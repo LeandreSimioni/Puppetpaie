@@ -342,7 +342,7 @@ pub(crate) struct Echeance {
     /// Le mois sur lequel elle porte (la DSN de ce mois, la DPAE d'un engagement de ce mois).
     mois: Option<Mois>,
     annee: Option<i32>,
-    fichier: Option<String>,
+    fichier: Option<std::path::PathBuf>,
     engagements: i64,
     validees: i64,
     spectacles: Vec<SpectacleARevoir>,
@@ -554,7 +554,8 @@ pub(crate) struct EcheanceDite {
     pub(crate) pastille: Pastille,
     pub(crate) mois: Option<Mois>,
     pub(crate) annee: Option<String>,
-    pub(crate) fichier: Option<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub(crate) fichier: Option<std::path::PathBuf>,
     pub(crate) engagements: i64,
     pub(crate) validees: i64,
     pub(crate) spectacles: Vec<SpectacleARevoir>,
@@ -1090,7 +1091,7 @@ pub(crate) fn mois_a_parcourir(ctx: &Contexte, aujourdhui: Jour) -> socle::echec
 
 /// `(nom, chemin)` de la DSN mensuelle du dossier du mois, la premiere dans l'ordre de
 /// `crate::etapes::ordre_de_depot` ; une DSN qui ne se lit pas se refuse.
-fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, String)>> {
+fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, std::path::PathBuf)>> {
     // Le mois n'est ecrit que si le moteur a note sa DSN mensuelle (`depart::mois_ecrit`, le critere de l'horloge
     // et de l'accueil) : un fichier DSN qu'il n'a pas note ne fait pas « le mois est ecrit ».
     let dossier = st.racine().join("sorties").join(mois.to_string());
@@ -1113,7 +1114,7 @@ fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, String)>> {
         }
     }
     fichiers.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(fichiers.into_iter().next().map(|(_, nom, c)| (nom, c.to_string_lossy().into_owned())))
+    Ok(fichiers.into_iter().next().map(|(_, nom, c)| (nom, c)))
 }
 
 /// Combien d'engagements le mois montre, et combien sont valides.

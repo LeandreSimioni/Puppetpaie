@@ -2,6 +2,7 @@
 //! chargement commun à tous les modes qui relisent un PDF (`charger`).
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
@@ -115,23 +116,24 @@ fn reparer(b: &[u8]) -> Option<Vec<u8>> {
 /// Ouvre un PDF, et dit s'il était verrouillé. Un fichier chiffré s'ouvre avec le mot de passe vide
 /// quand c'est possible (`dechiffrer` : `true`) ; sans le déchiffrer, le nombre de pages se lit
 /// quand même.
-pub fn ouvrir(chemin: &str, dechiffrer: bool) -> Result<(Document, bool), Refus> {
-    let octets = std::fs::read(chemin).map_err(|e| Refus::illisible(format!("{} illisible ({})", chemin, e)))?;
-    let mut doc = charger(&octets).map_err(|r| r.reformuler(|p| format!("{} {}", chemin, p)))?;
+pub fn ouvrir(chemin: &Path, dechiffrer: bool) -> Result<(Document, bool), Refus> {
+    let dit = chemin.display();
+    let octets = std::fs::read(chemin).map_err(|e| Refus::illisible(format!("{} illisible ({})", dit, e)))?;
+    let mut doc = charger(&octets).map_err(|r| r.reformuler(|p| format!("{} {}", dit, p)))?;
     let verrouille = doc.is_encrypted();
     if dechiffrer {
-        crate::chiffrement::dechiffrer(&mut doc, b"").map_err(|r| r.reformuler(|p| format!("{} : {}", chemin, p)))?;
+        crate::chiffrement::dechiffrer(&mut doc, b"").map_err(|r| r.reformuler(|p| format!("{} : {}", dit, p)))?;
     }
     Ok((doc, verrouille))
 }
 
 /// Le nombre de pages de chaque fichier, dans l'ordre.
-pub fn pages(chemins: &[String]) -> Result<Vec<usize>, Refus> {
+pub fn pages(chemins: &[PathBuf]) -> Result<Vec<usize>, Refus> {
     chemins.iter().map(|c| Ok(ouvrir(c, false)?.0.get_pages().len())).collect()
 }
 
 /// Le texte de chaque page de `chemin`, et les avertissements (pages illisibles).
-pub fn texte(chemin: &str) -> Result<(Vec<crate::texte::TexteDePage>, Vec<String>), Refus> {
+pub fn texte(chemin: &Path) -> Result<(Vec<crate::texte::TexteDePage>, Vec<String>), Refus> {
     let (doc, _) = ouvrir(chemin, true)?;
     Ok(crate::texte::texte_des_pages(&doc))
 }

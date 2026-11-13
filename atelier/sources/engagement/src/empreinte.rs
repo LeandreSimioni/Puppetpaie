@@ -41,7 +41,7 @@ fn empreinte_fiches(ctx: &Contexte, salarie: &IdSalarie, spectacle: Option<&str>
     // (`droit::fiche`) ; ce qui manque s'ecrit `null`.
     let sal = ctx.salaries.get(salarie).map(|f| droit::fiche::ChampsSalarie { taux_pas: None, ..f.champs.clone() });
     let spec = spectacle.and_then(|k| ctx.spectacles.get(k));
-    fichiers::sha256_hex(socle::ecriture::json_en_ligne(&(&ctx.entreprise, &sal, &spec)).as_bytes())
+    fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(&(&ctx.entreprise, &sal, &spec)).as_bytes()).to_string()
 }
 
 /// L'entree `fiches [mois, salarie, spectacle]` tient-elle encore ?

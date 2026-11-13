@@ -3,12 +3,13 @@
 
 use std::collections::BTreeMap;
 use socle::echec::Classe;
+use socle::fichiers::CheminRelatif;
 use std::path::Path;
 
-use envois::drive::{Client, Drive, ErreurGoogle};
+use envois::drive::{Client, Drive, EmpreinteMd5, ErreurGoogle};
 
 use compagnie::sauvegarde::{
-    cause_de, ecrire_index, empreinte, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
+    cause_de, ecrire_index, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
     DOSSIER_DRIVE, GOOGLE_INDISPONIBLE,
 };
 
@@ -32,7 +33,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     let (presents, ecartes) = inventaire(racine)?;
     let index = lire_index(racine)?;
     // Tout renvoyer, ou aucun index : aucun dossier n'est connu d'avance, chacun se cherche dans Drive.
-    let mut dossiers: BTreeMap<String, String> = index.iter().filter(|_| !tout).flat_map(|i| i.dossiers.clone()).collect();
+    let mut dossiers: BTreeMap<String, envois::drive::IdDrive> =index.iter().filter(|_| !tout).flat_map(|i| i.dossiers.clone()).collect();
 
     let mut resultat = Sauvegarde {
         racine_drive: racine_drive.to_string(),
@@ -54,17 +55,18 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     let mut indisponibles_de_suite = 0usize;
     // Ce qui n'a PAS pu etre depose. Ces fichiers n'entrent pas dans l'index : sans cela, le
     // passage suivant les croirait a jour.
-    let mut en_echec: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let etat_de: BTreeMap<&str, &Etat> = presents.iter().map(|(r, e)| (r.as_str(), e)).collect();
+    let mut en_echec: std::collections::HashSet<CheminRelatif> = std::collections::HashSet::new();
+    let etat_de: BTreeMap<&CheminRelatif, &Etat> = presents.iter().map(|(r, e)| (r, e)).collect();
 
-    // Par dossier : un seul listage Drive sert a tous les fichiers qu'il porte.
-    let mut par_dossier: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // Par dossier (`.` pour la racine, comme le dit un dossier reporte) : un seul listage Drive sert a tous les fichiers
+    // qu'il porte.
+    let mut par_dossier: BTreeMap<String, Vec<CheminRelatif>> = BTreeMap::new();
     for (relatif, _) in &presents {
-        let parent = match relatif.rfind('/') {
-            Some(i) => &relatif[..i],
-            None => ".",
+        let parent = match relatif.parent() {
+            Some(d) => d.to_string(),
+            None => ".".to_string(),
         };
-        par_dossier.entry(parent.to_string()).or_default().push(relatif.clone());
+        par_dossier.entry(parent).or_default().push(relatif.clone());
     }
 
     for (dossier, fichiers) in &par_dossier {
@@ -78,7 +80,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             en_echec.extend(fichiers.iter().cloned());
             continue;
         }
-        let essai: Result<(String, BTreeMap<String, envois::drive::Distant>), ErreurGoogle> = (|| {
+        let essai: Result<(envois::drive::IdDrive, BTreeMap<String, envois::drive::Distant>), ErreurGoogle> = (|| {
             let parent = match dossiers.get(&cle) {
                 Some(p) => p.clone(),
                 None => client.chemin(&segments)?,
@@ -112,25 +114,22 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             }
         };
 
-        let mut tries: Vec<&String> = fichiers.iter().collect();
+        let mut tries: Vec<&CheminRelatif> = fichiers.iter().collect();
         tries.sort();
         for relatif in tries {
             if indisponibles_de_suite >= INDISPONIBLE_D_AFFILEE {
-                resultat.reportes.push(Reporte { quoi: relatif.clone(), dossier: false, cause: GOOGLE_INDISPONIBLE.into() });
+                resultat.reportes.push(Reporte { quoi: relatif.to_string(), dossier: false, cause: GOOGLE_INDISPONIBLE.into() });
                 en_echec.insert(relatif.clone());
                 continue;
             }
             let chemin = racine.join(relatif);
-            let nom = match relatif.rfind('/') {
-                Some(i) => &relatif[i + 1..],
-                None => relatif.as_str(),
-            };
+            let nom = relatif.nom();
             let mut faire = || -> Result<Option<EtatFichier>, ErreurGoogle> {
-                let locale = empreinte(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
+                let locale = EmpreinteMd5::du_fichier(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
                 // Le fichier de ce nom que `lister` connait (le meme pour decider ET pour remplacer).
-                let connu = deja.get(nom);
-                let distante = if tout { None } else { connu.and_then(|d| d.md5.clone()).filter(|m| !m.is_empty()) };
-                if distante.as_deref() == Some(locale.as_str()) {
+                let connu = deja.get(nom.texte());
+                let distante = if tout { None } else { connu.and_then(|d| d.md5.as_ref()) };
+                if distante == Some(&locale) {
                     return Ok(None);
                 }
                 client.televerser(&chemin, &parent, None, connu)?;
@@ -145,7 +144,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 }
                 Ok(Some(etat)) => {
                     indisponibles_de_suite = 0;
-                    let octets = etat_de[relatif.as_str()].octets;
+                    let octets = etat_de[relatif].octets;
                     resultat.deposes.push(Fichier { relatif: relatif.clone(), octets, etat });
                     resultat.octets_deposes += octets;
                 }
@@ -160,7 +159,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                     resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
                     let cause = cause_de(&e);
                     indisponibles_de_suite = if cause == GOOGLE_INDISPONIBLE { indisponibles_de_suite + 1 } else { 0 };
-                    resultat.reportes.push(Reporte { quoi: relatif.clone(), dossier: false, cause: cause.into() });
+                    resultat.reportes.push(Reporte { quoi: relatif.to_string(), dossier: false, cause: cause.into() });
                     en_echec.insert(relatif.clone());
                 }
             }
@@ -168,7 +167,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     }
 
     // L'index n'est ecrit qu'a la fin, et seulement pour ce qui est passe.
-    let fichiers: BTreeMap<String, Etat> = presents.iter().filter(|(r, _)| !en_echec.contains(r)).map(|(r, e)| (r.clone(), *e)).collect();
+    let fichiers: BTreeMap<CheminRelatif, Etat> = presents.iter().filter(|(r, _)| !en_echec.contains(r)).map(|(r, e)| (r.clone(), *e)).collect();
     let maintenant = socle::temps::secondes();
     let quand = maintenant.a_la_minute();
     // CE QUI RESTE EN ECHEC, D'UN PASSAGE A L'AUTRE : de quoi dire ce qui persiste (`souci`). Un passage hors ligne ne compte

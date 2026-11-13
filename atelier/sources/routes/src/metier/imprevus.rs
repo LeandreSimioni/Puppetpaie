@@ -54,7 +54,7 @@ pub(crate) fn nomenclatures() -> R<Bloc60> {
 pub(crate) struct ArretDit<'a> {
     pub cle: &'a IdSalarie,
     pub contrat: &'a ContratAuJour,
-    pub motif: &'a str,
+    pub motif: droit::arrets::MotifDArret,
     pub dernier_jour: Jour,
     pub debut: Jour,
     pub fin: Jour,
@@ -71,7 +71,7 @@ pub(crate) fn arret_a_ecrire(x: ArretDit) -> ArretSaisi {
         salarie: x.cle.clone(),
         contrat_debut: x.contrat.debut,
         contrat_numero: x.contrat.numero.clone(),
-        motif: x.motif.to_string(),
+        motif: x.motif,
         dernier_jour_travaille: x.dernier_jour,
         debut: x.debut,
         fin_previsionnelle: x.fin,

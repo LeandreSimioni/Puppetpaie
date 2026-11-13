@@ -46,7 +46,7 @@ pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<socle::date::Jour>> {
     let lignes = envois::journal::lu(racine)?.lignes;
     Ok(lignes
         .iter()
-        .filter(|l| l.reel() && l.accepte() && l.empreinte() == Some(empreinte.as_str()))
+        .filter(|l| l.reel() && l.accepte() && l.empreinte() == Some(&empreinte))
         .find(|l| !envois::etats::refuse_par_un_retour(l))
         .map(|l| l.quand().jour()))
 }
@@ -59,7 +59,7 @@ pub fn refuser_si_partie(racine: &Path, cible: &Path) -> R<()> {
             Classe::Refuse,
             format!(
                 "{} est parti le {} : ce qui est parti ne se réécrit pas. Rien n'est écrit.",
-                socle::fichiers::nom_du(cible),
+                socle::fichiers::NomDeFichier::du(cible)?,
                 le.jj_mm_aaaa()
             ),
         )),

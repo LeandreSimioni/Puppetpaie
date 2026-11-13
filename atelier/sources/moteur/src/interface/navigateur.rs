@@ -141,7 +141,7 @@ pub fn ouvrir(url: &str, profil: &std::path::Path, journal: &dyn Fn(&str)) -> Op
         }
     }
     journal("Fenetre : le navigateur par defaut.\n");
-    if let Err(e) = compagnie::poste::ouvrir_adresse(url) {
+    if let Err(e) = socle::garde_reseau::Url::lire(url).and_then(|u| compagnie::poste::ouvrir_adresse(&u)) {
         journal(&format!("Le navigateur par defaut ne s'ouvre pas : {}\n", e.phrase));
     }
     None

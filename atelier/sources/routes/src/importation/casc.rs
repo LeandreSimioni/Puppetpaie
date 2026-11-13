@@ -191,8 +191,11 @@ pub struct Regularisation {
     pub courriel_audiens: Courriel,
     pub courriel_casc: Courriel,
     pub avertissements: Vec<String>,
-    pub fichiers: Vec<String>,
-    pub dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub fichiers: Vec<std::path::PathBuf>,
+    /// Ou les fichiers sont ecrits ; aucun tant qu'ils ne le sont pas.
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub dossier: Option<std::path::PathBuf>,
     pub boite_liee: bool,
     pub emplois: Vec<EmploiReg>,
 }
@@ -505,7 +508,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         courriel_casc,
         avertissements: avert,
         fichiers: vec![],
-        dossier: String::new(),
+        dossier: None,
         boite_liee: boite,
         emplois,
     })
@@ -531,8 +534,9 @@ fn deja_faites(ctx: &Contexte) -> R<String> {
         .join(", "))
 }
 
-/// L'ecriture de la regularisation : `exports/casc-svp/` -- les CSV, les deux courriels, la liste des gestes.
-pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<()> {
+/// L'ecriture de la regularisation : `exports/casc-svp/` -- les CSV, les deux courriels, la liste des gestes. Rend le
+/// dossier ecrit.
+pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<std::path::PathBuf> {
     let dossier = ctx.racine.join("exports").join("casc-svp");
     let io = |p: &Path, e: std::io::Error| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque);
     std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
@@ -571,9 +575,9 @@ pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<()> {
     let verifier = if r.avertissements.is_empty() { String::new() } else { format!("\nÀ vérifier :\n{}", r.avertissements.join("\n")) };
     std::fs::write(&p, format!("Régularisation CASC-SVP — {} — total {}\n\n{}\n{}\n", r.periode, euros(r.total), r.a_faire.join("\n"), verifier)).map_err(|e| io(&p, e))?;
     fichiers.insert(0, p);
-    r.fichiers = fichiers.iter().map(|f| f.display().to_string()).collect();
-    r.dossier = dossier.display().to_string();
-    Ok(())
+    r.fichiers = fichiers;
+    r.dossier = Some(dossier.clone());
+    Ok(dossier)
 }
 
 const ENTETES: [(u32, u16, &str); 42] = [

@@ -49,10 +49,11 @@ use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
 
-/// Un courriel, sans le piece jointe lue : `pieces` sont des chemins.
+/// Un courriel, sans le piece jointe lue : `pieces` sont des chemins. `pour` : celui a qui il s'adresse, tel que
+/// l'envoyeur le retrouve apres l'envoi, du type de ce qu'il est (un salarie : `IdSalarie`) ; l'envoi ne le lit pas.
 #[derive(Debug, Clone)]
-pub struct Message {
-    pub cle: String,
+pub struct Message<Pour> {
+    pub pour: Pour,
     pub nom: String,
     pub destinataire: String,
     pub sujet: String,
@@ -322,8 +323,8 @@ pub fn preparer_avec(
     m: socle::mois::Mois,
     dossier: &Path,
     renvois: &std::collections::HashMap<droit::contexte::IdSalarie, Renvoi>,
-    a_part: &std::collections::HashMap<String, Vec<&'static str>>,
-) -> R<Vec<Message>> {
+    a_part: &std::collections::HashMap<droit::contexte::IdSalarie, Vec<&'static str>>,
+) -> R<Vec<Message<droit::contexte::IdSalarie>>> {
     let (an, etiq, nom_mois) = (m.annee(), m.etiquette(), m.nom(socle::mois::Graphie::Accentuee));
     let mut vus: Vec<droit::contexte::IdSalarie> = Vec::new();
     let mut messages = Vec::new();
@@ -366,7 +367,7 @@ pub fn preparer_avec(
             }
             v
         };
-        let a_part_du = |piece: &str| a_part.get(cle.as_str()).is_some_and(|a| a.contains(&piece));
+        let a_part_du = |piece: &str| a_part.get(&cle).is_some_and(|a| a.contains(&piece));
         if a_part_du("aer") && !presents.iter().any(|p| p.champ == "aer") {
             notes.push(NOTE_SANS_AER);
         }
@@ -405,7 +406,7 @@ pub fn preparer_avec(
             None => (format!("{} {} — {}", capitaliser(nom_mois), an, enumerer(&courts)), formater(CORPS, &champs)),
         };
         messages.push(Message {
-            cle: cle.to_string(),
+            pour: cle,
             nom: format!("{} {}", texte(&s.prenom_affichage, "prenom_affichage")?, texte(&s.nom, "nom")?),
             destinataire: email.to_lowercase(),
             sujet,
@@ -426,8 +427,8 @@ pub fn preparer_avec(
 /// `identifiants` : une liste a remplir, si l'appelant la passe, des identifiants des messages partis, dans
 /// l'ordre (le `Message-ID` avec le vrai client). `copies` : de meme, les messages exactement tels qu'ils sont
 /// partis (RFC 822, en octets), a archiver quand l'envoi fait preuve.
-pub fn envoyer(
-    messages: &[Message],
+pub fn envoyer<Pour: Clone>(
+    messages: &[Message<Pour>],
     expediteur: &str,
     client: &mut dyn Courriel,
     identifiants: Option<&mut Vec<String>>,
@@ -447,8 +448,8 @@ pub struct ErreurEnvoi {
 }
 
 /// `envoyer`, avec ce qu'il faut pour noter un echec au journal : qui a ete servi, et ou l'envoi a echoue.
-pub fn envoyer_suivi(
-    messages: &[Message],
+pub fn envoyer_suivi<Pour: Clone>(
+    messages: &[Message<Pour>],
     expediteur: &str,
     client: &mut dyn Courriel,
     mut identifiants: Option<&mut Vec<String>>,
@@ -728,7 +729,7 @@ pub struct Hasards<'a> {
 /// Le message complet, pieces jointes comprises, tel que `EmailMessage.as_bytes()` l'ecrit, l'expediteur precede du
 /// nom que la compagnie affiche (« Compagnie du Fil <adresse> ») ; sans nom, l'adresse
 /// seule.
-pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> R<Vec<u8>> {
+pub fn en_mime_nomme<Pour>(message: &Message<Pour>, expediteur: &str, nom: Option<&str>) -> R<Vec<u8>> {
     let mut frontiere = frontiere_au_hasard;
     let domaine = match expediteur.rsplit_once('@') {
         Some((_, d)) => d,
@@ -742,11 +743,11 @@ pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> 
     en_mime_complet(message, expediteur, nom, hasards)
 }
 
-pub fn en_mime_avec(message: &Message, expediteur: &str, hasards: Hasards) -> R<Vec<u8>> {
+pub fn en_mime_avec<Pour>(message: &Message<Pour>, expediteur: &str, hasards: Hasards) -> R<Vec<u8>> {
     en_mime_complet(message, expediteur, None, hasards)
 }
 
-fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasards: Hasards) -> R<Vec<u8>> {
+fn en_mime_complet<Pour>(message: &Message<Pour>, expediteur: &str, nom: Option<&str>, hasards: Hasards) -> R<Vec<u8>> {
     let Hasards { date, message_id, frontiere } = hasards;
     let adresse = |a: &str| -> R<()> {
         if adresse_simple(a) {

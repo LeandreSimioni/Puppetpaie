@@ -83,3 +83,17 @@ codes_fermes! {
         NouvelleCotisationE = "096",
     }
 }
+
+codes_fermes! {
+    /// LE TYPE D'UN BENEFICIAIRE DE L'OBLIGATION D'EMPLOI EXTERNE A L'ENTREPRISE (S21.G00.13.002), la liste entiere de la
+    /// norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.13.txt` l. 81-90 ; relevee
+    /// dans `formats-dsn-*-base.json`). Ceux que la compagnie dit, la DSN de l'OETH les ecrit (`declarations::oeth`).
+    TypeDeBoethExterne, "Type de bénéficiaire externe de l'OETH", "S21.G00.13.002" {
+        Interimaires = "01",
+        GroupementDEmployeurs = "02",
+        Stagiaires = "03",
+        AssociationIntermediaire = "04",
+        AgenceDeMannequins = "05",
+        TravailATempsPartage = "06",
+    }
+}

@@ -33,12 +33,13 @@ use std::path::Path;
 use regex::Regex;
 use serde::Serialize;
 
-use super::{case, date_du_releve, en_transcription, nom_de, propre, remplie, sha256, EnOrdre, Rang, Releve, Transcription};
+use super::{case, date_du_releve, en_transcription, propre, remplie, sha256, EnOrdre, Rang, Releve, Transcription};
 use fabrique_pdf::mesure::{mesure, Mesure};
 use import::releve::PageRelevee;
 use socle::date::Jour;
 use socle::lecture_xlsx;
 use socle::echec::{refus, R};
+use socle::fichiers::NomDeFichier;
 
 const QUOI: &str = "Le tableau des usages du cahier technique NEODeS : pour chaque rubrique et chaque nature de declaration, si \
                     elle est obligatoire (O), conditionnelle (C), interdite (I) ou sans objet (N). Ecrire une rubrique que la \
@@ -58,9 +59,9 @@ struct Usages {
 #[derive(Serialize)]
 enum Empreinte {
     #[serde(rename = "sha256_du_classeur")]
-    Classeur(String),
+    Classeur(socle::fichiers::Empreinte),
     #[serde(rename = "sha256_du_pdf")]
-    Pdf(String),
+    Pdf(socle::fichiers::Empreinte),
 }
 
 /// Ce que dit chaque lettre du tableau.
@@ -237,7 +238,7 @@ fn releve_xlsx(source: &Path) -> R<(Rang, Vec<Rang>)> {
 /// Le tableau des usages du cahier en PDF, lu : (entete, lignes de rubriques, pages ou une rubrique a ete lue).
 fn lire_le_cahier(source: &Path) -> R<(Rang, Vec<Rang>, (usize, usize))> {
     let chemin = source.to_string_lossy();
-    let (pages, _) = fabrique_pdf::lecture::texte(&chemin).map_err(documents::fabrique::echec)?;
+    let (pages, _) = fabrique_pdf::lecture::texte(source).map_err(documents::fabrique::echec)?;
     let textes = pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect::<R<Vec<String>>>()?;
     let releve = import::releve::du_pdf(source).map_err(|r| r.en_echec().reformuler(|p| format!("{} : {}", chemin, p)))?;
     let (entete, lignes, pages) = releve_pdf(&textes, &releve.releve.pages)?;
@@ -266,7 +267,7 @@ pub fn transcrire(pdf: &Path) -> R<String> {
         corps.push('\n');
     }
     let t = Transcription::de(pdf, vec![("pages".into(), format!("{}-{}", premiere, derniere))], corps)?;
-    Ok(t.texte(&format!("Le tableau des usages de {}, cellule par cellule (`moteur extraire transcrire`)", nom_de(pdf))))
+    Ok(t.texte(&format!("Le tableau des usages de {}, cellule par cellule (`moteur extraire transcrire`)", NomDeFichier::du(pdf)?)))
 }
 
 /// (entete, lignes de rubriques, pages) relus dans une transcription : une case sans texte est vide.
@@ -322,7 +323,7 @@ pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
             "Tableau des usages de la norme DSN {}, classeur {} (feuille « {} »). Releve automatiquement par \
              `moteur extraire usages` le {}.",
             v,
-            nom_de(source),
+            NomDeFichier::du(source)?,
             FEUILLE_USAGES,
             date
         );
@@ -330,11 +331,11 @@ pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
     } else if en_transcription(source) {
         let t = Transcription::lire(source)?;
         let (entete, lignes, (premiere, derniere)) = lire_la_transcription(&t)?;
-        (entete, lignes, provenance_du_cahier(&t.pdf, &premiere, &derniere)?, t.sha256)
+        (entete, lignes, provenance_du_cahier(t.pdf.texte(), &premiere, &derniere)?, t.sha256)
     } else {
         version_du_cahier(source)?;
         let (entete, lignes, (premiere, derniere)) = lire_le_cahier(source)?;
-        let provenance = provenance_du_cahier(&nom_de(source), &premiere.to_string(), &derniere.to_string())?;
+        let provenance = provenance_du_cahier(NomDeFichier::du(source)?.texte(), &premiere.to_string(), &derniere.to_string())?;
         (entete, lignes, provenance, sha256(source)?)
     };
     let nature = Regex::new(r"\A(\d\d) - (.*)").expect("motif");

@@ -91,7 +91,7 @@ impl Soir<'_> {
             .collect();
         noms.sort();
         let Some(nom) = noms.last() else { return Vec::new() };
-        let (pages, _) = fabrique_pdf::lecture::texte(&envoi.join(nom).to_string_lossy()).unwrap_or_else(|m| panic!("{} : {}", nom, m.phrase));
+        let (pages, _) = fabrique_pdf::lecture::texte(&envoi.join(nom)).unwrap_or_else(|m| panic!("{} : {}", nom, m.phrase));
         let pages: Vec<String> = pages.iter().map(|t| t.lu().unwrap_or_else(|m| panic!("{} : {}", nom, m.phrase))).collect();
         pages.join("\n").lines().map(|l| l.trim_end().to_string()).collect()
     }
@@ -199,11 +199,11 @@ pub fn sorties(racine: &Path, jour: socle::date::Jour) -> Value {
             // Les fichiers a largeur fixe sont en latin-1 : un octet, un caractere.
             "dsn" | "txt" | "csv" | "eml" => lignes(&octets.iter().map(|&o| o as char).collect::<String>(), &r),
             "pdf" => {
-                let (pages, _) = fabrique_pdf::lecture::texte(&p.to_string_lossy()).unwrap_or_else(|m| panic!("{} : {}", rel, m.phrase));
+                let (pages, _) = fabrique_pdf::lecture::texte(&p).unwrap_or_else(|m| panic!("{} : {}", rel, m.phrase));
                 let pages: Vec<String> = pages.iter().map(|t| t.lu().unwrap_or_else(|m| panic!("{} : {}", rel, m.phrase))).collect();
                 lignes(&documents::avenant::normaliser(&pages.join("\n")), &r)
             }
-            _ => json!({"empreinte": socle::fichiers::sha256_hex(&octets)}),
+            _ => json!({"empreinte": socle::fichiers::Empreinte::des_octets(&octets).texte()}),
         };
         par_fichier.insert(rel, v);
     }

@@ -68,7 +68,10 @@ S21.G00.44 sur une supposition.",
 /// l'engagement).
 /// Un code que la nature ni l'engagement ne disent est `None`.
 pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> (Option<String>, Option<String>, Option<MotifDeRecours>) {
-    (nat.code("S21.G00.40.007"), nat.code("S21.G00.40.008"), nat.motif_recours_fixe().or(motif_recours))
+    use crate::natures::RubriqueDeLaNorme;
+    const NATURE: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.40.007");
+    const DISPOSITIF: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.40.008");
+    (nat.code(NATURE), nat.code(DISPOSITIF), nat.motif_recours_fixe().or(motif_recours))
 }
 
 #[cfg(test)]

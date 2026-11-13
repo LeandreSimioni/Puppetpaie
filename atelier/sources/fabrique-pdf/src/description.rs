@@ -4,6 +4,7 @@
 //! Toute erreur sort en une ligne de français, avec le numéro du bloc quand on le connaît.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use crate::forme as f;
 use crate::modele;
@@ -115,7 +116,7 @@ pub struct Police {
 
 #[derive(Debug, Clone)]
 pub struct Logo {
-    pub chemin: String,
+    pub chemin: PathBuf,
     pub largeur: Mesure,
     pub marge_haut: Mesure,
     pub marge_droite: Mesure,
@@ -142,7 +143,7 @@ pub struct Repere {
 /// `descente` points sous la ligne de base (la jambe d'un mot dessiné).
 #[derive(Debug, Clone)]
 pub struct ImageRepere {
-    pub chemin: String,
+    pub chemin: PathBuf,
     pub largeur: Mesure,
     pub descente: Mesure,
 }
@@ -203,7 +204,7 @@ pub enum Bloc {
         colonnes: Vec<(Mesure, Vec<BlocEtiquete>)>,
     },
     Image {
-        chemin: String,
+        chemin: PathBuf,
         largeur: Mesure,
         /// Posée à l'endroit courant sans occuper de hauteur (FORMAT.md).
         flottante: bool,
@@ -232,7 +233,7 @@ pub enum Bloc {
         couleur: Rvb,
     },
     ImageFixe {
-        chemin: String,
+        chemin: PathBuf,
         x: Mesure,
         y: Mesure,
         largeur: Mesure,
@@ -876,7 +877,7 @@ fn lire_modele(
         (None, None) => {
             return refus(format!("{} : \"modele\" demande \"chemin\" (le fichier) ou \"texte\" (le modèle même)", ou))
         }
-        (Some(c), None) => (modele::lire_fichier(c)?, c.clone()),
+        (Some(c), None) => (modele::lire_fichier(c)?, c.to_string_lossy().into_owned()),
         (None, Some(t)) => (modele::lire_modele(t, "le modèle donné en texte")?, "le modèle donné en texte".to_string()),
     };
     // Un avenant dit ce qu'il modifie ; un contrat et une attestation ne modifient rien.

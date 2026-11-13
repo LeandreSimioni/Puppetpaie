@@ -33,6 +33,7 @@
     "chomage":      {"charge": "645400", "tiers": "437200", "libelle": "Assurance chomage (France Travail)"},
     "prevoyance":   {"charge": "645300", "tiers": "437100", "libelle": "Prevoyance (Audiens)"},
     "prevoyance_t2": {"charge": "645300", "tiers": "437100", "libelle": "Prevoyance T2 (Audiens)"},
+    "prevoyance_tb": {"charge": "645300", "tiers": "437100", "libelle": "Prevoyance tranche B (Audiens)"},
     "retraite_t1":  {"charge": "645300", "tiers": "437100", "libelle": "Retraite complementaire T1 (Audiens)"},
     "retraite_t2":  {"charge": "645300", "tiers": "437100", "libelle": "Retraite complementaire T2 (Audiens)"},
     "apec_t1":      {"charge": "645300", "tiers": "437100", "libelle": "APEC T1 (Audiens)"},

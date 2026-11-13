@@ -24,7 +24,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::conges::{avertir, info};
 use crate::Chiffre;
-use droit::permanents::MotifDeSuspension;
+use droit::arrets::{MotifDArret, MotifDeReprise, SubrogationDeLArret};
+use droit::permanents::{MotifDeSuspension, ProprietesDeSuspension};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::SalarieDuContrat;
 use socle::date::Jour;
@@ -82,15 +83,15 @@ pub struct ArretSaisi {
     pub salarie: droit::contexte::IdSalarie,
     pub contrat_debut: Jour,
     pub contrat_numero: Option<crate::numeros::NumeroContrat>,
-    pub motif: String,
+    pub motif: MotifDArret,
     pub dernier_jour_travaille: Jour,
     pub debut: Jour,
     pub fin_previsionnelle: Jour,
-    pub subrogation: Option<String>,
+    pub subrogation: Option<SubrogationDeLArret>,
     pub subrogation_debut: Option<Jour>,
     pub subrogation_fin: Option<Jour>,
     pub reprise: Option<Jour>,
-    pub reprise_motif: Option<String>,
+    pub reprise_motif: Option<MotifDeReprise>,
     pub date_accident: Option<Jour>,
     pub jours_deja_indemnises: Option<Chiffre>,
     pub ij_brute: Option<Chiffre>,
@@ -129,9 +130,9 @@ pub struct RepriseNotee {
     pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub reprise_avant: Option<Jour>,
-    pub reprise_motif_avant: Option<String>,
+    pub reprise_motif_avant: Option<MotifDeReprise>,
     pub reprise: Option<Jour>,
-    pub reprise_motif: Option<String>,
+    pub reprise_motif: Option<MotifDeReprise>,
 }
 
 /// UNE SUSPENSION DU CONTRAT saisie (bloc 65 : motif, debut, fin), dans l'ordre ou elle s'ecrit ; chaque cle est ecrite
@@ -143,7 +144,7 @@ pub struct SuspensionSaisie {
     pub salarie: droit::contexte::IdSalarie,
     pub contrat_debut: Jour,
     pub contrat_numero: Option<crate::numeros::NumeroContrat>,
-    pub motif: String,
+    pub motif: MotifDeSuspension,
     pub debut: Jour,
     pub fin: Jour,
     #[serde(with = "socle::paris::ecrit::saisie")]
@@ -240,11 +241,11 @@ impl Imprevu {
         }
     }
 
-    /// Son motif, tel qu'il s'ecrit ; vide s'il n'en dit pas.
-    pub fn motif(&self) -> &str {
+    /// La suspension qu'il est, s'il en est une.
+    pub fn suspension(&self) -> Option<&SuspensionSaisie> {
         match self {
-            Imprevu::Arret(a) => &a.motif,
-            Imprevu::Suspension(s) => &s.motif,
+            Imprevu::Arret(_) => None,
+            Imprevu::Suspension(s) => Some(s),
         }
     }
 
@@ -259,10 +260,6 @@ impl Imprevu {
 
 pub fn est_un_arret(imp: &Imprevu) -> bool {
     matches!(imp, Imprevu::Arret(_))
-}
-
-pub fn est_une_suspension(imp: &Imprevu) -> bool {
-    matches!(imp, Imprevu::Suspension(_))
 }
 
 /// CE QU'UN IMPREVU DOIT TENIR AU-DELA DE SA FORME : les indemnites journalieres d'un arret, par jour, sont positives.
@@ -338,7 +335,7 @@ pub fn empreinte_du_salarie(racine: &Path, cle: &IdSalarie) -> R<String> {
 }
 
 fn empreinte_de(imprevus: &[Imprevu]) -> String {
-    socle::fichiers::sha256_hex(socle::ecriture::json_en_ligne(imprevus).as_bytes())
+    socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(imprevus).as_bytes()).to_string()
 }
 
 /// Les imprevus de `cle`, lus mois par mois du magasin sans se noter (`socle::forme::partagee`).
@@ -496,18 +493,19 @@ fn numeros_compatibles(a: Option<&str>, b: Option<&str>) -> bool {
 // ------------------------------------------------------------- les motifs de suspension
 
 /// Le motif de suspension (`permanents-base.json`, section `suspensions`), s'il existe.
-pub fn motif_de_suspension(code: &str) -> R<Option<MotifDeSuspension>> {
+pub fn motif_de_suspension(code: MotifDeSuspension) -> R<Option<ProprietesDeSuspension>> {
     droit::permanents::motif_de_suspension(code)
 }
 
-/// Ce que le motif d'une suspension interdit de declarer : un motif inconnu, ou le 200 (conges payes).
-pub fn verifier_motif_de_suspension(code: &str, qui: &str) -> R<MotifDeSuspension> {
+/// Ce que le motif d'une suspension interdit de declarer : un motif que `permanents-base.json` ne dit pas, ou le 200
+/// (conges payes).
+pub fn verifier_motif_de_suspension(code: MotifDeSuspension, qui: &str) -> R<ProprietesDeSuspension> {
     let Some(m) = motif_de_suspension(code)? else {
         return Err(socle::echec::cle(
             format!(
-                "{} : motif de suspension {}, que le logiciel ne connaît pas : le choisir dans la liste des motifs.",
+                "{} : motif de suspension inconnu ({}), que le logiciel ne connaît pas : le choisir dans la liste des motifs.",
                 qui,
-                if code.is_empty() { "absent".to_string() } else { format!("inconnu ({})", repr(code)) }
+                repr(code.code())
             ),
             "motif",
         ));
@@ -528,7 +526,7 @@ pub fn verifier_motif_de_suspension(code: &str, qui: &str) -> R<MotifDeSuspensio
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Suspension {
-    pub motif: String,
+    pub motif: MotifDeSuspension,
     pub debut: Jour,
     pub fin: Jour,
 }
@@ -543,14 +541,15 @@ pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: Moi
     let mut out = Vec::new();
     let mut siennes = Vec::new();
     for imp in du_mois_du_salarie(&ctx.racine, mois, Some(SUSPENSION), cle)? {
-        if du_contrat(&imp, cle, e.numero.as_deref(), &e.debut)? {
-            siennes.push(imp);
+        if let Some(code) = imp.suspension().map(|s| s.motif) {
+            if du_contrat(&imp, cle, e.numero.as_deref(), &e.debut)? {
+                siennes.push((code, imp));
+            }
         }
     }
-    siennes.sort_by_key(Imprevu::debut);
-    for imp in siennes {
-        let code = imp.motif().to_string();
-        let motif = verifier_motif_de_suspension(&code, &qui)?;
+    siennes.sort_by_key(|(_, imp)| imp.debut());
+    for (code, imp) in siennes {
+        let motif = verifier_motif_de_suspension(code, &qui)?;
         let (debut, fin) = (premier_jour(&imp)?, dernier_jour(&imp)?);
         if fin < debut {
             return Err(socle::refus!(
@@ -581,10 +580,11 @@ pub fn suspendu_sans_remuneration(
 ) -> R<Vec<Imprevu>> {
     let mut siennes = Vec::new();
     for imp in du_salarie(racine, cle)? {
-        if !est_une_suspension(&imp) || !du_contrat(&imp, cle, numero, contrat_debut)? || !croise(&imp, debut, fin)? {
+        let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
+        if !du_contrat(&imp, cle, numero, contrat_debut)? || !croise(&imp, debut, fin)? {
             continue;
         }
-        let remunere = motif_de_suspension(imp.motif())?.is_none_or(|m| m.remunere);
+        let remunere = motif_de_suspension(code)?.is_none_or(|m| m.remunere);
         if !remunere {
             siennes.push(imp);
         }
@@ -619,10 +619,11 @@ pub fn jours_de_conges_non_acquis(
 ) -> R<Decimal> {
     let mut total = Decimal::ZERO;
     for imp in du_salarie(racine, cle)? {
-        if !est_une_suspension(&imp) || !du_contrat(&imp, cle, numero, contrat_debut)? {
+        let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
+        if !du_contrat(&imp, cle, numero, contrat_debut)? {
             continue;
         }
-        let acquiert = motif_de_suspension(imp.motif())?.is_none_or(|m| m.acquiert_conges);
+        let acquiert = motif_de_suspension(code)?.is_none_or(|m| m.acquiert_conges);
         if acquiert {
             continue;
         }
@@ -652,11 +653,11 @@ pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour
     let mut retranches = 0i64;
     let mut dit = Vec::new();
     for imp in du_salarie(racine, cle)? {
-        if !est_une_suspension(&imp) || imp.salarie() != cle {
+        let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
+        if imp.salarie() != cle {
             continue;
         }
-        let code = imp.motif().to_string();
-        let Some(motif) = motif_de_suspension(&code)? else { continue };
+        let Some(motif) = motif_de_suspension(code)? else { continue };
         if motif.remunere {
             continue;
         }
@@ -840,9 +841,9 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
             socle::texte::virgule(heures),
             socle::texte::virgule(heures_du_mois)
         );
-        let code = imp.motif().to_string();
         if let Imprevu::Arret(arret) = &imp {
-            let motif = droit::arrets::motif_d_arret(&code)?;
+            let code = arret.motif;
+            let motif = droit::arrets::motif_d_arret(code)?;
             // Le bulletin nomme l'absence d'apres le motif de l'arret (S21.G00.60.001) : sa rubrique est celle du motif
             // (`arrets-base.json`, `rubrique`).
             let Some(rubrique) = motif.as_ref().and_then(|m| m.rubrique.clone()) else {
@@ -869,8 +870,8 @@ nomme cette absence. Rien n'est calcule.",
             if motif.as_ref().is_some_and(|m| m.origine.is_some()) {
                 crate::maintien::ajouter(ctx, e, arret, &nat, mois, m, &mut maintien)?;
             }
-        } else {
-            let motif = verifier_motif_de_suspension(&code, &qui)?;
+        } else if let Imprevu::Suspension(s) = &imp {
+            let motif = verifier_motif_de_suspension(s.motif, &qui)?;
             let libelle = motif.libelle.clone();
             if motif.remunere {
                 avert.push(info(format!(
@@ -903,7 +904,7 @@ nomme cette absence. Rien n'est calcule.",
 // ------------------------------------------------------------- les jours payes
 
 /// Le libelle d'un motif d'arret, tel que la norme le nomme ; un code qu'elle ne connait pas se dit tel.
-fn libelle_du_motif(motif: &Option<droit::arrets::CodeDuBloc60>) -> &str {
+fn libelle_du_motif(motif: &Option<droit::arrets::CodeDuBloc60<MotifDArret>>) -> &str {
     match motif {
         Some(m) => &m.libelle,
         None => "inconnu de la norme",
@@ -1004,21 +1005,22 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
         for c in cachets_de_la_saisie(ctx, data, imp.salarie(), &premier, &dernier)? {
             let i = c.engagement;
             let dates: Vec<String> = c.dates.iter().map(Jour::jj_mm_aaaa).collect();
-            let quoi = if est_un_arret(imp) {
-                let motif = droit::arrets::motif_d_arret(imp.motif())?;
-                format!(
-                    "l'arret de travail ({}) du {} au {} : un salarie en arret ne peut exercer son activite (bloc S21.G00.60)",
-                    libelle_du_motif(&motif),
-                    premier.jj_mm_aaaa(),
-                    dernier.jj_mm_aaaa()
-                )
-            } else {
-                format!(
+            let quoi = match imp {
+                Imprevu::Arret(a) => {
+                    let motif = droit::arrets::motif_d_arret(a.motif)?;
+                    format!(
+                        "l'arret de travail ({}) du {} au {} : un salarie en arret ne peut exercer son activite (bloc S21.G00.60)",
+                        libelle_du_motif(&motif),
+                        premier.jj_mm_aaaa(),
+                        dernier.jj_mm_aaaa()
+                    )
+                }
+                Imprevu::Suspension(s) => format!(
                     "la suspension {} du {} au {} : le contrat est suspendu (bloc S21.G00.65)",
-                    imp.motif(),
+                    s.motif,
                     premier.jj_mm_aaaa(),
                     dernier.jj_mm_aaaa()
-                )
+                ),
             };
             if let Some(a) = out.get_mut(i) {
                 a.push(avertir(format!(

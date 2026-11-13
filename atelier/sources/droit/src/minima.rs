@@ -38,7 +38,7 @@ forme_notee! {
         pub id: Option<String>,
         pub libelle: Option<String>,
         pub texte: Option<String>,
-        pub lien: Option<String>,
+        pub lien: Option<socle::garde_reseau::Url>,
         pub en_vigueur: Option<Jour>,
         pub etendu: Option<bool>,
         /// Le jour ou l'extension de l'accord prend effet (sa publication au JORF).
@@ -281,7 +281,10 @@ forme_notee! {
         pub nom: String,
         pub population: Option<String>,
         pub statut: Option<String>,
-        pub unite: String,
+        /// Ce que la valeur de la grille paie (le cachet, l'heure, le jour, la semaine, le mois) : l'unite d'une rubrique,
+        /// la meme notion (`catalogue::Unite`). Une unite hors de sa liste refuse le fichier a la lecture, au chemin de la
+        /// grille.
+        pub unite: crate::catalogue::Unite,
         pub heures: Option<Nombre>,
         pub categories: Option<Vec<String>>,
         pub codes: Option<Vec<crate::emplois::CodeEmploi>>,

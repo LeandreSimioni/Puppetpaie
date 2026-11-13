@@ -14,7 +14,7 @@ use droit::fiche::{CasePieceSalarie, Lue, Statut};
 use rust_decimal::RoundingStrategy;
 
 use crate::calcul::{LigneBrut, Paie};
-use droit::catalogue::rubrique;
+use droit::catalogue::{rubrique, Unite};
 use droit::contexte::Contexte;
 use socle::date::{repr_texte, Jour};
 use droit::emplois;
@@ -516,7 +516,7 @@ impl<'a> Cx<'a> {
             if !gr.statut.as_deref().is_none_or(|st| st == "tous" || st == statut.as_str()) {
                 continue;
             }
-            if est_cachet != (gr.unite == "cachet") {
+            if est_cachet != (gr.unite == Unite::Cachet) {
                 continue;
             }
             if !est_cachet {
@@ -524,7 +524,7 @@ impl<'a> Cx<'a> {
                     if !(heures && (horaire(&ligne.code) || mensuel(&ligne.code))) {
                         continue;
                     }
-                } else if ligne_de_l_unite(&gr.unite) != Some(ligne.code.as_str()) {
+                } else if ligne_de_l_unite(gr.unite) != Some(ligne.code.as_str()) {
                     continue;
                 }
             }
@@ -586,7 +586,7 @@ impl<'a> Cx<'a> {
             None => self.m.au_catalogue().and_then(|f| f.classement.as_ref()).and_then(|c| c.get(idcc)).cloned(),
         };
         // Une grille a l'unite prime : elle prix la ligne telle qu'elle est payee.
-        let unitaires: Vec<&Grille> = grilles.iter().copied().filter(|gr| gr.unite != "cachet" && !a_l_heure(gr)).collect();
+        let unitaires: Vec<&Grille> = grilles.iter().copied().filter(|gr| gr.unite != Unite::Cachet && !a_l_heure(gr)).collect();
         if !unitaires.is_empty() {
             grilles = unitaires;
         }
@@ -625,8 +625,8 @@ impl<'a> Cx<'a> {
                 dit += &format!(" ; abattu de {} % au plus ({})", ab_txt, pourquoi);
             }
             let nom = &gr.nom;
-            let unite = gr.unite.as_str();
-            if unite == "cachet" {
+            let unite = gr.unite;
+            if unite == Unite::Cachet {
                 trouves.push(Plancher {
                     montant,
                     quoi: format!("CCN {}, {}, {} : {} le cachet", idcc, nom, dit, euros(montant)),
@@ -634,10 +634,10 @@ impl<'a> Cx<'a> {
                 });
             } else if !a_l_heure(gr) {
                 let par = match unite {
-                    "mois" => "par mois",
-                    "semaine" => "la semaine",
-                    "jour" => "la journée",
-                    autre => return Err(socle::refus!("unité inconnue : {}", repr_texte(autre))),
+                    Unite::Mois => "par mois",
+                    Unite::Semaine => "la semaine",
+                    Unite::Jour => "la journée",
+                    autre => return Err(socle::refus!("La grille {} paie à l'unité « {} », que le calcul du minimum ne sait pas lire sans ses heures.", nom, autre)),
                 };
                 trouves.push(Plancher {
                     montant,
@@ -657,11 +657,11 @@ impl<'a> Cx<'a> {
                     dit += &format!(" ; {}", motif);
                 }
                 let par = match unite {
-                    "mois" => "par mois",
-                    "semaine" => "la semaine",
-                    "jour" => "la journée",
-                    "heure" => "de l'heure",
-                    autre => return Err(socle::refus!("unité inconnue : {}", repr_texte(autre))),
+                    Unite::Mois => "par mois",
+                    Unite::Semaine => "la semaine",
+                    Unite::Jour => "la journée",
+                    Unite::Heure => "de l'heure",
+                    autre => return Err(socle::refus!("La grille {} paie à l'unité « {} », que le calcul du minimum ne ramène pas à l'heure.", nom, autre)),
                 };
                 trouves.push(Plancher {
                     montant: h,
@@ -847,12 +847,12 @@ fn a_l_heure(gr: &Grille) -> bool {
     gr.heures.is_some_and(|h| !h.0.is_zero())
 }
 
-fn ligne_de_l_unite(unite: &str) -> Option<&'static str> {
+fn ligne_de_l_unite(unite: Unite) -> Option<&'static str> {
     match unite {
-        "jour" => Some("journee"),
-        "semaine" => Some("semaine"),
-        "mois" => Some("mois"),
-        _ => None,
+        Unite::Jour => Some("journee"),
+        Unite::Semaine => Some("semaine"),
+        Unite::Mois => Some("mois"),
+        Unite::Cachet | Unite::Heure | Unite::Service | Unite::Forfait | Unite::Pourcentage => None,
     }
 }
 
@@ -860,7 +860,7 @@ fn ligne_de_l_unite(unite: &str) -> Option<&'static str> {
 
 /// Une lecture, pas un verdict : la phrase renvoie au texte pour qu'on verifie.
 fn a_verifier(t: &Table, idcc: &str, phrase: String) -> Avis {
-    let lien = t.convention(idcc).and_then(|c| c.lien.as_deref()).filter(|l| !l.is_empty());
+    let lien = t.convention(idcc).and_then(|c| c.lien.as_ref());
     let lien: String = lien.map(|l| format!(" : {}", l)).into_iter().collect();
     Avis {
         info: true,

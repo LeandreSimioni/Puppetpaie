@@ -67,7 +67,8 @@ pub const ROUTES: &[Fiche] = &[
 ];
 
 /// `compagnies.MARQUEUR`.
-use socle::fichiers::MARQUEUR_COPIE;
+use socle::fichiers::{NomDeFichier, MARQUEUR_COPIE};
+use std::path::PathBuf;
 use crate::catalogue::{Ecran, Place};
 
 /// La trace de la derniere ouverture : `config/.ouverture.json`.
@@ -264,7 +265,7 @@ impl Ouverture {
     /// Ce que la page et `moteur route` lisent du passage, avec le detail des fichiers deposes et des retours archives :
     /// la phrase du passage, et une ligne par chose faite ou trouvee (ce que l'horloge a joue, ce qui manque, les
     /// incidents).
-    pub fn dite(self) -> OuvertureDite {
+    pub fn dite(self) -> R<OuvertureDite> {
         let retours_resume = self.releve.as_ref().map(Ouverture::resume_retours);
         let phrase = match &retours_resume {
             Some(r) => format!("Ouverture du {} : {}", ecrit::francaise::texte(self.quand), r),
@@ -281,33 +282,41 @@ impl Ouverture {
             hors_ligne: s.hors_ligne,
             souci: s.persistant.clone(),
         });
-        let retours = self.releve.as_ref().map(|r| RetoursDits {
-            resume: Ouverture::resume_retours(r),
-            trouves: r.trouves.len(),
-            nouveaux: r.nouveaux.len(),
-            archives: r.archives.iter().map(|a| a.chemin.to_string_lossy().into_owned()).collect(),
-            archives_detail: r
-                .archives
-                .iter()
-                .map(|a| RetourArchiveDit {
-                    chemin: a.chemin.to_string_lossy().into_owned(),
-                    fichier: a.chemin.file_name().map(|n| n.to_string_lossy().into_owned()),
-                    nature_retour: a.retour.nature_retour.clone(),
-                    libelle: envois::retours::libelle_nature(&a.retour.nature_retour),
+        let retours = self
+            .releve
+            .as_ref()
+            .map(|r| -> R<RetoursDits> {
+                Ok(RetoursDits {
+                    resume: Ouverture::resume_retours(r),
+                    trouves: r.trouves.len(),
+                    nouveaux: r.nouveaux.len(),
+                    archives: r.archives.iter().map(|a| a.chemin.clone()).collect(),
+                    archives_detail: r
+                        .archives
+                        .iter()
+                        .map(|a| -> R<RetourArchiveDit> {
+                            Ok(RetourArchiveDit {
+                                chemin: a.chemin.clone(),
+                                fichier: a.chemin.file_name().map(|n| NomDeFichier::lire(&n.to_string_lossy())).transpose()?,
+                                nature_retour: a.retour.nature_retour.clone(),
+                                libelle: envois::retours::libelle_nature(&a.retour.nature_retour),
+                            })
+                        })
+                        .collect::<R<_>>()?,
+                    rattaches: r.rattaches,
                 })
-                .collect(),
-            rattaches: r.rattaches,
-        });
+            })
+            .transpose()?;
         let retours_dpae = self.releve_dpae.as_ref().map(|r| RetoursDpaeDits {
             resume: Ouverture::resume_retours(r),
             trouves: r.trouves.len(),
             nouveaux: r.nouveaux.len(),
-            archives: r.archives.iter().map(|a| a.chemin.to_string_lossy().into_owned()).collect(),
+            archives: r.archives.iter().map(|a| a.chemin.clone()).collect(),
             rattaches: r.rattaches,
         });
         let fiches = self.fiches.as_ref().map(|f| FichesDites { resume: f.resume(), attendues: f.attendues, recues: f.recues.clone(), incidents: f.incidents.clone() });
         let tout_va_bien = self.tout_va_bien();
-        OuvertureDite {
+        Ok(OuvertureDite {
             phrase,
             quand: self.quand,
             secondes: self.secondes,
@@ -325,7 +334,7 @@ impl Ouverture {
             tout_va_bien,
             retenue: self.retenue,
             phrases,
-        }
+        })
     }
 }
 
@@ -365,7 +374,7 @@ impl Dite for OuvertureDite {
 #[derive(Debug, Serialize)]
 pub struct SauvegardeDite {
     pub resume: String,
-    pub deposes: Vec<String>,
+    pub deposes: Vec<socle::fichiers::CheminRelatif>,
     pub identiques: usize,
     pub octets: u64,
     pub deposes_detail: Vec<FichierDepose>,
@@ -377,7 +386,7 @@ pub struct SauvegardeDite {
 /// Un fichier parti au Drive : son chemin dans le dossier de la compagnie, neuf ou modifie, son poids.
 #[derive(Debug, Serialize)]
 pub struct FichierDepose {
-    pub relatif: String,
+    pub relatif: socle::fichiers::CheminRelatif,
     pub etat: &'static str,
     pub octets: u64,
 }
@@ -388,7 +397,8 @@ pub struct RetoursDits {
     pub resume: String,
     pub trouves: usize,
     pub nouveaux: usize,
-    pub archives: Vec<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub archives: Vec<PathBuf>,
     pub archives_detail: Vec<RetourArchiveDit>,
     pub rattaches: i64,
 }
@@ -396,8 +406,9 @@ pub struct RetoursDits {
 /// Un retour archive : ou, sa nature et son libelle.
 #[derive(Debug, Serialize)]
 pub struct RetourArchiveDit {
-    pub chemin: String,
-    pub fichier: Option<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub chemin: PathBuf,
+    pub fichier: Option<NomDeFichier>,
     #[serde(rename = "nature")]
     pub nature_retour: String,
     pub libelle: String,
@@ -409,7 +420,8 @@ pub struct RetoursDpaeDits {
     pub resume: String,
     pub trouves: usize,
     pub nouveaux: usize,
-    pub archives: Vec<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub archives: Vec<PathBuf>,
     pub rattaches: i64,
 }
 
@@ -429,7 +441,7 @@ pub struct FichesDites {
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
         Route::Ouverture => {
-            let dite: OuvertureDite = ouverture(porte.ctx, &Options::de_la_charge(charge.lire()?), Clients::default(), None)?.dite();
+            let dite: OuvertureDite = ouverture(porte.ctx, &Options::de_la_charge(charge.lire()?), Clients::default(), None)?.dite()?;
             en_json(dite)
         }
         autre => Err(crate::enveloppe::route_inconnue(autre.nom())),

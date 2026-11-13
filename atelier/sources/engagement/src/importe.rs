@@ -43,6 +43,7 @@ use crate::stock::{self, Objet};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::echec::R;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::num::Decimal;
 
@@ -99,7 +100,7 @@ pub struct ContratAtteste {
     /// Le jour que la piece porte (sa signature), tel qu'il s'y lit.
     pub atteste_le: Option<Jour>,
     /// La copie de la piece, sous `historique/bulletins/`, et sa page.
-    pub fichier: Option<String>,
+    pub fichier: Option<NomDeFichier>,
     pub page: Option<u64>,
     pub importe_le: Option<Jour>,
 }
@@ -144,7 +145,7 @@ pub struct PaieVersee {
     pub verse_le: Option<Jour>,
     /// Le depot de la DSN qui la declare, et la copie de son fichier.
     pub depose_le: Option<Jour>,
-    pub fichier: Option<String>,
+    pub fichier: Option<NomDeFichier>,
     /// Les bases assujetties que la DSN declare, par code du bloc 78.
     pub bases: BTreeMap<BaseAssujettie, Decimal>,
     /// Ce que le bulletin d'un mois atteste de ce mois, quand le contrat entier ne le garde pas.
@@ -225,7 +226,7 @@ pub struct EmploiImprime {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BulletinSource {
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     pub page: u64,
     pub logiciel: Option<String>,
     pub numero: Option<String>,

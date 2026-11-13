@@ -56,7 +56,8 @@ use std::collections::BTreeMap;
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::organismes::CodeCtp;
-use droit::apprentissage::{champ_du_motif, motif_de_la_fiche, taxe_apprentissage_non_due, MILLESIME_ASSOCIATIONS_REDEVABLES, MNATA_ASSOCIATIONS};
+use droit::apprentissage::{champ_du_motif, motif_de_la_fiche, taxe_apprentissage_non_due, CodeTaxe, MILLESIME_ASSOCIATIONS_REDEVABLES, MNATA_ASSOCIATIONS};
+use droit::fiche::MotifNonAssujettissement;
 
 use documents::taxe_sur_les_salaires::{assiette_taxe_sur_les_salaires, fractions_majorees, taxe_sur_les_salaires_de_la_fiche};
 use socle::echec::{refus, R};
@@ -67,10 +68,10 @@ use socle::num::{add, div, eur, mul, Decimal};
 /// l'annee de la DSN de decembre.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bloc44 {
-    pub code: &'static str,
+    pub code: CodeTaxe,
     pub montant: Option<Decimal>,
     /// Le motif de non-assujettissement a la taxe d'apprentissage (44.004, table MNATA), pour un 002 seulement.
-    pub motif: Option<String>,
+    pub motif: Option<MotifNonAssujettissement>,
 }
 
 /// La taxe d'apprentissage au bordereau (table des CTP de l'Urssaf) : la part principale hors Alsace-Moselle (992,
@@ -228,7 +229,7 @@ fn taxe_d_apprentissage(ent: &droit::fiche::ChampsEntreprise, ctp: &[CodeCtp], a
     let motif = motif_de_la_fiche(ent).map_err(|e| e.reformuler(|e| format!("DSN de decembre {} : {}", an, e)))?;
     let Some((code, libelle)) = motif else {
         if paye {
-            return Ok(Bloc44 { code: "001", montant: None, motif: None });
+            return Ok(Bloc44 { code: CodeTaxe::TaxeApprentissage, montant: None, motif: None });
         }
         return Err(socle::echec::cle(format!(
             "DSN de décembre {} : la table des cotisations livrée avec le logiciel \
@@ -256,8 +257,7 @@ ou la table livrée. Rien n'est écrit.",
             an, code, CTP_TAXE_APPRENTISSAGE[0], CTP_TAXE_APPRENTISSAGE[1], champ
         ), "ctp_urssaf"));
     }
-    // Le code vient de la table livree : `Bloc44.code` est statique, le motif ne l'est pas.
-    Ok(Bloc44 { code: "002", montant: None, motif: Some(code) })
+    Ok(Bloc44 { code: CodeTaxe::NonTaxeApprentissage, montant: None, motif: Some(code) })
 }
 
 /// Les blocs S21.G00.44 de la DSN mensuelle de `mois` pour l'etablissement `nic`, dans l'ordre des codes : aucun hors de
@@ -281,7 +281,7 @@ pub fn blocs(
 
     // La contribution supplementaire : L. 6242-1, I, ne la fait devoir qu'a 250 salaries et plus, l'effectif de l'annee
     // du millesime (V), regle des cinq ans comprise. Un grand seuil : sans la case des cinquante salaries, 004 sans rien lire.
-    let csa = if effectif_atteint(ctx, 250, an + 1, "contribution supplementaire a l'apprentissage")? { "003" } else { "004" };
+    let csa = if effectif_atteint(ctx, 250, an + 1, "contribution supplementaire a l'apprentissage")? { CodeTaxe::ContributionSupplementaireApprentissage } else { CodeTaxe::NonContributionSupplementaireApprentissage };
     out.push(Bloc44 { code: csa, montant: None, motif: None });
 
     // Ce qui demande les montants de l'annee : la taxe sur les salaires et la PEEC.
@@ -304,32 +304,34 @@ pas son assiette. Rien n'est ecrit.",
 
     // La PEEC : CCH L. 313-1, cinquante salaries.
     out.push(if peec {
-        Bloc44 { code: "005", montant: Some(assiette_peec(ctx, ent, orgs, nic, &annee)?), motif: None }
+        Bloc44 { code: CodeTaxe::Peec, montant: Some(assiette_peec(ctx, ent, orgs, nic, &annee)?), motif: None }
     } else {
-        Bloc44 { code: "006", montant: None, motif: None }
+        Bloc44 { code: CodeTaxe::NonPeec, montant: None, motif: None }
     });
 
     // La formation professionnelle : ce que le bordereau paie.
-    out.push(Bloc44 { code: if ctp.iter().any(|c| CTP_FORMATION.contains(c)) { "007" } else { "008" }, montant: None, motif: None });
+    let formation = if ctp.iter().any(|c| CTP_FORMATION.contains(c)) { CodeTaxe::FormationProfessionnelle } else { CodeTaxe::NonFormationProfessionnelle };
+    out.push(Bloc44 { code: formation, montant: None, motif: None });
 
     // La taxe sur les salaires : ce que la fiche dit, les assiettes de l'annee.
     let mut majorees = Vec::new();
     match ts {
-        None => out.push(Bloc44 { code: "010", montant: None, motif: None }),
+        None => out.push(Bloc44 { code: CodeTaxe::NonTaxeSurLesSalaires, montant: None, motif: None }),
         Some(pct) => {
             let (normal, premier, second) = assiettes_taxe_sur_les_salaires(&annee, bar, pct)?;
-            out.push(Bloc44 { code: "009", montant: Some(normal), motif: None });
+            out.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalaires, montant: Some(normal), motif: None });
             if premier > Decimal::ZERO {
-                majorees.push(Bloc44 { code: "015", montant: Some(premier), motif: None });
+                majorees.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalairesAuPremierTaux, montant: Some(premier), motif: None });
             }
             if second > Decimal::ZERO {
-                majorees.push(Bloc44 { code: "016", montant: Some(second), motif: None });
+                majorees.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalairesAuDeuxiemeTaux, montant: Some(second), motif: None });
             }
         }
     }
 
     // La contribution CPF-CDD : les contrats de l'annee.
-    out.push(Bloc44 { code: if cpf_cdd(&annee)? { "013" } else { "014" }, montant: None, motif: None });
+    let cpf = if cpf_cdd(&annee)? { CodeTaxe::CpfCdd } else { CodeTaxe::NonCpfCdd };
+    out.push(Bloc44 { code: cpf, montant: None, motif: None });
     out.extend(majorees);
     Ok(out)
 }
@@ -340,9 +342,9 @@ mod tests {
     fn la_fiche_propose_les_motifs_de_la_table_mnata_livree() {
         let motifs = droit::apprentissage::motifs_mnata().unwrap();
         assert_eq!(motifs.len(), 19);
-        assert_eq!(motifs.iter().find(|(c, _)| c == "007").map(|(_, l)| l.as_str()), Some("Associations sans but lucratif"));
+        assert_eq!(motifs.iter().find(|(c, _)| c.as_str() == "007").map(|(_, l)| l.as_str()), Some("Associations sans but lucratif"));
         let champ = crate::champs::champ(droit::fiche::NomDeFiche::Entreprise, droit::apprentissage::CHAMP_MOTIF_TAXE_APPRENTISSAGE).unwrap().unwrap();
         let choix: Vec<String> = champ.choix.iter().map(|c| c.to_string()).filter(|c| !c.is_empty()).collect();
-        assert_eq!(choix, motifs.iter().map(|(c, _)| c.clone()).collect::<Vec<_>>());
+        assert_eq!(choix, motifs.iter().map(|(c, _)| c.to_string()).collect::<Vec<_>>());
     }
 }

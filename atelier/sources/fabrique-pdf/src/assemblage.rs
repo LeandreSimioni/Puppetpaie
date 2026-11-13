@@ -37,7 +37,7 @@ impl Assemblage {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Piece {
-    pub fichier: String,
+    pub fichier: std::path::PathBuf,
     pub pages: Option<Vec<u32>>,
 }
 
@@ -64,7 +64,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
     let id_racine = sortie.new_object_id();
     let mut feuilles: Vec<Object> = Vec::new();
     // Chaque fichier n'est lu qu'une fois, même s'il revient dans plusieurs pièces.
-    let mut lus: HashMap<String, Document> = HashMap::new();
+    let mut lus: HashMap<std::path::PathBuf, Document> = HashMap::new();
     let mut verrouille = false;
 
     for (n, piece) in a.pieces.iter().enumerate() {
@@ -86,7 +86,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
                         _ => {
                             return refus(format!(
                                 "pièce {} : la page {} n'existe pas dans {} ({} page(s))",
-                                n, p, piece.fichier, pages.len()
+                                n, p, piece.fichier.display(), pages.len()
                             ))
                         }
                     }

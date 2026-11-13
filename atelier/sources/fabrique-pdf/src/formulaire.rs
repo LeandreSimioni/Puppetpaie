@@ -1041,7 +1041,7 @@ fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> 
     }
     let marge = im.marge;
     let (octets, nom) = match (&im.fichier, &im.svg) {
-        (Some(f), None) => (std::fs::read(f).map_err(|e| Refus::illisible(format!("image {} illisible ({})", f, e)))?, f.clone()),
+        (Some(f), None) => (std::fs::read(f).map_err(|e| Refus::illisible(format!("image {} illisible ({})", f.display(), e)))?, f.to_string_lossy().into_owned()),
         (None, Some(s)) => (s.as_bytes().to_vec(), format!("de l'image {}", rang)),
         (Some(_), Some(_)) | (None, None) => return refus(format!("image {} : il faut « fichier » ou « svg », l'un des deux", rang)),
     };

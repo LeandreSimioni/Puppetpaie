@@ -173,7 +173,7 @@ fn spectacles_declares(ctx: &Contexte) -> R<Vec<droit::contexte::IdSpectacle>> {
         let nature = o.carte().nature;
         let Some(sp) = o.carte().spectacle.as_deref().filter(|s| !s.trim().is_empty()) else { continue };
         let cle = ctx.spectacle(sp)?.cle;
-        let declare = nature.map(droit::natures::NatureDeContrat::proprietes).transpose()?.is_some_and(|n| n.ecrit("S21.G00.40.050"));
+        let declare = nature.map(droit::natures::NatureDeContrat::proprietes).transpose()?.is_some_and(|n| n.ecrit(droit::rubrique!("S21.G00.40.050")));
         if declare && !out.contains(&cle) {
             out.push(cle);
         }
@@ -187,7 +187,8 @@ fn spectacles_declares(ctx: &Contexte) -> R<Vec<droit::contexte::IdSpectacle>> {
 fn une_suspension_non_remuneree(ctx: &Contexte) -> R<Option<droit::natures::AuMois>> {
     use engagement::imprevus::Suspend;
     for imp in engagement::imprevus::tous(&ctx.racine)? {
-        if engagement::imprevus::est_une_suspension(&imp) && engagement::imprevus::motif_de_suspension(imp.motif())?.is_some_and(|m| !m.remunere) {
+        let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
+        if engagement::imprevus::motif_de_suspension(code)?.is_some_and(|m| !m.remunere) {
             if let Some(cle) = engagement::permanents::cle_du_salarie(ctx, imp.salarie())? {
                 return Ok(Some(cle));
             }

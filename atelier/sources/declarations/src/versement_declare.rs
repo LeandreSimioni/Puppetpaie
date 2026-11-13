@@ -11,6 +11,7 @@
 use std::str::FromStr;
 
 use droit::contexte::Contexte;
+use droit::natures::RubriqueDeLaNorme;
 use engagement::calcul::Paie;
 
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
@@ -20,39 +21,43 @@ use socle::num::Decimal;
 /// Les rubriques d'un versement que l'annulation reprend, et si elles portent un montant (a changer de signe).
 /// Le bloc 52 (primes) n'y est pas : `bloc_regularisation` ne l'a jamais ecrit, ni avant ni apres (fiche N7,
 /// § 2.1.3.6.1) ; le reprendre d'un seul cote annulerait une prime sans la redeclarer.
-const REPRISES: [(&str, bool); 31] = [
-    ("S21.G00.51.001", false),
-    ("S21.G00.51.002", false),
-    ("S21.G00.51.010", false),
-    ("S21.G00.51.011", false),
-    ("S21.G00.51.013", true),
-    ("S21.G00.53.001", false),
-    ("S21.G00.53.002", true),
-    ("S21.G00.53.003", false),
-    ("S21.G00.54.001", false),
-    ("S21.G00.54.002", true),
-    ("S21.G00.54.003", false),
-    ("S21.G00.54.004", false),
-    ("S21.G00.54.005", false),
-    ("S21.G00.58.001", false),
-    ("S21.G00.58.002", false),
-    ("S21.G00.58.003", false),
-    ("S21.G00.58.004", true),
-    ("S21.G00.78.001", false),
-    ("S21.G00.78.002", false),
-    ("S21.G00.78.003", false),
-    ("S21.G00.78.004", true),
-    ("S21.G00.78.005", false),
-    ("S21.G00.78.006", false),
-    ("S21.G00.79.001", false),
-    ("S21.G00.79.004", true),
-    ("S21.G00.81.001", false),
-    ("S21.G00.81.002", false),
-    ("S21.G00.81.003", true),
-    ("S21.G00.81.004", true),
-    ("S21.G00.81.005", false),
-    ("S21.G00.81.007", false),
+const REPRISES: [(RubriqueDeLaNorme, bool); 31] = [
+    (r("S21.G00.51.001"), false),
+    (r("S21.G00.51.002"), false),
+    (r("S21.G00.51.010"), false),
+    (r("S21.G00.51.011"), false),
+    (r("S21.G00.51.013"), true),
+    (r("S21.G00.53.001"), false),
+    (r("S21.G00.53.002"), true),
+    (r("S21.G00.53.003"), false),
+    (r("S21.G00.54.001"), false),
+    (r("S21.G00.54.002"), true),
+    (r("S21.G00.54.003"), false),
+    (r("S21.G00.54.004"), false),
+    (r("S21.G00.54.005"), false),
+    (r("S21.G00.58.001"), false),
+    (r("S21.G00.58.002"), false),
+    (r("S21.G00.58.003"), false),
+    (r("S21.G00.58.004"), true),
+    (r("S21.G00.78.001"), false),
+    (r("S21.G00.78.002"), false),
+    (r("S21.G00.78.003"), false),
+    (r("S21.G00.78.004"), true),
+    (r("S21.G00.78.005"), false),
+    (r("S21.G00.78.006"), false),
+    (r("S21.G00.79.001"), false),
+    (r("S21.G00.79.004"), true),
+    (r("S21.G00.81.001"), false),
+    (r("S21.G00.81.002"), false),
+    (r("S21.G00.81.003"), true),
+    (r("S21.G00.81.004"), true),
+    (r("S21.G00.81.005"), false),
+    (r("S21.G00.81.007"), false),
 ];
+
+const fn r(texte: &'static str) -> RubriqueDeLaNorme {
+    RubriqueDeLaNorme::du_moteur(texte)
+}
 
 /// Le versement d'un contrat, tel qu'une DSN l'a declare.
 #[derive(Clone, Debug)]
@@ -103,7 +108,7 @@ impl VersementDeclare {
 pub const FRAIS_54: [&str; 3] = ["07", "08", "09"];
 
 /// La rubrique porte-t-elle un montant a changer de signe ; `None` : on ne sait pas l'annuler.
-pub fn est_un_montant(rubrique: &str) -> Option<bool> {
+pub fn est_un_montant(rubrique: RubriqueDeLaNorme) -> Option<bool> {
     REPRISES.iter().find(|(r, _)| *r == rubrique).map(|(_, m)| *m)
 }
 
@@ -122,7 +127,7 @@ fn verifier_et_brut(lignes: &[(String, String)], numero: &str, quoi: &str) -> R<
     let mut brut: Option<Decimal> = None;
     let mut type_51: Option<&str> = None;
     for (k, v) in lignes {
-        let montant = est_un_montant(k).ok_or_else(|| socle::refus!("le versement du contrat {} porte {} dans {}, que l'annulation ne sait pas reprendre", numero, k, quoi))?;
+        let montant = RubriqueDeLaNorme::lue(k).and_then(est_un_montant).ok_or_else(|| socle::refus!("le versement du contrat {} porte {} dans {}, que l'annulation ne sait pas reprendre", numero, k, quoi))?;
         if montant {
             Decimal::from_str(v).map_err(|_| illisible(k, v, quoi))?;
         }

@@ -4,7 +4,7 @@
 //! millesime ; le calcul applique D5212-2, -20 a -24.
 
 use droit::contexte::Contexte;
-use droit::cotisation_etablissement::CotisationDEtablissement;
+use droit::cotisation_etablissement::{CotisationDEtablissement, TypeDeBoethExterne};
 use droit::organismes::CodeCtp;
 use serde::Deserialize;
 use socle::date::Jour;
@@ -29,9 +29,6 @@ const DEPENSES: [(&str, CotisationDEtablissement); 3] = [
     ("accompagnement", CotisationDEtablissement::DepenseAccompagnement),
 ];
 
-/// S21.G00.13.002 : les types de beneficiaires mis a disposition.
-const TYPES_EXTERNES: [&str; 6] = ["01", "02", "03", "04", "05", "06"];
-
 fn taux() -> Decimal {
     Decimal::from(6)
 }
@@ -51,7 +48,7 @@ pub struct Declaration {
     /// Les deductions non plafonnees, telles qu'elles se declarent (code -> montant).
     pub deductions: BTreeMap<CotisationDEtablissement, Decimal>,
     /// [(type, nombre)] des beneficiaires mis a disposition.
-    pub externes: Vec<(String, Decimal)>,
+    pub externes: Vec<(TypeDeBoethExterne, Decimal)>,
     /// Le code de l'accord agree, ou `None`.
     pub accord: Option<String>,
     /// Sous un accord agree, les depenses non realisees, si la compagnie en ecrit.
@@ -157,7 +154,7 @@ pub struct EntreeOeth {
 #[serde(deny_unknown_fields)]
 pub struct BoethExterne {
     #[serde(rename = "type")]
-    pub type_beneficiaire: String,
+    pub type_beneficiaire: TypeDeBoethExterne,
     pub nombre: Nombre,
 }
 
@@ -254,18 +251,9 @@ Rien n'est ecrit.",
 
     let mut externes = vec![];
     for x in donnees.boeth_externes.iter().flatten() {
-        let t = &x.type_beneficiaire;
-        if !TYPES_EXTERNES.contains(&t.as_str()) {
-            return Err(socle::refus!(
-                "{} : type de beneficiaire externe {} inconnu (S21.G00.13.002 : {}).",
-                ou,
-                repr(t),
-                TYPES_EXTERNES.join(", ")
-            ));
-        }
         let n = dec(x.nombre, "boeth_externes.nombre", millesime)?;
         if !n.is_zero() {
-            externes.push((t.clone(), n));
+            externes.push((x.type_beneficiaire, n));
         }
     }
     d.externes = externes;

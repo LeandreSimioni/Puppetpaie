@@ -684,7 +684,7 @@ pub fn empreinte_des_paies_validees(ctx: &Contexte, mois: Mois, salarie: Option<
 fn empreinte_des_paies(valides: &[(usize, Valide)], mois: Mois) -> R<String> {
     let paies: Vec<Option<Arc<PaieEcrite>>> = valides.iter().map(|(_, v)| v.paie_ecrite(mois)).collect::<R<_>>()?;
     let lues: Vec<Option<(&FormeDePaie<Avis>, &Option<crate::conges::Avant>)>> = paies.iter().map(|p| p.as_ref().map(|p| (&p.paie, &p.conges_avant))).collect();
-    Ok(socle::fichiers::sha256_hex(socle::ecriture::json_en_ligne(&lues).as_bytes()))
+    Ok(socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(&lues).as_bytes()).to_string())
 }
 
 thread_local! {
@@ -1871,7 +1871,7 @@ mod tests_rupture {
                 debut: Jour::nouveau(2026, 5, 4),
                 fin: Jour::nouveau(2026, 5, 6),
                 motif_rupture: Some(droit::natures::MotifDeRupture::CommunAccord),
-                preavis: Some(crate::saisie::Preavis { genre: "90".into(), debut: None, fin: None }),
+                preavis: Some(crate::saisie::Preavis { genre: droit::preavis::TypeDePreavis::SansClause, debut: None, fin: None }),
                 ..carte(ligne(3, taux))
             })
         };

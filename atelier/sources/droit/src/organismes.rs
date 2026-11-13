@@ -60,7 +60,7 @@ forme_notee! {
         pub nom: String,
         pub objet: String,
         pub jour_de_paiement: Option<u32>,
-        pub codes81: Vec<String>,
+        pub codes81: Vec<crate::code_cotisation::CleDeTotalisation>,
         pub adresse: Option<String>,
     }
 }
@@ -262,12 +262,22 @@ impl From<CodeCaisse> for String {
     }
 }
 
+crate::natures::codes_fermes! {
+    /// LE QUALIFIANT D'ASSIETTE D'UNE LIGNE DU BORDEREAU (S21.G00.23.002), la liste entiere de la norme (cahier
+    /// technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.23.txt` l. 33-36 ; relevee dans
+    /// `formats-dsn-*-base.json`). Celui de chaque CTP, `organismes-base.json` le dit (`Ctp::qualifiant`).
+    QualifiantDAssiette, "Qualifiant d'assiette", "S21.G00.23.002" {
+        AutreAssiette = "920",
+        AssiettePlafonnee = "921",
+    }
+}
+
 forme_notee! {
     /// UNE LIGNE DU BORDEREAU URSSAF : le CTP (23.001), son qualifiant d'assiette (23.002), ce qu'il lit (une assiette,
     /// ou un montant), son taux AT/MP, la population qui l'ecrit (`statut`, `nature`) et les seuils d'effectif.
     pub struct Ctp {
         pub code: CodeCtp,
-        pub qualifiant: String,
+        pub qualifiant: QualifiantDAssiette,
         pub assiette: Option<crate::bordereau::AssietteDuBordereau>,
         pub montant: Option<crate::bordereau::MontantDuBordereau>,
         pub taux_at: Option<TauxAt>,
@@ -698,9 +708,15 @@ impl Organismes {
         &self.base.versements
     }
 
-    /// L'Urssaf, l'organisme du bordereau.
-    pub fn urssaf(&self) -> Option<&Versement> {
-        self.base.versements.iter().find(|v| v.est_urssaf())
+    /// L'Urssaf, l'organisme du bordereau, de la DOETH et de la CSA (S21.G00.82.005) : la table livrée des versements la
+    /// dit, sinon rien ne se déclare.
+    pub fn urssaf(&self) -> R<&Versement> {
+        self.base.versements.iter().find(|v| v.est_urssaf()).ok_or_else(|| {
+            socle::echec::cle(
+                "La table livrée des versements (organismes-base.json) n'a pas l'Urssaf (un versement de libellé URSSAF) : la DSN ne déclare sans elle ni son bordereau (S21.G00.22), ni la DOETH, ni la CSA (S21.G00.82.005). Rien n'est écrit : le signaler au développeur.",
+                "versements",
+            )
+        })
     }
 
     /// La table des CTP du bordereau.

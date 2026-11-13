@@ -9,6 +9,7 @@
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use crate::description::{francais, Refus};
 pub use crate::mesure::Mesure;
@@ -91,7 +92,7 @@ pub struct Police {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Logo {
-    pub chemin: String,
+    pub chemin: PathBuf,
     pub largeur: Mesure,
     pub marge_haut: Mesure,
     pub marge_droite: Mesure,
@@ -121,7 +122,7 @@ pub struct Repere {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageRepere {
-    pub chemin: String,
+    pub chemin: PathBuf,
     pub largeur: Mesure,
     /// Ce que le bas de l'image descend sous la ligne de base (0 : posé dessus).
     pub descente: Mesure,
@@ -177,7 +178,7 @@ impl TryFrom<DocumentDit> for Document {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Modele {
-    pub chemin: Option<String>,
+    pub chemin: Option<PathBuf>,
     pub texte: Option<String>,
     pub valeurs: BTreeMap<String, String>,
     /// Le contrat que celui-ci annule et remplace (style « contrat »).
@@ -295,7 +296,7 @@ pub struct Colonne {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Image {
-    pub chemin: String,
+    pub chemin: PathBuf,
     pub largeur: Mesure,
     /// Posée à l'endroit courant sans occuper de hauteur ; sinon elle occupe sa hauteur.
     pub flottante: bool,
@@ -345,7 +346,7 @@ pub struct Trait {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageFixe {
-    pub chemin: String,
+    pub chemin: PathBuf,
     pub x: Mesure,
     pub y: Mesure,
     pub largeur: Mesure,
@@ -484,7 +485,7 @@ pub struct ImagePosee {
     /// Le retrait de l'image sur chaque bord du rectangle.
     pub marge: Mesure,
     /// `fichier` (PNG, JPEG ou SVG) et `svg` (le texte du SVG) s'excluent.
-    pub fichier: Option<String>,
+    pub fichier: Option<PathBuf>,
     pub svg: Option<String>,
 }
 

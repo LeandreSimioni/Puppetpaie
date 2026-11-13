@@ -37,6 +37,7 @@ use declarations::champs::Saisie;
 use droit::contexte::Contexte;
 use engagement::ecarts::{Comparaison, Grandeur};
 use socle::echec::R;
+use socle::fichiers::{Empreinte, EmpreinteCourte};
 
 /// L'endroit, dans le journal des incidents.
 pub const OU: &str = "ecarts_import";
@@ -134,23 +135,23 @@ fn registre(racine: &Path) -> PathBuf {
 }
 
 /// Les empreintes des paies deja comparees ; aucune tant que le registre n'existe pas.
-fn comparees(racine: &Path) -> R<BTreeSet<String>> {
+fn comparees(racine: &Path) -> R<BTreeSet<EmpreinteCourte>> {
     let p = registre(racine);
     if !socle::fichiers::existe(&p) {
         return Ok(BTreeSet::new());
     }
-    let lues: Vec<String> = socle::forme::lire_fichier(&p, "Le registre des paies importées comparées ne se lit pas : le signaler au développeur.")?;
+    let lues: Vec<EmpreinteCourte> =socle::forme::lire_fichier(&p, "Le registre des paies importées comparées ne se lit pas : le signaler au développeur.")?;
     Ok(lues.into_iter().collect())
 }
 
 /// Les rapports des paies importees de la compagnie que le registre ne dit pas deja comparees, et les empreintes des
 /// paies qui ne sont plus a comparer : comparees, ou que leurs pieces empechent de comparer (une paie que le calcul a
 /// refusee se compare de nouveau la fois suivante).
-pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<String>)> {
+pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<EmpreinteCourte>)> {
     let importes = engagement::importe::tous(&ctx.racine)?;
     let deja = comparees(&ctx.racine)?;
     let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
-    let faites: Vec<String> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
+    let faites: Vec<EmpreinteCourte> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
     Ok((rapports_de(ctx, &comparaisons)?, faites))
 }
 
@@ -274,7 +275,7 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
     for r in rapports {
         // Ce qui reconnait un rapport deja note : le journal tronque les longs textes et ne relit pas un detail, le
         // rapport se reconnait a la signature de ce qu'il dit en entier, que son genre porte (et donc son empreinte).
-        let signature = socle::fichiers::sha256_hex(format!("{}|{}", r.resume, socle::ecriture::json_en_ligne(&r.detail)).as_bytes())[..16].to_string();
+        let signature = Empreinte::des_octets(format!("{}|{}", r.resume, socle::ecriture::json_en_ligne(&r.detail)).as_bytes()).courte();
         let genre = format!("{} · {}", r.genre, signature);
         let empreinte = incidents::empreinte(incidents::LOGICIEL, OU, &genre);
         if deja.iter().any(|l| l.empreinte == empreinte) {

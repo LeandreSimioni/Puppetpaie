@@ -20,7 +20,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use socle::fichiers::nom_du;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
@@ -168,7 +168,8 @@ pub(crate) struct DossierRendu {
     salaries: Vec<IdSalarie>,
     categories: Vec<&'static str>,
     periode: String,
-    fichiers: Vec<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    fichiers: Vec<PathBuf>,
     pages: Ordonnee<Ordonnee<usize>>,
     avertissements: Vec<String>,
     refus: Vec<String>,
@@ -186,7 +187,7 @@ impl DossierRendu {
             salaries: d.salaries,
             categories: d.categories,
             periode: d.periode,
-            fichiers: d.fichiers.iter().map(|f| f.to_string_lossy().into_owned()).collect(),
+            fichiers: d.fichiers,
             pages: d.pages,
             avertissements: d.avertissements,
             refus: d.refus,
@@ -250,12 +251,12 @@ fn erreur_operation(message: impl Into<String>) -> Echec {
 // ------------------------------------------------------------------ la fabrique de PDF
 
 fn texte_pdf(chemin: &Path) -> R<Vec<String>> {
-    let (pages, _) = fabrique_pdf::lecture::texte(&chemin.to_string_lossy()).map_err(documents::fabrique::echec)?;
+    let (pages, _) = fabrique_pdf::lecture::texte(chemin).map_err(documents::fabrique::echec)?;
     pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect()
 }
 
 fn pages_pdf(chemin: &Path) -> R<usize> {
-    fabrique_pdf::lecture::pages(&[chemin.to_string_lossy().into_owned()])
+    fabrique_pdf::lecture::pages(&[chemin.to_path_buf()])
         .map(|n| n[0])
         .map_err(documents::fabrique::echec)
 }
@@ -745,7 +746,7 @@ fn mois_puppetpaie(
             let mut modeles = Vec::new();
             for p in &a_lui {
                 let parti = envois::etats::contrat_parti(&lignes, cle, p.engagement.numero.as_deref());
-                modeles.push(crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?);
+                modeles.push(crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_ref()), p)?);
             }
             documents::contrat::ecrire_contrat(ctx, &a_lui, &modeles, &ent, &chemin, &[])?;
             marquer(&chemin, aujourdhui)?;
@@ -782,7 +783,7 @@ fn mois_puppetpaie(
         // (`depart::fabriquer_documents`) ; la page porte le nom du salarie, sinon le fichier ne dit pas ce que les paies
         // disent, et rien ne se joint. Comme les bulletins : la page meme, jamais un certificat reimprime (regle 4).
         let archive = sortie.join(format!("CertificatsCS_{}.pdf", etiq));
-        let nom_archive = nom_du(&archive);
+        let nom_archive = NomDeFichier::du(&archive)?;
         let textes = if archive.exists() { Some(texte_pdf(&archive)?) } else { None };
         match textes {
             None if !paires.is_empty() => d.refus.push(format!(
@@ -925,7 +926,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
 fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &mut Dossier) -> R<Vec<Page>> {
     let lignes = engagement::importe::paies_lues(&ctx.racine)?;
     let dossier = ctx.racine.join("historique").join("bulletins");
-    let (mut pages, mut manquent): (Vec<Page>, Vec<String>) = (Vec::new(), Vec::new());
+    let (mut pages, mut manquent): (Vec<Page>, Vec<NomDeFichier>) = (Vec::new(), Vec::new());
     for x in lignes {
         let Some(b) = &x.paie.bulletin else { continue };
         let cle = x.salarie.clone();
@@ -934,7 +935,7 @@ fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &m
         if page < 1 {
             continue;
         }
-        if !cles.contains(&cle) || !p.contient(mois) || fichier.is_empty() || fichier.contains(['/', '\\']) {
+        if !cles.contains(&cle) || !p.contient(mois) {
             continue;
         }
         let source = dossier.join(&fichier);
@@ -955,7 +956,7 @@ fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &m
     if !manquent.is_empty() {
         d.avertissements.push(format!(
             "Bulletins repris à l'import dont la copie n'est plus dans historique/bulletins/, laissés hors du dossier : {}.",
-            manquent.join(", ")
+            manquent.iter().map(NomDeFichier::texte).collect::<Vec<_>>().join(", ")
         ));
     }
     Ok(pages)
@@ -1154,7 +1155,7 @@ fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(&'static str, Vec<u8>
         entrees.push(entree_ecrite(format!("{}-{}.pdf", i + 1, nom_de(cat)), octets.clone()));
     }
     for f in preuves {
-        entrees.push(entree_fichier(f, format!("preuves-de-signature/{}", nom_du(f)))?);
+        entrees.push(entree_fichier(f, format!("preuves-de-signature/{}", NomDeFichier::du(f)?))?);
     }
     ecrire_octets(&chemin, &zip(&entrees)?)?;
     Ok(chemin)
@@ -1192,7 +1193,7 @@ fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, V
         entrees.push(entree_ecrite(format!("{}-{}.pdf", i + 1, nom_de(cat)), octets.clone()));
     }
     for f in tout_preuves {
-        entrees.push(entree_fichier(f, format!("preuves-de-signature/{}", nom_du(f)))?);
+        entrees.push(entree_fichier(f, format!("preuves-de-signature/{}", NomDeFichier::du(f)?))?);
     }
     ecrire_octets(&chemin, &zip(&entrees)?)?;
     Ok(chemin)

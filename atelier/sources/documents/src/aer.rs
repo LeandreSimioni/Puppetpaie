@@ -467,7 +467,7 @@ pub struct Authentification<'a> {
     pub forcer: bool,
     /// Le tampon de la compagnie, si elle en a pose un. Sans lui, le cachet est
     /// DESSINE depuis `entreprise.json`.
-    pub cachet_fichier: Option<&'a str>,
+    pub cachet_fichier: Option<&'a Path>,
 }
 
 /// L'attestation, cadre 5 rempli et signee. Rend les octets du PDF.
@@ -499,7 +499,7 @@ pub fn authentifier(donnees: &[u8], a: &Authentification) -> R<Vec<u8>> {
             // La signature est posee PAR-DESSUS la page, en travers de la case,
             // comme une signature manuscrite. Le champ lui-meme reste vide : on
             // ne tape pas son nom a la place. PNG, JPEG ou SVG.
-            images.push(image_fichier(page, cadre_signature(r), sig));
+            images.push(image_fichier(page, cadre_signature(r), Path::new(sig)));
         }
     }
     if let Some((page, rect)) = case(&champs, CHAMP_CACHET) {
@@ -558,8 +558,8 @@ pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies
 /// reste VECTORIEL, net quelle que soit la taille de la case, la ou un PNG
 /// agrandi bave. Un fichier illisible n'est pas pose en silence : la fabrique
 /// refuse, et l'attestation ne sort pas sans qu'on sache pourquoi.
-fn image_fichier(page: usize, rect: [Mesure; 4], fichier: &str) -> ImagePosee {
-    ImagePosee { page, rect, marge: cachet::MARGE, fichier: Some(fichier.to_string()), svg: None }
+fn image_fichier(page: usize, rect: [Mesure; 4], fichier: &Path) -> ImagePosee {
+    ImagePosee { page, rect, marge: cachet::MARGE, fichier: Some(fichier.to_path_buf()), svg: None }
 }
 
 /// Le cachet a poser dans `rect` de la page `page` : celui de la compagnie
@@ -571,9 +571,9 @@ fn image_fichier(page: usize, rect: [Mesure; 4], fichier: &str) -> ImagePosee {
 /// fiche, et il suit la fiche quand elle change. Un fichier pose l'emporte
 /// simplement parce qu'une compagnie qui prend la peine d'apporter son tampon
 /// veut le sien.
-fn image(page: usize, rect: [Mesure; 4], ent: &droit::fiche::ChampsEntreprise, fichier: Option<&str>) -> Option<ImagePosee> {
+fn image(page: usize, rect: [Mesure; 4], ent: &droit::fiche::ChampsEntreprise, fichier: Option<&Path>) -> Option<ImagePosee> {
     if let Some(f) = fichier {
-        if Path::new(f).exists() {
+        if f.exists() {
             return Some(image_fichier(page, rect, f));
         }
     }

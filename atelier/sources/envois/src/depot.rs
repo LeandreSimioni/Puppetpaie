@@ -11,7 +11,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{Classe, Echec, R};
 use socle::texte::ascii_nfkd;
 
-pub const NATURE_TEST: &str = "01";
+pub const NATURE_TEST: droit::nature_declaration::EssaiOuReel = droit::nature_declaration::EssaiOuReel::Essai;
 pub use declarations::dsn_lue::{MENSUELLE, NATURE_REEL};
 pub const RUB_NATURE: &str = "S10.G00.00.005";
 
@@ -71,7 +71,7 @@ pub fn basculer_dsn(octets: &[u8]) -> R<Vec<u8>> {
 }
 
 /// `poser` : `<rubrique>,'[^']*'` devient `<rubrique>,'<valeur>'`, la premiere fois.
-fn poser(octets: &[u8], rubrique: &str, valeur: &str) -> R<Vec<u8>> {
+fn poser(octets: &[u8], rubrique: droit::natures::RubriqueDeLaNorme, valeur: &str) -> R<Vec<u8>> {
     let prefixe = format!("{},'", rubrique);
     let fin = |reste: &[u8]| reste.iter().position(|&b| b == b'\'').map(|p| p + 1);
     match premier(octets, prefixe.as_bytes(), fin) {
@@ -97,10 +97,10 @@ pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
             _ => None,
         };
         if let Some(t) = type_ar {
-            contenu = poser(&contenu, "S20.G00.05.002", t.code())?;
+            contenu = poser(&contenu, droit::rubrique!("S20.G00.05.002"), t.code())?;
         }
     }
-    poser(&contenu, "S20.G00.05.004", ordre)
+    poser(&contenu, droit::rubrique!("S20.G00.05.004"), ordre)
 }
 
 // ----------------------------------------------------------------- verifier
@@ -108,7 +108,7 @@ pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
 /// Le mode demande doit correspondre au fichier, et un reel
 /// exige une preuve.
 pub fn verifier(a: &DsnLue, reel: bool, presence_prouvee: bool) -> R<()> {
-    let nature_envoi = a.nature_envoi.as_deref();
+    let nature_envoi = a.nature_envoi;
     if reel && nature_envoi != Some(NATURE_REEL) {
         let porte = match nature_envoi {
             Some(n) => format!("porte {}='{}'", RUB_NATURE, n),

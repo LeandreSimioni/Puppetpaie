@@ -171,15 +171,15 @@ impl Geste {
 #[serde(deny_unknown_fields)]
 pub struct Piece {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub chemin: Option<String>,
+    pub chemin: Option<socle::fichiers::CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fichier: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dans_la_compagnie: Option<String>,
+    pub dans_la_compagnie: Option<socle::fichiers::CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fichiers: Option<BTreeMap<String, String>>,
+    pub fichiers: Option<BTreeMap<String, socle::fichiers::Empreinte>>,
 }
 
 /// Ce que rend `horloge-rattraper`, pour le rejeu : les pas joues, une phrase chacun.
@@ -393,8 +393,8 @@ fn instants(gestes: &[Geste]) -> R<Vec<Moment>> {
 }
 
 /// Le contenu d'une piece : `chemin` (relatif au scenario) ou l'empreinte `sha` (dans `pieces/`).
-fn source_de_piece(scenario: &Path, sha: &str) -> PathBuf {
-    scenario.join(PIECES).join(sha)
+fn source_de_piece(scenario: &Path, sha: &socle::fichiers::Empreinte) -> PathBuf {
+    scenario.join(PIECES).join(sha.texte())
 }
 
 /// Pose, avant la route, ce qu'on avait depose : un dossier de la compagnie se remet tel qu'il etait ; un dossier
@@ -418,9 +418,9 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
             (None, Some(f)) => f.iter().map(|(rel, sha)| (rel.clone(), source_de_piece(scenario, sha))).collect(),
             (None, None) => return Err(refus!("Pièce {} : elle ne dit ni son chemin ni ses fichiers.", cle)),
         };
-        let nom = p.nom.clone().or_else(|| p.chemin.as_deref().and_then(|c| Path::new(c).file_name()).map(|n| n.to_string_lossy().into_owned()));
+        let nom = p.nom.clone().or_else(|| p.chemin.as_ref().map(|c| c.nom().into()));
         let est_fichier = p.fichier == Some(true) || (fichiers.len() == 1 && fichiers[0].0 == ".");
-        let dans = p.dans_la_compagnie.as_deref();
+        let dans = p.dans_la_compagnie.as_ref();
         let cible = match dans {
             Some(rel) => racine.join(rel),
             None => travail.join(rang.to_string()).join(cle),
@@ -711,16 +711,16 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
         }
         for p in g.pieces.iter().flat_map(BTreeMap::values) {
             for sha in p.fichiers.iter().flat_map(BTreeMap::values) {
-                copier(&Path::new(PIECES).join(sha))?;
+                copier(&Path::new(PIECES).join(sha.texte()))?;
             }
             if let Some(c) = &p.chemin {
                 let source = scenario.join(c);
                 if source.is_dir() {
                     for (rel, _) in fichiers_de(&source)? {
-                        copier(&Path::new(c).join(rel))?;
+                        copier(&c.as_ref().join(rel))?;
                     }
                 } else {
-                    copier(Path::new(c))?;
+                    copier(c.as_ref())?;
                 }
             }
         }
@@ -802,7 +802,7 @@ pub fn fictives_de_reference(depot: &Path) -> R<Vec<(String, PathBuf)>> {
     let Some(entrees) = socle::fichiers::entrees(&dossier)? else {
         return Err(au_chemin("Les fictives de référence manquent : leur dossier n'existe pas.", &dossier));
     };
-    Ok(entrees.into_iter().filter(|p| p.join(GESTES).is_file()).map(|p| (socle::fichiers::nom_du(&p), p)).collect())
+    entrees.into_iter().filter(|p| p.join(GESTES).is_file()).map(|p| Ok((socle::fichiers::NomDeFichier::du(&p)?.into(), p))).collect()
 }
 
 /// Ce qu'une fictive livree ne porte pas de son rejeu : le marqueur (reecrit), les incidents du rejeu, les caches.
@@ -1149,10 +1149,10 @@ mod enregistreur {
         }
 
         /// Recopie un fichier dans `pieces/` (une fois par contenu) ; rend son empreinte.
-        fn recopier(&self, p: &Path) -> R<String> {
+        fn recopier(&self, p: &Path) -> R<socle::fichiers::Empreinte> {
             let octets = std::fs::read(p).map_err(|e| du_disque(p, &e))?;
-            let sha = socle::fichiers::sha256_hex(&octets);
-            let dest = self.dossier.join(PIECES).join(&sha);
+            let sha = socle::fichiers::Empreinte::des_octets(&octets);
+            let dest = self.dossier.join(PIECES).join(sha.texte());
             if !dest.exists() {
                 std::fs::write(&dest, &octets).map_err(|e| du_disque(&dest, &e))?;
             }
@@ -1179,7 +1179,7 @@ mod enregistreur {
                 };
                 // Son chemin dans la compagnie ; aucun, hors d'elle.
                 let dans = if chemin.starts_with(racine) {
-                    Some(chemin.strip_prefix(racine).map_err(|e| du_disque(&chemin, &e))?.to_string_lossy().replace('\\', "/"))
+                    Some(socle::fichiers::CheminRelatif::sous(racine, &chemin)?)
                 } else {
                     None
                 };

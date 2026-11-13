@@ -27,7 +27,7 @@ use std::sync::{Arc, OnceLock};
 use serde::Deserialize;
 
 use droit::fiche::Lue as _;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, Empreinte, FormeGardee, NomDeFichier};
 use crate::norme::Norme;
 use socle::echec::{refus, refus_avec, Lieu, R};
 
@@ -47,7 +47,7 @@ struct Base {
     _note: String,
     /// L'empreinte de chaque fichier de l'INSEE releve.
     #[serde(rename = "sha256")]
-    _sha256: BTreeMap<String, String>,
+    _sha256: BTreeMap<NomDeFichier, Empreinte>,
     #[serde(rename = "en_vigueur_naf_2025")]
     _en_vigueur_naf_2025: String,
     naf_2025: BTreeMap<String, Naf2025>,
@@ -127,7 +127,7 @@ point, tels que l'avis de situation Sirene les donne (9001Z en NAF rev. 2 ; 9020
 }
 
 /// La phrase d'un code NAF rev. 2 dans un fichier qui veut la NAF 2025 : vers quels codes il passe, et quoi faire.
-fn refus_rev2(ou: &str, code: &str, version: &str) -> R<String> {
+fn refus_rev2(ou: &str, code: &str, version: droit::natures::VersionDeLaNorme) -> R<String> {
     let b = base()?;
     let Some(e) = b.naf_rev2.get(code) else {
         return Err(socle::refus!("Code APE (NAF) {} : « {} » n'est pas dans la NAF rev. 2 livrée : le signaler au développeur.", ou, code));
@@ -171,7 +171,7 @@ pub fn verifier_pour(norme: &Norme, ent: &droit::fiche::ChampsEntreprise) -> R<(
             continue;
         }
         if en_naf_rev2(&code)? {
-            return Err(refus(refus_rev2(&ou, &code, &norme.version)?));
+            return Err(refus(refus_rev2(&ou, &code, norme.version)?));
         }
         return Err(refus_avec(
             format!(

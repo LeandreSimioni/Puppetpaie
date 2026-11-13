@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use socle::fichiers::{EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
 use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
@@ -93,7 +94,7 @@ pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EtatDsnDuMois {
     pub quand: InstantOuJour,
-    pub fichier: Option<String>,
+    pub fichier: Option<NomDeFichier>,
     pub flux: String,
     pub passee: bool,
     pub refusee: bool,
@@ -150,7 +151,7 @@ fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EtatEmbauche {
     pub quand: InstantOuJour,
-    pub fichier: Option<String>,
+    pub fichier: Option<NomDeFichier>,
     pub fin: Option<socle::date::Jour>,
     pub passee: bool,
     pub refusee: bool,
@@ -284,7 +285,7 @@ pub struct Attendue {
     pub salarie: droit::contexte::IdSalarie,
     /// L'adresse ou le contrat est parti (aucune : remis en main propre).
     pub adresse: Option<String>,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     /// L'acte du contrat parti (`avenant`, `remplace`) ; aucun pour le contrat lui-meme.
     pub acte: Option<String>,
     pub avenant: Option<i64>,
@@ -618,7 +619,7 @@ fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> &'static str {
 }
 
 /// Le dernier depot reel accepte de ce fichier (`empreinte`), s'il y en a un.
-pub fn deja_depose(lignes: &[Ligne], quoi: Acte, empreinte: &str) -> Option<Ligne> {
+pub fn deja_depose(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte) -> Option<Ligne> {
     crate::journal::filtrer(lignes, Some(quoi), None, true).filter(|l| l.accepte() && l.empreinte() == Some(empreinte)).last().cloned()
 }
 
@@ -649,8 +650,8 @@ pub fn pourquoi_rate(ligne: &Ligne) -> String {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repetition {
-    pub empreinte: String,
-    pub fichier: String,
+    pub empreinte: EmpreinteCourte,
+    pub fichier: NomDeFichier,
     pub conforme: Option<Ligne>,
     pub compte_rendu: Option<String>,
     pub ratees: Vec<Ligne>,
@@ -697,7 +698,7 @@ impl Repetition {
     }
 }
 
-pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &str) -> Repetition {
+pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom: &NomDeFichier) -> Repetition {
     let mut conforme: Option<&Ligne> = None;
     let (mut ratees, mut perimees) = (Vec::new(), Vec::new());
     for l in crate::journal::filtrer(lignes, Some(quoi), None, false).filter(|l| l.mode() == Mode::Test) {
@@ -752,8 +753,8 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &str) -> R
         (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), format!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
     };
     Repetition {
-        empreinte: empreinte.to_string(),
-        fichier: nom.to_string(),
+        empreinte: empreinte.clone(),
+        fichier: nom.clone(),
         conforme: conforme.cloned(),
         compte_rendu: compte_rendu.map(String::from),
         ratees,
@@ -1264,11 +1265,11 @@ pub fn rattacher_retours_ecrits(racine: &Path, retours: &[Annonce]) -> AvecIncid
 pub struct Parti {
     pub mois: Mois,
     pub numero: Option<engagement::numeros::NumeroContrat>,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     pub quand: InstantOuJour,
     pub signe: Option<Moment>,
     /// L'empreinte du modele avec lequel il est parti (`ContratParti::modele`).
-    pub modele: Option<String>,
+    pub modele: Option<EmpreinteCourte>,
 }
 
 impl Parti {
@@ -1301,12 +1302,8 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&str>
     parti
 }
 
-/// Le fichier d'une piece partie, dans `sorties/<mois>/` ou son `envoi/`. Un NOM, jamais un chemin : ce qui porte un
-/// separateur ne se resout pas.
-pub fn chemin_piece(racine: &Path, mois: Mois, nom: &str) -> Option<PathBuf> {
-    if nom.is_empty() || ["/", "\\", ".."].iter().any(|x| nom.contains(x)) {
-        return None;
-    }
+/// Le fichier d'une piece partie, dans `sorties/<mois>/` ou son `envoi/`. Un NOM, jamais un chemin : le type le tient.
+pub fn chemin_piece(racine: &Path, mois: Mois, nom: &NomDeFichier) -> Option<PathBuf> {
     let base = racine.join("sorties").join(mois.to_string());
     [base.join("envoi").join(nom), base.join(nom)].into_iter().find(|f| f.is_file())
 }
@@ -1345,7 +1342,7 @@ mod tests {
     fn contrat(sal: &str, code: &str) -> String {
         format!(
             "{{\"salarie\": \"{}\", \"debut\": \"2026-06-04\", \"fin\": \"2026-06-30\", \"numero\": \"SA1.26.01\", \"fichier\": \"c.pdf\", \"spectacle\": null, \
-             \"code\": \"{}\", \"empreinte\": \"e1\", \"message\": \"m1\", \"mois\": \"2026-06\", \"ailleurs\": false}}",
+             \"code\": \"{}\", \"empreinte\": \"e100000000000000\", \"message\": \"m1\", \"mois\": \"2026-06\", \"ailleurs\": false}}",
             sal, code
         )
     }
@@ -1359,7 +1356,7 @@ mod tests {
     }
 
     fn signature(quand: &str, c: &str, retours: &str) -> Ligne {
-        ligne("contrat-signature", "reel", quand, "e1", "f.dsn", true, "", &format!("{{\"contrats\": [{}], \"main_propre\": false}}", c), retours)
+        ligne("contrat-signature", "reel", quand, "e100000000000000","f.dsn", true, "", &format!("{{\"contrats\": [{}], \"main_propre\": false}}", c), retours)
     }
 
     #[test]
@@ -1379,18 +1376,19 @@ mod tests {
             ligne("dsn", mode, quand, empreinte, fichier, accepte, "", "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", retours)
         };
         let l = vec![
-            avec("test", "2026-06-01T09:00:00", "eB", "DSN.dsn", true, "[]"),
-            avec("test", "2026-06-01T10:00:00", "eA", "f.dsn", true, "[{\"nature\": \"11\", \"verdict\": \"OK\", \"libelle\": \"\", \"statut\": null, \"publication\": null}]"),
-            avec("test", "2026-06-01T11:00:00", "eA", "f.dsn", false, "[]"),
-            avec("reel", "2026-06-02T09:00:00", "eA", "f.dsn", true, "[]"),
+            avec("test", "2026-06-01T09:00:00", "eb00000000000000", "DSN.dsn", true, "[]"),
+            avec("test", "2026-06-01T10:00:00", "ea00000000000000", "f.dsn", true, "[{\"nature\": \"11\", \"verdict\": \"OK\", \"libelle\": \"\", \"statut\": null, \"publication\": null}]"),
+            avec("test", "2026-06-01T11:00:00", "ea00000000000000", "f.dsn", false, "[]"),
+            avec("reel", "2026-06-02T09:00:00", "ea00000000000000", "f.dsn", true, "[]"),
         ];
-        let rep = repetition(&l, Acte::Dsn, "eA", "DSN.dsn");
+        let (ea, eb) = (EmpreinteCourte::lire("ea00000000000000").unwrap(), EmpreinteCourte::lire("eb00000000000000").unwrap());
+        let rep = repetition(&l, Acte::Dsn, &ea, &NomDeFichier::lire("DSN.dsn").unwrap());
         assert_eq!((rep.compte_rendu.as_deref(), rep.conforme.as_ref().unwrap().quand().iso()), (Some("ok"), "2026-06-01T10:00:00".to_string()));
         assert_eq!((rep.ratees.len(), rep.perimees.len(), rep.etat), (1, 1, EtatDuTest::Testee));
-        let vide = repetition(&l, Acte::Dpae, "eA", "x");
+        let vide = repetition(&l, Acte::Dpae, &ea, &NomDeFichier::lire("x").unwrap());
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
-        assert_eq!(deja_depose(&l, Acte::Dsn, "eA").unwrap().quand().iso(), "2026-06-02T09:00:00");
-        assert!(deja_depose(&l, Acte::Dsn, "eB").is_none());
+        assert_eq!(deja_depose(&l, Acte::Dsn, &ea).unwrap().quand().iso(), "2026-06-02T09:00:00");
+        assert!(deja_depose(&l, Acte::Dsn, &eb).is_none());
         let r = |verdict: &str| RetourOrganisme { nature_retour: "11".into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         assert_eq!(compte_rendu_du_depot(&[r("OK"), r("KO")]), "ko");
         assert_eq!(compte_rendu_du_depot(&[]), "attendu");
@@ -1404,8 +1402,8 @@ mod tests {
 
     #[test]
     fn le_rattachement_pose_le_verdict_et_signale_l_incident() {
-        let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSBBBB", "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", "[]");
-        let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSCCCC", "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
+        let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, "WSBBBB", "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", "[]");
+        let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, "WSCCCC", "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
         let annonce = |flux: &str, nature: &str, seconde: i64| Annonce {
             publication: Some(socle::paris::Moment::a_paris(Jour::nouveau(2026, 6, 1).unwrap(), 11, 0, seconde).unwrap()),

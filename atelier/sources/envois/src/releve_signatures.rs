@@ -276,7 +276,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
     let prenom = a.prenom.clone().ok_or_else(|| socle::fichiers::absent("prenom"))?;
     let nom = a.nom.clone().ok_or_else(|| socle::fichiers::absent("nom"))?;
     let message = Message {
-        cle: a.salarie.to_string(),
+        pour: a.salarie.clone(),
         nom: nom.clone(),
         destinataire: c.de.to_string(),
         sujet,
@@ -293,8 +293,8 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
         pieces: c.signes.to_vec(),
         html: None,
     };
+    let noms_signes = c.signes.iter().map(|p| socle::fichiers::NomDeFichier::du(p)).collect::<R<Vec<_>>>()?;
     envoi::envoyer(&[message], c.expediteur, client, None, None)?;
-    let noms_signes: Vec<String> = c.signes.iter().map(|p| socle::fichiers::nom_du(p)).collect();
     let detail = DetailContresigne { salarie: a.salarie.clone(), nom, code: a.code.clone(), contrats: c.contrats.to_vec(), fichiers: noms_signes };
     let mut e = Envoi::nouveau(Mode::Reel, qui, true, c.de, "contrat contresigne renvoye au salarie", detail);
     e.mois = a.mois;

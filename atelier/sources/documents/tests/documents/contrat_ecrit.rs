@@ -26,7 +26,7 @@ fn chaque_modele_livre_se_lit_et_porte_les_mentions_de_l1242_12_et_r1221_34() {
         let nat = nature.proprietes().unwrap();
         let nom = nat.modele_contrat().unwrap();
         assert!(nat.mentions_obligatoires().unwrap().len() >= 15, "{} : ses mentions", nature);
-        let dits = manques(&nat, &texte(&nom), None).unwrap();
+        let dits = manques(&nat, &texte(nom.texte()), None).unwrap();
         assert!(dits.is_empty(), "{} : {:?}", nom, dits);
     }
 }

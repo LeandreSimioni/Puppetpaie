@@ -59,6 +59,7 @@ use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFich
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::echec::erreur;
 use crate::importation::completer as completer;
@@ -119,7 +120,7 @@ struct Lu {
 pub(crate) struct DossierLu {
     pub(crate) ap: Apercu,
     pub(crate) tri: import::tri::Tri,
-    pub(crate) copies: BTreeMap<usize, String>,
+    pub(crate) copies: BTreeMap<usize, NomDeFichier>,
 }
 
 /// `importation-apercu` avec `{"dossier": ...}`.
@@ -143,15 +144,21 @@ pub(crate) fn lire_dossier<T>(ctx: &Contexte, dossier: &Path, deposes: &HashMap<
 
 /// Le nom de la copie d'un fichier dans `historique/bulletins/` : l'empreinte, rien de personnel. `None` pour ce qui ne
 /// se reprend pas.
-pub(crate) fn nom_copie(f: &import::tri::Fichier) -> Option<String> {
+pub(crate) fn nom_copie(f: &import::tri::Fichier) -> R<Option<NomDeFichier>> {
     let ext = match f.sorte {
         Sorte::Dsn => "dsn",
         // `importation::lire_aem` ne lit que les `*.txt`.
         Sorte::Aem => "txt",
         Sorte::PdfTexte => "pdf",
-        _ => return None,
+        _ => return Ok(None),
     };
-    (f.empreinte.len() >= 16).then(|| format!("{}.{}", &f.empreinte[..16], ext))
+    f.empreinte.as_ref().map(|e| NomDeFichier::lire(&format!("{}.{}", e.courte(), ext))).transpose()
+}
+
+/// LE NOM DE LA COPIE D'UNE PIECE LUE : une piece lue a ete hachee au tri, elle a donc sa copie ; sans elle, c'est un
+/// defaut du logiciel.
+fn copie_lue(f: &import::tri::Fichier) -> R<NomDeFichier> {
+    nom_copie(f)?.ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : la pièce lue {} n'a pas de copie.", f.chemin)))
 }
 
 /// Un texte compare sans casse, sans accents, sans espaces ni ponctuation de bord (`bulletin_lu::jetons`).
@@ -437,8 +444,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         std::fs::create_dir_all(&d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
         // Le nom de sa copie ; une piece sans empreinte (une entree d'archive qui ne s'est pas extraite) n'en a pas, elle
         // se copie sous le nom de sa sorte.
-        let base = match nom_copie(f) {
-            Some(n) => n,
+        let base = match nom_copie(f)? {
+            Some(n) => n.to_string(),
             None => if *aem { "fichier.txt".to_string() } else { "fichier.dsn".to_string() },
         };
         let mut nom = base.clone();
@@ -531,7 +538,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         if f.sorte == Sorte::Dsn {
             let mut n = 0usize;
             let mut nouveaux = 0usize;
-            for x in ap.paies.iter().filter(|x| x.paie.fichier.as_deref() == Some(nom.as_str())) {
+            for x in ap.paies.iter().filter(|x| x.paie.fichier.as_ref().map(NomDeFichier::texte) == Some(nom.as_str())) {
                 n += 1;
                 if !hist_par_cle.contains_key(&x.cle()) {
                     nouveaux += 1;
@@ -549,7 +556,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             });
         } else {
             let (mut n, mut nouveaux, mut sans) = (0usize, 0usize, 0usize);
-            for c in ap.contrats.iter().filter(|c| &c.fichier == nom) {
+            for c in ap.contrats.iter().filter(|c| c.fichier.texte() == nom) {
                 n += 1;
                 if !par_nir.contains_key(&c.nir) && !nirs_dsn.contains(&c.nir) && !a_venir.contains(&c.nir) {
                     sans += 1;
@@ -921,10 +928,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let chemin = chemin_de(l);
         // Ce qui s'ecrit nomme la copie, pas le fichier d'origine (rien de personnel, le meme a l'apercu et a l'import). Un
         // PDF trie a son empreinte, donc sa copie.
-        let copie = match nom_copie(&tri.fichiers[l.fichier]) {
-            Some(c) => c,
-            None => chemin.clone(),
-        };
+        let copie = copie_lue(&tri.fichiers[l.fichier])?;
         let nb_pages = tri.fichiers[l.fichier].pages.len();
         let salarie = cle_de(&l.nir);
         let mut infos = infos_de(l, Some(&salarie));
@@ -999,7 +1003,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 let contrat = match &l.b.numero {
                     Some(n) => format!("bulletin {}", n),
                     None => {
-                        if nb_pages > 1 { format!("{} page {}", copie, l.page) } else { copie.clone() }
+                        if nb_pages > 1 { format!("{} page {}", copie, l.page) } else { copie.to_string() }
                     }
                 };
                 let mut paie = PaieVersee::vide(contrat, Declaration::Bulletin);
@@ -1151,10 +1155,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let mut reste: Option<ContratLu> = None;
         let mut sans_reste: Option<String> = None;
         // Le nom de la copie de la piece ; un PDF trie a son empreinte, donc sa copie.
-        let copie = match nom_copie(&tri.fichiers[cl.fichier]) {
-            Some(n) => n,
-            None => chemin_cert(cl),
-        };
+        let copie = copie_lue(&tri.fichiers[cl.fichier])?;
         if !est_aem && !pareils.is_empty() && !pareils.iter().any(Atteste::de_certificat) {
             let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_deref())?;
             match contrat_du_certificat(c, statut.as_deref(), cle_de(nir), &copie) {
@@ -1282,7 +1283,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
 
     // 9. Le compte rendu, fichier par fichier.
     let mut fichiers: Vec<FichierVu> = Vec::new();
-    let mut copies: BTreeMap<usize, String> = BTreeMap::new();
+    let mut copies: BTreeMap<usize, NomDeFichier> = BTreeMap::new();
     let mut comptes = ParSort::a_zero();
     for (i, f) in tri.fichiers.iter().enumerate() {
         // Ce que le tri dit du fichier ; ce qu'il en dit sans raison, sa sorte.
@@ -1334,7 +1335,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Sorte::PdfTexte => ps.iter().any(|p| matches!(p.sort, Sort::Repris | Sort::LibelleInconnu | Sort::DejaRepris)),
             Sorte::PdfSansTexte | Sorte::Archive | Sorte::Doublon | Sorte::Illisible | Sorte::Autre => false,
         };
-        let copie = nom_copie(f).filter(|_| repris);
+        let copie = nom_copie(f)?.filter(|_| repris);
         if let Some(c) = &copie {
             copies.insert(i, c.clone());
         }
@@ -1357,7 +1358,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let non_repris: Vec<NonReprisVu> =
         fichiers.iter().filter(|f| f.sort.non_repris()).map(|f| NonReprisVu { chemin: f.chemin.clone(), sort: f.sort, raison: f.raison.clone() }).collect();
     reponse.tri = TriVu {
-        dossier: tri.dossier.display().to_string(),
+        dossier: tri.dossier.clone(),
         fichiers,
         comptes,
         total: tri.fichiers.len(),
@@ -1915,7 +1916,7 @@ fn entreprise_proposee(e: EntrepriseLue) -> R<Saisie> {
 /// Complete une paie par le bulletin. Sur le brut, le net imposable, le net a payer et le PAS, le bulletin l'emporte ;
 /// ailleurs il remplit ce qui est vide et note ce qui differe. Rend les ecarts : (champ, valeur d'avant, le bulletin
 /// l'emporte, valeur du bulletin).
-fn completer(ligne: &mut PaieVersee, b: &BulletinLu, chemin: &str, page: usize, idcc: Option<&str>) -> R<Vec<(&'static str, String, bool, String)>> {
+fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page: usize, idcc: Option<&str>) -> R<Vec<(&'static str, String, bool, String)>> {
     use engagement::importe::{BulletinSource, CotisationImprimee, DatesTravaillees, LigneImprimee};
     let mut ecarts = Vec::new();
     let pas = b.pas.as_ref().and_then(|p| p.montant);
@@ -1989,14 +1990,14 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, chemin: &str, page: usize, 
     if dit_quelque_chose(&imprime) {
         ligne.emploi_imprime = Some(imprime);
     }
-    ligne.bulletin = Some(BulletinSource { fichier: chemin.to_string(), page: page as u64, logiciel: b.logiciel.clone(), numero: b.numero.clone(), contrat: b.contrat.clone() });
+    ligne.bulletin = Some(BulletinSource { fichier: copie.clone(), page: page as u64, logiciel: b.logiciel.clone(), numero: b.numero.clone(), contrat: b.contrat.clone() });
     Ok(ecarts)
 }
 
 /// Le contrat qu'un bulletin atteste, tel qu'un engagement importe le porte (`importe.contrat`), et sa cle `_cle_engagement`.
 /// Les heures se comptent en heures entieres comme celles d'une saisie (`cumul::engagement_de_paie` : arrondi au
 /// pair) ; des cachets ou des jours qui ne sont pas entiers, ou un compteur inconnu, ne font pas de contrat.
-fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, chemin: &str) -> R<(Compte, ContratLu)> {
+fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeFichier) -> R<(Compte, ContratLu)> {
     use socle::echec::refus;
     // LES JOURS TRAVAILLES sont ceux qu'atteste l'attestation employeur mensuelle de l'intermittent (annexes 8 et 10) ;
     // un permanent paye au mois n'en a pas, et son bulletin n'imprime ni dates travaillees ni cumul de jours : son
@@ -2040,7 +2041,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, chemin: &str) 
     a.numero_bulletin = plein(&l.b.numero);
     // Le numero du contrat, quand le bulletin l'imprime : il se lit, il ne se tire pas (regle 4).
     a.numero_contrat = plein(&l.b.contrat);
-    (a.fichier, a.page) = (Some(chemin.to_string()), Some(l.page as u64));
+    (a.fichier, a.page) = (Some(copie.clone()), Some(l.page as u64));
     Ok((compte, ContratLu { salarie: salarie.clone(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }))
 }
 
@@ -2170,7 +2171,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, IdSalarie>, a_creer: &[AC
 /// Le contrat qu'une AEM en PDF atteste, tel qu'un engagement importe le porte (la forme du contrat d'une AEM deposee,
 /// `import::ecrite`), et ce qu'il compte en mots : la periode du mois (`aem_lu::Aem::periode`), ses heures, ses
 /// cachets isoles et groupes, ses jours, son brut et son numero d'objet, tels qu'imprimes.
-fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: &str) -> R<(ContratLu, String)> {
+fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
     let (Some((debut, fin)), Some(brut)) = (a.periode(), a.brut) else {
         return Err(socle::echec::refus("l'AEM ne dit pas tout ce qu'un contrat demande"));
     };
@@ -2187,7 +2188,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
     c.numero_objet = plein(&a.numero_objet);
     (c.heures, c.cachets, c.jours, c.brut) = (heures, cachets, jours, Some(brut));
     c.numero_attestation = plein(&a.numero);
-    (c.fichier, c.page) = (Some(copie.to_string()), Some(a.page as u64));
+    (c.fichier, c.page) = (Some(copie.clone()), Some(a.page as u64));
     let ligne = ContratLu { salarie, debut: Some(debut), fin: Some(fin), numero: None, contrat: c };
     Ok((ligne, if quoi.is_empty() { "aucune heure, aucun cachet, aucun jour".into() } else { quoi.join(", ") }))
 }
@@ -2199,7 +2200,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
 /// annexes-8-10.txt`, l. 5802) ; le certificat n'a qu'une case pour les deux. Inference : pour un artiste, elle compte
 /// des cachets ; pour un technicien, des jours. Sans statut, rien ne le dit : pas de contrat. Les heures, que le
 /// certificat ne porte pas, ne s'inventent pas (0) ; le brut est celui du certificat, « arrondi à l'euro le plus proche ».
-fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&str>, salarie: Option<IdSalarie>, copie: &str) -> R<(ContratLu, String)> {
+fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&str>, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
     let (Some(debut), Some(fin), Some(nombre), Some(brut)) = (c.debut, c.fin, c.nombre, c.brut) else {
         return Err(socle::echec::refus("le certificat ne dit pas tout ce qu'un contrat demande"));
     };
@@ -2227,7 +2228,7 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&
     a.numero_certificat = c.numero.clone();
     a.base_conge = c.base_conge;
     a.atteste_le = c.signe_le;
-    (a.fichier, a.page) = (Some(copie.to_string()), Some(c.page as u64));
+    (a.fichier, a.page) = (Some(copie.clone()), Some(c.page as u64));
     Ok((ContratLu { salarie, debut: Some(debut), fin: Some(fin), numero: None, contrat: a }, quoi))
 }
 

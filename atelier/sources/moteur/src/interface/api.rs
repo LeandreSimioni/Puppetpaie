@@ -204,7 +204,7 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
                 let a: routes::accueil::ChargeAjouter = charge.lire()?;
                 let r = routes::dans_la_fenetre(&o, nom, charge);
                 let ajoutee: routes::accueil::Ajoutee = r.lire().map_err(|x| socle::echec::refus(x.phrase))?;
-                let geste = Geste { nom: Some(a.nom), venue: Some(a.venue), compagnie: Some(e.compagnie(std::path::Path::new(&ajoutee.chemin))?), ..Geste::du_banc(Genre::Ajouter) };
+                let geste = Geste { nom: Some(a.nom), venue: Some(a.venue), compagnie: Some(e.compagnie(&ajoutee.chemin)?), ..Geste::du_banc(Genre::Ajouter) };
                 Ok((r, geste))
             });
             return match rendu {

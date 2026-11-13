@@ -23,6 +23,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use socle::echec::{Classe, Echec};
+use socle::garde_reseau::Url;
 use envois::transport::{envoyer, Panne, Requete};
 
 /// Ce que le paquet soude (bride pour toujours) peut poster.
@@ -36,7 +37,7 @@ pub const REDEMANDER_IDENTITE: &str = "Le serveur ne reconnait plus ce poste : r
 /// pose le remplace toujours : `serveur` de `config/diagnostic.json`, ou `EDITEUR.json` du
 /// paquet. Jamais dans les essais : le garde-fou reseau (`garde_reseau`) le refuse ; un test pose son serveur local, ou
 /// nomme un faux mandataire local comme seule porte.
-pub const SERVEUR_PAR_DEFAUT: &str = "https://filet.puppetpaie.fr";
+pub const SERVEUR_PAR_DEFAUT: Url = Url::du_moteur("https://filet.puppetpaie.fr");
 
 /// Le filet ne doit jamais faire attendre une paie.
 pub const DELAI: u64 = 15;
@@ -298,12 +299,12 @@ fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
 }
 
 /// La reponse du serveur a l'action `action`, lue en sa forme, ou l'`ErreurFilet` qu'elle a causee.
-pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action: &str, corps: &C, entetes: &[(&str, &str)], delai: u64) -> Result<T, ErreurFilet> {
+pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action: &str, corps: &C, entetes: &[(&str, &str)], delai: u64) -> Result<T, ErreurFilet> {
     if crate::bridage::paquet_soude() && !ACTIONS_BRIDEES.contains(&action) {
         return Err(ErreurFilet::Autre(socle::echec::erreur(Classe::EditionBridee, edition_bridee(action))));
     }
     let donnees = socle::json_ascii::dumps(corps, None, false, false);
-    let url = format!("{}/{}", serveur.trim_end_matches('/'), action);
+    let url = Url::lire(&format!("{}/{}", serveur.texte().trim_end_matches('/'), action)).map_err(ErreurFilet::Autre)?;
     // Aucun codage demandé.
     let mut en_tetes: Vec<(&str, &str)> = vec![("User-Agent", "PuppetPaie-filet"), ("Accept-Encoding", "identity")];
     en_tetes.extend_from_slice(entetes);
@@ -339,18 +340,19 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action:
 
 /// Le serveur et l'identite du poste -- `(numero, cle)` donnee par le serveur.
 pub struct Client {
-    pub serveur: String,
+    /// Le serveur, tel que le reglage le dit ; `poster` ote sa barre finale.
+    pub serveur: Url,
     pub poste: (String, String),
 }
 
 impl Client {
     /// Le client des actions de l'editeur, avec l'identite de ce poste.
-    pub fn du_poste(serveur: &str, numero: &str, cle_du_poste: &str) -> Client {
-        Client { serveur: serveur.trim_end_matches('/').to_string(), poste: (numero.to_string(), cle_du_poste.to_string()) }
+    pub fn du_poste(serveur: &Url, numero: &str, cle_du_poste: &str) -> Client {
+        Client { serveur: serveur.clone(), poste: (numero.to_string(), cle_du_poste.to_string()) }
     }
 
     /// `POST /poste` : l'identite que le serveur donne a ce poste, rendue une seule fois (il n'en garde que l'empreinte).
-    pub fn demander_poste(serveur: &str) -> Result<Identite, ErreurFilet> {
+    pub fn demander_poste(serveur: &Url) -> Result<Identite, ErreurFilet> {
         poster(serveur, "poste", &Rien {}, &[], DELAI)
     }
 

@@ -20,6 +20,7 @@ use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratRe
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{Classe, R};
+use socle::fichiers::CheminRelatif;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use crate::proposee::A_COMPLETER;
@@ -32,9 +33,12 @@ fn importes_du_mois(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
 /// Un bulletin que l'ancien logiciel a fait, tel que l'import le garde : sa copie (relative a la compagnie), et le
 /// salarie qu'il paie.
 pub struct BulletinRepris {
-    pub chemin: String,
+    pub chemin: CheminRelatif,
     pub salarie: droit::contexte::IdSalarie,
 }
+
+/// Le dossier des copies que l'import garde, dans la compagnie.
+const BULLETINS_REPRIS: CheminRelatif = CheminRelatif::du_moteur("historique/bulletins");
 
 /// LES BULLETINS REPRIS DE `mois` : la copie que l'import garde de chaque fichier lu (`historique/bulletins/`, le nom que
 /// porte la paie importee), un par fichier, avec le salarie qu'il paie. Un fichier qui manque ne se liste pas.
@@ -44,11 +48,8 @@ pub fn bulletins_repris(racine: &Path, mois: Mois) -> R<Vec<BulletinRepris>> {
         if p.mois != mois {
             continue;
         }
-        let Some(fichier) = p.paie.bulletin.as_ref().map(|b| b.fichier.trim().to_string()) else { continue };
-        if fichier.is_empty() || fichier.contains(['/', '\\']) || fichier.contains("..") {
-            continue;
-        }
-        let chemin = format!("historique/bulletins/{}", fichier);
+        let Some(fichier) = p.paie.bulletin.as_ref().map(|b| &b.fichier) else { continue };
+        let chemin = BULLETINS_REPRIS.joint(fichier);
         if !racine.join(&chemin).is_file() || out.iter().any(|x| x.chemin == chemin) {
             continue;
         }

@@ -41,6 +41,7 @@
 
 use std::path::{Path, PathBuf};
 
+use droit::natures::RubriqueDeLaNorme;
 use serde::Deserialize;
 use socle::echec::{refus_avec, Echec, R};
 
@@ -190,20 +191,23 @@ impl Variable {
 
     /// Les rubriques de la DSN que chaque cle remplit (`dsn.rs` : l'en-tete S10.G00.01, le contact S10.G00.02 et
     /// S20.G00.07, l'entreprise S21.G00.06 et l'etablissement S21.G00.11).
-    fn rubriques(&self) -> [(&'static str, &str, &'static [&'static str]); 12] {
+    fn rubriques(&self) -> [(&'static str, &str, &'static [RubriqueDeLaNorme]); 12] {
+        const fn r(texte: &'static str) -> RubriqueDeLaNorme {
+            RubriqueDeLaNorme::du_moteur(texte)
+        }
         [
-            ("siren", &self.siren.0, &["S10.G00.01.001", "S21.G00.06.001"]),
-            ("nic", &self.nic.0, &["S10.G00.01.002", "S21.G00.06.002", "S21.G00.11.001"]),
-            ("raison_sociale", &self.raison_sociale.0, &["S10.G00.01.003"]),
-            ("adresse", &self.adresse.0, &["S10.G00.01.004", "S21.G00.06.004", "S21.G00.11.003"]),
-            ("code_postal", &self.code_postal.0, &["S10.G00.01.005", "S21.G00.06.005", "S21.G00.11.004"]),
-            ("commune", &self.commune.0, &["S10.G00.01.006", "S21.G00.06.006", "S21.G00.11.005"]),
-            ("naf", &self.naf.0, &["S21.G00.06.003", "S21.G00.11.002"]),
-            ("declarant_dsn.civilite", &self.declarant_dsn.civilite.0, &["S10.G00.02.001"]),
-            ("declarant_dsn.nom_prenom", &self.declarant_dsn.nom_prenom.0, &["S10.G00.02.002", "S20.G00.07.001"]),
-            ("declarant_dsn.email", &self.declarant_dsn.email.0, &["S10.G00.02.004", "S20.G00.07.003"]),
-            ("declarant_dsn.tel", &self.declarant_dsn.tel.0, &["S10.G00.02.005", "S20.G00.07.002"]),
-            ("declarant_dsn.qualite", &self.declarant_dsn.qualite.0, &["S20.G00.07.004"]),
+            ("siren", &self.siren.0, const { &[r("S10.G00.01.001"), r("S21.G00.06.001")] }),
+            ("nic", &self.nic.0, const { &[r("S10.G00.01.002"), r("S21.G00.06.002"), r("S21.G00.11.001")] }),
+            ("raison_sociale", &self.raison_sociale.0, const { &[r("S10.G00.01.003")] }),
+            ("adresse", &self.adresse.0, const { &[r("S10.G00.01.004"), r("S21.G00.06.004"), r("S21.G00.11.003")] }),
+            ("code_postal", &self.code_postal.0, const { &[r("S10.G00.01.005"), r("S21.G00.06.005"), r("S21.G00.11.004")] }),
+            ("commune", &self.commune.0, const { &[r("S10.G00.01.006"), r("S21.G00.06.006"), r("S21.G00.11.005")] }),
+            ("naf", &self.naf.0, const { &[r("S21.G00.06.003"), r("S21.G00.11.002")] }),
+            ("declarant_dsn.civilite", &self.declarant_dsn.civilite.0, const { &[r("S10.G00.02.001")] }),
+            ("declarant_dsn.nom_prenom", &self.declarant_dsn.nom_prenom.0, const { &[r("S10.G00.02.002"), r("S20.G00.07.001")] }),
+            ("declarant_dsn.email", &self.declarant_dsn.email.0, const { &[r("S10.G00.02.004"), r("S20.G00.07.003")] }),
+            ("declarant_dsn.tel", &self.declarant_dsn.tel.0, const { &[r("S10.G00.02.005"), r("S20.G00.07.002")] }),
+            ("declarant_dsn.qualite", &self.declarant_dsn.qualite.0, const { &[r("S20.G00.07.004")] }),
         ]
     }
 
@@ -236,7 +240,7 @@ impl Variable {
         // technique 2026.1, p. 139, `norme-dsn/texte/bloc-S20.G00.07.txt`), pas un intitule.
         for (cle, t, rubriques) in self.rubriques() {
             for r in rubriques {
-                if let Some(pourquoi) = declarations::formats::mauvaise(r, t)? {
+                if let Some(pourquoi) = declarations::formats::mauvaise(*r, t)? {
                     return Err(mal_formee(cle, &format!("ne tient pas dans {} de la DSN : {}", r, pourquoi)));
                 }
             }

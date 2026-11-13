@@ -36,9 +36,11 @@ use std::path::Path;
 
 
 use crate::calcul::LigneCotisation;
+use droit::forme_bareme::{IdDeCotisation, APEC_T1, APEC_T2, PREVOYANCE};
 use crate::importe::{Importe, PaieVersee};
 use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
+use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
 use socle::num::Decimal;
 
@@ -101,7 +103,7 @@ pub struct Ecart {
 #[derive(Clone, Debug)]
 pub struct Comparaison {
     /// L'empreinte de la paie (`empreinte`).
-    pub empreinte: String,
+    pub empreinte: EmpreinteCourte,
     pub mois: Mois,
     /// Le logiciel que le lecteur a reconnu au bulletin ; `None` : un autre.
     pub logiciel: Option<String>,
@@ -128,14 +130,19 @@ const REPLIS: [(&str, &str); 2] = [("conges_spec", "autres"), ("cet", "retraite_
 
 /// La cotisation d'une ligne de la paie calculee, au grain ou un bulletin l'imprime : les contributions que
 /// l'employeur paie seul et que le modele agrege (`autres`), les cotisations de la convention (`convention`), les
-/// tranches de l'Apec et de la prevoyance ; les autres gardent leur identifiant du bareme.
-pub fn cotisation_de(l: &LigneCotisation) -> String {
+/// tranches de l'Apec et les garanties de prevoyance de la paie (`garanties`, `calcul::garanties_de_prevoyance`) ; les
+/// autres gardent leur identifiant du bareme.
+pub fn cotisation_de(l: &LigneCotisation, garanties: &[IdDeCotisation]) -> String {
     let seule_employeur = l.taux_sal.is_none() && l.montant_sal.is_zero();
+    if garanties.contains(&l.id) {
+        return PREVOYANCE.as_str().into();
+    }
+    if l.id == APEC_T1 || l.id == APEC_T2 {
+        return "apec".into();
+    }
     match l.id.as_str() {
         "autres_1" | "autres_2" | "autres_3" | "autres_4" | "versement_mobilite" if seule_employeur => "autres".into(),
         "ccn" | "fcap" | "paritarisme" => "convention".into(),
-        "apec_t1" | "apec_t2" => "apec".into(),
-        id if id.starts_with("prevoyance") => "prevoyance".into(),
         id => id.into(),
     }
 }
@@ -154,7 +161,7 @@ struct Lue {
 
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
 /// deja comparee, elle ne se compare pas deux fois.
-pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Vec<Comparaison> {
+pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
     let brut = imp.objet().carte();
     let contrat = imp.contrat();
     // UN CONTRAT DONT LA NATURE RESTE A DIRE (sans `nature`, celui d'un permanent : `import::nature`) ne se compare
@@ -360,6 +367,7 @@ fn comparer_une(
         }
     }
     let paie = saisie.paies.first().ok_or_else(|| refus("le calcul ne rend aucune paie"))?;
+    let garanties = crate::calcul::garanties_de_prevoyance(&ctx, paie)?;
 
     // Les deux cotes, par cotisation.
     let mut leurs: BTreeMap<String, Vec<Lue>> = BTreeMap::new();
@@ -393,7 +401,7 @@ fn comparer_une(
     }
     let mut nos: BTreeMap<String, Vec<&LigneCotisation>> = BTreeMap::new();
     for l in &paie.lignes {
-        nos.entry(cotisation_de(l)).or_default().push(l);
+        nos.entry(cotisation_de(l, &garanties)).or_default().push(l);
     }
     for (fin, gros) in REPLIS {
         if !leurs.contains_key(fin) {
@@ -464,7 +472,7 @@ fn comparer_une(
         }
     }
     // Les totaux du bulletin, sans ce qu'il imprime apres eux : l'ecart relatif seulement.
-    let hors = |f: &dyn Fn(&LigneCotisation) -> Decimal| -> Decimal { paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l))).map(f).sum() };
+    let hors = |f: &dyn Fn(&LigneCotisation) -> Decimal| -> Decimal { paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l, &garanties))).map(f).sum() };
     for (cle, notre, leur) in [
         ("cotisations_salariales", paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
         ("cotisations_patronales", paie.total_pat - hors(&|l| l.montant_pat), p.cotisations_patronales),
@@ -493,9 +501,9 @@ fn a_refaire(c: &mut Comparaison, raison: Echec) -> Echec {
 
 /// L'empreinte de la paie `mois` de l'engagement importe `imp` : ce qui la reconnait d'une comparaison a l'autre (son
 /// salarie, ses bornes, son numero et ce que les pieces en disent, sans la date de l'import).
-pub fn empreinte(imp: &Importe, mois: Mois, p: &PaieVersee) -> String {
+pub fn empreinte(imp: &Importe, mois: Mois, p: &PaieVersee) -> EmpreinteCourte {
     let brut = imp.objet().carte();
     let paie = PaieVersee { importe_le: None, ..p.clone() };
     let graine = socle::ecriture::json_en_ligne(&(&brut.salarie, &brut.debut, &brut.fin, &brut.numero, mois, paie));
-    socle::fichiers::sha256_hex(graine.as_bytes())[..16].to_string()
+    Empreinte::des_octets(graine.as_bytes()).courte()
 }

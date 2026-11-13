@@ -191,7 +191,7 @@ carte! {
         #[champ(Fin, Preavis)]
         pub preavis: Option<Preavis>,
         #[champ(Fin, Transaction)]
-        pub transaction: Option<String>,
+        pub transaction: Option<droit::preavis::TransactionEnCours>,
         #[champ(Fin, DernierJourPaye)]
         pub dernier_jour_paye: Option<Jour>,
         #[champ(Fin, EnDroitALaRetraite)]
@@ -292,7 +292,7 @@ impl Simple for droit::fiche::CodeEmploiFt {
 macro_rules! code_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.code().to_string())) } } )* };
 }
-code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture, droit::natures::ModaliteDuTempsDeTravail);
+code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture, droit::natures::ModaliteDuTempsDeTravail, droit::preavis::TransactionEnCours);
 
 impl Simple for NombreLu {
     fn simple(&self) -> Option<Valeur> {
@@ -437,7 +437,7 @@ pub struct Prime {
 #[serde(deny_unknown_fields)]
 pub struct Preavis {
     #[serde(rename = "type")]
-    pub genre: String,
+    pub genre: droit::preavis::TypeDePreavis,
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
 }

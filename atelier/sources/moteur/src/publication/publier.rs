@@ -11,12 +11,13 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use compagnie::maj::{
-    b64, condensat, courante, derniere_lue, ecrire_json, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, plus_recente, programme_de,
+    b64, courante, derniere_lue, ecrire_json, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, plus_recente, programme_de,
     signature_valide, systeme_du_fichier, version_lue, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
     PROPRES_A_L_INSTALLATION, SYSTEMES, TOUT_SYSTEME,
 };
 
 use socle::echec::{au_chemin, du_disque, refus, R};
+use socle::fichiers::{Empreinte, NomDeFichier};
 
 /// La variable d'environnement ou le flux « Publier » pose la graine (base64) : lue par `publier_depuis_l_environnement`,
 /// jamais affichee.
@@ -149,30 +150,29 @@ fn entrees_du_logiciel(code: &Path, systeme: &str, tete: &str) -> R<Vec<Entree>>
 /// la livraison. Une empreinte est le SHA-256 des lignes `<nom>\t<SHA-256 du fichier>`, dans l'ordre des entrees (pour
 /// une fictive, ses seuls fichiers, nommes depuis son dossier) : elle ne depend que des fichiers livres et de leurs noms,
 /// ni de la compression ni des dates, et deux publications aux memes fictives ont la meme.
-fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, String)> {
+fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, Empreinte)> {
     let racine = compagnie::installation::DOSSIER_FICTIVES;
     let dossier = base(code)?.join(racine);
-    let hex = |h: Sha256| h.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
     let mut entrees = Vec::new();
     let mut toute = Sha256::new();
     let mut par_fictive: std::collections::BTreeMap<String, Sha256> = std::collections::BTreeMap::new();
     for rel in fictives_livrees(code)? {
         let r = rel.to_string_lossy().replace('\\', "/");
         let chemin = dossier.join(&rel);
-        let sha = condensat(&std::fs::read(&chemin).map_err(|e| du_disque(&chemin, &e))?);
+        let sha = Empreinte::des_octets(&std::fs::read(&chemin).map_err(|e| du_disque(&chemin, &e))?);
         toute.update(format!("{}/{}\t{}\n", racine, r, sha).as_bytes());
         if let Some((fictive, dedans)) = r.split_once('/') {
             par_fictive.entry(fictive.to_string()).or_default().update(format!("{}\t{}\n", dedans, sha).as_bytes());
         }
         entrees.push((format!("{}/{}", racine, r), chemin, false));
     }
-    let empreinte = hex(toute);
+    let empreinte = Empreinte::du_hachage(toute);
     let mut en_plus = Vec::new();
     let mut posees = std::collections::BTreeMap::new();
     for (nom, h) in par_fictive {
-        let e = hex(h);
+        let e = Empreinte::du_hachage(h);
         en_plus.push((format!("{}/{}/{}", racine, nom, LIVREE), format!("{}\n", socle::ecriture::json_en_ligne(&compagnie::maj::Livree { empreinte: e.clone() })).into_bytes()));
-        posees.insert(nom, e);
+        posees.insert(NomDeFichier::lire(&nom)?, e);
     }
     let l = socle::ecriture::json_indente(&compagnie::maj::Livraison { empreinte: Some(empreinte.clone()), posees }, 2).into_bytes();
     en_plus.push((format!("{}/{}", racine, LIVRAISON), l));
@@ -212,7 +212,7 @@ fn archiver(code: &Path, systeme: &str) -> R<Vec<u8>> {
 /// de chacune et `.livraison.json` (`entrees_des_fictives`), et l'empreinte de la livraison. Signee comme les archives de
 /// mise a jour, nommee dans `derniere.json` sous `fictives` ; une installation ne la telecharge que si l'empreinte n'est
 /// pas celle qu'elle retient (`preparer_les_fictives`).
-fn archiver_fictives(code: &Path) -> R<(Vec<u8>, String)> {
+fn archiver_fictives(code: &Path) -> R<(Vec<u8>, Empreinte)> {
     let (entrees, en_plus, empreinte) = entrees_des_fictives(code)?;
     Ok((zipper(&entrees, &en_plus)?, empreinte))
 }
@@ -238,8 +238,8 @@ fn archiver_installation(code: &Path, systeme: &str) -> R<Vec<u8>> {
 }
 
 /// Le nom de l'archive des fictives d'une version : `puppetpaie-<version>-fictives.zip`.
-fn nom_des_fictives(version: &str) -> String {
-    format!("puppetpaie-{}-fictives.zip", version)
+fn nom_des_fictives(version: &str) -> R<NomDeFichier> {
+    NomDeFichier::lire(&format!("puppetpaie-{}-fictives.zip", version))
 }
 
 /// LES MARQUES DE LA LIVRAISON, posees dans les fictives livrees a cote de `code` (`moteur maj --marquer-fictives --logiciel
@@ -252,7 +252,7 @@ fn nom_des_fictives(version: &str) -> String {
 /// D'ABORD, LES FICTIVES DE REFERENCE (`scenario::fictives_de_reference`) : chacune se refait de son scenario, rejoue
 /// jusqu'au jour de la publication (`scenario::livrer`), dans `fictives/<nom>` -- ce qu'une compagnie bien tenue a fait
 /// avant ce jour ; la suite est au visiteur. Un rejeu qui s'ecarte arrete la publication.
-pub fn marquer_les_fictives(code: &Path) -> R<String> {
+pub fn marquer_les_fictives(code: &Path) -> R<Empreinte> {
     let base = base(code)?;
     if std::env::var_os(socle::garde_reseau::VARIABLE).is_none() {
         std::env::set_var(socle::garde_reseau::VARIABLE, "1");
@@ -272,7 +272,7 @@ pub fn marquer_les_fictives(code: &Path) -> R<String> {
 /// exactement ce que porte l'archive des fictives (`entrees_des_fictives`), `fictives/` et ses marques comprises. Les
 /// fictives livrees se refont de leur scenario et ne sont pas suivies par Git : l'installeur les prend ici, pas dans le
 /// depot. Rend l'empreinte.
-pub fn poser_les_fictives(code: &Path, dossier: &Path) -> R<String> {
+pub fn poser_les_fictives(code: &Path, dossier: &Path) -> R<Empreinte> {
     let (entrees, en_plus, empreinte) = entrees_des_fictives(code)?;
     let ecrire = |nom: &str, octets: &[u8]| -> R<()> {
         let dest = dossier.join(nom);
@@ -304,11 +304,11 @@ pub struct CleDeGithub {
 /// signees ni nommees, rendues sous `installations`.
 fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     let version = courante(c)?;
-    let depot = d.display().to_string();
+    let depot = compagnie::maj::DepotDesMisesAJour::Dossier(d.to_path_buf());
     std::fs::create_dir_all(&d).map_err(|e| refus(e.to_string()))?;
     if d.join(DERNIERE).exists() {
         // Le `derniere.json` de la Release precedente, lu comme chaque installation le lit (`derniere_lue`).
-        let avant = derniere_lue(&lire_depot(&depot, DERNIERE)?)?;
+        let avant = derniere_lue(&lire_depot(&depot, &const { NomDeFichier::du_moteur(DERNIERE) })?)?;
         let av = avant.version.as_str();
         if !plus_recente(&version, av)? {
             return Err(socle::refus!(
@@ -331,17 +331,17 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
         ));
     }
     let mut archives = Archives::default();
-    let mut tailles: Vec<(String, usize)> = Vec::new();
-    let mut faites: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut tailles: Vec<(NomDeFichier, usize)> = Vec::new();
+    let mut faites: Vec<(NomDeFichier, Vec<u8>)> = Vec::new();
     for systeme in presents.iter().copied().chain([TOUT_SYSTEME]) {
         let octets = archiver(c, systeme)?;
         let signature = signer(&octets, privee)?;
         if !signature_valide(&octets, &signature, cle_publique) {
             return Err(autre_graine());
         }
-        let nom = nom_d_archive(&version, systeme);
+        let nom = nom_d_archive(&version, systeme)?;
         let systemes = (systeme == TOUT_SYSTEME).then(|| presents.iter().map(|s| s.to_string()).collect());
-        archives.poser(systeme, ArchivePubliee { archive: nom.clone(), sha256: condensat(&octets), signature, systemes });
+        archives.poser(systeme, ArchivePubliee { archive: nom.clone(), sha256: Empreinte::des_octets(&octets), signature, systemes });
         tailles.push((nom.clone(), octets.len()));
         faites.push((nom, octets));
     }
@@ -351,8 +351,8 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     if !signature_valide(&octets, &signature, cle_publique) {
         return Err(autre_graine());
     }
-    let nom = nom_des_fictives(&version);
-    let fictives = FictivesPubliees { archive: nom.clone(), sha256: condensat(&octets), signature, empreinte };
+    let nom = nom_des_fictives(&version)?;
+    let fictives = FictivesPubliees { archive: nom.clone(), sha256: Empreinte::des_octets(&octets), signature, empreinte };
     tailles.push((nom.clone(), octets.len()));
     faites.push((nom, octets));
     // LES ARCHIVES D'INSTALLATION, a cote (`archiver_installation`) : Linux et Mac s'ils sont publies, et tous les
@@ -360,7 +360,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     // installation ne les telecharge.
     for systeme in presents.iter().copied().filter(|s| *s != "windows").chain([TOUT_SYSTEME]) {
         let octets = archiver_installation(c, systeme)?;
-        let nom = nom_d_installation(&version, systeme);
+        let nom = nom_d_installation(&version, systeme)?;
         tailles.push((nom.clone(), octets.len()));
         faites.push((nom, octets));
     }
@@ -391,7 +391,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
 /// jour, celle des fictives, puis celles d'installation), et le dossier.
 pub struct Publication {
     pub manifeste: Publiee,
-    pub tailles: Vec<(String, usize)>,
+    pub tailles: Vec<(NomDeFichier, usize)>,
     pub dossier: PathBuf,
 }
 

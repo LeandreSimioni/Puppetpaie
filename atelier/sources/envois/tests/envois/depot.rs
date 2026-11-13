@@ -8,7 +8,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use envois::depot::{basculer_dpae, basculer_dsn, est_reel, renumeroter, verifier};
 
 fn lire(octets: &[u8]) -> DsnLue {
-    declarations::dsn_lue::lire(octets, "essai.dsn").unwrap()
+    declarations::dsn_lue::lire(octets, None).unwrap()
 }
 
 fn dsn(nature_envoi: &str) -> Vec<u8> {
@@ -33,7 +33,7 @@ fn flux(indicateur: &str, n: usize) -> Vec<u8> {
 fn le_test_ne_part_jamais_en_02() {
     for nature in ["02", "01", "03", "99"] {
         let s = basculer_dsn(&dsn(nature)).unwrap();
-        assert_eq!(lire(&s).nature_envoi.as_deref(), Some("01"), "{}", nature);
+        assert_eq!(lire(&s).nature_envoi, Some(droit::nature_declaration::EssaiOuReel::Essai), "{}", nature);
     }
 }
 

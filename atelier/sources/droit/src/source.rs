@@ -12,7 +12,7 @@ use serde::Deserialize;
 /// (`atelier/README.md`, ce que le logiciel fait). Un article d'un entrepot de la DILA (`articles.jsonl.gz`) se nomme
 /// `<entrepot>#<code>` (`legi-entrepot/articles.jsonl.gz#travail`, `kali-entrepot/articles.jsonl.gz#3090`), et
 /// l'article de la source est sa cle dans l'entrepot (`D7121-41`, `KALIARTI000027609780`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, serde::Serialize)]
 #[serde(try_from = "String")]
 pub struct CheminDepose(String);
 

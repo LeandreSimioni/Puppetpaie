@@ -422,7 +422,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         let Some(((_, _, numero), p)) = lecture.paies.iter().filter(|((_, n, _), _)| n.as_deref() == Some(nir.as_str())).last() else { continue };
         let c = p.contrat.as_ref();
         let Some(code) = c.and_then(|c| c.nature_dsn.clone()) else { continue };
-        let Some(nat) = permises.iter().find(|n| n.code("S21.G00.40.007").as_deref() == Some(code.as_str())) else { continue };
+        let Some(nat) = permises.iter().find(|n| n.code(droit::rubrique!("S21.G00.40.007")).as_deref() == Some(code.as_str())) else { continue };
         let en_cours = x.en_cours;
         let mut charge = ChargeNature { salarie: salarie.clone(), nature: nat.cle, debut: None, fin: None, numero: None, salaire: None, quotite: None };
         let mut complet = true;

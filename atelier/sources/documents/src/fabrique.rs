@@ -59,7 +59,7 @@ pub fn fusion_pieces(pieces: &[(PathBuf, Option<Vec<usize>>)]) -> R<Vec<u8>> {
         pieces: pieces
             .iter()
             .map(|(f, pages)| Piece {
-                fichier: f.to_string_lossy().into_owned(),
+                fichier: f.clone(),
                 pages: pages.as_ref().map(|p| p.iter().map(|n| *n as u32 + 1).collect()),
             })
             .collect(),

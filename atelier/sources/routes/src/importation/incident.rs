@@ -133,7 +133,7 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
             continue;
         }
         // Un texte que la fabrique ne releve pas part tel : la raison, masquee comme le reste.
-        let pages = match fabrique_pdf::lecture::texte(&f.disque.to_string_lossy()) {
+        let pages = match fabrique_pdf::lecture::texte(&f.disque) {
             Ok((pages, _)) => pages.iter().map(fabrique_pdf::texte::TexteDePage::montre).collect(),
             Err(r) => vec![format!("le texte du document ne se relève pas : {}", r.phrase)],
         };

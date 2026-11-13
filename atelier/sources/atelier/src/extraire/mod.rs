@@ -25,6 +25,7 @@ use serde::Serialize;
 
 use socle::date::Jour;
 use socle::echec::R;
+use socle::fichiers::{Empreinte, NomDeFichier};
 
 /// Un referentiel releve tel qu'il s'ecrit : `quoi` (ce qu'il est), `note` (d'ou il vient : la commande, les fichiers
 /// deposes lus, la date du releve), puis ce que le releve en a tire (`corps`, la forme de chaque referentiel).
@@ -186,9 +187,9 @@ fn ecrire(releve: &Releve, sortie: &Path, remplacer: bool) -> R<()> {
 /// PDF depose se refait.
 pub struct Transcription {
     /// Le nom du PDF transcrit.
-    pub pdf: String,
+    pub pdf: NomDeFichier,
     /// Son empreinte SHA-256.
-    pub sha256: String,
+    pub sha256: Empreinte,
     /// Ce que l'en-tete dit d'autre (`pages`...).
     pub champs: Vec<(String, String)>,
     /// Ce qui est transcrit.
@@ -200,7 +201,7 @@ const FIN_DE_L_ENTETE: &str = "# ---";
 impl Transcription {
     /// La transcription de `corps`, tire du PDF `pdf`.
     pub(crate) fn de(pdf: &Path, champs: Vec<(String, String)>, corps: String) -> R<Transcription> {
-        Ok(Transcription { pdf: nom_de(pdf), sha256: sha256(pdf)?, champs, corps })
+        Ok(Transcription { pdf: NomDeFichier::du(pdf)?, sha256: sha256(pdf)?, champs, corps })
     }
 
     /// Le fichier : `# titre`, `# pdf : ...`, `# sha256 : ...`, les autres champs, `# ---`, puis le corps.
@@ -225,8 +226,8 @@ impl Transcription {
         for l in entete.lines().skip(1) {
             let Some((k, v)) = l.strip_prefix("# ").and_then(|l| l.split_once(" : ")) else { continue };
             match k {
-                "pdf" => pdf = Some(v.to_string()),
-                "sha256" => sha = Some(v.to_string()),
+                "pdf" => pdf = Some(NomDeFichier::lire(v)?),
+                "sha256" => sha = Some(Empreinte::lire(v)?),
                 _ => champs.push((k.to_string(), v.to_string())),
             }
         }
@@ -282,14 +283,6 @@ fn transcrire(args: &[&str], remplacer: bool) -> i32 {
 
 // ------------------------------------------------------------------ les aides communes
 
-/// Le nom du fichier ; un chemin qui ne finit pas par un nom (`..`) se dit entier.
-pub(crate) fn nom_de(chemin: &Path) -> String {
-    match chemin.file_name() {
-        Some(n) => n.to_string_lossy().into_owned(),
-        None => chemin.display().to_string(),
-    }
-}
-
 pub(crate) use crate::EnOrdre;
 
 /// Une ligne d'un tableau releve, case par case : `None` pour une case vide.
@@ -306,9 +299,9 @@ pub(crate) fn remplie<'a>(r: &'a [Option<String>], j: usize, ou: &str) -> R<&'a 
 }
 
 /// L'empreinte SHA-256 du fichier, en hexadecimal.
-pub(crate) fn sha256(chemin: &Path) -> R<String> {
+pub(crate) fn sha256(chemin: &Path) -> R<Empreinte> {
     let octets = std::fs::read(chemin).map_err(|e| refus!("{} illisible ({})", chemin.display(), e))?;
-    Ok(socle::fichiers::sha256_hex(&octets))
+    Ok(Empreinte::des_octets(&octets))
 }
 
 /// Les blancs (`socle::texte::blanc`) ramenes a un, sans blanc au bord.

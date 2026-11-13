@@ -38,7 +38,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         eprintln!("{}", USAGE);
         return 2;
     }
-    match relever(Path::new(&args[0]), Path::new(&args[1]), &|url| crate::sources::telecharger(url, 120).map(|(o, _)| o)) {
+    match relever(Path::new(&args[0]), Path::new(&args[1]), &|url| socle::garde_reseau::Url::lire(url).and_then(|u| crate::sources::telecharger(&u, 120)).map(|(o, _)| o)) {
         Ok(t) => {
             println!("{}", t);
             0

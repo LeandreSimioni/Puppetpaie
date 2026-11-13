@@ -51,6 +51,6 @@ fn jeton_revoque_au_rafraichissement_rien_ne_part_vers_drive() {
     let r = compagnie_liee("revoque");
     std::env::set_var(routes::coffre::VARIABLE_GOOGLE_ESSAIS, &base);
     let mut c = routes::coffre::client_drive(&r).unwrap();
-    assert!(c.lister("P").is_err());
+    assert!(c.lister(&envois::drive::IdDrive::lire("P").unwrap()).is_err());
     assert_eq!(recu.lock().unwrap().len(), 1);
 }

@@ -1312,10 +1312,19 @@ macro_rules! choix {
             pub fn as_str(&self) -> &'static str {
                 match self { $( $nom::$var => $txt ),* }
             }
+            /// Le choix dont le code est `code`, s'il est de la liste.
+            pub fn du_code(code: &str) -> Option<$nom> {
+                match code { $( $txt => Some($nom::$var), )* _ => None }
+            }
         }
         impl std::fmt::Display for $nom {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str(self.as_str())
+            }
+        }
+        impl AsRef<str> for $nom {
+            fn as_ref(&self) -> &str {
+                self.as_str()
             }
         }
         impl FormeDeCase for $nom {
@@ -2461,7 +2470,7 @@ fiche! {
         Suspension(bool) = "suspension" => suspension,
         ArretDeTravail(bool) = "arret_de_travail" => arret_de_travail,
         CongesPris(bool) = "conges_pris" => conges_pris,
-        DsnBloc52(String) = "dsn_bloc52" => dsn_bloc52,
+        DsnBloc52(crate::type_de_prime::TypeDePrime) = "dsn_bloc52" => dsn_bloc52,
         Dit(String) = "dit" => dit,
     }
     pieces CasePieceRubrique {}

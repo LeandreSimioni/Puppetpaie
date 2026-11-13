@@ -26,7 +26,7 @@ use droit::natures::{self, MotifDeRupture, Nature};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
-use socle::fichiers::dossier_du_code;
+use socle::fichiers::{dossier_du_code, NomDeFichier};
 use socle::mois::Mois;
 use crate::catalogue::{Ecran, Place};
 use crate::fiches::{reporter, vue, SorteDeFiche};
@@ -616,16 +616,16 @@ pub(crate) fn registre_identite(dossier: &Path) -> R<RegistreIdentite> {
 pub(crate) struct ImageIdentite {
     pub(crate) pose: bool,
     pub(crate) automatique: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dossier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) octets: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
     pub(crate) quand: Option<socle::paris::Moment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::fichiers::ecrire_chemin")]
+    fichier: Option<PathBuf>,
     pub(crate) documents: &'static [&'static str],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) signataire: Option<Signataire>,
@@ -682,14 +682,14 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
             ecran: None,
         };
         match pose {
-            None => e.dossier = Some(dossier.display().to_string()),
+            None => e.dossier = Some(dossier.clone()),
             Some(f) => {
                 let st = std::fs::metadata(&f).map_err(|x| socle::echec::du_disque(&f, &x).reclasser(Classe::Disque))?;
                 e.octets = Some(st.len());
                 e.format = f.extension().map(|x| x.to_string_lossy().into_owned());
                 // Datee hors du calendrier, l'image posee se dit sans sa date.
                 e.quand = socle::paris::mtime(&st).map(socle::paris::Moment::a_la_seconde);
-                e.fichier = Some(f.display().to_string());
+                e.fichier = Some(f);
             }
         }
         Ok(e)
@@ -959,7 +959,7 @@ const SORTES: [(&str, &str); 6] =
 
 /// `mois_connus` : les mois saisis et les mois produits, du plus recent au plus
 /// ancien -- `(mois, fichiers du dossier de sortie)`.
-pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<String>)>> {
+pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<NomDeFichier>)>> {
     let mut vus: BTreeSet<Mois> = engagement::stock::mois_saisis(racine)?.into_iter().collect();
     // Les entrees d'un dossier (aucune s'il n'existe pas) ; un dossier qui ne se lit pas se refuse.
     let entrees = |d: &Path| -> R<Vec<std::fs::DirEntry>> {
@@ -977,11 +977,11 @@ pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<String>)>> {
     }
     let mut out = Vec::new();
     for mois in vus.into_iter().rev() {
-        let mut fichiers: Vec<String> = Vec::new();
+        let mut fichiers: Vec<NomDeFichier> = Vec::new();
         if let Some(d) = dossiers.get(&mois) {
             for e in entrees(d)? {
                 if e.path().is_file() {
-                    fichiers.push(e.file_name().to_string_lossy().into_owned());
+                    fichiers.push(NomDeFichier::du(&e.path())?);
                 }
             }
             fichiers.sort();
@@ -1033,14 +1033,14 @@ pub(crate) struct MoisDuBilan {
     importe: Option<bool>,
     a_faire: bool,
     sortes: Vec<&'static str>,
-    fichiers: Vec<String>,
+    fichiers: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     clos: Option<bool>,
 }
 
 impl MoisDuBilan {
     /// Un mois dont la DSN ne se lit pas : ses fichiers, et rien a corriger.
-    fn nu(mois: Mois, fichiers: &[String]) -> MoisDuBilan {
+    fn nu(mois: Mois, fichiers: &[NomDeFichier]) -> MoisDuBilan {
         MoisDuBilan {
             mois,
             produit: !fichiers.is_empty(),
@@ -1067,7 +1067,7 @@ impl MoisDuBilan {
 /// a. L'etat de la DSN : « passee » (bilan OK), « refusee », « attente »,
 /// « a_deposer », « en_retard » ; la meme lecture que les
 /// rappels : le journal des depots, et lui seul.
-fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) -> R<Vec<MoisDuBilan>> {
+fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichier>)]) -> R<Vec<MoisDuBilan>> {
     let mut out = Vec::new();
     for &(le_mois, ref noms) in mois {
         let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
@@ -1078,7 +1078,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) 
         let lu = compagnie::etat_dsn::du_mois(ctx, le_mois, None)?;
         let retard = lu.etat == Etat::ADeposer && en_retard;
         let depose = lu.deposee();
-        let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.starts_with(p))).map(|(_, l)| *l).collect();
+        let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.texte().starts_with(p))).map(|(_, l)| *l).collect();
         // Un mois tenu avant : ses bulletins sont ceux de l'ancien logiciel, que l'import garde.
         if importe && !import::mois::bulletins_repris(&ctx.racine, le_mois)?.is_empty() {
             sortes.insert(0, "bulletins repris");
@@ -1416,7 +1416,7 @@ struct NatureDeLaPage {
     /// signale pas : le CDDU a son terme).
     temps_plein_dit: Option<String>,
     motif_rupture_vide_dit: String,
-    unite_quotite: String,
+    unite_quotite: natures::UniteDeQuotite,
 }
 
 /// Les natures de contrat, telles que l'ecran les DECRIT : toutes, pour que toute carte se dessine (celle d'un permanent
@@ -1446,7 +1446,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             carte,
             mensuelle: n.mensuelle(),
             duree_indeterminee: n.duree_indeterminee,
-            spectacle: n.interdit("S21.G00.40.050").is_none_or(|s| s.is_empty()),
+            spectacle: n.interdit(droit::rubrique!("S21.G00.40.050")).is_none_or(|s| s.is_empty()),
             signalement_fctu: n.signalement_fctu(None),
             signalement_par_motif: signales,
             motifs_rupture: motifs.to_vec(),
@@ -1460,7 +1460,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
                 Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
                 _ => "— à choisir —".to_string(),
             },
-            unite_quotite: n.unite_quotite().to_string(),
+            unite_quotite: n.unite_quotite(),
         });
     }
     Ok(sortie)
@@ -1581,7 +1581,7 @@ pub(crate) struct EtatDeLaPage {
     natures: Vec<NatureDeLaPage>,
     types_preavis: Vec<droit::preavis::TypePreavis>,
     aides: Aides,
-    transaction: Vec<droit::preavis::Code>,
+    transaction: Vec<droit::preavis::Code<droit::preavis::TransactionEnCours>>,
     niveaux_sante: Vec<NiveauDeSante>,
     sante_hors_fiche: Option<String>,
     sante_aide: &'static str,
@@ -1714,7 +1714,7 @@ struct Aides(#[serde(serialize_with = "socle::ecriture::en_ordre")] &'static [(&
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Version {
     courante: String,
-    depot: String,
+    depot: compagnie::maj::DepotDesMisesAJour,
     prete: Option<String>,
     calcul: Option<String>,
     exigee: Option<String>,

@@ -20,7 +20,8 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use socle::fichiers::Empreinte;
+use socle::garde_reseau::Url;
 
 use crate::releve::kali::{self, Evenement, Rapport, Suivi};
 use crate::EnOrdre;
@@ -31,7 +32,7 @@ pub const MANIFESTE: &str = "sources.json";
 pub const AGENT: &str = "PuppetPaie (veille des sources ; +https://github.com/puppetpaie)";
 
 /// Ce qu'on telecharge : les octets et l'en-tete `Last-Modified`, ou la panne en une phrase.
-pub type Telecharger<'a> = dyn FnMut(&str) -> R<(Vec<u8>, Option<String>)> + 'a;
+pub type Telecharger<'a> = dyn FnMut(&Url) -> R<(Vec<u8>, Option<String>)> + 'a;
 
 /// LE MANIFESTE DES SOURCES (`donnees/sources.json`) : chaque source, dans l'ordre du fichier, et les conventions mises de
 /// cote pour etre relues avant d'ecrire leur couche.
@@ -52,20 +53,20 @@ pub struct Manifeste {
 pub struct Source {
     pub titre: String,
     pub editeur: String,
-    pub url: String,
+    pub url: Url,
     pub contenu: String,
     pub version: String,
     /// Le jour du releve.
     pub releve_le: Jour,
     pub fichier: String,
-    pub sha256: String,
+    pub sha256: Empreinte,
     /// L'original d'un organisme prive n'est pas dans le depot public : seule sa transcription y est (chemin relatif au
     /// meme dossier).
     pub transcription: Option<String>,
     pub verification: Verification,
     pub verification_comment: Option<String>,
     pub nourrit: Vec<String>,
-    pub page_de_veille: Option<String>,
+    pub page_de_veille: Option<Url>,
     pub en_vigueur: Option<String>,
     pub etendu_le: Option<String>,
     pub kali: Option<KaliSuivi>,
@@ -123,10 +124,6 @@ pub fn dossier(installation: &Path) -> PathBuf {
     installation.join(COPIES)
 }
 
-fn sha256(o: &[u8]) -> String {
-    Sha256::digest(o).iter().map(|b| format!("{:02x}", b)).collect()
-}
-
 /// Ce que la veille sait d'une source en ligne.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -155,7 +152,7 @@ pub struct EtatSource {
     pub(crate) ident: String,
     pub(crate) titre: String,
     pub(crate) editeur: String,
-    url: String,
+    url: Url,
     pub(crate) contenu: String,
     pub(crate) version: String,
     pub(crate) releve_le: String,
@@ -168,7 +165,7 @@ pub struct EtatSource {
     pub(crate) transcription_presente: Option<bool>,
     pub(crate) en_ligne: Option<EnLigne>,
     pub(crate) detail: Option<String>,
-    pub(crate) page_de_veille: Option<String>,
+    pub(crate) page_de_veille: Option<Url>,
     pub(crate) age_jours: i64,
     extra: Extra,
     kali: Option<KaliSuivi>,
@@ -190,7 +187,7 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
         let presente = p.is_file();
         // La transcription ne se confronte a aucun condensat : c'est l'original qui fait foi.
         let transcription_presente = s.transcription.as_ref().map(|t| d.join(t).is_file());
-        let conforme = if presente { Some(sha256(&std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e))?) == s.sha256) } else { None };
+        let conforme = if presente { Some(Empreinte::du_fichier(&p)? == s.sha256) } else { None };
         let releve = s.releve_le;
         out.push(EtatSource {
             ident: ident.clone(),
@@ -222,14 +219,14 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
 
 /// Le telechargement reel : un GET, l'agent de la veille, 30 s, TLS verifie par la plate-forme, le mandataire de
 /// l'environnement. Un statut d'erreur est une panne. L'en-tete `Last-Modified`, quand le serveur le donne en texte.
-pub fn telecharger(url: &str, secondes: u64) -> R<(Vec<u8>, Option<String>)> {
+pub fn telecharger(url: &Url, secondes: u64) -> R<(Vec<u8>, Option<String>)> {
     let mut c = ureq::Agent::config_builder().user_agent(AGENT).timeout_global(Some(std::time::Duration::from_secs(secondes)));
-    if url.starts_with("https:") {
+    if url.texte().starts_with("https:") {
         c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
     }
     // En essai, le garde-fou reseau : rien ne sort de la machine.
     let agent: ureq::Agent = socle::garde_reseau::regler(c, url)?.build().into();
-    let mut r = agent.get(url).call().map_err(|e| refus(e.to_string()))?;
+    let mut r = agent.get(url.texte()).call().map_err(|e| refus(e.to_string()))?;
     let modifie = match r.headers().get(ureq::http::header::LAST_MODIFIED) {
         Some(v) => Some(v.to_str().map_err(|e| refus!("{} : Last-Modified n'est pas du texte ({})", url, e))?.to_string()),
         None => None,
@@ -285,7 +282,7 @@ pub fn verifier(
             Some(s) => &s.sha256,
             None => return Err(refus!("sources.json : la source « {} » n'y est plus", e.ident)),
         };
-        if sha256(&octets) == *attendu {
+        if Empreinte::des_octets(&octets) == *attendu {
             e.en_ligne = Some(EnLigne::Inchangee);
             e.detail = modifie;
             continue;

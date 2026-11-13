@@ -373,7 +373,7 @@ fn fictive(trouve: &str) -> bool {
 /// Un texte depose tel que son emetteur l'a publie (son empreinte est celle que son `LISEZ-MOI` porte, `deposes`) :
 /// un numero qui y a la forme d'un NIR, d'un IBAN ou d'un BIC est le sien, seuls les motifs GENERIQUES s'y taisent,
 /// jamais les vraies valeurs lues dans `prive/config/`.
-fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], deposes: &BTreeMap<String, String>, trouvailles: &mut Vec<Trouvaille>) {
+fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], deposes: &BTreeMap<String, socle::fichiers::Empreinte>, trouvailles: &mut Vec<Trouvaille>) {
     let exemple = depose_tel_quel(deposes, fichier, o);
     let siens: Vec<&Motif> = motifs.iter().filter(|m| !(exemple && GENERIQUES.contains(&m.quoi()))).collect();
     // Un binaire se fouille en octets : ce qui n'est pas de l'UTF-8 devient un remplaçant, qui sépare les chiffres
@@ -421,8 +421,8 @@ pub fn verifier(racine: &Path, indexes: bool) -> R<Vec<Trouvaille>> {
 /// LE TEXTE `fichier` (relatif a la racine du depot), de contenu `o`, EST-IL DEPOSE TEL QUE SON EMETTEUR L'A PUBLIE :
 /// son empreinte est celle que le `LISEZ-MOI` de son dossier porte (`deposes`, `crate::empreintes::lues`). Le verrou de
 /// la suite s'en sert aussi.
-pub fn depose_tel_quel(deposes: &BTreeMap<String, String>, fichier: &str, o: &[u8]) -> bool {
-    deposes.get(fichier).is_some_and(|e| *e == crate::empreintes::empreinte(o))
+pub fn depose_tel_quel(deposes: &BTreeMap<String, socle::fichiers::Empreinte>, fichier: &str, o: &[u8]) -> bool {
+    deposes.get(fichier).is_some_and(|e| *e == socle::fichiers::Empreinte::des_octets(o))
 }
 
 /// Ce que la commande affiche : la phrase de passage, ou chaque fichier et ses lignes, et ce qu'il faut en faire.

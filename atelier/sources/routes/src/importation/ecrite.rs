@@ -25,6 +25,7 @@ use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::NomDeFiche;
 use engagement::importe::{Attestation, ContratLu, ContratRelu, Declaration, PaieLue, PaieVersee};
 use socle::date::Jour;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
@@ -50,7 +51,7 @@ fn en_os(e: &std::io::Error, p: &Path) -> Echec {
 /// `historique/bulletins/`, ou qu'est la compagnie. `None` : un mois que l'import n'a pas retenu ; un fichier retenu
 /// introuvable refuse.
 pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
-    let fichiers: Vec<String> = engagement::importe::paies_lues(&ctx.racine)?
+    let fichiers: Vec<socle::fichiers::NomDeFichier> = engagement::importe::paies_lues(&ctx.racine)?
         .into_iter()
         .filter(|x| x.mois == mois && x.paie.declare_par == Declaration::Dsn)
         .filter_map(|x| x.paie.fichier)
@@ -60,7 +61,7 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     if chemin.exists() {
         return Ok(Some(chemin));
     }
-    let a_part = socle::echec::Lieu { fichier: Some(nom.clone()), ..Default::default() };
+    let a_part = socle::echec::Lieu { fichier: Some(nom.to_string()), ..Default::default() };
     Err(socle::echec::refus_avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
 }
 
@@ -423,7 +424,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
 
 /// Ce qu'une ecriture a fait.
 struct Ecrit {
-    fichiers: Vec<String>,
+    fichiers: Vec<PathBuf>,
     contrats_aem: usize,
     contrats_bulletins: usize,
     contrats_certificats: usize,
@@ -447,7 +448,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     let aujourdhui = ctx.date;
     let reponse = &mut imp.reponse;
     // Les fiches, comme celles de l'ecran (`forcer` : une fiche importee avec des anomalies est ecrite quand meme).
-    let mut ecrits: BTreeSet<String> = BTreeSet::new();
+    let mut ecrits: BTreeSet<PathBuf> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
     for a in &imp.a_creer {
         let (cle, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
@@ -464,7 +465,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
         emplacement.cle = cle;
         emplacement.etat = EtatFiche::Creee;
         emplacement.anomalies = anomalies;
-        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)).display().to_string());
+        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)));
     }
     // Les fiches qui existent : ce qui y est vide ou « A COMPLETER » (`import::completer`), rien d'autre.
     let mut completees = 0usize;
@@ -482,11 +483,11 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
             e.etat = EtatFiche::Completee;
             e.completer.retain(|c| faits.valeur(c.champ).is_some());
         }
-        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)).display().to_string());
+        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)));
         completees += 1;
     }
     crate::fiches::dater_licences_suivantes(ctx, &imp.licences, Some(note))?;
-    let mut fichiers: Vec<String> = ecrits.into_iter().collect();
+    let mut fichiers: Vec<PathBuf> = ecrits.into_iter().collect();
     let mut avertissements: Vec<String> = Vec::new();
 
     // Les engagements importes, avec les fiches telles qu'elles sont MAINTENANT.
@@ -563,7 +564,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     if contrats_aem + contrats_bulletins + contrats_certificats + contrats_aem_pdf + neuves > 0 || importes_avant.is_empty() {
         let importes = engagements_importes(engagements, par_cle.into_values().collect(), le)?;
         for p in engagement::importe::ecrire_tous(&ctx.racine, importes)? {
-            fichiers.push(p.display().to_string());
+            fichiers.push(p);
         }
     }
     Ok(Ecrit { fichiers, contrats_aem, contrats_bulletins, contrats_certificats, contrats_aem_pdf, paies: neuves, restent_a_creer, completees, avertissements })
@@ -602,10 +603,10 @@ fn dossier_bulletins(ctx: &Contexte) -> PathBuf {
 /// La copie de ce que le dossier lu reprend, dans `historique/bulletins/`, sous le nom de sa copie. RIEN NE S'ECRASE :
 /// un fichier deja copie et identique est laisse ; un autre contenu sous le meme nom est laisse aussi, et SIGNALE (il
 /// n'est pas relu). Rend le compte, et les noms a relire.
-fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) -> R<(Copie, Vec<String>)> {
+fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) -> R<(Copie, Vec<NomDeFichier>)> {
     let dossier = dossier_bulletins(ctx);
     let (mut copies, mut identiques) = (0usize, 0usize);
-    let (mut differents, mut noms): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    let (mut differents, mut noms): (Vec<String>, Vec<NomDeFichier>) = (Vec::new(), Vec::new());
     for (i, nom) in &lu.copies {
         let source = &lu.tri.fichiers[*i].disque;
         let cible = dossier.join(nom);
@@ -616,7 +617,7 @@ fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) 
                 identiques += 1;
                 noms.push(nom.clone());
             } else {
-                differents.push(nom.clone());
+                differents.push(nom.to_string());
             }
             continue;
         }
@@ -629,7 +630,7 @@ fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) 
         copies += 1;
         noms.push(nom.clone());
     }
-    Ok((Copie { copies, identiques, differents, dossier: dossier.display().to_string() }, noms))
+    Ok((Copie { copies, identiques, differents, dossier }, noms))
 }
 
 /// `importer` : `{"dossier": ...}`, la boite aux lettres `import/` (vide ou absent : celle de la compagnie) -- la copie
@@ -643,7 +644,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         crate::importation::incident::noter_les_non_lus(ctx, &lu)?;
         let tri = lu.ap.reponse.tri;
         // La copie se relit sous le nom du fichier depose.
-        let deposes: HashMap<String, String> = lu.copies.iter().map(|(i, nom)| (nom.clone(), lu.tri.fichiers[*i].chemin.clone())).collect();
+        let deposes: HashMap<String, String> = lu.copies.iter().map(|(i, nom)| (nom.to_string(), lu.tri.fichiers[*i].chemin.clone())).collect();
         Ok((tri, copie, noms, deposes))
     })?;
 

@@ -180,7 +180,7 @@ pub fn du_pdf(chemin: &Path) -> Result<Rc<Releve>, Refus> {
     if let Some(r) = MEMO.with(|m| m.borrow().1.get(&cle).cloned()) {
         return Ok(r);
     }
-    let (texte, avertissements) = fabrique_pdf::inspection::inspecter(&chemin.to_string_lossy()).map_err(Refus::Fabrique)?;
+    let (texte, avertissements) = fabrique_pdf::inspection::inspecter(chemin).map_err(Refus::Fabrique)?;
     let releve: Inspection = socle::forme::lire_texte(&texte, "Le relevé du PDF n'a pas la forme que la fabrique écrit.").map_err(Refus::Releve)?;
     let r = Rc::new(Releve { releve, avertissements });
     MEMO.with(|m| {

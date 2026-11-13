@@ -307,7 +307,7 @@ pub struct ActeDuJournal {
     pub mode: String,
     pub accepte: bool,
     /// Le fichier parti, s'il y en a un.
-    pub fichier: Option<String>,
+    pub fichier: Option<socle::fichiers::NomDeFichier>,
     pub destinataire: String,
     pub reponse: String,
     pub origine: String,

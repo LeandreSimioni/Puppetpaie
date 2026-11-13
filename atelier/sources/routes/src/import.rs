@@ -411,7 +411,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement
         (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
         (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, n.taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
     }
-    (x.depose_le, x.fichier) = (p.depot, Some(p.fichier.clone()).filter(|f| !f.is_empty()));
+    (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
     x
 }
 
@@ -794,7 +794,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         importe_le,
         du: debut,
         au: fin,
-        dossier: racine.join("import").display().to_string(),
+        dossier: racine.join("import"),
         reprises,
         editeur,
         pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
@@ -816,7 +816,8 @@ struct EtatImportation {
     objets: usize,
     du: Option<Jour>,
     au: Option<Jour>,
-    dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: std::path::PathBuf,
     reprises: Vec<RepriseVue>,
     editeur: Vec<MessageEditeur>,
     /// La pastille de l'historique repris.

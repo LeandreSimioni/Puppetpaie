@@ -28,8 +28,6 @@ serde = { workspace = true }
 # Les motifs du caviardage (ce qui part chez l'editeur), des ecarts et du tri ;
 # sans les optimisations par defaut, qui pesent sur le binaire.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
-# L'empreinte d'une piece de la boite d'import (`tri.rs`).
-sha2 = { workspace = true }
 # Une archive zip deposee dans la boite d'import (`tri.rs`) : lecture.
 zip = { workspace = true }
 # Les pages d'un PDF importe, relevees par la fabrique dans le meme processus (`releve.rs`).

@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
+use droit::nature_declaration::NatureDEvenementDeclencheur;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::date::Jour;
 use socle::echec::{erreur, R};
@@ -21,7 +22,7 @@ use socle::mois::Mois;
 
 /// Ce qu'on demande de produire (l'outil de l'atelier).
 pub struct Demande<'a> {
-    pub motif: &'a str,
+    pub motif: NatureDEvenementDeclencheur,
     /// Le mois de paie ou lire le contrat a declarer.
     pub mois: Mois,
     /// `--salarie` : seulement ceux-la (`None` : tous ceux qui ont un taux a demander).
@@ -44,7 +45,7 @@ pub struct Ligne {
 
 /// Ce que `produire` vient d'ecrire : un fichier par individu.
 pub struct Lot {
-    pub motif: String,
+    pub motif: NatureDEvenementDeclencheur,
     pub dossier: PathBuf,
     pub fichiers: Vec<PathBuf>,
     pub lignes: Vec<Ligne>,
@@ -119,7 +120,7 @@ pub fn en_cours(ctx: &Contexte, cle: &IdSalarie) -> R<Option<EnCours>> {
 /// DGFiP valide au jour de son versement (`droit::pas::situation`, `Engagement::date_du_versement`). Rend la liste
 /// ENTIERE, ecartes compris : chacun dit pourquoi il part ou ne part pas. Un contrat par individu : le signalement en
 /// porte un (1,1). `forcer` : demander encore, une demande deja partie (le signalement rejete par la plate-forme).
-pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R<Vec<Ligne>> {
+pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: NatureDEvenementDeclencheur, forcer: bool) -> R<Vec<Ligne>> {
     use declarations::amorcage as am;
     let cle_de = |p: &Paie| p.salarie.id.clone();
     let mut cles: Vec<droit::contexte::IdSalarie> = Vec::new();
@@ -177,7 +178,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
 /// (`Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`), constitue le jour `constitution`. UN NUMERO D'ORDRE PAR FICHIER, a la
 /// suite de tous les signalements deja partis : la sequence ne se remet jamais a zero (cahier technique DSN, p. 136), et
 /// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent.
-pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, mois: Mois, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
+pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, mois: Mois, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
     let dossier = ctx.racine.join("sorties").join(mois.to_string());
     let premier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))? + 1;
@@ -185,7 +186,7 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, m
     let mut fichiers = Vec::new();
     for (rang, l) in retenues.iter().enumerate() {
         let options = am::Options {
-            motif: motif.to_string(),
+            motif,
             type_declaration: TypeDeLaDeclaration::Normale,
             ordre: premier + rang as i64,
             remplace: None,
@@ -225,7 +226,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
     let (retenus, ecartes): (Vec<Ligne>, Vec<Ligne>) = lignes.into_iter().partition(|l| l.pourquoi_pas.is_empty());
     // Aucun taux a demander : rien ne s'ecrit, et il n'y a rien a dire.
     if retenus.is_empty() && ecartes.is_empty() {
-        return Ok(Lot { motif: d.motif.to_string(), dossier: PathBuf::new(), fichiers: Vec::new(), lignes: Vec::new(), ecartes, recapitulatif: PathBuf::new() });
+        return Ok(Lot { motif: d.motif, dossier: PathBuf::new(), fichiers: Vec::new(), lignes: Vec::new(), ecartes, recapitulatif: PathBuf::new() });
     }
     if retenus.is_empty() {
         let raisons: Vec<String> = ecartes.iter().map(|l| format!("{} ({})", l.salarie, l.pourquoi_pas)).collect();
@@ -264,5 +265,5 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
     }
     let recap = dossier.join(format!("Amorcage{}_{}_recapitulatif.txt", d.motif, jour));
     std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| socle::echec::du_disque(&recap, &e).reclasser(Classe::Disque))?;
-    Ok(Lot { motif: d.motif.to_string(), dossier, fichiers, lignes: retenus, ecartes, recapitulatif: recap })
+    Ok(Lot { motif: d.motif, dossier, fichiers, lignes: retenus, ecartes, recapitulatif: recap })
 }

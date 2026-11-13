@@ -22,7 +22,7 @@ use envois::releve_retours;
 use socle::date::Jour;
 use socle::paris::Moment;
 use socle::echec::{erreur, Classe, Echec, R};
-use socle::fichiers::dossier_du_code;
+use socle::fichiers::{dossier_du_code, NomDeFichier};
 use socle::mois::{Graphie, Mois};
 use serde::{Deserialize, Serialize};
 use envois::depot_acte::DepotFait;
@@ -590,7 +590,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         let mut repetes = Vec::new();
         for x in &pareils {
             let empreinte = envois::journal::empreinte_fichier(x)?;
-            let nom = socle::fichiers::nom_du(x);
+            let nom = NomDeFichier::du(x)?;
             if etats::repetition(&journal.lignes, Quoi::Dpae.acte(), &empreinte, &nom).conforme.is_some() {
                 repetes.push(x.clone());
             }
@@ -601,8 +601,9 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
                 Some(r) => r.clone(),
                 None => pareils[0].clone(),
             };
-            let nom = socle::fichiers::nom_du(&choisi);
+            let nom = NomDeFichier::du(&choisi)?;
             marque = nom
+                .texte()
                 .strip_prefix(&format!("DPAE_{}", etiq))
                 .and_then(|r| r.strip_suffix(".txt"))
                 .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une DPAE du mois ne porte pas son nom.", "fichier", &nom).reclasser(Classe::DefautDuLogiciel))?
@@ -630,7 +631,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
 
     let n = retenues.len();
     Ok(Dpae::Ecrite(DpaeEcrite {
-        chemin: f.to_string_lossy().into_owned(),
+        chemin: f,
         phrase: format!("DPAE {} écrite : {} embauche{}.", socle::texte::de(&le_mois.libelle(Graphie::Accentuee)), n, if n > 1 { "s" } else { "" }),
     }))
 }
@@ -646,7 +647,7 @@ pub(crate) enum Dpae {
 /// La DPAE ecrite : le chemin de son fichier (son `.zip` et son recapitulatif en clair sont a cote), et la phrase qui
 /// dit combien d'embauches elle declare.
 pub(crate) struct DpaeEcrite {
-    pub(crate) chemin: String,
+    pub(crate) chemin: PathBuf,
     pub(crate) phrase: String,
 }
 
@@ -755,7 +756,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
     }
     // Ce qui reste a declarer s'ecrit, et un manque refuse ; quand rien ne reste, c'est la DPAE partie.
     match dpae(ctx, le_mois, d.engagements.as_deref())? {
-        Dpae::Ecrite(w) => Ok((w.chemin, DitALEcriture { phrase: Some(w.phrase), ..Default::default() })),
+        Dpae::Ecrite(w) => Ok((w.chemin.to_string_lossy().into_owned(), DitALEcriture { phrase: Some(w.phrase), ..Default::default() })),
         Dpae::Rien(phrase) => partie(ctx, d, le_mois)?.map(|c| (c, DitALEcriture::default())).ok_or_else(|| refus(phrase)),
     }
 }
@@ -773,7 +774,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
             let de = l.etablissement().or(principal);
-            l.fichier().is_some_and(|f| f.starts_with("DSN_")) && de == nic
+            l.fichier().is_some_and(|f| f.texte().starts_with("DSN_")) && de == nic
         }
         Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect::<BTreeSet<_>>() == *v),
         // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.
@@ -811,7 +812,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&str>) -> R<Depo
     };
     let phrase = std::iter::once(tranche).chain(fait.suites.iter().cloned()).collect::<Vec<_>>().join(" ");
     // APRES LA DSN REELLE D'UN MOIS QUI A DES SALARIES, la boite d'avis : leurs documents partent de l'etape 4.
-    let avis = (reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, &fichier)?.individus.is_empty())
+    let avis = (reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
         .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
     etats::poser_les_pastilles(&mut fait.ligne);
     poser_les_pastilles(&mut fait.deja);
@@ -928,18 +929,6 @@ pub(crate) fn normaliser(t: &str) -> String {
     format!("{}{}", tete, corps)
 }
 
-/// `PurePosixPath(t).name`.
-pub(crate) fn nom_du_chemin(t: &str) -> String {
-    let n = normaliser(t);
-    if n == "." || n.chars().all(|c| c == '/') {
-        return String::new();
-    }
-    match n.rsplit_once('/') {
-        Some((_, nom)) => nom.to_string(),
-        None => n,
-    }
-}
-
 fn existe(t: &str) -> bool {
     !t.contains('\0') && Path::new(t).exists()
 }
@@ -963,13 +952,13 @@ pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
 }
 
 /// `read_bytes`, l'erreur du disque sous sa classe.
-fn empreinte_du_fichier(chemin: &str) -> R<String> {
+fn empreinte_du_fichier(chemin: &str) -> R<socle::fichiers::EmpreinteCourte> {
     if chemin.contains('\0') {
         return Err(erreur(Classe::Illisible, "embedded null byte"));
     }
     let p = Path::new(chemin);
     let octets = std::fs::read(p).map_err(|e| erreur_io(&e, p))?;
-    Ok(envois::journal::empreinte(&octets))
+    Ok(socle::fichiers::Empreinte::des_octets(&octets).courte())
 }
 
 // ------------------------------------------------------------------ depot-apercu, la DPAE
@@ -1017,8 +1006,9 @@ pub(crate) struct EmbaucheDuFichier {
 #[derive(Debug, Serialize)]
 pub(crate) struct ApercuDpae {
     pub(crate) description: String,
-    pub(crate) fichier: String,
-    pub(crate) nom: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub(crate) fichier: PathBuf,
+    pub(crate) nom: NomDeFichier,
     pub(crate) enregistrements: usize,
     pub(crate) octets: usize,
     pub(crate) reel: bool,
@@ -1122,15 +1112,15 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         });
     }
     let mois = jours.iter().map(|j| j.mois_civil()).min();
-    let empreinte = envois::journal::empreinte(&contenu);
-    let nom_fichier = nom_du_chemin(&chemin);
+    let empreinte = socle::fichiers::Empreinte::des_octets(&contenu).courte();
+    let nom_fichier = NomDeFichier::du(Path::new(&chemin))?;
     let mut deja_depose = etats::deja_depose(&lignes_journal, Quoi::Dpae.acte(), &empreinte);
     poser_les_pastilles(&mut deja_depose);
     let mut repetition = etats::repetition(&lignes_journal, Quoi::Dpae.acte(), &empreinte, &nom_fichier);
     pastilles_du_test(&mut repetition);
     Ok(ApercuDpae {
         description: format!("{} — {} enregistrement{}, {} octets, indicateur {}.", nom_fichier, enrs.len(), if enrs.len() > 1 { "s" } else { "" }, contenu.len(), envois::depot::indicateur(&contenu)),
-        fichier: chemin,
+        fichier: PathBuf::from(chemin),
         nom: nom_fichier,
         enregistrements: enrs.len(),
         octets: contenu.len(),
@@ -1214,7 +1204,7 @@ fn bilan_de_la_repetition(ctx: &Contexte, d: &Designation) -> R<Repetition> {
     };
     let chemin = resoudre(&ctx.racine, &fichier)?;
     let empreinte = empreinte_du_fichier(&chemin)?;
-    let nom = nom_du_chemin(&chemin);
+    let nom = NomDeFichier::du(Path::new(&chemin))?;
     let lignes = crate::etapes::Moteur::nouveau(ctx).lignes()?;
     Ok(etats::repetition(&lignes, d.quoi.acte(), &empreinte, &nom))
 }

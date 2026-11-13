@@ -455,17 +455,6 @@ fn par_dessus_rubriques(section: &mut BTreeMap<IdDeCotisation, RubriqueModifiee>
     }
 }
 
-/// Ce qu'une couche ecrit de la reduction generale d'une section s'ajoute a ce qu'elle portait.
-fn reduction_par_dessus(r: &mut ReductionGenerale, m: &ReductionGenerale) {
-    macro_rules! si {
-        ($($c:ident),*) => { $( if m.$c.is_some() { r.$c = m.$c.clone(); } )* };
-    }
-    si!(verifie, formule, tmin, tdelta, puissance, t, plafond_smic, smic_horaire_reference, imputation, dsn, majoration_caisse_conges, source, note);
-    if m.statuts.is_some() {
-        r.statuts = m.statuts.clone();
-    }
-}
-
 /// Ce qu'une couche ecrit de la section d'une nature.
 fn modifier_la_nature(nat: &mut CoucheNature, m: &NatureModifiee, ou: &str) -> R<()> {
     if let Some(mods) = &m.rubriques {
@@ -542,7 +531,7 @@ fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, ou: &str) -> R<()> {
             modifier_cotisations(st.cotisations_dsn.as_mut().ok_or_else(|| inconnue(&ou, "cotisations_dsn"))?, mods, &ou)?;
         }
         if let Some(r) = &m.reduction_generale {
-            reduction_par_dessus(st.reduction_generale.get_or_insert_with(ReductionGenerale::default), r);
+            crate::bareme::reduction_par_dessus(st.reduction_generale.get_or_insert_with(ReductionGenerale::default), r);
         }
     }
     for (n, m) in s.par_nature.iter().flatten() {

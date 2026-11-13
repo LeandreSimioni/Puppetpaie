@@ -279,15 +279,16 @@ fn page_de(doc: &Document, numero: u32, id: lopdf::ObjectId, avertissements: &mu
 }
 
 /// L'inspection de `chemin` : la ligne de JSON, et les avertissements (pages illisibles).
-pub fn inspecter(chemin: &str) -> Result<(String, Vec<String>), Refus> {
-    let octets = std::fs::read(chemin).map_err(|e| Refus::illisible(format!("{} illisible ({})", chemin, e)))?;
-    let mut doc = crate::lecture::charger(&octets).map_err(|r| r.reformuler(|p| format!("{} {}", chemin, p)))?;
-    let dans = |r: Refus| r.reformuler(|p| format!("{} : {}", chemin, p));
+pub fn inspecter(chemin: &std::path::Path) -> Result<(String, Vec<String>), Refus> {
+    let dit = chemin.display();
+    let octets = std::fs::read(chemin).map_err(|e| Refus::illisible(format!("{} illisible ({})", dit, e)))?;
+    let mut doc = crate::lecture::charger(&octets).map_err(|r| r.reformuler(|p| format!("{} {}", dit, p)))?;
+    let dans = |r: Refus| r.reformuler(|p| format!("{} : {}", dit, p));
     let chiffre = chiffrement(&doc).map_err(dans)?;
     crate::chiffrement::dechiffrer(&mut doc, b"").map_err(dans)?;
     let mut avertissements = Vec::new();
     let pages = doc.get_pages().into_iter().map(|(n, id)| page_de(&doc, n, id, &mut avertissements)).collect::<Result<_, _>>().map_err(dans)?;
     let inspection = Inspection { chiffrement: chiffre, metadonnees: metadonnees(&doc, &mut avertissements).map_err(dans)?, pages };
-    let json = serde_json::to_string(&inspection).map_err(|e| Refus::defaut(format!("{} : {}", chemin, e)))?;
+    let json = serde_json::to_string(&inspection).map_err(|e| Refus::defaut(format!("{} : {}", dit, e)))?;
     Ok((json, avertissements))
 }

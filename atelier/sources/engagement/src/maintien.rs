@@ -105,7 +105,7 @@ impl Droits {
 
 /// L'origine d'un arret, lue sur son motif ; `None` pour un motif sans maintien (maternite, paternite...).
 pub fn origine(imp: &ArretSaisi) -> R<Option<Origine>> {
-    Origine::du_motif(&imp.motif)
+    Origine::du_motif(imp.motif)
 }
 
 /// LES DROITS D'UN ARRET : a l'anciennete au premier jour de l'absence (D1226-8), comptee depuis la date d'anciennete de la
@@ -356,7 +356,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     }
     let taux_horaire = div(m.salaire_du_mois, heures_du_mois);
     let n = dernier.moins(&premier) + 1;
-    let subroge = imp.subrogation.as_deref() == Some("01");
+    let subroge = imp.subrogation == Some(droit::arrets::SubrogationDeLArret::Oui);
     let (sub_debut, sub_fin) = (imp.subrogation_debut, imp.subrogation_fin);
     let regles = droit::permanents::regles()?;
     let rij = &regles.indemnites_journalieres;

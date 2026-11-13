@@ -14,7 +14,9 @@ use droit::fiche::{CaseDeFiche, NomDeFiche};
 use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
 use socle::date::Jour;
+use socle::fichiers::NomDeFichier;
 use socle::mois::{Graphie, Mois};
+use std::path::PathBuf;
 
 // ------------------------------------------------------------------ les sorts
 
@@ -512,7 +514,7 @@ pub struct FichierVu {
     pub raison: String,
     /// Le nom de sa copie sous `historique/bulletins/`, s'il est repris.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub copie: Option<String>,
+    pub copie: Option<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub doublon_de: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -563,7 +565,9 @@ pub struct NonRepris {
 /// Le dossier lu, fichier par fichier.
 #[derive(Debug, Clone, Serialize)]
 pub struct TriVu {
-    pub dossier: String,
+    /// Le dossier lu ; vide tant qu'aucun ne l'est (`aucun`).
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub dossier: PathBuf,
     pub fichiers: Vec<FichierVu>,
     /// Les fichiers, par sort.
     pub comptes: ParSort<usize>,
@@ -576,7 +580,7 @@ pub struct TriVu {
 impl TriVu {
     /// Aucun dossier lu encore.
     pub fn aucun() -> TriVu {
-        TriVu { dossier: String::new(), fichiers: Vec::new(), comptes: ParSort::a_zero(), total: 0, non_repris: None, dit: String::new() }
+        TriVu { dossier: PathBuf::new(), fichiers: Vec::new(), comptes: ParSort::a_zero(), total: 0, non_repris: None, dit: String::new() }
     }
 }
 
@@ -644,7 +648,8 @@ pub struct Copie {
     pub identiques: usize,
     /// Les noms deja copies avec un autre contenu : la copie est gardee telle quelle.
     pub differents: Vec<String>,
-    pub dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub dossier: PathBuf,
 }
 
 // ------------------------------------------------------------------ la reponse
@@ -672,7 +677,8 @@ pub struct Importation {
     pub rien_a_faire: bool,
     pub ecrit: bool,
     /// Les fichiers que l'import a ecrits.
-    pub fichiers: Vec<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub fichiers: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub copie: Option<Copie>,
     pub tri: TriVu,
@@ -800,7 +806,7 @@ impl Importation {
             );
         }
         // Le dossier, fichier par fichier.
-        self.tri.dit = format!("{} fichier{} dans {}", self.tri.total, s(self.tri.total), self.tri.dossier);
+        self.tri.dit = format!("{} fichier{} dans {}", self.tri.total, s(self.tri.total), self.tri.dossier.display());
         self.tri.fichiers.iter_mut().for_each(FichierVu::dire);
         self.titre_dit = if ecrit { "Repris" } else { "Serait repris" };
         // Ce que le bouton reprendrait.

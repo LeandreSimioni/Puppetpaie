@@ -33,7 +33,7 @@ use crate::usages::strip;
 pub struct Identifiant {
     pub champ: &'static str,
     pub r30: &'static str,
-    pub r31: &'static str,
+    pub r31: droit::natures::RubriqueDeLaNorme,
     pub libelle: &'static str,
     pub ecrite: fn(&ChampsSalarie) -> Option<String>,
     pub poser: fn(&mut ChampsSalarie, &ChampsSalarie),
@@ -51,7 +51,7 @@ pub const IDENTIFIANTS: [Identifiant; 4] = [
     Identifiant {
         champ: "nir",
         r30: "S21.G00.30.001",
-        r31: "S21.G00.31.008",
+        r31: droit::rubrique!("S21.G00.31.008"),
         libelle: "NIR",
         ecrite: |s| texte_ecrit(&s.nir),
         poser: |s, au| s.nir = au.nir.clone(),
@@ -60,7 +60,7 @@ pub const IDENTIFIANTS: [Identifiant; 4] = [
     Identifiant {
         champ: "nom",
         r30: "S21.G00.30.002",
-        r31: "S21.G00.31.009",
+        r31: droit::rubrique!("S21.G00.31.009"),
         libelle: "nom de famille",
         ecrite: |s| texte_ecrit(&s.nom),
         poser: |s, au| s.nom = au.nom.clone(),
@@ -69,7 +69,7 @@ pub const IDENTIFIANTS: [Identifiant; 4] = [
     Identifiant {
         champ: "prenom",
         r30: "S21.G00.30.004",
-        r31: "S21.G00.31.010",
+        r31: droit::rubrique!("S21.G00.31.010"),
         libelle: "prenoms",
         ecrite: |s| texte_ecrit(&s.prenom),
         poser: |s, au| s.prenom = au.prenom.clone(),
@@ -78,7 +78,7 @@ pub const IDENTIFIANTS: [Identifiant; 4] = [
     Identifiant {
         champ: "date_naissance",
         r30: "S21.G00.30.006",
-        r31: "S21.G00.31.011",
+        r31: droit::rubrique!("S21.G00.31.011"),
         libelle: "date de naissance",
         ecrite: |s| s.date_naissance.dite().map(Jour::jjmmaaaa),
         poser: |s, au| s.date_naissance = au.date_naissance.clone(),
@@ -97,7 +97,7 @@ pub struct Declaree {
     pub prenoms: Option<String>,
     pub naissance: Option<Jour>,
     /// Le numero technique temporaire (30.020), s'il y en avait un.
-    pub ntt: Option<String>,
+    pub ntt: Option<crate::ntt::Ntt>,
     pub matricule: Option<String>,
 }
 
@@ -113,7 +113,7 @@ impl Declaree {
     }
 
     /// L'identite seule (sans le mois ni le fichier) : deux etablissements d'un meme mois doivent dire la meme.
-    fn identite(&self) -> (&Option<String>, &Option<String>, &Option<String>, Option<Jour>, &Option<String>) {
+    fn identite(&self) -> (&Option<String>, &Option<String>, &Option<String>, Option<Jour>, &Option<crate::ntt::Ntt>) {
         (&self.nir, &self.nom, &self.prenoms, self.naissance, &self.ntt)
     }
 }
@@ -257,7 +257,7 @@ fn decrire(d: &Declaree) -> String {
         dite(&d.naissance.as_ref().map(Jour::jjmmaaaa)),
         match &d.nir {
             Some(nir) => format!("NIR {}", nir),
-            None => format!("NTT {}", dite(&d.ntt)),
+            None => format!("NTT {}", dite(&d.ntt.as_ref().map(|n| n.to_string()))),
         }
     )
 }
@@ -287,7 +287,7 @@ fn date_d_effet(brute: Option<&FicheSalarieDatee>, identifiant: &Identifiant, de
 /// a cote du NIR (30.020, p. 175 ; `ntt.rs`), pas par le bloc 31.
 pub fn ecrire(f: &mut Fichier, salarie: &ChampsSalarie, brute: Option<&FicheSalarieDatee>, declaree: Option<&Declaree>, mois: Mois, fin: &Jour) -> R<()> {
     let Some(d) = declaree else { return Ok(()) };
-    let mut par_date: BTreeMap<Jour, Vec<(&str, String)>> = BTreeMap::new();
+    let mut par_date: BTreeMap<Jour, Vec<(droit::natures::RubriqueDeLaNorme, String)>> = BTreeMap::new();
     let mut sans_date: Vec<String> = Vec::new();
     for identifiant @ Identifiant { champ, r31, libelle, ecrite: valeur, .. } in &IDENTIFIANTS {
         let (champ, r31, libelle) = (*champ, *r31, *libelle);
@@ -336,7 +336,7 @@ enregistrer, puis saisir la nouvelle : l'ecran demande alors la date d'effet). R
         ));
     }
     for (jour, rubriques) in par_date {
-        f.add("S21.G00.31.001", jour.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.31.001"), jour.jjmmaaaa());
         for (r, v) in rubriques {
             f.add(r, v);
         }

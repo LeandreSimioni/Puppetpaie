@@ -45,6 +45,7 @@ use sha2::{Digest, Sha256};
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::fichiers::Empreinte;
 use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Route, ILLISIBLE, MOIS};
@@ -315,7 +316,7 @@ const HORS_DE_L_ECRAN: [&str; 7] = [
 /// (la configuration dit si la boite courriel est liee, `boite_liee` : rien n'en est lu ici, ni ailleurs dans
 /// l'empreinte), et l'adresse de la boite posee dans l'environnement (`COURRIEL_COMPTE`). Ce qui ne s'y lit pas reste
 /// dehors (`HORS_DE_L_ECRAN` : les signalements se lisent a chaque ouverture, a cote).
-pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) -> String {
+pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) -> Empreinte {
     let ouverture = cle == OUVERTURE;
     let mut h = Sha256::new();
     let mut marques = vec![env!("PAIE_SOURCES").to_string(), jour.iso(), absolu(racine), absolu(&socle::fichiers::dossier_du_code())];
@@ -354,11 +355,11 @@ pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) ->
     // Le code livre : baremes, bases, modeles (une mise a jour les change sans changer le moteur).
     let code = socle::fichiers::dossier_du_code();
     signer_dossier(&mut h, &code, "", true, &|_| true);
-    h.finalize().iter().map(|o| format!("{:02x}", o)).collect()
+    Empreinte::du_hachage(h)
 }
 
 /// L'empreinte de l'etat `cle` de la compagnie `racine`, au jour `jour`.
-fn empreinte(racine: &Path, cle: Cle, jour: &Jour) -> String {
+fn empreinte(racine: &Path, cle: Cle, jour: &Jour) -> Empreinte {
     empreinte_de(racine, &cle.to_string(), *jour)
 }
 
@@ -378,7 +379,7 @@ fn noter(quoi: &str, e: &Echec) {
 /// dit le coffre s'y ajoute a chaque lecture : `du_mois`), et les autres lectures de l'ecran, ecrites.
 struct EtatDuMois {
     mois: Mois,
-    empreinte: String,
+    empreinte: Empreinte,
     par_engagement: Rendu,
     bilan: Bilan,
     lectures: Vec<(Route, String)>,
@@ -392,7 +393,7 @@ struct EtatDuMois {
 struct EtatDeLOuverture {
     format: u64,
     moteur: String,
-    empreinte: String,
+    empreinte: Empreinte,
     ouvre: Option<Mois>,
     lectures: BTreeMap<String, String>,
 }
@@ -611,7 +612,7 @@ struct ApercuEnregistre {
 
 /// L'etat de `mois`, refait : ses deux etats (`etapes::les_deux_etats`) et ses lectures (`LECTURES`, puis l'apercu de la
 /// saisie enregistree).
-fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: String) -> R<EtatDuMois> {
+fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: Empreinte) -> R<EtatDuMois> {
     let charge = charge_du_mois(mois)?;
     let mut lectures: Vec<(Route, String)> = LECTURES.iter().map(|r| (*r, lecture(o, *r, &charge))).collect();
     // L'APERCU : ce que la page demande des qu'un mois s'affiche (`calculerApercu`), sur la saisie qu'elle vient de lire
@@ -629,7 +630,7 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: String) -
 
 /// L'etat de l'ouverture, refait : les lectures de la page qui s'ouvre (`LECTURES_OUVERTURE`), telles quelles, et le
 /// mois a ouvrir.
-fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: String) -> R<EtatDeLOuverture> {
+fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: Empreinte) -> R<EtatDeLOuverture> {
     let mut lectures = BTreeMap::new();
     for (route, charge) in LECTURES_OUVERTURE {
         let c: Charge = socle::forme::lire_texte(charge, "La charge d'une lecture de l'ouverture ne se lit pas.")?;

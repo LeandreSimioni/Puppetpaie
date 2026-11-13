@@ -12,7 +12,7 @@ use crate::forme_bareme::{
     TauxDate, VersementMobiliteEcrit, CCN, MUTUELLE, PREVOYANCE, PREVOYANCE_T2, REGIME_LOCAL, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
 use crate::assiette::Assiette;
-use crate::base_assujettie::BaseAssujettie;
+use crate::base_assujettie::{BaseAssujettie, TypeDeComposant};
 use crate::code_cotisation::CodeCotisation81;
 use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Siret, Statut, StatutCategorielRc};
@@ -481,25 +481,26 @@ fn empiler(mut bar: Pile, sec: Couche) -> Pile {
     if let Some(m) = sec.majoration_conges_110 {
         bar.majoration_conges_110 = m;
     }
-    // La reduction generale se complete, elle ne se remplace pas.
     if let Some(s) = sec.reduction_generale {
-        let rg = bar.reduction_generale.get_or_insert_with(ReductionGenerale::default);
-        macro_rules! si {
-            ($($c:ident),*) => { $( if s.$c.is_some() { rg.$c = s.$c.clone(); } )* };
-        }
-        si!(verifie, formule, tmin, tdelta, puissance, t, plafond_smic, smic_horaire_reference, imputation, majoration_caisse_conges, source, note);
-        if s.statuts.is_some() {
-            rg.statuts = s.statuts.clone();
-        }
-        if let Some(d) = &s.dsn {
-            let r = rg.dsn.get_or_insert_with(Default::default);
-            macro_rules! si_dsn {
-                ($($c:ident),*) => { $( if d.$c.is_some() { r.$c = d.$c.clone(); } )* };
-            }
-            si_dsn!(code81_urssaf, code81_chomage, code81_retraite, ctp, ctp_regularisation, qualifiant, cle_total_chomage, cle_total_urssaf, source, note);
-        }
+        reduction_par_dessus(bar.reduction_generale.get_or_insert_with(ReductionGenerale::default), s);
     }
     bar
+}
+
+/// Ce qu'une couche ecrit de la reduction generale complete ce qu'elle portait, champ par champ, sa section `dsn`
+/// comprise : elle ne la remplace pas.
+pub(crate) fn reduction_par_dessus(rg: &mut ReductionGenerale, s: &ReductionGenerale) {
+    macro_rules! si {
+        ($($c:ident),*) => { $( if s.$c.is_some() { rg.$c = s.$c.clone(); } )* };
+    }
+    si!(verifie, formule, tmin, tdelta, puissance, t, plafond_smic, smic_horaire_reference, imputation, majoration_caisse_conges, statuts, source, note);
+    if let Some(d) = &s.dsn {
+        let r = rg.dsn.get_or_insert_with(Default::default);
+        macro_rules! si_dsn {
+            ($($c:ident),*) => { $( if d.$c.is_some() { r.$c = d.$c.clone(); } )* };
+        }
+        si_dsn!(code81_urssaf, code81_chomage, code81_retraite, ctp, ctp_regularisation, qualifiant, cle_total_chomage, cle_total_urssaf, source, note);
+    }
 }
 
 // ------------------------------------------------------------ les cadres
@@ -737,15 +738,15 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
     // Au moins la moitie a la charge de l'employeur (L911-7) : le releve du bareme dit la part.
     let part_pat = div(releve.part_employeur.0, Decimal::ONE_HUNDRED);
     let bar = poser_mutuelle(bar, None, total, part_pat, None);
-    Ok(composant_79(bar, &MUTUELLE, releve.composant_79.as_ref().map(|c| c.genre.as_str())))
+    Ok(composant_79(bar, &MUTUELLE, releve.composant_79.as_ref().map(|c| c.genre)))
 }
 
 /// Le type de composant de base assujettie (S21.G00.79.001) que la base 31 de la ligne `id` declare, quand la source de
 /// son taux le dit (`composant_79` sur la ligne ; `dsn::cotisations` le lit) : sans lui, la DSN garde la tranche A.
-fn composant_79(mut bar: Pile, id: &IdDeCotisation, type_79: Option<&str>) -> Pile {
-    if let Some(type_79) = type_79.filter(|t| !t.is_empty()) {
+fn composant_79(mut bar: Pile, id: &IdDeCotisation, type_79: Option<TypeDeComposant>) -> Pile {
+    if let Some(type_79) = type_79 {
         for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == *id) {
-            r.composant_79 = Some(type_79.to_string());
+            r.composant_79 = Some(type_79);
         }
     }
     bar

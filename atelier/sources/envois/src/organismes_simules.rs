@@ -315,15 +315,14 @@ fn mois_de(l: &Ligne) -> R<Mois> {
 /// La DSN de la ligne du journal, relue la ou le depot l'a prise (`sorties/<mois>/<fichier>`) ; un signalement est range
 /// sous le mois de son fait. `None` : le fichier n'est plus la.
 fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
-    let Some(fichier) = l.fichier().filter(|f| !f.is_empty()) else { return Ok(None) };
-    let p = Path::new(fichier);
-    let chemin = if p.is_absolute() { p.to_path_buf() } else { racine.join("sorties").join(mois_de(l)?.to_string()).join(fichier) };
+    let Some(fichier) = l.fichier() else { return Ok(None) };
+    let chemin = racine.join("sorties").join(mois_de(l)?.to_string()).join(fichier);
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(socle::echec::du_disque(&chemin, &e)),
     };
-    declarations::dsn_lue::lire(&octets, fichier).map(Some)
+    declarations::dsn_lue::lire(&octets, Some(fichier)).map(Some)
 }
 
 fn reelle(l: &Ligne) -> bool {
@@ -616,7 +615,7 @@ mod tests {
                 }
             }
         }
-        declarations::dsn_lue::lire(t.as_bytes(), "essai.dsn").unwrap()
+        declarations::dsn_lue::lire(t.as_bytes(), None).unwrap()
     }
 
     /// R. 130-1 du code de la securite sociale (`atelier/reference/sources/code-de-la-securite-sociale/articles-20261029.md`) :

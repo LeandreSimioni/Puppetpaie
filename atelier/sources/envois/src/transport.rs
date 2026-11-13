@@ -10,6 +10,7 @@
 
 use droit::fiche::Lue as _;
 use socle::echec::{Classe, Echec};
+use socle::garde_reseau::Url;
 use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -322,8 +323,8 @@ fn panne_de(e: ureq::Error, https: bool) -> Panne {
 /// une adresse https, `http_proxy` pour une adresse http, et `no_proxy`
 /// (noms, suffixes de domaine, `*`) qui l'ecarte. La machine elle-meme (les faux
 /// serveurs de l'atelier et des essais) ne passe jamais par un mandataire.
-fn mandataire(url: &str) -> Result<Option<ureq::Proxy>, Panne> {
-    let Some((schema, reste)) = url.split_once("://") else { return Ok(None) };
+fn mandataire(url: &Url) -> Result<Option<ureq::Proxy>, Panne> {
+    let Some((schema, reste)) = url.texte().split_once("://") else { return Ok(None) };
     // La variable en minuscules, sinon en capitales ; posee mais vide, ou hors d'Unicode, elle ne dit rien.
     let lue = |n: &str| match std::env::var(n) {
         Ok(v) => Some(v),
@@ -363,8 +364,8 @@ fn mandataire(url: &str) -> Result<Option<ureq::Proxy>, Panne> {
 }
 
 /// L'agent d'une demande. En essai, le garde-fou reseau (`garde_reseau`) le regle : rien ne sort de la machine.
-fn agent(delai: u64, url: &str) -> Result<ureq::Agent, Panne> {
-    let tls = url.starts_with("https:");
+fn agent(delai: u64, url: &Url) -> Result<ureq::Agent, Panne> {
+    let tls = url.texte().starts_with("https:");
     let d = Some(Duration::from_secs(delai));
     let mut c = ureq::Agent::config_builder()
         .proxy(mandataire(url)?)
@@ -436,34 +437,38 @@ fn coupee(lus: usize, attendu: Option<u64>) -> Panne {
     Panne::brute(Classe::Reseau, message)
 }
 
-/// L'adresse d'un `Location` de redirection, lue depuis l'adresse demandée.
-fn joindre(base: &str, loc: &str) -> String {
+/// L'adresse d'un `Location` de redirection (une reponse du tiers), lue depuis l'adresse demandée ; une adresse qui ne
+/// commence pas par `http://` ou `https://` se refuse.
+fn joindre(base: &Url, loc: &str) -> socle::echec::R<Url> {
     let loc = loc.replace(' ', "%20");
-    if let Some(i) = loc.find("://") {
-        if loc[..i].chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)) {
-            return loc;
+    let jointe = 'j: {
+        if let Some(i) = loc.find("://") {
+            if loc[..i].chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)) {
+                break 'j loc;
+            }
         }
-    }
-    let (schema, reste) = match base.split_once("://") {
-        Some((s, r)) => (s, r),
-        None => return loc,
+        let (schema, reste) = match base.texte().split_once("://") {
+            Some((s, r)) => (s, r),
+            None => break 'j loc,
+        };
+        if let Some(l) = loc.strip_prefix("//") {
+            break 'j format!("{}://{}", schema, l);
+        }
+        let (autorite, chemin) = match reste.find(['/', '?']) {
+            Some(i) => (&reste[..i], &reste[i..]),
+            None => (reste, ""),
+        };
+        if loc.starts_with('/') {
+            break 'j format!("{}://{}{}", schema, autorite, loc);
+        }
+        let chemin = avant(chemin, &['?', '#']);
+        let dossier = match chemin.rfind('/') {
+            Some(i) => &chemin[..=i],
+            None => "/",
+        };
+        format!("{}://{}{}{}", schema, autorite, dossier, loc)
     };
-    if let Some(l) = loc.strip_prefix("//") {
-        return format!("{}://{}", schema, l);
-    }
-    let (autorite, chemin) = match reste.find(['/', '?']) {
-        Some(i) => (&reste[..i], &reste[i..]),
-        None => (reste, ""),
-    };
-    if loc.starts_with('/') {
-        return format!("{}://{}{}", schema, autorite, loc);
-    }
-    let chemin = avant(chemin, &['?', '#']);
-    let dossier = match chemin.rfind('/') {
-        Some(i) => &chemin[..=i],
-        None => "/",
-    };
-    format!("{}://{}{}{}", schema, autorite, dossier, loc)
+    Url::lire(&jointe)
 }
 
 fn en_tetes_de(parts: &http::response::Parts) -> Entetes {
@@ -485,7 +490,7 @@ pub fn entete<'a>(e: &'a Entetes, nom: &str) -> Option<&'a str> {
 
 /// Ce qu'on envoie : une requete du guide.
 pub struct Requete<'a> {
-    pub url: &'a str,
+    pub url: &'a Url,
     pub jeton: Option<&'a str>,
     pub donnees: Option<&'a [u8]>,
     pub content_type: Option<&'a str>,
@@ -504,7 +509,7 @@ pub struct Requete<'a> {
 
 impl<'a> Requete<'a> {
     /// Un GET de `url`, sans jeton, sans corps ni en-tete de plus, qui demande `gzip`.
-    pub fn get(url: &'a str, delai: u64) -> Requete<'a> {
+    pub fn get(url: &'a Url, delai: u64) -> Requete<'a> {
         Requete { url, jeton: None, donnees: None, content_type: None, corps_gzip: false, post: false, delai, entetes: &[], sans_gzip: false, methode: None }
     }
 }
@@ -512,8 +517,8 @@ impl<'a> Requete<'a> {
 /// Le corps de la reponse (decompresse si `Content-Encoding: gzip`) et ses
 /// en-tetes ; une panne sinon (`Panne::Statut` pour un statut hors 2xx).
 pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
-    let https = r.url.starts_with("https:");
-    let mut url = r.url.to_string();
+    let https = r.url.texte().starts_with("https:");
+    let mut url = r.url.clone();
     let mut donnees = r.donnees;
     let mut methode = r.methode;
     let mut post = r.post || methode.is_some() || donnees.is_some_and(|d| !d.is_empty());
@@ -525,7 +530,7 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
             None if post => "POST",
             None => "GET",
         };
-        let mut b = http::Request::builder().method(verbe).uri(&url);
+        let mut b = http::Request::builder().method(verbe).uri(url.texte());
         if !r.sans_gzip {
             b = b.header("Accept-Encoding", "gzip");
         }
@@ -545,7 +550,7 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
         }
         // Le jeton ne suit une redirection que vers le meme hote.
         if let Some(j) = r.jeton {
-            if sauts == 0 || meme_hote(r.url, &url) {
+            if sauts == 0 || meme_hote(r.url.texte(), url.texte()) {
                 b = b.header("Authorization", format!("DSNLogin jeton={}", j));
             }
         }
@@ -570,7 +575,7 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
         };
         match (suite, loc) {
             (true, Some(l)) => {
-                url = joindre(&url, &l);
+                url = joindre(&url, &l).map_err(|e| Panne::brute(Classe::Illisible, format!("HTTP {} : adresse de redirection illisible ({})", code, e.phrase)))?;
                 if post {
                     post = false;
                     methode = None;
@@ -614,31 +619,30 @@ fn debut_du_corps(corps: Result<Vec<u8>, Box<Panne>>, n: usize) -> String {
 }
 
 /// Une panne d'appel en `Organisme`.
-fn en_erreur_api(url: &str, p: Panne) -> EchecApi {
+fn en_erreur_api(url: &Url, p: Panne) -> EchecApi {
     match p {
         Panne::Statut { code, corps } => {
-            EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("sur {}", sans_secret(url)), Some(debut_du_corps(corps, 400))), Some(code as i64))
+            EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("sur {}", sans_secret(url.texte())), Some(debut_du_corps(corps, 400))), Some(code as i64))
         }
-        Panne::Reseau(r) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url), r), Some(0)),
+        Panne::Reseau(r) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url.texte()), r), Some(0)),
         brute => echec_brut(brute),
     }
 }
 
 /// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `Organisme`.
-pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), EchecApi> {
+pub fn appeler(url: &Url, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete { jeton, ..Requete::get(url, DELAI_APPEL) };
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
 /// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures de Paris).
-pub fn consulter(base: &str, jeton: Option<&str>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
-    let mut url = base.to_string();
-    url.push_str(&horodatage(debut));
+pub fn consulter(base: &Url, jeton: Option<&str>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
+    let mut suite = horodatage(debut);
     if let Some(fin) = fin {
-        url.push('/');
-        url.push_str(&horodatage(fin));
+        suite.push('/');
+        suite.push_str(&horodatage(fin));
     }
-    appeler(&url, jeton).map(|(corps, _)| corps)
+    appeler(&base.joindre(&suite), jeton).map(|(corps, _)| corps)
 }
 
 /// LE DECLARANT QUI S'AUTHENTIFIE : le SIRET, le nom et le prenom du compte ouvert pour le service (vides : la fiche ne
@@ -677,7 +681,7 @@ pub fn declarant(ent: &droit::fiche::ChampsEntreprise) -> Identite {
 /// Ce qu'une authentification envoie : le declarant inscrit au service, le mot de passe deja prepare par l'appelant, le
 /// service, et le jeton d'une session deja ouverte.
 pub struct Authentification<'a> {
-    pub url: &'a str,
+    pub url: &'a Url,
     pub declarant: &'a Identite,
     pub motdepasse: Option<&'a str>,
     /// La variable d'environnement que le refus nomme quand le mot de passe manque.
@@ -752,7 +756,7 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,
 /// `Content-Encoding: gzip`, jeton DSNLogin. `forme` dit comment une panne se
 /// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`).
-pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
+pub fn depot(url: &Url, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
         jeton: Some(jeton),
         donnees: Some(corps_gzip),
@@ -773,9 +777,9 @@ pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64)
             },
             ("dsn", Panne::Reseau(r)) => EchecApi::nouveau(Classe::DepotRefuse, format!("Pas de reponse du point de depot : {}", r), None),
             (_, Panne::Statut { code, corps }) => {
-                EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("au depot sur {}", sans_secret(url)), Some(debut_du_corps(corps, 400))), None)
+                EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("au depot sur {}", sans_secret(url.texte())), Some(debut_du_corps(corps, 400))), None)
             }
-            (_, Panne::Reseau(r)) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url), r), None),
+            (_, Panne::Reseau(r)) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url.texte()), r), None),
             (_, brute) => echec_brut(brute),
         })
 }

@@ -193,12 +193,13 @@ impl Modele {
 }
 
 /// Lit le fichier `chemin` (UTF-8) et le découpe.
-pub fn lire_fichier(chemin: &str) -> Result<Modele, Refus> {
+pub fn lire_fichier(chemin: &std::path::Path) -> Result<Modele, Refus> {
+    let dit = chemin.to_string_lossy();
     let octets = std::fs::read(chemin)
-        .map_err(|e| Refus::illisible(format!("modèle illisible : {} : {}", chemin, e)))?;
+        .map_err(|e| Refus::illisible(format!("modèle illisible : {} : {}", dit, e)))?;
     let texte = String::from_utf8(octets)
-        .map_err(|e| Refus::illisible(format!("modèle illisible : {} n'est pas de l'UTF-8 ({})", chemin, e.utf8_error())))?;
-    lire_modele(&texte, chemin)
+        .map_err(|e| Refus::illisible(format!("modèle illisible : {} n'est pas de l'UTF-8 ({})", dit, e.utf8_error())))?;
+    lire_modele(&texte, &dit)
 }
 
 // ---------------------------------------------------------------------------

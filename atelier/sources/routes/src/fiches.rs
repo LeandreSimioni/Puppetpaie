@@ -691,7 +691,7 @@ pub(crate) struct DejaDeclare {
     pub(crate) au: Option<socle::mois::Mois>,
 }
 
-fn usages_declares(ctx: &Contexte, rubrique: Option<&str>, valeur: Option<&str>) -> R<DejaDeclare> {
+fn usages_declares(ctx: &Contexte, rubrique: Option<droit::natures::RubriqueDeLaNorme>, valeur: Option<&str>) -> R<DejaDeclare> {
     let (mut n, mut mois) = (0usize, Vec::<socle::mois::Mois>::new());
     if let (Some(rubrique), Some(valeur)) = (rubrique, valeur) {
         for dossier in [pieces_importees(ctx), ctx.racine.join("sorties")] {
@@ -1024,7 +1024,8 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
     html.push(("questionnaire", html_echapper(&q)));
     html.push(("mailto", html_echapper(&lien)));
     let message = Message {
-        cle: format!("fiche-{}", code),
+        // Celui a qui sa fiche est demandee n'en a pas encore : la demande se retrouve par son code, au journal.
+        pour: (),
         nom: match &prenom {
             Some(p) => p.clone(),
             None => adresse.clone(),

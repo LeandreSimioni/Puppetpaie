@@ -146,18 +146,13 @@ fn cle_de(genre: &str, chemin: &Path) -> String {
         let r = r.last().expect("registre ouvert");
         for (nom, base) in [("racine", &r.racine), ("code", &r.code)] {
             if let Some(rel) = sous(chemin, base) {
-                return format!("{} {}:{}", genre, nom, chemin_en_barres(rel));
+                // La cle d'une lecture nomme aussi la base elle-meme (`dossier? racine:`), qu'aucun chemin relatif ne
+                // nomme : elle s'ecrit par l'ecriture des chemins relatifs, sans en etre un.
+                return format!("{} {}:{}", genre, nom, CheminRelatif::en_barres(rel));
             }
         }
         format!("{} abs:{}", genre, chemin.to_string_lossy())
     })
-}
-
-/// UN CHEMIN RELATIF NOTE S'ECRIT AVEC DES BARRES DROITES, sur tous les systemes : la saisie du mois
-/// se reconnait dans les entrees sous `racine:engagements/AAAA-MM.json` (`engagement::empreinte`) : une cle notee avec la barre de
-/// Windows ne s'y retrouverait pas. `chemin_de` la relit telle quelle : Windows accepte la barre droite.
-fn chemin_en_barres(rel: &Path) -> String {
-    rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
 }
 
 /// Le genre et le chemin absolu d'une entree notee, pour la relire.
@@ -255,10 +250,6 @@ impl<S: TryFrom<String, Error = crate::echec::Echec>> LectureDatee<S> {
     }
 }
 
-pub fn sha256_hex(octets: &[u8]) -> String {
-    Sha256::digest(octets).iter().map(|o| format!("{:02x}", o)).collect()
-}
-
 /// Ce que vaut un fichier pour l'empreinte : le hachage de son contenu, `absent` s'il n'existe pas, `illisible` (et la
 /// raison) s'il ne se lit pas.
 pub fn empreinte_fichier(chemin: &Path) -> String {
@@ -281,7 +272,7 @@ fn empreinte_des_octets(chemin: &Path, octets: Vec<u8>) -> String {
             return e.clone();
         }
     }
-    let e = sha256_hex(&octets);
+    let e = Empreinte::des_octets(&octets).to_string();
     ranger(cache, chemin.to_path_buf(), (octets, e.clone()));
     e
 }
@@ -306,7 +297,7 @@ pub fn empreinte_dossier(chemin: &Path) -> String {
 
 fn empreinte_des_noms(noms: &std::io::Result<Vec<String>>) -> String {
     match noms {
-        Ok(n) => sha256_hex(n.join("\n").as_bytes()),
+        Ok(n) => Empreinte::des_octets(n.join("\n").as_bytes()).to_string(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => "absent".into(),
         Err(e) => format!("illisible : {}", e),
     }
@@ -698,12 +689,363 @@ pub fn modele_de(nom: &str, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
     dossier_du_code().join("modeles").join(nom)
 }
 
-/// Le nom d'un chemin, ou son texte entier s'il n'en a pas.
-pub fn nom_du(chemin: &std::path::Path) -> String {
-    match chemin.file_name() {
-        Some(n) => n.to_string_lossy().into_owned(),
-        None => chemin.to_string_lossy().into_owned(),
+/// LE NOM D'UN FICHIER, seul, sans son dossier : le fichier parti (`Contrat_ALBARET_AL3.26.01_Mai2026.pdf`), le modele
+/// d'un contrat (`contrat-cddu.modele`), l'archive d'une version (`puppetpaie-2026.11.12-windows.zip`). Il n'est pas
+/// vide, ne porte ni `/`, ni `\`, ni caractere nul, et n'est ni `.` ni `..` : joint a un dossier, il y reste. Il s'ecrit
+/// tel quel et se trie par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct NomDeFichier(std::borrow::Cow<'static, str>);
+
+impl NomDeFichier {
+    /// Le nom `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<NomDeFichier> {
+        if !NomDeFichier::a_sa_forme(texte) {
+            return Err(crate::refus!("{} n'est pas un nom de fichier : un nom seul, sans dossier.", repr(texte)));
+        }
+        Ok(NomDeFichier(std::borrow::Cow::Owned(texte.to_string())))
     }
+
+    const fn a_sa_forme(texte: &str) -> bool {
+        let o = texte.as_bytes();
+        if o.is_empty() || matches!(o, b"." | b"..") {
+            return false;
+        }
+        let mut i = 0;
+        while i < o.len() {
+            if matches!(o[i], b'/' | b'\\' | 0) {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+
+    /// LE NOM QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
+    pub const fn du_moteur(nom: &'static str) -> NomDeFichier {
+        assert!(NomDeFichier::a_sa_forme(nom), "nom de fichier mal forme");
+        NomDeFichier(std::borrow::Cow::Borrowed(nom))
+    }
+
+    /// LE NOM DU FICHIER `chemin` ; un chemin qui ne finit pas par un nom (`/`, `..`) se refuse. Un nom qui n'est pas en
+    /// UTF-8 garde son caractere illisible (`to_string_lossy`).
+    pub fn du(chemin: &Path) -> R<NomDeFichier> {
+        match chemin.file_name() {
+            Some(n) => NomDeFichier::lire(&n.to_string_lossy()),
+            None => Err(crate::refus!("{} ne nomme pas un fichier.", repr(&chemin.to_string_lossy()))),
+        }
+    }
+
+    /// Le nom tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NomDeFichier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<Path> for NomDeFichier {
+    fn as_ref(&self) -> &Path {
+        Path::new(self.texte())
+    }
+}
+
+impl TryFrom<String> for NomDeFichier {
+    type Error = Echec;
+    fn try_from(s: String) -> R<NomDeFichier> {
+        NomDeFichier::lire(&s)
+    }
+}
+
+impl From<NomDeFichier> for String {
+    fn from(n: NomDeFichier) -> String {
+        n.0.into_owned()
+    }
+}
+
+/// UN CHEMIN RELATIF a une racine que son champ dit (la compagnie, le dossier trie d'un import) :
+/// `retours/depots/20260203-100000_depot-dsn_202601.txt`, `sorties/2026-06/DSN_….dsn`. Il n'est pas vide, n'a pas de
+/// racine, et chacun de ses noms est un `NomDeFichier` (ni `.` ni `..`) : joint a sa racine, il y reste. IL S'ECRIT AVEC
+/// DES BARRES DROITES, sur tous les systemes : une cle notee avec la barre de Windows ne se retrouverait pas
+/// (`racine:engagements/AAAA-MM.json`, `engagement::empreinte`), et Windows accepte la barre droite pour le rejoindre.
+/// Il s'ecrit tel quel et se trie par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CheminRelatif(std::borrow::Cow<'static, str>);
+
+impl CheminRelatif {
+    /// Le chemin `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CheminRelatif> {
+        if !CheminRelatif::a_sa_forme(texte) {
+            return Err(crate::refus!("{} n'est pas un chemin relatif : des noms separes par des barres droites.", repr(texte)));
+        }
+        Ok(CheminRelatif(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// Des noms (`NomDeFichier::a_sa_forme`) separes par des barres droites.
+    const fn a_sa_forme(texte: &str) -> bool {
+        let o = texte.as_bytes();
+        let (mut debut, mut i) = (0, 0);
+        while i <= o.len() {
+            if i == o.len() || o[i] == b'/' {
+                let n = i - debut;
+                if n == 0 || (n == 1 && o[debut] == b'.') || (n == 2 && o[debut] == b'.' && o[debut + 1] == b'.') {
+                    return false;
+                }
+                debut = i + 1;
+            } else if matches!(o[i], b'\\' | 0) {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+
+    /// LE CHEMIN QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
+    pub const fn du_moteur(chemin: &'static str) -> CheminRelatif {
+        assert!(CheminRelatif::a_sa_forme(chemin), "chemin relatif mal forme");
+        CheminRelatif(std::borrow::Cow::Borrowed(chemin))
+    }
+
+    /// LE CHEMIN DE `chemin` SOUS `racine` ; un chemin qui n'y est pas, ou qui est la racine elle-meme, se refuse.
+    pub fn sous(racine: &Path, chemin: &Path) -> R<CheminRelatif> {
+        match sous(chemin, racine) {
+            Some(rel) => CheminRelatif::du(rel),
+            None => Err(crate::refus!("{} n'est pas sous {}.", repr(&chemin.to_string_lossy()), repr(&racine.to_string_lossy()))),
+        }
+    }
+
+    /// LE CHEMIN RELATIF `rel`, ecrit avec des barres droites ; un chemin qui a une racine, ou qui remonte (`..`), se
+    /// refuse.
+    pub fn du(rel: &Path) -> R<CheminRelatif> {
+        CheminRelatif::lire(&CheminRelatif::en_barres(rel))
+    }
+
+    /// Le chemin relatif `rel`, ecrit avec des barres droites ; un nom qui n'est pas en UTF-8 garde son caractere
+    /// illisible (`to_string_lossy`).
+    pub(crate) fn en_barres(rel: &Path) -> String {
+        rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
+    }
+
+    /// LE DOSSIER DES PIECES DU MOIS `mois` : `sorties/AAAA-MM`.
+    pub fn sorties(mois: crate::mois::Mois) -> CheminRelatif {
+        CheminRelatif(std::borrow::Cow::Owned(format!("sorties/{}", mois)))
+    }
+
+    /// Ce chemin, suivi du nom `nom`.
+    pub fn joint(&self, nom: &NomDeFichier) -> CheminRelatif {
+        CheminRelatif(std::borrow::Cow::Owned(format!("{}/{}", self.0, nom)))
+    }
+
+    /// Le chemin du dossier qui le contient ; `None` pour un nom seul, a la racine.
+    pub fn parent(&self) -> Option<CheminRelatif> {
+        self.0.rsplit_once('/').map(|(d, _)| CheminRelatif(std::borrow::Cow::Owned(d.to_string())))
+    }
+
+    /// Son dernier nom : celui du fichier.
+    pub fn nom(&self) -> NomDeFichier {
+        let nom = match self.0.rsplit_once('/') {
+            Some((_, n)) => n,
+            None => &self.0,
+        };
+        NomDeFichier(std::borrow::Cow::Owned(nom.to_string()))
+    }
+
+    /// Le chemin tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<NomDeFichier> for CheminRelatif {
+    fn from(n: NomDeFichier) -> CheminRelatif {
+        CheminRelatif(n.0)
+    }
+}
+
+impl std::fmt::Display for CheminRelatif {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<Path> for CheminRelatif {
+    fn as_ref(&self) -> &Path {
+        Path::new(self.texte())
+    }
+}
+
+impl TryFrom<String> for CheminRelatif {
+    type Error = Echec;
+    fn try_from(s: String) -> R<CheminRelatif> {
+        CheminRelatif::lire(&s)
+    }
+}
+
+impl From<CheminRelatif> for String {
+    fn from(c: CheminRelatif) -> String {
+        c.0.into_owned()
+    }
+}
+
+/// L'EMPREINTE D'UN CONTENU : son SHA-256 entier, 64 caracteres hexadecimaux minuscules (une source deposee, une
+/// archive de mise a jour, un exercice clos, un etat garde). Elle ne se fait que par `des_octets` (ou `du_hachage`, pour
+/// un contenu hache par morceaux) ; lue, elle refuse une autre forme. Elle s'ecrit telle quelle et se trie par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Empreinte(String);
+
+impl Empreinte {
+    /// L'empreinte des octets `octets`.
+    pub fn des_octets(octets: &[u8]) -> Empreinte {
+        Empreinte::du_hachage(Sha256::new_with_prefix(octets))
+    }
+
+    /// L'empreinte d'un contenu hache par morceaux dans `h`.
+    pub fn du_hachage(h: Sha256) -> Empreinte {
+        Empreinte(hexa(&h.finalize()))
+    }
+
+    /// L'empreinte du contenu du fichier `chemin`, ou la panne qui empeche de le lire.
+    pub fn du_fichier(chemin: &Path) -> R<Empreinte> {
+        std::fs::read(chemin).map(|o| Empreinte::des_octets(&o)).map_err(|e| crate::echec::du_disque(chemin, &e))
+    }
+
+    /// L'empreinte `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<Empreinte> {
+        if !est_hexa(texte, 64) {
+            return Err(crate::refus!("{} n'est pas une empreinte : 64 caracteres hexadecimaux minuscules.", repr(texte)));
+        }
+        Ok(Empreinte(texte.to_string()))
+    }
+
+    /// SES 16 PREMIERS CARACTERES : ce que le journal ecrit d'un fichier parti.
+    pub fn courte(&self) -> EmpreinteCourte {
+        EmpreinteCourte(self.0[..16].to_string())
+    }
+
+    /// L'empreinte telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Empreinte {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for Empreinte {
+    type Error = Echec;
+    fn try_from(s: String) -> R<Empreinte> {
+        Empreinte::lire(&s)
+    }
+}
+
+impl From<Empreinte> for String {
+    fn from(e: Empreinte) -> String {
+        e.0
+    }
+}
+
+/// L'EMPREINTE COURTE D'UN CONTENU : les 16 premiers caracteres de son SHA-256, ce que le journal des envois ecrit d'un
+/// fichier parti et d'un modele fige, ce qui reconnait une paie importee deja comparee, une DPAE due, l'etat d'un mois.
+/// Elle ne se fait que par `Empreinte::courte` ; lue, elle refuse une autre forme ; on n'en retrouve pas l'entiere.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct EmpreinteCourte(String);
+
+impl EmpreinteCourte {
+    /// L'empreinte courte `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<EmpreinteCourte> {
+        if !est_hexa(texte, 16) {
+            return Err(crate::refus!("{} n'est pas une empreinte courte : 16 caracteres hexadecimaux minuscules.", repr(texte)));
+        }
+        Ok(EmpreinteCourte(texte.to_string()))
+    }
+
+    /// L'empreinte courte telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for EmpreinteCourte {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for EmpreinteCourte {
+    type Error = Echec;
+    fn try_from(s: String) -> R<EmpreinteCourte> {
+        EmpreinteCourte::lire(&s)
+    }
+}
+
+impl From<EmpreinteCourte> for String {
+    fn from(e: EmpreinteCourte) -> String {
+        e.0
+    }
+}
+
+/// Les octets `octets` en hexadecimal minuscule : l'ecriture d'une empreinte.
+pub fn hexa(octets: &[u8]) -> String {
+    octets.iter().map(|o| format!("{:02x}", o)).collect()
+}
+
+/// `texte` est-il fait de `longueur` caracteres hexadecimaux minuscules : la forme d'une empreinte ecrite.
+pub fn est_hexa(texte: &str, longueur: usize) -> bool {
+    texte.len() == longueur && texte.bytes().all(|o| matches!(o, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// CE QUI S'ECRIT EN CHEMIN dans une reponse : un chemin du disque, absent ou non, seul ou en liste.
+pub trait EcritEnChemin {
+    fn ecrire<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error>;
+}
+
+impl EcritEnChemin for PathBuf {
+    fn ecrire<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string_lossy())
+    }
+}
+
+impl<C: EcritEnChemin> EcritEnChemin for Option<C> {
+    fn ecrire<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Some(c) => c.ecrire(s),
+            None => s.serialize_none(),
+        }
+    }
+}
+
+impl<C: EcritEnChemin> EcritEnChemin for Vec<C> {
+    fn ecrire<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        struct Un<'a, C>(&'a C);
+        impl<C: EcritEnChemin> serde::Serialize for Un<'_, C> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                self.0.ecrire(s)
+            }
+        }
+        let mut seq = s.serialize_seq(Some(self.len()))?;
+        for c in self {
+            seq.serialize_element(&Un(c))?;
+        }
+        seq.end()
+    }
+}
+
+/// UN CHEMIN DU DISQUE RENDU PAR UNE ROUTE (`#[serde(serialize_with = "socle::fichiers::ecrire_chemin")]`) : son texte,
+/// un nom qui n'est pas en UTF-8 gardant son caractere illisible (`to_string_lossy`), pour que la reponse parte quand
+/// meme : la compagnie peut etre rangee dans un tel dossier.
+pub fn ecrire_chemin<C: EcritEnChemin, S: serde::Serializer>(c: &C, s: S) -> Result<S::Ok, S::Error> {
+    c.ecrire(s)
 }
 
 #[cfg(test)]

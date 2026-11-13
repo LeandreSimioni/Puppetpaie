@@ -21,6 +21,7 @@ use serde::Serialize;
 use droit::contexte::{Contexte, IdSalarie};
 use socle::echec::R;
 use socle::echec::Classe;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::paris::{InstantOuJour, Moment};
 use socle::piece::format::Jjmmaaaa;
@@ -47,12 +48,12 @@ fn reel(b: &Bilan) -> bool {
 struct Atteste {
     flux: String,
     bilan: Bilan,
-    pieces: Vec<String>,
+    pieces: Vec<NomDeFichier>,
     deja: bool,
 }
 
 /// Les fichiers d'un dossier des retours dont le nom passe `garder`, tries ; aucun sans dossier.
-fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(String, PathBuf)>> {
+fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(NomDeFichier, PathBuf)>> {
     let lecture = match std::fs::read_dir(dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -61,8 +62,8 @@ fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(
     let mut noms = Vec::new();
     for e in lecture {
         let e = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?;
-        let nom = e.file_name().to_string_lossy().into_owned();
-        if garder(&nom) && e.path().is_file() {
+        let nom = NomDeFichier::du(&e.path())?;
+        if garder(nom.texte()) && e.path().is_file() {
             noms.push((nom, e.path()));
         }
     }
@@ -74,7 +75,7 @@ fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(
 fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
     let dossier = ctx.racine.join(crate::retours::RETOURS);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-    let mut par_flux: Vec<(String, Vec<(Bilan, String)>)> = vec![];
+    let mut par_flux: Vec<(String, Vec<(Bilan, NomDeFichier)>)> = vec![];
     let mut illisibles: Vec<String> = vec![];
     for (nom, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
         let octets = match std::fs::read(&p) {
@@ -105,7 +106,7 @@ fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
     let mut out: Vec<Atteste> = Vec::new();
     for (flux, couples) in par_flux {
         let bilans: Vec<Bilan> = couples.iter().map(|(b, _)| b.clone()).collect();
-        let mut pieces: Vec<String> = couples.into_iter().map(|(_, n)| n).collect();
+        let mut pieces: Vec<NomDeFichier> = couples.into_iter().map(|(_, n)| n).collect();
         pieces.sort();
         // Chaque flux a au moins un bilan : il ne s'y range que par lui.
         let Some(bilan) = crate::retours::fusionner_bilans(&bilans) else { continue };
@@ -127,7 +128,7 @@ pub struct DepotVu {
     pub accepte: bool,
     pub verdict_connu: bool,
     pub logiciel: Option<String>,
-    pub pieces: Vec<String>,
+    pub pieces: Vec<NomDeFichier>,
     pub deja: bool,
 }
 
@@ -285,7 +286,7 @@ pub struct DpaeAttestee {
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub quand: Option<Moment>,
     pub mois: Option<Mois>,
-    pub piece: String,
+    pub piece: NomDeFichier,
     pub embauches: Vec<EmbaucheAttestee>,
 }
 
@@ -323,7 +324,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
                     .and_then(|(j, (hh, mm))| Moment::a_paris(j, hh, mm, 0).filter(|m| m.jour_de_paris() == j && m.seconde_du_jour_de_paris() == hh * 3_600 + mm * 60));
             }
         }
-        let Some(flux) = flux_du_nom(&nom) else { continue };
+        let Some(flux) = flux_du_nom(nom.texte()) else { continue };
         if !embauches.is_empty() {
             sortie.push(DpaeAttestee { flux: flux.to_string(), quand, mois, piece: nom.clone(), embauches });
         }

@@ -10,14 +10,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use envois::drive::{Depose, Distant, Drive, ErreurGoogle};
-use compagnie::sauvegarde::empreinte;
+use envois::drive::{Depose, Distant, Drive, EmpreinteMd5, ErreurGoogle, IdDrive};
 
 pub struct FichierDrive {
-    pub id: String,
-    pub parent: String,
+    pub id: IdDrive,
+    pub parent: IdDrive,
     pub nom: String,
-    pub md5: Option<String>,
+    pub md5: Option<EmpreinteMd5>,
     pub contenu: Vec<u8>,
 }
 
@@ -33,7 +32,7 @@ pub struct Panne {
 pub struct FauxDrive {
     pub compte: Option<String>,
     /// id -> (parent, chemin complet depuis la racine)
-    dossiers: Vec<(String, String, String)>,
+    dossiers: Vec<(IdDrive, IdDrive, String)>,
     pub fichiers: Vec<FichierDrive>,
     /// Chaque appel, en une ligne : `chemin a/b`, `lister a/b`, `televerser a/b/nom connu=ID|-`.
     pub journal: Vec<String>,
@@ -52,25 +51,25 @@ impl FauxDrive {
         FauxDrive { compte: Some("compte@exemple.invalid".into()), ..Default::default() }
     }
 
-    fn prochain(&mut self, lettre: &str) -> String {
+    fn prochain(&mut self, lettre: &str) -> IdDrive {
         self.suivant += 1;
-        format!("{}{}", lettre, self.suivant)
+        IdDrive::lire(&format!("{}{}", lettre, self.suivant)).unwrap()
     }
 
-    pub fn id_du_dossier(&self, chemin: &str) -> String {
+    pub fn id_du_dossier(&self, chemin: &str) -> IdDrive {
         self.dossiers.iter().find(|(_, _, c)| c == chemin).map(|(i, _, _)| i.clone()).unwrap_or_else(|| panic!("pas de dossier {}", chemin))
     }
 
-    fn chemin_de(&self, id: &str) -> String {
+    fn chemin_de(&self, id: &IdDrive) -> String {
         self.dossiers.iter().find(|(i, _, _)| i == id).map(|(_, _, c)| c.clone()).unwrap_or_else(|| panic!("dossier inconnu : {}", id))
     }
 
     /// Un fichier deja la (hors de toute sauvegarde) : dans le dossier `chemin` (cree au besoin).
-    pub fn deposer(&mut self, chemin: &str, nom: &str, contenu: &[u8], avec_md5: bool) -> String {
+    pub fn deposer(&mut self, chemin: &str, nom: &str, contenu: &[u8], avec_md5: bool) -> IdDrive {
         let segments: Vec<&str> = chemin.split('/').collect();
         let parent = self.chemin(&segments).unwrap();
         let id = self.prochain("F");
-        let md5 = avec_md5.then(|| md5_de(contenu));
+        let md5 = avec_md5.then(|| EmpreinteMd5::des_octets(contenu));
         self.fichiers.push(FichierDrive { id: id.clone(), parent, nom: nom.into(), md5, contenu: contenu.to_vec() });
         id
     }
@@ -95,7 +94,7 @@ impl FauxDrive {
 
     /// Un second dossier de meme chemin que `chemin` (qui doit exister) : ce que deux postes qui sauvegardent en meme
     /// temps peuvent laisser dans le vrai Drive.
-    pub fn dossier_homonyme(&mut self, chemin: &str) -> String {
+    pub fn dossier_homonyme(&mut self, chemin: &str) -> IdDrive {
         let parent = self.dossiers.iter().find(|(_, _, c)| c == chemin).map(|(_, p, _)| p.clone()).unwrap_or_else(|| panic!("pas de dossier {}", chemin));
         let id = self.prochain("D");
         self.dossiers.push((id.clone(), parent, chemin.to_string()));
@@ -124,9 +123,9 @@ impl FauxDrive {
     }
 }
 
-pub fn md5_de(octets: &[u8]) -> String {
-    use md5::{Digest, Md5};
-    Md5::digest(octets).iter().map(|b| format!("{:02x}", b)).collect()
+/// Le lien qu'il donne d'un fichier depose : une adresse qui ne mene nulle part.
+fn lien(id: &IdDrive) -> socle::garde_reseau::Url {
+    socle::garde_reseau::Url::lire(&format!("http://faux-drive.invalid/lien/{}", id)).unwrap()
 }
 
 impl Drive for FauxDrive {
@@ -134,13 +133,13 @@ impl Drive for FauxDrive {
         self.compte.clone()
     }
 
-    fn chemin(&mut self, noms: &[&str]) -> Result<String, ErreurGoogle> {
+    fn chemin(&mut self, noms: &[&str]) -> Result<IdDrive, ErreurGoogle> {
         let cle = noms.join("/");
         self.journal.push(format!("chemin {}", cle));
         if let Some(e) = self.panne("chemin", &cle) {
             return Err(e);
         }
-        let mut parent = "root".to_string();
+        let mut parent = IdDrive::RACINE;
         let mut complet = String::new();
         for nom in noms {
             if !complet.is_empty() {
@@ -159,7 +158,7 @@ impl Drive for FauxDrive {
         Ok(parent)
     }
 
-    fn lister(&mut self, parent: &str) -> Result<BTreeMap<String, Distant>, ErreurGoogle> {
+    fn lister(&mut self, parent: &IdDrive) -> Result<BTreeMap<String, Distant>, ErreurGoogle> {
         let chemin = self.chemin_de(parent);
         self.journal.push(format!("lister {}", chemin));
         if let Some(e) = self.panne("lister", &chemin) {
@@ -171,16 +170,16 @@ impl Drive for FauxDrive {
             }
         }
         let mut l = BTreeMap::new();
-        for f in self.fichiers.iter().filter(|f| f.parent == parent) {
+        for f in self.fichiers.iter().filter(|f| f.parent == *parent) {
             l.insert(f.nom.clone(), Distant { id: f.id.clone(), md5: f.md5.clone(), octets: Some(f.contenu.len() as u64) });
         }
         Ok(l)
     }
 
-    fn televerser(&mut self, fichier: &Path, parent: &str, nom: Option<&str>, connu: Option<&Distant>) -> Result<Depose, ErreurGoogle> {
+    fn televerser(&mut self, fichier: &Path, parent: &IdDrive, nom: Option<&str>, connu: Option<&Distant>) -> Result<Depose, ErreurGoogle> {
         let nom = nom.map(str::to_string).unwrap_or_else(|| fichier.file_name().unwrap().to_string_lossy().into_owned());
         let chemin = format!("{}/{}", self.chemin_de(parent), nom);
-        self.journal.push(format!("televerser {} connu={}", chemin, connu.map(|c| c.id.as_str()).unwrap_or("-")));
+        self.journal.push(format!("televerser {} connu={}", chemin, connu.map(|c| c.id.texte()).unwrap_or("-")));
         for (n, p) in &self.effacer_au_televerser {
             if *n == nom {
                 let _ = std::fs::remove_file(p);
@@ -190,21 +189,21 @@ impl Drive for FauxDrive {
             return Err(e);
         }
         let contenu = std::fs::read(fichier).map_err(|e| ErreurGoogle::fichier(&e, fichier))?;
-        let md5 = if self.sans_md5 { None } else { Some(empreinte(fichier).unwrap()) };
+        let md5 = if self.sans_md5 { None } else { Some(EmpreinteMd5::du_fichier(fichier).unwrap()) };
         if let Some(c) = connu {
             let f = self.fichiers.iter_mut().find(|f| f.id == c.id).expect("`connu` doit exister dans le Drive");
-            assert_eq!(f.parent, parent, "on ne remplace qu'un fichier du dossier");
+            assert_eq!(f.parent, *parent, "on ne remplace qu'un fichier du dossier");
             f.contenu = contenu;
             f.md5 = md5;
-            return Ok(Depose { id: Some(f.id.clone()), nom: Some(nom), lien: Some(format!("lien/{}", f.id)), remplace: true });
+            return Ok(Depose { id: Some(f.id.clone()), nom: Some(nom), lien: Some(lien(&f.id)), remplace: true });
         }
         let id = self.prochain("F");
-        self.fichiers.push(FichierDrive { id: id.clone(), parent: parent.into(), nom: nom.clone(), md5, contenu });
-        Ok(Depose { id: Some(id.clone()), nom: Some(nom), lien: Some(format!("lien/{}", id)), remplace: false })
+        self.fichiers.push(FichierDrive { id: id.clone(), parent: parent.clone(), nom: nom.clone(), md5, contenu });
+        Ok(Depose { id: Some(id.clone()), nom: Some(nom), lien: Some(lien(&id)), remplace: false })
     }
 
-    fn sous_dossiers(&mut self, parent: &str) -> Result<Vec<(String, String)>, ErreurGoogle> {
-        let chemin = if parent == "root" { "root".to_string() } else { self.chemin_de(parent) };
+    fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<(String, IdDrive)>, ErreurGoogle> {
+        let chemin = if *parent == IdDrive::RACINE { IdDrive::RACINE.to_string() } else { self.chemin_de(parent) };
         self.journal.push(format!("sous_dossiers {}", chemin));
         if let Some(e) = self.panne("sous_dossiers", &chemin) {
             return Err(e);
@@ -217,8 +216,8 @@ impl Drive for FauxDrive {
             .collect())
     }
 
-    fn telecharger(&mut self, id: &str) -> Result<Vec<u8>, ErreurGoogle> {
-        let f = self.fichiers.iter().find(|f| f.id == id).unwrap_or_else(|| panic!("fichier inconnu : {}", id));
+    fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle> {
+        let f = self.fichiers.iter().find(|f| f.id == *id).unwrap_or_else(|| panic!("fichier inconnu : {}", id));
         let chemin = format!("{}/{}", self.chemin_de(&f.parent), f.nom);
         let contenu = f.contenu.clone();
         self.journal.push(format!("telecharger {}", chemin));

@@ -14,10 +14,9 @@ use serde::Serialize;
 use socle::date::Jour;
 
 use crate::avenant::valeurs_de_la_paie;
-use crate::bulletin::{identite_de, FORMAT, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
+use crate::bulletin::{chemin_texte, identite_de, FORMAT, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
 use droit::contexte::EntrepriseDuDocument;
 use engagement::calcul::Paie;
-use crate::conges_spectacles::chemin_texte;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, refus, APart, Classe, Echec, R};
 use crate::contrat_ecrit::ModeleDuContrat;
@@ -32,7 +31,7 @@ pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Docume
         police: None,
         style: Some(style),
         logo: identite_de(&ent.gabarits, "logo").map(|logo| forme::Logo {
-            chemin: chemin_texte(&logo),
+            chemin: chemin_texte(&logo).into(),
             largeur: LOGO_LARGEUR,
             marge_haut: LOGO_MARGE_HAUT,
             marge_droite: LOGO_MARGE_DROITE,

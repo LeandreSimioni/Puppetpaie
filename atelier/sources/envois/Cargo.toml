@@ -19,6 +19,8 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 # L'empreinte d'un fichier du journal ; le defi PKCE de l'autorisation Google.
 sha2 = { workspace = true }
+# L'empreinte MD5 que Drive publie pour chaque fichier (`drive::EmpreinteMd5`) : RustCrypto, sans options par defaut.
+md-5 = { version = "0.10", default-features = false }
 # Les aleas : la frontiere d'un message MIME, l'etat et le verificateur de l'autorisation Google.
 getrandom = { workspace = true }
 # Les retours DSN et DPAE sont du XML : lecture seule, Rust pur.

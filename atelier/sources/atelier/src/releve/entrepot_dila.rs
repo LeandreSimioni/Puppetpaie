@@ -190,7 +190,7 @@ fn agent(delai_global: Option<u64>, url: &str) -> R<ureq::Agent> {
     }
     c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
     // En essai, le garde-fou reseau : rien ne sort de la machine.
-    Ok(socle::garde_reseau::regler(c, url)?.build().into())
+    Ok(socle::garde_reseau::regler(c, &socle::garde_reseau::Url::lire(url)?)?.build().into())
 }
 
 impl Source for Reseau {

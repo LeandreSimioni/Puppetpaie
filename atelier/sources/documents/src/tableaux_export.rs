@@ -273,10 +273,10 @@ pub struct Tableau {
     pub donnees_personnelles: bool,
 }
 
-/// Le nom seul d'un fichier ecrit (`null` s'il n'est pas ecrit).
+/// Le nom seul d'un fichier ecrit (`null` s'il n'est pas ecrit) ; un chemin sans nom ne s'ecrit pas.
 pub fn nom_du_fichier<S: Serializer>(f: &Option<PathBuf>, s: S) -> Result<S::Ok, S::Error> {
-    match f.as_ref().and_then(|p| p.file_name()) {
-        Some(n) => s.serialize_str(&n.to_string_lossy()),
+    match f {
+        Some(p) => s.serialize_str(socle::fichiers::NomDeFichier::du(p).map_err(|e| serde::ser::Error::custom(e.phrase))?.texte()),
         None => s.serialize_none(),
     }
 }
@@ -539,7 +539,7 @@ struct FichierTableau<'a> {
     sources: &'a [String],
     donnees_personnelles: bool,
     format: &'a str,
-    fichier: Option<&'a str>,
+    fichier: Option<&'a socle::fichiers::NomDeFichier>,
 }
 
 /// Le tableau en JSON indente d'une espace.

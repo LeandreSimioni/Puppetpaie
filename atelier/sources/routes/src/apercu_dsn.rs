@@ -19,6 +19,7 @@ use declarations::dsn_lue::{ContratDeclare, DsnLue, Mesures, VersementLu};
 use documents::ecrire_documents::paies_aux_numeros_declares;
 use droit::contexte::Contexte;
 use droit::fiche::Lue as _;
+use droit::natures::{TypeDActivite, UniteDeMesure};
 use engagement::calcul::Paie;
 use envois::etats;
 use socle::date::Jour;
@@ -27,7 +28,8 @@ use socle::fichiers::repr;
 use socle::mois::Mois;
 use socle::num::{entier_lu, q2, Decimal};
 
-use crate::depots::{lire_octets, nom_du_chemin, resoudre};
+use crate::depots::{lire_octets, resoudre};
+use socle::fichiers::NomDeFichier;
 use crate::etapes::Moteur;
 use socle::ecran::Pastille;
 
@@ -120,13 +122,13 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     // Les mesures du travail remunere (type 01) que la DSN ecrit pour cette paie (`dsn::mesures_d_activite`).
     let (mut jours, mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
     for (t, valeur, code) in declarations::dsn::mesures_d_activite(p)? {
-        if t != "01" {
+        if t != TypeDActivite::TravailRemunere {
             continue;
         }
-        match code.as_str() {
-            "10" | "35" => heures += valeur,
-            "12" => jours += valeur,
-            "37" => cachets += valeur,
+        match code {
+            UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents => heures += valeur,
+            UniteDeMesure::Journee => jours += valeur,
+            UniteDeMesure::CachetsIsoles => cachets += valeur,
             _ => {}
         }
     }
@@ -407,11 +409,12 @@ fn remplacement_du_fichier(m: &mut Moteur, a: &DsnLue, mois: Mois) -> R<Remplace
 /// le recapitulatif et le test.
 #[derive(Debug, Serialize)]
 pub(crate) struct ApercuDsn {
-    pub(crate) fichier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub(crate) fichier: std::path::PathBuf,
     pub(crate) nom: String,
     pub(crate) description: String,
     pub(crate) mois: Mois,
-    pub(crate) nature_envoi: Option<String>,
+    pub(crate) nature_envoi: Option<droit::nature_declaration::EssaiOuReel>,
     pub(crate) reel: bool,
     pub(crate) signalement: bool,
     #[serde(rename = "nature")]
@@ -464,12 +467,12 @@ fn description(nom: &str, a: &DsnLue) -> String {
 pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
-    let a = declarations::dsn_lue::lire(&contenu, "")?;
+    let a = declarations::dsn_lue::lire(&contenu, None)?;
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
-    let empreinte = envois::journal::empreinte(&contenu);
+    let empreinte = socle::fichiers::Empreinte::des_octets(&contenu).courte();
     let deja = etats::deja_depose(&lignes, envois::journal::Acte::Dsn, &empreinte);
-    let nom = nom_du_chemin(&chemin);
+    let nom = NomDeFichier::du(std::path::Path::new(&chemin))?;
     let signalement = a.est_signalement();
     let mois = a.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}).", declarations::dsn_lue::SANS_MOIS)))?;
     let remplacement = if signalement { None } else { Some(remplacement_du_fichier(&mut m, &a, mois)?) };
@@ -494,11 +497,11 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         }
     };
     Ok(ApercuDsn {
-        description: description(&nom, &a),
-        fichier: chemin.clone(),
-        nom,
+        description: description(nom.texte(), &a),
+        fichier: std::path::PathBuf::from(&chemin),
+        nom: nom.into(),
         mois,
-        nature_envoi: a.nature_envoi.clone(),
+        nature_envoi: a.nature_envoi,
         reel: a.reel(),
         signalement,
         nature_declaration: a.nature()?.to_string(),

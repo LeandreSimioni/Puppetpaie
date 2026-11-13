@@ -457,7 +457,8 @@ pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -
     // puis l'en-tete `From` est remis avec son nom d'affichage.
     let (nu, rendu) = adresse_d_affichage(de);
     let message = crate::envoi::Message {
-        cle: ident.to_string(),
+        // La reponse va a la boite de la compagnie : personne a retrouver apres l'envoi.
+        pour: (),
         nom: nu.clone(),
         destinataire: a.to_string(),
         sujet: sujet.to_string(),

@@ -37,9 +37,9 @@ impl Courriel for Boite {
     }
 }
 
-fn message(dest: &str) -> Message {
+fn message(dest: &str) -> Message<()> {
     Message {
-        cle: dest.split('@').next().unwrap().into(),
+        pour: (),
         nom: "X".into(),
         destinataire: dest.into(),
         sujet: format!("Sujet pour {}", dest),

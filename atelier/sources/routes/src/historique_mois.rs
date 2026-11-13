@@ -32,6 +32,7 @@ use envois::journal::Ligne;
 use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 use socle::paris::Moment;
 
@@ -163,15 +164,6 @@ fn plur(n: usize, un: &'static str, plusieurs: &'static str) -> &'static str {
     if n > 1 { plusieurs } else { un }
 }
 
-/// Le chemin d'une piece, relatif a la compagnie (que la fenetre ouvre) ; une piece hors de la compagnie, par son chemin
-/// entier.
-fn relatif(racine: &Path, p: &Path) -> String {
-    if !p.starts_with(racine) {
-        return p.to_string_lossy().replace('\\', "/");
-    }
-    p.components().skip(racine.components().count()).map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/")
-}
-
 /// Le nom d'un salarie que porte `cle` : celui de sa fiche, s'il la dit ; sinon la cle elle-meme.
 fn qui_de_la_cle(ctx: &Contexte, cle: &IdSalarie) -> String {
     match ctx.salaries.get(cle).map(|s| documents::tableaux_export::qui_souple(s)).filter(|q| !q.is_empty()) {
@@ -214,9 +206,9 @@ struct Document {
     nom: String,
     sorte: &'static str,
     salarie: Option<droit::contexte::IdSalarie>,
-    chemin: String,
+    chemin: CheminRelatif,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<String>,
+    fichier: Option<NomDeFichier>,
 }
 
 /// Un envoi du mois (une ligne du journal), et ce qui en est revenu.
@@ -226,7 +218,7 @@ struct Envoi {
     acte: String,
     mode: &'static str,
     quand: socle::paris::InstantOuJour,
-    fichier: Option<String>,
+    fichier: Option<NomDeFichier>,
     flux: Option<String>,
     destinataire: Option<String>,
     identite: String,
@@ -246,7 +238,8 @@ struct RetourLu {
     quand: Option<Moment>,
     phrases: Vec<String>,
     pastille: Option<Pastille>,
-    piece: Option<String>,
+    /// Relative a la compagnie : la fenetre l'ouvre.
+    piece: Option<CheminRelatif>,
     #[serde(flatten)]
     organisme: Option<RetourDOrganisme>,
 }
@@ -295,7 +288,7 @@ impl Anomalie {
 
 /// CE QUI EST REVENU D'UN CONTRAT PARTI (`envois::etats::revenus`), lu : le contrat ou l'avenant, de qui, et comment (une
 /// reponse « Je signe », une mention a la main, ou son retrait) ; la piece signee s'il y en a une.
-fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) -> RetourLu {
+fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) -> R<RetourLu> {
     let piece = match (r.avenant, r.numero.as_deref()) {
         (None, Some(n)) => format!("Contrat n° {}", n),
         (None, None) => "Contrat sans numéro".to_string(),
@@ -310,18 +303,18 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
     } else {
         (format!("{} revenu signé", piece), format!("Reçu signé le {}, noté à la main.", quand))
     };
-    let signe = match (ligne.mois(), r.fichier_signe.as_deref()) {
+    let signe = match (ligne.mois(), r.fichier_signe.as_ref()) {
         (Some(m), Some(f)) => envois::etats::chemin_piece(&ctx.racine, m, f),
         _ => None,
     };
-    RetourLu {
+    Ok(RetourLu {
         titre: format!("{} — {}", titre, qui_du_contrat(ctx, &r.nom, &r.salarie)),
         quand: Some(r.quand),
         phrases: vec![phrase],
         pastille: Some(Pastille::de(if !r.recu { socle::ecran::EtatDEcran::Information } else { socle::ecran::EtatDEcran::Fait }, "signé")),
-        piece: signe.map(|p| relatif(&ctx.racine, &p)),
+        piece: signe.map(|p| CheminRelatif::sous(&ctx.racine, &p)).transpose()?,
         organisme: None,
-    }
+    })
 }
 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
@@ -381,8 +374,8 @@ fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
 fn identite(ctx: &Contexte, l: &Ligne) -> String {
     let mut morceaux: Vec<String> = Vec::new();
     if let Some(fichier) = l.fichier() {
-        let lisible = nom_lisible(ctx, fichier);
-        if lisible != fichier {
+        let lisible = nom_lisible(ctx, fichier.texte());
+        if lisible != fichier.texte() {
             morceaux.push(lisible);
         }
     }
@@ -411,22 +404,24 @@ pub(crate) fn sorte_de(nom: &str) -> &'static str {
 /// du fichier de meme nom qui part au depot : elle ne se liste pas.
 fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let mut out: Vec<Document> = Vec::new();
+    let sorties = CheminRelatif::sorties(mois);
+    let envoi = sorties.joint(&const { NomDeFichier::du_moteur("envoi") });
     let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
-    for nom in noms.filter(|n| !n.ends_with(".zip")) {
-        out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin: format!("sorties/{}/{}", mois, nom), fichier: None, nom });
+    for nom in noms.filter(|n| !n.texte().ends_with(".zip")) {
+        out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), fichier: None, nom: nom.into() });
     }
     for d in crate::archives::pieces_de_l_envoi(ctx, mois)? {
-        out.push(Document { sorte: sorte_de(&d.nom), salarie: d.salarie, chemin: format!("sorties/{}/envoi/{}", mois, d.nom), fichier: None, nom: d.nom });
+        out.push(Document { sorte: sorte_de(&d.nom), salarie: d.salarie, chemin: envoi.joint(&NomDeFichier::lire(&d.nom)?), fichier: None, nom: d.nom });
     }
     // CE QUE LE JOURNAL DIT PARTI, meme si son fichier manque : `fichier` le nomme pour `piece-partie`, qui le refait
     // (`depart::piece_partie`) et rend son chemin.
     for nom in pieces_du_journal(lignes) {
-        if out.iter().any(|d| d.nom == nom) {
+        if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
-        let dans_l_envoi = ["Bulletin_", "CertificatCS_", "AER_", "Contrat_", "Avenant"].iter().any(|p| nom.starts_with(p));
-        let chemin = if dans_l_envoi { format!("sorties/{}/envoi/{}", mois, nom) } else { format!("sorties/{}/{}", mois, nom) };
-        out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin, fichier: Some(nom.clone()), nom });
+        let dans_l_envoi = ["Bulletin_", "CertificatCS_", "AER_", "Contrat_", "Avenant"].iter().any(|p| nom.texte().starts_with(p));
+        let chemin = if dans_l_envoi { envoi.joint(&nom) } else { sorties.joint(&nom) };
+        out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
     for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
@@ -446,11 +441,11 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
 
 /// Les noms des pieces que les lignes acceptees du journal d'un mois disent parties : le fichier d'un depot, les contrats
 /// d'une demande de signature, les pieces d'un envoi de documents.
-fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
-    let mut noms: Vec<String> = Vec::new();
-    let mut noter = |n: &str| {
-        if !n.is_empty() && !n.contains(['/', '\\']) && !noms.iter().any(|x| x == n) {
-            noms.push(n.to_string());
+fn pieces_du_journal(lignes: &[Ligne]) -> Vec<NomDeFichier> {
+    let mut noms: Vec<NomDeFichier> = Vec::new();
+    let mut noter = |n: &NomDeFichier| {
+        if !noms.contains(n) {
+            noms.push(n.clone());
         }
     };
     for l in lignes.iter().filter(|l| l.accepte()) {
@@ -1019,7 +1014,7 @@ enum PieceDuRetour {
 }
 
 /// Un retour d'une ligne du journal, lu.
-fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> RetourLu {
+fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> R<RetourLu> {
     let canal = (ligne.acte() == envois::journal::Acte::Dpae).then_some("dpae");
     let nature = r.nature_retour.clone();
     let statut = r.statut.as_deref().and_then(dit);
@@ -1117,12 +1112,12 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
     };
     let nature_dit = dit(&nature).map(|n| format!("Nature {} : {}", n, libelle));
     let quand = publication;
-    RetourLu {
+    Ok(RetourLu {
         titre: titre_dit.clone(),
         quand,
         phrases,
         pastille,
-        piece: chemin.map(|p| relatif(racine, &p)),
+        piece: chemin.map(|p| CheminRelatif::sous(racine, &p)).transpose()?,
         organisme: Some(RetourDOrganisme {
             titre_dit,
             nature_dit,
@@ -1135,7 +1130,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             anomalies,
             traduite,
         }),
-    }
+    })
 }
 
 // ------------------------------------------------------------------ la route
@@ -1151,7 +1146,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
         // Ce qui est revenu, sur la ligne de chaque envoi : un contrat signe, une fiche remplie (ou la demande abandonnee),
         // un retour d'organisme.
         let mut retours: Vec<RetourLu> = match l {
-            Ligne::ContratSignature(e) => e.retours.iter().map(|r| revenu_lu(ctx, l, r)).collect(),
+            Ligne::ContratSignature(e) => e.retours.iter().map(|r| revenu_lu(ctx, l, r)).collect::<R<_>>()?,
             Ligne::FicheDemande(e) => e
                 .retours
                 .iter()
@@ -1164,7 +1159,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
                     organisme: None,
                 })
                 .collect(),
-            _ => l.retours_organisme().iter().map(|r| retour_lu(&ctx.racine, l, r)).collect(),
+            _ => l.retours_organisme().iter().map(|r| retour_lu(&ctx.racine, l, r)).collect::<R<_>>()?,
         };
         retours.sort_by(|a, b| a.quand.cmp(&b.quand));
         // Un depot attend ses retours par son flux (`journal.rattacher_retours`).
@@ -1173,7 +1168,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
             acte: acte(ctx, l),
             mode: l.mode().nom(),
             quand: l.quand(),
-            fichier: l.fichier().map(String::from),
+            fichier: l.fichier().cloned(),
             flux: dit(l.flux()).map(String::from),
             destinataire: dit(l.destinataire()).map(String::from),
             identite: identite(ctx, l),

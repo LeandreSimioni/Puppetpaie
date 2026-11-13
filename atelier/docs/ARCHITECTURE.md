@@ -176,7 +176,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | notion | ce que c'est | son type |
 |---|---|---|
 | NIR | le numéro de sécurité sociale | `droit::fiche::Nir` ; sa clé, `CleNir` (`droit/src/fiche.rs`) ; à unifier (#419) : des champs `nir` en `String` |
-| NTT | le numéro technique temporaire, sans NIR | à créer (#419) |
+| NTT | le numéro technique temporaire d'un individu sans NIR (S21.G00.30.020) | `Ntt` (`declarations/src/ntt.rs`) : il se fabrique pour un salarié (`ntt::numero`, contrôlé avec le SIREN) ou se lit dans une DSN (`Ntt::lu`, sa forme seule) ; que portent l'identité qu'une DSN partie a déclarée (`changements_individu::Declaree`) et l'individu d'une DSN lue |
 | SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | `Siren`, `Nic`, `Siret` (`droit/src/fiche.rs`) |
 | IBAN, BIC | un compte bancaire | `Iban`, `Bic` (`droit/src/fiche.rs` ; leurs contrôles, `socle/src/iban.rs`) |
 | numéro de contrat | S21.G00.40.009 : il se lit, ne se recalcule pas | `NumeroContrat` (`engagement/src/numeros.rs`) |
@@ -195,16 +195,49 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | pays | un code ISO 3166 à deux lettres | `CodePays` (`socle/src/pays.rs`) |
 | commune | son code INSEE (versement mobilité, S21.G00.81.005) | `CodeInsee` (`droit/src/fiche.rs`) |
 | courriel | une adresse de courriel | `Courriel` (`droit/src/fiche.rs`) |
+| courriel envoyé | un courriel qu'un geste envoie, et celui à qui il s'adresse, que l'envoyeur retrouve après l'envoi | `envois::envoi::Message<Pour>`, `Pour` du type de ce qu'il est : `IdSalarie` (les documents du mois, le dossier, les contrats à signer et le contrat contresigné), le nom court de l'organisme (la régularisation CASC-SVP : celui du `.eml` gardé), `()` quand personne n'est à retrouver (la fiche demandée, la réponse d'une personne fictive) ; l'envoi ne le lit pas |
 | expéditeur d'un courriel lu | une adresse, rien, ou un texte qui n'en est pas une | `envois::courriel_lecture::Expediteur` |
 | version du logiciel | le numéro d'une publication, des nombres séparés de points | `compagnie::maj::VersionDuLogiciel` |
+| rubrique de la norme | l'identifiant d'une rubrique de la DSN, « structure, groupe, bloc, rubrique » (`S21.G00.40.021`, cahier technique, chapitre 3, règles de nommage) | `RubriqueDeLaNorme` (`droit/src/natures.rs`), que portent la rubrique d'une liste de la norme (`ListeDeLaNorme::RUBRIQUE`), les clés des tables d'usages et de formats, les `codes`, `champs`, `absents` et `interdits` d'une nature de `contrats-base.json`, la rubrique d'une case de `champs-base.json`, ce que la lecture d'une DSN garde ; une rubrique que le moteur nomme se vérifie à la compilation (`droit::rubrique!`). Les rubriques que l'écrivain de la DSN passe à `dsn::Fichier::add` restent des littéraux |
+| nom de fichier | le nom d'un fichier seul, sans son dossier : le fichier parti que le journal des envois note, le modèle d'un contrat, une table de la norme livrée, l'archive d'une version, la copie d'une pièce importée | `NomDeFichier` (`socle/src/fichiers.rs`) : ni vide, ni `.` ni `..`, sans `/`, `\` ni caractère nul ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur` |
+| chemin relatif | un chemin sous une racine que son champ dit (la compagnie, le dossier de la sauvegarde) : la trace d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris | `CheminRelatif` (`socle/src/fichiers.rs`) : des `NomDeFichier` séparés par des barres droites sur tous les systèmes, ni vide ni avec une racine ; il se fait d'un chemin par `CheminRelatif::sous(racine, chemin)` ; la clé d'une lecture notée s'écrit avec la même écriture. Un chemin absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin` |
+| empreinte | le SHA-256 entier d'un contenu : une source déposée, une archive de mise à jour et les fictives (`derniere.json`, `.livraison.json`, `.livree.json`), un exercice clos, un état gardé | `Empreinte` (`socle/src/fichiers.rs`) : 64 caractères hexadécimaux minuscules ; elle ne se fait que par `Empreinte::des_octets` (ou `du_hachage`, un contenu haché par morceaux ; `du_fichier`), elle se lit par `Empreinte::lire`. Le registre des lectures d'une paie garde la sienne en texte |
+| empreinte courte | les 16 premiers caractères du SHA-256 : ce que le journal des envois écrit d'un fichier parti et d'un modèle figé, une paie importée déjà comparée, une DPAE due, l'état d'un mois de l'horloge ; on n'en retrouve pas l'entière | `EmpreinteCourte` (`socle/src/fichiers.rs`) : elle ne se fait que par `Empreinte::courte` |
+| empreinte MD5 | le `md5Checksum` que Drive publie d'un fichier, et celui que la sauvegarde et la restauration calculent pour s'y comparer | `EmpreinteMd5` (`envois/src/drive.rs`) : 32 caractères hexadécimaux minuscules ; un `md5Checksum` vide se lit absent, à la porte |
+| identifiant Drive | l'identifiant que Drive donne à un fichier ou à un dossier : ce qu'un listage rend, le dossier où l'on dépose, ce que l'index de la sauvegarde garde de chaque dossier | `IdDrive` (`envois/src/drive.rs`) : un texte opaque, non vide (Google n'en publie pas la forme) ; lu à la porte de la réponse de Google ; `IdDrive::RACINE`, le dossier racine du compte (`root`). Le nom de la racine de la sauvegarde (`PuppetPaie`) est un nom, pas un identifiant |
+| adresse | une adresse que le moteur appelle ou montre : un service (Google, net-entreprises, l'Urssaf, le serveur du filet, le dépôt des mises à jour), un texte (Légifrance, le CASC-SVP) | `Url` (`socle/src/garde_reseau.rs`, la porte du réseau) : elle commence par `http://` ou `https://`, rien d'autre n'est vérifié ; elle s'écrit et s'envoie au caractère près ; une adresse que le code compose, `Url::joindre` ; une que le moteur écrit en Rust, `Url::du_moteur` ; une adresse que rend un tiers (un lien du Drive, une redirection) se lit à sa porte. Une adresse de courriel est un `Courriel` |
+| dépôt des mises à jour | d'où une installation reçoit ses versions (`maj/reglage.json`, `depot`), ou ce que la publication relit | `DepotDesMisesAJour` (`compagnie/src/maj.rs`) : `Adresse(Url)` ou `Dossier(PathBuf)`, choisi à sa lecture par le début du texte ; il s'écrit tel qu'on l'a lu |
+| version de la norme | la version de la norme DSN d'un fichier (S10.G00.00.006 : `P26V01`, `P27V01`) | `VersionDeLaNorme` (`droit/src/natures.rs`), une liste de la norme, que porte `declarations::norme::Norme` ; une DSN lue d'une version non livrée n'en a pas |
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
 `NatureDeLaDeclaration`, `TypeDeLaDeclaration`, `CodeCotisation81`… ; les choix d'une fiche (`StatutConventionnel`, `Civilite`, `Sexe`…)
 aussi. Le CTP Urssaf (S21.G00.23.001) se lit dans la table datée de l'Urssaf, pas dans la norme : `CodeCtp`
 (`droit/src/organismes.rs`), que portent une ligne de la table des CTP, une ligne du bordereau, les CTP de la réduction
-générale et du régime local. À créer (#419), une liste par rubrique : le code d'option
-de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
+générale et du régime local. La fin du contrat : le type de préavis (S21.G00.63.001), `TypeDePreavis`, la transaction
+en cours (62.008), `TransactionEnCours`, le mois de rattachement d'un FCTU (50.020), `RattachementDuVersement`
+(`droit/src/preavis.rs`, `fctu-base.json` en dit les propriétés) ; le type d'une prime ou d'une indemnité
+(52.001), `TypeDePrime` (`droit/src/type_de_prime.rs`), que portent la rubrique (`dsn_bloc52`), ses lignes de paie et
+`permanents-base.json`. L'arrêt (bloc 60) : son motif (60.001), `MotifDArret`, le motif de la reprise (60.011),
+`MotifDeReprise`, la subrogation (60.004), `SubrogationDeLArret` (`droit/src/arrets.rs`, `arrets-base.json` en dit
+les propriétés ; la case « subrogation » d'un permanent, `fiche::Subrogation`, est une autre notion). Le motif d'une
+suspension (65.001), `MotifDeSuspension` (`droit/src/permanents.rs`, ses propriétés : `ProprietesDeSuspension`). Le
+contrat et son activité (`droit/src/natures.rs`, `contrats-base.json` dit celles de chaque nature) : l'unité de la
+quotité (40.011), `UniteDeQuotite` ; la modalité de déclaration de la fin (62.017, le circuit dérogatoire),
+`ModaliteDeDeclarationDeFin` ; le type d'une activité (53.001), `TypeDActivite`, et son unité de mesure (53.003),
+`UniteDeMesure`, que portent aussi les activités d'une DSN lue. Le type d'un composant de base assujettie (79.001),
+`TypeDeComposant` (`droit/src/base_assujettie.rs`), que porte la santé du barème (`composant_79`). Le qualifiant
+d'assiette d'une ligne du bordereau (23.002), `QualifiantDAssiette` (`droit/src/organismes.rs`), que portent un CTP de
+`organismes-base.json`, la réduction du barème et la ligne du bordereau. Le type d'un bénéficiaire externe de l'OETH
+(13.002), `TypeDeBoethExterne` (`droit/src/cotisation_etablissement.rs`). L'envoi d'essai ou réel (S10.G00.00.005),
+`EssaiOuReel`, et la nature de l'événement déclencheur d'un amorçage (S20.G00.05.011), `NatureDEvenementDeclencheur`
+(`droit/src/nature_declaration.rs`). Le code d'une taxe du bloc 44 (44.001), `CodeTaxe` (`droit/src/apprentissage.rs`) ;
+son motif de non-assujettissement (44.004, table MNATA) est le choix de la fiche `MotifNonAssujettissement`. Le type
+de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), n'a que les quatre codes que nos natures
+écrivent : une DSN lue d'un autre code laisse la case vide. La période d'affectation d'un composant de versement
+(55.004, « AAAAPNN »), `PeriodeDAffectation` (`declarations/src/dsn.rs`) : le trimestre, le semestre ou l'année que le
+moteur écrit. À créer (#419), une liste par rubrique : le code d'option
+de prévoyance.
 
 **Le métier**
 
@@ -220,9 +253,10 @@ de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 | fiche | entreprise, salarié ou spectacle, datée | `droit::fiche::NomDeFiche`, `Datee<T>` ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre notion, à renommer |
 | case | un champ d'une fiche | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` (`droit/src/fiche.rs`) ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé |
 | rubrique | une ligne du catalogue de paie | `droit::catalogue::Rubrique` (sa définition) ; son code, `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut (`LigneBrut.code`), les frais d'une profession au barème (`frais_hors_assiette`), une prime saisie, une ligne imprimée d'un bulletin importé ; un code que le moteur compose est une constante (`CodeDeRubrique::du_moteur`) |
-| unité d'une rubrique | ce que la quantité d'une ligne compte : cachet, heure, jour, semaine, mois, service, forfait, pourcentage (`rubriques-base.json`) | `Unite` (`droit/src/catalogue.rs`), que portent la rubrique, sa case `unite`, une ligne du brut (`LigneBrut`, sa forme écrite), une ligne de rémunération d'un mois |
+| unité d'une rubrique | ce que la quantité d'une ligne compte : cachet, heure, jour, semaine, mois, service, forfait, pourcentage (`rubriques-base.json`) | `Unite` (`droit/src/catalogue.rs`), que portent la rubrique, sa case `unite`, une ligne du brut (`LigneBrut`, sa forme écrite), une ligne de rémunération d'un mois, une grille des minima (`droit::minima::Grille::unite`, ce que sa valeur paie) |
 | cotisation du bulletin | une ligne de cotisation du barème (`rubriques_bulletin`), par sa clé : `maladie`, `retraite_t1` | `IdDeCotisation` (`droit/src/forme_bareme.rs`), que nomment les modifications d'une couche, `rubriques_retirees`, `apres`, `du_corps`, les `lignes` d'une cotisation DSN ou d'une contribution, `rubriques_abattues` de la DFS et les rubriques d'une DFS calculée ; une clé que le moteur nomme est une constante (`MUTUELLE`, `RETRAITE_T1`…) ; à unifier (#419) : `LigneCotisation.id` et ce qui la relit, en `String`. Ce n'est ni une rubrique du catalogue, ni une cotisation de la DSN |
 | cotisation de la DSN | une ligne du bloc 81, par son code S21.G00.81.001 | `CodeCotisation81` (`droit/src/code_cotisation.rs`), que portent `cotisations_dsn` (`code81`, `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) : `CleDeCotisationDsn` (même fichier) |
+| clé de totalisation | le versement (bloc S21.G00.20) dont le montant (20.005) compte une cotisation de la DSN : son code 81.001 et, quand ce code va à deux versements, qui le recouvre, écrits `code` ou `code:recouvreur` (`018:urssaf`, `018:chomage`, `040:urssaf`) ; une cotisation que le barème ne clé pas se totalise sous son code | `CleDeTotalisation` (`droit/src/code_cotisation.rs`), son recouvreur `Recouvreur`, que portent les `codes81` d'un versement de `organismes-base.json`, `cle_total` d'une cotisation DSN du barème, `cle_total_urssaf` et `cle_total_chomage` de la réduction générale, les totaux des versements de la DSN |
 | assiette | ce sur quoi une cotisation se calcule | `droit::assiette::Assiette` |
 | barème | les taux d'un jour, en trois étages | `droit::forme_bareme::Pile` |
 | emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres |

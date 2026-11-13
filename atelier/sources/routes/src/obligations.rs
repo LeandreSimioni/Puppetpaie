@@ -52,7 +52,8 @@ use socle::echec::R;
 pub use declarations::obligations::{CleDObligation, Ou, TexteDepose};
 use declarations::obligations::{BaseDesObligations, DeBase};
 use socle::echec::erreur;
-use socle::fichiers::repr;
+use socle::fichiers::{repr, CheminRelatif};
+use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
@@ -787,7 +788,7 @@ pub(crate) struct EnvoiDeLArret {
     ordre: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<socle::mois::Mois>,
-    fichier: Option<String>,
+    fichier: Option<CheminRelatif>,
     pub quand: InstantOuJour,
 }
 
@@ -809,7 +810,7 @@ fn envoi(envois: &[EnvoiDeLArret], nature: NatureDeLaDeclaration) -> Option<Fait
     Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.clone(), ordre: e.ordre, flux: None, comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.as_ref().map(CheminRelatif::to_string), ordre: e.ordre, flux: None, comment: "depot", le }),
     })
 }
 
@@ -863,18 +864,18 @@ fn signalement_dsn(
     aujourdhui: Jour,
     cle: CleDObligation,
     o: &DeBase,
-    subrogation: Option<&str>,
+    subrogation: Option<droit::arrets::SubrogationDeLArret>,
     depart: Depart,
     evenement: Jour,
     fait: Option<Fait>,
 ) -> R<Obligation> {
     let mut m = Obligation::squelette(cle, o);
-    let Some(subrogation) = subrogation.filter(|s| !s.is_empty()) else {
+    let Some(subrogation) = subrogation else {
         return Ok(m.indeterminee(
             "La subrogation de cet arrêt n'est pas dite : c'est elle qui fixe le délai (cinq jours ouvrés sans subrogation, avec la DSN du mois avec ; CSS R. 133-14, II).",
         ));
     };
-    if subrogation == droit::arrets::bloc_60().map_err(|m| m.reclasser(Classe::Illisible))?.subrogation_oui().map_err(|m| m.reclasser(Classe::Manque))? {
+    if subrogation == droit::arrets::SubrogationDeLArret::Oui {
         let d = o.delai_de(&o.delai_avec_subrogation, "delai_avec_subrogation")?;
         // SUBROGE, la date butoir est l'echeance de la DSN mensuelle du mois de l'evenement (R. 133-14, II, premier
         // alinea), telle que `echeance_dsn` la donne : reportee au jour ouvre suivant un samedi, un dimanche ou un ferie
@@ -957,14 +958,14 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             None => None,
         };
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie == *salarie);
-        let dans = |m: &dyn std::fmt::Display| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
+        let dans = |m: Mois| e.fichier.as_ref().map(|nom| CheminRelatif::sorties(m).joint(nom));
         use NatureDeLaDeclaration as N;
         match (nature, dj, mois) {
             (N::SignalementArret | N::SignalementReprise, Some(dj), _) if declare_lu.is_some() && d.evenement == declare_lu && du_salarie => {
-                partis.push(EnvoiDeLArret { fichier: dans(&dj.mois_civil()), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
+                partis.push(EnvoiDeLArret { fichier: dans(dj.mois_civil()), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
             }
             (N::Mensuelle, _, Some(mois)) if reporte(mois, quand)? => {
-                partis.push(EnvoiDeLArret { fichier: dans(&mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
+                partis.push(EnvoiDeLArret { fichier: dans(mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
             }
             _ => {}
         }
@@ -989,7 +990,7 @@ struct ArretLu<'a> {
     debut: Option<Jour>,
     fin: Option<Jour>,
     reprise: Option<Jour>,
-    subrogation: Option<&'a str>,
+    subrogation: Option<droit::arrets::SubrogationDeLArret>,
     date_accident: Option<Jour>,
     prolongations: &'a [Prolongation],
 }
@@ -999,12 +1000,12 @@ impl<'a> ArretLu<'a> {
     fn de(a: &'a ArretSaisi) -> R<ArretLu<'a>> {
         let premier = engagement::imprevus::premier_jour(&Imprevu::Arret(a.clone())).map_err(|m| m.reclasser(Classe::Illisible))?;
         Ok(ArretLu {
-            motif: Some(&a.motif),
+            motif: Some(a.motif.code()),
             dernier: Some(a.dernier_jour_travaille),
             debut: Some(premier),
             fin: Some(a.fin_previsionnelle),
             reprise: a.reprise,
-            subrogation: a.subrogation.as_deref(),
+            subrogation: a.subrogation,
             date_accident: a.date_accident,
             prolongations: &a.prolongations,
         })
@@ -1184,14 +1185,14 @@ fn fctu_depose(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) 
         .filter(|l| l.accepte())
         // Un signalement refuse au bilan n'est pas recu (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : il reste du.
         .filter(|l| !envois::etats::refuse_par_un_retour(l))
-        .filter(|l| evenement_de(l) == Some(*fin) && l.fichier().is_some_and(|f| f.to_uppercase() == nom))
+        .filter(|l| evenement_de(l) == Some(*fin) && l.fichier().is_some_and(|f| f.texte().to_uppercase() == nom))
         .min_by_key(|l| l.quand());
     let Some(l) = premier else { return Ok(None) };
     let le = l.quand().jour();
     Ok(Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(str::to_string), ordre: None, flux: Some(l.flux().to_string()), comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(|f| f.to_string()), ordre: None, flux: Some(l.flux().to_string()), comment: "depot", le }),
     }))
 }
 
@@ -1331,7 +1332,7 @@ fn arret_connaissance(ctx: &Contexte, c: ChargeConnaissance) -> R<ObligationsDeL
 /// Ce que la compagnie dit avoir connu de l'arret `a` (`de`), d'apres le jour et l'heure dits : la connaissance a
 /// ecrire dans la fiche de suivi, controlee sans rien ecrire (`None` : un jour vide efface).
 pub(crate) fn connaissance_saisie(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, dite: &ConnaissanceDite) -> R<Option<ConnaissanceSaisie>> {
-    if de == DeQuoi::Accident && !motif_appelle_la_declaration(&a.motif)? {
+    if de == DeQuoi::Accident && !motif_appelle_la_declaration(a.motif.code())? {
         return Err(refus(format!(
             "L'arret de {} (motif {}) n'est pas un accident du travail ou de trajet : il n'y a pas de declaration d'accident, ni de connaissance de l'accident a dire. Rien n'est ecrit.",
             a.salarie, a.motif
@@ -1436,7 +1437,7 @@ pub struct ObligationFaite {
 
 fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsDeLArret> {
     let (cle, a) = l_arret_de(ctx, &charge.salarie, &charge.dernier_jour)?;
-    if !motif_appelle(f.obligation, &a.motif)? {
+    if !motif_appelle(f.obligation, a.motif.code())? {
         return Err(refus(format!("L'arret de {} (motif {}) {}. Rien n'est ecrit.", cle, a.motif, f.hors_motif)));
     }
     let dernier = a.dernier_jour_travaille;
@@ -1503,7 +1504,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeArretObligations {
-    motif: Option<TexteDit>,
+    motif: Option<droit::arrets::MotifDArret>,
     dernier_jour: Option<Jour>,
     debut: Option<Jour>,
     fin: Option<Jour>,
@@ -1528,7 +1529,7 @@ fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salari
         Ok(contrat) => contrat,
         Err(e) => return Ok(ArretEcrit::PasEncore(e.phrase)),
     };
-    let Some(motif) = c.motif.as_deref() else { return Ok(ArretEcrit::PasEncore("le motif n'est pas encore dit.".to_string())) };
+    let Some(motif) = c.motif else { return Ok(ArretEcrit::PasEncore("le motif n'est pas encore dit.".to_string())) };
     let mut arret = crate::metier::imprevus::arret_a_ecrire(crate::metier::imprevus::ArretDit {
         cle: &cle,
         contrat: &contrat,
@@ -1569,7 +1570,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     };
     let a = match &saisi {
         Some(s) => ArretLu { reprise: c.reprise, date_accident: c.date_accident, ..ArretLu::de(s)? },
-        None => ArretLu { motif: c.motif.as_deref(), dernier, debut: None, fin, reprise: c.reprise, subrogation: None, date_accident: c.date_accident, prolongations: &[] },
+        None => ArretLu { motif: c.motif.map(droit::arrets::MotifDArret::code), dernier, debut: None, fin, reprise: c.reprise, subrogation: None, date_accident: c.date_accident, prolongations: &[] },
     };
     // Ce que la compagnie dit avoir connu, tape et lisible ; une heure de l'accident dite sans jour est celle du jour de
     // l'accident, comme a l'enregistrement (`connaissance_saisie`).

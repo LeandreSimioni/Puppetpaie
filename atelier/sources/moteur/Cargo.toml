@@ -53,10 +53,7 @@ zip = { workspace = true }
 
 [dev-dependencies]
 # Les essais lisent la reponse d'une route telle que la page la recoit : du JSON.
-serde_json = { workspace = true }
-# Le faux Drive des essais (`tests/faux_drive`) publie l'empreinte MD5 de chaque fichier, comme Drive.
-md-5 = { version = "0.10", default-features = false }
-# Les montants qu'un essai compare.
+serde_json = { workspace = true }# Les montants qu'un essai compare.
 rust_decimal = { workspace = true }
 # Les gardes de structure (`tests/fichiers/structure.rs`, `sources.rs`) cherchent des motifs dans les sources.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }

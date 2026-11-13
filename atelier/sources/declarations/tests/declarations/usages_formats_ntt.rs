@@ -60,7 +60,7 @@ fn comparer(obtenu: Oracle) {
 /// L'oracle est celui des tables 2026 : ses comparaisons se font dans la version P26V01 (la table se choisit par version
 /// de la norme).
 fn p26() -> declarations::norme::Norme {
-    declarations::norme::Norme::connue("P26V01").unwrap()
+    declarations::norme::Norme::connue(droit::natures::VersionDeLaNorme::P26V01).unwrap()
 }
 
 fn usages_calcules(o: &Oracle) -> Usages {
@@ -71,7 +71,7 @@ fn usages_calcules(o: &Oracle) -> Usages {
             .map(|(r, _)| {
                 let codes = NatureDeLaDeclaration::TOUS
                     .iter()
-                    .map(|nat| match usages::usage(&p26(), r, *nat).unwrap() {
+                    .map(|nat| match usages::usage(&p26(), droit::natures::RubriqueDeLaNorme::lire(r).unwrap(), *nat).unwrap() {
                         Some(u) => u.lettre(),
                         None => ".",
                     })
@@ -96,8 +96,9 @@ fn rubriques_calculees(o: &Oracle) -> Vec<(String, String, String, Vec<String>)>
     o.rubriques
         .iter()
         .map(|(r, v, _, _)| {
-            let mauvaise: String = formats::mauvaise_en(&p26(), r, v).unwrap().into_iter().collect();
-            let refuses = formats::caracteres_refuses_en(&p26(), r, v).unwrap().iter().map(|c| c.to_string()).collect();
+            let rubrique = droit::natures::RubriqueDeLaNorme::lire(r).unwrap();
+            let mauvaise: String = formats::mauvaise_en(&p26(), rubrique, v).unwrap().into_iter().collect();
+            let refuses = formats::caracteres_refuses_en(&p26(), rubrique, v).unwrap().iter().map(|c| c.to_string()).collect();
             (r.clone(), v.clone(), mauvaise, refuses)
         })
         .collect()

@@ -18,10 +18,10 @@ use socle::echec::Classe;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use droit::contexte::Contexte;
 use socle::echec::erreur;
+use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 use socle::mois::{Annee, Mois};
 use socle::num::{zero2, Decimal};
 use socle::paris::Moment;
@@ -103,8 +103,9 @@ pub(crate) struct ExportComptaRendu {
     ecritures: Vec<EcritureRendue>,
     total_debit: String,
     total_credit: String,
-    dossier: Option<String>,
-    fichier: Option<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: Option<PathBuf>,
+    fichier: Option<NomDeFichier>,
     plan: String,
     avertissements: Vec<String>,
 }
@@ -117,14 +118,14 @@ impl crate::enveloppe::Dite for ExportComptaRendu {
 
 impl ExportCompta {
     /// Ce que la route rend : un chemin ne rend que son nom ; `dossier`, celui ou il est ecrit.
-    pub(crate) fn rendu(self) -> ExportComptaRendu {
-        let dossier = self.fichier.as_ref().and_then(|f| f.parent()).map(|d| d.to_string_lossy().into_owned());
-        let fichier = self.fichier.as_ref().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned());
+    pub(crate) fn rendu(self) -> R<ExportComptaRendu> {
+        let dossier = self.fichier.as_ref().and_then(|f| f.parent()).map(Path::to_path_buf);
+        let fichier = self.fichier.as_deref().map(NomDeFichier::du).transpose()?;
         let phrase = match &fichier {
             Some(f) => format!("Export comptable de {} : {} écritures, dans {} (le dossier des exercices).", self.annee, self.ecritures.len(), f),
             None => format!("Export comptable de {} : {} écritures, rien n'est écrit.", self.annee, self.ecritures.len()),
         };
-        ExportComptaRendu {
+        Ok(ExportComptaRendu {
             phrase,
             annee: self.annee,
             du: self.du,
@@ -152,7 +153,7 @@ impl ExportCompta {
             fichier,
             plan: self.plan,
             avertissements: self.avertissements,
-        }
+        })
     }
 }
 
@@ -273,7 +274,7 @@ pub(crate) fn export_compta_route(ctx: &Contexte, c: ChargeExportCompta) -> R<Ex
         Some(m) => m,
         None => DECEMBRE,
     };
-    Ok(export_compta(ctx, c.annee.annee()?, du, au, c.apercu != Some(true))?.rendu())
+    export_compta(ctx, c.annee.annee()?, du, au, c.apercu != Some(true))?.rendu()
 }
 
 /// Le premier et le dernier mois d'une annee.
@@ -302,9 +303,9 @@ pub(crate) struct ExerciceNote {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub(crate) le: Moment,
     qui: String,
-    archive: String,
+    archive: CheminRelatif,
     octets: u64,
-    empreinte: String,
+    empreinte: Empreinte,
     fichiers: u64,
     forcee: bool,
     sans_dsn: Vec<Mois>,
@@ -317,9 +318,9 @@ struct ExerciceRouvertNote {
     #[serde(with = "socle::paris::ecrit::seconde")]
     le: Moment,
     qui: String,
-    archive: String,
+    archive: CheminRelatif,
     octets: u64,
-    empreinte: String,
+    empreinte: Empreinte,
     fichiers: u64,
     forcee: bool,
     sans_dsn: Vec<Mois>,
@@ -498,9 +499,9 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     let octets = zip(&entrees)?;
     std::fs::write(&archive, &octets).map_err(|e| en_os(&e, &archive))?;
 
-    let empreinte: String = Sha256::digest(&octets).iter().map(|b| format!("{:02x}", b)).collect();
+    let empreinte = Empreinte::des_octets(&octets);
     let le = maintenant();
-    let relatif = archive.strip_prefix(&ctx.racine).map_err(|e| refus(e.to_string()))?.to_string_lossy().replace('\\', "/");
+    let relatif = CheminRelatif::sous(&ctx.racine, &archive)?;
     tous.clos.insert(
         annee,
         ExerciceNote {
@@ -515,7 +516,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
         },
     );
     ecrire_exercices(ctx, &tous)?;
-    Ok(ExerciceClos { annee, le, archive: archive.to_string_lossy().into_owned(), octets: octets.len(), empreinte, fichiers: n, manques })
+    Ok(ExerciceClos { annee, le, archive, octets: octets.len(), empreinte, fichiers: n, manques })
 }
 
 /// Un exercice clos : l'annee, quand, l'archive (son chemin, sa taille, son empreinte, le nombre de fichiers qu'elle
@@ -525,9 +526,10 @@ pub(crate) struct ExerciceClos {
     pub(crate) annee: Annee,
     #[serde(with = "socle::paris::ecrit::seconde")]
     le: Moment,
-    archive: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    archive: PathBuf,
     octets: usize,
-    empreinte: String,
+    empreinte: Empreinte,
     pub(crate) fichiers: usize,
     pub(crate) manques: Vec<String>,
 }
@@ -538,7 +540,7 @@ pub(crate) struct ExerciceRouvert {
     pub(crate) annee: Annee,
     #[serde(with = "socle::paris::ecrit::seconde")]
     etait_clos_depuis: Moment,
-    archive: String,
+    archive: CheminRelatif,
 }
 
 /// Ce que fait la route `cloture` : clore l'exercice, ou le rouvrir.

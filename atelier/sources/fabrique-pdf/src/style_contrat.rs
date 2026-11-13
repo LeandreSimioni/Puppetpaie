@@ -168,7 +168,7 @@ fn signatures(v: &Valeurs, signature: Option<&str>) -> Result<Bloc, Refus> {
         Some(chemin) => {
             employeur.push(Bloc::Espace(Mesure::entier(3)));
             employeur.push(Bloc::Image {
-                chemin: chemin.to_string(),
+                chemin: chemin.into(),
                 largeur: SIGNATURE_LARGEUR,
                 flottante: true,
             });
@@ -216,7 +216,7 @@ fn signature_employeur(v: &Valeurs, image: &str) -> Result<Bloc, Refus> {
             Z,
         ),
         Bloc::Espace(Mesure::entier(3)),
-        Bloc::Image { chemin: image.to_string(), largeur: SIGNATURE_LARGEUR, flottante: false },
+        Bloc::Image { chemin: image.into(), largeur: SIGNATURE_LARGEUR, flottante: false },
     ];
     Ok(Bloc::Colonnes {
         filet: None,

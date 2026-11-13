@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
-use crate::code_cotisation::{CleDeCotisationDsn, CodeCotisation81};
+use crate::code_cotisation::{CleDeCotisationDsn, CleDeTotalisation, CodeCotisation81};
 use crate::fiche::Lue;
 use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
@@ -495,13 +495,19 @@ pub const REGIME_LOCAL: IdDeCotisation = IdDeCotisation::du_moteur("regime_local
 pub const CCN: IdDeCotisation = IdDeCotisation::du_moteur("ccn");
 pub const RETRAITE_T1: IdDeCotisation = IdDeCotisation::du_moteur("retraite_t1");
 /// Les lignes du bareme que le calcul lit par leur cle : la CSG deductible et la CSG-CRDS non deductible (le net fiscal,
-/// les heures en plus), les assurances vieillesse (la reduction des heures en plus), l'APEC (tranche 2), l'AT/MP.
+/// les heures en plus), les assurances vieillesse (la reduction des heures en plus), l'APEC (ses deux tranches, que le
+/// bulletin et les ecarts groupent), l'AT/MP.
 pub const CSG_DED: IdDeCotisation = IdDeCotisation::du_moteur("csg_ded");
 pub const CSG_CRDS_ND: IdDeCotisation = IdDeCotisation::du_moteur("csg_crds_nd");
 pub const VIEIL_PLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_plaf");
 pub const VIEIL_DEPLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_deplaf");
+pub const APEC_T1: IdDeCotisation = IdDeCotisation::du_moteur("apec_t1");
 pub const APEC_T2: IdDeCotisation = IdDeCotisation::du_moteur("apec_t2");
 pub const ATMP: IdDeCotisation = IdDeCotisation::du_moteur("atmp");
+/// Les lignes dont l'organisme et le compte de tiers recoivent les parts Urssaf et chomage de la reduction generale
+/// (l'etat des cotisations par organisme, les ecritures comptables ; la part retraite : `RETRAITE_T1`).
+pub const MALADIE: IdDeCotisation = IdDeCotisation::du_moteur("maladie");
+pub const CHOMAGE: IdDeCotisation = IdDeCotisation::du_moteur("chomage");
 /// La ligne que le calcul compose lui-meme, hors du bareme, pour la reduction generale (celles des heures en plus :
 /// `engagement::heures_en_plus`).
 pub const REDUCTION_GENERALE: IdDeCotisation = IdDeCotisation::du_moteur("reduction_generale");
@@ -528,7 +534,7 @@ forme! {
         pub cet_si_depasse: Option<Cet>,
         pub masquer_base_et_taux: Option<bool>,
         /// Le type de composant de la base 31 de la DSN (S21.G00.79.001) que la sante pose (`bareme::bareme_sante`).
-        pub composant_79: Option<String>,
+        pub composant_79: Option<crate::base_assujettie::TypeDeComposant>,
         /// Le facteur du taux AT/MP de la compagnie (`bareme::bareme_atmp`) : 0,7 pour un artiste (abattement de 30 %).
         pub facteur_atmp: Option<Court>,
         /// Ce qui remplit le taux, quand ce n'est pas le bareme (le taux AT/MP, la prevoyance d'une convention).
@@ -617,7 +623,7 @@ forme! {
 forme! {
     pub struct Composant79 {
         #[serde(rename = "type")]
-        pub genre: String,
+        pub genre: crate::base_assujettie::TypeDeComposant,
     }
 }
 
@@ -661,7 +667,8 @@ forme! {
         pub adhesion: Option<String>,
         /// La cotisation n'est due qu'au-dela de ce multiple du SMIC.
         pub seuil_smic: Option<Nombre>,
-        pub cle_total: Option<String>,
+        /// Le versement dont le montant la compte ; sans elle, son code (`CleDeTotalisation`).
+        pub cle_total: Option<CleDeTotalisation>,
         /// La commune du versement mobilite (`bareme::bareme_vm`).
         pub code_insee: Option<crate::fiche::CodeInsee>,
         /// Les lignes du bulletin dont la cotisation est la somme.
@@ -783,9 +790,9 @@ forme! {
         pub code81_retraite: Option<CodeCotisation81>,
         pub ctp: Option<crate::organismes::CodeCtp>,
         pub ctp_regularisation: Option<crate::organismes::CodeCtp>,
-        pub qualifiant: Option<String>,
-        pub cle_total_chomage: Option<String>,
-        pub cle_total_urssaf: Option<String>,
+        pub qualifiant: Option<crate::organismes::QualifiantDAssiette>,
+        pub cle_total_chomage: Option<CleDeTotalisation>,
+        pub cle_total_urssaf: Option<CleDeTotalisation>,
     }
 }
 
@@ -1392,14 +1399,34 @@ pub struct DsnDeLaReduction {
     pub code81_urssaf: CodeCotisation81,
     pub code81_chomage: CodeCotisation81,
     pub code81_retraite: CodeCotisation81,
-    pub cle_total_urssaf: String,
-    pub cle_total_chomage: String,
+    pub cle_total_urssaf: CleDeTotalisation,
+    pub cle_total_chomage: CleDeTotalisation,
 }
 
 impl Pile {
     /// La rubrique `id`, si la pile la porte.
     pub fn rubrique(&self, id: &IdDeCotisation) -> Option<&Rubrique> {
         self.rubriques_bulletin.iter().find(|r| r.id == *id)
+    }
+
+    /// LES GARANTIES DE PREVOYANCE de cette pile empilee : la ligne de la prevoyance (`PREVOYANCE`), et les lignes que la
+    /// pile somme avec elle dans une meme cotisation individuelle Prevoyance-Assurance-Mutuelle (S21.G00.81.001 = 059,
+    /// « pour la periode et l'affiliation concernees », `atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt` l. 228) :
+    /// une cotisation 059 est celle d'une affiliation, et la sante a la sienne (la mutuelle sous l'adhesion `SANTE`).
+    /// INFERENCE, ecrite comme telle : ce qui distingue la prevoyance de la sante sous le code 059 est l'affiliation que
+    /// la pile partage avec la ligne de la prevoyance, pas le nom de l'adhesion. Une cotisation 059 sur une base (sans
+    /// `lignes`) n'en range aucune.
+    pub fn garanties_de_prevoyance(&self) -> Vec<IdDeCotisation> {
+        let mut ids = vec![PREVOYANCE];
+        for c in self.cotisations_dsn.iter().filter(|c| c.code81 == Some(CodeCotisation81::PrevoyanceAssuranceMutuelle)) {
+            let Some(lignes) = c.lignes.as_ref().filter(|l| l.contains(&PREVOYANCE)) else { continue };
+            for l in lignes {
+                if !ids.contains(l) {
+                    ids.push(l.clone());
+                }
+            }
+        }
+        ids
     }
 
     /// CE QUE LA DSN DECLARE DE LA REDUCTION GENERALE de cette pile empilee : chaque code dit par le bareme, sinon un refus
@@ -1416,13 +1443,13 @@ impl Pile {
             )
         };
         let code = |c: Option<CodeCotisation81>, champ: &str| c.ok_or_else(|| manque(champ));
-        let cle = |c: Option<&String>, champ: &str| c.cloned().ok_or_else(|| manque(champ));
+        let cle = |c: Option<CleDeTotalisation>, champ: &str| c.ok_or_else(|| manque(champ));
         Ok(DsnDeLaReduction {
             code81_urssaf: code(d.and_then(|d| d.code81_urssaf), "code81_urssaf")?,
             code81_chomage: code(d.and_then(|d| d.code81_chomage), "code81_chomage")?,
             code81_retraite: code(d.and_then(|d| d.code81_retraite), "code81_retraite")?,
-            cle_total_urssaf: cle(d.and_then(|d| d.cle_total_urssaf.as_ref()), "cle_total_urssaf")?,
-            cle_total_chomage: cle(d.and_then(|d| d.cle_total_chomage.as_ref()), "cle_total_chomage")?,
+            cle_total_urssaf: cle(d.and_then(|d| d.cle_total_urssaf), "cle_total_urssaf")?,
+            cle_total_chomage: cle(d.and_then(|d| d.cle_total_chomage), "cle_total_chomage")?,
         })
     }
 }

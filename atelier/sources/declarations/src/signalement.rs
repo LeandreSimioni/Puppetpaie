@@ -13,7 +13,7 @@ use droit::fiche::Lue as _;
 
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
-use crate::dsn::{self, dite, Arret, Fichier, LOGICIEL, VERSION};
+use crate::dsn::{self, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
@@ -69,27 +69,25 @@ fn impossible<T>(m: String) -> R<T> {
     Err(Echec::impossible(m))
 }
 
-/// L'arret est-il subroge ? Son code de subrogation est le « oui » de la norme (`droit::arrets::Bloc60`).
+/// L'arret est-il subroge ? Son code de subrogation est le « oui » de la norme (S21.G00.60.004).
 pub fn avec_subrogation(a: &Arret) -> socle::echec::R<bool> {
-    let bloc = droit::arrets::bloc_60()?;
-    let oui = bloc.subrogation_oui()?;
-    Ok(dite(&a.saisi.subrogation).is_some_and(|s| s == oui))
+    Ok(a.saisi.subrogation == Some(droit::arrets::SubrogationDeLArret::Oui))
 }
 
 /// Ce que la norme refuse (`Echec::Impossible`) ; rend les avertissements.
 pub fn verifier(a: &Arret, nature: NatureSignalement, constitution: Option<&Jour>) -> R<Vec<String>> {
     let v = &a.saisi;
     let bloc = droit::arrets::bloc_60()?;
-    let motif = match bloc.motifs_arret.code(&v.motif) {
+    let motif = match bloc.motifs_arret.code(v.motif) {
         Some(m) => m.clone(),
         None => {
             return impossible(format!(
                 "Motif d'arret {} inconnu de la norme (S21.G00.60.001). Les motifs sont dans arrets-base.json.",
-                repr(&v.motif)
+                repr(v.motif.code())
             ))
         }
     };
-    let m_s = v.motif.clone();
+    let m_s = v.motif;
     let libelle = motif.libelle.clone();
 
     if motif.annulation == Some(true) {
@@ -119,7 +117,7 @@ moteur n'ecrit pas.",
     let debut = v.debut;
     let fin_prev = v.fin_previsionnelle;
     let debut_contrat = v.contrat_debut;
-    let (accident, subrogation, reprise, reprise_motif) = (v.date_accident, dite(&v.subrogation), v.reprise, dite(&v.reprise_motif));
+    let (accident, subrogation, reprise, reprise_motif) = (v.date_accident, v.subrogation, v.reprise, v.reprise_motif);
 
     // Le dernier jour travaille est la veille du debut prescrit, ou ce jour meme quand il a ete travaille
     // (S21.G00.60.002) : un arret ne commence pas avant un jour travaille.
@@ -195,7 +193,7 @@ et a maintenir le salaire."
                 .collect();
             return impossible(format!(
                 "Subrogation {} : la norme ne connait que {}.",
-                repr(subrogation),
+                repr(subrogation.code()),
                 liste.join(", ")
             ));
         }
@@ -272,7 +270,7 @@ reprise.",
             None => {
                 return impossible(format!(
                     "Motif de reprise {} inconnu de la norme (S21.G00.60.011).",
-                    repr(reprise_motif)
+                    repr(reprise_motif.code())
                 ))
             }
         };
@@ -316,7 +314,7 @@ un fait déjà survenu ne se date pas dans le futur.",
     // UN MOTIF QUE LA DSN NE COUVRE PAS (le deuil d'enfant, 19) : la norme l'admet dans un signalement (S21.G00.60.001,
     // aucune regle CCH ne l'en exclut), donc rien ne se refuse (regle 7) ; mais l'Assurance Maladie ne le traite pas, et
     // l'attestation de salaire se fait sur net-entreprises. La phrase est dans `obligations-base.json` (`sauf_motifs`).
-    if let Some(a) = avertissement_hors_dsn(nature, &m_s)? {
+    if let Some(a) = avertissement_hors_dsn(nature, m_s.code())? {
         avertissements.push(a);
     }
     Ok(avertissements)
@@ -392,66 +390,66 @@ annule-et-remplace (type 03)."
     crate::naf::verifier_pour(&norme, ent)?;
     let mut f = Fichier::en_norme(norme);
     // ------------------------------------------------------------ S10 envoi
-    f.add("S10.G00.00.001", LOGICIEL);
-    f.add("S10.G00.00.002", LOGICIEL);
-    f.add("S10.G00.00.003", VERSION);
-    f.add("S10.G00.00.005", if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
+    f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
+    f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
+    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
     f.ecrire_la_version()?;
-    f.add("S10.G00.00.007", "01");
-    f.add("S10.G00.00.008", "01");
-    f.add_case("S10.G00.01.001", &ent.siren, "siren")?;
-    f.add_case("S10.G00.01.002", &ent.nic, "nic")?;
-    f.add_case("S10.G00.01.003", &ent.raison_sociale, "raison_sociale")?;
-    f.add_case("S10.G00.01.004", &ent.adresse, "adresse")?;
-    f.add_case("S10.G00.01.005", &ent.code_postal, "code_postal")?;
-    f.add_case("S10.G00.01.006", &ent.commune, "commune")?;
-    f.add_complement("S10.G00.01.009", &ent.complement_adresse);
+    f.add(droit::rubrique!("S10.G00.00.007"), "01");
+    f.add(droit::rubrique!("S10.G00.00.008"), "01");
+    f.add_case(droit::rubrique!("S10.G00.01.001"), &ent.siren, "siren")?;
+    f.add_case(droit::rubrique!("S10.G00.01.002"), &ent.nic, "nic")?;
+    f.add_case(droit::rubrique!("S10.G00.01.003"), &ent.raison_sociale, "raison_sociale")?;
+    f.add_case(droit::rubrique!("S10.G00.01.004"), &ent.adresse, "adresse")?;
+    f.add_case(droit::rubrique!("S10.G00.01.005"), &ent.code_postal, "code_postal")?;
+    f.add_case(droit::rubrique!("S10.G00.01.006"), &ent.commune, "commune")?;
+    f.add_complement(droit::rubrique!("S10.G00.01.009"), &ent.complement_adresse);
     dsn::contact_emetteur(&mut f, ent)?;
 
     // ---------------------------------------------------------- S20 declar.
     f.ecrire_code(nature.nature())?;
     f.ecrire_code(td)?;
-    f.add("S20.G00.05.003", "11");
-    f.add("S20.G00.05.004", o.ordre.to_string());
+    f.add(droit::rubrique!("S20.G00.05.003"), "11");
+    f.add(droit::rubrique!("S20.G00.05.004"), o.ordre.to_string());
     if let Some(r) = remplace {
-        f.add("S20.G00.05.006", r);
+        f.add(droit::rubrique!("S20.G00.05.006"), r);
     }
-    f.add("S20.G00.05.007", constitution.jjmmaaaa());
+    f.add(droit::rubrique!("S20.G00.05.007"), constitution.jjmmaaaa());
     crate::dsn::contact_chez_le_declare(&mut f, ent)?;
 
     // ------------------------------------------------------ S21 entreprise
-    f.add_case("S21.G00.06.001", &ent.siren, "siren")?;
-    f.add_case("S21.G00.06.002", &ent.nic, "nic")?;
+    f.add_case(droit::rubrique!("S21.G00.06.001"), &ent.siren, "siren")?;
+    f.add_case(droit::rubrique!("S21.G00.06.002"), &ent.nic, "nic")?;
     // L'etablissement est celui du salarie, comme dans ses mensuelles (`droit::bareme::entreprise_du_salarie`) : le NIC est
     // une donnee identifiante (cahier technique DSN 2026.1, § 2.5.1, p. 67).
     let etab = droit::bareme::entreprise_du_salarie(ent, &fiche)?;
-    f.add_case("S21.G00.11.001", &etab.nic, "nic")?;
-    f.add_case("S21.G00.11.003", &etab.adresse, "adresse")?;
-    f.add_case("S21.G00.11.004", &etab.code_postal, "code_postal")?;
-    f.add_case("S21.G00.11.005", &etab.commune, "commune")?;
-    f.add_complement("S21.G00.11.006", &etab.complement_adresse);
+    f.add_case(droit::rubrique!("S21.G00.11.001"), &etab.nic, "nic")?;
+    f.add_case(droit::rubrique!("S21.G00.11.003"), &etab.adresse, "adresse")?;
+    f.add_case(droit::rubrique!("S21.G00.11.004"), &etab.code_postal, "code_postal")?;
+    f.add_case(droit::rubrique!("S21.G00.11.005"), &etab.commune, "commune")?;
+    f.add_complement(droit::rubrique!("S21.G00.11.006"), &etab.complement_adresse);
 
     // Les adhesions qui valent le dernier jour travaille (`droit::adhesions`).
     let orgs = ctx.organismes()?;
     let jour = engagement::imprevus::dernier_jour_declare(arret)?;
     for ad in orgs.adhesions_prevoyance.iter().filter(|ad| ad.en_vigueur(&jour, &jour)) {
-        f.add("S21.G00.15.001", &ad.libelle);
-        f.add("S21.G00.15.002", &ad.delegataire);
-        f.add("S21.G00.15.005", &ad.reference);
+        f.add(droit::rubrique!("S21.G00.15.001"), &ad.libelle);
+        f.add(droit::rubrique!("S21.G00.15.002"), &ad.delegataire);
+        f.add(droit::rubrique!("S21.G00.15.005"), &ad.reference);
     }
 
     // ------------------------------------------------------- S21 individu
     crate::ntt::poser_nir(&mut f, &fiche)?;
-    f.add_case("S21.G00.30.002", &fiche.nom, "nom")?;
-    f.add_case("S21.G00.30.004", &fiche.prenom, "prenom")?;
-    f.add("S21.G00.30.006", fiche.date_naissance.exigee("date_naissance")?.jjmmaaaa());
-    f.add_case("S21.G00.30.019", &fiche.code_salarie, "code_salarie")?;
+    f.add_case(droit::rubrique!("S21.G00.30.002"), &fiche.nom, "nom")?;
+    f.add_case(droit::rubrique!("S21.G00.30.004"), &fiche.prenom, "prenom")?;
+    f.add(droit::rubrique!("S21.G00.30.006"), fiche.date_naissance.exigee("date_naissance")?.jjmmaaaa());
+    f.add_case(droit::rubrique!("S21.G00.30.019"), &fiche.code_salarie, "code_salarie")?;
     crate::ntt::poser_ntt(&mut f, ent, &fiche,crate::changements_individu::derniere_declaree(ctx, &fiche, &engagement::imprevus::dernier_jour_declare(arret)?, departs)?.as_ref())?;
 
     // -------------------------------------------------------- S21 contrat
-    f.add("S21.G00.40.001", arret.contrat_debut.jjmmaaaa());
-    f.add_opt("S21.G00.40.009", arret.contrat_numero.as_deref())?;
-    f.add_case("S21.G00.40.019", &etab.siret, "siret")?;
+    f.add(droit::rubrique!("S21.G00.40.001"), arret.contrat_debut.jjmmaaaa());
+    f.add_opt(droit::rubrique!("S21.G00.40.009"), arret.contrat_numero.as_deref())?;
+    f.add_case(droit::rubrique!("S21.G00.40.019"), &etab.siret, "siret")?;
 
     if ent.banque.is_none() {
         return Err(Echec::Autre(socle::fichiers::absent("banque")));
@@ -467,8 +465,8 @@ annule-et-remplace (type 03)."
     dsn::bloc_60(&mut f, a, nature.nature(), banque)?;
 
     let n = f.lignes.len() + 2;
-    f.add("S90.G00.90.001", n);
-    f.add("S90.G00.90.002", "1");
+    f.add(droit::rubrique!("S90.G00.90.001"), n);
+    f.add(droit::rubrique!("S90.G00.90.002"), "1");
     let texte = f.texte();
     crate::usages::verifier_fichier(&texte)?;
     crate::formats::verifier_fichier(&texte)?;

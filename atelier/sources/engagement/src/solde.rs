@@ -505,7 +505,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
 
     // --- le type de preavis que le signalement declarera (S21.G00.63.001) et ce que ce solde verse : le
     // signalement refuse un desaccord (`fctu::generer`) ; le solde le dit des la saisie.
-    if let Some(type_preavis) = e.preavis.as_ref().map(|p| p.genre.clone()).filter(|t| !t.is_empty()) {
+    if let Some(type_preavis) = e.preavis.as_ref().map(|p| p.genre) {
         let codes = droit::preavis::codes_52_de_l_indemnite_de_preavis()?;
         let mut versees = Vec::new();
         for l in &stc.lignes {
@@ -514,7 +514,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 versees.push((c, r.libelle));
             }
         }
-        if let Some(pourquoi) = droit::preavis::desaccord_du_preavis(&type_preavis, &versees)? {
+        if let Some(pourquoi) = droit::preavis::desaccord_du_preavis(type_preavis, &versees)? {
             stc.avertissements.push(avertir(format!(
                 "{} : {} Le signalement de fin de contrat le refusera tel quel.",
                 qui, pourquoi

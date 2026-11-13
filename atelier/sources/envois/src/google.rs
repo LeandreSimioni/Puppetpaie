@@ -6,16 +6,17 @@
 use serde::Deserialize;
 
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::garde_reseau::Url;
 
 use crate::drive::ErreurGoogle;
 use crate::transport::{envoyer, Panne, Requete};
 
 /// L'adresse des jetons de Google.
-pub const JETONS: &str = "https://oauth2.googleapis.com/token";
+pub const JETONS: Url = Url::du_moteur("https://oauth2.googleapis.com/token");
 
 /// L'adresse des jetons d'un Google qui repond a `base` (un serveur local), au meme chemin que `JETONS`.
-pub fn jetons_de_la_base(base: &str) -> String {
-    format!("{}/token", base)
+pub fn jetons_de_la_base(base: &Url) -> Url {
+    base.joindre("/token")
 }
 
 /// Les permissions que le logiciel demande : les fichiers qu'il cree dans le Drive, et l'adresse du compte.
@@ -152,7 +153,7 @@ fn brute(p: Panne) -> Echec {
 
 /// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(..))` pour un refus
 /// de Google, traduit, `Err` pour une panne brute. `adresse` : `JETONS`, ou un serveur local.
-pub fn jeton_par_rafraichissement(adresse: &str, application: &Application, rafraichissement: &str, delai: u64) -> R<Result<String, ErreurGoogle>> {
+pub fn jeton_par_rafraichissement(adresse: &Url, application: &Application, rafraichissement: &str, delai: u64) -> R<Result<String, ErreurGoogle>> {
     let corps = encoder(&[
         ("client_id", application.client_id.clone()),
         ("client_secret", application.client_secret.clone()),

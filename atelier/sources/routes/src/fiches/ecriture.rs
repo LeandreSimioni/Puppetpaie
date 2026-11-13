@@ -1118,7 +1118,7 @@ fn changements_dits(ctx: &Contexte, nom: NomDeFiche, avant: &Saisie, apres: &Sai
         let mut dit = ChangementDit { champ: k.to_string(), libelle, avant: avant.valeur(*k).cloned(), apres: apres.valeur(*k).cloned(), deja_declare: None, avant_lisible: None, apres_lisible: None };
         if let Some(c) = c.filter(|c| c.declare) {
             let valeur = mot_de(avant.valeur(*k));
-            dit.deja_declare = Some(super::usages_declares(ctx, c.rubrique.as_deref(), valeur.as_deref())?);
+            dit.deja_declare = Some(super::usages_declares(ctx, c.rubrique, valeur.as_deref())?);
         }
         // La forme lisible d'une forme declaree : c'est elle que la boite montre.
         if let Some(source) = c.filter(|c| c.calcule()).and_then(|c| c.derive_de) {
