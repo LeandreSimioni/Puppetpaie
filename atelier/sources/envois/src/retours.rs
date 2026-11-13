@@ -476,6 +476,31 @@ impl StatutDuRetour {
 }
 
 droit::codes_fermes! {
+    /// LE TYPE D'UN RAPPORT DE DEPOT (`rapport/@type`), celui que la plate-forme ecrit dans les pieces recues, et que le
+    /// guide de l'API DSN v6.8 donne a ses exemples : « AEE : exemple_retour_10_AEE.xml », « Certificat de conformité :
+    /// exemple_retour_11_CCO.xml », « Bilan d’anomalies : exemple_retour_11_BAN.xml » (l. 4825-4828 ; « CCO / BAN », nature
+    /// 11, l. 5691 ; `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`).
+    /// Un rapport d'un autre type n'est pas le bilan d'un depot (`bilan_d_octets`).
+    TypeDeRapport, "Type de rapport", texte "guide de l'API DSN v6.8, l. 4825-4828" {
+        Aee = "AEE",
+        Cco = "CCO",
+        Ban = "BAN",
+    }
+}
+
+impl TypeDeRapport {
+    /// Son libelle (le « Modele conceptuel » de la specification du schema des bilans VT2.2,
+    /// `gip-mds-specifications-schema-bilans-vt2.2-20201118.txt`).
+    pub fn libelle(self) -> &'static str {
+        match self {
+            TypeDeRapport::Aee => "Accusé d'enregistrement électronique",
+            TypeDeRapport::Cco => "Certificat de conformité",
+            TypeDeRapport::Ban => "Bilan d'anomalies",
+        }
+    }
+}
+
+droit::codes_fermes! {
     /// LA CATEGORIE D'UNE ANOMALIE D'UN BILAN (`categorie`, `categorie_anomalie_type` du schema des bilans, l. 839-855,
     /// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`) : bloquante ou non.
     CategorieDAnomalie, "Catégorie d'anomalie", texte "schéma des bilans v02r01, categorie_anomalie_type, l. 839-855" {
@@ -484,7 +509,6 @@ droit::codes_fermes! {
     }
 }
 
-pub const RAPPORTS_DEPOT: [&str; 3] = ["CCO", "BAN", "AEE"];
 
 /// Les rubriques DSN du taux de PAS, et ce qu'elles portent.
 const RUBRIQUES_PAS: [(&str, ChampPas); 3] = [
@@ -1166,7 +1190,7 @@ pub struct Bilan {
     pub etat_declaration: Option<Verdict>,
     pub mois: Option<socle::mois::Mois>,
     pub logiciel: Option<String>,
-    pub type_rapport: String,
+    pub type_rapport: TypeDeRapport,
     pub type_declaration: Option<TypeDeLaDeclaration>,
     pub fraction: Option<Fraction>,
     pub ordre: Option<NumeroDOrdre>,
@@ -1301,7 +1325,7 @@ fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
     Zone::lue(nettoye(brut), format::MoisDsn).valeur().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bilan>> {
+fn bilan_depuis(champs: &[(String, String)], type_rapport: TypeDeRapport) -> R<Option<Bilan>> {
     let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     let Some(flux) = forme_du_retour(get("idflux").as_deref(), IdDeFlux::lire)? else { return Ok(None) };
     let recu_le = reception_du_rapport(&get)?;
@@ -1313,7 +1337,7 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bil
         etat_declaration: forme_du_retour(get("etat").or(get("etat_conformite")).as_deref(), Verdict::lire)?,
         mois: get("mois").map(|m| mois_du_rapport(&m)).transpose()?,
         logiciel: get("nom_logiciel"),
-        type_rapport: type_rapport.to_string(),
+        type_rapport,
         type_declaration: type_du_retour(get("type").as_deref())?,
         fraction: forme_du_retour(get("fraction").as_deref(), Fraction::lire)?,
         ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
@@ -1335,7 +1359,7 @@ pub fn bilan_d_octets(o: &[u8]) -> R<Option<Bilan>> {
     if local(&racine.tag) != "rapport" {
         return Ok(None);
     }
-    let Some(type_rapport) = racine.attribut("type").filter(|t| RAPPORTS_DEPOT.contains(t)) else {
+    let Some(type_rapport) = racine.attribut("type").and_then(TypeDeRapport::du_code) else {
         return Ok(None);
     };
     // Un balayage a plat, premiere occurrence gagnante.
@@ -1368,7 +1392,7 @@ pub fn bilan_si_xml(o: &[u8]) -> R<Option<Bilan>> {
 pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
     let mut out = Vec::new();
     // Un fichier qui n'est pas un XML, ou un rapport qui n'est pas celui d'un depot, n'identifie aucune declaration.
-    let arbre = octets_arbre(o)?.filter(|a| local(&a.racine().tag) == "rapport" && a.racine().attribut("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)));
+    let arbre = octets_arbre(o)?.filter(|a| local(&a.racine().tag) == "rapport" && a.racine().attribut("type").and_then(TypeDeRapport::du_code).is_some());
     if let Some(arbre) = &arbre {
         out.extend(declarations_de_l_arbre(arbre)?);
     }
@@ -1534,11 +1558,8 @@ pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
 /// `fusionner_bilans` : un seul bilan par flux, le plus complet. Le bilan de
 /// declaration (CCO, BAN) l'emporte sur l'accuse de transport (AEE).
 pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
-    // Le bilan de declaration d'abord, puis l'accuse de transport, puis tout autre rapport.
-    let rang = |b: &Bilan| {
-        let t = b.type_rapport.as_str();
-        (!matches!(t, "CCO" | "BAN"), t != "AEE")
-    };
+    // Le bilan de declaration d'abord, puis l'accuse de transport.
+    let rang = |b: &Bilan| b.type_rapport == TypeDeRapport::Aee;
     let mut tries: Vec<&Bilan> = bilans.iter().collect();
     tries.sort_by_key(|b| rang(b));
     let (premier, autres) = tries.split_first()?;
@@ -2617,21 +2638,6 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
 
 // --------------------------------------------- un rapport au format harmonise, lu pour l'Historique
 
-/// Les types de rapport que la specification du schema des bilans nomme (« Modele conceptuel » : AEE, certificat de
-/// conformite, avis de rejet, bilan d'anomalies, BIS, controle inter-declarations ;
-/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-specifications-schema-bilans-vt2.2-20201118.txt`). Les codes
-/// courts AEE, CCO, BAN sont ceux que la plate-forme ecrit dans `rapport/@type` (pieces recues ; `RAPPORTS_DEPOT`) ;
-/// ARE, BIS et CID sont les noms des exemples du guide v6.8 (§6.1, `exemple_retour_10_ARE.xml`, `_20_BIS_`, `_21_CID`) :
-/// une inference sur le code, qu'aucune piece recue n'a encore eprouvee.
-const TYPES_RAPPORT: [(&str, &str); 6] = [
-    ("AEE", "Accusé d'enregistrement électronique"),
-    ("ARE", "Avis de rejet"),
-    ("CCO", "Certificat de conformité"),
-    ("BAN", "Bilan d'anomalies"),
-    ("BIS", "Bilan d'identification des salariés"),
-    ("CID", "Contrôle inter-déclarations"),
-];
-
 fn premier_texte<'a>(a: &'a Arbre, e: &'a Noeud, noms: &[&str]) -> &'a str {
     for nom in noms {
         if let Some(x) = a.sous(e).find(|x| local(&x.tag) == *nom && !x.texte_net().is_empty()) {
@@ -2656,7 +2662,8 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         return Ok(None);
     }
     let type_rapport = racine.attribut("type").map(str::to_string);
-    let libelle = TYPES_RAPPORT.iter().find(|(c, _)| Some(*c) == type_rapport.as_deref()).map(|(_, l)| l.to_string());
+    // Le libelle d'un rapport de depot (`TypeDeRapport`) ; un autre type se dit tel qu'ecrit.
+    let libelle = type_rapport.as_deref().and_then(TypeDeRapport::du_code).map(|t| t.libelle().to_string());
     let envoi = arbre.tous().find(|e| local(&e.tag) == "envoi");
     let de_l_envoi = |nom: &str| envoi.map(|e| premier_texte(&arbre, e, &[nom]).to_string()).filter(|t| !t.is_empty());
     let (etat_envoi, essai_reel) = (forme_du_retour(de_l_envoi("envoi_etat").as_deref(), Verdict::lire)?, essai_du_retour(de_l_envoi("essai_reel").as_deref())?);
