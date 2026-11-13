@@ -189,14 +189,15 @@ pub fn noter_valeur(cle: &str, valeur: String) {
 }
 
 /// UNE LECTURE NOTEE QUI PORTE UN JOUR OU UN MOIS : sa cle s'ecrit ici (`cle`) et se relit ici (`lue`), la seule porte
-/// par laquelle la cle d'une empreinte ecrite redevient un jour ou un mois. `S` est la cle du salarie, dont le type
-/// vit au-dessus du socle (`droit::contexte::IdSalarie`) : la lecture la lit par lui (`TryFrom<String>`).
+/// par laquelle la cle d'une empreinte ecrite redevient un jour ou un mois. `S` est la cle du salarie, `L` le lieu
+/// d'une mission, dont les types vivent au-dessus du socle (`droit::contexte::IdSalarie`, `droit::missions::LieuDeMission`) :
+/// la lecture les lit par eux (`TryFrom<String>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LectureDatee<S> {
+pub enum LectureDatee<S, L> {
     /// `pas <salarie> <jour> [<mois>]` : le taux de PAS du salarie a ce jour, pour la paie de ce mois.
     Pas { salarie: S, le: crate::date::Jour, mois: Option<crate::mois::Mois> },
     /// `mission <lieu> <jour>` : l'indemnite de mission d'un jour a l'etranger.
-    Mission { lieu: String, jour: crate::date::Jour },
+    Mission { lieu: L, jour: crate::date::Jour },
     /// `mensuels <mois> <salarie>` : les mensuels d'avant d'un salarie.
     Mensuels { mois: crate::mois::Mois, salarie: S },
     /// `paies <mois> <salarie>` : les paies validees d'un salarie au mois.
@@ -205,7 +206,7 @@ pub enum LectureDatee<S> {
     Saisie { mois: crate::mois::Mois, salarie: Option<S> },
 }
 
-impl<S: std::fmt::Display> LectureDatee<S> {
+impl<S: std::fmt::Display, L: std::fmt::Display> LectureDatee<S, L> {
     /// La cle sous laquelle elle se note.
     pub fn cle(&self) -> String {
         match self {
@@ -220,10 +221,10 @@ impl<S: std::fmt::Display> LectureDatee<S> {
     }
 }
 
-impl<S: TryFrom<String, Error = crate::echec::Echec>> LectureDatee<S> {
-    /// La lecture que nomme la cle `cle` d'une empreinte ecrite ; `None` : ce n'en est pas une ; un jour, un mois ou une
-    /// cle de salarie qui ne se lit pas refuse.
-    pub fn lue(cle: &str) -> Option<crate::echec::R<LectureDatee<S>>> {
+impl<S: TryFrom<String, Error = crate::echec::Echec>, L: TryFrom<String, Error = crate::echec::Echec>> LectureDatee<S, L> {
+    /// La lecture que nomme la cle `cle` d'une empreinte ecrite ; `None` : ce n'en est pas une ; un jour, un mois, une
+    /// cle de salarie ou un lieu qui ne se lit pas refuse.
+    pub fn lue(cle: &str) -> Option<crate::echec::R<LectureDatee<S, L>>> {
         use crate::date::Jour;
         use crate::mois::Mois;
         let sal = |s: &str| S::try_from(s.to_string());
@@ -233,7 +234,7 @@ impl<S: TryFrom<String, Error = crate::echec::Echec>> LectureDatee<S> {
             return Some((|| Ok(LectureDatee::Pas { salarie: sal(salarie)?, le: Jour::lire(jour)?, mois: mois.map(Mois::lire).transpose()? }))());
         }
         if let Some((lieu, jour)) = cle.strip_prefix("mission ").and_then(|r| r.split_once(' ')) {
-            return Some(Jour::lire(jour).map(|jour| LectureDatee::Mission { lieu: lieu.to_string(), jour }));
+            return Some((|| Ok(LectureDatee::Mission { lieu: L::try_from(lieu.to_string())?, jour: Jour::lire(jour)? }))());
         }
         if let Some((mois, salarie)) = cle.strip_prefix("mensuels ").and_then(|r| r.split_once(' ')) {
             return Some((|| Ok(LectureDatee::Mensuels { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());

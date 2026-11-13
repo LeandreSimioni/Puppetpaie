@@ -115,7 +115,7 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
         "aujourdhui" => return Ok(v == droit::contexte::aujourdhui_sans_note()?.iso()),
         _ => {}
     }
-    if let Some(lue) = LectureDatee::<IdSalarie>::lue(k) {
+    if let Some(lue) = LectureDatee::<IdSalarie, droit::missions::LieuDeMission>::lue(k) {
         return Ok(match lue? {
             // L'indemnite de mission d'un jour a l'etranger : la valeur prise, pas la table (`droit::missions`).
             LectureDatee::Mission { lieu, jour } => v == droit::missions::du_jour(&lieu, &jour)?.empreinte(),

@@ -392,7 +392,7 @@ pub(crate) fn avant_le_mois(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie
     }
     let cle = cle_de_fiche(ctx, cle_salarie)?;
     let mensuels = mensuels_d_avant(ctx, mois, &cle)?;
-    socle::fichiers::noter_valeur(&socle::fichiers::LectureDatee::Mensuels { mois, salarie: &cle }.cle(), empreinte_des(&mensuels));
+    socle::fichiers::noter_valeur(&socle::fichiers::LectureDatee::<_, droit::missions::LieuDeMission>::Mensuels { mois, salarie: &cle }.cle(), empreinte_des(&mensuels));
     let lus = if mensuels.is_empty() { Lus::Aucun } else { Lus::Avant(mois) };
     compteur(ctx, au, cle_salarie, a_la_date, lus)
 }

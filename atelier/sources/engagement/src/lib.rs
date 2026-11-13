@@ -1542,9 +1542,10 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[usize], nuits: &[J
         let nuitee = du_jour.iter().find(|(k, _)| es[*k].nuitee);
         // Une ligne a l'etranger dit son territoire (`a_l_etranger`) ; un jour de `tous_les_jours` a au moins une ligne.
         let (k, _) = nuitee.or(du_jour.first()).ok_or_else(|| refus("un jour à l'étranger sans ligne : le signaler au développeur"))?;
-        let lieu = lignes[es[*k].rang].territoire_dit().map(String::from).ok_or_else(|| socle::fichiers::absent("territoire"))?;
+        let territoire = lignes[es[*k].rang].territoire_dit().ok_or_else(|| socle::fichiers::absent("territoire"))?;
+        let lieu = droit::missions::lieu(territoire).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
         let indemnite = droit::missions::du_jour(&lieu, j).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
-        socle::fichiers::noter_valeur(&socle::fichiers::LectureDatee::<droit::contexte::IdSalarie>::Mission { lieu: lieu.clone(), jour: *j }.cle(), indemnite.empreinte());
+        socle::fichiers::noter_valeur(&socle::fichiers::LectureDatee::<droit::contexte::IdSalarie, _>::Mission { lieu: lieu.clone(), jour: *j }.cle(), indemnite.empreinte());
         let loge = nuitee.is_none() && !nuits.contains(j) && du_jour.iter().any(|(k, _)| cochee(&lignes[es[*k].rang], LOGE));
         let limite = if loge { socle::num::eur2(indemnite.euros * (Decimal::ONE - REDUCTION_LOGE)) } else { indemnite.euros };
         let total: Decimal = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();
@@ -1562,7 +1563,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[usize], nuits: &[J
         // Le lieu se dit par son nom quand la table des lieux le nomme (`droit::missions::lieux`), sinon par son code.
         let dit = match droit::missions::nom(&lieu)? {
             Some(nom) => nom,
-            None => lieu,
+            None => lieu.texte().to_string(),
         };
         limites_du_jour.push((*j, limite, dit));
     }

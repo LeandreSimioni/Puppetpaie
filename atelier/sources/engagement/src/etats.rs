@@ -62,6 +62,7 @@ use crate::stock::{self, Objet};
 use crate::{empreinte, relire};
 use droit::contexte::Contexte;
 use socle::date::Jour;
+use droit::missions::LieuDeMission;
 use socle::fichiers::LectureDatee;
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
@@ -668,7 +669,7 @@ pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<
     let lire = |saisie: std::sync::Arc<(crate::saisie::VueDuMois, String)>| -> R<Vec<Paie>> {
         let data = &saisie.0;
         let valides = valides_lues(ctx, mois, Some(salarie))?;
-        socle::fichiers::noter_valeur(&LectureDatee::Paies { mois, salarie }.cle(), empreinte_des_paies(&valides, mois)?);
+        socle::fichiers::noter_valeur(&LectureDatee::<_, LieuDeMission>::Paies { mois, salarie }.cle(), empreinte_des_paies(&valides, mois)?);
         valides.iter().map(|(i, v)| v.paie(ctx, data, *i)).collect()
     };
     Ok(stock::vue_et_empreinte(&ctx.racine, mois)?.map(lire).transpose()?.into_iter().flatten().collect())
@@ -982,7 +983,7 @@ fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[usize]) -> R<Vec<Paie
             // Les paies, les mensuels et le taux de PAS d'un autre salarie ne sont pas de son calcul. La cle d'une lecture
             // notee par ce calcul se relit, ou le calcul refuse.
             for k in entrees.keys() {
-                let lue = LectureDatee::<IdSalarie>::lue(k).transpose()?;
+                let lue = LectureDatee::<IdSalarie, LieuDeMission>::lue(k).transpose()?;
                 if matches!(&lue, Some(LectureDatee::Paies { salarie: autre, .. } | LectureDatee::Mensuels { salarie: autre, .. } | LectureDatee::Pas { salarie: autre, .. }) if *autre != salarie) {
                     siennes.remove(k);
                 }
@@ -1049,7 +1050,7 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
     }
     // La saisie dont la paie depend : `<le mois>:<les engagements de son salarie>` (`stock::empreinte_de_saisie`), lue
     // des deux cotes ; une saisie que l'une des deux paies n'a pas lue ne dit pas qu'un engagement a change.
-    let lue = LectureDatee::<IdSalarie>::lue;
+    let lue = LectureDatee::<IdSalarie, LieuDeMission>::lue;
     let saisies: Vec<&String> = changees.iter().copied().filter(|k| matches!(lue(k), Some(Ok(LectureDatee::Saisie { .. }))) && ea.contains_key(*k) && eb.contains_key(*k)).collect();
     let part = |e: &BTreeMap<String, String>, k: &str, i: usize| e.get(k).and_then(|v| v.split(':').nth(i).map(String::from));
     if saisies.iter().any(|k| part(&ea, k, 1) != part(&eb, k, 1)) || changees.iter().any(|k| matches!(lue(k), Some(Ok(LectureDatee::Mensuels { .. })))) {
@@ -1665,7 +1666,7 @@ fn reporter(ctx: &Contexte, o: &Objet, premier: Mois, departs: &Departs) -> R<()
 /// les fiches). `None` : il tient. Sinon, la paie ecrite avec l'etat refait, et ce qu'il a lu dans son empreinte.
 fn conges_avant_a_jour(ctx: &Contexte, o: &Objet, ancienne: &PaieEcrite, mois: Mois, relues: &mut empreinte::Relues) -> R<Option<PaieEcrite>> {
     let entrees = &ancienne.empreinte.entrees;
-    let de_lui = |k: &str| matches!(LectureDatee::<IdSalarie>::lue(k), Some(Ok(LectureDatee::Paies { .. }))) || k.starts_with("fiches ");
+    let de_lui = |k: &str| matches!(LectureDatee::<IdSalarie, LieuDeMission>::lue(k), Some(Ok(LectureDatee::Paies { .. }))) || k.starts_with("fiches ");
     let siennes: BTreeMap<String, String> = entrees.iter().filter(|(k, _)| de_lui(k)).map(|(k, v)| (k.clone(), v.clone())).collect();
     if empreinte::tient(ctx, &siennes, relues)? {
         return Ok(None);

@@ -358,7 +358,7 @@ pub fn rubriques_par_defaut(
 pub fn taux_dgfip(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
     let t = triplet(ctx, cle, le, mois)?;
     if let Some(j) = le {
-        socle::fichiers::noter_valeur(&LectureDatee::Pas { salarie: cle, le: j, mois }.cle(), empreinte_du_triplet(&t));
+        socle::fichiers::noter_valeur(&LectureDatee::<_, crate::missions::LieuDeMission>::Pas { salarie: cle, le: j, mois }.cle(), empreinte_du_triplet(&t));
     }
     Ok(t)
 }
