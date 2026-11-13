@@ -16,6 +16,7 @@ use socle::date::Jour;
 use crate::dsn::{self, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre};
 use droit::type_declaration::TypeDeLaDeclaration;
 
 /// LA NATURE D'UN SIGNALEMENT QUE CE MODULE ECRIT (S20.G00.05.001) : l'arret de travail (04), la reprise (05). Son code
@@ -325,8 +326,8 @@ pub struct Options {
     /// La nature de la declaration (S20.G00.05.001).
     pub nature_declaration: NatureSignalement,
     pub type_declaration: TypeDeLaDeclaration,
-    pub ordre: i64,
-    pub remplace: Option<String>,
+    pub ordre: NumeroDOrdre,
+    pub remplace: Option<IdentifiantDeDeclaration>,
     pub envoi_test: bool,
     pub date_constitution: Option<Jour>,
 }
@@ -337,7 +338,7 @@ impl Options {
         Options {
             nature_declaration: NatureSignalement::Arret,
             type_declaration: TypeDeLaDeclaration::Normale,
-            ordre: 1,
+            ordre: NumeroDOrdre::PREMIER,
             remplace: None,
             envoi_test: false,
             date_constitution: None,
@@ -357,7 +358,7 @@ technique §1.4.3.4).",
             repr(td.code())
         ));
     }
-    let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
+    let remplace = o.remplace;
     if td == TypeDeLaDeclaration::AnnuleEtRemplace && remplace.is_none() {
         return impossible(
             "Un annule-et-remplace doit viser la declaration qu'il remplace (S20.G00.05.006) : l'identifiant du \
@@ -410,7 +411,7 @@ annule-et-remplace (type 03)."
     f.ecrire_code(nature.nature())?;
     f.ecrire_code(td)?;
     f.add(droit::rubrique!("S20.G00.05.003"), "11");
-    f.add(droit::rubrique!("S20.G00.05.004"), o.ordre.to_string());
+    f.add(droit::rubrique!("S20.G00.05.004"), o.ordre);
     if let Some(r) = remplace {
         f.add(droit::rubrique!("S20.G00.05.006"), r);
     }

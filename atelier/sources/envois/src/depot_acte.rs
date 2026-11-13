@@ -140,7 +140,7 @@ pub fn deposer_dsn(
     d: &Depot,
     apercu: &DsnLue,
     environnement: &str,
-    ordre_test: Option<i64>,
+    ordre_test: Option<droit::natures::NumeroDOrdre>,
     suites: &mut Suites,
 ) -> R<DepotFait> {
     branchement.ouvrir()?;
@@ -157,8 +157,8 @@ pub fn deposer_dsn(
         let mut contenu = d.octets.to_vec();
         if !d.reel {
             contenu = depot::basculer_dsn(&contenu)?;
-            if let Some(n) = ordre_test.filter(|n| *n != 0) {
-                contenu = depot::renumeroter(&contenu, &n.to_string())?;
+            if let Some(n) = ordre_test.filter(|n| n.valeur() != 0) {
+                contenu = depot::renumeroter(&contenu, n)?;
             }
         }
         let url = client.adresses.depot.clone();
@@ -170,7 +170,7 @@ pub fn deposer_dsn(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement, ..DetailDsn::nouveau(false) };
+            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: apercu.ordre, evenement: d.evenement, ..DetailDsn::nouveau(false) };
             let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
@@ -189,7 +189,7 @@ pub fn deposer_dsn(
         // LA NATURE : un signalement se numerote a la suite de tous ceux deja partis (`journal::dernier_ordre_des_signalements`).
         nature_declaration: apercu.nature_declaration,
         // LE RANG DECLARE : le prochain annule-et-remplace se numerote au-dessus de cet ordre.
-        ordre: texte(apercu.ordre.as_deref()),
+        ordre: apercu.ordre,
         versements: Some(apercu.versements_organismes.iter().map(|m| m.to_string()).collect()),
         salaries: Some(apercu.individus.len()),
         // CE QUI A ETE PRELEVE SUR LA GRILLE, et non sur le taux du salarie : la seule trace qui reste.

@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::echeances::Echeance;
+use droit::natures::NumeroDOrdre;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
@@ -905,17 +906,15 @@ struct SaisieEtCorrections<'a> {
 ///   le moteur les a produits (`ordre_signalements`, cahier technique DSN 2026.1 p. 136), et chacun part a son tour.
 /// - Les DPAE : la plus recemment produite d'abord, lue dans son nom (`DPAE_<Mois>_<AAAAMMJJ-HHMM>.txt` apres
 ///   `DPAE_<Mois>.txt` : l'ordre inverse des noms).
-/// Une DSN qui ne se lit pas, ou dont le numero d'ordre n'est pas un nombre, se refuse.
+/// Une DSN qui ne se lit pas se refuse ; un numero d'ordre hors de sa forme, la lecture de la DSN le laisse vide.
 pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
     use std::cmp::Reverse;
     if !a_l_extension(nom, ".dsn") {
         return Ok((0, None, String::new(), Reverse(None), Reverse(nom.to_string())));
     }
     let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(&chemin.to_string_lossy())?, Some(&NomDeFichier::du(chemin)?))?;
-    let lu = match apercu.ordre.as_deref().map(str::trim) {
-        Some(t) => Some(t.parse::<i64>().map_err(|e| socle::echec::a_la_cle("Le numéro d'ordre d'une DSN écrite ne se lit pas.", "S20.G00.05.004", e).reclasser(Classe::Illisible))?),
-        None => None,
-    };
+    // Au plus quinze chiffres (S20.G00.05.004) : le rang tient dans la cle de rangement sans perte.
+    let lu = apercu.ordre.map(|o| o.valeur() as i64);
     if apercu.est_signalement() {
         return Ok((1, lu, nom.to_string(), Reverse(None), Reverse(String::new())));
     }
@@ -1382,8 +1381,10 @@ impl Deposables {
 pub(crate) struct Remplacement {
     mois: Mois,
     pub(crate) deposee: bool,
-    pub(crate) dernier_ordre: Option<i64>,
-    prochain_ordre: i64,
+    #[serde(with = "droit::natures::en_nombre::option")]
+    pub(crate) dernier_ordre: Option<NumeroDOrdre>,
+    #[serde(with = "droit::natures::en_nombre")]
+    prochain_ordre: NumeroDOrdre,
     pub(crate) limite: Jour,
     admis: bool,
     saisie_modifiee: Option<bool>,
@@ -1845,12 +1846,12 @@ impl<'a> Moteur<'a> {
     }
 
     /// Le plus haut ordre porte par ces depots reels du mois (`depots_reels`) ; `None` s'il n'y en a pas.
-    pub(crate) fn dernier_ordre(&self, mois: Mois, faits: &[envois::journal::Ligne]) -> R<Option<i64>> {
-        Ok(faits.iter().map(|l| self.ordre_de_la_ligne(mois, l)).collect::<R<Vec<i64>>>()?.into_iter().max())
+    pub(crate) fn dernier_ordre(&self, mois: Mois, faits: &[envois::journal::Ligne]) -> R<Option<NumeroDOrdre>> {
+        Ok(faits.iter().map(|l| self.ordre_de_la_ligne(mois, l)).collect::<R<Vec<NumeroDOrdre>>>()?.into_iter().max())
     }
 
     /// Le rang d'un depot reel du journal : l'ordre que sa ligne porte (S20.G00.05.004 du fichier parti, noté au depot).
-    pub(crate) fn ordre_de_la_ligne(&self, mois: Mois, l: &envois::journal::Ligne) -> R<i64> {
+    pub(crate) fn ordre_de_la_ligne(&self, mois: Mois, l: &envois::journal::Ligne) -> R<NumeroDOrdre> {
         let refus = || Echec {
             a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("ordre".to_string()), ..Default::default() }.into()),
             ..erreur(
@@ -1858,8 +1859,7 @@ impl<'a> Moteur<'a> {
                 format!("Un dépôt réel de la DSN de {} ne porte pas son ordre (S20.G00.05.004) dans le journal des envois : le rang d'un annule-et-remplace ne se devine pas ; le signaler au développeur.", mois),
             )
         };
-        let Some(t) = l.dsn().and_then(|e| e.detail.ordre.as_deref()) else { return Err(refus()) };
-        t.trim().parse::<i64>().map_err(|_| refus())
+        l.dsn().and_then(|e| e.detail.ordre).ok_or_else(refus)
     }
 
     /// `depots_reels` : les depots REELS de DSN mensuelle du mois que la
@@ -1898,7 +1898,7 @@ impl<'a> Moteur<'a> {
             mois: le_mois,
             deposee: !faits.is_empty(),
             dernier_ordre: None,
-            prochain_ordre: 1,
+            prochain_ordre: NumeroDOrdre::PREMIER,
             limite: lim,
             admis,
             saisie_modifiee: None,
@@ -1911,7 +1911,7 @@ impl<'a> Moteur<'a> {
             return Ok(out);
         };
         out.dernier_ordre = Some(dernier);
-        out.prochain_ordre = dernier + 1;
+        out.prochain_ordre = dernier.plus(1)?;
         // Ce que la DSN a emporte, compare au present des engagements du mois (`dsn_a_refaire`).
         let mut modifiee = false;
         if derniere.versions().is_some() {
@@ -1967,7 +1967,7 @@ impl<'a> Moteur<'a> {
                 );
             }
         } else if admis {
-            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {} à minuit", dernier + 1, jour);
+            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {} à minuit", out.prochain_ordre, jour);
         }
         Ok(out)
     }

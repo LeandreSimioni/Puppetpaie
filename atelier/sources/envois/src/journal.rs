@@ -620,7 +620,7 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
 }
 
 /// Le plus grand numero d'ordre (`S20.G00.05.004`) des signalements REELS deja envoyes par la compagnie, tous
-/// evenements confondus (arret, reprise, fin de contrat, amorcage) ; 0 s'il n'y en a aucun.
+/// evenements confondus (arret, reprise, fin de contrat, amorcage) ; aucun s'il n'y en a pas.
 ///
 /// Cahier technique DSN 2026.1, p. 136 : « Pour un signalement, ce numero ne doit pas etre remis a zero afin
 /// qu'il soit unique quel que soit le mois d'emission » ; p. 14 : un second signalement normal au meme SIRET et
@@ -629,8 +629,8 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
 /// Un signalement se reconnait a `detail.nature` (04, 05, 07, 08) ; une ligne reprise des retours, qui ne la porte pas,
 /// a son mois : le bilan d'une mensuelle le dit, celui d'un signalement non. Une ligne non acceptee (le point de depot
 /// n'a rien recu) ne consomme pas de numero.
-pub fn dernier_ordre_des_signalements(racine: &Path) -> R<i64> {
-    let mut dernier = 0;
+pub fn dernier_ordre_des_signalements(racine: &Path) -> R<Option<droit::natures::NumeroDOrdre>> {
+    let mut dernier = None;
     for l in lire(racine, Some(Acte::Dsn), None, true)? {
         let Some(e) = l.dsn() else { continue };
         let signalement = match e.detail.nature_declaration {
@@ -649,8 +649,8 @@ pub fn dernier_ordre_des_signalements(racine: &Path) -> R<i64> {
                 socle::echec::Lieu { chemin: Some(chemin(racine).to_string_lossy().into_owned()), fichier: e.fichier.as_ref().map(|f| f.texte().to_string()), cle: Some("detail.ordre".to_string()), detail: None },
             )
         };
-        match e.detail.ordre.as_deref() {
-            Some(o) => dernier = dernier.max(o.trim().parse::<i64>().map_err(|_| sans_ordre())?),
+        match e.detail.ordre {
+            Some(o) => dernier = dernier.max(Some(o)),
             None if e.accepte => return Err(sans_ordre()),
             None => {}
         }

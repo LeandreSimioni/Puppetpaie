@@ -27,7 +27,7 @@ use droit::contexte::IdSalarie;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{contrat_court, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
+use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -552,11 +552,11 @@ pub struct Regularisation {
 /// Les parametres de `generer`, avec leurs defauts.
 pub struct Options {
     pub date_constitution: Option<Jour>,
-    pub fraction: String,
+    pub fraction: Fraction,
     pub type_declaration: TypeDeLaDeclaration,
     pub envoi_test: bool,
-    pub ordre: i64,
-    pub remplace: Option<String>,
+    pub ordre: NumeroDOrdre,
+    pub remplace: Option<IdentifiantDeDeclaration>,
     pub etablissement: Option<String>,
     /// Sur un annule et remplace (type 03 ou 05) : la declaration remplacee portait-elle un versement DGFiP
     /// (S21.G00.20.002 = DGFIP_PAS) ? `None` : on ne sait pas, et la DSN refuse s'il n'y a rien a reverser ce mois-ci.
@@ -568,10 +568,10 @@ impl Options {
     pub fn normale() -> Options {
         Options {
             date_constitution: None,
-            fraction: "11".into(),
+            fraction: Fraction::NON_FRACTIONNEE,
             type_declaration: TypeDeLaDeclaration::Normale,
             envoi_test: false,
-            ordre: 1,
+            ordre: NumeroDOrdre::PREMIER,
             remplace: None,
             etablissement: None,
             remplacee_versait_pas: None,
@@ -4623,12 +4623,12 @@ traverse. Reprendre le contrat dans la saisie du mois, ou corriger les dates de 
         (true, TypeDeLaDeclaration::AnnuleEtRemplace) => TypeDeLaDeclaration::AnnuleEtRemplaceSansIndividu,
         (_, t) => t,
     };
-    if o.remplace.as_deref().is_some_and(|r| !r.is_empty()) {
+    if o.remplace.is_some() {
         return Err(refus("S20.G00.05.006 est interdite sur une DSN mensuelle : la plate-forme a repondu CST-04 le \
 10/09/2026. Un annule et remplace se code par le type de declaration 03 et un numero d'ordre superieur, sans \
 identifiant de declaration remplacee."));
     }
-    if type_declaration.remplace() && o.ordre < 2 {
+    if type_declaration.remplace() && o.ordre <= NumeroDOrdre::PREMIER {
         return Err(refus!(
             "Un annule et remplace doit porter un numero d'ordre STRICTEMENT superieur au dernier ordre accepte du \
 mois civil en cours (recu ordre={}). La plate-forme rend B1-208-11 sinon ; le dernier ordre accepte se lit sur le \
@@ -4664,7 +4664,7 @@ certificat de conformite du depot precedent.",
 
     f.ecrire_code(NatureDeLaDeclaration::Mensuelle)?;
     f.ecrire_code(type_declaration)?;
-    f.add(droit::rubrique!("S20.G00.05.003"), &o.fraction);
+    f.add(droit::rubrique!("S20.G00.05.003"), o.fraction);
     f.add(droit::rubrique!("S20.G00.05.004"), o.ordre);
     f.add(droit::rubrique!("S20.G00.05.005"), debut_mois.jjmmaaaa());
     f.add(droit::rubrique!("S20.G00.05.007"), constitution.jjmmaaaa());

@@ -693,7 +693,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
             "{}{}{} : {}.",
             nature_dsn(d.nature_declaration, d.type_declaration),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
-            morceau(", ordre ", dit(&d.ordre), ""),
+            morceau(", ordre ", d.ordre.map(|o| o.to_string()).as_deref(), ""),
             verdict
         ));
     }

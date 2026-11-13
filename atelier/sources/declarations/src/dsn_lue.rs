@@ -13,7 +13,7 @@ use serde::Serialize;
 use droit::base_assujettie::BaseAssujettie;
 use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, NumeroObjetSpectacle, Siren};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
-use droit::natures::{ListeDeLaNorme, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
+use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
@@ -501,11 +501,11 @@ pub struct DsnLue {
     /// Le mois principal declare (S20.G00.05.005) ; un signalement n'en declare pas.
     pub mois: Option<Mois>,
     /// Le type, la fraction et le numero d'ordre de la declaration (S20.G00.05.002, .003, .004), et l'identifiant de
-    /// celle qu'elle remplace (.006).
+    /// celle qu'elle remplace (.006) ; une valeur hors de sa forme laisse la case vide.
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub fraction: Option<String>,
-    pub ordre: Option<String>,
-    pub remplace: Option<String>,
+    pub fraction: Option<Fraction>,
+    pub ordre: Option<NumeroDOrdre>,
+    pub remplace: Option<IdentifiantDeDeclaration>,
     /// Le jour de constitution de l'envoi (S20.G00.05.007).
     pub depot: Option<Jour>,
     /// Le nom du fichier lu ; aucun pour une DSN lue de ses seuls octets.
@@ -943,7 +943,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
     let mut fautes = Fautes::default();
     let (mut mois, mut depot): (Option<Mois>, Option<Jour>) = (None, None);
     let mut type_declaration: Option<TypeDeLaDeclaration> = None;
-    let (mut fraction, mut ordre, mut remplace): (Option<String>, Option<String>, Option<String>) = (None, None, None);
+    let (mut fraction, mut ordre, mut remplace): (Option<Fraction>, Option<NumeroDOrdre>, Option<IdentifiantDeDeclaration>) = (None, None, None);
     let (mut logiciel, mut nature_envoi): (Option<String>, Option<EssaiOuReel>) = (None, None);
     let mut nature: Option<NatureDeLaDeclaration> = None;
     let mut versements_organismes: Vec<Decimal> = Vec::new();
@@ -1000,8 +1000,8 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let n = fautes.code(rub, &v);
                 nature = nature.or(n);
             }
-            "S20.G00.05.003" => premier(&mut fraction, &plein),
-            "S20.G00.05.006" => premier(&mut remplace, &plein),
+            "S20.G00.05.003" => premier(&mut fraction, &Fraction::lue(&v)),
+            "S20.G00.05.006" => premier(&mut remplace, &IdentifiantDeDeclaration::lu(&v)),
             "S21.G00.20.005" => versements_organismes.extend(fautes.montant(rub, &v)),
             "S21.G00.30.020" => {
                 if let Some(i) = individu {
@@ -1029,7 +1029,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             "S10.G00.02.001" => civilite_emetteur = plein,
             "S10.G00.02.002" => nom_emetteur = plein,
             "S20.G00.05.002" => type_declaration = fautes.code(rub, &v),
-            "S20.G00.05.004" => ordre = plein,
+            "S20.G00.05.004" => ordre = NumeroDOrdre::lu(&v),
             "S20.G00.05.005" => {
                 // 01MMAAAA : le premier jour du mois.
                 let premier_jour = jour_dsn(&v).filter(|j| j.jour == 1);

@@ -323,11 +323,11 @@ pub struct DetailDsn {
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fraction: Option<String>,
+    pub fraction: Option<droit::natures::Fraction>,
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ordre: Option<String>,
+    pub ordre: Option<droit::natures::NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub versements: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -338,7 +338,9 @@ pub struct DetailDsn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pas_bareme: Option<usize>,
     pub repetition: Option<Ouverture>,
-    pub ordre_test: Option<i64>,
+    /// Ecrit en nombre, `null` quand il n'y en a pas ; une cle absente se lit vide, comme un `Option` ordinaire.
+    #[serde(default, with = "droit::natures::en_nombre::option")]
+    pub ordre_test: Option<droit::natures::NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub etablissement: Option<String>,
     /// Le jour de l'evenement qu'un signalement declare (le dernier jour travaille d'un arret, la fin d'un contrat...) ; la

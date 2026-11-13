@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
 use droit::nature_declaration::NatureDeLaDeclaration;
-use droit::natures::ListeDeLaNorme;
+use droit::natures::{Fraction, ListeDeLaNorme, NumeroDOrdre};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
@@ -764,8 +764,8 @@ pub struct Bilan {
     pub logiciel: Option<String>,
     pub type_rapport: String,
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub fraction: Option<String>,
-    pub ordre: Option<String>,
+    pub fraction: Option<Fraction>,
+    pub ordre: Option<NumeroDOrdre>,
     pub salaries: Option<String>,
     pub contrats: Option<String>,
     pub conformite: Option<String>,
@@ -911,8 +911,8 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bil
         logiciel: get("nom_logiciel"),
         type_rapport: type_rapport.to_string(),
         type_declaration: type_du_retour(get("type").as_deref())?,
-        fraction: get("fraction"),
-        ordre: get("ordre"),
+        fraction: forme_du_retour(get("fraction").as_deref(), Fraction::lire)?,
+        ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
         salaries: get("salaries"),
         contrats: get("contrats"),
         conformite: get("etat_conformite"),
@@ -988,7 +988,7 @@ fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
         out.push(DeclarationIdentifiee {
             nature_declaration: nature_du_retour(get("nature").as_deref())?,
             type_declaration: type_du_retour(get("type").as_deref())?,
-            ordre: get("ordre"),
+            ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
             siren: get("SIREN"),
             nic: get("nic_affectation"),
             etat: get("etat"),
@@ -1007,7 +1007,7 @@ pub struct DeclarationIdentifiee {
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub ordre: Option<String>,
+    pub ordre: Option<NumeroDOrdre>,
     pub siren: Option<String>,
     pub nic: Option<String>,
     pub etat: Option<String>,
@@ -1025,6 +1025,12 @@ fn nature_du_retour(code: Option<&str>) -> R<Option<NatureDeLaDeclaration>> {
 /// de la liste de la norme refuse le retour, qui ne se lit pas.
 fn type_du_retour(code: Option<&str>) -> R<Option<TypeDeLaDeclaration>> {
     code_du_retour(code, "type")
+}
+
+/// Ce qu'un retour de la norme porte dans une forme de la norme (`lire` : une fraction, un numero d'ordre), `None` s'il
+/// ne le porte pas : hors de sa forme, le retour ne se lit pas.
+fn forme_du_retour<T>(texte: Option<&str>, lire: fn(&str) -> R<T>) -> R<Option<T>> {
+    texte.map(|t| lire(t).map_err(|e| e.reclasser(Classe::Illisible))).transpose()
 }
 
 fn code_du_retour<T: ListeDeLaNorme>(code: Option<&str>, quoi: &str) -> R<Option<T>> {
@@ -2236,7 +2242,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         declarations.push(DeclarationDuRapport {
             nature_declaration: nature_du_retour(Some(premier_texte(&arbre, id, &["nature"])).filter(|t| !t.is_empty()))?,
             type_declaration: type_du_retour(Some(premier_texte(&arbre, id, &["type"])).filter(|t| !t.is_empty()))?,
-            ordre: premier_texte(&arbre, id, &["ordre"]).to_string(),
+            ordre: forme_du_retour(Some(premier_texte(&arbre, id, &["ordre"])).filter(|t| !t.is_empty()), NumeroDOrdre::lire)?,
             mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
             etat: premier_texte(&arbre, bilan, &["etat", "etat_conformite"]).to_string(),
         });
@@ -2316,7 +2322,7 @@ pub struct DeclarationDuRapport {
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub ordre: String,
+    pub ordre: Option<NumeroDOrdre>,
     pub mois: Option<socle::mois::Mois>,
     pub etat: String,
 }
@@ -2569,7 +2575,7 @@ pub struct Neores {
     pub produit_le: Option<socle::paris::Moment>,
     pub mois: Option<socle::mois::Mois>,
     pub essai_reel: Option<String>,
-    pub ordre: Option<String>,
+    pub ordre: Option<NumeroDOrdre>,
     pub metier: Option<String>,
     pub conformite: Option<String>,
     pub actions: Vec<ActionNeores>,
@@ -2737,7 +2743,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         produit_le: b002.map(|b| rubrique_instant(&a, b, "RO_B002_R011")).transpose()?.flatten(),
         mois: r(b000, "RO_B000_R006").map(|m| mois_du_jour(&m)).transpose()?,
         essai_reel: r(b000, "RO_B000_R013"),
-        ordre: r(b000, "RO_B000_R012"),
+        ordre: forme_du_retour(r(b000, "RO_B000_R012").as_deref(), NumeroDOrdre::lire)?,
         metier: r(b003, "RO_B003_R001"),
         conformite: r(b003, "RO_B003_R002"),
         actions,
@@ -2830,7 +2836,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
         declarations.push(DeclarationOc {
             nature_declaration: nature_du_retour(at(d, "NatureDecla").as_deref())?,
             type_declaration: type_du_retour(at(d, "TypeDecla").as_deref())?,
-            ordre: at(d, "NoOrdreDecla"),
+            ordre: forme_du_retour(at(d, "NoOrdreDecla").as_deref(), NumeroDOrdre::lire)?,
             mois: at(d, "DateMoisDec").map(|m| mois_du_jour(&m)).transpose()?,
             code_oc: organisme_crm_oc(d, "CodeOC")?,
             code_delegataire: organisme_crm_oc(d, "CodeDELEG")?,
@@ -2870,7 +2876,7 @@ pub struct DeclarationOc {
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub ordre: Option<String>,
+    pub ordre: Option<NumeroDOrdre>,
     pub mois: Option<socle::mois::Mois>,
     /// S21.G00.15.002, l'organisme (schema du CRM OC, `CodeOC`).
     pub code_oc: Option<IdentifiantDOrganisme>,

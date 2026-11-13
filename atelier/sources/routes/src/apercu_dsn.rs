@@ -19,14 +19,13 @@ use declarations::dsn_lue::{ContratDeclare, DsnLue, Mesures, VersementLu};
 use documents::ecrire_documents::paies_aux_numeros_declares;
 use droit::contexte::Contexte;
 use droit::fiche::Lue as _;
-use droit::natures::{TypeDActivite, UniteDeMesure};
+use droit::natures::{Fraction, IdentifiantDeDeclaration, NumeroDOrdre, TypeDActivite, UniteDeMesure};
 use engagement::calcul::Paie;
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
-use socle::fichiers::repr;
 use socle::mois::Mois;
-use socle::num::{entier_lu, q2, Decimal};
+use socle::num::{q2, Decimal};
 
 use crate::depots::{lire_octets, resoudre};
 use socle::fichiers::NomDeFichier;
@@ -393,11 +392,8 @@ pub(crate) struct RemplacementDuFichier {
 /// annule-et-remplace (type 03 ou 05) d'un ordre plus grand que le dernier depose.
 fn remplacement_du_fichier(m: &mut Moteur, a: &DsnLue, mois: Mois) -> R<RemplacementDuFichier> {
     let r = m.etat_remplacement(mois, a.etablissement())?;
-    let remplace = match (a.type_declaration, a.ordre.as_deref()) {
-        (Some(t), Some(ordre)) if t.remplace() && r.deposee => {
-            let n = entier_lu(ordre).ok_or_else(|| erreur(Classe::Illisible, format!("nombre entier illisible : {}", repr(ordre))))?;
-            r.dernier_ordre.is_none_or(|d| n > i128::from(d))
-        }
+    let remplace = match (a.type_declaration, a.ordre) {
+        (Some(t), Some(ordre)) if t.remplace() && r.deposee => r.dernier_ordre.is_none_or(|d| ordre > d),
         // Une declaration qui ne remplace pas, sans ordre, ou rien de depose : le fichier ne remplace rien.
         (Some(_) | None, Some(_) | None) => false,
     };
@@ -423,9 +419,9 @@ pub(crate) struct ApercuDsn {
     pub(crate) evenement: Option<socle::date::Jour>,
     pub(crate) type_declaration: Option<droit::type_declaration::TypeDeLaDeclaration>,
     pub(crate) libelle_type: Option<&'static str>,
-    pub(crate) ordre: Option<String>,
-    pub(crate) fraction: Option<String>,
-    pub(crate) remplace: Option<String>,
+    pub(crate) ordre: Option<NumeroDOrdre>,
+    pub(crate) fraction: Option<Fraction>,
+    pub(crate) remplace: Option<IdentifiantDeDeclaration>,
     pub(crate) constitution: Option<String>,
     pub(crate) siren: Option<droit::fiche::Siren>,
     pub(crate) salaries: usize,
@@ -450,7 +446,7 @@ fn description(nom: &str, a: &DsnLue) -> String {
     if let Some(t) = a.type_declaration {
         d += &format!(" — {} (type {})", t.libelle(), t);
     }
-    for (quoi, v) in [("ordre", a.ordre.clone()), ("fraction", a.fraction.clone()), ("constituée le", a.depot.map(|j| j.jj_mm_aaaa()))] {
+    for (quoi, v) in [("ordre", a.ordre.map(|o| o.to_string())), ("fraction", a.fraction.map(|f| f.to_string())), ("constituée le", a.depot.map(|j| j.jj_mm_aaaa()))] {
         if let Some(v) = v {
             d += &format!(", {} {}", quoi, v);
         }
@@ -509,9 +505,9 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         evenement: if signalement { a.evenement() } else { None },
         type_declaration: a.type_declaration,
         libelle_type: a.type_declaration.map(droit::type_declaration::TypeDeLaDeclaration::libelle),
-        ordre: a.ordre.clone(),
-        fraction: a.fraction.clone(),
-        remplace: a.remplace.clone(),
+        ordre: a.ordre,
+        fraction: a.fraction,
+        remplace: a.remplace,
         constitution: a.depot.map(|j| j.jj_mm_aaaa()),
         siren: a.emetteur.clone(),
         salaries: a.individus.len(),

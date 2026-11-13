@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::{Contexte, IdSalarie, SalarieDesigne};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::NumeroDOrdre;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
 use socle::date::Jour;
@@ -512,8 +513,8 @@ pub struct DepotFait {
     quand: InstantOuJour,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ordre: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "droit::natures::en_nombre::option::serialize")]
+    ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     flux: Option<String>,
     comment: &'static str,
@@ -785,7 +786,8 @@ pub(crate) struct EnvoiDeLArret {
     pub nature_declaration: NatureDeLaDeclaration,
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    ordre: Option<i64>,
+    #[serde(serialize_with = "droit::natures::en_nombre::option::serialize")]
+    ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<socle::mois::Mois>,
     fichier: Option<CheminRelatif>,
@@ -953,10 +955,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         let d = &e.detail;
         let Some(nature) = d.nature_declaration else { continue };
         let type_declaration = d.type_declaration;
-        let ordre = match d.ordre.as_deref().map(str::trim).filter(|o| !o.is_empty()) {
-            Some(o) => Some(o.parse::<i64>().map_err(|x| erreur(Classe::Illisible, format!("L'ordre {} d'une DSN du journal des envois ne se lit pas ({}).", repr(o), x)))?),
-            None => None,
-        };
+        let ordre = d.ordre;
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie == *salarie);
         let dans = |m: Mois| e.fichier.as_ref().map(|nom| CheminRelatif::sorties(m).joint(nom));
         use NatureDeLaDeclaration as N;
