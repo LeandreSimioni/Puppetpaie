@@ -35,7 +35,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "travail",
         legitext: IdDila::du_moteur("LEGITEXT000006072050"),
-        nom:"Code du travail",
+        nom: "Code du travail",
         dossier: "code-du-travail",
         titre: "Code du travail -- ce que la paie lit",
         domaines: &[
@@ -218,7 +218,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "securite-sociale",
         legitext: IdDila::du_moteur("LEGITEXT000006073189"),
-        nom:"Code de la securite sociale",
+        nom: "Code de la securite sociale",
         dossier: "code-de-la-securite-sociale",
         titre: "Code de la securite sociale -- ce que la paie lit",
         domaines: &[
@@ -363,7 +363,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "collectivites",
         legitext: IdDila::du_moteur("LEGITEXT000006070633"),
-        nom:"Code general des collectivites territoriales",
+        nom: "Code general des collectivites territoriales",
         dossier: "code-general-des-collectivites-territoriales",
         titre: "Code general des collectivites territoriales -- le versement mobilite",
         domaines: &[
@@ -382,7 +382,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "artistes-1975",
         legitext: IdDila::du_moteur("JORFTEXT000000310494"),
-        nom:"Arrete du 24 janvier 1975 fixant le taux des cotisations de securite sociale et d'allocations familiales dues au titre de l'emploi des artistes du spectacle",
+        nom: "Arrete du 24 janvier 1975 fixant le taux des cotisations de securite sociale et d'allocations familiales dues au titre de l'emploi des artistes du spectacle",
         dossier: "arrete-1975-artistes-du-spectacle",
         titre: "Arrete du 24 janvier 1975 (artistes du spectacle) -- le plafond",
         domaines: &[
@@ -398,7 +398,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "evenements-dsn-2013",
         legitext: IdDila::du_moteur("JORFTEXT000027683422"),
-        nom:"Arrete du 2 juillet 2013 fixant le delai de transmission des evenements dans le cadre de la declaration sociale nominative",
+        nom: "Arrete du 2 juillet 2013 fixant le delai de transmission des evenements dans le cadre de la declaration sociale nominative",
         dossier: "arrete-2013-delai-evenements-dsn",
         titre: "Arrete du 2 juillet 2013 (DSN) -- le delai des signalements d'evenement",
         domaines: &[
@@ -432,7 +432,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "frais-professionnels-2025",
         legitext: IdDila::du_moteur("JORFTEXT000052198430"),
-        nom:"Arrete du 4 septembre 2025 relatif aux frais professionnels deductibles pour le calcul des cotisations de securite sociale",
+        nom: "Arrete du 4 septembre 2025 relatif aux frais professionnels deductibles pour le calcul des cotisations de securite sociale",
         dossier: "dfs/arrete-2025-frais-professionnels",
         titre: "Arrete du 4 septembre 2025 (frais professionnels) -- la deduction forfaitaire specifique",
         domaines: &[
@@ -451,7 +451,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "missions-2006",
         legitext: IdDila::du_moteur("JORFTEXT000000242359"),
-        nom:"Decret n° 2006-781 du 3 juillet 2006 fixant les conditions et les modalites de reglement des frais occasionnes par les deplacements temporaires des personnels civils de l'Etat",
+        nom: "Decret n° 2006-781 du 3 juillet 2006 fixant les conditions et les modalites de reglement des frais occasionnes par les deplacements temporaires des personnels civils de l'Etat",
         dossier: "decret-2006-781-deplacements",
         titre: "Decret n° 2006-781 du 3 juillet 2006 -- l'indemnite de mission et ses taux",
         domaines: &[
@@ -469,7 +469,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "reduction-generale-dfs-2019",
         legitext: IdDila::du_moteur("JORFTEXT000039626366"),
-        nom:"Arrete du 4 decembre 2019 relatif au benefice de la reduction prevue a l'article L. 241-13 du code de la securite sociale pour les employeurs appliquant la deduction forfaitaire specifique",
+        nom: "Arrete du 4 decembre 2019 relatif au benefice de la reduction prevue a l'article L. 241-13 du code de la securite sociale pour les employeurs appliquant la deduction forfaitaire specifique",
         dossier: "dfs/arrete-2019-reduction-generale",
         titre: "Arrete du 4 decembre 2019 -- la reduction generale sous deduction forfaitaire specifique",
         domaines: &[
@@ -485,7 +485,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "construction",
         legitext: IdDila::du_moteur("LEGITEXT000006074096"),
-        nom:"Code de la construction et de l'habitation",
+        nom: "Code de la construction et de l'habitation",
         dossier: "code-de-la-construction-et-de-l-habitation",
         titre: "Code de la construction et de l'habitation -- la PEEC",
         domaines: &[
@@ -500,7 +500,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "loi-de-finances-2026",
         legitext: IdDila::du_moteur("JORFTEXT000053508155"),
-        nom:"Loi n° 2026-103 du 19 fevrier 2026 de finances pour 2026",
+        nom: "Loi n° 2026-103 du 19 fevrier 2026 de finances pour 2026",
         dossier: "loi-de-finances-2026",
         titre: "Loi de finances pour 2026 -- la taxe d'apprentissage des associations",
         domaines: &[
@@ -517,7 +517,7 @@ pub static TEXTES: &[Texte] = &[
     Texte {
         cle: "impots",
         legitext: IdDila::du_moteur("LEGITEXT000006069577"),
-        nom:"Code general des impots",
+        nom: "Code general des impots",
         dossier: "code-general-des-impots",
         titre: "Code general des impots -- ce que la paie lit",
         domaines: &[

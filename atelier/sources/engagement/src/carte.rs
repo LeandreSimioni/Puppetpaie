@@ -60,8 +60,14 @@ impl IdDeModele {
     pub fn de_la_charge(texte: &str) -> R<IdDeModele> {
         match IdDeModele::numero_de(texte) {
             Some(numero) => Ok(IdDeModele { texte: texte.to_string(), numero }),
-            None => Err(refus(format!("Aucun modèle de contrat {} : en choisir un de la liste (modeles-contrat).", texte))),
+            None => Err(IdDeModele::aucun(texte)),
         }
+    }
+
+    /// Le refus d'un modele `id` qu'on ne connait pas, qui dit ou le choisir : la seule phrase, que la charge et la
+    /// recherche dans les modeles disent.
+    pub fn aucun(id: impl std::fmt::Display) -> socle::echec::Echec {
+        refus(format!("Aucun modèle de contrat {} : en choisir un de la liste (modeles-contrat).", id))
     }
 
     /// L'id du modele de numero `numero`.

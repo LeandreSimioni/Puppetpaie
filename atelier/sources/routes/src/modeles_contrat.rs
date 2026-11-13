@@ -284,7 +284,7 @@ fn modele_lu(nom: String, base: bool, contrat: &str, avenant: &str) -> R<ModeleD
 }
 
 fn aucun(id: &IdDeModele) -> Echec {
-    refus(format!("Aucun modèle de contrat {} : en choisir un de la liste (modeles-contrat).", id))
+    IdDeModele::aucun(id)
 }
 
 /// Le special que nomme `id` (l'id d'une charge, ou celui d'un defaut).

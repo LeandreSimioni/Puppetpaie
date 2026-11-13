@@ -378,12 +378,12 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
                 let mut sal: Vec<&String> = titres.iter().copied().filter(|t| parle_salaires(t)).collect();
                 sal.sort();
                 if !sal.is_empty() {
-                    forts.push(format!("{} : texte(s) nouveau(x) attache(s) a la convention -- {}", c.livraison.iso(),sal.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(" ; ")));
+                    forts.push(format!("{} : texte(s) nouveau(x) attache(s) a la convention -- {}", c.livraison.iso(), sal.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(" ; ")));
                 }
                 let mut autres: Vec<&String> = titres.iter().copied().filter(|t| !parle_salaires(t)).collect();
                 autres.sort();
                 if !autres.is_empty() {
-                    faibles.push(format!("{} : {} texte(s) nouveau(x) -- {}", c.livraison.iso(),autres.len(), autres.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(" ; ")));
+                    faibles.push(format!("{} : {} texte(s) nouveau(x) -- {}", c.livraison.iso(), autres.len(), autres.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(" ; ")));
                 }
                 if c.premiere {
                     faibles.push(format!("{} : {}", c.livraison.iso(), c.titre));
