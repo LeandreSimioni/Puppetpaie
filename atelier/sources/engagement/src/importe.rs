@@ -105,23 +105,70 @@ pub struct ContratAtteste {
     pub importe_le: Option<Jour>,
 }
 
-/// Ce qui a declare une paie versee.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Declaration {
-    #[serde(rename = "DSN")]
-    Dsn,
-    #[serde(rename = "bulletin")]
-    Bulletin,
+/// CE QUI RECONNAIT UNE PAIE VERSEE D'UN IMPORT A L'AUTRE, ET CE QUI L'A DECLAREE : le numero du contrat que la DSN
+/// deposee declare (S21.G00.51.010) ; sinon un bulletin seul, par le numero qu'il imprime (le texte d'autrui), ou, s'il
+/// n'en imprime pas, par sa copie (sous `historique/bulletins/`) et sa page quand la copie en a plusieurs. Elle s'ecrit
+/// avec son origine : `{"dsn": "<numero>"}`, `{"bulletin": "<numero imprime>"}`, `{"copie": {"fichier", "page"}}`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum CleDePaieVersee {
+    Dsn(NumeroContrat),
+    Bulletin(String),
+    Copie { fichier: NomDeFichier, page: Option<u64> },
+}
+
+impl CleDePaieVersee {
+    /// Le numero du contrat qu'une DSN deposee declare ; aucun : un bulletin seul l'a declaree.
+    pub fn numero_declare(&self) -> Option<&NumeroContrat> {
+        match self {
+            CleDePaieVersee::Dsn(n) => Some(n),
+            CleDePaieVersee::Bulletin(_) | CleDePaieVersee::Copie { .. } => None,
+        }
+    }
+
+    /// Un bulletin seul l'a-t-il declaree (par son numero ou par sa copie) ?
+    pub fn d_un_bulletin(&self) -> bool {
+        self.numero_declare().is_none()
+    }
+
+    /// Ce que la page en montre (la carte d'un engagement importe) : le numero declare, `bulletin <numero>`, ou la copie
+    /// et sa page.
+    pub fn dite(&self) -> String {
+        match self {
+            CleDePaieVersee::Dsn(n) => n.to_string(),
+            CleDePaieVersee::Bulletin(n) => format!("bulletin {}", n),
+            CleDePaieVersee::Copie { fichier, page: Some(p) } => format!("{} page {}", fichier, p),
+            CleDePaieVersee::Copie { fichier, page: None } => fichier.to_string(),
+        }
+    }
+}
+
+/// Les paies d'un import se rangent dans l'ordre de ce qu'elles disent (`dite`) ; deux origines qui le disent pareil (un
+/// numero declare « bulletin 12345 » et le bulletin 12345), dans l'ordre de leur origine.
+impl Ord for CleDePaieVersee {
+    fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+        let rang = |c: &CleDePaieVersee| match c {
+            CleDePaieVersee::Dsn(_) => 0,
+            CleDePaieVersee::Bulletin(_) => 1,
+            CleDePaieVersee::Copie { .. } => 2,
+        };
+        self.dite().cmp(&autre.dite()).then_with(|| rang(self).cmp(&rang(autre)))
+    }
+}
+
+impl PartialOrd for CleDePaieVersee {
+    fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
 }
 
 /// CE QUI A ETE VERSE UN MOIS : ce que la DSN deposee declare (bloc 50, ses bases du bloc 78), complete par le bulletin
 /// de ce mois, qui fait foi sur ce qu'il imprime (`import::bulletins::completer`). `contrat` est ce qui la reconnait d'un
-/// import a l'autre : le numero que la DSN declare (S21.G00.51.010), sinon le bulletin ou sa copie.
+/// import a l'autre, et dit qui l'a declaree (`CleDePaieVersee`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PaieVersee {
-    pub contrat: String,
-    pub declare_par: Declaration,
+    pub contrat: CleDePaieVersee,
     pub nir: Option<droit::fiche::Nir>,
     pub numero_objet: Option<NumeroObjetSpectacle>,
     pub debut: Option<Jour>,
@@ -313,7 +360,7 @@ impl PaieRelue {
 
 impl<S: Clone> PaieLue<S> {
     /// Ce qui la reconnait d'un import a l'autre : (mois, salarie, contrat).
-    pub fn cle(&self) -> (Mois, S, String) {
+    pub fn cle(&self) -> (Mois, S, CleDePaieVersee) {
         (self.mois, self.salarie.clone(), self.paie.contrat.clone())
     }
 
@@ -326,11 +373,10 @@ impl<S: Clone> PaieLue<S> {
 }
 
 impl PaieVersee {
-    /// Une paie dont on ne sait encore que ce qui la reconnait et ce qui la declare.
-    pub fn vide(contrat: String, declare_par: Declaration) -> PaieVersee {
+    /// Une paie dont on ne sait encore que ce qui la reconnait et la declare.
+    pub fn vide(contrat: CleDePaieVersee) -> PaieVersee {
         PaieVersee {
             contrat,
-            declare_par,
             nir: None,
             numero_objet: None,
             debut: None,
@@ -833,11 +879,11 @@ pub fn paies_lues(racine: &Path) -> R<Vec<PaieRelue>> {
 }
 
 /// LA DSN DE `mois` QUE L'ANCIEN LOGICIEL A DEPOSEE : une paie importee de ce mois qu'une DSN deposee declare
-/// (`declare_par: "DSN"` : son `depose_le`, son `fichier`), qu'une saisie touche aussi le mois ou non. Cette DSN n'est
+/// (`CleDePaieVersee::Dsn` : son `depose_le`, son `fichier`), qu'une saisie touche aussi le mois ou non. Cette DSN n'est
 /// pas faite ici et ne se refait pas ici (regle 4) : ce que la saisie ajoute a ce mois se declare dans une DSN suivante,
 /// comme un contrat ajoute apres la DSN de son mois.
 pub fn dsn_deposee(racine: &Path, mois: Mois) -> R<Option<PaieRelue>> {
-    let trouve = tous(racine)?.iter().find_map(|i| i.paies().get(&mois).filter(|p| p.declare_par == Declaration::Dsn).map(|p| i.paie_lue(mois, p)));
+    let trouve = tous(racine)?.iter().find_map(|i| i.paies().get(&mois).filter(|p| !p.contrat.d_un_bulletin()).map(|p| i.paie_lue(mois, p)));
     trouve.transpose()
 }
 
@@ -877,13 +923,12 @@ pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &IdSalarie, debut: Jou
 }
 
 /// LE NUMERO QU'UNE DSN DE L'ANCIEN LOGICIEL A DECLARE pour l'engagement `o` : celui de sa derniere paie importee
-/// qu'une DSN deposee declare (`declare_par: "DSN"`, S21.G00.40.009). Cette DSN est partie : le numero est lu, il ne se
-/// dit plus et ne change plus (`numeros::a_la_validation`). `None` pour un engagement d'ici, ou repris des seuls bulletins.
-/// La norme l'a deja contraint : il se lit comme tout numero (`NumeroContrat::lire`).
+/// qu'une DSN deposee declare (`CleDePaieVersee::Dsn`, S21.G00.40.009). Cette DSN est partie : le numero est lu, il ne
+/// se dit plus et ne change plus (`numeros::a_la_validation`). `None` pour un engagement d'ici, ou repris des seuls
+/// bulletins.
 pub fn numero_declare(o: &Objet) -> R<Option<NumeroContrat>> {
     let Some(pieces) = o.pieces() else { return Ok(None) };
-    let declare = pieces.paies.values().rev().filter(|p| p.declare_par == Declaration::Dsn).map(|p| p.contrat.as_str()).find(|n| !n.trim().is_empty());
-    declare.map(NumeroContrat::lire).transpose()
+    Ok(pieces.paies.values().rev().find_map(|p| p.contrat.numero_declare()).cloned())
 }
 
 /// Une DSN de l'ancien logiciel a-t-elle declare le numero du contrat de `salarie` commence le `debut`

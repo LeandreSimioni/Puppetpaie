@@ -39,7 +39,7 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 struct Versee {
     salarie: droit::fiche::FicheSalarie,
     brut: Decimal,
-    numero: Option<String>,
+    numero: Option<engagement::numeros::NumeroContrat>,
     debut: Option<Jour>,
     fin: Option<Jour>,
     /// Les cachets, heures et jours que le contrat atteste, quand il tient dans le mois.
@@ -67,7 +67,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
                 }
             }
         }
-        let numero = Some(p.paie.contrat.clone()).filter(|n| !n.is_empty() && p.paie.declare_par != engagement::importe::Declaration::Bulletin);
+        let numero = p.paie.contrat.numero_declare().cloned();
         out.push(Versee { salarie, brut, numero, debut, fin, activite });
     }
     Ok(out)
@@ -133,7 +133,7 @@ pub struct IndividuReg {
 #[derive(Serialize)]
 pub struct ContratReg {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub numero: Option<String>,
+    pub numero: Option<engagement::numeros::NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]

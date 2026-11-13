@@ -17,7 +17,7 @@ use serde::Serialize;
 
 use droit::contexte::{Contexte, IdSpectacle};
 use droit::fiche::NumeroObjetSpectacle;
-use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratRelu, DatesTravaillees, Declaration, Importe, LigneImprimee, PaieRelue, PaieVersee};
+use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratRelu, DatesTravaillees, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{Classe, R};
@@ -327,9 +327,9 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let nombre = |de_la_paie: fn(&PaieVersee) -> Option<i64>, du_contrat: fn(&ContratAtteste) -> Option<i64>| p.and_then(de_la_paie).or_else(|| c.and_then(du_contrat));
     let (cachets, heures, jours) = (nombre(|p| p.cachets, |c| c.cachets), nombre(|p| p.heures, |c| c.heures), nombre(|p| p.jours, |c| c.jours));
     let bulletin = p.and_then(|p| p.bulletin.clone());
-    let declare_par = match p.map(|p| p.declare_par) {
-        Some(Declaration::Dsn) => Some("DSN"),
-        Some(Declaration::Bulletin) => Some("bulletin"),
+    let declare_par = match p.map(|p| p.contrat.d_un_bulletin()) {
+        Some(false) => Some("DSN"),
+        Some(true) => Some("bulletin"),
         None => None,
     };
     let par_aem = c.is_some_and(|c| c.atteste_par == Attestation::Aem);
@@ -474,7 +474,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         nom: nom.or_else(|| salarie.as_ref().map(ToString::to_string)),
         salarie,
         spectacle: SpectacleDeCarte { cle: spectacle.as_ref().map(|s| s.0.clone()), numero_objet: numero, titre },
-        contrat: p.map(|p| p.contrat.clone()),
+        contrat: p.map(|p| p.contrat.dite()),
         debut,
         fin,
         periode,

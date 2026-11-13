@@ -401,9 +401,9 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 /// bulletin atteste en unites entieres pour le mois d'un permanent, ceux d'un intermittent sont a son contrat (AEM,
 /// bulletin) ; la DSN les declare en decimal.
 fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
-    use engagement::importe::{Declaration, PaieVersee};
+    use engagement::importe::{CleDePaieVersee, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
-    let mut x = PaieVersee::vide(d.numero.to_string(), Declaration::Dsn);
+    let mut x = PaieVersee::vide(CleDePaieVersee::Dsn(d.numero.clone()));
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.debut, x.fin, x.verse_le, x.quotite) = (c.and_then(|c| c.debut), c.and_then(|c| c.fin), d.verse_le, c.and_then(|c| c.quotite));
@@ -632,7 +632,7 @@ pub(crate) fn apercu_lu(
     }
 
     // 5. Les paies declarees par les DSN : ce que chaque versement a porte.
-    let deja_paies: HashSet<(socle::mois::Mois, droit::contexte::IdSalarie, String)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieRelue::cle).collect();
+    let deja_paies: HashSet<(socle::mois::Mois, droit::contexte::IdSalarie, engagement::importe::CleDePaieVersee)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieRelue::cle).collect();
     // La cle de la fiche du NIR ; `None` : sa fiche est a creer.
     let cle_de = |nir: &Option<Nir>| nir.as_ref().and_then(|n| par_nir.get(n)).cloned();
     let a_une_fiche = |nir: &Option<Nir>| nir.as_ref().is_some_and(|n| par_nir.contains_key(n)) || cles_a_venir.contains(nir);
@@ -641,7 +641,7 @@ pub(crate) fn apercu_lu(
         if !a_une_fiche(nir) {
             continue;
         }
-        if !cle_de(nir).is_some_and(|c| deja_paies.contains(&(*mois, c, contrat.to_string()))) {
+        if !cle_de(nir).is_some_and(|c| deja_paies.contains(&(*mois, c, engagement::importe::CleDePaieVersee::Dsn(contrat.clone())))) {
             paies_nouvelles += 1;
         }
     }
@@ -885,7 +885,7 @@ impl Reprise {
 /// `reprises` de `importation-etat` : DSN, AEM, certificats Congés Spectacles, bulletins, dans cet ordre, celles qui ont
 /// repris quelque chose.
 fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu], paies: &[engagement::importe::PaieRelue]) -> R<Vec<RepriseVue>> {
-    use engagement::importe::{Attestation, Declaration};
+    use engagement::importe::Attestation;
     let (mut aem, mut contrats_bulletins, mut certificats) = (Reprise::aucune(), Reprise::aucune(), Reprise::aucune());
     for c in contrats {
         let cible = match c.contrat.atteste_par {
@@ -902,11 +902,11 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
         let le = x.paie.importe_le;
         let mois = Some(MoisOuJour::Mois(x.mois));
         // Une paie declaree par une DSN et completee par un bulletin compte des deux cotes : elle a les deux sources.
-        if x.paie.declare_par == Declaration::Dsn {
+        if !x.paie.contrat.d_un_bulletin() {
             dsn.voir(mois, mois, le);
             mois_dsn.insert(x.mois);
         }
-        if x.paie.declare_par == Declaration::Bulletin || x.paie.bulletin.is_some() {
+        if x.paie.contrat.d_un_bulletin() || x.paie.bulletin.is_some() {
             bulletins.voir(mois, mois, le);
         }
     }

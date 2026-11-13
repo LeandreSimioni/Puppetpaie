@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::NomDeFiche;
 use crate::fiches::FicheNommee;
-use engagement::importe::{Attestation, ContratLu, ContratRelu, Declaration, PaieLue, PaieVersee};
+use engagement::importe::{Attestation, CleDePaieVersee, ContratLu, ContratRelu, PaieLue, PaieVersee};
 use engagement::numeros::NumeroContrat;
 use socle::date::Jour;
 use socle::fichiers::NomDeFichier;
@@ -55,7 +55,7 @@ fn en_os(e: &std::io::Error, p: &Path) -> Echec {
 pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     let fichiers: Vec<socle::fichiers::NomDeFichier> = engagement::importe::paies_lues(&ctx.racine)?
         .into_iter()
-        .filter(|x| x.mois == mois && x.paie.declare_par == Declaration::Dsn)
+        .filter(|x| x.mois == mois && !x.paie.contrat.d_un_bulletin())
         .filter_map(|x| x.paie.fichier)
         .collect();
     let Some(nom) = fichiers.last() else { return Ok(None) };
@@ -144,7 +144,7 @@ fn porte_un_bulletin(x: &PaieLue) -> bool {
 }
 
 fn declaree_par_bulletin(x: &PaieLue) -> bool {
-    x.paie.declare_par == Declaration::Bulletin
+    x.paie.contrat.d_un_bulletin()
 }
 
 /// Complete une paie par ce qu'un bulletin a ecrit d'elle (`b`), comme `importation::bulletins::completer` : sur le
@@ -192,18 +192,18 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
     gagne(&mut ligne.bulletin, &b.bulletin);
 }
 
-/// Une paie qu'un bulletin seul declare (`declare_par: "bulletin"`) s'efface devant la paie declaree des memes
+/// Une paie qu'un bulletin seul declare (`CleDePaieVersee::Bulletin`, `Copie`) s'efface devant la paie declaree des memes
 /// salarie, debut et fin, qu'elle complete (une seule ; plusieurs : celle du meme mois, sinon rien ne se rapproche).
 /// Rend le nombre de paies de bulletin laissees a cote de plusieurs paies declarees.
-fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, Option<IdSalarie>, String), PaieLue>) -> usize {
-    let de_bulletin: Vec<(socle::mois::Mois, Option<IdSalarie>, String)> = par_cle.iter().filter(|(_, x)| declaree_par_bulletin(x)).map(|(k, _)| k.clone()).collect();
+fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, Option<IdSalarie>, CleDePaieVersee), PaieLue>) -> usize {
+    let de_bulletin: Vec<(socle::mois::Mois, Option<IdSalarie>, CleDePaieVersee)> = par_cle.iter().filter(|(_, x)| declaree_par_bulletin(x)).map(|(k, _)| k.clone()).collect();
     let mut ambigues = 0usize;
     for kb in de_bulletin {
         let b = par_cle[&kb].clone();
         // Une paie dont la fiche est encore a creer ne se rapproche de rien.
         let (Some(debut), Some(fin), Some(_)) = (b.paie.debut, b.paie.fin, &b.salarie) else { continue };
         let salarie = b.salarie.clone();
-        let mut cibles: Vec<(socle::mois::Mois, Option<IdSalarie>, String)> = par_cle
+        let mut cibles: Vec<(socle::mois::Mois, Option<IdSalarie>, CleDePaieVersee)> = par_cle
             .iter()
             .filter(|(_, x)| !declaree_par_bulletin(x) && x.salarie == salarie && x.paie.debut == Some(debut) && x.paie.fin == Some(fin))
             .map(|(k, _)| k.clone())
@@ -351,20 +351,15 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     // Le premier mois d'un groupe : celui de sa premiere paie, sinon celui de son debut.
     let premier_mois = |g: &Groupe| mois_de(g).into_iter().min().or_else(|| mois_du_debut(g));
     a_fondre.sort_by_key(|g| (g.salarie.clone(), premier_mois(g)));
-    let declare = |g: &Groupe| g.paies.iter().filter(|p| !declaree_par_bulletin(p)).map(|p| p.paie.contrat.clone()).find(|n| !n.is_empty());
+    let declare = |g: &Groupe| g.paies.iter().find_map(|p| p.paie.contrat.numero_declare().cloned());
     let imprime = |g: &Groupe| g.contrat.as_ref().and_then(|c| c.contrat.numero_contrat.clone());
-    // Le numero que la DSN a declare se lit comme tout numero (`NumeroContrat::lire`) ; sinon celui que le bulletin imprime.
-    let numero_de = |g: &Groupe| -> R<Option<NumeroContrat>> {
-        match declare(g) {
-            Some(n) => Ok(Some(NumeroContrat::lire(&n)?)),
-            None => Ok(imprime(g)),
-        }
-    };
+    // Le numero que la DSN a declare ; sinon celui que le bulletin imprime.
+    let numero_de = |g: &Groupe| -> Option<NumeroContrat> { declare(g).or_else(|| imprime(g)) };
     // (salarie, numero, ses groupes)
     let mut paquets: Vec<(Option<IdSalarie>, Option<NumeroContrat>, Vec<Groupe>)> = Vec::new();
     let (mut numerotes, mut muets): (Vec<(NumeroContrat, Groupe)>, Vec<Groupe>) = (Vec::new(), Vec::new());
     for g in a_fondre {
-        match numero_de(&g)? {
+        match numero_de(&g) {
             Some(n) => numerotes.push((n, g)),
             None => muets.push(g),
         }
@@ -410,7 +405,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
                 Some(l) => l,
                 None => aujourdhui,
             };
-            let numero = numero_de(&g)?;
+            let numero = numero_de(&g);
             let paies = g.paies.iter().map(|p| (p.mois.clone(), p.paie.clone())).collect();
             let pieces = Pieces { le, contrat: g.contrat.map(|c| c.contrat), paies };
             let carte = engagement::saisie::Carte {
@@ -543,7 +538,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     // LES PAIES : on remplace ligne a ligne par la cle (mois, salarie, contrat). Une ligne de DSN qui arrive sur une ligne
     // completee par un bulletin garde ce que le bulletin a ecrit ; une paie de bulletin seul s'efface devant la paie
     // declaree qu'elle complete (`rapprocher`).
-    let mut par_cle: BTreeMap<(socle::mois::Mois, Option<IdSalarie>, String), PaieLue> = BTreeMap::new();
+    let mut par_cle: BTreeMap<(socle::mois::Mois, Option<IdSalarie>, CleDePaieVersee), PaieLue> = BTreeMap::new();
     for x in crate::import::paies_historique(ctx)? {
         let x = x.a_l_apercu();
         par_cle.insert(x.cle(), x);
