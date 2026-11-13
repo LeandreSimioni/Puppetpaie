@@ -2063,7 +2063,7 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
     if dits.is_empty() {
         return Ok(());
     }
-    let idcc = ctx.entreprise.idcc.ecrite("idcc")?;
+    let idcc = ctx.entreprise.idcc.exigee("idcc")?;
     let quoi = dits.join(", ");
     let quoi = match nom_prenom(p.salarie.nom.portee(), p.salarie.prenom.portee()) {
         Some(qui) => format!("{} : {}", qui, quoi),

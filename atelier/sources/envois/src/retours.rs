@@ -2568,8 +2568,8 @@ pub fn rattacher(quis: &[&str], index: &[(droit::contexte::IdSalarie, String)]) 
 /// `temoin_bureau`, `taux`, `date_effet`, `date_calcul`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TauxAtmpNotifie {
-    pub siren: String,
-    pub nic: String,
+    pub siren: droit::fiche::Siren,
+    pub nic: droit::fiche::Nic,
     pub code_ctn: String,
     pub section: String,
     /// Le code risque tel que la DSN le declare (S21.G00.40.040) : celui de la notification, suivi du « B » quand le taux
@@ -2613,6 +2613,8 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
             if siren.is_empty() || nic.is_empty() {
                 return Err(echec(Classe::Illisible, "Notification du taux AT/MP : la déclaration ne dit pas son établissement (SIREN, nic_affectation)."));
             }
+            let siren_lu = droit::fiche::Siren::lire(&siren).map_err(|_| illisible("SIREN", &siren))?;
+            let nic_lu = droit::fiche::Nic::lire(&nic).map_err(|_| illisible("NIC", &nic))?;
             let code = champ("code_risque").to_uppercase();
             let ok_code = code.len() == 5 && code.chars().all(|c| c.is_ascii_digit() || c.is_ascii_uppercase());
             if !ok_code {
@@ -2630,8 +2632,8 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
             let effet = champ("date_effet");
             let Some(date_effet) = jour_aaaammjj(&effet) else { return Err(illisible("date d'effet", &effet)) };
             out.push(TauxAtmpNotifie {
-                siren: siren.clone(),
-                nic: nic.clone(),
+                siren: siren_lu,
+                nic: nic_lu,
                 code_ctn: champ("code_ctn"),
                 section: champ("section"),
                 code_risque,

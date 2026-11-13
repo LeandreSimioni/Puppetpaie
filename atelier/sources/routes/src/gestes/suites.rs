@@ -115,7 +115,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         };
         let mut par_annee: BTreeMap<i32, Vec<envois::retours::TauxAtmpNotifie>> = BTreeMap::new();
         for t in lus {
-            if Some(t.siren.as_str()) != siren || Some(t.nic.as_str()) != nic {
+            if Some(&t.siren) != ctx.entreprise.siren.dite() || Some(&t.nic) != ctx.entreprise.nic.dite() {
                 a_faire.push(format!(
                     "{} : le taux {} (code risque {}) est celui de l'établissement {}{}, {}. Rien n'est posé.",
                     source, t.taux, t.code_risque, t.siren, t.nic, la_fiche
