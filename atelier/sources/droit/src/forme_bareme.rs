@@ -281,7 +281,7 @@ forme! {
         // Ce que le moteur pose sur la pile : l'etablissement du salarie (`bareme::surcharger`). La compagnie, la pile la
         // recoit typee (`bareme::EntrepriseLue`), elle ne la porte pas.
         #[serde(skip)]
-        pub etablissement: Option<String>,
+        pub etablissement: Option<crate::fiche::Nic>,
     }
 }
 

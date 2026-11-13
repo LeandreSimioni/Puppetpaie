@@ -749,7 +749,7 @@ pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContr
             continue;
         }
         let mut f = fiche;
-        f.etablissement = e.etablissement.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string);
+        f.etablissement = e.etablissement.clone();
         return Ok(f);
     }
     Ok(fiche)

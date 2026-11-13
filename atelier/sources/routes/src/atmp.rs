@@ -180,10 +180,10 @@ fn derniere(liste: &[droit::fiche::Datee<TauxAtmp>]) -> Option<TauxAtmp> {
 /// LA CASE DU TAUX AT/MP D'UN AUTRE ETABLISSEMENT `nic`, en liste datee comme celle du siege : chaque ligne que porte une
 /// version de la liste des etablissements, a sa propre date, une fois, avec la note de la version qui l'a portee la
 /// premiere.
-fn case_d_un_etablissement(versions: &[&droit::fiche::Datee<Vec<Etablissement>>], nic: Option<&str>) -> Vec<droit::fiche::Datee<TauxAtmp>> {
+fn case_d_un_etablissement(versions: &[&droit::fiche::Datee<Vec<Etablissement>>], nic: Option<&droit::fiche::Nic>) -> Vec<droit::fiche::Datee<TauxAtmp>> {
     let mut out: Vec<droit::fiche::Datee<TauxAtmp>> = Vec::new();
     for v in versions {
-        for t in v.valeur.iter().flatten().filter(|x| x.nic.portee() == nic).filter_map(|x| x.taux_atmp.clone()).filter(|t| !t.est_vide()) {
+        for t in v.valeur.iter().flatten().filter(|x| x.nic.dite() == nic).filter_map(|x| x.taux_atmp.clone()).filter(|t| !t.est_vide()) {
             if !out.iter().any(|d| d.valeur.as_ref() == Some(&t)) {
                 out.push(droit::fiche::Datee { depuis: t.depuis, valeur: Some(t), note: v.note.clone() });
             }
@@ -311,7 +311,7 @@ fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: i32, nom
 /// Le code et le taux d'un autre etablissement, tels que l'ecran les dit, sous sa ligne.
 #[derive(Debug, Serialize)]
 struct EtablissementDit {
-    nic: Option<String>,
+    nic: Option<droit::fiche::Nic>,
     libelle: Option<String>,
     phrase: String,
     explication: String,
@@ -367,8 +367,8 @@ pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
     let versions: Vec<&droit::fiche::Datee<Vec<Etablissement>>> = brute.etablissements.iter().flat_map(|l| droit::fiche::valeurs_datees(l)).collect();
     let mut etablissements = Vec::new();
     for e in ctx.etablissements_dits() {
-        let n = e.nic.portee().map(String::from);
-        let (avant, maintenant, a_venir) = trois(&case_d_un_etablissement(&versions, n.as_deref()), &aujourdhui)?;
+        let n = e.nic.dite().cloned();
+        let (avant, maintenant, a_venir) = trois(&case_d_un_etablissement(&versions, n.as_ref()), &aujourdhui)?;
         let code = e.taux_atmp.as_ref().and_then(|t| t.code_risque.clone());
         let (nom, r) = nom_de_code(&code);
         let lu = e.taux_atmp.as_ref().and_then(|t| bareme::taux_atmp_de_l_annee(t, an, socle.as_ref(), bareme::en_alsace_moselle(e.code_postal.portee())));

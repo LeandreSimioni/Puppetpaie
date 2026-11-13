@@ -124,7 +124,7 @@ nature! {
             debut: Jour = Debut,
             fin: Jour = Fin,
             numero: crate::numeros::NumeroContrat = Numero,
-            etablissement: String = Etablissement,
+            etablissement: droit::fiche::Nic = Etablissement,
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
@@ -172,7 +172,7 @@ nature! {
         facultatif {
             fin: Jour = Fin,
             numero: crate::numeros::NumeroContrat = Numero,
-            etablissement: String = Etablissement,
+            etablissement: droit::fiche::Nic = Etablissement,
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
@@ -229,7 +229,7 @@ nature! {
         }
         facultatif {
             numero: crate::numeros::NumeroContrat = Numero,
-            etablissement: String = Etablissement,
+            etablissement: droit::fiche::Nic = Etablissement,
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
@@ -606,7 +606,7 @@ changements! {
     Debut(Jour) = "debut" => debut,
     Fin(Jour) = "fin" => fin,
     Numero(crate::numeros::NumeroContrat) = "numero" => numero,
-    Etablissement(String) = "etablissement" => etablissement,
+    Etablissement(droit::fiche::Nic) = "etablissement" => etablissement,
     Metier(droit::emplois::CodeEmploi) = "metier" => metier,
     Cadre(bool) = "cadre" => cadre,
     Lieu(String) = "lieu" => lieu,

@@ -318,13 +318,14 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
 fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Option<TempsDeLaCase<Valeur>>> {
     type Cases = Vec<(CaseDeFiche, Vec<droit::fiche::Datee<Valeur>>)>;
     let Some(liste) = ctx.entreprise_brute().etablissements.as_deref() else { return Ok(None) };
-    let principal = ctx.entreprise.nic_principal().map(str::to_string);
-    let mut par_nic: Vec<(String, Cases)> = Vec::new();
+    let principal = ctx.entreprise.nic_principal();
+    let mut par_nic: Vec<(droit::fiche::Nic, Cases)> = Vec::new();
     for version in droit::fiche::valeurs_datees(liste) {
         let lue = champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, &UneCase([(CaseEntreprise::Etablissements.into(), &version.valeur)]))?;
         let Some(Valeur::Lignes(lignes)) = lue.case(CaseEntreprise::Etablissements) else { continue };
-        for l in lignes {
-            let Some(nic) = l.mot(CaseEtablissement::Nic).filter(|n| Some(n) != principal.as_ref()) else { continue };
+        // Une ligne de la saisie par etablissement de la liste, dans son ordre : le NIC se lit dans l'etablissement.
+        for (e, l) in version.valeur.iter().flatten().zip(lignes) {
+            let Some(nic) = e.nic.dite().filter(|n| Some(*n) != principal).cloned() else { continue };
             if !par_nic.iter().any(|(n, _)| *n == nic) {
                 par_nic.push((nic.clone(), Vec::new()));
             }
@@ -349,7 +350,7 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
         let libelle = cases.iter().find(|(k, _)| *k == CaseEtablissement::Libelle.into()).and_then(|(_, d)| d.last()).and_then(|d| d.valeur.as_ref()).and_then(Valeur::mot);
         let dit = match libelle {
             Some(l) => l,
-            None => nic.clone(),
+            None => nic.to_string(),
         };
         let mut temps = Vec::new();
         for (cle, datees) in cases {
@@ -479,7 +480,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
 pub(crate) struct ChoixEtablissement {
     periode_dit: Option<String>,
     /// Le NIC de l'etablissement ; aucun pour le siege (un engagement du siege n'en ecrit pas).
-    nic: Option<String>,
+    nic: Option<droit::fiche::Nic>,
     nom: String,
     ouverture: Option<String>,
     fermeture: Option<String>,
@@ -492,7 +493,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
     let principal = ctx.entreprise.nic_principal();
     let autres: Vec<(droit::fiche::Etablissement, Option<socle::date::Jour>)> = droit::contexte::histoire_des_etablissements(ctx.entreprise_brute().etablissements.as_deref())?
         .into_iter()
-        .filter(|(e, _)| e.nic.portee() != principal)
+        .filter(|(e, _)| e.nic.dite() != principal)
         .collect();
     if autres.is_empty() {
         return Ok(None);
@@ -504,7 +505,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
     let mut out = vec![ChoixEtablissement { periode_dit: None, nic: None, nom: nom_du_siege, ouverture: None, fermeture: None }];
     for (e, fermeture) in autres {
         // Un etablissement se choisit par son NIC : sans lui, il ne se choisit pas.
-        let Some(nic) = e.nic.en_texte() else { continue };
+        let Some(nic) = e.nic.dite().cloned() else { continue };
         let commune = e.commune_affichage.remplie().or(e.commune.portee());
         let nom = [e.libelle.remplie(), commune].into_iter().flatten().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join(", ");
         // Son ouverture, et son dernier jour s'il est ferme, tels que l'option les dit.
@@ -512,7 +513,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
             Some(f) => format!("ouvert le {}, jusqu'au {}", o.jj_mm_aaaa(), f.jj_mm_aaaa()),
             None => format!("ouvert le {}", o.jj_mm_aaaa()),
         });
-        let nom = if nom.is_empty() { nic.clone() } else { nom };
+        let nom = if nom.is_empty() { nic.to_string() } else { nom };
         out.push(ChoixEtablissement { periode_dit, nom, nic: Some(nic), ouverture: e.ouverture.map(|j| j.iso()), fermeture: fermeture.map(|j| j.iso()) });
     }
     Ok(Some(out))

@@ -163,8 +163,8 @@ pub struct Declare {
     /// Le mois de cette DSN.
     pub mois: Mois,
     /// Le NIC de l'etablissement qui l'a deposee, et son SIRET (06.001 + 11.001).
-    pub nic: String,
-    pub siret: String,
+    pub nic: droit::fiche::Nic,
+    pub siret: droit::fiche::Siret,
     pub bloc: Vec<(String, String)>,
 }
 
@@ -322,7 +322,7 @@ intermediaires, ou ne garder qu'un changement.",
 /// Les blocs S21.G00.41 du contrat de `p`, dont le bloc 40 vient d'etre ecrit (`ecrit`), dans la DSN mensuelle de
 /// `mois` de l'etablissement `nics[0]`, en norme `norme` ; `decl` : son bloc 40 declare (`dsn::bloc_40_declare`). Vide au
 /// premier mois du contrat.
-fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[String], ecrit: &[(String, String)], decl: &Declare) -> R<Vec<Vec<(String, String)>>> {
+fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[droit::fiche::Nic], ecrit: &[(String, String)], decl: &Declare) -> R<Vec<Vec<(String, String)>>> {
     let e = &p.engagement;
     if e.numero.as_deref().is_none_or(str::is_empty) {
         return Ok(Vec::new());
@@ -375,7 +375,7 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
                 nics[0]
             ));
         };
-        identifiants.push(vec![("S21.G00.41.001".to_string(), date.jjmmaaaa()), ("S21.G00.41.012".to_string(), decl.siret.clone())]);
+        identifiants.push(vec![("S21.G00.41.001".to_string(), date.jjmmaaaa()), ("S21.G00.41.012".to_string(), decl.siret.to_string())]);
     }
     // LES MODALITES : une par bloc, l'ancienne valeur, sa date, la profondeur de recalcul.
     let mut modalites = Vec::new();
@@ -413,7 +413,7 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
 }
 
 /// Pose les blocs 41 du contrat de `p` juste apres son bloc 40, qui commence a la ligne `debut` du fichier `f`.
-pub fn poser(f: &mut crate::dsn::Fichier, debut: usize, ctx: &Contexte, p: &Paie, mois: Mois, nics: &[String], declare: Option<&Declare>) -> R<()> {
+pub fn poser(f: &mut crate::dsn::Fichier, debut: usize, ctx: &Contexte, p: &Paie, mois: Mois, nics: &[droit::fiche::Nic], declare: Option<&Declare>) -> R<()> {
     let mut fin = debut;
     let mut ecrit = Vec::new();
     while let Some(l) = f.lignes.get(fin).filter(|l| l.starts_with("S21.G00.40.")) {

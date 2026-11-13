@@ -14,7 +14,7 @@
 //! L'AER ne se fabrique pas : France Travail la renvoie apres la DSN, et elle part avec les documents quand elle est la.
 //! Un numero de contrat s'ecrit dans l'engagement a sa validation (`engagement::numeros`) ; tout ce qui part le lit la.
 
-use droit::fiche::Lue as _;
+use droit::fiche::{Lue as _, Nic};
 use socle::echec::Classe;
 use socle::fichiers::{Empreinte, EmpreinteCourte, NomDeFichier};
 use socle::mois::{Graphie, Mois};
@@ -86,7 +86,7 @@ pub(crate) fn mois_ecrit(racine: &Path, mois: Mois) -> R<bool> {
 
 /// Ce que doit etre la prochaine DSN REELLE de ce mois : `(type, ordre, remplace)`. Normale d'ordre 1 si rien n'est
 /// passe ; sinon annule-et-remplace au rang suivant -- et un refus si son delai est passe.
-fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&str>) -> R<(TypeDeLaDeclaration, NumeroDOrdre)> {
+fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&Nic>) -> R<(TypeDeLaDeclaration, NumeroDOrdre)> {
     let faits = m.depots_reels(le_mois, nic)?;
     let dernier = m.dernier_ordre(le_mois, &faits)?;
     // CE QUE LA PLATE-FORME A VU EN REEL ce mois civil, lu en silence dans les bilans archives
@@ -105,7 +105,7 @@ fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&s
 
 /// La declaration qu'un annule-et-remplace remplace (la derniere DSN mensuelle partie du mois, `dsn_parties`)
 /// portait-elle un versement du prelevement a la source (S21.G00.20.002 = DGFIP_PAS) ? `None` : aucune n'est partie.
-fn remplacee_versait_pas_de(ctx: &Contexte, m: &mut Moteur, mois: Mois, nic: Option<&str>) -> R<Option<bool>> {
+fn remplacee_versait_pas_de(ctx: &Contexte, m: &mut Moteur, mois: Mois, nic: Option<&Nic>) -> R<Option<bool>> {
     Ok(dsn_parties(ctx, m, mois, nic)?.last().map(verse_a_la_dgfip))
 }
 
@@ -121,7 +121,7 @@ struct Forme {
     type_dsn: TypeDeLaDeclaration,
     ordre: NumeroDOrdre,
     /// Le NIC de l'etablissement ; `None` : la compagnie n'en a qu'un.
-    etablissement: Option<String>,
+    etablissement: Option<Nic>,
     constitution: socle::date::Jour,
     remplacee_versait_pas: Option<bool>,
 }
@@ -170,7 +170,7 @@ impl Lu {
         let nic = forme.etablissement.clone();
         let du_nic = |sal: &droit::fiche::SalarieDuContrat| -> R<bool> {
             // Sans etablissement nomme, la DSN les declare tous.
-            let du = |n: &String| -> R<bool> { Ok(droit::bareme::etablissement_de(&fiche, sal).map_err(|e| e.reclasser(Classe::Illisible))? == *n) };
+            let du = |n: &Nic| -> R<bool> { Ok(droit::bareme::etablissement_de(&fiche, sal).map_err(|e| e.reclasser(Classe::Illisible))? == *n) };
             Ok(nic.as_ref().map(du).transpose()?.is_none_or(|oui| oui))
         };
         let mut paies: Vec<Paie> = Vec::new();
@@ -220,12 +220,12 @@ impl Present {
 /// LA DSN QUE PORTE LE FICHIER `chemin` (mois principal `mois`, etablissement `nic` ; le principal sans lui), fabriquee
 /// de nouveau depuis les paies des engagements qu'elle couvre (`fabriquer_du_present`), sous la forme que son en-tete
 /// dit, au jour ou elle a ete constituee. `None` : le fichier ne dit plus ce que disent les paies, il se refait.
-pub(crate) fn refabriquer(ctx: &Contexte, chemin: &Path, mois: socle::mois::Mois, nic: Option<&str>) -> R<Option<declarations::dsn::Fabriquee>> {
+pub(crate) fn refabriquer(ctx: &Contexte, chemin: &Path, mois: socle::mois::Mois, nic: Option<&Nic>) -> R<Option<declarations::dsn::Fabriquee>> {
     refabriquer_sur(ctx, None, chemin, mois, nic)
 }
 
 /// `refabriquer`, sur ce que la fabrication en cours a deja lu (`lu`), ou sur ce qui se lit maintenant.
-fn refabriquer_sur(ctx: &Contexte, lu: Option<&Lu>, chemin: &Path, mois: Mois, nic: Option<&str>) -> R<Option<declarations::dsn::Fabriquee>> {
+fn refabriquer_sur(ctx: &Contexte, lu: Option<&Lu>, chemin: &Path, mois: Mois, nic: Option<&Nic>) -> R<Option<declarations::dsn::Fabriquee>> {
     // Un fichier qui n'est pas la (encore jamais ecrit) se fait ; un fichier qui ne se lit pas se refuse.
     let octets = match std::fs::read(chemin) {
         Ok(o) => o,
@@ -239,13 +239,13 @@ fn refabriquer_sur(ctx: &Contexte, lu: Option<&Lu>, chemin: &Path, mois: Mois, n
         return Ok(None);
     };
     let plusieurs = !ctx.entreprise_du_mois(mois).secondaires().is_empty();
-    let nic = match nic.filter(|n| !n.is_empty()) {
-        Some(n) => n.to_string(),
-        None => ctx.entreprise.nic.ecrite("nic").map_err(|e| e.reclasser(Classe::Illisible))?.to_string(),
+    let nic = match nic {
+        Some(n) => n.clone(),
+        None => ctx.entreprise.nic.exigee("nic").map_err(|e| e.reclasser(Classe::Illisible))?.clone(),
     };
     let remplacee_versait_pas = if type_dsn.remplace() {
         let mut m = Moteur::nouveau(ctx);
-        remplacee_versait_pas_de(ctx, &mut m, mois, plusieurs.then_some(nic.as_str()))?
+        remplacee_versait_pas_de(ctx, &mut m, mois, plusieurs.then_some(&nic))?
     } else {
         None
     };
@@ -300,8 +300,8 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
     let type_dsn = e.detail.type_declaration.ok_or_else(|| erreur(Classe::Illisible, "journal : une DSN partie sans son type".to_string()))?;
     let plusieurs = !ctx.entreprise_du_mois(le_mois).secondaires().is_empty();
     let nic = match l.etablissement() {
-        Some(n) => n.to_string(),
-        None => ctx.entreprise.nic.ecrite("nic").map_err(|e| e.reclasser(Classe::Illisible))?.to_string(),
+        Some(n) => n.clone(),
+        None => ctx.entreprise.nic.exigee("nic").map_err(|e| e.reclasser(Classe::Illisible))?.clone(),
     };
     // Constituee le jour ou son fichier a ete ecrit (le journal des ecritures), sinon le jour de son depot.
     let fichier = l.fichier().ok_or_else(|| erreur(Classe::Illisible, "journal : une DSN partie sans son fichier".to_string()))?;
@@ -382,7 +382,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
 /// LES DSN MENSUELLES PARTIES de `mois` pour l'etablissement `nic` (`Null` : le principal), reelles et acceptees, dans
 /// l'ordre de leur rang, chacune fabriquee de nouveau telle qu'elle est partie (`dsn_partie`) ; un annule-et-remplace
 /// sait ainsi si celle qu'il remplacait versait a la DGFiP.
-fn dsn_parties(ctx: &Contexte, m: &mut Moteur, mois: Mois, nic: Option<&str>) -> R<Vec<declarations::dsn::Fabriquee>> {
+fn dsn_parties(ctx: &Contexte, m: &mut Moteur, mois: Mois, nic: Option<&Nic>) -> R<Vec<declarations::dsn::Fabriquee>> {
     let lignes = m.lignes()?;
     let mut faits: Vec<(NumeroDOrdre, usize)> = Vec::new();
     for l in m.depots_reels(mois, nic)? {
@@ -402,14 +402,14 @@ fn dsn_parties(ctx: &Contexte, m: &mut Moteur, mois: Mois, nic: Option<&str>) ->
 /// partie du mois, telle qu'elle est partie (ses paies et les corrections d'autres mois qu'elle portait, `dsn_parties`) ;
 /// si aucune n'est partie, celle qui partirait aujourd'hui (`fabriquer_du_present`). Rend aussi si elle est partie.
 /// `None` : rien n'est parti et rien n'est a declarer pour cet etablissement (ni paie validee, ni correction).
-pub(crate) fn dsn_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&str>) -> R<Option<(declarations::dsn::Fabriquee, bool)>> {
+pub(crate) fn dsn_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&Nic>) -> R<Option<(declarations::dsn::Fabriquee, bool)>> {
     let mut m = Moteur::nouveau(ctx);
     let plusieurs = !ctx.entreprise_du_mois(mois).secondaires().is_empty();
-    let nic = match nic.filter(|n| !n.is_empty()) {
-        Some(n) => n.to_string(),
-        None => ctx.entreprise.nic.ecrite("nic").map_err(|e| e.reclasser(Classe::Illisible))?.to_string(),
+    let nic = match nic {
+        Some(n) => n.clone(),
+        None => ctx.entreprise.nic.exigee("nic").map_err(|e| e.reclasser(Classe::Illisible))?.clone(),
     };
-    if let Some(f) = dsn_parties(ctx, &mut m, mois, plusieurs.then_some(nic.as_str()))?.pop() {
+    if let Some(f) = dsn_parties(ctx, &mut m, mois, plusieurs.then_some(&nic))?.pop() {
         return Ok(Some((f, true)));
     }
     let forme = Forme { type_dsn: TypeDeLaDeclaration::Normale, ordre: NumeroDOrdre::PREMIER, etablissement: plusieurs.then_some(nic), constitution: ctx.aujourdhui, remplacee_versait_pas: None };
@@ -521,9 +521,9 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     let mut m = Moteur::nouveau(ctx);
     // Un mois deja declare dont l'annule-et-remplace n'est plus admis : refuse AVANT d'ecrire quoi que ce soit.
     // Un etablissement par NIC quand la compagnie en a plusieurs ; sinon le principal, sans NIC.
-    let nics: Vec<Option<String>> = if plusieurs { fiche.nics().map_err(|e| e.reclasser(Classe::Illisible))?.into_iter().map(Some).collect() } else { vec![None] };
+    let nics: Vec<Option<Nic>> = if plusieurs { fiche.nics().map_err(|e| e.reclasser(Classe::Illisible))?.into_iter().map(Some).collect() } else { vec![None] };
     for nic in &nics {
-        forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_deref())?;
+        forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_ref())?;
     }
     let etiq = le_mois.etiquette();
     let sortie = ctx.racine.join("sorties").join(texte);
@@ -599,13 +599,13 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     for nic in &nics {
         let n = nic.clone();
         let mut nom = match &n {
-            Some(x) if Some(x.as_str()) != principal => format!("DSN_{}_{}.dsn", etiq, x),
+            Some(x) if Some(x) != principal => format!("DSN_{}_{}.dsn", etiq, x),
             _ => format!("DSN_{}.dsn", etiq),
         };
-        let (type_dsn, ordre) = forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_deref())?;
+        let (type_dsn, ordre) = forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_ref())?;
         let mut remplacee_versait_pas = None;
         if type_dsn.remplace() {
-            remplacee_versait_pas = remplacee_versait_pas_de(ctx, &mut m, mois, nic.as_deref())?;
+            remplacee_versait_pas = remplacee_versait_pas_de(ctx, &mut m, mois, nic.as_ref())?;
             nom = format!("{}_AR{}.dsn", &nom[..nom.len() - ".dsn".len()], ordre);
             avertissements.push(info(format!(
                 "La DSN de {} est deja partie : celle-ci est un ANNULE-ET-REMPLACE integral (ordre {}). Elle remplace la precedente, ordres de telepaiement compris, et s'envoie au plus tard le {} a minuit.",
@@ -617,11 +617,11 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         let f_dsn = sortie.join(&nom);
         // LE FICHIER DEJA ECRIT QUI DIT LA MEME CHOSE se reprend (`refabriquer`) : meme declaration, au jour ou il a ete
         // constitue.
-        if refabriquer_sur(ctx, Some(&lu), &f_dsn, le_mois, n.as_deref())?.is_none() {
+        if refabriquer_sur(ctx, Some(&lu), &f_dsn, le_mois, n.as_ref())?.is_none() {
             // Ce que la DSN de cet etablissement corrige des mois passes : elle le dit a son depot.
-            let portees = declarations::produire_regularisations::versions_portees(ctx, &lu.regs, match n.as_deref() {
+            let portees = declarations::produire_regularisations::versions_portees(ctx, &lu.regs, match n.as_ref() {
                 Some(x) => x,
-                None => fiche.nic.ecrite("nic").map_err(|e| e.reclasser(Classe::Illisible))?,
+                None => fiche.nic.exigee("nic").map_err(|e| e.reclasser(Classe::Illisible))?,
             })?;
             // La ligne du journal de son depot les emporte en sa forme (`envois::journal::Version`).
             let portees: Vec<envois::journal::Version> = portees
@@ -1199,13 +1199,13 @@ fn refaire_la_dsn(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Lig
     let le_mois = l.mois().ok_or_else(|| erreur(Classe::Illisible, "journal : une DSN partie sans son mois".to_string()))?;
     let plusieurs = !ctx.entreprise_du_mois(le_mois).secondaires().is_empty();
     let nic = match (plusieurs, l.etablissement()) {
-        (true, Some(n)) => Some(n.to_string()),
-        (true, None) => Some(ctx.entreprise.nic.ecrite("nic").map_err(|e| e.reclasser(Classe::Illisible))?.to_string()),
+        (true, Some(n)) => Some(n.clone()),
+        (true, None) => Some(ctx.entreprise.nic.exigee("nic").map_err(|e| e.reclasser(Classe::Illisible))?.clone()),
         (false, _) => None,
     };
     // Un annule-et-remplace : la DSN qu'il remplacait versait-elle a la DGFiP ?
     let mut avant: Vec<(NumeroDOrdre, usize)> = Vec::new();
-    for x in m.depots_reels(le_mois, nic.as_deref())? {
+    for x in m.depots_reels(le_mois, nic.as_ref())? {
         if let Some(r) = lignes.iter().position(|y| *y == x).filter(|r| *r < rang) {
             avant.push((m.ordre_de_la_ligne(le_mois, &x)?, r));
         }

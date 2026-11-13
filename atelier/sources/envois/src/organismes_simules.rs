@@ -491,7 +491,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
         element(d.type_declaration.map(droit::type_declaration::TypeDeLaDeclaration::code)),
         mois,
         element(d.entreprise.siren.as_deref()),
-        element(d.etablissement()),
+        element(d.etablissement().map(|n| -> &str { n })),
         taux
     );
     let r = retour(NatureDuRetour::TauxAtMp, flux, publication, "Compte-rendu metier taux AT/MP, notification de la Carsat (compagnie fictive)", None);

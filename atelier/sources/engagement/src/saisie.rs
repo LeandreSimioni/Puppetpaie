@@ -118,7 +118,7 @@ carte! {
         #[champ(Partage, Numero)]
         pub numero: Option<crate::numeros::NumeroContrat>,
         #[champ(Terme, Etablissement)]
-        pub etablissement: Option<String>,
+        pub etablissement: Option<droit::fiche::Nic>,
         #[champ(Terme, Metier)]
         pub metier: Option<droit::emplois::CodeEmploi>,
         #[champ(Terme, Cadre)]
@@ -284,6 +284,12 @@ impl Simple for droit::fiche::CodePcsEse {
 }
 
 impl Simple for droit::fiche::CodeEmploiFt {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.to_string()))
+    }
+}
+
+impl Simple for droit::fiche::Nic {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Texte(self.to_string()))
     }

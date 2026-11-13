@@ -105,7 +105,7 @@ pub struct Engagement {
     pub statut_categoriel_rc: Option<StatutCategorielRc>,
     /// L'etablissement (NIC) ou le salarie est rattache pour CE contrat, quand la compagnie en a plusieurs ; `None` : le
     /// principal. La fiche du salarie le porte pour la paie et les declarations du contrat (`calcul::fiche_de_l_engagement`).
-    pub etablissement: Option<String>,
+    pub etablissement: Option<droit::fiche::Nic>,
     /// Sa nature de contrat, toujours dite (regle 6).
     pub nature: NatureDeContrat,
     pub quotite_contrat: Option<Decimal>,
@@ -186,7 +186,7 @@ pub struct Assemble {
     pub statut: Option<Statut>,
     pub statut_conventionnel: Option<StatutConventionnel>,
     pub statut_categoriel_rc: Option<StatutCategorielRc>,
-    pub etablissement: Option<String>,
+    pub etablissement: Option<droit::fiche::Nic>,
     pub quotite_contrat: Option<Chiffre>,
     pub quotite_reference_saisie: Option<Chiffre>,
     pub modalite_temps_travail_saisie: Option<ModaliteDuTempsDeTravail>,
@@ -528,7 +528,7 @@ impl Engagement {
             statut: v.statut.clone(),
             statut_conventionnel: v.statut_conventionnel.clone(),
             statut_categoriel_rc: v.statut_categoriel_rc.clone(),
-            etablissement: v.etablissement.clone().filter(|t| !t.trim().is_empty()),
+            etablissement: v.etablissement.clone(),
             nature,
             quotite_contrat: v.quotite_contrat.as_ref().map(Chiffre::court).transpose()?,
             quotite_reference_saisie: v.quotite_reference_saisie.as_ref().map(Chiffre::court).transpose()?,

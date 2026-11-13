@@ -18,7 +18,7 @@ use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
-use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
+use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue, Nic};
 use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, IdDeCotisation, Pile, Rubrique, PREVOYANCE};
 use documents::bordereau::{self, Destinataire, LigneBordereau, TauxDeLaLigne};
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
@@ -557,7 +557,7 @@ pub struct Options {
     pub envoi_test: bool,
     pub ordre: NumeroDOrdre,
     pub remplace: Option<IdentifiantDeDeclaration>,
-    pub etablissement: Option<String>,
+    pub etablissement: Option<Nic>,
     /// Sur un annule et remplace (type 03 ou 05) : la declaration remplacee portait-elle un versement DGFiP
     /// (S21.G00.20.002 = DGFIP_PAS) ? `None` : on ne sait pas, et la DSN refuse s'il n'y a rien a reverser ce mois-ci.
     pub remplacee_versait_pas: Option<bool>,
@@ -3996,7 +3996,7 @@ pub struct SoldeTa {
 /// derniere DSN qui a declare ce mois a portee (`engagement::etats::paie_declaree`, regle 4 : ce qui est declare se lit
 /// dans la version sur laquelle la DSN est partie), ou sa paie ecrite si aucune DSN ne l'a encore declaree. Un
 /// engagement en saisie n'y est pas : rien ne part de lui. `nic` : les seuls salaries de cet etablissement.
-pub fn paies_declarees_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&str>, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
+pub fn paies_declarees_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&Nic>, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
     // Un mois sans saisie n'a rien declare.
     let declarees = |data: engagement::saisie::VueDuMois| -> R<Vec<Paie>> {
         let ctx_m = ctx.du_mois(mois)?;
@@ -4008,7 +4008,7 @@ pub fn paies_declarees_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&str>, de
                 None => v.paie(ctx, &data, i)?,
             };
             if let Some(n) = nic {
-                if bareme::etablissement_de(&ctx_m.entreprise, &p.salarie)? != n {
+                if bareme::etablissement_de(&ctx_m.entreprise, &p.salarie)? != *n {
                     continue;
                 }
             }
@@ -4022,7 +4022,7 @@ pub fn paies_declarees_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&str>, de
 /// LES ASSIETTES DES CTP `codes` que le bordereau Urssaf de `mois` porte pour l'etablissement `nic` sur les paies
 /// `paies`, une par code, tirees par la fonction qui ecrit le bordereau de la DSN (`lignes_bordereau`) : la taxe
 /// d'apprentissage (992, 993) que lisent le solde d'avril et la contribution supplementaire de mars (`csa`).
-pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: Mois, nic: &str, codes: &[CodeCtp]) -> R<Vec<Decimal>> {
+pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: Mois, nic: &Nic, codes: &[CodeCtp]) -> R<Vec<Decimal>> {
     if paies.is_empty() {
         return Ok(vec![zero2(); codes.len()]);
     }
@@ -4036,7 +4036,7 @@ pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: Mois, nic: &str, 
 }
 
 /// Les assiettes des CTP `codes` que les DSN de l'annee `annee` declarent pour l'etablissement `nic`, une par code.
-pub fn assiettes_de_l_annee(ctx: &Contexte, annee: i32, nic: &str, codes: &[CodeCtp], departs: &engagement::departs::Departs) -> R<Vec<Decimal>> {
+pub fn assiettes_de_l_annee(ctx: &Contexte, annee: i32, nic: &Nic, codes: &[CodeCtp], departs: &engagement::departs::Departs) -> R<Vec<Decimal>> {
     let mut total = vec![zero2(); codes.len()];
     for m in 1..=12 {
         let mois = Mois::nouveau(annee, m)?;
@@ -4052,7 +4052,7 @@ pub fn assiettes_de_l_annee(ctx: &Contexte, annee: i32, nic: &str, codes: &[Code
 /// l'assiette de son solde.
 const CTP_TAXE_PRINCIPALE: CodeCtp = CodeCtp::du_moteur("992");
 
-fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: &Pile, nic: &str, departs: &engagement::departs::Departs) -> R<Option<SoldeTa>> {
+fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: &Pile, nic: &Nic, departs: &engagement::departs::Departs) -> R<Option<SoldeTa>> {
     if mois.numero() != 4 {
         return Ok(None);
     }
@@ -4212,7 +4212,7 @@ fn echeance_mois_suivant(mois: Mois, jour: u32) -> Jour {
 /// seule facon de l'obtenir (regle 8 : chaque etablissement a son taux AT/MP) : le bordereau courant, le bordereau
 /// regularise et le nominatif (`bar_du`) passent par elle. (La pile
 /// d'un salarie, `bareme::bareme_applique`, surcharge de meme par l'etablissement du salarie.)
-fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &str, mois: Mois) -> R<Pile> {
+fn bareme_du_nic(ctx: &Contexte, ent: &ChampsEntreprise, nic: &Nic, mois: Mois) -> R<Pile> {
     bareme::surcharger((*ctx.bareme(&mois.premier_jour())?).clone(), ent, nic)
 }
 
@@ -4261,7 +4261,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
                 .filter(|(k, _)| k.starts_with("S21.G00.40."))
                 .map(|(k, x)| (k.to_string(), x.trim_matches('\'').to_string()))
                 .collect();
-            return Ok(Some(crate::changements_contrat::Declare { mois: m, siret: ctx_m.entreprise.siren.ecrite("siren")?.trim().to_string() + &nic, nic, bloc }));
+            return Ok(Some(crate::changements_contrat::Declare { mois: m, siret: droit::fiche::Siret::de(ctx_m.entreprise.siren.exigee("siren")?, &nic), nic, bloc }));
         }
         m = m.precedent();
     }
@@ -4269,7 +4269,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
 }
 
 /// Le bareme d'un mois pour l'etablissement, avec ses contributions.
-pub fn bar_du(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, nic: &str, m: Mois) -> R<BaremeDuMois> {
+pub fn bar_du(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, nic: &Nic, m: Mois) -> R<BaremeDuMois> {
     let lue = ctx.entreprise_lue(&m.premier_jour())?;
     let b = bareme_du_nic(ctx, ent, nic, m)?;
     let c = contributions_dsn(ctx, ent, orgs, m, &b)?;
@@ -4451,14 +4451,14 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
 pub fn fabriquer(ctx: &Contexte, paies: &[Paie], mois: Mois, regs: &[Regularisation], arrets: &[Arret], o: &Options, departs: &engagement::departs::Departs) -> R<Fabriquee> {
     let ctx = &ctx.du_mois(mois)?;
     let ent0 = &ctx.entreprise;
-    let principal_nic = ent0.nic.ecrite("nic")?;
-    let nic = match o.etablissement.as_deref().filter(|n| !n.is_empty()) {
-        Some(n) => n.to_string(),
-        None => principal_nic.to_string(),
+    let principal_nic = ent0.nic.exigee("nic")?;
+    let nic = match &o.etablissement {
+        Some(n) => n.clone(),
+        None => principal_nic.clone(),
     };
-    let principal = nic == principal_nic;
+    let principal = nic == *principal_nic;
     if !principal && ent0.etablissement(&nic).is_none() {
-        return Err(refus!("Etablissement {} inconnu de la fiche entreprise (connus : {}).", nic, ent0.nics()?.join(", ")));
+        return Err(refus!("Etablissement {} inconnu de la fiche entreprise (connus : {}).", nic, ent0.nics()?.iter().map(Nic::to_string).collect::<Vec<_>>().join(", ")));
     }
     let mut egares = BTreeSet::new();
     for s in paies.iter().map(|p| &p.salarie).chain(regs.iter().map(|r| &r.apres.salarie)) {
@@ -4490,7 +4490,7 @@ par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
         ));
     }
     // Les etablissements, celui de cette DSN d'abord : un contrat declare ailleurs a change d'etablissement (bloc 41).
-    let nics_courant_d_abord: Vec<String> = std::iter::once(nic.clone()).chain(ent0.nics()?.into_iter().filter(|n| *n != nic)).collect();
+    let nics_courant_d_abord: Vec<Nic> = std::iter::once(nic.clone()).chain(ent0.nics()?.into_iter().filter(|n| *n != nic)).collect();
     // Ce qui est parti, et les engagements du mois : le bloc 40 declare de chaque contrat se lit dans sa version (`bloc_40_declare`).
     let etats_du_mois = engagement::etats::tels_qu_ecrits(ctx, mois, departs)?;
     let orgs = ctx.organismes()?;

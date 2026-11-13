@@ -8,7 +8,7 @@
 //! Ce que l'état veut dire (partie, déposée, à faire) se lit ici, par les méthodes d'[`EtatDsn`] ; sa forme est
 //! déclarée une fois (`EtatDsn`, `Etat`), et c'est elle que les routes rendent.
 
-use droit::fiche::Lue as _;
+use droit::fiche::{Lue as _, Nic};
 use serde::Serialize;
 
 use droit::contexte::Contexte;
@@ -86,7 +86,7 @@ impl EtatDsn {
 }
 
 /// L'état de la DSN de `mois` ; `nic` : l'établissement (`None` : le principal ; les états du journal sont les siens).
-pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&str>) -> R<EtatDsn> {
+pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>) -> R<EtatDsn> {
     let mois = le_mois;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     if let Some(e) = etats::etat_dsn_du_mois(&lignes, le_mois, nic, ctx.entreprise.nic_principal()) {
@@ -168,7 +168,7 @@ pub fn premier_mois_du(ctx: &Contexte) -> R<Option<Mois>> {
 /// `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt` l. 2291-2309) : elle est due chaque mois,
 /// avec ou sans salarie, a partir du premier mois du (`premier_mois_du`), tant qu'elle reste a faire
 /// (`EtatDsn::a_faire`). LE SEUL ENDROIT QUI LE DIT : l'echeancier, les rappels et le panneau des etapes le lisent.
-pub fn due(ctx: &Contexte, mois: Mois, nic: Option<&str>) -> R<bool> {
+pub fn due(ctx: &Contexte, mois: Mois, nic: Option<&Nic>) -> R<bool> {
     if premier_mois_du(ctx)?.is_some_and(|p| mois < p) {
         return Ok(false);
     }

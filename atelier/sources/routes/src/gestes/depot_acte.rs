@@ -16,7 +16,7 @@
 //! Le SIMULATEUR (`bridage::branchement`) joue le depot -- un flux `FICTIF-...` -- et rien ne quitte le poste ;
 //! le reste (repetition, journal) se deroule comme en vrai.
 
-use droit::fiche::Lue as _;
+use droit::fiche::{Lue as _, Nic};
 use socle::echec::Classe;
 use std::path::{Path, PathBuf};
 
@@ -169,7 +169,7 @@ fn ordre_dit(o: Option<NumeroDOrdre>) -> R<NumeroDOrdre> {
 /// autre poste, comptent pour l'ordre sans s'afficher), plus un. Une mensuelle du mois deja
 /// acceptee dans la base d'essai, meme venue d'ailleurs, fait partir l'essai en annule-et-remplace. Trop grand ne coute
 /// rien ; trop petit, c'est B1-208-11. `constitution` : le mois de constitution du fichier (`AAAA-MM`, S20.G00.05.007).
-fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&str>, constitution: Mois) -> R<Option<NumeroDOrdre>> {
+fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, constitution: Mois) -> R<Option<NumeroDOrdre>> {
     let mois = &le_mois.to_string();
     let du_mois = envois::journal::lire(&ctx.racine, Some(Acte::Dsn), Some(le_mois), false).map_err(|m| m.reclasser(Classe::Disque))?;
     let essais: Vec<&Ligne> = etats::de_l_etablissement(&du_mois, nic, ctx.entreprise.nic_principal()).into_iter().filter(|l| !l.reel() && !l.signalement()).collect();
@@ -199,7 +199,7 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&str>, cons
 /// Le garde-fou du depot REEL d'une mensuelle, ecrit depuis la
 /// norme. `Ok(true)` : un annule-et-remplace en regle (rien a forcer) ; `Ok(false)` : une premiere DSN ou une
 /// normale (`DsnDejaDeposee` tranche) ; un refus sinon.
-fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: Option<&str>) -> R<bool> {
+fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: Option<&Nic>) -> R<bool> {
     let mois = &le_mois.to_string();
     let mut m = crate::etapes::Moteur::nouveau(ctx);
     let faits = m.depots_reels(le_mois, nic)?;
@@ -317,7 +317,7 @@ pub fn deposer_dsn_dans(
             "Compagnie d'essai : ce fichier ne porte pas le SIREN de la compagnie (il a ete ecrit sous une autre identite : celle de la compagnie fictive, avant le montage, ou une identite d'avant). Déposer ici la DSN du mois, qui s'y fabrique. Rien n'est parti.",
         ));
     }
-    let nic: Option<&str> = apercu.etablissement().filter(|n| !n.is_empty());
+    let nic: Option<&Nic> = apercu.etablissement();
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
 
     let (mut forme, mut repetition) = (String::new(), None);
@@ -414,14 +414,14 @@ pub fn deposer_dsn_dans(
     let versions = if apercu.est_signalement() {
         versions_du_signalement(ctx, le_mois, &octets)?
     } else {
-        let nic = match apercu.etablissement().filter(|n| !n.is_empty()) {
-            Some(n) => n.to_string(),
-            None => ctx.entreprise.nic.ecrite("nic")?.to_string(),
+        let nic = match apercu.etablissement() {
+            Some(n) => n.clone(),
+            None => ctx.entreprise.nic.exigee("nic")?.clone(),
         };
         // Un etablissement qui ne se lit pas refuse le depot : la premiere faute, rendue apres la lecture.
         let faute: std::cell::RefCell<Option<Echec>> = std::cell::RefCell::new(None);
         let garder = |_: &IdSalarie, _: &str, e: &engagement::stock::Ecrit| match crate::etapes::nic_de_l_engagement_ecrit(ctx, e) {
-            Ok(n) => n.as_deref() == Some(nic.as_str()),
+            Ok(n) => n.as_ref() == Some(&nic),
             Err(x) => {
                 faute.borrow_mut().get_or_insert(x);
                 false

@@ -19,14 +19,14 @@
 use std::collections::BTreeMap;
 
 use droit::contexte::Contexte;
-use droit::fiche::{ChampsEntreprise, Datee, Etablissement, FicheEntrepriseDatee, Lue as _};
+use droit::fiche::{ChampsEntreprise, Datee, Etablissement, FicheEntrepriseDatee, Lue as _, Nic};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 
 use crate::fiches::{refus, ChangementDit};
 
-fn nic(e: &Etablissement) -> Option<String> {
-    e.nic.en_texte()
+fn nic(e: &Etablissement) -> Option<Nic> {
+    e.nic.dite().cloned()
 }
 
 /// Son nom : son libelle, sinon sa commune, sinon son NIC.
@@ -208,7 +208,7 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
     let versions: Vec<(Option<Jour>, Vec<Etablissement>)> =
         contenu.etablissements.iter().flat_map(|l| droit::fiche::valeurs_datees(l)).map(|e| (e.depuis, e.valeur.iter().flatten().cloned().collect())).collect();
     let ouverts: Vec<Etablissement> = versions.last().map(|(_, l)| l.clone()).into_iter().flatten().collect();
-    let mut frises: BTreeMap<Option<String>, Frise> = BTreeMap::new();
+    let mut frises: BTreeMap<Option<Nic>, Frise> = BTreeMap::new();
     for (i, (j, l)) in versions.iter().enumerate() {
         let Some(j) = j.or_else(|| versions.get(i + 1).and_then(|(x, _)| *x)) else { continue };
         for f in frises.values_mut() {
@@ -294,7 +294,7 @@ valeur, et la date ne se devine pas. Rien n'a été enregistré.",
     let mut datee = vec![Datee { depuis: None, valeur: Some(Vec::new()), note: None }];
     let mut precedente: Vec<Etablissement> = Vec::new();
     for j in jours {
-        let mut ouverts_ce_jour: Vec<(Option<Jour>, Option<String>, Etablissement)> = frises.iter().filter_map(|(n, f)| au(f, &j).map(|v| (v.ouverture, n.clone(), v))).collect();
+        let mut ouverts_ce_jour: Vec<(Option<Jour>, Option<Nic>, Etablissement)> = frises.iter().filter_map(|(n, f)| au(f, &j).map(|v| (v.ouverture, n.clone(), v))).collect();
         ouverts_ce_jour.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
         let valeur: Vec<Etablissement> = ouverts_ce_jour.into_iter().map(|(_, _, v)| v).collect();
         if valeur == precedente {

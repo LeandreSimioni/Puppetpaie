@@ -146,7 +146,7 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
 /// `recapitulatif_dsn` : ce que la DSN declare, contrat par contrat, comparé aux contrats saisis de l'etablissement `nic`
 /// (tous sans etablissement). La paie du mois qui ne se lit pas (ou l'etablissement d'un salarie) ne se compare pas, et
 /// la phrase le dit.
-fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) -> R<RecapDsn> {
+fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit::fiche::Nic>) -> R<RecapDsn> {
     let mut sans_comparaison: Option<Echec> = None;
     let liste = match saisie_aux_numeros_declares(ctx, mois) {
         Ok(l) => l,
@@ -161,7 +161,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
     for (i, p) in liste.iter().enumerate() {
         if let Some(nic) = nic {
             match droit::bareme::etablissement_de(&ctx.entreprise, &p.salarie) {
-                Ok(e) if e == nic => {}
+                Ok(e) if e == *nic => {}
                 Ok(_) => continue,
                 Err(m) => {
                     sans_comparaison = Some(m);

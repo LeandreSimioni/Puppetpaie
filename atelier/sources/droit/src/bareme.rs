@@ -15,7 +15,7 @@ use crate::assiette::Assiette;
 use crate::base_assujettie::{BaseAssujettie, TypeDeComposant};
 use crate::code_cotisation::CodeCotisation81;
 use crate::natures::{AuMois, Nature};
-use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Siret, Statut, StatutCategorielRc};
+use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, Nic, SalarieDuContrat, Siret, Statut, StatutCategorielRc};
 use socle::date::Jour;
 use socle::echec::{Lieu, Echec, R};
 use socle::forme::Court;
@@ -514,9 +514,9 @@ pub fn est_cadre(sal: &ChampsSalarie) -> bool {
 /// Le code postal de SON etablissement, sinon celui de l'entreprise.
 pub fn alsace_moselle(ent: &ChampsEntreprise, sal: &SalarieDuContrat) -> bool {
     let mut cp = ent.code_postal.portee();
-    let nic = sal.etablissement.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    let nic = sal.etablissement.as_ref();
     for e in ent.etablissements.dite().into_iter().flatten() {
-        if nic.is_some() && nic == e.nic.portee().map(str::trim) {
+        if nic.is_some() && nic == e.nic.dite() {
             if let Some(c) = e.code_postal.remplie() {
                 cp = Some(c);
             }
@@ -1163,15 +1163,15 @@ pub struct EntrepriseLue {
 // ---------------------------------------------------- les etablissements
 
 /// Le NIC de l'etablissement du salarie, de la fiche entreprise.
-pub fn etablissement_de(fiche: &ChampsEntreprise, sal: &SalarieDuContrat) -> R<String> {
+pub fn etablissement_de(fiche: &ChampsEntreprise, sal: &SalarieDuContrat) -> R<Nic> {
     rattachement(&fiche.nics()?, sal)
 }
 
 /// `nics` : le siege, puis les autres etablissements.
-fn rattachement(nics: &[String], sal: &SalarieDuContrat) -> R<String> {
+fn rattachement(nics: &[Nic], sal: &SalarieDuContrat) -> R<Nic> {
     // Un engagement qui ne dit pas d'etablissement est rattache au siege.
-    let nic = match sal.etablissement.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
-        Some(n) if n != nics[0] => n.to_string(),
+    let nic = match &sal.etablissement {
+        Some(n) if *n != nics[0] => n.clone(),
         _ => return Ok(nics[0].clone()),
     };
     if !nics[1..].contains(&nic) {
@@ -1179,7 +1179,7 @@ fn rattachement(nics: &[String], sal: &SalarieDuContrat) -> R<String> {
             "'engagement le rattache a l'etablissement {}, que la \
 fiche entreprise ne porte pas a cette date (Configuration › Entreprise › Avancé, « Autres établissements » : son ouverture ; connus : {}).",
             nic,
-            nics.join(", ")
+            nics.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")
         );
         // Un salarie sans nom : la phrase se tourne sans lui.
         return Err(socle::echec::refus(match sal.nom.remplie() {
@@ -1192,8 +1192,8 @@ fiche entreprise ne porte pas a cette date (Configuration › Entreprise › Ava
 
 /// L'entreprise vue depuis l'etablissement `nic`.
 /// Un autre etablissement que le siege : son NIC, son SIRET (celui du SIREN et de ce NIC), et son adresse quand il la dit.
-pub fn fiche_de_l_etablissement(fiche: &ChampsEntreprise, nic: &str) -> R<ChampsEntreprise> {
-    if nic.is_empty() || Some(nic) == fiche.nic_principal() {
+pub fn fiche_de_l_etablissement(fiche: &ChampsEntreprise, nic: &Nic) -> R<ChampsEntreprise> {
+    if Some(nic) == fiche.nic_principal() {
         return Ok(fiche.clone());
     }
     let e = fiche.etablissement(nic).ok_or_else(|| socle::refus!("Etablissement inconnu : {}.", nic))?;
@@ -1241,8 +1241,8 @@ pub fn entreprise_du_salarie(ent: &ChampsEntreprise, salarie: &SalarieDuContrat)
 
 /// Le taux AT/MP et le versement mobilite de
 /// l'etablissement remplacent ceux du siege.
-pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &str) -> R<Pile> {
-    let e = if !nic.is_empty() && Some(nic) != fiche.nic_principal() { fiche.etablissement(nic) } else { None };
+pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile> {
+    let e = if Some(nic) != fiche.nic_principal() { fiche.etablissement(nic) } else { None };
     let e = match e {
         Some(e) => e,
         None => return Ok(bar),
@@ -1275,7 +1275,7 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &str) -> R<Pile>
             ..Default::default()
         }));
     }
-    bar.etablissement = Some(e.nic.ecrite("nic")?.to_string());
+    bar.etablissement = Some(e.nic.exigee("nic")?.clone());
     Ok(bar)
 }
 

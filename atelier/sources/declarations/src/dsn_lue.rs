@@ -555,8 +555,8 @@ impl DsnLue {
     }
 
     /// L'etablissement declare (le premier S21.G00.11.001).
-    pub fn etablissement(&self) -> Option<&str> {
-        self.etablissements.first().map(|n| &**n)
+    pub fn etablissement(&self) -> Option<&droit::fiche::Nic> {
+        self.etablissements.first()
     }
 
     /// Le jour de l'evenement d'un signalement : l'arret par son dernier jour travaille (S21.G00.60.002), la fin de

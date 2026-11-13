@@ -206,12 +206,12 @@ pub struct VersionPortee {
 /// LES VERSIONS QUE PORTENT LES CORRECTIONS `regs` (`regularisations_pour`, lues par la fabrication de la DSN) pour
 /// l'etablissement `nic` : pour chacune, la version de l'engagement du mois corrige, `{"salarie", "numero", "version",
 /// "mois": <le mois corrige>}`. Ce que la DSN fabriquee dit porter, et ce que la ligne du journal de son depot emporte.
-pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<VersionPortee>> {
+pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &droit::fiche::Nic) -> R<Vec<VersionPortee>> {
     let fiche = &ctx.entreprise;
     let plusieurs = !fiche.secondaires().is_empty();
     let mut out = Vec::new();
     for r in regs {
-        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(|e| e.reclasser(Classe::Illisible))? != nic {
+        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(|e| e.reclasser(Classe::Illisible))? != *nic {
             continue;
         }
         let numero = r.apres.engagement.numero.clone().ok_or_else(|| {

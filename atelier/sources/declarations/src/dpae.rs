@@ -372,7 +372,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
             let (a, b) = zone_employeur(nom);
             ecrire_zone(&mut buf, nom, a, b, &v)?;
         }
-        if etab.nic.portee() != ent.nic_principal() {
+        if etab.nic.dite() != ent.nic_principal() {
             code_urssaf = Some(urssaf_d_un_etablissement(etab)?);
         }
     }
@@ -1074,7 +1074,7 @@ mod tests {
         ));
         let nantes = crate::urssaf::base().unwrap().du_departement("44").unwrap();
         let mut e = embauche(N::Cdi, None);
-        e.salarie.etablissement = Some("00024".into());
+        e.salarie.etablissement = Some(droit::fiche::Nic::lire("00024").unwrap());
         let t = enr(&e, Some(&ent), Some("117")).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), nantes);
         let t = enr(&embauche(N::Cdi, None), Some(&ent), Some("117")).unwrap();

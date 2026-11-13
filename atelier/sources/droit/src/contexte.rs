@@ -578,7 +578,7 @@ fn versement_mobilite_dit(pile: &Pile) -> bool {
 /// Les etablissements de la fiche se tiennent-ils (SIRET, NIC, une fois chacun) ?
 pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> R<()> {
     let siren = fiche.siren.portee();
-    let mut vus: Vec<&str> = fiche.nic_principal().into_iter().collect();
+    let mut vus: Vec<&str> = fiche.nic_principal().map(|n| -> &str { n }).into_iter().collect();
     let mut griefs: Vec<String> = Vec::new();
     for e in fiche.secondaires() {
         let nom = match (e.libelle.remplie(), e.nic.portee()) {
@@ -1619,7 +1619,7 @@ PSS_H_METROP).",
     pub fn etablissements_dits(&self) -> Vec<crate::fiche::Etablissement> {
         let derniere = self.fiches.entreprise.etablissements.as_deref().and_then(|l| l.iter().max_by_key(|d| d.depuis)).and_then(|d| d.valeur.dite());
         let principal = self.entreprise.nic_principal();
-        derniere.into_iter().flatten().filter(|e| e.nic.portee() != principal).cloned().collect()
+        derniere.into_iter().flatten().filter(|e| e.nic.dite() != principal).cloned().collect()
     }
 
     /// La fiche entreprise d'un mois : lue au dernier jour du mois, avec chaque autre etablissement ouvert un

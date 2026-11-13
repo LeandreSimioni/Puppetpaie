@@ -999,7 +999,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // l'etablissement du contrat, celui sous lequel la DSN le declare (`droit::bareme::entreprise_du_salarie`).
     let vue = droit::bareme::entreprise_du_salarie(ent, sal)?;
     let (siret, naf) = (vue.siret.ecrite("siret")?, vue.naf.ecrite("naf")?);
-    let etablissement = vue.nic.portee().and_then(|n| ent.etablissement(n)).map(|l| {
+    let etablissement = vue.nic.dite().and_then(|n| ent.etablissement(n)).map(|l| {
         // La forme lisible, sinon la forme civile ; ce que l'etablissement ne dit pas ne s'imprime pas.
         let ou = |usage: &Option<String>, civil: &Option<String>| usage.remplie().or(civil.portee()).map(str::to_string);
         let complement = l.complement_adresse_affichage.remplie().or(l.complement_adresse.remplie());

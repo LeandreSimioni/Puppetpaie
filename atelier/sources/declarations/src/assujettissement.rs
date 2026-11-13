@@ -57,7 +57,7 @@ use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::organismes::CodeCtp;
 use droit::apprentissage::{champ_du_motif, motif_de_la_fiche, taxe_apprentissage_non_due, CodeTaxe, MILLESIME_ASSOCIATIONS_REDEVABLES, MNATA_ASSOCIATIONS};
-use droit::fiche::MotifNonAssujettissement;
+use droit::fiche::{MotifNonAssujettissement, Nic};
 
 use documents::taxe_sur_les_salaires::{assiette_taxe_sur_les_salaires, fractions_majorees, taxe_sur_les_salaires_de_la_fiche};
 use socle::echec::{refus, R};
@@ -94,7 +94,7 @@ enum MoisDeLAnnee {
 /// Les douze mois de l'annee de la DSN, pour l'etablissement `nic`. Le mois de la DSN est `paies` (celles qu'elle
 /// declare) ; un autre mois se lit dans ses engagements : leurs paies declarees (`dsn::paies_declarees_du_mois`) si
 /// `montants`, sinon leurs seuls contrats. Un mois sans saisie n'a pas eu de salarie.
-fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &str, mois: Mois, paies: &[Paie], montants: bool, departs: &engagement::departs::Departs) -> R<Vec<MoisDeLAnnee>> {
+fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &Nic, mois: Mois, paies: &[Paie], montants: bool, departs: &engagement::departs::Departs) -> R<Vec<MoisDeLAnnee>> {
     let mut out = Vec::new();
     for m in 1..=12u32 {
         let m = Mois::nouveau(mois.annee(), m)?;
@@ -111,7 +111,7 @@ fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &s
         } else {
             let mut garde = Vec::new();
             for p in crate::dsn::contrats_du_mois(ctx, m, departs)? {
-                if droit::bareme::etablissement_de(ent, &p.salarie)? == nic {
+                if droit::bareme::etablissement_de(ent, &p.salarie)? == *nic {
                     garde.push(p);
                 }
             }
@@ -181,7 +181,7 @@ fn assiettes_taxe_sur_les_salaires(annee: &[MoisDeLAnnee], bar: &droit::forme_ba
 
 /// L'assiette de la PEEC de l'etablissement : les remunerations de l'annee qui servent de base aux cotisations de
 /// securite sociale, la base 03 de chaque contrat (celle que la DSN de chaque mois a declaree ou declare).
-fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &droit::organismes::Organismes, nic: &str, annee: &[MoisDeLAnnee]) -> R<Decimal> {
+fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &droit::organismes::Organismes, nic: &Nic, annee: &[MoisDeLAnnee]) -> R<Decimal> {
     let mut total = Decimal::ZERO;
     for m in annee {
         match m {
@@ -265,7 +265,7 @@ ou la table livrée. Rien n'est écrit.",
 /// cessation d'activite, seul autre cas de la p. 58). `ent` : la fiche entreprise ; `ent_e` : vue depuis
 /// l'etablissement ; `bar` : le bareme du mois pour l'etablissement ; `paies` : celles que la DSN declare.
 pub fn blocs(
-    ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, ent_e: &droit::fiche::ChampsEntreprise, orgs: &droit::organismes::Organismes, bar: &droit::forme_bareme::Pile, nic: &str, mois: Mois, paies: &[Paie], departs: &engagement::departs::Departs,
+    ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, ent_e: &droit::fiche::ChampsEntreprise, orgs: &droit::organismes::Organismes, bar: &droit::forme_bareme::Pile, nic: &Nic, mois: Mois, paies: &[Paie], departs: &engagement::departs::Departs,
 ) -> R<Vec<Bloc44>> {
     if mois.numero() != 12 {
         return Ok(Vec::new());

@@ -36,7 +36,7 @@ pub(crate) enum CaseDatee {
 /// qui la dit (son libelle).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TempsDUneLigne<V> {
-    pub(crate) cle: String,
+    pub(crate) cle: droit::fiche::Nic,
     pub(crate) dit: String,
     pub(crate) cases: Vec<TempsDeLaCase<V>>,
 }

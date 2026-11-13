@@ -2570,25 +2570,25 @@ impl ChampsSalarie {
 
 impl ChampsEntreprise {
     /// Le NIC du siege, tel que la fiche le dit.
-    pub fn nic_principal(&self) -> Option<&str> {
-        self.nic.portee()
+    pub fn nic_principal(&self) -> Option<&Nic> {
+        self.nic.dite()
     }
 
     /// Les etablissements autres que le siege.
     pub fn secondaires(&self) -> Vec<&Etablissement> {
-        let nic = self.nic.portee();
-        self.etablissements.dite().into_iter().flatten().filter(|e| e.nic.portee() != nic).collect()
+        let nic = self.nic.dite();
+        self.etablissements.dite().into_iter().flatten().filter(|e| e.nic.dite() != nic).collect()
     }
 
     /// L'autre etablissement de ce NIC, `None` : le siege, ou un NIC que la fiche ne porte pas.
-    pub fn etablissement(&self, nic: &str) -> Option<&Etablissement> {
-        self.secondaires().into_iter().find(|e| e.nic.portee() == Some(nic))
+    pub fn etablissement(&self, nic: &Nic) -> Option<&Etablissement> {
+        self.secondaires().into_iter().find(|e| e.nic.dite() == Some(nic))
     }
 
     /// Le NIC du siege, puis celui de chaque autre etablissement : une DSN par etablissement. Chacun s'exige : sans lui,
     /// la DSN de l'etablissement ne s'ecrit pas.
-    pub fn nics(&self) -> R<Vec<String>> {
-        std::iter::once(self.nic.ecrite("nic")).chain(self.secondaires().iter().map(|e| e.nic.ecrite("etablissements.nic"))).map(|n| n.map(str::to_string)).collect()
+    pub fn nics(&self) -> R<Vec<Nic>> {
+        std::iter::once(self.nic.exigee("nic")).chain(self.secondaires().iter().map(|e| e.nic.exigee("etablissements.nic"))).map(|n| n.cloned()).collect()
     }
 
     /// Les feries qu'elle chome, tels que `socle::feries::chomes` les lit ; `None` : la fiche n'en dit rien.
@@ -2643,7 +2643,7 @@ impl std::ops::DerefMut for FicheSalarie {
 pub struct SalarieDuContrat {
     pub fiche: FicheSalarie,
     pub idcc_de_l_employeur: Option<Idcc>,
-    pub etablissement: Option<String>,
+    pub etablissement: Option<Nic>,
     pub sante_suspendue: Option<String>,
 }
 
@@ -2656,7 +2656,7 @@ struct Figee {
     #[serde(skip_serializing_if = "Option::is_none")]
     idcc_de_l_employeur: Option<Idcc>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    etablissement: Option<String>,
+    etablissement: Option<Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sante_suspendue: Option<String>,
 }

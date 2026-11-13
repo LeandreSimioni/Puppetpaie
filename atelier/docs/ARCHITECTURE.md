@@ -287,7 +287,7 @@ de prévoyance.
 | emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres |
 | code d'un métier | un code de la nomenclature des emplois du spectacle de France Travail (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est un), sinon de la nomenclature | `CodeEmploi` (`droit/src/emplois.rs`), que portent le métier qu'une carte choisit (`metier`), la clé du catalogue, un métier et celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier : `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui peut n'en nommer aucun (« 999SPT ») |
 | statut | artiste ou technicien | `droit::fiche::Statut` |
-| établissement | un lieu d'emploi | son `Nic`, à créer (#419) |
+| établissement | un lieu d'emploi | son `Nic` (`droit/src/fiche.rs`, cinq chiffres), que portent la fiche entreprise et ses autres établissements (`nic_principal`, `nics`, `etablissement`), la carte et l'engagement, la fiche d'un contrat (`SalarieDuContrat`), la DSN fabriquée et lue, le journal des envois, la désignation d'un dépôt ; aucun (`None`) : le siège |
 | effectif | l'effectif que l'Urssaf calcule | `droit::contexte::Effectif` |
 
 ## Le principe

@@ -5,7 +5,7 @@
 //! choisir, refuser, nommer, ecrire, et passer a `envois` ce qui part. Le jour est celui du contexte
 //! (`PUPPETPAIE_AUJOURDHUI`) ; l'horodatage d'un fichier partiel de DPAE est la minute de l'horloge, a l'heure de Paris.
 
-use droit::fiche::Lue as _;
+use droit::fiche::{Lue as _, Nic};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -147,7 +147,7 @@ pub struct Designation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) etablissement: Option<String>,
+    pub(crate) etablissement: Option<Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -166,8 +166,8 @@ impl Designation {
     }
 
     /// L'etablissement nomme (son NIC), s'il l'est.
-    fn nic(&self) -> Option<&str> {
-        self.etablissement.as_deref()
+    fn nic(&self) -> Option<&Nic> {
+        self.etablissement.as_ref()
     }
 }
 
@@ -180,7 +180,7 @@ pub(crate) struct ChargeDeposer {
     #[serde(skip_serializing_if = "Option::is_none")]
     mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    etablissement: Option<String>,
+    etablissement: Option<Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -748,7 +748,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
             }
         }
         let dsn = crate::gestes::depart::fabriquer_dsn(ctx, le_mois, "interface")?;
-        let chemin = match d.etablissement.as_deref().filter(|n| !n.is_empty()) {
+        let chemin = match &d.etablissement {
             Some(n) => dsn.fichiers.iter().find(|f| f.file_name().is_some_and(|x| x.to_string_lossy().contains(&format!("_{}", n)))),
             None => dsn.fichiers.first(),
         };
@@ -770,12 +770,12 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
     let lignes = envois::journal::lu(&ctx.racine)?.lignes;
     // Une fiche qui ne dit pas encore son NIC n'a que son siege, et aucune DSN n'en est partie.
     let principal = ctx.entreprise.nic_principal();
-    let nic = d.etablissement.as_deref().filter(|n| !n.is_empty()).or(principal);
+    let nic = d.etablissement.as_ref().or(principal);
     let voulues: Option<BTreeSet<etats::Paire>> = d.engagements.as_ref().filter(|e| !e.is_empty()).map(|e| e.iter().map(|x| (x.salarie.clone(), Some(x.numero.clone()))).collect());
     let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
-            let de = l.etablissement().map(|n| -> &str { n }).or(principal);
+            let de = l.etablissement().or(principal);
             l.fichier().is_some_and(|f| f.texte().starts_with("DSN_")) && de == nic
         }
         Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect::<BTreeSet<_>>() == *v),
@@ -861,7 +861,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
         refuse = embauches.iter().any(|x| x.is_some_and(|x| x.refusee));
     } else {
         let ligne = du_flux(Quoi::Dsn.acte());
-        let nic = ligne.and_then(Ligne::etablissement).map(|n| -> &str { n });
+        let nic = ligne.and_then(Ligne::etablissement);
         // Sans son mois, rien ne dit ou en est la DSN : elle attend.
         let e = mois.map(|m| compagnie::etat_dsn::du_mois(ctx, m, nic)).transpose()?;
         passe = e.as_ref().is_some_and(|e| e.etat == compagnie::etat_dsn::Etat::Passee);
