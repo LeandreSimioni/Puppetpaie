@@ -23,7 +23,7 @@ use crate::suites::{DepotRefuse, Suites};
 /// ecrite au journal ; `mois`, celui que le fichier declare.
 #[derive(Debug, serde::Serialize)]
 pub struct DepotFait {
-    pub quoi: String,
+    pub quoi: Acte,
     pub mois: Mois,
     pub reel: bool,
     pub reponse: String,
@@ -112,7 +112,7 @@ fn trace_relative(ctx: &Contexte, t: &Path) -> R<CheminRelatif> {
 /// journal refuse joint son echec a celui du depot : il ne se perd pas.
 fn echec(ctx: &Contexte, quoi: Acte, d: &Depot, ligne: Ligne, e: Echec, suites: &mut Suites) -> Echec {
     let classe = e.classe_notee();
-    suites.depot_refuse = Some(DepotRefuse { quoi: quoi.nom().into(), reel: d.reel, classe: classe.into(), message: e.phrase.clone(), repetition: d.repetition.cloned() });
+    suites.depot_refuse = Some(DepotRefuse { quoi, reel: d.reel, classe: classe.into(), message: e.phrase.clone(), repetition: d.repetition.cloned() });
     match noter(ctx, d, ligne) {
         Ok(_) => e,
         Err(journal) => e.reformuler(|p| format!("{}\nLe journal des envois ne l'a pas noté : {}", p, journal.phrase)),
@@ -205,7 +205,7 @@ pub fn deposer_dsn(
     let ligne = Ligne::Dsn(envoi_du_depot(d, true, "net-entreprises", flux.clone(), &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
     let ligne = repondu_aussitot(ctx, joue, ligne, suites)?;
-    Ok(DepotFait { quoi: "dsn".into(), mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
+    Ok(DepotFait { quoi: Acte::Dsn, mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
 }
 
 /// Depose une DPAE. `contenu` : le fichier tel qu'il part (bascule en test faite) ; `embauches` : ce qu'elle declare
@@ -252,7 +252,7 @@ pub fn deposer_dpae(
     let ligne = Ligne::Dpae(envoi_du_depot(d, true, "urssaf", flux.clone(), &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
     let ligne = repondu_aussitot(ctx, joue, ligne, suites)?;
-    Ok(DepotFait { quoi: "dpae".into(), mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
+    Ok(DepotFait { quoi: Acte::Dpae, mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
 }
 
 #[cfg(test)]
