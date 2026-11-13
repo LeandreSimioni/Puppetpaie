@@ -247,7 +247,13 @@ fn chiffres(t: &str) -> usize {
 /// quoi faire (`{texte}`, `{n}` sa mesure, `{max}` la borne) : rien ne le couperait. Un texte vide n'est pas le sien :
 /// la case vide s'ecrit nulle.
 macro_rules! texte_borne {
-    (@commun $nom:ident, $unite:literal) => {
+    (@ranger) => {
+        None
+    };
+    (@ranger $ranger:path) => {
+        Some($ranger)
+    };
+    (@commun $nom:ident, $unite:literal $(, rangee par $ranger:path)?) => {
         impl $nom {
             /// Le texte `texte`, ou ce qui le refuse ; vide, il n'est pas une valeur (la case vide s'ecrit nulle).
             pub fn lire(texte: &str) -> R<$nom> {
@@ -282,16 +288,23 @@ macro_rules! texte_borne {
 
         impl<'de> Deserialize<'de> for $nom {
             fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                $nom::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+                let texte = String::deserialize(d)?;
+                // Une saisie se range d'abord dans la forme du type (`FormeDeCase::RANGER`), s'il en a une.
+                let texte = match <$nom as FormeDeCase>::RANGER {
+                    Some(ranger) => socle::forme::range_si_saisi(texte, ranger),
+                    None => texte,
+                };
+                $nom::lire(&texte).map_err(|e| serde::de::Error::custom(e.phrase))
             }
         }
 
         impl FormeDeCase for $nom {
             const FAUTE: Option<fn(&str) -> Option<String>> = Some($nom::faute);
             const LONGUEUR: Option<(usize, &'static str)> = Some(($nom::LONGUEUR, $unite));
+            const RANGER: Option<fn(&str) -> String> = texte_borne!(@ranger $($ranger)?);
         }
     };
-    ($(#[$m:meta])* pub struct $nom:ident : $borne:ident $max:literal $unite:literal par $mesure:ident, $phrase:literal;) => {
+    ($(#[$m:meta])* pub struct $nom:ident : $borne:ident $max:literal $unite:literal par $mesure:ident $(rangee par $ranger:path)?, $phrase:literal;) => {
         $(#[$m])*
         #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
         #[serde(transparent)]
@@ -307,7 +320,7 @@ macro_rules! texte_borne {
             }
         }
 
-        texte_borne!(@commun $nom, $unite);
+        texte_borne!(@commun $nom, $unite $(, rangee par $ranger)?);
     };
 }
 
@@ -486,13 +499,19 @@ l'étranger), ce que la DPAE et la DSN écrivent (norme DPAE v5.3, zone « Code 
 texte_borne! {
     /// LE NUMERO DE SECURITE SOCIALE d'un salarie, sans sa cle : 13 caracteres. La DPAE en ecrit 13 (N_SECU_SOC, positions
     /// 348-360 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 309-315) ; la DSN aussi (S21.G00.30.001,
-    /// X [13,13] : `logiciel/donnees/formats-dsn-base.json`).
-    pub struct Nir : Exactement 13 "caractères" par caracteres,
+    /// X [13,13] : `logiciel/donnees/formats-dsn-base.json`). Saisi, il se range sans aucun blanc et en capitales
+    /// (`Nir::rangee`) : un departement corse saisi « 2a » s'ecrit « 2A ».
+    pub struct Nir : Exactement 13 "caractères" par caracteres rangee par Nir::rangee,
         "« {texte} » a {n} caractères : un numéro de sécurité sociale en a {max}, sans sa clé, ce que la DPAE et la DSN \
 écrivent (norme DPAE v5.3, zone « Numéro de sécurité sociale » ; DSN, S21.G00.30.001). Les deux derniers chiffres vont dans la case « Clé »";
 }
 
 impl Nir {
+    /// Le texte saisi `texte` dans sa forme, avant d'etre lu (`FormeDeCase::RANGER`) : sans aucun blanc, en capitales.
+    pub fn rangee(texte: &str) -> String {
+        sans_blancs(texte).to_uppercase()
+    }
+
     /// Le sexe que dit son premier chiffre (`Sexe::du_nir`).
     pub fn sexe(&self) -> Option<Sexe> {
         Sexe::du_nir(&self.0)

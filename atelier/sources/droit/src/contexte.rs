@@ -1698,8 +1698,10 @@ PSS_H_METROP).",
         // Le NIR, quand c'est lui qu'on donne : 13 caracteres, ou 15 avec la cle.
         let brut: String = nom.replace(' ', "").to_uppercase();
         if forme_de_nir(&brut) {
+            // Un NIR saisi se range en capitales (`Nir::rangee`) : 2A, 2B.
+            let cherche = crate::fiche::Nir::lire(&brut[..13])?;
             for (cle, s) in &self.salaries {
-                if s.nir.dite().is_some_and(|n| n.as_ref().to_uppercase() == brut[..13]) {
+                if s.nir.dite() == Some(&cherche) {
                     return Ok(cle.to_string());
                 }
             }
