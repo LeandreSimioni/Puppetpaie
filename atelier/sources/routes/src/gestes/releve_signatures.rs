@@ -193,7 +193,6 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             }
         }
         let noms_signes = signes.iter().map(|(_, p)| NomDeFichier::du(p)).collect::<R<Vec<_>>>()?;
-        let fichier_signe = noms_signes.iter().map(NomDeFichier::texte).collect::<Vec<_>>().join(", ");
 
         // LE JOURNAL D'ABORD : une fois la ligne ecrite, la releve suivante n'attend plus ce code, et le renvoi ne se fera
         // pas deux fois. Un contrat que `contrat_recu` refuse (la paie n'est plus dans la saisie du mois...) devient un
@@ -246,7 +245,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             adresse: de.clone(),
             quand: quand.clone(),
             contrats: contrats.clone(),
-            fichier_signe: fichier_signe.clone(),
+            fichier_signe: noms_signes.clone(),
             preuve: nom_preuve.clone(),
             renvoye: false,
         });
@@ -273,7 +272,12 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 let dernier = r.recues.len() - 1;
                 r.recues[dernier].renvoye = true;
             }
-            Err(e) => r.incidents.push(format!("{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.", a_nom, e.phrase, fichier_signe)),
+            Err(e) => r.incidents.push(format!(
+                "{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.",
+                a_nom,
+                e.phrase,
+                noms_signes.iter().map(NomDeFichier::texte).collect::<Vec<_>>().join(", ")
+            )),
         }
     }
     client.fermer()?;

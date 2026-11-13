@@ -1105,7 +1105,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     // LE CONTRAT ET L'AVENANT : la derniere ligne qui les a fait partir.
     if nom.starts_with("Contrat") || nom.starts_with("Avenant") {
         // L'EXEMPLAIRE CONTRESIGNE : le contrat parti, plus la mention que sa signature a notee (`contresigner`).
-        let signe = lignes.iter().rev().filter(|l| l.mois() == Some(le_mois)).flat_map(|l| envois::etats::revenus(l)).find(|r| r.fichier_signe.as_ref().is_some_and(|f| f.texte().split(", ").any(|f| f == nom)));
+        let signe = lignes.iter().rev().filter(|l| l.mois() == Some(le_mois)).flat_map(|l| envois::etats::revenus(l)).find(|r| r.fichier_signe.as_ref() == Some(fichier));
         if let Some(r) = signe {
             let Some(envoye) = envois::releve_signatures::souche_contresignee(&nom) else {
                 return Err(refus(format!("{} : la signature notée ne dit pas quel contrat parti elle signe.", nom)));
