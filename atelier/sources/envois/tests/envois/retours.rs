@@ -62,7 +62,7 @@ fn ban() -> String {
     rapport(
         "BAN",
         "<envoi><idflux>WSBBBB</idflux></envoi><declaration><declaration_bilan><etat>KO</etat>\
-         <declaration_anomalie><code>CST-04</code><categorie>Bloquante</categorie>\
+         <declaration_anomalie><code>CST-04</code><categorie>bloquant</categorie>\
          <message> Code URSSAF invalide </message><identifiant>S21.G00.20.001</identifiant><valeur>X</valeur>\
          <nom_famille>FAVART</nom_famille></declaration_anomalie>\
          <declaration_anomalie><code>B1-208-08</code><message>Sans categorie</message></declaration_anomalie>\

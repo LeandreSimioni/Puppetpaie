@@ -1097,7 +1097,7 @@ pub struct DetailIncidentDeRetour {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AnomalieDeRetour {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub categorie: Option<String>,
+    pub categorie: Option<retours::CategorieDAnomalie>,
     pub code: String,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1125,7 +1125,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
             None => archive_du_retour(racine, r, quoi)?.map(|f| lire_archive(&f)).transpose()?,
         };
         let codees = contenu.map(|c| retours::anomalies_codees_d_octets(&c)).transpose()?;
-        codees.into_iter().flatten().map(|a| AnomalieDeRetour { categorie: Some(a.categorie), code: a.code, message: a.message, rubrique: Some(a.rubrique) }).collect()
+        codees.into_iter().flatten().map(|a| AnomalieDeRetour { categorie: a.categorie, code: a.code, message: a.message, rubrique: Some(a.rubrique) }).collect()
     };
     // Sans doublon, les bloquantes d'abord, puis par code.
     let mut uniques: Vec<AnomalieDeRetour> = Vec::new();
@@ -1134,7 +1134,8 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
             uniques.push(a);
         }
     }
-    uniques.sort_by(|x, y| (x.categorie.as_deref() != Some("bloquant"), &x.code).cmp(&(y.categorie.as_deref() != Some("bloquant"), &y.code)));
+    let bloquant = Some(retours::CategorieDAnomalie::Bloquant);
+    uniques.sort_by(|x, y| (x.categorie != bloquant, &x.code).cmp(&(y.categorie != bloquant, &y.code)));
     let phrases: Vec<String> = uniques.iter().take(10).map(|a| format!("{} : {}", a.code, a.message).trim_matches(|c| c == ' ' || c == ':').to_string()).collect();
     let resume = match phrases.join(" ; ") {
         r if r.is_empty() => "Rejet sans motif lisible".to_string(),

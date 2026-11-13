@@ -364,12 +364,13 @@ fn bilans_refuses(flux: &IdDeFlux, publication: Moment, l: &Ligne, nature: Natur
     };
     let ban = format!(
         "{}<declaration><declaration_identification><rang>1</rang><nature>{}</nature></declaration_identification>\
-         <declaration_bilan><etat>KO</etat><mois>{}</mois><declaration_anomalie><code>{}</code><categorie>Bloquante</categorie>\
+         <declaration_bilan><etat>KO</etat><mois>{}</mois><declaration_anomalie><code>{}</code><categorie>{}</categorie>\
          <message>{}</message><identifiant>{}</identifiant></declaration_anomalie></declaration_bilan></declaration>",
         envoi,
         nature,
         mois_dsn,
         echappe(&refus.code),
+        crate::retours::CategorieDAnomalie::Bloquant,
         echappe(&refus.message),
         element(refus.rubrique.as_deref())
     );

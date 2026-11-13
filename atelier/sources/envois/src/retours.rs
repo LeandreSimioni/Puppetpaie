@@ -455,7 +455,7 @@ impl StatutDuRetour {
         }
     }
 
-    /// Le statut qui ecrit ce verdict.
+    /// Le statut qui ecrit ce verdict (meme code).
     pub fn du_verdict(v: Verdict) -> StatutDuRetour {
         match v {
             Verdict::Ok => StatutDuRetour::Ok,
@@ -472,6 +472,15 @@ impl StatutDuRetour {
             StatutDuRetour::Ano => Some(Verdict::Ano),
             StatutDuRetour::EnCours | StatutDuRetour::AnoBloquante => None,
         }
+    }
+}
+
+droit::codes_fermes! {
+    /// LA CATEGORIE D'UNE ANOMALIE D'UN BILAN (`categorie`, `categorie_anomalie_type` du schema des bilans, l. 839-855,
+    /// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`) : bloquante ou non.
+    CategorieDAnomalie, "Catégorie d'anomalie", texte "schéma des bilans v02r01, categorie_anomalie_type, l. 839-855" {
+        Bloquant = "bloquant",
+        NonBloquant = "non-bloquant",
     }
 }
 
@@ -1469,7 +1478,10 @@ pub fn anomalies_lisibles_d_octets(o: &[u8]) -> R<Vec<String>> {
             }
         }
         if !message.is_empty() {
-            let cat = if categorie.is_empty() { String::new() } else { format!(" ({})", categorie) };
+            let cat = match forme_du_retour(Some(categorie).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)? {
+                Some(c) => format!(" ({})", c),
+                None => String::new(),
+            };
             let qui = if nom.is_empty() { String::new() } else { format!(" -- {}", nom) };
             out.push(format!("{}{}{}", message, cat, qui));
         }
@@ -1478,10 +1490,10 @@ pub fn anomalies_lisibles_d_octets(o: &[u8]) -> R<Vec<String>> {
 }
 
 /// UNE ANOMALIE D'UN BILAN, en codes (`anomalies_codees_d_octets`) : chaque champ est le texte du premier element de son
-/// nom sous l'anomalie (vide s'il n'en porte pas), tel que le journal des incidents l'ecrit.
+/// nom sous l'anomalie (vide s'il n'en porte pas ; la categorie, absente), tel que le journal des incidents l'ecrit.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct AnomalieCodee {
-    pub categorie: String,
+    pub categorie: Option<CategorieDAnomalie>,
     pub code: String,
     pub message: String,
     pub rubrique: String,
@@ -1496,12 +1508,12 @@ pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
         if !matches!(local(&a.tag), "declaration_anomalie" | "envoi_anomalie") {
             continue;
         }
-        let (mut code, mut categorie, mut message, mut rubrique) = (String::new(), String::new(), String::new(), String::new());
+        let (mut code, mut categorie, mut message, mut rubrique) = (String::new(), None, String::new(), String::new());
         for x in arbre.sous(a) {
             let t = x.texte_net();
             match local(&x.tag) {
                 "code" if code.is_empty() => code = t.to_string(),
-                "categorie" if categorie.is_empty() => categorie = t.to_string(),
+                "categorie" if categorie.is_none() => categorie = forme_du_retour(Some(t).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)?,
                 "message" if message.is_empty() => message = t.to_string(),
                 "identifiant" if rubrique.is_empty() => rubrique = t.to_string(),
                 _ => {}
@@ -2681,7 +2693,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         }
         anomalies.push(AnomalieDuRapport {
             code: code.to_string(),
-            categorie: premier_texte(&arbre, a, &["categorie"]).to_string(),
+            categorie: forme_du_retour(Some(premier_texte(&arbre, a, &["categorie"])).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)?,
             message: message.to_string(),
             rubrique,
             ligne: premier_texte(&arbre, a, &["numero_ligne"]).to_string(),
@@ -2743,7 +2755,7 @@ pub struct DeclarationDuRapport {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AnomalieDuRapport {
     pub code: String,
-    pub categorie: String,
+    pub categorie: Option<CategorieDAnomalie>,
     pub message: String,
     pub rubrique: String,
     pub ligne: String,

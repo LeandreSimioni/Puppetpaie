@@ -223,7 +223,7 @@ struct Anomalie {
 impl Anomalie {
     fn du_rapport(a: &AnomalieDuRapport) -> Anomalie {
         let o = |t: &str| dit(t).map(String::from);
-        Anomalie { code: o(&a.code), categorie: o(&a.categorie), message: o(&a.message), rubrique: o(&a.rubrique), ligne: o(&a.ligne), nombre: o(&a.nombre), salarie: o(&a.salarie) }
+        Anomalie { code: o(&a.code), categorie: a.categorie.map(|c| c.to_string()), message: o(&a.message), rubrique: o(&a.rubrique), ligne: o(&a.ligne), nombre: o(&a.nombre), salarie: o(&a.salarie) }
     }
 
     fn du_message(message: &str) -> Anomalie {
