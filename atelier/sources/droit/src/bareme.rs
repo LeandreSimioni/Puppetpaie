@@ -1425,26 +1425,52 @@ impl Fraction {
     }
 }
 
-/// (part patronale, part salariale) de la tranche 1, en fractions, pour la
-/// convention de l'entreprise et cette population (`population` la nomme, `de_la_branche` la lit dans la branche).
-pub fn repartition_t1(
-    bar: &Pile,
-    ent: &ChampsEntreprise,
-    population: &str,
-    de_la_branche: fn(&crate::forme_bareme::RepartitionDeBranche) -> Option<String>,
-) -> R<(Fraction, Fraction)> {
+/// LA COLONNE DE LA REPARTITION DE BRANCHE de la retraite complementaire en tranche 1 (tableau n 3 de la fiche Audiens
+/// « Taux et repartitions », `retraite_t1_repartition.par_idcc` du socle) : le permanent, ou l'intermittent de tel statut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColonneDeRepartition {
+    Permanent,
+    Intermittent(Statut),
+}
+
+impl ColonneDeRepartition {
+    /// Ce que la branche `b` dit dans cette colonne.
+    fn de(self, b: &crate::forme_bareme::RepartitionDeBranche) -> Option<&String> {
+        match self {
+            ColonneDeRepartition::Permanent => b.permanent.as_ref(),
+            ColonneDeRepartition::Intermittent(Statut::Artiste) => b.artiste.as_ref(),
+            ColonneDeRepartition::Intermittent(Statut::Technicien) => b.technicien.as_ref(),
+        }
+    }
+}
+
+impl std::fmt::Display for ColonneDeRepartition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ColonneDeRepartition::Permanent => f.write_str("permanent"),
+            ColonneDeRepartition::Intermittent(s) => f.write_str(s.as_str()),
+        }
+    }
+}
+
+/// Le premier jour ou la repartition d'avant 1999 ne vaut plus.
+const PREMIER_JANVIER_1999: Jour = Jour { an: 1999, mois: 1, jour: 1 };
+
+/// (part patronale, part salariale) de la tranche 1, en fractions, pour la convention de l'entreprise et la colonne
+/// `colonne` de sa branche.
+pub fn repartition_t1(bar: &Pile, ent: &ChampsEntreprise, colonne: ColonneDeRepartition) -> R<(Fraction, Fraction)> {
     let rep = bar.retraite_t1_repartition.as_ref();
     // La repartition d'avant 1999 vaut pour la compagnie dont la fiche dit une premiere embauche d'avant 1999.
-    let embauche_avant_1999 = ent.premiere_embauche.dite().is_some_and(|j| j.iso().as_str() < "1999-01-01");
+    let embauche_avant_1999 = ent.premiere_embauche.dite().is_some_and(|j| *j < PREMIER_JANVIER_1999);
     let avant_1999 = rep.map(|r| r.avant_1999.as_str()).filter(|a| !a.is_empty());
     let texte_rep: String = match avant_1999 {
         Some(a) if embauche_avant_1999 => a.to_string(),
         _ => {
             let idcc = ent.idcc.dite();
             let branche = idcc.and_then(|i| rep.and_then(|r| r.par_idcc.get(i)));
-            let t = branche.and_then(de_la_branche);
+            let t = branche.and_then(|b| colonne.de(b));
             match t.filter(|t| !t.is_empty()) {
-                Some(t) => t,
+                Some(t) => t.clone(),
                 None => {
                     return Err(refus(
                         "Le barème de l'année ne porte pas la répartition de la retraite complémentaire de cette convention : le signaler au développeur.",
@@ -1459,7 +1485,7 @@ du socle.",
                                 Some(i) => i.as_ref(),
                                 None => "(aucune)",
                             },
-                            population
+                            colonne
                         ),
                     ))
                 }
@@ -1534,7 +1560,7 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
         if !ent.idcc.est_dite() && !ent.premiere_embauche.est_dite() {
             return Ok(bar);
         }
-        let (_, part_sal) = repartition_t1(&bar, ent, "permanent", |b| b.permanent.clone())?;
+        let (_, part_sal) = repartition_t1(&bar, ent, ColonneDeRepartition::Permanent)?;
         let (p, s) = parts_t1(rep.taux_droit_commun, part_sal);
         return poser_t1(bar, p, s);
     }
@@ -1581,11 +1607,7 @@ demander a Audiens, puis a ecrire dans la couche de \
             ),
         ));
     }
-    let de_la_branche: fn(&crate::forme_bareme::RepartitionDeBranche) -> Option<String> = match statut {
-        Statut::Artiste => |b| b.artiste.clone(),
-        Statut::Technicien => |b| b.technicien.clone(),
-    };
-    let (_, part_sal) = repartition_t1(&bar, ent, statut.as_str(), de_la_branche)?;
+    let (_, part_sal) = repartition_t1(&bar, ent, ColonneDeRepartition::Intermittent(statut))?;
     let (p, s) = parts_t1(taux, part_sal);
     poser_t1(bar, p, s)
 }

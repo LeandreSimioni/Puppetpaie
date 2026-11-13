@@ -117,7 +117,7 @@ fn entree_tient(ctx: &Contexte, k: &CleLue, v: &ValeurLue) -> R<bool> {
         CleLue::Datee(LectureDatee::Pas { salarie, le, mois }) => *v == droit::pas::empreinte(ctx, salarie, *le, *mois)?,
         CleLue::Datee(LectureDatee::Mensuels { mois, salarie }) => *v == ValeurLue::Empreinte(crate::conges::empreinte_des_mensuels_d_avant(ctx, *mois, salarie)?),
         CleLue::Datee(LectureDatee::Paies { mois, salarie }) => *v == ValeurLue::Empreinte(crate::etats::empreinte_des_paies_validees(ctx, *mois, Some(salarie))?),
-        CleLue::Datee(LectureDatee::Saisie { mois, salarie }) => stock::empreinte_de_la_saisie_du_mois(racine, *mois, salarie.as_ref())?.is_some_and(|e| *v == e),
+        CleLue::Datee(LectureDatee::Saisie { mois, salarie }) => stock::empreinte_de_la_saisie_du_mois(racine, *mois, salarie.as_ref())?.is_some_and(|e| *v == ValeurLue::Saisie(e)),
         CleLue::Imprevus { salarie } => *v == ValeurLue::Empreinte(crate::imprevus::empreinte_du_salarie(racine, salarie)?),
         CleLue::Fichier(c) => *v == fichiers::empreinte_fichier(&sur_le_disque(c)),
         CleLue::Existe(c) => *v == ValeurLue::OuiNon(sur_le_disque(c).exists()),
