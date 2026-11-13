@@ -33,7 +33,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     let (presents, ecartes) = inventaire(racine)?;
     let index = lire_index(racine)?;
     // Tout renvoyer, ou aucun index : aucun dossier n'est connu d'avance, chacun se cherche dans Drive.
-    let mut dossiers: BTreeMap<String, String> = index.iter().filter(|_| !tout).flat_map(|i| i.dossiers.clone()).collect();
+    let mut dossiers: BTreeMap<String, envois::drive::IdDrive> =index.iter().filter(|_| !tout).flat_map(|i| i.dossiers.clone()).collect();
 
     let mut resultat = Sauvegarde {
         racine_drive: racine_drive.to_string(),
@@ -80,7 +80,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             en_echec.extend(fichiers.iter().cloned());
             continue;
         }
-        let essai: Result<(String, BTreeMap<String, envois::drive::Distant>), ErreurGoogle> = (|| {
+        let essai: Result<(envois::drive::IdDrive, BTreeMap<String, envois::drive::Distant>), ErreurGoogle> = (|| {
             let parent = match dossiers.get(&cle) {
                 Some(p) => p.clone(),
                 None => client.chemin(&segments)?,

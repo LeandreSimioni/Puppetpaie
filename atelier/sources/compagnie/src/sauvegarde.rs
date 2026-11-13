@@ -386,7 +386,7 @@ pub struct Index {
     #[serde(with = "socle::paris::ecrit::saisie")]
     pub quand: socle::paris::Moment,
     pub racine_drive: String,
-    pub dossiers: BTreeMap<String, String>,
+    pub dossiers: BTreeMap<String, envois::drive::IdDrive>,
     pub fichiers: BTreeMap<CheminRelatif, Etat>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::saisie::option")]
     pub derniere_complete: Option<socle::paris::Moment>,
