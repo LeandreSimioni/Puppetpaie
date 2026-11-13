@@ -912,7 +912,7 @@ enum PieceDuRetour {
 
 /// Un retour d'une ligne du journal, lu.
 fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> R<RetourLu> {
-    let canal = if ligne.acte() == envois::journal::Acte::Dpae { CanalDesRetours::Dpae } else { CanalDesRetours::Dsn };
+    let canal = CanalDesRetours::de_l_acte(ligne.acte());
     let nature = r.nature_retour;
     let statut = r.statut;
     let publication = r.publication;

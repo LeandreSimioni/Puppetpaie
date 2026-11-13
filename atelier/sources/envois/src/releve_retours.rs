@@ -316,6 +316,14 @@ pub enum CanalDesRetours {
 }
 
 impl CanalDesRetours {
+    /// Le canal des retours d'un envoi : la DPAE a le sien, tout le reste passe par celui de la DSN.
+    pub fn de_l_acte(acte: Acte) -> CanalDesRetours {
+        match acte {
+            Acte::Dpae => CanalDesRetours::Dpae,
+            _ => CanalDesRetours::Dsn,
+        }
+    }
+
     /// Le sous-dossier de `retours/` ou s'archivent ses pieces : aucun pour la DSN (`retours/` meme), `dpae` pour la DPAE.
     pub fn dossier(self) -> Option<&'static str> {
         match self {
@@ -323,14 +331,20 @@ impl CanalDesRetours {
             CanalDesRetours::Dpae => Some("dpae"),
         }
     }
+
+    /// Le dossier de ses pieces sous la racine d'une compagnie : `retours/` (la DSN) ou `retours/dpae/` (la DPAE).
+    pub fn chemin(self, racine: &Path) -> PathBuf {
+        let p = racine.join(crate::retours::RETOURS);
+        match self.dossier() {
+            Some(d) => p.join(d),
+            None => p,
+        }
+    }
 }
 
 /// `retours/` (la DSN) ou `retours/dpae/` (la DPAE), cree.
 fn dossier_archive(racine: &Path, canal: CanalDesRetours) -> R<PathBuf> {
-    let mut p = racine.join(crate::retours::RETOURS);
-    if let Some(d) = canal.dossier() {
-        p = p.join(d);
-    }
+    let p = canal.chemin(racine);
     std::fs::create_dir_all(&p).map_err(|e| crate::etats::erreur_io(&e, &p))?;
     Ok(p)
 }

@@ -948,14 +948,6 @@ fn cle_de_poste(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// Le numero de ce poste chez l'editeur, tel que le serveur l'a donne (`config/diagnostic.json`, dans la compagnie dont
-/// vient la configuration) ; aucun tant qu'aucune identite n'a ete demandee. Ne demande rien : c'est `client_du_poste`
-/// qui le fait, a l'envoi.
-pub fn poste(racine: &Path) -> R<Option<NumeroDePoste>> {
-    let (_, ou) = configuration(racine)?;
-    Ok(lire_config(&ou)?.poste)
-}
-
 /// `client_du_poste` : le client des actions de l'editeur chez `serveur`, avec
 /// l'identite de ce poste. Elle se lit dans `config/diagnostic.json` de `ou`
 /// (`poste`, `cle`, `serveur`) ; absente, incomplete, ou donnee par un autre

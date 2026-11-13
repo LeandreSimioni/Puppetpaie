@@ -981,7 +981,7 @@ pub fn cle_du_contenu(r: &Annonce) -> CleDuContenu {
 /// La piece archivee du retour `r` d'un envoi `quoi`, dans `retours/` (`retours/dpae/` pour une DPAE) ; son nom porte
 /// `sansflux` quand le retour ne dit pas son flux (`releve_retours::archiver_retour`).
 fn archive_du_retour(racine: &Path, r: &Annonce, quoi: Acte) -> R<Option<PathBuf>> {
-    let dossier = if quoi == Acte::Dpae { racine.join(crate::retours::RETOURS_DPAE) } else { racine.join(crate::retours::RETOURS) };
+    let dossier = crate::releve_retours::CanalDesRetours::de_l_acte(quoi).chemin(racine);
     if !dossier.is_dir() {
         return Ok(None);
     }
@@ -1147,7 +1147,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
     };
     uniques.truncate(30);
     Ok(Some(IncidentDeRetour {
-        canal: if quoi == Acte::Dpae { crate::releve_retours::CanalDesRetours::Dpae } else { crate::releve_retours::CanalDesRetours::Dsn },
+        canal: crate::releve_retours::CanalDesRetours::de_l_acte(quoi),
         ou: format!("retour-{}", quoi.nom()),
         quoi: quoi_,
         resume,
