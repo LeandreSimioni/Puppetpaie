@@ -324,7 +324,7 @@ intermediaires, ou ne garder qu'un changement.",
 /// premier mois du contrat.
 fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[droit::fiche::Nic], ecrit: &[(String, String)], decl: &Declare) -> R<Vec<Vec<(String, String)>>> {
     let e = &p.engagement;
-    if e.numero.as_deref().is_none_or(str::is_empty) {
+    if e.numero.is_none() {
         return Ok(Vec::new());
     }
     if e.premier_mois() {

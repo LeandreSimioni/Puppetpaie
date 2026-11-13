@@ -847,7 +847,13 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
     for (numero, mois) in objets_aem {
         let deja_la = spectacle_du_numero(&reponse.spectacles, &numero, false)?.is_some();
-        let a_creer = ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Spectacle && a.donnees.mot(CaseSpectacle::NumeroObjet).is_some_and(|n| n.eq_ignore_ascii_case(&numero)));
+        let mut a_creer = false;
+        for a in ap.a_creer.iter().filter(|a| a.nom == NomDeFiche::Spectacle) {
+            if a.donnees.mot(CaseSpectacle::NumeroObjet).map(|n| NumeroObjetSpectacle::lire(&n)).transpose()?.is_some_and(|n| n.meme(&numero)) {
+                a_creer = true;
+                break;
+            }
+        }
         if connus.contains_key(&numero) || deja_la || a_creer {
             continue;
         }

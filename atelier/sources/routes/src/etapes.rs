@@ -1462,7 +1462,7 @@ impl<'a> Moteur<'a> {
     fn a_refaire_du_mois(&mut self, mois: Mois, e: &engagement::etats::Etat, departs: &engagement::departs::Departs) -> R<Rc<Vec<ARefaire>>> {
         let carte = &e.objet().brut.saisie.carte;
         // Rien n'est parti d'un engagement en saisie : rien n'est a refaire.
-        let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_deref().filter(|n| !n.is_empty())) else {
+        let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_deref()) else {
             return Ok(Rc::new(Vec::new()));
         };
         let cle = (mois, salarie.to_string(), numero.to_string());

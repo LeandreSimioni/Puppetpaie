@@ -493,7 +493,7 @@ impl Importe {
         let dernier = *self.paies().keys().max()?;
         let apres = self.carte().fin.is_some_and(|f| f.mois_civil() > dernier);
         let par_aem = self.contrat().is_some_and(|c| c.atteste_par == Attestation::Aem);
-        let continue_ = apres && !par_aem && !self.permanent() && self.carte().numero.as_deref().is_some_and(|n| !n.is_empty());
+        let continue_ = apres && !par_aem && !self.permanent() && self.carte().numero.is_some();
         continue_.then_some(dernier)
     }
 
@@ -687,7 +687,7 @@ impl Importe {
             fin,
             numero: match self.carte().numero.clone() {
                 Some(n) => Some(n),
-                None => p.bulletin.as_ref().and_then(|b| b.contrat.as_deref()).filter(|n| !n.trim().is_empty()).map(NumeroContrat::lire).transpose()?,
+                None => p.bulletin.as_ref().and_then(|b| b.contrat.as_deref()).and_then(NumeroContrat::d_une_piece),
             },
             mois,
             planning: Vec::new(),
@@ -858,9 +858,9 @@ pub fn qui_continuent(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
 /// Le contrat importe que l'engagement `e` de la saisie continue : meme salarie, meme debut, meme numero, et il continue
 /// apres son dernier mois verse (`continue_apres`).
 pub fn continue_par(racine: &Path, e: &Carte) -> R<Option<Importe>> {
-    let (Some(debut), Some(numero), Some(salarie)) = (e.debut, e.numero.as_deref().filter(|n| !n.is_empty()), &e.salarie) else { return Ok(None) };
+    let (Some(debut), Some(numero), Some(salarie)) = (e.debut, e.numero.as_ref(), &e.salarie) else { return Ok(None) };
     Ok(tous(racine)?.into_iter().find(|i| {
-        i.continue_apres().is_some() && i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
+        i.continue_apres().is_some() && i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_ref() == Some(numero)
     }))
 }
 

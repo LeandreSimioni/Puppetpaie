@@ -969,7 +969,7 @@ impl NumeroObjetSpectacle {
         }
     }
 
-    /// LE NUMERO D'OBJET QU'UNE PIECE IMPORTEE PORTE (une AEM, une AER, un bulletin d'autrui, une DSN lue) : sans ses
+    /// LE NUMERO D'OBJET QU'UNE PIECE IMPORTEE PORTE (une AEM, une AER, un bulletin d'autrui) : sans ses
     /// blancs de bord ; a blanc ou hors de sa forme, la case reste vide, comme un code hors de nos listes (la piece d'un
     /// tiers se lit, elle ne se refuse pas pour lui).
     pub fn d_une_piece(texte: &str) -> Option<NumeroObjetSpectacle> {

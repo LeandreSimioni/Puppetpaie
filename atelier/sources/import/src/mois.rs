@@ -459,7 +459,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     }
     let origine_dit = (!lu.is_empty()).then(|| format!("lu dans {}", lu.join(" + ")));
     let spectacle_dit = match (&titre, &numero) {
-        (Some(t), Some(n)) if **n != **t =>Some(format!("{} — n° {}", t, n)),
+        (Some(t), Some(n)) if **n != **t => Some(format!("{} — n° {}", t, n)),
         (Some(t), _) => Some(t.clone()),
         (None, Some(n)) => Some(format!("n° {}", n)),
         (None, None) => None,

@@ -137,9 +137,11 @@ impl From<NumeroContrat> for String {
     }
 }
 
-/// LE NUMERO D'UN BULLETIN DU LOGICIEL, `N/AAAA` : son rang dans la suite des bulletins de l'annee, puis l'annee. Il ne se
-/// donne qu'ici (`numeroter`) ; la paie ecrite le garde, et il se relit tel qu'il est ecrit (`lire`, ou `serde` : la meme
-/// chaine). Celui qu'un bulletin d'autrui imprime est du texte (`importe::ContratAtteste::numero_bulletin`).
+/// LE NUMERO D'UN BULLETIN DU LOGICIEL, `N/AAAA` : son rang dans la suite des bulletins de l'annee, puis l'annee. Il se
+/// donne par `numeroter`, et par le depart des documents d'un mois sur la suite qu'il reserve
+/// (`routes::gestes::depart::fabriquer_documents`) ; l'apercu d'un bulletin en montre un (`du_rang`). La paie ecrite le
+/// garde, et il se relit tel qu'il est ecrit (`lire`, ou `serde` : la meme chaine). Celui qu'un bulletin d'autrui imprime
+/// est du texte (`importe::ContratAtteste::numero_bulletin`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(into = "String")]
 pub struct NumeroDeBulletin {
@@ -168,7 +170,9 @@ impl NumeroDeBulletin {
         }
     }
 
-    /// Le bulletin de rang `rang` de l'annee `annee` : celui que `numeroter` donne, ou que l'apercu d'un bulletin montre.
+    /// Le bulletin de rang `rang` de l'annee `annee` : celui que `numeroter` donne, celui que le depart des documents
+    /// d'un mois donne sur la suite qu'il reserve (`routes::gestes::depart::fabriquer_documents`), ou celui que l'apercu
+    /// d'un bulletin montre.
     pub fn du_rang(rang: i64, annee: i32) -> NumeroDeBulletin {
         NumeroDeBulletin { texte: format!("{}/{}", rang, annee), rang, annee: i64::from(annee) }
     }

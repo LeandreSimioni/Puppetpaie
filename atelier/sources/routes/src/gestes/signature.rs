@@ -176,8 +176,8 @@ const SANS_NUMERO: &str = "(sans numéro)";
 const SANS_NUMERO_FICHIER: &str = "sans-numero";
 
 /// Le numero d'un contrat tel que le nom d'un fichier le porte : le sien, ou qu'il n'en a pas.
-fn numero_de_fichier(n: Option<&str>) -> String {
-    match n.filter(|n| !n.is_empty()) {
+fn numero_de_fichier(n: Option<&NumeroContrat>) -> String {
+    match n {
         Some(n) => n.to_string(),
         None => SANS_NUMERO_FICHIER.to_string(),
     }
@@ -373,7 +373,7 @@ fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit
 /// Le nom du PDF des contrats d'un salarie : `Contrat_<cle>_<numero>_<mois>.pdf`, `Contrats_..._<n1>+<n2>_...` quand il en
 /// porte plusieurs (une page par contrat).
 fn nom_du_pdf(cle: &IdSalarie, ps: &[Paie], etiq: &str, suffixe: &str) -> R<NomDeFichier> {
-    let numeros: Vec<String> = ps.iter().map(|p| numero_de_fichier(p.engagement.numero.as_deref())).collect();
+    let numeros: Vec<String> = ps.iter().map(|p| numero_de_fichier(p.engagement.numero.as_ref())).collect();
     NomDeFichier::lire(&format!("Contrat{}_{}_{}_{}{}.pdf", if ps.len() > 1 { "s" } else { "" }, cle, numeros.join("+"), etiq, suffixe))
 }
 
@@ -973,7 +973,7 @@ fn avenant_ecrit(
             f
         }
         None => {
-            let f = dossier.join(format!("Avenant{}_{}_{}_{}.pdf", a.numero, salarie, numero_de_fichier(a.contrat.as_deref()), a.mois.etiquette()));
+            let f = dossier.join(format!("Avenant{}_{}_{}_{}.pdf", a.numero, salarie, numero_de_fichier(a.contrat.as_ref()), a.mois.etiquette()));
             // Le modele du contrat qu'il modifie, dont il suit l'avenant : celui avec lequel ce contrat est parti ; signe
             // hors du logiciel, celui que son engagement suit.
             let modele = if ailleurs {
