@@ -487,21 +487,28 @@ impl Lecture {
 fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: Option<&str>) -> Lecture {
     if canal == CanalDesRetours::Dpae && nature == NatureDuRetour::CertificatDpae {
         let texte: String = o.iter().map(|&b| b as char).collect();
-        let lignes = declarations::dpae::lire_certificat(&texte);
-        if !lignes.is_empty() {
-            let mut l = Lecture::nouvelle("Certificat de conformité des DPAE");
-            for x in &lignes {
-                let qui = joint([dit(&x.nom), dit(&x.prenom)], " ");
-                let etat = if x.enregistree {
-                    format!("enregistrée{}", morceau(", dossier ", dit(&x.dossier), ""))
-                } else if x.deja_existante {
-                    "déjà enregistrée auparavant".to_string()
-                } else {
-                    format!("refusée{}", morceau(" : ", joint([dit(&x.code), dit(&x.libelle)], " — ").as_deref(), ""))
-                };
-                l.phrases.push(format!("{}{} : {}.", morceau("", qui.as_deref(), ""), morceau(" (embauche du ", dit(&x.embauche), ")"), etat));
+        match declarations::dpae::lire_certificat(&texte) {
+            Ok(lignes) if !lignes.is_empty() => {
+                let mut l = Lecture::nouvelle("Certificat de conformité des DPAE");
+                for x in &lignes {
+                    let qui = joint([dit(&x.nom), dit(&x.prenom)], " ");
+                    let etat = if x.enregistree {
+                        format!("enregistrée{}", morceau(", dossier ", dit(&x.dossier), ""))
+                    } else if x.deja_existante {
+                        "déjà enregistrée auparavant".to_string()
+                    } else {
+                        format!("refusée{}", morceau(" : ", joint([dit(&x.code), dit(&x.libelle)], " — ").as_deref(), ""))
+                    };
+                    l.phrases.push(format!("{}{} : {}.", morceau("", qui.as_deref(), ""), morceau(" (embauche du ", x.embauche.map(|j| j.iso()).as_deref(), ")"), etat));
+                }
+                return l;
             }
-            return l;
+            Ok(_) => {}
+            Err(m) => {
+                let mut l = Lecture::nouvelle("Certificat de conformité des DPAE");
+                l.phrases.push(format!("Ce certificat ne se lit pas : {}", m.phrase));
+                return l;
+            }
         }
     }
     if o.starts_with(b"%PDF") {

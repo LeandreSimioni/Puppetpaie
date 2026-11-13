@@ -28,6 +28,60 @@ use socle::echec::{refus, R};
 use crate::ligne::{LigneDonnee, LignePaie};
 use crate::saisie::{Carte, Champ, CongePris, Groupe, Preavis, Prime, Valeur};
 
+/// UN MODELE DE CONTRAT PROPRE A LA COMPAGNIE, qu'une carte choisit (`modele_contrat`) : `m` et un entier, l'id que la
+/// compagnie lui donne a sa creation (`routes::modeles_contrat`, son seul ecrivain, par `de`), garde tel qu'ecrit ; aucun
+/// choisi : le defaut de sa nature. Un autre texte se refuse a la lecture.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdDeModele {
+    texte: String,
+    numero: u32,
+}
+
+impl IdDeModele {
+    /// L'id `texte`, ou ce qui le refuse.
+    pub fn lire(texte: &str) -> R<IdDeModele> {
+        match texte.strip_prefix('m').map(str::parse::<u32>) {
+            Some(Ok(numero)) => Ok(IdDeModele { texte: texte.to_string(), numero }),
+            _ => Err(refus(format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", texte))),
+        }
+    }
+
+    /// L'id du modele de numero `numero`.
+    pub fn de(numero: u32) -> IdDeModele {
+        IdDeModele { texte: format!("m{}", numero), numero }
+    }
+
+    /// Son numero.
+    pub fn numero(&self) -> u32 {
+        self.numero
+    }
+
+    /// L'id tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.texte
+    }
+}
+
+impl std::fmt::Display for IdDeModele {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.texte)
+    }
+}
+
+impl TryFrom<String> for IdDeModele {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<IdDeModele> {
+        IdDeModele::lire(&s)
+    }
+}
+
+impl From<IdDeModele> for String {
+    fn from(i: IdDeModele) -> String {
+        i.texte
+    }
+}
+
 /// Ce qu'une case de la carte est pour sa nature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -136,7 +190,7 @@ nature! {
             statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             clauses_particulieres: String = ClausesParticulieres,
-            modele_contrat: String = ModeleContrat,
+            modele_contrat: IdDeModele = ModeleContrat,
             primes: Vec<Prime> = Primes,
             date_paiement: Jour = DatePaiement,
             jours: NombreLu = Jours,
@@ -187,7 +241,7 @@ nature! {
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
-            modele_contrat: String = ModeleContrat,
+            modele_contrat: IdDeModele = ModeleContrat,
             lignes: Vec<LignePaie> = Lignes,
             conges_pris: Vec<CongePris> = CongesPris,
             primes: Vec<Prime> = Primes,
@@ -244,7 +298,7 @@ nature! {
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
-            modele_contrat: String = ModeleContrat,
+            modele_contrat: IdDeModele = ModeleContrat,
             lignes: Vec<LignePaie> = Lignes,
             conges_pris: Vec<CongePris> = CongesPris,
             primes: Vec<Prime> = Primes,
@@ -625,7 +679,7 @@ changements! {
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,
     RepartitionHoraire(String) = "repartition_horaire" => repartition_horaire,
     ClausesParticulieres(String) = "clauses_particulieres" => clauses_particulieres,
-    ModeleContrat(String) = "modele_contrat" => modele_contrat,
+    ModeleContrat(IdDeModele) = "modele_contrat" => modele_contrat,
     CongesPris(Vec<CongePris>) = "conges_pris" => conges_pris,
     Primes(Vec<Prime>) = "primes" => primes,
     DatePaiement(Jour) = "date_paiement" => date_paiement,

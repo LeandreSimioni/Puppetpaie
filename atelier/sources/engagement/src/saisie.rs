@@ -156,7 +156,7 @@ carte! {
         #[champ(Terme, ClausesParticulieres)]
         pub clauses_particulieres: Option<String>,
         #[champ(Terme, ModeleContrat)]
-        pub modele_contrat: Option<String>,
+        pub modele_contrat: Option<crate::carte::IdDeModele>,
         #[champ(Fait, Lignes)]
         /// Les lignes de paie de la carte (`ligne::LignePaie`).
         pub lignes: Option<Vec<LignePaie>>,
@@ -292,6 +292,12 @@ impl Simple for droit::fiche::CodeEmploiFt {
 impl Simple for droit::fiche::Nic {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Texte(self.to_string()))
+    }
+}
+
+impl Simple for crate::carte::IdDeModele {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.texte().to_string()))
     }
 }
 

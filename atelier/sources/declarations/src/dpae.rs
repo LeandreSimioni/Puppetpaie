@@ -838,7 +838,33 @@ pub const ZONES_RETOUR: [(&str, usize, usize); 7] = [
     ("mt", 974, 975),       // I_MT : medecine du travail informee
     ("pmf5", 975, 976),     // I_PMF5 : premiere embauche dans l'etablissement (CFE-Urssaf)
 ];
-pub const FORMALITES: [(&str, &str); 4] = [("certif", "CERTIF"), ("imma", "IMMA"), ("mt", "MT"), ("pmf5", "PMF5")];
+/// UNE FORMALITE QUE LE CERTIFICAT D'UNE DPAE DIT FAITE (`O` a sa zone) : I_CERTIF, I_IMMA, I_MT, I_PMF5, « Positionné
+/// par le système » (Format 120, positions 971, 974, 975, 976 :
+/// `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 503-530). Une liste de la norme, qui s'ecrit par son
+/// nom sans `I_` (`CERTIF`, `IMMA`, `MT`, `PMF5`) ; le journal des envois la garde avec la personne certifiee.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum FormaliteDpae {
+    Certif,
+    Imma,
+    Mt,
+    Pmf5,
+}
+
+impl FormaliteDpae {
+    /// Toutes, dans l'ordre de leurs zones.
+    pub const TOUTES: [FormaliteDpae; 4] = [FormaliteDpae::Certif, FormaliteDpae::Imma, FormaliteDpae::Mt, FormaliteDpae::Pmf5];
+
+    /// Sa zone du certificat (`ZONES_RETOUR`).
+    fn zone(self) -> &'static str {
+        match self {
+            FormaliteDpae::Certif => "certif",
+            FormaliteDpae::Imma => "imma",
+            FormaliteDpae::Mt => "mt",
+            FormaliteDpae::Pmf5 => "pmf5",
+        }
+    }
+}
 
 fn zone_retour(nom: &str) -> (usize, usize) {
     let (_, a, b) = ZONES_RETOUR.iter().find(|(n, _, _)| *n == nom).expect("zone de retour de la DPAE");
@@ -850,9 +876,10 @@ fn zone_retour(nom: &str) -> (usize, usize) {
 pub struct LigneDuCertificat {
     pub nom: String,
     pub prenom: String,
-    pub nir: String,
-    /// AAAA-MM-JJ, vide si la zone ne porte pas huit caracteres.
-    pub embauche: String,
+    /// Aucun quand la zone est a blanc (une DPAE sans NIR la laisse ainsi, `ecrire`).
+    pub nir: Option<droit::fiche::Nir>,
+    /// Aucun quand la zone est a blanc.
+    pub embauche: Option<Jour>,
     /// R_DOSSIER, la reference sous laquelle la DPAE est enregistree.
     pub dossier: String,
     /// C_RETOUR_AR (`00` quand la zone est a blanc) et son libelle (Format 120).
@@ -863,13 +890,14 @@ pub struct LigneDuCertificat {
     /// 98.
     pub deja_existante: bool,
     /// Celles a O : CERTIF, IMMA, MT, PMF5.
-    pub formalites: Vec<&'static str>,
+    pub formalites: Vec<FormaliteDpae>,
     /// C_RET_AR_LOT (`00` quand la zone est a blanc).
     pub lot: String,
 }
 
-/// Le certificat de conformite (nature 41), DPAE par DPAE.
-pub fn lire_certificat(contenu: &str) -> Vec<LigneDuCertificat> {
+/// Le certificat de conformite (nature 41), DPAE par DPAE. Un retour de la norme se lit strictement : un NIR ou un
+/// jour d'embauche qui n'en sont pas refusent le certificat ; une zone a blanc reste vide.
+pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
     let mut out = Vec::new();
     for r in lire_enregistrements(contenu) {
         let z = |k: &str| {
@@ -886,16 +914,16 @@ pub fn lire_certificat(contenu: &str) -> Vec<LigneDuCertificat> {
             Some((_, l)) => l.to_string(),
             None => format!("code {} (inconnu du Format 120)", code),
         };
-        let e: Vec<char> = emb.chars().collect();
-        let embauche = if e.len() == 8 {
-            format!(
-                "{}-{}-{}",
-                e[4..].iter().collect::<String>(),
-                e[2..4].iter().collect::<String>(),
-                e[..2].iter().collect::<String>()
-            )
-        } else {
-            String::new()
+        let embauche = match emb.as_str() {
+            "" => None,
+            jjmmaaaa => match socle::piece::Zone::lue(jjmmaaaa, socle::piece::format::Jjmmaaaa).valeur() {
+                Some(j) => Some(j),
+                None => return Err(refus(format!("Certificat de conformité des DPAE : la date d'embauche {} n'est pas un jour (JJMMAAAA).", repr(jjmmaaaa)))),
+            },
+        };
+        let nir = match c("nir").as_str() {
+            "" => None,
+            n => Some(droit::fiche::Nir::lire(n).map_err(|e| e.reformuler(|p| format!("Certificat de conformité des DPAE : {}", p)))?),
         };
         let dossier = z("dossier");
         let lot = z("ret_ar_lot");
@@ -903,18 +931,18 @@ pub fn lire_certificat(contenu: &str) -> Vec<LigneDuCertificat> {
         out.push(LigneDuCertificat {
             nom: c("nom"),
             prenom: c("prenom"),
-            nir: c("nir"),
+            nir,
             embauche,
             dossier,
             deja_existante: code == CODE_DEJA_EXISTANTE,
             code,
             libelle,
             enregistree,
-            formalites: FORMALITES.iter().filter(|(k, _)| z(k) == "O").map(|(_, n)| *n).collect(),
+            formalites: FormaliteDpae::TOUTES.into_iter().filter(|f| z(f.zone()) == "O").collect(),
             lot: if lot.is_empty() { "00".to_string() } else { lot },
         });
     }
-    out
+    Ok(out)
 }
 
 // ------------------------------------------------------------------ tests
@@ -1203,18 +1231,18 @@ mod tests {
                 }
             }
         });
-        let c = lire_certificat(&f);
+        let c = lire_certificat(&f).unwrap();
         assert_eq!(c.len(), 4);
-        assert_eq!(c[0].embauche, "2026-10-01");
+        assert_eq!(c[0].embauche.map(|j| j.iso()).as_deref(), Some("2026-10-01"));
         assert_eq!(c[0].dossier, "D1234");
         assert_eq!(c[0].code, "99");
         assert_eq!(c[0].libelle, "Autre erreur (données facultatives)");
         assert!(c[0].enregistree);
-        assert_eq!(c[0].formalites, ["CERTIF", "MT"]);
+        assert_eq!(c[0].formalites, [FormaliteDpae::Certif, FormaliteDpae::Mt]);
         // 98 : deja existante, et pas enregistree
         assert!(c[1].deja_existante);
         assert!(!c[1].enregistree);
-        assert_eq!(c[1].formalites, ["IMMA"]);
+        assert_eq!(c[1].formalites, [FormaliteDpae::Imma]);
         // un code inconnu du Format 120
         assert_eq!(c[2].libelle, "code 77 (inconnu du Format 120)");
         assert!(!c[2].enregistree);
@@ -1222,7 +1250,7 @@ mod tests {
         assert_eq!(c[3].lot, "11");
         assert!(!c[3].enregistree);
         // sans code de retour, `00`
-        assert_eq!(lire_certificat(&flux(1, |_, _| {}))[0].code, "00");
+        assert_eq!(lire_certificat(&flux(1, |_, _| {})).unwrap()[0].code, "00");
     }
 
     #[test]

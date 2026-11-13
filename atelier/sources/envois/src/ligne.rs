@@ -431,13 +431,15 @@ impl DetailDpae {
 pub struct PersonneCertifiee {
     pub nom: String,
     pub prenom: String,
-    pub embauche: String,
+    /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc (le journal l'ecrit `""`).
+    #[serde(with = "socle::forme::vide_si_aucun")]
+    pub embauche: Option<socle::date::Jour>,
     pub dossier: String,
     pub code: String,
     pub libelle: String,
     pub enregistree: bool,
     pub deja_existante: bool,
-    pub formalites: Vec<String>,
+    pub formalites: Vec<declarations::dpae::FormaliteDpae>,
     /// Ce que la page en montre (`routes::depots`) : pose sur ce qu'une route rend, jamais ecrit ni lu au journal.
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub pastille: Option<socle::ecran::Pastille>,
@@ -604,7 +606,7 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modifications: Option<Vec<ArticleModifie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub clauses: Option<BTreeMap<String, Option<String>>>,
+    pub clauses: Option<BTreeMap<documents::marqueurs::Marqueur, Option<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<CodeDeDemande>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -815,7 +817,7 @@ pub struct DossierServi {
 #[serde(deny_unknown_fields)]
 pub struct DetailDossier {
     pub periode: String,
-    pub categories: Vec<String>,
+    pub categories: Vec<documents::CategorieDeDocument>,
     pub salaries: Vec<DossierServi>,
     pub expediteur: Courriel,
     #[serde(skip_serializing_if = "Option::is_none")]

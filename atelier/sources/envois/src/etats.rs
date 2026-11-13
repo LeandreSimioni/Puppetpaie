@@ -165,7 +165,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
-            let cert = certifiees.iter().rev().find(|c| c.embauche == x.debut.iso() && meme_nom(x.salarie.as_str(), &c.nom));
+            let cert = certifiees.iter().rev().find(|c| c.embauche == Some(x.debut) && meme_nom(x.salarie.as_str(), &c.nom));
             etat.insert(
                 paire(&x.salarie, Some(n)),
                 EtatEmbauche {
@@ -1010,7 +1010,7 @@ fn lire_archive(f: &Path) -> R<Vec<u8>> {
 /// Ce que le certificat de conformite d'une DPAE (nature 41) dit de chaque personne ; rien s'il ne se lit pas.
 fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
     let texte: String = contenu.iter().map(|&b| b as char).collect();
-    let lignes = declarations::dpae::lire_certificat(&texte);
+    let lignes = declarations::dpae::lire_certificat(&texte)?;
     if lignes.is_empty() {
         return Ok(None);
     }
@@ -1031,7 +1031,7 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
             libelle: l.libelle,
             enregistree: l.enregistree,
             deja_existante: l.deja_existante,
-            formalites: l.formalites.iter().map(|f| f.to_string()).collect(),
+            formalites: l.formalites,
             pastille: None,
         };
         if !p.enregistree && !p.deja_existante {

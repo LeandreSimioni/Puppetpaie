@@ -30,6 +30,7 @@ use documents::marqueurs::ModeleLu;
 use droit::contexte::Contexte;
 use droit::natures::{Nature, NatureDeContrat};
 use engagement::calcul::Paie;
+use engagement::carte::IdDeModele;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecran::Pastille;
@@ -168,8 +169,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 #[serde(deny_unknown_fields)]
 struct ModelesDeContrat {
     speciaux: Vec<Special>,
-    defauts: BTreeMap<NatureDeContrat, String>,
-    supprimes: Vec<String>,
+    defauts: BTreeMap<NatureDeContrat, IdDeModele>,
+    supprimes: Vec<IdDeModele>,
 }
 
 /// UN MODELE SPECIAL : son id (celui que l'engagement et le defaut nomment), son nom, sa nature, son contrat et son
@@ -177,7 +178,7 @@ struct ModelesDeContrat {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Special {
-    id: String,
+    id: IdDeModele,
     nom: String,
     nature: NatureDeContrat,
     contrat: Texte,
@@ -282,24 +283,13 @@ fn modele_lu(nom: String, base: bool, contrat: &str, avenant: &str) -> R<ModeleD
     Ok(ModeleDuContrat { lu: lire(contrat)?, avenant: lire(avenant)?, nom, base })
 }
 
-/// Le numero d'un id de special (`m<numero>`, que la copie donne) ; un autre id ne vient que d'un fichier ecrit a la main.
-fn numero_d_id(id: &str) -> R<u32> {
-    match id.strip_prefix('m').map(str::parse::<u32>) {
-        Some(Ok(n)) => Ok(n),
-        _ => {
-            let a_part = socle::echec::Lieu { fichier: Some("gabarits/contrats/modeles.json".into()), cle: Some(id.into()), ..Default::default() };
-            let phrase = format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", id);
-            Err(Echec { a_part: Some(a_part.into()), ..erreur(Classe::MalFormee, phrase) })
-        }
-    }
-}
-
 fn aucun(id: &str) -> Echec {
     refus(format!("Aucun modèle de contrat {} : en choisir un de la liste (modeles-contrat).", id))
 }
 
+/// Le special que nomme `id` (le texte d'une charge, ou l'id d'un defaut).
 fn special<'a>(m: &'a ModelesDeContrat, id: &str) -> R<&'a Special> {
-    m.speciaux.iter().find(|s| s.id == id).ok_or_else(|| aucun(id))
+    m.speciaux.iter().find(|s| s.id.texte() == id).ok_or_else(|| aucun(id))
 }
 
 /// Le modele que nomme `{nature, id}` : son nom, et le special (aucun : la base).
@@ -332,12 +322,12 @@ fn texte_de(nat: &Nature, s: Option<&Special>, partie: Partie) -> R<String> {
 pub(crate) fn du_contrat(ctx: &Contexte, p: &Paie) -> R<ModeleDuContrat> {
     let nat = p.engagement.nat()?;
     let m = lus(ctx)?;
-    let choix = p.engagement.ecrit.modele_contrat.as_deref().filter(|id| !m.supprimes.iter().any(|x| x == id));
+    let choix = p.engagement.ecrit.modele_contrat.as_ref().filter(|id| !m.supprimes.contains(id));
     let choisi = match choix {
-        Some(id) => Some(m.speciaux.iter().find(|s| s.id == id).ok_or_else(|| {
+        Some(id) => Some(m.speciaux.iter().find(|s| s.id == *id).ok_or_else(|| {
             refus(format!("Le contrat de {} suit le modèle {}, que la compagnie n'a pas : en choisir un autre dans son engagement (Avancé › Modèle de contrat). Rien n'est écrit.", p.salarie.id, id))
         })?),
-        None => m.defauts.get(&nat.cle).map(|id| special(&m, id)).transpose()?,
+        None => m.defauts.get(&nat.cle).map(|id| special(&m, id.texte())).transpose()?,
     };
     match choisi {
         Some(s) if s.nature != nat.cle => Err(refus(format!("{} est un modèle de {}, pas de {} : en choisir un autre. Rien n'est écrit.", s.nom_dit(), s.nature.proprietes()?.nom_du_contrat(), nat.nom_du_contrat()))),
@@ -471,7 +461,7 @@ fn paragraphe(titre: &str, alineas: &[Alinea]) -> R<Paragraphe> {
 /// ecrit, et le refus dit quoi. Un manque deja la (la base a change) ne bloque pas : il se corrige un geste a la fois.
 fn sur_les_paragraphes(ctx: &Contexte, id: &str, partie: Partie, faire: impl FnOnce(&mut Decoupe) -> R<String>) -> R<Modeles> {
     let mut m = lus(ctx)?;
-    let i = m.speciaux.iter().position(|s| s.id == id).ok_or_else(|| aucun(id))?;
+    let i = m.speciaux.iter().position(|s| s.id.texte() == id).ok_or_else(|| aucun(id))?;
     let nat = m.speciaux[i].nature.proprietes()?;
     let avant = m.speciaux[i].partie(partie).texte.clone();
     let mut d = Decoupe::de(&avant)?;
@@ -639,7 +629,7 @@ struct ChargeApercu {
 /// Un modele de contrat d'une nature, tel que la liste le dit : la base (sans id) ou un special.
 #[derive(Debug, Serialize)]
 struct ModeleDit {
-    id: Option<String>,
+    id: Option<IdDeModele>,
     nom: String,
     base: bool,
     defaut: bool,
@@ -753,7 +743,7 @@ fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
     for nat in natures_de(ctx)? {
         let (contrat, avenant) = (texte_de_base(&nat, Partie::Contrat)?, texte_de_base(&nat, Partie::Avenant)?);
         let defaut = m.defauts.get(&nat.cle);
-        let dit = |id: Option<&String>, nom: String, manques: Vec<String>, base_changee: bool| {
+        let dit = |id: Option<&IdDeModele>, nom: String, manques: Vec<String>, base_changee: bool| {
             let est_defaut = defaut == id;
             let pastille = match (manques.is_empty(), est_defaut) {
                 (false, _) => Pastille::de(socle::ecran::EtatDEcran::Refuse, "incomplet"),
@@ -931,7 +921,7 @@ fn nom_libre(m: &ModelesDeContrat, sauf: Option<&str>, nom: &str) -> R<String> {
     if nom.is_empty() {
         return Err(erreur(Classe::Manque, "Le modèle spécial a besoin d'un nom. Rien n'est écrit."));
     }
-    if m.speciaux.iter().any(|s| s.nom == nom && Some(s.id.as_str()) != sauf) {
+    if m.speciaux.iter().any(|s| s.nom == nom && Some(s.id.texte()) != sauf) {
         return Err(refus(format!("La compagnie a déjà un modèle « {} » : lui donner un autre nom. Rien n'est écrit.", nom)));
     }
     Ok(nom)
@@ -946,8 +936,8 @@ fn copier(ctx: &Contexte, c: ChargeCopier) -> R<Modeles> {
     let partie = |p| texte_de_base(&nat, p).map(|t| Texte { base: t.clone(), texte: t });
     let (contrat, avenant) = (partie(Partie::Contrat)?, partie(Partie::Avenant)?);
     // Un id ne sert qu'une fois : ni un special present, ni un supprime.
-    let n = m.speciaux.iter().map(|s| &s.id).chain(m.supprimes.iter()).try_fold(0, |n, id| numero_d_id(id).map(|k| n.max(k)))? + 1;
-    m.speciaux.push(Special { id: format!("m{}", n), nom: nom.clone(), nature: nat.cle.clone(), contrat, avenant });
+    let n = m.speciaux.iter().map(|s| &s.id).chain(m.supprimes.iter()).fold(0, |n, id| n.max(id.numero())) + 1;
+    m.speciaux.push(Special { id: IdDeModele::de(n), nom: nom.clone(), nature: nat.cle.clone(), contrat, avenant });
     ecrire(ctx, &m)?;
     modeles(ctx, &format!("Modèle « {} » copié de la base du {}. ", nom, nat.nom_du_contrat()))
 }
@@ -956,17 +946,17 @@ fn copier(ctx: &Contexte, c: ChargeCopier) -> R<Modeles> {
 fn renommer(ctx: &Contexte, c: ChargeRenommer) -> R<Modeles> {
     let mut m = lus(ctx)?;
     let nom = nom_libre(&m, Some(&c.id), &c.nom)?;
-    let i = m.speciaux.iter().position(|s| s.id == c.id).ok_or_else(|| aucun(&c.id))?;
+    let i = m.speciaux.iter().position(|s| s.id.texte() == c.id).ok_or_else(|| aucun(&c.id))?;
     let avant = std::mem::replace(&mut m.speciaux[i].nom, nom.clone());
     ecrire(ctx, &m)?;
     modeles(ctx, &format!("Modèle « {} » renommé « {} ». ", avant, nom))
 }
 
 /// Les engagements dont une carte choisit le special `id` (sa case `modele_contrat`, au premier mois ou a un avenant).
-fn choisi_par(ctx: &Contexte, id: &str) -> R<Vec<String>> {
+fn choisi_par(ctx: &Contexte, id: &IdDeModele) -> R<Vec<String>> {
     Ok(engagement::stock::objets(&ctx.racine)?
         .iter()
-        .filter(|o| o.carte().modele_contrat.as_deref() == Some(id) || o.avenants().iter().any(|a| a.termes.modele_contrat.as_deref() == Some(id)))
+        .filter(|o| o.carte().modele_contrat.as_ref() == Some(id) || o.avenants().iter().any(|a| a.termes.modele_contrat.as_ref() == Some(id)))
         .map(|o| engagement::etats::qui_de(ctx, o))
         .collect())
 }
@@ -976,11 +966,12 @@ fn choisi_par(ctx: &Contexte, id: &str) -> R<Vec<String>> {
 /// deja parti garde son texte (`figer`).
 fn supprimer(ctx: &Contexte, c: ChargeId) -> R<Modeles> {
     let mut m = lus(ctx)?;
-    let nom = special(&m, &c.id)?.nom.clone();
-    let qui = choisi_par(ctx, &c.id)?;
-    m.speciaux.retain(|s| s.id != c.id);
-    m.defauts.retain(|_, id| *id != c.id);
-    m.supprimes.push(c.id);
+    let s = special(&m, &c.id)?;
+    let (nom, id) = (s.nom.clone(), s.id.clone());
+    let qui = choisi_par(ctx, &id)?;
+    m.speciaux.retain(|s| s.id != id);
+    m.defauts.retain(|_, d| *d != id);
+    m.supprimes.push(id);
     ecrire(ctx, &m)?;
     let suite = match qui.len() {
         0 => String::new(),
@@ -996,7 +987,8 @@ fn par_defaut(ctx: &Contexte, c: ChargeDefaut) -> R<Modeles> {
     let devant = match &c.id {
         Some(id) => {
             let (nom, _) = designe(&m, &nat, Some(id))?;
-            m.defauts.insert(nat.cle.clone(), id.clone());
+            let id = special(&m, id)?.id.clone();
+            m.defauts.insert(nat.cle.clone(), id);
             format!("{} est le modèle par défaut du {}. ", nom, nat.nom_du_contrat())
         }
         None => {
@@ -1016,7 +1008,7 @@ pub(crate) fn au_choix(ctx: &Contexte, nature: NatureDeContrat) -> R<Vec<ModeleA
     if siens.is_empty() {
         return Ok(Vec::new());
     }
-    let defaut = match m.defauts.get(&nature).map(|id| special(&m, id)).transpose()? {
+    let defaut = match m.defauts.get(&nature).map(|id| special(&m, id.texte())).transpose()? {
         Some(s) => format!("Le modèle par défaut (« {} »)", s.nom),
         None => "Le modèle par défaut (la base)".to_string(),
     };
@@ -1028,7 +1020,7 @@ pub(crate) fn au_choix(ctx: &Contexte, nature: NatureDeContrat) -> R<Vec<ModeleA
 /// Un modele au choix d'un engagement : son id (aucun : le defaut de la nature) et son nom.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ModeleAuChoix {
-    id: Option<String>,
+    id: Option<IdDeModele>,
     nom: String,
 }
 

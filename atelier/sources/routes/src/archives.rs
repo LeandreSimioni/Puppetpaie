@@ -254,7 +254,7 @@ struct SalariePropose {
 /// Une categorie a cocher : son nom, et ce qu'elle porte.
 #[derive(Debug, Serialize)]
 struct CategorieProposee {
-    categorie: &'static str,
+    categorie: documents::CategorieDeDocument,
     quoi: &'static str,
 }
 
@@ -295,7 +295,7 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
     let mois = mois_disponibles(ctx)?;
     let annees = annees_de(&mois);
     etat_logiciel(ctx)?;
-    let categories: Vec<CategorieProposee> = crate::dossier_salarie::CATEGORIES.iter().map(|c| CategorieProposee { categorie: c, quoi: crate::dossier_salarie::libelle_de(c) }).collect();
+    let categories: Vec<CategorieProposee> = documents::CategorieDeDocument::TOUTES.iter().map(|c| CategorieProposee { categorie: *c, quoi: c.libelle() }).collect();
     Ok(FormesDuDossier {
         phrase: format!("Dossiers possibles : {} ; sortes de pièces : {}.", socle::ecran::compte(salaries.len(), "salarié", "salariés"), categories.len()),
         salaries,
@@ -720,7 +720,7 @@ struct ChargeDossierEnvoyer {
     mois: Option<Mois>,
     annee: Option<AnneeDite>,
     toutes_les_annees: Option<bool>,
-    categories: Option<Vec<String>>,
+    categories: Option<Vec<documents::CategorieDeDocument>>,
 }
 
 /// La route `dossier-envoyer` : le dossier se refait ici (`dossier_salarie`, un fichier par salarie, ecrit dans
@@ -782,8 +782,8 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
         let liste = d
             .categories
             .iter()
-            .filter(|c| ses_pages.is_some_and(|p| p.get(c).is_some()))
-            .map(|c| crate::dossier_salarie::libelle_de(c).to_lowercase())
+            .filter(|c| ses_pages.is_some_and(|p| p.get(c.texte()).is_some()))
+            .map(|c| c.libelle().to_lowercase())
             .collect::<Vec<_>>()
             .join(", ");
         let corps = envoi::formater(
@@ -792,7 +792,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
                 ("prenom", prenom.clone()),
                 ("periode", if d.periode == "toute la période" { String::new() } else { format!(" ({})", d.periode) }),
                 ("liste", liste),
-                ("reedition", if ses_pages.is_some_and(|p| p.get(crate::dossier_salarie::CONTRATS).is_some()) { REEDITION_CONTRATS.to_string() } else { String::new() }),
+                ("reedition", if ses_pages.is_some_and(|p| p.get(documents::CategorieDeDocument::Contrats.texte()).is_some()) { REEDITION_CONTRATS.to_string() } else { String::new() }),
                 ("signataire", signe.to_string()),
                 ("raison_sociale", ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::absent("raison_sociale"))?.to_string()),
             ],
@@ -814,7 +814,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let expediteur = expediteur_de(client.as_ref())?;
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
-        categories: d.categories.iter().map(|c| c.to_string()).collect(),
+        categories: d.categories.clone(),
         salaries: d
             .salaries
             .iter()

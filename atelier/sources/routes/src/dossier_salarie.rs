@@ -31,6 +31,7 @@ use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use engagement::{self, Engagement};
 use documents::fiche_recapitulative::Recapitulatifs;
+use documents::CategorieDeDocument;
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
 use socle::num::{eur2, Decimal};
 use socle::echec::{erreur, Classe, Echec, R};
@@ -118,7 +119,7 @@ pub(crate) struct DemandeDeDossier {
     pub(crate) mois: Option<Mois>,
     pub(crate) annee: Option<AnneeDite>,
     pub(crate) toutes_les_annees: Option<bool>,
-    pub(crate) categories: Option<Vec<String>>,
+    pub(crate) categories: Option<Vec<CategorieDeDocument>>,
     pub(crate) ensemble: Option<bool>,
     pub(crate) apercu: Option<bool>,
 }
@@ -166,7 +167,7 @@ pub(crate) struct DossierEnvoye {
 pub(crate) struct DossierRendu {
     phrase: String,
     salaries: Vec<IdSalarie>,
-    categories: Vec<&'static str>,
+    categories: Vec<CategorieDeDocument>,
     periode: String,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     fichiers: Vec<PathBuf>,
@@ -191,7 +192,7 @@ impl DossierRendu {
             pages: d.pages,
             avertissements: d.avertissements,
             refus: d.refus,
-            libelles: Ordonnee(CATEGORIES.iter().map(|c| (c.to_string(), libelle_de(c))).collect()),
+            libelles: Ordonnee(CategorieDeDocument::TOUTES.iter().map(|c| (c.texte().to_string(), c.libelle())).collect()),
             phrases,
             envoi,
         }
@@ -200,42 +201,17 @@ impl DossierRendu {
 
 // ------------------------------------------------------------------ les categories
 
-const BULLETINS: &str = "bulletins";
-pub(crate) const CONTRATS: &str = "contrats";
-const CONTRATS_SIGNES: &str = "contrats-signes";
-const CERTIFICATS_CS: &str = "certificats-cs";
-const ATTESTATIONS: &str = "attestations";
-const DOCUMENTS_FIN: &str = "documents-fin";
-const RECAPITULATIF: &str = "recapitulatif";
-pub(crate) const CATEGORIES: [&str; 7] = [BULLETINS, CONTRATS, CONTRATS_SIGNES, CERTIFICATS_CS, ATTESTATIONS, DOCUMENTS_FIN, RECAPITULATIF];
-
-pub(crate) fn libelle_de(c: &str) -> &'static str {
+/// Le nom que le fichier d'une categorie porte.
+fn nom_de(c: CategorieDeDocument) -> &'static str {
     match c {
-        BULLETINS => "Bulletins de paie",
-        CONTRATS => "Contrats",
-        CONTRATS_SIGNES => "Contrats signés",
-        CERTIFICATS_CS => "Certificats Congés Spectacles",
-        ATTESTATIONS => "Attestations employeur (AER, AEM)",
-        DOCUMENTS_FIN => "Documents de fin de contrat",
-        _ => "Fiche récapitulative",
+        CategorieDeDocument::Bulletins => "Bulletins",
+        CategorieDeDocument::Contrats => "Contrats",
+        CategorieDeDocument::ContratsSignes => "Contrats-signes",
+        CategorieDeDocument::CertificatsCs => "Certificats-Conges-Spectacles",
+        CategorieDeDocument::Attestations => "Attestations-employeur",
+        CategorieDeDocument::DocumentsFin => "Documents-de-fin",
+        CategorieDeDocument::Recapitulatif => "Fiche-recapitulative",
     }
-}
-
-fn nom_de(c: &str) -> &'static str {
-    match c {
-        BULLETINS => "Bulletins",
-        CONTRATS => "Contrats",
-        CONTRATS_SIGNES => "Contrats-signes",
-        CERTIFICATS_CS => "Certificats-Conges-Spectacles",
-        ATTESTATIONS => "Attestations-employeur",
-        DOCUMENTS_FIN => "Documents-de-fin",
-        _ => "Fiche-recapitulative",
-    }
-}
-
-/// Le rang d'une categorie dans l'ordre de lecture (chaque page en porte une de `CATEGORIES`).
-fn rang_de(c: &str) -> Option<usize> {
-    CATEGORIES.iter().position(|x| *x == c)
 }
 
 const PIED_REEDITE: &str = "Réédité par PuppetPaie le {} depuis les données de paie — numéros et montants identiques au document remis ; mise en page d'aujourd'hui.";
@@ -340,7 +316,7 @@ impl Periode {
 
 /// Une page du dossier, d'ou qu'elle vienne.
 struct Page {
-    categorie: &'static str,
+    categorie: CategorieDeDocument,
     cle: IdSalarie,
     /// L'ordre de lecture dans sa categorie : son mois, puis son jour ; une page sans jour (le bulletin du mois, un
     /// contrat, une attestation) se lit avant les jours de son mois. Un recapitulatif n'a pas de mois : ses pages gardent
@@ -354,7 +330,7 @@ struct Page {
 
 pub(crate) struct Dossier {
     pub(crate) salaries: Vec<IdSalarie>,
-    pub(crate) categories: Vec<&'static str>,
+    pub(crate) categories: Vec<CategorieDeDocument>,
     pub(crate) periode: String,
     pub(crate) fichiers: Vec<PathBuf>,
     /// `{cle: {categorie: n}}`, dans l'ordre ou les cles et les categories sont apparues.
@@ -640,7 +616,7 @@ fn mois_puppetpaie(
     ctx: &Contexte,
     le_mois: Mois,
     cles: &HashSet<IdSalarie>,
-    categories: &HashSet<&str>,
+    categories: &HashSet<CategorieDeDocument>,
     tmp: &Path,
     d: &mut Dossier,
     aujourdhui: &Jour,
@@ -668,7 +644,7 @@ fn mois_puppetpaie(
     let mut paies_contrats: Vec<Paie> = Vec::new();
     let mut siennes_contrats: Vec<usize> = Vec::new();
     if !ecrit {
-        if categories.contains(BULLETINS) || categories.contains(CERTIFICATS_CS) {
+        if categories.contains(&CategorieDeDocument::Bulletins) || categories.contains(&CategorieDeDocument::CertificatsCs) {
             d.avertissements.push(format!(
                 "{} : aucun document n'est encore parti, ni bulletin ni certificat à rééditer.",
                 lib
@@ -679,7 +655,7 @@ fn mois_puppetpaie(
         let (data, mut figees) = charger(ctx, le_mois)?;
         let partis: Vec<usize> = (0..figees.len()).filter(|i| cles.contains(&cle_de(&figees[*i])) && figees[*i].engagement.numero.is_some()).collect();
         if partis.is_empty() {
-            if categories.contains(CONTRATS) {
+            if categories.contains(&CategorieDeDocument::Contrats) {
                 d.refus.push(format!("{} : contrats non réédités — aucun n'est parti à la signature, et un numéro ne s'invente pas.", lib));
             }
         } else {
@@ -696,7 +672,7 @@ fn mois_puppetpaie(
     // salarie a recue pour le mois (`depart::fabriquer_documents`, `envoi/Bulletin_<cle>_<Mois>.pdf`), qui porte tous ses
     // bulletins numerotes. Rien ne se recalcule ni ne se reimprime : un moteur qui a change de calcul depuis envoie quand
     // meme ce que le salarie a recu. Une piece qui manque refuse, sans repli.
-    if categories.contains(BULLETINS) && ecrit {
+    if categories.contains(&CategorieDeDocument::Bulletins) && ecrit {
         for cle in &cles_des_siennes {
             if !siennes.iter().any(|i| cle_de(&paies[*i]) == *cle && numerote(&paies[*i])) {
                 continue;
@@ -709,13 +685,13 @@ fn mois_puppetpaie(
                 )));
             }
             for n in 0..pages_pdf(&piece)? {
-                pages.push(Page { categorie: BULLETINS, cle: cle.clone(), tri: Some((le_mois, None)), source: piece.clone(), numero: n });
+                pages.push(Page { categorie: CategorieDeDocument::Bulletins, cle: cle.clone(), tri: Some((le_mois, None)), source: piece.clone(), numero: n });
             }
         }
     }
 
     // 2. Les contrats : ceux du mois ecrit portent les numeros de leur engagement valide.
-    if categories.contains(CONTRATS) {
+    if categories.contains(&CategorieDeDocument::Contrats) {
         let (source, indices): (&Vec<Paie>, &Vec<usize>) = if ecrit { (&paies, &siennes) } else { (&paies_contrats, &siennes_contrats) };
         let mut cles_contrats: Vec<IdSalarie> = indices.iter().map(|i| cle_de(&source[*i])).collect();
         cles_contrats.sort();
@@ -751,13 +727,13 @@ fn mois_puppetpaie(
             documents::contrat::ecrire_contrat(ctx, &a_lui, &modeles, &ent, &chemin, &[])?;
             marquer(&chemin, aujourdhui)?;
             for i in 0..pages_pdf(&chemin)? {
-                pages.push(Page { categorie: CONTRATS, cle: cle.clone(), tri: Some((le_mois, None)), source: chemin.clone(), numero: i });
+                pages.push(Page { categorie: CategorieDeDocument::Contrats, cle: cle.clone(), tri: Some((le_mois, None)), source: chemin.clone(), numero: i });
             }
         }
     }
 
     // 3. Les certificats Conges Spectacles partis, a leurs N CE, ecrits dans la paie a leur depart.
-    if categories.contains(CERTIFICATS_CS) && ecrit {
+    if categories.contains(&CategorieDeDocument::CertificatsCs) && ecrit {
         let (pour_cs, avert) = certificats_dus(ctx, &paies)?;
         d.avertissements.extend(avert.into_iter().map(|a| format!("{} : {}", lib, a)));
         let ecrits = engagement::etats::numeros_des_documents(ctx, le_mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
@@ -824,7 +800,7 @@ fn mois_puppetpaie(
                         continue;
                     }
                     for page in ses_pages {
-                        pages.push(Page { categorie: CERTIFICATS_CS, cle: cle.clone(), tri: Some((le_mois, None)), source: archive.clone(), numero: page });
+                        pages.push(Page { categorie: CategorieDeDocument::CertificatsCs, cle: cle.clone(), tri: Some((le_mois, None)), source: archive.clone(), numero: page });
                     }
                 }
             }
@@ -834,7 +810,7 @@ fn mois_puppetpaie(
 
     // 4. Ce qui se prend tel quel : contrats signes, AER, documents de fin.
     for cle in &cles_des_siennes {
-        if categories.contains(CONTRATS_SIGNES) {
+        if categories.contains(&CategorieDeDocument::ContratsSignes) {
             // Le contrat signe hors du logiciel (`engagement::signe_ailleurs`) : le PDF que la compagnie a depose dans son
             // dossier (`signature::contrat_signe_depose`), une fois sur la periode.
             for p in siennes.iter().map(|i| &paies[*i]).filter(|p| cle_de(p) == *cle) {
@@ -846,12 +822,12 @@ fn mois_puppetpaie(
                         continue;
                     }
                     for i in 0..pages_pdf(&f)? {
-                        pages.push(Page { categorie: CONTRATS_SIGNES, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
+                        pages.push(Page { categorie: CategorieDeDocument::ContratsSignes, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                     }
                 }
             }
         }
-        if categories.contains(CONTRATS_SIGNES) && envoi_dir.is_dir() {
+        if categories.contains(&CategorieDeDocument::ContratsSignes) && envoi_dir.is_dir() {
             for nom in contrats_signes_de(&envoi_dir, cle)? {
                 let f = envoi_dir.join(&nom);
                 // Le contrat signe est pris tel quel ; ses numeros, eux, se CONFRONTENT a ceux du
@@ -875,24 +851,24 @@ fn mois_puppetpaie(
                     ));
                 }
                 for i in 0..pages_pdf(&f)? {
-                    pages.push(Page { categorie: CONTRATS_SIGNES, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
+                    pages.push(Page { categorie: CategorieDeDocument::ContratsSignes, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                 }
             }
         }
-        if categories.contains(ATTESTATIONS) {
+        if categories.contains(&CategorieDeDocument::Attestations) {
             let f = envoi_dir.join(format!("AER_{}_{}.pdf", cle, etiq));
             if f.exists() {
                 for i in 0..pages_pdf(&f)? {
-                    pages.push(Page { categorie: ATTESTATIONS, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
+                    pages.push(Page { categorie: CategorieDeDocument::Attestations, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                 }
             }
         }
-        if categories.contains(DOCUMENTS_FIN) {
+        if categories.contains(&CategorieDeDocument::DocumentsFin) {
             for debut in [format!("CertificatTravail_{}_", cle), format!("RecuSoldeToutCompte_{}_", cle)] {
                 for nom in noms_commencant_finissant(&sortie, &debut, ".pdf")? {
                     let f = sortie.join(&nom);
                     for i in 0..pages_pdf(&f)? {
-                        pages.push(Page { categorie: DOCUMENTS_FIN, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
+                        pages.push(Page { categorie: CategorieDeDocument::DocumentsFin, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                     }
                 }
             }
@@ -951,7 +927,7 @@ fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &m
             None => mois.premier_jour(),
         };
         let tri = Some((jour.mois_civil(), Some(jour)));
-        pages.push(Page { categorie: BULLETINS, cle, tri, source, numero: page as usize - 1 });
+        pages.push(Page { categorie: CategorieDeDocument::Bulletins, cle, tri, source, numero: page as usize - 1 });
     }
     if !manquent.is_empty() {
         d.avertissements.push(format!(
@@ -1128,21 +1104,21 @@ fn ecrire_octets(chemin: &Path, octets: &[u8]) -> R<()> {
 }
 
 /// `{cle: {categorie: octets}}`, dans l'ordre ou les cles et les categories sont apparues.
-type Contenus = Vec<(IdSalarie, Vec<(&'static str, Vec<u8>)>)>;
+type Contenus = Vec<(IdSalarie, Vec<(CategorieDeDocument, Vec<u8>)>)>;
 
 /// Un dossier d'une seule categorie n'est fait que de ceux qui en ont des pages : sinon, un defaut.
 fn sans_pages() -> Echec {
     erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier d'une catégorie n'a pas les pages de cette catégorie.")
 }
 
-fn contenu_de<'a>(contenus: &'a Contenus, cle: &IdSalarie) -> Option<&'a Vec<(&'static str, Vec<u8>)>> {
+fn contenu_de<'a>(contenus: &'a Contenus, cle: &IdSalarie) -> Option<&'a Vec<(CategorieDeDocument, Vec<u8>)>> {
     contenus.iter().find(|(c, _)| c == cle).map(|(_, v)| v)
 }
 
 /// Ecrit le dossier d'un salarie (un fichier par categorie, ou un seul PDF) et rend son chemin.
-fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(&'static str, Vec<u8>)], preuves: &[PathBuf], cats: &[&'static str], p: &Periode, un_seul: bool) -> R<PathBuf> {
+fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(CategorieDeDocument, Vec<u8>)], preuves: &[PathBuf], cats: &[CategorieDeDocument], p: &Periode, un_seul: bool) -> R<PathBuf> {
     let base = format!("Dossier_{}_{}", nom_salarie(cle.as_str()), p.nom());
-    if un_seul && !(cats == [CONTRATS_SIGNES] && !preuves.is_empty()) {
+    if un_seul && !(cats == [CategorieDeDocument::ContratsSignes] && !preuves.is_empty()) {
         let cat = cats[0];
         let chemin = dossier.join(format!("{}_{}.pdf", base, nom_de(cat)));
         let octets = contenus.iter().find(|(c, _)| *c == cat).map(|(_, o)| o.as_slice()).ok_or_else(sans_pages)?;
@@ -1151,8 +1127,8 @@ fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(&'static str, Vec<u8>
     }
     let chemin = dossier.join(format!("{}.zip", base));
     let mut entrees = Vec::new();
-    for (i, (cat, octets)) in CATEGORIES.iter().filter_map(|c| contenus.iter().find(|(x, _)| x == c)).enumerate() {
-        entrees.push(entree_ecrite(format!("{}-{}.pdf", i + 1, nom_de(cat)), octets.clone()));
+    for (i, (cat, octets)) in CategorieDeDocument::TOUTES.iter().filter_map(|c| contenus.iter().find(|(x, _)| x == c)).enumerate() {
+        entrees.push(entree_ecrite(format!("{}-{}.pdf", i + 1, nom_de(*cat)), octets.clone()));
     }
     for f in preuves {
         entrees.push(entree_fichier(f, format!("preuves-de-signature/{}", NomDeFichier::du(f)?))?);
@@ -1163,22 +1139,22 @@ fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(&'static str, Vec<u8>
 
 /// Tous les salaries dans le meme fichier : un PDF par categorie qui les
 /// enchaine (une seule categorie : ce PDF-la), sinon un ZIP.
-fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, Vec<PathBuf>)], cats: &[&'static str], p: &Periode, un_seul: bool, tmp: &Path) -> R<PathBuf> {
+fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, Vec<PathBuf>)], cats: &[CategorieDeDocument], p: &Periode, un_seul: bool, tmp: &Path) -> R<PathBuf> {
     let base = format!("Dossiers_{}", p.nom());
     let mut cles: Vec<&IdSalarie> = contenus.iter().map(|(c, _)| c).collect();
     cles.sort();
-    let mut par_cat: Vec<(&'static str, Vec<Vec<u8>>)> = Vec::new();
+    let mut par_cat: Vec<(CategorieDeDocument, Vec<Vec<u8>>)> = Vec::new();
     for cle in cles {
         for (cat, octets) in contenu_de(contenus, cle).into_iter().flatten() {
             match par_cat.iter_mut().find(|(c, _)| c == cat) {
                 Some((_, v)) => v.push(octets.clone()),
-                None => par_cat.push((cat, vec![octets.clone()])),
+                None => par_cat.push((*cat, vec![octets.clone()])),
             }
         }
     }
-    let mut reunis: Vec<(&'static str, Vec<u8>)> = Vec::new();
+    let mut reunis: Vec<(CategorieDeDocument, Vec<u8>)> = Vec::new();
     for (cat, morceaux) in &par_cat {
-        reunis.push((cat, fusion_octets(morceaux, tmp)?));
+        reunis.push((*cat, fusion_octets(morceaux, tmp)?));
     }
     let tout_preuves: Vec<&PathBuf> = preuves.iter().flat_map(|(_, l)| l.iter()).collect();
     if un_seul && tout_preuves.is_empty() {
@@ -1189,8 +1165,8 @@ fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, V
     }
     let chemin = dossier.join(format!("{}.zip", base));
     let mut entrees = Vec::new();
-    for (i, (cat, octets)) in CATEGORIES.iter().filter_map(|c| reunis.iter().find(|(x, _)| x == c)).enumerate() {
-        entrees.push(entree_ecrite(format!("{}-{}.pdf", i + 1, nom_de(cat)), octets.clone()));
+    for (i, (cat, octets)) in CategorieDeDocument::TOUTES.iter().filter_map(|c| reunis.iter().find(|(x, _)| x == c)).enumerate() {
+        entrees.push(entree_ecrite(format!("{}-{}.pdf", i + 1, nom_de(*cat)), octets.clone()));
     }
     for f in tout_preuves {
         entrees.push(entree_fichier(f, format!("preuves-de-signature/{}", NomDeFichier::du(f)?))?);
@@ -1209,12 +1185,8 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     let p = Periode::nouveau(demande.mois, annee, demande.toutes_les_annees == Some(true))?;
     // Le jour reel de Paris, pas `ctx.aujourdhui`.
     let aujourdhui = socle::temps::jour_de_paris();
-    let inconnues: Vec<&str> = demande.categories.iter().flatten().map(String::as_str).filter(|c| !CATEGORIES.contains(c)).collect();
-    if !inconnues.is_empty() {
-        return Err(erreur_operation(format!("Catégorie inconnue : {}. Les catégories sont {}.", inconnues.join(", "), CATEGORIES.join(", "))));
-    }
     // Les categories dites ; aucune dite, toutes.
-    let cats: Vec<&'static str> = CATEGORIES.iter().copied().filter(|c| demande.categories.as_ref().is_none_or(|l| l.iter().any(|x| x == c))).collect();
+    let cats: Vec<CategorieDeDocument> = CategorieDeDocument::TOUTES.iter().copied().filter(|c| demande.categories.as_ref().is_none_or(|l| l.contains(c))).collect();
     let demandes: Option<&Vec<IdSalarie>> = demande.salaries.as_ref();
     let cles: Vec<IdSalarie> = match demandes {
         Some(liste) => {
@@ -1244,7 +1216,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     let racine_tmp = Temporaire::nouveau_dans(&std::env::temp_dir(), "puppetpaie-dossier")?;
     let tmp = racine_tmp.0.as_path();
     let ensemble_cles: HashSet<IdSalarie> = cles.iter().cloned().collect();
-    let ensemble_cats: HashSet<&str> = cats.iter().copied().collect();
+    let ensemble_cats: HashSet<CategorieDeDocument> = cats.iter().copied().collect();
     let mut pages: Vec<Page> = Vec::new();
     let mut contrats_vus: HashSet<String> = HashSet::new();
     let mut attente: HashMap<i32, i64> = HashMap::new();
@@ -1255,24 +1227,24 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     }
     // Les bulletins repris a l'import : la page meme, copiee dans `historique/bulletins/`. Un engagement importe n'a
     // aucun document d'ici : sa page est la seule, meme dans un mois que la saisie touche aussi.
-    if ensemble_cats.contains(BULLETINS) {
+    if ensemble_cats.contains(&CategorieDeDocument::Bulletins) {
         pages.extend(pages_importees(ctx, &ensemble_cles, &p, &mut d)?);
     }
-    if cats.contains(&RECAPITULATIF) {
+    if cats.contains(&CategorieDeDocument::Recapitulatif) {
         let (m, a, toutes) = p.bornes();
         let mut recaps = Recapitulatifs::nouveau(ctx, m, a, toutes, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
         for cle in &cles {
             if let Some(r) = recaps.pdf(cle, tmp)? {
                 for i in 0..pages_pdf(&r)? {
-                    pages.push(Page { categorie: RECAPITULATIF, cle: cle.clone(), tri: None, source: r.clone(), numero: i });
+                    pages.push(Page { categorie: CategorieDeDocument::Recapitulatif, cle: cle.clone(), tri: None, source: r.clone(), numero: i });
                 }
             }
         }
     }
 
     // Par salarie, par categorie, dans l'ordre de lecture.
-    pages.sort_by(|a, b| (&a.cle, rang_de(a.categorie), &a.tri).cmp(&(&b.cle, rang_de(b.categorie), &b.tri)));
-    let mut par: Vec<(IdSalarie, Vec<(&'static str, Vec<&Page>)>)> = Vec::new();
+    pages.sort_by(|a, b| (&a.cle, a.categorie, &a.tri).cmp(&(&b.cle, b.categorie, &b.tri)));
+    let mut par: Vec<(IdSalarie, Vec<(CategorieDeDocument, Vec<&Page>)>)> = Vec::new();
     for pg in &pages {
         let i = match par.iter().position(|(c, _)| *c == pg.cle) {
             Some(i) => i,
@@ -1287,7 +1259,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
             None => cats_du_salarie.push((pg.categorie, vec![pg])),
         }
     }
-    let preuves: Vec<(IdSalarie, Vec<PathBuf>)> =if cats.contains(&CONTRATS_SIGNES) { par.iter().map(|(c, _)| Ok((c.clone(), signatures(ctx, c, &p)?))).collect::<R<Vec<_>>>()? } else { Vec::new() };
+    let preuves: Vec<(IdSalarie, Vec<PathBuf>)> =if cats.contains(&CategorieDeDocument::ContratsSignes) { par.iter().map(|(c, _)| Ok((c.clone(), signatures(ctx, c, &p)?))).collect::<R<Vec<_>>>()? } else { Vec::new() };
     d.salaries = cles.iter().filter(|c| par.iter().any(|(x, _)| x == *c)).cloned().collect();
     if d.salaries.is_empty() {
         // `AucunDocument` : une reponse, pas un incident.
@@ -1311,7 +1283,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
                     },
                     None => contenus.push((cle.clone(), vec![(*cat, octets)])),
                 }
-                *d.pages.entree(cle.as_str(), Ordonnee::default).entree(cat, || n) = n;
+                *d.pages.entree(cle.as_str(), Ordonnee::default).entree(cat.texte(), || n) = n;
             }
         }
     }
