@@ -17,7 +17,7 @@ use socle::echec::Lieu;
 use socle::num::Decimal;
 
 use socle::date::{repr_texte, Jour};
-use socle::fichiers::dossier_du_code;
+use socle::fichiers::{dossier_du_code, CheminRelatif};
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, Echec, R};
 use socle::texte::cle_recherche;
@@ -1207,6 +1207,19 @@ pub const SPECTACLES: &str = "config/spectacles.json";
 pub const EFFECTIFS: &str = "config/effectifs.json";
 /// Les baremes propres a la compagnie (`<annee>.json`), sous sa racine.
 pub const BAREMES: &str = "config/baremes";
+
+/// LA SURCOUCHE DE LA COMPAGNIE POUR L'ANNEE `an`, sous sa racine : `config/baremes/<an>.json`. Le seul ecrivain de ce
+/// chemin : le bareme le lit, son controle le nomme, la raison d'un recalcul le reconnait (`engagement::etats`).
+pub fn surcouche(an: i32) -> R<CheminRelatif> {
+    CheminRelatif::lire(&format!("{}/{}.json", BAREMES, an))
+}
+
+/// L'annee de la surcouche que `chemin` nomme, s'il en est une (`surcouche`, dont c'est la seule relecture).
+pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<i32> {
+    let an = chemin.texte().strip_prefix(BAREMES)?.strip_prefix('/')?.strip_suffix(".json")?;
+    let an = i32::try_from(socle::num::entier_de_chiffres(an)?).ok()?;
+    surcouche(an).is_ok_and(|c| c == *chemin).then_some(an)
+}
 /// Le fichier des organismes et contrats de la DSN, sous `config/`.
 pub const ORGANISMES: &str = "organismes.json";
 
@@ -1360,19 +1373,19 @@ impl Contexte {
     /// Ce dont depend le bareme lu a `jour` : la compagnie, sa fiche entreprise a ce jour, et la signature (date, taille)
     /// des fichiers qui le composent.
     pub fn empreinte_bareme(&self, jour: &Jour) -> R<String> {
-        Ok(self.empreinte_bareme_de(jour.an, &self.entreprise_au(jour)))
+        self.empreinte_bareme_de(jour.an, &self.entreprise_au(jour))
     }
 
-    fn empreinte_bareme_de(&self, an: i32, ent: &ChampsEntreprise) -> String {
+    fn empreinte_bareme_de(&self, an: i32, ent: &ChampsEntreprise) -> R<String> {
         let cfg = self.racine.join(socle::fichiers::CONFIG);
         let sig: Vec<_> = [
-            socle::fichiers::signature(&cfg.join("baremes").join(format!("{}.json", an))),
+            socle::fichiers::signature(&self.racine.join(surcouche(an)?)),
             socle::fichiers::signature(&self.code.join("baremes").join(format!("{}.json", an))),
             socle::fichiers::signature(&cfg.join("effectifs.json")),
         ]
         .into_iter()
         .collect();
-        format!("{}|{}|{}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu)
+        Ok(format!("{}|{}|{}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu))
     }
 
     /// LA PILE DE `jour` : le socle livre + la couche de la convention que la fiche `ent` nomme + la surcouche de la
@@ -1383,11 +1396,11 @@ impl Contexte {
         type Cache = Mutex<HashMap<String, socle::fichiers::Notee<Arc<PileLue>>>>;
         static CACHE: OnceLock<Cache> = OnceLock::new();
         let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        let cle = format!("{}|{}", self.empreinte_bareme_de(jour.an, ent), jour.iso());
+        let cle = format!("{}|{}", self.empreinte_bareme_de(jour.an, ent)?, jour.iso());
         socle::fichiers::garde_notee(cache, cle, || {
             let (pile, regles) = self.empiler(jour, ent)?;
             // Le controle est ici, le seul endroit qui compose un bareme.
-            controler(&pile, ent, &effectif_de(&self.racine, ent)?, &format!("config/baremes/{}.json", jour.an))?;
+            controler(&pile, ent, &effectif_de(&self.racine, ent)?, surcouche(jour.an)?.texte())?;
             Ok(Arc::new(PileLue { pile: Arc::new(pile), regles }))
         })
     }
@@ -1398,10 +1411,11 @@ impl Contexte {
     /// SMIC compris).
     fn empiler(&self, jour: &Jour, ent: &ChampsEntreprise) -> R<(Pile, Vec<Jour>)> {
         let an = jour.an;
-        let ou = format!("config/baremes/{}.json", an);
+        let chemin = surcouche(an)?;
+        let ou = chemin.texte();
         let dossier = self.code.join("baremes");
         let organisation = ent.organisation_patronale.dite().map(String::as_str);
-        let p = self.racine.join(BAREMES).join(format!("{}.json", an));
+        let p = self.racine.join(&chemin);
         let mut regles = Vec::new();
         // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
         let surcouche = match socle::fichiers::existe(&p) {

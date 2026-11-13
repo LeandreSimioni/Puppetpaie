@@ -265,7 +265,7 @@ pub fn jour(t: &str) -> socle::echec::R<Option<Jour>> {
 pub struct Ligne {
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
-    pub numero: String,
+    pub numero: Option<engagement::numeros::NumeroContrat>,
     pub cachets: Option<Decimal>,
     pub heures: Option<Decimal>,
 }
@@ -279,11 +279,13 @@ fn valeur(champs: &[ChampLu], nom: &str) -> Option<String> {
 /// derniere l'emporte, a la place de la premiere.
 pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
     let mut out: Vec<Ligne> = Vec::new();
-    let mut numero_courant = String::new();
+    let mut numero_courant = None;
     for rang in 1..=5 {
         let nom = |p: &str| format!("{}{:02}", p, rang);
-        if let Some(numero) = valeur(champs, &nom(NUM_CONTRAT)).map(|n| n.trim().to_string()).filter(|n| !n.is_empty()) {
-            numero_courant = numero;
+        // L'attestation imprime le numero que notre DSN a declare : un numero qui ne se lit pas se refuse en se nommant,
+        // il ne laisse pas la colonne prendre celui d'un autre contrat. A blanc : la suite du meme contrat.
+        if let Some(n) = valeur(champs, &nom(NUM_CONTRAT)).filter(|n| !n.trim().is_empty()) {
+            numero_courant = Some(engagement::numeros::NumeroContrat::lire(n.trim())?);
         }
         let (deb, fin) = (valeur(champs, &nom(DEBUT)), valeur(champs, &nom(FIN)));
         let (deb, fin) = match (deb.filter(|v| !v.is_empty()), fin.filter(|v| !v.is_empty())) {
@@ -356,12 +358,8 @@ fn nombre(d: Option<Decimal>) -> String {
     }
 }
 
-fn nom_du_contrat(numero: &str) -> &str {
-    if numero.is_empty() {
-        "contrat"
-    } else {
-        numero
-    }
+fn nom_du_contrat(numero: Option<&engagement::numeros::NumeroContrat>) -> String {
+    engagement::numeros::numero_dit(numero, "", "", "contrat")
 }
 
 /// Les ecarts entre l'attestation et la paie. Liste vide = concordance. `paies` : TOUTES les periodes que l'attestation
@@ -374,11 +372,11 @@ fn nom_du_contrat(numero: &str) -> &str {
 pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
     let mut ecarts = Vec::new();
     for ligne in imprime {
-        let p = paies.iter().find(|p| p.numero == ligne.numero && Some(p.debut) == ligne.debut && Some(p.fin) == ligne.fin);
+        let p = paies.iter().find(|p| Some(&p.numero) == ligne.numero.as_ref() && Some(p.debut) == ligne.debut && Some(p.fin) == ligne.fin);
         let Some(p) = p else {
             ecarts.push(format!(
                 "{} ({}) : une periode sur l'attestation qu'aucune paie n'explique ({} cachets, {} heures)",
-                nom_du_contrat(&ligne.numero),
+                nom_du_contrat(ligne.numero.as_ref()),
                 periode(ligne.debut, ligne.fin),
                 nombre(ligne.cachets),
                 nombre(ligne.heures)
@@ -389,7 +387,7 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
             if !concordent(vu, n) {
                 ecarts.push(format!(
                     "{} ({}) : {} {} sur l'attestation, {} dans la paie",
-                    nom_du_contrat(&ligne.numero),
+                    nom_du_contrat(ligne.numero.as_ref()),
                     periode(ligne.debut, ligne.fin),
                     nombre(vu),
                     quoi,
@@ -399,10 +397,10 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
         }
     }
     for p in paies {
-        if !imprime.iter().any(|l| l.numero == p.numero && l.debut == Some(p.debut) && l.fin == Some(p.fin)) {
+        if !imprime.iter().any(|l| l.numero.as_ref() == Some(&p.numero) && l.debut == Some(p.debut) && l.fin == Some(p.fin)) {
             ecarts.push(format!(
                 "{} ({}) : une periode de la paie ({} cachets, {} heures) que l'attestation ne porte pas",
-                nom_du_contrat(&p.numero),
+                nom_du_contrat(Some(&p.numero)),
                 periode(Some(p.debut), Some(p.fin)),
                 nombre(Some(p.cachets)),
                 nombre(p.heures)

@@ -891,22 +891,17 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // LES NUMEROS D'OBJET SANS TITRE (importes des DSN, « A COMPLETER »), archives : la liste des spectacles les groupe sous
     // cette phrase.
     let sans_titre: Vec<&droit::fiche::ChampsSpectacle> = ctx.spectacles.values().filter(|s| s.archivee() && s.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case("a completer"))).collect();
-    // Les deux premiers chiffres d'un numero d'objet disent son annee.
-    let ans: Vec<u32> = sans_titre
-        .iter()
-        .filter_map(|s| s.numero_objet.dite().and_then(|n| n.get(..2)))
-        .filter(|a| a.chars().all(|c| c.is_ascii_digit()))
-        .map(|a| a.parse::<u32>().map(|a| 2000 + a).map_err(|e| socle::echec::refus(e.to_string())))
-        .collect::<R<_>>()?;
+    // L'annee ou chaque numero a ete demande (`NumeroObjetSpectacle::annee_de_la_demande`).
+    let ans: Vec<i32> = sans_titre.iter().filter_map(|s| s.numero_objet.dite().and_then(droit::fiche::NumeroObjetSpectacle::annee_de_la_demande)).collect();
     let numeros_sans_titre = match (sans_titre.len(), ans.iter().min(), ans.iter().max()) {
         (0, _, _) => None,
         (n, de, a) => {
             let s = if n > 1 { "s" } else { "" };
-            // Aucun numero ne dit son annee : la phrase n'en dit pas.
+            // Aucun numero ne dit l'annee de sa demande : la phrase n'en dit pas.
             let annees: String = de
                 .map(|de| match a.filter(|a| *a != de) {
-                    Some(a) => format!(" de {}–{}", de, a),
-                    None => format!(" de {}", de),
+                    Some(a) => format!(" (demandé{} de {} à {})", s, de, a),
+                    None => format!(" (demandé{} en {})", s, de),
                 })
                 .into_iter()
                 .collect();

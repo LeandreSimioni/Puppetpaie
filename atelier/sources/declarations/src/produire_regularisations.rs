@@ -123,10 +123,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engage
                         "Correction de {} pour {} (contrat {}) : {}. Une regularisation annule ce qui a ete DECLARE : elle le lit dans la version de l'engagement sur laquelle la DSN est partie, elle ne le recalcule pas. La DSN de {} ne se produit pas tant que ce n'est pas regle.",
                         mois,
                         documents::tableaux_export::qui_souple(&apres.salarie),
-                        match numero.as_deref() {
-                            Some(n) => n,
-                            None => "sans numero",
-                        },
+                        engagement::numeros::numero_dit(numero.as_ref(), "", "", "sans numero"),
                         quoi,
                         mois_courant
                     ),
@@ -172,10 +169,7 @@ fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Moi
         let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)
             .map_err(|e| e.reclasser(Classe::Illisible))?
             .ok_or_else(|| {
-                let numero = match n.objet().carte().numero.as_deref() {
-                    Some(numero) => format!("le contrat {}", numero),
-                    None => "un contrat sans numero".to_string(),
-                };
+                let numero = engagement::numeros::numero_dit(n.objet().carte().numero.as_ref(), "le contrat ", "", "un contrat sans numero");
                 erreur(Classe::Illisible, format!("{} : aucune DSN partie n'a declare {} de ce mois", mois, numero))
             })?;
         let apres = lu.avant.annulee();
@@ -265,7 +259,7 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
             return Err(socle::fichiers::absent("nom").reclasser(Classe::Manque));
         }
         // Une regularisation corrige un contrat deja declare : son numero se lit (regle 4).
-        let numero = r.apres.engagement.numero.as_deref().ok_or_else(|| socle::fichiers::absent("numero").reclasser(Classe::Manque))?;
+        let numero = r.apres.engagement.numero.as_ref().ok_or_else(|| socle::fichiers::absent("numero").reclasser(Classe::Manque))?;
         out.push(format!(
             "{}, contrat {} ({}) : brut {} → {}, net {} → {}",
             documents::tableaux_export::qui_souple(s),

@@ -1247,7 +1247,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     blocs.extend(cumul);
     let date_paiement = e.date_du_versement()?;
     // Un contrat sans numero (un apercu avant la validation) ne le dit pas.
-    let contrat = if let Some(n) = e.numero.as_deref() { format!("Contrat n° {} — {}", n, nat.libelle) } else { format!("Contrat — {}", nat.libelle) };
+    let contrat = if let Some(n) = e.numero.as_ref() { format!("Contrat n° {} — {}", n, nat.libelle) } else { format!("Contrat — {}", nat.libelle) };
     blocs.push(para(
         vec![mt(format!(
             "Plafond Urssaf de la période : {}{}SMIC retenu pour la réduction générale : {}{}Règlement le {} \

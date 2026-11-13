@@ -21,14 +21,14 @@ use serde::Serialize;
 
 use import::dsn_aem::{self, SalarieDeclare};
 use import::proposee;
-use import::reponse::{en_mots, n_mots, DitPar, Ecart, EtatFiche, FicheImportee, Importation, Origine};
+use import::reponse::{en_mots, n_mots, DitPar, Ecart, EtatFiche, FicheImportee, FicheVisee, Importation, Origine};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, OPERATION, SALARIE};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
-use droit::fiche::{CaseEntreprise, Nir, NomDeFiche, NumeroObjetSpectacle};
+use droit::fiche::{CaseEntreprise, FicheNommee, Nir, NomDeFiche, NumeroObjetSpectacle};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::mois::MoisOuJour;
@@ -353,7 +353,7 @@ impl SansNets {
         let pourquoi = match self.avec.as_slice() {
             [] => "plusieurs versements de la DSN le paient".to_string(),
             [un] => format!("son versement dans la DSN paie aussi le contrat {}", un),
-            autres => format!("son versement dans la DSN paie aussi les contrats {}", autres.join(", ")),
+            autres => format!("son versement dans la DSN paie aussi les contrats {}", autres.iter().map(engagement::numeros::NumeroContrat::as_str).collect::<Vec<_>>().join(", ")),
         };
         format!(
             "{}, contrat {} ({}) : {}, sans dire ses nets ni son prélèvement à la source, et aucun bulletin ne les donne. L'engagement est repris sans ses nets : importez son bulletin.",
@@ -481,7 +481,7 @@ pub(crate) fn apercu_lu(
                 Some(r) => r,
                 None => "L'entreprise, sans raison sociale".to_string(),
             };
-            entreprise = Some(FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
+            entreprise = Some(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Entreprise), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
             a_creer_liste.push(ACreer { nom: NomDeFiche::Entreprise, rang: None, donnees: e });
             a_creer += 1;
         } else {
@@ -495,11 +495,11 @@ pub(crate) fn apercu_lu(
             if let Some(m) = lecture.dernier_mois {
                 ec = ecarts(NomDeFiche::Entreprise, &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, m)?;
             }
-            let mut f = FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
+            let mut f = FicheImportee::new(FicheVisee::Nommee(FicheNommee::Entreprise), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Entreprise, &fiche, &e)?;
             f.noter(&champs, &Origine::dsn(lecture.dernier_mois));
             entreprise = Some(f);
-            crate::importation::completer::ajouter(&mut a_completer, crate::fiches::FicheNommee::Entreprise, &champs);
+            crate::importation::completer::ajouter(&mut a_completer, FicheNommee::Entreprise, &champs);
         }
     }
 
@@ -520,16 +520,16 @@ pub(crate) fn apercu_lu(
         if let Some(cle) = decl.nir.as_ref().and_then(|n| par_nir.get(n)) {
             let fiche = vue_salarie(ctx, cle)?;
             let ec = ecarts(NomDeFiche::Salarie, &fiche, &decl.fiche()?, decl.mois)?;
-            let mut entree = FicheImportee::new(NomDeFiche::Salarie, Some(cle.as_str()), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
+            let mut entree = FicheImportee::new(FicheVisee::Nommee(FicheNommee::Salarie(cle.clone())), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Salarie, &fiche, &fiche_salarie(decl)?)?;
             entree.noter(&champs, &Origine::dsn(Some(decl.mois)));
-            crate::importation::completer::ajouter(&mut a_completer, crate::fiches::FicheNommee::Salarie(cle.clone()), &champs);
+            crate::importation::completer::ajouter(&mut a_completer, FicheNommee::Salarie(cle.clone()), &champs);
             salaries.push(entree);
             continue;
         }
         let donnees = fiche_salarie(decl)?;
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Salarie, &donnees)?;
-        salaries.push(FicheImportee::new(NomDeFiche::Salarie, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
+        salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
         a_creer_liste.push(ACreer { nom: NomDeFiche::Salarie, rang: Some(salaries.len() - 1), donnees });
         cles_a_venir.insert(decl.nir.clone());
         a_creer += 1;
@@ -590,7 +590,7 @@ pub(crate) fn apercu_lu(
                 Some(t) => t.to_string(),
                 None => "Spectacle sans titre".to_string(),
             };
-            spectacles.push(FicheImportee::new(NomDeFiche::Spectacle, Some(cle), &format!("{} ({})", titre, o.numero), EtatFiche::Existante, Vec::new(), Vec::new(), &vide));
+            spectacles.push(FicheImportee::new(FicheVisee::Nommee(FicheNommee::Spectacle(cle.clone())), &format!("{} ({})", titre, o.numero), EtatFiche::Existante, Vec::new(), Vec::new(), &vide));
             continue;
         }
         let source = if o.aem { "AEM" } else { "DSN" };
@@ -607,8 +607,7 @@ pub(crate) fn apercu_lu(
         let donnees = proposee::de(NomDeFiche::Spectacle, &sp)?;
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Spectacle, &donnees)?;
         spectacles.push(FicheImportee::new(
-            NomDeFiche::Spectacle,
-            None,
+            FicheVisee::ACreer(NomDeFiche::Spectacle),
             &format!("numéro d'objet {}, sans titre (déclarations de {} à {})", o.numero, o.premier, o.dernier),
             EtatFiche::ACreer,
             Vec::new(),

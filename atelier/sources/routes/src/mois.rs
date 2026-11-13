@@ -1689,7 +1689,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             (Some(n), false) => format!("bulletin {}", n),
             (None, false) => "bulletin".to_string(),
         }];
-        if let Some(n) = e.numero.as_deref() {
+        if let Some(n) = e.numero.as_ref() {
             m.push(format!("contrat {}", n));
         }
         let mut bornes = match &e.fin {

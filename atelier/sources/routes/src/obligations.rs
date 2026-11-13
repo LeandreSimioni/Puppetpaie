@@ -1611,7 +1611,8 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
 /// La charge de `arret-obligations` : l'arret tel qu'il se saisit, chaque champ vide tant qu'il n'est pas tape -- le
 /// motif, le dernier jour travaille, le debut, la fin prescrite, la reprise, le salarie et le contrat suspendu (d'ou se
 /// tire la subrogation), le jour de l'accident, et ce que la compagnie a connu (l'arret, l'accident et son heure). Un champ
-/// absent ou nul n'est pas encore tape (`""` se refuse, `TexteDit`) ; un jour tape s'ecrit AAAA-MM-JJ.
+/// absent ou nul n'est pas encore tape (`""` se refuse, `TexteDit`) ; un jour tape s'ecrit AAAA-MM-JJ. Le contrat se
+/// choisit dans ceux qu'`arret-contrats` rend : son numero se lit (`NumeroContrat`).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeArretObligations {
@@ -1621,7 +1622,7 @@ pub(crate) struct ChargeArretObligations {
     fin: Option<Jour>,
     reprise: Option<Jour>,
     salarie: Option<SalarieDesigne>,
-    contrat: Option<TexteDit>,
+    contrat: Option<engagement::numeros::NumeroContrat>,
     date_accident: Option<Jour>,
     connaissance_arret: Option<Jour>,
     connaissance_accident: Option<Jour>,
@@ -1636,7 +1637,7 @@ fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salari
         Ok(cle) => cle,
         Err(m) => return Ok(ArretEcrit::PasEncore(m.phrase)),
     };
-    let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, c.contrat.as_deref()) {
+    let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, c.contrat.as_ref()) {
         Ok(contrat) => contrat,
         Err(e) => return Ok(ArretEcrit::PasEncore(e.phrase)),
     };

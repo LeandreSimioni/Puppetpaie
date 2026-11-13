@@ -223,11 +223,11 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
 /// LES SAISIES DE L'ANNEE, PAR LEUR EMPREINTE : `{"AAAA-MM": empreinte}` pour chaque mois saisi de l'annee, l'empreinte
 /// de sa saisie (`engagement::stock::empreinte_de_la_saisie_du_mois` : ce qu'elle dit qui change la paie). Une saisie
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
-pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<socle::mois::Mois, String>> {
+pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<socle::mois::Mois, socle::fichiers::EmpreinteDeSaisie>> {
     let mut m = BTreeMap::new();
     for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee_civile() == annee) {
         if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
-            m.insert(mois, e.to_string());
+            m.insert(mois, e);
         }
     }
     Ok(m)
@@ -483,9 +483,10 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             entrees.push(entree_fichier(&cfg.join(nom), format!("config/{}", nom))?);
         }
     }
-    let bar = cfg.join("baremes").join(format!("{}.json", annee));
+    let surcouche = droit::contexte::surcouche(annee.nombre())?;
+    let bar = ctx.racine.join(surcouche.texte());
     if bar.exists() {
-        entrees.push(entree_fichier(&bar, format!("config/baremes/{}.json", annee))?);
+        entrees.push(entree_fichier(&bar, surcouche.texte().to_string())?);
     }
     if let Some(f) = &fichier_export {
         let nom = f.file_name().ok_or_else(|| refus("L'export compta n'a pas de nom de fichier."))?;

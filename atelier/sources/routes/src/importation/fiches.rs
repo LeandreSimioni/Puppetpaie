@@ -5,7 +5,8 @@
 
 use declarations::champs::{self, Anomalie, Saisie};
 use droit::contexte::Contexte;
-use droit::fiche::{FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, NomDeFiche};
+use droit::fiche::{FicheEntrepriseDatee, FicheNommee, FicheSalarieDatee, FicheSpectacleDatee, NomDeFiche};
+use import::reponse::FicheVisee;
 use socle::echec::{erreur, Classe, R};
 
 use crate::fiches::{self, Forcer, SorteDeFiche};
@@ -24,8 +25,9 @@ pub(crate) fn verifier_comme_a_l_ecriture(nom: NomDeFiche, donnees: &Saisie) -> 
 }
 
 /// UNE FICHE QUE L'IMPORT CREE, ecrite comme celles de l'ecran (`fiches::ecrire_fiche`, `forcer` : une fiche importee
-/// avec des anomalies est ecrite quand meme). Rend sa cle et ses anomalies, chacune avec le libelle de sa case.
-pub(crate) fn ecrire_fiche(ctx: &Contexte, nom: NomDeFiche, donnees: &Saisie, note: &str) -> R<(Option<String>, Vec<Anomalie>)> {
+/// avec des anomalies est ecrite quand meme). Rend la fiche ecrite (nommee par sa cle ; l'entreprise, qui n'en a pas,
+/// reste la fiche a creer qu'elle etait) et ses anomalies, chacune avec le libelle de sa case.
+pub(crate) fn ecrire_fiche(ctx: &Contexte, nom: NomDeFiche, donnees: &Saisie, note: &str) -> R<(FicheVisee, Vec<Anomalie>)> {
     match nom {
         NomDeFiche::Entreprise => ecrire::<FicheEntrepriseDatee>(ctx, donnees, note),
         NomDeFiche::Salarie => ecrire::<FicheSalarieDatee>(ctx, donnees, note),
@@ -33,13 +35,17 @@ pub(crate) fn ecrire_fiche(ctx: &Contexte, nom: NomDeFiche, donnees: &Saisie, no
     }
 }
 
-fn ecrire<F: SorteDeFiche>(ctx: &Contexte, donnees: &Saisie, note: &str) -> R<(Option<String>, Vec<Anomalie>)> {
+fn ecrire<F: SorteDeFiche>(ctx: &Contexte, donnees: &Saisie, note: &str) -> R<(FicheVisee, Vec<Anomalie>)> {
     let lue: F::Plate = droit::fiche::lire_saisie(donnees, F::FICHIER).map_err(|m| m.reclasser(Classe::Refuse))?;
     let p = fiches::preparer::<F>(ctx, None, |plate| poser_les_cases::<F>(plate, lue))?;
     let e = fiches::ecrire_fiche::<F>(ctx, p, Forcer::Tout, None, Some(note))?;
     let mut anomalies = e.anomalies;
     fiches::avec_libelles(F::NOM, &mut anomalies)?;
-    Ok((e.cle.as_ref().map(F::cle_dite), anomalies))
+    let fiche = match e.cle {
+        Some(k) => FicheVisee::Nommee(F::nommee(k)),
+        None => FicheVisee::ACreer(F::NOM),
+    };
+    Ok((fiche, anomalies))
 }
 
 /// Les cases que `lue` dit, posees dans `plate` : une fiche vide la prend entiere, ses notes comprises. Rend les cases
@@ -62,11 +68,11 @@ fn poser_les_cases<F: SorteDeFiche>(plate: &mut F::Plate, lue: F::Plate) -> Vec<
 /// qu'elle est sur le disque, si elle y est vide ou « A COMPLETER » -- et seulement alors : une case remplie depuis
 /// l'apercu reste ce qu'elle est. Une case vide n'avait rien declare : la valeur qui la remplit vaut de tout temps
 /// (`fiches::poser`). Rend les cases ecrites.
-pub(crate) fn completer_fiche(ctx: &Contexte, fiche: &fiches::FicheNommee, champs: &Saisie) -> R<Saisie> {
+pub(crate) fn completer_fiche(ctx: &Contexte, fiche: &FicheNommee, champs: &Saisie) -> R<Saisie> {
     match fiche {
-        fiches::FicheNommee::Entreprise => completer::<FicheEntrepriseDatee>(ctx, None, champs),
-        fiches::FicheNommee::Salarie(cle) => completer::<FicheSalarieDatee>(ctx, Some(cle), champs),
-        fiches::FicheNommee::Spectacle(cle) => completer::<FicheSpectacleDatee>(ctx, Some(cle), champs),
+        FicheNommee::Entreprise => completer::<FicheEntrepriseDatee>(ctx, None, champs),
+        FicheNommee::Salarie(cle) => completer::<FicheSalarieDatee>(ctx, Some(cle), champs),
+        FicheNommee::Spectacle(cle) => completer::<FicheSpectacleDatee>(ctx, Some(cle), champs),
     }
 }
 

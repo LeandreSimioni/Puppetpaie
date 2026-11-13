@@ -238,10 +238,7 @@ fn jours_et_lieux(liste: &[DateDeLigne]) -> (Vec<Jour>, BTreeMap<Jour, String>) 
 impl Engagement {
     /// « NOM Prénom, contrat N » : qui une phrase de refus désigne.
     pub fn qui(&self) -> String {
-        match self.numero.as_deref() {
-            Some(n) => format!("{}, contrat {}", self.nom, n),
-            None => format!("{}, contrat sans numero", self.nom),
-        }
+        numeros::numero_dit(self.numero.as_ref(), &format!("{}, contrat ", self.nom), "", &format!("{}, contrat sans numero", self.nom))
     }
 
     /// LE NUMERO DU CONTRAT QUE LA DSN DECLARE (S21.G00.40.009, obligatoire) : sans lui, l'engagement ne se declare pas,
@@ -1929,10 +1926,10 @@ pub fn vue_requise(racine: &Path, mois: Mois) -> R<saisie::VueDuMois> {
 /// declarerait deux salaries sous le meme 40.009. Le refus nomme le numero et les deux salaries, quelle que soit la
 /// face qui a ecrit la saisie.
 fn un_numero_un_salarie(paies: &[crate::calcul::Paie], mois: Mois) -> R<()> {
-    let mut vus: BTreeMap<String, String> = BTreeMap::new();
+    let mut vus: BTreeMap<&numeros::NumeroContrat, &IdSalarie> = BTreeMap::new();
     for p in paies {
-        let Some(n) = p.engagement.numero.as_deref() else { continue };
-        let cle = p.salarie.id.to_string();
+        let Some(n) = p.engagement.numero.as_ref() else { continue };
+        let cle = &p.salarie.id;
         match vus.get(n) {
             Some(autre) if *autre != cle => {
                 return Err(socle::refus!(
@@ -1944,7 +1941,7 @@ fn un_numero_un_salarie(paies: &[crate::calcul::Paie], mois: Mois) -> R<()> {
             }
             Some(_) => {}
             None => {
-                vus.insert(n.to_string(), cle);
+                vus.insert(n, cle);
             }
         }
     }

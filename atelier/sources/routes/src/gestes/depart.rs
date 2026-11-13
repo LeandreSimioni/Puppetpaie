@@ -502,10 +502,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     }
     for p in paies {
         if p.engagement.sans_paie() {
-            let contrat = match p.engagement.numero.as_deref() {
-                Some(n) => format!("contrat {}", n),
-                None => "un contrat sans numéro".to_string(),
-            };
+            let contrat = engagement::numeros::numero_dit(p.engagement.numero.as_ref(), "contrat ", "", "un contrat sans numéro");
             avertissements.push(info(format!(
                 "{} : {} en cours, aucun cachet en {} -- la DSN porte le contrat avec un versement a zero.",
                 documents::tableaux_export::qui_souple(&p.salarie),
@@ -1451,7 +1448,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
             let effet = premier.effet.ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans sa date d'effet", nom)))?;
             return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, date_contrat, effet, jour, &modele, premier.ailleurs);
         }
-        let mut remplacements: Vec<((IdSalarie, socle::date::Jour, String), (String, socle::date::Jour))> = Vec::new();
+        let mut remplacements: Vec<((IdSalarie, socle::date::Jour, NumeroContrat), (String, socle::date::Jour))> = Vec::new();
         if nom.texte().strip_suffix("remplace.pdf").is_some_and(|b| b.ends_with('_')) {
             for c in &contrats {
                 let parti = envois::etats::contrat_parti(&lignes[..rang], &c.salarie, c.numero.as_ref())
@@ -1460,8 +1457,8 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
                     Some(n) => n.to_string(),
                     None => SANS_NUMERO.to_string(),
                 };
-                let le_sien = c.numero.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?;
-                remplacements.push(((c.salarie.clone(), c.debut, le_sien.to_string()), (numero, parti.date())));
+                let le_sien = c.numero.as_ref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?;
+                remplacements.push(((c.salarie.clone(), c.debut, le_sien.clone()), (numero, parti.date())));
             }
         }
         // Chaque contrat avec le modele qu'il suivait a son depart.

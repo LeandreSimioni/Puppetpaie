@@ -264,10 +264,7 @@ impl ContratCs {
 
     /// Le contrat, tel qu'un refus le nomme : « FA1.26.13 », ou « sans numero ».
     fn nomme(&self) -> String {
-        match self.numero.as_deref() {
-            Some(n) => n.to_string(),
-            None => "sans numero".to_string(),
-        }
+        engagement::numeros::numero_dit(self.numero.as_ref(), "", "", "sans numero")
     }
 }
 

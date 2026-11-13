@@ -52,7 +52,7 @@ use compagnie::installation::{self as compagnies, Compagnie};
 use crate::catalogue::Route;
 use crate::depots::{ChargeDeposer, Designation, Quoi};
 use crate::enveloppe::Dite;
-use crate::rappels::EcheanceDite;
+use crate::rappels::{EcheanceDite, GenreDEcheance};
 use droit::contexte::Contexte;
 use envois::etats;
 use envois::retours::IdDeFlux;
@@ -670,10 +670,12 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance) ->
     let crate::rappels::CleDEcheance::DuSalarie { quoi: genre, salarie, jour } = cle else { return Ok(None) };
     let mois = jour.mois_civil();
     let compact = jour.aaaammjj();
-    let nom = match genre.as_str() {
-        "signalement_arret" => format!("SignalementArret_{}_{}.dsn", salarie, compact),
+    use crate::obligations::CleDObligation as C;
+    use crate::rappels::QuoiDuSalarie as Q;
+    let nom = match genre {
+        Q::Obligation(C::SignalementArret) => format!("SignalementArret_{}_{}.dsn", salarie, compact),
         // L'annule-et-remplace s'ecrit a cote du signalement parti, sous `_AR<ordre>` : le dernier ecrit.
-        "signalement_arret_rectificatif" => {
+        Q::Obligation(C::SignalementArretRectificatif) => {
             let tete = format!("signalementarret_{}_{}_ar", salarie, compact).to_lowercase();
             let rang = |p: &PathBuf| -> Option<i64> {
                 let n = p.file_name()?.to_string_lossy().to_lowercase();
@@ -683,9 +685,9 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance) ->
             let dossier = ctx.racine.join("sorties").join(mois.to_string());
             return Ok(fichiers_de(&dossier)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));
         }
-        "signalement_reprise" => format!("SignalementReprise_{}_{}.dsn", salarie, compact),
-        crate::rappels::FIN_CONTRAT => format!("SignalementFinContrat_{}_{}.dsn", salarie, compact),
-        _ => return Ok(None),
+        Q::Obligation(C::SignalementReprise) => format!("SignalementReprise_{}_{}.dsn", salarie, compact),
+        Q::FinContrat => format!("SignalementFinContrat_{}_{}.dsn", salarie, compact),
+        Q::Obligation(C::SignalementFinContrat | C::DeclarationAccident | C::DeclarationMaladieProfessionnelle | C::AttestationSalaire) => return Ok(None),
     };
     fichier_ecrit(&ctx.racine, mois, &nom)
 }
@@ -700,8 +702,8 @@ fn rappel_incomplet(quoi: &str) -> Echec {
 fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDite) -> R<Option<Declaration>> {
     let mut fichier: Option<PathBuf> = None;
     let mut mensuelle: Option<Mois> = None;
-    let mut d = match r.quoi.as_str() {
-        "dsn" => {
+    let mut d = match r.quoi {
+        GenreDEcheance::Dsn => {
             let mois = r.mois.ok_or_else(|| rappel_incomplet("de DSN"))?;
             let e = r.echeance_depot.as_ref().ok_or_else(|| rappel_incomplet("de DSN"))?;
             let marche = match r.etape.as_str() {
@@ -730,7 +732,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 pret: Pret::RIEN,
             }
         }
-        "obligation" => {
+        GenreDEcheance::Obligation => {
             let ob = r.obligation.as_ref().ok_or_else(|| rappel_incomplet("d'obligation"))?;
             let quand_dit = ob.butoir.map(|b| match ob.heure_du_butoir.as_deref() {
                 Some("24:00") => format!("le {}, jusqu'à minuit", b.jj_mm_aaaa()),
@@ -758,7 +760,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
             };
             Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir: ob.butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::RIEN }
         }
-        "dpae" => {
+        GenreDEcheance::Dpae => {
             let jour = r.date;
             Declaration {
                 cle: r.cle.clone(),
@@ -776,7 +778,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 pret: Pret::RIEN,
             }
         }
-        _ => return Ok(None),
+        GenreDEcheance::DeLAnnee(_) => return Ok(None),
     };
     if let Some(f) = fichier.filter(|f| f.is_file()) {
         // Le depot reel de ce contenu est deja note : le rappel se taira au prochain releve.

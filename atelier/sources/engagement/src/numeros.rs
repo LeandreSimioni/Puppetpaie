@@ -101,25 +101,6 @@ impl NumeroContrat {
     }
 }
 
-impl std::ops::Deref for NumeroContrat {
-    type Target = str;
-    fn deref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::borrow::Borrow<str> for NumeroContrat {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
-impl AsRef<str> for NumeroContrat {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
 impl std::fmt::Display for NumeroContrat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -204,34 +185,10 @@ pub fn numero_dit(numero: Option<impl std::fmt::Display>, avant: &str, apres: &s
     }
 }
 
-impl PartialEq<str> for NumeroContrat {
-    fn eq(&self, autre: &str) -> bool {
-        self.0 == autre
-    }
-}
-
-impl PartialEq<&str> for NumeroContrat {
-    fn eq(&self, autre: &&str) -> bool {
-        self.0 == *autre
-    }
-}
-
-impl PartialEq<String> for NumeroContrat {
-    fn eq(&self, autre: &String) -> bool {
-        self.0 == *autre
-    }
-}
-
-impl PartialEq<NumeroContrat> for &str {
-    fn eq(&self, autre: &NumeroContrat) -> bool {
-        *self == autre.0
-    }
-}
-
-impl PartialEq<NumeroContrat> for String {
-    fn eq(&self, autre: &NumeroContrat) -> bool {
-        *self == autre.0
-    }
+/// Le contrat d'un salarie dans un message : « le contrat VA5.26.01 de VARENNE », « le contrat de VARENNE » tant qu'il n'a
+/// pas de numero.
+pub fn le_contrat(numero: Option<&NumeroContrat>, salarie: &IdSalarie) -> String {
+    numero_dit(numero, "le contrat ", &format!(" de {}", salarie), &format!("le contrat de {}", salarie))
 }
 
 /// Le numero de rang `seq` de l'annee `annee`, pour le salarie de cette fiche : `<initiales><code>.<AA>.<rang>`. Le seul

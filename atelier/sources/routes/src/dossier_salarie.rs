@@ -30,6 +30,7 @@ use documents::conges_spectacles::{self, ContratCs, MoisPaye, PaieCs};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use engagement::{self, Engagement};
+use engagement::numeros::NumeroContrat;
 use documents::fiche_recapitulative::Recapitulatifs;
 use documents::CategorieDeDocument;
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
@@ -375,8 +376,9 @@ fn contrats_signes_de(dossier: &Path, cle: &IdSalarie) -> R<Vec<String>> {
         .collect())
 }
 
-/// Les numéros de contrat d'un nom de fichier : des capitales, des chiffres, un point, deux chiffres, un point, des chiffres.
-fn numeros_de_contrat(nom: &str) -> Vec<String> {
+/// Les numéros de contrat d'un nom de fichier que le logiciel a écrit : des capitales, des chiffres, un point, deux
+/// chiffres, un point, des chiffres ; chacun se lit (`NumeroContrat::lire`).
+fn numeros_de_contrat(nom: &str) -> R<Vec<NumeroContrat>> {
     let c: Vec<char> = nom.chars().collect();
     let chiffres = |de: usize| c.get(de..).into_iter().flatten().take_while(|x| x.is_ascii_digit()).count();
     let mut out = Vec::new();
@@ -397,13 +399,13 @@ fn numeros_de_contrat(nom: &str) -> Vec<String> {
         }
         match fini {
             Some(f) => {
-                out.push(c[i..f].iter().collect());
+                out.push(NumeroContrat::lire(&c[i..f].iter().collect::<String>())?);
                 i = f;
             }
             None => i += 1,
         }
     }
-    out
+    Ok(out)
 }
 
 /// Le nom d'un salarie pour un nom de fichier : ce qui n'est ni chiffre, ni lettre ASCII, ni tiret devient un tiret.
@@ -620,7 +622,7 @@ fn mois_puppetpaie(
     tmp: &Path,
     d: &mut Dossier,
     aujourdhui: &Jour,
-    contrats_vus: &mut HashSet<String>,
+    contrats_vus: &mut HashSet<NumeroContrat>,
     attente: &mut HashMap<i32, i64>,
 ) -> R<Vec<Page>> {
     let mut pages = Vec::new();
@@ -703,13 +705,13 @@ fn mois_puppetpaie(
                 if !engagement::contrat_a_signer(&ctx.racine, &p.engagement)? {
                     continue;
                 }
-                match p.engagement.numero.as_deref() {
+                match p.engagement.numero.as_ref() {
                     Some(n) if contrats_vus.contains(n) => {}
                     Some(_) => a_lui.push(p.clone()),
                     None => sans += 1,
                 }
             }
-            contrats_vus.extend(a_lui.iter().filter_map(|p| p.engagement.numero.clone().map(String::from)));
+            contrats_vus.extend(a_lui.iter().filter_map(|p| p.engagement.numero.clone()));
             if sans > 0 {
                 d.refus.push(format!("{}, {} : {} contrat(s) sans numéro lu, non réédité(s).", lib, cle, sans));
             }
@@ -832,14 +834,14 @@ fn mois_puppetpaie(
                 let f = envoi_dir.join(&nom);
                 // Le contrat signe est pris tel quel ; ses numeros, eux, se CONFRONTENT a ceux du
                 // mois ecrit.
-                let portes: std::collections::BTreeSet<String> = numeros_de_contrat(&nom).into_iter().collect();
-                let connus: std::collections::BTreeSet<String> = siennes
+                let portes: std::collections::BTreeSet<NumeroContrat> = numeros_de_contrat(&nom)?.into_iter().collect();
+                let connus: std::collections::BTreeSet<NumeroContrat> = siennes
                     .iter()
                     .map(|i| &paies[*i])
                     .filter(|p| cle_de(p) == *cle)
-                    .filter_map(|p| p.engagement.numero.clone().map(String::from))
+                    .filter_map(|p| p.engagement.numero.clone())
                     .collect();
-                let hors: Vec<&String> = portes.difference(&connus).collect();
+                let hors: Vec<&NumeroContrat> = portes.difference(&connus).collect();
                 if ecrit && !hors.is_empty() {
                     d.avertissements.push(format!(
                         "{}, {} : le contrat signé {} porte {}, que le mois écrit ne connaît pas (bulletins et DSN : {}). Il est au dossier tel qu'il a été signé ; l'écart est à regarder.",
@@ -847,7 +849,7 @@ fn mois_puppetpaie(
                         cle,
                         nom,
                         hors.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
-                        if connus.is_empty() { "aucun".to_string() } else { connus.iter().cloned().collect::<Vec<_>>().join(", ") }
+                        if connus.is_empty() { "aucun".to_string() } else { connus.iter().map(NumeroContrat::as_str).collect::<Vec<_>>().join(", ") }
                     ));
                 }
                 for i in 0..pages_pdf(&f)? {
@@ -1218,7 +1220,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     let ensemble_cles: HashSet<IdSalarie> = cles.iter().cloned().collect();
     let ensemble_cats: HashSet<CategorieDeDocument> = cats.iter().copied().collect();
     let mut pages: Vec<Page> = Vec::new();
-    let mut contrats_vus: HashSet<String> = HashSet::new();
+    let mut contrats_vus: HashSet<NumeroContrat> = HashSet::new();
     let mut attente: HashMap<i32, i64> = HashMap::new();
     for m in engagement::stock::mois_saisis(&ctx.racine)? {
         if p.contient(m) {

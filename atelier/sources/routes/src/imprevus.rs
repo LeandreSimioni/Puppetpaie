@@ -567,10 +567,10 @@ fn cle_du_nom(ctx: &Contexte, salarie: &SalarieDesigne) -> R<IdSalarie> {
 /// nomme (`voulu`, son numero), sinon le seul. Un imprevu designe son contrat par son numero et sa date de debut
 /// (S21.G00.40.009 et .001) ; sans contrat, il n'y a rien a suspendre, et a deux, le cahier technique laisse le choix au
 /// declarant : on le lui demande.
-pub(crate) fn contrat_suspendu(ctx: &Contexte, cle: &IdSalarie, jour: &Jour, voulu: Option<&str>) -> R<ContratAuJour> {
+pub(crate) fn contrat_suspendu(ctx: &Contexte, cle: &IdSalarie, jour: &Jour, voulu: Option<&NumeroContrat>) -> R<ContratAuJour> {
     let candidats = contrats_au(ctx, cle, *jour)?;
     if let Some(voulu) = voulu {
-        return match candidats.iter().find(|c| c.numero.as_deref() == Some(voulu)) {
+        return match candidats.iter().find(|c| c.numero.as_ref() == Some(voulu)) {
             Some(c) => Ok(c.clone()),
             None => {
                 let liste: Vec<String> = candidats.iter().map(|c| numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO)).collect();
@@ -1650,7 +1650,7 @@ fn verifier_suspension(s: &SuspensionSaisie, contrat_fin: Option<Jour>) -> R<()>
 fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<ReponseSuspension> {
     let cle = cle_du_nom(ctx, &c.salarie)?;
     let debut = c.debut;
-    let contrat = contrat_suspendu(ctx, &cle, &debut, c.contrat.as_ref().map(NumeroContrat::as_str))?;
+    let contrat = contrat_suspendu(ctx, &cle, &debut, c.contrat.as_ref())?;
     let s = SuspensionSaisie {
         genre: GenreSuspension::Suspension,
         salarie: cle.clone(),
@@ -1754,7 +1754,7 @@ fn reponse_suspension(ctx: &Contexte, s: &SuspensionSaisie, phrase: &str) -> R<R
 fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArret> {
     let cle = cle_du_nom(ctx, &c.salarie)?;
     let dernier = c.dernier_jour;
-    let choisi = contrat_suspendu(ctx, &cle, &dernier, c.contrat.as_ref().map(NumeroContrat::as_str))?;
+    let choisi = contrat_suspendu(ctx, &cle, &dernier, c.contrat.as_ref())?;
     let mut arret = arret_a_ecrire(ArretDit {
         cle: &cle,
         contrat: &choisi,

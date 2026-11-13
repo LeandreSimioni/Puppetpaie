@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use declarations::champs::{self, Anomalie, Apercu, Gravite, Saisie, Valeur};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
-use droit::fiche::{CaseDeFiche, NomDeCase, NomDeFiche, CaseEntreprise, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, FicheDatee, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, Lue as _};
+use droit::fiche::{CaseDeFiche, FicheNommee, NomDeCase, NomDeFiche, CaseEntreprise, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, FicheDatee, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, Lue as _};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::forme::NombreLu;
@@ -40,6 +40,8 @@ pub(crate) trait SorteDeFiche: FicheDatee {
 
     /// La cle telle qu'une phrase la dit.
     fn cle_dite(cle: &Self::Cle) -> String;
+    /// La fiche que la cle nomme.
+    fn nommee(cle: Self::Cle) -> FicheNommee;
     /// Le salarie que la cle nomme, pour une fiche de salarie.
     fn salarie(_cle: &Self::Cle) -> Option<&IdSalarie> {
         None
@@ -106,6 +108,9 @@ impl SorteDeFiche for FicheEntrepriseDatee {
 
     fn cle_dite(_cle: &()) -> String {
         String::new()
+    }
+    fn nommee(_cle: ()) -> FicheNommee {
+        FicheNommee::Entreprise
     }
     fn nommer_neuve(_d: &Saisie, _existants: &Self) -> R<Option<()>> {
         Ok(None)
@@ -254,6 +259,9 @@ impl SorteDeFiche for FicheSalarieDatee {
     fn cle_dite(cle: &IdSalarie) -> String {
         cle.to_string()
     }
+    fn nommee(cle: IdSalarie) -> FicheNommee {
+        FicheNommee::Salarie(cle)
+    }
     fn salarie(cle: &IdSalarie) -> Option<&IdSalarie> {
         Some(cle)
     }
@@ -344,6 +352,9 @@ impl SorteDeFiche for FicheSpectacleDatee {
 
     fn cle_dite(cle: &IdSpectacle) -> String {
         cle.to_string()
+    }
+    fn nommee(cle: IdSpectacle) -> FicheNommee {
+        FicheNommee::Spectacle(cle)
     }
     fn nommer_neuve(d: &Saisie, existants: &droit::fiche::Spectacles) -> R<Option<IdSpectacle>> {
         cle_neuve::<Self>(d, existants, IdSpectacle::lire).map(Some)

@@ -55,7 +55,7 @@ use import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
 use droit::natures::NatureDeContrat;
-use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, Nir, NomDeCase, NomDeFiche, NumeroObjetSpectacle};
+use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, FicheNommee, Nir, NomDeCase, NomDeFiche, NumeroObjetSpectacle};
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
@@ -63,7 +63,6 @@ use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::echec::erreur;
 use crate::importation::completer as completer;
-use crate::fiches::FicheNommee;
 use import::proposee;
 use import::tri::Sorte;
 use socle::num::Decimal;
@@ -74,7 +73,7 @@ use engagement::numeros::NumeroContrat;
 use crate::import::{self as ri, ACreer, Apercu, SpectacleDesPieces};
 use droit::contexte::IdSalarie;
 use import::reponse::{
-    BlocBulletins, BlocPieces, DitPar, Ecart, EcartPaie, EtatContrat, EtatFiche, EtatPaie, FicheImportee, FichierVu, Importation, InfosPage, NonRepris, NonReprisVu,
+    BlocBulletins, BlocPieces, DitPar, Ecart, EcartPaie, EtatContrat, EtatFiche, EtatPaie, FicheImportee, FicheVisee, FichierVu, Importation, InfosPage, NonRepris, NonReprisVu,
     Origine, PageVu, ParSort, Sort, Source, TriVu,
 };
 
@@ -634,7 +633,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Salarie, &proposees)?;
         let libelle = libelle_propose(&proposees);
-        reponse.salaries.push(FicheImportee::new(NomDeFiche::Salarie, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees));
+        reponse.salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees));
         ap.a_creer.push(ACreer { nom: NomDeFiche::Salarie, rang: Some(reponse.salaries.len() - 1), donnees: proposees });
         nouvelles_fiches += 1;
     }
@@ -672,7 +671,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Salarie, &proposees)?;
         let libelle = libelle_propose(&proposees);
-        let mut entree = FicheImportee::new(NomDeFiche::Salarie, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees);
+        let mut entree = FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees);
         entree.lu_dans = Some(origine_cert(dernier));
         reponse.salaries.push(entree);
         ap.a_creer.push(ACreer { nom: NomDeFiche::Salarie, rang: Some(reponse.salaries.len() - 1), donnees: proposees });
@@ -834,7 +833,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Some((t, _)) => format!("numéro d'objet {}, titre proposé « {} » (bulletins de {} à {})", numero, t, premier, dernier),
             None => format!("numéro d'objet {}, sans titre (bulletins de {} à {})", numero, premier, dernier),
         };
-        reponse.spectacles.push(FicheImportee::new(NomDeFiche::Spectacle, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
+        reponse.spectacles.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Spectacle), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
         ap.a_creer.push(ACreer { nom: NomDeFiche::Spectacle, rang: Some(reponse.spectacles.len() - 1), donnees });
         nouvelles_fiches += 1;
     }
@@ -872,7 +871,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let donnees = proposee::de(NomDeFiche::Spectacle, &sp)?;
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Spectacle, &donnees)?;
         let libelle = format!("numéro d'objet {}, sans titre (AEM de {} à {})", numero, premier, dernier);
-        reponse.spectacles.push(FicheImportee::new(NomDeFiche::Spectacle, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
+        reponse.spectacles.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Spectacle), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
         ap.a_creer.push(ACreer { nom: NomDeFiche::Spectacle, rang: Some(reponse.spectacles.len() - 1), donnees });
         nouvelles_fiches += 1;
     }
@@ -927,7 +926,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             index.entry((nir, d, f)).or_default().push((mois, contrat, Cible::Historique(cle)));
         }
     }
-    let mut prises: HashMap<String, (String, usize, Decimal, Decimal)> = HashMap::new();
+    /// La paie qu'une page de bulletin dit : une paie declaree (son mois, sa cle), ou, rattachee a aucune, ses dates.
+    #[derive(PartialEq, Eq, Hash)]
+    enum PaieDeLaPage {
+        Declaree(Mois, CleDePaieVersee),
+        Datee(Jour, Jour),
+    }
+    // Deux pages qui disent la meme paie du meme salarie : la copie et la page de la premiere, ses montants.
+    let mut prises: HashMap<(Nir, PaieDeLaPage), (String, usize, Decimal, Decimal)> = HashMap::new();
     let (mut paies_nouvelles, mut paies_completees) = (0usize, 0usize);
     let mut paies_liste: Vec<PaieLue> = Vec::new();
     let mut contrats_liste: Vec<ContratLu> = Vec::new();
@@ -984,10 +990,13 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
         }
         let cible = candidats.into_iter().next();
-        let ident = match &cible {
-            Some((mois, contrat, _)) => format!("paie {} {} {}", mois, l.nir, contrat.dite()),
-            None => format!("bulletin {} {} {}", l.nir, debut.iso(), fin.iso()),
-        };
+        let ident = (
+            l.nir.clone(),
+            match &cible {
+                Some((mois, contrat, _)) => PaieDeLaPage::Declaree(*mois, contrat.clone()),
+                None => PaieDeLaPage::Datee(debut, fin),
+            },
+        );
         if let Some((autre, page, brut, net)) = prises.get(&ident) {
             let (sort, raison) = if *brut == l.b.brut && *net == l.b.net_a_payer {
                 (Sort::DejaRepris, format!("le même bulletin est déjà lu : {} page {}", autre, page))
@@ -1530,7 +1539,7 @@ fn creer_l_entreprise(ctx: &Contexte, a_creer: &mut Vec<ACreer>, reponse: &mut I
         Some(r) => r,
         None => "L'entreprise, sans raison sociale".to_string(),
     };
-    let mut entree = FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e);
+    let mut entree = FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Entreprise), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e);
     entree.lu_dans = origine;
     reponse.entreprise = Some(entree);
     a_creer.push(ACreer { nom: NomDeFiche::Entreprise, rang: None, donnees: e });
@@ -1544,10 +1553,10 @@ fn libelle_propose(f: &Saisie) -> String {
 
 /// La fiche existante `cle` de la liste, ajoutee (`libelle`) si la reponse ne la porte pas encore.
 fn fiche_existante<'a>(liste: &'a mut Vec<FicheImportee>, fiche: &FicheNommee, libelle: impl FnOnce() -> String) -> &'a mut FicheImportee {
-    let rang = match liste.iter().position(|e| e.cle.as_deref() == fiche.cle()) {
+    let rang = match liste.iter().position(|e| e.fiche.nommee() == Some(fiche)) {
         Some(i) => i,
         None => {
-            liste.push(FicheImportee::new(fiche.nom(), fiche.cle(), &libelle(), EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default()));
+            liste.push(FicheImportee::new(FicheVisee::Nommee(fiche.clone()), &libelle(), EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default()));
             liste.len() - 1
         }
     };
@@ -1561,7 +1570,7 @@ fn entreprise_existante<'a>(reponse: &'a mut Importation, ctx: &Contexte) -> &'a
             Some(r) => r,
             None => "L'entreprise, sans raison sociale",
         };
-        FicheImportee::new(NomDeFiche::Entreprise, None, libelle, EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default())
+        FicheImportee::new(FicheVisee::Nommee(FicheNommee::Entreprise), libelle, EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default())
     })
 }
 

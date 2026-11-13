@@ -233,7 +233,7 @@ fn deux_mois(heures_oct: u32) -> Vec<u8> {
 fn verifier_un_contrat_sur_deux_mois_colonne_par_colonne() {
     let paies = [paie("SI2.26.19", jour(2026, 9, 29), jour(2026, 9, 30), 0, 8), paie("SI2.26.19", jour(2026, 10, 1), jour(2026, 10, 16), 0, 10)];
     let q = aer::lire_quantites(&aer::champs(&deux_mois(10)).unwrap()).unwrap();
-    assert_eq!(q.iter().map(|l| l.numero.as_str()).collect::<Vec<_>>(), ["SI2.26.19", "SI2.26.19"], "la suite du contrat garde son numero");
+    assert_eq!(q.iter().map(|l| l.numero.as_ref().map(engagement::numeros::NumeroContrat::as_str)).collect::<Vec<_>>(), [Some("SI2.26.19"), Some("SI2.26.19")], "la suite du contrat garde son numero");
     assert_eq!(aer::verifier(&deux_mois(10), &paies).unwrap(), Vec::<String>::new());
     let e = aer::verifier(&deux_mois(12), &paies).unwrap();
     assert_eq!(e.len(), 1, "{:?}", e);
