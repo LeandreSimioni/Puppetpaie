@@ -83,8 +83,7 @@ pub struct Lieu {
 /// OU SE FAIT UNE OBLIGATION HORS DSN : les lieux que `obligations-base.json` propose (`ou`), que la compagnie choisit en
 /// la disant faite (`accident-declare`, `attestation-declare`) et que sa fiche de suivi garde. Ecrit par son mot ; un
 /// autre mot se refuse a la lecture.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LieuHorsDsn {
     Courrier,
     NetEntreprises,
@@ -110,6 +109,12 @@ impl LieuHorsDsn {
 impl std::fmt::Display for LieuHorsDsn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.texte())
+    }
+}
+
+impl Serialize for LieuHorsDsn {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.texte())
     }
 }
 
