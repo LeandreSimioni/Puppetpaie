@@ -4,7 +4,7 @@
 
 use socle::echec::R;
 
-use crate::natures::{MotifDeRecours, Nature, NatureDeContrat};
+use crate::natures::{DispositifDePolitiquePublique, MotifDeRecours, Nature, NatureDeContrat, NatureDuContratDsn};
 
 /// Le contrat de nature `nature` ouvre-t-il la contribution CPF-CDD ? Il se juge sur ce que la DSN en ecrit
 /// (`codes_de` : le code de la nature, son dispositif, le motif de recours de la nature, sinon celui de l'engagement).
@@ -16,12 +16,12 @@ pub fn ouvre_cpf_cdd(nature: NatureDeContrat, motif_recours: Option<MotifDeRecou
     if let Some(refus) = nat.motif_recours_fixe().is_none().then(|| motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui))).flatten() {
         return Err(socle::echec::refus(refus));
     }
-    let (nature, dispositif, motif) = codes_de(&nat, motif_recours);
+    let (nature, dispositif, motif) = codes_de(&nat, motif_recours)?;
     let Some(nature) = nature else {
         return Err(socle::refus!("La nature de {} ne dit pas son code (S21.G00.40.007) : le signaler au développeur.", qui));
     };
     // « titulaires d'un contrat à durée déterminée » : la nature 02 (CDD de droit prive) seule.
-    if nature != "02" {
+    if nature != NatureDuContratDsn::CddDroitPrive {
         return Ok(false);
     }
     match motif {
@@ -43,7 +43,7 @@ le déclare (S21.G00.40.021).",
     }
     // D. 6331-72 : contrats d'accompagnement dans l'emploi, d'apprentissage, de professionnalisation, et ceux de
     // L. 6321-9 -- tous portent un dispositif de politique publique (40.008), et le moteur n'en ecrit aucun.
-    if let Some(dispositif) = dispositif.filter(|d| d != "99") {
+    if let Some(dispositif) = dispositif.filter(|d| *d != DispositifDePolitiquePublique::NonConcerne) {
         return Err(socle::refus!(
             "Un CDD sous le dispositif de politique publique {1} (S21.G00.40.008), {0}. D. 6331-72 du code du travail en \
 exclut certains de la contribution CPF-CDD (contrats d'accompagnement dans l'emploi, d'apprentissage, de \
@@ -58,11 +58,8 @@ S21.G00.44 sur une supposition.",
 /// Ce que la DSN ecrit d'un contrat de nature `nat` : nature, dispositif, motif (celui de la nature, sinon celui de
 /// l'engagement).
 /// Un code que la nature ni l'engagement ne disent est `None`.
-pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> (Option<String>, Option<String>, Option<MotifDeRecours>) {
-    use crate::natures::RubriqueDeLaNorme;
-    const NATURE: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.40.007");
-    const DISPOSITIF: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.40.008");
-    (nat.code(NATURE), nat.code(DISPOSITIF), nat.motif_recours_fixe().or(motif_recours))
+pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> R<(Option<NatureDuContratDsn>, Option<DispositifDePolitiquePublique>, Option<MotifDeRecours>)> {
+    Ok((nat.nature_dsn()?, nat.dispositif()?, nat.motif_recours_fixe().or(motif_recours)))
 }
 
 #[cfg(test)]

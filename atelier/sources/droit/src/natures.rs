@@ -753,6 +753,66 @@ codes_fermes! {
 }
 
 codes_fermes! {
+    /// LA NATURE DU CONTRAT DECLAREE (S21.G00.40.007), la liste entiere de la norme (cahier technique DSN 2026.1,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` ; relevee dans `formats-dsn-*-base.json`, la meme pour les
+    /// deux versions livrees). Celle de chaque nature, `contrats-base.json` la dit (`codes`, `Nature::nature_dsn`) ; le
+    /// calcul en lit le CDD de droit prive (`cpf_cdd`, `majoration_chomage`).
+    NatureDuContratDsn, "Nature du contrat", "S21.G00.40.007" {
+        CdiDroitPrive = "01",
+        CddDroitPrive = "02",
+        ContratDeMission = "03",
+        CdiIntermittent = "07",
+        CdiInterimaire = "08",
+        CdiDroitPublic = "09",
+        CddDroitPublic = "10",
+        DetachementAvecPension = "20",
+        DetachementSansPension = "21",
+        ConventionDeStage = "29",
+        AppuiAuProjetDEntreprise = "32",
+        NominationFonctionPublique = "50",
+        CollaborateurOccasionnel = "51",
+        CumulAccessoire = "52",
+        EmploiPenitentiaire = "53",
+        EmploiPenitentiaireEnApprentissage = "54",
+        EngagementEducatif = "60",
+        SoutienEtAideParLeTravail = "70",
+        MandatSocial = "80",
+        MandatDElu = "81",
+        CdiDeChantier = "82",
+        ServiceCivique = "89",
+        AutreNature = "90",
+        EngagementMaritimeCdi = "91",
+        EngagementMaritimeCdd = "92",
+        LigneDeService = "93",
+    }
+}
+
+codes_fermes! {
+    /// LE DISPOSITIF DE POLITIQUE PUBLIQUE (S21.G00.40.008), la liste entiere de la norme (cahier technique DSN 2026.1,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` ; relevee dans `formats-dsn-*-base.json`, la meme pour les
+    /// deux versions livrees). Celui de chaque nature, `contrats-base.json` le dit (`codes`, `Nature::dispositif`) ; la
+    /// contribution CPF-CDD en lit le « non concerne » (`cpf_cdd`).
+    DispositifDePolitiquePublique, "Dispositif de politique publique", "S21.G00.40.008" {
+        CuiInitiativeEmploi = "21",
+        ParcoursEmploiCompetences = "41",
+        CuiAccesALEmploiDom = "42",
+        Professionnalisation = "61",
+        ApprentissageArtisanal = "64",
+        ApprentissageNonInscrit = "65",
+        Cifre = "66",
+        CddSeniors = "70",
+        CddDInsertion = "71",
+        ContratDeGeneration = "80",
+        ApprentissageSecteurPublic = "81",
+        ValorisationDeLExperience = "83",
+        StageDeFormationProfessionnelle = "92",
+        MiseEnSituationProfessionnelle = "93",
+        AdulteRelais = "94",
+        NonConcerne = "99",
+    }
+}
+
+codes_fermes! {
     /// LA MODALITE DE DECLARATION DE LA FIN DE CONTRAT, le circuit derogatoire applique ou non (S21.G00.62.017), la liste
     /// entiere de la norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt` ;
     /// relevee dans `formats-dsn-*-base.json`). Celle de chaque nature, `contrats-base.json` la dit
@@ -1346,6 +1406,28 @@ impl Proprietes {
     /// `motif_recours_fixe`).
     pub fn code(&self, rubrique: RubriqueDeLaNorme) -> Option<String> {
         self.codes.autres.get(&rubrique).map(|c| c.valeur.clone())
+    }
+
+    /// La nature du contrat que la DSN declare (S21.G00.40.007), lue dans sa liste ; `None` : la nature ne la dit pas.
+    /// Un code hors de la liste refuse en le nommant.
+    pub fn nature_dsn(&self) -> R<Option<NatureDuContratDsn>> {
+        self.code_de_la_liste(NatureDuContratDsn::du_code, NatureDuContratDsn::RUBRIQUE)
+    }
+
+    /// Le dispositif de politique publique que la DSN declare (S21.G00.40.008), lu dans sa liste ; `None` : la nature ne
+    /// le dit pas. Un code hors de la liste refuse en le nommant.
+    pub fn dispositif(&self) -> R<Option<DispositifDePolitiquePublique>> {
+        self.code_de_la_liste(DispositifDePolitiquePublique::du_code, DispositifDePolitiquePublique::RUBRIQUE)
+    }
+
+    /// La valeur fixe de la rubrique `rubrique`, lue dans sa liste par `du_code`.
+    fn code_de_la_liste<T>(&self, du_code: fn(&str) -> Option<T>, rubrique: RubriqueDeLaNorme) -> R<Option<T>> {
+        match self.code(rubrique) {
+            Some(c) => du_code(&c).map(Some).ok_or_else(|| {
+                socle::echec::a_la_cle(ILLISIBLE, &format!("codes.{}", rubrique), format!("{} n'est pas un code de la liste de la norme", repr(&c)))
+            }),
+            None => Ok(None),
+        }
     }
 
     /// La modalite du temps de travail (S21.G00.40.014) que la nature fixe (le CDDU : 99), ou `None` : elle se dit sur

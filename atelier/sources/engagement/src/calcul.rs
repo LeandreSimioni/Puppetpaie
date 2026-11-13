@@ -1112,7 +1112,7 @@ pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
         eng.motif_recours,
         &crate::numeros::le_contrat(eng.numero.as_ref(), &eng.salarie),
     )?;
-    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref());
+    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref())?;
     bareme_du_salarie(ctx, &p.salarie, &nat, &eng.fin_periode(), caisse, cpf_cdd, majoration)
 }
 
@@ -1341,7 +1341,7 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
         eng.motif_recours,
         &crate::numeros::le_contrat(eng.numero.as_ref(), &eng.salarie),
     )?;
-    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref());
+    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref())?;
     let bar = bareme_du_salarie(ctx, &sal, &nat, &fin_periode, caisse, cpf_cdd, majoration)?;
     let rubriques_bulletin = &bar.rubriques_bulletin;
     let jours = Decimal::from(eng.jours);

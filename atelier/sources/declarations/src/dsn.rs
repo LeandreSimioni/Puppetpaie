@@ -772,7 +772,7 @@ fn bareme_du_contrat(e: &engagement::Engagement, salarie: &droit::fiche::Salarie
     let fin = e.fin_periode();
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(e.nature, e.motif_recours, &engagement::numeros::le_contrat(e.numero.as_ref(), &e.salarie))?;
     let caisse = droit::caisse_conges::affilie(&nat, salarie, &e.debut, e.fin.as_ref())?;
-    let majoration = droit::majoration_chomage::due(&nat, e.motif_recours, &e.debut, e.fin.as_ref());
+    let majoration = droit::majoration_chomage::due(&nat, e.motif_recours, &e.debut, e.fin.as_ref())?;
     let cle = format!("{}|{}|{:?}|{}|{}|{}|{}", fin.iso(), nat.cle, salarie, nat.mensuelle(), caisse, cpf_cdd, majoration);
     if let Some(pile) = socle::memoire::tenu(&bar.piles).get(&cle) {
         return Ok(pile.clone());
