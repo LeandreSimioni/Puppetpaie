@@ -306,7 +306,8 @@ struct ExercicesDits {
     phrase: String,
     phrases: Vec<String>,
     exercices: Vec<ExerciceDit>,
-    dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: std::path::PathBuf,
 }
 
 /// Une annee connue du dossier : ses mois, ses DSN acceptees, sa cloture, son export compta, sa pastille, et sa ligne.
@@ -324,7 +325,7 @@ struct ExerciceDit {
 /// L'export compta d'une annee : son fichier, et quand il a ete ecrit.
 #[derive(Debug, serde::Serialize)]
 struct ExportDeLAnnee {
-    fichier: String,
+    fichier: socle::fichiers::NomDeFichier,
     #[serde(with = "socle::paris::ecrit::minute::option")]
     ecrit: Option<socle::paris::Moment>,
 }
@@ -336,7 +337,7 @@ fn exercices_route(ctx: &Contexte) -> R<ExercicesDits> {
         phrase: format!("Exercices : {}.", exercices.len()),
         phrases: exercices.iter().map(|e| format!("{} : {}", e.annee, e.pastille.mots)).collect(),
         exercices,
-        dossier: ctx.racine.join("sorties").join("exercices").display().to_string(),
+        dossier: ctx.racine.join("sorties").join("exercices"),
     })
 }
 
@@ -351,7 +352,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     for &a in annees.iter().rev() {
         let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| x.annee_civile() == a).copied().collect();
         mois.sort();
-        let fichier = format!("Compta_{}.csv", a);
+        let fichier = socle::fichiers::NomDeFichier::lire(&format!("Compta_{}.csv", a))?;
         let chemin = ctx.racine.join("sorties").join("exercices").join(&fichier);
         let mut acceptees = Vec::new();
         for &x in &mois {

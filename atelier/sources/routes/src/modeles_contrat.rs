@@ -711,7 +711,8 @@ struct ModeleRendu {
 #[derive(Debug, Serialize)]
 struct Apercu {
     phrase: String,
-    chemin: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    chemin: std::path::PathBuf,
 }
 
 macro_rules! dites {
@@ -920,7 +921,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
             documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, 1, p.engagement.debut, ctx.aujourdhui, ctx.aujourdhui, &modele, false)?
         }
     }
-    Ok(Apercu { phrase: format!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, p.engagement.debut.jj_mm_aaaa()), chemin: chemin.to_string_lossy().into_owned() })
+    Ok(Apercu { phrase: format!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, p.engagement.debut.jj_mm_aaaa()), chemin })
 }
 
 /// Le nom d'un special : dit, et qu'aucun autre special (que `sauf`) ne porte.

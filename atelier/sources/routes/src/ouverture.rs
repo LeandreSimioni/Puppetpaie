@@ -616,16 +616,16 @@ pub(crate) fn registre_identite(dossier: &Path) -> R<RegistreIdentite> {
 pub(crate) struct ImageIdentite {
     pub(crate) pose: bool,
     pub(crate) automatique: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dossier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) octets: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
     pub(crate) quand: Option<socle::paris::Moment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::fichiers::ecrire_chemin")]
+    fichier: Option<PathBuf>,
     pub(crate) documents: &'static [&'static str],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) signataire: Option<Signataire>,
@@ -682,14 +682,14 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
             ecran: None,
         };
         match pose {
-            None => e.dossier = Some(dossier.display().to_string()),
+            None => e.dossier = Some(dossier.clone()),
             Some(f) => {
                 let st = std::fs::metadata(&f).map_err(|x| socle::echec::du_disque(&f, &x).reclasser(Classe::Disque))?;
                 e.octets = Some(st.len());
                 e.format = f.extension().map(|x| x.to_string_lossy().into_owned());
                 // Datee hors du calendrier, l'image posee se dit sans sa date.
                 e.quand = socle::paris::mtime(&st).map(socle::paris::Moment::a_la_seconde);
-                e.fichier = Some(f.display().to_string());
+                e.fichier = Some(f);
             }
         }
         Ok(e)

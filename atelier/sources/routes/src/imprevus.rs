@@ -411,7 +411,8 @@ struct ReponseSuspension {
 /// `arret-signaler` : le fichier ecrit.
 #[derive(Debug, Serialize)]
 pub(crate) struct ReponseSignalement {
-    fichier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    fichier: std::path::PathBuf,
     phrase: String,
     nature: NatureSignalement,
     #[serde(rename = "type")]
@@ -423,7 +424,8 @@ pub(crate) struct ReponseSignalement {
 /// `fin-contrat-signaler` : le fichier ecrit.
 #[derive(Debug, Serialize)]
 pub(crate) struct ReponseSignalementFin {
-    fichier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    fichier: std::path::PathBuf,
     phrase: String,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
@@ -438,7 +440,8 @@ struct ReponsePapiers {
     phrase: String,
     certificat: String,
     recu: String,
-    dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: std::path::PathBuf,
     avertissements: &'static [&'static str],
 }
 
@@ -1906,7 +1909,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
         phrase: format!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
         certificat: certificat.to_string_lossy().into_owned(),
         recu: recu.to_string_lossy().into_owned(),
-        dossier: dossier.to_string_lossy().into_owned(),
+        dossier,
         avertissements: documents::fin_de_contrat::AVIS,
     })
 }
@@ -2004,7 +2007,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
     let preavis = declarations::fctu::libelle_preavis(fin.type_preavis)?;
     Ok(ReponseSignalementFin {
-        fichier: cible.to_string_lossy().into_owned(),
+        fichier: cible,
         phrase: phrase_du_signalement(&format!("Signalement de fin de contrat écrit (préavis : {}). Rien n'est parti.", preavis), &avertissements),
         type_declaration,
         ordre,
@@ -2144,7 +2147,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         NatureSignalement::Reprise => "Signalement de reprise écrit. Rien n'est parti.",
     };
     Ok(ReponseSignalement {
-        fichier: cible.to_string_lossy().into_owned(),
+        fichier: cible,
         phrase: phrase_du_signalement(fait, &avertissements),
         nature: c.nature,
         type_declaration,

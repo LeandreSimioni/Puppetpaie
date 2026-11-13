@@ -409,7 +409,8 @@ fn remplacement_du_fichier(m: &mut Moteur, a: &DsnLue, mois: Mois) -> R<Remplace
 /// le recapitulatif et le test.
 #[derive(Debug, Serialize)]
 pub(crate) struct ApercuDsn {
-    pub(crate) fichier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub(crate) fichier: std::path::PathBuf,
     pub(crate) nom: String,
     pub(crate) description: String,
     pub(crate) mois: Mois,
@@ -497,7 +498,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
     };
     Ok(ApercuDsn {
         description: description(nom.texte(), &a),
-        fichier: chemin.clone(),
+        fichier: std::path::PathBuf::from(&chemin),
         nom: nom.into(),
         mois,
         nature_envoi: a.nature_envoi,

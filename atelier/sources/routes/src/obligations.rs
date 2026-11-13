@@ -52,7 +52,8 @@ use socle::echec::R;
 pub use declarations::obligations::{CleDObligation, Ou, TexteDepose};
 use declarations::obligations::{BaseDesObligations, DeBase};
 use socle::echec::erreur;
-use socle::fichiers::repr;
+use socle::fichiers::{repr, CheminRelatif};
+use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
@@ -787,7 +788,7 @@ pub(crate) struct EnvoiDeLArret {
     ordre: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<socle::mois::Mois>,
-    fichier: Option<String>,
+    fichier: Option<CheminRelatif>,
     pub quand: InstantOuJour,
 }
 
@@ -809,7 +810,7 @@ fn envoi(envois: &[EnvoiDeLArret], nature: NatureDeLaDeclaration) -> Option<Fait
     Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.clone(), ordre: e.ordre, flux: None, comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.as_ref().map(CheminRelatif::to_string), ordre: e.ordre, flux: None, comment: "depot", le }),
     })
 }
 
@@ -957,14 +958,14 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             None => None,
         };
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie == *salarie);
-        let dans = |m: &dyn std::fmt::Display| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
+        let dans = |m: Mois| e.fichier.as_ref().map(|nom| CheminRelatif::sorties(m).joint(nom));
         use NatureDeLaDeclaration as N;
         match (nature, dj, mois) {
             (N::SignalementArret | N::SignalementReprise, Some(dj), _) if declare_lu.is_some() && d.evenement == declare_lu && du_salarie => {
-                partis.push(EnvoiDeLArret { fichier: dans(&dj.mois_civil()), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
+                partis.push(EnvoiDeLArret { fichier: dans(dj.mois_civil()), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
             }
             (N::Mensuelle, _, Some(mois)) if reporte(mois, quand)? => {
-                partis.push(EnvoiDeLArret { fichier: dans(&mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
+                partis.push(EnvoiDeLArret { fichier: dans(mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
             }
             _ => {}
         }

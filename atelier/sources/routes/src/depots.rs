@@ -631,7 +631,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
 
     let n = retenues.len();
     Ok(Dpae::Ecrite(DpaeEcrite {
-        chemin: f.to_string_lossy().into_owned(),
+        chemin: f,
         phrase: format!("DPAE {} écrite : {} embauche{}.", socle::texte::de(&le_mois.libelle(Graphie::Accentuee)), n, if n > 1 { "s" } else { "" }),
     }))
 }
@@ -647,7 +647,7 @@ pub(crate) enum Dpae {
 /// La DPAE ecrite : le chemin de son fichier (son `.zip` et son recapitulatif en clair sont a cote), et la phrase qui
 /// dit combien d'embauches elle declare.
 pub(crate) struct DpaeEcrite {
-    pub(crate) chemin: String,
+    pub(crate) chemin: PathBuf,
     pub(crate) phrase: String,
 }
 
@@ -756,7 +756,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
     }
     // Ce qui reste a declarer s'ecrit, et un manque refuse ; quand rien ne reste, c'est la DPAE partie.
     match dpae(ctx, le_mois, d.engagements.as_deref())? {
-        Dpae::Ecrite(w) => Ok((w.chemin, DitALEcriture { phrase: Some(w.phrase), ..Default::default() })),
+        Dpae::Ecrite(w) => Ok((w.chemin.to_string_lossy().into_owned(), DitALEcriture { phrase: Some(w.phrase), ..Default::default() })),
         Dpae::Rien(phrase) => partie(ctx, d, le_mois)?.map(|c| (c, DitALEcriture::default())).ok_or_else(|| refus(phrase)),
     }
 }
@@ -1006,7 +1006,8 @@ pub(crate) struct EmbaucheDuFichier {
 #[derive(Debug, Serialize)]
 pub(crate) struct ApercuDpae {
     pub(crate) description: String,
-    pub(crate) fichier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub(crate) fichier: PathBuf,
     pub(crate) nom: NomDeFichier,
     pub(crate) enregistrements: usize,
     pub(crate) octets: usize,
@@ -1119,7 +1120,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     pastilles_du_test(&mut repetition);
     Ok(ApercuDpae {
         description: format!("{} — {} enregistrement{}, {} octets, indicateur {}.", nom_fichier, enrs.len(), if enrs.len() > 1 { "s" } else { "" }, contenu.len(), envois::depot::indicateur(&contenu)),
-        fichier: chemin,
+        fichier: PathBuf::from(chemin),
         nom: nom_fichier,
         enregistrements: enrs.len(),
         octets: contenu.len(),

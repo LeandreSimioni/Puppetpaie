@@ -401,9 +401,11 @@ pub(crate) fn reunir_pour_imprimer(dossier: &std::path::Path, quoi: &str, etiq: 
 /// contrats et les avenants partis tels que le journal les note.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct Impression {
-    pub fichiers: Vec<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub fichiers: Vec<std::path::PathBuf>,
     pub impression: String,
-    pub chemin: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub chemin: std::path::PathBuf,
     pub contrats: Vec<ContratParti>,
     pub avenants: Vec<ContratParti>,
 }
@@ -434,22 +436,21 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, "")?);
         let (modeles, figes) = modeles_figes(ctx, ps)?;
         documents::contrat::ecrire_contrat(ctx, ps, &modeles, &ent, &pdf, &[])?;
-        fichiers.push(pdf.to_string_lossy().into_owned());
         for (p, fige) in ps.iter().zip(figes) {
             contrats.push(entree_du_contrat(ctx, p, cle, &pdf, &p.titre()?, s_mois, &ent, fige)?);
         }
+        fichiers.push(pdf);
     }
     let mut saisies: HashMap<Mois, (engagement::saisie::VueDuMois, Vec<Paie>)> = HashMap::new();
     let mut lignes_avenants: Vec<ContratParti> = Vec::new();
     for (salarie, aa) in avenants {
         for a in aa {
             let (pdf, c, _) = avenant_ecrit(ctx, salarie, a, &mut saisies, &departs)?;
-            fichiers.push(pdf.to_string_lossy().into_owned());
+            fichiers.push(pdf);
             lignes_avenants.push(c);
         }
     }
-    let pdfs: Vec<std::path::PathBuf> = fichiers.iter().map(std::path::PathBuf::from).collect();
-    let impression = reunir_pour_imprimer(&dossier, "contrats", &etiq, &pdfs)?;
+    let impression = reunir_pour_imprimer(&dossier, "contrats", &etiq, &fichiers)?;
     let nom_impression = NomDeFichier::du(&impression)?;
     let le_mois = Some(mois);
     if !contrats.is_empty() {
@@ -467,7 +468,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         );
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }
-    Ok(Impression { fichiers, impression: nom_impression.into(), chemin: impression.to_string_lossy().into_owned(), contrats, avenants: lignes_avenants })
+    Ok(Impression { fichiers, impression: nom_impression.into(), chemin: impression, contrats, avenants: lignes_avenants })
 }
 
 // ------------------------------------------------------------------ demander-signature
@@ -823,7 +824,8 @@ pub(crate) fn contrat_signe_depose(racine: &std::path::Path, cle: &IdSalarie, de
 /// l'ouvre, et le cree), les PDF deposes, et la phrase.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct ContratSigneDit {
-    pub chemin: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub chemin: std::path::PathBuf,
     pub deposes: Vec<String>,
     pub phrase: String,
 }
@@ -837,7 +839,7 @@ pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &IdSalarie, debut: Jour) ->
     } else {
         format!("Le contrat signé de {} ({}) part joint à chaque avenant.", qui, deposes.join(", "))
     };
-    Ok(ContratSigneDit { chemin: dossier_du_contrat_signe(&ctx.racine, cle, debut).to_string_lossy().into_owned(), deposes, phrase })
+    Ok(ContratSigneDit { chemin: dossier_du_contrat_signe(&ctx.racine, cle, debut), deposes, phrase })
 }
 
 /// L'AVENANT A ENVOYER OU A IMPRIMER, verifie par la route : le contrat qu'il modifie (son salarie, son premier jour, le

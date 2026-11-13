@@ -171,7 +171,7 @@ impl Geste {
 #[serde(deny_unknown_fields)]
 pub struct Piece {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub chemin: Option<String>,
+    pub chemin: Option<socle::fichiers::CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fichier: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -418,7 +418,7 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
             (None, Some(f)) => f.iter().map(|(rel, sha)| (rel.clone(), source_de_piece(scenario, sha))).collect(),
             (None, None) => return Err(refus!("Pièce {} : elle ne dit ni son chemin ni ses fichiers.", cle)),
         };
-        let nom = p.nom.clone().or_else(|| p.chemin.as_deref().and_then(|c| Path::new(c).file_name()).map(|n| n.to_string_lossy().into_owned()));
+        let nom = p.nom.clone().or_else(|| p.chemin.as_ref().map(|c| c.nom().into()));
         let est_fichier = p.fichier == Some(true) || (fichiers.len() == 1 && fichiers[0].0 == ".");
         let dans = p.dans_la_compagnie.as_deref();
         let cible = match dans {
@@ -717,10 +717,10 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
                 let source = scenario.join(c);
                 if source.is_dir() {
                     for (rel, _) in fichiers_de(&source)? {
-                        copier(&Path::new(c).join(rel))?;
+                        copier(&c.as_ref().join(rel))?;
                     }
                 } else {
-                    copier(Path::new(c))?;
+                    copier(c.as_ref())?;
                 }
             }
         }

@@ -417,7 +417,7 @@ fn page_accueil() -> R<String> {
     let r = routes::accueil::liste(&installation::base())?;
     let mut tuiles = Vec::new();
     for c in &r.compagnies {
-        let medaillon = match c.logo.as_deref().map(Path::new).and_then(logo_en_ligne) {
+        let medaillon = match c.logo.as_deref().and_then(logo_en_ligne) {
             Some(logo) => format!("<img src=\"{}\" alt=\"\">", logo),
             None => format!("<span class=\"initiale\">{}</span>", echapper(&c.nom.chars().take(1).collect::<String>())),
         };

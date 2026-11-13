@@ -1163,7 +1163,7 @@ impl AvenantLu {
             )));
         }
         let dits = self.modifications.iter().filter_map(|m| m.phrase.clone().filter(|p| !p.is_empty()));
-        let dossier = self.contrat_signe.as_ref().map(|d| format!("{} Son dossier : {}", d.phrase, d.chemin));
+        let dossier = self.contrat_signe.as_ref().map(|d| format!("{} Son dossier : {}", d.phrase, d.chemin.display()));
         let phrases: Vec<String> = std::iter::once(situation.clone()).chain(encarts.iter().map(Encart::en_ligne)).chain(dits).chain(dossier).collect();
         // Le contrat comme l'avenant le nomme (`{{avenant.reference}}`) : signe hors du logiciel, le papier ne porte
         // pas le numero que le logiciel lui a donne.

@@ -168,7 +168,8 @@ pub(crate) struct DossierRendu {
     salaries: Vec<IdSalarie>,
     categories: Vec<&'static str>,
     periode: String,
-    fichiers: Vec<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    fichiers: Vec<PathBuf>,
     pages: Ordonnee<Ordonnee<usize>>,
     avertissements: Vec<String>,
     refus: Vec<String>,
@@ -186,7 +187,7 @@ impl DossierRendu {
             salaries: d.salaries,
             categories: d.categories,
             periode: d.periode,
-            fichiers: d.fichiers.iter().map(|f| f.to_string_lossy().into_owned()).collect(),
+            fichiers: d.fichiers,
             pages: d.pages,
             avertissements: d.avertissements,
             refus: d.refus,

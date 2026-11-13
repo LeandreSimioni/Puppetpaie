@@ -1301,7 +1301,8 @@ enum Geste {
 #[derive(Debug, Clone, Serialize)]
 struct GesteDuDossier {
     libelle: &'static str,
-    chemin: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    chemin: PathBuf,
     phrase: String,
 }
 
@@ -1358,7 +1359,7 @@ pub struct DpaeDue {
 /// UN FICHIER DEPOSABLE D'UN MOIS (`fichiers_deposables`) : son chemin.
 #[derive(Debug, Clone)]
 pub(crate) struct Deposable {
-    pub(crate) chemin: String,
+    pub(crate) chemin: PathBuf,
 }
 
 /// Les fichiers deposables d'un mois, par acte, le dernier ecrit en tete.
@@ -1777,7 +1778,7 @@ impl<'a> Moteur<'a> {
             let ranger = |v: Vec<&(String, PathBuf)>| -> R<Vec<Deposable>> {
                 let mut ranges = v.into_iter().map(|f| Ok((ordre_de_depot(&f.0, &f.1)?, f))).collect::<R<Vec<_>>>()?;
                 ranges.sort_by(|a, b| a.0.cmp(&b.0));
-                Ok(ranges.into_iter().map(|(_, (_, chemin))| Deposable { chemin: chemin.to_string_lossy().into_owned() }).collect())
+                Ok(ranges.into_iter().map(|(_, (_, chemin))| Deposable { chemin: chemin.clone() }).collect())
             };
             let dsn: Vec<_> = tous.iter().filter(|f| a_l_extension(&f.0, ".dsn")).collect();
             let dpae: Vec<_> = tous
@@ -2005,7 +2006,7 @@ impl<'a> Moteur<'a> {
         let mut trouve = None;
         for f in fichiers.de(quoi) {
             let de_l_etablissement = match (quoi == DSN, nic) {
-                (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin)?, None)?.etablissement() == Some(n),
+                (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin.to_string_lossy())?, None)?.etablissement() == Some(n),
                 // Une DPAE, ou une DSN sans etablissement demande : le premier fichier, quel qu'il soit.
                 (true, None) | (false, Some(_)) | (false, None) => true,
             };
@@ -2017,7 +2018,7 @@ impl<'a> Moteur<'a> {
         let Some(premier) = trouve else {
             return Ok(None);
         };
-        let chemin = PathBuf::from(&premier.chemin);
+        let chemin = premier.chemin.clone();
         let lignes = self.lignes()?;
         let empreinte = envois::journal::empreinte_fichier(&chemin).map_err(|m| m.reclasser(Classe::FichierAbsent))?;
         let acte = if quoi == DSN { envois::journal::Acte::Dsn } else { envois::journal::Acte::Dpae };
@@ -2045,7 +2046,7 @@ impl<'a> Moteur<'a> {
             charge.etablissement = nic.map(String::from);
         }
         if quoi == DPAE {
-            let a = crate::depots::apercu_depot_dpae(self.ctx, &fichier.chemin)?;
+            let a = crate::depots::apercu_depot_dpae(self.ctx, &fichier.chemin.to_string_lossy())?;
             // La DPAE s'ecrit depuis des engagements valides : chacune de ses embauches a sa fiche et son contrat.
             let designee = |e: crate::depots::EmbaucheDuFichier| match (e.salarie, e.numero) {
                 (Some(salarie), Some(numero)) => Ok(EmbaucheDesignee { salarie, numero }),

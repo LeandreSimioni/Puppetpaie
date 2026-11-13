@@ -27,7 +27,7 @@ use envois::envoi;
 use envois::journal;
 use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
 use socle::echec::{erreur, Classe, Echec};
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::{Graphie, Mois, MoisOuJour};
 use crate::catalogue::{Ecran, Place};
 
@@ -148,7 +148,8 @@ pub(crate) struct ChargeDocumentsImprimer {
 pub(crate) struct DocumentsImprimes {
     phrase: String,
     impression: String,
-    chemin: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    chemin: std::path::PathBuf,
     salaries: Vec<IdSalarie>,
     avertissements: Vec<String>,
     phrases: Vec<String>,
@@ -175,7 +176,7 @@ struct ChargePiecePartie {
 #[derive(Debug, Serialize)]
 struct PiecePartie {
     phrase: &'static str,
-    chemin: String,
+    chemin: CheminRelatif,
 }
 
 /// Un message de l'apercu : a qui, quelles pieces (leur nom de fichier, et leur sorte, ce que l'ecran en dit), et, pour un
@@ -222,11 +223,11 @@ struct ApercuEnvoi {
 /// compagnie (`sorties/<mois>/[envoi/]<fichier>`).
 fn piece_partie(ctx: &Contexte, c: ChargePiecePartie) -> R<PiecePartie> {
     let f = crate::gestes::depart::piece_partie(ctx, c.mois, &c.fichier)?;
-    let relatif = f.strip_prefix(&ctx.racine).map_err(|e| {
-        let lieu = socle::echec::Lieu { detail: Some(e.to_string()), ..Default::default() };
+    let chemin = CheminRelatif::sous(&ctx.racine, &f).map_err(|e| {
+        let lieu = socle::echec::Lieu { detail: Some(e.phrase), ..Default::default() };
         Echec { a_part: Some(lieu.into()), ..erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la pièce partie n'est pas dans le dossier de la compagnie.") }
     })?;
-    Ok(PiecePartie { phrase: "La pièce partie, telle qu'elle est partie.", chemin: relatif.to_string_lossy().replace('\\', "/") })
+    Ok(PiecePartie { phrase: "La pièce partie, telle qu'elle est partie.", chemin })
 }
 
 // ------------------------------------------------------------------ les outils
@@ -815,7 +816,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     Ok(DocumentsImprimes {
         phrase: format!("Documents {} imprimés pour {}, à remettre en main propre.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), qui_les_recoit.join(", ")),
         impression: nom_impression.into(),
-        chemin: impression.to_string_lossy().into_owned(),
+        chemin: impression,
         salaries: cles,
         phrases: avertissements.clone(),
         avertissements,

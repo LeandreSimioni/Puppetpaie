@@ -245,11 +245,13 @@ pub struct Tuile {
     pub id: String,
     pub nom: String,
     pub lieu: String,
-    chemin: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    chemin: PathBuf,
     pub reelle: bool,
     pub remise_a_zero: bool,
     pub couleur: String,
-    pub logo: Option<String>,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub logo: Option<PathBuf>,
 }
 
 /// Ce que rend `compagnies`, et ce que l'accueil de la fenetre dessine (`interface::page_accueil`).
@@ -270,7 +272,8 @@ pub struct Ajoutee {
     phrase: String,
     id: String,
     nom: String,
-    pub chemin: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub chemin: PathBuf,
 }
 
 /// Ce que rend `compagnie-couleur`.
@@ -370,7 +373,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
             } else {
                 format!("{} est ajoutée, en compagnie fictive : rien n'en part.", c.nom)
             };
-            en_json(Ajoutee { phrase, id: c.id, nom: c.nom, chemin: c.racine.to_string_lossy().into_owned() })
+            en_json(Ajoutee { phrase, id: c.id, nom: c.nom, chemin: c.racine })
         }
         Route::CompagnieCouleur => {
             let c: ChargeCouleur = charge.lire()?;
@@ -429,9 +432,9 @@ pub fn liste(inst: &std::path::Path) -> R<Liste> {
     let mut cies: Vec<Tuile> = Vec::new();
     for c in compagnies::liste_de(inst)? {
         cies.push(Tuile {
-            chemin: c.racine.to_string_lossy().into_owned(),
+            chemin: c.racine.clone(),
             remise_a_zero: !c.reelle && compagnies::est_fictive_livree(&c.racine)?,
-            logo: compagnies::logo(&c.racine).map(|p| p.to_string_lossy().into_owned()),
+            logo: compagnies::logo(&c.racine),
             id: c.id,
             nom: c.nom,
             lieu: c.lieu,

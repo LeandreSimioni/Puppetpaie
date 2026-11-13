@@ -4,7 +4,7 @@
 
 use droit::fiche::Lue as _;
 use std::collections::{BTreeSet, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -268,7 +268,8 @@ struct FormesDuDossier {
     mois: Vec<Mois>,
     annees: Vec<String>,
     boite_liee: bool,
-    dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: PathBuf,
 }
 
 /// Les salaries que la page propose.
@@ -302,7 +303,7 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
         mois,
         annees,
         boite_liee: crate::ouverture::boite_liee(ctx)?,
-        dossier: ctx.racine.join("exports").join("dossiers").display().to_string(),
+        dossier: ctx.racine.join("exports").join("dossiers"),
     })
 }
 
@@ -391,7 +392,8 @@ struct ExportsPossibles {
     etats: Vec<documents::plan_comptable::EtatLivre>,
     formats: Vec<documents::plan_comptable::FormatLivre>,
     regroupements: Vec<documents::plan_comptable::RegroupementLivre>,
-    dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: PathBuf,
     compta: LogicielDuComptable,
     ecran: EcranDesExports,
 }
@@ -425,7 +427,7 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
     let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats().filter(|(e, piece)| etat_concerne(ctx, &e.etat, *piece, permanents, taxe_due)).map(|(e, _)| e.clone()).collect();
-    let dossier = ctx.racine.join("exports").display().to_string();
+    let dossier = ctx.racine.join("exports");
     let ecran = EcranDesExports {
         vide: mois.is_empty().then_some("Aucune paie saisie : il n'y a rien à exporter pour l'instant."),
         regroupement_livre: "Par salarié, ce qu'on envoie au comptable ; par mois, ce qu'on rapproche de la banque ; par spectacle, ce qui justifie une subvention. Les trois disent la même chose, et le total ne bouge pas.",
@@ -433,7 +435,7 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
         analytique: "Les salaires bruts ventilés par spectacle. Le code de chaque spectacle se règle sur sa fiche : Configuration › Spectacles, case « Code analytique ». Vide, il est tiré du titre.",
         format_libre: "Le format se choisit ci-dessous.",
         coordonnees: "Le NIR, la naissance, l'adresse. Sans la case, rien de tout cela ne sort ; un fichier qui les porte ne s'envoie qu'à qui en a besoin.",
-        dossier: format!("{} — et nulle part ailleurs : un export emporte des salaires", dossier),
+        dossier: format!("{} — et nulle part ailleurs : un export emporte des salaires", dossier.display()),
         categories: "Une seule case : un PDF. Plusieurs : un ZIP, un PDF par catégorie.",
     };
     Ok(ExportsPossibles {
@@ -984,7 +986,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
         total: r.total.to_string(),
         annees,
         eml: emls,
-        dossier: garde.to_string_lossy().into_owned(),
+        dossier: garde,
     })
 }
 
@@ -999,7 +1001,8 @@ struct CascEnvoyee {
     total: String,
     annees: Vec<RegularisationNotee>,
     eml: Vec<NomDeFichier>,
-    dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: PathBuf,
 }
 
 /// L'erreur du disque, sous sa classe (`FichierAbsent`, `Disque`).

@@ -273,12 +273,12 @@ fn deposer_les_dsn(
     a_faire: &mut Vec<String>,
 ) -> R<bool> {
     let f = Moteur::nouveau(ctx).fichiers_deposables(mois)?;
-    let chemins: Vec<String> = f.dsn.iter().map(|x| x.chemin.clone()).collect();
+    let chemins: Vec<std::path::PathBuf> = f.dsn.iter().map(|x| x.chemin.clone()).collect();
     let journal = envois::journal::lu(&ctx.racine)?;
     let lignes: Vec<&envois::journal::Ligne> = envois::journal::filtrer(&journal.lignes, Some(envois::journal::Acte::Dsn), None, false).filter(|l| l.accepte()).collect();
     let mut fait = false;
     for chemin in chemins {
-        let p = Path::new(&chemin);
+        let p = chemin.as_path();
         let nom = socle::fichiers::NomDeFichier::du(p)?;
         let octets = std::fs::read(p).map_err(|e| socle::echec::du_disque(p, &e).reclasser(Classe::du_disque(&e)))?;
         // LA DEMANDE DE TAUX NE PART QU'AVEC LA DPAE (`depot_acte::deposer_dpae`) : un signalement d'amorcage reste d'un
@@ -299,7 +299,7 @@ fn deposer_les_dsn(
         // Un signalement qui ne part pas se nomme : le pas est celui de la DSN du mois.
         let signalement = lue.nature_declaration != Some(declarations::dsn_lue::MENSUELLE);
         for reel in [false, true] {
-            a_faire.extend(deposer_dsn_joue(d, ctx, &chemin, reel).map_err(|mut e| {
+            a_faire.extend(deposer_dsn_joue(d, ctx, &chemin.to_string_lossy(), reel).map_err(|mut e| {
                 if signalement {
                     e = Echec { a_part: None, ..e.reformuler(|p| format!("le signalement {} ne part pas : {}", nom, p)) };
                 }
@@ -666,7 +666,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             let crate::depots::Dpae::Ecrite(r) = crate::depots::dpae(ctx, *mois, Some(&engagements))? else {
                 return Ok(Joue::Rien);
             };
-            let fichier = r.chemin;
+            let fichier = r.chemin.to_string_lossy().into_owned();
             // La DPAE emporte la demande de taux de PAS de ses embauches (`depot_acte::deposer_dpae`).
             for reel in [false, true] {
                 deposer_dpae_joue(d, ctx, &fichier, reel)?;
