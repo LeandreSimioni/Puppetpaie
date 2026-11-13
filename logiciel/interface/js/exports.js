@@ -497,7 +497,7 @@ function dessinerCasc(r) {
         <div class="casc-option">
           <h5>À la main</h5>
           <p>${echapper(r.ecran.a_la_main)}</p>
-          <button class="secondaire" id="casc-dossier">Ouvrir les fichiers</button>
+          ${r.dossier ? `<button class="secondaire" id="casc-dossier">Ouvrir les fichiers</button>` : ""}
           ${courriel(r.courriel_audiens, "Courriel à Audiens")}
           ${courriel(r.courriel_casc, "Courriel au CASC-SVP")}
           <div class="e-contrat-champs">
@@ -514,7 +514,7 @@ function dessinerCasc(r) {
       <table class="livre"><thead><tr><th>mois</th><th class="r">masse</th><th class="r">taux</th>
         <th class="r">CASC</th></tr></thead><tbody>${lignes}${annees}</tbody></table>
     </details>`;
-  document.getElementById("casc-dossier").onclick = async () => {
+  if (r.dossier) document.getElementById("casc-dossier").onclick = async () => {
     await ouvrirEtDire(r.dossier);
   };
   const choixAnnee = document.getElementById("casc-annee");
