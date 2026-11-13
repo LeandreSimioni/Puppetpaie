@@ -841,8 +841,8 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         if let Some(c) = lu(&d.complement) {
             l.phrases.push(c.to_string());
         }
-        let compte = |n: &Option<String>, un: &str, plusieurs: &str| -> Option<String> {
-            lu(n).filter(|n| *n != "0").map(|n| format!("{} {}", n, if n == "1" { un } else { plusieurs }))
+        let compte = |n: &Option<usize>, un: &str, plusieurs: &str| -> Option<String> {
+            n.filter(|n| *n != 0).map(|n| format!("{} {}", n, if n == 1 { un } else { plusieurs }))
         };
         let comptes: Vec<String> = [
             compte(&d.erreurs, "erreur", "erreurs"),
@@ -889,7 +889,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
                 message: joint(message.iter().map(|m| Some(m.as_str())), " — "),
                 rubrique: joint([lu(&r.rubrique), lu(&r.libelle_rubrique).map(|x| format!("({})", x)).as_deref()], " "),
                 ligne: None,
-                nombre: lu(&r.nombre).map(String::from),
+                nombre: r.nombre.map(|n| n.to_string()),
                 salarie: lu(&r.salarie).map(String::from),
             });
         }

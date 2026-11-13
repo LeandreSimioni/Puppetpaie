@@ -199,14 +199,13 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
     for d in a_ecrire {
         let b = &d.bilan;
         let (Some(quand), Some(piece)) = (heure_du_bilan(b), d.pieces.last()) else { continue };
-        let salaries = b.salaries.as_deref().map(|s| s.trim().parse::<usize>().map_err(|_| socle::echec::cle("Le nombre de salariés d'un bilan ne se lit pas.", "salaries").reclasser(Classe::Illisible))).transpose()?;
         let detail = DetailDsn {
             logiciel: b.logiciel.clone(),
             type_declaration: b.type_declaration,
             fraction: b.fraction,
             ordre: b.ordre,
-            salaries,
-            contrats: b.contrats.clone(),
+            salaries: b.salaries,
+            contrats: b.contrats.map(|n| n.to_string()),
             etat_envoi: b.etat_envoi.map(|v| v.code().to_string()),
             etat_declaration: b.etat_declaration,
             verdict_connu: Some(b.etat_declaration.is_some()),

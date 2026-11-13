@@ -1194,8 +1194,8 @@ pub struct Bilan {
     pub type_declaration: Option<TypeDeLaDeclaration>,
     pub fraction: Option<Fraction>,
     pub ordre: Option<NumeroDOrdre>,
-    pub salaries: Option<String>,
-    pub contrats: Option<String>,
+    pub salaries: Option<usize>,
+    pub contrats: Option<usize>,
     pub conformite: Option<String>,
     pub certificat: Option<String>,
     pub siret_declarant: Option<String>,
@@ -1341,8 +1341,8 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: TypeDeRapport) -> R<O
         type_declaration: type_du_retour(get("type").as_deref())?,
         fraction: forme_du_retour(get("fraction").as_deref(), Fraction::lire)?,
         ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
-        salaries: get("salaries"),
-        contrats: get("contrats"),
+        salaries: forme_du_retour(get("salaries").as_deref(), compte_du_retour)?,
+        contrats: forme_du_retour(get("contrats").as_deref(), compte_du_retour)?,
         conformite: get("etat_conformite"),
         certificat: get("certificat_conformite"),
         siret_declarant: get("siret"),
@@ -1460,6 +1460,14 @@ fn essai_du_retour(code: Option<&str>) -> R<Option<EssaiOuReel>> {
 /// de la liste de la norme refuse le retour, qui ne se lit pas.
 fn type_du_retour(code: Option<&str>) -> R<Option<TypeDeLaDeclaration>> {
     code_du_retour(code, "type")
+}
+
+/// Un compte qu'un retour porte : un `integer` du schema des bilans (`salaries`, `contrats`, l. 170-188,
+/// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`), un attribut entier du
+/// compte rendu d'un organisme complementaire (`NbErreursSimilaires`, `NbreSal`, `NbreErreur`... :
+/// `ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd`, l. 190-199, 910-961) ; une autre forme se refuse.
+fn compte_du_retour(texte: &str) -> R<usize> {
+    texte.parse::<usize>().map_err(|_| socle::refus!("Un compte que le retour porte ne se lit pas : {} n'est pas un nombre entier positif.", socle::fichiers::repr(texte)))
 }
 
 /// Ce qu'un retour de la norme porte dans une forme de la norme (`lire` : une fraction, un numero d'ordre), `None` s'il
@@ -3364,7 +3372,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
                 libelle: at(rm, "LibelCodeRetourMetier"),
                 description: at(rm, "DescriptionRetour"),
                 criticite: forme_du_retour(at(rm, "CriticiteRetour").as_deref(), code_ferme::<CriticiteOc>)?,
-                nombre: at(rm, "NbErreursSimilaires"),
+                nombre: forme_du_retour(at(rm, "NbErreursSimilaires").as_deref(), compte_du_retour)?,
                 rubrique: at(rm, "RubriqueBlocRetour"),
                 libelle_rubrique: at(rm, "LibelRubBlocRetour"),
                 valeur: at(rm, "ValeurRubriqueErreur"),
@@ -3390,11 +3398,11 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             telephone: at(d, "TelContact"),
             code_retour: forme_du_retour(at(d, "CodeRetourDecla").as_deref(), code_ferme::<RetourGlobalOc>)?,
             complement: at(d, "ComplementRetourDecla"),
-            erreurs: at(d, "NbreErreur"),
-            critiques: at(d, "NbreCritique"),
-            affiliations: at(d, "NbreAff"),
-            radiations: at(d, "NbreRad"),
-            salaries: at(d, "NbreSal"),
+            erreurs: forme_du_retour(at(d, "NbreErreur").as_deref(), compte_du_retour)?,
+            critiques: forme_du_retour(at(d, "NbreCritique").as_deref(), compte_du_retour)?,
+            affiliations: forme_du_retour(at(d, "NbreAff").as_deref(), compte_du_retour)?,
+            radiations: forme_du_retour(at(d, "NbreRad").as_deref(), compte_du_retour)?,
+            salaries: forme_du_retour(at(d, "NbreSal").as_deref(), compte_du_retour)?,
             mandats,
             retours,
         });
@@ -3432,11 +3440,11 @@ pub struct DeclarationOc {
     pub telephone: Option<String>,
     pub code_retour: Option<RetourGlobalOc>,
     pub complement: Option<String>,
-    pub erreurs: Option<String>,
-    pub critiques: Option<String>,
-    pub affiliations: Option<String>,
-    pub radiations: Option<String>,
-    pub salaries: Option<String>,
+    pub erreurs: Option<usize>,
+    pub critiques: Option<usize>,
+    pub affiliations: Option<usize>,
+    pub radiations: Option<usize>,
+    pub salaries: Option<usize>,
     pub mandats: Vec<MandatOc>,
     pub retours: Vec<RetourMetierOc>,
 }
@@ -3458,7 +3466,7 @@ pub struct RetourMetierOc {
     pub libelle: Option<String>,
     pub description: Option<String>,
     pub criticite: Option<CriticiteOc>,
-    pub nombre: Option<String>,
+    pub nombre: Option<usize>,
     pub rubrique: Option<String>,
     pub libelle_rubrique: Option<String>,
     pub valeur: Option<String>,

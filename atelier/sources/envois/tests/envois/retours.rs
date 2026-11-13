@@ -79,7 +79,7 @@ fn un_certificat_de_conformite() {
     assert_eq!(b.conformite.as_deref(), Some("OK"));
     assert_eq!(b.certificat.as_deref(), Some("CERTIFIE"));
     assert_eq!(b.mois.map(|m| m.to_string()).as_deref(), Some("2026-08"));
-    assert_eq!((b.salaries.as_deref(), b.contrats.as_deref()), (Some("3"), Some("4")));
+    assert_eq!((b.salaries, b.contrats), (Some(3), Some(4)));
 }
 
 #[test]
