@@ -247,7 +247,7 @@ pub(crate) fn apercu_description(modele: Modele) -> R<fabrique_pdf::Description>
     let ent = ctx.pour_un_modele(&fiche);
     // Une paie de l'ecran n'a pas de numero de bulletin (il se reserve au depart) : l'apercu montre celui d'un premier
     // bulletin de l'annee.
-    let numeros: Vec<Option<String>> = (1..=s.paies.len()).map(|n| Some(format!("{}/{:04}", n, le_mois.annee()))).collect();
+    let numeros: Vec<Option<engagement::numeros::NumeroDeBulletin>> = (1..=s.paies.len() as i64).map(|n| Some(engagement::numeros::NumeroDeBulletin::du_rang(n, le_mois.annee()))).collect();
     let departs = engagement::departs::Departs::default();
     let passe = documents::bulletin::passe_des_bulletins(&ctx, &s.paies, le_mois, &departs)?;
     jeux_et_description(&ctx, &s.paies, &numeros, &ent, le_mois, None, false, &HashMap::new(), &departs, &passe)

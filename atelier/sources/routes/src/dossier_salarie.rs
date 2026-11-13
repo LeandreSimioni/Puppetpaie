@@ -630,7 +630,7 @@ fn mois_puppetpaie(
     let envoi_dir = sortie.join("envoi");
     let (_, paies) = charger(ctx, le_mois)?;
     // Les documents du mois sont partis quand une paie porte le numero de son bulletin (ecrit a son depart).
-    let numerote = |p: &Paie| p.numero_bulletin.as_deref().is_some_and(|n| !n.is_empty());
+    let numerote = |p: &Paie| p.numero_bulletin.is_some();
     let ecrit = paies.iter().any(numerote);
     let siennes: Vec<usize> = (0..paies.len()).filter(|i| cles.contains(&cle_de(&paies[*i]))).collect();
     if siennes.is_empty() {

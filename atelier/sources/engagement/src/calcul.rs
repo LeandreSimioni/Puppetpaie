@@ -356,7 +356,7 @@ pub struct Contenu {
     /// `calculer` (7.10) ; les lignes hors assiette n'y entrent que si le catalogue les dit imposables.
     pub net_imposable: Decimal,
     pub cout_employeur: Decimal,
-    pub numero_bulletin: Option<String>,
+    pub numero_bulletin: Option<crate::numeros::NumeroDeBulletin>,
     /// Les assiettes du calcul, que la DSN declare telles quelles.
     pub bases: BTreeMap<Assiette, Decimal>,
     /// Les lignes de remuneration (le haut du bulletin), pas les cotisations.

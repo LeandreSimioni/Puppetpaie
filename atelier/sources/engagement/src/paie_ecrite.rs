@@ -31,10 +31,10 @@ pub struct PaieEcrite {
     pub conges: Option<crate::conges::CompteurConges>,
     pub conges_avant: Option<crate::conges::Avant>,
     /// Le numero du bulletin et le premier N CE, ecrits quand ses documents sont partis (`etats::poser_numeros_des_documents`).
-    pub bulletin: Option<String>,
+    pub bulletin: Option<crate::numeros::NumeroDeBulletin>,
     pub ce: Option<i64>,
     /// Le numero du bulletin d'une paie partie que celle-ci rectifie.
-    pub rectifie: Option<String>,
+    pub rectifie: Option<crate::numeros::NumeroDeBulletin>,
     /// Pourquoi la paie s'est recalculee d'elle-meme, et quand.
     pub recalcul: Option<Recalcul>,
 }
@@ -98,7 +98,7 @@ pub struct FormeDePaie<A> {
     pub net_imposable: Decimal,
     #[serde(with = "nombre")]
     pub net_social: Decimal,
-    pub numero_bulletin: Option<String>,
+    pub numero_bulletin: Option<crate::numeros::NumeroDeBulletin>,
     pub reduction_generale: Option<droit::reduction::ReductionGenerale>,
     pub remuneration: Vec<FormeDeRemuneration>,
     #[serde(with = "nombre")]

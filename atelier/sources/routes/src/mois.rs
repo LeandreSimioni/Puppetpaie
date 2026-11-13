@@ -1586,7 +1586,7 @@ pub(crate) struct VuePaie {
     /// Ce que la carte validee dit de la paie : ce qu'elle paye, en bref, son bulletin.
     paye_dit: String,
     bulletin_dit: Option<String>,
-    numero_bulletin: Option<String>,
+    numero_bulletin: Option<engagement::numeros::NumeroDeBulletin>,
     numero_contrat: Option<engagement::numeros::NumeroContrat>,
     salarie: SalarieVu,
     /// UN PERMANENT N'A PAS DE SPECTACLE, et `None` est la reponse juste.

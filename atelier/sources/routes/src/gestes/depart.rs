@@ -28,7 +28,7 @@ use declarations::produire_regularisations::{self as regularisations, Reg};
 use crate::etapes::Moteur;
 use compagnie::pieces_ecrites::{cle_de_piece, journal_des_ecritures, noter_piece_ecrite, refuser_si_partie, EmpreinteNotee};
 use droit::contexte::{Contexte, IdSalarie};
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{NumeroContrat, NumeroDeBulletin};
 use droit::natures::NumeroDOrdre;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
@@ -658,7 +658,7 @@ pub(crate) struct DocumentsFabriques {
     reserves: Reserves,
     /// `(cle du salarie, numero du contrat, numero de bulletin, premier et dernier N CE)` : ce qui s'ecrit dans les paies au
     /// depart.
-    a_poser: Vec<(IdSalarie, NumeroContrat, Option<String>, Option<(i64, i64)>)>,
+    a_poser: Vec<(IdSalarie, NumeroContrat, Option<NumeroDeBulletin>, Option<(i64, i64)>)>,
     pub(crate) avertissements: Vec<String>,
 }
 
@@ -668,7 +668,7 @@ impl DocumentsFabriques {
     pub(crate) fn engager(self, ctx: &Contexte, mois: Mois) -> R<()> {
         self.reserves.valider(ctx)?;
         for (cle, numero, bulletin, ce) in &self.a_poser {
-            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_deref(), ce.map(|c| c.0))?;
+            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_ref(), ce.map(|c| c.0))?;
         }
         Ok(())
     }
@@ -682,18 +682,14 @@ impl DocumentsFabriques {
         let an = i64::from(mois.annee());
         for (cle, numero, bulletin, ce) in self.a_poser.iter().filter(|a| servis.contains(&&a.0)) {
             // Le numero d'un bulletin, `N/AAAA` : son rang dans l'annee.
-            if let Some(b) = bulletin.as_deref() {
-                let rang = b.split('/').next().map(str::trim).map(str::parse::<i64>);
-                let n = match rang {
-                    Some(Ok(n)) => n,
-                    _ => return Err(erreur(Classe::Illisible, format!("numéro de bulletin illisible : {}", socle::fichiers::repr(b)))),
-                };
+            if let Some(b) = bulletin {
+                let n = b.rang();
                 bulletin_max = Some((an, bulletin_max.into_iter().map(|(_, m)| m).chain([n]).fold(n, i64::max)));
             }
             if let Some((_, dernier)) = ce {
                 ce_max = Some(ce_max.into_iter().chain([*dernier]).fold(*dernier, i64::max));
             }
-            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_deref(), ce.map(|c| c.0))?;
+            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_ref(), ce.map(|c| c.0))?;
         }
         if let Some((an, n)) = bulletin_max {
             bornes.enregistrer(an, Suite::Bulletin, n);
@@ -741,8 +737,8 @@ fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois
     })
 }
 
-fn numero_en_nom(n: &str) -> String {
-    n.replace('/', "-")
+fn numero_en_nom(n: &NumeroDeBulletin) -> String {
+    n.to_string().replace('/', "-")
 }
 
 /// LES DOCUMENTS DU MOIS, FABRIQUES A LEUR ENVOI, pour les salaries `cles` : depuis les paies ecrites des engagements
@@ -798,13 +794,13 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     let dossier = sortie.join("envoi");
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let part = |p: &Paie| cles.contains(&p.salarie.id);
-    let mut a_poser: HashMap<usize, (Option<String>, Option<(i64, i64)>)> = HashMap::new();
+    let mut a_poser: HashMap<usize, (Option<NumeroDeBulletin>, Option<(i64, i64)>)> = HashMap::new();
 
     // LES BULLETINS : un numero par paie qui a des cachets, ecrit dans la paie a son depart.
     // Le numero de chaque bulletin, a cote de sa paie : celui que la paie ecrite porte, sinon celui que ce depart reserve.
     // Les numeros neufs se donnent dans l'ordre ou les documents partent (`cles`), salarie par salarie : ceux d'un salarie
     // se suivent, et un envoi coupe en route laisse aux servis les premiers, sans trou.
-    let mut numeros: Vec<Option<String>> = vec![None; paies.len()];
+    let mut numeros: Vec<Option<NumeroDeBulletin>> = vec![None; paies.len()];
     let mut numerotees: Vec<bool> = vec![false; paies.len()];
     for i in 0..paies.len() {
         if paies[i].engagement.sans_paie() {
@@ -822,7 +818,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
             }
             let n = faits.reserves.prochain(ctx, Suite::Bulletin, an)?;
             faits.reserves.enregistrer(an, Suite::Bulletin, n);
-            let numero = format!("{}/{}", n, an);
+            let numero = NumeroDeBulletin::du_rang(n, mois.annee());
             numeros[i] = Some(numero.clone());
             a_poser.entry(i).or_default().0 = Some(numero);
             numerotees[i] = true;
@@ -887,7 +883,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
 
     // LE BULLETIN D'ORIGINE RESTE : une paie refaite part sous un nouveau numero, et ce qui est parti se garde.
     for (i, p) in paies.iter().enumerate().filter(|(i, p)| part(p) && numerotees[*i]) {
-        if let (Some(r), true) = (ecrits[i].rectifie.as_deref(), a_poser.get(&i).is_some_and(|x| x.0.is_some())) {
+        if let (Some(r), true) = (ecrits[i].rectifie.as_ref(), a_poser.get(&i).is_some_and(|x| x.0.is_some())) {
             let cle = cle_de(p);
             let piece = dossier.join(envois::envoi::nom_fichier("Bulletin", &cle, &etiq));
             let garde = sortie.join(format!("Bulletin_{}_{}_{}.pdf", cle, etiq, numero_en_nom(r)));
@@ -898,7 +894,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     }
     let impression = Impression { paies: &paies, numeros: &numeros, rectificatifs: &rectificatifs, certificats: &certificats };
     imprimer(ctx, mois, &ent, &impression, cles, false)?;
-    let mut poses: Vec<(usize, (Option<String>, Option<(i64, i64)>))> = a_poser.into_iter().collect();
+    let mut poses: Vec<(usize, (Option<NumeroDeBulletin>, Option<(i64, i64)>))> = a_poser.into_iter().collect();
     poses.sort_by_key(|(i, _)| *i);
     faits.a_poser = poses
         .into_iter()
@@ -915,7 +911,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
 /// certificat, premier N CE).
 struct Impression<'a> {
     paies: &'a [Paie],
-    numeros: &'a [Option<String>],
+    numeros: &'a [Option<NumeroDeBulletin>],
     rectificatifs: &'a HashMap<usize, documents::bulletin::Rectificatif>,
     certificats: &'a [(usize, &'a PaieCs, i64)],
 }
@@ -959,7 +955,7 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
     let bulletins = |rangs: &[usize], toutes: Option<&[Paie]>| -> R<fabrique_pdf::Description> {
         let imprimees: Vec<Paie> = rangs.iter().map(|i| paies[*i].clone()).collect();
         let rectifs: HashMap<usize, documents::bulletin::Rectificatif> = rangs.iter().enumerate().filter_map(|(k, i)| imp.rectificatifs.get(i).map(|r| (k, r.clone()))).collect();
-        let leurs_numeros: Vec<Option<String>> = rangs.iter().map(|i| imp.numeros[*i].clone()).collect();
+        let leurs_numeros: Vec<Option<NumeroDeBulletin>> = rangs.iter().map(|i| imp.numeros[*i].clone()).collect();
         documents::bulletin::jeux_et_description(ctx, &imprimees, &leurs_numeros, ent, le_mois, toutes, false, &rectifs, &departs, &passe).map_err(|e| e.reclasser(Classe::Illisible))
     };
 
@@ -1049,7 +1045,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
             let cle = IdSalarie::lire(&cle).map_err(|_| crate::archives::piece_etrangere(nom))?;
             let piece = sortie.join("envoi").join(envois::envoi::nom_fichier("Bulletin", &cle, &etiq));
             for rang in envois.iter().rev() {
-                if !refaire_les_documents(ctx, mois, &lignes, *rang, false)?.iter().any(|(c, n)| *c == cle && n.as_deref() == Some(numero.as_str())) {
+                if !refaire_les_documents(ctx, mois, &lignes, *rang, false)?.iter().any(|(c, n)| *c == cle && n.as_ref().is_some_and(|n| n.to_string() == numero)) {
                     continue;
                 }
                 // Cet envoi ne refait que cette piece : ce qu'il ecrirait d'autre n'est pas le dernier etat parti.
@@ -1505,8 +1501,8 @@ fn recapitulatif_de(nom: &str) -> Option<&str> {
 const SANS_NUMERO: &str = "(sans numéro)";
 
 /// La paie ecrite de `mois` que porte la version de l'engagement `o` dont le bulletin a le numero `numero`.
-fn paie_ecrite_au_bulletin(o: &engagement::stock::Objet, mois: Mois, numero: &str) -> R<Option<engagement::paie_ecrite::PaieEcrite>> {
-    Ok(engagement::paies::ecrites(o, mois)?.into_iter().find(|p| p.bulletin.as_deref() == Some(numero)))
+fn paie_ecrite_au_bulletin(o: &engagement::stock::Objet, mois: Mois, numero: &NumeroDeBulletin) -> R<Option<engagement::paie_ecrite::PaieEcrite>> {
+    Ok(engagement::paies::ecrites(o, mois)?.into_iter().find(|p| p.bulletin.as_ref() == Some(numero)))
 }
 
 /// LES DOCUMENTS QU'A FAIT PARTIR LA LIGNE `lignes[rang]` (un envoi aux salaries de `mois`), refaits tels qu'ils sont
@@ -1515,27 +1511,27 @@ fn paie_ecrite_au_bulletin(o: &engagement::stock::Objet, mois: Mois, numero: &st
 /// avec l'ecart au bulletin parti avant lui quand la DSN du mois ne se refaisait plus ; au jour et a l'heure de l'envoi.
 /// Seuls les fichiers qui manquent s'ecrivent, et aucun si `ecrire` est faux. Rend, pour chaque paie de l'envoi, le
 /// salarie et le numero de son bulletin.
-fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::Ligne], rang: usize, ecrire: bool) -> R<Vec<(IdSalarie, Option<String>)>> {
+fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::Ligne], rang: usize, ecrire: bool) -> R<Vec<(IdSalarie, Option<NumeroDeBulletin>)>> {
     let l = &lignes[rang];
     let (jour, instant) = instant_de(l.quand())?;
     let cles: Vec<IdSalarie> = l.documents().ok_or_else(|| erreur(Classe::Illisible, "journal : la ligne n'est pas un envoi de documents".to_string()))?.detail.salaries.iter().map(|s| s.cle.clone()).collect();
-    let refaire = || -> R<Vec<(IdSalarie, Option<String>)>> {
+    let refaire = || -> R<Vec<(IdSalarie, Option<NumeroDeBulletin>)>> {
         let ctx = contexte_du_jour(ctx, jour)?.du_mois(mois).map_err(|e| e.reclasser(Classe::Illisible))?;
         let jusqu_a = envois::journal::departs_des_lignes(&lignes[..=rang]);
         let avant = envois::journal::departs_des_lignes(&lignes[..rang]);
         let clos = regularisations::se_corrige_ailleurs(&ctx, &avant, mois)?;
         let mut paies: Vec<Paie> = Vec::new();
-        let mut numeros: Vec<Option<String>> = Vec::new();
+        let mut numeros: Vec<Option<NumeroDeBulletin>> = Vec::new();
         let mut premiers_ce: Vec<Option<i64>> = Vec::new();
         let mut rectificatifs: HashMap<usize, documents::bulletin::Rectificatif> = HashMap::new();
         for e in engagement::etats::du_mois(&ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)? {
             let Some(v) = e.valide() else { continue };
             let Some(p) = engagement::etats::paie_partie(&ctx, v.objet(), &jusqu_a, mois)? else { continue };
-            let ecrite = match p.numero_bulletin.as_deref() {
+            let ecrite = match p.numero_bulletin.as_ref() {
                 Some(n) => paie_ecrite_au_bulletin(v.objet(), mois, n)?,
                 None => None,
             };
-            if let Some(r) = ecrite.as_ref().and_then(|x| x.rectifie.as_deref()) {
+            if let Some(r) = ecrite.as_ref().and_then(|x| x.rectifie.as_ref()) {
                 let parti = if clos { engagement::etats::paie_partie(&ctx, v.objet(), &avant, mois)? } else { None };
                 let ecart = match parti {
                     Some(parti) => {
@@ -1544,7 +1540,7 @@ fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::
                     }
                     None => None,
                 };
-                rectificatifs.insert(paies.len(), documents::bulletin::Rectificatif { rectifie: r.to_string(), mois_origine: mois, ecart });
+                rectificatifs.insert(paies.len(), documents::bulletin::Rectificatif { rectifie: r.clone(), mois_origine: mois, ecart });
             }
             numeros.push(if p.engagement.sans_paie() { None } else { p.numero_bulletin.clone() });
             premiers_ce.push(ecrite.as_ref().and_then(|x| x.ce));

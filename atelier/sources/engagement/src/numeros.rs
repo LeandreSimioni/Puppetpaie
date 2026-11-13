@@ -127,6 +127,65 @@ impl From<NumeroContrat> for String {
     }
 }
 
+/// LE NUMERO D'UN BULLETIN DU LOGICIEL, `N/AAAA` : son rang dans la suite des bulletins de l'annee, puis l'annee. Il ne se
+/// donne qu'ici (`numeroter`) ; la paie ecrite le garde, et il se relit tel qu'il est ecrit (`lire`, ou `serde` : la meme
+/// chaine). Celui qu'un bulletin d'autrui imprime est du texte (`importe::ContratAtteste::numero_bulletin`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(into = "String")]
+pub struct NumeroDeBulletin {
+    texte: String,
+    rang: i64,
+    annee: i64,
+}
+
+impl<'de> serde::Deserialize<'de> for NumeroDeBulletin {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        NumeroDeBulletin::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+impl NumeroDeBulletin {
+    /// Le numero ecrit `texte` : des chiffres, `/`, l'annee en quatre chiffres ; toute autre forme se refuse.
+    pub fn lire(texte: &str) -> R<NumeroDeBulletin> {
+        let lu = texte.split_once('/').and_then(|(n, an)| {
+            let rang = socle::num::entier_de_chiffres(n)?;
+            let annee = if an.len() == 4 { socle::num::entier_de_chiffres(an) } else { None }?;
+            Some((rang, annee))
+        });
+        match lu {
+            Some((rang, annee)) => Ok(NumeroDeBulletin { texte: texte.to_string(), rang, annee }),
+            None => Err(socle::refus!("« {} » n'est pas un numéro de bulletin : son rang, « / », puis l'année en quatre chiffres (12/2026)", texte)),
+        }
+    }
+
+    /// Le bulletin de rang `rang` de l'annee `annee` : celui que `numeroter` donne, ou que l'apercu d'un bulletin montre.
+    pub fn du_rang(rang: i64, annee: i32) -> NumeroDeBulletin {
+        NumeroDeBulletin { texte: format!("{}/{}", rang, annee), rang, annee: i64::from(annee) }
+    }
+
+    /// Son rang dans la suite de son annee.
+    pub fn rang(&self) -> i64 {
+        self.rang
+    }
+
+    /// Son annee.
+    pub fn annee(&self) -> i64 {
+        self.annee
+    }
+}
+
+impl std::fmt::Display for NumeroDeBulletin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.texte)
+    }
+}
+
+impl From<NumeroDeBulletin> for String {
+    fn from(n: NumeroDeBulletin) -> String {
+        n.texte
+    }
+}
+
 /// UN NUMERO (d'un contrat, d'un avenant) TEL QU'UNE PHRASE LE DIT, la seule fonction qui l'y ecrit : `avant`, le
 /// numero puis `apres` quand il y en a un ; `sans` quand il n'y en a pas.
 pub fn numero_dit(numero: Option<impl std::fmt::Display>, avant: &str, apres: &str, sans: &str) -> String {
@@ -210,9 +269,11 @@ fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(socle::mois::Moi
 /// numero d'une autre forme n'est pas un rang de cette suite : il ne se lit pas comme tel.
 pub fn dernier_bulletin_importe(racine: &std::path::Path, annee: i64) -> R<i64> {
     let rang = |t: Option<&str>| -> Option<i64> {
-        let (n, an) = t?.trim().split_once('/')?;
-        let rang = socle::num::entier_de_chiffres(n)?;
-        (an.len() == 4 && socle::num::entier_de_chiffres(an)? == annee).then_some(rang)
+        let n = match NumeroDeBulletin::lire(t?.trim()) {
+            Ok(n) => n,
+            Err(_) => return None,
+        };
+        (n.annee() == annee).then_some(n.rang())
     };
     let mut haut = 0;
     for i in crate::importe::tous(racine)? {
@@ -337,10 +398,10 @@ pub fn numeroter(ctx: &Contexte, paies: &mut [crate::calcul::Paie], annee: i32, 
         if p.engagement.numero.is_none() {
             proposer(ctx, p, &mut pris, departs)?;
         }
-        if p.engagement.sans_paie() || p.numero_bulletin.as_deref().is_some_and(|n| !n.is_empty()) {
+        if p.engagement.sans_paie() || p.numero_bulletin.is_some() {
             continue;
         }
-        p.numero_bulletin = Some(format!("{}/{}", n_bull, annee));
+        p.numero_bulletin = Some(NumeroDeBulletin::du_rang(n_bull, annee));
         n_bull += 1;
     }
     Ok(n_bull)

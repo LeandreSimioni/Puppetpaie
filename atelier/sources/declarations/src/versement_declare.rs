@@ -215,7 +215,7 @@ pub struct DernierDeclare {
     /// La derniere paie declaree.
     pub avant: Paie,
     /// Le numero du dernier bulletin qu'une paie declaree de ce contrat porte : celui qu'une correction rectifie.
-    pub bulletin: Option<String>,
+    pub bulletin: Option<engagement::numeros::NumeroDeBulletin>,
 }
 
 /// LE DERNIER ETAT DECLARE de l'engagement `o` pour `mois`, par les DSN des mois anterieurs a `mois_courant` (`departs` :

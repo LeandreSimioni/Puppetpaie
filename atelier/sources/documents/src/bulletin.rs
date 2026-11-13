@@ -7,6 +7,7 @@ use droit::contexte::Contexte;
 use droit::fiche::{ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie};
 use droit::cumul::{tableau_cumul, Colonne};
 use engagement::cumul::Passe;
+use engagement::numeros::NumeroDeBulletin;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::texte::euros;
@@ -345,7 +346,7 @@ pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::S
 /// refait plus, il porte l'ECART avec le bulletin parti, verse avec une paie suivante (`Ecart`).
 #[derive(Debug, Clone)]
 pub struct Rectificatif {
-    pub rectifie: String,
+    pub rectifie: NumeroDeBulletin,
     pub mois_origine: Mois,
     /// `None` : il remplace en entier le bulletin parti.
     pub ecart: Option<Ecart>,
@@ -863,7 +864,7 @@ fn tableau_modele(p: &Paie, garanties: &[IdDeCotisation]) -> R<Vec<Ligne>> {
 /// cotisation -- chaque ligne du bareme sous la ligne (ou le groupe) du bulletin qui la porte, avec sa base, le taux et
 /// le montant de la part salariale et de la part employeur --, puis les trois totaux du bulletin, aux memes montants.
 /// Elle ne dit rien que la paie ne dise : chaque ligne de la paie s'y imprime une fois.
-fn blocs_annexe(p: &Paie, numero: Option<&str>, garanties: &[IdDeCotisation]) -> R<Vec<Bloc>> {
+fn blocs_annexe(p: &Paie, numero: Option<&NumeroDeBulletin>, garanties: &[IdDeCotisation]) -> R<Vec<Bloc>> {
     let sal = &p.salarie;
     // Un bulletin sans numero (un apercu) ne le dit pas.
     let bulletin = if let Some(n) = numero { format!("au bulletin n° {}", n) } else { "au bulletin".to_string() };
@@ -952,7 +953,7 @@ pub struct Jeu<'a> {
     pub paie: &'a Paie,
     /// Le numero du bulletin (`N/AAAA`), tel que l'engagement le porte (`engagement::numeros`) ou que le depart le
     /// reserve : il se donne a cote de la paie, qui ne se copie pas sous un autre numero.
-    pub numero: Option<&'a str>,
+    pub numero: Option<&'a NumeroDeBulletin>,
     pub colonnes: Option<&'a [Colonne]>,
     pub plafond: Decimal,
     pub conges: Option<&'a CompteurConges>,
@@ -1353,7 +1354,7 @@ pub fn remboursements(ctx: &Contexte, p: &Paie) -> R<Vec<usize>> {
 pub fn jeux_et_description(
     ctx: &Contexte,
     paies: &[Paie],
-    numeros: &[Option<String>],
+    numeros: &[Option<NumeroDeBulletin>],
     ent: &droit::contexte::EntrepriseDuDocument,
     mois: Mois,
     paies_du_mois: Option<&[Paie]>,
@@ -1396,7 +1397,7 @@ pub fn jeux_et_description(
         let pas = pas_par_paie[i].as_ref().ok_or_else(|| socle::refus!("{} : la paie de {} n'a pas de prélèvement à la source.", cle, p.engagement.mois))?;
         jeux.push(Jeu {
             paie: p,
-            numero: numeros[i].as_deref(),
+            numero: numeros[i].as_ref(),
             colonnes: colonnes_par_salarie.get(cle).map(Vec::as_slice),
             plafond: p.plafond_urssaf(ctx)?,
             conges: p.conges.as_ref(),
