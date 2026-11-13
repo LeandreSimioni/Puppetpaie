@@ -628,7 +628,8 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             c.empreinte = Some(empreinte.clone());
             if remplace {
                 c.acte = Some("remplace".into());
-                c.remplace = p.engagement.numero.as_deref().and_then(|propre| remplacements.iter().find(|(k, _)| *k == (cle.clone(), debut, propre.to_string())).map(|(_, (n, _))| n.clone()));
+                // Le contrat remplace est celui parti sous le meme numero (`envois::etats::contrat_parti`).
+                c.remplace = p.engagement.numero.as_ref().filter(|propre| remplacements.iter().any(|(k, _)| *k == (cle.clone(), debut, propre.to_string()))).cloned();
             }
             contrats.push(c);
         }

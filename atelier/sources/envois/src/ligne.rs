@@ -594,7 +594,7 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avenant: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remplace: Option<String>,
+    pub remplace: Option<NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effet: Option<socle::date::Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
