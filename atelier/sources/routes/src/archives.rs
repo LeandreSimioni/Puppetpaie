@@ -588,11 +588,11 @@ struct EcranDUnEtat {
 
 /// Le verbe unique, `exporter <etat>` : l'etat demande, tel que l'ecran le montre.
 fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
-    let nom = |f: &Option<std::path::PathBuf>| f.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned());
+    let nom = |f: &Option<std::path::PathBuf>| -> R<Option<String>> { f.as_deref().map(|p| NomDeFichier::du(p).map(String::from)).transpose() };
     // (le titre, les fichiers ecrits, ses avertissements, ses donnees personnelles, ses totaux partiels, la boite posee)
     let (etat, titre, ecrits, avertissements, personnelles, partiels, boite_liee) = match exporter_objet(ctx, c)? {
         Exporte::Casc(r) => {
-            let (periode, ecrits, avertissements, boite_liee) = (r.periode.clone(), r.fichiers.iter().map(|f| NomDeFichier::du(std::path::Path::new(f)).map(String::from)).collect::<R<Vec<_>>>()?, r.avertissements.clone(), r.boite_liee);
+            let (periode, ecrits, avertissements, boite_liee) = (r.periode.clone(), r.fichiers.iter().map(|f| NomDeFichier::du(f).map(String::from)).collect::<R<Vec<_>>>()?, r.avertissements.clone(), r.boite_liee);
             (EtatRendu::Casc(r), periode, ecrits, avertissements, false, Vec::new(), boite_liee)
         }
         Exporte::Livre(l) => {
@@ -606,11 +606,11 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
                     format!("{} sur {} bulletin{} sur {}", colonne.replace('_', " "), sur, if sur == 1 { "" } else { "s" }, bulletins)
                 })
                 .collect();
-            let (periode, ecrit, avertissements) = (l.periode.clone(), nom(&l.fichier).into_iter().collect(), l.avertissements.clone());
+            let (periode, ecrit, avertissements) = (l.periode.clone(), nom(&l.fichier)?.into_iter().collect(), l.avertissements.clone());
             (EtatRendu::Livre(l), periode, ecrit, avertissements, false, partiels, false)
         }
         Exporte::Tableau(t) => {
-            let (titre, ecrit, avertissements, personnelles) = (t.titre.clone(), nom(&t.fichier).into_iter().collect(), t.avertissements.clone(), t.donnees_personnelles);
+            let (titre, ecrit, avertissements, personnelles) = (t.titre.clone(), nom(&t.fichier)?.into_iter().collect(), t.avertissements.clone(), t.donnees_personnelles);
             (EtatRendu::Tableau(t), titre, ecrit, avertissements, personnelles, Vec::new(), false)
         }
     };

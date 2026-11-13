@@ -1302,12 +1302,8 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&str>
     parti
 }
 
-/// Le fichier d'une piece partie, dans `sorties/<mois>/` ou son `envoi/`. Un NOM, jamais un chemin : ce qui porte un
-/// separateur ne se resout pas.
-pub fn chemin_piece(racine: &Path, mois: Mois, nom: &str) -> Option<PathBuf> {
-    if nom.is_empty() || ["/", "\\", ".."].iter().any(|x| nom.contains(x)) {
-        return None;
-    }
+/// Le fichier d'une piece partie, dans `sorties/<mois>/` ou son `envoi/`. Un NOM, jamais un chemin : le type le tient.
+pub fn chemin_piece(racine: &Path, mois: Mois, nom: &NomDeFichier) -> Option<PathBuf> {
     let base = racine.join("sorties").join(mois.to_string());
     [base.join("envoi").join(nom), base.join(nom)].into_iter().find(|f| f.is_file())
 }

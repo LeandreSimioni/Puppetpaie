@@ -1013,7 +1013,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     let refus = |m: String| erreur(Classe::Refuse, m);
     let nom = fichier.texte();
     let mois = le_mois;
-    if let Some(f) = envois::etats::chemin_piece(&ctx.racine, le_mois, nom) {
+    if let Some(f) = envois::etats::chemin_piece(&ctx.racine, le_mois, fichier) {
         return Ok(f);
     }
     let mut m = Moteur::nouveau(ctx);
@@ -1075,7 +1075,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         for rang in envois.into_iter().rev() {
             refaire_les_documents(ctx, mois, &lignes, rang, true)?;
         }
-        return envois::etats::chemin_piece(&ctx.racine, le_mois, nom)
+        return envois::etats::chemin_piece(&ctx.racine, le_mois, fichier)
             .ok_or_else(|| refus(format!("{} : aucun envoi de documents de {} ne l'a fait partir.", nom, mois.libelle(Graphie::Accentuee))));
     }
     // LA DPAE : son enregistrement, son `.zip` et son recapitulatif, d'apres la derniere ligne qui l'a deposee.
@@ -1160,7 +1160,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
             let (jour, instant) = instant_de(quand.into())?;
             let ctx_j = contexte_du_jour(ctx, jour)?;
             socle::temps::pendant(instant, || crate::documents::ranger_aer_detail(&ctx_j, Some(mois), Some(std::slice::from_ref(&a)), false))?;
-            if let Some(f) = envois::etats::chemin_piece(&ctx.racine, le_mois, nom) {
+            if let Some(f) = envois::etats::chemin_piece(&ctx.racine, le_mois, fichier) {
                 return Ok(f);
             }
         }

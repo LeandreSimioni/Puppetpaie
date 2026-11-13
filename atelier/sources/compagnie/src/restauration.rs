@@ -112,15 +112,14 @@ fn md5_de(octets: &[u8]) -> String {
     Md5::digest(octets).iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-/// Un nom venu du Drive peut-il etre un nom de fichier ici, sans sortir du dossier ? Ni vide, ni `.` ou `..`, ni barre
-/// oblique (d'un cote ou de l'autre), ni NUL ; sous Windows, ni deux-points (`C:x` changerait de lecteur) ni ce que
-/// Windows refuse.
-fn nom_sur(nom: &str) -> bool {
-    !nom.is_empty()
-        && nom != "."
-        && nom != ".."
-        && !nom.contains(['/', '\\', '\0'])
-        && !(cfg!(windows) && nom.contains([':', '<', '>', '"', '|', '?', '*']))
+/// LE NOM VENU DU DRIVE, s'il peut etre un nom de fichier ici sans sortir du dossier : un `NomDeFichier`, et sous
+/// Windows, ni deux-points (`C:x` changerait de lecteur) ni ce que Windows refuse ; `None` sinon, que la restauration
+/// dit en incident pour ce nom, sans le redescendre.
+fn nom_sur(nom: &str) -> Option<NomDeFichier> {
+    match NomDeFichier::lire(nom) {
+        Ok(n) if !(cfg!(windows) && nom.contains([':', '<', '>', '"', '|', '?', '*'])) => Some(n),
+        Ok(_) | Err(_) => None,
+    }
 }
 
 /// Un fichier de la sauvegarde, tel que l'inventaire du Drive le voit.
@@ -197,11 +196,11 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             None => nom.to_string(),
         };
         for (nom, d) in client.lister(&id)? {
-            if !nom_sur(&nom) {
+            let Some(n) = nom_sur(&nom) else {
                 resultat.incidents.push(format!("{} : ce nom ne peut pas etre un nom de fichier ici, il n'est pas redescendu.", ici(&nom)));
                 continue;
-            }
-            let relatif = dans(&dossier, NomDeFichier::lire(&nom)?);
+            };
+            let relatif = dans(&dossier, n);
             if ecarte(&relatif) {
                 resultat.ecartes += 1;
                 continue;
@@ -213,10 +212,8 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             par_nom.entry(nom).or_default().push(i);
         }
         for (nom, ids) in par_nom {
-            if !nom_sur(&nom) {
-                resultat.incidents.push(format!("{}/ : ce nom ne peut pas etre un nom de dossier ici, rien n'en est redescendu.", ici(&nom)));
-            } else {
-                let relatif = dans(&dossier, NomDeFichier::lire(&nom)?);
+            if let Some(n) = nom_sur(&nom) {
+                let relatif = dans(&dossier, n);
                 match ids.as_slice() {
                     [seul] => a_voir.push((Some(relatif), seul.clone())),
                     _ => resultat.incidents.push(format!(
@@ -225,6 +222,8 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
                         ids.len()
                     )),
                 }
+            } else {
+                resultat.incidents.push(format!("{}/ : ce nom ne peut pas etre un nom de dossier ici, rien n'en est redescendu.", ici(&nom)));
             }
         }
     }

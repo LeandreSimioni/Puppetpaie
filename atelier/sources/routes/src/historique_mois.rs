@@ -304,7 +304,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
         (format!("{} revenu signé", piece), format!("Reçu signé le {}, noté à la main.", quand))
     };
     let signe = match (ligne.mois(), r.fichier_signe.as_ref()) {
-        (Some(m), Some(f)) => envois::etats::chemin_piece(&ctx.racine, m, f.texte()),
+        (Some(m), Some(f)) => envois::etats::chemin_piece(&ctx.racine, m, f),
         _ => None,
     };
     Ok(RetourLu {

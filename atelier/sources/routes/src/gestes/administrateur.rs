@@ -714,7 +714,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 _ => None,
             };
             if r.etape == "a_deposer" {
-                fichier = r.fichier.as_ref().map(PathBuf::from);
+                fichier = r.fichier.clone();
                 mensuelle = Some(mois);
             }
             Declaration {
