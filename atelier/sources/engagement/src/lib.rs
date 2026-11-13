@@ -1823,12 +1823,12 @@ pub fn contrat_a_signer(racine: &Path, eng: &Engagement) -> R<bool> {
 /// document indiquant ces modifications », `atelier/reference/sources/code-du-travail/xml/R1221-40.xml`), qui ne connait
 /// pas son texte et dit en clair ce qui change (`documents::avenant::changements_en_clair`).
 pub fn signe_ailleurs(racine: &Path, eng: &Engagement) -> R<bool> {
-    signe_ailleurs_de(racine, &*eng.nat()?, &eng.salarie, eng.debut, eng.numero.as_deref(), eng.mois)
+    signe_ailleurs_de(racine, &*eng.nat()?, &eng.salarie, eng.debut, eng.numero.as_ref(), eng.mois)
 }
 
 /// `signe_ailleurs`, de ce que l'engagement dit : sa nature, son salarie, son debut, son numero, et le mois d'ou on le
 /// regarde.
-pub fn signe_ailleurs_de(racine: &Path, nat: &Nature, salarie: &IdSalarie, debut: Jour, numero: Option<&str>, mois: Mois) -> R<bool> {
+pub fn signe_ailleurs_de(racine: &Path, nat: &Nature, salarie: &IdSalarie, debut: Jour, numero: Option<&numeros::NumeroContrat>, mois: Mois) -> R<bool> {
     if nat.modele_contrat().is_none() {
         return Ok(false);
     }

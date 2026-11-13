@@ -35,9 +35,9 @@ fn paire(salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Paire {
 }
 
 /// L'indice, dans `paies`, de la paie du contrat n° `numero` de ce salarie.
-pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &IdSalarie, numero: &str) -> R<Option<usize>> {
+pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &IdSalarie, numero: &NumeroContrat) -> R<Option<usize>> {
     for (i, x) in paies.iter().enumerate() {
-        if x.salarie.id == *salarie && x.engagement.numero.as_deref() == Some(numero) && x.engagement.nat()?.modele_contrat().is_some() {
+        if x.salarie.id == *salarie && x.engagement.numero.as_ref() == Some(numero)&& x.engagement.nat()?.modele_contrat().is_some() {
             return Ok(Some(i));
         }
     }
@@ -315,12 +315,12 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
     // Les reponses deja relevees, par envoi (son code) et par contrat ou avenant : une reponse ne se note qu'une fois.
     // La mention « signe » retiree a la main l'emporte sur la reponse deja lue ; seul un nouvel envoi (un autre code)
     // attend une nouvelle reponse.
-    let releve = |code: &CodeDeDemande, salarie: &IdSalarie, numero: Option<&str>, avenant: Option<i64>| (code.clone(), salarie.clone(), numero.map(str::to_string), avenant);
-    let deja_releves: HashSet<(CodeDeDemande, IdSalarie, Option<String>, Option<i64>)> = lignes
+    let releve = |code: &CodeDeDemande, salarie: &IdSalarie, numero: Option<&NumeroContrat>, avenant: Option<i64>| (code.clone(), salarie.clone(), numero.cloned(), avenant);
+    let deja_releves: HashSet<(CodeDeDemande, IdSalarie, Option<NumeroContrat>, Option<i64>)> = lignes
         .iter()
         .flat_map(revenus)
         .filter(|d| d.recu && d.par_courriel())
-        .filter_map(|d| d.code.as_ref().map(|c| releve(c, &d.salarie, d.numero.as_deref(), d.avenant)))
+        .filter_map(|d| d.code.as_ref().map(|c| releve(c, &d.salarie, d.numero.as_ref(), d.avenant)))
         .collect();
     let mut par_code: HashMap<CodeDeDemande, usize> = HashMap::new();
     let mut demandes: Vec<Attendue> = Vec::new();
@@ -378,7 +378,7 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
         .filter(|d| {
             d.contrats.iter().any(|c| {
                 let k = paire(&c.salarie, c.numero.as_ref());
-                let revenu = deja_releves.contains(&releve(&d.code, &c.salarie, c.numero.as_deref(), c.avenant))
+                let revenu = deja_releves.contains(&releve(&d.code, &c.salarie, c.numero.as_ref(), c.avenant))
                     || if d.apres_signature { derniere_recue.get(&k).is_some_and(|&rang| rang >= d.rang) } else { recus.contains_key(&k) };
                 !revenu
             })
@@ -1264,17 +1264,17 @@ impl Parti {
 }
 
 /// Le contrat n° `numero` de ce salarie (`None` : son contrat sans numero), tel qu'il est parti a la signature.
-pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&str>) -> Option<Parti> {
+pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Option<Parti> {
     let mut parti: Option<Parti> = None;
     for l in lignes.iter().filter(|l| l.accepte()) {
         if let Some(e) = l.signature() {
-            for c in e.detail.contrats.iter().filter(|c| c.salarie == *salarie && c.numero.as_deref() == numero && !c.est_avenant()) {
+            for c in e.detail.contrats.iter().filter(|c| c.salarie == *salarie && c.numero.as_ref() == numero &&!c.est_avenant()) {
                 parti = Some(Parti { mois: c.mois, numero: c.numero.clone(), fichier: c.fichier.clone(), quand: e.quand.clone(), signe: None, modele: c.modele.clone() });
             }
         }
         for d in revenus(l) {
             if let Some(p) = parti.as_mut() {
-                if d.recu && d.salarie == *salarie && d.numero.as_deref() == numero && p.signe.is_none() {
+                if d.recu && d.salarie == *salarie && d.numero.as_ref() == numero && p.signe.is_none() {
                     p.signe = Some(d.quand);
                 }
             }

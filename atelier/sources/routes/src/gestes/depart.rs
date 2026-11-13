@@ -258,20 +258,20 @@ fn refabriquer_sur(ctx: &Contexte, lu: Option<&Lu>, chemin: &Path, mois: Mois, n
 }
 
 /// L'engagement de `mois` du salarie `cle` au contrat `numero`, actif ou non.
-fn engagement_de(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &str) -> R<engagement::stock::Objet> {
+fn engagement_de(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &NumeroContrat) -> R<engagement::stock::Objet> {
     engagement::stock::objets_du_mois(&ctx.racine, mois)?
         .into_iter()
         .chain(engagement::stock::non_actifs_du_mois(&ctx.racine, mois)?)
         .find(|o| {
             let b = &*o.brut;
-            b.saisie.carte.salarie.as_ref() == Some(cle) && b.saisie.carte.numero.as_deref() == Some(numero)
+            b.saisie.carte.salarie.as_ref() == Some(cle) && b.saisie.carte.numero.as_ref() == Some(numero)
         })
         .ok_or_else(|| erreur(Classe::Illisible, format!("{} : aucun engagement de {} ne porte le contrat {} qu'une DSN partie a declare.", cle, mois.libelle(socle::mois::Graphie::Accentuee), numero)))
 }
 
 /// La paie de `mois` que la version `version` de l'engagement `o` (salarie `cle`, contrat `numero`) a ecrite
 /// (`engagement::etats::paie_de_la_version_n`).
-fn paie_de_la_version(ctx: &Contexte, o: &engagement::stock::Objet, cle: &IdSalarie, numero: &str, mois: Mois, version: u64) -> R<Paie> {
+fn paie_de_la_version(ctx: &Contexte, o: &engagement::stock::Objet, cle: &IdSalarie, numero: &NumeroContrat, mois: Mois, version: u64) -> R<Paie> {
     engagement::etats::paie_de_la_version_n(ctx, o, version, mois)?
         .ok_or_else(|| erreur(Classe::Illisible, format!("{} : la version {} du contrat {} n'a pas de paie de {}.", cle, version, numero, mois.libelle(Graphie::Accentuee))))
 }
@@ -316,7 +316,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
     let mut paies: Vec<Paie> = Vec::new();
     let mut regs: Vec<declarations::dsn::Regularisation> = Vec::new();
     for v in l.versions().into_iter().flatten() {
-        let (cle, numero, version) = (v.salarie.clone(), v.numero.to_string(), v.version);
+        let (cle, numero, version) = (v.salarie.clone(), v.numero.clone(), v.version);
         let Some(c) = v.mois.filter(|&c| c != le_mois) else {
             let o = engagement_de(ctx, le_mois, &cle, &numero)?;
             paies.push(paie_de_la_version(&ctx_m, &o, &cle, &numero, le_mois, version)?);
@@ -1243,7 +1243,7 @@ fn paies_emportees(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne) -> R<
     let ctx_m = ctx.du_mois(mois).map_err(|e| e.reclasser(Classe::Illisible))?;
     let mut out = Vec::new();
     for v in l.versions().into_iter().flatten() {
-        let (cle, numero, version) = (v.salarie.clone(), v.numero.to_string(), v.version);
+        let (cle, numero, version) = (v.salarie.clone(), v.numero.clone(), v.version);
         let o = engagement_de(ctx, mois, &cle, &numero)?;
         out.push(paie_de_la_version(&ctx_m, &o, &cle, &numero, mois, version)?);
     }
@@ -1419,7 +1419,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
     let contrats: Vec<&envois::journal::ContratParti> = l.signature().into_iter().flat_map(|s| s.detail.contrats.iter().filter(|c| c.fichier == nom)).collect();
     let mut paies: Vec<Paie> = Vec::new();
     for c in &contrats {
-        let numero = c.numero.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?.to_string();
+        let numero = c.numero.clone().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?;
         let (cle, mois_c) = (c.salarie.clone(), c.mois);
         let version = l
             .versions()
@@ -1443,7 +1443,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
             let (date_contrat, modele) = if premier.ailleurs {
                 (premier.debut, crate::modeles_contrat::du_contrat(&ctx_j, p0)?)
             } else {
-                let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero.as_deref())
+                let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero.as_ref())
                     .ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} modifie un contrat qui n'est pas parti avant lui", nom)))?;
                 (parti.date(), crate::modeles_contrat::du_contrat_parti(&ctx_j, parti.modele.as_ref(), p0)?)
             };
@@ -1454,7 +1454,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
         let mut remplacements: Vec<((IdSalarie, socle::date::Jour, String), (String, socle::date::Jour))> = Vec::new();
         if nom.texte().strip_suffix("remplace.pdf").is_some_and(|b| b.ends_with('_')) {
             for c in &contrats {
-                let parti = envois::etats::contrat_parti(&lignes[..rang], &c.salarie, c.numero.as_deref())
+                let parti = envois::etats::contrat_parti(&lignes[..rang], &c.salarie, c.numero.as_ref())
                     .ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} remplace un contrat qui n'est pas parti avant lui", nom)))?;
                 let numero = match &parti.numero {
                     Some(n) => n.to_string(),

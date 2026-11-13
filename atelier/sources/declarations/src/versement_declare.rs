@@ -123,7 +123,7 @@ pub(crate) fn illisible(k: &str, v: &str, quoi: &str) -> Echec {
 
 /// Le brut (S21.G00.51.013 du type 001) de lignes de versement ; chaque rubrique y doit etre de celles que
 /// l'annulation sait reprendre, chaque montant lisible.
-fn verifier_et_brut(lignes: &[(String, String)], numero: &str, quoi: &str) -> R<Decimal> {
+fn verifier_et_brut(lignes: &[(String, String)], numero: &engagement::numeros::NumeroContrat, quoi: &str) -> R<Decimal> {
     let mut brut: Option<Decimal> = None;
     let mut type_51: Option<&str> = None;
     for (k, v) in lignes {
@@ -143,7 +143,7 @@ fn verifier_et_brut(lignes: &[(String, String)], numero: &str, quoi: &str) -> R<
 
 /// Le montant net social declare : le S21.G00.58.004 du seul bloc 58 de type 03 de ces lignes ; aucun ou plusieurs
 /// refusent.
-fn net_social_de(lignes: &[(String, String)], numero: &str, quoi: &str) -> R<Decimal> {
+fn net_social_de(lignes: &[(String, String)], numero: &engagement::numeros::NumeroContrat, quoi: &str) -> R<Decimal> {
     let mut type_58: Option<&str> = None;
     let mut nets = Vec::new();
     for (k, v) in lignes {

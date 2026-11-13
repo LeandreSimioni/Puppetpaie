@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::NomDeFiche;
 use engagement::importe::{Attestation, ContratLu, ContratRelu, Declaration, PaieLue, PaieVersee};
+use engagement::numeros::NumeroContrat;
 use socle::date::Jour;
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
@@ -350,16 +351,27 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     let premier_mois = |g: &Groupe| mois_de(g).into_iter().min().or_else(|| mois_du_debut(g));
     a_fondre.sort_by_key(|g| (g.salarie.clone(), premier_mois(g)));
     let declare = |g: &Groupe| g.paies.iter().filter(|p| !declaree_par_bulletin(p)).map(|p| p.paie.contrat.clone()).find(|n| !n.is_empty());
-    let imprime = |g: &Groupe| g.contrat.as_ref().and_then(|c| c.contrat.numero_contrat.clone()).filter(|n| !n.is_empty());
-    let numero_de = |g: &Groupe| declare(g).or_else(|| imprime(g));
+    let imprime = |g: &Groupe| g.contrat.as_ref().and_then(|c| c.contrat.numero_contrat.clone());
+    // Le numero que la DSN a declare se lit comme tout numero (`NumeroContrat::lire`) ; sinon celui que le bulletin imprime.
+    let numero_de = |g: &Groupe| -> R<Option<NumeroContrat>> {
+        match declare(g) {
+            Some(n) => Ok(Some(NumeroContrat::lire(&n)?)),
+            None => Ok(imprime(g)),
+        }
+    };
     // (salarie, numero, ses groupes)
-    let mut paquets: Vec<(Option<IdSalarie>, Option<String>, Vec<Groupe>)> = Vec::new();
-    let (numerotes, muets): (Vec<Groupe>, Vec<Groupe>) = a_fondre.into_iter().partition(|g| numero_de(g).is_some());
-    for g in numerotes {
-        let n = numero_de(&g);
-        match paquets.iter_mut().find(|(s, x, _)| *s == g.salarie && *x == n) {
+    let mut paquets: Vec<(Option<IdSalarie>, Option<NumeroContrat>, Vec<Groupe>)> = Vec::new();
+    let (mut numerotes, mut muets): (Vec<(NumeroContrat, Groupe)>, Vec<Groupe>) = (Vec::new(), Vec::new());
+    for g in a_fondre {
+        match numero_de(&g)? {
+            Some(n) => numerotes.push((n, g)),
+            None => muets.push(g),
+        }
+    }
+    for (n, g) in numerotes {
+        match paquets.iter_mut().find(|(s, x, _)| *s == g.salarie && x.as_ref() == Some(&n)) {
             Some(p) => p.2.push(g),
-            None => paquets.push((g.salarie.clone(), n, vec![g])),
+            None => paquets.push((g.salarie.clone(), Some(n), vec![g])),
         }
     }
     for g in muets {
@@ -397,7 +409,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
                 Some(l) => l,
                 None => aujourdhui,
             };
-            let numero = engagement::numeros::NumeroContrat::du_texte(declare(&g).or_else(|| imprime(&g)).as_deref())?;
+            let numero = numero_de(&g)?;
             let paies = g.paies.iter().map(|p| (p.mois.clone(), p.paie.clone())).collect();
             let pieces = Pieces { le, contrat: g.contrat.map(|c| c.contrat), paies };
             let carte = engagement::saisie::Carte {

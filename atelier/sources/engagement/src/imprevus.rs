@@ -31,6 +31,7 @@ use droit::fiche::SalarieDuContrat;
 use socle::date::Jour;
 use socle::mois::Mois;
 use crate::Avis;
+use crate::numeros::NumeroContrat;
 use socle::fichiers::repr;
 use socle::echec::R;
 use socle::num::{div, eur2, mul, Decimal};
@@ -175,7 +176,7 @@ struct FichierDesImprevus {
 pub trait Suspend {
     fn salarie(&self) -> &IdSalarie;
     fn contrat_debut(&self) -> Jour;
-    fn contrat_numero(&self) -> Option<&str>;
+    fn contrat_numero(&self) -> Option<&NumeroContrat>;
 }
 
 impl Suspend for ArretSaisi {
@@ -185,8 +186,8 @@ impl Suspend for ArretSaisi {
     fn contrat_debut(&self) -> Jour {
         self.contrat_debut
     }
-    fn contrat_numero(&self) -> Option<&str> {
-        self.contrat_numero.as_deref()
+    fn contrat_numero(&self) -> Option<&NumeroContrat> {
+        self.contrat_numero.as_ref()
     }
 }
 
@@ -197,8 +198,8 @@ impl Suspend for SuspensionSaisie {
     fn contrat_debut(&self) -> Jour {
         self.contrat_debut
     }
-    fn contrat_numero(&self) -> Option<&str> {
-        self.contrat_numero.as_deref()
+    fn contrat_numero(&self) -> Option<&NumeroContrat> {
+        self.contrat_numero.as_ref()
     }
 }
 
@@ -215,7 +216,7 @@ impl Suspend for Imprevu {
             Imprevu::Suspension(s) => s.contrat_debut(),
         }
     }
-    fn contrat_numero(&self) -> Option<&str> {
+    fn contrat_numero(&self) -> Option<&NumeroContrat> {
         match self {
             Imprevu::Arret(a) => a.contrat_numero(),
             Imprevu::Suspension(s) => s.contrat_numero(),
@@ -477,7 +478,7 @@ fn croisant(imprevus: Vec<Imprevu>, mois: Mois, genre_voulu: Option<&str>) -> R<
 /// L'imprevu suspend-il CE contrat ? Le meme salarie (la cle de sa fiche), la meme date de debut du contrat
 /// (S21.G00.40.001), et le meme numero (40.009) quand l'un et l'autre en ont un : un contrat saisi avant sa premiere
 /// production n'a pas encore de numero (il se fige a la production), et c'est sa date de debut qui le designe.
-pub fn du_contrat<I: Suspend>(imp: &I, cle: &IdSalarie, numero: Option<&str>, debut: &Jour) -> R<bool> {
+pub fn du_contrat<I: Suspend>(imp: &I, cle: &IdSalarie, numero: Option<&NumeroContrat>, debut: &Jour) -> R<bool> {
     if imp.salarie() != cle || imp.contrat_debut() != *debut {
         return Ok(false);
     }
@@ -485,8 +486,7 @@ pub fn du_contrat<I: Suspend>(imp: &I, cle: &IdSalarie, numero: Option<&str>, de
 }
 
 /// Deux numeros de contrat se contredisent quand l'un et l'autre en ont un, et qu'ils different.
-fn numeros_compatibles(a: Option<&str>, b: Option<&str>) -> bool {
-    let (a, b) = (a.filter(|n| !n.is_empty()), b.filter(|n| !n.is_empty()));
+fn numeros_compatibles(a: Option<&NumeroContrat>, b: Option<&NumeroContrat>) -> bool {
     a.zip(b).is_none_or(|(a, b)| a == b)
 }
 
@@ -542,7 +542,7 @@ pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: Moi
     let mut siennes = Vec::new();
     for imp in du_mois_du_salarie(&ctx.racine, mois, Some(SUSPENSION), cle)? {
         if let Some(code) = imp.suspension().map(|s| s.motif) {
-            if du_contrat(&imp, cle, e.numero.as_deref(), &e.debut)? {
+            if du_contrat(&imp, cle, e.numero.as_ref(), &e.debut)? {
                 siennes.push((code, imp));
             }
         }
@@ -573,7 +573,7 @@ pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: Moi
 pub fn suspendu_sans_remuneration(
     racine: &Path,
     cle: &IdSalarie,
-    numero: Option<&str>,
+    numero: Option<&NumeroContrat>,
     contrat_debut: &Jour,
     debut: &Jour,
     fin: &Jour,
@@ -612,7 +612,7 @@ pub fn suspendu_sans_remuneration(
 pub fn jours_de_conges_non_acquis(
     racine: &Path,
     cle: &IdSalarie,
-    numero: Option<&str>,
+    numero: Option<&NumeroContrat>,
     contrat_debut: &Jour,
     debut: &Jour,
     fin: &Jour,
@@ -702,7 +702,7 @@ pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, debut: &Jou
     let mut out = Vec::new();
     for imp in du_salarie(&ctx.racine, cle)? {
         let Imprevu::Arret(a) = imp else { continue };
-        if du_contrat(&a, cle, paie.engagement.numero.as_deref(), &paie.engagement.debut)? && arret_croise(&a, debut, fin)? {
+        if du_contrat(&a, cle, paie.engagement.numero.as_ref(),&paie.engagement.debut)? && arret_croise(&a, debut, fin)? {
             out.push(a);
         }
     }
@@ -745,7 +745,7 @@ pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContr
         if e.debut != Some(debut) || e.salarie.as_ref() != Some(&fiche.id) {
             continue;
         }
-        if !numeros_compatibles(imp.contrat_numero(), e.numero.as_deref()) {
+        if !numeros_compatibles(imp.contrat_numero(), e.numero.as_ref()) {
             continue;
         }
         let mut f = fiche;
@@ -757,7 +757,7 @@ pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContr
 
 /// Les imprevus du contrat qui croisent le mois, du premier au dernier jour : le contrat de `salarie` (la cle que la carte
 /// ecrit) commence le `debut`, de numero `numero` (vide avant la validation).
-pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &IdSalarie, debut: &Jour, numero: Option<&str>, mois: Mois) -> R<Vec<Imprevu>> {
+pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &IdSalarie, debut: &Jour, numero: Option<&NumeroContrat>, mois: Mois) -> R<Vec<Imprevu>> {
     crate::fiche_du_salarie(ctx, salarie)?;
     let mut out = Vec::new();
     for imp in du_mois_du_salarie(&ctx.racine, mois, None, salarie)? {
@@ -814,7 +814,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
     // Un contrat sans date de debut ecrite ne se designe pas : aucun imprevu ne peut le nommer (S21.G00.40.001).
     let imprevus: Vec<_> = e
         .debut
-        .map(|debut| du_contrat_dans_le_mois(ctx, crate::conges::salarie_de(e)?, &debut, e.numero.as_deref(), mois))
+        .map(|debut| du_contrat_dans_le_mois(ctx, crate::conges::salarie_de(e)?, &debut, e.numero.as_ref(), mois))
         .transpose()?
         .into_iter()
         .flatten()

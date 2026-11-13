@@ -1137,7 +1137,7 @@ struct ADire<'a> {
     reprise: Option<Jour>,
     premier: Jour,
     dernier: Jour,
-    contrat: Option<&'a str>,
+    contrat: Option<&'a NumeroContrat>,
     signalements: &'a [crate::obligations::EnvoiDeLArret],
 }
 
@@ -1287,7 +1287,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
         reprise: a.reprise,
         premier,
         dernier,
-        contrat: a.contrat_numero.as_deref(),
+        contrat: a.contrat_numero.as_ref(),
         signalements: &base.signalements,
     })?;
     Ok(ResumeDArret {
@@ -1324,7 +1324,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         reprise: None,
         premier,
         dernier,
-        contrat: s.contrat_numero.as_deref(),
+        contrat: s.contrat_numero.as_ref(),
         signalements: &[],
     })?;
     Ok(ResumeDeSuspension {

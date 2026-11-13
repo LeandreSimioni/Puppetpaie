@@ -510,7 +510,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             for p in ps {
                 let debut = p.engagement.debut;
                 // Le contrat qui part est remplace, lui (son numero) : un autre contrat du salarie n'a rien a remplacer.
-                let Some(parti) = envois::etats::contrat_parti(&lignes, k, p.engagement.numero.as_deref()) else {
+                let Some(parti) = envois::etats::contrat_parti(&lignes, k, p.engagement.numero.as_ref()) else {
                     return Err(refus(format!("Le contrat de {} du {} n'est jamais parti : il n'a rien à remplacer, il s'envoie. Rien n'est parti.", k, debut.jj_mm_aaaa())));
                 };
                 if debut <= ctx.aujourdhui {
@@ -585,7 +585,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             quoi = format!("les contrats d'engagement suivants : {}", morceaux.join(" ; "));
             exemplaire = "tes contrats";
         }
-        let rappels: Vec<bool> = ps.iter().map(|p| d.rappel(cle, p.engagement.numero.as_deref())).collect();
+        let rappels: Vec<bool> = ps.iter().map(|p| d.rappel(cle, p.engagement.numero.as_ref())).collect();
         let pieces: Vec<(String, bool)> = ps.iter().zip(&rappels).map(|(p, r)| (format!("le contrat n° {}", numero_de(p)), *r)).collect();
         (sujet, liste) = rappel_du_courriel(sujet, liste, &pieces, if ps.len() == 1 { RAPPEL_RELANCE } else { RAPPEL_RELANCE_PLURIEL });
         if remplace {
@@ -705,13 +705,13 @@ pub(crate) struct DemandeDeSignature<'a> {
 
 impl DemandeDeSignature<'_> {
     /// L'etat du contrat n° `numero` de `salarie`, tel que `signature-apercu` le montre.
-    fn etat(&self, salarie: &IdSalarie, numero: Option<&str>) -> Option<&crate::contrats::ContratASigner> {
-        self.etats_des_contrats.iter().rev().find(|c| c.salarie == *salarie && c.numero.as_deref() == numero)
+    fn etat(&self, salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Option<&crate::contrats::ContratASigner> {
+        self.etats_des_contrats.iter().rev().find(|c| c.salarie == *salarie && c.numero.as_ref() == numero)
     }
 
     /// UN RAPPEL : un courriel a deja demande de signer ce contrat (le journal le dit, `demande_par_courriel`). Un contrat
     /// refait qui annule et remplace est une autre piece : il n'est jamais un rappel.
-    pub(crate) fn rappel(&self, salarie: &IdSalarie, numero: Option<&str>) -> bool {
+    pub(crate) fn rappel(&self, salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> bool {
         !self.remplace && self.etat(salarie, numero).is_some_and(|c| c.demande_par_courriel)
     }
 
@@ -749,10 +749,10 @@ pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<Dema
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, d.mois, None, &departs)?;
     let (par_salarie, _) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
-    let cles: Vec<(IdSalarie, Option<String>)> = par_salarie.iter().flat_map(|(k, ps, _)| ps.iter().map(|p| (k.clone(), p.engagement.numero.as_deref().map(String::from)))).collect();
+    let cles: Vec<(IdSalarie, Option<NumeroContrat>)> = par_salarie.iter().flat_map(|(k, ps, _)| ps.iter().map(|p| (k.clone(), p.engagement.numero.clone()))).collect();
     let mut verifiee = DemandeVerifiee { avertissements: Vec::new(), contrats: cles.len(), rappels: 0 };
     for (salarie, numero) in &cles {
-        let numero = numero.as_deref();
+        let numero = numero.as_ref();
         if d.rappel(salarie, numero) {
             verifier_rappel(d.etat(salarie, numero), numero)?;
             verifiee.rappels += 1;
@@ -764,8 +764,8 @@ pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<Dema
 }
 
 /// « Déjà parti, imprimé le 05/11/2026. » : ce que l'envoi par courriel d'un contrat deja parti dit, sans le refuser.
-fn deja_parti_dit(etats: &[crate::contrats::ContratASigner], salarie: &IdSalarie, numero: Option<&str>) -> Option<String> {
-    let c = etats.iter().rev().find(|c| c.salarie == *salarie &&c.numero.as_deref() == numero)?;
+fn deja_parti_dit(etats: &[crate::contrats::ContratASigner], salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Option<String> {
+    let c = etats.iter().rev().find(|c| c.salarie == *salarie && c.numero.as_ref() == numero)?;
     let quand = c.demande_le?.jour().jj_mm_aaaa();
     let comment = if c.par == Some("imprime") { "imprimé" } else { "envoyé" };
     Some(format!("Contrat n° {} de {} : déjà parti, {} le {}.", numero_dit(numero, "", "", SANS_NUMERO), c.nom, comment, quand))
@@ -785,7 +785,7 @@ fn avec_et_sans_courriel(choisis: ParSalarie) -> R<(ParSalarie, Vec<String>)> {
 
 /// Un rappel ne vaut que pour un contrat a jour : il renvoie le meme contrat. Un contrat revenu signe n'arrive pas ici
 /// (`DemandeDeSignature::contrats`).
-fn verifier_rappel(c: Option<&crate::contrats::ContratASigner>, numero: Option<&str>) -> R<()> {
+fn verifier_rappel(c: Option<&crate::contrats::ContratASigner>, numero: Option<&NumeroContrat>) -> R<()> {
     match c {
         Some(c) if c.caduc => Err(refus(format!(
             "Le contrat n° {} de {} a changé depuis son envoi : il se modifie par un avenant, il ne se redemande pas. Rien n'est parti.",
@@ -949,7 +949,7 @@ fn avenant_ecrit(
     }
     let (_, paies) = &saisies[&mois_a];
     // Un avenant designe son contrat par son numero : sans numero, il n'en designe aucun.
-    let rang = match a.contrat.as_deref() {
+    let rang = match a.contrat.as_ref() {
         Some(numero) => envois::etats::paie_du_contrat(paies, salarie, numero)?,
         None => None,
     };
@@ -980,7 +980,7 @@ fn avenant_ecrit(
                 crate::modeles_contrat::du_contrat(ctx, p)?
             } else {
                 let j = envois::journal::lu(&ctx.racine)?;
-                let parti = envois::etats::contrat_parti(&j.lignes, salarie, a.contrat.as_deref());
+                let parti = envois::etats::contrat_parti(&j.lignes, salarie, a.contrat.as_ref());
                 crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_ref()), p)?
             };
             documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, a.date_contrat.ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un avenant neuf ne dit pas la date du contrat qu'il modifie."))?, a.effet, ctx.aujourdhui, &modele, ailleurs)?;

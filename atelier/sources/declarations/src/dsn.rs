@@ -471,7 +471,7 @@ impl Arret {
     /// L'arret suspend-il le contrat de cette paie ? La regle des imprevus (`imprevus::du_contrat`) : le meme salarie, la
     /// meme date de debut du contrat, le meme numero quand l'un et l'autre en ont un.
     fn du_contrat(&self, p: &Paie) -> R<bool> {
-        engagement::imprevus::du_contrat(&self.saisi, &cle_salarie(p), p.engagement.numero.as_deref(), &p.engagement.debut)
+        engagement::imprevus::du_contrat(&self.saisi, &cle_salarie(p), p.engagement.numero.as_ref(), &p.engagement.debut)
     }
 }
 
@@ -2499,7 +2499,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
 
 /// Les affiliations que CE fichier a deja ecrites pour le contrat `numero` de l'individu en cours :
 /// (S21.G00.70.013, S21.G00.70.012).
-fn affiliations_ecrites(f: &Fichier, numero: &str) -> Vec<(String, String)> {
+fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat) -> Vec<(String, String)> {
     // L'individu en cours commence a son NIR ; sans lui, le fichier entier.
     let lignes = match f.lignes.iter().rposition(|l| l.starts_with("S21.G00.30.001,")) {
         Some(depart) => &f.lignes[depart..],
@@ -2512,7 +2512,7 @@ fn affiliations_ecrites(f: &Fichier, numero: &str) -> Vec<(String, String)> {
         let v = v.trim_matches('\'');
         match k {
             "S21.G00.40.001" | "S21.G00.50.001" => du_contrat = false,
-            "S21.G00.40.009" => du_contrat = v == numero,
+            "S21.G00.40.009" => du_contrat = v == numero.as_str(),
             "S21.G00.70.012" if du_contrat => id = Some(v.to_string()),
             "S21.G00.70.013" if du_contrat => {
                 if let Some(i) = id.take() {
@@ -4574,7 +4574,7 @@ retirer la ligne. Rien n'est ecrit.",
         }
         let mut declare = false;
         for p in paies {
-            if engagement::imprevus::du_contrat(&imp, &cle_salarie(p), p.engagement.numero.as_deref(), &p.engagement.debut)? {
+            if engagement::imprevus::du_contrat(&imp, &cle_salarie(p), p.engagement.numero.as_ref(), &p.engagement.debut)? {
                 declare = true;
             }
         }

@@ -2058,7 +2058,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     a.heures_enseignement = enseignement.filter(|h| *h > 0);
     a.numero_bulletin = plein(&l.b.numero);
     // Le numero du contrat, quand le bulletin l'imprime : il se lit, il ne se tire pas (regle 4).
-    a.numero_contrat = plein(&l.b.contrat);
+    a.numero_contrat = l.b.contrat.as_deref().and_then(engagement::numeros::NumeroContrat::d_une_piece);
     (a.fichier, a.page) = (Some(copie.clone()), Some(l.page as u64));
     Ok((compte, ContratLu { salarie: salarie.clone(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }))
 }

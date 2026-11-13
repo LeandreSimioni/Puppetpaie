@@ -94,7 +94,7 @@ pub struct ContratAtteste {
     pub nature: Option<NatureDeContrat>,
     pub numero_bulletin: Option<String>,
     /// Le numero du contrat qu'un bulletin imprime (il se lit, il ne se tire pas : regle 4).
-    pub numero_contrat: Option<String>,
+    pub numero_contrat: Option<NumeroContrat>,
     pub numero_attestation: Option<String>,
     pub numero_certificat: Option<String>,
     /// Le jour que la piece porte (sa signature), tel qu'il s'y lit.
@@ -867,13 +867,13 @@ pub fn continue_par(racine: &Path, e: &Carte) -> R<Option<Importe>> {
 /// LE CONTRAT `numero` DE `salarie` COMMENCE LE `debut` VIENT-IL DE L'ANCIEN LOGICIEL ? Un engagement importe porte ces
 /// salarie, debut et numero : c'est lui, ou le contrat d'usage qu'il continue ici (`continue_par`). L'ecran le dit sur
 /// la carte. Faux sans numero.
-pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &IdSalarie, debut: Jour, numero: Option<&str>) -> R<bool> {
-    let vient = |numero: &str| -> R<bool> {
+pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &IdSalarie, debut: Jour, numero: Option<&NumeroContrat>) -> R<bool> {
+    let vient = |numero: &NumeroContrat| -> R<bool> {
         Ok(tous(racine)?.iter().any(|i| {
-            i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
+            i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_ref() == Some(numero)
         }))
     };
-    Ok(numero.filter(|n| !n.is_empty()).map(vient).transpose()?.is_some_and(|oui| oui))
+    Ok(numero.map(vient).transpose()?.is_some_and(|oui| oui))
 }
 
 /// LE NUMERO QU'UNE DSN DE L'ANCIEN LOGICIEL A DECLARE pour l'engagement `o` : celui de sa derniere paie importee

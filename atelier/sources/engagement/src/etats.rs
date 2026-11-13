@@ -263,10 +263,10 @@ fn paie_sur_son_ecrite(mut paie: Paie, x: &PaieEcrite) -> Paie {
 /// `numero` : le numero de son bulletin, le premier N CE de son certificat. Ils se relisent ensuite (`numeros_ecrits`) :
 /// un document reparti a l'identique garde ses numeros. Une paie deja numerotee ne change pas de
 /// numero.
-pub fn poser_numeros_des_documents(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &str, bulletin: Option<&crate::numeros::NumeroDeBulletin>, ce: Option<i64>) -> R<()> {
+pub fn poser_numeros_des_documents(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &crate::numeros::NumeroContrat, bulletin: Option<&crate::numeros::NumeroDeBulletin>, ce: Option<i64>) -> R<()> {
     let o = stock::objets_du_mois(&ctx.racine, mois)?
         .into_iter()
-        .find(|o| o.carte().salarie.as_ref() == Some(cle) && o.carte().numero.as_deref() == Some(numero))
+        .find(|o| o.carte().salarie.as_ref() == Some(cle) && o.carte().numero.as_ref() == Some(numero))
         .ok_or_else(|| socle::refus!("{} : pas d'engagement de {} au contrat {}", mois, cle, numero))?;
     let Some(mut p) = crate::paies::presente(&o, mois)?.filter(|_| o.est_valide()).map(|p| (*p).clone()) else {
         return Err(socle::refus!("{} : l'engagement de {} au contrat {} n'a pas de paie validee", mois, cle, numero));
@@ -328,7 +328,7 @@ pub fn signe_ailleurs(ctx: &Contexte, o: &Objet) -> R<bool> {
     let nat = c.nature_lue()?;
     let salarie = c.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     // Un engagement sans debut n'a pas de contrat.
-    let signe = crate::debut_brut(&o.brut).map(|debut| crate::signe_ailleurs_de(&ctx.racine, &nat, salarie, debut, c.numero.as_deref(), o.fichier));
+    let signe = crate::debut_brut(&o.brut).map(|debut| crate::signe_ailleurs_de(&ctx.racine, &nat, salarie, debut, c.numero.as_ref(), o.fichier));
     Ok(signe.transpose()?.is_some_and(|oui| oui))
 }
 
@@ -452,10 +452,10 @@ pub fn valides_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<bool>> {
 
 /// La paie ecrite de `mois` de l'engagement du salarie `cle` (la cle de sa fiche) au contrat `numero`, lue par
 /// `du_mois` ; `None` s'il n'est pas valide ou n'a pas de paie ecrite pour ce mois.
-pub fn paie_ecrite_de(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &str, departs: &Departs) -> R<Option<PaieEcrite>> {
+pub fn paie_ecrite_de(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &crate::numeros::NumeroContrat, departs: &Departs) -> R<Option<PaieEcrite>> {
     for e in du_mois(ctx, mois, departs)? {
         let o = e.objet();
-        if o.carte().salarie.as_ref() == Some(cle) && o.carte().numero.as_deref() == Some(numero) {
+        if o.carte().salarie.as_ref() == Some(cle) && o.carte().numero.as_ref() == Some(numero) {
             if let Some(p) = e.paie_ecrite(mois)? {
                 return Ok(Some((*p).clone()));
             }

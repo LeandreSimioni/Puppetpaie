@@ -75,6 +75,16 @@ impl NumeroContrat {
         droit::fiche::sans_blancs_de_bord(texte)
     }
 
+    /// LE NUMERO QU'UNE PIECE D'AUTRUI IMPRIME (un bulletin d'un autre logiciel) : sans ses blancs de bord ; a blanc ou
+    /// hors de sa forme, la case reste vide, comme un code hors de nos listes (la piece d'un tiers se lit, elle ne se
+    /// refuse pas pour lui).
+    pub fn d_une_piece(texte: &str) -> Option<NumeroContrat> {
+        match NumeroContrat::lire(&NumeroContrat::rangee(texte)) {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        }
+    }
+
     /// Le numero d'un texte dit : absent, aucun ; une autre forme que celle de la norme (le texte vide compris) se refuse.
     pub fn du_texte(t: Option<&str>) -> R<Option<NumeroContrat>> {
         t.map(NumeroContrat::lire).transpose()

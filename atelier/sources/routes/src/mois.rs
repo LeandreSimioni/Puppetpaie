@@ -1481,7 +1481,7 @@ fn champs_du_contrat_de(ctx: &Contexte, e: &SaisieCarte, cle: &IdSalarie, mois: 
     }
     // Un contrat repris d'un ancien logiciel (sa date de debut dite) ne se refait pas.
     if let Some(d) = debut {
-        if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_deref())? {
+        if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_ref())? {
             return Ok(Vec::new());
         }
     }

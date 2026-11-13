@@ -875,9 +875,9 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut sections = Vec::new();
     for m in p.mois.clone() {
         let paies = lecture.paies(m)?;
-        let mut ordre: Vec<(String, Option<String>, usize)> = Vec::new();
+        let mut ordre: Vec<(String, Option<engagement::numeros::NumeroContrat>, usize)> = Vec::new();
         for (i, paie) in paies.iter().enumerate() {
-            ordre.push((qui(paie.salarie())?, paie.engagement().numero.as_deref().map(str::to_string), i));
+            ordre.push((qui(paie.salarie())?, paie.engagement().numero.clone(), i));
         }
         ordre.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
         for (nom, numero, i) in ordre {

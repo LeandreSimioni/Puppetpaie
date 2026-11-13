@@ -1201,7 +1201,7 @@ struct LigneDePage<'a> {
     nom: Option<&'a str>,
     spectacle: Option<&'a str>,
     nature: Option<&'a str>,
-    numero: Option<&'a str>,
+    numero: Option<&'a engagement::numeros::NumeroContrat>,
     debut: Option<Jour>,
     fin: Option<Jour>,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
@@ -1250,7 +1250,7 @@ impl<'a> LigneDePage<'a> {
             nom: v.nom.as_deref(),
             spectacle: v.spectacle.as_deref(),
             nature: v.libelle_nature.as_deref(),
-            numero: v.numero.as_deref(),
+            numero: v.numero.as_ref(),
             debut: v.debut,
             fin: v.fin,
             valide: v.valide,
@@ -1587,7 +1587,7 @@ impl<'a> Moteur<'a> {
             };
             let recalcul = recalcul.as_ref().and_then(engagement::etats::phrase_du_recalcul);
             // REPRIS D'UN ANCIEN LOGICIEL : la carte le dit (`engagement::importe::vient_d_un_ancien_logiciel`).
-            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.debut, p.engagement.numero.as_deref())?;
+            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.debut, p.engagement.numero.as_ref())?;
             // SIGNE AILLEURS : son contrat ecrit ne se fait pas signer ici, ses avenants si (`engagement::signe_ailleurs`).
             let ailleurs = engagement::signe_ailleurs(&self.ctx.racine, &p.engagement)?;
             // ECRIT : le contrat de cet engagement se fait signer ici (`engagement::contrat_a_signer`).

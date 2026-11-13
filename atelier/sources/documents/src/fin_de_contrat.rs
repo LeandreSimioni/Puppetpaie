@@ -58,7 +58,7 @@ l'organisme assureur, à l'ouverture et au cours de la période de maintien.",
 /// puis le reçu ; les deux ou aucun (un reçu qui ne s'écrit pas emporte le certificat déjà posé).
 pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf; 2]> {
     let e = &p.engagement;
-    let Some(numero) = e.numero.as_deref() else {
+    let Some(numero) = e.numero.as_ref() else {
         return Err(erreur(Classe::Illisible, "Certificat de travail : le contrat n'a pas de numéro, il n'est pas validé. Le valider d'abord."));
     };
     let Some(fin) = e.fin else {
@@ -109,7 +109,7 @@ fait). Rien n'est écrit.",
 }
 
 /// Les mentions communes du certificat de travail et du reçu, du contrat `numero` qui finit le `fin`.
-fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit::fiche::ChampsEntreprise) -> R<Valeurs> {
+fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::NumeroContrat, fin: Jour, ent: &droit::fiche::ChampsEntreprise) -> R<Valeurs> {
     let s = &p.salarie;
     let e = &p.engagement;
     fn ecrite<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
