@@ -9,7 +9,7 @@
 use socle::texte::sans_accent;
 use crate::forme_bareme::{
     CotisationDsn, CotisationModifiee, CotisationSupplementaire, IdDeCotisation, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, TauxAtmp,
-    TauxDate, VersementMobiliteEcrit, CCN, MUTUELLE, PREVOYANCE, PREVOYANCE_T2, REGIME_LOCAL, RETRAITE_T1, VERSEMENT_MOBILITE,
+    TauxDate, VersementMobiliteEcrit, CADRE, CADRE_PERMANENT, CCN, MUTUELLE, PREVOYANCE, PREVOYANCE_T2, REGIME_LOCAL, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
 use crate::assiette::Assiette;
 use crate::base_assujettie::{BaseAssujettie, TypeDeComposant};
@@ -181,10 +181,9 @@ fn cotisation_par_dessus(base: &mut CotisationModifiee, m: &CotisationModifiee) 
 /// Trois issues : le statut du corps (on rend le bareme), une section
 /// `par_statut` verifiee et sans trou (ses sections remplacent celles du
 /// corps), sinon un refus qui nomme tout ce qui bloque.
-pub fn bareme_du_statut(mut bar: Pile, statut: &str) -> R<Pile> {
-    let statut = statut.trim().to_lowercase();
+pub fn bareme_du_statut(mut bar: Pile, statut: Statut) -> R<Pile> {
     let statuts = bar.statuts.clone();
-    if statut.is_empty() || statuts.contains(&statut) {
+    if statuts.iter().any(|s| s == statut.as_str()) {
         return Ok(bar);
     }
 
@@ -266,11 +265,9 @@ mecanisme se decide. Tant que la section n'est pas marquee \
 /// Le bareme du statut, avec la surcouche de la NATURE DU CONTRAT
 /// (`par_nature`). Sans section verifiee et sans trou, on REFUSE.
 pub fn bareme_de_la_nature(bar: Pile, nat: &Nature) -> R<Pile> {
-    let nom = match nat.bareme() {
-        Some(n) if !n.is_empty() => n.to_string(),
-        _ => return Ok(bar),
-    };
-    let Some(sec) = bar.par_nature.get(&nom).cloned() else {
+    let Some(section) = nat.bareme() else { return Ok(bar) };
+    let nom = section.population();
+    let Some(sec) = bar.par_nature.get(&section).cloned() else {
         return Err(refus(
             format!("Le barème {} ne sait pas payer cette nature de contrat : le signaler au développeur.", annee(&bar)),
             format!(
@@ -351,10 +348,10 @@ pub fn bareme_cpf_cdd(mut bar: Pile, nat: &Nature, cpf_cdd: bool) -> R<Pile> {
     }
     // Une nature sans section de bareme n'en a pas non plus pour la contribution.
     let nom = match nat.bareme() {
-        Some(n) => n.to_string(),
-        None => "(sans section de barème)".to_string(),
+        Some(n) => n.population(),
+        None => "(sans section de barème)",
     };
-    let Some(sec) = nat.bareme().and_then(|n| bar.par_nature.get(n)).and_then(|n| n.cpf_cdd.clone()) else {
+    let Some(sec) = nat.bareme().and_then(|n| bar.par_nature.get(&n)).and_then(|n| n.cpf_cdd.clone()) else {
         return Err(refus(
             format!("Le barème {} ne porte pas la contribution formation d'un CDD : le signaler au développeur.", annee(&bar)),
             format!(
@@ -697,7 +694,7 @@ la Securite sociale), et pas plus de 100.",
     }
     let releve = nat
         .and_then(|n| n.bareme())
-        .and_then(|b| bar.par_nature.get(b))
+        .and_then(|b| bar.par_nature.get(&b))
         .and_then(|s| s.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == MUTUELLE))
         .and_then(|r| r.releve_svp_sante.clone());
     let Some(releve) = releve.filter(|r| !r.niveaux.is_empty()) else {
@@ -1023,8 +1020,7 @@ pub fn bareme_convention(mut bar: Pile, ent: &EntrepriseLue, nat: Option<&Nature
     let Some(contributions) = bar.contributions_conventionnelles.take().filter(|l| !l.is_empty()) else {
         return Ok(bar);
     };
-    let population = if mensuelle(nat) { "permanent" } else { "intermittent" };
-    let permanent = population == "permanent";
+    let permanent = mensuelle(nat);
     let mut representation: Option<String> = None;
     let mut rubriques = std::mem::take(&mut bar.rubriques_bulletin);
     for c in &contributions {
@@ -1121,7 +1117,7 @@ pub fn bareme_applique(
     } else {
         surcharger(partage.clone(), fiche, &etablissement_de(fiche, sal)?)?
     };
-    bar = bareme_du_statut(bar, sal.statut.exigee("statut")?.as_str())?;
+    bar = bareme_du_statut(bar, *sal.statut.exigee("statut")?)?;
     bar = bareme_atmp(bar, fiche)?;
     // Ce que la caisse reprend du statut tel qu'avant la nature : ses rubriques et ses cotisations (`bareme_caisse_conges`).
     let avant_la_nature = (caisse_conges != crate::caisse_conges::par_defaut(nat))
@@ -1599,7 +1595,7 @@ demander a Audiens, puis a ecrire dans la couche de \
 /// cahier technique 2026.1 p. 302 et 305). Chacune se place juste apres la derniere cotisation de code `apres` sur la
 /// meme base 78 : elle partage son bloc 78 (`dsn::bases_et_cotisations` ouvre un bloc par base). Sans elle, refus : une
 /// cotisation posee ailleurs que sous la base qu'elle suit changerait les blocs 78 sans que rien ne le dise.
-fn ajouter_cotisations(cots: &mut Vec<CotisationDsn>, ajouts: &[CotisationDsn], nom: &str, an: &str) -> R<()> {
+fn ajouter_cotisations(cots: &mut Vec<CotisationDsn>, ajouts: &[CotisationDsn], nom: &crate::forme_bareme::CategorieDuBareme, an: &str) -> R<()> {
     for a in ajouts {
         let mut x = a.clone();
         // Le code de la cotisation ajoutee, tel que le refus le cite.
@@ -1636,8 +1632,8 @@ pub fn bareme_cadre(mut bar: Pile, sal: &SalarieDuContrat, nat: Option<&Nature>)
         return Ok(bar);
     }
     let mensuelle = mensuelle(nat);
-    let nom = if mensuelle { "cadre_permanent" } else { "cadre" };
-    let Some(mut sec) = bar.par_categorie.get(nom).filter(|s| s.verifie == Some(true)).cloned() else {
+    let nom = if mensuelle { CADRE_PERMANENT } else { CADRE };
+    let Some(mut sec) = bar.par_categorie.get(&nom).filter(|s| s.verifie == Some(true)).cloned() else {
         return Err(refus(
             "Le barème de l'année ne sait pas payer un cadre : le signaler au développeur.",
             format!(
@@ -1657,7 +1653,7 @@ intermittent : ses tranches sont mensuelles"
         ));
     };
     // Un cadre d'un statut donne, quand la convention le distingue.
-    let st = sal.statut.exigee("statut")?.as_str().to_string();
+    let st = *sal.statut.exigee("statut")?;
     if let Some(sous) = sec.par_statut.as_ref().and_then(|p| p.get(&st)).cloned() {
         for (rid, champs) in sous.rubriques.iter().flatten() {
             par_dessus(sec.rubriques.get_or_insert_with(BTreeMap::new).entry(rid.clone()).or_default(), champs);
@@ -1696,7 +1692,7 @@ intermittent : ses tranches sont mensuelles"
     }
     let an = annee(&bar);
     if let Some(ajouts) = &sec.cotisations_ajoutees {
-        ajouter_cotisations(&mut bar.cotisations_dsn, ajouts, nom, &an)?;
+        ajouter_cotisations(&mut bar.cotisations_dsn, ajouts, &nom, &an)?;
     }
     Ok(bar)
 }

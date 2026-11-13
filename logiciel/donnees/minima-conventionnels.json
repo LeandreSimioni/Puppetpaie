@@ -1044,7 +1044,6 @@
     "grilles_complementaires": [
      {
       "nom": "artistes dramatiques et chorégraphiques, au mois",
-      "population": "tous",
       "statut": "artiste",
       "unite": "mois",
       "heures": 151.67,
@@ -1079,7 +1078,6 @@
      },
      {
       "nom": "artistes de cirque, au mois",
-      "population": "tous",
       "statut": "artiste",
       "unite": "mois",
       "heures": 151.67,
@@ -1092,7 +1090,6 @@
      },
      {
       "nom": "musiciens, au mois",
-      "population": "tous",
       "statut": "artiste",
       "unite": "mois",
       "heures": 151.67,
@@ -1105,7 +1102,6 @@
      },
      {
       "nom": "artistes de chœur, au mois",
-      "population": "tous",
       "statut": "artiste",
       "unite": "mois",
       "heures": 151.67,
@@ -1175,7 +1171,6 @@
      },
      {
       "nom": "artistes lyriques solistes, au mois",
-      "population": "tous",
       "statut": "artiste",
       "unite": "mois",
       "heures": 151.67,
@@ -1192,7 +1187,6 @@
   "grilles_complementaires": [
    {
     "nom": "artistes dramatiques et chorégraphiques, au mois",
-    "population": "tous",
     "statut": "artiste",
     "unite": "mois",
     "heures": 151.67,
@@ -1229,7 +1223,6 @@
    },
    {
     "nom": "artistes de cirque, au mois",
-    "population": "tous",
     "statut": "artiste",
     "unite": "mois",
     "heures": 151.67,
@@ -1244,7 +1237,6 @@
    },
    {
     "nom": "musiciens, au mois",
-    "population": "tous",
     "statut": "artiste",
     "unite": "mois",
     "heures": 151.67,
@@ -1259,7 +1251,6 @@
    },
    {
     "nom": "artistes de chœur, au mois",
-    "population": "tous",
     "statut": "artiste",
     "unite": "mois",
     "heures": 151.67,
@@ -1331,7 +1322,6 @@
    },
    {
     "nom": "artistes lyriques solistes, au mois",
-    "population": "tous",
     "statut": "artiste",
     "unite": "mois",
     "heures": 151.67,
@@ -2850,7 +2840,6 @@
    {
     "nom": "réalisateurs de fiction, la journée",
     "unite": "jour",
-    "population": "tous",
     "statut": "artiste",
     "heures": null,
     "categories": [
@@ -2868,7 +2857,6 @@
    {
     "nom": "réalisateurs de fiction, la semaine",
     "unite": "semaine",
-    "population": "tous",
     "statut": "artiste",
     "heures": null,
     "categories": [
@@ -2886,7 +2874,6 @@
    {
     "nom": "réalisateurs de fiction, le mois",
     "unite": "mois",
-    "population": "tous",
     "statut": "artiste",
     "heures": null,
     "categories": [
@@ -3134,7 +3121,6 @@
     "categories": [
      "realisateur"
     ],
-    "population": "tous",
     "statut": "artiste",
     "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
@@ -3150,7 +3136,6 @@
     "categories": [
      "realisateur"
     ],
-    "population": "tous",
     "statut": "artiste",
     "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
@@ -3171,7 +3156,6 @@
     "categories": [
      "realisateur"
     ],
-    "population": "tous",
     "statut": "artiste",
     "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
@@ -3186,7 +3170,6 @@
     "categories": [
      "realisateur_publicite"
     ],
-    "population": "tous",
     "statut": "artiste",
     "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
@@ -3200,7 +3183,6 @@
     "categories": [
      "realisateur_publicite"
     ],
-    "population": "tous",
     "statut": "artiste",
     "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
@@ -3231,7 +3213,6 @@
           {
             "nom": "niveaux (art. 7.3)",
             "population": "permanent",
-            "statut": "tous",
             "unite": "mois",
             "heures": 151.67,
             "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000055028614", "citation": "Le tableau suivant se substitue intégralement au tableau de l'article 7.3 du tronc commun de la convention collective."},
@@ -3292,7 +3273,6 @@
           {
             "nom": "fonctions des permanents",
             "population": "permanent",
-            "statut": "tous",
             "unite": "mois",
             "heures": 151.67,
             "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000055028607", "citation": "les grilles annexées au présent avenant se substituent intégralement aux grilles correspondantes dans le tronc commun et les annexes de la convention"},
@@ -4812,7 +4792,6 @@
       {
         "nom": "niveaux (art. 7.3)",
         "population": "permanent",
-        "statut": "tous",
         "unite": "mois",
         "heures": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000051948357", "citation": "Le niveau et le salaire minimum applicables à une fonction non-référencée dans les grilles de classification"},
@@ -4876,7 +4855,6 @@
       {
         "nom": "fonctions des permanents",
         "population": "permanent",
-        "statut": "tous",
         "unite": "mois",
         "heures": 151.67,
         "note": "art. 7.2, annexes I a V",
@@ -6584,7 +6562,6 @@
       {
         "nom": "CDI et CDD de droit commun",
         "population": "permanent",
-        "statut": "tous",
         "unite": "mois",
         "heures": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2412", "emetteur": "convention", "article": "KALIARTI000050506609", "citation": "Salaires minima conventionnels (CDI et CDD de droit commun)"},
@@ -6810,7 +6787,6 @@
       {
         "nom": "permanents, moins de 50 salariés",
         "population": "permanent",
-        "statut": "tous",
         "unite": "mois",
         "heures": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3241", "emetteur": "convention", "article": "KALIARTI000054880884", "citation": "Au 1er juin 2026 (mensuel)"},
@@ -6981,7 +6957,6 @@
       {
         "nom": "permanents du disque",
         "population": "permanent",
-        "statut": "tous",
         "unite": "mois",
         "heures": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2121", "emetteur": "convention", "article": "KALIARTI000054262231", "citation": "les salaires minima annuels et mensuels sont augmentés de 1,18 %"},
@@ -7259,7 +7234,6 @@
       {
         "nom": "indices de référence",
         "population": "permanent",
-        "statut": "tous",
         "unite": "mois",
         "heures": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#1922", "emetteur": "convention", "article": "KALIARTI000052283593", "citation": "rappellent au présent article la formule permettant le calcul des salaires"},
@@ -7393,7 +7367,6 @@
       {
         "nom": "niveaux et échelons",
         "population": "permanent",
-        "statut": "tous",
         "unite": "mois",
         "heures": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#1790", "emetteur": "convention", "article": "KALIARTI000054871994", "citation": "Comme suite aux réunions de négociation de la commission paritaire nationale de la convention collective des espaces de loisirs, d'attractions et culturels"},

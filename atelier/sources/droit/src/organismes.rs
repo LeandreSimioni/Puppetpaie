@@ -283,8 +283,8 @@ forme_notee! {
         pub taux_at: Option<TauxAt>,
         pub statut: Option<crate::fiche::Statut>,
         /// La population : `intermittent` ou `permanent` (`ParNature`).
-        #[serde(rename = "nature")]
-        pub population: Option<String>,
+        #[serde(rename = "nature", default, deserialize_with = "crate::natures::population::option::deserialize")]
+        pub population: Option<crate::natures::Paie>,
         pub effectif_au_moins: Option<i64>,
         pub effectif_sous: Option<i64>,
     }
@@ -683,9 +683,12 @@ impl ParNature {
         [("intermittent", &self.intermittent), ("permanent", &self.permanent)]
     }
 
-    /// Le rattachement de la nature `cle` (`Nature::bareme`), s'il est compose.
-    pub fn de(&self, cle: &str) -> Option<&Rattachement> {
-        self.natures().into_iter().find(|(n, _)| *n == cle).map(|(_, r)| r)
+    /// Le rattachement de la section `section` (`Nature::section_des_organismes`).
+    pub fn de(&self, section: crate::natures::Paie) -> &Rattachement {
+        match section {
+            crate::natures::Paie::Activite => &self.intermittent,
+            crate::natures::Paie::Mensuelle => &self.permanent,
+        }
     }
 }
 

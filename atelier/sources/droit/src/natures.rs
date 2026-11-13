@@ -13,12 +13,78 @@ use std::sync::{Arc, OnceLock};
 /// Les types de contrat de la DPAE (Format 120 v5.3, C_TYPE_CONTRAT).
 pub const TYPES_CONTRAT_DPAE: [(&str, &str); 3] = [("1", "CDD"), ("2", "CDI"), ("3", "CTT")];
 
-/// La face de paie d'une nature : aux cachets et aux heures, ou au mois.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+/// La face de paie d'une nature : aux cachets et aux heures, ou au mois. C'est aussi la population que les fichiers
+/// livres nomment (`intermittent`, `permanent` : `population`), qui se trie comme son texte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Paie {
     Activite,
     Mensuelle,
+}
+
+impl Paie {
+    /// La population, telle que les fichiers livres l'ecrivent : `intermittent` (a l'activite), `permanent` (au mois).
+    pub fn population(self) -> &'static str {
+        match self {
+            Paie::Activite => "intermittent",
+            Paie::Mensuelle => "permanent",
+        }
+    }
+}
+
+/// LA POPULATION ECRITE : `intermittent` ou `permanent`, la face de paie (`Paie`) la ou les fichiers livres la nomment
+/// ainsi (les sections `par_nature` du bareme, la `population` d'une grille des minima, la `nature` d'une ligne du
+/// bordereau, la section d'une nature de `contrats-base.json`). Un autre mot se refuse a la lecture, en le nommant.
+pub mod population {
+    use super::Paie;
+    use serde::Deserialize;
+    use std::collections::BTreeMap;
+
+    fn lue<E: serde::de::Error>(texte: &str) -> Result<Paie, E> {
+        match texte {
+            "intermittent" => Ok(Paie::Activite),
+            "permanent" => Ok(Paie::Mensuelle),
+            _ => Err(E::custom(format!("{} n'est pas une population : intermittent ou permanent", socle::fichiers::repr(texte)))),
+        }
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Paie, D::Error> {
+        lue(&String::deserialize(d)?)
+    }
+
+    pub mod option {
+        use super::{lue, Paie};
+        use serde::Deserialize;
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Paie>, D::Error> {
+            match Option::<String>::deserialize(d)? {
+                Some(t) => lue(&t).map(Some),
+                None => Ok(None),
+            }
+        }
+    }
+
+    /// Les cles d'une table par population.
+    pub mod cles {
+        use super::{lue, BTreeMap, Paie};
+        use serde::Deserialize;
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>, V: Deserialize<'de>>(d: D) -> Result<BTreeMap<Paie, V>, D::Error> {
+            BTreeMap::<String, V>::deserialize(d)?.into_iter().map(|(k, v)| Ok((lue(&k)?, v))).collect()
+        }
+
+        pub mod option {
+            use super::{lue, BTreeMap, Paie};
+            use serde::Deserialize;
+
+            pub fn deserialize<'de, D: serde::Deserializer<'de>, V: Deserialize<'de>>(d: D) -> Result<Option<BTreeMap<Paie, V>>, D::Error> {
+                match Option::<BTreeMap<String, V>>::deserialize(d)? {
+                    Some(m) => m.into_iter().map(|(k, v)| Ok((lue(&k)?, v))).collect::<Result<BTreeMap<Paie, V>, D::Error>>().map(Some),
+                    None => Ok(None),
+                }
+            }
+        }
+    }
 }
 
 /// UNE RUBRIQUE DE LA NORME DSN, par son identifiant : « la logique de hierarchisation en structure, groupe, bloc,
@@ -828,8 +894,10 @@ pub struct Proprietes {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Bareme {
-    section: Option<String>,
-    organismes: String,
+    #[serde(default, deserialize_with = "population::option::deserialize")]
+    section: Option<Paie>,
+    #[serde(deserialize_with = "population::deserialize")]
+    organismes: Paie,
     #[serde(rename = "note")]
     _note: String,
 }
@@ -1165,14 +1233,14 @@ impl Proprietes {
     }
 
     /// La section `par_nature` du bareme a appliquer par-dessus le statut, ou `None` : le corps du bareme.
-    pub fn bareme(&self) -> Option<&str> {
-        self.bareme.section.as_deref()
+    pub fn bareme(&self) -> Option<Paie> {
+        self.bareme.section
     }
 
     /// La section des organismes et des contributions de la nature (`organismes-base.json`, `par_nature`), que
     /// `contrats-base.json` dit pour chacune.
-    pub fn section_des_organismes(&self) -> &str {
-        &self.bareme.organismes
+    pub fn section_des_organismes(&self) -> Paie {
+        self.bareme.organismes
     }
 
     /// S21.G00.40.011.

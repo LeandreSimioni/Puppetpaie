@@ -504,17 +504,17 @@ impl<'a> Cx<'a> {
 
     /// Les grilles de cette convention qui visent cette ligne.
     fn grilles_de(&self, ligne: &LigneBrut, grilles: &'a [Grille]) -> R<Vec<&'a Grille>> {
-        let population = if permanent(self.paie)? { "permanent" } else { "intermittent" };
+        let population = self.paie.engagement.nat()?.paie;
         let statut = self.statut();
         let est_cachet = cachet(&ligne.code);
         let heures = !ligne.heures_annexes.is_zero();
         let mut out: Vec<&'a Grille> = Vec::new();
         for gr in grilles {
             // Une grille qui ne dit pas sa population ou son statut les vise tous.
-            if !gr.population.as_deref().is_none_or(|pop| pop == "tous" || pop == population) {
+            if !gr.population.is_none_or(|pop| pop == population) {
                 continue;
             }
-            if !gr.statut.as_deref().is_none_or(|st| st == "tous" || st == statut.as_str()) {
+            if !gr.statut.is_none_or(|st| st == statut) {
                 continue;
             }
             if est_cachet != (gr.unite == Unite::Cachet) {
@@ -1163,7 +1163,7 @@ pub fn cases_du_metier(ctx: &Contexte, code: &droit::fiche::CodeEmploiFt, jour: 
         lues.extend(c.si_salarie.into_iter().flat_map(|s| s.cases()));
     };
     let grilles = grille.grilles.iter().flatten().chain(grille.grilles_complementaires.iter().flatten());
-    for gr in grilles.filter(|gr| gr.statut.as_deref().is_none_or(|st| st == "tous" || st == statut.as_str())) {
+    for gr in grilles.filter(|gr| gr.statut.is_none_or(|st| st == statut)) {
         let c = gr.conditions();
         if !vise(&c) {
             continue;

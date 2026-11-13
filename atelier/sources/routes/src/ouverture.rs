@@ -1490,8 +1490,7 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
     }
     let pile = ctx.bareme(&ctx.aujourdhui)?;
     // La complementaire sante est celle des permanents : la couche de leur nature.
-    const PERMANENT: &str = "permanent";
-    let releve = pile.par_nature.get(PERMANENT).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == droit::forme_bareme::MUTUELLE)).and_then(|r| r.releve_svp_sante.as_ref());
+    let releve = pile.par_nature.get(&droit::natures::Paie::Mensuelle).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == droit::forme_bareme::MUTUELLE)).and_then(|r| r.releve_svp_sante.as_ref());
     // Une couche sans releve de la complementaire n'en dit aucun niveau.
     Ok(releve
         .into_iter()

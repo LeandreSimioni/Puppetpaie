@@ -64,7 +64,7 @@ pub fn reduction_generale(
     let Some(statut) = statut.filter(|s| !s.is_empty()) else {
         return Err(socle::echec::refus("La fiche du salarié ne dit pas son statut (artiste ou technicien), dont dépend la réduction générale : le remplir."));
     };
-    if !rg.statuts.iter().flatten().any(|s| s == statut) || brut <= Decimal::ZERO || heures <= Decimal::ZERO {
+    if !rg.statuts.iter().flatten().any(|s| s.as_str() == statut) || brut <= Decimal::ZERO || heures <= Decimal::ZERO {
         return Ok(None);
     }
     let smic_ref = eur(mul(requis(rg.smic_horaire_reference.map(|n| n.0), "smic_horaire_reference")?, heures));

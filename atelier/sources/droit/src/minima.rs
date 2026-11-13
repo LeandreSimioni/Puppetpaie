@@ -279,8 +279,11 @@ forme_notee! {
     /// (dans l'ordre du texte), ses majorations, et ce qui la ramene a l'heure (`heures`, `facteur`) ou l'abat.
     pub struct Grille {
         pub nom: String,
-        pub population: Option<String>,
-        pub statut: Option<String>,
+        /// La population que la grille vise ; absente, toutes.
+        #[serde(default, deserialize_with = "crate::natures::population::option::deserialize")]
+        pub population: Option<crate::natures::Paie>,
+        /// Le statut que la grille vise ; absent, tous.
+        pub statut: Option<crate::fiche::Statut>,
         /// Ce que la valeur de la grille paie (le cachet, l'heure, le jour, la semaine, le mois) : l'unite d'une rubrique,
         /// la meme notion (`catalogue::Unite`). Une unite hors de sa liste refuse le fichier a la lecture, au chemin de la
         /// grille.

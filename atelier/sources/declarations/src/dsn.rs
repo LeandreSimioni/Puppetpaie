@@ -613,8 +613,8 @@ const TRANCHE_A: TypeDeComposant = TypeDeComposant::TrancheAPrevoyance;
 
 /// LA SECTION DES ORGANISMES (`organismes-base.json`, `par_nature`) ET DES CONTRIBUTIONS D'UNE NATURE DE CONTRAT : celle
 /// que `contrats-base.json` dit pour elle (`Nature::section_des_organismes`).
-fn section_de(nat: &Nature) -> &str {
-    nat.section_des_organismes()
+fn section_de(nat: &Nature) -> &'static str {
+    nat.section_des_organismes().population()
 }
 
 /// UNE CONTRIBUTION DECLAREE SOUS UNE ADHESION AUDIENS ce mois-la (la CASC-SVP, une contribution de branche :
@@ -1148,15 +1148,7 @@ fn bornes_du_mois(mois: Mois) -> (Jour, Jour) {
 /// periode `debut`..=`fin`.
 pub fn affiliations(orgs: &Organismes, nat: &Nature, contribs: &[ContributionDuMois], (debut, fin): (Jour, Jour)) -> R<Vec<String>> {
     let cle = section_de(nat).to_string();
-    let Some(sec) = orgs.par_nature.de(&cle) else {
-        return Err(refus_avec(format!(
-            "Contrat {} : la DSN rattache chaque salarié à ses contrats de prévoyance et de santé (S21.G00.70.013), et \
-les organismes composés pour la compagnie ne disent rien d'un salarié « {} » (seulement des intermittents et des \
-permanents). Aucune saisie de la compagnie ne le dit : c'est la composition livrée qui \
-ne connaît pas ce cas. Rien n'est écrit.",
-            nat.libelle, cle
-        ), Lieu { fichier: Some("organismes-base.json".into()), ..Default::default() }));
-    };
+    let sec = orgs.par_nature.de(nat.section_des_organismes());
     if sec.references.is_empty() {
         let pourquoi = match sec.a_confirmer {
             Some(p) => p,
@@ -3488,7 +3480,7 @@ fn lignes_bordereau(
     let ctps = crate::assujettissement::ctp_sans_la_taxe_non_due(orgs.ctp_urssaf().to_vec(), taxe_apprentissage_non_due_du_mois(ent, mois)?);
     let ctps = ctps.as_slice();
     let brut_permanent = somme[&CleCtp::Assiette(AssietteDuBordereau::BrutPermanent)];
-    if !brut_permanent.is_zero() &&!ctps.iter().any(|c| c.population.as_deref() == Some("permanent")) {
+    if !brut_permanent.is_zero() &&!ctps.iter().any(|c| c.population == Some(droit::natures::Paie::Mensuelle)) {
         return Err(refus!(
             "La DSN de {} porte {} de brut de salariés permanents, et la table des CTP livrée avec le logiciel \
 n'a aucun CTP des permanents. Le bordereau Urssaf serait faux : un \
@@ -3503,7 +3495,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             continue;
         }
         let (valeur, par_montant) = valeur_ctp(&somme, ctp)?;
-        if (ctp.statut.is_some() || ctp.population.as_deref().is_some_and(|s| !s.is_empty())) && valeur.is_zero() {
+        if (ctp.statut.is_some() || ctp.population.is_some()) && valeur.is_zero() {
             continue;
         }
         let v = rond(valeur);

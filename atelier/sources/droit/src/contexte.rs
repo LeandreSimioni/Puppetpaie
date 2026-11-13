@@ -502,7 +502,7 @@ fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &Idcc) -> R
         modifier_rubriques(&mut pile.rubriques_bulletin, mods, &ou)?;
     }
     for (n, m) in c.par_nature.iter().flatten() {
-        modifier_la_nature(pile.par_nature.entry(n.clone()).or_default(), m, &ou)?;
+        modifier_la_nature(pile.par_nature.entry(*n).or_default(), m, &ou)?;
     }
     for (k, m) in c.par_categorie.iter().flatten() {
         let cat = pile.par_categorie.entry(k.clone()).or_default();
@@ -510,7 +510,7 @@ fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &Idcc) -> R
             par_dessus_rubriques(cat.rubriques.get_or_insert_with(BTreeMap::new), mods);
         }
         for (s, sec) in m.par_statut.iter().flatten() {
-            cat.par_statut.get_or_insert_with(BTreeMap::new).insert(s.clone(), sec.clone());
+            cat.par_statut.get_or_insert_with(BTreeMap::new).insert(*s, sec.clone());
         }
     }
     Ok(())
@@ -543,7 +543,7 @@ fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, ou: &str) -> R<()> {
         }
     }
     for (n, m) in s.par_nature.iter().flatten() {
-        modifier_la_nature(pile.par_nature.get_mut(n).ok_or_else(|| inconnue(&ou, &format!("par_nature.{}", n)))?, m, &ou)?;
+        modifier_la_nature(pile.par_nature.get_mut(n).ok_or_else(|| inconnue(&ou, &format!("par_nature.{}", n.population())))?, m, &ou)?;
     }
     Ok(())
 }
