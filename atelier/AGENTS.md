@@ -180,6 +180,9 @@ une règle sans texte déposé est un souvenir.
   `LISEZ-MOI.md` par dossier** (URL, date, **où le moteur s'en sert**) ; une inférence se dit telle ; le code **cite le
   fichier déposé** ; chaque taux livré porte sa `source { fichier, article, citation }`, qu'un test vérifie dans le
   texte. Les codes se relèvent par `moteur-atelier releve-codes`, jamais à la main.
+- **Le texte entier de nos conventions collectives** (annexes, avenants, accords de salaires, toutes versions) est dans
+  `atelier/reference/sources/kali-entrepot/`, un seul fichier compressé : son `LISEZ-MOI.md` dit comment le lire
+  (`moteur-atelier releve-conventions article|chercher`, ou `zcat`).
 - **Un fondement** : un texte déposé qui dit la valeur, ou la convergence d'au moins deux textes d'émetteurs distincts,
   raisonnement écrit (`methodes/FONDER-UN-TAUX.md` du privé). L'usage du secteur ou la pratique d'un autre logiciel ne
   fondent rien. Un texte que le nuage n'atteint pas se demande à Léandre, qui le relève.
