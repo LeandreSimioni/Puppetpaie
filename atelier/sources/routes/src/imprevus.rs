@@ -77,7 +77,7 @@ const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
 const FIN_PRESCRITE: Champ = Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin prescrite"), forme: Forme::Date, sens: "la nouvelle fin prescrite", avance: false };
 const REPRISE: Champ = Champ { nom: "reprise", libelle: Affiche::new("Reprise le"), forme: Forme::Date, sens: "le jour de la reprise ; nul l'efface", avance: false };
 const MOTIF_REPRISE: Champ = Champ { nom: "motif_reprise", libelle: Affiche::new("Motif de la reprise"), forme: Forme::Texte, sens: "le motif de la reprise", avance: true };
-const IJ_BRUTE: Champ = Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), en texte (« 40.89 ») ; absente, elle ne change pas", avance: false };
+const IJ_BRUTE: Champ = Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), un montant (40.89, en nombre ou en texte « 40.89 ») ; absente, elle ne change pas", avance: false };
 const IJ_NETTE: Champ = Champ { nom: "ij_nette", libelle: Affiche::new("Indemnité nette d'un jour"), forme: Forme::Texte, sens: "la même, nette de CSG et CRDS", avance: false };
 const IJ_BRUTE_MAJOREE: Champ = Champ { nom: "ij_brute_majoree", libelle: Affiche::new("Indemnité brute majorée"), forme: Forme::Texte, sens: "accident du travail, dès le 29e jour : brute", avance: true };
 const IJ_NETTE_MAJOREE: Champ = Champ { nom: "ij_nette_majoree", libelle: Affiche::new("Indemnité nette majorée"), forme: Forme::Texte, sens: "la même, nette", avance: true };
@@ -205,8 +205,8 @@ struct ChargeArretReprise {
     motif_reprise: Option<MotifDeReprise>,
 }
 
-/// La charge de `arret-indemnites` : chaque montant, un chiffre saisi (« 40.89 », tel que le releve l'ecrit ; l'arret le
-/// garde au centime, en texte), et les jours deja indemnises ; absent, rien ne change.
+/// La charge de `arret-indemnites` : chaque montant, un chiffre saisi (40.89 en nombre, ou « 40.89 » en texte, tel que le
+/// releve l'ecrit ; l'arret le garde au centime, en texte), et les jours deja indemnises ; absent, rien ne change.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretIndemnites {

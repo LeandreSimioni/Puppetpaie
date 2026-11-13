@@ -39,11 +39,28 @@ pub struct IdDeModele {
 }
 
 impl IdDeModele {
-    /// L'id `texte`, ou ce qui le refuse.
-    pub fn lire(texte: &str) -> R<IdDeModele> {
+    /// Le numero de l'id `texte`, s'il a la forme d'un id (`m` et un entier).
+    fn numero_de(texte: &str) -> Option<u32> {
         match texte.strip_prefix('m').map(str::parse::<u32>) {
-            Some(Ok(numero)) => Ok(IdDeModele { texte: texte.to_string(), numero }),
-            _ => Err(refus(format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", texte))),
+            Some(Ok(numero)) => Some(numero),
+            Some(Err(_)) | None => None,
+        }
+    }
+
+    /// L'id `texte` qu'un fichier ecrit (les modeles, une carte), ou ce qui le refuse.
+    pub fn lire(texte: &str) -> R<IdDeModele> {
+        match IdDeModele::numero_de(texte) {
+            Some(numero) => Ok(IdDeModele { texte: texte.to_string(), numero }),
+            None => Err(refus(format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", texte))),
+        }
+    }
+
+    /// L'id `texte` que nomme la charge d'une route (`id_de_la_charge`), ou ce qui le refuse : la phrase d'un modele
+    /// qu'on ne connait pas, qui dit ou le choisir.
+    pub fn de_la_charge(texte: &str) -> R<IdDeModele> {
+        match IdDeModele::numero_de(texte) {
+            Some(numero) => Ok(IdDeModele { texte: texte.to_string(), numero }),
+            None => Err(refus(format!("Aucun modèle de contrat {} : en choisir un de la liste (modeles-contrat).", texte))),
         }
     }
 
@@ -73,6 +90,30 @@ impl TryFrom<String> for IdDeModele {
     type Error = socle::echec::Echec;
     fn try_from(s: String) -> R<IdDeModele> {
         IdDeModele::lire(&s)
+    }
+}
+
+/// LA LECTURE D'UN ID DANS LA CHARGE D'UNE ROUTE (`#[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]`) :
+/// un id mal forme s'y refuse par la phrase d'une charge (`IdDeModele::de_la_charge`), pas par celle du fichier.
+pub mod id_de_la_charge {
+    use super::IdDeModele;
+    use serde::Deserialize;
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<IdDeModele, D::Error> {
+        IdDeModele::de_la_charge(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+
+    /// Un id facultatif (`#[serde(default, deserialize_with = "…::option::deserialize")]`) : absent ou nul, aucun.
+    pub mod option {
+        use super::IdDeModele;
+        use serde::Deserialize;
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IdDeModele>, D::Error> {
+            match Option::<String>::deserialize(d)? {
+                Some(t) => IdDeModele::de_la_charge(&t).map(Some).map_err(|e| serde::de::Error::custom(e.phrase)),
+                None => Ok(None),
+            }
+        }
     }
 }
 

@@ -977,9 +977,8 @@ fn signalement_dsn(
 }
 
 /// La connaissance saisie de l'arret ou de l'accident, si la compagnie l'a dite.
-fn connaissance(dit: CeQueDitLaCompagnie, de: DeQuoi, quoi: &str) -> R<Option<Depart>> {
-    let Some(c) = dit.connaissance(de) else { return Ok(None) };
-    Ok(Some(Depart { quand: c.quand, quoi: quoi.into(), presume: None }))
+fn connaissance(dit: CeQueDitLaCompagnie, de: DeQuoi, quoi: &str) -> Option<Depart> {
+    dit.connaissance(de).map(|c| Depart { quand: c.quand, quoi: quoi.into(), presume: None })
 }
 
 // ------------------------------------------------------------- les arrets
@@ -1102,7 +1101,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
         None => None,
     };
     let connu_de_l_arret = |o: &DeBase| -> R<Option<Depart>> {
-        Ok(match (connaissance(fiche, DeQuoi::Arret, "le jour où la compagnie a connu l'arrêt")?, debut) {
+        Ok(match (connaissance(fiche, DeQuoi::Arret, "le jour où la compagnie a connu l'arrêt"), debut) {
             (Some(c), _) => Some(c),
             (None, Some(debut)) => Some(Depart::du_jour(debut, "le jour où la compagnie a connu l'arrêt", Some(o.presume()?))),
             (None, None) => None,
@@ -1152,7 +1151,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
         let mut m = Obligation::squelette(CleDObligation::DeclarationAccident, o);
         let d = o.delai_de(&o.delai, "delai")?;
         let quoi = "la connaissance de l'accident par la compagnie";
-        let depart = match (connaissance(fiche, DeQuoi::Accident, quoi)?, a.date_accident) {
+        let depart = match (connaissance(fiche, DeQuoi::Accident, quoi), a.date_accident) {
             (Some(c), _) => Some(c),
             (None, Some(j)) => Some(Depart::du_jour(j, quoi, Some(o.presume()?))),
             (None, None) => None,
@@ -1564,7 +1563,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
                 return Err(refus(format!("Ou {} a-t-elle ete faite ? {} n'est pas connu ; les lieux sont : {}. Rien n'est ecrit.", f.quoi.to_lowercase(), repr(depot.texte()), dits.join(", "))));
             }
             let suivi = Suivi::lire(ctx)?;
-            if let Some(c) = connaissance(suivi.de(&cle, dernier), f.connaissance, "")? {
+            if let Some(c) = connaissance(suivi.de(&cle, dernier), f.connaissance, "") {
                 if le < c.jour() {
                     return Err(refus(format!(
                         "{} faite le {}, avant {} (le {}, saisi) : ce n'est pas possible. Rien n'est ecrit.",

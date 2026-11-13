@@ -40,11 +40,6 @@ fn saisie_aux_numeros_declares(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
 
 // ------------------------------------------------------------------ recapitulatif_dsn
 
-/// Un nombre sans ses zeros de fin ; zero s'ecrit `0` (`normalize` le rend sans signe ni decimale).
-fn norm(d: Decimal) -> Decimal {
-    d.normalize()
-}
-
 /// Un contrat du fichier (`DsnLue`), et ce qu'il declare pour le mois et en rappel d'un mois deja declare. Son numero
 /// (S21.G00.40.009) et son debut (S21.G00.40.001) sont obligatoires : un contrat qui ne les porte pas ne se lit pas.
 struct ContratLu {
@@ -129,7 +124,7 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     }
     for (quoi, paie, fichier) in [("jours", jours, m.jours), ("cachets", cachets, m.cachets), ("heures", heures, m.heures)] {
         if paie != fichier {
-            ecarts.push(format!("{} : la paie dit {}, le fichier {}", quoi, norm(paie), norm(fichier)));
+            ecarts.push(format!("{} : la paie dit {}, le fichier {}", quoi, paie.normalize(), fichier.normalize()));
         }
     }
     let emploi = p.salarie.emploi.en_texte();
@@ -222,9 +217,9 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
                 brut: m.brut.map(q2),
-                jours: norm(m.jours),
-                cachets: norm(m.cachets),
-                heures: norm(m.heures),
+                jours: m.jours.normalize(),
+                cachets: m.cachets.normalize(),
+                heures: m.heures.normalize(),
                 fin_declaree: c.fin_declaree,
                 motif_fin: c.motif_fin,
                 remunere: m.remunere,

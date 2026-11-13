@@ -482,6 +482,7 @@ fn sur_les_paragraphes(ctx: &Contexte, id: &IdDeModele, partie: Partie, faire: i
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeEcrireParagraphe {
+    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
     id: IdDeModele,
     partie: Partie,
     numero: usize,
@@ -501,6 +502,7 @@ fn ecrire_paragraphe(ctx: &Contexte, c: ChargeEcrireParagraphe) -> R<Modeles> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeAjouter {
+    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
     id: IdDeModele,
     partie: Partie,
     numero: usize,
@@ -531,6 +533,7 @@ enum Sens {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDeplacer {
+    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
     id: IdDeModele,
     partie: Partie,
     numero: usize,
@@ -555,6 +558,7 @@ fn deplacer_paragraphe(ctx: &Contexte, c: ChargeDeplacer) -> R<Modeles> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeParagraphe {
+    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
     id: IdDeModele,
     partie: Partie,
     numero: usize,
@@ -577,6 +581,7 @@ fn supprimer_paragraphe(ctx: &Contexte, c: ChargeParagraphe) -> R<Modeles> {
 #[serde(deny_unknown_fields)]
 struct ChargeLire {
     nature: NatureDeContrat,
+    #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
     id: Option<IdDeModele>,
     partie: Partie,
 }
@@ -585,6 +590,7 @@ struct ChargeLire {
 #[serde(deny_unknown_fields)]
 struct ChargeDefaut {
     nature: NatureDeContrat,
+    #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
     id: Option<IdDeModele>,
 }
 
@@ -598,6 +604,7 @@ struct ChargeCopier {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeRenommer {
+    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
     id: IdDeModele,
     nom: String,
 }
@@ -605,6 +612,7 @@ struct ChargeRenommer {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeId {
+    #[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]
     id: IdDeModele,
 }
 
@@ -621,6 +629,7 @@ struct EngagementVise {
 #[serde(deny_unknown_fields)]
 struct ChargeApercu {
     nature: NatureDeContrat,
+    #[serde(default, deserialize_with = "engagement::carte::id_de_la_charge::option::deserialize")]
     id: Option<IdDeModele>,
     partie: Partie,
     engagement: Option<EngagementVise>,
