@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 
 use droit::assiette::Assiette;
 use droit::base_assujettie::BaseAssujettie;
-use droit::fiche::Lue;
+use droit::fiche::{Lue, NumeroObjetSpectacle};
 use droit::natures::NatureDeContrat;
 use std::path::{Path, PathBuf};
 
@@ -80,7 +80,7 @@ pub enum Attestation {
 #[serde(deny_unknown_fields)]
 pub struct ContratAtteste {
     pub atteste_par: Attestation,
-    pub numero_objet: Option<String>,
+    pub numero_objet: Option<NumeroObjetSpectacle>,
     pub heures: Option<i64>,
     pub cachets: Option<i64>,
     pub jours: Option<i64>,
@@ -123,7 +123,7 @@ pub struct PaieVersee {
     pub contrat: String,
     pub declare_par: Declaration,
     pub nir: Option<droit::fiche::Nir>,
-    pub numero_objet: Option<String>,
+    pub numero_objet: Option<NumeroObjetSpectacle>,
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
     /// La quotite que la DSN deposee declare pour le contrat (S21.G00.40.013).
@@ -643,8 +643,8 @@ impl Importe {
         let ctx = ctx.du_mois(mois)?;
         let cle = self.carte().salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
         let sal = crate::calcul::convention_de_l_employeur(&ctx, crate::fiche_du_salarie(&ctx, cle)?);
-        let objet: Option<String> = p.numero_objet.clone().or_else(|| contrat.and_then(|c| c.numero_objet.clone())).filter(|o| !o.is_empty()).map(|o| o.to_uppercase());
-        let spectacle = ctx.spectacles.iter().find(|(_, f)| objet.is_some() && f.numero_objet.portee().map(str::to_uppercase) == objet).map(|(k, _)| k.clone());
+        let objet = p.numero_objet.as_ref().or_else(|| contrat.and_then(|c| c.numero_objet.as_ref()));
+        let spectacle = objet.and_then(|o| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite().is_some_and(|n| n.meme(o))).map(|(k, _)| k.clone()));
         let spec = match &spectacle {
             Some(k) => Some(crate::fiche_du_spectacle(&ctx, k)?),
             None => None,

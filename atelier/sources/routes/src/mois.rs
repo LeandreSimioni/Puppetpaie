@@ -21,6 +21,7 @@
 //! est la forme de son module (`gestes::conseils::ConseilVu`).
 
 use droit::fiche::Lue as _;
+use droit::fiche::NumeroObjetSpectacle;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -646,7 +647,6 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     let mut vus: HashSet<(IdSalarie, Jour, String)> = HashSet::new();
     for i in engagement::importe::qui_continuent(&ctx.racine, mois)? {
         let b = i.objet().carte();
-        let plein = |o: Option<&String>| o.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
         let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.clone(), b.debut, b.fin, b.numero.as_ref().map(ToString::to_string)) else {
             return Err(erreur(Classe::Illisible, "Un contrat repris d'un autre logiciel ne dit pas son salarié, ses bornes ou son numéro : le reprendre à l'import."));
@@ -656,11 +656,11 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
         }
         let fiche = ctx.fiche_de(&salarie).map_err(|m| m.reclasser(Classe::Manque))?;
         let derniere = i.paies().values().last();
-        let numero_objet = match plein(i.contrat().and_then(|c| c.numero_objet.as_ref())) {
+        let numero_objet = match i.contrat().and_then(|c| c.numero_objet.as_ref()) {
             Some(n) => Some(n),
-            None => plein(derniere.and_then(|p| p.numero_objet.as_ref())),
+            None => derniere.and_then(|p| p.numero_objet.as_ref()),
         };
-        let spectacle = numero_objet.as_deref().and_then(|no| ctx.spectacles.iter().find(|(_, s)| s.numero_objet.portee().is_some_and(|n| n.eq_ignore_ascii_case(no))).map(|(k, _)| k.to_string()));
+        let spectacle = numero_objet.and_then(|no| ctx.spectacles.iter().find(|(_, s)| s.numero_objet.dite().is_some_and(|n| n.meme(no))).map(|(k, _)| k.to_string()));
         let taux_cachet = derniere
             .into_iter()
             .flat_map(|p| p.lignes.iter())
@@ -723,23 +723,23 @@ const TITRE_A_COMPLETER: &str = "A COMPLETER";
 /// Les spectacles retrouves par leur cle ou par leur numero d'objet.
 struct Spectacles<'a> {
     ctx: &'a Contexte,
-    par_objet: HashMap<String, &'a droit::fiche::ChampsSpectacle>,
+    par_objet: HashMap<&'a NumeroObjetSpectacle, &'a droit::fiche::ChampsSpectacle>,
 }
 
 impl<'a> Spectacles<'a> {
     fn nouveau(ctx: &'a Contexte) -> Spectacles<'a> {
         let mut par_objet = HashMap::new();
         for v in ctx.spectacles.values() {
-            if let Some(n) = v.numero_objet.remplie() {
-                par_objet.entry(n.to_string()).or_insert(v);
+            if let Some(n) = v.numero_objet.dite() {
+                par_objet.entry(n).or_insert(v);
             }
         }
         Spectacles { ctx, par_objet }
     }
 
-    /// Le spectacle de cle `x`, sinon de numero d'objet `x`.
+    /// Le spectacle de cle `x`, sinon de numero d'objet `x` (le texte qu'un engagement ecrit de son spectacle).
     fn trouver(&self, x: &str) -> Option<&'a droit::fiche::ChampsSpectacle> {
-        self.ctx.spectacles.get(x).or_else(|| self.par_objet.get(x).copied())
+        self.ctx.spectacles.get(x).or_else(|| self.par_objet.iter().find_map(|(n, v)| (***n == *x).then_some(*v)))
     }
 }
 
@@ -785,7 +785,7 @@ struct Atteste {
     salarie: IdSalarie,
     debut: Jour,
     fin: Jour,
-    numero_objet: Option<String>,
+    numero_objet: Option<NumeroObjetSpectacle>,
     cachets: Option<i64>,
     heures: Option<i64>,
     jours: Option<i64>,
@@ -801,7 +801,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
             salarie: salarie.clone(),
             debut,
             fin,
-            numero_objet: c.contrat.numero_objet.clone().filter(|n| !n.is_empty()),
+            numero_objet: c.contrat.numero_objet.clone(),
             cachets,
             heures,
             jours,
@@ -908,7 +908,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         if couverts.contains(&a.fin.mois_civil()) || !voulu(&a.salarie) {
             continue;
         }
-        let spec = a.numero_objet.as_deref().and_then(|n| spectacles.par_objet.get(n).copied());
+        let spec = a.numero_objet.as_ref().and_then(|n| spectacles.par_objet.get(n).copied());
         out.push(Passe {
             dit: dit_du_contrat(a.debut, a.fin, a.cachets, a.heures),
             nom: ctx.nomme(&a.salarie),
@@ -919,7 +919,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             cachets: a.cachets,
             heures: a.heures,
             jours: a.jours,
-            numero_objet: a.numero_objet,
+            numero_objet: a.numero_objet.map(|n| n.to_string()),
             dates: Vec::new(),
             source: "historique",
         });

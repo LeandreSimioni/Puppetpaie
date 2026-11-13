@@ -256,7 +256,6 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
         contrat: Option<ContratLu>,
         paies: Vec<PaieLue>,
     }
-    let plein = |x: &Option<String>| x.clone().filter(|s| !s.is_empty());
     // Le contrat d'un permanent : sa nature, payee au mois, est dite, ou reste a dire (`import::nature`).
     let mut permanents: HashSet<droit::natures::NatureDeContrat> = HashSet::new();
     for c in &contrats {
@@ -272,7 +271,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
         groupes.push(Groupe { salarie: c.salarie.clone(), debut: c.debut, fin: c.fin, contrat: Some(c), paies: Vec::new() });
     }
     for p in paies {
-        let (s, d, f, o) = (p.salarie.clone(), p.paie.debut, p.paie.fin, plein(&p.paie.numero_objet));
+        let (s, d, f, o) = (p.salarie.clone(), p.paie.debut, p.paie.fin, p.paie.numero_objet.clone());
         let mut candidats: Vec<usize> = (0..groupes.len()).filter(|&i| groupes[i].contrat.is_some() && groupes[i].salarie == s && groupes[i].debut == d && groupes[i].fin == f).collect();
         // Le contrat qu'un bulletin atteste porte la periode du mois ; la paie declaree, le contrat entier : la periode
         // du bulletin dans le contrat declare, et l'engagement prend les dates du contrat.
@@ -306,8 +305,8 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
             [i] => Some(*i),
             [] => None,
             plusieurs => {
-                let meme_objet = |c: &ContratLu| match (plein(&c.contrat.numero_objet), &o) {
-                    (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+                let meme_objet = |c: &ContratLu| match (&c.contrat.numero_objet, &o) {
+                    (Some(a), Some(b)) => a.meme(b),
                     (a, b) => a.is_none() && b.is_none(),
                 };
                 let memes: Vec<usize> = plusieurs.iter().copied().filter(|&i| groupes[i].contrat.as_ref().is_some_and(meme_objet)).collect();

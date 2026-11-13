@@ -483,7 +483,7 @@ impl Echeance {
                     EXPORT_COMPTA => action(Route::ExportCompta, ChargeAnnee { annee: Annee::nouvelle(i64::from(annee))? }, None, "Exporter pour la compta".into()),
                     // Tous continuent, tant qu'on n'en a pas décoché un : la boîte s'ouvre ainsi.
                     _ => {
-                        let charge = ChargeRevue { annee, continuent: self.spectacles.iter().map(|s| s.cle.clone()).collect() };
+                        let charge = ChargeRevue { annee, continuent: self.spectacles.iter().map(|s| s.cle.to_string()).collect() };
                         action(Route::RevueSpectacles, charge, None, "Choisir les spectacles".into())
                     }
                 }
@@ -582,9 +582,9 @@ pub(crate) struct EcheanceDite {
 /// porte (vides quand elle ne les dit pas), et son nom a l'ecran (`nomme` : son titre, sinon sa cle).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SpectacleARevoir {
-    cle: String,
+    cle: droit::contexte::IdSpectacle,
     titre: Option<String>,
-    numero_objet: Option<String>,
+    numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
     nomme: String,
 }
 
@@ -1034,7 +1034,7 @@ fn spectacles_a_revoir(ctx: &Contexte, annee: i32, faites: &Cochees) -> Vec<Spec
                 Some(t) => t.clone(),
                 None => cle.to_string(),
             };
-            SpectacleARevoir { cle: cle.to_string(), titre, numero_objet: s.numero_objet.remplie().map(|n| n.to_string()), nomme }
+            SpectacleARevoir { cle: cle.clone(), titre, numero_objet: s.numero_objet.dite().cloned(), nomme }
         })
         .collect()
 }

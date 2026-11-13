@@ -12,7 +12,7 @@ use serde::Serialize;
 use declarations::champs::Saisie;
 
 use declarations::dsn_lue::{Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
-use droit::fiche::Nir;
+use droit::fiche::{Nir, NumeroObjetSpectacle};
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::fichiers::NomDeFichier;
@@ -292,7 +292,8 @@ pub struct ContratAtteste {
     pub nir: Nir,
     pub debut: socle::date::Jour,
     pub fin: socle::date::Jour,
-    pub numero_objet: String,
+    /// Le numero d'objet de la zone 638..650 : a blanc ou hors de sa forme, aucun (`NumeroObjetSpectacle::d_une_piece`).
+    pub numero_objet: Option<NumeroObjetSpectacle>,
     pub(crate) heures: i128,
     /// Les cachets, et les cachets « groupes » (la case que le gabarit garde a 00).
     pub(crate) cachets: i128,
@@ -313,7 +314,7 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     // L'AEM est l'attestation des annexes 8 et 10, celle d'un contrat d'usage du spectacle (Unédic, circulaire 2016-25,
     // `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`).
     let mut a = Atteste::vide(Attestation::Aem, Some(droit::natures::NatureDeContrat::CdduSpectacle));
-    a.numero_objet = plein(&c.numero_objet);
+    a.numero_objet.clone_from(&c.numero_objet);
     (a.heures, a.cachets, a.jours) = (Some(c.heures as i64), Some(c.cachets as i64), Some(c.jours as i64));
     a.brut = Some(c.brut);
     a.numero_attestation = plein(&c.numero_attestation);
@@ -368,7 +369,8 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                     continue;
                 }
             };
-            let numero_objet = champ(&l, 638, 650).trim_matches(blanc).to_string();
+            let objet_ecrit = champ(&l, 638, 650).trim_matches(blanc).to_string();
+            let numero_objet = NumeroObjetSpectacle::d_une_piece(&objet_ecrit);
             let entiers = [(650, 653), (653, 655), (655, 657), (657, 659)].map(|(a, b)| entier_lu(&champ(&l, a, b)));
             let [Some(heures), Some(c1), Some(c2), Some(jours)] = entiers else {
                 illisible(&mut illisibles);
@@ -385,7 +387,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                 nir_ecrit,
                 debut.iso(),
                 fin.iso(),
-                numero_objet.clone(),
+                objet_ecrit,
                 heures.to_string(),
                 (c1 + c2).to_string(),
                 jours.to_string(),

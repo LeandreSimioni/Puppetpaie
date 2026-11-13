@@ -55,7 +55,7 @@ use import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
 use droit::natures::NatureDeContrat;
-use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, Nir, NomDeCase, NomDeFiche};
+use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, Nir, NomDeCase, NomDeFiche, NumeroObjetSpectacle};
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
@@ -731,19 +731,19 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
 
     // 7. Les spectacles, par numero d'objet, avec leur titre quand le bulletin le donne.
-    let mut connus: HashMap<String, droit::contexte::IdSpectacle> = HashMap::new();
+    let mut connus: HashMap<NumeroObjetSpectacle, droit::contexte::IdSpectacle> = HashMap::new();
     for (cle, sp) in &ctx.spectacles {
-        if let Some(numero) = sp.numero_objet.portee() {
-            connus.insert(numero.to_uppercase(), cle.clone());
+        if let Some(numero) = sp.numero_objet.dite() {
+            connus.insert(numero.en_capitales(), cle.clone());
         }
     }
-    let mut par_objet: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    let mut par_objet: BTreeMap<NumeroObjetSpectacle, Vec<usize>> = BTreeMap::new();
     for (k, l) in lus.iter().enumerate() {
-        if let Some(o) = l.b.numero_objet.as_deref().filter(|o| !o.is_empty()) {
-            par_objet.entry(o.to_uppercase()).or_default().push(k);
+        if let Some(o) = objet_imprime(&l.b) {
+            par_objet.entry(o.en_capitales()).or_default().push(k);
         }
     }
-    let mut objets: Vec<(String, Vec<usize>)> = par_objet.into_iter().collect();
+    let mut objets: Vec<(NumeroObjetSpectacle, Vec<usize>)> = par_objet.into_iter().collect();
     objets.sort_by(|a, b| (lus[a.1[0]].b.fin, &a.0).cmp(&(lus[b.1[0]].b.fin, &b.0)));
     for (numero, rangs) in &objets {
         let titre = rangs.iter().rev().find_map(|&k| lus[k].b.spectacle.clone().filter(|t| !t.trim().is_empty()));
@@ -802,7 +802,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             completer::ajouter(&mut ap.a_completer, NomDeFiche::Spectacle, Some(cle), &champs);
             continue;
         }
-        let deja_la = reponse.spectacles.iter().position(|e| e.etat == EtatFiche::ACreer && e.numero_objet().as_deref() == Some(numero.as_str()));
+        let deja_la = spectacle_du_numero(&reponse.spectacles, numero, true)?;
         if let Some(rang) = deja_la {
             // Un objet que les DSN ou les AEM creent : le bulletin lui propose son titre.
             let Some(a) = ap.a_creer.iter_mut().find(|a| a.nom == NomDeFiche::Spectacle && a.rang == Some(rang)) else { continue };
@@ -838,15 +838,15 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
     // 7b. Les numeros d'objet des AEM en PDF qu'aucune fiche, aucune DSN ni aucun bulletin ne connait : un spectacle a
     // creer, sans titre (l'AEM ne l'imprime pas), comme ceux des AEM deposees.
-    let mut objets_aem: BTreeMap<String, Vec<Mois>> = BTreeMap::new();
+    let mut objets_aem: BTreeMap<NumeroObjetSpectacle, Vec<Mois>> = BTreeMap::new();
     for a in certificats.iter().filter_map(|c| c.aem.as_ref()) {
-        if let (Some(o), Some(m)) = (a.numero_objet.as_deref().filter(|o| !o.is_empty()), a.mois) {
-            objets_aem.entry(o.to_uppercase()).or_default().push(m);
+        if let (Some(o), Some(m)) = (&a.numero_objet, a.mois) {
+            objets_aem.entry(o.en_capitales()).or_default().push(m);
         }
     }
     for (numero, mois) in objets_aem {
-        let deja_la = reponse.spectacles.iter().any(|e| e.numero_objet().as_deref() == Some(numero.as_str()));
-        let a_creer = ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Spectacle && a.donnees.mot(CaseSpectacle::NumeroObjet).map(|n| n.to_uppercase()).as_deref() == Some(numero.as_str()));
+        let deja_la = spectacle_du_numero(&reponse.spectacles, &numero, false)?.is_some();
+        let a_creer = ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Spectacle && a.donnees.mot(CaseSpectacle::NumeroObjet).is_some_and(|n| n.eq_ignore_ascii_case(&numero)));
         if connus.contains_key(&numero) || deja_la || a_creer {
             continue;
         }
@@ -1952,10 +1952,9 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
         *place = Some(v);
     }
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
-    let objet = plein(&b.numero_objet);
-    match (&ligne.numero_objet, objet) {
+    match (&ligne.numero_objet, objet_imprime(b)) {
         (None, o) => ligne.numero_objet = o,
-        (Some(avant), Some(o)) if avant.to_uppercase() != o.to_uppercase() => ecarts.push(("numero_objet", avant.clone(), false, o)),
+        (Some(avant), Some(o)) if !avant.meme(&o) => ecarts.push(("numero_objet", avant.to_string(), false, o.to_string())),
         _ => {}
     }
     // Le taux du prelevement que le bulletin imprime, quand la DSN ne l'a pas declare.
@@ -2054,7 +2053,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     // se reprend en attendant (`Importe::nature_rangee` refuse de ranger ce qui a ete verse tant qu'elle reste a dire).
     let nature = marque_d_intermittent(&l.b).then_some(NatureDeContrat::CdduSpectacle);
     let mut a = ContratAtteste::vide(Attestation::Bulletin, nature);
-    a.numero_objet = plein(&l.b.numero_objet);
+    a.numero_objet = objet_imprime(&l.b);
     (a.heures, a.cachets, a.jours, a.brut) = (Some(heures), Some(cachets), Some(jours), Some(brut));
     a.heures_enseignement = enseignement.filter(|h| *h > 0);
     a.numero_bulletin = plein(&l.b.numero);
@@ -2067,11 +2066,28 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
 /// Le bulletin porte-t-il une marque d'engagement du spectacle : un numero d'objet, ou une cotisation Congés
 /// Spectacles (sous sa famille, ou une ligne qui la nomme : CoolPaie la range sous les autres contributions) ?
 fn marque_d_intermittent(b: &BulletinLu) -> bool {
-    b.numero_objet.as_deref().is_some_and(|o| !o.trim().is_empty())
+    objet_imprime(b).is_some()
         || b.cotisations.iter().any(|c| {
             (c.famille.as_deref() == Some("conges_spectacles") || compare(&c.libelle).contains("congesspectacles"))
                 && c.montant_employeur.is_some_and(|m| !m.is_zero())
         })
+}
+
+/// LE NUMERO D'OBJET QU'UN BULLETIN IMPRIME, la seule lecture de sa case : a blanc ou hors de sa forme, aucun
+/// (`NumeroObjetSpectacle::d_une_piece`).
+fn objet_imprime(b: &BulletinLu) -> Option<NumeroObjetSpectacle> {
+    b.numero_objet.as_deref().and_then(NumeroObjetSpectacle::d_une_piece)
+}
+
+/// Le rang de la fiche de spectacle de la reponse qui porte ce numero d'objet (sans regarder la casse) ; `a_creer` : parmi
+/// celles a creer seulement.
+fn spectacle_du_numero(spectacles: &[FicheImportee], numero: &NumeroObjetSpectacle, a_creer: bool) -> R<Option<usize>> {
+    for (rang, e) in spectacles.iter().enumerate() {
+        if (!a_creer || e.etat == EtatFiche::ACreer) && e.numero_objet()?.is_some_and(|n| n.meme(numero)) {
+            return Ok(Some(rang));
+        }
+    }
+    Ok(None)
 }
 
 /// Le nom d'un champ de paie dans une phrase du compte rendu.
@@ -2206,7 +2222,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
     // L'AEM est l'attestation des annexes 8 et 10, celle d'un contrat d'usage du spectacle (Unédic, circulaire 2016-25,
     // `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`).
     let mut c = ContratAtteste::vide(Attestation::Aem, Some(NatureDeContrat::CdduSpectacle));
-    c.numero_objet = plein(&a.numero_objet);
+    c.numero_objet.clone_from(&a.numero_objet);
     (c.heures, c.cachets, c.jours, c.brut) = (heures, cachets, jours, Some(brut));
     c.numero_attestation = plein(&a.numero);
     (c.fichier, c.page) = (Some(copie.clone()), Some(a.page as u64));

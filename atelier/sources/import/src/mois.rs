@@ -15,7 +15,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSpectacle};
+use droit::fiche::NumeroObjetSpectacle;
 use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratRelu, DatesTravaillees, Declaration, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
 use socle::date::Jour;
@@ -133,13 +134,10 @@ fn nom_du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> Option<St
 
 /// La fiche du spectacle de ce numero d'objet : `(cle, titre)` ; le titre est vide quand la fiche ne le dit pas, ou
 /// qu'il est « A COMPLETER ».
-fn spectacle_de(ctx: &Contexte, numero: &str) -> Option<(String, Option<String>)> {
-    if numero.is_empty() {
-        return None;
-    }
-    ctx.spectacles.iter().find(|(_, s)| s.numero_objet.portee().is_some_and(|n| n.trim().eq_ignore_ascii_case(numero))).map(|(k, s)| {
+fn spectacle_de(ctx: &Contexte, numero: &NumeroObjetSpectacle) -> Option<(IdSpectacle, Option<String>)> {
+    ctx.spectacles.iter().find(|(_, s)| s.numero_objet.dite().is_some_and(|n| n.meme(numero))).map(|(k, s)| {
         let t = s.titre.portee().map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string);
-        (k.to_string(), t)
+        (k.clone(), t)
     })
 }
 
@@ -275,8 +273,8 @@ pub(crate) struct Sources {
 /// Le spectacle d'une carte : sa fiche, son numero d'objet, son titre.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SpectacleDeCarte {
-    cle: Option<String>,
-    numero_objet: Option<String>,
+    cle: Option<IdSpectacle>,
+    numero_objet: Option<NumeroObjetSpectacle>,
     titre: Option<String>,
 }
 
@@ -316,8 +314,8 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let salarie = paie.map(|x| x.salarie.clone()).or_else(|| contrat.map(|x| x.salarie.clone()));
     let debut = p.and_then(|p| p.debut).or_else(|| contrat.and_then(|x| x.debut));
     let fin = p.and_then(|p| p.fin).or_else(|| contrat.and_then(|x| x.fin));
-    let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone())).and_then(plein);
-    let spectacle = numero.as_deref().and_then(|n| spectacle_de(ctx, n));
+    let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone()));
+    let spectacle = numero.as_ref().and_then(|n| spectacle_de(ctx, n));
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
     let titre = match &spectacle {
         Some((_, Some(t))) => Some(t.clone()),
@@ -435,7 +433,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     };
     // CE QUE LA CARTE FERMEE DIT : le spectacle, les cachets et les heures ; au survol, les pieces lues.
     let mut quoi = Vec::new();
-    if let Some(t) = titre.clone().or_else(|| numero.clone()) {
+    if let Some(t) = titre.clone().or_else(|| numero.as_ref().map(ToString::to_string)) {
         quoi.push(t);
     }
     if let Some(n) = cachets.filter(|n| *n != 0) {
@@ -461,7 +459,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     }
     let origine_dit = (!lu.is_empty()).then(|| format!("lu dans {}", lu.join(" + ")));
     let spectacle_dit = match (&titre, &numero) {
-        (Some(t), Some(n)) if n != t => Some(format!("{} — n° {}", t, n)),
+        (Some(t), Some(n)) if **n != **t =>Some(format!("{} — n° {}", t, n)),
         (Some(t), _) => Some(t.clone()),
         (None, Some(n)) => Some(format!("n° {}", n)),
         (None, None) => None,

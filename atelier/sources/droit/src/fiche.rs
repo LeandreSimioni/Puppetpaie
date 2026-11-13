@@ -915,6 +915,26 @@ impl NumeroObjetSpectacle {
             ))
         }
     }
+
+    /// LE NUMERO D'OBJET QU'UNE PIECE IMPORTEE PORTE (une AEM, une AER, un bulletin d'autrui, une DSN lue) : sans ses
+    /// blancs de bord ; a blanc ou hors de sa forme, la case reste vide, comme un code hors de nos listes (la piece d'un
+    /// tiers se lit, elle ne se refuse pas pour lui).
+    pub fn d_une_piece(texte: &str) -> Option<NumeroObjetSpectacle> {
+        match NumeroObjetSpectacle::lire(&NumeroObjetSpectacle::rangee(texte)) {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        }
+    }
+
+    /// Le meme numero que `autre`, sans regarder la casse : une piece et une fiche l'ecrivent en capitales ou non.
+    pub fn meme(&self, autre: &NumeroObjetSpectacle) -> bool {
+        self.0.eq_ignore_ascii_case(&autre.0)
+    }
+
+    /// Le meme numero, en capitales : la cle sous laquelle l'import regroupe ce que les pieces en impriment.
+    pub fn en_capitales(&self) -> NumeroObjetSpectacle {
+        NumeroObjetSpectacle(self.0.to_ascii_uppercase())
+    }
 }
 
 notion_lue!(NumeroObjetSpectacle rangee par sans_blancs_de_bord);

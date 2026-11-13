@@ -28,7 +28,7 @@ use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
-use droit::fiche::{CaseEntreprise, Nir, NomDeFiche};
+use droit::fiche::{CaseEntreprise, Nir, NomDeFiche, NumeroObjetSpectacle};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::mois::MoisOuJour;
@@ -400,7 +400,7 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 /// une date ne se lit pas). Son activite (53) n'y passe pas : les heures, cachets et jours d'une paie sont ceux qu'un
 /// bulletin atteste en unites entieres pour le mois d'un permanent, ceux d'un intermittent sont a son contrat (AEM,
 /// bulletin) ; la DSN les declare en decimal.
-fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement::importe::PaieVersee {
+fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
     use engagement::importe::{Declaration, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
     let mut x = PaieVersee::vide(d.numero.to_string(), Declaration::Dsn);
@@ -421,7 +421,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement
 #[derive(Serialize)]
 pub(crate) struct SpectacleDesPieces {
     pub(crate) titre: &'static str,
-    pub(crate) numero_objet: String,
+    pub(crate) numero_objet: NumeroObjetSpectacle,
     pub(crate) alias: Vec<String>,
     pub(crate) actif: bool,
     pub(crate) note: String,
@@ -545,7 +545,7 @@ pub(crate) fn apercu_lu(
     avertissements.extend(illisibles.iter().map(|f| format!("AEM illisible, ignoree : {}", f)));
     let n_aem = contrats.iter().map(|c| c.fichier.clone()).collect::<HashSet<_>>().len();
     struct Objet {
-        numero: String,
+        numero: NumeroObjetSpectacle,
         premier: String,
         dernier: String,
         contrats: i64,
@@ -554,17 +554,17 @@ pub(crate) fn apercu_lu(
     let mut objets: Vec<Objet> = lecture
         .objets
         .iter()
-        .map(|o| Objet { numero: o.numero.to_string(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
+        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
         .collect();
     for c in &contrats {
-        if c.numero_objet.is_empty() {
+        let Some(numero) = &c.numero_objet else {
             continue;
-        }
+        };
         let m = c.fin.mois_civil().to_string();
-        let i = match objets.iter().position(|o| o.numero == c.numero_objet) {
+        let i = match objets.iter().position(|o| o.numero == *numero) {
             Some(i) => i,
             None => {
-                objets.push(Objet { numero: c.numero_objet.clone(), premier: m.clone(), dernier: m.clone(), contrats: 0, aem: true });
+                objets.push(Objet { numero: numero.clone(), premier: m.clone(), dernier: m.clone(), contrats: 0, aem: true });
                 objets.len() - 1
             }
         };
@@ -648,11 +648,8 @@ pub(crate) fn apercu_lu(
     let rien_a_faire = a_creer == 0 && a_completer.is_empty() && paies_nouvelles == 0;
     // DEUX SOURCES POUR UNE LIGNE -- les montants viennent de la DSN, le numero d'objet peut
     // venir de l'AEM (rapprochee sur salarie, debut, fin).
-    let objets_aem: HashMap<(Nir, String, String), String> = contrats
-        .iter()
-        .filter(|c| !c.numero_objet.is_empty())
-        .map(|c| ((c.nir.clone(), c.debut.iso(), c.fin.iso()), c.numero_objet.clone()))
-        .collect();
+    let objets_aem: HashMap<(Nir, String, String), NumeroObjetSpectacle> =
+        contrats.iter().filter_map(|c| Some(((c.nir.clone(), c.debut.iso(), c.fin.iso()), c.numero_objet.clone()?))).collect();
     let mut paies: Vec<engagement::importe::PaieLue> = Vec::new();
     let mut sans_nets: Vec<SansNets> = Vec::new();
     for ((mois, nir, contrat), v) in &lecture.paies {
@@ -661,7 +658,7 @@ pub(crate) fn apercu_lu(
         }
         let mois = *mois;
         let c = v.contrat.as_ref();
-        let objet = c.and_then(|c| c.objet.as_ref()).map(|o| o.to_string()).or_else(|| {
+        let objet = c.and_then(|c| c.objet.clone()).or_else(|| {
             let (debut, fin) = (c.and_then(|c| c.debut)?, c.and_then(|c| c.fin)?);
             objets_aem.get(&(nir.clone()?, debut.iso(), fin.iso())).cloned()
         });
@@ -743,7 +740,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let debut = contrats.iter().filter_map(|c| c.debut).min();
     let fin = contrats.iter().filter_map(|c| c.fin).max();
     let salaries: HashSet<&droit::contexte::IdSalarie> = contrats.iter().map(|c| &c.salarie).collect();
-    let objets: HashSet<&str> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_deref()).collect();
+    let objets: HashSet<&NumeroObjetSpectacle> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_ref()).collect();
     let editeur = attend_l_editeur(racine)?;
     let attend_editeur = editeur.iter().filter(|x| !x.repondu).count();
     let reprises = reprises_faites(racine, &contrats, &paies)?;

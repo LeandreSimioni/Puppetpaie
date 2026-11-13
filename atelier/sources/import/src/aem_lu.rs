@@ -36,6 +36,7 @@
 
 use std::path::Path;
 
+use droit::fiche::NumeroObjetSpectacle;
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
@@ -170,7 +171,8 @@ pub struct Aem {
     pub code_postal: Option<String>,
     pub commune: Option<String>,
     pub emploi: Option<String>,
-    pub numero_objet: Option<String>,
+    /// Le numero d'objet imprime ; aucun hors de sa forme (`NumeroObjetSpectacle::d_une_piece`).
+    pub numero_objet: Option<NumeroObjetSpectacle>,
     pub cadre: Option<bool>,
     /// « artiste » (annexe 10) ou « technicien » (annexe 8).
     pub statut: Option<&'static str>,
@@ -393,7 +395,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
         let nom = |p: &str| format!("{}{:02}", p, rang);
         // Un contrat se dit dans la colonne de sa premiere periode ; la colonne sans contrat en est la suite.
         if v(&nom("CON_NUMERO_")).is_some() {
-            numero_objet = v(&nom("CON_OBJET_"));
+            numero_objet = v(&nom("CON_OBJET_")).and_then(|o| NumeroObjetSpectacle::d_une_piece(&o));
         }
         let (Some(debut), Some(fin)) = (jour(&nom("SAL_DT_DEB_")), jour(&nom("SAL_DT_FIN_"))) else { continue };
         let page = champ(&nom("SAL_DT_DEB_")).and_then(|c| c.page).ok_or_else(|| socle::refus!("la case {} de l'AER n'est sur aucune page", nom("SAL_DT_DEB_")))?;
@@ -687,7 +689,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.commune = texte(lu("commune", Some(2)));
 
     a.emploi = texte(lu("emploi", Some(3)));
-    a.numero_objet = lu("objet", Some(3)).first().cloned();
+    a.numero_objet = lu("objet", Some(3)).first().and_then(|o| NumeroObjetSpectacle::d_une_piece(o));
     a.embauche = date_en_tete(&lu("embauche", Some(3))).map(|d| d.0);
     a.fin_contrat = date_en_tete(&lu("fin", Some(3))).map(|d| d.0);
 

@@ -330,7 +330,7 @@ fn comparer_une(
     let spectacle = match (mensuelle, dit(&p.spectacle)) {
         (true, _) => None,
         (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
-        (false, None) => dit(&p.numero_objet).and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.portee() == Some(n.as_str())).map(|(k, _)| k.clone())),
+        (false, None) => p.numero_objet.as_ref().and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite() == Some(n)).map(|(k, _)| k.clone())),
     };
     let e = crate::saisie::Carte {
         salarie: Some(salarie.clone()),
