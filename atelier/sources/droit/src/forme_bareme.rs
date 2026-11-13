@@ -484,41 +484,11 @@ impl From<IdDeCotisation> for String {
     }
 }
 
-/// LA CATEGORIE D'UNE SECTION DU BAREME (`par_categorie` : `cadre`, `cadre_permanent`), que le calcul d'un cadre lit
-/// (`bareme::bareme_cadre`). INFERENCE (aucun texte n'en fixe la forme : c'est une cle du logiciel) : une cle n'est
-/// jamais vide. Celles que le moteur lit sont des constantes (`CADRE`, `CADRE_PERMANENT`) ; celle d'un bareme se lit.
-/// Elle s'ecrit et se trie comme son texte.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
-#[serde(try_from = "String")]
-pub struct CategorieDuBareme(std::borrow::Cow<'static, str>);
-
-impl CategorieDuBareme {
-    /// La categorie ecrite `texte` ; vide, elle se refuse.
-    pub fn lire(texte: &str) -> socle::echec::R<CategorieDuBareme> {
-        if texte.is_empty() {
-            return Err(socle::refus!("categorie du bareme vide"));
-        }
-        Ok(CategorieDuBareme(std::borrow::Cow::Owned(texte.to_string())))
-    }
-
-    /// LA CATEGORIE QUE LE MOTEUR NOMME, ecrite en Rust : une constante, dont le compilateur refuse une cle vide.
-    pub const fn du_moteur(cle: &'static str) -> CategorieDuBareme {
-        assert!(!cle.is_empty(), "categorie du bareme vide");
-        CategorieDuBareme(std::borrow::Cow::Borrowed(cle))
-    }
-}
-
-impl std::fmt::Display for CategorieDuBareme {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl TryFrom<String> for CategorieDuBareme {
-    type Error = socle::echec::Echec;
-    fn try_from(s: String) -> socle::echec::R<CategorieDuBareme> {
-        CategorieDuBareme::lire(&s)
-    }
+crate::cle_opaque! {
+    /// LA CATEGORIE D'UNE SECTION DU BAREME (`par_categorie` : `cadre`, `cadre_permanent`), que le calcul d'un cadre lit
+    /// (`bareme::bareme_cadre`). Une cle du logiciel (`cle_opaque!`) ; celles que le moteur lit sont des constantes
+    /// (`CADRE`, `CADRE_PERMANENT`) ; celle d'un bareme se lit.
+    pub struct CategorieDuBareme, "catégorie du barème";
 }
 
 /// Les sections d'un cadre : intermittent (`cadre`), paye au mois (`cadre_permanent`).
@@ -822,7 +792,37 @@ forme! {
         pub imputation: Option<Imputation>,
         pub dsn: Option<ReductionDsn>,
         /// La fraction du coefficient d'un salarie declare a la caisse des Conges Spectacles (`100/90`).
-        pub majoration_caisse_conges: Option<String>,
+        pub majoration_caisse_conges: Option<MajorationCaisseConges>,
+    }
+}
+
+/// LA MAJORATION DU COEFFICIENT DE LA REDUCTION GENERALE d'un salarie declare a la caisse des Conges Spectacles
+/// (`majoration_caisse_conges`, « 100/90 ») : son numerateur et son denominateur tels qu'ecrits, sans les reduire ; le
+/// coefficient se multiplie par l'un et se divise par l'autre (`reduction`). Reecrite comme lue (`Display`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MajorationCaisseConges {
+    pub numerateur: Decimal,
+    pub denominateur: Decimal,
+}
+
+impl MajorationCaisseConges {
+    /// La majoration ecrite `texte`, « numerateur/denominateur ».
+    pub fn lire(texte: &str) -> socle::echec::R<MajorationCaisseConges> {
+        let (n, d) = texte.split_once('/').ok_or_else(|| socle::refus!("fraction illisible : {}", socle::fichiers::repr(texte)))?;
+        let lire = |s: &str| <Decimal as std::str::FromStr>::from_str(s).map_err(|_| socle::echec::refus(socle::num::illisible(s)));
+        Ok(MajorationCaisseConges { numerateur: lire(n)?, denominateur: lire(d)? })
+    }
+}
+
+impl std::fmt::Display for MajorationCaisseConges {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.numerateur, self.denominateur)
+    }
+}
+
+impl<'de> Deserialize<'de> for MajorationCaisseConges {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        MajorationCaisseConges::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
     }
 }
 
@@ -1222,16 +1222,16 @@ forme! {
         #[serde(deserialize_with = "socle::forme::court")]
         pub taux_droit_commun: Decimal,
         pub ceg: Cet,
-        pub avant_1999: String,
+        pub avant_1999: crate::bareme::RepartitionDeLaTrancheUne,
         pub par_idcc: BTreeMap<crate::fiche::Idcc, RepartitionDeBranche>,
     }
 }
 
 forme! {
     pub struct RepartitionDeBranche {
-        pub permanent: Option<String>,
-        pub technicien: Option<String>,
-        pub artiste: Option<String>,
+        pub permanent: Option<crate::bareme::RepartitionDeLaTrancheUne>,
+        pub technicien: Option<crate::bareme::RepartitionDeLaTrancheUne>,
+        pub artiste: Option<crate::bareme::RepartitionDeLaTrancheUne>,
     }
 }
 

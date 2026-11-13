@@ -3,8 +3,6 @@
 //! Agirc-Arrco, sa limite sous deduction forfaitaire specifique, et le seuil de SMIC d'une cotisation qui ne s'applique
 //! qu'au-dela. Le droit recoit le bareme, le brut et les heures ; l'engagement l'appelle a son calcul.
 
-use std::str::FromStr;
-
 use rust_decimal::prelude::*;
 use serde::Serialize;
 
@@ -84,15 +82,9 @@ pub fn reduction_generale(
         let terme = crochet.checked_powd(puissance).ok_or_else(|| socle::refus!("la réduction générale ne se calcule pas : {} puissance {}", crochet, puissance))?;
         coefficient = add(requis(rg.tmin.map(|n| n.0), "tmin")?, mul(requis(rg.tdelta.map(|n| n.0), "tdelta")?, terme));
     }
-    if let Some(t) = rg.majoration_caisse_conges.as_deref().filter(|t| !t.is_empty()) {
+    if let Some(m) = rg.majoration_caisse_conges {
         if caisse_conges && !coefficient.is_zero() {
-            let parts: Vec<&str> = t.split('/').collect();
-            if parts.len() != 2 {
-                return Err(socle::refus!("fraction illisible : {}", socle::fichiers::repr(t)));
-            }
-            let lire = |s: &str| Decimal::from_str(s).map_err(|_| socle::echec::refus(socle::num::illisible(s)));
-            let (num, den) = (lire(parts[0])?, lire(parts[1])?);
-            coefficient = diviser(mul(coefficient, num), den)?;
+            coefficient = diviser(mul(coefficient, m.numerateur), m.denominateur)?;
         }
     }
     let coefficient = if coefficient.is_zero() { coefficient } else { quantifier4(coefficient) };

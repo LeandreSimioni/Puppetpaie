@@ -681,6 +681,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | annexe de la convention 3090 | `AnnexeConvention` | `droit/src/fiche.rs` |
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
+| répartition de la tranche 1 | `RepartitionDeLaTrancheUne` | `droit/src/bareme.rs` |
+| majoration de la caisse des congés | `MajorationCaisseConges` | `droit/src/forme_bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
 | rôle d'un contrat d'organisme | `RoleDuContrat` | `droit/src/organismes.rs` |
 | contribution de branche | `ContributionDeBranche` | `droit/src/forme_bareme.rs` |
@@ -851,8 +853,16 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   d'une branche (tableau n° 3 de la fiche Audiens « Taux et répartitions ») : le permanent, ou l'intermittent artiste
   ou technicien. `Permanent`, `Intermittent(Statut)` ; elle lit sa colonne dans `retraite_t1_repartition.par_idcc` du
   socle (`permanent`, `artiste`, `technicien`) et s'écrit par ce nom dans le refus d'une branche sans répartition.
+- **répartition de la tranche 1** : la part employeur et la part salariée de la retraite complémentaire en tranche 1
+  d'une branche (`retraite_t1_repartition` du socle : `avant_1999`, chaque colonne de `par_idcc`). Deux écritures,
+  gardées telles que lues et réécrites ainsi : en pourcentages (`EnPourcentages`, « 60/40 »), en fractions
+  (`EnFractions`, « 2/3-1/3 ») ; ce que le calcul partage, ses deux parts irréductibles (`parts`,
+  `PartDeLaTrancheUne`, même fichier). Ce n'est pas une fraction de la norme (`natures::Fraction`, S20.G00.05.003).
+- **majoration de la caisse des congés** : ce par quoi le coefficient de la réduction générale d'un salarié déclaré à
+  la caisse des Congés Spectacles se multiplie (`majoration_caisse_conges` du barème, « 100/90 ») : son numérateur et
+  son dénominateur tels qu'écrits, sans les réduire (le calcul reste `c × 100 / 90`) ; réécrite comme lue.
 - **catégorie du barème** : la section d'un cadre dans le barème (`par_categorie` : `cadre`, `cadre_permanent`). Une clé
-  non vide, qui se trie comme son texte ; celles que le moteur lit, `CADRE`, `CADRE_PERMANENT`.
+  du logiciel (`droit::cle_opaque!`), qui se trie comme son texte ; celles que le moteur lit, `CADRE`, `CADRE_PERMANENT`.
 - **établissement** : un lieu d'emploi ; son `Nic` a cinq chiffres. Que portent la fiche entreprise et ses autres
   établissements (`nic_principal`, `nics`, `etablissement`), la carte et l'engagement, la fiche d'un contrat
   (`SalarieDuContrat`), la DSN fabriquée et lue, le journal des envois, la désignation d'un dépôt ; aucun (`None`) : le

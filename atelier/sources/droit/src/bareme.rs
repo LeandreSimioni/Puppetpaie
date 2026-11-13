@@ -1395,15 +1395,16 @@ pub fn couche_organisation<'a>(bar: &'a Pile, nom: &str) -> Option<&'a crate::fo
     bar.par_organisation_patronale.iter().find(|(k, c)| k.reconnait(c, nom)).map(|(_, c)| c)
 }
 
-/// Une fraction `num/den` irreductible.
+/// UNE PART DE LA TRANCHE 1 : la part employeur ou salariee d'une repartition de la retraite complementaire en tranche 1
+/// (`RepartitionDeLaTrancheUne::parts`), `num/den` irreductible, ce que le calcul partage (`parts_t1`).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Fraction {
+pub struct PartDeLaTrancheUne {
     pub num: i128,
     pub den: i128,
 }
 
-impl Fraction {
-    fn nouvelle(num: i128, den: i128) -> Fraction {
+impl PartDeLaTrancheUne {
+    fn nouvelle(num: i128, den: i128) -> PartDeLaTrancheUne {
         fn pgcd(a: i128, b: i128) -> i128 {
             if b == 0 {
                 a.abs()
@@ -1412,21 +1413,69 @@ impl Fraction {
             }
         }
         let g = pgcd(num, den).max(1);
-        Fraction { num: num / g, den: den / g }
+        PartDeLaTrancheUne { num: num / g, den: den / g }
+    }
+}
+
+/// LA REPARTITION DE LA RETRAITE COMPLEMENTAIRE EN TRANCHE 1 d'une branche (tableau n 3 de la fiche Audiens « Taux et
+/// repartitions », `retraite_t1_repartition` du socle) : la part employeur, puis la part salariee. Deux ecritures,
+/// gardees telles que lues et reecrites ainsi (`Display`) : en pourcentages (« 60/40 »), en fractions (« 2/3-1/3 »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepartitionDeLaTrancheUne {
+    /// « 60/40 » : les deux parts en pourcentages.
+    EnPourcentages { employeur: i128, salarie: i128 },
+    /// « 2/3-1/3 » : les deux parts en fractions (numerateur, denominateur), telles qu'ecrites.
+    EnFractions { employeur: (i128, i128), salarie: (i128, i128) },
+}
+
+impl RepartitionDeLaTrancheUne {
+    /// La repartition ecrite `texte` : « a/b » (des pourcentages) ou « a/b-c/d » (des fractions), en nombres entiers.
+    pub fn lire(texte: &str) -> R<RepartitionDeLaTrancheUne> {
+        let faute = || socle::refus!("repartition de la tranche 1 illisible : {}", socle::fichiers::repr(texte));
+        let entier = |s: &str| -> R<i128> {
+            if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(faute());
+            }
+            s.parse::<i128>().map_err(|_| faute())
+        };
+        let fraction = |s: &str| -> R<(i128, i128)> {
+            let (n, d) = s.split_once('/').ok_or_else(faute)?;
+            let (n, d) = (entier(n)?, entier(d)?);
+            if d == 0 {
+                return Err(socle::refus!("fraction de denominateur nul : {}", socle::fichiers::repr(s)));
+            }
+            Ok((n, d))
+        };
+        match texte.split_once('-') {
+            Some((a, b)) => Ok(RepartitionDeLaTrancheUne::EnFractions { employeur: fraction(a)?, salarie: fraction(b)? }),
+            None => {
+                let (a, b) = texte.split_once('/').ok_or_else(faute)?;
+                Ok(RepartitionDeLaTrancheUne::EnPourcentages { employeur: entier(a)?, salarie: entier(b)? })
+            }
+        }
     }
 
-    /// `Fraction("2/3")` ou `Fraction("1")`.
-    fn lire(s: &str) -> R<Fraction> {
-        let s = s.trim();
-        let faux = || socle::refus!("fraction illisible : {}", socle::fichiers::repr(s));
-        let (n, dn) = match s.split_once('/') {
-            Some((a, b)) => (a.trim().parse::<i128>().map_err(|_| faux())?, b.trim().parse::<i128>().map_err(|_| faux())?),
-            None => (s.parse::<i128>().map_err(|_| faux())?, 1),
-        };
-        if dn == 0 {
-            return Err(socle::refus!("fraction de denominateur nul : {}", socle::fichiers::repr(s)));
+    /// (part employeur, part salariee), irreductibles.
+    pub fn parts(self) -> (PartDeLaTrancheUne, PartDeLaTrancheUne) {
+        match self {
+            RepartitionDeLaTrancheUne::EnPourcentages { employeur, salarie } => (PartDeLaTrancheUne::nouvelle(employeur, 100), PartDeLaTrancheUne::nouvelle(salarie, 100)),
+            RepartitionDeLaTrancheUne::EnFractions { employeur: (a, b), salarie: (c, d) } => (PartDeLaTrancheUne::nouvelle(a, b), PartDeLaTrancheUne::nouvelle(c, d)),
         }
-        Ok(Fraction::nouvelle(n, dn))
+    }
+}
+
+impl std::fmt::Display for RepartitionDeLaTrancheUne {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RepartitionDeLaTrancheUne::EnPourcentages { employeur, salarie } => write!(f, "{}/{}", employeur, salarie),
+            RepartitionDeLaTrancheUne::EnFractions { employeur: (a, b), salarie: (c, d) } => write!(f, "{}/{}-{}/{}", a, b, c, d),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RepartitionDeLaTrancheUne {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        RepartitionDeLaTrancheUne::lire(&<String as serde::Deserialize>::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
     }
 }
 
@@ -1440,7 +1489,7 @@ pub enum ColonneDeRepartition {
 
 impl ColonneDeRepartition {
     /// Ce que la branche `b` dit dans cette colonne.
-    fn de(self, b: &crate::forme_bareme::RepartitionDeBranche) -> Option<&String> {
+    fn de(self, b: &crate::forme_bareme::RepartitionDeBranche) -> Option<&RepartitionDeLaTrancheUne> {
         match self {
             ColonneDeRepartition::Permanent => b.permanent.as_ref(),
             ColonneDeRepartition::Intermittent(Statut::Artiste) => b.artiste.as_ref(),
@@ -1463,19 +1512,19 @@ const PREMIER_JANVIER_1999: Jour = Jour { an: 1999, mois: 1, jour: 1 };
 
 /// (part patronale, part salariale) de la tranche 1, en fractions, pour la convention de l'entreprise et la colonne
 /// `colonne` de sa branche.
-pub fn repartition_t1(bar: &Pile, ent: &ChampsEntreprise, colonne: ColonneDeRepartition) -> R<(Fraction, Fraction)> {
+pub fn repartition_t1(bar: &Pile, ent: &ChampsEntreprise, colonne: ColonneDeRepartition) -> R<(PartDeLaTrancheUne, PartDeLaTrancheUne)> {
     let rep = bar.retraite_t1_repartition.as_ref();
     // La repartition d'avant 1999 vaut pour la compagnie dont la fiche dit une premiere embauche d'avant 1999.
     let embauche_avant_1999 = ent.premiere_embauche.dite().is_some_and(|j| *j < PREMIER_JANVIER_1999);
-    let avant_1999 = rep.map(|r| r.avant_1999.as_str()).filter(|a| !a.is_empty());
-    let texte_rep: String = match avant_1999 {
-        Some(a) if embauche_avant_1999 => a.to_string(),
+    let avant_1999 = rep.map(|r| r.avant_1999);
+    let repartition = match avant_1999 {
+        Some(a) if embauche_avant_1999 => a,
         _ => {
             let idcc = ent.idcc.dite();
             let branche = idcc.and_then(|i| rep.and_then(|r| r.par_idcc.get(i)));
             let t = branche.and_then(|b| colonne.de(b));
-            match t.filter(|t| !t.is_empty()) {
-                Some(t) => t.clone(),
+            match t {
+                Some(t) => *t,
                 None => {
                     return Err(refus(
                         "Le barème de l'année ne porte pas la répartition de la retraite complémentaire de cette convention : le signaler au développeur.",
@@ -1497,27 +1546,12 @@ du socle.",
             }
         }
     };
-    // « 60/40 » en pourcentages, « 2/3-1/3 » en fractions.
-    if texte_rep.contains('-') {
-        let mut p = texte_rep.split('-');
-        match (p.next(), p.next(), p.next()) {
-            (Some(a), Some(b), None) => Ok((Fraction::lire(a)?, Fraction::lire(b)?)),
-            _ => Err(socle::refus!("repartition de la tranche 1 illisible : {}", socle::fichiers::repr(&texte_rep))),
-        }
-    } else {
-        let (a, b) = texte_rep
-            .split_once('/')
-            .ok_or_else(|| socle::refus!("repartition de la tranche 1 illisible : {}", socle::fichiers::repr(&texte_rep)))?;
-        let ent = |s: &str| {
-            s.trim().parse::<i128>().map_err(|_| socle::refus!("nombre entier illisible : {}", socle::fichiers::repr(s)))
-        };
-        Ok((Fraction::nouvelle(ent(a)?, 100), Fraction::nouvelle(ent(b)?, 100)))
-    }
+    Ok(repartition.parts())
 }
 
 /// Un taux global partage : la part salariale arrondie au centieme, la demie
 /// vers le bas, la patronale en est le reste.
-pub fn parts_t1(total: Decimal, sal: Fraction) -> (Decimal, Decimal) {
+pub fn parts_t1(total: Decimal, sal: PartDeLaTrancheUne) -> (Decimal, Decimal) {
     let part_sal = div(mul(total, Decimal::from_i128_with_scale(sal.num, 0)), Decimal::from_i128_with_scale(sal.den, 0))
         .round_dp_with_strategy(2, RoundingStrategy::MidpointTowardZero);
     (total - part_sal, part_sal)

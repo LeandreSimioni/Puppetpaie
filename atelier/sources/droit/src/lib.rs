@@ -5,7 +5,7 @@
 //! chercher.
 
 /// UNE CLE DU LOGICIEL, OPAQUE : un texte non vide, sans blancs de bord, gardé tel que lu ; il s'ecrit et se trie comme
-/// lui (le modele de `forme_bareme::CategorieDuBareme`). INFERENCE pour chacune (aucun texte n'en fixe la forme : ce sont
+/// lui. INFERENCE pour chacune (aucun texte n'en fixe la forme : ce sont
 /// des cles des fichiers livres) ; aucune liste dans le code. Une cle que le moteur nomme est une constante
 /// (`du_moteur`, dont le compilateur refuse une cle vide) ; une cle d'un fichier se lit (`lire`, `try_from`). `$quoi`
 /// nomme la notion dans le refus.
