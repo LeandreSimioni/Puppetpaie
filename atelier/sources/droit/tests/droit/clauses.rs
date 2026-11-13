@@ -518,7 +518,7 @@ fn profil() {
     jouer("clauses/profil-blocs.json", cas_de("clauses/profil-blocs.json"), |p| empreinte_profil(&g, p));
     jouer("clauses/profil.json", cas_de("clauses/profil.json"), cas_profil);
     jouer("clauses/nom.json", cas_de::<String>("clauses/nom.json"), |i| c::nom(idcc_dit(i).as_ref()));
-    jouer("clauses/releve.json", cas_de::<String>("clauses/releve.json"), |i| rendu(c::releve(idcc_dit(i).as_ref()),|r| r.is_some()));
+    jouer("clauses/releve.json", cas_de::<String>("clauses/releve.json"), |i| rendu(c::releve(idcc_dit(i).as_ref()), |r| r.is_some()));
 }
 
 #[test]

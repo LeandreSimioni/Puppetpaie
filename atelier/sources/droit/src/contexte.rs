@@ -587,13 +587,9 @@ pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> R<()> 
             (None, None) => "Un établissement sans libellé ni NIC".to_string(),
         };
         let nic = match e.nic.portee() {
-            Some(n) if n.len() == 5 && n.chars().all(|c| c.is_ascii_digit()) => n,
-            autre => {
-                let ecrit = match autre {
-                    Some(n) => repr_texte(n),
-                    None => "vide".to_string(),
-                };
-                griefs.push(format!("{} : NIC {} (cinq chiffres attendus)", nom, ecrit));
+            Some(n) => n,
+            None => {
+                griefs.push(format!("{} : NIC vide (cinq chiffres attendus)", nom));
                 continue;
             }
         };
