@@ -3041,11 +3041,14 @@ pub struct ParametreNeores {
     pub calcule_le: Option<socle::paris::Moment>,
 }
 
-/// Une identite (`RO.B009`) : ce qui a ete declare, et la reference.
+/// Une identite (`RO.B009`) : ce qui a ete declare, et la reference. L'individu declare l'est par son NIR (R001) ou, sans
+/// NIR, par son numero technique temporaire (R002) (cahier technique NEOReS 2027.1.0,
+/// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2027.1.0-20260303.txt` l. 2752-2798).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IdentiteNeores {
-    pub nir_declare: Option<String>,
-    pub nir_reference: Option<String>,
+    pub nir_declare: Option<Nir>,
+    pub ntt_declare: Option<declarations::ntt::Ntt>,
+    pub nir_reference: Option<Nir>,
     pub nom_declare: Option<String>,
     pub nom_reference: Option<String>,
     pub prenom_declare: Option<String>,
@@ -3208,9 +3211,10 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .filter(|x| local(&x.tag) == "RO_B009")
         .map(|b| {
             let x = |n: &str| rubrique_texte(&a, b, n);
-            IdentiteNeores {
-                nir_declare: x("RO_B009_R001").or(x("RO_B009_R002")),
-                nir_reference: x("RO_B009_R003"),
+            Ok(IdentiteNeores {
+                nir_declare: forme_du_retour(rubrique_de(&a, b, "RO_B009_R001"), Nir::lire)?,
+                ntt_declare: forme_du_retour(rubrique_de(&a, b, "RO_B009_R002"), declarations::ntt::Ntt::lire)?,
+                nir_reference: forme_du_retour(rubrique_de(&a, b, "RO_B009_R003"), Nir::lire)?,
                 nom_declare: x("RO_B009_R004"),
                 nom_reference: x("RO_B009_R005"),
                 prenom_declare: x("RO_B009_R006"),
@@ -3218,9 +3222,9 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                 naissance_declaree: x("RO_B009_R008"),
                 naissance_reference: x("RO_B009_R009"),
                 matricule: x("RO_B009_R010"),
-            }
+            })
         })
-        .collect();
+        .collect::<R<_>>()?;
     let informations = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B011")

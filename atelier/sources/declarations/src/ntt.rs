@@ -19,13 +19,21 @@ pub const RUBRIQUE_NIR: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G0
 /// code sexe (CSL-11), sans espace (CSL-12), le SIREN de l'entreprise en 2e a 10e position (CCH-13)
 /// (`atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt` l. 338-354). Il se fabrique pour un salarie (`numero`, qui
 /// le controle entier) ou se lit dans une DSN (`Ntt::lu`, sa forme seule : le SIREN de l'entreprise n'y est pas en main).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Ntt(String);
 
 impl Ntt {
     /// Le NTT qu'une DSN lue ecrit, s'il en a la forme ; sinon aucun.
     pub fn lu(valeur: &str) -> R<Option<Ntt>> {
         Ok(faute(valeur, "")?.is_none().then(|| Ntt(valeur.to_string())))
+    }
+
+    /// Le NTT qu'un retour de la norme ecrit (RO.B009.R002 de NEOReS) : hors de sa forme, il se refuse.
+    pub fn lire(valeur: &str) -> R<Ntt> {
+        match faute(valeur, "")? {
+            None => Ok(Ntt(valeur.to_string())),
+            Some(f) => Err(socle::refus!("« {} » n'est pas un numéro technique temporaire : {}.", valeur, f)),
+        }
     }
 
     pub fn as_str(&self) -> &str {

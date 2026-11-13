@@ -800,8 +800,13 @@ fn neores_lu(crm: &Neores) -> Lecture {
         if let Some(r) = differe(&i.naissance_reference, &i.naissance_declaree) {
             ecarts.push(format!("née ou né le {} selon le répertoire{}", date_lisible(r), morceau(" (déclaré : ", lu(&i.naissance_declaree).map(date_lisible).as_deref(), ")")));
         }
-        if let Some(r) = differe(&i.nir_reference, &i.nir_declare) {
-            ecarts.push(format!("NIR de référence {}{}", r, morceau(" (déclaré : ", lu(&i.nir_declare), ")")));
+        if let Some(r) = i.nir_reference.as_ref().filter(|r| i.nir_declare.as_ref() != Some(*r)) {
+            let declare = match (&i.nir_declare, &i.ntt_declare) {
+                (Some(n), _) => format!(" (déclaré : {})", n),
+                (None, Some(t)) => format!(" (NTT déclaré : {})", t),
+                (None, None) => String::new(),
+            };
+            ecarts.push(format!("NIR de référence {}{}", r, declare));
         }
         let qui = morceau(" : ", declare.or(reference).as_deref(), "");
         let quoi = if ecarts.is_empty() { "à vérifier".to_string() } else { ecarts.join(", ") };
