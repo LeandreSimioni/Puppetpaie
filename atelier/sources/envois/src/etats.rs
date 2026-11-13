@@ -1075,7 +1075,7 @@ fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u
 /// canal, l'endroit, le premier code d'anomalie (ou `KO`), le resume (dix anomalies au plus), et le detail.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IncidentDeRetour {
-    pub canal: &'static str,
+    pub canal: crate::releve_retours::CanalDesRetours,
     pub ou: String,
     pub quoi: String,
     pub resume: String,
@@ -1147,7 +1147,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
     };
     uniques.truncate(30);
     Ok(Some(IncidentDeRetour {
-        canal: if quoi == Acte::Dpae { DPAE } else { DSN },
+        canal: if quoi == Acte::Dpae { crate::releve_retours::CanalDesRetours::Dpae } else { crate::releve_retours::CanalDesRetours::Dsn },
         ou: format!("retour-{}", quoi.nom()),
         quoi: quoi_,
         resume,
@@ -1407,7 +1407,7 @@ mod tests {
         let mut inc = Vec::new();
         assert_eq!(rattacher_retours(&r, &retours, &contenus, &mut inc).unwrap(), 2);
         assert_eq!(inc.len(), 1);
-        assert_eq!((inc[0].canal, inc[0].ou.as_str(), inc[0].quoi.as_str()), ("dsn", "retour-dsn", "CST-04"));
+        assert_eq!((inc[0].canal, inc[0].ou.as_str(), inc[0].quoi.as_str()), (crate::releve_retours::CanalDesRetours::Dsn, "retour-dsn", "CST-04"));
         assert_eq!(inc[0].resume, "CST-04 : Code URSSAF invalide");
         assert!(!inc[0].detail.reel);
         assert_eq!(inc[0].detail.anomalies[0].rubrique.as_deref(), Some("S21.G00.20.001"));
