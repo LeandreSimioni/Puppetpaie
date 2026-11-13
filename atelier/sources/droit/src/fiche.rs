@@ -2358,7 +2358,7 @@ cases! {
     pub struct TauxPas {
         taux: crate::pas::TauxDePas,
         r#type: crate::type_taux_pas::TypeDeTauxPas,
-        identifiant: String,
+        identifiant: crate::pas::IdentifiantDuTauxPas,
         #[serde(default, with = "socle::paris::ecrit::compacte::option")]
         mis_a_disposition: socle::paris::Moment,
         en_retour_de: Mois,

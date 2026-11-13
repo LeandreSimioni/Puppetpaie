@@ -1886,8 +1886,13 @@ impl Entree94 {
         let (Some(nir), Some(identifiant)) = (self.nir.clone(), self.identifiant.clone()) else { return Ok(None) };
         let taux = self.taux.as_deref().map(taux_de_pas).transpose()?;
         let type_taux = self.type_.as_deref().map(type_de_taux).transpose()?;
-        Ok(Some(ReleveTauxPas { nir, taux, type_taux, identifiant }))
+        Ok(Some(ReleveTauxPas { nir, taux, type_taux, identifiant: identifiant_de_pas(&identifiant)? }))
     }
+}
+
+/// Un identifiant de taux de PAS lu dans un compte rendu (S21.G00.50.008) ; une autre forme refuse la piece.
+fn identifiant_de_pas(t: &str) -> R<droit::pas::IdentifiantDuTauxPas> {
+    droit::pas::IdentifiantDuTauxPas::lire(t).map_err(|e| e.reclasser(Classe::Illisible))
 }
 
 /// Un taux de PAS lu dans un compte rendu (S21.G00.50.006) ; une autre forme refuse la piece.
@@ -1908,7 +1913,7 @@ pub struct ReleveTauxPas {
     pub taux: Option<droit::pas::TauxDePas>,
     #[serde(rename = "type")]
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant: String,
+    pub identifiant: droit::pas::IdentifiantDuTauxPas,
 }
 
 /// LES TAUX DE PAS D'UN COMPTE RENDU, et la strategie qui les a lus (`None` : aucune n'a rien trouve).
@@ -1977,7 +1982,7 @@ fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
             Some(t) => (Some(taux_de_pas(&t)?), Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip)),
             None => (None, None),
         };
-        releves.push(ReleveTauxPas { nir, taux, type_taux, identifiant: identifiant.to_string() });
+        releves.push(ReleveTauxPas { nir, taux, type_taux, identifiant: identifiant_de_pas(identifiant)? });
     }
     Ok(releves)
 }
@@ -2079,7 +2084,7 @@ fn pas_par_balayage(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
                 cur.taux = Some(v.clone());
             } else if cur.type_.is_none() && droit::type_taux_pas::TypeDeTauxPas::du_code(v).is_some() {
                 cur.type_ = Some(v.clone());
-            } else if cur.identifiant.is_none() && (v == "-1" || ((1..=18).contains(&v.chars().count()) && v.chars().all(|c| c.is_ascii_digit()))) {
+            } else if cur.identifiant.is_none() && droit::pas::IdentifiantDuTauxPas::lire(v).is_ok() {
                 cur.identifiant = Some(v.clone());
             }
         }

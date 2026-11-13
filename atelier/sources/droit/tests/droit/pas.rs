@@ -124,7 +124,7 @@ struct CasDuTaux {
 struct TauxRecu {
     taux: Option<TauxDePas>,
     type_taux: Option<TypeDeTauxPas>,
-    identifiant: Option<String>,
+    identifiant: Option<droit::pas::IdentifiantDuTauxPas>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

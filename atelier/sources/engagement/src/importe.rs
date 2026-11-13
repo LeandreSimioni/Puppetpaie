@@ -188,7 +188,7 @@ pub struct PaieVersee {
     pub pas: Option<Decimal>,
     pub taux_pas: Option<Decimal>,
     pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant_pas: Option<String>,
+    pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
     pub verse_le: Option<Jour>,
     /// Le depot de la DSN qui la declare, et la copie de son fichier.
     pub depose_le: Option<Jour>,
@@ -663,7 +663,7 @@ pub struct LigneDeCotisation {
 pub struct PasImporte {
     pub taux: Option<Decimal>,
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant: Option<String>,
+    pub identifiant: Option<droit::pas::IdentifiantDuTauxPas>,
     pub prelevement: Decimal,
 }
 

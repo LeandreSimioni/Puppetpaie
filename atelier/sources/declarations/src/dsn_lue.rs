@@ -323,7 +323,7 @@ pub struct VersementLu {
     /// .006 a .008.
     pub taux_pas: Option<Decimal>,
     pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant_pas: Option<String>,
+    pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
     /// .009.
     pub pas: Option<Decimal>,
     pub remunerations: Vec<Remuneration>,
@@ -453,7 +453,7 @@ pub struct Nets {
     pub net_verse: Option<Decimal>,
     pub taux_pas: Option<Decimal>,
     pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant_pas: Option<String>,
+    pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
     pub pas: Option<Decimal>,
 }
 
@@ -1249,7 +1249,8 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let t = fautes.code(rub, &v);
                 versement.into_iter().for_each(|x| x.type_pas = t);
             }
-            "S21.G00.50.008" => versement.into_iter().for_each(|x| x.identifiant_pas = plein.clone()),
+            // Un identifiant hors de sa forme laisse la case vide (une DSN lue : un inconnu ne s'invente pas).
+            "S21.G00.50.008" => versement.into_iter().for_each(|x| x.identifiant_pas = droit::pas::IdentifiantDuTauxPas::lire(&v).ok()),
             "S21.G00.50.009" => {
                 let m = fautes.montant(rub, &v);
                 versement.into_iter().for_each(|x| x.pas = m);

@@ -71,7 +71,7 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
             None => "None",
         };
         dire!("  {:<12} taux {:<6} type {} ({})", cle, ecrit(e.taux.map(|t| t.to_string())), ecrit(e.r#type.map(|t| t.to_string())), libelle);
-        dire!("  {:<12} identifiant {}, mis a disposition {}", "", dit(e.identifiant.as_deref()), ecrit(e.mis_a_disposition.map(socle::paris::ecrit::compacte::texte)));
+        dire!("  {:<12} identifiant {}, mis a disposition {}", "", dit(e.identifiant.as_ref().map(droit::pas::IdentifiantDuTauxPas::as_str)), ecrit(e.mis_a_disposition.map(socle::paris::ecrit::compacte::texte)));
         match s.valable_jusqu_a {
             Some(j) => dire!("  {:<12} {}, jusqu'au {}\n", "", s.libelle, j.jj_mm_aaaa()),
             None => dire!("  {:<12} {}\n", "", s.libelle),
