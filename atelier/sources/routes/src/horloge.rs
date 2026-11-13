@@ -59,6 +59,7 @@ use crate::contrats::{AvenantVoulu, ChargeRecu, ChargeSignature, ContratASigner,
 use droit::contexte::Contexte;
 use envois::courriel::Courriel;
 use socle::date::Jour;
+use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::{Annee, Mois};
 use socle::paris::Moment;
 use compagnie::preuve::Preuve;
@@ -287,11 +288,11 @@ fn deposer_les_dsn(
         if !garder(&lue) || lue.nature_declaration == Some(declarations::amorcage::NATURE) {
             continue;
         }
-        let empreinte = envois::journal::empreinte(&octets);
+        let empreinte = Empreinte::des_octets(&octets).courte();
         let mut deja = false;
         for l in lignes.iter().filter(|l| l.fichier() == Some(&nom)) {
             let refuse = etats::refuse_par_un_retour(l);
-            deja |= (l.reel() && !refuse) || (refuse && l.empreinte() == Some(empreinte.as_str()));
+            deja |= (l.reel() && !refuse) || (refuse && l.empreinte() == Some(&empreinte));
         }
         if deja {
             continue;
@@ -332,7 +333,7 @@ pub(crate) fn dernier_rattrapage(racine: &Path, aujourdhui: Option<Jour>) -> R<V
 struct Memoire {
     quoi: String,
     le: Jour,
-    mois_faits: BTreeMap<Mois, String>,
+    mois_faits: BTreeMap<Mois, EmpreinteCourte>,
     annees_faites: BTreeSet<i32>,
     dernier: Option<DernierRattrapage>,
 }
@@ -974,15 +975,15 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
 
 /// L'empreinte de ce qui fait un mois : sa saisie (`stock::empreinte_de_la_saisie_du_mois`) et ses imprevus. Un mois
 /// fait dont l'empreinte change se rejoue.
-fn empreinte_du_mois(racine: &Path, mois: Mois) -> R<String> {
+fn empreinte_du_mois(racine: &Path, mois: Mois) -> R<EmpreinteCourte> {
     // Un mois sans saisie, ou sans imprevus, ou sans fiche de suivi, a une empreinte : celle de ce qu'il n'a pas.
     let saisie = format!("{:?}", engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None)?);
     let mut tout = saisie.into_bytes();
     for f in [engagement::imprevus::dossier(racine).join(format!("{}.json", mois)), engagement::imprevus::dossier(racine).join("obligations.json")] {
         let octets = if socle::fichiers::existe(&f) { Some(std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?) } else { None };
-        tout.extend(format!("{:?}", octets.map(|o| socle::fichiers::sha256_hex(&o))).into_bytes());
+        tout.extend(format!("{:?}", octets.map(|o| Empreinte::des_octets(&o).to_string())).into_bytes());
     }
-    Ok(socle::fichiers::sha256_hex(&tout)[..16].to_string())
+    Ok(Empreinte::des_octets(&tout).courte())
 }
 
 /// UN MOIS FAIT : toutes ses etapes sont vertes (`etapes_restantes`, ce que l'ecran montre) et aucun signalement n'est a

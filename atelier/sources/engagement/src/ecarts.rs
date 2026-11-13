@@ -40,6 +40,7 @@ use droit::forme_bareme::{IdDeCotisation, APEC_T1, APEC_T2, PREVOYANCE};
 use crate::importe::{Importe, PaieVersee};
 use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
+use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
 use socle::num::Decimal;
 
@@ -102,7 +103,7 @@ pub struct Ecart {
 #[derive(Clone, Debug)]
 pub struct Comparaison {
     /// L'empreinte de la paie (`empreinte`).
-    pub empreinte: String,
+    pub empreinte: EmpreinteCourte,
     pub mois: Mois,
     /// Le logiciel que le lecteur a reconnu au bulletin ; `None` : un autre.
     pub logiciel: Option<String>,
@@ -160,7 +161,7 @@ struct Lue {
 
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
 /// deja comparee, elle ne se compare pas deux fois.
-pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Vec<Comparaison> {
+pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
     let brut = imp.objet().carte();
     let contrat = imp.contrat();
     // UN CONTRAT DONT LA NATURE RESTE A DIRE (sans `nature`, celui d'un permanent : `import::nature`) ne se compare
@@ -500,9 +501,9 @@ fn a_refaire(c: &mut Comparaison, raison: Echec) -> Echec {
 
 /// L'empreinte de la paie `mois` de l'engagement importe `imp` : ce qui la reconnait d'une comparaison a l'autre (son
 /// salarie, ses bornes, son numero et ce que les pieces en disent, sans la date de l'import).
-pub fn empreinte(imp: &Importe, mois: Mois, p: &PaieVersee) -> String {
+pub fn empreinte(imp: &Importe, mois: Mois, p: &PaieVersee) -> EmpreinteCourte {
     let brut = imp.objet().carte();
     let paie = PaieVersee { importe_le: None, ..p.clone() };
     let graine = socle::ecriture::json_en_ligne(&(&brut.salarie, &brut.debut, &brut.fin, &brut.numero, mois, paie));
-    socle::fichiers::sha256_hex(graine.as_bytes())[..16].to_string()
+    Empreinte::des_octets(graine.as_bytes()).courte()
 }

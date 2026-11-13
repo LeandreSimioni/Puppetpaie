@@ -79,12 +79,12 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
 #[test]
 fn l_empreinte_reste_comparable_a_celles_du_journal() {
     // Les 16 premiers chiffres hexadecimaux du SHA-256, comme celles deja ecrites au journal.
-    assert_eq!(journal::empreinte(b"abc"), "ba7816bf8f01cfea");
+    assert_eq!(socle::fichiers::Empreinte::des_octets(b"abc").courte().texte(), "ba7816bf8f01cfea");
     let d = dossier_de_test("journal", "empreinte");
     let f = d.join("DSN.dsn");
     std::fs::write(&f, b"abc").unwrap();
     let l = journal::noter(&d, dsn(Mode::Reel), Some(&f), a(3, 10)).unwrap();
-    assert_eq!((l.fichier().map(|f| f.texte()), l.empreinte()), (Some("DSN.dsn"), Some("ba7816bf8f01cfea")));
+    assert_eq!((l.fichier().map(|f| f.texte()), l.empreinte().map(|e| e.texte())), (Some("DSN.dsn"), Some("ba7816bf8f01cfea")));
     let l = journal::noter(&d, dsn(Mode::Reel), Some(&d.join("absent.dsn")), a(3, 10)).unwrap();
     assert_eq!((l.fichier().map(|f| f.texte()), l.empreinte()), (Some("absent.dsn"), None));
 }

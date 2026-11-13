@@ -203,7 +203,7 @@ pub fn sorties(racine: &Path, jour: socle::date::Jour) -> Value {
                 let pages: Vec<String> = pages.iter().map(|t| t.lu().unwrap_or_else(|m| panic!("{} : {}", rel, m.phrase))).collect();
                 lignes(&documents::avenant::normaliser(&pages.join("\n")), &r)
             }
-            _ => json!({"empreinte": socle::fichiers::sha256_hex(&octets)}),
+            _ => json!({"empreinte": socle::fichiers::Empreinte::des_octets(&octets).texte()}),
         };
         par_fichier.insert(rel, v);
     }

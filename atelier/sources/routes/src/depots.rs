@@ -952,13 +952,13 @@ pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
 }
 
 /// `read_bytes`, l'erreur du disque sous sa classe.
-fn empreinte_du_fichier(chemin: &str) -> R<String> {
+fn empreinte_du_fichier(chemin: &str) -> R<socle::fichiers::EmpreinteCourte> {
     if chemin.contains('\0') {
         return Err(erreur(Classe::Illisible, "embedded null byte"));
     }
     let p = Path::new(chemin);
     let octets = std::fs::read(p).map_err(|e| erreur_io(&e, p))?;
-    Ok(envois::journal::empreinte(&octets))
+    Ok(socle::fichiers::Empreinte::des_octets(&octets).courte())
 }
 
 // ------------------------------------------------------------------ depot-apercu, la DPAE
@@ -1112,7 +1112,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         });
     }
     let mois = jours.iter().map(|j| j.mois_civil()).min();
-    let empreinte = envois::journal::empreinte(&contenu);
+    let empreinte = socle::fichiers::Empreinte::des_octets(&contenu).courte();
     let nom_fichier = NomDeFichier::du(Path::new(&chemin))?;
     let mut deja_depose = etats::deja_depose(&lignes_journal, Quoi::Dpae.acte(), &empreinte);
     poser_les_pastilles(&mut deja_depose);

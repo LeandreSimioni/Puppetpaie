@@ -335,7 +335,7 @@ pub fn empreinte_du_salarie(racine: &Path, cle: &IdSalarie) -> R<String> {
 }
 
 fn empreinte_de(imprevus: &[Imprevu]) -> String {
-    socle::fichiers::sha256_hex(socle::ecriture::json_en_ligne(imprevus).as_bytes())
+    socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(imprevus).as_bytes()).to_string()
 }
 
 /// Les imprevus de `cle`, lus mois par mois du magasin sans se noter (`socle::forme::partagee`).

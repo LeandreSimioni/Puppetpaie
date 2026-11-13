@@ -470,7 +470,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
     let a = declarations::dsn_lue::lire(&contenu, None)?;
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
-    let empreinte = envois::journal::empreinte(&contenu);
+    let empreinte = socle::fichiers::Empreinte::des_octets(&contenu).courte();
     let deja = etats::deja_depose(&lignes, envois::journal::Acte::Dsn, &empreinte);
     let nom = NomDeFichier::du(std::path::Path::new(&chemin))?;
     let signalement = a.est_signalement();

@@ -144,7 +144,7 @@ pub fn deposer_dsn(
     suites: &mut Suites,
 ) -> R<DepotFait> {
     branchement.ouvrir()?;
-    let deja = crate::etats::deja_depose(&crate::journal::lu(&ctx.racine)?.lignes, Acte::Dsn, &crate::journal::empreinte(d.octets));
+    let deja = crate::etats::deja_depose(&crate::journal::lu(&ctx.racine)?.lignes, Acte::Dsn, &socle::fichiers::Empreinte::des_octets(d.octets).courte());
     let joue = branchement.joue();
     let envoi = || -> R<String> {
         if joue {

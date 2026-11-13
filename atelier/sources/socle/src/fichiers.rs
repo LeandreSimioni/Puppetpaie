@@ -250,10 +250,6 @@ impl<S: TryFrom<String, Error = crate::echec::Echec>> LectureDatee<S> {
     }
 }
 
-pub fn sha256_hex(octets: &[u8]) -> String {
-    Sha256::digest(octets).iter().map(|o| format!("{:02x}", o)).collect()
-}
-
 /// Ce que vaut un fichier pour l'empreinte : le hachage de son contenu, `absent` s'il n'existe pas, `illisible` (et la
 /// raison) s'il ne se lit pas.
 pub fn empreinte_fichier(chemin: &Path) -> String {
@@ -276,7 +272,7 @@ fn empreinte_des_octets(chemin: &Path, octets: Vec<u8>) -> String {
             return e.clone();
         }
     }
-    let e = sha256_hex(&octets);
+    let e = Empreinte::des_octets(&octets).to_string();
     ranger(cache, chemin.to_path_buf(), (octets, e.clone()));
     e
 }
@@ -301,7 +297,7 @@ pub fn empreinte_dossier(chemin: &Path) -> String {
 
 fn empreinte_des_noms(noms: &std::io::Result<Vec<String>>) -> String {
     match noms {
-        Ok(n) => sha256_hex(n.join("\n").as_bytes()),
+        Ok(n) => Empreinte::des_octets(n.join("\n").as_bytes()).to_string(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => "absent".into(),
         Err(e) => format!("illisible : {}", e),
     }
@@ -894,6 +890,118 @@ impl From<CheminRelatif> for String {
     fn from(c: CheminRelatif) -> String {
         c.0.into_owned()
     }
+}
+
+/// L'EMPREINTE D'UN CONTENU : son SHA-256 entier, 64 caracteres hexadecimaux minuscules (une source deposee, une
+/// archive de mise a jour, un exercice clos, un etat garde). Elle ne se fait que par `des_octets` (ou `du_hachage`, pour
+/// un contenu hache par morceaux) ; lue, elle refuse une autre forme. Elle s'ecrit telle quelle et se trie par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Empreinte(String);
+
+impl Empreinte {
+    /// L'empreinte des octets `octets`.
+    pub fn des_octets(octets: &[u8]) -> Empreinte {
+        Empreinte::du_hachage(Sha256::new_with_prefix(octets))
+    }
+
+    /// L'empreinte d'un contenu hache par morceaux dans `h`.
+    pub fn du_hachage(h: Sha256) -> Empreinte {
+        Empreinte(hexa(&h.finalize()))
+    }
+
+    /// L'empreinte du contenu du fichier `chemin`, ou la panne qui empeche de le lire.
+    pub fn du_fichier(chemin: &Path) -> R<Empreinte> {
+        std::fs::read(chemin).map(|o| Empreinte::des_octets(&o)).map_err(|e| crate::echec::du_disque(chemin, &e))
+    }
+
+    /// L'empreinte `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<Empreinte> {
+        if !est_hexa(texte, 64) {
+            return Err(crate::refus!("{} n'est pas une empreinte : 64 caracteres hexadecimaux minuscules.", repr(texte)));
+        }
+        Ok(Empreinte(texte.to_string()))
+    }
+
+    /// SES 16 PREMIERS CARACTERES : ce que le journal ecrit d'un fichier parti.
+    pub fn courte(&self) -> EmpreinteCourte {
+        EmpreinteCourte(self.0[..16].to_string())
+    }
+
+    /// L'empreinte telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Empreinte {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for Empreinte {
+    type Error = Echec;
+    fn try_from(s: String) -> R<Empreinte> {
+        Empreinte::lire(&s)
+    }
+}
+
+impl From<Empreinte> for String {
+    fn from(e: Empreinte) -> String {
+        e.0
+    }
+}
+
+/// L'EMPREINTE COURTE D'UN CONTENU : les 16 premiers caracteres de son SHA-256, ce que le journal des envois ecrit d'un
+/// fichier parti et d'un modele fige, ce qui reconnait une paie importee deja comparee, une DPAE due, l'etat d'un mois.
+/// Elle ne se fait que par `Empreinte::courte` ; lue, elle refuse une autre forme ; on n'en retrouve pas l'entiere.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct EmpreinteCourte(String);
+
+impl EmpreinteCourte {
+    /// L'empreinte courte `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<EmpreinteCourte> {
+        if !est_hexa(texte, 16) {
+            return Err(crate::refus!("{} n'est pas une empreinte courte : 16 caracteres hexadecimaux minuscules.", repr(texte)));
+        }
+        Ok(EmpreinteCourte(texte.to_string()))
+    }
+
+    /// L'empreinte courte telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for EmpreinteCourte {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for EmpreinteCourte {
+    type Error = Echec;
+    fn try_from(s: String) -> R<EmpreinteCourte> {
+        EmpreinteCourte::lire(&s)
+    }
+}
+
+impl From<EmpreinteCourte> for String {
+    fn from(e: EmpreinteCourte) -> String {
+        e.0
+    }
+}
+
+/// Les octets `octets` en hexadecimal minuscule : l'ecriture d'une empreinte.
+pub fn hexa(octets: &[u8]) -> String {
+    octets.iter().map(|o| format!("{:02x}", o)).collect()
+}
+
+/// `texte` est-il fait de `longueur` caracteres hexadecimaux minuscules : la forme d'une empreinte ecrite.
+pub fn est_hexa(texte: &str, longueur: usize) -> bool {
+    texte.len() == longueur && texte.bytes().all(|o| matches!(o, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// CE QUI S'ECRIT EN CHEMIN dans une reponse : un chemin du disque, absent ou non, seul ou en liste.

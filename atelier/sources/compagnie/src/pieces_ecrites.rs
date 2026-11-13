@@ -46,7 +46,7 @@ pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<socle::date::Jour>> {
     let lignes = envois::journal::lu(racine)?.lignes;
     Ok(lignes
         .iter()
-        .filter(|l| l.reel() && l.accepte() && l.empreinte() == Some(empreinte.as_str()))
+        .filter(|l| l.reel() && l.accepte() && l.empreinte() == Some(&empreinte))
         .find(|l| !envois::etats::refuse_par_un_retour(l))
         .map(|l| l.quand().jour()))
 }

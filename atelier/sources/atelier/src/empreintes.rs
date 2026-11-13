@@ -9,9 +9,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
-
 use socle::echec::R;
+use socle::fichiers::Empreinte;
 
 /// Le dossier des textes deposes, relatif a la racine du depot.
 pub const TEXTES: &str = "atelier/reference/sources";
@@ -24,11 +23,6 @@ const SECTION: &str = "## Empreintes";
 
 /// Ce que la section dit d'elle-meme, sous son titre.
 const CHAPEAU: &str = "Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).";
-
-/// L'empreinte d'un contenu : le SHA-256, en hexadecimal minuscule.
-pub fn empreinte(o: &[u8]) -> String {
-    Sha256::digest(o).iter().map(|b| format!("{:02x}", b)).collect()
-}
 
 /// Les fichiers de `dossier`, a toute profondeur, tries ; aucun s'il n'existe pas (un depot sans textes deposes).
 fn fichiers(dossier: &Path, out: &mut Vec<PathBuf>) -> R<()> {
@@ -65,7 +59,7 @@ pub fn ecrire(depot: &Path) -> R<usize> {
     let racine = depot.join(TEXTES);
     let mut tous = Vec::new();
     fichiers(&racine, &mut tous)?;
-    let mut par_lisez_moi: BTreeMap<PathBuf, Vec<(String, String)>> = BTreeMap::new();
+    let mut par_lisez_moi: BTreeMap<PathBuf, Vec<(String, Empreinte)>> = BTreeMap::new();
     let mut sans = Vec::new();
     for f in tous.iter().filter(|f| f.file_name().is_none_or(|n| n != LISEZ_MOI)) {
         let Some(l) = lisez_moi_de(&racine, f) else {
@@ -81,7 +75,7 @@ pub fn ecrire(depot: &Path) -> R<usize> {
             Err(e) => return Err(socle::refus!("{} n'est pas sous {} : {}", f.display(), dossier.display(), e)),
         };
         let o = std::fs::read(f).map_err(|e| socle::echec::du_disque(f, &e))?;
-        par_lisez_moi.entry(l).or_default().push((rel, empreinte(&o)));
+        par_lisez_moi.entry(l).or_default().push((rel, Empreinte::des_octets(&o)));
     }
     if !sans.is_empty() {
         return Err(socle::refus!("Ces textes déposés n'ont aucun {} pour porter leur empreinte : {}. Rien n'est écrit.", LISEZ_MOI, sans.join(", ")));

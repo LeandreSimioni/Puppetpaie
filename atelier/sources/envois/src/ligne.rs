@@ -12,7 +12,7 @@ use droit::contexte::IdSalarie;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
-use socle::fichiers::{CheminRelatif, NomDeFichier};
+use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
 
 /// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
@@ -98,7 +98,7 @@ pub struct Envoi<D, R> {
     pub mois: Option<Mois>,
     /// Le nom du fichier parti, sans son dossier.
     pub fichier: Option<NomDeFichier>,
-    pub empreinte: Option<String>,
+    pub empreinte: Option<EmpreinteCourte>,
     pub mode: Mode,
     pub qui: String,
     pub accepte: bool,
@@ -173,8 +173,8 @@ impl Ligne {
         commun!(self, e => e.fichier.as_ref())
     }
 
-    pub fn empreinte(&self) -> Option<&str> {
-        commun!(self, e => e.empreinte.as_deref())
+    pub fn empreinte(&self) -> Option<&EmpreinteCourte> {
+        commun!(self, e => e.empreinte.as_ref())
     }
 
     pub fn mode(&self) -> Mode {
@@ -300,7 +300,7 @@ pub struct Ouverture {
     pub test: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flux: Option<String>,
-    pub empreinte: String,
+    pub empreinte: EmpreinteCourte,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compte_rendu: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -603,14 +603,14 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relance: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub empreinte: Option<String>,
+    pub empreinte: Option<EmpreinteCourte>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub ailleurs: bool,
     /// L'empreinte du modele avec lequel ce contrat est parti (son texte et celui de son avenant), fige sous ce nom avec la compagnie
     /// (`routes::modeles_contrat::figer`) ; un avenant ne la porte pas.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub modele: Option<String>,
+    pub modele: Option<EmpreinteCourte>,
 }
 
 impl ContratParti {

@@ -24,8 +24,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
-
+use socle::fichiers::Empreinte;
 use socle::texte::{lignes_du_texte, texte_latin1};
 use socle::echec::R;
 
@@ -91,8 +90,8 @@ pub struct Fichier {
     pub disque: PathBuf,
     pub sorte: Sorte,
     pub taille: u64,
-    /// SHA-256 en hexadecimal ; vide pour une entree d'archive qui n'a pas ete extraite.
-    pub empreinte: String,
+    /// Son empreinte ; aucune pour une entree d'archive qui n'a pas ete extraite.
+    pub empreinte: Option<Empreinte>,
     /// Les pages d'un PDF ouvert ; vide pour le reste.
     pub pages: Vec<PageLue>,
     /// Pourquoi, en une phrase, quand il y a quelque chose a dire.
@@ -131,12 +130,8 @@ struct Trieur {
     travail: PathBuf,
     travail_canon: PathBuf,
     /// Empreinte -> chemin du premier fichier qui l'a portee.
-    vus: HashMap<String, String>,
+    vus: HashMap<Empreinte, String>,
     fichiers: Vec<Fichier>,
-}
-
-fn hexa(octets: &[u8]) -> String {
-    Sha256::digest(octets).iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 impl Trieur {
@@ -146,7 +141,7 @@ impl Trieur {
             disque,
             sorte: Sorte::Autre,
             taille: 0,
-            empreinte: String::new(),
+            empreinte: None,
             pages: Vec::new(),
             raison: None,
             doublon_de: None,
@@ -214,22 +209,23 @@ impl Trieur {
             }
         };
         f.taille = octets.len() as u64;
-        f.empreinte = hexa(&octets);
-        if let Some(premier) = self.vus.get(&f.empreinte) {
+        let empreinte = Empreinte::des_octets(&octets);
+        f.empreinte = Some(empreinte.clone());
+        if let Some(premier) = self.vus.get(&empreinte) {
             f.sorte = Sorte::Doublon;
             f.doublon_de = Some(premier.clone());
             f.raison = Some(format!("copie exacte de {}", premier));
             self.fichiers.push(f);
             return;
         }
-        self.vus.insert(f.empreinte.clone(), f.chemin.clone());
+        self.vus.insert(empreinte.clone(), f.chemin.clone());
         if octets.is_empty() {
             f.raison = Some("fichier vide".into());
             self.fichiers.push(f);
             return;
         }
         if est_un_zip(&octets) {
-            self.ouvrir_archive(f, &octets, profondeur);
+            self.ouvrir_archive(f, &octets, &empreinte, profondeur);
             return;
         }
         if est_un_pdf(&octets) {
@@ -259,7 +255,7 @@ impl Trieur {
     }
 
     /// Un zip : ouvert dans son propre sous-dossier de `travail/`, puis son contenu trie a la suite.
-    fn ouvrir_archive(&mut self, mut f: Fichier, octets: &[u8], profondeur: usize) {
+    fn ouvrir_archive(&mut self, mut f: Fichier, octets: &[u8], empreinte: &Empreinte, profondeur: usize) {
         if profondeur >= PROFONDEUR_MAX {
             f.raison = Some(format!("zip rangé à plus de {} niveaux de zips l'un dans l'autre : pas ouvert", PROFONDEUR_MAX));
             self.fichiers.push(f);
@@ -279,7 +275,7 @@ impl Trieur {
             None => f.chemin.as_str(),
         };
         let assaini: String = nom.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect();
-        let cible = self.travail.join(format!("{}-{}", assaini, &f.empreinte[..12]));
+        let cible = self.travail.join(format!("{}-{}", assaini, &empreinte.texte()[..12]));
         let pret = socle::fichiers::effacer(&cible).and_then(|()| std::fs::create_dir_all(&cible).map_err(|e| socle::echec::du_disque(&cible, &e)));
         if let Err(e) = pret {
             f.sorte = Sorte::Illisible;

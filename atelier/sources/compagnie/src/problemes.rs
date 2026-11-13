@@ -278,7 +278,7 @@ pub struct Signalement {
     pub texte: String,
     pub captures: usize,
     pub incidents: usize,
-    pub empreinte: String,
+    pub empreinte: socle::fichiers::Empreinte,
     /// L'heure ou il s'est enregistre, en secondes de l'heure de Paris (les doublons).
     #[serde(with = "socle::paris::ecrit::secondes_locales")]
     pub enregistre: Moment,
@@ -480,7 +480,7 @@ const DOUBLON_SECONDES: i64 = 600;
 
 /// L'empreinte de ce qu'on a ecrit : le texte (caviarde) et les captures, rien de ce qui change d'une seconde a l'autre
 /// (incidents joints, version).
-fn empreinte_du_message(corps: &Corps<CaptureQuiPart>) -> String {
+fn empreinte_du_message(corps: &Corps<CaptureQuiPart>) -> socle::fichiers::Empreinte {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(corps.texte.as_bytes());
@@ -488,7 +488,7 @@ fn empreinte_du_message(corps: &Corps<CaptureQuiPart>) -> String {
         h.update(b"\n");
         h.update(c.donnees.as_bytes());
     }
-    h.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+    socle::fichiers::Empreinte::du_hachage(h)
 }
 
 /// LE BILAN D'UN PASSAGE des messages : partis, ce qui attend encore, la panne, et si un autre passage tenait la boite.

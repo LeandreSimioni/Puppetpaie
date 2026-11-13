@@ -37,7 +37,7 @@ const QUOI: &str = "La NAF 2025 (sous-classes) et la correspondance de chaque so
 /// Le referentiel `naf-base.json`, apres `quoi` et `note`.
 #[derive(Serialize)]
 struct Naf {
-    sha256: EnOrdre<String>,
+    sha256: EnOrdre<socle::fichiers::Empreinte>,
     en_vigueur_naf_2025: &'static str,
     naf_2025: EnOrdre<SousClasse>,
     naf_rev2: EnOrdre<Rev2>,

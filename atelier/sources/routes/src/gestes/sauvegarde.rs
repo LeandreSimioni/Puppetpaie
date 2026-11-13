@@ -6,10 +6,10 @@ use socle::echec::Classe;
 use socle::fichiers::CheminRelatif;
 use std::path::Path;
 
-use envois::drive::{Client, Drive, ErreurGoogle};
+use envois::drive::{Client, Drive, EmpreinteMd5, ErreurGoogle};
 
 use compagnie::sauvegarde::{
-    cause_de, ecrire_index, empreinte, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
+    cause_de, ecrire_index, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
     DOSSIER_DRIVE, GOOGLE_INDISPONIBLE,
 };
 
@@ -125,11 +125,11 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
             let chemin = racine.join(relatif);
             let nom = relatif.nom();
             let mut faire = || -> Result<Option<EtatFichier>, ErreurGoogle> {
-                let locale = empreinte(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
+                let locale = EmpreinteMd5::du_fichier(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
                 // Le fichier de ce nom que `lister` connait (le meme pour decider ET pour remplacer).
                 let connu = deja.get(nom.texte());
-                let distante = if tout { None } else { connu.and_then(|d| d.md5.clone()).filter(|m| !m.is_empty()) };
-                if distante.as_deref() == Some(locale.as_str()) {
+                let distante = if tout { None } else { connu.and_then(|d| d.md5.as_ref()) };
+                if distante == Some(&locale) {
                     return Ok(None);
                 }
                 client.televerser(&chemin, &parent, None, connu)?;

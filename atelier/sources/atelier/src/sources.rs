@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use socle::fichiers::Empreinte;
 
 use crate::releve::kali::{self, Evenement, Rapport, Suivi};
 use crate::EnOrdre;
@@ -58,7 +58,7 @@ pub struct Source {
     /// Le jour du releve.
     pub releve_le: Jour,
     pub fichier: String,
-    pub sha256: String,
+    pub sha256: Empreinte,
     /// L'original d'un organisme prive n'est pas dans le depot public : seule sa transcription y est (chemin relatif au
     /// meme dossier).
     pub transcription: Option<String>,
@@ -121,10 +121,6 @@ pub const COPIES: &str = "atelier/reference/sources";
 
 pub fn dossier(installation: &Path) -> PathBuf {
     installation.join(COPIES)
-}
-
-fn sha256(o: &[u8]) -> String {
-    Sha256::digest(o).iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Ce que la veille sait d'une source en ligne.
@@ -190,7 +186,7 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
         let presente = p.is_file();
         // La transcription ne se confronte a aucun condensat : c'est l'original qui fait foi.
         let transcription_presente = s.transcription.as_ref().map(|t| d.join(t).is_file());
-        let conforme = if presente { Some(sha256(&std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e))?) == s.sha256) } else { None };
+        let conforme = if presente { Some(Empreinte::du_fichier(&p)? == s.sha256) } else { None };
         let releve = s.releve_le;
         out.push(EtatSource {
             ident: ident.clone(),
@@ -285,7 +281,7 @@ pub fn verifier(
             Some(s) => &s.sha256,
             None => return Err(refus!("sources.json : la source « {} » n'y est plus", e.ident)),
         };
-        if sha256(&octets) == *attendu {
+        if Empreinte::des_octets(&octets) == *attendu {
             e.en_ligne = Some(EnLigne::Inchangee);
             e.detail = modifie;
             continue;

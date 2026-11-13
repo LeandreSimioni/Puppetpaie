@@ -434,7 +434,7 @@ fn mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Vec<String
 }
 
 fn empreinte_des(mensuels: &[String]) -> String {
-    socle::fichiers::sha256_hex(mensuels.join(";").as_bytes())
+    socle::fichiers::Empreinte::des_octets(mensuels.join(";").as_bytes()).to_string()
 }
 
 /// L'empreinte des contrats payes au mois du salarie `cle` commences avant `mois` (`mensuels_d_avant`).

@@ -31,7 +31,7 @@ use envois::suites::Suites;
 use envois::journal::{Acte, EmbaucheDeclaree, Ligne, Ouverture, Version};
 use droit::contexte::IdSalarie;
 use engagement::numeros::NumeroContrat;
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{Empreinte, NomDeFichier};
 use socle::mois::{Mois, MoisOuJour};
 
 pub use envois::depot_acte::DepotFait;
@@ -85,7 +85,7 @@ fn phrase_repetition(quoi: &str, etat: &etats::Repetition) -> String {
 fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement: &str) -> R<Ouverture> {
     let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     let nom = NomDeFichier::du(chemin)?;
-    let etat = etats::repetition(lignes, quoi, &envois::journal::empreinte(&octets), &nom);
+    let etat = etats::repetition(lignes, quoi, &Empreinte::des_octets(&octets).courte(), &nom);
     // UN REEL NE PART QUE SUR LE BILAN LU DE SON TEST : l'accuse d'enregistrement dit
     // « envoi recu », pas « conforme » (regle 5). Pour une DSN, c'est le bilan de nature 11 du test, qui arrive « en
     // general dans les dix minutes » (la reponse du point de depot). Pour une DPAE, le bilan 11 ou le certificat 41 :
@@ -610,7 +610,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         let octets = std::fs::read(f).map_err(|e| socle::echec::du_disque(f, &e))?;
         let lignes = envois::journal::lu(&ctx.racine)?.lignes;
         let nom = NomDeFichier::du(f)?;
-        Ok(etats::repetition(&lignes, Acte::Dsn, &envois::journal::empreinte(&octets), &nom).conforme.is_some())
+        Ok(etats::repetition(&lignes, Acte::Dsn, &Empreinte::des_octets(&octets).courte(), &nom).conforme.is_some())
     };
     let mut releve = false;
     let mut parties: Vec<String> = Vec::new();

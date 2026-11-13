@@ -20,6 +20,7 @@ use std::path::Path;
 
 use socle::echec::{Classe, Echec};
 
+use md5::Digest;
 use serde::{Deserialize, Serialize};
 
 use crate::google::{encoder, jeton_par_rafraichissement, lue, phrase_de_panne, Application, JETONS};
@@ -32,8 +33,8 @@ use crate::transport::{envoyer, Requete};
 struct FichierDrive {
     id: Option<String>,
     name: Option<String>,
-    #[serde(rename = "md5Checksum")]
-    md5: Option<String>,
+    #[serde(rename = "md5Checksum", default, deserialize_with = "md5_ou_absent")]
+    md5: Option<EmpreinteMd5>,
     /// La taille, que Drive ecrit en texte ; absente pour un fichier Google Docs.
     size: Option<String>,
     #[serde(rename = "mimeType")]
@@ -42,6 +43,77 @@ struct FichierDrive {
     lien: Option<String>,
 }
 impl socle::forme::ReponseDUnTiers for FichierDrive {}
+
+/// Le `md5Checksum` d'un fichier : Google dit l'absence par un texte vide comme en omettant la cle ; c'est la meme.
+fn md5_ou_absent<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<EmpreinteMd5>, D::Error> {
+    match Option::<String>::deserialize(d)? {
+        None => Ok(None),
+        Some(t) if t.is_empty() => Ok(None),
+        Some(t) => EmpreinteMd5::lire(&t).map(Some).map_err(|e| serde::de::Error::custom(e.phrase)),
+    }
+}
+
+/// L'EMPREINTE QUE DRIVE PUBLIE D'UN FICHIER (`md5Checksum`), et celle que la sauvegarde et la restauration calculent
+/// pour s'y comparer : le MD5 du contenu, 32 caracteres hexadecimaux minuscules. Elle ne se calcule que par
+/// `des_octets` ou `du_fichier` ; lue, elle refuse une autre forme. Elle s'ecrit telle quelle.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct EmpreinteMd5(String);
+
+impl EmpreinteMd5 {
+    /// L'empreinte des octets `octets`.
+    pub fn des_octets(octets: &[u8]) -> EmpreinteMd5 {
+        EmpreinteMd5(socle::fichiers::hexa(&md5::Md5::digest(octets)))
+    }
+
+    /// L'empreinte du contenu du fichier `chemin`, lu par morceaux.
+    pub fn du_fichier(chemin: &Path) -> std::io::Result<EmpreinteMd5> {
+        use std::io::Read;
+        let mut f = std::fs::File::open(chemin)?;
+        let mut h = md5::Md5::new();
+        let mut bloc = vec![0u8; 1024 * 256];
+        loop {
+            let n = f.read(&mut bloc)?;
+            if n == 0 {
+                break;
+            }
+            h.update(&bloc[..n]);
+        }
+        Ok(EmpreinteMd5(socle::fichiers::hexa(&h.finalize())))
+    }
+
+    /// L'empreinte `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> socle::echec::R<EmpreinteMd5> {
+        if !socle::fichiers::est_hexa(texte, 32) {
+            return Err(socle::refus!("{} n'est pas une empreinte MD5 : 32 caracteres hexadecimaux minuscules.", socle::fichiers::repr(texte)));
+        }
+        Ok(EmpreinteMd5(texte.to_string()))
+    }
+
+    /// L'empreinte telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for EmpreinteMd5 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for EmpreinteMd5 {
+    type Error = Echec;
+    fn try_from(s: String) -> socle::echec::R<EmpreinteMd5> {
+        EmpreinteMd5::lire(&s)
+    }
+}
+
+impl From<EmpreinteMd5> for String {
+    fn from(e: EmpreinteMd5) -> String {
+        e.0
+    }
+}
 
 impl FichierDrive {
     /// Son identifiant, que Drive donne toujours a ce qu'il rend.
@@ -162,7 +234,7 @@ impl From<Echec> for ErreurGoogle {
 pub struct Distant {
     pub id: String,
     /// `md5Checksum`, calcule par Google ; absent pour un fichier Google Docs.
-    pub md5: Option<String>,
+    pub md5: Option<EmpreinteMd5>,
     /// Sa taille ; absente pour un fichier Google Docs.
     pub octets: Option<u64>,
 }

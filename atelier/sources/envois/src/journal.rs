@@ -25,8 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-
+use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
 use socle::paris::{InstantOuJour, Moment};
@@ -44,15 +43,9 @@ pub fn chemin(racine: &Path) -> PathBuf {
     racine.join(DEPOTS)
 }
 
-/// Les 16 premiers caracteres du SHA-256.
-pub fn empreinte(contenu: &[u8]) -> String {
-    let h = Sha256::digest(contenu);
-    h.iter().take(8).map(|o| format!("{:02x}", o)).collect()
-}
-
 /// L'empreinte d'un fichier, comme le journal l'écrit.
-pub fn empreinte_fichier(chemin: &Path) -> R<String> {
-    std::fs::read(chemin).map(|b| empreinte(&b)).map_err(|e| socle::echec::du_disque(&chemin, &e))
+pub fn empreinte_fichier(chemin: &Path) -> R<EmpreinteCourte> {
+    Ok(Empreinte::du_fichier(chemin)?.courte())
 }
 
 /// UN ENREGISTREMENT DU FICHIER : un envoi (`id`, `ligne`), un retour (`a`, `retour`) ou un complement (`a`, `nature`,
@@ -436,7 +429,7 @@ pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, date: Data
     let ecrite = ligne.clone();
     ajouter(racine, |_, index| {
         // L'empreinte du texte de la ligne ; deux lignes au meme texte se distinguent par leur rang.
-        let base = self::empreinte(socle::ecriture::json_en_ligne(&ligne).as_bytes());
+        let base = Empreinte::des_octets(socle::ecriture::json_en_ligne(&ligne).as_bytes()).courte().to_string();
         let mut id = base.clone();
         let mut rang = 1;
         while index.contains_key(&id) {
@@ -462,7 +455,7 @@ fn commun_mut(l: &mut Ligne) -> (&mut InstantOuJour, &mut String) {
     }
 }
 
-fn poser_fichier(l: &mut Ligne, nom: socle::fichiers::NomDeFichier, e: Option<String>) {
+fn poser_fichier(l: &mut Ligne, nom: socle::fichiers::NomDeFichier, e: Option<EmpreinteCourte>) {
     macro_rules! poser {
         ($x:ident) => {{
             $x.fichier = Some(nom);

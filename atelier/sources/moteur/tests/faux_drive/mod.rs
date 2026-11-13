@@ -10,14 +10,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use envois::drive::{Depose, Distant, Drive, ErreurGoogle};
-use compagnie::sauvegarde::empreinte;
+use envois::drive::{Depose, Distant, Drive, EmpreinteMd5, ErreurGoogle};
 
 pub struct FichierDrive {
     pub id: String,
     pub parent: String,
     pub nom: String,
-    pub md5: Option<String>,
+    pub md5: Option<EmpreinteMd5>,
     pub contenu: Vec<u8>,
 }
 
@@ -70,7 +69,7 @@ impl FauxDrive {
         let segments: Vec<&str> = chemin.split('/').collect();
         let parent = self.chemin(&segments).unwrap();
         let id = self.prochain("F");
-        let md5 = avec_md5.then(|| md5_de(contenu));
+        let md5 = avec_md5.then(|| EmpreinteMd5::des_octets(contenu));
         self.fichiers.push(FichierDrive { id: id.clone(), parent, nom: nom.into(), md5, contenu: contenu.to_vec() });
         id
     }
@@ -122,11 +121,6 @@ impl FauxDrive {
     fn panne(&self, operation: &str, cle: &str) -> Option<ErreurGoogle> {
         self.pannes.iter().find(|p| p.operation == operation && cle.contains(&p.motif)).map(|p| p.erreur.clone())
     }
-}
-
-pub fn md5_de(octets: &[u8]) -> String {
-    use md5::{Digest, Md5};
-    Md5::digest(octets).iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 impl Drive for FauxDrive {
@@ -190,7 +184,7 @@ impl Drive for FauxDrive {
             return Err(e);
         }
         let contenu = std::fs::read(fichier).map_err(|e| ErreurGoogle::fichier(&e, fichier))?;
-        let md5 = if self.sans_md5 { None } else { Some(empreinte(fichier).unwrap()) };
+        let md5 = if self.sans_md5 { None } else { Some(EmpreinteMd5::du_fichier(fichier).unwrap()) };
         if let Some(c) = connu {
             let f = self.fichiers.iter_mut().find(|f| f.id == c.id).expect("`connu` doit exister dans le Drive");
             assert_eq!(f.parent, parent, "on ne remplace qu'un fichier du dossier");

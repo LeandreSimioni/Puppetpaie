@@ -16,7 +16,7 @@
 
 use droit::fiche::Lue as _;
 use socle::echec::Classe;
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{Empreinte, EmpreinteCourte, NomDeFichier};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
 use crate::dossier_salarie::cle_de;
@@ -644,7 +644,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         // La paie que chaque DSN declare : l'ecran dira si elle change avant l'envoi.
         let empreinte = m.empreinte_saisie_avec(le_mois, || Ok(Moteur::portees(&lu.regs)))?;
         for (f, _, portees) in a_ecrire {
-            noter_piece_ecrite(&ctx.racine, &cle_de_piece(&f), empreinte.clone().map(EmpreinteNotee::Saisie), Some(portees))?;
+            noter_piece_ecrite(&ctx.racine, &cle_de_piece(&f), empreinte.as_ref().map(|e| EmpreinteNotee::Saisie(e.to_string())), Some(portees))?;
         }
     }
     Ok(DsnFabriquee { fichiers, avertissements })
@@ -1124,7 +1124,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         if let Some(rang) = lignes.iter().rposition(|l| du_mois(l) && porte(l)) {
             let pdf = sortie.join("envoi").join(nom);
             // Parti par courriel, il a son empreinte : le refait la redonne, ou il ne s'ecrit pas ; imprime, ses clauses le gardent.
-            let empreinte = lignes[rang].signature().and_then(|s| s.detail.contrats.iter().find(|c| c.fichier == *fichier)).and_then(|c| c.empreinte.as_deref());
+            let empreinte = lignes[rang].signature().and_then(|s| s.detail.contrats.iter().find(|c| c.fichier == *fichier)).and_then(|c| c.empreinte.as_ref());
             match empreinte {
                 Some(e) => std::fs::write(&pdf, contrat_parti(ctx, &lignes, rang, &pdf, e)?).map_err(|e| os(&pdf, e))?,
                 None => refaire_le_contrat(ctx, &lignes, rang, &pdf, &pdf)?,
@@ -1218,7 +1218,7 @@ fn refaire_la_dsn(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Lig
     };
     let f = dsn_partie(ctx, m, lignes, rang, versait)?;
     let octets = declarations::dsn::en_latin1(&f.texte).map_err(|e| e.reclasser(Classe::Illisible))?;
-    if l.empreinte() != Some(envois::journal::empreinte(&octets).as_str()) {
+    if l.empreinte() != Some(&Empreinte::des_octets(&octets).courte()) {
         return Err(erreur(
             Classe::Refuse,
             format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", NomDeFichier::du(cible)?),
@@ -1259,7 +1259,7 @@ fn paies_emportees(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne) -> R<
 fn garder_si_identique(l: &envois::journal::Ligne, ecrits: &[PathBuf]) -> R<()> {
     let premier = &ecrits[0];
     let ecrit = std::fs::read(premier).map_err(|e| os(premier, e))?;
-    if l.empreinte() == Some(envois::journal::empreinte(&ecrit).as_str()) {
+    if l.empreinte() == Some(&Empreinte::des_octets(&ecrit).courte()) {
         return Ok(());
     }
     let refus = erreur(
@@ -1381,9 +1381,9 @@ pub(crate) fn contresigner(ctx: &Contexte, lignes: &[envois::journal::Ligne], co
 /// demande de signature `lignes[rang]`) : le fichier, s'il a cette empreinte ; sinon refait a cote, par la ligne qui
 /// l'a ecrit (celle-ci, ou une plus ancienne qui a fait partir les memes octets : la relance d'un avenant reprend le
 /// PDF parti). Refus quand rien ne redonne l'empreinte. Le fichier `envoye` n'est pas reecrit.
-fn contrat_parti(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize, envoye: &Path, empreinte: &str) -> R<Vec<u8>> {
+fn contrat_parti(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize, envoye: &Path, empreinte: &EmpreinteCourte) -> R<Vec<u8>> {
     match std::fs::read(envoye) {
-        Ok(o) if envois::journal::empreinte(&o) == empreinte => return Ok(o),
+        Ok(o) if Empreinte::des_octets(&o).courte() == *empreinte => return Ok(o),
         // Le fichier a change, ou n'est plus la : il se refait.
         Ok(_change) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -1391,7 +1391,7 @@ fn contrat_parti(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize,
     }
     let nom = NomDeFichier::du(envoye)?;
     let refait = envoye.with_extension("pdf.refait");
-    let a_empreinte = |l: &envois::journal::Ligne| l.signature().is_some_and(|s| s.detail.contrats.iter().any(|c| c.fichier == nom && c.empreinte.as_deref() == Some(empreinte)));
+    let a_empreinte = |l: &envois::journal::Ligne| l.signature().is_some_and(|s| s.detail.contrats.iter().any(|c| c.fichier == nom && c.empreinte.as_ref() == Some(empreinte)));
     for r in (0..=rang).rev().filter(|r| a_empreinte(&lignes[*r])) {
         let o = match refaire_le_contrat(ctx, lignes, r, envoye, &refait).and_then(|_| std::fs::read(&refait).map_err(|e| os(&refait, e))) {
             Ok(o) => {
@@ -1400,7 +1400,7 @@ fn contrat_parti(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize,
             }
             Err(e) => return Err(socle::fichiers::effacer_apres(e, &refait)),
         };
-        if envois::journal::empreinte(&o) == empreinte {
+        if Empreinte::des_octets(&o).courte() == *empreinte {
             return Ok(o);
         }
     }
@@ -1449,7 +1449,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
             } else {
                 let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero.as_deref())
                     .ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} modifie un contrat qui n'est pas parti avant lui", nom)))?;
-                (parti.date(), crate::modeles_contrat::du_contrat_parti(&ctx_j, parti.modele.as_deref(), p0)?)
+                (parti.date(), crate::modeles_contrat::du_contrat_parti(&ctx_j, parti.modele.as_ref(), p0)?)
             };
             let modifs = crate::gestes::signature::pour_la_piece(premier.modifications.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans les articles qu'il modifie", nom)))?);
             let effet = premier.effet.ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans sa date d'effet", nom)))?;
@@ -1471,7 +1471,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
         // Chaque contrat avec le modele qu'il suivait a son depart.
         let mut modeles = Vec::new();
         for (c, p) in contrats.iter().zip(&paies) {
-            modeles.push(crate::modeles_contrat::du_contrat_parti(&ctx_j, c.modele.as_deref(), p)?);
+            modeles.push(crate::modeles_contrat::du_contrat_parti(&ctx_j, c.modele.as_ref(), p)?);
         }
         documents::contrat::ecrire_contrat(&ctx_j, &paies, &modeles, &ent, vers, &remplacements)
     };

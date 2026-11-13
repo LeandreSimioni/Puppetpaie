@@ -100,7 +100,7 @@ fn une_empreinte_qui_ne_colle_pas_n_ecrit_rien_de_ce_fichier() {
     let mut d = FauxDrive::nouveau();
     sauvegarder_dans(&source, &mut d);
     // Le Drive annonce une empreinte que le contenu ne donne pas (un transfert abime, un fichier change en route).
-    d.fichier_mut("PuppetPaie/sauvegarde/paies/2026-06/dupont.json").md5 = Some("0".repeat(32));
+    d.fichier_mut("PuppetPaie/sauvegarde/paies/2026-06/dupont.json").md5 = Some(envois::drive::EmpreinteMd5::lire(&"0".repeat(32)).unwrap());
     let cible = base.join("cible");
     let r = restaurer(&cible, RD, &mut d).unwrap();
     assert_eq!(r.incidents.len(), 1, "{:?}", r.incidents);

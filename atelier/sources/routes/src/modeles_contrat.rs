@@ -33,6 +33,7 @@ use engagement::calcul::Paie;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecran::Pastille;
+use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
 
 const fn champ(nom: &'static str, libelle: &'static str, forme: Forme, sens: &'static str) -> Champ {
@@ -346,15 +347,15 @@ pub(crate) fn du_contrat(ctx: &Contexte, p: &Paie) -> R<ModeleDuContrat> {
 }
 
 /// Les fichiers ou un contrat parti garde son texte et celui de son avenant.
-fn figes(ctx: &Contexte, empreinte: &str) -> (PathBuf, PathBuf) {
+fn figes(ctx: &Contexte, empreinte: &EmpreinteCourte) -> (PathBuf, PathBuf) {
     let d = dossier(ctx).join("partis");
     (d.join(format!("{}.modele", empreinte)), d.join(format!("{}.avenant.modele", empreinte)))
 }
 
 /// FIGE LE TEXTE DE CE MODELE ET CELUI DE SON AVENANT, au depart d'un contrat qui le suit (s'ils ne le sont pas deja) ;
 /// rend leur empreinte, que la ligne du journal note.
-pub(crate) fn figer(ctx: &Contexte, m: &ModeleDuContrat) -> R<String> {
-    let e: String = socle::fichiers::sha256_hex(format!("{}\u{0}{}", m.lu.texte, m.avenant.texte).as_bytes()).chars().take(16).collect();
+pub(crate) fn figer(ctx: &Contexte, m: &ModeleDuContrat) -> R<EmpreinteCourte> {
+    let e = Empreinte::des_octets(format!("{}\u{0}{}", m.lu.texte, m.avenant.texte).as_bytes()).courte();
     let (contrat, avenant) = figes(ctx, &e);
     for (chemin, texte) in [(contrat, &m.lu.texte), (avenant, &m.avenant.texte)] {
         if !chemin.is_file() {
@@ -369,7 +370,7 @@ pub(crate) fn figer(ctx: &Contexte, m: &ModeleDuContrat) -> R<String> {
 /// LE MODELE AVEC LEQUEL CE CONTRAT EST PARTI, et son avenant : les textes figes sous l'empreinte que sa ligne du journal
 /// note. Une ligne qui n'en note pas est celle d'un contrat parti avant que le journal note son modele : il se refait
 /// avec le modele qu'il suit aujourd'hui (`du_contrat`).
-pub(crate) fn du_contrat_parti(ctx: &Contexte, empreinte: Option<&str>, p: &Paie) -> R<ModeleDuContrat> {
+pub(crate) fn du_contrat_parti(ctx: &Contexte, empreinte: Option<&EmpreinteCourte>, p: &Paie) -> R<ModeleDuContrat> {
     let Some(e) = empreinte else { return du_contrat(ctx, p) };
     let (contrat, avenant) = figes(ctx, e);
     modele_lu("Le modèle avec lequel ce contrat est parti".to_string(), false, &lire_texte(&contrat)?, &lire_texte(&avenant)?)

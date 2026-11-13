@@ -18,11 +18,10 @@ use socle::echec::Classe;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use droit::contexte::Contexte;
 use socle::echec::erreur;
-use socle::fichiers::{CheminRelatif, NomDeFichier};
+use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 use socle::mois::{Annee, Mois};
 use socle::num::{zero2, Decimal};
 use socle::paris::Moment;
@@ -306,7 +305,7 @@ pub(crate) struct ExerciceNote {
     qui: String,
     archive: CheminRelatif,
     octets: u64,
-    empreinte: String,
+    empreinte: Empreinte,
     fichiers: u64,
     forcee: bool,
     sans_dsn: Vec<Mois>,
@@ -321,7 +320,7 @@ struct ExerciceRouvertNote {
     qui: String,
     archive: CheminRelatif,
     octets: u64,
-    empreinte: String,
+    empreinte: Empreinte,
     fichiers: u64,
     forcee: bool,
     sans_dsn: Vec<Mois>,
@@ -500,7 +499,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     let octets = zip(&entrees)?;
     std::fs::write(&archive, &octets).map_err(|e| en_os(&e, &archive))?;
 
-    let empreinte: String = Sha256::digest(&octets).iter().map(|b| format!("{:02x}", b)).collect();
+    let empreinte = Empreinte::des_octets(&octets);
     let le = maintenant();
     let relatif = CheminRelatif::sous(&ctx.racine, &archive)?;
     tous.clos.insert(
@@ -530,7 +529,7 @@ pub(crate) struct ExerciceClos {
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     archive: PathBuf,
     octets: usize,
-    empreinte: String,
+    empreinte: Empreinte,
     pub(crate) fichiers: usize,
     pub(crate) manques: Vec<String>,
 }

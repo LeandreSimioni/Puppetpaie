@@ -27,10 +27,7 @@ declarations = { path = "../declarations" }
 envois = { path = "../envois" }
 serde = { workspace = true }
 # Les empreintes SHA-256 (l'archive de mise a jour, le coffre, les incidents, l'instance).
-sha2 = { workspace = true }
-# L'empreinte MD5 que Drive publie pour chaque fichier (`sauvegarde.rs`) : RustCrypto, sans options par defaut.
-md-5 = { version = "0.10", default-features = false }
-# Les motifs du journal des incidents (caviardage, ce qui part chez l'editeur) ;
+sha2 = { workspace = true }# Les motifs du journal des incidents (caviardage, ce qui part chez l'editeur) ;
 # sans les optimisations par defaut, qui pesent sur le binaire.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 # Le telechargement de la mise a jour (`maj.rs`) : HTTP/1.1 synchrone, TLS par rustls, racines du systeme

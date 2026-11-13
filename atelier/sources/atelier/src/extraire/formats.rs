@@ -77,9 +77,9 @@ struct Formats {
 #[derive(Serialize)]
 enum Empreinte {
     #[serde(rename = "sha256_du_classeur")]
-    Classeur(String),
+    Classeur(socle::fichiers::Empreinte),
     #[serde(rename = "sha256_du_pdf")]
-    Pdf(String),
+    Pdf(socle::fichiers::Empreinte),
 }
 
 /// Le format d'une rubrique : sa longueur [min, max], ses expressions de controle que le moteur compile, et sa liste de

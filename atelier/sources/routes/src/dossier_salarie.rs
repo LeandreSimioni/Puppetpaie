@@ -746,7 +746,7 @@ fn mois_puppetpaie(
             let mut modeles = Vec::new();
             for p in &a_lui {
                 let parti = envois::etats::contrat_parti(&lignes, cle, p.engagement.numero.as_deref());
-                modeles.push(crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?);
+                modeles.push(crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_ref()), p)?);
             }
             documents::contrat::ecrire_contrat(ctx, &a_lui, &modeles, &ent, &chemin, &[])?;
             marquer(&chemin, aujourdhui)?;

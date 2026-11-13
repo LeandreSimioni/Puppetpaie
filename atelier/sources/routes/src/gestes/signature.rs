@@ -29,7 +29,7 @@ use envois::courriel::Courriel;
 use envois::envoi::{self, Message};
 use socle::echec::{erreur, R};
 use socle::echec::Echec;
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{EmpreinteCourte, NomDeFichier};
 use socle::html::{html_echapper, mailto};
 use socle::texte::capitaliser;
 use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
@@ -336,7 +336,7 @@ pub(crate) fn controler_avenants(ctx: &Contexte, avenants: &[(IdSalarie, Vec<UnA
 /// Le contrat tel qu'il part, pour le journal : qui, quand, sous quel numero, dans quel fichier, et ce qu'il dit, clause
 /// par clause, et le modele qu'il suit (`modele`, son empreinte, `modeles_figes`). La version de l'engagement sur
 /// laquelle il part, la ligne du journal la porte (`journal::versions_des_contrats`).
-fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &IdSalarie, pdf: &std::path::Path, titre: &str, mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, modele: String) -> R<ContratParti> {
+fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &IdSalarie, pdf: &std::path::Path, titre: &str, mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, modele: EmpreinteCourte) -> R<ContratParti> {
     Ok(ContratParti {
         salarie: cle.clone(),
         debut: p.engagement.debut,
@@ -364,7 +364,7 @@ fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &IdSalarie, pdf: &std::path:
 
 /// LES MODELES QUE SUIVENT CES CONTRATS QUI PARTENT (`modeles_contrat::du_contrat`), chacun fige avec la compagnie : les
 /// modeles, et leurs empreintes, que le journal note.
-fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit::ModeleDuContrat>, Vec<String>)> {
+fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit::ModeleDuContrat>, Vec<EmpreinteCourte>)> {
     let mut modeles = Vec::new();
     let mut figes = Vec::new();
     for p in ps {
@@ -985,7 +985,7 @@ fn avenant_ecrit(
             } else {
                 let j = envois::journal::lu(&ctx.racine)?;
                 let parti = envois::etats::contrat_parti(&j.lignes, salarie, a.contrat.as_deref());
-                crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?
+                crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_ref()), p)?
             };
             documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, a.date_contrat.ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un avenant neuf ne dit pas la date du contrat qu'il modifie."))?, a.effet, ctx.aujourdhui, &modele, ailleurs)?;
             f

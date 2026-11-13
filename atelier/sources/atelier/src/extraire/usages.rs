@@ -58,9 +58,9 @@ struct Usages {
 #[derive(Serialize)]
 enum Empreinte {
     #[serde(rename = "sha256_du_classeur")]
-    Classeur(String),
+    Classeur(socle::fichiers::Empreinte),
     #[serde(rename = "sha256_du_pdf")]
-    Pdf(String),
+    Pdf(socle::fichiers::Empreinte),
 }
 
 /// Ce que dit chaque lettre du tableau.

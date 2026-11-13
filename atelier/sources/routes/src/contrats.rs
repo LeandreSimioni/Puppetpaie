@@ -1268,7 +1268,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let deja = envois::etats::avenants_du_contrat(g.avenants.get(&(p.salarie.id.clone(), parti.numero.clone())), &parti);
     let ent = documents::avenant::ent_du_mois(ctx, mois_parti);
     // Le modele avec lequel le contrat est parti : l'avenant cite ses articles.
-    let modele = crate::modeles_contrat::du_contrat_parti(ctx, parti.modele.as_deref(), p)?.lu.decoupe("le modèle du contrat").map_err(|m| m.reclasser(Classe::Illisible))?;
+    let modele = crate::modeles_contrat::du_contrat_parti(ctx, parti.modele.as_ref(), p)?.lu.decoupe("le modèle du contrat").map_err(|m| m.reclasser(Classe::Illisible))?;
     let paie_ecrite = engagement::relire::ecrire(ctx, p)?;
     let numero_porte = p.engagement.numero.as_ref();
     let vals = documents::avenant::valeurs_de_la_paie(ctx, &ent, &paie_ecrite, numero_porte)?;

@@ -25,7 +25,7 @@ use serde::Serialize;
 
 use socle::date::Jour;
 use socle::echec::R;
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{Empreinte, NomDeFichier};
 
 /// Un referentiel releve tel qu'il s'ecrit : `quoi` (ce qu'il est), `note` (d'ou il vient : la commande, les fichiers
 /// deposes lus, la date du releve), puis ce que le releve en a tire (`corps`, la forme de chaque referentiel).
@@ -189,7 +189,7 @@ pub struct Transcription {
     /// Le nom du PDF transcrit.
     pub pdf: NomDeFichier,
     /// Son empreinte SHA-256.
-    pub sha256: String,
+    pub sha256: Empreinte,
     /// Ce que l'en-tete dit d'autre (`pages`...).
     pub champs: Vec<(String, String)>,
     /// Ce qui est transcrit.
@@ -227,7 +227,7 @@ impl Transcription {
             let Some((k, v)) = l.strip_prefix("# ").and_then(|l| l.split_once(" : ")) else { continue };
             match k {
                 "pdf" => pdf = Some(NomDeFichier::lire(v)?),
-                "sha256" => sha = Some(v.to_string()),
+                "sha256" => sha = Some(Empreinte::lire(v)?),
                 _ => champs.push((k.to_string(), v.to_string())),
             }
         }
@@ -307,9 +307,9 @@ pub(crate) fn remplie<'a>(r: &'a [Option<String>], j: usize, ou: &str) -> R<&'a 
 }
 
 /// L'empreinte SHA-256 du fichier, en hexadecimal.
-pub(crate) fn sha256(chemin: &Path) -> R<String> {
+pub(crate) fn sha256(chemin: &Path) -> R<Empreinte> {
     let octets = std::fs::read(chemin).map_err(|e| refus!("{} illisible ({})", chemin.display(), e))?;
-    Ok(socle::fichiers::sha256_hex(&octets))
+    Ok(Empreinte::des_octets(&octets))
 }
 
 /// Les blancs (`socle::texte::blanc`) ramenes a un, sans blanc au bord.

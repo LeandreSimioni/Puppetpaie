@@ -1151,7 +1151,7 @@ mod enregistreur {
         /// Recopie un fichier dans `pieces/` (une fois par contenu) ; rend son empreinte.
         fn recopier(&self, p: &Path) -> R<String> {
             let octets = std::fs::read(p).map_err(|e| du_disque(p, &e))?;
-            let sha = socle::fichiers::sha256_hex(&octets);
+            let sha = socle::fichiers::Empreinte::des_octets(&octets).to_string();
             let dest = self.dossier.join(PIECES).join(&sha);
             if !dest.exists() {
                 std::fs::write(&dest, &octets).map_err(|e| du_disque(&dest, &e))?;

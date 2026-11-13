@@ -27,7 +27,7 @@ use std::sync::{Arc, OnceLock};
 use serde::Deserialize;
 
 use droit::fiche::Lue as _;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, Empreinte, FormeGardee, NomDeFichier};
 use crate::norme::Norme;
 use socle::echec::{refus, refus_avec, Lieu, R};
 
@@ -47,7 +47,7 @@ struct Base {
     _note: String,
     /// L'empreinte de chaque fichier de l'INSEE releve.
     #[serde(rename = "sha256")]
-    _sha256: BTreeMap<String, String>,
+    _sha256: BTreeMap<NomDeFichier, Empreinte>,
     #[serde(rename = "en_vigueur_naf_2025")]
     _en_vigueur_naf_2025: String,
     naf_2025: BTreeMap<String, Naf2025>,

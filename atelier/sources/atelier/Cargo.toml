@@ -39,8 +39,6 @@ moteur = { path = "../moteur", features = ["atelier"] }
 fabrique-pdf = { path = "../fabrique-pdf" }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
-# L'empreinte d'une source (`sources`).
-sha2 = { workspace = true }
 # Le gzip des livraisons de la DILA (`releve::entrepot_dila`), deja lie par la fabrique de PDF.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 # Les textes de la DILA sont du XML : lecture seule, Rust pur (`releve::kali`).

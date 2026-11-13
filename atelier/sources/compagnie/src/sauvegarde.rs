@@ -21,10 +21,8 @@ use std::collections::BTreeMap;
 use socle::echec::Classe;
 use socle::fichiers::CheminRelatif;
 use socle::paris::Moment;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use md5::{Digest, Md5};
 
 use envois::drive::ErreurGoogle;
 
@@ -307,21 +305,6 @@ pub(crate) fn ecarte(relatif: &CheminRelatif) -> bool {
         return true;
     }
     relatif.components().any(|c| DOSSIERS_EXCLUS.contains(&c.as_os_str().to_string_lossy().as_ref()))
-}
-
-/// `empreinte` : MD5 du contenu, le meme que Drive publie. Lu par morceaux.
-pub fn empreinte(chemin: &Path) -> std::io::Result<String> {
-    let mut f = std::fs::File::open(chemin)?;
-    let mut h = Md5::new();
-    let mut bloc = vec![0u8; 1024 * 256];
-    loop {
-        let n = f.read(&mut bloc)?;
-        if n == 0 {
-            break;
-        }
-        h.update(&bloc[..n]);
-    }
-    Ok(h.finalize().iter().map(|b| format!("{:02x}", b)).collect())
 }
 
 /// Les entrees (fichiers et liens, pas les dossiers) sous `dossier`, relatives a `racine`. Un dossier lien n'est pas

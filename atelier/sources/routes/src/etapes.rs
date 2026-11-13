@@ -37,7 +37,7 @@ use engagement::numeros::NumeroContrat;
 use envois::etats::{self, DOCUMENTS, DPAE, DSN, SIGNATURE};
 use socle::echec::{Classe, R};
 use socle::echec::erreur;
-use socle::fichiers::{sha256_hex, NomDeFichier};
+use socle::fichiers::{Empreinte, EmpreinteCourte, NomDeFichier};
 use socle::echec::Echec;
 use crate::catalogue::{Acte, Fiche};
 use crate::catalogue::Route;
@@ -1351,7 +1351,7 @@ pub struct DpaeDue {
     pub spectacle: Option<String>,
     pub debut: Jour,
     pub fin: Option<Jour>,
-    pub empreinte: String,
+    pub empreinte: EmpreinteCourte,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pourquoi: Option<String>,
 }
@@ -1799,21 +1799,21 @@ impl<'a> Moteur<'a> {
     /// version de chaque engagement d'un mois passe dont elle porte la correction
     /// (`produire_regularisations::regularisations_pour`) : une correction validee apres l'ecriture du fichier le rend
     /// perime comme une paie du mois qui change. `None` si rien ne se lit ni ne se corrige.
-    pub(crate) fn empreinte_saisie(&self, mois: Mois) -> R<Option<String>> {
+    pub(crate) fn empreinte_saisie(&self, mois: Mois) -> R<Option<EmpreinteCourte>> {
         let departs = self.departs()?;
         self.empreinte_saisie_avec(mois, || declarations::produire_regularisations::regularisations_pour(self.ctx, mois, &departs).map(|r| Self::portees(&r)))
     }
 
     /// `empreinte_saisie`, sur les corrections portees que `portees` lit (`Moteur::portees`) : la fabrication de la DSN,
     /// qui les a deja lues, les passe.
-    pub(crate) fn empreinte_saisie_avec(&self, mois: Mois, portees: impl FnOnce() -> R<Vec<Portee>>) -> R<Option<String>> {
+    pub(crate) fn empreinte_saisie_avec(&self, mois: Mois, portees: impl FnOnce() -> R<Vec<Portee>>) -> R<Option<EmpreinteCourte>> {
         let vue = engagement::etats::empreinte_des_paies_validees(self.ctx, mois, None)?;
         let portees = portees()?;
         if portees.is_empty() {
-            return Ok(Some(vue.chars().take(16).collect()));
+            return Ok(Some(Empreinte::lire(&vue)?.courte()));
         }
         let ecrite = socle::ecriture::json_trie(&SaisieEtCorrections { saisie: &vue, corrections: &portees });
-        Ok(Some(sha256_hex(ecrite.as_bytes())[..16].to_string()))
+        Ok(Some(Empreinte::des_octets(ecrite.as_bytes()).courte()))
     }
 
     /// Ce que l'empreinte de la saisie retient de chaque correction portee (`Portee`).
@@ -1978,7 +1978,7 @@ impl<'a> Moteur<'a> {
         use compagnie::pieces_ecrites::{piece_notee, EmpreinteNotee};
         let note = piece_notee(self.racine(), fichier)?;
         if let Some((n, EmpreinteNotee::Saisie(notee))) = note.as_ref().and_then(|n| Some((n, n.empreinte_saisie.as_ref()?))) {
-            if self.empreinte_saisie(le_mois)?.as_deref() != Some(notee.as_str()) {
+            if self.empreinte_saisie(le_mois)?.as_ref().map(EmpreinteCourte::texte) != Some(notee.as_str()) {
                 return Ok(Some(format!("l'engagement a changé depuis que ce fichier a été écrit (le {})", n.quand.dit())));
             }
             return Ok(None);
@@ -2970,7 +2970,7 @@ pub(crate) fn le_mois_a_ouvrir(ctx: &Contexte) -> R<(Mois, Rendu)> {
 /// Ce que la DPAE d'une embauche declare, en 16 caracteres : l'identite du salarie telle que l'engagement la lit, les
 /// bornes du contrat, le spectacle, la nature ; pas les taux ni les cachets. Un test de DPAE fait sur une autre empreinte
 /// ne vaut plus.
-fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::ChampsSalarie) -> String {
+fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::ChampsSalarie) -> EmpreinteCourte {
     /// Ce que l'empreinte couvre, ecrit en JSON : une case vide y est `null`.
     #[derive(serde::Serialize)]
     struct Embauche<'a> {
@@ -2999,5 +2999,5 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
         sexe: sal.sexe.code(),
         nature: e.nature.cle(),
     };
-    sha256_hex(socle::ecriture::json_en_ligne(&embauche).as_bytes())[..16].to_string()
+    Empreinte::des_octets(socle::ecriture::json_en_ligne(&embauche).as_bytes()).courte()
 }

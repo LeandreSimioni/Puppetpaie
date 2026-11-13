@@ -152,7 +152,7 @@ pub(crate) fn nom_copie(f: &import::tri::Fichier) -> R<Option<NomDeFichier>> {
         Sorte::PdfTexte => "pdf",
         _ => return Ok(None),
     };
-    (f.empreinte.len() >= 16).then(|| NomDeFichier::lire(&format!("{}.{}", &f.empreinte[..16], ext))).transpose()
+    f.empreinte.as_ref().map(|e| NomDeFichier::lire(&format!("{}.{}", e.courte(), ext))).transpose()
 }
 
 /// LE NOM DE LA COPIE D'UNE PIECE LUE : une piece lue a ete hachee au tri, elle a donc sa copie ; sans elle, c'est un

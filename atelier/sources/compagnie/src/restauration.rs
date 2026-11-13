@@ -31,11 +31,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use md5::{Digest, Md5};
 
 use crate::coffre::{Coffre, SERVICES};
-use envois::drive::{Drive, ErreurGoogle};
-use crate::sauvegarde::{ecarte, ecrire_index, empreinte, hors_ligne, inventaire, Index, DOSSIER_DRIVE};
+use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle};
+use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, Index, DOSSIER_DRIVE};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 
 /// Un fichier redescendu.
@@ -108,10 +107,6 @@ pub struct RestaurationDite {
 
 use crate::sauvegarde::lisible;
 
-fn md5_de(octets: &[u8]) -> String {
-    Md5::digest(octets).iter().map(|b| format!("{:02x}", b)).collect()
-}
-
 /// LE NOM VENU DU DRIVE, s'il peut etre un nom de fichier ici sans sortir du dossier : un `NomDeFichier`, et sous
 /// Windows, ni deux-points (`C:x` changerait de lecteur) ni ce que Windows refuse ; `None` sinon, que la restauration
 /// dit en incident pour ce nom, sans le redescendre.
@@ -125,7 +120,7 @@ fn nom_sur(nom: &str) -> Option<NomDeFichier> {
 /// Un fichier de la sauvegarde, tel que l'inventaire du Drive le voit.
 struct Entree {
     id: String,
-    md5: Option<String>,
+    md5: Option<EmpreinteMd5>,
     /// Le dossier, relatif a `sauvegarde/` (`None` a la racine).
     dossier: Option<CheminRelatif>,
 }
@@ -205,7 +200,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
                 resultat.ecartes += 1;
                 continue;
             }
-            distants.insert(relatif, Entree { id: d.id, md5: d.md5.filter(|m| !m.is_empty()), dossier: dossier.clone() });
+            distants.insert(relatif, Entree { id: d.id, md5: d.md5, dossier: dossier.clone() });
         }
         let mut par_nom: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for (nom, i) in client.sous_dossiers(&id)? {
@@ -234,9 +229,9 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     let mut ecarts: Vec<String> = Vec::new();
     for (relatif, _) in &presents {
         let chemin = cible.join(relatif);
-        let locale = empreinte(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
+        let locale = EmpreinteMd5::du_fichier(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
         match distants.get(relatif) {
-            Some(d) if d.md5.as_deref() == Some(locale.as_str()) => {
+            Some(d) if d.md5.as_ref() == Some(&locale) => {
                 deja.insert(relatif.clone());
             }
             Some(_) => ecarts.push(format!("{} (differe de la copie du Drive)", relatif)),
@@ -268,7 +263,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         if verifies.contains(relatif) {
             continue;
         }
-        let Some(attendue) = d.md5.as_deref() else {
+        let Some(attendue) = d.md5.as_ref() else {
             resultat.incidents.push(format!("{} : le Drive n'en donne pas d'empreinte (un document Google ?), il n'est pas redescendu.", relatif));
             continue;
         };
@@ -289,8 +284,8 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
                 continue;
             }
         };
-        let recue = md5_de(&contenu);
-        if recue != attendue {
+        let recue = EmpreinteMd5::des_octets(&contenu);
+        if recue != *attendue {
             resultat.incidents.push(format!(
                 "{} : l'empreinte ne colle pas (le Drive annonce {}, le contenu recu donne {}) : rien n'est ecrit. Relancer `moteur restaurer`.",
                 relatif, attendue, recue

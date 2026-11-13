@@ -69,10 +69,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use socle::date::Jour;
 use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{Empreinte, NomDeFichier};
 use socle::num::Decimal;
 use socle::paris::Moment;
 
@@ -391,7 +390,7 @@ pub struct Publiee {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive: Option<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sha256: Option<String>,
+    pub sha256: Option<Empreinte>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
 }
@@ -416,7 +415,7 @@ pub struct Archives {
 #[serde(deny_unknown_fields)]
 pub struct ArchivePubliee {
     pub archive: NomDeFichier,
-    pub sha256: String,
+    pub sha256: Empreinte,
     pub signature: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub systemes: Option<Vec<String>>,
@@ -427,21 +426,21 @@ pub struct ArchivePubliee {
 #[serde(deny_unknown_fields)]
 pub struct FictivesPubliees {
     pub archive: NomDeFichier,
-    pub sha256: String,
+    pub sha256: Empreinte,
     pub signature: String,
-    pub empreinte: String,
+    pub empreinte: Empreinte,
 }
 
 impl ArchivePubliee {
     /// Ce que `archive_verifiee` verifie : le nom, le condensat, la signature.
-    fn signee(&self) -> (&NomDeFichier, &str, &str) {
+    fn signee(&self) -> (&NomDeFichier, &Empreinte, &str) {
         (&self.archive, &self.sha256, &self.signature)
     }
 }
 
 impl FictivesPubliees {
     /// Ce que `archive_verifiee` verifie : le nom, le condensat, la signature.
-    fn signee(&self) -> (&NomDeFichier, &str, &str) {
+    fn signee(&self) -> (&NomDeFichier, &Empreinte, &str) {
         (&self.archive, &self.sha256, &self.signature)
     }
 }
@@ -505,10 +504,8 @@ pub fn derniere_lue(octets: &[u8]) -> R<Publiee> {
         return Err(publiee_illisible("archives", ""));
     }
     for (systeme, a) in d.archives.toutes() {
-        for (k, v) in [("sha256", &a.sha256), ("signature", &a.signature)] {
-            if v.is_empty() {
-                return Err(publiee_illisible(&format!("archives.{}.{}", systeme, k), ""));
-            }
+        if a.signature.is_empty() {
+            return Err(publiee_illisible(&format!("archives.{}.signature", systeme), ""));
         }
         // Celle de tous les systemes dit ceux qu'elle porte (au moins un) ; celle d'un systeme n'en dit aucun.
         let dit_ses_systemes = a.systemes.as_ref().is_some_and(|s| !s.is_empty());
@@ -519,17 +516,10 @@ pub fn derniere_lue(octets: &[u8]) -> R<Publiee> {
             return Err(publiee_illisible(&format!("archives.{}.systemes", systeme), x));
         }
     }
-    let f = &d.fictives;
-    for (k, v) in [("sha256", &f.sha256), ("signature", &f.signature), ("empreinte", &f.empreinte)] {
-        if v.is_empty() {
-            return Err(publiee_illisible(&format!("fictives.{}", k), ""));
-        }
+    if d.fictives.signature.is_empty() {
+        return Err(publiee_illisible("fictives.signature", ""));
     }
     Ok(d)
-}
-
-pub fn condensat(octets: &[u8]) -> String {
-    Sha256::digest(octets).iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 pub fn b64(t: &str) -> R<Vec<u8>> {
@@ -695,11 +685,11 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
 /// entre dans une installation : la mise a jour, les fictives, les systemes qu'un dossier portable ajoute
 /// (`completer_le_portable`). Un echec de lecture porte `HORS_LIGNE` ou `INTROUVABLE` ; une archive qui n'est pas la
 /// notre, `ALTEREE` ou `SIGNATURE_REFUSEE`.
-fn archive_verifiee(depot: &str, (nom, attendu, signature): (&NomDeFichier, &str, &str), cles: &[&str], suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
+fn archive_verifiee(depot: &str, (nom, attendu, signature): (&NomDeFichier, &Empreinte, &str), cles: &[&str], suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
     let octets = lire_depot_suivi(depot, nom, suivre)?;
-    let sha = condensat(&octets);
-    if sha != attendu {
-        return Err((ALTEREE, refus_avec("Une archive téléchargée est altérée : elle se télécharge de nouveau à la prochaine mise à jour.", APart::forme(Alteree { fichier: nom.to_string(), condensat: sha, attendu: attendu.to_string() }))));
+    let sha = Empreinte::des_octets(&octets);
+    if sha != *attendu {
+        return Err((ALTEREE, refus_avec("Une archive téléchargée est altérée : elle se télécharge de nouveau à la prochaine mise à jour.", APart::forme(Alteree { fichier: nom.to_string(), condensat: sha.to_string(), attendu: attendu.to_string() }))));
     }
     if !signee_par_l_une(&octets, signature, cles) {
         return Err((SIGNATURE_REFUSEE, socle::refus!("la signature de {} n'est pas celle de l'editeur", nom)));
@@ -963,15 +953,15 @@ const FICTIVES_PRETES: &str = "fictives-pretes";
 #[serde(deny_unknown_fields)]
 pub struct Livraison {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub empreinte: Option<String>,
-    pub posees: std::collections::BTreeMap<NomDeFichier, String>,
+    pub empreinte: Option<Empreinte>,
+    pub posees: std::collections::BTreeMap<NomDeFichier, Empreinte>,
 }
 
 /// LA MARQUE D'UNE FICTIVE LIVREE (`fictives/<nom>/.livree.json`) : l'empreinte de son contenu a la livraison.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Livree {
-    pub empreinte: String,
+    pub empreinte: Empreinte,
 }
 
 /// Ce qu'un dossier `fictives/` retient de sa livraison (`LIVRAISON`), ou `None` (une installation qui n'a recu
@@ -981,7 +971,7 @@ fn livraison_retenue(fictives: &Path) -> R<Option<Livraison>> {
 }
 
 /// L'empreinte de la livraison de fictives que retient un dossier `fictives/`, ou `None`.
-pub fn empreinte_retenue(fictives: &Path) -> R<Option<String>> {
+pub fn empreinte_retenue(fictives: &Path) -> R<Option<Empreinte>> {
     Ok(livraison_retenue(fictives)?.and_then(|l| l.empreinte))
 }
 
@@ -1023,15 +1013,15 @@ fn deballer_les_fictives(octets: &[u8], cible: &Path) -> R<()> {
 /// livraisons) ne les recoit pas. Rend ce qui s'est passe, ou `None` s'il n'y avait rien a faire.
 pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str]) -> Option<String> {
     let f = &d.fictives;
-    let empreinte = f.empreinte.as_str();
+    let empreinte = &f.empreinte;
     let maj = dossier_maj(inst);
     let pretes = maj.join(FICTIVES_PRETES);
     let vise = pretes.join(crate::installation::DOSSIER_FICTIVES);
     if inst.join(".git").exists() {
         return None;
     }
-    let court = &empreinte[..empreinte.len().min(12)];
-    let deja = || -> R<bool> { Ok(empreinte_retenue(&dossier_des_fictives(inst))?.as_deref() == Some(empreinte) || empreinte_retenue(&vise)?.as_deref() == Some(empreinte)) };
+    let court = &empreinte.texte()[..12];
+    let deja = || -> R<bool> { Ok(empreinte_retenue(&dossier_des_fictives(inst))?.as_ref() == Some(empreinte) || empreinte_retenue(&vise)?.as_ref() == Some(empreinte)) };
     match deja() {
         Ok(true) => return None,
         Ok(false) => {}
@@ -1042,7 +1032,7 @@ pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str
         let part = maj.join(format!("{}.part", FICTIVES_PRETES));
         socle::fichiers::effacer(&part)?;
         deballer_les_fictives(&octets, &part)?;
-        if empreinte_retenue(&part.join(crate::installation::DOSSIER_FICTIVES))?.as_deref() != Some(empreinte) {
+        if empreinte_retenue(&part.join(crate::installation::DOSSIER_FICTIVES))?.as_ref() != Some(empreinte) {
             return Err(socle::fichiers::effacer_apres(refus("l'archive des fictives ne dit pas l'empreinte annoncee"), &part));
         }
         socle::fichiers::effacer(&pretes)?;
@@ -1201,7 +1191,7 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
     }
     Some(format!(
         "Compagnies fictives : livraison {} posee ({}){}.",
-        &empreinte[..empreinte.len().min(12)],
+        &empreinte.texte()[..12],
         posees.keys().map(NomDeFichier::texte).collect::<Vec<_>>().join(", "),
         if dit.is_empty() { String::new() } else { format!(" ; {}", dit.join(" ; ")) }
     ))

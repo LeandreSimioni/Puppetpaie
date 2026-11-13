@@ -886,7 +886,7 @@ pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&IdSalarie>) -> Stri
         .map(|e| Carte { valide: None, numero: None, ..e.clone() })
         .collect();
     let tete = Tete { mois: &vue.mois, taux_cachet: &vue.taux_cachet };
-    let h = |x: String| socle::fichiers::sha256_hex(x.as_bytes());
+    let h = |x: String| socle::fichiers::Empreinte::des_octets(x.as_bytes());
     format!("{}:{}", h(socle::ecriture::canonique(&tete)), h(socle::ecriture::canonique(&engagements)))
 }
 

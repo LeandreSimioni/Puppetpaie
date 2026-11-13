@@ -55,7 +55,7 @@ fn transcription_du_cahier_2026_1(quoi: &str) -> PathBuf {
     let chemin = reference(&format!("norme-dsn/dsn-cahier-technique-2026.1-{}.txt", quoi));
     let t = extraire::Transcription::lire(&chemin).unwrap();
     let octets = std::fs::read(&pdf).unwrap();
-    assert_eq!(t.sha256, socle::fichiers::sha256_hex(&octets), "{} : le PDF depose a change, la transcription se refait", chemin.display());
+    assert_eq!(t.sha256, socle::fichiers::Empreinte::des_octets(&octets), "{} : le PDF depose a change, la transcription se refait", chemin.display());
     chemin
 }
 

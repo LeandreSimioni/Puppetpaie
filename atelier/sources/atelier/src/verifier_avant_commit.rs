@@ -422,7 +422,7 @@ pub fn verifier(racine: &Path, indexes: bool) -> R<Vec<Trouvaille>> {
 /// son empreinte est celle que le `LISEZ-MOI` de son dossier porte (`deposes`, `crate::empreintes::lues`). Le verrou de
 /// la suite s'en sert aussi.
 pub fn depose_tel_quel(deposes: &BTreeMap<String, String>, fichier: &str, o: &[u8]) -> bool {
-    deposes.get(fichier).is_some_and(|e| *e == crate::empreintes::empreinte(o))
+    deposes.get(fichier).is_some_and(|e| e == socle::fichiers::Empreinte::des_octets(o).texte())
 }
 
 /// Ce que la commande affiche : la phrase de passage, ou chaque fichier et ses lignes, et ce qu'il faut en faire.

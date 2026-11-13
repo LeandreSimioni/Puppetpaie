@@ -614,14 +614,14 @@ pub struct Declaration {
 pub struct TableauCompagnie {
     pub le: Jour,
     pub declarations: Vec<Declaration>,
-    pub empreinte: String,
+    pub empreinte: socle::fichiers::Empreinte,
 }
 
 /// Ou en est un fichier DSN ecrit (mensuelle ou signalement), lu du journal : `None` quand un depot reel accepte de ce
 /// contenu est note. Les memes lectures que l'etape de depot du mois (`crate::etapes`, la route `etat-du-mois`).
 fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &Path, mensuelle: Option<Mois>) -> R<Option<Etape>> {
     let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
-    let empreinte = envois::journal::empreinte(&octets);
+    let empreinte = socle::fichiers::Empreinte::des_octets(&octets).courte();
     if etats::deja_depose(lignes, envois::journal::Acte::Dsn, &empreinte).is_some() {
         return Ok(None);
     }
