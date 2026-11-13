@@ -263,7 +263,7 @@ pub struct ContratDeclare {
     /// .022, la caisse de conges payes, telle que la DSN l'ecrit.
     pub caisse_conges: Option<String>,
     /// .040 et .043 : le code risque et le taux AT/MP (`bloc-S21.G00.40.txt` l. 1224-1315).
-    pub code_risque: Option<String>,
+    pub code_risque: Option<droit::bareme::CodeRisqueAt>,
     pub taux_at: Option<Decimal>,
     /// .049, la licence.
     pub licence: Option<String>,
@@ -1201,7 +1201,8 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 }
                 contrat.into_iter().for_each(|c| c.caisse_conges = plein.clone());
             }
-            "S21.G00.40.040" => contrat.into_iter().for_each(|c| c.code_risque = plein.clone()),
+            // Un code hors de sa forme laisse la case vide (une DSN lue : lire, un inconnu ne s'invente pas).
+            "S21.G00.40.040" => contrat.into_iter().for_each(|c| c.code_risque = droit::bareme::CodeRisqueAt::lire(&v).ok()),
             "S21.G00.40.043" => {
                 let t = fautes.nombre(rub, &v);
                 contrat.into_iter().for_each(|c| c.taux_at = t);

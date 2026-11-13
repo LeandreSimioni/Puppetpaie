@@ -55,11 +55,18 @@ pub struct TauxPasAnnonce {
     pub taux: Decimal,
 }
 
+/// Le code risque annonce, range comme une saisie (`CodeRisqueAt::rangee` : `92.3AD` se lit `923AD`).
+fn code_risque_annonce<'de, D: serde::Deserializer<'de>>(d: D) -> Result<droit::bareme::CodeRisqueAt, D::Error> {
+    let texte = String::deserialize(d)?;
+    droit::bareme::CodeRisqueAt::lire(&droit::bareme::CodeRisqueAt::rangee(&texte)).map_err(|e| serde::de::Error::custom(e.phrase))
+}
+
 /// La CARSAT notifie ce taux a l'etablissement.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TauxAtmpAnnonce {
-    pub code_risque: String,
+    #[serde(deserialize_with = "code_risque_annonce")]
+    pub code_risque: droit::bareme::CodeRisqueAt,
     pub taux: Decimal,
     pub date_effet: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,9 +174,9 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
             gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: deux_decimales(n) });
         }
         Annonce::TauxAtmp(t) => {
-            let code = t.code_risque.replace(['.', ' '], "").to_uppercase();
+            let code = t.code_risque;
             let n = t.taux;
-            if code.len() != 5 || !(Decimal::ZERO..Decimal::from(20)).contains(&n) || n.is_zero() {
+            if code.as_str().len() != 5 || !(Decimal::ZERO..Decimal::from(20)).contains(&n) || n.is_zero() {
                 return Err(socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp").reclasser(Classe::Illisible));
             }
             gardee.taux_atmp = Some(TauxAtmpAnnonce {
@@ -467,7 +474,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
             "<taux_AT>{}{}<code_risque>{}</code_risque>{}<taux>{}</taux><date_effet>{}</date_effet><date_calcul>{}</date_calcul></taux_AT>",
             facultatif(&t.code_ctn, "code_ctn"),
             facultatif(&t.section, "section"),
-            echappe(&t.code_risque),
+            echappe(t.code_risque.as_str()),
             facultatif(&t.bureau, "temoin_bureau"),
             t.taux,
             t.date_effet.aaaammjj(),

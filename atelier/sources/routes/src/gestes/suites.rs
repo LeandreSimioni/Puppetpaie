@@ -126,11 +126,11 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         }
         for (an, mut taux) in par_annee {
             taux.sort_by_key(|t| t.date_effet);
-            let codes: std::collections::BTreeSet<&str> = taux.iter().map(|t| t.code_risque.as_str()).collect();
+            let codes: std::collections::BTreeSet<&droit::bareme::CodeRisqueAt> = taux.iter().map(|t| &t.code_risque).collect();
             if codes.len() > 1 {
                 a_faire.push(format!(
                     "{} : plusieurs codes risques pour {} ({}). La configuration n'en porte qu'un par année : rien n'est posé ; saisissez celui de l'activité principale dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
-                    source, an, codes.into_iter().collect::<Vec<_>>().join(", ")
+                    source, an, codes.into_iter().map(droit::bareme::CodeRisqueAt::as_str).collect::<Vec<_>>().join(", ")
                 ));
                 continue;
             }

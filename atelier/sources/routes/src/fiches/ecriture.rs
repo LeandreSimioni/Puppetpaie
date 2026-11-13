@@ -134,13 +134,13 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         p.sans_notes()
     }
     /// LE TAUX AT/MP SAISI (`taux_atmp`, une ligne : `routes::atmp`) : le code risque s'ecrit sans point ni blanc
-    /// (S21.G00.40.040, « 923AD ») ; la ligne est celle de la personne (`provenance`), sans notification.
+    /// (S21.G00.40.040, « 923AD » : sa saisie se range a sa lecture, `CodeRisqueAt::rangee`) ; la ligne est celle de la
+    /// personne (`provenance`), sans notification.
     fn ajuster(avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) {
         if apres.taux_atmp == avant.taux_atmp {
             return;
         }
         let Some(t) = apres.taux_atmp.as_mut() else { return };
-        t.code_risque = t.code_risque.as_deref().map(|c| c.trim_matches(socle::texte::blanc).replace(['.', ' '], "").to_uppercase()).filter(|c| !c.is_empty());
         t.provenance = Some(droit::fiche::ProvenanceAtmp::Saisie);
         t.notification = None;
     }

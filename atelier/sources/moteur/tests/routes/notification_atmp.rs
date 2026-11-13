@@ -58,7 +58,7 @@ fn la_notification_lue_pose_le_taux_de_l_annee_a_sa_date_d_effet() {
         droit::fiche::valeur_au(f.taux_atmp.as_deref().unwrap(), &j).unwrap()
     };
     let t = taux_au(jour(2026, 1, 1));
-    assert_eq!((t.code_risque.as_deref(), t.valeur.clone(), t.depuis, t.provenance), (Some("923AD"), Some(droit::fiche::Montant::Flottant(socle::num::Decimal::new(17, 1))), Some(jour(2026, 1, 1)), Some(droit::fiche::ProvenanceAtmp::Notification)), "{:?}", t);
+    assert_eq!((t.code_risque.as_ref().map(droit::bareme::CodeRisqueAt::as_str), t.valeur.clone(), t.depuis, t.provenance), (Some("923AD"), Some(droit::fiche::Montant::Flottant(socle::num::Decimal::new(17, 1))), Some(jour(2026, 1, 1)), Some(droit::fiche::ProvenanceAtmp::Notification)), "{:?}", t);
     assert_eq!(t.notification.and_then(|n| n.effet), Some(jour(2026, 1, 1)));
 
     // Effet en cours d'annee : le taux d'avant jusqu'a la date d'effet, le notifie ensuite.

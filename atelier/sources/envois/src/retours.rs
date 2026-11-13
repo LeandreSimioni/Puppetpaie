@@ -2574,7 +2574,7 @@ pub struct TauxAtmpNotifie {
     pub section: String,
     /// Le code risque tel que la DSN le declare (S21.G00.40.040) : celui de la notification, suivi du « B » quand le taux
     /// est celui des fonctions support.
-    pub code_risque: String,
+    pub code_risque: droit::bareme::CodeRisqueAt,
     /// En pourcentage (1.50 pour 1,50 %).
     pub taux: socle::num::Decimal,
     pub date_effet: socle::date::Jour,
@@ -2615,15 +2615,15 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
             }
             let siren_lu = droit::fiche::Siren::lire(&siren).map_err(|_| illisible("SIREN", &siren))?;
             let nic_lu = droit::fiche::Nic::lire(&nic).map_err(|_| illisible("NIC", &nic))?;
+            // Le code de la notification a cinq signes (le « B » est son temoin bureau) : sa forme est celle de la DSN.
             let code = champ("code_risque").to_uppercase();
-            let ok_code = code.len() == 5 && code.chars().all(|c| c.is_ascii_digit() || c.is_ascii_uppercase());
-            if !ok_code {
+            let Some(lu) = droit::bareme::CodeRisqueAt::lire(&code).ok().filter(|c| c.as_str().len() == 5) else {
                 return Err(illisible("code risque", &code));
-            }
+            };
             let bureau = champ("temoin_bureau");
             let code_risque = match bureau.as_str() {
-                "" => code,
-                "B" | "b" => format!("{}B", code),
+                "" => lu,
+                "B" | "b" => lu.avec_bureau()?,
                 autre => return Err(illisible("témoin bureau", autre)),
             };
             let brut = champ("taux");

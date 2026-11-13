@@ -606,7 +606,7 @@ pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> R<()> 
             }
         }
         // Le code risque se dit toujours ; le taux de la periode, c'est la paie qui le demande (`bareme::surcharger`).
-        if e.taux_atmp.dite().and_then(|t| t.code_risque.remplie()).is_none_or(|c| c.trim().is_empty()) {
+        if e.taux_atmp.dite().and_then(|t| t.code_risque.dite()).is_none() {
             griefs.push(format!(
                 "{} : son code risque AT/MP, tel que la CARSAT le notifie a CET etablissement (Configuration › \
 Entreprise › Avancé, « Établissements »)",

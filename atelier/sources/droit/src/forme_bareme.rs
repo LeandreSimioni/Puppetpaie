@@ -950,8 +950,9 @@ forme! {
 
 forme! {
     pub struct RisqueAtmp {
-        pub code: String,
-        pub code_arrete: Option<String>,
+        pub code: crate::bareme::CodeRisqueAt,
+        #[serde(default, deserialize_with = "crate::bareme::ecrit_a_l_arrete::deserialize")]
+        pub code_arrete: Option<crate::bareme::CodeRisqueAt>,
         pub taux: Option<Nombre>,
         pub tc: bool,
         pub alsace_moselle: Option<AtmpAlsaceMoselle>,
@@ -1445,7 +1446,7 @@ forme! {
 #[derive(Debug, Clone, Default)]
 pub struct TauxAtmp {
     pub valeur: Option<Decimal>,
-    pub code_risque: Option<String>,
+    pub code_risque: Option<crate::bareme::CodeRisqueAt>,
     pub depuis: Option<socle::date::Jour>,
     pub provenance: Option<crate::fiche::ProvenanceAtmp>,
     pub notification: Option<crate::fiche::NotificationAtmp>,

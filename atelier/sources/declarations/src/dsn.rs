@@ -1732,14 +1732,14 @@ pub fn bloc_contrat_fctu(
     let ecrit_atmp = usage_admet(f, droit::rubrique!("S21.G00.40.043"), nature_dsn)?;
     // SIG-11 : sous le code risque 999ZZ (pas encore de notification), le taux (40.043) est interdit ; sous tout autre
     // code, il est obligatoire (`norme-dsn/texte/bloc-S21.G00.40.txt`, l. 1309-1313).
-    let code_risque = atmp.and_then(|a| a.code_risque.clone()).filter(|c| !c.is_empty());
+    let code_risque = atmp.and_then(|a| a.code_risque.clone());
     let valeur_atmp = atmp.and_then(|a| a.valeur).filter(|v| !v.is_zero());
-    let sans_notification = code_risque.as_deref() == Some(bareme::SANS_NOTIFICATION);
+    let sans_notification = code_risque.as_ref() == Some(&bareme::SANS_NOTIFICATION);
     // Le code risque (40.040) et le taux (40.043, sauf sans notification) que le contrat declare.
     let atmp_ecrit: Option<(String, Option<Decimal>)> = match (ecrit_atmp, code_risque, valeur_atmp) {
         (false, _, _) => None,
-        (true, Some(c), _) if sans_notification => Some((c, None)),
-        (true, Some(c), Some(v)) => Some((c, Some(v))),
+        (true, Some(c), _) if sans_notification => Some((c.to_string(), None)),
+        (true, Some(c), Some(v)) => Some((c.to_string(), Some(v))),
         (true, _, _) => {
             return Err(socle::echec::cle(format!(
                 "Bareme {} : le taux AT/MP manque (sa valeur et son code risque). C'est le taux AT/MP notifie a l'etablissement, \

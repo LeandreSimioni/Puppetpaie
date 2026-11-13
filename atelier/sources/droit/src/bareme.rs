@@ -763,7 +763,7 @@ pub fn bareme_atmp(mut bar: Pile, _ent: &ChampsEntreprise) -> R<Pile> {
         if let Some(pourquoi) = t.and_then(|t| t.manque.clone()) {
             return Err(pourquoi);
         }
-        return Err(if t.and_then(|t| t.code_risque.as_deref()) == Some(SANS_NOTIFICATION) {
+        return Err(if t.and_then(|t| t.code_risque.as_ref()) == Some(&SANS_NOTIFICATION) {
             socle::echec::erreur(
                 socle::echec::Classe::TauxAtmpAbsent,
                 format!("Le taux AT/MP {} manque : le code risque est 999ZZ (pas encore de notification de la CARSAT), que la DSN déclare sans taux, et aucun texte ne dit quel taux le bulletin cotise en attendant. Le code et le taux notifiés se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) », dès que la notification arrive (compte AT/MP sur net-entreprises).",
@@ -1758,10 +1758,10 @@ pub fn somme_pct(a: Decimal, taux: &[Decimal]) -> Decimal {
 /// de l'annee l'ecrit (`atelier/reference/sources/tarification-atmp/`, transcription des annexes l. 497-561).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RisqueAtmp {
-    /// La forme de la DSN (S21.G00.40.040), sans point : `923AD`.
-    pub code: String,
-    /// La forme de l'arrete, `92.3AD` ; rien pour 999ZZ.
-    pub code_arrete: Option<String>,
+    /// Le code, dans la forme de la DSN (S21.G00.40.040), sans point : `923AD`.
+    pub code: CodeRisqueAt,
+    /// Le code tel que l'arrete le nomme (`92.3AD`, `CodeRisqueAt::a_l_arrete`) ; rien pour 999ZZ.
+    pub code_arrete: Option<CodeRisqueAt>,
     pub libelle: String,
     pub precisions: Option<String>,
     /// Le taux net collectif de l'annexe 1, en pourcentage ; rien pour 999ZZ.
@@ -1772,9 +1772,99 @@ pub struct RisqueAtmp {
     pub alsace_moselle: Option<(i64, Decimal)>,
 }
 
+/// LE CODE RISQUE AT/MP (S21.G00.40.040, `X [5,6]`, « Table RAT - Codes risque ATMP ») : trois chiffres et deux
+/// caracteres, suivis du « B » du taux bureau s'il est sur la notification (`norme-dsn/texte/bloc-S21.G00.40.txt`
+/// l. 1229-1240) ; 999ZZ sans notification. Il s'ecrit comme la DSN l'ecrit (`923AD`) ; l'arrete de tarification
+/// l'ecrit avec un point apres ses deux premiers chiffres (`92.3AD`, `de_l_arrete`, `a_l_arrete`). Une saisie se range
+/// d'abord sans blancs de bord, sans point ni espace, en capitales (`rangee`). Que portent la case du taux AT/MP de la
+/// fiche, un risque de l'arrete, le taux AT/MP du bareme, ce que la lecture d'une DSN garde, la notification de la
+/// CARSAT et ce que le simulateur annonce.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(transparent)]
+pub struct CodeRisqueAt(std::borrow::Cow<'static, str>);
+
+impl CodeRisqueAt {
+    /// Le code ecrit `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CodeRisqueAt> {
+        if !code_risque_valide(texte) {
+            return Err(socle::refus!(
+                "Code risque « {} » : trois chiffres et deux lettres ou chiffres, suivis du « B » du taux bureau s'il est sur la notification (923AD, 602MDB) ; 999ZZ sans notification.",
+                texte
+            ));
+        }
+        Ok(CodeRisqueAt(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// Le code tel que l'arrete l'ecrit, un point apres ses deux premiers chiffres (`92.3AD`).
+    pub fn de_l_arrete(texte: &str) -> R<CodeRisqueAt> {
+        match (texte.get(..2), texte.get(2..3), texte.get(3..)) {
+            (Some(a), Some("."), Some(b)) => CodeRisqueAt::lire(&format!("{}{}", a, b)),
+            _ => Err(socle::refus!("Code risque de l'arrêté « {} » : deux chiffres, un point, puis la suite du code (92.3AD).", texte)),
+        }
+    }
+
+    /// LE CODE QUE LE MOTEUR NOMME, ecrit en Rust.
+    pub const fn du_moteur(code: &'static str) -> CodeRisqueAt {
+        CodeRisqueAt(std::borrow::Cow::Borrowed(code))
+    }
+
+    /// Le texte saisi `texte` dans sa forme, avant d'etre lu : sans blancs de bord, sans point ni espace, en capitales.
+    pub fn rangee(texte: &str) -> String {
+        texte.trim_matches(socle::texte::blanc).replace(['.', ' '], "").to_uppercase()
+    }
+
+    /// Ce qui refuse `texte` a la saisie ; rien pour un texte vide (la case vide s'ecrit nulle).
+    pub fn faute(texte: &str) -> Option<String> {
+        if texte.is_empty() {
+            return None;
+        }
+        CodeRisqueAt::lire(texte).err().map(|e| e.phrase)
+    }
+
+    /// Le code de cinq signes que la notification de la CARSAT ecrit, suivi du « B » du taux bureau.
+    pub fn avec_bureau(&self) -> R<CodeRisqueAt> {
+        CodeRisqueAt::lire(&format!("{}B", self.0))
+    }
+
+    /// Le code tel que l'arrete l'ecrit (`92.3AD`).
+    pub fn a_l_arrete(&self) -> String {
+        format!("{}.{}", &self.0[..2], &self.0[2..])
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CodeRisqueAt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for CodeRisqueAt {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as serde::Deserialize>::deserialize(d)?;
+        CodeRisqueAt::lire(&socle::forme::range_si_saisi(texte, CodeRisqueAt::rangee)).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+/// L'ECRITURE DE L'ARRETE d'un code risque (`92.3AD`), la ou un fichier livre la porte (`risques_atmp.codes`,
+/// `code_arrete`) : lue par `CodeRisqueAt::de_l_arrete` ; absente ou nulle, aucune.
+pub mod ecrit_a_l_arrete {
+    use serde::Deserialize;
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<super::CodeRisqueAt>, D::Error> {
+        match Option::<String>::deserialize(d)? {
+            Some(t) => super::CodeRisqueAt::de_l_arrete(&t).map(Some).map_err(|e| serde::de::Error::custom(e.phrase)),
+            None => Ok(None),
+        }
+    }
+}
+
 /// Le code sans notification de la CARSAT (S21.G00.40.040, `norme-dsn/texte/bloc-S21.G00.40.txt` l. 1236-1252) : la DSN
 /// interdit alors le taux (SIG-11, l. 1311-1313).
-pub const SANS_NOTIFICATION: &str = "999ZZ";
+pub const SANS_NOTIFICATION: CodeRisqueAt = CodeRisqueAt::du_moteur("999ZZ");
 
 /// LE TAUX QUE L'ARRETE FIXE pour ce risque : le taux net collectif de l'annexe 1 quand il s'applique, c'est-a-dire pour
 /// un risque « TC » quel que soit l'effectif (D. 242-6-14, I), et pour un autre quand le taux collectif lui vaut
@@ -1798,11 +1888,9 @@ pub fn risques_de(bar: &Pile) -> Vec<RisqueAtmp> {
     bar.risques_atmp
         .iter()
         .flat_map(|r| &r.codes)
-        // Un code vide ne nomme aucun risque.
-        .filter(|r| !r.code.trim().is_empty())
         .map(|r| RisqueAtmp {
-            code: r.code.trim().to_string(),
-            code_arrete: texte(&r.code_arrete),
+            code: r.code.clone(),
+            code_arrete: r.code_arrete.clone(),
             libelle: r.libelle.trim().to_string(),
             precisions: texte(&r.precisions),
             taux: r.taux.as_ref().map(deux),
@@ -1848,12 +1936,12 @@ mod tests_risques_atmp {
     #[test]
     fn le_taux_d_un_risque_tc_est_celui_de_l_arrete_quel_que_soit_l_effectif() {
         let socle = crate::contexte::socle_livre_lu(2026).unwrap().unwrap();
-        let r = risques_de(&socle).into_iter().find(|r| r.code == "923AD").unwrap();
-        assert_eq!((r.code.as_str(), r.code_arrete.as_deref(), r.tc), ("923AD", Some("92.3AD"), true));
+        let r = risques_de(&socle).into_iter().find(|r| r.code.as_str() == "923AD").unwrap();
+        assert_eq!((r.code.as_str(), r.code_arrete.as_ref().map(CodeRisqueAt::a_l_arrete).as_deref(), r.tc), ("923AD", Some("92.3AD"), true));
         assert_eq!(taux_de_l_arrete(&r, false, false), Some(Decimal::new(150, 2)));
         assert_eq!(taux_de_l_arrete(&r, true, true), None);
         assert_eq!(r.alsace_moselle, Some((3, Decimal::new(334, 2))));
-        let gestion = risques_de(&socle).into_iter().find(|r| r.code == "921CC").unwrap();
+        let gestion = risques_de(&socle).into_iter().find(|r| r.code.as_str() == "921CC").unwrap();
         assert_eq!(taux_de_l_arrete(&gestion, true, false), Some(Decimal::new(107, 2)));
         assert_eq!(taux_de_l_arrete(&gestion, false, false), None);
         let sans = risques_de(&socle).into_iter().find(|r| r.code == SANS_NOTIFICATION).unwrap();
@@ -1871,7 +1959,7 @@ mod tests_risques_atmp {
     fn un_taux_notifie_sans_tc_ne_vaut_pas_au_dela_de_son_annee() {
         let s26 = crate::contexte::socle_livre_lu(2026).unwrap().unwrap();
         let ligne = |code: &str, t: Decimal| crate::fiche::TauxAtmp {
-            code_risque: Some(code.into()),
+            code_risque: Some(CodeRisqueAt::lire(code).unwrap()),
             valeur: Some(crate::fiche::Montant::Flottant(t)),
             depuis: Some(Jour::nouveau(2025, 1, 1).unwrap()),
             ..Default::default()
@@ -1903,11 +1991,11 @@ fn pourcent(t: Decimal) -> String {
 /// notification) n'a pas de taux (`bareme_atmp` dit pourquoi). Sinon `Err` : le taux de l'annee manque et se demande.
 /// `None` : la case ne dit aucun code.
 pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: i32, socle_an: Option<&Pile>, alsace_moselle: bool) -> Option<R<TauxAtmp>> {
-    let code = dit.code_risque.as_deref().map(str::trim).filter(|c| !c.is_empty())?.to_string();
+    let code = dit.code_risque.clone()?;
     let risque = socle_an.and_then(|s| risques_de(s).into_iter().find(|r| r.code == code));
-    let nom = match risque.as_ref().and_then(|r| r.code_arrete.clone()) {
-        Some(c) => c,
-        None => code.clone(),
+    let nom = match risque.as_ref().and_then(|r| r.code_arrete.as_ref()) {
+        Some(c) => c.a_l_arrete(),
+        None => code.to_string(),
     };
     let manque = |pourquoi: String| {
         Some(Err(socle::echec::erreur(
@@ -1938,26 +2026,22 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: i32, socle_an: Opt
 
 /// LA FORME D'UN CODE RISQUE (S21.G00.40.040, `X [5,6]`) : trois chiffres et deux caracteres, suivis du « B » du taux
 /// bureau s'il est sur la notification (`norme-dsn/texte/bloc-S21.G00.40.txt` l. 1229-1240) ; 999ZZ sans notification.
-pub fn code_risque_valide(code: &str) -> bool {
+fn code_risque_valide(code: &str) -> bool {
     let c: Vec<char> = code.chars().collect();
     (c.len() == 5 || (c.len() == 6 && c[5] == 'B'))
         && c[..3].iter().all(|x| x.is_ascii_digit())
         && c[3..5].iter().all(|x| x.is_ascii_digit() || x.is_ascii_uppercase())
 }
 
-/// CE QUE LA CASE DU TAUX AT/MP REFUSE, quoi qu'on force : un code risque hors de sa forme (`code_risque_valide`), un taux
-/// avec 999ZZ (la DSN n'en declare aucun, S21.G00.40.043, SIG-11), un taux hors de (0 ; 20) %, un taux sans la date a
-/// partir de laquelle il vaut (celle de la notification). `None` : rien a redire.
+/// CE QUE LA CASE DU TAUX AT/MP REFUSE, quoi qu'on force (un code risque hors de sa forme se refuse a sa lecture,
+/// `CodeRisqueAt`) : un taux avec 999ZZ (la DSN n'en declare aucun, S21.G00.40.043, SIG-11), un taux hors de (0 ; 20) %,
+/// un taux sans la date a partir de laquelle il vaut (celle de la notification). `None` : rien a redire.
 pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> R<Option<String>> {
-    let code = t.code_risque.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    let code = t.code_risque.as_ref();
     let valeur = t.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose()?;
     Ok(match (code, valeur) {
         (None, Some(_)) => Some("Le taux AT/MP se dit avec son code risque, tel que la notification de la CARSAT les écrit.".to_string()),
-        (Some(c), _) if !code_risque_valide(c) => Some(format!(
-            "Code risque « {} » : trois chiffres et deux lettres ou chiffres, suivis du « B » du taux bureau s'il est sur la notification (923AD, 602MDB) ; 999ZZ sans notification.",
-            c
-        )),
-        (Some(SANS_NOTIFICATION), Some(_)) => Some("Avec 999ZZ (pas encore de notification), la DSN ne déclare aucun taux (norme DSN, S21.G00.40.043) : laissez le taux vide.".to_string()),
+        (Some(c), Some(_)) if *c == SANS_NOTIFICATION => Some("Avec 999ZZ (pas encore de notification), la DSN ne déclare aucun taux (norme DSN, S21.G00.40.043) : laissez le taux vide.".to_string()),
         (_, Some(v)) if v <= Decimal::ZERO || v >= Decimal::from(20) => Some(format!("Taux AT/MP de {} % : il se donne en pourcentage, par exemple 1,50 pour 1,50 %.", v.normalize())),
         (_, Some(_)) if t.depuis.is_none() => Some("Le taux AT/MP se dit avec la date à partir de laquelle il vaut, celle de la notification de la CARSAT.".to_string()),
         _ => None,

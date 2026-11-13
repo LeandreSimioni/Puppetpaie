@@ -94,7 +94,7 @@ pub struct LectureDsn {
     pub paies: BTreeMap<(Mois, Option<Nir>, engagement::numeros::NumeroContrat), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
-    pub atmp: BTreeMap<i32, (Mois, String, Option<Decimal>)>,
+    pub atmp: BTreeMap<i32, (Mois, droit::bareme::CodeRisqueAt, Option<Decimal>)>,
     /// Les adhesions prevoyance de la derniere DSN qui en declare.
     pub adhesions: Vec<Adhesion>,
     /// Les conventions collectives que chaque DSN declare, dans l'ordre des mois (`conventions_divergentes`).
@@ -214,7 +214,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             }
         }
         // Le code risque de la DSN : un seul pour tous ses contrats, sinon rien (on ne choisit pas).
-        let risques: BTreeSet<(String, Option<Decimal>)> =
+        let risques: BTreeSet<(droit::bareme::CodeRisqueAt, Option<Decimal>)> =
             info.contrats.iter().filter_map(|c| c.code_risque.clone().map(|r| (r, c.taux_at))).collect();
         if risques.len() == 1 {
             if let Some((code, taux)) = risques.into_iter().next() {
@@ -535,7 +535,7 @@ mod tests_parametrage {
         std::fs::remove_dir_all(&d).ok();
         let c = lu.entreprise.declarant_dsn.clone().unwrap();
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.as_deref()), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
-        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
+        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), droit::bareme::CodeRisqueAt::lire("923AD").unwrap(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
         assert_eq!(lu.adhesions[0].organisme, Some(droit::organismes::AUDIENS));
     }

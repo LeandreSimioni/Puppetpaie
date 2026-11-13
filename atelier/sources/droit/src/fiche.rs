@@ -1508,6 +1508,10 @@ impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
+impl FormeDeCase for crate::bareme::CodeRisqueAt {
+    const FAUTE: Option<fn(&str) -> Option<String>> = Some(crate::bareme::CodeRisqueAt::faute);
+    const RANGER: Option<fn(&str) -> String> = Some(crate::bareme::CodeRisqueAt::rangee);
+}
 impl FormeDeCase for socle::pays::CodePays {
     const FAUTE: Option<fn(&str) -> Option<String>> = Some(socle::pays::CodePays::faute);
     const RANGER: Option<fn(&str) -> String> = Some(socle::pays::CodePays::rangee);
@@ -2407,7 +2411,7 @@ cases! {
     /// notification), pour l'annee de cette date (`bareme::taux_atmp_de_l_annee`) ; `provenance` dit qui l'a ecrite,
     /// `notification` celle d'ou elle vient.
     pub struct TauxAtmp, cles CaseTauxAtmp {
-        CodeRisque(String) = "code_risque" => code_risque,
+        CodeRisque(crate::bareme::CodeRisqueAt) = "code_risque" => code_risque,
         Valeur(Montant) = "valeur" => valeur,
         Depuis(Jour) = "depuis" => depuis,
         Provenance(ProvenanceAtmp) = "provenance" => provenance,
