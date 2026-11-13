@@ -160,11 +160,16 @@ fn cle_de(genre: &str, chemin: &Path) -> String {
         let r = r.last().expect("registre ouvert");
         for (nom, base) in [(RACINE, &r.racine), (CODE, &r.code)] {
             if let Some(rel) = sous(chemin, base) {
-                return format!("{} {}:{}", genre, nom, CheminRelatif::en_barres(rel));
+                return format!("{} {}", genre, base_et_chemin(nom, &CheminRelatif::en_barres(rel)));
             }
         }
-        format!("{} {}:{}", genre, ABSOLU, chemin.to_string_lossy())
+        format!("{} {}", genre, base_et_chemin(ABSOLU, &chemin.to_string_lossy()))
     })
+}
+
+/// L'ecriture d'un chemin lu, `<base>:<chemin>` : la seule, que `CheminLu` et la cle notee (`cle_de`) prennent.
+fn base_et_chemin(base: &str, chemin: &str) -> String {
+    format!("{}:{}", base, chemin)
 }
 
 fn noter(genre: &str, chemin: &Path, valeur: ValeurLue) {
@@ -243,13 +248,14 @@ impl CheminLu {
 
 impl std::fmt::Display for CheminLu {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CheminLu::Racine(Some(c)) => write!(f, "{}:{}", RACINE, c),
-            CheminLu::Racine(None) => write!(f, "{}:", RACINE),
-            CheminLu::Code(Some(c)) => write!(f, "{}:{}", CODE, c),
-            CheminLu::Code(None) => write!(f, "{}:", CODE),
-            CheminLu::Absolu(p) => write!(f, "{}:{}", ABSOLU, p.to_string_lossy()),
-        }
+        let texte = match self {
+            CheminLu::Racine(Some(c)) => base_et_chemin(RACINE, &c.to_string()),
+            CheminLu::Racine(None) => base_et_chemin(RACINE, ""),
+            CheminLu::Code(Some(c)) => base_et_chemin(CODE, &c.to_string()),
+            CheminLu::Code(None) => base_et_chemin(CODE, ""),
+            CheminLu::Absolu(p) => base_et_chemin(ABSOLU, &p.to_string_lossy()),
+        };
+        f.write_str(&texte)
     }
 }
 
