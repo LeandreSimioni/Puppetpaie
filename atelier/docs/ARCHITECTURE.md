@@ -690,6 +690,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche | `droit::fiche::NomDeFiche`, `Datee<T>` | `droit/src/fiche.rs` |
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
+| fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
+| faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |
+| ce qu'une case écrit | `MotEcrit` | `socle/src/ecriture.rs` |
+| valeur d'une case d'une fiche | `ValeurDeCase` | `socle/src/ecriture.rs` |
+| liste lue élément par élément | `socle::forme::Liste` | `socle/src/forme.rs` |
 | clé d'échéance | `CleDEcheance` | `routes/src/rappels.rs` |
 | échéance de l'année | `CleDAnnuelle` | `routes/src/rappels.rs` |
 | genre d'une échéance | `GenreDEcheance` | `routes/src/rappels.rs` |
@@ -786,6 +791,21 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   vient d'écrire), ou la sorte d'une fiche encore à créer, sans clé. `Nommee(FicheNommee)`, `ACreer(NomDeFiche)` ;
   écrite en deux champs, `nom` et `cle` (`null` pour l'entreprise et une fiche à créer) ; que porte une fiche de la
   réponse de l'import (`FicheImportee`).
+- **fiche saisie** : la saisie d'une fiche est la fiche typée elle-même (`ChampsEntreprise`, `ChampsSalarie`,
+  `ChampsSpectacle`), ses fautes à côté ; chaque case se nettoie et se type une fois, à l'entrée (`lire_cases`, la seule
+  porte d'un formulaire ; `Changements::lire` pour `enregistrer-fiche`), et personne ne relit le texte tapé. La table
+  (`declarations::champs`) la juge par ce trait : ce qu'une case écrit (`ecrite`), si elle est remplie (`dite` : zéro
+  l'est, une case à cocher non cochée ne l'est pas, une structure l'est par une de ses cases).
+- **faute d'une case saisie** : la case, le chemin sous elle dans une structure, la phrase de ce que son type refuse ;
+  la case reste vide dans la fiche typée, la faute devient une anomalie non forçable (`champs::des_fautes`), dite avec
+  toutes les autres.
+- **ce qu'une case écrit** : vide, un mot (un texte, un nombre écrit), oui ou non, une structure ; la valeur typée dans
+  l'écriture de son fichier (`socle::ecriture::mot`), ce que lisent les règles de `champs-base.json` (`si`, `exige_si`,
+  `avance`, la norme, la longueur).
+- **valeur d'une case d'une fiche** : la valeur typée d'une case, écrite comme le fichier l'écrit ; que portent la boîte
+  « Ce qui change » (`ChangementDit`) et l'historique d'une fiche.
+- **liste lue élément par élément** : une liste d'une charge dont chaque élément se lit seul en sa forme, une faute ne
+  faisant pas taire les suivants (`chacun`) ; les changements d'`enregistrer-fiche`.
 - **clé d'échéance** : ce qui nomme une échéance des rappels d'un rappel à l'autre : une échéance de l'année
   (`quoi:AAAA`), la DSN d'un mois (`dsn:AAAA-MM`), les DPAE d'un jour (`dpae:AAAA-MM-JJ`), une obligation qui vise un
   salarié (`<quoi>:<salarié>:<jour>` : une fin de contrat, ce qu'un arrêt fait naître).

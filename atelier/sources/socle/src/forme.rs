@@ -148,6 +148,48 @@ impl Objet {
         lire(&Value::Object(m), phrase)
     }
 
+    /// Ses cles, dans l'ordre ecrit.
+    pub fn cles(&self) -> Vec<&str> {
+        self.0.keys().map(String::as_str).collect()
+    }
+
+    /// LA VALEUR DE LA SEULE CLE `cle`, LUE EN SA FORME `T` comme une saisie (`lire_saisie`) ; absente, aucune.
+    #[track_caller]
+    pub fn lire_une<T: DeserializeOwned>(&self, cle: &str, phrase: &str) -> R<Option<T>> {
+        match self.0.get(cle) {
+            Some(v) => lire_saisie(v, phrase).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// CHAQUE ENTREE DONT LA CLE EST GARDEE (`garder`), LUE SEULE EN SA FORME `T`, comme l'objet
+    /// `{nom_cle: cle, nom_valeur: valeur}` d'une saisie (`lire_saisie`) : une entree fautive ne fait pas taire les
+    /// suivantes. Sa faute : le chemin sous la valeur (vide pour la valeur elle-meme) et ce qui ne va pas.
+    pub fn chacune<T: DeserializeOwned>(&self, garder: impl Fn(&str) -> bool, nom_cle: &str, nom_valeur: &str) -> Vec<(String, Result<T, (String, String)>)> {
+        let mut out = Vec::new();
+        for (cle, valeur) in self.0.iter().filter(|(k, _)| garder(k)) {
+            let mut entree = serde_json::Map::new();
+            entree.insert(nom_cle.to_string(), Value::String(cle.clone()));
+            entree.insert(nom_valeur.to_string(), valeur.clone());
+            out.push((cle.clone(), une_entree(&Value::Object(entree), nom_valeur)));
+        }
+        out
+    }
+
+    /// L'OBJET D'UN FORMULAIRE, SES CASES BLANCHES VIDES : une case que la page laisse blanche (`""`, des blancs) n'y dit
+    /// rien, a toute profondeur (une case d'une structure, d'une ligne) ; elle s'ecrit nulle (`null`).
+    pub fn sans_textes_blancs(&self) -> Objet {
+        fn blanchir(v: &Value) -> Value {
+            match v {
+                Value::String(t) if t.trim().is_empty() => Value::Null,
+                Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), blanchir(x))).collect()),
+                Value::Array(a) => Value::Array(a.iter().map(blanchir).collect()),
+                x => x.clone(),
+            }
+        }
+        Objet(self.0.iter().map(|(k, x)| (k.clone(), blanchir(x))).collect())
+    }
+
     /// L'objet sans sa cle `cle`.
     pub fn retirer(&mut self, cle: &str) {
         self.0.remove(cle);
@@ -171,6 +213,56 @@ impl Objet {
             o.iter().map(|(k, x)| (k.clone(), if k.starts_with(prefixe) && x.is_string() { Value::String(String::new()) } else { vider(x, prefixe) })).collect()
         }
         Objet(vider_l_objet(&self.0, prefixe))
+    }
+}
+
+/// UNE ENTREE LUE SEULE (`Objet::chacune`, `Liste::chacun`) comme une saisie : sa faute, le chemin sous `sous` (vide pour la
+/// valeur elle-meme) et ce qui ne va pas.
+fn une_entree<T: DeserializeOwned>(v: &Value, sous: &str) -> Result<T, (String, String)> {
+    struct Remise(bool);
+    impl Drop for Remise {
+        fn drop(&mut self) {
+            EN_SAISIE.set(self.0);
+        }
+    }
+    let _remise = Remise(EN_SAISIE.replace(true));
+    let texte = v.to_string();
+    let mut d = serde_json::Deserializer::from_str(&texte);
+    match serde_path_to_error::deserialize(&mut d) {
+        Ok(t) => Ok(t),
+        Err(e) => {
+            let chemin = e.path().to_string();
+            let chemin = match chemin.strip_prefix(sous) {
+                Some(reste) => reste.trim_start_matches('.').to_string(),
+                None if chemin == "." => String::new(),
+                None => chemin,
+            };
+            Err((chemin, en_clair(&e.inner().to_string())))
+        }
+    }
+}
+
+/// UNE LISTE QUE SA FORME LIT ELEMENT PAR ELEMENT (les changements d'une fiche, `droit::fiche::Changements`) : chacun lu
+/// seul, une faute ne faisant pas taire les suivants (`chacun`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Liste(Vec<Value>);
+
+impl<'de> serde::Deserialize<'de> for Liste {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Liste, D::Error> {
+        Vec::<Value>::deserialize(d).map(Liste)
+    }
+}
+
+impl Liste {
+    /// Aucun element.
+    pub fn est_vide(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// CHAQUE ELEMENT LU SEUL EN SA FORME `T`, comme une saisie (`lire_saisie`) ; sa faute : le chemin sous `sous` et ce qui
+    /// ne va pas.
+    pub fn chacun<T: DeserializeOwned>(&self, sous: &str) -> Vec<Result<T, (String, String)>> {
+        self.0.iter().map(|v| une_entree(v, sous)).collect()
     }
 }
 

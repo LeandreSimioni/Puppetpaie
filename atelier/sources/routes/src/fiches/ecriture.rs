@@ -1222,10 +1222,11 @@ fn avertissement_en_phrases(a: &Avertissement) -> Vec<String> {
 /// La charge de `enregistrer-fiche`, pour une fiche : sa cle (absente : une fiche neuve, ou l'entreprise), ses
 /// changements, la date d'effet de ce qui change et pourquoi, et ce qui est lu et passe outre.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields, bound(deserialize = "C: serde::de::DeserializeOwned, K: serde::de::DeserializeOwned"))]
-pub(crate) struct Enregistrement<C, K> {
+#[serde(deny_unknown_fields, bound(deserialize = "K: serde::de::DeserializeOwned"))]
+pub(crate) struct Enregistrement<K> {
     cle: Option<K>,
-    changements: droit::fiche::Changements<C>,
+    /// Chacun se lit seul dans le type de sa case (`droit::fiche::Changements::lire`) : toutes les fautes ensemble.
+    changements: socle::forme::Liste,
     depuis: Option<Jour>,
     note: Option<String>,
     forcer: Option<bool>,
@@ -1237,11 +1238,11 @@ pub(crate) struct Enregistrement<C, K> {
 #[serde(tag = "nom", deny_unknown_fields)]
 pub(crate) enum ChargeEnregistrer {
     #[serde(rename = "entreprise")]
-    Entreprise(Enregistrement<droit::fiche::ChangementEntreprise, ()>),
+    Entreprise(Enregistrement<()>),
     #[serde(rename = "salarie")]
-    Salarie(Enregistrement<droit::fiche::ChangementSalarie, IdSalarie>),
+    Salarie(Enregistrement<IdSalarie>),
     #[serde(rename = "spectacle")]
-    Spectacle(Enregistrement<droit::fiche::ChangementSpectacle, IdSpectacle>),
+    Spectacle(Enregistrement<IdSpectacle>),
 }
 
 /// Ce que rend `enregistrer-fiche` : l'avertissement (rien n'est ecrit), ou ce qui l'est.
@@ -1272,8 +1273,13 @@ pub(crate) fn enregistrer_fiche(ctx: &Contexte, charge: ChargeEnregistrer) -> R<
     }
 }
 
-fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement, F::Cle>) -> R<FicheEnregistree<F::Cle>> {
+fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<FicheEnregistree<F::Cle>> {
     let Enregistrement { cle, changements, depuis, note, forcer, confirme } = e;
+    // UNE CASE QUE SON TYPE REFUSE refuse la fiche, avec toutes les autres : rien n'est ecrit.
+    let (changements, fautes) = droit::fiche::Changements::<F::Changement>::lire(&changements).map_err(|e| e.reclasser(Classe::MalFormee))?;
+    if !fautes.is_empty() {
+        return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
+    }
     let p = preparer::<F>(ctx, cle.as_ref(), |plate| {
         changements
             .0

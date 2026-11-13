@@ -2136,6 +2136,27 @@ fn fautes_des_types(champs: &[Champ], donnees: &Saisie) -> Vec<Constat> {
     fautes
 }
 
+/// LES FAUTES DES CASES TAPEES (`droit::fiche::FauteDeCase`, ce que le type de chaque case refuse a la porte) EN
+/// ANOMALIES de la fiche `nom` : chacune sur sa case (une forme declaree, sur la forme lisible dont elle se deduit, qui est
+/// ce qu'on corrige), une erreur qui ne se passe pas outre.
+pub fn des_fautes(nom: NomDeFiche, fautes: &[droit::fiche::FauteDeCase]) -> R<Vec<Anomalie>> {
+    let champs = table(nom)?;
+    Ok(fautes
+        .iter()
+        .map(|f| {
+            let case = match champs.iter().find(|c| c.cle == f.case) {
+                Some(c) => c.a_l_ecran(),
+                None => f.case,
+            };
+            let message = match &f.chemin {
+                Some(chemin) => format!("« {} » : {}", chemin, f.phrase),
+                None => f.phrase.clone(),
+            };
+            constat(case, Gravite::Erreur, message).dit(false, "La fiche ne se relirait pas : la valeur se corrige.")
+        })
+        .collect())
+}
+
 /// Le texte saisi dans la case `cle`, sans ses blancs de bord, s'il en reste.
 fn texte_dit(d: &Saisie, cle: impl Into<NomDeCase>) -> Option<String> {
     d.mot(cle).map(|t| strip(&t).to_string()).filter(|t| !t.is_empty())
