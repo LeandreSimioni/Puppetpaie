@@ -31,7 +31,7 @@ use std::path::Path;
 use crate::retours::IdDeFlux;
 
 use droit::contexte::Contexte;
-use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::natures::NumeroDOrdre;
 use socle::echec::{erreur, Classe};
 use crate::branchement::Branchement;
@@ -191,7 +191,7 @@ pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, f
     if !declaration.codes.iter().any(|c| c == "B1-208-10") {
         return None;
     }
-    let essai = if declaration.essai_reel.as_deref() == Some(crate::retours::ESSAI_TEST) { "essai" } else { "reel" };
+    let essai = if declaration.essai_reel == Some(EssaiOuReel::Essai) { "essai" } else { "reel" };
     // Ce que le bilan ne dit pas se dit tel.
     let dit = |x: Option<&str>| match x {
         Some(t) => t.to_string(),
@@ -249,7 +249,7 @@ impl MensuellesVues {
 ///
 /// `mois` : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
 pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
-    let base = if essai { crate::retours::ESSAI_TEST } else { crate::retours::ESSAI_REEL };
+    let base = if essai { EssaiOuReel::Essai } else { EssaiOuReel::Reel };
     let aaaamm = format!("{:04}{:02}", constitution.annee(), constitution.numero());
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
     // Avant le premier bilan lu : aucune mensuelle vue.
@@ -257,7 +257,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
     for (_, p) in bilans_archives(racine)? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let Some(bilan) = crate::retours::bilan_si_xml(&octets)? else { continue };
-        if bilan.essai_reel.as_deref() != Some(base) {
+        if bilan.essai_reel != Some(base) {
             continue;
         }
         let du_mois_recu = bilan.recu_le.as_ref().is_some_and(|r| r.jour().mois_civil() == constitution);

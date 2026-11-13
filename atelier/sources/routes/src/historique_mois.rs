@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::contexte::{Contexte, IdSalarie};
-use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
@@ -566,7 +566,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: NatureDuRetour) -> Lecture {
     if let Some(m) = &rapport.message {
         l.phrases.push(m.clone());
     }
-    if rapport.essai_reel.as_deref() == Some(retours::ESSAI_TEST) {
+    if rapport.essai_reel == Some(EssaiOuReel::Essai) {
         l.phrases.push("Envoi d'essai (test) : rien n'est déclaré ni conservé.".into());
     }
     let etat = rapport.etat_envoi;
@@ -647,7 +647,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
     if crm.remplace {
         l.phrases.push("Ce compte rendu annule et remplace un compte rendu précédent de l'organisme.".into());
     }
-    if crm.essai_reel.as_deref() == Some("01") {
+    if crm.essai_reel == Some(EssaiOuReel::Essai) {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
     if let Some(debut) = crm.debut {
@@ -816,7 +816,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         Some("3") => "Compte rendu complet (CRC)",
         _ => "Compte rendu de l'organisme complémentaire",
     });
-    if crm.essai_reel.as_deref() == Some("01") {
+    if crm.essai_reel == Some(EssaiOuReel::Essai) {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
     for d in &crm.declarations {

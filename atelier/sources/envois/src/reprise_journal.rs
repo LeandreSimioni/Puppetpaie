@@ -41,7 +41,7 @@ fn accepte(b: &Bilan) -> bool {
 
 /// Un depot reel (`essai_reel` 02), et non d'essai.
 fn reel(b: &Bilan) -> bool {
-    b.essai_reel.as_deref() == Some(crate::retours::ESSAI_REEL)
+    b.essai_reel == Some(droit::nature_declaration::EssaiOuReel::Reel)
 }
 
 /// Un depot dont une piece de `retours/` temoigne.

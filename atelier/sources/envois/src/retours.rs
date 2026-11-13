@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
-use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::natures::{Fraction, ListeDeLaNorme, NumeroDOrdre};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
@@ -484,8 +484,6 @@ droit::codes_fermes! {
     }
 }
 
-pub const ESSAI_TEST: &str = "01";
-pub const ESSAI_REEL: &str = "02";
 pub const RAPPORTS_DEPOT: [&str; 3] = ["CCO", "BAN", "AEE"];
 
 /// Les rubriques DSN du taux de PAS, et ce qu'elles portent.
@@ -1163,7 +1161,7 @@ fn lire_octets(o: &[u8]) -> R<Arbre> {
 pub struct Bilan {
     pub flux: IdDeFlux,
     pub recu_le: Option<Reception>,
-    pub essai_reel: Option<String>,
+    pub essai_reel: Option<EssaiOuReel>,
     pub etat_envoi: Option<Verdict>,
     pub etat_declaration: Option<Verdict>,
     pub mois: Option<socle::mois::Mois>,
@@ -1310,7 +1308,7 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bil
     Ok(Some(Bilan {
         flux,
         recu_le,
-        essai_reel: get("essai_reel"),
+        essai_reel: essai_du_retour(get("essai_reel").as_deref())?,
         etat_envoi: forme_du_retour(get("envoi_etat").as_deref(), Verdict::lire)?,
         etat_declaration: forme_du_retour(get("etat").or(get("etat_conformite")).as_deref(), Verdict::lire)?,
         mois: get("mois").map(|m| mois_du_rapport(&m)).transpose()?,
@@ -1378,7 +1376,7 @@ pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
 }
 
 fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
-    let essai_reel = arbre.tous().find(|e| local(&e.tag) == "essai_reel").map(|e| e.texte_net().to_string()).filter(|t| !t.is_empty());
+    let essai_reel = essai_du_retour(arbre.tous().find(|e| local(&e.tag) == "essai_reel").map(|e| e.texte_net()).filter(|t| !t.is_empty()))?;
     let mut out = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
         let (mut champs, mut codes): (Vec<(&str, &str)>, Vec<String>) = (Vec::new(), Vec::new());
@@ -1398,7 +1396,7 @@ fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
             siren: get("SIREN"),
             nic: get("nic_affectation"),
             etat: forme_du_retour(get("etat").as_deref(), Verdict::lire)?,
-            essai_reel: essai_reel.clone(),
+            essai_reel,
             codes,
         });
     }
@@ -1417,7 +1415,7 @@ pub struct DeclarationIdentifiee {
     pub siren: Option<String>,
     pub nic: Option<String>,
     pub etat: Option<Verdict>,
-    pub essai_reel: Option<String>,
+    pub essai_reel: Option<EssaiOuReel>,
     pub codes: Vec<String>,
 }
 
@@ -1425,6 +1423,13 @@ pub struct DeclarationIdentifiee {
 /// hors de la liste de la norme refuse le retour, qui ne se lit pas.
 fn nature_du_retour(code: Option<&str>) -> R<Option<NatureDeLaDeclaration>> {
     code_du_retour(code, "nature")
+}
+
+/// L'envoi d'essai ou reel qu'un retour dit (S10.G00.00.005, que reprennent `essai_reel` d'un bilan, RO.B000.R013 d'un
+/// NEOReS et `CodeEnvoi` d'un compte rendu d'organisme complementaire), `None` s'il ne le dit pas : un code hors de la
+/// liste de la norme refuse le retour, qui ne se lit pas.
+fn essai_du_retour(code: Option<&str>) -> R<Option<EssaiOuReel>> {
+    code_du_retour(code, "code d'envoi")
 }
 
 /// Le type d'une declaration qu'un retour de la norme nomme (S20.G00.05.002), `None` s'il ne le dit pas : un code hors
@@ -2654,7 +2659,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
     let libelle = TYPES_RAPPORT.iter().find(|(c, _)| Some(*c) == type_rapport.as_deref()).map(|(_, l)| l.to_string());
     let envoi = arbre.tous().find(|e| local(&e.tag) == "envoi");
     let de_l_envoi = |nom: &str| envoi.map(|e| premier_texte(&arbre, e, &[nom]).to_string()).filter(|t| !t.is_empty());
-    let (etat_envoi, essai_reel) = (forme_du_retour(de_l_envoi("envoi_etat").as_deref(), Verdict::lire)?, de_l_envoi("essai_reel"));
+    let (etat_envoi, essai_reel) = (forme_du_retour(de_l_envoi("envoi_etat").as_deref(), Verdict::lire)?, essai_du_retour(de_l_envoi("essai_reel").as_deref())?);
     let mut declarations = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
         let sous_bloc = |nom: &str| match arbre.sous(d).find(|x| local(&x.tag) == nom) {
@@ -2733,7 +2738,7 @@ pub struct Rapport {
     pub libelle: Option<String>,
     pub message: Option<String>,
     pub etat_envoi: Option<Verdict>,
-    pub essai_reel: Option<String>,
+    pub essai_reel: Option<EssaiOuReel>,
     pub declarations: Vec<DeclarationDuRapport>,
     pub anomalies: Vec<AnomalieDuRapport>,
     pub informations: Vec<InformationCollective>,
@@ -2998,7 +3003,7 @@ pub struct Neores {
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub produit_le: Option<socle::paris::Moment>,
     pub mois: Option<socle::mois::Mois>,
-    pub essai_reel: Option<String>,
+    pub essai_reel: Option<EssaiOuReel>,
     pub ordre: Option<NumeroDOrdre>,
     pub metier: Option<String>,
     pub conformite: Option<Verdict>,
@@ -3166,7 +3171,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         fin: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R009")).transpose()?.flatten(),
         produit_le: b002.map(|b| rubrique_instant(&a, b, "RO_B002_R011")).transpose()?.flatten(),
         mois: r(b000, "RO_B000_R006").map(|m| mois_du_jour(&m)).transpose()?,
-        essai_reel: r(b000, "RO_B000_R013"),
+        essai_reel: essai_du_retour(r(b000, "RO_B000_R013").as_deref())?,
         ordre: forme_du_retour(r(b000, "RO_B000_R012").as_deref(), NumeroDOrdre::lire)?,
         metier: r(b003, "RO_B003_R001"),
         conformite: forme_du_retour(r(b003, "RO_B003_R002").as_deref(), Verdict::lire)?,
@@ -3281,14 +3286,14 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             retours,
         });
     }
-    Ok(Some(CrmOc { type_crm: at(racine, "TypCRM"), essai_reel: at(racine, "CodeEnvoi"), version: at(racine, "VersionCRM"), declarations }))
+    Ok(Some(CrmOc { type_crm: at(racine, "TypCRM"), essai_reel: essai_du_retour(at(racine, "CodeEnvoi").as_deref())?, version: at(racine, "VersionCRM"), declarations }))
 }
 
 /// UN COMPTE RENDU D'ORGANISME COMPLEMENTAIRE LU (`lire_crm_oc`) ; un attribut que le fichier ne porte pas est vide.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CrmOc {
     pub type_crm: Option<String>,
-    pub essai_reel: Option<String>,
+    pub essai_reel: Option<EssaiOuReel>,
     pub version: Option<String>,
     pub declarations: Vec<DeclarationOc>,
 }

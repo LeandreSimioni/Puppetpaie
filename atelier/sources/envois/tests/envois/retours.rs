@@ -74,7 +74,7 @@ fn ban() -> String {
 fn un_certificat_de_conformite() {
     let b = bilan_d_octets(cco().as_bytes()).unwrap().unwrap();
     assert_eq!(b.type_rapport, "CCO");
-    assert_eq!(b.essai_reel.as_deref(), Some("01"));
+    assert_eq!(b.essai_reel, Some(droit::nature_declaration::EssaiOuReel::Essai));
     assert_eq!(b.etat_declaration, Some(Verdict::Ok));
     assert_eq!(b.conformite.as_deref(), Some("OK"));
     assert_eq!(b.certificat.as_deref(), Some("CERTIFIE"));
