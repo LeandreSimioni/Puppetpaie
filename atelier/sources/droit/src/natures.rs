@@ -249,6 +249,228 @@ codes_fermes! {
     }
 }
 
+/// LE NUMERO DE FRACTION D'UNE DECLARATION (S20.G00.05.003) : « exprimé par 'nd' avec : n = numéro de la fraction,
+/// d = nombre total de fractions, n doit être inférieur ou égal à d » ; « Pour une entreprise non fractionnée mettre
+/// 11 » (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt` l. 91-102). Deux
+/// chiffres, `N [2,2]` (l. 115 ; CSL P26V01 `[1-9]{2}`, P27V01 `(1[1-9])|([2-9][0-9])`,
+/// `texte-2027/bloc-S20.G00.05.txt` l. 105) : chaque `nd` avec 1 <= n <= d <= 9 passe les deux. Il s'ecrit et se lit
+/// par ce texte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Fraction {
+    numero: u8,
+    nombre: u8,
+}
+
+impl Fraction {
+    /// « Pour une entreprise non fractionnée mettre 11 » (bloc l. 102) ; un signalement ne porte qu'elle (CCH-11).
+    pub const NON_FRACTIONNEE: Fraction = Fraction { numero: 1, nombre: 1 };
+
+    /// La fraction que ce texte ecrit, s'il en a la forme (`nd`, 1 <= n <= d <= 9).
+    pub fn lue(texte: &str) -> Option<Fraction> {
+        match texte.as_bytes() {
+            [n @ b'1'..=b'9', d @ b'1'..=b'9'] if n <= d => Some(Fraction { numero: n - b'0', nombre: d - b'0' }),
+            _ => None,
+        }
+    }
+
+    /// La fraction ecrite `texte` ; refus si elle n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<Fraction> {
+        Fraction::lue(texte).ok_or_else(|| {
+            socle::refus!(
+                "Numéro de fraction de déclaration {} : il s'écrit « nd », n le numéro de la fraction et d leur nombre, n au plus d (S20.G00.05.003 ; « 11 » pour une entreprise non fractionnée).",
+                repr(texte)
+            )
+        })
+    }
+}
+
+impl std::fmt::Display for Fraction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.numero, self.nombre)
+    }
+}
+
+impl Serialize for Fraction {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Fraction {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = String::deserialize(d)?;
+        Fraction::lire(&texte).map_err(serde::de::Error::custom)
+    }
+}
+
+/// LE NUMERO D'ORDRE D'UNE DECLARATION (S20.G00.05.004) : « attribué par le déclarant », il « permet d'identifier le rang
+/// de constitution d'une déclaration au cours du mois courant » ; `N [1,15]`, CSL `0|[1-9][0-9]*` (cahier technique DSN
+/// 2026.1, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt` l. 117-124 ; le meme en 2027,
+/// `texte-2027/bloc-S20.G00.05.txt` l. 107-120). NEOReS le reprend (RO.B000.R012). Il s'ecrit en decimal, sans zero de
+/// tete, et se lit dans cette forme seule ; le journal des envois l'ecrit aussi en nombre (`en_nombre`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NumeroDOrdre(u64);
+
+impl NumeroDOrdre {
+    /// Le premier numero que le moteur donne : celui qui suit « aucun ».
+    pub const PREMIER: NumeroDOrdre = NumeroDOrdre(1);
+
+    /// Au plus quinze chiffres (`[1,15]`).
+    const PLUS_GRAND: u64 = 999_999_999_999_999;
+
+    /// Le numero que ce texte ecrit, s'il en a la forme (`0|[1-9][0-9]*`, au plus quinze chiffres).
+    pub fn lu(texte: &str) -> Option<NumeroDOrdre> {
+        let o = texte.as_bytes();
+        if o.is_empty() || o.len() > 15 || !o.iter().all(u8::is_ascii_digit) || (o.len() > 1 && o[0] == b'0') {
+            return None;
+        }
+        Some(NumeroDOrdre(o.iter().fold(0u64, |n, c| n * 10 + u64::from(c - b'0'))))
+    }
+
+    /// Le numero ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<NumeroDOrdre> {
+        NumeroDOrdre::lu(texte).ok_or_else(|| {
+            socle::refus!(
+                "Numéro d'ordre de déclaration {} : il s'écrit en chiffres, sans zéro en tête, au plus quinze (S20.G00.05.004).",
+                repr(texte)
+            )
+        })
+    }
+
+    /// Le numero `n` ; refus s'il a plus de quinze chiffres.
+    pub fn du_nombre(n: u64) -> R<NumeroDOrdre> {
+        if n > NumeroDOrdre::PLUS_GRAND {
+            return Err(socle::refus!("Numéro d'ordre de déclaration {} : il a au plus quinze chiffres (S20.G00.05.004).", n));
+        }
+        Ok(NumeroDOrdre(n))
+    }
+
+    /// Le numero `rang` places plus loin ; refus s'il a plus de quinze chiffres.
+    pub fn plus(self, rang: u64) -> R<NumeroDOrdre> {
+        match self.0.checked_add(rang) {
+            Some(n) => NumeroDOrdre::du_nombre(n),
+            None => Err(socle::refus!("Numéro d'ordre de déclaration {} plus {} : il a au plus quinze chiffres (S20.G00.05.004).", self.0, rang)),
+        }
+    }
+
+    /// Le numero qui suit `dernier` ; le premier quand il n'y en a aucun.
+    pub fn suivant(dernier: Option<NumeroDOrdre>) -> R<NumeroDOrdre> {
+        match dernier {
+            Some(o) => o.plus(1),
+            None => Ok(NumeroDOrdre::PREMIER),
+        }
+    }
+
+    /// Sa valeur.
+    pub fn valeur(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for NumeroDOrdre {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Serialize for NumeroDOrdre {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for NumeroDOrdre {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = String::deserialize(d)?;
+        NumeroDOrdre::lire(&texte).map_err(serde::de::Error::custom)
+    }
+}
+
+/// UN NUMERO D'ORDRE ECRIT EN NOMBRE (`#[serde(with = "droit::natures::en_nombre")]`) : le journal des envois
+/// (`ordre_test`) et les charges des routes l'ecrivent ainsi ; `option` pour un `Option<NumeroDOrdre>` (`null` : aucun).
+pub mod en_nombre {
+    use super::NumeroDOrdre;
+
+    pub fn serialize<S: serde::Serializer>(o: &NumeroDOrdre, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(o.0)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NumeroDOrdre, D::Error> {
+        let n = <u64 as serde::Deserialize>::deserialize(d)?;
+        NumeroDOrdre::du_nombre(n).map_err(serde::de::Error::custom)
+    }
+
+    pub mod option {
+        use super::NumeroDOrdre;
+
+        pub fn serialize<S: serde::Serializer>(o: &Option<NumeroDOrdre>, s: S) -> Result<S::Ok, S::Error> {
+            match o {
+                Some(o) => s.serialize_some(&o.0),
+                None => s.serialize_none(),
+            }
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<NumeroDOrdre>, D::Error> {
+            match <Option<u64> as serde::Deserialize>::deserialize(d)? {
+                Some(n) => NumeroDOrdre::du_nombre(n).map(Some).map_err(serde::de::Error::custom),
+                None => Ok(None),
+            }
+        }
+    }
+}
+
+/// L'IDENTIFIANT D'UNE DECLARATION ANNULEE OU REMPLACEE (S20.G00.05.006) : « une concaténation de la date de constitution
+/// du fichier (S20.G00.05.007) et du numéro d'ordre de la déclaration (S20.G00.05.004) de la déclaration annulée » ;
+/// `X [9,23]`, CSL `(0[1-9]|[1-2][0-9]|3[0-1])(0[1-9]|1[0-2])(19|20)[0-9]{2}(0|[1-9][0-9]*)` (cahier technique DSN
+/// 2026.1, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt` l. 136-152 ; le meme en 2027,
+/// `texte-2027/bloc-S20.G00.05.txt` l. 132-148). Il s'ecrit et se lit `JJMMAAAA` suivi du numero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IdentifiantDeDeclaration {
+    pub constitue_le: socle::date::Jour,
+    pub ordre: NumeroDOrdre,
+}
+
+impl IdentifiantDeDeclaration {
+    /// L'identifiant que ce texte ecrit, s'il en a la forme.
+    pub fn lu(texte: &str) -> Option<IdentifiantDeDeclaration> {
+        if texte.len() < 9 || texte.len() > 23 || !texte.is_ascii() {
+            return None;
+        }
+        let (date, ordre) = texte.split_at(8);
+        let constitue_le = socle::piece::Zone::lue(date, socle::piece::format::Jjmmaaaa).valeur().filter(|j| (1900..=2099).contains(&j.an))?;
+        Some(IdentifiantDeDeclaration { constitue_le, ordre: NumeroDOrdre::lu(ordre)? })
+    }
+
+    /// L'identifiant ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<IdentifiantDeDeclaration> {
+        IdentifiantDeDeclaration::lu(texte).ok_or_else(|| {
+            socle::refus!(
+                "Identifiant de la déclaration annulée ou remplacée {} : il s'écrit JJMMAAAA, la date de constitution de cette déclaration, suivie de son numéro d'ordre (S20.G00.05.006).",
+                repr(texte)
+            )
+        })
+    }
+}
+
+impl std::fmt::Display for IdentifiantDeDeclaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.constitue_le.jjmmaaaa(), self.ordre)
+    }
+}
+
+impl Serialize for IdentifiantDeDeclaration {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for IdentifiantDeDeclaration {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = String::deserialize(d)?;
+        IdentifiantDeDeclaration::lire(&texte).map_err(serde::de::Error::custom)
+    }
+}
+
 codes_fermes! {
     /// UN MOTIF DE RECOURS (S21.G00.40.021), la liste entiere de la norme (cahier technique DSN 2026.1 p. 194-195,
     /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` ; classeur 2027.1.2, type `DSN_Motifs_Recours`). Ceux
