@@ -181,7 +181,7 @@ impl<'a> Declarations<'a> {
             let mut tous = Vec::new();
             for p in paies {
                 let s = &p.salarie;
-                let nir = crate::ntt::nir_de(s);
+                let nir = s.nir.dite().cloned();
                 tous.push(Declaree {
                     mois,
                     fichier: "la paie declaree".to_string(),
@@ -205,7 +205,7 @@ impl<'a> Declarations<'a> {
     /// Il se reconnait a un NIR que sa fiche (`brute`, datee) a porte, sinon a son matricule
     /// (30.019 ; il finit le NTT et ne change pas sans NIR, `routes::fiches::ecrire_fiche`).
     pub fn derniere(&mut self, salarie: &ChampsSalarie, brute: Option<&FicheSalarieDatee>) -> R<Option<Declaree>> {
-        let mut nirs: Vec<Nir> = crate::ntt::nir_de(salarie).into_iter().collect();
+        let mut nirs: Vec<Nir> = salarie.nir.dite().cloned().into_iter().collect();
         for d in brute.into_iter().flat_map(|b| b.nir.iter().flat_map(|l| droit::fiche::valeurs_datees(l))) {
             nirs.extend(d.valeur.clone());
         }

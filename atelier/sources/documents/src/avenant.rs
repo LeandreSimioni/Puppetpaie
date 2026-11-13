@@ -286,7 +286,7 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     // atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt l. 1183-1184, et l'annexe X,
     // l. 1161-1162) : un spectacle qui n'en a pas encore fait son contrat, qui n'en dit rien. Le bulletin, lui, l'exige
     // (`exige_par` de `champs-base.json`). Sans numero, pas de valeur : l'alinea qui le dit ne s'ecrit pas.
-    if let Some(n) = sp.numero_objet.dite().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+    if let Some(n) = sp.numero_objet.dite() {
         poser(Marqueur::SpectacleNumeroObjet, n.to_string());
     }
     Ok(m)

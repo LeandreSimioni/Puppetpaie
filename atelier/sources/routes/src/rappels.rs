@@ -110,7 +110,7 @@ const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), form
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeRevue {
     annee: i32,
-    continuent: Vec<String>,
+    continuent: Vec<droit::contexte::IdSpectacle>,
 }
 
 /// La charge de `echeance-faite` : l'echeance « quoi:AAAA », cochee sauf `fait: false`.
@@ -239,9 +239,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revue> {
     let ChargeRevue { annee, continuent } = charge;
     // L'ordre ne compte pas, les doublons non plus.
-    let garder: BTreeSet<String> = continuent.into_iter().collect();
+    let garder: BTreeSet<droit::contexte::IdSpectacle> = continuent.into_iter().collect();
     let actifs = ctx.spectacles_actifs();
-    let inconnus: Vec<&str> = garder.iter().map(String::as_str).filter(|g| !actifs.contains(g)).collect();
+    let inconnus: Vec<&str> = garder.iter().map(AsRef::as_ref).filter(|g| !actifs.contains(g)).collect();
     if !inconnus.is_empty() {
         return Err(erreur(Classe::Refuse, format!("Spectacle actif inconnu : {}.", inconnus.join(", "))));
     }
@@ -250,7 +250,7 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
         crate::fiches::activer_fiche(ctx, droit::fiche::NomDeFiche::Spectacle, cle, false)?;
     }
     marquer_echeance(ctx, &format!("{}:{}", REVUE_SPECTACLES, annee), true, "interface")?;
-    let continuent: Vec<String> = garder.into_iter().collect();
+    let continuent: Vec<String> = garder.into_iter().map(String::from).collect();
     let neuf = Contexte::nouveau(&ctx.racine, None)?;
     let configuration = crate::ouverture::configuration_dite(&neuf)?;
     let phrase = format!("Spectacles qui continuent : {} ; archivés : {}.", continuent.len(), archives.len());
@@ -483,7 +483,7 @@ impl Echeance {
                     EXPORT_COMPTA => action(Route::ExportCompta, ChargeAnnee { annee: Annee::nouvelle(i64::from(annee))? }, None, "Exporter pour la compta".into()),
                     // Tous continuent, tant qu'on n'en a pas décoché un : la boîte s'ouvre ainsi.
                     _ => {
-                        let charge = ChargeRevue { annee, continuent: self.spectacles.iter().map(|s| s.cle.to_string()).collect() };
+                        let charge = ChargeRevue { annee, continuent: self.spectacles.iter().map(|s| s.cle.clone()).collect() };
                         action(Route::RevueSpectacles, charge, None, "Choisir les spectacles".into())
                     }
                 }

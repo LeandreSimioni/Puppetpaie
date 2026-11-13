@@ -9,7 +9,7 @@ use socle::fichiers::repr;
 use crate::formats;
 use socle::echec::R;
 use crate::usages::strip;
-use droit::fiche::{ChampsSalarie, FicheSalarie, Nir, Sexe};
+use droit::fiche::{ChampsSalarie, FicheSalarie, Sexe};
 use droit::natures::RubriqueDeLaNorme;
 
 pub const RUBRIQUE: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.020");
@@ -124,14 +124,10 @@ pub fn faute(valeur: &str, siren: &str) -> R<Option<String>> {
     formats::mauvaise(RUBRIQUE, valeur)
 }
 
-/// Le NIR de la fiche, quand elle le dit : la DSN l'ecrit tel quel (sa saisie l'a range, `Nir::rangee`).
-pub fn nir_de(salarie: &ChampsSalarie) -> Option<Nir> {
-    salarie.nir.dite().cloned()
-}
-
-/// S21.G00.30.001, quand il y en a un -- et rien du tout sinon.
+/// S21.G00.30.001, quand il y en a un -- et rien du tout sinon. La DSN ecrit le NIR de la fiche tel quel (sa saisie l'a
+/// range, `Nir::rangee`).
 pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
-    if let Some(nir) = nir_de(salarie) {
+    if let Some(nir) = salarie.nir.dite().cloned() {
         f.add(RUBRIQUE_NIR, nir);
     }
     Ok(())
@@ -145,7 +141,7 @@ pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
 /// `norme-dsn/texte/bloc-S21.G00.30.txt`, l. 348-354) ; sinon rien. `declaree` : l'identite que la derniere DSN a
 /// declaree pour lui (`changements_individu::Declarations::derniere`, ou `derniere_declaree`).
 pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie: &FicheSalarie, declaree:Option<&crate::changements_individu::Declaree>) -> R<()> {
-    if nir_de(salarie).is_none() {
+    if salarie.nir.dite().is_none() {
         f.add(RUBRIQUE, numero(ent.siren.ecrite("siren")?, salarie)?);
         return Ok(());
     }

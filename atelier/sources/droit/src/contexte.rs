@@ -1824,9 +1824,14 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
             noms.extend(sp.alias.dite().into_iter().flatten().cloned());
             Ok(noms)
         };
+        // Un nom qui n'a pas la forme d'un numero d'objet ne designe aucun numero.
+        let objet = match crate::fiche::NumeroObjetSpectacle::lire(net) {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        };
         let mut exacts = Vec::new();
         for (cle, sp) in &ordre {
-            if noms_de(cle, sp)?.iter().any(|n| cle_recherche(n) == q) || sp.numero_objet.portee().is_some_and(|n| n.to_uppercase() == net.to_uppercase()) {
+            if noms_de(cle, sp)?.iter().any(|n| cle_recherche(n) == q) || sp.numero_objet.dite().is_some_and(|n| objet.as_ref().is_some_and(|o| o.meme(n))) {
                 exacts.push(*cle);
             }
         }

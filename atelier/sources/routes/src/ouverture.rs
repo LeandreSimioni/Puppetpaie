@@ -894,7 +894,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // Les deux premiers chiffres d'un numero d'objet disent son annee.
     let ans: Vec<u32> = sans_titre
         .iter()
-        .filter_map(|s| s.numero_objet.portee().and_then(|n| n.get(..2)))
+        .filter_map(|s| s.numero_objet.dite().and_then(|n| n.get(..2)))
         .filter(|a| a.chars().all(|c| c.is_ascii_digit()))
         .map(|a| a.parse::<u32>().map(|a| 2000 + a).map_err(|e| socle::echec::refus(e.to_string())))
         .collect::<R<_>>()?;

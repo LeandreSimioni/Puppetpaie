@@ -341,8 +341,8 @@ impl SorteDeFiche for FicheSpectacleDatee {
         // « permet d'identifier toutes les personnes ayant travaille » dessus (S21.G00.40.050,
         // `norme-dsn/texte/bloc-S21.G00.40.txt`, l. 1379-1385) ; deux fiches au meme numero se confondraient dans la DSN.
         // `forcer` ne leve pas ce refus.
-        let Some(numero) = apres.numero_objet.remplie().map(str::trim).filter(|n| !n.is_empty()) else { return Ok(()) };
-        let porteur = ctx.spectacles.iter().find(|(k, s)| Some(k.as_str()) != cle && s.numero_objet.portee().is_some_and(|n| n.trim().eq_ignore_ascii_case(numero)));
+        let Some(numero) = apres.numero_objet.dite() else { return Ok(()) };
+        let porteur = ctx.spectacles.iter().find(|(k, s)| Some(k.as_str()) != cle && s.numero_objet.dite().is_some_and(|n| n.meme(numero)));
         if let Some((k, s)) = porteur {
             let qui = match s.titre.remplie().filter(|t| !t.trim().is_empty() && !t.trim().eq_ignore_ascii_case(A_COMPLETER)) {
                 Some(t) => format!("du spectacle « {} » (fiche {})", t, k),
