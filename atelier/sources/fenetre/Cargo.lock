@@ -491,7 +491,6 @@ dependencies = [
  "engagement",
  "envois",
  "getrandom 0.3.4",
- "md-5",
  "regex",
  "rpassword",
  "scrypt",
@@ -1065,6 +1064,7 @@ dependencies = [
  "imap-proto",
  "lettre",
  "mailparse",
+ "md-5",
  "regex",
  "roxmltree 0.20.0",
  "rust_decimal",
@@ -1928,7 +1928,6 @@ dependencies = [
  "fabrique-pdf",
  "regex",
  "serde",
- "sha2",
  "socle",
  "zip",
 ]

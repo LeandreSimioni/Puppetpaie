@@ -98,7 +98,7 @@ pub fn ecrire(depot: &Path) -> R<usize> {
 
 /// LES EMPREINTES ECRITES : pour chaque texte que la section d'un `LISEZ-MOI` sous `depot` nomme, son chemin relatif a
 /// la racine du depot et son SHA-256. Une ligne de la section qui n'a pas la forme qu'`ecrire` lui donne refuse.
-pub fn lues(depot: &Path) -> R<BTreeMap<String, String>> {
+pub fn lues(depot: &Path) -> R<BTreeMap<String, socle::fichiers::Empreinte>> {
     let racine = depot.join(TEXTES);
     let mut tous = Vec::new();
     fichiers(&racine, &mut tous)?;
@@ -113,10 +113,10 @@ pub fn lues(depot: &Path) -> R<BTreeMap<String, String>> {
         };
         for ligne in texte[i..].lines().filter(|x| x.starts_with("- `")) {
             let lue = ligne.strip_prefix("- `").and_then(|x| x.split_once("` : `")).and_then(|(rel, e)| e.strip_suffix('`').map(|e| (rel, e)));
-            let Some((rel, e)) = lue.filter(|(_, e)| e.len() == 64 && e.bytes().all(|b| b.is_ascii_hexdigit())) else {
+            let Some((rel, e)) = lue.and_then(|(rel, e)| socle::fichiers::Empreinte::lire(e).ok().map(|e| (rel, e))) else {
                 return Err(socle::refus!("{} : la ligne « {} » de ses empreintes ne se lit pas (`moteur-atelier empreintes` la réécrit)", l.display(), ligne));
             };
-            out.insert(format!("{}/{}", dossier, rel), e.to_string());
+            out.insert(format!("{}/{}", dossier, rel), e);
         }
     }
     Ok(out)
