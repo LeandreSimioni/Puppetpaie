@@ -1092,12 +1092,9 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
             None => "salarié inconnu de la configuration".to_string(),
         };
         // La nature de l'engagement, par son nom court ; sans engagement, le type que le fichier ecrit (Format 120).
-        let type_contrat = match (id.as_ref().and_then(|k| natures.get(k)), e.type_contrat.as_deref()) {
+        let type_contrat = match (id.as_ref().and_then(|k| natures.get(k)), e.type_contrat) {
             (Some(n), _) => Some(n.clone()),
-            (None, Some(t)) => Some(match droit::natures::TYPES_CONTRAT_DPAE.iter().find(|(k, _)| *k == t) {
-                Some((_, l)) => l.to_string(),
-                None => format!("type {}", t),
-            }),
+            (None, Some(t)) => Some(t.libelle().to_string()),
             (None, None) => None,
         };
         let numero = id.as_ref().and_then(|k| numeros.get(k)).cloned();

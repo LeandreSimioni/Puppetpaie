@@ -10,9 +10,6 @@ use socle::num::Decimal;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
-/// Les types de contrat de la DPAE (Format 120 v5.3, C_TYPE_CONTRAT).
-pub const TYPES_CONTRAT_DPAE: [(&str, &str); 3] = [("1", "CDD"), ("2", "CDI"), ("3", "CTT")];
-
 /// La face de paie d'une nature : aux cachets et aux heures, ou au mois. C'est aussi la population que les fichiers
 /// livres nomment (`intermittent`, `permanent` : `population`), qui se trie comme son texte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
@@ -1070,14 +1067,36 @@ struct Dpae {
     _quoi: String,
     #[serde(rename = "source")]
     _source: crate::source::Fondement,
-    type_contrat: TypeContratDpae,
+    type_contrat: TypeContratDpaeEcrit,
     date_fin: DateFinDpae,
+}
+
+crate::codes_fermes! {
+    /// LE TYPE DE CONTRAT DE LA DPAE (C_TYPE_CONTRAT, position 865) : « Code type de contrat (1, 2, 3) pour CDD, CDI,
+    /// CTT » (Format 120 v5.3, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 454-460 ; l. 76). Que portent
+    /// la DPAE d'une nature (`contrats-base.json`, `dpae.type_contrat`) et une DPAE relue.
+    TypeContratDpae, "Type de contrat de la DPAE (C_TYPE_CONTRAT)", texte "Format 120 v5.3, C_TYPE_CONTRAT" {
+        Cdd = "1",
+        Cdi = "2",
+        Ctt = "3",
+    }
+}
+
+impl TypeContratDpae {
+    /// Son libelle (Format 120 v5.3, l. 459 : « CDD, CDI, CTT »).
+    pub fn libelle(self) -> &'static str {
+        match self {
+            TypeContratDpae::Cdd => "CDD",
+            TypeContratDpae::Cdi => "CDI",
+            TypeContratDpae::Ctt => "CTT",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TypeContratDpae {
-    valeur: String,
+struct TypeContratDpaeEcrit {
+    valeur: TypeContratDpae,
     #[serde(rename = "quoi")]
     _quoi: String,
     #[serde(rename = "note")]
@@ -1439,8 +1458,8 @@ impl Proprietes {
     }
 
     /// C_TYPE_CONTRAT du Format 120 : 1 CDD, 2 CDI, 3 CTT.
-    pub fn type_contrat_dpae(&self) -> String {
-        self.dpae.type_contrat.valeur.clone()
+    pub fn type_contrat_dpae(&self) -> TypeContratDpae {
+        self.dpae.type_contrat.valeur
     }
 
     /// La DPAE de ce contrat porte-t-elle une date de fin ?
@@ -1539,16 +1558,13 @@ struct Contrats {
 const ILLISIBLE: &str = "Les natures de contrat livrées avec le logiciel ne se lisent pas : le signaler au développeur.";
 
 /// LA SEULE LECTURE DE `contrats-base.json` : sa forme (une cle qui n'est pas une `NatureDeContrat` refuse), puis ce
-/// qu'elle ne dit pas seule : chaque nature du logiciel y est, et son type de contrat de la DPAE est l'un des trois du
-/// Format 120.
+/// qu'elle ne dit pas seule : chaque nature du logiciel y est (son type de contrat de la DPAE se lit par sa forme,
+/// `TypeContratDpae`).
 fn lu() -> R<Arc<Contrats>> {
     static CACHE: OnceLock<FormeGardee<Contrats>> = OnceLock::new();
     forme_en_cache(&CACHE, "contrats-base.json", ILLISIBLE, |f: Fichier| {
         let mut natures = Vec::new();
         for (cle, proprietes) in f.natures {
-            if !TYPES_CONTRAT_DPAE.iter().any(|(k, _)| *k == proprietes.dpae.type_contrat.valeur) {
-                return Err(socle::echec::a_la_cle(ILLISIBLE, &format!("natures.{}.dpae.type_contrat.valeur", cle), format!("{} n'est pas un type de contrat du Format 120 (1, 2 ou 3)", repr(&proprietes.dpae.type_contrat.valeur))));
-            }
             natures.push(Arc::new(Nature { cle, proprietes }));
         }
         let de = |n: NatureDeContrat| -> R<Arc<Nature>> {

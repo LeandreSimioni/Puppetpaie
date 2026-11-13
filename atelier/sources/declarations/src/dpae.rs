@@ -438,7 +438,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     poser(&mut buf, "sexe", sexe)?;
     poser(&mut buf, "dept_naissance", s.departement_naissance.ecrite("departement_naissance")?)?;
     let nat = nature_de(e)?;
-    poser(&mut buf, "type_contrat", &nat.type_contrat_dpae())?;
+    poser(&mut buf, "type_contrat", nat.type_contrat_dpae().code())?;
     // UN CDI N'A PAS DE TERME, et la zone D_FIN_CDD reste a blanc : le
     // controle 46 (<< date de fin obligatoire >>) ne vise que les contrats de
     // type CDD. Un CDD sans fin, lui, est refuse ici plutot que par l'Urssaf.
@@ -729,7 +729,7 @@ pub struct EnregistrementRelu {
     pub date_naissance: Option<String>,
     /// `JJMMAAAA`.
     pub date_embauche: Option<String>,
-    pub type_contrat: Option<String>,
+    pub type_contrat: Option<droit::natures::TypeContratDpae>,
     /// `JJMMAAAA`, la fin prevue du CDD.
     pub date_fin: Option<String>,
 }
@@ -747,6 +747,12 @@ pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
                 Some(n) => Some(droit::fiche::Nir::lire(&n).map_err(|e| e.reformuler(|p| format!("DPAE relue, zone NIR : {}", p)))?),
                 None => None,
             };
+            let type_contrat = match zone("type_contrat") {
+                Some(t) => Some(droit::natures::TypeContratDpae::du_code(&t).ok_or_else(|| {
+                    socle::refus!("DPAE relue, zone C_TYPE_CONTRAT : {} n'est pas un type de contrat du Format 120 (1 CDD, 2 CDI, 3 CTT).", socle::fichiers::repr(&t))
+                })?),
+                None => None,
+            };
             Ok(EnregistrementRelu {
                 horodatage: zone("horodatage"),
                 nom: zone("nom"),
@@ -754,7 +760,7 @@ pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
                 nir,
                 date_naissance: zone("date_naissance"),
                 date_embauche: zone("date_embauche"),
-                type_contrat: zone("type_contrat"),
+                type_contrat,
                 date_fin: zone("date_fin"),
             })
         })

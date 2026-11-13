@@ -5,7 +5,7 @@
 //! `atelier/reference/sources/kali-3090-titres-vii-x-xi-annexes-20260924.md`).
 
 use droit::essai::{plafond, refuser_au_dela};
-use droit::fiche::IDCC_3090;
+use droit::fiche::{StatutConventionnel as S, IDCC_3090};
 use droit::natures::NatureDeContrat as N;
 use socle::date::Jour;
 
@@ -16,7 +16,7 @@ fn la_periode_d_essai_ne_depasse_pas_ce_que_le_texte_permet() {
     let jours = |p: Option<droit::essai::Plafond>| p.map(|p| p.jours);
 
     // Un CDD de six mois au plus : un jour par semaine, deux semaines au plus.
-    let jules = plafond(&cdd, &j(1, 12), Some(&j(6, 30)), Some("05"), false, Some(&IDCC_3090)).unwrap();
+    let jules = plafond(&cdd, &j(1, 12), Some(&j(6, 30)), Some(S::AgentDeMaitrise), false, Some(&IDCC_3090)).unwrap();
     assert_eq!(jours(jules.clone()), Some(14));
     let refus = refuser_au_dela(30, jules.as_ref(), "VARENNE Jules").unwrap_err().phrase;
     assert!(refus.contains("L. 1242-10") && refus.contains("14 jours"), "{}", refus);
@@ -31,13 +31,13 @@ fn la_periode_d_essai_ne_depasse_pas_ce_que_le_texte_permet() {
     assert_eq!(plafond(&cdd, &j(1, 12), None, None, false, None).unwrap(), None);
 
     // Un CDI : deux mois pour un employe, trois pour un agent de maitrise, quatre pour un cadre ; un artiste de la 3090,
-    // deux mois ; un classement que la loi ne nomme pas, rien.
+    // deux mois ; sans classement, rien.
     let debut = j(1, 12);
-    assert_eq!(jours(plafond(&cdi, &debut, None, Some("06"), false, None).unwrap()), Some(59));
-    assert_eq!(jours(plafond(&cdi, &debut, None, Some("05"), false, None).unwrap()), Some(90));
-    assert_eq!(jours(plafond(&cdi, &debut, None, Some("04"), false, None).unwrap()), Some(120));
-    assert_eq!(jours(plafond(&cdi, &debut, None, Some("04"), true, Some(&IDCC_3090)).unwrap()), Some(59));
-    assert_eq!(plafond(&cdi, &debut, None, Some("01"), false, None).unwrap(), None);
-    let cadre = plafond(&cdi, &debut, None, Some("04"), false, None).unwrap();
+    assert_eq!(jours(plafond(&cdi, &debut, None, Some(S::Employe06), false, None).unwrap()), Some(59));
+    assert_eq!(jours(plafond(&cdi, &debut, None, Some(S::AgentDeMaitrise), false, None).unwrap()), Some(90));
+    assert_eq!(jours(plafond(&cdi, &debut, None, Some(S::Cadre04), false, None).unwrap()), Some(120));
+    assert_eq!(jours(plafond(&cdi, &debut, None, Some(S::Cadre04), true, Some(&IDCC_3090)).unwrap()), Some(59));
+    assert_eq!(plafond(&cdi, &debut, None, None, false, None).unwrap(), None);
+    let cadre = plafond(&cdi, &debut, None, Some(S::Cadre04), false, None).unwrap();
     assert!(refuser_au_dela(121, cadre.as_ref(), "X").unwrap_err().phrase.contains("L. 1221-19"));
 }
