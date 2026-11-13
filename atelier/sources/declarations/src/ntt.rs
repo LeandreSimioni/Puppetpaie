@@ -9,7 +9,7 @@ use socle::fichiers::repr;
 use crate::formats;
 use socle::echec::R;
 use crate::usages::strip;
-use droit::fiche::{ChampsSalarie, FicheSalarie, Sexe};
+use droit::fiche::{ChampsSalarie, FicheSalarie, Nir, Sexe};
 use droit::natures::RubriqueDeLaNorme;
 
 pub const RUBRIQUE: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.020");
@@ -19,8 +19,36 @@ pub const RUBRIQUE_NIR: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G0
 /// code sexe (CSL-11), sans espace (CSL-12), le SIREN de l'entreprise en 2e a 10e position (CCH-13)
 /// (`atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt` l. 338-354). Il se fabrique pour un salarie (`numero`, qui
 /// le controle entier) ou se lit dans une DSN (`Ntt::lu`, sa forme seule : le SIREN de l'entreprise n'y est pas en main).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct Ntt(String);
+
+/// CE QUI IDENTIFIE UN INDIVIDU DANS UNE DSN : son NIR (S21.G00.30.001), ou, sans NIR, son NTT (S21.G00.30.020 :
+/// « En l'absence de NIR ou de NIA, il est obligatoire de remplir la rubrique », `norme-dsn/texte/bloc-S21.G00.30.txt`,
+/// l. 348-354). Il ne s'ecrit dans aucun fichier ; il se trie NIR d'abord, chacun comme son texte.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum IdentifiantDIndividu {
+    Nir(Nir),
+    Ntt(Ntt),
+}
+
+impl IdentifiantDIndividu {
+    /// Ce qu'il est, pour une phrase : « NIR » ou « NTT ».
+    pub fn quoi(&self) -> &'static str {
+        match self {
+            IdentifiantDIndividu::Nir(_) => "NIR",
+            IdentifiantDIndividu::Ntt(_) => "NTT",
+        }
+    }
+}
+
+impl std::fmt::Display for IdentifiantDIndividu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IdentifiantDIndividu::Nir(n) => n.fmt(f),
+            IdentifiantDIndividu::Ntt(n) => n.fmt(f),
+        }
+    }
+}
 
 impl Ntt {
     /// Le NTT qu'une DSN lue ecrit, s'il en a la forme ; sinon aucun.
@@ -165,26 +193,25 @@ pub fn verifier_fichier(texte: &str) -> R<()> {
 }
 
 fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> R<()> {
-    let mut vus_nir: Vec<(&str, &str)> = Vec::new();
-    let mut vus_ntt: Vec<(&str, &str)> = Vec::new();
+    // Un NIR et un NTT ne sont jamais egaux : une seule liste.
+    let mut vus: Vec<(IdentifiantDIndividu, &str)> = Vec::new();
     for i in individus {
         let nom = match i.nom.as_deref() {
             Some(n) => n,
             None => "Un individu sans nom (S21.G00.30.002)",
         };
-        let nir = i.nir.as_deref();
-        if nir.is_none() && i.ntt.is_none() {
+        if i.nir.is_none() && i.ntt.is_none() {
             return Err(socle::refus!(
                 "{} est declare sans numero d'inscription au repertoire et sans numero technique temporaire. La norme exige l'un ou l'autre (CCH-12, S21.G00.30.020) : sans cela l'individu n'est identifie par rien.",
                 nom
             ));
         }
-        for (cle, vus, quoi) in [(nir, &mut vus_nir, "NIR"), (i.ntt.as_ref().map(Ntt::as_str), &mut vus_ntt, "NTT")] {
+        for cle in [i.nir.clone().map(IdentifiantDIndividu::Nir), i.ntt.clone().map(IdentifiantDIndividu::Ntt)] {
             let Some(cle) = cle else { continue };
             if let Some((_, autre)) = vus.iter().find(|(c, _)| *c == cle) {
                 return Err(socle::refus!(
                     "Le meme {} ({}) identifie deux individus de la meme declaration, {} et {}. La norme l'interdit (CCH-14) : un identifiant qui designe deux personnes rend la declaration intracable.",
-                    quoi, cle, autre, nom
+                    cle.quoi(), cle, autre, nom
                 ));
             }
             vus.push((cle, nom));

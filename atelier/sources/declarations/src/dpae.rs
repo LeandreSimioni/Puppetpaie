@@ -784,51 +784,106 @@ pub fn meme_declaration(a: &str, b: &str) -> bool {
 // et dans le certificat de conformite (nature 41), qui est NOTRE
 // enregistrement renvoye avec ses zones de retour remplies.
 
-/// C_RET_AR_LOT, 76-77 : le traitement du message.
-pub const CODES_RET_AR_LOT: [(&str, &str); 3] =
-    [("00", "Correct"), ("11", "Code version incorrect"), ("15", "Longueur du message incorrecte")];
+droit::codes_fermes! {
+    /// C_RET_AR_LOT, positions 76-77 : le traitement du message, « Sera renseigné par le système. 00 indique un
+    /// traitement nominal » (Format 120, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 165-173 ; la liste
+    /// de l'onglet « Codes retour », l. 591-597).
+    CodeRetourDuLot, "Code retour du lot (C_RET_AR_LOT)", texte "Format 120 v5.3, onglet « Codes retour », PDF p. 9" {
+        Correct = "00",
+        CodeVersionIncorrect = "11",
+        LongueurIncorrecte = "15",
+    }
+}
 
-/// C_RETOUR_AR, 430-431 : chaque DPAE.
-pub const CODES_RETOUR_AR: [(&str, &str); 26] = [
-    ("00", "DPAE enregistrée"),
-    ("01", "SIRET invalide - syntaxiquement incorrect"),
-    ("02", "Code URSSAF invalide - n'appartenant pas à la liste des codes Urssaf"),
-    ("03", "Code APE invalide - n'appartenant pas à la liste des codes APE (NAF)"),
-    ("05", "Nom ou raison sociale invalide - non renseignée ou caractères interdits"),
-    ("06", "Adresse invalide - non renseignée"),
-    ("07", "Code postal invalide - ne comportant pas 5 caractères numériques"),
-    ("08", "Commune invalide - non renseignée"),
-    ("11", "Code origine application incorrect"),
-    ("12", "Code origine saisie invalide - non renseigné"),
-    ("31", "Nom salarié invalide - non renseigné"),
-    ("32", "Prénom salarié invalide - non renseigné"),
-    ("33", "Date de naissance salarié invalide - invraisemblable ou non renseignée"),
-    ("34", "Lieu de naissance invalide - non renseigné"),
-    ("35", "Date et/ou heure d'embauche invalide - invraisemblable ou non renseignée"),
-    ("38", "Numéro de sécurité sociale invalide - invraisemblable, département inexistant…"),
-    ("39", "Date de déclaration invalide - invraisemblable ou non renseignée"),
-    ("40", "Heure de déclaration invalide - invraisemblable ou non renseignée"),
-    ("43", "Sexe du salarié invalide - différent de M ou F, ou non renseigné"),
-    ("44", "Type de contrat invalide - différent de 1, 2 ou 3, ou non renseigné"),
-    ("45", "Code NAF invalide pour le type de contrat CTT"),
-    ("46", "Date de fin de CDD obligatoire pour un CDD, ou invalide (antérieure à l'embauche…)"),
-    ("47", "Département de naissance invalide - non renseigné"),
-    ("50", "Code médecine du travail invalide - non renseigné"),
-    ("98", "DPAE déjà existante (nom, prénom, date de naissance, date et heure d'embauche, SIRET)"),
-    ("99", "Autre erreur (données facultatives)"),
-];
+impl CodeRetourDuLot {
+    /// Son libelle, mot pour mot (Format 120, `v5.3_FormatDPAE_EMAIL.pdf`, p. 9-10).
+    pub fn libelle(self) -> &'static str {
+        match self {
+            CodeRetourDuLot::Correct => "Correct",
+            CodeRetourDuLot::CodeVersionIncorrect => "Code version incorrect",
+            CodeRetourDuLot::LongueurIncorrecte => "Longueur du message incorrecte",
+        }
+    }
+}
 
-// ENREGISTREE, EN PRATIQUE : `00` ou `99` avec une reference de dossier. Le
-// `99` (<< autre erreur, donnees facultatives >>) enregistre la DPAE mais
-// signale une donnee facultative mal formee. Celui que portaient tous les
-// certificats depuis juin 2026, CoolPaie compris, venait de la periode
-// d'essai (N_JJ_ESSAI) laissee a blanc : un CDDU l'ecrit `000` et rend `00`.
-// Un CDI ou un CDD, dont l'essai n'est pas connu, reste en 99.
-// Le `98` dit qu'une DPAE identique existait deja : rien n'a ete cree, et les
-// formalites restent a N -- sur le second TEST des memes
-// embauches. L'embauche est declaree quand meme, par la premiere.
-pub const CODES_ENREGISTREE: [&str; 2] = ["00", "99"];
-pub const CODE_DEJA_EXISTANTE: &str = "98";
+droit::codes_fermes! {
+    /// C_RETOUR_AR, positions 430-431 : chaque DPAE, « '00' DPAE enregistrée, '98' DPAE déjà existante. Pour tout autre
+    /// code voir liste des codes retour » (Format 120, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`,
+    /// l. 359-368 ; la liste de l'onglet « Codes retour », dont chaque code et son libelle se lisent ensemble dans
+    /// `v5.3_FormatDPAE_EMAIL.pdf`, p. 9-10 : la transcription en separe les colonnes).
+    CodeRetourDpae, "Code retour de la DPAE (C_RETOUR_AR)", texte "Format 120 v5.3, onglet « Codes retour », PDF p. 9-10" {
+        Enregistree = "00",
+        SiretInvalide = "01",
+        CodeUrssafInvalide = "02",
+        CodeApeInvalide = "03",
+        NomOuRaisonSocialeInvalide = "05",
+        AdresseInvalide = "06",
+        CodePostalInvalide = "07",
+        CommuneInvalide = "08",
+        CodeOrigineApplicationIncorrect = "11",
+        CodeOrigineSaisieInvalide = "12",
+        NomSalarieInvalide = "31",
+        PrenomSalarieInvalide = "32",
+        DateDeNaissanceInvalide = "33",
+        LieuDeNaissanceInvalide = "34",
+        EmbaucheInvalide = "35",
+        NumeroDeSecuriteSocialeInvalide = "38",
+        DateDeDeclarationInvalide = "39",
+        HeureDeDeclarationInvalide = "40",
+        SexeInvalide = "43",
+        TypeDeContratInvalide = "44",
+        CodeNafInvalidePourCtt = "45",
+        FinDeCddInvalide = "46",
+        DepartementDeNaissanceInvalide = "47",
+        CodeMedecineDuTravailInvalide = "50",
+        DejaExistante = "98",
+        AutreErreur = "99",
+    }
+}
+
+impl CodeRetourDpae {
+    /// Son libelle, mot pour mot (Format 120, `v5.3_FormatDPAE_EMAIL.pdf`, p. 9-10).
+    pub fn libelle(self) -> &'static str {
+        match self {
+            CodeRetourDpae::Enregistree => "Correct",
+            CodeRetourDpae::SiretInvalide => "SIRET invalide - syntaxiquement incorrect",
+            CodeRetourDpae::CodeUrssafInvalide => "Code URSSAF invalide - n’appartenant pas à la liste des Codes Urssaf",
+            CodeRetourDpae::CodeApeInvalide => "Code APE invalide - n’appartenant pas à la liste des codes APE(NAF)",
+            CodeRetourDpae::NomOuRaisonSocialeInvalide => "Nom ou raison sociale invalide – non renseignée ou caractères interdits",
+            CodeRetourDpae::AdresseInvalide => "Adresse invalide - non renseignée",
+            CodeRetourDpae::CodePostalInvalide => "Code postal invalide - ne comportant pas 5 caractères numériques",
+            CodeRetourDpae::CommuneInvalide => "Commune invalide - non renseignée",
+            CodeRetourDpae::CodeOrigineApplicationIncorrect => "Code origine application incorrect",
+            CodeRetourDpae::CodeOrigineSaisieInvalide => "Code origine saisie invalide - non renseigné",
+            CodeRetourDpae::NomSalarieInvalide => "Nom salarié invalide - non renseigné",
+            CodeRetourDpae::PrenomSalarieInvalide => "Prénom salarié invalide - non renseigné",
+            CodeRetourDpae::DateDeNaissanceInvalide => "Date de naissance salarié invalide - invraisemblable ou non renseignée",
+            CodeRetourDpae::LieuDeNaissanceInvalide => "Lieu de naissance invalide - non renseigné",
+            CodeRetourDpae::EmbaucheInvalide => "Date et/ou Heure d’embauche invalide - invraisemblable ou non renseignée",
+            CodeRetourDpae::NumeroDeSecuriteSocialeInvalide => "Numéro de sécurité sociale invalide - invraisemblable, département inexistant,... (1)",
+            CodeRetourDpae::DateDeDeclarationInvalide => "Date de déclaration invalide - invraisemblable ou non renseignée",
+            CodeRetourDpae::HeureDeDeclarationInvalide => "Heure de déclaration invalide - invraisemblable ou non renseignée",
+            CodeRetourDpae::SexeInvalide => "Sexe du salarié Invalide -différent de M ou F - non renseigné",
+            CodeRetourDpae::TypeDeContratInvalide => "Type de contrat Invalide – différent de 1,2 ou 3 - non renseigné",
+            CodeRetourDpae::CodeNafInvalidePourCtt => "Code NAF invalide pour le type de contrat CTT",
+            CodeRetourDpae::FinDeCddInvalide => "Date de fin de CDD obligatoire pour un contrat CDD ou invalide (par ex. antérieure à la date d'embauche)",
+            CodeRetourDpae::DepartementDeNaissanceInvalide => "Département de naissance invalide - non renseigné",
+            CodeRetourDpae::CodeMedecineDuTravailInvalide => "Code médecine du travail invalide - non renseigné",
+            CodeRetourDpae::DejaExistante => "DPAE déjà existante (nom, prénom, date naissance, heure & date embauche et siret)",
+            CodeRetourDpae::AutreErreur => "Autre erreur (erreur concernant des données facultatives)",
+        }
+    }
+
+    /// ENREGISTREE, EN PRATIQUE : `00` ou `99` (avec une reference de dossier, `lire_certificat`). Le `99` (« autre
+    /// erreur, donnees facultatives ») enregistre la DPAE mais signale une donnee facultative mal formee. Celui que
+    /// portaient tous les certificats depuis juin 2026, CoolPaie compris, venait de la periode d'essai (N_JJ_ESSAI)
+    /// laissee a blanc : un CDDU l'ecrit `000` et rend `00`. Un CDI ou un CDD, dont l'essai n'est pas connu, reste en 99.
+    /// Le `98` (`DejaExistante`) dit qu'une DPAE identique existait deja : rien n'a ete cree, et les formalites restent a
+    /// N -- sur le second TEST des memes embauches. L'embauche est declaree quand meme, par la premiere.
+    pub fn enregistree(self) -> bool {
+        matches!(self, CodeRetourDpae::Enregistree | CodeRetourDpae::AutreErreur)
+    }
+}
 
 /// 0-based, [debut, fin). Positions du Format 120 moins un.
 pub const ZONES_RETOUR: [(&str, usize, usize); 7] = [
@@ -884,21 +939,21 @@ pub struct LigneDuCertificat {
     pub embauche: Option<Jour>,
     /// R_DOSSIER, la reference sous laquelle la DPAE est enregistree.
     pub dossier: String,
-    /// C_RETOUR_AR (`00` quand la zone est a blanc) et son libelle (Format 120).
-    pub code: String,
-    pub libelle: String,
+    /// C_RETOUR_AR.
+    pub code: CodeRetourDpae,
     /// 00 ou 99 avec un dossier.
     pub enregistree: bool,
     /// 98.
     pub deja_existante: bool,
     /// Celles a O : CERTIF, IMMA, MT, PMF5.
     pub formalites: Vec<FormaliteDpae>,
-    /// C_RET_AR_LOT (`00` quand la zone est a blanc).
-    pub lot: String,
+    /// C_RET_AR_LOT ; aucun quand la zone est a blanc.
+    pub lot: Option<CodeRetourDuLot>,
 }
 
-/// Le certificat de conformite (nature 41), DPAE par DPAE. Un retour de la norme se lit strictement : un NIR ou un
-/// jour d'embauche qui n'en sont pas refusent le certificat ; une zone a blanc reste vide.
+/// Le certificat de conformite (nature 41), DPAE par DPAE. Un retour de la norme se lit strictement : un NIR, un
+/// jour d'embauche ou un code retour qui n'en sont pas refusent le certificat, comme un code retour a blanc ; une
+/// autre zone a blanc reste vide.
 pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
     let mut out = Vec::new();
     for r in lire_enregistrements(contenu) {
@@ -911,10 +966,21 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             strip(&tranche(&r, a, b)).to_string()
         };
         let emb = c("date_embauche");
-        let code = if z("retour_ar").is_empty() { "00".to_string() } else { z("retour_ar") };
-        let libelle = match CODES_RETOUR_AR.iter().find(|(k, _)| *k == code) {
-            Some((_, l)) => l.to_string(),
-            None => format!("code {} (inconnu du Format 120)", code),
+        // Une DPAE correcte porte le code 0 (Format 120, onglet « Codes retour ») : a blanc, le certificat ne dit pas ce
+        // qu'il en est, et rien ne le devine (regle 1).
+        let code = match z("retour_ar").as_str() {
+            "" => return Err(refus(format!("Certificat de conformité des DPAE : il ne dit pas le code retour de la DPAE de {} (C_RETOUR_AR, positions 430-431, à blanc).", repr(&c("nom"))))),
+            k => match CodeRetourDpae::du_code(k) {
+                Some(code) => code,
+                None => return Err(refus(format!("Certificat de conformité des DPAE : le code retour {} de la DPAE de {} n'est pas un code du Format 120 (C_RETOUR_AR, positions 430-431).", repr(k), repr(&c("nom"))))),
+            },
+        };
+        let lot = match z("ret_ar_lot").as_str() {
+            "" => None,
+            k => match CodeRetourDuLot::du_code(k) {
+                Some(lot) => Some(lot),
+                None => return Err(refus(format!("Certificat de conformité des DPAE : le code retour du lot {} n'est pas un code du Format 120 (C_RET_AR_LOT, positions 76-77).", repr(k)))),
+            },
         };
         let embauche = match emb.as_str() {
             "" => None,
@@ -928,20 +994,18 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             n => Some(droit::fiche::Nir::lire(n).map_err(|e| e.reformuler(|p| format!("Certificat de conformité des DPAE : {}", p)))?),
         };
         let dossier = z("dossier");
-        let lot = z("ret_ar_lot");
-        let enregistree = CODES_ENREGISTREE.contains(&code.as_str()) && !dossier.is_empty();
+        let enregistree = code.enregistree() && !dossier.is_empty();
         out.push(LigneDuCertificat {
             nom: c("nom"),
             prenom: c("prenom"),
             nir,
             embauche,
             dossier,
-            deja_existante: code == CODE_DEJA_EXISTANTE,
+            deja_existante: code == CodeRetourDpae::DejaExistante,
             code,
-            libelle,
             enregistree,
             formalites: FormaliteDpae::TOUTES.into_iter().filter(|f| z(f.zone()) == "O").collect(),
-            lot: if lot.is_empty() { "00".to_string() } else { lot },
+            lot,
         });
     }
     Ok(out)
@@ -1226,7 +1290,7 @@ mod tests {
                     poser_texte(r, 429, "98");
                     poser_texte(r, 973, "O");
                 }
-                2 => poser_texte(r, 429, "77"),
+                2 => poser_texte(r, 429, "38"),
                 _ => {
                     poser_texte(r, 75, "11");
                     poser_texte(r, 429, "00");
@@ -1237,22 +1301,26 @@ mod tests {
         assert_eq!(c.len(), 4);
         assert_eq!(c[0].embauche.map(|j| j.iso()).as_deref(), Some("2026-10-01"));
         assert_eq!(c[0].dossier, "D1234");
-        assert_eq!(c[0].code, "99");
-        assert_eq!(c[0].libelle, "Autre erreur (données facultatives)");
+        assert_eq!(c[0].code, CodeRetourDpae::AutreErreur);
+        assert_eq!(c[0].code.libelle(), "Autre erreur (erreur concernant des données facultatives)");
         assert!(c[0].enregistree);
         assert_eq!(c[0].formalites, [FormaliteDpae::Certif, FormaliteDpae::Mt]);
         // 98 : deja existante, et pas enregistree
         assert!(c[1].deja_existante);
         assert!(!c[1].enregistree);
         assert_eq!(c[1].formalites, [FormaliteDpae::Imma]);
-        // un code inconnu du Format 120
-        assert_eq!(c[2].libelle, "code 77 (inconnu du Format 120)");
-        assert!(!c[2].enregistree);
+        // un refus de la DPAE (38)
+        assert_eq!(c[2].code, CodeRetourDpae::NumeroDeSecuriteSocialeInvalide);
+        assert!(!c[2].enregistree && !c[2].deja_existante);
         // un lot en erreur ; le code `00` sans dossier n'est pas enregistre
-        assert_eq!(c[3].lot, "11");
+        assert_eq!(c[3].lot, Some(CodeRetourDuLot::CodeVersionIncorrect));
         assert!(!c[3].enregistree);
-        // sans code de retour, `00`
-        assert_eq!(lire_certificat(&flux(1, |_, _| {})).unwrap()[0].code, "00");
+        // un code inconnu du Format 120 refuse le certificat
+        let e = lire_certificat(&flux(1, |r, _| poser_texte(r, 429, "77"))).unwrap_err();
+        assert!(e.phrase.contains("77") && e.phrase.contains("C_RETOUR_AR"), "{}", e.phrase);
+        // un code retour a blanc aussi : le certificat ne dit pas ce qu'il en est de la DPAE
+        let e = lire_certificat(&flux(1, |_, _| {})).unwrap_err();
+        assert!(e.phrase.contains("à blanc"), "{}", e.phrase);
     }
 
     #[test]
@@ -1280,7 +1348,7 @@ mod tests {
             assert!(w[0].1 <= w[1].0, "{} recouvre {}", w[0].2, w[1].2);
         }
         assert!(zones.iter().all(|z| z.1 <= LONGUEUR - 1));
-        assert_eq!(CODES_RETOUR_AR.len(), 26);
+        assert_eq!(CodeRetourDpae::TOUS.len(), 26);
         assert!(ZONES_RETOUR.iter().all(|z| z.2 < LONGUEUR));
     }
 }

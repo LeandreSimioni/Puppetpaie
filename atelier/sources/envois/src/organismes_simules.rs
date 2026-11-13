@@ -208,14 +208,11 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<Decimal> {
     let n = socle::date::jours_du_mois(an, mois);
     let premier = Jour::nouveau(an, mois, 1).expect("mois");
     let dernier = Jour::nouveau(an, mois, n).expect("mois");
-    let mut par_jour: BTreeMap<String, Vec<Decimal>> = BTreeMap::new();
+    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, Vec<Decimal>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
-            let ind = &d.individus[k.individu];
-            let qui = match (&ind.nir, &ind.ntt) {
-                (Some(nir), _) => nir.to_string(),
-                (None, Some(ntt)) => format!("NTT {}", ntt),
-                (None, None) => return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020")),
+            let Some(qui) = d.individus[k.individu].identifiant() else {
+                return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
             };
             let jours = par_jour.entry(qui).or_insert_with(|| vec![Decimal::ZERO; n as usize]);
             if k.motif_recours == Some(droit::natures::MotifDeRecours::Remplacement) {

@@ -377,6 +377,15 @@ impl IndividuDeclare {
             ntt: None,
         }
     }
+
+    /// Ce qui l'identifie : son NIR, sinon son NTT ; aucun s'il n'a ni l'un ni l'autre.
+    pub fn identifiant(&self) -> Option<crate::ntt::IdentifiantDIndividu> {
+        match (&self.nir, &self.ntt) {
+            (Some(nir), _) => Some(crate::ntt::IdentifiantDIndividu::Nir(nir.clone())),
+            (None, Some(ntt)) => Some(crate::ntt::IdentifiantDIndividu::Ntt(ntt.clone())),
+            (None, None) => None,
+        }
+    }
 }
 
 impl ContratDeclare {
