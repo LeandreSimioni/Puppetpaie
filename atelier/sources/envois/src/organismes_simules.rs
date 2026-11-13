@@ -374,9 +374,12 @@ fn bilans_refuses(flux: &IdDeFlux, publication: Moment, l: &Ligne, nature: Natur
         echappe(&refus.message),
         element(refus.rubrique.as_deref())
     );
+    // Le statut d'un flux DSN non conforme : l'AEE « OK », le bilan d'anomalies « KO » (guide de l'API DSN v6.8, § 5.2.3,
+    // l. 3836-3843, `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`).
+    let bilan = crate::retours::Annonce { statut: Some(crate::retours::StatutDuRetour::Ko), ..retour(NatureDuRetour::CertificatDeConformite, flux, publication, "Bilan d'anomalies (compagnie fictive)", None) };
     Ok(vec![
         Piece { retour: retour(NatureDuRetour::AccuseDEnregistrement, flux, publication, "Accuse de reception (compagnie fictive)", None), contenu: rapport("AEE", &envoi) },
-        Piece { retour: retour(NatureDuRetour::CertificatDeConformite, flux, publication, "Bilan d'anomalies (compagnie fictive)", None), contenu: rapport("BAN", &ban) },
+        Piece { retour: bilan, contenu: rapport("BAN", &ban) },
     ])
 }
 
