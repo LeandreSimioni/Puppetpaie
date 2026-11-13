@@ -29,7 +29,6 @@ use socle::verrou::Verrou;
 const TEXTE_MAX: usize = 5000;
 /// 1,5 Mo decodes.
 const CAPTURE_MAX: usize = 1536 * 1024;
-const CAPTURE_TYPES: [&str; 2] = ["image/png", "image/jpeg"];
 pub const CAPTURES_MAX: usize = 5;
 const INCIDENTS_JOINTS: usize = 10;
 /// « Un probleme, une idee ? », sous la racine de la compagnie.
@@ -88,12 +87,45 @@ pub fn base64_strict(t: &str) -> Option<Vec<u8>> {
     Some(sortie)
 }
 
+/// LE TYPE D'IMAGE D'UNE CAPTURE jointe a un message au developpeur : PNG ou JPEG, une liste du logiciel (ce que la
+/// page envoie, ce que le serveur de l'editeur garde). Ecrit par son type MIME (`image/png`, `image/jpeg`) ; un autre se
+/// refuse a la lecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum TypeDeCapture {
+    #[serde(rename = "image/png")]
+    Png,
+    #[serde(rename = "image/jpeg")]
+    Jpeg,
+}
+
+impl TypeDeCapture {
+    pub const TOUS: [TypeDeCapture; 2] = [TypeDeCapture::Png, TypeDeCapture::Jpeg];
+
+    /// Son type MIME, tel que la page et le corps du message l'ecrivent.
+    pub fn texte(self) -> &'static str {
+        match self {
+            TypeDeCapture::Png => "image/png",
+            TypeDeCapture::Jpeg => "image/jpeg",
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TypeDeCapture {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mot = String::deserialize(d)?;
+        match TypeDeCapture::TOUS.into_iter().find(|t| t.texte() == mot) {
+            Some(t) => Ok(t),
+            None => Err(serde::de::Error::custom("Une capture doit être une image PNG ou JPEG.")),
+        }
+    }
+}
+
 /// UNE CAPTURE DE LA PAGE : son type d'image, ses donnees en base64 (avec ou sans le prefixe `data:image/...;base64,`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CaptureDeLaPage {
     #[serde(rename = "type")]
-    pub genre: String,
+    pub genre: TypeDeCapture,
     pub donnees: String,
 }
 
@@ -102,7 +134,7 @@ pub struct CaptureDeLaPage {
 #[serde(deny_unknown_fields)]
 pub struct CaptureQuiPart {
     #[serde(rename = "type")]
-    pub genre: String,
+    pub genre: TypeDeCapture,
     pub donnees: String,
 }
 
@@ -113,9 +145,6 @@ struct Capture {
 }
 
 fn capture_valide(c: &CaptureDeLaPage) -> R<Capture> {
-    if !CAPTURE_TYPES.contains(&c.genre.as_str()) {
-        return Err(refus("Une capture doit être une image PNG ou JPEG."));
-    }
     let donnees = match c.donnees.strip_prefix("data:") {
         Some(d) => match d.split_once(',') {
             Some((_, r)) => r.to_string(),
@@ -130,7 +159,7 @@ fn capture_valide(c: &CaptureDeLaPage) -> R<Capture> {
     if brut.len() > CAPTURE_MAX {
         return Err(refus("Une capture dépasse 1,5 Mo."));
     }
-    Ok(Capture { part: CaptureQuiPart { genre: c.genre.clone(), donnees }, octets: brut.len() })
+    Ok(Capture { part: CaptureQuiPart { genre: c.genre, donnees }, octets: brut.len() })
 }
 
 fn captures_valides(captures: &[CaptureDeLaPage]) -> R<Vec<Capture>> {
@@ -176,7 +205,7 @@ pub struct Corps<C> {
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureMontree {
     #[serde(rename = "type")]
-    pub genre: String,
+    pub genre: TypeDeCapture,
     pub donnees: String,
 }
 
@@ -240,7 +269,7 @@ pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Captu
         .captures
         .iter()
         .zip(&tailles)
-        .map(|(c, n)| CaptureMontree { genre: c.genre.clone(), donnees: format!("({} Ko, non affichés)", n.div_ceil(1024)) })
+        .map(|(c, n)| CaptureMontree { genre: c.genre, donnees: format!("({} Ko, non affichés)", n.div_ceil(1024)) })
         .collect();
     let corps = Corps {
         texte: corps.texte,

@@ -113,7 +113,7 @@ pub struct Ligne {
     /// La trace de ce que l'incident portait (la charge de la route, l'etat du mois), ecrite par la frontiere.
     pub detail: String,
     pub trace: Option<String>,
-    pub caviarde: Vec<String>,
+    pub caviarde: Vec<EtiquetteDeCaviardage>,
     /// Combien de fois il a ete vu, et la derniere.
     pub fois: u64,
     #[serde(with = "socle::paris::ecrit::seconde")]
@@ -145,16 +145,124 @@ const FICHIER_EDITEUR: &str = "EDITEUR.json";
 
 // ------------------------------------------------------------------- les motifs
 
-fn motifs_a_caviarder() -> &'static [(Regex, &'static str)] {
-    static M: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+/// CE QUE LE CAVIARDAGE A RETIRE d'un texte : son etiquette (`[NIR]` ici, `<NIR>` dans le texte d'un bulletin que
+/// l'import caviarde, `import::caviardage`), jamais ce que c'etait. Une liste du logiciel : les dix de l'import (le nom,
+/// le prenom, le NIR, la date de naissance, l'adresse, le numero Conges Spectacles, le courriel, le telephone, l'IBAN, le
+/// code salarie) et, pour les incidents, le BIC et le jeton de session. Ecrite par son mot en capitales (le journal des
+/// incidents, ce qui part chez l'editeur) ; un autre mot se refuse a la lecture. Elle se trie comme son mot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum EtiquetteDeCaviardage {
+    Nom,
+    Prenom,
+    Nir,
+    Naissance,
+    Adresse,
+    Cs,
+    Courriel,
+    Tel,
+    Iban,
+    Code,
+    Bic,
+    Jeton,
+}
+
+impl EtiquetteDeCaviardage {
+    /// Toutes, dans l'ordre du resume d'un caviardage (`import::caviardage::Caviarde::resume`).
+    pub const TOUTES: [EtiquetteDeCaviardage; 12] = [
+        EtiquetteDeCaviardage::Nom,
+        EtiquetteDeCaviardage::Prenom,
+        EtiquetteDeCaviardage::Nir,
+        EtiquetteDeCaviardage::Naissance,
+        EtiquetteDeCaviardage::Adresse,
+        EtiquetteDeCaviardage::Cs,
+        EtiquetteDeCaviardage::Courriel,
+        EtiquetteDeCaviardage::Tel,
+        EtiquetteDeCaviardage::Iban,
+        EtiquetteDeCaviardage::Code,
+        EtiquetteDeCaviardage::Bic,
+        EtiquetteDeCaviardage::Jeton,
+    ];
+
+    /// Son mot, tel que le marqueur et le journal l'ecrivent.
+    pub fn texte(self) -> &'static str {
+        match self {
+            EtiquetteDeCaviardage::Nom => "NOM",
+            EtiquetteDeCaviardage::Prenom => "PRENOM",
+            EtiquetteDeCaviardage::Nir => "NIR",
+            EtiquetteDeCaviardage::Naissance => "NAISSANCE",
+            EtiquetteDeCaviardage::Adresse => "ADRESSE",
+            EtiquetteDeCaviardage::Cs => "CS",
+            EtiquetteDeCaviardage::Courriel => "COURRIEL",
+            EtiquetteDeCaviardage::Tel => "TEL",
+            EtiquetteDeCaviardage::Iban => "IBAN",
+            EtiquetteDeCaviardage::Code => "CODE",
+            EtiquetteDeCaviardage::Bic => "BIC",
+            EtiquetteDeCaviardage::Jeton => "JETON",
+        }
+    }
+
+    /// Ce qu'elle dit a la personne, au singulier et au pluriel (« 1 nom », « 3 noms enlevés »).
+    pub fn dit(self) -> (&'static str, &'static str) {
+        match self {
+            EtiquetteDeCaviardage::Nom => ("nom", "noms"),
+            EtiquetteDeCaviardage::Prenom => ("prénom", "prénoms"),
+            EtiquetteDeCaviardage::Nir => ("NIR", "NIR"),
+            EtiquetteDeCaviardage::Naissance => ("date de naissance", "dates de naissance"),
+            EtiquetteDeCaviardage::Adresse => ("adresse", "adresses"),
+            EtiquetteDeCaviardage::Cs => ("numéro Congés Spectacles", "numéros Congés Spectacles"),
+            EtiquetteDeCaviardage::Courriel => ("courriel", "courriels"),
+            EtiquetteDeCaviardage::Tel => ("téléphone", "téléphones"),
+            EtiquetteDeCaviardage::Iban => ("IBAN", "IBAN"),
+            EtiquetteDeCaviardage::Code => ("code salarié", "codes salarié"),
+            EtiquetteDeCaviardage::Bic => ("BIC", "BIC"),
+            EtiquetteDeCaviardage::Jeton => ("jeton de session", "jetons de session"),
+        }
+    }
+}
+
+impl std::fmt::Display for EtiquetteDeCaviardage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.texte())
+    }
+}
+
+impl PartialOrd for EtiquetteDeCaviardage {
+    fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
+}
+
+impl Ord for EtiquetteDeCaviardage {
+    fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+        self.texte().cmp(autre.texte())
+    }
+}
+
+impl<'de> Deserialize<'de> for EtiquetteDeCaviardage {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mot = String::deserialize(d)?;
+        match EtiquetteDeCaviardage::TOUTES.into_iter().find(|e| e.texte() == mot) {
+            Some(e) => Ok(e),
+            None => Err(serde::de::Error::custom(format!(
+                "Étiquette de caviardage inconnue : {}. Les étiquettes sont {}.",
+                socle::fichiers::repr(&mot),
+                EtiquetteDeCaviardage::TOUTES.map(EtiquetteDeCaviardage::texte).join(", ")
+            ))),
+        }
+    }
+}
+
+fn motifs_a_caviarder() -> &'static [(Regex, EtiquetteDeCaviardage)] {
+    static M: OnceLock<Vec<(Regex, EtiquetteDeCaviardage)>> = OnceLock::new();
     M.get_or_init(|| {
         vec![
             // Avec ou sans les espaces de la carte Vitale (1 84 12 76 451 089 46).
-            (motif(r"\b[12] ?[0-9]{2} ?(?:0[1-9]|1[0-2]) ?[0-9]{2} ?[0-9]{3} ?[0-9]{3}(?: ?[0-9]{1,2})?\b"), "NIR"),
-            (motif(r"\bFR\d{2} ?(?:\d{4} ?){5}\d{3}\b"), "IBAN"),
-            (motif(r"\b[A-Z]{4}FR[A-Z0-9]{2}[0-9][A-Z0-9]{0,2}\b"), "BIC"),
+            (motif(r"\b[12] ?[0-9]{2} ?(?:0[1-9]|1[0-2]) ?[0-9]{2} ?[0-9]{3} ?[0-9]{3}(?: ?[0-9]{1,2})?\b"), EtiquetteDeCaviardage::Nir),
+            (motif(r"\bFR\d{2} ?(?:\d{4} ?){5}\d{3}\b"), EtiquetteDeCaviardage::Iban),
+            (motif(r"\b[A-Z]{4}FR[A-Z0-9]{2}[0-9][A-Z0-9]{0,2}\b"), EtiquetteDeCaviardage::Bic),
             // Le jeton de session de l'interface : le secret du serveur local.
-            (motif(r#"(?i)(jeton=)[^&\s\"'\\]+"#), "JETON"),
+            (motif(r#"(?i)(jeton=)[^&\s\"'\\]+"#), EtiquetteDeCaviardage::Jeton),
         ]
     })
 }
@@ -220,7 +328,7 @@ fn tete(s: &str, n: usize) -> String {
 
 /// Le texte nettoye, et ce qui a ete trouve. Le
 /// marqueur dit CE QUI a ete retire (`[NIR]`), pas ce que c'etait.
-pub fn caviarder(texte: &str) -> (String, Vec<&'static str>) {
+pub fn caviarder(texte: &str) -> (String, Vec<EtiquetteDeCaviardage>) {
     let mut s = texte.to_string();
     let mut trouve = Vec::new();
     for (motif, quoi) in motifs_a_caviarder() {
@@ -236,7 +344,7 @@ pub fn caviarder(texte: &str) -> (String, Vec<&'static str>) {
 }
 
 /// Un texte caviarde puis coupe a `limite` points de code ; ce que le caviardage a trouve s'ajoute a `trouve`.
-fn nettoyer(s: &str, trouve: &mut Vec<&'static str>, limite: usize) -> String {
+fn nettoyer(s: &str, trouve: &mut Vec<EtiquetteDeCaviardage>, limite: usize) -> String {
     let (propre, vus) = caviarder(s);
     trouve.extend(vus);
     tete(&propre, limite)
@@ -345,7 +453,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     let mut trouve = Vec::new();
     // LA FRONTIERE (`diagnostic`) : un message peut nommer un salarie ; il devient son numero, puis le caviardage. L'alarme
     // (`caviarde`) se leve sur ce qui est ARRIVE : ce que la frontiere a deja remplace se dit quand meme.
-    let texte = |s: &str, limite: usize, trouve: &mut Vec<&'static str>| {
+    let texte = |s: &str, limite: usize, trouve: &mut Vec<EtiquetteDeCaviardage>| {
         nettoyer(s, trouve, limite);
         nettoyer(&crate::diagnostic::texte_en_forme(Some(racine), s, limite), trouve, limite + 40)
     };
@@ -399,7 +507,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
         resume,
         detail,
         trace,
-        caviarde: trouve.iter().map(|t| t.to_string()).collect(),
+        caviarde: trouve,
         fois: 1,
         derniere: quand,
         fil,
@@ -590,7 +698,7 @@ pub struct Paquet {
     pub derniere: Moment,
     /// Les versions ou il a ete vu (celles qui se lisaient).
     pub versions: Vec<crate::maj::VersionDuLogiciel>,
-    pub caviarde: Vec<String>,
+    pub caviarde: Vec<EtiquetteDeCaviardage>,
 }
 
 /// `regrouper` : les incidents regroupes par empreinte, le plus frequent en
@@ -629,7 +737,7 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
                 }
                 for c in &l.caviarde {
                     if !p.caviarde.contains(c) {
-                        p.caviarde.push(c.clone());
+                        p.caviarde.push(*c);
                     }
                 }
             }
@@ -679,7 +787,7 @@ pub struct PourLEditeur {
     pub resume: String,
     pub detail: String,
     pub trace: Option<String>,
-    pub caviarde: Vec<String>,
+    pub caviarde: Vec<EtiquetteDeCaviardage>,
     pub machine: String,
     pub fois: u64,
     #[serde(with = "socle::paris::ecrit::seconde")]

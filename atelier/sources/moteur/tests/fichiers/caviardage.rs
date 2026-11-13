@@ -184,8 +184,9 @@ fn gabarit_a_sans_rien_connaitre() {
     tout_reste(&c, &GARDE_A);
     // La compagnie, en colonne de gauche, n'est pas prise pour un nom.
     tout_reste(&c, &["Compagnie des Fausses Pistes"]);
-    for e in ["NOM", "PRENOM", "NIR", "NAISSANCE", "ADRESSE", "CS", "COURRIEL", "TEL", "IBAN", "CODE"] {
-        assert!(c.enleves.get(e).copied().unwrap_or(0) > 0, "rien d'enleve pour {} : {:?}\n{}", e, c.enleves, c.texte);
+    use compagnie::incidents::EtiquetteDeCaviardage as E;
+    for e in [E::Nom, E::Prenom, E::Nir, E::Naissance, E::Adresse, E::Cs, E::Courriel, E::Tel, E::Iban, E::Code] {
+        assert!(c.enleves.get(&e).copied().unwrap_or(0) > 0, "rien d'enleve pour {} : {:?}\n{}", e, c.enleves, c.texte);
     }
     assert!(c.texte.contains("<NOM>") && c.texte.contains("<PRENOM>") && c.texte.contains("<NIR>"));
 }
