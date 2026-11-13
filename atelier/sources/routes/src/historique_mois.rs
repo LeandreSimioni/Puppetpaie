@@ -29,7 +29,10 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
-use envois::retours::{self, AnomalieDuRapport, CrmOc, IdDeFlux, NatureDuRetour, Neores, Rapport, StatutDuRetour, Verdict};
+use envois::retours::{
+    self, AnomalieDuRapport, CriticiteOc, CrmOc, DeclencheurNeores, IdDeFlux, NatureDuRetour, Neores, Rapport, ResultatDuControleNeores, StatutDuRetour, SubstituableNeores, TypeDActionNeores,
+    TypeDeCrmOc, Verdict,
+};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
@@ -641,7 +644,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
         None => "Compte rendu NEOReS".to_string(),
     });
     l.organisme = lu(&crm.organisme).map(String::from);
-    if let Some(pourquoi) = crm.declencheur_libelle.and_then(dit) {
+    if let Some(pourquoi) = crm.declencheur.map(DeclencheurNeores::libelle) {
         l.phrases.push(format!("{}{}.", majuscule(pourquoi), morceau(" (compte rendu ", lu(&crm.code), ")")));
     }
     if crm.remplace {
@@ -697,25 +700,25 @@ fn neores_lu(crm: &Neores) -> Lecture {
                 if !x.acceptees.is_empty() {
                     v.push(format!("valeurs acceptées : {}", x.acceptees.join(", ")));
                 }
-                if let Some(t) = x.resultat.and_then(dit) {
-                    v.push(t.to_string());
+                if let Some(t) = x.resultat {
+                    v.push(t.libelle().to_string());
                 }
                 if let (false, Some(r)) = (v.is_empty(), r) {
                     precisions.push(format!("{} : {}", r, v.join(", ")));
                 }
             }
-            if let Some(t) = d.substituable.and_then(dit) {
-                precisions.push(t.to_string());
+            if let Some(t) = d.substituable {
+                precisions.push(t.libelle().to_string());
             }
         }
-        let message = joint([lu(&a.libelle), a.resultat.and_then(dit)], " — ");
+        let message = joint([lu(&a.libelle), a.resultat.map(ResultatDuControleNeores::libelle)], " — ");
         // Un ecart a corriger (types 01 a 03, ou un resultat de controle) se range parmi les anomalies ; un parametre a
         // prendre (04, 05) n'en est pas une : il se dit en phrase, avec sa valeur (`RO.B008`, plus bas).
-        let parametre = matches!(lu(&a.type_code), Some("04" | "05")) && a.resultat.and_then(dit).is_none();
+        let parametre = matches!(a.type_action, Some(TypeDActionNeores::PriseEnCompteDUnParametre | TypeDActionNeores::RegularisationDUnParametre)) && a.resultat.is_none();
         if !parametre {
             l.anomalies.push(Anomalie {
                 code: lu(&a.code).map(String::from),
-                categorie: a.type_action.map(String::from),
+                categorie: a.type_action.map(|t| t.libelle().to_string()),
                 message: message.clone(),
                 rubrique: joint(rubriques.iter().map(|r| Some(r.as_str())), ", "),
                 ligne: None,
@@ -723,7 +726,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
                 salarie: joint(salaries.iter().map(|s| Some(s.as_str())), ", "),
             });
         } else if let Some(m) = &message {
-            l.phrases.push(format!("{}{}.", morceau("", a.type_action.map(majuscule).as_deref(), " : "), m));
+            l.phrases.push(format!("{}{}.", morceau("", a.type_action.map(|t| majuscule(t.libelle())).as_deref(), " : "), m));
         }
         let tete = morceau("", lu(&a.code), " — ");
         if let Some(c) = lu(&a.controle) {
@@ -737,7 +740,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
         }
         for (v, quoi) in [
             (lu(&a.consequences), "Sans correction"),
-            (a.substituable.and_then(dit), "Substitution"),
+            (a.substituable.map(SubstituableNeores::libelle), "Substitution"),
             (lu(&a.rappel), "Avant correction par l'organisme"),
             (lu(&a.exception), "Cas d'exception"),
             (lu(&a.reference), "Référence"),
@@ -811,10 +814,10 @@ fn neores_lu(crm: &Neores) -> Lecture {
 /// qui l'a produit, le code retour global, son complement, les mandats SEPA a creer, le contact ; chaque retour metier en
 /// anomalie (code, libelle, valeurs, rubrique, salarie).
 fn crm_oc_lu(crm: &CrmOc) -> Lecture {
-    let mut l = Lecture::nouvelle(match lu(&crm.type_crm) {
-        Some("2") => "Compte rendu de traitement (CRT)",
-        Some("3") => "Compte rendu complet (CRC)",
-        _ => "Compte rendu de l'organisme complémentaire",
+    let mut l = Lecture::nouvelle(match crm.type_crm {
+        Some(TypeDeCrmOc::Traitement) => "Compte rendu de traitement (CRT)",
+        Some(TypeDeCrmOc::Complet) => "Compte rendu complet (CRC)",
+        None => "Compte rendu de l'organisme complémentaire",
     });
     if crm.essai_reel == Some(EssaiOuReel::Essai) {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
@@ -824,10 +827,9 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
             l.organisme = Some(p.to_string());
         }
         let organisme = joint([lu(&d.producteur), d.code_producteur.as_ref().map(IdentifiantDOrganisme::as_str)], ", code ");
-        let retour = match (d.retour_global.and_then(dit), lu(&d.code_retour)) {
-            (Some(g), _) => g.to_string(),
-            (None, Some(c)) => format!("code retour {}", c),
-            (None, None) => "sans code retour".to_string(),
+        let retour = match d.code_retour {
+            Some(g) => g.libelle(),
+            None => "sans code retour",
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
@@ -883,7 +885,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
             }
             l.anomalies.push(Anomalie {
                 code: lu(&r.code).map(String::from),
-                categorie: joint([genre, r.criticite.and_then(dit)], ", "),
+                categorie: joint([genre, r.criticite.map(CriticiteOc::libelle)], ", "),
                 message: joint(message.iter().map(|m| Some(m.as_str())), " — "),
                 rubrique: joint([lu(&r.rubrique), lu(&r.libelle_rubrique).map(|x| format!("({})", x)).as_deref()], " "),
                 ligne: None,

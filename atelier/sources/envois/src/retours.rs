@@ -2801,43 +2801,115 @@ pub fn membres_du_zip(o: &[u8]) -> R<Vec<String>> {
 
 // ------------------------------------------------ un compte rendu NEOReS, lu
 
-/// `RO.B001.R001` « Declencheur du retour organisme » : cahier technique NEOReS 2026.1.2, « Rubriques », bloc RO.B001
-/// (`atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`) ; 05 et 06 viennent du
-/// cahier 2027.1.0 (`gip-mds-neores-cahier-technique-2027.1.0-20260303.txt`, et la note differentielle, § II).
-const DECLENCHEURS_NEORES: [(&str, &str); 6] = [
-    ("01", "retour sur une DSN mensuelle ou un signalement d'événement"),
-    ("02", "retour en fin d'exercice"),
-    ("03", "rappel d'actions non réalisées"),
-    ("04", "paramètre à prendre en compte en paie"),
-    ("05", "récapitulatif des substitutions de données opérées par l'organisme"),
-    ("06", "retour informatif"),
-];
+droit::codes_fermes! {
+    /// `RO.B001.R001` « Declencheur du retour organisme » : 01 a 04 au cahier technique NEOReS 2026.1.2 (l. 1619-1622,
+    /// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`) ; 05 et 06 viennent du
+    /// cahier 2027.1.0 (l. 1749-1754, `gip-mds-neores-cahier-technique-2027.1.0-20260303.txt`, et la note
+    /// differentielle, § II).
+    DeclencheurNeores, "Déclencheur du retour organisme (RO.B001.R001)", texte "cahier technique NEOReS 2027.1.0, l. 1749-1754" {
+        DsnOuSignalement = "01",
+        FinDExercice = "02",
+        Rappel = "03",
+        Parametre = "04",
+        Substitutions = "05",
+        Informatif = "06",
+    }
+}
 
-/// `RO.B004.R003` « Type d'action » (cahier 2026.1.2, « Rubriques », bloc RO.B004).
-const TYPES_ACTION_NEORES: [(&str, &str); 5] = [
-    ("01", "correction de données DSN précédemment déclarées"),
-    ("02", "correction de données d'identification d'individus"),
-    ("03", "émission de l'ensemble des données attendues par l'organisme pour un mois principal déclaré"),
-    ("04", "prise en compte d'un paramètre"),
-    ("05", "régularisation d'un paramètre"),
-];
+impl DeclencheurNeores {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            DeclencheurNeores::DsnOuSignalement => "retour sur une DSN mensuelle ou un signalement d'événement",
+            DeclencheurNeores::FinDExercice => "retour en fin d'exercice",
+            DeclencheurNeores::Rappel => "rappel d'actions non réalisées",
+            DeclencheurNeores::Parametre => "paramètre à prendre en compte en paie",
+            DeclencheurNeores::Substitutions => "récapitulatif des substitutions de données opérées par l'organisme",
+            DeclencheurNeores::Informatif => "retour informatif",
+        }
+    }
+}
 
-/// `RO.B004.R006` et `RO.B007.R009` « Resultat du controle » (cahier 2026.1.2, blocs RO.B004 et RO.B007).
-const RESULTATS_NEORES: [(&str, &str); 7] = [
-    ("01", "valeur incohérente"),
-    ("02", "rubrique absente"),
-    ("03", "rubrique présente à tort"),
-    ("04", "bloc absent"),
-    ("05", "bloc présent à tort"),
-    ("06", "cumul incohérent"),
-    ("07", "ensemble des données attendues pour le mois absentes"),
-];
+droit::codes_fermes! {
+    /// `RO.B002.R004` « Type de retour organisme » : « 01 - Retour organisme normal », « 02 - Retour organisme annule et
+    /// remplace » (cahier technique NEOReS 2026.1.2, l. 1690-1691 ; 2027.1.0, l. 1821-1822).
+    TypeDeRetourNeores, "Type de retour organisme (RO.B002.R004)", texte "cahier technique NEOReS 2026.1.2, l. 1690-1691" {
+        Normal = "01",
+        AnnuleEtRemplace = "02",
+    }
+}
 
-/// `RO.B004.R016` (cahier 2026.1.2) puis `RO.B005.R005` (cahier 2027.1.0) « Caractere substituable de la donnee ».
-const SUBSTITUABLE_NEORES: [(&str, &str); 2] = [
-    ("01", "donnée substituable : sans correction ni opposition de votre part, l'Urssaf ou la MSA la corrigera elle-même"),
-    ("02", "donnée non substituable"),
-];
+droit::codes_fermes! {
+    /// `RO.B004.R003` « Type d'action » (cahier technique NEOReS 2026.1.2, l. 1892-1901 ; 2027.1.0, l. 2026-2030).
+    TypeDActionNeores, "Type d'action (RO.B004.R003)", texte "cahier technique NEOReS 2026.1.2, l. 1892-1901" {
+        CorrectionDeDonnees = "01",
+        CorrectionDIdentification = "02",
+        EmissionDesDonneesAttendues = "03",
+        PriseEnCompteDUnParametre = "04",
+        RegularisationDUnParametre = "05",
+    }
+}
+
+impl TypeDActionNeores {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            TypeDActionNeores::CorrectionDeDonnees => "correction de données DSN précédemment déclarées",
+            TypeDActionNeores::CorrectionDIdentification => "correction de données d'identification d'individus",
+            TypeDActionNeores::EmissionDesDonneesAttendues => "émission de l'ensemble des données attendues par l'organisme pour un mois principal déclaré",
+            TypeDActionNeores::PriseEnCompteDUnParametre => "prise en compte d'un paramètre",
+            TypeDActionNeores::RegularisationDUnParametre => "régularisation d'un paramètre",
+        }
+    }
+}
+
+droit::codes_fermes! {
+    /// `RO.B004.R006` et `RO.B007.R009` « Resultat du controle » (cahier technique NEOReS 2026.1.2, l. 1962-1968 ; le bloc
+    /// RO.B007 n'en a que 01 a 06, l. 2477-2482).
+    ResultatDuControleNeores, "Résultat du contrôle (RO.B004.R006, RO.B007.R009)", texte "cahier technique NEOReS 2026.1.2, l. 1962-1968" {
+        ValeurIncoherente = "01",
+        RubriqueAbsente = "02",
+        RubriquePresenteATort = "03",
+        BlocAbsent = "04",
+        BlocPresentATort = "05",
+        CumulIncoherent = "06",
+        DonneesDuMoisAbsentes = "07",
+    }
+}
+
+impl ResultatDuControleNeores {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            ResultatDuControleNeores::ValeurIncoherente => "valeur incohérente",
+            ResultatDuControleNeores::RubriqueAbsente => "rubrique absente",
+            ResultatDuControleNeores::RubriquePresenteATort => "rubrique présente à tort",
+            ResultatDuControleNeores::BlocAbsent => "bloc absent",
+            ResultatDuControleNeores::BlocPresentATort => "bloc présent à tort",
+            ResultatDuControleNeores::CumulIncoherent => "cumul incohérent",
+            ResultatDuControleNeores::DonneesDuMoisAbsentes => "ensemble des données attendues pour le mois absentes",
+        }
+    }
+}
+
+droit::codes_fermes! {
+    /// `RO.B004.R016` (cahier technique NEOReS 2026.1.2, l. 2087-2088) puis `RO.B005.R005` (cahier 2027.1.0, l. 2340-2341)
+    /// « Caractere substituable de la donnee ».
+    SubstituableNeores, "Caractère substituable de la donnée (RO.B004.R016, RO.B005.R005)", texte "cahier technique NEOReS 2026.1.2, l. 2087-2088" {
+        Substituable = "01",
+        NonSubstituable = "02",
+    }
+}
+
+impl SubstituableNeores {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            SubstituableNeores::Substituable => "donnée substituable : sans correction ni opposition de votre part, l'Urssaf ou la MSA la corrigera elle-même",
+            SubstituableNeores::NonSubstituable => "donnée non substituable",
+        }
+    }
+}
 
 /// La table des types de parametres (`RO.B008.R001`), telle que net-entreprises la sert
 /// (`atelier/reference/sources/neores/gip-mds-neores-table-types-de-parametres-20230703.csv`).
@@ -2915,7 +2987,7 @@ pub struct DonneeNeores {
     pub cumul: bool,
     pub debut: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
-    pub resultat: Option<&'static str>,
+    pub resultat: Option<ResultatDuControleNeores>,
     pub acceptees: Vec<String>,
 }
 
@@ -2926,7 +2998,7 @@ pub struct DetailNeores {
     pub debut: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
     pub montant: Option<socle::num::Decimal>,
-    pub substituable: Option<&'static str>,
+    pub substituable: Option<SubstituableNeores>,
     pub rappel: Option<String>,
     pub interlocuteur: Option<String>,
     pub individus: Vec<IndividuNeores>,
@@ -2938,10 +3010,9 @@ pub struct DetailNeores {
 pub struct ActionNeores {
     pub code: Option<String>,
     pub libelle: Option<String>,
-    pub type_code: Option<String>,
     #[serde(rename = "type")]
-    pub type_action: Option<&'static str>,
-    pub resultat: Option<&'static str>,
+    pub type_action: Option<TypeDActionNeores>,
+    pub resultat: Option<ResultatDuControleNeores>,
     pub individus: Option<String>,
     pub contrats: Option<String>,
     pub controle: Option<String>,
@@ -2949,7 +3020,7 @@ pub struct ActionNeores {
     pub action: Option<String>,
     pub aide: Option<String>,
     pub consequences: Option<String>,
-    pub substituable: Option<&'static str>,
+    pub substituable: Option<SubstituableNeores>,
     pub rappel: Option<String>,
     pub exception: Option<String>,
     pub details: Vec<DetailNeores>,
@@ -2999,10 +3070,10 @@ pub struct InformationNeores {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Neores {
     pub version: Option<String>,
-    pub declencheur: Option<String>,
-    pub declencheur_libelle: Option<&'static str>,
+    pub declencheur: Option<DeclencheurNeores>,
     pub code: Option<String>,
     pub libelle: Option<String>,
+    /// `RO.B002.R004` vaut « 02 », un retour qui annule et remplace (`TypeDeRetourNeores`).
     pub remplace: bool,
     pub organisme: Option<String>,
     pub debut: Option<socle::date::Jour>,
@@ -3053,7 +3124,8 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let r = |bloc: Option<&Noeud>, nom: &str| bloc.and_then(|b| rubrique_texte(&a, b, nom));
     let (b000, b001, b002, b003) = (premier("RO_B000"), premier("RO_B001"), premier("RO_B002"), premier("RO_B003"));
     let version = a.tous().find(|x| local(&x.tag) == "RO_R001").map(|x| x.texte_net().to_string()).filter(|t| !t.is_empty());
-    let declencheur = r(b001, "RO_B001_R001");
+    let declencheur = forme_du_retour(r(b001, "RO_B001_R001").as_deref(), code_ferme::<DeclencheurNeores>)?;
+    let type_de_retour = forme_du_retour(r(b002, "RO_B002_R004").as_deref(), code_ferme::<TypeDeRetourNeores>)?;
     let individu = |b: &Noeud, p: &str| -> R<IndividuNeores> {
         Ok(IndividuNeores {
             nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
@@ -3080,7 +3152,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                         cumul: rubrique_de(&a, b, "RO_B007_R004") == Some("01"),
                         debut: rubrique_jour(&a, b, "RO_B007_R005")?,
                         fin: rubrique_jour(&a, b, "RO_B007_R006")?,
-                        resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, b, "RO_B007_R009")),
+                        resultat: forme_du_retour(rubrique_de(&a, b, "RO_B007_R009"), code_ferme::<ResultatDuControleNeores>)?,
                         acceptees: blocs_sous(&a, b, "RO_B010").into_iter().filter_map(|v| rubrique_texte(&a, v, "RO_B010_R001")).collect(),
                     })
                 })
@@ -3091,7 +3163,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                 fin: rubrique_jour(&a, d, "RO_B005_R003")?,
                 montant: rubrique_montant(&a, d, "RO_B005_R004")?,
                 // CT 2027.1.0 : le caractere substituable et le rappel descendent au detail de l'action (note differentielle, § III).
-                substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, d, "RO_B005_R005")),
+                substituable: forme_du_retour(rubrique_de(&a, d, "RO_B005_R005"), code_ferme::<SubstituableNeores>)?,
                 rappel: rd("RO_B005_R006"),
                 interlocuteur: rd("RO_B005_R007"),
                 individus,
@@ -3101,9 +3173,8 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         actions.push(ActionNeores {
             code: rc("RO_B004_R001"),
             libelle: rc("RO_B004_R002"),
-            type_code: rc("RO_B004_R003"),
-            type_action: dans_table(&TYPES_ACTION_NEORES, rubrique_de(&a, c, "RO_B004_R003")),
-            resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, c, "RO_B004_R006")),
+            type_action: forme_du_retour(rubrique_de(&a, c, "RO_B004_R003"), code_ferme::<TypeDActionNeores>)?,
+            resultat: forme_du_retour(rubrique_de(&a, c, "RO_B004_R006"), code_ferme::<ResultatDuControleNeores>)?,
             individus: rc("RO_B004_R009"),
             contrats: rc("RO_B004_R010"),
             controle: rc("RO_B004_R011"),
@@ -3111,7 +3182,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
             action: rc("RO_B004_R013"),
             aide: rc("RO_B004_R014"),
             consequences: rc("RO_B004_R015"),
-            substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, c, "RO_B004_R016")),
+            substituable: forme_du_retour(rubrique_de(&a, c, "RO_B004_R016"), code_ferme::<SubstituableNeores>)?,
             rappel: rc("RO_B004_R017"),
             exception: rc("RO_B004_R018"),
             details,
@@ -3168,11 +3239,10 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .collect::<R<_>>()?;
     Ok(Some(Neores {
         version,
-        declencheur_libelle: dans_table(&DECLENCHEURS_NEORES, declencheur.as_deref()),
         declencheur,
         code: r(b002, "RO_B002_R002"),
         libelle: r(b002, "RO_B002_R003"),
-        remplace: r(b002, "RO_B002_R004").as_deref() == Some("02"),
+        remplace: type_de_retour == Some(TypeDeRetourNeores::AnnuleEtRemplace),
         organisme: r(b002, "RO_B002_R005"),
         debut: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R008")).transpose()?.flatten(),
         fin: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R009")).transpose()?.flatten(),
@@ -3191,18 +3261,56 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
 
 // ------------------------------- un compte rendu d'organisme complementaire, lu
 
-/// `Declaration/@CodeRetourDecla`, le code retour global : schema CRM DSN OC P3 V1.1.4
-/// (`atelier/reference/sources/gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd`, l. 1001-1013) et
-/// specification V1.1.4 du 17/06/2025 (`ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt`, niveau 2, « Code retour global »).
-const RETOURS_GLOBAUX_OC: [(&str, &str); 4] = [
-    ("0", "DSN acceptée"),
-    ("1", "DSN acceptée, avec des corrections à apporter (anomalies non bloquantes)"),
-    ("2", "DSN partiellement prise en compte (des erreurs empêchent la prise en compte de certains salariés ou de certaines données)"),
-    ("3", "DSN non prise en compte par l'organisme (erreurs au niveau de la déclaration)"),
-];
+droit::codes_fermes! {
+    /// `Fichier/@TypCRM`, le type du compte rendu : « 2 (CRT compte-rendu basique) », « 3 (CRC compte-rendu complet) »
+    /// (schema CRM DSN OC P3 V1.1.4, l. 1071-1081,
+    /// `atelier/reference/sources/gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd`).
+    TypeDeCrmOc, "Type de CRM (TypCRM)", texte "schéma CRM DSN OC P3 V1.1.4, l. 1071-1081" {
+        Traitement = "2",
+        Complet = "3",
+    }
+}
 
-/// `RetourMetier/@CriticiteRetour` (schema V1.1.4, l. 514-523).
-const CRITICITES_OC: [(&str, &str); 2] = [("C", "critique : à corriger impérativement dans la DSN suivante"), ("P", "passable : à corriger dès que possible")];
+droit::codes_fermes! {
+    /// `Declaration/@CodeRetourDecla`, le code retour global : schema CRM DSN OC P3 V1.1.4 (l. 1001-1015) et
+    /// specification V1.1.4 du 17/06/2025 (`ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt`, niveau 2, « Code retour global »).
+    RetourGlobalOc, "Code retour global (CodeRetourDecla)", texte "schéma CRM DSN OC P3 V1.1.4, l. 1001-1015" {
+        Acceptee = "0",
+        AccepteeAvecCorrections = "1",
+        PartiellementPriseEnCompte = "2",
+        NonPriseEnCompte = "3",
+    }
+}
+
+impl RetourGlobalOc {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            RetourGlobalOc::Acceptee => "DSN acceptée",
+            RetourGlobalOc::AccepteeAvecCorrections => "DSN acceptée, avec des corrections à apporter (anomalies non bloquantes)",
+            RetourGlobalOc::PartiellementPriseEnCompte => "DSN partiellement prise en compte (des erreurs empêchent la prise en compte de certains salariés ou de certaines données)",
+            RetourGlobalOc::NonPriseEnCompte => "DSN non prise en compte par l'organisme (erreurs au niveau de la déclaration)",
+        }
+    }
+}
+
+droit::codes_fermes! {
+    /// `RetourMetier/@CriticiteRetour` : « C = "Critique" », « P = "Passable" » (schema CRM DSN OC P3 V1.1.4, l. 514-525).
+    CriticiteOc, "Criticité du retour (CriticiteRetour)", texte "schéma CRM DSN OC P3 V1.1.4, l. 514-525" {
+        Critique = "C",
+        Passable = "P",
+    }
+}
+
+impl CriticiteOc {
+    /// Ce qu'elle dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            CriticiteOc::Critique => "critique : à corriger impérativement dans la DSN suivante",
+            CriticiteOc::Passable => "passable : à corriger dès que possible",
+        }
+    }
+}
 
 /// Un compte rendu metier d'organisme complementaire (nature 51 : guide de l'API DSN v6.8, tableau des retours,
 /// « CRM-DSN-OC-P3-V1.1.4-17062025 »), lu d'apres son schema et sa specification
@@ -3255,7 +3363,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
                 code: at(rm, "CodeRetourMetier"),
                 libelle: at(rm, "LibelCodeRetourMetier"),
                 description: at(rm, "DescriptionRetour"),
-                criticite: dans_table(&CRITICITES_OC, at(rm, "CriticiteRetour").as_deref()),
+                criticite: forme_du_retour(at(rm, "CriticiteRetour").as_deref(), code_ferme::<CriticiteOc>)?,
                 nombre: at(rm, "NbErreursSimilaires"),
                 rubrique: at(rm, "RubriqueBlocRetour"),
                 libelle_rubrique: at(rm, "LibelRubBlocRetour"),
@@ -3268,7 +3376,6 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
                 contexte,
             });
         }
-        let code = at(d, "CodeRetourDecla");
         declarations.push(DeclarationOc {
             nature_declaration: nature_du_retour(at(d, "NatureDecla").as_deref())?,
             type_declaration: type_du_retour(at(d, "TypeDecla").as_deref())?,
@@ -3281,8 +3388,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             contact: at(d, "NomContact"),
             courriel: at(d, "MailContact"),
             telephone: at(d, "TelContact"),
-            retour_global: dans_table(&RETOURS_GLOBAUX_OC, code.as_deref()),
-            code_retour: code,
+            code_retour: forme_du_retour(at(d, "CodeRetourDecla").as_deref(), code_ferme::<RetourGlobalOc>)?,
             complement: at(d, "ComplementRetourDecla"),
             erreurs: at(d, "NbreErreur"),
             critiques: at(d, "NbreCritique"),
@@ -3293,13 +3399,13 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             retours,
         });
     }
-    Ok(Some(CrmOc { type_crm: at(racine, "TypCRM"), essai_reel: essai_du_retour(at(racine, "CodeEnvoi").as_deref())?, version: at(racine, "VersionCRM"), declarations }))
+    Ok(Some(CrmOc { type_crm: forme_du_retour(at(racine, "TypCRM").as_deref(), code_ferme::<TypeDeCrmOc>)?, essai_reel: essai_du_retour(at(racine, "CodeEnvoi").as_deref())?, version: at(racine, "VersionCRM"), declarations }))
 }
 
 /// UN COMPTE RENDU D'ORGANISME COMPLEMENTAIRE LU (`lire_crm_oc`) ; un attribut que le fichier ne porte pas est vide.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CrmOc {
-    pub type_crm: Option<String>,
+    pub type_crm: Option<TypeDeCrmOc>,
     pub essai_reel: Option<EssaiOuReel>,
     pub version: Option<String>,
     pub declarations: Vec<DeclarationOc>,
@@ -3324,8 +3430,7 @@ pub struct DeclarationOc {
     pub contact: Option<String>,
     pub courriel: Option<String>,
     pub telephone: Option<String>,
-    pub code_retour: Option<String>,
-    pub retour_global: Option<&'static str>,
+    pub code_retour: Option<RetourGlobalOc>,
     pub complement: Option<String>,
     pub erreurs: Option<String>,
     pub critiques: Option<String>,
@@ -3352,7 +3457,7 @@ pub struct RetourMetierOc {
     pub code: Option<String>,
     pub libelle: Option<String>,
     pub description: Option<String>,
-    pub criticite: Option<&'static str>,
+    pub criticite: Option<CriticiteOc>,
     pub nombre: Option<String>,
     pub rubrique: Option<String>,
     pub libelle_rubrique: Option<String>,
