@@ -244,7 +244,7 @@ pub struct DatesTravaillees {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CotisationImprimee {
-    pub famille: Option<String>,
+    pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
     pub libelle: String,
     pub cotisation: Option<String>,
     pub base: Option<Decimal>,
@@ -648,7 +648,7 @@ pub struct LigneDeRemuneration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneDeCotisation {
     pub id: Option<droit::forme_bareme::IdDeCotisation>,
-    pub famille: Option<String>,
+    pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
     pub libelle: String,
     pub base: Option<Decimal>,
     pub taux_pat: Option<Decimal>,
@@ -789,7 +789,7 @@ impl Importe {
             .map(|l| {
                 Ok(LigneDeCotisation {
                     id: l.cotisation.as_deref().filter(|c| !c.is_empty()).map(droit::forme_bareme::IdDeCotisation::lire).transpose()?,
-                    famille: l.famille.clone().filter(|f| !f.is_empty()),
+                    famille: l.famille.clone(),
                     libelle: l.libelle.clone(),
                     base: l.base,
                     taux_pat: taux(l.taux_employeur),

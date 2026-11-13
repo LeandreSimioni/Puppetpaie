@@ -2004,18 +2004,20 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
     ligne.cotisations = Some(
         b.cotisations
             .iter()
-            .map(|c| CotisationImprimee {
-                famille: c.famille.clone(),
-                libelle: c.libelle.clone(),
-                cotisation: c.cotisation.clone(),
-                base: c.base,
-                taux_employeur: c.taux_employeur,
-                montant_employeur: c.montant_employeur,
-                taux_salarie: c.taux_salarie,
-                montant_salarie: c.montant_salarie,
-                hors_total: c.hors_total,
+            .map(|c| {
+                Ok(CotisationImprimee {
+                    famille: c.famille.as_deref().map(droit::forme_bareme::FamilleDeCotisation::lire).transpose()?,
+                    libelle: c.libelle.clone(),
+                    cotisation: c.cotisation.clone(),
+                    base: c.base,
+                    taux_employeur: c.taux_employeur,
+                    montant_employeur: c.montant_employeur,
+                    taux_salarie: c.taux_salarie,
+                    montant_salarie: c.montant_salarie,
+                    hors_total: c.hors_total,
+                })
             })
-            .collect(),
+            .collect::<R<_>>()?,
     );
     // Le statut et l'emploi que CE bulletin imprime : un salarie artiste un mois peut etre technicien, ou non cadre au
     // regime general, un autre ; la comparaison des calculs lit celui de la paie (`engagement::ecarts`), pas la fiche.

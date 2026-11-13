@@ -495,6 +495,20 @@ crate::cle_opaque! {
 pub const CADRE: CategorieDuBareme = CategorieDuBareme::du_moteur("cadre");
 pub const CADRE_PERMANENT: CategorieDuBareme = CategorieDuBareme::du_moteur("cadre_permanent");
 
+crate::cle_opaque! {
+    /// LA FAMILLE D'UNE COTISATION AU BULLETIN (arrete du 25/02/2016 : `RETRAITE`, `SANTÉ`, `ASSURANCE CHÔMAGE`…), sous
+    /// laquelle le bulletin la range : `famille` d'une rubrique du bareme, d'une ligne calculee, d'une ligne qu'un bulletin
+    /// importe imprime (la cle de `familles` de la table de lecture). Gardee telle que lue (`cle_opaque!`) : l'AT/MP s'y
+    /// ecrit avec un tiret court ou un tiret long, la table de lecture en minuscules ; celles que le moteur lit ou pose sont
+    /// des constantes (`FAMILLE_RETRAITE`, `FAMILLE_ALLEGEMENTS`).
+    pub struct FamilleDeCotisation, "famille d'une cotisation";
+}
+
+/// La famille des assurances vieillesse, que la reduction des heures en plus lit (`engagement::heures_en_plus`).
+pub const FAMILLE_RETRAITE: FamilleDeCotisation = FamilleDeCotisation::du_moteur("RETRAITE");
+/// La famille des lignes que le calcul compose pour les reductions et exonerations de cotisations.
+pub const FAMILLE_ALLEGEMENTS: FamilleDeCotisation = FamilleDeCotisation::du_moteur("EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS");
+
 /// Les cotisations que le moteur nomme lui-meme (`bareme`) : la mutuelle, la prevoyance, la contribution
 /// conventionnelle, la retraite complementaire (ses deux tranches et la CET), le versement mobilite, le regime local
 /// d'Alsace-Moselle.
@@ -529,7 +543,7 @@ forme! {
     /// Une ligne de cotisation du bulletin.
     pub struct Rubrique {
         pub id: IdDeCotisation,
-        pub famille: Option<String>,
+        pub famille: Option<FamilleDeCotisation>,
         pub libelle: Option<String>,
         /// Son assiette dans les bases du calcul.
         pub base: Option<Assiette>,
@@ -646,7 +660,7 @@ forme! {
     /// parts que la couche retire (la rubrique n'a plus de part de ce cote : `Rubrique::taux_pat`, `taux_sal`).
     #[derive(Default)]
     pub struct RubriqueModifiee {
-        pub famille: Option<String>,
+        pub famille: Option<FamilleDeCotisation>,
         pub libelle: Option<String>,
         pub base: Option<Assiette>,
         pub taux_pat: Option<TauxDate>,
@@ -1320,7 +1334,7 @@ forme! {
     /// (absente ou nulle) ne change pas ; `efface` retire une part.
     pub struct Contribution {
         pub id: IdDeCotisation,
-        pub famille: Option<String>,
+        pub famille: Option<FamilleDeCotisation>,
         pub libelle: Option<String>,
         pub base: Option<BaseParPopulation>,
         pub taux_pat: Option<Court>,

@@ -611,7 +611,7 @@ enum Rang {
     /// agregees (C. trav. R. 3243-2, al. 2 ; arrete, art. 3), la caisse des Conges Spectacles comprise.
     Autres,
     /// Une famille que le moteur ne range pas : titree par sa famille.
-    Hors(String),
+    Hors(droit::forme_bareme::FamilleDeCotisation),
     /// « COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES ».
     Facultative(&'static str),
     /// « EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS ».
@@ -626,7 +626,7 @@ impl Rang {
             Rang::Retraite => "Retraite",
             Rang::Ligne(_, nom) | Rang::Facultative(nom) => nom,
             Rang::Autres => AUTRES,
-            Rang::Hors(famille) => famille,
+            Rang::Hors(famille) => famille.as_str(),
             Rang::Allegement => EXONERATIONS,
         }
     }
@@ -795,7 +795,7 @@ fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> 
             out.push(ligne(vec![s(AUTRES), vide(), vide(), vide(), s(fmt_eur(total))], vec![]));
         }
         Rang::Hors(famille) => {
-            out.push(titre_groupe(famille, COLONNES));
+            out.push(titre_groupe(famille.as_str(), COLONNES));
             for l in lignes {
                 out.push(ligne_cotisation(l.libelle.clone(), l)?);
             }

@@ -669,6 +669,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | case qu'une rubrique fait saisir | `CaseSaisie` | `droit/src/catalogue.rs` |
 | origine d'une rubrique | `OrigineDeRubrique` | `droit/src/catalogue.rs` |
 | cotisation du bulletin | `IdDeCotisation` ; à unifier (#419) : `LigneCotisation.id` | `droit/src/forme_bareme.rs` |
+| famille d'une cotisation | `FamilleDeCotisation` | `droit/src/forme_bareme.rs` |
 | cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |
 | clé de totalisation | `CleDeTotalisation` | `droit/src/code_cotisation.rs` |
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
@@ -808,6 +809,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   d'une cotisation DSN ou d'une contribution, `rubriques_abattues` de la DFS et les rubriques d'une DFS calculée ; une
   clé que le moteur nomme est une constante (`MUTUELLE`, `RETRAITE_T1`…). À unifier : `LigneCotisation.id` et ce qui la
   relit, en `String`. Ce n'est ni une rubrique du catalogue, ni une cotisation de la DSN.
+- **famille d'une cotisation** : la famille sous laquelle le bulletin range une cotisation (arrêté du 25/02/2016 :
+  `RETRAITE`, `SANTÉ`, `ASSURANCE CHÔMAGE`…). Une clé du logiciel (`droit::cle_opaque!`), gardée telle que lue : le
+  barème écrit l'AT/MP avec un tiret court ou un tiret long, la table de lecture des bulletins écrit ses familles en
+  minuscules (`conges_spectacles`) ; celles que le moteur lit ou pose, `FAMILLE_RETRAITE`, `FAMILLE_ALLEGEMENTS`. Que
+  portent une rubrique du barème, sa modification par une couche, une contribution conventionnelle, une ligne de
+  cotisation calculée et sa forme écrite, une ligne qu'un bulletin importé imprime, une ligne de cotisation d'une paie
+  importée, le rang d'une famille que le bulletin ne range pas.
 - **cotisation de la DSN** : une ligne du bloc 81, par son code S21.G00.81.001. Que portent `cotisations_dsn` (`code81`,
   `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version
   de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) :

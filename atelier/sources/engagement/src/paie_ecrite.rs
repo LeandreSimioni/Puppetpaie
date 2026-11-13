@@ -140,7 +140,7 @@ pub struct FormeDeCotisation {
     /// La cotisation de la ligne.
     pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
-    pub famille: String,
+    pub famille: droit::forme_bareme::FamilleDeCotisation,
     pub libelle: String,
     #[serde(with = "nombre")]
     pub base: Decimal,

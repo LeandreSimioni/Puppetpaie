@@ -8,7 +8,7 @@
 
 use socle::texte::sans_accent;
 use crate::forme_bareme::{
-    CotisationDsn, CotisationModifiee, CotisationSupplementaire, IdDeCotisation, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, TauxAtmp,
+    CotisationDsn, CotisationModifiee, CotisationSupplementaire, FamilleDeCotisation, IdDeCotisation, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, TauxAtmp,
     TauxDate, VersementMobiliteEcrit, CADRE, CADRE_PERMANENT, CCN, MUTUELLE, PREVOYANCE, PREVOYANCE_T2, REGIME_LOCAL, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
 use crate::assiette::Assiette;
@@ -799,7 +799,7 @@ pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuC
             continue;
         }
         // La tranche 2 se range dans la famille de la ligne de la prevoyance.
-        let famille = dit(&r.famille).map(str::to_string);
+        let famille = r.famille.clone();
         posee = true;
         let mut rr = r;
         match &cot {
@@ -1332,7 +1332,7 @@ pub fn bareme_vm(mut bar: Pile, sal: &SalarieDuContrat) -> R<Pile> {
     // circulaire Acoss 2013-019, § 1.3) -- celle du FNAL, `majoration_conges_115`, qui vaut 1 pour un permanent.
     // Le 78.004 reste le brut. Textes : atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md.
     bar.rubriques_bulletin.push(Rubrique {
-        famille: Some("AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR".into()),
+        famille: Some(FamilleDeCotisation::du_moteur("AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR")),
         libelle: Some("Versement mobilité".into()),
         base: Some(Assiette::BrutX115),
         taux_pat: Some(TauxDate(taux)),
@@ -1363,7 +1363,7 @@ ne porte pas le taux du regime local (`regime_local_alsace_moselle`).",
     };
     let org = org_urssaf(&bar)?;
     bar.rubriques_bulletin.push(Rubrique {
-        famille: Some("SANTÉ".into()),
+        famille: Some(FamilleDeCotisation::du_moteur("SANTÉ")),
         libelle: Some("Régime local Alsace-Moselle — maladie".into()),
         base: Some(Assiette::Brut),
         taux_sal: Some(Court(rl.taux_sal)),

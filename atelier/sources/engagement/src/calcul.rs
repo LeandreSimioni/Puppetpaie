@@ -215,7 +215,7 @@ pub struct LigneCotisation {
     /// La cotisation de la ligne.
     pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
-    pub famille: String,
+    pub famille: droit::forme_bareme::FamilleDeCotisation,
     pub libelle: String,
     pub base: Decimal,
     pub taux_pat: Option<Decimal>,
@@ -555,7 +555,7 @@ fn bref(l: &LigneBrut) -> String {
 pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Decimal) -> LigneCotisation {
     LigneCotisation {
         id: droit::forme_bareme::REDUCTION_GENERALE,
-        famille: FAMILLE_ALLEGEMENTS.into(),
+        famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
         libelle: "Réduction générale dégressive unique".into(),
         base: brut,
         taux_pat: None,
@@ -855,8 +855,6 @@ contrat, {} (CSS R. 242-1, al. 6 ; arrêté du 4 septembre 2025, art. 9, I, dern
 }
 
 // ---------------------------------------------------------------- calculer
-
-pub(crate) const FAMILLE_ALLEGEMENTS: &str = "EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS";
 
 /// Les assiettes d'un montant de salaire (§7.4) : celles qui se calculent par rubrique de salaire
 /// (`Assiette::par_rubrique`).
