@@ -1428,17 +1428,16 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
 /// `poser-courriel` : le courriel `email` du salarie `cle`, saisi la ou il manque (la boite des contrats a
 /// faire signer). La fiche entiere s'ecrit comme depuis l'ecran (`ecrire_fiche`), seul le courriel y change : il se
 /// verifie avec elle, et une fiche qui refuse le dit.
-pub(crate) fn poser_courriel(ctx: &Contexte, cle: &IdSalarie, email: &str) -> R<droit::fiche::Courriel> {
+pub(crate) fn poser_courriel(ctx: &Contexte, cle: &IdSalarie, email: &droit::fiche::Courriel) -> R<()> {
     if !ctx.salaries.contains_key(cle) {
         return Err(refus(format!("Salarié {} inconnu.", socle::fichiers::repr(cle.as_str()))));
     }
     let cle = cle.as_str();
-    let email = droit::fiche::Courriel::lire(&droit::fiche::Courriel::rangee(email))?;
     let p = preparer::<FicheSalarieDatee>(ctx, Some(cle), |plate| {
         plate.email = Some(email.clone());
         vec![droit::fiche::CaseSalarie::Email.into()]
     })?;
     let (depuis, _) = date_proposee(ctx, NomDeFiche::Salarie, Some(cle))?;
     ecrire_fiche::<FicheSalarieDatee>(ctx, p, Forcer::Rien, Some(depuis), None)?;
-    Ok(email)
+    Ok(())
 }

@@ -21,7 +21,7 @@ pub(crate) struct ContratAuJour {
     pub debut: Jour,
     pub(crate) fin: Option<Jour>,
     pub(crate) mois: socle::mois::Mois,
-    pub(crate) spectacle: Option<String>,
+    pub(crate) spectacle: Option<droit::contexte::IdSpectacle>,
     pub(crate) mensuel: bool,
     pub(crate) nature: Option<droit::natures::NatureDeContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]

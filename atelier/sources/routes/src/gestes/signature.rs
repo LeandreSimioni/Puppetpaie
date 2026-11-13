@@ -853,7 +853,7 @@ pub struct UnAvenant {
     pub effet: Jour,
     pub modifications: Vec<ArticleModifie>,
     /// Le courriel du salarie, s'il est dit : sans lui, l'avenant ne part pas par courriel.
-    pub destinataire: Option<String>,
+    pub destinataire: Option<droit::fiche::Courriel>,
     /// L'avenant deja parti et pas revenu, qui repart tel quel (`Repris`) ; aucun : un avenant neuf, ecrit ici.
     pub repris: Option<Repris>,
 }
@@ -1048,7 +1048,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
             let (pdf, mut c, p) = avenant_ecrit(ctx, salarie, a, &mut saisies, &departs)?;
             nommes.push(ContratNomme::de(&p)?);
             sal = Some(p.salarie.clone());
-            c.adresse = a.destinataire.as_deref().map(|d| droit::fiche::Courriel::lire(&d.trim().to_lowercase())).transpose()?;
+            c.adresse = a.destinataire.as_ref().map(|d| droit::fiche::Courriel::lire(&d.trim().to_lowercase())).transpose()?;
             c.relance = Some(a.rappel());
             lignes_contrats.push(c);
             pdfs.push(pdf);

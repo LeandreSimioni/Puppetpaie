@@ -432,9 +432,9 @@ pub struct FicheLue {
 #[serde(deny_unknown_fields)]
 pub struct BanqueLue {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub iban: Option<String>,
+    pub iban: Option<droit::fiche::Iban>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bic: Option<String>,
+    pub bic: Option<droit::fiche::Bic>,
 }
 
 /// `fiche_depuis_reponses` : (les cases lues de la fiche, ce qui n'a pas pu se lire). Rien n'est suppose. Une liste
@@ -541,20 +541,19 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
             },
         }
     }
-    // LE COMPTE BANCAIRE : l'IBAN compact (sans blancs, en majuscules) ; un IBAN dont la forme ou la cle est fausse ne
-    // s'ecrit pas, il se dit a completer avec sa raison (`socle::iban::faute_iban`) ; le BIC de meme (`faute_bic`).
+    // LE COMPTE BANCAIRE : l'IBAN compact (sans blancs, en majuscules), lu par son type (`droit::fiche::Iban`) ; un IBAN
+    // dont la forme ou la cle est fausse ne s'ecrit pas, il se dit a completer avec sa raison ; le BIC de meme (`Bic`).
     let mut banque = BanqueLue::default();
-    for (q, cle, faute) in [("iban", "IBAN", socle::iban::faute_iban as fn(&str) -> Option<String>), ("bic", "BIC", socle::iban::faute_bic)] {
-        let Some(brut) = reponse(q).map(strip).filter(|b| !b.is_empty()) else { continue };
-        match faute(brut) {
-            None => {
-                let compact = Some(socle::iban::iban_compact(brut));
-                match q {
-                    "iban" => banque.iban = compact,
-                    _ => banque.bic = compact,
-                }
-            }
-            Some(f) => illisible.push(format!("{} : « {} » ({})", cle, brut, f)),
+    if let Some(brut) = reponse("iban").map(strip).filter(|b| !b.is_empty()) {
+        match droit::fiche::Iban::lire(&droit::fiche::Iban::rangee(brut)) {
+            Ok(iban) => banque.iban = Some(iban),
+            Err(e) => illisible.push(format!("IBAN : « {} » ({})", brut, e.phrase)),
+        }
+    }
+    if let Some(brut) = reponse("bic").map(strip).filter(|b| !b.is_empty()) {
+        match droit::fiche::Bic::lire(&droit::fiche::Bic::rangee(brut)) {
+            Ok(bic) => banque.bic = Some(bic),
+            Err(e) => illisible.push(format!("BIC : « {} » ({})", brut, e.phrase)),
         }
     }
     if banque != BanqueLue::default() {

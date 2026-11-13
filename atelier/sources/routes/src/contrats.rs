@@ -317,7 +317,7 @@ struct ChargePieces {
 #[serde(deny_unknown_fields)]
 struct ChargeCourriel {
     salarie: IdSalarie,
-    email: String,
+    email: droit::fiche::Courriel,
 }
 
 // ------------------------------------------------------------------ les reponses
@@ -347,7 +347,7 @@ pub(crate) struct ContratASigner {
     pub(crate) salarie: droit::contexte::IdSalarie,
     pub(crate) nom: String,
     /// Le courriel du salarie, s'il est dit.
-    pub(crate) destinataire: Option<String>,
+    pub(crate) destinataire: Option<droit::fiche::Courriel>,
     spectacle: String,
     pub(crate) debut: Jour,
     fin: Option<Jour>,
@@ -470,7 +470,7 @@ pub(crate) struct ApercuAvenant {
     avenants: Vec<AvenantDit>,
     remplacable: bool,
     boite_liee: bool,
-    destinataire: Option<String>,
+    destinataire: Option<droit::fiche::Courriel>,
     situation: String,
     encarts: Vec<Encart>,
     titre: String,
@@ -501,7 +501,7 @@ struct PiecesParties {
 struct CourrielPose {
     phrase: String,
     salarie: IdSalarie,
-    email: String,
+    email: droit::fiche::Courriel,
 }
 
 // ------------------------------------------------------------------ l'aiguillage
@@ -523,8 +523,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 
 /// `poser-courriel` : le courriel du salarie, pose dans sa fiche (`fiches::poser_courriel`).
 fn poser_courriel(ctx: &Contexte, c: ChargeCourriel) -> R<CourrielPose> {
-    let email = crate::fiches::poser_courriel(ctx, &c.salarie, &c.email)?.to_string();
-    Ok(CourrielPose { phrase: format!("Courriel de {} : {}.", c.salarie, email), salarie: c.salarie, email })
+    crate::fiches::poser_courriel(ctx, &c.salarie, &c.email)?;
+    Ok(CourrielPose { phrase: format!("Courriel de {} : {}.", c.salarie, c.email), salarie: c.salarie, email: c.email })
 }
 
 // ------------------------------------------------------------------ contrat-recu
@@ -873,7 +873,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &
     }
     // La porte du branchement, avant de rien lire.
     compagnie::bridage::branchement(&ctx.racine)?.ouvrir()?;
-    let (par_salarie, sans): (Vec<_>, Vec<_>) = avenants_a_envoyer(ctx, voulus, etats)?.into_iter().partition(|(_, aa)| aa.iter().all(|a| a.destinataire.as_deref().is_some_and(|d| !d.trim().is_empty())));
+    let (par_salarie, sans): (Vec<_>, Vec<_>) = avenants_a_envoyer(ctx, voulus, etats)?.into_iter().partition(|(_, aa)| aa.iter().all(|a| a.destinataire.is_some()));
     let noms_sans: Vec<String> = sans.iter().map(|(k, _)| ctx.nomme(k)).collect();
     if par_salarie.is_empty() {
         return Err(refus(format!("{} Rien n'est parti.", crate::gestes::signature::avenants_sans_courriel_dit(&noms_sans))));
@@ -989,7 +989,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         };
         contrats.push(ContratASigner {
             salarie: p.salarie.id.clone(),
-            destinataire: p.salarie.email.en_texte(),
+            destinataire: p.salarie.email.dite().cloned(),
             spectacle: p.titre()?,
             debut,
             fin,
@@ -1030,7 +1030,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
     }
     let phrases: Vec<String> = contrats
         .iter()
-        .map(|c| format!("{} ({}) : {}", c.nom, contrat_dit(c.numero.as_deref()), match &c.destinataire { Some(d) => d.as_str(), None => "pas de courriel : il s'imprime" }))
+        .map(|c| format!("{} ({}) : {}", c.nom, contrat_dit(c.numero.as_deref()), match &c.destinataire { Some(d) => d.as_ref(), None => "pas de courriel : il s'imprime" }))
         .chain(avertissements.iter().cloned())
         .collect();
     Ok(ApercuSignature {
@@ -1101,7 +1101,7 @@ struct AvenantLu {
     avenants: Vec<AvenantParti>,
     remplacable: bool,
     boite_liee: bool,
-    destinataire: Option<String>,
+    destinataire: Option<droit::fiche::Courriel>,
 }
 
 impl AvenantLu {
@@ -1326,7 +1326,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
         remplacable: c.debut > ctx.aujourdhui,
         // Sans boite courriel, l'avenant s'imprime avec les contrats (`contrats-imprimer`) : rien ne part d'ici.
         boite_liee: crate::ouverture::boite_liee(ctx)?,
-        destinataire: p.salarie.email.en_texte(),
+        destinataire: p.salarie.email.dite().cloned(),
     }))
 }
 
@@ -1407,7 +1407,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         avenants: deja,
         remplacable: false,
         boite_liee: crate::ouverture::boite_liee(ctx)?,
-        destinataire: p.salarie.email.en_texte(),
+        destinataire: p.salarie.email.dite().cloned(),
     }))
 }
 

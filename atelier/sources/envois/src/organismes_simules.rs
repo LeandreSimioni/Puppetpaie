@@ -51,7 +51,7 @@ pub enum Annonce {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TauxPasAnnonce {
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
     pub taux: Decimal,
 }
 
@@ -161,7 +161,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
     match annonce.clone() {
         Annonce::TauxPas(t) => {
             let n = t.taux;
-            if t.salarie.is_empty() || !(Decimal::ZERO..=Decimal::ONE_HUNDRED).contains(&n) {
+            if !(Decimal::ZERO..=Decimal::ONE_HUNDRED).contains(&n) {
                 return Err(socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas").reclasser(Classe::Illisible));
             }
             gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: deux_decimales(n) });
@@ -401,7 +401,7 @@ fn taux_de_simulation(nir: &droit::fiche::Nir) -> Decimal {
 /// `taux_imposition_PAS`). `None` quand la declaration ne porte aucun salarie de la compagnie.
 fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publication: Moment) -> R<Option<Piece>> {
     let depot = l.quand().jour();
-    let mut taux: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut taux: BTreeMap<droit::contexte::IdSalarie, Decimal> = BTreeMap::new();
     for a in &memoire.annonces {
         let Some(t) = &a.taux_pas else { continue };
         if a.le <= depot {
@@ -416,7 +416,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDe
             continue;
         }
         // Le taux annonce ; sans annonce, celui de la simulation.
-        let t = match taux.get(cle.as_str()) {
+        let t = match taux.get(cle) {
             Some(t) => *t,
             None => taux_de_simulation(nir_de_la_fiche),
         };

@@ -186,7 +186,7 @@ struct MessageVu {
     cle: IdSalarie,
     nom: String,
     /// Le courriel de la fiche ; vide, ses documents s'impriment.
-    destinataire: Option<String>,
+    destinataire: Option<droit::fiche::Courriel>,
     pieces: Vec<NomDeFichier>,
     sortes: Vec<&'static str>,
     renvoi: bool,
@@ -522,7 +522,7 @@ fn documents_prets(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie
 struct Message {
     cle: IdSalarie,
     nom: String,
-    destinataire: Option<String>,
+    destinataire: Option<droit::fiche::Courriel>,
     pieces: Vec<std::path::PathBuf>,
 }
 
@@ -561,7 +561,7 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, doss
         messages.push(Message {
             nom: ctx.nomme(&cle),
             // Une fiche sans courriel se montre : ses documents s'impriment ; c'est l'envoi par courriel qui la refuse.
-            destinataire: s.email.portee().map(str::to_lowercase),
+            destinataire: s.email.dite().map(|e| droit::fiche::Courriel::lire(&e.to_lowercase())).transpose()?,
             cle,
             pieces,
         });

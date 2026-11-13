@@ -2581,7 +2581,7 @@ fn contrats_au(ctx: &Contexte, cle: &IdSalarie, jour: Jour) -> R<Vec<ContratAuJo
                 debut,
                 fin,
                 mois: m,
-                spectacle: e.spectacle.as_ref().map(ToString::to_string),
+                spectacle: e.spectacle.clone(),
                 // Paye au mois (`Nature::mensuelle`) : son mois de paie se tire du moteur, et un arret y appelle le maintien
                 // de salaire (L1226-1 : pas pour un intermittent).
                 mensuel,

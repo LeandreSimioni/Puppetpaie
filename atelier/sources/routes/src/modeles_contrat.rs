@@ -27,7 +27,7 @@ use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, 
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use documents::contrat_ecrit::{ChampDeModele, ModeleDuContrat};
 use documents::marqueurs::ModeleLu;
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::natures::{Nature, NatureDeContrat};
 use engagement::calcul::Paie;
 use engagement::carte::IdDeModele;
@@ -621,7 +621,7 @@ struct ChargeId {
 #[serde(deny_unknown_fields)]
 struct EngagementVise {
     mois: Mois,
-    salarie: String,
+    salarie: IdSalarie,
     debut: Jour,
 }
 
@@ -814,7 +814,7 @@ fn engagements_de(ctx: &Contexte, nature: NatureDeContrat) -> R<Vec<EngagementAu
         }
         let (Some(salarie), Some(debut)) = (o.carte().salarie.as_ref(), engagement::debut_brut(&o.brut)) else { continue };
         let mois = o.premier_mois();
-        v.push(EngagementAuChoix { engagement: EngagementVise { mois, salarie: salarie.to_string(), debut }, nom: engagement::etats::qui_de(ctx, &o) });
+        v.push(EngagementAuChoix { engagement: EngagementVise { mois, salarie: salarie.clone(), debut }, nom: engagement::etats::qui_de(ctx, &o) });
     }
     v.sort_by(|a, b| b.engagement.debut.cmp(&a.engagement.debut));
     Ok(v)
@@ -894,7 +894,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
     let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, vise.mois, None, &departs)?;
     let p = paies
         .into_iter()
-        .find(|p| p.salarie.id.to_string() == vise.salarie && p.engagement.debut == vise.debut)
+        .find(|p| p.salarie.id == vise.salarie && p.engagement.debut == vise.debut)
         .ok_or_else(|| refus(format!("Aucun engagement validé de {} du {} en {} : en choisir un de la liste.", vise.salarie, vise.debut.jj_mm_aaaa(), vise.mois.etiquette())))?;
     let modele = modele_lu(nom.clone(), s.is_none(), &texte_de(&nat, s, Partie::Contrat)?, &texte_de(&nat, s, Partie::Avenant)?)?;
     let ent = documents::avenant::ent_du_mois(ctx, vise.mois);

@@ -126,7 +126,7 @@ pub struct IndividuReg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commune: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
+    pub email: Option<droit::fiche::Courriel>,
 }
 
 /// Le contrat d'une ligne de la liste nominative, tel que l'engagement importe et la fiche le disent.
@@ -370,7 +370,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 adresse: champ(S::Adresse),
                 code_postal: champ(S::CodePostal),
                 commune: champ(S::Commune),
-                email: champ(S::Email),
+                email: p.salarie.champs.email.dite().cloned(),
             };
             let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: champ(S::Emploi) };
             emplois.push(EmploiReg {
@@ -688,7 +688,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             (13, coupe(texte_de(&i.adresse), 32)),
             (15, coupe(texte_de(&i.code_postal), 5)),
             (16, coupe(texte_de(&i.commune), 26)),
-            (19, texte_de(&i.email)),
+            (19, cellule(&i.email)),
             (21, coupe(texte_de(&c.emploi), 34)),
             (22, jj(&x.debut)),
             (23, jj(&x.fin)),

@@ -2976,7 +2976,7 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
     struct Embauche<'a> {
         debut: Jour,
         fin: Option<Jour>,
-        spectacle: Option<String>,
+        spectacle: Option<&'a droit::contexte::IdSpectacle>,
         nir: Option<&'a droit::fiche::Nir>,
         nom: Option<&'a str>,
         prenom: Option<&'a str>,
@@ -2989,7 +2989,7 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
     let embauche = Embauche {
         debut: e.debut,
         fin: e.fin,
-        spectacle: e.spectacle.as_ref().map(|s| s.to_string()),
+        spectacle: e.spectacle.as_ref(),
         nir: sal.nir.dite(),
         nom: sal.nom.portee(),
         prenom: sal.prenom.portee(),
