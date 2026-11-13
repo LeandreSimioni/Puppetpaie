@@ -17,7 +17,7 @@ use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, Verdict};
-use crate::retours::{self, Annonce};
+use crate::retours::{self, Annonce, IdDeFlux};
 use socle::echec::{Echec, R};
 use crate::tables_journal::ALNUM;
 
@@ -95,7 +95,8 @@ pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: 
 pub struct EtatDsnDuMois {
     pub quand: InstantOuJour,
     pub fichier: Option<NomDeFichier>,
-    pub flux: String,
+    #[serde(serialize_with = "socle::forme::vide_si_aucun::serialize")]
+    pub flux: Option<IdDeFlux>,
     pub passee: bool,
     pub refusee: bool,
     pub anomalies: Vec<String>,
@@ -450,11 +451,11 @@ pub fn resumes_des_documents(lignes: &[Ligne], mois: Mois) -> HashMap<String, Op
 }
 
 /// Les flux des depots de test, chacun une fois.
-pub fn flux_de_test(lignes: &[Ligne]) -> Vec<String> {
-    let mut d: Vec<String> = Vec::new();
-    for l in lignes.iter().filter(|l| l.mode() == Mode::Test && !l.flux().is_empty()) {
-        if !d.iter().any(|f| f == l.flux()) {
-            d.push(l.flux().to_string());
+pub fn flux_de_test(lignes: &[Ligne]) -> Vec<IdDeFlux> {
+    let mut d: Vec<IdDeFlux> = Vec::new();
+    for f in lignes.iter().filter(|l| l.mode() == Mode::Test).filter_map(Ligne::flux) {
+        if !d.contains(f) {
+            d.push(f.clone());
         }
     }
     d
@@ -688,8 +689,8 @@ impl EtatDuTest {
 
 impl Repetition {
     /// Le flux du test conforme, s'il y en a un.
-    pub fn flux_conforme(&self) -> Option<String> {
-        self.conforme.as_ref().map(|c| c.flux().to_string())
+    pub fn flux_conforme(&self) -> Option<IdDeFlux> {
+        self.conforme.as_ref().and_then(|c| c.flux().cloned())
     }
 
     /// Les lignes qu'il porte, pour y poser ce que la page en montre.
@@ -859,23 +860,24 @@ fn flux_json(c: &[char]) -> Option<String> {
     None
 }
 
-pub fn flux_de(reponse: &str) -> String {
+/// Le flux que la reponse d'un depot donne (`<idflux>`, `"idflux"`, ou la reponse nue d'au moins huit caracteres), s'il
+/// a la forme d'un flux (`IdDeFlux`) ; aucun sinon.
+pub fn flux_de(reponse: &str) -> Option<IdDeFlux> {
     if reponse.is_empty() {
-        return String::new();
+        return None;
     }
     let c: Vec<char> = reponse.chars().collect();
     if let Some(m) = flux_xml(&c) {
-        return m;
+        return IdDeFlux::lu(&m);
     }
     if let Some(m) = flux_json(&c) {
-        return m;
+        return IdDeFlux::lu(&m);
     }
     let nu = reponse.trim_matches(socle::texte::blanc);
-    let n = nu.chars().count();
-    if (8..=64).contains(&n) && nu.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-') {
-        nu.to_string()
+    if nu.chars().count() >= 8 {
+        IdDeFlux::lu(nu)
     } else {
-        String::new()
+        None
     }
 }
 
@@ -978,7 +980,7 @@ fn correspond(j: &[Jeton], nom: &[char]) -> bool {
 }
 
 /// LA CLE DU CONTENU TELECHARGE D'UN RETOUR (`retours::Annonce`) : son flux, sa nature, sa publication.
-pub type CleDuContenu = (Option<String>, String, Option<socle::paris::Moment>);
+pub type CleDuContenu = (Option<IdDeFlux>, String, Option<socle::paris::Moment>);
 
 /// La cle du contenu telecharge du retour `r`.
 pub fn cle_du_contenu(r: &Annonce) -> CleDuContenu {
@@ -992,8 +994,8 @@ fn archive_du_retour(racine: &Path, r: &Annonce, quoi: Acte) -> R<Option<PathBuf
     if !dossier.is_dir() {
         return Ok(None);
     }
-    let flux = match r.flux.as_deref().filter(|f| !f.is_empty()) {
-        Some(f) => f,
+    let flux = match &r.flux {
+        Some(f) => f.texte(),
         None => "sansflux",
     };
     let motif = jetons(&format!("*_nature{}_{}*", r.nature_retour, flux));
@@ -1189,10 +1191,10 @@ fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleD
     }
     let mut lignes = (*crate::journal::lu(racine)?.lignes).clone();
     let mut rangements: Vec<(usize, Rangement)> = Vec::new();
-    let mut par_flux: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut par_flux: HashMap<IdDeFlux, Vec<usize>> = HashMap::new();
     for (i, l) in lignes.iter().enumerate() {
-        if !l.flux().is_empty() {
-            par_flux.entry(l.flux().to_string()).or_default().push(i);
+        if let Some(f) = l.flux() {
+            par_flux.entry(f.clone()).or_default().push(i);
         }
     }
     let mut ajoutes = 0;
@@ -1415,7 +1417,7 @@ mod tests {
             id: None,
             url: None,
             libelle: None,
-            flux: Some(flux.into()),
+            flux: Some(IdDeFlux::lire(flux).unwrap()),
         };
         let retours = vec![annonce("WSBBBB", "11", 1), annonce("WSINCONNU", "11", 2), annonce("WSCCCC", "20", 3)];
         let mut contenus = HashMap::new();

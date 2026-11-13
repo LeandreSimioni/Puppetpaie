@@ -37,7 +37,7 @@ pub fn relever_retours(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, e
 }
 
 /// Releve les retours de la DPAE : par flux s'il est connu, sinon par plage.
-pub fn relever_retours_dpae(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, flux: Option<&str>) -> R<Releve> {
+pub fn relever_retours_dpae(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, flux: Option<&envois::retours::IdDeFlux>) -> R<Releve> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = client_dpae(ctx, b)?;
     let mut s = Suites::default();

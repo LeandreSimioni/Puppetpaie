@@ -16,6 +16,7 @@ use crate::depot;
 use declarations::dsn_lue::DsnLue;
 use crate::ligne::{Acte, DetailDpae, DetailDsn, EmbaucheDeclaree, Envoi, Ligne, Mode, Ouverture, Version};
 use crate::releve_retours::{Client, Panne};
+use crate::retours::IdDeFlux;
 use crate::suites::{DepotRefuse, Suites};
 
 /// Ce qui vient de partir, et ce que l'organisme a repondu : la reponse de la route `deposer`. `ligne` est la ligne
@@ -26,7 +27,8 @@ pub struct DepotFait {
     pub mois: Mois,
     pub reel: bool,
     pub reponse: String,
-    pub flux: String,
+    #[serde(serialize_with = "socle::forme::vide_si_aucun::serialize")]
+    pub flux: Option<IdDeFlux>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub trace: Option<PathBuf>,
     pub ligne: Ligne,
@@ -87,10 +89,10 @@ pub fn archiver_reponse(racine: &Path, quoi: &str, marque: &str, reponse: &str) 
 }
 
 /// L'envoi du depot `d` a `destinataire`, et ce que l'organisme a repondu.
-fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: &str, reponse: &str, trace: Option<CheminRelatif>, detail: D, versions: bool) -> Envoi<D, Rt> {
+fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: Option<IdDeFlux>, reponse: &str, trace: Option<CheminRelatif>, detail: D, versions: bool) -> Envoi<D, Rt> {
     let mut e = Envoi::nouveau(Mode::de(d.reel), d.qui, accepte, destinataire, reponse, detail);
     e.mois = Some(d.mois);
-    e.flux = flux.to_string();
+    e.flux = flux;
     e.trace = trace;
     e.versions = versions.then(|| d.versions.to_vec());
     e
@@ -171,7 +173,7 @@ pub fn deposer_dsn(
         Ok(r) => r,
         Err(e) => {
             let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: apercu.ordre, evenement: d.evenement, ..DetailDsn::nouveau(false) };
-            let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase, None, detail, false));
+            let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", None, &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
     };
@@ -200,7 +202,7 @@ pub fn deposer_dsn(
         evenement: d.evenement,
         ..DetailDsn::nouveau(false)
     };
-    let ligne = Ligne::Dsn(envoi_du_depot(d, true, "net-entreprises", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
+    let ligne = Ligne::Dsn(envoi_du_depot(d, true, "net-entreprises", flux.clone(), &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
     let ligne = repondu_aussitot(ctx, joue, ligne, suites)?;
     Ok(DepotFait { quoi: "dsn".into(), mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
@@ -237,7 +239,7 @@ pub fn deposer_dpae(
         Ok(r) => r,
         Err(e) => {
             let detail = DetailDpae { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), ..DetailDpae::nouveau(false, false) };
-            let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", "", &e.phrase, None, detail, false));
+            let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", None, &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dpae, d, ligne, e, suites));
         }
     };
@@ -247,7 +249,7 @@ pub fn deposer_dpae(
     // Ce que ce depot a REELLEMENT declare, a la maille de l'embauche : c'est ce qui repondra ensuite a
     // « lesquelles restent a faire ».
     let detail = DetailDpae { preuve, repetition: d.repetition.cloned(), embauches, ..DetailDpae::nouveau(false, false) };
-    let ligne = Ligne::Dpae(envoi_du_depot(d, true, "urssaf", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
+    let ligne = Ligne::Dpae(envoi_du_depot(d, true, "urssaf", flux.clone(), &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
     let ligne = repondu_aussitot(ctx, joue, ligne, suites)?;
     Ok(DepotFait { quoi: "dpae".into(), mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })

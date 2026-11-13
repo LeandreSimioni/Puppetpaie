@@ -67,6 +67,65 @@ pub const RETOURS: &str = "retours";
 /// Les retours de la DPAE, a part (regle 5).
 pub const RETOURS_DPAE: &str = "retours/dpae";
 
+/// L'IDENTIFIANT D'UN FLUX : ce que la plate-forme donne a un depot, et par quoi elle range ses retours (« Identifiant du
+/// flux DSN », `depot.idflux` et `flux.id`, « [0-9A-Za-z.-_]* », [1,50] : guide d'implementation de l'API DSN v6.8,
+/// l. 1448-1453, 1568-1573, 1676-1681,
+/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`). INFERENCE : la
+/// classe se lit « chiffres, lettres, `.`, `-`, `_` » (lue comme une expression reguliere, `.-_` serait un intervalle).
+/// Le canal DPAE n'a pas de texte depose pour la forme du sien (son guide se dit compatible avec celui de la DSN) ; le
+/// simulateur ecrit `FICTIF-` et douze chiffres hexadecimaux (`branchement::reponse_fictive`). Il s'ecrit et se lit
+/// par son texte ; une autre forme se refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdDeFlux(String);
+
+impl IdDeFlux {
+    /// Le flux que ce texte ecrit, s'il en a la forme.
+    pub fn lu(texte: &str) -> Option<IdDeFlux> {
+        let forme = (1..=50).contains(&texte.len()) && texte.bytes().all(|o| o.is_ascii_alphanumeric() || matches!(o, b'.' | b'-' | b'_'));
+        forme.then(|| IdDeFlux(texte.to_string()))
+    }
+
+    /// Le flux ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<IdDeFlux> {
+        IdDeFlux::lu(texte).ok_or_else(|| {
+            socle::refus!(
+                "Identifiant de flux {} : il s'écrit en chiffres, lettres, « . », « - » ou « _ », de 1 à 50 caractères (guide de l'API DSN, depot.idflux).",
+                socle::fichiers::repr(texte)
+            )
+        })
+    }
+
+    /// Le flux tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+
+    /// Le flux d'un depot que le simulateur a joue (`branchement::PREFIXE_FLUX_FICTIF`, et l'ancien `DEMO-`).
+    pub fn est_fictif(&self) -> bool {
+        self.0.starts_with(crate::branchement::PREFIXE_FLUX_FICTIF) || self.0.starts_with(crate::branchement::ANCIEN_PREFIXE_FLUX_FICTIF)
+    }
+}
+
+impl std::fmt::Display for IdDeFlux {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for IdDeFlux {
+    type Error = Echec;
+    fn try_from(s: String) -> R<IdDeFlux> {
+        IdDeFlux::lire(&s)
+    }
+}
+
+impl From<IdDeFlux> for String {
+    fn from(f: IdDeFlux) -> String {
+        f.0
+    }
+}
+
 pub const NATURE_TAUX_PAS: &str = "94";
 pub const NATURE_TAUX_ATMP: &str = "34";
 pub const NATURE_AER_SPECTACLE: &str = "46";
@@ -755,7 +814,7 @@ fn lire_octets(o: &[u8]) -> R<Arbre> {
 /// `idflux` n'est le bilan d'aucun depot.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Bilan {
-    pub flux: String,
+    pub flux: IdDeFlux,
     pub recu_le: Option<Reception>,
     pub essai_reel: Option<String>,
     pub etat_envoi: Option<String>,
@@ -899,7 +958,7 @@ fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
 
 fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bilan>> {
     let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-    let Some(flux) = get("idflux") else { return Ok(None) };
+    let Some(flux) = forme_du_retour(get("idflux").as_deref(), IdDeFlux::lire)? else { return Ok(None) };
     let recu_le = reception_du_rapport(&get)?;
     Ok(Some(Bilan {
         flux,
@@ -1168,13 +1227,13 @@ pub struct Annonce {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub libelle: Option<String>,
-    pub flux: Option<String>,
+    pub flux: Option<IdDeFlux>,
 }
 
 impl Annonce {
     /// Ce qui distingue un retour : son flux, sa nature, sa publication.
-    pub fn cle(&self) -> (Option<&str>, &str, Option<Moment>) {
-        (self.flux.as_deref(), self.nature_retour.as_str(), self.publication)
+    pub fn cle(&self) -> (Option<&IdDeFlux>, &str, Option<Moment>) {
+        (self.flux.as_ref(), self.nature_retour.as_str(), self.publication)
     }
 }
 
@@ -1182,7 +1241,7 @@ impl Annonce {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Depot {
-    pub idflux: String,
+    pub idflux: IdDeFlux,
     #[serde(with = "socle::paris::ecrit::compacte")]
     pub date: Moment,
     pub statut: String,
@@ -1225,7 +1284,7 @@ struct RetoursJson {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FluxJson {
-    id: Option<String>,
+    id: Option<IdDeFlux>,
     retour: Option<UnOuPlusieurs<RetourJson>>,
 }
 
@@ -1336,10 +1395,12 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
         if local(&flux.tag) != "flux" {
             continue;
         }
+        // Un identifiant vide n'est pas dit, comme tout enfant vide ; un autre qui n'a pas la forme d'un flux refuse la liste.
         let idf = match flux.attribut("id").filter(|s| !s.is_empty()) {
-            Some(i) => Some(i.to_string()),
-            None => arbre.enfants(flux).find(|c| local(&c.tag) == "id").map(|c| c.texte_net().to_string()),
+            Some(i) => Some(i),
+            None => arbre.enfants(flux).find(|c| local(&c.tag) == "id").map(|c| c.texte_net()).filter(|t| !t.is_empty()),
         };
+        let idf = idf.map(|i| IdDeFlux::lire(i).map_err(|e| socle::echec::cle(e.phrase, "flux.id").reclasser(Classe::Illisible))).transpose()?;
         for r in arbre.enfants(flux) {
             if local(&r.tag) != "retour" {
                 continue;
@@ -1388,7 +1449,8 @@ pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
             return Err(illisible(&format!("depot.{}", autre)));
         }
         let date = Zone::lue(&champ("date")?, format::InstantCompact).valeur().ok_or_else(|| illisible("depot.date"))?;
-        out.push(Depot { idflux: champ("idflux")?, date, statut: champ("statut")? });
+        let idflux = IdDeFlux::lire(&champ("idflux")?).map_err(|e| socle::echec::cle(e.phrase, "depot.idflux").reclasser(Classe::Illisible))?;
+        out.push(Depot { idflux, date, statut: champ("statut")? });
     }
     Ok(out)
 }

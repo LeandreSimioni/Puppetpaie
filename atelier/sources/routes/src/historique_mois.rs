@@ -29,7 +29,7 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
-use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
+use envois::retours::{self, AnomalieDuRapport, CrmOc, IdDeFlux, Neores, Rapport};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
@@ -219,7 +219,7 @@ struct Envoi {
     mode: &'static str,
     quand: socle::paris::InstantOuJour,
     fichier: Option<NomDeFichier>,
-    flux: Option<String>,
+    flux: Option<IdDeFlux>,
     destinataire: Option<String>,
     identite: String,
     accepte: bool,
@@ -379,7 +379,7 @@ fn identite(ctx: &Contexte, l: &Ligne) -> String {
             morceaux.push(lisible);
         }
     }
-    if let Some(f) = dit(l.flux()) {
+    if let Some(f) = l.flux() {
         morceaux.push(format!("numéro de dépôt {}", f));
     }
     match dit(l.destinataire()) {
@@ -476,13 +476,13 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
 /// qui nomme `sansflux` un retour sans flux) : celle de sa publication ; sans publication datee, la premiere de sa nature
 /// pour ce flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
-fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<Moment>) -> R<Option<PathBuf>> {
+fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&IdDeFlux>, nature: &str, publication: Option<Moment>) -> R<Option<PathBuf>> {
     let mut dossier = racine.join(envois::retours::RETOURS);
     if let Some(c) = canal {
         dossier = dossier.join(c);
     }
     let flux: String = match flux {
-        Some(f) => f.chars().take(24).collect(),
+        Some(f) => f.texte().chars().take(24).collect(),
         None => "sansflux".into(),
     };
     let suffixe = format!("_nature{}_{}", nature, flux);
@@ -1019,7 +1019,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
     let nature = r.nature_retour.clone();
     let statut = r.statut.as_deref().and_then(dit);
     let publication = r.publication;
-    let flux = dit(ligne.flux());
+    let flux = ligne.flux();
     let (organisme, format) = match canal {
         Some(_) => (Some("l'Urssaf (DPAE)"), None),
         None => match NATURES.iter().find(|(c, _, _)| *c == nature) {
@@ -1169,12 +1169,12 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
             mode: l.mode().nom(),
             quand: l.quand(),
             fichier: l.fichier().cloned(),
-            flux: dit(l.flux()).map(String::from),
+            flux: l.flux().cloned(),
             destinataire: dit(l.destinataire()).map(String::from),
             identite: identite(ctx, l),
             accepte: l.accepte(),
             resume: etats::resume(Some(l), &recus, &avenants),
-            attend_retour: dit(l.flux()).is_some(),
+            attend_retour: l.flux().is_some(),
             retours,
         });
     }

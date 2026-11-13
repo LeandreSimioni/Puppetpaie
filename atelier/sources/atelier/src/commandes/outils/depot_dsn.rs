@@ -50,8 +50,8 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let fait = depot_acte::deposer_dsn_dans(&cadre.ctx, &designee, false, Some(&Preuve::default()), "atelier", environnement, false, "", ordre)?;
     dire!("Depot de TEST {} ({}) : rien n'est conserve.", fait.mois, environnement);
     dire!("Reponse du point de depot :\n{}", if fait.reponse.is_empty() { "(vide)" } else { fait.reponse.as_str() });
-    if !fait.flux.is_empty() {
-        dire!("Flux : {} -- les retours s'y rattacheront (outil retours, ou la route ouverture).", fait.flux);
+    if let Some(flux) = &fait.flux {
+        dire!("Flux : {} -- les retours s'y rattacheront (outil retours, ou la route ouverture).", flux);
     }
     Ok(0)
 }

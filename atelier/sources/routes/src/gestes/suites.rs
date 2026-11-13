@@ -56,8 +56,8 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
     let nirs: Vec<(droit::contexte::IdSalarie, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.clone(), nir.to_string()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<socle::mois::Mois> {
-        let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
-        let l = journal.lignes.iter().find(|l| l.flux() == flux)?;
+        let flux = retour.flux.as_ref()?;
+        let l = journal.lignes.iter().find(|l| l.flux() == Some(flux))?;
         (l.acte() == envois::journal::Acte::Dsn && l.nature_dsn() == Some(droit::nature_declaration::NatureDeLaDeclaration::Mensuelle)).then(|| l.mois()).flatten()
     };
     let mut tous = Vec::new();

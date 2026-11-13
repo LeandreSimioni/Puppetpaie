@@ -28,6 +28,8 @@
 use droit::fiche::Lue as _;
 use std::path::Path;
 
+use crate::retours::IdDeFlux;
+
 use droit::contexte::Contexte;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::natures::NumeroDOrdre;
@@ -65,9 +67,10 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
 
 /// Le plus grand ordre des signalements (natures 04, 05, 07, 08) que les bilans de nature 11 archives dans `retours/`
 /// declarent pour ce SIREN, essais et reels, acceptes ou non ; et le flux qui le porte. Le flux se lit dans le nom de
-/// l'archive (`AAAAMMJJ-hhmmss_nature11_<flux>.<ext>`, `releve_retours::archiver_retour`).
-pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(NumeroDOrdre, String)>, Echec> {
-    let mut dernier: Option<(NumeroDOrdre, String)> = None;
+/// l'archive (`AAAAMMJJ-hhmmss_nature11_<flux>.<ext>`, `releve_retours::archiver_retour`) ; `sansflux`, ou un nom qui
+/// n'en porte pas un de la forme d'un flux, n'en dit aucun.
+pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(NumeroDOrdre, Option<IdDeFlux>)>, Echec> {
+    let mut dernier: Option<(NumeroDOrdre, Option<IdDeFlux>)> = None;
     for (nom, p) in bilans_archives(racine)? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         // Le flux suit la nature dans le nom, avant l'extension.
@@ -76,6 +79,7 @@ pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(Nu
             Some((f, _)) => f,
             None => apres,
         };
+        let flux = Some(flux).filter(|f| *f != "sansflux").and_then(IdDeFlux::lu);
         for d in crate::retours::declarations_du_bilan(&octets)? {
             let signalement = d.nature_declaration.is_some_and(NatureDeLaDeclaration::signalement_envoye);
             if !signalement || d.siren.as_deref() != Some(siren) {
@@ -83,7 +87,7 @@ pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(Nu
             }
             let Some(o) = d.ordre else { continue };
             if dernier.as_ref().is_none_or(|(m, _)| o > *m) {
-                dernier = Some((o, flux.to_string()));
+                dernier = Some((o, flux.clone()));
             }
         }
     }
@@ -170,7 +174,10 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
             "Ordre {} : la plate-forme connait un signalement a l'ordre {} (flux {}) que le journal de ce dossier ne connait pas (il s'arretait a {}). Elle fait foi : le numero d'ordre d'un signalement ne se prend pas deux fois (cahier technique DSN 2026.1, §1.4.3.2, p. 14).",
             NumeroDOrdre::suivant(dernier)?,
             plateforme,
-            flux,
+            match flux {
+                Some(f) => f.to_string(),
+                None => "non dit".to_string(),
+            },
             arret
         ));
     }
@@ -179,7 +186,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
 
 /// La conduite a tenir devant un signalement refuse B1-208-10, ou `None` si ce bilan n'en est pas un. Le bilan ne dit
 /// pas QUEL signalement tient deja cet ordre : la phrase donne les deux cas.
-pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, flux: Option<&str>) -> Option<String> {
+pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, flux: Option<&IdDeFlux>) -> Option<String> {
     let nature = declaration.nature_declaration.filter(|n| n.signalement_envoye())?;
     if !declaration.codes.iter().any(|c| c == "B1-208-10") {
         return None;
@@ -191,7 +198,7 @@ pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, f
         None => "non dit".to_string(),
     };
     let ordre = declaration.ordre.map(|o| o.to_string());
-    let (flux, ordre) = (dit(flux), dit(ordre.as_deref()));
+    let (flux, ordre) = (dit(flux.map(IdDeFlux::texte)), dit(ordre.as_deref()));
     Some(format!(
         "Signalement {} de nature {} (flux {}, ordre {}) refuse B1-208-10, << il existe deja une declaration normale >> : pour un signalement, la plate-forme n'en accepte qu'un normal par SIRET et par numero d'ordre (cahier technique DSN 2026.1, §1.4.3.2, p. 14), et l'ordre {} etait deja pris -- par un depot que ce dossier ne connaissait peut-etre pas (un autre poste, une copie, un essai ; la base d'essai a sa propre memoire). Le bilan ne dit pas lequel. Si l'evenement n'est pas encore declare : refaire le signalement sans `--ordre`, il prend le suivant du plus grand ordre que la plate-forme et le journal connaissent. S'il l'est deja (un signalement accepte pour le meme salarie et le meme contrat) : il n'y a rien a renvoyer ; pour le corriger, c'est un annule-et-remplace (`--remplace`, S20.G00.05.006 = date de constitution et ordre du signalement accepte), a un ordre superieur (§1.4.3.4, p. 15).",
         essai, nature, flux, ordre, ordre

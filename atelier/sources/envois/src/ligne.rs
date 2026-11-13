@@ -15,6 +15,8 @@ use engagement::numeros::NumeroContrat;
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
 
+use crate::retours::IdDeFlux;
+
 /// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -103,7 +105,9 @@ pub struct Envoi<D, R> {
     pub qui: String,
     pub accepte: bool,
     pub destinataire: String,
-    pub flux: String,
+    /// Le flux que la plate-forme a donne au depot ; `""` au fichier quand elle n'en a pas donne.
+    #[serde(with = "socle::forme::vide_si_aucun")]
+    pub flux: Option<IdDeFlux>,
     pub retours: Vec<R>,
     pub reponse: String,
     /// La reponse de l'organisme archivee, relative a la compagnie.
@@ -197,8 +201,8 @@ impl Ligne {
         commun!(self, e => &e.destinataire)
     }
 
-    pub fn flux(&self) -> &str {
-        commun!(self, e => &e.flux)
+    pub fn flux(&self) -> Option<&IdDeFlux> {
+        commun!(self, e => e.flux.as_ref())
     }
 
     pub fn reponse(&self) -> &str {
@@ -299,7 +303,7 @@ pub struct Ouverture {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub flux: Option<String>,
+    pub flux: Option<IdDeFlux>,
     pub empreinte: EmpreinteCourte,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compte_rendu: Option<String>,

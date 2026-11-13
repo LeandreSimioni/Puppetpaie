@@ -21,13 +21,13 @@ use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
-use crate::retours::{Annonce, Depot};
+use crate::retours::{Annonce, Depot, IdDeFlux};
 use socle::date::Jour;
 use socle::num::Decimal;
 use socle::paris::Moment;
 use socle::garde_reseau::Url;
 
-use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
+use crate::branchement::Branchement;
 use crate::journal::{Acte, Ligne, RetourOrganisme};
 use crate::suites::Suites;
 
@@ -232,9 +232,9 @@ impl Client {
         crate::retours::liste_depots_d_octets(&brut).map_err(de_lecture)
     }
 
-    pub fn lister_retours_du_flux(&mut self, idflux: &str) -> Result<Vec<Annonce>, Panne> {
+    pub fn lister_retours_du_flux(&mut self, idflux: &IdDeFlux) -> Result<Vec<Annonce>, Panne> {
         self.assurer_session()?;
-        let (brut, _) = self.appel(&self.adresses.retours_flux.joindre(idflux))?;
+        let (brut, _) = self.appel(&self.adresses.retours_flux.joindre(idflux.texte()))?;
         crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
     }
 
@@ -336,8 +336,8 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
         Some(p) => horodatage_archive(p),
         None => maintenant.to_string(),
     };
-    let flux = match retour.flux.as_deref().filter(|f| !f.is_empty()) {
-        Some(f) => f,
+    let flux = match &retour.flux {
+        Some(f) => f.texte(),
         None => "sansflux",
     };
     let nom = format!("{}_nature{}_{}{}", horo, retour.nature_retour, flux, ext);
@@ -432,12 +432,8 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
     for i in 0..lignes.len() {
         let l = &lignes[i];
         let quoi = l.acte();
-        let flux = l.flux().to_string();
-        if matches!(quoi, Acte::Dsn | Acte::Dpae)
-            && l.accepte()
-            && (flux.starts_with(PREFIXE_FLUX_FICTIF) || flux.starts_with(ANCIEN_PREFIXE_FLUX_FICTIF))
-            && l.nombre_de_retours() == 0
-        {
+        let Some(flux) = l.flux().filter(|f| f.est_fictif()).cloned() else { continue };
+        if matches!(quoi, Acte::Dsn | Acte::Dpae) && l.accepte() && l.nombre_de_retours() == 0 {
             let base = |nature: &str, verdict: Option<&str>, libelle: &str| RetourOrganisme {
                 nature_retour: nature.into(),
                 verdict: verdict.map(String::from),
@@ -621,7 +617,7 @@ pub fn relever_retours(
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
                 if canal.is_empty() && r.nature_retour == "11" {
                     for d in crate::retours::declarations_du_bilan(&contenu)? {
-                        releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_deref()));
+                        releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
@@ -680,7 +676,7 @@ pub fn relever_retours_dpae(
     debut: Moment,
     fin: Moment,
     tout: bool,
-    flux: Option<&str>,
+    flux: Option<&IdDeFlux>,
     client: Option<Client>,
     suites: &mut Suites,
 ) -> R<Releve> {

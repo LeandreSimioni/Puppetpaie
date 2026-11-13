@@ -551,7 +551,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
     let p = chemin_trace(ctx);
     // LES RETOURS DE LA COMPAGNIE, PAS CEUX DU BAC A SABLE : les retours des depots de test ne se comptent que
     // dans la copie de developpement.
-    let tests: Vec<String> = if est_copie(&ctx.racine) {
+    let tests: Vec<envois::retours::IdDeFlux> = if est_copie(&ctx.racine) {
         Vec::new()
     } else {
         // Un journal illisible n'empeche pas la trace (l'ouverture n'echoue jamais) : il est un incident.
@@ -563,7 +563,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
             }
         }
     };
-    let hors_tests = |liste: &[envois::retours::Annonce]| -> usize { liste.iter().filter(|x| !tests.iter().any(|t| x.flux.as_deref() == Some(t.as_str()))).count() };
+    let hors_tests = |liste: &[envois::retours::Annonce]| -> usize { liste.iter().filter(|x| !tests.iter().any(|t| x.flux.as_ref() == Some(t))).count() };
     let (trouves, nouveaux) = match &r.releve {
         Some(rel) => (hors_tests(&rel.trouves), hors_tests(&rel.nouveaux)),
         None => (0, 0),

@@ -217,7 +217,7 @@ impl ChargeDeposer {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeSuivre {
     pub(crate) quoi: Quoi,
-    pub(crate) flux: Option<String>,
+    pub(crate) flux: Option<envois::retours::IdDeFlux>,
     pub(crate) mois: Option<Mois>,
 }
 
@@ -806,7 +806,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&str>) -> R<Depo
         let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
         format!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
-        suivre_depot(ctx, ChargeSuivre { quoi, flux: Some(fait.flux.clone()), mois: Some(fait.mois) })?.phrase
+        suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
     } else {
         "Dépôt réel effectué — ses retours sont attendus.".to_string()
     };
@@ -835,7 +835,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let dpae = quoi == Quoi::Dpae;
     let (debut, fin) = releve_retours::derniere_journee()?;
     let releve = if dpae {
-        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
+        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
     } else {
         crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None)
     };
@@ -845,7 +845,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
-    let du_flux = |q: envois::journal::Acte| flux.as_deref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == f));
+    let du_flux = |q: envois::journal::Acte| flux.as_ref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == Some(f)));
     let (passe, refuse);
     if dpae {
         let etat = etats::etat_des_embauches(&lignes);
@@ -890,7 +890,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
         let releve = match d.quoi {
             Quoi::Dpae => {
                 let flux = repetition.flux_conforme();
-                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
+                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
             }
             Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None),
         };

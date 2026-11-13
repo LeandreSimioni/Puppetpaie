@@ -450,7 +450,7 @@ impl<D, R> Envoi<D, R> {
             qui: qui.to_string(),
             accepte,
             destinataire: destinataire.to_string(),
-            flux: String::new(),
+            flux: None,
             retours: Vec::new(),
             reponse: reponse.to_string(),
             trace: None,

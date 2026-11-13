@@ -516,7 +516,7 @@ pub struct DepotFait {
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "droit::natures::en_nombre::option::serialize")]
     ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    flux: Option<String>,
+    flux: Option<envois::retours::IdDeFlux>,
     comment: &'static str,
     le: Jour,
 }
@@ -1191,7 +1191,7 @@ fn fctu_depose(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) 
     Ok(Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(|f| f.to_string()), ordre: None, flux: Some(l.flux().to_string()), comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(|f| f.to_string()), ordre: None, flux: l.flux().cloned(), comment: "depot", le }),
     }))
 }
 

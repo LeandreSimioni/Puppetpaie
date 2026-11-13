@@ -9,7 +9,7 @@ use crate::outils::dossier_de_test;
 fn envoi<D, R>(mode: Mode, detail: D) -> Envoi<D, R> {
     let mut e = Envoi::nouveau(mode, "test", true, "", "", detail);
     e.mois = Some(Mois::nouveau(2026, 9).unwrap());
-    e.flux = "F1".into();
+    e.flux = Some(envois::retours::IdDeFlux::lire("F1").unwrap());
     e
 }
 
