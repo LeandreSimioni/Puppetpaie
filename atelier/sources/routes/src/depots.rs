@@ -839,7 +839,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let releve = if dpae {
         crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
     } else {
-        crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None)
+        crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, envois::releve_retours::CanalDesRetours::Dsn)
     };
     let incident = match releve {
         Ok(r) => releve_retours::incidents_en_phrase(&r),
@@ -894,7 +894,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
                 let flux = repetition.flux_conforme();
                 crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
             }
-            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None),
+            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, envois::releve_retours::CanalDesRetours::Dsn),
         };
         incident = match releve {
             Ok(rel) => releve_retours::incidents_en_phrase(&rel),

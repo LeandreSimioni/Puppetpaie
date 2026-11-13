@@ -29,6 +29,7 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
+use envois::releve_retours::CanalDesRetours;
 use envois::retours::{
     self, AnomalieDuRapport, CriticiteOc, CrmOc, DeclencheurNeores, IdDeFlux, NatureDuRetour, Neores, Rapport, ResultatDuControleNeores, StatutDuRetour, SubstituableNeores, TypeDActionNeores,
     TypeDeCrmOc, Verdict,
@@ -426,10 +427,10 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
 /// qui nomme `sansflux` un retour sans flux) : celle de sa publication ; sans publication datee, la premiere de sa nature
 /// pour ce flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
-fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&IdDeFlux>, nature: NatureDuRetour, publication: Option<Moment>) -> R<Option<PathBuf>> {
+fn piece_du_retour(racine: &Path, canal: CanalDesRetours, flux: Option<&IdDeFlux>, nature: NatureDuRetour, publication: Option<Moment>) -> R<Option<PathBuf>> {
     let mut dossier = racine.join(envois::retours::RETOURS);
-    if let Some(c) = canal {
-        dossier = dossier.join(c);
+    if let Some(d) = canal.dossier() {
+        dossier = dossier.join(d);
     }
     let flux: String = match flux {
         Some(f) => f.texte().chars().take(24).collect(),
@@ -483,8 +484,8 @@ impl Lecture {
 /// Une piece lue : le certificat DPAE (nature 41 du canal DPAE, `dpae::lire_certificat`), un rapport au format
 /// harmonise (`retours::lire_rapport`), une archive d'AER (`retours::aer_spectacle`), un PDF. Autre chose ne se
 /// traduit pas : son format est dit, ce qui l'empeche de se lire aussi, et la piece s'ouvre telle quelle.
-fn lire_piece(o: &[u8], canal: Option<&str>, nature: NatureDuRetour, format: Option<&str>) -> Lecture {
-    if canal == Some("dpae") && nature == NatureDuRetour::CertificatDpae {
+fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: Option<&str>) -> Lecture {
+    if canal == CanalDesRetours::Dpae && nature == NatureDuRetour::CertificatDpae {
         let texte: String = o.iter().map(|&b| b as char).collect();
         let lignes = declarations::dpae::lire_certificat(&texte);
         if !lignes.is_empty() {
@@ -911,14 +912,14 @@ enum PieceDuRetour {
 
 /// Un retour d'une ligne du journal, lu.
 fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> R<RetourLu> {
-    let canal = (ligne.acte() == envois::journal::Acte::Dpae).then_some("dpae");
+    let canal = CanalDesRetours::de_l_acte(ligne.acte());
     let nature = r.nature_retour;
     let statut = r.statut;
     let publication = r.publication;
     let flux = ligne.flux();
     let (organisme, format) = match canal {
-        Some(_) => (Some("l'Urssaf (DPAE)"), None),
-        None => (nature.organisme(), nature.format()),
+        CanalDesRetours::Dpae => (Some("l'Urssaf (DPAE)"), None),
+        CanalDesRetours::Dsn => (nature.organisme(), nature.format()),
     };
     let libelle = match dit(&r.libelle) {
         Some(l) => l.to_string(),

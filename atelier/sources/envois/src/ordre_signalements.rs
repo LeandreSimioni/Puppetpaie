@@ -146,7 +146,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
         None
     } else {
         let fin = socle::temps::secondes();
-        match fin.plus(-JOURS_DE_RELEVE * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CANAL_DSN, suites)) {
+        match fin.plus(-JOURS_DE_RELEVE * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, suites)) {
             Ok(r) if r.incidents.is_empty() => None,
             Ok(r) => Some(releve_retours::incidents_en_phrase(&r)),
             Err(e) => Some(e.phrase),

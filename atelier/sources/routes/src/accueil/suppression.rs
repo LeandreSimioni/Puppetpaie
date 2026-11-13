@@ -367,7 +367,7 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
 /// parmi `a_garder`. Chacune est gardee ou supprimee ; une fictive ajoutee nommee nulle part reste, et la question
 /// reviendra pour elle. `lacher` : ce que la fenetre tient de chacune (sa file sur le fil des calculs), avant qu'elle
 /// bouge. Rend ce qui est garde, supprime, et chaque echec : un echec sur l'une n'arrete pas les autres.
-pub fn repondre(inst: &Path, garder_ids: &[String], ne_pas_garder: &[String], poste: &Poste, lacher: &dyn Fn(&Path)) -> R<Reponse> {
+pub fn repondre(inst: &Path, garder_ids: &[installation::IdDeCompagnie], ne_pas_garder: &[installation::IdDeCompagnie], poste: &Poste, lacher: &dyn Fn(&Path)) -> R<Reponse> {
     if compagnie::bridage::est_bride_de(inst) {
         return Err(refus("Le logiciel est bridé : ses compagnies ajoutées restent des compagnies fictives."));
     }
@@ -400,7 +400,7 @@ pub fn repondre(inst: &Path, garder_ids: &[String], ne_pas_garder: &[String], po
 /// Une compagnie gardee : son identifiant de tuile, son nom.
 #[derive(Debug, serde::Serialize)]
 pub struct Gardee {
-    pub id: String,
+    pub id: installation::IdDeCompagnie,
     pub nom: String,
 }
 

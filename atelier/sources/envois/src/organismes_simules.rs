@@ -660,7 +660,7 @@ mod tests {
         assert!(crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j(2027, 1, 5)).unwrap());
         assert!(crate::releve_retours::poser_effectif(&racine, 2025, Decimal::from(2), j(2027, 1, 5)).unwrap());
         let p = crm_effectif(2026, Decimal::new(1142, 2), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), Moment::a_paris(j(2027, 2, 15), 10, 0, 0).unwrap());
-        let chemin = crate::releve_retours::archiver_retour(&racine, "", &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
+        let chemin = crate::releve_retours::archiver_retour(&racine, crate::releve_retours::CanalDesRetours::Dsn, &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
         let fiche: droit::fiche::ChampsEntreprise = socle::forme::lire_texte("{}", "la fiche").unwrap();

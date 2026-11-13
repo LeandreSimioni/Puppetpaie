@@ -304,15 +304,47 @@ pub fn jour_de_publication_dit(r: &Annonce) -> Option<String> {
 
 // ------------------------------------------------------------------ l'archive des retours
 
-/// Le canal de la DSN, celui de net-entreprises : son archive est `retours/` meme.
-pub const CANAL_DSN: &str = "";
+/// LE CANAL D'UN RETOUR D'ORGANISME (regle 5 de `atelier/AGENTS.md` : deux canaux de retours, services, mots de passe et
+/// archives distincts) : la DSN sur net-entreprises, la DPAE sur `consultation.dpae-edi.urssaf.fr`. Une liste du
+/// logiciel ; il ne s'ecrit dans aucun fichier (s'il s'ecrivait, ce serait `dsn` ou `dpae`) ; `dossier` dit ou
+/// s'archivent ses pieces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CanalDesRetours {
+    Dsn,
+    Dpae,
+}
 
-/// `retours/` (la DSN) ou `retours/<canal>/`, cree.
-fn dossier_archive(racine: &Path, canal: &str) -> R<PathBuf> {
-    let mut p = racine.join(crate::retours::RETOURS);
-    if !canal.is_empty() {
-        p = p.join(canal);
+impl CanalDesRetours {
+    /// Le canal des retours d'un envoi : la DPAE a le sien, tout le reste passe par celui de la DSN.
+    pub fn de_l_acte(acte: Acte) -> CanalDesRetours {
+        match acte {
+            Acte::Dpae => CanalDesRetours::Dpae,
+            _ => CanalDesRetours::Dsn,
+        }
     }
+
+    /// Le sous-dossier de `retours/` ou s'archivent ses pieces : aucun pour la DSN (`retours/` meme), `dpae` pour la DPAE.
+    pub fn dossier(self) -> Option<&'static str> {
+        match self {
+            CanalDesRetours::Dsn => None,
+            CanalDesRetours::Dpae => Some("dpae"),
+        }
+    }
+
+    /// Le dossier de ses pieces sous la racine d'une compagnie : `retours/` (la DSN) ou `retours/dpae/` (la DPAE).
+    pub fn chemin(self, racine: &Path) -> PathBuf {
+        let p = racine.join(crate::retours::RETOURS);
+        match self.dossier() {
+            Some(d) => p.join(d),
+            None => p,
+        }
+    }
+}
+
+/// `retours/` (la DSN) ou `retours/dpae/` (la DPAE), cree.
+fn dossier_archive(racine: &Path, canal: CanalDesRetours) -> R<PathBuf> {
+    let p = canal.chemin(racine);
     std::fs::create_dir_all(&p).map_err(|e| crate::etats::erreur_io(&e, &p))?;
     Ok(p)
 }
@@ -321,7 +353,7 @@ fn dossier_archive(racine: &Path, canal: &str) -> R<PathBuf> {
 /// `maintenant` (`AAAAMMJJ-hhmmss`) quand le retour n'en porte pas ; `sansflux` quand il ne dit pas son flux.
 /// L'extension suit le type de contenu, sinon le contenu (`<` en tete : du XML). Une piece deja archivee sous ce nom
 /// n'est pas reecrite.
-pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, maintenant: &str) -> R<PathBuf> {
+pub(crate) fn archiver_retour(racine: &Path, canal: CanalDesRetours, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, maintenant: &str) -> R<PathBuf> {
     let dit = |m: &str| ctype.is_some_and(|c| c.contains(m));
     let ext = if dit("pdf") {
         ".pdf"
@@ -351,12 +383,12 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
 }
 
 /// La piece d'un retour, archivee a l'heure de la releve.
-fn archiver(ctx: &Contexte, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, canal: &str) -> R<PathBuf> {
+fn archiver(ctx: &Contexte, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, canal: CanalDesRetours) -> R<PathBuf> {
     archiver_retour(&ctx.racine, canal, retour, contenu, ctype, &horodatage_archive(socle::temps::secondes()))
 }
 
 /// Le journal des retours vus sur le canal.
-fn journal_des_vus(ctx: &Contexte, canal: &str) -> R<PathBuf> {
+fn journal_des_vus(ctx: &Contexte, canal: CanalDesRetours) -> R<PathBuf> {
     Ok(dossier_archive(&ctx.racine, canal)?.join("journal.json"))
 }
 
@@ -369,7 +401,7 @@ fn lire_vus(p: &Path) -> R<Vec<Annonce>> {
 }
 
 /// Ajoute au journal du canal les retours qu'il n'a pas encore vus.
-fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: &str) -> R<()> {
+fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: CanalDesRetours) -> R<()> {
     let p = journal_des_vus(ctx, canal)?;
     let mut deja = lire_vus(&p)?;
     let connus: Vec<CleDeRetour> = deja.iter().map(crate::etats::cle_du_contenu).collect();
@@ -385,7 +417,7 @@ fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: &str) -> R<()> {
 type CleDeRetour = crate::etats::CleDuContenu;
 
 /// Les cles des retours deja vus sur le canal.
-fn deja_vus(ctx: &Contexte, canal: &str) -> R<Vec<CleDeRetour>> {
+fn deja_vus(ctx: &Contexte, canal: CanalDesRetours) -> R<Vec<CleDeRetour>> {
     Ok(lire_vus(&journal_des_vus(ctx, canal)?)?.iter().map(crate::etats::cle_du_contenu).collect())
 }
 
@@ -496,14 +528,14 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
     // LE MEME CHEMIN QU'UNE VRAIE : l'archive dans `retours/`, puis le rangement (par `moteur`), qui signe le cadre 5 et la
     // pose dans `sorties/<mois>/envoi/`, ou l'envoi va la chercher.
     for (retour, archive) in &a_archiver {
-        suites.aer.push(archiver(ctx, retour, archive, Some("application/zip"), "")?);
+        suites.aer.push(archiver(ctx, retour, archive, Some("application/zip"), CanalDesRetours::Dsn)?);
     }
     if !pieces.is_empty() {
         let mut contenus: Vec<(crate::etats::CleDuContenu, Vec<u8>)> = Vec::new();
         let mut decrits: Vec<Annonce> = Vec::new();
         for x in &pieces {
             let retour = &x.retour;
-            let chemin = archiver(ctx, retour, &x.contenu, Some("application/xml"), "")?;
+            let chemin = archiver(ctx, retour, &x.contenu, Some("application/xml"), CanalDesRetours::Dsn)?;
             if retour.nature_retour == NatureDuRetour::TauxPas {
                 suites.taux_pas.push((retour.clone(), chemin));
             } else if retour.nature_retour == NatureDuRetour::TauxAtMp {
@@ -541,7 +573,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
 }
 
 /// Telecharge et archive ce que les organismes ont publie, de `debut` a `fin`. `client` : le client du service, avec son mot de passe (le canal DPAE passe le sien, avec
-/// `canal = "dpae"`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit.
+/// `canal` `Dpae`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit.
 pub fn relever_retours(
     ctx: &Contexte,
     branchement: Branchement,
@@ -549,7 +581,7 @@ pub fn relever_retours(
     fin: Moment,
     tout: bool,
     client: Option<Client>,
-    canal: &str,
+    canal: CanalDesRetours,
     suites: &mut Suites,
 ) -> R<Releve> {
     let mut releve = Releve::vide();
@@ -613,17 +645,17 @@ pub fn relever_retours(
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
                 // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
-                if canal.is_empty() && r.nature_retour == NatureDuRetour::TauxAtMp {
+                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::TauxAtMp {
                     suites.taux_atmp.push((r.clone(), chemin.clone()));
                 }
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
-                if canal.is_empty() && r.nature_retour == NatureDuRetour::CertificatDeConformite {
+                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::CertificatDeConformite {
                     for d in crate::retours::declarations_du_bilan(&contenu)? {
                         releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
-                if canal.is_empty() && r.nature_retour == NatureDuRetour::TauxPas {
+                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::TauxPas {
                     suites.taux_pas.push((r.clone(), chemin.clone()));
                 }
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
@@ -636,7 +668,7 @@ pub fn relever_retours(
         }
     }
 
-    if canal.is_empty() {
+    if canal == CanalDesRetours::Dsn {
         // L'EFFECTIF S'ECRIT SEUL : `config/effectifs.json` se refait depuis les archives.
         reconstruire_effectifs(&ctx.racine)?;
     }
@@ -652,12 +684,12 @@ pub fn relever_retours(
 
     // UN DEPOT QUE LES RETOURS ATTESTENT EST UN DEPOT : ce qu'un autre logiciel a depose sous le meme compte
     // entre au journal de lui-meme, et le mois qu'il declare n'est plus « en retard ».
-    if canal.is_empty() {
+    if canal == CanalDesRetours::Dsn {
         suites.garder(crate::reprise_journal::reprendre_les_depots(ctx, "releve"))?;
     }
 
     // L'AER SE RANGE DES QU'ELLE ARRIVE : la boite d'envoi la voit (les suites).
-    if canal.is_empty() {
+    if canal == CanalDesRetours::Dsn {
         suites.aer.extend(
             releve
                 .archives
@@ -697,7 +729,7 @@ pub fn relever_retours_dpae(
         return Ok(r);
     };
     let Some(flux) = flux else {
-        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), crate::etats::DPAE, suites);
+        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), CanalDesRetours::Dpae, suites);
     };
     let mut r = Releve::vide();
     let trouves = client.authentifier().and_then(|_| client.lister_retours_du_flux(flux));
@@ -713,7 +745,7 @@ pub fn relever_retours_dpae(
         let Some(url) = x.url.clone() else { continue };
         match client.telecharger(&url) {
             Ok((contenu, ctype)) => {
-                let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), "dpae")?;
+                let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), CanalDesRetours::Dpae)?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
             }
             Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase)),
@@ -721,7 +753,7 @@ pub fn relever_retours_dpae(
         }
     }
     if !r.trouves.is_empty() {
-        noter_vus(ctx, &r.trouves, "dpae")?;
+        noter_vus(ctx, &r.trouves, CanalDesRetours::Dpae)?;
         // Le chemin par flux accroche aussi ce qu'il trouve au journal.
         let contenus: Vec<_> = r.archives.iter().map(|a| (crate::etats::cle_du_contenu(&a.retour), a.contenu.clone())).collect();
         r.rattaches = suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &r.trouves, &contenus))?;

@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use compagnie::installation as compagnies;
-use compagnie::installation::{entree, nom_de_dossier, nom_dossier, Compagnie, Creation, Marqueur, Venue, DOSSIER_FICTIVES, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
+use compagnie::installation::{entree, nom_de_dossier, nom_dossier, Compagnie, CouleurDeCompagnie, Creation, IdDeCompagnie, Marqueur, Venue, DOSSIER_FICTIVES, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
 use crate::gestes::administrateur;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
@@ -188,23 +188,23 @@ pub struct ChargeAjouter {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCouleur {
-    compagnie: String,
-    couleur: String,
+    compagnie: IdDeCompagnie,
+    couleur: CouleurDeCompagnie,
 }
 
 /// La charge qui nomme une compagnie de l'accueil.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCompagnie {
-    compagnie: String,
+    compagnie: IdDeCompagnie,
 }
 
 /// La charge de `compagnies-garder` : les compagnies a garder, et celles a supprimer.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeGarder {
-    garder: Vec<String>,
-    ne_pas_garder: Vec<String>,
+    garder: Vec<IdDeCompagnie>,
+    ne_pas_garder: Vec<IdDeCompagnie>,
 }
 
 /// La charge de `administrateur-tableau` : le tableau garde, ou refait (apres un releve, s'il est demande).
@@ -242,14 +242,14 @@ struct ChargePortable {
 /// Une compagnie de l'accueil, telle qu'une tuile la montre.
 #[derive(Debug, Serialize)]
 pub struct Tuile {
-    pub id: String,
+    pub id: IdDeCompagnie,
     pub nom: String,
     pub lieu: String,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     chemin: PathBuf,
     pub reelle: bool,
     pub remise_a_zero: bool,
-    pub couleur: String,
+    pub couleur: CouleurDeCompagnie,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub logo: Option<PathBuf>,
 }
@@ -270,7 +270,7 @@ pub struct Liste {
 #[serde(deny_unknown_fields)]
 pub struct Ajoutee {
     phrase: String,
-    id: String,
+    id: IdDeCompagnie,
     nom: String,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub chemin: PathBuf,
@@ -280,7 +280,7 @@ pub struct Ajoutee {
 #[derive(Debug, Serialize)]
 struct Couleur {
     phrase: String,
-    couleur: String,
+    couleur: CouleurDeCompagnie,
 }
 
 /// Ce que rend une route qui n'a que sa phrase.
@@ -506,7 +506,7 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     }
     let nom_du_dossier = nom_dossier(&dossier)?;
     if !bride {
-        return entree(format!("cie:{}", nom_du_dossier), &dossier, true);
+        return entree(IdDeCompagnie::Cie(nom_du_dossier), &dossier, true);
     }
     // Le marqueur d'une fictive (`est_fictive`), et la marque qui la dit ajoutee. `copie_de` ne dit pas le nom d'une
     // fictive livree (`maj::marquee_comme_livree` compare « compagnie fictive <nom du dossier> ») : elle n'en est pas une.
@@ -518,5 +518,5 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
         quoi: "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.".to_string(),
     };
     socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;
-    entree(format!("fictive:{}", nom_du_dossier), &dossier, false)
+    entree(IdDeCompagnie::Fictive(nom_du_dossier), &dossier, false)
 }

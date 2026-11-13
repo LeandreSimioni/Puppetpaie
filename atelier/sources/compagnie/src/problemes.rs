@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Ecriture, Machine};
-use crate::editeur::Retour;
+use crate::editeur::{NumeroDeRetour, Retour};
 use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
@@ -150,7 +150,7 @@ pub struct Contexte {
     /// fictive.
     pub demonstration: bool,
     /// Le dossier d'une compagnie fictive ; une compagnie reelle n'est pas nommee.
-    pub compagnie: Option<String>,
+    pub compagnie: Option<socle::fichiers::NomDeFichier>,
     pub systeme: String,
     /// LA MACHINE EN ENTIER, et ce que la page a vu (`diagnostic::machine`) : de quoi deboguer sans redemander.
     pub machine: Machine,
@@ -161,7 +161,8 @@ pub struct Contexte {
 #[serde(deny_unknown_fields)]
 pub struct Corps<C> {
     pub texte: String,
-    pub version: String,
+    /// La version du logiciel ; vide quand `VERSION` ne se lisait pas (`incidents::version`).
+    pub version: Option<crate::maj::VersionDuLogiciel>,
     pub contexte: Contexte,
     /// LES TROIS MINUTES D'AVANT : chaque geste et chaque route, une ligne par action.
     pub fil: Vec<String>,
@@ -194,7 +195,7 @@ fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: 
     let texte = crate::diagnostic::texte_en_forme(Some(racine), &texte, TEXTE_MAX + 200);
     let fictive = crate::installation::est_fictive(racine)?;
     let compagnie = match (fictive, racine.file_name()) {
-        (true, Some(n)) => Some(n.to_string_lossy().into_owned()),
+        (true, Some(_)) => Some(socle::fichiers::NomDeFichier::du(racine)?),
         (true, None) | (false, _) => None,
     };
     let lues = incidents::lire(racine, None, false)?;
@@ -272,7 +273,7 @@ pub struct EnvoiDuMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Signalement {
-    pub id: String,
+    pub id: IdDeMessage,
     #[serde(with = "socle::paris::ecrit::minute")]
     pub quand: Moment,
     pub texte: String,
@@ -283,8 +284,8 @@ pub struct Signalement {
     #[serde(with = "socle::paris::ecrit::secondes_locales")]
     pub enregistre: Moment,
     pub envoi: EnvoiDuMessage,
-    pub numero: Option<String>,
-    pub ticket: Option<String>,
+    pub numero: Option<NumeroDeRetour>,
+    pub ticket: Option<socle::garde_reseau::Url>,
     pub ticket_numero: Option<i64>,
     pub reponse: Option<String>,
     #[serde(with = "socle::paris::ecrit::minute_utc::option")]
@@ -328,7 +329,7 @@ fn dossier_attente(racine: &Path) -> PathBuf {
     chemin_signalements(racine).with_file_name(DOSSIER_ATTENTE)
 }
 
-fn chemin_corps(racine: &Path, id: &str) -> PathBuf {
+fn chemin_corps(racine: &Path, id: &IdDeMessage) -> PathBuf {
     dossier_attente(racine).join(format!("{}.json", id))
 }
 
@@ -400,18 +401,71 @@ fn modifier<T>(racine: &Path, f: impl FnOnce(&mut Vec<Signalement>) -> R<(T, boo
     Ok(Some(t))
 }
 
-/// Un identifiant de message, propre au poste : l'heure et six octets tires au hasard. Il nomme son fichier d'attente.
-fn nouvel_id() -> R<String> {
+/// L'IDENTIFIANT D'UN MESSAGE AU DEVELOPPEUR, propre au poste, qui nomme son fichier d'attente : l'heure de Paris
+/// `AAAAMMJJTHHMMSS`, un tiret, et six octets tires au hasard en douze hexadecimaux minuscules. La forme que son seul
+/// ecrivain fait (`nouvel_id`), lue strictement ; il s'ecrit et se lit par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdDeMessage(String);
+
+impl IdDeMessage {
+    /// L'identifiant que ce texte ecrit, s'il en a la forme.
+    pub fn lu(texte: &str) -> Option<IdDeMessage> {
+        let o = texte.as_bytes();
+        let chiffres = |a: &[u8]| a.iter().all(u8::is_ascii_digit);
+        let forme = o.len() == 28
+            && chiffres(&o[..8])
+            && o[8] == b'T'
+            && chiffres(&o[9..15])
+            && o[15] == b'-'
+            && o[16..].iter().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(c));
+        forme.then(|| IdDeMessage(texte.to_string()))
+    }
+
+    /// L'identifiant ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<IdDeMessage> {
+        IdDeMessage::lu(texte).ok_or_else(|| {
+            socle::refus!("Identifiant de message {} : il s'écrit AAAAMMJJTHHMMSS, un tiret et douze chiffres hexadécimaux minuscules.", socle::fichiers::repr(texte))
+        })
+    }
+
+    /// L'identifiant tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for IdDeMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for IdDeMessage {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<IdDeMessage> {
+        IdDeMessage::lire(&s)
+    }
+}
+
+impl From<IdDeMessage> for String {
+    fn from(i: IdDeMessage) -> String {
+        i.0
+    }
+}
+
+/// Un identifiant de message neuf : l'heure et six octets tires au hasard.
+fn nouvel_id() -> R<IdDeMessage> {
     let mut alea = [0u8; 6];
     socle::temps::aleas(&mut alea).map_err(|e| e.reclasser(Classe::Disque))?;
     let heure: String = socle::paris::ecrit::seconde::texte(socle::temps::secondes()).chars().filter(char::is_ascii_alphanumeric).collect();
-    Ok(format!("{}-{}", heure, alea.iter().map(|o| format!("{:02x}", o)).collect::<String>()))
+    Ok(IdDeMessage(format!("{}-{}", heure, alea.iter().map(|o| format!("{:02x}", o)).collect::<String>())))
 }
 
 /// Ce que rend l'enregistrement d'un message : son identifiant, et s'il l'etait deja.
 #[derive(Debug, Serialize)]
 pub struct Enregistre {
-    pub id: String,
+    pub id: IdDeMessage,
     pub deja: bool,
 }
 
@@ -546,7 +600,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
         return Ok(bilan(0, 0, None, false));
     }
     let mut client = None;
-    let (mut partis, mut tentes, mut panne) = (0, Vec::<String>::new(), None::<String>);
+    let (mut partis, mut tentes, mut panne) = (0, Vec::<IdDeMessage>::new(), None::<String>);
     while tentes.len() < PAR_PASSAGE {
         // Le plus ancien qui attend et n'a pas ete tente : un message enregistre pendant le passage part avec lui.
         let lignes = en_ordre(racine)?;
@@ -610,14 +664,14 @@ fn passage(racine: &Path) -> R<BilanMessages> {
 }
 
 /// La ligne `id` est arrivee chez l'editeur : `depose`, avec ce que le serveur a rendu.
-fn marquer_arrive(racine: &Path, id: &str, r: &Retour) -> R<()> {
+fn marquer_arrive(racine: &Path, id: &IdDeMessage, r: &Retour) -> R<()> {
     let quand = socle::temps::secondes().a_la_seconde();
     let fait = modifier(racine, |lignes| {
         let mut change = false;
-        for l in lignes.iter_mut().filter(|l| l.id == id) {
+        for l in lignes.iter_mut().filter(|l| l.id == *id) {
             l.envoi = EnvoiDuMessage { etat: DEPOSE, quand: Some(quand), essai: l.envoi.essai, erreur: None };
             l.numero = Some(r.numero.clone());
-            l.ticket = Some(r.ticket.clone()).filter(|t| !t.is_empty());
+            l.ticket = r.ticket.clone();
             l.ticket_numero = r.ticket_numero;
             change = true;
         }
@@ -628,7 +682,7 @@ fn marquer_arrive(racine: &Path, id: &str, r: &Retour) -> R<()> {
     fait.ok_or_else(|| erreur(Classe::Refuse, format!("Le message {} est parti, mais la boîte des messages est restée occupée : il n'a pas pu être noté.", id)))
 }
 
-fn noter_raison(racine: &Path, ids: &[String], raison: &str) -> R<()> {
+fn noter_raison(racine: &Path, ids: &[IdDeMessage], raison: &str) -> R<()> {
     modifier(racine, |lignes| {
         let mut change = false;
         for l in lignes.iter_mut().filter(|l| en_attente(l) && ids.contains(&l.id)) {
@@ -654,7 +708,9 @@ fn effacer_les_partis(racine: &Path) -> R<()> {
                 None => continue,
             };
             let Some(id) = nom.strip_suffix(".json") else { continue };
-            if !lignes.iter().any(|l| en_attente(l) && l.id == id) {
+            // Un nom qui n'est pas un identifiant n'est celui d'aucun message qui attend : il s'efface aussi.
+            let id = IdDeMessage::lu(id);
+            if !lignes.iter().any(|l| en_attente(l) && Some(&l.id) == id.as_ref()) {
                 socle::ecriture::effacer(&f).map_err(|e| e.reclasser(Classe::Disque))?;
             }
         }
@@ -666,7 +722,7 @@ fn effacer_les_partis(racine: &Path) -> R<()> {
 /// `relever_reponses` : rend le nombre de reponses nouvelles. Rien a demander,
 /// rien ne part que les numeros des signalements qui n'en ont pas encore.
 pub fn relever_reponses(racine: &Path) -> R<usize> {
-    let attendent: Vec<String> = en_ordre(racine)?.into_iter().filter(|l| l.reponse.is_none()).filter_map(|l| l.numero).collect();
+    let attendent: Vec<NumeroDeRetour> = en_ordre(racine)?.into_iter().filter(|l| l.reponse.is_none()).filter_map(|l| l.numero).collect();
     if attendent.is_empty() {
         return Ok(0);
     }
@@ -687,7 +743,7 @@ pub fn relever_reponses(racine: &Path) -> R<usize> {
     let n = modifier(racine, |lignes| {
         let mut n = 0;
         for l in lignes.iter_mut().filter(|l| l.reponse.is_none()) {
-            let Some(x) = recues.iter().rev().find(|x| l.numero.as_deref() == Some(x.numero.as_str())) else { continue };
+            let Some(x) = recues.iter().rev().find(|x| l.numero.as_ref() == Some(&x.numero)) else { continue };
             l.reponse = Some(tete(&x.reponse, 2000));
             l.repondu_le = x.repondu_le;
             l.lu = Some(false);

@@ -448,8 +448,12 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     // janvier suivant qui repondent a la DSN de decembre sont pris aussi : ils portent sur l'annee close.
     let (de_l_annee, suivante) = (annee.to_string(), format!("{}01", annee.nombre() + 1));
     // Les retours DSN a la racine des retours, ceux des DPAE sous `dpae/`.
-    let canaux: [(PathBuf, &str); 2] = [(ctx.racine.join(envois::retours::RETOURS), ""), (ctx.racine.join(envois::retours::RETOURS_DPAE), "dpae/")];
-    for (d, prefixe) in canaux {
+    for canal in [envois::releve_retours::CanalDesRetours::Dsn, envois::releve_retours::CanalDesRetours::Dpae] {
+        let d = canal.chemin(&ctx.racine);
+        let prefixe = match canal.dossier() {
+            Some(s) => format!("{}/", s),
+            None => String::new(),
+        };
         if d.is_dir() {
             let mut noms: Vec<(String, PathBuf)> = Vec::new();
             for e in std::fs::read_dir(&d).map_err(|e| en_os(&e, &d))? {

@@ -1,7 +1,7 @@
 //! `moteur maj` : la mise a jour en ligne de commande -- la chercher, l'appliquer, revenir a la precedente. Ce que la mise
 //! a jour recoit, verifie et applique : `compagnie::maj` ; la publier, par le flux « Publier » : `publication`.
 
-use compagnie::maj::{appliquer, installation, revenir, verifier, version_lue};
+use compagnie::maj::{appliquer, installation, revenir, verifier};
 
 /// `moteur maj [--sans-telecharger] [--appliquer] [--revenir]`.
 pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
@@ -15,13 +15,13 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     } else if drapeau("--appliquer") {
         match compagnie::instance::ouverte(&installation(), compagnie::instance::Plage::DU_POSTE) {
             Ok(true) => Err(socle::echec::refus("PuppetPaie tourne : fermer la fenetre, puis appliquer")),
-            Ok(false) => appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(&r.version), r.avant)),
+            Ok(false) => appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", r.version.lue(), r.avant.display())),
             Err(e) => Err(e),
         }
     } else if drapeau("--revenir") {
         match compagnie::instance::ouverte(&installation(), compagnie::instance::Plage::DU_POSTE) {
             Ok(true) => Err(socle::echec::refus("PuppetPaie tourne : fermer la fenetre, puis revenir")),
-            Ok(false) => revenir(&installation()).map(|v| format!("Retour a la version {}", version_lue(&v))),
+            Ok(false) => revenir(&installation()).map(|v| format!("Retour a la version {}", v.lue())),
             Err(e) => Err(e),
         }
     } else {

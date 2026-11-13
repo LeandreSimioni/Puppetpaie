@@ -835,9 +835,9 @@ fn refaire_compagnie(o: &Options, racine: &Path) -> R<TableauCompagnie> {
 /// tableau, ce qui l'empeche de se faire, combien de declarations, et combien sont pretes.
 #[derive(Debug, Serialize)]
 pub struct CompagnieDuTableau {
-    pub id: Option<String>,
+    pub id: Option<compagnie::installation::IdDeCompagnie>,
     pub nom: String,
-    pub couleur: Option<String>,
+    pub couleur: Option<compagnie::installation::CouleurDeCompagnie>,
     pub le: Option<Jour>,
     pub erreur: Option<String>,
     pub declarations: usize,
@@ -852,8 +852,8 @@ pub struct DeclarationDuTableau {
     #[serde(flatten)]
     pub declaration: Declaration,
     pub compagnie: String,
-    pub id: Option<String>,
-    pub couleur: Option<String>,
+    pub id: Option<compagnie::installation::IdDeCompagnie>,
+    pub couleur: Option<compagnie::installation::CouleurDeCompagnie>,
     pub limite_dit: Option<String>,
 }
 

@@ -4,7 +4,7 @@
 
 use droit::contexte::Contexte;
 use envois::ordre_signalements::OrdreConnu;
-use envois::releve_retours::{Client, Releve};
+use envois::releve_retours::{CanalDesRetours, Client, Releve};
 use envois::suites::Suites;
 use socle::echec::R;
 use socle::paris::Moment;
@@ -20,13 +20,10 @@ fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<Releve> {
     Ok(releve)
 }
 
-/// Releve les retours DSN (ou, `canal = Some("dpae")` avec un client Urssaf donne, ceux de la DPAE) : `client` donne, ou
-/// celui de la consultation net-entreprises. `canal` : celui de la DSN s'il n'est pas dit.
-pub fn relever_retours(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, environnement: &str, client: Option<Client>, canal: Option<&str>) -> R<Releve> {
-    let canal = match canal {
-        Some(c) => c,
-        None => envois::releve_retours::CANAL_DSN,
-    };    let b = compagnie::bridage::branchement(&ctx.racine)?;
+/// Releve les retours du canal `canal` (la DPAE avec un client Urssaf donne) : `client` donne, ou celui de la
+/// consultation net-entreprises.
+pub fn relever_retours(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, environnement: &str, client: Option<Client>, canal: CanalDesRetours) -> R<Releve> {
+    let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
         None => client_dsn(ctx, b, environnement)?,

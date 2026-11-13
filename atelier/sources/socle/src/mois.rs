@@ -259,6 +259,39 @@ impl From<Annee> for String {
     }
 }
 
+/// UNE ANNEE ECRITE EN NOMBRE (`#[serde(with = "socle::mois::en_nombre")]`) : le nombre de paies parti chez l'editeur
+/// (`2025`, ce que le serveur du filet lit et rend) ; `option` pour un `Option<Annee>` (`null` : aucune).
+pub mod en_nombre {
+    use super::Annee;
+
+    pub fn serialize<S: serde::Serializer>(a: &Annee, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_i32(a.0)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
+        let n = <i64 as serde::Deserialize>::deserialize(d)?;
+        Annee::nouvelle(n).map_err(serde::de::Error::custom)
+    }
+
+    pub mod option {
+        use super::Annee;
+
+        pub fn serialize<S: serde::Serializer>(a: &Option<Annee>, s: S) -> Result<S::Ok, S::Error> {
+            match a {
+                Some(a) => s.serialize_some(&a.0),
+                None => s.serialize_none(),
+            }
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Annee>, D::Error> {
+            match <Option<i64> as serde::Deserialize>::deserialize(d)? {
+                Some(n) => Annee::nouvelle(n).map(Some).map_err(serde::de::Error::custom),
+                None => Ok(None),
+            }
+        }
+    }
+}
+
 /// Le mois dont parle un acte, ou le jour qui le date (l'evenement d'un signalement) : ecrit `AAAA-MM` ou `AAAA-MM-JJ`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoisOuJour {

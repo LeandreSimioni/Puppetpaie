@@ -289,7 +289,7 @@ pub struct DpaeAttestee {
 /// Les DPAE dont `retours/dpae/` porte le certificat (nature 41). Une entree par FLUX, avec
 /// les embauches qu'il declare ; les NIR qu'on ne sait rattacher a aucune fiche sont DITS, jamais devines. LECTURE PURE.
 pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)> {
-    let dossier = ctx.racine.join(crate::retours::RETOURS_DPAE);
+    let dossier = crate::releve_retours::CanalDesRetours::Dpae.chemin(&ctx.racine);
     let par_nir = salarie_par_nir(ctx);
     let (mut sortie, mut inconnus): (Vec<DpaeAttestee>, Vec<String>) = (vec![], vec![]);
     for (nom, p) in fichiers_du_dossier(&dossier, |n| crate::retours::archive_de_nature(n, crate::retours::NatureDuRetour::CertificatDpae))? {
@@ -362,7 +362,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
     let connus: Vec<IdDeFlux> = journal::lire(&ctx.racine, None, None, false)?.iter().filter_map(Ligne::flux).cloned().collect();
 
     // Le bilan XML du meme flux, quand il est la : il porte l'idflux ENTIER et dit si le depot etait reel ou de test.
-    let dossier = ctx.racine.join(crate::retours::RETOURS_DPAE);
+    let dossier = crate::releve_retours::CanalDesRetours::Dpae.chemin(&ctx.racine);
     let mut bilans: Vec<(IdDeFlux, Vec<Bilan>)> = Vec::new();
     for (_, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;

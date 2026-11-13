@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use socle::echec::R;
-use socle::fichiers::dossier_du_code;
+use socle::fichiers::{dossier_du_code, NomDeFichier};
 
 /// Le journal de la fenetre, sous la racine de la compagnie qu'elle sert.
 pub const JOURNAL_INTERFACE: &str = "journal/interface.log";
@@ -22,7 +22,7 @@ pub const FICHIER_HORLOGE: &str = "config/horloge.json";
 
 pub const MARQUEUR: &str = "COPIE-DE-DEVELOPPEMENT.json";
 /// La couleur d'une compagnie qui n'en a pas choisi : le rouge de la charte de l'accueil.
-const COULEUR_DE_LA_CHARTE: &str = "#B22222";
+const COULEUR_DE_LA_CHARTE: CouleurDeCompagnie = CouleurDeCompagnie(std::borrow::Cow::Borrowed("#B22222"));
 /// La couleur de la compagnie, sous sa racine.
 const AFFICHAGE: &str = "config/affichage.json";
 const DOSSIER_ORIGINE: &str = ".origine";
@@ -147,7 +147,7 @@ pub struct Marqueur {
     pub copie_de: String,
     /// La fictive que copie une compagnie d'essai (son nom).
     #[serde(rename = "depuis", skip_serializing_if = "Option::is_none")]
-    pub fictive: Option<String>,
+    pub fictive: Option<NomDeFichier>,
     /// LA MARQUE D'UNE FICTIVE AJOUTEE (`est_ajoutee`) : `true`, sur elle seule.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ajoutee: Option<bool>,
@@ -222,11 +222,11 @@ pub fn nom_de(racine: &Path) -> R<String> {
 fn nom_et_lieu(racine: &Path) -> R<(String, String)> {
     let ent = match fiche(racine) {
         Ok(ent) => ent,
-        Err(pourquoi) => return Ok((nom_dossier(racine)?, pourquoi.phrase)),
+        Err(pourquoi) => return Ok((nom_dossier(racine)?.to_string(), pourquoi.phrase)),
     };
     let nom = match dit(ent.nom_affichage.as_deref()).or_else(|| dit(ent.raison_sociale.as_deref())) {
         Some(n) => n,
-        None => nom_dossier(racine)?,
+        None => nom_dossier(racine)?.to_string(),
     };
     Ok((nom, lieu(&ent)))
 }
@@ -257,24 +257,66 @@ fn lieu(ent: &droit::fiche::ChampsEntreprise) -> String {
     [commune, idcc].into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
-fn couleur_valide(c: &str) -> bool {
-    c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit())
+/// LA COULEUR D'UNE COMPAGNIE, celle de sa tuile et de sa page : `#RRGGBB`, six chiffres hexadecimaux, gardee telle que
+/// lue (minuscules comprises) ; `poser_couleur` l'ecrit en majuscules. Elle s'ecrit et se lit par son texte ; une autre
+/// forme se refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CouleurDeCompagnie(std::borrow::Cow<'static, str>);
+
+impl CouleurDeCompagnie {
+    /// La couleur ecrite `texte` ; refus si elle n'a pas la forme `#RRGGBB`.
+    pub fn lire(texte: &str) -> R<CouleurDeCompagnie> {
+        let o = texte.as_bytes();
+        if !(o.len() == 7 && o[0] == b'#' && o[1..].iter().all(u8::is_ascii_hexdigit)) {
+            return Err(socle::refus!("Couleur attendue sous la forme #RRGGBB : '{}'", texte));
+        }
+        Ok(CouleurDeCompagnie(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// La couleur telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+
+    /// La meme couleur, ecrite en majuscules.
+    fn en_majuscules(&self) -> CouleurDeCompagnie {
+        CouleurDeCompagnie(std::borrow::Cow::Owned(self.0.to_uppercase()))
+    }
+}
+
+impl std::fmt::Display for CouleurDeCompagnie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CouleurDeCompagnie {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CouleurDeCompagnie> {
+        CouleurDeCompagnie::lire(&s)
+    }
+}
+
+impl From<CouleurDeCompagnie> for String {
+    fn from(c: CouleurDeCompagnie) -> String {
+        c.0.into_owned()
+    }
 }
 
 /// `config/affichage.json` : la couleur que la compagnie a choisie (`poser_couleur`).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Affichage {
-    couleur: String,
+    couleur: CouleurDeCompagnie,
 }
 
 /// La couleur d'une compagnie (`config/affichage.json`) ; celle de la charte tant qu'elle n'en a pas choisi.
-pub fn couleur(racine: &Path) -> R<String> {
+pub fn couleur(racine: &Path) -> R<CouleurDeCompagnie> {
     let p = racine.join(AFFICHAGE);
     match lire_s_il_est_la::<Affichage>(&p, "La couleur de la compagnie (config/affichage.json) ne se lit pas.")? {
-        Some(a) if couleur_valide(&a.couleur) => Ok(a.couleur),
-        Some(a) => Err(socle::echec::abime(&p, format!("la couleur « {} » n'a pas la forme #RRGGBB", a.couleur))),
-        None => Ok(COULEUR_DE_LA_CHARTE.to_string()),
+        Some(a) => Ok(a.couleur),
+        None => Ok(COULEUR_DE_LA_CHARTE),
     }
 }
 
@@ -283,21 +325,70 @@ pub fn logo(racine: &Path) -> Option<PathBuf> {
     ["logo.svg", "logo.png"].iter().map(|n| racine.join("gabarits").join("identite").join(n)).find(|p| p.is_file())
 }
 
+/// L'IDENTIFIANT D'UNE COMPAGNIE DE L'INSTALLATION, celui de sa tuile : la vraie compagnie du poste (`reelle`), une
+/// compagnie sous `compagnies/` (`cie:<dossier>`), ou une fictive sous `fictives/` (`fictive:<dossier>`). Il s'ecrit et se
+/// lit par son texte ; une autre forme se refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum IdDeCompagnie {
+    Reelle,
+    Cie(NomDeFichier),
+    Fictive(NomDeFichier),
+}
+
+impl IdDeCompagnie {
+    /// L'identifiant ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<IdDeCompagnie> {
+        if texte == "reelle" {
+            return Ok(IdDeCompagnie::Reelle);
+        }
+        let refus = |pourquoi: &str| socle::refus!("Identifiant de compagnie {} : {}", socle::fichiers::repr(texte), pourquoi);
+        match (texte.strip_prefix("cie:"), texte.strip_prefix("fictive:")) {
+            (Some(d), _) => NomDeFichier::lire(d).map(IdDeCompagnie::Cie).map_err(|e| refus(&e.phrase)),
+            (None, Some(d)) => NomDeFichier::lire(d).map(IdDeCompagnie::Fictive).map_err(|e| refus(&e.phrase)),
+            (None, None) => Err(refus("reelle, cie:<dossier> ou fictive:<dossier>.")),
+        }
+    }
+}
+
+impl std::fmt::Display for IdDeCompagnie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IdDeCompagnie::Reelle => f.write_str("reelle"),
+            IdDeCompagnie::Cie(d) => write!(f, "cie:{}", d),
+            IdDeCompagnie::Fictive(d) => write!(f, "fictive:{}", d),
+        }
+    }
+}
+
+impl TryFrom<String> for IdDeCompagnie {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<IdDeCompagnie> {
+        IdDeCompagnie::lire(&s)
+    }
+}
+
+impl From<IdDeCompagnie> for String {
+    fn from(i: IdDeCompagnie) -> String {
+        i.to_string()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Compagnie {
-    pub id: String,
+    pub id: IdDeCompagnie,
     pub nom: String,
     pub lieu: String,
     pub racine: PathBuf,
     pub reelle: bool,
-    pub couleur: String,
+    pub couleur: CouleurDeCompagnie,
 }
 
 /// La nature d'une fictive que son nom porte parfois, entre parentheses.
 const NATURES_DITES: [&str; 3] = [" (fictive)", " (démonstration)", " (demonstration)"];
 
 /// La tuile de la compagnie `racine` (`nom_et_lieu`).
-pub fn entree(id: String, racine: &Path, reelle: bool) -> R<Compagnie> {
+pub fn entree(id: IdDeCompagnie, racine: &Path, reelle: bool) -> R<Compagnie> {
     let (mut n, lieu) = nom_et_lieu(racine)?;
     if !reelle {
         // Le nom d'une fictive porte parfois sa nature, entre parentheses : la tuile la dit deja.
@@ -333,10 +424,11 @@ fn sous_dossiers(dossier: &Path) -> R<Vec<PathBuf>> {
 }
 
 /// Le nom du dossier d'une compagnie.
-pub fn nom_dossier(p: &Path) -> R<String> {
-    p.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
-        socle::echec::refus_avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })
-    })
+pub fn nom_dossier(p: &Path) -> R<NomDeFichier> {
+    match p.file_name() {
+        Some(_) => NomDeFichier::du(p),
+        None => Err(socle::echec::refus_avec("Ce n'est pas le dossier d'une compagnie.", socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() })),
+    }
 }
 
 /// Les compagnies de l'installation `b` (le dossier qui porte `logiciel/`, `prive/`, `compagnies/`, `fictives/`), dans
@@ -346,14 +438,14 @@ pub fn liste_de(b: &Path) -> R<Vec<Compagnie>> {
     if !crate::bridage::est_bride_de(b) {
         let reel = if b == base() { dossier_reel() } else { b.join("prive") };
         if reel.join(socle::fichiers::CONFIG).is_dir() {
-            out.push(entree("reelle".into(), &reel, true)?);
+            out.push(entree(IdDeCompagnie::Reelle, &reel, true)?);
         }
         for d in sous_dossiers(&b.join("compagnies"))? {
-            out.push(entree(format!("cie:{}", nom_dossier(&d)?), &d, true)?);
+            out.push(entree(IdDeCompagnie::Cie(nom_dossier(&d)?), &d, true)?);
         }
     }
     for d in sous_dossiers(&b.join(DOSSIER_FICTIVES))? {
-        out.push(entree(format!("fictive:{}", nom_dossier(&d)?), &d, false)?);
+        out.push(entree(IdDeCompagnie::Fictive(nom_dossier(&d)?), &d, false)?);
     }
     Ok(out)
 }
@@ -377,20 +469,17 @@ pub fn a_tenir_a_jour(b: &Path) -> R<Vec<PathBuf>> {
 }
 
 /// Le dossier d'une tuile -- et seulement d'une tuile : l'identifiant ne designe jamais un chemin qu'on n'a pas propose.
-pub fn racine_choisie(inst: &Path, id: &str) -> R<PathBuf> {
+pub fn racine_choisie(inst: &Path, id: &IdDeCompagnie) -> R<PathBuf> {
     liste_de(inst)?
         .into_iter()
-        .find(|c| c.id == id)
+        .find(|c| c.id == *id)
         .map(|c| c.racine)
         .ok_or_else(|| socle::refus!("Compagnie inconnue ou absente de cette version : {}", id))
 }
 
-pub fn poser_couleur(inst: &Path, id: &str, valeur: &str) -> R<String> {
-    if !couleur_valide(valeur) {
-        return Err(socle::refus!("Couleur attendue sous la forme #RRGGBB : '{}'", valeur));
-    }
-    let c = liste_de(inst)?.into_iter().find(|c| c.id == id && c.reelle).ok_or_else(|| socle::echec::refus("Seule une compagnie reelle a une couleur a choisir."))?;
-    let v = valeur.to_uppercase();
+pub fn poser_couleur(inst: &Path, id: &IdDeCompagnie, valeur: &CouleurDeCompagnie) -> R<CouleurDeCompagnie> {
+    let c = liste_de(inst)?.into_iter().find(|c| c.id == *id && c.reelle).ok_or_else(|| socle::echec::refus("Seule une compagnie reelle a une couleur a choisir."))?;
+    let v = valeur.en_majuscules();
     socle::ecriture::ecrire_json(&c.racine.join(AFFICHAGE), &Affichage { couleur: v.clone() }, 2)?;
     Ok(v)
 }
@@ -529,10 +618,10 @@ pub fn figer_origine(racine: &Path) -> R<()> {
 }
 
 /// La fictive revient a sa photo d'origine ; ce qui appartient au poste est garde. Rend (nom, deja).
-pub fn remettre_a_zero(inst: &Path, id: &str) -> R<(String, bool)> {
+pub fn remettre_a_zero(inst: &Path, id: &IdDeCompagnie) -> R<(String, bool)> {
     let mut trouvee = None;
     for c in liste_de(inst)? {
-        if c.id == id && !c.reelle && est_fictive_livree(&c.racine)? {
+        if c.id == *id && !c.reelle && est_fictive_livree(&c.racine)? {
             trouvee = Some(c);
         }
     }

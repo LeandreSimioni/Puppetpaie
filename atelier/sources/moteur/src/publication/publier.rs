@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use compagnie::maj::{
-    b64, courante, derniere_lue, ecrire_json, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, plus_recente, programme_de,
-    signature_valide, systeme_du_fichier, version_lue, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
-    PROPRES_A_L_INSTALLATION, SYSTEMES, TOUT_SYSTEME,
+    b64, courante, derniere_lue, ecrire_json, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, programme_de,
+    signature_valide, systeme_du_fichier, VersionDuLogiciel, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
+    CleDArchive, Systeme, PROPRES_A_L_INSTALLATION,
 };
 
 use socle::echec::{au_chemin, du_disque, refus, R};
@@ -122,24 +122,23 @@ fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
 /// Une entree d'archive : son nom dans le zip, le fichier qu'elle porte, et si c'est un programme Unix (executable).
 type Entree = (String, PathBuf, bool);
 
-/// Les entrees du logiciel (`code`) pour un systeme (`SYSTEMES`) ou tous (`TOUT_SYSTEME`), chacune nommee `<tete><chemin>` :
+/// Les entrees du logiciel (`code`) pour un systeme ou tous (`CleDArchive`), chacune nommee `<tete><chemin>` :
 /// le contenu de `logiciel/`, sans caches ni depot git ni version d'avant ; pour un systeme, les fichiers communs et les
 /// siens seulement (`systeme_du_fichier`). Les programmes Unix (`linux/puppetpaie`, `mac/moteur`...) sont marques
 /// executables, et eux seuls.
-fn entrees_du_logiciel(code: &Path, systeme: &str, tete: &str) -> R<Vec<Entree>> {
-    if systeme != TOUT_SYSTEME && !SYSTEMES.contains(&systeme) {
-        return Err(socle::refus!("« {} » n'est pas un systeme", systeme));
-    }
+fn entrees_du_logiciel(code: &Path, cle: CleDArchive, tete: &str) -> R<Vec<Entree>> {
     let mut liste = Vec::new();
     fichiers(code, Path::new(""), &mut liste)?;
     let mut out = Vec::new();
     for rel in liste {
         let nom = rel.to_string_lossy().replace('\\', "/");
         let du_systeme = systeme_du_fichier(&nom);
-        if systeme != TOUT_SYSTEME && du_systeme.is_some_and(|s| s != systeme) {
-            continue;
+        if let (CleDArchive::Du(systeme), Some(s)) = (cle, du_systeme) {
+            if s != systeme {
+                continue;
+            }
         }
-        let programme_unix = du_systeme.is_some_and(|s| s != "windows") && nom.rsplit('/').next().is_some_and(|n| PROGRAMMES_UNIX.contains(&n));
+        let programme_unix = du_systeme.is_some_and(|s| s != Systeme::Windows) && nom.rsplit('/').next().is_some_and(|n| PROGRAMMES_UNIX.contains(&n));
         out.push((format!("{}{}", tete, nom), code.join(&rel), programme_unix));
     }
     Ok(out)
@@ -201,11 +200,11 @@ fn zipper(entrees: &[Entree], en_plus: &[(String, Vec<u8>)]) -> R<Vec<u8>> {
     Ok(z.finish().map_err(|e| refus(e.to_string()))?.into_inner())
 }
 
-/// L'ARCHIVE DE MISE A JOUR d'un systeme (`SYSTEMES`) ou de tous (`TOUT_SYSTEME`) : LE CONTENU DE `logiciel/` A SA RACINE,
+/// L'ARCHIVE DE MISE A JOUR d'un systeme ou de tous (`CleDArchive`) : LE CONTENU DE `logiciel/` A SA RACINE,
 /// sans `fictives/`. Sa forme est un contrat avec toutes les installations posees (la tete de ce fichier) : elle ne change
 /// plus. C'est elle que `derniere.json` nomme sous `archives`, que l'editeur signe, que `telecharger` prend.
-fn archiver(code: &Path, systeme: &str) -> R<Vec<u8>> {
-    zipper(&entrees_du_logiciel(code, systeme, "")?, &[])
+fn archiver(code: &Path, cle: CleDArchive) -> R<Vec<u8>> {
+    zipper(&entrees_du_logiciel(code, cle, "")?, &[])
 }
 
 /// L'ARCHIVE DES FICTIVES (`puppetpaie-<version>-fictives.zip`) : `fictives/`, ses compagnies fictives livrees, la marque
@@ -227,18 +226,18 @@ fn archiver_fictives(code: &Path) -> R<(Vec<u8>, Empreinte)> {
 /// Celle de TOUS LES SYSTEMES est le dossier portable : elle porte aussi, a sa racine, le marqueur `PORTABLE.json`
 /// (`coffre::MARQUEUR_PORTABLE`) ; decompressee sur une cle USB, elle s'ouvre sous Windows, Linux et macOS, et la cle du
 /// poste naitra a cote.
-fn archiver_installation(code: &Path, systeme: &str) -> R<Vec<u8>> {
-    let mut entrees = entrees_du_logiciel(code, systeme, &format!("{}/", LOGICIEL))?;
+fn archiver_installation(code: &Path, cle: CleDArchive) -> R<Vec<u8>> {
+    let mut entrees = entrees_du_logiciel(code, cle, &format!("{}/", LOGICIEL))?;
     let (fictives, mut en_plus, _) = entrees_des_fictives(code)?;
     entrees.extend(fictives);
-    if systeme == TOUT_SYSTEME {
+    if cle == CleDArchive::DeTous {
         en_plus.push((compagnie::coffre::MARQUEUR_PORTABLE.to_string(), compagnie::coffre::CONTENU_PORTABLE.as_bytes().to_vec()));
     }
     zipper(&entrees, &en_plus)
 }
 
 /// Le nom de l'archive des fictives d'une version : `puppetpaie-<version>-fictives.zip`.
-fn nom_des_fictives(version: &str) -> R<NomDeFichier> {
+fn nom_des_fictives(version: &VersionDuLogiciel) -> R<NomDeFichier> {
     NomDeFichier::lire(&format!("puppetpaie-{}-fictives.zip", version))
 }
 
@@ -309,12 +308,11 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     if d.join(DERNIERE).exists() {
         // Le `derniere.json` de la Release precedente, lu comme chaque installation le lit (`derniere_lue`).
         let avant = derniere_lue(&lire_depot(&depot, &const { NomDeFichier::du_moteur(DERNIERE) })?)?;
-        let av = avant.version.as_str();
-        if !plus_recente(&version, av)? {
+        if !version.plus_recente_que(&avant.version) {
             return Err(socle::refus!(
                 "le depot est deja en {} ; augmenter VERSION (aujourd'hui {}, le fichier s'ecrit AAAA.MM.JJ : {}) avant de publier",
-                version_lue(av),
-                version_lue(&version),
+                avant.version.lue(),
+                version.lue(),
                 version
             ));
         }
@@ -322,9 +320,9 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     // Une archive par systeme dont la fenetre est dans `logiciel/` (le flux les pose toutes trois ; un poste qui publie
     // depuis son propre `logiciel/` n'a que la sienne), et celle de tous les systemes. Sans aucune fenetre, aucune
     // installation ne pourrait lancer la version : rien n'est publie.
-    let presents: Vec<&str> = SYSTEMES.into_iter().filter(|s| programme_de(c, s, "puppetpaie").is_file()).collect();
+    let presents: Vec<Systeme> = Systeme::TOUS.into_iter().filter(|s| programme_de(c, *s, "puppetpaie").is_file()).collect();
     if presents.is_empty() {
-        let attendues = SYSTEMES.map(|s| programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().replace('\\', "/")).join(", ");
+        let attendues = Systeme::TOUS.map(|s| programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().replace('\\', "/")).join(", ");
         return Err(socle::echec::refus_avec(
             "Le logiciel n'a la fenêtre d'aucun système : aucune installation ne pourrait lancer cette version.",
             socle::echec::Lieu { chemin: Some(c.to_string_lossy().into_owned()), detail: Some(format!("attendue : {}", attendues)), ..socle::echec::Lieu::default() },
@@ -333,15 +331,15 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     let mut archives = Archives::default();
     let mut tailles: Vec<(NomDeFichier, usize)> = Vec::new();
     let mut faites: Vec<(NomDeFichier, Vec<u8>)> = Vec::new();
-    for systeme in presents.iter().copied().chain([TOUT_SYSTEME]) {
-        let octets = archiver(c, systeme)?;
+    for cle in presents.iter().copied().map(CleDArchive::Du).chain([CleDArchive::DeTous]) {
+        let octets = archiver(c, cle)?;
         let signature = signer(&octets, privee)?;
         if !signature_valide(&octets, &signature, cle_publique) {
             return Err(autre_graine());
         }
-        let nom = nom_d_archive(&version, systeme)?;
-        let systemes = (systeme == TOUT_SYSTEME).then(|| presents.iter().map(|s| s.to_string()).collect());
-        archives.poser(systeme, ArchivePubliee { archive: nom.clone(), sha256: Empreinte::des_octets(&octets), signature, systemes });
+        let nom = nom_d_archive(&version, cle)?;
+        let systemes = (cle == CleDArchive::DeTous).then(|| presents.clone());
+        archives.poser(cle, ArchivePubliee { archive: nom.clone(), sha256: Empreinte::des_octets(&octets), signature, systemes });
         tailles.push((nom.clone(), octets.len()));
         faites.push((nom, octets));
     }
@@ -358,9 +356,9 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     // LES ARCHIVES D'INSTALLATION, a cote (`archiver_installation`) : Linux et Mac s'ils sont publies, et tous les
     // systemes (le dossier portable) ; Windows a son installeur. Ni signees ni nommees dans `derniere.json` : aucune
     // installation ne les telecharge.
-    for systeme in presents.iter().copied().filter(|s| *s != "windows").chain([TOUT_SYSTEME]) {
-        let octets = archiver_installation(c, systeme)?;
-        let nom = nom_d_installation(&version, systeme)?;
+    for cle in presents.iter().copied().filter(|s| *s != Systeme::Windows).map(CleDArchive::Du).chain([CleDArchive::DeTous]) {
+        let octets = archiver_installation(c, cle)?;
+        let nom = nom_d_installation(&version, cle)?;
         tailles.push((nom.clone(), octets.len()));
         faites.push((nom, octets));
     }
@@ -478,7 +476,7 @@ pub fn publier_depuis_l_environnement(logiciel: &Path, sortie: &Path, notes: &st
 #[cfg(test)]
 mod tests {
     use super::*;
-    use compagnie::maj::{courante, deballer, signature_valide, CLE_PUBLIQUE, TOUT_SYSTEME};
+    use compagnie::maj::{courante, deballer, signature_valide, CLE_PUBLIQUE};
 
     /// Une compagnie fictive livree a cote du logiciel : `<base>/fictives/fictive-essai/` (son marqueur et sa fiche), et le
     /// LISEZ-MOI du dossier.
@@ -508,8 +506,8 @@ mod tests {
         std::fs::write(code.join("target").join("gros"), "a ne pas livrer").unwrap();
         // L'archive de mise a jour ne demande aucune fictive ; celle d'installation, si : decompressee, elle s'ouvrirait
         // bridee sur un accueil vide.
-        let octets = archiver(&code, TOUT_SYSTEME).unwrap();
-        assert!(archiver_installation(&code, TOUT_SYSTEME).unwrap_err().phrase.contains("Aucune compagnie fictive"));
+        let octets = archiver(&code, CleDArchive::DeTous).unwrap();
+        assert!(archiver_installation(&code, CleDArchive::DeTous).unwrap_err().phrase.contains("Aucune compagnie fictive"));
         une_fictive(&base);
         // Ce qui est du poste et pas de la fictive livree : sa photo d'origine, ses secrets, le journal
         // de la fenetre ; et un dossier qui n'est pas une fictive.
@@ -524,11 +522,11 @@ mod tests {
             std::fs::write(f.join(rel), t).unwrap();
         }
         // LE CONTRAT : le contenu de `logiciel/` a la racine, rien d'autre, et les fictives n'y changent rien.
-        assert_eq!(octets, archiver(&code, TOUT_SYSTEME).unwrap(), "le zip est deterministe, et sans fictives");
+        assert_eq!(octets, archiver(&code, CleDArchive::DeTous).unwrap(), "le zip est deterministe, et sans fictives");
         let mut noms = noms_de(&octets);
         noms.sort();
         assert_eq!(noms, ["VERSION", "donnees/a.json"]);
-        let installation = archiver_installation(&code, TOUT_SYSTEME).unwrap();
+        let installation = archiver_installation(&code, CleDArchive::DeTous).unwrap();
         let noms = noms_de(&installation);
         assert!(noms.contains(&"logiciel/VERSION".to_string()) && noms.contains(&"logiciel/donnees/a.json".to_string()), "{:?}", noms);
         assert!(noms.contains(&"fictives/LISEZ-MOI.md".to_string()) && noms.contains(&"fictives/fictive-essai/config/entreprise.json".to_string()), "{:?}", noms);
@@ -538,7 +536,7 @@ mod tests {
         // Les trois fichiers livres, la marque de la fictive et ce que retient la livraison : rien du poste.
         assert!(noms.contains(&"fictives/fictive-essai/.livree.json".to_string()) && noms.contains(&"fictives/.livraison.json".to_string()), "{:?}", noms);
         assert_eq!(noms.iter().filter(|n| n.starts_with("fictives/")).count(), 5, "rien du poste : {:?}", noms);
-        assert_eq!(installation, archiver_installation(&code, TOUT_SYSTEME).unwrap(), "le zip est deterministe");
+        assert_eq!(installation, archiver_installation(&code, CleDArchive::DeTous).unwrap(), "le zip est deterministe");
         // L'archive des fictives porte exactement le `fictives/` de l'archive d'installation ; son empreinte ne depend que
         // du contenu livre.
         let (fictives, empreinte) = archiver_fictives(&code).unwrap();
@@ -559,7 +557,7 @@ mod tests {
         assert!(!signature_valide(&altere, &sig, &publique));
         let neuf = base.join("maj-neuve").join("logiciel");
         deballer(&octets, &neuf).unwrap();
-        assert_eq!(courante(&neuf).unwrap(), "2026.10.09");
+        assert_eq!(courante(&neuf).unwrap().texte(), "2026.10.09");
         assert!(neuf.join("donnees").join("a.json").is_file());
         assert!(!neuf.join("target").exists());
         // Une archive d'installation n'est pas une mise a jour : refusee, rien n'est ecrit.

@@ -66,7 +66,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let r = if dpae {
         routes::gestes::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
     } else {
-        routes::gestes::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, None)?
+        routes::gestes::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, envois::releve_retours::CanalDesRetours::Dsn)?
     };
     for i in &r.incidents {
         dire!("  {}", i);

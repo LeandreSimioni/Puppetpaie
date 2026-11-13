@@ -35,7 +35,7 @@ fn exigee_en_attente(ctx: &Contexte) -> R<Option<String>> {
     let code = ctx.code.parent().map(std::path::Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
     let Some(p) = crate::maj::prete(&code.join(".."))? else { return Ok(None) };
     let (exigee, version) = (p.exigee, p.version);
-    if exigee.is_empty() || !crate::maj::plus_recente(&version, &crate::maj::courante(&code).map_err(|e| e.reclasser(Classe::Illisible))?).map_err(|e| e.reclasser(Classe::Illisible))? {
+    if exigee.is_empty() || !version.plus_recente_que(&crate::maj::courante(&code).map_err(|e| e.reclasser(Classe::Illisible))?) {
         return Ok(None);
     }
     Ok(Some(format!(

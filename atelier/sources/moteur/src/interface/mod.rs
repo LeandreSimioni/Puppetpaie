@@ -222,7 +222,7 @@ fn echapper(t: &str) -> String {
     t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#x27;")
 }
 
-/// La version telle que la fenetre la montre : `JJ.MM.AAAA` (`maj::version_lue`) ; le fichier garde l'identifiant.
+/// La version telle que la fenetre la montre : `JJ.MM.AAAA` (`VersionDuLogiciel::lue`) ; le fichier garde l'identifiant.
 /// Le binaire de l'atelier n'est pas une version publiee : il dit de quelles sources il est fait (le commit, `build.rs`).
 #[cfg(feature = "atelier")]
 fn version() -> String {
@@ -236,10 +236,9 @@ fn version() -> String {
 
 #[cfg(not(feature = "atelier"))]
 fn version() -> String {
-    let p = installation::logiciel().join("VERSION");
-    match std::fs::read_to_string(&p) {
-        Ok(v) => compagnie::maj::version_lue(&v),
-        Err(e) => format!("illisible ({})", socle::echec::du_disque(&p, &e).phrase),
+    match compagnie::maj::courante(&installation::logiciel()) {
+        Ok(v) => v.lue(),
+        Err(e) => format!("illisible ({})", e.phrase),
     }
 }
 
@@ -422,7 +421,7 @@ fn page_accueil() -> R<String> {
             None => format!("<span class=\"initiale\">{}</span>", echapper(&c.nom.chars().take(1).collect::<String>())),
         };
         let marque = if c.reelle {
-            CRAYON.replace("%s", &c.couleur)
+            CRAYON.replace("%s", c.couleur.texte())
         } else if c.remise_a_zero {
             ZERO.to_string()
         } else {
@@ -433,7 +432,7 @@ fn page_accueil() -> R<String> {
             format!(
                 "<div class=\"tuile{}\" data-id=\"{}\"{}><div class=\"tete\"><div class=\"medaillon\">{}</div>{}</div><div class=\"corps\"><span class=\"nom\">{}</span><span class=\"lieu\">{}</span></div></div>",
                 if c.reelle { "" } else { " fictive" },
-                echapper(&c.id),
+                echapper(&c.id.to_string()),
                 if c.reelle { format!(" style=\"--cie:{}\"", c.couleur) } else { String::new() },
                 medaillon,
                 marque,
@@ -466,7 +465,7 @@ fn page_accueil() -> R<String> {
         let liste: String = r
             .a_garder
             .iter()
-            .map(|c| format!("<li><label><input type=\"checkbox\" value=\"{}\" checked> {}</label></li>", echapper(&c.id), echapper(&c.nom)))
+            .map(|c| format!("<li><label><input type=\"checkbox\" value=\"{}\" checked> {}</label></li>", echapper(&c.id.to_string()), echapper(&c.nom)))
             .collect();
         format!("{}{}", grille, GARDER.replace("{{LISTE}}", &liste))
     };
@@ -837,7 +836,7 @@ impl Fenetre {
         let fait = |recharger: bool| Geste::Fait { ok: true, recharger };
         match (nom, self.phase()) {
             ("choisir", Phase::Accueil) => {
-                let r = installation::racine_choisie(&installation::base(), texte(args, 0)?)?;
+                let r = installation::racine_choisie(&installation::base(), &installation::IdDeCompagnie::lire(texte(args, 0)?)?)?;
                 self.prendre(r)?;
                 Ok(fait(true))
             }
@@ -882,7 +881,7 @@ impl Fenetre {
             // refuse, et rien ne se ferme.
             ("redemarrer", _) => {
                 let v = compagnie::maj::redemarrer_pour_mettre_a_jour(&compagnie::maj::installation(), &compagnie::maj::RECHERCHE)?;
-                self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", compagnie::maj::version_lue(&v)));
+                self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", v.lue()));
                 self.poser_phase(Phase::Accueil);
                 self.fermer_le_logiciel();
                 Ok(fait(false))
