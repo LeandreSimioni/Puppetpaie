@@ -84,7 +84,8 @@ pub struct LectureDsn {
     /// Le premier et le dernier mois declares ; aucun sans DSN.
     pub premier_mois: Option<Mois>,
     pub dernier_mois: Option<Mois>,
-    pub illisibles: Vec<String>,
+    /// Les DSN qui ne disent pas leur mois, par leur nom.
+    pub illisibles: Vec<NomDeFichier>,
     /// Les etablissements declares (S21.G00.11.001), et le NIC du siege (S21.G00.06.002), d'une DSN a l'autre.
     pub etablissements: BTreeSet<droit::fiche::Nic>,
     pub nics_siege: BTreeSet<droit::fiche::Nic>,
@@ -179,14 +180,6 @@ fn noms_tries(dossier: &Path) -> Result<Vec<String>, Echec> {
     Ok(v)
 }
 
-/// Le nom d'un fichier, pour le dire.
-fn nom_de(f: &Path) -> String {
-    match f.file_name() {
-        Some(n) => n.to_string_lossy().into_owned(),
-        None => f.display().to_string(),
-    }
-}
-
 /// Toutes les DSN d'un dossier, la plus recente faisant foi par salarie. Une DSN fautive refuse
 /// (`declarations::dsn_lue::lire`).
 pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
@@ -196,7 +189,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
         // Une DSN sans mois principal (S20.G00.05.005) ne dit pas quel mois elle declare : elle est ignoree, en le disant.
         match declarations::dsn_lue::lire_une_dsn(&f)?.and_then(|i| Some((i.mois?, i))) {
             Some(lue) => lues.push(lue),
-            _ => out.illisibles.push(nom_de(&f)),
+            _ => out.illisibles.push(NomDeFichier::du(&f)?),
         }
     }
     // Par mois declare, puis par date de depot : un annule-et-remplace depose apres l'original fait foi.

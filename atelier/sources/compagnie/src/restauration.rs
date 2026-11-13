@@ -36,11 +36,12 @@ use md5::{Digest, Md5};
 use crate::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, ErreurGoogle};
 use crate::sauvegarde::{ecarte, ecrire_index, empreinte, hors_ligne, inventaire, Index, DOSSIER_DRIVE};
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 
 /// Un fichier redescendu.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Redescendu {
-    pub relatif: String,
+    pub relatif: CheminRelatif,
     pub octets: u64,
 }
 
@@ -76,7 +77,7 @@ impl Restauration {
     pub fn dite(&self, a_faire: Vec<String>) -> RestaurationDite {
         RestaurationDite {
             resume: self.resume(),
-            cible: self.cible.display().to_string(),
+            cible: self.cible.clone(),
             racine_drive: self.racine_drive.clone(),
             redescendus: self.redescendus.iter().map(|f| f.relatif.clone()).collect(),
             deja_la: self.deja_la,
@@ -93,9 +94,10 @@ impl Restauration {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RestaurationDite {
     pub resume: String,
-    pub cible: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub cible: PathBuf,
     pub racine_drive: String,
-    pub redescendus: Vec<String>,
+    pub redescendus: Vec<CheminRelatif>,
     pub deja_la: usize,
     pub octets: u64,
     pub ecartes: usize,
@@ -125,8 +127,16 @@ fn nom_sur(nom: &str) -> bool {
 struct Entree {
     id: String,
     md5: Option<String>,
-    /// Le dossier, relatif a `sauvegarde/` (`""` a la racine).
-    dossier: String,
+    /// Le dossier, relatif a `sauvegarde/` (`None` a la racine).
+    dossier: Option<CheminRelatif>,
+}
+
+/// Le chemin du nom `nom` dans le dossier `dossier` (`None` a la racine de `sauvegarde/`).
+fn dans(dossier: &Option<CheminRelatif>, nom: NomDeFichier) -> CheminRelatif {
+    match dossier {
+        Some(d) => d.joint(&nom),
+        None => CheminRelatif::from(nom),
+    }
 }
 
 /// Le seul dossier de ce nom sous `parent`, sans rien creer. `Ok(None)` s'il n'y en a pas ; un refus s'il y en a deux.
@@ -176,19 +186,23 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     let racine_id = le_dossier(client, "root", racine_drive, racine_drive)?.ok_or_else(absente)?;
     let sauvegarde_id = le_dossier(client, &racine_id, DOSSIER_DRIVE, &format!("{}/{}", racine_drive, DOSSIER_DRIVE))?.ok_or_else(absente)?;
 
-    let mut distants: BTreeMap<String, Entree> = BTreeMap::new();
-    let mut dossiers: BTreeMap<String, String> = BTreeMap::new();
-    let mut a_voir: Vec<(String, String)> = vec![(String::new(), sauvegarde_id)];
+    let mut distants: BTreeMap<CheminRelatif, Entree> = BTreeMap::new();
+    let mut dossiers: BTreeMap<Option<CheminRelatif>, String> = BTreeMap::new();
+    let mut a_voir: Vec<(Option<CheminRelatif>, String)> = vec![(None, sauvegarde_id)];
     while let Some((dossier, id)) = a_voir.pop() {
         dossiers.insert(dossier.clone(), id.clone());
-        let joindre = |nom: &str| if dossier.is_empty() { nom.to_string() } else { format!("{}/{}", dossier, nom) };
+        // Le nom tel que le Drive le donne, dans son dossier : pour dire celui qui ne peut pas etre un nom ici.
+        let ici = |nom: &str| match &dossier {
+            Some(d) => format!("{}/{}", d, nom),
+            None => nom.to_string(),
+        };
         for (nom, d) in client.lister(&id)? {
-            let relatif = joindre(&nom);
             if !nom_sur(&nom) {
-                resultat.incidents.push(format!("{} : ce nom ne peut pas etre un nom de fichier ici, il n'est pas redescendu.", relatif));
+                resultat.incidents.push(format!("{} : ce nom ne peut pas etre un nom de fichier ici, il n'est pas redescendu.", ici(&nom)));
                 continue;
             }
-            if ecarte(Path::new(&relatif)) {
+            let relatif = dans(&dossier, NomDeFichier::lire(&nom)?);
+            if ecarte(&relatif) {
                 resultat.ecartes += 1;
                 continue;
             }
@@ -199,12 +213,12 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             par_nom.entry(nom).or_default().push(i);
         }
         for (nom, ids) in par_nom {
-            let relatif = joindre(&nom);
             if !nom_sur(&nom) {
-                resultat.incidents.push(format!("{}/ : ce nom ne peut pas etre un nom de dossier ici, rien n'en est redescendu.", relatif));
+                resultat.incidents.push(format!("{}/ : ce nom ne peut pas etre un nom de dossier ici, rien n'en est redescendu.", ici(&nom)));
             } else {
+                let relatif = dans(&dossier, NomDeFichier::lire(&nom)?);
                 match ids.as_slice() {
-                    [seul] => a_voir.push((relatif, seul.clone())),
+                    [seul] => a_voir.push((Some(relatif), seul.clone())),
                     _ => resultat.incidents.push(format!(
                         "{}/ : {} dossiers de ce nom dans le Drive, rien n'en est redescendu (la restauration ne choisit pas : les reunir a la main dans le Drive, puis relancer).",
                         relatif,
@@ -217,7 +231,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
 
     // 2. Le dossier local : ce que la sauvegarde y porterait doit deja etre la copie du Drive.
     let (presents, _) = inventaire(cible)?;
-    let mut deja: BTreeSet<String> = BTreeSet::new();
+    let mut deja: BTreeSet<CheminRelatif> = BTreeSet::new();
     let mut ecarts: Vec<String> = Vec::new();
     for (relatif, _) in &presents {
         let chemin = cible.join(relatif);
@@ -259,7 +273,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             resultat.incidents.push(format!("{} : le Drive n'en donne pas d'empreinte (un document Google ?), il n'est pas redescendu.", relatif));
             continue;
         };
-        let chemin = relatif.split('/').fold(cible.to_path_buf(), |p, s| p.join(s));
+        let chemin = relatif.texte().split('/').fold(cible.to_path_buf(), |p, s| p.join(s));
         if socle::fichiers::present(&chemin)? {
             resultat.incidents.push(format!("{} : il existe deja ici, il est garde tel quel.", relatif));
             continue;
@@ -306,8 +320,8 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         fichiers.insert(relatif.clone(), *etat);
         if let Some(d) = distants.get(relatif) {
             let mut cle = format!("{}/{}", racine_drive, DOSSIER_DRIVE);
-            if !d.dossier.is_empty() {
-                cle = format!("{}/{}", cle, d.dossier);
+            if let Some(dossier) = &d.dossier {
+                cle = format!("{}/{}", cle, dossier);
             }
             if let Some(id) = dossiers.get(&d.dossier) {
                 index_dossiers.insert(cle, id.clone());

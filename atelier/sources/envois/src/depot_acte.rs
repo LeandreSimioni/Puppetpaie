@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::fichiers::CheminRelatif;
 use socle::mois::Mois;
 
 use crate::branchement::{reponse_fictive, Branchement};
@@ -26,6 +27,7 @@ pub struct DepotFait {
     pub reel: bool,
     pub reponse: String,
     pub flux: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub trace: Option<PathBuf>,
     pub ligne: Ligne,
     /// Le depot PRECEDENT du meme fichier, s'il y en a eu un.
@@ -85,7 +87,7 @@ pub fn archiver_reponse(racine: &Path, quoi: &str, marque: &str, reponse: &str) 
 }
 
 /// L'envoi du depot `d` a `destinataire`, et ce que l'organisme a repondu.
-fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: &str, reponse: &str, trace: Option<String>, detail: D, versions: bool) -> Envoi<D, Rt> {
+fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: &str, reponse: &str, trace: Option<CheminRelatif>, detail: D, versions: bool) -> Envoi<D, Rt> {
     let mut e = Envoi::nouveau(Mode::de(d.reel), d.qui, accepte, destinataire, reponse, detail);
     e.mois = Some(d.mois);
     e.flux = flux.to_string();
@@ -100,9 +102,8 @@ fn noter(ctx: &Contexte, d: &Depot, ligne: Ligne) -> R<Ligne> {
 }
 
 /// LA TRACE, RELATIVE A LA COMPAGNIE : une compagnie change de dossier, et un chemin absolu ne menerait nulle part.
-fn trace_relative(ctx: &Contexte, t: &Path) -> R<String> {
-    let relative = t.strip_prefix(&ctx.racine).map_err(|_| socle::echec::du_disque(&t, &"La trace d'un dépôt s'écrit hors de la compagnie.".to_string()).reclasser(Classe::Disque))?;
-    Ok(relative.to_string_lossy().replace('\\', "/"))
+fn trace_relative(ctx: &Contexte, t: &Path) -> R<CheminRelatif> {
+    CheminRelatif::sous(&ctx.racine, t).map_err(|_| socle::echec::du_disque(&t, &"La trace d'un dépôt s'écrit hors de la compagnie.".to_string()).reclasser(Classe::Disque))
 }
 
 /// Le depot a echoue : la ligne refusee au journal, l'incident dans les suites, et le refus rendu. Une ligne que le

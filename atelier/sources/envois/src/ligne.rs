@@ -12,7 +12,7 @@ use droit::contexte::IdSalarie;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 
 /// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
@@ -107,7 +107,7 @@ pub struct Envoi<D, R> {
     pub retours: Vec<R>,
     pub reponse: String,
     /// La reponse de l'organisme archivee, relative a la compagnie.
-    pub trace: Option<String>,
+    pub trace: Option<CheminRelatif>,
     pub detail: D,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub versions: Option<Vec<Version>>,
@@ -205,8 +205,8 @@ impl Ligne {
         commun!(self, e => &e.reponse)
     }
 
-    pub fn trace(&self) -> Option<&str> {
-        commun!(self, e => e.trace.as_deref())
+    pub fn trace(&self) -> Option<&CheminRelatif> {
+        commun!(self, e => e.trace.as_ref())
     }
 
     pub fn versions(&self) -> Option<&[Version]> {

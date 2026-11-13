@@ -19,6 +19,7 @@
 
 use std::collections::BTreeMap;
 use socle::echec::Classe;
+use socle::fichiers::CheminRelatif;
 use socle::paris::Moment;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -79,7 +80,7 @@ impl EtatFichier {
 /// Un fichier depose (`Fichier`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fichier {
-    pub relatif: String,
+    pub relatif: CheminRelatif,
     pub octets: u64,
     pub etat: EtatFichier,
 }
@@ -299,7 +300,8 @@ pub struct Etat {
 
 /// Un nom ou un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin relatif
 /// (le nom du fichier compris). La restauration s'en sert aussi : elle ne redescend que ce que la sauvegarde envoie.
-pub(crate) fn ecarte(relatif: &Path) -> bool {
+pub(crate) fn ecarte(relatif: &CheminRelatif) -> bool {
+    let relatif: &Path = relatif.as_ref();
     let exclu = |nom: &str| NOMS_EXCLUS.contains(&nom) || SUFFIXES_EXCLUS.iter().any(|s| nom.ends_with(s));
     if relatif.file_name().is_some_and(|n| exclu(&n.to_string_lossy())) {
         return true;
@@ -351,7 +353,7 @@ fn parcourir(racine: &Path, dossier: &Path, sortie: &mut Vec<PathBuf>) -> Result
 /// `inventaire` : les fichiers triés par chemin (composante par
 /// composante, pas en texte : `a/x` passe avant `a b/x`), et le nombre d'ecartes. Ne lit aucun
 /// contenu. Un fichier qui disparait entre le parcours et sa lecture n'est plus a sauver.
-pub fn inventaire(racine: &Path) -> Result<(Vec<(String, Etat)>, usize), ErreurGoogle> {
+pub fn inventaire(racine: &Path) -> Result<(Vec<(CheminRelatif, Etat)>, usize), ErreurGoogle> {
     let mut chemins = Vec::new();
     parcourir(racine, racine, &mut chemins)?;
     chemins.sort();
@@ -361,7 +363,8 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(String, Etat)>, usize), ErreurG
         if !complet.is_file() {
             continue;
         }
-        if ecarte(&rel) {
+        let relatif = CheminRelatif::du(&rel)?;
+        if ecarte(&relatif) {
             ecartes += 1;
             continue;
         }
@@ -370,7 +373,6 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(String, Etat)>, usize), ErreurG
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Err(ErreurGoogle::fichier(&e, &complet)),
         };
-        let relatif = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
         // La date du fichier dit s'il a change depuis son dernier envoi : datee hors du calendrier, elle ne le dit pas, et
         // la sauvegarde s'arrete en le nommant plutot que de l'envoyer a l'aveugle.
         let Some(date) = socle::paris::mtime(&m) else {
@@ -402,7 +404,7 @@ pub struct Index {
     pub quand: socle::paris::Moment,
     pub racine_drive: String,
     pub dossiers: BTreeMap<String, String>,
-    pub fichiers: BTreeMap<String, Etat>,
+    pub fichiers: BTreeMap<CheminRelatif, Etat>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::saisie::option")]
     pub derniere_complete: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]

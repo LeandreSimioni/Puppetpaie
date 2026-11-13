@@ -903,8 +903,8 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
 
     // La liste nominative est la premiere chose qu'ecrit le dossier (`casc::ecrire`) : si elle ne peut s'ecrire, le refus
     // tombe avant tout autre fichier, et rien ne part.
-    ecrire(ctx, &mut r)?;
-    let classeur = std::path::Path::new(&r.dossier).join("CASC-SVP_liste-nominative.xlsx");
+    let dossier = ecrire(ctx, &mut r)?;
+    let classeur = dossier.join("CASC-SVP_liste-nominative.xlsx");
 
     // Chaque courriel porte le nom court de son organisme : celui du `.eml` garde.
     let messages: Vec<Message<&str>> = vec![
@@ -960,7 +960,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     };
 
     // Ce que l'envoi garde : les deux messages tels qu'ils sont partis.
-    let garde = std::path::Path::new(&r.dossier).join("envoyes");
+    let garde = dossier.join("envoyes");
     std::fs::create_dir_all(&garde).map_err(|e| socle::echec::du_disque(&garde, &e).reclasser(Classe::Disque))?;
     for (nom, brut) in emls.iter().zip(&copies) {
         let p = garde.join(nom);

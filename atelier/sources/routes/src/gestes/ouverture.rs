@@ -273,7 +273,7 @@ impl Ouverture {
         let phrases: Vec<String> = self.horloge.iter().chain(&self.manquants).chain(&self.incidents).cloned().collect();
         let sauvegarde = self.sauvegarde.as_ref().map(|s| SauvegardeDite {
             resume: s.resume(),
-            deposes: s.deposes.iter().map(|f| f.relatif.clone()).collect(),
+            deposes: s.deposes.iter().map(|f| f.relatif.to_string()).collect(),
             identiques: s.identiques,
             octets: s.octets_deposes,
             deposes_detail: s.deposes.iter().map(|f| FichierDepose { relatif: f.relatif.clone(), etat: f.etat.texte(), octets: f.octets }).collect(),
@@ -377,7 +377,7 @@ pub struct SauvegardeDite {
 /// Un fichier parti au Drive : son chemin dans le dossier de la compagnie, neuf ou modifie, son poids.
 #[derive(Debug, Serialize)]
 pub struct FichierDepose {
-    pub relatif: String,
+    pub relatif: socle::fichiers::CheminRelatif,
     pub etat: &'static str,
     pub octets: u64,
 }

@@ -794,7 +794,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         importe_le,
         du: debut,
         au: fin,
-        dossier: racine.join("import").display().to_string(),
+        dossier: racine.join("import"),
         reprises,
         editeur,
         pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
@@ -816,7 +816,8 @@ struct EtatImportation {
     objets: usize,
     du: Option<Jour>,
     au: Option<Jour>,
-    dossier: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    dossier: std::path::PathBuf,
     reprises: Vec<RepriseVue>,
     editeur: Vec<MessageEditeur>,
     /// La pastille de l'historique repris.

@@ -146,18 +146,13 @@ fn cle_de(genre: &str, chemin: &Path) -> String {
         let r = r.last().expect("registre ouvert");
         for (nom, base) in [("racine", &r.racine), ("code", &r.code)] {
             if let Some(rel) = sous(chemin, base) {
-                return format!("{} {}:{}", genre, nom, chemin_en_barres(rel));
+                // La cle d'une lecture nomme aussi la base elle-meme (`dossier? racine:`), qu'aucun chemin relatif ne
+                // nomme : elle s'ecrit par l'ecriture des chemins relatifs, sans en etre un.
+                return format!("{} {}:{}", genre, nom, CheminRelatif::en_barres(rel));
             }
         }
         format!("{} abs:{}", genre, chemin.to_string_lossy())
     })
-}
-
-/// UN CHEMIN RELATIF NOTE S'ECRIT AVEC DES BARRES DROITES, sur tous les systemes : la saisie du mois
-/// se reconnait dans les entrees sous `racine:engagements/AAAA-MM.json` (`engagement::empreinte`) : une cle notee avec la barre de
-/// Windows ne s'y retrouverait pas. `chemin_de` la relit telle quelle : Windows accepte la barre droite.
-fn chemin_en_barres(rel: &Path) -> String {
-    rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
 }
 
 /// Le genre et le chemin absolu d'une entree notee, pour la relire.
@@ -774,6 +769,175 @@ impl From<NomDeFichier> for String {
     fn from(n: NomDeFichier) -> String {
         n.0.into_owned()
     }
+}
+
+/// UN CHEMIN RELATIF a une racine que son champ dit (la compagnie, le dossier trie d'un import) :
+/// `retours/depots/20260203-100000_depot-dsn_202601.txt`, `sorties/2026-06/DSN_….dsn`. Il n'est pas vide, n'a pas de
+/// racine, et chacun de ses noms est un `NomDeFichier` (ni `.` ni `..`) : joint a sa racine, il y reste. IL S'ECRIT AVEC
+/// DES BARRES DROITES, sur tous les systemes : une cle notee avec la barre de Windows ne se retrouverait pas
+/// (`racine:engagements/AAAA-MM.json`, `engagement::empreinte`), et Windows accepte la barre droite pour le rejoindre.
+/// Il s'ecrit tel quel et se trie par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CheminRelatif(std::borrow::Cow<'static, str>);
+
+impl CheminRelatif {
+    /// Le chemin `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CheminRelatif> {
+        if !CheminRelatif::a_sa_forme(texte) {
+            return Err(crate::refus!("{} n'est pas un chemin relatif : des noms separes par des barres droites.", repr(texte)));
+        }
+        Ok(CheminRelatif(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// Des noms (`NomDeFichier::a_sa_forme`) separes par des barres droites.
+    const fn a_sa_forme(texte: &str) -> bool {
+        let o = texte.as_bytes();
+        let (mut debut, mut i) = (0, 0);
+        while i <= o.len() {
+            if i == o.len() || o[i] == b'/' {
+                let n = i - debut;
+                if n == 0 || (n == 1 && o[debut] == b'.') || (n == 2 && o[debut] == b'.' && o[debut + 1] == b'.') {
+                    return false;
+                }
+                debut = i + 1;
+            } else if matches!(o[i], b'\\' | 0) {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+
+    /// LE CHEMIN QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
+    pub const fn du_moteur(chemin: &'static str) -> CheminRelatif {
+        assert!(CheminRelatif::a_sa_forme(chemin), "chemin relatif mal forme");
+        CheminRelatif(std::borrow::Cow::Borrowed(chemin))
+    }
+
+    /// LE CHEMIN DE `chemin` SOUS `racine` ; un chemin qui n'y est pas, ou qui est la racine elle-meme, se refuse.
+    pub fn sous(racine: &Path, chemin: &Path) -> R<CheminRelatif> {
+        match sous(chemin, racine) {
+            Some(rel) => CheminRelatif::du(rel),
+            None => Err(crate::refus!("{} n'est pas sous {}.", repr(&chemin.to_string_lossy()), repr(&racine.to_string_lossy()))),
+        }
+    }
+
+    /// LE CHEMIN RELATIF `rel`, ecrit avec des barres droites ; un chemin qui a une racine, ou qui remonte (`..`), se
+    /// refuse.
+    pub fn du(rel: &Path) -> R<CheminRelatif> {
+        CheminRelatif::lire(&CheminRelatif::en_barres(rel))
+    }
+
+    /// Le chemin relatif `rel`, ecrit avec des barres droites ; un nom qui n'est pas en UTF-8 garde son caractere
+    /// illisible (`to_string_lossy`).
+    pub(crate) fn en_barres(rel: &Path) -> String {
+        rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
+    }
+
+    /// LE DOSSIER DES PIECES DU MOIS `mois` : `sorties/AAAA-MM`.
+    pub fn sorties(mois: crate::mois::Mois) -> CheminRelatif {
+        CheminRelatif(std::borrow::Cow::Owned(format!("sorties/{}", mois)))
+    }
+
+    /// Ce chemin, suivi du nom `nom`.
+    pub fn joint(&self, nom: &NomDeFichier) -> CheminRelatif {
+        CheminRelatif(std::borrow::Cow::Owned(format!("{}/{}", self.0, nom)))
+    }
+
+    /// Le chemin du dossier qui le contient ; `None` pour un nom seul, a la racine.
+    pub fn parent(&self) -> Option<CheminRelatif> {
+        self.0.rsplit_once('/').map(|(d, _)| CheminRelatif(std::borrow::Cow::Owned(d.to_string())))
+    }
+
+    /// Son dernier nom : celui du fichier.
+    pub fn nom(&self) -> NomDeFichier {
+        let nom = match self.0.rsplit_once('/') {
+            Some((_, n)) => n,
+            None => &self.0,
+        };
+        NomDeFichier(std::borrow::Cow::Owned(nom.to_string()))
+    }
+
+    /// Le chemin tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<NomDeFichier> for CheminRelatif {
+    fn from(n: NomDeFichier) -> CheminRelatif {
+        CheminRelatif(n.0)
+    }
+}
+
+impl std::fmt::Display for CheminRelatif {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<Path> for CheminRelatif {
+    fn as_ref(&self) -> &Path {
+        Path::new(self.texte())
+    }
+}
+
+impl TryFrom<String> for CheminRelatif {
+    type Error = Echec;
+    fn try_from(s: String) -> R<CheminRelatif> {
+        CheminRelatif::lire(&s)
+    }
+}
+
+impl From<CheminRelatif> for String {
+    fn from(c: CheminRelatif) -> String {
+        c.0.into_owned()
+    }
+}
+
+/// CE QUI S'ECRIT EN CHEMIN dans une reponse : un chemin du disque, absent ou non, seul ou en liste.
+pub trait EcritEnChemin {
+    fn ecrire<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error>;
+}
+
+impl EcritEnChemin for PathBuf {
+    fn ecrire<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string_lossy())
+    }
+}
+
+impl<C: EcritEnChemin> EcritEnChemin for Option<C> {
+    fn ecrire<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Some(c) => c.ecrire(s),
+            None => s.serialize_none(),
+        }
+    }
+}
+
+impl<C: EcritEnChemin> EcritEnChemin for Vec<C> {
+    fn ecrire<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        struct Un<'a, C>(&'a C);
+        impl<C: EcritEnChemin> serde::Serialize for Un<'_, C> {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                self.0.ecrire(s)
+            }
+        }
+        let mut seq = s.serialize_seq(Some(self.len()))?;
+        for c in self {
+            seq.serialize_element(&Un(c))?;
+        }
+        seq.end()
+    }
+}
+
+/// UN CHEMIN DU DISQUE RENDU PAR UNE ROUTE (`#[serde(serialize_with = "socle::fichiers::ecrire_chemin")]`) : son texte,
+/// un nom qui n'est pas en UTF-8 gardant son caractere illisible (`to_string_lossy`), pour que la reponse parte quand
+/// meme : la compagnie peut etre rangee dans un tel dossier.
+pub fn ecrire_chemin<C: EcritEnChemin, S: serde::Serializer>(c: &C, s: S) -> Result<S::Ok, S::Error> {
+    c.ecrire(s)
 }
 
 #[cfg(test)]
