@@ -26,7 +26,7 @@ use droit::natures::{self, MotifDeRupture, Nature};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
-use socle::fichiers::dossier_du_code;
+use socle::fichiers::{dossier_du_code, NomDeFichier};
 use socle::mois::Mois;
 use crate::catalogue::{Ecran, Place};
 use crate::fiches::{reporter, vue, SorteDeFiche};
@@ -959,7 +959,7 @@ const SORTES: [(&str, &str); 6] =
 
 /// `mois_connus` : les mois saisis et les mois produits, du plus recent au plus
 /// ancien -- `(mois, fichiers du dossier de sortie)`.
-pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<String>)>> {
+pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<NomDeFichier>)>> {
     let mut vus: BTreeSet<Mois> = engagement::stock::mois_saisis(racine)?.into_iter().collect();
     // Les entrees d'un dossier (aucune s'il n'existe pas) ; un dossier qui ne se lit pas se refuse.
     let entrees = |d: &Path| -> R<Vec<std::fs::DirEntry>> {
@@ -977,11 +977,11 @@ pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<String>)>> {
     }
     let mut out = Vec::new();
     for mois in vus.into_iter().rev() {
-        let mut fichiers: Vec<String> = Vec::new();
+        let mut fichiers: Vec<NomDeFichier> = Vec::new();
         if let Some(d) = dossiers.get(&mois) {
             for e in entrees(d)? {
                 if e.path().is_file() {
-                    fichiers.push(e.file_name().to_string_lossy().into_owned());
+                    fichiers.push(NomDeFichier::du(&e.path())?);
                 }
             }
             fichiers.sort();
@@ -1033,14 +1033,14 @@ pub(crate) struct MoisDuBilan {
     importe: Option<bool>,
     a_faire: bool,
     sortes: Vec<&'static str>,
-    fichiers: Vec<String>,
+    fichiers: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     clos: Option<bool>,
 }
 
 impl MoisDuBilan {
     /// Un mois dont la DSN ne se lit pas : ses fichiers, et rien a corriger.
-    fn nu(mois: Mois, fichiers: &[String]) -> MoisDuBilan {
+    fn nu(mois: Mois, fichiers: &[NomDeFichier]) -> MoisDuBilan {
         MoisDuBilan {
             mois,
             produit: !fichiers.is_empty(),
@@ -1067,7 +1067,7 @@ impl MoisDuBilan {
 /// a. L'etat de la DSN : « passee » (bilan OK), « refusee », « attente »,
 /// « a_deposer », « en_retard » ; la meme lecture que les
 /// rappels : le journal des depots, et lui seul.
-fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) -> R<Vec<MoisDuBilan>> {
+fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichier>)]) -> R<Vec<MoisDuBilan>> {
     let mut out = Vec::new();
     for &(le_mois, ref noms) in mois {
         let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
@@ -1078,7 +1078,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) 
         let lu = compagnie::etat_dsn::du_mois(ctx, le_mois, None)?;
         let retard = lu.etat == Etat::ADeposer && en_retard;
         let depose = lu.deposee();
-        let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.starts_with(p))).map(|(_, l)| *l).collect();
+        let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.texte().starts_with(p))).map(|(_, l)| *l).collect();
         // Un mois tenu avant : ses bulletins sont ceux de l'ancien logiciel, que l'import garde.
         if importe && !import::mois::bulletins_repris(&ctx.racine, le_mois)?.is_empty() {
             sortes.insert(0, "bulletins repris");

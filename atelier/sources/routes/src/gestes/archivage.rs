@@ -18,7 +18,7 @@ use envois::drive::{Client, Drive, ErreurGoogle};
 /// `FichierArchive`.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FichierArchive {
-    pub nom: String,
+    pub nom: socle::fichiers::NomDeFichier,
     pub octets: u64,
     pub remplace: bool,
 }
@@ -73,8 +73,8 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
     let deja = client.lister(&cible)?;
     let mut deposes = Vec::new();
     for f in &fichiers {
-        let nom_local = f.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| ErreurGoogle::nouvelle(socle::echec::Classe::DefautDuLogiciel, "Défaut du logiciel : une pièce à archiver n'a pas de nom."))?;
-        let r = client.televerser(f, &cible, None, deja.get(&nom_local))?;
+        let nom_local = socle::fichiers::NomDeFichier::du(f)?;
+        let r = client.televerser(f, &cible, None, deja.get(nom_local.texte()))?;
         let octets = std::fs::metadata(f).map_err(|e| ErreurGoogle::fichier(&e, f))?.len();
         // Le fichier porte dans Drive le nom sous lequel il y est depose (`televerser`, sans nom : celui du fichier).
         deposes.push(FichierArchive { nom: nom_local, octets, remplace: r.remplace });

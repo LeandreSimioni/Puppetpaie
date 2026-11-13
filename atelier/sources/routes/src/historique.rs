@@ -402,7 +402,7 @@ fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     } else {
         format!("{} fichier(s) déposé(s) dans le Drive, dossier {}.", r.fichiers.len(), ou)
     };
-    let fichiers = r.fichiers.into_iter().map(|f| FichierDepose { nom: f.nom, octets: f.octets, remplace: f.remplace }).collect();
+    let fichiers = r.fichiers.into_iter().map(|f| FichierDepose { nom: f.nom.into(), octets: f.octets, remplace: f.remplace }).collect();
     Ok(Archive { phrase, mois: r.mois, dossier, compte: r.compte, fichiers })
 }
 

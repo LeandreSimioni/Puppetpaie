@@ -42,6 +42,7 @@ use engagement::saisie::{Carte, Preavis, VueDuMois};
 use engagement::Chiffre;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::fichiers::NomDeFichier;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 
@@ -735,12 +736,8 @@ fn parti_le(ctx: &Contexte, a: &ArretSaisi, nature: NatureSignalement) -> R<Opti
 
 /// Le nom d'un signalement : `<base>.dsn` ; un annule-et-remplace, `<base>_AR<ordre>.dsn`, a cote du signalement parti
 /// qu'il remplace, qui reste tel qu'il est parti (regle 4).
-fn nom_du_signalement(base: &str, annule_et_remplace: bool, ordre: i64) -> String {
-    if annule_et_remplace {
-        format!("{}_AR{}.dsn", base, ordre)
-    } else {
-        format!("{}.dsn", base)
-    }
+fn nom_du_signalement(base: &str, annule_et_remplace: bool, ordre: i64) -> R<NomDeFichier> {
+    NomDeFichier::lire(&if annule_et_remplace { format!("{}_AR{}.dsn", base, ordre) } else { format!("{}.dsn", base) })
 }
 
 /// UN ARRET EN COURS : celui dont on peut encore apprendre qu'il se prolonge ou que le salarie a repris plus
@@ -1985,7 +1982,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     // saisie verifiee : la plate-forme ne se consulte pas pour un refus.
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
-    let nom = nom_du_signalement(&format!("SignalementFinContrat_{}_{}", cle, fin.fin.aaaammjj()), remplace.is_some(), ordre);
+    let nom = nom_du_signalement(&format!("SignalementFinContrat_{}_{}", cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
     let cible = ctx.racine.join("sorties").join(mois.to_string()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
@@ -2128,7 +2125,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         &format!("Signalement{}_{}_{}", if c.nature == NatureSignalement::Arret { "Arret" } else { "Reprise" }, arret.salarie, dernier.aaaammjj()),
         type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace,
         ordre,
-    );
+    )?;
     let cible = ctx.racine.join("sorties").join(dernier.mois_civil().to_string()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {

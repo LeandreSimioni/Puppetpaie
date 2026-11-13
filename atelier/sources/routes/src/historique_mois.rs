@@ -413,8 +413,8 @@ pub(crate) fn sorte_de(nom: &str) -> &'static str {
 fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let mut out: Vec<Document> = Vec::new();
     let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
-    for nom in noms.filter(|n| !n.ends_with(".zip")) {
-        out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin: format!("sorties/{}/{}", mois, nom), fichier: None, nom });
+    for nom in noms.filter(|n| !n.texte().ends_with(".zip")) {
+        out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin: format!("sorties/{}/{}", mois, nom), fichier: None, nom: nom.into() });
     }
     for d in crate::archives::pieces_de_l_envoi(ctx, mois)? {
         out.push(Document { sorte: sorte_de(&d.nom), salarie: d.salarie, chemin: format!("sorties/{}/envoi/{}", mois, d.nom), fichier: None, nom: d.nom });
