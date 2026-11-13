@@ -89,12 +89,35 @@ fn texte_de(n: roxmltree::Node, chemin: &[&str]) -> Option<String> {
 }
 
 /// LA FICHE D'UNE CONVENTION (un conteneur KALI) : son IDCC, son titre, son etat, et ses textes attaches (identifiant ->
-/// titre, dans l'ordre de la fiche).
+/// titre, dans l'ordre de la fiche). Son IDCC et son etat restent tels que la livraison les ecrit : ils ne se lisent que
+/// pour une convention suivie (`veiller`), une livraison portant aussi toutes les autres.
 pub struct Fiche {
     idcc: Option<String>,
     titre: Option<String>,
-    etat: Option<EtatDuTexteDila>,
+    etat: Option<String>,
     textes: EnOrdre<String>,
+}
+
+/// UN TEXTE MODIFIE, tel que la livraison l'ecrit : il se lit en `Texte` pour un texte d'une convention suivie seulement.
+struct TexteLivre {
+    titre: Option<String>,
+    date_texte: Option<String>,
+    modifie_le: Option<String>,
+    etat: Option<String>,
+    extension: Option<String>,
+}
+
+impl TexteLivre {
+    /// Ce que dit ce texte, lu du fichier `nom` de la livraison.
+    fn lire(&self, nom: &str) -> R<Texte> {
+        Ok(Texte {
+            titre: self.titre.clone(),
+            date_texte: jour_lu(nom, "DATE_TEXTE", self.date_texte.clone())?,
+            modifie_le: jour_lu(nom, "DERNIERE_MODIFICATION", self.modifie_le.clone())?,
+            etat: etat_lu(nom, self.etat.clone())?,
+            extension: self.extension.clone(),
+        })
+    }
 }
 
 /// CE QUE DIT UN TEXTE MODIFIE : son titre, ses dates, son etat, son extension.
@@ -134,7 +157,7 @@ fn jour_lu(nom: &str, element: &str, jour: Option<String>) -> R<Option<Jour>> {
 
 /// Ce qu'une livraison contient : les conteneurs (par identifiant) et les textes modifies (par identifiant : ce qu'il dit,
 /// et le nom de son fichier dans l'archive). Tout, sans filtrer : c'est l'appelant qui sait ce qu'il suit.
-fn lire_livraison(octets: &[u8]) -> R<(EnOrdre<Fiche>, EnOrdre<(Texte, String)>)> {
+fn lire_livraison(octets: &[u8]) -> R<(EnOrdre<Fiche>, EnOrdre<(TexteLivre, String)>)> {
     let mut conteneurs = EnOrdre::new();
     let mut textes = EnOrdre::new();
     for (nom, xml) in fichiers_tar_gz(octets)? {
@@ -155,18 +178,17 @@ fn lire_livraison(octets: &[u8]) -> R<(EnOrdre<Fiche>, EnOrdre<(Texte, String)>)
                         liens.poser(id.to_string(), titre.trim().to_string());
                     }
                 }
-                let etat = etat_lu(&nom, champ("ETAT"))?;
-                conteneurs.poser(ident, Fiche { idcc: champ("NUM"), titre: champ("TITRE"), etat, textes: liens });
+                conteneurs.poser(ident, Fiche { idcc: champ("NUM"), titre: champ("TITRE"), etat: champ("ETAT"), textes: liens });
             }
             "TEXTE_VERSION" => {
                 let chron = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_TEXTE_CHRONICLE", c]);
                 let vers = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_TEXTE_VERSION", c]);
                 let titre = vers("TITRE").or_else(|| vers("TITREFULL"));
-                let texte = Texte {
+                let texte = TexteLivre {
                     titre,
-                    date_texte: jour_lu(&nom, "DATE_TEXTE", chron("DATE_TEXTE"))?,
-                    modifie_le: jour_lu(&nom, "DERNIERE_MODIFICATION", chron("DERNIERE_MODIFICATION"))?,
-                    etat: etat_lu(&nom, vers("ETAT"))?,
+                    date_texte: chron("DATE_TEXTE"),
+                    modifie_le: chron("DERNIERE_MODIFICATION"),
+                    etat: vers("ETAT"),
                     extension: vers("LIBELLE_EXTENSION"),
                 };
                 textes.poser(ident, (texte, nom));
@@ -417,7 +439,8 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                     Ok(i) => i,
                     Err(e) => return Err(refus!("la fiche KALI de {} ({}) : {}", cont, l, e.phrase)),
                 };
-                resume_c.poser(cont.to_string(), ConteneurLu { idcc, etat: c.etat, premiere, nouveaux });
+                let etat = etat_lu(&format!("la fiche KALI de {} ({})", cont, l), c.etat.clone())?;
+                resume_c.poser(cont.to_string(), ConteneurLu { idcc, etat, premiere, nouveaux });
                 for (k, v) in &c.textes.0 {
                     anciens.poser(k.clone(), v.clone());
                 }
@@ -429,7 +452,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                     if relever {
                         poser(dossier, l, ident, membre, &octets)?;
                     }
-                    resume_t.poser(ident.clone(), TexteLu { texte: t.clone(), conteneur: suivi.conteneur.clone() });
+                    resume_t.poser(ident.clone(), TexteLu { texte: t.lire(membre)?, conteneur: suivi.conteneur.clone() });
                 }
             }
         }

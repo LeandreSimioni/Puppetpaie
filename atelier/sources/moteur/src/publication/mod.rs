@@ -38,7 +38,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> Option<i32> {
             format!(
                 "Cle de GitHub fabriquee.\nLa GRAINE (secrete) est dans : {}\n  l'ouvrir, copier tout son contenu dans le secret PUPPETPAIE_CLE_SIGNATURE de l'environnement \
                  « publication » du depot public, puis EFFACER ce fichier.\nLa cle publique (pas secrete), aussi dans {} :\n  {}\n  a reporter dans compagnie/src/maj.rs, CLE_PUBLIQUE_GITHUB.",
-                r.graine, r.publique, r.cle_publique
+                r.graine.display(), r.publique.display(), r.cle_publique
             )
         })
     } else if drapeau("--publier-github") {
