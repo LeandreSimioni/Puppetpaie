@@ -1135,8 +1135,11 @@ fn chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe() {
     let mut fautes = Vec::new();
     let metiers = emplois["emplois"].as_object().unwrap();
     let niveaux: BTreeSet<&str> = metiers.values().filter_map(|m| m["classification_3090"]["niveau"].as_str()).collect();
+    // Ce que le test parcourt n'est jamais vide : une cle renommee le ferait reussir sans rien verifier.
+    let (mut rangements, mut primes, mut lignes_3090) = (0, 0, 0);
     for (idcc, c) in clauses["conventions"].as_object().unwrap() {
         if let Some(par) = c["categories"]["par_niveau_3090"].as_object() {
+            rangements += 1;
             for n in &niveaux {
                 match par.get(*n).and_then(Value::as_str) {
                     Some(cat) if c["categories"]["valeurs"].get(cat).is_some() => {}
@@ -1146,6 +1149,7 @@ fn chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe() {
             }
         }
         if let Some(prime) = c.get("prime_anciennete") {
+            primes += 1;
             for n in &niveaux {
                 let Some(ligne) = prime["niveaux"].get(*n).and_then(Value::as_str) else {
                     fautes.push(format!("clauses {} : la prime d'anciennete n'a pas de ligne pour le niveau {}", idcc, n));
@@ -1163,6 +1167,7 @@ fn chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe() {
     let annexes_3090 = &minima["conventions"]["3090"]["annexes"];
     for (code, m) in metiers {
         for (annexe, ligne) in m["minima"]["3090"].as_object().into_iter().flatten() {
+            lignes_3090 += 1;
             if annexes_3090[annexe.as_str()]["cachets"].get(ligne.as_str().unwrap()).is_none() {
                 fautes.push(format!("emplois {} : la ligne {} n'est pas une grille de cachets de l'annexe {} de la 3090", code, ligne, annexe));
             }
@@ -1179,5 +1184,13 @@ fn chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe() {
             }
         }
     }
+    assert!(
+        !niveaux.is_empty() && rangements > 0 && primes > 0 && lignes_3090 > 0,
+        "le test ne parcourt rien : niveaux 3090 {}, par_niveau_3090 {}, primes d'anciennete {}, lignes de minima 3090 {}",
+        niveaux.len(),
+        rangements,
+        primes,
+        lignes_3090
+    );
     assert!(fautes.is_empty(), "chaque cle des grilles et des clauses citee existe dans le fichier qu'elle designe :\n{}", fautes.join("\n"));
 }

@@ -682,6 +682,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
 | répartition de la tranche 1 | `RepartitionDeLaTrancheUne` | `droit/src/bareme.rs` |
+| part de la tranche 1 | `PartDeLaTrancheUne` | `droit/src/bareme.rs` |
 | majoration de la caisse des congés | `MajorationCaisseConges` | `droit/src/forme_bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
 | rôle d'un contrat d'organisme | `RoleDuContrat` | `droit/src/organismes.rs` |
