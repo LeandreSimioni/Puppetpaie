@@ -988,6 +988,19 @@ impl NumeroObjetSpectacle {
     pub fn en_capitales(&self) -> NumeroObjetSpectacle {
         NumeroObjetSpectacle(self.0.to_ascii_uppercase())
     }
+
+    /// L'ANNEE OU L'EMPLOYEUR A DEMANDE LE NUMERO : ses deux premiers caracteres (circulaire Unedic 2016-25, fiche 2,
+    /// § 1.1.3.2 « Composition du numéro d'objet », `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`,
+    /// l. 5681-5700 : « 2 caractères pour l'année (année de la demande de numéro par l'employeur) »). `None` quand ce ne
+    /// sont pas deux chiffres : le texte dit deux caractères, pas deux chiffres, et un numero qui ne les a pas ne dit pas
+    /// son annee. INFERENCE : le siecle (`2000 +`) ; le texte ne donne que deux caracteres, et le numero n'est exige sur
+    /// l'AEM qu'au-dela du 31 mars 2008 (meme fichier, l. 5705).
+    pub fn annee_de_la_demande(&self) -> Option<i32> {
+        match self.0.as_bytes() {
+            [d @ b'0'..=b'9', u @ b'0'..=b'9', ..] => Some(2000 + i32::from(d - b'0') * 10 + i32::from(u - b'0')),
+            _ => None,
+        }
+    }
 }
 
 notion_lue!(NumeroObjetSpectacle rangee par sans_blancs_de_bord);

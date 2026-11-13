@@ -926,7 +926,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             index.entry((nir, d, f)).or_default().push((mois, contrat, Cible::Historique(cle)));
         }
     }
-    let mut prises: HashMap<String, (String, usize, Decimal, Decimal)> = HashMap::new();
+    /// La paie qu'une page de bulletin dit : une paie declaree (son mois, sa cle), ou, rattachee a aucune, ses dates.
+    #[derive(PartialEq, Eq, Hash)]
+    enum PaieDeLaPage {
+        Declaree(Mois, CleDePaieVersee),
+        Datee(Jour, Jour),
+    }
+    // Deux pages qui disent la meme paie du meme salarie : la copie et la page de la premiere, ses montants.
+    let mut prises: HashMap<(Nir, PaieDeLaPage), (String, usize, Decimal, Decimal)> = HashMap::new();
     let (mut paies_nouvelles, mut paies_completees) = (0usize, 0usize);
     let mut paies_liste: Vec<PaieLue> = Vec::new();
     let mut contrats_liste: Vec<ContratLu> = Vec::new();
@@ -983,10 +990,13 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
         }
         let cible = candidats.into_iter().next();
-        let ident = match &cible {
-            Some((mois, contrat, _)) => format!("paie {} {} {}", mois, l.nir, contrat.dite()),
-            None => format!("bulletin {} {} {}", l.nir, debut.iso(), fin.iso()),
-        };
+        let ident = (
+            l.nir.clone(),
+            match &cible {
+                Some((mois, contrat, _)) => PaieDeLaPage::Declaree(*mois, contrat.clone()),
+                None => PaieDeLaPage::Datee(debut, fin),
+            },
+        );
         if let Some((autre, page, brut, net)) = prises.get(&ident) {
             let (sort, raison) = if *brut == l.b.brut && *net == l.b.net_a_payer {
                 (Sort::DejaRepris, format!("le même bulletin est déjà lu : {} page {}", autre, page))

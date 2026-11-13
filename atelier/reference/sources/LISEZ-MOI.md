@@ -25,7 +25,9 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `iso-32000/adobe-iso32000-1-pdf17-20261111.pdf` : transcription (extraits) `iso-32000/adobe-iso32000-1-pdf17-extraits-20261111.md`
 - `spiac-cgt-pav-minima-20260101.xlsx` : transcription `spiac-cgt-pav-minima-20260101.csv`
 - `syndeac-ccneac-artistes-dramatiques-nao-2026.xlsx` : transcription `syndeac-ccneac-artistes-dramatiques-nao-2026.csv`
-- `unedic-circulaire-2016-25-annexes-8-10.pdf` : transcription `unedic-circulaire-2016-25-annexes-8-10.txt`
+- `unedic-circulaire-2016-25-annexes-8-10.pdf` : transcription `unedic-circulaire-2016-25-annexes-8-10.txt` ; le moteur
+  s'en sert dans `droit::fiche::NumeroObjetSpectacle::annee_de_la_demande` (fiche 2, § 1.1.3.2, l'année d'un numéro
+  d'objet)
 - `unicode/unicode-norme-18.0.0-chapitre-3-20261015.html` : transcription (extraits) `unicode/unicode-norme-18.0.0-chapitre-3-extraits-20261015.md`
 - `unicode/unicode-politique-de-stabilite-20261015.html` : transcription (extraits) `unicode/unicode-politique-de-stabilite-extraits-20261015.md`
 
