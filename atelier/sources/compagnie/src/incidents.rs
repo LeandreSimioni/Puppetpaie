@@ -106,7 +106,7 @@ pub struct Ligne {
     pub quand: Moment,
     /// La version du logiciel ; vide quand `VERSION` ne se lisait pas (`version`).
     pub version: Option<crate::maj::VersionDuLogiciel>,
-    pub empreinte: String,
+    pub empreinte: CleDIncident,
     pub ou: String,
     pub genre: String,
     pub resume: String,
@@ -242,13 +242,56 @@ fn nettoyer(s: &str, trouve: &mut Vec<&'static str>, limite: usize) -> String {
     tete(&propre, limite)
 }
 
+/// LA CLE D'UN INCIDENT : ce qui fait que deux incidents sont le meme (la nature, l'endroit, le genre), les douze
+/// premiers hexadecimaux minuscules du SHA-256 de `nature|ou|quoi`. Ce n'est pas une empreinte d'un contenu
+/// (`socle::fichiers::Empreinte`) : la forme que son seul ecrivain fait (`empreinte`), lue strictement ; elle s'ecrit
+/// et se lit par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CleDIncident(String);
+
+impl CleDIncident {
+    /// La cle ecrite `texte` ; refus si elle n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<CleDIncident> {
+        let forme = texte.len() == 12 && texte.bytes().all(|o| o.is_ascii_digit() || (b'a'..=b'f').contains(&o));
+        if !forme {
+            return Err(socle::refus!("Clé d'incident {} : elle s'écrit en douze chiffres hexadécimaux minuscules.", socle::fichiers::repr(texte)));
+        }
+        Ok(CleDIncident(texte.to_string()))
+    }
+
+    /// La cle telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CleDIncident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CleDIncident {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CleDIncident> {
+        CleDIncident::lire(&s)
+    }
+}
+
+impl From<CleDIncident> for String {
+    fn from(c: CleDIncident) -> String {
+        c.0
+    }
+}
+
 /// Ce qui fait que deux incidents sont LE MEME -- la
 /// nature, l'endroit et le genre, pas le message.
-pub fn empreinte(nature: Nature, ou: &str, quoi: &str) -> String {
+pub fn empreinte(nature: Nature, ou: &str, quoi: &str) -> CleDIncident {
     use sha2::{Digest, Sha256};
     let graine = format!("{}|{}|{}", nature.nom(), ou, quoi);
     let h = Sha256::digest(graine.as_bytes());
-    h.iter().map(|o| format!("{:02x}", o)).collect::<String>()[..12].to_string()
+    CleDIncident(h.iter().take(6).map(|o| format!("{:02x}", o)).collect())
 }
 
 // ------------------------------------------------------------------------ ecrire
@@ -532,7 +575,7 @@ pub fn lire(racine: &Path, nature: Option<Nature>, en_attente_seulement: bool) -
 /// Un paquet d'incidents semblables (`regrouper`).
 #[derive(Debug, Clone, Serialize)]
 pub struct Paquet {
-    pub empreinte: String,
+    pub empreinte: CleDIncident,
     pub quoi: Nature,
     pub ou: String,
     pub genre: String,
@@ -551,7 +594,7 @@ pub struct Paquet {
 /// tete. Les natures qui ne se regroupent pas rendent une entree par ligne.
 pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
     // (cle de regroupement, paquet) dans l'ordre d'insertion.
-    let mut paquets: Vec<(Option<String>, Paquet)> = Vec::new();
+    let mut paquets: Vec<(Option<CleDIncident>, Paquet)> = Vec::new();
     for l in lire(racine, nature, false)? {
         let cle = l.quoi.se_regroupe().then(|| l.empreinte.clone());
         let existant = match &cle {
@@ -627,7 +670,7 @@ pub struct PourLEditeur {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: Moment,
     pub version: Option<crate::maj::VersionDuLogiciel>,
-    pub empreinte: String,
+    pub empreinte: CleDIncident,
     pub ou: String,
     pub genre: String,
     pub resume: String,
@@ -793,7 +836,7 @@ pub fn edition() -> String {
 #[serde(deny_unknown_fields)]
 pub struct AnneeRetenue {
     pub paies: u64,
-    pub poste: String,
+    pub poste: NumeroDePoste,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub parti_le: Moment,
 }
@@ -807,13 +850,13 @@ pub struct ConfigDiagnostic {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub envoi: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub poste: Option<String>,
+    pub poste: Option<NumeroDePoste>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub serveur: Option<Url>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub paies_annuelles: Option<BTreeMap<String, AnneeRetenue>>,
+    pub paies_annuelles: Option<BTreeMap<socle::mois::Annee, AnneeRetenue>>,
 }
 
 /// `config/diagnostic.json` de `racine` : rien n'est pose sans le fichier ; un fichier qui ne se lit pas se refuse.
@@ -855,9 +898,46 @@ pub fn regler_envoi(racine: &Path, actif: bool) -> R<()> {
     ecrire_config(racine, &c)
 }
 
-/// Un numero de poste tel que le serveur les donne : 32 hexadecimaux.
-fn numero_de_poste(s: &str) -> bool {
-    s.len() == 32 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+/// LE NUMERO DE CE POSTE CHEZ L'EDITEUR, tel que le serveur du filet le donne (`POST /poste`) : 32 hexadecimaux
+/// minuscules (`RE_POSTE` de `infra/filet/filet_serveur.py`). Il s'ecrit et se lit par son texte ; une autre forme se
+/// refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct NumeroDePoste(String);
+
+impl NumeroDePoste {
+    /// Le numero ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<NumeroDePoste> {
+        let forme = texte.len() == 32 && texte.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if !forme {
+            return Err(socle::refus!("Numéro de poste {} : il s'écrit en 32 chiffres hexadécimaux minuscules.", socle::fichiers::repr(texte)));
+        }
+        Ok(NumeroDePoste(texte.to_string()))
+    }
+
+    /// Le numero tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NumeroDePoste {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for NumeroDePoste {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<NumeroDePoste> {
+        NumeroDePoste::lire(&s)
+    }
+}
+
+impl From<NumeroDePoste> for String {
+    fn from(n: NumeroDePoste) -> String {
+        n.0
+    }
 }
 
 /// Une cle de poste telle que le serveur les donne : 64 hexadecimaux.
@@ -868,9 +948,9 @@ fn cle_de_poste(s: &str) -> bool {
 /// Le numero de ce poste chez l'editeur, tel que le serveur l'a donne (`config/diagnostic.json`, dans la compagnie dont
 /// vient la configuration) ; aucun tant qu'aucune identite n'a ete demandee. Ne demande rien : c'est `client_du_poste`
 /// qui le fait, a l'envoi.
-pub fn poste(racine: &Path) -> R<Option<String>> {
+pub fn poste(racine: &Path) -> R<Option<NumeroDePoste>> {
     let (_, ou) = configuration(racine)?;
-    Ok(lire_config(&ou)?.poste.filter(|n| numero_de_poste(n)))
+    Ok(lire_config(&ou)?.poste)
 }
 
 /// `client_du_poste` : le client des actions de l'editeur chez `serveur`, avec
@@ -883,7 +963,7 @@ pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet
     let mut c = lire_config(ou)?;
     let serveur = Url::lire(serveur.texte().trim_end_matches('/'))?;
     let connue = match (&c.poste, &c.cle, &c.serveur) {
-        (Some(n), Some(k), Some(s)) if numero_de_poste(n) && cle_de_poste(k) && s.texte().trim_end_matches('/') == serveur.texte() => Some((n.clone(), k.clone())),
+        (Some(n), Some(k), Some(s)) if cle_de_poste(k) && s.texte().trim_end_matches('/') == serveur.texte() => Some((n.clone(), k.clone())),
         _ => None,
     };
     let (numero, cle) = match connue {
@@ -893,7 +973,7 @@ pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet
                 Ok(r) => r,
                 Err(e) => return Ok(Err(e)),
             };
-            if !numero_de_poste(&r.poste) || !cle_de_poste(&r.cle) {
+            if !cle_de_poste(&r.cle) {
                 return Ok(Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}/poste n'a pas rendu une identité de poste.", serveur), 0)));
             }
             c.poste = Some(r.poste.clone());
@@ -965,7 +1045,7 @@ pub fn canal(racine: &Path) -> R<Canal> {
 }
 
 /// Passe a `depose` les lignes nommees par (empreinte, quand).
-fn marquer(racine: &Path, cles: &[(String, Moment)]) -> R<usize> {
+fn marquer(racine: &Path, cles: &[(CleDIncident, Moment)]) -> R<usize> {
     if cles.is_empty() {
         return Ok(0);
     }
@@ -1034,7 +1114,7 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
                 break;
             }
         };
-        let cles: Vec<(String, Moment)> = r.recus.into_iter().chain(r.ecartes).collect();
+        let cles: Vec<(CleDIncident, Moment)> = r.recus.into_iter().chain(r.ecartes).collect();
         bilan.envoyes += marquer(racine, &cles)?;
     }
     bilan.reste = lire(racine, None, true)?.len();

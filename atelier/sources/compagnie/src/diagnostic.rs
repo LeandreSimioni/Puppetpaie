@@ -1148,7 +1148,7 @@ pub struct Machine {
     pub disque_libre_mo: Lu<u64>,
     pub installation: String,
     pub chemin: String,
-    pub edition: String,
+    pub edition: crate::bridage::EtatDuBridage,
     pub compagnie: String,
     pub langue_systeme: Option<String>,
     /// Depuis combien de temps le moteur tourne, en mots.
@@ -1198,7 +1198,7 @@ pub fn machine(racine: &Path) -> Machine {
         disque_libre_mo: disque_libre(racine),
         installation: installation.to_string(),
         chemin: chemin_sans_session(&base),
-        edition: crate::bridage::etat().to_string(),
+        edition: crate::bridage::etat(),
         compagnie: match crate::installation::est_fictive(racine) {
             Ok(true) => "fictive".to_string(),
             Ok(false) => "réelle (non nommée)".to_string(),
@@ -1216,9 +1216,9 @@ pub fn machine(racine: &Path) -> Machine {
 /// Un depot du mois, tel qu'un incident le dit : l'acte, quand, le mode, accepte ou non, et les verdicts des organismes.
 #[derive(Debug, serde::Serialize)]
 pub struct DepotDit {
-    quoi: String,
+    quoi: envois::ligne::Acte,
     quand: socle::paris::InstantOuJour,
-    mode: String,
+    mode: envois::ligne::Mode,
     accepte: bool,
     retours: Vec<String>,
 }
@@ -1241,9 +1241,9 @@ pub fn etat_du_mois(racine: &Path, mois: socle::mois::Mois) -> R<EtatDuMois> {
         .iter()
         .filter(|d| d.mois() == Some(mois))
         .map(|d| DepotDit {
-            quoi: d.acte().nom().to_string(),
+            quoi: d.acte(),
             quand: d.quand(),
-            mode: d.mode().nom().to_string(),
+            mode: d.mode(),
             accepte: d.accepte(),
             retours: d
                 .retours_organisme()

@@ -27,16 +27,31 @@ use std::path::Path;
 
 const FICHIER_GESTE: &str = ".edition.json";
 const FICHIER_INSTALLATION: &str = "EDITION.json";
-pub const BRIDE: &str = "bride";
-pub const DEBLOQUE: &str = "debloque";
 
-/// Un mot du bridage : `Some(true)` bride, `Some(false)` debloque ; `"demo"` et `"complete"`, que portent des
-/// installations posees, se lisent aussi (en tete du module).
-fn bride_selon(mot: &str) -> Option<bool> {
-    match mot {
-        BRIDE | "demo" => Some(true),
-        DEBLOQUE | "complete" => Some(false),
-        _ => None,
+/// L'ETAT DU BRIDAGE : bride ou debloque. Il s'ecrit `bride`, `debloque` ; `demo` se lit aussi « bride » et `complete`
+/// « debloque », les mots que portent des installations posees (en tete du module).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EtatDuBridage {
+    #[serde(alias = "demo")]
+    Bride,
+    #[serde(alias = "complete")]
+    Debloque,
+}
+
+impl EtatDuBridage {
+    /// Le mot tel qu'il s'ecrit.
+    pub fn texte(self) -> &'static str {
+        match self {
+            EtatDuBridage::Bride => "bride",
+            EtatDuBridage::Debloque => "debloque",
+        }
+    }
+}
+
+impl std::fmt::Display for EtatDuBridage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.texte())
     }
 }
 
@@ -45,19 +60,19 @@ fn bride_selon(mot: &str) -> Option<bool> {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Edition {
-    edition: String,
+    edition: EtatDuBridage,
     #[serde(skip_serializing_if = "Option::is_none")]
     quoi: Option<String>,
 }
 
-/// Ce que le fichier `p` dit du bridage : `Some(true)` bride, `Some(false)` debloque ; `None` s'il ne le dit pas (absent,
-/// illisible, un autre mot). Le bridage tient a ce qui est dit : rien de ce qui ne se lit pas ne debloque.
-fn dit(p: &Path) -> Option<bool> {
+/// Ce que le fichier `p` dit du bridage ; `None` s'il ne le dit pas (absent, ou illisible : un autre mot ne se lit pas).
+/// Le bridage tient a ce qui est dit : rien de ce qui ne se lit pas ne debloque.
+fn dit(p: &Path) -> Option<EtatDuBridage> {
     if !p.exists() {
         return None;
     }
     match socle::forme::lire_fichier::<Edition>(p, "Le fichier du bridage ne se lit pas.") {
-        Ok(e) => bride_selon(&e.edition),
+        Ok(e) => Some(e.edition),
         // Il ne debloque pas ; le developpeur le saura (le fil du moteur).
         Err(illisible) => {
             crate::diagnostic::noter_moteur(&format!("bridage : {}", illisible.phrase));
@@ -74,7 +89,7 @@ pub fn paquet_soude() -> bool {
 
 /// Le paquet soude de l'installation `inst` (le dossier qui porte `logiciel/`).
 pub fn paquet_soude_de(inst: &Path) -> bool {
-    dit(&inst.join("logiciel").join(FICHIER_INSTALLATION)) == Some(true)
+    dit(&inst.join("logiciel").join(FICHIER_INSTALLATION)) == Some(EtatDuBridage::Bride)
 }
 
 /// Bride ou debloque, pour le logiciel qui tourne (`est_bride_de`).
@@ -88,7 +103,7 @@ pub fn est_bride_de(inst: &Path) -> bool {
     if paquet_soude_de(inst) {
         return true;
     }
-    dit(&inst.join(FICHIER_GESTE)) != Some(false)
+    dit(&inst.join(FICHIER_GESTE)) != Some(EtatDuBridage::Debloque)
 }
 
 /// LE REFUS D'UN ENVOI DEPUIS UNE FICTIVE AJOUTEE, mot pour mot : le meme pour tout geste
@@ -116,19 +131,19 @@ pub fn branchement(racine: &Path) -> socle::echec::R<envois::branchement::Branch
     })
 }
 
-/// Le mot qui le dit (le journal des incidents, la description du poste) : `bride` ou `debloque`.
-pub fn etat() -> &'static str {
+/// Ce qu'il est, pour le logiciel qui tourne (le journal des incidents, la description du poste).
+pub fn etat() -> EtatDuBridage {
     if est_bride() {
-        BRIDE
+        EtatDuBridage::Bride
     } else {
-        DEBLOQUE
+        EtatDuBridage::Debloque
     }
 }
 
 /// L'installation `inst` bridee en toutes lettres, comme le geste de l'accueil la laisse (`.edition.json`) : celle du rejeu
 /// d'un scenario (`routes::scenario`).
 pub fn brider(inst: &Path) -> socle::echec::R<()> {
-    socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2)
+    socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: EtatDuBridage::Bride, quoi: None }, 2)
 }
 
 /// LE GESTE SECRET DE L'ACCUEIL (la route `basculer`), sur l'installation `inst` : bride <-> debloque, retenu sur le
@@ -137,11 +152,11 @@ pub fn basculer_de(inst: &Path) -> socle::echec::R<()> {
     if paquet_soude_de(inst) {
         return Ok(());
     }
-    let nouveau = if est_bride_de(inst) { DEBLOQUE } else { BRIDE };
+    let nouveau = if est_bride_de(inst) { EtatDuBridage::Debloque } else { EtatDuBridage::Bride };
     socle::ecriture::ecrire_json(
         &inst.join(FICHIER_GESTE),
         &Edition {
-            edition: nouveau.to_string(),
+            edition: nouveau,
             quoi: Some("Le bridage de PuppetPaie sur ce poste : bride (l'accueil ne propose que les compagnies fictives) ou debloque. Change par le geste de l'accueil.".to_string()),
         },
         2,

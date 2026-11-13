@@ -24,7 +24,10 @@ use serde::{Deserialize, Serialize};
 
 use socle::echec::{Classe, Echec};
 use socle::garde_reseau::Url;
+use socle::mois::Annee;
 use envois::transport::{envoyer, Panne, Requete};
+
+use crate::incidents::{CleDIncident, NumeroDePoste};
 
 /// Ce que le paquet soude (bride pour toujours) peut poster.
 pub const ACTIONS_BRIDEES: [&str; 4] = ["poste", "rapport", "retour", "reponses"];
@@ -86,7 +89,7 @@ impl ErreurFilet {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Identite {
-    pub poste: String,
+    pub poste: NumeroDePoste,
     pub cle: String,
 }
 
@@ -97,26 +100,72 @@ pub struct Identite {
 #[serde(deny_unknown_fields)]
 pub struct Rapport {
     #[serde(deserialize_with = "cles_lues")]
-    pub recus: Vec<(String, socle::paris::Moment)>,
+    pub recus: Vec<(CleDIncident, socle::paris::Moment)>,
     #[serde(deserialize_with = "cles_lues")]
-    pub ecartes: Vec<(String, socle::paris::Moment)>,
+    pub ecartes: Vec<(CleDIncident, socle::paris::Moment)>,
 }
 
 /// Les cles `(empreinte, quand)` d'un rapport, le `quand` ecrit `AAAA-MM-JJTHH:MM:SS` (`socle::paris::ecrit::seconde`).
-fn cles_lues<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<(String, socle::paris::Moment)>, D::Error> {
-    Vec::<(String, String)>::deserialize(d)?
+fn cles_lues<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<(CleDIncident, socle::paris::Moment)>, D::Error> {
+    Vec::<(CleDIncident, String)>::deserialize(d)?
         .into_iter()
         .map(|(e, q)| Ok((e, socle::paris::ecrit::seconde::deserialize(serde::de::value::StrDeserializer::<D::Error>::new(&q))?)))
         .collect()
 }
 
-/// `POST /retour` : le numero que l'utilisateur lit, et l'adresse ou l'editeur le suit si elle est deja ouverte (vide
-/// sinon ; son numero absent).
+/// LE NUMERO D'UN RETOUR : celui que le serveur du filet donne a un message au developpeur, et que l'utilisateur lit
+/// (`R-` et six hexadecimaux majuscules, `RE_NUMERO_RETOUR` de `infra/filet/filet_serveur.py`). Ce n'est pas le
+/// numero du ticket qui le suit (`ticket_numero`). Il s'ecrit et se lit par son texte ; une autre forme se refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct NumeroDeRetour(String);
+
+impl NumeroDeRetour {
+    /// Le numero ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> socle::echec::R<NumeroDeRetour> {
+        let forme = match texte.strip_prefix("R-") {
+            Some(h) => h.len() == 6 && h.bytes().all(|o| o.is_ascii_digit() || (b'A'..=b'F').contains(&o)),
+            None => false,
+        };
+        if !forme {
+            return Err(socle::refus!("Numéro de retour {} : il s'écrit « R- » suivi de six chiffres hexadécimaux majuscules.", socle::fichiers::repr(texte)));
+        }
+        Ok(NumeroDeRetour(texte.to_string()))
+    }
+
+    /// Le numero tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NumeroDeRetour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for NumeroDeRetour {
+    type Error = Echec;
+    fn try_from(s: String) -> socle::echec::R<NumeroDeRetour> {
+        NumeroDeRetour::lire(&s)
+    }
+}
+
+impl From<NumeroDeRetour> for String {
+    fn from(n: NumeroDeRetour) -> String {
+        n.0
+    }
+}
+
+/// `POST /retour` : le numero que l'utilisateur lit, et l'adresse ou l'editeur le suit si elle est deja ouverte (le
+/// serveur ecrit `""` sinon : aucune ; son numero absent).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Retour {
-    pub numero: String,
-    pub ticket: String,
+    pub numero: NumeroDeRetour,
+    #[serde(deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    pub ticket: Option<Url>,
     pub ticket_numero: Option<i64>,
 }
 
@@ -132,7 +181,7 @@ pub struct Reponses {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReponseDuServeur {
-    pub numero: String,
+    pub numero: NumeroDeRetour,
     pub reponse: String,
     #[serde(deserialize_with = "socle::paris::ecrit::minute_utc::vide_ou")]
     pub repondu_le: Option<socle::paris::Moment>,
@@ -143,7 +192,8 @@ pub struct ReponseDuServeur {
 #[serde(deny_unknown_fields)]
 pub struct Paies {
     pub recu: bool,
-    pub annee: i32,
+    #[serde(with = "socle::mois::en_nombre")]
+    pub annee: Annee,
     pub paies: usize,
 }
 
@@ -163,7 +213,7 @@ struct Rien {}
 /// Une action du poste : le numero du poste, et ce qu'elle porte.
 #[derive(Serialize)]
 struct DuPoste<'a, C: Serialize> {
-    poste: &'a str,
+    poste: &'a NumeroDePoste,
     #[serde(flatten)]
     corps: C,
 }
@@ -175,13 +225,14 @@ struct Incidents<'a, I: Serialize> {
 
 #[derive(Serialize)]
 struct CompteDesPaies {
-    annee: i32,
+    #[serde(with = "socle::mois::en_nombre")]
+    annee: Annee,
     paies: usize,
 }
 
 #[derive(Serialize)]
 struct Numeros<'a> {
-    numeros: &'a [String],
+    numeros: &'a [NumeroDeRetour],
 }
 
 /// Le message d'`EditionBridee(quoi)`.
@@ -342,13 +393,13 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action:
 pub struct Client {
     /// Le serveur, tel que le reglage le dit ; `poster` ote sa barre finale.
     pub serveur: Url,
-    pub poste: (String, String),
+    pub poste: (NumeroDePoste, String),
 }
 
 impl Client {
     /// Le client des actions de l'editeur, avec l'identite de ce poste.
-    pub fn du_poste(serveur: &Url, numero: &str, cle_du_poste: &str) -> Client {
-        Client { serveur: serveur.clone(), poste: (numero.to_string(), cle_du_poste.to_string()) }
+    pub fn du_poste(serveur: &Url, numero: &NumeroDePoste, cle_du_poste: &str) -> Client {
+        Client { serveur: serveur.clone(), poste: (numero.clone(), cle_du_poste.to_string()) }
     }
 
     /// `POST /poste` : l'identite que le serveur donne a ce poste, rendue une seule fois (il n'en garde que l'empreinte).
@@ -374,7 +425,7 @@ impl Client {
 
     /// Le nombre de paies de l'annee (`nombre_de_paies`) : `{"annee", "paies"}` et le numero du poste, rien
     /// d'autre.
-    pub fn compter_paies(&self, annee: i32, paies: usize) -> Result<Paies, ErreurFilet> {
+    pub fn compter_paies(&self, annee: Annee, paies: usize) -> Result<Paies, ErreurFilet> {
         self.post_du_poste("paies", CompteDesPaies { annee, paies }, DELAI)
     }
 
@@ -384,7 +435,7 @@ impl Client {
     }
 
     /// `POST /reponses` : les reponses aux messages `numeros`.
-    pub fn reponses(&self, numeros: &[String]) -> Result<Reponses, ErreurFilet> {
+    pub fn reponses(&self, numeros: &[NumeroDeRetour]) -> Result<Reponses, ErreurFilet> {
         self.post_du_poste("reponses", Numeros { numeros }, DELAI)
     }
 }

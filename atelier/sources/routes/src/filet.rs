@@ -259,7 +259,7 @@ struct Compte {
 struct IncidentNote {
     phrase: &'static str,
     note: bool,
-    empreinte: Option<String>,
+    empreinte: Option<incidents::CleDIncident>,
 }
 
 /// Ce que rendent `incidents-lire` et `incidents-regrouper` : les lignes gardees (`compagnie::incidents`), en phrases.
@@ -317,7 +317,7 @@ pub(crate) struct Signalements {
 #[derive(Debug, Serialize)]
 struct Envoye {
     phrase: String,
-    id: String,
+    id: problemes::IdDeMessage,
     deja: bool,
     signalements: Vec<SignalementDit>,
     non_lues: usize,
@@ -527,9 +527,10 @@ fn quoi_dit(quoi: Nature) -> &'static str {
 fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let (serveur, _) = incidents::configuration(racine)?;
     let lignes = incidents::lire(racine, None, false)?;
-    let mut groupes: Vec<(String, Groupe)> = Vec::new();
+    // Un groupe par cle d'incident ; un rejet de declaration, qui ne se regroupe pas, a la sienne avec son instant.
+    let mut groupes: Vec<((incidents::CleDIncident, Option<Moment>), Groupe)> = Vec::new();
     for l in &lignes {
-        let cle = if l.quoi.se_regroupe() { l.empreinte.clone() } else { format!("{}|{}", l.empreinte, socle::paris::ecrit::seconde::texte(l.quand)) };
+        let cle = (l.empreinte.clone(), (!l.quoi.se_regroupe()).then_some(l.quand));
         let i = match groupes.iter().position(|(k, _)| *k == cle) {
             Some(i) => i,
             None => {

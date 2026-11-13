@@ -122,11 +122,11 @@ fn tete(s: &str, n: usize) -> String {
 pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec::R<usize> {
     let voc = vocabulaire()?;
     let cr = &lu.ap.reponse.tri.fichiers;
-    let deja: BTreeSet<String> = incidents::lire(&ctx.racine, None, false)?
+    let deja: BTreeSet<incidents::CleDIncident> = incidents::lire(&ctx.racine, None, false)?
         .iter()
         .map(|l| l.empreinte.clone())
         .collect();
-    let mut vues: HashSet<String> = HashSet::new();
+    let mut vues: HashSet<incidents::CleDIncident> = HashSet::new();
     let mut notes = 0;
     for (f, c) in lu.tri.fichiers.iter().zip(cr.iter()) {
         if f.sorte != Sorte::PdfTexte || !c.sort.non_repris() {
