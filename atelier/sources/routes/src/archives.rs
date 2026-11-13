@@ -946,6 +946,10 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
         partis: None,
         echec_a: None,
     };
+    // Le nom de chaque `.eml` garde se fait avant l'envoi : rien ne se refuse apres que les courriels sont partis.
+    let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
+    let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
+    let emls = messages.iter().map(|m| NomDeFichier::lire(&format!("{}_CASC-SVP_{}.eml", horodate, m.pour))).collect::<R<Vec<_>>>()?;
     let mut copies: Vec<Vec<u8>> = Vec::new();
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,
@@ -958,13 +962,9 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     // Ce que l'envoi garde : les deux messages tels qu'ils sont partis.
     let garde = std::path::Path::new(&r.dossier).join("envoyes");
     std::fs::create_dir_all(&garde).map_err(|e| socle::echec::du_disque(&garde, &e).reclasser(Classe::Disque))?;
-    let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
-    let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
-    let mut emls: Vec<NomDeFichier> = Vec::new();
-    for (m, brut) in messages.iter().zip(&copies) {
-        let p = garde.join(format!("{}_CASC-SVP_{}.eml", horodate, m.pour));
+    for (nom, brut) in emls.iter().zip(&copies) {
+        let p = garde.join(nom);
         std::fs::write(&p, brut).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
-        emls.push(NomDeFichier::du(&p)?);
     }
     detail.eml = emls.clone();
     noter(ctx, journal::Ligne::RegularisationCasc(par_courriel(None, qui, true, &partis.join(", "), &format!("{} courriel(s) envoye(s)", partis.len()), detail, None)))?;
