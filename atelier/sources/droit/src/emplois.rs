@@ -112,7 +112,7 @@ pub struct FicheDuCatalogue {
     pub conventions_hors_liste: Option<Vec<Idcc>>,
     /// IDCC -> le classement conventionnel du metier dans cette convention.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub classement: Option<BTreeMap<String, String>>,
+    pub classement: Option<BTreeMap<Idcc, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub classification_1285: Option<Classification1285>,
     #[serde(skip_serializing_if = "Option::is_none")]

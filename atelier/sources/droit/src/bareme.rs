@@ -15,7 +15,7 @@ use crate::assiette::Assiette;
 use crate::base_assujettie::{BaseAssujettie, TypeDeComposant};
 use crate::code_cotisation::CodeCotisation81;
 use crate::natures::{AuMois, Nature};
-use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, Nic, SalarieDuContrat, Siret, Statut, StatutCategorielRc};
+use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, Nic, SalarieDuContrat, Siret, Statut, StatutCategorielRc, IDCC_3090};
 use socle::date::Jour;
 use socle::echec::{Lieu, Echec, R};
 use socle::forme::Court;
@@ -609,7 +609,7 @@ n'est calcule.",
 /// (`sante_conventionnelle`) ou le contrat de la compagnie. `None` : la 3090, dont le niveau se lit sur le bulletin
 /// d'adhesion du salarie (`sante_svp`), ou une compagnie qui n'a pas dit sa convention.
 pub fn sante_hors_fiche(ent: &ChampsEntreprise) -> R<Option<String>> {
-    let Some(idcc) = ent.idcc.portee() else {
+    let Some(idcc) = ent.idcc.dite() else {
         return Ok(None);
     };
     if prevoyance::a_un_regime_de_sante(ent)? {
@@ -618,7 +618,7 @@ pub fn sante_hors_fiche(ent: &ChampsEntreprise) -> R<Option<String>> {
             idcc
         )));
     }
-    if idcc == "3090" {
+    if *idcc == IDCC_3090 {
         return Ok(None);
     }
     Ok(Some(format!(
@@ -647,7 +647,7 @@ pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, n
         }
         None => {}
     }
-    if let Some(idcc) = ent.idcc.portee().filter(|i| *i != "3090") {
+    if let Some(idcc) = ent.idcc.dite().filter(|i| **i != IDCC_3090) {
         // Une convention sans regime de sante a elle : le contrat de l'entreprise.
         let choix = ent.permanent.ouvrir(au_mois).sante_permanents.dite();
         let Some(taux_contrat) = choix.and_then(|c| c.taux_contrat.dite()) else {
@@ -858,7 +858,7 @@ pub fn casc_exemptee(ent: &ChampsEntreprise, cinquante: Option<&crate::contexte:
 
 /// Retire la CASC-SVP (rubrique `ccn` de la 3090) d'une entreprise exemptee.
 pub fn bareme_casc(mut bar: Pile, ent: &EntrepriseLue) -> Pile {
-    if ent.fiche.idcc.portee() != Some("3090") || !casc_exemptee(&ent.fiche, ent.cinquante.as_ref(), ent.cse.as_ref()) {
+    if ent.fiche.idcc.dite() != Some(&IDCC_3090) || !casc_exemptee(&ent.fiche, ent.cinquante.as_ref(), ent.cse.as_ref()) {
         return bar;
     }
     bar.rubriques_bulletin.retain(|r| r.id != CCN);

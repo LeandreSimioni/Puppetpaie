@@ -1239,7 +1239,7 @@ recalculer le bulletin si le salarie est dispense, retirer la dispense de la fic
 declare.",
                 qui_contrat(p),
                 motif,
-                ent.idcc.portee().into_iter().map(|i| format!(" (convention {})", i)).collect::<String>()
+                ent.idcc.dite().into_iter().map(|i| format!(" (convention {})", i)).collect::<String>()
             ),
             "sante_dispense",
         ));
@@ -1470,7 +1470,7 @@ fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, 
                 return Err(refus!(
                     "Convention {} : le {} se declare en DSN depuis {}, sous une adhesion Audiens, et les organismes \
 du mois n'ont pas l'adhesion de cette contribution, que le logiciel compose depuis le bareme. Rien n'est ecrit.",
-                    ent.idcc.ecrite("idcc")?,
+                    ent.idcc.exigee("idcc")?,
                     nom,
                     spec.en_dsn_depuis
                 ))

@@ -584,7 +584,7 @@ impl<'a> Cx<'a> {
         // Le classement de la fiche, sinon celui que le catalogue donne au metier dans cette convention.
         let classement: Option<String> = match self.fiche.classement_conventionnel.portee().map(str::trim).filter(|c| !c.is_empty()) {
             Some(c) => Some(c.to_string()),
-            None => self.m.au_catalogue().and_then(|f| f.classement.as_ref()).and_then(|c| c.get(&**idcc)).cloned(),
+            None => self.m.au_catalogue().and_then(|f| f.classement.as_ref()).and_then(|c| c.get(idcc)).cloned(),
         };
         // Une grille a l'unite prime : elle prix la ligne telle qu'elle est payee.
         let unitaires: Vec<&Grille> = grilles.iter().copied().filter(|gr| gr.unite != Unite::Cachet && !a_l_heure(gr)).collect();

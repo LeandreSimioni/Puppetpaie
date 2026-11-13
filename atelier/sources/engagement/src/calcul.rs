@@ -1194,8 +1194,8 @@ fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mu
     let Some(premiere) = suspensions.first() else { return Ok(fiche) };
     let motifs: Vec<&str> = suspensions.iter().filter_map(|s| s.suspension()).map(|s| s.motif.code()).collect();
     let ent = ctx.entreprise_au(&fin);
-    let idcc = ent.idcc.portee();
-    let pourquoi = if idcc == Some("3090") {
+    let idcc = ent.idcc.dite();
+    let pourquoi = if idcc == Some(&droit::fiche::IDCC_3090) {
         format!(
             "contrat suspendu sans indemnisation tout le mois (motif {}) : les garanties de sante sont suspendues (CCN 3090, \
 accord sante du 19/07/2024, art. 4.2 et 15)",
@@ -1224,7 +1224,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
                     motifs.join(", "),
                     premiere.debut().jj_mm_aaaa(),
                     match idcc {
-                        Some(i) => i,
+                        Some(i) => &**i,
                         None => "de la compagnie",
                     },
                     SANTE_SUSPENSION.nom(),

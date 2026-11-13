@@ -740,7 +740,7 @@ fn annuelles(st: &Etat, base: &EcheancierBase) -> R<Vec<Echeance>> {
     let premier = premier_mois(ctx)?;
     let mut out = Vec::new();
     for annee in st.aujourdhui.an..=derniere {
-        for e in annuelles_de(base, ctx.entreprise.idcc.portee()) {
+        for e in annuelles_de(base, ctx.entreprise.idcc.dite()) {
             if let Some(x) = annuelle(st, e, annee, &faites, premier)? {
                 let export = x.quoi == CLOTURE && x.etat != Fait;
                 out.push(x);
@@ -832,7 +832,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
 
 /// Les echeances annuelles de la convention de la fiche (`idcc`) : celles qui n'en nomment aucune, et celles qui la
 /// nomment.
-fn annuelles_de<'a>(base: &'a EcheancierBase, idcc: Option<&'a str>) -> impl Iterator<Item = &'a Annuelle> {
+fn annuelles_de<'a>(base: &'a EcheancierBase, idcc: Option<&'a droit::fiche::Idcc>) -> impl Iterator<Item = &'a Annuelle> {
     base.annuelles.iter().filter(move |e| e.idcc.as_ref().is_none_or(|l| idcc.is_some_and(|i| l.iter().any(|x| x == i))))
 }
 
@@ -882,7 +882,7 @@ struct ModeleDsn {
 #[serde(deny_unknown_fields)]
 struct Annuelle {
     cle: String,
-    idcc: Option<Vec<String>>,
+    idcc: Option<Vec<droit::fiche::Idcc>>,
     mois: Vec<u32>,
     titre: String,
     detail: String,

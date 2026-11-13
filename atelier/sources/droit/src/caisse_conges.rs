@@ -99,7 +99,7 @@ pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> R<bool> {
 /// Le technicien d'un CDD de droit commun que la liste de l'annexe 8 de la convention de l'employeur ne nomme pas
 /// (`intermittent` : non, par la seule annexe 8) : son metier (le libelle du catalogue) et l'IDCC. Sans IDCC sur la
 /// fiche, rien : la convention ne dit alors rien.
-pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(String, String)>> {
+pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(String, crate::fiche::Idcc)>> {
     if nat.duree_indeterminee || !nat.mensuelle() {
         return Ok(None);
     }
@@ -113,7 +113,7 @@ pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(Stri
     if m.nomme_par_l_annexe8(idcc) {
         return Ok(None);
     }
-    Ok(Some((m.libelle().to_string(), idcc.to_string())))
+    Ok(Some((m.libelle().to_string(), idcc.clone())))
 }
 
 /// L'employeur declare-t-il ce contrat a la caisse des Conges Spectacles ? `sal` est la fiche telle que la paie la lit
