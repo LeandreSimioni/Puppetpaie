@@ -222,7 +222,7 @@ fn echapper(t: &str) -> String {
     t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#x27;")
 }
 
-/// La version telle que la fenetre la montre : `JJ.MM.AAAA` (`maj::version_lue`) ; le fichier garde l'identifiant.
+/// La version telle que la fenetre la montre : `JJ.MM.AAAA` (`VersionDuLogiciel::lue`) ; le fichier garde l'identifiant.
 /// Le binaire de l'atelier n'est pas une version publiee : il dit de quelles sources il est fait (le commit, `build.rs`).
 #[cfg(feature = "atelier")]
 fn version() -> String {
@@ -236,10 +236,9 @@ fn version() -> String {
 
 #[cfg(not(feature = "atelier"))]
 fn version() -> String {
-    let p = installation::logiciel().join("VERSION");
-    match std::fs::read_to_string(&p) {
-        Ok(v) => compagnie::maj::version_lue(&v),
-        Err(e) => format!("illisible ({})", socle::echec::du_disque(&p, &e).phrase),
+    match compagnie::maj::courante(&installation::logiciel()) {
+        Ok(v) => v.lue(),
+        Err(e) => format!("illisible ({})", e.phrase),
     }
 }
 
@@ -882,7 +881,7 @@ impl Fenetre {
             // refuse, et rien ne se ferme.
             ("redemarrer", _) => {
                 let v = compagnie::maj::redemarrer_pour_mettre_a_jour(&compagnie::maj::installation(), &compagnie::maj::RECHERCHE)?;
-                self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", compagnie::maj::version_lue(&v)));
+                self.ecrire(&format!("Redemarrage pour la mise a jour {}.\n", v.lue()));
                 self.poser_phase(Phase::Accueil);
                 self.fermer_le_logiciel();
                 Ok(fait(false))

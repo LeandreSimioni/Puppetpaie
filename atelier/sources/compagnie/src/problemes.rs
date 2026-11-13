@@ -161,7 +161,8 @@ pub struct Contexte {
 #[serde(deny_unknown_fields)]
 pub struct Corps<C> {
     pub texte: String,
-    pub version: String,
+    /// La version du logiciel ; vide quand `VERSION` ne se lisait pas (`incidents::version`).
+    pub version: Option<crate::maj::VersionDuLogiciel>,
     pub contexte: Contexte,
     /// LES TROIS MINUTES D'AVANT : chaque geste et chaque route, une ligne par action.
     pub fil: Vec<String>,

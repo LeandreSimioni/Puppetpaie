@@ -104,7 +104,8 @@ pub struct Ligne {
     pub quoi: Nature,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: Moment,
-    pub version: String,
+    /// La version du logiciel ; vide quand `VERSION` ne se lisait pas (`version`).
+    pub version: Option<crate::maj::VersionDuLogiciel>,
     pub empreinte: String,
     pub ou: String,
     pub genre: String,
@@ -210,11 +211,6 @@ pub fn chemin(racine: &Path) -> PathBuf {
     }
 }
 
-/// Le texte sans ses blancs de bord.
-fn sans_blancs_de_bord(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
-}
-
 /// `s[:n]` sur des points de code.
 fn tete(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
@@ -257,12 +253,15 @@ pub fn empreinte(nature: Nature, ou: &str, quoi: &str) -> String {
 
 // ------------------------------------------------------------------------ ecrire
 
-/// La version du logiciel : `VERSION`, a cote du code ; un fichier qui ne se lit pas le dit.
-pub fn version() -> String {
-    let p = dossier_du_code().join("..").join("VERSION");
-    match std::fs::read_to_string(&p) {
-        Ok(t) => sans_blancs_de_bord(&t).to_string(),
-        Err(e) => format!("(VERSION ne se lit pas : {})", e),
+/// La version du logiciel que porte un incident (`maj::courante`, a cote du code) ; vide quand elle ne se lit pas : un
+/// incident se note toujours, et la raison va au fil du moteur.
+pub fn version() -> Option<crate::maj::VersionDuLogiciel> {
+    match crate::maj::courante(&dossier_du_code().join("..")) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            crate::diagnostic::noter_moteur(&format!("VERSION ne se lit pas : {}", e.phrase));
+            None
+        }
     }
 }
 
@@ -543,7 +542,8 @@ pub struct Paquet {
     pub premiere: Moment,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub derniere: Moment,
-    pub versions: Vec<String>,
+    /// Les versions ou il a ete vu (celles qui se lisaient).
+    pub versions: Vec<crate::maj::VersionDuLogiciel>,
     pub caviarde: Vec<String>,
 }
 
@@ -570,7 +570,7 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
                     combien: l.fois,
                     premiere: l.quand,
                     derniere: l.quand,
-                    versions: vec![l.version.clone()],
+                    versions: l.version.iter().cloned().collect(),
                     caviarde: l.caviarde.clone(),
                 },
             )),
@@ -578,8 +578,8 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
                 let p = &mut paquets[i].1;
                 p.combien += l.fois;
                 p.derniere = l.quand;
-                if !p.versions.contains(&l.version) {
-                    p.versions.push(l.version.clone());
+                if let Some(v) = l.version.as_ref().filter(|v| !p.versions.contains(v)) {
+                    p.versions.push(v.clone());
                 }
                 for c in &l.caviarde {
                     if !p.caviarde.contains(c) {
@@ -626,7 +626,7 @@ pub struct PourLEditeur {
     pub quoi: Nature,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: Moment,
-    pub version: String,
+    pub version: Option<crate::maj::VersionDuLogiciel>,
     pub empreinte: String,
     pub ou: String,
     pub genre: String,
@@ -659,7 +659,7 @@ pub fn pour_l_editeur(racine: &Path, l: &Ligne) -> PourLEditeur {
     PourLEditeur {
         quoi: l.quoi,
         quand: l.quand,
-        version: t(&l.version),
+        version: l.version.clone(),
         empreinte: l.empreinte.clone(),
         ou: t(&l.ou),
         genre: t(&l.genre),

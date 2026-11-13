@@ -1136,7 +1136,8 @@ pub struct Memoire {
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Machine {
-    pub version: String,
+    /// La version du logiciel ; vide quand `VERSION` ne se lisait pas (`incidents::version`).
+    pub version: Option<crate::maj::VersionDuLogiciel>,
     pub moteur: String,
     pub profil: String,
     pub systeme: String,

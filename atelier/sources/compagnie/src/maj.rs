@@ -164,20 +164,22 @@ pub fn systeme_du_fichier(rel: &str) -> Option<&'static str> {
 }
 
 /// Le nom de l'archive d'une version pour un systeme (ou `TOUT_SYSTEME`) : `puppetpaie-<version>-<systeme>.zip`.
-pub fn nom_d_archive(version: &str, systeme: &str) -> R<NomDeFichier> {
+pub fn nom_d_archive(version: &VersionDuLogiciel, systeme: &str) -> R<NomDeFichier> {
     NomDeFichier::lire(&format!("puppetpaie-{}-{}.zip", version, systeme))
 }
 
 /// Le nom de l'archive D'INSTALLATION d'une version (`archiver_installation`) : `puppetpaie-<version>-<systeme>-installation.zip`.
 /// Il n'y en a que pour Linux, Mac et tous les systemes : Windows a son installeur.
-pub fn nom_d_installation(version: &str, systeme: &str) -> R<NomDeFichier> {
+pub fn nom_d_installation(version: &VersionDuLogiciel, systeme: &str) -> R<NomDeFichier> {
     NomDeFichier::lire(&format!("puppetpaie-{}-{}-installation.zip", version, systeme))
 }
 
-/// La version d'un logiciel : son fichier `VERSION`. Un logiciel qui ne la dit pas se refuse.
-pub fn courante(code: &Path) -> R<String> {
+/// LA SEULE LECTURE DE `VERSION` : la version d'un logiciel. Un logiciel qui ne la dit pas, ou qui dit autre chose
+/// qu'une version, se refuse.
+pub fn courante(code: &Path) -> R<VersionDuLogiciel> {
     let p = code.join("VERSION");
-    socle::fichiers::lire_texte(&p).map(|v| v.trim().to_string()).map_err(|e| socle::echec::du_disque(&p, &e))
+    let t = socle::fichiers::lire_texte(&p).map_err(|e| socle::echec::du_disque(&p, &e))?;
+    VersionDuLogiciel::lire(&t)
 }
 
 /// Le dossier du logiciel (`logiciel/`) qui porte ce programme : le parent du dossier du code.
@@ -186,43 +188,81 @@ pub fn dossier_installe() -> R<PathBuf> {
     code.parent().map(Path::to_path_buf).ok_or_else(|| refus_avec("Le dossier du logiciel ne se trouve pas.", a_part_chemin(&code)))
 }
 
-/// UNE VERSION DU LOGICIEL, ses nombres de gauche a droite (`AAAA.MM.JJ`, `AAAA.MM.JJ.N`) : l'ordre des versions. Elle
-/// s'ecrit en texte (`VERSION`, `derniere.json`, les archives, ce que signe l'editeur), et ne se lit que par `lire`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct VersionDuLogiciel(Vec<u64>);
+/// UNE VERSION DU LOGICIEL : des nombres separes de points (`AAAA.MM.JJ`, `AAAA.MM.JJ.N`). Elle GARDE LE TEXTE LU (sans
+/// ses blancs autour) et s'ecrit par lui, octet pour octet (`VERSION`, `derniere.json`, `prete.json`, les noms des
+/// archives, `maj/<version>/`, ce que signe l'editeur) : `2026.11.01` reste `2026.11.01`. Deux versions sont la meme si
+/// elles s'ecrivent pareil ; l'ordre des versions est celui de leurs nombres, de gauche a droite (`plus_recente_que`).
+/// Elle ne se lit que par `lire`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct VersionDuLogiciel {
+    texte: String,
+    nombres: Vec<u64>,
+}
 
 impl VersionDuLogiciel {
     /// La version ecrite `v` ; une version qui n'en est pas une se refuse.
     pub fn lire(v: &str) -> R<VersionDuLogiciel> {
-        v.trim()
+        let texte = v.trim();
+        let nombres = texte
             .split('.')
             .map(|x| x.parse::<u64>().map_err(|_| refus_avec("Une version ne se lit pas : elle s'écrit en nombres séparés de points.", Lieu { detail: Some(v.to_string()), ..Default::default() })))
-            .collect::<R<Vec<u64>>>()
-            .map(VersionDuLogiciel)
+            .collect::<R<Vec<u64>>>()?;
+        Ok(VersionDuLogiciel { texte: texte.to_string(), nombres })
+    }
+
+    /// Le texte de la version, tel qu'il a ete lu.
+    pub fn texte(&self) -> &str {
+        &self.texte
+    }
+
+    /// Est-elle plus recente que `autre` ? Les nombres, de gauche a droite.
+    pub fn plus_recente_que(&self, autre: &VersionDuLogiciel) -> bool {
+        self.nombres > autre.nombres
+    }
+
+    /// LA VERSION TELLE QU'UN HUMAIN LA LIT : `JJ.MM.AAAA`, l'annee en tete embrouille.
+    /// L'IDENTIFIANT, lui, reste `AAAA.MM.JJ` (`texte`) : l'ordre compare les nombres de gauche a droite, et `01.11.2026`
+    /// passerait pour plus ancienne que `14.10.2026`. Seul l'affichage change : tout ce qui montre une version passe par
+    /// ici. Une version qui n'a pas la forme d'une date (`0.0.0`) se dit par son texte.
+    pub fn lue(&self) -> String {
+        let p: Vec<&str> = self.texte.split('.').collect();
+        let chiffres = |x: &str, n: usize| x.len() == n && x.bytes().all(|c| c.is_ascii_digit());
+        if p.len() == 3 && chiffres(p[0], 4) && chiffres(p[1], 2) && chiffres(p[2], 2) {
+            format!("{}.{}.{}", p[2], p[1], p[0])
+        } else if p.len() == 4 && chiffres(p[0], 4) && chiffres(p[1], 2) && chiffres(p[2], 2) && !p[3].is_empty() && p[3].bytes().all(|c| c.is_ascii_digit()) {
+            // La deuxieme version d'un meme jour (`AAAA.MM.JJ.N`, posee par le flux « Publier ») : « JJ.MM.AAAA (N) ».
+            format!("{}.{}.{} ({})", p[2], p[1], p[0], p[3])
+        } else {
+            self.texte.clone()
+        }
     }
 }
 
-/// `candidate` est-elle plus recente que `reference` ?
-pub fn plus_recente(candidate: &str, reference: &str) -> R<bool> {
-    Ok(VersionDuLogiciel::lire(candidate)? > VersionDuLogiciel::lire(reference)?)
+impl PartialEq for VersionDuLogiciel {
+    fn eq(&self, autre: &VersionDuLogiciel) -> bool {
+        self.texte == autre.texte
+    }
 }
 
-/// LA VERSION TELLE QU'UN HUMAIN LA LIT : `JJ.MM.AAAA`, l'annee en tete embrouille.
-/// L'IDENTIFIANT, lui, reste `AAAA.MM.JJ` (`VERSION`, `derniere.json`, les archives, `prive/maj/<version>/`, ce que signe
-/// l'editeur) : `plus_recente` compare les trois nombres de gauche a droite, et `01.11.2026` passerait pour plus ancienne
-/// que `14.10.2026`. Seul l'affichage change : tout ce qui montre une version passe par ici. Ce qui n'a pas la forme d'une
-/// date (`0.0.0`, un texte libre) est rendu tel quel.
-pub fn version_lue(v: &str) -> String {
-    let t = v.trim();
-    let p: Vec<&str> = t.split('.').collect();
-    let chiffres = |x: &str, n: usize| x.len() == n && x.bytes().all(|c| c.is_ascii_digit());
-    if p.len() == 3 && chiffres(p[0], 4) && chiffres(p[1], 2) && chiffres(p[2], 2) {
-        format!("{}.{}.{}", p[2], p[1], p[0])
-    } else if p.len() == 4 && chiffres(p[0], 4) && chiffres(p[1], 2) && chiffres(p[2], 2) && !p[3].is_empty() && p[3].bytes().all(|c| c.is_ascii_digit()) {
-        // La deuxieme version d'un meme jour (`AAAA.MM.JJ.N`, posee par le flux « Publier ») : « JJ.MM.AAAA (N) ».
-        format!("{}.{}.{} ({})", p[2], p[1], p[0], p[3])
-    } else {
-        t.to_string()
+impl Eq for VersionDuLogiciel {}
+
+impl std::fmt::Display for VersionDuLogiciel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.texte)
+    }
+}
+
+impl TryFrom<String> for VersionDuLogiciel {
+    type Error = Echec;
+    fn try_from(s: String) -> R<VersionDuLogiciel> {
+        VersionDuLogiciel::lire(&s)
+    }
+}
+
+impl From<VersionDuLogiciel> for String {
+    fn from(v: VersionDuLogiciel) -> String {
+        v.texte
     }
 }
 
@@ -334,7 +374,7 @@ pub fn depot(pose: Option<DepotDesMisesAJour>) -> DepotDesMisesAJour {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Prete {
-    pub version: String,
+    pub version: VersionDuLogiciel,
     #[serde(with = "socle::paris::ecrit::minute")]
     pub quand: Moment,
     pub archives: Vec<String>,
@@ -350,7 +390,7 @@ const PRETE: &str = "prete.json";
 /// code de l'installation posee, et une autre forme refuse la bascule (l'ancienne version reste en place et le dit).
 fn prete_dans(maj: &Path) -> R<Option<Prete>> {
     let p: Option<Prete> = lire_forme(&maj.join(PRETE), "La mise à jour prête ne se lit pas : effacez son fichier, elle se téléchargera de nouveau.")?;
-    Ok(p.filter(|p| maj.join(&p.version).join(LOGICIEL).join("donnees").is_dir()))
+    Ok(p.filter(|p| maj.join(p.version.texte()).join(LOGICIEL).join("donnees").is_dir()))
 }
 
 /// La version telechargee, controlee, a appliquer.
@@ -362,21 +402,39 @@ pub fn lire_depot(depot: &DepotDesMisesAJour, nom: &NomDeFichier) -> R<Vec<u8>> 
     lire_depot_suivi(depot, nom, &|_, _| {}).map_err(|(_, e)| e)
 }
 
-/// Ce qu'on dit d'un echec, en un mot, a l'ecran, sans alarme ; la
-/// phrase entiere va au journal de la mise a jour.
-const HORS_LIGNE: &str = "hors ligne";
-const INTROUVABLE: &str = "introuvable";
-const ILLISIBLE: &str = "dépôt illisible";
-const SIGNATURE_REFUSEE: &str = "signature refusée";
-const ALTEREE: &str = "archive altérée";
-const REFUSEE_AU_CONTROLE: &str = "refusée au contrôle";
-const REGLAGE_ILLISIBLE: &str = "réglage illisible";
+/// CE QUI A FAIT ECHOUER UNE RECHERCHE DE MISE A JOUR, dit en un mot a l'ecran, sans alarme (`mot`) ; la phrase entiere
+/// va au journal de la mise a jour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EchecDeMiseAJour {
+    HorsLigne,
+    Introuvable,
+    DepotIllisible,
+    SignatureRefusee,
+    ArchiveAlteree,
+    RefuseeAuControle,
+    ReglageIllisible,
+}
 
-/// Un echec de la mise a jour : son mot pour l'ecran, et le refus.
-type Rate = (&'static str, Echec);
+impl EchecDeMiseAJour {
+    /// Le mot que l'ecran en dit.
+    pub fn mot(self) -> &'static str {
+        match self {
+            EchecDeMiseAJour::HorsLigne => "hors ligne",
+            EchecDeMiseAJour::Introuvable => "introuvable",
+            EchecDeMiseAJour::DepotIllisible => "dépôt illisible",
+            EchecDeMiseAJour::SignatureRefusee => "signature refusée",
+            EchecDeMiseAJour::ArchiveAlteree => "archive altérée",
+            EchecDeMiseAJour::RefuseeAuControle => "refusée au contrôle",
+            EchecDeMiseAJour::ReglageIllisible => "réglage illisible",
+        }
+    }
+}
+
+/// Un echec de la mise a jour : ce qui l'a fait echouer, et le refus.
+type Rate = (EchecDeMiseAJour, Echec);
 
 /// `lire_depot`, en disant a `suivre` ce qui est recu (octets recus, octets attendus si le depot le dit) : la barre de
-/// l'indicateur (`Recherche`). Un echec porte son mot : injoignable (`HORS_LIGNE`), ou absent (`INTROUVABLE`).
+/// l'indicateur (`Recherche`). Un echec dit s'il est injoignable (`HorsLigne`) ou absent (`Introuvable`).
 fn lire_depot_suivi(depot: &DepotDesMisesAJour, nom: &NomDeFichier, suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
     const LIMITE: u64 = 512 * 1024 * 1024;
     let lire_tout = |lecteur: &mut dyn Read, attendus: Option<u64>| -> std::io::Result<Vec<u8>> {
@@ -399,26 +457,26 @@ fn lire_depot_suivi(depot: &DepotDesMisesAJour, nom: &NomDeFichier, suivre: &dyn
         DepotDesMisesAJour::Adresse(a) => a,
         DepotDesMisesAJour::Dossier(dossier) => {
             let p = dossier.join(nom);
-            let dit = |e: std::io::Error| (INTROUVABLE, socle::echec::du_disque(&p, &e));
+            let dit = |e: std::io::Error| (EchecDeMiseAJour::Introuvable, socle::echec::du_disque(&p, &e));
             let mut f = std::fs::File::open(&p).map_err(dit)?;
             let attendus = f.metadata().map_err(dit)?.len();
             return lire_tout(&mut f, Some(attendus)).map_err(dit);
         }
     };
-    let url = Url::lire(&format!("{}/{}", adresse.texte().trim_end_matches('/'), nom)).map_err(|e| (HORS_LIGNE, e))?;
+    let url = Url::lire(&format!("{}/{}", adresse.texte().trim_end_matches('/'), nom)).map_err(|e| (EchecDeMiseAJour::HorsLigne, e))?;
     let mut c = ureq::Agent::config_builder().user_agent(AGENT).timeout_global(Some(std::time::Duration::from_secs(120)));
     if url.texte().starts_with("https:") {
         c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
     }
     // En essai, le garde-fou reseau : rien ne sort de la machine (une panne de reseau, comme hors ligne).
-    let agent: ureq::Agent = socle::garde_reseau::regler(c, &url).map_err(|e| (HORS_LIGNE, e.reformuler(|m| format!("{} : {}", url, m))))?.build().into();
+    let agent: ureq::Agent = socle::garde_reseau::regler(c, &url).map_err(|e| (EchecDeMiseAJour::HorsLigne, e.reformuler(|m| format!("{} : {}", url, m))))?.build().into();
     let mut r = agent.get(url.texte()).call().map_err(|e| {
-        let mot = if matches!(e, ureq::Error::StatusCode(_)) { INTROUVABLE } else { HORS_LIGNE };
+        let mot = if matches!(e, ureq::Error::StatusCode(_)) { EchecDeMiseAJour::Introuvable } else { EchecDeMiseAJour::HorsLigne };
         (mot, socle::refus!("{} : {}", url, e))
     })?;
     let attendus = r.body().content_length();
     let mut lecteur = r.body_mut().with_config().limit(LIMITE).reader();
-    lire_tout(&mut lecteur, attendus).map_err(|e| (HORS_LIGNE, socle::refus!("{} : {}", url, e)))
+    lire_tout(&mut lecteur, attendus).map_err(|e| (EchecDeMiseAJour::HorsLigne,socle::refus!("{} : {}", url, e)))
 }
 
 /// `derniere.json`, LA VERSION PUBLIEE : ce qu'ecrit `moteur::publication` et que lit chaque installation, une
@@ -428,7 +486,7 @@ fn lire_depot_suivi(depot: &DepotDesMisesAJour, nom: &NomDeFichier, suivre: &dyn
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Publiee {
-    pub version: String,
+    pub version: VersionDuLogiciel,
     pub publiee_le: Jour,
     pub notes: String,
     pub calcul: String,
@@ -529,7 +587,7 @@ pub fn derniere(depot: &DepotDesMisesAJour) -> R<Publiee> {
 /// `derniere`, l'echec avec son mot : le depot ne repond pas, ou il repond quelque chose qui n'est pas un `derniere.json`.
 fn derniere_dite(depot: &DepotDesMisesAJour) -> Result<Publiee, Rate> {
     let octets = lire_depot_suivi(depot, &const { NomDeFichier::du_moteur(DERNIERE) }, &|_, _| {})?;
-    derniere_lue(&octets).map_err(|e| (ILLISIBLE, e))
+    derniere_lue(&octets).map_err(|e| (EchecDeMiseAJour::DepotIllisible, e))
 }
 
 const PUBLIEE_ILLISIBLE: &str = "La version publiée ne se lit pas : la mise à jour se refera à la prochaine.";
@@ -540,14 +598,11 @@ fn publiee_illisible(cle: &str, detail: impl std::fmt::Display) -> Echec {
     refus_avec(PUBLIEE_ILLISIBLE, Lieu { fichier: Some(DERNIERE.to_string()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Default::default() })
 }
 
-/// LA SEULE LECTURE DE `derniere.json` : sa forme (`Publiee`), puis ce qu'elle ne dit pas d'elle-meme : une version, au
-/// moins une archive, aucun champ vide, et la liste des systemes de celle de tous.
+/// LA SEULE LECTURE DE `derniere.json` : sa forme (`Publiee`, dont la version), puis ce qu'elle ne dit pas d'elle-meme :
+/// au moins une archive, aucun champ vide, et la liste des systemes de celle de tous.
 pub fn derniere_lue(octets: &[u8]) -> R<Publiee> {
     let texte = std::str::from_utf8(octets).map_err(|e| publiee_illisible("", e))?;
     let d: Publiee = socle::forme::lire_texte(texte, PUBLIEE_ILLISIBLE)?;
-    if d.version.is_empty() {
-        return Err(publiee_illisible("version", ""));
-    }
     if d.archives.toutes().next().is_none() {
         return Err(publiee_illisible("archives", ""));
     }
@@ -731,16 +786,16 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
 /// UNE ARCHIVE SIGNEE, recue et verifiee : son entree de `derniere.json` (`archive`, `sha256`, `signature`) lue au depot,
 /// son condensat et la signature de l'editeur (l'une des `cles`) verifies. Le seul chemin par ou une archive de l'editeur
 /// entre dans une installation : la mise a jour, les fictives, les systemes qu'un dossier portable ajoute
-/// (`completer_le_portable`). Un echec de lecture porte `HORS_LIGNE` ou `INTROUVABLE` ; une archive qui n'est pas la
-/// notre, `ALTEREE` ou `SIGNATURE_REFUSEE`.
+/// (`completer_le_portable`). Un echec de lecture porte `HorsLigne` ou `Introuvable` ; une archive qui n'est pas la
+/// notre, `ArchiveAlteree` ou `SignatureRefusee`.
 fn archive_verifiee(depot: &DepotDesMisesAJour, (nom, attendu, signature): (&NomDeFichier, &Empreinte, &str), cles: &[&str], suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
     let octets = lire_depot_suivi(depot, nom, suivre)?;
     let sha = Empreinte::des_octets(&octets);
     if sha != *attendu {
-        return Err((ALTEREE, refus_avec("Une archive téléchargée est altérée : elle se télécharge de nouveau à la prochaine mise à jour.", APart::forme(Alteree { fichier: nom.to_string(), condensat: sha.to_string(), attendu: attendu.to_string() }))));
+        return Err((EchecDeMiseAJour::ArchiveAlteree, refus_avec("Une archive téléchargée est altérée : elle se télécharge de nouveau à la prochaine mise à jour.", APart::forme(Alteree { fichier: nom.to_string(), condensat: sha.to_string(), attendu: attendu.to_string() }))));
     }
     if !signee_par_l_une(&octets, signature, cles) {
-        return Err((SIGNATURE_REFUSEE, socle::refus!("la signature de {} n'est pas celle de l'editeur", nom)));
+        return Err((EchecDeMiseAJour::SignatureRefusee, socle::refus!("la signature de {} n'est pas celle de l'editeur", nom)));
     }
     Ok(octets)
 }
@@ -781,15 +836,15 @@ fn jeux_a_essayer<'a>(d: &'a Publiee, systemes: &[&'static str]) -> Vec<Vec<(&'s
 /// telechargee dont le condensat ou la signature ne vaut pas est refusee sans essayer l'autre : ce n'est pas qu'elle
 /// manque, c'est qu'elle n'est pas la notre.
 fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&str], suivi: &Recherche) -> Result<Prete, Rate> {
-    let version = d.version.as_str();
+    let version = &d.version;
     let systemes = systemes_poses(&logiciel_de(inst));
     let jeux = jeux_a_essayer(d, &systemes);
     if jeux.is_empty() {
         let phrase = format!("La version publiée n'a pas d'archive pour ce système ({}).", systemes.join(", "));
-        return Err((INTROUVABLE, refus_avec(phrase, Lieu { fichier: Some(DERNIERE.to_string()), ..Default::default() })));
+        return Err((EchecDeMiseAJour::Introuvable, refus_avec(phrase, Lieu { fichier: Some(DERNIERE.to_string()), ..Default::default() })));
     }
     let mut manquees = Vec::new();
-    let mut mot = INTROUVABLE;
+    let mut mot = EchecDeMiseAJour::Introuvable;
     let mut prises = None;
     'jeux: for jeu in jeux {
         let mut recues = Vec::new();
@@ -797,7 +852,7 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
             let suivre = |recus: u64, attendus: Option<u64>| suivi.poser(Etape::Telechargement, Some(version), |p| (p.recus, p.attendus) = (recus, attendus));
             match archive_verifiee(depot, a.signee(), cles, &suivre) {
                 Ok(o) => recues.push((k, o)),
-                Err((m, e)) if m == HORS_LIGNE || m == INTROUVABLE => {
+                Err((m @ (EchecDeMiseAJour::HorsLigne | EchecDeMiseAJour::Introuvable), e)) => {
                     mot = m;
                     manquees.push(e);
                     continue 'jeux;
@@ -811,8 +866,8 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
     // Les phrases de chaque jeu manque, ensemble : le mot de l'ecran est celui du dernier.
     let prises = prises.ok_or_else(|| (mot, refus(manquees.iter().map(|e: &Echec| e.phrase.as_str()).collect::<Vec<_>>().join(" ; "))))?;
     suivi.poser(Etape::Preparation, Some(version), |_| {});
-    let au_controle = |e: Echec| (REFUSEE_AU_CONTROLE, e);
-    let cible = dossier_maj(inst).join(version);
+    let au_controle = |e: Echec| (EchecDeMiseAJour::RefuseeAuControle, e);
+    let cible = dossier_maj(inst).join(version.texte());
     socle::fichiers::effacer(&cible).map_err(au_controle)?;
     let neuf = logiciel_de(&cible);
     std::fs::create_dir_all(&neuf).map_err(|e| au_controle(refus(e.to_string())))?;
@@ -820,8 +875,8 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
         deballer(octets, &neuf).map_err(au_controle)?;
     }
     let dite = courante(&neuf).map_err(au_controle)?;
-    if dite != version {
-        return Err(au_controle(socle::refus!("l'archive dit {}, l'annonce de la dernière version dit {}", version_lue(&dite), version_lue(version))));
+    if dite != *version {
+        return Err(au_controle(socle::refus!("l'archive dit {}, l'annonce de la dernière version dit {}", dite.lue(), version.lue())));
     }
     // Le programme de chaque systeme doit y etre, meme sans compagnie a controler.
     if let Some(s) = systemes.iter().find(|s| !programme_de(&neuf, s, "puppetpaie").is_file()) {
@@ -841,7 +896,7 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
         }
     }
     let prete = Prete {
-        version: version.to_string(),
+        version: version.clone(),
         quand: socle::temps::secondes().a_la_minute(),
         archives: prises.iter().map(|(k, _)| k.to_string()).collect(),
         notes: d.notes.clone(),
@@ -870,7 +925,7 @@ pub fn systeme_lu(s: &str) -> &str {
 /// Le depot qui porte la version `version` : la Release de cette version quand le reglage ne dit rien
 /// (`DEPOT_PAR_DEFAUT` nomme la derniere ; GitHub sert les fichiers d'une Release sous `releases/download/v<version>`,
 /// le nom que lui donne le flux « Publier »). Un depot pose dans le reglage est pris tel quel.
-fn depot_de_la_version(depot: &DepotDesMisesAJour, version: &str) -> R<DepotDesMisesAJour> {
+fn depot_de_la_version(depot: &DepotDesMisesAJour, version: &VersionDuLogiciel) -> R<DepotDesMisesAJour> {
     match depot {
         DepotDesMisesAJour::Adresse(a) if *a == DEPOT_PAR_DEFAUT => match a.texte().strip_suffix("/latest/download") {
             Some(tete) => Ok(DepotDesMisesAJour::Adresse(Url::lire(&format!("{}/download/v{}", tete, version))?)),
@@ -904,14 +959,14 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
         let hors_ligne = |e: Echec| e.reformuler(|m| format!("Le dépôt ne répond pas ({}). {} Reconnectez-vous, puis recommencez.", m, rien));
         let depot = depot_de_la_version(&depot(reglage(inst)?), &version)?;
         let d = derniere_dite(&depot).map_err(|(mot, e)| {
-            if mot == HORS_LIGNE {
+            if mot == EchecDeMiseAJour::HorsLigne {
                 hors_ligne(e)
             } else {
-                e.reformuler(|m| format!("Le dépôt ne donne pas la version {} ({}). {}", version_lue(&version), m, rien))
+                e.reformuler(|m| format!("Le dépôt ne donne pas la version {} ({}). {}", version.lue(), m, rien))
             }
         })?;
         if d.version != version {
-            return Err(socle::refus!("Le dépôt n'a plus la version installée ({}) : mettez PuppetPaie à jour, puis recommencez. {}", version_lue(&version), rien));
+            return Err(socle::refus!("Le dépôt n'a plus la version installée ({}) : mettez PuppetPaie à jour, puis recommencez. {}", version.lue(), rien));
         }
         // Chaque systeme manquant, son archive : la sienne, sinon celle de tous qui le porte (une seule fois pour plusieurs).
         let mut a_prendre: Vec<(&ArchivePubliee, Vec<&'static str>)> = Vec::new();
@@ -940,10 +995,10 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
                 }
             };
             let de_qui = |e: Echec| e.reformuler(|m| format!("{} : {}. {}", qui, m, rien));
-            let octets = archive_verifiee(&depot, a.signee(), cles, &suivre).map_err(|(mot, e)| if mot == HORS_LIGNE { hors_ligne(e) } else { de_qui(e) })?;
+            let octets = archive_verifiee(&depot, a.signee(), cles, &suivre).map_err(|(mot, e)| if mot == EchecDeMiseAJour::HorsLigne { hors_ligne(e) } else { de_qui(e) })?;
             let dite = version_de_l_archive(&octets).map_err(de_qui)?;
             if dite != version {
-                return Err(socle::refus!("{} : l'archive n'est pas de la version {}. {}", qui, version_lue(&version), rien));
+                return Err(socle::refus!("{} : l'archive n'est pas de la version {}. {}", qui, version.lue(), rien));
             }
             recues.push((octets, systemes));
         }
@@ -964,7 +1019,7 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
         format!("Ajoutés : {}.", noms(&ajoutes))
     };
     if !absents.is_empty() {
-        phrase.push_str(&format!("{}La {} n'est pas publiée pour {}.", if phrase.is_empty() { "" } else { " " }, version_lue(&version), noms(&absents)));
+        phrase.push_str(&format!("{}La {} n'est pas publiée pour {}.", if phrase.is_empty() { "" } else { " " }, version.lue(), noms(&absents)));
     }
     if inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
         phrase.push_str(" Le dossier est portable.");
@@ -978,19 +1033,19 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
 pub struct PortableComplete {
     pub ajoutes: Vec<&'static str>,
     pub absents: Vec<&'static str>,
-    pub version: String,
+    pub version: VersionDuLogiciel,
     pub portable: bool,
     pub phrase: String,
 }
 
 
 /// La version que porte une archive de mise a jour (son fichier `VERSION`) : une archive qui ne la dit pas se refuse.
-fn version_de_l_archive(octets: &[u8]) -> R<String> {
+fn version_de_l_archive(octets: &[u8]) -> R<VersionDuLogiciel> {
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(octets)).map_err(|e| socle::refus!("archive illisible : {}", e))?;
     let mut f = z.by_name("VERSION").map_err(|e| socle::refus!("l'archive ne dit pas sa version : {}", e))?;
     let mut t = String::new();
     f.read_to_string(&mut t).map_err(|e| socle::refus!("l'archive ne dit pas sa version : {}", e))?;
-    Ok(t.trim().to_string())
+    VersionDuLogiciel::lire(&t)
 }
 
 /// LES FICTIVES PRETES : la livraison telechargee et verifiee (`preparer_les_fictives`), qui attend le prochain lancement
@@ -1275,19 +1330,19 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
         suivi.poser(Etape::Recherche, None, |_| {});
     }
     let c = logiciel_de(inst);
-    let echec = |mot: &'static str, version: Option<&str>, phrase: String| {
-        suivi.poser(Etape::Echec, version, |p| p.mot = mot.to_string());
+    let echec = |mot: EchecDeMiseAJour, version: Option<&VersionDuLogiciel>, phrase: String| {
+        suivi.poser(Etape::Echec, version, |p| p.mot = Some(mot));
         phrase
     };
     let courante_ici = match courante(&c) {
         Ok(v) => v,
-        Err(e) => return echec(INTROUVABLE, None, format!("version installee illisible ({})", e.phrase)),
+        Err(e) => return echec(EchecDeMiseAJour::Introuvable, None, format!("version installee illisible ({})", e.phrase)),
     };
-    let cour = version_lue(&courante_ici);
+    let cour = courante_ici.lue();
     let depot = match reglage(inst) {
         Ok(d) => self::depot(d),
         Err(e) if calme => return format!("version {} ({} ; nouvel essai au tour suivant)", cour, e.phrase),
-        Err(e) => return echec(REGLAGE_ILLISIBLE, None, format!("version {} ({})", cour, e.phrase)),
+        Err(e) => return echec(EchecDeMiseAJour::ReglageIllisible, None, format!("version {} ({})", cour, e.phrase)),
     };
     let d = match derniere_dite(&depot) {
         Ok(d) => d,
@@ -1301,15 +1356,11 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
         }
     }
     let v = d.version.clone();
-    match plus_recente(&v, &courante_ici) {
-        Ok(true) => {}
-        Ok(false) => {
-            suivi.poser(Etape::AJour, Some(&courante_ici), |p| p.sans_ce_systeme = None);
-            return format!("version {}, a jour", cour);
-        }
-        Err(e) => return echec(ILLISIBLE, None, format!("version {} ({})", cour, e.phrase)),
+    if !v.plus_recente_que(&courante_ici) {
+        suivi.poser(Etape::AJour, Some(&courante_ici), |p| p.sans_ce_systeme = None);
+        return format!("version {}, a jour", cour);
     }
-    let lue = version_lue(&v);
+    let lue = v.lue();
     // Publiee sans l'un des systemes de l'installation : rien a telecharger, la version en place reste (une tout-systeme
     // qui ne le porte pas ne se lancerait pas la ; un dossier portable ne perd pas l'un de ses systemes). Pour cette
     // installation, il n'y a pas de mise a jour.
@@ -1351,7 +1402,8 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
 /// jour », « Mise a jour en cours » (avec une barre de progression), « Redemarrer pour mettre a jour ». Le moteur tient ou en est la recherche de CE processus (`chercher_en_fond` pose `RECHERCHE`) ;
 /// l'accueil et la page d'une compagnie la lisent par le geste `maj` du lanceur (`interface::Fenetre::lanceur`) et
 /// n'affichent que ce que `etat` leur dit : la phrase, la barre, et s'il faut relire (`en_cours`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Etape {
     /// Aucune recherche dans ce processus (un `moteur route`, un essai) : rien a montrer.
     Aucune,
@@ -1371,10 +1423,11 @@ pub enum Etape {
 #[derive(Debug)]
 struct Point {
     etape: Etape,
-    version: Option<String>,
+    version: Option<VersionDuLogiciel>,
     recus: u64,
     attendus: Option<u64>,
-    mot: String,
+    /// Ce qui a fait echouer la recherche, a l'etape `Echec` ; vide a toute autre.
+    mot: Option<EchecDeMiseAJour>,
     /// La phrase `calcul` de la version prete : ce qu'elle change d'un calcul de paie (vide : rien).
     calcul: String,
     /// La raison `exigee` de la version prete : elle est indispensable avant de declarer (vide : elle ne l'est pas).
@@ -1382,8 +1435,8 @@ struct Point {
     /// Ce que la version en place, installee juste avant ce lancement, change d'un calcul de paie
     /// (`dire_l_installation`) : vide, rien a dire. Il tient tout le lancement, quelle que soit l'etape.
     installee: String,
-    sans_ce_systeme: Option<String>,
-    /// Un echec `HORS_LIGNE` que la recherche reprendra d'elle-meme : quand (`chercher_tant_qu_il_tourne`).
+    sans_ce_systeme: Option<VersionDuLogiciel>,
+    /// Un echec `HorsLigne` que la recherche reprendra d'elle-meme : quand (`chercher_tant_qu_il_tourne`).
     nouvel_essai: Option<std::time::Instant>,
 }
 
@@ -1394,7 +1447,7 @@ impl Point {
             version: None,
             recus: 0,
             attendus: None,
-            mot: String::new(),
+            mot: None,
             calcul: String::new(),
             exigee: String::new(),
             installee: String::new(),
@@ -1435,35 +1488,20 @@ pub struct Recherche(std::sync::Mutex<Point>);
 /// La recherche du lancement, celle que l'indicateur montre.
 pub static RECHERCHE: Recherche = Recherche::nouvelle();
 
-impl Etape {
-    /// Le nom que l'etat donne a l'etape.
-    pub fn nom(self) -> &'static str {
-        match self {
-            Etape::Aucune => "aucune",
-            Etape::Recherche => "recherche",
-            Etape::AJour => "a_jour",
-            Etape::Telechargement => "telechargement",
-            Etape::Preparation => "preparation",
-            Etape::Prete => "prete",
-            Etape::Echec => "echec",
-        }
-    }
-}
-
 impl Recherche {
     pub const fn nouvelle() -> Recherche {
         Recherche(std::sync::Mutex::new(Point::vide()))
     }
 
     /// Passe a `etape` (ce qui tient a l'etape d'avant s'efface, sauf la version si `version` n'en dit pas), puis `plus`.
-    fn poser(&self, etape: Etape, version: Option<&str>, plus: impl FnOnce(&mut Point)) {
+    fn poser(&self, etape: Etape, version: Option<&VersionDuLogiciel>, plus: impl FnOnce(&mut Point)) {
         let mut p = self.tenu();
         if p.etape != etape {
-            let garde = version.map(String::from).or_else(|| if etape == Etape::AJour { None } else { p.version.take() });
+            let garde = version.cloned().or_else(|| if etape == Etape::AJour { None } else { p.version.take() });
             let installee = std::mem::take(&mut p.installee);
             *p = Point { etape, version: garde, installee, ..Point::vide() };
         } else if let Some(v) = version {
-            p.version = Some(v.to_string());
+            p.version = Some(v.clone());
         }
         plus(&mut p);
     }
@@ -1486,10 +1524,10 @@ impl Recherche {
         self.tenu().etape
     }
 
-    /// La recherche a echoue faute de reseau (`HORS_LIGNE`) : c'est le seul echec qu'un nouvel essai peut lever.
+    /// La recherche a echoue faute de reseau (`HorsLigne`) : c'est le seul echec qu'un nouvel essai peut lever.
     fn hors_ligne(&self) -> bool {
         let p = self.tenu();
-        p.etape == Etape::Echec && p.mot == HORS_LIGNE
+        p.etape == Etape::Echec && p.mot == Some(EchecDeMiseAJour::HorsLigne)
     }
 
     /// Ce que l'indicateur montre, tout decide ici : `etape`, `texte` (vide : rien a montrer), `detail` (la bulle),
@@ -1501,7 +1539,7 @@ impl Recherche {
     /// Tout se dit positivement, par ce qui est vrai (« Logiciel a jour » plutot qu'« Aucune mise a jour »).
     pub fn etat(&self) -> EtatDeLaRecherche {
         let p = self.tenu();
-        let lue = p.version.as_deref().map(version_lue);
+        let lue = p.version.as_ref().map(VersionDuLogiciel::lue);
         let nommee = |t: &str| lue.as_ref().map(|v| format!("PuppetPaie {} {}", v, t));
         let mo = |o: u64| crate::sauvegarde::en_mo(o, ',');
         let essai = p.nouvel_essai.map(|t| {
@@ -1518,7 +1556,7 @@ impl Recherche {
             Etape::AJour => (
                 "Logiciel à jour",
                 Some(match (&lue, &p.sans_ce_systeme) {
-                    (Some(c), Some(v)) => format!("PuppetPaie {} est la dernière version pour ce système ; la {} est publiée pour les autres.", c, version_lue(v)),
+                    (Some(c), Some(v)) => format!("PuppetPaie {} est la dernière version pour ce système ; la {} est publiée pour les autres.", c, v.lue()),
                     (Some(c), None) => format!("PuppetPaie {} est la dernière version.", c),
                     (None, _) => "Cette version est la dernière.".into(),
                 }),
@@ -1558,7 +1596,10 @@ impl Recherche {
                 None,
             ),
         };
-        let texte = if p.etape == Etape::Echec { format!("Mise à jour : {}", p.mot) } else { texte.to_string() };
+        let texte = match p.mot {
+            Some(m) if p.etape == Etape::Echec => format!("Mise à jour : {}", m.mot()),
+            _ => texte.to_string(),
+        };
         let en_cours = matches!(p.etape, Etape::Recherche | Etape::Telechargement | Etape::Preparation);
         let relire_ms = if en_cours {
             Some(RELIRE_EN_COURS_MS)
@@ -1570,7 +1611,7 @@ impl Recherche {
             None
         };
         EtatDeLaRecherche {
-            etape: p.etape.nom(),
+            etape: p.etape,
             texte,
             detail,
             barre,
@@ -1596,7 +1637,7 @@ impl Recherche {
 /// CE QUE L'INDICATEUR DE MISE A JOUR MONTRE (`Recherche::etat`).
 #[derive(Debug, Clone, Serialize)]
 pub struct EtatDeLaRecherche {
-    pub etape: &'static str,
+    pub etape: Etape,
     pub texte: String,
     pub detail: Option<String>,
     pub barre: bool,
@@ -1637,7 +1678,7 @@ fn dire_l_installation(inst: &Path, suivi: &Recherche) {
     if calcul.is_empty() {
         return;
     }
-    suivi.installee(format!("PuppetPaie {} est en place. {}", version_lue(&a.version), phrase_du_calcul(calcul)));
+    suivi.installee(format!("PuppetPaie {} est en place. {}", a.version.lue(), phrase_du_calcul(calcul)));
 }
 
 /// `maj/appliquee.json`, que la bascule ecrit : la version installee, quand, ses notes, sa phrase `calcul`, et si elle a
@@ -1645,7 +1686,7 @@ fn dire_l_installation(inst: &Path, suivi: &Recherche) {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Appliquee {
-    version: String,
+    version: VersionDuLogiciel,
     #[serde(with = "socle::paris::ecrit::minute")]
     quand: Moment,
     notes: String,
@@ -1663,23 +1704,23 @@ fn ecrire_appliquee(chemin: &Path, a: &Appliquee) -> R<()> {
 /// Le geste « Redemarrer pour mettre a jour » : la version prete part au relais (comme au lancement, `au_lancement`) ; a
 /// l'appelant de s'arreter aussitot, sans rien ouvrir (le relais attend sa fin, bascule et ouvre la neuve). Refuse si la
 /// recherche de ce processus n'a rien de pret : rien n'est lance.
-pub fn redemarrer_pour_mettre_a_jour(inst: &Path, suivi: &Recherche) -> R<String> {
+pub fn redemarrer_pour_mettre_a_jour(inst: &Path, suivi: &Recherche) -> R<VersionDuLogiciel> {
     let v = match a_installer(inst)? {
         Some(v) if suivi.etape() == Etape::Prete => v,
         _ => return Err(refus("Cette version reste en service jusqu'à ce qu'une nouvelle soit prête.")),
     };
     lancer_relais(inst, &v).map_err(|e| {
-        noter(inst, &format!("Mise a jour {} non appliquee : {}", version_lue(&v), e.phrase));
+        noter(inst, &format!("Mise a jour {} non appliquee : {}", v.lue(), e.phrase));
         e.reformuler(|m| format!("La mise à jour ne s'installe pas : {}", m))
     })?;
-    noter(inst, &format!("Redemarrage demande pour la mise a jour {}.", version_lue(&v)));
+    noter(inst, &format!("Redemarrage demande pour la mise a jour {}.", v.lue()));
     Ok(v)
 }
 
 /// La version prete et plus recente que celle en place : celle qui s'installe au lancement suivant ; ou `None`.
-pub fn a_installer(inst: &Path) -> R<Option<String>> {
+pub fn a_installer(inst: &Path) -> R<Option<VersionDuLogiciel>> {
     match prete(inst)? {
-        Some(p) if plus_recente(&p.version, &courante(&logiciel_de(inst))?)? => Ok(Some(p.version)),
+        Some(p) if p.version.plus_recente_que(&courante(&logiciel_de(inst))?) => Ok(Some(p.version)),
         Some(_) | None => Ok(None),
     }
 }
@@ -1708,8 +1749,9 @@ pub fn appliquer(inst: &Path) -> R<Basculee> {
 /// Ce qu'une bascule a fait : la version en place, ou la precedente est gardee, quand.
 #[derive(Debug, Clone, Serialize)]
 pub struct Basculee {
-    pub version: String,
-    pub avant: String,
+    pub version: VersionDuLogiciel,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub avant: PathBuf,
     #[serde(with = "socle::paris::ecrit::minute")]
     pub quand: Moment,
 }
@@ -1720,7 +1762,7 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
     let inst = code.parent().map(Path::to_path_buf).ok_or_else(|| refus_avec("Le logiciel n'est dans aucune installation.", a_part_chemin(code)))?;
     let d = prete_dans(maj)?.ok_or_else(|| refus("aucune version prete a appliquer"))?;
     let version = d.version.clone();
-    let neuf = maj.join(&version).join("logiciel");
+    let neuf = maj.join(version.texte()).join("logiciel");
     let avant = code.join(".avant");
     socle::fichiers::effacer(&avant)?;
     std::fs::create_dir_all(&avant).map_err(|e| refus(e.to_string()))?;
@@ -1785,12 +1827,12 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
     std::fs::create_dir_all(dossier_maj(&inst)).map_err(|e| refus(e.to_string()))?;
     ecrire_appliquee(&dossier_maj(&inst).join(APPLIQUEE), &Appliquee { version: version.clone(), quand, notes: d.notes, calcul: d.calcul, vue: false })?;
     socle::fichiers::effacer_apres_coup(&maj.join(PRETE));
-    socle::fichiers::effacer_apres_coup(&maj.join(&version));
-    Ok(Basculee { version, avant: avant.display().to_string(), quand })
+    socle::fichiers::effacer_apres_coup(&maj.join(version.texte()));
+    Ok(Basculee { version, avant, quand })
 }
 
 /// Reprendre la version d'avant, gardee dans `.avant/`. Une seule marche arriere. Rend la version reprise.
-pub fn revenir(inst: &Path) -> R<String> {
+pub fn revenir(inst: &Path) -> R<VersionDuLogiciel> {
     let code = &logiciel_de(inst);
     let avant = code.join(".avant");
     if !avant.join("donnees").is_dir() {
@@ -1847,7 +1889,7 @@ pub fn au_lancement() -> bool {
     match lancer_relais(&inst, &v) {
         Ok(_) => true,
         Err(e) => {
-            noter(&inst, &format!("Mise a jour {} non appliquee : {}", version_lue(&v), e.phrase));
+            noter(&inst, &format!("Mise a jour {} non appliquee : {}", v.lue(), e.phrase));
             false
         }
     }
@@ -1870,7 +1912,7 @@ pub fn chercher_en_fond() {
 }
 
 /// LA RECHERCHE CONTINUE TANT QUE LE LOGICIEL TOURNE. `verifier_suivi`, puis, selon ce qu'elle laisse dans `suivi` :
-/// - un echec `HORS_LIGNE` (le depot ne repond pas, ou la reception a ete coupee) : un nouvel essai apres
+/// - un echec `HorsLigne` (le depot ne repond pas, ou la reception a ete coupee) : un nouvel essai apres
 ///   `attentes[n]` (la derniere se repete : `ATTENTES_HORS_LIGNE`). Le moment du prochain essai est dans `suivi` : la
 ///   bulle le dit, et la page relit tant qu'il est prevu (`relire_ms`) ;
 /// - « a jour » : un tour calme (`verifier_en`) toutes les `rythme` (`RYTHME_A_JOUR`). Une version publiee
@@ -1928,9 +1970,9 @@ pub fn noter(inst: &Path, t: &str) {
 
 /// Le programme neuf, copie hors de `logiciel/`, prend le relais ; il attendra la fin de CE processus. Rend `true` si le
 /// relais est parti.
-pub fn lancer_relais(inst: &Path, version: &str) -> R<bool> {
+pub fn lancer_relais(inst: &Path, version: &VersionDuLogiciel) -> R<bool> {
     let maj = dossier_maj(inst);
-    let neuf = maj.join(version).join("logiciel");
+    let neuf = maj.join(version.texte()).join("logiciel");
     let source = programme(&neuf, "puppetpaie");
     if !source.is_file() {
         return Err(refus_avec(format!("Le programme de la fenêtre manque dans la version {}.", version), a_part_chemin(&source)));
@@ -2038,7 +2080,7 @@ pub fn relais(args: &[socle::ligne::Argument]) -> i32 {
     if attendu {
         let journal = |t: &str| noter(&inst, t);
         match appliquer_depuis(&maj, &code) {
-            Ok(r) => journal(&format!("Mise a jour appliquee : PuppetPaie {} (la precedente est gardee dans .avant/).", version_lue(&r.version))),
+            Ok(r) => journal(&format!("Mise a jour appliquee : PuppetPaie {} (la precedente est gardee dans .avant/).", r.version.lue())),
             Err(e) => journal(&format!("Mise a jour non appliquee : {}", e.phrase)),
         }
     }
@@ -2078,7 +2120,7 @@ mod tests {
 
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
-        let p = Prete { version: "2026.11.01".into(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
+        let p = Prete { version: VersionDuLogiciel::lire("2026.11.01").unwrap(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
     }
 
@@ -2100,7 +2142,7 @@ mod tests {
             std::fs::write(neuf.join("EDITION.json"), "{\"edition\": \"bride\"}").unwrap();
             poser_la_prete(&racine);
             appliquer(&racine).unwrap();
-            assert_eq!(courante(&code).unwrap(), "2026.11.01");
+            assert_eq!(courante(&code).unwrap().texte(), "2026.11.01");
             assert_eq!(std::fs::read_to_string(code.join("EDITION.json")).ok().as_deref(), avant);
             let _ = std::fs::remove_dir_all(&base);
         }
@@ -2123,11 +2165,11 @@ mod tests {
         let r = appliquer(&racine);
         ECHOUER_SUR.with(|e| *e.borrow_mut() = None);
         assert!(r.unwrap_err().phrase.starts_with("la bascule a echoue"));
-        assert_eq!(courante(&code).unwrap(), "2026.10.09");
+        assert_eq!(courante(&code).unwrap().texte(), "2026.10.09");
         assert_eq!(std::fs::read_to_string(code.join("donnees").join("a.json")).unwrap(), "2026.10.09");
         assert_eq!(std::fs::read_to_string(code.join("interface").join("index.html")).unwrap(), "2026.10.09");
         assert!(code.join("EDITION.json").is_file());
-        assert_eq!(courante(&neuf).unwrap(), "2026.11.01");
+        assert_eq!(courante(&neuf).unwrap().texte(), "2026.11.01");
         assert_eq!(std::fs::read_to_string(neuf.join("donnees").join("a.json")).unwrap(), "2026.11.01");
         assert!(neuf.join("interface").join("index.html").is_file());
         assert!(prete(&racine).unwrap().is_some(), "la version reste prete, pour le prochain demarrage");

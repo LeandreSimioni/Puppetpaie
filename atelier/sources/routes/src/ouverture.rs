@@ -1713,13 +1713,13 @@ struct Aides(#[serde(serialize_with = "socle::ecriture::en_ordre")] &'static [(&
 /// prete et ce qu'elle dit (`calcul`, `exigee`), la signature, la version d'avant, et la phrase.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Version {
-    courante: String,
+    courante: compagnie::maj::VersionDuLogiciel,
     depot: compagnie::maj::DepotDesMisesAJour,
-    prete: Option<String>,
+    prete: Option<compagnie::maj::VersionDuLogiciel>,
     calcul: Option<String>,
     exigee: Option<String>,
     signee: bool,
-    avant: Option<String>,
+    avant: Option<compagnie::maj::VersionDuLogiciel>,
     phrase: String,
 }
 
@@ -1734,7 +1734,7 @@ pub(crate) fn version() -> R<Version> {
     let courante_v = compagnie::maj::courante(&code)?;
     let avant = if code.join(".avant").join("donnees").is_dir() { Some(compagnie::maj::courante(&code.join(".avant"))?) } else { None };
     // Une version prete se dit dans la phrase ; sans elle, la phrase n'en dit rien.
-    let dite: String = prete.iter().filter(|p| !p.version.is_empty()).map(|p| format!(" La version {} est prête.", p.version)).collect();
+    let dite: String = prete.iter().map(|p| format!(" La version {} est prête.", p.version)).collect();
     let (prete, calcul, exigee) = match prete {
         Some(p) => (Some(p.version), Some(p.calcul), Some(p.exigee)),
         None => (None, None, None),

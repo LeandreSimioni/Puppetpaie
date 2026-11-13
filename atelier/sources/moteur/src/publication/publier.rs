@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use compagnie::maj::{
-    b64, courante, derniere_lue, ecrire_json, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, plus_recente, programme_de,
-    signature_valide, systeme_du_fichier, version_lue, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
+    b64, courante, derniere_lue, ecrire_json, lire_depot, Archives, ArchivePubliee, FictivesPubliees, Publiee, nom_d_archive, nom_d_installation, programme_de,
+    signature_valide, systeme_du_fichier, VersionDuLogiciel, CLE_PUBLIQUE_GITHUB, DERNIERE, LIVRAISON, LIVREE, LOGICIEL,
     PROPRES_A_L_INSTALLATION, SYSTEMES, TOUT_SYSTEME,
 };
 
@@ -238,7 +238,7 @@ fn archiver_installation(code: &Path, systeme: &str) -> R<Vec<u8>> {
 }
 
 /// Le nom de l'archive des fictives d'une version : `puppetpaie-<version>-fictives.zip`.
-fn nom_des_fictives(version: &str) -> R<NomDeFichier> {
+fn nom_des_fictives(version: &VersionDuLogiciel) -> R<NomDeFichier> {
     NomDeFichier::lire(&format!("puppetpaie-{}-fictives.zip", version))
 }
 
@@ -309,12 +309,11 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     if d.join(DERNIERE).exists() {
         // Le `derniere.json` de la Release precedente, lu comme chaque installation le lit (`derniere_lue`).
         let avant = derniere_lue(&lire_depot(&depot, &const { NomDeFichier::du_moteur(DERNIERE) })?)?;
-        let av = avant.version.as_str();
-        if !plus_recente(&version, av)? {
+        if !version.plus_recente_que(&avant.version) {
             return Err(socle::refus!(
                 "le depot est deja en {} ; augmenter VERSION (aujourd'hui {}, le fichier s'ecrit AAAA.MM.JJ : {}) avant de publier",
-                version_lue(av),
-                version_lue(&version),
+                avant.version.lue(),
+                version.lue(),
                 version
             ));
         }
@@ -559,7 +558,7 @@ mod tests {
         assert!(!signature_valide(&altere, &sig, &publique));
         let neuf = base.join("maj-neuve").join("logiciel");
         deballer(&octets, &neuf).unwrap();
-        assert_eq!(courante(&neuf).unwrap(), "2026.10.09");
+        assert_eq!(courante(&neuf).unwrap().texte(), "2026.10.09");
         assert!(neuf.join("donnees").join("a.json").is_file());
         assert!(!neuf.join("target").exists());
         // Une archive d'installation n'est pas une mise a jour : refusee, rien n'est ecrit.
