@@ -355,7 +355,8 @@ struct Passe {
     heures: Option<i64>,
     jours: Option<i64>,
     titre: Option<String>,
-    numero_objet: Option<String>,
+    numero_objet: Option<NumeroObjetSpectacle>,
+    spectacle: Option<droit::contexte::IdSpectacle>,
     dates: Vec<Jour>,
     source: &'static str,
 }
@@ -724,23 +725,24 @@ const TITRE_A_COMPLETER: &str = "A COMPLETER";
 /// Les spectacles retrouves par leur cle ou par leur numero d'objet.
 struct Spectacles<'a> {
     ctx: &'a Contexte,
-    par_objet: HashMap<&'a NumeroObjetSpectacle, &'a droit::fiche::ChampsSpectacle>,
+    par_objet: HashMap<&'a NumeroObjetSpectacle, (&'a droit::contexte::IdSpectacle, &'a droit::fiche::ChampsSpectacle)>,
 }
 
 impl<'a> Spectacles<'a> {
     fn nouveau(ctx: &'a Contexte) -> Spectacles<'a> {
         let mut par_objet = HashMap::new();
-        for v in ctx.spectacles.values() {
+        for (k, v) in &ctx.spectacles {
             if let Some(n) = v.numero_objet.dite() {
-                par_objet.entry(n).or_insert(v);
+                par_objet.entry(n).or_insert((k, v));
             }
         }
         Spectacles { ctx, par_objet }
     }
 
-    /// Le spectacle de cle `x`, sinon de numero d'objet `x` (le texte qu'un engagement ecrit de son spectacle).
-    fn trouver(&self, x: &str) -> Option<&'a droit::fiche::ChampsSpectacle> {
-        self.ctx.spectacles.get(x).or_else(|| self.par_objet.iter().find_map(|(n, v)| (***n == *x).then_some(*v)))
+    /// Le spectacle de cle `x`, sinon de numero d'objet `x` (le texte qu'un engagement ecrit de son spectacle) : sa cle et
+    /// sa fiche.
+    fn trouver(&self, x: &str) -> Option<(&'a droit::contexte::IdSpectacle, &'a droit::fiche::ChampsSpectacle)> {
+        self.ctx.spectacles.get_key_value(x).or_else(|| self.par_objet.iter().find_map(|(n, v)| (***n == *x).then_some(*v)))
     }
 }
 
@@ -860,11 +862,13 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             if !voulu(&cle) {
                 continue;
             }
-            let ref_spec = e.spectacle.as_ref().map(ToString::to_string);
-            let spec = ref_spec.as_deref().and_then(|r| spectacles.trouver(r));
-            let numero = match spec.and_then(|s| s.numero_objet.remplie()) {
-                Some(n) => Some(n.to_string()),
-                None => ref_spec.clone(),
+            let trouve = e.spectacle.as_ref().and_then(|r| spectacles.trouver(r));
+            let spec = trouve.map(|(_, s)| s);
+            let numero_objet = spec.and_then(|s| s.numero_objet.dite()).cloned();
+            // Le titre d'une fiche sans titre se dit par son numero d'objet, sinon par le spectacle que l'engagement nomme.
+            let titre = match &numero_objet {
+                Some(n) => titre_de(spec, Some(&n.to_string())),
+                None => titre_de(spec, e.spectacle.as_deref()),
             };
             let cachets = cachets_de(ctx, &e)?;
             let dates = jours_joues(&e);
@@ -886,8 +890,9 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
                 cachets: Some(cachets),
                 heures: None,
                 jours: Some(jours),
-                titre: titre_de(spec, numero.as_deref()),
-                numero_objet: numero,
+                titre,
+                numero_objet,
+                spectacle: e.spectacle.clone(),
                 dates: dates.into_iter().filter(|j| j.mois_civil() == mois).collect(),
                 source: "paie",
             };
@@ -909,18 +914,20 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         if couverts.contains(&a.fin.mois_civil()) || !voulu(&a.salarie) {
             continue;
         }
-        let spec = a.numero_objet.as_ref().and_then(|n| spectacles.par_objet.get(n).copied());
+        let trouve = a.numero_objet.as_ref().and_then(|n| spectacles.par_objet.get(n).copied());
+        let spec = trouve.map(|(_, s)| s);
         out.push(Passe {
             dit: dit_du_contrat(a.debut, a.fin, a.cachets, a.heures),
             nom: ctx.nomme(&a.salarie),
             titre: titre_de(spec, a.numero_objet.as_deref()),
+            spectacle: trouve.map(|(k, _)| k.clone()),
             salarie: a.salarie,
             debut: a.debut,
             fin: a.fin,
             cachets: a.cachets,
             heures: a.heures,
             jours: a.jours,
-            numero_objet: a.numero_objet.map(|n| n.to_string()),
+            numero_objet: a.numero_objet,
             dates: Vec::new(),
             source: "historique",
         });

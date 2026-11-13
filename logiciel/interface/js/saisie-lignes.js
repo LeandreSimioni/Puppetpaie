@@ -385,9 +385,10 @@ function libelleDuPasse(c, avecNom) {
   return [avecNom ? c.nom.split(" ")[0] : null, c.titre].filter((x) => x != null).join(" · ");
 }
 
-/** Une ligne de la liste des contrats d'un mois passé. */
+/** Une ligne de la liste des contrats d'un mois passé : au survol, son numéro d'objet, sinon son spectacle. */
 function ligneContratPasse(c, avecNom) {
-  return `<div class="c-passe"${c.numero_objet ? ` title="${echapper(c.numero_objet)}"` : ""}>
+  const survol = c.numero_objet || c.spectacle;
+  return `<div class="c-passe"${survol ? ` title="${echapper(survol)}"` : ""}>
       <span>${echapper(libelleDuPasse(c, avecNom))}</span>
       <span class="discret">${echapper(c.dit)}</span>
     </div>`;
