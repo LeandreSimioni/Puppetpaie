@@ -45,20 +45,20 @@ forme_notee! {
         pub etendu_le: Option<Jour>,
         /// Les organisations d'employeurs signataires de l'accord.
         pub signataires: Option<Vec<String>>,
-        pub annexes: Option<BTreeMap<String, Annexe>>,
+        pub annexes: Option<BTreeMap<crate::fiche::AnnexeConvention, Annexe>>,
         pub clauses_communes: Option<ClausesCommunes>,
-        pub cachets: Option<BTreeMap<String, GrilleDeCachets>>,
+        pub cachets: Option<BTreeMap<CleDeGrille, GrilleDeCachets>>,
         pub repetition: Option<RepetitionParService>,
         pub emplois_autres_qu_artistiques: Option<EmploisAutres>,
         pub accords: Option<Vec<Convention>>,
         pub grilles: Option<Vec<Grille>>,
         pub grilles_complementaires: Option<Vec<Grille>>,
         /// 2642 : le minimum d'un CDDU a la semaine de 35 h, par fonction.
-        pub cddu_semaine_35h: Option<BTreeMap<String, Cddu2642>>,
+        pub cddu_semaine_35h: Option<BTreeMap<CleDeGrille, Cddu2642>>,
         /// 2642 : le mensuel pour 35 h d'un permanent, par fonction.
-        pub permanents_mensuel_35h: Option<BTreeMap<String, Nombre>>,
+        pub permanents_mensuel_35h: Option<BTreeMap<CleDeGrille, Nombre>>,
         /// 3097 : la semaine de 39 h d'un technicien, par fonction.
-        pub techniciens_semaine_39h: Option<BTreeMap<String, Nombre>>,
+        pub techniciens_semaine_39h: Option<BTreeMap<CleDeGrille, Nombre>>,
         /// 3097 : les heures que la semaine de 39 h paie au taux de base (35 h + 4 h a 125 %).
         pub heures_payees_de_la_semaine: Option<Nombre>,
         pub avant_2026_05: Option<Avant2026>,
@@ -73,7 +73,7 @@ forme_notee! {
     /// Une annexe de la 3090 : ses cachets d'artistes, sa repetition, le taux horaire de ses techniciens.
     pub struct Annexe {
         pub libelle: String,
-        pub cachets: Option<BTreeMap<String, GrilleDeCachets>>,
+        pub cachets: Option<BTreeMap<CleDeGrille, GrilleDeCachets>>,
         pub repetition: Option<RepetitionDeLAnnexe>,
         pub techniciens: Option<ParNiveau<Nombre>>,
     }
@@ -105,17 +105,26 @@ pub struct ParNiveau<T> {
 
 impl<T> ParNiveau<T> {
     /// La valeur du niveau `niveau`, si la grille en a une.
-    pub fn du_niveau(&self, niveau: &str) -> Option<&T> {
-        match niveau {
-            "cadre_groupe_1" => self.cadre_groupe_1.as_ref(),
-            "cadre_groupe_2" => self.cadre_groupe_2.as_ref(),
-            "cadre_groupe_3" => self.cadre_groupe_3.as_ref(),
-            "agent_de_maitrise" => self.agent_de_maitrise.as_ref(),
-            "employe_qualifie_1" => self.employe_qualifie_1.as_ref(),
-            "employe_qualifie_2" => self.employe_qualifie_2.as_ref(),
-            "employe" => self.employe.as_ref(),
-            _ => None,
-        }
+    pub fn du_niveau(&self, niveau: &CleDeGrille) -> Option<&T> {
+        const NIVEAUX: [CleDeGrille; 7] = [
+            CleDeGrille::du_moteur("cadre_groupe_1"),
+            CleDeGrille::du_moteur("cadre_groupe_2"),
+            CleDeGrille::du_moteur("cadre_groupe_3"),
+            CleDeGrille::du_moteur("agent_de_maitrise"),
+            CleDeGrille::du_moteur("employe_qualifie_1"),
+            CleDeGrille::du_moteur("employe_qualifie_2"),
+            CleDeGrille::du_moteur("employe"),
+        ];
+        let valeurs = [
+            &self.cadre_groupe_1,
+            &self.cadre_groupe_2,
+            &self.cadre_groupe_3,
+            &self.agent_de_maitrise,
+            &self.employe_qualifie_1,
+            &self.employe_qualifie_2,
+            &self.employe,
+        ];
+        NIVEAUX.iter().zip(valeurs).find(|(n, _)| *n == niveau).and_then(|(_, v)| v.as_ref())
     }
 }
 
@@ -123,10 +132,10 @@ forme_notee! {
     /// La grille des cachets d'un emploi : ses paliers sur le nombre de representations, et sa jauge quand elle en depend.
     pub struct GrilleDeCachets {
         pub libelle: String,
-        pub periode: Option<String>,
-        pub jauge: Option<String>,
+        pub periode: Option<CleDeGrille>,
+        pub jauge: Option<CleDeGrille>,
         pub paliers: Vec<Palier>,
-        pub autres_jauges: Option<BTreeMap<String, Vec<Nombre>>>,
+        pub autres_jauges: Option<BTreeMap<CleDeGrille, Vec<Nombre>>>,
     }
 }
 
@@ -157,7 +166,8 @@ forme_notee! {
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub service: Decimal,
         pub service_libelle: String,
-        pub par_categorie: Option<BTreeMap<String, ServiceDeCategorie>>,
+        /// Par ligne de minima d'un metier de la 1285 (`emplois-base.json`, `minima.1285`).
+        pub par_categorie: Option<BTreeMap<CleDeGrille, ServiceDeCategorie>>,
     }
 }
 
@@ -175,7 +185,7 @@ forme_notee! {
     pub struct EmploisAutres {
         #[serde(deserialize_with = "socle::forme::court")]
         pub heures_mensuelles: Decimal,
-        pub groupes: BTreeMap<String, Vec<Court>>,
+        pub groupes: BTreeMap<CleDeGrille, Vec<Court>>,
     }
 }
 
@@ -183,8 +193,8 @@ forme_notee! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Cddu2642 {
-    pub filiere: String,
-    pub niveau: String,
+    pub filiere: CleDeGrille,
+    pub niveau: CleDeGrille,
     pub fiction: Option<Nombre>,
     pub flux: Option<Nombre>,
     pub autre: Option<Nombre>,
@@ -200,7 +210,7 @@ impl Cddu2642 {
 forme_notee! {
     /// 3097 : les deux fonctions reevaluees au 01/05/2026, a leur montant d'avant.
     pub struct Avant2026 {
-        pub montants: BTreeMap<String, Nombre>,
+        pub montants: BTreeMap<CleDeGrille, Nombre>,
     }
 }
 
@@ -253,23 +263,24 @@ forme_notee! {
 
 impl Complement3097 {
     /// Le role `role` (la ligne de minima du metier dans la 3097), s'il en est un.
-    pub fn du_role(&self, role: &str) -> Option<&Engagement3097> {
-        match role {
-            "figuration" => Some(&self.figuration),
-            "silhouette_muette" => Some(&self.silhouette_muette),
-            "silhouette_parlante" => Some(&self.silhouette_parlante),
-            "doublure_simple" => Some(&self.doublure_simple),
-            "doublure_polyvalente" => Some(&self.doublure_polyvalente),
-            _ => None,
-        }
+    pub fn du_role(&self, role: &CleDeGrille) -> Option<&Engagement3097> {
+        const ROLES: [CleDeGrille; 5] = [
+            CleDeGrille::du_moteur("figuration"),
+            CleDeGrille::du_moteur("silhouette_muette"),
+            CleDeGrille::du_moteur("silhouette_parlante"),
+            CleDeGrille::du_moteur("doublure_simple"),
+            CleDeGrille::du_moteur("doublure_polyvalente"),
+        ];
+        let engagements = [&self.figuration, &self.silhouette_muette, &self.silhouette_parlante, &self.doublure_simple, &self.doublure_polyvalente];
+        ROLES.iter().zip(engagements).find(|(r, _)| *r == role).map(|(_, e)| e)
     }
 }
 
 forme_notee! {
     /// 3097, titre IV : le mensuel de base des permanents par niveau, et le niveau de chaque emploi repere.
     pub struct Permanents3097 {
-        pub niveaux: BTreeMap<String, Nombre>,
-        pub emplois_reperes: BTreeMap<String, String>,
+        pub niveaux: BTreeMap<CleDeGrille, Nombre>,
+        pub emplois_reperes: BTreeMap<CleDeGrille, CleDeGrille>,
     }
 }
 
@@ -289,13 +300,15 @@ forme_notee! {
         /// grille.
         pub unite: crate::catalogue::Unite,
         pub heures: Option<Nombre>,
-        pub categories: Option<Vec<String>>,
+        /// Les lignes de minima des metiers qu'elle vise (`emplois-base.json`, `minima.<idcc>`).
+        pub categories: Option<Vec<CleDeGrille>>,
         pub codes: Option<Vec<crate::emplois::CodeEmploi>>,
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
         pub anciennete: Option<Anciennete>,
         pub duree_contrat_max_jours: Option<i64>,
+        /// Les grilles qu'elle remplace, par leur `nom`.
         pub remplace: Option<Vec<String>>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
         pub valeurs: Vec<(String, Nombre)>,
@@ -312,8 +325,8 @@ forme_notee! {
     /// ajoute a chaque valeur.
     pub struct Majoration {
         pub nom: String,
-        pub groupe: Option<String>,
-        pub categories: Option<Vec<String>>,
+        pub groupe: Option<CleDeGrille>,
+        pub categories: Option<Vec<CleDeGrille>>,
         pub codes: Option<Vec<crate::emplois::CodeEmploi>>,
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
@@ -436,7 +449,7 @@ impl SiSalarie {
 
 /// LES CONDITIONS D'UNE GRILLE OU D'UNE MAJORATION, telles que l'engagement les confronte a une ligne de paie.
 pub struct Conditions<'a> {
-    pub categories: Option<&'a [String]>,
+    pub categories: Option<&'a [CleDeGrille]>,
     pub codes: Option<&'a [crate::emplois::CodeEmploi]>,
     pub si_spectacle: Option<&'a SiSpectacle>,
     pub si_entreprise: Option<&'a SiEntreprise>,
@@ -571,6 +584,25 @@ impl Table {
 pub fn accord<'a>(t: &'a Table, id: &AccordDeSalaires) -> Option<&'a Convention> {
     t.conventions.values().flat_map(|c| c.accords.iter().flatten()).find(|a| a.id.as_ref() == Some(id))
 }
+
+crate::cle_opaque! {
+    /// UNE CLE DES GRILLES DES MINIMA : ce qui nomme une ligne ou une colonne des grilles de `minima-conventionnels.json`
+    /// (une grille de cachets `theatre.role`, une fonction de la 2642 ou de la 3097, un groupe de la 1285, un niveau de
+    /// la 3090 `cadre_groupe_1`, une jauge, une periode, une categorie d'une grille), et ce qui la designe ailleurs : la
+    /// ligne de minima d'un metier et sa classification 3090 (`emplois-base.json`), la grille et le niveau que la prime
+    /// d'anciennete lit (`clauses-conventionnelles-base.json`). `decisions-t8.md` Q4 (b) : un type opaque, sans liste
+    /// dans le code ; celles que le moteur lit sont des constantes.
+    pub struct CleDeGrille, "clé de grille des minima";
+}
+
+/// La grille technique de la classification 3090 (`classification_3090.grille`).
+pub const TECHNIQUE: CleDeGrille = CleDeGrille::du_moteur("technique");
+/// La grille administrative de la classification 3090.
+pub const ADMINISTRATIF: CleDeGrille = CleDeGrille::du_moteur("administratif");
+/// La ligne de minima de l'artiste-interprete de la 3097 (titre III).
+pub const ACTEUR: CleDeGrille = CleDeGrille::du_moteur("acteur");
+/// La ligne de minima d'un artiste de cirque de la 1285.
+pub const CIRQUE: CleDeGrille = CleDeGrille::du_moteur("cirque");
 
 crate::cle_opaque! {
     /// L'IDENTIFIANT D'UN ACCORD DE SALAIRES (`kali-1285-accord-salaires-20260701`) : l'`id` d'un accord de

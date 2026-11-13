@@ -309,7 +309,7 @@ enum Livree {
     /// `bareme:rubriques_bulletin/id=<rubrique>/taux_pat`
     TauxPatronal(droit::forme_bareme::IdDeCotisation),
     /// `minima:conventions/<idcc>/annexes/<annexe>/repetition/cachet`
-    CachetDeRepetition { idcc: droit::fiche::Idcc, annexe: String },
+    CachetDeRepetition { idcc: droit::fiche::Idcc, annexe: droit::fiche::AnnexeConvention },
 }
 
 impl<'de> Deserialize<'de> for Gabarit {
@@ -402,7 +402,10 @@ fn lire_livree(chemin: &str, bareme: bool) -> R<Livree> {
             Some(id) => Livree::TauxPatronal(droit::forme_bareme::IdDeCotisation::lire(id)?),
             None => return Err(inconnue()),
         },
-        (false, ["conventions", idcc, "annexes", annexe, "repetition", "cachet"]) => Livree::CachetDeRepetition { idcc: droit::fiche::Idcc::lire(idcc)?, annexe: annexe.to_string() },
+        (false, ["conventions", idcc, "annexes", annexe, "repetition", "cachet"]) => match droit::fiche::AnnexeConvention::du_code(annexe) {
+            Some(annexe) => Livree::CachetDeRepetition { idcc: droit::fiche::Idcc::lire(idcc)?, annexe },
+            None => return Err(inconnue()),
+        },
         _ => return Err(inconnue()),
     })
 }

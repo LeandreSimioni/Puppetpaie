@@ -141,7 +141,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
     let cdd =!e.nature_lue()?.duree_indeterminee;
     let legal = permanents::preavis_mois(anciennete, motif, cdd)?;
     let prof = profil(ctx, e)?;
-    let categorie = prof.categorie.as_deref();
+    let categorie = prof.categorie.as_ref();
     let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif, age(ctx, e)?)?;
     let conv_mois = conv.mois.map(de_p).transpose()?;
     // Une convention qui ne donne pas de duree dit pourquoi ; une qui en donne une dit son article (`clauses::preavis_mois`).
@@ -164,7 +164,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
         out.pourquoi = if conv_mois == Some(Decimal::ZERO) { conv.pourquoi.clone() } else { None };
         return Ok(out);
     }
-    if releve && conv_mois.is_none() && categorie.is_some_and(|c| !c.is_empty()) {
+    if releve && conv_mois.is_none() && categorie.is_some() {
         out.pourquoi = Some(format!("{}. Dites sa durée sur la carte (« durée du préavis, en mois »).", conv_pourquoi()?));
         return Ok(out);
     }
@@ -795,7 +795,7 @@ fn indemnite_de_rupture(
             qui
         )));
         let mise = clauses::indemnite_mise_a_la_retraite(idcc, anciennete, &mut retenu)?;
-        let vise = prof.categorie.as_deref() == Some("cadre_de_direction") && ctx.entreprise.annexe_convention.code() == Some("1") && anciennete > Decimal::from(120);
+        let vise = prof.categorie == Some(clauses::CADRE_DE_DIRECTION) && ctx.entreprise.annexe_convention.dite() == Some(&droit::fiche::AnnexeConvention::A1) && anciennete > Decimal::from(120);
         if let Some(cdd) = mise.cadre_de_direction.as_ref().filter(|_| vise) {
             if saisi.is_none() {
                 return Err(socle::echec::cle(format!(
@@ -1215,7 +1215,7 @@ fn indemnite_conventionnelle(
 ) -> R<clauses::Indemnite> {
     clauses::indemnite_licenciement(
         idcc(ctx),
-        ctx.entreprise.annexe_convention.code(),
+        ctx.entreprise.annexe_convention.dite().copied(),
         &profil(ctx, e)?,
         anciennete,
         reference,

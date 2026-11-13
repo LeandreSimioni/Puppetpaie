@@ -92,11 +92,33 @@ pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
     let metier = dite(&e.metier).map(|c| droit::emplois::CodeEmploi::lire(&c)).transpose()?;
-    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: e.statut, metier, cadre: e.cadre, debut: e.debut })
+    let categorie_conventionnelle = dite(&e.categorie_conventionnelle).map(|c| match droit::fiche::CategorieConventionnelle::du_code(&c) {
+        Some(cat) => cat,
+        None => panic!("la catégorie {:?} de l'oracle n'est pas un choix de la fiche : donnee invalide", c),
+    });
+    Ok(DitParLEngagement { categorie_conventionnelle, statut: e.statut, metier, cadre: e.cadre, debut: e.debut })
+}
+
+/// Une categorie de clause des oracles, ou son vide (`""` : rien n'est dit).
+pub(crate) fn categorie_dite(t: Option<&str>) -> Option<c::CategorieDeClause> {
+    t.filter(|t| !t.is_empty()).map(|t| match c::CategorieDeClause::lire(t) {
+        Ok(cat) => cat,
+        Err(e) => panic!("la catégorie {:?} de l'oracle n'en est pas une : donnee invalide ({})", t, e.phrase),
+    })
+}
+
+/// Une annexe de la CCNEAC des oracles : celle de la case de la fiche Entreprise, que la compagnie choisit dans sa
+/// liste ; un texte hors de la liste (`""`, `"10"`, `"zzz"`) ne dit aucune annexe.
+pub(crate) fn annexe_dite(t: &str) -> Option<droit::fiche::AnnexeConvention> {
+    droit::fiche::AnnexeConvention::du_code(t)
 }
 
 pub(crate) fn profil_de(p: &Prof) -> Profil {
-    Profil { categorie: p.categorie.clone(), grille: p.grille.clone(), source: String::new() }
+    let grille = p.grille.as_deref().map(|g| match droit::minima::CleDeGrille::lire(g) {
+        Ok(g) => g,
+        Err(e) => panic!("la grille {:?} de l'oracle n'en est pas une : donnee invalide ({})", g, e.phrase),
+    });
+    Profil { categorie: categorie_dite(p.categorie.as_deref()), grille, source: String::new() }
 }
 
 // ------------------------------------------------------------- les calculs
@@ -105,11 +127,6 @@ pub(crate) fn profil_de(p: &Prof) -> Profil {
 /// le test refuse en la nommant.
 pub(crate) fn motif_lu(m: Option<&str>) -> Option<droit::natures::MotifDeRupture> {
     m.map(|c| droit::natures::MotifDeRupture::du_code(c).unwrap_or_else(|| panic!("le motif {:?} de l'oracle n'est pas un code de S21.G00.62.002 : donnee invalide", c)))
-}
-
-/// Un IDCC ou une annexe des oracles, ou son vide (`""` dans les oracles : la compagnie n'en dit pas).
-pub(crate) fn dit_ou_vide(t: &str) -> Option<&str> {
-    Some(t).filter(|t| !t.is_empty())
 }
 
 /// L'IDCC d'un oracle, ou son vide (`""` : la compagnie n'en dit pas) ; un texte qui n'est pas un IDCC est une donnee
@@ -143,7 +160,7 @@ pub(crate) fn bloc_profil(g: &Grilles, idcc: &str, code: &str) -> Vec<R<Profil>>
 }
 
 pub(crate) fn bloc_preavis(g: &Grilles, idcc: &str, categorie: Option<&str>, motif: Option<&str>) -> Vec<R<PreavisDit>> {
-    g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(idcc_dit(idcc).as_ref(), categorie, dec(a), motif_lu(motif), age.as_deref().map(dec)))).collect()
+    g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(idcc_dit(idcc).as_ref(), categorie_dite(categorie).as_ref(), dec(a), motif_lu(motif), age.as_deref().map(dec)))).collect()
 }
 
 pub(crate) fn annees(g: &Grilles) -> Vec<P> {
@@ -176,11 +193,11 @@ pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Op
 }
 
 pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option<c::ClauseDAnnexe>>> {
-    g.profs.iter().flat_map(|pr| g.motifs.iter().map(move |m| c::clause_d_annexe(idcc_dit(idcc).as_ref(), dit_ou_vide(annexe), &profil_de(pr), motif_lu(m.as_deref())))).collect()
+    g.profs.iter().flat_map(|pr| g.motifs.iter().map(move |m| c::clause_d_annexe(idcc_dit(idcc).as_ref(), annexe_dite(annexe), &profil_de(pr), motif_lu(m.as_deref())))).collect()
 }
 
 pub(crate) fn indemnite(idcc: &str, annexe: &str, pr: &Prof, anc: &str, r: &str, motif: Option<&str>, age: Option<&str>) -> R<Indemnite> {
-    c::indemnite_licenciement(idcc_dit(idcc).as_ref(), dit_ou_vide(annexe), &profil_de(pr), dec(anc), &mut || Ok(dec(r)), motif_lu(motif), age.map(dec))
+    c::indemnite_licenciement(idcc_dit(idcc).as_ref(), annexe_dite(annexe), &profil_de(pr), dec(anc), &mut || Ok(dec(r)), motif_lu(motif), age.map(dec))
 }
 
 pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -> Vec<R<Indemnite>> {
@@ -210,7 +227,9 @@ pub(crate) fn bloc_retraite(g: &Grilles, f: impl Fn(&str, &str) -> R<Retraite>) 
 }
 
 pub(crate) fn prime(idcc: &str, annexe: &str, fiche: &str, eng: Option<&Eng>, j: &Jour, jauge: Option<&str>) -> R<Option<Prime>> {
-    c::prime_anciennete(idcc_dit(idcc).as_ref(), dit_ou_vide(annexe), &champs(fiche)?, &dit(eng)?, j, |_| jauge)
+    // Une jauge des oracles hors de la liste de la case (`""`, `"zzz"`) ne dit aucune jauge.
+    let jauge = jauge.and_then(droit::fiche::JaugeAnnexe1::du_code);
+    c::prime_anciennete(idcc_dit(idcc).as_ref(), annexe_dite(annexe), &champs(fiche)?, &dit(eng)?, j, |_| jauge)
 }
 
 pub(crate) fn bloc_prime(g: &Grilles, idcc: &str, annexe: &str, code: &str) -> Vec<R<Option<Prime>>> {
@@ -320,7 +339,7 @@ pub(crate) fn rendu<T, U>(r: R<T>, f: impl Fn(T) -> U) -> Rendu<U> {
 }
 
 pub(crate) fn profil_ecrit(p: Profil) -> ProfilLu {
-    ProfilLu { categorie: p.categorie, grille: p.grille, source: p.source }
+    ProfilLu { categorie: p.categorie.map(String::from), grille: p.grille.map(String::from), source: p.source }
 }
 
 pub(crate) fn preavis_ecrit(p: PreavisDit) -> PreavisLu {
@@ -441,11 +460,11 @@ pub(crate) fn cas_profil(c: &CasProfil) -> Rendu<ProfilLu> {
 }
 
 pub(crate) fn cas_preavis(x: &CasPreavis) -> Rendu<PreavisLu> {
-    rendu(c::preavis_mois(idcc_dit(&x.idcc).as_ref(), x.categorie.as_deref(), dec(&x.anciennete), motif_lu(x.motif.as_deref()), x.age.as_deref().map(dec)), preavis_ecrit)
+    rendu(c::preavis_mois(idcc_dit(&x.idcc).as_ref(), categorie_dite(x.categorie.as_deref()).as_ref(), dec(&x.anciennete), motif_lu(x.motif.as_deref()), x.age.as_deref().map(dec)), preavis_ecrit)
 }
 
 pub(crate) fn cas_annexe(x: &CasAnnexe) -> Rendu<Option<AnnexeLue>> {
-    rendu(c::clause_d_annexe(idcc_dit(&x.idcc).as_ref(), dit_ou_vide(&x.annexe), &profil_de(&x.profil), motif_lu(x.motif.as_deref())), annexe_ecrite)
+    rendu(c::clause_d_annexe(idcc_dit(&x.idcc).as_ref(), annexe_dite(&x.annexe), &profil_de(&x.profil), motif_lu(x.motif.as_deref())), annexe_ecrite)
 }
 
 pub(crate) fn cas_indemnite(x: &CasIndemnite) -> Rendu<IndemniteLue> {

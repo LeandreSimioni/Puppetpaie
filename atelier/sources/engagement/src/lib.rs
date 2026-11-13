@@ -1141,7 +1141,7 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
             let ent = ctx.entreprise_au(&fin_mois);
             let fiche = crate::calcul::fiche_de_l_engagement(ctx, eng)?;
             let metier = fiche.code_emploi_ft.dite().map(emplois::metier).transpose()?.flatten();
-            let cirque = metier.as_ref().and_then(|m| m.au_catalogue()).and_then(|f| f.minima.ccn_1285.as_deref()) == Some("cirque");
+            let cirque = metier.as_ref().and_then(|m| m.au_catalogue()).and_then(|f| f.minima.ccn_1285.as_ref()) == Some(&droit::minima::CIRQUE);
             (ent.idcc.dite() == Some(&droit::clauses::IDCC_CCNEAC) && cirque).then_some(f)
         }
         _ => None,

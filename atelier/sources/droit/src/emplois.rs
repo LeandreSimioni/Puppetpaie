@@ -16,7 +16,8 @@ use socle::echec::R;
 use socle::date::Jour;
 
 use crate::contexte::{Contexte, IdSalarie};
-use crate::fiche::{CaseDeFiche, CaseSalarie, CodeEmploiFt, CodePcsEse, FicheSalarie, Idcc, Lue, Statut, StatutCategorielRc, StatutConventionnel};
+use crate::fiche::{AnnexeConvention, CaseDeFiche, CaseSalarie, CodeEmploiFt, CodePcsEse, FicheSalarie, Idcc, Lue, Statut, StatutCategorielRc, StatutConventionnel};
+use crate::minima::CleDeGrille;
 
 /// `emplois-base.json` : le catalogue des metiers, dans l'ordre ou le deroulant les montre, et les noms courts des
 /// conventions. Sa `note` dit le perimetre, les sources et les regles de chaque champ.
@@ -215,24 +216,24 @@ pub struct FicheDuCatalogue {
 #[serde(deny_unknown_fields)]
 pub struct Minima {
     #[serde(rename = "3090", skip_serializing_if = "Option::is_none")]
-    pub ccn_3090: Option<BTreeMap<String, String>>,
+    pub ccn_3090: Option<BTreeMap<AnnexeConvention, CleDeGrille>>,
     #[serde(rename = "1285", skip_serializing_if = "Option::is_none")]
-    pub ccn_1285: Option<String>,
+    pub ccn_1285: Option<CleDeGrille>,
     #[serde(rename = "2642", skip_serializing_if = "Option::is_none")]
-    pub ccn_2642: Option<String>,
+    pub ccn_2642: Option<CleDeGrille>,
     #[serde(rename = "3097", skip_serializing_if = "Option::is_none")]
-    pub ccn_3097: Option<String>,
+    pub ccn_3097: Option<CleDeGrille>,
 }
 
 impl Minima {
     /// La ligne de minima d'une convention qui n'en a qu'une (1285, 2642, 3097), ou `None`.
-    pub fn ligne(&self, idcc: &Idcc) -> Option<&str> {
+    pub fn ligne(&self, idcc: &Idcc) -> Option<&CleDeGrille> {
         if *idcc == crate::clauses::IDCC_CCNEAC {
-            self.ccn_1285.as_deref()
+            self.ccn_1285.as_ref()
         } else if *idcc == crate::fiche::IDCC_2642 {
-            self.ccn_2642.as_deref()
+            self.ccn_2642.as_ref()
         } else if *idcc == crate::fiche::IDCC_3097 {
-            self.ccn_3097.as_deref()
+            self.ccn_3097.as_ref()
         } else {
             None
         }
@@ -252,15 +253,15 @@ pub struct Classification1285 {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Classification3090 {
-    pub grille: String,
-    pub niveau: String,
+    pub grille: CleDeGrille,
+    pub niveau: CleDeGrille,
 }
 
 /// La fonction du metier dans la grille de la 2642.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Fonction {
-    pub fonction: String,
+    pub fonction: CleDeGrille,
 }
 
 /// La fonction du metier dans la grille de la 3097 (titre II), et l'emploi repere du titre IV qui donne le salaire d'un
@@ -268,9 +269,9 @@ pub struct Fonction {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Classification3097 {
-    pub fonction: String,
+    pub fonction: CleDeGrille,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub titre_iv: Option<String>,
+    pub titre_iv: Option<CleDeGrille>,
 }
 
 /// `nomenclature-emplois-ft.json` : les codes emploi France Travail (S21.G00.40.005), leur libelle et leur annexe.
@@ -425,18 +426,28 @@ impl Metier {
     /// Le statut conventionnel DSN (40.002) du metier declare NON cadre. L'artiste-interprete : 05, par inference
     /// (`statut_conventionnel` dans la `note` de `emplois-base.json` : « Non-cadres » de la 3090, art. 6.3, hors de la categorie
     /// cadre de la 1285, art. XI.2.1 ; 05 par l'exemple de la fiche net-entreprises 3344, l. 364-366).
-    pub fn statut_non_cadre(&self) -> Option<StatutConventionnel> {
+    /// Un niveau 3090 de categorie cadre ou agent de maitrise (la categorie de chaque niveau :
+    /// `categories.par_niveau_3090` de la 3090 dans `clauses-conventionnelles-base.json`) se declare agent de maitrise ;
+    /// un niveau que cette table ne range pas se refuse.
+    pub fn statut_non_cadre(&self) -> R<Option<StatutConventionnel>> {
         if let Some(st) = self.au_catalogue().map(|f| f.statut_conventionnel).filter(|s| *s != StatutConventionnel::Cadre04) {
-            return Some(st);
+            return Ok(Some(st));
         }
         if self.statut() == Statut::Artiste {
-            return Some(StatutConventionnel::AgentDeMaitrise);
+            return Ok(Some(StatutConventionnel::AgentDeMaitrise));
         }
-        let c = self.classification_3090()?;
-        if c.niveau.starts_with("cadre") || c.niveau.starts_with("agent") {
-            return Some(StatutConventionnel::AgentDeMaitrise);
+        let Some(c) = self.classification_3090() else { return Ok(None) };
+        let t = crate::clauses::table()?;
+        let categorie = t
+            .convention(Some(&crate::fiche::IDCC_3090))
+            .and_then(|conv| conv.categories.as_ref())
+            .and_then(|s| s.par_niveau_3090.as_ref())
+            .and_then(|par| par.get(&c.niveau))
+            .ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", &format!("conventions.3090.categories.par_niveau_3090.{}", c.niveau)))?;
+        if [crate::clauses::CADRE, crate::clauses::AGENT_DE_MAITRISE].contains(categorie) {
+            return Ok(Some(StatutConventionnel::AgentDeMaitrise));
         }
-        Some(if c.grille == "administratif" { StatutConventionnel::Employe06 } else { StatutConventionnel::Employe07 })
+        Ok(Some(if c.grille == crate::minima::ADMINISTRATIF { StatutConventionnel::Employe06 } else { StatutConventionnel::Employe07 }))
     }
 }
 
@@ -478,7 +489,7 @@ pub fn resoudre(code: &CodeEmploi, cadre: Option<bool>, feminin: bool, idcc: Opt
         pcs_ese: m.pcs_ese().cloned(),
         code_emploi_ft: Some(CodeEmploiFt::from(&m.code)),
         statut: m.statut(),
-        statut_conventionnel: if est_cadre { Some(StatutConventionnel::Cadre04) } else { m.statut_non_cadre() },
+        statut_conventionnel: if est_cadre { Some(StatutConventionnel::Cadre04) } else { m.statut_non_cadre()? },
         statut_categoriel_rc: if est_cadre { StatutCategorielRc::Cadre } else { StatutCategorielRc::NonCadre },
     })
 }
@@ -644,7 +655,7 @@ pub struct MetierDuDeroulant {
     pub annexe: AnnexeChomage,
     pub pcs_ese: CodePcsEse,
     pub cadre_par_defaut: bool,
-    pub niveau_3090: Option<String>,
+    pub niveau_3090: Option<CleDeGrille>,
     pub conventions: Vec<Idcc>,
 }
 

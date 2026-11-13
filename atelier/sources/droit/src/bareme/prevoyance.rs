@@ -60,7 +60,7 @@ forme! {
         pub options: Option<Options>,
         pub sante_minimum: Option<SanteMinimum>,
         pub financement_paritarisme: Option<Financement>,
-        pub annexes: Option<BTreeMap<String, Annexe>>,
+        pub annexes: Option<BTreeMap<crate::fiche::AnnexeConvention, Annexe>>,
         pub sante: Option<Sante>,
     }
 }
@@ -135,7 +135,7 @@ forme! {
     /// La cotisation minimale de la sante des permanents, en % du plafond mensuel : le socle, et ce qu'une annexe impose.
     pub struct SanteMinimum {
         pub socle: Datees,
-        pub annexes: Option<BTreeMap<String, Datees>>,
+        pub annexes: Option<BTreeMap<crate::fiche::AnnexeConvention, Datees>>,
         pub part_patronale_minimum: Nombre,
     }
 }
@@ -259,7 +259,7 @@ charge de l'employeur (XII.2.1.11), et pas plus de 100.",
 pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(Decimal, String)>> {
     let c = catalogue()?;
     let Some(m) = ent.idcc.dite().and_then(|i| c.regime(i)).and_then(|r| r.sante_minimum.as_ref()) else { return Ok(None) };
-    let annexe = ent.annexe_convention.code();
+    let annexe = ent.annexe_convention.dite();
     let (table, qui) = match annexe.and_then(|n| m.annexes.as_ref().and_then(|a| a.get(n)).map(|t| (n, t))) {
         Some((n, t)) => (t, format!("annexe {}", n)),
         None => (&m.socle, "socle".to_string()),
@@ -424,7 +424,7 @@ nouveau le laisserait sans couverture pendant un an.",
 
 /// (taux minimum de tranche 1, d'ou il vient) pour ce salarie ; `None` : ni la convention (elle fixe la repartition,
 /// pas le taux : `contrat_requis`) ni l'obligation cadre n'en fixent.
-fn minimum_t1(reg: &Regime, annexe: Option<&str>, cadre: bool) -> R<Option<(Decimal, String)>> {
+fn minimum_t1(reg: &Regime, annexe: Option<&crate::fiche::AnnexeConvention>, cadre: bool) -> R<Option<(Decimal, String)>> {
     let mut retenu = reg.obligatoire.taux.map(|Court(t)| (t, format!("{} : {} %", reg.texte, pcf(t))));
     let sup = annexe.and_then(|n| reg.annexes.as_ref().and_then(|a| a.get(n)).map(|a| (n, a.taux))).filter(|(_, t)| !t.is_zero());
     if let Some((n, s)) = sup.filter(|(_, s)| retenu.as_ref().is_none_or(|(t, _)| s > t)) {
@@ -518,7 +518,7 @@ lus sur le contrat ou l'appel de cotisations. Rien n'est calcule.",
         return Ok(Cotisation::PasDue);
     }
 
-    let minimum = minimum_t1(&reg, entreprise.annexe_convention.code(), cadre)?;
+    let minimum = minimum_t1(&reg, entreprise.annexe_convention.dite(), cadre)?;
     let obl = &reg.obligatoire;
     let oc = reg.obligatoire_cadre.as_ref();
     let mut part_pat = obl.part_patronale;

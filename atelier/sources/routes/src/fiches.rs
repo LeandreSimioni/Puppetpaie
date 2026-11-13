@@ -562,7 +562,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, d
             Some(s) => Some(*s),
             None => ctx.fiche_de(salarie)?.statut.dite().copied(),
         };
-        if droit::clauses::prime_anciennete_possible(ent.idcc.dite(), ent.annexe_convention.code(), Some(code), statut)? {
+        if droit::clauses::prime_anciennete_possible(ent.idcc.dite(), ent.annexe_convention.dite().copied(), Some(code), statut)? {
             cases.insert(droit::fiche::CasePieceEntreprise::JaugeAnnexe1.into());
         }
     }

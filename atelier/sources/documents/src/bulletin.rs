@@ -291,7 +291,7 @@ fn classification(idcc: Option<&droit::fiche::Idcc>, sal: &ChampsSalarie, au_moi
     let categorie = match profil.categorie {
         Some(c) => Some(match droit::clauses::categorie_imprimee(idcc, &c)? {
             Some(dite) => dite,
-            None => c.replace('_', " "),
+            None => c.as_str().replace('_', " "),
         }),
         None => None,
     };

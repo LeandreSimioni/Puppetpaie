@@ -1120,3 +1120,64 @@ fn la_carte_valide_a_une_variante_par_nature() {
     let ecrites: BTreeSet<&str> = base["natures"].as_object().unwrap().keys().map(String::as_str).collect();
     assert_eq!(ecrites, NatureDeContrat::TOUTES.iter().map(|n| n.cle()).collect::<BTreeSet<_>>(), "une variante de la carte par nature du fichier");
 }
+
+/// CHAQUE CLE DES GRILLES ET DES CLAUSES QU'UN FICHIER LIVRE CITE EXISTE DANS CELUI QU'ELLE DESIGNE (`decisions-t8.md`
+/// Q4 (b) : `droit::minima::CleDeGrille` et `droit::clauses::CategorieDeClause` sont opaques, sans liste dans le code).
+/// Le niveau 3090 de chaque metier (`emplois-base.json`) a sa categorie dans `par_niveau_3090` de chaque convention qui
+/// en porte, et cette categorie est une de ses `categories.valeurs` ; il a sa ligne dans `niveaux` de chaque prime
+/// d'anciennete, et cette ligne a son salaire dans chacune de ses grilles (`costume`, chaque jauge de `technique`) ; la
+/// ligne de minima 3090 d'un metier, annexe par annexe, est une grille de cachets de cette annexe
+/// (`minima-conventionnels.json`) ; une grille que `remplace` nomme est une grille de la meme convention ou du meme accord.
+#[test]
+fn chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe() {
+    let lire = |f: &str| -> Value { serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees").join(f)).unwrap()).unwrap() };
+    let (emplois, clauses, minima) = (lire("emplois-base.json"), lire("clauses-conventionnelles-base.json"), lire("minima-conventionnels.json"));
+    let mut fautes = Vec::new();
+    let metiers = emplois["emplois"].as_object().unwrap();
+    let niveaux: BTreeSet<&str> = metiers.values().filter_map(|m| m["classification_3090"]["niveau"].as_str()).collect();
+    for (idcc, c) in clauses["conventions"].as_object().unwrap() {
+        if let Some(par) = c["categories"]["par_niveau_3090"].as_object() {
+            for n in &niveaux {
+                match par.get(*n).and_then(Value::as_str) {
+                    Some(cat) if c["categories"]["valeurs"].get(cat).is_some() => {}
+                    Some(cat) => fautes.push(format!("clauses {} : la categorie {} du niveau {} n'est pas une de ses categories", idcc, cat, n)),
+                    None => fautes.push(format!("clauses {} : par_niveau_3090 ne range pas le niveau {}", idcc, n)),
+                }
+            }
+        }
+        if let Some(prime) = c.get("prime_anciennete") {
+            for n in &niveaux {
+                let Some(ligne) = prime["niveaux"].get(*n).and_then(Value::as_str) else {
+                    fautes.push(format!("clauses {} : la prime d'anciennete n'a pas de ligne pour le niveau {}", idcc, n));
+                    continue;
+                };
+                for g in prime["salaires_conventionnels"].as_array().unwrap() {
+                    let grilles = std::iter::once(&g["costume"]).chain(g["technique"].as_object().unwrap().values());
+                    if grilles.into_iter().any(|grille| grille.get(ligne).is_none()) {
+                        fautes.push(format!("clauses {} : la ligne {} n'a pas son salaire dans la grille du {}", idcc, ligne, g["depuis"]));
+                    }
+                }
+            }
+        }
+    }
+    let annexes_3090 = &minima["conventions"]["3090"]["annexes"];
+    for (code, m) in metiers {
+        for (annexe, ligne) in m["minima"]["3090"].as_object().into_iter().flatten() {
+            if annexes_3090[annexe.as_str()]["cachets"].get(ligne.as_str().unwrap()).is_none() {
+                fautes.push(format!("emplois {} : la ligne {} n'est pas une grille de cachets de l'annexe {} de la 3090", code, ligne, annexe));
+            }
+        }
+    }
+    for (idcc, c) in minima["conventions"].as_object().unwrap() {
+        for texte in std::iter::once(c).chain(c["accords"].as_array().into_iter().flatten()) {
+            let grilles: Vec<&Value> = ["grilles", "grilles_complementaires"].iter().flat_map(|g| texte[*g].as_array().into_iter().flatten()).collect();
+            let noms: BTreeSet<&str> = grilles.iter().filter_map(|g| g["nom"].as_str()).collect();
+            for nomme in grilles.iter().flat_map(|g| g["remplace"].as_array().into_iter().flatten()) {
+                if !nomme.as_str().is_some_and(|n| noms.contains(n)) {
+                    fautes.push(format!("minima {} : la grille remplacee {} n'est pas une grille du meme texte", idcc, nomme));
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "chaque cle des grilles et des clauses citee existe dans le fichier qu'elle designe :\n{}", fautes.join("\n"));
+}
