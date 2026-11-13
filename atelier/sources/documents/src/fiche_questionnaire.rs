@@ -1,5 +1,5 @@
 //! Le questionnaire de la fiche salarie remplie par la personne elle-meme, par courriel
-//! Les `QUESTIONS`, `questionnaire`, `code_fiche`, `lire_reponses`, `fiche_depuis_reponses`.
+//! Les `QUESTIONS`, `questionnaire`, `CodeDeDemande` (et `code_au_hasard`), `lire_reponses`, `fiche_depuis_reponses`.
 //!
 //! Les textes (questions, objet, corps, HTML) et les deux tables (pays, nationalites) sont ecrits mot pour mot du questionnaire. Les deux tables ne portent que le code
 //! ISO : la codification UE (quatre valeurs) se deduit dans `codification_ue`. Les pays se

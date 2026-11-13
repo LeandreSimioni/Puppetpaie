@@ -465,7 +465,13 @@ pub fn envoyer_suivi<Pour: Clone>(
         Some(Err(m)) => return Err(ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: Vec::new(), echoue: premier.destinataire.clone() }),
         None => None,
     };
+    // Les adresses que le journal notera, toutes lues avant que le premier message parte : une adresse fausse ne laisse
+    // partir personne.
+    let mut adresses: Vec<droit::fiche::Courriel> = Vec::with_capacity(messages.len());
     for message in messages {
+        adresses.push(droit::fiche::Courriel::lire(&message.destinataire).map_err(|m| ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: Vec::new(), echoue: message.destinataire.clone() })?);
+    }
+    for (message, parti) in messages.iter().zip(adresses) {
         let signe;
         let (message, nom) = match &signature {
             Some(s) => {
@@ -475,8 +481,6 @@ pub fn envoyer_suivi<Pour: Clone>(
             None => (message, None),
         };
         let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: faits.clone(), echoue: message.destinataire.clone() })?;
-        // L'adresse que le journal notera, lue avant que le message parte.
-        let parti = droit::fiche::Courriel::lire(&message.destinataire).map_err(|m| ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: faits.clone(), echoue: message.destinataire.clone() })?;
         let ident = match client.envoyer(&brut) {
             Ok(i) => i,
             Err(e) if faits.is_empty() => return Err(ErreurEnvoi { echec: e, partis: faits, echoue: message.destinataire.clone() }),
