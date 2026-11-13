@@ -182,7 +182,7 @@ fn texte_de(cle: &str) -> Option<&'static Texte> {
 
 /// LEGITEXT -> cle du texte.
 fn par_legitext() -> Vec<(&'static str, &'static str)> {
-    TEXTES.iter().map(|t| (t.legitext, t.cle)).collect()
+    TEXTES.iter().map(|t| (t.legitext.texte(), t.cle)).collect()
 }
 
 /// Cle du texte -> les numeros qu'on y cherche.

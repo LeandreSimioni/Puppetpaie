@@ -30,6 +30,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use droit::fiche::Idcc;
 use socle::date::Jour;
 
 use crate::EnOrdre;
@@ -191,7 +192,7 @@ struct Trou {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Amorce {
-    pub livraison: String,
+    pub livraison: Jour,
     pub textes: usize,
     pub titre: Option<String>,
 }
@@ -209,7 +210,7 @@ struct LivraisonLue {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConteneurLu {
-    idcc: Option<String>,
+    idcc: Option<Idcc>,
     etat: Option<String>,
     premiere: bool,
     nouveaux: EnOrdre<String>,
@@ -234,7 +235,7 @@ fn tous_cites(connus: Option<&EnOrdre<String>>) -> bool {
 /// Une convention suivie : son conteneur, son IDCC, les textes que le manifeste cite.
 pub struct Suivi {
     pub conteneur: String,
-    pub idcc: String,
+    pub idcc: Idcc,
     pub textes: Vec<String>,
 }
 
@@ -259,7 +260,7 @@ pub enum Evenement {
 /// La fiche d'une convention relivree : `premiere` (la liste de reference posee), `nouveaux` (ses textes nouveaux).
 #[derive(Debug, Clone, Serialize)]
 pub struct EvenementConvention {
-    pub livraison: String,
+    pub livraison: Jour,
     pub genre: &'static str,
     pub ident: String,
     pub titre: String,
@@ -273,17 +274,17 @@ pub struct EvenementTexte {
     #[serde(flatten)]
     pub texte: Texte,
     pub conteneur: String,
-    pub livraison: String,
+    pub livraison: Jour,
     pub genre: &'static str,
     pub ident: String,
 }
 
 impl Evenement {
     /// Le jour de la livraison qui l'a porte.
-    pub fn livraison(&self) -> &str {
+    pub fn livraison(&self) -> Jour {
         match self {
-            Evenement::Convention(c) => &c.livraison,
-            Evenement::Texte(t) => &t.livraison,
+            Evenement::Convention(c) => c.livraison,
+            Evenement::Texte(t) => t.livraison,
         }
     }
 }
@@ -362,7 +363,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                 for (k, v) in &c.textes.0 {
                     ses.poser(k.clone(), v.clone());
                 }
-                amorces.poser(cont.to_string(), Amorce { livraison: jour(l)?.iso(), textes: c.textes.len(), titre: c.titre.clone() });
+                amorces.poser(cont.to_string(), Amorce { livraison: jour(l)?, textes: c.textes.len(), titre: c.titre.clone() });
                 a_amorcer.retain(|x| *x != cont);
             }
         }
@@ -385,7 +386,12 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                 let premiere = tous_cites(connus.valeur(cont));
                 let anciens = connus.entree(cont.to_string(), EnOrdre::new);
                 let nouveaux = if premiere { EnOrdre::new() } else { EnOrdre(c.textes.0.iter().filter(|(k, _)| anciens.valeur(k).is_none()).cloned().collect()) };
-                resume_c.poser(cont.to_string(), ConteneurLu { idcc: c.idcc.clone(), etat: c.etat.clone(), premiere, nouveaux });
+                // Le NUM de la fiche d'une convention suivie est son IDCC (quatre chiffres) : un autre texte refuse la veille.
+                let idcc = match c.idcc.as_deref().map(Idcc::lire).transpose() {
+                    Ok(i) => i,
+                    Err(e) => return Err(refus!("la fiche KALI de {} ({}) : {}", cont, l, e.phrase)),
+                };
+                resume_c.poser(cont.to_string(), ConteneurLu { idcc, etat: c.etat.clone(), premiere, nouveaux });
                 for (k, v) in &c.textes.0 {
                     anciens.poser(k.clone(), v.clone());
                 }
@@ -436,12 +442,12 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                 }
             };
             if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| k == cont).map(|(_, v)| v) {
-                ev.push(Evenement::Convention(EvenementConvention { livraison: jour(l)?.iso(), genre: "convention", ident: cont.clone(), titre, premiere: c.premiere, nouveaux: c.nouveaux.clone() }));
+                ev.push(Evenement::Convention(EvenementConvention { livraison: jour(l)?, genre: "convention", ident: cont.clone(), titre, premiere: c.premiere, nouveaux: c.nouveaux.clone() }));
             }
         }
         for (ident, t) in &r.textes.0 {
             if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| *k == t.conteneur).map(|(_, v)| v) {
-                ev.push(Evenement::Texte(EvenementTexte { texte: t.texte.clone(), conteneur: t.conteneur.clone(), livraison: jour(l)?.iso(), genre: "texte", ident: ident.clone() }));
+                ev.push(Evenement::Texte(EvenementTexte { texte: t.texte.clone(), conteneur: t.conteneur.clone(), livraison: jour(l)?, genre: "texte", ident: ident.clone() }));
             }
         }
     }

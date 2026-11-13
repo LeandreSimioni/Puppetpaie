@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::releve::entrepot_dila::{self as dila, dire, Entrepot, LecteurTar, Source};
 use crate::sources::Manifeste;
 use crate::EnOrdre;
+use droit::fiche::Idcc;
 use socle::date::Jour;
 
 use socle::echec::{Echec, R};
@@ -99,7 +100,7 @@ struct ChangeKali {
     #[serde(skip_serializing_if = "Option::is_none")]
     avant: Option<String>,
     id: String,
-    idcc: String,
+    idcc: Idcc,
     livraison: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     num: Option<String>,
@@ -127,12 +128,12 @@ pub fn suivies(manifeste: &Manifeste) -> EnOrdre<String> {
     let mut out = EnOrdre::new();
     for (_, s) in &manifeste.sources.0 {
         if let Some(k) = &s.kali {
-            out.poser(k.conteneur.clone(), k.idcc.clone());
+            out.poser(k.conteneur.texte().to_string(), k.idcc.to_string());
         }
     }
     // Les conventions que le moteur ne porte pas encore, gardees pour etre relues avant d'ecrire leur couche.
     for (idcc, c) in &manifeste.conventions_a_relever.0 {
-        out.poser(c.conteneur.clone(), idcc.clone());
+        out.poser(c.conteneur.texte().to_string(), idcc.clone());
     }
     out
 }
@@ -223,7 +224,7 @@ fn passer<L: Read>(tar: &mut LecteurTar<L>, articles: &mut EnOrdre<ArticleKali>,
         if let (Some(livraison), Some(ancien)) = (livraison, articles.valeur(&k)) {
             if (&ancien.etat, &ancien.contenu) != (&a.etat, &a.contenu) {
                 changes.push(ChangeKali {
-                    idcc: a.cle[0].clone(),
+                    idcc: Idcc::lire(&a.cle[0])?,
                     id: a.cle[1].clone(),
                     num: a.num.clone(),
                     livraison: livraison.to_string(),
@@ -336,13 +337,13 @@ pub fn charger(racine: &Path) -> R<EntrepotKali> {
 
 /// Les articles d'une convention, d'un numero donne s'il y en a un ; les versions en vigueur seulement, par defaut. Ranges
 /// par texte, numero, date de debut.
-pub fn articles<'a>(ent: &'a EntrepotKali, idcc: &str, num: Option<&str>, en_vigueur: bool) -> Vec<&'a ArticleKali> {
+pub fn articles<'a>(ent: &'a EntrepotKali, idcc: &Idcc, num: Option<&str>, en_vigueur: bool) -> Vec<&'a ArticleKali> {
     let mut out: Vec<&ArticleKali> = ent
         .articles
         .0
         .iter()
         .map(|(_, a)| a)
-        .filter(|a| a.cle[0] == idcc && num.is_none_or(|n| a.num.as_deref() == Some(n)) && (!en_vigueur || a.etat.as_deref().is_some_and(|e| e.starts_with("VIGUEUR"))))
+        .filter(|a| a.cle[0] == **idcc && num.is_none_or(|n| a.num.as_deref() == Some(n)) && (!en_vigueur || a.etat.as_deref().is_some_and(|e| e.starts_with("VIGUEUR"))))
         .collect();
     out.sort_by(|a, b| (&a.texte, &a.num, &a.debut).cmp(&(&b.texte, &b.num, &b.debut)));
     out
@@ -379,7 +380,7 @@ pub fn transcrire(a: &ArticleKali) -> String {
 }
 
 /// `article <sources> <IDCC> <numero>...` : ce que la commande affiche.
-pub fn rendre_articles(ent: &EntrepotKali, idcc: &str, nums: &[String]) -> String {
+pub fn rendre_articles(ent: &EntrepotKali, idcc: &Idcc, nums: &[String]) -> String {
     let mut out = String::new();
     for num in nums {
         let trouves = articles(ent, idcc, Some(num), true);
@@ -395,7 +396,7 @@ pub fn rendre_articles(ent: &EntrepotKali, idcc: &str, nums: &[String]) -> Strin
 }
 
 /// `chercher <sources> <IDCC> <mot>` : une ligne par article en vigueur dont le texte porte le mot (sans egard a la casse).
-pub fn rendre_recherche(ent: &EntrepotKali, idcc: &str, mot: &str) -> String {
+pub fn rendre_recherche(ent: &EntrepotKali, idcc: &Idcc, mot: &str) -> String {
     let mot = mot.to_lowercase();
     let mut out = String::new();
     for a in articles(ent, idcc, None, true) {
@@ -440,8 +441,8 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
             });
             sortie(r)
         }
-        "article" if args.len() >= 4 => sortie(charger(racine).map(|e| rendre_articles(&e, &args[2], &args[3..]))),
-        "chercher" if args.len() >= 4 => sortie(charger(racine).map(|e| rendre_recherche(&e, &args[2], &args[3]))),
+        "article" if args.len() >= 4 => sortie(Idcc::lire(&args[2]).and_then(|i| charger(racine).map(|e| rendre_articles(&e, &i, &args[3..])))),
+        "chercher" if args.len() >= 4 => sortie(Idcc::lire(&args[2]).and_then(|i| charger(racine).map(|e| rendre_recherche(&e, &i, &args[3])))),
         _ => {
             eprintln!("{}", USAGE);
             2
