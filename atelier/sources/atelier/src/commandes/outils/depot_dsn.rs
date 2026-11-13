@@ -16,7 +16,7 @@ use socle::echec::Echec;
 pub static SPEC: Spec = Spec {
     commande: "depot-dsn",
     positionnels: &[Pos::facultatif("fichier", None)],
-    options: &[Opt::valeur("ordre"), Opt::choix("environnement", &["production", "editeur"], Some("production"))],
+    options: &[Opt::valeur("ordre"), Opt::choix("environnement", envois::releve_retours::EnvironnementNetEntreprises::NOMS, Some("production"))],
 };
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
@@ -46,7 +46,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     };
     // Un depot de test n'engage rien : il lui faut seulement le secret de l'organisme, donc le coffre ouvert.
     cadre.ouvrir_le_coffre();
-    let environnement = super::avec_defaut(args, "environnement")?;
+    let environnement = envois::releve_retours::EnvironnementNetEntreprises::lire(super::avec_defaut(args, "environnement")?)?;
     let fait = depot_acte::deposer_dsn_dans(&cadre.ctx, &designee, false, Some(&Preuve::default()), "atelier", environnement, false, "", ordre)?;
     dire!("Depot de TEST {} ({}) : rien n'est conserve.", fait.mois, environnement);
     dire!("Reponse du point de depot :\n{}", if fait.reponse.is_empty() { "(vide)" } else { fait.reponse.as_str() });

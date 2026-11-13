@@ -246,7 +246,7 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
         let e = &p.engagement;
         let mut dates = e.dates_travail.clone();
         dates.sort();
-        let heures = e.heures.filter(|h| !h.is_zero()).map(fmt_heures);
+        let heures = e.heures.filter(|h| !h.is_zero());
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
             debut: e.debut,
@@ -282,11 +282,31 @@ pub struct ContratResume {
     pub spectacle: Option<String>,
     pub jours: Vec<socle::date::Jour>,
     pub cachets: i64,
-    /// Ses heures, s'il en a.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub heures: Option<String>,
+    /// Ses heures, s'il en a, ecrites comme le bulletin les ecrit (`heures_ecrites`).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "heures_ecrites")]
+    pub heures: Option<Decimal>,
     pub brut: Decimal,
     pub net: Decimal,
+}
+
+/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`fmt_heures` : « 13,5 », « 24 ») et relues dans
+/// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
+mod heures_ecrites {
+    use serde::{Deserialize, Serialize};
+    use socle::num::Decimal;
+
+    pub fn serialize<S: serde::Serializer>(h: &Option<Decimal>, s: S) -> Result<S::Ok, S::Error> {
+        h.map(super::fmt_heures).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Decimal>, D::Error> {
+        let Some(t) = Option::<String>::deserialize(d)? else { return Ok(None) };
+        let h = socle::num::dec_texte(&t.replacen(',', ".", 1)).map_err(|e| serde::de::Error::custom(e.phrase))?;
+        if super::fmt_heures(h) != t {
+            return Err(serde::de::Error::custom(format!("heures {} : elles s'écrivent comme le bulletin les écrit (« 13,5 »).", socle::fichiers::repr(&t))));
+        }
+        Ok(Some(h))
+    }
 }
 
 /// CE QUI A CHANGE depuis l'envoi des documents, en lignes pretes pour le courriel : ce qui a change dans les

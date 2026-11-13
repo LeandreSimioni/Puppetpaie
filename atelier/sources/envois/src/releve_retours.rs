@@ -77,41 +77,80 @@ pub struct Adresses {
     pub service: Option<String>,
 }
 
-fn adresses_dsn(environnement: &str) -> Result<Adresses, Panne> {
+/// LA PLATE-FORME DE NET-ENTREPRISES a laquelle le client de la DSN parle : la production, ou la plate-forme d'essai de
+/// l'editeur (rien n'y est declare). Une liste du logiciel, ecrite `production`, `editeur` (la ligne de commande la
+/// nomme ainsi, `NOMS`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvironnementNetEntreprises {
+    Production,
+    Editeur,
+}
+
+impl EnvironnementNetEntreprises {
+    /// Leurs noms, dans l'ordre, tels que la ligne de commande les propose.
+    pub const NOMS: &'static [&'static str] = &["production", "editeur"];
+
+    /// Son nom.
+    pub fn nom(self) -> &'static str {
+        match self {
+            EnvironnementNetEntreprises::Production => "production",
+            EnvironnementNetEntreprises::Editeur => "editeur",
+        }
+    }
+
+    /// La plate-forme que `texte` nomme ; un autre texte se refuse en le nommant.
+    pub fn lire(texte: &str) -> R<EnvironnementNetEntreprises> {
+        match texte {
+            "production" => Ok(EnvironnementNetEntreprises::Production),
+            "editeur" => Ok(EnvironnementNetEntreprises::Editeur),
+            autre => Err(erreur(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
+        }
+    }
+}
+
+impl std::fmt::Display for EnvironnementNetEntreprises {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
+fn adresses_dsn(environnement: EnvironnementNetEntreprises) -> Adresses {
     // L'atelier seulement : un faux net-entreprises local (`redirection`). Le service reste celui de l'environnement.
     #[cfg(feature = "atelier")]
     if let Some(b) = crate::redirection::base(crate::redirection::VARIABLE_DSN) {
-        let service = if environnement == "editeur" { SERVICE_DSN_REGIME_GENERAL_TEST } else { SERVICE_DSN_REGIME_GENERAL };
-        return Ok(Adresses {
+        let service = match environnement {
+            EnvironnementNetEntreprises::Editeur => SERVICE_DSN_REGIME_GENERAL_TEST,
+            EnvironnementNetEntreprises::Production => SERVICE_DSN_REGIME_GENERAL,
+        };
+        return Adresses {
             authentification: b.joindre("/authentifier/"),
             retours: b.joindre("/lister-retours-declarant/1.0/"),
             retours_flux: b.joindre("/lister-retours-flux/1.0/"),
             depot: b.joindre("/deposer-dsn/1.0/"),
             service: Some(service.into()),
-        });
+        };
     }
     let (auth, hote_consultation, depot, service) = match environnement {
-        "production" => (
+        EnvironnementNetEntreprises::Production => (
             Url::du_moteur("https://services.net-entreprises.fr/authentifier/1.0/"),
             Url::du_moteur("https://consultation.dsnrg.net-entreprises.fr"),
             Url::du_moteur("https://depot.dsnrg.net-entreprises.fr/deposer-dsn/1.0/"),
             SERVICE_DSN_REGIME_GENERAL,
         ),
-        "editeur" => (
+        EnvironnementNetEntreprises::Editeur => (
             Url::du_moteur("https://test-services.net-entreprises.fr/authentifier/1.0/"),
             Url::du_moteur("https://consultation-edit.dsnrg.net-entreprises.fr"),
             Url::du_moteur("https://depot-edit.dsnrg.net-entreprises.fr/deposer-dsn/1.0/"),
             SERVICE_DSN_REGIME_GENERAL_TEST,
         ),
-        autre => return Err(panne(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
     };
-    Ok(Adresses {
+    Adresses {
         authentification: auth,
         retours: hote_consultation.joindre("/lister-retours-declarant/1.0/"),
         retours_flux: hote_consultation.joindre("/lister-retours-flux/1.0/"),
         depot,
         service: Some(service.into()),
-    })
+    }
 }
 
 fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
@@ -148,23 +187,23 @@ pub struct Client {
 
 impl Client {
     /// `Client(ctx, environnement, motdepasse=...)` : le compte net-entreprises de la DSN.
-    pub fn dsn(ctx: &Contexte, environnement: &str, motdepasse: Option<Secret>) -> Result<Client, Panne> {
+    pub fn dsn(ctx: &Contexte, environnement: EnvironnementNetEntreprises, motdepasse: Option<Secret>) -> Client {
         let declarant = crate::transport::declarant(&ctx.entreprise);
-        Ok(Client {
-            adresses: adresses_dsn(environnement)?,
+        Client {
+            adresses: adresses_dsn(environnement),
             jeton: None,
             declarant,
             motdepasse,
             variable: VARIABLE_MOTDEPASSE,
             majuscules: false,
-        })
+        }
     }
 
     /// `ClientDpae(ctx, majuscules, motdepasse)` : le compte Urssaf, qui n'est pas celui de la DSN.
     pub fn dpae(ctx: &Contexte, majuscules: bool, motdepasse: Option<Secret>) -> Client {
         // Sans compte DPAE dit, le declarant est l'entreprise, sans nom ni prenom, et le service n'est pas dit.
         let compte = ctx.entreprise.api_dpae.dite();
-        let siret = compte.and_then(|c| c.siret.en_texte()).or_else(|| ctx.entreprise.siret.en_texte());
+        let siret = compte.and_then(|c| c.siret.dite()).or_else(|| ctx.entreprise.siret.dite()).cloned();
         Client {
             adresses: adresses_dpae(compte),
             jeton: None,

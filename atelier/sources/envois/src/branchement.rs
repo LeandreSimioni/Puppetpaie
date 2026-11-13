@@ -55,15 +55,20 @@ impl Branchement {
 pub const PREFIXE_FLUX_FICTIF: &str = "FICTIF-";
 pub const ANCIEN_PREFIXE_FLUX_FICTIF: &str = "DEMO-";
 
-/// Ce que le point de depot aurait repondu a un depot joue : un flux, et la mention.
-pub fn reponse_fictive(quoi: &str, reel: bool) -> R<String> {
+/// Ce que le point de depot aurait repondu a un depot joue (une DSN ou une DPAE) : un flux, et la mention.
+pub fn reponse_fictive(quoi: crate::ligne::Acte, reel: bool) -> R<String> {
+    let acte = match quoi {
+        crate::ligne::Acte::Dsn => "DSN",
+        crate::ligne::Acte::Dpae => "DPAE",
+        autre => return Err(erreur(Classe::Refuse, format!("Un dépôt joué est une DSN ou une DPAE, pas « {} ».", autre.nom()))),
+    };
     let mut o = [0u8; 6];
     socle::temps::aleas(&mut o).map_err(|e| e.reformuler(|m| format!("pas d'alea du systeme : {}", m)).reclasser(Classe::Disque))?;
     let flux = format!("{}{}", PREFIXE_FLUX_FICTIF, o.iter().map(|b| format!("{:02X}", b)).collect::<String>());
     Ok(format!(
         "<idflux>{}</idflux>\nCompagnie fictive : {} {} jouee, rien n'a quitte le poste.",
         flux,
-        if quoi == "dsn" { "DSN" } else { "DPAE" },
+        acte,
         if reel { "reelle" } else { "de test" }
     ))
 }

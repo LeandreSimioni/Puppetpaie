@@ -427,6 +427,66 @@ impl<'de> Deserialize<'de> for Verdict {
     }
 }
 
+/// LE COMPTE RENDU D'UN TEST DE DEPOT, ecrit en minuscules (`ok`, `ko`) : ce que le journal des envois garde d'un test qui
+/// a ouvert un depot reel (`ligne::Ouverture`), et ce que dit ou en est le test d'un fichier (`etats::Repetition`). Il se
+/// relit dans cette forme seule. `attendu` : un test conforme dont le bilan n'est pas encore revenu (aucun verdict), et
+/// `null` aucun test conforme.
+pub mod compte_rendu_ecrit {
+    use super::Verdict;
+    use serde::{Deserialize, Serialize};
+
+    fn en_minuscules(v: Verdict) -> String {
+        v.code().to_lowercase()
+    }
+
+    fn lu<E: serde::de::Error>(texte: &str) -> Result<Verdict, E> {
+        match Verdict::TOUS.iter().copied().find(|v| en_minuscules(*v) == texte) {
+            Some(v) => Ok(v),
+            None => Err(E::custom(format!("compte rendu {} : il s'écrit ok, ko ou ano.", socle::fichiers::repr(texte)))),
+        }
+    }
+
+    /// Un verdict qui peut manquer : `None` ne s'ecrit pas (`skip_serializing_if`).
+    pub mod option {
+        use super::*;
+
+        pub fn serialize<S: serde::Serializer>(v: &Option<Verdict>, s: S) -> Result<S::Ok, S::Error> {
+            v.map(en_minuscules).serialize(s)
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Verdict>, D::Error> {
+            match Option::<String>::deserialize(d)? {
+                Some(t) => lu(&t).map(Some),
+                None => Ok(None),
+            }
+        }
+    }
+
+    /// Le compte rendu du test conforme d'un fichier : aucun test conforme (`None`, `null`), son bilan attendu
+    /// (`Some(None)`, `attendu`), ou son verdict.
+    pub mod du_test {
+        use super::*;
+
+        const ATTENDU: &str = "attendu";
+
+        pub fn serialize<S: serde::Serializer>(v: &Option<Option<Verdict>>, s: S) -> Result<S::Ok, S::Error> {
+            match v {
+                None => s.serialize_none(),
+                Some(None) => s.serialize_str(ATTENDU),
+                Some(Some(v)) => s.serialize_str(&en_minuscules(*v)),
+            }
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<Verdict>>, D::Error> {
+            match Option::<String>::deserialize(d)? {
+                None => Ok(None),
+                Some(t) if t == ATTENDU => Ok(Some(None)),
+                Some(t) => lu(&t).map(|v| Some(Some(v))),
+            }
+        }
+    }
+}
+
 droit::codes_fermes! {
     /// LE STATUT QU'UNE LISTE DES RETOURS DONNE A UN RETOUR (`flux.retour.statut`) : « OK », « KO », « ANO », « EN COURS »
     /// (avec une espace : guide de l'API DSN v6.8, l. 87 et 1733-1745,
@@ -2570,13 +2630,11 @@ pub fn rattacher(quis: &[&str], index: &[(droit::contexte::IdSalarie, String)]) 
 
 /// UN TAUX AT/MP NOTIFIE, tel qu'un compte rendu de nature 34 le porte : l'etablissement de la declaration a laquelle il
 /// est rattache (`SIREN`, `nic_affectation`), puis un element `taux_AT` (`code_ctn`, `section`, `code_risque`,
-/// `temoin_bureau`, `taux`, `date_effet`, `date_calcul`).
+/// `temoin_bureau`, `taux`, `date_effet`, `date_calcul`). Le code CTN et la section ne se lisent pas : rien ne s'en sert.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TauxAtmpNotifie {
     pub siren: droit::fiche::Siren,
     pub nic: droit::fiche::Nic,
-    pub code_ctn: String,
-    pub section: String,
     /// Le code risque tel que la DSN le declare (S21.G00.40.040) : celui de la notification, suivi du « B » quand le taux
     /// est celui des fonctions support.
     pub code_risque: droit::bareme::CodeRisqueAt,
@@ -2586,14 +2644,13 @@ pub struct TauxAtmpNotifie {
     pub date_calcul: Option<socle::date::Jour>,
 }
 
-/// AAAAMMJJ (le format du schema des bilans) ou AAAA-MM-JJ.
-fn jour_aaaammjj(t: &str) -> Option<socle::date::Jour> {
-    let c: Vec<u32> = t.chars().filter_map(|x| x.to_digit(10)).collect();
-    if c.len() != 8 {
-        return None;
+/// Le jour d'une zone d'une notification : `AAAAMMJJ` (le format du schema des bilans) ou `AAAA-MM-JJ`, et ces deux formes
+/// seules.
+fn jour_notifie(t: &str) -> Option<socle::date::Jour> {
+    match Zone::lue(t, format::Aaaammjj).valeur().filter(|j| j.aaaammjj() == t) {
+        Some(j) => Some(j),
+        None => Zone::lue(t, format::JourIso).valeur(),
     }
-    let nombre = |chiffres: &[u32]| chiffres.iter().fold(0, |n, d| n * 10 + d);
-    socle::date::Jour::nouveau(nombre(&c[..4]) as i32, nombre(&c[4..6]), nombre(&c[6..8]))
 }
 
 /// LES TAUX AT/MP QU'UNE NOTIFICATION DE NATURE 34 COMMUNIQUE. Le guide de l'API DSN (§5.26.1 : « CR métier taux AT »,
@@ -2635,18 +2692,16 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
             let taux = socle::num::decimal_a_virgule(&brut).filter(|v| *v > socle::num::Decimal::ZERO && *v < socle::num::Decimal::from(100));
             let Some(taux) = taux else { return Err(illisible("taux", &brut)) };
             let effet = champ("date_effet");
-            let Some(date_effet) = jour_aaaammjj(&effet) else { return Err(illisible("date d'effet", &effet)) };
+            let Some(date_effet) = jour_notifie(&effet) else { return Err(illisible("date d'effet", &effet)) };
             out.push(TauxAtmpNotifie {
                 siren: siren_lu,
                 nic: nic_lu,
-                code_ctn: champ("code_ctn"),
-                section: champ("section"),
                 code_risque,
                 taux,
                 date_effet,
                 date_calcul: match champ("date_calcul") {
                     c if c.is_empty() => None,
-                    c => Some(jour_aaaammjj(&c).ok_or_else(|| illisible("date de calcul", &c))?),
+                    c => Some(jour_notifie(&c).ok_or_else(|| illisible("date de calcul", &c))?),
                 },
             });
         }

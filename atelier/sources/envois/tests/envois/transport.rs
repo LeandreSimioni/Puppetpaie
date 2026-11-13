@@ -41,7 +41,7 @@ fn faux() -> (String, Recu) {
 }
 
 fn declarant() -> Identite {
-    Identite { siret: Some("12345678901234".into()), nom: Some("DUPONT".into()), prenom: Some("Jean Pierre".into()) }
+    Identite { siret: Some(droit::fiche::Siret::lire("12345678901234").unwrap()), nom: Some("DUPONT".into()), prenom: Some("Jean Pierre".into()) }
 }
 
 /// L'authentification du guide, avec ce mot de passe.
@@ -73,7 +73,7 @@ fn un_mot_de_passe_absent_ou_un_declarant_incomplet_ne_partent_pas() {
     for mdp in [None, Some("")] {
         assert!(authentifier_avec(&url, &d, mdp).is_err());
     }
-    let incomplet = Identite { siret: Some("1".into()), ..Identite::default() };
+    let incomplet = Identite { siret: declarant().siret, ..Identite::default() };
     assert!(authentifier_avec(&url, &incomplet, Some("secret")).is_err());
     assert!(recu.lock().unwrap().is_empty(), "rien n'est parti");
 }

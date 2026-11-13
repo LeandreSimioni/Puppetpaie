@@ -267,6 +267,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | identifiant d'un envoi | `IdDEnvoi` | `envois/src/journal.rs` |
 | nature d'un retour | `NatureDuRetour` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
+| plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
 | statut d'un retour | `StatutDuRetour` | `envois/src/retours.rs` |
 | catégorie d'une anomalie | `CategorieDAnomalie` | `envois/src/retours.rs` |
@@ -519,11 +520,17 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
   fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
   journal des retours vus, l'incident d'un retour (sa nature au journal des incidents), la pièce que l'Historique relit.
+- **plate-forme de net-entreprises** : la plate-forme à laquelle le client de la DSN parle : la production, ou la
+  plate-forme d'essai de l'éditeur, où rien n'est déclaré (un dépôt réel n'y part pas). Une liste du logiciel :
+  `Production`, `Editeur`, nommés `production`, `editeur` (`NOMS`, ce que la ligne de commande propose, lu à sa porte
+  par `lire`) ; elle choisit les adresses et le service. Que portent le client de la DSN, le dépôt d'une DSN, la relève.
 - **verdict** : ce que la pièce d'un retour dit d'un envoi, d'une déclaration ou des données analysées : OK, KO, ANO.
   `etat_type`, `envoi_etat_type` et `ok_ko` du schéma des bilans, RO.B003.R002 de NEOReS ; il se lit sans casse, à sa
   seule porte (`Verdict::lu`), et s'écrit en capitales. Que portent un bilan, une déclaration qu'il identifie, un
   rapport, un NEOReS, un retour d'organisme au journal des envois et l'état de la déclaration qu'une ligne reprise
-  garde. Ce que la pièce en dit au journal (le verdict, les anomalies en phrases, les personnes d'une DPAE) :
+  garde ; le compte rendu d'un test de dépôt, écrit en minuscules (`retours::compte_rendu_ecrit` : `ok`, `ko` ;
+  `attendu` quand son bilan n'est pas revenu), que portent l'ouverture d'un dépôt réel au journal et la répétition d'un
+  fichier. Ce que la pièce en dit au journal (le verdict, les anomalies en phrases, les personnes d'une DPAE) :
   `ligne::VerdictDeLaPiece`.
 - **statut d'un retour** : ce que la liste des retours dit d'un retour (`flux.retour.statut`) : OK, KO, ANO, EN COURS,
   ANOBLOQUANTE (France Travail). `droit::codes_fermes!` sur son texte : guide de l'API DSN v6.8, l. 1733-1745, et « De

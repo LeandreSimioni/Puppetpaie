@@ -956,7 +956,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…")?;
             let fin = socle::temps::secondes();
-            match fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
+            match fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.manquants.extend(rel.a_faire.iter().cloned());
@@ -992,7 +992,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
             let rel = fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
-                Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), envois::releve_retours::CanalDesRetours::Dpae),
+                Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, Some(c), envois::releve_retours::CanalDesRetours::Dpae),
                 None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
             });
             match rel {

@@ -649,7 +649,7 @@ pub fn consulter(base: &Url, jeton: Option<&socle::secret::Secret>, debut: socle
 /// les dit pas).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Identite {
-    pub siret: Option<String>,
+    pub siret: Option<droit::fiche::Siret>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
 }
@@ -657,7 +657,7 @@ pub struct Identite {
 impl Identite {
     /// Ce qui lui manque pour s'authentifier, dit en mots.
     pub fn manquants(&self) -> Vec<&'static str> {
-        [(&self.siret, "le SIRET"), (&self.nom, "le nom"), (&self.prenom, "le prénom")].into_iter().filter(|(c, _)| c.is_none()).map(|(_, m)| m).collect()
+        [(self.siret.is_none(), "le SIRET"), (self.nom.is_none(), "le nom"), (self.prenom.is_none(), "le prénom")].into_iter().filter(|(manque, _)| *manque).map(|(_, m)| m).collect()
     }
 }
 
@@ -665,9 +665,9 @@ impl Identite {
 /// (`declarant`), sinon le SIRET et le contact DSN coupe au premier espace (le nom, puis le prenom).
 pub fn declarant(ent: &droit::fiche::ChampsEntreprise) -> Identite {
     if let Some(d) = ent.declarant.dite().filter(|d| !d.est_vide()) {
-        return Identite { siret: d.siret.en_texte(), nom: d.nom.en_texte(), prenom: d.prenom.en_texte() };
+        return Identite { siret: d.siret.dite().cloned(), nom: d.nom.en_texte(), prenom: d.prenom.en_texte() };
     }
-    let mut i = Identite { siret: ent.siret.en_texte(), nom: None, prenom: None };
+    let mut i = Identite { siret: ent.siret.dite().cloned(), nom: None, prenom: None };
     if let Some(brut) = ent.declarant_dsn.dite().and_then(|d| d.nom_prenom.portee()) {
         let morceaux = mots(socle::texte::strip(brut));
         if morceaux.len() >= 2 {
@@ -734,7 +734,7 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
     let service = a.service.filter(|s| !s.is_empty());
     let corps = format!(
         "<identifiants><siret>{}</siret><nom>{}</nom><prenom>{}</prenom><motdepasse>{}</motdepasse>{}</identifiants>",
-        siret,
+        AsRef::<str>::as_ref(siret),
         nom,
         prenom,
         echapper(mdp.devoiler()),
