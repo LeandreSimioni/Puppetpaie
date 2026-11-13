@@ -138,7 +138,76 @@ pub trait ListeDeLaNorme: Copy + std::fmt::Display + 'static {
 /// UNE LISTE FERMEE DE CODES DE LA NORME, declaree une fois : chaque variante et son code, le seul endroit ou il s'ecrit.
 /// Elle se lit et s'ecrit par son code ; un code qu'elle n'a pas se refuse a la lecture, en nommant ce code et sa rubrique.
 /// Dans l'ordre de leurs codes : un objet indexe par elle s'ecrit comme quand son code etait un texte.
+///
+/// UNE LISTE FERMEE HORS DE LA NORME DSN (une liste des retours des organismes, celle d'un schema ou d'un guide) :
+/// `codes_fermes! { Nom, "quoi", texte "fichier depose, l. a-b" { ... } }`. Elle fait de meme, sans rubrique : son refus
+/// nomme le texte depose qui dit la liste, et elle n'est pas une `ListeDeLaNorme`.
+#[macro_export]
 macro_rules! codes_fermes {
+    ($(#[$a:meta])* $nom:ident, $quoi:literal, texte $texte:literal {
+        $( $(#[$va:meta])* $v:ident = $code:literal, )*
+    }) => {
+        $(#[$a])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum $nom {
+            $( $(#[$va])* $v, )*
+        }
+
+        impl $nom {
+            pub const TOUS: &'static [$nom] = &[ $( $nom::$v, )* ];
+
+            /// Le texte depose qui dit la liste.
+            pub const TEXTE: &'static str = $texte;
+
+            /// Son code, le seul endroit ou il s'ecrit.
+            pub fn code(self) -> &'static str {
+                match self { $( $nom::$v => $code, )* }
+            }
+
+            /// Celui de ce code, s'il en est un.
+            pub fn du_code(code: &str) -> Option<$nom> {
+                $nom::TOUS.iter().copied().find(|m| m.code() == code)
+            }
+        }
+
+        impl Ord for $nom {
+            fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+                self.code().cmp(autre.code())
+            }
+        }
+
+        impl PartialOrd for $nom {
+            fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(autre))
+            }
+        }
+
+        impl std::fmt::Display for $nom {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(self.code())
+            }
+        }
+
+        impl serde::Serialize for $nom {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(self.code())
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $nom {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                let code = <String as serde::Deserialize>::deserialize(d)?;
+                $nom::du_code(&code).ok_or_else(|| {
+                    if code.is_empty() {
+                        serde::de::Error::custom(format!("{} non dit : le choisir dans la liste.", $quoi))
+                    } else {
+                        serde::de::Error::custom(format!("{} inconnu : {} (hors de la liste de {}).", $quoi, socle::fichiers::repr(&code), $texte))
+                    }
+                })
+            }
+        }
+    };
+
     ($(#[$a:meta])* $nom:ident, $quoi:literal, $rubrique:literal {
         $( $(#[$va:meta])* $v:ident = $code:literal $(depuis $depuis:ident)? $(jusqu_a $jusqu:ident)?, )*
     }) => {
