@@ -1187,12 +1187,16 @@ pub(crate) fn a_finir(phrase: impl Into<String>) -> Echec {
 /// LE TARIF DE LA CONVENTION d'une rubrique a ce jour (`tarifs_conventionnels.<code>` de la couche de la convention du
 /// bareme, liste datee : l'avenant qui le fixe et sa date d'effet y sont cites). `None` : la convention n'en fixe pas, ou
 /// pas encore a ce jour ; le taux se saisit.
-pub fn tarif_conventionnel(ctx: &Contexte, code: &str, jour: &Jour) -> R<Option<Decimal>> {
+pub fn tarif_conventionnel(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<Decimal>> {
     let bar = ctx.bareme(jour)?;
-    Ok(bar.tarifs_conventionnels.as_ref().and_then(|t| match code {
-        "repas" => t.repas.and_then(|n| n.0),
-        "nuitee" => t.nuitee.and_then(|n| n.0),
-        _ => None,
+    Ok(bar.tarifs_conventionnels.as_ref().and_then(|t| {
+        if *code == REPAS {
+            t.repas.and_then(|n| n.0)
+        } else if *code == NUITEE {
+            t.nuitee.and_then(|n| n.0)
+        } else {
+            None
+        }
     }))
 }
 
@@ -1211,7 +1215,7 @@ fn lignes_au_tarif(ctx: &Contexte, lignes: &[LignePaie], mois: Mois) -> R<Option
             Some(j) => j.jour(),
             None => mois.premier_jour(),
         };
-        if let Some(t) = tarif_conventionnel(ctx, l.rubrique().as_str(), &jour)? {
+        if let Some(t) = tarif_conventionnel(ctx, l.rubrique(), &jour)? {
             l.poser_taux(t)?;
             change = true;
         }

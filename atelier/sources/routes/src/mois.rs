@@ -2047,7 +2047,7 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
     for l in &p.remuneration {
         let mut tarif = None;
         for j in &jours {
-            match engagement::tarif_conventionnel(ctx, l.rubrique.as_str(), j)? {
+            match engagement::tarif_conventionnel(ctx, &l.rubrique, j)? {
                 Some(t) if t == l.taux => {
                     tarif = Some(t);
                     break;

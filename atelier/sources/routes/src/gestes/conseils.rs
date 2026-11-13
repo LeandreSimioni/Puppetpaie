@@ -734,7 +734,7 @@ fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: Decimal) -> R<Option
     let saisies = p.saisies();
     let (mut heures_avant, mut gain, mut jours, mut montant) = (Decimal::ZERO, Decimal::ZERO, 0i64, Decimal::ZERO);
     for (l, s) in p.remuneration.iter().zip(saisies) {
-        if l.code != "repetition" || l.heures_annexes.is_zero() {
+        if l.code != droit::catalogue::REPETITION ||l.heures_annexes.is_zero() {
             continue;
         }
         // Une ligne sans saisie n'a pas de dates connues.

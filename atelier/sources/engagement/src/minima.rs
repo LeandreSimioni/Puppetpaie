@@ -34,8 +34,7 @@ pub fn idcc_du_contrat(idcc: &droit::fiche::Idcc, sp: Option<&droit::fiche::Spec
 }
 
 /// Les rubriques que les minima savent comparer (`rubriques-base.json`).
-const REPETITION: CodeDeRubrique = CodeDeRubrique::du_moteur("repetition");
-const HEURE: CodeDeRubrique = CodeDeRubrique::du_moteur("heure");
+use droit::catalogue::{HEURE, REPETITION};
 const JOURNEE: CodeDeRubrique = CodeDeRubrique::du_moteur("journee");
 const SEMAINE: CodeDeRubrique = CodeDeRubrique::du_moteur("semaine");
 

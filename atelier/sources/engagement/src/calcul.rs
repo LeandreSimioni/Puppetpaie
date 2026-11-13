@@ -1968,7 +1968,7 @@ pub(crate) fn plafond_temps_partiel(ent: &ChampsEntreprise, e: &Engagement, sal:
 /// une ligne d'heures tapee a la main ne dit pas si elle en est, et refuse plutot que de le deviner.
 pub(crate) fn duree_du_temps_partiel(e: &Engagement) -> R<(Decimal, Decimal)> {
     let nat = e.nat()?;
-    if let Some(l) = e.lignes.iter().find(|l| l.rubrique() == "heure") {
+    if let Some(l) = e.lignes.iter().find(|l| *l.rubrique() == droit::catalogue::HEURE) {
         return Err(socle::refus!(
             "{} : le plafond de Securite sociale de ce salarie a temps partiel se corrige a la duree de son \
 contrat << majoree du nombre d'heures complementaires >> du mois (CSS R. 242-2, I, dernier alinea), et la paie porte des \

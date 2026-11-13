@@ -265,26 +265,14 @@ impl From<CodeDeRubrique> for String {
     }
 }
 
-impl PartialEq<str> for CodeDeRubrique {
-    fn eq(&self, autre: &str) -> bool {
-        self.0 == autre
-    }
-}
-
-impl PartialEq<&str> for CodeDeRubrique {
-    fn eq(&self, autre: &&str) -> bool {
-        self.0 == *autre
-    }
-}
-
-impl PartialEq<String> for CodeDeRubrique {
-    fn eq(&self, autre: &String) -> bool {
-        &self.0 == autre
-    }
-}
-
 /// La rubrique du cachet : celle que les annexes VIII et X convertissent en heures (`cumul::Constantes`).
 pub const CACHET: CodeDeRubrique = CodeDeRubrique::du_moteur("cachet");
+
+/// La rubrique de l'heure de travail d'un intermittent.
+pub const HEURE: CodeDeRubrique = CodeDeRubrique::du_moteur("heure");
+
+/// La rubrique du service de repetition.
+pub const REPETITION: CodeDeRubrique = CodeDeRubrique::du_moteur("repetition");
 
 /// Une forme de paie : ce que le bulletin appelle une ligne.
 #[derive(Debug, Clone, PartialEq)]
