@@ -73,21 +73,20 @@ pub(crate) fn champs_a_completer(nom: NomDeFiche, fiche: &Saisie, proposees: &Sa
     Ok(out)
 }
 
-/// Une fiche existante que l'import completerait : laquelle (`cle` ; rien pour l'entreprise), et ses cases.
+/// Une fiche existante que l'import completerait : laquelle, et ses cases.
 pub(crate) struct ACompleter {
-    pub(crate) nom: NomDeFiche,
-    pub(crate) cle: Option<String>,
+    pub(crate) fiche: crate::fiches::FicheNommee,
     pub(crate) champs: Saisie,
 }
 
 /// Ajoute des cases a completer. LA PREMIERE PIECE QUI DONNE UNE CASE LA GARDE : les DSN passent avant les bulletins,
 /// comme pour une fiche que l'import cree (le bulletin complete la fiche que la DSN cree, il ne la reecrit pas).
-pub(crate) fn ajouter(liste: &mut Vec<ACompleter>, nom: NomDeFiche, cle: Option<&str>, champs: &Saisie) {
+pub(crate) fn ajouter(liste: &mut Vec<ACompleter>, fiche: crate::fiches::FicheNommee, champs: &Saisie) {
     if !champs.est_dite() {
         return;
     }
-    match liste.iter_mut().find(|a| a.nom == nom && a.cle.as_deref() == cle) {
+    match liste.iter_mut().find(|a| a.fiche == fiche) {
         Some(a) => import::proposee::completer_de(&mut a.champs, champs),
-        None => liste.push(ACompleter { nom, cle: cle.map(String::from), champs: champs.clone() }),
+        None => liste.push(ACompleter { fiche, champs: champs.clone() }),
     }
 }

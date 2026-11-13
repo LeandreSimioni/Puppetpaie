@@ -22,6 +22,7 @@
 
 use droit::fiche::Lue as _;
 use droit::fiche::NumeroObjetSpectacle;
+use engagement::numeros::NumeroContrat;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -298,10 +299,10 @@ struct CarteEcrite {
 struct EnCours {
     salarie: IdSalarie,
     nom: String,
-    spectacle: Option<String>,
+    spectacle: Option<droit::contexte::IdSpectacle>,
     debut: Jour,
     fin: Jour,
-    numero: String,
+    numero: NumeroContrat,
     depuis: Option<Mois>,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux_cachet: Option<Decimal>,
@@ -316,10 +317,10 @@ struct Reprise {
     nature: NatureDeContrat,
     salarie: IdSalarie,
     #[serde(skip_serializing_if = "Option::is_none")]
-    spectacle: Option<String>,
+    spectacle: Option<droit::contexte::IdSpectacle>,
     debut: Jour,
     fin: Jour,
-    numero: String,
+    numero: NumeroContrat,
     lignes: [LigneAReprendre; 1],
 }
 
@@ -644,11 +645,11 @@ pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<(IdSalari
 /// encore aucun cachet, R12, n'en propose aucun : la ligne reste a completer).
 fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     let mut out: Vec<EnCours> = Vec::new();
-    let mut vus: HashSet<(IdSalarie, Jour, String)> = HashSet::new();
+    let mut vus: HashSet<(IdSalarie, Jour, NumeroContrat)> = HashSet::new();
     for i in engagement::importe::qui_continuent(&ctx.racine, mois)? {
         let b = i.objet().carte();
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
-        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.clone(), b.debut, b.fin, b.numero.as_ref().map(ToString::to_string)) else {
+        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.clone(), b.debut, b.fin, b.numero.clone()) else {
             return Err(erreur(Classe::Illisible, "Un contrat repris d'un autre logiciel ne dit pas son salarié, ses bornes ou son numéro : le reprendre à l'import."));
         };
         if !vus.insert((salarie.clone(), debut, numero.clone())) {
@@ -660,7 +661,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             Some(n) => Some(n),
             None => derniere.and_then(|p| p.numero_objet.as_ref()),
         };
-        let spectacle = numero_objet.and_then(|no| ctx.spectacles.iter().find(|(_, s)| s.numero_objet.dite().is_some_and(|n| n.meme(no))).map(|(k, _)| k.to_string()));
+        let spectacle = numero_objet.and_then(|no| ctx.spectacles.iter().find(|(_, s)| s.numero_objet.dite().is_some_and(|n| n.meme(no))).map(|(k, _)| k.clone()));
         let taux_cachet = derniere
             .into_iter()
             .flat_map(|p| p.lignes.iter())
@@ -693,9 +694,9 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             engagement,
         });
     }
-    let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<String>)> = HashSet::new();
+    let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<NumeroContrat>)> = HashSet::new();
     for (c, e) in engagements_du_mois(ctx, mois)? {
-        deja.insert((c, bornes_brutes(&e).0, e.numero.as_ref().map(ToString::to_string)));
+        deja.insert((c, bornes_brutes(&e).0, e.numero.clone()));
     }
     for c in out.iter_mut() {
         c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.debut), Some(c.numero.clone())));
@@ -1907,7 +1908,7 @@ struct PaieACompleter {
 /// Le salarie tel que la carte le nomme.
 #[derive(Debug, Serialize)]
 struct CleEcrite {
-    cle: Option<String>,
+    cle: Option<IdSalarie>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2138,7 +2139,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                 let (debut, fin) = bornes_brutes(e);
                 r.paies.push(PaieVue::ACompleter(PaieACompleter {
                     a_completer: m.phrase.clone(),
-                    salarie: CleEcrite { cle: e.salarie.as_ref().map(ToString::to_string) },
+                    salarie: CleEcrite { cle: e.salarie.clone() },
                     debut,
                     fin,
                     avertissements: [],

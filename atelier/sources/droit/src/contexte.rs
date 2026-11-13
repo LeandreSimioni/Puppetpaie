@@ -1308,8 +1308,8 @@ impl Contexte {
     }
 
     /// Idem pour les spectacles.
-    pub fn spectacles_actifs(&self) -> Vec<&str> {
-        self.spectacles.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k.as_str()).collect()
+    pub fn spectacles_actifs(&self) -> Vec<&IdSpectacle> {
+        self.spectacles.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k).collect()
     }
 
     /// L'effectif de la compagnie (`config/effectifs.json`).

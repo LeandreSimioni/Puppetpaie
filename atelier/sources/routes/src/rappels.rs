@@ -241,14 +241,15 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
     // L'ordre ne compte pas, les doublons non plus.
     let garder: BTreeSet<droit::contexte::IdSpectacle> = continuent.into_iter().collect();
     let actifs = ctx.spectacles_actifs();
-    let inconnus: Vec<&str> = garder.iter().map(AsRef::as_ref).filter(|g| !actifs.contains(g)).collect();
+    let inconnus: Vec<&str> = garder.iter().filter(|g| !actifs.contains(g)).map(AsRef::as_ref).collect();
     if !inconnus.is_empty() {
         return Err(erreur(Classe::Refuse, format!("Spectacle actif inconnu : {}.", inconnus.join(", "))));
     }
-    let archives: Vec<String> = actifs.iter().filter(|c| !garder.contains(**c)).map(|c| c.to_string()).collect();
+    let archives: Vec<droit::contexte::IdSpectacle> = actifs.into_iter().filter(|c| !garder.contains(*c)).cloned().collect();
     for cle in &archives {
-        crate::fiches::activer_fiche(ctx, droit::fiche::NomDeFiche::Spectacle, cle, false)?;
+        crate::fiches::activer_fiche(ctx, &crate::fiches::ChargeActiver::Spectacle { cle: cle.clone(), actif: false })?;
     }
+    let archives: Vec<String> = archives.into_iter().map(String::from).collect();
     marquer_echeance(ctx, &format!("{}:{}", REVUE_SPECTACLES, annee), true, "interface")?;
     let continuent: Vec<String> = garder.into_iter().map(String::from).collect();
     let neuf = Contexte::nouveau(&ctx.racine, None)?;

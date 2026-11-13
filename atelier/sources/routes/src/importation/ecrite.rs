@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::NomDeFiche;
+use crate::fiches::FicheNommee;
 use engagement::importe::{Attestation, ContratLu, ContratRelu, Declaration, PaieLue, PaieVersee};
 use engagement::numeros::NumeroContrat;
 use socle::date::Jour;
@@ -481,20 +482,20 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     // Les fiches qui existent : ce qui y est vide ou « A COMPLETER » (`import::completer`), rien d'autre.
     let mut completees = 0usize;
     for a in &imp.a_completer {
-        let faits = crate::importation::fiches::completer_fiche(ctx, a.nom, a.cle.as_deref(), &a.champs)?;
+        let faits = crate::importation::fiches::completer_fiche(ctx, &a.fiche, &a.champs)?;
         if !faits.est_dite() {
             continue;
         }
-        let emplacement = match a.nom {
-            NomDeFiche::Entreprise => reponse.entreprise.as_mut(),
-            NomDeFiche::Salarie => reponse.salaries.iter_mut().find(|e| e.cle.as_deref() == a.cle.as_deref()),
-            NomDeFiche::Spectacle => reponse.spectacles.iter_mut().find(|e| e.cle.as_deref() == a.cle.as_deref()),
+        let emplacement = match &a.fiche {
+            FicheNommee::Entreprise => reponse.entreprise.as_mut(),
+            FicheNommee::Salarie(_) => reponse.salaries.iter_mut().find(|e| e.cle.as_deref() == a.fiche.cle()),
+            FicheNommee::Spectacle(_) => reponse.spectacles.iter_mut().find(|e| e.cle.as_deref() == a.fiche.cle()),
         };
         if let Some(e) = emplacement {
             e.etat = EtatFiche::Completee;
             e.completer.retain(|c| faits.valeur(c.champ).is_some());
         }
-        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)));
+        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.fiche.nom())));
         completees += 1;
     }
     crate::fiches::dater_licences_suivantes(ctx, &imp.licences, Some(note))?;

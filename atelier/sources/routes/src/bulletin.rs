@@ -149,7 +149,7 @@ struct ModeleDit {
 /// Un salarie qui a demande l'autre modele (la case de sa fiche).
 #[derive(Debug, Clone, serde::Serialize)]
 struct SalarieAutrement {
-    cle: String,
+    cle: droit::contexte::IdSalarie,
     nom: String,
     modele: &'static str,
 }
@@ -186,7 +186,7 @@ fn modeles(ctx: &Contexte) -> R<ModelesDuBulletin> {
                     (Some(un), None) | (None, Some(un)) => un.to_string(),
                     (None, None) => cle.to_string(),
                 };
-                autrement.push(SalarieAutrement { cle: cle.to_string(), nom, modele: m.cle() });
+                autrement.push(SalarieAutrement { cle: cle.clone(), nom, modele: m.cle() });
             }
         }
     }

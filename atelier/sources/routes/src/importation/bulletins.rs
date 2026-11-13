@@ -63,6 +63,7 @@ use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::echec::erreur;
 use crate::importation::completer as completer;
+use crate::fiches::FicheNommee;
 use import::proposee;
 use import::tri::Sorte;
 use socle::num::Decimal;
@@ -618,10 +619,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             // Ce qui y est vide, de ce que les bulletins impriment (la fiche qu'ils creeraient) ; ce que la DSN complete
             // deja garde la valeur de la DSN (`completer::ajouter`).
             let champs = completer::champs_a_completer(NomDeFiche::Salarie, &vue, &proposees)?;
-            let entree = fiche_existante(&mut reponse.salaries, NomDeFiche::Salarie, cle.as_str(), || libelle_salarie(fiche));
+            let entree = fiche_existante(&mut reponse.salaries, &FicheNommee::Salarie(cle.clone()), || libelle_salarie(fiche));
             entree.ajouter_ecarts(ec);
             noter_par_champ(entree, &champs, &siens, &chemin_de)?;
-            completer::ajouter(&mut ap.a_completer, NomDeFiche::Salarie, Some(cle.as_str()), &champs);
+            completer::ajouter(&mut ap.a_completer, FicheNommee::Salarie(cle.clone()), &champs);
             continue;
         }
         if nirs_dsn.contains(nir) {
@@ -659,9 +660,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         if let Some(cle) = par_nir.get(nir) {
             let fiche = &ctx.salaries[cle];
             let champs = completer::champs_a_completer(NomDeFiche::Salarie, &proposee::de(NomDeFiche::Salarie, &fiche.champs)?, &proposees)?;
-            let entree = fiche_existante(&mut reponse.salaries, NomDeFiche::Salarie, cle.as_str(), || libelle_salarie(fiche));
+            let entree = fiche_existante(&mut reponse.salaries, &FicheNommee::Salarie(cle.clone()), || libelle_salarie(fiche));
             entree.noter(&champs, &origine_cert(dernier));
-            completer::ajouter(&mut ap.a_completer, NomDeFiche::Salarie, Some(cle.as_str()), &champs);
+            completer::ajouter(&mut ap.a_completer, FicheNommee::Salarie(cle.clone()), &champs);
             continue;
         }
         if rang_a_creer(&ap.a_creer, NomDeFiche::Salarie, Some(nir))?.is_some() {
@@ -692,7 +693,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             entree.ajouter_ecarts(ec);
             let champs = completer::champs_a_completer(NomDeFiche::Entreprise, &vue, &proposees)?;
             entree.noter(&champs, &Origine::bulletin(Some(chemin_de(dernier)), Some(dernier.page)));
-            completer::ajouter(&mut ap.a_completer, NomDeFiche::Entreprise, None, &champs);
+            completer::ajouter(&mut ap.a_completer, FicheNommee::Entreprise, &champs);
         } else if reponse.entreprise.as_ref().is_some_and(|e| e.etat == EtatFiche::ACreer) {
             // La fiche que les DSN creent, completee de ce que le bulletin imprime et qu'elles ne portent pas (3d).
             completer_a_creer(&mut ap.a_creer, &mut reponse, NomDeFiche::Entreprise, None, &proposees)?;
@@ -720,7 +721,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             entree.ajouter_ecarts(ec);
             let champs = completer::champs_a_completer(NomDeFiche::Entreprise, &proposee::de(NomDeFiche::Entreprise, &ctx.entreprise)?, &proposees)?;
             entree.noter(&champs, &origine_cert(dernier));
-            completer::ajouter(&mut ap.a_completer, NomDeFiche::Entreprise, None, &champs);
+            completer::ajouter(&mut ap.a_completer, FicheNommee::Entreprise, &champs);
         } else if ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Entreprise) {
             completer_a_creer(&mut ap.a_creer, &mut reponse, NomDeFiche::Entreprise, None, &proposees)?;
         } else if reponse.entreprise.is_none() {
@@ -796,10 +797,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 Some(t) => t,
                 None => "Spectacle sans titre".to_string(),
             };
-            let entree = fiche_existante(&mut reponse.spectacles, NomDeFiche::Spectacle, cle, || format!("{} ({})", titre_de_la_fiche, numero));
+            let entree = fiche_existante(&mut reponse.spectacles, &FicheNommee::Spectacle(cle.clone()), || format!("{} ({})", titre_de_la_fiche, numero));
             entree.ajouter_ecarts(ec);
             entree.noter(&champs, &origine);
-            completer::ajouter(&mut ap.a_completer, NomDeFiche::Spectacle, Some(cle), &champs);
+            completer::ajouter(&mut ap.a_completer, FicheNommee::Spectacle(cle.clone()), &champs);
             continue;
         }
         let deja_la = spectacle_du_numero(&reponse.spectacles, numero, true)?;
@@ -1537,11 +1538,11 @@ fn libelle_propose(f: &Saisie) -> String {
 }
 
 /// La fiche existante `cle` de la liste, ajoutee (`libelle`) si la reponse ne la porte pas encore.
-fn fiche_existante<'a>(liste: &'a mut Vec<FicheImportee>, nom: NomDeFiche, cle: &str, libelle: impl FnOnce() -> String) -> &'a mut FicheImportee {
-    let rang = match liste.iter().position(|e| e.cle.as_deref() == Some(cle)) {
+fn fiche_existante<'a>(liste: &'a mut Vec<FicheImportee>, fiche: &FicheNommee, libelle: impl FnOnce() -> String) -> &'a mut FicheImportee {
+    let rang = match liste.iter().position(|e| e.cle.as_deref() == fiche.cle()) {
         Some(i) => i,
         None => {
-            liste.push(FicheImportee::new(nom, Some(cle), &libelle(), EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default()));
+            liste.push(FicheImportee::new(fiche.nom(), fiche.cle(), &libelle(), EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default()));
             liste.len() - 1
         }
     };

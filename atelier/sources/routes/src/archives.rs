@@ -245,7 +245,7 @@ fn annees_de(dispo: &[Mois]) -> Vec<String> {
 /// Un salarie que la page propose : sa cle, son nom, s'il est actif, s'il a un courriel.
 #[derive(Debug, Serialize)]
 struct SalariePropose {
-    cle: String,
+    cle: droit::contexte::IdSalarie,
     nom: String,
     actif: bool,
     email: bool,
@@ -279,7 +279,7 @@ fn salaries_de_la_page(ctx: &Contexte) -> Vec<SalariePropose> {
     fiches
         .into_iter()
         .map(|(k, v)| SalariePropose {
-            cle: k.to_string(),
+            cle: k.clone(),
             nom: documents::tableaux_export::qui_souple(v),
             actif: !v.archivee(),
             email: v.email.is_some(),
@@ -1038,7 +1038,7 @@ struct TableauDesDroits {
 /// et le tableau du mois.
 #[derive(Debug, Serialize)]
 struct DroitsDUnSalarie {
-    cle: String,
+    cle: droit::contexte::IdSalarie,
     nom: String,
     fenetre: String,
     lignes: Vec<(String, String)>,
@@ -1134,7 +1134,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
             Some(f) => crate::nom_a_l_ecran(f, cle),
             None => cle.to_string(),
         };
-        salaries.push(DroitsDUnSalarie { cle: cle.to_string(), nom, fenetre: p.libelle_fenetre.clone(), lignes, phrase, notes, colonnes: tableau });
+        salaries.push(DroitsDUnSalarie { cle: cle.clone(), nom, fenetre: p.libelle_fenetre.clone(), lignes, phrase, notes, colonnes: tableau });
     }
     let phrase = if salaries.is_empty() {
         "Aucun engagement d'intermittent n'est encore validé ni importé."

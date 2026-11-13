@@ -18,7 +18,7 @@ use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
 use documents::fiche_questionnaire::CodeDeDemande;
-use droit::contexte::{Contexte, IdSalarie};
+use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
 use droit::fiche::{CaseEntreprise, CodeEmploiFt, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, CaseDeFiche, NomDeFiche, Piece};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
@@ -250,7 +250,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
         }
         Route::VerifierFiche => en_json(self::ecriture::verifier_fiche(charge.lire()?)?),
-        Route::EnregistrerFiche => en_json(ecriture::enregistrer_fiche(ctx, charge.lire()?)?),
+        Route::EnregistrerFiche => ecriture::enregistrer_fiche(ctx, charge.lire()?),
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
         Route::CompagnieSupprimer => {
@@ -286,13 +286,42 @@ struct FichesRelevees {
     incidents: Vec<String>,
 }
 
+/// UNE FICHE NOMMEE : l'entreprise (le fichier entier, sans cle), ou un salarie, un spectacle par la cle de sa fiche.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FicheNommee {
+    Entreprise,
+    Salarie(IdSalarie),
+    Spectacle(IdSpectacle),
+}
+
+impl FicheNommee {
+    /// Le nom de la fiche.
+    pub(crate) fn nom(&self) -> NomDeFiche {
+        match self {
+            FicheNommee::Entreprise => NomDeFiche::Entreprise,
+            FicheNommee::Salarie(_) => NomDeFiche::Salarie,
+            FicheNommee::Spectacle(_) => NomDeFiche::Spectacle,
+        }
+    }
+
+    /// Sa cle, en texte ; l'entreprise n'en a pas.
+    pub(crate) fn cle(&self) -> Option<&str> {
+        match self {
+            FicheNommee::Entreprise => None,
+            FicheNommee::Salarie(k) => Some(k.as_str()),
+            FicheNommee::Spectacle(k) => Some(k.as_str()),
+        }
+    }
+}
+
 /// La charge de `activer-fiche` : la fiche (`salarie` ou `spectacle`) et sa cle, active ou archivee.
 #[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeActiver {
-    nom: NomDeFiche,
-    cle: String,
-    actif: bool,
+#[serde(tag = "nom", deny_unknown_fields)]
+pub(crate) enum ChargeActiver {
+    #[serde(rename = "salarie")]
+    Salarie { cle: IdSalarie, actif: bool },
+    #[serde(rename = "spectacle")]
+    Spectacle { cle: IdSpectacle, actif: bool },
 }
 
 macro_rules! dites {
@@ -439,7 +468,7 @@ fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
     let entreprise = if nom == NomDeFiche::Entreprise { donnees.clone() } else { Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)? };
     let jour = ctx.aujourdhui;
     let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
-    let Montres { cases, pieces_ouvertes } = montres(ctx, nom, cle.as_ref().map(IdSalarie::as_str), &donnees, &entreprise, &p)?;
+    let Montres { cases, pieces_ouvertes } = montres(ctx, nom, cle.as_ref(), &donnees, &entreprise, &p)?;
     Ok(Permanents {
         phrase: if permanents_de(&entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
         montres: cases,
@@ -470,11 +499,11 @@ fn permanents_de(entreprise: &Saisie) -> bool {
 /// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
 /// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
 /// page ne montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
+pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
     let au_mois = match nom {
         NomDeFiche::Entreprise => permanents_de(entreprise) || !p.dus.is_empty(),
         // Un salarie pas encore enregistre n'a aucun engagement.
-        NomDeFiche::Salarie => cle.map(IdSalarie::lire).transpose()?.map(|c| engagement::permanents::cle_du_salarie(ctx, &c)).transpose()?.flatten().is_some(),
+        NomDeFiche::Salarie => cle.map(|c| engagement::permanents::cle_du_salarie(ctx, c)).transpose()?.flatten().is_some(),
         // Un spectacle n'a pas la piece d'un permanent.
         NomDeFiche::Spectacle => false,
     };
@@ -526,7 +555,7 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> 
 /// l'annexe I, que sa prime
 /// d'anciennete peut viser (`droit::clauses::prime_anciennete_possible`, le metier de la carte ou de la fiche de son
 /// salarie). Un engagement qui n'est plus actif ne demande rien ; une fiche sans engagement, rien.
-fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<CaseDeFiche>> {
+fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, donnees: &Saisie) -> R<std::collections::BTreeSet<CaseDeFiche>> {
     let mut cases = std::collections::BTreeSet::new();
     // Le code emploi de la fiche en cours de saisie, rangé à sa lecture (`Saisie`) ; hors de sa forme, sa faute le dit.
     let de_la_fiche = donnees.mot(droit::fiche::CaseSalarie::CodeEmploiFt).and_then(|c| CodeEmploiFt::lire(&c).ok());
@@ -538,7 +567,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
             let s = &e.saisie;
             let Some(salarie) = s.carte.salarie.as_ref() else { continue };
             let du_salarie = match (nom, cle) {
-                (NomDeFiche::Salarie,Some(c)) if c == salarie.as_str() => de_la_fiche.clone(),
+                (NomDeFiche::Salarie, Some(c)) if c == salarie => de_la_fiche.clone(),
                 (NomDeFiche::Entreprise, _) if paye_au_mois(s)? => ctx.fiche_de(salarie)?.code_emploi_ft.dite().cloned(),
                 _ => continue,
             };
@@ -749,35 +778,33 @@ pub(crate) fn aujourd_hui() -> Jour {
 
 /// Seul `actif` change, a partir d'aujourd'hui (archiver, c'est ne plus proposer a partir de ce jour ; ce qui precede
 /// reste ce qu'il etait), par l'ecrivain de la fiche (`poser`).
-pub(crate) fn activer_fiche(ctx: &Contexte, nom: NomDeFiche, cle: &str, actif: bool) -> R<()> {
+pub(crate) fn activer_fiche(ctx: &Contexte, c: &ChargeActiver) -> R<()> {
     let jour = Some(ctx.aujourdhui);
-    match nom {
-        NomDeFiche::Salarie => poser::<FicheSalarieDatee>(ctx, Some(cle), vec![ChangementSalarie::Actif(Some(actif))], jour, None),
-        NomDeFiche::Spectacle => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::Actif(Some(actif))], jour, None),
-        NomDeFiche::Entreprise => Err(refus(format!("Seuls un salarie ou un spectacle s'activent : {}.", socle::fichiers::repr(NomDeFiche::Entreprise.nom())))),
+    match c {
+        ChargeActiver::Salarie { cle, actif } => poser::<FicheSalarieDatee>(ctx, Some(cle), vec![ChangementSalarie::Actif(Some(*actif))], jour, None),
+        ChargeActiver::Spectacle { cle, actif } => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::Actif(Some(*actif))], jour, None),
     }
 }
 
 fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
-    let (nom, cle, actif) = (c.nom, c.cle.as_str(), c.actif);
-    activer_fiche(ctx, nom, cle, actif)?;
+    activer_fiche(ctx, &c)?;
     // Le nom que la liste montre : le salarie par son nom, le spectacle par son titre ; la cle seule si la fiche n'en a pas.
-    let nomme = if nom == NomDeFiche::Salarie {
-        let id = IdSalarie::lire(cle).map_err(|m| m.reclasser(Classe::Manque))?;
-        ctx.fiche_de(&id).map_err(|m| m.reclasser(Classe::Manque))?.nomme()
-    } else {
-        let fiche = ctx.spectacles.get(cle).ok_or_else(|| refus(format!("Spectacle inconnu : {}.", socle::fichiers::repr(cle))))?;
-        fiche.titre.portee().filter(|t| !t.trim().is_empty()).map(String::from)
-    };
-    let qui = match nomme {
-        Some(n) => n,
-        None => cle.to_string(),
-    };
-    let phrase = match (nom, actif) {
-        (NomDeFiche::Salarie,true) => format!("{} : fiche réactivée.", qui),
-        (NomDeFiche::Salarie,false) => format!("{} : fiche archivée.", qui),
-        (_, true) => format!("Spectacle « {} » réactivé.", qui),
-        (_, false) => format!("Spectacle « {} » archivé.", qui),
+    let phrase = match &c {
+        ChargeActiver::Salarie { cle, actif } => {
+            let qui = match ctx.fiche_de(cle).map_err(|m| m.reclasser(Classe::Manque))?.nomme() {
+                Some(n) => n,
+                None => cle.to_string(),
+            };
+            if *actif { format!("{} : fiche réactivée.", qui) } else { format!("{} : fiche archivée.", qui) }
+        }
+        ChargeActiver::Spectacle { cle, actif } => {
+            let fiche = ctx.spectacles.get(cle).ok_or_else(|| refus(format!("Spectacle inconnu : {}.", socle::fichiers::repr(cle.as_str()))))?;
+            let qui = match fiche.titre.portee().filter(|t| !t.trim().is_empty()) {
+                Some(t) => t.to_string(),
+                None => cle.to_string(),
+            };
+            if *actif { format!("Spectacle « {} » réactivé.", qui) } else { format!("Spectacle « {} » archivé.", qui) }
+        }
     };
     Ok(FicheActivee { phrase, etat: etat_relu(ctx)? })
 }
@@ -832,12 +859,12 @@ use crate::catalogue::{Ecran, Place};
 /// LE DERNIER MOIS PARTI pour la fiche `nom` (`cle` pour un salarie) : le dernier dont les documents ou la DSN sont
 /// partis (`engagement::departs`), ou que l'ancien logiciel a verse et declare (un engagement importe), pour ce salarie,
 /// ou pour quiconque quand c'est la fiche de l'entreprise. `None` : aucun ; une fiche de spectacle n'en a pas.
-pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>) -> R<Option<socle::mois::Mois>> {
+pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>) -> R<Option<socle::mois::Mois>> {
     use engagement::departs::Envoi;
     if nom == NomDeFiche::Spectacle {
         return Ok(None);
     }
-    let sien = |c: &IdSalarie| nom == NomDeFiche::Entreprise || Some(c.as_str()) == cle;
+    let sien = |c: &IdSalarie| nom == NomDeFiche::Entreprise || Some(c) == cle;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let partis = departs
         .engagements()
@@ -857,7 +884,7 @@ pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: NomDeFiche, cle: Option<&s
 /// LA DATE QU'UN CHANGEMENT DE FICHE PROPOSE, et pourquoi : le premier jour du mois qui suit le dernier mois parti
 /// (`dernier_mois_parti`) : ce qui est parti garde ce qu'il a dit, le reste prend la valeur nouvelle. Aucun mois parti :
 /// le premier jour du mois en cours. Une autre date se choisit, dans le passe aussi : ce qui est parti se corrige alors.
-pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>) -> R<(Jour, String)> {
+pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>) -> R<(Jour, String)> {
     let qui = if nom == NomDeFiche::Entreprise { "" } else { " pour ce salarié" };
     Ok(match dernier_mois_parti(ctx, nom, cle)? {
         Some(m) => {
@@ -879,7 +906,7 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>) 
 /// UN TAUX DE PAS RECU S'ECRIT DANS LA FICHE DE SON SALARIE (`taux_pas`), date du jour ou il commence de valoir
 /// `depuis` : avant ce jour, la fiche ne le disait pas (la case vide). `note` dit d'ou il vient.
 pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &IdSalarie, valeur: droit::fiche::TauxPas, depuis: Jour, note: &str) -> R<()> {
-    ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie.as_str()), vec![ChangementSalarie::TauxPas(Some(valeur))], true, Some(depuis), Some(note), &depuis)
+    ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::TauxPas(Some(valeur))], true, Some(depuis), Some(note), &depuis)
 }
 
 /// Une case de la fiche entreprise (`poser`).
@@ -895,7 +922,7 @@ pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &IdSalarie,
     let Some(fiche) = ctx.salaries.get(salarie) else { return Ok(()) };
     let debut = debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
     match engagement::calcul::Anciennete::de(&ctx.racine, fiche, salarie, debut)? {
-        engagement::calcul::Anciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie.as_str()), vec![ChangementSalarie::DateAnciennete(Some(j))], None, None),
+        engagement::calcul::Anciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(j))], None, None),
         engagement::calcul::Anciennete::Dite(_) | engagement::calcul::Anciennete::NonDite => Ok(()),
     }
 }
@@ -912,7 +939,7 @@ pub(crate) fn reprendre_anciennete(ctx: &Contexte, salarie: &IdSalarie, pose_le:
     let posee = contenu.fiches.get(salarie).and_then(|f| f.date_anciennete.as_deref()).filter(|v| v.len() == 1).and_then(|v| v.first());
     let a_remplacer = posee.filter(|seule| seule.valeur.dite() == Some(&pose_le) && debut < pose_le);
     // La note de l'import (d'ou vient la valeur) reste : la valeur vient toujours des pieces importees.
-    let remplacer = |seule: &droit::fiche::Datee<Jour>| poser::<FicheSalarieDatee>(ctx, Some(salarie.as_str()), vec![ChangementSalarie::DateAnciennete(Some(debut))], None, seule.note.as_deref());
+    let remplacer = |seule: &droit::fiche::Datee<Jour>| poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(debut))], None, seule.note.as_deref());
     Ok(a_remplacer.map(remplacer).transpose()?.is_some())
 }
 
@@ -1113,7 +1140,7 @@ pub struct ReleveFiches {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FicheRecue {
     code: CodeDeDemande,
-    cle: Option<String>,
+    cle: Option<IdSalarie>,
     nom: String,
     illisible: Vec<String>,
     erreurs: usize,
@@ -1236,7 +1263,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
         let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
-        let existante: Option<String> = trouvee.map(|(k, _)| k.to_string());
+        let existante: Option<IdSalarie> = trouvee.map(|(k, _)| k.clone());
         // Une fiche qui existe deja : on ne complete que ses cases VIDES (ce qu'elle porte a peut-etre deja ete declare) ;
         // une fiche neuve prend toutes celles de la reponse, active. La note dit d'ou viennent les valeurs.
         let deja = match trouvee {
@@ -1244,7 +1271,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             None => None,
         };
         let dites = droit::fiche::ChampsSalarie::default().cases_differentes(&recue);
-        let p = preparer::<FicheSalarieDatee>(ctx, existante.as_deref(), |plate| {
+        let p = preparer::<FicheSalarieDatee>(ctx, existante.as_ref(), |plate| {
             let mut nommees = Vec::new();
             for k in dites {
                 let a_remplir = deja.as_ref().is_none_or(|v| vide(v.valeur(k)));
@@ -1270,7 +1297,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         let retour = journal::RetourFiche {
             code: code.clone(),
             abandon: false,
-            salarie: f.cle.as_deref().map(droit::contexte::IdSalarie::lire).transpose().map_err(|e| e.reclasser(Classe::Disque))?,
+            salarie: f.cle.clone(),
             illisible: Some(illisible.clone()),
             erreurs: Some(erreurs),
             quand,
@@ -1432,7 +1459,6 @@ pub(crate) fn poser_courriel(ctx: &Contexte, cle: &IdSalarie, email: &droit::fic
     if !ctx.salaries.contains_key(cle) {
         return Err(refus(format!("Salarié {} inconnu.", socle::fichiers::repr(cle.as_str()))));
     }
-    let cle = cle.as_str();
     let p = preparer::<FicheSalarieDatee>(ctx, Some(cle), |plate| {
         plate.email = Some(email.clone());
         vec![droit::fiche::CaseSalarie::Email.into()]

@@ -499,7 +499,7 @@ pub(crate) fn apercu_lu(
             let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Entreprise, &fiche, &e)?;
             f.noter(&champs, &Origine::dsn(lecture.dernier_mois));
             entreprise = Some(f);
-            crate::importation::completer::ajouter(&mut a_completer, NomDeFiche::Entreprise, None, &champs);
+            crate::importation::completer::ajouter(&mut a_completer, crate::fiches::FicheNommee::Entreprise, &champs);
         }
     }
 
@@ -523,7 +523,7 @@ pub(crate) fn apercu_lu(
             let mut entree = FicheImportee::new(NomDeFiche::Salarie, Some(cle.as_str()), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Salarie, &fiche, &fiche_salarie(decl)?)?;
             entree.noter(&champs, &Origine::dsn(Some(decl.mois)));
-            crate::importation::completer::ajouter(&mut a_completer, NomDeFiche::Salarie, Some(cle.as_str()), &champs);
+            crate::importation::completer::ajouter(&mut a_completer, crate::fiches::FicheNommee::Salarie(cle.clone()), &champs);
             salaries.push(entree);
             continue;
         }

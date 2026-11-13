@@ -34,15 +34,26 @@ pub(crate) trait SorteDeFiche: FicheDatee {
     }
     /// Le fichier qui la porte.
     type Fichier: Clone + Default + PartialEq + Serialize + serde::de::DeserializeOwned;
+    /// La cle d'une fiche dans son fichier : `IdSalarie`, `IdSpectacle` ; l'entreprise, le fichier entier, n'en a pas
+    /// (`()`).
+    type Cle: Clone + PartialEq + std::fmt::Debug + Serialize + serde::de::DeserializeOwned;
 
+    /// La cle telle qu'une phrase la dit.
+    fn cle_dite(cle: &Self::Cle) -> String;
+    /// Le salarie que la cle nomme, pour une fiche de salarie.
+    fn salarie(_cle: &Self::Cle) -> Option<&IdSalarie> {
+        None
+    }
+    /// La cle d'une fiche neuve (`cle_neuve`) ; l'entreprise n'en a pas.
+    fn nommer_neuve(d: &Saisie, existants: &Self::Fichier) -> R<Option<Self::Cle>>;
     /// La fiche `cle` du fichier, si elle existe.
-    fn existante<'a>(f: &'a mut Self::Fichier, cle: Option<&str>) -> Option<&'a mut Self>;
+    fn existante<'a>(f: &'a mut Self::Fichier, cle: Option<&Self::Cle>) -> Option<&'a mut Self>;
     /// La fiche `cle`, neuve si le fichier ne la porte pas encore.
-    fn ou_neuve<'a>(f: &'a mut Self::Fichier, cle: Option<&str>) -> R<&'a mut Self>;
+    fn ou_neuve<'a>(f: &'a mut Self::Fichier, cle: Option<&Self::Cle>) -> R<&'a mut Self>;
     /// Le fichier porte-t-il la fiche `cle` ?
-    fn contient(f: &Self::Fichier, cle: &str) -> bool;
+    fn contient(f: &Self::Fichier, cle: &Self::Cle) -> bool;
     /// La fiche telle que l'ecran l'a montree (`ctx.lue_au`), si elle existe.
-    fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<Self::Plate>;
+    fn montree(ctx: &Contexte, cle: Option<&Self::Cle>) -> Option<Self::Plate>;
     /// Les cases qui different d'une fiche a l'autre.
     fn differentes(a: &Self::Plate, b: &Self::Plate) -> Vec<CaseDeFiche>;
     /// Les cases de la fiche, sans ses notes (ce que l'ecran montre).
@@ -57,7 +68,7 @@ pub(crate) trait SorteDeFiche: FicheDatee {
     /// controle (la forme d'un code risque, la notification d'un taux AT/MP que la saisie change).
     fn ajuster(_avant: &Self::Plate, _apres: &mut Self::Plate) {}
     /// Ce qu'une ecriture refuse, `forcer` ou non (un NIR, un matricule, un numero d'objet deja pris).
-    fn refuser(_ctx: &Contexte, _cle: Option<&str>, _avant: &Self::Plate, _apres: &Self::Plate) -> R<()> {
+    fn refuser(_ctx: &Contexte, _cle: Option<&Self::Cle>, _avant: &Self::Plate, _apres: &Self::Plate) -> R<()> {
         Ok(())
     }
     /// Ce qu'une fiche neuve recoit du moteur (le matricule suivant).
@@ -87,21 +98,28 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     const NOM: NomDeFiche = NomDeFiche::Entreprise;
     const FICHIER: &'static str = droit::contexte::ENTREPRISE;
     type Fichier = FicheEntrepriseDatee;
+    type Cle = ();
 
     fn a_part() -> Vec<CaseDeFiche> {
         vec![CaseEntreprise::Etablissements.into(), CaseEntreprise::TauxAtmp.into()]
     }
 
-    fn existante<'a>(f: &'a mut Self, _cle: Option<&str>) -> Option<&'a mut Self> {
+    fn cle_dite(_cle: &()) -> String {
+        String::new()
+    }
+    fn nommer_neuve(_d: &Saisie, _existants: &Self) -> R<Option<()>> {
+        Ok(None)
+    }
+    fn existante<'a>(f: &'a mut Self, _cle: Option<&()>) -> Option<&'a mut Self> {
         Some(f)
     }
-    fn ou_neuve<'a>(f: &'a mut Self, _cle: Option<&str>) -> R<&'a mut Self> {
+    fn ou_neuve<'a>(f: &'a mut Self, _cle: Option<&()>) -> R<&'a mut Self> {
         Ok(f)
     }
-    fn contient(_f: &Self, _cle: &str) -> bool {
+    fn contient(_f: &Self, _cle: &()) -> bool {
         false
     }
-    fn montree(ctx: &Contexte, _cle: Option<&str>) -> Option<ChampsEntreprise> {
+    fn montree(ctx: &Contexte, _cle: Option<&()>) -> Option<ChampsEntreprise> {
         Some(crate::etablissements::entreprise_montree(ctx))
     }
     fn differentes(a: &ChampsEntreprise, b: &ChampsEntreprise) -> Vec<CaseDeFiche> {
@@ -123,7 +141,7 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     }
     /// La ligne du taux AT/MP qui ne se lit pas comme la DSN le declare (`droit::bareme::taux_atmp_refuse`) ; une ligne
     /// ne se retire pas (une autre la remplace, a sa date).
-    fn refuser(_ctx: &Contexte, _cle: Option<&str>, avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<()> {
+    fn refuser(_ctx: &Contexte, _cle: Option<&()>, avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<()> {
         if apres.taux_atmp == avant.taux_atmp {
             return Ok(());
         }
@@ -231,20 +249,29 @@ impl SorteDeFiche for FicheSalarieDatee {
     const NOM: NomDeFiche = NomDeFiche::Salarie;
     const FICHIER: &'static str = droit::contexte::SALARIES;
     type Fichier = droit::fiche::Salaries;
+    type Cle = IdSalarie;
 
-    // Un texte qui n'est pas une cle (vide, fait de blancs : `IdSalarie::lire`) ne nomme aucune fiche existante.
-    fn existante<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&str>) -> Option<&'a mut Self> {
-        f.fiches.get_mut(&IdSalarie::lire(cle?).ok()?)
+    fn cle_dite(cle: &IdSalarie) -> String {
+        cle.to_string()
     }
-    fn ou_neuve<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&str>) -> R<&'a mut Self> {
+    fn salarie(cle: &IdSalarie) -> Option<&IdSalarie> {
+        Some(cle)
+    }
+    fn nommer_neuve(d: &Saisie, existants: &droit::fiche::Salaries) -> R<Option<IdSalarie>> {
+        cle_neuve::<Self>(d, existants, IdSalarie::lire).map(Some)
+    }
+    fn existante<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&IdSalarie>) -> Option<&'a mut Self> {
+        f.fiches.get_mut(cle?)
+    }
+    fn ou_neuve<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&IdSalarie>) -> R<&'a mut Self> {
         let cle = cle.ok_or_else(|| refus("Une fiche de salarié se nomme par sa clé."))?;
-        Ok(f.fiches.entry(IdSalarie::lire(cle)?).or_default())
+        Ok(f.fiches.entry(cle.clone()).or_default())
     }
-    fn contient(f: &droit::fiche::Salaries, cle: &str) -> bool {
-        IdSalarie::lire(cle).is_ok_and(|c| f.fiches.contains_key(&c))
+    fn contient(f: &droit::fiche::Salaries, cle: &IdSalarie) -> bool {
+        f.fiches.contains_key(cle)
     }
-    fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<ChampsSalarie> {
-        ctx.salaries.get(&IdSalarie::lire(cle?).ok()?).map(|f| Self::retenue(f.champs.clone()))
+    fn montree(ctx: &Contexte, cle: Option<&IdSalarie>) -> Option<ChampsSalarie> {
+        ctx.salaries.get(cle?).map(|f| Self::retenue(f.champs.clone()))
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -255,7 +282,7 @@ impl SorteDeFiche for FicheSalarieDatee {
     fn retenue(p: ChampsSalarie) -> ChampsSalarie {
         ChampsSalarie { actif: Some(!p.archivee()), ..p }
     }
-    fn refuser(ctx: &Contexte, cle: Option<&str>, avant: &ChampsSalarie, apres: &ChampsSalarie) -> R<()> {
+    fn refuser(ctx: &Contexte, cle: Option<&IdSalarie>, avant: &ChampsSalarie, apres: &ChampsSalarie) -> R<()> {
         // LE MATRICULE D'UN SALARIE SANS NIR NE SE CHANGE PAS : il finit son numero technique temporaire.
         if let (Some(_), Some(a), Some(b)) = (cle, avant.code_salarie.remplie(), apres.code_salarie.remplie()) {
             if a != b && apres.nir.portee().is_none() && avant.nir.portee().is_none() {
@@ -270,7 +297,7 @@ impl SorteDeFiche for FicheSalarieDatee {
         // UN NIR, UNE PERSONNE : `forcer` ne leve pas ce refus.
         if let Some(nir) = apres.nir.dite() {
             let autres: Vec<&str> =
-                ctx.salaries.iter().filter(|(k, s)| Some(k.as_str()) != cle && s.nir.dite() == Some(nir)).map(|(k, _)| k.as_str()).collect();
+                ctx.salaries.iter().filter(|(k, s)| Some(*k) != cle && s.nir.dite() == Some(nir)).map(|(k, _)| k.as_str()).collect();
             if !autres.is_empty() {
                 return Err(refus(format!(
                     "Le NIR {} est déjà celui de la fiche {}. Un NIR désigne une personne et une seule : complétez ou réactivez cette \
@@ -284,7 +311,7 @@ impl SorteDeFiche for FicheSalarieDatee {
         // dont « le choix de la valeur revient a l'employeur », `norme-dsn/texte/bloc-S21.G00.30.txt`, l. 327-329) ; deux
         // fiches au meme matricule s'y confondraient. `forcer` ne leve pas ce refus.
         if let Some(matricule) = apres.code_salarie.remplie().map(str::trim).filter(|m| !m.is_empty()) {
-            let porteur = ctx.salaries.iter().find(|(k, s)| Some(k.as_str()) != cle && s.code_salarie.portee().is_some_and(|m| m.trim() == matricule));
+            let porteur = ctx.salaries.iter().find(|(k, s)| Some(*k) != cle && s.code_salarie.portee().is_some_and(|m| m.trim() == matricule));
             if let Some((k, s)) = porteur {
                 let qui = match s.nomme() {
                     Some(n) => n,
@@ -313,18 +340,25 @@ impl SorteDeFiche for FicheSpectacleDatee {
     const NOM: NomDeFiche = NomDeFiche::Spectacle;
     const FICHIER: &'static str = droit::contexte::SPECTACLES;
     type Fichier = droit::fiche::Spectacles;
+    type Cle = IdSpectacle;
 
-    fn existante<'a>(f: &'a mut droit::fiche::Spectacles, cle: Option<&str>) -> Option<&'a mut Self> {
+    fn cle_dite(cle: &IdSpectacle) -> String {
+        cle.to_string()
+    }
+    fn nommer_neuve(d: &Saisie, existants: &droit::fiche::Spectacles) -> R<Option<IdSpectacle>> {
+        cle_neuve::<Self>(d, existants, IdSpectacle::lire).map(Some)
+    }
+    fn existante<'a>(f: &'a mut droit::fiche::Spectacles, cle: Option<&IdSpectacle>) -> Option<&'a mut Self> {
         f.fiches.get_mut(cle?)
     }
-    fn ou_neuve<'a>(f: &'a mut droit::fiche::Spectacles, cle: Option<&str>) -> R<&'a mut Self> {
+    fn ou_neuve<'a>(f: &'a mut droit::fiche::Spectacles, cle: Option<&IdSpectacle>) -> R<&'a mut Self> {
         let cle = cle.ok_or_else(|| refus("Une fiche de spectacle se nomme par sa clé."))?;
-        Ok(f.fiches.entry(IdSpectacle::lire(cle)?).or_default())
+        Ok(f.fiches.entry(cle.clone()).or_default())
     }
-    fn contient(f: &droit::fiche::Spectacles, cle: &str) -> bool {
+    fn contient(f: &droit::fiche::Spectacles, cle: &IdSpectacle) -> bool {
         f.fiches.contains_key(cle)
     }
-    fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<ChampsSpectacle> {
+    fn montree(ctx: &Contexte, cle: Option<&IdSpectacle>) -> Option<ChampsSpectacle> {
         ctx.spectacles.get(cle?).cloned().map(Self::retenue)
     }
     fn differentes(a: &ChampsSpectacle, b: &ChampsSpectacle) -> Vec<CaseDeFiche> {
@@ -336,13 +370,13 @@ impl SorteDeFiche for FicheSpectacleDatee {
     fn retenue(p: ChampsSpectacle) -> ChampsSpectacle {
         ChampsSpectacle { actif: Some(!p.archivee()), ..p }
     }
-    fn refuser(ctx: &Contexte, cle: Option<&str>, _avant: &ChampsSpectacle, apres: &ChampsSpectacle) -> R<()> {
+    fn refuser(ctx: &Contexte, cle: Option<&IdSpectacle>, _avant: &ChampsSpectacle, apres: &ChampsSpectacle) -> R<()> {
         // UN NUMERO D'OBJET, UN SPECTACLE : France Travail l'attribue « pour chaque spectacle ou chaque production » et il
         // « permet d'identifier toutes les personnes ayant travaille » dessus (S21.G00.40.050,
         // `norme-dsn/texte/bloc-S21.G00.40.txt`, l. 1379-1385) ; deux fiches au meme numero se confondraient dans la DSN.
         // `forcer` ne leve pas ce refus.
         let Some(numero) = apres.numero_objet.dite() else { return Ok(()) };
-        let porteur = ctx.spectacles.iter().find(|(k, s)| Some(k.as_str()) != cle && s.numero_objet.dite().is_some_and(|n| n.meme(numero)));
+        let porteur = ctx.spectacles.iter().find(|(k, s)| Some(*k) != cle && s.numero_objet.dite().is_some_and(|n| n.meme(numero)));
         if let Some((k, s)) = porteur {
             let qui = match s.titre.remplie().filter(|t| !t.trim().is_empty() && !t.trim().eq_ignore_ascii_case(A_COMPLETER)) {
                 Some(t) => format!("du spectacle « {} » (fiche {})", t, k),
@@ -853,15 +887,15 @@ fn libelles_a_dater(nom: NomDeFiche, a_dater: &[CaseDeFiche]) -> R<Vec<String>> 
 /// fiche telle qu'elle est sur le disque a `lue_au` (`ecrire_datee`), l'ancien fichier sauvegarde. Ni derivation ni
 /// verification : chaque case est deja dans sa forme. `cle` : celle d'un salarie ou d'un spectacle, `None` pour
 /// l'entreprise.
-pub(crate) fn poser<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, changements: Vec<F::Changement>, depuis: Option<Jour>, note: Option<&str>) -> R<()> {
+pub(crate) fn poser<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, changements: Vec<F::Changement>, depuis: Option<Jour>, note: Option<&str>) -> R<()> {
     poser_au::<F>(ctx, cle, changements, false, depuis, note, &ctx.lue_au)
 }
 
 /// `poser`, face a la fiche lue a `lue_au` ; `premiere_datee` comme `ecrire_datee`.
-pub(crate) fn poser_au<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, changements: Vec<F::Changement>, premiere_datee: bool, depuis: Option<Jour>, note: Option<&str>, lue_au: &Jour) -> R<()> {
+pub(crate) fn poser_au<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, changements: Vec<F::Changement>, premiere_datee: bool, depuis: Option<Jour>, note: Option<&str>, lue_au: &Jour) -> R<()> {
     let mut contenu = lire_fichier::<F>(ctx)?;
     let Some(brute) = F::existante(&mut contenu, cle) else {
-        return Err(refus(format!("La fiche {} {} n'existe pas : rien n'est écrit.", F::NOM, cle.into_iter().collect::<String>())));
+        return Err(refus(format!("La fiche {} {} n'existe pas : rien n'est écrit.", F::NOM, cle.map(F::cle_dite).into_iter().collect::<String>())));
     };
     let avant = brute.au(lue_au);
     let mut apres = avant.clone();
@@ -936,7 +970,7 @@ pub(crate) fn avec_libelles(nom: NomDeFiche, anomalies: &mut [Anomalie]) -> R<()
 /// UNE FICHE PRETE A S'ECRIRE : telle que l'ecran l'a montree (`avant`), et telle qu'elle sera, ses changements poses
 /// et derivee (`apres`), avec les cases que l'ecran a nommees.
 pub(crate) struct Preparee<F: SorteDeFiche> {
-    cle: Option<String>,
+    cle: Option<F::Cle>,
     avant: F::Plate,
     apres: F::Plate,
     vue_avant: Saisie,
@@ -946,7 +980,7 @@ pub(crate) struct Preparee<F: SorteDeFiche> {
 /// PREPARER L'ECRITURE de la fiche `cle` (`None` : une fiche neuve, ou l'entreprise) : la fiche telle que l'ecran l'a
 /// montree, ce que `changer` y pose (il rend les cases qu'il nomme), ce que la fiche refuse quoi qu'on force, puis la
 /// derivation des formes declarees de ce que ces cases disent.
-pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, changer: impl FnOnce(&mut F::Plate) -> Vec<CaseDeFiche>) -> R<Preparee<F>> {
+pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, changer: impl FnOnce(&mut F::Plate) -> Vec<CaseDeFiche>) -> R<Preparee<F>> {
     let mut avant = F::Plate::default();
     if let Some(p) = F::montree(ctx, cle) {
         avant = p;
@@ -964,13 +998,13 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, chang
     deriver(F::NOM, &mut vue_apres, true, &|c| nommees.contains(&c))?;
     reporter::<F>(&mut apres, &vue_changee, &vue_apres)?;
     let vue_apres = vue::<F>(&apres)?;
-    Ok(Preparee { cle: cle.map(str::to_string), avant, apres, vue_avant, vue_apres })
+    Ok(Preparee { cle: cle.cloned(), avant, apres, vue_avant, vue_apres })
 }
 
 /// Ce que l'ecriture d'une fiche a fait : sa cle (celle d'une fiche neuve est fabriquee ici), les anomalies, si le
 /// fichier a change (une fiche enregistree telle qu'elle est n'ecrit rien), et les cases ecrites.
-pub(crate) struct FicheEcrite {
-    pub(crate) cle: Option<String>,
+pub(crate) struct FicheEcrite<K> {
+    pub(crate) cle: Option<K>,
     pub(crate) anomalies: Vec<Anomalie>,
     pub(crate) ecrit: bool,
     pub(crate) champs: Vec<CaseDeFiche>,
@@ -978,19 +1012,19 @@ pub(crate) struct FicheEcrite {
 
 /// ECRIRE UNE FICHE PREPAREE : verifiee entiere, telle qu'elle sera (une erreur la refuse, sauf ce que `forcer` passe
 /// outre), puis chaque case qui change datee (`ecrire_datee`), et l'ancien fichier sauvegarde.
-pub(crate) fn ecrire_fiche<F: SorteDeFiche>(ctx: &Contexte, p: Preparee<F>, forcer: Forcer, depuis: Option<Jour>, note: Option<&str>) -> R<FicheEcrite> {
+pub(crate) fn ecrire_fiche<F: SorteDeFiche>(ctx: &Contexte, p: Preparee<F>, forcer: Forcer, depuis: Option<Jour>, note: Option<&str>) -> R<FicheEcrite<F::Cle>> {
     let anomalies = champs::verifier_fiche(F::NOM, &p.vue_apres)?;
     if forcer.refuse(&anomalies) {
         return Err(fiche_refusee(F::NOM, &anomalies)?);
     }
     let mut contenu = lire_fichier::<F>(ctx)?;
     let avant_fichier = contenu.clone();
-    let cle = match (F::NOM != NomDeFiche::Entreprise, p.cle) {
+    let cle = match p.cle {
         // UNE FICHE NEUVE : la cle se fabrique ici et nulle part ailleurs.
-        (true, None) => Some(cle_neuve::<F>(&p.vue_apres, &contenu)?),
-        (_, cle) => cle,
+        None => F::nommer_neuve(&p.vue_apres, &contenu)?,
+        cle => cle,
     };
-    let brute = F::ou_neuve(&mut contenu, cle.as_deref())?;
+    let brute = F::ou_neuve(&mut contenu, cle.as_ref())?;
     let mut champs = ecrire_datee::<F>(brute, &p.avant, &p.apres, false, depuis, note, &ctx.lue_au)?;
     if F::a_part().iter().any(|k| F::differentes(&p.avant, &p.apres).contains(k)) && F::ecrire_a_part(ctx, brute, &p.apres, depuis, note)? {
         champs.extend(F::a_part());
@@ -1004,7 +1038,7 @@ pub(crate) fn ecrire_fiche<F: SorteDeFiche>(ctx: &Contexte, p: Preparee<F>, forc
 
 /// La cle d'une fiche neuve, lisible et unique dans son fichier : le nom du salarie (puis son prenom), le titre du
 /// spectacle (ou son numero d'objet, quand il n'en a pas encore).
-fn cle_neuve<F: SorteDeFiche>(d: &Saisie, existants: &F::Fichier) -> R<String> {
+fn cle_neuve<F: SorteDeFiche>(d: &Saisie, existants: &F::Fichier, lire: fn(&str) -> R<F::Cle>) -> R<F::Cle> {
     let propre = |texte: &str, bas: bool| -> String {
         let t = champs::sans_accents(texte).replace(['\'', '\u{2019}'], "");
         let t: String = t.chars().map(|c| if envois::etats::lettre_ou_chiffre(c) { c } else { '-' }).collect();
@@ -1034,14 +1068,20 @@ fn cle_neuve<F: SorteDeFiche>(d: &Saisie, existants: &F::Fichier) -> R<String> {
     let Some(dernier) = candidats.last() else {
         return Err(refus(format!("Impossible de nommer cette fiche {} : il lui faut au moins un {}.", F::NOM, if F::NOM == NomDeFiche::Salarie { "nom" } else { "titre" })));
     };
-    if let Some(c) = candidats.iter().find(|c| !F::contient(existants, c)) {
-        return Ok(c.clone());
+    for c in &candidats {
+        let cle = lire(c)?;
+        if !F::contient(existants, &cle) {
+            return Ok(cle);
+        }
     }
     let mut n = 2;
-    while F::contient(existants, &format!("{}-{}", dernier, n)) {
+    loop {
+        let cle = lire(&format!("{}-{}", dernier, n))?;
+        if !F::contient(existants, &cle) {
+            return Ok(cle);
+        }
         n += 1;
     }
-    Ok(format!("{}-{}", dernier, n))
 }
 
 // ------------------------------------------------------------------ l'avertissement
@@ -1095,7 +1135,7 @@ fn avertissement<F: SorteDeFiche>(ctx: &Contexte, p: &Preparee<F>) -> R<Option<A
     if changements.is_empty() {
         return Ok(usage.map(|u| Avertissement { changements, depuis: None, pourquoi: None, usage: Some(u) }));
     }
-    let (depuis, pourquoi) = date_proposee(ctx, F::NOM, p.cle.as_deref())?;
+    let (depuis, pourquoi) = date_proposee(ctx, F::NOM, p.cle.as_ref().and_then(F::salarie))?;
     Ok(Some(Avertissement { changements, depuis: Some(depuis), pourquoi: Some(pourquoi), usage }))
 }
 
@@ -1171,9 +1211,9 @@ fn avertissement_en_phrases(a: &Avertissement) -> Vec<String> {
 /// La charge de `enregistrer-fiche`, pour une fiche : sa cle (absente : une fiche neuve, ou l'entreprise), ses
 /// changements, la date d'effet de ce qui change et pourquoi, et ce qui est lu et passe outre.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields, bound(deserialize = "C: serde::de::DeserializeOwned"))]
-pub(crate) struct Enregistrement<C> {
-    cle: Option<String>,
+#[serde(deny_unknown_fields, bound(deserialize = "C: serde::de::DeserializeOwned, K: serde::de::DeserializeOwned"))]
+pub(crate) struct Enregistrement<C, K> {
+    cle: Option<K>,
     changements: droit::fiche::Changements<C>,
     depuis: Option<Jour>,
     note: Option<String>,
@@ -1186,22 +1226,22 @@ pub(crate) struct Enregistrement<C> {
 #[serde(tag = "nom", deny_unknown_fields)]
 pub(crate) enum ChargeEnregistrer {
     #[serde(rename = "entreprise")]
-    Entreprise(Enregistrement<droit::fiche::ChangementEntreprise>),
+    Entreprise(Enregistrement<droit::fiche::ChangementEntreprise, ()>),
     #[serde(rename = "salarie")]
-    Salarie(Enregistrement<droit::fiche::ChangementSalarie>),
+    Salarie(Enregistrement<droit::fiche::ChangementSalarie, IdSalarie>),
     #[serde(rename = "spectacle")]
-    Spectacle(Enregistrement<droit::fiche::ChangementSpectacle>),
+    Spectacle(Enregistrement<droit::fiche::ChangementSpectacle, IdSpectacle>),
 }
 
 /// Ce que rend `enregistrer-fiche` : l'avertissement (rien n'est ecrit), ou ce qui l'est.
 #[derive(Serialize)]
 #[serde(untagged)]
-pub(crate) enum FicheEnregistree {
+pub(crate) enum FicheEnregistree<K> {
     Avertie { avertissement: Avertissement, phrase: String, phrases: Vec<String> },
-    Ecrite { cle: Option<String>, ecrits: Vec<CaseDeFiche>, #[serde(with = "socle::paris::ecrit::seconde::option")] enregistre_a: Option<socle::paris::Moment>, enregistre_dit: Option<String>, phrase: String },
+    Ecrite { cle: Option<K>, ecrits: Vec<CaseDeFiche>, #[serde(with = "socle::paris::ecrit::seconde::option")] enregistre_a: Option<socle::paris::Moment>, enregistre_dit: Option<String>, phrase: String },
 }
 
-impl crate::enveloppe::Dite for FicheEnregistree {
+impl<K: Serialize> crate::enveloppe::Dite for FicheEnregistree<K> {
     fn phrase(&self) -> &str {
         match self {
             FicheEnregistree::Avertie { phrase, .. } | FicheEnregistree::Ecrite { phrase, .. } => phrase,
@@ -1212,19 +1252,18 @@ impl crate::enveloppe::Dite for FicheEnregistree {
 /// `enregistrer-fiche` : une fiche de l'ecran, ecrite (`ecrire_fiche`). Une valeur existante qui change demande sa date
 /// d'effet : sans `confirme`, la route rend l'avertissement (`avertissement`) et n'ecrit rien ; la meme charge avec
 /// `confirme` ecrit, a partir de `depuis` (la date proposee, s'il manque).
-pub(crate) fn enregistrer_fiche(ctx: &Contexte, charge: ChargeEnregistrer) -> R<FicheEnregistree> {
+pub(crate) fn enregistrer_fiche(ctx: &Contexte, charge: ChargeEnregistrer) -> R<crate::enveloppe::Rendu> {
+    use crate::enveloppe::en_json;
     match charge {
-        ChargeEnregistrer::Entreprise(e) => enregistrer::<FicheEntrepriseDatee>(ctx, e),
-        ChargeEnregistrer::Salarie(e) => enregistrer::<FicheSalarieDatee>(ctx, e),
-        ChargeEnregistrer::Spectacle(e) => enregistrer::<FicheSpectacleDatee>(ctx, e),
+        ChargeEnregistrer::Entreprise(e) => en_json(enregistrer::<FicheEntrepriseDatee>(ctx, e)?),
+        ChargeEnregistrer::Salarie(e) => en_json(enregistrer::<FicheSalarieDatee>(ctx, e)?),
+        ChargeEnregistrer::Spectacle(e) => en_json(enregistrer::<FicheSpectacleDatee>(ctx, e)?),
     }
 }
 
-fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement>) -> R<FicheEnregistree> {
+fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement, F::Cle>) -> R<FicheEnregistree<F::Cle>> {
     let Enregistrement { cle, changements, depuis, note, forcer, confirme } = e;
-    // L'entreprise est le fichier entier : elle n'a pas de cle.
-    let cle = cle.filter(|_| F::NOM != NomDeFiche::Entreprise);
-    let p = preparer::<F>(ctx, cle.as_deref(), |plate| {
+    let p = preparer::<F>(ctx, cle.as_ref(), |plate| {
         changements
             .0
             .into_iter()

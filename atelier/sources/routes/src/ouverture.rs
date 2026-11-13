@@ -229,7 +229,7 @@ struct PastilleDeFiche {
 /// cases comblees (`donnees`, par le nom que `champs-base.json` leur donne, avec leur `historique`), ce qu'elle declare,
 /// ses anomalies, sa pastille, et les cases que la page en montre (`fiches::montres`).
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct VueFiche<P> {
+pub(crate) struct VueFiche<P, K> {
     quoi_dit: String,
     geste_dit: &'static str,
     matricule_dit: Option<String>,
@@ -237,7 +237,7 @@ pub(crate) struct VueFiche<P> {
     erreurs_titre: Option<String>,
     erreurs_note: &'static str,
     nom: NomDeFiche,
-    cle: Option<String>,
+    cle: Option<K>,
     donnees: DonneesDeLaFiche<P>,
     declare: champs::Apercu,
     anomalies: Vec<champs::Anomalie>,
@@ -252,7 +252,7 @@ pub(crate) struct VueFiche<P> {
     ecarts: Vec<CaseDeFiche>,
 }
 
-impl<P> VueFiche<P> {
+impl<P, K> VueFiche<P, K> {
     /// Ses erreurs (gravite « erreur »), celles que le bandeau compte.
     fn erreurs(&self) -> usize {
         self.anomalies.iter().filter(|a| a.gravite == champs::Gravite::Erreur).count()
@@ -368,12 +368,12 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
 /// montre (`fiches::montres`, que la fiche de l'entreprise `ent` et les permanents du jour `p` commandent).
 fn fiche_verifiee<F: SorteDeFiche>(
     ctx: &Contexte,
-    cle: Option<&str>,
+    cle: Option<&F::Cle>,
     plate: F::Plate,
     historique: Vec<TempsDeLaCase<Valeur>>,
     ent: &champs::Saisie,
     p: &engagement::permanents::Permanents,
-) -> R<VueFiche<F::Plate>> {
+) -> R<VueFiche<F::Plate, F::Cle>> {
     let nom = F::NOM;
     let plate = F::retenue(plate);
     let lue = vue::<F>(&plate)?;
@@ -428,7 +428,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
         (None, _) => "Nouveau spectacle".to_string(),
         (Some(_), _) if sans_titre => "Spectacle à nommer".to_string(),
         (Some(_), Some(t)) => t,
-        (Some(c), None) => c.to_string(),
+        (Some(c), None) => F::cle_dite(c),
     };
     let erreurs_titre = match erreurs {
         0 => None,
@@ -446,7 +446,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
     let matricule_dit = lu(CaseSalarie::CodeSalarie.into()).filter(|_| nom == NomDeFiche::Salarie).map(|m| format!("matricule {}", m));
-    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, nom, cle, &comble, ent, p)?;
+    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, nom, cle.and_then(F::salarie), &comble, ent, p)?;
     // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
     let du_code_postal = match ctx.entreprise.code_postal.portee() {
         Some(cp) => declarations::urssaf::base()?.du_code_postal(cp),
@@ -461,7 +461,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
         erreurs_titre,
         erreurs_note,
         nom,
-        cle: cle.map(str::to_string),
+        cle: cle.cloned(),
         donnees: DonneesDeLaFiche { fiche: F::sans_notes(montree), historique },
         declare,
         anomalies,
@@ -802,9 +802,9 @@ pub(crate) struct ConfigurationDeLaPage {
     compteurs_dit: Option<String>,
     deduction_forfaitaire: String,
     numeros_sans_titre: Option<String>,
-    entreprise: VueFiche<droit::fiche::ChampsEntreprise>,
-    salaries: Vec<VueFiche<droit::fiche::ChampsSalarie>>,
-    spectacles: Vec<VueFiche<droit::fiche::ChampsSpectacle>>,
+    entreprise: VueFiche<droit::fiche::ChampsEntreprise, ()>,
+    salaries: Vec<VueFiche<droit::fiche::ChampsSalarie, droit::contexte::IdSalarie>>,
+    spectacles: Vec<VueFiche<droit::fiche::ChampsSpectacle, droit::contexte::IdSpectacle>>,
     compteurs: documents::ecrire_documents::Compteurs,
     erreurs: Option<socle::ecran::Pastille>,
     description: Descriptions,
@@ -859,12 +859,12 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let salaries = ctx
         .salaries
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k), &jour)?, &ent, &p))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k), v.champs.clone(), temps_de(ctx.salarie_brut(k), &jour)?, &ent, &p))
         .collect::<R<Vec<_>>>()?;
     let spectacles = ctx
         .spectacles
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSpectacleDatee>(ctx, Some(k.as_str()), v.clone(), temps_de(ctx.spectacle_brut(k.as_str()), &jour)?, &ent, &p))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSpectacleDatee>(ctx, Some(k), v.clone(), temps_de(ctx.spectacle_brut(k.as_str()), &jour)?, &ent, &p))
         .collect::<R<Vec<_>>>()?;
     // LES ERREURS DE CONFIGURATION, toutes fiches comptees, que le bandeau montre (orange) : une valeur saisie et fausse,
     // les memes que la pastille de chaque fiche. Une case vide n'en est jamais une : ce qu'un acte exige, « Pour demarrer » le dit.
@@ -1542,7 +1542,7 @@ struct SalarieDeLaListe {
 /// Un spectacle des listes ou l'on choisit : sa cle, son titre et son numero d'objet, tels que sa fiche les porte.
 #[derive(Debug, Clone, serde::Serialize)]
 struct SpectacleDeLaListe {
-    cle: String,
+    cle: droit::contexte::IdSpectacle,
     titre: String,
     numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
 }
@@ -1615,7 +1615,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         .map(|k| {
             let v = &ctx.spectacles[k];
             let titre = v.titre.clone().ok_or_else(|| socle::fichiers::absent("titre").reclasser(Classe::Manque))?;
-            Ok(SpectacleDeLaListe { cle: k.to_string(), titre, numero_objet: v.numero_objet.clone() })
+            Ok(SpectacleDeLaListe { cle: k.clone(), titre, numero_objet: v.numero_objet.clone() })
         })
         .collect::<R<Vec<_>>>()?;
 
