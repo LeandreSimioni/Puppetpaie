@@ -217,6 +217,8 @@ impl ChargeDeposer {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeSuivre {
     pub(crate) quoi: Quoi,
+    /// Tel que `deposer` le rend : `""` quand le depot n'a pas de flux.
+    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
     pub(crate) flux: Option<envois::retours::IdDeFlux>,
     pub(crate) mois: Option<Mois>,
 }

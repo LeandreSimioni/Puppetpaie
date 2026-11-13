@@ -1488,6 +1488,8 @@ struct RetoursJson {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FluxJson {
+    /// Un id vide se lit absent, comme `<id/>` dans la liste XML.
+    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
     id: Option<IdDeFlux>,
     retour: Option<UnOuPlusieurs<RetourJson>>,
 }
