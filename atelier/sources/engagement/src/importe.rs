@@ -246,7 +246,7 @@ pub struct DatesTravaillees {
 pub struct CotisationImprimee {
     pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
     pub libelle: String,
-    pub cotisation: Option<String>,
+    pub cotisation: Option<crate::ecarts::RegroupementDeComparaison>,
     pub base: Option<Decimal>,
     pub taux_employeur: Option<Decimal>,
     pub montant_employeur: Option<Decimal>,
@@ -275,9 +275,16 @@ pub struct EmploiImprime {
 pub struct BulletinSource {
     pub fichier: NomDeFichier,
     pub page: u64,
-    pub logiciel: Option<String>,
+    pub logiciel: Option<LogicielDUnBulletin>,
     pub numero: Option<String>,
-    pub contrat: Option<String>,
+    pub contrat: Option<NumeroContrat>,
+}
+
+droit::cle_opaque! {
+    /// LE LOGICIEL DE PAIE D'UN BULLETIN IMPORTE, reconnu a sa signature : une cle de `logiciels` de la table de lecture
+    /// des bulletins (`bulletins-lecture-base.json`). Une cle du logiciel (`droit::cle_opaque!`) ; aucun : un autre
+    /// logiciel.
+    pub struct LogicielDUnBulletin, "logiciel d'un bulletin";
 }
 
 /// UN CONTRAT ATTESTE, AVEC LES BORNES DE SON ENGAGEMENT : la ligne que l'import manipule, de la lecture de la piece a
@@ -733,7 +740,7 @@ impl Importe {
             fin,
             numero: match self.carte().numero.clone() {
                 Some(n) => Some(n),
-                None => p.bulletin.as_ref().and_then(|b| b.contrat.as_deref()).and_then(NumeroContrat::d_une_piece),
+                None => p.bulletin.as_ref().and_then(|b| b.contrat.clone()),
             },
             mois,
             planning: Vec::new(),
@@ -786,19 +793,17 @@ impl Importe {
             .cotisations
             .iter()
             .flatten()
-            .map(|l| {
-                Ok(LigneDeCotisation {
-                    id: l.cotisation.as_deref().filter(|c| !c.is_empty()).map(droit::forme_bareme::IdDeCotisation::lire).transpose()?,
-                    famille: l.famille.clone(),
-                    libelle: l.libelle.clone(),
-                    base: l.base,
-                    taux_pat: taux(l.taux_employeur),
-                    montant_pat: l.montant_employeur,
-                    taux_sal: taux(l.taux_salarie),
-                    montant_sal: l.montant_salarie,
-                })
+            .map(|l| LigneDeCotisation {
+                id: l.cotisation.as_ref().map(crate::ecarts::RegroupementDeComparaison::cle_de_cotisation),
+                famille: l.famille.clone(),
+                libelle: l.libelle.clone(),
+                base: l.base,
+                taux_pat: taux(l.taux_employeur),
+                montant_pat: l.montant_employeur,
+                taux_sal: taux(l.taux_salarie),
+                montant_sal: l.montant_salarie,
             })
-            .collect::<R<_>>()?;
+            .collect();
 
         // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let mut bases: BTreeMap<Assiette, Decimal> = BTreeMap::new();

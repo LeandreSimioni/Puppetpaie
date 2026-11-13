@@ -531,6 +531,16 @@ pub const VIEIL_DEPLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_deplaf
 pub const APEC_T1: IdDeCotisation = IdDeCotisation::du_moteur("apec_t1");
 pub const APEC_T2: IdDeCotisation = IdDeCotisation::du_moteur("apec_t2");
 pub const ATMP: IdDeCotisation = IdDeCotisation::du_moteur("atmp");
+/// Les contributions que l'employeur paie seul et que le modele du bulletin agrege dans « Autres charges dues par
+/// l'employeur » (la caisse des Conges Spectacles comprise), et celles de la convention (FNAS, FCAP, paritarisme), que la
+/// comparaison d'un bulletin importe groupe (`engagement::ecarts::cotisation_de`).
+pub const AUTRES_1: IdDeCotisation = IdDeCotisation::du_moteur("autres_1");
+pub const AUTRES_2: IdDeCotisation = IdDeCotisation::du_moteur("autres_2");
+pub const AUTRES_3: IdDeCotisation = IdDeCotisation::du_moteur("autres_3");
+pub const AUTRES_4: IdDeCotisation = IdDeCotisation::du_moteur("autres_4");
+pub const CONGES_SPEC: IdDeCotisation = IdDeCotisation::du_moteur("conges_spec");
+pub const FCAP: IdDeCotisation = IdDeCotisation::du_moteur("fcap");
+pub const PARITARISME: IdDeCotisation = IdDeCotisation::du_moteur("paritarisme");
 /// Les lignes dont l'organisme et le compte de tiers recoivent les parts Urssaf et chomage de la reduction generale
 /// (l'etat des cotisations par organisme, les ecritures comptables ; la part retraite : `RETRAITE_T1`).
 pub const MALADIE: IdDeCotisation = IdDeCotisation::du_moteur("maladie");

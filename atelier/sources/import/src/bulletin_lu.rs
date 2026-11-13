@@ -53,6 +53,7 @@ use socle::num::Decimal;
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 use droit::catalogue::CodeDeRubrique;
+use engagement::importe::LogicielDUnBulletin;
 
 /// `n` points.
 const fn pt(n: i64) -> Mesure {
@@ -592,7 +593,7 @@ pub struct Table {
     /// (cle, libelles canoniques).
     cumuls: Vec<(String, Vec<String>)>,
     /// (nom, signature : les libelles qui doivent tous se trouver).
-    logiciels: Vec<(String, Vec<Vec<String>>)>,
+    logiciels: Vec<(LogicielDUnBulletin, Vec<Vec<String>>)>,
     lignes: Vec<LigneTable>,
 }
 
@@ -616,7 +617,7 @@ struct TableEcrite {
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     cumuls: Vec<(String, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    logiciels: Vec<(String, Signature)>,
+    logiciels: Vec<(LogicielDUnBulletin, Signature)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     lignes: Vec<(String, Option<LigneEcrite>)>,
 }
@@ -935,7 +936,7 @@ pub struct Cumul {
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct BulletinLu {
     /// Le logiciel que sa signature nomme (`logiciels` de la table) ; `None` : un autre.
-    pub logiciel: Option<String>,
+    pub logiciel: Option<LogicielDUnBulletin>,
     pub numero: Option<String>,
     pub entreprise: Entreprise,
     pub salarie: Salarie,
@@ -1274,7 +1275,7 @@ impl RangCorps {
 }
 
 impl<'a> Lecteur<'a> {
-    fn lire(&mut self, logiciel: Option<String>) -> Result<BulletinLu, Refus> {
+    fn lire(&mut self, logiciel: Option<LogicielDUnBulletin>) -> Result<BulletinLu, Refus> {
         let tableau = self.tableau();
         // L'en-tete finit au tableau ; sans tableau, toute la page en est (le salarie se lit pour le caviardage).
         let limite = match &tableau {

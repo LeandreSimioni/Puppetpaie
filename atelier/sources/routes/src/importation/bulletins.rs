@@ -339,7 +339,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 }
             };
             let logiciel = match &b.logiciel {
-                Some(l) => l.clone(),
+                Some(l) => l.as_str().to_string(),
                 None => "autre".to_string(),
             };
             *par_logiciel.entry(logiciel).or_default() += 1;
@@ -2008,7 +2008,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
                 Ok(CotisationImprimee {
                     famille: c.famille.as_deref().map(droit::forme_bareme::FamilleDeCotisation::lire).transpose()?,
                     libelle: c.libelle.clone(),
-                    cotisation: c.cotisation.clone(),
+                    cotisation: c.cotisation.as_deref().map(engagement::ecarts::RegroupementDeComparaison::lire).transpose()?,
                     base: c.base,
                     taux_employeur: c.taux_employeur,
                     montant_employeur: c.montant_employeur,
@@ -2025,7 +2025,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
     if dit_quelque_chose(&imprime) {
         ligne.emploi_imprime = Some(imprime);
     }
-    ligne.bulletin = Some(BulletinSource { fichier: copie.clone(), page: page as u64, logiciel: b.logiciel.clone(), numero: b.numero.clone(), contrat: b.contrat.clone() });
+    ligne.bulletin = Some(BulletinSource { fichier: copie.clone(), page: page as u64, logiciel: b.logiciel.clone(), numero: b.numero.clone(), contrat: b.contrat.as_deref().and_then(NumeroContrat::d_une_piece) });
     Ok(ecarts)
 }
 

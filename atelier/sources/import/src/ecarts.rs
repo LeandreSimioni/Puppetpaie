@@ -35,7 +35,9 @@ use crate::caviardage::{self, Connus};
 use compagnie::incidents;
 use declarations::champs::Saisie;
 use droit::contexte::Contexte;
-use engagement::ecarts::{Comparaison, Grandeur};
+use droit::fiche::AnnexeConvention;
+use engagement::ecarts::{Comparaison, Grandeur, OrigineDuTauxAtmp, RegroupementDeComparaison};
+use engagement::importe::LogicielDUnBulletin;
 use socle::echec::R;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 
@@ -56,26 +58,64 @@ pub struct Rapport {
 #[serde(untagged)]
 pub enum Detail {
     Ecart {
-        cotisation: String,
+        cotisation: RegroupementDeComparaison,
         libelles: Vec<String>,
         grandeur: &'static str,
-        logiciel: String,
+        logiciel: LogicielDuRapport,
         idcc: Option<droit::fiche::Idcc>,
-        annexe: Option<String>,
+        annexe: Option<AnnexeConvention>,
         organisation_patronale: Option<String>,
         cas: Vec<Cas>,
     },
     NonComparee {
         raison: String,
         idcc: Option<droit::fiche::Idcc>,
-        annexe: Option<String>,
+        annexe: Option<AnnexeConvention>,
         cas: Vec<Cas>,
     },
     NonRattachees {
-        logiciel: String,
+        logiciel: LogicielDuRapport,
         libelles: Vec<String>,
         idcc: Option<droit::fiche::Idcc>,
     },
+}
+
+/// LE LOGICIEL QU'UN RAPPORT NOMME : celui que le lecteur a reconnu au bulletin, sinon « autre ». Il s'ecrit et se trie
+/// comme ce texte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogicielDuRapport(Option<LogicielDUnBulletin>);
+
+impl LogicielDuRapport {
+    fn dit(&self) -> &str {
+        match &self.0 {
+            Some(l) => l.as_str(),
+            None => "autre",
+        }
+    }
+}
+
+impl Ord for LogicielDuRapport {
+    fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+        self.dit().cmp(autre.dit())
+    }
+}
+
+impl PartialOrd for LogicielDuRapport {
+    fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
+}
+
+impl std::fmt::Display for LogicielDuRapport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.dit())
+    }
+}
+
+impl Serialize for LogicielDuRapport {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.dit())
+    }
 }
 
 /// Une paie d'un rapport : son mois, ce qui la range (le logiciel d'une paie non comparee ; la nature, le statut, la
@@ -84,12 +124,12 @@ pub enum Detail {
 pub struct Cas {
     mois: socle::mois::Mois,
     #[serde(skip_serializing_if = "Option::is_none")]
-    logiciel: Option<String>,
+    logiciel: Option<LogicielDUnBulletin>,
     nature: droit::natures::NatureDeContrat,
-    statut: Option<String>,
+    statut: Option<droit::fiche::Statut>,
     cadre: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    taux_atmp: Option<&'static str>,
+    taux_atmp: Option<OrigineDuTauxAtmp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     notre_taux: Option<socle::num::Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,22 +198,19 @@ pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<EmpreinteCourte>)> {
 fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> {
     let e = &ctx.entreprise;
     let (idcc, annexe, organisation) =
-        (e.idcc.dite().cloned(), e.annexe_convention.dite().map(|a| a.as_str().to_string()), e.organisation_patronale.remplie().map(String::from));
+        (e.idcc.dite().cloned(), e.annexe_convention.dite().copied(), e.organisation_patronale.remplie().map(String::from));
     let mut connus = Connus::default();
     ajouter_les_fiches(ctx, &mut connus)?;
     let mut propre = Propre { connus: &connus, vus: Default::default() };
     // Le logiciel que le lecteur a reconnu au bulletin ; un autre se dit « autre ».
-    let logiciel = |c: &Comparaison| match &c.logiciel {
-        Some(l) => l.clone(),
-        None => "autre".to_string(),
-    };
+    let logiciel = |c: &Comparaison| LogicielDuRapport(c.logiciel.clone());
     // Sa forme la plus courte ; « -0 » est 0.
     let nombre = |t: Option<socle::num::Decimal>| t.map(|d| if d.is_zero() { socle::num::Decimal::ZERO } else { d.normalize() });
-    let cas = |c: &Comparaison, p: &mut Propre| Cas {
+    let cas = |c: &Comparaison| Cas {
         mois: c.mois,
         logiciel: None,
         nature: c.nature,
-        statut: p.option(&c.statut),
+        statut: c.statut,
         cadre: c.cadre,
         taux_atmp: c.taux_atmp,
         notre_taux: None,
@@ -181,19 +218,19 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
         ecart_relatif: None,
     };
 
-    let mut ecarts: BTreeMap<(String, Grandeur, String), (Vec<String>, Vec<Cas>)> = BTreeMap::new();
+    let mut ecarts: BTreeMap<(RegroupementDeComparaison, Grandeur, LogicielDuRapport), (Vec<String>, Vec<Cas>)> = BTreeMap::new();
     let mut refus: BTreeMap<String, Vec<Cas>> = BTreeMap::new();
-    let mut seules: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut seules: BTreeMap<LogicielDuRapport, Vec<String>> = BTreeMap::new();
     for c in comparaisons {
         match &c.ecarts {
             Err(raison) => {
                 let raison = montant().replace_all(&propre.texte(&raison.phrase), "<MONTANT>").into_owned();
-                let x = Cas { logiciel: propre.option(&c.logiciel), taux_atmp: None, ..cas(c, &mut propre) };
+                let x = Cas { logiciel: c.logiciel.clone(), taux_atmp: None, ..cas(c) };
                 refus.entry(raison).or_default().push(x);
             }
             Ok(liste) => {
                 for e in liste {
-                    let x = Cas { notre_taux: nombre(e.notre_taux), leur_taux: nombre(e.leur_taux), ecart_relatif: nombre(e.ecart_relatif), ..cas(c, &mut propre) };
+                    let x = Cas { notre_taux: nombre(e.notre_taux), leur_taux: nombre(e.leur_taux), ecart_relatif: nombre(e.ecart_relatif), ..cas(c) };
                     let (libelles, v) = ecarts.entry((e.cotisation.clone(), e.grandeur, logiciel(c))).or_default();
                     for l in &e.libelles {
                         if !libelles.contains(l) {
@@ -223,12 +260,12 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
         );
         let genre = format!("{} · {} · {}", cotisation, grandeur.code(), logiciel);
         let detail = Detail::Ecart {
-            cotisation: propre.texte(&cotisation),
+            cotisation,
             libelles: propre.textes(&libelles),
             grandeur: grandeur.code(),
-            logiciel: propre.texte(&logiciel),
+            logiciel,
             idcc: idcc.clone(),
-            annexe: annexe.clone(),
+            annexe,
             organisation_patronale: propre.option(&organisation),
             cas,
         };
@@ -237,13 +274,13 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     for (raison, cas) in refus {
         let resume = format!("Paie importée non comparée : {} ; {} paie(s).", raison, cas.len());
         let genre: String = format!("non comparée : {}", raison).chars().take(120).collect();
-        let detail = Detail::NonComparee { raison: propre.texte(&raison), idcc: idcc.clone(), annexe: annexe.clone(), cas };
+        let detail = Detail::NonComparee { raison: propre.texte(&raison), idcc: idcc.clone(), annexe, cas };
         sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
     }
     for (logiciel, libelles) in seules {
         let resume = format!("Lignes de cotisation non comparées (bulletin {}) : la table de lecture ne les rattache à aucune cotisation : {}.", logiciel, libelles.join(" ; "));
         let genre = format!("cotisation non rattachée · {}", logiciel);
-        let detail = Detail::NonRattachees { logiciel: propre.texte(&logiciel), libelles: propre.textes(&libelles), idcc: idcc.clone() };
+        let detail = Detail::NonRattachees { logiciel, libelles: propre.textes(&libelles), idcc: idcc.clone() };
         sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });
     }
     Ok(sortie)

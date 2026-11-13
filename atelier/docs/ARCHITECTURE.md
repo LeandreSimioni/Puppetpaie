@@ -670,6 +670,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | origine d'une rubrique | `OrigineDeRubrique` | `droit/src/catalogue.rs` |
 | cotisation du bulletin | `IdDeCotisation` ; à unifier (#419) : `LigneCotisation.id` | `droit/src/forme_bareme.rs` |
 | famille d'une cotisation | `FamilleDeCotisation` | `droit/src/forme_bareme.rs` |
+| regroupement de la comparaison | `RegroupementDeComparaison`, `TotalDuBulletin` | `engagement/src/ecarts.rs` |
+| origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
+| logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
 | cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |
 | clé de totalisation | `CleDeTotalisation` | `droit/src/code_cotisation.rs` |
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
@@ -816,6 +819,20 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   portent une rubrique du barème, sa modification par une couche, une contribution conventionnelle, une ligne de
   cotisation calculée et sa forme écrite, une ligne qu'un bulletin importé imprime, une ligne de cotisation d'une paie
   importée, le rang d'une famille que le bulletin ne range pas.
+- **regroupement de la comparaison** : ce que la comparaison d'un bulletin importé au calcul nomme, au grain où un
+  bulletin l'imprime : une cotisation du barème (`Cotisation(IdDeCotisation)`), les contributions que l'employeur paie
+  seul (`autres`), celles de la convention (`convention`), les tranches de l'Apec (`apec`), ou un total du bulletin
+  (`Total(TotalDuBulletin)` : `cotisations_salariales`, `cotisations_patronales`, `net_social`, `net_imposable`).
+  Écrit par son texte, trié comme lui ; la clé de `cotisations` de la table de lecture des bulletins. Que portent un
+  écart, la ligne de cotisation qu'un bulletin importé imprime, l'incident d'un écart d'import ; la ligne de cotisation
+  d'une paie importée en garde le nom pour clé de cotisation (`cle_de_cotisation`).
+- **origine du taux AT/MP comparé** : d'où vient le taux AT/MP du calcul d'une comparaison : la compagnie, ou le
+  bulletin importé (l'AT/MP n'est alors pas comparé). Une liste du logiciel, écrite `compagnie`, `bulletin`.
+- **logiciel d'un bulletin importé** : le logiciel de paie qu'un bulletin importé est reconnu avoir fait, à sa signature
+  (une clé de `logiciels` de `bulletins-lecture-base.json`). Une clé du logiciel (`droit::cle_opaque!`) ; aucun : un
+  autre. Que portent un bulletin lu, le bulletin d'une paie versée, ce qu'une page dit d'elle-même dans le compte rendu
+  de l'import, une comparaison ; l'incident d'un écart d'import l'écrit « autre » quand il n'y en a pas
+  (`import::ecarts::LogicielDuRapport`, une écriture).
 - **cotisation de la DSN** : une ligne du bloc 81, par son code S21.G00.81.001. Que portent `cotisations_dsn` (`code81`,
   `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version
   de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) :

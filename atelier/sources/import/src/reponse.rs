@@ -497,7 +497,7 @@ fn ecrit_salarie_de_la_page<S: serde::Serializer>(salarie: &Option<Option<droit:
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct InfosPage {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub logiciel: Option<String>,
+    pub logiciel: Option<engagement::importe::LogicielDUnBulletin>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub numero: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

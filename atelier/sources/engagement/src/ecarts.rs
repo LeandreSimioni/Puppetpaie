@@ -36,8 +36,10 @@ use std::path::Path;
 
 
 use crate::calcul::LigneCotisation;
-use droit::forme_bareme::{IdDeCotisation, APEC_T1, APEC_T2, PREVOYANCE};
-use crate::importe::{Importe, PaieVersee};
+use droit::forme_bareme::{
+    IdDeCotisation, APEC_T1, APEC_T2, ATMP, AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, CCN, CET, CONGES_SPEC, FCAP, PARITARISME, PREVOYANCE, RETRAITE_T1, VERSEMENT_MOBILITE,
+};
+use crate::importe::{Importe, LogicielDUnBulletin, PaieVersee};
 use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
 use socle::fichiers::{Empreinte, EmpreinteCourte};
@@ -85,10 +87,126 @@ impl Grandeur {
     }
 }
 
-/// Un ecart sur une cotisation (ou un total : `total_salarie`, `total_employeur`, `net_social`, `net_imposable`).
+/// CE QUE LA COMPARAISON D'UN BULLETIN IMPORTE NOMME, au grain ou un bulletin l'imprime : une cotisation du bareme, ou
+/// un regroupement de cotisations que le modele du bulletin imprime sur une ligne (les contributions que l'employeur
+/// paie seul, `autres` ; celles de la convention, `convention` ; les tranches de l'Apec, `apec`), ou un total du
+/// bulletin. La cle de `cotisations` de la table de lecture des bulletins ; elle s'ecrit par son texte et se trie comme
+/// lui (`as_str`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RegroupementDeComparaison {
+    Cotisation(IdDeCotisation),
+    Autres,
+    Convention,
+    Apec,
+    Total(TotalDuBulletin),
+}
+
+/// Un total que le bulletin importe imprime et que la comparaison confronte au calcul.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TotalDuBulletin {
+    CotisationsSalariales,
+    CotisationsPatronales,
+    NetSocial,
+    NetImposable,
+}
+
+impl TotalDuBulletin {
+    pub const TOUS: [TotalDuBulletin; 4] = [TotalDuBulletin::CotisationsSalariales, TotalDuBulletin::CotisationsPatronales, TotalDuBulletin::NetSocial, TotalDuBulletin::NetImposable];
+
+    /// Son nom ecrit.
+    pub fn cle(self) -> &'static str {
+        match self {
+            TotalDuBulletin::CotisationsSalariales => "cotisations_salariales",
+            TotalDuBulletin::CotisationsPatronales => "cotisations_patronales",
+            TotalDuBulletin::NetSocial => "net_social",
+            TotalDuBulletin::NetImposable => "net_imposable",
+        }
+    }
+}
+
+impl RegroupementDeComparaison {
+    /// Son nom ecrit : la cle de la cotisation, ou celle du regroupement ou du total.
+    pub fn as_str(&self) -> &str {
+        match self {
+            RegroupementDeComparaison::Cotisation(id) => id.as_str(),
+            RegroupementDeComparaison::Autres => "autres",
+            RegroupementDeComparaison::Convention => "convention",
+            RegroupementDeComparaison::Apec => "apec",
+            RegroupementDeComparaison::Total(t) => t.cle(),
+        }
+    }
+
+    /// Celui qu'ecrit `texte` : un regroupement ou un total par son nom, sinon la cotisation de cette cle (vide, elle se
+    /// refuse).
+    pub fn lire(texte: &str) -> R<RegroupementDeComparaison> {
+        Ok(match texte {
+            "autres" => RegroupementDeComparaison::Autres,
+            "convention" => RegroupementDeComparaison::Convention,
+            "apec" => RegroupementDeComparaison::Apec,
+            _ => match TotalDuBulletin::TOUS.iter().copied().find(|t| t.cle() == texte) {
+                Some(t) => RegroupementDeComparaison::Total(t),
+                None => RegroupementDeComparaison::Cotisation(IdDeCotisation::lire(texte)?),
+            },
+        })
+    }
+
+    /// LA CLE DE COTISATION QU'UNE LIGNE IMPRIMEE PORTE dans la paie importee (`importe::LigneDeCotisation::id`) : la
+    /// cotisation, ou le nom du regroupement que la table de lecture lui a donne.
+    pub fn cle_de_cotisation(&self) -> IdDeCotisation {
+        match self {
+            RegroupementDeComparaison::Cotisation(id) => id.clone(),
+            RegroupementDeComparaison::Autres => IdDeCotisation::du_moteur("autres"),
+            RegroupementDeComparaison::Convention => IdDeCotisation::du_moteur("convention"),
+            RegroupementDeComparaison::Apec => IdDeCotisation::du_moteur("apec"),
+            RegroupementDeComparaison::Total(t) => IdDeCotisation::du_moteur(t.cle()),
+        }
+    }
+}
+
+impl Ord for RegroupementDeComparaison {
+    fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+        self.as_str().cmp(autre.as_str())
+    }
+}
+
+impl PartialOrd for RegroupementDeComparaison {
+    fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
+}
+
+impl std::fmt::Display for RegroupementDeComparaison {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl serde::Serialize for RegroupementDeComparaison {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RegroupementDeComparaison {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as serde::Deserialize>::deserialize(d)?;
+        RegroupementDeComparaison::lire(&texte).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+/// D'OU VIENT LE TAUX AT/MP DU CALCUL d'une comparaison : celui que la compagnie a pose pour l'annee, ou celui que le
+/// bulletin importe applique (l'AT/MP n'est alors pas compare). Une liste du logiciel, ecrite `compagnie`, `bulletin`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrigineDuTauxAtmp {
+    Compagnie,
+    Bulletin,
+}
+
+/// Un ecart sur une cotisation (ou un total : `TotalDuBulletin`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ecart {
-    pub cotisation: String,
+    pub cotisation: RegroupementDeComparaison,
     /// Les libelles du bulletin importe pour cette cotisation (les notres quand il ne l'imprime pas).
     pub libelles: Vec<String>,
     pub grandeur: Grandeur,
@@ -106,14 +224,13 @@ pub struct Comparaison {
     pub empreinte: EmpreinteCourte,
     pub mois: Mois,
     /// Le logiciel que le lecteur a reconnu au bulletin ; `None` : un autre.
-    pub logiciel: Option<String>,
+    pub logiciel: Option<LogicielDUnBulletin>,
     pub nature: NatureDeContrat,
-    pub statut: Option<String>,
+    pub statut: Option<droit::fiche::Statut>,
     /// Cadre (`true`) ou non cadre, quand le bulletin ou la fiche le dit.
     pub cadre: Option<bool>,
-    /// D'ou vient le taux AT/MP du calcul : `compagnie` (celui qu'elle a pose pour l'annee) ou `bulletin` (celui que le
-    /// bulletin importe applique : l'AT/MP n'est alors pas compare).
-    pub taux_atmp: Option<&'static str>,
+    /// D'ou vient le taux AT/MP du calcul.
+    pub taux_atmp: Option<OrigineDuTauxAtmp>,
     /// Les ecarts ; `Err` : la paie ne se compare pas, et pourquoi.
     pub ecarts: R<Vec<Ecart>>,
     /// La paie ne s'est pas comparee parce que le calcul a refuse la saisie (une configuration a completer, l'effectif
@@ -126,25 +243,28 @@ pub struct Comparaison {
 
 /// Quand le bulletin importe n'imprime pas la premiere a part, elle se compare dans la seconde (le modele de l'arrete
 /// du 25/02/2016, art. 3 : « Autres charges dues par l'employeur » ; la ligne « Retraite complementaire, CEG et CET »).
-const REPLIS: [(&str, &str); 2] = [("conges_spec", "autres"), ("cet", "retraite_t1")];
+const REPLIS: [(IdDeCotisation, RegroupementDeComparaison); 2] =
+    [(CONGES_SPEC, RegroupementDeComparaison::Autres), (CET, RegroupementDeComparaison::Cotisation(RETRAITE_T1))];
 
 /// La cotisation d'une ligne de la paie calculee, au grain ou un bulletin l'imprime : les contributions que
 /// l'employeur paie seul et que le modele agrege (`autres`), les cotisations de la convention (`convention`), les
 /// tranches de l'Apec et les garanties de prevoyance de la paie (`garanties`, `calcul::garanties_de_prevoyance`) ; les
 /// autres gardent leur identifiant du bareme.
-pub fn cotisation_de(l: &LigneCotisation, garanties: &[IdDeCotisation]) -> String {
+pub fn cotisation_de(l: &LigneCotisation, garanties: &[IdDeCotisation]) -> RegroupementDeComparaison {
     let seule_employeur = l.taux_sal.is_none() && l.montant_sal.is_zero();
     if garanties.contains(&l.id) {
-        return PREVOYANCE.as_str().into();
+        return RegroupementDeComparaison::Cotisation(PREVOYANCE);
     }
     if l.id == APEC_T1 || l.id == APEC_T2 {
-        return "apec".into();
+        return RegroupementDeComparaison::Apec;
     }
-    match l.id.as_str() {
-        "autres_1" | "autres_2" | "autres_3" | "autres_4" | "versement_mobilite" if seule_employeur => "autres".into(),
-        "ccn" | "fcap" | "paritarisme" => "convention".into(),
-        id => id.into(),
+    if seule_employeur && [AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, VERSEMENT_MOBILITE].contains(&l.id) {
+        return RegroupementDeComparaison::Autres;
     }
+    if [CCN, FCAP, PARITARISME].contains(&l.id) {
+        return RegroupementDeComparaison::Convention;
+    }
+    RegroupementDeComparaison::Cotisation(l.id.clone())
 }
 
 /// Une ligne de cotisation du bulletin importe.
@@ -178,7 +298,7 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             if deja(&empreinte) {
                 return None;
             }
-            let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone()).filter(|l| !l.is_empty());
+            let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut c = Comparaison {
                 empreinte,
                 mois,
@@ -226,7 +346,7 @@ fn comparer_une(
     let dit = |v: &Option<String>| v.clone().filter(|x| !x.is_empty());
     let imprime = |champ: fn(&crate::importe::EmploiImprime) -> &Option<String>| p.emploi_imprime.as_ref().and_then(|i| dit(champ(i)));
     let imprimes = p.emploi_imprime.as_ref();
-    c.statut = imprimes.and_then(|i| i.statut).or_else(|| fiche.statut.dite().copied()).map(|s| s.as_str().to_string());
+    c.statut = imprimes.and_then(|i| i.statut).or_else(|| fiche.statut.dite().copied());
     c.cadre = imprimes.and_then(|i| i.statut_categoriel_rc).map(|s| s == droit::fiche::StatutCategorielRc::Cadre).or_else(|| fiche.statut_categoriel_rc.dite().map(|s| *s == droit::fiche::StatutCategorielRc::Cadre));
     let Some(cotisations) = &p.cotisations else {
         return Err(refus("la paie importée n'a pas de bulletin : la DSN seule ne porte pas ses lignes de cotisation"));
@@ -239,7 +359,7 @@ fn comparer_une(
     let an: i32 = annee.parse().map_err(|_| socle::refus!("mois illisible : {}", mois))?;
     let mut atmp_imprime: Option<(Option<Decimal>, Option<Decimal>, Option<Decimal>)> = None;
     if !ctx.taux_atmp_dit(an)? {
-        let ligne = cotisations.iter().find(|l| l.cotisation.as_deref() == Some("atmp"));
+        let ligne = cotisations.iter().find(|l| l.cotisation == Some(RegroupementDeComparaison::Cotisation(ATMP)));
         atmp_imprime = ligne
             .map(|l| (l.taux_employeur, l.montant_employeur, l.base))
             .filter(|(t, m, _)| t.is_some() || m.is_some_and(|m| !m.is_zero()));
@@ -248,7 +368,7 @@ fn comparer_une(
         }
     }
     let atmp_lu = atmp_imprime.is_some();
-    c.taux_atmp = Some(if atmp_lu { "bulletin" } else { "compagnie" });
+    c.taux_atmp = Some(if atmp_lu { OrigineDuTauxAtmp::Bulletin } else { OrigineDuTauxAtmp::Compagnie });
     // Les jours travailles que le bulletin dit, chacun sur chaque ligne (les jours de l'engagement en sont la reunion).
     let mut jours: Vec<crate::DateDeLigne> = Vec::new();
     for d in &p.dates {
@@ -370,9 +490,9 @@ fn comparer_une(
     let garanties = crate::calcul::garanties_de_prevoyance(&ctx, paie)?;
 
     // Les deux cotes, par cotisation.
-    let mut leurs: BTreeMap<String, Vec<Lue>> = BTreeMap::new();
+    let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<Lue>> = BTreeMap::new();
     // Les cotisations que le bulletin imprime apres son total (les facultatives, les exonerations) : hors de ce total.
-    let mut hors_total: Vec<String> = Vec::new();
+    let mut hors_total: Vec<RegroupementDeComparaison> = Vec::new();
     for l in cotisations {
         let lue = Lue {
             libelle: l.libelle.clone(),
@@ -385,7 +505,7 @@ fn comparer_une(
         if lue.montant_salarie.is_none() && lue.montant_employeur.is_none() {
             continue;
         }
-        match l.cotisation.clone().filter(|c| !c.is_empty()) {
+        match l.cotisation.clone() {
             Some(code) => {
                 if l.hors_total && !hors_total.contains(&code) {
                     hors_total.push(code.clone());
@@ -399,24 +519,25 @@ fn comparer_une(
             }
         }
     }
-    let mut nos: BTreeMap<String, Vec<&LigneCotisation>> = BTreeMap::new();
+    let mut nos: BTreeMap<RegroupementDeComparaison, Vec<&LigneCotisation>> = BTreeMap::new();
     for l in &paie.lignes {
         nos.entry(cotisation_de(l, &garanties)).or_default().push(l);
     }
     for (fin, gros) in REPLIS {
-        if !leurs.contains_key(fin) {
-            if let Some(v) = nos.remove(fin) {
-                nos.entry(gros.into()).or_default().extend(v);
+        let fin = RegroupementDeComparaison::Cotisation(fin);
+        if !leurs.contains_key(&fin) {
+            if let Some(v) = nos.remove(&fin) {
+                nos.entry(gros).or_default().extend(v);
             }
         }
     }
     let mut ecarts = Vec::new();
-    let mut codes: Vec<&String> = leurs.keys().chain(nos.keys()).collect();
+    let mut codes: Vec<&RegroupementDeComparaison> = leurs.keys().chain(nos.keys()).collect();
     codes.sort();
     codes.dedup();
     let zero = Decimal::ZERO;
     for code in codes {
-        if atmp_lu && code == "atmp" {
+        if atmp_lu && *code == RegroupementDeComparaison::Cotisation(ATMP) {
             continue;
         }
         let eux: &[Lue] = match leurs.get(code) {
@@ -474,15 +595,15 @@ fn comparer_une(
     // Les totaux du bulletin, sans ce qu'il imprime apres eux : l'ecart relatif seulement.
     let hors = |f: &dyn Fn(&LigneCotisation) -> Decimal| -> Decimal { paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l, &garanties))).map(f).sum() };
     for (cle, notre, leur) in [
-        ("cotisations_salariales", paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
-        ("cotisations_patronales", paie.total_pat - hors(&|l| l.montant_pat), p.cotisations_patronales),
-        ("net_social", paie.net_social, p.net_social),
-        ("net_imposable", paie.net_imposable, p.net_imposable),
+        (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
+        (TotalDuBulletin::CotisationsPatronales, paie.total_pat - hors(&|l| l.montant_pat), p.cotisations_patronales),
+        (TotalDuBulletin::NetSocial, paie.net_social, p.net_social),
+        (TotalDuBulletin::NetImposable, paie.net_imposable, p.net_imposable),
     ] {
         let Some(leur) = leur else { continue };
         if (leur - notre).abs() > Decimal::new(1, 2) {
-            let grandeur = if cle == "cotisations_patronales" { Grandeur::MontantEmployeur } else { Grandeur::MontantSalarie };
-            ecarts.push(Ecart { cotisation: cle.into(), libelles: Vec::new(), grandeur, notre_taux: None, leur_taux: None, ecart_relatif: relatif(leur, notre) });
+            let grandeur = if cle == TotalDuBulletin::CotisationsPatronales { Grandeur::MontantEmployeur } else { Grandeur::MontantSalarie };
+            ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), grandeur, notre_taux: None, leur_taux: None, ecart_relatif: relatif(leur, notre) });
         }
     }
     Ok(ecarts)

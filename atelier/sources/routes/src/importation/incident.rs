@@ -138,7 +138,8 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
             Err(r) => vec![format!("le texte du document ne se relève pas : {}", r.phrase)],
         };
         let logiciel = c.pages.iter().find_map(|p| p.infos.logiciel.clone());
-        let genre = format!("document non lu : famille {}", famille(pages.first().map(String::as_str), logiciel.as_deref(), voc));
+        let logiciel = logiciel.as_ref().map(engagement::importe::LogicielDUnBulletin::as_str);
+        let genre = format!("document non lu : famille {}", famille(pages.first().map(String::as_str), logiciel, voc));
         let empreinte = incidents::empreinte(incidents::LOGICIEL, OU, &genre);
         if deja.contains(&empreinte) || !vues.insert(empreinte) {
             continue;
@@ -148,7 +149,7 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
             .iter()
             .map(|p| FormeDePage { page: p.page, sort: p.sort, raison: masquer_avec(&p.raison, voc), releve: f.pages.get(p.page.saturating_sub(1)) })
             .collect();
-        let detail = Detail { sort: c.sort, logiciel: logiciel.as_deref(), pages: pages.len(), forme, raison: masquer_avec(&c.raison, voc) };
+        let detail = Detail { sort: c.sort, logiciel, pages: pages.len(), forme, raison: masquer_avec(&c.raison, voc) };
         let texte: Vec<String> = pages.iter().enumerate().map(|(k, p)| format!("--- page {} ---\n{}", k + 1, masquer_avec(p.trim_end(), voc))).collect();
         let trace = tete(&texte.join("\n"), TRACE_MAX);
         let resume = format!("Import : un document accepté n'a pas été lu (« {} »). Sa forme, masquée.", c.sort.en_mots().1);
