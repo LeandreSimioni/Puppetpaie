@@ -67,22 +67,51 @@ use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
 use socle::{echec::{refus, Echec, R}, num::{pct, Decimal}};
 
-/// La raison d'un recalcul : le taux de prelevement a la source a change.
-pub const TAUX_DE_PAS: &str = "taux de PAS reçu";
-/// La raison d'un recalcul : le code qui calcule a change (le moteur, ou les baremes et catalogues qu'il livre).
-pub const CALCUL_CORRIGE: &str = "calcul corrigé";
-/// La raison d'un recalcul : un autre engagement valide du meme salarie dans le mois, que le calcul lit, a change (la
-/// deduction forfaitaire specifique deja retenue, `calcul::dfs_deja_deduite`).
-pub const AUTRE_ENGAGEMENT: &str = "un autre engagement du salarié a changé";
-/// La raison d'un recalcul : ce que la saisie du mois pose pour tous ses engagements (taux du cachet, date de paiement) a
-/// change.
-pub const SAISIE_DU_MOIS: &str = "saisie du mois modifiée";
-/// La raison d'un recalcul : un arret ou une suspension du salarie (le magasin des imprevus, `imprevus::DOSSIER`), que le
-/// calcul lit, a change.
-pub const IMPREVU: &str = "un arrêt ou une absence a changé";
-/// La raison d'un recalcul : la configuration de la compagnie a change sans valeur datee nouvelle (une fiche corrigee, les
-/// contrats d'organismes).
-pub const CONFIGURATION: &str = "configuration de la compagnie modifiée";
+/// POURQUOI UNE PAIE SE RECALCULE (`raison`). Elle s'ecrit par sa phrase (`Display`), que la paie ecrite garde
+/// (`Recalcul::raison`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RaisonDuRecalcul {
+    /// Le taux de prelevement a la source a change.
+    TauxDePas,
+    /// Une regle datee nouvelle s'applique : une regle du code, ou une valeur datee de la configuration de la compagnie.
+    RegleDu(Jour),
+    /// Le code qui calcule a change (le moteur, ou les baremes et catalogues qu'il livre).
+    CalculCorrige,
+    /// Un autre engagement valide du meme salarie dans le mois, que le calcul lit, a change (la deduction forfaitaire
+    /// specifique deja retenue, `calcul::dfs_deja_deduite`).
+    AutreEngagement,
+    /// Ce que la saisie du mois pose pour tous ses engagements (taux du cachet, date de paiement) a change.
+    SaisieDuMois,
+    /// Un arret ou une suspension du salarie (le magasin des imprevus, `imprevus::DOSSIER`), que le calcul lit, a change.
+    Imprevu,
+    /// La paie validee d'un autre mois que le calcul lit (conges, cumuls) a change.
+    PaieDUnAutreMois(Mois),
+    /// La configuration de la compagnie a change sans valeur datee nouvelle (une fiche corrigee, les contrats
+    /// d'organismes).
+    Configuration,
+}
+
+impl RaisonDuRecalcul {
+    /// Une decision de l'editeur : le code qui calcule, ou une regle datee.
+    fn decision_de_l_editeur(self) -> bool {
+        matches!(self, RaisonDuRecalcul::CalculCorrige | RaisonDuRecalcul::RegleDu(_))
+    }
+}
+
+impl std::fmt::Display for RaisonDuRecalcul {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RaisonDuRecalcul::TauxDePas => f.write_str("taux de PAS reçu"),
+            RaisonDuRecalcul::RegleDu(jour) => write!(f, "règle du {}", jour.jj_mm_aaaa()),
+            RaisonDuRecalcul::CalculCorrige => f.write_str("calcul corrigé"),
+            RaisonDuRecalcul::AutreEngagement => f.write_str("un autre engagement du salarié a changé"),
+            RaisonDuRecalcul::SaisieDuMois => f.write_str("saisie du mois modifiée"),
+            RaisonDuRecalcul::Imprevu => f.write_str("un arrêt ou une absence a changé"),
+            RaisonDuRecalcul::PaieDUnAutreMois(m) => write!(f, "la paie {} a changé", socle::texte::de(&m.libelle(socle::mois::Graphie::Accentuee))),
+            RaisonDuRecalcul::Configuration => f.write_str("configuration de la compagnie modifiée"),
+        }
+    }
+}
 
 
 // ------------------------------------------------------------------ ce qui est parti
@@ -1026,13 +1055,13 @@ fn egales_sans_avis(a: &FormeDePaie<Avis>, b: &FormeDePaie<Avis>) -> bool {
 /// saisie, une paie d'un autre mois, une valeur datee) dit donc pourquoi avant le code, qui ne se nomme que lorsque rien
 /// d'autre n'a change. Une paie partie (`parti`) ne bouge que par une decision de l'editeur : le code et les regles
 /// datees s'y nomment d'abord, puisque ce sont eux qui la refont.
-fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<String> {
+fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<RaisonDuRecalcul> {
     if egales_sans_avis(&avant.paie, &apres.paie) && avant.conges_sans_avis() == apres.conges_sans_avis() && avant.pas != apres.pas {
-        return Ok(TAUX_DE_PAS.to_string());
+        return Ok(RaisonDuRecalcul::TauxDePas);
     }
     let vieilles = &avant.empreinte.regles;
     if let Some(r) = apres.empreinte.regles.iter().filter(|r| !vieilles.contains(r)).max() {
-        return Ok(format!("règle du {}", r.jj_mm_aaaa()));
+        return Ok(RaisonDuRecalcul::RegleDu(*r));
     }
     let (ea, eb) = (&avant.empreinte.entrees, &apres.empreinte.entrees);
     let changees: Vec<&CleLue> = ea.keys().chain(eb.keys()).filter(|k| ea.get(*k) != eb.get(*k)).collect();
@@ -1040,7 +1069,7 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<String> {
     // deux a lu dit que le calcul a pris un autre chemin (un arret saisi lit le bareme des arrets), pas que le code a change.
     let code = changees.iter().any(|k| matches!(k, CleLue::Moteur) || (empreinte::est_du_code(k) && ea.contains_key(*k) && eb.contains_key(*k)));
     if code && parti {
-        return Ok(CALCUL_CORRIGE.to_string());
+        return Ok(RaisonDuRecalcul::CalculCorrige);
     }
     // La saisie dont la paie depend : ce que le mois pose et les engagements de son salarie (`stock::empreinte_de_saisie`),
     // lue des deux cotes ; une saisie que l'une des deux paies n'a pas lue ne dit pas qu'un engagement a change.
@@ -1050,17 +1079,17 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<String> {
         _ => None,
     };
     if saisies.iter().any(|k| engagements(ea, k) != engagements(eb, k)) || changees.iter().any(|k| matches!(k, CleLue::Datee(LectureDatee::Mensuels { .. }))) {
-        return Ok(AUTRE_ENGAGEMENT.to_string());
+        return Ok(RaisonDuRecalcul::AutreEngagement);
     }
     if !saisies.is_empty() {
-        return Ok(SAISIE_DU_MOIS.to_string());
+        return Ok(RaisonDuRecalcul::SaisieDuMois);
     }
     if changees.iter().any(|k| du_magasin_des_imprevus(k)) {
-        return Ok(IMPREVU.to_string());
+        return Ok(RaisonDuRecalcul::Imprevu);
     }
     // L'indemnite de mission d'un jour a l'etranger que la table livree dit autrement : le code qui calcule.
     if changees.iter().any(|k| matches!(k, CleLue::Datee(LectureDatee::Mission { .. }))) {
-        return Ok(CALCUL_CORRIGE.to_string());
+        return Ok(RaisonDuRecalcul::CalculCorrige);
     }
     // Les paies validees d'un autre mois que le calcul lit (conges, cumuls) : `paies <le mois> <son salarie>`.
     let premier = changees.iter().filter_map(|k| match k {
@@ -1068,7 +1097,7 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<String> {
         _ => None,
     }).min();
     if let Some(m) = premier {
-        return Ok(format!("la paie {} a changé", socle::texte::de(&m.libelle(socle::mois::Graphie::Accentuee))));
+        return Ok(RaisonDuRecalcul::PaieDUnAutreMois(m));
     }
     // La configuration de la compagnie : une valeur datee de ses fiches qui s'applique, ou son bareme de l'annee
     // (`droit::contexte::surcouche` : ses choix de bareme, qui valent pour toute l'annee). Une paie peut lire celle d'une
@@ -1083,12 +1112,12 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<String> {
         })
         .and_then(|an| Jour::nouveau(an, 1, 1));
     if let Some(jour) = config_nouvelle.or(annee_du_bareme) {
-        return Ok(format!("règle du {}", jour.jj_mm_aaaa()));
+        return Ok(RaisonDuRecalcul::RegleDu(jour));
     }
     if code {
-        return Ok(CALCUL_CORRIGE.to_string());
+        return Ok(RaisonDuRecalcul::CalculCorrige);
     }
-    Ok(CONFIGURATION.to_string())
+    Ok(RaisonDuRecalcul::Configuration)
 }
 
 /// Le moment d'un geste, a l'heure du moteur.
@@ -1486,11 +1515,6 @@ pub fn non_actifs_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
     Ok(stock::non_actifs_du_mois(&ctx.racine, mois)?.into_iter().filter_map(NonActif::de).collect())
 }
 
-/// Une raison de recalcul qui est une decision de l'editeur : le code qui calcule, ou une regle datee.
-fn decision_de_l_editeur(raison: &str) -> bool {
-    raison == CALCUL_CORRIGE || raison.starts_with("règle du ")
-}
-
 /// LE RECALCUL DE LUI-MEME, a la lecture de `mois` (`du_mois`) : chaque engagement valide du mois dont la paie de ce mois
 /// n'est plus juste (son empreinte ne tient plus, ou elle manque : un contrat sans terme qui entre dans un nouveau mois)
 /// se recalcule et se reecrit. Un chiffre qui change note pourquoi, et quand ; rien d'autre ne change. Si un envoi a
@@ -1589,13 +1613,13 @@ fn rafraichir(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool) -> R
         };
         let le = maintenant();
         if let Some(r) = &raison {
-            nouvelle.recalcul = Some(Recalcul { le: le.clone(), raison: r.clone() });
+            nouvelle.recalcul = Some(Recalcul { le: le.clone(), raison: r.to_string() });
         }
         match (&raison, parti, &ancienne) {
             // Partie, sans chiffre qui change : l'empreinte se renouvelle, la paie garde ses numeros.
             (None, true, Some(a)) => garder_les_numeros(a, &mut nouvelle),
             // Partie, et une decision de l'editeur la change : un bulletin rectificatif.
-            (Some(r), true, a) if decision_de_l_editeur(r) => {
+            (Some(r), true, a) if r.decision_de_l_editeur() => {
                 if let Some(b) = a.as_ref().and_then(|a| a.bulletin.clone().or_else(|| a.rectifie.clone())) {
                     nouvelle.rectifie = Some(b);
                 }

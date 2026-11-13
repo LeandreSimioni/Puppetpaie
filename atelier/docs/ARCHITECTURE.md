@@ -673,6 +673,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | regroupement de la comparaison | `RegroupementDeComparaison`, `TotalDuBulletin` | `engagement/src/ecarts.rs` |
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
+| raison d'un recalcul | `RaisonDuRecalcul` | `engagement/src/etats.rs` |
 | cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |
 | clé de totalisation | `CleDeTotalisation` | `droit/src/code_cotisation.rs` |
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
@@ -833,6 +834,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   autre. Que portent un bulletin lu, le bulletin d'une paie versée, ce qu'une page dit d'elle-même dans le compte rendu
   de l'import, une comparaison ; l'incident d'un écart d'import l'écrit « autre » quand il n'y en a pas
   (`import::ecarts::LogicielDuRapport`, une écriture).
+- **raison d'un recalcul** : pourquoi une paie déjà écrite se recalcule : le taux de PAS reçu, une règle datée (`RegleDu`,
+  un jour), le code qui calcule corrigé, un autre engagement du salarié, la saisie du mois, un arrêt ou une absence, la
+  paie d'un autre mois, la configuration de la compagnie. Une liste du logiciel ; écrite par sa phrase (`Display` :
+  « calcul corrigé », « règle du JJ/MM/AAAA »…), que la paie écrite garde (`Recalcul::raison`, du texte). Le code et une
+  règle datée sont des décisions de l'éditeur (`decision_de_l_editeur`) : elles seules refont une paie partie.
 - **cotisation de la DSN** : une ligne du bloc 81, par son code S21.G00.81.001. Que portent `cotisations_dsn` (`code81`,
   `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version
   de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) :
