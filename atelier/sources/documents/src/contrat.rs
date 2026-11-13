@@ -14,7 +14,7 @@ use serde::Serialize;
 use socle::date::Jour;
 
 use crate::avenant::valeurs_de_la_paie;
-use crate::bulletin::{chemin_texte, identite_de, FORMAT, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
+use crate::bulletin::{chemin_net, identite_de, FORMAT, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
 use droit::contexte::EntrepriseDuDocument;
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
@@ -31,7 +31,7 @@ pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Docume
         police: None,
         style: Some(style),
         logo: identite_de(&ent.gabarits, "logo").map(|logo| forme::Logo {
-            chemin: chemin_texte(&logo).into(),
+            chemin: chemin_net(&logo),
             largeur: LOGO_LARGEUR,
             marge_haut: LOGO_MARGE_HAUT,
             marge_droite: LOGO_MARGE_DROITE,
@@ -95,7 +95,7 @@ pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], 
         if let Some((_, (numero, date))) = remplace {
             un.remplace = Some(forme::Remplace { numero: numero.clone(), date: date.jj_mm_aaaa() });
         }
-        un.signature = signature.as_deref().map(chemin_texte);
+        un.signature = signature.as_deref().map(chemin_net);
         refuser_ce_que_le_modele_tairait(modele, &v)?;
         crate::contrat_ecrit::refuser_un_modele_incomplet(modele, &nat, &v)?;
         documents.push(Document::Modele(un));
@@ -185,7 +185,7 @@ fn description_avenant(ctx: &Contexte, p: &Paie, ent: &EntrepriseDuDocument, lu:
     }
     let mut un = document_modele(lu, &v);
     un.modifications = Some(modifs.to_vec());
-    un.signature = identite_de(&ent.gabarits, "signature").as_deref().map(chemin_texte);
+    un.signature = identite_de(&ent.gabarits, "signature").as_deref().map(chemin_net);
     Ok(enveloppe(Style::Avenant, ent, vec![Document::Modele(un)]))
 }
 

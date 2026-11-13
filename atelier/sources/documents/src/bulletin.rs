@@ -1271,9 +1271,9 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
 
 // ------------------------------------------------------------ la description
 
-/// Un chemin en texte : sans `.` ni séparateur double.
-pub(crate) fn chemin_texte(p: &Path) -> String {
-    p.components().collect::<PathBuf>().to_string_lossy().into_owned()
+/// Un chemin que la fabrique lit : sans `.` ni séparateur double.
+pub(crate) fn chemin_net(p: &Path) -> PathBuf {
+    p.components().collect::<PathBuf>()
 }
 
 /// `identite_de` : le fichier d'identite (`logo`, `signature`) de la compagnie dont `gabarits` est le dossier de
@@ -1305,7 +1305,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
         police: Some(f::Police { taille: mesure("7.4"), interligne: mesure("1.2"), couleur: ARDOISE.to_string() }),
         style: None,
         logo: identite_de(&ent.gabarits, "logo").map(|logo| f::Logo {
-            chemin: chemin_texte(&logo).into(),
+            chemin: chemin_net(&logo),
             largeur: LOGO_LARGEUR,
             marge_haut: LOGO_MARGE_HAUT,
             marge_droite: LOGO_MARGE_DROITE,
@@ -1323,7 +1323,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
             distance: Mesure::entier(24),
             premiere_page: true,
             image: Some(f::ImageRepere {
-                chemin: chemin_texte(&socle::fichiers::dossier_du_code().join("puppetpaie-mot.svg")).into(),
+                chemin: chemin_net(&socle::fichiers::dossier_du_code().join("puppetpaie-mot.svg")),
                 largeur: PIED_MOT_LARGEUR,
                 descente: PIED_MOT_DESCENTE,
             }),

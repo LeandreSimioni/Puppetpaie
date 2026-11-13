@@ -165,7 +165,7 @@ fn inventaire(p: &Paie) -> String {
 fn ecrire_papier(lu: &ModeleLu, valeurs: Valeurs, chemin: &Path, ent: &droit::contexte::EntrepriseDuDocument, signe: bool) -> R<()> {
     let mut un = crate::contrat::document_modele(lu, &valeurs);
     if signe {
-        un.signature_employeur = identite_de(&ent.gabarits, "signature").as_deref().map(crate::bulletin::chemin_texte);
+        un.signature_employeur = identite_de(&ent.gabarits, "signature").as_deref().map(crate::bulletin::chemin_net);
     }
     let d = crate::contrat::enveloppe(Style::Attestation, ent, vec![Document::Modele(un)]);
     crate::fabrique::ecrire_pdf(&d, chemin)?;

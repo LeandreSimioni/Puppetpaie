@@ -97,12 +97,12 @@ pub struct Contrat<'a> {
     /// (numero, date) du contrat que celui-ci annule et remplace (contrat seulement).
     pub remplace: Option<(&'a str, &'a str)>,
     /// L'image de la signature de l'employeur ; sans elle la case reste vide.
-    pub signature: Option<&'a str>,
+    pub signature: Option<&'a std::path::Path>,
     /// Les articles modifiés (avenant seulement).
     pub modifications: &'a [Modification],
     /// L'image de la signature de l'employeur, posée en fin de document, à droite (attestation
     /// seulement : le certificat de travail s'établit signé ; le reçu, lui, se signe du salarié).
-    pub signature_employeur: Option<&'a str>,
+    pub signature_employeur: Option<&'a std::path::Path>,
 }
 
 fn para(
@@ -148,7 +148,7 @@ fn valeur<'a>(v: &'a Valeurs, cle: &str) -> Result<&'a str, Refus> {
 /// Le bloc de signatures : deux colonnes à filet, celle de l'employeur avec sa signature sous sa
 /// fonction (image flottante : elle recouvre les lignes vides sans rien pousser à la page
 /// suivante). Sans fichier de signature, la case reste vide et le contrat se signe à la main.
-fn signatures(v: &Valeurs, signature: Option<&str>) -> Result<Bloc, Refus> {
+fn signatures(v: &Valeurs, signature: Option<&std::path::Path>) -> Result<Bloc, Refus> {
     let case = |libelle: &str, nom: &str, sous: &str| -> Vec<Bloc> {
         vec![
             para(vec![(libelle.to_string(), true)], mesure("6.6"), ROUGE, Alignement::Gauche, Z, Z),
@@ -197,7 +197,7 @@ fn signatures(v: &Valeurs, signature: Option<&str>) -> Result<Bloc, Refus> {
 
 /// Le bloc de l'employeur en fin d'attestation : nom, fonction, puis l'image (qui occupe sa
 /// hauteur), dans la moitié droite de la page. Il ne se coupe pas entre deux pages.
-fn signature_employeur(v: &Valeurs, image: &str) -> Result<Bloc, Refus> {
+fn signature_employeur(v: &Valeurs, image: &std::path::Path) -> Result<Bloc, Refus> {
     let etiquetter = |blocs: Vec<Bloc>| -> Vec<BlocEtiquete> {
         blocs
             .into_iter()
