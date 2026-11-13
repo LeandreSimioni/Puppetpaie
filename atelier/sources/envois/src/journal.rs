@@ -9,7 +9,7 @@
 //!   l'empreinte de son texte ;
 //! - un retour, `{"a", "retour"}` (`rattacher`, `ranger`) : il s'ajoute aux `retours` de l'envoi `a`, dans la forme de
 //!   sa sorte (`ligne::RetourOrganisme`, `RetourContrat`, `RetourFiche`) ;
-//! - un complement, `{"a", "nature", "publication", "complete"}` (`ranger`) : le verdict (`ligne::Verdict`) s'ecrit dans
+//! - un complement, `{"a", "nature", "publication", "complete"}` (`ranger`) : le verdict (`ligne::VerdictDeLaPiece`) s'ecrit dans
 //!   le retour de l'envoi `a` qui porte cette nature et cette publication (le verdict d'un bilan arrive apres son annonce).
 //! `lu` replie ces enregistrements dans l'ordre en `lignes` ; un processus ne relit que ce qui s'est ajoute depuis sa
 //! derniere lecture. Un enregistrement qui ne se lit pas strictement (une cle inconnue, une valeur d'une autre forme)
@@ -128,7 +128,7 @@ struct Enregistrement {
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::compacte::option")]
     publication: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    complete: Option<Verdict>,
+    complete: Option<VerdictDeLaPiece>,
 }
 
 /// CE QUI REVIENT D'UN ENVOI, dans la forme de sa sorte : un compte rendu d'organisme (une DSN, une DPAE), un contrat
@@ -571,7 +571,7 @@ pub enum Rangement {
     /// Un compte rendu de plus.
     Retour(RetourOrganisme),
     /// Le verdict du compte rendu de cette nature et de cette publication.
-    Complement { nature_retour: crate::retours::NatureDuRetour, publication: Option<socle::paris::Moment>, verdict: Verdict },
+    Complement { nature_retour: crate::retours::NatureDuRetour, publication: Option<socle::paris::Moment>, verdict: VerdictDeLaPiece },
 }
 
 /// RANGE CE QUI REVIENT des envois : chaque `(i, rangement)` sur la `i`-ieme ligne du journal lu (`lu`), dans l'ordre.
@@ -726,7 +726,8 @@ mod tests {
     #[test]
     fn une_declaration_refusee_au_bilan_n_est_pas_partie() {
         use crate::retours::NatureDuRetour::{AccuseDEnregistrement, CertificatDeConformite};
-        let retour = |nature: crate::retours::NatureDuRetour, verdict: &str| RetourOrganisme { nature_retour: nature, verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
+        use crate::retours::Verdict;
+        let retour = |nature: crate::retours::NatureDuRetour, verdict: Verdict| RetourOrganisme { nature_retour: nature, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
             e.mois = Some(Mois::nouveau(2026, 6).unwrap());
@@ -735,12 +736,12 @@ mod tests {
             e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: 1, mois: None }]);
             e
         }
-        let ko = vec![retour(AccuseDEnregistrement, "OK"), retour(CertificatDeConformite, "KO")];
+        let ko = vec![retour(AccuseDEnregistrement, Verdict::Ok), retour(CertificatDeConformite, Verdict::Ko)];
         let lignes = vec![
             Ligne::Dsn(envoi("ALPHA", ko.clone(), DetailDsn::nouveau(false))),
-            Ligne::Dsn(envoi("BETA", vec![], DetailDsn { etat_declaration: Some("KO".into()), ..DetailDsn::nouveau(true) })),
+            Ligne::Dsn(envoi("BETA", vec![], DetailDsn { etat_declaration: Some(Verdict::Ko), ..DetailDsn::nouveau(true) })),
             Ligne::Dpae(envoi("GAMMA", ko, DetailDpae::nouveau(false, false))),
-            Ligne::Dsn(envoi("DELTA", vec![retour(CertificatDeConformite, "OK")], DetailDsn::nouveau(false))),
+            Ligne::Dsn(envoi("DELTA", vec![retour(CertificatDeConformite, Verdict::Ok)], DetailDsn::nouveau(false))),
         ];
         let d = departs_des_lignes(&lignes);
         let numero = engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap();

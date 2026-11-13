@@ -5,7 +5,7 @@
 
 use envois::retours::{
     aer_spectacle, anomalies_codees_d_octets, bilan_d_octets, fusionner_bilans, releves_vers_salaries,
-    taux_pas_d_octets, ReleveTauxPas,
+    taux_pas_d_octets, ReleveTauxPas, Verdict,
 };
 
 fn releve(nir: &str, identifiant: &str) -> ReleveTauxPas {
@@ -75,7 +75,7 @@ fn un_certificat_de_conformite() {
     let b = bilan_d_octets(cco().as_bytes()).unwrap().unwrap();
     assert_eq!(b.type_rapport, "CCO");
     assert_eq!(b.essai_reel.as_deref(), Some("01"));
-    assert_eq!(b.etat_declaration.as_deref(), Some("OK"));
+    assert_eq!(b.etat_declaration, Some(Verdict::Ok));
     assert_eq!(b.conformite.as_deref(), Some("OK"));
     assert_eq!(b.certificat.as_deref(), Some("CERTIFIE"));
     assert_eq!(b.mois.map(|m| m.to_string()).as_deref(), Some("2026-08"));
@@ -87,11 +87,11 @@ fn le_bilan_de_declaration_l_emporte_sur_l_accuse() {
     let a = bilan_d_octets(aee().as_bytes()).unwrap().unwrap();
     let c = bilan_d_octets(cco().as_bytes()).unwrap().unwrap();
     // Un accuse ne dit ni le mois ni le verdict de la declaration.
-    assert_eq!((a.etat_declaration.as_deref(), a.mois), (None, None));
+    assert_eq!((a.etat_declaration, a.mois), (None, None));
     for ordre in [[a.clone(), c.clone()], [c.clone(), a.clone()]] {
         let f = fusionner_bilans(&ordre).unwrap();
         assert_eq!(f.type_rapport, "CCO");
-        assert_eq!(f.etat_declaration.as_deref(), Some("OK"));
+        assert_eq!(f.etat_declaration, Some(Verdict::Ok));
         assert_eq!(f.mois.map(|m| m.to_string()).as_deref(), Some("2026-08"));
     }
 }

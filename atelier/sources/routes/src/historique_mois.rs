@@ -29,7 +29,7 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
-use envois::retours::{self, AnomalieDuRapport, CrmOc, IdDeFlux, NatureDuRetour, Neores, Rapport};
+use envois::retours::{self, AnomalieDuRapport, CrmOc, IdDeFlux, NatureDuRetour, Neores, Rapport, Verdict};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
@@ -215,7 +215,7 @@ struct RetourDOrganisme {
     libelle: String,
     organisme: Option<String>,
     statut: Option<String>,
-    verdict: Option<String>,
+    verdict: Option<Verdict>,
     anomalies: Vec<Anomalie>,
     traduite: bool,
 }
@@ -483,62 +483,6 @@ struct Lecture {
     verdict: Option<Verdict>,
 }
 
-/// LE VERDICT D'UNE PIECE OU D'UN RETOUR, tel que la norme l'ecrit (guide v6.8, § 3.4.4 « Reponse du service » ; le
-/// rapport harmonise) : traite sans anomalie, refuse, ou traite avec des anomalies non bloquantes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Verdict {
-    Ok,
-    Ko,
-    Ano,
-}
-
-impl Verdict {
-    /// Le verdict qu'un texte de la piece ecrit ; un autre texte (« EN COURS ») n'en est pas un.
-    fn du_texte(t: &str) -> Option<Verdict> {
-        match t {
-            "OK" => Some(Verdict::Ok),
-            "KO" => Some(Verdict::Ko),
-            "ANO" => Some(Verdict::Ano),
-            _ => None,
-        }
-    }
-
-    fn code(self) -> &'static str {
-        match self {
-            Verdict::Ok => "OK",
-            Verdict::Ko => "KO",
-            Verdict::Ano => "ANO",
-        }
-    }
-
-    /// Ce qu'il dit d'une declaration.
-    fn en_mots(self) -> &'static str {
-        match self {
-            Verdict::Ok => "conforme",
-            Verdict::Ko => "refusée",
-            Verdict::Ano => "acceptée avec des anomalies",
-        }
-    }
-
-    /// Ce qu'il dit d'un envoi.
-    fn de_l_envoi(self) -> &'static str {
-        match self {
-            Verdict::Ok => "accepté",
-            Verdict::Ko => "refusé",
-            Verdict::Ano => "accepté avec des anomalies",
-        }
-    }
-
-    /// Sa pastille : OK fait, KO refuse, ANO a corriger (la compagnie le peut).
-    fn a_l_ecran(self) -> socle::ecran::EtatDEcran {
-        match self {
-            Verdict::Ok => socle::ecran::EtatDEcran::Fait,
-            Verdict::Ko => socle::ecran::EtatDEcran::Refuse,
-            Verdict::Ano => socle::ecran::EtatDEcran::AFaire,
-        }
-    }
-}
-
 impl Lecture {
     fn nouvelle(titre: impl Into<String>) -> Lecture {
         Lecture { titre: titre.into(), organisme: None, phrases: Vec::new(), anomalies: Vec::new(), traduite: true, verdict: None }
@@ -637,16 +581,14 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: NatureDuRetour) -> Lecture {
     if rapport.essai_reel.as_deref() == Some(retours::ESSAI_TEST) {
         l.phrases.push("Envoi d'essai (test) : rien n'est déclaré ni conservé.".into());
     }
-    let etat = lu(&rapport.etat_envoi);
-    if let Some(v) = etat.and_then(Verdict::du_texte) {
+    let etat = rapport.etat_envoi;
+    if let Some(v) = etat {
         l.phrases.push(format!("L'envoi est {} ({}).", v.de_l_envoi(), v.code()));
     }
     for d in &rapport.declarations {
-        let e = dit(&d.etat);
-        let verdict = match (e.and_then(Verdict::du_texte).map(Verdict::en_mots), e) {
-            (Some(mots), Some(e)) => format!("{} ({})", mots, e),
-            (None, Some(e)) => e.to_string(),
-            (_, None) => "sans état".to_string(),
+        let verdict = match d.etat {
+            Some(e) => format!("{} ({})", e.en_mots(), e.code()),
+            None => "sans état".to_string(),
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
@@ -676,7 +618,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: NatureDuRetour) -> Lecture {
     // LE VERDICT EST CELUI DE LA PIECE : France Travail publie son compte rendu « cinéma, spectacle »
     // (nature 45) toujours au statut ANOBLOQUANTE, même quand il ne relève rien (guide « De la DSN à l'attestation
     // employeur », v3.2, p. 10, dépose dans `net-entreprises-base-connaissances/`). Ce que dit la piece passe devant.
-    let verdicts: Vec<Verdict> = etat.into_iter().chain(rapport.declarations.iter().filter_map(|d| dit(&d.etat))).filter_map(Verdict::du_texte).collect();
+    let verdicts: Vec<Verdict> = etat.into_iter().chain(rapport.declarations.iter().filter_map(|d| d.etat)).collect();
     l.verdict = if verdicts.contains(&Verdict::Ko) {
         Some(Verdict::Ko)
     } else if verdicts.contains(&Verdict::Ano) || !l.anomalies.is_empty() {
@@ -727,9 +669,9 @@ fn neores_lu(crm: &Neores) -> Lecture {
         });
     }
     let metier = morceau(" (", lu(&crm.metier), ")");
-    match lu(&crm.conformite) {
-        Some("OK") => l.phrases.push(format!("Aucun écart constaté sur les données analysées{}.", metier)),
-        Some("ANO") => l.phrases.push(format!("Des écarts ont été constatés sur les données analysées{} : chacun appelle une correction dans la paie, au plus tard dans la DSN suivante.", metier)),
+    match crm.conformite {
+        Some(Verdict::Ok) => l.phrases.push(format!("Aucun écart constaté sur les données analysées{}.", metier)),
+        Some(Verdict::Ano) => l.phrases.push(format!("Des écarts ont été constatés sur les données analysées{} : chacun appelle une correction dans la paie, au plus tard dans la DSN suivante.", metier)),
         _ => {}
     }
     for a in &crm.actions {
@@ -1051,16 +993,20 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
     };
     // L'organisme que la piece nomme passe devant celui de la nature (« l'organisme complementaire » : lequel).
     let organisme = lu_organisme.or(organisme.map(String::from));
-    let verdict = lu_verdict.map(Verdict::code).or(r.verdict()).map(String::from);
+    let verdict = lu_verdict.or(r.verdict());
     // Sa pastille : celle du verdict (`Verdict::a_l_ecran`) ; un statut qui n'est pas un verdict (« EN COURS ») est une
     // information.
-    let pastille = verdict.as_deref().or(statut).map(|lu| Pastille::de(
-        match Verdict::du_texte(lu) {
-            Some(v) => v.a_l_ecran(),
-            None => socle::ecran::EtatDEcran::Information,
-        },
-        lu,
-    ));
+    let pastille = match (verdict, statut) {
+        (Some(v), _) => Some(Pastille::de(v.a_l_ecran(), v.code())),
+        (None, Some(s)) => Some(Pastille::de(
+            match Verdict::lu(s) {
+                Some(v) => v.a_l_ecran(),
+                None => socle::ecran::EtatDEcran::Information,
+            },
+            s,
+        )),
+        (None, None) => None,
+    };
     let titre_dit = match titre.as_deref().and_then(dit) {
         Some(t) => t.to_string(),
         None => libelle.clone(),

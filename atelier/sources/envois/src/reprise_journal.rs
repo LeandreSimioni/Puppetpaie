@@ -28,7 +28,7 @@ use socle::piece::format::Jjmmaaaa;
 use socle::piece::Zone;
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
-use crate::retours::{Bilan, IdDeFlux, Reception};
+use crate::retours::{Bilan, IdDeFlux, Reception, Verdict};
 
 /// La reponse d'une ligne reprise sans certificat de conformite : le journal ecrit la reponse en texte
 /// (`journal::Envoi::reponse`), et la plate-forme n'en a pas dit.
@@ -36,7 +36,7 @@ const SANS_CERTIFICAT: &str = "";
 
 /// Le depot que le bilan dit accepte : l'etat de la declaration, sinon celui de l'envoi, est OK.
 fn accepte(b: &Bilan) -> bool {
-    b.verdict().is_some_and(|v| v.eq_ignore_ascii_case("OK"))
+    b.verdict() == Some(Verdict::Ok)
 }
 
 /// Un depot reel (`essai_reel` 02), et non d'essai.
@@ -207,8 +207,8 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
             ordre: b.ordre,
             salaries,
             contrats: b.contrats.clone(),
-            etat_envoi: b.etat_envoi.clone(),
-            etat_declaration: b.etat_declaration.clone(),
+            etat_envoi: b.etat_envoi.map(|v| v.code().to_string()),
+            etat_declaration: b.etat_declaration,
             verdict_connu: Some(b.etat_declaration.is_some()),
             pieces: Some(d.pieces.clone()),
             ..DetailDsn::nouveau(true)

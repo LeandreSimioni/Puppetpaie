@@ -341,6 +341,91 @@ impl From<IdDeFlux> for String {
     }
 }
 
+/// LE VERDICT D'UNE PIECE : ce qu'un bilan dit d'un envoi ou d'une declaration, ou un compte rendu de ce qu'il a
+/// analyse. OK, KO, ANO : `envoi_etat_type` et `etat_type` du schema des bilans (l. 722-770), `ok_ko` pour
+/// `etat_conformite` (l. 716-721, OK et KO ;
+/// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`) ; RO.B003.R002 d'un
+/// NEOReS, OK et ANO (cahier technique NEOReS 2026.1.2, l. 1826-1829,
+/// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`) ; le certificat d'une
+/// DPAE n'en dit que OK ou KO (`etats::verdict_du_certificat`). Il se lit sans casse, a sa seule porte (`Verdict::lu`) :
+/// la documentation du schema l'ecrit « ok: déclaration conforme […], ko: déclaration rejetée » (l. 201). Il s'ecrit en
+/// capitales.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Verdict {
+    Ok,
+    Ko,
+    Ano,
+}
+
+impl Verdict {
+    pub const TOUS: &'static [Verdict] = &[Verdict::Ok, Verdict::Ko, Verdict::Ano];
+
+    /// Son code, en capitales : le seul endroit ou il s'ecrit.
+    pub fn code(self) -> &'static str {
+        match self {
+            Verdict::Ok => "OK",
+            Verdict::Ko => "KO",
+            Verdict::Ano => "ANO",
+        }
+    }
+
+    /// Le verdict que ce texte ecrit, sans casse ; un autre texte n'en est pas un.
+    pub fn lu(texte: &str) -> Option<Verdict> {
+        Verdict::TOUS.iter().copied().find(|v| v.code().eq_ignore_ascii_case(texte))
+    }
+
+    /// Le verdict ecrit `texte` ; refus s'il n'en est pas un.
+    pub fn lire(texte: &str) -> R<Verdict> {
+        Verdict::lu(texte).ok_or_else(|| socle::refus!("Verdict {} : il s'écrit OK, KO ou ANO (schéma des bilans, etat_type).", socle::fichiers::repr(texte)))
+    }
+
+    /// Ce qu'il dit d'une declaration.
+    pub fn en_mots(self) -> &'static str {
+        match self {
+            Verdict::Ok => "conforme",
+            Verdict::Ko => "refusée",
+            Verdict::Ano => "acceptée avec des anomalies",
+        }
+    }
+
+    /// Ce qu'il dit d'un envoi.
+    pub fn de_l_envoi(self) -> &'static str {
+        match self {
+            Verdict::Ok => "accepté",
+            Verdict::Ko => "refusé",
+            Verdict::Ano => "accepté avec des anomalies",
+        }
+    }
+
+    /// Sa pastille : OK fait, KO refuse, ANO a corriger (la compagnie le peut).
+    pub fn a_l_ecran(self) -> socle::ecran::EtatDEcran {
+        match self {
+            Verdict::Ok => socle::ecran::EtatDEcran::Fait,
+            Verdict::Ko => socle::ecran::EtatDEcran::Refuse,
+            Verdict::Ano => socle::ecran::EtatDEcran::AFaire,
+        }
+    }
+}
+
+impl std::fmt::Display for Verdict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.code())
+    }
+}
+
+impl Serialize for Verdict {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.code())
+    }
+}
+
+impl<'de> Deserialize<'de> for Verdict {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as Deserialize>::deserialize(d)?;
+        Verdict::lire(&texte).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
 pub const ESSAI_TEST: &str = "01";
 pub const ESSAI_REEL: &str = "02";
 pub const RAPPORTS_DEPOT: [&str; 3] = ["CCO", "BAN", "AEE"];
@@ -1021,8 +1106,8 @@ pub struct Bilan {
     pub flux: IdDeFlux,
     pub recu_le: Option<Reception>,
     pub essai_reel: Option<String>,
-    pub etat_envoi: Option<String>,
-    pub etat_declaration: Option<String>,
+    pub etat_envoi: Option<Verdict>,
+    pub etat_declaration: Option<Verdict>,
     pub mois: Option<socle::mois::Mois>,
     pub logiciel: Option<String>,
     pub type_rapport: String,
@@ -1038,8 +1123,8 @@ pub struct Bilan {
 
 impl Bilan {
     /// Ce que le bilan dit de la declaration (son etat), sinon de l'envoi.
-    pub fn verdict(&self) -> Option<&str> {
-        self.etat_declaration.as_deref().or(self.etat_envoi.as_deref())
+    pub fn verdict(&self) -> Option<Verdict> {
+        self.etat_declaration.or(self.etat_envoi)
     }
 
     /// Ce que `autre` dit et que celui-ci ne dit pas.
@@ -1168,8 +1253,8 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bil
         flux,
         recu_le,
         essai_reel: get("essai_reel"),
-        etat_envoi: get("envoi_etat"),
-        etat_declaration: get("etat").or(get("etat_conformite")),
+        etat_envoi: forme_du_retour(get("envoi_etat").as_deref(), Verdict::lire)?,
+        etat_declaration: forme_du_retour(get("etat").or(get("etat_conformite")).as_deref(), Verdict::lire)?,
         mois: get("mois").map(|m| mois_du_rapport(&m)).transpose()?,
         logiciel: get("nom_logiciel"),
         type_rapport: type_rapport.to_string(),
@@ -1254,7 +1339,7 @@ fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
             ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
             siren: get("SIREN"),
             nic: get("nic_affectation"),
-            etat: get("etat"),
+            etat: forme_du_retour(get("etat").as_deref(), Verdict::lire)?,
             essai_reel: essai_reel.clone(),
             codes,
         });
@@ -1273,7 +1358,7 @@ pub struct DeclarationIdentifiee {
     pub ordre: Option<NumeroDOrdre>,
     pub siren: Option<String>,
     pub nic: Option<String>,
-    pub etat: Option<String>,
+    pub etat: Option<Verdict>,
     pub essai_reel: Option<String>,
     pub codes: Vec<String>,
 }
@@ -2502,7 +2587,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
     let libelle = TYPES_RAPPORT.iter().find(|(c, _)| Some(*c) == type_rapport.as_deref()).map(|(_, l)| l.to_string());
     let envoi = arbre.tous().find(|e| local(&e.tag) == "envoi");
     let de_l_envoi = |nom: &str| envoi.map(|e| premier_texte(&arbre, e, &[nom]).to_string()).filter(|t| !t.is_empty());
-    let (etat_envoi, essai_reel) = (de_l_envoi("envoi_etat"), de_l_envoi("essai_reel"));
+    let (etat_envoi, essai_reel) = (forme_du_retour(de_l_envoi("envoi_etat").as_deref(), Verdict::lire)?, de_l_envoi("essai_reel"));
     let mut declarations = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
         let sous_bloc = |nom: &str| match arbre.sous(d).find(|x| local(&x.tag) == nom) {
@@ -2516,7 +2601,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
             type_declaration: type_du_retour(Some(premier_texte(&arbre, id, &["type"])).filter(|t| !t.is_empty()))?,
             ordre: forme_du_retour(Some(premier_texte(&arbre, id, &["ordre"])).filter(|t| !t.is_empty()), NumeroDOrdre::lire)?,
             mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
-            etat: premier_texte(&arbre, bilan, &["etat", "etat_conformite"]).to_string(),
+            etat: forme_du_retour(Some(premier_texte(&arbre, bilan, &["etat", "etat_conformite"])).filter(|t| !t.is_empty()), Verdict::lire)?,
         });
     }
     let mut anomalies = Vec::new();
@@ -2580,14 +2665,14 @@ pub struct Rapport {
     pub type_rapport: Option<String>,
     pub libelle: Option<String>,
     pub message: Option<String>,
-    pub etat_envoi: Option<String>,
+    pub etat_envoi: Option<Verdict>,
     pub essai_reel: Option<String>,
     pub declarations: Vec<DeclarationDuRapport>,
     pub anomalies: Vec<AnomalieDuRapport>,
     pub informations: Vec<InformationCollective>,
 }
 
-/// Une declaration d'un rapport : nature (quand il la dit), type, ordre, mois (quand il le dit) et etat.
+/// Une declaration d'un rapport : nature, type, ordre, mois et etat, quand il les dit.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationDuRapport {
     #[serde(rename = "nature")]
@@ -2596,7 +2681,7 @@ pub struct DeclarationDuRapport {
     pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: Option<NumeroDOrdre>,
     pub mois: Option<socle::mois::Mois>,
-    pub etat: String,
+    pub etat: Option<Verdict>,
 }
 
 /// Une anomalie d'un rapport, telle que la page l'affiche.
@@ -2849,7 +2934,7 @@ pub struct Neores {
     pub essai_reel: Option<String>,
     pub ordre: Option<NumeroDOrdre>,
     pub metier: Option<String>,
-    pub conformite: Option<String>,
+    pub conformite: Option<Verdict>,
     pub actions: Vec<ActionNeores>,
     pub parametres: Vec<ParametreNeores>,
     pub identites: Vec<IdentiteNeores>,
@@ -3017,7 +3102,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         essai_reel: r(b000, "RO_B000_R013"),
         ordre: forme_du_retour(r(b000, "RO_B000_R012").as_deref(), NumeroDOrdre::lire)?,
         metier: r(b003, "RO_B003_R001"),
-        conformite: r(b003, "RO_B003_R002"),
+        conformite: forme_du_retour(r(b003, "RO_B003_R002").as_deref(), Verdict::lire)?,
         actions,
         parametres,
         identites,

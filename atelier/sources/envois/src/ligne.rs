@@ -15,7 +15,7 @@ use engagement::numeros::NumeroContrat;
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
 
-use crate::retours::IdDeFlux;
+use crate::retours::{IdDeFlux, Verdict};
 
 /// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -354,7 +354,7 @@ pub struct DetailDsn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub etat_envoi: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub etat_declaration: Option<String>,
+    pub etat_declaration: Option<Verdict>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict_connu: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -463,8 +463,8 @@ impl PersonneCertifiee {
 /// pour le certificat d'une DPAE, chaque personne.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Verdict {
-    pub verdict: String,
+pub struct VerdictDeLaPiece {
+    pub verdict: Verdict,
     pub anomalies: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dpae: Option<Vec<PersonneCertifiee>>,
@@ -479,7 +479,7 @@ pub struct RetourOrganisme {
     #[serde(rename = "nature")]
     pub nature_retour: crate::retours::NatureDuRetour,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub verdict: Option<String>,
+    pub verdict: Option<Verdict>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anomalies: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -492,12 +492,12 @@ pub struct RetourOrganisme {
 }
 
 impl RetourOrganisme {
-    pub fn verdict(&self) -> Option<&str> {
-        self.verdict.as_deref()
+    pub fn verdict(&self) -> Option<Verdict> {
+        self.verdict
     }
 
     pub fn ko(&self) -> bool {
-        self.verdict() == Some("KO")
+        self.verdict == Some(Verdict::Ko)
     }
 
     pub fn anomalies(&self) -> Option<&[String]> {
@@ -514,7 +514,7 @@ impl RetourOrganisme {
     }
 
     /// Ce que sa piece en dit, pose sur lui.
-    pub fn poser(&mut self, v: Verdict) {
+    pub fn poser(&mut self, v: VerdictDeLaPiece) {
         self.verdict = Some(v.verdict);
         self.anomalies = Some(v.anomalies);
         if v.dpae.is_some() {
@@ -525,7 +525,7 @@ impl RetourOrganisme {
     /// Ce qu'un autre poste en savait de plus (un verdict), sans rien retirer.
     pub fn completer(&mut self, autre: &RetourOrganisme) {
         if self.verdict.is_none() {
-            self.verdict = autre.verdict.clone();
+            self.verdict = autre.verdict;
         }
         if self.anomalies.is_none() {
             self.anomalies = autre.anomalies.clone();

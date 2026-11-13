@@ -271,7 +271,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
             if let Some(o) = d.ordre.filter(|_| du_mois_recu) {
                 vues.ordre = vues.ordre.max(Some(o));
             }
-            if du_mois_declare && d.etat.as_deref().is_some_and(|e| e.eq_ignore_ascii_case("OK")) {
+            if du_mois_declare && d.etat == Some(crate::retours::Verdict::Ok) {
                 vues.du_mois_acceptee = true;
             }
         }

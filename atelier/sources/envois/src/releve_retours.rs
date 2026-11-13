@@ -21,7 +21,7 @@ use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
-use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour};
+use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour, Verdict};
 use socle::date::Jour;
 use socle::num::Decimal;
 use socle::paris::Moment;
@@ -434,9 +434,9 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
         let quoi = l.acte();
         let Some(flux) = l.flux().filter(|f| f.est_fictif()).cloned() else { continue };
         if matches!(quoi, Acte::Dsn | Acte::Dpae) && l.accepte() && l.nombre_de_retours() == 0 {
-            let base = |nature: NatureDuRetour, verdict: Option<&str>, libelle: &str| RetourOrganisme {
+            let base = |nature: NatureDuRetour, verdict: Option<Verdict>, libelle: &str| RetourOrganisme {
                 nature_retour: nature,
-                verdict: verdict.map(String::from),
+                verdict,
                 anomalies: Some(Vec::new()),
                 dpae: None,
                 libelle: libelle.into(),
@@ -445,8 +445,8 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             };
             let mut retours: Vec<RetourOrganisme> = Vec::new();
             if quoi == Acte::Dpae {
-                retours.push(base(NatureDuRetour::CertificatDeConformite, Some("OK"), "Bilan de conformite (compagnie fictive)"));
-                let mut m = base(NatureDuRetour::CertificatDpae, Some("OK"), "Certificat de conformite des DPAE (compagnie fictive)");
+                retours.push(base(NatureDuRetour::CertificatDeConformite, Some(Verdict::Ok), "Bilan de conformite (compagnie fictive)"));
+                let mut m = base(NatureDuRetour::CertificatDpae, Some(Verdict::Ok), "Certificat de conformite des DPAE (compagnie fictive)");
                 m.dpae = Some(Vec::new());
                 retours.push(m);
             } else {
@@ -459,8 +459,8 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                     }
                     Ok(autres) => pieces.extend(autres),
                 }
-                retours.push(base(NatureDuRetour::AccuseDEnregistrement, Some("OK"), "Accuse de reception (compagnie fictive)"));
-                retours.push(base(NatureDuRetour::CertificatDeConformite, Some("OK"), "Bilan de conformite (compagnie fictive)"));
+                retours.push(base(NatureDuRetour::AccuseDEnregistrement, Some(Verdict::Ok), "Accuse de reception (compagnie fictive)"));
+                retours.push(base(NatureDuRetour::CertificatDeConformite, Some(Verdict::Ok), "Bilan de conformite (compagnie fictive)"));
                 // L'AER : seulement quand elle est due, et avec sa piece, comme France Travail la publie.
                 if let Some(archive) = aer_jouee(ctx, l)? {
                     let r46 = base(NatureDuRetour::AerSpectacle, None, "Attestation employeur rematerialisee (compagnie fictive)");

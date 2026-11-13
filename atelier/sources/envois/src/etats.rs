@@ -16,8 +16,8 @@ use socle::mois::Mois;
 use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
 use crate::journal::{chemin, Rangement};
-use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, Verdict};
-use crate::retours::{self, Annonce, IdDeFlux, NatureDuRetour};
+use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, VerdictDeLaPiece};
+use crate::retours::{self, Annonce, IdDeFlux, NatureDuRetour, Verdict};
 use socle::echec::{Echec, R};
 use crate::tables_journal::ALNUM;
 
@@ -101,7 +101,7 @@ pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&str>, princip
     let e = l.dsn()?;
     let (mut bilan_ok, mut aer, mut anomalies) = (false, false, Vec::new());
     for r in &e.retours {
-        bilan_ok |= r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some("OK");
+        bilan_ok |= r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some(Verdict::Ok);
         aer |= r.nature_retour == NatureDuRetour::AerSpectacle;
         if r.ko() {
             anomalies.extend(r.anomalies().into_iter().flatten().cloned());
@@ -110,7 +110,7 @@ pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&str>, princip
     // UN DEPOT REPRIS DES RETOURS (`reprise_journal`) : sa piece EST le bilan de la plate-forme, et la ligne
     // en garde le verdict (`detail.etat_declaration`) -- tant qu'aucun bilan n'est range en face, c'est lui qui dit.
     let sans_bilan = !e.retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite);
-    let repris_ok = sans_bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().is_some_and(|x| x.eq_ignore_ascii_case("OK"));
+    let repris_ok = sans_bilan && e.detail.reconstruit && e.detail.etat_declaration == Some(Verdict::Ok);
     let refusee = refuse_par_un_retour(l);
     Some(EtatDsnDuMois { quand: e.quand.clone(), fichier: e.fichier.clone(), flux: e.flux.clone(), passee: (bilan_ok || repris_ok) && !refusee, refusee, anomalies, aer_recue: aer })
 }
@@ -132,7 +132,7 @@ pub fn lettre_ou_chiffre(c: char) -> bool {
 fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
     let (mut passee, mut ko) = (false, false);
     for r in retours {
-        passee |= r.nature_retour == NatureDuRetour::CertificatDpae || (r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some("OK"));
+        passee |= r.nature_retour == NatureDuRetour::CertificatDpae || (r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some(Verdict::Ok));
         ko |= r.ko();
     }
     (passee, ko && !passee)
@@ -555,7 +555,7 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
         }
         return format!("{}{}", prefixe, fin);
     }
-    if retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some("OK")) {
+    if retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some(Verdict::Ok)) {
         let apres = retours.iter().filter(|r| !matches!(r.nature_retour, NatureDuRetour::AccuseDEnregistrement | NatureDuRetour::CertificatDeConformite)).count();
         let suite = if apres > 0 { format!(" ; {} compte{}-rendu{} d'organismes reçu{}", apres, pluriel(apres), pluriel(apres), pluriel(apres)) } else { String::new() };
         return format!("{} — bilan OK, aucune anomalie{}", prefixe, suite);
@@ -583,7 +583,7 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
                 return true;
             }
             let bilan = e.retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite);
-            !bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().is_some_and(|x| x.eq_ignore_ascii_case("KO"))
+            !bilan && e.detail.reconstruit && e.detail.etat_declaration == Some(Verdict::Ko)
         }
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     }
@@ -601,7 +601,7 @@ fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> &'static str {
         if r.ko() {
             return "ko";
         }
-        ok = ok || (matches!(r.nature_retour, NatureDuRetour::CertificatDeConformite | NatureDuRetour::CertificatDpae) && r.verdict() == Some("OK"));
+        ok = ok || (matches!(r.nature_retour, NatureDuRetour::CertificatDeConformite | NatureDuRetour::CertificatDpae) && r.verdict() == Some(Verdict::Ok));
     }
     if ok {
         "ok"
@@ -1007,7 +1007,7 @@ fn lire_archive(f: &Path) -> R<Vec<u8>> {
 }
 
 /// Ce que le certificat de conformite d'une DPAE (nature 41) dit de chaque personne ; rien s'il ne se lit pas.
-fn verdict_du_certificat(contenu: &[u8]) -> R<Option<Verdict>> {
+fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
     let texte: String = contenu.iter().map(|&b| b as char).collect();
     let lignes = declarations::dpae::lire_certificat(&texte);
     if lignes.is_empty() {
@@ -1044,12 +1044,12 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<Verdict>> {
             vus.push(a);
         }
     }
-    Ok(Some(Verdict { verdict: if vus.is_empty() { "OK" } else { "KO" }.into(), anomalies: vus, dpae: Some(personnes) }))
+    Ok(Some(VerdictDeLaPiece { verdict: if vus.is_empty() { Verdict::Ok } else { Verdict::Ko }, anomalies: vus, dpae: Some(personnes) }))
 }
 
 /// Ce que la piece du retour `r` d'un envoi `quoi` en dit : le bilan (nature 10 ou 11) ou le certificat d'une DPAE
 /// (nature 41) ; rien pour une autre nature, ou une piece absente ou illisible.
-fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u8]>) -> R<Option<Verdict>> {
+fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u8]>) -> R<Option<VerdictDeLaPiece>> {
     let nature = r.nature_retour;
     if !matches!(nature, NatureDuRetour::AccuseDEnregistrement | NatureDuRetour::CertificatDeConformite) && !(quoi == Acte::Dpae && nature == NatureDuRetour::CertificatDpae) {
         return Ok(None);
@@ -1066,9 +1066,9 @@ fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u
     }
     // Une piece sans bilan (ce n'est pas un rapport de depot), ou un bilan qui ne dit ni l'etat de la declaration ni
     // celui de l'envoi, ne donne pas de verdict.
-    let Some(verdict) = retours::bilan_si_xml(&octets)?.and_then(|b| b.verdict().map(str::to_uppercase)) else { return Ok(None) };
+    let Some(verdict) = retours::bilan_si_xml(&octets)?.and_then(|b| b.verdict()) else { return Ok(None) };
     let anomalies = retours::anomalies_lisibles_d_octets(&octets)?;
-    Ok(Some(Verdict { verdict, anomalies, dpae: None }))
+    Ok(Some(VerdictDeLaPiece { verdict, anomalies, dpae: None }))
 }
 
 /// L'INCIDENT D'UN RETOUR QUI REJETTE, tel que le journal des incidents l'ecrit (`compagnie::incidents`) : son
@@ -1105,8 +1105,8 @@ pub struct AnomalieDeRetour {
 }
 
 /// L'INCIDENT D'UN RETOUR QUI REJETTE : rien quand le retour ne rejette pas.
-fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &Verdict, contenus: &HashMap<CleDuContenu, Vec<u8>>) -> R<Option<IncidentDeRetour>> {
-    if verdict.verdict != "KO" {
+fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiece, contenus: &HashMap<CleDuContenu, Vec<u8>>) -> R<Option<IncidentDeRetour>> {
+    if verdict.verdict != Verdict::Ko {
         return Ok(None);
     }
     let quoi = ligne.acte();
@@ -1368,8 +1368,8 @@ mod tests {
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
         assert_eq!(deja_depose(&l, Acte::Dsn, &ea).unwrap().quand().iso(), "2026-06-02T09:00:00");
         assert!(deja_depose(&l, Acte::Dsn, &eb).is_none());
-        let r = |verdict: &str| RetourOrganisme { nature_retour: NatureDuRetour::CertificatDeConformite, verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
-        assert_eq!(compte_rendu_du_depot(&[r("OK"), r("KO")]), "ko");
+        let r = |verdict: Verdict| RetourOrganisme { nature_retour: NatureDuRetour::CertificatDeConformite, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
+        assert_eq!(compte_rendu_du_depot(&[r(Verdict::Ok), r(Verdict::Ko)]), "ko");
         assert_eq!(compte_rendu_du_depot(&[]), "attendu");
     }
 
@@ -1414,7 +1414,7 @@ mod tests {
         assert!(!socle::ecriture::json_en_ligne(&inc[0]).contains("FAVART"));
         let fichier = crate::journal::lu(&r).unwrap().lignes;
         let pose = &fichier[0].retours_organisme()[0];
-        assert_eq!(pose.verdict(), Some("KO"));
+        assert_eq!(pose.verdict(), Some(Verdict::Ko));
         assert_eq!(pose.anomalies(), Some(&["Code URSSAF invalide (bloquant) -- FAVART".to_string()][..]));
         assert_eq!(pose.libelle, "Certificat de conformite / bilan d'anomalies");
         assert_eq!(fichier[1].retours_organisme()[0].libelle, "bilan d'identification des salaries");
