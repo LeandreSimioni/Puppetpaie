@@ -292,8 +292,10 @@ pub fn poser_les_fictives(code: &Path, dossier: &Path) -> R<Empreinte> {
 /// La cle de GitHub fabriquee : le fichier de la graine (secrete), celui de la cle publique, et la cle publique.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CleDeGithub {
-    pub graine: String,
-    pub publique: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub graine: PathBuf,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub publique: PathBuf,
     pub cle_publique: String,
 }
 
@@ -429,7 +431,7 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
     f.write_all(socle::base64::ecrire(&graine).as_bytes()).map_err(|e| refus(e.to_string()))?;
     graine.fill(0);
     std::fs::write(&fichier_publique, format!("{}\n", publique)).map_err(|e| refus(e.to_string()))?;
-    Ok(CleDeGithub { graine: fichier.display().to_string(), publique: fichier_publique.display().to_string(), cle_publique: publique })
+    Ok(CleDeGithub { graine: fichier, publique: fichier_publique, cle_publique: publique })
 }
 
 /// `publier_signe` depuis une graine en base64 (celle du secret de GitHub), verifiee contre `cle_publique` : refuse si

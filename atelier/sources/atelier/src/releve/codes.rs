@@ -56,7 +56,7 @@ use std::time::Instant;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::releve::entrepot_dila::{self as dila, dire, Entrepot, LecteurTar, Source};
+use crate::releve::entrepot_dila::{self as dila, dire, Entrepot, IdDila, LecteurTar, LivraisonDila, Source};
 use crate::EnOrdre;
 use socle::date::Jour;
 
@@ -93,9 +93,9 @@ version d'avant, dans l'archive globale.";
 #[serde(deny_unknown_fields)]
 pub struct ArticleLegi {
     cle: Vec<String>,
-    id: String,
+    id: IdDila,
     #[serde(skip_serializing_if = "Option::is_none")]
-    debut: Option<String>,
+    debut: Option<Jour>,
     en_vigueur: bool,
     xml: String,
 }
@@ -112,22 +112,22 @@ impl dila::Article for ArticleLegi {
 #[serde(deny_unknown_fields)]
 pub struct EtatLegi {
     changes: Vec<ChangeLegi>,
-    construit_le: String,
+    construit_le: Jour,
     global: String,
-    lues: Vec<String>,
+    lues: Vec<LivraisonDila>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mis_a_jour_le: Option<String>,
+    mis_a_jour_le: Option<Jour>,
 }
 
 impl dila::Etat for EtatLegi {
-    fn lues(&self) -> &[String] {
+    fn lues(&self) -> &[LivraisonDila] {
         &self.lues
     }
-    fn lues_mut(&mut self) -> &mut Vec<String> {
+    fn lues_mut(&mut self) -> &mut Vec<LivraisonDila> {
         &mut self.lues
     }
-    fn dater(&mut self, aujourdhui: &str) {
-        self.mis_a_jour_le = Some(aujourdhui.to_string());
+    fn dater(&mut self, aujourdhui: Jour) {
+        self.mis_a_jour_le = Some(aujourdhui);
     }
 }
 
@@ -136,12 +136,12 @@ impl dila::Etat for EtatLegi {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChangeLegi {
-    apres: String,
+    apres: IdDila,
     article: String,
-    avant: String,
+    avant: IdDila,
     #[serde(skip_serializing_if = "Option::is_none")]
-    depuis: Option<String>,
-    livraison: String,
+    depuis: Option<Jour>,
+    livraison: LivraisonDila,
     texte: String,
 }
 
@@ -155,14 +155,14 @@ struct ReleveDUnTexte {
     source: String,
     global: String,
     texte: String,
-    legitext: String,
+    legitext: IdDila,
     livraisons_lues: usize,
     livraisons_totales: usize,
     /// Ce qui reste a lire quand un passage s'interrompt : le document le dira, plutot que de se donner pour complet.
     complet: bool,
-    derniere_livraison: Option<String>,
+    derniere_livraison: Option<LivraisonDila>,
     changes_depuis_le_global: Vec<ChangeLegi>,
-    releve_le: String,
+    releve_le: Jour,
     articles: EnOrdre<ArticleReleve>,
 }
 
@@ -171,9 +171,9 @@ struct ReleveDUnTexte {
 #[serde(deny_unknown_fields)]
 struct ArticleReleve {
     #[serde(skip_serializing_if = "Option::is_none")]
-    debut: Option<String>,
+    debut: Option<Jour>,
     en_vigueur: bool,
-    id: String,
+    id: IdDila,
 }
 
 fn texte_de(cle: &str) -> Option<&'static Texte> {
@@ -289,7 +289,7 @@ fn passer<L: Read>(
     articles: &mut EnOrdre<ArticleLegi>,
     journal: &mut Vec<String>,
     mut changes: Option<&mut Vec<ChangeLegi>>,
-    livraison: &str,
+    livraison: Option<&LivraisonDila>,
     tous_les_articles: bool,
     seuls: Option<&[&str]>,
 ) -> R<(usize, std::time::Duration)> {
@@ -311,10 +311,15 @@ fn passer<L: Read>(
                     None => l,
                 })
                 .collect();
-            for (_, a) in articles.0.iter().filter(|(_, a)| retires.contains(a.id.as_str())) {
-                journal.push(format!("retire par {} : {}", livraison, a.cle.join(" ")));
+            // L'archive globale n'a pas d'estampille : le journal n'en nomme aucune.
+            let par = match livraison {
+                Some(l) => l.texte(),
+                None => "",
+            };
+            for (_, a) in articles.0.iter().filter(|(_, a)| retires.contains(a.id.texte())) {
+                journal.push(format!("retire par {} : {}", par, a.cle.join(" ")));
             }
-            articles.0.retain(|(_, a)| !retires.contains(a.id.as_str()));
+            articles.0.retain(|(_, a)| !retires.contains(a.id.texte()));
             continue;
         }
         if !m.nom.contains("/article/") {
@@ -337,17 +342,23 @@ fn passer<L: Read>(
         // PIEGE 1 : `code_en_vigueur` porte aussi les versions anterieures. La version qui vaut a `<ETAT>` VIGUEUR et
         // `<DATE_FIN>` 2999-01-01 -- la BALISE, pas l'attribut `etat` d'autres balises.
         let en_vigueur = groupe(re_etat(), &txt) == Some("VIGUEUR") && groupe(re_fin(), &txt) == Some("2999-01-01");
-        let debut = groupe(re_debut(), &txt).map(str::to_string);
+        let debut = match groupe(re_debut(), &txt) {
+            Some(d) => Some(socle::piece::Zone::lue(d, socle::piece::format::JourIso).valeur().ok_or_else(|| refus!("{} : DATE_DEBUT « {} » n'est pas un jour AAAA-MM-JJ", m.nom, d))?),
+            None => None,
+        };
         // PIEGE 2 : l'entrepot range par (texte, NUMERO) ; une version neuve remplace l'ancienne sous la meme cle.
         let k = dila::cle(&[texte, &num]);
         let ancien = articles.valeur(&k);
         if ancien.is_some_and(|a| a.en_vigueur) && !en_vigueur {
             continue;
         }
-        let id = groupe(re_id(), &m.nom).ok_or_else(|| refus!("{} : un article dont le nom ne porte pas son identifiant LEGIARTI", m.nom))?.to_string();
+        let id = IdDila::lire(groupe(re_id(), &m.nom).ok_or_else(|| refus!("{} : un article dont le nom ne porte pas son identifiant LEGIARTI", m.nom))?)?;
         if let (Some(ch), Some(a)) = (changes.as_deref_mut(), ancien) {
             if a.id != id {
-                ch.push(ChangeLegi { texte: texte.to_string(), article: num.clone(), avant: a.id.clone(), apres: id.clone(), depuis: debut.clone(), livraison: livraison.to_string() });
+                let Some(livraison) = livraison else {
+                    return Err(refus!("{} : un changement de version note hors d'une livraison", m.nom));
+                };
+                ch.push(ChangeLegi { texte: texte.to_string(), article: num.clone(), avant: a.id.clone(), apres: id.clone(), depuis: debut, livraison: livraison.clone() });
             }
         }
         articles.poser(k, ArticleLegi { cle: vec![texte.to_string(), num], id, debut, en_vigueur, xml: txt });
@@ -357,13 +368,13 @@ fn passer<L: Read>(
 
 /// Les livraisons de l'index posterieures a l'archive globale. Un index qui n'en liste aucune n'est plus celui qu'on
 /// lit : la page a change.
-fn livraisons(source: &dyn Source) -> R<Vec<String>> {
+fn livraisons(source: &dyn Source) -> R<Vec<LivraisonDila>> {
     let page = dila::page(source, BASE)?;
-    let toutes = dila::livraisons(&page, "LEGI");
+    let toutes = dila::livraisons(&page, "LEGI")?;
     if toutes.is_empty() {
         return Err(refus!("l'index LEGI ({}) ne liste aucune livraison : la page a change ?", BASE));
     }
-    Ok(toutes.into_iter().filter(|n| n[..8] > *DEPUIS).collect())
+    Ok(toutes.into_iter().filter(|n| n.jour().aaaammjj().as_str() > DEPUIS).collect())
 }
 
 /// L'archive globale en flux, rejouee trois fois : elle fait 1,1 Go, et une coupure de transport n'est pas une reponse.
@@ -375,7 +386,7 @@ fn passer_le_global(
 ) -> R<(usize, std::time::Duration)> {
     let mut essai = 1;
     loop {
-        let r = source.flux(&format!("{}{}", BASE, GLOBAL)).and_then(|f| passer(&mut dila::tar_gz(f), &mut ent.articles, journal, None, "", true, seuls));
+        let r = source.flux(&format!("{}{}", BASE, GLOBAL)).and_then(|f| passer(&mut dila::tar_gz(f), &mut ent.articles, journal, None, None, true, seuls));
         match r {
             Ok(v) => return Ok(v),
             Err(e) => {
@@ -403,7 +414,7 @@ fn passer_le_global(
 /// livraisons pas encore appliquees se telechargent, plusieurs a la fois, et s'appliquent dans l'ordre. Ajouter un article
 /// a `TEXTES` ne coute plus rien : il est deja dans l'entrepot.
 pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujourdhui: &Jour) -> R<()> {
-    let jour = aujourdhui.iso();
+    let jour = *aujourdhui;
     std::fs::create_dir_all(racine).map_err(|e| refus!("{} : {}", racine.display(), e))?;
     let dossier = racine.join(ENTREPOT);
     let mut journal: Vec<String> = Vec::new();
@@ -416,22 +427,22 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
         let presents: HashSet<String> = ent.articles.0.iter().map(|(_, a)| a.cle[0].clone()).collect();
         let absents: Vec<&str> = TEXTES.iter().map(|t| t.cle).filter(|c| !presents.contains(*c)).collect();
         if !absents.is_empty() {
-            completer(&mut ent, &absents, &mut journal, source, &jour)?;
+            completer(&mut ent, &absents, &mut journal, source, jour)?;
         }
         ent
     } else {
         dire("== archive globale (construction de l'entrepot) ==");
         // L'ARCHIVE GLOBALE EST LE SOCLE : sans elle il n'y a rien a comparer.
-        let etat = EtatLegi { changes: Vec::new(), construit_le: jour.clone(), global: GLOBAL.to_string(), lues: Vec::new(), mis_a_jour_le: None };
+        let etat = EtatLegi { changes: Vec::new(), construit_le: jour, global: GLOBAL.to_string(), lues: Vec::new(), mis_a_jour_le: None };
         let mut ent: EntrepotLegi = Entrepot::neuf(&dossier, etat);
         let (vus, sec) = passer_le_global(&mut ent, &mut journal, source, None)?;
         dire(&format!("  {} fichiers d'article lus en {}s ; {} articles gardes", vus, secondes(sec), ent.articles.len()));
-        ent.sauver(&jour)?;
+        ent.sauver(jour)?;
         ent
     };
     let toutes = livraisons(source)?;
     let lues = ent.lues();
-    let neuves: Vec<String> = toutes.iter().filter(|n| !lues.contains(*n)).cloned().collect();
+    let neuves: Vec<LivraisonDila> = toutes.iter().filter(|n| !lues.contains(*n)).cloned().collect();
     dire(&format!("== {} livraison(s) nouvelle(s) sur {} ==", neuves.len(), toutes.len()));
     let urls: Vec<String> = neuves.iter().map(|n| format!("{}LEGI_{}.tar.gz", BASE, n)).collect();
     let mut changes: Vec<ChangeLegi> = Vec::new();
@@ -447,7 +458,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
                 return false;
             }
         };
-        if let Err(e) = passer(&mut dila::archive(&octets), &mut ent.articles, &mut journal, Some(&mut changes), nom, true, None) {
+        if let Err(e) = passer(&mut dila::archive(&octets), &mut ent.articles, &mut journal, Some(&mut changes), Some(nom), true, None) {
             panne = Some(e.reformuler(|p| format!("livraison {} : {}", nom, p)));
             return false;
         }
@@ -456,7 +467,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
         // complet.
         if (i + 1) % 25 == 0 {
             ent.etat.changes.append(&mut changes);
-            if let Err(e) = ent.sauver(&jour) {
+            if let Err(e) = ent.sauver(jour) {
                 panne = Some(e);
                 return false;
             }
@@ -468,12 +479,12 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
         return Err(e);
     }
     ent.etat.changes.append(&mut changes);
-    ent.sauver(&jour)?;
+    ent.sauver(jour)?;
     let articles: Vec<&ArticleLegi> = ent.articles.0.iter().map(|(_, a)| a).filter(|a| voulu(&a.cle[0], &a.cle[1])).collect();
     let changes_voulus: Vec<&ChangeLegi> = ent.etat.changes.iter().filter(|c| voulu(&c.texte, &c.article)).collect();
-    let mut lues: Vec<String> = ent.lues().into_iter().collect();
+    let mut lues: Vec<LivraisonDila> = ent.lues().into_iter().collect();
     lues.sort();
-    ecrire(racine, &articles, &lues, toutes.len(), &changes_voulus, &jour)?;
+    ecrire(racine, &articles, &lues, toutes.len(), &changes_voulus, jour)?;
     let gardes: HashSet<(&str, &str)> = articles.iter().map(|a| (a.cle[0].as_str(), a.cle[1].as_str())).collect();
     let mut manque: Vec<String> = TEXTES
         .iter()
@@ -488,7 +499,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
     perimes.sort();
     let mut vus_changes: Vec<String> = changes_voulus.iter().map(|c| format!("{} ({})", c.article, c.livraison)).collect::<HashSet<_>>().into_iter().collect();
     vus_changes.sort();
-    let toutes_ens: HashSet<&String> = toutes.iter().collect();
+    let toutes_ens: HashSet<&LivraisonDila> = toutes.iter().collect();
     dire("== fini ==");
     dire(&format!("  livraisons : {} appliquees sur {}", ent.lues().iter().filter(|l| toutes_ens.contains(l)).count(), toutes.len()));
     dire(&format!("  manquants : {}", if manque.is_empty() { "aucun".to_string() } else { manque.join(" ") }));
@@ -504,16 +515,16 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
 /// Les textes de `absents`, lus dans l'archive globale puis dans chaque livraison deja appliquee a l'entrepot, dans
 /// l'ordre : l'entrepot les tient ensuite comme s'il les avait gardes des le depart. Le cout est celui d'une construction
 /// (l'archive globale en flux, puis les livraisons), mais une fois par texte ajoute.
-fn completer(ent: &mut EntrepotLegi, absents: &[&str], journal: &mut Vec<String>, source: &dyn Source, jour: &str) -> R<()> {
+fn completer(ent: &mut EntrepotLegi, absents: &[&str], journal: &mut Vec<String>, source: &dyn Source, jour: Jour) -> R<()> {
     dire(&format!("== textes ajoutes depuis la construction : {} ==", absents.join(", ")));
     let (vus, sec) = passer_le_global(ent, journal, source, Some(absents))?;
     dire(&format!("  {} fichiers d'article de ces textes lus en {}s", vus, secondes(sec)));
-    let mut lues: Vec<String> = ent.lues().into_iter().collect();
+    let mut lues: Vec<LivraisonDila> = ent.lues().into_iter().collect();
     lues.sort();
     let urls: Vec<String> = lues.iter().map(|n| format!("{}LEGI_{}.tar.gz", BASE, n)).collect();
     let mut panne: Option<Echec> = None;
     dila::en_ordre(source, &urls, 8, |i, octets| {
-        let r = octets.and_then(|o| passer(&mut dila::archive(&o), &mut ent.articles, journal, None, &lues[i], true, Some(absents)));
+        let r = octets.and_then(|o| passer(&mut dila::archive(&o), &mut ent.articles, journal, None, Some(&lues[i]), true, Some(absents)));
         if let Err(e) = r {
             // Une livraison manquee laisserait ces textes dans une version ancienne sans le dire : on s'arrete, et on
             // n'ecrit rien.
@@ -534,7 +545,7 @@ fn completer(ent: &mut EntrepotLegi, absents: &[&str], journal: &mut Vec<String>
 ///
 /// CHAQUE DOSSIER SE LIT SEUL : son `releve.json` ne parle que de ses articles, et le nombre de livraisons lues y est
 /// repete. Un texte dont le releve ne dirait ou il en est que par le dossier d'a cote serait un releve qu'on croit complet.
-fn ecrire(racine: &Path, articles: &[&ArticleLegi], lues: &[String], totales: usize, changes: &[&ChangeLegi], jour: &str) -> R<()> {
+fn ecrire(racine: &Path, articles: &[&ArticleLegi], lues: &[LivraisonDila], totales: usize, changes: &[&ChangeLegi], jour: Jour) -> R<()> {
     for texte in TEXTES {
         let dossier = racine.join(texte.dossier);
         // Le XML de chaque article dans `xml/`, le releve a cote : c'est la piece justificative qui reste a cote du compte
@@ -546,19 +557,19 @@ fn ecrire(racine: &Path, articles: &[&ArticleLegi], lues: &[String], totales: us
             let num = &a.cle[1];
             let f = px.join(format!("{}.xml", fichier(num)));
             std::fs::write(&f, &a.xml).map_err(|e| refus!("{} : {}", f.display(), e))?;
-            siens.poser(num.clone(), ArticleReleve { debut: a.debut.clone(), en_vigueur: a.en_vigueur, id: a.id.clone() });
+            siens.poser(num.clone(), ArticleReleve { debut: a.debut, en_vigueur: a.en_vigueur, id: a.id.clone() });
         }
         let releve = ReleveDUnTexte {
             source: BASE.to_string(),
             global: GLOBAL.to_string(),
             texte: texte.nom.to_string(),
-            legitext: texte.legitext.to_string(),
+            legitext: texte.legitext.clone(),
             livraisons_lues: lues.len(),
             livraisons_totales: totales,
             complet: lues.len() == totales,
             derniere_livraison: lues.last().cloned(),
             changes_depuis_le_global: changes.iter().filter(|c| c.texte == texte.cle).map(|c| (*c).clone()).collect(),
-            releve_le: jour.to_string(),
+            releve_le: jour,
             articles: siens,
         };
         let p = dossier.join("releve.json");
@@ -610,7 +621,7 @@ fn ce_qui_a_change(meta: &ReleveDUnTexte) -> String {
         meta.changes_depuis_le_global.len(),
         meta.changes_depuis_le_global
             .iter()
-            .map(|c| format!("{} ({} -> {}, livraison du {})", c.article, c.avant, c.apres, jour_lisible(dila::premiers_caracteres(&c.livraison, 8))))
+            .map(|c| format!("{} ({} -> {}, livraison du {})", c.article, c.avant, c.apres, c.livraison.jour().jj_mm_aaaa()))
             .collect::<Vec<_>>()
             .join(" ; ")
     )
@@ -660,7 +671,7 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
         format!("| code | {} (`{}`) |", texte.nom, texte.legitext),
         format!("| livraisons lues | **{} sur {}**, dans l'ordre depuis le {} |", lues, totales, jour_lisible(DEPUIS)),
         format!("| ce qu'elles disent | {} |", ce_qui_a_change(&meta)),
-        format!("| releve le | {} |", meta.releve_le),
+        format!("| releve le | {} |", meta.releve_le.iso()),
         format!("| articles | {} |", n_articles),
         String::new(),
     ];
@@ -669,7 +680,7 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
     if !meta.complet {
         let reste = totales as i64 - lues as i64;
         let au = match &meta.derniere_livraison {
-            Some(l) => format!("au {}", jour_lisible(dila::premiers_caracteres(l, 8))),
+            Some(l) => format!("au {}", l.jour().jj_mm_aaaa()),
             None => "avant toute livraison".to_string(),
         };
         lignes.push(format!(
@@ -705,7 +716,7 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
             let xml = lire_texte(&dossier.join(XML).join(format!("{}.xml", fichier(num))))?;
             let etat = if a.en_vigueur { "" } else { "  **VERSION PERIMEE**" };
             match &a.debut {
-                Some(d) => lignes.push(format!("### {} (`{}`, en vigueur depuis le {}){}", num, a.id, d, etat)),
+                Some(d) => lignes.push(format!("### {} (`{}`, en vigueur depuis le {}){}", num, a.id, d.iso(), etat)),
                 None => lignes.push(format!("### {} (`{}`){}", num, a.id, etat)),
             }
             lignes.push(String::new());
@@ -747,7 +758,7 @@ fn changements(racine: &Path) -> R<Vec<ChangeLegi>> {
 fn avant(racine: &Path, changements: &[ChangeLegi], source: &dyn Source) -> R<HashMap<(String, String), String>> {
     let mut vise: HashMap<String, (String, String)> = HashMap::new();
     for c in changements {
-        vise.insert(c.avant.clone(), (c.texte.clone(), c.article.clone()));
+        vise.insert(c.avant.texte().to_string(), (c.texte.clone(), c.article.clone()));
     }
     let (mut trouves, mut vus, t0) = (HashMap::new(), 0usize, Instant::now());
     let mut tar = dila::tar_gz(source.flux(&format!("{}{}", BASE, GLOBAL))?);
@@ -865,9 +876,9 @@ fn ecrire_comparaison(
     for c in tries {
         let (cle, article) = (c.texte.clone(), c.article.clone());
         let texte = texte_de(&cle).ok_or_else(|| refus!("texte inconnu : {}", cle))?;
-        let livraison = jour_lisible(dila::premiers_caracteres(&c.livraison, 8));
+        let livraison = c.livraison.jour().jj_mm_aaaa();
         let quand = match &c.depuis {
-            Some(depuis) => format!("en vigueur depuis le {}, livraison du {}", jour_lisible(dila::premiers_caracteres(&depuis.replace('-', ""), 8)), livraison),
+            Some(depuis) => format!("en vigueur depuis le {}, livraison du {}", depuis.jj_mm_aaaa(), livraison),
             None => format!("livraison du {}", livraison),
         };
         lignes.extend(["---".to_string(), String::new(), format!("## {} ({})", article, texte.nom), String::new(), format!("`{}` -> `{}`, {}.", c.avant, c.apres, quand), String::new()]);

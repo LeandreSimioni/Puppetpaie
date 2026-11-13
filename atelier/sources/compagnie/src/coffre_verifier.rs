@@ -64,7 +64,7 @@ pub fn verifier_secret(ctx: &Contexte, service: &str) -> R<Verdict> {
 
 /// L'authentification d'un service : le client de la DSN, ou celui de la DPAE (un autre compte).
 fn authentifier_pour_de_vrai(ctx: &Contexte, service: &str, mdp: Option<socle::secret::Secret>) -> Result<(), Panne> {
-    let mut client = if service == NET_ENTREPRISES { Client::dsn(ctx, "production", mdp)? } else { Client::dpae(ctx, false, mdp) };
+    let mut client = if service == NET_ENTREPRISES { Client::dsn(ctx, envois::releve_retours::EnvironnementNetEntreprises::Production, mdp) } else { Client::dpae(ctx, false, mdp) };
     client.authentifier()
 }
 

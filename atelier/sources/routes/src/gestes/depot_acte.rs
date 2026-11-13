@@ -27,7 +27,7 @@ use envois::depot;
 use envois::etats;
 use socle::echec::R;
 use socle::echec::erreur;
-use envois::releve_retours::Client;
+use envois::releve_retours::{Client, EnvironnementNetEntreprises};
 use envois::suites::Suites;
 use envois::journal::{Acte, EmbaucheDeclaree, Ligne, Ouverture, Version};
 use droit::contexte::IdSalarie;
@@ -93,7 +93,7 @@ fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement:
     // celui d'un test revient bel et bien (constate sur des DPAE de test : le certificat 41 les dit enregistrees,
     // code 99).
     if let (etats::EtatDuTest::Testee, Some(l)) = (etat.etat, &etat.conforme) {
-        return Ok(Ouverture { test: Some(l.quand().to_string()), flux: etat.flux_conforme(), empreinte: etat.empreinte.clone(), compte_rendu: etat.compte_rendu.clone(), contournement: None });
+        return Ok(Ouverture { test: Some(l.quand().to_string()), flux: etat.flux_conforme(), empreinte: etat.empreinte.clone(), compte_rendu: etat.compte_rendu, contournement: None });
     }
     let raison = contournement.trim();
     if !raison.is_empty() {
@@ -260,7 +260,7 @@ pub(crate) fn deposer_dsn(
     forcer: bool,
     contournement: &str,
 ) -> R<DepotFait> {
-    deposer_dsn_dans(ctx, fichier, reel, preuve, qui, "production", forcer, contournement, None)
+    deposer_dsn_dans(ctx, fichier, reel, preuve, qui, EnvironnementNetEntreprises::Production, forcer, contournement, None)
 }
 
 /// `deposer_dsn` avec l'ENVIRONNEMENT du point de depot (`production` ou `editeur`) et l'ordre d'un essai, que seul
@@ -278,14 +278,14 @@ pub fn deposer_dsn_dans(
     reel: bool,
     preuve: Option<&Preuve>,
     qui: &str,
-    environnement: &str,
+    environnement: EnvironnementNetEntreprises,
     forcer: bool,
     contournement: &str,
     ordre_d_essai: Option<i64>,
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
-    if reel && environnement != "production" {
+    if reel && environnement != EnvironnementNetEntreprises::Production {
         return Err(erreur(
             Classe::Refuse,
             format!("L'environnement '{}' est la plate-forme d'essai de l'editeur : rien n'y est declare. Un depot REEL ne part que sur 'production' ; pour essayer, un depot de test. Rien n'est parti.", environnement),
@@ -620,7 +620,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
             releve = true;
             // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place.
             fait = envois::releve_retours::derniere_journee()
-                .and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, envois::releve_retours::CanalDesRetours::Dsn))
+                .and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
                 .and_then(|_| deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ()));
         }
         let qui_demande = ctx.nomme(&l.salarie);

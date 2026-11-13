@@ -157,7 +157,7 @@ pub struct EtatSource {
     url: Url,
     pub(crate) contenu: String,
     pub(crate) version: String,
-    pub(crate) releve_le: String,
+    pub(crate) releve_le: Jour,
     verification: Verification,
     pub(crate) nourrit: Vec<String>,
     pub(crate) fichier: String,
@@ -172,8 +172,6 @@ pub struct EtatSource {
     extra: Extra,
     kali: Option<KaliSuivi>,
     evenements: Vec<Evenement>,
-    #[serde(skip)]
-    releve: Jour,
 }
 
 /// Ce que le manifeste dit, confronte au disque -- sans reseau. Un etat par source, dans l'ordre du manifeste.
@@ -190,7 +188,6 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
         // La transcription ne se confronte a aucun condensat : c'est l'original qui fait foi.
         let transcription_presente = s.transcription.as_ref().map(|t| d.join(t).is_file());
         let conforme = if presente { Some(Empreinte::du_fichier(&p)? == s.sha256) } else { None };
-        let releve = s.releve_le;
         out.push(EtatSource {
             ident: ident.clone(),
             titre: s.titre.clone(),
@@ -198,7 +195,7 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
             url: s.url.clone(),
             contenu: s.contenu.clone(),
             version: s.version.clone(),
-            releve_le: s.releve_le.iso(),
+            releve_le: s.releve_le,
             verification: s.verification,
             nourrit: s.nourrit.clone(),
             fichier: s.fichier.clone(),
@@ -209,11 +206,10 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
             en_ligne: None,
             detail: None,
             page_de_veille: s.page_de_veille.clone(),
-            age_jours: aujourdhui.moins(&releve),
+            age_jours: aujourdhui.moins(&s.releve_le),
             extra: Extra { en_vigueur: s.en_vigueur.clone(), etendu_le: s.etendu_le.clone(), verification_comment: s.verification_comment.clone() },
             kali: s.kali.clone(),
             evenements: Vec::new(),
-            releve,
         });
     }
     Ok(out)
@@ -337,17 +333,17 @@ fn veiller_kali(d: &Path, liste: &[EtatSource], relever: bool, tele: &mut kali::
     let mut depuis: Option<Jour> = None;
     for e in liste {
         let Some(k) = &e.kali else { continue };
-        let i = match suivis.iter().position(|s| s.conteneur == k.conteneur.texte()) {
+        let i = match suivis.iter().position(|s| s.conteneur == k.conteneur) {
             Some(i) => i,
             None => {
-                suivis.push(Suivi { conteneur: k.conteneur.texte().to_string(), idcc: k.idcc.clone(), textes: Vec::new() });
+                suivis.push(Suivi { conteneur: k.conteneur.clone(), idcc: k.idcc.clone(), textes: Vec::new() });
                 suivis.len() - 1
             }
         };
         suivis[i].textes.push(k.texte.texte().to_string());
         depuis = Some(match depuis {
-            Some(j) => j.min(e.releve),
-            None => e.releve,
+            Some(j) => j.min(e.releve_le),
+            None => e.releve_le,
         });
     }
     let depuis = depuis?;
@@ -366,10 +362,10 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
         }
     };
     let Some(k) = e.kali.clone() else { return };
-    let depuis = e.releve_le.clone();
-    let evts: Vec<Evenement> = rapport.evenements.valeur(k.conteneur.texte()).into_iter().flatten().filter(|x| x.livraison() > e.releve).cloned().collect();
-    let lues = rapport.livraisons_lues.iter().filter(|j| **j > depuis).count();
-    let ou = format!("IDCC {}, {} livraison(s) KALI lue(s) depuis le {}", k.idcc, lues, depuis);
+    let depuis = e.releve_le;
+    let evts: Vec<Evenement> = rapport.evenements.valeur(k.conteneur.texte()).into_iter().flatten().filter(|x| x.livraison() > depuis).cloned().collect();
+    let lues = rapport.livraisons_lues.iter().filter(|l| l.jour() > depuis).count();
+    let ou = format!("IDCC {}, {} livraison(s) KALI lue(s) depuis le {}", k.idcc, lues, depuis.iso());
     let (mut forts, mut faibles) = (Vec::new(), Vec::new());
     for x in &evts {
         match x {
@@ -392,7 +388,7 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
             Evenement::Texte(t) => {
                 let mut dit = Vec::new();
                 if let Some(d) = &t.texte.date_texte {
-                    dit.push(format!("du {}", d));
+                    dit.push(format!("du {}", d.iso()));
                 }
                 if let Some(etat) = &t.texte.etat {
                     dit.push(format!("etat {}", etat));
@@ -402,7 +398,7 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
                 }
                 let titre = t.texte.titre.as_ref().map(|titre| format!(" -- {}", titre)).into_iter().collect::<String>();
                 let ligne = format!("{} : texte {} modifie{} ({})", t.livraison.iso(), t.ident, titre, dit.join(", "));
-                if t.ident == k.texte.texte() || t.texte.titre.as_deref().is_some_and(parle_salaires) {
+                if t.ident == k.texte || t.texte.titre.as_deref().is_some_and(parle_salaires) {
                     forts.push(ligne);
                 } else {
                     faibles.push(ligne);

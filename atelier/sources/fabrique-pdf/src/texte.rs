@@ -566,19 +566,20 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
     }
 }
 
+/// Le découpage d'une chaîne en codes : ses codes, (code, nombre d'octets) ; ou le CMap prédéfini non déposé, sans
+/// `ToUnicode` qui dise ses espaces de codes, qui fait que rien ne dit où un code finit.
+enum Decoupe {
+    Codes(Vec<(u32, usize)>),
+    CmapNonDepose(String),
+}
+
 impl Police {
-    /// Les codes d'une chaîne : (code, nombre d'octets) ; ou pourquoi rien ne dit où un code finit (un CMap prédéfini
-    /// non déposé, sans `ToUnicode` qui dise ses espaces de codes).
-    fn codes(&self, s: &[u8]) -> Result<Result<Vec<(u32, usize)>, String>, Refus> {
+    /// Le découpage d'une chaîne en codes.
+    fn codes(&self, s: &[u8]) -> Result<Decoupe, Refus> {
         let espaces = match &self.sorte {
-            Sorte::Simple { .. } => return Ok(Ok(s.iter().map(|b| (*b as u32, 1)).collect())),
+            Sorte::Simple { .. } => return Ok(Decoupe::Codes(s.iter().map(|b| (*b as u32, 1)).collect())),
             Sorte::Composee { espaces, .. } | Sorte::NonDeposee { espaces: Some(espaces), .. } => espaces,
-            Sorte::NonDeposee { cmap, espaces: None } => {
-                return Ok(Err(format!(
-                    "le CMap prédéfini {} n'est pas déposé et la police n'a pas de /ToUnicode : rien ne dit où ses codes finissent, ni leurs CID (ISO 32000-1, 9.10.2)",
-                    cmap
-                )))
-            }
+            Sorte::NonDeposee { cmap, espaces: None } => return Ok(Decoupe::CmapNonDepose(cmap.clone())),
         };
         let Some(plus_court) = espaces.iter().map(|e| e.0).min() else {
             return illisible("une police composée n'a aucun espace de codes");
@@ -606,7 +607,7 @@ impl Police {
             v.push((code, n));
             i += n;
         }
-        Ok(Ok(v))
+        Ok(Decoupe::Codes(v))
     }
 
     /// Le CID d'un code (le code lui-même pour une police simple, où `Widths` est par code) ; `None` quand le CMap
@@ -1917,8 +1918,12 @@ impl<'a> Interprete<'a> {
     fn montrer(&mut self, e: &Etat, tm: &mut Mat, chaine: &[u8]) -> Result<(), Refus> {
         let police = police_choisie(e)?.clone();
         let codes = match police.codes(chaine)? {
-            Ok(codes) => codes,
-            Err(pourquoi) => {
+            Decoupe::Codes(codes) => codes,
+            Decoupe::CmapNonDepose(cmap) => {
+                let pourquoi = format!(
+                    "le CMap prédéfini {} n'est pas déposé et la police n'a pas de /ToUnicode : rien ne dit où ses codes finissent, ni leurs CID (ISO 32000-1, 9.10.2)",
+                    cmap
+                );
                 let inconnu = Signe::Inconnu(Inconnu { police: police.nom.clone(), code: code_ecrit(chaine), pourquoi });
                 return self.poser(&police, e, tm, vec![inconnu], Z);
             }

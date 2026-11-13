@@ -246,13 +246,18 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | système | `Systeme` | `compagnie/src/maj.rs` |
 | clé d'archive | `CleDArchive` | `compagnie/src/maj.rs` |
 | état du bridage | `EtatDuBridage` | `compagnie/src/bridage.rs` |
+| sorte d'une copie | `SorteDeCopie` | `compagnie/src/installation.rs` |
 | clé d'incident | `CleDIncident` | `compagnie/src/incidents.rs` |
+| canal d'un incident de la page | `CanalDeLaPage` | `compagnie/src/incidents.rs` |
+| origine d'un appel | `OrigineDeLAppel` | `compagnie/src/diagnostic.rs` |
 | numéro de poste | `NumeroDePoste` | `compagnie/src/incidents.rs` |
 | secret | `Secret` | `socle/src/secret.rs` |
 | numéro de retour | `NumeroDeRetour` | `compagnie/src/editeur.rs` |
 | identifiant d'un message | `IdDeMessage` | `compagnie/src/problemes.rs` |
 | étiquette de caviardage | `EtiquetteDeCaviardage` | `compagnie/src/incidents.rs` |
 | identifiant de la DILA | `IdDila` | `atelier/src/releve/entrepot_dila.rs` |
+| livraison de la DILA | `LivraisonDila` | `atelier/src/releve/entrepot_dila.rs` |
+| état d'un texte de la DILA | `EtatDuTexteDila` | `atelier/src/releve/entrepot_dila.rs` |
 | type d'une capture | `TypeDeCapture` | `compagnie/src/problemes.rs` |
 | rubrique de la norme | `RubriqueDeLaNorme` | `droit/src/natures.rs` |
 | nom de fichier | `NomDeFichier` | `socle/src/fichiers.rs` |
@@ -267,7 +272,9 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | identifiant d'un envoi | `IdDEnvoi` | `envois/src/journal.rs` |
 | nature d'un retour | `NatureDuRetour` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
+| plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
+| compte rendu d'un test de dépôt | `CompteRenduDuTest` | `envois/src/retours.rs` |
 | statut d'un retour | `StatutDuRetour` | `envois/src/retours.rs` |
 | catégorie d'une anomalie | `CategorieDAnomalie` | `envois/src/retours.rs` |
 | type d'un rapport de dépôt | `TypeDeRapport` | `envois/src/retours.rs` |
@@ -419,10 +426,19 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **état du bridage** : bridé ou débloqué : ce que disent `.edition.json` et `logiciel/EDITION.json`. Une liste du
   logiciel : écrit `bride`, `debloque` ; `demo` et `complete` se lisent aussi (le contrat avec les installations
   posées) ; que portent la machine d'un incident (`edition`) et sa ligne en mots.
+- **sorte d'une copie** : ce qu'une copie de compagnie est : une fictive (ses envois sont joués), la compagnie d'essai
+  (ses dépôts partent en test), une copie de développement. Une liste du logiciel ; le marqueur
+  (`COPIE-DE-DEVELOPPEMENT.json`) ne l'écrit pas à part : elle se lit au début de sa phrase `copie_de` (« compagnie
+  fictive … », « compagnie d'essai … »), une fois, par `Marqueur::sorte`.
 - **clé d'incident** : ce qui fait que deux incidents sont le même : la nature, l'endroit, le genre. Les douze premiers
   hexadécimaux minuscules du SHA-256 de `nature|ou|quoi`, que seul `incidents::empreinte` fait, lue strictement ; pas
   une `Empreinte`. Que portent une ligne du journal des incidents, un paquet, ce qui part chez l'éditeur, les clés
   reçues et écartées que le serveur du filet rend.
+- **canal d'un incident de la page** : par où la page a vu casser (`js/tuyau.js`) : une erreur, une promesse rejetée,
+  une ressource absente. Une liste du logiciel, écrite `erreur`, `promesse`, `ressource` ; que portent le rapport de la
+  page (`incident-navigateur`) et le détail de l'incident.
+- **origine d'un appel** : d'où vient l'appel d'une route servie par la fenêtre : la page, ou le fond (la veille, le
+  filet, l'état des mois). Une liste du logiciel, écrite `page`, `fond` dans le fil du diagnostic.
 - **numéro de poste** : le numéro que le serveur du filet donne à ce poste (`POST /poste`) ; 32 hexadécimaux minuscules
   (`RE_POSTE` du serveur). Que portent `config/diagnostic.json`, l'identité rendue par le serveur, le client du filet, ce
   qui part (`poste`) et une année de paies partie. La clé du poste, à côté, est un secret.
@@ -453,7 +469,16 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   (« KALICONT000028157262 », « LEGITEXT000006072050 ») : sa famille (`LEGITEXT`, `LEGIARTI`, `KALITEXT`, `KALIARTI`,
   `KALICONT`, `JORFTEXT`) et douze chiffres. L'atelier seul : il s'écrit et se trie comme son texte ; un identifiant que
   l'atelier écrit en Rust, `IdDila::du_moteur`. Que portent le suivi KALI d'une source et une convention à relever
-  (`sources.json`), le texte d'un code relevé (`releve::codes::textes`).
+  (`sources.json`), le texte d'un code relevé (`releve::codes::textes`), les articles et les changements des entrepôts
+  (`legi-entrepot/`, `kali-entrepot/`), un relevé (`releve.json`), les événements de la veille KALI.
+- **livraison de la DILA** : une livraison quotidienne des bases LEGI et KALI, nommée par son estampille
+  `AAAAMMJJ-HHMMSS` (`KALI_20260922-214912.tar.gz`), qui commence par son jour. L'atelier seul : elle s'écrit et se trie
+  comme son estampille, `jour()` dit son jour. Que portent les livraisons appliquées d'un entrepôt et ses changements, la
+  dernière livraison d'un relevé, ce que la veille KALI a lu.
+- **état d'un texte de la DILA** : l'élément `ETAT` d'un article, d'un texte ou d'une convention (`VIGUEUR_ETEN`,
+  `ABROGE`…). Une liste relevée des bases (les entrepôts et les pièces de `atelier/reference/sources/`), écrite par son
+  nom ; un autre nom se refuse. `de_vigueur()` : les états dont le nom commence par `VIGUEUR`. Que portent un article
+  de l'entrepôt KALI et ses changements, la fiche d'une convention et un texte modifié de la veille KALI.
 - **type d'une capture** : le type d'image d'une capture jointe à un message au développeur : PNG ou JPEG. Une liste du
   logiciel, écrit `image/png`, `image/jpeg` ; que portent une capture de la page, celle qui part et celle que l'aperçu
   montre.
@@ -519,12 +544,20 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
   fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
   journal des retours vus, l'incident d'un retour (sa nature au journal des incidents), la pièce que l'Historique relit.
+- **plate-forme de net-entreprises** : la plate-forme à laquelle le client de la DSN parle : la production, ou la
+  plate-forme d'essai de l'éditeur, où rien n'est déclaré (un dépôt réel n'y part pas). Une liste du logiciel :
+  `Production`, `Editeur`, nommés `production`, `editeur` (`NOMS`, ce que la ligne de commande propose, lu à sa porte
+  par `lire`) ; elle choisit les adresses et le service. Que portent le client de la DSN, le dépôt d'une DSN, la relève.
 - **verdict** : ce que la pièce d'un retour dit d'un envoi, d'une déclaration ou des données analysées : OK, KO, ANO.
   `etat_type`, `envoi_etat_type` et `ok_ko` du schéma des bilans, RO.B003.R002 de NEOReS ; il se lit sans casse, à sa
   seule porte (`Verdict::lu`), et s'écrit en capitales. Que portent un bilan, une déclaration qu'il identifie, un
   rapport, un NEOReS, un retour d'organisme au journal des envois et l'état de la déclaration qu'une ligne reprise
   garde. Ce que la pièce en dit au journal (le verdict, les anomalies en phrases, les personnes d'une DPAE) :
   `ligne::VerdictDeLaPiece`.
+- **compte rendu d'un test de dépôt** : ce que le test conforme d'un fichier dit à l'heure où on le lit : son bilan
+  attendu, conforme, refusé (`attendu`, `ok`, `ko`, en minuscules). Que portent la répétition d'un fichier
+  (`etats::Repetition`, `null` sans test conforme) et l'ouverture d'un dépôt réel au journal des envois
+  (`ligne::Ouverture`), qui garde ce qu'il valait au départ du dépôt.
 - **statut d'un retour** : ce que la liste des retours dit d'un retour (`flux.retour.statut`) : OK, KO, ANO, EN COURS,
   ANOBLOQUANTE (France Travail). `droit::codes_fermes!` sur son texte : guide de l'API DSN v6.8, l. 1733-1745, et « De
   la DSN à l'attestation employeur » v3.2, l. 235-243. Que portent un retour listé, un retour d'organisme au journal des

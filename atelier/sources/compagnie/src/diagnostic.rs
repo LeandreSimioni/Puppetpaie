@@ -746,10 +746,26 @@ pub struct Ecriture {
     pub issue: String,
 }
 
-/// Une route servie par la fenetre : `source` « page » (la page l'a demandee) ou « fond » (la veille, le filet, l'etat des
-/// mois...) ; son nom, si elle ecrit (`ecriture` : l'acte de sa fiche, `routes::est_une_ecriture`), sa charge mise en
-/// forme, sa duree, son issue.
-pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: &str, nom: &str, ecriture: bool, charge: &C, duree: Duration, issue: Result<(), (&str, &str)>) {
+/// D'OU VIENT L'APPEL D'UNE ROUTE servie par la fenetre : la page l'a demandee, ou le fond (la veille, le filet, l'etat des
+/// mois...). Le fil l'ecrit par son nom, « page » ou « fond ».
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrigineDeLAppel {
+    Page,
+    Fond,
+}
+
+impl OrigineDeLAppel {
+    pub fn nom(self) -> &'static str {
+        match self {
+            OrigineDeLAppel::Page => "page",
+            OrigineDeLAppel::Fond => "fond",
+        }
+    }
+}
+
+/// Une route servie par la fenetre : d'ou vient l'appel (`source`) ; son nom, si elle ecrit (`ecriture` : l'acte de sa
+/// fiche, `routes::est_une_ecriture`), sa charge mise en forme, sa duree, son issue.
+pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: OrigineDeLAppel, nom: &str, ecriture: bool, charge: &C, duree: Duration, issue: Result<(), (&str, &str)>) {
     let forme = en_forme(Some(racine), charge);
     let ch = if forme == "{}" || forme == "null" { String::new() } else { format!(" {}", compact(&forme, CHARGE_LIGNE_MAX)) };
     let ms = duree.as_millis();
@@ -760,11 +776,14 @@ pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: &str, nom: &str
             (format!("→ refus {} « {} », {} ms", classe, m, ms), format!("refus {} {}", classe, m), true)
         }
     };
-    let quoi = if source == "page" { "route" } else { "fond, route" };
+    let quoi = match source {
+        OrigineDeLAppel::Page => "route",
+        OrigineDeLAppel::Fond => "fond, route",
+    };
     let t = maintenant_ms().saturating_sub(ms as u64);
     // DE QUOI REJOUER : la ligne du fil coupe la charge ; une ecriture de la page (ou un refus) la garde entiere, mise en
     // forme -- la saisie qui a mene au refus se rejoue sur une fictive (`ecritures`).
-    if source == "page" && (ecriture || refusee) {
+    if source == OrigineDeLAppel::Page && (ecriture || refusee) {
         let mut e = socle::memoire::tenu(les_ecritures());
         while e.len() >= ECRITURES_MAX || e.front().is_some_and(|x| x.t + FENETRE_MS < t) {
             e.pop_front();
@@ -779,7 +798,7 @@ pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: &str, nom: &str
             _ => e.push_back(EcritureGardee { t, route: nom.to_string(), charge: forme.clone(), issue: issue_texte }),
         }
     }
-    ajouter(t, format!("{} {}{} {}", quoi, nom, ch, fin), format!("{}|{}|{}|{}", source, nom, ch, cle_issue));
+    ajouter(t, format!("{} {}{} {}", quoi, nom, ch, fin), format!("{}|{}|{}|{}", source.nom(), nom, ch, cle_issue));
 }
 
 /// Les ecritures (et les refus) de la page gardees entieres : au plus tant, dans la fenetre.

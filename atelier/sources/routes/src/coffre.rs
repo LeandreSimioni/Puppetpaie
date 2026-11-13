@@ -1038,7 +1038,7 @@ fn identifiant_du_compte(ent: &droit::fiche::ChampsEntreprise, service: &str) ->
     match service {
         "net-entreprises" => {
             let d = envois::transport::declarant(ent);
-            let manque: Vec<&'static str> = [("siret", &d.siret), ("nom", &d.nom), ("prenom", &d.prenom)].into_iter().filter(|(_, v)| v.is_none()).map(|(c, _)| c).collect();
+            let manque: Vec<&'static str> = [("siret", d.siret.is_none()), ("nom", d.nom.is_none()), ("prenom", d.prenom.is_none())].into_iter().filter(|(_, manque)| *manque).map(|(c, _)| c).collect();
             let texte = match (&d.siret, &d.nom, &d.prenom) {
                 (Some(siret), Some(nom), Some(prenom)) => Some(format!("compte de {} {}, SIRET {}", nom, prenom, siret)),
                 _ => None,

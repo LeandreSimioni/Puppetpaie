@@ -23,7 +23,7 @@ pub static SPEC: Spec = Spec {
         Opt::valeur("depuis"),
         Opt::valeur("jusqu-a"),
         Opt::drapeau("tout"),
-        Opt::choix("environnement", &["production", "editeur"], Some("production")),
+        Opt::choix("environnement", envois::releve_retours::EnvironnementNetEntreprises::NOMS, Some("production")),
     ],
 };
 
@@ -55,7 +55,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     cadre.ouvrir_le_coffre();
     let flux = args.texte("flux").filter(|f| !f.is_empty()).map(envois::retours::IdDeFlux::lire).transpose()?;
     let flux = flux.as_ref();
-    let environnement = super::avec_defaut(args, "environnement")?;
+    let environnement = envois::releve_retours::EnvironnementNetEntreprises::lire(super::avec_defaut(args, "environnement")?)?;
     let ou = if dpae { "DPAE".to_string() } else { format!("DSN ({})", environnement) };
     match flux {
         Some(f) => dire!("Retours {}, du {} au {}, flux {}.", ou, debut.jour_de_paris().jj_mm_aaaa(), fin.jour_de_paris().jj_mm_aaaa(), f),

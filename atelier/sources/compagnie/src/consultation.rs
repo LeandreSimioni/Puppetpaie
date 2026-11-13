@@ -3,7 +3,7 @@
 
 use droit::contexte::Contexte;
 use envois::branchement::Branchement;
-use envois::releve_retours::Client;
+use envois::releve_retours::{Client, EnvironnementNetEntreprises};
 use socle::echec::R;
 
 /// Le mot de passe d'un service, pour une CONSULTATION : l'environnement d'abord, puis le coffre ; `None`
@@ -14,12 +14,12 @@ pub fn mot_de_passe_de_consultation(ctx: &Contexte, service: &str) -> R<Option<s
 }
 
 /// Le client net-entreprises de la consultation, dans le monde seulement : `None` quand aucun mot de passe n'est pose.
-pub fn client_dsn(ctx: &Contexte, branchement: Branchement, environnement: &str) -> R<Option<Client>> {
+pub fn client_dsn(ctx: &Contexte, branchement: Branchement, environnement: EnvironnementNetEntreprises) -> R<Option<Client>> {
     if branchement != Branchement::Monde {
         return Ok(None);
     }
     let Some(mdp) = mot_de_passe_de_consultation(ctx, "net-entreprises")? else { return Ok(None) };
-    Client::dsn(ctx, environnement, Some(mdp)).map(Some).map_err(|p| p.en_echec())
+    Ok(Some(Client::dsn(ctx, environnement, Some(mdp))))
 }
 
 /// Le client Urssaf de la consultation, dans le monde seulement : `None` quand aucun mot de passe n'est pose.
