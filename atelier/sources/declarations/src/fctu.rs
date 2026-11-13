@@ -17,6 +17,7 @@ use crate::dsn::{
 use engagement::Engagement;
 use socle::echec::{Classe, R};
 use socle::fichiers::repr;
+use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre};
 use droit::type_declaration::TypeDeLaDeclaration;
 use droit::preavis::{TransactionEnCours, TypeDePreavis};
 use droit::type_de_prime::TypeDePrime;
@@ -392,8 +393,8 @@ pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> R<()> 
 /// Les parametres de `generer`, avec leurs defauts.
 pub struct Options {
     pub type_declaration: TypeDeLaDeclaration,
-    pub ordre: i64,
-    pub remplace: Option<String>,
+    pub ordre: NumeroDOrdre,
+    pub remplace: Option<IdentifiantDeDeclaration>,
     pub envoi_test: bool,
     pub date_constitution: Option<Jour>,
 }
@@ -401,7 +402,7 @@ pub struct Options {
 impl Options {
     /// Un premier signalement normal, en reel, constitue le jour de son depot.
     pub fn normale() -> Options {
-        Options { type_declaration: TypeDeLaDeclaration::Normale, ordre: 1, remplace: None, envoi_test: false, date_constitution: None }
+        Options { type_declaration: TypeDeLaDeclaration::Normale, ordre: NumeroDOrdre::PREMIER, remplace: None, envoi_test: false, date_constitution: None }
     }
 }
 
@@ -411,7 +412,7 @@ pub fn generer(
     ctx: &Contexte, paie: &engagement::calcul::Paie, fin: &FinDeContrat, o: &Options, arrets: &[Arret], departs: &engagement::departs::Departs,
 ) -> Result<String, Echec> {
     let type_declaration = o.type_declaration;
-    let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
+    let remplace = o.remplace;
     if matches!(type_declaration, TypeDeLaDeclaration::AnnuleEtRemplace | TypeDeLaDeclaration::Annule) && remplace.is_none() {
         return Err(Echec::impossible(format!(
             "Un signalement « {} » doit viser la declaration qu'il reprend (S20.G00.05.006) : sans elle, la \

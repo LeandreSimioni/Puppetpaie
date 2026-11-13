@@ -9,7 +9,7 @@
 //!   l'empreinte de son texte ;
 //! - un retour, `{"a", "retour"}` (`rattacher`, `ranger`) : il s'ajoute aux `retours` de l'envoi `a`, dans la forme de
 //!   sa sorte (`ligne::RetourOrganisme`, `RetourContrat`, `RetourFiche`) ;
-//! - un complement, `{"a", "nature", "publication", "complete"}` (`ranger`) : le verdict (`ligne::Verdict`) s'ecrit dans
+//! - un complement, `{"a", "nature", "publication", "complete"}` (`ranger`) : le verdict (`ligne::VerdictDeLaPiece`) s'ecrit dans
 //!   le retour de l'envoi `a` qui porte cette nature et cette publication (le verdict d'un bilan arrive apres son annonce).
 //! `lu` replie ces enregistrements dans l'ordre en `lignes` ; un processus ne relit que ce qui s'est ajoute depuis sa
 //! derniere lecture. Un enregistrement qui ne se lit pas strictement (une cle inconnue, une valeur d'une autre forme)
@@ -48,25 +48,87 @@ pub fn empreinte_fichier(chemin: &Path) -> R<EmpreinteCourte> {
     Ok(Empreinte::du_fichier(chemin)?.courte())
 }
 
+/// L'IDENTIFIANT D'UN ENVOI AU JOURNAL, que `a` reprend : l'empreinte courte du texte de sa ligne, suivie de `-<rang>`
+/// quand une ligne au meme texte porte deja l'empreinte seule (le rang, a partir de 2). C'est la forme que le seul
+/// ecrivain fait (`noter`) ; lu, il refuse toute autre forme.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+struct IdDEnvoi {
+    empreinte: EmpreinteCourte,
+    /// 1 : l'empreinte seule ; au-dela, le rang ecrit apres elle.
+    rang: u32,
+}
+
+impl IdDEnvoi {
+    /// L'identifiant de la premiere ligne a ce texte : son empreinte seule.
+    fn premier(empreinte: EmpreinteCourte) -> IdDEnvoi {
+        IdDEnvoi { empreinte, rang: 1 }
+    }
+
+    /// Celui de la ligne suivante au meme texte : le rang d'apres.
+    fn suivant(&self) -> IdDEnvoi {
+        IdDEnvoi { empreinte: self.empreinte.clone(), rang: self.rang + 1 }
+    }
+
+    /// L'identifiant ecrit `texte`, ou la phrase qui le refuse.
+    fn lire(texte: &str) -> R<IdDEnvoi> {
+        let refuse = || socle::refus!("{} n'est pas l'identifiant d'un envoi : 16 caracteres hexadecimaux minuscules, suivis de « -<rang> » a partir de 2.", socle::fichiers::repr(texte));
+        let (empreinte, rang) = match texte.split_once('-') {
+            None => (texte, 1),
+            Some((e, r)) => {
+                let chiffres = !r.is_empty() && !r.starts_with('0') && r.bytes().all(|o| o.is_ascii_digit());
+                match r.parse::<u32>() {
+                    Ok(n) if chiffres && n >= 2 => (e, n),
+                    _ => return Err(refuse()),
+                }
+            }
+        };
+        let empreinte = EmpreinteCourte::lire(empreinte).map_err(|_| refuse())?;
+        Ok(IdDEnvoi { empreinte, rang })
+    }
+}
+
+impl std::fmt::Display for IdDEnvoi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.rang {
+            1 => write!(f, "{}", self.empreinte),
+            r => write!(f, "{}-{}", self.empreinte, r),
+        }
+    }
+}
+
+impl TryFrom<String> for IdDEnvoi {
+    type Error = Echec;
+    fn try_from(s: String) -> R<IdDEnvoi> {
+        IdDEnvoi::lire(&s)
+    }
+}
+
+impl From<IdDEnvoi> for String {
+    fn from(i: IdDEnvoi) -> String {
+        i.to_string()
+    }
+}
+
 /// UN ENREGISTREMENT DU FICHIER : un envoi (`id`, `ligne`), un retour (`a`, `retour`) ou un complement (`a`, `nature`,
 /// `publication`, `complete`). Le retour se lit dans la forme de la sorte de son envoi (`Tenu::replier`).
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Enregistrement {
     #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<String>,
+    id: Option<IdDEnvoi>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ligne: Option<Ligne>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    a: Option<String>,
+    a: Option<IdDEnvoi>,
     #[serde(skip_serializing_if = "Option::is_none")]
     retour: Option<Retour>,
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
-    nature_retour: Option<String>,
+    nature_retour: Option<crate::retours::NatureDuRetour>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::compacte::option")]
     publication: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    complete: Option<Verdict>,
+    complete: Option<VerdictDeLaPiece>,
 }
 
 /// CE QUI REVIENT D'UN ENVOI, dans la forme de sa sorte : un compte rendu d'organisme (une DSN, une DPAE), un contrat
@@ -89,7 +151,7 @@ pub struct Journal {
     pub lignes: Arc<Vec<Ligne>>,
     pub departs: engagement::departs::Departs,
     /// L'`id` de chaque ligne, dans le meme ordre.
-    ids: Arc<Vec<String>>,
+    ids: Arc<Vec<IdDEnvoi>>,
 }
 
 /// Le journal d'un dossier tel que le processus l'a replie : les octets lus jusqu'a la derniere fin de ligne, ce que
@@ -100,7 +162,7 @@ struct Tenu {
     octets: Vec<u8>,
     vu: Option<(u64, std::time::SystemTime)>,
     journal: Journal,
-    index: HashMap<String, usize>,
+    index: HashMap<IdDEnvoi, usize>,
 }
 
 impl Tenu {
@@ -276,7 +338,7 @@ pub fn lu(racine: &Path) -> R<Journal> {
 
 /// LE SEUL ENDROIT QUI ECRIT LE JOURNAL : les enregistrements que `faire` tire du journal a jour s'ajoutent a la fin du
 /// fichier, d'une seule ecriture, et se replient tels qu'ils se reliront.
-fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) -> R<Vec<Enregistrement>>) -> R<()> {
+fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<IdDEnvoi, usize>) -> R<Vec<Enregistrement>>) -> R<()> {
     let p = chemin(racine);
     let mut tenus = tenus();
     let t = a_jour(&mut tenus, &p)?;
@@ -319,7 +381,7 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> R<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(socle::echec::du_disque(&p, &e)),
     };
-    let mut gardes: std::collections::HashSet<String> = Default::default();
+    let mut gardes: std::collections::HashSet<IdDEnvoi> = Default::default();
     let mut texte = String::new();
     for (n, l) in octets.split(|&o| o == b'\n').enumerate() {
         if l.iter().all(u8::is_ascii_whitespace) {
@@ -388,7 +450,7 @@ impl<D, R> Envoi<D, R> {
             qui: qui.to_string(),
             accepte,
             destinataire: destinataire.to_string(),
-            flux: String::new(),
+            flux: None,
             retours: Vec::new(),
             reponse: reponse.to_string(),
             trace: None,
@@ -429,12 +491,9 @@ pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, date: Data
     let ecrite = ligne.clone();
     ajouter(racine, |_, index| {
         // L'empreinte du texte de la ligne ; deux lignes au meme texte se distinguent par leur rang.
-        let base = Empreinte::des_octets(socle::ecriture::json_en_ligne(&ligne).as_bytes()).courte().to_string();
-        let mut id = base.clone();
-        let mut rang = 1;
+        let mut id = IdDEnvoi::premier(Empreinte::des_octets(socle::ecriture::json_en_ligne(&ligne).as_bytes()).courte());
         while index.contains_key(&id) {
-            rang += 1;
-            id = format!("{}-{}", base, rang);
+            id = id.suivant();
         }
         Ok(vec![Enregistrement { id: Some(id), ligne: Some(ligne), ..Default::default() }])
     })?;
@@ -512,7 +571,7 @@ pub enum Rangement {
     /// Un compte rendu de plus.
     Retour(RetourOrganisme),
     /// Le verdict du compte rendu de cette nature et de cette publication.
-    Complement { nature_retour: String, publication: Option<socle::paris::Moment>, verdict: Verdict },
+    Complement { nature_retour: crate::retours::NatureDuRetour, publication: Option<socle::paris::Moment>, verdict: VerdictDeLaPiece },
 }
 
 /// RANGE CE QUI REVIENT des envois : chaque `(i, rangement)` sur la `i`-ieme ligne du journal lu (`lu`), dans l'ordre.
@@ -574,7 +633,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
         // Un avenant : la ligne du journal le dit (`acte`), et son contrat porte son numero.
         let avenant = l
             .signature()
-            .filter(|s| s.detail.acte.as_deref() == Some("avenant"))
+            .filter(|s| s.detail.acte == Some(ActeDuContrat::Avenant))
             .and_then(|s| s.detail.contrats.iter().find(|c| c.salarie == v.salarie && c.numero.as_ref() == Some(&v.numero)))
             .and_then(|c| c.avenant)
             .map(|a| a.to_string());
@@ -620,7 +679,7 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
 }
 
 /// Le plus grand numero d'ordre (`S20.G00.05.004`) des signalements REELS deja envoyes par la compagnie, tous
-/// evenements confondus (arret, reprise, fin de contrat, amorcage) ; 0 s'il n'y en a aucun.
+/// evenements confondus (arret, reprise, fin de contrat, amorcage) ; aucun s'il n'y en a pas.
 ///
 /// Cahier technique DSN 2026.1, p. 136 : « Pour un signalement, ce numero ne doit pas etre remis a zero afin
 /// qu'il soit unique quel que soit le mois d'emission » ; p. 14 : un second signalement normal au meme SIRET et
@@ -629,8 +688,8 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
 /// Un signalement se reconnait a `detail.nature` (04, 05, 07, 08) ; une ligne reprise des retours, qui ne la porte pas,
 /// a son mois : le bilan d'une mensuelle le dit, celui d'un signalement non. Une ligne non acceptee (le point de depot
 /// n'a rien recu) ne consomme pas de numero.
-pub fn dernier_ordre_des_signalements(racine: &Path) -> R<i64> {
-    let mut dernier = 0;
+pub fn dernier_ordre_des_signalements(racine: &Path) -> R<Option<droit::natures::NumeroDOrdre>> {
+    let mut dernier = None;
     for l in lire(racine, Some(Acte::Dsn), None, true)? {
         let Some(e) = l.dsn() else { continue };
         let signalement = match e.detail.nature_declaration {
@@ -649,8 +708,8 @@ pub fn dernier_ordre_des_signalements(racine: &Path) -> R<i64> {
                 socle::echec::Lieu { chemin: Some(chemin(racine).to_string_lossy().into_owned()), fichier: e.fichier.as_ref().map(|f| f.texte().to_string()), cle: Some("detail.ordre".to_string()), detail: None },
             )
         };
-        match e.detail.ordre.as_deref() {
-            Some(o) => dernier = dernier.max(o.trim().parse::<i64>().map_err(|_| sans_ordre())?),
+        match e.detail.ordre {
+            Some(o) => dernier = dernier.max(Some(o)),
             None if e.accepte => return Err(sans_ordre()),
             None => {}
         }
@@ -666,7 +725,9 @@ mod tests {
     /// la DSN suivante. Rien n'a ete recu (cahier technique DSN, § 4.2, `norme-dsn/texte/chapitre-4-controles.txt`).
     #[test]
     fn une_declaration_refusee_au_bilan_n_est_pas_partie() {
-        let retour = |nature: &str, verdict: &str| RetourOrganisme { nature_retour: nature.into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
+        use crate::retours::NatureDuRetour::{AccuseDEnregistrement, CertificatDeConformite};
+        use crate::retours::Verdict;
+        let retour = |nature: crate::retours::NatureDuRetour, verdict: Verdict| RetourOrganisme { nature_retour: nature, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
             e.mois = Some(Mois::nouveau(2026, 6).unwrap());
@@ -675,12 +736,12 @@ mod tests {
             e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: 1, mois: None }]);
             e
         }
-        let ko = vec![retour("10", "OK"), retour("11", "KO")];
+        let ko = vec![retour(AccuseDEnregistrement, Verdict::Ok), retour(CertificatDeConformite, Verdict::Ko)];
         let lignes = vec![
             Ligne::Dsn(envoi("ALPHA", ko.clone(), DetailDsn::nouveau(false))),
-            Ligne::Dsn(envoi("BETA", vec![], DetailDsn { etat_declaration: Some("KO".into()), ..DetailDsn::nouveau(true) })),
+            Ligne::Dsn(envoi("BETA", vec![], DetailDsn { etat_declaration: Some(Verdict::Ko), ..DetailDsn::nouveau(true) })),
             Ligne::Dpae(envoi("GAMMA", ko, DetailDpae::nouveau(false, false))),
-            Ligne::Dsn(envoi("DELTA", vec![retour("11", "OK")], DetailDsn::nouveau(false))),
+            Ligne::Dsn(envoi("DELTA", vec![retour(CertificatDeConformite, Verdict::Ok)], DetailDsn::nouveau(false))),
         ];
         let d = departs_des_lignes(&lignes);
         let numero = engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap();

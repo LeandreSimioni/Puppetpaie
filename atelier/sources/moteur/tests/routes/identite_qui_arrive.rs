@@ -84,7 +84,7 @@ fn le_nir_qui_arrive_vaut_de_tout_temps_et_le_signalement_porte_le_ntt_declare()
     let lignes = std::fs::read_to_string(&journal).unwrap();
     let mut reel: serde_json::Value = serde_json::from_str(lignes.lines().rev().find(|l| l.contains("\"ligne\"")).unwrap()).unwrap();
     reel["ligne"]["mode"] = json!("reel");
-    reel["id"] = json!("reel-du-test");
+    reel["id"] = json!(format!("{}-9", reel["id"].as_str().unwrap()));
     std::fs::write(&journal, format!("{}{}\n", lignes, reel)).unwrap();
     let parti = std::fs::read(&f).unwrap();
     reussi(&route(&c, "arret-prolonger", json!({"salarie": "SANSNIR", "dernier_jour": "2026-02-06", "fin": "2026-02-10"}), jour));

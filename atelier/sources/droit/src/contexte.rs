@@ -18,7 +18,7 @@ use socle::num::Decimal;
 
 use socle::date::{repr_texte, Jour};
 use socle::fichiers::dossier_du_code;
-use socle::mois::Mois;
+use socle::mois::{Annee, Mois};
 use socle::echec::{refus, Echec, R};
 use socle::texte::cle_recherche;
 
@@ -122,7 +122,36 @@ pub fn histoire_des_etablissements(liste: Option<&[Datee<Vec<Etablissement>>]>) 
 
 // ------------------------------------------------ l'effectif
 
-const CODE_SECURITE_SOCIALE: &str = "A01";
+crate::natures::codes_fermes! {
+    /// LE TYPE D'UN PARAMETRE NEOReS (`RO.B008.R001`) : l'effectif qu'un compte rendu de nature 118 communique, et la cle
+    /// d'un effectif de `config/effectifs.json`. La table que net-entreprises sert
+    /// (`atelier/reference/sources/neores/gip-mds-neores-table-types-de-parametres-20230703.csv`) : A01 a A05, A07, tous
+    /// du compte rendu 118 « Effectifs ».
+    TypeDeParametreNeores, "Type de paramètre NEOReS (RO.B008.R001)", texte "table des types de paramètres NEOReS (gip-mds-neores-table-types-de-parametres-20230703.csv), l. 2-7" {
+        /// L'effectif de securite sociale (art. L. 130-1 CSS), celui des seuils de cotisation.
+        EffectifMoyen = "A01",
+        EffectifBoeth = "A02",
+        EffectifEcap = "A03",
+        EffectifOeth = "A04",
+        EffectifCsaCfip = "A05",
+        EffectifCsa = "A07",
+    }
+}
+
+impl TypeDeParametreNeores {
+    /// Son libelle, celui de la table.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            TypeDeParametreNeores::EffectifMoyen => "effectif moyen annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifBoeth => "effectif moyen BOETH annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifEcap => "effectif moyen ECAP annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifOeth => "effectif moyen d'assujettissement OETH annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifCsaCfip => "effectif moyen CSA CFIP annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifCsa => "effectif moyen CSA annuel (niveau entreprise)",
+        }
+    }
+}
+
 const ANNEES_CONSECUTIVES: i32 = 5;
 /// Le plus petit seuil d'effectif dont un taux depend (la formation des permanents) : une annee qui ne le departage pas
 /// ne departage aucun des autres.
@@ -182,7 +211,7 @@ pub fn cinquante_salaries_et_plus(fiche: &ChampsEntreprise) -> bool {
 struct FichierEffectifs {
     #[serde(rename = "quoi")]
     _quoi: Option<String>,
-    annees: Option<BTreeMap<String, BTreeMap<String, EffectifEcrit>>>,
+    annees: Option<BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>>,
 }
 
 /// L'effectif d'un code pour une annee.
@@ -194,7 +223,7 @@ struct EffectifEcrit {
     #[serde(rename = "calcule_le", default, with = "socle::paris::ecrit::seconde::option")]
     _calcule_le: Option<socle::paris::Moment>,
     #[serde(rename = "source")]
-    _source: Option<String>,
+    _source: Option<socle::fichiers::CheminRelatif>,
     #[serde(rename = "dit_le")]
     _dit_le: Option<Jour>,
 }
@@ -206,11 +235,8 @@ pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
     if socle::fichiers::existe(&p) {
         let lu: FichierEffectifs = socle::forme::lire_fichier(&p, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.")?;
         for (an, codes) in lu.annees.into_iter().flatten() {
-            if an.is_empty() || !an.chars().all(|c| c.is_ascii_digit()) {
-                continue;
-            }
-            if let Some(a01) = codes.get(CODE_SECURITE_SOCIALE) {
-                annees.insert(an.parse::<i32>().map_err(|e| refus(e.to_string()))?, a01.valeur);
+            if let Some(a01) = codes.get(&TypeDeParametreNeores::EffectifMoyen) {
+                annees.insert(an.nombre(), a01.valeur);
             }
         }
     }

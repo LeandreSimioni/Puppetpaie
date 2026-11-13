@@ -56,8 +56,8 @@ const BLANC: &str = "#FFFFFF";
 // ------------------------------------------------------------------ ce que la DSN dit
 
 /// Une rubrique que la DSN doit porter (`quoi` la dit en mots, `rubrique` va a part).
-fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: droit::natures::RubriqueDeLaNorme) -> R<&'a str> {
-    v.as_deref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), &rubrique.to_string()))
+fn exigee<'a, T>(v: &'a Option<T>, quoi: &str, rubrique: droit::natures::RubriqueDeLaNorme) -> R<&'a T> {
+    v.as_ref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), &rubrique.to_string()))
 }
 
 /// Le contrat releve-t-il de l'attestation Cinema Spectacle ? Ce que France Travail lit de la DSN : un CDD (40.007 = 02)
@@ -249,7 +249,7 @@ fn quantite(d: Decimal) -> String {
 
 /// Le PDF d'une attestation : le salarie `ind` (et ce que la DSN dit de plus, `plus`), ses periodes (cinq au plus),
 /// l'emploi et le motif de rupture de son contrat, l'employeur `ent`, edite le `edite_le`.
-fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: droit::natures::MotifDeRupture, idcc: Option<&str>, edite_le: Jour, remplace: Option<&str>) -> R<Vec<u8>> {
+fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: droit::natures::MotifDeRupture, idcc: Option<&str>, edite_le: Jour, remplace: Option<droit::natures::NumeroDOrdre>) -> R<Vec<u8>> {
     if periodes.is_empty() || periodes.len() > COLONNES {
         return Err(socle::refus!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
     }
@@ -545,7 +545,7 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
     let le_mois = d.mois.ok_or_else(|| refus("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)"))?;
     // Le type et l'ordre de la declaration (S20.G00.05.002 et .004) : 03 et 05 annulent et remplacent.
     let remplace = match d.type_declaration {
-        Some(t) if t.remplace() => Some(exigee(&d.ordre, "l'ordre de la déclaration qu'elle remplace", droit::rubrique!("S20.G00.05.004"))?),
+        Some(t) if t.remplace() => Some(*exigee(&d.ordre, "l'ordre de la déclaration qu'elle remplace", droit::rubrique!("S20.G00.05.004"))?),
         _ => None,
     };
     let lignes = crate::journal::lu(&ctx.racine).map(|j| j.lignes)?;

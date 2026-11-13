@@ -16,17 +16,19 @@ use crate::depot;
 use declarations::dsn_lue::DsnLue;
 use crate::ligne::{Acte, DetailDpae, DetailDsn, EmbaucheDeclaree, Envoi, Ligne, Mode, Ouverture, Version};
 use crate::releve_retours::{Client, Panne};
+use crate::retours::IdDeFlux;
 use crate::suites::{DepotRefuse, Suites};
 
 /// Ce qui vient de partir, et ce que l'organisme a repondu : la reponse de la route `deposer`. `ligne` est la ligne
 /// ecrite au journal ; `mois`, celui que le fichier declare.
 #[derive(Debug, serde::Serialize)]
 pub struct DepotFait {
-    pub quoi: String,
+    pub quoi: Acte,
     pub mois: Mois,
     pub reel: bool,
     pub reponse: String,
-    pub flux: String,
+    #[serde(serialize_with = "socle::forme::vide_si_aucun::serialize")]
+    pub flux: Option<IdDeFlux>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub trace: Option<PathBuf>,
     pub ligne: Ligne,
@@ -87,10 +89,10 @@ pub fn archiver_reponse(racine: &Path, quoi: &str, marque: &str, reponse: &str) 
 }
 
 /// L'envoi du depot `d` a `destinataire`, et ce que l'organisme a repondu.
-fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: &str, reponse: &str, trace: Option<CheminRelatif>, detail: D, versions: bool) -> Envoi<D, Rt> {
+fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: Option<IdDeFlux>, reponse: &str, trace: Option<CheminRelatif>, detail: D, versions: bool) -> Envoi<D, Rt> {
     let mut e = Envoi::nouveau(Mode::de(d.reel), d.qui, accepte, destinataire, reponse, detail);
     e.mois = Some(d.mois);
-    e.flux = flux.to_string();
+    e.flux = flux;
     e.trace = trace;
     e.versions = versions.then(|| d.versions.to_vec());
     e
@@ -110,7 +112,7 @@ fn trace_relative(ctx: &Contexte, t: &Path) -> R<CheminRelatif> {
 /// journal refuse joint son echec a celui du depot : il ne se perd pas.
 fn echec(ctx: &Contexte, quoi: Acte, d: &Depot, ligne: Ligne, e: Echec, suites: &mut Suites) -> Echec {
     let classe = e.classe_notee();
-    suites.depot_refuse = Some(DepotRefuse { quoi: quoi.nom().into(), reel: d.reel, classe: classe.into(), message: e.phrase.clone(), repetition: d.repetition.cloned() });
+    suites.depot_refuse = Some(DepotRefuse { quoi, reel: d.reel, classe: classe.into(), message: e.phrase.clone(), repetition: d.repetition.cloned() });
     match noter(ctx, d, ligne) {
         Ok(_) => e,
         Err(journal) => e.reformuler(|p| format!("{}\nLe journal des envois ne l'a pas noté : {}", p, journal.phrase)),
@@ -140,7 +142,7 @@ pub fn deposer_dsn(
     d: &Depot,
     apercu: &DsnLue,
     environnement: &str,
-    ordre_test: Option<i64>,
+    ordre_test: Option<droit::natures::NumeroDOrdre>,
     suites: &mut Suites,
 ) -> R<DepotFait> {
     branchement.ouvrir()?;
@@ -157,21 +159,20 @@ pub fn deposer_dsn(
         let mut contenu = d.octets.to_vec();
         if !d.reel {
             contenu = depot::basculer_dsn(&contenu)?;
-            if let Some(n) = ordre_test.filter(|n| *n != 0) {
-                contenu = depot::renumeroter(&contenu, &n.to_string())?;
+            if let Some(n) = ordre_test.filter(|n| n.valeur() != 0) {
+                contenu = depot::renumeroter(&contenu, n)?;
             }
         }
         let url = client.adresses.depot.clone();
         let (reponse, _type) = client.deposer_octets(&url, &contenu, "dsn").map_err(Panne::en_echec)?;
         Ok(reponse)
     };
-    let texte = |v: Option<&str>| v.map(str::to_string);
     let preuve = Some(d.preuve.to_string());
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement, ..DetailDsn::nouveau(false) };
-            let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase, None, detail, false));
+            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: apercu.ordre, evenement: d.evenement, ..DetailDsn::nouveau(false) };
+            let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", None, &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
     };
@@ -189,21 +190,21 @@ pub fn deposer_dsn(
         // LA NATURE : un signalement se numerote a la suite de tous ceux deja partis (`journal::dernier_ordre_des_signalements`).
         nature_declaration: apercu.nature_declaration,
         // LE RANG DECLARE : le prochain annule-et-remplace se numerote au-dessus de cet ordre.
-        ordre: texte(apercu.ordre.as_deref()),
+        ordre: apercu.ordre,
         versements: Some(apercu.versements_organismes.iter().map(|m| m.to_string()).collect()),
         salaries: Some(apercu.individus.len()),
         // CE QUI A ETE PRELEVE SUR LA GRILLE, et non sur le taux du salarie : la seule trace qui reste.
         pas_bareme: Some(apercu.pas_bareme()),
         repetition: d.repetition.cloned(),
         ordre_test,
-        etablissement: texte(apercu.etablissement()),
+        etablissement: apercu.etablissements.first().cloned(),
         evenement: d.evenement,
         ..DetailDsn::nouveau(false)
     };
-    let ligne = Ligne::Dsn(envoi_du_depot(d, true, "net-entreprises", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
+    let ligne = Ligne::Dsn(envoi_du_depot(d, true, "net-entreprises", flux.clone(), &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
     let ligne = repondu_aussitot(ctx, joue, ligne, suites)?;
-    Ok(DepotFait { quoi: "dsn".into(), mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
+    Ok(DepotFait { quoi: Acte::Dsn, mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
 }
 
 /// Depose une DPAE. `contenu` : le fichier tel qu'il part (bascule en test faite) ; `embauches` : ce qu'elle declare
@@ -237,7 +238,7 @@ pub fn deposer_dpae(
         Ok(r) => r,
         Err(e) => {
             let detail = DetailDpae { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), ..DetailDpae::nouveau(false, false) };
-            let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", "", &e.phrase, None, detail, false));
+            let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", None, &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dpae, d, ligne, e, suites));
         }
     };
@@ -247,10 +248,10 @@ pub fn deposer_dpae(
     // Ce que ce depot a REELLEMENT declare, a la maille de l'embauche : c'est ce qui repondra ensuite a
     // « lesquelles restent a faire ».
     let detail = DetailDpae { preuve, repetition: d.repetition.cloned(), embauches, ..DetailDpae::nouveau(false, false) };
-    let ligne = Ligne::Dpae(envoi_du_depot(d, true, "urssaf", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
+    let ligne = Ligne::Dpae(envoi_du_depot(d, true, "urssaf", flux.clone(), &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
     let ligne = repondu_aussitot(ctx, joue, ligne, suites)?;
-    Ok(DepotFait { quoi: "dpae".into(), mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
+    Ok(DepotFait { quoi: Acte::Dpae, mois: d.mois, reel: d.reel, reponse, flux, trace: Some(trace), ligne, deja, repetition: d.repetition.cloned(), suites: Vec::new() })
 }
 
 #[cfg(test)]

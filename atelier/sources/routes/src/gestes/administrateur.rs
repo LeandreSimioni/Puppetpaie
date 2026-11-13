@@ -55,6 +55,7 @@ use crate::enveloppe::Dite;
 use crate::rappels::EcheanceDite;
 use droit::contexte::Contexte;
 use envois::etats;
+use envois::retours::IdDeFlux;
 use socle::echec::erreur;
 use socle::echec::Echec;
 use socle::echec::R;
@@ -1024,7 +1025,7 @@ pub struct Resultat {
     pub classe: Option<Classe>,
     /// Le flux de ce qui est parti (ce que `suivre-depot` prend pour suivre ses retours).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub flux: Option<String>,
+    pub flux: Option<IdDeFlux>,
     /// Une declaration partie en reel, dont les retours se suivent (`administrateur-suivre`) : sa compagnie et ce que
     /// `suivre-depot` prend.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1175,7 +1176,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
                 };
                 // Le flux de ce qui est parti : la ligne que le depot a ecrite au journal des envois.
                 let journal = envois::journal::lu(racine)?;
-                let flux = journal.lignes.get(avant..).and_then(|nouvelles| nouvelles.last()).map(|l| l.flux().to_string());
+                let flux = journal.lignes.get(avant..).and_then(|nouvelles| nouvelles.last()).and_then(|l| l.flux().cloned());
                 (true, Some(phrase), None, None, flux)
             }
             Err(r) => (false, None, Some(r.phrase), r.classe, None),

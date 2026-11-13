@@ -217,7 +217,9 @@ impl ChargeDeposer {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeSuivre {
     pub(crate) quoi: Quoi,
-    pub(crate) flux: Option<String>,
+    /// Tel que `deposer` le rend : `""` quand le depot n'a pas de flux.
+    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    pub(crate) flux: Option<envois::retours::IdDeFlux>,
     pub(crate) mois: Option<Mois>,
 }
 
@@ -773,7 +775,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
     let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
-            let de = l.etablissement().or(principal);
+            let de = l.etablissement().map(|n| -> &str { n }).or(principal);
             l.fichier().is_some_and(|f| f.texte().starts_with("DSN_")) && de == nic
         }
         Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect::<BTreeSet<_>>() == *v),
@@ -806,7 +808,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&str>) -> R<Depo
         let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
         format!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
-        suivre_depot(ctx, ChargeSuivre { quoi, flux: Some(fait.flux.clone()), mois: Some(fait.mois) })?.phrase
+        suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
     } else {
         "Dépôt réel effectué — ses retours sont attendus.".to_string()
     };
@@ -835,7 +837,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let dpae = quoi == Quoi::Dpae;
     let (debut, fin) = releve_retours::derniere_journee()?;
     let releve = if dpae {
-        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
+        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
     } else {
         crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None)
     };
@@ -845,7 +847,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
-    let du_flux = |q: envois::journal::Acte| flux.as_deref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == f));
+    let du_flux = |q: envois::journal::Acte| flux.as_ref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == Some(f)));
     let (passe, refuse);
     if dpae {
         let etat = etats::etat_des_embauches(&lignes);
@@ -859,7 +861,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
         refuse = embauches.iter().any(|x| x.is_some_and(|x| x.refusee));
     } else {
         let ligne = du_flux(Quoi::Dsn.acte());
-        let nic = ligne.and_then(Ligne::etablissement);
+        let nic = ligne.and_then(Ligne::etablissement).map(|n| -> &str { n });
         // Sans son mois, rien ne dit ou en est la DSN : elle attend.
         let e = mois.map(|m| compagnie::etat_dsn::du_mois(ctx, m, nic)).transpose()?;
         passe = e.as_ref().is_some_and(|e| e.etat == compagnie::etat_dsn::Etat::Passee);
@@ -890,7 +892,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
         let releve = match d.quoi {
             Quoi::Dpae => {
                 let flux = repetition.flux_conforme();
-                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
+                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
             }
             Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None),
         };

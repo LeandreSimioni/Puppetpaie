@@ -655,6 +655,25 @@ pub fn ecrire_a_virgule_opt<S: serde::Serializer>(d: &Option<crate::num::Decimal
     }
 }
 
+/// UNE VALEUR FACULTATIVE QUE SA FORME ECRIT `""` QUAND ELLE MANQUE (le `flux` d'une ligne du journal des envois, d'un
+/// depot rendu) : `#[serde(with = "socle::forme::vide_si_aucun")]`. `None` s'ecrit `""` ; `""` (ou `null`) se lit `None` ; tout
+/// autre texte se lit dans la forme de la valeur. La facon d'ecrire est celle du fichier, la valeur reste une absence.
+pub mod vide_si_aucun {
+    pub fn serialize<T: serde::Serialize, S: serde::Serializer>(v: &Option<T>, s: S) -> Result<S::Ok, S::Error> {
+        match v {
+            Some(t) => t.serialize(s),
+            None => s.serialize_str(""),
+        }
+    }
+
+    pub fn deserialize<'de, T: serde::de::DeserializeOwned, D: serde::Deserializer<'de>>(d: D) -> Result<Option<T>, D::Error> {
+        let Some(texte) = <Option<String> as serde::Deserialize>::deserialize(d)?.filter(|t| !t.is_empty()) else {
+            return Ok(None);
+        };
+        T::deserialize(serde::de::IntoDeserializer::<D::Error>::into_deserializer(texte)).map(Some)
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for NombreEcrit {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         struct Lu;

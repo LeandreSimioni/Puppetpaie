@@ -33,7 +33,7 @@ use socle::fichiers::{EmpreinteCourte, NomDeFichier};
 use socle::html::{html_echapper, mailto};
 use socle::texte::capitaliser;
 use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
-use envois::journal::{ArticleModifie, ContratParti, DetailSignature, Ligne, Version};
+use envois::journal::{ActeDuContrat, ArticleModifie, ContratParti, DetailSignature, Ligne, Version};
 use socle::date::Jour;
 use socle::mois::Mois;
 use droit::contexte::IdSalarie;
@@ -460,7 +460,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }
     if !lignes_avenants.is_empty() {
-        let detail = DetailSignature { contrats: lignes_avenants.clone(), main_propre: true, expediteur: None, relance: None, acte: Some("avenant".into()), partis: None, echec_a: None };
+        let detail = DetailSignature { contrats: lignes_avenants.clone(), main_propre: true, expediteur: None, relance: None, acte: Some(ActeDuContrat::Avenant), partis: None, echec_a: None };
         let versions = envois::journal::versions_des_contrats(ctx, &lignes_avenants, &departs)?;
         let reponse = format!(
             "{} imprime(s) pour une remise en main propre",
@@ -627,8 +627,9 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             c.relance = Some(*rappel);
             c.empreinte = Some(empreinte.clone());
             if remplace {
-                c.acte = Some("remplace".into());
-                c.remplace = p.engagement.numero.as_deref().and_then(|propre| remplacements.iter().find(|(k, _)| *k == (cle.clone(), debut, propre.to_string())).map(|(_, (n, _))| n.clone()));
+                c.acte = Some(ActeDuContrat::Remplace);
+                // Le contrat remplace est celui parti sous le meme numero (`envois::etats::contrat_parti`).
+                c.remplace = p.engagement.numero.as_ref().filter(|propre| remplacements.iter().any(|(k, _)| *k == (cle.clone(), debut, propre.to_string()))).cloned();
             }
             contrats.push(c);
         }
@@ -999,7 +1000,7 @@ fn avenant_ecrit(
         fichier: NomDeFichier::du(&pdf)?,
         spectacle: Some(p.titre()?),
         mois: a.mois,
-        acte: Some("avenant".into()),
+        acte: Some(ActeDuContrat::Avenant),
         avenant: Some(a.numero),
         remplace: None,
         effet: Some(a.effet),
@@ -1177,7 +1178,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
             main_propre: false,
             expediteur: Some(expediteur.clone()),
             relance: Some(aa.iter().all(UnAvenant::rappel)),
-            acte: Some("avenant".into()),
+            acte: Some(ActeDuContrat::Avenant),
             partis: None,
             echec_a: None,
         };

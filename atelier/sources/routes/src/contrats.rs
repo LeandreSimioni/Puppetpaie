@@ -544,7 +544,7 @@ pub(crate) struct ParCourriel {
     pub(crate) mention: Option<String>,
     /// L'acte de la demande (`avenant`, `remplace`) ; aucun pour le contrat lui-meme (la forme du journal des envois,
     /// `envois::etats`).
-    pub(crate) acte: Option<String>,
+    pub(crate) acte: Option<envois::journal::ActeDuContrat>,
     pub(crate) avenant: Option<i64>,
 }
 
@@ -600,7 +600,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         numero: numero_note.clone(),
         nom: nom.clone(),
         avenant: av,
-        origine: courriel.map(|_| "courriel".to_string()),
+        origine: courriel.map(|_| journal::OrigineDuRetourDeContrat::Courriel),
         code: courriel.map(|m| m.code.clone()),
         adresse: courriel.map(|m| m.adresse.clone()),
         quand,
@@ -608,7 +608,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         preuve: courriel.map(|m| m.preuve.clone()),
         fichier_signe: courriel.and_then(|m| m.fichier_signe.clone()),
         mention: courriel.and_then(|m| m.mention.clone()),
-        acte: courriel.and_then(|m| m.acte.clone()),
+        acte: courriel.and_then(|m| m.acte),
         qui: qui.to_string(),
         reponse,
     };
@@ -1459,10 +1459,10 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
         let parti = if e.detail.main_propre { "imprimé" } else { "envoyé à la signature" };
         for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_deref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
-            let quoi = match x.acte.as_deref() {
-                Some("avenant") => format!("{} {}", majuscule(&avenant_dit(x.avenant)), parti),
-                Some("remplace") => format!("Contrat qui annule et remplace le {}, {}", contrat_dit(x.remplace.as_deref()), parti),
-                _ => format!("Contrat {}", parti),
+            let quoi = match x.acte {
+                Some(journal::ActeDuContrat::Avenant) => format!("{} {}", majuscule(&avenant_dit(x.avenant)), parti),
+                Some(journal::ActeDuContrat::Remplace) => format!("Contrat qui annule et remplace le {}, {}", contrat_dit(x.remplace.as_deref()), parti),
+                None => format!("Contrat {}", parti),
             };
             contrat.push(piece(racine, quoi, e.quand(), Some(x.mois), &x.fichier));
         }
@@ -1470,7 +1470,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
         for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero.as_deref())) {
             if let Some(f) = d.fichier_signe.as_ref() {
                 let quoi = match d.avenant {
-                    Some(a) if d.acte.as_deref() == Some("avenant") => format!("Avenant n° {} signé, contresigné", a),
+                    Some(a) if d.acte == Some(journal::ActeDuContrat::Avenant) => format!("Avenant n° {} signé, contresigné", a),
                     _ => "Contrat signé, contresigné".to_string(),
                 };
                 contrat.push(piece(racine, quoi, d.quand.into(), l.mois(), f));

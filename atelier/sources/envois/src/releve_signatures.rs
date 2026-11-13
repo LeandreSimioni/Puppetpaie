@@ -60,7 +60,7 @@ pub struct SignatureRecue {
     pub quand: Moment,
     /// `[{salarie, debut, fin, numero, spectacle, fichier, avenant, mois}]`, tels que le journal les donne.
     pub contrats: Vec<ContratAttendu>,
-    pub fichier_signe: String,
+    pub fichier_signe: Vec<socle::fichiers::NomDeFichier>,
     pub preuve: String,
     pub renvoye: bool,
 }

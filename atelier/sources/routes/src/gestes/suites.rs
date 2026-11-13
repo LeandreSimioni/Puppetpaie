@@ -53,11 +53,11 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
 /// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent.
 fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
-    let nirs: Vec<(droit::contexte::IdSalarie, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.clone(), nir.to_string()))).collect();
+    let nirs: Vec<(droit::contexte::IdSalarie, droit::fiche::Nir)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.dite().map(|nir| (cle.clone(), nir.clone()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<socle::mois::Mois> {
-        let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
-        let l = journal.lignes.iter().find(|l| l.flux() == flux)?;
+        let flux = retour.flux.as_ref()?;
+        let l = journal.lignes.iter().find(|l| l.flux() == Some(flux))?;
         (l.acte() == envois::journal::Acte::Dsn && l.nature_dsn() == Some(droit::nature_declaration::NatureDeLaDeclaration::Mensuelle)).then(|| l.mois()).flatten()
     };
     let mut tous = Vec::new();
@@ -152,8 +152,8 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
     compagnie::incidents::noter(
         &ctx.racine,
         &compagnie::incidents::Note {
-            nature: if d.quoi == "dsn" { compagnie::incidents::DSN } else { compagnie::incidents::DPAE },
-            ou: &format!("depot-{}", d.quoi),
+            nature: if d.quoi == envois::journal::Acte::Dsn { compagnie::incidents::DSN } else { compagnie::incidents::DPAE },
+            ou: &format!("depot-{}", d.quoi.nom()),
             quoi: &d.classe,
             resume: &d.message,
             detail: DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },

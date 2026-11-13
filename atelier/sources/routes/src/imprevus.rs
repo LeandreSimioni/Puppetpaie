@@ -32,6 +32,7 @@ use socle::ecran::Pastille;
 use declarations::signalement;
 use droit::contexte::{Contexte, IdSalarie, SalarieDesigne};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre};
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60, MotifDArret, MotifDeReprise, SubrogationDeLArret};
@@ -230,9 +231,9 @@ pub(crate) struct ChargeArretSignaler {
     dernier_jour: Jour,
     nature: NatureSignalement,
     #[serde(skip_serializing_if = "Option::is_none")]
-    remplace: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ordre: Option<i64>,
+    remplace: Option<IdentifiantDeDeclaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
+    ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     test: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -247,7 +248,7 @@ impl ChargeArretSignaler {
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`) : son numero d'ordre et son
     /// jour de constitution, tels que le journal les dit.
-    pub(crate) fn refait(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement, ordre: i64, le: Jour) -> ChargeArretSignaler {
+    pub(crate) fn refait(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement, ordre: NumeroDOrdre, le: Jour) -> ChargeArretSignaler {
         ChargeArretSignaler { ordre: Some(ordre), le: Some(le), ..ChargeArretSignaler::de(salarie, dernier_jour, nature) }
     }
 }
@@ -298,9 +299,9 @@ pub(crate) struct ChargeFinContratSignaler {
     mois: Mois,
     salarie: SalarieDesigne,
     #[serde(skip_serializing_if = "Option::is_none")]
-    remplace: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ordre: Option<i64>,
+    remplace: Option<IdentifiantDeDeclaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
+    ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     test: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -314,7 +315,7 @@ impl ChargeFinContratSignaler {
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`).
-    pub(crate) fn refait(mois: Mois, salarie: IdSalarie, ordre: i64, le: Jour) -> ChargeFinContratSignaler {
+    pub(crate) fn refait(mois: Mois, salarie: IdSalarie, ordre: NumeroDOrdre, le: Jour) -> ChargeFinContratSignaler {
         ChargeFinContratSignaler { ordre: Some(ordre), le: Some(le), ..ChargeFinContratSignaler::de(mois, salarie) }
     }
 }
@@ -328,14 +329,6 @@ struct ChargeFinContratDocuments {
     le: Option<Jour>,
 }
 
-/// L'identifiant du signalement qu'un annule-et-remplace remplace, s'il se dit ; dit vide, il ne designe rien et se refuse.
-fn remplace_dit(r: &Option<String>) -> R<Option<String>> {
-    match r.as_deref().map(str::trim) {
-        Some("") => Err(erreur(Classe::Manque, "Le signalement remplacé n'est pas dit : donner son identifiant, ou ne rien remplacer.")),
-        autre => Ok(autre.map(str::to_string)),
-    }
-}
-
 /// Le jour de constitution d'un signalement ou d'un document : celui que la charge dit ; absent, aujourd'hui (la fiche de
 /// la route le dit).
 fn constitue_le(ctx: &Contexte, le: Option<Jour>) -> Jour {
@@ -347,7 +340,7 @@ fn constitue_le(ctx: &Contexte, le: Option<Jour>) -> Jour {
 
 /// Le numero d'ordre d'un signalement : celui que la charge dit ; absent, le suivant de tous ceux deja partis
 /// (`prochain_ordre`), avec ce que la plate-forme en dit.
-fn ordre_du_signalement(ctx: &Contexte, ordre: Option<i64>) -> R<(i64, Vec<String>)> {
+fn ordre_du_signalement(ctx: &Contexte, ordre: Option<NumeroDOrdre>) -> R<(NumeroDOrdre, Vec<String>)> {
     match ordre {
         Some(n) => Ok((n, Vec::new())),
         None => prochain_ordre(ctx),
@@ -417,7 +410,8 @@ pub(crate) struct ReponseSignalement {
     nature: NatureSignalement,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
-    ordre: i64,
+    #[serde(with = "droit::natures::en_nombre")]
+    ordre: NumeroDOrdre,
     avertissements: Vec<String>,
 }
 
@@ -429,7 +423,8 @@ pub(crate) struct ReponseSignalementFin {
     phrase: String,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
-    ordre: i64,
+    #[serde(with = "droit::natures::en_nombre")]
+    ordre: NumeroDOrdre,
     preavis: String,
     avertissements: Vec<String>,
 }
@@ -741,7 +736,7 @@ fn parti_le(ctx: &Contexte, a: &ArretSaisi, nature: NatureSignalement) -> R<Opti
 
 /// Le nom d'un signalement : `<base>.dsn` ; un annule-et-remplace, `<base>_AR<ordre>.dsn`, a cote du signalement parti
 /// qu'il remplace, qui reste tel qu'il est parti (regle 4).
-fn nom_du_signalement(base: &str, annule_et_remplace: bool, ordre: i64) -> R<NomDeFichier> {
+fn nom_du_signalement(base: &str, annule_et_remplace: bool, ordre: NumeroDOrdre) -> R<NomDeFichier> {
     NomDeFichier::lire(&if annule_et_remplace { format!("{}_AR{}.dsn", base, ordre) } else { format!("{}.dsn", base) })
 }
 
@@ -1963,7 +1958,7 @@ fn echec_fctu(e: declarations::fctu::Echec) -> Echec {
 pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refaire: bool) -> R<ReponseSignalementFin> {
     let mois = c.mois;
     let salarie = c.salarie.as_str();
-    let remplace = remplace_dit(&c.remplace)?;
+    let remplace = c.remplace;
     let envoi_test = c.test == Some(true);
 
     let (saisie, paies) = validees(ctx, mois)?;
@@ -1993,7 +1988,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let options = declarations::fctu::Options {
         type_declaration,
         ordre,
-        remplace: remplace.clone(),
+        remplace,
         envoi_test,
         date_constitution: c.le,
     };
@@ -2082,9 +2077,9 @@ pub(crate) fn etats_d_alors(ctx: &Contexte, salarie: &IdSalarie, dernier_jour: &
 /// DSN, p. 136 : « Pour un signalement, ce numero ne doit pas etre remis a zero afin qu'il soit unique quel que
 /// soit le mois d'emission ». LA PLATE-FORME FAIT FOI : `crate::gestes::releve::dernier_ordre_connu` la consulte ; ce
 /// qu'il faut en dire (elle n'a pas repondu, elle connaissait plus que le journal) part avec les avertissements.
-fn prochain_ordre(ctx: &Contexte) -> R<(i64, Vec<String>)> {
+fn prochain_ordre(ctx: &Contexte) -> R<(NumeroDOrdre, Vec<String>)> {
     let connu = crate::gestes::releve::dernier_ordre_connu(ctx, None)?;
-    Ok((connu.dernier + 1, connu.avertissements))
+    Ok((NumeroDOrdre::suivant(connu.dernier)?, connu.avertissements))
 }
 
 /// LE SIGNALEMENT D'ARRET (04) OU DE REPRISE (05), ecrit dans `sorties/AAAA-MM/`. Rien n'est depose : le depot est un
@@ -2098,7 +2093,7 @@ fn prochain_ordre(ctx: &Contexte) -> R<(i64, Vec<String>)> {
 /// fichier parti reste tel qu'il est parti.
 pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: Option<&ArretSaisi>) -> R<ReponseSignalement> {
     let nature = c.nature;
-    let remplace = remplace_dit(&c.remplace)?;
+    let remplace = c.remplace;
     let arret = match alors {
         Some(a) => a.clone(),
         None => l_arret(ctx, &cle_du_nom(ctx, &c.salarie)?, &c.dernier_jour)?.2,

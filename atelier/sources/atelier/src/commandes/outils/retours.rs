@@ -53,7 +53,8 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let dpae = args.drapeau("dpae");
     refuser_si_pas_redirige(cadre, if dpae { Organisme::Dpae } else { Organisme::Dsn }, "la releve des retours")?;
     cadre.ouvrir_le_coffre();
-    let flux = args.texte("flux").filter(|f| !f.is_empty());
+    let flux = args.texte("flux").filter(|f| !f.is_empty()).map(envois::retours::IdDeFlux::lire).transpose()?;
+    let flux = flux.as_ref();
     let environnement = super::avec_defaut(args, "environnement")?;
     let ou = if dpae { "DPAE".to_string() } else { format!("DSN ({})", environnement) };
     match flux {
@@ -70,7 +71,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     for i in &r.incidents {
         dire!("  {}", i);
     }
-    let mut trouves: Vec<&envois::retours::Annonce> = r.trouves.iter().filter(|x| flux.is_none() || x.flux.as_deref() == flux).collect();
+    let mut trouves: Vec<&envois::retours::Annonce> = r.trouves.iter().filter(|x| flux.is_none() || x.flux.as_ref() == flux).collect();
     trouves.sort_by_key(|x| x.publication);
     dire!("{} retour(s), dont {} nouveau(x).\n", trouves.len(), r.nouveaux.len());
     for x in trouves {
@@ -79,9 +80,9 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             if r.nouveaux.contains(x) { "NEUF" } else { "    " },
             super::dit(envois::releve_retours::jour_de_publication_dit(x).as_deref()),
             x.nature_retour,
-            super::dit(x.statut.as_deref()),
-            envois::retours::libelle_nature(&x.nature_retour),
-            super::dit(x.flux.as_deref())
+            super::dit(x.statut.map(envois::retours::StatutDuRetour::code)),
+            x.nature_retour.libelle_dit(),
+            super::dit(x.flux.as_ref().map(envois::retours::IdDeFlux::texte))
         );
     }
     for quoi in &r.a_faire {

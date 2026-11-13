@@ -85,7 +85,7 @@ fn poser(octets: &[u8], rubrique: droit::natures::RubriqueDeLaNorme, valeur: &st
 
 /// `renumeroter_pour_test` : un annule-et-remplace d'ordre `ordre` (type 01 -> 03,
 /// 02 -> 05), en memoire.
-pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
+pub fn renumeroter(octets: &[u8], ordre: droit::natures::NumeroDOrdre) -> R<Vec<u8>> {
     let prefixe = b"S20.G00.05.002,'";
     let mut contenu = octets.to_vec();
     if let Some((i, _)) = premier(octets, prefixe, deux_chiffres) {
@@ -100,7 +100,7 @@ pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
             contenu = poser(&contenu, droit::rubrique!("S20.G00.05.002"), t.code())?;
         }
     }
-    poser(&contenu, droit::rubrique!("S20.G00.05.004"), ordre)
+    poser(&contenu, droit::rubrique!("S20.G00.05.004"), &ordre.to_string())
 }
 
 // ----------------------------------------------------------------- verifier

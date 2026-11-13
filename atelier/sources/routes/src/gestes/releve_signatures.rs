@@ -193,15 +193,14 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             }
         }
         let noms_signes = signes.iter().map(|(_, p)| NomDeFichier::du(p)).collect::<R<Vec<_>>>()?;
-        let fichier_signe = noms_signes.iter().map(NomDeFichier::texte).collect::<Vec<_>>().join(", ");
 
         // LE JOURNAL D'ABORD : une fois la ligne ecrite, la releve suivante n'attend plus ce code, et le renvoi ne se fera
         // pas deux fois. Un contrat que `contrat_recu` refuse (la paie n'est plus dans la saisie du mois...) devient un
         // incident NOMME (le salarie, le contrat, la raison) et la releve continue.
         // Une demande qui ne dit pas son acte est celle du contrat lui-meme (la forme du journal des envois,
         // `envois::etats`) : l'absence passe telle quelle.
-        let acte = a.acte.clone();
-        let est_avenant = acte.as_deref() == Some("avenant");
+        let acte = a.acte;
+        let est_avenant = acte == Some(envois::journal::ActeDuContrat::Avenant);
         let mut notes = 0usize;
         for c in &contrats {
             let sien = signes.iter().find(|(n, _)| *n == c.fichier).map(|(_, p)| NomDeFichier::du(p)).transpose()?;
@@ -214,7 +213,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 fichier_signe: sien,
                 // La mention posee : l'exemplaire contresigne se refait du contrat parti et d'elle (`depart::piece_partie`).
                 mention: mention.clone(),
-                acte: acte.clone(),
+                acte,
                 avenant: if est_avenant { c.avenant.filter(|n| *n != 0).or(a.avenant) } else { None },
             };
             let debut = c.debut.iso();
@@ -246,7 +245,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             adresse: de.clone(),
             quand: quand.clone(),
             contrats: contrats.clone(),
-            fichier_signe: fichier_signe.clone(),
+            fichier_signe: noms_signes.clone(),
             preuve: nom_preuve.clone(),
             renvoye: false,
         });
@@ -273,7 +272,12 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 let dernier = r.recues.len() - 1;
                 r.recues[dernier].renvoye = true;
             }
-            Err(e) => r.incidents.push(format!("{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.", a_nom, e.phrase, fichier_signe)),
+            Err(e) => r.incidents.push(format!(
+                "{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.",
+                a_nom,
+                e.phrase,
+                noms_signes.iter().map(NomDeFichier::texte).collect::<Vec<_>>().join(", ")
+            )),
         }
     }
     client.fermer()?;

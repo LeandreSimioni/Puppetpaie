@@ -10,8 +10,8 @@ use crate::retours::Annonce;
 /// Un depot refuse, a noter au journal des incidents (test comme reel).
 #[derive(Clone, Debug)]
 pub struct DepotRefuse {
-    /// `dsn` ou `dpae`.
-    pub quoi: String,
+    /// Une DSN ou une DPAE.
+    pub quoi: crate::journal::Acte,
     pub reel: bool,
     pub classe: String,
     pub message: String,

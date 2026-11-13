@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::{Contexte, IdSalarie, SalarieDesigne};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::NumeroDOrdre;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
 use socle::date::Jour;
@@ -52,7 +53,7 @@ use socle::echec::R;
 pub use declarations::obligations::{CleDObligation, Ou, TexteDepose};
 use declarations::obligations::{BaseDesObligations, DeBase};
 use socle::echec::erreur;
-use socle::fichiers::{repr, CheminRelatif};
+use socle::fichiers::{repr, CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, OPERATION};
@@ -511,11 +512,11 @@ pub enum FaitDit {
 pub struct DepotFait {
     quand: InstantOuJour,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<String>,
+    fichier: Option<NomDeFichier>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "droit::natures::en_nombre::option::serialize")]
+    ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ordre: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    flux: Option<String>,
+    flux: Option<envois::retours::IdDeFlux>,
     comment: &'static str,
     le: Jour,
 }
@@ -785,7 +786,8 @@ pub(crate) struct EnvoiDeLArret {
     pub nature_declaration: NatureDeLaDeclaration,
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    ordre: Option<i64>,
+    #[serde(serialize_with = "droit::natures::en_nombre::option::serialize")]
+    ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<socle::mois::Mois>,
     fichier: Option<CheminRelatif>,
@@ -810,7 +812,7 @@ fn envoi(envois: &[EnvoiDeLArret], nature: NatureDeLaDeclaration) -> Option<Fait
     Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.as_ref().map(CheminRelatif::to_string), ordre: e.ordre, flux: None, comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.as_ref().map(CheminRelatif::nom), ordre: e.ordre, flux: None, comment: "depot", le }),
     })
 }
 
@@ -953,10 +955,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         let d = &e.detail;
         let Some(nature) = d.nature_declaration else { continue };
         let type_declaration = d.type_declaration;
-        let ordre = match d.ordre.as_deref().map(str::trim).filter(|o| !o.is_empty()) {
-            Some(o) => Some(o.parse::<i64>().map_err(|x| erreur(Classe::Illisible, format!("L'ordre {} d'une DSN du journal des envois ne se lit pas ({}).", repr(o), x)))?),
-            None => None,
-        };
+        let ordre = d.ordre;
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie == *salarie);
         let dans = |m: Mois| e.fichier.as_ref().map(|nom| CheminRelatif::sorties(m).joint(nom));
         use NatureDeLaDeclaration as N;
@@ -1192,7 +1191,7 @@ fn fctu_depose(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) 
     Ok(Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(|f| f.to_string()), ordre: None, flux: Some(l.flux().to_string()), comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().cloned(), ordre: None, flux: l.flux().cloned(), comment: "depot", le }),
     }))
 }
 
