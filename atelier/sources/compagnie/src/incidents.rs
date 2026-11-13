@@ -638,15 +638,25 @@ pub struct RapportNavigateur {
     pub ligne: Option<u64>,
     pub colonne: Option<u64>,
     pub pile: Option<String>,
-    pub canal: String,
+    pub canal: CanalDeLaPage,
     pub ou_dans_la_page: String,
+}
+
+/// LE CANAL D'UN INCIDENT DE LA PAGE : par ou la page l'a vu casser (`noterIncident`, js/tuyau.js) -- une erreur, une
+/// promesse rejetee, une ressource absente. Il s'ecrit par son nom, en minuscules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CanalDeLaPage {
+    Erreur,
+    Promesse,
+    Ressource,
 }
 
 /// Ce que porte un incident de la page.
 #[derive(Serialize)]
 struct DetailDeLaPage {
     face: &'static str,
-    canal: String,
+    canal: CanalDeLaPage,
     #[serde(skip_serializing_if = "Option::is_none")]
     colonne: Option<u64>,
     ou_dans_la_page: String,
@@ -666,7 +676,7 @@ pub fn depuis_navigateur(racine: &Path, rapport: &RapportNavigateur) -> R<Option
         Some(l) => format!("{}:{}", fichier, l),
         None => fichier,
     };
-    let detail = DetailDeLaPage { face: "interface", canal: tete(&rapport.canal, 20), colonne: rapport.colonne, ou_dans_la_page: tete(&rapport.ou_dans_la_page, 120) };
+    let detail = DetailDeLaPage { face: "interface", canal: rapport.canal, colonne: rapport.colonne, ou_dans_la_page: tete(&rapport.ou_dans_la_page, 120) };
     let resume = format!("{}: {}", genre, rapport.message);
     let trace = rapport.pile.as_deref().filter(|p| !p.is_empty()).map(|p| tete(p, JS_PILE_MAX));
     noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi: &genre, resume: &resume, detail, trace: trace.as_deref(), sans_contexte: false })

@@ -246,7 +246,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | système | `Systeme` | `compagnie/src/maj.rs` |
 | clé d'archive | `CleDArchive` | `compagnie/src/maj.rs` |
 | état du bridage | `EtatDuBridage` | `compagnie/src/bridage.rs` |
+| sorte d'une copie | `SorteDeCopie` | `compagnie/src/installation.rs` |
 | clé d'incident | `CleDIncident` | `compagnie/src/incidents.rs` |
+| canal d'un incident de la page | `CanalDeLaPage` | `compagnie/src/incidents.rs` |
+| origine d'un appel | `OrigineDeLAppel` | `compagnie/src/diagnostic.rs` |
 | numéro de poste | `NumeroDePoste` | `compagnie/src/incidents.rs` |
 | secret | `Secret` | `socle/src/secret.rs` |
 | numéro de retour | `NumeroDeRetour` | `compagnie/src/editeur.rs` |
@@ -421,10 +424,19 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **état du bridage** : bridé ou débloqué : ce que disent `.edition.json` et `logiciel/EDITION.json`. Une liste du
   logiciel : écrit `bride`, `debloque` ; `demo` et `complete` se lisent aussi (le contrat avec les installations
   posées) ; que portent la machine d'un incident (`edition`) et sa ligne en mots.
+- **sorte d'une copie** : ce qu'une copie de compagnie est : une fictive (ses envois sont joués), la compagnie d'essai
+  (ses dépôts partent en test), une copie de développement. Une liste du logiciel ; le marqueur
+  (`COPIE-DE-DEVELOPPEMENT.json`) ne l'écrit pas à part : elle se lit au début de sa phrase `copie_de` (« compagnie
+  fictive … », « compagnie d'essai … »), une fois, par `Marqueur::sorte`.
 - **clé d'incident** : ce qui fait que deux incidents sont le même : la nature, l'endroit, le genre. Les douze premiers
   hexadécimaux minuscules du SHA-256 de `nature|ou|quoi`, que seul `incidents::empreinte` fait, lue strictement ; pas
   une `Empreinte`. Que portent une ligne du journal des incidents, un paquet, ce qui part chez l'éditeur, les clés
   reçues et écartées que le serveur du filet rend.
+- **canal d'un incident de la page** : par où la page a vu casser (`js/tuyau.js`) : une erreur, une promesse rejetée,
+  une ressource absente. Une liste du logiciel, écrite `erreur`, `promesse`, `ressource` ; que portent le rapport de la
+  page (`incident-navigateur`) et le détail de l'incident.
+- **origine d'un appel** : d'où vient l'appel d'une route servie par la fenêtre : la page, ou le fond (la veille, le
+  filet, l'état des mois). Une liste du logiciel, écrite `page`, `fond` dans le fil du diagnostic.
 - **numéro de poste** : le numéro que le serveur du filet donne à ce poste (`POST /poste`) ; 32 hexadécimaux minuscules
   (`RE_POSTE` du serveur). Que portent `config/diagnostic.json`, l'identité rendue par le serveur, le client du filet, ce
   qui part (`poste`) et une année de paies partie. La clé du poste, à côté, est un secret.
