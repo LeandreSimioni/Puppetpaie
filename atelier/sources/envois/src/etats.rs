@@ -1017,23 +1017,22 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
     let mut personnes = Vec::new();
     let mut anomalies: Vec<String> = Vec::new();
     for l in lignes {
-        if l.lot != "00" {
-            if let Some((_, nom)) = declarations::dpae::CODES_RET_AR_LOT.iter().find(|(c, _)| *c == l.lot) {
-                anomalies.push(format!("{} (lot)", nom));
-            }
+        if let Some(lot) = l.lot.filter(|lot| *lot != declarations::dpae::CodeRetourDuLot::Correct) {
+            anomalies.push(format!("{} (lot)", lot.libelle()));
         }
         let p = PersonneCertifiee {
+            libelle: l.libelle().to_string(),
             nom: l.nom,
             prenom: l.prenom,
             embauche: l.embauche,
             dossier: l.dossier,
             code: l.code,
-            libelle: l.libelle,
             enregistree: l.enregistree,
             deja_existante: l.deja_existante,
             formalites: l.formalites,
             pastille: None,
         };
+        // Refusee, ou sans code retour (ni enregistree ni refusee) : la ligne le dit dans ses anomalies.
         if !p.enregistree && !p.deja_existante {
             anomalies.push(format!("{} -- {}", p.libelle, p.nom));
         }
@@ -1116,8 +1115,8 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
             .dpae
             .iter()
             .flatten()
-            .filter(|d| !d.enregistree && !d.deja_existante)
-            .map(|d| AnomalieDeRetour { categorie: None, code: d.code.clone(), message: d.libelle.clone(), rubrique: None })
+            .filter(|d| d.refusee())
+            .filter_map(|d| d.code.map(|code| AnomalieDeRetour { categorie: None, code: code.to_string(), message: d.libelle.clone(), rubrique: None }))
             .collect()
     } else {
         // Sans piece (ni telechargee, ni archivee), le rejet n'a pas d'anomalie lisible.

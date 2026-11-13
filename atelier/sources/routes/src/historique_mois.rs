@@ -497,7 +497,10 @@ fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: 
                     } else if x.deja_existante {
                         "déjà enregistrée auparavant".to_string()
                     } else {
-                        format!("refusée{}", morceau(" : ", joint([dit(&x.code), dit(&x.libelle)], " — ").as_deref(), ""))
+                        match x.code {
+                            Some(code) => format!("refusée : {} — {}", code, x.libelle()),
+                            None => x.libelle().to_string(),
+                        }
                     };
                     l.phrases.push(format!("{}{} : {}.", morceau("", qui.as_deref(), ""), morceau(" (embauche du ", x.embauche.map(|j| j.iso()).as_deref(), ")"), etat));
                 }
@@ -994,7 +997,15 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             }
             let anomalies: Vec<Anomalie> = r.anomalies().into_iter().flatten().map(|a| Anomalie::du_message(a)).collect();
             for d in r.personnes().into_iter().flatten() {
-                let etat = if d.enregistree { "enregistrée".to_string() } else if d.deja_existante { "déjà enregistrée auparavant".into() } else { format!("refusée : {}", d.libelle) };
+                let etat = if d.enregistree {
+                    "enregistrée".to_string()
+                } else if d.deja_existante {
+                    "déjà enregistrée auparavant".into()
+                } else if d.refusee() {
+                    format!("refusée : {}", d.libelle)
+                } else {
+                    d.libelle.clone()
+                };
                 phrases.push(format!("{} : {}.", joint([dit(&d.nom), dit(&d.prenom)], " ").into_iter().collect::<String>(), etat));
             }
             (None, anomalies, false, None, None)
