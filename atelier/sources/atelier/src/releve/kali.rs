@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use droit::fiche::Idcc;
 use socle::date::Jour;
 
+use crate::releve::entrepot_dila::{EtatDuTexteDila, IdDila, LivraisonDila};
 use crate::EnOrdre;
 
 pub const INDEX: &str = "https://echanges.dila.gouv.fr/OPENDATA/KALI/";
@@ -45,9 +46,8 @@ use socle::echec::{refus, R};
 /// Ce qu'on telecharge : une adresse, ses octets (ou la panne, en une phrase).
 pub type Telecharger<'a> = dyn FnMut(&str) -> R<Vec<u8>> + 'a;
 
-/// Les estampilles `AAAAMMJJ-HHMMSS` de l'index, sans doublon, dans l'ordre (`entrepot_dila::livraisons`, que l'entrepot KALI
-/// lit aussi).
-pub fn livraisons(index_html: &str) -> Vec<String> {
+/// Les livraisons de l'index, sans doublon, dans l'ordre (`entrepot_dila::livraisons`, que l'entrepot KALI lit aussi).
+pub fn livraisons(index_html: &str) -> R<Vec<LivraisonDila>> {
     crate::releve::entrepot_dila::livraisons(index_html, "KALI")
 }
 
@@ -93,7 +93,7 @@ fn texte_de(n: roxmltree::Node, chemin: &[&str]) -> Option<String> {
 pub struct Fiche {
     idcc: Option<String>,
     titre: Option<String>,
-    etat: Option<String>,
+    etat: Option<EtatDuTexteDila>,
     textes: EnOrdre<String>,
 }
 
@@ -104,13 +104,32 @@ pub struct Texte {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub titre: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_texte: Option<String>,
+    pub date_texte: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub modifie_le: Option<String>,
+    pub modifie_le: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub etat: Option<String>,
+    pub etat: Option<EtatDuTexteDila>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<String>,
+}
+
+/// L'etat que porte l'element `ETAT` du fichier `nom`, s'il en porte un.
+fn etat_lu(nom: &str, etat: Option<String>) -> R<Option<EtatDuTexteDila>> {
+    match etat {
+        Some(e) => EtatDuTexteDila::lire(&e).map(Some).map_err(|x| x.reformuler(|p| format!("{} : {}", nom, p))),
+        None => Ok(None),
+    }
+}
+
+/// Le jour que porte l'element `element` du fichier `nom` (`AAAA-MM-JJ`), s'il en porte un.
+fn jour_lu(nom: &str, element: &str, jour: Option<String>) -> R<Option<Jour>> {
+    match jour {
+        Some(j) => match socle::piece::Zone::lue(&j, socle::piece::format::JourIso).valeur() {
+            Some(d) => Ok(Some(d)),
+            None => Err(refus!("{} : {} « {} » n'est pas un jour AAAA-MM-JJ", nom, element, j)),
+        },
+        None => Ok(None),
+    }
 }
 
 /// Ce qu'une livraison contient : les conteneurs (par identifiant) et les textes modifies (par identifiant : ce qu'il dit,
@@ -136,13 +155,20 @@ fn lire_livraison(octets: &[u8]) -> R<(EnOrdre<Fiche>, EnOrdre<(Texte, String)>)
                         liens.poser(id.to_string(), titre.trim().to_string());
                     }
                 }
-                conteneurs.poser(ident, Fiche { idcc: champ("NUM"), titre: champ("TITRE"), etat: champ("ETAT"), textes: liens });
+                let etat = etat_lu(&nom, champ("ETAT"))?;
+                conteneurs.poser(ident, Fiche { idcc: champ("NUM"), titre: champ("TITRE"), etat, textes: liens });
             }
             "TEXTE_VERSION" => {
                 let chron = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_TEXTE_CHRONICLE", c]);
                 let vers = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_TEXTE_VERSION", c]);
                 let titre = vers("TITRE").or_else(|| vers("TITREFULL"));
-                let texte = Texte { titre, date_texte: chron("DATE_TEXTE"), modifie_le: chron("DERNIERE_MODIFICATION"), etat: vers("ETAT"), extension: vers("LIBELLE_EXTENSION") };
+                let texte = Texte {
+                    titre,
+                    date_texte: jour_lu(&nom, "DATE_TEXTE", chron("DATE_TEXTE"))?,
+                    modifie_le: jour_lu(&nom, "DERNIERE_MODIFICATION", chron("DERNIERE_MODIFICATION"))?,
+                    etat: etat_lu(&nom, vers("ETAT"))?,
+                    extension: vers("LIBELLE_EXTENSION"),
+                };
                 textes.poser(ident, (texte, nom));
             }
             _ => {}
@@ -211,7 +237,7 @@ struct LivraisonLue {
 #[serde(deny_unknown_fields)]
 struct ConteneurLu {
     idcc: Option<Idcc>,
-    etat: Option<String>,
+    etat: Option<EtatDuTexteDila>,
     premiere: bool,
     nouveaux: EnOrdre<String>,
 }
@@ -222,7 +248,7 @@ struct ConteneurLu {
 struct TexteLu {
     #[serde(flatten)]
     texte: Texte,
-    conteneur: String,
+    conteneur: IdDila,
 }
 
 /// Les textes connus d'une convention ne viennent-ils que du manifeste (aucune fiche vue) ?
@@ -234,16 +260,16 @@ fn tous_cites(connus: Option<&EnOrdre<String>>) -> bool {
 
 /// Une convention suivie : son conteneur, son IDCC, les textes que le manifeste cite.
 pub struct Suivi {
-    pub conteneur: String,
+    pub conteneur: IdDila,
     pub idcc: Idcc,
     pub textes: Vec<String>,
 }
 
-/// CE QUI A BOUGE depuis la date de releve : les livraisons lues (leurs jours), celles lues cette fois, le trou de
-/// l'index s'il y en a un, les fiches qui ont pose les listes de reference, et les evenements par conteneur.
+/// CE QUI A BOUGE depuis la date de releve : les livraisons lues, celles lues cette fois, le trou de l'index s'il y en a
+/// un (une phrase), les fiches qui ont pose les listes de reference, et les evenements par conteneur.
 pub struct Rapport {
-    pub livraisons_lues: Vec<String>,
-    pub nouvelles: Vec<String>,
+    pub livraisons_lues: Vec<LivraisonDila>,
+    pub nouvelles: Vec<LivraisonDila>,
     pub trou: Option<String>,
     pub amorces: EnOrdre<Amorce>,
     pub evenements: EnOrdre<Vec<Evenement>>,
@@ -262,7 +288,7 @@ pub enum Evenement {
 pub struct EvenementConvention {
     pub livraison: Jour,
     pub genre: &'static str,
-    pub ident: String,
+    pub ident: IdDila,
     pub titre: String,
     pub premiere: bool,
     pub nouveaux: EnOrdre<String>,
@@ -273,10 +299,10 @@ pub struct EvenementConvention {
 pub struct EvenementTexte {
     #[serde(flatten)]
     pub texte: Texte,
-    pub conteneur: String,
+    pub conteneur: IdDila,
     pub livraison: Jour,
     pub genre: &'static str,
-    pub ident: String,
+    pub ident: IdDila,
 }
 
 impl Evenement {
@@ -307,7 +333,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
         None => (EnOrdre::new(), EnOrdre::new(), Vec::new(), None, EnOrdre::new()),
     };
     for s in suivis {
-        let c = connus.entree(s.conteneur.clone(), EnOrdre::new);
+        let c = connus.entree(s.conteneur.texte().to_string(), EnOrdre::new);
         for t in &s.textes {
             c.entree(t.clone(), || CITE.to_string());
         }
@@ -315,26 +341,26 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
 
     let seuil = format!("{}-999999", depuis.aaaammjj());
     let index = String::from_utf8_lossy(&telecharger(INDEX)?).into_owned();
-    let toutes = livraisons(&index);
-    let (Some(premiere), Some(derniere)) = (toutes.first().cloned(), toutes.last().cloned()) else {
+    let toutes = livraisons(&index)?;
+    let (Some(premiere), Some(derniere)) = (toutes.first(), toutes.last()) else {
         return Err(refus("l'index KALI ne liste aucune livraison : la page a change ?"));
     };
-    let a_lire: Vec<&String> = toutes.iter().filter(|l| **l > seuil).collect();
+    let a_lire: Vec<&LivraisonDila> = toutes.iter().filter(|l| l.texte() > seuil.as_str()).collect();
 
     // Ce qu'on a couvert sans trou : de la premiere veille a la derniere livraison vue. Si l'index ne remonte plus
     // jusque-la, des livraisons sont sorties sans avoir ete lues -- on le dit, et on s'en souvient.
     let couverture = match couverture {
         None => {
-            if premiere > seuil {
-                trous.push(Trou { de: depuis.aaaammjj(), a: huit(&premiere)? });
+            if premiere.texte() > seuil.as_str() {
+                trous.push(Trou { de: depuis.aaaammjj(), a: premiere.jour().aaaammjj() });
             }
-            Plage { de: std::cmp::min(&seuil, &premiere).clone(), a: derniere.clone() }
+            Plage { de: std::cmp::min(seuil.as_str(), premiere.texte()).to_string(), a: derniere.texte().to_string() }
         }
-        Some(c) if premiere > c.a => {
-            trous.push(Trou { de: huit(&c.a)?, a: huit(&premiere)? });
-            Plage { de: c.de, a: derniere.clone() }
+        Some(c) if premiere.texte() > c.a.as_str() => {
+            trous.push(Trou { de: huit(&c.a)?, a: premiere.jour().aaaammjj() });
+            Plage { de: c.de, a: derniere.texte().to_string() }
         }
-        Some(c) => Plage { de: c.de, a: std::cmp::max(c.a, derniere.clone()) },
+        Some(c) => Plage { de: c.de, a: std::cmp::max(c.a, derniere.texte().to_string()) },
     };
     let mut trou = None;
     for t in &trous {
@@ -350,9 +376,9 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
     // La liste de reference d'une convention (ses textes attaches) ne vient que d'une fiche livree. Tant qu'on n'en a pas
     // vu, on ne saurait pas rattacher un texte modifie a la convention -- sauf ceux que le manifeste cite. Alors, une
     // fois, on remonte l'index a rebours jusqu'a trouver la derniere fiche de chaque convention suivie.
-    let mut a_amorcer: Vec<&str> = suivis.iter().map(|s| s.conteneur.as_str()).filter(|c| tous_cites(connus.valeur(c))).collect();
+    let mut a_amorcer: Vec<&str> = suivis.iter().map(|s| s.conteneur.texte()).filter(|c| tous_cites(connus.valeur(c))).collect();
     a_amorcer.dedup();
-    for l in toutes.iter().filter(|l| **l <= seuil).rev() {
+    for l in toutes.iter().filter(|l| l.texte() <= seuil.as_str()).rev() {
         if a_amorcer.is_empty() {
             break;
         }
@@ -363,7 +389,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                 for (k, v) in &c.textes.0 {
                     ses.poser(k.clone(), v.clone());
                 }
-                amorces.poser(cont.to_string(), Amorce { livraison: jour(l)?, textes: c.textes.len(), titre: c.titre.clone() });
+                amorces.poser(cont.to_string(), Amorce { livraison: l.jour(), textes: c.textes.len(), titre: c.titre.clone() });
                 a_amorcer.retain(|x| *x != cont);
             }
         }
@@ -371,7 +397,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
 
     let mut nouvelles = Vec::new();
     for l in a_lire {
-        if livraisons_lues.valeur(l).is_some() {
+        if livraisons_lues.valeur(l.texte()).is_some() {
             continue;
         }
         let octets = telecharger(&format!("{}KALI_{}.tar.gz", INDEX, l))?;
@@ -379,7 +405,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
         let mut resume_c = EnOrdre::new();
         let mut resume_t = EnOrdre::new();
         for suivi in suivis {
-            let cont = suivi.conteneur.as_str();
+            let cont = suivi.conteneur.texte();
             if let Some(c) = conteneurs.valeur(cont) {
                 // La premiere fiche vue donne la liste de reference : rien n'y est « nouveau », on ne connaissait pas la
                 // liste d'avant.
@@ -391,7 +417,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                     Ok(i) => i,
                     Err(e) => return Err(refus!("la fiche KALI de {} ({}) : {}", cont, l, e.phrase)),
                 };
-                resume_c.poser(cont.to_string(), ConteneurLu { idcc, etat: c.etat.clone(), premiere, nouveaux });
+                resume_c.poser(cont.to_string(), ConteneurLu { idcc, etat: c.etat, premiere, nouveaux });
                 for (k, v) in &c.textes.0 {
                     anciens.poser(k.clone(), v.clone());
                 }
@@ -399,17 +425,16 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
         }
         for (ident, (t, membre)) in &textes.0 {
             for suivi in suivis {
-                let cont = suivi.conteneur.as_str();
-                if connus.valeur(cont).is_some_and(|c| c.valeur(ident).is_some()) {
+                if connus.valeur(suivi.conteneur.texte()).is_some_and(|c| c.valeur(ident).is_some()) {
                     if relever {
                         poser(dossier, l, ident, membre, &octets)?;
                     }
-                    resume_t.poser(ident.clone(), TexteLu { texte: t.clone(), conteneur: cont.to_string() });
+                    resume_t.poser(ident.clone(), TexteLu { texte: t.clone(), conteneur: suivi.conteneur.clone() });
                 }
             }
         }
-        livraisons_lues.poser(l.clone(), LivraisonLue { conteneurs: resume_c, textes: resume_t });
-        nouvelles.push(l.clone());
+        livraisons_lues.poser(l.texte().to_string(), LivraisonLue { conteneurs: resume_c, textes: resume_t });
+        nouvelles.push((*l).clone());
     }
 
     std::fs::create_dir_all(dossier).map_err(|e| refus!("{} : {}", dossier.display(), e))?;
@@ -418,7 +443,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
 
     let mut evenements: EnOrdre<Vec<Evenement>> = EnOrdre::new();
     for suivi in suivis {
-        evenements.entree(suivi.conteneur.clone(), Vec::new);
+        evenements.entree(suivi.conteneur.texte().to_string(), Vec::new);
     }
     let mut lues: Vec<&(String, LivraisonLue)> = cache.livraisons.0.iter().filter(|(l, _)| *l > seuil).collect();
     lues.sort_by(|a, b| a.0.cmp(&b.0));
@@ -442,18 +467,18 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                 }
             };
             if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| k == cont).map(|(_, v)| v) {
-                ev.push(Evenement::Convention(EvenementConvention { livraison: jour(l)?, genre: "convention", ident: cont.clone(), titre, premiere: c.premiere, nouveaux: c.nouveaux.clone() }));
+                ev.push(Evenement::Convention(EvenementConvention { livraison: jour(l)?, genre: "convention", ident: IdDila::lire(cont)?, titre, premiere: c.premiere, nouveaux: c.nouveaux.clone() }));
             }
         }
         for (ident, t) in &r.textes.0 {
-            if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| *k == t.conteneur).map(|(_, v)| v) {
-                ev.push(Evenement::Texte(EvenementTexte { texte: t.texte.clone(), conteneur: t.conteneur.clone(), livraison: jour(l)?, genre: "texte", ident: ident.clone() }));
+            if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| k == t.conteneur.texte()).map(|(_, v)| v) {
+                ev.push(Evenement::Texte(EvenementTexte { texte: t.texte.clone(), conteneur: t.conteneur.clone(), livraison: jour(l)?, genre: "texte", ident: IdDila::lire(ident)? }));
             }
         }
     }
     Ok(Rapport {
-        livraisons_lues: toutes.iter().filter(|l| **l > seuil).map(|l| jour(l).map(|j| j.iso())).collect::<R<Vec<String>>>()?,
-        nouvelles: nouvelles.iter().map(|l| jour(l).map(|j| j.iso())).collect::<R<Vec<String>>>()?,
+        livraisons_lues: toutes.iter().filter(|l| l.texte() > seuil.as_str()).cloned().collect(),
+        nouvelles,
         trou,
         amorces: cache.amorces,
         evenements,
@@ -462,12 +487,12 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
 
 /// Le XML d'un texte touche, garde a cote des sources : on le relira, et on ne le perd pas quand la livraison sort de
 /// l'index.
-fn poser(dossier: &Path, livraison: &str, ident: &str, membre: &str, octets: &[u8]) -> R<()> {
+fn poser(dossier: &Path, livraison: &LivraisonDila, ident: &str, membre: &str, octets: &[u8]) -> R<()> {
     let Some((_, xml)) = fichiers_tar_gz(octets)?.into_iter().find(|(n, _)| n == membre) else {
         return Err(refus!("{} absent de la livraison {}", membre, livraison));
     };
     let kali = dossier.join("kali");
-    let cible = kali.join(format!("{}-{}.xml", ident, jour(livraison)?.iso()));
+    let cible = kali.join(format!("{}-{}.xml", ident, livraison.jour().iso()));
     std::fs::create_dir_all(&kali).map_err(|e| refus!("{} : {}", kali.display(), e))?;
     std::fs::write(&cible, xml).map_err(|e| refus!("{} : {}", cible.display(), e))
 }

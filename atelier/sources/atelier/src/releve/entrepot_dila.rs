@@ -123,6 +123,152 @@ impl<'de> serde::Deserialize<'de> for IdDila {
     }
 }
 
+// ------------------------------------------------------------------ une livraison, l'etat d'un texte
+
+/// UNE LIVRAISON QUOTIDIENNE DE LA DILA (LEGI, KALI) : son estampille `AAAAMMJJ-HHMMSS`, telle que l'index la nomme
+/// (`LEGI_20250715-205701.tar.gz`), et le jour qu'elle commence par dire. Elle s'ecrit et se trie comme son estampille.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LivraisonDila {
+    estampille: String,
+    jour: socle::date::Jour,
+}
+
+impl LivraisonDila {
+    /// La livraison d'estampille `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<LivraisonDila> {
+        let o = texte.as_bytes();
+        let forme = o.len() == 15 && o[8] == b'-' && o.iter().enumerate().all(|(i, c)| i == 8 || c.is_ascii_digit());
+        let jour = match texte.get(..8) {
+            Some(t) if forme => socle::piece::Zone::lue(t, socle::piece::format::Aaaammjj).valeur(),
+            _ => None,
+        };
+        match jour {
+            Some(jour) => Ok(LivraisonDila { estampille: texte.to_string(), jour }),
+            None => Err(refus(format!("« {} » n'est pas l'estampille d'une livraison de la DILA (AAAAMMJJ-HHMMSS).", texte))),
+        }
+    }
+
+    /// Son estampille.
+    pub fn texte(&self) -> &str {
+        &self.estampille
+    }
+
+    /// Le jour de la livraison.
+    pub fn jour(&self) -> socle::date::Jour {
+        self.jour
+    }
+}
+
+impl std::fmt::Display for LivraisonDila {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.estampille)
+    }
+}
+
+impl Serialize for LivraisonDila {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.estampille)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for LivraisonDila {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        LivraisonDila::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+/// L'ETAT D'UN TEXTE DE LA DILA (l'element `ETAT` d'un article, d'un texte ou d'une convention des bases LEGI et KALI).
+/// La liste est celle que les bases portent, relevee le 13/11/2026 dans les entrepots et les pieces de
+/// `atelier/reference/sources/` (`legi-entrepot/`, `kali-entrepot/`, les `xml/` des codes) : elle s'ecrit par son nom ; un
+/// autre nom se refuse en se citant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EtatDuTexteDila {
+    Abroge,
+    AbrogeDiff,
+    Annule,
+    Deplace,
+    Disjoint,
+    Modifie,
+    ModifieMortNe,
+    Perime,
+    Remplace,
+    Transfere,
+    Vigueur,
+    VigueurDiff,
+    VigueurEten,
+    VigueurNonEten,
+}
+
+impl EtatDuTexteDila {
+    const TOUS: [EtatDuTexteDila; 14] = [
+        EtatDuTexteDila::Abroge,
+        EtatDuTexteDila::AbrogeDiff,
+        EtatDuTexteDila::Annule,
+        EtatDuTexteDila::Deplace,
+        EtatDuTexteDila::Disjoint,
+        EtatDuTexteDila::Modifie,
+        EtatDuTexteDila::ModifieMortNe,
+        EtatDuTexteDila::Perime,
+        EtatDuTexteDila::Remplace,
+        EtatDuTexteDila::Transfere,
+        EtatDuTexteDila::Vigueur,
+        EtatDuTexteDila::VigueurDiff,
+        EtatDuTexteDila::VigueurEten,
+        EtatDuTexteDila::VigueurNonEten,
+    ];
+
+    /// Son nom, tel que les bases l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            EtatDuTexteDila::Abroge => "ABROGE",
+            EtatDuTexteDila::AbrogeDiff => "ABROGE_DIFF",
+            EtatDuTexteDila::Annule => "ANNULE",
+            EtatDuTexteDila::Deplace => "DEPLACE",
+            EtatDuTexteDila::Disjoint => "DISJOINT",
+            EtatDuTexteDila::Modifie => "MODIFIE",
+            EtatDuTexteDila::ModifieMortNe => "MODIFIE_MORT_NE",
+            EtatDuTexteDila::Perime => "PERIME",
+            EtatDuTexteDila::Remplace => "REMPLACE",
+            EtatDuTexteDila::Transfere => "TRANSFERE",
+            EtatDuTexteDila::Vigueur => "VIGUEUR",
+            EtatDuTexteDila::VigueurDiff => "VIGUEUR_DIFF",
+            EtatDuTexteDila::VigueurEten => "VIGUEUR_ETEN",
+            EtatDuTexteDila::VigueurNonEten => "VIGUEUR_NON_ETEN",
+        }
+    }
+
+    /// L'etat que `texte` nomme, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<EtatDuTexteDila> {
+        match EtatDuTexteDila::TOUS.into_iter().find(|e| e.nom() == texte) {
+            Some(e) => Ok(e),
+            None => Err(refus(format!("« {} » n'est pas un etat d'un texte de la DILA.", texte))),
+        }
+    }
+
+    /// Un etat de vigueur : son nom commence par `VIGUEUR` (la vigueur differee, l'etendue et la non etendue comprises).
+    pub fn de_vigueur(self) -> bool {
+        matches!(self, EtatDuTexteDila::Vigueur | EtatDuTexteDila::VigueurDiff | EtatDuTexteDila::VigueurEten | EtatDuTexteDila::VigueurNonEten)
+    }
+}
+
+impl std::fmt::Display for EtatDuTexteDila {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
+impl Serialize for EtatDuTexteDila {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for EtatDuTexteDila {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        EtatDuTexteDila::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
 // ------------------------------------------------------------------ l'entrepot
 
 /// Le separateur des parties d'une cle d'article (`("impots", "1724")`, `("3090", "KALIARTI...")`) dans la cle de la table :
@@ -147,9 +293,9 @@ pub trait Article: Serialize + DeserializeOwned {
 /// L'ETAT DE LECTURE d'un entrepot (`etat.json`) : les livraisons deja appliquees, et le jour de la derniere sauvegarde.
 /// Sa forme s'ecrit cles triees : ses champs (et ceux de ce qu'il porte) se declarent dans l'ordre alphabetique.
 pub trait Etat: Serialize + DeserializeOwned {
-    fn lues(&self) -> &[String];
-    fn lues_mut(&mut self) -> &mut Vec<String>;
-    fn dater(&mut self, aujourdhui: &str);
+    fn lues(&self) -> &[LivraisonDila];
+    fn lues_mut(&mut self) -> &mut Vec<LivraisonDila>;
+    fn dater(&mut self, aujourdhui: socle::date::Jour);
 }
 
 /// Des articles sous une cle, et l'etat de lecture.
@@ -197,17 +343,17 @@ impl<A: Article, E: Etat> Entrepot<A, E> {
     }
 
     /// Les livraisons deja appliquees.
-    pub fn lues(&self) -> HashSet<String> {
+    pub fn lues(&self) -> HashSet<LivraisonDila> {
         self.etat.lues().iter().cloned().collect()
     }
 
-    /// La livraison `nom` est appliquee.
-    pub fn noter_lue(&mut self, nom: &str) {
-        self.etat.lues_mut().push(nom.to_string());
+    /// La livraison `livraison` est appliquee.
+    pub fn noter_lue(&mut self, livraison: &LivraisonDila) {
+        self.etat.lues_mut().push(livraison.clone());
     }
 
-    /// Ecrit les deux fichiers ; `aujourdhui` (AAAA-MM-JJ) devient le jour de la mise a jour.
-    pub fn sauver(&mut self, aujourdhui: &str) -> R<()> {
+    /// Ecrit les deux fichiers ; `aujourdhui` devient le jour de la mise a jour.
+    pub fn sauver(&mut self, aujourdhui: socle::date::Jour) -> R<()> {
         std::fs::create_dir_all(&self.dossier).map_err(|e| refus!("{} : {}", self.dossier.display(), e))?;
         let tmp = self.dossier.join(format!("{}.tmp", ARTICLES));
         {
@@ -369,13 +515,14 @@ pub fn en_ordre(source: &dyn Source, urls: &[String], fils: usize, mut rendre: i
     });
 }
 
-/// Les estampilles `AAAAMMJJ-HHMMSS` des livraisons `<PREFIXE>_...tar.gz` d'un index, sans doublon, dans l'ordre.
-pub fn livraisons(index_html: &str, prefixe: &str) -> Vec<String> {
+/// Les livraisons `<PREFIXE>_AAAAMMJJ-HHMMSS.tar.gz` d'un index, sans doublon, dans l'ordre ; une estampille qui ne
+/// commence pas par un jour refuse l'index.
+pub fn livraisons(index_html: &str, prefixe: &str) -> R<Vec<LivraisonDila>> {
     let m = Regex::new(&format!(r"{}_(\d{{8}}-\d{{6}})\.tar\.gz", regex::escape(prefixe))).expect("motif des livraisons");
-    let mut v: Vec<String> = m.captures_iter(index_html).map(|c| c[1].to_string()).collect();
+    let mut v: Vec<LivraisonDila> = m.captures_iter(index_html).map(|c| LivraisonDila::lire(&c[1])).collect::<R<_>>()?;
     v.sort();
     v.dedup();
-    v
+    Ok(v)
 }
 
 // ------------------------------------------------------------------ l'archive

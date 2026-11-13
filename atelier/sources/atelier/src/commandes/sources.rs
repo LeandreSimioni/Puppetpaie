@@ -63,7 +63,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     for e in &liste {
         dire!("{}", e.ident);
         dire!("   {}", e.titre);
-        dire!("   {} -- version {}, relevee le {} (il y a {} j)", e.editeur, e.version, e.releve_le, e.age_jours);
+        dire!("   {} -- version {}, relevee le {} (il y a {} j)", e.editeur, e.version, e.releve_le.iso(), e.age_jours);
         dire!("   {}", e.contenu);
         let copie = match (e.copie_conforme, e.copie_presente, e.transcription_presente, &e.transcription) {
             (Some(true), _, _, _) => "copie conforme".to_string(),

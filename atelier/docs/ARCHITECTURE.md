@@ -256,6 +256,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | identifiant d'un message | `IdDeMessage` | `compagnie/src/problemes.rs` |
 | étiquette de caviardage | `EtiquetteDeCaviardage` | `compagnie/src/incidents.rs` |
 | identifiant de la DILA | `IdDila` | `atelier/src/releve/entrepot_dila.rs` |
+| livraison de la DILA | `LivraisonDila` | `atelier/src/releve/entrepot_dila.rs` |
+| état d'un texte de la DILA | `EtatDuTexteDila` | `atelier/src/releve/entrepot_dila.rs` |
 | type d'une capture | `TypeDeCapture` | `compagnie/src/problemes.rs` |
 | rubrique de la norme | `RubriqueDeLaNorme` | `droit/src/natures.rs` |
 | nom de fichier | `NomDeFichier` | `socle/src/fichiers.rs` |
@@ -467,7 +469,16 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   (« KALICONT000028157262 », « LEGITEXT000006072050 ») : sa famille (`LEGITEXT`, `LEGIARTI`, `KALITEXT`, `KALIARTI`,
   `KALICONT`, `JORFTEXT`) et douze chiffres. L'atelier seul : il s'écrit et se trie comme son texte ; un identifiant que
   l'atelier écrit en Rust, `IdDila::du_moteur`. Que portent le suivi KALI d'une source et une convention à relever
-  (`sources.json`), le texte d'un code relevé (`releve::codes::textes`).
+  (`sources.json`), le texte d'un code relevé (`releve::codes::textes`), les articles et les changements des entrepôts
+  (`legi-entrepot/`, `kali-entrepot/`), un relevé (`releve.json`), les événements de la veille KALI.
+- **livraison de la DILA** : une livraison quotidienne des bases LEGI et KALI, nommée par son estampille
+  `AAAAMMJJ-HHMMSS` (`KALI_20260922-214912.tar.gz`), qui commence par son jour. L'atelier seul : elle s'écrit et se trie
+  comme son estampille, `jour()` dit son jour. Que portent les livraisons appliquées d'un entrepôt et ses changements, la
+  dernière livraison d'un relevé, ce que la veille KALI a lu.
+- **état d'un texte de la DILA** : l'élément `ETAT` d'un article, d'un texte ou d'une convention (`VIGUEUR_ETEN`,
+  `ABROGE`…). Une liste relevée des bases (les entrepôts et les pièces de `atelier/reference/sources/`), écrite par son
+  nom ; un autre nom se refuse. `de_vigueur()` : les états dont le nom commence par `VIGUEUR`. Que portent un article
+  de l'entrepôt KALI et ses changements, la fiche d'une convention et un texte modifié de la veille KALI.
 - **type d'une capture** : le type d'image d'une capture jointe à un message au développeur : PNG ou JPEG. Une liste du
   logiciel, écrit `image/png`, `image/jpeg` ; que portent une capture de la page, celle qui part et celle que l'aperçu
   montre.
