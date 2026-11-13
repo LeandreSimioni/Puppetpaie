@@ -237,8 +237,8 @@ struct Echeancier {
 struct Revue {
     phrase: String,
     annee: i32,
-    archives: Vec<String>,
-    continuent: Vec<String>,
+    archives: Vec<droit::contexte::IdSpectacle>,
+    continuent: Vec<droit::contexte::IdSpectacle>,
     /// La configuration relue (`ouverture`, route `configuration`).
     configuration: crate::ouverture::ConfigurationDite,
 }
@@ -328,9 +328,8 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
     for cle in &archives {
         crate::fiches::activer_fiche(ctx, &crate::fiches::ChargeActiver::Spectacle { cle: cle.clone(), actif: false })?;
     }
-    let archives: Vec<String> = archives.into_iter().map(String::from).collect();
     marquer_echeance(ctx, &CleDEcheance::de_l_annee(REVUE_SPECTACLES, annee)?, true, "interface")?;
-    let continuent: Vec<String> = garder.into_iter().map(String::from).collect();
+    let continuent: Vec<droit::contexte::IdSpectacle> = garder.into_iter().collect();
     let neuf = Contexte::nouveau(&ctx.racine, None)?;
     let configuration = crate::ouverture::configuration_dite(&neuf)?;
     let phrase = format!("Spectacles qui continuent : {} ; archivés : {}.", continuent.len(), archives.len());
