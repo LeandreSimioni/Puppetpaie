@@ -309,8 +309,8 @@ pub struct Ouverture {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flux: Option<IdDeFlux>,
     pub empreinte: EmpreinteCourte,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::retours::compte_rendu_ecrit::option")]
-    pub compte_rendu: Option<Verdict>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compte_rendu: Option<crate::retours::CompteRenduDuTest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contournement: Option<String>,
 }

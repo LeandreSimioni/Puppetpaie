@@ -269,6 +269,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
+| compte rendu d'un test de dépôt | `CompteRenduDuTest` | `envois/src/retours.rs` |
 | statut d'un retour | `StatutDuRetour` | `envois/src/retours.rs` |
 | catégorie d'une anomalie | `CategorieDAnomalie` | `envois/src/retours.rs` |
 | type d'un rapport de dépôt | `TypeDeRapport` | `envois/src/retours.rs` |
@@ -528,10 +529,12 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   `etat_type`, `envoi_etat_type` et `ok_ko` du schéma des bilans, RO.B003.R002 de NEOReS ; il se lit sans casse, à sa
   seule porte (`Verdict::lu`), et s'écrit en capitales. Que portent un bilan, une déclaration qu'il identifie, un
   rapport, un NEOReS, un retour d'organisme au journal des envois et l'état de la déclaration qu'une ligne reprise
-  garde ; le compte rendu d'un test de dépôt, écrit en minuscules (`retours::compte_rendu_ecrit` : `ok`, `ko` ;
-  `attendu` quand son bilan n'est pas revenu), que portent l'ouverture d'un dépôt réel au journal et la répétition d'un
-  fichier. Ce que la pièce en dit au journal (le verdict, les anomalies en phrases, les personnes d'une DPAE) :
+  garde. Ce que la pièce en dit au journal (le verdict, les anomalies en phrases, les personnes d'une DPAE) :
   `ligne::VerdictDeLaPiece`.
+- **compte rendu d'un test de dépôt** : ce que le test conforme d'un fichier dit à l'heure où on le lit : son bilan
+  attendu, conforme, refusé (`attendu`, `ok`, `ko`, en minuscules). Que portent la répétition d'un fichier
+  (`etats::Repetition`, `null` sans test conforme) et l'ouverture d'un dépôt réel au journal des envois
+  (`ligne::Ouverture`), qui garde ce qu'il valait au départ du dépôt.
 - **statut d'un retour** : ce que la liste des retours dit d'un retour (`flux.retour.statut`) : OK, KO, ANO, EN COURS,
   ANOBLOQUANTE (France Travail). `droit::codes_fermes!` sur son texte : guide de l'API DSN v6.8, l. 1733-1745, et « De
   la DSN à l'attestation employeur » v3.2, l. 235-243. Que portent un retour listé, un retour d'organisme au journal des

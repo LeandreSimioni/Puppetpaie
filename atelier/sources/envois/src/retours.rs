@@ -427,64 +427,16 @@ impl<'de> Deserialize<'de> for Verdict {
     }
 }
 
-/// LE COMPTE RENDU D'UN TEST DE DEPOT, ecrit en minuscules (`ok`, `ko`) : ce que le journal des envois garde d'un test qui
-/// a ouvert un depot reel (`ligne::Ouverture`), et ce que dit ou en est le test d'un fichier (`etats::Repetition`). Il se
-/// relit dans cette forme seule. `attendu` : un test conforme dont le bilan n'est pas encore revenu (aucun verdict), et
-/// `null` aucun test conforme.
-pub mod compte_rendu_ecrit {
-    use super::Verdict;
-    use serde::{Deserialize, Serialize};
-
-    fn en_minuscules(v: Verdict) -> String {
-        v.code().to_lowercase()
-    }
-
-    fn lu<E: serde::de::Error>(texte: &str) -> Result<Verdict, E> {
-        match Verdict::TOUS.iter().copied().find(|v| en_minuscules(*v) == texte) {
-            Some(v) => Ok(v),
-            None => Err(E::custom(format!("compte rendu {} : il s'écrit ok, ko ou ano.", socle::fichiers::repr(texte)))),
-        }
-    }
-
-    /// Un verdict qui peut manquer : `None` ne s'ecrit pas (`skip_serializing_if`).
-    pub mod option {
-        use super::*;
-
-        pub fn serialize<S: serde::Serializer>(v: &Option<Verdict>, s: S) -> Result<S::Ok, S::Error> {
-            v.map(en_minuscules).serialize(s)
-        }
-
-        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Verdict>, D::Error> {
-            match Option::<String>::deserialize(d)? {
-                Some(t) => lu(&t).map(Some),
-                None => Ok(None),
-            }
-        }
-    }
-
-    /// Le compte rendu du test conforme d'un fichier : aucun test conforme (`None`, `null`), son bilan attendu
-    /// (`Some(None)`, `attendu`), ou son verdict.
-    pub mod du_test {
-        use super::*;
-
-        const ATTENDU: &str = "attendu";
-
-        pub fn serialize<S: serde::Serializer>(v: &Option<Option<Verdict>>, s: S) -> Result<S::Ok, S::Error> {
-            match v {
-                None => s.serialize_none(),
-                Some(None) => s.serialize_str(ATTENDU),
-                Some(Some(v)) => s.serialize_str(&en_minuscules(*v)),
-            }
-        }
-
-        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<Verdict>>, D::Error> {
-            match Option::<String>::deserialize(d)? {
-                None => Ok(None),
-                Some(t) if t == ATTENDU => Ok(Some(None)),
-                Some(t) => lu(&t).map(|v| Some(Some(v))),
-            }
-        }
-    }
+/// LE COMPTE RENDU D'UN TEST DE DEPOT, ecrit en minuscules : son bilan attendu (`attendu`, aucun certificat ni refus
+/// encore), conforme (`ok`), refuse (`ko`). Que portent le test conforme d'un fichier (`etats::Repetition`, `null` sans
+/// test conforme) et l'ouverture d'un depot reel au journal des envois (`ligne::Ouverture`), qui garde ce qu'il valait
+/// quand le depot est parti (un depot parti avant son bilan a ecrit `attendu`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompteRenduDuTest {
+    Attendu,
+    Ok,
+    Ko,
 }
 
 droit::codes_fermes! {

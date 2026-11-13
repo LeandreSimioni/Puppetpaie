@@ -18,7 +18,7 @@ use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, VerdictDeLaPiece};
-use crate::retours::{self, Annonce, IdDeFlux, NatureDuRetour, Verdict};
+use crate::retours::{self, Annonce, CompteRenduDuTest, IdDeFlux, NatureDuRetour, Verdict};
 use socle::echec::{Echec, R};
 use crate::tables_journal::ALNUM;
 
@@ -592,21 +592,24 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
 }
 
 /// Le compte rendu d'un depot : KO des qu'un retour refuse ; OK seulement quand LE BILAN le dit -- la nature 11
-/// (certificat de conformite ou bilan d'anomalies) pour une DSN, le certificat 41 pour une DPAE ; aucun sinon (il est
-/// attendu).
+/// (certificat de conformite ou bilan d'anomalies) pour une DSN, le certificat 41 pour une DPAE ; attendu sinon.
 /// L'ACCUSE D'ENREGISTREMENT (nature 10) NE COMPTE PAS : il dit « envoi recu », `etat_envoi` OK, pas « declaration
 /// conforme » (regle 5 ; `retours::NatureDuRetour` : « 10 - Accuse d'enregistrement electronique »). Un test dont seul
 /// l'accuse est la ne doit pas s'afficher « testee — conforme » quand l'essai precedent du meme contenu a pris
 /// B1-208-11.
-fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> Option<Verdict> {
+fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> CompteRenduDuTest {
     let mut ok = false;
     for r in retours {
         if r.ko() {
-            return Some(Verdict::Ko);
+            return CompteRenduDuTest::Ko;
         }
         ok = ok || (matches!(r.nature_retour, NatureDuRetour::CertificatDeConformite | NatureDuRetour::CertificatDpae) && r.verdict() == Some(Verdict::Ok));
     }
-    ok.then_some(Verdict::Ok)
+    if ok {
+        CompteRenduDuTest::Ok
+    } else {
+        CompteRenduDuTest::Attendu
+    }
 }
 
 /// Le dernier depot reel accepte de ce fichier (`empreinte`), s'il y en a un.
@@ -644,9 +647,8 @@ pub struct Repetition {
     pub empreinte: EmpreinteCourte,
     pub fichier: NomDeFichier,
     pub conforme: Option<Ligne>,
-    /// Aucun sans test conforme ; celui de son bilan, ou attendu (`Some(None)`).
-    #[serde(default, with = "crate::retours::compte_rendu_ecrit::du_test")]
-    pub compte_rendu: Option<Option<Verdict>>,
+    /// Aucun sans test conforme.
+    pub compte_rendu: Option<CompteRenduDuTest>,
     pub ratees: Vec<Ligne>,
     pub perimees: Vec<Ligne>,
     pub couleur: String,
@@ -710,7 +712,7 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
     // LA COULEUR DE L'ENCART qui le dit (la charte des etats, `socle::ecran::couleur_de_l_etat`) : teste conforme, vert ;
     // essaye et rate (ou un test d'un contenu d'avant), a corriger, orange ; en test, ou jamais essaye, une information.
     let couleur = match conforme {
-        Some(_) if compte_rendu == Some(Some(Verdict::Ok)) => "vert",
+        Some(_) if compte_rendu == Some(CompteRenduDuTest::Ok) => "vert",
         Some(_) => "gris",
         None if !ratees.is_empty() || !perimees.is_empty() => "orange",
         None => "gris",
@@ -719,7 +721,7 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
     let cette = if quoi == Acte::Dpae { "Cette DPAE" } else { "Cette DSN" };
     const ENSUITE: &str = "Le dépôt réel se fait une fois le test revenu conforme.";
     let (etat, titre, phrase) = match (conforme, ratees.last(), perimees.last()) {
-        (Some(c), _, _) if compte_rendu == Some(Some(Verdict::Ok)) => (
+        (Some(c), _, _) if compte_rendu == Some(CompteRenduDuTest::Ok) => (
             EtatDuTest::Testee,
             format!("{} est testée — conforme. Voulez-vous l'envoyer ?", cette),
             format!("Déposée en test le {}, avec ce même contenu.", c.quand().dit()),
@@ -1363,15 +1365,15 @@ mod tests {
         ];
         let (ea, eb) = (EmpreinteCourte::lire("ea00000000000000").unwrap(), EmpreinteCourte::lire("eb00000000000000").unwrap());
         let rep = repetition(&l, Acte::Dsn, &ea, &NomDeFichier::lire("DSN.dsn").unwrap());
-        assert_eq!((rep.compte_rendu, rep.conforme.as_ref().unwrap().quand().iso()), (Some(Some(Verdict::Ok)), "2026-06-01T10:00:00".to_string()));
+        assert_eq!((rep.compte_rendu, rep.conforme.as_ref().unwrap().quand().iso()), (Some(CompteRenduDuTest::Ok), "2026-06-01T10:00:00".to_string()));
         assert_eq!((rep.ratees.len(), rep.perimees.len(), rep.etat), (1, 1, EtatDuTest::Testee));
         let vide = repetition(&l, Acte::Dpae, &ea, &NomDeFichier::lire("x").unwrap());
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
         assert_eq!(deja_depose(&l, Acte::Dsn, &ea).unwrap().quand().iso(), "2026-06-02T09:00:00");
         assert!(deja_depose(&l, Acte::Dsn, &eb).is_none());
         let r = |verdict: Verdict| RetourOrganisme { nature_retour: NatureDuRetour::CertificatDeConformite, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
-        assert_eq!(compte_rendu_du_depot(&[r(Verdict::Ok), r(Verdict::Ko)]), Some(Verdict::Ko));
-        assert_eq!(compte_rendu_du_depot(&[]), None);
+        assert_eq!(compte_rendu_du_depot(&[r(Verdict::Ok), r(Verdict::Ko)]), CompteRenduDuTest::Ko);
+        assert_eq!(compte_rendu_du_depot(&[]), CompteRenduDuTest::Attendu);
     }
 
     const BAN_KO: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" type=\"BAN\">\
