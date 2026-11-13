@@ -1536,7 +1536,6 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         // Une ligne a l'etranger dit son lieu (`LieuDeFrais::Etranger`) ; un jour de `tous_les_jours` a au moins une ligne.
         let (k, _) = nuitee.or(du_jour.first()).ok_or_else(|| refus("un jour à l'étranger sans ligne : le signaler au développeur"))?;
         let lieu = &es[*k].lieu;
-        droit::missions::lieu(lieu).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
         let indemnite = droit::missions::du_jour(lieu, j).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
         socle::fichiers::noter_lecture(&droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Mission { lieu: lieu.clone(), jour: *j }), indemnite.empreinte());
         let loge = nuitee.is_none() && !nuits.contains(j) && du_jour.iter().any(|(k, _)| cochee(&lignes[es[*k].rang], LOGE));

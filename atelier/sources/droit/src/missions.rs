@@ -264,14 +264,6 @@ fn pas_un_lieu(code: &str) -> socle::echec::Echec {
     socle::refus!("« {} » n'est pas un lieu de la table des indemnités de mission à l'étranger.", code)
 }
 
-/// Le lieu `lieu` (celui d'une ligne de frais) est-il un lieu de la table ? Refus : un code que la table ne connait pas.
-pub fn lieu(lieu: &LieuDeMission) -> R<()> {
-    if tables()?.indemnites.contains_key(lieu) {
-        return Ok(());
-    }
-    Err(pas_un_lieu(lieu.texte()))
-}
-
 /// Les lieux a l'etranger que le choix « Lieu » d'une ligne de frais propose : `(code, nom)`, par nom. Un pays se nomme
 /// comme la liste des pays du logiciel (`socle::pays`) ; une ville, par `villes.json`, suivie de son pays. Un code que ni
 /// l'une ni l'autre ne nomme (un Etat disparu, une ligne d'avant 2006) n'est pas propose.
