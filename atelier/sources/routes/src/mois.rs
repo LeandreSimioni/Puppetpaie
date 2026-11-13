@@ -225,7 +225,8 @@ struct ChargeEmploi {
 }
 
 /// Ce qui dit le sexe, sur la fiche que l'ecran remplit : le NIR, sinon la case `sexe` (`ntt::sexe_de`), chacune telle
-/// que la fiche l'ecrit (absente quand elle n'est pas remplie).
+/// que la fiche l'ecrit (absente quand elle n'est pas remplie). Le NIR est celui que la personne tape encore : un texte,
+/// pas un `Nir` (un NIR a moitie tape refuserait la charge pendant la frappe).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SexeDeLaFiche {
@@ -944,7 +945,7 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
 /// salariee : le catalogue porte les deux formes (`feminin`), la fiche dit le sexe (le premier chiffre du NIR, sinon la
 /// case `sexe` : `ntt::sexe_de`). `feminin` donne seul suffit aussi.
 fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
-    let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref(), s.sexe.as_deref()) == Some("2"));
+    let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref().and_then(droit::fiche::Sexe::du_nir), s.sexe.as_deref()) == Some("2"));
     let champs = emplois::resoudre(&c.metier, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
     let phrase = match &champs.code_emploi_ft {
         Some(code) => format!("Métier : {} ({}).", champs.emploi_affichage, code),

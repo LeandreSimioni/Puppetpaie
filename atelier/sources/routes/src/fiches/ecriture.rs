@@ -268,9 +268,9 @@ impl SorteDeFiche for FicheSalarieDatee {
             }
         }
         // UN NIR, UNE PERSONNE : `forcer` ne leve pas ce refus.
-        if let Some(nir) = apres.nir.portee().map(str::trim).filter(|n| !n.is_empty()) {
+        if let Some(nir) = apres.nir.dite() {
             let autres: Vec<&str> =
-                ctx.salaries.iter().filter(|(k, s)| Some(k.as_str()) != cle && s.nir.portee().is_some_and(|n| n.trim() == nir)).map(|(k, _)| k.as_str()).collect();
+                ctx.salaries.iter().filter(|(k, s)| Some(k.as_str()) != cle && s.nir.dite() == Some(nir)).map(|(k, _)| k.as_str()).collect();
             if !autres.is_empty() {
                 return Err(refus(format!(
                     "Le NIR {} est déjà celui de la fiche {}. Un NIR désigne une personne et une seule : complétez ou réactivez cette \

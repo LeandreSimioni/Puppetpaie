@@ -139,7 +139,7 @@ pub fn est_perime(e: &TauxPas, le: Jour) -> bool {
 
 /// Vrai seulement si la fiche est la ET qu'elle n'a pas de NIR.
 pub fn sans_nir(ctx: &Contexte, cle: &IdSalarie) -> bool {
-    ctx.salaries.get(cle).is_some_and(|f| f.nir.portee().is_none_or(|n| n.trim().is_empty()))
+    ctx.salaries.get(cle).is_some_and(|f| f.nir.portee().is_none())
 }
 
 /// Le jour auquel on demande si un taux vaut encore : celui du contexte.

@@ -386,7 +386,7 @@ fn bilans_refuses(flux: &IdDeFlux, publication: Moment, l: &Ligne, nature: Natur
 /// LE TAUX DE SIMULATION d'un salarie dont le scenario n'annonce aucun taux : la DGFiP simulee le connait comme la vraie
 /// connait celui de tout contribuable identifie. Il ne vient d'aucun texte ni d'aucun avis d'imposition : c'est un
 /// nombre tire du NIR (FNV-1a), stable d'un compte rendu a l'autre, de 0,00 % a 12,00 % par dixieme.
-fn taux_de_simulation(nir: &str) -> Decimal {
+fn taux_de_simulation(nir: &droit::fiche::Nir) -> Decimal {
     let h = nir.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
     deux_decimales(Decimal::new((h % 121) as i64, 1))
 }
@@ -411,14 +411,14 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDe
     let mut salaries = String::new();
     let mut vus = BTreeSet::new();
     for (ind, nir) in d.individus.iter().filter_map(|i| i.nir.clone().map(|n| (i, n))) {
-        let Some((cle, _)) = ctx.salaries.iter().find(|(_, s)| s.nir.portee() == Some(nir.as_str())) else { continue };
+        let Some((cle, nir_de_la_fiche)) = ctx.salaries.iter().find_map(|(k, s)| s.nir.dite().filter(|n| n.as_ref() == nir.as_str()).map(|n| (k, n))) else { continue };
         if !vus.insert(nir.clone()) {
             continue;
         }
         // Le taux annonce ; sans annonce, celui de la simulation.
         let t = match taux.get(cle.as_str()) {
             Some(t) => *t,
-            None => taux_de_simulation(&nir),
+            None => taux_de_simulation(nir_de_la_fiche),
         };
         salaries.push_str(&format!(
             "<salarie><NIR>{}</NIR><matricule>{}</matricule><taux_imposition_PAS>{}</taux_imposition_PAS></salarie>",

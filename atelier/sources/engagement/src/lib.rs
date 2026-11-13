@@ -1775,10 +1775,10 @@ fn unites_du_statut(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
 
 /// "1", "2", ou `None` si la fiche ne le dit pas (le NIR d'abord).
 fn sexe(fiche: &droit::fiche::ChampsSalarie) -> Option<String> {
-    if let Some(nir) = fiche.nir.portee().map(str::trim).filter(|n| n.starts_with('1') || n.starts_with('2')) {
-        return Some(nir[..1].to_string());
+    match fiche.nir.dite().and_then(droit::fiche::Nir::sexe) {
+        Some(s) => Some(s.as_str().to_string()),
+        None => fiche.sexe.dite().map(|s| s.as_str().to_string()),
     }
-    fiche.sexe.dite().map(|s| s.as_str().to_string())
 }
 
 // ------------------------------------------- le contrat qui deborde du mois

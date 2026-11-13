@@ -1783,7 +1783,7 @@ Un enregistrement par contrat, encodage latin-1. Zones dans `declarations/src/dp
 | 368-412 | lieu de naissance (44 c.) |
 | 412-420 | date d'embauche `JJMMAAAA` |
 | 420-424 | heure d'embauche `HHMM` |
-| 730-731 | sexe `M` / `F` — lu sur le NIR quand il y en a un, sur la case `sexe` de la fiche sinon (`ntt::sexe`, la seule lecture du sexe dans le moteur) |
+| 730-731 | sexe `M` / `F` — lu sur le NIR quand il y en a un, sur la case `sexe` de la fiche sinon (`ntt::sexe_de` ; le sexe d'un NIR ne se lit que par `droit::fiche::Sexe::du_nir`, que `Nir::sexe` appelle) |
 | 827-829 | département de naissance |
 | 864-865 | `C_TYPE_CONTRAT` : `1` CDD, `2` CDI, `3` CTT — **la DPAE n'en connaît que trois**, quand la DSN en a une vingtaine. La valeur vient de la nature du contrat (`logiciel/donnees/contrats-base.json`, section `dpae`) |
 | 865-873 | `D_FIN_CDD`, fin prévue du CDD `JJMMAAAA` — **à blanc pour un CDI**, qui n'a pas de terme |

@@ -408,9 +408,9 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_postal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nir: Option<String>,
+    pub nir: Option<droit::fiche::Nir>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nir_cle: Option<String>,
+    pub nir_cle: Option<droit::fiche::CleNir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sexe: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -474,11 +474,17 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
     if let Some(r) = reponse("nir") {
         let n: Vec<char> = r.chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
         let tout_chiffres = n.iter().all(|c| chiffre(*c));
+        // Treize chiffres sont un NIR ; une cle hors de 01..97 rend la reponse entiere illisible, avec sa raison.
         if tout_chiffres && n.len() == 15 {
-            d.nir = Some(n[..13].iter().collect::<String>());
-            d.nir_cle = Some(n[13..].iter().collect::<String>());
+            match droit::fiche::CleNir::lire(&n[13..].iter().collect::<String>()) {
+                Ok(cle) => {
+                    d.nir = Some(droit::fiche::Nir::lire(&n[..13].iter().collect::<String>())?);
+                    d.nir_cle = Some(cle);
+                }
+                Err(e) => illisible.push(format!("numéro de sécurité sociale : « {} » ({})", r, e.phrase)),
+            }
         } else if tout_chiffres && n.len() == 13 {
-            d.nir = Some(n.iter().collect::<String>());
+            d.nir = Some(droit::fiche::Nir::lire(&n.iter().collect::<String>())?);
         } else {
             illisible.push(format!("numéro de sécurité sociale : « {} »", r));
         }
@@ -555,7 +561,7 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
         d.banque = Some(banque);
     }
     // Ce que le NIR ecrit de la naissance complete ce que les reponses ne disent pas.
-    if let Some((departement, pays)) = d.nir.as_deref().and_then(naissance_depuis_nir) {
+    if let Some((departement, pays)) = d.nir.as_ref().and_then(naissance_depuis_nir) {
         d.departement_naissance = Some(departement);
         if d.pays_naissance.is_none() {
             d.pays_naissance = pays;
@@ -567,8 +573,8 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
 /// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger), et le pays
 /// de naissance qu'il en deduit (la France, hors 99). Deux cas se taisent : la Corse d'avant 1976 (« 20 ») et un NIR
 /// incomplet.
-fn naissance_depuis_nir(nir: &str) -> Option<(String, Option<socle::pays::CodePays>)> {
-    let c: Vec<char> = strip(nir).chars().collect();
+fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> Option<(String, Option<socle::pays::CodePays>)> {
+    let c: Vec<char> = nir.chars().collect();
     if c.len() != 13 || !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
         return None;
     }

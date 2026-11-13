@@ -1702,7 +1702,7 @@ fn fiche_salarie(nir: &str, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<
     s.date_anciennete = ls.iter().map(|l| l.b.debut).min();
     let statut = ls.iter().rev().find_map(|l| l.b.salarie.statut.as_deref());
     // Une salariee recoit le metier au feminin, comme dans sa fiche (`routes::mois::emploi`) : le sexe que porte son NIR.
-    let femme = declarations::ntt::sexe_de(Some(nir), None) == Some("2");
+    let femme = droit::fiche::Sexe::du_nir(nir) == Some(droit::fiche::Sexe::Feminin);
     let metier = statut_et_metier(statut, s.emploi.as_deref(), femme, idcc)?;
     salarie_propose(s, &metier)
 }
@@ -2128,7 +2128,7 @@ fn fiche_de_certificats(nir: &str, ls: &[&Attestee], idcc: Option<&droit::fiche:
         (s, c) => s.or(c).map(String::from),
     };
     let emploi = dernier(&|c| c.emploi.clone());
-    let femme = declarations::ntt::sexe_de(Some(nir), None) == Some("2");
+    let femme = droit::fiche::Sexe::du_nir(nir) == Some(droit::fiche::Sexe::Feminin);
     let metier = statut_et_metier(statut.as_deref(), emploi.as_deref(), femme, idcc)?;
     salarie_propose(s, &metier)
 }
@@ -2164,7 +2164,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, IdSalarie>, a_creer: &[AC
     if let Some(s) = a_creer.iter().filter(|a| a.nom == NomDeFiche::Salarie && a.nir().as_deref() == Some(nir)).find_map(|a| a.donnees.mot(CaseSalarie::Statut)) {
         return Ok(Some(s));
     }
-    let femme = declarations::ntt::sexe_de(Some(nir), None) == Some("2");
+    let femme = droit::fiche::Sexe::du_nir(nir) == Some(droit::fiche::Sexe::Feminin);
     Ok(statut_et_metier(None, c.emploi.as_deref(), femme, idcc)?.statut.map(|s| s.as_str().to_string()))
 }
 

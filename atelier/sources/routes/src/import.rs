@@ -237,7 +237,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
             None => None,
         },
     };
-    let femme = declarations::ntt::sexe_de(decl.nir.as_deref(), None) == Some("2");
+    let femme = decl.nir.as_deref().and_then(droit::fiche::Sexe::du_nir) == Some(droit::fiche::Sexe::Feminin);
     let emploi_affichage = du_catalogue.map(|m| if femme { m.feminin() } else { m.libelle() }).filter(|l| !l.is_empty());
     let de_la_dsn = SalarieDeLaDsn {
         nir: decl.nir.as_deref(),

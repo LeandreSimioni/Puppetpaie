@@ -982,7 +982,7 @@ fn jour_jjmmaaaa(v: &str) -> Option<Jour> {
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
 struct IdentiteDeFiche {
     cle: IdSalarie,
-    nir: Option<String>,
+    nir: Option<droit::fiche::Nir>,
     nom: Option<String>,
     prenom: Option<String>,
     naissance: Option<Jour>,
@@ -1026,7 +1026,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
     let texte: String = contenu.iter().map(|&b| b as char).collect();
-    let enrs = declarations::dpae::relire(&texte);
+    let enrs = declarations::dpae::relire(&texte)?;
     let m = crate::etapes::Moteur::nouveau(ctx);
     let lignes_journal = m.lignes()?;
     let faites = etats::embauches_par_depot(&lignes_journal);
@@ -1037,7 +1037,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         .iter()
         .map(|(k, f)| IdentiteDeFiche {
             cle: k.clone(),
-            nir: f.champs.nir.remplie().map(String::from),
+            nir: f.champs.nir.dite().cloned(),
             nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
             prenom: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
             naissance: f.champs.date_naissance.dite().copied(),
@@ -1072,8 +1072,8 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     for e in &enrs {
         // Sans NIR, la DPAE declare un numero temporaire (zone a blanc) : l'embauche se reconnait a l'identite qu'elle
         // porte, nom, prenom et date de naissance (`dpae::enregistrement`).
-        let trouve: Option<&IdentiteDeFiche> = match e.nir.as_deref() {
-            Some(nir) => fiches.iter().find(|f| f.nir.as_deref() == Some(nir)),
+        let trouve: Option<&IdentiteDeFiche> = match &e.nir {
+            Some(nir) => fiches.iter().find(|f| f.nir.as_ref() == Some(nir)),
             None => {
                 let (nom, prenom, naissance) = (e.nom.as_deref(), e.prenom.as_deref(), e.date_naissance.as_deref().map(jour_jjmmaaaa));
                 fiches.iter().find(|f| nom.is_some() && f.nom.as_deref() == nom && f.prenom.as_deref() == prenom && f.naissance.map(Some) == naissance)

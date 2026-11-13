@@ -293,7 +293,7 @@ macro_rules! texte_borne {
     };
     ($(#[$m:meta])* pub struct $nom:ident : $borne:ident $max:literal $unite:literal par $mesure:ident, $phrase:literal;) => {
         $(#[$m])*
-        #[derive(Debug, Clone, PartialEq, Serialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
         #[serde(transparent)]
         pub struct $nom(String);
 
@@ -490,6 +490,13 @@ texte_borne! {
     pub struct Nir : Exactement 13 "caractères" par caracteres,
         "« {texte} » a {n} caractères : un numéro de sécurité sociale en a {max}, sans sa clé, ce que la DPAE et la DSN \
 écrivent (norme DPAE v5.3, zone « Numéro de sécurité sociale » ; DSN, S21.G00.30.001). Les deux derniers chiffres vont dans la case « Clé »";
+}
+
+impl Nir {
+    /// Le sexe que dit son premier chiffre (`Sexe::du_nir`).
+    pub fn sexe(&self) -> Option<Sexe> {
+        Sexe::du_nir(&self.0)
+    }
 }
 
 /// LE MATRICULE d'un salarie, son numero dans la compagnie (S21.G00.30.019, « Matricule de l'individu dans
@@ -2029,6 +2036,19 @@ pub fn valeurs_datees<T>(liste: &[Datee<T>]) -> Vec<&Datee<T>> {
 choix! {
     /// Le sexe du NIR (S21.G00.30.005).
     pub enum Sexe { Masculin = "1", Feminin = "2" }
+}
+
+impl Sexe {
+    /// Le sexe que dit le premier chiffre d'un NIR écrit `texte` (« S = sexe de la personne physique doit être égal à 1
+    /// ou 2 » : `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 81-82), ses blancs de bord ôtés ; aucun pour
+    /// un autre signe. La seule lecture du sexe d'un NIR : `Nir::sexe`, et le NIR qu'une saisie en cours écrit.
+    pub fn du_nir(texte: &str) -> Option<Sexe> {
+        match socle::texte::strip(texte).get(..1) {
+            Some("1") => Some(Sexe::Masculin),
+            Some("2") => Some(Sexe::Feminin),
+            _ => None,
+        }
+    }
 }
 
 choix! {

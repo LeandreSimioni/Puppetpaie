@@ -115,11 +115,10 @@ fn nationalite(code: &str) -> Option<&'static str> {
 }
 
 /// Le premier chiffre du NIR (1 homme, 2 femme) ; un NIR provisoire ne le dit pas.
-fn sexe(nir: Option<&str>) -> Option<&'static str> {
-    match nir?.chars().next() {
-        Some('1') => Some("M"),
-        Some('2') => Some("F"),
-        _ => None,
+fn sexe(nir: Option<&droit::fiche::Nir>) -> Option<&'static str> {
+    match nir?.sexe()? {
+        droit::fiche::Sexe::Masculin => Some("M"),
+        droit::fiche::Sexe::Feminin => Some("F"),
     }
 }
 
@@ -173,7 +172,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 (None, cat) => cat.map(str::to_string),
             },
         );
-        l.ot("naissance", f.date_naissance.dite().map(|j| jj(&j.iso()))).ot("sexe", sexe(f.nir.portee()));
+        l.ot("naissance", f.date_naissance.dite().map(|j| jj(&j.iso()))).ot("sexe", sexe(f.nir.dite()));
         l.ot("emploi", c.emploi.clone()).ot("qualification", f.statut.dite().map(|s| s.to_string())).t("contrat_type", c.libelle_nature.clone()).ot("contrat", c.contrat.clone());
         l.t("entree", c.debut.jj_mm_aaaa()).ot("sortie", c.fin.map(|j| j.jj_mm_aaaa()));
         rangees.push(((c.debut, nom, c.contrat.clone()), l));

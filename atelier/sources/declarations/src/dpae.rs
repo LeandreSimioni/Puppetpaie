@@ -406,7 +406,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     // LE SEXE VIENT DU NIR QUAND IL Y EN A UN, de la fiche sinon : c'est la
     // meme lecture que pour le numero technique temporaire de la DSN
     // (`ntt.rs`), et il n'y en a qu'une dans le logiciel.
-    let sexe = match ntt::sexe_de(s.nir.portee(), s.sexe.code()) {
+    let sexe = match ntt::sexe_de(s.nir.dite().and_then(droit::fiche::Nir::sexe), s.sexe.code()) {
         Some("1") => "M",
         Some("2") => "F",
         Some(autre) => return Err(socle::refus!("Le sexe « {} » n'est ni 1 ni 2 : le signaler au développeur.", autre)),
@@ -726,7 +726,8 @@ pub struct EnregistrementRelu {
     pub horodatage: Option<String>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
-    pub nir: Option<String>,
+    /// A blanc, le salarie n'avait pas de NIR (`ecrire`) ; rempli, c'est le NIR que nous avons ecrit.
+    pub nir: Option<droit::fiche::Nir>,
     /// `JJMMAAAA`.
     pub date_naissance: Option<String>,
     /// `JJMMAAAA`.
@@ -736,8 +737,8 @@ pub struct EnregistrementRelu {
     pub date_fin: Option<String>,
 }
 
-/// Chaque enregistrement par ses zones (`CHAMPS`).
-pub fn relire(contenu: &str) -> Vec<EnregistrementRelu> {
+/// Chaque enregistrement par ses zones (`CHAMPS`) ; une zone NIR remplie qui n'est pas un NIR le refuse.
+pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
     lire_enregistrements(contenu)
         .iter()
         .map(|r| {
@@ -745,16 +746,20 @@ pub fn relire(contenu: &str) -> Vec<EnregistrementRelu> {
                 let (a, b) = champ(nom);
                 Some(tranche(r, a, b).trim_matches(socle::texte::blanc).to_string()).filter(|v| !v.is_empty())
             };
-            EnregistrementRelu {
+            let nir = match zone("nir") {
+                Some(n) => Some(droit::fiche::Nir::lire(&n).map_err(|e| e.reformuler(|p| format!("DPAE relue, zone NIR : {}", p)))?),
+                None => None,
+            };
+            Ok(EnregistrementRelu {
                 horodatage: zone("horodatage"),
                 nom: zone("nom"),
                 prenom: zone("prenom"),
-                nir: zone("nir"),
+                nir,
                 date_naissance: zone("date_naissance"),
                 date_embauche: zone("date_embauche"),
                 type_contrat: zone("type_contrat"),
                 date_fin: zone("date_fin"),
-            }
+            })
         })
         .collect()
 }

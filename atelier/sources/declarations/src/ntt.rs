@@ -9,7 +9,7 @@ use socle::fichiers::repr;
 use crate::formats;
 use socle::echec::R;
 use crate::usages::strip;
-use droit::fiche::{ChampsSalarie, FicheSalarie};
+use droit::fiche::{ChampsSalarie, FicheSalarie, Nir, Sexe};
 use droit::natures::RubriqueDeLaNorme;
 
 pub const RUBRIQUE: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.020");
@@ -39,22 +39,23 @@ impl std::fmt::Display for Ntt {
     }
 }
 
-/// Le code sexe d'un NIR (son premier chiffre), sinon de la case `sexe` ; `None` si ni l'un ni l'autre ne le dit.
-pub fn sexe_de(nir: Option<&str>, sexe: Option<&str>) -> Option<&'static str> {
+/// Le code sexe que dit le NIR (`du_nir` : `Nir::sexe`, ou `Sexe::du_nir` d'un NIR en cours de saisie), sinon la case
+/// `sexe` ; `None` si ni l'un ni l'autre ne le dit.
+pub fn sexe_de(du_nir: Option<Sexe>, sexe: Option<&str>) -> Option<&'static str> {
     let un_ou_deux = |t: &str| match t {
         "1" => Some("1"),
         "2" => Some("2"),
         _ => None,
     };
-    match nir.map(strip).and_then(|n| n.get(..1)).and_then(un_ou_deux) {
-        Some(s) => Some(s),
+    match du_nir {
+        Some(s) => Some(s.as_str()),
         None => sexe.map(strip).and_then(un_ou_deux),
     }
 }
 
 /// Le NTT de ce salarie dans l'entreprise de SIREN `siren`.
 pub fn numero(siren: &str, salarie: &FicheSalarie) -> R<Ntt> {
-    let Some(s) = sexe_de(salarie.nir.portee(), salarie.sexe.code()) else {
+    let Some(s) = sexe_de(salarie.nir.dite().and_then(Nir::sexe), salarie.sexe.code()) else {
         let qui = match salarie.nom.remplie() {
             Some(nom) => nom.to_string(),
             None => salarie.id.to_string(),
@@ -123,15 +124,20 @@ pub fn faute(valeur: &str, siren: &str) -> R<Option<String>> {
     formats::mauvaise(RUBRIQUE, valeur)
 }
 
-/// Le NIR de la fiche, quand elle le dit.
-pub fn nir_de(salarie: &ChampsSalarie) -> Option<String> {
-    salarie.nir.portee().map(|n| strip(n).to_string())
+/// Le NIR de la fiche tel que la DSN l'ecrit, quand elle le dit : sans blanc de bord (la case ne les retire pas a la
+/// saisie) ; ote, il doit garder ses 13 caracteres, sinon le refus le dit.
+pub fn nir_de(salarie: &ChampsSalarie) -> R<Option<Nir>> {
+    salarie.nir.dite().map(nir_ecrit).transpose()
 }
 
+/// Un NIR tel que la DSN l'ecrit : sans blanc de bord.
+pub(crate) fn nir_ecrit(nir: &Nir) -> R<Nir> {
+    Nir::lire(strip(nir))
+}
 
 /// S21.G00.30.001, quand il y en a un -- et rien du tout sinon.
 pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
-    if let Some(nir) = nir_de(salarie) {
+    if let Some(nir) = nir_de(salarie)? {
         f.add(RUBRIQUE_NIR, nir);
     }
     Ok(())
@@ -145,7 +151,7 @@ pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
 /// `norme-dsn/texte/bloc-S21.G00.30.txt`, l. 348-354) ; sinon rien. `declaree` : l'identite que la derniere DSN a
 /// declaree pour lui (`changements_individu::Declarations::derniere`, ou `derniere_declaree`).
 pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie: &FicheSalarie, declaree:Option<&crate::changements_individu::Declaree>) -> R<()> {
-    if nir_de(salarie).is_none() {
+    if nir_de(salarie)?.is_none() {
         f.add(RUBRIQUE, numero(ent.siren.ecrite("siren")?, salarie)?);
         return Ok(());
     }
