@@ -492,6 +492,40 @@ texte_borne! {
 écrivent (norme DPAE v5.3, zone « Numéro de sécurité sociale » ; DSN, S21.G00.30.001). Les deux derniers chiffres vont dans la case « Clé »";
 }
 
+/// LE MATRICULE d'un salarie, son numero dans la compagnie (S21.G00.30.019, « Matricule de l'individu dans
+/// l'entreprise ») : « Le choix de la valeur que prend le matricule revient à l'employeur », « X [1,30] » (cahier
+/// technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt` l. 327-331 ;
+/// `logiciel/donnees/formats-dsn-base.json`, S21.G00.30.019). De 1 a 30 caracteres, et rien de plus (regle 7) ; il
+/// s'ecrit tel qu'il a ete saisi. La fiche du salarie le porte, la DSN et le signalement le declarent, la DSN partie le
+/// garde (`declarations::changements_individu::Declaree`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Matricule(String);
+
+impl Matricule {
+    pub const LONGUEUR: usize = 30;
+
+    /// Le matricule `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<Matricule> {
+        let n = caracteres(texte);
+        if (1..=Self::LONGUEUR).contains(&n) {
+            Ok(Matricule(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "Matricule {} : il a {} caractères, la DSN en écrit de 1 à {} (S21.G00.30.019). Corrigez-le",
+                socle::fichiers::repr(texte),
+                n,
+                Self::LONGUEUR
+            ))
+        }
+    }
+}
+
+/// Le matricule saisi se garde tel quel : le choix de sa valeur revient a l'employeur.
+fn tel_quel(texte: &str) -> String {
+    texte.to_string()
+}
+
 /// CE QU'UNE NOTION LUE PORTE AVEC SON TEXTE : elle se lit de son seul lecteur (`lire`, a la lecture du fichier comme a
 /// la porte) et se refuse a la saisie par sa faute (`FormeDeCase::FAUTE`) ; sa saisie se range d'abord dans sa forme
 /// (`$ranger`, `FormeDeCase::RANGER`), qu'elle soit la case d'une fiche ou la valeur d'une charge
@@ -878,6 +912,7 @@ impl CodeInsee {
 notion_lue!(CodeInsee rangee par socle::texte::en_capitales);
 
 notion_lue!(CodeEmploiFt rangee par socle::texte::en_capitales);
+notion_lue!(Matricule rangee par tel_quel);
 
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
@@ -2289,7 +2324,7 @@ cases! {
 fiche! {
     /// LA FICHE D'UN SALARIE a un jour.
     pub struct ChampsSalarie, datee FicheSalarieDatee, changement ChangementSalarie, cles CaseSalarie {
-        CodeSalarie(String) = "code_salarie" => code_salarie,
+        CodeSalarie(Matricule) = "code_salarie" => code_salarie,
         InitialesContrat(String) = "initiales_contrat" => initiales_contrat,
         NomAffichage(String) = "nom_affichage" => nom_affichage,
         Nom(NomDeclare) = "nom" => nom,

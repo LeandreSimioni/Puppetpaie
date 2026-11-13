@@ -2177,7 +2177,7 @@ pub(crate) fn resume_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi) -> R<Arre
     let signale = !signalements.is_empty();
     // UN SIGNALEMENT EST-IL DU ? Pas pour un motif que la DSN ne couvre pas (le deuil d'enfant : `obligations-base.json`,
     // `signalement_arret.sauf_motifs`) ; son obligation est alors l'attestation de salaire hors DSN.
-    let signalement_du = crate::obligations::signalement_du(a.motif.code())?;
+    let signalement_du = crate::obligations::signalement_du(a.motif)?;
     Ok(ArretResume {
         salarie: a.salarie.clone(),
         contrat: a.contrat_numero.clone(),

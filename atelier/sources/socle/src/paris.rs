@@ -420,6 +420,83 @@ pub mod ecrit {
             lu(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une heure du calendrier (années 1 à 9999)", t)))
         }
     }
+
+    /// UN JOUR ET SON HEURE EN DEUX CHAMPS : le jour `AAAA-MM-JJ` et l'heure de Paris `HH:MM`, facultative ; ensemble, un
+    /// `InstantOuJour` (l'instant a la minute, ou le jour seul quand l'heure manque). La fiche de suivi des obligations
+    /// d'un arret les ecrit ainsi (le jour et l'heure ou une obligation hors DSN a ete faite, ou la compagnie a connu
+    /// l'arret ou l'accident), et ses routes les rendent ainsi. La forme qui les porte ecrit l'heure en `HeureEcrite`, et
+    /// passe de ses deux champs a l'instant par `quand`, de l'instant a ses deux champs par `champs`.
+    pub mod jour_et_heure {
+        use super::super::{InstantOuJour, Moment};
+        use crate::date::Jour;
+
+        /// L'heure `HH:MM` qu'une forme ecrit a cote de son jour : elle ne se lit que de ce texte, et ne sert qu'a faire
+        /// l'instant (`quand`).
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct HeureEcrite {
+            heure: i64,
+            minute: i64,
+        }
+
+        /// L'instant de `jour` a l'heure `heure`, ou le jour seul sans heure ; `None` si cette heure n'existe pas a Paris
+        /// ce jour-la (l'heure sautee du passage a l'heure d'ete, directive 2000/84/CE, art. 2).
+        pub fn quand(jour: Jour, heure: Option<HeureEcrite>) -> Option<InstantOuJour> {
+            match heure {
+                None => Some(InstantOuJour::Jour(jour)),
+                Some(h) => a_la_minute(jour, h.heure * 60 + h.minute),
+            }
+        }
+
+        /// L'instant de `jour` a `minute` (comptee depuis minuit, heure de Paris) ; `None` pour une minute hors du jour,
+        /// ou une heure qui n'existe pas a Paris ce jour-la.
+        pub fn a_la_minute(jour: Jour, minute: i64) -> Option<InstantOuJour> {
+            if !(0..1_440).contains(&minute) {
+                return None;
+            }
+            let m = Moment::a_paris(jour, minute / 60, minute % 60, 0)?;
+            (super::local(m) == (jour, minute * 60)).then_some(InstantOuJour::Instant(m))
+        }
+
+        /// La minute du jour (comptee depuis minuit, heure de Paris) d'un instant ; `None` pour un jour seul.
+        pub fn minute(q: InstantOuJour) -> Option<u32> {
+            match q {
+                InstantOuJour::Jour(_) => None,
+                // La seconde du jour est de 0 a 86 399 : sa minute tient dans un `u32`.
+                InstantOuJour::Instant(m) => Some((super::local(m).1 / 60) as u32),
+            }
+        }
+
+        /// Les deux champs d'un instant ou d'un jour : son jour (de Paris) et, pour un instant, son heure a la minute.
+        pub fn champs(q: InstantOuJour) -> (Jour, Option<HeureEcrite>) {
+            match q {
+                InstantOuJour::Jour(j) => (j, None),
+                InstantOuJour::Instant(m) => {
+                    let (j, r) = super::local(m);
+                    (j, Some(HeureEcrite { heure: r / 3_600, minute: (r % 3_600) / 60 }))
+                }
+            }
+        }
+
+        impl serde::Serialize for HeureEcrite {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(&format!("{:02}:{:02}", self.heure, self.minute))
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for HeureEcrite {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureEcrite, D::Error> {
+                let t = <String as serde::Deserialize>::deserialize(d)?;
+                let lue = match super::morceaux(&t, 5, [(0, 2), (2, 3), (3, 5)]) {
+                    Some([h, ":", m]) => match (super::chiffres(h), super::chiffres(m)) {
+                        (Some(heure), Some(minute)) if heure < 24 && minute < 60 => Some(HeureEcrite { heure, minute }),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                lue.ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure HH:MM", crate::date::repr_texte(&t))))
+            }
+        }
+    }
 }
 
 /// UN INSTANT ECRIT DANS UN FICHIER (un scenario) : ses secondes depuis 1970, un nombre a virgule (`ecrit`), lues

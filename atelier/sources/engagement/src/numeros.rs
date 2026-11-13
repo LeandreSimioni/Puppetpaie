@@ -170,9 +170,9 @@ impl PartialEq<NumeroContrat> for String {
 /// qui fabrique un numero de contrat (regle 4) ; des initiales ou un code qui le sortiraient de la forme de la norme le
 /// font refuser (`NumeroContrat::lire`).
 pub fn former(fiche: &droit::fiche::ChampsSalarie, annee: i32, seq: i64) -> R<NumeroContrat> {
-    let champ = |c: &Option<String>, k: &str| droit::fiche::Lue::ecrite(c, k).map(str::to_string);
+    use droit::fiche::Lue;
     let an = annee.to_string();
-    NumeroContrat::lire(&format!("{}{}.{}.{:02}", champ(&fiche.initiales_contrat, "initiales_contrat")?, champ(&fiche.code_salarie, "code_salarie")?, &an[2.min(an.len())..], seq))
+    NumeroContrat::lire(&format!("{}{}.{}.{:02}", fiche.initiales_contrat.ecrite("initiales_contrat")?, fiche.code_salarie.ecrite("code_salarie")?, &an[2.min(an.len())..], seq))
 }
 
 /// Le dernier rang pris en `annee`, par salarie (la cle de sa fiche) : le plus grand des numeros de cette annee que

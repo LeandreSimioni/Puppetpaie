@@ -303,7 +303,7 @@ rapproche chacun de ses déclarations par lui. En choisir un autre, ou laisser l
         // Le matricule d'une fiche neuve : le suivant. Un matricule saisi est garde tel quel. L'ANCIENNETE PART DE
         // L'EMBAUCHE, pas du jour de la fiche : la validation du premier engagement la pose (`poser_anciennete_a_l_embauche`).
         if plate.code_salarie.remplie().map(str::trim).is_none_or(str::is_empty) {
-            plate.code_salarie = Some(matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?.to_string());
+            plate.code_salarie = Some(droit::fiche::Matricule::lire(&matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?.to_string())?);
         }
         Ok(())
     }

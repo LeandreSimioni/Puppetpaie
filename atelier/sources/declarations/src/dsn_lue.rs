@@ -229,7 +229,7 @@ pub struct IndividuDeclare {
     pub email: Option<Courriel>,
     /// .019.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_salarie: Option<String>,
+    pub code_salarie: Option<droit::fiche::Matricule>,
     /// .020, le numero technique temporaire d'un individu declare sans NIR (`ntt`) : la fiche n'en a pas.
     #[serde(skip)]
     pub ntt: Option<crate::ntt::Ntt>,
@@ -1105,8 +1105,17 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let Some(i) = individu else { continue };
                 individus[i].date_naissance = fautes.valeur(rub, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
             }
+            // 30.019 : un matricule hors de sa forme (X [1,30]) laisse la case vide, comme une DSN qui ne le dirait pas
+            // (la regle d'une DSN lue : un code hors liste ou hors forme ne refuse pas l'import).
+            "S21.G00.30.019" => {
+                let Some(i) = individu else { continue };
+                individus[i].code_salarie = match droit::fiche::Matricule::lire(&v) {
+                    Ok(m) => Some(m),
+                    Err(_) => None,
+                };
+            }
             "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.005" | "S21.G00.30.007" | "S21.G00.30.008" | "S21.G00.30.009"
-            | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" | "S21.G00.30.019" => {
+            | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" => {
                 let Some(i) = individu else { continue };
                 let s = &mut individus[i];
                 let case = match k {
@@ -1119,8 +1128,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     "S21.G00.30.010" => &mut s.commune,
                     "S21.G00.30.013" => &mut s.code_nationalite_dsn,
                     "S21.G00.30.014" => &mut s.departement_naissance,
-                    "S21.G00.30.015" => &mut s.pays_naissance,
-                    _ => &mut s.code_salarie,
+                    _ => &mut s.pays_naissance,
                 };
                 *case = Some(match k {
                     "S21.G00.30.005" => sexe_de_la_fiche(&v),

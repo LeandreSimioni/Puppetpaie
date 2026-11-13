@@ -315,7 +315,7 @@ un fait déjà survenu ne se date pas dans le futur.",
     // UN MOTIF QUE LA DSN NE COUVRE PAS (le deuil d'enfant, 19) : la norme l'admet dans un signalement (S21.G00.60.001,
     // aucune regle CCH ne l'en exclut), donc rien ne se refuse (regle 7) ; mais l'Assurance Maladie ne le traite pas, et
     // l'attestation de salaire se fait sur net-entreprises. La phrase est dans `obligations-base.json` (`sauf_motifs`).
-    if let Some(a) = avertissement_hors_dsn(nature, m_s.code())? {
+    if let Some(a) = avertissement_hors_dsn(nature, m_s)? {
         avertissements.push(a);
     }
     Ok(avertissements)
@@ -477,11 +477,11 @@ annule-et-remplace (type 03)."
 /// L'avertissement d'un signalement de nature `nature` (04 ou 05) dont le motif n'est pas couvert par la DSN
 /// (`sauf_motifs.avertissement`) : la norme l'admet, le moteur ne le refuse pas (regle 7), il dit que l'Assurance Maladie
 /// ne le traite pas et ce qui se fait a la place. `None` pour un motif couvert. Appele par `verifier`.
-pub fn avertissement_hors_dsn(nature: NatureSignalement, motif: &str) -> socle::echec::R<Option<String>> {
+pub fn avertissement_hors_dsn(nature: NatureSignalement, motif: droit::arrets::MotifDArret) -> socle::echec::R<Option<String>> {
     let base = crate::obligations::base()?;
     let o = match nature {
         NatureSignalement::Arret => base.obligations.signalement_arret,
         NatureSignalement::Reprise => base.obligations.signalement_reprise,
     };
-    Ok(o.sauf_motifs.filter(|s| s.codes.iter().any(|m| m == motif)).map(|s| s.avertissement).filter(|t| !t.is_empty()))
+    Ok(o.sauf_motifs.filter(|s| s.codes.contains(&motif)).map(|s| s.avertissement).filter(|t| !t.is_empty()))
 }

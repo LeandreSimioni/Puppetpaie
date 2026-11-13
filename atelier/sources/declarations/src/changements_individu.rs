@@ -20,7 +20,7 @@
 use std::collections::BTreeMap;
 
 use droit::contexte::Contexte;
-use droit::fiche::{ChampsSalarie, Lue, Datee, FicheSalarie, FicheSalarieDatee};
+use droit::fiche::{ChampsSalarie, Lue, Datee, FicheSalarie, FicheSalarieDatee, Matricule};
 use socle::date::Jour;
 use socle::mois::Mois;
 use crate::dsn::Fichier;
@@ -98,7 +98,12 @@ pub struct Declaree {
     pub naissance: Option<Jour>,
     /// Le numero technique temporaire (30.020), s'il y en avait un.
     pub ntt: Option<crate::ntt::Ntt>,
-    pub matricule: Option<String>,
+    pub matricule: Option<Matricule>,
+}
+
+/// Le matricule de la fiche tel que le bloc 30 l'ecrit, sans son blanc autour.
+fn matricule_ecrit(c: &Option<Matricule>) -> R<Option<Matricule>> {
+    c.portee().map(|t| Matricule::lire(strip(t))).transpose()
 }
 
 impl Declaree {
@@ -188,7 +193,7 @@ impl<'a> Declarations<'a> {
                     nom: texte_ecrit(&s.nom),
                     prenoms: texte_ecrit(&s.prenom),
                     naissance: s.date_naissance.dite().copied(),
-                    matricule: texte_ecrit(&s.code_salarie),
+                    matricule: matricule_ecrit(&s.code_salarie)?,
                 });
             }
             self.lus.insert(i, tous);
@@ -202,7 +207,7 @@ impl<'a> Declarations<'a> {
     pub fn derniere(&mut self, salarie: &ChampsSalarie, brute: Option<&FicheSalarieDatee>) -> R<Option<Declaree>> {
         let mut nirs: Vec<String> = crate::ntt::nir_de(salarie).into_iter().collect();
         nirs.extend(brute.into_iter().flat_map(IDENTIFIANTS[0].datees).filter_map(|(_, v)| v));
-        let matricule = texte_ecrit(&salarie.code_salarie);
+        let matricule = matricule_ecrit(&salarie.code_salarie)?;
         for i in 0..self.mois.len() {
             let tous = self.lire(i)?;
             let mut siens: Vec<&Declaree> = tous.iter().filter(|d| d.nir.as_ref().is_some_and(|n| nirs.contains(n))).collect();
@@ -357,7 +362,7 @@ mod tests {
             prenoms: Some("LUCILE".into()),
             naissance: Some(Jour::nouveau(1990, 10, 2).unwrap()),
             ntt: None,
-            matricule: Some("6".into()),
+            matricule: Some(Matricule::lire("6").unwrap()),
         }
     }
 
