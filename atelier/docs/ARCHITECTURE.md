@@ -150,103 +150,421 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 
 **Le temps**
 
-| notion | ce que c'est | son type |
+| notion | son type | déclaré dans |
 |---|---|---|
-| instant | un point du temps, à la nanoseconde ; aussi « à la minute près » | `Moment` (`socle/src/paris.rs`) ; ses écritures (à la seconde, à la minute, la saisie, la française, l'UTC du filet, le bloc de la plate-forme DSN, les secondes locales) sont les modules de `socle::paris::ecrit`, dits par l'attribut serde du champ ; « pas encore » : `Option<Moment>` |
-| instant ou jour | l'instant d'un geste, ou le jour seul (un bilan qui ne dit que sa date, un geste de scénario dit d'un jour, une obligation d'un arrêt dite faite ou une connaissance sans heure) | `InstantOuJour` (`socle/src/paris.rs`) ; écrit en un champ (`AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`), ou en deux, le jour et l'heure `HH:MM` (`socle::paris::ecrit::jour_et_heure` : la fiche de suivi des obligations d'un arrêt et ce que ses routes rendent) |
-| jour | un jour civil | `Jour` (`socle/src/date.rs`) ; les marqueurs de `socle::piece::format` sont des formats de zone |
-| mois | un mois civil, clé d'une paie | `Mois` (`socle/src/mois.rs`) ; `Graphie` dit comment s'écrit son nom |
-| mois ou jour | le mois d'un acte ou le jour d'un événement | `MoisOuJour` (`socle/src/mois.rs`) |
-| année | une année civile | `Annee` (`socle/src/mois.rs`) ; écrite en texte (`"2025"`, la clé de `paies_annuelles`), ou en nombre là où la forme le dit (`socle::mois::en_nombre` : le nombre de paies parti chez l'éditeur, ce que le serveur du filet lit et rend) ; à unifier (#419) : des `i32` |
-| période | deux jours bornes, du … au … | à créer (#419) : `Periode` ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres |
-| durée de droit | des jours ou des mois de calendrier | `droit::maintien::Duree` |
-| durée mesurée | un temps écoulé | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` (des millisecondes : une écriture) |
+| instant | `Moment` | `socle/src/paris.rs` |
+| instant ou jour | `InstantOuJour` | `socle/src/paris.rs` |
+| jour | `Jour` | `socle/src/date.rs` |
+| mois | `Mois` | `socle/src/mois.rs` |
+| mois ou jour | `MoisOuJour` | `socle/src/mois.rs` |
+| année | `Annee` ; à unifier (#419) : des `i32` | `socle/src/mois.rs` |
+| période | à créer (#419) : `Periode` | — |
+| durée de droit | `droit::maintien::Duree` | `droit/src/maintien.rs` |
+| durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
+
+**Le détail**
+
+- **instant** : un point du temps, à la nanoseconde ; aussi « à la minute près ». Ses écritures (à la seconde, à la
+  minute, la saisie, la française, l'UTC du filet, le bloc de la plate-forme DSN, les secondes locales) sont les modules
+  de `socle::paris::ecrit`, dits par l'attribut serde du champ ; « pas encore » : `Option<Moment>`.
+- **instant ou jour** : l'instant d'un geste, ou le jour seul (un bilan qui ne dit que sa date, un geste de scénario dit
+  d'un jour, une obligation d'un arrêt dite faite ou une connaissance sans heure). Écrit en un champ
+  (`AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`), ou en deux, le jour et l'heure `HH:MM` (`socle::paris::ecrit::jour_et_heure` :
+  la fiche de suivi des obligations d'un arrêt et ce que ses routes rendent).
+- **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone.
+- **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom.
+- **mois ou jour** : le mois d'un acte ou le jour d'un événement.
+- **année** : une année civile. Écrite en texte (`"2025"`, la clé de `paies_annuelles`), ou en nombre là où la forme le
+  dit (`socle::mois::en_nombre` : le nombre de paies parti chez l'éditeur, ce que le serveur du filet lit et rend).
+- **période** : deux jours bornes, du … au … ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres.
+- **durée de droit** : des jours ou des mois de calendrier.
+- **durée mesurée** : un temps écoulé ; `envois::ligne::Durees`, à unifier, est des millisecondes : une écriture.
 
 **L'argent et les quantités**
 
-| notion | ce que c'est | son type |
+| notion | son type | déclaré dans |
 |---|---|---|
-| montant | une somme en euros, au centime | à créer (#419) : `Montant` (`socle`) ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant`, `droit::fiche::Montant` ; `engagement::ligne::Montant` est une ligne au montant, à renommer ; une réponse qui rend un montant ou une quantité en texte garde le `Decimal` (au centime : `socle::num::q2`) et l'écrit par `socle::ecriture::decimal_en_texte` |
-| taux | un pourcentage appliqué à une base | à créer (#419) : `Taux` ; aujourd'hui `Decimal`, `droit::forme_bareme::Taux` (une forme) ; le taux de PAS est sa notion à lui, `droit::pas::TauxDePas` |
-| quantité | des heures, des cachets, des jours : trois grandeurs indépendantes | à créer (#419) : `Heures`, `Cachets`, `Jours` ; aujourd'hui `Decimal`, `i64`, `engagement::ligne::Chiffre` |
-| nombre lu | un nombre tel qu'un fichier l'écrit | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` sont des écritures, lues à la porte |
+| montant | à créer (#419) : `Montant` | `socle` |
+| taux | à créer (#419) : `Taux` | — |
+| quantité | à créer (#419) : `Heures`, `Cachets`, `Jours` | — |
+| nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
+
+**Le détail**
+
+- **montant** : une somme en euros, au centime ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant`,
+  `droit::fiche::Montant` ; `engagement::ligne::Montant` est une ligne au montant, à renommer. Une réponse qui rend un
+  montant ou une quantité en texte garde le `Decimal` (au centime : `socle::num::q2`) et l'écrit par
+  `socle::ecriture::decimal_en_texte`.
+- **taux** : un pourcentage appliqué à une base ; aujourd'hui `Decimal`, `droit::forme_bareme::Taux` (une forme) ; le
+  taux de PAS est sa notion à lui, `droit::pas::TauxDePas`.
+- **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui `Decimal`, `i64`,
+  `engagement::ligne::Chiffre`.
+- **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte.
 
 **Les identifiants**
 
-| notion | ce que c'est | son type |
+| notion | son type | déclaré dans |
 |---|---|---|
-| NIR | le numéro de sécurité sociale | `droit::fiche::Nir` : treize caractères, saisi il se range sans aucun blanc et en capitales (`Nir::rangee`) ; celui d'une pièce importée se lit par `Nir::d_une_piece` (hors forme : aucun), coupé de sa clé par `Nir::et_sa_cle` ; le sexe qu'il dit, `Nir::sexe`, et celui d'une fiche, `ChampsSalarie::sexe` ; sa clé, `CleNir` (`droit/src/fiche.rs`), celle d'un `Nir` par `CleNir::du_nir` ; que portent la fiche, l'identité qu'une DSN partie a déclarée, une DSN lue, une AEM, une AER, un certificat, un bulletin importé (après sa porte), la paie versée d'un engagement importé, les retours ; un NIR en cours de saisie reste son texte |
-| NTT | le numéro technique temporaire d'un individu sans NIR (S21.G00.30.020) | `Ntt` (`declarations/src/ntt.rs`) : il se fabrique pour un salarié (`ntt::numero`, contrôlé avec le SIREN) ou se lit dans une DSN (`Ntt::lu`, sa forme seule), ou dans un retour de la norme (`Ntt::lire`, strict : RO.B009.R002 de NEOReS) ; que portent l'identité qu'une DSN partie a déclarée (`changements_individu::Declaree`), l'individu d'une DSN lue et l'identité en écart d'un compte rendu NEOReS (`envois::retours::IdentiteNeores`, à côté du NIR déclaré, R001) |
-| identifiant d'un individu | ce qui identifie un individu dans une DSN : son NIR, ou, sans NIR, son NTT (« Un individu s'identifie par son NIR **ou** par son NTT ») | `IdentifiantDIndividu` (`declarations/src/ntt.rs`) : `Nir(Nir)`, `Ntt(Ntt)`, écrit dans aucun fichier, trié NIR d'abord ; celui d'un individu d'une DSN lue, `IndividuDeclare::identifiant` (le NIR, sinon le NTT) ; que portent l'effectif que le simulateur des organismes compte et le contrôle des doublons (CCH-14) |
-| case d'identité | un des quatre identifiants que le bloc « Changements individu » reporte quand il change : NIR, nom de famille, prénoms, date de naissance (S21.G00.31.008 à .011) | `CaseDIdentite` (`declarations/src/changements_individu.rs`, une liste de la norme) : `TOUTES` dans l'ordre du bloc 31, sa rubrique (`r31`), son libellé, la case de la fiche qui la porte ; sa valeur telle que le bloc 30 l'écrit est privée au fichier |
-| SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | `Siren`, `Nic`, `Siret` (`droit/src/fiche.rs`) |
-| IBAN, BIC | un compte bancaire | `Iban`, `Bic` (`droit/src/fiche.rs` ; leurs contrôles, `socle/src/iban.rs`) |
-| numéro de contrat | S21.G00.40.009 : il se lit, ne se recalcule pas | `NumeroContrat` (`engagement/src/numeros.rs`) : ni `Deref` ni comparaison à un texte : il se compare à un numéro, s'imprime par `Display` (`numero_dit` quand il peut manquer ; le contrat d'un salarié dans un refus, `numeros::le_contrat`), s'écrit par `as_str` à la porte ; celui qu'imprime une pièce d'autrui se lit par `d_une_piece` |
-| clé d'une paie versée | ce qui reconnaît une paie versée d'un engagement importé d'un import à l'autre, et ce qui l'a déclarée : le numéro de contrat qu'une DSN déposée déclare ; sinon un bulletin seul, par le numéro qu'il imprime (le texte d'autrui), ou par sa copie et sa page | `CleDePaieVersee` (`engagement/src/importe.rs`) : `Dsn(NumeroContrat)`, `Bulletin(String)`, `Copie { fichier: NomDeFichier, page }`, écrite avec son origine (`{"dsn": …}`, `{"bulletin": …}`, `{"copie": {…}}`) ; ce que la carte d'un engagement importé en montre, `dite()` ; que porte `PaieVersee.contrat` |
-| numéro de bulletin | le numéro qu'un bulletin du logiciel porte, `N/AAAA` : son rang dans la suite de l'année, puis l'année | `NumeroDeBulletin` (`engagement/src/numeros.rs`) : `numeroter` en donne un, et le départ des documents d'un mois sur la suite qu'il réserve (`routes::gestes::depart::fabriquer_documents`) ; l'aperçu d'un bulletin en montre un (`du_rang`) ; il se lit strictement ; que portent la paie, sa forme écrite, la paie écrite (`bulletin`, `rectifie`), le bulletin imprimé et son rectificatif, le dernier état déclaré d'un contrat ; celui qu'un bulletin d'autrui imprime est du texte |
-| numéro d'objet spectacle | S21.G00.40.050, natures 02 et 10 | `NumeroObjetSpectacle` (`droit/src/fiche.rs`) ; l'année de sa demande, ses deux premiers chiffres (`annee_de_la_demande`) |
-| IDCC | l'identifiant d'une convention collective : la notion « convention » | `Idcc` (`droit/src/fiche.rs`) : quatre chiffres, il s'écrit et se trie comme son texte ; la clé des tables par convention (minima, clauses, organismes, prévoyance, emplois, barème, plan comptable) ; une convention que le moteur nomme est une constante (`Idcc::du_moteur` : `IDCC_3090`…, `clauses::IDCC_CCNEAC`) ; dans l'atelier, le suivi KALI d'une source, la fiche d'une convention que la veille garde, un changement de l'entrepôt KALI, l'IDCC que `releve-conventions` prend ; `minima::Convention`, `clauses::Convention`, `forme_bareme::Convention` sont des formes de fichiers |
-| identifiant d'organisme | l'organisme de protection sociale que la DSN paie (S21.G00.20.001), d'une cotisation (81.002), d'une adhésion de prévoyance (15.002) : le SIRET de l'Urssaf, de France Travail, de la caisse Congés Spectacles, le code d'une institution (`P0983`), `DGFIP` | `IdentifiantDOrganisme` (`droit/src/organismes.rs`), que portent un versement de `organismes-base.json`, un contrat qu'un texte exige, une adhésion, la `org` d'une cotisation DSN du barème, les lignes 81 et les ordres de paiement de la DSN, ce que la lecture d'une DSN garde des blocs 15 et 20, l'organisme et le délégataire qu'un retour de la plate-forme ou un compte rendu d'organisme complémentaire nomme (`envois::retours`) ; `AUDIENS`, `SIRET_FRANCE_TRAVAIL`, `DGFIP` sont des constantes. Le code caisse d'un mois sans individu (S20.G00.08.001) est une autre notion |
-| code caisse | l'organisme qui n'a plus d'individu rattaché, dans une DSN sans individu (S20.G00.08.001), « X [2,6] » de la table ODRT : Agirc-Arrco 88, France Travail 93, Congés Spectacles 97 | `CodeCaisse` (`droit/src/organismes.rs`), que porte `sans_individu` de `organismes-base.json` |
-| salarié | la clé de sa fiche | `IdSalarie` (`droit/src/contexte.rs`) |
-| salarié désigné | le salarié tel qu'une personne ou une charge le désigne : la clé de sa fiche, son nom, son prénom, son NIR | `SalarieDesigne` (`droit/src/contexte.rs`), que portent les charges des imprévus et des obligations d'un arrêt ; il se résout en `IdSalarie` à un seul endroit, `Contexte::cle_du_salarie` |
-| spectacle | la clé de sa fiche | `IdSpectacle` (`droit/src/contexte.rs`) |
-| compagnie | l'identifiant d'une compagnie de l'installation, celui de sa tuile | `IdDeCompagnie` (`compagnie/src/installation.rs`) : `Reelle`, `Cie(NomDeFichier)`, `Fictive(NomDeFichier)`, écrit `reelle`, `cie:<dossier>`, `fictive:<dossier>` ; que portent une tuile de l'accueil, les charges de l'accueil (couleur, remise à zéro, compagnies à garder), une compagnie gardée, le tableau de l'administrateur, le choix d'une tuile dans la fenêtre |
-| couleur d'une compagnie | la couleur qu'une compagnie choisit pour sa tuile et sa page | `CouleurDeCompagnie` (`compagnie/src/installation.rs`) : `#RRGGBB`, gardée telle que lue ; `poser_couleur` l'écrit en majuscules ; celle de la charte quand rien n'est posé ; que portent `config/affichage.json`, une tuile, la charge et la réponse de `compagnie-couleur`, le tableau de l'administrateur. La couleur d'une pastille (`socle::ecran`) est une autre notion |
-| PCS-ESE | la profession et catégorie socioprofessionnelle d'un emploi (S21.G00.40.004), « X [4,4] » de la table de l'Insee | `CodePcsEse` (`droit/src/fiche.rs`), que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, le métier du catalogue, ce qu'un bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`), le contrat de la liste nominative d'une régularisation CASC-SVP |
-| code emploi déclaré | le complément PCS-ESE d'un emploi (S21.G00.40.005), « X [2,6] » : pour le spectacle, un code de la nomenclature des emplois du spectacle, « 999SPT » pour un emploi permanent, « 50 », « 51 » (CCH-18) ; il ne nomme pas toujours un métier | `CodeEmploiFt` (`droit/src/fiche.rs`), que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, ce qu'un bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 ; le métier qu'il nomme : `emplois::metier` ; un code d'un métier se déclare tel quel (`From<&CodeEmploi>`) |
-| matricule | le numéro d'un salarié dans la compagnie (S21.G00.30.019, « X [1,30] », que l'employeur choisit) | `Matricule` (`droit/src/fiche.rs`), que portent la fiche du salarié (`code_salarie`), l'identité qu'une DSN partie a déclarée (`changements_individu::Declaree`), l'individu d'une DSN lue ; ce qu'un bulletin d'autrui imprime reste son texte |
-| licence | | à créer (#419) |
-| code NAF, code postal | | `CodeNaf`, `CodePostal` (`droit/src/fiche.rs`) |
-| pays | un code ISO 3166 à deux lettres | `CodePays` (`socle/src/pays.rs`), que porte aussi le pays d'une ville de la table des missions (`villes.json`) |
-| lieu de mission | un pays, ou une ville que la table DGFiP des indemnités de mission à l'étranger distingue de son pays (« NY », New York) | `LieuDeMission` (`droit/src/missions.rs`) : deux lettres capitales, le `code_pays` de `indemnites.csv` et de `change.csv`, les clés de `villes.json` ; il s'écrit et se trie comme son texte ; que portent les tables lues, la clé `mission <lieu> <jour>` d'une empreinte de paie (`socle::fichiers::LectureDatee`, générique sur le lieu) ; celui d'une ligne de frais à l'étranger (`LieuDeFrais::Etranger`), que `missions::lieu` trouve dans la table |
-| lieu d'une ligne de frais | où une nuitée ou un repas a lieu hors de la métropole (le choix « Lieu » ; absent : la métropole) : un territoire hors métropole, ou un lieu à l'étranger | `LieuDeFrais` (`engagement/src/ligne.rs`) : `HorsMetropole(TerritoireHorsMetropole)` (`dom`, `pacifique`, `monaco`, les clés de `frais_hors_metropole` du barème, et `taaf`, sans forfait) ou `Etranger(LieuDeMission)` ; écrit par son texte, lu à sa porte (une clé de territoire, sinon un code de lieu) ; que portent une ligne de frais (`territoire`), la ligne qu'un appelant donne, ce que le choix « Lieu » propose (`TerritoireHorsMetropole::TOUS`) |
-| monnaie | la monnaie d'une indemnité de mission à l'étranger (« EUR », « USD ») | `CodeMonnaie` (`droit/src/missions.rs`) : trois lettres capitales, `code_monnaie` et `monnaie_source` des tables DGFiP ; que porte une indemnité d'un jour (`Indemnite`, son empreinte) |
-| commune | son code INSEE (versement mobilité, S21.G00.81.005) | `CodeInsee` (`droit/src/fiche.rs`) |
-| courriel | une adresse de courriel | `Courriel` (`droit/src/fiche.rs`), que portent la fiche, et au journal des envois l'expéditeur, les adresses servies (`partis`), celle où un envoi a échoué (`echec_a`), celle d'une demande (`adresse`) et celle d'où sa réponse est venue (`de`) ; l'expéditeur d'un courriel **reçu** est un `Expediteur` |
-| code de demande | le code qu'une demande de signature ou de fiche porte, et qu'on cherche dans la réponse : `SIG-` ou `FIC-` (la sorte de demande, `SorteDeDemande`) et six signes de `ALPHABET_CODE` | `CodeDeDemande` (`documents/src/fiche_questionnaire.rs`) : seul `code_au_hasard` le fait, il se lit strictement ; que portent un contrat parti, un avenant parti, ce qui en revient, le contrat contresigné, une demande de fiche et sa réponse, une signature attendue et relevée ; une réponse reçue est le texte d'un tiers, on y cherche `texte()` |
-| identifiant de courriel | le `Message-ID` d'un courriel que le logiciel envoie, `<gauche@droite>` (RFC 5322, § 3.6.4) | `IdDeCourriel` (`envois/src/envoi.rs`) : écrit par `nouveau_message_id` et la boîte simulée, rendu par l'envoi (`Courriel::envoyer`) ; que portent un contrat parti, une demande de fiche, une signature ou une fiche attendue (`envoyes`) ; un identifiant **reçu** (l'UID d'un message de la boîte, un en-tête) est le texte d'un tiers, qui se compare à `texte()` |
-| courriel envoyé | un courriel qu'un geste envoie, et celui à qui il s'adresse, que l'envoyeur retrouve après l'envoi | `envois::envoi::Message<Pour>`, `Pour` du type de ce qu'il est : `IdSalarie` (les documents du mois, le dossier, les contrats à signer et le contrat contresigné), le nom court de l'organisme (la régularisation CASC-SVP : celui du `.eml` gardé), `()` quand personne n'est à retrouver (la fiche demandée, la réponse d'une personne fictive) ; l'envoi ne le lit pas |
-| expéditeur d'un courriel lu | une adresse, rien, ou un texte qui n'en est pas une | `envois::courriel_lecture::Expediteur` |
-| version du logiciel | le numéro d'une publication, des nombres séparés de points | `compagnie::maj::VersionDuLogiciel` : il garde le texte lu et s'écrit par lui (`2026.11.01` reste `2026.11.01` : `VERSION`, `derniere.json`, `prete.json`, les noms des archives, `maj/<version>/`) ; deux versions sont la même si elles s'écrivent pareil, « plus récente » compare les nombres (`plus_recente_que`) ; `lue()` la dit `JJ.MM.AAAA` ; `VERSION` ne se lit que par `maj::courante` ; celle d'un incident est vide quand `VERSION` ne se lit pas |
-| échec d'une mise à jour | ce qui a fait échouer une recherche de mise à jour, dit en un mot à l'écran : hors ligne, introuvable, dépôt illisible, signature refusée, archive altérée, refusée au contrôle, réglage illisible | `EchecDeMiseAJour` (`compagnie/src/maj.rs`, une liste du logiciel ; `mot()`) |
-| système | le système dont une archive porte les programmes, et ceux d'une installation : `windows`, `linux`, `mac`, le nom du dossier de ses programmes dans `logiciel/` | `Systeme` (`compagnie/src/maj.rs`, une liste du logiciel) : `TOUS`, `DE_CE_PROGRAMME` (celui qu'on a compilé), `lu()` (« Windows », « Linux », « macOS ») ; que portent la liste `systemes` de l'archive de tous dans `derniere.json`, ce que `portable-completer` ajoute ou ne trouve pas, le système d'un fichier de `logiciel/`. Ce que `diagnostic` dit de la machine (`macos`, la constante du compilateur) est une description |
-| clé d'archive | la clé d'une archive de mise à jour publiée dans `derniere.json` : celle d'un système, ou `tout-systeme` (le dossier portable, qui les porte tous) | `CleDArchive` (`compagnie/src/maj.rs`) : `Du(Systeme)` ou `DeTous`, écrite par son texte ; que portent les archives prises d'une version prête (`prete.json`), les noms des archives d'une version |
-| état du bridage | bridé ou débloqué : ce que disent `.edition.json` et `logiciel/EDITION.json` | `EtatDuBridage` (`compagnie/src/bridage.rs`, une liste du logiciel) : écrit `bride`, `debloque` ; `demo` et `complete` se lisent aussi (le contrat avec les installations posées) ; que portent la machine d'un incident (`edition`) et sa ligne en mots |
-| clé d'incident | ce qui fait que deux incidents sont le même : la nature, l'endroit, le genre | `CleDIncident` (`compagnie/src/incidents.rs`) : les douze premiers hexadécimaux minuscules du SHA-256 de `nature\|ou\|quoi`, que seul `incidents::empreinte` fait, lue strictement ; pas une `Empreinte` ; que portent une ligne du journal des incidents, un paquet, ce qui part chez l'éditeur, les clés reçues et écartées que le serveur du filet rend |
-| numéro de poste | le numéro que le serveur du filet donne à ce poste (`POST /poste`) | `NumeroDePoste` (`compagnie/src/incidents.rs`) : 32 hexadécimaux minuscules (`RE_POSTE` du serveur) ; que portent `config/diagnostic.json`, l'identité rendue par le serveur, le client du filet, ce qui part (`poste`) et une année de paies partie. La clé du poste, à côté, est un secret |
-| secret | un mot de passe (du logiciel, d'un organisme, de la boîte, de l'administrateur), un jeton (d'une session net-entreprises, de Google, de la fenêtre), une clé (celle du poste chez le serveur du filet, le secret de l'application Google, la graine de publication) | `Secret` (`socle/src/secret.rs`) : opaque ; `{:?}` écrit « [secret] », ni `Display` ni `Serialize` ; il se lit d'une charge, d'une réponse, d'une saisie ; `devoiler()` aux seules portes qui l'emploient (le transport, le coffre, la page servie à la fenêtre), `egal_a` le compare en temps constant ; là où le logiciel en garde un dans un fichier qu'il écrit (la séance gardée, le jeton Google scellé, la clé du poste dans `config/diagnostic.json`, la charge d'un dépôt groupé), l'écriture est nommée (`socle::secret::ecrit`, `ecrit_option`). Les enveloppes et les secrets scellés du coffre sont du chiffré en base64, pas des secrets ; le nom de l'algorithme de la dérivation reste le texte lu (`deriver` refuse un autre que scrypt en le nommant) |
-| numéro de retour | le numéro que le serveur du filet donne à un message au développeur, celui que l'utilisateur lit | `NumeroDeRetour` (`compagnie/src/editeur.rs`) : `R-` et six hexadécimaux majuscules (`RE_NUMERO_RETOUR` du serveur) ; que portent la réponse à `POST /retour`, les réponses relevées, la boîte des messages ; le ticket qui suit un message est autre chose (son adresse, une `Url` ; son numéro, un entier) |
-| identifiant d'un message | l'identifiant d'un message au développeur, propre au poste, qui nomme son fichier d'attente | `IdDeMessage` (`compagnie/src/problemes.rs`) : `AAAAMMJJTHHMMSS-` et douze hexadécimaux minuscules, la forme que seul `nouvel_id` fait, lue strictement ; que portent la boîte des messages (`journal/signalements.json`), le nom de `journal/signalements/<id>.json`, la réponse de `signalement-envoyer` |
-| étiquette de caviardage | ce que le caviardage a retiré d'un texte, jamais ce que c'était (`[NIR]`, `<NOM>`) : nom, prénom, NIR, date de naissance, adresse, numéro Congés Spectacles, courriel, téléphone, IBAN, code salarié (l'import) ; BIC, jeton de session (les incidents) | `EtiquetteDeCaviardage` (`compagnie/src/incidents.rs`, une liste du logiciel) : écrite par son mot en capitales (`NOM`, `CS`, `JETON`), elle se trie comme lui ; `dit()`, ses mots pour la personne ; que portent une ligne du journal des incidents, un paquet, ce qui part chez l'éditeur (`caviarde`), le compte de ce que l'import a enlevé d'un bulletin (`import::caviardage::Caviarde::enleves`) |
-| identifiant de la DILA | un texte, un article ou une convention des bases LEGI, KALI, JORF (« KALICONT000028157262 », « LEGITEXT000006072050 ») : sa famille (`LEGITEXT`, `LEGIARTI`, `KALITEXT`, `KALIARTI`, `KALICONT`, `JORFTEXT`) et douze chiffres | `IdDila` (`atelier/src/releve/entrepot_dila.rs`, l'atelier seul) : il s'écrit et se trie comme son texte ; un identifiant que l'atelier écrit en Rust, `IdDila::du_moteur` ; que portent le suivi KALI d'une source et une convention à relever (`sources.json`), le texte d'un code relevé (`releve::codes::textes`) |
-| type d'une capture | le type d'image d'une capture jointe à un message au développeur : PNG ou JPEG | `TypeDeCapture` (`compagnie/src/problemes.rs`, une liste du logiciel), écrit `image/png`, `image/jpeg` ; que portent une capture de la page, celle qui part et celle que l'aperçu montre |
-| rubrique de la norme | l'identifiant d'une rubrique de la DSN, « structure, groupe, bloc, rubrique » (`S21.G00.40.021`, cahier technique, chapitre 3, règles de nommage) | `RubriqueDeLaNorme` (`droit/src/natures.rs`), que portent la rubrique d'une liste de la norme (`ListeDeLaNorme::RUBRIQUE`), les clés des tables d'usages et de formats, les `codes`, `champs`, `absents` et `interdits` d'une nature de `contrats-base.json`, la rubrique d'une case de `champs-base.json`, ce que la lecture d'une DSN garde ; une rubrique que le moteur nomme se vérifie à la compilation (`droit::rubrique!`). Les rubriques que l'écrivain de la DSN passe à `dsn::Fichier::add` restent des littéraux |
-| nom de fichier | le nom d'un fichier seul, sans son dossier : le fichier parti que le journal des envois note, le modèle d'un contrat, une table de la norme livrée, l'archive d'une version, la copie d'une pièce importée | `NomDeFichier` (`socle/src/fichiers.rs`) : ni vide, ni `.` ni `..`, sans `/`, `\` ni caractère nul ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur` |
-| chemin relatif | un chemin sous une racine que son champ dit (la compagnie, le dossier de la sauvegarde) : la trace d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris | `CheminRelatif` (`socle/src/fichiers.rs`) : des `NomDeFichier` séparés par des barres droites sur tous les systèmes, ni vide ni avec une racine ; il se fait d'un chemin par `CheminRelatif::sous(racine, chemin)` ; la clé d'une lecture notée s'écrit avec la même écriture. Un chemin absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin` |
-| empreinte | le SHA-256 entier d'un contenu : une source déposée, une archive de mise à jour et les fictives (`derniere.json`, `.livraison.json`, `.livree.json`), un exercice clos, un état gardé | `Empreinte` (`socle/src/fichiers.rs`) : 64 caractères hexadécimaux minuscules ; elle ne se fait que par `Empreinte::des_octets` (ou `du_hachage`, un contenu haché par morceaux ; `du_fichier`), elle se lit par `Empreinte::lire` ; que porte aussi ce qu'une lecture notée valait (`ValeurLue::Empreinte`) |
-| clé de lecture | ce dont une paie dépend, une lecture que son calcul a notée : un fichier lu, un chemin dont il a demandé s'il existe ou s'il est un dossier, un dossier parcouru, la marque du code qui calcule, la date, aujourd'hui, les fiches d'une paie, les imprévus d'un salarié, une lecture datée (le taux de PAS, une indemnité de mission, les mensuels d'avant, les paies validées d'un mois, la saisie d'un mois) | `CleDeLecture<S, L, P>` (`socle/src/fichiers.rs`), générique sur le salarié, le lieu d'une mission et le spectacle (`droit::contexte::CleLue` : `IdSalarie`, `LieuDeMission`, `IdSpectacle`) ; le chemin qu'elle nomme, `CheminLu` (`racine:`, `code:`, `abs:`) ; une lecture datée, `LectureDatee<S, L>` ; écrite par son texte (`fichier racine:config/effectifs.json`, `fiches ["2026-11","FULLER",null]`), triée comme lui ; le registre (`socle::fichiers`, un par fil) garde le texte qu'il note et ne rend que des clés lues (`rendre`) ; que porte l'empreinte d'une paie écrite (`engagement::paie_ecrite::Empreinte.entrees`, écrite par `socle::fichiers::lectures`) |
-| valeur lue | ce qu'une lecture notée valait : une empreinte, absent, illisible (et la raison), oui ou non, un jour, la marque du code, la saisie d'un mois (`ValeurLue::Saisie`, une `EmpreinteDeSaisie`), l'empreinte composée d'une donnée (le taux de PAS, l'indemnité de mission d'un jour) | `ValeurLue` (`socle/src/fichiers.rs`) : écrite par son texte, relue selon la sorte de sa clé, strictement |
-| empreinte d'une saisie | ce dont la saisie d'un mois est faite pour une paie : ce que le mois pose pour tous (le taux du cachet), et ses engagements valides (ceux d'un salarié, pour sa paie), deux empreintes ; la raison d'un recalcul dit laquelle a changé | `EmpreinteDeSaisie` (`socle/src/fichiers.rs`) : `mois`, `engagements`, écrite `<mois>:<engagements>` et relue strictement ; seul `engagement::stock::empreinte_de_saisie` la fait ; que portent une lecture notée d'une paie, la saisie d'un mois que l'écran garde, les empreintes des saisies de l'année qu'un export compta note au journal des écritures (`EmpreinteNotee::Annee`) |
-| empreinte courte | les 16 premiers caractères du SHA-256 : ce que le journal des envois écrit d'un fichier parti et d'un modèle figé, une paie importée déjà comparée, une DPAE due, l'état d'un mois de l'horloge ; on n'en retrouve pas l'entière | `EmpreinteCourte` (`socle/src/fichiers.rs`) : elle ne se fait que par `Empreinte::courte` |
-| empreinte MD5 | le `md5Checksum` que Drive publie d'un fichier, et celui que la sauvegarde et la restauration calculent pour s'y comparer | `EmpreinteMd5` (`envois/src/drive.rs`) : 32 caractères hexadécimaux minuscules ; un `md5Checksum` vide se lit absent, à la porte |
-| identifiant de flux | l'identifiant que la plate-forme donne à un dépôt (`idflux`), et par lequel elle range ses retours : celui de net-entreprises, celui du canal DPAE, le `FICTIF-…` du simulateur | `IdDeFlux` (`envois/src/retours.rs`, la porte des retours) : chiffres, lettres, `.`, `-`, `_`, de 1 à 50 caractères (guide de l'API DSN v6.8 ; la classe est une inférence) ; que portent une ligne du journal des envois (`""` au fichier quand la plate-forme n'en a pas donné : `socle::forme::vide_si_aucun`), l'ouverture d'un dépôt réel, un retour listé, un dépôt listé, un bilan, la reprise ; `IdDeFlux::est_fictif` reconnaît un dépôt joué |
-| identifiant d'un envoi | l'`id` qu'un envoi porte au journal des envois, et que `a` reprend pour ce qui lui revient | `IdDEnvoi` (`envois/src/journal.rs`, privé au journal) : l'empreinte courte du texte de la ligne, suivie de `-<rang>` (à partir de 2) quand une ligne au même texte la porte déjà ; la forme que le seul écrivain fait (`noter`), lue strictement |
-| nature d'un retour | ce qu'est un retour d'organisme, des deux canaux : un accusé, un bilan, un compte rendu, une AER, le certificat des DPAE (« 10 », « 11 », « 46 », « 118 », « 41 »…) | `NatureDuRetour` (`envois/src/retours.rs`, `droit::codes_fermes!` sur son texte) : la liste du guide de l'API DSN v6.8 (l. 573-788, chaque code à sa ligne) et le retour 41 de la FAQ de l'API DPAE (p. 5) ; que portent un retour listé, un retour rangé au journal des envois, son complément, l'incident d'un retour, le nom d'une archive (`archive_de_nature`) ; les natures qu'une compagnie reçoit ont leur fiche (libellé, organisme, format) |
-| canal des retours | le canal d'un retour d'organisme (règle 5) : la DSN sur net-entreprises, la DPAE sur l'Urssaf, services, mots de passe et archives distincts | `CanalDesRetours` (`envois/src/releve_retours.rs`, une liste du logiciel : `Dsn`, `Dpae`) ; il ne s'écrit dans aucun fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/` ; que portent la relève, l'archive d'une pièce, le journal des retours vus, l'incident d'un retour (sa nature au journal des incidents), la pièce que l'Historique relit |
-| verdict | ce que la pièce d'un retour dit d'un envoi, d'une déclaration ou des données analysées : OK, KO, ANO | `Verdict` (`envois/src/retours.rs`) : `etat_type`, `envoi_etat_type` et `ok_ko` du schéma des bilans, RO.B003.R002 de NEOReS ; il se lit sans casse, à sa seule porte (`Verdict::lu`), et s'écrit en capitales ; que portent un bilan, une déclaration qu'il identifie, un rapport, un NEOReS, un retour d'organisme au journal des envois et l'état de la déclaration qu'une ligne reprise garde. Ce que la pièce en dit au journal (le verdict, les anomalies en phrases, les personnes d'une DPAE) : `ligne::VerdictDeLaPiece` |
-| statut d'un retour | ce que la liste des retours dit d'un retour (`flux.retour.statut`) : OK, KO, ANO, EN COURS, ANOBLOQUANTE (France Travail) | `StatutDuRetour` (`envois/src/retours.rs`, `droit::codes_fermes!` sur son texte : guide de l'API DSN v6.8, l. 1733-1745, et « De la DSN à l'attestation employeur » v3.2, l. 235-243) ; que portent un retour listé, un retour d'organisme au journal des envois ; le simulateur écrit OK, et KO au bilan d'anomalies d'une DSN refusée (guide v6.8, § 5.2.3) ; un retour joué se reconnaît à son flux (`IdDeFlux::est_fictif`) |
-| catégorie d'une anomalie | bloquante ou non, ce qu'un bilan dit d'une anomalie (`categorie`) | `CategorieDAnomalie` (`envois/src/retours.rs`, `codes_fermes!` sur `categorie_anomalie_type` du schéma des bilans, l. 839-855 : « bloquant », « non-bloquant ») ; que portent une anomalie en codes, une anomalie d'un rapport, l'anomalie d'un incident de retour (les bloquantes d'abord) |
-| type d'un rapport de dépôt | ce qu'est le bilan d'un dépôt (`rapport/@type`) : l'accusé d'enregistrement, le certificat de conformité, le bilan d'anomalies | `TypeDeRapport` (`envois/src/retours.rs`, `codes_fermes!` sur le guide de l'API DSN v6.8, l. 4825-4828 : AEE, CCO, BAN), que porte un bilan ; un rapport d'un autre type n'est pas un bilan de dépôt, et l'Historique le lit sous son type tel qu'écrit |
-| codes d'un compte rendu | ce que les comptes rendus NEOReS et des organismes complémentaires disent par un code, et dont l'Historique fait ses phrases | `envois/src/retours.rs`, chacun par `codes_fermes!` sur son texte, avec son libellé : NEOReS (cahiers techniques 2026.1.2 et 2027.1.0), le déclencheur `DeclencheurNeores` (RO.B001.R001), le type de retour `TypeDeRetourNeores` (RO.B002.R004 : 02 annule et remplace), le type d'action `TypeDActionNeores` (RO.B004.R003), le résultat du contrôle `ResultatDuControleNeores` (RO.B004.R006, RO.B007.R009), le caractère substituable `SubstituableNeores` (RO.B004.R016, RO.B005.R005) ; CRM OC (schéma V1.1.4) : `TypeDeCrmOc` (`TypCRM`), `RetourGlobalOc` (`CodeRetourDecla`), `CriticiteOc` (`CriticiteRetour`) |
-| type d'un paramètre NEOReS | l'effectif qu'un compte rendu 118 communique (`RO.B008.R001` : A01 l'effectif de sécurité sociale, A02 à A05, A07), et la clé d'un effectif de `config/effectifs.json` | `TypeDeParametreNeores` (`droit/src/contexte.rs`, `codes_fermes!` sur la table que net-entreprises sert, `neores/gip-mds-neores-table-types-de-parametres-20230703.csv`, avec son libellé) ; que portent un paramètre d'un NEOReS, un effectif mesuré d'un 118, les clés de `config/effectifs.json` (par `Annee`, puis par type) |
-| identifiant Drive | l'identifiant que Drive donne à un fichier ou à un dossier : ce qu'un listage rend, le dossier où l'on dépose, ce que l'index de la sauvegarde garde de chaque dossier | `IdDrive` (`envois/src/drive.rs`) : un texte opaque, non vide (Google n'en publie pas la forme) ; lu à la porte de la réponse de Google ; `IdDrive::RACINE`, le dossier racine du compte (`root`). Le nom de la racine de la sauvegarde (`PuppetPaie`) est un nom, pas un identifiant |
-| adresse | une adresse que le moteur appelle ou montre : un service (Google, net-entreprises, l'Urssaf, le serveur du filet, le dépôt des mises à jour), un texte (Légifrance, le CASC-SVP) | `Url` (`socle/src/garde_reseau.rs`, la porte du réseau) : elle commence par `http://` ou `https://`, rien d'autre n'est vérifié ; elle s'écrit et s'envoie au caractère près ; une adresse que le code compose, `Url::joindre` ; une que le moteur écrit en Rust, `Url::du_moteur` ; une adresse que rend un tiers (un lien du Drive, une redirection) se lit à sa porte. Une adresse de courriel est un `Courriel` |
-| dépôt des mises à jour | d'où une installation reçoit ses versions (`maj/reglage.json`, `depot`), ou ce que la publication relit | `DepotDesMisesAJour` (`compagnie/src/maj.rs`) : `Adresse(Url)` ou `Dossier(PathBuf)`, choisi à sa lecture par le début du texte ; il s'écrit tel qu'on l'a lu |
-| version de la norme | la version de la norme DSN d'un fichier (S10.G00.00.006 : `P26V01`, `P27V01`) | `VersionDeLaNorme` (`droit/src/natures.rs`), une liste de la norme, que porte `declarations::norme::Norme` ; une DSN lue d'une version non livrée n'en a pas |
-| fraction | le numéro de fraction d'une déclaration (S20.G00.05.003), « nd » : la fraction n sur d, n au plus d ; « 11 » pour une entreprise non fractionnée | `Fraction` (`droit/src/natures.rs`), que portent les options de la DSN mensuelle, la DSN lue, le journal des envois et le bilan d'un dépôt ; `Fraction::NON_FRACTIONNEE` |
-| numéro d'ordre | le rang de constitution d'une déclaration (S20.G00.05.004, et RO.B000.R012 de NEOReS), `0\|[1-9][0-9]*`, au plus quinze chiffres | `NumeroDOrdre` (`droit/src/natures.rs`), que portent les options des déclarations, la DSN lue, le journal des envois, les retours, les charges des signalements ; « aucun » est `None`, le suivant `NumeroDOrdre::suivant` ; écrit en nombre par `droit::natures::en_nombre` là où la forme le dit |
-| identifiant de déclaration | la déclaration qu'un annule-et-remplace ou un annule vise (S20.G00.05.006) : sa date de constitution `JJMMAAAA` et son numéro d'ordre | `IdentifiantDeDeclaration` (`droit/src/natures.rs`), que portent les options des signalements, la DSN lue, les charges des signalements |
+| NIR | `droit::fiche::Nir` | `droit/src/fiche.rs` |
+| NTT | `Ntt` | `declarations/src/ntt.rs` |
+| identifiant d'un individu | `IdentifiantDIndividu` | `declarations/src/ntt.rs` |
+| case d'identité | `CaseDIdentite` | `declarations/src/changements_individu.rs` |
+| SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
+| IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
+| numéro de contrat | `NumeroContrat` | `engagement/src/numeros.rs` |
+| clé d'une paie versée | `CleDePaieVersee` | `engagement/src/importe.rs` |
+| numéro de bulletin | `NumeroDeBulletin` | `engagement/src/numeros.rs` |
+| numéro d'objet spectacle | `NumeroObjetSpectacle` | `droit/src/fiche.rs` |
+| IDCC | `Idcc` | `droit/src/fiche.rs` |
+| identifiant d'organisme | `IdentifiantDOrganisme` | `droit/src/organismes.rs` |
+| code caisse | `CodeCaisse` | `droit/src/organismes.rs` |
+| salarié | `IdSalarie` | `droit/src/contexte.rs` |
+| salarié désigné | `SalarieDesigne` | `droit/src/contexte.rs` |
+| spectacle | `IdSpectacle` | `droit/src/contexte.rs` |
+| compagnie | `IdDeCompagnie` | `compagnie/src/installation.rs` |
+| couleur d'une compagnie | `CouleurDeCompagnie` | `compagnie/src/installation.rs` |
+| PCS-ESE | `CodePcsEse` | `droit/src/fiche.rs` |
+| code emploi déclaré | `CodeEmploiFt` | `droit/src/fiche.rs` |
+| matricule | `Matricule` | `droit/src/fiche.rs` |
+| licence | à créer (#419) | — |
+| code NAF, code postal | `CodeNaf`, `CodePostal` | `droit/src/fiche.rs` |
+| pays | `CodePays` | `socle/src/pays.rs` |
+| lieu de mission | `LieuDeMission` | `droit/src/missions.rs` |
+| lieu d'une ligne de frais | `LieuDeFrais` | `engagement/src/ligne.rs` |
+| monnaie | `CodeMonnaie` | `droit/src/missions.rs` |
+| commune | `CodeInsee` | `droit/src/fiche.rs` |
+| courriel | `Courriel` | `droit/src/fiche.rs` |
+| code de demande | `CodeDeDemande` | `documents/src/fiche_questionnaire.rs` |
+| identifiant de courriel | `IdDeCourriel` | `envois/src/envoi.rs` |
+| courriel envoyé | `envois::envoi::Message<Pour>` | `envois/src/envoi.rs` |
+| expéditeur d'un courriel lu | `envois::courriel_lecture::Expediteur` | `envois/src/courriel_lecture.rs` |
+| version du logiciel | `compagnie::maj::VersionDuLogiciel` | `compagnie/src/maj.rs` |
+| échec d'une mise à jour | `EchecDeMiseAJour` | `compagnie/src/maj.rs` |
+| système | `Systeme` | `compagnie/src/maj.rs` |
+| clé d'archive | `CleDArchive` | `compagnie/src/maj.rs` |
+| état du bridage | `EtatDuBridage` | `compagnie/src/bridage.rs` |
+| clé d'incident | `CleDIncident` | `compagnie/src/incidents.rs` |
+| numéro de poste | `NumeroDePoste` | `compagnie/src/incidents.rs` |
+| secret | `Secret` | `socle/src/secret.rs` |
+| numéro de retour | `NumeroDeRetour` | `compagnie/src/editeur.rs` |
+| identifiant d'un message | `IdDeMessage` | `compagnie/src/problemes.rs` |
+| étiquette de caviardage | `EtiquetteDeCaviardage` | `compagnie/src/incidents.rs` |
+| identifiant de la DILA | `IdDila` | `atelier/src/releve/entrepot_dila.rs` |
+| type d'une capture | `TypeDeCapture` | `compagnie/src/problemes.rs` |
+| rubrique de la norme | `RubriqueDeLaNorme` | `droit/src/natures.rs` |
+| nom de fichier | `NomDeFichier` | `socle/src/fichiers.rs` |
+| chemin relatif | `CheminRelatif` | `socle/src/fichiers.rs` |
+| empreinte | `Empreinte` | `socle/src/fichiers.rs` |
+| clé de lecture | `CleDeLecture<S, L, P>` | `socle/src/fichiers.rs` |
+| valeur lue | `ValeurLue` | `socle/src/fichiers.rs` |
+| empreinte d'une saisie | `EmpreinteDeSaisie` | `socle/src/fichiers.rs` |
+| empreinte courte | `EmpreinteCourte` | `socle/src/fichiers.rs` |
+| empreinte MD5 | `EmpreinteMd5` | `envois/src/drive.rs` |
+| identifiant de flux | `IdDeFlux` | `envois/src/retours.rs` |
+| identifiant d'un envoi | `IdDEnvoi` | `envois/src/journal.rs` |
+| nature d'un retour | `NatureDuRetour` | `envois/src/retours.rs` |
+| canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
+| verdict | `Verdict` | `envois/src/retours.rs` |
+| statut d'un retour | `StatutDuRetour` | `envois/src/retours.rs` |
+| catégorie d'une anomalie | `CategorieDAnomalie` | `envois/src/retours.rs` |
+| type d'un rapport de dépôt | `TypeDeRapport` | `envois/src/retours.rs` |
+| codes d'un compte rendu | huit listes de codes, nommées dans le détail | `envois/src/retours.rs` |
+| type d'un paramètre NEOReS | `TypeDeParametreNeores` | `droit/src/contexte.rs` |
+| identifiant Drive | `IdDrive` | `envois/src/drive.rs` |
+| adresse | `Url` | `socle/src/garde_reseau.rs` |
+| dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
+| version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
+| fraction | `Fraction` | `droit/src/natures.rs` |
+| numéro d'ordre | `NumeroDOrdre` | `droit/src/natures.rs` |
+| identifiant de déclaration | `IdentifiantDeDeclaration` | `droit/src/natures.rs` |
+
+**Le détail**
+
+- **NIR** : le numéro de sécurité sociale ; treize caractères, saisi il se range sans aucun blanc et en capitales
+  (`Nir::rangee`). Celui d'une pièce importée se lit par `Nir::d_une_piece` (hors forme : aucun), coupé de sa clé par
+  `Nir::et_sa_cle` ; le sexe qu'il dit, `Nir::sexe`, et celui d'une fiche, `ChampsSalarie::sexe` ; sa clé, `CleNir`
+  (`droit/src/fiche.rs`), celle d'un `Nir` par `CleNir::du_nir`. Que portent la fiche, l'identité qu'une DSN partie a
+  déclarée, une DSN lue, une AEM, une AER, un certificat, un bulletin importé (après sa porte), la paie versée d'un
+  engagement importé, les retours ; un NIR en cours de saisie reste son texte.
+- **NTT** : le numéro technique temporaire d'un individu sans NIR (S21.G00.30.020). Il se fabrique pour un salarié
+  (`ntt::numero`, contrôlé avec le SIREN) ou se lit dans une DSN (`Ntt::lu`, sa forme seule), ou dans un retour de la
+  norme (`Ntt::lire`, strict : RO.B009.R002 de NEOReS). Que portent l'identité qu'une DSN partie a déclarée
+  (`changements_individu::Declaree`), l'individu d'une DSN lue et l'identité en écart d'un compte rendu NEOReS
+  (`envois::retours::IdentiteNeores`, à côté du NIR déclaré, R001).
+- **identifiant d'un individu** : ce qui identifie un individu dans une DSN : son NIR, ou, sans NIR, son NTT (« Un
+  individu s'identifie par son NIR **ou** par son NTT »). `Nir(Nir)`, `Ntt(Ntt)`, écrit dans aucun fichier, trié NIR
+  d'abord ; celui d'un individu d'une DSN lue, `IndividuDeclare::identifiant` (le NIR, sinon le NTT). Que portent
+  l'effectif que le simulateur des organismes compte et le contrôle des doublons (CCH-14).
+- **case d'identité** : un des quatre identifiants que le bloc « Changements individu » reporte quand il change : NIR,
+  nom de famille, prénoms, date de naissance (S21.G00.31.008 à .011). Une liste de la norme : `TOUTES` dans l'ordre du
+  bloc 31, sa rubrique (`r31`), son libellé, la case de la fiche qui la porte ; sa valeur telle que le bloc 30 l'écrit
+  est privée au fichier.
+- **SIREN, NIC, SIRET** : l'entreprise, l'établissement, les deux.
+- **IBAN, BIC** : un compte bancaire ; leurs contrôles, `socle/src/iban.rs`.
+- **numéro de contrat** : S21.G00.40.009 : il se lit, ne se recalcule pas. Ni `Deref` ni comparaison à un texte : il se
+  compare à un numéro, s'imprime par `Display` (`numero_dit` quand il peut manquer ; le contrat d'un salarié dans un
+  refus, `numeros::le_contrat`), s'écrit par `as_str` à la porte ; celui qu'imprime une pièce d'autrui se lit par
+  `d_une_piece`.
+- **clé d'une paie versée** : ce qui reconnaît une paie versée d'un engagement importé d'un import à l'autre, et ce qui
+  l'a déclarée : le numéro de contrat qu'une DSN déposée déclare ; sinon un bulletin seul, par le numéro qu'il imprime
+  (le texte d'autrui), ou par sa copie et sa page. `Dsn(NumeroContrat)`, `Bulletin(String)`,
+  `Copie { fichier: NomDeFichier, page }`, écrite avec son origine (`{"dsn": …}`, `{"bulletin": …}`,
+  `{"copie": {…}}`) ; ce que la carte d'un engagement importé en montre, `dite()` ; que porte `PaieVersee.contrat`.
+- **numéro de bulletin** : le numéro qu'un bulletin du logiciel porte, `N/AAAA` : son rang dans la suite de l'année, puis
+  l'année. `numeroter` en donne un, et le départ des documents d'un mois sur la suite qu'il réserve
+  (`routes::gestes::depart::fabriquer_documents`) ; l'aperçu d'un bulletin en montre un (`du_rang`) ; il se lit
+  strictement. Que portent la paie, sa forme écrite, la paie écrite (`bulletin`, `rectifie`), le bulletin imprimé et son
+  rectificatif, le dernier état déclaré d'un contrat ; celui qu'un bulletin d'autrui imprime est du texte.
+- **numéro d'objet spectacle** : S21.G00.40.050, natures 02 et 10 ; l'année de sa demande, ses deux premiers chiffres
+  (`annee_de_la_demande`).
+- **IDCC** : l'identifiant d'une convention collective : la notion « convention ». Quatre chiffres, il s'écrit et se trie
+  comme son texte ; la clé des tables par convention (minima, clauses, organismes, prévoyance, emplois, barème, plan
+  comptable) ; une convention que le moteur nomme est une constante (`Idcc::du_moteur` : `IDCC_3090`…,
+  `clauses::IDCC_CCNEAC`). Dans l'atelier, le suivi KALI d'une source, la fiche d'une convention que la veille garde, un
+  changement de l'entrepôt KALI, l'IDCC que `releve-conventions` prend ; `minima::Convention`, `clauses::Convention`,
+  `forme_bareme::Convention` sont des formes de fichiers.
+- **identifiant d'organisme** : l'organisme de protection sociale que la DSN paie (S21.G00.20.001), d'une cotisation
+  (81.002), d'une adhésion de prévoyance (15.002) : le SIRET de l'Urssaf, de France Travail, de la caisse Congés
+  Spectacles, le code d'une institution (`P0983`), `DGFIP`. Que portent un versement de `organismes-base.json`, un
+  contrat qu'un texte exige, une adhésion, la `org` d'une cotisation DSN du barème, les lignes 81 et les ordres de
+  paiement de la DSN, ce que la lecture d'une DSN garde des blocs 15 et 20, l'organisme et le délégataire qu'un retour
+  de la plate-forme ou un compte rendu d'organisme complémentaire nomme (`envois::retours`) ; `AUDIENS`,
+  `SIRET_FRANCE_TRAVAIL`, `DGFIP` sont des constantes. Le code caisse d'un mois sans individu (S20.G00.08.001) est une
+  autre notion.
+- **code caisse** : l'organisme qui n'a plus d'individu rattaché, dans une DSN sans individu (S20.G00.08.001),
+  « X [2,6] » de la table ODRT : Agirc-Arrco 88, France Travail 93, Congés Spectacles 97 ; que porte `sans_individu` de
+  `organismes-base.json`.
+- **salarié** : la clé de sa fiche.
+- **salarié désigné** : le salarié tel qu'une personne ou une charge le désigne : la clé de sa fiche, son nom, son
+  prénom, son NIR. Que portent les charges des imprévus et des obligations d'un arrêt ; il se résout en `IdSalarie` à un
+  seul endroit, `Contexte::cle_du_salarie`.
+- **spectacle** : la clé de sa fiche.
+- **compagnie** : l'identifiant d'une compagnie de l'installation, celui de sa tuile. `Reelle`, `Cie(NomDeFichier)`,
+  `Fictive(NomDeFichier)`, écrit `reelle`, `cie:<dossier>`, `fictive:<dossier>`. Que portent une tuile de l'accueil, les
+  charges de l'accueil (couleur, remise à zéro, compagnies à garder), une compagnie gardée, le tableau de
+  l'administrateur, le choix d'une tuile dans la fenêtre.
+- **couleur d'une compagnie** : la couleur qu'une compagnie choisit pour sa tuile et sa page. `#RRGGBB`, gardée telle que
+  lue ; `poser_couleur` l'écrit en majuscules ; celle de la charte quand rien n'est posé. Que portent
+  `config/affichage.json`, une tuile, la charge et la réponse de `compagnie-couleur`, le tableau de l'administrateur. La
+  couleur d'une pastille (`socle::ecran`) est une autre notion.
+- **PCS-ESE** : la profession et catégorie socioprofessionnelle d'un emploi (S21.G00.40.004), « X [4,4] » de la table de
+  l'Insee. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, le métier du catalogue, ce qu'un
+  bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`), le
+  contrat de la liste nominative d'une régularisation CASC-SVP.
+- **code emploi déclaré** : le complément PCS-ESE d'un emploi (S21.G00.40.005), « X [2,6] » : pour le spectacle, un code
+  de la nomenclature des emplois du spectacle, « 999SPT » pour un emploi permanent, « 50 », « 51 » (CCH-18) ; il ne
+  nomme pas toujours un métier. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, ce qu'un
+  bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 ; le métier qu'il nomme : `emplois::metier` ;
+  un code d'un métier se déclare tel quel (`From<&CodeEmploi>`).
+- **matricule** : le numéro d'un salarié dans la compagnie (S21.G00.30.019, « X [1,30] », que l'employeur choisit). Que
+  portent la fiche du salarié (`code_salarie`), l'identité qu'une DSN partie a déclarée
+  (`changements_individu::Declaree`), l'individu d'une DSN lue ; ce qu'un bulletin d'autrui imprime reste son texte.
+- **pays** : un code ISO 3166 à deux lettres, que porte aussi le pays d'une ville de la table des missions
+  (`villes.json`).
+- **lieu de mission** : un pays, ou une ville que la table DGFiP des indemnités de mission à l'étranger distingue de son
+  pays (« NY », New York). Deux lettres capitales, le `code_pays` de `indemnites.csv` et de `change.csv`, les clés de
+  `villes.json` ; il s'écrit et se trie comme son texte. Que portent les tables lues, la clé `mission <lieu> <jour>`
+  d'une empreinte de paie (`socle::fichiers::LectureDatee`, générique sur le lieu) ; celui d'une ligne de frais à
+  l'étranger (`LieuDeFrais::Etranger`), que `missions::lieu` trouve dans la table.
+- **lieu d'une ligne de frais** : où une nuitée ou un repas a lieu hors de la métropole (le choix « Lieu » ; absent : la
+  métropole) : un territoire hors métropole, ou un lieu à l'étranger. `HorsMetropole(TerritoireHorsMetropole)` (`dom`,
+  `pacifique`, `monaco`, les clés de `frais_hors_metropole` du barème, et `taaf`, sans forfait) ou
+  `Etranger(LieuDeMission)` ; écrit par son texte, lu à sa porte (une clé de territoire, sinon un code de lieu). Que
+  portent une ligne de frais (`territoire`), la ligne qu'un appelant donne, ce que le choix « Lieu » propose
+  (`TerritoireHorsMetropole::TOUS`).
+- **monnaie** : la monnaie d'une indemnité de mission à l'étranger (« EUR », « USD ») ; trois lettres capitales,
+  `code_monnaie` et `monnaie_source` des tables DGFiP ; que porte une indemnité d'un jour (`Indemnite`, son empreinte).
+- **commune** : son code INSEE (versement mobilité, S21.G00.81.005).
+- **courriel** : une adresse de courriel. Que portent la fiche, et au journal des envois l'expéditeur, les adresses
+  servies (`partis`), celle où un envoi a échoué (`echec_a`), celle d'une demande (`adresse`) et celle d'où sa réponse
+  est venue (`de`) ; l'expéditeur d'un courriel **reçu** est un `Expediteur`.
+- **code de demande** : le code qu'une demande de signature ou de fiche porte, et qu'on cherche dans la réponse : `SIG-`
+  ou `FIC-` (la sorte de demande, `SorteDeDemande`) et six signes de `ALPHABET_CODE`. Seul `code_au_hasard` le fait, il
+  se lit strictement. Que portent un contrat parti, un avenant parti, ce qui en revient, le contrat contresigné, une
+  demande de fiche et sa réponse, une signature attendue et relevée ; une réponse reçue est le texte d'un tiers, on y
+  cherche `texte()`.
+- **identifiant de courriel** : le `Message-ID` d'un courriel que le logiciel envoie, `<gauche@droite>` (RFC 5322,
+  § 3.6.4). Écrit par `nouveau_message_id` et la boîte simulée, rendu par l'envoi (`Courriel::envoyer`). Que portent un
+  contrat parti, une demande de fiche, une signature ou une fiche attendue (`envoyes`) ; un identifiant **reçu** (l'UID
+  d'un message de la boîte, un en-tête) est le texte d'un tiers, qui se compare à `texte()`.
+- **courriel envoyé** : un courriel qu'un geste envoie, et celui à qui il s'adresse, que l'envoyeur retrouve après
+  l'envoi. `Pour` du type de ce qu'il est : `IdSalarie` (les documents du mois, le dossier, les contrats à signer et le
+  contrat contresigné), le nom court de l'organisme (la régularisation CASC-SVP : celui du `.eml` gardé), `()` quand
+  personne n'est à retrouver (la fiche demandée, la réponse d'une personne fictive) ; l'envoi ne le lit pas.
+- **expéditeur d'un courriel lu** : une adresse, rien, ou un texte qui n'en est pas une.
+- **version du logiciel** : le numéro d'une publication, des nombres séparés de points. Il garde le texte lu et s'écrit
+  par lui (`2026.11.01` reste `2026.11.01` : `VERSION`, `derniere.json`, `prete.json`, les noms des archives,
+  `maj/<version>/`) ; deux versions sont la même si elles s'écrivent pareil, « plus récente » compare les nombres
+  (`plus_recente_que`) ; `lue()` la dit `JJ.MM.AAAA`. `VERSION` ne se lit que par `maj::courante` ; celle d'un incident
+  est vide quand `VERSION` ne se lit pas.
+- **échec d'une mise à jour** : ce qui a fait échouer une recherche de mise à jour, dit en un mot à l'écran : hors ligne,
+  introuvable, dépôt illisible, signature refusée, archive altérée, refusée au contrôle, réglage illisible. Une liste du
+  logiciel ; `mot()`.
+- **système** : le système dont une archive porte les programmes, et ceux d'une installation : `windows`, `linux`,
+  `mac`, le nom du dossier de ses programmes dans `logiciel/`. Une liste du logiciel : `TOUS`, `DE_CE_PROGRAMME` (celui
+  qu'on a compilé), `lu()` (« Windows », « Linux », « macOS »). Que portent la liste `systemes` de l'archive de tous dans
+  `derniere.json`, ce que `portable-completer` ajoute ou ne trouve pas, le système d'un fichier de `logiciel/`. Ce que
+  `diagnostic` dit de la machine (`macos`, la constante du compilateur) est une description.
+- **clé d'archive** : la clé d'une archive de mise à jour publiée dans `derniere.json` : celle d'un système, ou
+  `tout-systeme` (le dossier portable, qui les porte tous). `Du(Systeme)` ou `DeTous`, écrite par son texte ; que
+  portent les archives prises d'une version prête (`prete.json`), les noms des archives d'une version.
+- **état du bridage** : bridé ou débloqué : ce que disent `.edition.json` et `logiciel/EDITION.json`. Une liste du
+  logiciel : écrit `bride`, `debloque` ; `demo` et `complete` se lisent aussi (le contrat avec les installations
+  posées) ; que portent la machine d'un incident (`edition`) et sa ligne en mots.
+- **clé d'incident** : ce qui fait que deux incidents sont le même : la nature, l'endroit, le genre. Les douze premiers
+  hexadécimaux minuscules du SHA-256 de `nature|ou|quoi`, que seul `incidents::empreinte` fait, lue strictement ; pas
+  une `Empreinte`. Que portent une ligne du journal des incidents, un paquet, ce qui part chez l'éditeur, les clés
+  reçues et écartées que le serveur du filet rend.
+- **numéro de poste** : le numéro que le serveur du filet donne à ce poste (`POST /poste`) ; 32 hexadécimaux minuscules
+  (`RE_POSTE` du serveur). Que portent `config/diagnostic.json`, l'identité rendue par le serveur, le client du filet, ce
+  qui part (`poste`) et une année de paies partie. La clé du poste, à côté, est un secret.
+- **secret** : un mot de passe (du logiciel, d'un organisme, de la boîte, de l'administrateur), un jeton (d'une session
+  net-entreprises, de Google, de la fenêtre), une clé (celle du poste chez le serveur du filet, le secret de
+  l'application Google, la graine de publication). Opaque ; `{:?}` écrit « [secret] », ni `Display` ni `Serialize` ; il
+  se lit d'une charge, d'une réponse, d'une saisie ; `devoiler()` aux seules portes qui l'emploient (le transport, le
+  coffre, la page servie à la fenêtre), `egal_a` le compare en temps constant. Là où le logiciel en garde un dans un
+  fichier qu'il écrit (la séance gardée, le jeton Google scellé, la clé du poste dans `config/diagnostic.json`, la
+  charge d'un dépôt groupé), l'écriture est nommée (`socle::secret::ecrit`, `ecrit_option`). Les enveloppes et les
+  secrets scellés du coffre sont du chiffré en base64, pas des secrets ; le nom de l'algorithme de la dérivation reste
+  le texte lu (`deriver` refuse un autre que scrypt en le nommant).
+- **numéro de retour** : le numéro que le serveur du filet donne à un message au développeur, celui que l'utilisateur
+  lit ; `R-` et six hexadécimaux majuscules (`RE_NUMERO_RETOUR` du serveur). Que portent la réponse à `POST /retour`, les
+  réponses relevées, la boîte des messages ; le ticket qui suit un message est autre chose (son adresse, une `Url` ; son
+  numéro, un entier).
+- **identifiant d'un message** : l'identifiant d'un message au développeur, propre au poste, qui nomme son fichier
+  d'attente. `AAAAMMJJTHHMMSS-` et douze hexadécimaux minuscules, la forme que seul `nouvel_id` fait, lue strictement ;
+  que portent la boîte des messages (`journal/signalements.json`), le nom de `journal/signalements/<id>.json`, la
+  réponse de `signalement-envoyer`.
+- **étiquette de caviardage** : ce que le caviardage a retiré d'un texte, jamais ce que c'était (`[NIR]`, `<NOM>`) :
+  nom, prénom, NIR, date de naissance, adresse, numéro Congés Spectacles, courriel, téléphone, IBAN, code salarié
+  (l'import) ; BIC, jeton de session (les incidents). Une liste du logiciel : écrite par son mot en capitales (`NOM`,
+  `CS`, `JETON`), elle se trie comme lui ; `dit()`, ses mots pour la personne. Que portent une ligne du journal des
+  incidents, un paquet, ce qui part chez l'éditeur (`caviarde`), le compte de ce que l'import a enlevé d'un bulletin
+  (`import::caviardage::Caviarde::enleves`).
+- **identifiant de la DILA** : un texte, un article ou une convention des bases LEGI, KALI, JORF
+  (« KALICONT000028157262 », « LEGITEXT000006072050 ») : sa famille (`LEGITEXT`, `LEGIARTI`, `KALITEXT`, `KALIARTI`,
+  `KALICONT`, `JORFTEXT`) et douze chiffres. L'atelier seul : il s'écrit et se trie comme son texte ; un identifiant que
+  l'atelier écrit en Rust, `IdDila::du_moteur`. Que portent le suivi KALI d'une source et une convention à relever
+  (`sources.json`), le texte d'un code relevé (`releve::codes::textes`).
+- **type d'une capture** : le type d'image d'une capture jointe à un message au développeur : PNG ou JPEG. Une liste du
+  logiciel, écrit `image/png`, `image/jpeg` ; que portent une capture de la page, celle qui part et celle que l'aperçu
+  montre.
+- **rubrique de la norme** : l'identifiant d'une rubrique de la DSN, « structure, groupe, bloc, rubrique »
+  (`S21.G00.40.021`, cahier technique, chapitre 3, règles de nommage). Que portent la rubrique d'une liste de la norme
+  (`ListeDeLaNorme::RUBRIQUE`), les clés des tables d'usages et de formats, les `codes`, `champs`, `absents` et
+  `interdits` d'une nature de `contrats-base.json`, la rubrique d'une case de `champs-base.json`, ce que la lecture
+  d'une DSN garde ; une rubrique que le moteur nomme se vérifie à la compilation (`droit::rubrique!`). Les rubriques que
+  l'écrivain de la DSN passe à `dsn::Fichier::add` restent des littéraux.
+- **nom de fichier** : le nom d'un fichier seul, sans son dossier : le fichier parti que le journal des envois note, le
+  modèle d'un contrat, une table de la norme livrée, l'archive d'une version, la copie d'une pièce importée. Ni vide, ni
+  `.` ni `..`, sans `/`, `\` ni caractère nul ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans
+  nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur`.
+- **chemin relatif** : un chemin sous une racine que son champ dit (la compagnie, le dossier de la sauvegarde) : la trace
+  d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris. Des
+  `NomDeFichier` séparés par des barres droites sur tous les systèmes, ni vide ni avec une racine ; il se fait d'un
+  chemin par `CheminRelatif::sous(racine, chemin)` ; la clé d'une lecture notée s'écrit avec la même écriture. Un chemin
+  absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin`.
+- **empreinte** : le SHA-256 entier d'un contenu : une source déposée, une archive de mise à jour et les fictives
+  (`derniere.json`, `.livraison.json`, `.livree.json`), un exercice clos, un état gardé. 64 caractères hexadécimaux
+  minuscules ; elle ne se fait que par `Empreinte::des_octets` (ou `du_hachage`, un contenu haché par morceaux ;
+  `du_fichier`), elle se lit par `Empreinte::lire` ; que porte aussi ce qu'une lecture notée valait
+  (`ValeurLue::Empreinte`).
+- **clé de lecture** : ce dont une paie dépend, une lecture que son calcul a notée : un fichier lu, un chemin dont il a
+  demandé s'il existe ou s'il est un dossier, un dossier parcouru, la marque du code qui calcule, la date, aujourd'hui,
+  les fiches d'une paie, les imprévus d'un salarié, une lecture datée (le taux de PAS, une indemnité de mission, les
+  mensuels d'avant, les paies validées d'un mois, la saisie d'un mois). Générique sur le salarié, le lieu d'une mission
+  et le spectacle (`droit::contexte::CleLue` : `IdSalarie`, `LieuDeMission`, `IdSpectacle`) ; le chemin qu'elle nomme,
+  `CheminLu` (`racine:`, `code:`, `abs:`) ; une lecture datée, `LectureDatee<S, L>`. Écrite par son texte
+  (`fichier racine:config/effectifs.json`, `fiches ["2026-11","FULLER",null]`), triée comme lui ; le registre
+  (`socle::fichiers`, un par fil) garde le texte qu'il note et ne rend que des clés lues (`rendre`). Que porte
+  l'empreinte d'une paie écrite (`engagement::paie_ecrite::Empreinte.entrees`, écrite par `socle::fichiers::lectures`).
+- **valeur lue** : ce qu'une lecture notée valait : une empreinte, absent, illisible (et la raison), oui ou non, un jour,
+  la marque du code, la saisie d'un mois (`ValeurLue::Saisie`, une `EmpreinteDeSaisie`), l'empreinte composée d'une
+  donnée (le taux de PAS, l'indemnité de mission d'un jour). Écrite par son texte, relue selon la sorte de sa clé,
+  strictement.
+- **empreinte d'une saisie** : ce dont la saisie d'un mois est faite pour une paie : ce que le mois pose pour tous (le
+  taux du cachet), et ses engagements valides (ceux d'un salarié, pour sa paie), deux empreintes ; la raison d'un
+  recalcul dit laquelle a changé. `mois`, `engagements`, écrite `<mois>:<engagements>` et relue strictement ; seul
+  `engagement::stock::empreinte_de_saisie` la fait. Que portent une lecture notée d'une paie, la saisie d'un mois que
+  l'écran garde, les empreintes des saisies de l'année qu'un export compta note au journal des écritures
+  (`EmpreinteNotee::Annee`).
+- **empreinte courte** : les 16 premiers caractères du SHA-256 : ce que le journal des envois écrit d'un fichier parti et
+  d'un modèle figé, une paie importée déjà comparée, une DPAE due, l'état d'un mois de l'horloge ; on n'en retrouve pas
+  l'entière. Elle ne se fait que par `Empreinte::courte`.
+- **empreinte MD5** : le `md5Checksum` que Drive publie d'un fichier, et celui que la sauvegarde et la restauration
+  calculent pour s'y comparer ; 32 caractères hexadécimaux minuscules ; un `md5Checksum` vide se lit absent, à la porte.
+- **identifiant de flux** : l'identifiant que la plate-forme donne à un dépôt (`idflux`), et par lequel elle range ses
+  retours : celui de net-entreprises, celui du canal DPAE, le `FICTIF-…` du simulateur. Son fichier est la porte des
+  retours : chiffres, lettres, `.`, `-`, `_`, de 1 à 50 caractères (guide de l'API DSN v6.8 ; la classe est une
+  inférence). Que portent une ligne du journal des envois (`""` au fichier quand la plate-forme n'en a pas donné :
+  `socle::forme::vide_si_aucun`), l'ouverture d'un dépôt réel, un retour listé, un dépôt listé, un bilan, la reprise ;
+  `IdDeFlux::est_fictif` reconnaît un dépôt joué.
+- **identifiant d'un envoi** : l'`id` qu'un envoi porte au journal des envois, et que `a` reprend pour ce qui lui revient.
+  Privé au journal : l'empreinte courte du texte de la ligne, suivie de `-<rang>` (à partir de 2) quand une ligne au
+  même texte la porte déjà ; la forme que le seul écrivain fait (`noter`), lue strictement.
+- **nature d'un retour** : ce qu'est un retour d'organisme, des deux canaux : un accusé, un bilan, un compte rendu, une
+  AER, le certificat des DPAE (« 10 », « 11 », « 46 », « 118 », « 41 »…). `droit::codes_fermes!` sur son texte : la
+  liste du guide de l'API DSN v6.8 (l. 573-788, chaque code à sa ligne) et le retour 41 de la FAQ de l'API DPAE (p. 5).
+  Que portent un retour listé, un retour rangé au journal des envois, son complément, l'incident d'un retour, le nom
+  d'une archive (`archive_de_nature`) ; les natures qu'une compagnie reçoit ont leur fiche (libellé, organisme, format).
+- **canal des retours** : le canal d'un retour d'organisme (règle 5) : la DSN sur net-entreprises, la DPAE sur l'Urssaf,
+  services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
+  fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
+  journal des retours vus, l'incident d'un retour (sa nature au journal des incidents), la pièce que l'Historique relit.
+- **verdict** : ce que la pièce d'un retour dit d'un envoi, d'une déclaration ou des données analysées : OK, KO, ANO.
+  `etat_type`, `envoi_etat_type` et `ok_ko` du schéma des bilans, RO.B003.R002 de NEOReS ; il se lit sans casse, à sa
+  seule porte (`Verdict::lu`), et s'écrit en capitales. Que portent un bilan, une déclaration qu'il identifie, un
+  rapport, un NEOReS, un retour d'organisme au journal des envois et l'état de la déclaration qu'une ligne reprise
+  garde. Ce que la pièce en dit au journal (le verdict, les anomalies en phrases, les personnes d'une DPAE) :
+  `ligne::VerdictDeLaPiece`.
+- **statut d'un retour** : ce que la liste des retours dit d'un retour (`flux.retour.statut`) : OK, KO, ANO, EN COURS,
+  ANOBLOQUANTE (France Travail). `droit::codes_fermes!` sur son texte : guide de l'API DSN v6.8, l. 1733-1745, et « De
+  la DSN à l'attestation employeur » v3.2, l. 235-243. Que portent un retour listé, un retour d'organisme au journal des
+  envois ; le simulateur écrit OK, et KO au bilan d'anomalies d'une DSN refusée (guide v6.8, § 5.2.3) ; un retour joué
+  se reconnaît à son flux (`IdDeFlux::est_fictif`).
+- **catégorie d'une anomalie** : bloquante ou non, ce qu'un bilan dit d'une anomalie (`categorie`). `codes_fermes!` sur
+  `categorie_anomalie_type` du schéma des bilans, l. 839-855 : « bloquant », « non-bloquant ». Que portent une anomalie
+  en codes, une anomalie d'un rapport, l'anomalie d'un incident de retour (les bloquantes d'abord).
+- **type d'un rapport de dépôt** : ce qu'est le bilan d'un dépôt (`rapport/@type`) : l'accusé d'enregistrement, le
+  certificat de conformité, le bilan d'anomalies. `codes_fermes!` sur le guide de l'API DSN v6.8, l. 4825-4828 : AEE,
+  CCO, BAN ; que porte un bilan. Un rapport d'un autre type n'est pas un bilan de dépôt, et l'Historique le lit sous son
+  type tel qu'écrit.
+- **codes d'un compte rendu** : ce que les comptes rendus NEOReS et des organismes complémentaires disent par un code, et
+  dont l'Historique fait ses phrases. Chacun par `codes_fermes!` sur son texte, avec son libellé. NEOReS (cahiers
+  techniques 2026.1.2 et 2027.1.0) : le déclencheur `DeclencheurNeores` (RO.B001.R001), le type de retour
+  `TypeDeRetourNeores` (RO.B002.R004 : 02 annule et remplace), le type d'action `TypeDActionNeores` (RO.B004.R003), le
+  résultat du contrôle `ResultatDuControleNeores` (RO.B004.R006, RO.B007.R009), le caractère substituable
+  `SubstituableNeores` (RO.B004.R016, RO.B005.R005). CRM OC (schéma V1.1.4) : `TypeDeCrmOc` (`TypCRM`), `RetourGlobalOc`
+  (`CodeRetourDecla`), `CriticiteOc` (`CriticiteRetour`).
+- **type d'un paramètre NEOReS** : l'effectif qu'un compte rendu 118 communique (`RO.B008.R001` : A01 l'effectif de
+  sécurité sociale, A02 à A05, A07), et la clé d'un effectif de `config/effectifs.json`. `codes_fermes!` sur la table
+  que net-entreprises sert, `neores/gip-mds-neores-table-types-de-parametres-20230703.csv`, avec son libellé. Que portent
+  un paramètre d'un NEOReS, un effectif mesuré d'un 118, les clés de `config/effectifs.json` (par `Annee`, puis par
+  type).
+- **identifiant Drive** : l'identifiant que Drive donne à un fichier ou à un dossier : ce qu'un listage rend, le dossier
+  où l'on dépose, ce que l'index de la sauvegarde garde de chaque dossier. Un texte opaque, non vide (Google n'en publie
+  pas la forme) ; lu à la porte de la réponse de Google ; `IdDrive::RACINE`, le dossier racine du compte (`root`). Le
+  nom de la racine de la sauvegarde (`PuppetPaie`) est un nom, pas un identifiant.
+- **adresse** : une adresse que le moteur appelle ou montre : un service (Google, net-entreprises, l'Urssaf, le serveur
+  du filet, le dépôt des mises à jour), un texte (Légifrance, le CASC-SVP). Son fichier est la porte du réseau : elle
+  commence par `http://` ou `https://`, rien d'autre n'est vérifié ; elle s'écrit et s'envoie au caractère près. Une
+  adresse que le code compose, `Url::joindre` ; une que le moteur écrit en Rust, `Url::du_moteur` ; une adresse que rend
+  un tiers (un lien du Drive, une redirection) se lit à sa porte. Une adresse de courriel est un `Courriel`.
+- **dépôt des mises à jour** : d'où une installation reçoit ses versions (`maj/reglage.json`, `depot`), ou ce que la
+  publication relit. `Adresse(Url)` ou `Dossier(PathBuf)`, choisi à sa lecture par le début du texte ; il s'écrit tel
+  qu'on l'a lu.
+- **version de la norme** : la version de la norme DSN d'un fichier (S10.G00.00.006 : `P26V01`, `P27V01`). Une liste de
+  la norme, que porte `declarations::norme::Norme` ; une DSN lue d'une version non livrée n'en a pas.
+- **fraction** : le numéro de fraction d'une déclaration (S20.G00.05.003), « nd » : la fraction n sur d, n au plus d ;
+  « 11 » pour une entreprise non fractionnée. Que portent les options de la DSN mensuelle, la DSN lue, le journal des
+  envois et le bilan d'un dépôt ; `Fraction::NON_FRACTIONNEE`.
+- **numéro d'ordre** : le rang de constitution d'une déclaration (S20.G00.05.004, et RO.B000.R012 de NEOReS),
+  `0|[1-9][0-9]*`, au plus quinze chiffres. Que portent les options des déclarations, la DSN lue, le journal des envois,
+  les retours, les charges des signalements ; « aucun » est `None`, le suivant `NumeroDOrdre::suivant` ; écrit en nombre
+  par `droit::natures::en_nombre` là où la forme le dit.
+- **identifiant de déclaration** : la déclaration qu'un annule-et-remplace ou un annule vise (S20.G00.05.006) : sa date
+  de constitution `JJMMAAAA` et son numéro d'ordre ; que portent les options des signalements, la DSN lue, les charges
+  des signalements.
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
@@ -281,48 +599,182 @@ de prévoyance.
 
 **Le métier**
 
-| notion | ce que c'est | son type |
+| notion | son type | déclaré dans |
 |---|---|---|
-| engagement | ce qu'une compagnie engage d'un salarié, et ses calculs | `Engagement` (`engagement/src/lib.rs`) ; sa forme écrite est une forme |
-| contrat | ce que l'engagement fait signer et déclare : son numéro et ses termes | à unifier (#419) : `ContratEcrit`, `ContratParti`, `ContratLu`, `ContratAtteste`, `ContratDeclare`… sont des lectures, à ranger par origine ; `droit::organismes::Contrat` est un contrat d'organisme, à renommer |
-| acte d'un contrat parti | ce qu'est une pièce partie à la signature qui n'est pas le contrat lui-même : un avenant, le contrat refait qui annule et remplace celui qui est parti ; aucun : le contrat | `envois::ligne::ActeDuContrat` (`avenant`, `remplace` : une liste du logiciel, qu'il écrit lui-même), que portent un contrat parti, le détail d'un envoi à la signature, ce qui en revient, une signature attendue, une réponse relevée par courriel |
-| acte qu'une case exige | un acte qui ne se fait pas sans une case de fiche (`exige_par` de `champs-base.json`), ou qu'elle sert sans le bloquer (`utile_pour`) : la DSN, la DPAE, le contrat, le bulletin, le certificat Congés Spectacles, toute paie, l'envoi par courriel | `declarations::champs::ActeExigeant` (une liste du logiciel), écrit `dsn`, `dpae`, `contrat`, `bulletin`, `certificat`, `paie`, `envoi` ; que portent une ligne et une case de `champs-base.json`, leur description, ce qu'une case sert (`Sert`), le refus d'un acte quand une fiche n'a pas ce qu'il exige (`refus_des_manques`). La sorte d'un envoi au journal (`envois::ligne::Acte`) est une autre notion |
-| marqueur | un champ qu'un modèle de document cite (`{{employeur.siret}}`) ; aussi une clause d'un contrat parti | `documents::marqueurs::Marqueur` (une liste du logiciel) : il s'écrit, se lit et se trie par son nom (`nom()`) ; que portent les valeurs d'un document, un modèle lu, les clauses d'un contrat parti au journal des envois (`ContratParti.clauses`, rangées dans l'ordre de leurs noms) ; ce qu'un refus ou la liste des champs d'un modèle écrivent entre accolades reste leur texte |
-| modèle de contrat choisi | un modèle de contrat propre à la compagnie, qu'une carte choisit (`modele_contrat`) ; aucun : le défaut de sa nature | `IdDeModele` (`engagement/src/carte.rs`) : `m` et un entier, gardé tel qu'écrit ; seul `IdDeModele::de` en fait un neuf (la copie d'une base, `routes::modeles_contrat`) ; que portent la carte, le contrat écrit d'un engagement, un modèle spécial, le défaut d'une nature, les supprimés (`gabarits/contrats/modeles.json`), et les charges des routes de modèles, lues à leur porte. Le modèle du bulletin (« simplifié », « complet ») est une autre notion |
-| catégorie d'un document | une sorte de pièce du dossier d'un salarié : bulletins, contrats, contrats signés, certificats Congés Spectacles, attestations, documents de fin, fiche récapitulative | `documents::CategorieDeDocument` (une liste du logiciel, dans l'ordre où le dossier se lit : `TOUTES`), écrite `bulletins`, `contrats-signes`… ; que portent la charge du dossier, le dossier rendu, les catégories proposées, le dossier parti au journal des envois (`DetailDossier.categories`) |
-| formalité d'une DPAE | ce que le certificat de conformité d'une DPAE dit fait : CERTIF, IMMA, MT, PMF5 (Format 120, I_CERTIF à I_PMF5) | `declarations::dpae::FormaliteDpae` (une liste de la norme), que portent une ligne du certificat et la personne certifiée au journal des envois |
-| code retour d'une DPAE | ce que le certificat de conformité dit de chaque DPAE (C_RETOUR_AR, positions 430-431 du Format 120) : 00 enregistrée, 98 déjà existante, 99 autre erreur, les codes d'anomalie | `declarations::dpae::CodeRetourDpae` (`codes_fermes!` sur l'onglet « Codes retour » du Format 120, avec son libellé mot pour mot, PDF p. 9-10 ; `enregistree()` : 00 et 99) ; un code hors de la liste, ou la zone à blanc, refuse le certificat ; que portent une ligne du certificat et la personne certifiée au journal des envois |
-| code retour du lot | ce que le certificat de conformité dit du traitement du message (C_RET_AR_LOT, positions 76-77) : 00 correct, 11, 15 | `declarations::dpae::CodeRetourDuLot` (`codes_fermes!`, avec son libellé) ; un code hors de la liste refuse le certificat ; à blanc, aucun ; que porte une ligne du certificat (un lot autre que correct est une anomalie de la pièce) |
-| lieu d'une obligation hors DSN | où une obligation qu'un arrêt fait naître se fait soi-même : `courrier`, `net-entreprises`, `net-entreprises-ecran`, `net-entreprises-edi` | `declarations::obligations::LieuHorsDsn` (une liste du logiciel), que portent les lieux d'`obligations-base.json` (`ou`), la charge d'`accident-declare` et d'`attestation-declare` (`depot`), l'obligation dite faite de la fiche de suivi |
-| origine du retour d'un contrat | d'où vient la réponse à un contrat parti : un « Je signe » relevé par courriel ; aucune : la mention posée à la main | `envois::ligne::OrigineDuRetourDeContrat` (`courriel` : une liste du logiciel), que porte ce qui revient d'un contrat parti |
-| paie | ce qui part avec le bulletin d'un mois | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… ; `droit::natures::Paie` est une autre notion (la population), à renommer |
-| population | la face de paie d'une nature : à l'activité (l'intermittent) ou au mois (le permanent) | `droit::natures::Paie` : `Activite`, `Mensuelle`, écrits `activite`, `mensuelle` dans `contrats-base.json` (`paie`), et `intermittent`, `permanent` là où les fichiers livrés nomment la population (`natures::population`) : les sections `par_nature` du barème et de ses couches, la `nature` d'un effet de seuil, la section d'une nature (`bareme`), la `nature` d'une ligne du bordereau, la `population` d'une grille des minima (absente : toutes) |
-| ligne de paie | une ligne datée : cachet, heures, prime, frais | `engagement::ligne::LignePaie` ; une date de ligne, `DateDeLigne` |
-| salarié | une personne que la compagnie emploie | `IdSalarie` et `droit::fiche::FicheSalarie` ; `SalarieDuContrat`, la fiche figée d'un contrat |
-| compagnie | l'employeur et son installation | `compagnie::installation::Compagnie` |
-| spectacle | une production | `IdSpectacle` et `droit::fiche::Spectacle` |
-| fiche | entreprise, salarié ou spectacle, datée | `droit::fiche::NomDeFiche`, `Datee<T>` ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre notion, à renommer |
-| fiche nommée | une fiche et ce qui la désigne : l'entreprise (le fichier entier, sans clé), un salarié ou un spectacle par la clé de sa fiche | `FicheNommee` (`droit/src/fiche.rs`) : `Entreprise`, `Salarie(IdSalarie)`, `Spectacle(IdSpectacle)`, que porte une fiche que l'import complète ou vise ; la clé d'une sorte de fiche, `SorteDeFiche::Cle` (`()` pour l'entreprise), que portent l'écriture d'une fiche, sa charge (`enregistrer-fiche`, `activer-fiche`), la fiche que la configuration montre et ce que l'écriture rend |
-| fiche visée par l'import | la fiche qu'une ligne de l'import vise : une fiche nommée (qui existe, ou que l'import vient d'écrire), ou la sorte d'une fiche encore à créer, sans clé | `FicheVisee` (`import/src/reponse.rs`) : `Nommee(FicheNommee)`, `ACreer(NomDeFiche)` ; écrite en deux champs, `nom` et `cle` (`null` pour l'entreprise et une fiche à créer) ; que porte une fiche de la réponse de l'import (`FicheImportee`) |
-| clé d'échéance | ce qui nomme une échéance des rappels d'un rappel à l'autre : une échéance de l'année (`quoi:AAAA`), la DSN d'un mois (`dsn:AAAA-MM`), les DPAE d'un jour (`dpae:AAAA-MM-JJ`), une obligation qui vise un salarié (`<quoi>:<salarié>:<jour>` : une fin de contrat, ce qu'un arrêt fait naître) | `CleDEcheance` (`routes/src/rappels.rs`) : `DeLAnnee { quoi: CleDAnnuelle, .. }`, `Dsn`, `Dpae`, `DuSalarie { quoi: QuoiDuSalarie, .. }` ; écrite par son texte, lue strictement par lui (`quoi` jusqu'au premier deux-points, le jour après le dernier), triée comme lui ; que portent une échéance et ce que les rappels en rendent, la charge et la réponse d'`echeance-faite`, les échéances cochées (`config/echeancier.json`), une déclaration du tableau de l'administrateur |
-| échéance de l'année | une échéance de calendrier : la `cle` d'une échéance d'`echeancier-base.json`, ou l'export comptable (une clé du logiciel) | `CleDAnnuelle` (`routes/src/rappels.rs`) : une clé non vide, sans deux-points, écrite comme son texte ; celles que le moteur lit, `CLOTURE`, `REVUE_SPECTACLES`, `AT_MP` (des clés de l'échéancier livré) et `EXPORT_COMPTA` (qui n'en est pas une), tenues par un test de structure |
-| genre d'une échéance | ce qu'est une échéance des rappels : la DSN d'un mois, les DPAE d'un jour, une obligation due, une échéance de l'année | `GenreDEcheance` (`routes/src/rappels.rs`) : `Dsn`, `Dpae`, `Obligation`, `DeLAnnee(CleDAnnuelle)` ; écrit `dsn`, `dpae`, `obligation` ou la clé ; que porte une échéance, que les rappels rendent (`quoi`) et que lit le tableau de l'administrateur |
-| ce que vise l'échéance d'un salarié | la fin de son contrat à signaler, ou une obligation qu'un arrêt fait naître | `QuoiDuSalarie` (`routes/src/rappels.rs`) : `FinContrat` (écrit `fin-contrat`), `Obligation(CleDObligation)` (écrit son nom) ; le `quoi` d'une clé d'échéance `<quoi>:<salarié>:<jour>` |
-| case | un champ d'une fiche | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` (`droit/src/fiche.rs`) ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé |
-| rubrique | une ligne du catalogue de paie | `droit::catalogue::Rubrique` (sa définition) ; son code, `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut (`LigneBrut.code`), les frais d'une profession au barème (`frais_hors_assiette`), une prime saisie, une ligne imprimée d'un bulletin importé ; un code que le moteur compose est une constante (`CodeDeRubrique::du_moteur`) |
-| unité d'une rubrique | ce que la quantité d'une ligne compte : cachet, heure, jour, semaine, mois, service, forfait, pourcentage (`rubriques-base.json`) | `Unite` (`droit/src/catalogue.rs`), que portent la rubrique, sa case `unite`, une ligne du brut (`LigneBrut`, sa forme écrite), une ligne de rémunération d'un mois, une grille des minima (`droit::minima::Grille::unite`, ce que sa valeur paie) |
-| cotisation du bulletin | une ligne de cotisation du barème (`rubriques_bulletin`), par sa clé : `maladie`, `retraite_t1` | `IdDeCotisation` (`droit/src/forme_bareme.rs`), que nomment les modifications d'une couche, `rubriques_retirees`, `apres`, `du_corps`, les `lignes` d'une cotisation DSN ou d'une contribution, `rubriques_abattues` de la DFS et les rubriques d'une DFS calculée ; une clé que le moteur nomme est une constante (`MUTUELLE`, `RETRAITE_T1`…) ; à unifier (#419) : `LigneCotisation.id` et ce qui la relit, en `String`. Ce n'est ni une rubrique du catalogue, ni une cotisation de la DSN |
-| cotisation de la DSN | une ligne du bloc 81, par son code S21.G00.81.001 | `CodeCotisation81` (`droit/src/code_cotisation.rs`), que portent `cotisations_dsn` (`code81`, `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) : `CleDeCotisationDsn` (même fichier) |
-| clé de totalisation | le versement (bloc S21.G00.20) dont le montant (20.005) compte une cotisation de la DSN : son code 81.001 et, quand ce code va à deux versements, qui le recouvre, écrits `code` ou `code:recouvreur` (`018:urssaf`, `018:chomage`, `040:urssaf`) ; une cotisation que le barème ne clé pas se totalise sous son code | `CleDeTotalisation` (`droit/src/code_cotisation.rs`), son recouvreur `Recouvreur`, que portent les `codes81` d'un versement de `organismes-base.json`, `cle_total` d'une cotisation DSN du barème, `cle_total_urssaf` et `cle_total_chomage` de la réduction générale, les totaux des versements de la DSN |
-| assiette | ce sur quoi une cotisation se calcule | `droit::assiette::Assiette` |
-| barème | les taux d'un jour, en trois étages | `droit::forme_bareme::Pile` |
-| emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres |
-| code d'un métier | un code de la nomenclature des emplois du spectacle de France Travail (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est un), sinon de la nomenclature | `CodeEmploi` (`droit/src/emplois.rs`), que portent le métier qu'une carte choisit (`metier`), la clé du catalogue, un métier et celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier : `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui peut n'en nommer aucun (« 999SPT ») |
-| statut | artiste ou technicien | `droit::fiche::Statut`, écrit `artiste`, `technicien` : que portent la fiche, les sections `par_statut` du barème (d'une catégorie aussi), la section d'un effet de seuil, les `statuts` de la réduction générale, le `statut` d'une ligne du bordereau et d'une grille des minima (absent : tous) |
-| colonne de la répartition de branche | la colonne de la répartition de la retraite complémentaire en tranche 1 d'une branche (tableau n° 3 de la fiche Audiens « Taux et répartitions ») : le permanent, ou l'intermittent artiste ou technicien | `ColonneDeRepartition` (`droit/src/bareme.rs`) : `Permanent`, `Intermittent(Statut)` ; elle lit sa colonne dans `retraite_t1_repartition.par_idcc` du socle (`permanent`, `artiste`, `technicien`) et s'écrit par ce nom dans le refus d'une branche sans répartition |
-| catégorie du barème | la section d'un cadre dans le barème (`par_categorie` : `cadre`, `cadre_permanent`) | `CategorieDuBareme` (`droit/src/forme_bareme.rs`) : une clé non vide, qui se trie comme son texte ; celles que le moteur lit, `CADRE`, `CADRE_PERMANENT` |
-| établissement | un lieu d'emploi | son `Nic` (`droit/src/fiche.rs`, cinq chiffres), que portent la fiche entreprise et ses autres établissements (`nic_principal`, `nics`, `etablissement`), la carte et l'engagement, la fiche d'un contrat (`SalarieDuContrat`), la DSN fabriquée et lue, le journal des envois, la désignation d'un dépôt ; aucun (`None`) : le siège |
-| effectif | l'effectif que l'Urssaf calcule | `droit::contexte::Effectif` |
+| engagement | `Engagement` | `engagement/src/lib.rs` |
+| contrat | à unifier (#419) : `ContratEcrit`, `ContratParti`, `ContratLu`, `ContratAtteste`, `ContratDeclare`… | — |
+| acte d'un contrat parti | `envois::ligne::ActeDuContrat` | `envois/src/ligne.rs` |
+| acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
+| marqueur | `documents::marqueurs::Marqueur` | `documents/src/marqueurs.rs` |
+| modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
+| catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
+| formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
+| code retour d'une DPAE | `declarations::dpae::CodeRetourDpae` | `declarations/src/dpae.rs` |
+| code retour du lot | `declarations::dpae::CodeRetourDuLot` | `declarations/src/dpae.rs` |
+| lieu d'une obligation hors DSN | `declarations::obligations::LieuHorsDsn` | `declarations/src/obligations.rs` |
+| origine du retour d'un contrat | `envois::ligne::OrigineDuRetourDeContrat` | `envois/src/ligne.rs` |
+| paie | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… | `engagement/src/calcul.rs` |
+| population | `droit::natures::Paie` | `droit/src/natures.rs` |
+| ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
+| salarié | `IdSalarie`, `droit::fiche::FicheSalarie` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
+| compagnie | `compagnie::installation::Compagnie` | `compagnie/src/installation.rs` |
+| spectacle | `IdSpectacle`, `droit::fiche::Spectacle` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
+| fiche | `droit::fiche::NomDeFiche`, `Datee<T>` | `droit/src/fiche.rs` |
+| fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
+| fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
+| clé d'échéance | `CleDEcheance` | `routes/src/rappels.rs` |
+| échéance de l'année | `CleDAnnuelle` | `routes/src/rappels.rs` |
+| genre d'une échéance | `GenreDEcheance` | `routes/src/rappels.rs` |
+| ce que vise l'échéance d'un salarié | `QuoiDuSalarie` | `routes/src/rappels.rs` |
+| case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
+| rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
+| unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
+| cotisation du bulletin | `IdDeCotisation` ; à unifier (#419) : `LigneCotisation.id` | `droit/src/forme_bareme.rs` |
+| cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |
+| clé de totalisation | `CleDeTotalisation` | `droit/src/code_cotisation.rs` |
+| assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
+| barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
+| emploi | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres | `droit/src/emplois.rs` |
+| code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
+| statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
+| colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
+| catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
+| établissement | son `Nic` | `droit/src/fiche.rs` |
+| effectif | `droit::contexte::Effectif` | `droit/src/contexte.rs` |
+
+**Le détail**
+
+- **engagement** : ce qu'une compagnie engage d'un salarié, et ses calculs ; sa forme écrite est une forme.
+- **contrat** : ce que l'engagement fait signer et déclare : son numéro et ses termes. `ContratEcrit`, `ContratParti`,
+  `ContratLu`, `ContratAtteste`, `ContratDeclare`… sont des lectures, à ranger par origine ;
+  `droit::organismes::Contrat` est un contrat d'organisme, à renommer.
+- **acte d'un contrat parti** : ce qu'est une pièce partie à la signature qui n'est pas le contrat lui-même : un avenant,
+  le contrat refait qui annule et remplace celui qui est parti ; aucun : le contrat. `avenant`, `remplace` : une liste
+  du logiciel, qu'il écrit lui-même. Que portent un contrat parti, le détail d'un envoi à la signature, ce qui en
+  revient, une signature attendue, une réponse relevée par courriel.
+- **acte qu'une case exige** : un acte qui ne se fait pas sans une case de fiche (`exige_par` de `champs-base.json`), ou
+  qu'elle sert sans le bloquer (`utile_pour`) : la DSN, la DPAE, le contrat, le bulletin, le certificat Congés
+  Spectacles, toute paie, l'envoi par courriel. Une liste du logiciel, écrit `dsn`, `dpae`, `contrat`, `bulletin`,
+  `certificat`, `paie`, `envoi`. Que portent une ligne et une case de `champs-base.json`, leur description, ce qu'une
+  case sert (`Sert`), le refus d'un acte quand une fiche n'a pas ce qu'il exige (`refus_des_manques`). La sorte d'un
+  envoi au journal (`envois::ligne::Acte`) est une autre notion.
+- **marqueur** : un champ qu'un modèle de document cite (`{{employeur.siret}}`) ; aussi une clause d'un contrat parti.
+  Une liste du logiciel : il s'écrit, se lit et se trie par son nom (`nom()`). Que portent les valeurs d'un document, un
+  modèle lu, les clauses d'un contrat parti au journal des envois (`ContratParti.clauses`, rangées dans l'ordre de leurs
+  noms) ; ce qu'un refus ou la liste des champs d'un modèle écrivent entre accolades reste leur texte.
+- **modèle de contrat choisi** : un modèle de contrat propre à la compagnie, qu'une carte choisit (`modele_contrat`) ;
+  aucun : le défaut de sa nature. `m` et un entier, gardé tel qu'écrit ; seul `IdDeModele::de` en fait un neuf (la copie
+  d'une base, `routes::modeles_contrat`). Que portent la carte, le contrat écrit d'un engagement, un modèle spécial, le
+  défaut d'une nature, les supprimés (`gabarits/contrats/modeles.json`), et les charges des routes de modèles, lues à
+  leur porte. Le modèle du bulletin (« simplifié », « complet ») est une autre notion.
+- **catégorie d'un document** : une sorte de pièce du dossier d'un salarié : bulletins, contrats, contrats signés,
+  certificats Congés Spectacles, attestations, documents de fin, fiche récapitulative. Une liste du logiciel, dans
+  l'ordre où le dossier se lit : `TOUTES` ; écrite `bulletins`, `contrats-signes`… Que portent la charge du dossier, le
+  dossier rendu, les catégories proposées, le dossier parti au journal des envois (`DetailDossier.categories`).
+- **formalité d'une DPAE** : ce que le certificat de conformité d'une DPAE dit fait : CERTIF, IMMA, MT, PMF5 (Format 120,
+  I_CERTIF à I_PMF5). Une liste de la norme, que portent une ligne du certificat et la personne certifiée au journal des
+  envois.
+- **code retour d'une DPAE** : ce que le certificat de conformité dit de chaque DPAE (C_RETOUR_AR, positions 430-431 du
+  Format 120) : 00 enregistrée, 98 déjà existante, 99 autre erreur, les codes d'anomalie. `codes_fermes!` sur l'onglet
+  « Codes retour » du Format 120, avec son libellé mot pour mot, PDF p. 9-10 ; `enregistree()` : 00 et 99. Un code hors
+  de la liste, ou la zone à blanc, refuse le certificat ; que portent une ligne du certificat et la personne certifiée au
+  journal des envois.
+- **code retour du lot** : ce que le certificat de conformité dit du traitement du message (C_RET_AR_LOT, positions
+  76-77) : 00 correct, 11, 15. `codes_fermes!`, avec son libellé ; un code hors de la liste refuse le certificat ; à
+  blanc, aucun ; que porte une ligne du certificat (un lot autre que correct est une anomalie de la pièce).
+- **lieu d'une obligation hors DSN** : où une obligation qu'un arrêt fait naître se fait soi-même : `courrier`,
+  `net-entreprises`, `net-entreprises-ecran`, `net-entreprises-edi`. Une liste du logiciel, que portent les lieux
+  d'`obligations-base.json` (`ou`), la charge d'`accident-declare` et d'`attestation-declare` (`depot`), l'obligation
+  dite faite de la fiche de suivi.
+- **origine du retour d'un contrat** : d'où vient la réponse à un contrat parti : un « Je signe » relevé par courriel ;
+  aucune : la mention posée à la main. `courriel` : une liste du logiciel, que porte ce qui revient d'un contrat parti.
+- **paie** : ce qui part avec le bulletin d'un mois ; `droit::natures::Paie` est une autre notion (la population), à
+  renommer.
+- **population** : la face de paie d'une nature : à l'activité (l'intermittent) ou au mois (le permanent). `Activite`,
+  `Mensuelle`, écrits `activite`, `mensuelle` dans `contrats-base.json` (`paie`), et `intermittent`, `permanent` là où
+  les fichiers livrés nomment la population (`natures::population`) : les sections `par_nature` du barème et de ses
+  couches, la `nature` d'un effet de seuil, la section d'une nature (`bareme`), la `nature` d'une ligne du bordereau, la
+  `population` d'une grille des minima (absente : toutes).
+- **ligne de paie** : une ligne datée : cachet, heures, prime, frais ; une date de ligne, `DateDeLigne`.
+- **salarié** : une personne que la compagnie emploie ; `SalarieDuContrat`, la fiche figée d'un contrat.
+- **compagnie** : l'employeur et son installation.
+- **spectacle** : une production.
+- **fiche** : entreprise, salarié ou spectacle, datée ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre
+  notion, à renommer.
+- **fiche nommée** : une fiche et ce qui la désigne : l'entreprise (le fichier entier, sans clé), un salarié ou un
+  spectacle par la clé de sa fiche. `Entreprise`, `Salarie(IdSalarie)`, `Spectacle(IdSpectacle)`, que porte une fiche
+  que l'import complète ou vise. La clé d'une sorte de fiche, `SorteDeFiche::Cle` (`()` pour l'entreprise), que portent
+  l'écriture d'une fiche, sa charge (`enregistrer-fiche`, `activer-fiche`), la fiche que la configuration montre et ce
+  que l'écriture rend.
+- **fiche visée par l'import** : la fiche qu'une ligne de l'import vise : une fiche nommée (qui existe, ou que l'import
+  vient d'écrire), ou la sorte d'une fiche encore à créer, sans clé. `Nommee(FicheNommee)`, `ACreer(NomDeFiche)` ;
+  écrite en deux champs, `nom` et `cle` (`null` pour l'entreprise et une fiche à créer) ; que porte une fiche de la
+  réponse de l'import (`FicheImportee`).
+- **clé d'échéance** : ce qui nomme une échéance des rappels d'un rappel à l'autre : une échéance de l'année
+  (`quoi:AAAA`), la DSN d'un mois (`dsn:AAAA-MM`), les DPAE d'un jour (`dpae:AAAA-MM-JJ`), une obligation qui vise un
+  salarié (`<quoi>:<salarié>:<jour>` : une fin de contrat, ce qu'un arrêt fait naître).
+  `DeLAnnee { quoi: CleDAnnuelle, .. }`, `Dsn`, `Dpae`, `DuSalarie { quoi: QuoiDuSalarie, .. }` ; écrite par son texte,
+  lue strictement par lui (`quoi` jusqu'au premier deux-points, le jour après le dernier), triée comme lui. Que portent
+  une échéance et ce que les rappels en rendent, la charge et la réponse d'`echeance-faite`, les échéances cochées
+  (`config/echeancier.json`), une déclaration du tableau de l'administrateur.
+- **échéance de l'année** : une échéance de calendrier : la `cle` d'une échéance d'`echeancier-base.json`, ou l'export
+  comptable (une clé du logiciel). Une clé non vide, sans deux-points, écrite comme son texte ; celles que le moteur
+  lit, `CLOTURE`, `REVUE_SPECTACLES`, `AT_MP` (des clés de l'échéancier livré) et `EXPORT_COMPTA` (qui n'en est pas
+  une), tenues par un test de structure.
+- **genre d'une échéance** : ce qu'est une échéance des rappels : la DSN d'un mois, les DPAE d'un jour, une obligation
+  due, une échéance de l'année. `Dsn`, `Dpae`, `Obligation`, `DeLAnnee(CleDAnnuelle)` ; écrit `dsn`, `dpae`,
+  `obligation` ou la clé ; que porte une échéance, que les rappels rendent (`quoi`) et que lit le tableau de
+  l'administrateur.
+- **ce que vise l'échéance d'un salarié** : la fin de son contrat à signaler, ou une obligation qu'un arrêt fait naître.
+  `FinContrat` (écrit `fin-contrat`), `Obligation(CleDObligation)` (écrit son nom) ; le `quoi` d'une clé d'échéance
+  `<quoi>:<salarié>:<jour>`.
+- **case** : un champ d'une fiche ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé.
+- **rubrique** : une ligne du catalogue de paie ; `droit::catalogue::Rubrique` est sa définition. Son code,
+  `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut
+  (`LigneBrut.code`), les frais d'une profession au barème (`frais_hors_assiette`), une prime saisie, une ligne imprimée
+  d'un bulletin importé ; un code que le moteur compose est une constante (`CodeDeRubrique::du_moteur`).
+- **unité d'une rubrique** : ce que la quantité d'une ligne compte : cachet, heure, jour, semaine, mois, service,
+  forfait, pourcentage (`rubriques-base.json`). Que portent la rubrique, sa case `unite`, une ligne du brut (`LigneBrut`,
+  sa forme écrite), une ligne de rémunération d'un mois, une grille des minima (`droit::minima::Grille::unite`, ce que
+  sa valeur paie).
+- **cotisation du bulletin** : une ligne de cotisation du barème (`rubriques_bulletin`), par sa clé : `maladie`,
+  `retraite_t1`. Que nomment les modifications d'une couche, `rubriques_retirees`, `apres`, `du_corps`, les `lignes`
+  d'une cotisation DSN ou d'une contribution, `rubriques_abattues` de la DFS et les rubriques d'une DFS calculée ; une
+  clé que le moteur nomme est une constante (`MUTUELLE`, `RETRAITE_T1`…). À unifier : `LigneCotisation.id` et ce qui la
+  relit, en `String`. Ce n'est ni une rubrique du catalogue, ni une cotisation de la DSN.
+- **cotisation de la DSN** : une ligne du bloc 81, par son code S21.G00.81.001. Que portent `cotisations_dsn` (`code81`,
+  `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version
+  de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) :
+  `CleDeCotisationDsn` (même fichier).
+- **clé de totalisation** : le versement (bloc S21.G00.20) dont le montant (20.005) compte une cotisation de la DSN : son
+  code 81.001 et, quand ce code va à deux versements, qui le recouvre, écrits `code` ou `code:recouvreur`
+  (`018:urssaf`, `018:chomage`, `040:urssaf`) ; une cotisation que le barème ne clé pas se totalise sous son code. Son
+  recouvreur, `Recouvreur`. Que portent les `codes81` d'un versement de `organismes-base.json`, `cle_total` d'une
+  cotisation DSN du barème, `cle_total_urssaf` et `cle_total_chomage` de la réduction générale, les totaux des
+  versements de la DSN.
+- **assiette** : ce sur quoi une cotisation se calcule.
+- **barème** : les taux d'un jour, en trois étages.
+- **emploi** : ce que fait le salarié.
+- **code d'un métier** : un code de la nomenclature des emplois du spectacle de France Travail
+  (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est
+  un), sinon de la nomenclature. Que portent le métier qu'une carte choisit (`metier`), la clé du catalogue, un métier et
+  celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier :
+  `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui
+  peut n'en nommer aucun (« 999SPT »).
+- **statut** : artiste ou technicien ; écrit `artiste`, `technicien`. Que portent la fiche, les sections `par_statut` du
+  barème (d'une catégorie aussi), la section d'un effet de seuil, les `statuts` de la réduction générale, le `statut`
+  d'une ligne du bordereau et d'une grille des minima (absent : tous).
+- **colonne de la répartition de branche** : la colonne de la répartition de la retraite complémentaire en tranche 1
+  d'une branche (tableau n° 3 de la fiche Audiens « Taux et répartitions ») : le permanent, ou l'intermittent artiste
+  ou technicien. `Permanent`, `Intermittent(Statut)` ; elle lit sa colonne dans `retraite_t1_repartition.par_idcc` du
+  socle (`permanent`, `artiste`, `technicien`) et s'écrit par ce nom dans le refus d'une branche sans répartition.
+- **catégorie du barème** : la section d'un cadre dans le barème (`par_categorie` : `cadre`, `cadre_permanent`). Une clé
+  non vide, qui se trie comme son texte ; celles que le moteur lit, `CADRE`, `CADRE_PERMANENT`.
+- **établissement** : un lieu d'emploi ; son `Nic` a cinq chiffres. Que portent la fiche entreprise et ses autres
+  établissements (`nic_principal`, `nics`, `etablissement`), la carte et l'engagement, la fiche d'un contrat
+  (`SalarieDuContrat`), la DSN fabriquée et lue, le journal des envois, la désignation d'un dépôt ; aucun (`None`) : le
+  siège.
+- **effectif** : l'effectif que l'Urssaf calcule.
 
 ## Le principe
 
