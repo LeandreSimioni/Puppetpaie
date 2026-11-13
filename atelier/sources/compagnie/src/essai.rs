@@ -347,7 +347,7 @@ impl Identite {
 pub struct Montage {
     pub dossier: PathBuf,
     /// Le nom de la fictive copiee.
-    pub fictive: String,
+    pub fictive: socle::fichiers::NomDeFichier,
     /// `false` : la copie existait deja, seule son identite a ete reecrite.
     pub neuf: bool,
 }
@@ -464,7 +464,10 @@ pub fn monter(dossier: &Path, fictive: &str, texte: Option<&str>) -> R<Montage> 
         (None, copiee)
     } else {
         let s = source(fictive)?;
-        let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus_avec("La fictive à copier n'a pas de nom.", a_part(&s)))?;
+        let nom = match s.file_name() {
+            Some(_) => socle::fichiers::NomDeFichier::du(&s)?,
+            None => return Err(refus_avec("La fictive à copier n'a pas de nom.", a_part(&s))),
+        };
         (Some(s), nom)
     };
     // La fiche sous la nouvelle identite, calculee AVANT toute ecriture.

@@ -1226,7 +1226,7 @@ pub fn preparer_les_fictives(inst: &Path, depot: &DepotDesMisesAJour, d: &Publie
 /// ou posee par l'installeur Windows) : son `COPIE-DE-DEVELOPPEMENT.json` dit `copie_de` = « compagnie fictive <son nom> »,
 /// exactement ce que porte chaque fictive livree (`fictives/<nom>/COPIE-DE-DEVELOPPEMENT.json`). Une fictive copiee et
 /// renommee sur le poste dit encore le nom de celle qu'elle copie : ce n'est pas le sien.
-fn marquee_comme_livree(dossier: &Path, nom: &str) -> R<bool> {
+fn marquee_comme_livree(dossier: &Path, nom: &NomDeFichier) -> R<bool> {
     Ok(crate::installation::copie_de(dossier)? == Some(format!("{} {}", crate::installation::MARQUE_FICTIVE, nom)))
 }
 
@@ -1270,7 +1270,7 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
                 let marque: Option<Livree> = lire_forme(&d.join(LIVREE), "La marque d'une fictive livrée ne se lit pas.")?;
                 empreinte_de(a, nom).is_some() && marque.map(|m| m.empreinte) == empreinte_de(a, nom)
             }
-            None => marquee_comme_livree(&d, nom.texte())?,
+            None => marquee_comme_livree(&d, nom)?,
         })
     };
     let ecarter = |nom: &NomDeFichier| -> R<()> {
