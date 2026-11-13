@@ -623,7 +623,12 @@ pub(crate) fn deduction_forfaitaire(bar: &Pile, sal: &ChampsSalarie, ent: &Champ
     let dfs = bar.deduction_forfaitaire.as_ref();
     let professions = dfs.map(|d| &d.professions);
     let connues = || match professions {
-        Some(p) => p.keys().map(|k| k.as_str()).collect::<Vec<_>>().join(", "),
+        Some(p) => {
+            // Dans l'ordre de leurs noms, comme le bareme les ecrit (la cle se trie dans l'ordre de sa declaration).
+            let mut noms: Vec<&str> = p.keys().map(|k| k.as_str()).collect();
+            noms.sort_unstable();
+            noms.join(", ")
+        }
         None => "aucune".to_string(),
     };
     let Some(fiche_prof) = professions.and_then(|p| p.get(&profession)) else {

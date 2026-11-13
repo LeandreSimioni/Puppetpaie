@@ -598,7 +598,10 @@ where
         Remplie::Dite(v) => v,
     };
     ranger_les_textes(&mut v, &mut Vec::new(), rangee);
-    T::deserialize(v).map(Remplie::Dite).map_err(serde::de::Error::custom)
+    // Relue depuis son texte JSON : un nombre a virgule y reste le texte ecrit (`arbitrary_precision`, `NombreEcrit`) ;
+    // lue de la `Value` meme, il arriverait en flottant.
+    let texte = serde_json::to_string(&v).map_err(serde::de::Error::custom)?;
+    serde_json::from_str::<T>(&texte).map(Remplie::Dite).map_err(serde::de::Error::custom)
 }
 
 /// Chaque texte de `v`, a son chemin `chemin`, range par `rangee`.
