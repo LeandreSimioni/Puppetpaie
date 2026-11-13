@@ -42,10 +42,10 @@ pub fn disponible(racine: &Path) -> R<bool> {
 }
 
 /// Le mot de passe, lu en CONSULTATION.
-pub fn mot_de_passe(racine: &Path) -> R<String> {
+pub fn mot_de_passe(racine: &Path) -> R<socle::secret::Secret> {
     let lu = coffre_de(racine).lire(SERVICE, CONSULTATION, false, None).map_err(|e| e.reclasser(Classe::Courriel))?;
     match lu {
-        Some(m) if !m.is_empty() => Ok(m.replace(' ', "")),
+        Some(m) if !m.devoiler().is_empty() => Ok(m.transforme(|t| t.replace(' ', ""))),
         _ => Err(refus("Aucun mot de passe de boite courriel dans le coffre.\n  route coffre-poser, service courriel, compte adresse@...")),
     }
 }

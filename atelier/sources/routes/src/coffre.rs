@@ -214,7 +214,7 @@ struct ChargeService {
 #[serde(deny_unknown_fields)]
 struct ChargePoser {
     service: String,
-    valeur: Option<String>,
+    valeur: Option<socle::secret::Secret>,
     compte: Option<String>,
     nom: Option<String>,
     prenom: Option<String>,
@@ -225,8 +225,8 @@ struct ChargePoser {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeChanger {
-    nouveau: Option<String>,
-    confirmation: Option<String>,
+    nouveau: Option<socle::secret::Secret>,
+    confirmation: Option<socle::secret::Secret>,
 }
 
 /// LA CHARGE DE `administrateur-rattacher` ET `administrateur-detacher` : le mot de passe de l'administrateur (absent : un
@@ -234,9 +234,9 @@ struct ChargeChanger {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChargeAdministrateur {
-    pub administrateur: Option<String>,
-    pub nouveau: Option<String>,
-    pub confirmation: Option<String>,
+    pub administrateur: Option<socle::secret::Secret>,
+    pub nouveau: Option<socle::secret::Secret>,
+    pub confirmation: Option<socle::secret::Secret>,
 }
 
 // ------------------------------------------------------------------ ce que les routes rendent
@@ -458,7 +458,7 @@ pub fn administrateur_etat(racine: &Path) -> R<crate::gestes::administrateur::Et
 /// `administrateur-rattacher` et `administrateur-detacher`, sur le coffre de `poste` : tout se decide dans
 /// `administrateur.rs`. Le mot de passe de l'administrateur vient de la charge (la page), sinon il est tape par un humain ;
 /// `mdp`, le mot de passe actuel de la compagnie, tape pour la route.
-pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, mdp: Option<&str>, poste: &Poste) -> R<Rattachement> {
+pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, mdp: Option<&socle::secret::Secret>, poste: &Poste) -> R<Rattachement> {
     use crate::gestes::administrateur as adm;
     let inst = adm::installation_de(racine);
     let admin = match charge.administrateur {
@@ -473,14 +473,14 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
     if nom == Route::AdministrateurRattacher {
         // Une compagnie qui a deja son mot de passe le donne aussi : c'est lui que celui de l'administrateur remplace.
         let actuel = match mdp {
-            Some(m) => Some(m.to_string()),
+            Some(m) => Some(m.clone()),
             None if poste.coffre(racine).ouverture_exigee().map_err(en_operation)? => {
                 exiger_mot_de_passe(racine, None, "rattacher cette compagnie à l'administrateur")?;
                 actuel(None)
             }
             None => None,
         };
-        let noms = adm::rattacher(&inst, racine, &admin, actuel.as_deref(), poste).map_err(|e| e.reclasser(Classe::Refuse))?;
+        let noms = adm::rattacher(&inst, racine, &admin, actuel.as_ref(), poste).map_err(|e| e.reclasser(Classe::Refuse))?;
         let phrase = format!("Compagnie rattachée à l'administrateur : {} s'ouvrent avec le même mot de passe.", en_liste(&noms));
         return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste)? });
     }
@@ -513,7 +513,7 @@ fn refus(m: impl Into<String>) -> Echec {
 
 /// `exiger_mot_de_passe` : le mot de passe du logiciel, s'il est pose, pour un acte qui ENGAGE sans rien envoyer. Decide
 /// ICI, jamais par la page. `motdepasse` : celui que la page a fait taper pour la route.
-pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi: &str) -> R<()> {
+pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&socle::secret::Secret>, quoi: &str) -> R<()> {
     let coffre = compagnie::coffre::Coffre::du_poste(racine);
     if !coffre.ouverture_exigee()? {
         return Ok(());
@@ -536,7 +536,7 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi:
 }
 
 /// Un secret a poser : celui de la charge (la page), sinon tape deux fois par un humain (`demande::saisir_deux_fois`).
-fn secret_a_poser(donne: Option<String>, titre: &str, lignes: &[String]) -> R<String> {
+fn secret_a_poser(donne: Option<socle::secret::Secret>, titre: &str, lignes: &[String]) -> R<socle::secret::Secret> {
     match donne {
         Some(v) => Ok(v),
         None => compagnie::demande::saisir_deux_fois(titre, lignes, "mot de passe (rien ne s'affiche) : ").map_err(|e| e.reclasser(Classe::Refuse)),
@@ -545,9 +545,9 @@ fn secret_a_poser(donne: Option<String>, titre: &str, lignes: &[String]) -> R<St
 
 /// Le mot de passe actuel du logiciel : celui que la page a fait taper, sinon celui que l'humain vient de taper pour cette
 /// route (`exiger_mot_de_passe`).
-fn actuel(mdp: Option<&str>) -> Option<String> {
+fn actuel(mdp: Option<&socle::secret::Secret>) -> Option<socle::secret::Secret> {
     match mdp {
-        Some(m) => Some(m.to_string()),
+        Some(m) => Some(m.clone()),
         None => compagnie::coffre::mot_de_passe_retenu(),
     }
 }
@@ -602,11 +602,11 @@ fn manque_du_compte(identifiant: &Identifiant) -> Option<String> {
 /// nom et le prenom du compte qui depose les DPAE (`nom`, `prenom`), ecrits dans la fiche entreprise s'ils changent. Un
 /// seul geste, une seule preuve : tout se verifie avant d'ecrire. Rend l'etat du coffre, sans valeur. Rien a poser se
 /// refuse avant la porte du mot de passe du logiciel : il n'y a rien a autoriser.
-fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCoffre> {
+fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
     let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
     let compte = if c.nom.is_some() || c.prenom.is_some() { compte_dpae_change(ctx, c.nom.as_deref(), c.prenom.as_deref())? } else { None };
     // Sans `valeur` (`moteur route`) : le compte seul s'il change, sinon le secret, tape par un humain apres la porte.
-    let donne = c.valeur.as_deref().is_some_and(|v| !socle::texte::strip(v).is_empty());
+    let donne = c.valeur.as_ref().is_some_and(|v| !socle::texte::strip(v.devoiler()).is_empty());
     let tape = c.valeur.is_none() && compte.is_none();
     if !tape && !donne && compte.is_none() {
         return Err(refus(format!("Tapez le mot de passe {} à poser : rien n'a été posé.", service.nom)));
@@ -615,7 +615,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCo
     exiger_mot_de_passe(&ctx.racine, mdp, if pose_un_secret { "poser un mot de passe" } else { "changer le compte qui depose les DPAE" })?;
     let lignes = [format!("Service : {}", service.libelle), "La frappe ne s'affiche pas : elle est scellée dans le coffre, nulle part ailleurs.".to_string()];
     let valeur = if pose_un_secret { Some(secret_a_poser(c.valeur, "PuppetPaie : poser un mot de passe", &lignes)?) } else { None };
-    let valeur = valeur.filter(|v| !socle::texte::strip(v).is_empty());
+    let valeur = valeur.filter(|v| !socle::texte::strip(v.devoiler()).is_empty());
     let entreprise = match compte {
         Some(propres) => ecrire_compte_dpae(ctx, propres)?,
         None => ctx.entreprise.clone(),
@@ -643,7 +643,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCo
 }
 
 /// `coffre-oublier` : retire un secret du coffre.
-fn coffre_oublier(ctx: &Contexte, c: ChargeService, mdp: Option<&str>) -> R<EtatDuCoffre> {
+fn coffre_oublier(ctx: &Contexte, c: ChargeService, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer un mot de passe")?;
     let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
     coffre(ctx).oublier(service.nom).map_err(en_operation)?;
@@ -701,7 +701,7 @@ fn ecrire_compte_dpae(ctx: &Contexte, propres: Vec<(&'static str, String)>) -> R
 
 /// Pose ou change le mot de passe du logiciel. L'actuel est exige s'il existe, et il ouvre aussi le coffre quand la cle
 /// de ce poste ne l'ouvre plus.
-fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> R<EtatDuCoffre> {
+fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
     exiger_mot_de_passe(&ctx.racine, mdp, "changer le mot de passe du logiciel")?;
     // La page tape le nouveau et sa confirmation dans ses cases ; par `moteur route`, l'humain le tape deux fois.
     let (nouveau, confirmation) = match (c.nouveau, c.confirmation) {
@@ -713,7 +713,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
             (m.clone(), m)
         }
     };
-    if nouveau != confirmation {
+    if !nouveau.egal_a(confirmation.devoiler()) {
         return Err(refus("Les deux saisies du nouveau mot de passe different. Rien n'a ete modifie."));
     }
     let actuel = actuel(mdp);
@@ -727,24 +727,24 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
         crate::gestes::administrateur::changer(&inst, &actuel, &nouveau, &confirmation, &crate::gestes::administrateur::Poste::de_ce_poste()).map_err(|e| e.reclasser(Classe::Refuse))?;
         return coffre_etat(ctx);
     }
-    coffre(ctx).poser_ouverture(&nouveau, actuel.as_deref()).map_err(en_operation)?;
+    coffre(ctx).poser_ouverture(&nouveau, actuel.as_ref()).map_err(en_operation)?;
     coffre_etat(ctx)
 }
 
 /// Plus de mot de passe du logiciel. L'actuel est exige.
-fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&str>) -> R<EtatDuCoffre> {
+fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
     if crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)? {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;
-    coffre(ctx).oublier_ouverture(actuel(mdp).as_deref())?;
+    coffre(ctx).oublier_ouverture(actuel(mdp).as_ref())?;
     coffre_etat(ctx)
 }
 
 // ------------------------------------------------------------------ Google
 
 /// Efface le jeton local, sans reseau. L'acces reste accorde cote Google, et se retire sur myaccount.google.com.
-fn google_oublier(ctx: &Contexte, mdp: Option<&str>) -> R<GoogleOublie> {
+fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<GoogleOublie> {
     exiger_mot_de_passe(&ctx.racine, mdp, "oublier le compte Google")?;
     let p = ctx.racine.join(JETON_GOOGLE);
     let efface = p.exists();
@@ -778,14 +778,15 @@ fn config(racine: &Path) -> PathBuf {
 #[serde(deny_unknown_fields)]
 struct ApplicationEcrite {
     client_id: String,
-    client_secret: String,
+    client_secret: socle::secret::Secret,
 }
 
 /// LE JETON GOOGLE TEL QU'IL SE SCELLE (`sceller_le_jeton`) : le rafraichissement, le compte, les permissions accordees.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct JetonEcrit {
-    rafraichissement: String,
+    #[serde(serialize_with = "socle::secret::ecrit")]
+    rafraichissement: socle::secret::Secret,
     compte: String,
     permissions: Vec<String>,
 }
@@ -797,7 +798,7 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
         // Un `google.json` illisible est un refus, pas un plantage.
         let a: ApplicationEcrite = socle::forme::lire_fichier(&p, "L'application Google de la compagnie (google.json) ne se lit pas : la corriger, ou la supprimer pour revenir à celle du logiciel.")
             .map_err(|e| e.reclasser(Classe::Google))?;
-        if a.client_id.is_empty() || a.client_secret.is_empty() {
+        if a.client_id.is_empty() || a.client_secret.devoiler().is_empty() {
             let lieu = socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() };
             return Err(Echec {
                 a_part: Some(lieu.into()),
@@ -929,7 +930,7 @@ fn adresses_de_l_autorisation() -> R<envois::google_autorisation::Adresses> {
 /// (`google_autorisation::autoriser`) : le moteur ouvre la fenetre de consentement de Google dans le navigateur du poste
 /// et dit son adresse sur la sortie d'erreur (un terminal sans navigateur la copie), la personne accepte, Google renvoie
 /// le code au moteur, qui scelle le jeton. Rend l'adresse du compte lie. La page et `moteur route` l'appellent pareil.
-fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
+fn google_autoriser(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<String> {
     exiger_mot_de_passe(&ctx.racine, mdp, "lier le compte Google")?;
     let (application, _) = identifiants(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?;
     let dire_url = |u: &socle::garde_reseau::Url| {

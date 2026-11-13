@@ -90,7 +90,7 @@ impl ErreurFilet {
 #[serde(deny_unknown_fields)]
 pub struct Identite {
     pub poste: NumeroDePoste,
-    pub cle: String,
+    pub cle: socle::secret::Secret,
 }
 
 /// `POST /rapport` : les cles `(empreinte, quand)` recues, et celles que le serveur a ecartees (une ligne mal formee :
@@ -393,13 +393,13 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action:
 pub struct Client {
     /// Le serveur, tel que le reglage le dit ; `poster` ote sa barre finale.
     pub serveur: Url,
-    pub poste: (NumeroDePoste, String),
+    pub poste: (NumeroDePoste, socle::secret::Secret),
 }
 
 impl Client {
     /// Le client des actions de l'editeur, avec l'identite de ce poste.
-    pub fn du_poste(serveur: &Url, numero: &NumeroDePoste, cle_du_poste: &str) -> Client {
-        Client { serveur: serveur.clone(), poste: (numero.clone(), cle_du_poste.to_string()) }
+    pub fn du_poste(serveur: &Url, numero: &NumeroDePoste, cle_du_poste: &socle::secret::Secret) -> Client {
+        Client { serveur: serveur.clone(), poste: (numero.clone(), cle_du_poste.clone()) }
     }
 
     /// `POST /poste` : l'identite que le serveur donne a ce poste, rendue une seule fois (il n'en garde que l'empreinte).
@@ -412,7 +412,7 @@ impl Client {
     /// complete de ce qu'il y a a faire.
     fn post_du_poste<C: Serialize, T: DeserializeOwned>(&self, action: &str, corps: C, delai: u64) -> Result<T, ErreurFilet> {
         let (numero, cle) = &self.poste;
-        match poster(&self.serveur, action, &DuPoste { poste: numero, corps }, &[("X-Filet-Cle", cle.as_str())], delai) {
+        match poster(&self.serveur, action, &DuPoste { poste: numero, corps }, &[("X-Filet-Cle", cle.devoiler())], delai) {
             Err(ErreurFilet::Filet { message, statut: 401 }) => Err(ErreurFilet::filet(format!("{} {}", message, REDEMANDER_IDENTITE), 401)),
             r => r,
         }

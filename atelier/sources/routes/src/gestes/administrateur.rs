@@ -260,20 +260,20 @@ fn exigee(poste: &Poste, racine: &Path) -> R<bool> {
 }
 
 /// Le mot de passe ouvre-t-il le coffre de la compagnie `racine` ?
-fn ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> R<bool> {
-    if motdepasse.is_empty() {
+fn ouvre(poste: &Poste, racine: &Path, motdepasse: &socle::secret::Secret) -> R<bool> {
+    if motdepasse.devoiler().is_empty() {
         return Ok(false);
     }
     poste.coffre(racine).verifier_ouverture(motdepasse)
 }
 
 /// Le mot de passe ouvre-t-il le coffre de cette compagnie ?
-pub fn mot_de_passe_ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> R<bool> {
+pub fn mot_de_passe_ouvre(poste: &Poste, racine: &Path, motdepasse: &socle::secret::Secret) -> R<bool> {
     ouvre(poste, racine, motdepasse)
 }
 
 /// Une des compagnies `racines` s'ouvre-t-elle par `motdepasse` ?
-fn ouvre_une(poste: &Poste, racines: &[PathBuf], motdepasse: &str) -> R<bool> {
+fn ouvre_une(poste: &Poste, racines: &[PathBuf], motdepasse: &socle::secret::Secret) -> R<bool> {
     for r in racines {
         if ouvre(poste, r, motdepasse)? {
             return Ok(true);
@@ -390,7 +390,7 @@ fn et_la_remise(phrase: String, remise: R<()>) -> Echec {
 /// compagnies qui ont deja un mot de passe, et toutes celles qu'il ouvre deviennent les siennes. Une compagnie qui a deja
 /// son mot de passe donne aussi `actuel` (c'est lui que le rattachement remplace). Un refus n'ecrit rien. Rend les noms des
 /// compagnies de l'administrateur.
-pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, poste: &Poste) -> R<Vec<String>> {
+pub fn rattacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, actuel: Option<&socle::secret::Secret>, poste: &Poste) -> R<Vec<String>> {
     if compagnie::bridage::est_bride_de(inst) {
         return Err(socle::echec::refus("Le logiciel est bridé : il ne gère que des compagnies fictives."));
     }
@@ -404,7 +404,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
     if est_rattachee(inst, racine)? {
         return Err(socle::echec::refus("Cette compagnie est déjà gérée par l'administrateur."));
     }
-    if admin.is_empty() {
+    if admin.devoiler().is_empty() {
         return Err(socle::echec::refus("Tapez le mot de passe de l'administrateur. Rien n'a changé."));
     }
     let groupe = rattachees(inst)?;
@@ -433,7 +433,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
     }
     let coffre = poste.coffre(racine);
     let deja = coffre.ouverture_exigee()?;
-    let actuel = actuel.filter(|a| !a.is_empty());
+    let actuel = actuel.filter(|a| !a.devoiler().is_empty());
     if deja {
         match actuel {
             None => return Err(socle::echec::refus("Tapez aussi le mot de passe actuel de cette compagnie : c'est lui que celui de l'administrateur remplace. Rien n'a changé.")),
@@ -469,17 +469,17 @@ struct HorsDeLInstallation {
 
 /// DETACHER `racine` : elle recoit son propre mot de passe (`nouveau`, tape deux fois), et celui de l'administrateur
 /// (`admin`, verifie) ne l'ouvre plus. Un refus n'ecrit rien.
-pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> R<()> {
+pub fn detacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, nouveau: &socle::secret::Secret, confirmation: &socle::secret::Secret, poste: &Poste) -> R<()> {
     if !est_rattachee(inst, racine)? {
         return Err(socle::echec::refus("Cette compagnie n'est pas gérée par l'administrateur : elle a déjà son propre mot de passe."));
     }
     if !ouvre(poste, racine, admin)? {
         return Err(socle::echec::refus("Ce n'est pas le mot de passe de l'administrateur. Rien n'a changé."));
     }
-    if nouveau != confirmation {
+    if !nouveau.egal_a(confirmation.devoiler()) {
         return Err(socle::echec::refus("Les deux saisies du nouveau mot de passe diffèrent. Rien n'a changé."));
     }
-    if nouveau == admin {
+    if nouveau.egal_a(admin.devoiler()) {
         return Err(socle::echec::refus("Choisissez un mot de passe différent de celui de l'administrateur : c'est lui qui la sépare des autres. Rien n'a changé."));
     }
     let coffre = poste.coffre(racine);
@@ -498,12 +498,12 @@ pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirma
 /// CHANGER le mot de passe de l'administrateur : toutes ses compagnies se rescellent d'un coup. `actuel` doit ouvrir
 /// chacune ; tout se prepare d'abord (si une seule refuse, rien ne s'ecrit) ; puis chaque coffre est remplace, et si un
 /// remplacement echoue, ceux deja faits reviennent a leur etat d'avant. Rend les noms des compagnies rescellees.
-pub fn changer(inst: &Path, actuel: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> R<Vec<String>> {
+pub fn changer(inst: &Path, actuel: &socle::secret::Secret, nouveau: &socle::secret::Secret, confirmation: &socle::secret::Secret, poste: &Poste) -> R<Vec<String>> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
         return Err(socle::echec::refus("Ce logiciel n'a pas d'administrateur : chaque compagnie a son propre mot de passe."));
     }
-    if nouveau != confirmation {
+    if !nouveau.egal_a(confirmation.devoiler()) {
         return Err(socle::echec::refus("Les deux saisies du nouveau mot de passe diffèrent. Rien n'a changé."));
     }
     let mut prets: Vec<(PathBuf, Vec<u8>, Option<Vec<u8>>)> = Vec::new();
@@ -1109,7 +1109,7 @@ impl Dite for DepotGroupe {
 /// de l'administrateur part, compagnie par compagnie, par la route `deposer` de chacune. `motdepasse` (reel) : celui que la
 /// fenetre a fait taper au moment de l'acte ; sans lui, le moteur le demande a un humain. Rend, declaration par
 /// declaration, ce qui est parti et ce qui a refuse, et le tableau refait.
-pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>) -> R<DepotGroupe> {
+pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::secret::Secret>) -> R<DepotGroupe> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
         return Err(erreur(Classe::Refuse, "Ce logiciel n'a pas d'administrateur : chaque compagnie dépose depuis sa page. Rien n'est parti."));
@@ -1140,9 +1140,9 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
         let refuses = resultats.len();
         return Ok(DepotGroupe { phrase: phrase.into(), reel, partis: 0, refuses, resultats, tableau: tableau(o, inst, false)? });
     }
-    let mut mdp: Option<String> = None;
+    let mut mdp: Option<socle::secret::Secret> = None;
     if reel {
-        let m = match motdepasse.filter(|m| !m.is_empty()) {
+        let m = match motdepasse.filter(|m| !m.devoiler().is_empty()) {
             Some(m) => m,
             None => {
                 let acte = compagnie::demande::Acte::nouveau(

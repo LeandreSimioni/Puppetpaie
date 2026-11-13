@@ -514,7 +514,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::SignatureApercu => en_json(signature_apercu(ctx, charge.lire::<ChargeMois>()?.mois)?),
         Route::AvenantApercu => en_json(avenant_apercu(ctx, &charge.lire()?)?),
         Route::PiecesParties => en_json(pieces_parties(ctx, charge.lire()?)?),
-        Route::DemanderSignature => en_json(demander_signature(ctx, charge.lire()?, charge.mot_de_passe().map(String::from), &mut || client_courriel(ctx))?),
+        Route::DemanderSignature => en_json(demander_signature(ctx, charge.lire()?, charge.mot_de_passe().cloned(), &mut || client_courriel(ctx))?),
         Route::ContratsImprimer => en_json(contrats_imprimer(ctx, charge.lire::<ChargeImprimer>()?.signature(), INTERFACE)?),
         Route::ContratRecu => en_json(contrat_recu(ctx, &charge.lire()?, INTERFACE, None)?),
         autre => Err(crate::enveloppe::route_inconnue(autre.nom())),
@@ -699,7 +699,7 @@ fn avenant_dit(numero: Option<i64>) -> String {
 /// (`signature::demander_signature`) et les avenants (`envoyer_avenants`, un courriel par salarie). CE QUI PART EN
 /// RAPPEL, l'etat des contrats du mois (`signature-apercu`, lu au journal) le dit, piece par piece : un contrat ou un
 /// avenant qu'un courriel a deja demande ; la phrase les nomme.
-pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse: Option<String>, ouvrir: Ouvrir) -> R<SignaturesDemandees> {
+pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse: Option<socle::secret::Secret>, ouvrir: Ouvrir) -> R<SignaturesDemandees> {
     c.aucun_coche()?;
     let avenants = c.avenants();
     let des_contrats = avenants.is_empty() || c.contrats_choisis();

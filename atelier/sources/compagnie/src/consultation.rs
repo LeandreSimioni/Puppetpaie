@@ -8,7 +8,7 @@ use socle::echec::R;
 
 /// Le mot de passe d'un service, pour une CONSULTATION : l'environnement d'abord, puis le coffre ; `None`
 /// quand rien n'est pose. Un coffre qui ne s'ouvre pas est un refus, pas une absence.
-pub fn mot_de_passe_de_consultation(ctx: &Contexte, service: &str) -> R<Option<String>> {
+pub fn mot_de_passe_de_consultation(ctx: &Contexte, service: &str) -> R<Option<socle::secret::Secret>> {
     let coffre = crate::coffre::Coffre::du_poste(&ctx.racine);
     coffre.lire(service, crate::coffre::CONSULTATION, false, None)
 }

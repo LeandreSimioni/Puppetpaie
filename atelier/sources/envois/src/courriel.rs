@@ -243,7 +243,7 @@ fn es(e: std::io::Error) -> Echec {
 
 impl<F: Read + Write> Imap<F> {
     /// Lit l'accueil du serveur, puis `LOGIN` et `EXAMINE` (lecture seule) du dossier.
-    pub fn ouvrir(flux: F, compte: &str, mot_de_passe: &str, dossier: &str) -> R<Imap<F>> {
+    pub fn ouvrir(flux: F, compte: &str, mot_de_passe: &socle::secret::Secret, dossier: &str) -> R<Imap<F>> {
         let mut imap = Imap { flux, tampon: Vec::new(), numero: 0 };
         let accueil = imap.lire_unite()?;
         match Response::parse(&accueil) {
@@ -251,7 +251,7 @@ impl<F: Read + Write> Imap<F> {
             Ok(_) => {}
             Err(e) => return Err(erreur(format!("L'accueil du serveur ne se lit pas : {}", e))),
         }
-        imap.commande(&format!("LOGIN {} {}", quoter(compte)?, quoter(mot_de_passe)?))?;
+        imap.commande(&format!("LOGIN {} {}", quoter(compte)?, quoter(mot_de_passe.devoiler())?))?;
         imap.commande(&format!("EXAMINE {}", quoter(dossier)?))?;
         Ok(imap)
     }
@@ -378,7 +378,7 @@ impl<F: Read + Write> Imap<F> {
 pub struct Client {
     racine: PathBuf,
     compte: String,
-    mot_de_passe: String,
+    mot_de_passe: socle::secret::Secret,
     pub serveurs: Serveurs,
     imap: Option<Imap<Box<dyn Flux>>>,
 }
@@ -386,11 +386,11 @@ pub struct Client {
 impl Client {
     /// `compte` : l'adresse de la boite ; `mot_de_passe` : celui que l'appelant a lu au coffre (les espaces d'un mot de
     /// passe d'application se retirent ici). Les serveurs se lisent dans `config/courriel.json` de `racine`.
-    pub fn nouveau(racine: &Path, compte: &str, mot_de_passe: &str) -> R<Client> {
+    pub fn nouveau(racine: &Path, compte: &str, mot_de_passe: &socle::secret::Secret) -> R<Client> {
         Ok(Client {
             racine: racine.to_path_buf(),
             compte: compte.trim().to_lowercase(),
-            mot_de_passe: mot_de_passe.replace(' ', ""),
+            mot_de_passe: mot_de_passe.transforme(|m| m.replace(' ', "")),
             serveurs: serveurs(racine)?,
             imap: None,
         })
@@ -504,7 +504,7 @@ impl Courriel for Client {
         let adresses = adresses.map_err(|e| erreur(format!("adresse de destinataire illisible : {}", e)))?;
         let expediteur: Address = self.compte.parse().map_err(|e| erreur(format!("adresse de la boite illisible : {}", e)))?;
         let enveloppe = Envelope::new(Some(expediteur), adresses).map_err(|e| erreur(e.to_string()))?;
-        let mdp = self.mot_de_passe.clone();
+        let mdp = self.mot_de_passe.devoiler().to_string();
         let (hote, port) = (self.serveurs.smtp.clone(), self.serveurs.port_smtp);
         // En essai, le garde-fou reseau : aucun serveur d'envoi reel.
         socle::garde_reseau::directe(&hote).map_err(|e| e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel))?;

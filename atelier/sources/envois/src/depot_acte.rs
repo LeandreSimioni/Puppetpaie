@@ -57,7 +57,7 @@ pub struct Depot<'a> {
     /// La repetition qui ouvre un depot reel (rien pour un test).
     pub repetition: Option<&'a Ouverture>,
     /// Le mot de passe de l'organisme (le monde seulement).
-    pub motdepasse: Option<String>,
+    pub motdepasse: Option<socle::secret::Secret>,
     /// La version de chaque engagement que le depot emporte.
     pub versions: &'a [Version],
 }

@@ -20,6 +20,7 @@ use socle::base64::ecrire as base64_ecrire;
 use socle::echec::Classe;
 use socle::json_ascii::dumps;
 use socle::paris::Moment;
+use socle::secret::Secret;
 
 pub const FICHIER: &str = "coffre.bin";
 pub const FICHIER_CLE: &str = "cle-poste.bin";
@@ -96,11 +97,18 @@ struct Contenu {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Kdf {
-    pub algo: String,
+    pub algo: Algo,
     pub n: u64,
     pub r: u64,
     pub p: u64,
     pub sel: String,
+}
+
+/// L'ALGORITHME DE LA DERIVATION, tel que le coffre l'ecrit : scrypt seul (un autre nom ne se lit pas).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum Algo {
+    #[serde(rename = "scrypt")]
+    Scrypt,
 }
 
 /// LES ENVELOPPES DE LA CLE MAITRESSE, en base64 : scellee par la cle du poste, et par le mot de passe du logiciel
@@ -130,7 +138,8 @@ struct FichePosee {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Gardee {
-    motdepasse: String,
+    #[serde(serialize_with = "socle::secret::ecrit")]
+    motdepasse: Secret,
     #[serde(with = "socle::paris::ecrit::minute")]
     fin: Moment,
     coffre: String,
@@ -453,16 +462,15 @@ fn aad_fiches(fiches: &BTreeMap<String, FichePosee>) -> Vec<u8> {
 
 /// La cle scrypt de 32 octets. Les parametres sont ceux du fichier : ils sont
 /// verifies avant la derivation, memoire comprise (`SCRYPT_MAXMEM`).
-pub fn deriver(motdepasse: &str, kdf: &Kdf) -> R<Vec<u8>> {
+pub fn deriver(motdepasse: &Secret, kdf: &Kdf) -> R<Vec<u8>> {
     // Le fil de fond de la fenetre ne dechiffre rien : aucun mot de passe ne s'y derive.
     if socle::fil_de_fond::ici() {
         return Err(refus(socle::fil_de_fond::refus("le coffre")));
     }
-    if kdf.algo != "scrypt" {
-        return Err(refus(format!("Ce coffre dit avoir ete ferme par {}, que cette version ne sait pas ouvrir.", repr_chaine(&kdf.algo))));
-    }
     let sel = d64(&kdf.sel)?;
-    scrypt_32(motdepasse.as_bytes(), &sel, i128::from(kdf.n), i128::from(kdf.r), i128::from(kdf.p))
+    match kdf.algo {
+        Algo::Scrypt => scrypt_32(motdepasse.devoiler().as_bytes(), &sel, i128::from(kdf.n), i128::from(kdf.r), i128::from(kdf.p)),
+    }
 }
 
 fn scrypt_32(motdepasse: &[u8], sel: &[u8], n: i128, r: i128, p: i128) -> R<Vec<u8>> {
@@ -505,13 +513,13 @@ fn scrypt_32(motdepasse: &[u8], sel: &[u8], n: i128, r: i128, p: i128) -> R<Vec<
 // processus, une par fil a la fois, et `routes::commande` remet en sortant ce qu'il a trouve, quoi qu'il arrive ;
 // les tests, chacun sur son fil, ne se le transmettent pas.
 thread_local! {
-    static TAPE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    static TAPE: std::cell::RefCell<Option<Secret>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Retient, pour cette commande, le mot de passe du logiciel qu'un humain vient de taper.
-pub fn retenir_mot_de_passe_tape(motdepasse: &str) {
-    if !motdepasse.is_empty() {
-        TAPE.with(|t| *t.borrow_mut() = Some(motdepasse.to_string()));
+pub fn retenir_mot_de_passe_tape(motdepasse: &Secret) {
+    if !motdepasse.devoiler().is_empty() {
+        TAPE.with(|t| *t.borrow_mut() = Some(motdepasse.clone()));
     }
 }
 
@@ -523,13 +531,13 @@ pub fn oublier_mot_de_passe_tape() {
 /// Le mot de passe du logiciel qu'un humain a tape pour cette route (`demande::autoriser_acte` le retient), et rien
 /// d'autre : ni la variable, ni la seance. Le geste qui a besoin de l'actuel (le changer, le retirer) le prend ici quand la
 /// charge ne le porte pas.
-pub fn mot_de_passe_retenu() -> Option<String> {
+pub fn mot_de_passe_retenu() -> Option<Secret> {
     TAPE.with(|t| t.borrow().clone())
 }
 
 /// Le mot de passe tape pour cette commande : celui de la demande, sinon `PUPPETPAIE_MOTDEPASSE`.
-fn mot_de_passe_tape() -> Option<String> {
-    TAPE.with(|t| t.borrow().clone()).or_else(|| env_non_vide("PUPPETPAIE_MOTDEPASSE"))
+fn mot_de_passe_tape() -> Option<Secret> {
+    TAPE.with(|t| t.borrow().clone()).or_else(|| env_non_vide("PUPPETPAIE_MOTDEPASSE").map(Secret::nouveau))
 }
 
 /// Le marqueur d'un dossier PORTABLE, a cote de `logiciel/` :
@@ -806,7 +814,7 @@ impl Coffre {
     /// poste est posee tout de suite ; celle du mot de passe vient avec lui.
     fn creer(&self) -> R<(Vec<u8>, Contenu)> {
         let maitresse = aleas(32)?;
-        let kdf = Kdf { algo: "scrypt".into(), n: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, sel: b64(&aleas(16)?) };
+        let kdf = Kdf { algo: Algo::Scrypt, n: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, sel: b64(&aleas(16)?) };
         let enveloppes = Enveloppes { poste: b64(&sceller(&self.cle_ou_creer()?, &maitresse, AAD_POSTE)?), motdepasse: None };
         Ok((maitresse, Contenu { version: VERSION, kdf, enveloppes, fiches: BTreeMap::new(), secrets: None, logiciel_pose_le: None }))
     }
@@ -818,9 +826,9 @@ impl Coffre {
     /// LA SEANCE EN TROISIEME : si ni la cle du poste ni un mot de passe donne ou tape n'ouvrent, le mot de passe
     /// GARDE par `garder_ouverture` (12 h) est essaye. Il ouvre le coffre ; il n'AUTORISE aucun acte reel (cela, seule
     /// `demande::autoriser_acte` le fait).
-    fn ouvrir(&self, contenu: &Contenu, motdepasse: Option<&str>) -> R<Option<Vec<u8>>> {
+    fn ouvrir(&self, contenu: &Contenu, motdepasse: Option<&Secret>) -> R<Option<Vec<u8>>> {
         let tape = mot_de_passe_tape();
-        let donne = motdepasse.filter(|m| !m.is_empty()).or(tape.as_deref());
+        let donne = motdepasse.filter(|m| !m.devoiler().is_empty()).or(tape.as_ref());
         if let Some(m) = self.ouvrir_avec(contenu, donne)? {
             return Ok(Some(m));
         }
@@ -834,7 +842,7 @@ impl Coffre {
         }
     }
 
-    fn ouvrir_avec(&self, contenu: &Contenu, motdepasse: Option<&str>) -> R<Option<Vec<u8>>> {
+    fn ouvrir_avec(&self, contenu: &Contenu, motdepasse: Option<&Secret>) -> R<Option<Vec<u8>>> {
         if let Some(cle) = self.cle_poste(false)? {
             match desceller(&cle, &d64(&contenu.enveloppes.poste)?, AAD_POSTE) {
                 Ok(m) => return Ok(Some(m)),
@@ -842,7 +850,7 @@ impl Coffre {
                 Err(x) => return Err(x),
             }
         }
-        if let (Some(mdp), Some(e)) = (motdepasse.filter(|m| !m.is_empty()), &contenu.enveloppes.motdepasse) {
+        if let (Some(mdp), Some(e)) = (motdepasse.filter(|m| !m.devoiler().is_empty()), &contenu.enveloppes.motdepasse) {
             let r = deriver(mdp, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
             return match r {
                 Ok(m) => Ok(Some(m)),
@@ -853,7 +861,7 @@ impl Coffre {
         Ok(None)
     }
 
-    fn ouvrir_ou_lever(&self, motdepasse: Option<&str>) -> R<(Vec<u8>, Contenu)> {
+    fn ouvrir_ou_lever(&self, motdepasse: Option<&Secret>) -> R<(Vec<u8>, Contenu)> {
         let Some(contenu) = self.lire_fichier()? else {
             return self.creer();
         };
@@ -947,8 +955,9 @@ impl Coffre {
 
     // ------------------------------------------------------------- l'usage
 
-    pub fn poser(&self, service: &str, motdepasse: &str, compte: Option<&str>) -> R<PathBuf> {
+    pub fn poser(&self, service: &str, motdepasse: &Secret, compte: Option<&str>) -> R<PathBuf> {
         let fiche = service_connu(service)?;
+        let motdepasse = motdepasse.devoiler();
         if strip(motdepasse).is_empty() {
             return Err(refus("Mot de passe vide : rien n'a ete pose."));
         }
@@ -1054,7 +1063,7 @@ impl Coffre {
     /// Le mot de passe du service, ou None. L'environnement l'emporte sur le
     /// coffre. `usage` dit pourquoi il se lit : `CONSULTATION` ou `DEPOT`. `ouverture` : le mot de passe du logiciel,
     /// quand l'appelant l'a fait taper ; ce module ne le demande jamais.
-    pub fn lire(&self, service: &str, usage: &str, confirme: bool, ouverture: Option<&str>) -> R<Option<String>> {
+    pub fn lire(&self, service: &str, usage: &str, confirme: bool, ouverture: Option<&Secret>) -> R<Option<Secret>> {
         let fiche = service_connu(service)?;
         let nom = fiche.nom;
         let usage = Usage::lu(usage)?;
@@ -1065,7 +1074,7 @@ impl Coffre {
             ));
         }
         if let Some(v) = self.variables.get(fiche.variable) {
-            return Ok(Some(v.clone()));
+            return Ok(Some(Secret::nouveau(v.clone())));
         }
         let Some(contenu) = self.lire_fichier()? else { return Ok(None) };
         if !contenu.fiches.contains_key(nom) {
@@ -1073,7 +1082,7 @@ impl Coffre {
         }
         let Some(maitresse) = self.ouvrir(&contenu, ouverture)? else {
             let absente = if self.cle_posee()? { "" } else { ", et elle est absente" };
-            let donne = if ouverture.is_some_and(|o| !o.is_empty()) || mot_de_passe_tape().is_some() { "ne l'ouvre pas non plus" } else { "n'a pas ete donne" };
+            let donne = if ouverture.is_some_and(|o| !o.devoiler().is_empty()) || mot_de_passe_tape().is_some() { "ne l'ouvre pas non plus" } else { "n'a pas ete donne" };
             return Err(refus_a(
                 format!(
                     "Le secret {} est dans le coffre, mais rien ici ne l'ouvre : la \
@@ -1088,7 +1097,7 @@ impl Coffre {
             ));
         };
         let mut secrets = self.secrets(&contenu, &maitresse)?;
-        Ok(secrets.remove(nom).filter(|s| !s.is_empty()))
+        Ok(secrets.remove(nom).filter(|s| !s.is_empty()).map(Secret::nouveau))
     }
 
     pub fn disponible(&self, service: &str) -> R<bool> {
@@ -1100,15 +1109,15 @@ impl Coffre {
 
     /// Pose (ou change) le mot de passe du logiciel. `ancien` sert quand la cle
     /// du poste n'ouvre pas le coffre.
-    pub fn poser_ouverture(&self, motdepasse: &str, ancien: Option<&str>) -> R<PathBuf> {
+    pub fn poser_ouverture(&self, motdepasse: &Secret, ancien: Option<&Secret>) -> R<PathBuf> {
         let octets = self.preparer_ouverture(motdepasse, ancien)?;
         self.ecrire_octets(&octets)
     }
 
     /// Ce que `poser_ouverture` ecrirait, SANS L'ECRIRE : les octets du coffre rescelle par `motdepasse`. Sert a qui doit
     /// resceller plusieurs coffres d'un coup (l'administrateur, `administrateur.rs`) : tout se prepare, puis tout se remplace.
-    pub fn preparer_ouverture(&self, motdepasse: &str, ancien: Option<&str>) -> R<Vec<u8>> {
-        if strip(motdepasse).chars().count() < LONGUEUR_MINIMALE_LOGICIEL {
+    pub fn preparer_ouverture(&self, motdepasse: &Secret, ancien: Option<&Secret>) -> R<Vec<u8>> {
+        if strip(motdepasse.devoiler()).chars().count() < LONGUEUR_MINIMALE_LOGICIEL {
             return Err(refus(format!(
                 "Mot de passe du logiciel trop court : {} caracteres au moins. \
                  Il n'est plus seulement un oui ou non depuis le 20/09/2026 -- il \
@@ -1134,7 +1143,7 @@ impl Coffre {
     }
 
     /// Retire l'enveloppe du mot de passe du logiciel.
-    pub fn oublier_ouverture(&self, ancien: Option<&str>) -> R<bool> {
+    pub fn oublier_ouverture(&self, ancien: Option<&Secret>) -> R<bool> {
         if !self.lire_fichier()?.is_some_and(|c| c.enveloppes.motdepasse.is_some()) {
             return Ok(false);
         }
@@ -1152,7 +1161,7 @@ impl Coffre {
 
     /// Le mot de passe du logiciel est-il le bon ? L'enveloppe le dit en
     /// s'ouvrant : GCM ne connait pas le « presque ».
-    pub fn verifier_ouverture(&self, motdepasse: &str) -> R<bool> {
+    pub fn verifier_ouverture(&self, motdepasse: &Secret) -> R<bool> {
         let contenu = match self.lire_fichier() {
             Ok(Some(c)) => c,
             Ok(None) => return Ok(false),
@@ -1177,11 +1186,11 @@ impl Coffre {
 
     /// Garde le mot de passe du logiciel jusqu'a `fin` (`AAAA-MM-JJTHH:MM`).
     /// Refuse un mot de passe qui n'ouvre pas le coffre.
-    pub fn garder_ouverture(&self, motdepasse: &str, fin: Moment) -> R<Moment> {
+    pub fn garder_ouverture(&self, motdepasse: &Secret, fin: Moment) -> R<Moment> {
         if !self.verifier_ouverture(motdepasse)? {
             return Err(refus("Mot de passe du logiciel refuse : rien n'est garde."));
         }
-        let d = Gardee { motdepasse: motdepasse.into(), fin, coffre: affiche(&resoudre(&self.chemin())?) };
+        let d = Gardee { motdepasse: motdepasse.clone(), fin, coffre: affiche(&resoudre(&self.chemin())?) };
         let clair = dumps(&d, None, false, false);
         let p = self.chemin_gardee()?;
         dossier_de(&p)?;
@@ -1213,7 +1222,7 @@ impl Coffre {
 
     /// Le mot de passe garde, s'il y en a un, pas expire, pour CE coffre, et
     /// qu'il l'ouvre encore. Une gardee expiree ou perimee s'efface.
-    pub fn ouverture_gardee(&self) -> R<Option<String>> {
+    pub fn ouverture_gardee(&self) -> R<Option<Secret>> {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),

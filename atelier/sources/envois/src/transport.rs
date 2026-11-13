@@ -491,7 +491,7 @@ pub fn entete<'a>(e: &'a Entetes, nom: &str) -> Option<&'a str> {
 /// Ce qu'on envoie : une requete du guide.
 pub struct Requete<'a> {
     pub url: &'a Url,
-    pub jeton: Option<&'a str>,
+    pub jeton: Option<&'a socle::secret::Secret>,
     pub donnees: Option<&'a [u8]>,
     pub content_type: Option<&'a str>,
     /// L'en-tete `Content-Encoding: gzip` d'un depot.
@@ -551,7 +551,7 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
         // Le jeton ne suit une redirection que vers le meme hote.
         if let Some(j) = r.jeton {
             if sauts == 0 || meme_hote(r.url.texte(), url.texte()) {
-                b = b.header("Authorization", format!("DSNLogin jeton={}", j));
+                b = b.header("Authorization", format!("DSNLogin jeton={}", j.devoiler()));
             }
         }
         let ag = agent(r.delai, &url)?;
@@ -630,13 +630,13 @@ fn en_erreur_api(url: &Url, p: Panne) -> EchecApi {
 }
 
 /// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `Organisme`.
-pub fn appeler(url: &Url, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), EchecApi> {
+pub fn appeler(url: &Url, jeton: Option<&socle::secret::Secret>) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete { jeton, ..Requete::get(url, DELAI_APPEL) };
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
 /// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures de Paris).
-pub fn consulter(base: &Url, jeton: Option<&str>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
+pub fn consulter(base: &Url, jeton: Option<&socle::secret::Secret>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
     let mut suite = horodatage(debut);
     if let Some(fin) = fin {
         suite.push('/');
@@ -683,17 +683,17 @@ pub fn declarant(ent: &droit::fiche::ChampsEntreprise) -> Identite {
 pub struct Authentification<'a> {
     pub url: &'a Url,
     pub declarant: &'a Identite,
-    pub motdepasse: Option<&'a str>,
+    pub motdepasse: Option<&'a socle::secret::Secret>,
     /// La variable d'environnement que le refus nomme quand le mot de passe manque.
     pub variable: &'a str,
     pub service: Option<&'a str>,
-    pub jeton: Option<&'a str>,
+    pub jeton: Option<&'a socle::secret::Secret>,
 }
 
 /// UNE SESSION OUVERTE : son jeton.
 #[derive(Debug, Clone)]
 pub struct Session {
-    pub jeton: String,
+    pub jeton: socle::secret::Secret,
 }
 
 /// L'authentification du guide de l'API DSN : la session ouverte. Sans mot de passe ou sans declarant complet, rien ne
@@ -701,7 +701,7 @@ pub struct Session {
 pub fn authentifier(a: &Authentification) -> Result<Session, EchecApi> {
     let variable = a.variable;
     let mdp = match a.motdepasse {
-        Some(m) if !m.is_empty() => m,
+        Some(m) if !m.devoiler().is_empty() => m,
         _ => {
             return Err(EchecApi::nouveau(
                 Classe::Organisme,
@@ -737,7 +737,7 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
         siret,
         nom,
         prenom,
-        echapper(mdp),
+        echapper(mdp.devoiler()),
         // Le service ne s'ecrit que s'il est dit.
         service.iter().map(|s| format!("<service>{}</service>", s)).collect::<String>()
     );
@@ -750,13 +750,13 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
     };
     let (brut, _) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
     let jeton: String = brut.iter().map(|&b| if b < 0x80 { b as char } else { '\u{fffd}' }).collect();
-    Ok(Session { jeton: socle::texte::strip(&jeton).to_string() })
+    Ok(Session { jeton: socle::secret::Secret::nouveau(socle::texte::strip(&jeton).to_string()) })
 }
 
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,
 /// `Content-Encoding: gzip`, jeton DSNLogin. `forme` dit comment une panne se
 /// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`).
-pub fn depot(url: &Url, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
+pub fn depot(url: &Url, jeton: &socle::secret::Secret, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
         jeton: Some(jeton),
         donnees: Some(corps_gzip),

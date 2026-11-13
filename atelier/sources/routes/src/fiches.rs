@@ -1011,8 +1011,8 @@ struct DemandeDeFiche {
 }
 
 /// `fiche-demander` : le courriel « Remplir ma fiche » part (`demander_fiche`), sous la preuve que la charge porte.
-fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&str>) -> R<DemandeDeFiche> {
-    let preuve = Preuve::du_mot_de_passe(motdepasse.map(str::to_string));
+fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&socle::secret::Secret>) -> R<DemandeDeFiche> {
+    let preuve = Preuve::du_mot_de_passe(motdepasse.cloned());
     let d = demander_fiche(ctx, &c.adresse, c.prenom.as_deref(), &preuve, INTERFACE, None)?;
     Ok(DemandeDeFiche { phrase: format!("Demande de fiche envoyée à {} (code {}) : sa fiche se crée à l'arrivée de sa réponse.", d.adresse, d.code), code: d.code, adresse: d.adresse })
 }

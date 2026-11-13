@@ -2,7 +2,8 @@
 //! sur des coffres et des mots de passe inventes, chacun dans son dossier (jamais la vraie cle du poste).
 
 use crate::outils::chemin_unique;
-use compagnie::coffre::{deriver, Coffre, Kdf, CONSULTATION};
+use compagnie::coffre::{deriver, Algo, Coffre, Kdf, CONSULTATION};
+use socle::secret::Secret;
 use socle::json_ascii::dumps;
 use socle::paris::Moment;
 use serde_json::{json, Value};
@@ -32,18 +33,25 @@ fn autre_poste(c: &Coffre) -> Coffre {
     Coffre { racine: c.racine.clone(), dossier_cle: dossier(), maintenant: c.maintenant.clone(), variables: BTreeMap::new() }
 }
 
+/// Un secret de ces essais.
+fn s(t: &str) -> Secret {
+    Secret::nouveau(t)
+}
+
+/// Le secret de net-entreprises lu en consultation, devoile pour etre compare.
 fn lire(c: &Coffre, ouverture: Option<&str>) -> socle::echec::R<Option<String>> {
-    c.lire("net-entreprises", CONSULTATION, false, ouverture)
+    let ouverture = ouverture.map(s);
+    c.lire("net-entreprises", CONSULTATION, false, ouverture.as_ref()).map(|l| l.map(|x| x.devoiler().to_string()))
 }
 
 #[test]
 fn un_secret_se_pose_et_se_relit_sans_etre_en_clair() {
     let c = coffre();
-    c.poser("urssaf", "UnSecretTresReconnaissable", None).unwrap();
+    c.poser("urssaf", &s("UnSecretTresReconnaissable"), None).unwrap();
     let octets = std::fs::read(c.chemin()).unwrap();
     assert!(!String::from_utf8_lossy(&octets).contains("UnSecretTresReconnaissable"));
     let r = c.lire("urssaf", CONSULTATION, false, None).unwrap();
-    assert_eq!(r.as_deref(), Some("UnSecretTresReconnaissable"));
+    assert_eq!(r.as_ref().map(Secret::devoiler), Some("UnSecretTresReconnaissable"));
     assert_eq!(lire(&c, None).unwrap(), None);
     assert!(c.pose("urssaf").unwrap() && !c.pose("courriel").unwrap());
 }
@@ -51,7 +59,7 @@ fn un_secret_se_pose_et_se_relit_sans_etre_en_clair() {
 #[test]
 fn l_etat_ne_rend_jamais_la_valeur() {
     let c = coffre();
-    c.poser("urssaf", "MotDePasseTresSecret42", None).unwrap();
+    c.poser("urssaf", &s("MotDePasseTresSecret42"), None).unwrap();
     let etat = serde_json::to_string(&c.services().unwrap()).unwrap();
     assert!(!etat.contains("MotDePasseTresSecret42"));
     assert!(etat.contains("\"pose_le\":\"2026-10-03 14:05\""));
@@ -61,14 +69,14 @@ fn l_etat_ne_rend_jamais_la_valeur() {
 fn le_mot_de_passe_du_logiciel_ouvre_l_enveloppe_et_rien_d_autre() {
     let c = coffre();
     assert!(!c.ouverture_exigee().unwrap());
-    assert!(!c.verifier_ouverture("sesame-123").unwrap());
-    c.poser_ouverture("sesame-123", None).unwrap();
+    assert!(!c.verifier_ouverture(&s("sesame-123")).unwrap());
+    c.poser_ouverture(&s("sesame-123"), None).unwrap();
     assert!(c.ouverture_exigee().unwrap());
-    assert!(c.verifier_ouverture("sesame-123").unwrap());
-    assert!(!c.verifier_ouverture("sesame-123 ").unwrap());
-    assert!(!c.verifier_ouverture("").unwrap());
+    assert!(c.verifier_ouverture(&s("sesame-123")).unwrap());
+    assert!(!c.verifier_ouverture(&s("sesame-123 ")).unwrap());
+    assert!(!c.verifier_ouverture(&s("")).unwrap());
     assert!(!String::from_utf8_lossy(&std::fs::read(c.chemin()).unwrap()).contains("sesame-123"));
-    assert!(c.poser_ouverture("12345", None).unwrap_err().phrase.starts_with("Mot de passe du logiciel trop court : 6 caracteres"));
+    assert!(c.poser_ouverture(&s("12345"), None).unwrap_err().phrase.starts_with("Mot de passe du logiciel trop court : 6 caracteres"));
     assert!(c.oublier_ouverture(None).unwrap());
     assert!(!c.ouverture_exigee().unwrap() && !c.chemin().exists());
 }
@@ -76,8 +84,8 @@ fn le_mot_de_passe_du_logiciel_ouvre_l_enveloppe_et_rien_d_autre() {
 #[test]
 fn un_coffre_apporte_sur_un_autre_poste_s_ouvre_par_le_mot_de_passe() {
     let c = coffre();
-    c.poser("net-entreprises", "unvraimotdepasse", None).unwrap();
-    c.poser_ouverture("sesame-123", None).unwrap();
+    c.poser("net-entreprises", &s("unvraimotdepasse"), None).unwrap();
+    c.poser_ouverture(&s("sesame-123"), None).unwrap();
     let ailleurs = autre_poste(&c);
     assert!(!ailleurs.ouvre_a_ce_poste().unwrap());
     assert!(lire(&ailleurs, None).unwrap_err().phrase.contains("n'a pas ete donne"));
@@ -86,25 +94,25 @@ fn un_coffre_apporte_sur_un_autre_poste_s_ouvre_par_le_mot_de_passe() {
     assert_eq!(lire(&ailleurs, Some("sesame-123")).unwrap().as_deref(), Some("unvraimotdepasse"));
     assert!(!ailleurs.chemin_cle().exists());
     // et reposer le mot de passe repose une cle : le poste retrouve son autonomie
-    ailleurs.poser_ouverture("sesame-124", Some("sesame-123")).unwrap();
+    ailleurs.poser_ouverture(&s("sesame-124"), Some(&s("sesame-123"))).unwrap();
     assert!(ailleurs.ouvre_a_ce_poste().unwrap());
     assert_eq!(lire(&ailleurs, None).unwrap().as_deref(), Some("unvraimotdepasse"));
-    assert!(ailleurs.verifier_ouverture("sesame-124").unwrap());
+    assert!(ailleurs.verifier_ouverture(&s("sesame-124")).unwrap());
 }
 
 #[test]
 fn sans_cle_ni_mot_de_passe_le_coffre_refuse_et_le_dit() {
     let c = coffre();
-    c.poser("net-entreprises", "unvraimotdepasse", None).unwrap();
+    c.poser("net-entreprises", &s("unvraimotdepasse"), None).unwrap();
     std::fs::remove_file(c.chemin_cle()).unwrap();
     assert!(lire(&c, None).unwrap_err().phrase.contains("et elle est absente"));
-    assert!(c.poser("urssaf", "unvraimotdepasse", None).unwrap_err().phrase.starts_with("Ce coffre ne s'ouvre pas ici"));
+    assert!(c.poser("urssaf", &s("unvraimotdepasse"), None).unwrap_err().phrase.starts_with("Ce coffre ne s'ouvre pas ici"));
 }
 
 #[test]
 fn un_fichier_altere_ou_d_une_autre_version_est_refuse() {
     let c = coffre();
-    c.poser("net-entreprises", "unvraimotdepasse", None).unwrap();
+    c.poser("net-entreprises", &s("unvraimotdepasse"), None).unwrap();
     let bon = std::fs::read_to_string(c.chemin()).unwrap();
     let mut v: Value = serde_json::from_str(&bon).unwrap();
     let t = v["secrets"].as_str().unwrap().to_string();
@@ -122,35 +130,34 @@ fn un_fichier_altere_ou_d_une_autre_version_est_refuse() {
 
 #[test]
 fn scrypt_est_celui_de_la_rfc_7914_et_refuse_les_parametres_d_un_fichier_piege() {
-    let kdf = |algo: &str, n: u64, r: u64, p: u64, sel: &str| Kdf { algo: algo.into(), n, r, p, sel: sel.into() };
-    let cle = deriver("password", &kdf("scrypt", 1024, 8, 16, "TmFDbA==")).unwrap();
+    let kdf = |n: u64, r: u64, p: u64, sel: &str| Kdf { algo: Algo::Scrypt, n, r, p, sel: sel.into() };
+    let cle = deriver(&s("password"), &kdf(1024, 8, 16, "TmFDbA==")).unwrap();
     assert_eq!(cle.iter().map(|b| format!("{:02x}", b)).collect::<String>(), "fdbabe1c9d3472007856e7190d01e9fe7c6ad7cbc8237830e77376634b373162");
     // n qui n'est pas une puissance de 2, r nul, une memoire demesuree
     for (n, r, p) in [(3, 8, 1), (2, 0, 1), (131072, 8, 1)] {
-        assert!(deriver("x", &kdf("scrypt", n, r, p, "AAAA")).is_err(), "n={} r={} p={}", n, r, p);
+        assert!(deriver(&s("x"), &kdf(n, r, p, "AAAA")).is_err(), "n={} r={} p={}", n, r, p);
     }
-    assert!(deriver("x", &kdf("argon2", 1024, 8, 1, "AAAA")).unwrap_err().phrase.contains("argon2"), "le refus nomme l'algorithme");
 }
 
 #[test]
 fn l_ouverture_gardee_vaut_pour_son_coffre_et_expire() {
     let c = coffre();
-    c.poser_ouverture("sesame-123", None).unwrap();
+    c.poser_ouverture(&s("sesame-123"), None).unwrap();
     let fin = minute(4, 2, 5);
-    assert!(c.garder_ouverture("faux-faux", fin).unwrap_err().phrase.starts_with("Mot de passe du logiciel refuse"));
-    assert_eq!(c.ouverture_gardee().unwrap(), None);
-    c.garder_ouverture("sesame-123", fin).unwrap();
+    assert!(c.garder_ouverture(&s("faux-faux"), fin).unwrap_err().phrase.starts_with("Mot de passe du logiciel refuse"));
+    assert!(c.ouverture_gardee().unwrap().is_none());
+    c.garder_ouverture(&s("sesame-123"), fin).unwrap();
     assert!(!String::from_utf8_lossy(&std::fs::read(c.chemin_gardee().unwrap()).unwrap()).contains("sesame-123"));
-    assert_eq!(c.ouverture_gardee().unwrap().as_deref(), Some("sesame-123"));
+    assert_eq!(c.ouverture_gardee().unwrap().as_ref().map(Secret::devoiler), Some("sesame-123"));
     assert_eq!(c.fin_ouverture_gardee().unwrap(), Some(fin));
     // un autre coffre, meme poste : rien
     let autre = Coffre { racine: dossier().join("autre"), dossier_cle: c.dossier_cle.clone(), maintenant: c.maintenant.clone(), variables: BTreeMap::new() };
-    assert_eq!(autre.ouverture_gardee().unwrap(), None);
+    assert!(autre.ouverture_gardee().unwrap().is_none());
     assert!(c.chemin_gardee().unwrap().exists());
     // expiree : elle s'efface
     let tard = Coffre { racine: c.racine.clone(), dossier_cle: c.dossier_cle.clone(), maintenant: minute(4, 2, 6), variables: BTreeMap::new() };
     assert_eq!(tard.fin_ouverture_gardee().unwrap(), None);
-    assert_eq!(tard.ouverture_gardee().unwrap(), None);
+    assert!(tard.ouverture_gardee().unwrap().is_none());
     assert!(!c.chemin_gardee().unwrap().exists());
 }
 

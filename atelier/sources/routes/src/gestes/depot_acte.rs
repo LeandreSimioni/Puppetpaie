@@ -393,9 +393,9 @@ pub fn deposer_dsn_dans(
     }
 
     let joue = branchement.joue();
-    let mut mdp: Option<String> = None;
+    let mut mdp: Option<socle::secret::Secret> = None;
     if !joue {
-        mdp = motdepasse_organisme(ctx, "net-entreprises", preuve.and_then(|p| p.motdepasse.as_deref()))?;
+        mdp = motdepasse_organisme(ctx, "net-entreprises", preuve.and_then(|p| p.motdepasse.as_ref()))?;
     }
     if reel && !joue {
         refuser_si_copie(ctx, "une DSN reelle")?;
@@ -515,7 +515,7 @@ pub(crate) fn deposer_dpae_avec(
         let soucis = match donne.as_deref() {
             Some(c) => c.verifier_identifiants()?,
             None => {
-                let mdp = motdepasse_organisme(ctx, "urssaf", preuve.and_then(|p| p.motdepasse.as_deref()))?;
+                let mdp = motdepasse_organisme(ctx, "urssaf", preuve.and_then(|p| p.motdepasse.as_ref()))?;
                 let c = Client::dpae(ctx, majuscules, mdp);
                 let soucis = c.verifier_identifiants()?;
                 client = Some(c);

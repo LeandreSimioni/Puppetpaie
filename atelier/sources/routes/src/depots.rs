@@ -199,13 +199,14 @@ pub(crate) struct ChargeDeposer {
 pub(crate) struct DepotDemande {
     #[serde(flatten)]
     charge: ChargeDeposer,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    motdepasse: Option<String>,
+    // La charge se relit aussitot par la route `deposer` (`administrateur::en_charge`) : le mot de passe y passe, nomme.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::secret::ecrit_option")]
+    motdepasse: Option<socle::secret::Secret>,
 }
 
 impl ChargeDeposer {
     /// Le depot de la declaration `d`, reel ou de test, sous le mot de passe tape.
-    pub(crate) fn de(d: Designation, reel: bool, motdepasse: Option<String>) -> DepotDemande {
+    pub(crate) fn de(d: Designation, reel: bool, motdepasse: Option<socle::secret::Secret>) -> DepotDemande {
         let Designation { quoi, mois, etablissement, engagements, fichier } = d;
         DepotDemande { charge: ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel: Some(reel), forcer: None, contournement: None }, motdepasse }
     }
@@ -789,12 +790,12 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
 /// corps du POST, il n'est ni journalise ni renvoye. `contournement` : le motif ECRIT d'un depot reel sans
 /// repetition. `forcer` : l'annule-et-remplace voulu, apres l'avertissement que la page affiche sur
 /// `DsnDejaDeposee` -- jamais par defaut.
-fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&str>) -> R<Deposee> {
+fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::Secret>) -> R<Deposee> {
     let ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel, forcer, contournement } = c;
     let (reel, forcer) = (reel == Some(true), forcer == Some(true));
     let d = Designation { quoi, mois, etablissement, engagements, fichier };
     let (fichier, _) = designee(ctx, &d)?;
-    let preuve = Preuve::du_mot_de_passe(motdepasse.map(String::from));
+    let preuve = Preuve::du_mot_de_passe(motdepasse.cloned());
     // Le motif ecrit d'un reel sans test ; aucun motif, aucun contournement (`depot_acte::exiger_repetition`).
     let contournement: String = contournement.iter().map(|c| c.trim()).collect();
     let contournement = contournement.as_str();

@@ -27,6 +27,7 @@ pub mod num;
 pub mod paris;
 pub mod pays;
 pub mod piece;
+pub mod secret;
 pub mod nfkd_ascii;
 pub mod tables_nfkc;
 pub mod temps;

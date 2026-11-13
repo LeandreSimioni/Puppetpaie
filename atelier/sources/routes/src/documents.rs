@@ -739,8 +739,8 @@ struct ChargeEnvoyerDocuments {
 }
 
 /// Envoie a chaque salarie ses documents du mois, sur le mot de passe du logiciel tape pour l'envoi. Irreversible.
-fn envoyer_documents(ctx: &Contexte, c: ChargeEnvoyerDocuments, mot_de_passe: Option<&str>, ouvrir: Ouvrir) -> R<DocumentsEnvoyes> {
-    let preuve = Preuve::du_mot_de_passe(mot_de_passe.map(String::from));
+fn envoyer_documents(ctx: &Contexte, c: ChargeEnvoyerDocuments, mot_de_passe: Option<&socle::secret::Secret>, ouvrir: Ouvrir) -> R<DocumentsEnvoyes> {
+    let preuve = Preuve::du_mot_de_passe(mot_de_passe.cloned());
     let prepare = preparer_envoi(ctx, c.mois, c.salaries.as_deref(), Some(&preuve), ouvrir)?;
     expedier_envoi(ctx, prepare, c.mois, &preuve, INTERFACE)
 }

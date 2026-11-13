@@ -211,7 +211,7 @@ impl crate::enveloppe::Dite for Suppression {
 /// qui dit ce qui sera efface ; rien ne bouge. Avec `confirme` : la suppression (`supprimer`), la preuve d'une compagnie
 /// reelle comprise (`motdepasse`, que la page a fait taper ; sinon le moteur le demande lui-meme a un humain). `avant` :
 /// ce que la fenetre lache de la compagnie avant qu'elle parte (rien, par `moteur route`).
-pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&str>, avant: &dyn Fn(&Path)) -> R<Suppression> {
+pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&socle::secret::Secret>, avant: &dyn Fn(&Path)) -> R<Suppression> {
     if charge.confirme != Some(true) {
         return question(racine);
     }
@@ -222,13 +222,13 @@ pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&str>, a
 
 /// La preuve d'une suppression reelle : le mot de passe du logiciel, verifie sur le coffre de la compagnie. Vide : le
 /// moteur le demande lui-meme (`demande::mot_de_passe_de_l_acte`). Un coffre sans mot de passe du logiciel ne prouve rien.
-fn prouver(racine: &Path, nom: &str, motdepasse: Option<&str>, poste: &Poste) -> R<()> {
+fn prouver(racine: &Path, nom: &str, motdepasse: Option<&socle::secret::Secret>, poste: &Poste) -> R<()> {
     let coffre = poste.coffre(racine);
     if !coffre.ouverture_exigee()? {
         return Err(refus("Aucun mot de passe du logiciel n'est posé pour cette compagnie : rien ne prouve qui la supprime. Rien n'a été supprimé."));
     }
-    let tape = match motdepasse.filter(|m| !m.is_empty()) {
-        Some(m) => m.to_string(),
+    let tape = match motdepasse.filter(|m| !m.devoiler().is_empty()) {
+        Some(m) => m.clone(),
         None => {
             let acte = compagnie::demande::Acte::nouveau(format!("supprimer définitivement la compagnie {}", nom), None, "");
             compagnie::demande::mot_de_passe_de_l_acte(racine, &acte).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été supprimé.", p)))?
@@ -243,7 +243,7 @@ fn prouver(racine: &Path, nom: &str, motdepasse: Option<&str>, poste: &Poste) ->
 /// SUPPRIMER `racine`, compagnie de l'installation `inst` : la preuve d'abord (une compagnie reelle), puis `avant` (la
 /// fenetre lache ce qu'elle tient de la compagnie), puis l'effacement (`effacer`). Rend le nom de la compagnie. Un refus
 /// n'efface rien et n'appelle pas `avant`.
-pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&str>, poste: &Poste, avant: &dyn Fn(&Path)) -> R<String> {
+pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&socle::secret::Secret>, poste: &Poste, avant: &dyn Fn(&Path)) -> R<String> {
     let g = genre(inst, racine)?;
     let nom = installation::nom_de(racine)?;
     if g == Genre::Reelle {

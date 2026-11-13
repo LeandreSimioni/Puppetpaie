@@ -963,7 +963,8 @@ pub struct ConfigDiagnostic {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub poste: Option<NumeroDePoste>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cle: Option<String>,
+    #[serde(serialize_with = "socle::secret::ecrit_option")]
+    pub cle: Option<socle::secret::Secret>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub serveur: Option<Url>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1052,7 +1053,8 @@ impl From<NumeroDePoste> for String {
 }
 
 /// Une cle de poste telle que le serveur les donne : 64 hexadecimaux.
-fn cle_de_poste(s: &str) -> bool {
+fn cle_de_poste(cle: &socle::secret::Secret) -> bool {
+    let s = cle.devoiler();
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 

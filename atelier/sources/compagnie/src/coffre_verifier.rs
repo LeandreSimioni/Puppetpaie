@@ -28,7 +28,7 @@ pub const COURRIEL: &str = "courriel";
 
 /// De quoi ouvrir une session chez net-entreprises ou l'Urssaf : le service, et son mot de passe (`None` quand rien
 /// n'est pose ; la variable d'environnement a deja ete consultee).
-pub type Authentifier<'a> = &'a mut dyn FnMut(&Contexte, &str, Option<String>) -> Result<(), Panne>;
+pub type Authentifier<'a> = &'a mut dyn FnMut(&Contexte, &str, Option<socle::secret::Secret>) -> Result<(), Panne>;
 
 /// De quoi ouvrir la boite : `courriel.verifier` (une seule connexion IMAP).
 pub type OuvrirBoite<'a> = &'a mut dyn FnMut(&Contexte) -> R<Ouverture>;
@@ -63,7 +63,7 @@ pub fn verifier_secret(ctx: &Contexte, service: &str) -> R<Verdict> {
 }
 
 /// L'authentification d'un service : le client de la DSN, ou celui de la DPAE (un autre compte).
-fn authentifier_pour_de_vrai(ctx: &Contexte, service: &str, mdp: Option<String>) -> Result<(), Panne> {
+fn authentifier_pour_de_vrai(ctx: &Contexte, service: &str, mdp: Option<socle::secret::Secret>) -> Result<(), Panne> {
     let mut client = if service == NET_ENTREPRISES { Client::dsn(ctx, "production", mdp)? } else { Client::dpae(ctx, false, mdp) };
     client.authentifier()
 }

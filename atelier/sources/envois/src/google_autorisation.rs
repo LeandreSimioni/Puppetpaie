@@ -330,7 +330,7 @@ pub fn autoriser(
 
     let corps = encoder(&[
         ("client_id", application.client_id.clone()),
-        ("client_secret", application.client_secret.clone()),
+        ("client_secret", application.client_secret.devoiler().to_string()),
         ("code", code),
         ("code_verifier", verificateur),
         ("grant_type", "authorization_code".into()),
@@ -343,12 +343,13 @@ pub fn autoriser(
         ..Requete::get(&adresses.jetons, DELAI)
     })?;
     let non_vide = |t: Option<String>| t.filter(|x| !x.is_empty());
-    let Some(rafraichissement) = non_vide(reponse.refresh_token) else {
+    let non_vide_secret = |t: Option<socle::secret::Secret>| t.filter(|x| !x.devoiler().is_empty());
+    let Some(rafraichissement) = non_vide_secret(reponse.refresh_token) else {
         return Err(refus(
             "Google n'a pas renvoye de jeton de rafraichissement. Retirer\nl'acces de l'application sur myaccount.google.com > Securite >\nVos connexions a des applications tierces, puis recommencer.",
         ));
     };
-    let Some(acces) = non_vide(reponse.access_token) else {
+    let Some(acces) = non_vide_secret(reponse.access_token) else {
         return Err(refus("Google n'a pas renvoye de jeton d'acces : aucune autorisation enregistree. Recommencer."));
     };
     // Sans `scope`, Google n'a accorde aucune permission.
@@ -367,7 +368,7 @@ pub fn autoriser(
         ));
     }
 
-    let autorisation = format!("Bearer {}", acces);
+    let autorisation = format!("Bearer {}", acces.devoiler());
     let entetes = [("Authorization", autorisation.as_str())];
     let infos: ReponseCompte = appeler(&Requete { entetes: &entetes, ..Requete::get(&adresses.compte, DELAI) })?;
     let Some(compte) = non_vide(infos.email) else {
@@ -380,7 +381,7 @@ pub fn autoriser(
 /// Ce que l'autorisation obtient : le jeton de rafraichissement, l'adresse du compte, les permissions accordees.
 /// L'appelant le scelle (`routes::coffre::sceller_le_jeton`) : ce flux n'ouvre jamais le coffre.
 pub struct JetonGoogle {
-    pub rafraichissement: String,
+    pub rafraichissement: socle::secret::Secret,
     pub compte: String,
     pub permissions: Vec<String>,
 }

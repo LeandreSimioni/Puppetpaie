@@ -12,6 +12,7 @@
 //! le message ne releve rien. Ce qu'elle trouve en chemin et qui touche a la compagnie (les incidents des retours, les
 //! attestations France Travail a ranger) va dans les suites (`suites::Suites`).
 
+use socle::secret::Secret;
 use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
@@ -138,16 +139,16 @@ fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
 /// `netentreprises.Client` et `dpae_api.ClientDpae`.
 pub struct Client {
     pub adresses: Adresses,
-    pub jeton: Option<String>,
+    pub jeton: Option<Secret>,
     pub declarant: crate::transport::Identite,
-    motdepasse: Option<String>,
+    motdepasse: Option<Secret>,
     variable: &'static str,
     majuscules: bool,
 }
 
 impl Client {
     /// `Client(ctx, environnement, motdepasse=...)` : le compte net-entreprises de la DSN.
-    pub fn dsn(ctx: &Contexte, environnement: &str, motdepasse: Option<String>) -> Result<Client, Panne> {
+    pub fn dsn(ctx: &Contexte, environnement: &str, motdepasse: Option<Secret>) -> Result<Client, Panne> {
         let declarant = crate::transport::declarant(&ctx.entreprise);
         Ok(Client {
             adresses: adresses_dsn(environnement)?,
@@ -160,7 +161,7 @@ impl Client {
     }
 
     /// `ClientDpae(ctx, majuscules, motdepasse)` : le compte Urssaf, qui n'est pas celui de la DSN.
-    pub fn dpae(ctx: &Contexte, majuscules: bool, motdepasse: Option<String>) -> Client {
+    pub fn dpae(ctx: &Contexte, majuscules: bool, motdepasse: Option<Secret>) -> Client {
         // Sans compte DPAE dit, le declarant est l'entreprise, sans nom ni prenom, et le service n'est pas dit.
         let compte = ctx.entreprise.api_dpae.dite();
         let siret = compte.and_then(|c| c.siret.en_texte()).or_else(|| ctx.entreprise.siret.en_texte());
@@ -176,27 +177,27 @@ impl Client {
 
     /// Le mot de passe que l'appelant a donne (le moteur le prend a l'environnement ou au coffre) : le client n'en
     /// cherche aucun.
-    fn secret(&self) -> Option<String> {
-        self.motdepasse.clone().filter(|m| !m.is_empty())
+    fn secret(&self) -> Option<&Secret> {
+        self.motdepasse.as_ref().filter(|m| !m.devoiler().is_empty())
     }
 
     /// `ClientDpae.verifier_identifiants` : ce qui ferait echouer la connexion MtoM. Le mot de passe ne
     /// quitte pas le client : on ne sait que s'il porte un `@`.
     pub fn verifier_identifiants(&self) -> Result<Vec<String>, Echec> {
-        let arobase = self.secret().is_some_and(|m| m.contains('@'));
+        let arobase = self.secret().is_some_and(|m| m.devoiler().contains('@'));
         crate::depot::identifiants(&self.declarant, arobase)
     }
 
     /// `Client.authentifier` : ouvre une session. Le mot de passe ne survit pas a cet appel.
     pub fn authentifier(&mut self) -> Result<(), Panne> {
-        let mdp = self.secret().map(|m| if self.majuscules { m.to_uppercase() } else { m });
+        let mdp = self.secret().map(|m| if self.majuscules { m.transforme(str::to_uppercase) } else { m.clone() });
         let session = crate::transport::authentifier(&crate::transport::Authentification {
             url: &self.adresses.authentification,
             declarant: &self.declarant,
-            motdepasse: mdp.as_deref(),
+            motdepasse: mdp.as_ref(),
             variable: self.variable,
             service: self.adresses.service.as_deref(),
-            jeton: self.jeton.as_deref(),
+            jeton: self.jeton.as_ref(),
         })?;
         self.jeton = Some(session.jeton);
         Ok(())
@@ -204,20 +205,20 @@ impl Client {
 
     pub fn assurer_session(&mut self) -> Result<(), Panne> {
         // Un jeton vide n'ouvre pas de session.
-        if !self.jeton.as_deref().is_some_and(|j| !j.is_empty()) {
+        if !self.jeton.as_ref().is_some_and(|j| !j.devoiler().is_empty()) {
             self.authentifier()?;
         }
         Ok(())
     }
 
     fn appel(&self, url: &Url) -> Result<(Vec<u8>, crate::transport::Entetes), Panne> {
-        Ok(crate::transport::appeler(url, self.jeton.as_deref())?)
+        Ok(crate::transport::appeler(url, self.jeton.as_ref())?)
     }
 
     /// La consultation d'une plage.
     fn consulter(&mut self, base: &Url, debut: Moment, fin: Option<Moment>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
-        Ok(crate::transport::consulter(base, self.jeton.as_deref(), debut, fin)?)
+        Ok(crate::transport::consulter(base, self.jeton.as_ref(), debut, fin)?)
     }
 
     pub fn lister_retours(&mut self, debut: Moment, fin: Moment) -> Result<Vec<Annonce>, Panne> {

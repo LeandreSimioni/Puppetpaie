@@ -31,6 +31,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use crate::coffre::{retenir_mot_de_passe_tape, Coffre};
+use socle::secret::Secret;
 use socle::echec::{refus, Echec, R};
 use socle::mois::MoisOuJour;
 
@@ -70,20 +71,12 @@ pub struct Question {
     pub invite: Option<String>,
 }
 
-/// Ce qu'un canal rapporte : le mot de passe tape, ou le refus (fenetre fermee, rien tape, personne la).
+/// Ce qu'un canal rapporte : le mot de passe tape (un secret, que `{:?}` ne montre jamais), ou le refus (fenetre fermee,
+/// rien tape, personne la).
+#[derive(Debug)]
 pub enum Reponse {
-    Mot(String),
+    Mot(Secret),
     Refus(Echec),
-}
-
-// Un `Debug` qui ne montre jamais le mot de passe : un `{:?}` perdu ne doit rien fuir.
-impl std::fmt::Debug for Reponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Reponse::Mot(_) => f.write_str("Reponse::Mot(<masque>)"),
-            Reponse::Refus(p) => write!(f, "Reponse::Refus({:?})", p),
-        }
-    }
 }
 
 /// Ce que l'appelant recoit : « accepte » ou « refuse », et le refus (sans rien du secret).
@@ -161,14 +154,14 @@ fn question_de_la_seance(heures: i64, essai: u8, precedent_refuse: bool) -> Ques
 
 /// Pose la question jusqu'a `ESSAIS` fois ; rend le mot de passe qui ouvre le coffre de `racine`, ou la phrase du refus.
 /// Le mot de passe sort d'ici vers l'appelant interne seul (jamais vers un agent) ; rien d'autre n'en garde trace.
-fn obtenir(racine: &Path, canal: &dyn Canal, question: impl Fn(u8, bool) -> Question) -> R<String> {
+fn obtenir(racine: &Path, canal: &dyn Canal, question: impl Fn(u8, bool) -> Question) -> R<Secret> {
     let coffre = Coffre::du_poste(racine);
     let mut refuse = false;
     for essai in 1..=ESSAIS {
         match canal.demander(&question(essai, refuse)) {
             Reponse::Refus(e) => return Err(e),
             Reponse::Mot(m) => {
-                if m.is_empty() {
+                if m.devoiler().is_empty() {
                     return Err(refus("Rien n'a ete tape : refuse."));
                 }
                 // Un coffre illisible ne dit rien du mot de passe : son refus est celui du coffre.
@@ -208,7 +201,7 @@ pub fn autoriser_acte(racine: &Path, acte: &Acte) -> Verdict {
 /// mot de passe tape, verifie sur le coffre de `racine` (une compagnie rattachee), RENDU a l'appelant, qui le
 /// passe comme preuve au depot de chaque compagnie -- chaque depot le reverifie sur son propre coffre (`verifier_preuve`).
 /// Rien n'est retenu ici. Refuse comme `autoriser_acte` : sans mot de passe pose, sans humain, fenetre fermee.
-pub fn mot_de_passe_de_l_acte(racine: &Path, acte: &Acte) -> R<String> {
+pub fn mot_de_passe_de_l_acte(racine: &Path, acte: &Acte) -> R<Secret> {
     if let Some(e) = sans_mot_de_passe_pose(racine) {
         return Err(e);
     }
@@ -248,11 +241,11 @@ Poser un mot de passe est un geste d'humain : le faire depuis un terminal ouvert
 ///
 /// Rend le texte tape, ou la phrase du refus. RIEN n'est verifie ici (ce n'est pas une preuve d'acte : `autoriser_acte` en est
 /// une) et RIEN n'est retenu : l'appelant range le secret et le laisse tomber. Un texte vide est un refus.
-pub fn saisir_secret(titre: &str, lignes: &[String], invite: &str) -> R<String> {
+pub fn saisir_secret(titre: &str, lignes: &[String], invite: &str) -> R<Secret> {
     let Some(canal) = canal_installe() else { return Err(refus(SANS_HUMAIN_SAISIE)) };
     let question = Question { titre: titre.into(), lignes: lignes.to_vec(), essai: 1, precedent_refuse: false, seance: false, invite: Some(invite.into()) };
     match canal.demander(&question) {
-        Reponse::Mot(m) if m.is_empty() => Err(refus("Rien n'a ete tape : rien n'est pose.")),
+        Reponse::Mot(m) if m.devoiler().is_empty() => Err(refus("Rien n'a ete tape : rien n'est pose.")),
         Reponse::Mot(m) => Ok(m),
         Reponse::Refus(e) if e.phrase == SANS_HUMAIN && e.a_part.is_none() => Err(refus(SANS_HUMAIN_SAISIE)),
         Reponse::Refus(e) => Err(e),
@@ -261,10 +254,10 @@ pub fn saisir_secret(titre: &str, lignes: &[String], invite: &str) -> R<String> 
 
 /// Un secret a poser, tape DEUX fois par le meme canal (`saisir_secret`) : la frappe ne s'affiche pas, la seconde la
 /// confirme. Rend le texte, ou le refus (rien n'est pose).
-pub fn saisir_deux_fois(titre: &str, lignes: &[String], invite: &str) -> R<String> {
+pub fn saisir_deux_fois(titre: &str, lignes: &[String], invite: &str) -> R<Secret> {
     let mot = saisir_secret(titre, lignes, invite)?;
     let bis = saisir_secret("PuppetPaie : le retaper", &[], "le retaper (rien ne s'affiche) : ")?;
-    if bis != mot {
+    if !bis.egal_a(mot.devoiler()) {
         return Err(refus("Les deux saisies different. Rien n'a ete pose."));
     }
     Ok(mot)
@@ -311,7 +304,7 @@ impl Canal for Fausse {
         let prochaine = self.reponses.get((*rang).min(self.reponses.len().saturating_sub(1))).cloned().flatten();
         *rang += 1;
         match prochaine {
-            Some(m) => Reponse::Mot(m),
+            Some(m) => Reponse::Mot(Secret::nouveau(m)),
             None => Reponse::Refus(refus("Fenetre fermee : refuse. Rien n'est parti.")),
         }
     }
@@ -498,7 +491,7 @@ mod fenetre_systeme {
                             sans_fin = t;
                         }
                     }
-                    Reponse::Mot(sans_fin.to_string())
+                    Reponse::Mot(socle::secret::Secret::nouveau(sans_fin.to_string()))
                 }
                 Ok(_) => Reponse::Refus(socle::echec::refus(FERMEE)),
                 Err(e) => Reponse::Refus(socle::refus!("La fenetre du mot de passe ne s'ouvre pas ({}) : refuse. Rien n'est parti.", e)),
@@ -613,7 +606,7 @@ mod terminal_windows {
                 }
             });
             match recu.recv_timeout(ATTENTE) {
-                Ok(Ok(m)) => Reponse::Mot(m.trim_end_matches(['\r', '\n']).to_string()),
+                Ok(Ok(m)) => Reponse::Mot(Secret::nouveau(m.trim_end_matches(['\r', '\n']).to_string())),
                 Ok(Err(e)) => Reponse::Refus(socle::refus!("La console ne se lit pas ({}) : refuse. Rien n'est parti.", e)),
                 Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => Reponse::Refus(socle::echec::refus("Rien n'a ete tape (delai depasse, ou pas de console) : refuse. Rien n'est parti.")),
             }
@@ -720,7 +713,7 @@ mod terminal_unix {
                 return refus_du_terminal("Le terminal n'a pas été rendu tel qu'il était (sa saisie reste masquée) : refusé. Rien n'est parti.", e);
             }
             match ligne {
-                Ok(Ok(l)) => Reponse::Mot(l.trim_end_matches(['\r', '\n']).to_string()),
+                Ok(Ok(l)) => Reponse::Mot(socle::secret::Secret::nouveau(l.trim_end_matches(['\r', '\n']).to_string())),
                 Ok(Err(e)) => refus_du_terminal("Le terminal ne se lit pas : refuse. Rien n'est parti.", e),
                 Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => Reponse::Refus(socle::echec::refus("Rien n'a ete tape (delai depasse ou terminal ferme) : refuse. Rien n'est parti.")),
             }
@@ -791,9 +784,9 @@ mod tests {
         oublier_mot_de_passe_tape();
         let m = Monde { _tour: tour, racine, poste_a, poste_b };
         let c = m.coffre_a();
-        c.poser("net-entreprises", NET, None).unwrap();
-        c.poser("courriel", BOITE, Some("moi@exemple.com")).unwrap();
-        c.poser_ouverture(LOGICIEL, None).unwrap();
+        c.poser("net-entreprises", &Secret::nouveau(NET), None).unwrap();
+        c.poser("courriel", &Secret::nouveau(BOITE), Some("moi@exemple.com")).unwrap();
+        c.poser_ouverture(&Secret::nouveau(LOGICIEL), None).unwrap();
         std::env::set_var("PUPPETPAIE_CLE", &m.poste_b);
         m
     }
@@ -814,7 +807,7 @@ mod tests {
     fn un_mauvais_mot_de_passe_n_ouvre_pas_et_ne_dit_rien_du_secret() {
         let m = monde();
         let mauvais = "Pas-le-bon-mot-de-passe-77";
-        crate::coffre::retenir_mot_de_passe_tape(mauvais);
+        crate::coffre::retenir_mot_de_passe_tape(&Secret::nouveau(mauvais));
         for r in [
             crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").map(|_| ()).map_err(|e| e.phrase),
             crate::boite::mot_de_passe(&m.racine).map(|_| ()).map_err(|e| e.phrase),
@@ -876,16 +869,16 @@ mod tests {
         let m = monde();
         // Le mot de passe est LA, par les trois voies qui ouvrent le coffre : aucune ne vaut aval.
         std::env::set_var("PUPPETPAIE_MOTDEPASSE", LOGICIEL);
-        crate::coffre::retenir_mot_de_passe_tape(LOGICIEL);
+        crate::coffre::retenir_mot_de_passe_tape(&Secret::nouveau(LOGICIEL));
         {
             let _g = installer(Rc::new(Fausse::mot(LOGICIEL)));
             assert!(matches!(ouvrir_seance(&m.racine), Verdict::Accepte));
         }
         assert!(proteger_un_acte(&m).contains("aucun humain"));
         // Et la charge de la route, elle, reste une preuve (la fenetre Tk, la page) : le mot de passe tape y arrive.
-        let preuve = crate::preuve::Preuve { motdepasse: Some(LOGICIEL.into()), ..Default::default() };
+        let preuve = crate::preuve::Preuve { motdepasse: Some(Secret::nouveau(LOGICIEL)), ..Default::default() };
         assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&preuve), septembre(), "x", "y").is_ok());
-        let mauvaise = crate::preuve::Preuve { motdepasse: Some("Pas-le-bon-mot-de-passe-77".into()), ..Default::default() };
+        let mauvaise = crate::preuve::Preuve { motdepasse: Some(Secret::nouveau("Pas-le-bon-mot-de-passe-77")), ..Default::default() };
         assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&mauvaise), septembre(), "x", "y").is_err());
     }
 
@@ -904,8 +897,8 @@ mod tests {
         // Plus rien de retenu en memoire : c'est la seance GARDEE (12 h) qui ouvre, dans un processus neuf.
         oublier_mot_de_passe_tape();
         let lu = crate::consultation::mot_de_passe_de_consultation(&m.ctx(), "net-entreprises").unwrap();
-        assert_eq!(lu.as_deref(), Some(NET));
-        assert_eq!(crate::boite::mot_de_passe(&m.racine).unwrap(), BOITE);
+        assert_eq!(lu.as_ref().map(Secret::devoiler), Some(NET));
+        assert_eq!(crate::boite::mot_de_passe(&m.racine).unwrap().devoiler(), BOITE);
         // Mais un acte reel, lui, redemande -- et sans humain, refuse.
         assert!(proteger_un_acte(&m).contains("aucun humain"));
     }

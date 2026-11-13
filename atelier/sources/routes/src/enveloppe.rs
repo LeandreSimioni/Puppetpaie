@@ -92,7 +92,7 @@ pub struct Charge {
     objet: Objet,
     /// Le mot de passe que l'objet porte, lu une fois en sa forme a l'entree (`MotDePasseDeLaCharge`).
     #[serde(skip)]
-    mot_de_passe: Option<String>,
+    mot_de_passe: Option<socle::secret::Secret>,
 }
 
 /// LE MOT DE PASSE DE L'ENVELOPPE, seul, lu en sa forme : un texte, ou rien. Un texte vide n'est pas un mot de passe : la
@@ -100,7 +100,7 @@ pub struct Charge {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MotDePasseDeLaCharge {
-    motdepasse: Option<String>,
+    motdepasse: Option<socle::secret::Secret>,
 }
 
 impl<'de> Deserialize<'de> for Charge {
@@ -118,7 +118,7 @@ impl Charge {
     #[track_caller]
     fn de_l_objet(objet: Objet) -> R<Charge> {
         let lu: MotDePasseDeLaCharge = objet.lire_cles(&[MOT_DE_PASSE], "La demande est mal formée : le mot de passe est un texte.").map_err(|m| m.reclasser(Classe::MalFormee))?;
-        Ok(Charge { objet, mot_de_passe: lu.motdepasse.filter(|m| !m.is_empty()) })
+        Ok(Charge { objet, mot_de_passe: lu.motdepasse.filter(|m| !m.devoiler().is_empty()) })
     }
 
     /// La charge d'une route qui ne prend rien : `{}`.
@@ -149,8 +149,8 @@ impl Charge {
     }
 
     /// Le mot de passe du logiciel tape pour cette route, s'il est donne (un texte non vide).
-    pub fn mot_de_passe(&self) -> Option<&str> {
-        self.mot_de_passe.as_deref()
+    pub fn mot_de_passe(&self) -> Option<&socle::secret::Secret> {
+        self.mot_de_passe.as_ref()
     }
 
     /// LE MOIS DE LA CHARGE, s'il est donne : une route qui porte un mois se sert sous la configuration de ce mois

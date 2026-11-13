@@ -44,16 +44,18 @@ fn declarant() -> Identite {
     Identite { siret: Some("12345678901234".into()), nom: Some("DUPONT".into()), prenom: Some("Jean Pierre".into()) }
 }
 
-fn auth<'a>(url: &'a Url, declarant: &'a Identite, motdepasse: Option<&'a str>) -> Authentification<'a> {
-    Authentification { url, declarant, motdepasse, variable: "NET_ENTREPRISES_MOTDEPASSE", service: Some("97"), jeton: None }
+/// L'authentification du guide, avec ce mot de passe.
+fn authentifier_avec(url: &Url, declarant: &Identite, motdepasse: Option<&str>) -> Result<envois::transport::Session, envois::transport::EchecApi> {
+    let secret = motdepasse.map(|m| socle::secret::Secret::nouveau(m));
+    authentifier(&Authentification { url, declarant, motdepasse: secret.as_ref(), variable: "NET_ENTREPRISES_MOTDEPASSE", service: Some("97"), jeton: None })
 }
 
 #[test]
 fn l_authentification_envoie_les_identifiants_du_guide_et_rend_le_jeton() {
     let (base, recu) = faux();
     let (url, d) = (Url::lire(&format!("{}/auth", base)).unwrap(), declarant());
-    let r = authentifier(&auth(&url, &d, Some("a&b<c>d"))).unwrap();
-    assert_eq!(r.jeton, "JETON-123");
+    let r = authentifier_avec(&url, &d, Some("a&b<c>d")).unwrap();
+    assert_eq!(r.jeton.devoiler(), "JETON-123");
     let v = &recu.lock().unwrap()[0];
     assert_eq!((v.methode.as_str(), en_tete(v, "content-type")), ("POST", Some("application/xml")));
     // Le mot de passe s'echappe : un `<` ou un `&` ne casse pas le XML du guide.
@@ -69,10 +71,10 @@ fn un_mot_de_passe_absent_ou_un_declarant_incomplet_ne_partent_pas() {
     let url = Url::lire(&format!("{}/auth", base)).unwrap();
     let d = declarant();
     for mdp in [None, Some("")] {
-        assert!(authentifier(&auth(&url, &d, mdp)).is_err());
+        assert!(authentifier_avec(&url, &d, mdp).is_err());
     }
     let incomplet = Identite { siret: Some("1".into()), ..Identite::default() };
-    assert!(authentifier(&auth(&url, &incomplet, Some("secret"))).is_err());
+    assert!(authentifier_avec(&url, &incomplet, Some("secret")).is_err());
     assert!(recu.lock().unwrap().is_empty(), "rien n'est parti");
 }
 
@@ -82,7 +84,7 @@ fn le_mot_de_passe_ne_fuit_dans_aucun_message() {
     let d = declarant();
     for chemin in ["/code/401", "/code/500", "/ferme", "/introuvable"] {
         let url = Url::lire(&format!("{}{}", base, chemin)).unwrap();
-        let r = authentifier(&auth(&url, &d, Some("Tres-Secret-42")));
+        let r = authentifier_avec(&url, &d, Some("Tres-Secret-42"));
         let tout = match r {
             Ok(s) => format!("{:?}", s),
             Err(e) => format!("{:?}", e),
@@ -95,7 +97,7 @@ fn le_mot_de_passe_ne_fuit_dans_aucun_message() {
 fn un_depot_part_en_post_text_plain_gzip_avec_le_jeton() {
     let (base, recu) = faux();
     let corps = gzip(b"faux depot");
-    let (rendu, _) = depot(&Url::lire(&format!("{}/depot", base)).unwrap(),"J-9", &corps, "dsn", 10).unwrap();
+    let (rendu, _) = depot(&Url::lire(&format!("{}/depot", base)).unwrap(), &socle::secret::Secret::nouveau("J-9"), &corps, "dsn", 10).unwrap();
     assert_eq!(rendu, b"<retours/>");
     let v = &recu.lock().unwrap()[0];
     assert_eq!(v.methode, "POST");
