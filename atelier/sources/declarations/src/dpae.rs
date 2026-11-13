@@ -492,7 +492,7 @@ pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> R<Vec<String>>
         saisies.push((droit::fiche::NomDeFiche::Salarie, format!("la fiche de {}", qui), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &e.salarie.champs)?));
     }
     let fiches: Vec<(droit::fiche::NomDeFiche, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
-    if let Some(m) = crate::champs::refus_des_manques("dpae", &fiches, &[])? {
+    if let Some(m) = crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dpae, &fiches, &[])? {
         return Err(refus(m));
     }
     if embauches.is_empty() {

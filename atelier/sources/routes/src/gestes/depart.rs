@@ -774,7 +774,7 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
         saisies.push((NomDeFiche::Spectacle, qui, Saisie::de_la_fiche(NomDeFiche::Spectacle, &sp.champs)?));
     }
     let fiches: Vec<(NomDeFiche, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
-    match declarations::champs::refus_des_manques("bulletin", &fiches, &[])? {
+    match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Bulletin, &fiches, &[])? {
         Some(m) => Err(erreur(Classe::Refuse, m)),
         None => Ok(()),
     }

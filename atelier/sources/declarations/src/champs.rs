@@ -311,10 +311,10 @@ pub struct Champ {
     /// Les actes qui ne se font pas sans lui (`exige_par` : `dsn`, `dpae`, `contrat`, `bulletin`, `certificat`, `paie`) :
     /// LA SEULE LISTE de ce qu'un acte exige d'une fiche, que « Pour demarrer » (`demarrage::manques`) et l'acte
     /// (`refus_des_manques`) lisent.
-    pub exige_par: Option<Vec<String>>,
+    pub exige_par: Option<Vec<ActeExigeant>>,
     /// Les gestes qu'il sert sans les bloquer (`utile_pour`, meme vocabulaire que `exige_par`) : sans lui, ils se font
     /// autrement, ce que dit `sinon`. « Pour demarrer » le dit : « utile pour ... ; sinon, ... ».
-    pub utile_pour: Option<Vec<String>>,
+    pub utile_pour: Option<Vec<ActeExigeant>>,
     /// Ce qui se passe sans lui, quand rien ne se refuse (`sinon`).
     pub sinon: Option<String>,
     /// Les cases d'une structure (`champs`), decrites chacune ; une autre cle s'y refuse. Une case peut etre un chemin
@@ -340,7 +340,7 @@ pub struct Case {
     pub aide: Option<String>,
     pub exemple: Option<String>,
     pub derive_de: Option<Chemin>,
-    pub exige_par: Option<Vec<String>>,
+    pub exige_par: Option<Vec<ActeExigeant>>,
     pub choix: Option<Vec<String>>,
     pub libelles: Option<Libelles>,
     /// Les choix se montrent en boutons a cocher, chacun une phrase entiere (`boutons`).
@@ -570,11 +570,11 @@ pub struct Description<'a> {
     pub exige_si: Option<&'a Condition>,
     pub ecran: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub exige_par: Option<&'a [String]>,
+    pub exige_par: Option<&'a [ActeExigeant]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bloque: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub utile_pour: Option<&'a [String]>,
+    pub utile_pour: Option<&'a [ActeExigeant]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub utile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -606,7 +606,7 @@ pub struct DescriptionDeCase<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub choix: Option<&'a [String]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub exige_par: Option<&'a [String]>,
+    pub exige_par: Option<&'a [ActeExigeant]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bloque: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1169,23 +1169,77 @@ impl<'de> Visitor<'de> for Attendu {
 
 // ------------------------------------------------------------------ ce qui manque
 
-/// Le nom en clair d'un acte de `exige_par`.
-fn acte_en_clair(acte: &str) -> &str {
-    match acte {
-        "dsn" => "la DSN",
-        "dpae" => "la DPAE",
-        "contrat" => "les contrats",
-        "bulletin" => "les bulletins",
-        "certificat" => "les certificats Congés Spectacles",
-        "paie" => "toute paie",
-        "envoi" => "l'envoi par courriel de ses contrats et de ses documents",
-        autre => autre,
+/// UN ACTE QU'UNE CASE DE FICHE EXIGE OU SERT : ce que `champs-base.json` nomme dans `exige_par` (l'acte ne se fait pas
+/// sans la case) et `utile_pour` (le geste se fait autrement sans elle). Une liste du logiciel, ses actes : la DSN, la
+/// DPAE, le contrat, le bulletin, le certificat Congés Spectacles, toute paie, l'envoi par courriel. Ecrit par son mot
+/// (`dsn`, `dpae`, `contrat`, `bulletin`, `certificat`, `paie`, `envoi`) ; un autre mot refuse la table a sa lecture.
+/// Ce n'est pas la sorte d'un envoi au journal (`envois::ligne::Acte`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActeExigeant {
+    Dsn,
+    Dpae,
+    Contrat,
+    Bulletin,
+    Certificat,
+    Paie,
+    Envoi,
+}
+
+impl ActeExigeant {
+    pub const TOUS: [ActeExigeant; 7] =
+        [ActeExigeant::Dsn, ActeExigeant::Dpae, ActeExigeant::Contrat, ActeExigeant::Bulletin, ActeExigeant::Certificat, ActeExigeant::Paie, ActeExigeant::Envoi];
+
+    /// Son mot, tel que `champs-base.json` l'ecrit.
+    pub fn texte(self) -> &'static str {
+        match self {
+            ActeExigeant::Dsn => "dsn",
+            ActeExigeant::Dpae => "dpae",
+            ActeExigeant::Contrat => "contrat",
+            ActeExigeant::Bulletin => "bulletin",
+            ActeExigeant::Certificat => "certificat",
+            ActeExigeant::Paie => "paie",
+            ActeExigeant::Envoi => "envoi",
+        }
+    }
+
+    /// Son nom en clair.
+    fn en_clair(self) -> &'static str {
+        match self {
+            ActeExigeant::Dsn => "la DSN",
+            ActeExigeant::Dpae => "la DPAE",
+            ActeExigeant::Contrat => "les contrats",
+            ActeExigeant::Bulletin => "les bulletins",
+            ActeExigeant::Certificat => "les certificats Congés Spectacles",
+            ActeExigeant::Paie => "toute paie",
+            ActeExigeant::Envoi => "l'envoi par courriel de ses contrats et de ses documents",
+        }
+    }
+}
+
+impl std::fmt::Display for ActeExigeant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.texte())
+    }
+}
+
+impl<'de> Deserialize<'de> for ActeExigeant {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mot = String::deserialize(d)?;
+        match ActeExigeant::TOUS.into_iter().find(|a| a.texte() == mot) {
+            Some(a) => Ok(a),
+            None => Err(serde::de::Error::custom(format!(
+                "Acte inconnu : {}. Les actes sont {}.",
+                socle::fichiers::repr(&mot),
+                ActeExigeant::TOUS.map(ActeExigeant::texte).join(", ")
+            ))),
+        }
     }
 }
 
 /// « la DSN, la DPAE et les contrats » ; aucun acte, rien a dire.
-pub fn actes_en_clair(actes: &[String]) -> Option<String> {
-    let noms: Vec<&str> = actes.iter().map(|a| acte_en_clair(a)).collect();
+pub fn actes_en_clair(actes: &[ActeExigeant]) -> Option<String> {
+    let noms: Vec<&str> = actes.iter().map(|a| a.en_clair()).collect();
     let (dernier, debut) = noms.split_last()?;
     Some(match debut {
         [] => dernier.to_string(),
@@ -1197,8 +1251,8 @@ pub fn actes_en_clair(actes: &[String]) -> Option<String> {
 /// bloquer (`utile_pour`) et ce qui se passe sans elle (`sinon`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Sert {
-    Exigee(Vec<String>),
-    Utile { gestes: Vec<String>, sinon: Option<String> },
+    Exigee(Vec<ActeExigeant>),
+    Utile { gestes: Vec<ActeExigeant>, sinon: Option<String> },
 }
 
 /// Une case vide d'une fiche qu'un acte exige ou qu'un geste sert (`Sert`).
@@ -1217,7 +1271,7 @@ pub struct Manquant {
 }
 
 /// Ce que sert une ligne qui porte `exige_par` ou `utile_pour` ; aucune : elle ne manque a personne.
-fn ce_qu_elle_sert(exige_par: Option<&Vec<String>>, utile_pour: Option<&Vec<String>>, sinon: Option<&String>) -> Option<Sert> {
+fn ce_qu_elle_sert(exige_par: Option<&Vec<ActeExigeant>>, utile_pour: Option<&Vec<ActeExigeant>>, sinon: Option<&String>) -> Option<Sert> {
     match (exige_par, utile_pour) {
         (Some(a), _) => Some(Sert::Exigee(a.clone())),
         (None, Some(u)) => Some(Sert::Utile { gestes: u.clone(), sinon: sinon.cloned() }),
@@ -1287,12 +1341,12 @@ pub fn utiles(nom: NomDeFiche) -> R<Vec<CaseDeFiche>> {
 /// LE REFUS D'UN ACTE quand une fiche qu'il lit n'a pas ce qu'il exige (`exige_par`) : tout ce qui manque, d'un coup,
 /// fiche par fiche. `fiches` : (`entreprise` ou `salarie`, qui, la fiche) ; `sauf` : les cases qu'un fait de l'acte ne demande
 /// pas. `None` : rien ne manque.
-pub fn refus_des_manques(acte: &str, fiches: &[(NomDeFiche, String, &Saisie)], sauf: &[CaseDeFiche]) -> R<Option<String>> {
+pub fn refus_des_manques(acte: ActeExigeant, fiches: &[(NomDeFiche, String, &Saisie)], sauf: &[CaseDeFiche]) -> R<Option<String>> {
     let mut lignes = Vec::new();
     for (nom, qui, donnees) in fiches {
         let manque: Vec<String> = manquants(*nom, donnees)?
             .into_iter()
-            .filter(|m| matches!(&m.sert, Sert::Exigee(actes) if actes.iter().any(|a| a == acte)) && !m.cle.seul().is_some_and(|c| sauf.contains(&c)))
+            .filter(|m| matches!(&m.sert, Sert::Exigee(actes) if actes.contains(&acte)) && !m.cle.seul().is_some_and(|c| sauf.contains(&c)))
             .map(|m| format!("« {} »", m.libelle))
             .collect();
         if !manque.is_empty() {
@@ -1304,7 +1358,7 @@ pub fn refus_des_manques(acte: &str, fiches: &[(NomDeFiche, String, &Saisie)], s
     }
     Ok(Some(format!(
         "Pour {}, il manque, à remplir dans Configuration : {}. Rien n'est écrit.",
-        acte_en_clair(acte),
+        acte.en_clair(),
         lignes.join(" ; ")
     )))
 }

@@ -317,7 +317,7 @@ fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a 
         saisies.push((NomDeFiche::Salarie, format!("la fiche de {}", crate::nom_a_l_ecran(s, cle)), Saisie::de_la_fiche(NomDeFiche::Salarie, s)?));
     }
     let fiches: Vec<(NomDeFiche, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
-    match declarations::champs::refus_des_manques("contrat", &fiches, &[])? {
+    match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Contrat, &fiches, &[])? {
         Some(m) => Err(refus(m)),
         None => Ok(()),
     }
