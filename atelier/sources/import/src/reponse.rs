@@ -9,7 +9,7 @@
 use serde::Serialize;
 
 use declarations::champs::{Anomalie, Saisie, Valeur};
-use droit::fiche::{CaseDeFiche, NomDeFiche};
+use droit::fiche::{CaseDeFiche, FicheNommee, NomDeFiche};
 
 use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
@@ -297,11 +297,56 @@ impl Ecart {
     }
 }
 
+/// LA FICHE QUE L'IMPORT VISE : une fiche nommee (qui existe, ou que l'import vient d'ecrire), ou la sorte d'une fiche
+/// encore a creer, qui n'a pas de cle. Elle s'ecrit en deux champs, `nom` et `cle` (la cle de la fiche nommee, `null`
+/// pour l'entreprise et pour une fiche a creer).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FicheVisee {
+    Nommee(FicheNommee),
+    ACreer(NomDeFiche),
+}
+
+impl FicheVisee {
+    /// Le nom de la fiche.
+    pub fn nom(&self) -> NomDeFiche {
+        match self {
+            FicheVisee::Nommee(f) => f.nom(),
+            FicheVisee::ACreer(n) => *n,
+        }
+    }
+
+    /// La fiche nommee ; une fiche a creer n'en est pas une.
+    pub fn nommee(&self) -> Option<&FicheNommee> {
+        match self {
+            FicheVisee::Nommee(f) => Some(f),
+            FicheVisee::ACreer(_) => None,
+        }
+    }
+}
+
+/// L'ecriture d'une `FicheVisee` : son nom, et la cle d'une fiche nommee.
+#[derive(Serialize)]
+struct FicheViseeEcrite<'a> {
+    nom: NomDeFiche,
+    cle: Option<&'a str>,
+}
+
+impl Serialize for FicheVisee {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let cle = match self {
+            FicheVisee::Nommee(FicheNommee::Salarie(k)) => Some(k.as_str()),
+            FicheVisee::Nommee(FicheNommee::Spectacle(k)) => Some(k.as_str()),
+            FicheVisee::Nommee(FicheNommee::Entreprise) | FicheVisee::ACreer(_) => None,
+        };
+        FicheViseeEcrite { nom: self.nom(), cle }.serialize(s)
+    }
+}
+
 /// UNE FICHE QUE L'IMPORT CREE, COMPLETE OU LAISSE, ou sur laquelle il a a redire.
 #[derive(Debug, Clone, Serialize)]
 pub struct FicheImportee {
-    pub nom: NomDeFiche,
-    pub cle: Option<String>,
+    #[serde(flatten)]
+    pub fiche: FicheVisee,
     pub libelle: String,
     pub etat: EtatFiche,
     pub ecarts: Vec<Ecart>,
@@ -319,10 +364,9 @@ pub struct FicheImportee {
 }
 
 impl FicheImportee {
-    pub fn new(nom: NomDeFiche, cle: Option<&str>, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
+    pub fn new(fiche: FicheVisee, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
         let mut f = FicheImportee {
-            nom,
-            cle: cle.map(String::from),
+            fiche,
             libelle: libelle.to_string(),
             etat,
             ecarts: Vec::new(),

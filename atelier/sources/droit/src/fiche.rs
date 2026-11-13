@@ -1167,6 +1167,25 @@ impl std::fmt::Display for NomDeFiche {
     }
 }
 
+/// UNE FICHE NOMMEE : l'entreprise (le fichier entier, sans cle), ou un salarie, un spectacle par la cle de sa fiche.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FicheNommee {
+    Entreprise,
+    Salarie(IdSalarie),
+    Spectacle(IdSpectacle),
+}
+
+impl FicheNommee {
+    /// Le nom de la fiche.
+    pub fn nom(&self) -> NomDeFiche {
+        match self {
+            FicheNommee::Entreprise => NomDeFiche::Entreprise,
+            FicheNommee::Salarie(_) => NomDeFiche::Salarie,
+            FicheNommee::Spectacle(_) => NomDeFiche::Spectacle,
+        }
+    }
+}
+
 /// LE NOM D'UNE CASE DECLAREE HORS DES PIECES : un champ d'une fiche ou une case d'une structure, tel que sa forme
 /// l'ecrit. Il ne se fabrique que de la forme (`Declaree`, les cles d'une fiche : `CaseSalarie`, `CaseEntreprise`...) ;
 /// un texte ne devient un nom de case qu'a la porte, contre la forme (`NomDeCase::lire`), et un nom que la forme ne

@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::NomDeFiche;
-use crate::fiches::FicheNommee;
+use droit::fiche::FicheNommee;
 use engagement::importe::{Attestation, CleDePaieVersee, ContratLu, ContratRelu, PaieLue, PaieVersee};
 use engagement::numeros::NumeroContrat;
 use socle::date::Jour;
@@ -458,7 +458,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     let mut ecrits: BTreeSet<PathBuf> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
     for a in &imp.a_creer {
-        let (cle, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
+        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
         let emplacement = match (a.nom, a.rang) {
             (NomDeFiche::Entreprise, _) => reponse.entreprise.as_mut(),
             (NomDeFiche::Salarie, Some(i)) => reponse.salaries.get_mut(i),
@@ -469,7 +469,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
             restent_a_creer += 1;
             continue;
         };
-        emplacement.cle = cle;
+        emplacement.fiche = fiche;
         emplacement.etat = EtatFiche::Creee;
         emplacement.anomalies = anomalies;
         ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)));
@@ -483,8 +483,8 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
         }
         let emplacement = match &a.fiche {
             FicheNommee::Entreprise => reponse.entreprise.as_mut(),
-            FicheNommee::Salarie(_) => reponse.salaries.iter_mut().find(|e| e.cle.as_deref() == a.fiche.cle()),
-            FicheNommee::Spectacle(_) => reponse.spectacles.iter_mut().find(|e| e.cle.as_deref() == a.fiche.cle()),
+            FicheNommee::Salarie(_) => reponse.salaries.iter_mut().find(|e| e.fiche.nommee() == Some(&a.fiche)),
+            FicheNommee::Spectacle(_) => reponse.spectacles.iter_mut().find(|e| e.fiche.nommee() == Some(&a.fiche)),
         };
         if let Some(e) = emplacement {
             e.etat = EtatFiche::Completee;

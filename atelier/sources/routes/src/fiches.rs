@@ -286,34 +286,6 @@ struct FichesRelevees {
     incidents: Vec<String>,
 }
 
-/// UNE FICHE NOMMEE : l'entreprise (le fichier entier, sans cle), ou un salarie, un spectacle par la cle de sa fiche.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum FicheNommee {
-    Entreprise,
-    Salarie(IdSalarie),
-    Spectacle(IdSpectacle),
-}
-
-impl FicheNommee {
-    /// Le nom de la fiche.
-    pub(crate) fn nom(&self) -> NomDeFiche {
-        match self {
-            FicheNommee::Entreprise => NomDeFiche::Entreprise,
-            FicheNommee::Salarie(_) => NomDeFiche::Salarie,
-            FicheNommee::Spectacle(_) => NomDeFiche::Spectacle,
-        }
-    }
-
-    /// Sa cle, en texte ; l'entreprise n'en a pas.
-    pub(crate) fn cle(&self) -> Option<&str> {
-        match self {
-            FicheNommee::Entreprise => None,
-            FicheNommee::Salarie(k) => Some(k.as_str()),
-            FicheNommee::Spectacle(k) => Some(k.as_str()),
-        }
-    }
-}
-
 /// La charge de `activer-fiche` : la fiche (`salarie` ou `spectacle`) et sa cle, active ou archivee.
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "nom", deny_unknown_fields)]
