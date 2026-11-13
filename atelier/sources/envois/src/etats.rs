@@ -1390,7 +1390,7 @@ mod tests {
             ops: None,
             delegataire: None,
             nature_retour: nature,
-            statut: Some("recu".into()),
+            statut: Some(retours::StatutDuRetour::Ok),
             id: None,
             url: None,
             libelle: None,

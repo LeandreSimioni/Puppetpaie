@@ -80,7 +80,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             if r.nouveaux.contains(x) { "NEUF" } else { "    " },
             super::dit(envois::releve_retours::jour_de_publication_dit(x).as_deref()),
             x.nature_retour.code(),
-            super::dit(x.statut.as_deref()),
+            super::dit(x.statut.map(envois::retours::StatutDuRetour::code)),
             x.nature_retour.libelle_dit(),
             super::dit(x.flux.as_ref().map(envois::retours::IdDeFlux::texte))
         );

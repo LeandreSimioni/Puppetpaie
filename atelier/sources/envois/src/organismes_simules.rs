@@ -279,8 +279,9 @@ pub struct Piece {
     pub contenu: Vec<u8>,
 }
 
-/// UN RETOUR TEL QUE LA LISTE DES RETOURS LE DECRIT : son flux, sa nature, sa publication, son statut (`fictive`), son
-/// libelle, et pour un compte rendu du PAS, le mois de la declaration (`production`).
+/// UN RETOUR TEL QUE LA LISTE DES RETOURS LE DECRIT : son flux, sa nature, sa publication, son statut (OK, une valeur de
+/// la liste : un retour joue se reconnait a son flux, `IdDeFlux::est_fictif`), son libelle, et pour un compte rendu du
+/// PAS, le mois de la declaration (`production`).
 fn retour(nature: NatureDuRetour, flux: &IdDeFlux, publication: Moment, libelle: &str, production: Option<String>) -> crate::retours::Annonce {
     crate::retours::Annonce {
         publication: Some(publication),
@@ -288,7 +289,7 @@ fn retour(nature: NatureDuRetour, flux: &IdDeFlux, publication: Moment, libelle:
         ops: None,
         delegataire: None,
         nature_retour: nature,
-        statut: Some("fictive".to_string()),
+        statut: Some(crate::retours::StatutDuRetour::Ok),
         id: None,
         url: None,
         libelle: Some(libelle.to_string()),

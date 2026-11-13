@@ -29,7 +29,7 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
-use envois::retours::{self, AnomalieDuRapport, CrmOc, IdDeFlux, NatureDuRetour, Neores, Rapport, Verdict};
+use envois::retours::{self, AnomalieDuRapport, CrmOc, IdDeFlux, NatureDuRetour, Neores, Rapport, StatutDuRetour, Verdict};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
@@ -68,18 +68,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 // ------------------------------------------------------------------ les tables
-
-/// Ce que dit le statut d'un retour : guide v6.8, §3.4.4 « Reponse du service » (`flux.retour.statut`) ; un autre statut
-/// ne se traduit pas.
-fn phrase_du_statut(statut: &str) -> Option<&'static str> {
-    match statut {
-        "OK" => Some("le traitement s'est terminé normalement"),
-        "KO" => Some("au moins une anomalie bloquante a empêché la poursuite du traitement"),
-        "ANO" => Some("des anomalies non bloquantes sont survenues, le traitement est allé à son terme"),
-        "EN COURS" => Some("la déclaration est en cours de distribution vers l'organisme"),
-        _ => None,
-    }
-}
 
 /// La nature et le type d'une declaration (S20.G00.05.001 et .002, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`) ;
 /// une nature qui n'est pas dite est une DSN.
@@ -214,7 +202,7 @@ struct RetourDOrganisme {
     nature_retour: NatureDuRetour,
     libelle: String,
     organisme: Option<String>,
-    statut: Option<String>,
+    statut: Option<StatutDuRetour>,
     verdict: Option<Verdict>,
     anomalies: Vec<Anomalie>,
     traduite: bool,
@@ -918,7 +906,7 @@ enum PieceDuRetour {
 fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> R<RetourLu> {
     let canal = (ligne.acte() == envois::journal::Acte::Dpae).then_some("dpae");
     let nature = r.nature_retour;
-    let statut = r.statut.as_deref().and_then(dit);
+    let statut = r.statut;
     let publication = r.publication;
     let flux = ligne.flux();
     let (organisme, format) = match canal {
@@ -949,9 +937,9 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         _ => None,
     };
     match (lu_verdict, statut) {
-        (Some(v), Some(s)) if v.code() != s => {
+        (Some(v), Some(s)) if s.verdict() != Some(v) => {
             let sans_anomalie = matches!(&piece, PieceDuRetour::Lue(_, l) if l.anomalies.is_empty());
-            let dit_la_piece = match (v, phrase_du_statut(v.code())) {
+            let dit_la_piece = match (v, StatutDuRetour::du_verdict(v).phrase()) {
                 (Verdict::Ok, _) if sans_anomalie => "aucune anomalie",
                 (_, Some(p)) => p,
                 (autre, None) => autre.code(),
@@ -959,7 +947,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             phrases.push(format!("Publié au statut {}, mais la pièce dit : {} ({}).", s, dit_la_piece, v.code()));
         }
         (_, Some(s)) => {
-            if let Some(p) = phrase_du_statut(s) {
+            if let Some(p) = s.phrase() {
                 phrases.push(format!("Statut {} : {}.", s, p));
             }
         }
@@ -976,9 +964,10 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
                 phrases.push(format!("La pièce de ce retour ne se lit pas sur ce poste : {} ; ce qui est dit ici vient du relevé.", m));
             } else if format == Some("aucun") {
                 phrases.push("Un accusé de réception, sans document : son statut dit tout.".into());
-            } else if matches!(statut, Some("fictive" | "demonstration")) {
-                // Le retour d'un depot joue par une compagnie fictive (`crate::gestes::releve::rattacher_simulation`) : le
-                // bilan est joue sans piece ; seule l'AER (nature 46) a la sienne, fabriquee (`aer_fictive`).
+            } else if flux.is_some_and(IdDeFlux::est_fictif) {
+                // Le retour d'un depot joue par une compagnie fictive (`envois::releve_retours::rattacher_simulation`, qui
+                // le reconnait a son flux) : le bilan est joue sans piece ; seule l'AER (nature 46) a la sienne, fabriquee
+                // (`aer_fictive`).
                 phrases.push("Compagnie fictive : ce retour est joué par le logiciel, sans pièce d'organisme.".into());
             } else {
                 phrases.push("La pièce de ce retour n'est pas archivée sur ce poste : ce qui est dit ici vient du relevé.".into());
@@ -999,11 +988,11 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
     let pastille = match (verdict, statut) {
         (Some(v), _) => Some(Pastille::de(v.a_l_ecran(), v.code())),
         (None, Some(s)) => Some(Pastille::de(
-            match Verdict::lu(s) {
+            match s.verdict() {
                 Some(v) => v.a_l_ecran(),
                 None => socle::ecran::EtatDEcran::Information,
             },
-            s,
+            s.code(),
         )),
         (None, None) => None,
     };
@@ -1026,7 +1015,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             nature_retour: nature,
             libelle,
             organisme,
-            statut: statut.map(String::from),
+            statut,
             verdict,
             anomalies,
             traduite,

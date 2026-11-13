@@ -426,6 +426,55 @@ impl<'de> Deserialize<'de> for Verdict {
     }
 }
 
+droit::codes_fermes! {
+    /// LE STATUT QU'UNE LISTE DES RETOURS DONNE A UN RETOUR (`flux.retour.statut`) : « OK », « KO », « ANO », « EN COURS »
+    /// (avec une espace : guide de l'API DSN v6.8, l. 87 et 1733-1745,
+    /// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`) ; et
+    /// « ANOBLOQUANTE », que France Travail donne a ses comptes rendus 42, 44 et 45 (« Pôle emploi est contraint de
+    /// transmettre un code statut à « ANOBLOQUANTE » même si […] les balises « envoi_etat » et « etat » de la déclaration
+    /// sont OK » : « De la DSN à l'attestation employeur » v3.2, l. 235-243 et 390-404,
+    /// `atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`).
+    StatutDuRetour, "Statut du retour", texte "guide de l'API DSN v6.8, l. 1733-1745, et « De la DSN à l'attestation employeur » v3.2, l. 235-243" {
+        Ok = "OK",
+        Ko = "KO",
+        Ano = "ANO",
+        EnCours = "EN COURS",
+        AnoBloquante = "ANOBLOQUANTE",
+    }
+}
+
+impl StatutDuRetour {
+    /// Ce que le guide en dit (l. 1739-1745) ; « ANOBLOQUANTE » n'y est pas.
+    pub fn phrase(self) -> Option<&'static str> {
+        match self {
+            StatutDuRetour::Ok => Some("le traitement s'est terminé normalement"),
+            StatutDuRetour::Ko => Some("au moins une anomalie bloquante a empêché la poursuite du traitement"),
+            StatutDuRetour::Ano => Some("des anomalies non bloquantes sont survenues, le traitement est allé à son terme"),
+            StatutDuRetour::EnCours => Some("la déclaration est en cours de distribution vers l'organisme"),
+            StatutDuRetour::AnoBloquante => None,
+        }
+    }
+
+    /// Le statut qui ecrit ce verdict.
+    pub fn du_verdict(v: Verdict) -> StatutDuRetour {
+        match v {
+            Verdict::Ok => StatutDuRetour::Ok,
+            Verdict::Ko => StatutDuRetour::Ko,
+            Verdict::Ano => StatutDuRetour::Ano,
+        }
+    }
+
+    /// Le verdict qu'il ecrit, quand il en ecrit un (OK, KO, ANO) ; « EN COURS » et « ANOBLOQUANTE » n'en sont pas.
+    pub fn verdict(self) -> Option<Verdict> {
+        match self {
+            StatutDuRetour::Ok => Some(Verdict::Ok),
+            StatutDuRetour::Ko => Some(Verdict::Ko),
+            StatutDuRetour::Ano => Some(Verdict::Ano),
+            StatutDuRetour::EnCours | StatutDuRetour::AnoBloquante => None,
+        }
+    }
+}
+
 pub const ESSAI_TEST: &str = "01";
 pub const ESSAI_REEL: &str = "02";
 pub const RAPPORTS_DEPOT: [&str; 3] = ["CCO", "BAN", "AEE"];
@@ -1509,7 +1558,7 @@ pub struct Annonce {
     #[serde(rename = "nature")]
     pub nature_retour: NatureDuRetour,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub statut: Option<String>,
+    pub statut: Option<StatutDuRetour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1592,7 +1641,7 @@ struct RetourJson {
     delegataire: Option<IdentifiantDOrganisme>,
     #[serde(rename = "nature")]
     nature_retour: NatureDuRetour,
-    statut: Option<String>,
+    statut: Option<StatutDuRetour>,
     id: Option<String>,
     url: Option<String>,
 }
@@ -1649,11 +1698,17 @@ fn organisme_liste(texte: &str, cle: &str) -> R<IdentifiantDOrganisme> {
     IdentifiantDOrganisme::lire(texte).map_err(|e| socle::echec::cle(e.phrase, cle).reclasser(Classe::Illisible))
 }
 
-/// La nature d'un retour que la liste XML porte ; hors de la liste, la liste ne se lit pas (la phrase du type, celle de
-/// la liste JSON, la cle a part).
-fn nature_liste(texte: &str) -> R<NatureDuRetour> {
+/// Un code d'une liste fermee des retours (la nature, le statut, la categorie d'une anomalie...), lu par la forme de son
+/// type : hors de sa liste, la phrase du type, celle de la liste JSON.
+fn code_ferme<T: serde::de::DeserializeOwned>(texte: &str) -> R<T> {
     let lecteur: serde::de::value::StrDeserializer<serde::de::value::Error> = serde::de::IntoDeserializer::into_deserializer(texte);
-    NatureDuRetour::deserialize(lecteur).map_err(|e| socle::echec::cle(e.to_string(), "flux.retour.nature").reclasser(Classe::Illisible))
+    T::deserialize(lecteur).map_err(|e| socle::echec::refus(e.to_string()))
+}
+
+/// Un code d'une liste fermee que la liste XML porte a `cle` ; hors de sa liste, la liste ne se lit pas (la phrase du
+/// type, celle de la liste JSON, la cle a part).
+fn code_liste<T: serde::de::DeserializeOwned>(texte: &str, cle: &str) -> R<T> {
+    code_ferme(texte).map_err(|e| socle::echec::cle(e.phrase, cle).reclasser(Classe::Illisible))
 }
 
 /// Le texte des enfants de `e`, par leur nom local (un enfant vide n'est pas dit).
@@ -1711,8 +1766,8 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
                     "production" => production = texte,
                     "ops" => ops = Some(organisme_liste(t, "flux.retour.ops")?),
                     "delegataire" => delegataire = Some(organisme_liste(t, "flux.retour.delegataire")?),
-                    "nature" => nature = Some(nature_liste(t)?),
-                    "statut" => statut = texte,
+                    "nature" => nature = Some(code_liste(t, "flux.retour.nature")?),
+                    "statut" => statut = Some(code_liste(t, "flux.retour.statut")?),
                     "id" => id = texte,
                     "url" => url = texte,
                     autre => return Err(illisible(&format!("flux.retour.{}", autre))),

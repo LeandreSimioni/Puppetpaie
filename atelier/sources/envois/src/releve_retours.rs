@@ -21,7 +21,7 @@ use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
-use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour, Verdict};
+use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour, StatutDuRetour, Verdict};
 use socle::date::Jour;
 use socle::num::Decimal;
 use socle::paris::Moment;
@@ -440,7 +440,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                 anomalies: Some(Vec::new()),
                 dpae: None,
                 libelle: libelle.into(),
-                statut: Some("fictive".into()),
+                statut: Some(StatutDuRetour::Ok),
                 publication: Some(pub_),
             };
             let mut retours: Vec<RetourOrganisme> = Vec::new();

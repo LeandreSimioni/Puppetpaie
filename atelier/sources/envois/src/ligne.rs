@@ -15,7 +15,7 @@ use engagement::numeros::NumeroContrat;
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
 
-use crate::retours::{IdDeFlux, Verdict};
+use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
 
 /// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -485,7 +485,7 @@ pub struct RetourOrganisme {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dpae: Option<Vec<PersonneCertifiee>>,
     pub libelle: String,
-    pub statut: Option<String>,
+    pub statut: Option<StatutDuRetour>,
     /// L'heure ou la plate-forme l'a mis a disposition (`retours::Annonce`).
     #[serde(with = "socle::paris::ecrit::compacte::option")]
     pub publication: Option<socle::paris::Moment>,
