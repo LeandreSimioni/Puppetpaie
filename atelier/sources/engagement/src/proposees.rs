@@ -29,7 +29,7 @@ pub struct Proposees {
 pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<droit::fiche::Statut>, metier: Option<&droit::fiche::CodeEmploiFt>, jour: &Jour) -> R<Proposees> {
     let cat = catalogue(&ctx.racine, jour)?;
     let ent = &ctx.entreprise;
-    let prime = clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), metier, statut)?;
+    let prime = clauses::prime_anciennete_possible(ent.idcc.dite(), ent.annexe_convention.code(), metier, statut)?;
     let prend = |r: &&Rubrique| {
         let forme = mensuelle.is_none_or(|m| if m { crate::a_une_limite(&r.code) } else { r.reservee_a() != Some("mensuelle") });
         // Une rubrique de la piece d'un salarie au mois ne se saisit pas : son calcul la compose (`rubrique_a_saisir`).

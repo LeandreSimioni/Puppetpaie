@@ -237,8 +237,8 @@ pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::Effectif, 
 pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     let base = droit::adhesions::casc_svp_base().map_err(|m| m.reclasser(Classe::Disque))?;
     let ent = &ctx.entreprise;
-    let idcc = ent.idcc.ecrite("idcc").map_err(|e| e.reclasser(Classe::Refuse))?;
-    if idcc != base.idcc {
+    let idcc = ent.idcc.exigee("idcc").map_err(|e| e.reclasser(Classe::Refuse))?;
+    if *idcc != base.idcc {
         return Err(refus(format!(
             "La CASC-SVP est une cotisation de la convention 3090 ; la fiche entreprise dit {}. Il n'y a rien a regulariser.",
             idcc

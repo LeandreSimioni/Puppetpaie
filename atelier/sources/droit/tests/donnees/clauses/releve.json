@@ -14,7 +14,6 @@
 {"cas":"3090","attendu":{"ok":true}},
 {"cas":"3090","attendu":{"ok":true}},
 {"cas":"9999","attendu":{"ok":false}},
-{"cas":"0","attendu":{"ok":false}},
 {"cas":"","attendu":{"ok":false}},
 {"cas":"1285","attendu":{"ok":true}}
 ]

@@ -33,7 +33,7 @@ fn un_accord_lie_l_adherente_des_sa_date_et_toute_compagnie_des_son_extension() 
     assert_eq!(lie_depuis(&non_etendu, None, j(2026, 8, 1)), None);
 
     // La grille du jour suit la meme date : celle de l'accord des qu'il lie la compagnie, celle d'avant jusque-la.
-    let depuis = |org: Option<&str>, jour: socle::date::Jour| grille_au(&t, "1285", org, Some(jour)).unwrap().1.map(|x| x.iso());
+    let depuis = |org: Option<&str>, jour: socle::date::Jour| grille_au(&t, &droit::clauses::IDCC_CCNEAC, org, Some(jour)).unwrap().1.map(|x| x.iso());
     assert_eq!(depuis(Some("SYNDEAC"), j(2026, 7, 31)), None);
     assert_eq!(depuis(Some("SYNDEAC"), j(2026, 8, 1)).as_deref(), Some("2026-08-01"));
     assert_eq!(depuis(None, j(2026, 9, 18)), None);

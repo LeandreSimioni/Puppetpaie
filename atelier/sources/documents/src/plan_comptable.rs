@@ -33,7 +33,7 @@ pub struct Tables {
     /// de conges payes : `engagement::conges::provision_conges_de`), ranges a part. Leur place dit leur piece.
     au_mois: Vec<EtatLivre>,
     /// L'etat -> les conventions (IDCC) qui le demandent.
-    pub si_convention: BTreeMap<String, Vec<String>>,
+    pub si_convention: BTreeMap<String, Vec<droit::fiche::Idcc>>,
     /// Les etats qui ne servent qu'a une compagnie qui doit la taxe sur les salaires une des annees a exporter.
     pub si_taxe_sur_les_salaires: Vec<String>,
     pub formats: Vec<FormatLivre>,

@@ -146,7 +146,7 @@ struct Echeancier {
     /// Le nom de la compagnie ; `null` : la fiche ne le dit pas encore.
     compagnie: Option<String>,
     /// La convention de la fiche de l'entreprise ; `null` : la fiche ne la dit pas.
-    idcc: Option<String>,
+    idcc: Option<droit::fiche::Idcc>,
     ce_mois: Vec<EcheanceDite>,
     a_venir: Vec<EcheanceDite>,
     a_faire: usize,
@@ -663,7 +663,7 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
         date_dit: format!("Nous sommes le {}", date_en_clair(&st.aujourdhui)),
         bienvenue: "Bienvenue sur PuppetPaie",
         compagnie,
-        idcc: ctx.entreprise.idcc.portee().map(str::to_string),
+        idcc: ctx.entreprise.idcc.dite().cloned(),
         ce_mois,
         a_venir,
         a_faire,

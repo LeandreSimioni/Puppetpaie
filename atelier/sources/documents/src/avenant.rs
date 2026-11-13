@@ -311,7 +311,7 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
     poser(Marqueur::EmployeurCommune, lisible(&ent.commune_affichage, &ent.commune, "commune")?);
     poser(Marqueur::EmployeurSiret, case(&ent.siret, "siret")?);
     poser(Marqueur::EmployeurNaf, case(&ent.naf, "naf")?);
-    poser(Marqueur::EmployeurIdcc, idcc);
+    poser(Marqueur::EmployeurIdcc, idcc.to_string());
     poser(Marqueur::EmployeurConvention, convention);
     poser(
         Marqueur::EmployeurSignataire,

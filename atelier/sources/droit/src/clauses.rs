@@ -7,7 +7,7 @@
 //! loi (l'appelant : `engagement::solde`).
 
 use crate::emplois;
-use crate::fiche::{ChampsSalarie, CodeEmploiFt, Lue, Statut};
+use crate::fiche::{ChampsSalarie, CodeEmploiFt, Idcc, Lue, Statut};
 use crate::natures::{AuMois, MotifDeRupture};
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
@@ -29,7 +29,7 @@ forme! {
     /// `clauses-conventionnelles-base.json`, entier : les clauses de chaque convention relevee, sous son IDCC. Une
     /// convention absente n'a pas ses clauses relevees : le moteur calcule la loi seule et le dit.
     pub struct Table {
-        pub conventions: BTreeMap<String, Convention>,
+        pub conventions: BTreeMap<Idcc, Convention>,
     }
 }
 
@@ -465,13 +465,13 @@ pub fn table() -> R<Arc<Table>> {
 impl Table {
     /// Les clauses de la convention `idcc`, si elles sont relevees.
     /// La convention `idcc` ; `None` : elle n'est pas relevee, ou la compagnie n'a pas d'IDCC.
-    pub fn convention(&self, idcc: Option<&str>) -> Option<&Convention> {
-        idcc.and_then(|i| self.conventions.get(i.trim()))
+    pub fn convention(&self, idcc: Option<&Idcc>) -> Option<&Convention> {
+        idcc.and_then(|i| self.conventions.get(i))
     }
 }
 
 /// Les clauses relevees de cette convention, ou `None` si elles ne le sont pas (ou si la compagnie n'a pas d'IDCC).
-pub fn releve(idcc: Option<&str>) -> R<Option<Convention>> {
+pub fn releve(idcc: Option<&Idcc>) -> R<Option<Convention>> {
     Ok(table()?.convention(idcc).cloned())
 }
 
@@ -486,8 +486,8 @@ fn manque(cle: &str) -> socle::echec::Echec {
 }
 
 /// Pour les phrases : « la convention 3090 », ou « la convention collective » quand l'IDCC manque.
-pub fn nom(idcc: Option<&str>) -> String {
-    match idcc.map(str::trim).filter(|i| !i.is_empty()) {
+pub fn nom(idcc: Option<&Idcc>) -> String {
+    match idcc {
         Some(i) => format!("la convention {}", i),
         None => "la convention collective".to_string(),
     }
@@ -518,7 +518,7 @@ pub fn idcc_nomme(nom: &str) -> R<Option<crate::fiche::Idcc>> {
     let t = table()?;
     let mut trouves = t.conventions.iter().filter(|(_, c)| lus.is_subset(&mots_du_nom(&c.libelle)));
     match (trouves.next(), trouves.next()) {
-        (Some((idcc, _)), None) => crate::fiche::Idcc::lire(idcc).map(Some),
+        (Some((idcc, _)), None) => Ok(Some(idcc.clone())),
         _ => Ok(None),
     }
 }
@@ -535,7 +535,7 @@ pub fn categorie_en_mots(c: &str) -> String {
 
 /// La categorie `c` dite par la convention `idcc`, telle que le bulletin l'imprime (la premiere phrase de son libelle),
 /// ou `None` si la convention ne la nomme pas.
-pub fn categorie_imprimee(idcc: Option<&str>, c: &str) -> R<Option<String>> {
+pub fn categorie_imprimee(idcc: Option<&Idcc>, c: &str) -> R<Option<String>> {
     let t = table()?;
     let dite = t.convention(idcc).and_then(|conv| conv.categories.as_ref()).and_then(|s| s.valeurs.iter().find(|(k, _)| k == c));
     let premiere_phrase = |l: &str| match l.split_once(". ") {
@@ -545,7 +545,7 @@ pub fn categorie_imprimee(idcc: Option<&str>, c: &str) -> R<Option<String>> {
     Ok(dite.map(|(_, l)| premiere_phrase(l)))
 }
 
-fn non_relevees(idcc: Option<&str>) -> String {
+fn non_relevees(idcc: Option<&Idcc>) -> String {
     format!("les clauses de {} ne sont pas relevées", nom(idcc))
 }
 
@@ -583,7 +583,7 @@ pub struct Profil {
 
 /// `au_mois` : la cle de la piece d'un permanent, quand l'engagement lu est paye au mois ; sans elle, la categorie que
 /// la fiche dit ne se lit pas (elle n'est demandee qu'a un salarie au mois).
-pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> R<Profil> {
+pub fn profil(idcc: Option<&Idcc>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> R<Profil> {
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
     // Le code que les phrases citent : celui de l'engagement, sinon celui de la fiche, metier ou non.
@@ -660,7 +660,7 @@ pub struct PreavisDit {
 
 /// Le motif est un code de la norme (S21.G00.62.002) : les listes d'une convention suivent son texte, plus large que les
 /// motifs qu'une nature permet (089).
-pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Decimal, motif: Option<MotifDeRupture>, age: Option<Decimal>) -> R<PreavisDit> {
+pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&str>, anciennete: Decimal, motif: Option<MotifDeRupture>, age: Option<Decimal>) -> R<PreavisDit> {
     let (a, age) = (P::depuis(anciennete), age.map(P::depuis));
     let rien = |article: Option<String>, pourquoi: String| PreavisDit { mois: None, article, jours: None, pourquoi: Some(pourquoi) };
     let t = table()?;
@@ -785,7 +785,7 @@ impl Bareme {
 // ----------------------------------------------- l'indemnite de licenciement
 /// La clause d'annexe qui s'applique a ce salarie, ou `None`. Le personnel technique de l'annexe I se lit sur la
 /// GRILLE du metier.
-pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, motif: Option<MotifDeRupture>) -> R<Option<ClauseDAnnexe>> {
+pub fn clause_d_annexe(idcc: Option<&Idcc>, annexe: Option<&str>, prof: &Profil, motif: Option<MotifDeRupture>) -> R<Option<ClauseDAnnexe>> {
     let t = table()?;
     let par = t
         .convention(idcc)
@@ -819,7 +819,7 @@ pub struct Indemnite {
 }
 
 pub fn indemnite_licenciement(
-    idcc: Option<&str>,
+    idcc: Option<&Idcc>,
     annexe: Option<&str>,
     prof: &Profil,
     anciennete: Decimal,
@@ -1002,7 +1002,7 @@ fn fois_la_reference(mois: P, reference: &mut dyn FnMut() -> R<Decimal>) -> R<P>
 }
 
 /// L'indemnite conventionnelle de mise a la retraite.
-pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<Retraite> {
+pub fn indemnite_mise_a_la_retraite(idcc: Option<&Idcc>, anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<Retraite> {
     let anciennete = P::depuis(anciennete);
     let t = table()?;
     let conv = t.convention(idcc);
@@ -1048,7 +1048,7 @@ pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, ref
 }
 
 /// L'indemnite conventionnelle de depart volontaire a la retraite : un palier, pas un cumul.
-pub fn indemnite_depart_retraite(idcc: Option<&str>, anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<Retraite> {
+pub fn indemnite_depart_retraite(idcc: Option<&Idcc>, anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<Retraite> {
     let anciennete = P::depuis(anciennete);
     let t = table()?;
     let conv = t.convention(idcc);
@@ -1101,10 +1101,10 @@ pub const RUBRIQUE_PRIME_ANCIENNETE: crate::catalogue::CodeDeRubrique = crate::c
 /// `atelier/reference/sources/kali-1285-x3-remuneration-artistes-20260929.md`, « IDCC : 1285 (CCNEAC) »). Ses regles
 /// propres (le mois incomplet d'un artiste, art. X.3 ; le plancher horaire d'un technicien, titre VI et les accords de
 /// salaires) ne se lisent que sous lui : la seule ecriture de ce code dans le calcul.
-pub const IDCC_CCNEAC: &str = "1285";
+pub const IDCC_CCNEAC: Idcc = Idcc::du_moteur("1285");
 
 /// La prime d'anciennete de la convention `idcc`, si elle en porte une pour l'annexe `annexe`.
-fn prime_de_l_annexe<'t>(t: &'t Table, idcc: Option<&str>, annexe: Option<&str>) -> Option<&'t PrimeAnciennete> {
+fn prime_de_l_annexe<'t>(t: &'t Table, idcc: Option<&Idcc>, annexe: Option<&str>) -> Option<&'t PrimeAnciennete> {
     t.convention(idcc).and_then(|c| c.prime_anciennete.as_ref()).filter(|sec| annexe.map(str::trim) == Some(sec.annexe.as_str()))
 }
 
@@ -1120,7 +1120,7 @@ fn grille_technique(m: &emplois::Metier) -> Option<&emplois::Classification3090>
 /// dit ce `metier` et ce `statut` : les conditions de `prime_anciennete`, quelle que soit la nature du contrat (l'art.
 /// 3.1 de l'annexe I nomme le CDI et le CDD du personnel technique, l'art. 3.11 « chaque technicien »). Ce que la carte
 /// ne dit pas encore (son metier, son statut) ne l'ecarte pas.
-pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&CodeEmploiFt>, statut: Option<Statut>) -> R<bool> {
+pub fn prime_anciennete_possible(idcc: Option<&Idcc>, annexe: Option<&str>, metier: Option<&CodeEmploiFt>, statut: Option<Statut>) -> R<bool> {
     let t = table()?;
     if prime_de_l_annexe(&t, idcc, annexe).is_none() || statut == Some(Statut::Artiste) {
         return Ok(false);
@@ -1135,7 +1135,7 @@ pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metie
 /// ou `None` si elle ne le concerne pas. La jauge de la salle est une case du metier (`fiche::Piece::Metier`) : `jauge`
 /// ne la lit qu'avec la cle de la grille de l'annexe, qu'un technicien de l'annexe seul donne.
 pub fn prime_anciennete<'j>(
-    idcc: Option<&str>,
+    idcc: Option<&Idcc>,
     annexe: Option<&str>,
     fiche: &ChampsSalarie,
     e: &DitParLEngagement,

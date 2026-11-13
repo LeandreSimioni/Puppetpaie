@@ -16,7 +16,7 @@ use socle::echec::R;
 use socle::date::Jour;
 
 use crate::contexte::{Contexte, IdSalarie};
-use crate::fiche::{CaseDeFiche, CaseSalarie, CodeEmploiFt, CodePcsEse, FicheSalarie, Lue, Statut, StatutCategorielRc, StatutConventionnel};
+use crate::fiche::{CaseDeFiche, CaseSalarie, CodeEmploiFt, CodePcsEse, FicheSalarie, Idcc, Lue, Statut, StatutCategorielRc, StatutConventionnel};
 
 /// `emplois-base.json` : le catalogue des metiers, dans l'ordre ou le deroulant les montre, et les noms courts des
 /// conventions. Sa `note` dit le perimetre, les sources et les regles de chaque champ.
@@ -26,7 +26,7 @@ pub struct BaseEmplois {
     pub quoi: String,
     pub note: String,
     /// IDCC -> le nom court de la convention.
-    pub conventions: BTreeMap<String, String>,
+    pub conventions: BTreeMap<Idcc, String>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     pub emplois: Vec<(CodeEmploi, FicheDuCatalogue)>,
 }
@@ -97,7 +97,7 @@ pub struct FicheDuCatalogue {
     pub cadre_par_defaut: bool,
     /// Le defaut cadre d'une convention qui le dit autrement (le dramaturge, cadre dans la 1285).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cadre_selon_la_convention: Option<BTreeMap<String, bool>>,
+    pub cadre_selon_la_convention: Option<BTreeMap<Idcc, bool>>,
     pub statut_conventionnel: StatutConventionnel,
     pub minima: Minima,
     pub emploi: String,
@@ -106,10 +106,10 @@ pub struct FicheDuCatalogue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub annexe_nomenclature: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub conventions: Option<Vec<String>>,
+    pub conventions: Option<Vec<Idcc>>,
     /// Les conventions dont le deroulant le montre sans que leur liste de l'annexe 8 le nomme.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub conventions_hors_liste: Option<Vec<String>>,
+    pub conventions_hors_liste: Option<Vec<Idcc>>,
     /// IDCC -> le classement conventionnel du metier dans cette convention.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub classement: Option<BTreeMap<String, String>>,
@@ -142,12 +142,15 @@ pub struct Minima {
 
 impl Minima {
     /// La ligne de minima d'une convention qui n'en a qu'une (1285, 2642, 3097), ou `None`.
-    pub fn ligne(&self, idcc: &str) -> Option<&str> {
-        match idcc.trim() {
-            "1285" => self.ccn_1285.as_deref(),
-            "2642" => self.ccn_2642.as_deref(),
-            "3097" => self.ccn_3097.as_deref(),
-            _ => None,
+    pub fn ligne(&self, idcc: &Idcc) -> Option<&str> {
+        if *idcc == crate::clauses::IDCC_CCNEAC {
+            self.ccn_1285.as_deref()
+        } else if *idcc == crate::fiche::IDCC_2642 {
+            self.ccn_2642.as_deref()
+        } else if *idcc == crate::fiche::IDCC_3097 {
+            self.ccn_3097.as_deref()
+        } else {
+            None
         }
     }
 }
@@ -313,17 +316,16 @@ impl Metier {
     /// porte dans `conventions` les conventions dont le deroulant le montre, dont celles qui le portent sans que leur liste
     /// le nomme (`conventions_hors_liste`, et la regle de lecture des listes 6 et 7 dans la `note` de `emplois-base.json`).
     /// Un metier hors catalogue ne dit pas sur quelle liste il est : non.
-    pub fn nomme_par_l_annexe8(&self, idcc: &str) -> bool {
-        let idcc = idcc.trim();
-        self.au_catalogue().is_some_and(|f| !idcc.is_empty() && f.conventions.iter().flatten().any(|c| c == idcc) && !f.conventions_hors_liste.iter().flatten().any(|c| c == idcc))
+    pub fn nomme_par_l_annexe8(&self, idcc: &Idcc) -> bool {
+        self.au_catalogue().is_some_and(|f| f.conventions.iter().flatten().any(|c| c == idcc) && !f.conventions_hors_liste.iter().flatten().any(|c| c == idcc))
     }
 
     /// Le metier est-il cadre, faute d'engagement qui le dise, dans la convention `idcc` ? `cadre_selon_la_convention`
     /// l'emporte pour la convention qu'il nomme (le dramaturge, cadre dans la 1285, art. XI.2.1, que la grille 3090 ne
     /// nomme pas : `cadre_par_defaut` dans la `note` de `emplois-base.json`) ; sinon `cadre_par_defaut`. Hors catalogue :
     /// `None`, seule la compagnie le sait (la fiche le dit).
-    pub fn cadre_par_defaut(&self, idcc: Option<&str>) -> Option<bool> {
-        self.au_catalogue().map(|f| match f.cadre_selon_la_convention.as_ref().zip(idcc).and_then(|(c, i)| c.get(i.trim())) {
+    pub fn cadre_par_defaut(&self, idcc: Option<&Idcc>) -> Option<bool> {
+        self.au_catalogue().map(|f| match f.cadre_selon_la_convention.as_ref().zip(idcc).and_then(|(c, i)| c.get(i)) {
             Some(cadre) => *cadre,
             None => f.cadre_par_defaut,
         })
@@ -378,7 +380,7 @@ pub struct ChampsDuMetier {
 
 /// Les sept champs declares pour ce metier (`emploi_affichage` compris).
 /// `cadre` a `None` prend le defaut du catalogue dans la convention `idcc` (`Metier::cadre_par_defaut`).
-pub fn resoudre(code: &CodeEmploi, cadre: Option<bool>, feminin: bool, idcc: Option<&str>) -> R<ChampsDuMetier> {
+pub fn resoudre(code: &CodeEmploi, cadre: Option<bool>, feminin: bool, idcc: Option<&Idcc>) -> R<ChampsDuMetier> {
     let m = code.metier()?;
     let est_cadre = match cadre.or_else(|| m.cadre_par_defaut(idcc)) {
         Some(c) => c,
@@ -557,12 +559,12 @@ pub struct MetierDuDeroulant {
     pub pcs_ese: CodePcsEse,
     pub cadre_par_defaut: bool,
     pub niveau_3090: Option<String>,
-    pub conventions: Vec<String>,
+    pub conventions: Vec<Idcc>,
 }
 
 /// Le catalogue du spectacle vivant, le defaut cadre de chaque metier lu dans la convention `idcc`, pour un
 /// deroulant, dans l'ordre du fichier.
-pub fn catalogue(idcc: Option<&str>) -> R<Vec<MetierDuDeroulant>> {
+pub fn catalogue(idcc: Option<&Idcc>) -> R<Vec<MetierDuDeroulant>> {
     base()?
         .emplois
         .iter()
@@ -603,7 +605,7 @@ pub fn par_intitule(intitule: &str, norme: impl Fn(&str) -> String) -> R<Option<
 }
 
 /// IDCC -> le nom court de la convention.
-pub fn noms_des_conventions() -> R<BTreeMap<String, String>> {
+pub fn noms_des_conventions() -> R<BTreeMap<Idcc, String>> {
     Ok(base()?.conventions.clone())
 }
 

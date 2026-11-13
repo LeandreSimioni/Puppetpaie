@@ -284,7 +284,7 @@ pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
 /// (`droit::clauses::profil` : la fiche, sinon le metier, jamais devinee) dite par le libelle de la convention, puis le
 /// classement que la fiche porte dans la grille (`classement_conventionnel`) ; `None` quand ni l'une ni l'autre ne se
 /// lisent.
-fn classification(idcc: Option<&str>, sal: &ChampsSalarie, au_mois: Option<&droit::natures::AuMois>) -> R<Option<String>> {
+fn classification(idcc: Option<&droit::fiche::Idcc>, sal: &ChampsSalarie, au_mois: Option<&droit::natures::AuMois>) -> R<Option<String>> {
     let profil = droit::clauses::profil(idcc, sal, au_mois, &Default::default())?;
     // La categorie dite par la convention ; celle que la convention ne nomme pas s'imprime telle que la fiche la dit.
     let categorie = match profil.categorie {
@@ -326,12 +326,12 @@ fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> R<String> 
     }
 }
 
-pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::Spectacle>, sal: &ChampsSalarie, jour: &Jour) -> R<(String, String)> {
+pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::Spectacle>, sal: &ChampsSalarie, jour: &Jour) -> R<(droit::fiche::Idcc, String)> {
     let Some(idcc_compagnie) = &ent.idcc else {
         return Err(socle::echec::cle("La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.", "idcc"));
     };
-    let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?.to_string();
-    let libelle = if idcc == "1734" {
+    let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?;
+    let libelle = if idcc == droit::fiche::IDCC_1734 {
         "Artistes-interprètes engagés pour des émissions de télévision".to_string()
     } else {
         droit::bareme::libelle_convention(&idcc, jour.an)?

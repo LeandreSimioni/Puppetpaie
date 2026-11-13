@@ -85,7 +85,7 @@ pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &str) -> R<Option<(declarati
 fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     let base = droit::adhesions::casc_svp_base()?;
     let ent = &ctx.entreprise;
-    if ent.idcc.portee() != Some(base.idcc.as_str()) {
+    if ent.idcc.dite() != Some(&base.idcc) {
         return Ok(None);
     }
     let eff = ctx.effectif()?;

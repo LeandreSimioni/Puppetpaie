@@ -85,7 +85,7 @@ pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> R<bool> {
         match m.annexe() {
             10 => Ok(true),
             8 => {
-                let idcc = sal.idcc_de_l_employeur.as_deref().ok_or_else(|| {
+                let idcc = sal.idcc_de_l_employeur.as_ref().ok_or_else(|| {
                     socle::echec::refus("La convention collective de l'employeur n'est pas dite : la liste de l'annexe 8 qui nomme le métier en dépend (Configuration › Entreprise).")
                 })?;
                 Ok(m.nomme_par_l_annexe8(idcc))
@@ -109,11 +109,11 @@ pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(Stri
     let Some(m) = emplois::metier(code)?.filter(|m| m.annexe() == 8) else {
         return Ok(None);
     };
-    let Some(idcc) = sal.idcc_de_l_employeur.as_deref().filter(|i| !i.trim().is_empty()) else { return Ok(None) };
+    let Some(idcc) = sal.idcc_de_l_employeur.as_ref() else { return Ok(None) };
     if m.nomme_par_l_annexe8(idcc) {
         return Ok(None);
     }
-    Ok(Some((m.libelle().to_string(), idcc.trim().to_string())))
+    Ok(Some((m.libelle().to_string(), idcc.to_string())))
 }
 
 /// L'employeur declare-t-il ce contrat a la caisse des Conges Spectacles ? `sal` est la fiche telle que la paie la lit

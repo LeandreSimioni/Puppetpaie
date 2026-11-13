@@ -249,7 +249,7 @@ fn quantite(d: Decimal) -> String {
 
 /// Le PDF d'une attestation : le salarie `ind` (et ce que la DSN dit de plus, `plus`), ses periodes (cinq au plus),
 /// l'emploi et le motif de rupture de son contrat, l'employeur `ent`, edite le `edite_le`.
-fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: droit::natures::MotifDeRupture, idcc: Option<&str>, edite_le: Jour, remplace: Option<droit::natures::NumeroDOrdre>) -> R<Vec<u8>> {
+fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: droit::natures::MotifDeRupture, idcc: Option<&droit::fiche::Idcc>, edite_le: Jour, remplace: Option<droit::natures::NumeroDOrdre>) -> R<Vec<u8>> {
     if periodes.is_empty() || periodes.len() > COLONNES {
         return Err(socle::refus!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
     }
@@ -319,7 +319,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     etiquette(&mut p1, 300, 343, "Code APE/NAF");
     f.imprime_dite(1, "EMP_APE", [368, 333, 432, 345], ent.naf.portee(), m("8.5"), Alignement::Gauche);
     etiquette(&mut p1, 470, 343, "N° IDCC");
-    f.imprime_dite(1, "EMP_IDCC", [515, 333, 566, 345], idcc, m("8.5"), Alignement::Gauche);
+    f.imprime_dite(1, "EMP_IDCC", [515, 333, 566, 345], idcc.map(|i| &**i), m("8.5"), Alignement::Gauche);
     etiquette(&mut p1, 30, 362, "Nom ou raison sociale");
     f.imprime_dite(1, "ENSEIGNE", [146, 352, 567, 365], ent.raison_sociale.portee(), m("8.5"), Alignement::Gauche);
     etiquette(&mut p1, 30, 380, "Adresse");
@@ -402,7 +402,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
             f.imprime(2, &format!("CON_NUM_DT_FIN_{}", n), r(125, 140), fin, m("8.5"), Alignement::Centre);
             f.imprime_dite(2, &format!("CON_OBJET_{}", n), r(145, 172), objet.as_deref(), pt(8), Alignement::Centre);
             let idcc_contrat = d.contrats_de(ind.nir.as_deref()).find(|c| c.numero.as_deref() == Some(numero.as_str())).and_then(|c| c.idcc.as_deref()).filter(|i| !i.is_empty());
-            if let Some(idcc_contrat) = idcc_contrat.filter(|i| Some(*i) != idcc) {
+            if let Some(idcc_contrat) = idcc_contrat.filter(|i| Some(*i) != idcc.map(|j| &**j)) {
                 f.imprime(2, &format!("CON_IDCC_{}", n), r(184, 206), idcc_contrat, m("8.5"), Alignement::Centre);
             }
         }
@@ -551,7 +551,7 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
     let lignes = crate::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let ent = &ctx.entreprise;
     let siret = ent.siret.ecrite("siret")?;
-    let idcc = ent.idcc.portee();
+    let idcc = ent.idcc.dite();
     let mut pdfs: Vec<(String, Vec<u8>)> = Vec::new();
     for ind in &d.individus {
         let mut finis: Vec<&ContratDeclare> = d.contrats_de(ind.nir.as_deref()).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()).collect();

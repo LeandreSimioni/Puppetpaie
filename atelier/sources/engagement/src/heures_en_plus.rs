@@ -42,7 +42,7 @@ pub fn faits_appeles(ctx: &Contexte, partiel: bool) -> R<Vec<&'static str>> {
     if partiel {
         return Ok(vec![HEURES_COMPLEMENTAIRES]);
     }
-    let idcc = ctx.entreprise.idcc.portee();
+    let idcc = ctx.entreprise.idcc.dite();
     Ok(if droit::heures_en_plus::paliers_conventionnels(idcc)? {
         vec![HEURES_SUPPLEMENTAIRES]
     } else {
@@ -83,7 +83,7 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, qu
     if quotite.is_zero() {
         return Err(socle::refus!("{} : ses heures par mois sont nulles ; le taux horaire de ses heures en plus ne se calcule pas.", qui(ctx, e)));
     }
-    let idcc = ctx.entreprise.idcc.portee();
+    let idcc = ctx.entreprise.idcc.dite();
     let (rubrique, reparties) = if partiel {
         (HEURE_COMPLEMENTAIRE, droit::heures_en_plus::complementaires(idcc, comp, quotite)?)
     } else {

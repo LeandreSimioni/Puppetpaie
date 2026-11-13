@@ -67,7 +67,7 @@ fn du_ou_rien(v: Option<Decimal>) -> Decimal {
 }
 
 /// L'article de la convention qui donne une indemnite ; la convention elle-meme quand son releve ne dit pas l'article.
-fn l_article(article: Option<&str>, idcc: Option<&str>) -> String {
+fn l_article(article: Option<&str>, idcc: Option<&droit::fiche::Idcc>) -> String {
     match article.filter(|a| !a.is_empty()) {
         Some(a) => a.to_string(),
         None => clauses::nom(idcc),
@@ -75,8 +75,8 @@ fn l_article(article: Option<&str>, idcc: Option<&str>) -> String {
 }
 
 /// L'IDCC de la fiche, tel que les clauses le lisent (`None` : la compagnie n'en dit pas).
-fn idcc(ctx: &Contexte) -> Option<&str> {
-    ctx.entreprise.idcc.portee()
+fn idcc(ctx: &Contexte) -> Option<&droit::fiche::Idcc> {
+    ctx.entreprise.idcc.dite()
 }
 
 // ------------------------------------------------------------ le profil
@@ -1025,7 +1025,7 @@ fn phrase_de_la_convention(
     haut: Option<Decimal>,
     m_legal: Decimal,
     pourquoi: Option<&str>,
-    idcc: Option<&str>,
+    idcc: Option<&droit::fiche::Idcc>,
 ) -> String {
     if !releve {
         return format!("les clauses de {} ne sont pas relevees : seule la loi est calculee", clauses::nom(idcc));

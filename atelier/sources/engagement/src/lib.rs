@@ -1017,7 +1017,7 @@ pub(crate) fn engagements(
             Some(code) => {
                 let salarie = fiche_du_salarie(ctx, carte.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?;
                 let feminin = sexe(&salarie).as_deref() == Some("2");
-                Some(emplois::resoudre(code, carte.cadre, feminin, ctx.entreprise.idcc.portee()).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?)
+                Some(emplois::resoudre(code, carte.cadre, feminin, ctx.entreprise.idcc.dite()).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?)
             }
             None => None,
         };
@@ -1145,7 +1145,7 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
             let fiche = crate::calcul::fiche_de_l_engagement(ctx, eng)?;
             let metier = fiche.code_emploi_ft.dite().map(emplois::metier).transpose()?.flatten();
             let cirque = metier.as_ref().and_then(|m| m.au_catalogue()).and_then(|f| f.minima.ccn_1285.as_deref()) == Some("cirque");
-            (ent.idcc.portee() == Some(droit::clauses::IDCC_CCNEAC) && cirque).then_some(f)
+            (ent.idcc.dite() == Some(&droit::clauses::IDCC_CCNEAC) && cirque).then_some(f)
         }
         _ => None,
     };
@@ -2001,7 +2001,7 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
             Some(metier) => Some((metier, metier.metier()?)),
             None => None,
         };
-        if let Some((metier, m)) = m.filter(|(_, m)| e.cadre == Some(false) && m.cadre_par_defaut(ctx.entreprise.idcc.portee()) == Some(true)) {
+        if let Some((metier, m)) = m.filter(|(_, m)| e.cadre == Some(false) && m.cadre_par_defaut(ctx.entreprise.idcc.dite()) == Some(true)) {
             fn texte<T: AsRef<str>>(c: &Option<T>) -> Option<String> {
                 c.remplie().map(str::to_string)
             }

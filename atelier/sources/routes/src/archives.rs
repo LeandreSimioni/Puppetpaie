@@ -348,10 +348,10 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
 /// `engagement::permanents::Permanents::ouverts`), ni la taxe sur les salaires a qui ne la doit aucune des annees a
 /// exporter (`taxe_due`).
 fn etat_concerne(ctx: &Contexte, etat: &str, piece: Option<droit::fiche::Piece>, permanents: bool, taxe_due: bool) -> bool {
-    let idcc = ctx.entreprise.idcc.portee();
+    let idcc = ctx.entreprise.idcc.dite();
     let t = tables();
     if let Some(liste) = t.si_convention.get(etat) {
-        if !liste.iter().any(|c| Some(c.as_str()) == idcc) {
+        if !liste.iter().any(|c| Some(c) == idcc) {
             return false;
         }
     }

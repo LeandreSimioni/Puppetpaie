@@ -5,6 +5,7 @@
 //! `atelier/reference/sources/kali-3090-titres-vii-x-xi-annexes-20260924.md`).
 
 use droit::essai::{plafond, refuser_au_dela};
+use droit::fiche::IDCC_3090;
 use droit::natures::NatureDeContrat as N;
 use socle::date::Jour;
 
@@ -15,14 +16,14 @@ fn la_periode_d_essai_ne_depasse_pas_ce_que_le_texte_permet() {
     let jours = |p: Option<droit::essai::Plafond>| p.map(|p| p.jours);
 
     // Un CDD de six mois au plus : un jour par semaine, deux semaines au plus.
-    let jules = plafond(&cdd, &j(1, 12), Some(&j(6, 30)), Some("05"), false, Some("3090")).unwrap();
+    let jules = plafond(&cdd, &j(1, 12), Some(&j(6, 30)), Some("05"), false, Some(&IDCC_3090)).unwrap();
     assert_eq!(jours(jules.clone()), Some(14));
     let refus = refuser_au_dela(30, jules.as_ref(), "VARENNE Jules").unwrap_err().phrase;
     assert!(refus.contains("L. 1242-10") && refus.contains("14 jours"), "{}", refus);
     assert!(refuser_au_dela(14, jules.as_ref(), "VARENNE Jules").is_ok());
     // Trois semaines de contrat : trois jours ; un contrat d'usage de trois jours : un jour.
     assert_eq!(jours(plafond(&cdd, &j(3, 2), Some(&j(3, 22)), None, false, None).unwrap()), Some(3));
-    assert_eq!(jours(plafond(&cddu, &j(11, 20), Some(&j(11, 22)), None, true, Some("3090")).unwrap()), Some(1));
+    assert_eq!(jours(plafond(&cddu, &j(11, 20), Some(&j(11, 22)), None, true, Some(&IDCC_3090)).unwrap()), Some(1));
     // Plus de six mois : un jour par semaine, un mois au plus.
     assert_eq!(jours(plafond(&cdd, &j(1, 12), Some(&j(7, 20)), None, false, None).unwrap()), Some(28));
     assert_eq!(jours(plafond(&cdd, &j(1, 12), Some(&j(12, 31)), None, false, None).unwrap()), Some(31));
@@ -35,7 +36,7 @@ fn la_periode_d_essai_ne_depasse_pas_ce_que_le_texte_permet() {
     assert_eq!(jours(plafond(&cdi, &debut, None, Some("06"), false, None).unwrap()), Some(59));
     assert_eq!(jours(plafond(&cdi, &debut, None, Some("05"), false, None).unwrap()), Some(90));
     assert_eq!(jours(plafond(&cdi, &debut, None, Some("04"), false, None).unwrap()), Some(120));
-    assert_eq!(jours(plafond(&cdi, &debut, None, Some("04"), true, Some("3090")).unwrap()), Some(59));
+    assert_eq!(jours(plafond(&cdi, &debut, None, Some("04"), true, Some(&IDCC_3090)).unwrap()), Some(59));
     assert_eq!(plafond(&cdi, &debut, None, Some("01"), false, None).unwrap(), None);
     let cadre = plafond(&cdi, &debut, None, Some("04"), false, None).unwrap();
     assert!(refuser_au_dela(121, cadre.as_ref(), "X").unwrap_err().phrase.contains("L. 1221-19"));

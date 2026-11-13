@@ -1340,7 +1340,7 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
 fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &str) -> R<(Option<String>, Option<(i64, i64)>)> {
     let base = droit::organismes::base()?;
     let libelle = adhesion.libelle.trim();
-    let Some(options) = base.options(ent.idcc.portee(), libelle) else {
+    let Some(options) = base.options(ent.idcc.dite(), libelle) else {
         return Ok((None, None));
     };
     let lieu = format!(
@@ -1400,7 +1400,7 @@ fn refs_du_mois(orgs: &Organismes, sec: &droit::organismes::Rattachement, mois: 
 /// `casc_svp` : la CASC-SVP de ce mois, ou `None`.
 fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois) -> R<Option<ContributionDuMois>> {
     let base = droit::adhesions::casc_svp_base()?;
-    if ent.idcc.portee() != Some(base.idcc.as_str()) || mois < base.depuis {
+    if ent.idcc.dite() != Some(&base.idcc) || mois < base.depuis {
         return Ok(None);
     }
     let (an, eff) = (mois.annee(), ctx.effectif()?);
@@ -1647,7 +1647,7 @@ p. 322). Corriger la date sur la fiche : le jour ou la personne est entree dans 
 ///
 /// La CCH-11 (p. 182, l. 156-160 : 40.003 = 01 => 40.002 dans 03, 04 ou 08) est un controle bloquant : verifiee ici,
 /// avant de produire.
-pub fn statuts_du_contrat(p: &Paie, idcc: Option<&str>) -> R<(String, String)> {
+pub fn statuts_du_contrat(p: &Paie, idcc: Option<&droit::fiche::Idcc>) -> R<(String, String)> {
     let s = &p.salarie;
     let lu = |v: Option<&str>| v.map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
     let code = s.code_emploi_ft.dite();
@@ -1762,7 +1762,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         }
     };
     // Les statuts se lisent, ou refusent (`statuts_du_contrat`), avant qu'une ligne du contrat soit ecrite.
-    let (statut_conventionnel, statut_categoriel_rc) = statuts_du_contrat(p, ent.idcc.portee())?;
+    let (statut_conventionnel, statut_categoriel_rc) = statuts_du_contrat(p, ent.idcc.dite())?;
     f.add(droit::rubrique!("S21.G00.40.001"), e.debut.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.40.002"), statut_conventionnel);
     f.add(droit::rubrique!("S21.G00.40.003"), statut_categoriel_rc);

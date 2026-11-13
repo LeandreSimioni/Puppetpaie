@@ -23,7 +23,7 @@ use crate::source::forme_notee;
 forme_notee! {
     /// `donnees/minima-conventionnels.json` : une grille par convention, par son IDCC.
     pub struct Table {
-        pub conventions: BTreeMap<String, Convention>,
+        pub conventions: BTreeMap<crate::fiche::Idcc, Convention>,
     }
 }
 
@@ -494,7 +494,7 @@ pub struct SpectacleDuContrat<'a> {
 /// un métier hors catalogue ne dit pas s'il l'est, l'IDCC se refuse (règle 1).
 pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: &crate::fiche::ChampsSalarie) -> R<crate::fiche::Idcc> {
     let idcc = idcc.clone();
-    if !matches!(&*idcc, "2642" | "3241") || !sp.emission_tv_1734 || sal.statut.dite().is_some_and(|s| *s != crate::fiche::Statut::Artiste) {
+    if (idcc != crate::fiche::IDCC_2642 && idcc != crate::fiche::IDCC_3241) || !sp.emission_tv_1734 || sal.statut.dite().is_some_and(|s| *s != crate::fiche::Statut::Artiste) {
         return Ok(idcc);
     }
     let code = sal.code_emploi_ft.dite();
@@ -517,7 +517,7 @@ pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: 
                 None => "ce salarié",
             }
         )),
-        Some("Artistes" | "Cirque et rue") => crate::fiche::Idcc::lire("1734"),
+        Some("Artistes" | "Cirque et rue") => Ok(crate::fiche::IDCC_1734),
         Some(_) => Ok(idcc),
     }
 }
@@ -559,7 +559,7 @@ pub fn palier(paliers: &[Palier], nombre: i64) -> Option<Decimal> {
 
 impl Table {
     /// La convention `idcc`, si la table la connait.
-    pub fn convention(&self, idcc: &str) -> Option<&Convention> {
+    pub fn convention(&self, idcc: &crate::fiche::Idcc) -> Option<&Convention> {
         self.conventions.get(idcc)
     }
 }
@@ -592,7 +592,7 @@ pub fn lie_depuis(accord: &Convention, organisation: Option<&str>, depuis: Jour)
 /// les minima (`en_vigueur`) la lient a ce jour (`lie_depuis`), avec le jour depuis lequel il la lie ; a defaut, la
 /// grille de la convention elle-meme. `None` : la table ne connait pas la convention. Avec elle, la cle des cases du
 /// metier (`ParLaGrille`) : seule une grille trouvee les ouvre.
-pub fn grille_au<'a>(t: &'a Table, idcc: &str, organisation: Option<&str>, jour: Option<Jour>) -> Option<(&'a Convention, Option<Jour>, ParLaGrille)> {
+pub fn grille_au<'a>(t: &'a Table, idcc: &crate::fiche::Idcc, organisation: Option<&str>, jour: Option<Jour>) -> Option<(&'a Convention, Option<Jour>, ParLaGrille)> {
     let base = t.convention(idcc)?;
     let lie = |a: &'a Convention| {
         // Un accord qui ne dit pas quand ses minima entrent en vigueur ne lie personne.

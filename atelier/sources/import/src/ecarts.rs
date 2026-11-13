@@ -60,21 +60,21 @@ pub enum Detail {
         libelles: Vec<String>,
         grandeur: &'static str,
         logiciel: String,
-        idcc: Option<String>,
+        idcc: Option<droit::fiche::Idcc>,
         annexe: Option<String>,
         organisation_patronale: Option<String>,
         cas: Vec<Cas>,
     },
     NonComparee {
         raison: String,
-        idcc: Option<String>,
+        idcc: Option<droit::fiche::Idcc>,
         annexe: Option<String>,
         cas: Vec<Cas>,
     },
     NonRattachees {
         logiciel: String,
         libelles: Vec<String>,
-        idcc: Option<String>,
+        idcc: Option<droit::fiche::Idcc>,
     },
 }
 
@@ -158,7 +158,7 @@ pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<EmpreinteCourte>)> {
 fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> {
     let e = &ctx.entreprise;
     let (idcc, annexe, organisation) =
-        (e.idcc.remplie().map(String::from), e.annexe_convention.dite().map(|a| a.as_str().to_string()), e.organisation_patronale.remplie().map(String::from));
+        (e.idcc.dite().cloned(), e.annexe_convention.dite().map(|a| a.as_str().to_string()), e.organisation_patronale.remplie().map(String::from));
     let mut connus = Connus::default();
     ajouter_les_fiches(ctx, &mut connus)?;
     let mut propre = Propre { connus: &connus, vus: Default::default() };

@@ -1509,7 +1509,7 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
 /// (`applicable`), et l'option qui la propose.
 #[derive(Debug, Clone, serde::Serialize)]
 struct ConventionServie {
-    idcc: String,
+    idcc: droit::fiche::Idcc,
     libelle: String,
     applicable: bool,
     option_dit: String,
@@ -1522,7 +1522,7 @@ fn conventions(ctx: &Contexte) -> R<Vec<ConventionServie>> {
         .conventions_servies()?
         .into_iter()
         .map(|(idcc, c)| {
-            let libelle = if c.libelle.trim().is_empty() { idcc.clone() } else { c.libelle };
+            let libelle = if c.libelle.trim().is_empty() { idcc.to_string() } else { c.libelle };
             let option_dit = format!("IDCC {} — {}{}", idcc, libelle, if c.applicable { "" } else { " (taux non relevés)" });
             ConventionServie { idcc, libelle, applicable: c.applicable, option_dit }
         })

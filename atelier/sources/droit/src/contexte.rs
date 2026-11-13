@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
-use crate::fiche::{ChampsEntreprise, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
+use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
 use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
 use socle::echec::Lieu;
 use socle::num::Decimal;
@@ -382,30 +382,12 @@ pub fn socle_livre_lu(an: i32) -> R<Option<Pile>> {
 
 /// LA COUCHE DE LA CONVENTION COLLECTIVE `idcc` (`par_convention` du socle), ce qu'elle fond dans le socle ; `None` : un
 /// socle qui ne couvre aucune convention, ou une convention qui n'a rien a fondre.
-fn convention<'a>(pile: &'a Pile, idcc: &str) -> R<Option<&'a CoucheConvention>> {
+fn convention<'a>(pile: &'a Pile, idcc: &Idcc) -> R<Option<&'a CoucheConvention>> {
     if pile.par_convention.is_empty() {
         return Ok(None);
     }
     let annee = pile.annee;
-    let connues: Vec<&str> = pile.par_convention.keys().map(String::as_str).collect();
-    let idcc = idcc.trim();
-    if idcc.is_empty() {
-        return Err(socle::echec::refus_avec(
-            "La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.",
-            Lieu {
-                cle: Some("idcc".into()),
-                detail: Some(format!(
-                    "Bareme {} : la fiche entreprise ne dit pas son `idcc`, et les \
-cotisations conventionnelles en dependent.\n\
-\x20 Conventions couvertes : {}.\n\
-\x20 A ecrire dans config/entreprise.json : \"idcc\": \"3090\".",
-                    annee,
-                    connues.join(", ")
-                )),
-                ..Lieu::default()
-            },
-        ));
-    }
+    let connues: Vec<&str> = pile.par_convention.keys().map(|k| k.as_ref()).collect();
     let Some(couche) = pile.par_convention.get(idcc) else {
         return Err(socle::echec::refus_avec(
             "La convention collective de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
@@ -498,7 +480,7 @@ fn modifier_la_nature(nat: &mut CoucheNature, m: &NatureModifiee, ou: &str) -> R
 
 /// LA COUCHE DE LA CONVENTION FONDUE DANS LE SOCLE : ses tarifs, ses contributions, son champ s'ajoutent ; ce qu'elle
 /// ecrit des rubriques et des sections du socle les change ; la section d'un statut qu'elle donne est la sienne entiere.
-fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &str) -> R<()> {
+fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &Idcc) -> R<()> {
     let ou = format!("La couche de la convention {} du barème {}", idcc, pile.annee);
     if let Some(t) = &c.tarifs_conventionnels {
         pile.tarifs_conventionnels = Some(t.clone());
@@ -1352,7 +1334,7 @@ impl Contexte {
     /// LES CONVENTIONS QUE LE SOCLE SERT (`par_convention`), lues par leur forme : celles du socle livre de l'annee du
     /// jour, a defaut du plus recent livre. Elles ne dependent d'aucune compagnie : la fiche qui n'a pas encore choisi la
     /// sienne les propose.
-    pub fn conventions_servies(&self) -> R<BTreeMap<String, crate::forme_bareme::Convention>> {
+    pub fn conventions_servies(&self) -> R<BTreeMap<Idcc, crate::forme_bareme::Convention>> {
         let dossier = self.code.join("baremes");
         let jour = self.aujourdhui;
         let an = match fichier_du_socle(&dossier, jour.an) {
@@ -1460,7 +1442,7 @@ depuis le plus recent.",
         let (mut pile, r) = crate::forme_bareme::lire_le_socle(&fichier, jour, organisation)?;
         regles.extend(r);
         regles.extend(smic_en_vigueur(&pile.smic_horaire, jour)?.map(|(j, _)| j));
-        if let Some(idcc) = ent.idcc.portee() {
+        if let Some(idcc) = ent.idcc.dite() {
             if let Some(c) = convention(&pile, idcc)?.cloned() {
                 fondre_la_convention(&mut pile, &c, idcc)?;
             }
@@ -1569,7 +1551,7 @@ depuis le plus recent.",
     fn dans_la_couche<T>(&self, jour: &Jour, lire: impl FnOnce(&CoucheConvention) -> T) -> R<Option<T>> {
         let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(None) };
         let ent = self.entreprise_au(jour);
-        let Some(idcc) = ent.idcc.portee() else { return Ok(None) };
+        let Some(idcc) = ent.idcc.dite() else { return Ok(None) };
         let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite().map(String::as_str))?;
         Ok(convention(&socle_an, idcc)?.map(lire))
     }

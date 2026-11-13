@@ -1006,7 +1006,7 @@ par_caisse_conges['{}'] marquee \"verifie\": true. Le payer comme sa nature le d
 /// (`donnees/baremes/<an>.json`), celui que la fiche entreprise propose au choix de l'IDCC. Le bulletin et le contrat
 /// l'impriment d'ici, à la date de leur période ; une convention que le socle de l'année ne porte pas n'a pas de
 /// libellé, et le refus le dit (règle 1).
-pub fn libelle_convention(idcc: &str, an: i32) -> R<String> {
+pub fn libelle_convention(idcc: &crate::fiche::Idcc, an: i32) -> R<String> {
     let Some(pile) = crate::contexte::socle_livre_lu(an)? else {
         return Err(socle::refus!("Aucun barème livré pour {} : le libellé de la convention {} ne se lit pas.", an, idcc));
     };
@@ -1444,7 +1444,7 @@ pub fn repartition_t1(
     let texte_rep: String = match avant_1999 {
         Some(a) if embauche_avant_1999 => a.to_string(),
         _ => {
-            let idcc = ent.idcc.portee();
+            let idcc = ent.idcc.dite();
             let branche = idcc.and_then(|i| rep.and_then(|r| r.par_idcc.get(i)));
             let t = branche.and_then(de_la_branche);
             match t.filter(|t| !t.is_empty()) {
@@ -1460,7 +1460,7 @@ repartitions >>, puis s'ecrit dans `retraite_t1_repartition` \
 du socle.",
                             annee(bar),
                             match idcc {
-                                Some(i) => i,
+                                Some(i) => i.as_ref(),
                                 None => "(aucune)",
                             },
                             population

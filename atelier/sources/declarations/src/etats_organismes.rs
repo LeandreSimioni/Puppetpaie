@@ -12,6 +12,7 @@
 
 use documents::plan_comptable::plan;
 use droit::fiche::Lue as _;
+use droit::fiche::{Idcc, IDCC_1790, IDCC_2642, IDCC_3097};
 use std::collections::{BTreeMap, BTreeSet};
 
 use droit::contexte::Contexte;
@@ -64,7 +65,7 @@ fn organismes(ctx: &Contexte) -> R<Vec<(IdDeCotisation, String)>> {
 
 /// Ce que la convention `idcc` fait payer hors du bulletin (`hors_bulletin`), dans le socle livre de l'annee `an`, a
 /// defaut dans le plus recent livre.
-fn hors_bulletin(ctx: &Contexte, an: i32, idcc: &str) -> R<Option<droit::forme_bareme::HorsBulletin>> {
+fn hors_bulletin(ctx: &Contexte, an: i32, idcc: &Idcc) -> R<Option<droit::forme_bareme::HorsBulletin>> {
     let socle = match droit::contexte::socle_livre_lu(an).map_err(|e| e.reclasser(Classe::Disque))? {
         Some(s) => s,
         None => {
@@ -86,8 +87,8 @@ fn annee_entiere(an: &str) -> R<i32> {
 }
 
 /// L'IDCC de la fiche entreprise, que chacun de ces etats exige.
-fn idcc_de(ctx: &Contexte) -> R<String> {
-    ctx.entreprise.idcc.ecrite("idcc").map(str::to_string).map_err(|e| e.reclasser(Classe::Refuse))
+fn idcc_de(ctx: &Contexte) -> R<Idcc> {
+    ctx.entreprise.idcc.exigee("idcc").cloned().map_err(|e| e.reclasser(Classe::Refuse))
 }
 
 // ===================================== 6. les cotisations par organisme
@@ -581,16 +582,17 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     refuse_un_mois("Les contributions Afdas de la 2642 sont annuelles : elles se demandent pour une année, ou pour toutes.", d)?;
     let idcc = idcc_de(ctx)?;
-    let branche = match idcc.as_str() {
-        "2642" => "la production audiovisuelle (IDCC 2642)",
-        "3097" => "la production cinématographique (IDCC 3097)",
-        "1790" => "les espaces de loisirs, d'attractions et culturels (IDCC 1790)",
-        _ => {
-            return Err(refus(format!(
-                "Les contributions Afdas de cet état sont celles de la production audiovisuelle (IDCC 2642), de la production cinématographique (IDCC 3097) et des espaces de loisirs (IDCC 1790) ; la fiche entreprise dit IDCC {}.",
-                idcc
-            )))
-        }
+    let branche = if idcc == IDCC_2642 {
+        "la production audiovisuelle (IDCC 2642)"
+    } else if idcc == IDCC_3097 {
+        "la production cinématographique (IDCC 3097)"
+    } else if idcc == IDCC_1790 {
+        "les espaces de loisirs, d'attractions et culturels (IDCC 1790)"
+    } else {
+        return Err(refus(format!(
+            "Les contributions Afdas de cet état sont celles de la production audiovisuelle (IDCC 2642), de la production cinématographique (IDCC 3097) et des espaces de loisirs (IDCC 1790) ; la fiche entreprise dit IDCC {}.",
+            idcc
+        )));
     };
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
@@ -659,7 +661,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         l.t("a_payer", format!("avant le 28/02/{}, à l'Afdas (Globaldec')", annee_entiere(&an)? + 1));
         lignes.push(l);
     }
-    if idcc == "1790" {
+    if idcc == IDCC_1790 {
         avert.push("Montants hors taxes : l'Afdas facture la TVA en plus. Taux de l'avenant n° 52 (article 1.5) : 0,35 % sous 10 salariés, 0,30 % à partir de 10, sur les salaires des CDI et des CDD. La plaquette Afdas « Loisirs 2026 » place le seuil à 11 : l'écart ne touche qu'un effectif d'exactement 10.".to_string());
     } else {
         avert.push("Montants hors taxes : l'Afdas facture la TVA en plus. Le taux de la CPNEF est celui de l'Afdas, qui collecte (0,004 %, 15 à 2 000 € HT) ; la web-conférence Audiens 2026 donne l'inverse — à confirmer sur le premier appel de l'Afdas.".to_string());
@@ -671,7 +673,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avec_total = false;
     t.sections = vec![Section::nouvelle("", lignes)];
     let mut cols = vec![col_t("annee", "Année"), col_m("masse", "Masse salariale")];
-    if idcc != "1790" {
+    if idcc != IDCC_1790 {
         cols.push(col_m("cpnef", "CPNEF (dialogue social)"));
     }
     cols.extend([
@@ -683,7 +685,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     ]);
     t.colonnes = cols;
     t.sources = vec![
-        if idcc == "1790" { "CCN 1790, avenant n° 52, article 1.5 ; plaquette Afdas « Loisirs 2026 »" } else { "plaquette Afdas « Contributions 2026 Audiovisuel » (janvier 2026)" }.to_string(),
+        if idcc == IDCC_1790 { "CCN 1790, avenant n° 52, article 1.5 ; plaquette Afdas « Loisirs 2026 »" } else { "plaquette Afdas « Contributions 2026 Audiovisuel » (janvier 2026)" }.to_string(),
         "masse salariale : le livre de paie, bulletin par bulletin".to_string(),
     ];
     finir(ctx, &mut t, Some(&p), "afdas-2642", &d.format, d.ecrire)?;

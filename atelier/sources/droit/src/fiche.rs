@@ -643,14 +643,56 @@ identifiant_de_chiffres! {
         "« {texte} » n'est pas un SIRET : il a {max} chiffres, le SIREN puis le NIC, sans espace (INSEE). Corrigez-le";
 }
 
-identifiant_de_chiffres! {
-    /// L'IDCC, L'IDENTIFIANT D'UNE CONVENTION COLLECTIVE : 4 chiffres (DSN, « Code convention collective applicable »,
-    /// S21.G00.40.017, et « Code convention collective principale », S21.G00.11.022, X [4,4] :
-    /// `logiciel/donnees/formats-dsn-base.json`).
-    pub struct Idcc : 4,
-        "« {texte} » n'est pas un IDCC : une convention collective se dit en {max} chiffres, 3090 par exemple (DSN, \
-S21.G00.40.017). Corrigez-le";
+/// L'IDCC, L'IDENTIFIANT D'UNE CONVENTION COLLECTIVE : 4 chiffres (DSN, « Code convention collective applicable »,
+/// S21.G00.40.017, et « Code convention collective principale », S21.G00.11.022, X [4,4] :
+/// `logiciel/donnees/formats-dsn-base.json`). C'est la cle des tables par convention : il s'ecrit et se trie
+/// comme son texte (quatre chiffres : l'ordre du texte est celui des nombres), et une table qu'il indexe s'ecrit dans
+/// l'ordre de ses cles telles qu'ecrites. Une convention que le moteur nomme lui-meme est une constante (`du_moteur`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Idcc(std::borrow::Cow<'static, str>);
+
+impl Idcc {
+    pub const LONGUEUR: usize = 4;
+
+    /// L'identifiant `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<Idcc> {
+        if de_chiffres(texte, Self::LONGUEUR) {
+            Ok(Idcc(std::borrow::Cow::Owned(texte.to_string())))
+        } else {
+            Err(socle::echec::refus(format!(
+                "« {texte} » n'est pas un IDCC : une convention collective se dit en {max} chiffres, 3090 par exemple \
+(DSN, S21.G00.40.017). Corrigez-le",
+                texte = texte,
+                max = Self::LONGUEUR
+            )))
+        }
+    }
+
+    /// UNE CONVENTION QUE LE MOTEUR NOMME, ecrite en Rust : une constante (`const X: Idcc = Idcc::du_moteur("…")`),
+    /// dont le compilateur refuse un texte qui n'est pas fait de quatre chiffres.
+    pub const fn du_moteur(texte: &'static str) -> Idcc {
+        let octets = texte.as_bytes();
+        assert!(octets.len() == Self::LONGUEUR, "un IDCC a quatre chiffres");
+        let mut i = 0;
+        while i < octets.len() {
+            assert!(octets[i].is_ascii_digit(), "un IDCC a quatre chiffres");
+            i += 1;
+        }
+        Idcc(std::borrow::Cow::Borrowed(texte))
+    }
 }
+
+notion_lue!(Idcc rangee par sans_blancs);
+
+/// Les conventions que le moteur nomme lui-meme (une regle propre a l'une d'elles), par leur IDCC ; la CCNEAC :
+/// `clauses::IDCC_CCNEAC`.
+pub const IDCC_1734: Idcc = Idcc::du_moteur("1734");
+pub const IDCC_1790: Idcc = Idcc::du_moteur("1790");
+pub const IDCC_2642: Idcc = Idcc::du_moteur("2642");
+pub const IDCC_3090: Idcc = Idcc::du_moteur("3090");
+pub const IDCC_3097: Idcc = Idcc::du_moteur("3097");
+pub const IDCC_3241: Idcc = Idcc::du_moteur("3241");
 
 impl Siren {
     /// Sa cle de Luhn est-elle juste (`cle_de_luhn_juste`) ?

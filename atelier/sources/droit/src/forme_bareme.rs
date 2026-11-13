@@ -268,7 +268,7 @@ forme! {
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
         pub par_organisation_patronale: BTreeMap<String, Organisation>,
         pub retraite_t1_repartition: Option<RetraiteT1Repartition>,
-        pub par_convention: BTreeMap<String, Convention>,
+        pub par_convention: BTreeMap<crate::fiche::Idcc, Convention>,
         // La couche de la convention de la compagnie, fondue dans le socle (`contexte::convention`) : le socle ne l'ecrit pas.
         pub contributions_conventionnelles: Option<Vec<Contribution>>,
         pub tarifs_conventionnels: Option<Tarifs>,
@@ -1155,7 +1155,7 @@ forme! {
         pub taux_droit_commun: Decimal,
         pub ceg: Cet,
         pub avant_1999: String,
-        pub par_idcc: BTreeMap<String, RepartitionDeBranche>,
+        pub par_idcc: BTreeMap<crate::fiche::Idcc, RepartitionDeBranche>,
     }
 }
 
