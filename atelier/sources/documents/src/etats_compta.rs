@@ -1006,10 +1006,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut avert: Vec<String> = Vec::new();
     let retenu = ChoixCompta::lu(&ctx.racine)?;
     let mut format = d.format;
-    let mut logiciel = d.logiciel;
-    if logiciel.is_none() && format.is_none() {
-        logiciel = retenu.retenu();
-    }
+    let logiciel = d.logiciel;
     let analytique = match d.analytique {
         Some(a) => a,
         None => retenu.analytique,
@@ -1021,10 +1018,9 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         avert.push(format!("{} : format « {} » — {}.", connu.nom, connu.format, connu.pourquoi));
         format = Some(connu.format);
     }
-    // Ni format ni logiciel : le tableau en CSV (`exporter` exige toujours un format de cet etat).
-    let format = match format {
-        Some(f) => f,
-        None => FormatDExport::Csv,
+    // `exporter` exige un format de cet etat : sans format ni logiciel, rien ne se choisit a sa place.
+    let Some(format) = format else {
+        return Err(refus("Les écritures comptables s'exportent dans un format : choisir le format, ou le logiciel comptable.".to_string()));
     };
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
     let mut t = Tableau::nouveau(EtatDExport::EcrituresComptables, "Journal de paie — écritures comptables", p.libelle.clone());
