@@ -13,7 +13,6 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use crate::plan_comptable::EtatDExport;
-use socle::grandeurs::Montant;
 use socle::num::Decimal;
 use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
@@ -58,7 +57,7 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
                 objet: paie.spectacle().and_then(|s| s.numero_objet.dite()).cloned(),
                 debut: e.debut,
                 fin: e.fin.or(e.dates_travail.last().copied()),
-                brut: paie.brut().map(|b| Montant::du_decimal(b).au_centime().decimal()),
+                brut: paie.brut().map(|b| b.au_centime().decimal()),
             });
         }
     }

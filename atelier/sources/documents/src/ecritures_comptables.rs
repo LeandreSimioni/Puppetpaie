@@ -117,8 +117,8 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         let qui = crate::tableaux_export::qui(p.salarie())?;
         // Une ecriture ne s'equilibre qu'avec chacun de ses montants : celui que les pieces d'une paie importee taisent
         // ne s'invente pas, l'ecriture se refuse en le nommant.
-        let dit = |m: Option<Decimal>, quoi: &str| -> R<Decimal> {
-            m.map(|x| Montant::du_decimal(x).au_centime().decimal()).ok_or_else(|| refus(format!("{}, {} : les pièces importées ne disent pas {} ; les écritures comptables du mois ne s'écrivent pas sans lui.", qui, mois, quoi)))
+        let dit = |m: Option<Montant>, quoi: &str| -> R<Decimal> {
+            m.map(|x| x.au_centime().decimal()).ok_or_else(|| refus(format!("{}, {} : les pièces importées ne disent pas {} ; les écritures comptables du mois ne s'écrivent pas sans lui.", qui, mois, quoi)))
         };
         let brut = dit(p.brut(), "le brut")?;
         ajouter(&mut brut_par_spectacle, titre.clone(), brut);

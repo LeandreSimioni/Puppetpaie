@@ -1333,7 +1333,7 @@ fn provision_d_une_annee_importee(
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
             for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == *cle) {
                 let Some(brut) = q.brut else { return Ok(None) };
-                total = add(total, brut);
+                total = add(total, brut.decimal());
             }
         }
         Ok(Some((total, premier_importe <= du.mois_civil())))
@@ -1375,7 +1375,7 @@ fn provision_d_une_annee_importee(
             }
         }
         // Le salaire du maintien : le brut du dernier mois repris ; un bulletin qui ne le dit pas, il ne se lit pas.
-        let Some(salaire) = paies.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle).map(|q| q.brut).try_fold(Montant::ZERO.decimal(), |a, b| b.map(|b| add(a, b))) else {
+        let Some(salaire) = paies.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle).map(|q| q.brut).try_fold(Montant::ZERO.decimal(), |a, b| b.map(|b| add(a, b.decimal()))) else {
             avert.push(format!(
                 "{} : un de ses bulletins repris de {} ne dit pas son brut : son salaire du mois ne se lit pas, il n'est pas dans la provision.",
                 ctx.nomme(&cle),
@@ -1602,7 +1602,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
             // (`assujettissement`, bloc S21.G00.44). Le brut ou l'assiette de la CSG que les pieces d'une paie importee
             // taisent ne s'invente pas : la taxe ne se calcule pas sans eux.
-            let (Some(brut), Some(base_csg)) = (pa.brut(), pa.base_csg()) else {
+            let (Some(brut), Some(base_csg)) = (pa.brut().map(Montant::decimal), pa.base_csg().map(Montant::decimal)) else {
                 return Err(refus(format!(
                     "{}, {} : les pièces importées ne disent pas son brut ou son assiette de CSG ; la taxe sur les salaires ne se calcule pas sans eux.",
                     crate::tableaux_export::qui_souple(pa.salarie()),

@@ -501,13 +501,13 @@ fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engag
             libelle_nature: nat_libelle(p)?,
             // `fiche_recapitulative` lit encore le titre en texte : vide sans spectacle.
             spectacle: titre_spectacle(p).into_iter().collect(),
-            brut: p.brut().map(|x| Montant::du_decimal(x).au_centime().decimal()),
-            cotisations_salariales: p.total_sal().map(|x| Montant::du_decimal(x).au_centime().decimal()),
-            cotisations_patronales: p.total_pat().map(|x| Montant::du_decimal(x).au_centime().decimal()),
-            net_imposable: p.net_imposable().map(|x| Montant::du_decimal(x).au_centime().decimal()),
-            net_a_payer: p.net_a_payer().map(|x| Montant::du_decimal(x).au_centime().decimal()),
+            brut: p.brut().map(|x| x.au_centime().decimal()),
+            cotisations_salariales: p.total_sal().map(|x| x.au_centime().decimal()),
+            cotisations_patronales: p.total_pat().map(|x| x.au_centime().decimal()),
+            net_imposable: p.net_imposable().map(|x| x.au_centime().decimal()),
+            net_a_payer: p.net_a_payer().map(|x| x.au_centime().decimal()),
             pas: r.as_ref().map(|v| Montant::du_decimal(v.prelevement()).au_centime().decimal()),
-            cout_employeur: p.cout_employeur().map(|c| Montant::du_decimal(c).au_centime().decimal()),
+            cout_employeur: p.cout_employeur().map(|c| c.au_centime().decimal()),
             // Une paie importee : ce que ses pieces disent ; une paie du logiciel a toujours son jour.
             verse_le: match p.importee() {
                 Some(_) => e.versement_dit()?,
@@ -922,7 +922,7 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for r in paie.remuneration() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Rémunération");
-                l.ot("code", r.code).t("libelle", r.libelle).od("base", r.quantite).od("taux_sal", r.taux).od("gain", r.montant.map(|x| Montant::du_decimal(x).au_centime().decimal()));
+                l.ot("code", r.code).t("libelle", r.libelle).od("base", r.quantite).od("taux_sal", r.taux).od("gain", r.montant.map(|x| x.au_centime().decimal()));
                 lignes.push(l);
             }
             for c in paie.cotisations() {
@@ -937,7 +937,7 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for (lib, v) in [("Net imposable", paie.net_imposable()), ("Net à payer avant impôt", paie.net_a_payer())] {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Résultat");
-                l.t("libelle", lib).od("net", v.map(|x| Montant::du_decimal(x).au_centime().decimal()));
+                l.t("libelle", lib).od("net", v.map(|x| x.au_centime().decimal()));
                 lignes.push(l);
             }
             let sec = format!("{} — {}{}", nom, libelle_mois(m), titre.filter(|t| !t.is_empty()).map(|t| format!(" — {}", t)).into_iter().collect::<String>());
@@ -1174,7 +1174,7 @@ pub fn prelevement_a_la_source(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut l = Ligne::nouvelle();
             l.m("mois", m).t("salarie", qui(paie.salarie())?).ot("contrat", paie.engagement().numero.clone());
             l.ot("nir", paie.salarie().nir.portee().filter(|_| coord));
-            l.od("net_imposable", paie.net_imposable().map(|x| Montant::du_decimal(x).au_centime().decimal()));
+            l.od("net_imposable", paie.net_imposable().map(|x| x.au_centime().decimal()));
             match r {
                 Some(v) => {
                     // Ce que la paie ne dit pas (une paie importee dont les pieces ne l'impriment pas) reste vide.
@@ -1306,7 +1306,7 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         for paie in lecture.paies(m)?.iter() {
             let mut l = Ligne::nouvelle();
             l.m("mois", m).t("salarie", qui(paie.salarie())?).ot("contrat", paie.engagement().numero.clone());
-            l.od("plafond", paie.plafond().map(|x| Montant::du_decimal(x).au_centime().decimal()));
+            l.od("plafond", paie.plafond().map(|x| x.au_centime().decimal()));
             for (k, v) in paie.bases() {
                 let v = match v {
                     engagement::calcul::BaseDeCotisation::Montant(m) => m.au_centime().decimal(),
@@ -1316,7 +1316,7 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 vues.insert(k);
             }
             if !paie.bases().contains_key(&Assiette::Csg) {
-                l.od(&format!("b_{}", Assiette::Csg), paie.base_csg().map(|x| Montant::du_decimal(x).au_centime().decimal()));
+                l.od(&format!("b_{}", Assiette::Csg), paie.base_csg().map(|x| x.au_centime().decimal()));
                 vues.insert(Assiette::Csg);
             }
             lignes.push(l);
@@ -1379,7 +1379,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut l = Ligne::nouvelle();
             l.m("mois", m).t("salarie", qui(paie.salarie())?).t("cle_salarie", paie.salarie().id.to_string());
             l.ot("contrat", e.numero.clone()).ot("spectacle", titre_spectacle(paie)).ot("emploi", emploi).t("debut", jj(&debut)).ot("fin", fin.as_deref().map(jj));
-            l.od("cachets", cachets).od("heures", heures).n("jours", e.dates_travail.len() as i64).od("brut", paie.brut().map(|x| Montant::du_decimal(x).au_centime().decimal()));
+            l.od("cachets", cachets).od("heures", heures).n("jours", e.dates_travail.len() as i64).od("brut", paie.brut().map(|x| x.au_centime().decimal()));
             lignes.push(l);
         }
     }

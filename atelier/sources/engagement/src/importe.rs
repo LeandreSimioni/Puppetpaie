@@ -46,6 +46,7 @@ use socle::echec::R;
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::num::Decimal;
+use socle::grandeurs::Montant;
 
 /// Dans un engagement importe : ce que l'import a lu de lui (`Pieces`).
 pub const IMPORTE: &str = "importe";
@@ -175,17 +176,27 @@ pub struct PaieVersee {
     pub fin: Option<Jour>,
     /// La quotite que la DSN deposee declare pour le contrat (S21.G00.40.013).
     pub quotite: Option<Decimal>,
-    pub brut: Option<Decimal>,
-    pub net_imposable: Option<Decimal>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub brut: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub net_imposable: Option<Montant>,
     /// Le net verse de la DSN (50.004), qui n'est pas le net a payer.
-    pub net_verse: Option<Decimal>,
-    pub net_a_payer: Option<Decimal>,
-    pub net_avant_impot: Option<Decimal>,
-    pub net_social: Option<Decimal>,
-    pub cotisations_salariales: Option<Decimal>,
-    pub cotisations_patronales: Option<Decimal>,
-    pub cout_employeur: Option<Decimal>,
-    pub pas: Option<Decimal>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub net_verse: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub net_a_payer: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub net_avant_impot: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub net_social: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub cotisations_salariales: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub cotisations_patronales: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub cout_employeur: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub pas: Option<Montant>,
     pub taux_pas: Option<Decimal>,
     pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
@@ -217,7 +228,8 @@ pub struct LigneImprimee {
     pub quantite: Option<Decimal>,
     pub libelle: String,
     pub taux: Option<Decimal>,
-    pub montant: Option<Decimal>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub montant: Option<Montant>,
     pub soumis: bool,
     pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub heures: Option<Decimal>,
@@ -234,7 +246,7 @@ impl LigneImprimee {
             quantite: self.quantite.map(socle::forme::Nombre),
             taux: self.taux.map(socle::grandeurs::MontantUnitaire::du_decimal),
             heures: self.heures.map(socle::grandeurs::Heures::du_decimal),
-            montant: socle::grandeurs::Montant::du_decimal(self.montant?),
+            montant: self.montant?,
         }))
     }
 }
@@ -626,16 +638,16 @@ pub struct PaieImportee {
     pub lignes: Vec<LigneDeCotisation>,
     /// Les bases que les pieces disent, la ou le bareme de la paie les range.
     pub bases: BTreeMap<Assiette, Decimal>,
-    pub brut: Option<Decimal>,
+    pub brut: Option<Montant>,
     /// Le plafond applique : la base plafonnee que les pieces disent, quand elle est sous le brut.
-    pub plafond: Option<Decimal>,
-    pub total_sal: Option<Decimal>,
-    pub total_pat: Option<Decimal>,
+    pub plafond: Option<Montant>,
+    pub total_sal: Option<Montant>,
+    pub total_pat: Option<Montant>,
     /// Le net avant impot : celui que le bulletin imprime, sinon le net paye ou verse plus l'impot preleve.
-    pub net_a_payer: Option<Decimal>,
-    pub net_social: Option<Decimal>,
-    pub net_imposable: Option<Decimal>,
-    pub cout_employeur: Option<Decimal>,
+    pub net_a_payer: Option<Montant>,
+    pub net_social: Option<Montant>,
+    pub net_imposable: Option<Montant>,
+    pub cout_employeur: Option<Montant>,
     pub numero_bulletin: Option<String>,
     /// Le prelevement a la source que les pieces disent ; `None` : elles n'en disent pas.
     pub pas: Option<PasImporte>,
@@ -651,7 +663,7 @@ pub struct LigneDeRemuneration {
     pub unite: Option<droit::catalogue::Unite>,
     pub quantite: Option<Decimal>,
     pub taux: Option<Decimal>,
-    pub montant: Option<Decimal>,
+    pub montant: Option<Montant>,
     pub heures_annexes: Option<Decimal>,
     /// La ligne est soumise a cotisations : ce que le catalogue dit de sa rubrique, sinon ce que le bulletin imprime.
     pub soumis: bool,
@@ -679,7 +691,7 @@ pub struct PasImporte {
     pub taux: Option<Decimal>,
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant: Option<droit::pas::IdentifiantDuTauxPas>,
-    pub prelevement: Decimal,
+    pub prelevement: Montant,
 }
 
 impl Importe {
@@ -818,7 +830,7 @@ impl Importe {
         // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let mut bases: BTreeMap<Assiette, Decimal> = BTreeMap::new();
         if let Some(b) = brut {
-            bases.insert(Assiette::Brut, b);
+            bases.insert(Assiette::Brut, b.decimal());
         }
         let fin_periode = engagement.fin_periode();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
@@ -844,7 +856,7 @@ impl Importe {
             }
         }
         // Le plafond applique : la base plafonnee, quand elle est sous le brut.
-        let plafond = brut.and_then(|b| [Assiette::BrutPlafonne, Assiette::T1Mensuelle].iter().find_map(|k| bases.get(k)).filter(|t| **t < b).copied());
+        let plafond = brut.and_then(|b| [Assiette::BrutPlafonne, Assiette::T1Mensuelle].iter().find_map(|k| bases.get(k)).map(|t| Montant::du_decimal(*t)).filter(|t| *t < b));
         // Le net avant impot : celui que le bulletin imprime, sinon le net paye ou le net verse plus l'impot preleve.
         let net_a_payer = p.net_avant_impot.or_else(|| p.net_a_payer.or(p.net_verse).zip(p.pas).map(|(net, pas)| net + pas));
 

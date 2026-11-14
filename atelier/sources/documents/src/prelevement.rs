@@ -71,7 +71,7 @@ impl Prelevement {
     pub fn prelevement(&self) -> socle::num::Decimal {
         match self {
             Prelevement::Calcule(v) => v.prelevement.decimal(),
-            Prelevement::Importe(p) => p.prelevement,
+            Prelevement::Importe(p) => p.prelevement.decimal(),
         }
     }
 

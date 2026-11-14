@@ -2021,9 +2021,9 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
         ("net_a_payer", &mut ligne.net_a_payer, Some(b.net_a_payer)),
         ("pas", &mut ligne.pas, pas),
     ] {
-        let Some(v) = v else { continue };
+        let Some(v) = v.map(Montant::du_decimal) else { continue };
         if let Some(avant) = place.filter(|a| *a != v) {
-            ecarts.push((champ, avant.to_string(), true, v.to_string()));
+            ecarts.push((champ, avant.decimal().to_string(), true, v.decimal().to_string()));
         }
         *place = Some(v);
     }
@@ -2053,13 +2053,13 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
         (&mut ligne.net_avant_impot, b.net_avant_impot),
     ] {
         if x.is_some() {
-            *place = x;
+            *place = x.map(Montant::du_decimal);
         }
     }
     ligne.lignes = b
         .lignes
         .iter()
-        .map(|l| LigneImprimee { quantite: l.quantite, libelle: l.libelle.clone(), taux: l.taux, montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), heures: l.heures })
+        .map(|l| LigneImprimee { quantite: l.quantite, libelle: l.libelle.clone(), taux: l.taux, montant: l.montant.map(Montant::du_decimal), soumis: l.soumis, rubrique: l.rubrique.clone(), heures: l.heures })
         .collect();
     ligne.dates = b.dates_travaillees.iter().map(|(debut, fin)| DatesTravaillees { debut: *debut, fin: *fin }).collect();
     ligne.cotisations = Some(

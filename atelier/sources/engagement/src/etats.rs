@@ -594,44 +594,44 @@ impl PaieDuMois {
         }
     }
 
-    fn montant(&self, validee: fn(&Paie) -> Decimal, importee: fn(&crate::importe::PaieImportee) -> Option<Decimal>) -> Option<Decimal> {
+    fn montant(&self, validee: fn(&Paie) -> Montant, importee: fn(&crate::importe::PaieImportee) -> Option<Montant>) -> Option<Montant> {
         match self {
             PaieDuMois::Validee(p) => Some(validee(p)),
             PaieDuMois::Importee(p) => importee(p),
         }
     }
 
-    pub fn brut(&self) -> Option<Decimal> {
-        self.montant(|p| p.brut.decimal(), |p| p.brut)
+    pub fn brut(&self) -> Option<Montant> {
+        self.montant(|p| p.brut, |p| p.brut)
     }
 
-    pub fn total_sal(&self) -> Option<Decimal> {
-        self.montant(|p| p.total_sal.decimal(), |p| p.total_sal)
+    pub fn total_sal(&self) -> Option<Montant> {
+        self.montant(|p| p.total_sal, |p| p.total_sal)
     }
 
-    pub fn total_pat(&self) -> Option<Decimal> {
-        self.montant(|p| p.total_pat.decimal(), |p| p.total_pat)
+    pub fn total_pat(&self) -> Option<Montant> {
+        self.montant(|p| p.total_pat, |p| p.total_pat)
     }
 
-    pub fn net_a_payer(&self) -> Option<Decimal> {
-        self.montant(|p| p.net_a_payer.decimal(), |p| p.net_a_payer)
+    pub fn net_a_payer(&self) -> Option<Montant> {
+        self.montant(|p| p.net_a_payer, |p| p.net_a_payer)
     }
 
-    pub fn net_imposable(&self) -> Option<Decimal> {
-        self.montant(|p| p.net_imposable.decimal(), |p| p.net_imposable)
+    pub fn net_imposable(&self) -> Option<Montant> {
+        self.montant(|p| p.net_imposable, |p| p.net_imposable)
     }
 
-    pub fn cout_employeur(&self) -> Option<Decimal> {
-        self.montant(|p| p.cout_employeur.decimal(), |p| p.cout_employeur)
+    pub fn cout_employeur(&self) -> Option<Montant> {
+        self.montant(|p| p.cout_employeur, |p| p.cout_employeur)
     }
 
-    pub fn plafond(&self) -> Option<Decimal> {
-        self.montant(|p| p.plafond.decimal(), |p| p.plafond)
+    pub fn plafond(&self) -> Option<Montant> {
+        self.montant(|p| p.plafond, |p| p.plafond)
     }
 
     /// L'assiette de la CSG : celle du calcul, ou celle que les pieces disent.
-    pub fn base_csg(&self) -> Option<Decimal> {
-        self.montant(|p| p.base_csg.decimal(), |p| p.bases.get(&droit::assiette::Assiette::Csg).copied())
+    pub fn base_csg(&self) -> Option<Montant> {
+        self.montant(|p| p.base_csg, |p| p.bases.get(&droit::assiette::Assiette::Csg).copied().map(Montant::du_decimal))
     }
 
     /// Les assiettes, chacune dans ce qu'elle compte : celles du calcul, ou celles que les pieces disent, que leur assiette
@@ -676,7 +676,7 @@ impl PaieDuMois {
                     unite: Some(r.unite),
                     quantite: Some(r.quantite.decimal()),
                     taux: Some(r.taux.decimal()),
-                    montant: Some(r.montant.decimal()),
+                    montant: Some(r.montant),
                     heures_annexes: Some(r.heures_annexes.decimal()),
                     soumis: r.soumis,
                 })

@@ -52,7 +52,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
     let du_mois = |d: &Option<socle::date::Jour>| d.is_some_and(|d| d.mois_civil() == mois);
     for i in engagement::importe::du_mois(&ctx.racine, mois)? {
         let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
-        let Some(brut) = p.paie.brut else { continue };
+        let Some(brut) = p.paie.brut.map(socle::grandeurs::Montant::decimal) else { continue };
         let cle = &p.salarie;
         let salarie = ctx.salaries.get(cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
         let (debut, fin) = (p.paie.debut, p.paie.fin);

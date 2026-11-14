@@ -358,7 +358,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
 
     // Les montants, et d'ou chacun vient : le bulletin fait foi sur ceux qu'il imprime (`import::bulletins::completer`).
     let (mut montants, mut sources) = (Montants::default(), Sources::default());
-    let lus: [(&str, fn(&PaieVersee) -> Option<Decimal>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<Source>)); 9] = [
+    let lus: [(&str, fn(&PaieVersee) -> Option<socle::grandeurs::Montant>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<Source>)); 9] = [
         ("brut", |p| p.brut, |m, s| (&mut m.brut, &mut s.brut)),
         ("net_imposable", |p| p.net_imposable, |m, s| (&mut m.net_imposable, &mut s.net_imposable)),
         ("net_a_payer", |p| p.net_a_payer, |m, s| (&mut m.net_a_payer, &mut s.net_a_payer)),
@@ -372,7 +372,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     for (k, lu, place) in lus {
         // Le montant que la paie porte ; sans paie, le brut que l'AEM atteste.
         let porte = match (p, k == "brut") {
-            (Some(p), _) => lu(p).map(|d| (d, if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
+            (Some(p), _) => lu(p).map(|d| (d.decimal(), if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
             (None, true) => c.and_then(|c| c.brut).map(|b| (b, Source::Aem)),
             (None, false) => None,
         };

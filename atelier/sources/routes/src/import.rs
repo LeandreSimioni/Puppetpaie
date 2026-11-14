@@ -31,6 +31,7 @@ use droit::contexte::Contexte;
 use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, FicheEntrepriseDatee, FicheNommee, FicheSaisie, FicheSalarieDatee, Nir, NomDeFiche, NumeroObjetSpectacle, ValeurDeCase};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
+use socle::grandeurs::Montant;
 use socle::mois::MoisOuJour;
 
 const DOSSIER: Champ = Champ { nom: "dossier", libelle: Affiche::new("Dossier"), forme: Forme::Texte, sens: "le dossier choisi ; la boîte import/ de la compagnie sinon", avance: true };
@@ -366,12 +367,12 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<NumeroObjetSpectacle>)
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.debut, x.fin, x.verse_le, x.quotite) = (c.and_then(|c| c.debut), c.and_then(|c| c.fin), d.verse_le, c.and_then(|c| c.quotite));
-    (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
+    (x.brut, x.bases) = (d.mesures.brut.map(Montant::du_decimal), d.bases.clone());
     if let Some(n) = &d.nets {
-        (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
+        (x.net_imposable, x.net_verse) = (n.net_imposable.map(Montant::du_decimal), n.net_verse.map(Montant::du_decimal));
         // Un taux que la DSN n'ecrit pas comme la norme (`droit::pas::TauxDePas::du_nombre`) n'en est pas un : vide.
         let taux_pas = n.taux_pas.filter(|d| droit::pas::TauxDePas::du_nombre(*d).is_some());
-        (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
+        (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas.map(Montant::du_decimal), taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
     }
     (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
     x

@@ -470,7 +470,7 @@ pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
 /// mois reste parmi les manquants (rien ne se devine).
 fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Decimal, Vec<engagement::LignePaie>, i64)>> {
     let Some(p) = i.paies().get(&mois) else { return Ok(None) };
-    let Some(brut) = p.brut.map(|b| Montant::du_decimal(b).au_centime().decimal()) else { return Ok(None) };
+    let Some(brut) = p.brut.map(|b| b.au_centime().decimal()) else { return Ok(None) };
     let mut dates: Vec<Jour> = Vec::new();
     for d in &p.dates {
         let mut j = d.debut;

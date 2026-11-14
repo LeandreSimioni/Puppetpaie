@@ -835,7 +835,7 @@ pub fn base_declaree_importee(p: &engagement::importe::PaieImportee, bar: &Barem
         return Ok(Some(Montant::ZERO.decimal()));
     };
     Ok(match cle {
-        Assiette::Brut => p.brut,
+        Assiette::Brut => p.brut.map(Montant::decimal),
         k => p.bases.get(&k).copied(),
     })
 }

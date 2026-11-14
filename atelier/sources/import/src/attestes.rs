@@ -267,7 +267,7 @@ impl Registre {
                     Some(f) => dernier.min(f),
                     None => dernier,
                 });
-                (a.heures, a.cachets, a.jours, a.brut) = (p.heures, p.cachets, p.jours, p.brut);
+                (a.heures, a.cachets, a.jours, a.brut) = (p.heures, p.cachets, p.jours, p.brut.map(socle::grandeurs::Montant::decimal));
                 tous.push(a);
             }
         }

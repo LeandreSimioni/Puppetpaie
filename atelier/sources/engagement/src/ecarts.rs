@@ -629,7 +629,7 @@ fn comparer_une(
         (TotalDuBulletin::NetSocial, paie.net_social, p.net_social),
         (TotalDuBulletin::NetImposable, paie.net_imposable, p.net_imposable),
     ] {
-        let Some(leur) = leur.map(Montant::du_decimal) else { continue };
+        let Some(leur) = leur else { continue };
         if (leur - notre).abs() > UN_CENTIME {
             let grandeur = if cle == TotalDuBulletin::CotisationsPatronales { Grandeur::MontantEmployeur } else { Grandeur::MontantSalarie };
             ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), mesure: MesureDeLEcart::Relatif(grandeur, relatif(leur, notre)) });
