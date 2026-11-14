@@ -14,7 +14,7 @@ use crate::dossier_salarie::{construire, AnneeDite, DemandeDeDossier, DossierEnv
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
-use socle::mois::{Mois, MoisOuJour};
+use socle::mois::{Annee, Mois, MoisOuJour};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
@@ -27,7 +27,7 @@ use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use envois::journal;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
-use socle::fichiers::{repr, NomDeFichier};
+use socle::fichiers::NomDeFichier;
 use socle::html::courriel_en_html;
 use crate::catalogue::{Ecran, Place};
 
@@ -235,8 +235,8 @@ fn mois_disponibles(ctx: &Contexte) -> R<Vec<Mois>> {
 }
 
 /// Les années des mois, de la plus récente à la plus ancienne.
-fn annees_de(dispo: &[Mois]) -> Vec<String> {
-    let mut annees: Vec<String> = dispo.iter().map(|m| format!("{:04}", m.annee())).collect::<HashSet<_>>().into_iter().collect();
+fn annees_de(dispo: &[Mois]) -> Vec<Annee> {
+    let mut annees: Vec<Annee> = dispo.iter().map(|m| m.annee_civile()).collect::<HashSet<_>>().into_iter().collect();
     annees.sort();
     annees.reverse();
     annees
@@ -266,7 +266,7 @@ struct FormesDuDossier {
     salaries: Vec<SalariePropose>,
     categories: Vec<CategorieProposee>,
     mois: Vec<Mois>,
-    annees: Vec<String>,
+    annees: Vec<Annee>,
     boite_liee: bool,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: PathBuf,
@@ -368,10 +368,9 @@ fn etat_concerne(ctx: &Contexte, etat: EtatDExport, piece: Option<droit::fiche::
 /// La compagnie doit-elle la taxe sur les salaires d'une des annees `annees` ? Le regime de la fiche telle qu'elle est
 /// au 31 decembre de chacune (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : une annee ou la
 /// fiche ne dit pas encore tout compte, l'etat dit ce qu'il faut repondre ; une annee ou elle n'est pas due, non.
-fn taxe_due_une_annee(ctx: &Contexte, annees: &[String]) -> R<bool> {
+fn taxe_due_une_annee(ctx: &Contexte, annees: &[Annee]) -> R<bool> {
     for a in annees {
-        let an: i32 = a.parse().map_err(|_| erreur(Classe::Illisible, format!("L'année {} ne se lit pas.", repr(a))))?;
-        let Some(fin) = socle::date::Jour::nouveau(an, 12, 31) else { continue };
+        let Some(fin) = socle::date::Jour::nouveau(a.nombre(), 12, 31) else { continue };
         let regime = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise_au(&fin), None);
         if regime.decision != documents::taxe_sur_les_salaires::Decision::NonDue {
             return Ok(true);
@@ -388,7 +387,7 @@ fn taxe_due_une_annee(ctx: &Contexte, annees: &[String]) -> R<bool> {
 struct ExportsPossibles {
     phrase: String,
     mois: Vec<Mois>,
-    annees: Vec<String>,
+    annees: Vec<Annee>,
     etats: Vec<documents::plan_comptable::EtatLivre>,
     formats: Vec<documents::plan_comptable::FormatLivre>,
     regroupements: Vec<documents::plan_comptable::RegroupementLivre>,

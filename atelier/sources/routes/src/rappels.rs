@@ -693,7 +693,7 @@ impl Echeance {
             cochable: self.cochable,
             pastille: Pastille::de(self.etat.a_l_ecran(), self.etat.mots()),
             mois: self.mois,
-            annee: self.annee.map(|a| a.to_string()),
+            annee: self.annee.map(|a| Annee::nouvelle(i64::from(a))).transpose()?,
             fichier: self.fichier.clone(),
             engagements: self.engagements,
             validees: self.validees,
@@ -734,7 +734,7 @@ pub(crate) struct EcheanceDite {
     /// Sa pastille : la couleur et les mots de son etat.
     pub(crate) pastille: Pastille,
     pub(crate) mois: Option<Mois>,
-    pub(crate) annee: Option<String>,
+    pub(crate) annee: Option<Annee>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub(crate) fichier: Option<std::path::PathBuf>,
     pub(crate) engagements: i64,

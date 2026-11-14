@@ -897,7 +897,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     };
     // Les compteurs de la derniere annee, en une ligne : ce que l'en-tete de la Paie montre.
     let compteurs = documents::ecrire_documents::compteurs(&ctx.racine)?;
-    let compteurs_dit = compteurs.iter().filter(|(k, _)| k.len() == 4 && k.chars().all(|c| c.is_ascii_digit())).max_by(|a, b| a.0.cmp(b.0)).map(|(an, c)| {
+    let compteurs_dit = compteurs.iter().next_back().map(|(an, c)| {
         let n = |x: Option<i64>| match x {
             Some(n) => n.to_string(),
             None => "aucun".to_string(),
