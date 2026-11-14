@@ -243,7 +243,7 @@ impl FichierEffectifs {
 /// `config/effectifs.json` de la compagnie, lu par sa forme ; aucun s'il n'existe pas.
 pub fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
     let p = racine.join(EFFECTIFS);
-    if !socle::fichiers::existe(&p) {
+    if !sur_le_disque(&p)? {
         return Ok(None);
     }
     socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie (config/effectifs.json) ne se lit pas.").map(Some)
@@ -375,26 +375,64 @@ pub fn annees_du_socle(dossier: &Path) -> R<Vec<i32>> {
     Ok(v)
 }
 
-/// Les annees disponibles, ecrites comme `", ".join(...) or "aucune"` ; le refus du disque, s'il refuse.
-fn disponibles(dossier: &Path) -> String {
-    match annees_du_socle(dossier) {
-        Ok(a) if a.is_empty() => "aucune".to_string(),
-        Ok(a) => a.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", "),
-        Err(e) => e.phrase,
+/// LE BAREME QUE LE LOGICIEL N'A PAS POUR L'ANNEE `an` (`Contexte::socle_de_l_annee`, que `socle_repris` rend a part) :
+/// ni surcouche de la compagnie ni socle livre de l'annee, ou une surcouche qui nomme un socle non livre. `livrees` : les
+/// annees dont le socle est livre. Ses lecteurs le reconnaissent par son type : la faute de la case « Organisation
+/// patronale » (`routes::fiches::ecriture`), un refus partout ailleurs (`From`).
+#[derive(Debug)]
+pub enum BaremeAbsent {
+    DeLAnnee { an: i32, livrees: Vec<i32> },
+    SocleNonLivre { an: i32, surcouche: CheminRelatif, socle: i32, livrees: Vec<i32> },
+}
+
+impl BaremeAbsent {
+    /// Ce qu'il dit.
+    pub fn phrase(&self) -> String {
+        let ecrites = |l: &[i32]| if l.is_empty() { "aucune".to_string() } else { l.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ") };
+        match self {
+            BaremeAbsent::DeLAnnee { an, livrees } => format!(
+                "Le logiciel n'a pas les taux de {} (SMIC, plafond de la Sécurité sociale, cotisations) : il a ceux de {}. Une paie de {} ne se calcule pas avec cette version.",
+                an,
+                ecrites(livrees),
+                an
+            ),
+            BaremeAbsent::SocleNonLivre { an, surcouche, socle, livrees } => format!(
+                "Bareme {} : {} demande le socle {}, qui n'est pas livre.\n\
+\x20 Socles disponibles : {}. Un socle neuf s'ecrit en janvier, \
+depuis le plus recent.",
+                an,
+                surcouche.texte(),
+                socle,
+                ecrites(livrees)
+            ),
+        }
     }
 }
 
+impl From<BaremeAbsent> for Echec {
+    #[track_caller]
+    fn from(absent: BaremeAbsent) -> Echec {
+        refus(absent.phrase())
+    }
+}
 
-/// Le fichier du socle livre de l'annee, s'il est livre.
-fn fichier_du_socle(dossier: &Path, an: i32) -> Option<PathBuf> {
+/// `chemin` est-il sur le disque ? `fichiers::existe` le dit et le note (le calcul suit son apparition) ; le disque qui
+/// refuse de le dire remonte (`fichiers::present`) : seule l'absence vraie est `false`.
+fn sur_le_disque(chemin: &Path) -> R<bool> {
+    socle::fichiers::present(chemin)?;
+    Ok(socle::fichiers::existe(chemin))
+}
+
+/// Le fichier du socle livre de l'annee, s'il est livre ; le disque qui refuse de le dire remonte.
+fn fichier_du_socle(dossier: &Path, an: i32) -> R<Option<PathBuf>> {
     let p = dossier.join(format!("{}.json", an));
-    socle::fichiers::existe(&p).then_some(p)
+    Ok(sur_le_disque(&p)?.then_some(p))
 }
 
 /// LE SOCLE LIVRE DE L'ANNEE `an`, seul (sans convention ni compagnie), lu au 1er janvier : ce que la tarification AT/MP
 /// de l'annee en dit (`bareme::risques_de`, `bareme::arrete_atmp`). `None` : il n'est pas livre.
 pub fn socle_livre_lu(an: i32) -> R<Option<Pile>> {
-    let Some(fichier) = fichier_du_socle(&dossier_du_code().join("baremes"), an) else { return Ok(None) };
+    let Some(fichier) = fichier_du_socle(&dossier_du_code().join("baremes"), an)? else { return Ok(None) };
     let jour = Jour::nouveau(an, 1, 1).ok_or_else(|| socle::refus!("Année {} hors du calendrier.", an))?;
     Ok(Some(crate::forme_bareme::lire_le_socle(&fichier, &jour, None)?.0))
 }
@@ -1369,11 +1407,11 @@ impl Contexte {
     pub fn conventions_servies(&self) -> R<BTreeMap<Idcc, crate::forme_bareme::Convention>> {
         let dossier = self.code.join("baremes");
         let jour = self.aujourdhui;
-        let an = match fichier_du_socle(&dossier, jour.an) {
+        let an = match fichier_du_socle(&dossier, jour.an)? {
             Some(_) => jour.an,
             None => annees_du_socle(&dossier)?.into_iter().max().ok_or_else(|| socle::echec::livree("baremes", "par_convention"))?,
         };
-        let fichier = fichier_du_socle(&dossier, an).ok_or_else(|| socle::echec::livree("baremes", "par_convention"))?;
+        let fichier = fichier_du_socle(&dossier, an)?.ok_or_else(|| socle::echec::livree("baremes", "par_convention"))?;
         // Le dernier jour de l'annee du socle quand il est d'une annee passee : ses valeurs datees y valent toutes.
         let a = if an == jour.an { jour } else { Jour::nouveau(an, 12, 31).ok_or_else(|| socle::refus!("{}", socle::date::annee_impossible(an)))? };
         Ok(crate::forme_bareme::lire_le_socle(&fichier, &a, None)?.0.par_convention)
@@ -1466,8 +1504,8 @@ impl Contexte {
     /// LE SOCLE QUE LE BAREME DE L'ANNEE `an` REPREND, lu seul (`forme_bareme::socle_seul` : sans la convention, la
     /// compagnie ni son taux AT/MP) : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee. Ce
     /// contre quoi une organisation patronale se reconnait (`Pile::organisation`). `Ok(Err)` : le logiciel n'a pas le
-    /// bareme de l'annee (`socle_de_l_annee`) ; `Err` : tout le reste (le disque, un socle illisible, l'annee).
-    pub fn socle_repris(&self, an: i32) -> R<Result<Arc<Pile>, Echec>> {
+    /// bareme de l'annee (`BaremeAbsent`) ; `Err` : tout le reste (le disque, un socle illisible, l'annee).
+    pub fn socle_repris(&self, an: i32) -> R<Result<Arc<Pile>, BaremeAbsent>> {
         let fichier = match self.socle_de_l_annee(an)? {
             Ok((_, f)) => f,
             Err(sans_bareme) => return Ok(Err(sans_bareme)),
@@ -1485,17 +1523,16 @@ impl Contexte {
     }
 
     /// LA SURCOUCHE DE L'ANNEE `an` ET LE FICHIER DU SOCLE QU'ELLE REPREND ; sans surcouche, la compagnie n'a rien change
-    /// au socle livre de l'annee. Sans l'une ni l'autre, ou une surcouche qui nomme un socle non livre : le refus du bareme,
+    /// au socle livre de l'annee. Sans l'une ni l'autre, ou une surcouche qui nomme un socle non livre : `BaremeAbsent`,
     /// rendu a part (`Ok(Err)`) ; une surcouche illisible, le disque ou l'annee : `Err`.
-    fn socle_de_l_annee(&self, an: i32) -> R<Result<(Surcouche, PathBuf), Echec>> {
+    fn socle_de_l_annee(&self, an: i32) -> R<Result<(Surcouche, PathBuf), BaremeAbsent>> {
         let chemin = surcouche(an)?;
-        let ou = chemin.texte();
         let dossier = self.code.join("baremes");
         let p = self.racine.join(&chemin);
         // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
-        let surcouche = match socle::fichiers::existe(&p) {
+        let surcouche = match sur_le_disque(&p)? {
             true => crate::forme_bareme::lire_la_surcouche(&p)?,
-            false if fichier_du_socle(&dossier, an).is_some() => Surcouche {
+            false if fichier_du_socle(&dossier, an)?.is_some() => Surcouche {
                 annee: an,
                 socle: an,
                 quoi: None,
@@ -1507,25 +1544,10 @@ impl Contexte {
                 source: None,
                 note: None,
             },
-            false => {
-                return Ok(Err(socle::refus!(
-                    "Le logiciel n'a pas les taux de {} (SMIC, plafond de la Sécurité sociale, cotisations) : il a ceux de {}. Une paie de {} ne se calcule pas avec cette version.",
-                    an,
-                    disponibles(&dossier),
-                    an
-                )))
-            }
+            false => return Ok(Err(BaremeAbsent::DeLAnnee { an, livrees: annees_du_socle(&dossier)? })),
         };
-        let Some(fichier) = fichier_du_socle(&dossier, surcouche.socle) else {
-            return Ok(Err(socle::refus!(
-                "Bareme {} : {} demande le socle {}, qui n'est pas livre.\n\
-\x20 Socles disponibles : {}. Un socle neuf s'ecrit en janvier, \
-depuis le plus recent.",
-                an,
-                ou,
-                surcouche.socle,
-                disponibles(&dossier)
-            )));
+        let Some(fichier) = fichier_du_socle(&dossier, surcouche.socle)? else {
+            return Ok(Err(BaremeAbsent::SocleNonLivre { an, surcouche: chemin, socle: surcouche.socle, livrees: annees_du_socle(&dossier)? }));
         };
         Ok(Ok((surcouche, fichier)))
     }
@@ -1613,7 +1635,7 @@ depuis le plus recent.",
     /// Ce que `lire` tire de la couche de la convention que la fiche entreprise nomme a `jour`, dans le socle de l'annee ;
     /// `None` : une annee sans socle, une fiche sans convention, ou une convention que le socle ne couvre pas.
     fn dans_la_couche<T>(&self, jour: &Jour, lire: impl FnOnce(&CoucheConvention) -> T) -> R<Option<T>> {
-        let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(None) };
+        let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an)? else { return Ok(None) };
         let ent = self.entreprise_au(jour);
         let Some(idcc) = ent.idcc.dite() else { return Ok(None) };
         let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;

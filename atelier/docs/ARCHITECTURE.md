@@ -787,6 +787,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | clé de totalisation | `CleDeTotalisation` | `droit/src/code_cotisation.rs` |
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
 | barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
+| barème absent | `droit::contexte::BaremeAbsent` | `droit/src/contexte.rs` |
 | emploi | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
@@ -1101,6 +1102,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   versements de la DSN.
 - **assiette** : ce sur quoi une cotisation se calcule.
 - **barème** : les taux d'un jour, en trois étages.
+- **barème absent** : l'année dont le logiciel n'a pas le barème (ni surcouche ni socle livré, ou une surcouche qui
+  nomme un socle non livré), avec les années livrées ; `Contexte::socle_repris` le rend à part, un refus ailleurs.
 - **emploi** : ce que fait le salarié.
 - **code d'un métier** : un code de la nomenclature des emplois du spectacle de France Travail
   (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est
@@ -1175,7 +1178,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   `SorteDeFiche::reconnaitre`) dans le socle que le barème de l'année de l'écran reprend (`Contexte::socle_repris` :
   celui que la surcouche nomme, sinon le socle livré de l'année, lu sans le taux AT/MP), par `Pile::organisation`, la
   seule porte, et s'écrit par sa clé ; une organisation qu'il ne couvre pas, ou une année dont le logiciel n'a pas le
-  barème (le refus que `socle_repris` rend à part), est la faute de sa case ; tout autre refus remonte entier. Une
+  barème (`BaremeAbsent`, que `socle_repris` rend à part), est la faute de sa case ; tout autre refus remonte entier. Une
   fiche écrite avant sous un alias se reconnaît de même à chaque lecture : le socle se lit avec la clé reconnue
   (`forme_bareme::lire_le_socle`), les minima la demandent à `Contexte::organisation_reconnue`, et un signataire se
   compare à elle (`minima::signataire`). Les cases du métier qu'une fiche montre
