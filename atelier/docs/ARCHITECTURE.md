@@ -290,6 +290,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | identifiant d'un envoi | `IdDEnvoi` | `envois/src/journal.rs` |
 | nature d'un retour | `NatureDuRetour` | `envois/src/retours.rs` |
 | format d'une pièce de retour | `FormatDuRetour` | `envois/src/retours.rs` |
+| type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
@@ -606,6 +607,12 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   harmonisé, aucun (un accusé sans document), PDF, NEOReS, organisme complémentaire, AGIRC-ARRCO (non publié) ; une
   liste du logiciel (`socle::noms_fermes!`), écrite dans aucun fichier ; ce qui dit d'une pièce qu'elle ne se traduit
   pas, ou qu'un accusé n'a pas de document.
+- **type d'une information collective** : ce qu'un rapport harmonisé communique dans un bloc
+  `information_collective` (schéma des bilans VT2.2, l. 291-294) : `atmp` (le taux AT/MP), `bmcc` (le bonus-malus de
+  la contribution chômage) ; une liste du texte (`socle::noms_fermes!`). Le lecteur des rapports lit au mieux : le type
+  qu'un rapport donne (`TypeDInformationLu`) est un type prévu, ou le texte d'un type que le schéma ne prévoit pas,
+  gardé et dit tel (« Information (…) ») ; un rapport qui ne le dit pas n'en a pas. Que porte une information d'un
+  rapport (`InformationCollective`), que la lecture d'une pièce traduit.
 - **canal des retours** : le canal d'un retour d'organisme (règle 5) : la DSN sur net-entreprises, la DPAE sur l'Urssaf,
   services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
   fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
@@ -728,8 +735,10 @@ d'assiette d'une ligne du bordereau (23.002), `QualifiantDAssiette` (`droit/src/
 complémentaire (`CodeEnvoi`), et la nature de l'événement déclencheur d'un amorçage (S20.G00.05.011), `NatureDEvenementDeclencheur`
 (`droit/src/nature_declaration.rs`). Le code d'une taxe du bloc 44 (44.001), `CodeTaxe` (`droit/src/apprentissage.rs`) ;
 son motif de non-assujettissement (44.004, table MNATA) est le choix de la fiche `MotifNonAssujettissement`. Le type
-de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), n'a que les quatre codes que nos natures
-écrivent : une DSN lue d'un autre code laisse la case vide. La période d'affectation d'un composant de versement
+de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), la liste entière : ceux que nos natures
+déclarent à chaque paie (`contrats-base.json`, 001, 002, 003, 010), les heures en plus (017) et l'absence (028, 029)
+que `dsn::remunerations` écrit, celui que le `dsn_type` d'une rubrique nomme ; une DSN lue d'un code hors de la
+liste laisse la case vide. La période d'affectation d'un composant de versement
 (55.004, « AAAAPNN »), `PeriodeDAffectation` (`declarations/src/dsn.rs`) : le trimestre, le semestre ou l'année que le
 moteur écrit. La nature du contrat déclarée (40.007), `NatureDuContratDsn`, et le dispositif de politique publique
 (40.008), `DispositifDePolitiquePublique` (`droit/src/natures.rs`), que `contrats-base.json` dit par nature
@@ -832,6 +841,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | emploi | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
+| sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | catégorie dans la convention | `CategorieConventionnelle` | `droit/src/fiche.rs` |
@@ -1170,6 +1180,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   `emplois-base.json` et `familles_costume` des clauses ; un métier hors du catalogue n'en a pas
   (`Metier::famille`). Que portent un métier du catalogue et celui d'un déroulant, ce que rendent `metiers-catalogue`
   et la page de configuration ; « Artistes » et « Cirque et rue » disent l'artiste-interprète de la 1734.
+- **sorte DSN d'une rubrique** : un mot du logiciel, `prime` ou `absence`, que le `dsn_type` d'une rubrique écrit à la
+  place d'un type de rémunération de la norme (`010`, `017` : `TypeDeRemuneration`, l'autre notion) ; une liste du
+  logiciel (`socle::noms_fermes!`). Le champ porte l'une ou l'autre (`DsnTypeDeRubrique`, écrit par son texte, un autre
+  texte se refuse) ; rien ne l'applique (`docs/RUBRIQUES.md`, § 5) : seule la page le montre. Que portent
+  `rubriques-base.json`, `config/rubriques-compagnie.json` et la rubrique de la page.
 - **annexe du règlement d'assurance chômage** : l'annexe VIII (les ouvriers et techniciens) ou X (les artistes) dont
   relève un intermittent. `Viii`, `X` ; écrite par son nom (`X`, `VIII` : l'annexe d'une rubrique, celle d'une source)
   ou par son numéro (`8`, `10` : `emplois-base.json`, la nomenclature, un métier rendu, `emplois::annexe_en_nombre`).

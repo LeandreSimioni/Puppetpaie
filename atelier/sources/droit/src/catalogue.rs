@@ -110,6 +110,50 @@ pub enum HorsAssiette {
     Mouvement,
 }
 
+socle::noms_fermes! {
+    /// LA SORTE DSN D'UNE RUBRIQUE, un mot du logiciel que `dsn_type` ecrit a la place d'un type de remuneration de la
+    /// norme : une prime, une absence. Rien ne l'applique (`docs/RUBRIQUES.md`, « Les champs que rien n'applique »).
+    SorteDsnDeRubrique, "Sorte DSN d'une rubrique" {
+        Prime = "prime",
+        Absence = "absence",
+    }
+}
+
+/// LE `dsn_type` D'UNE RUBRIQUE : un type de remuneration de la norme (`010`, `017` ;
+/// `natures::TypeDeRemuneration`), ou une sorte du logiciel (`prime`, `absence` ; `SorteDsnDeRubrique`). Il s'ecrit par
+/// son texte, et se lit en l'un ou l'autre ; un autre texte se refuse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DsnTypeDeRubrique {
+    Remuneration(crate::natures::TypeDeRemuneration),
+    Sorte(SorteDsnDeRubrique),
+}
+
+impl crate::fiche::FormeDeCase for DsnTypeDeRubrique {}
+
+impl serde::Serialize for DsnTypeDeRubrique {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            DsnTypeDeRubrique::Remuneration(t) => s.serialize_str(t.code()),
+            DsnTypeDeRubrique::Sorte(o) => s.serialize_str(o.nom()),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DsnTypeDeRubrique {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as serde::Deserialize>::deserialize(d)?;
+        match (crate::natures::TypeDeRemuneration::du_code(&texte), SorteDsnDeRubrique::du_nom(&texte)) {
+            (Some(t), _) => Ok(DsnTypeDeRubrique::Remuneration(t)),
+            (None, Some(o)) => Ok(DsnTypeDeRubrique::Sorte(o)),
+            (None, None) => Err(serde::de::Error::custom(format!(
+                "dsn_type inconnu : {}. Un type de rémunération de la norme (S21.G00.51.011), ou : {}.",
+                repr(&texte),
+                SorteDsnDeRubrique::TOUTES.iter().map(|o| o.nom()).collect::<Vec<_>>().join(", ")
+            ))),
+        }
+    }
+}
+
 /// LE SENS D'UNE RUBRIQUE : ce que sa ligne fait au brut, l'ajouter (`+`) ou l'en retirer (`-`) (`sens` de
 /// `rubriques-base.json`). Une liste du logiciel ; un autre sens se refuse a la lecture de la rubrique.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -290,7 +334,7 @@ pub struct Rubrique {
     pub heures_forfait: Option<Decimal>,
     pub plafond: Option<Unite>,
     pub aem: Option<Unite>,
-    pub dsn_type: Option<String>,
+    pub dsn_type: Option<DsnTypeDeRubrique>,
     pub dsn_autres_bruts: Option<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub annexe: Option<crate::emplois::AnnexeChomage>,
     pub plafond_mensuel: Option<i64>,

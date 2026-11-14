@@ -2071,6 +2071,7 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe:
             TypeDeRemuneration::AssietteChomage => p.assiette_chomage,
             TypeDeRemuneration::SalaireRetabli => p.salaire_retabli,
             TypeDeRemuneration::SalaireDeBase => p.salaire_de_base,
+            autre => return Err(socle::refus!("contrats-base.json fait déclarer à chaque paie le type de rémunération {}, que le moteur ne calcule pas : le signaler au développeur.", autre)),
         };
         f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
@@ -2093,11 +2094,11 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe:
     if let (Some(percue), Some(habituelle)) =
         (p.bases.get(&Assiette::RemunerationPercueHorsEna), p.bases.get(&Assiette::RemunerationHabituelleHorsEna))
     {
-        for (code, montant) in [("028", *percue), ("029", *habituelle)] {
+        for (t, montant) in [(TypeDeRemuneration::PercueHorsEna, *percue), (TypeDeRemuneration::HabituelleHorsEna, *habituelle)] {
             f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
             f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
             f.add_opt(droit::rubrique!("S21.G00.51.010"), e.numero.clone())?;
-            f.add(droit::rubrique!("S21.G00.51.011"), code);
+            f.add(droit::rubrique!("S21.G00.51.011"), t.code());
             f.add(droit::rubrique!("S21.G00.51.013"), ms(montant, signe));
         }
     }
@@ -2106,7 +2107,7 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe:
         f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
         f.add_opt(droit::rubrique!("S21.G00.51.010"), e.numero.clone())?;
-        f.add(droit::rubrique!("S21.G00.51.011"), "017");
+        f.add(droit::rubrique!("S21.G00.51.011"), TypeDeRemuneration::HeuresAleatoires.code());
         f.add(droit::rubrique!("S21.G00.51.012"), ms(heures, signe));
         f.add(droit::rubrique!("S21.G00.51.013"), ms(montant, signe));
     }

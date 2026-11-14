@@ -33,7 +33,7 @@ use envois::journal::Ligne;
 use envois::releve_retours::CanalDesRetours;
 use envois::retours::{
     self, AnomalieDuRapport, CriticiteOc, CrmOc, DeclencheurNeores, IdDeFlux, NatureDuRetour, Neores, Rapport, ResultatDuControleNeores, StatutDuRetour, SubstituableNeores, TypeDActionNeores,
-    TypeDeCrmOc, Verdict,
+    TypeDInformationCollective, TypeDInformationLu, TypeDeCrmOc, Verdict,
 };
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
@@ -666,11 +666,11 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: NatureDuRetour) -> Lecture {
         ));
     }
     for i in &rapport.informations {
-        let quoi = match dit(&i.type_information) {
-            Some("atmp") => "Information : taux accident du travail et maladie professionnelle".to_string(),
-            Some("bmcc") => "Information : bonus-malus de la contribution chômage".to_string(),
+        let quoi = match &i.type_information {
+            Some(TypeDInformationLu::Prevu(TypeDInformationCollective::Atmp)) => "Information : taux accident du travail et maladie professionnelle".to_string(),
+            Some(TypeDInformationLu::Prevu(TypeDInformationCollective::Bmcc)) => "Information : bonus-malus de la contribution chômage".to_string(),
+            Some(TypeDInformationLu::NonPrevu(autre)) => format!("Information ({})", autre),
             None => "Information".to_string(),
-            Some(autre) => format!("Information ({})", autre),
         };
         let donnees: Vec<String> = i.donnees.iter().map(|d| format!("{} : {}", d.nom, d.valeur)).collect();
         l.phrases.push(if donnees.is_empty() { format!("{}.", quoi) } else { format!("{} — {}.", quoi, donnees.join(" ; ")) });

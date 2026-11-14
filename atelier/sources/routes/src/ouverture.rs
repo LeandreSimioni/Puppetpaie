@@ -1255,7 +1255,7 @@ pub(crate) struct RubriqueDeLaPage {
     heures_forfait: Option<NombreLu>,
     plafond: Option<droit::catalogue::Unite>,
     aem: Option<droit::catalogue::Unite>,
-    dsn_type: Option<String>,
+    dsn_type: Option<droit::catalogue::DsnTypeDeRubrique>,
     dsn_autres_bruts: Option<AutreElementDeRevenuBrut>,
     annexe: Option<droit::emplois::AnnexeChomage>,
     soumis: bool,
@@ -1286,7 +1286,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),
         ("aem", r.aem.is_some()),
-        ("dsn_type", r.dsn_type.as_deref().is_some_and(|s| !s.is_empty())),
+        ("dsn_type", r.dsn_type.is_some()),
     ]
     .into_iter()
     .filter(|(_, dite)| *dite)
@@ -1326,7 +1326,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         heures_forfait: r.heures_forfait.map(NombreLu),
         plafond: r.plafond,
         aem: r.aem,
-        dsn_type: r.dsn_type.clone(),
+        dsn_type: r.dsn_type,
         dsn_autres_bruts: r.dsn_autres_bruts,
         annexe: r.annexe,
         soumis: r.soumis,

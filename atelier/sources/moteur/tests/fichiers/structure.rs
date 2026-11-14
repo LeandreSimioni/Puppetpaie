@@ -566,6 +566,7 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     confronter::<droit::natures::DispositifDePolitiquePublique>(&mut fautes);
     confronter::<droit::natures::ModaliteDeDeclarationDeFin>(&mut fautes);
     confronter::<droit::natures::TypeDActivite>(&mut fautes);
+    confronter::<droit::natures::TypeDeRemuneration>(&mut fautes);
     confronter::<droit::natures::UniteDeMesure>(&mut fautes);
     confronter::<droit::base_assujettie::TypeDeComposant>(&mut fautes);
     confronter::<droit::organismes::QualifiantDAssiette>(&mut fautes);

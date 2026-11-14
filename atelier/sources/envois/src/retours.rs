@@ -2765,7 +2765,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
             .filter(|x| x.enfants.is_empty() && !x.texte_net().is_empty() && local(&x.tag) != "type")
             .map(|x| DonneeCollective { nom: local(&x.tag).to_string(), valeur: x.texte_net().to_string() })
             .collect();
-        informations.push(InformationCollective { type_information: premier_texte(&arbre, c, &["type"]).to_string(), donnees });
+        informations.push(InformationCollective { type_information: TypeDInformationLu::du_texte(premier_texte(&arbre, c, &["type"])), donnees });
     }
     Ok(Some(Rapport {
         type_rapport,
@@ -2821,12 +2821,46 @@ pub struct AnomalieDuRapport {
     pub salarie: String,
 }
 
-/// Une information collective d'un rapport (§2.6) : son type, et ses donnees.
+/// Une information collective d'un rapport (§2.6) : son type, quand il le dit, et ses donnees.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InformationCollective {
     #[serde(rename = "type")]
-    pub type_information: String,
+    pub type_information: Option<TypeDInformationLu>,
     pub donnees: Vec<DonneeCollective>,
+}
+
+socle::noms_fermes! {
+    /// LE TYPE D'UNE INFORMATION COLLECTIVE que le schema des bilans prevoit (VT2.2, §2.6,
+    /// `gip-mds-api-dsn/gip-mds-specifications-schema-bilans-vt2.2-20201118.txt` l. 291-294).
+    TypeDInformationCollective, "Type d'information collective" {
+        /// Accident du travail et maladie professionnelle.
+        Atmp = "atmp",
+        /// Bonus-malus contribution chomage.
+        Bmcc = "bmcc",
+    }
+}
+
+/// LE TYPE QU'UN RAPPORT DONNE A UNE INFORMATION COLLECTIVE : un type prevu, ou le texte lu d'un type que le schema ne
+/// prevoit pas, garde et dit tel : le lecteur des rapports lit au mieux, et une valeur inconnue ne devient pas une valeur
+/// connue. Il s'ecrit par son texte.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TypeDInformationLu {
+    Prevu(TypeDInformationCollective),
+    NonPrevu(String),
+}
+
+impl TypeDInformationLu {
+    /// Le type ecrit `texte` ; un texte blanc n'en dit aucun.
+    fn du_texte(texte: &str) -> Option<TypeDInformationLu> {
+        if texte.trim().is_empty() {
+            return None;
+        }
+        Some(match TypeDInformationCollective::du_nom(texte) {
+            Some(t) => TypeDInformationLu::Prevu(t),
+            None => TypeDInformationLu::NonPrevu(texte.to_string()),
+        })
+    }
 }
 
 /// Une donnee d'une information collective : son nom et sa valeur.
