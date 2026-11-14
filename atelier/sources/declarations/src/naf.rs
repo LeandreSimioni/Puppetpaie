@@ -27,6 +27,7 @@ use std::sync::{Arc, OnceLock};
 use serde::Deserialize;
 
 use droit::fiche::Lue as _;
+use droit::fiche::CodeNaf;
 use socle::fichiers::{forme_en_cache, Empreinte, FormeGardee, NomDeFichier};
 use crate::norme::Norme;
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -50,8 +51,8 @@ struct Base {
     _sha256: BTreeMap<NomDeFichier, Empreinte>,
     #[serde(rename = "en_vigueur_naf_2025")]
     _en_vigueur_naf_2025: String,
-    naf_2025: BTreeMap<String, Naf2025>,
-    naf_rev2: BTreeMap<String, NafRev2>,
+    naf_2025: BTreeMap<CodeNaf, Naf2025>,
+    naf_rev2: BTreeMap<CodeNaf, NafRev2>,
 }
 
 /// Une sous-classe de la NAF 2025 : son code ecrit par l'INSEE (`90.20Y`) et son intitule.
@@ -97,14 +98,25 @@ fn net(code: &str) -> String {
     code.trim().to_uppercase()
 }
 
+/// Le code `code`, tel que la fiche le porte (`net`), s'il a la forme d'un code APE ; sans elle, il n'est la sous-classe
+/// d'aucune des deux nomenclatures.
+fn sous_classe(code: &str) -> Option<CodeNaf> {
+    match CodeNaf::lire(&net(code)) {
+        Ok(c) => Some(c),
+        Err(_) => None,
+    }
+}
+
 /// Le code est-il une sous-classe de la NAF 2025 ?
 pub fn en_naf_2025(code: &str) -> R<bool> {
-    Ok(base()?.naf_2025.contains_key(&net(code)))
+    let b = base()?;
+    Ok(sous_classe(code).is_some_and(|c| b.naf_2025.contains_key(&c)))
 }
 
 /// Le code est-il une sous-classe de la NAF rev. 2 ?
 pub fn en_naf_rev2(code: &str) -> R<bool> {
-    Ok(base()?.naf_rev2.contains_key(&net(code)))
+    let b = base()?;
+    Ok(sous_classe(code).is_some_and(|c| b.naf_rev2.contains_key(&c)))
 }
 
 /// Ce qu'on reproche a un code APE saisi, ou `None`.
@@ -129,7 +141,7 @@ point, tels que l'avis de situation Sirene les donne (9001Z en NAF rev. 2 ; 9020
 /// La phrase d'un code NAF rev. 2 dans un fichier qui veut la NAF 2025 : vers quels codes il passe, et quoi faire.
 fn refus_rev2(ou: &str, code: &str, version: droit::natures::VersionDeLaNorme) -> R<String> {
     let b = base()?;
-    let Some(e) = b.naf_rev2.get(code) else {
+    let Some(e) = sous_classe(code).and_then(|c| b.naf_rev2.get(&c)) else {
         return Err(socle::refus!("Code APE (NAF) {} : « {} » n'est pas dans la NAF rev. 2 livrée : le signaler au développeur.", ou, code));
     };
     let vers: Vec<String> =

@@ -226,7 +226,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
     permanent.id.nom = "TARTEMPION";
     permanent.id.nir = "185079999912388";
     permanent.id.conges_spectacles = None;
-    permanent.cotisations.retain(|c| c.2 != "conges_spectacles");
+    permanent.cotisations.retain(|c| c.2 != "CONGÉS SPECTACLES");
     std::fs::create_dir_all(c.join("import")).unwrap();
     pdf(vec![page_a(&artiste)], &c.join("import/artiste.pdf"));
     pdf(vec![page_a(&permanent)], &c.join("import/permanent.pdf"));
@@ -393,7 +393,7 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     const ADMIN: &str = "administrateur-essai-1";
     let (inst, a) = installation_a_part(c, route.nom());
     let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 2).unwrap(), 10, 0, 0).unwrap() };
-    poste.coffre(&a).poser_ouverture(ADMIN, None).unwrap();
+    poste.coffre(&a).poser_ouverture(&socle::secret::Secret::nouveau(ADMIN), None).unwrap();
     let b = ajouter_venant(&inst, "Seconde", Venue::Neuve).unwrap().racine;
     let mut charge = exemple;
     charge["administrateur"] = json!(ADMIN);
@@ -562,6 +562,8 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     confronter::<droit::arrets::SubrogationDeLArret>(&mut fautes);
     confronter::<droit::permanents::MotifDeSuspension>(&mut fautes);
     confronter::<droit::natures::UniteDeQuotite>(&mut fautes);
+    confronter::<droit::natures::NatureDuContratDsn>(&mut fautes);
+    confronter::<droit::natures::DispositifDePolitiquePublique>(&mut fautes);
     confronter::<droit::natures::ModaliteDeDeclarationDeFin>(&mut fautes);
     confronter::<droit::natures::TypeDActivite>(&mut fautes);
     confronter::<droit::natures::UniteDeMesure>(&mut fautes);
@@ -572,6 +574,69 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     confronter::<droit::nature_declaration::NatureDEvenementDeclencheur>(&mut fautes);
     confronter::<droit::apprentissage::CodeTaxe>(&mut fautes);
     assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
+}
+
+/// CHAQUE TYPE QUE LE GLOSSAIRE CITE EXISTE (`atelier/docs/ARCHITECTURE.md`, « Le glossaire ») : une ligne de ses
+/// tableaux dont la colonne « déclaré dans » nomme des fichiers du code (`…/src/….rs`, sous `atelier/sources/`) a chaque
+/// type de sa colonne « son type » (en code ; un chemin `a::b::C` se lit par son dernier segment, ses parametres
+/// `<…>` laisses ; en `CamelCase`) declare dans l'un d'eux : `struct`, `enum`, `type`, `trait`, ou une liste de
+/// `codes_fermes!` (son nom en tete, suivi de sa phrase). Un type dont le chemin part d'une crate hors de l'espace (la
+/// bibliotheque standard) n'y est pas declare ; une ligne qui ne nomme aucun fichier du code n'a rien a verifier.
+#[test]
+fn chaque_type_du_glossaire_existe() {
+    let doc = std::fs::read_to_string(espace().parent().unwrap().join("docs").join("ARCHITECTURE.md")).unwrap();
+    let debut = doc.find("\n## Le glossaire").expect("ARCHITECTURE.md : pas de section « Le glossaire »");
+    let section = &doc[debut + 1..];
+    let fin = match section[1..].find("\n## ") {
+        Some(i) => i + 1,
+        None => section.len(),
+    };
+    let en_code = regex::Regex::new("`([^`]+)`").unwrap();
+    let fichier_du_code = regex::Regex::new(r"^[a-z_\-]+/src/[A-Za-z0-9_/\-]+\.rs$").unwrap();
+    let camel = regex::Regex::new("^[A-Z][A-Za-z0-9]*$").unwrap();
+    let crates: BTreeSet<String> = dossiers_des_crates().iter().filter_map(|d| d.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+    let mut fautes = Vec::new();
+    let mut lignes_vues = 0;
+    for ligne in section[..fin].lines().filter(|l| l.starts_with("| ") && !l.starts_with("| notion |")) {
+        let colonnes: Vec<&str> = ligne.split('|').map(str::trim).collect();
+        let [_, notion, types, declare, _] = colonnes.as_slice() else {
+            fautes.push(format!("« {} » : une ligne du glossaire a trois colonnes", ligne));
+            continue;
+        };
+        let fichiers: Vec<&str> = en_code.captures_iter(declare).map(|c| c.get(1).unwrap().as_str()).filter(|f| fichier_du_code.is_match(f)).collect();
+        if fichiers.is_empty() {
+            continue;
+        }
+        lignes_vues += 1;
+        let mut sources = Vec::new();
+        for f in &fichiers {
+            match std::fs::read_to_string(espace().join(f)) {
+                Ok(s) => sources.push(s),
+                Err(_) => fautes.push(format!("{} : le fichier {} n'existe pas", notion, f)),
+            }
+        }
+        for t in en_code.captures_iter(types).map(|c| c.get(1).unwrap().as_str()) {
+            let chemin = match t.split_once('<') {
+                Some((c, _)) => c,
+                None => t,
+            };
+            let segments: Vec<&str> = chemin.split("::").collect();
+            if segments.len() > 1 && !crates.contains(segments[0]) {
+                continue;
+            }
+            let nom = segments[segments.len() - 1];
+            if !camel.is_match(nom) {
+                continue;
+            }
+            // Une declaration en tete de ligne (un commentaire qui nomme le type ne compte pas).
+            let declaration = regex::Regex::new(&format!(r"(?m)^\s*(pub(\([a-z]+\))?\s+)?(struct|enum|type|trait)\s+{0}\b|^\s*{0}\s*,\s*\x22", nom)).unwrap();
+            if !sources.iter().any(|s| declaration.is_match(s)) {
+                fautes.push(format!("{} : le type {} n'est declare dans aucun de {}", notion, nom, fichiers.join(", ")));
+            }
+        }
+    }
+    assert!(lignes_vues > 0, "le glossaire n'a aucune ligne qui nomme un fichier du code");
+    assert!(fautes.is_empty(), "chaque type que le glossaire cite existe, la ou il le dit :\n{}", fautes.join("\n"));
 }
 
 /// Chaque crate de l'espace : chaque dossier de `atelier/sources/` qui a son `Cargo.toml` (`fenetre/` et
@@ -1054,4 +1119,92 @@ fn la_carte_valide_a_une_variante_par_nature() {
     let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/contrats-base.json")).unwrap()).unwrap();
     let ecrites: BTreeSet<&str> = base["natures"].as_object().unwrap().keys().map(String::as_str).collect();
     assert_eq!(ecrites, NatureDeContrat::TOUTES.iter().map(|n| n.cle()).collect::<BTreeSet<_>>(), "une variante de la carte par nature du fichier");
+}
+
+/// UNE PIECE PRODUITE N'EST QUE D'UNE SORTE (`documents::SorteDePieceProduite`, dont chaque variante est dans `TOUTES`
+/// par construction : `sortes_de_pieces_produites!`) : aucun prefixe n'en commence un autre ; `du_nom` relit la sorte de
+/// son prefixe.
+#[test]
+fn une_piece_produite_n_est_que_d_une_sorte() {
+    use documents::SorteDePieceProduite as Sorte;
+    for a in Sorte::TOUTES {
+        for b in Sorte::TOUTES.iter().filter(|b| *b != a) {
+            assert!(!b.prefixe().starts_with(a.prefixe()), "{} commence {}", a.prefixe(), b.prefixe());
+        }
+        assert_eq!(Sorte::du_nom(a.prefixe()), Some((*a, "")), "du_nom relit {}", a.prefixe());
+    }
+}
+
+/// CHAQUE CLE DES GRILLES ET DES CLAUSES QU'UN FICHIER LIVRE CITE EXISTE DANS CELUI QU'ELLE DESIGNE (`decisions-t8.md`
+/// Q4 (b) : `droit::minima::CleDeGrille` est opaque, sans liste dans le code).
+/// Le niveau 3090 de chaque metier (`emplois-base.json`) a sa categorie dans `par_niveau_3090` de chaque convention qui
+/// en porte, et cette categorie est une de ses `categories.valeurs` ; il a sa ligne dans `niveaux` de chaque prime
+/// d'anciennete, et cette ligne a son salaire dans chacune de ses grilles (`costume`, chaque jauge de `technique`) ; la
+/// ligne de minima 3090 d'un metier, annexe par annexe, est une grille de cachets de cette annexe
+/// (`minima-conventionnels.json`) ; une grille que `remplace` nomme est une grille de la meme convention ou du meme accord.
+#[test]
+fn chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe() {
+    let lire = |f: &str| -> Value { serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees").join(f)).unwrap()).unwrap() };
+    let (emplois, clauses, minima) = (lire("emplois-base.json"), lire("clauses-conventionnelles-base.json"), lire("minima-conventionnels.json"));
+    let mut fautes = Vec::new();
+    let metiers = emplois["emplois"].as_object().unwrap();
+    let niveaux: BTreeSet<&str> = metiers.values().filter_map(|m| m["classification_3090"]["niveau"].as_str()).collect();
+    // Ce que le test parcourt n'est jamais vide : une cle renommee le ferait reussir sans rien verifier.
+    let (mut rangements, mut primes, mut lignes_3090) = (0, 0, 0);
+    for (idcc, c) in clauses["conventions"].as_object().unwrap() {
+        if let Some(par) = c["categories"]["par_niveau_3090"].as_object() {
+            rangements += 1;
+            for n in &niveaux {
+                match par.get(*n).and_then(Value::as_str) {
+                    Some(cat) if c["categories"]["valeurs"].get(cat).is_some() => {}
+                    Some(cat) => fautes.push(format!("clauses {} : la categorie {} du niveau {} n'est pas une de ses categories", idcc, cat, n)),
+                    None => fautes.push(format!("clauses {} : par_niveau_3090 ne range pas le niveau {}", idcc, n)),
+                }
+            }
+        }
+        if let Some(prime) = c.get("prime_anciennete") {
+            primes += 1;
+            for n in &niveaux {
+                let Some(ligne) = prime["niveaux"].get(*n).and_then(Value::as_str) else {
+                    fautes.push(format!("clauses {} : la prime d'anciennete n'a pas de ligne pour le niveau {}", idcc, n));
+                    continue;
+                };
+                for g in prime["salaires_conventionnels"].as_array().unwrap() {
+                    let grilles = std::iter::once(&g["costume"]).chain(g["technique"].as_object().unwrap().values());
+                    if grilles.into_iter().any(|grille| grille.get(ligne).is_none()) {
+                        fautes.push(format!("clauses {} : la ligne {} n'a pas son salaire dans la grille du {}", idcc, ligne, g["depuis"]));
+                    }
+                }
+            }
+        }
+    }
+    let annexes_3090 = &minima["conventions"]["3090"]["annexes"];
+    for (code, m) in metiers {
+        for (annexe, ligne) in m["minima"]["3090"].as_object().into_iter().flatten() {
+            lignes_3090 += 1;
+            if annexes_3090[annexe.as_str()]["cachets"].get(ligne.as_str().unwrap()).is_none() {
+                fautes.push(format!("emplois {} : la ligne {} n'est pas une grille de cachets de l'annexe {} de la 3090", code, ligne, annexe));
+            }
+        }
+    }
+    for (idcc, c) in minima["conventions"].as_object().unwrap() {
+        for texte in std::iter::once(c).chain(c["accords"].as_array().into_iter().flatten()) {
+            let grilles: Vec<&Value> = ["grilles", "grilles_complementaires"].iter().flat_map(|g| texte[*g].as_array().into_iter().flatten()).collect();
+            let noms: BTreeSet<&str> = grilles.iter().filter_map(|g| g["nom"].as_str()).collect();
+            for nomme in grilles.iter().flat_map(|g| g["remplace"].as_array().into_iter().flatten()) {
+                if !nomme.as_str().is_some_and(|n| noms.contains(n)) {
+                    fautes.push(format!("minima {} : la grille remplacee {} n'est pas une grille du meme texte", idcc, nomme));
+                }
+            }
+        }
+    }
+    assert!(
+        !niveaux.is_empty() && rangements > 0 && primes > 0 && lignes_3090 > 0,
+        "le test ne parcourt rien : niveaux 3090 {}, par_niveau_3090 {}, primes d'anciennete {}, lignes de minima 3090 {}",
+        niveaux.len(),
+        rangements,
+        primes,
+        lignes_3090
+    );
+    assert!(fautes.is_empty(), "chaque cle des grilles et des clauses citee existe dans le fichier qu'elle designe :\n{}", fautes.join("\n"));
 }

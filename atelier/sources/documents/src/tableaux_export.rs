@@ -29,6 +29,7 @@ use socle::num::Decimal;
 use socle::echec::Echec;
 use socle::mois::Mois;
 pub use socle::echec::R;
+use crate::plan_comptable::{EtatDExport, FormatDExport};
 
 /// Un refus `Refuse`.
 pub fn refus(m: impl Into<String>) -> Echec {
@@ -36,7 +37,7 @@ pub fn refus(m: impl Into<String>) -> Echec {
 }
 
 /// `FORMATS_TABLEAU` : les six formats de la machinerie, dans l'ordre du format.
-pub const FORMATS_TABLEAU: [&str; 6] = ["csv", "tsv", "xlsx", "pdf", "html", "json"];
+pub const FORMATS_TABLEAU: [FormatDExport; 6] = [FormatDExport::Csv, FormatDExport::Tsv, FormatDExport::Xlsx, FormatDExport::Pdf, FormatDExport::Html, FormatDExport::Json];
 
 // ------------------------------------------------------------------ valeurs
 
@@ -256,7 +257,7 @@ impl Section {
 /// UN TABLEAU, tel que la route le rend : son fichier ne s'ecrit que par son nom.
 #[derive(Clone, Debug, Serialize)]
 pub struct Tableau {
-    pub etat: String,
+    pub etat: EtatDExport,
     pub titre: String,
     pub periode: String,
     pub colonnes: Vec<Colonne>,
@@ -265,7 +266,7 @@ pub struct Tableau {
     pub avertissements: Vec<String>,
     pub sources: Vec<String>,
     pub mois: Vec<Mois>,
-    pub format: String,
+    pub format: FormatDExport,
     #[serde(serialize_with = "nom_du_fichier")]
     pub fichier: Option<PathBuf>,
     pub sous_totaux: bool,
@@ -282,9 +283,9 @@ pub fn nom_du_fichier<S: Serializer>(f: &Option<PathBuf>, s: S) -> Result<S::Ok,
 }
 
 impl Tableau {
-    pub fn nouveau(etat: &str, titre: impl Into<String>, periode: impl Into<String>) -> Tableau {
+    pub fn nouveau(etat: EtatDExport, titre: impl Into<String>, periode: impl Into<String>) -> Tableau {
         Tableau {
-            etat: etat.to_string(),
+            etat,
             titre: titre.into(),
             periode: periode.into(),
             colonnes: Vec::new(),
@@ -293,7 +294,7 @@ impl Tableau {
             avertissements: Vec::new(),
             sources: Vec::new(),
             mois: Vec::new(),
-            format: "csv".to_string(),
+            format: FormatDExport::Csv,
             fichier: None,
             sous_totaux: true,
             avec_total: true,
@@ -528,7 +529,7 @@ pub fn tsv_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
 /// CE QUE LE FICHIER JSON D'UN TABLEAU PORTE : le fichier n'y est pas encore nomme quand il s'ecrit (`null`).
 #[derive(Serialize)]
 struct FichierTableau<'a> {
-    etat: &'a str,
+    etat: EtatDExport,
     titre: &'a str,
     periode: &'a str,
     mois: &'a [Mois],
@@ -538,14 +539,14 @@ struct FichierTableau<'a> {
     avertissements: &'a [String],
     sources: &'a [String],
     donnees_personnelles: bool,
-    format: &'a str,
+    format: FormatDExport,
     fichier: Option<&'a socle::fichiers::NomDeFichier>,
 }
 
 /// Le tableau en JSON indente d'une espace.
 pub fn json_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
     let f = FichierTableau {
-        etat: &t.etat,
+        etat: t.etat,
         titre: &t.titre,
         periode: &t.periode,
         mois: &t.mois,
@@ -555,7 +556,7 @@ pub fn json_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
         avertissements: &t.avertissements,
         sources: &t.sources,
         donnees_personnelles: t.donnees_personnelles,
-        format: &t.format,
+        format: t.format,
         fichier: None,
     };
     Ok(socle::ecriture::json_indente(&f, 1).into_bytes())
@@ -596,14 +597,15 @@ fn ecrire_cellule(ws: &mut Feuille, ligne: u32, col: u16, cel: &Cel, style: &Sty
 
 /// Le nom de la feuille : celui de l'etat (`livre-de-paie`), qui tient dans les 31 caracteres qu'Excel admet et n'en
 /// porte aucun qu'il refuse ; le titre entier est la premiere ligne de la feuille.
-fn nom_de_feuille(t: &Tableau) -> R<&str> {
-    if t.etat.is_empty() || t.etat.chars().count() > 31 || t.etat.chars().any(|c| "[]:*?/\\'".contains(c)) {
+fn nom_de_feuille(t: &Tableau) -> R<&'static str> {
+    let nom = t.etat.as_str();
+    if nom.is_empty() || nom.chars().count() > 31 || nom.chars().any(|c| "[]:*?/\\'".contains(c)) {
         return Err(refus(format!(
             "L'état « {} » ne peut pas nommer une feuille Excel : 31 caractères au plus, sans crochet, deux-points, astérisque, point d'interrogation, barre ni apostrophe. Le renommer dans le moteur.",
-            t.etat
+            nom
         )));
     }
-    Ok(&t.etat)
+    Ok(nom)
 }
 
 /// `xlsx_tableau`.
@@ -924,30 +926,42 @@ pub fn pdf_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
 
 /// Les octets d'un tableau dans son format.
 pub fn octets(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
-    match t.format.as_str() {
-        "csv" => csv_tableau(t, ctx),
-        "tsv" => tsv_tableau(t, ctx),
-        "xlsx" => xlsx_tableau(t, ctx),
-        "pdf" => pdf_tableau(t, ctx),
-        "html" => html_tableau(t, ctx),
-        "json" => json_tableau(t, ctx),
-        autre => Err(refus(format!("Format inconnu pour cet état : « {} ».", autre))),
+    match t.format {
+        FormatDExport::Csv => csv_tableau(t, ctx),
+        FormatDExport::Tsv => tsv_tableau(t, ctx),
+        FormatDExport::Xlsx => xlsx_tableau(t, ctx),
+        FormatDExport::Pdf => pdf_tableau(t, ctx),
+        FormatDExport::Html => html_tableau(t, ctx),
+        FormatDExport::Json => json_tableau(t, ctx),
+        autre @ (FormatDExport::Fec
+        | FormatDExport::Ximport
+        | FormatDExport::Oxygene
+        | FormatDExport::Sage
+        | FormatDExport::Quadra
+        | FormatDExport::Ebp
+        | FormatDExport::Pennylane) => Err(refus(format!("Format inconnu pour cet état : « {} ».", autre))),
     }
 }
 
 /// Le format demande, s'il est l'un de `formats`. (Le XLSX et le PDF sont toujours
-/// disponibles : ni openpyxl ni la fabrique externe ne sont plus en jeu.)
-pub fn format_possible(fmt: &str, formats: &[&str]) -> R<String> {
-    if !formats.contains(&fmt) {
-        return Err(refus(format!("Format inconnu pour cet état : « {} ». Les formats possibles sont {}.", fmt, formats.join(", "))));
+/// disponibles : ni openpyxl ni la fabrique externe ne sont plus en jeu.) Une demande sans format n'en est aucun.
+pub fn format_possible(fmt: Option<FormatDExport>, formats: &[FormatDExport]) -> R<FormatDExport> {
+    match fmt {
+        Some(f) if formats.contains(&f) => Ok(f),
+        autre => {
+            let ecrit = match autre {
+                Some(f) => f.as_str(),
+                None => "",
+            };
+            Err(refus(format!("Format inconnu pour cet état : « {} ». Les formats possibles sont {}.", ecrit, formats.iter().map(|f| f.as_str()).collect::<Vec<_>>().join(", "))))
+        }
     }
-    Ok(fmt.to_string())
 }
 
 /// Ecrit le tableau dans `dossier/nom.<ext>` (`tsv` s'ecrit `.txt`) et rend le chemin.
 pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<PathBuf> {
     std::fs::create_dir_all(dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-    let ext = if t.format == "tsv" { "txt" } else { t.format.as_str() };
+    let ext = if t.format == FormatDExport::Tsv { "txt" } else { t.format.as_str() };
     let chemin = dossier.join(format!("{}.{}", nom, ext));
     let contenu = octets(t, Some(ctx))?;
     std::fs::write(&chemin, contenu).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;

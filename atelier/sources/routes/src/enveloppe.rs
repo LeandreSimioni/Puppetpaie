@@ -92,7 +92,7 @@ pub struct Charge {
     objet: Objet,
     /// Le mot de passe que l'objet porte, lu une fois en sa forme a l'entree (`MotDePasseDeLaCharge`).
     #[serde(skip)]
-    mot_de_passe: Option<String>,
+    mot_de_passe: Option<socle::secret::Secret>,
 }
 
 /// LE MOT DE PASSE DE L'ENVELOPPE, seul, lu en sa forme : un texte, ou rien. Un texte vide n'est pas un mot de passe : la
@@ -100,7 +100,7 @@ pub struct Charge {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MotDePasseDeLaCharge {
-    motdepasse: Option<String>,
+    motdepasse: Option<socle::secret::Secret>,
 }
 
 impl<'de> Deserialize<'de> for Charge {
@@ -113,12 +113,14 @@ impl<'de> Deserialize<'de> for Charge {
 const CHARGE_MAL_FORMEE: &str = "La demande est mal formée : sa charge est un objet {…}.";
 
 impl Charge {
-    /// LA CHARGE QU'EST L'OBJET `objet` : son mot de passe lu en sa forme (`MotDePasseDeLaCharge`) ; une autre valeur
+    /// LA CHARGE QU'EST L'OBJET `objet` : son mot de passe lu en sa forme (`MotDePasseDeLaCharge`), puis retire de l'objet
+    /// (la charge s'ecrit et se montre sans lui : il ne vit plus que dans `mot_de_passe`) ; une autre valeur
     /// qu'un texte a `motdepasse` la refuse (`MalFormee`).
     #[track_caller]
-    fn de_l_objet(objet: Objet) -> R<Charge> {
+    fn de_l_objet(mut objet: Objet) -> R<Charge> {
         let lu: MotDePasseDeLaCharge = objet.lire_cles(&[MOT_DE_PASSE], "La demande est mal formée : le mot de passe est un texte.").map_err(|m| m.reclasser(Classe::MalFormee))?;
-        Ok(Charge { objet, mot_de_passe: lu.motdepasse.filter(|m| !m.is_empty()) })
+        objet.retirer(MOT_DE_PASSE);
+        Ok(Charge { objet, mot_de_passe: lu.motdepasse.filter(|m| !m.devoiler().is_empty()) })
     }
 
     /// La charge d'une route qui ne prend rien : `{}`.
@@ -149,8 +151,8 @@ impl Charge {
     }
 
     /// Le mot de passe du logiciel tape pour cette route, s'il est donne (un texte non vide).
-    pub fn mot_de_passe(&self) -> Option<&str> {
-        self.mot_de_passe.as_deref()
+    pub fn mot_de_passe(&self) -> Option<&socle::secret::Secret> {
+        self.mot_de_passe.as_ref()
     }
 
     /// LE MOIS DE LA CHARGE, s'il est donne : une route qui porte un mois se sert sous la configuration de ce mois
@@ -191,7 +193,6 @@ impl Charge {
     /// de passe du logiciel de toute route, et ceux d'une route du coffre (`routes::coffre::SECRETS`), en sont retires ;
     /// la route les demande alors elle-meme a un humain.
     pub(crate) fn sans_les_secrets(&mut self, route: Route) {
-        self.objet.retirer(MOT_DE_PASSE);
         self.mot_de_passe = None;
         if catalogue::dans(super::coffre::ROUTES, route).is_some() {
             for s in super::coffre::SECRETS {

@@ -126,11 +126,11 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         }
         for (an, mut taux) in par_annee {
             taux.sort_by_key(|t| t.date_effet);
-            let codes: std::collections::BTreeSet<&str> = taux.iter().map(|t| t.code_risque.as_str()).collect();
+            let codes: std::collections::BTreeSet<&droit::bareme::CodeRisqueAt> = taux.iter().map(|t| &t.code_risque).collect();
             if codes.len() > 1 {
                 a_faire.push(format!(
                     "{} : plusieurs codes risques pour {} ({}). La configuration n'en porte qu'un par année : rien n'est posé ; saisissez celui de l'activité principale dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
-                    source, an, codes.into_iter().collect::<Vec<_>>().join(", ")
+                    source, an, codes.into_iter().map(droit::bareme::CodeRisqueAt::as_str).collect::<Vec<_>>().join(", ")
                 ));
                 continue;
             }
@@ -154,7 +154,7 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
         &compagnie::incidents::Note {
             nature: if d.quoi == envois::journal::Acte::Dsn { compagnie::incidents::DSN } else { compagnie::incidents::DPAE },
             ou: &format!("depot-{}", d.quoi.nom()),
-            quoi: &d.classe,
+            quoi: socle::echec::classe_notee(d.classe),
             resume: &d.message,
             detail: DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },
             trace: None,

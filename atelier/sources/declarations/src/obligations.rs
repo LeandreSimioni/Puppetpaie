@@ -203,7 +203,7 @@ pub struct FeuilleDAccident {
 
 /// Une obligation que le moteur sait compter : chacune est un champ de `LesObligations`, et son nom (`nom`) est la cle du
 /// fichier, celle que la page et les rappels lisent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CleDObligation {
     SignalementArret,
     SignalementArretRectificatif,
@@ -226,6 +226,32 @@ impl CleDObligation {
             CleDObligation::DeclarationMaladieProfessionnelle => "declaration_maladie_professionnelle",
             CleDObligation::AttestationSalaire => "attestation_salaire",
         }
+    }
+
+    /// Un signalement d'evenement, qui part en DSN (arret, son rectificatif, reprise, fin de contrat) ?
+    pub fn est_un_signalement(self) -> bool {
+        match self {
+            CleDObligation::SignalementArret
+            | CleDObligation::SignalementArretRectificatif
+            | CleDObligation::SignalementReprise
+            | CleDObligation::SignalementFinContrat => true,
+            CleDObligation::DeclarationAccident | CleDObligation::DeclarationMaladieProfessionnelle | CleDObligation::AttestationSalaire => false,
+        }
+    }
+
+    /// L'obligation dont `nom` est le nom ; `None` pour un nom qui n'en est aucun.
+    pub fn de_son_nom(nom: &str) -> Option<CleDObligation> {
+        [
+            CleDObligation::SignalementArret,
+            CleDObligation::SignalementArretRectificatif,
+            CleDObligation::SignalementReprise,
+            CleDObligation::SignalementFinContrat,
+            CleDObligation::DeclarationAccident,
+            CleDObligation::DeclarationMaladieProfessionnelle,
+            CleDObligation::AttestationSalaire,
+        ]
+        .into_iter()
+        .find(|c| c.nom() == nom)
     }
 }
 

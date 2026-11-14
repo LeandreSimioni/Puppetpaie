@@ -121,13 +121,137 @@ pub fn nulle_ou_dite<'de, D: Deserializer<'de>, T: DeserializeOwned + FormeDeCas
 #[derive(Debug, Clone, PartialEq)]
 pub struct Changements<C>(pub Vec<C>);
 
-impl<'de, C: Deserialize<'de>> Deserialize<'de> for Changements<C> {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = Vec::<C>::deserialize(d)?;
-        if v.is_empty() {
-            return Err(serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
+/// La case d'un changement, lue seule : ce que nomme un changement dont la valeur est fautive.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CaseSeule {
+    case: CaseDeFiche,
+    #[serde(default, rename = "valeur", deserialize_with = "socle::forme::non_lue")]
+    _valeur: socle::forme::NonLue,
+}
+
+impl<C: DeserializeOwned> Changements<C> {
+    /// LES CHANGEMENTS TAPES `liste`, CHACUN LU SEUL dans le type de sa case : ceux qui se lisent, et la faute de chacun
+    /// des autres, toutes ensemble (`FauteDeCase`). Une liste vide, ou un changement qui ne nomme pas une case d'une
+    /// fiche, refuse la charge.
+    pub fn lire(liste: &socle::forme::Liste) -> R<(Changements<C>, Vec<FauteDeCase>)> {
+        if liste.est_vide() {
+            return Err(socle::echec::refus("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
         }
-        Ok(Changements(v))
+        let mut lus = Vec::new();
+        let mut fautes = Vec::new();
+        for (case, lu) in liste.chacun::<CaseSeule>("valeur").into_iter().zip(liste.chacun::<C>("valeur")) {
+            let case = case.map_err(|(_, detail)| socle::echec::refus(format!("`changements` : {}", detail)))?.case;
+            match lu {
+                Ok(ch) => lus.push(ch),
+                Err((chemin, phrase)) => fautes.push(FauteDeCase::de(case, chemin, phrase)),
+            }
+        }
+        Ok((Changements(lus), fautes))
+    }
+}
+
+/// UNE FAUTE D'UNE CASE SAISIE : la case, le chemin sous elle dans une structure (`[1].siret`, `email`), et la phrase de
+/// ce que le type de la case refuse. La case reste vide dans la fiche typee ; la faute se dit a cote, avec toutes les
+/// autres du formulaire (`declarations::champs::des_fautes`), et ne se passe pas outre.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FauteDeCase {
+    pub case: CaseDeFiche,
+    pub chemin: Option<String>,
+    pub phrase: String,
+}
+
+impl FauteDeCase {
+    /// La faute de la case `case`, au chemin `chemin` sous elle (vide : la case elle-meme).
+    fn de(case: CaseDeFiche, chemin: String, phrase: String) -> FauteDeCase {
+        let chemin = match chemin.as_str() {
+            "" | "?" => None,
+            _ => Some(chemin),
+        };
+        FauteDeCase { case, chemin, phrase }
+    }
+}
+
+impl FauteDeCase {
+    /// LE TEXTE `texte` QUE LE MOTEUR POSE DANS LA CASE `case` (une forme declaree fabriquee de la lisible), lu dans le type
+    /// de la case comme un changement `C` : ce que le type refuse est la faute de la case.
+    pub fn pose<C: DeserializeOwned>(case: CaseDeFiche, texte: &str) -> Result<C, FauteDeCase> {
+        match socle::forme::un_texte_pose::<C>("case", case.nom(), "valeur", texte) {
+            Ok(ch) => Ok(ch),
+            Err((chemin, phrase)) => Err(FauteDeCase::de(case, chemin, phrase)),
+        }
+    }
+}
+
+pub use socle::ecriture::{MotEcrit, ValeurDeCase};
+
+/// UNE NOTE D'UNE FICHE : un texte qu'elle porte et qui n'est pas une case (d'ou elle vient, le titre que l'import
+/// propose a un spectacle). Seul `fiche!` en fait une, du nom qu'il declare : une note ne se nomme pas par un texte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NoteDeFiche(&'static str);
+
+impl NoteDeFiche {
+    /// Son nom, la cle que le fichier ecrit.
+    pub fn nom(self) -> &'static str {
+        self.0
+    }
+}
+
+/// UNE FICHE QUE LA TABLE DES CASES JUGE (`declarations::champs`) : l'entreprise, un salarie, un spectacle, typee. Ce
+/// qu'une case ecrit (`ecrite`), si elle est remplie (`dite`), et sa seule porte depuis un formulaire (`lire_cases`).
+pub trait FicheSaisie: Sized + Default + Clone {
+    const NOM: NomDeFiche;
+
+    /// Ce qu'ecrit la case au bout de `chemin` sous la case `k` (une structure : les cles qui y menent).
+    fn ecrite_au_chemin(&self, k: CaseDeFiche, chemin: &[&str]) -> MotEcrit;
+
+    /// LA FICHE TAPEE `o` (un formulaire), case par case (`lire_cases` de sa forme) : la fiche typee et la faute de
+    /// chaque case que son type refuse.
+    fn lire_cases(o: &socle::forme::Objet) -> R<(Self, Vec<FauteDeCase>)>;
+
+    /// La valeur de la case `k`, ecrite comme le fichier l'ecrit ; vide, aucune.
+    fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase>;
+
+    /// Aucune case n'y est ecrite (ses notes ne comptent pas).
+    fn est_vide(&self) -> bool;
+
+    /// Les cases et les notes que `autre` dit remplacent les siennes.
+    fn fondre(&mut self, autre: &Self);
+
+    /// Les cases et les notes que `autre` dit et qu'elle ne dit pas.
+    fn completer_de(&mut self, autre: &Self);
+
+    /// La case `k` telle que `autre` la dit.
+    fn prendre(&mut self, autre: &Self, k: CaseDeFiche);
+
+    /// Les cases qu'elle dit, dans l'ordre de la forme.
+    fn cases_dites(&self) -> Vec<CaseDeFiche>;
+
+    /// Les notes qu'elle dit : leur nom et leur texte.
+    fn notes_dites(&self) -> Vec<(NoteDeFiche, &str)>;
+
+    /// La note `note` telle que `autre` la dit.
+    fn prendre_la_note(&mut self, autre: &Self, note: NoteDeFiche);
+
+    /// Ce qu'ecrit la case `k`.
+    fn ecrite(&self, k: CaseDeFiche) -> MotEcrit {
+        self.ecrite_au_chemin(k, &[])
+    }
+
+    /// LA CASE `k` EST-ELLE REMPLIE : une valeur, sauf une case a cocher non cochee ; une structure, une de ses cases
+    /// remplie. Zero est une valeur.
+    fn dite(&self, k: CaseDeFiche) -> bool {
+        dit(&self.ecrite(k))
+    }
+}
+
+/// Ce mot ecrit dit-il quelque chose (`FicheSaisie::dite`) ?
+pub fn dit(m: &MotEcrit) -> bool {
+    match m {
+        MotEcrit::Vide | MotEcrit::StructureVide => false,
+        MotEcrit::Mot(t) | MotEcrit::Nombre(t) => !t.is_empty(),
+        MotEcrit::OuiNon(b) => *b,
+        MotEcrit::Structure => true,
     }
 }
 
@@ -362,6 +486,30 @@ texte_borne! {
 la DSN écrivent (norme DPAE v5.3, zone « Code NAF » ; DSN, S21.G00.06.003). Corrigez-le";
 }
 
+impl CodePostal {
+    /// LE CODE POSTAL QU'UNE PIECE IMPORTEE IMPRIME (un bulletin, une AEM, un certificat d'un autre logiciel), ses blancs
+    /// de bord retires, ou la faute qui le refuse : hors de sa forme, la case reste vide et se redemande
+    /// (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> R<CodePostal> {
+        CodePostal::lire(texte.trim())
+    }
+}
+
+impl CodeNaf {
+    /// LE CODE APE QU'UNE PIECE IMPORTEE IMPRIME, ses blancs de bord retires, et sans le point de la notation de l'INSEE
+    /// (« 90.01Z », les deux chiffres de la division puis le point : `atelier/reference/sources/insee-naf-2025/`, ses
+    /// classeurs et son `LISEZ-MOI.md`) : la DPAE et la DSN l'ecrivent sans lui (« 9001Z »). Hors de sa forme, la faute
+    /// qui le refuse : la case reste vide et se redemande (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> R<CodeNaf> {
+        let t = texte.trim();
+        let sans_point = match (t.get(..2), t.get(2..3), t.get(3..)) {
+            (Some(division), Some("."), Some(reste)) => format!("{}{}", division, reste),
+            _ => t.to_string(),
+        };
+        CodeNaf::lire(&sans_point)
+    }
+}
+
 texte_borne! {
     /// LE CODE PCS-ESE d'un emploi (S21.G00.40.004) : « Table PCSESE - Code profession et catégorie socioprofessionnelle
     /// PCS-ESE », « X [4,4] » (cahier technique DSN 2026.1, p. 183, `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`
@@ -371,6 +519,17 @@ texte_borne! {
     pub struct CodePcsEse : Exactement 4 "caractères" par caracteres,
         "« {texte} » a {n} caractères : un code PCS-ESE en a {max} (465b), ce que la DSN écrit \
 (S21.G00.40.004). Corrigez-le";
+}
+
+impl CodePcsEse {
+    /// UN EMPLOI D'ARTISTE DU SPECTACLE : un code du groupe 354. Les rubriques deposees de ce groupe sont des artistes
+    /// « dans le cadre d'un spectacle vivant ou audiovisuel » (Insee, PCS-ESE 2017,
+    /// `atelier/reference/sources/insee-pcs-ese-2017-fiches/354b.txt`, `354c.txt`, `354e.txt`, l. 34-35), et les
+    /// « Artistes du cirque et des spectacles divers » (`354f.txt`, l. 34). INFERENCE : le groupe entier se lit ainsi ;
+    /// ses autres rubriques ne sont pas deposees.
+    pub fn est_un_artiste_du_spectacle(&self) -> bool {
+        self.0.starts_with("354")
+    }
 }
 
 /// LE CODE EMPLOI DECLARE d'un emploi (S21.G00.40.005, « Code complément PCS-ESE ») : « X [2,6] », d'une des tables
@@ -496,6 +655,21 @@ texte_borne! {
 l'étranger), ce que la DPAE et la DSN écrivent (norme DPAE v5.3, zone « Code du département de naissance » ; DSN, S21.G00.30.014). Corrigez-le";
 }
 
+/// S21.G00.30.014 (`atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`, l. 254-262) : « Pour les personnes nées
+/// à l'étranger, renseigner 99 » ; « La valeur 20 n'est acceptée que pour les personnes nées avant 1976 », l'ancien code
+/// de la Corse (2A et 2B depuis).
+impl DepartementNaissance {
+    /// 99 : une naissance a l'etranger.
+    pub fn est_etranger(&self) -> bool {
+        self.0 == "99"
+    }
+
+    /// 20 : l'ancien code de la Corse, avant 1976.
+    pub fn est_l_ancienne_corse(&self) -> bool {
+        self.0 == "20"
+    }
+}
+
 texte_borne! {
     /// LE NUMERO DE SECURITE SOCIALE d'un salarie, sans sa cle : 13 caracteres. La DPAE en ecrit 13 (N_SECU_SOC, positions
     /// 348-360 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 309-315) ; la DSN aussi (S21.G00.30.001,
@@ -530,14 +704,11 @@ impl Nir {
         }
     }
 
-    /// LE NIR QU'UNE PIECE IMPORTEE PORTE (une DSN lue, une AEM, une AER, un certificat, un bulletin d'autrui) : hors de sa
-    /// forme, la case reste vide, comme un code hors de nos listes ; la piece d'un tiers se lit, elle ne se refuse pas
-    /// pour lui. Les retours de la norme le lisent strictement (`lire`).
-    pub fn d_une_piece(texte: &str) -> Option<Nir> {
-        match Nir::lire(texte) {
-            Ok(n) => Some(n),
-            Err(_) => None,
-        }
+    /// LE NIR QU'UNE PIECE IMPORTEE PORTE (une DSN lue, une AEM, une AER, un certificat, un bulletin d'autrui), ou la
+    /// faute qui le refuse : la piece d'un tiers se lit, elle ne se refuse pas pour lui ; hors de sa forme, la case reste
+    /// vide et sa faute se dit (`FauteDeCase`). Les retours de la norme le lisent strictement (`lire`).
+    pub fn d_une_piece(texte: &str) -> R<Nir> {
+        Nir::lire(texte)
     }
 }
 
@@ -804,6 +975,12 @@ impl Siret {
     pub fn cle_juste(&self) -> bool {
         cle_de_luhn_juste(&self.0)
     }
+
+    /// LE SIRET QU'UNE PIECE IMPORTEE IMPRIME (un bulletin d'un autre logiciel), ses chiffres, ou la faute qui le refuse :
+    /// hors de sa forme, la case reste vide et se redemande (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> R<Siret> {
+        Siret::lire(texte)
+    }
 }
 
 /// UN IBAN (ISO 13616) : sa forme et sa cle sont celles de `socle::iban::faute_iban` (S21.G00.20.004 de la DSN, et le
@@ -969,14 +1146,15 @@ impl NumeroObjetSpectacle {
         }
     }
 
-    /// LE NUMERO D'OBJET QU'UNE PIECE IMPORTEE PORTE (une AEM, une AER, un bulletin d'autrui) : sans ses
-    /// blancs de bord ; a blanc ou hors de sa forme, la case reste vide, comme un code hors de nos listes (la piece d'un
-    /// tiers se lit, elle ne se refuse pas pour lui).
-    pub fn d_une_piece(texte: &str) -> Option<NumeroObjetSpectacle> {
-        match NumeroObjetSpectacle::lire(&NumeroObjetSpectacle::rangee(texte)) {
-            Ok(n) => Some(n),
-            Err(_) => None,
+    /// LE NUMERO D'OBJET QU'UNE PIECE IMPORTEE PORTE (une AEM, une AER, un bulletin d'autrui) : sans ses blancs de bord ;
+    /// a blanc, aucun ; hors de sa forme, la faute qui le refuse (la case reste vide et sa faute se dit,
+    /// `Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> R<Option<NumeroObjetSpectacle>> {
+        let range = NumeroObjetSpectacle::rangee(texte);
+        if range.is_empty() {
+            return Ok(None);
         }
+        NumeroObjetSpectacle::lire(&range).map(Some)
     }
 
     /// Le meme numero que `autre`, sans regarder la casse : une piece et une fiche l'ecrivent en capitales ou non.
@@ -987,6 +1165,19 @@ impl NumeroObjetSpectacle {
     /// Le meme numero, en capitales : la cle sous laquelle l'import regroupe ce que les pieces en impriment.
     pub fn en_capitales(&self) -> NumeroObjetSpectacle {
         NumeroObjetSpectacle(self.0.to_ascii_uppercase())
+    }
+
+    /// L'ANNEE OU L'EMPLOYEUR A DEMANDE LE NUMERO : ses deux premiers caracteres (circulaire Unedic 2016-25, fiche 2,
+    /// § 1.1.3.2 « Composition du numéro d'objet », `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`,
+    /// l. 5681-5700 : « 2 caractères pour l'année (année de la demande de numéro par l'employeur) »). `None` quand ce ne
+    /// sont pas deux chiffres : le texte dit deux caractères, pas deux chiffres, et un numero qui ne les a pas ne dit pas
+    /// son annee. INFERENCE : le siecle (`2000 +`) ; le texte ne donne que deux caracteres, et le numero n'est exige sur
+    /// l'AEM qu'au-dela du 31 mars 2008 (meme fichier, l. 5705).
+    pub fn annee_de_la_demande(&self) -> Option<i32> {
+        match self.0.as_bytes() {
+            [d @ b'0'..=b'9', u @ b'0'..=b'9', ..] => Some(2000 + i32::from(d - b'0') * 10 + i32::from(u - b'0')),
+            _ => None,
+        }
     }
 }
 
@@ -1167,11 +1358,30 @@ impl std::fmt::Display for NomDeFiche {
     }
 }
 
+/// UNE FICHE NOMMEE : l'entreprise (le fichier entier, sans cle), ou un salarie, un spectacle par la cle de sa fiche.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FicheNommee {
+    Entreprise,
+    Salarie(IdSalarie),
+    Spectacle(IdSpectacle),
+}
+
+impl FicheNommee {
+    /// Le nom de la fiche.
+    pub fn nom(&self) -> NomDeFiche {
+        match self {
+            FicheNommee::Entreprise => NomDeFiche::Entreprise,
+            FicheNommee::Salarie(_) => NomDeFiche::Salarie,
+            FicheNommee::Spectacle(_) => NomDeFiche::Spectacle,
+        }
+    }
+}
+
 /// LE NOM D'UNE CASE DECLAREE HORS DES PIECES : un champ d'une fiche ou une case d'une structure, tel que sa forme
 /// l'ecrit. Il ne se fabrique que de la forme (`Declaree`, les cles d'une fiche : `CaseSalarie`, `CaseEntreprise`...) ;
 /// un texte ne devient un nom de case qu'a la porte, contre la forme (`NomDeCase::lire`), et un nom que la forme ne
-/// declare pas s'y refuse. C'est la cle d'une saisie (`declarations::champs::Saisie`) : aucune case ne s'y lit par un
-/// texte. UNE CASE D'UNE PIECE N'EN EST PAS UNE : elle est une `CaseDePiece`, que `fiche!` separe a la declaration.
+/// declare pas s'y refuse. UNE CASE D'UNE PIECE N'EN EST PAS UNE : elle est une `CaseDePiece`, que `fiche!` separe a la
+/// declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NomDeCase(&'static str);
 
@@ -1206,9 +1416,8 @@ impl NomDeCase {
     }
 }
 
-/// UNE CASE D'UNE PIECE (`PieceFermee`), telle que `fiche!` la separe a la declaration : elle n'est pas un `NomDeCase`,
-/// et une saisie ne la lit donc pas par `Saisie::case` ; elle se lit par le seul chemin des pieces, qui la prend
-/// (`declarations::champs::Saisie::piece`). Sa piece est celle que sa forme lui donne (`CaseDePiece::piece`).
+/// UNE CASE D'UNE PIECE (`PieceFermee`), telle que `fiche!` la separe a la declaration : elle n'est pas un `NomDeCase`.
+/// Sa piece est celle que sa forme lui donne (`CaseDePiece::piece`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CaseDePiece {
     Salarie(CasePieceSalarie),
@@ -1416,8 +1625,8 @@ pub struct Declaree<K = NomDeCase> {
 impl<K> Declaree<K> {
     /// LE TEXTE SAISI `texte` RANGE DANS LA FORME DU TYPE DE LA CASE (`FormeDeCase::RANGER`, le seul endroit qui dit
     /// comment une saisie se range), avant tout controle et toute ecriture : ce qui s'ecrit est ce que son lecteur relit.
-    /// Les deux portes d'une saisie l'appliquent, celle d'une saisie de fiche (`declarations::champs::lecture`) et celle
-    /// d'un changement de case (`nulle_ou_dite`) ; rien pour un type qui lit son texte tel quel.
+    /// La seule porte d'une case saisie l'applique, celle d'un changement de case (`nulle_ou_dite`, par laquelle
+    /// `FicheSaisie::lire_cases` lit chaque case) ; rien pour un type qui lit son texte tel quel.
     pub fn rangee(&self, texte: &str) -> Option<String> {
         self.ranger.map(|r| r(texte))
     }
@@ -1475,6 +1684,11 @@ impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
 impl FormeDeCase for socle::paris::Moment {}
+impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
+impl FormeDeCase for crate::bareme::CodeRisqueAt {
+    const FAUTE: Option<fn(&str) -> Option<String>> = Some(crate::bareme::CodeRisqueAt::faute);
+    const RANGER: Option<fn(&str) -> String> = Some(crate::bareme::CodeRisqueAt::rangee);
+}
 impl FormeDeCase for socle::pays::CodePays {
     const FAUTE: Option<fn(&str) -> Option<String>> = Some(socle::pays::CodePays::faute);
     const RANGER: Option<fn(&str) -> String> = Some(socle::pays::CodePays::rangee);
@@ -1818,6 +2032,110 @@ macro_rules! fiche {
             /// Les memes cases, sans ses notes.
             pub fn sans_notes(self) -> $plate {
                 $plate { $( $( $note: None, )* )? ..self }
+            }
+
+            /// Les cases et les notes que `autre` dit remplacent les siennes.
+            pub fn fondre(&mut self, autre: &$plate) {
+                self.par_dessus(autre);
+                $( $( if autre.$note.is_some() {
+                    self.$note = autre.$note.clone();
+                } )* )?
+            }
+
+            /// Les cases et les notes que `autre` dit et qu'elle ne dit pas : la premiere qui en dit une la garde.
+            pub fn completer_de(&mut self, autre: &$plate) {
+                $( if self.$champ.is_none() {
+                    self.$champ = autre.$champ.clone();
+                } )*
+                $( $( if self.$piece.cases.$pchamp.is_none() {
+                    self.$piece.cases.$pchamp = autre.$piece.cases.$pchamp.clone();
+                } )* )*
+                $( $( if self.$note.is_none() {
+                    self.$note = autre.$note.clone();
+                } )* )?
+            }
+
+            /// La case `k` telle que `autre` la dit (vide s'il ne la dit pas).
+            pub fn prendre(&mut self, autre: &$plate, k: CaseDeFiche) {
+                $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
+                    self.$champ = autre.$champ.clone();
+                } )*
+                $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
+                    self.$piece.cases.$pchamp = autre.$piece.cases.$pchamp.clone();
+                } )* )*
+            }
+
+            /// Les cases qu'elle dit, dans l'ordre de la forme.
+            pub fn cases_dites(&self) -> Vec<CaseDeFiche> {
+                let mut out = Vec::new();
+                $( if self.$champ.is_some() {
+                    out.push(CaseDeFiche::Case($cles::$var.into()));
+                } )*
+                $( $( if self.$piece.cases.$pchamp.is_some() {
+                    out.push(CaseDeFiche::Piece($pcles::$pvar.into()));
+                } )* )*
+                out
+            }
+
+            /// Les notes qu'elle dit : leur nom et leur texte.
+            pub fn notes_dites(&self) -> Vec<(NoteDeFiche, &str)> {
+                let toutes: Vec<(NoteDeFiche, Option<&str>)> = vec![$($( (NoteDeFiche(stringify!($note)), self.$note.as_deref()) ),*)?];
+                toutes.into_iter().filter_map(|(k, t)| t.map(|t| (k, t))).collect()
+            }
+
+            /// La note `note` telle que `autre` la dit ; une fiche sans notes n'a rien a y lire (`_autre`, `_note`).
+            pub fn prendre_la_note(&mut self, _autre: &$plate, _note: NoteDeFiche) {
+                $( $( if _note == NoteDeFiche(stringify!($note)) {
+                    self.$note = _autre.$note.clone();
+                } )* )?
+            }
+
+            /// CE QU'ECRIT LA CASE au bout de `chemin` sous la case `k` (`socle::ecriture::mot_au_chemin`) ; une case
+            /// que la forme ne declare pas n'ecrit rien.
+            pub fn ecrite_au_chemin(&self, k: CaseDeFiche, chemin: &[&str]) -> MotEcrit {
+                $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
+                    return socle::ecriture::mot_au_chemin(&self.$champ, chemin);
+                } )*
+                $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
+                    return socle::ecriture::mot_au_chemin(&self.$piece.cases.$pchamp, chemin);
+                } )* )*
+                MotEcrit::Vide
+            }
+
+            /// La valeur de la case `k`, ecrite comme le fichier l'ecrit ; vide, aucune.
+            pub fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase> {
+                $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
+                    return ValeurDeCase::de(&self.$champ);
+                } )*
+                $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
+                    return ValeurDeCase::de(&self.$piece.cases.$pchamp);
+                } )* )*
+                None
+            }
+
+            /// LA FICHE TAPEE `o` (un formulaire de la fiche `fiche`), LA SEULE PORTE D'UNE FICHE SAISIE : chaque case
+            /// lue seule dans son type (`$ch`, par `nulle_ou_dite` : son rangement, puis son type), une case blanche
+            /// vide (`Objet::sans_textes_blancs`) ; la faute d'une case s'ajoute (`FauteDeCase`) et la lecture continue.
+            /// Ses notes se lisent en texte ; la ligne de l'histoire (`historique`), que la page renvoie, ne se lit pas.
+            /// Une cle qui n'est pas une case de la fiche refuse le formulaire.
+            pub fn lire_cases_de_la_fiche(o: &socle::forme::Objet, fiche: &str) -> R<($plate, Vec<FauteDeCase>)> {
+                let o = o.sans_textes_blancs();
+                let cases = $plate::cases();
+                let lue = |k: &str| k != NomDeCase::HISTORIQUE.nom() && !$plate::NOTES.contains(&k);
+                let mut plate = $plate::default();
+                let mut fautes = Vec::new();
+                for (k, lu) in o.chacune::<$ch>(lue, "case", "valeur") {
+                    let Some(d) = cases.iter().find(|d| d.cle.nom() == k) else {
+                        let connues: Vec<&str> = cases.iter().map(|d| d.cle.nom()).collect();
+                        return Err(socle::echec::refus(format!("la case « {} » n'existe pas dans la fiche {} ; ses cases sont : {}", k, fiche, connues.join(", "))));
+                    };
+                    match lu {
+                        Ok(ch) => <$datee as FicheDatee>::appliquer(&mut plate, ch),
+                        Err((chemin, phrase)) => fautes.push(FauteDeCase::de(d.cle, chemin, phrase)),
+                    }
+                }
+                $( $( plate.$note = o.lire_une::<Option<String>>(stringify!($note), "Une note de la fiche se lit en texte.")?.flatten(); )* )?
+                Ok((plate, fautes))
             }
         }
 
@@ -2202,19 +2520,179 @@ choix! {
     pub enum StagiaireCcneac { Premiere = "1", Deuxieme = "2" }
 }
 
-choix! {
-    pub enum CategorieConventionnelle {
-        Artiste = "artiste",
-        Employe = "employe",
-        Technicien = "technicien",
-        AgentDeMaitrise = "agent_de_maitrise",
-        Cadre = "cadre",
-        CadreDeDirection = "cadre_de_direction",
+/// LA CATEGORIE D'UN SALARIE DANS LA CONVENTION : celle que nomment les clauses d'une convention
+/// (`clauses-conventionnelles-base.json` : `categories.valeurs`, le preavis par categorie, la categorie d'un niveau 3090),
+/// le profil d'un salarie (`clauses::Profil`) et la case « Catégorie dans la convention » de la fiche. Une liste du
+/// logiciel, ecrite par son texte. `NonCadre` (« non cadre » : la clause qui vaut pour tous ceux qui ne sont pas cadres)
+/// ne se dit pas sur la fiche, ou la case cadre le dit : la fiche la refuse en nommant sa case (sa lecture, `DeLaFiche`),
+/// les clauses la lisent (`de_la_convention`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(from = "CategorieDeLaFiche")]
+pub enum CategorieConventionnelle {
+    #[serde(rename = "artiste")]
+    Artiste,
+    #[serde(rename = "employe")]
+    Employe,
+    #[serde(rename = "technicien")]
+    Technicien,
+    #[serde(rename = "agent_de_maitrise")]
+    AgentDeMaitrise,
+    #[serde(rename = "cadre")]
+    Cadre,
+    #[serde(rename = "cadre_de_direction")]
+    CadreDeDirection,
+    #[serde(rename = "non_cadre")]
+    NonCadre,
+}
+
+/// La lecture de la case « Catégorie dans la convention » de la fiche : les six qu'elle porte, une autre refusee
+/// (serde nomme les six), et la case nommee par la faute de la saisie (`FauteDeCase`). Elle se nomme comme la notion dans
+/// ce que serde en dit.
+#[derive(Deserialize)]
+#[serde(rename = "CategorieConventionnelle")]
+enum CategorieDeLaFiche {
+    #[serde(rename = "artiste")]
+    Artiste,
+    #[serde(rename = "employe")]
+    Employe,
+    #[serde(rename = "technicien")]
+    Technicien,
+    #[serde(rename = "agent_de_maitrise")]
+    AgentDeMaitrise,
+    #[serde(rename = "cadre")]
+    Cadre,
+    #[serde(rename = "cadre_de_direction")]
+    CadreDeDirection,
+}
+
+impl From<CategorieDeLaFiche> for CategorieConventionnelle {
+    fn from(c: CategorieDeLaFiche) -> CategorieConventionnelle {
+        match c {
+            CategorieDeLaFiche::Artiste => CategorieConventionnelle::Artiste,
+            CategorieDeLaFiche::Employe => CategorieConventionnelle::Employe,
+            CategorieDeLaFiche::Technicien => CategorieConventionnelle::Technicien,
+            CategorieDeLaFiche::AgentDeMaitrise => CategorieConventionnelle::AgentDeMaitrise,
+            CategorieDeLaFiche::Cadre => CategorieConventionnelle::Cadre,
+            CategorieDeLaFiche::CadreDeDirection => CategorieConventionnelle::CadreDeDirection,
+        }
+    }
+}
+
+impl CategorieConventionnelle {
+    /// Les sept, dans l'ordre de la liste.
+    pub const TOUTES: [CategorieConventionnelle; 7] = [
+        CategorieConventionnelle::Artiste,
+        CategorieConventionnelle::Employe,
+        CategorieConventionnelle::Technicien,
+        CategorieConventionnelle::AgentDeMaitrise,
+        CategorieConventionnelle::Cadre,
+        CategorieConventionnelle::CadreDeDirection,
+        CategorieConventionnelle::NonCadre,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CategorieConventionnelle::Artiste => "artiste",
+            CategorieConventionnelle::Employe => "employe",
+            CategorieConventionnelle::Technicien => "technicien",
+            CategorieConventionnelle::AgentDeMaitrise => "agent_de_maitrise",
+            CategorieConventionnelle::Cadre => "cadre",
+            CategorieConventionnelle::CadreDeDirection => "cadre_de_direction",
+            CategorieConventionnelle::NonCadre => "non_cadre",
+        }
+    }
+
+    /// Celle dont le code est `code`, si elle est des sept.
+    pub fn du_code(code: &str) -> Option<CategorieConventionnelle> {
+        CategorieConventionnelle::TOUTES.into_iter().find(|c| c.as_str() == code)
+    }
+
+    /// LA CATEGORIE QU'UNE CONVENTION NOMME dans ses clauses (`clauses-conventionnelles-base.json`) : l'une des sept,
+    /// `non_cadre` compris ; une autre se refuse.
+    pub fn de_la_convention(texte: &str) -> R<CategorieConventionnelle> {
+        match CategorieConventionnelle::du_code(texte) {
+            Some(c) => Ok(c),
+            None => Err(socle::refus!(
+                "Catégorie dans la convention : {} n'en est pas une ({}).",
+                socle::fichiers::repr(texte),
+                CategorieConventionnelle::TOUTES.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for CategorieConventionnelle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl AsRef<str> for CategorieConventionnelle {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl FormeDeCase for CategorieConventionnelle {
+    /// Les six que la case de la fiche porte.
+    const VALEURS: &'static [&'static str] = &["artiste", "employe", "technicien", "agent_de_maitrise", "cadre", "cadre_de_direction"];
+}
+
+impl Choix for CategorieConventionnelle {
+    fn code(&self) -> &'static str {
+        self.as_str()
     }
 }
 
 choix! {
+    /// LES DEUX MODELES DU BULLETIN (`documents::bulletin`, ou chacun se decrit) : le simplifie, le modele de l'arrete
+    /// du 25/02/2016, art. 1, I ; le complet, le meme bulletin suivi d'une page annexe qui detaille chaque cotisation.
+    /// La case `modele_bulletin` de la fiche entreprise (la compagnie, pour tous) et de la fiche d'un salarie (qui
+    /// l'emporte) ; la charge des routes du modele.
     pub enum ModeleBulletin { Simplifie = "simplifié", Complet = "complet" }
+}
+
+impl ModeleBulletin {
+    pub const TOUS: [ModeleBulletin; 2] = [ModeleBulletin::Simplifie, ModeleBulletin::Complet];
+
+    pub fn nom(self) -> &'static str {
+        match self {
+            ModeleBulletin::Simplifie => "Simplifié",
+            ModeleBulletin::Complet => "Complet",
+        }
+    }
+
+    /// Ce que la page en dit, sous l'apercu.
+    pub fn description(self) -> &'static str {
+        match self {
+            ModeleBulletin::Simplifie => {
+                "Le bulletin clarifié du modèle réglementaire (arrêté du 25 février 2016) : les cotisations regroupées \
+                 sous les lignes du modèle, le taux de la part salariale, les contributions de l'employeur en une ligne."
+            }
+            ModeleBulletin::Complet => {
+                "Le même bulletin, ligne pour ligne, suivi d'une page annexe qui détaille chaque cotisation et \
+                 contribution sous la ligne du bulletin qui la regroupe : sa base, le taux et le montant de la part \
+                 salariale et de la part employeur."
+            }
+        }
+    }
+
+    /// Son ecriture dans l'adresse d'un apercu : sans accent (`simplifie`, `complet`).
+    pub fn dans_l_adresse(self) -> &'static str {
+        match self {
+            ModeleBulletin::Simplifie => "simplifie",
+            ModeleBulletin::Complet => "complet",
+        }
+    }
+
+    /// Le modele qu'ecrit l'adresse d'un apercu (sans accent, ou avec), s'il en est un.
+    pub fn de_l_adresse(v: &str) -> Option<ModeleBulletin> {
+        match v {
+            "simplifie" | "simplifié" => Some(ModeleBulletin::Simplifie),
+            "complet" => Some(ModeleBulletin::Complet),
+            _ => None,
+        }
+    }
 }
 
 choix! {
@@ -2299,7 +2777,7 @@ cases! {
 
 cases! {
     /// La complementaire sante d'un permanent : le niveau souscrit et la composition couverte.
-    pub struct SanteSvp { niveau: String, conjoint: bool, enfants: Montant }
+    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: Montant }
 }
 
 cases! {
@@ -2321,7 +2799,7 @@ cases! {
     pub struct TauxPas {
         taux: crate::pas::TauxDePas,
         r#type: crate::type_taux_pas::TypeDeTauxPas,
-        identifiant: String,
+        identifiant: crate::pas::IdentifiantDuTauxPas,
         #[serde(default, with = "socle::paris::ecrit::compacte::option")]
         mis_a_disposition: socle::paris::Moment,
         en_retour_de: Mois,
@@ -2374,7 +2852,7 @@ cases! {
     /// notification), pour l'annee de cette date (`bareme::taux_atmp_de_l_annee`) ; `provenance` dit qui l'a ecrite,
     /// `notification` celle d'ou elle vient.
     pub struct TauxAtmp, cles CaseTauxAtmp {
-        CodeRisque(String) = "code_risque" => code_risque,
+        CodeRisque(crate::bareme::CodeRisqueAt) = "code_risque" => code_risque,
         Valeur(Montant) = "valeur" => valeur,
         Depuis(Jour) = "depuis" => depuis,
         Provenance(ProvenanceAtmp) = "provenance" => provenance,
@@ -2545,7 +3023,7 @@ fiche! {
         CongesspectaclesAdherent(String) = "congesspectacles_adherent" => congesspectacles_adherent,
         AffiliationFranceTravail(String) = "affiliation_france_travail" => affiliation_france_travail,
         RetraiteComplementaire(String) = "retraite_complementaire" => retraite_complementaire,
-        OrganisationPatronale(String) = "organisation_patronale" => organisation_patronale,
+        OrganisationPatronale(crate::forme_bareme::OrganisationPatronale) = "organisation_patronale" => organisation_patronale,
         OrganisationPatronaleDepuis(Jour) = "organisation_patronale_depuis" => organisation_patronale_depuis,
         EmploieDesPermanents(bool) = "emploie_des_permanents" => emploie_des_permanents,
         DateDeVersementIntermittents(crate::versement::Versement) = "date_de_versement_intermittents" => date_de_versement_intermittents,
@@ -2616,13 +3094,25 @@ choix! {
     pub enum FormatCinema { Long = "long", Court = "court" }
 }
 
+crate::cle_opaque! {
+    /// LE CODE ANALYTIQUE D'UN SPECTACLE : la section ou l'export comptable ventile ses salaires bruts, une cle de la
+    /// compagnie (la case `code_analytique` de sa fiche, les `sections` du plan comptable propre). Une saisie se lit sans
+    /// ses blancs de bord. Ce que le logiciel du comptable en admet se dit a part (`declarations::champs`, la largeur de
+    /// sa zone : `documents::etats_compta`).
+    pub struct CodeAnalytique, "code analytique";
+}
+
+impl FormeDeCase for CodeAnalytique {
+    const RANGER: Option<fn(&str) -> String> = Some(sans_blancs_de_bord);
+}
+
 fiche! {
     /// LA FICHE D'UN SPECTACLE a un jour (`config/spectacles.json`). Ses notes, ecrites par l'import, disent d'ou il
     /// vient et le titre que les bulletins de l'ancien logiciel proposent (`declarations::demarrage`).
     pub struct ChampsSpectacle, datee FicheSpectacleDatee, changement ChangementSpectacle, cles CaseSpectacle {
         Titre(String) = "titre" => titre,
         NumeroObjet(NumeroObjetSpectacle) = "numero_objet" => numero_objet,
-        CodeAnalytique(String) = "code_analytique" => code_analytique,
+        CodeAnalytique(CodeAnalytique) = "code_analytique" => code_analytique,
         GenreAudiovisuel(GenreAudiovisuel) = "genre_audiovisuel" => genre_audiovisuel,
         EmissionTv1734(bool) = "emission_tv_1734" => emission_tv_1734,
         FormatCinema(FormatCinema) = "format_cinema" => format_cinema,
@@ -2640,6 +3130,7 @@ fiche! {
 }
 
 impl FormeDeCase for crate::catalogue::PlafondAnnuelHeures {}
+impl FormeDeCase for crate::emplois::AnnexeChomage {}
 
 fiche! {
     /// UNE RUBRIQUE TELLE QU'UN FICHIER L'ECRIT, case par case : livree (`rubriques-base.json`, de tout temps), ou la
@@ -2649,21 +3140,21 @@ fiche! {
         Libelle(String) = "libelle" => libelle,
         Unite(crate::catalogue::Unite) = "unite" => unite,
         Nature(crate::catalogue::NatureDeRubrique) = "nature" => nature,
-        Saisie(Vec<String>) = "saisie" => saisie,
+        Saisie(Vec<crate::catalogue::CaseSaisie>) = "saisie" => saisie,
         Soumis(bool) = "soumis" => soumis,
         Imposable(bool) = "imposable" => imposable,
         CongesSpectacles(bool) = "conges_spectacles" => conges_spectacles,
         Source(String) = "source" => source,
-        Sens(String) = "sens" => sens,
+        Sens(crate::catalogue::Sens) = "sens" => sens,
         HeuresForfait(Montant) = "heures_forfait" => heures_forfait,
-        Plafond(String) = "plafond" => plafond,
-        Aem(String) = "aem" => aem,
+        Plafond(crate::catalogue::Unite) = "plafond" => plafond,
+        Aem(crate::catalogue::Unite) = "aem" => aem,
         DsnType(String) = "dsn_type" => dsn_type,
         DsnAutresBruts(crate::autre_revenu_brut::AutreElementDeRevenuBrut) = "dsn_autres_bruts" => dsn_autres_bruts,
-        Annexe(String) = "annexe" => annexe,
+        Annexe(crate::emplois::AnnexeChomage) = "annexe" => annexe,
         PlafondMensuel(i64) = "plafond_mensuel" => plafond_mensuel,
         PlafondAnnuelHeures(crate::catalogue::PlafondAnnuelHeures) = "plafond_annuel_heures" => plafond_annuel_heures,
-        ComptePour(String) = "compte_pour" => compte_pour,
+        ComptePour(crate::catalogue::ComptePour) = "compte_pour" => compte_pour,
         SalaireDeBase(bool) = "salaire_de_base" => salaire_de_base,
         Retabli(bool) = "retabli" => retabli,
         Suspension(bool) = "suspension" => suspension,
@@ -2674,6 +3165,48 @@ fiche! {
     }
     pieces CasePieceRubrique {}
 }
+
+/// Les trois fiches que la table des cases juge (`FicheSaisie`).
+macro_rules! fiche_saisie {
+    ($($plate:ident = $nom:ident),*) => {
+        $(
+            impl FicheSaisie for $plate {
+                const NOM: NomDeFiche = NomDeFiche::$nom;
+                fn ecrite_au_chemin(&self, k: CaseDeFiche, chemin: &[&str]) -> MotEcrit {
+                    $plate::ecrite_au_chemin(self, k, chemin)
+                }
+                fn lire_cases(o: &socle::forme::Objet) -> R<(Self, Vec<FauteDeCase>)> {
+                    $plate::lire_cases_de_la_fiche(o, NomDeFiche::$nom.nom())
+                }
+                fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase> {
+                    $plate::valeur_ecrite(self, k)
+                }
+                fn est_vide(&self) -> bool {
+                    $plate::est_vide(self)
+                }
+                fn fondre(&mut self, autre: &Self) {
+                    $plate::fondre(self, autre)
+                }
+                fn completer_de(&mut self, autre: &Self) {
+                    $plate::completer_de(self, autre)
+                }
+                fn prendre(&mut self, autre: &Self, k: CaseDeFiche) {
+                    $plate::prendre(self, autre, k)
+                }
+                fn cases_dites(&self) -> Vec<CaseDeFiche> {
+                    $plate::cases_dites(self)
+                }
+                fn notes_dites(&self) -> Vec<(NoteDeFiche, &str)> {
+                    $plate::notes_dites(self)
+                }
+                fn prendre_la_note(&mut self, autre: &Self, note: NoteDeFiche) {
+                    $plate::prendre_la_note(self, autre, note)
+                }
+            }
+        )*
+    };
+}
+fiche_saisie!(ChampsEntreprise = Entreprise, ChampsSalarie = Salarie, ChampsSpectacle = Spectacle);
 
 impl ChampsSpectacle {
     /// Archivee : `actif: false`. L'absence vaut actif.
@@ -2712,11 +3245,11 @@ impl ChampsSalarie {
         }
     }
 
-    /// Ce que la fiche dit de la nationalite (`socle::codification_ue`, S21.G00.30.013).
-    pub fn nationalite(&self) -> socle::codification_ue::Nationalite {
-        socle::codification_ue::Nationalite::nouvelle(
-            self.code_nationalite_dsn.code(),
-            self.pays_nationalite.portee(),
+    /// Ce que la fiche dit de la nationalite (`crate::nationalite`, S21.G00.30.013).
+    pub fn nationalite(&self) -> crate::nationalite::Nationalite {
+        crate::nationalite::Nationalite::nouvelle(
+            self.code_nationalite_dsn.dite().copied(),
+            self.pays_nationalite.dite().cloned(),
             self.pays_nationalite_hors_liste.portee(),
             self.nomme(),
         )
@@ -2918,17 +3451,6 @@ compagnie à nouveau (« Ajouter une compagnie », d'un logiciel précédent) ou
     )
 }
 
-/// Le refus d'une ecriture de fiche que sa forme ne lit pas : rien ne s'ecrit, la valeur se corrige.
-fn refus_d_ecriture(fichier: &str, chemin: &str, detail: &str) -> String {
-    let ou = if chemin.is_empty() { String::new() } else { format!(", à « {} »", chemin) };
-    format!("{}{} ne s'écrirait pas : {}. Rien n'est écrit : corriger cette valeur.", fichier, ou, detail)
-}
-
-/// CE QU'UNE ECRITURE VA POSER DANS LE FICHIER `fichier`, lu par sa forme avant de s'ecrire : ce qui ne se lit pas se
-/// refuse en nommant la cle jusqu'a sa case, et rien n'est ecrit.
-pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: &str) -> R<T> {
-    socle::forme::relire_en_phrase(v, |chemin, detail| refus_d_ecriture(fichier, chemin, detail))
-}
 
 #[cfg(test)]
 mod tests {

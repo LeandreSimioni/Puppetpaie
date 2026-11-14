@@ -409,7 +409,7 @@ pub(crate) struct ApercuDsn {
     pub(crate) reel: bool,
     pub(crate) signalement: bool,
     #[serde(rename = "nature")]
-    pub(crate) nature_declaration: String,
+    pub(crate) nature_declaration: droit::nature_declaration::NatureDeLaDeclaration,
     pub(crate) libelle_nature: String,
     pub(crate) evenement: Option<socle::date::Jour>,
     pub(crate) type_declaration: Option<droit::type_declaration::TypeDeLaDeclaration>,
@@ -495,7 +495,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         nature_envoi: a.nature_envoi,
         reel: a.reel(),
         signalement,
-        nature_declaration: a.nature()?.to_string(),
+        nature_declaration: a.nature()?,
         libelle_nature: a.nature_lisible().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001)."))?,
         evenement: if signalement { a.evenement() } else { None },
         type_declaration: a.type_declaration,

@@ -382,8 +382,8 @@ pub enum ValeurLue {
     Jour(crate::date::Jour),
     /// La marque du code qui calcule.
     Moteur(String),
-    /// La saisie d'un mois : `<ce que le mois pose pour tous>:<ses engagements>`, deux empreintes.
-    Saisie { mois: Empreinte, engagements: Empreinte },
+    /// La saisie d'un mois : deux empreintes (`EmpreinteDeSaisie`).
+    Saisie(EmpreinteDeSaisie),
     /// L'empreinte composee d'une donnee, ecrite par son seul ecrivain : le taux de PAS d'un salarie a un jour
     /// (`droit::pas`), l'indemnite de mission d'un jour (`droit::missions`).
     Composee(String),
@@ -399,7 +399,7 @@ impl std::fmt::Display for ValeurLue {
             ValeurLue::OuiNon(false) => f.write_str("non"),
             ValeurLue::Jour(j) => f.write_str(&j.iso()),
             ValeurLue::Moteur(m) => f.write_str(m),
-            ValeurLue::Saisie { mois, engagements } => write!(f, "{}:{}", mois, engagements),
+            ValeurLue::Saisie(s) => write!(f, "{}", s),
             ValeurLue::Composee(t) => f.write_str(t),
         }
     }
@@ -429,10 +429,7 @@ impl ValeurLue {
             CleDeLecture::Moteur if !texte.is_empty() => ValeurLue::Moteur(texte),
             CleDeLecture::Date | CleDeLecture::Aujourdhui => ValeurLue::Jour(crate::date::Jour::lire(&texte).map_err(|_| refus())?),
             CleDeLecture::Fiches { .. } | CleDeLecture::Imprevus { .. } | CleDeLecture::Datee(LectureDatee::Mensuels { .. } | LectureDatee::Paies { .. }) => ValeurLue::Empreinte(empreinte(&texte)?),
-            CleDeLecture::Datee(LectureDatee::Saisie { .. }) => match texte.split_once(':') {
-                Some((m, e)) => ValeurLue::Saisie { mois: empreinte(m)?, engagements: empreinte(e)? },
-                None => return Err(refus()),
-            },
+            CleDeLecture::Datee(LectureDatee::Saisie { .. }) => ValeurLue::Saisie(EmpreinteDeSaisie::lire(&texte).map_err(|_| refus())?),
             CleDeLecture::Datee(LectureDatee::Pas { .. } | LectureDatee::Mission { .. }) if !texte.is_empty() => ValeurLue::Composee(texte),
             CleDeLecture::Moteur | CleDeLecture::Datee(_) => return Err(refus()),
         })
@@ -1292,6 +1289,45 @@ impl TryFrom<String> for EmpreinteCourte {
 impl From<EmpreinteCourte> for String {
     fn from(e: EmpreinteCourte) -> String {
         e.0
+    }
+}
+
+/// L'EMPREINTE DE LA SAISIE D'UN MOIS : ce que le mois pose pour tous (`mois`), et ses engagements (`engagements`),
+/// deux empreintes ; la raison d'un recalcul dit laquelle a change. Elle s'ecrit `<mois>:<engagements>` (les lectures
+/// d'une paie, le journal des ecritures) et se relit strictement.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct EmpreinteDeSaisie {
+    pub mois: Empreinte,
+    pub engagements: Empreinte,
+}
+
+impl EmpreinteDeSaisie {
+    /// L'empreinte de saisie `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<EmpreinteDeSaisie> {
+        match texte.split_once(':') {
+            Some((m, e)) => Ok(EmpreinteDeSaisie { mois: Empreinte::lire(m)?, engagements: Empreinte::lire(e)? }),
+            None => Err(crate::refus!("{} n'est pas l'empreinte d'une saisie : deux empreintes separees par « : ».", repr(texte))),
+        }
+    }
+}
+
+impl std::fmt::Display for EmpreinteDeSaisie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.mois, self.engagements)
+    }
+}
+
+impl TryFrom<String> for EmpreinteDeSaisie {
+    type Error = Echec;
+    fn try_from(s: String) -> R<EmpreinteDeSaisie> {
+        EmpreinteDeSaisie::lire(&s)
+    }
+}
+
+impl From<EmpreinteDeSaisie> for String {
+    fn from(e: EmpreinteDeSaisie) -> String {
+        e.to_string()
     }
 }
 

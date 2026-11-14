@@ -11,7 +11,7 @@ use socle::mois::MoisOuJour;
 /// `Preuve` : ce qui prouve qu'un humain veut CET acte, MAINTENANT. Le mot de passe DU LOGICIEL, retape.
 #[derive(Default, Clone)]
 pub struct Preuve {
-    pub motdepasse: Option<String>,
+    pub motdepasse: Option<socle::secret::Secret>,
     /// La preuve deja donnee pour ce geste (sa forme), quand un acte en emporte d'autres : la demande de taux de PAS part
     /// avec la DPAE sous la meme preuve, sans redemander. Jamais lue d'une charge.
     pub donnee: Option<String>,
@@ -19,8 +19,8 @@ pub struct Preuve {
 
 impl Preuve {
     /// La preuve que la charge d'un acte porte : le mot de passe du logiciel tape pour lui (vide : rien n'a ete tape).
-    pub fn du_mot_de_passe(motdepasse: Option<String>) -> Preuve {
-        Preuve { motdepasse: motdepasse.filter(|m| !m.is_empty()), ..Preuve::default() }
+    pub fn du_mot_de_passe(motdepasse: Option<socle::secret::Secret>) -> Preuve {
+        Preuve { motdepasse: motdepasse.filter(|m| !m.devoiler().is_empty()), ..Preuve::default() }
     }
 }
 
@@ -93,7 +93,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: M
             "Aucun mot de passe du logiciel n'est pose : rien ne peut partir en reel. Le poser d'abord : la fenêtre PuppetPaie le demande à sa première ouverture. Rien n'est parti.",
         ));
     }
-    let Some(preuve) = preuve.filter(|p| p.motdepasse.as_deref().is_some_and(|m| !m.is_empty())) else {
+    let Some(preuve) = preuve.filter(|p| p.motdepasse.as_ref().is_some_and(|m| !m.devoiler().is_empty())) else {
         // Rien n'a ete tape pour cette charge : c'est le moteur qui demande, a un humain, ou il refuse.
         let acte = crate::demande::Acte::nouveau(quoi, Some(quand), a_qui);
         return match crate::demande::autoriser_acte(&ctx.racine, &acte) {
@@ -102,7 +102,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: M
         };
     };
     // Aucun mot de passe tape n'ouvre rien.
-    let ouvre = preuve.motdepasse.as_deref().map(|m| coffre.verifier_ouverture(m)).transpose()?;
+    let ouvre = preuve.motdepasse.as_ref().map(|m| coffre.verifier_ouverture(m)).transpose()?;
     if ouvre != Some(true) {
         return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe du logiciel refuse. Rien n'est parti."));
     }
@@ -114,7 +114,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: M
 /// Le secret de l'organisme -- l'environnement d'abord (quelqu'un l'a tape dans une
 /// fenetre, il vaut confirmation), puis le coffre. Ce qui autorise a y puiser pour un depot REEL, c'est la
 /// preuve verifiee juste avant par l'appelant. Ce qui SORT d'ici est un secret : il va directement au client.
-pub fn motdepasse_organisme(ctx: &Contexte, service: &str, ouverture: Option<&str>) -> R<Option<String>> {
+pub fn motdepasse_organisme(ctx: &Contexte, service: &str, ouverture: Option<&socle::secret::Secret>) -> R<Option<socle::secret::Secret>> {
     let coffre = crate::coffre::Coffre::du_poste(&ctx.racine);
     if !coffre.disponible(service)? {
         return Err(erreur(

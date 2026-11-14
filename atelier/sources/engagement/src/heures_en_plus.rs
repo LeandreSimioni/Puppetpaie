@@ -160,14 +160,14 @@ pub(crate) fn apres_les_cotisations(
     let mut avis = Vec::new();
 
     // La reduction salariale.
-    let vieillesse = sal(&|l| l.famille == "RETRAITE");
+    let vieillesse = sal(&|l| l.famille == droit::forme_bareme::FAMILLE_RETRAITE);
     let taux = (vieillesse / brut * Decimal::ONE_HUNDRED).min(droit::heures_en_plus::taux_maximum_de_reduction()?).round_dp(2);
     let de_base = sal(&|l| l.est(&VIEIL_PLAF) || l.est(&VIEIL_DEPLAF));
     let reduction = eur2(remuneration * taux / Decimal::ONE_HUNDRED).min(de_base).max(Decimal::new(0, 2));
     let genre = if supplementaires.is_zero() { "complémentaires" } else { "supplémentaires" };
     let mut out = vec![LigneCotisation {
         id: REDUCTION,
-        famille: crate::calcul::FAMILLE_ALLEGEMENTS.into(),
+        famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
         libelle: format!("Réduction de cotisations salariales sur heures {}", genre),
         base: remuneration,
         taux_pat: None,
@@ -188,7 +188,7 @@ pub(crate) fn apres_les_cotisations(
         if !deduction.is_zero() {
             out.push(LigneCotisation {
                 id: DEDUCTION,
-                famille: crate::calcul::FAMILLE_ALLEGEMENTS.into(),
+                famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
                 libelle: "Déduction patronale sur heures supplémentaires".into(),
                 base: supplementaires,
                 taux_pat: None,

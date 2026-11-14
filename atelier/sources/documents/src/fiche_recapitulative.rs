@@ -65,8 +65,8 @@ impl<'a> Recapitulatifs<'a> {
             mois,
             annee,
             toutes,
-            regroupement: String::new(),
-            format: "pdf".to_string(),
+            regroupement: None,
+            format: Some(crate::plan_comptable::FormatDExport::Pdf),
             coordonnees: false,
             ecrire: false,
             logiciel: None,
@@ -180,7 +180,7 @@ impl<'a> Recapitulatifs<'a> {
             if sections.is_empty() {
                 continue;
             }
-            let mut reduit = Tableau::nouveau(&t.etat, format!("{} — {}", t.titre, lui), t.periode.clone());
+            let mut reduit = Tableau::nouveau(t.etat,format!("{} — {}", t.titre, lui), t.periode.clone());
             reduit.colonnes = t.colonnes.clone();
             reduit.sections = sections;
             reduit.sources = t.sources.clone();

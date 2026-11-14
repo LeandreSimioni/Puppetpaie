@@ -415,7 +415,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::AdministrateurDeposer => {
             let c: ChargeDeposer = charge.lire()?;
-            let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().map(String::from))?;
+            let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().cloned())?;
             en_json(depot)
         }
         Route::AdministrateurSuivre => {
@@ -479,15 +479,16 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     }
     let cfg = dossier.join(socle::fichiers::CONFIG);
     std::fs::create_dir_all(&cfg).map_err(|e| socle::echec::du_disque(&cfg, &e))?;
-    // La raison sociale se deduit du nom comme a chaque enregistrement de la fiche (`fiches::deriver` : majuscules SANS
-    // ACCENTS, la forme declaree) : la fiche neuve nait sans erreur de configuration.
-    let mut saisie = declarations::champs::Saisie::default();
-    saisie.poser(droit::fiche::CaseEntreprise::NomAffichage, declarations::champs::Valeur::Texte(nom.clone()));
-    crate::fiches::deriver(droit::fiche::NomDeFiche::Entreprise, &mut saisie, false, &|_| true)?;
+    // La raison sociale se deduit du nom comme a chaque enregistrement de la fiche (`SorteDeFiche::deriver` : majuscules
+    // SANS ACCENTS, la forme declaree) : la fiche neuve nait sans erreur de configuration. Ce que son type refuse se dit.
+    let mut plate = droit::fiche::ChampsEntreprise { nom_affichage: Some(nom.clone()), ..Default::default() };
+    let fautes = <droit::fiche::FicheEntrepriseDatee as crate::fiches::SorteDeFiche>::deriver(&mut plate, false, &|_| true)?;
+    if let Some(f) = fautes.first() {
+        return Err(socle::echec::refus(format!("{} : {}", droit::contexte::ENTREPRISE, f.phrase)));
+    }
     // Toute la configuration est datee (`droit::fiche::dater`) : la premiere valeur vaut de tout temps.
     // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
     let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());
-    let plate: droit::fiche::ChampsEntreprise = droit::fiche::lire_saisie(&saisie, droit::contexte::ENTREPRISE)?;
     let fiche = <droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate);
     socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
     socle::ecriture::ecrire_json(&dossier.join(droit::contexte::SALARIES), &droit::fiche::Salaries::default(), 2)?;

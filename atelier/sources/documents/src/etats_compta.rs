@@ -15,12 +15,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use droit::contexte::Contexte;
+use droit::fiche::CodeAnalytique;
 use socle::echec::{erreur, Classe};
 use socle::mois::Mois;
 use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
-use crate::ecritures_comptables::{ecritures_du_mois, Ecriture};
+use crate::ecritures_comptables::{ecritures_du_mois, Ecriture, NumeroDeCompte};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
-use crate::plan_comptable::{Logiciel, Plan};
+use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielComptable, Plan};
 use socle::texte::euros;
 use socle::num::{add, div, eur, eur2, mul, sub, zero2, Decimal};
 use crate::tableaux_export::{
@@ -31,8 +32,21 @@ use crate::tableaux_export::{
 // ------------------------------------------------------------------ les tables
 
 /// `FORMATS_ECRITURES` : les six formats de la machinerie, puis les sept des logiciels.
-pub const FORMATS_ECRITURES: [&str; 13] =
-    ["csv", "tsv", "xlsx", "pdf", "html", "json", "fec", "ximport", "oxygene", "sage", "quadra", "ebp", "pennylane"];
+pub const FORMATS_ECRITURES: [FormatDExport; 13] = [
+    FormatDExport::Csv,
+    FormatDExport::Tsv,
+    FormatDExport::Xlsx,
+    FormatDExport::Pdf,
+    FormatDExport::Html,
+    FormatDExport::Json,
+    FormatDExport::Fec,
+    FormatDExport::Ximport,
+    FormatDExport::Oxygene,
+    FormatDExport::Sage,
+    FormatDExport::Quadra,
+    FormatDExport::Ebp,
+    FormatDExport::Pennylane,
+];
 
 const SOURCES: &str = "plan comptable : plan-comptable-base.json (plan comptable général, classes 64, 42, 43, 44), remplacé clé par clé par config/plan-comptable.json";
 // LES NOTICES, deposees dans `atelier/reference/sources/formats-comptables/` (son LISEZ-MOI) : chaque format s'ecrit
@@ -48,7 +62,7 @@ const SOURCE_QUADRA: &str = "Quadra : Cegid, « Fichier d'entrée ASCII dans Qua
 const ESSAI: &str = " Faire un premier import d'essai sur un dossier de test avant de s'y fier.";
 
 /// `LOGICIELS[logiciel]`, lu dans `exports_tables.json`.
-fn logiciel_connu(logiciel: &str) -> Option<&'static Logiciel> {
+fn logiciel_connu(logiciel: LogicielComptable) -> Option<&'static Logiciel> {
     crate::plan_comptable::tables().logiciels.iter().find(|l| l.logiciel == logiciel)
 }
 
@@ -182,7 +196,7 @@ fn cp1252(lignes: &[String]) -> Vec<u8> {
 
 /// Le libelle d'un compte, lu dans le plan : tiers, brut, net, PAS, retenues, puis les charges
 /// (le premier libelle de ligne qui le porte) ; aucun pour un compte que le plan ne nomme pas.
-fn libelle_compte(plan: &Plan, compte: &str) -> Option<String> {
+fn libelle_compte(plan: &Plan, compte: &NumeroDeCompte) -> Option<String> {
     if let Some(n) = plan.tiers.get(compte) {
         return Some(n.clone());
     }
@@ -191,11 +205,11 @@ fn libelle_compte(plan: &Plan, compte: &str) -> Option<String> {
             return Some(libelle.clone());
         }
     }
-    if let Some((_, regle)) = plan.retenues.iter().find(|(_, r)| r.compte == compte) {
+    if let Some((_, regle)) = plan.retenues.iter().find(|(_, r)| r.compte == *compte) {
         return regle.libelle.clone();
     }
-    let (_, regle) = plan.lignes.iter().find(|(_, r)| r.charge == compte)?;
-    Some(match compte {
+    let regle = plan.lignes.iter().map(|(_, r)| r).chain(plan.regroupements.iter().map(|(_, r)| r)).find(|r| r.charge == *compte)?;
+    Some(match compte.as_str() {
         "645100" => "Cotisations Urssaf".to_string(),
         "645300" => "Cotisations retraite et prévoyance".to_string(),
         "645400" => "Cotisations assurance chômage".to_string(),
@@ -206,10 +220,10 @@ fn libelle_compte(plan: &Plan, compte: &str) -> Option<String> {
 }
 
 /// Le sous-compte individuel du salarie quand le plan en tient un, le compte general sinon.
-fn compte_de(e: &Ecriture) -> String {
+fn compte_de(e: &Ecriture) -> &NumeroDeCompte {
     match &e.auxiliaire {
-        Some(a) => a.clone(),
-        None => e.compte.clone(),
+        Some(a) => a,
+        None => &e.compte,
     }
 }
 
@@ -225,7 +239,7 @@ fn libelle_de(plan: &Plan, e: &Ecriture) -> Option<String> {
 /// Une ligne d'ecriture pour un tableau.
 fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
-    l.t("journal", e.journal.clone()).t("date", e.date.jj_mm_aaaa()).t("piece", e.piece.clone()).t("compte", compte_de(e));
+    l.t("journal", e.journal.to_string()).t("date", e.date.jj_mm_aaaa()).t("piece", e.piece.clone()).t("compte", compte_de(e).to_string());
     l.ot("libelle_compte", libelle_de(plan, e)).t("libelle", e.libelle.clone());
     l.od("debit", if e.debit.is_zero() { None } else { Some(e.debit) });
     l.od("credit", if e.credit.is_zero() { None } else { Some(e.credit) });
@@ -258,7 +272,7 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
 struct Envoi<'a> {
     plan: &'a Plan,
     ctx: &'a Contexte,
-    sections: Option<BTreeMap<String, String>>,
+    sections: Option<BTreeMap<String, CodeAnalytique>>,
     /// Le format, quand ses zones sont bornees, et les libelles courts que la compagnie y a valides.
     borne: Option<FormatBorne>,
     courts: Option<Courts>,
@@ -300,7 +314,7 @@ impl Envoi<'_> {
 
     /// Ce qui ne tient pas et n'a pas de valeur courte validee : l'export se refuse, en disant combien et ou les
     /// raccourcir ; la page y renvoie (`libelles_courts`, le format).
-    fn refus_des_depasses(&self, format: &str) -> R<()> {
+    fn refus_des_depasses(&self, format: FormatDExport) -> R<()> {
         let n = self.depasses.borrow().values().filter(|d| d.court.is_none()).count();
         if n == 0 {
             return Ok(());
@@ -308,17 +322,17 @@ impl Envoi<'_> {
         // Seul un format aux zones bornees note ce qui depasse.
         let nom = match self.borne {
             Some(f) => f.nom(),
-            None => format,
+            None => format.as_str(),
         };
         /// Ce que le refus porte a part : le format des libelles courts a poser, et combien.
         #[derive(Serialize)]
         struct APoser {
-            libelles_courts: String,
+            libelles_courts: FormatDExport,
             nombre: usize,
         }
         Err(socle::echec::refus_avec(
             format!("{} trop long{} pour {} : les raccourcir (Exports, « Libellés courts »).", if n > 1 { format!("{} libellés", n) } else { "1 libellé".to_string() }, if n > 1 { "s" } else { "" }, nom),
-            socle::echec::APart::forme(APoser { libelles_courts: format.to_string(), nombre: n }),
+            socle::echec::APart::forme(APoser { libelles_courts: format, nombre: n }),
         ))
     }
 
@@ -328,7 +342,7 @@ impl Envoi<'_> {
         if e.compte != self.plan.brut.compte {
             return None;
         }
-        sections.get(e.analytique.as_ref()?).cloned()
+        sections.get(e.analytique.as_ref()?).map(CodeAnalytique::to_string)
     }
 }
 
@@ -340,35 +354,34 @@ fn code_du_titre(titre: &str) -> String {
 
 /// `codes_des_fiches` : titre -> code analytique, lu sur les fiches spectacle. La fiche active l'emporte, puis le
 /// numero le plus recent.
-fn codes_des_fiches(spectacles: Vec<&droit::fiche::ChampsSpectacle>) -> BTreeMap<String, String> {
+fn codes_des_fiches(spectacles: Vec<&droit::fiche::ChampsSpectacle>) -> BTreeMap<String, CodeAnalytique> {
     let mut rangees = spectacles;
     rangees.sort_by_cached_key(|v| (!v.archivee(), v.numero_objet.en_texte()));
     let mut out = BTreeMap::new();
     for v in rangees {
-        if let (Some(titre), Some(code)) = (v.titre.remplie(), v.code_analytique.portee()) {
-            out.insert(titre.to_string(), code.trim().to_string());
+        if let (Some(titre), Some(code)) = (v.titre.remplie(), v.code_analytique.dite()) {
+            out.insert(titre.to_string(), code.clone());
         }
     }
     out
 }
 
 /// `codes_sections` : le code de chaque spectacle -- celui de sa fiche, sinon celui du plan, sinon tire du titre.
-fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &BTreeMap<String, String>) -> R<BTreeMap<String, String>> {
+fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &BTreeMap<String, CodeAnalytique>) -> R<BTreeMap<String, CodeAnalytique>> {
     let brut = &plan.brut.compte;
-    // Les codes choisis : ceux du plan, puis ceux des fiches ; un code vide n'en choisit pas.
-    let mut propres: BTreeMap<String, String> = BTreeMap::new();
+    // Les codes choisis : ceux du plan, puis ceux des fiches.
+    let mut propres: BTreeMap<String, CodeAnalytique> = BTreeMap::new();
     if let Some(s) = &plan.sections {
         propres.extend(s.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
     propres.extend(fiches.iter().map(|(k, v)| (k.clone(), v.clone())));
-    propres.retain(|_, v| !v.is_empty());
     let mut out = BTreeMap::new();
-    let mut qui: BTreeMap<String, String> = BTreeMap::new();
+    let mut qui: BTreeMap<CodeAnalytique, String> = BTreeMap::new();
     let titres: BTreeSet<&String> = ecritures.iter().filter(|e| e.compte == *brut).filter_map(|e| e.analytique.as_ref()).filter(|a| !a.is_empty()).collect();
     for titre in titres {
         let choisi = propres.get(titre);
         let code = match choisi {
-            Some(c) => c.clone(),
+            Some(c) => c.to_string(),
             None => code_du_titre(titre),
         };
         if code.is_empty() || code.chars().count() > largeur {
@@ -377,6 +390,7 @@ fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &
                 code, titre, largeur
             )));
         }
+        let code = CodeAnalytique::lire(&code)?;
         if let Some(autre) = qui.get(&code) {
             let meme_choix = choisi.is_some() && propres.get(autre) == Some(&code);
             if !meme_choix {
@@ -393,11 +407,11 @@ fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &
 }
 
 /// `comptes_utilises` : (compte, libelle) de chaque compte que les ecritures mouvementent, dans l'ordre des numeros.
-fn comptes_utilises(ecritures: &[Ecriture], plan: &Plan) -> Vec<(String, String)> {
-    let mut vus: BTreeMap<String, String> = BTreeMap::new();
+fn comptes_utilises(ecritures: &[Ecriture], plan: &Plan) -> Vec<(NumeroDeCompte, String)> {
+    let mut vus: BTreeMap<NumeroDeCompte, String> = BTreeMap::new();
     for e in ecritures {
         let c = compte_de(e);
-        if !vus.contains_key(&c) {
+        if !vus.contains_key(c) {
             // Un compte que le plan ne nomme pas prend le libelle de sa ligne, sans le mois.
             let lib = match libelle_de(plan, e).filter(|l| !l.is_empty()) {
                 Some(l) => l,
@@ -406,7 +420,7 @@ fn comptes_utilises(ecritures: &[Ecriture], plan: &Plan) -> Vec<(String, String)
                     None => e.libelle.clone(),
                 },
             };
-            vus.insert(c, lib);
+            vus.insert(c.clone(), lib);
         }
     }
     vus.into_iter().collect()
@@ -437,13 +451,13 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         };
         // Un champ « à blanc si non utilisé » (BOI-CF-IOR-60-40-20, § 70) reste vide.
         let champs = [
-            e.journal.clone(),
+            e.journal.to_string(),
             journal_lib.clone(),
             format!("{:04}{:05}", e.date.an, e.numero),
             date.clone(),
-            e.compte.clone(),
+            e.compte.to_string(),
             ou_vide(libelle_compte(plan, &e.compte)),
-            ou_vide(e.auxiliaire.clone()),
+            ou_vide(e.auxiliaire.as_ref().map(NumeroDeCompte::to_string)),
             ou_vide(e.auxiliaire_libelle.clone()),
             e.piece.clone(),
             date,
@@ -521,8 +535,8 @@ fn virgule(v: Decimal) -> String {
 }
 
 /// Le compte et le journal tiennent dans leurs zones, ou on refuse.
-fn borne(format: &str, compte: &str, journal: &str) -> R<()> {
-    let l = crate::plan_comptable::tables().limites.get(format).ok_or_else(|| erreur(Classe::Manque, format!("format inconnu : {}", socle::fichiers::repr(format))))?;
+fn borne(format: FormatDExport, compte: &str, journal: &str) -> R<()> {
+    let l = crate::plan_comptable::tables().limites.get(&format).ok_or_else(|| erreur(Classe::Manque, format!("format inconnu : {}", socle::fichiers::repr(format.as_str()))))?;
     if let Some(lc) = l.compte.filter(|lc| compte.chars().count() > *lc) {
         return Err(refus(format!("{} : le compte « {} » dépasse sa zone ({} caractères). Choisir dans le plan comptable de la compagnie un compte qui tient.", l.nom, compte, lc)));
     }
@@ -548,17 +562,17 @@ fn ximport(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let (s, montant) = sens(e);
         let champs: BTreeMap<&str, String> = [
             ("mouvement", e.numero.to_string()),
-            ("journal", e.journal.clone()),
+            ("journal", e.journal.to_string()),
             ("date", e.date.aaaammjj()),
             ("echeance", String::new()),
             ("piece", e.piece.clone()),
-            ("compte", compte_de(e)),
+            ("compte", compte_de(e).to_string()),
             ("libelle", env.libelle(e, false, 25)),
             ("montant", deux(montant).replace('.', ",")),
             ("sens", s.to_string()),
             ("pointage", String::new()),
             ("analytique", ou_vide(env.section(e))),
-            ("libelle_compte", env.intitule(&compte_de(e), &ou_vide(libelle_de(env.plan, e)), 34)),
+            ("libelle_compte", env.intitule(compte_de(e).as_str(), &ou_vide(libelle_de(env.plan, e)), 34)),
             ("euro", "O".to_string()),
         ]
         .into_iter()
@@ -590,15 +604,15 @@ fn oxygene(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     let zones = zones_oxygene();
     let mut out = vec![zones.join(";")];
     for e in ecritures {
-        borne("oxygene", &compte_de(e), &e.journal)?;
+        borne(FormatDExport::Oxygene, compte_de(e).as_str(), e.journal.as_str())?;
         let section = env.section(e);
         let mut z: BTreeMap<&str, String> = zones.iter().map(|k| (k.as_str(), String::new())).collect();
         // Le poste analytique d'une ligne ventilee : celui que la compagnie dit ; sinon la zone reste vide.
-        let poste: String = section.as_ref().and(env.plan.poste_analytique.as_ref()).map(|p| tenir("Oxygène", "CODAGE", p, 9)).transpose()?.into_iter().collect();
+        let poste: String = section.as_ref().and(env.plan.poste_analytique.as_ref()).map(|p| tenir("Oxygène", "CODAGE", p.as_str(), 9)).transpose()?.into_iter().collect();
         let section = ou_vide(section);
         for (k, v) in [
-            ("NUMJL", e.journal.clone()),
-            ("NUMCP", compte_de(e)),
+            ("NUMJL", e.journal.to_string()),
+            ("NUMCP", compte_de(e).to_string()),
             ("DTOPE", e.date.aaaammjj()),
             ("NPIEC", piece_courte(e)),
             ("LIBEC", env.libelle(e, true, 40)),
@@ -616,10 +630,11 @@ fn oxygene(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
 
 /// `oxygene_comptes` : « L'importation du plan comptable », fiche compte (`SOURCE_OXYGENE`, l. 353-371) : le numero,
 /// l'intitule reduit (non obligatoire : laisse vide), l'intitule.
-fn oxygene_comptes(comptes: &[(String, String)], env: &Envoi) -> R<Vec<u8>> {
+fn oxygene_comptes(comptes: &[(NumeroDeCompte, String)], env: &Envoi) -> R<Vec<u8>> {
     let mut out = vec!["NUMCP;CODCP;LIBCP".to_string()];
     for (compte, lib) in comptes {
-        borne("oxygene", compte, "")?;
+        let compte = compte.as_str();
+        borne(FormatDExport::Oxygene, compte, "")?;
         out.push([csv_propre(compte), String::new(), csv_propre(&env.intitule(compte, lib, 50))].join(";"));
     }
     Ok(cp1252(&out))
@@ -643,13 +658,13 @@ fn sage_pnm(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     // Un nom qui ne tient pas laisse la ligne vide : l'export se refuse a la fin (`refus_des_depasses`).
     let mut out = vec![ou_vide(env.tenir_ou_court(Quoi::Compagnie, &nom, &nom, 30))];
     for e in ecritures {
-        borne("sage", &compte_de(e), &e.journal)?;
+        borne(FormatDExport::Sage, compte_de(e).as_str(), e.journal.as_str())?;
         let (s, montant) = sens(e);
         let mut champs: BTreeMap<&str, String> = [
-            ("journal", e.journal.clone()),
+            ("journal", e.journal.to_string()),
             ("date", jjmmaa(e.date)),
             ("type_piece", "OD".to_string()),
-            ("compte", compte_de(e)),
+            ("compte", compte_de(e).to_string()),
             ("type_compte", String::new()),
             ("auxiliaire", String::new()),
             ("reference", e.piece.clone()),
@@ -719,8 +734,8 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     for (c, lib) in comptes_utilises(ecritures, env.plan) {
         let mut ch: BTreeMap<&str, String> = BTreeMap::new();
         ch.insert("type", "C".to_string());
-        ch.insert("compte", compte_quadra(&c)?);
-        ch.insert("libelle", env.intitule(&c, &lib, 30));
+        ch.insert("compte", compte_quadra(c.as_str())?);
+        ch.insert("libelle", env.intitule(c.as_str(), &lib, 30));
         for k in ["debit1", "credit1", "debit2", "credit2"] {
             ch.insert(k, "+000000000000".to_string());
         }
@@ -732,15 +747,15 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let centimes = eur2(montant).mantissa();
         let mut ch: BTreeMap<&str, String> = BTreeMap::new();
         ch.insert("type", "M".to_string());
-        ch.insert("compte", compte_quadra(&compte_de(e))?);
-        ch.insert("journal", e.journal.clone());
+        ch.insert("compte", compte_quadra(compte_de(e).as_str())?);
+        ch.insert("journal", e.journal.to_string());
         ch.insert("folio", "000".to_string());
         ch.insert("date", jjmmaa(e.date));
         ch.insert("sens", s.to_string());
         ch.insert("montant", format!("+{:012}", centimes));
         ch.insert("affaire", ou_vide(env.section(e)));
         ch.insert("devise", "EUR".to_string());
-        ch.insert("journal3", e.journal.clone());
+        ch.insert("journal3", e.journal.to_string());
         ch.insert("libelle30", env.libelle(e, false, 30));
         ch.insert("piece10", piece_courte(e));
         sortie.push(quadra_ligne(&ch, &POSITIONS_QUADRA)?);
@@ -765,14 +780,14 @@ fn ebp_zone(s: &str) -> String {
 fn ebp(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     let mut out = Vec::new();
     for (i, e) in ecritures.iter().enumerate() {
-        borne("ebp", &compte_de(e), &e.journal)?;
+        borne(FormatDExport::Ebp, compte_de(e).as_str(), e.journal.as_str())?;
         let (s, montant) = sens(e);
         out.push(
             [
                 (i + 1).to_string(),
                 jjmmaa(e.date),
-                e.journal.clone(),
-                compte_de(e),
+                e.journal.to_string(),
+                compte_de(e).to_string(),
                 String::new(),
                 format!("\"{}\"", env.libelle(e, true, 40).replace('"', "'")),
                 ebp_texte("piece", &e.piece, 15)?,
@@ -791,11 +806,12 @@ fn ebp(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
 }
 
 /// `ebp_comptes` : COMPTES.TXT, ses dix zones (`SOURCE_EBP`, l. 137-150).
-fn ebp_comptes(comptes: &[(String, String)], env: &Envoi) -> R<Vec<u8>> {
+fn ebp_comptes(comptes: &[(NumeroDeCompte, String)], env: &Envoi) -> R<Vec<u8>> {
     let out: Vec<String> = comptes
         .iter()
         .map(|(c, lib)| {
-            borne("ebp", c, "")?;
+            let c = c.as_str();
+            borne(FormatDExport::Ebp, c, "")?;
             let mut z = vec![ebp_zone(c), env.intitule(c, &ebp_zone(lib), 60)];
             z.extend(std::iter::repeat(String::new()).take(8));
             Ok(z.join(","))
@@ -820,17 +836,18 @@ fn pennylane(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     }
     let mut out = vec![entete];
     for e in ecritures {
-        if !(!e.journal.is_empty() && e.journal.chars().all(char::is_alphabetic) && e.journal.chars().count() <= 5) {
-            return Err(refus(format!("Pennylane : le code journal « {} » doit tenir en 5 lettres. Le changer dans le plan comptable de la compagnie.", e.journal)));
+        let journal = e.journal.as_str();
+        if !(journal.chars().all(char::is_alphabetic) && journal.chars().count() <= 5) {
+            return Err(refus(format!("Pennylane : le code journal « {} » doit tenir en 5 lettres. Le changer dans le plan comptable de la compagnie.", journal)));
         }
-        let compte = compte_de(e);
+        let compte = compte_de(e).to_string();
         if !tout_chiffres(&compte) && !PENNYLANE_ALPHANUMERIQUES.iter().any(|p| compte.starts_with(p)) {
             return Err(refus(format!(
                 "Pennylane : le compte « {} » porte des lettres, ce que Pennylane n'accepte que pour les comptes 401, 411, 410, 421, 455 et 467. Le changer dans le plan comptable de la compagnie.",
                 compte
             )));
         }
-        let mut champs = vec![e.date.jj_mm_aaaa(), e.journal.clone(), e.piece.clone(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
+        let mut champs = vec![e.date.jj_mm_aaaa(), journal.to_string(), e.piece.clone(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
         if analytique {
             // Une ligne ventilee porte sa famille, sa categorie (le spectacle) et son code ; les autres laissent les trois
             // colonnes vides.
@@ -863,13 +880,13 @@ struct Ecrivain {
     conseil: String,
     section: Analytique,
     /// (modele du nom, ecrivain, conseil)
-    comptes: Option<(&'static str, fn(&[(String, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
+    comptes: Option<(&'static str, fn(&[(NumeroDeCompte, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
 }
 
 /// `ECRIVAINS.get(format)`.
-fn ecrivain(format: &str) -> Option<Ecrivain> {
+fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
     Some(match format {
-        "fec" => Ecrivain {
+        FormatDExport::Fec => Ecrivain {
             fichier: "extrait-fec-paie-%s.txt",
             ecrire: fec,
             source: SOURCE_FEC,
@@ -877,7 +894,7 @@ fn ecrivain(format: &str) -> Option<Ecrivain> {
             section: Analytique::Non,
             comptes: None,
         },
-        "ximport" => Ecrivain {
+        FormatDExport::Ximport => Ecrivain {
             fichier: "XIMPORT-paie-%s.TXT",
             ecrire: ximport,
             source: SOURCE_XIMPORT,
@@ -885,7 +902,7 @@ fn ecrivain(format: &str) -> Option<Ecrivain> {
             section: Analytique::Largeur(6),
             comptes: None,
         },
-        "oxygene" => Ecrivain {
+        FormatDExport::Oxygene => Ecrivain {
             fichier: "oxygene-ecritures-paie-%s.csv",
             ecrire: oxygene,
             source: SOURCE_OXYGENE,
@@ -896,7 +913,7 @@ fn ecrivain(format: &str) -> Option<Ecrivain> {
             section: Analytique::Largeur(20),
             comptes: Some(("oxygene-plan-comptable-paie-%s.csv", oxygene_comptes, "à importer d'abord, « Import plan comptable » ; un compte qui existe déjà n'a pas à y être.")),
         },
-        "sage" => Ecrivain {
+        FormatDExport::Sage => Ecrivain {
             fichier: "ecritures-paie-%s.pnm",
             ecrire: sage_pnm,
             source: SOURCE_SAGE,
@@ -907,7 +924,7 @@ fn ecrivain(format: &str) -> Option<Ecrivain> {
             section: Analytique::Largeur(13),
             comptes: None,
         },
-        "quadra" => Ecrivain {
+        FormatDExport::Quadra => Ecrivain {
             fichier: "quadra-ecritures-paie-%s.txt",
             ecrire: quadra,
             source: SOURCE_QUADRA,
@@ -918,7 +935,7 @@ fn ecrivain(format: &str) -> Option<Ecrivain> {
             section: Analytique::Largeur(10),
             comptes: None,
         },
-        "ebp" => Ecrivain {
+        FormatDExport::Ebp => Ecrivain {
             fichier: "ECRITURES-paie-%s.TXT",
             ecrire: ebp,
             source: SOURCE_EBP,
@@ -926,7 +943,7 @@ fn ecrivain(format: &str) -> Option<Ecrivain> {
             section: Analytique::SansLargeur,
             comptes: Some(("COMPTES.TXT", ebp_comptes, "EBP le lit seul s'il est dans le même dossier que le fichier des écritures, et crée les comptes absents avec leur intitulé.")),
         },
-        "pennylane" => Ecrivain {
+        FormatDExport::Pennylane => Ecrivain {
             fichier: "pennylane-ecritures-paie-%s.csv",
             ecrire: pennylane,
             source: SOURCE_PENNYLANE,
@@ -937,7 +954,8 @@ fn ecrivain(format: &str) -> Option<Ecrivain> {
             section: Analytique::SansLargeur,
             comptes: None,
         },
-        _ => return None,
+        // Les formats de la machinerie des tableaux : pas d'ecrivain de logiciel.
+        FormatDExport::Csv | FormatDExport::Tsv | FormatDExport::Xlsx | FormatDExport::Pdf | FormatDExport::Html | FormatDExport::Json => return None,
     })
 }
 
@@ -953,13 +971,13 @@ pub struct ChoixCompta {
     #[serde(rename = "quoi")]
     _quoi: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub logiciel: Option<String>,
+    pub logiciel: Option<LogicielComptable>,
     pub analytique: bool,
 }
 
 impl ChoixCompta {
     /// Le choix `logiciel` (aucun : aucun logiciel retenu) et `analytique`, tel qu'il s'ecrit.
-    pub fn nouveau(logiciel: Option<String>, analytique: bool) -> ChoixCompta {
+    pub fn nouveau(logiciel: Option<LogicielComptable>, analytique: bool) -> ChoixCompta {
         ChoixCompta { _quoi: "Le logiciel du comptable, retenu pour les écritures comptables (Exports).".to_string(), logiciel, analytique }
     }
 
@@ -978,8 +996,8 @@ impl ChoixCompta {
     }
 
     /// Le logiciel retenu, s'il en est un.
-    fn retenu(&self) -> Option<String> {
-        self.logiciel.clone()
+    fn retenu(&self) -> Option<LogicielComptable> {
+        self.logiciel
     }
 }
 
@@ -991,27 +1009,25 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
     let retenu = ChoixCompta::lu(&ctx.racine)?;
-    let mut format = d.format.clone();
-    let mut logiciel = d.logiciel.clone().filter(|l| !l.is_empty());
-    if logiciel.is_none() && format.is_empty() {
-        logiciel = retenu.retenu();
-    }
+    let mut format = d.format;
+    let logiciel = d.logiciel;
     let analytique = match d.analytique {
         Some(a) => a,
         None => retenu.analytique,
     };
-    if let Some(l) = &logiciel {
+    if let Some(l) = logiciel {
         let Some(connu) = logiciel_connu(l) else {
             return Err(refus(format!("Logiciel inconnu : « {} ». Les logiciels connus sont {}.", l, logiciels_dits().join(", "))));
         };
         avert.push(format!("{} : format « {} » — {}.", connu.nom, connu.format, connu.pourquoi));
-        format = connu.format.clone();
+        format = Some(connu.format);
     }
-    if format.is_empty() {
-        format = "csv".to_string();
-    }
+    // `exporter` exige un format de cet etat : sans format ni logiciel, rien ne se choisit a sa place.
+    let Some(format) = format else {
+        return Err(refus("Les écritures comptables s'exportent dans un format : choisir le format, ou le logiciel comptable.".to_string()));
+    };
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
-    let mut t = Tableau::nouveau("ecritures-comptables", "Journal de paie — écritures comptables", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::EcrituresComptables, "Journal de paie — écritures comptables", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     let mois: BTreeSet<Mois> = ecr.iter().map(|e| e.mois).collect();
@@ -1033,12 +1049,12 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_t("analytique", "Analytique"),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
-    let ecr_format = ecrivain(&format);
+    let ecr_format = ecrivain(format);
     if let Some(ec) = &ecr_format {
         t.sources.push(ec.source.to_string());
         t.avertissements.push(ec.conseil.clone());
     }
-    t.format = format_possible(&format, &FORMATS_ECRITURES)?;
+    t.format = format_possible(Some(format), &FORMATS_ECRITURES)?;
     totaliser(&mut t, TOTAL_GENERAL)?;
     // Le total de chaque colonne : la somme de ce que les lignes portent (aucune ligne, rien).
     let somme = |k: &str| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(zero2(), add);
@@ -1069,10 +1085,10 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let dossier = p.dossier(ctx);
         if let Some(ec) = &ecr_format {
             let io = |c: &std::path::Path, e: std::io::Error| socle::echec::du_disque(&c, &e).reclasser(Classe::Disque);
-            let env = envoi(ctx, &plan, sections, &format)?;
+            let env = envoi(ctx, &plan, sections, format)?;
             // Les deux fichiers se fabriquent avant d'ecrire : une zone qui ne tient pas refuse l'export entier.
             let (ecritures, comptes) = fabriquer(ec, &ecr, &env)?;
-            env.refus_des_depasses(&format)?;
+            env.refus_des_depasses(format)?;
             std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
             let chemin = dossier.join(ec.fichier.replace("%s", &p.nom()));
             std::fs::write(&chemin, ecritures).map_err(|e| io(&chemin, e))?;
@@ -1092,7 +1108,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 }
 
 /// Ce qu'un ecrivain recoit pour `format` : le plan, les sections, et les libelles courts valides de ce format.
-fn envoi<'a>(ctx: &'a Contexte, plan: &'a Plan, sections: Option<BTreeMap<String, String>>, format: &str) -> R<Envoi<'a>> {
+fn envoi<'a>(ctx: &'a Contexte, plan: &'a Plan, sections: Option<BTreeMap<String, CodeAnalytique>>, format: FormatDExport) -> R<Envoi<'a>> {
     let borne = FormatBorne::de(format);
     let courts = match borne {
         Some(f) => crate::libelles_courts::lire(&ctx.racine)?.formats.remove(&f),
@@ -1117,7 +1133,7 @@ fn fabriquer(ec: &Ecrivain, ecr: &[Ecriture], env: &Envoi) -> R<Fabrique> {
 /// CE QUI NE TIENT PAS DANS LES ZONES DE `format`, sur tous les mois de la compagnie : chaque libelle et chaque intitule
 /// de compte trop long, avec sa valeur courte validee si elle tient. Les memes ecrivains que l'export, qui ne s'ecrit
 /// pas : la page des libelles courts lit ce que l'export refuserait.
-pub fn trop_longs(ctx: &Contexte, format: &str, departs: &engagement::departs::Departs) -> R<Vec<Depasse>> {
+pub fn trop_longs(ctx: &Contexte, format: FormatDExport, departs: &engagement::departs::Departs) -> R<Vec<Depasse>> {
     let Some(ec) = ecrivain(format) else {
         return Err(socle::refus!("Le format d'export « {} » n'existe pas.", format));
     };
@@ -1143,9 +1159,9 @@ pub fn trop_longs(ctx: &Contexte, format: &str, departs: &engagement::departs::D
 }
 
 /// Le format des ecritures du logiciel retenu par la compagnie (`config/compta.json`), s'il en est un.
-pub fn format_retenu(ctx: &Contexte) -> R<Option<String>> {
+pub fn format_retenu(ctx: &Contexte) -> R<Option<FormatDExport>> {
     let retenu = ChoixCompta::lu(&ctx.racine)?;
-    Ok(retenu.retenu().and_then(|l| logiciel_connu(&l)).map(|l| l.format.clone()))
+    Ok(retenu.retenu().and_then(logiciel_connu).map(|l| l.format))
 }
 
 // ------------------------------------------------------------------ le grand livre
@@ -1169,17 +1185,17 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
-    let mut par: BTreeMap<String, Vec<Ligne>> = BTreeMap::new();
-    let mut libelles: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut par: BTreeMap<NumeroDeCompte, Vec<Ligne>> = BTreeMap::new();
+    let mut libelles: BTreeMap<NumeroDeCompte, Option<String>> = BTreeMap::new();
     for e in &ecr {
-        par.entry(compte_de(e)).or_default().push(ligne_de(e, &plan));
-        libelles.insert(compte_de(e), libelle_de(&plan, e));
+        par.entry(compte_de(e).clone()).or_default().push(ligne_de(e, &plan));
+        libelles.insert(compte_de(e).clone(), libelle_de(&plan, e));
     }
-    let mut t = Tableau::nouveau("grand-livre-paie", "Grand livre des comptes de paie", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::GrandLivrePaie, "Grand livre des comptes de paie", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     // Une section par compte : son numero, et son libelle quand le plan le nomme.
-    t.sections = par.into_iter().map(|(c, l)| Section::nouvelle([Some(c.clone()), libelles[&c].clone()].into_iter().flatten().collect::<Vec<_>>().join(" "), l)).collect();
+    t.sections = par.into_iter().map(|(c, l)| Section::nouvelle([Some(c.to_string()), libelles[&c].clone()].into_iter().flatten().collect::<Vec<_>>().join(" "), l)).collect();
     t.colonnes = vec![
         col_t("compte", "Compte"),
         col_t("date", "Date"),
@@ -1190,7 +1206,7 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_m("credit", "Crédit"),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
-    t.format = format_possible(&d.format, &FORMATS_TABLEAU)?;
+    t.format = format_possible(d.format, &FORMATS_TABLEAU)?;
     totaliser(&mut t, TOTAL_GENERAL)?;
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
@@ -1213,13 +1229,13 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
     let zero = zero2();
     // compte -> (libelle, debit, credit)
-    let mut par: BTreeMap<String, (Option<String>, Decimal, Decimal)> = BTreeMap::new();
+    let mut par: BTreeMap<NumeroDeCompte, (Option<String>, Decimal, Decimal)> = BTreeMap::new();
     for e in &ecr {
         let c = compte_de(e);
-        if !par.contains_key(&c) {
+        if !par.contains_key(c) {
             par.insert(c.clone(), (libelle_de(&plan, e), zero, zero));
         }
-        let x = par.get_mut(&c).expect("insere");
+        let x = par.get_mut(c).expect("insere");
         x.1 = add(x.1, e.debit);
         x.2 = add(x.2, e.credit);
     }
@@ -1227,12 +1243,12 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for (c, (lib, debit, credit)) in &par {
         let v = sub(*debit, *credit);
         let mut l = Ligne::nouvelle();
-        l.t("compte", c.clone()).ot("libelle", lib.clone()).d("debit", *debit).d("credit", *credit);
+        l.t("compte", c.to_string()).ot("libelle", lib.clone()).d("debit", *debit).d("credit", *credit);
         l.od("solde_debiteur", if v > Decimal::ZERO { Some(v) } else { None });
         l.od("solde_crediteur", if v < Decimal::ZERO { Some(-v) } else { None });
         lignes.push(l);
     }
-    let mut t = Tableau::nouveau("balance-paie", "Balance des comptes de paie", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::BalancePaie, "Balance des comptes de paie", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
@@ -1245,7 +1261,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_m("solde_crediteur", "Solde créditeur"),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
-    t.format = format_possible(&d.format, &FORMATS_TABLEAU)?;
+    t.format = format_possible(d.format, &FORMATS_TABLEAU)?;
     totaliser(&mut t, TOTAL_GENERAL)?;
     if d.ecrire {
         ecrire_tableau(&mut t, &p.dossier(ctx), &format!("balance-paie-{}", p.nom()), ctx)?;
@@ -1483,7 +1499,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         pc.dette_charges.libelle,
         euros(charges_dites)
     ));
-    let mut t = Tableau::nouveau("provision-conges", format!("Provision pour congés payés au {}", jj(&fin.iso())), p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::ProvisionConges, format!("Provision pour congés payés au {}", jj(&fin.iso())), p.libelle.clone());
     t.mois = vec![m];
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
@@ -1504,7 +1520,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_m("total", "Provision"),
     ];
     t.sources = vec!["compteur de congés écrit dans la paie validée du mois, indemnité L3141-24 comme au solde de tout compte, taux patronal = cotisations patronales / brut des bulletins des douze derniers mois".to_string()];
-    finir(ctx, &mut t, Some(&p), "provision-conges", &d.format, false)?;
+    finir(ctx, &mut t, Some(&p), "provision-conges", d.format,false)?;
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
             for c in ["report", "acquis", "pris", "solde", "taux_patronal", "bulletins"] {
@@ -1666,7 +1682,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         avert.push(format!("Périodicité l'année suivante : {}.", periodicite));
     }
-    let mut t = Tableau::nouveau("taxe-sur-les-salaires", format!("Taxe sur les salaires {}", annee), p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::TaxeSurLesSalaires, format!("Taxe sur les salaires {}", annee), p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
@@ -1681,7 +1697,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_m("taxe", "Taxe brute"),
     ];
     t.sources = vec!["CGI art. 231 et 1679 A ; notices 2501-SD et 2502-SD de la DGFiP (seuils, franchise, décote, abattement de l'année)".to_string()];
-    finir(ctx, &mut t, Some(&p), "taxe-sur-les-salaires", &d.format, false)?;
+    finir(ctx, &mut t, Some(&p), "taxe-sur-les-salaires", d.format,false)?;
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
             tot.rien("mois");

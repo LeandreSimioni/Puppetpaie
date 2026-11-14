@@ -14,7 +14,7 @@
 use serde::Deserialize;
 
 use droit::contexte::Contexte;
-use droit::organismes::{attendus, composer, ligne, saisis, Adhesion, Attendu, Saisie};
+use droit::organismes::{attendus, composer, ligne, saisis, Adhesion, Attendu, CleDeContrat, Saisie, Saisies};
 use socle::date::Jour;
 use std::collections::BTreeMap;
 use socle::ecriture::ecrire_json;
@@ -22,18 +22,19 @@ use socle::echec::R;
 use socle::mois::Mois;
 
 /// La charge de `organismes-enregistrer` : ce que la compagnie saisit de chaque contrat (`{cle: {libelle, organisme}}`,
-/// rien sans lui), et le mois a partir duquel ils valent (le mois en cours sans lui).
+/// rien sans lui ; les fautes de tous se disent ensemble, `Saisies`), et le mois a partir duquel ils valent (le mois en
+/// cours sans lui).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChargeEnregistrer {
-    contrats: Option<BTreeMap<String, Saisie>>,
+    contrats: Option<Saisies>,
     mois: Option<Mois>,
 }
 
 impl ChargeEnregistrer {
     /// Les contrats `contrats`, a partir du mois en cours (l'import).
-    pub fn des_contrats(contrats: BTreeMap<String, Saisie>) -> ChargeEnregistrer {
-        ChargeEnregistrer { contrats: Some(contrats), mois: None }
+    pub fn des_contrats(contrats: BTreeMap<CleDeContrat, Saisie>) -> ChargeEnregistrer {
+        ChargeEnregistrer { contrats: Some(Saisies(contrats)), mois: None }
     }
 }
 
@@ -96,14 +97,14 @@ pub fn lire(ctx: &Contexte, mois: Option<Mois>) -> R<Lus> {
 /// (`droit::fiche::dater` : la premiere composition vaut de tout temps), et rend la lecture. Ce qui precede le mois ne
 /// change pas.
 pub fn enregistrer(ctx: &Contexte, charge: ChargeEnregistrer) -> R<Lus> {
-    let saisies: BTreeMap<String, Saisie> = charge.contrats.into_iter().flatten().collect();
+    let saisies: BTreeMap<CleDeContrat, Saisie> = charge.contrats.into_iter().flat_map(|s| s.0).collect();
     let periode = periode(ctx, charge.mois);
     let du_mois = ctx.au(&periode.1)?;
     let (saisi, prises) = saisis(&du_mois)?;
     let compose = composer(&du_mois, &saisi, prises, &saisies, Some((&periode, permanents_ouverts(&du_mois, &periode)?))).map_err(|e| e.reclasser(socle::echec::Classe::Refuse))?;
     // Ce qu'un texte donne entier (sa reference de contrat et son identifiant) ne s'ecrit pas : il se recompose a la
     // date de chaque mois, sous la convention de ce mois.
-    let fixes: Vec<String> = attendus(&du_mois)?.iter().filter(|s| s.libelle_donne().is_some()).map(|s| s.cle.trim().to_string()).collect();
+    let fixes: Vec<CleDeContrat> = attendus(&du_mois)?.iter().filter(|s| s.libelle_donne().is_some()).map(|s| s.cle.clone()).collect();
     let adhesions: Vec<Adhesion> = compose.adhesions_prevoyance.into_iter().filter(|a| !fixes.contains(&a.cle)).collect();
     let (en_vigueur, _) = saisis(&du_mois.au(&periode.0)?)?;
     // Le fichier ne garde que la saisie : tout autre cle se recompose des textes (`droit::organismes`).

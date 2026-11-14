@@ -163,6 +163,35 @@ impl std::fmt::Display for Classe {
     }
 }
 
+/// LA CLASSE D'UN ECHEC NOTE en memoire : la classe d'un refus classe, un refus ordinaire, ou une panique. Elle
+/// s'ecrit (`Display`) par le nom de la classe, `-` pour un refus ordinaire, `panique` : ce que le diagnostic montre.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ClasseNotee {
+    Classe(Classe),
+    Ordinaire,
+    Panique,
+}
+
+impl ClasseNotee {
+    /// La classe notee d'un refus : la sienne, ou un refus ordinaire (`None`).
+    pub fn du_refus(classe: Option<Classe>) -> ClasseNotee {
+        match classe {
+            Some(c) => ClasseNotee::Classe(c),
+            None => ClasseNotee::Ordinaire,
+        }
+    }
+}
+
+impl std::fmt::Display for ClasseNotee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClasseNotee::Classe(c) => f.write_str(c.nom()),
+            ClasseNotee::Ordinaire => f.write_str("-"),
+            ClasseNotee::Panique => f.write_str("panique"),
+        }
+    }
+}
+
 /// UN REFUS : sa classe (`None` pour un refus ordinaire), sa phrase, en mots, pour l'ecran, et ce qu'il porte a part
 /// (`APart` : un lieu, ou la forme de la couche qui refuse), dans sa forme, jamais dans la phrase. Il ne
 /// se construit que par ses constructeurs (`refus`, `refus_avec`, `erreur`, `noter_et`, ceux de ce module), qui notent
@@ -280,7 +309,7 @@ pub struct Echoue {
     pub t: u64,
     pub fil: String,
     pub ou: String,
-    pub classe: String,
+    pub classe: ClasseNotee,
     pub message: String,
 }
 
@@ -303,19 +332,16 @@ pub fn fil_courant() -> String {
 #[track_caller]
 pub fn noter_echec(classe: Option<Classe>, message: &str) {
     let l = std::panic::Location::caller();
-    noter_echec_a(&format!("{}:{}", l.file(), l.line()), classe.map(Classe::nom), message);
+    noter_echec_a(&format!("{}:{}", l.file(), l.line()), ClasseNotee::du_refus(classe), message);
 }
 
 /// Un echec ne a l'endroit `ou` (une panique donne le sien), garde en memoire comme `noter_echec`.
-pub fn noter_echec_a(ou: &str, classe: Option<&str>, message: &str) {
+pub fn noter_echec_a(ou: &str, classe: ClasseNotee, message: &str) {
     let e = Echoue {
         t: maintenant_ms(),
         fil: fil_courant(),
         ou: ou.to_string(),
-        classe: match classe {
-            Some(c) => c.to_string(),
-            None => "-".to_string(),
-        },
+        classe,
         message: message.chars().take(300).collect(),
     };
     let mut l = echecs_notes();

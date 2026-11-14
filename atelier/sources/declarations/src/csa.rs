@@ -37,13 +37,8 @@
 //! « [(17-15) x 100] / 15 ») ; l'effectif qui « excède deux mille » suit, comme celui des 250, la regle de
 //! franchissement de L. 130-1, II (L. 6242-1, V, le dit des deux seuils).
 
-use std::collections::BTreeMap;
-
-use serde::Deserialize;
-
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, FichierEffectifs, TypeDeParametreNeores};
 use droit::cotisation_etablissement::CotisationDEtablissement;
-use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::num::{add, div, mul, Decimal};
@@ -54,8 +49,8 @@ pub const CODE_EXONERATION: CotisationDEtablissement = CotisationDEtablissement:
 pub const CTP: droit::organismes::CodeCtp = droit::organismes::CodeCtp::du_moteur("998");
 const SEUIL: i64 = 250;
 const SEUIL_DEUX_MILLE: i64 = 2000;
-const CODE_ALTERNANTS: &str = "A05";
-const CODE_DENOMINATEUR: &str = "A07";
+const CODE_ALTERNANTS: TypeDeParametreNeores = TypeDeParametreNeores::EffectifCsaCfip;
+const CODE_DENOMINATEUR: TypeDeParametreNeores = TypeDeParametreNeores::EffectifCsa;
 
 /// Ce que la DSN de mars porte pour un millesime.
 #[derive(Clone, Debug)]
@@ -128,48 +123,11 @@ pub fn taux(quotient: Decimal, plus_de_deux_mille: bool) -> Option<Decimal> {
     }
 }
 
-/// `config/effectifs.json` (ecrit par `envois::releve_retours`) : les effectifs par annee civile et par code, ceux que
-/// l'Urssaf renvoie en 118 (`calcule_le`, `source`) et ceux que la compagnie a dits (`dit_le`).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Effectifs {
-    #[serde(rename = "quoi")]
-    _quoi: Option<String>,
-    annees: Option<BTreeMap<String, BTreeMap<String, EffectifDuCode>>>,
-}
-
-impl Effectifs {
-    /// `config/effectifs.json` de la compagnie, lu par sa forme ; sans fichier, aucun effectif.
-    pub(crate) fn lus(ctx: &Contexte) -> R<Effectifs> {
-        let chemin = ctx.racine.join(droit::contexte::EFFECTIFS);
-        if !socle::fichiers::existe(&chemin) {
-            return Ok(Effectifs { _quoi: None, annees: None });
-        }
-        socle::forme::lire_fichier(&chemin, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.")
-    }
-
-    /// La valeur du code `code` du CRM 118 pour l'annee `annee`, s'il est ecrit.
-    pub(crate) fn du_118(&self, annee: i32, code: &str) -> Option<Decimal> {
-        self.annees.as_ref()?.get(&annee.to_string())?.get(code).map(|c| c.valeur.0)
-    }
-}
-
-/// L'effectif d'un code pour une annee, en decimal (un flottant garde son echelle).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EffectifDuCode {
-    valeur: Nombre,
-    #[serde(rename = "calcule_le", default, with = "socle::paris::ecrit::seconde::option")]
-    _calcule_le: Option<socle::paris::Moment>,
-    #[serde(rename = "source")]
-    _source: Option<String>,
-    #[serde(rename = "dit_le")]
-    _dit_le: Option<socle::date::Jour>,
-}
-
-/// La valeur d'un code du CRM 118 pour une annee (`config/effectifs.json`), ou `None`.
-fn effectif_du_118(effectifs: &Effectifs, annee: i32, code: &str) -> Option<Decimal> {
-    effectifs.du_118(annee, code)
+/// La valeur d'un code du CRM 118 pour une annee (`config/effectifs.json`, `droit::contexte::effectifs_lus` : sans
+/// fichier, aucun effectif), ou `None`.
+pub(crate) fn effectif_du_118(effectifs: Option<&FichierEffectifs>, annee: i32, code: TypeDeParametreNeores) -> R<Option<Decimal>> {
+    let annee = socle::mois::Annee::nouvelle(annee.into())?;
+    Ok(effectifs.and_then(|e| e.du_118(annee, code)))
 }
 
 /// L'effectif « excède deux mille salariés » pour l'annee N : au-dessus les cinq annees civiles N-4 a N (L. 6242-1, V ;
@@ -217,9 +175,9 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois, departs: &engagement
     if !assujettie {
         return Ok(None);
     }
-    let effectifs = Effectifs::lus(ctx)?;
+    let effectifs = droit::contexte::effectifs_lus(&ctx.racine)?;
     let (alternants, denominateur) =
-        (effectif_du_118(&effectifs, n, CODE_ALTERNANTS), effectif_du_118(&effectifs, n, CODE_DENOMINATEUR));
+        (effectif_du_118(effectifs.as_ref(), n, CODE_ALTERNANTS)?, effectif_du_118(effectifs.as_ref(), n, CODE_DENOMINATEUR)?);
     let (Some(alternants), Some(denominateur)) = (alternants, denominateur) else {
         return Err(socle::refus!(
             "DSN de mars {} : la compagnie compte au moins 250 salaries et doit la taxe d'apprentissage ; la contribution \
@@ -261,7 +219,7 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
     };
     if quotient >= Decimal::new(3, 0) {
         // L. 6242-1, II, dernier alinea : 3 % et une progression d'au moins 10 % sur l'annee precedente.
-        let Some(avant) = effectif_du_118(&effectifs, n - 1, CODE_ALTERNANTS) else {
+        let Some(avant) = effectif_du_118(effectifs.as_ref(), n - 1, CODE_ALTERNANTS)? else {
             return Err(socle::refus!(
                 "DSN de mars {} : les alternants font {} % de l'effectif en {}, entre 3 et 5 % : la contribution \
 supplementaire a l'apprentissage n'est pas due si leur effectif a progresse d'au moins 10 % sur {} (L. 6242-1, II). \

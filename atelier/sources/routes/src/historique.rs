@@ -337,7 +337,7 @@ fn exercices_route(ctx: &Contexte) -> R<ExercicesDits> {
         phrase: format!("Exercices : {}.", exercices.len()),
         phrases: exercices.iter().map(|e| format!("{} : {}", e.annee, e.pastille.mots)).collect(),
         exercices,
-        dossier: ctx.racine.join("sorties").join("exercices"),
+        dossier: documents::DossierHorsDuMois::Exercices.sous(&ctx.racine),
     })
 }
 
@@ -352,8 +352,8 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     for &a in annees.iter().rev() {
         let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| x.annee_civile() == a).copied().collect();
         mois.sort();
-        let fichier = socle::fichiers::NomDeFichier::lire(&format!("Compta_{}.csv", a))?;
-        let chemin = ctx.racine.join("sorties").join("exercices").join(&fichier);
+        let fichier = socle::fichiers::NomDeFichier::lire(&format!("{}{}.csv", documents::SorteDePieceProduite::Compta.prefixe(), a))?;
+        let chemin = documents::DossierHorsDuMois::Exercices.sous(&ctx.racine).join(&fichier);
         let mut acceptees = Vec::new();
         for &x in &mois {
             if compagnie::etat_dsn::du_mois(ctx, x, None)?.partie() {

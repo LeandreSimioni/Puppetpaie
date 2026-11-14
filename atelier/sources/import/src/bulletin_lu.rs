@@ -53,6 +53,8 @@ use socle::num::Decimal;
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 use droit::catalogue::CodeDeRubrique;
+use droit::forme_bareme::FamilleDeCotisation;
+use engagement::importe::LogicielDUnBulletin;
 
 /// `n` points.
 const fn pt(n: i64) -> Mesure {
@@ -585,14 +587,14 @@ pub struct Table {
     titres: Vec<String>,
     /// Ce qui ouvre l'annexe d'un bulletin.
     annexe: Vec<Vec<String>>,
-    /// (cle, titres canoniques).
-    familles: Vec<(String, Vec<String>)>,
+    /// (famille, titres canoniques).
+    familles: Vec<(FamilleDeCotisation, Vec<String>)>,
     /// (cotisation, libelles canoniques) : la cotisation qu'une ligne imprimee est.
     cotisations: Vec<(String, Vec<String>)>,
     /// (cle, libelles canoniques).
     cumuls: Vec<(String, Vec<String>)>,
     /// (nom, signature : les libelles qui doivent tous se trouver).
-    logiciels: Vec<(String, Vec<Vec<String>>)>,
+    logiciels: Vec<(LogicielDUnBulletin, Vec<Vec<String>>)>,
     lignes: Vec<LigneTable>,
 }
 
@@ -609,14 +611,15 @@ struct TableEcrite {
     resumes: ResumesEcrits,
     titres: Libelles,
     annexe: Libelles,
+    /// Chaque famille ecrite comme le bareme l'ecrit (`FamilleDeCotisation`), lue dans son type.
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    familles: Vec<(String, Libelles)>,
+    familles: Vec<(FamilleDeCotisation, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     cotisations: Vec<(String, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     cumuls: Vec<(String, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    logiciels: Vec<(String, Signature)>,
+    logiciels: Vec<(LogicielDUnBulletin, Signature)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     lignes: Vec<(String, Option<LigneEcrite>)>,
 }
@@ -686,7 +689,9 @@ pub fn textes_de_la_table() -> R<Vec<String>> {
     let r = &t.resumes;
     let mut libelles: Vec<&Libelles> = vec![&e.libelle, &e.base, &e.taux, &e.montant, &e.salarie, &e.employeur, &e.periode, &e.cumul];
     libelles.extend([&r.brut, &r.total, &r.net_social, &r.net_avant_impot, &r.pas, &r.net_imposable, &t.titres, &t.annexe]);
-    libelles.extend(t.mentions.iter().chain(&t.familles).chain(&t.cotisations).chain(&t.cumuls).map(|(_, l)| l));
+    libelles.extend(t.mentions.iter().map(|(_, l)| l));
+    libelles.extend(t.familles.iter().map(|(_, l)| l));
+    libelles.extend(t.cotisations.iter().chain(&t.cumuls).map(|(_, l)| l));
     libelles.extend(t.logiciels.iter().map(|(_, s)| &s.signature));
     let mut out = vec![t.quoi.clone(), t.note.clone()];
     for l in libelles {
@@ -742,7 +747,7 @@ impl Libelles {
 }
 
 /// Des groupes de libelles : (cle, libelles canoniques).
-fn groupes(g: &[(String, Libelles)], ou: &str) -> R<Vec<(String, Vec<String>)>> {
+fn groupes<K: Clone + std::fmt::Display>(g: &[(K, Libelles)], ou: &str) -> R<Vec<(K, Vec<String>)>> {
     g.iter().map(|(k, x)| Ok((k.clone(), x.canoniques(&format!("{}.{}", ou, k))?))).collect()
 }
 
@@ -809,12 +814,12 @@ impl Table {
     }
 
     /// La famille (`familles` de la table) que le titre imprime `libelle` nomme ; `None` : un titre qu'elle ne connait pas.
-    pub fn famille_nommee(&self, libelle: &str) -> Option<&str> {
+    pub fn famille_nommee(&self, libelle: &str) -> Option<&FamilleDeCotisation> {
         self.famille(&canon(libelle))
     }
 
-    fn famille(&self, libelle: &str) -> Option<&str> {
-        self.familles.iter().find(|(_, t)| t.iter().any(|x| x == libelle)).map(|(c, _)| c.as_str())
+    fn famille(&self, libelle: &str) -> Option<&FamilleDeCotisation> {
+        self.familles.iter().find(|(_, t)| t.iter().any(|x| x == libelle)).map(|(c, _)| c)
     }
 
     /// Un titre de famille commence-t-il par ce libelle (titre ecrit sur deux rangs) ?
@@ -902,8 +907,8 @@ pub struct LignePaie {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Cotisation {
-    /// La cle de la famille (`familles` de la table) sous laquelle la ligne est ecrite.
-    pub famille: Option<String>,
+    /// La famille (`familles` de la table) sous laquelle la ligne est ecrite.
+    pub famille: Option<FamilleDeCotisation>,
     pub libelle: String,
     /// LA COTISATION QUE LA LIGNE EST, dans les mots du moteur (`cotisations` de la table, par son libelle : l'identifiant
     /// du bareme, ou le grain auquel le modele de l'arrete du 25/02/2016 regroupe plusieurs lignes) ; `None` : un libelle
@@ -935,7 +940,7 @@ pub struct Cumul {
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct BulletinLu {
     /// Le logiciel que sa signature nomme (`logiciels` de la table) ; `None` : un autre.
-    pub logiciel: Option<String>,
+    pub logiciel: Option<LogicielDUnBulletin>,
     pub numero: Option<String>,
     pub entreprise: Entreprise,
     pub salarie: Salarie,
@@ -970,7 +975,35 @@ pub struct BulletinLu {
     /// Les cumuls, dans l'ordre de la page : `cachets`, `jours`, `heures`, `brut`, `plafond`, `cout_employeur`...
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub cumuls: Vec<(String, Cumul)>,
-    pub avertissements: Vec<String>,
+    pub avertissements: Vec<Avertissement>,
+}
+
+/// CE QU'UN BULLETIN LU SIGNALE SANS ETRE REFUSE : la page se contredit (`controler`), un libelle de ligne est absent de
+/// la table (`Refus::LibelleInconnu`), ou une autre faute de lecture. Il s'ecrit par sa phrase (`texte`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Avertissement {
+    /// Ce qui se contredit, sans le mot « incohérent » qui le precede a l'ecrit.
+    Incoherence(String),
+    /// Le libelle absent de la table.
+    LibelleInconnu(String),
+    Lecture(String),
+}
+
+impl Avertissement {
+    /// Sa phrase.
+    pub fn texte(&self) -> String {
+        match self {
+            Avertissement::Incoherence(d) => Refus::Incoherent(d.clone()).message(),
+            Avertissement::LibelleInconnu(l) => Refus::LibelleInconnu(l.clone()).message(),
+            Avertissement::Lecture(t) => t.clone(),
+        }
+    }
+}
+
+impl serde::Serialize for Avertissement {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.texte())
+    }
 }
 
 /// Pourquoi une page n'est pas un bulletin lu.
@@ -1251,7 +1284,7 @@ struct Lecteur<'a> {
     debuts: Vec<Option<usize>>,
     /// Les mots pris par la valeur d'une mention.
     pris: Vec<usize>,
-    avertissements: Vec<String>,
+    avertissements: Vec<Avertissement>,
 }
 
 /// Un rang du corps : son libelle et ses nombres, chacun avec sa colonne.
@@ -1274,7 +1307,7 @@ impl RangCorps {
 }
 
 impl<'a> Lecteur<'a> {
-    fn lire(&mut self, logiciel: Option<String>) -> Result<BulletinLu, Refus> {
+    fn lire(&mut self, logiciel: Option<LogicielDUnBulletin>) -> Result<BulletinLu, Refus> {
         let tableau = self.tableau();
         // L'en-tete finit au tableau ; sans tableau, toute la page en est (le salarie se lit pour le caviardage).
         let limite = match &tableau {
@@ -1368,13 +1401,13 @@ impl<'a> Lecteur<'a> {
         for (a, b) in &dates_travaillees {
             let n = b.moins(a);
             if !(0..=INTERVALLE_MAX).contains(&n) {
-                self.avertissements.push(format!("dates travaillées du {} au {} : intervalle non déplié", a.iso(), b.iso()));
+                self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : intervalle non déplié", a.iso(), b.iso())));
                 continue;
             }
             for k in 0..=n {
                 match a.plus_jours(k) {
                     Ok(x) => jours_travailles.push(x),
-                    Err(e) => self.avertissements.push(format!("dates travaillées du {} au {} : {}", a.iso(), b.iso(), e.phrase)),
+                    Err(e) => self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : {}", a.iso(), b.iso(), e.phrase))),
                 }
             }
         }
@@ -1391,10 +1424,10 @@ impl<'a> Lecteur<'a> {
         let net_a_payer = match (nombre(&valeurs, "net_a_payer"), corps.lu.net_avant_impot, pas.as_ref().and_then(|p| p.montant)) {
             (Some(n), _, _) => n,
             (None, Some(avant), Some(impot)) => {
-                self.avertissements.push(format!(
+                self.avertissements.push(Avertissement::Lecture(format!(
                     "le net à payer n'est pas imprimé : lu comme le net avant impôt ({}) moins l'impôt prélevé ({}), imprimés",
                     avant, impot
-                ));
+                )));
                 avant - impot
             }
             _ => {
@@ -1621,7 +1654,7 @@ impl<'a> Lecteur<'a> {
                         Some(Valeur::Periode(lire_date(textes[1])?, lire_date(textes[3])?))
                     }
                     _ => {
-                        self.avertissements.push(format!("{} : « {} » n'est pas une période du ... au ...", m.nom, textes.join(" ")));
+                        self.avertissements.push(Avertissement::Lecture(format!("{} : « {} » n'est pas une période du ... au ...", m.nom, textes.join(" "))));
                         None
                     }
                 }
@@ -1645,7 +1678,7 @@ impl<'a> Lecteur<'a> {
                     l = textes.iter().filter_map(|x| lire_date(x)).map(|j| (j, j)).collect();
                 }
                 if l.is_empty() {
-                    self.avertissements.push(format!("{} : « {} » ne se lit pas en dates", m.nom, textes.join(" ")));
+                    self.avertissements.push(Avertissement::Lecture(format!("{} : « {} » ne se lit pas en dates", m.nom, textes.join(" "))));
                     return None;
                 }
                 Some(Valeur::Intervalles(l))
@@ -1755,7 +1788,7 @@ impl<'a> Lecteur<'a> {
         blocs.sort_by(|a, b| a.0.cmp(&b.0));
         let (employeurs, salaries): (Vec<_>, Vec<_>) = blocs.into_iter().map(|(_, b)| b).partition(|b| b.employeur);
         if employeurs.len() > 1 {
-            self.avertissements.push(format!("{} adresses d'employeur : la première est gardée", employeurs.len()));
+            self.avertissements.push(Avertissement::Lecture(format!("{} adresses d'employeur : la première est gardée", employeurs.len())));
         }
         let mut salaries = salaries.into_iter();
         let salarie = salaries.next();
@@ -1800,7 +1833,7 @@ impl<'a> Lecteur<'a> {
                 return (Some(mots[n..].join(" ")), Some(mots[..n].join(" ")));
             }
         }
-        self.avertissements.push(format!("nom et prénom non séparés : « {} »", complet));
+        self.avertissements.push(Avertissement::Lecture(format!("nom et prénom non séparés : « {} »", complet)));
         (None, None)
     }
 
@@ -1958,15 +1991,15 @@ impl<'a> Lecteur<'a> {
                 .min_by(|&a, &b| (sortie[a].cy - n.boite.cy()).abs().cmp(&(sortie[b].cy - n.boite.cy()).abs()));
             match proche {
                 Some(k) if col.is_some() && places[k].iter().any(|(_, c, _)| *c == col) => {
-                    self.avertissements.push(format!("« {} » : deux nombres dans une même colonne", sortie[k].libelle));
+                    self.avertissements.push(Avertissement::Lecture(format!("« {} » : deux nombres dans une même colonne", sortie[k].libelle)));
                 }
                 Some(k) => {
                     if col.is_none() {
-                        self.avertissements.push(format!("« {} » : le nombre {} est hors des colonnes du tableau", sortie[k].libelle, n.valeur));
+                        self.avertissements.push(Avertissement::Lecture(format!("« {} » : le nombre {} est hors des colonnes du tableau", sortie[k].libelle, n.valeur)));
                     }
                     places[k].push((n.boite.x1, col, n.valeur));
                 }
-                None => self.avertissements.push(format!("nombre {} sans libellé à sa hauteur", n.valeur)),
+                None => self.avertissements.push(Avertissement::Lecture(format!("nombre {} sans libellé à sa hauteur", n.valeur))),
             }
         }
         for (r, mut l) in sortie.iter_mut().zip(places) {
@@ -1993,14 +2026,14 @@ impl<'a> Lecteur<'a> {
             NonSoumis,
         }
         let mut phase = Phase::Lignes;
-        let mut famille: Option<String> = None;
+        let mut famille: Option<FamilleDeCotisation> = None;
         let mut famille_apres_total = false;
         let mut titre_en_cours: Option<(String, String)> = None; // (canonique, tel qu'ecrit)
         let mut avertissements = Vec::new();
         let mut fin: Option<Mesure> = None;
         // Une ligne de paie : sa quantite en tete, son montant au dernier nombre, son taux a l'avant-dernier ou dans son
         // libelle (« Cachets à 150,00 »).
-        let ligne = |libelle: &str, quantite: Option<Decimal>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<String>| {
+        let ligne = |libelle: &str, quantite: Option<Decimal>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<Avertissement>| {
             let (libelle, taux_ecrit) = taux_du_libelle(libelle);
             let (libelle, quantite) = match quantite {
                 Some(q) => (libelle, Some(q)),
@@ -2011,7 +2044,7 @@ impl<'a> Lecteur<'a> {
             let (rubrique, heures, soumis) = match table.lignes.iter().find(|x| x.canon == cl) {
                 Some(x) => (x.rubrique.clone(), x.heures, soumis && !x.non_soumise),
                 None => {
-                    avertissements.push(Refus::LibelleInconnu(libelle.clone()).message());
+                    avertissements.push(Avertissement::LibelleInconnu(libelle.clone()));
                     (None, None, soumis)
                 }
             };
@@ -2077,7 +2110,7 @@ impl<'a> Lecteur<'a> {
                         lu.total_salarie = r.colonne(Genre::Montant, Some(Part::Salarie));
                         phase = Phase::ApresTotal;
                         if let Some((_, ecrit)) = titre_en_cours.take() {
-                            avertissements.push(format!("rang sans montant : « {} »", ecrit));
+                            avertissements.push(Avertissement::Lecture(format!("rang sans montant : « {} »", ecrit)));
                         }
                         continue;
                     }
@@ -2090,7 +2123,7 @@ impl<'a> Lecteur<'a> {
                     if let Some((tc, te)) = titre_en_cours.take() {
                         let (cle, ecrit) = (format!("{} {}", tc, cl), format!("{} {}", te, r.libelle));
                         if let Some(f) = table.famille(&cle) {
-                            famille = Some(f.to_string());
+                            famille = Some(f.clone());
                             famille_apres_total |= phase == Phase::ApresTotal;
                             if !r.nombres.is_empty() {
                                 lu.ajouter(cotisation(table, &famille, ecrit, &r), phase == Phase::ApresTotal);
@@ -2101,10 +2134,10 @@ impl<'a> Lecteur<'a> {
                             titre_en_cours = Some((cle, ecrit));
                             continue;
                         }
-                        avertissements.push(format!("rang sans montant : « {} »", te));
+                        avertissements.push(Avertissement::Lecture(format!("rang sans montant : « {} »", te)));
                     }
                     if let Some(f) = table.famille(&cl) {
-                        famille = Some(f.to_string());
+                        famille = Some(f.clone());
                         famille_apres_total |= phase == Phase::ApresTotal;
                         if !r.nombres.is_empty() {
                             lu.ajouter(cotisation(table, &famille, r.libelle.clone(), &r), phase == Phase::ApresTotal);
@@ -2123,7 +2156,7 @@ impl<'a> Lecteur<'a> {
                         continue;
                     }
                     if r.nombres.is_empty() {
-                        avertissements.push(format!("cotisation sans montant : « {} »", r.libelle));
+                        avertissements.push(Avertissement::Lecture(format!("cotisation sans montant : « {} »", r.libelle)));
                     }
                     lu.ajouter(cotisation(table, &famille, r.libelle.clone(), &r), phase == Phase::ApresTotal);
                 }
@@ -2274,7 +2307,7 @@ impl Corps {
     }
 }
 
-fn cotisation(table: &Table, famille: &Option<String>, libelle: String, r: &RangCorps) -> Cotisation {
+fn cotisation(table: &Table, famille: &Option<FamilleDeCotisation>, libelle: String, r: &RangCorps) -> Cotisation {
     Cotisation {
         famille: famille.clone(),
         cotisation: table.cotisation(&libelle).map(str::to_string),
@@ -2292,11 +2325,11 @@ fn cotisation(table: &Table, famille: &Option<String>, libelle: String, r: &Rang
 fn controler(b: &mut BulletinLu) {
     let soumises: Vec<&LignePaie> = b.lignes.iter().filter(|l| l.soumis).collect();
     if soumises.iter().any(|l| l.montant.is_none()) {
-        b.avertissements.push("une ligne soumise n'a pas de montant : le brut ne se contrôle pas".into());
+        b.avertissements.push(Avertissement::Lecture("une ligne soumise n'a pas de montant : le brut ne se contrôle pas".into()));
     } else if !soumises.is_empty() {
         let somme: Decimal = soumises.iter().filter_map(|l| l.montant).sum();
         if somme != b.brut {
-            b.avertissements.push(format!("incohérent : le brut lu ({}) n'est pas la somme des lignes soumises ({})", b.brut, somme));
+            b.avertissements.push(Avertissement::Incoherence(format!("le brut lu ({}) n'est pas la somme des lignes soumises ({})", b.brut, somme)));
         }
     }
     if let (Some(avant), Some(salarie)) = (b.net_avant_impot, b.total_salarie) {
@@ -2304,23 +2337,23 @@ fn controler(b: &mut BulletinLu) {
         let hors_total: Decimal = b.cotisations.iter().filter(|c| c.hors_total).filter_map(|c| c.montant_salarie).sum();
         let attendu = b.brut - salarie - hors_total + non_soumis;
         if attendu != avant {
-            b.avertissements.push(format!(
-                "incohérent : le net avant impôt lu ({}) n'est pas brut - cotisations salariales + lignes non soumises ({})",
+            b.avertissements.push(Avertissement::Incoherence(format!(
+                "le net avant impôt lu ({}) n'est pas brut - cotisations salariales + lignes non soumises ({})",
                 avant, attendu
-            ));
+            )));
         }
     }
     match (b.net_avant_impot, b.pas.as_ref().and_then(|p| p.montant)) {
         (Some(avant), Some(impot)) => {
             if avant - impot != b.net_a_payer {
-                b.avertissements.push(format!(
-                    "incohérent : le net à payer lu ({}) n'est pas le net avant impôt moins l'impôt prélevé ({})",
+                b.avertissements.push(Avertissement::Incoherence(format!(
+                    "le net à payer lu ({}) n'est pas le net avant impôt moins l'impôt prélevé ({})",
                     b.net_a_payer,
                     avant - impot
-                ));
+                )));
             }
         }
-        _ => b.avertissements.push("le net à payer ne se contrôle pas (net avant impôt ou impôt prélevé absent)".into()),
+        _ => b.avertissements.push(Avertissement::Lecture("le net à payer ne se contrôle pas (net avant impôt ou impôt prélevé absent)".into())),
     }
 }
 
@@ -2378,10 +2411,10 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         let par_unite = forfait.or(l.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE));
         if !cachet && par_unite.is_none() {
             // un defraiement, un acompte : ni cachet ni heure ; une rubrique dont les heures se saisissent : non dites
-            sans_duree |= r.saisie.iter().any(|s| s == "heures");
+            sans_duree |= r.saisie.contains(&droit::catalogue::CaseSaisie::Heures);
             continue;
         }
-        let ens = r.compte_pour == "ouverture_des_droits";
+        let ens = r.compte_pour == droit::catalogue::ComptePour::OuvertureDesDroits;
         let Some(q) = l.quantite else {
             avertissements.push(format!("« {} » : sans quantité, ses {} ne se comptent pas", l.libelle, if cachet { "cachets" } else { "heures" }));
             if cachet {

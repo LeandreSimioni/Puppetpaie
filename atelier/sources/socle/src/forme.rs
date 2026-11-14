@@ -148,6 +148,48 @@ impl Objet {
         lire(&Value::Object(m), phrase)
     }
 
+    /// Ses cles, dans l'ordre ecrit.
+    pub fn cles(&self) -> Vec<&str> {
+        self.0.keys().map(String::as_str).collect()
+    }
+
+    /// LA VALEUR DE LA SEULE CLE `cle`, LUE EN SA FORME `T` comme une saisie (`lire_saisie`) ; absente, aucune.
+    #[track_caller]
+    pub fn lire_une<T: DeserializeOwned>(&self, cle: &str, phrase: &str) -> R<Option<T>> {
+        match self.0.get(cle) {
+            Some(v) => lire_saisie(v, phrase).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// CHAQUE ENTREE DONT LA CLE EST GARDEE (`garder`), LUE SEULE EN SA FORME `T`, comme l'objet
+    /// `{nom_cle: cle, nom_valeur: valeur}` d'une saisie (`lire_saisie`) : une entree fautive ne fait pas taire les
+    /// suivantes. Sa faute : le chemin sous la valeur (vide pour la valeur elle-meme) et ce qui ne va pas.
+    pub fn chacune<T: DeserializeOwned>(&self, garder: impl Fn(&str) -> bool, nom_cle: &str, nom_valeur: &str) -> Vec<(String, Result<T, (String, String)>)> {
+        let mut out = Vec::new();
+        for (cle, valeur) in self.0.iter().filter(|(k, _)| garder(k)) {
+            let mut entree = serde_json::Map::new();
+            entree.insert(nom_cle.to_string(), Value::String(cle.clone()));
+            entree.insert(nom_valeur.to_string(), valeur.clone());
+            out.push((cle.clone(), une_entree(&Value::Object(entree), nom_valeur)));
+        }
+        out
+    }
+
+    /// L'OBJET D'UN FORMULAIRE, SES CASES BLANCHES VIDES : une case que la page laisse blanche (`""`, des blancs) n'y dit
+    /// rien, a toute profondeur (une case d'une structure, d'une ligne) ; elle s'ecrit nulle (`null`).
+    pub fn sans_textes_blancs(&self) -> Objet {
+        fn blanchir(v: &Value) -> Value {
+            match v {
+                Value::String(t) if t.trim().is_empty() => Value::Null,
+                Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), blanchir(x))).collect()),
+                Value::Array(a) => Value::Array(a.iter().map(blanchir).collect()),
+                x => x.clone(),
+            }
+        }
+        Objet(self.0.iter().map(|(k, x)| (k.clone(), blanchir(x))).collect())
+    }
+
     /// L'objet sans sa cle `cle`.
     pub fn retirer(&mut self, cle: &str) {
         self.0.remove(cle);
@@ -174,6 +216,65 @@ impl Objet {
     }
 }
 
+/// UNE ENTREE LUE SEULE (`Objet::chacune`, `Liste::chacun`) comme une saisie : sa faute, le chemin sous `sous` (vide pour la
+/// valeur elle-meme) et ce qui ne va pas.
+fn une_entree<T: DeserializeOwned>(v: &Value, sous: &str) -> Result<T, (String, String)> {
+    struct Remise(bool);
+    impl Drop for Remise {
+        fn drop(&mut self) {
+            EN_SAISIE.set(self.0);
+        }
+    }
+    let _remise = Remise(EN_SAISIE.replace(true));
+    let texte = v.to_string();
+    let mut d = serde_json::Deserializer::from_str(&texte);
+    match serde_path_to_error::deserialize(&mut d) {
+        Ok(t) => Ok(t),
+        Err(e) => {
+            let chemin = e.path().to_string();
+            let chemin = match chemin.strip_prefix(sous) {
+                Some(reste) => reste.trim_start_matches('.').to_string(),
+                None if chemin == "." => String::new(),
+                None => chemin,
+            };
+            Err((chemin, en_clair(&e.inner().to_string())))
+        }
+    }
+}
+
+/// LE TEXTE `texte` QUE LE MOTEUR POSE DANS UNE CASE (une forme declaree qu'il fabrique de la lisible), lu dans le type de
+/// sa case comme un changement `{nom_cle: cle, nom_valeur: texte}` qui se saisit : sa faute, le chemin et ce qui ne va pas.
+pub fn un_texte_pose<T: DeserializeOwned>(nom_cle: &str, cle: &str, nom_valeur: &str, texte: &str) -> Result<T, (String, String)> {
+    let mut entree = serde_json::Map::new();
+    entree.insert(nom_cle.to_string(), Value::String(cle.to_string()));
+    entree.insert(nom_valeur.to_string(), Value::String(texte.to_string()));
+    une_entree(&Value::Object(entree), nom_valeur)
+}
+
+/// UNE LISTE QUE SA FORME LIT ELEMENT PAR ELEMENT (les changements d'une fiche, `droit::fiche::Changements`) : chacun lu
+/// seul, une faute ne faisant pas taire les suivants (`chacun`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Liste(Vec<Value>);
+
+impl<'de> serde::Deserialize<'de> for Liste {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Liste, D::Error> {
+        Vec::<Value>::deserialize(d).map(Liste)
+    }
+}
+
+impl Liste {
+    /// Aucun element.
+    pub fn est_vide(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// CHAQUE ELEMENT LU SEUL EN SA FORME `T`, comme une saisie (`lire_saisie`) ; sa faute : le chemin sous `sous` et ce qui
+    /// ne va pas.
+    pub fn chacun<T: DeserializeOwned>(&self, sous: &str) -> Vec<Result<T, (String, String)>> {
+        self.0.iter().map(|v| une_entree(v, sous)).collect()
+    }
+}
+
 /// UNE CLE CONNUE QUE LE LOGICIEL NE LIT PAS : une note d'un fichier (`quoi`, `note`, `source` : atelier/AGENTS.md,
 /// « Chaque forme est declaree une fois »), ou une valeur que le fichier porte pour qui l'ecrit. La forme la nomme, pour
 /// refuser toute cle inconnue (`deny_unknown_fields`), et n'en garde rien : son type ne porte aucune valeur
@@ -188,29 +289,6 @@ pub enum Rien {}
 /// La valeur d'une cle non lue (`NonLue`) : n'importe quelle valeur JSON, parcourue et jetee.
 pub fn non_lue<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NonLue, D::Error> {
     <serde::de::IgnoredAny as serde::Deserialize>::deserialize(d).map(|_| std::marker::PhantomData)
-}
-
-/// UNE FORME QUE SA TABLE TYPE (`DeserializeSeed` : une saisie de fiche, que la table des cases lit case par case selon
-/// la forme de chacune, `declarations::champs::Lecture`) : la donnee `v` lue selon `table`, dans son texte, comme `lire`.
-#[track_caller]
-fn lire_selon<S, U>(v: &Value, table: S, phrase: &str) -> R<U>
-where
-    S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
-{
-    let texte = v.to_string();
-    let mut d = serde_json::Deserializer::from_str(&texte);
-    let mut suivi = serde_path_to_error::Track::new();
-    match table.deserialize(serde_path_to_error::Deserializer::new(&mut d, &mut suivi)) { Ok(u) => Ok(u), Err(e) => Err(refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e))) }
-}
-
-/// UNE FORME ECRITE (`Serialize`, une fiche typee) RELUE SELON UNE TABLE : ce qu'elle ecrit, lu par `lire_selon`.
-#[track_caller]
-pub fn relire_selon<T, S, U>(t: &T, table: S, phrase: &str) -> R<U>
-where
-    T: serde::Serialize + ?Sized,
-    S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
-{
-    lire_selon(&crate::ecriture::en_valeur(t), table, phrase)
 }
 
 /// Le fichier JSON `fichier` lu en `T` (`lire_texte`, sa lecture notee au registre d'un calcul suivi :
@@ -335,49 +413,6 @@ pub fn nombre_en_texte<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String,
 fn texte_a_virgule<'de, A: serde::de::MapAccess<'de>>(m: A) -> Result<String, A::Error> {
     use serde::Deserialize;
     serde_json::Number::deserialize(serde::de::value::MapAccessDeserializer::new(m)).map(|n| n.to_string())
-}
-
-/// La cle privee sous laquelle le lecteur JSON passe un nombre a virgule a un `visit_map` (`serde_json`,
-/// `arbitrary_precision`).
-const CLE_DU_NOMBRE: &str = "$serde_json::private::Number";
-
-/// CE QU'UN `visit_map` RECOIT D'UNE CASE QUI PEUT ETRE UN NOMBRE OU UN OBJET (`declarations::champs`) : un nombre a
-/// virgule, ou un vrai objet, rendu entier a son lecteur (`Table`, dont la premiere cle se relit).
-pub enum TableOuNombre<A> {
-    Nombre(NombreLu),
-    Table(Table<A>),
-}
-
-/// Un objet dont la premiere cle a deja ete lue (`table_ou_nombre`) : il la rend d'abord, puis la suite.
-pub struct Table<A> {
-    premiere: Option<String>,
-    reste: A,
-}
-
-/// `m` est-il un nombre a virgule (sa seule cle est la cle privee du lecteur JSON), ou un objet ?
-pub fn table_ou_nombre<'de, A: serde::de::MapAccess<'de>>(mut m: A) -> Result<TableOuNombre<A>, A::Error> {
-    let premiere: Option<String> = m.next_key()?;
-    if premiere.as_deref() == Some(CLE_DU_NOMBRE) {
-        let texte: String = m.next_value()?;
-        return match NombreLu::du_texte(&texte) {
-            Ok(n) => Ok(TableOuNombre::Nombre(n)),
-            Err(e) => Err(serde::de::Error::custom(format!("{} n'est pas un nombre ({})", texte, e))),
-        };
-    }
-    Ok(TableOuNombre::Table(Table { premiere, reste: m }))
-}
-
-impl<'de, A: serde::de::MapAccess<'de>> serde::de::MapAccess<'de> for Table<A> {
-    type Error = A::Error;
-    fn next_key_seed<K: serde::de::DeserializeSeed<'de>>(&mut self, seed: K) -> Result<Option<K::Value>, A::Error> {
-        match self.premiere.take() {
-            Some(cle) => seed.deserialize(serde::de::value::StringDeserializer::<A::Error>::new(cle)).map(Some),
-            None => self.reste.next_key_seed(seed),
-        }
-    }
-    fn next_value_seed<V: serde::de::DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, A::Error> {
-        self.reste.next_value_seed(seed)
-    }
 }
 
 /// UN NOMBRE JSON DE SON TEXTE (un decimal, un instant) : il s'ecrit tel quel, exact (`ecriture::nombre_ecrit`).
@@ -598,7 +633,10 @@ where
         Remplie::Dite(v) => v,
     };
     ranger_les_textes(&mut v, &mut Vec::new(), rangee);
-    T::deserialize(v).map(Remplie::Dite).map_err(serde::de::Error::custom)
+    // Relue depuis son texte JSON : un nombre a virgule y reste le texte ecrit (`arbitrary_precision`, `NombreEcrit`) ;
+    // lue de la `Value` meme, il arriverait en flottant.
+    let texte = serde_json::to_string(&v).map_err(serde::de::Error::custom)?;
+    serde_json::from_str::<T>(&texte).map(Remplie::Dite).map_err(serde::de::Error::custom)
 }
 
 /// Chaque texte de `v`, a son chemin `chemin`, range par `rangee`.
@@ -823,16 +861,6 @@ where
         }
     }
     d.deserialize_map(Lues(note, std::marker::PhantomData))
-}
-
-/// UNE FORME ECRITE (`Serialize` : une charge, une fiche composee) RELUE EN `T`, quand la phrase du refus nomme
-/// elle-meme la cle fautive : `phrase(chemin, detail)` la compose (le fichier d'une compagnie, qu'elle corrige :
-/// `droit::fiche`).
-#[track_caller]
-pub fn relire_en_phrase<T: DeserializeOwned>(t: &(impl serde::Serialize + ?Sized), phrase: impl Fn(&str, &str) -> String) -> R<T> {
-    let texte = crate::ecriture::en_valeur(t).to_string();
-    let mut d = serde_json::Deserializer::from_str(&texte);
-    match serde_path_to_error::deserialize(&mut d) { Ok(t) => Ok(t), Err(e) => Err(refus_en_phrase(&phrase, &e)) }
 }
 
 /// `lire_en_phrase`, du fichier JSON `fichier` (sa lecture notee au registre d'un calcul suivi, `fichiers::lire_texte`) ;

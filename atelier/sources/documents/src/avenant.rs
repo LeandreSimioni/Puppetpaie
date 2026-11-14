@@ -11,7 +11,8 @@
 
 use droit::fiche::Lue as _;
 
-use crate::marqueurs::{pour_la_fabrique, Marqueur, Valeurs};
+use crate::marqueurs::{pour_la_fabrique, Valeurs};
+use droit::marqueurs::Marqueur;
 use fabrique_pdf::modele::{self, Modele};
 use serde::Serialize;
 
@@ -19,17 +20,12 @@ use crate::bulletin::{convention_du_contrat, fmt_eur};
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie, FormeDeRemuneration};
-use engagement::saisie::Valeur;
+use engagement::saisie::{Champ, Valeur};
 use socle::date::Jour;
 use socle::mois::Mois;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use socle::nfkc::nfkc;
 use socle::echec::{refus, R};
-
-
-/// Ce qui remplace une valeur qui n'est pas un texte : elle ne se refuse que si le modele s'en
-/// sert. Une phrase qui la porte est un refus.
-const INVALIDE: &str = "\u{0}\u{0}VALEUR-SANS-TEXTE\u{0}\u{0}";
 
 
 // ------------------------------------------------------ le texte qu'on compare
@@ -343,30 +339,24 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
         },
     );
     let emploi_texte = lisible(&s.emploi_affichage, &s.emploi, "emploi")?;
-    if emploi_texte == INVALIDE {
-        return Err(refus("l'emploi n'est pas un texte"));
-    }
     poser(Marqueur::SalarieEmploi, emploi_texte.to_lowercase());
     poser(Marqueur::SalarieQualiteDe, de_devant(&emploi_texte).to_string());
-    // Un numero que le moteur ne porte pas (contrat pas encore numerote) n'est pas devine ni pris au compteur.
-    poser(
-        Marqueur::ContratNumero,
-        match e.numero.as_deref() {
-            Some(n) if !n.is_empty() => n.to_string(),
-            _ => INVALIDE.to_string(),
-        },
-    );
+    // Un numero que le moteur ne porte pas (contrat pas encore numerote) n'est pas devine ni pris au compteur (regle 4).
+    let Some(numero) = e.numero.as_ref() else {
+        return Err(socle::refus!(
+            "Le contrat de {} du {} n'a pas de numéro (S21.G00.40.009) : il ne s'écrit pas. Valider l'engagement le lui donne.",
+            e.f.salarie,
+            e.f.debut.jj_mm_aaaa()
+        ));
+    };
+    poser(Marqueur::ContratNumero, numero.to_string());
     poser(Marqueur::ContratDebut, e.f.debut.jj_mm_aaaa());
     Ok(m)
 }
 
 /// Le paragraphe tel qu'il se LIT sur le contrat imprime.
 fn texte_brut(texte: &str, vals: &modele::Valeurs) -> R<String> {
-    let t = modele::texte_brut(texte, vals).map_err(crate::fabrique::echec)?;
-    if t.contains(INVALIDE) {
-        return Err(refus("une valeur du modele n'est pas un texte"));
-    }
-    Ok(t)
+    modele::texte_brut(texte, vals).map_err(crate::fabrique::echec)
 }
 
 // ------------------------------------------------- ce que l'avenant modifie
@@ -476,27 +466,27 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
 
 /// Un terme du contrat, tel que l'avenant d'un contrat signe hors du logiciel le nomme : son titre, et son nom dans une
 /// phrase.
-fn terme_nomme(terme: &str) -> (&'static str, &'static str) {
+fn terme_nomme(terme: Champ) -> (&'static str, &'static str) {
     match terme {
-        "salaire_mensuel" => ("Rémunération mensuelle brute", "la rémunération mensuelle brute"),
-        "quotite_contrat" => ("Durée du travail", "la durée du travail"),
-        "quotite_reference" => ("Durée de référence", "la durée de référence"),
-        "modalite_temps_travail" => ("Temps de travail", "la modalité du temps de travail"),
-        "emploi" => ("Emploi", "l'emploi"),
-        "metier" => ("Métier", "le métier"),
-        "cadre" => ("Statut de cadre", "le statut de cadre"),
-        "statut" => ("Statut", "le statut"),
-        "nature" => ("Nature du contrat", "la nature du contrat"),
-        "motif_recours" => ("Motif de recours", "le motif de recours"),
-        "lieu" => ("Lieu de travail", "le lieu de travail"),
-        "spectacle" => ("Spectacle", "le spectacle"),
+        Champ::SalaireMensuel => ("Rémunération mensuelle brute", "la rémunération mensuelle brute"),
+        Champ::QuotiteContrat => ("Durée du travail", "la durée du travail"),
+        Champ::QuotiteReference => ("Durée de référence", "la durée de référence"),
+        Champ::ModaliteTempsTravail => ("Temps de travail", "la modalité du temps de travail"),
+        Champ::Emploi => ("Emploi", "l'emploi"),
+        Champ::Metier => ("Métier", "le métier"),
+        Champ::Cadre => ("Statut de cadre", "le statut de cadre"),
+        Champ::Statut => ("Statut", "le statut"),
+        Champ::Nature => ("Nature du contrat", "la nature du contrat"),
+        Champ::MotifRecours => ("Motif de recours", "le motif de recours"),
+        Champ::Lieu => ("Lieu de travail", "le lieu de travail"),
+        Champ::Spectacle => ("Spectacle", "le spectacle"),
         _ => ("Clause du contrat", "une clause du contrat"),
     }
 }
 
 /// La valeur d'un terme en clair : un montant en euros, une duree en heures par mois (S21.G00.40.013), une nature, un
 /// motif ou un spectacle par son nom.
-fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v: &Valeur) -> R<String> {
+fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v: &Valeur) -> R<String> {
     let texte = match v {
         Valeur::Nature(n) => return Ok(n.proprietes()?.libelle.clone()),
         Valeur::Texte(s) => s.clone(),
@@ -509,13 +499,13 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
         match v {
             Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).dec(),
             Valeur::Texte(s) => socle::num::decimal_a_virgule(s).ok_or_else(|| refus(socle::num::illisible(s))),
-            Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme, texte)),
+            Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
         }
     };
     Ok(match terme {
-        "salaire_mensuel" => socle::texte::euros(nombre()?),
-        "quotite_contrat" | "quotite_reference" => format!("{} heures par mois", socle::texte::virgule(nombre()?)),
-        "cadre" => {
+        Champ::SalaireMensuel => socle::texte::euros(nombre()?),
+        Champ::QuotiteContrat | Champ::QuotiteReference => format!("{} heures par mois", socle::texte::virgule(nombre()?)),
+        Champ::Cadre => {
             let cadre = match v {
                 Valeur::Oui(b) => *b,
                 Valeur::Nombre(n) => !n.est_nul(),
@@ -524,9 +514,9 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
             };
             if cadre { "cadre".into() } else { "non cadre".into() }
         }
-        "motif_recours" => droit::natures::MotifDeRecours::du_code(&texte).and_then(|m| nat.libelle_motif_recours(m)).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
-        "spectacle" => droit::fiche::Lue::ecrite(&ctx.spectacle(&texte)?.titre, "titre")?.to_string(),
-        "emploi" => format!("« {} »", texte),
+        Champ::MotifRecours => droit::natures::MotifDeRecours::du_code(&texte).and_then(|m| nat.libelle_motif_recours(m)).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
+        Champ::Spectacle => droit::fiche::Lue::ecrite(&ctx.spectacle(&texte)?.titre, "titre")?.to_string(),
+        Champ::Emploi => format!("« {} »", texte),
         _ => texte,
     })
 }
@@ -550,8 +540,8 @@ pub fn changements_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, change
     changes
         .iter()
         .map(|c| {
-            let (titre, nom) = terme_nomme(c.terme.nom());
-            let dit = |v: &Option<Valeur>| v.as_ref().map(|x| valeur_en_clair(ctx, nat, c.terme.nom(), x)).transpose();
+            let (titre, nom) = terme_nomme(c.terme);
+            let dit = |v: &Option<Valeur>| v.as_ref().map(|x| valeur_en_clair(ctx, nat, c.terme, x)).transpose();
             let (avant, apres) = (dit(&c.avant)?, dit(&c.apres)?);
             let quand = format!("À compter du {}", c.jour.jj_mm_aaaa());
             let phrase = match (&avant, &apres) {

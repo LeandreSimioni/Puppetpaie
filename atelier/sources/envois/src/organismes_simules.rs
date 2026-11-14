@@ -55,11 +55,18 @@ pub struct TauxPasAnnonce {
     pub taux: Decimal,
 }
 
+/// Le code risque annonce, range comme une saisie (`CodeRisqueAt::rangee` : `92.3AD` se lit `923AD`).
+fn code_risque_annonce<'de, D: serde::Deserializer<'de>>(d: D) -> Result<droit::bareme::CodeRisqueAt, D::Error> {
+    let texte = String::deserialize(d)?;
+    droit::bareme::CodeRisqueAt::lire(&droit::bareme::CodeRisqueAt::rangee(&texte)).map_err(|e| serde::de::Error::custom(e.phrase))
+}
+
 /// La CARSAT notifie ce taux a l'etablissement.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TauxAtmpAnnonce {
-    pub code_risque: String,
+    #[serde(deserialize_with = "code_risque_annonce")]
+    pub code_risque: droit::bareme::CodeRisqueAt,
     pub taux: Decimal,
     pub date_effet: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,9 +174,9 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
             gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: deux_decimales(n) });
         }
         Annonce::TauxAtmp(t) => {
-            let code = t.code_risque.replace(['.', ' '], "").to_uppercase();
+            let code = t.code_risque;
             let n = t.taux;
-            if code.len() != 5 || !(Decimal::ZERO..Decimal::from(20)).contains(&n) || n.is_zero() {
+            if code.as_str().len() != 5 || !(Decimal::ZERO..Decimal::from(20)).contains(&n) || n.is_zero() {
                 return Err(socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp").reclasser(Classe::Illisible));
             }
             gardee.taux_atmp = Some(TauxAtmpAnnonce {
@@ -208,14 +215,11 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<Decimal> {
     let n = socle::date::jours_du_mois(an, mois);
     let premier = Jour::nouveau(an, mois, 1).expect("mois");
     let dernier = Jour::nouveau(an, mois, n).expect("mois");
-    let mut par_jour: BTreeMap<String, Vec<Decimal>> = BTreeMap::new();
+    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, Vec<Decimal>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
-            let ind = &d.individus[k.individu];
-            let qui = match (&ind.nir, &ind.ntt) {
-                (Some(nir), _) => nir.to_string(),
-                (None, Some(ntt)) => format!("NTT {}", ntt),
-                (None, None) => return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020")),
+            let Some(qui) = d.individus[k.individu].identifiant() else {
+                return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
             };
             let jours = par_jour.entry(qui).or_insert_with(|| vec![Decimal::ZERO; n as usize]);
             if k.motif_recours == Some(droit::natures::MotifDeRecours::Remplacement) {
@@ -315,7 +319,7 @@ fn mois_de(l: &Ligne) -> R<Mois> {
 /// sous le mois de son fait. `None` : le fichier n'est plus la.
 fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
     let Some(fichier) = l.fichier() else { return Ok(None) };
-    let chemin = racine.join("sorties").join(mois_de(l)?.to_string()).join(fichier);
+    let chemin = documents::fichier_depose(&racine.join("sorties").join(mois_de(l)?.to_string()), fichier.texte());
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -470,7 +474,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
             "<taux_AT>{}{}<code_risque>{}</code_risque>{}<taux>{}</taux><date_effet>{}</date_effet><date_calcul>{}</date_calcul></taux_AT>",
             facultatif(&t.code_ctn, "code_ctn"),
             facultatif(&t.section, "section"),
-            echappe(&t.code_risque),
+            echappe(t.code_risque.as_str()),
             facultatif(&t.bureau, "temoin_bureau"),
             t.taux,
             t.date_effet.aaaammjj(),

@@ -3,13 +3,15 @@
 //! et les AEM en PDF lus, chaque fiche que l'import cree, complete ou laisse (`FicheImportee`), et leurs phrases
 //! (`Importation::dire`, une fois tout ecrit).
 //!
-//! Ce que porte une fiche, et la case d'un ecart, sont des saisies de leur fiche (`declarations::champs::Saisie`,
-//! `Valeur`) ; ses anomalies, celles de sa verification (`declarations::champs::Anomalie`).
+//! Ce que porte une fiche est la fiche proposee (`crate::proposee::FicheProposee`) ; la case d'un ecart et ce qui
+//! complete une fiche, la valeur typee d'une case (`droit::fiche::ValeurDeCase`) ; ses anomalies, celles de sa
+//! verification (`declarations::champs::Anomalie`).
 
 use serde::Serialize;
 
-use declarations::champs::{Anomalie, Saisie, Valeur};
-use droit::fiche::{CaseDeFiche, NomDeFiche};
+use crate::proposee::FicheProposee;
+use declarations::champs::Anomalie;
+use droit::fiche::{CaseDeFiche, FicheNommee, NomDeFiche, ValeurDeCase};
 
 use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
@@ -165,17 +167,55 @@ pub fn pastilles_des_sorts() -> ParSort<Pastille> {
 
 // ------------------------------------------------------------------ d'ou vient une valeur
 
-/// La piece d'ou vient une valeur reprise.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// LA PIECE D'OU VIENT UNE VALEUR REPRISE : une piece de l'import (la DSN, un bulletin, un certificat, une AEM).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Source {
-    #[serde(rename = "dsn")]
     Dsn,
-    #[serde(rename = "bulletin")]
     Bulletin,
-    #[serde(rename = "certificat")]
     Certificat,
-    #[serde(rename = "AEM")]
     Aem,
+}
+
+impl Serialize for Source {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+impl Source {
+    /// Son nom, tel que la reponse et le compte rendu l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            Source::Dsn => "dsn",
+            Source::Bulletin => "bulletin",
+            Source::Certificat => "certificat",
+            Source::Aem => "AEM",
+        }
+    }
+}
+
+/// CE QUI ATTESTE UN CONTRAT, OU LA PAIE QU'UN BULLETIN COMPLETE : une piece de cet import (`Source`), ou l'historique
+/// deja repris. Il s'ecrit par son nom, celui de la piece ou « historique ».
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Attestant {
+    Piece(Source),
+    Historique,
+}
+
+impl Serialize for Attestant {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+impl Attestant {
+    /// Son nom, tel que la reponse et le compte rendu l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            Attestant::Piece(p) => p.nom(),
+            Attestant::Historique => "historique",
+        }
+    }
 }
 
 /// D'ou vient une valeur reprise : la DSN d'un mois, un bulletin (fichier, page), un certificat Congés Spectacles ou une
@@ -226,21 +266,6 @@ impl Origine {
     }
 }
 
-/// UNE CASE, EN MOTS DANS UNE PHRASE : un texte ou un nombre tel qu'il s'ecrit, oui ou non, des mots a la suite, une
-/// structure (`cle valeur`), ses lignes (chacune ses valeurs).
-pub fn en_mots(v: &Valeur) -> String {
-    let valeurs = |s: &Saisie| s.cases().iter().map(|(_, x)| en_mots(x)).collect::<Vec<_>>().join(" ");
-    match v {
-        Valeur::Texte(t) => t.clone(),
-        Valeur::Nombre(n) => n.to_string(),
-        Valeur::OuiNon(true) => "oui".to_string(),
-        Valeur::OuiNon(false) => "non".to_string(),
-        Valeur::Mots(l) => l.join(", "),
-        Valeur::Bloc(b) => b.cases().iter().map(|(k, x)| format!("{} {}", k, en_mots(x))).collect::<Vec<_>>().join(", "),
-        Valeur::Lignes(l) => l.iter().map(valeurs).collect::<Vec<_>>().join(", "),
-    }
-}
-
 // ------------------------------------------------------------------ une fiche
 
 /// Ou en est une fiche que l'import reprend.
@@ -257,7 +282,7 @@ pub enum EtatFiche {
 #[derive(Debug, Clone, Serialize)]
 pub struct Completee {
     pub champ: CaseDeFiche,
-    pub valeur: Valeur,
+    pub valeur: ValeurDeCase,
     #[serde(flatten)]
     pub origine: Origine,
     pub dit: String,
@@ -267,7 +292,7 @@ pub struct Completee {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum DitPar {
-    Dsn { dsn: Valeur, mois: Mois },
+    Dsn { dsn: ValeurDeCase, mois: Mois },
     Bulletin { bulletin: String, fichier: String, page: usize },
     Certificat { certificat: String, fichier: String, page: usize },
     Aem { aem: String, fichier: String, page: usize },
@@ -278,36 +303,81 @@ pub enum DitPar {
 pub struct Ecart {
     pub champ: CaseDeFiche,
     /// La case de la fiche, telle qu'elle est (un texte, ou une structure : la banque).
-    pub fiche: Valeur,
+    pub fiche: ValeurDeCase,
     #[serde(flatten)]
     pub par: DitPar,
     pub dit: String,
 }
 
 impl Ecart {
-    pub fn new(champ: impl Into<CaseDeFiche>, fiche: Valeur, par: DitPar) -> Ecart {
+    pub fn new(champ: impl Into<CaseDeFiche>, fiche: ValeurDeCase, par: DitPar) -> Ecart {
         let (ou, lu) = match &par {
             DitPar::Certificat { certificat, fichier, page } => (format!("le certificat ({}, page {}) disait", fichier, page), certificat.clone()),
             DitPar::Aem { aem, fichier, page } => (format!("l'AEM ({}, page {}) disait", fichier, page), aem.clone()),
             DitPar::Bulletin { bulletin, fichier, page } => (format!("le bulletin ({}, page {}) disait", fichier, page), bulletin.clone()),
-            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&mois.libelle(socle::mois::Graphie::Accentuee))), en_mots(dsn)),
+            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&mois.libelle(socle::mois::Graphie::Accentuee))), dsn.en_mots()),
         };
-        let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, en_mots(&fiche));
+        let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, fiche.en_mots());
         Ecart { champ: champ.into(), fiche, par, dit }
+    }
+}
+
+/// LA FICHE QUE L'IMPORT VISE : une fiche nommee (qui existe, ou que l'import vient d'ecrire), ou la sorte d'une fiche
+/// encore a creer, qui n'a pas de cle. Elle s'ecrit en deux champs, `nom` et `cle` (la cle de la fiche nommee, `null`
+/// pour l'entreprise et pour une fiche a creer).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FicheVisee {
+    Nommee(FicheNommee),
+    ACreer(NomDeFiche),
+}
+
+impl FicheVisee {
+    /// Le nom de la fiche.
+    pub fn nom(&self) -> NomDeFiche {
+        match self {
+            FicheVisee::Nommee(f) => f.nom(),
+            FicheVisee::ACreer(n) => *n,
+        }
+    }
+
+    /// La fiche nommee ; une fiche a creer n'en est pas une.
+    pub fn nommee(&self) -> Option<&FicheNommee> {
+        match self {
+            FicheVisee::Nommee(f) => Some(f),
+            FicheVisee::ACreer(_) => None,
+        }
+    }
+}
+
+/// L'ecriture d'une `FicheVisee` : son nom, et la cle d'une fiche nommee.
+#[derive(Serialize)]
+struct FicheViseeEcrite<'a> {
+    nom: NomDeFiche,
+    cle: Option<&'a str>,
+}
+
+impl Serialize for FicheVisee {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let cle = match self {
+            FicheVisee::Nommee(FicheNommee::Salarie(k)) => Some(k.as_str()),
+            FicheVisee::Nommee(FicheNommee::Spectacle(k)) => Some(k.as_str()),
+            FicheVisee::Nommee(FicheNommee::Entreprise) | FicheVisee::ACreer(_) => None,
+        };
+        FicheViseeEcrite { nom: self.nom(), cle }.serialize(s)
     }
 }
 
 /// UNE FICHE QUE L'IMPORT CREE, COMPLETE OU LAISSE, ou sur laquelle il a a redire.
 #[derive(Debug, Clone, Serialize)]
 pub struct FicheImportee {
-    pub nom: NomDeFiche,
-    pub cle: Option<String>,
+    #[serde(flatten)]
+    pub fiche: FicheVisee,
     pub libelle: String,
     pub etat: EtatFiche,
     pub ecarts: Vec<Ecart>,
     pub anomalies: Vec<Anomalie>,
     /// Ce que porte une fiche a creer.
-    pub donnees: Saisie,
+    pub donnees: FicheProposee,
     pub completer: Vec<Completee>,
     /// La piece d'ou vient une fiche a creer, quand ce n'est ni une DSN ni un bulletin.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -319,15 +389,14 @@ pub struct FicheImportee {
 }
 
 impl FicheImportee {
-    pub fn new(nom: NomDeFiche, cle: Option<&str>, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
+    pub fn new(fiche: FicheVisee, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &FicheProposee) -> FicheImportee {
         let mut f = FicheImportee {
-            nom,
-            cle: cle.map(String::from),
             libelle: libelle.to_string(),
             etat,
             ecarts: Vec::new(),
             anomalies: Vec::new(),
-            donnees: Saisie::default(),
+            donnees: FicheProposee::vide(fiche.nom()),
+            fiche,
             completer: Vec::new(),
             lu_dans: None,
             lu_dans_dit: None,
@@ -339,11 +408,18 @@ impl FicheImportee {
     }
 
     /// Ce que porte la fiche a creer (ses cases, sans ses notes), et ses anomalies.
-    pub fn poser(&mut self, donnees: &Saisie, anomalies: Vec<Anomalie>) {
-        let mut cases = Saisie::default();
-        crate::proposee::fondre(&mut cases, donnees);
-        self.donnees = cases;
+    pub fn poser(&mut self, donnees: &FicheProposee, anomalies: Vec<Anomalie>) {
+        self.donnees = donnees.sans_notes();
         self.anomalies = anomalies;
+    }
+
+    /// Des anomalies de plus (une piece de plus qui la complete) : une anomalie deja dite ne se redit pas.
+    pub fn ajouter_anomalies(&mut self, anomalies: Vec<Anomalie>) {
+        for a in anomalies {
+            if !self.anomalies.contains(&a) {
+                self.anomalies.push(a);
+            }
+        }
     }
 
     /// Les ecarts d'une piece de plus : une case deja notee garde le sien (la DSN passe avant le bulletin).
@@ -357,18 +433,17 @@ impl FicheImportee {
 
     /// Note ce qui serait complete et d'ou ca vient. Une case deja notee garde sa premiere origine
     /// (`completer::ajouter`).
-    pub fn noter(&mut self, champs: &Saisie, origine: &Origine) {
-        for (k, v) in champs.cases() {
+    pub fn noter(&mut self, valeurs: &[(CaseDeFiche, ValeurDeCase)], origine: &Origine) {
+        for (k, v) in valeurs {
             if !self.completer.iter().any(|c| c.champ == *k) {
                 self.completer.push(Completee { champ: *k, valeur: v.clone(), origine: origine.clone(), dit: String::new() });
             }
         }
     }
 
-    /// Le numero d'objet d'un spectacle a creer. L'import l'y pose d'un `NumeroObjetSpectacle` (une AEM, un bulletin) : un
-    /// texte qui ne se lit pas en numero d'objet est une faute du logiciel, qui se dit.
-    pub fn numero_objet(&self) -> socle::echec::R<Option<droit::fiche::NumeroObjetSpectacle>> {
-        self.donnees.mot(droit::fiche::CaseSpectacle::NumeroObjet).map(|n| droit::fiche::NumeroObjetSpectacle::lire(&n)).transpose()
+    /// Le numero d'objet d'un spectacle a creer.
+    pub fn numero_objet(&self) -> Option<&droit::fiche::NumeroObjetSpectacle> {
+        self.donnees.spectacle().and_then(|s| s.numero_objet.as_ref())
     }
 
     /// La fiche s'ecrit-elle : a creer, ou existante avec des cases a completer.
@@ -388,7 +463,7 @@ impl FicheImportee {
         self.lu_dans_dit = self.lu_dans.as_ref().map(|o| format!("Lu dans {}", o.en_mots()));
         let completee = self.etat == EtatFiche::Completee;
         for c in &mut self.completer {
-            c.dit = format!("{} « {} », lu dans {} : la case était vide", if completee { "a reçu" } else { "recevra" }, en_mots(&c.valeur), c.origine.en_mots());
+            c.dit = format!("{} « {} », lu dans {} : la case était vide", if completee { "a reçu" } else { "recevra" }, c.valeur.en_mots(), c.origine.en_mots());
         }
     }
 }
@@ -418,8 +493,8 @@ pub enum EtatContrat {
 #[derive(Debug, Clone, Serialize)]
 pub struct EcartPaie {
     pub champ: &'static str,
-    /// D'ou vient la paie : `dsn`, `historique` ou `bulletin`.
-    pub source: &'static str,
+    /// D'ou vient la paie : la DSN, l'historique, ou le bulletin lui-meme.
+    pub source: Attestant,
     pub valeur: String,
     pub bulletin: String,
     pub le_bulletin_l_emporte: bool,
@@ -428,7 +503,7 @@ pub struct EcartPaie {
 }
 
 impl EcartPaie {
-    pub fn new(champ: &'static str, source: &'static str, valeur: String, gagne: bool, bulletin: String) -> EcartPaie {
+    pub fn new(champ: &'static str, source: Attestant, valeur: String, gagne: bool, bulletin: String) -> EcartPaie {
         let champ_dit = match champ {
             "brut" => "brut",
             "net_imposable" => "net imposable",
@@ -453,7 +528,7 @@ fn ecrit_salarie_de_la_page<S: serde::Serializer>(salarie: &Option<Option<droit:
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct InfosPage {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub logiciel: Option<String>,
+    pub logiciel: Option<engagement::importe::LogicielDUnBulletin>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub numero: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -21,7 +21,7 @@
 use import::dsn_aem::LectureDsn;
 use declarations::dsn_lue::Adhesion;
 use droit::contexte::Contexte;
-use droit::organismes::Ligne;
+use droit::organismes::{Ligne, RoleDuContrat};
 
 /// Le libelle d'un contrat attendu, s'il en dit un.
 fn libelle_de(l: &Ligne) -> Option<String> {
@@ -69,12 +69,12 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
 
 /// Le role d'un contrat attendu (`role` de `organismes-base.json` : `prevoyance`, `sante`) que le libelle d'une adhesion
 /// nomme, et lui seul : « SANTE CCNEAC » nomme la sante, « PREVOYANCE CCNEAC » la prevoyance, « CCNEAC » rien.
-fn role_nomme(libelle: &str) -> Option<&'static str> {
+fn role_nomme(libelle: &str) -> Option<RoleDuContrat> {
     let mots = import::bulletin_lu::jetons(libelle);
     let a = |m: &str| mots.iter().any(|x| x == m);
     match (a("prevoyance"), a("sante")) {
-        (true, false) => Some("prevoyance"),
-        (false, true) => Some("sante"),
+        (true, false) => Some(RoleDuContrat::Prevoyance),
+        (false, true) => Some(RoleDuContrat::Sante),
         _ => None,
     }
 }
@@ -109,14 +109,14 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
         return Ok(());
     }
     // Le role du contrat attendu d'une ligne (`prevoyance`, `sante`), s'il en a un.
-    let role_de = |l: &Ligne| attendus.iter().find(|s| s.cle.trim() == l.cle).and_then(|s| s.role.as_deref()).map(str::trim).map(str::to_string);
+    let role_de = |l: &Ligne| attendus.iter().find(|s| s.cle == l.cle).and_then(|s| s.role);
     let mut paires: Vec<(&Ligne, &Adhesion, bool)> = Vec::new();
     if let ([l], [a]) = (a_saisir.as_slice(), libres.as_slice()) {
         paires.push((l, a, false));
     } else {
         for l in &a_saisir {
             let r = role_de(l);
-            let siens: Vec<&&Adhesion> = libres.iter().filter(|a| r.is_some() && role_nomme(&libelle(a)) == r.as_deref()).collect();
+            let siens: Vec<&&Adhesion> = libres.iter().filter(|a| r.is_some() && role_nomme(&libelle(a)) == r).collect();
             let rivaux = a_saisir.iter().filter(|x| role_de(x) == r).count();
             if let ([a], 1) = (siens.as_slice(), rivaux) {
                 paires.push((l, a, true));
@@ -124,16 +124,27 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
         }
     }
     let organisme = |a: &Adhesion| a.organisme.as_ref().map(|o| o.to_string());
+    // La saisie est celle de l'ecran (`organismes-enregistrer`), lue par sa porte (`Saisie::lue`).
     let mut saisies = std::collections::BTreeMap::new();
+    let mut lues = Ok(());
     for (l, a, _) in &paires {
-        // La saisie est celle de l'ecran (`organismes-enregistrer`) : une case vide ne s'y ecrit pas `""`.
-        let libelle = socle::forme::TexteDit::lire(&libelle(a))?;
-        let organisme = organisme(a).as_deref().map(socle::forme::TexteDit::lire).transpose()?;
-        saisies.insert(l.cle.clone(), droit::organismes::Saisie { libelle: Some(libelle), organisme });
+        match droit::organismes::Saisie::lue(Some(&libelle(a)), organisme(a).as_deref()) {
+            Ok(s) => {
+                saisies.insert(l.cle.clone(), s);
+            }
+            Err(e) => {
+                lues = Err(e);
+                break;
+            }
+        }
     }
-    let enregistre = match saisies.is_empty() {
-        true => false,
-        false => match compagnie::organismes::enregistrer(ctx, compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)) {
+    let enregistre = match (lues, saisies.is_empty()) {
+        (Err(e), _) => {
+            faits.push(format!("Les contrats de la DSN reprise ne s'enregistrent pas : {}", e.phrase));
+            false
+        }
+        (Ok(()), true) => false,
+        (Ok(()), false) => match compagnie::organismes::enregistrer(ctx, compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)) {
             Ok(_) => true,
             Err(e) => {
                 faits.push(format!("Les contrats de la DSN reprise ne s'enregistrent pas : {}", e.phrase));

@@ -26,6 +26,133 @@ pub fn en_valeur<T: Serialize + ?Sized>(v: &T) -> Value {
     }
 }
 
+/// CE QU'UNE CASE ECRIT, tel que son fichier l'ecrit : rien (nulle), un texte, un nombre (son ecriture), oui ou non, une
+/// structure (un objet ou une liste) qui porte quelque chose, ou une structure sans rien dedans (`{}`, `[]` : une liste de
+/// jours qui n'en coche aucun). C'est la valeur typee dans son ecriture, pas un texte tape : ce que lisent les regles de
+/// `champs-base.json`, ecrites dans la meme ecriture (`declarations::champs`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MotEcrit {
+    Vide,
+    Mot(String),
+    /// Un nombre, tel qu'il s'ecrit : les regles de forme d'un texte (`champs-base.json`) ne s'y appliquent pas.
+    Nombre(String),
+    OuiNon(bool),
+    Structure,
+    StructureVide,
+}
+
+impl MotEcrit {
+    /// Le mot ecrit, s'il en est un (un texte ou un nombre).
+    pub fn mot(&self) -> Option<&str> {
+        match self {
+            MotEcrit::Mot(m) | MotEcrit::Nombre(m) => Some(m),
+            MotEcrit::Vide | MotEcrit::OuiNon(_) | MotEcrit::Structure | MotEcrit::StructureVide => None,
+        }
+    }
+}
+
+/// CE QU'ECRIT LA VALEUR `v` (`MotEcrit`), par la seule ecriture du logiciel (`en_valeur`).
+pub fn mot<T: Serialize + ?Sized>(v: &T) -> MotEcrit {
+    mot_de_la_valeur(&en_valeur(v))
+}
+
+/// CE QU'ECRIT LA CASE AU BOUT DE `chemin` DANS LA VALEUR `v` (les cles des structures qui y menent) : vide si une
+/// structure du chemin ne la porte pas.
+pub fn mot_au_chemin<T: Serialize + ?Sized>(v: &T, chemin: &[&str]) -> MotEcrit {
+    let valeur = en_valeur(v);
+    let mut ici = &valeur;
+    for cle in chemin {
+        match ici.get(*cle) {
+            Some(x) => ici = x,
+            None => return MotEcrit::Vide,
+        }
+    }
+    mot_de_la_valeur(ici)
+}
+
+/// LA VALEUR D'UNE CASE D'UNE FICHE, ecrite comme son fichier l'ecrit (la valeur typee, rien de tape) : ce que la boite
+/// « Ce qui change » et l'historique d'une fiche montrent.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct ValeurDeCase(Value);
+
+impl ValeurDeCase {
+    /// La valeur `v` ecrite ; nulle, aucune.
+    pub fn de<T: Serialize + ?Sized>(v: &T) -> Option<ValeurDeCase> {
+        let valeur = en_valeur(v);
+        (!valeur.is_null()).then_some(ValeurDeCase(valeur))
+    }
+
+    /// Un texte ecrit tel quel (une ligne d'un autre etablissement, dite en mots).
+    pub fn texte(t: String) -> ValeurDeCase {
+        ValeurDeCase(Value::String(t))
+    }
+
+    /// Ce qu'elle ecrit (`MotEcrit`).
+    pub fn ecrite(&self) -> MotEcrit {
+        mot_de_la_valeur(&self.0)
+    }
+
+    /// Les cases d'une structure, chacune avec sa valeur (une case nulle n'en a pas) ; autre chose qu'une structure, aucune.
+    pub fn cases(&self) -> Option<Vec<(String, Option<ValeurDeCase>)>> {
+        match &self.0 {
+            Value::Object(o) => Some(o.iter().map(|(k, x)| (k.clone(), (!x.is_null()).then(|| ValeurDeCase(x.clone())))).collect()),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => None,
+        }
+    }
+
+    /// Une liste : chacun de ses elements.
+    pub fn elements(&self) -> Option<Vec<ValeurDeCase>> {
+        match &self.0 {
+            Value::Array(l) => Some(l.iter().cloned().map(ValeurDeCase).collect()),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => None,
+        }
+    }
+
+    /// Le nombre qu'elle dit : un nombre, ou un texte qui en ecrit un (`num::dec_texte`).
+    pub fn nombre(&self) -> Option<crate::num::Decimal> {
+        let ecrit = match &self.0 {
+            Value::Number(n) => nombre_ecrit(n),
+            Value::String(t) => t.clone(),
+            Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => return None,
+        };
+        match crate::num::dec_texte(&ecrit) {
+            Ok(d) => Some(d),
+            Err(_) => None,
+        }
+    }
+
+    /// LA VALEUR EN MOTS, pour une phrase : un texte, un nombre ecrit, oui ou non, des mots separes, les cases d'une
+    /// structure (« cle valeur »), le nombre de lignes d'une liste de structures.
+    pub fn en_mots(&self) -> String {
+        fn mots(v: &Value) -> String {
+            match v {
+                Value::Null => "vide".to_string(),
+                Value::String(t) if t.trim().is_empty() => "vide".to_string(),
+                Value::String(t) => t.clone(),
+                Value::Number(n) => nombre_ecrit(n),
+                Value::Bool(b) => (if *b { "oui" } else { "non" }).to_string(),
+                Value::Array(l) if l.iter().any(Value::is_object) => format!("{} lignes", l.len()),
+                Value::Array(l) => l.iter().map(mots).collect::<Vec<_>>().join(", "),
+                Value::Object(o) => o.iter().map(|(k, x)| format!("{} {}", k, mots(x))).collect::<Vec<_>>().join(", "),
+            }
+        }
+        mots(&self.0)
+    }
+}
+
+fn mot_de_la_valeur(v: &Value) -> MotEcrit {
+    match v {
+        Value::Null => MotEcrit::Vide,
+        Value::String(t) => MotEcrit::Mot(t.clone()),
+        Value::Number(n) => MotEcrit::Nombre(nombre_ecrit(n)),
+        Value::Bool(b) => MotEcrit::OuiNon(*b),
+        Value::Array(l) if l.is_empty() => MotEcrit::StructureVide,
+        Value::Object(o) if o.is_empty() => MotEcrit::StructureVide,
+        Value::Array(_) | Value::Object(_) => MotEcrit::Structure,
+    }
+}
+
 /// LA FORME `t` ECRITE EN OBJET (`forme::Objet`) : `None` si elle s'ecrit autre chose qu'un objet.
 pub fn en_objet<T: Serialize + ?Sized>(t: &T) -> Option<crate::forme::Objet> {
     match en_valeur(t) {

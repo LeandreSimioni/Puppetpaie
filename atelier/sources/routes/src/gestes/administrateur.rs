@@ -52,7 +52,7 @@ use compagnie::installation::{self as compagnies, Compagnie};
 use crate::catalogue::Route;
 use crate::depots::{ChargeDeposer, Designation, Quoi};
 use crate::enveloppe::Dite;
-use crate::rappels::EcheanceDite;
+use crate::rappels::{EcheanceDite, EtapeDEcheance, GenreDEcheance};
 use droit::contexte::Contexte;
 use envois::etats;
 use envois::retours::IdDeFlux;
@@ -260,20 +260,20 @@ fn exigee(poste: &Poste, racine: &Path) -> R<bool> {
 }
 
 /// Le mot de passe ouvre-t-il le coffre de la compagnie `racine` ?
-fn ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> R<bool> {
-    if motdepasse.is_empty() {
+fn ouvre(poste: &Poste, racine: &Path, motdepasse: &socle::secret::Secret) -> R<bool> {
+    if motdepasse.devoiler().is_empty() {
         return Ok(false);
     }
     poste.coffre(racine).verifier_ouverture(motdepasse)
 }
 
 /// Le mot de passe ouvre-t-il le coffre de cette compagnie ?
-pub fn mot_de_passe_ouvre(poste: &Poste, racine: &Path, motdepasse: &str) -> R<bool> {
+pub fn mot_de_passe_ouvre(poste: &Poste, racine: &Path, motdepasse: &socle::secret::Secret) -> R<bool> {
     ouvre(poste, racine, motdepasse)
 }
 
 /// Une des compagnies `racines` s'ouvre-t-elle par `motdepasse` ?
-fn ouvre_une(poste: &Poste, racines: &[PathBuf], motdepasse: &str) -> R<bool> {
+fn ouvre_une(poste: &Poste, racines: &[PathBuf], motdepasse: &socle::secret::Secret) -> R<bool> {
     for r in racines {
         if ouvre(poste, r, motdepasse)? {
             return Ok(true);
@@ -390,7 +390,7 @@ fn et_la_remise(phrase: String, remise: R<()>) -> Echec {
 /// compagnies qui ont deja un mot de passe, et toutes celles qu'il ouvre deviennent les siennes. Une compagnie qui a deja
 /// son mot de passe donne aussi `actuel` (c'est lui que le rattachement remplace). Un refus n'ecrit rien. Rend les noms des
 /// compagnies de l'administrateur.
-pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, poste: &Poste) -> R<Vec<String>> {
+pub fn rattacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, actuel: Option<&socle::secret::Secret>, poste: &Poste) -> R<Vec<String>> {
     if compagnie::bridage::est_bride_de(inst) {
         return Err(socle::echec::refus("Le logiciel est bridé : il ne gère que des compagnies fictives."));
     }
@@ -404,7 +404,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
     if est_rattachee(inst, racine)? {
         return Err(socle::echec::refus("Cette compagnie est déjà gérée par l'administrateur."));
     }
-    if admin.is_empty() {
+    if admin.devoiler().is_empty() {
         return Err(socle::echec::refus("Tapez le mot de passe de l'administrateur. Rien n'a changé."));
     }
     let groupe = rattachees(inst)?;
@@ -433,7 +433,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
     }
     let coffre = poste.coffre(racine);
     let deja = coffre.ouverture_exigee()?;
-    let actuel = actuel.filter(|a| !a.is_empty());
+    let actuel = actuel.filter(|a| !a.devoiler().is_empty());
     if deja {
         match actuel {
             None => return Err(socle::echec::refus("Tapez aussi le mot de passe actuel de cette compagnie : c'est lui que celui de l'administrateur remplace. Rien n'a changé.")),
@@ -469,17 +469,17 @@ struct HorsDeLInstallation {
 
 /// DETACHER `racine` : elle recoit son propre mot de passe (`nouveau`, tape deux fois), et celui de l'administrateur
 /// (`admin`, verifie) ne l'ouvre plus. Un refus n'ecrit rien.
-pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> R<()> {
+pub fn detacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, nouveau: &socle::secret::Secret, confirmation: &socle::secret::Secret, poste: &Poste) -> R<()> {
     if !est_rattachee(inst, racine)? {
         return Err(socle::echec::refus("Cette compagnie n'est pas gérée par l'administrateur : elle a déjà son propre mot de passe."));
     }
     if !ouvre(poste, racine, admin)? {
         return Err(socle::echec::refus("Ce n'est pas le mot de passe de l'administrateur. Rien n'a changé."));
     }
-    if nouveau != confirmation {
+    if !nouveau.egal_a(confirmation.devoiler()) {
         return Err(socle::echec::refus("Les deux saisies du nouveau mot de passe diffèrent. Rien n'a changé."));
     }
-    if nouveau == admin {
+    if nouveau.egal_a(admin.devoiler()) {
         return Err(socle::echec::refus("Choisissez un mot de passe différent de celui de l'administrateur : c'est lui qui la sépare des autres. Rien n'a changé."));
     }
     let coffre = poste.coffre(racine);
@@ -498,12 +498,12 @@ pub fn detacher(inst: &Path, racine: &Path, admin: &str, nouveau: &str, confirma
 /// CHANGER le mot de passe de l'administrateur : toutes ses compagnies se rescellent d'un coup. `actuel` doit ouvrir
 /// chacune ; tout se prepare d'abord (si une seule refuse, rien ne s'ecrit) ; puis chaque coffre est remplace, et si un
 /// remplacement echoue, ceux deja faits reviennent a leur etat d'avant. Rend les noms des compagnies rescellees.
-pub fn changer(inst: &Path, actuel: &str, nouveau: &str, confirmation: &str, poste: &Poste) -> R<Vec<String>> {
+pub fn changer(inst: &Path, actuel: &socle::secret::Secret, nouveau: &socle::secret::Secret, confirmation: &socle::secret::Secret, poste: &Poste) -> R<Vec<String>> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
         return Err(socle::echec::refus("Ce logiciel n'a pas d'administrateur : chaque compagnie a son propre mot de passe."));
     }
-    if nouveau != confirmation {
+    if !nouveau.egal_a(confirmation.devoiler()) {
         return Err(socle::echec::refus("Les deux saisies du nouveau mot de passe diffèrent. Rien n'a changé."));
     }
     let mut prets: Vec<(PathBuf, Vec<u8>, Option<Vec<u8>>)> = Vec::new();
@@ -641,9 +641,14 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
     }))
 }
 
-/// Le fichier d'un signalement ecrit, s'il y en a un : `sorties/<mois>/<nom>` (le nom compare sans casse).
-fn fichier_ecrit(racine: &Path, mois: socle::mois::Mois, nom: &str) -> R<Option<PathBuf>> {
-    let dossier = racine.join("sorties").join(mois.to_string());
+/// Le dossier du mois `mois` ou se range le signalement `piece` (`PieceDuMois::dossier`).
+fn dossier_du_signalement(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois) -> PathBuf {
+    piece.dossier().sous(&racine.join("sorties").join(mois.to_string()))
+}
+
+/// Le fichier d'un signalement ecrit, s'il y en a un, dans le dossier du mois ou il se range (le nom compare sans casse).
+fn fichier_ecrit(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois, nom: &str) -> R<Option<PathBuf>> {
+    let dossier = dossier_du_signalement(racine, mois, piece);
     Ok(fichiers_de(&dossier)?.into_iter().find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(nom))))
 }
 
@@ -670,24 +675,30 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance) ->
     let crate::rappels::CleDEcheance::DuSalarie { quoi: genre, salarie, jour } = cle else { return Ok(None) };
     let mois = jour.mois_civil();
     let compact = jour.aaaammjj();
-    let nom = match genre.as_str() {
-        "signalement_arret" => format!("SignalementArret_{}_{}.dsn", salarie, compact),
+    use crate::obligations::CleDObligation as C;
+    use crate::rappels::QuoiDuSalarie as Q;
+    use documents::PieceDuMois as P;
+    // Le nom d'un signalement : le prefixe de sa sorte, le salarie, le jour (`imprevus`).
+    let nom = |piece: P| format!("{}{}_{}.dsn", piece.sorte().prefixe(), salarie, compact);
+    let piece = match genre {
+        Q::Obligation(C::SignalementArret) => P::SignalementArret,
         // L'annule-et-remplace s'ecrit a cote du signalement parti, sous `_AR<ordre>` : le dernier ecrit.
-        "signalement_arret_rectificatif" => {
-            let tete = format!("signalementarret_{}_{}_ar", salarie, compact).to_lowercase();
+        Q::Obligation(C::SignalementArretRectificatif) => {
+            let piece = P::SignalementArret;
+            let tete = format!("{}{}_{}_ar", piece.sorte().prefixe(), salarie, compact).to_lowercase();
             let rang = |p: &PathBuf| -> Option<i64> {
                 let n = p.file_name()?.to_string_lossy().to_lowercase();
                 // Un nom qui ne finit pas par un rang n'est pas un annule-et-remplace.
                 n.strip_prefix(&tete)?.strip_suffix(".dsn")?.parse::<i64>().into_iter().next()
             };
-            let dossier = ctx.racine.join("sorties").join(mois.to_string());
+            let dossier = dossier_du_signalement(&ctx.racine, mois, piece);
             return Ok(fichiers_de(&dossier)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));
         }
-        "signalement_reprise" => format!("SignalementReprise_{}_{}.dsn", salarie, compact),
-        crate::rappels::FIN_CONTRAT => format!("SignalementFinContrat_{}_{}.dsn", salarie, compact),
-        _ => return Ok(None),
+        Q::Obligation(C::SignalementReprise) => P::SignalementReprise,
+        Q::FinContrat => P::SignalementFinContrat,
+        Q::Obligation(C::SignalementFinContrat | C::DeclarationAccident | C::DeclarationMaladieProfessionnelle | C::AttestationSalaire) => return Ok(None),
     };
-    fichier_ecrit(&ctx.racine, mois, &nom)
+    fichier_ecrit(&ctx.racine, mois, piece, &nom(piece))
 }
 
 /// Le defaut d'un rappel qui ne porte pas ce que son genre exige.
@@ -700,17 +711,17 @@ fn rappel_incomplet(quoi: &str) -> Echec {
 fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDite) -> R<Option<Declaration>> {
     let mut fichier: Option<PathBuf> = None;
     let mut mensuelle: Option<Mois> = None;
-    let mut d = match r.quoi.as_str() {
-        "dsn" => {
+    let mut d = match r.quoi {
+        GenreDEcheance::Dsn => {
             let mois = r.mois.ok_or_else(|| rappel_incomplet("de DSN"))?;
             let e = r.echeance_depot.as_ref().ok_or_else(|| rappel_incomplet("de DSN"))?;
-            let marche = match r.etape.as_str() {
-                "a_saisir" => Some("Saisir le mois dans la compagnie (vide s'il n'y a pas eu de paie : une DSN « néant » se dépose aussi)."),
-                "a_produire" => Some("Écrire le mois dans la compagnie : la DSN s'écrit avec les bulletins, puis se teste."),
-                "a_corriger" => Some("Corriger dans la compagnie, réécrire le mois, puis retester."),
-                _ => None,
+            let marche = match r.etape {
+                Some(EtapeDEcheance::ASaisir) => Some("Saisir le mois dans la compagnie (vide s'il n'y a pas eu de paie : une DSN « néant » se dépose aussi)."),
+                Some(EtapeDEcheance::AProduire) => Some("Écrire le mois dans la compagnie : la DSN s'écrit avec les bulletins, puis se teste."),
+                Some(EtapeDEcheance::ACorriger) => Some("Corriger dans la compagnie, réécrire le mois, puis retester."),
+                Some(EtapeDEcheance::ADeposer | EtapeDEcheance::DUneObligation(_)) | None => None,
             };
-            if r.etape == "a_deposer" {
+            if r.etape == Some(EtapeDEcheance::ADeposer) {
                 fichier = r.fichier.clone();
                 mensuelle = Some(mois);
             }
@@ -720,7 +731,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 genre: Genre::Dsn,
                 titre: format!("DSN de {}", mois.libelle(socle::mois::Graphie::Accentuee)),
                 mois: Some(mois),
-                butoir: Some(e.jour),
+                butoir: Some(e.limite.jour_de_paris()),
                 quand_dit: Some(e.phrase.clone()),
                 detail: r.detail.clone(),
                 marche: marche.map(String::from),
@@ -730,15 +741,12 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 pret: Pret::RIEN,
             }
         }
-        "obligation" => {
+        GenreDEcheance::Obligation => {
             let ob = r.obligation.as_ref().ok_or_else(|| rappel_incomplet("d'obligation"))?;
-            let quand_dit = ob.butoir.map(|b| match ob.heure_du_butoir.as_deref() {
-                Some("24:00") => format!("le {}, jusqu'à minuit", b.jj_mm_aaaa()),
-                Some(h) => format!("le {} à {}", b.jj_mm_aaaa(), h),
-                None => format!("le {}", b.jj_mm_aaaa()),
-            });
+            let butoir = ob.jour_butoir()?;
+            let quand_dit = ob.quand_dit()?;
             let detail = if ob.phrase.is_empty() { r.detail.clone() } else { ob.phrase.clone() };
-            let (genre, marche, ou) = if ob.cle.nom().starts_with("signalement_") {
+            let (genre, marche, ou) = if ob.cle.est_un_signalement() {
                 fichier = fichier_du_signalement(ctx, &r.cle)?;
                 let marche = if r.a_saisir.is_empty() {
                     "Écrire le signalement dans la compagnie (Imprévus, ou la colonne du mois), puis le tester."
@@ -756,9 +764,9 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 };
                 (Genre::HorsDsn, "Elle ne part pas avec la DSN : à faire sur le service de l'organisme, puis à dire faite dans la compagnie.", lieux)
             };
-            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir: ob.butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::RIEN }
+            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::RIEN }
         }
-        "dpae" => {
+        GenreDEcheance::Dpae => {
             let jour = r.date;
             Declaration {
                 cle: r.cle.clone(),
@@ -776,7 +784,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 pret: Pret::RIEN,
             }
         }
-        _ => return Ok(None),
+        GenreDEcheance::DeLAnnee(_) => return Ok(None),
     };
     if let Some(f) = fichier.filter(|f| f.is_file()) {
         // Le depot reel de ce contenu est deja note : le rappel se taira au prochain releve.
@@ -1109,7 +1117,7 @@ impl Dite for DepotGroupe {
 /// de l'administrateur part, compagnie par compagnie, par la route `deposer` de chacune. `motdepasse` (reel) : celui que la
 /// fenetre a fait taper au moment de l'acte ; sans lui, le moteur le demande a un humain. Rend, declaration par
 /// declaration, ce qui est parti et ce qui a refuse, et le tableau refait.
-pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>) -> R<DepotGroupe> {
+pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::secret::Secret>) -> R<DepotGroupe> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
         return Err(erreur(Classe::Refuse, "Ce logiciel n'a pas d'administrateur : chaque compagnie dépose depuis sa page. Rien n'est parti."));
@@ -1140,9 +1148,9 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
         let refuses = resultats.len();
         return Ok(DepotGroupe { phrase: phrase.into(), reel, partis: 0, refuses, resultats, tableau: tableau(o, inst, false)? });
     }
-    let mut mdp: Option<String> = None;
+    let mut mdp: Option<socle::secret::Secret> = None;
     if reel {
-        let m = match motdepasse.filter(|m| !m.is_empty()) {
+        let m = match motdepasse.filter(|m| !m.devoiler().is_empty()) {
             Some(m) => m,
             None => {
                 let acte = compagnie::demande::Acte::nouveau(

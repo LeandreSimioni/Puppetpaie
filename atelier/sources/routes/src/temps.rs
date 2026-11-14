@@ -29,7 +29,7 @@ pub(crate) struct TempsDeLaCase<V> {
 #[serde(untagged)]
 pub(crate) enum CaseDatee {
     Case(droit::fiche::CaseDeFiche),
-    Contrat(String),
+    Contrat(droit::organismes::CleDeContrat),
 }
 
 /// Les temps des cases d'une ligne d'une liste datee, la ligne nommee par sa cle (le NIC d'un etablissement) et par ce

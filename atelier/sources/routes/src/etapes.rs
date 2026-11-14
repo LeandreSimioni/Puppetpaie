@@ -480,6 +480,14 @@ enum Attente {
     Aucune,
 }
 
+/// OU EN EST LE DEPOT D'UNE DECLARATION ECRITE (`chemin_de_depot`) : la paie a change depuis son ecriture (la DSN se
+/// refait), ou l'etat de son test (`envois::etats::EtatDuTest`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EtapeDuDepot {
+    PaieChangee,
+    Test(etats::EtatDuTest),
+}
+
 /// Le point d'un engagement sur la ligne DPAE. `RienADeclarer` : un contrat commence avant le logiciel.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PointDpae {
@@ -867,13 +875,13 @@ fn emportes_a_refaire(
         }
     }
     // Les corrections de mois passes que la ligne porte ne sont pas des engagements de ce mois.
-    let mut emportes: Vec<(String, String)> = emportes.iter().filter(|v| v.mois.is_none()).map(|v| (v.salarie.to_string(), v.numero.to_string())).collect();
-    let mut presents: Vec<(String, String)> = siens
+    let mut emportes: Vec<(&IdSalarie, &NumeroContrat)> = emportes.iter().filter(|v| v.mois.is_none()).map(|v| (&v.salarie, &v.numero)).collect();
+    let mut presents: Vec<(&IdSalarie, &NumeroContrat)> = siens
         .iter()
         .filter(|e| e.valide().is_some())
         .filter_map(|e| {
             let b = &*e.objet().brut;
-            Some((b.saisie.carte.salarie.as_ref()?.to_string(), b.saisie.carte.numero.as_ref()?.to_string()))
+            Some((b.saisie.carte.salarie.as_ref()?, b.saisie.carte.numero.as_ref()?))
         })
         .collect();
     emportes.sort();
@@ -973,8 +981,8 @@ pub(crate) struct Globales {
     pub(crate) recus: HashMap<etats::Paire, Moment>,
     pub(crate) renvoyes: HashSet<etats::Paire>,
     pub(crate) avenants: HashMap<etats::Paire, Vec<envois::journal::AvenantParti>>,
-    /// Comment chaque contrat est parti la derniere fois : `imprime` ou `courriel`.
-    pub(crate) par: HashMap<etats::Paire, &'static str>,
+    /// Comment chaque contrat est parti la derniere fois.
+    pub(crate) par: HashMap<etats::Paire, etats::ModeDeRemise>,
 }
 
 // ------------------------------------------------------------ l'etat d'un engagement
@@ -1092,7 +1100,7 @@ pub(crate) struct CdiEnCours {
 #[derive(Debug, Clone)]
 pub(crate) struct Signature {
     pub(crate) fait: Option<InstantOuJour>,
-    pub(crate) par: Option<&'static str>,
+    pub(crate) par: Option<etats::ModeDeRemise>,
     pub(crate) recu: Option<Moment>,
     pub(crate) caduc: bool,
     pub(crate) pourquoi: &'static str,
@@ -1405,7 +1413,7 @@ pub struct Moteur<'a> {
     /// (`charger_saisie`), ce qui est a refaire de chaque engagement valide (`a_refaire_du_mois`, par mois, salarie et
     /// numero) et l'etat de chaque engagement (`etat_par_engagement`).
     saisies: HashMap<Mois, Rc<SaisieMois>>,
-    refaire: HashMap<(Mois, String, String), Rc<Vec<ARefaire>>>,
+    refaire: HashMap<(Mois, IdSalarie, NumeroContrat), Rc<Vec<ARefaire>>>,
     lignes: HashMap<Mois, Rc<Vec<Ligne>>>,
 }
 
@@ -1462,10 +1470,10 @@ impl<'a> Moteur<'a> {
     fn a_refaire_du_mois(&mut self, mois: Mois, e: &engagement::etats::Etat, departs: &engagement::departs::Departs) -> R<Rc<Vec<ARefaire>>> {
         let carte = &e.objet().brut.saisie.carte;
         // Rien n'est parti d'un engagement en saisie : rien n'est a refaire.
-        let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_deref()) else {
+        let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_ref()) else {
             return Ok(Rc::new(Vec::new()));
         };
-        let cle = (mois, salarie.to_string(), numero.to_string());
+        let cle = (mois, salarie.clone(), numero.clone());
         if let Some(r) = self.refaire.get(&cle) {
             return Ok(r.clone());
         }
@@ -1761,7 +1769,8 @@ impl<'a> Moteur<'a> {
         if let Some(v) = self.fichiers.get(&mois) {
             return Ok(v.clone());
         }
-        let dossier = self.racine().join("sorties").join(mois.to_string());
+        // Les declarations deposables (la DSN, la DPAE) se rangent dans les sorties du mois.
+        let dossier = documents::DossierDuMois::Sorties.sous(&self.racine().join("sorties").join(mois.to_string()));
         let rendu = if !dossier.is_dir() {
             Deposables::default()
         } else {
@@ -1784,7 +1793,11 @@ impl<'a> Moteur<'a> {
             let dsn: Vec<_> = tous.iter().filter(|f| a_l_extension(&f.0, ".dsn")).collect();
             let dpae: Vec<_> = tous
                 .iter()
-                .filter(|f| f.0.starts_with("DPAE_") && a_l_extension(&f.0, ".txt") && !radical(&f.0).ends_with("_recapitulatif"))
+                .filter(|f| {
+                    matches!(documents::SorteDePieceProduite::du_nom(&f.0), Some((documents::SorteDePieceProduite::Dpae, _)))
+                        && a_l_extension(&f.0, ".txt")
+                        && !radical(&f.0).ends_with("_recapitulatif")
+                })
                 .collect();
             Deposables { dsn: ranger(dsn)?, dpae: ranger(dpae)? }
         };
@@ -1995,7 +2008,7 @@ impl<'a> Moteur<'a> {
     /// paie changee), le fichier, et ce qu'un test refuse a dit ; `None` sans fichier a deposer, ou s'il est deja parti.
     /// `nic` : pour la DSN d'une compagnie a plusieurs etablissements, celle de cet etablissement (son en-tete,
     /// S21.G00.11.001) ; aucun : le premier fichier, quel qu'il soit.
-    fn chemin_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&Nic>) -> R<Option<(&'static str, Deposable, Option<String>)>> {
+    fn chemin_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&Nic>) -> R<Option<(EtapeDuDepot, Deposable, Option<String>)>> {
         // « Ecrite » pour une DSN : le meme critere que l'horloge, l'accueil et les rappels (`depart::mois_ecrit`,
         // la DSN mensuelle notee au journal des ecritures), pas un fichier pose dans `sorties/<mois>/`. Un mois passe lu a
         // l'ouverture (`ecrit`) ne demande que ce qui reste, pas le geste qui l'ouvre.
@@ -2028,12 +2041,12 @@ impl<'a> Moteur<'a> {
         let nom = NomDeFichier::du(&chemin)?;
         let r = etats::repetition(&lignes, acte, &empreinte, &nom);
         let etape = if quoi == DSN && self.paie_changee_depuis_l_ecriture(le_mois, &chemin)?.is_some() {
-            "paie_changee"
+            EtapeDuDepot::PaieChangee
         } else {
-            r.etat.nom()
+            EtapeDuDepot::Test(r.etat)
         };
         // UN TEST REFUSE SE DIT AVEC SES ANOMALIES, la ou l'on propose d'envoyer : le code et le message du bilan.
-        let refus = r.motif.as_deref().filter(|_| etape == "test_refuse").map(|m| m.trim_end_matches('.').to_string());
+        let refus = r.motif.as_deref().filter(|_| etape == EtapeDuDepot::Test(etats::EtatDuTest::TestRefuse)).map(|m| m.trim_end_matches('.').to_string());
         Ok(Some((etape, premier, refus)))
     }
 
@@ -2059,11 +2072,11 @@ impl<'a> Moteur<'a> {
         let action = match etape {
             // Le fichier ecrit ne declare plus la paie : la DSN se refait depuis les engagements valides, et repasse par
             // le test.
-            "paie_changee" => deposer_dsn(le_mois, nic, format!("Réécrire {} et la tester…", nom)),
-            "ecrite" => deposer(format!("Tester {}…", nom)),
-            "en_test" => deposer("Voir le test en cours…".into()),
-            "testee" => deposer(format!("Envoyer {} testée…", nom)),
-            _ => deposer("Voir le refus du test…".into()),
+            EtapeDuDepot::PaieChangee => deposer_dsn(le_mois, nic, format!("Réécrire {} et la tester…", nom)),
+            EtapeDuDepot::Test(etats::EtatDuTest::Ecrite) => deposer(format!("Tester {}…", nom)),
+            EtapeDuDepot::Test(etats::EtatDuTest::EnTest) => deposer("Voir le test en cours…".into()),
+            EtapeDuDepot::Test(etats::EtatDuTest::Testee) => deposer(format!("Envoyer {} testée…", nom)),
+            EtapeDuDepot::Test(etats::EtatDuTest::TestRefuse) => deposer("Voir le refus du test…".into()),
         };
         Ok((Some(action), refus.map(|r| format!("test refusé : {}", r))))
     }
@@ -2463,7 +2476,7 @@ impl<'a> Moteur<'a> {
                 };
                 // Seule la DPAE partie se compare (`debut_declare`) : les paies parties ne se relisent pas ici, sauf
                 // quand le mois a deja compare tout ce qui est a refaire (`a_refaire_du_mois`).
-                let refaire: Vec<ARefaire> = match self.refaire.get(&(le_mois, cle.to_string(), numero.to_string())) {
+                let refaire: Vec<ARefaire> = match self.refaire.get(&(le_mois, cle.clone(), numero.clone())) {
                     Some(r) => r.iter().filter(|a| matches!(a, ARefaire::Dpae { .. })).cloned().collect(),
                     None => engagement::etats::a_refaire_parmi(self.ctx, v, &departs, &|s| s == engagement::departs::Envoi::Dpae)?,
                 };
@@ -2583,7 +2596,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         Some(c) if !ailleurs => format!("CDI, signé en {}", c.signe_en.libelle(Graphie::Accentuee)),
         _ => "Contrat".to_string(),
     };
-    let par_dit = if s.par == Some("imprime") { "imprimé" } else { "envoyé" };
+    let par_dit = etats::mot_de_la_remise(s.par, etats::PlaceDeLaRemise::Phrase);
     let (etat, phrase, geste) = match pt.contrat {
         PointContrat::AEnvoyer => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
         PointContrat::ARefaire if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
@@ -2799,7 +2812,7 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::
         }
         let plus_recent = out.get(cle).is_some_and(|v| v.quand >= quand);
         if !plus_recent {
-            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(cle.as_str()).cloned().flatten(), quand });
+            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(cle).cloned().flatten(), quand });
         }
     }
     Ok(out)
@@ -2818,7 +2831,10 @@ fn etat_documents(parti_le: Option<InstantOuJour>, caduc: bool) -> EtatDocuments
 
 /// `DSN_[^\W\d_]+\d{4}(_AR\d+)?\.dsn` : le nom d'une DSN mensuelle.
 pub(crate) fn est_une_dsn_mensuelle(nom: &str) -> bool {
-    nom.strip_prefix("DSN_").and_then(|r| r.strip_suffix(".dsn")).is_some_and(nom_du_mois_et_rang)
+    match documents::SorteDePieceProduite::du_nom(nom) {
+        Some((documents::SorteDePieceProduite::Dsn, reste)) => reste.strip_suffix(".dsn").is_some_and(nom_du_mois_et_rang),
+        _ => false,
+    }
 }
 
 /// `[^\W\d_]+\d{4}(_AR\d+)?` : ce que le nom d'une DSN mensuelle porte entre `DSN_` et `.dsn`.
@@ -2848,7 +2864,7 @@ pub(crate) const CONTRAT_AILLEURS_A_MODIFIER: &str = "un terme du contrat signé
 /// version sur laquelle il est parti (`a_refaire_signer`, `engagement::etats::a_refaire`), ou il porte un autre numero
 /// que celui que la DSN declare. Un contrat renvoye attend une NOUVELLE signature : celle de l'ancien ne compte plus.
 pub(crate) fn etat_signature(
-    fait: Option<InstantOuJour>, par: Option<&'static str>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
+    fait: Option<InstantOuJour>, par: Option<etats::ModeDeRemise>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
     a_refaire_signer: bool, ailleurs: bool,
 ) -> Signature {
     let recu = if renvoye { None } else { recu.cloned() };

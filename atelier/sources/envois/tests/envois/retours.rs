@@ -9,7 +9,7 @@ use envois::retours::{
 };
 
 fn releve(nir: &str, identifiant: &str) -> ReleveTauxPas {
-    ReleveTauxPas { nir: droit::fiche::Nir::lire(nir).unwrap(), taux: droit::pas::TauxDePas::lire("0.00"), type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip), identifiant: identifiant.to_string() }
+    ReleveTauxPas { nir: droit::fiche::Nir::lire(nir).unwrap(), taux: droit::pas::TauxDePas::lire("0.00"), type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip), identifiant: droit::pas::IdentifiantDuTauxPas::lire(identifiant).unwrap() }
 }
 
 const CRM_REEL: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" identifiant=\"450189378\" type=\"CRM nominatif\" profil=\"DSN\" version=\"v02r01\"><envoi><envoi_identification><idflux>WSUrBZ50Y4RWJdDpsRsh.3r</idflux></envoi_identification></envoi><declaration><declaration_bilan><etat>OK</etat><salarie><NIR>1990101999999</NIR><matricule>2</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie><salarie><NIR>2990101999999</NIR><matricule>1</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie></declaration_bilan></declaration></ns2:rapport>";

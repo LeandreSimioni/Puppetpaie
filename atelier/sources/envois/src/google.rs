@@ -31,7 +31,7 @@ pub const DELAI: u64 = 60;
 #[derive(Debug, Clone)]
 pub struct Application {
     pub client_id: String,
-    pub client_secret: String,
+    pub client_secret: socle::secret::Secret,
 }
 
 /// CE QUE GOOGLE REND A UNE DEMANDE DE JETON (`/token`) : le jeton d'acces, et pour un premier code d'autorisation le
@@ -39,8 +39,8 @@ pub struct Application {
 /// ignorees a la porte (`socle::forme::lire_reponse_tiers`).
 #[derive(Debug, Deserialize)]
 pub struct ReponseJeton {
-    pub access_token: Option<String>,
-    pub refresh_token: Option<String>,
+    pub access_token: Option<socle::secret::Secret>,
+    pub refresh_token: Option<socle::secret::Secret>,
     pub scope: Option<String>,
 }
 impl socle::forme::ReponseDUnTiers for ReponseJeton {}
@@ -153,11 +153,11 @@ fn brute(p: Panne) -> Echec {
 
 /// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(..))` pour un refus
 /// de Google, traduit, `Err` pour une panne brute. `adresse` : `JETONS`, ou un serveur local.
-pub fn jeton_par_rafraichissement(adresse: &Url, application: &Application, rafraichissement: &str, delai: u64) -> R<Result<String, ErreurGoogle>> {
+pub fn jeton_par_rafraichissement(adresse: &Url, application: &Application, rafraichissement: &socle::secret::Secret, delai: u64) -> R<Result<socle::secret::Secret, ErreurGoogle>> {
     let corps = encoder(&[
         ("client_id", application.client_id.clone()),
-        ("client_secret", application.client_secret.clone()),
-        ("refresh_token", rafraichissement.to_string()),
+        ("client_secret", application.client_secret.devoiler().to_string()),
+        ("refresh_token", rafraichissement.devoiler().to_string()),
         ("grant_type", "refresh_token".into()),
     ]);
     let requete = Requete {
@@ -173,7 +173,7 @@ pub fn jeton_par_rafraichissement(adresse: &Url, application: &Application, rafr
                 Ok(r) => r,
                 Err(e) => return Ok(Err(ErreurGoogle::from(e.reclasser(Classe::Google)))),
             };
-            match reponse.access_token.filter(|t| !t.is_empty()) {
+            match reponse.access_token.filter(|t| !t.devoiler().is_empty()) {
                 Some(acces) => Ok(Ok(acces)),
                 None => Ok(Err(ErreurGoogle::google("Google n'a pas rendu de jeton d'acces. Reessayer plus tard ; si cela dure, lier de nouveau le compte."))),
             }

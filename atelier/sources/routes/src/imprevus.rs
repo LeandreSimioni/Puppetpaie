@@ -567,10 +567,10 @@ fn cle_du_nom(ctx: &Contexte, salarie: &SalarieDesigne) -> R<IdSalarie> {
 /// nomme (`voulu`, son numero), sinon le seul. Un imprevu designe son contrat par son numero et sa date de debut
 /// (S21.G00.40.009 et .001) ; sans contrat, il n'y a rien a suspendre, et a deux, le cahier technique laisse le choix au
 /// declarant : on le lui demande.
-pub(crate) fn contrat_suspendu(ctx: &Contexte, cle: &IdSalarie, jour: &Jour, voulu: Option<&str>) -> R<ContratAuJour> {
+pub(crate) fn contrat_suspendu(ctx: &Contexte, cle: &IdSalarie, jour: &Jour, voulu: Option<&NumeroContrat>) -> R<ContratAuJour> {
     let candidats = contrats_au(ctx, cle, *jour)?;
     if let Some(voulu) = voulu {
-        return match candidats.iter().find(|c| c.numero.as_deref() == Some(voulu)) {
+        return match candidats.iter().find(|c| c.numero.as_ref() == Some(voulu)) {
             Some(c) => Ok(c.clone()),
             None => {
                 let liste: Vec<String> = candidats.iter().map(|c| numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO)).collect();
@@ -1650,7 +1650,7 @@ fn verifier_suspension(s: &SuspensionSaisie, contrat_fin: Option<Jour>) -> R<()>
 fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<ReponseSuspension> {
     let cle = cle_du_nom(ctx, &c.salarie)?;
     let debut = c.debut;
-    let contrat = contrat_suspendu(ctx, &cle, &debut, c.contrat.as_ref().map(NumeroContrat::as_str))?;
+    let contrat = contrat_suspendu(ctx, &cle, &debut, c.contrat.as_ref())?;
     let s = SuspensionSaisie {
         genre: GenreSuspension::Suspension,
         salarie: cle.clone(),
@@ -1754,7 +1754,7 @@ fn reponse_suspension(ctx: &Contexte, s: &SuspensionSaisie, phrase: &str) -> R<R
 fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArret> {
     let cle = cle_du_nom(ctx, &c.salarie)?;
     let dernier = c.dernier_jour;
-    let choisi = contrat_suspendu(ctx, &cle, &dernier, c.contrat.as_ref().map(NumeroContrat::as_str))?;
+    let choisi = contrat_suspendu(ctx, &cle, &dernier, c.contrat.as_ref())?;
     let mut arret = arret_a_ecrire(ArretDit {
         cle: &cle,
         contrat: &choisi,
@@ -1901,6 +1901,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let p = paie_de_l_engagement(&paies, rang, &cle, c.salarie.as_str(), mois)?;
     let date = constitue_le(ctx, c.le);
     let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    // Les sorties du mois : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
     let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
     Ok(ReponsePapiers {
         phrase: format!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
@@ -1982,8 +1983,8 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     // saisie verifiee : la plate-forme ne se consulte pas pour un refus.
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
-    let nom = nom_du_signalement(&format!("SignalementFinContrat_{}_{}", cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
-    let cible = ctx.racine.join("sorties").join(mois.to_string()).join(&nom);
+    let nom = nom_du_signalement(&format!("{}{}_{}", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
+    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string())).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
         type_declaration,
@@ -2121,12 +2122,17 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     avertissements.extend(plate_forme);
 
     let dernier = arret.dernier_jour_travaille;
+    let piece = match c.nature {
+        NatureSignalement::Arret => documents::PieceDuMois::SignalementArret,
+        NatureSignalement::Reprise => documents::PieceDuMois::SignalementReprise,
+    };
     let nom = nom_du_signalement(
-        &format!("Signalement{}_{}_{}", if c.nature == NatureSignalement::Arret { "Arret" } else { "Reprise" }, arret.salarie, dernier.aaaammjj()),
+        &format!("{}{}_{}", piece.sorte().prefixe(), arret.salarie, dernier.aaaammjj()),
         type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace,
         ordre,
     )?;
-    let cible = ctx.racine.join("sorties").join(dernier.mois_civil().to_string()).join(&nom);
+    // Arret et reprise : deux pieces du mois, la sienne dit son dossier.
+    let cible = piece.dossier().sous(&ctx.racine.join("sorties").join(dernier.mois_civil().to_string())).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature_declaration: nature,
@@ -2328,9 +2334,10 @@ fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
     // ni pour la rupture d'un CDD par le salarie (L1243-2), que la convention du licenciement ne regle pas.
     if duree != Some(Decimal::ZERO) && regle.is_none() {
         let tout = engagement::preavis(ctx, e, anciennete, motif)?;
-        if let (Some(conv), true) = (tout.convention, tout.qui != "la loi (L1234-1)") {
-            dit.push_str(&format!(" {} en donne {} : c'est elle qui s'applique.", tout.qui, conv));
-        } else if tout.mois.is_none() {
+        let hors_la_loi = tout.duree.as_ref().filter(|d| d.source != engagement::solde::SourceDuPreavis::Loi);
+        if let (Some(conv), Some(d)) = (tout.convention, hors_la_loi) {
+            dit.push_str(&format!(" {} en donne {} : c'est elle qui s'applique.", d.qui(), conv));
+        } else if tout.duree.is_none() {
             if let Some(pourquoi) = &tout.pourquoi {
                 dit.push_str(&format!(" Et {}.", pourquoi.trim_end_matches('.')));
             }

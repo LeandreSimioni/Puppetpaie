@@ -66,9 +66,9 @@ pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 /// Ce que la copie ne prend pas de la fictive (relatif a sa racine).
 const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::installation::FICHIER_HORLOGE];
 
-/// Une compagnie d'essai : son marqueur le dit (`installation::copie_de`).
+/// Une compagnie d'essai : son marqueur le dit (`installation::sorte_de_copie`).
 pub fn est_essai(racine: &Path) -> R<bool> {
-    Ok(crate::installation::copie_de(racine)?.is_some_and(|c| c.starts_with(MARQUE_ESSAI)))
+    Ok(crate::installation::sorte_de_copie(racine)? == Some(crate::installation::SorteDeCopie::Essai))
 }
 
 /// Ce qu'un refus porte a part : le chemin `p`.

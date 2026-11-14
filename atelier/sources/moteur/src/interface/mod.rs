@@ -181,7 +181,7 @@ enum Phase {
 }
 
 pub struct Fenetre {
-    jeton: String,
+    jeton: socle::secret::Secret,
     /// Le port de la page : le cookie du jeton porte son nom (`jeton-<port>`), car un cookie ne connait pas le port --
     /// deux installations ouvertes dans le meme navigateur ne s'ecrasent pas leur jeton.
     port: u16,
@@ -197,7 +197,7 @@ pub struct Fenetre {
     /// LE MOT DE PASSE DE L'ADMINISTRATEUR, tape une fois dans cette fenetre : il ouvre ses autres
     /// compagnies sans le redemander tant que la fenetre vit. Il OUVRE, il n'autorise rien : un acte reel redemande
     /// toujours le mot de passe au moment de l'acte. Il ne va dans aucune route, aucun fichier, aucun journal.
-    administrateur: Mutex<Option<String>>,
+    administrateur: Mutex<Option<socle::secret::Secret>>,
     temoin: Mutex<Instant>,
     journal: Mutex<Option<PathBuf>>,
     minutes_veille: u64,
@@ -364,13 +364,13 @@ fn fichier_de_la_page(chemin: &str) -> R<Option<(Vec<u8>, &'static str)>> {
 /// Le jeton de cette fenetre, tire une fois et garde dans son dossier sur le poste (`navigateur::dossier_local`).
 /// Un jeton garde d'une autre forme se tire a neuf. UN TIRAGE QUI ECHOUE REFUSE : la fenetre ne demarre pas avec un jeton
 /// previsible.
-fn jeton(local: &Path) -> R<String> {
+fn jeton(local: &Path) -> R<socle::secret::Secret> {
     let p = local.join(".jeton-interface");
     match std::fs::read_to_string(&p) {
         Ok(j) => {
             let j = j.trim();
             if j.len() >= 24 && j.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-                return Ok(j.to_string());
+                return Ok(socle::secret::Secret::nouveau(j));
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -381,7 +381,7 @@ fn jeton(local: &Path) -> R<String> {
     let j: String = o.iter().map(|b| format!("{:02x}", b)).collect();
     std::fs::create_dir_all(local).map_err(|e| socle::echec::du_disque(local, &e))?;
     std::fs::write(&p, &j).map_err(|e| socle::echec::du_disque(&p, &e))?;
-    Ok(j)
+    Ok(socle::secret::Secret::nouveau(j))
 }
 
 /// Un JSON pose dans la page, dans un `<script type="application/json">` : rien ne peut y fermer la balise.
@@ -389,12 +389,12 @@ fn json_dans_la_page(v: &impl serde::Serialize) -> String {
     socle::ecriture::json_en_ligne(v).replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026")
 }
 
-fn page(corps: &str, jeton: &str, noms: &str) -> String {
+fn page(corps: &str, jeton: &socle::secret::Secret, noms: &str) -> String {
     // Ce que l'accueil et les pages du mot de passe disent : les phrases de la fenetre (`{{P:...}}`), la page n'en ecrit aucune.
     let corps = PHRASES_DE_L_ACCUEIL.iter().fold(corps.to_string(), |c, (cle, phrase)| c.replace(&format!("{{{{P:{}}}}}", cle), phrase));
     format!(
         "<!doctype html>\n<html lang=\"fr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>PuppetPaie</title>\n{}</head><body>\n{}\n</body></html>",
-        CALE.replace("{{JETON}}", jeton).replace("{{NOMS}}", noms),
+        CALE.replace("{{JETON}}", jeton.devoiler()).replace("{{NOMS}}", noms),
         corps
     )
 }
@@ -483,11 +483,11 @@ fn page_accueil() -> R<String> {
 }
 
 /// La page du logiciel, telle que la fenetre la recoit (publique pour `tests/interface_fichiers.rs`).
-pub fn page_logiciel(racine: &Path, jeton: &str) -> R<String> {
+pub fn page_logiciel(racine: &Path, jeton: &socle::secret::Secret) -> R<String> {
     let brut = std::fs::read_to_string(ressources().join("index.html")).map_err(|e| socle::echec::du_disque(&ressources().join("index.html"), &e))?;
     let copie = installation::est_copie(racine);
     let mut p = brut
-        .replace("{{JETON}}", jeton)
+        .replace("{{JETON}}", jeton.devoiler())
         .replace("{{EMPREINTE}}", &empreinte())
         .replace("{{COPIE}}", if copie { "1" } else { "" })
         .replace("{{COPIE_TEXTE}}", &installation::texte_copie(racine)?)
@@ -497,7 +497,7 @@ pub fn page_logiciel(racine: &Path, jeton: &str) -> R<String> {
         )
         .replace("{{PHRASES}}", &socle::ecriture::json_en_ligne(&PHRASES_DE_LA_FENETRE))
         .replace("{{VERSION_DITE}}", &format!("version {}{}", version(), if compagnie::bridage::est_bride() { " &middot; d&eacute;mo" } else { "" }));
-    let cale = CALE.replace("{{JETON}}", jeton).replace("{{NOMS}}", NOMS_LOGICIEL);
+    let cale = CALE.replace("{{JETON}}", jeton.devoiler()).replace("{{NOMS}}", NOMS_LOGICIEL);
     // Avant le PREMIER script de la page (`/js/tuyau.js`, qui definit `api`) : la cale doit exister avant lui.
     p = p.replacen("<script src=\"/js/", &format!("{}<script src=\"/js/", cale), 1);
     Ok(p)
@@ -681,9 +681,9 @@ impl Fenetre {
 
     /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee. Un registre qui
     /// ne se lit pas refuse : l'erreur remonte.
-    fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) -> R<()> {
+    fn retenir_administrateur(&self, racine: &Path, motdepasse: &socle::secret::Secret) -> R<()> {
         if routes::gestes::administrateur::est_rattachee(&installation::base(), racine)? {
-            *tenu(&self.administrateur) = Some(motdepasse.to_string());
+            *tenu(&self.administrateur) = Some(motdepasse.clone());
         }
         Ok(())
     }
@@ -704,7 +704,7 @@ impl Fenetre {
 
     fn autorise(&self, r: &Requete) -> bool {
         let fourni = r.param("jeton").map(String::from).or_else(|| r.entete("x-jeton").map(String::from)).or_else(|| r.cookie(&self.nom_du_cookie()));
-        let ok = fourni.is_some_and(|f| egal_en_temps_constant(f.as_bytes(), self.jeton.as_bytes()));
+        let ok = fourni.is_some_and(|f| self.jeton.egal_a(&f));
         if ok {
             *tenu(&self.temoin) = Instant::now();
         }
@@ -841,7 +841,7 @@ impl Fenetre {
                 Ok(fait(true))
             }
             ("verifier", Phase::MotDePasse { racine, .. }) => {
-                let motdepasse = texte(args, 0)?;
+                let motdepasse = &socle::secret::Secret::nouveau(texte(args, 0)?);
                 if !compagnie::coffre::Coffre::du_poste(&racine).verifier_ouverture(motdepasse)? {
                     return Err(socle::echec::refus("Mot de passe refusé."));
                 }
@@ -994,7 +994,7 @@ impl Fenetre {
                     // Le jeton passe en cookie, et l'adresse redevient propre.
                     return Reponse::nouvelle(303, "text/plain", Vec::new())
                         .avec("Location", "/")
-                        .avec("Set-Cookie", format!("{}={}; Path=/; HttpOnly; SameSite=Strict", self.nom_du_cookie(), self.jeton));
+                        .avec("Set-Cookie", format!("{}={}; Path=/; HttpOnly; SameSite=Strict", self.nom_du_cookie(), self.jeton.devoiler()));
                 }
                 let html = match self.phase() {
                     Phase::Accueil => match page_accueil() {
@@ -1098,18 +1098,18 @@ impl Fenetre {
         if !self.autorise(r) {
             return interdit;
         }
-        let Some(modele) = r.param("modele").and_then(routes::bulletin::modele_de_l_adresse) else {
+        let Some(modele) = r.param("modele").and_then(droit::fiche::ModeleBulletin::de_l_adresse) else {
             return Reponse::nouvelle(404, "text/plain", Vec::new());
         };
         // La route, comme la page l'appellerait : sa charge et sa reponse lues par leur forme.
         let lire = || -> R<Vec<u8>> {
-            let charge = Charge::de_forme(&routes::bulletin::ChargeModele { modele: modele.cle().to_string() })?;
+            let charge = Charge::de_forme(&routes::bulletin::ChargeModele { modele })?;
             let a: routes::bulletin::ApercuModele = api::route(&racine, Route::BulletinModeleApercu, &charge).lire().map_err(|x| socle::echec::refus(x.phrase))?;
             socle::base64::lire(&a.pdf).map_err(|e| e.reformuler(|p| format!("L'aperçu du bulletin ne se lit pas : {}.", p)))
         };
         match lire() {
             Ok(octets) if octets.starts_with(b"%PDF") => Reponse::nouvelle(200, "application/pdf", octets)
-                .avec("Content-Disposition", format!("inline; filename=\"apercu-bulletin-{}.pdf\"", if modele == documents::bulletin::Modele::Complet { "complet" } else { "simplifie" }))
+                .avec("Content-Disposition", format!("inline; filename=\"apercu-bulletin-{}.pdf\"", modele.dans_l_adresse()))
                 .avec("Content-Security-Policy", "default-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'"),
             Ok(_) => Reponse::nouvelle(500, "text/plain; charset=utf-8", "L'aperçu du bulletin n'est pas un PDF."),
             Err(e) => Reponse::nouvelle(500, "text/plain; charset=utf-8", e.phrase),
@@ -1133,14 +1133,12 @@ impl Fenetre {
                 None => rien(),
             };
         }
-        if !["cachet", "logo", "signature"].contains(&quoi) {
-            return rien();
-        }
+        let Some(sorte) = documents::SorteDImage::du_nom(quoi) else { return rien() };
         let dossier = racine.join("gabarits").join("identite");
-        for (ext, mime) in [(".png", "image/png"), (".jpg", "image/jpeg"), (".svg", "image/svg+xml")] {
-            let f = dossier.join(format!("{}{}", quoi, ext));
+        for format in fabrique_pdf::alleger::FormatDImage::TOUS {
+            let f = dossier.join(format!("{}{}", sorte.nom(), format.extension()));
             match std::fs::read(&f) {
-                Ok(o) => return Reponse::nouvelle(200, mime, o),
+                Ok(o) => return Reponse::nouvelle(200, format.mime(), o),
                 // Pas d'image dans ce format : le suivant.
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", socle::echec::du_disque(&f, &e).phrase),
@@ -1151,7 +1149,7 @@ impl Fenetre {
 
     /// L'adresse que la fenetre charge (avec le jeton, qui passe aussitot en cookie).
     pub fn adresse(&self, hote: &str, port: u16) -> String {
-        format!("http://{}:{}/?jeton={}", hote, port, self.jeton)
+        format!("http://{}:{}/?jeton={}", hote, port, self.jeton.devoiler())
     }
 }
 
@@ -1181,9 +1179,6 @@ pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &RouteReponse) -> Stri
     ligne
 }
 
-fn egal_en_temps_constant(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
 
 /// AU LANCEMENT, avant tout : la livraison de fictives prete (`maj::poser_les_fictives_pretes`), et le reste cache d'une
 /// compagnie supprimee (`suppression::effacer_les_restes`). Ce qui s'est passe va dans le journal de l'installation

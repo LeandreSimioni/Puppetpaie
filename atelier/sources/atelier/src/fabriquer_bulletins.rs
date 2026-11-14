@@ -677,7 +677,7 @@ fn lire_paie(liste: Option<Vec<CotisationLue>>, net_imposable: Option<Nombre>, p
         let ouc = format!("{} : cotisation {}", ou, k + 1);
         let famille = g
             .famille_nommee(&c.famille)
-            .and_then(|f| FAMILLES_B.iter().find(|(x, _)| *x == f).copied())
+            .and_then(|f| FAMILLES_B.iter().find(|(x, _)| *x == f.as_str()).copied())
             .ok_or_else(|| refus!("{} : la famille « {} » n'en est pas une que le bulletin imprime dans son total", ouc, c.famille))?;
         if g.cotisation(&c.libelle).is_none() {
             return Err(refus!("{} : « {} » n'est pas une cotisation de la table de lecture : ajoutez-la à `cotisations`", ouc, c.libelle));
@@ -726,37 +726,37 @@ fn identite(d: &Description, s: &Salarie) -> R<Identite<String>> {
 fn libelle_a(cle: &str) -> (Option<&'static str>, Mesure, &'static str, &'static str) {
     // (titre de famille sur son propre rang, x du libelle, libelle, famille)
     match cle {
-        "maladie" => (Some("SANTE"), m("33.9"), "Sécurité sociale - Maladie Maternité Invalidité Décès", "sante"),
-        "prevoyance" => (None, m("33.9"), "Complémentaire Incapacité Invalidité Décès", "sante"),
-        "atmp" => (Some("ACCIDENTS DU TRAVAIL - MALADIES"), m("40"), "PROFESSIONNELLES", "accidents_du_travail"),
-        "vieillesse_plafonnee" => (Some("RETRAITE"), m("33.9"), "Sécurité sociale plafonnée", "retraite"),
-        "vieillesse_deplafonnee" => (None, m("33.9"), "Sécurité sociale déplafonnée", "retraite"),
-        "complementaire" => (None, m("33.9"), "Complémentaire Tranche 1", "retraite"),
-        "famille" => (None, m("33.9"), "FAMILLE", "famille"),
-        "chomage" => (Some("ASSURANCE CHOMAGE"), m("33.9"), "Chômage", "assurance_chomage"),
-        "autres" => (Some("AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR"), m("33.9"), "autres contributions dues par l'employeur", "autres_contributions"),
-        "conges_spectacles" => (None, m("33.9"), "CONGES SPECTACLES", "conges_spectacles"),
-        "conventionnelles" => (Some("COTISATIONS STATUTAIRES OU PREVUES PAR LA"), m("40"), "CONVENTION COLLECTIVE", "cotisations_conventionnelles"),
-        "csg_deductible" => (None, m("33.9"), "CSG déductible à l'impôt sur le revenu", "csg"),
-        _ => (None, m("33.9"), "CSG/CRDS non déductible à l'impôt sur le revenu", "csg"),
+        "maladie" => (Some("SANTE"), m("33.9"), "Sécurité sociale - Maladie Maternité Invalidité Décès", SANTE),
+        "prevoyance" => (None, m("33.9"), "Complémentaire Incapacité Invalidité Décès", SANTE),
+        "atmp" => (Some("ACCIDENTS DU TRAVAIL - MALADIES"), m("40"), "PROFESSIONNELLES", ATMP),
+        "vieillesse_plafonnee" => (Some("RETRAITE"), m("33.9"), "Sécurité sociale plafonnée", RETRAITE),
+        "vieillesse_deplafonnee" => (None, m("33.9"), "Sécurité sociale déplafonnée", RETRAITE),
+        "complementaire" => (None, m("33.9"), "Complémentaire Tranche 1", RETRAITE),
+        "famille" => (None, m("33.9"), "FAMILLE", FAMILLE),
+        "chomage" => (Some("ASSURANCE CHOMAGE"), m("33.9"), "Chômage", CHOMAGE),
+        "autres" => (Some("AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR"), m("33.9"), "autres contributions dues par l'employeur", AUTRES),
+        "conges_spectacles" => (None, m("33.9"), "CONGES SPECTACLES", CONGES_SPECTACLES),
+        "conventionnelles" => (Some("COTISATIONS STATUTAIRES OU PREVUES PAR LA"), m("40"), "CONVENTION COLLECTIVE", CONVENTIONNELLES),
+        "csg_deductible" => (None, m("33.9"), "CSG déductible à l'impôt sur le revenu", CSG),
+        _ => (None, m("33.9"), "CSG/CRDS non déductible à l'impôt sur le revenu", CSG),
     }
 }
 
 fn libelle_b(cle: &str) -> (Option<&'static str>, Mesure, &'static str, &'static str) {
     match cle {
-        "maladie" => (Some("Santé"), m("74"), "Sécurité Sociale - Maladie Maternité Invalidité Décès", "sante"),
-        "prevoyance" => (None, m("74"), "Prévoyance, Incapacité, Invalidité, Décès, Autres", "sante"),
-        "atmp" => (None, m("39"), "Accidents du travail & maladies professionnelles", "accidents_du_travail"),
-        "vieillesse_plafonnee" => (Some("Retraite"), m("74"), "Sécurité Sociale Vieillesse plafonnée", "retraite"),
-        "vieillesse_deplafonnee" => (None, m("74"), "Sécurité Sociale Vieillesse déplafonnée", "retraite"),
-        "complementaire" => (None, m("74"), "Retraite complémentaire, CEG et CET T1", "retraite"),
-        "famille" => (None, m("39"), "Famille", "famille"),
-        "chomage" => (None, m("39"), "Assurance chômage", "assurance_chomage"),
-        "autres" => (None, m("39"), "Autres charges dues par l\u{2019}employeur", "autres_contributions"),
-        "conges_spectacles" => (None, m("39"), "Congés Spectacles", "conges_spectacles"),
-        "conventionnelles" => (None, m("39"), "Cotisations statutaires ou prévues par la convention collective", "cotisations_conventionnelles"),
-        "csg_deductible" => (None, m("39"), "CSG déductible de l'impôt sur le revenu", "csg"),
-        _ => (None, m("39"), "CSG/CRDS non déductible de l'impôt sur le revenu", "csg"),
+        "maladie" => (Some("Santé"), m("74"), "Sécurité Sociale - Maladie Maternité Invalidité Décès", SANTE),
+        "prevoyance" => (None, m("74"), "Prévoyance, Incapacité, Invalidité, Décès, Autres", SANTE),
+        "atmp" => (None, m("39"), "Accidents du travail & maladies professionnelles", ATMP),
+        "vieillesse_plafonnee" => (Some("Retraite"), m("74"), "Sécurité Sociale Vieillesse plafonnée", RETRAITE),
+        "vieillesse_deplafonnee" => (None, m("74"), "Sécurité Sociale Vieillesse déplafonnée", RETRAITE),
+        "complementaire" => (None, m("74"), "Retraite complémentaire, CEG et CET T1", RETRAITE),
+        "famille" => (None, m("39"), "Famille", FAMILLE),
+        "chomage" => (None, m("39"), "Assurance chômage", CHOMAGE),
+        "autres" => (None, m("39"), "Autres charges dues par l\u{2019}employeur", AUTRES),
+        "conges_spectacles" => (None, m("39"), "Congés Spectacles", CONGES_SPECTACLES),
+        "conventionnelles" => (None, m("39"), "Cotisations statutaires ou prévues par la convention collective", CONVENTIONNELLES),
+        "csg_deductible" => (None, m("39"), "CSG déductible de l'impôt sur le revenu", CSG),
+        _ => (None, m("39"), "CSG/CRDS non déductible de l'impôt sur le revenu", CSG),
     }
 }
 
@@ -770,18 +770,31 @@ enum RenduB {
     Rang(&'static str),
 }
 
+/// Chaque famille (`familles` de la table de lecture, ecrite comme le bareme l'ecrit), et comment sPAIEctacle l'imprime.
 const FAMILLES_B: [(&str, RenduB); 10] = [
-    ("sante", RenduB::Titre("Santé")),
-    ("accidents_du_travail", RenduB::Rang("Accidents du travail & maladies professionnelles")),
-    ("retraite", RenduB::Titre("Retraite")),
-    ("famille", RenduB::Rang("Famille")),
-    ("assurance_chomage", RenduB::Rang("Assurance chômage")),
-    ("autres_contributions", RenduB::Rang("Autres charges dues par l\u{2019}employeur")),
-    ("conges_spectacles", RenduB::Rang("Congés Spectacles")),
-    ("cotisations_conventionnelles", RenduB::Rang("Cotisations statutaires ou prévues par la convention collective")),
-    ("csg", RenduB::Lignes),
-    ("exonerations", RenduB::Rang("Exonérations et allègements de cotisations")),
+    (SANTE, RenduB::Titre("Santé")),
+    (ATMP, RenduB::Rang("Accidents du travail & maladies professionnelles")),
+    (RETRAITE, RenduB::Titre("Retraite")),
+    (FAMILLE, RenduB::Rang("Famille")),
+    (CHOMAGE, RenduB::Rang("Assurance chômage")),
+    (AUTRES, RenduB::Rang("Autres charges dues par l\u{2019}employeur")),
+    (CONGES_SPECTACLES, RenduB::Rang("Congés Spectacles")),
+    (CONVENTIONNELLES, RenduB::Rang("Cotisations statutaires ou prévues par la convention collective")),
+    (CSG, RenduB::Lignes),
+    (EXONERATIONS, RenduB::Rang("Exonérations et allègements de cotisations")),
 ];
+
+// Les familles de la table de lecture (`familles` de `bulletins-lecture-base.json`), telles qu'elle les ecrit.
+const SANTE: &str = "SANTÉ";
+const ATMP: &str = "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES";
+const RETRAITE: &str = "RETRAITE";
+const FAMILLE: &str = "FAMILLE";
+const CHOMAGE: &str = "ASSURANCE CHÔMAGE";
+const AUTRES: &str = "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR";
+const CONGES_SPECTACLES: &str = "CONGÉS SPECTACLES";
+const CONVENTIONNELLES: &str = "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE";
+const CSG: &str = "CSG / CRDS";
+const EXONERATIONS: &str = "EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS";
 
 /// Les rangs sPAIEctacle des cotisations d'une paie, famille par famille, dans l'ordre de la paie. Un montant nul ne
 /// s'imprime pas ; une ligne sans aucun montant non plus (elle se lirait comme un titre).

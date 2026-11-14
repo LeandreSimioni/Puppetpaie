@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
 use crate::code_cotisation::{CleDeCotisationDsn, CleDeTotalisation, CodeCotisation81};
-use crate::fiche::{Lue, Statut};
+use crate::fiche::Statut;
 use crate::natures::Paie;
 use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
@@ -116,7 +116,7 @@ enum Ecrite<T> {
 struct Entree<T> {
     depuis: Option<socle::date::Jour>,
     valeur: T,
-    accord: Option<String>,
+    accord: Option<crate::minima::AccordDeSalaires>,
     #[serde(default, deserialize_with = "socle::forme::non_lue")]
     source: socle::forme::NonLue,
     #[serde(default, deserialize_with = "socle::forme::non_lue")]
@@ -127,7 +127,7 @@ struct Entree<T> {
 /// plus tot), et le `depuis` de chaque valeur datee retenue.
 struct Lecture {
     jour: socle::date::Jour,
-    organisation: Option<String>,
+    organisation: Option<OrganisationPatronale>,
     retenues: Vec<socle::date::Jour>,
 }
 
@@ -142,10 +142,10 @@ thread_local! {
 pub(crate) fn lire_au<T: serde::de::DeserializeOwned>(
     fichier: &std::path::Path,
     jour: &socle::date::Jour,
-    organisation: Option<&str>,
+    organisation: Option<&OrganisationPatronale>,
     phrase: &str,
 ) -> socle::echec::R<(T, Vec<socle::date::Jour>)> {
-    LECTURE.with(|l| *l.borrow_mut() = Some(Lecture { jour: *jour, organisation: organisation.map(str::to_string), retenues: Vec::new() }));
+    LECTURE.with(|l| *l.borrow_mut() = Some(Lecture { jour: *jour, organisation: organisation.cloned(), retenues: Vec::new() }));
     let lu = socle::forme::lire_fichier::<T>(fichier, phrase);
     let lecture = LECTURE.with(|l| l.borrow_mut().take());
     let mut retenues = lecture.ok_or_else(|| socle::echec::refus("La lecture du barème a perdu ses dates : le signaler au développeur."))?.retenues;
@@ -189,9 +189,9 @@ pub(crate) mod datee {
                 None => e.depuis,
                 Some(source) => {
                     let t = crate::minima::table()?;
-                    let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree("minima-conventionnels.json", &source))?;
+                    let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree("minima-conventionnels.json", source.as_str()))?;
                     let ecrit = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Une valeur du barème datée par un accord ne dit pas son jour : le signaler au développeur.", "depuis", &source))?;
-                    match crate::minima::lie_depuis(accord, lecture.organisation.as_deref(), ecrit) {
+                    match crate::minima::lie_depuis(accord, lecture.organisation.as_ref(), ecrit) {
                         Some(j) => Some(j),
                         None => continue,
                     }
@@ -268,7 +268,7 @@ forme! {
         pub regime_local_alsace_moselle: Option<RegimeLocal>,
         /// Le versement mobilite de la compagnie ou de l'etablissement (sa fiche) : `bareme::versement_mobilite` le lit.
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
-        pub par_organisation_patronale: BTreeMap<String, Organisation>,
+        pub par_organisation_patronale: BTreeMap<OrganisationPatronale, Organisation>,
         pub retraite_t1_repartition: Option<RetraiteT1Repartition>,
         pub par_convention: BTreeMap<crate::fiche::Idcc, Convention>,
         // La couche de la convention de la compagnie, fondue dans le socle (`contexte::convention`) : le socle ne l'ecrit pas.
@@ -484,46 +484,35 @@ impl From<IdDeCotisation> for String {
     }
 }
 
-/// LA CATEGORIE D'UNE SECTION DU BAREME (`par_categorie` : `cadre`, `cadre_permanent`), que le calcul d'un cadre lit
-/// (`bareme::bareme_cadre`). INFERENCE (aucun texte n'en fixe la forme : c'est une cle du logiciel) : une cle n'est
-/// jamais vide. Celles que le moteur lit sont des constantes (`CADRE`, `CADRE_PERMANENT`) ; celle d'un bareme se lit.
-/// Elle s'ecrit et se trie comme son texte.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
-#[serde(try_from = "String")]
-pub struct CategorieDuBareme(std::borrow::Cow<'static, str>);
-
-impl CategorieDuBareme {
-    /// La categorie ecrite `texte` ; vide, elle se refuse.
-    pub fn lire(texte: &str) -> socle::echec::R<CategorieDuBareme> {
-        if texte.is_empty() {
-            return Err(socle::refus!("categorie du bareme vide"));
-        }
-        Ok(CategorieDuBareme(std::borrow::Cow::Owned(texte.to_string())))
-    }
-
-    /// LA CATEGORIE QUE LE MOTEUR NOMME, ecrite en Rust : une constante, dont le compilateur refuse une cle vide.
-    pub const fn du_moteur(cle: &'static str) -> CategorieDuBareme {
-        assert!(!cle.is_empty(), "categorie du bareme vide");
-        CategorieDuBareme(std::borrow::Cow::Borrowed(cle))
-    }
-}
-
-impl std::fmt::Display for CategorieDuBareme {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl TryFrom<String> for CategorieDuBareme {
-    type Error = socle::echec::Echec;
-    fn try_from(s: String) -> socle::echec::R<CategorieDuBareme> {
-        CategorieDuBareme::lire(&s)
-    }
+crate::cle_opaque! {
+    /// LA CATEGORIE D'UNE SECTION DU BAREME (`par_categorie` : `cadre`, `cadre_permanent`), que le calcul d'un cadre lit
+    /// (`bareme::bareme_cadre`). Une cle du logiciel (`cle_opaque!`) ; celles que le moteur lit sont des constantes
+    /// (`CADRE`, `CADRE_PERMANENT`) ; celle d'un bareme se lit.
+    pub struct CategorieDuBareme, "catégorie du barème";
 }
 
 /// Les sections d'un cadre : intermittent (`cadre`), paye au mois (`cadre_permanent`).
 pub const CADRE: CategorieDuBareme = CategorieDuBareme::du_moteur("cadre");
 pub const CADRE_PERMANENT: CategorieDuBareme = CategorieDuBareme::du_moteur("cadre_permanent");
+
+crate::cle_opaque! {
+    /// LA FAMILLE D'UNE COTISATION AU BULLETIN (arrete du 25/02/2016 : `RETRAITE`, `SANTÉ`, `ASSURANCE CHÔMAGE`…), sous
+    /// laquelle le bulletin la range : `famille` d'une rubrique du bareme, d'une ligne calculee, d'une ligne qu'un bulletin
+    /// importe imprime (la cle de `familles` de la table de lecture, ecrite comme le bareme ecrit la famille ; une famille
+    /// que le bareme n'a pas, comme l'arrete la nomme : `atelier/reference/sources/montant-net-social/
+    /// legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml`). Gardee telle que lue (`cle_opaque!`) : l'AT/MP s'y ecrit
+    /// avec un tiret court ou un tiret long (la table de lecture prend le tiret long, celui du corps du socle) ; celles que
+    /// le moteur lit ou pose sont des constantes (`FAMILLE_RETRAITE`, `FAMILLE_ALLEGEMENTS`, `FAMILLE_CONGES_SPECTACLES`).
+    pub struct FamilleDeCotisation, "famille d'une cotisation";
+}
+
+/// La famille des assurances vieillesse, que la reduction des heures en plus lit (`engagement::heures_en_plus`).
+pub const FAMILLE_RETRAITE: FamilleDeCotisation = FamilleDeCotisation::du_moteur("RETRAITE");
+/// La famille des lignes que le calcul compose pour les reductions et exonerations de cotisations.
+pub const FAMILLE_ALLEGEMENTS: FamilleDeCotisation = FamilleDeCotisation::du_moteur("EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS");
+/// La famille de la cotisation a la caisse des Congés Spectacles, que l'import d'un bulletin lit
+/// (`routes::importation::bulletins`, la marque d'un intermittent).
+pub const FAMILLE_CONGES_SPECTACLES: FamilleDeCotisation = FamilleDeCotisation::du_moteur("CONGÉS SPECTACLES");
 
 /// Les cotisations que le moteur nomme lui-meme (`bareme`) : la mutuelle, la prevoyance, la contribution
 /// conventionnelle, la retraite complementaire (ses deux tranches et la CET), le versement mobilite, le regime local
@@ -547,10 +536,22 @@ pub const VIEIL_DEPLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_deplaf
 pub const APEC_T1: IdDeCotisation = IdDeCotisation::du_moteur("apec_t1");
 pub const APEC_T2: IdDeCotisation = IdDeCotisation::du_moteur("apec_t2");
 pub const ATMP: IdDeCotisation = IdDeCotisation::du_moteur("atmp");
+/// Les contributions que l'employeur paie seul et que le modele du bulletin agrege dans « Autres charges dues par
+/// l'employeur » (la caisse des Conges Spectacles comprise), et celles de la convention (FNAS, FCAP, paritarisme), que la
+/// comparaison d'un bulletin importe groupe (`engagement::ecarts::cotisation_de`).
+pub const AUTRES_1: IdDeCotisation = IdDeCotisation::du_moteur("autres_1");
+pub const AUTRES_2: IdDeCotisation = IdDeCotisation::du_moteur("autres_2");
+pub const AUTRES_3: IdDeCotisation = IdDeCotisation::du_moteur("autres_3");
+pub const AUTRES_4: IdDeCotisation = IdDeCotisation::du_moteur("autres_4");
+pub const CONGES_SPEC: IdDeCotisation = IdDeCotisation::du_moteur("conges_spec");
+pub const FCAP: IdDeCotisation = IdDeCotisation::du_moteur("fcap");
+pub const PARITARISME: IdDeCotisation = IdDeCotisation::du_moteur("paritarisme");
 /// Les lignes dont l'organisme et le compte de tiers recoivent les parts Urssaf et chomage de la reduction generale
 /// (l'etat des cotisations par organisme, les ecritures comptables ; la part retraite : `RETRAITE_T1`).
 pub const MALADIE: IdDeCotisation = IdDeCotisation::du_moteur("maladie");
 pub const CHOMAGE: IdDeCotisation = IdDeCotisation::du_moteur("chomage");
+/// Les allocations familiales, que le modele du bulletin imprime sur sa ligne « Famille » (`documents::bulletin`).
+pub const ALLOCATIONS_FAMILIALES: IdDeCotisation = IdDeCotisation::du_moteur("famille");
 /// La ligne que le calcul compose lui-meme, hors du bareme, pour la reduction generale (celles des heures en plus :
 /// `engagement::heures_en_plus`).
 pub const REDUCTION_GENERALE: IdDeCotisation = IdDeCotisation::du_moteur("reduction_generale");
@@ -559,7 +560,7 @@ forme! {
     /// Une ligne de cotisation du bulletin.
     pub struct Rubrique {
         pub id: IdDeCotisation,
-        pub famille: Option<String>,
+        pub famille: Option<FamilleDeCotisation>,
         pub libelle: Option<String>,
         /// Son assiette dans les bases du calcul.
         pub base: Option<Assiette>,
@@ -645,7 +646,7 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleveSante {
-    pub niveaux: BTreeMap<String, NiveauSante>,
+    pub niveaux: BTreeMap<NiveauDeGarantie, NiveauSante>,
     pub part_employeur: Nombre,
     pub composant_79: Option<Composant79>,
     pub source: Option<Fondement>,
@@ -676,7 +677,7 @@ forme! {
     /// parts que la couche retire (la rubrique n'a plus de part de ce cote : `Rubrique::taux_pat`, `taux_sal`).
     #[derive(Default)]
     pub struct RubriqueModifiee {
-        pub famille: Option<String>,
+        pub famille: Option<FamilleDeCotisation>,
         pub libelle: Option<String>,
         pub base: Option<Assiette>,
         pub taux_pat: Option<TauxDate>,
@@ -703,7 +704,7 @@ forme! {
         /// La base de la ligne s'arrete au plafond de la periode.
         pub plafond: Option<bool>,
         pub composants: Option<Vec<Court>>,
-        pub affectation: Option<String>,
+        pub affectation: Option<crate::code_cotisation::IdentifiantDAffiliation>,
         /// L'adhesion sous laquelle se declare la base 31 de la cotisation, nommee pour qui lit le bareme : la reference
         /// du contrat chez l'organisme (S21.G00.15.001 : `INTERBRANCHE`, `TSINTERMITTENTS`) ou son role (`PREVOYANCE`,
         /// `SANTE`). Ce n'est pas un organisme ; c'est `affectation` (la place de l'adhesion) que la DSN ecrit.
@@ -726,7 +727,7 @@ impl CotisationDsn {
     /// n'a pas de code, une couche ne la nomme pas.
     pub fn cle(&self) -> Option<CleDeCotisationDsn> {
         let code = self.code81?;
-        Some(CleDeCotisationDsn { code, affectation: self.affectation.clone().filter(|a| !a.is_empty()) })
+        Some(CleDeCotisationDsn { code, affectation: self.affectation.clone() })
     }
 }
 
@@ -797,13 +798,22 @@ forme! {
     }
 }
 
+/// LA FORMULE DE LA REDUCTION GENERALE qu'un bareme nomme (`formule`) : celle de « Fillon », au coefficient `t` ; un
+/// bareme qui n'en nomme aucune calcule le coefficient par `tmin`, `tdelta` et `puissance` (`reduction`). Une liste du
+/// logiciel : les baremes livres n'ecrivent que `fillon`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FormuleDeReduction {
+    Fillon,
+}
+
 forme! {
     /// La reduction generale des cotisations (CSS L. 241-13), ou ce qu'une couche en complete.
     #[derive(Default)]
     pub struct ReductionGenerale {
         pub verifie: Option<bool>,
         pub statuts: Option<Vec<Statut>>,
-        pub formule: Option<String>,
+        pub formule: Option<FormuleDeReduction>,
         pub tmin: Option<Nombre>,
         pub tdelta: Option<Nombre>,
         pub puissance: Option<Nombre>,
@@ -813,7 +823,37 @@ forme! {
         pub imputation: Option<Imputation>,
         pub dsn: Option<ReductionDsn>,
         /// La fraction du coefficient d'un salarie declare a la caisse des Conges Spectacles (`100/90`).
-        pub majoration_caisse_conges: Option<String>,
+        pub majoration_caisse_conges: Option<MajorationCaisseConges>,
+    }
+}
+
+/// LA MAJORATION DU COEFFICIENT DE LA REDUCTION GENERALE d'un salarie declare a la caisse des Conges Spectacles
+/// (`majoration_caisse_conges`, « 100/90 ») : son numerateur et son denominateur tels qu'ecrits, sans les reduire ; le
+/// coefficient se multiplie par l'un et se divise par l'autre (`reduction`). Reecrite comme lue (`Display`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MajorationCaisseConges {
+    pub numerateur: Decimal,
+    pub denominateur: Decimal,
+}
+
+impl MajorationCaisseConges {
+    /// La majoration ecrite `texte`, « numerateur/denominateur ».
+    pub fn lire(texte: &str) -> socle::echec::R<MajorationCaisseConges> {
+        let (n, d) = texte.split_once('/').ok_or_else(|| socle::refus!("fraction illisible : {}", socle::fichiers::repr(texte)))?;
+        let lire = |s: &str| <Decimal as std::str::FromStr>::from_str(s).map_err(|_| socle::echec::refus(socle::num::illisible(s)));
+        Ok(MajorationCaisseConges { numerateur: lire(n)?, denominateur: lire(d)? })
+    }
+}
+
+impl std::fmt::Display for MajorationCaisseConges {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.numerateur, self.denominateur)
+    }
+}
+
+impl<'de> Deserialize<'de> for MajorationCaisseConges {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        MajorationCaisseConges::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
     }
 }
 
@@ -920,12 +960,19 @@ forme! {
     }
 }
 
+crate::cle_opaque! {
+    /// LA CATEGORIE DE LA DEDUCTION FORFAITAIRE SPECIFIQUE d'une profession (`20`, `25`) : le taux de l'article 5 de
+    /// l'annexe IV du CGI (redaction du 31/12/2000) qu'elle porte, la cle des `taux` de l'annee du bareme. Que portent
+    /// une profession du bareme, la DFS d'un contrat et sa forme ecrite.
+    pub struct CategorieDfs, "catégorie de la déduction forfaitaire spécifique";
+}
+
 forme! {
     pub struct DeductionForfaitaire {
         pub verifie: Option<bool>,
-        pub professions: BTreeMap<String, Profession>,
+        pub professions: BTreeMap<crate::fiche::ProfessionDfs, Profession>,
         pub frais_cumulables: bool,
-        pub taux: BTreeMap<String, socle::forme::Nombre>,
+        pub taux: BTreeMap<CategorieDfs, socle::forme::Nombre>,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub plafond_annuel: Decimal,
         pub rubriques_abattues: Vec<IdDeCotisation>,
@@ -935,7 +982,7 @@ forme! {
 forme! {
     pub struct Profession {
         pub libelle: String,
-        pub categorie: String,
+        pub categorie: CategorieDfs,
         pub frais_hors_assiette: Vec<crate::catalogue::CodeDeRubrique>,
         pub taux: Option<Nombre>,
     }
@@ -950,8 +997,9 @@ forme! {
 
 forme! {
     pub struct RisqueAtmp {
-        pub code: String,
-        pub code_arrete: Option<String>,
+        pub code: crate::bareme::CodeRisqueAt,
+        #[serde(default, deserialize_with = "crate::bareme::ecrit_a_l_arrete::deserialize")]
+        pub code_arrete: Option<crate::bareme::CodeRisqueAt>,
         pub taux: Option<Nombre>,
         pub tc: bool,
         pub alsace_moselle: Option<AtmpAlsaceMoselle>,
@@ -1175,6 +1223,39 @@ forme! {
     }
 }
 
+crate::cle_opaque! {
+    /// L'ORGANISATION PATRONALE : la cle d'une couche du bareme (`par_organisation_patronale`, son sigle), la case de la
+    /// fiche entreprise qui la nomme, et un signataire d'un accord de salaires (`minima::Convention::signataires`, ecrit
+    /// par sa cle, compare a la cle que la porte reconnait). Une
+    /// saisie se range en sigle (`FormeDeCase::RANGER`), se reconnait par son sigle ou un alias de sa couche dans le
+    /// bareme du jour (`Pile::organisation`, la seule porte) et s'ecrit par sa cle ; une fiche ecrite avant sous un alias
+    /// se reconnait de meme, a chaque lecture.
+    pub struct OrganisationPatronale, "organisation patronale";
+}
+
+impl OrganisationPatronale {
+    /// LE NOM `nom` DESIGNE-T-IL CETTE ORGANISATION : son sigle, ou l'un des `alias` (ceux de sa couche), sans egard aux
+    /// accents, a la casse ni aux blancs (`socle::texte::sigle`). La seule comparaison d'un nom a une organisation, que
+    /// seule la porte lit (`Pile::organisation`).
+    fn designee_par(&self, alias: Option<&Vec<String>>, nom: &OrganisationPatronale) -> bool {
+        let cle = socle::texte::sigle(nom.as_str());
+        !cle.is_empty() && (cle == socle::texte::sigle(self.as_str()) || alias.into_iter().flatten().any(|a| cle == socle::texte::sigle(a)))
+    }
+}
+
+/// Une organisation saisie se range en sigle : « Scène Ensemble » se lit « SCENE ENSEMBLE ».
+impl crate::fiche::FormeDeCase for OrganisationPatronale {
+    const RANGER: Option<fn(&str) -> String> = Some(socle::texte::sigle);
+}
+
+impl Pile {
+    /// L'ORGANISATION `o` DANS CE BAREME : sa cle et sa couche, reconnues par son sigle ou un alias de la couche
+    /// (`OrganisationPatronale::designee_par`) ; `None` : le bareme ne la couvre pas.
+    pub fn organisation(&self, o: &OrganisationPatronale) -> Option<(&OrganisationPatronale, &Organisation)> {
+        self.par_organisation_patronale.iter().find(|(k, c)| k.designee_par(c.alias.as_ref(), o))
+    }
+}
+
 forme! {
     /// La couche d'une organisation patronale : la retraite T1 de ses adherents (`bareme::bareme_retraite_t1`).
     pub struct Organisation {
@@ -1199,16 +1280,16 @@ forme! {
         #[serde(deserialize_with = "socle::forme::court")]
         pub taux_droit_commun: Decimal,
         pub ceg: Cet,
-        pub avant_1999: String,
+        pub avant_1999: crate::bareme::RepartitionDeLaTrancheUne,
         pub par_idcc: BTreeMap<crate::fiche::Idcc, RepartitionDeBranche>,
     }
 }
 
 forme! {
     pub struct RepartitionDeBranche {
-        pub permanent: Option<String>,
-        pub technicien: Option<String>,
-        pub artiste: Option<String>,
+        pub permanent: Option<crate::bareme::RepartitionDeLaTrancheUne>,
+        pub technicien: Option<crate::bareme::RepartitionDeLaTrancheUne>,
+        pub artiste: Option<crate::bareme::RepartitionDeLaTrancheUne>,
     }
 }
 
@@ -1297,7 +1378,7 @@ forme! {
     /// (absente ou nulle) ne change pas ; `efface` retire une part.
     pub struct Contribution {
         pub id: IdDeCotisation,
-        pub famille: Option<String>,
+        pub famille: Option<FamilleDeCotisation>,
         pub libelle: Option<String>,
         pub base: Option<BaseParPopulation>,
         pub taux_pat: Option<Court>,
@@ -1338,12 +1419,38 @@ forme! {
     }
 }
 
+crate::cle_opaque! {
+    /// UNE CONTRIBUTION CONVENTIONNELLE DE BRANCHE declaree sous une adhesion Audiens (FNAS, FCAP, PARITARISME, CCHSCT,
+    /// APPAV) : son nom, garde tel que le bareme l'ecrit (`contributions_dsn`). Que portent une contribution DSN du
+    /// bareme, une adhesion saisie et un contrat attendu ; deux noms sont la meme contribution sans egard a la casse
+    /// (`est`), et une adhesion la tient aussi par son libelle (`est_le_libelle`).
+    pub struct ContributionDeBranche, "contribution de branche";
+}
+
+impl ContributionDeBranche {
+    /// La meme contribution, sans egard a la casse.
+    pub fn est(&self, autre: &ContributionDeBranche) -> bool {
+        self.est_le_libelle(autre.as_str())
+    }
+
+    /// Le libelle `libelle` (S21.G00.15.001), sans ses blancs de bord et sans egard a la casse, est-il son nom ?
+    pub fn est_le_libelle(&self, libelle: &str) -> bool {
+        self.as_str().to_uppercase() == libelle.trim().to_uppercase()
+    }
+}
+
+crate::cle_opaque! {
+    /// LE NIVEAU DE GARANTIE SANTE d'un permanent (`1`, `2`, `3`) : la cle des niveaux du releve sante du bareme, des
+    /// options d'un contrat d'organisme (S21.G00.70.004 par niveau), et la case `sante_svp.niveau` de sa fiche.
+    pub struct NiveauDeGarantie, "niveau de garantie santé";
+}
+
 /// Une contribution de branche que la DSN declare (bloc 82), la somme de lignes du bulletin. Son premier mois en DSN
 /// n'a pas de valeur par defaut : elle ne prend pas la forme `forme!`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContributionDsn {
-    pub contribution: String,
+    pub contribution: ContributionDeBranche,
     pub lignes: Vec<IdDeCotisation>,
     pub en_dsn_depuis: socle::mois::Mois,
     pub source: Option<Fondement>,
@@ -1355,7 +1462,7 @@ forme! {
     pub struct Secteurs {
         pub champ: ChampDuSecteur,
         pub libelle: String,
-        pub portes: Vec<String>,
+        pub portes: Vec<crate::fiche::Secteur2121>,
         pub refus: String,
     }
 }
@@ -1370,9 +1477,9 @@ pub enum ChampDuSecteur {
 
 impl ChampDuSecteur {
     /// Ce que la fiche y dit.
-    pub fn dit(self, fiche: &crate::fiche::ChampsEntreprise) -> Option<&'static str> {
+    pub fn dit(self, fiche: &crate::fiche::ChampsEntreprise) -> Option<crate::fiche::Secteur2121> {
         match self {
-            ChampDuSecteur::Secteur2121 => fiche.secteur_2121.code(),
+            ChampDuSecteur::Secteur2121 => fiche.secteur_2121,
         }
     }
 }
@@ -1419,17 +1526,41 @@ forme! {
 #[derive(Debug, Clone, Default)]
 pub struct TauxAtmp {
     pub valeur: Option<Decimal>,
-    pub code_risque: Option<String>,
+    pub code_risque: Option<crate::bareme::CodeRisqueAt>,
     pub depuis: Option<socle::date::Jour>,
     pub provenance: Option<crate::fiche::ProvenanceAtmp>,
     pub notification: Option<crate::fiche::NotificationAtmp>,
     pub manque: Option<socle::echec::Echec>,
 }
 
-/// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`) : la phrase d'un refus est celle d'un bareme que le moteur ne sait pas
-/// lire, la cle a part.
-pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&str>) -> socle::echec::R<(Pile, Vec<socle::date::Jour>)> {
-    lire_au(fichier, jour, organisation, "Le barème de l'année porte une clé ou une valeur que le moteur ne sait pas lire : le signaler au développeur.")
+/// La phrase du refus d'un socle livre que le moteur ne sait pas lire, la cle a part.
+const SOCLE_ILLISIBLE: &str = "Le barème de l'année porte une clé ou une valeur que le moteur ne sait pas lire : le signaler au développeur.";
+
+/// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`), pour la compagnie adherente de `organisation` (la case de sa fiche,
+/// un alias peut-etre) : elle se reconnait d'abord dans ce socle (`socle_seul`, `Pile::organisation`, la seule porte),
+/// et le socle se lit avec sa cle, celle que nomment les signataires d'un accord (`minima::signataire`). Une
+/// organisation que le socle ne couvre pas n'est signataire d'aucun accord (le bareme la refuse ensuite,
+/// `contexte::controler_organisation_patronale`).
+pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&OrganisationPatronale>) -> socle::echec::R<(Pile, Vec<socle::date::Jour>)> {
+    let cle = match organisation {
+        Some(o) => socle_seul(fichier, jour.an)?.organisation(o).map(|(k, _)| k.clone()),
+        None => None,
+    };
+    lire_au(fichier, jour, cle.as_ref(), SOCLE_ILLISIBLE)
+}
+
+/// LE SOCLE LIVRE `fichier` LU SEUL au 1er janvier de `an`, sans organisation, garde tant que le fichier ne change pas :
+/// ce contre quoi une organisation patronale se reconnait (`Pile::organisation`) avant que le bareme se lise avec elle,
+/// et sans le taux AT/MP de la compagnie.
+pub(crate) fn socle_seul(fichier: &std::path::Path, an: i32) -> socle::echec::R<std::sync::Arc<Pile>> {
+    type Cache = std::sync::Mutex<std::collections::HashMap<String, socle::fichiers::Notee<std::sync::Arc<Pile>>>>;
+    static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let cle = format!("{}|{:?}|{}", fichier.display(), socle::fichiers::signature(fichier)?, an);
+    socle::fichiers::garde_notee(cache, cle, || {
+        let jour = socle::date::Jour::nouveau(an, 1, 1).ok_or_else(|| socle::refus!("Année {} hors du calendrier.", an))?;
+        Ok(std::sync::Arc::new(lire_au(fichier, &jour, None, SOCLE_ILLISIBLE)?.0))
+    })
 }
 
 /// LA SURCOUCHE DE LA COMPAGNIE `fichier` : la phrase d'un refus dit ce que la compagnie corrige, la cle a part.

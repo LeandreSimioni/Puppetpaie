@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::NomDeFiche;
-use crate::fiches::FicheNommee;
+use droit::fiche::FicheNommee;
 use engagement::importe::{Attestation, CleDePaieVersee, ContratLu, ContratRelu, PaieLue, PaieVersee};
 use engagement::numeros::NumeroContrat;
 use socle::date::Jour;
@@ -31,6 +31,7 @@ use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
+use import::attestes::BlocDImport;
 use import::reponse::{Copie, EtatFiche, Importation};
 
 /// Le fichier de `config/` ou s'ecrit la fiche `nom`.
@@ -69,12 +70,12 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
 
 /// `lire_dsn_casc` : la DSN deposee, et si elle porte la CASC-SVP (un contrat rattache, S21.G00.70.013, a
 /// l'adhesion que la DSN nomme `contrat` en bloc 15). `None` : illisible.
-pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &str) -> R<Option<(declarations::dsn_lue::DsnLue, bool)>> {
+pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::ReferenceDeContrat) -> R<Option<(declarations::dsn_lue::DsnLue, bool)>> {
     let Some(d) = declarations::dsn_lue::lire_une_dsn(chemin)? else { return Ok(None) };
     let porte = d
         .adhesions
         .iter()
-        .filter(|a| a.libelle == contrat)
+        .filter(|a| a.libelle == contrat.as_str())
         .filter_map(|a| a.reference.as_ref())
         .any(|r| d.rattachements.contains(r));
     Ok(Some((d, porte)))
@@ -458,8 +459,8 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     let mut ecrits: BTreeSet<PathBuf> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
     for a in &imp.a_creer {
-        let (cle, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
-        let emplacement = match (a.nom, a.rang) {
+        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, &a.donnees, &a.fautes, note)?;
+        let emplacement = match (a.donnees.nom(), a.rang) {
             (NomDeFiche::Entreprise, _) => reponse.entreprise.as_mut(),
             (NomDeFiche::Salarie, Some(i)) => reponse.salaries.get_mut(i),
             (NomDeFiche::Spectacle, Some(i)) => reponse.spectacles.get_mut(i),
@@ -469,10 +470,10 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
             restent_a_creer += 1;
             continue;
         };
-        emplacement.cle = cle;
+        emplacement.fiche = fiche;
         emplacement.etat = EtatFiche::Creee;
         emplacement.anomalies = anomalies;
-        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)));
+        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.donnees.nom())));
     }
     // Les fiches qui existent : ce qui y est vide ou « A COMPLETER » (`import::completer`), rien d'autre.
     let mut completees = 0usize;
@@ -483,12 +484,12 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
         }
         let emplacement = match &a.fiche {
             FicheNommee::Entreprise => reponse.entreprise.as_mut(),
-            FicheNommee::Salarie(_) => reponse.salaries.iter_mut().find(|e| e.cle.as_deref() == a.fiche.cle()),
-            FicheNommee::Spectacle(_) => reponse.spectacles.iter_mut().find(|e| e.cle.as_deref() == a.fiche.cle()),
+            FicheNommee::Salarie(_) => reponse.salaries.iter_mut().find(|e| e.fiche.nommee() == Some(&a.fiche)),
+            FicheNommee::Spectacle(_) => reponse.spectacles.iter_mut().find(|e| e.fiche.nommee() == Some(&a.fiche)),
         };
         if let Some(e) = emplacement {
             e.etat = EtatFiche::Completee;
-            e.completer.retain(|c| faits.valeur(c.champ).is_some());
+            e.completer.retain(|c| faits.valeur_ecrite(c.champ).is_some());
         }
         ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.fiche.nom())));
         completees += 1;
@@ -522,18 +523,18 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
             }
         }
     }
-    let mut comptes: HashMap<&str, usize> = HashMap::new();
+    let mut comptes: HashMap<BlocDImport, usize> = HashMap::new();
     for (nir, ligne, bloc) in &imp.contrats_attestes {
         let Some(cle) = par_nir.get(nir) else { continue };
         let mut e = ligne.clone();
         e.salarie = Some(cle.clone());
         e.contrat.importe_le = Some(le);
         engagements.push(e);
-        *comptes.entry(bloc).or_default() += 1;
+        *comptes.entry(*bloc).or_default() += 1;
     }
-    let compte = |bloc: &str| -> usize { comptes.iter().filter(|(b, _)| **b == bloc).map(|(_, n)| *n).sum() };
+    let compte = |bloc: BlocDImport| -> usize { comptes.iter().filter(|(b, _)| **b == bloc).map(|(_, n)| *n).sum() };
     let (contrats_aem, contrats_bulletins, contrats_certificats, contrats_aem_pdf) =
-        (compte("declarations"), compte("bulletins"), compte("certificats"), compte("aem_pdf"));
+        (compte(BlocDImport::Declarations), compte(BlocDImport::Bulletins), compte(BlocDImport::Certificats), compte(BlocDImport::AemPdf));
 
     // LES PAIES : on remplace ligne a ligne par la cle (mois, salarie, contrat). Une ligne de DSN qui arrive sur une ligne
     // completee par un bulletin garde ce que le bulletin a ecrit ; une paie de bulletin seul s'efface devant la paie
@@ -724,7 +725,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         fiches.push(socle::ecran::compte(de(&reponse.spectacles), "spectacle", "spectacles"));
     }
     // UN SPECTACLE SANS TITRE (`completer::A_COMPLETER`) : les bulletins en proposent un a valider
-    // (`demarrage::TITRE_PROPOSE`), ou les pieces ne portent que son numero d'objet ; le contrat imprime le titre, la phrase
+    // (la note `titre_propose`), ou les pieces ne portent que son numero d'objet ; le contrat imprime le titre, la phrase
     // le dit. Lu dans les fiches telles que l'import les a ecrites.
     let (mut proposes, mut sans_titre) = (0, 0);
     let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;

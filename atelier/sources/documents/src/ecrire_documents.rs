@@ -10,6 +10,7 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::echec::Echec;
 use socle::echec::R;
+use socle::mois::Annee;
 use socle::verrou::Verrou;
 use socle::ecriture::json_indente;
 use engagement::calcul::Paie;
@@ -30,7 +31,7 @@ pub enum Suite {
 }
 
 /// `config/compteurs.json` : par annee (`"2026"`), le dernier numero de chaque suite.
-pub type Compteurs = BTreeMap<String, CompteursDeLAnnee>;
+pub type Compteurs = BTreeMap<Annee, CompteursDeLAnnee>;
 
 /// Les derniers numeros d'une annee, suite par suite.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -106,7 +107,7 @@ pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: i32, atte
     let n_bull = match attente.get(&annee) {
         Some(v) => v + 1,
         None => {
-            let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.bulletin);
+            let lu = compteurs(&ctx.racine)?.get(&Annee::nouvelle(annee.into())?).and_then(|c| c.bulletin);
             lu.into_iter().fold(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee.into())?, i64::max) + 1
         }
     };
@@ -131,7 +132,7 @@ impl Reserves {
         if let Some(v) = self.valeurs.get(&(annee, suite)) {
             return Ok(v + 1);
         }
-        let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.de(suite));
+        let lu = compteurs(&ctx.racine)?.get(&Annee::nouvelle(annee)?).and_then(|c| c.de(suite));
         let importe = match suite {
             Suite::Bulletin => Some(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee)?),
             Suite::CertificatCs => None,
@@ -167,7 +168,7 @@ impl Reserves {
         let p = ctx.racine.join(COMPTEURS);
         let mut c = compteurs(&ctx.racine)?;
         for k in &self.ordre {
-            c.entry(k.0.to_string()).or_default().poser(k.1, self.valeurs[k]);
+            c.entry(Annee::nouvelle(k.0)?).or_default().poser(k.1, self.valeurs[k]);
         }
         std::fs::write(&p, json_indente(&c, 2)).map_err(|e| os(&p, e))
     }

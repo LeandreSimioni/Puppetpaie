@@ -1182,8 +1182,8 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         }
     }
     let ent = &ctx.entreprise;
-    let jauge = |cle: &droit::minima::ParLaGrille| ent.metier.ouvrir(&(*cle, *au)).jauge_annexe_1.dite().map(droit::fiche::Choix::code);
-    let pa = clauses::prime_anciennete(ent.idcc.dite(), ent.annexe_convention.code(), &fiche, &crate::solde::dit_par_l_engagement(e)?, &fin_mois, jauge)?;
+    let jauge = |cle: &droit::minima::ParLaGrille| ent.metier.ouvrir(&(*cle, *au)).jauge_annexe_1.dite().copied();
+    let pa = clauses::prime_anciennete(ent.idcc.dite(), ent.annexe_convention.dite().copied(), &fiche, &crate::solde::dit_par_l_engagement(e)?, &fin_mois, jauge)?;
     if let Some(pa) = pa {
         let Some(base_conv) = pa.base.map(|b| socle::num::dec_texte(&b.to_string())).transpose()? else {
             return Err(socle::refus!("{} : prime d'anciennete ({}) -- {}.", qui(ctx, e), pa.article, pa.pourquoi.into_iter().collect::<String>()));

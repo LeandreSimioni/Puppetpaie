@@ -18,7 +18,7 @@ use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, VerdictDeLaPiece};
-use crate::retours::{self, Annonce, IdDeFlux, NatureDuRetour, Verdict};
+use crate::retours::{self, Annonce, CompteRenduDuTest, IdDeFlux, NatureDuRetour, Verdict};
 use socle::echec::{Echec, R};
 use crate::tables_journal::ALNUM;
 
@@ -187,12 +187,69 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 
 // -------------------------------------------------------------- les contrats
 
-/// Comment chaque contrat est parti la derniere fois : `imprime` (remis en main propre, `detail.main_propre`) ou
-/// `courriel`.
-pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, &'static str> {
+/// LE MODE DE REMISE D'UNE PIECE REMISE AUX SALARIES : comment un contrat (ou un avenant), ou les documents d'un mois
+/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre, `detail.main_propre`), ou par
+/// courriel. Ecrite `imprime`, `courriel`. Une ligne du journal la dit si elle en a une (`Ligne::remise` : la signature
+/// d'un contrat, l'envoi des documents).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModeDeRemise {
+    Imprime,
+    Courriel,
+}
+
+impl ModeDeRemise {
+    /// Celui d'un envoi du journal, par `main_propre` : imprime s'il est remis en main propre, sinon par courriel.
+    pub fn de(main_propre: bool) -> ModeDeRemise {
+        if main_propre {
+            ModeDeRemise::Imprime
+        } else {
+            ModeDeRemise::Courriel
+        }
+    }
+}
+
+/// OU SE DIT LA REMISE : dans une phrase (la reponse d'une route, la phrase d'un envoi du journal), ou dans le recit de
+/// ce qui est parti (l'Historique du mois, les pieces d'un contrat).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaceDeLaRemise {
+    Phrase,
+    Recit,
+}
+
+/// LE MOT DE LA REMISE d'une piece partie, a sa place : « imprimé » ; par courriel, « envoyé » dans une phrase,
+/// « envoyé à la signature » dans le recit. SANS REMISE NOTEE (`None`) : le contrat est parti (`engagement::departs`,
+/// `journal::noter_ligne`) par un courriel coupe en route (`ligne_d_envoi::noter_echec_d_envoi`), dont la ligne n'est pas
+/// acceptee mais a servi le salarie, et que `contrats_partis_par`, qui ne lit que les lignes acceptees, ne retient pas :
+/// c'etait un courriel.
+pub fn mot_de_la_remise(par: Option<ModeDeRemise>, place: PlaceDeLaRemise) -> &'static str {
+    match (par, place) {
+        (Some(ModeDeRemise::Imprime), PlaceDeLaRemise::Phrase | PlaceDeLaRemise::Recit) => "imprimé",
+        (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Phrase) => "envoyé",
+        (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Recit) => "envoyé à la signature",
+    }
+}
+
+/// LE MOT DU DEPART D'UN ACTE DU JOURNAL, dans une phrase, quand sa ligne n'a pas de remise (`Ligne::remise`) : une
+/// declaration deposee, un courriel parti, s'est « envoyé ». Une ligne qui a une remise la dit (`mot_de_la_remise`).
+fn mot_de_l_acte(acte: Acte) -> &'static str {
+    match acte {
+        Acte::Dsn
+        | Acte::Dpae
+        | Acte::Documents
+        | Acte::ContratSignature
+        | Acte::ContratContresigne
+        | Acte::RegularisationCasc
+        | Acte::DossierSalarie
+        | Acte::FicheDemande => "envoyé",
+    }
+}
+
+/// Comment chaque contrat est parti la derniere fois.
+pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, ModeDeRemise> {
     let mut d = HashMap::new();
     for e in lignes.iter().filter_map(Ligne::signature).filter(|e| e.accepte) {
-        let par = if e.detail.main_propre { "imprime" } else { "courriel" };
+        let par = ModeDeRemise::de(e.detail.main_propre);
         for c in &e.detail.contrats {
             d.insert(paire(&c.salarie, c.numero.as_ref()), par);
         }
@@ -432,11 +489,11 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
 /// CE QUE LES DOCUMENTS DU MOIS DISAIENT, par salarie : le resume de sa paie (`envoi::resume_de`) dans la derniere ligne
 /// d'envoi de documents qui l'a servi (un envoi coupe en route ne porte que ceux qu'il a servis). Qu'ils soient partis,
 /// c'est l'engagement qui le sait (`journal::departs`) ; ceci n'en dit que le contenu.
-pub fn resumes_des_documents(lignes: &[Ligne], mois: Mois) -> HashMap<String, Option<crate::envoi::ResumeDePaie>> {
+pub fn resumes_des_documents(lignes: &[Ligne], mois: Mois) -> HashMap<IdSalarie, Option<crate::envoi::ResumeDePaie>> {
     let mut out = HashMap::new();
     for e in crate::journal::filtrer(lignes, Some(Acte::Documents), Some(mois), false).filter_map(Ligne::documents) {
         for s in &e.detail.salaries {
-            out.insert(s.cle.to_string(), s.resume.clone());
+            out.insert(s.cle.clone(), s.resume.clone());
         }
     }
     out
@@ -483,15 +540,20 @@ fn pluriel(n: usize) -> &'static str {
 /// memes lectures que l'etat de l'engagement.
 pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
     let Some(ligne) = ligne else { return "pas encore envoyé".into() };
+    let en_test = ligne.mode() == Mode::Test;
     let mut quand = ligne.quand().dit();
-    if ligne.mode() == Mode::Test {
+    if en_test {
         quand = format!("en TEST le {}", quand);
     }
     if !ligne.accepte() {
         return format!("envoi du {} refusé au dépôt — {}", quand, ligne.reponse());
     }
-    let parti = if ligne.main_propre() { "imprimé" } else { "envoyé" };
-    let le = if quand.starts_with("en TEST") { quand.clone() } else { format!("le {}", quand) };
+    // Une ligne qui a une remise la dit ; une autre n'en a pas (`Ligne::remise`) : son acte se dit (`mot_de_l_acte`).
+    let parti = match ligne.remise() {
+        Some(par) => mot_de_la_remise(Some(par), PlaceDeLaRemise::Phrase),
+        None => mot_de_l_acte(ligne.acte()),
+    };
+    let le = if en_test { quand.clone() } else { format!("le {}", quand) };
     let prefixe = format!("{} {}", parti, le);
     match ligne {
         Ligne::ContratSignature(e) => {
@@ -590,24 +652,24 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
     }
 }
 
-/// Le compte rendu d'un depot : `ko` des qu'un retour refuse ; `ok` seulement quand LE BILAN le dit -- la nature 11
-/// (certificat de conformite ou bilan d'anomalies) pour une DSN, le certificat 41 pour une DPAE ; `attendu` sinon.
+/// Le compte rendu d'un depot : KO des qu'un retour refuse ; OK seulement quand LE BILAN le dit -- la nature 11
+/// (certificat de conformite ou bilan d'anomalies) pour une DSN, le certificat 41 pour une DPAE ; attendu sinon.
 /// L'ACCUSE D'ENREGISTREMENT (nature 10) NE COMPTE PAS : il dit « envoi recu », `etat_envoi` OK, pas « declaration
 /// conforme » (regle 5 ; `retours::NatureDuRetour` : « 10 - Accuse d'enregistrement electronique »). Un test dont seul
 /// l'accuse est la ne doit pas s'afficher « testee — conforme » quand l'essai precedent du meme contenu a pris
 /// B1-208-11.
-fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> &'static str {
+fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> CompteRenduDuTest {
     let mut ok = false;
     for r in retours {
         if r.ko() {
-            return "ko";
+            return CompteRenduDuTest::Ko;
         }
         ok = ok || (matches!(r.nature_retour, NatureDuRetour::CertificatDeConformite | NatureDuRetour::CertificatDpae) && r.verdict() == Some(Verdict::Ok));
     }
     if ok {
-        "ok"
+        CompteRenduDuTest::Ok
     } else {
-        "attendu"
+        CompteRenduDuTest::Attendu
     }
 }
 
@@ -646,7 +708,8 @@ pub struct Repetition {
     pub empreinte: EmpreinteCourte,
     pub fichier: NomDeFichier,
     pub conforme: Option<Ligne>,
-    pub compte_rendu: Option<String>,
+    /// Aucun sans test conforme.
+    pub compte_rendu: Option<CompteRenduDuTest>,
     pub ratees: Vec<Ligne>,
     pub perimees: Vec<Ligne>,
     pub couleur: String,
@@ -710,7 +773,7 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
     // LA COULEUR DE L'ENCART qui le dit (la charte des etats, `socle::ecran::couleur_de_l_etat`) : teste conforme, vert ;
     // essaye et rate (ou un test d'un contenu d'avant), a corriger, orange ; en test, ou jamais essaye, une information.
     let couleur = match conforme {
-        Some(_) if compte_rendu == Some("ok") => "vert",
+        Some(_) if compte_rendu == Some(CompteRenduDuTest::Ok) => "vert",
         Some(_) => "gris",
         None if !ratees.is_empty() || !perimees.is_empty() => "orange",
         None => "gris",
@@ -719,7 +782,7 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
     let cette = if quoi == Acte::Dpae { "Cette DPAE" } else { "Cette DSN" };
     const ENSUITE: &str = "Le dépôt réel se fait une fois le test revenu conforme.";
     let (etat, titre, phrase) = match (conforme, ratees.last(), perimees.last()) {
-        (Some(c), _, _) if compte_rendu == Some("ok") => (
+        (Some(c), _, _) if compte_rendu == Some(CompteRenduDuTest::Ok) => (
             EtatDuTest::Testee,
             format!("{} est testée — conforme. Voulez-vous l'envoyer ?", cette),
             format!("Déposée en test le {}, avec ce même contenu.", c.quand().dit()),
@@ -749,7 +812,7 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
         empreinte: empreinte.clone(),
         fichier: nom.clone(),
         conforme: conforme.cloned(),
-        compte_rendu: compte_rendu.map(String::from),
+        compte_rendu,
         ratees,
         perimees,
         couleur: couleur.to_string(),
@@ -1017,23 +1080,22 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
     let mut personnes = Vec::new();
     let mut anomalies: Vec<String> = Vec::new();
     for l in lignes {
-        if l.lot != "00" {
-            if let Some((_, nom)) = declarations::dpae::CODES_RET_AR_LOT.iter().find(|(c, _)| *c == l.lot) {
-                anomalies.push(format!("{} (lot)", nom));
-            }
+        if let Some(lot) = l.lot.filter(|lot| *lot != declarations::dpae::CodeRetourDuLot::Correct) {
+            anomalies.push(format!("{} (lot)", lot.libelle()));
         }
         let p = PersonneCertifiee {
+            libelle: l.code.libelle().to_string(),
             nom: l.nom,
             prenom: l.prenom,
             embauche: l.embauche,
             dossier: l.dossier,
             code: l.code,
-            libelle: l.libelle,
             enregistree: l.enregistree,
             deja_existante: l.deja_existante,
             formalites: l.formalites,
             pastille: None,
         };
+        // Refusee : la ligne le dit dans ses anomalies.
         if !p.enregistree && !p.deja_existante {
             anomalies.push(format!("{} -- {}", p.libelle, p.nom));
         }
@@ -1116,8 +1178,8 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
             .dpae
             .iter()
             .flatten()
-            .filter(|d| !d.enregistree && !d.deja_existante)
-            .map(|d| AnomalieDeRetour { categorie: None, code: d.code.clone(), message: d.libelle.clone(), rubrique: None })
+            .filter(|d| d.refusee())
+            .map(|d| AnomalieDeRetour { categorie: None, code: d.code.to_string(), message: d.code.libelle().to_string(), rubrique: None })
             .collect()
     } else {
         // Sans piece (ni telechargee, ni archivee), le rejet n'a pas d'anomalie lisible.
@@ -1283,10 +1345,12 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&Nume
     parti
 }
 
-/// Le fichier d'une piece partie, dans `sorties/<mois>/` ou son `envoi/`. Un NOM, jamais un chemin : le type le tient.
+/// Le fichier d'une piece partie, dans l'un des dossiers du mois (`DossierDuMois::TOUS` : son envoi, puis ses sorties) :
+/// son nom ne dit pas seul son dossier (le bulletin garde a cote de son rectificatif est un `Bulletin`, hors de l'envoi).
+/// Un NOM, jamais un chemin : le type le tient.
 pub fn chemin_piece(racine: &Path, mois: Mois, nom: &NomDeFichier) -> Option<PathBuf> {
     let base = racine.join("sorties").join(mois.to_string());
-    [base.join("envoi").join(nom), base.join(nom)].into_iter().find(|f| f.is_file())
+    documents::DossierDuMois::TOUS.into_iter().map(|d| d.sous(&base).join(nom)).find(|f| f.is_file())
 }
 
 /// Les avenants du contrat parti -- pas ceux d'un contrat qu'il a remplace. `tous` : les avenants de son contrat
@@ -1364,15 +1428,15 @@ mod tests {
         ];
         let (ea, eb) = (EmpreinteCourte::lire("ea00000000000000").unwrap(), EmpreinteCourte::lire("eb00000000000000").unwrap());
         let rep = repetition(&l, Acte::Dsn, &ea, &NomDeFichier::lire("DSN.dsn").unwrap());
-        assert_eq!((rep.compte_rendu.as_deref(), rep.conforme.as_ref().unwrap().quand().iso()), (Some("ok"), "2026-06-01T10:00:00".to_string()));
+        assert_eq!((rep.compte_rendu, rep.conforme.as_ref().unwrap().quand().iso()), (Some(CompteRenduDuTest::Ok), "2026-06-01T10:00:00".to_string()));
         assert_eq!((rep.ratees.len(), rep.perimees.len(), rep.etat), (1, 1, EtatDuTest::Testee));
         let vide = repetition(&l, Acte::Dpae, &ea, &NomDeFichier::lire("x").unwrap());
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
         assert_eq!(deja_depose(&l, Acte::Dsn, &ea).unwrap().quand().iso(), "2026-06-02T09:00:00");
         assert!(deja_depose(&l, Acte::Dsn, &eb).is_none());
         let r = |verdict: Verdict| RetourOrganisme { nature_retour: NatureDuRetour::CertificatDeConformite, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
-        assert_eq!(compte_rendu_du_depot(&[r(Verdict::Ok), r(Verdict::Ko)]), "ko");
-        assert_eq!(compte_rendu_du_depot(&[]), "attendu");
+        assert_eq!(compte_rendu_du_depot(&[r(Verdict::Ok), r(Verdict::Ko)]), CompteRenduDuTest::Ko);
+        assert_eq!(compte_rendu_du_depot(&[]), CompteRenduDuTest::Attendu);
     }
 
     const BAN_KO: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" type=\"BAN\">\

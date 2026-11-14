@@ -28,13 +28,14 @@ use socle::fichiers::{modele_de, repr};
 use socle::paris::Moment;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
+use crate::urssaf::CodeUrssafDpae;
 use crate::usages::strip;
 
 
 pub const LONGUEUR: usize = 990;
 
 /// L'heure d'embauche que porte la DPAE : 8 h. Rien ne la demande.
-pub const HEURE_EMBAUCHE: &str = "0800";
+const HEURE_EMBAUCHE: i64 = 8;
 
 /// POSITIONS 0-BASED, [debut, fin). Le dessin d'enregistrement officiel
 /// (Format 120, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.pdf`) compte a
@@ -177,11 +178,6 @@ fn zone_texte(texte: &str, jeu: &Jeu, largeur: usize, faute: fn(&str) -> Option<
     Ok(ljust(&entiere(&normaliser(texte, jeu), largeur, faute)?, largeur))
 }
 
-/// Non vide, et rien que des chiffres.
-fn tout_chiffres(t: &str) -> bool {
-    !t.is_empty() && t.chars().all(socle::texte::est_chiffre)
-}
-
 /// Les chiffres d'un numéro de téléphone.
 fn chiffres(t: &str) -> String {
     t.chars().filter(|&c| socle::texte::est_chiffre(c)).collect()
@@ -291,11 +287,25 @@ pub fn employeur(ent: &ChampsEntreprise) -> R<Vec<(&'static str, String)>> {
 
 // ------------------------------------------------------- l'Urssaf
 
+/// LE CODE URSSAF DE LA FICHE ENTREPRISE (`code_urssaf`, tape), sans ses blancs, lu en C_URSSAF : trois chiffres, sinon
+/// le refus nomme la case.
+pub fn code_urssaf_saisi(brut: &str) -> R<CodeUrssafDpae> {
+    let (a, b) = champ("code_urssaf");
+    match CodeUrssafDpae::lire(strip(brut)) {
+        Ok(code) => Ok(code),
+        Err(_) => Err(socle::echec::a_la_cle(
+            &format!("Le code Urssaf de la fiche entreprise s'écrit en {} chiffres : le lire sur un bordereau Urssaf.", b - a),
+            "code_urssaf",
+            repr(brut),
+        )),
+    }
+}
+
 /// L'Urssaf qui recoit la DPAE d'un salarie d'un autre etablissement que le siege : celle « dans le ressort territorial
 /// duquel est situe l'etablissement devant employer le salarie » (code du travail, R. 1221-3, 1°,
 /// `atelier/reference/sources/code-du-travail/xml/R1221-3.xml`), lue au departement de son code postal
 /// (`urssaf-dpae-base.json`, `par_departement`). Le code de la fiche entreprise est celui du siege.
-fn urssaf_d_un_etablissement(vue: &ChampsEntreprise) -> R<String> {
+fn urssaf_d_un_etablissement(vue: &ChampsEntreprise) -> R<CodeUrssafDpae> {
     let (siret, cp) = (vue.siret.ecrite("siret")?, vue.code_postal.ecrite("code_postal")?);
     match crate::urssaf::base()?.du_code_postal(cp) {
         Some(code) => Ok(code),
@@ -324,13 +334,26 @@ pub struct Embauche {
     pub spectacle: Option<droit::fiche::Spectacle>,
 }
 
+impl Embauche {
+    /// L'instant de l'embauche : son premier jour, a l'heure que la DPAE porte (`HEURE_EMBAUCHE`, a Paris).
+    pub fn instant(&self) -> R<Moment> {
+        Moment::a_paris(self.debut, HEURE_EMBAUCHE, 0, 0)
+            .ok_or_else(|| socle::refus!("L'embauche du {} à {} h n'est pas une heure de Paris.", self.debut.jj_mm_aaaa(), HEURE_EMBAUCHE))
+    }
+}
+
+/// L'heure et la minute de `m` a Paris, chacune sur deux chiffres, separees par `entre` (HHMM, HHhMM).
+fn heure_minute(m: Moment, entre: &str) -> String {
+    let s = m.seconde_du_jour_de_paris();
+    format!("{:02}{}{:02}", s / 3_600, entre, s / 60 % 60)
+}
+
 /// Les parametres communs d'une ecriture.
 pub struct Parametres<'a> {
     /// La minute de l'ecriture, donnee par l'appelant (heure de Paris), que la zone ecrit JJMMAAAAHHMM.
     pub horodatage: Moment,
-    pub heure_embauche: String,
-    /// Le code Urssaf voulu, tel que l'appelant l'a donne (`None` : celui du gabarit).
-    pub code_urssaf: Option<String>,
+    /// Le code Urssaf voulu (`code_urssaf_saisi`, `None` : celui du gabarit).
+    pub code_urssaf: Option<CodeUrssafDpae>,
     pub ent: Option<&'a EntrepriseDuDocument>,
     pub chemins: &'a Chemins,
 }
@@ -375,30 +398,22 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
             code_urssaf = Some(urssaf_d_un_etablissement(etab)?);
         }
     }
-    if let Some(brut) = &code_urssaf {
-        let (a, b) = champ("code_urssaf");
-        let v = strip(brut);
-        if v.chars().count() != b - a || !tout_chiffres(v) {
-            return Err(socle::echec::a_la_cle(
-                &format!("Le code Urssaf de la fiche entreprise s'écrit en {} chiffres : le lire sur un bordereau Urssaf.", b - a),
-                "code_urssaf",
-                repr(brut),
-            ));
-        }
-        // ET LE CODE DOIT EXISTER. Trois chiffres bien formes
-        // suffisaient ; le point de depot, lui, repond << Code URSSAF invalide
+    if let Some(code) = &code_urssaf {
+        // LE CODE DOIT EXISTER. Trois chiffres bien formes (`code_urssaf_saisi`)
+        // ne suffisent pas ; le point de depot, lui, repond << Code URSSAF invalide
         // -- n'appartenant pas a la liste des Codes Urssaf >>, des jours plus
         // tard, sur une embauche qui n'est alors pas declaree. La liste est
         // celle de la Table des Urssaf (`urssaf-codes-types-personnel.csv`), relevee et
         // datee.
-        if !crate::urssaf::base()?.existe(v) {
+        if !crate::urssaf::base()?.existe(code) {
             return Err(socle::echec::a_la_cle(
                 "Le code Urssaf de la fiche entreprise n'est pas celui d'un organisme de recouvrement connu : le point de dépôt le refuserait. Le code se lit sur les bordereaux Urssaf de la compagnie.",
                 "code_urssaf",
-                repr(brut),
+                repr(code.as_str()),
             ));
         }
-        ecrire_zone(&mut buf, "code_urssaf", a, b, v)?;
+        let (a, b) = champ("code_urssaf");
+        ecrire_zone(&mut buf, "code_urssaf", a, b, code.as_str())?;
     }
 
     let s = &e.salarie;
@@ -433,12 +448,13 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     poser(&mut buf, "lieu_naissance", &zone_texte(s.lieu_naissance.ecrite("lieu_naissance")?, &LIEU, zone("lieu_naissance"), droit::fiche::LieuNaissance::faute)?)?;
     let (a, b) = RESERVE_APRES_LIEU;
     ecrire_zone(&mut buf, "reserve", a, b, &" ".repeat(b - a))?;
-    poser(&mut buf, "date_embauche", &e.debut.jjmmaaaa())?;
-    poser(&mut buf, "heure_embauche", &p.heure_embauche)?;
+    let embauche = e.instant()?;
+    poser(&mut buf, "date_embauche", &embauche.jour_de_paris().jjmmaaaa())?;
+    poser(&mut buf, "heure_embauche", &heure_minute(embauche, ""))?;
     poser(&mut buf, "sexe", sexe)?;
     poser(&mut buf, "dept_naissance", s.departement_naissance.ecrite("departement_naissance")?)?;
     let nat = nature_de(e)?;
-    poser(&mut buf, "type_contrat", &nat.type_contrat_dpae())?;
+    poser(&mut buf, "type_contrat", nat.type_contrat_dpae().code())?;
     // UN CDI N'A PAS DE TERME, et la zone D_FIN_CDD reste a blanc : le
     // controle 46 (<< date de fin obligatoire >>) ne vise que les contrats de
     // type CDD. Un CDD sans fin, lui, est refuse ici plutot que par l'Urssaf.
@@ -477,18 +493,17 @@ pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> R<Vec<String>>
     // CE QUE LA DPAE EXIGE DES FICHES (`exige_par` de `champs-base.json`, la liste que « Pour demarrer » lit : la naissance,
     // zones D_NAISSANCE_SAL, L_LIEU_NAISS_SAL et le departement de naissance, « O », et le sexe sans NIR, zone SEXE,
     // `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`) : tout ce qui manque, d'un coup, avant d'ecrire.
-    let mut saisies: Vec<(droit::fiche::NomDeFiche, String, crate::champs::Saisie)> = Vec::new();
+    let mut fiches: Vec<(crate::champs::FicheAJuger<'_>, String)> = Vec::new();
     if let Some(e) = p.ent {
-        saisies.push((droit::fiche::NomDeFiche::Entreprise, "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Entreprise, &e.fiche)?));
+        fiches.push((crate::champs::FicheAJuger::Entreprise(&e.fiche), "la fiche entreprise".to_string()));
     }
     for e in embauches {
         let qui = match e.salarie.nomme() {
             Some(n) => n,
             None => e.salarie.fiche.id.to_string(),
         };
-        saisies.push((droit::fiche::NomDeFiche::Salarie, format!("la fiche de {}", qui), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &e.salarie.champs)?));
+        fiches.push((crate::champs::FicheAJuger::Salarie(&e.salarie.champs), format!("la fiche de {}", qui)));
     }
-    let fiches: Vec<(droit::fiche::NomDeFiche, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     if let Some(m) = crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dpae, &fiches, &[])? {
         return Err(refus(m));
     }
@@ -640,14 +655,8 @@ fn nature_de(e: &Embauche) -> R<std::sync::Arc<natures::Nature>> {
     e.nature.proprietes()
 }
 
-/// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises. `heure_embauche` (HHMM) se dit `HHhMM`.
-pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &str) -> R<String> {
-    let h: Vec<char> = heure_embauche.chars().collect();
-    let heure = format!(
-        "{}h{}",
-        h.iter().take(2).collect::<String>(),
-        h.iter().skip(2).collect::<String>()
-    );
+/// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises. L'heure d'embauche s'y dit `HHhMM`.
+pub fn recapitulatif(embauches: &[Embauche]) -> R<String> {
     let mut lignes: Vec<String> = vec!["DPAE - a declarer avant le debut de chaque contrat".into(), String::new()];
     for e in embauches {
         let s = &e.salarie;
@@ -677,7 +686,8 @@ pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &str) -> R<String> 
             Some(nir) => format!("  NIR {}{}", nir, s.nir_cle.ecrite("nir_cle")?),
             None => "  NIR : aucun -- cette DPAE vaut demande d'immatriculation (formalite IMMA)".to_string(),
         });
-        lignes.push(format!("  Embauche le {} a {}{}", e.debut.jj_mm_aaaa(), heure, terme));
+        let embauche = e.instant()?;
+        lignes.push(format!("  Embauche le {} a {}{}", embauche.jour_de_paris().jj_mm_aaaa(), heure_minute(embauche, "h"), terme));
         lignes.push(format!("  Emploi : {} - {}{}", s.emploi.ecrite("emploi")?, nat.libelle, ou));
         lignes.push(String::new());
     }
@@ -719,19 +729,31 @@ fn tranche(r: &[char], a: usize, b: usize) -> String {
 /// UN ENREGISTREMENT DPAE RELU : les zones (`CHAMPS`) qu'on en lit, chacune sans ses blancs ; a blanc, elle est vide.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnregistrementRelu {
-    /// `JJMMAAAAHHMM`, sans secondes.
-    pub horodatage: Option<String>,
+    /// Ecrit `JJMMAAAAHHMM`, sans secondes, a Paris (`horodatage_relu`).
+    pub horodatage: Option<Moment>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
     /// A blanc, le salarie n'avait pas de NIR (`ecrire`) ; rempli, c'est le NIR que nous avons ecrit.
     pub nir: Option<droit::fiche::Nir>,
-    /// `JJMMAAAA`.
-    pub date_naissance: Option<String>,
-    /// `JJMMAAAA`.
-    pub date_embauche: Option<String>,
-    pub type_contrat: Option<String>,
-    /// `JJMMAAAA`, la fin prevue du CDD.
-    pub date_fin: Option<String>,
+    /// Ecrite `JJMMAAAA`.
+    pub date_naissance: Option<Jour>,
+    /// Ecrite `JJMMAAAA`.
+    pub date_embauche: Option<Jour>,
+    pub type_contrat: Option<droit::natures::TypeContratDpae>,
+    /// Ecrite `JJMMAAAA`, la fin prevue du CDD.
+    pub date_fin: Option<Jour>,
+}
+
+/// L'HORODATAGE D'UNE DPAE RELUE (D_CREATION, H_CREATION : `JJMMAAAAHHMM`), l'heure de Paris telle qu'ecrite : un texte
+/// d'une autre forme, ou une heure qui n'existe pas a Paris, ne se lit pas.
+fn horodatage_relu(h: &str) -> Option<Moment> {
+    if h.len() != 12 || !h.is_ascii() {
+        return None;
+    }
+    let heure = socle::num::entier_de_chiffres(&h[8..10]).filter(|x| (0..24).contains(x))?;
+    let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x))?;
+    let j = socle::piece::Zone::lue(&h[..8], socle::piece::format::Jjmmaaaa).valeur()?;
+    Moment::a_paris(j, heure, minute, 0).filter(|m| m.jour_de_paris() == j && m.seconde_du_jour_de_paris() == heure * 3_600 + minute * 60)
 }
 
 /// Chaque enregistrement par ses zones (`CHAMPS`) ; une zone NIR remplie qui n'est pas un NIR le refuse.
@@ -747,15 +769,34 @@ pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
                 Some(n) => Some(droit::fiche::Nir::lire(&n).map_err(|e| e.reformuler(|p| format!("DPAE relue, zone NIR : {}", p)))?),
                 None => None,
             };
+            let type_contrat = match zone("type_contrat") {
+                Some(t) => Some(droit::natures::TypeContratDpae::du_code(&t).ok_or_else(|| {
+                    socle::refus!("DPAE relue, zone C_TYPE_CONTRAT : {} n'est pas un type de contrat du Format 120 (1 CDD, 2 CDI, 3 CTT).", socle::fichiers::repr(&t))
+                })?),
+                None => None,
+            };
+            // Une zone datee que nous avons ecrite, hors de sa forme : le fichier n'est pas le notre, il se refuse.
+            let jour = |nom: &str| -> R<Option<Jour>> {
+                match zone(nom) {
+                    Some(t) => match socle::piece::Zone::lue(&t, socle::piece::format::Jjmmaaaa).valeur() {
+                        Some(j) => Ok(Some(j)),
+                        None => Err(socle::refus!("DPAE relue, zone {} : {} n'est pas une date JJMMAAAA.", nom, socle::fichiers::repr(&t))),
+                    },
+                    None => Ok(None),
+                }
+            };
             Ok(EnregistrementRelu {
-                horodatage: zone("horodatage"),
+                horodatage: match zone("horodatage") {
+                    Some(h) => horodatage_relu(&h),
+                    None => None,
+                },
                 nom: zone("nom"),
                 prenom: zone("prenom"),
                 nir,
-                date_naissance: zone("date_naissance"),
-                date_embauche: zone("date_embauche"),
-                type_contrat: zone("type_contrat"),
-                date_fin: zone("date_fin"),
+                date_naissance: jour("date_naissance")?,
+                date_embauche: jour("date_embauche")?,
+                type_contrat,
+                date_fin: jour("date_fin")?,
             })
         })
         .collect()
@@ -784,51 +825,106 @@ pub fn meme_declaration(a: &str, b: &str) -> bool {
 // et dans le certificat de conformite (nature 41), qui est NOTRE
 // enregistrement renvoye avec ses zones de retour remplies.
 
-/// C_RET_AR_LOT, 76-77 : le traitement du message.
-pub const CODES_RET_AR_LOT: [(&str, &str); 3] =
-    [("00", "Correct"), ("11", "Code version incorrect"), ("15", "Longueur du message incorrecte")];
+droit::codes_fermes! {
+    /// C_RET_AR_LOT, positions 76-77 : le traitement du message, « Sera renseigné par le système. 00 indique un
+    /// traitement nominal » (Format 120, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 165-173 ; la liste
+    /// de l'onglet « Codes retour », l. 591-597).
+    CodeRetourDuLot, "Code retour du lot (C_RET_AR_LOT)", texte "Format 120 v5.3, onglet « Codes retour », PDF p. 9" {
+        Correct = "00",
+        CodeVersionIncorrect = "11",
+        LongueurIncorrecte = "15",
+    }
+}
 
-/// C_RETOUR_AR, 430-431 : chaque DPAE.
-pub const CODES_RETOUR_AR: [(&str, &str); 26] = [
-    ("00", "DPAE enregistrée"),
-    ("01", "SIRET invalide - syntaxiquement incorrect"),
-    ("02", "Code URSSAF invalide - n'appartenant pas à la liste des codes Urssaf"),
-    ("03", "Code APE invalide - n'appartenant pas à la liste des codes APE (NAF)"),
-    ("05", "Nom ou raison sociale invalide - non renseignée ou caractères interdits"),
-    ("06", "Adresse invalide - non renseignée"),
-    ("07", "Code postal invalide - ne comportant pas 5 caractères numériques"),
-    ("08", "Commune invalide - non renseignée"),
-    ("11", "Code origine application incorrect"),
-    ("12", "Code origine saisie invalide - non renseigné"),
-    ("31", "Nom salarié invalide - non renseigné"),
-    ("32", "Prénom salarié invalide - non renseigné"),
-    ("33", "Date de naissance salarié invalide - invraisemblable ou non renseignée"),
-    ("34", "Lieu de naissance invalide - non renseigné"),
-    ("35", "Date et/ou heure d'embauche invalide - invraisemblable ou non renseignée"),
-    ("38", "Numéro de sécurité sociale invalide - invraisemblable, département inexistant…"),
-    ("39", "Date de déclaration invalide - invraisemblable ou non renseignée"),
-    ("40", "Heure de déclaration invalide - invraisemblable ou non renseignée"),
-    ("43", "Sexe du salarié invalide - différent de M ou F, ou non renseigné"),
-    ("44", "Type de contrat invalide - différent de 1, 2 ou 3, ou non renseigné"),
-    ("45", "Code NAF invalide pour le type de contrat CTT"),
-    ("46", "Date de fin de CDD obligatoire pour un CDD, ou invalide (antérieure à l'embauche…)"),
-    ("47", "Département de naissance invalide - non renseigné"),
-    ("50", "Code médecine du travail invalide - non renseigné"),
-    ("98", "DPAE déjà existante (nom, prénom, date de naissance, date et heure d'embauche, SIRET)"),
-    ("99", "Autre erreur (données facultatives)"),
-];
+impl CodeRetourDuLot {
+    /// Son libelle, mot pour mot (Format 120, `v5.3_FormatDPAE_EMAIL.pdf`, p. 9-10).
+    pub fn libelle(self) -> &'static str {
+        match self {
+            CodeRetourDuLot::Correct => "Correct",
+            CodeRetourDuLot::CodeVersionIncorrect => "Code version incorrect",
+            CodeRetourDuLot::LongueurIncorrecte => "Longueur du message incorrecte",
+        }
+    }
+}
 
-// ENREGISTREE, EN PRATIQUE : `00` ou `99` avec une reference de dossier. Le
-// `99` (<< autre erreur, donnees facultatives >>) enregistre la DPAE mais
-// signale une donnee facultative mal formee. Celui que portaient tous les
-// certificats depuis juin 2026, CoolPaie compris, venait de la periode
-// d'essai (N_JJ_ESSAI) laissee a blanc : un CDDU l'ecrit `000` et rend `00`.
-// Un CDI ou un CDD, dont l'essai n'est pas connu, reste en 99.
-// Le `98` dit qu'une DPAE identique existait deja : rien n'a ete cree, et les
-// formalites restent a N -- sur le second TEST des memes
-// embauches. L'embauche est declaree quand meme, par la premiere.
-pub const CODES_ENREGISTREE: [&str; 2] = ["00", "99"];
-pub const CODE_DEJA_EXISTANTE: &str = "98";
+droit::codes_fermes! {
+    /// C_RETOUR_AR, positions 430-431 : chaque DPAE, « '00' DPAE enregistrée, '98' DPAE déjà existante. Pour tout autre
+    /// code voir liste des codes retour » (Format 120, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`,
+    /// l. 359-368 ; la liste de l'onglet « Codes retour », dont chaque code et son libelle se lisent ensemble dans
+    /// `v5.3_FormatDPAE_EMAIL.pdf`, p. 9-10 : la transcription en separe les colonnes).
+    CodeRetourDpae, "Code retour de la DPAE (C_RETOUR_AR)", texte "Format 120 v5.3, onglet « Codes retour », PDF p. 9-10" {
+        Enregistree = "00",
+        SiretInvalide = "01",
+        CodeUrssafInvalide = "02",
+        CodeApeInvalide = "03",
+        NomOuRaisonSocialeInvalide = "05",
+        AdresseInvalide = "06",
+        CodePostalInvalide = "07",
+        CommuneInvalide = "08",
+        CodeOrigineApplicationIncorrect = "11",
+        CodeOrigineSaisieInvalide = "12",
+        NomSalarieInvalide = "31",
+        PrenomSalarieInvalide = "32",
+        DateDeNaissanceInvalide = "33",
+        LieuDeNaissanceInvalide = "34",
+        EmbaucheInvalide = "35",
+        NumeroDeSecuriteSocialeInvalide = "38",
+        DateDeDeclarationInvalide = "39",
+        HeureDeDeclarationInvalide = "40",
+        SexeInvalide = "43",
+        TypeDeContratInvalide = "44",
+        CodeNafInvalidePourCtt = "45",
+        FinDeCddInvalide = "46",
+        DepartementDeNaissanceInvalide = "47",
+        CodeMedecineDuTravailInvalide = "50",
+        DejaExistante = "98",
+        AutreErreur = "99",
+    }
+}
+
+impl CodeRetourDpae {
+    /// Son libelle, mot pour mot (Format 120, `v5.3_FormatDPAE_EMAIL.pdf`, p. 9-10).
+    pub fn libelle(self) -> &'static str {
+        match self {
+            CodeRetourDpae::Enregistree => "Correct",
+            CodeRetourDpae::SiretInvalide => "SIRET invalide - syntaxiquement incorrect",
+            CodeRetourDpae::CodeUrssafInvalide => "Code URSSAF invalide - n’appartenant pas à la liste des Codes Urssaf",
+            CodeRetourDpae::CodeApeInvalide => "Code APE invalide - n’appartenant pas à la liste des codes APE(NAF)",
+            CodeRetourDpae::NomOuRaisonSocialeInvalide => "Nom ou raison sociale invalide – non renseignée ou caractères interdits",
+            CodeRetourDpae::AdresseInvalide => "Adresse invalide - non renseignée",
+            CodeRetourDpae::CodePostalInvalide => "Code postal invalide - ne comportant pas 5 caractères numériques",
+            CodeRetourDpae::CommuneInvalide => "Commune invalide - non renseignée",
+            CodeRetourDpae::CodeOrigineApplicationIncorrect => "Code origine application incorrect",
+            CodeRetourDpae::CodeOrigineSaisieInvalide => "Code origine saisie invalide - non renseigné",
+            CodeRetourDpae::NomSalarieInvalide => "Nom salarié invalide - non renseigné",
+            CodeRetourDpae::PrenomSalarieInvalide => "Prénom salarié invalide - non renseigné",
+            CodeRetourDpae::DateDeNaissanceInvalide => "Date de naissance salarié invalide - invraisemblable ou non renseignée",
+            CodeRetourDpae::LieuDeNaissanceInvalide => "Lieu de naissance invalide - non renseigné",
+            CodeRetourDpae::EmbaucheInvalide => "Date et/ou Heure d’embauche invalide - invraisemblable ou non renseignée",
+            CodeRetourDpae::NumeroDeSecuriteSocialeInvalide => "Numéro de sécurité sociale invalide - invraisemblable, département inexistant,... (1)",
+            CodeRetourDpae::DateDeDeclarationInvalide => "Date de déclaration invalide - invraisemblable ou non renseignée",
+            CodeRetourDpae::HeureDeDeclarationInvalide => "Heure de déclaration invalide - invraisemblable ou non renseignée",
+            CodeRetourDpae::SexeInvalide => "Sexe du salarié Invalide -différent de M ou F - non renseigné",
+            CodeRetourDpae::TypeDeContratInvalide => "Type de contrat Invalide – différent de 1,2 ou 3 - non renseigné",
+            CodeRetourDpae::CodeNafInvalidePourCtt => "Code NAF invalide pour le type de contrat CTT",
+            CodeRetourDpae::FinDeCddInvalide => "Date de fin de CDD obligatoire pour un contrat CDD ou invalide (par ex. antérieure à la date d'embauche)",
+            CodeRetourDpae::DepartementDeNaissanceInvalide => "Département de naissance invalide - non renseigné",
+            CodeRetourDpae::CodeMedecineDuTravailInvalide => "Code médecine du travail invalide - non renseigné",
+            CodeRetourDpae::DejaExistante => "DPAE déjà existante (nom, prénom, date naissance, heure & date embauche et siret)",
+            CodeRetourDpae::AutreErreur => "Autre erreur (erreur concernant des données facultatives)",
+        }
+    }
+
+    /// ENREGISTREE, EN PRATIQUE : `00` ou `99` (avec une reference de dossier, `lire_certificat`). Le `99` (« autre
+    /// erreur, donnees facultatives ») enregistre la DPAE mais signale une donnee facultative mal formee. Celui que
+    /// portaient tous les certificats depuis juin 2026, CoolPaie compris, venait de la periode d'essai (N_JJ_ESSAI)
+    /// laissee a blanc : un CDDU l'ecrit `000` et rend `00`. Un CDI ou un CDD, dont l'essai n'est pas connu, reste en 99.
+    /// Le `98` (`DejaExistante`) dit qu'une DPAE identique existait deja : rien n'a ete cree, et les formalites restent a
+    /// N -- sur le second TEST des memes embauches. L'embauche est declaree quand meme, par la premiere.
+    pub fn enregistree(self) -> bool {
+        matches!(self, CodeRetourDpae::Enregistree | CodeRetourDpae::AutreErreur)
+    }
+}
 
 /// 0-based, [debut, fin). Positions du Format 120 moins un.
 pub const ZONES_RETOUR: [(&str, usize, usize); 7] = [
@@ -884,21 +980,21 @@ pub struct LigneDuCertificat {
     pub embauche: Option<Jour>,
     /// R_DOSSIER, la reference sous laquelle la DPAE est enregistree.
     pub dossier: String,
-    /// C_RETOUR_AR (`00` quand la zone est a blanc) et son libelle (Format 120).
-    pub code: String,
-    pub libelle: String,
+    /// C_RETOUR_AR.
+    pub code: CodeRetourDpae,
     /// 00 ou 99 avec un dossier.
     pub enregistree: bool,
     /// 98.
     pub deja_existante: bool,
     /// Celles a O : CERTIF, IMMA, MT, PMF5.
     pub formalites: Vec<FormaliteDpae>,
-    /// C_RET_AR_LOT (`00` quand la zone est a blanc).
-    pub lot: String,
+    /// C_RET_AR_LOT ; aucun quand la zone est a blanc.
+    pub lot: Option<CodeRetourDuLot>,
 }
 
-/// Le certificat de conformite (nature 41), DPAE par DPAE. Un retour de la norme se lit strictement : un NIR ou un
-/// jour d'embauche qui n'en sont pas refusent le certificat ; une zone a blanc reste vide.
+/// Le certificat de conformite (nature 41), DPAE par DPAE. Un retour de la norme se lit strictement : un NIR, un
+/// jour d'embauche ou un code retour qui n'en sont pas refusent le certificat, comme un code retour a blanc ; une
+/// autre zone a blanc reste vide.
 pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
     let mut out = Vec::new();
     for r in lire_enregistrements(contenu) {
@@ -911,10 +1007,21 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             strip(&tranche(&r, a, b)).to_string()
         };
         let emb = c("date_embauche");
-        let code = if z("retour_ar").is_empty() { "00".to_string() } else { z("retour_ar") };
-        let libelle = match CODES_RETOUR_AR.iter().find(|(k, _)| *k == code) {
-            Some((_, l)) => l.to_string(),
-            None => format!("code {} (inconnu du Format 120)", code),
+        // Une DPAE correcte porte le code 0 (Format 120, onglet « Codes retour ») : a blanc, le certificat ne dit pas ce
+        // qu'il en est, et rien ne le devine (regle 1).
+        let code = match z("retour_ar").as_str() {
+            "" => return Err(refus(format!("Certificat de conformité des DPAE : il ne dit pas le code retour de la DPAE de {} (C_RETOUR_AR, positions 430-431, à blanc).", repr(&c("nom"))))),
+            k => match CodeRetourDpae::du_code(k) {
+                Some(code) => code,
+                None => return Err(refus(format!("Certificat de conformité des DPAE : le code retour {} de la DPAE de {} n'est pas un code du Format 120 (C_RETOUR_AR, positions 430-431).", repr(k), repr(&c("nom"))))),
+            },
+        };
+        let lot = match z("ret_ar_lot").as_str() {
+            "" => None,
+            k => match CodeRetourDuLot::du_code(k) {
+                Some(lot) => Some(lot),
+                None => return Err(refus(format!("Certificat de conformité des DPAE : le code retour du lot {} n'est pas un code du Format 120 (C_RET_AR_LOT, positions 76-77).", repr(k)))),
+            },
         };
         let embauche = match emb.as_str() {
             "" => None,
@@ -928,20 +1035,18 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             n => Some(droit::fiche::Nir::lire(n).map_err(|e| e.reformuler(|p| format!("Certificat de conformité des DPAE : {}", p)))?),
         };
         let dossier = z("dossier");
-        let lot = z("ret_ar_lot");
-        let enregistree = CODES_ENREGISTREE.contains(&code.as_str()) && !dossier.is_empty();
+        let enregistree = code.enregistree() && !dossier.is_empty();
         out.push(LigneDuCertificat {
             nom: c("nom"),
             prenom: c("prenom"),
             nir,
             embauche,
             dossier,
-            deja_existante: code == CODE_DEJA_EXISTANTE,
+            deja_existante: code == CodeRetourDpae::DejaExistante,
             code,
-            libelle,
             enregistree,
             formalites: FormaliteDpae::TOUTES.into_iter().filter(|f| z(f.zone()) == "O").collect(),
-            lot: if lot.is_empty() { "00".to_string() } else { lot },
+            lot,
         });
     }
     Ok(out)
@@ -1006,12 +1111,16 @@ mod tests {
         }
     }
 
-    fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<&str>, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: Moment::a_paris(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap(), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
+    fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<CodeUrssafDpae>, chemins: &'a Chemins) -> Parametres<'a> {
+        Parametres { horodatage: Moment::a_paris(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap(), code_urssaf: code, ent, chemins }
     }
 
     fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {
         let c = chemins();
+        let code = match code {
+            Some(brut) => Some(code_urssaf_saisi(brut)?),
+            None => None,
+        };
         enregistrements(std::slice::from_ref(e), &parametres(ent, code, &c)).map(|mut v| v.remove(0))
     }
 
@@ -1106,7 +1215,7 @@ mod tests {
         let mut e = embauche(N::Cdi, None);
         e.salarie.etablissement = Some(droit::fiche::Nic::lire("00024").unwrap());
         let t = enr(&e, Some(&ent), Some("117")).unwrap();
-        assert_eq!(zone(&t, "code_urssaf"), nantes);
+        assert_eq!(zone(&t, "code_urssaf"), nantes.as_str());
         let t = enr(&embauche(N::Cdi, None), Some(&ent), Some("117")).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), "117");
     }
@@ -1226,7 +1335,7 @@ mod tests {
                     poser_texte(r, 429, "98");
                     poser_texte(r, 973, "O");
                 }
-                2 => poser_texte(r, 429, "77"),
+                2 => poser_texte(r, 429, "38"),
                 _ => {
                     poser_texte(r, 75, "11");
                     poser_texte(r, 429, "00");
@@ -1237,22 +1346,26 @@ mod tests {
         assert_eq!(c.len(), 4);
         assert_eq!(c[0].embauche.map(|j| j.iso()).as_deref(), Some("2026-10-01"));
         assert_eq!(c[0].dossier, "D1234");
-        assert_eq!(c[0].code, "99");
-        assert_eq!(c[0].libelle, "Autre erreur (données facultatives)");
+        assert_eq!(c[0].code, CodeRetourDpae::AutreErreur);
+        assert_eq!(c[0].code.libelle(), "Autre erreur (erreur concernant des données facultatives)");
         assert!(c[0].enregistree);
         assert_eq!(c[0].formalites, [FormaliteDpae::Certif, FormaliteDpae::Mt]);
         // 98 : deja existante, et pas enregistree
         assert!(c[1].deja_existante);
         assert!(!c[1].enregistree);
         assert_eq!(c[1].formalites, [FormaliteDpae::Imma]);
-        // un code inconnu du Format 120
-        assert_eq!(c[2].libelle, "code 77 (inconnu du Format 120)");
-        assert!(!c[2].enregistree);
+        // un refus de la DPAE (38)
+        assert_eq!(c[2].code, CodeRetourDpae::NumeroDeSecuriteSocialeInvalide);
+        assert!(!c[2].enregistree && !c[2].deja_existante);
         // un lot en erreur ; le code `00` sans dossier n'est pas enregistre
-        assert_eq!(c[3].lot, "11");
+        assert_eq!(c[3].lot, Some(CodeRetourDuLot::CodeVersionIncorrect));
         assert!(!c[3].enregistree);
-        // sans code de retour, `00`
-        assert_eq!(lire_certificat(&flux(1, |_, _| {})).unwrap()[0].code, "00");
+        // un code inconnu du Format 120 refuse le certificat
+        let e = lire_certificat(&flux(1, |r, _| poser_texte(r, 429, "77"))).unwrap_err();
+        assert!(e.phrase.contains("77") && e.phrase.contains("C_RETOUR_AR"), "{}", e.phrase);
+        // un code retour a blanc aussi : le certificat ne dit pas ce qu'il en est de la DPAE
+        let e = lire_certificat(&flux(1, |_, _| {})).unwrap_err();
+        assert!(e.phrase.contains("à blanc"), "{}", e.phrase);
     }
 
     #[test]
@@ -1280,7 +1393,7 @@ mod tests {
             assert!(w[0].1 <= w[1].0, "{} recouvre {}", w[0].2, w[1].2);
         }
         assert!(zones.iter().all(|z| z.1 <= LONGUEUR - 1));
-        assert_eq!(CODES_RETOUR_AR.len(), 26);
+        assert_eq!(CodeRetourDpae::TOUS.len(), 26);
         assert!(ZONES_RETOUR.iter().all(|z| z.2 < LONGUEUR));
     }
 }

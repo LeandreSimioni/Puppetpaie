@@ -53,9 +53,9 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<(Jour, Jour)>> {
 /// encore ; le logiciel ne choisit pas.
 pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[(Jour, Jour)]) -> R<Vec<Engagement>> {
     let ligne = match eng.lignes.as_slice() {
-        [l] if l.rubrique() == "mois" => l,
+        [l] if *l.rubrique() == crate::conges::MOIS_PAYE => l,
         _ => {
-            let autres: Vec<String> = eng.lignes.iter().filter(|l| l.rubrique() != "mois").map(|l| l.rubrique().to_string()).collect();
+            let autres: Vec<String> = eng.lignes.iter().filter(|l| *l.rubrique() != crate::conges::MOIS_PAYE).map(|l| l.rubrique().to_string()).collect();
             return Err(socle::refus!(
                 "{} : la paie de ce mois se decoupe en periodes elementaires (un changement de statut, de categorie ou de \
 duree du travail le {}), et elle porte {} en plus du salaire mensuel. A quelle periode une telle ligne se rattache (avant \

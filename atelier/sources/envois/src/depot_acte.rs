@@ -15,7 +15,7 @@ use crate::branchement::{reponse_fictive, Branchement};
 use crate::depot;
 use declarations::dsn_lue::DsnLue;
 use crate::ligne::{Acte, DetailDpae, DetailDsn, EmbaucheDeclaree, Envoi, Ligne, Mode, Ouverture, Version};
-use crate::releve_retours::{Client, Panne};
+use crate::releve_retours::{Client, EnvironnementNetEntreprises, Panne};
 use crate::retours::IdDeFlux;
 use crate::suites::{DepotRefuse, Suites};
 
@@ -57,7 +57,7 @@ pub struct Depot<'a> {
     /// La repetition qui ouvre un depot reel (rien pour un test).
     pub repetition: Option<&'a Ouverture>,
     /// Le mot de passe de l'organisme (le monde seulement).
-    pub motdepasse: Option<String>,
+    pub motdepasse: Option<socle::secret::Secret>,
     /// La version de chaque engagement que le depot emporte.
     pub versions: &'a [Version],
 }
@@ -111,8 +111,7 @@ fn trace_relative(ctx: &Contexte, t: &Path) -> R<CheminRelatif> {
 /// Le depot a echoue : la ligne refusee au journal, l'incident dans les suites, et le refus rendu. Une ligne que le
 /// journal refuse joint son echec a celui du depot : il ne se perd pas.
 fn echec(ctx: &Contexte, quoi: Acte, d: &Depot, ligne: Ligne, e: Echec, suites: &mut Suites) -> Echec {
-    let classe = e.classe_notee();
-    suites.depot_refuse = Some(DepotRefuse { quoi, reel: d.reel, classe: classe.into(), message: e.phrase.clone(), repetition: d.repetition.cloned() });
+    suites.depot_refuse = Some(DepotRefuse { quoi, reel: d.reel, classe: e.classe, message: e.phrase.clone(), repetition: d.repetition.cloned() });
     match noter(ctx, d, ligne) {
         Ok(_) => e,
         Err(journal) => e.reformuler(|p| format!("{}\nLe journal des envois ne l'a pas noté : {}", p, journal.phrase)),
@@ -141,7 +140,7 @@ pub fn deposer_dsn(
     branchement: Branchement,
     d: &Depot,
     apercu: &DsnLue,
-    environnement: &str,
+    environnement: EnvironnementNetEntreprises,
     ordre_test: Option<droit::natures::NumeroDOrdre>,
     suites: &mut Suites,
 ) -> R<DepotFait> {
@@ -150,9 +149,9 @@ pub fn deposer_dsn(
     let joue = branchement.joue();
     let envoi = || -> R<String> {
         if joue {
-            return reponse_fictive("dsn", d.reel);
+            return reponse_fictive(Acte::Dsn, d.reel);
         }
-        let mut client = Client::dsn(ctx, environnement, d.motdepasse.clone()).map_err(Panne::en_echec)?;
+        let mut client = Client::dsn(ctx, environnement, d.motdepasse.clone());
         client.authentifier().map_err(Panne::en_echec)?;
         // La verification est refaite ici : la derniere porte avant le reseau.
         depot::verifier(&declarations::dsn_lue::lire(d.octets, None)?, d.reel, true)?;
@@ -191,7 +190,7 @@ pub fn deposer_dsn(
         nature_declaration: apercu.nature_declaration,
         // LE RANG DECLARE : le prochain annule-et-remplace se numerote au-dessus de cet ordre.
         ordre: apercu.ordre,
-        versements: Some(apercu.versements_organismes.iter().map(|m| m.to_string()).collect()),
+        versements: Some(apercu.versements_organismes.clone()),
         salaries: Some(apercu.individus.len()),
         // CE QUI A ETE PRELEVE SUR LA GRILLE, et non sur le taux du salarie : la seule trace qui reste.
         pas_bareme: Some(apercu.pas_bareme()),
@@ -225,7 +224,7 @@ pub fn deposer_dpae(
     let mut client = client;
     let mut envoi = || -> R<String> {
         if joue {
-            return reponse_fictive("dpae", d.reel);
+            return reponse_fictive(Acte::Dpae, d.reel);
         }
         let c: &mut Client = client.as_deref_mut().ok_or_else(|| erreur(Classe::Refuse, "client absent"))?;
         c.authentifier().map_err(Panne::en_echec)?;

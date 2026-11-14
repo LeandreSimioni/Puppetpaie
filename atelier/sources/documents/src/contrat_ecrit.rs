@@ -16,7 +16,8 @@
 use droit::fiche::Lue as _;
 use serde::Serialize;
 
-use crate::marqueurs::{Marqueur, ModeleLu, Valeurs};
+use crate::marqueurs::{ModeleLu, Valeurs};
+use droit::marqueurs::Marqueur;
 
 use crate::avenant::{de_devant, et, fait_le_brut, ligne_citee, remuneration_hors_brut};
 use crate::bulletin::fmt_eur;
@@ -213,10 +214,10 @@ impl Organismes {
 
     /// L'organisme de l'adhesion `cle` (la prevoyance, la sante) : celui que la compagnie a enregistre, sinon celui que
     /// la branche designe (`organisme_fixe` des contrats de `organismes-base.json`). `None` : elle n'a pas ce contrat.
-    fn adhesion(&self, cle: &str) -> Option<Organisme> {
-        let enregistre = self.compagnie.adhesions_prevoyance.iter().find(|a| a.cle == cle).map(|a| &a.delegataire);
+    fn adhesion(&self, cle: &droit::organismes::CleDeContrat) -> Option<Organisme> {
+        let enregistre = self.compagnie.adhesions_prevoyance.iter().find(|a| a.cle == *cle).map(|a| &a.delegataire);
         let designe = || {
-            self.compagnie.base.contrats_de(self.idcc.as_ref()).filter(|c| c.cle == cle && c.organisme_fixe).find_map(|c| c.organisme.as_ref())
+            self.compagnie.base.contrats_de(self.idcc.as_ref()).filter(|c| c.cle == *cle && c.organisme_fixe).find_map(|c| c.organisme.as_ref())
         };
         self.par_siret(enregistre.or_else(designe)?)
     }
@@ -234,10 +235,10 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     let artiste = sal.statut.dite() == Some(&droit::fiche::Statut::Artiste);
     let categorie = match sal.statut_conventionnel.dite().map(|c| natures::categorie_d_emploi(*c, artiste)).transpose()?.flatten() {
         Some(c) => c,
-        None => match sal.statut_categoriel_rc.code() {
-            Some("01" | "02") => "cadre".to_string(),
-            Some("04") => "non cadre".to_string(),
-            _ => sal.statut.code().map(str::to_string).ok_or_else(|| {
+        None => match sal.statut_categoriel_rc.dite() {
+            Some(droit::fiche::StatutCategorielRc::Cadre | droit::fiche::StatutCategorielRc::Extension) => "cadre".to_string(),
+            Some(droit::fiche::StatutCategorielRc::NonCadre) => "non cadre".to_string(),
+            None => sal.statut.code().map(str::to_string).ok_or_else(|| {
                 socle::refus!("La fiche de {} ne dit pas sa catégorie d'emploi, que le contrat écrit porte (R. 1221-34, 3°) : choisir son métier dans la liste, ou saisir son classement conventionnel sur sa fiche. Rien n'est écrit.", nom)
             })?,
         },
@@ -260,7 +261,8 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::Lieu { fichier: Some("organismes-base.json".into()), cle: Some("131".into()), ..Default::default() }))?;
     let manque_adresse = |o: &Organisme| socle::refus!("Le contrat de {} donne « le nom et l'adresse » de {} (L. 1242-12, 8°), et cette adresse n'est pas connue du logiciel. Rien n'est écrit.", nom, o.nom);
     m.insert(Marqueur::OrganismesRetraite, retraite.nom_et_adresse().ok_or_else(|| manque_adresse(&retraite))?);
-    let (cle_prevoyance, cle_sante) = if nat.permanent() { ("prevoyance_permanents", "sante_permanents") } else { ("interbranche", "tsintermittents") };
+    use droit::organismes::{INTERBRANCHE, PREVOYANCE_PERMANENTS, SANTE_PERMANENTS, TSINTERMITTENTS};
+    let (cle_prevoyance, cle_sante) = if nat.permanent() { (&PREVOYANCE_PERMANENTS, &SANTE_PERMANENTS) } else { (&INTERBRANCHE, &TSINTERMITTENTS) };
     let prevoyance = org.adhesion(cle_prevoyance);
     m.insert(
         Marqueur::OrganismesPrevoyance,
@@ -317,24 +319,10 @@ pub const EN_FRANCAIS: &str = "Le contrat de travail écrit est rédigé en fran
 /// Les valeurs qui peuvent etre vides : un modele ne les cite que dans un alinea qui commence par `[si ce.marqueur]`.
 const PEUVENT_ETRE_VIDES: [Marqueur; 5] = [Marqueur::SpectacleNumeroObjet, Marqueur::RemunerationPeriode, Marqueur::RemunerationHorsBrut, Marqueur::ContratPersonneRemplacee, Marqueur::ContratClausesParticulieres];
 
-/// Ce que le refus d'une mention inconnue porte a part : la table livree et le marqueur.
-#[derive(Serialize)]
-struct MentionAPart {
-    fichier: &'static str,
-    marqueur: String,
-}
-
 /// Les mentions que la loi exige d'un contrat de cette nature (`Nature::mentions_obligatoires`), chacune par son
 /// marqueur, le texte qui l'exige, et si elle n'est due que dite.
 pub fn mentions(nat: &Nature) -> R<Vec<(Marqueur, String, bool)>> {
-    nat.mentions_obligatoires()
-        .into_iter()
-        .flatten()
-        .map(|x| {
-            let m = Marqueur::lire(&x.marqueur).ok_or_else(|| socle::echec::refus_avec(format!("La table livrée des natures exige du {} une mention que le logiciel ne connaît pas : le signaler au développeur.", nat.nom_du_contrat()), socle::echec::APart::forme(MentionAPart { fichier: "contrats-base.json", marqueur: x.marqueur.clone() })))?;
-            Ok((m, x.texte.clone(), x.si_dite == Some(true)))
-        })
-        .collect()
+    Ok(nat.mentions_obligatoires().into_iter().flatten().map(|x| (x.marqueur, x.texte.clone(), x.si_dite == Some(true))).collect())
 }
 
 /// LE VERIFICATEUR D'UN MODELE DE CONTRAT, paragraphe par paragraphe : sa grammaire ; dans chaque article (et le

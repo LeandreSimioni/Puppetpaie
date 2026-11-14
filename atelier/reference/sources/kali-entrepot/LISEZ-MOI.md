@@ -50,3 +50,10 @@ livraisons nouvelles ; `--reconstruire` relit la base entière, 180 Mo, pour une
 **Où le moteur s'en sert** : nulle part encore directement. Une règle n'entre dans le code que par une transcription
 citée (`kali-<IDCC>-…` dans le dossier au-dessus), faite d'après cet entrepôt. Les minima et clauses relevés ne couvrent
 que la 1285 et la 3090 (ticket #437 du privé).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `articles.jsonl.gz` : `c3dab7425d9d050d5076ae4713fe2114ca1c0658d77f42d4f9350574e1bb88a6`
+- `etat.json` : `5cd6f921db06eee028bc9ebcaa43da56c704034c5a6908717bfa37ebdb5360ab`

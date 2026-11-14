@@ -22,11 +22,11 @@ const MOIS_DE_DECLARATION: u32 = 4;
 const CTP_CONTRIBUTION: CodeCtp = CodeCtp::du_moteur("730");
 const CTP_ACCORD: CodeCtp = CodeCtp::du_moteur("740");
 
-/// Les categories de D5212-23 et leur code en S21.G00.82.002.
-const DEPENSES: [(&str, CotisationDEtablissement); 3] = [
-    ("accessibilite", CotisationDEtablissement::DepenseAccessibilite),
-    ("maintien", CotisationDEtablissement::DepenseMaintien),
-    ("accompagnement", CotisationDEtablissement::DepenseAccompagnement),
+/// Les categories de D5212-23 : leur cle dans `config/oeth.json`, leur code en S21.G00.82.002, et ce que la saisie en dit.
+const DEPENSES: [(&str, CotisationDEtablissement, fn(&Depenses) -> Option<Nombre>); 3] = [
+    ("accessibilite", CotisationDEtablissement::DepenseAccessibilite, Depenses::accessibilite),
+    ("maintien", CotisationDEtablissement::DepenseMaintien, Depenses::maintien),
+    ("accompagnement", CotisationDEtablissement::DepenseAccompagnement, Depenses::accompagnement),
 ];
 
 fn taux() -> Decimal {
@@ -120,7 +120,7 @@ impl Declaration {
 }
 
 /// `config/oeth.json` : les chiffres de chaque millesime, sous son annee (`null` : rien de saisi).
-type FichierOeth = BTreeMap<String, Option<EntreeOeth>>;
+type FichierOeth = BTreeMap<socle::mois::Annee, Option<EntreeOeth>>;
 
 /// Les chiffres OETH d'un millesime, tels que l'Urssaf les transmet avant le 15 mars (D5212-5), et ce que la compagnie
 /// sait d'elle-meme : son accord agree, ses depenses, sa sous-traitance ; ou qu'elle n'est pas assujettie, et pourquoi.
@@ -169,12 +169,16 @@ pub struct Depenses {
 }
 
 impl Depenses {
-    fn de(&self, categorie: &str) -> Option<Nombre> {
-        match categorie {
-            "accessibilite" => self.accessibilite,
-            "maintien" => self.maintien,
-            _ => self.accompagnement,
-        }
+    fn accessibilite(&self) -> Option<Nombre> {
+        self.accessibilite
+    }
+
+    fn maintien(&self) -> Option<Nombre> {
+        self.maintien
+    }
+
+    fn accompagnement(&self) -> Option<Nombre> {
+        self.accompagnement
     }
 }
 
@@ -297,8 +301,8 @@ connait pas s'applique. Rien n'est ecrit.",
     // La sous-traitance et les depenses (D5212-22 et -23) : celles que la compagnie ecrit, et elles seules.
     let sous_traitance = montant(donnees.sous_traitance, "sous_traitance", millesime)?;
     let mut depenses: Vec<(CotisationDEtablissement, Decimal)> = Vec::new();
-    for (cle, code) in DEPENSES {
-        if let Some(m) = montant(donnees.depenses.as_ref().and_then(|d| d.de(cle)), &format!("depenses.{}", cle), millesime)? {
+    for (cle, code, dite) in DEPENSES {
+        if let Some(m) = montant(donnees.depenses.as_ref().and_then(dite), &format!("depenses.{}", cle), millesime)? {
             depenses.push((code, m));
         }
     }
@@ -367,7 +371,7 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois) -> R<Option<Declarat
     } else {
         FichierOeth::new()
     };
-    let Some(donnees) = fichier.remove(&millesime.to_string()).flatten() else {
+    let Some(donnees) = fichier.remove(&socle::mois::Annee::nouvelle(millesime.into())?).flatten() else {
         if !assujetti_selon_l_effectif(ctx, millesime)? {
             return Ok(None);
         }
@@ -434,7 +438,8 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<Decimal> {
 /// seuil ; sinon la regle des cinq ans (L. 130-1, II, CSS) : un effectif qu'elle ne departage pas refuse, en disant
 /// quelles annees manquent (`Effectif::atteint`).
 fn assujetti_selon_l_effectif(ctx: &Contexte, millesime: i32) -> R<bool> {
-    if let Some(a04) = crate::csa::Effectifs::lus(ctx)?.du_118(millesime, "A04") {
+    let effectifs = droit::contexte::effectifs_lus(&ctx.racine)?;
+    if let Some(a04) = crate::csa::effectif_du_118(effectifs.as_ref(), millesime, droit::contexte::TypeDeParametreNeores::EffectifOeth)? {
         if a04 < Decimal::from(SEUIL) {
             return Ok(false);
         }

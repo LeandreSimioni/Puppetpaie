@@ -292,8 +292,10 @@ pub fn poser_les_fictives(code: &Path, dossier: &Path) -> R<Empreinte> {
 /// La cle de GitHub fabriquee : le fichier de la graine (secrete), celui de la cle publique, et la cle publique.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CleDeGithub {
-    pub graine: String,
-    pub publique: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub graine: PathBuf,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    pub publique: PathBuf,
     pub cle_publique: String,
 }
 
@@ -429,12 +431,12 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
     f.write_all(socle::base64::ecrire(&graine).as_bytes()).map_err(|e| refus(e.to_string()))?;
     graine.fill(0);
     std::fs::write(&fichier_publique, format!("{}\n", publique)).map_err(|e| refus(e.to_string()))?;
-    Ok(CleDeGithub { graine: fichier.display().to_string(), publique: fichier_publique.display().to_string(), cle_publique: publique })
+    Ok(CleDeGithub { graine: fichier, publique: fichier_publique, cle_publique: publique })
 }
 
 /// `publier_signe` depuis une graine en base64 (celle du secret de GitHub), verifiee contre `cle_publique` : refuse si
 /// la cle publique n'est pas reportee (vide) ou si la graine n'est pas la sienne. Aucun message ne porte la graine.
-fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
+fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &socle::secret::Secret, cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     if cle_publique.is_empty() {
         return Err(socle::echec::refus_avec(
             "La clé publique de GitHub n'est pas reportée dans le logiciel : rien n'est publié.",
@@ -442,7 +444,7 @@ fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_publ
         ));
     }
     // Le refus ne dit pas pourquoi la base64 ne se lit pas : il ne porte rien de la graine.
-    let graine = match b64(graine_b64.trim()) {
+    let graine = match b64(graine_b64.devoiler().trim()) {
         Ok(g) if g.len() == 32 => g,
         _ => return Err(socle::refus!("{} illisible (32 octets en base64 attendus)", VARIABLE_GRAINE)),
     };
@@ -466,7 +468,7 @@ fn autre_graine() -> socle::echec::Echec {
 pub fn publier_depuis_l_environnement(logiciel: &Path, sortie: &Path, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     // Le refus ne dit rien de la valeur : c'est la graine.
     let g = match std::env::var(VARIABLE_GRAINE) {
-        Ok(g) if !g.trim().is_empty() => g,
+        Ok(g) if !g.trim().is_empty() => socle::secret::Secret::nouveau(g),
         Ok(_) | Err(std::env::VarError::NotPresent) => return Err(socle::refus!("{} absente : rien n'est publie", VARIABLE_GRAINE)),
         Err(std::env::VarError::NotUnicode(_)) => return Err(socle::refus!("{} n'est pas du texte : rien n'est publie", VARIABLE_GRAINE)),
     };

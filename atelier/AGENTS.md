@@ -113,6 +113,10 @@ par son nom dans le JS : on lit sa fiche.
 - **La vérification se fait à l'arrivée de chaque lot**, pas à la fin : compilé, testé, relu par l'orchestrateur puis
   par un agent neuf (« Une seule vérification, à l'arrivée ») : une passation crue sur parole cache ses replis, et des
   lots compilés ensemble à la fin empilent les rouges.
+- **Le glossaire se tient dans le lot** : le relecteur neuf de chaque lot répond aussi à « une notion neuve est-elle
+  restée en texte, ou a-t-elle un type absent du glossaire ? » ; une notion neuve entre au glossaire
+  (`docs/ARCHITECTURE.md`, « Le glossaire ») dans le lot qui la crée, et un test de structure vérifie que chaque type
+  qu'il cite existe.
 - Le rejeu des fictives (`cargo test --profile essais -p moteur --test rejeu`) suit chaque lot qui touche au calcul ou
   aux déclarations ; avant, un lot n'est pas « fini ».
 - **Aucune attente fixe** : on attend un état ; une lenteur se cherche à la cause.
@@ -232,7 +236,8 @@ publication : il peut retarder sur les sources).
 dans `atelier/sources`) se lance **une fois avant chaque PR, par l'orchestrateur**, en arrière-plan ; à l'arrivée d'un
 lot, il ne lance que les tests des crates que le lot touche (`-p <crate>` ; dans `moteur`, le binaire concerné :
 `-p moteur --test routes`, `--test rejeu`…). Avant, `rm -rf "${CARGO_TARGET_DIR:-target}/tmp"` (les dossiers de travail
-des tests, ~3 Go).
+des tests, ~3 Go). **Toute compilation et tout test de l'orchestrateur se lancent en arrière-plan**, sans exception
+(Léandre : « en tant qu'orchestrateur, il faut que tu sois disponible ») : il attend leur fin en parlant avec Léandre.
 
 - **On compile peu** (Léandre : « on code et après on compile », pas « tout le temps parce qu'on peut ») : l'exécutant,
   `cargo check` seulement ; l'orchestrateur, à l'arrivée du lot, ce que le lot touche ; après une correction, seul ce

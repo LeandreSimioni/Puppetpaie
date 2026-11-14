@@ -4,7 +4,7 @@
 use engagement::calcul::Paie;
 use engagement::conges::CompteurConges;
 use droit::contexte::Contexte;
-use droit::fiche::{ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie};
+use droit::fiche::{ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie, ModeleBulletin};
 use droit::cumul::{tableau_cumul, Colonne};
 use engagement::cumul::Passe;
 use engagement::numeros::NumeroDeBulletin;
@@ -14,7 +14,8 @@ use socle::texte::euros;
 use socle::echec::{refus, R};
 use socle::num::{div, sub, Decimal};
 use droit::pas::Versement;
-use droit::forme_bareme::{IdDeCotisation, APEC_T1, APEC_T2};
+use droit::forme_bareme::{self as cot, IdDeCotisation};
+use engagement::ecarts::RegroupementDeComparaison as Regroupement;
 use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Mesure, Morceau};
 use fabrique_pdf::mesure::mesure;
@@ -291,7 +292,7 @@ fn classification(idcc: Option<&droit::fiche::Idcc>, sal: &ChampsSalarie, au_moi
     let categorie = match profil.categorie {
         Some(c) => Some(match droit::clauses::categorie_imprimee(idcc, &c)? {
             Some(dite) => dite,
-            None => c.replace('_', " "),
+            None => c.as_str().replace('_', " "),
         }),
         None => None,
     };
@@ -491,7 +492,7 @@ fn tableau_conges(cpt: &CompteurConges) -> Bloc {
 /// LEGIARTI000049854119.xml) : « Base », « Taux », « Salarié », « Employeur ». Un seul taux : celui du salarie, le seul
 /// que le code du travail exige (R. 3243-1, 8°, a : « pour les cotisations et contributions [...] a la charge du
 /// salarie, leurs taux ») ; le modele met « - » au taux des lignes que l'employeur paie seul (accidents du travail,
-/// famille). Les deux modeles impriment ce tableau-la (voir `Modele`).
+/// famille). Les deux modeles impriment ce tableau-la (voir `ModeleBulletin`).
 const COLONNES: i64 = 5;
 const LARGEURS: [Mesure; 5] = [mesure("0.55"), mesure("0.12"), mesure("0.09"), mesure("0.12"), mesure("0.12")];
 /// L'annexe du modele *complet* : le libelle, la base, le taux et le montant de chaque part.
@@ -515,77 +516,26 @@ const LARGEURS_ANNEXE: [Mesure; 6] = [mesure("0.46"), mesure("0.11"), mesure("0.
 ///
 /// QUI CHOISIT : la compagnie, pour tous (`modele_bulletin` de la fiche entreprise, pose par le selecteur de
 /// Configuration) ; un salarie qui demande l'autre modele l'obtient par la case `modele_bulletin` de sa fiche (Avance),
-/// qui l'emporte. Sans choix : le simplifie. Une valeur inconnue refuse (regle 1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Modele {
-    Simplifie,
-    Complet,
-}
-
-impl Modele {
-    pub const TOUS: [Modele; 2] = [Modele::Simplifie, Modele::Complet];
-
-    /// La valeur de la case (`champs-base.json`, forme « choix »).
-    pub fn cle(self) -> &'static str {
-        match self {
-            Modele::Simplifie => "simplifié",
-            Modele::Complet => "complet",
-        }
-    }
-
-    pub fn nom(self) -> &'static str {
-        match self {
-            Modele::Simplifie => "Simplifié",
-            Modele::Complet => "Complet",
-        }
-    }
-
-    /// Ce que la page en dit, sous l'apercu.
-    pub fn description(self) -> &'static str {
-        match self {
-            Modele::Simplifie => {
-                "Le bulletin clarifié du modèle réglementaire (arrêté du 25 février 2016) : les cotisations regroupées \
-                 sous les lignes du modèle, le taux de la part salariale, les contributions de l'employeur en une ligne."
-            }
-            Modele::Complet => {
-                "Le même bulletin, ligne pour ligne, suivi d'une page annexe qui détaille chaque cotisation et \
-                 contribution sous la ligne du bulletin qui la regroupe : sa base, le taux et le montant de la part \
-                 salariale et de la part employeur."
-            }
-        }
-    }
-
-    /// Le modele que dit le choix `modele_bulletin` d'une fiche lue par sa forme.
-    pub fn du_choix(c: Option<&droit::fiche::ModeleBulletin>) -> Option<Modele> {
-        c.map(|c| match c {
-            droit::fiche::ModeleBulletin::Simplifie => Modele::Simplifie,
-            droit::fiche::ModeleBulletin::Complet => Modele::Complet,
-        })
-    }
-
-    /// Le choix de la fiche qui le dit.
-    pub fn choix(self) -> droit::fiche::ModeleBulletin {
-        match self {
-            Modele::Simplifie => droit::fiche::ModeleBulletin::Simplifie,
-            Modele::Complet => droit::fiche::ModeleBulletin::Complet,
-        }
-    }
-}
-
+/// qui l'emporte. Sans choix : le simplifie. Le modele est un choix de la fiche (`droit::fiche::ModeleBulletin`), lu par
+/// sa forme : une valeur inconnue refuse la fiche (regle 1).
+///
 /// Le modele du bulletin d'une paie : la case de la fiche du salarie l'emporte ; sinon celle de la compagnie. Sans choix,
 /// le bulletin est celui de l'arrete du 25/02/2016, art. 1, I, le simplifie, sans l'annexe que seul le complet ajoute.
-pub fn modele_du_bulletin(ent: &ChampsEntreprise, sal: &FicheSalarie) -> R<Modele> {
+pub fn modele_du_bulletin(ent: &ChampsEntreprise, sal: &FicheSalarie) -> R<ModeleBulletin> {
     Ok(match modele_du_salarie(sal)? {
         Some(m) => m,
         None => modele_de_la_compagnie(ent),
     })
 }
 
-/// Le modele de la compagnie : celui qu'elle a choisi ; sans choix, le simplifie de l'arrete du 25/02/2016, art. 1, I.
-pub fn modele_de_la_compagnie(ent: &ChampsEntreprise) -> Modele {
-    match Modele::du_choix(ent.modele_bulletin.dite()) {
-        Some(m) => m,
-        None => Modele::Simplifie,
+/// LE MODELE DE LA COMPAGNIE : celui qu'elle a choisi ; sans choix, le modele que l'arrete du 25/02/2016 donne, art. 1,
+/// I (redaction du 25/06/2024 ; atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin/
+/// LEGIARTI000049854119.xml, l. 68) : « Les informations mentionnées à l'article R. 3243-1 du code du travail sont
+/// présentées selon le modèle suivant », le simplifie. Le complet n'y ajoute qu'une page annexe.
+pub fn modele_de_la_compagnie(ent: &ChampsEntreprise) -> ModeleBulletin {
+    match ent.modele_bulletin.dite() {
+        Some(m) => *m,
+        None => ModeleBulletin::Simplifie,
     }
 }
 
@@ -611,7 +561,7 @@ enum Rang {
     /// agregees (C. trav. R. 3243-2, al. 2 ; arrete, art. 3), la caisse des Conges Spectacles comprise.
     Autres,
     /// Une famille que le moteur ne range pas : titree par sa famille.
-    Hors(String),
+    Hors(droit::forme_bareme::FamilleDeCotisation),
     /// « COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES ».
     Facultative(&'static str),
     /// « EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS ».
@@ -626,7 +576,7 @@ impl Rang {
             Rang::Retraite => "Retraite",
             Rang::Ligne(_, nom) | Rang::Facultative(nom) => nom,
             Rang::Autres => AUTRES,
-            Rang::Hors(famille) => famille,
+            Rang::Hors(famille) => famille.as_str(),
             Rang::Allegement => EXONERATIONS,
         }
     }
@@ -651,7 +601,7 @@ const FACULTATIVES: &str = "COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES";
 /// Le rang d'une ligne de cotisation, par son identifiant (le libelle et la famille sont ceux du bareme, que le
 /// bulletin ne lit plus que pour une ligne qu'il ne connait pas). Le modele range la prevoyance, obligatoire ou non,
 /// sous « COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES », sa seule ligne « Prévoyance, Incapacité, Invalidité,
-/// Décès, Autres » (art. 1, I) ; la FAQ du BOSS, Q 18 (meme fichier que `Modele`, l. 192-196) : une cotisation rendue
+/// Décès, Autres » (art. 1, I) ; la FAQ du BOSS, Q 18 (meme fichier que `modele_du_bulletin`, l. 192-196) : une cotisation rendue
 /// obligatoire par un accord de branche, et non par la loi, est facultative.
 ///
 /// La caisse des Conges Spectacles : dans « Autres charges dues par l'employeur », et non sur une ligne
@@ -669,23 +619,32 @@ fn rang(l: &engagement::calcul::LigneCotisation, garanties: &[IdDeCotisation]) -
     if garanties.contains(&l.id) {
         return Rang::Facultative(PREVOYANCE);
     }
-    if l.id == APEC_T1 || l.id == APEC_T2 {
+    let id = &l.id;
+    if Regroupement::DE_L_APEC.contains(id) {
         return Rang::Ligne(5, APEC);
     }
-    match l.id.as_str() {
-        "maladie" | "regime_local" | "mutuelle" => Rang::Sante,
-        "atmp" => Rang::Ligne(1, ATMP),
-        "vieil_plaf" | "vieil_deplaf" | "retraite_t1" | "retraite_t2" | "cet" => Rang::Retraite,
-        "famille" => Rang::Ligne(3, FAMILLE),
-        "chomage" => Rang::Ligne(4, CHOMAGE),
-        "autres_1" | "autres_2" | "autres_3" | "autres_4" | "versement_mobilite" | "conges_spec" if seule_employeur => {
-            Rang::Autres
-        }
-        "ccn" | "fcap" | "paritarisme" => Rang::Ligne(8, CONVENTION),
-        "csg_ded" => Rang::Ligne(9, CSG_DEDUCTIBLE),
-        "csg_crds_nd" => Rang::Ligne(10, CSG_NON_DEDUCTIBLE),
-        "reduction_generale" | "reduction_heures_en_plus" | "deduction_heures_supplementaires" => Rang::Allegement,
-        _ => Rang::Hors(l.famille.clone()),
+    if [cot::MALADIE, cot::REGIME_LOCAL, cot::MUTUELLE].contains(id) {
+        Rang::Sante
+    } else if *id == cot::ATMP {
+        Rang::Ligne(1, ATMP)
+    } else if [cot::VIEIL_PLAF, cot::VIEIL_DEPLAF, cot::RETRAITE_T1, cot::RETRAITE_T2, cot::CET].contains(id) {
+        Rang::Retraite
+    } else if *id == cot::ALLOCATIONS_FAMILIALES {
+        Rang::Ligne(3, FAMILLE)
+    } else if *id == cot::CHOMAGE {
+        Rang::Ligne(4, CHOMAGE)
+    } else if seule_employeur && (Regroupement::DE_L_EMPLOYEUR_SEUL.contains(id) || *id == cot::CONGES_SPEC) {
+        Rang::Autres
+    } else if Regroupement::DE_LA_CONVENTION.contains(id) {
+        Rang::Ligne(8, CONVENTION)
+    } else if *id == cot::CSG_DED {
+        Rang::Ligne(9, CSG_DEDUCTIBLE)
+    } else if *id == cot::CSG_CRDS_ND {
+        Rang::Ligne(10, CSG_NON_DEDUCTIBLE)
+    } else if [cot::REDUCTION_GENERALE, engagement::heures_en_plus::REDUCTION, engagement::heures_en_plus::DEDUCTION].contains(id) {
+        Rang::Allegement
+    } else {
+        Rang::Hors(l.famille.clone())
     }
 }
 
@@ -726,14 +685,17 @@ fn rangees<'p>(p: &'p Paie, garanties: &[IdDeCotisation]) -> Vec<(Rang, Vec<&'p 
 /// local d'Alsace-Moselle, la CET d'un permanent, que le moteur calcule sur T1 + T2 sans la partager entre les deux
 /// tranches) gardent le leur.
 fn libelle_du_modele(l: &engagement::calcul::LigneCotisation) -> String {
-    match l.id.as_str() {
-        "maladie" => SANTE_SECU.into(),
-        "mutuelle" => SANTE_COMPLEMENTAIRE.into(),
-        "vieil_plaf" => "Sécurité Sociale Vieillesse plafonnée".into(),
-        "vieil_deplaf" => "Sécurité Sociale Vieillesse déplafonnée".into(),
-        "retraite_t1" => "Retraite complémentaire, CEG et CET T1".into(),
-        "retraite_t2" => "Retraite complémentaire, CEG et CET T2".into(),
-        _ => l.libelle.clone(),
+    const DU_MODELE: [(IdDeCotisation, &str); 6] = [
+        (cot::MALADIE, SANTE_SECU),
+        (cot::MUTUELLE, SANTE_COMPLEMENTAIRE),
+        (cot::VIEIL_PLAF, "Sécurité Sociale Vieillesse plafonnée"),
+        (cot::VIEIL_DEPLAF, "Sécurité Sociale Vieillesse déplafonnée"),
+        (cot::RETRAITE_T1, "Retraite complémentaire, CEG et CET T1"),
+        (cot::RETRAITE_T2, "Retraite complémentaire, CEG et CET T2"),
+    ];
+    match DU_MODELE.iter().find(|(id, _)| *id == l.id) {
+        Some((_, libelle)) => (*libelle).to_string(),
+        None => l.libelle.clone(),
     }
 }
 
@@ -795,7 +757,7 @@ fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> 
             out.push(ligne(vec![s(AUTRES), vide(), vide(), vide(), s(fmt_eur(total))], vec![]));
         }
         Rang::Hors(famille) => {
-            out.push(titre_groupe(famille, COLONNES));
+            out.push(titre_groupe(famille.as_str(), COLONNES));
             for l in lignes {
                 out.push(ligne_cotisation(l.libelle.clone(), l)?);
             }
@@ -1247,7 +1209,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     blocs.extend(cumul);
     let date_paiement = e.date_du_versement()?;
     // Un contrat sans numero (un apercu avant la validation) ne le dit pas.
-    let contrat = if let Some(n) = e.numero.as_deref() { format!("Contrat n° {} — {}", n, nat.libelle) } else { format!("Contrat — {}", nat.libelle) };
+    let contrat = if let Some(n) = e.numero.as_ref() { format!("Contrat n° {} — {}", n, nat.libelle) } else { format!("Contrat — {}", nat.libelle) };
     blocs.push(para(
         vec![mt(format!(
             "Plafond Urssaf de la période : {}{}SMIC retenu pour la réduction générale : {}{}Règlement le {} \
@@ -1290,7 +1252,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
     for j in jeux {
         let modele = modele_du_bulletin(ent, &j.paie.salarie)?;
         documents.push(Document::Blocs(blocs_un(j, ent)?));
-        if modele == Modele::Complet {
+        if modele == ModeleBulletin::Complet {
             documents.push(Document::Blocs(blocs_annexe(j.paie, j.numero, &j.prevoyance)?));
         }
     }
@@ -1432,9 +1394,6 @@ fn exige(c: &Option<String>, cle: &str) -> R<String> {
 }
 
 /// Le modele du bulletin que la fiche du salarie choisit, `None` si elle n'en choisit pas.
-pub fn modele_du_salarie(sal: &FicheSalarie) -> R<Option<Modele>> {
-    Ok(sal.modele_bulletin.dite().map(|m| match m {
-        droit::fiche::ModeleBulletin::Simplifie => Modele::Simplifie,
-        droit::fiche::ModeleBulletin::Complet => Modele::Complet,
-    }))
+pub fn modele_du_salarie(sal: &FicheSalarie) -> R<Option<ModeleBulletin>> {
+    Ok(sal.modele_bulletin.dite().copied())
 }

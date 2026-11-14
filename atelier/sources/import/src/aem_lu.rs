@@ -36,7 +36,7 @@
 
 use std::path::Path;
 
-use droit::fiche::NumeroObjetSpectacle;
+use droit::fiche::{NumeroObjetSpectacle, Statut};
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
@@ -174,8 +174,8 @@ pub struct Aem {
     /// Le numero d'objet imprime ; aucun hors de sa forme (`NumeroObjetSpectacle::d_une_piece`).
     pub numero_objet: Option<NumeroObjetSpectacle>,
     pub cadre: Option<bool>,
-    /// « artiste » (annexe 10) ou « technicien » (annexe 8).
-    pub statut: Option<&'static str>,
+    /// Artiste (annexe 10) ou technicien (annexe 8).
+    pub statut: Option<Statut>,
     /// La date d'embauche et la date de fin du contrat, telles qu'imprimees.
     pub embauche: Option<Jour>,
     pub fin_contrat: Option<Jour>,
@@ -185,12 +185,29 @@ pub struct Aem {
     pub cachets_groupes: Option<i64>,
     pub jours: Option<i64>,
     pub brut: Option<Decimal>,
-    /// « complementaire » ou « rectificative » quand la case est cochee.
-    pub corrige: Option<&'static str>,
+    /// Complementaire ou rectificative quand la case est cochee.
+    pub corrige: Option<NatureDUneAem>,
     /// Une periode d'une AER Cinéma Spectacle (`lire_aer`), qui atteste au meme rang qu'une AEM.
     pub aer: bool,
     /// Ce que la page dit d'elle-meme qui ne tient pas (une cle de NIR fausse, un nombre hors colonne).
     pub faute: Option<String>,
+}
+
+/// CE QU'EST UNE AEM QUI CORRIGE : complementaire (sa case cochee), ou rectificative (« positive » ou « negative »).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NatureDUneAem {
+    Complementaire,
+    Rectificative,
+}
+
+impl NatureDUneAem {
+    /// Son mot, dans la phrase qui la refuse.
+    pub fn en_mots(self) -> &'static str {
+        match self {
+            NatureDUneAem::Complementaire => "complémentaire",
+            NatureDUneAem::Rectificative => "rectificative",
+        }
+    }
 }
 
 impl Aem {
@@ -217,7 +234,7 @@ impl Aem {
         if let Some(c) = self.corrige {
             return Some(format!(
                 "AEM {} : elle corrige une attestation initiale que l'import ne lit pas, elle ne se reprend pas seule ; déposez le bulletin du même mois",
-                c
+                c.en_mots()
             ));
         }
         if let Some(f) = &self.faute {
@@ -365,18 +382,27 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
     };
     // Le NIR imprime, coupe en treize caracteres et sa cle (`Nir::et_sa_cle`) ; d'une autre longueur, aucun.
     let coupe = nir.as_deref().and_then(droit::fiche::Nir::et_sa_cle);
-    let nir_lu = coupe.and_then(|(n, _)| droit::fiche::Nir::d_une_piece(n));
+    // Un NIR hors de sa forme se dit (sans lui, l'AER manque de son NIR) ; sa cle ne se compare alors a rien.
+    let nir_lu = match coupe.map(|(n, _)| droit::fiche::Nir::d_une_piece(n)) {
+        Some(Ok(n)) => Some(n),
+        Some(Err(e)) => {
+            fautes.push(e.phrase);
+            None
+        }
+        None => None,
+    };
     let cle_nir = match coupe.and_then(|(_, k)| k).map(droit::fiche::CleNir::lire).transpose() {
-        Ok(Some(k)) => match nir_lu.as_ref().and_then(droit::fiche::CleNir::du_nir) {
-            Some(c) if c == k => Some(c),
-            Some(_) => {
+        Ok(Some(k)) => match nir_lu.as_ref().map(|n| (n, droit::fiche::CleNir::du_nir(n))) {
+            Some((_, Some(c))) if c == k => Some(c),
+            Some((_, Some(_))) => {
                 fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".to_string());
                 None
             }
-            None => {
+            Some((_, None)) => {
                 fautes.push("le NIR imprimé n'a pas la forme d'un numéro de sécurité sociale".to_string());
                 None
             }
+            None => None,
         },
         Ok(None) => None,
         Err(e) => {
@@ -398,7 +424,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
         let nom = |p: &str| format!("{}{:02}", p, rang);
         // Un contrat se dit dans la colonne de sa premiere periode ; la colonne sans contrat en est la suite.
         if v(&nom("CON_NUMERO_")).is_some() {
-            numero_objet = v(&nom("CON_OBJET_")).and_then(|o| NumeroObjetSpectacle::d_une_piece(&o));
+            numero_objet = objet_de_la_piece(v(&nom("CON_OBJET_")).as_deref());
         }
         let (Some(debut), Some(fin)) = (jour(&nom("SAL_DT_DEB_")), jour(&nom("SAL_DT_FIN_"))) else { continue };
         let page = champ(&nom("SAL_DT_DEB_")).and_then(|c| c.page).ok_or_else(|| socle::refus!("la case {} de l'AER n'est sur aucune page", nom("SAL_DT_DEB_")))?;
@@ -692,7 +718,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.commune = texte(lu("commune", Some(2)));
 
     a.emploi = texte(lu("emploi", Some(3)));
-    a.numero_objet = lu("objet", Some(3)).first().and_then(|o| NumeroObjetSpectacle::d_une_piece(o));
+    a.numero_objet = objet_de_la_piece(lu("objet", Some(3)).first().map(String::as_str));
     a.embauche = date_en_tete(&lu("embauche", Some(3))).map(|d| d.0);
     a.fin_contrat = date_en_tete(&lu("fin", Some(3))).map(|d| d.0);
 
@@ -708,10 +734,10 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         let Some(lib) = jetons(&mots[l].texte).last().cloned() else { continue };
         let s = section(mots[l].y0);
         match (s, lib.as_str()) {
-            (0, "complementaire") => a.corrige = Some("complémentaire"),
-            (0, "positive" | "negative") => a.corrige = Some("rectificative"),
-            (3, "artiste") => a.statut = Some("artiste"),
-            (3, "technicien" | "ouvrier") => a.statut = Some("technicien"),
+            (0, "complementaire") => a.corrige = Some(NatureDUneAem::Complementaire),
+            (0, "positive" | "negative") => a.corrige = Some(NatureDUneAem::Rectificative),
+            (3, "artiste") => a.statut = Some(Statut::Artiste),
+            (3, "technicien" | "ouvrier") => a.statut = Some(Statut::Technicien),
             (3, "cours") => a.en_cours = true,
             (3, "cadre") => {
                 // « Non cadre » : « Non » juste avant, ou juste au-dessus (le libelle sur deux rangs).
@@ -805,6 +831,16 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
 }
 
 /// Un nombre entier du mois (« 1 », « 12 », « 8,00 ») ; `None` pour ce qui n'en est pas un.
+/// LE NUMERO D'OBJET QU'UNE AEM OU UNE AER IMPRIME (`NumeroObjetSpectacle::d_une_piece`) : a blanc ou hors de sa forme, la
+/// case reste vide sans refuser la piece (#439) ; la faute d'un numero hors de sa forme ne se note pas ici, l'AEM n'a
+/// pas de case du spectacle ou la dire.
+fn objet_de_la_piece(texte: Option<&str>) -> Option<NumeroObjetSpectacle> {
+    match texte.map(NumeroObjetSpectacle::d_une_piece) {
+        Some(Ok(n)) => n,
+        Some(Err(_)) | None => None,
+    }
+}
+
 fn entier(t: &str) -> Option<i64> {
     if !t.chars().all(|c| c.is_ascii_digit() || c == ',') || !t.chars().next()?.is_ascii_digit() {
         return None;

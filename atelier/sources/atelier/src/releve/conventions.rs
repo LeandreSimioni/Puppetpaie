@@ -24,7 +24,7 @@ use std::time::Instant;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::releve::entrepot_dila::{self as dila, dire, Entrepot, LecteurTar, Source};
+use crate::releve::entrepot_dila::{self as dila, dire, Entrepot, EtatDuTexteDila, IdDila, LecteurTar, LivraisonDila, Source};
 use crate::sources::Manifeste;
 use crate::EnOrdre;
 use droit::fiche::Idcc;
@@ -51,16 +51,16 @@ nouvelles (`--reconstruire` relit la base entiere, 180 Mo) ; `article` rend les 
 #[serde(deny_unknown_fields)]
 pub struct ArticleKali {
     cle: Vec<String>,
-    id: String,
+    id: IdDila,
     #[serde(skip_serializing_if = "Option::is_none")]
     num: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    etat: Option<String>,
+    etat: Option<EtatDuTexteDila>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    debut: Option<String>,
+    debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fin: Option<String>,
-    conteneur: String,
+    fin: Option<Jour>,
+    conteneur: IdDila,
     #[serde(skip_serializing_if = "Option::is_none")]
     texte: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -83,12 +83,12 @@ impl dila::Article for ArticleKali {
 #[serde(deny_unknown_fields)]
 pub struct EtatKali {
     changes: Vec<ChangeKali>,
-    construit_le: String,
+    construit_le: Jour,
     conteneurs: BTreeMap<String, String>,
     global: String,
-    lues: Vec<String>,
+    lues: Vec<LivraisonDila>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mis_a_jour_le: Option<String>,
+    mis_a_jour_le: Option<Jour>,
 }
 
 /// Une livraison qui change l'etat ou le texte d'un article deja tenu (champs dans l'ordre alphabetique).
@@ -96,26 +96,26 @@ pub struct EtatKali {
 #[serde(deny_unknown_fields)]
 struct ChangeKali {
     #[serde(skip_serializing_if = "Option::is_none")]
-    apres: Option<String>,
+    apres: Option<EtatDuTexteDila>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    avant: Option<String>,
-    id: String,
+    avant: Option<EtatDuTexteDila>,
+    id: IdDila,
     idcc: Idcc,
-    livraison: String,
+    livraison: LivraisonDila,
     #[serde(skip_serializing_if = "Option::is_none")]
     num: Option<String>,
     texte_change: bool,
 }
 
 impl dila::Etat for EtatKali {
-    fn lues(&self) -> &[String] {
+    fn lues(&self) -> &[LivraisonDila] {
         &self.lues
     }
-    fn lues_mut(&mut self) -> &mut Vec<String> {
+    fn lues_mut(&mut self) -> &mut Vec<LivraisonDila> {
         &mut self.lues
     }
-    fn dater(&mut self, aujourdhui: &str) {
-        self.mis_a_jour_le = Some(aujourdhui.to_string());
+    fn dater(&mut self, aujourdhui: Jour) {
+        self.mis_a_jour_le = Some(aujourdhui);
     }
 }
 
@@ -166,29 +166,43 @@ pub fn nettoyer(x: &str) -> String {
 }
 
 /// (cle, article) d'un fichier d'article, ou `None` s'il n'est d'aucune convention suivie (ou n'a pas d'identifiant).
-/// La cle est (IDCC, identifiant KALIARTI).
-fn lire(xml: &str, conteneurs: &EnOrdre<String>) -> Option<(String, ArticleKali)> {
+/// La cle est (IDCC, identifiant KALIARTI). L'identifiant, l'etat et les dates se lisent ici, a la porte du XML : un
+/// element vide n'en dit aucun ; un element qui n'en a pas la forme refuse l'article.
+fn lire(xml: &str, conteneurs: &EnOrdre<String>) -> R<Option<(String, ArticleKali)>> {
     static TXT: OnceLock<Regex> = OnceLock::new();
     static TM: OnceLock<Regex> = OnceLock::new();
-    let (cont, idcc) = conteneurs.0.iter().find(|(c, _)| xml.contains(c.as_str()))?;
+    let Some((cont, idcc)) = conteneurs.0.iter().find(|(c, _)| xml.contains(c.as_str())) else {
+        return Ok(None);
+    };
     let g = |k: &str| re_champ(k).captures(xml).and_then(|c| c.get(1)).map(|m| dila::sans_blancs(m.as_str()).to_string());
     let txt = motif(&TXT, r#"(?s)<TITRE_TXT[^>]*id_txt="([^"]*)"[^>]*>(.*?)</TITRE_TXT>"#).captures(xml);
-    let ident = g("ID").filter(|i| !i.is_empty())?;
+    let Some(ident) = g("ID").filter(|i| !i.is_empty()) else {
+        return Ok(None);
+    };
+    let jour = |k: &str| -> R<Option<Jour>> {
+        match g(k).filter(|d| !d.is_empty()) {
+            Some(d) => match socle::piece::Zone::lue(&d, socle::piece::format::JourIso).valeur() {
+                Some(j) => Ok(Some(j)),
+                None => Err(refus!("{} : {} « {} » n'est pas un jour AAAA-MM-JJ", ident, k, d)),
+            },
+            None => Ok(None),
+        }
+    };
     let chemin: Vec<String> = motif(&TM, r"(?s)<TITRE_TM[^>]*>(.*?)</TITRE_TM>").captures_iter(xml).map(|c| nettoyer(&c[1])).collect();
     let a = ArticleKali {
         cle: vec![idcc.clone(), ident.clone()],
-        id: ident,
+        id: IdDila::lire(&ident)?,
         num: g("NUM"),
-        etat: g("ETAT"),
-        debut: g("DATE_DEBUT"),
-        fin: g("DATE_FIN"),
-        conteneur: cont.clone(),
+        etat: g("ETAT").filter(|e| !e.is_empty()).map(|e| EtatDuTexteDila::lire(&e)).transpose()?,
+        debut: jour("DATE_DEBUT")?,
+        fin: jour("DATE_FIN")?,
+        conteneur: IdDila::lire(cont)?,
         texte: txt.as_ref().map(|c| c[1].to_string()),
         titre_texte: txt.as_ref().map(|c| nettoyer(&c[2])),
         chemin: chemin.join(" > "),
         contenu: g("CONTENU").map(|c| nettoyer(&c)),
     };
-    Some((dila::cle_de(&a.cle), a))
+    Ok(Some((dila::cle_de(&a.cle), a)))
 }
 
 /// Le dernier segment d'un chemin de la liste des suppressions (l'identifiant retire).
@@ -202,7 +216,7 @@ fn dernier_segment(l: &str) -> &str {
 /// Fait defiler une archive (la base entiere, ou une livraison quand `livraison` est nommee) et range les articles des
 /// conventions suivies ; rend le nombre d'articles gardes. Une livraison qui change l'etat ou le texte d'un article deja
 /// tenu le note dans `changes`.
-fn passer<L: Read>(tar: &mut LecteurTar<L>, articles: &mut EnOrdre<ArticleKali>, changes: &mut Vec<ChangeKali>, conteneurs: &EnOrdre<String>, livraison: Option<&str>) -> R<usize> {
+fn passer<L: Read>(tar: &mut LecteurTar<L>, articles: &mut EnOrdre<ArticleKali>, changes: &mut Vec<ChangeKali>, conteneurs: &EnOrdre<String>, livraison: Option<&LivraisonDila>) -> R<usize> {
     let mut n = 0;
     while let Some(m) = tar.suivant()? {
         if !m.fichier {
@@ -218,18 +232,18 @@ fn passer<L: Read>(tar: &mut LecteurTar<L>, articles: &mut EnOrdre<ArticleKali>,
             continue;
         }
         let xml = String::from_utf8_lossy(&tar.lire()?).into_owned();
-        let Some((k, a)) = lire(&xml, conteneurs) else {
+        let Some((k, a)) = lire(&xml, conteneurs)? else {
             continue;
         };
         if let (Some(livraison), Some(ancien)) = (livraison, articles.valeur(&k)) {
             if (&ancien.etat, &ancien.contenu) != (&a.etat, &a.contenu) {
                 changes.push(ChangeKali {
                     idcc: Idcc::lire(&a.cle[0])?,
-                    id: a.cle[1].clone(),
+                    id: a.id.clone(),
                     num: a.num.clone(),
-                    livraison: livraison.to_string(),
-                    avant: ancien.etat.clone(),
-                    apres: a.etat.clone(),
+                    livraison: livraison.clone(),
+                    avant: ancien.etat,
+                    apres: a.etat,
                     texte_change: ancien.contenu != a.contenu,
                 });
             }
@@ -253,7 +267,7 @@ fn globale(source: &dyn Source) -> R<String> {
 /// Tient l'entrepot a jour : la base entiere la premiere fois (ou une convention nouvelle a suivre, ou `reconstruire`),
 /// puis les livraisons pas encore appliquees, dans l'ordre.
 pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, source: &dyn Source, aujourdhui: &Jour) -> R<EntrepotKali> {
-    let jour = aujourdhui.iso();
+    let jour = *aujourdhui;
     let conteneurs = suivies(manifeste);
     let dossier = racine.join(DOSSIER);
     let charge: Option<EntrepotKali> = if dila::existe(&dossier) && !reconstruire { Some(Entrepot::charger(&dossier)?) } else { None };
@@ -266,7 +280,7 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
             dire(&format!("== base KALI entiere : {} ==", glob));
             let etat = EtatKali {
                 changes: Vec::new(),
-                construit_le: jour.clone(),
+                construit_le: jour,
                 conteneurs: conteneurs.0.iter().cloned().collect(),
                 global: glob.clone(),
                 lues: Vec::new(),
@@ -276,7 +290,7 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
             let t0 = Instant::now();
             let n = passer(&mut dila::tar_gz(source.flux(&format!("{}{}", BASE, glob))?), &mut ent.articles, &mut ent.etat.changes, &conteneurs, None)?;
             dire(&format!("  {} articles gardes en {}s", n, crate::releve::codes::secondes(t0.elapsed())));
-            ent.sauver(&jour)?;
+            ent.sauver(jour)?;
             ent
         }
     };
@@ -285,9 +299,9 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
         .captures(&ent.etat.global)
         .map(|c| c[1].to_string())
         .ok_or_else(|| refus!("{}/etat.json : « global » sans date ({})", DOSSIER, ent.etat.global))?;
-    let toutes: Vec<String> = dila::livraisons(&dila::page(source, BASE)?, "KALI").into_iter().filter(|l| l[..8] >= *date_globale).collect();
+    let toutes: Vec<LivraisonDila> = dila::livraisons(&dila::page(source, BASE)?, "KALI")?.into_iter().filter(|l| l.jour().aaaammjj() >= date_globale).collect();
     let lues = ent.lues();
-    let neuves: Vec<String> = toutes.iter().filter(|l| !lues.contains(*l)).cloned().collect();
+    let neuves: Vec<LivraisonDila> = toutes.iter().filter(|l| !lues.contains(*l)).cloned().collect();
     dire(&format!("== {} livraison(s) nouvelle(s) sur {} ==", neuves.len(), toutes.len()));
     let urls: Vec<String> = neuves.iter().map(|l| format!("{}KALI_{}.tar.gz", BASE, l)).collect();
     let mut panne: Option<Echec> = None;
@@ -307,7 +321,7 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
         }
         ent.noter_lue(nom);
         if (i + 1) % 50 == 0 {
-            if let Err(e) = ent.sauver(&jour) {
+            if let Err(e) = ent.sauver(jour) {
                 panne = Some(e);
                 return false;
             }
@@ -318,7 +332,7 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
     if let Some(e) = panne {
         return Err(e);
     }
-    ent.sauver(&jour)?;
+    ent.sauver(jour)?;
     dire(&format!("== {} articles, {} livraisons appliquees ==", ent.articles.len(), ent.lues().len()));
     Ok(ent)
 }
@@ -343,7 +357,7 @@ pub fn articles<'a>(ent: &'a EntrepotKali, idcc: &Idcc, num: Option<&str>, en_vi
         .0
         .iter()
         .map(|(_, a)| a)
-        .filter(|a| a.cle[0] == **idcc && num.is_none_or(|n| a.num.as_deref() == Some(n)) && (!en_vigueur || a.etat.as_deref().is_some_and(|e| e.starts_with("VIGUEUR"))))
+        .filter(|a| a.cle[0] == **idcc && num.is_none_or(|n| a.num.as_deref() == Some(n)) && (!en_vigueur || a.etat.is_some_and(EtatDuTexteDila::de_vigueur)))
         .collect();
     out.sort_by(|a, b| (&a.texte, &a.num, &a.debut).cmp(&(&b.texte, &b.num, &b.debut)));
     out
@@ -354,6 +368,22 @@ fn dit(t: &Option<String>) -> &str {
     match t {
         Some(t) => t,
         None => "(non dit)",
+    }
+}
+
+/// L'etat de l'article tel que la transcription l'ecrit.
+fn etat_dit(e: Option<EtatDuTexteDila>) -> &'static str {
+    match e {
+        Some(e) => e.nom(),
+        None => "(non dit)",
+    }
+}
+
+/// Une date de l'article telle que la transcription l'ecrit.
+fn jour_dit(j: Option<Jour>) -> String {
+    match j {
+        Some(j) => j.iso(),
+        None => "(non dit)".to_string(),
     }
 }
 
@@ -369,9 +399,9 @@ pub fn transcrire(a: &ArticleKali) -> String {
         dila::premiers_caracteres(&a.chemin, 120),
         num,
         a.id,
-        dit(&a.etat),
-        dit(&a.debut),
-        dit(&a.fin),
+        etat_dit(a.etat),
+        jour_dit(a.debut),
+        jour_dit(a.fin),
         dit(&a.titre_texte),
         dit(&a.texte),
         "-".repeat(78),
@@ -401,7 +431,7 @@ pub fn rendre_recherche(ent: &EntrepotKali, idcc: &Idcc, mot: &str) -> String {
     let mut out = String::new();
     for a in articles(ent, idcc, None, true) {
         if a.contenu.as_deref().is_some_and(|c| c.to_lowercase().contains(&mot)) {
-            out.push_str(&format!("{}  {:<8} {:<22} {}\n", a.id, dit(&a.num), dit(&a.etat), dila::premiers_caracteres(&a.chemin, 90)));
+            out.push_str(&format!("{}  {:<8} {:<22} {}\n", a.id, dit(&a.num), etat_dit(a.etat), dila::premiers_caracteres(&a.chemin, 90)));
         }
     }
     out

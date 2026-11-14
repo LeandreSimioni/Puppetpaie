@@ -16,6 +16,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
+use socle::num::Decimal;
 
 use crate::envoi::IdDeCourriel;
 use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
@@ -271,12 +272,15 @@ impl Ligne {
         }
     }
 
-    /// Un envoi remis en main propre (des contrats ou des documents imprimes).
-    pub fn main_propre(&self) -> bool {
+    /// SA REMISE, dite seulement par les lignes qui en ont une : celles qui donnent une piece au salarie imprimee (a
+    /// remettre en main propre) ou par courriel, et le notent (`main_propre`) : des contrats a signer, des documents
+    /// (bulletins, certificats, attestations). Les autres n'ont pas de remise : une DSN, une DPAE se deposent ; une
+    /// regularisation de la CASC, un dossier, une demande de fiche, un contrat contresigne ne partent que par courriel.
+    pub fn remise(&self) -> Option<crate::etats::ModeDeRemise> {
         match self {
-            Ligne::ContratSignature(e) => e.detail.main_propre,
-            Ligne::Documents(e) => e.detail.main_propre,
-            Ligne::Dsn(_) | Ligne::Dpae(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
+            Ligne::ContratSignature(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
+            Ligne::Documents(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
+            Ligne::Dsn(_) | Ligne::Dpae(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => None,
         }
     }
 
@@ -309,9 +313,42 @@ pub struct Ouverture {
     pub flux: Option<IdDeFlux>,
     pub empreinte: EmpreinteCourte,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub compte_rendu: Option<String>,
+    pub compte_rendu: Option<crate::retours::CompteRenduDuTest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contournement: Option<String>,
+}
+
+/// Les montants d'une DSN deposee, chacun ecrit en texte tel que `socle::ecriture::decimal_en_texte` l'ecrit, et relu dans
+/// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
+mod versements_en_texte {
+    use serde::{Deserialize, Serialize};
+    use socle::num::Decimal;
+
+    /// Un montant ecrit par `decimal_en_texte`.
+    struct EnTexte<'a>(&'a Decimal);
+
+    impl Serialize for EnTexte<'_> {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            socle::ecriture::decimal_en_texte::serialize(self.0, s)
+        }
+    }
+
+    pub fn serialize<S: serde::Serializer>(v: &Option<Vec<Decimal>>, s: S) -> Result<S::Ok, S::Error> {
+        v.as_ref().map(|l| l.iter().map(EnTexte).collect::<Vec<_>>()).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Decimal>>, D::Error> {
+        let Some(textes) = Option::<Vec<String>>::deserialize(d)? else { return Ok(None) };
+        let mut out = Vec::with_capacity(textes.len());
+        for t in textes {
+            let m = socle::num::dec_texte(&t).map_err(|e| serde::de::Error::custom(e.phrase))?;
+            if m.to_string() != t {
+                return Err(serde::de::Error::custom(format!("versement {} : un montant s'écrit en chiffres, un point avant ses décimales.", socle::fichiers::repr(&t))));
+            }
+            out.push(m);
+        }
+        Ok(Some(out))
+    }
 }
 
 /// LE DETAIL D'UNE DSN : ce que le fichier deposé declare (sa nature, son type, son ordre, son etablissement, ses
@@ -335,8 +372,9 @@ pub struct DetailDsn {
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ordre: Option<droit::natures::NumeroDOrdre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub versements: Option<Vec<String>>,
+    /// Les montants versés aux organismes (S21.G00.20.005), écrits en texte (`socle::ecriture::decimal_en_texte`).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "versements_en_texte")]
+    pub versements: Option<Vec<Decimal>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub salaries: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -435,7 +473,9 @@ pub struct PersonneCertifiee {
     #[serde(with = "socle::forme::vide_si_aucun")]
     pub embauche: Option<socle::date::Jour>,
     pub dossier: String,
-    pub code: String,
+    /// C_RETOUR_AR.
+    pub code: declarations::dpae::CodeRetourDpae,
+    /// Le libelle de son code (Format 120).
     pub libelle: String,
     pub enregistree: bool,
     pub deja_existante: bool,
@@ -446,6 +486,11 @@ pub struct PersonneCertifiee {
 }
 
 impl PersonneCertifiee {
+    /// Refusee : un code retour qui ne l'enregistre pas et ne la dit pas deja existante.
+    pub fn refusee(&self) -> bool {
+        !self.enregistree && !self.deja_existante
+    }
+
     /// Sa pastille : enregistree, faite ; deja existante, une information ; refusee, refusee.
     pub fn pastille_due(&self) -> socle::ecran::Pastille {
         use socle::ecran::{EtatDEcran, Pastille};
@@ -454,12 +499,7 @@ impl PersonneCertifiee {
         } else if self.deja_existante {
             Pastille::de(EtatDEcran::Information, "déjà existante")
         } else {
-            // Ni libelle ni code : le compte rendu dit seulement qu'elle est refusee.
-            let mots = match [&self.libelle, &self.code].into_iter().find(|t| !t.is_empty()) {
-                Some(m) => m.as_str(),
-                None => "refusée",
-            };
-            Pastille::de(EtatDEcran::Refuse, mots)
+            Pastille::de(EtatDEcran::Refuse, self.code.libelle())
         }
     }
 }
@@ -606,7 +646,7 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modifications: Option<Vec<ArticleModifie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub clauses: Option<BTreeMap<documents::marqueurs::Marqueur, Option<String>>>,
+    pub clauses: Option<BTreeMap<droit::marqueurs::Marqueur, Option<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<CodeDeDemande>,
     #[serde(skip_serializing_if = "Option::is_none")]

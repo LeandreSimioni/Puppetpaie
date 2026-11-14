@@ -15,7 +15,7 @@ pub struct TauxRecu {
     pub salarie: droit::contexte::IdSalarie,
     pub taux: Option<droit::pas::TauxDePas>,
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant: String,
+    pub identifiant: droit::pas::IdentifiantDuTauxPas,
     pub mis_a_disposition: socle::paris::Moment,
     pub en_retour_de: Option<socle::mois::Mois>,
 }
@@ -62,7 +62,7 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
         for v in &d.versements {
             // « -1 » : un CDD court sans taux personnalise (`norme-dsn/texte/bloc-S21.G00.50.txt`, S21.G00.50.008) ;
             // aucun taux n'a ete transmis. Sans la date du versement (S21.G00.50.001), le taux ne se date pas.
-            let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| *i != "-1"), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
+            let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| !i.sans_crm()), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
                 continue;
             };
             let taux = match v.taux_pas {
@@ -75,7 +75,7 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
                 salarie: (*cle).clone(),
                 taux,
                 type_taux: v.type_pas,
-                identifiant: id.to_string(),
+                identifiant: id.clone(),
                 mis_a_disposition: instant_du_jour(j)?,
                 en_retour_de: None,
             };

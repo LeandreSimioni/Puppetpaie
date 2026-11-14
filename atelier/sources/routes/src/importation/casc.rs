@@ -19,7 +19,6 @@ use rust_decimal::RoundingStrategy;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-use declarations::champs::Saisie;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::ecriture::ecrire_json;
@@ -327,17 +326,18 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         let mut mois_sal: Vec<(Nir, String, Decimal)> = vec![];
         let an = annee_de(m);
         for p in paies {
-            // Les colonnes de l'etat nomment les cases de la fiche, lue par sa table.
-            let fiche = Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &p.salarie.champs)?;
-            use droit::fiche::CaseSalarie as S;
-            let champ = |cle: S| fiche.mot(cle);
+            // Les colonnes de l'etat nomment les cases de la fiche typee, chacune telle qu'elle s'ecrit.
+            let f = &p.salarie.champs;
+            let dit = |t: Option<&str>| t.filter(|t| !t.is_empty()).map(str::to_string);
+            let (nom, prenom) = (dit(f.nom.portee()), dit(f.prenom.portee()));
+            let (adresse, code_postal, commune) = (dit(f.adresse.portee()), dit(f.code_postal.portee()), dit(f.commune.portee()));
             let brut = p.brut;
             // La liste nominative se tient par NIR : une fiche sans NIR ne s'y range pas.
             let nir = p.salarie.champs.nir.dite().cloned().ok_or_else(|| refus(format!("{} : la fiche du salarié « {} » n'a pas de NIR ; la liste nominative de la régularisation le demande.", m, p.salarie.id)))?;
             masse += brut;
             match mois_sal.iter_mut().find(|(n, _, _)| *n == nir) {
                 Some((_, _, t)) => *t += brut,
-                None => mois_sal.push((nir.clone(), match champ(S::Nom) {
+                None => mois_sal.push((nir.clone(), match nom.clone() {
                     Some(n) => n,
                     None => nir.to_string(),
                 }, brut)),
@@ -346,12 +346,12 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             let pos = match par_salarie.iter().position(|(k, _)| *k == cle) {
                 Some(i) => i,
                 None => {
-                    let adresse: Vec<String> = [S::Adresse, S::CodePostal, S::Commune].into_iter().filter_map(champ).collect();
+                    let adresse: Vec<String> = [adresse.clone(), code_postal.clone(), commune.clone()].into_iter().flatten().collect();
                     par_salarie.push((
                         cle,
                         SalarieReg {
                             annee: an,
-                            salarie: [champ(S::Nom), champ(S::Prenom)].into_iter().flatten().collect::<Vec<_>>().join(" "),
+                            salarie: [nom.clone(), prenom.clone()].into_iter().flatten().collect::<Vec<_>>().join(" "),
                             nir: Some(nir.clone()),
                             date_naissance: p.salarie.champs.date_naissance.dite().copied(),
                             adresse: adresse.join(" "),
@@ -364,15 +364,15 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             par_salarie[pos].1.masse += brut;
             let individu = IndividuReg {
                 nir: p.salarie.champs.nir.dite().cloned(),
-                nom: champ(S::Nom),
-                prenom: champ(S::Prenom),
+                nom,
+                prenom,
                 date_naissance: p.salarie.champs.date_naissance.dite().copied(),
-                adresse: champ(S::Adresse),
-                code_postal: champ(S::CodePostal),
-                commune: champ(S::Commune),
+                adresse,
+                code_postal,
+                commune,
                 email: p.salarie.champs.email.dite().cloned(),
             };
-            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: champ(S::Emploi) };
+            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: dit(f.emploi.portee()) };
             emplois.push(EmploiReg {
                 annee: an,
                 mois: *m,
@@ -660,7 +660,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
-        let artiste = c.pcs_ese.as_ref().is_some_and(|p| p.starts_with("354"));
+        let artiste = c.pcs_ese.as_ref().is_some_and(droit::fiche::CodePcsEse::est_un_artiste_du_spectacle);
         let nir = i.nir.clone();
         let cle = (x.annee, nir.clone());
         let total = match cumul.iter_mut().find(|(k, _)| *k == cle) {

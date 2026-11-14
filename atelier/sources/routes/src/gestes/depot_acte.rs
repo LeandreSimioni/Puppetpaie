@@ -27,7 +27,7 @@ use envois::depot;
 use envois::etats;
 use socle::echec::R;
 use socle::echec::erreur;
-use envois::releve_retours::Client;
+use envois::releve_retours::{Client, EnvironnementNetEntreprises};
 use envois::suites::Suites;
 use envois::journal::{Acte, EmbaucheDeclaree, Ligne, Ouverture, Version};
 use droit::contexte::IdSalarie;
@@ -93,7 +93,7 @@ fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement:
     // celui d'un test revient bel et bien (constate sur des DPAE de test : le certificat 41 les dit enregistrees,
     // code 99).
     if let (etats::EtatDuTest::Testee, Some(l)) = (etat.etat, &etat.conforme) {
-        return Ok(Ouverture { test: Some(l.quand().to_string()), flux: etat.flux_conforme(), empreinte: etat.empreinte.clone(), compte_rendu: etat.compte_rendu.clone(), contournement: None });
+        return Ok(Ouverture { test: Some(l.quand().to_string()), flux: etat.flux_conforme(), empreinte: etat.empreinte.clone(), compte_rendu: etat.compte_rendu, contournement: None });
     }
     let raison = contournement.trim();
     if !raison.is_empty() {
@@ -113,9 +113,11 @@ fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement:
 /// (`journal::versions_du_mois`).
 fn versions_du_signalement(ctx: &Contexte, mois: Mois, octets: &[u8]) -> R<Vec<Version>> {
     let texte = String::from_utf8_lossy(octets);
-    let numeros: Vec<String> =
-        texte.lines().filter_map(|l| l.strip_prefix("S21.G00.40.009,")).map(|v| v.trim().trim_matches('\'').to_string()).collect();
-    envois::journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |_, numero, _| numeros.iter().any(|n| n == numero))}
+    // Notre signalement : un numero qui ne se lit pas est un defaut du logiciel, il refuse.
+    let numeros: Vec<NumeroContrat> =
+        texte.lines().filter_map(|l| l.strip_prefix("S21.G00.40.009,")).map(|v| NumeroContrat::lire(v.trim().trim_matches('\''))).collect::<R<_>>()?;
+    envois::journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |_, numero, _| numeros.contains(numero))
+}
 
 /// La derniere porte -- une copie de developpement ne declare rien en reel.
 fn refuser_si_copie(ctx: &Contexte, quoi: &str) -> R<()> {
@@ -184,7 +186,7 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, cons
             connus.push(n);
         }
         if let Some(nom) = l.fichier() {
-            let p = ctx.racine.join("sorties").join(mois).join(nom);
+            let p = documents::fichier_depose(&ctx.racine.join("sorties").join(mois), nom.texte());
             if p.exists() {
                 let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::du_disque(&e)))?;
                 if let Some(n) = rang_dans_le_fichier(&octets)? {
@@ -258,7 +260,7 @@ pub(crate) fn deposer_dsn(
     forcer: bool,
     contournement: &str,
 ) -> R<DepotFait> {
-    deposer_dsn_dans(ctx, fichier, reel, preuve, qui, "production", forcer, contournement, None)
+    deposer_dsn_dans(ctx, fichier, reel, preuve, qui, EnvironnementNetEntreprises::Production, forcer, contournement, None)
 }
 
 /// `deposer_dsn` avec l'ENVIRONNEMENT du point de depot (`production` ou `editeur`) et l'ordre d'un essai, que seul
@@ -276,14 +278,14 @@ pub fn deposer_dsn_dans(
     reel: bool,
     preuve: Option<&Preuve>,
     qui: &str,
-    environnement: &str,
+    environnement: EnvironnementNetEntreprises,
     forcer: bool,
     contournement: &str,
     ordre_d_essai: Option<i64>,
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
-    if reel && environnement != "production" {
+    if reel && environnement != EnvironnementNetEntreprises::Production {
         return Err(erreur(
             Classe::Refuse,
             format!("L'environnement '{}' est la plate-forme d'essai de l'editeur : rien n'y est declare. Un depot REEL ne part que sur 'production' ; pour essayer, un depot de test. Rien n'est parti.", environnement),
@@ -393,9 +395,9 @@ pub fn deposer_dsn_dans(
     }
 
     let joue = branchement.joue();
-    let mut mdp: Option<String> = None;
+    let mut mdp: Option<socle::secret::Secret> = None;
     if !joue {
-        mdp = motdepasse_organisme(ctx, "net-entreprises", preuve.and_then(|p| p.motdepasse.as_deref()))?;
+        mdp = motdepasse_organisme(ctx, "net-entreprises", preuve.and_then(|p| p.motdepasse.as_ref()))?;
     }
     if reel && !joue {
         refuser_si_copie(ctx, "une DSN reelle")?;
@@ -420,7 +422,7 @@ pub fn deposer_dsn_dans(
         };
         // Un etablissement qui ne se lit pas refuse le depot : la premiere faute, rendue apres la lecture.
         let faute: std::cell::RefCell<Option<Echec>> = std::cell::RefCell::new(None);
-        let garder = |_: &IdSalarie, _: &str, e: &engagement::stock::Ecrit| match crate::etapes::nic_de_l_engagement_ecrit(ctx, e) {
+        let garder = |_: &IdSalarie, _: &NumeroContrat, e: &engagement::stock::Ecrit| match crate::etapes::nic_de_l_engagement_ecrit(ctx, e) {
             Ok(n) => n.as_ref() == Some(&nic),
             Err(x) => {
                 faute.borrow_mut().get_or_insert(x);
@@ -515,7 +517,7 @@ pub(crate) fn deposer_dpae_avec(
         let soucis = match donne.as_deref() {
             Some(c) => c.verifier_identifiants()?,
             None => {
-                let mdp = motdepasse_organisme(ctx, "urssaf", preuve.and_then(|p| p.motdepasse.as_deref()))?;
+                let mdp = motdepasse_organisme(ctx, "urssaf", preuve.and_then(|p| p.motdepasse.as_ref()))?;
                 let c = Client::dpae(ctx, majuscules, mdp);
                 let soucis = c.verifier_identifiants()?;
                 client = Some(c);
@@ -536,14 +538,14 @@ pub(crate) fn deposer_dpae_avec(
         .map(|l| {
             Ok(EmbaucheDeclaree {
                 salarie: l.salarie.clone().ok_or_else(|| socle::refus!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?,
-                numero: l.numero.as_deref().map(NumeroContrat::lire).transpose()?,
+                numero: l.numero.clone(),
                 debut: l.debut,
                 fin: l.fin,
             })
         })
         .collect::<R<_>>()?;
     // La version de chaque engagement dont l'embauche part : une date d'embauche qui change ensuite le dit.
-    let declare = |cle: &IdSalarie, n: &str| embauches.iter().any(|x| x.salarie == *cle && x.numero.as_deref() == Some(n));
+    let declare = |cle: &IdSalarie, n: &NumeroContrat| embauches.iter().any(|x| x.salarie == *cle && x.numero.as_ref() == Some(n));
     let versions = envois::journal::versions_du_mois(ctx, le_mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, n, _| declare(cle, n))?;
     let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement: None, reel, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: None, versions: &versions };
     let c = match donne.as_deref_mut() {
@@ -618,7 +620,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
             releve = true;
             // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place.
             fait = envois::releve_retours::derniere_journee()
-                .and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, envois::releve_retours::CanalDesRetours::Dsn))
+                .and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
                 .and_then(|_| deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ()));
         }
         let qui_demande = ctx.nomme(&l.salarie);
@@ -640,7 +642,7 @@ fn paies_des_embauches(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree
     // Un mois sans engagement valide n'a aucune embauche declaree.
     let saisie = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(o)?;
     let declaree = |p: &engagement::calcul::Paie| {
-        embauches.iter().any(|e| e.salarie == p.salarie.id && e.numero.as_deref() == p.engagement.numero.as_deref())
+        embauches.iter().any(|e| e.salarie == p.salarie.id && e.numero.as_ref() == p.engagement.numero.as_ref())
     };
     let mut paies = Vec::new();
     let engagements = saisie.map(|(data, _)| engagement::engagements_de_la_saisie(ctx, &data)).transpose().map_err(o)?;

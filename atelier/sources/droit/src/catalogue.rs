@@ -110,7 +110,101 @@ pub enum HorsAssiette {
     Mouvement,
 }
 
-pub const COMPTE_POUR: [&str; 2] = ["droits_et_montant", "ouverture_des_droits"];
+/// LE SENS D'UNE RUBRIQUE : ce que sa ligne fait au brut, l'ajouter (`+`) ou l'en retirer (`-`) (`sens` de
+/// `rubriques-base.json`). Une liste du logiciel ; un autre sens se refuse a la lecture de la rubrique.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum Sens {
+    #[serde(rename = "+")]
+    Plus,
+    #[serde(rename = "-")]
+    Moins,
+}
+
+impl Sens {
+    /// Son nom ecrit.
+    pub fn cle(self) -> &'static str {
+        match self {
+            Sens::Plus => "+",
+            Sens::Moins => "-",
+        }
+    }
+
+    /// Le signe qu'il donne au montant ou aux heures d'une ligne : 1 ou -1.
+    pub fn signe(self) -> Decimal {
+        match self {
+            Sens::Plus => Decimal::ONE,
+            Sens::Moins => Decimal::NEGATIVE_ONE,
+        }
+    }
+}
+
+impl crate::fiche::FormeDeCase for Sens {}
+
+/// CE QU'UNE RUBRIQUE COMPTE POUR LES DROITS DES ANNEXES VIII ET X (`compte_pour` de `rubriques-base.json`) : ses heures
+/// et son montant, ou ses heures pour l'ouverture des droits seulement. Une liste du logiciel ; une autre valeur se
+/// refuse a la lecture de la rubrique.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComptePour {
+    DroitsEtMontant,
+    OuvertureDesDroits,
+}
+
+impl ComptePour {
+    /// Son nom ecrit.
+    pub fn cle(self) -> &'static str {
+        match self {
+            ComptePour::DroitsEtMontant => "droits_et_montant",
+            ComptePour::OuvertureDesDroits => "ouverture_des_droits",
+        }
+    }
+}
+
+impl crate::fiche::FormeDeCase for ComptePour {}
+
+/// UNE CASE QU'UNE RUBRIQUE FAIT SAISIR sur sa ligne (`saisie` de `rubriques-base.json`) : la quantite, le taux, les
+/// heures, les jours (les dates de la ligne), la base, le taux de majoration, le montant, le genre d'un avantage en
+/// nature. Une liste du logiciel, relevee dans `rubriques-base.json` ; une autre case se refuse a la lecture de la
+/// rubrique. Leur ordre est celui de la ligne.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaseSaisie {
+    Quantite,
+    Taux,
+    Heures,
+    Jours,
+    Base,
+    TauxMajoration,
+    Montant,
+    Genre,
+}
+
+impl CaseSaisie {
+    /// Son nom ecrit.
+    pub fn cle(self) -> &'static str {
+        match self {
+            CaseSaisie::Quantite => "quantite",
+            CaseSaisie::Taux => "taux",
+            CaseSaisie::Heures => "heures",
+            CaseSaisie::Jours => "jours",
+            CaseSaisie::Base => "base",
+            CaseSaisie::TauxMajoration => "taux_majoration",
+            CaseSaisie::Montant => "montant",
+            CaseSaisie::Genre => "genre",
+        }
+    }
+}
+
+impl crate::fiche::FormeDeCase for CaseSaisie {}
+
+/// D'OU VIENT UNE RUBRIQUE : livree avec le logiciel (`rubriques-base.json`), ou propre a la compagnie
+/// (`config/rubriques-compagnie.json`). Une liste du logiciel, ecrite `base`, `compagnie`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrigineDeRubrique {
+    Base,
+    Compagnie,
+}
 
 /// Le plafond annuel d'heures d'une rubrique (l'enseignement, annexe X) : selon l'age du salarie.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
@@ -152,19 +246,6 @@ impl CodeDeRubrique {
     }
 }
 
-impl std::ops::Deref for CodeDeRubrique {
-    type Target = str;
-    fn deref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::borrow::Borrow<str> for CodeDeRubrique {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
 impl std::fmt::Display for CodeDeRubrique {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -184,26 +265,14 @@ impl From<CodeDeRubrique> for String {
     }
 }
 
-impl PartialEq<str> for CodeDeRubrique {
-    fn eq(&self, autre: &str) -> bool {
-        self.0 == autre
-    }
-}
-
-impl PartialEq<&str> for CodeDeRubrique {
-    fn eq(&self, autre: &&str) -> bool {
-        self.0 == *autre
-    }
-}
-
-impl PartialEq<String> for CodeDeRubrique {
-    fn eq(&self, autre: &String) -> bool {
-        &self.0 == autre
-    }
-}
-
 /// La rubrique du cachet : celle que les annexes VIII et X convertissent en heures (`cumul::Constantes`).
 pub const CACHET: CodeDeRubrique = CodeDeRubrique::du_moteur("cachet");
+
+/// La rubrique de l'heure de travail d'un intermittent.
+pub const HEURE: CodeDeRubrique = CodeDeRubrique::du_moteur("heure");
+
+/// La rubrique du service de repetition.
+pub const REPETITION: CodeDeRubrique = CodeDeRubrique::du_moteur("repetition");
 
 /// Une forme de paie : ce que le bulletin appelle une ligne.
 #[derive(Debug, Clone, PartialEq)]
@@ -212,21 +281,21 @@ pub struct Rubrique {
     pub libelle: String,
     pub unite: Unite,
     pub nature: NatureDeRubrique,
-    pub saisie: Vec<String>,
+    pub saisie: Vec<CaseSaisie>,
     pub soumis: bool,
     pub imposable: bool,
     pub conges_spectacles: bool,
     pub source: String,
-    pub sens: String,
+    pub sens: Sens,
     pub heures_forfait: Option<Decimal>,
-    pub plafond: Option<String>,
-    pub aem: Option<String>,
+    pub plafond: Option<Unite>,
+    pub aem: Option<Unite>,
     pub dsn_type: Option<String>,
     pub dsn_autres_bruts: Option<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
-    pub annexe: Option<String>,
+    pub annexe: Option<crate::emplois::AnnexeChomage>,
     pub plafond_mensuel: Option<i64>,
     pub plafond_annuel_heures: Option<PlafondAnnuelHeures>,
-    pub compte_pour: String,
+    pub compte_pour: ComptePour,
     pub salaire_de_base: bool,
     pub retabli: bool,
     pub suspension: bool,
@@ -238,40 +307,31 @@ pub struct Rubrique {
     /// permanent (la caisse des Conges Spectacles paie ceux d'un intermittent, C. trav. D. 7121-38), les indemnites
     /// journalieres que la compagnie subrogee reverse (la subrogation est une case des permanents).
     pub piece: Option<Piece>,
-    pub origine: String,
+    pub origine: OrigineDeRubrique,
     /// Ce que la ligne fait, que l'ecran dit sous elle quand son nom ne le dit pas (l'acompte).
     pub dit: Option<String>,
-}
-
-fn joindre(l: &[&str]) -> String {
-    l.join(", ")
 }
 
 impl Rubrique {
     /// Les refus d'une rubrique mal formee.
     fn verifier(&self) -> R<()> {
         let code = &self.code;
-        if !COMPTE_POUR.contains(&self.compte_pour.as_str()) {
-            return Err(mal_decrite(code, format!(
-                "Rubrique {} : compte_pour {} inconnu. Connus : {}.",
-                repr(code), repr(&self.compte_pour), joindre(&COMPTE_POUR))));
-        }
         if self.source.is_empty() {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : `source` est vide. Une rubrique dit d'ou vient \
-                 sa regle, sinon personne ne pourra la verifier.", repr(code))));
+                 sa regle, sinon personne ne pourra la verifier.", repr(code.as_str()))));
         }
         if self.conges_spectacles && !self.soumis {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : `conges_spectacles` sans `soumis`. Les Conges \
                  Spectacles sont une cotisation : leur assiette ne peut pas \
-                 depasser ce qui entre dans l'assiette des cotisations.", repr(code))));
+                 depasser ce qui entre dans l'assiette des cotisations.", repr(code.as_str()))));
         }
         if self.heures_forfait.is_some() && self.unite == Unite::Heure {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : `heures_forfait` sur une rubrique dont l'unite \
                  est l'heure. Les heures y sont un fait, pas un forfait : \
-                 elles compteraient deux fois.", repr(code))));
+                 elles compteraient deux fois.", repr(code.as_str()))));
         }
         Ok(())
     }
@@ -291,12 +351,12 @@ impl Rubrique {
                  (remboursement de frais professionnels : hors du montant net social), `indemnite` (une somme \
                  versee a l'occasion du travail, exoneree ou non : dans le montant net social) ou `retenue` \
                  (acompte, avance, saisie : hors du montant net social).",
-                repr(&self.code), repr(autre.cle())))),
+                repr(self.code.as_str()), repr(autre.cle())))),
         }
     }
 
-    /// La forme de paie a laquelle la rubrique est reservee : `"mensuelle"`, `"activite"` ou rien.
-    pub fn reservee_a(&self) -> Option<&'static str> {
+    /// La population a laquelle la rubrique est reservee : au mois, a l'activite, ou aucune.
+    pub fn reservee_a(&self) -> Option<crate::natures::Paie> {
         if self.salaire_de_base
             || self.retabli
             || self.suspension
@@ -305,10 +365,10 @@ impl Rubrique {
             || self.dsn_bloc52.is_some()
             || self.piece == Some(Piece::Permanent)
         {
-            return Some("mensuelle");
+            return Some(crate::natures::Paie::Mensuelle);
         }
         if self.unite == Unite::Cachet {
-            return Some("activite");
+            return Some(crate::natures::Paie::Activite);
         }
         None
     }
@@ -336,7 +396,7 @@ impl Rubrique {
     /// ligne qui les tait se refuse (`engagement::engagements`) :
     /// sans elle, [`Rubrique::heures`] compterait zero en silence.
     pub fn heures_a_saisir(&self) -> bool {
-        self.heures_forfait.is_none() && self.saisie.iter().any(|s| s == "heures")
+        self.heures_forfait.is_none() && self.saisie.contains(&CaseSaisie::Heures)
     }
 
     /// Les heures que cette ligne fait compter, au total : le forfait
@@ -372,8 +432,8 @@ impl Rubrique {
 
 /// Le refus d'une rubrique qui ne se construit pas : la phrase, et ce qui ne va pas a part.
 #[track_caller]
-fn mal_decrite(code: &str, detail: String) -> socle::echec::Echec {
-    socle::echec::refus_avec(format!("La rubrique {} est mal décrite : le signaler au développeur.", repr(code)), Lieu { detail: Some(detail), ..Lieu::default() })
+fn mal_decrite(code: &CodeDeRubrique, detail: String) -> socle::echec::Echec {
+    socle::echec::refus_avec(format!("La rubrique {} est mal décrite : le signaler au développeur.", repr(code.as_str())),Lieu { detail: Some(detail), ..Lieu::default() })
 }
 
 /// `rubriques-base.json`, entier : ses notes, les annexes VIII et X, les rubriques livrees (chacune une fiche que la
@@ -475,7 +535,7 @@ pub fn rubrique_a_saisir(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R
     if r.piece.is_some() {
         return Err(socle::refus!(
             "La rubrique {} ne se saisit pas : le calcul d'un contrat payé au mois la pose lui-même.",
-            repr(code)
+            repr(code.as_str())
         ));
     }
     Ok(r)
@@ -484,7 +544,7 @@ pub fn rubrique_a_saisir(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R
 /// LES RUBRIQUES LIVREES, construites, sans celles d'aucune compagnie : ce que le logiciel sait d'une rubrique avant
 /// toute configuration (la table de lecture des bulletins s'y rapporte).
 pub fn livrees() -> R<Vec<Rubrique>> {
-    base()?.rangees().into_iter().map(|(c, v, piece)| construire(c, v, "base", piece)).collect()
+    base()?.rangees().into_iter().map(|(c, v, piece)| construire(c, v, OrigineDeRubrique::Base, piece)).collect()
 }
 
 /// Le seuil et la fenetre des annexes VIII et X.
@@ -511,8 +571,8 @@ fn de_la_compagnie(racine: &Path) -> R<RubriquesDeLaCompagnie> {
 
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
 /// doit dire, ou qui ne dit pas ce que sa forme attend, se refuse en la nommant.
-fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: &str, piece: Option<Piece>) -> R<Rubrique> {
-    let faute = |cle: &str, quoi: &str| mal_decrite(&code, format!("Rubrique {} : `{}` {}.", repr(&code), cle, quoi));
+fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubrique, piece: Option<Piece>) -> R<Rubrique> {
+    let faute = |cle: &str, quoi: &str| mal_decrite(&code, format!("Rubrique {} : `{}` {}.", repr(code.as_str()), cle, quoi));
     fn dite<T>(c: Option<T>, cle: &str, faute: &dyn Fn(&str, &str) -> socle::echec::Echec) -> R<T> {
         c.ok_or_else(|| faute(cle, "manque"))
     }
@@ -543,7 +603,7 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: &str, piece: Opt
         conges_pris: dite(f.conges_pris, "conges_pris", &faute)?,
         dsn_bloc52: f.dsn_bloc52,
         piece,
-        origine: origine.to_string(),
+        origine,
         dit: f.dit,
     };
     r.verifier()?;
@@ -589,7 +649,7 @@ fn construire_catalogue(racine: &Path, jour: &Jour) -> R<Vec<Rubrique>> {
     }
     let mut out = Vec::new();
     for (code, d, piece, propre) in brut {
-        out.push(construire(code, d, if propre { "compagnie" } else { "base" }, piece)?);
+        out.push(construire(code, d, if propre { OrigineDeRubrique::Compagnie } else { OrigineDeRubrique::Base }, piece)?);
     }
     out.sort_by_key(|r| r.libelle.to_lowercase());
     Ok(out)
@@ -657,26 +717,26 @@ pub fn rubrique(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R<Rubrique
     let mut connues: Vec<&str> = cat.iter().map(|r| r.code.as_str()).collect();
     connues.sort();
     Err(socle::refus!(
-        "Rubrique inconnue : {}. Connues : {}.", repr(code), connues.join(", ")))
+        "Rubrique inconnue : {}. Connues : {}.", repr(code.as_str()), connues.join(", ")))
 }
 
 /// Le code S21.G00.54.001 de cette ligne de paie, ou `None` : `genre` de la
 /// saisie precise lequel des cinq avantages en nature.
-pub fn code_54(r: &Rubrique, genre: Option<&str>) -> R<Option<AutreElementDeRevenuBrut>> {
+pub fn code_54(r: &Rubrique, genre: Option<AutreElementDeRevenuBrut>) -> R<Option<AutreElementDeRevenuBrut>> {
     let Some(code) = r.dsn_autres_bruts else { return Ok(None) };
-    let Some(genre) = genre.map(str::trim).filter(|g| !g.is_empty()) else {
+    let Some(genre) = genre else {
         return Ok(Some(code));
     };
     if !code.avantage_en_nature() {
-        return Err(socle::echec::a_la_cle(&format!("La ligne « {} » dit le genre d'un avantage en nature, et ce n'en est pas un : retirer ce genre.", r.libelle), "genre", repr_texte(genre)));
+        return Err(socle::echec::a_la_cle(&format!("La ligne « {} » dit le genre d'un avantage en nature, et ce n'en est pas un : retirer ce genre.", r.libelle), "genre", repr_texte(genre.code())));
+    }
+    if genre.avantage_en_nature() {
+        return Ok(Some(genre));
     }
     let avantages: Vec<AutreElementDeRevenuBrut> = AutreElementDeRevenuBrut::TOUS.iter().copied().filter(|a| a.avantage_en_nature()).collect();
-    match avantages.iter().copied().find(|a| a.code() == genre) {
-        Some(a) => Ok(Some(a)),
-        None => Err(socle::echec::a_la_cle(
-            &format!("La ligne « {} » porte un genre d'avantage en nature inconnu : le choisir dans la liste.", r.libelle),
-            "genre",
-            format!("{} ; connus : {}", repr_texte(genre), avantages.iter().map(|a| a.code()).collect::<Vec<_>>().join(", ")),
-        )),
-    }
+    Err(socle::echec::a_la_cle(
+        &format!("La ligne « {} » porte un genre d'avantage en nature inconnu : le choisir dans la liste.", r.libelle),
+        "genre",
+        format!("{} ; connus : {}", repr_texte(genre.code()), avantages.iter().map(|a| a.code()).collect::<Vec<_>>().join(", ")),
+    ))
 }

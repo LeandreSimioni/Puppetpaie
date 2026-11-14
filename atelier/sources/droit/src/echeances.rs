@@ -100,7 +100,7 @@ pub fn remise_du_contrat(debut: &Jour, idcc: Option<&crate::fiche::Idcc>, code_e
         source: "Code du travail, art. L. 1242-13 (atelier/reference/sources/code-du-travail/xml/L1242-13.xml)".into(),
     };
     let Some(r) = crate::clauses::releve(idcc)?.and_then(|c| c.remise_du_contrat) else { return Ok(e) };
-    if r.metiers.iter().any(|m| Some(m.as_str()) == code_emploi.map(AsRef::as_ref)) {
+    if code_emploi.is_some_and(|c| r.metiers.iter().any(|m| crate::fiche::CodeEmploiFt::from(m) == *c)) {
         let jour = jour_ouvrable(debut, -r.jours_ouvrables_avant, chomes)?;
         if jour < e.jour {
             e = Echeance { jour, mots: "au plus tard le", heure: "", source: format!("{}, art. {}", crate::clauses::nom(idcc), r.article) };

@@ -238,10 +238,7 @@ fn jours_et_lieux(liste: &[DateDeLigne]) -> (Vec<Jour>, BTreeMap<Jour, String>) 
 impl Engagement {
     /// « NOM Prénom, contrat N » : qui une phrase de refus désigne.
     pub fn qui(&self) -> String {
-        match self.numero.as_deref() {
-            Some(n) => format!("{}, contrat {}", self.nom, n),
-            None => format!("{}, contrat sans numero", self.nom),
-        }
+        numeros::numero_dit(self.numero.as_ref(), &format!("{}, contrat ", self.nom), "", &format!("{}, contrat sans numero", self.nom))
     }
 
     /// LE NUMERO DU CONTRAT QUE LA DSN DECLARE (S21.G00.40.009, obligatoire) : sans lui, l'engagement ne se declare pas,
@@ -349,7 +346,7 @@ impl Engagement {
                 // (`calcul::lignes_brut`) : une absence en retire. Un acompte,
                 // au forfait et sans heures, n'en retire aucune.
                 let h = r.heures(q, l.heures());
-                autres += if r.sens == "-" { -h } else { h };
+                autres += if r.sens == droit::catalogue::Sens::Moins { -h } else { h };
             }
         }
         // Un nombre de cachets se compte en entiers : la partie entiere de la somme.
@@ -1016,7 +1013,7 @@ pub(crate) fn engagements(
         let declare = match &carte.metier {
             Some(code) => {
                 let salarie = fiche_du_salarie(ctx, carte.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?;
-                let feminin = sexe(&salarie).as_deref() == Some("2");
+                let feminin = salarie.sexe() == Some(droit::fiche::Sexe::Feminin);
                 Some(emplois::resoudre(code, carte.cadre, feminin, ctx.entreprise.idcc.dite()).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?)
             }
             None => None,
@@ -1144,7 +1141,7 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
             let ent = ctx.entreprise_au(&fin_mois);
             let fiche = crate::calcul::fiche_de_l_engagement(ctx, eng)?;
             let metier = fiche.code_emploi_ft.dite().map(emplois::metier).transpose()?.flatten();
-            let cirque = metier.as_ref().and_then(|m| m.au_catalogue()).and_then(|f| f.minima.ccn_1285.as_deref()) == Some("cirque");
+            let cirque = metier.as_ref().and_then(|m| m.au_catalogue()).and_then(|f| f.minima.ccn_1285.as_ref()) == Some(&droit::minima::CIRQUE);
             (ent.idcc.dite() == Some(&droit::clauses::IDCC_CCNEAC) && cirque).then_some(f)
         }
         _ => None,
@@ -1190,12 +1187,16 @@ pub(crate) fn a_finir(phrase: impl Into<String>) -> Echec {
 /// LE TARIF DE LA CONVENTION d'une rubrique a ce jour (`tarifs_conventionnels.<code>` de la couche de la convention du
 /// bareme, liste datee : l'avenant qui le fixe et sa date d'effet y sont cites). `None` : la convention n'en fixe pas, ou
 /// pas encore a ce jour ; le taux se saisit.
-pub fn tarif_conventionnel(ctx: &Contexte, code: &str, jour: &Jour) -> R<Option<Decimal>> {
+pub fn tarif_conventionnel(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<Decimal>> {
     let bar = ctx.bareme(jour)?;
-    Ok(bar.tarifs_conventionnels.as_ref().and_then(|t| match code {
-        "repas" => t.repas.and_then(|n| n.0),
-        "nuitee" => t.nuitee.and_then(|n| n.0),
-        _ => None,
+    Ok(bar.tarifs_conventionnels.as_ref().and_then(|t| {
+        if *code == REPAS {
+            t.repas.and_then(|n| n.0)
+        } else if *code == NUITEE {
+            t.nuitee.and_then(|n| n.0)
+        } else {
+            None
+        }
     }))
 }
 
@@ -1765,11 +1766,6 @@ fn unites_du_statut(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
     Ok(())
 }
 
-/// "1", "2", ou `None` si la fiche ne le dit pas (`ChampsSalarie::sexe` : le NIR d'abord).
-fn sexe(fiche: &droit::fiche::ChampsSalarie) -> Option<String> {
-    fiche.sexe().map(|s| s.as_str().to_string())
-}
-
 // ------------------------------------------- le contrat qui deborde du mois
 
 /// Le debut de l'engagement ecrit `e`, comme `Engagement` le deduirait : `debut` s'il le dit, sinon son premier jour
@@ -1929,10 +1925,10 @@ pub fn vue_requise(racine: &Path, mois: Mois) -> R<saisie::VueDuMois> {
 /// declarerait deux salaries sous le meme 40.009. Le refus nomme le numero et les deux salaries, quelle que soit la
 /// face qui a ecrit la saisie.
 fn un_numero_un_salarie(paies: &[crate::calcul::Paie], mois: Mois) -> R<()> {
-    let mut vus: BTreeMap<String, String> = BTreeMap::new();
+    let mut vus: BTreeMap<&numeros::NumeroContrat, &IdSalarie> = BTreeMap::new();
     for p in paies {
-        let Some(n) = p.engagement.numero.as_deref() else { continue };
-        let cle = p.salarie.id.to_string();
+        let Some(n) = p.engagement.numero.as_ref() else { continue };
+        let cle = &p.salarie.id;
         match vus.get(n) {
             Some(autre) if *autre != cle => {
                 return Err(socle::refus!(
@@ -1944,7 +1940,7 @@ fn un_numero_un_salarie(paies: &[crate::calcul::Paie], mois: Mois) -> R<()> {
             }
             Some(_) => {}
             None => {
-                vus.insert(n.to_string(), cle);
+                vus.insert(n, cle);
             }
         }
     }

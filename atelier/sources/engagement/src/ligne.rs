@@ -13,6 +13,7 @@
 
 use std::collections::BTreeMap;
 
+use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::CodeDeRubrique;
 use serde::{Deserialize, Serialize};
 use socle::forme::NombreLu;
@@ -337,7 +338,7 @@ pub struct AvantageEnNature {
     pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub montant: Case,
-    pub genre: Option<String>,
+    pub genre: Option<AutreElementDeRevenuBrut>,
 }
 
 /// UNE LIGNE QUE LE MOTEUR COMPOSE : quantite x taux, ses heures par unite quand elle en dit, ce qu'elle dit d'elle-meme
@@ -616,9 +617,9 @@ impl LignePaie {
     }
 
     /// Le genre d'un avantage en nature, s'il est dit (`droit::catalogue::code_54`).
-    pub fn genre(&self) -> Option<&str> {
+    pub fn genre(&self) -> Option<AutreElementDeRevenuBrut> {
         match self {
-            LignePaie::AvantageEnNature(l) => l.genre.as_deref(),
+            LignePaie::AvantageEnNature(l) => l.genre,
             _ => None,
         }
     }
@@ -793,23 +794,24 @@ impl FormeSaisie {
     /// semaine, ce sont les dates de la ligne) ; `None` : une rubrique que le moteur pose (`saisie` vide), qui ne se saisit
     /// pas. Une `saisie` que le moteur ne sait pas ranger est une rubrique mal decrite : refus.
     pub fn de(r: &droit::catalogue::Rubrique) -> R<Option<FormeSaisie>> {
-        let mut dit: Vec<&str> = r.saisie.iter().map(String::as_str).filter(|s| *s != "jours").collect();
+        use droit::catalogue::CaseSaisie as C;
+        let mut dit: Vec<C> = r.saisie.iter().copied().filter(|s| *s != C::Jours).collect();
         dit.sort_unstable();
         let frais = r.nature == droit::catalogue::NatureDeRubrique::Frais;
         Ok(Some(match (dit.as_slice(), frais) {
-            (["quantite", "taux"], false) => FormeSaisie::Unites,
-            (["quantite", "taux"], true) if crate::a_une_limite(&r.code) => FormeSaisie::Frais,
-            (["quantite", "taux"], true) => FormeSaisie::FraisSansLimite,
-            (["heures", "quantite", "taux"], false) => FormeSaisie::UnitesEtHeures,
-            (["base", "taux_majoration"], _) => FormeSaisie::Pourcentage,
-            (["montant"], _) => FormeSaisie::Montant,
-            (["genre", "montant"], _) => FormeSaisie::AvantageEnNature,
+            ([C::Quantite, C::Taux], false) => FormeSaisie::Unites,
+            ([C::Quantite, C::Taux], true) if crate::a_une_limite(&r.code) => FormeSaisie::Frais,
+            ([C::Quantite, C::Taux], true) => FormeSaisie::FraisSansLimite,
+            ([C::Quantite, C::Taux, C::Heures], false) => FormeSaisie::UnitesEtHeures,
+            ([C::Base, C::TauxMajoration], _) => FormeSaisie::Pourcentage,
+            ([C::Montant], _) => FormeSaisie::Montant,
+            ([C::Montant, C::Genre], _) => FormeSaisie::AvantageEnNature,
             ([], _) => return Ok(None),
             _ => {
                 return Err(socle::refus!(
                     "La rubrique « {} » est mal décrite : sa saisie ({}) ne dit pas une forme de ligne. Le signaler au développeur.",
                     r.libelle,
-                    r.saisie.join(", ")
+                    r.saisie.iter().map(|s| s.cle()).collect::<Vec<_>>().join(", ")
                 ))
             }
         }))
@@ -849,7 +851,7 @@ pub struct LigneDonnee {
     pub base: Option<Case>,
     pub taux_majoration: Option<Case>,
     pub montant: Option<Case>,
-    pub genre: Option<Option<String>>,
+    pub genre: Option<Option<AutreElementDeRevenuBrut>>,
     pub territoire: Option<Option<LieuDeFrais>>,
     pub cases: Option<Vec<CaseDeFrais>>,
     pub lieu: Option<Option<String>>,
@@ -891,7 +893,7 @@ impl<'de> Deserialize<'de> for LigneDonnee {
                         Cle::Base => une(&mut l.base, m.next_value::<Nombre>()?.0, cle)?,
                         Cle::TauxMajoration => une(&mut l.taux_majoration, m.next_value::<Nombre>()?.0, cle)?,
                         Cle::Montant => une(&mut l.montant, m.next_value::<Nombre>()?.0, cle)?,
-                        Cle::Genre => une(&mut l.genre, m.next_value::<Option<String>>()?, cle)?,
+                        Cle::Genre => une(&mut l.genre, m.next_value::<Option<AutreElementDeRevenuBrut>>()?, cle)?,
                         Cle::Territoire => une(&mut l.territoire, m.next_value::<Option<LieuDeFrais>>()?, cle)?,
                         Cle::Cases => une(&mut l.cases, m.next_value::<Vec<CaseDeFrais>>()?, cle)?,
                         Cle::Lieu => une(&mut l.lieu, m.next_value::<Option<String>>()?, cle)?,
@@ -968,10 +970,8 @@ impl LigneDonnee {
             ));
         }
         // Une case vide s'ecrit `null`, jamais un texte vide.
-        for (cle, t) in [(Cle::Lieu, &self.lieu), (Cle::Genre, &self.genre)] {
-            if t.as_ref().is_some_and(|t| t.as_ref().is_some_and(|t| t.trim().is_empty())) {
-                return Err(socle::refus!("la ligne « {} » : « {} » est vide ; écrivez null.", r.libelle, cle.nom()));
-            }
+        if self.lieu.as_ref().is_some_and(|t| t.as_ref().is_some_and(|t| t.trim().is_empty())) {
+            return Err(socle::refus!("la ligne « {} » : « {} » est vide ; écrivez null.", r.libelle, Cle::Lieu.nom()));
         }
         let rubrique = r.code.clone();
         // Chaque cle obligatoire est dite (la verification vient d'etre faite) ; une facultative absente est vide.
@@ -1025,7 +1025,7 @@ impl LigneDonnee {
             }),
             FormeSaisie::Pourcentage => LignePaie::Pourcentage(Pourcentage { rubrique, base: dit(self.base), taux_majoration: dit(self.taux_majoration) }),
             FormeSaisie::Montant => LignePaie::Montant(Montant { rubrique, montant: dit(self.montant) }),
-            FormeSaisie::AvantageEnNature => LignePaie::AvantageEnNature(AvantageEnNature { rubrique, montant: dit(self.montant), genre: texte(self.genre) }),
+            FormeSaisie::AvantageEnNature => LignePaie::AvantageEnNature(AvantageEnNature { rubrique, montant: dit(self.montant), genre: self.genre.flatten() }),
         })
     }
 }

@@ -30,7 +30,7 @@ fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
 
     // Cinquante salaries et plus depuis cinq ans (CSS L. 130-1, II), et la fiche le dit : la DSN est due le 5. La surcouche dit ce que le
     // bareme exige a cet effectif (`seuils_effectif` du socle 2026).
-    ecrire(&c, "config/effectifs.json", &json!({"annees": (2021..=2025).map(|a| (a.to_string(), json!({"A01": {"valeur": 60}}))).collect::<serde_json::Map<String, Value>>()}));
+    ecrire(&c, "config/effectifs.json", &json!({"quoi": "effectifs du banc", "annees": (2021..=2025).map(|a| (a.to_string(), json!({"A01": {"valeur": 60}}))).collect::<serde_json::Map<String, Value>>()}));
     let mut bareme = json!({"annee": 2026, "socle": 2026});
     let surcouche: Value = serde_json::from_str(
         r#"{

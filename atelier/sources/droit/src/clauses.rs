@@ -7,7 +7,8 @@
 //! loi (l'appelant : `engagement::solde`).
 
 use crate::emplois;
-use crate::fiche::{ChampsSalarie, CodeEmploiFt, Idcc, Lue, Statut};
+use crate::fiche::{AnnexeConvention, CategorieConventionnelle, ChampsSalarie, CodeEmploiFt, Idcc, JaugeAnnexe1, Lue, Statut};
+use crate::minima::CleDeGrille;
 use crate::natures::{AuMois, MotifDeRupture};
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
@@ -75,13 +76,37 @@ forme! {
     /// Les categories de la convention, dans l'ordre du texte, chacune dite en mots (ce que le bulletin imprime : la
     /// premiere phrase).
     pub struct Categories {
-        #[serde(deserialize_with = "en_ordre")]
-        pub valeurs: Vec<(String, String)>,
+        #[serde(deserialize_with = "categories_en_ordre")]
+        pub valeurs: Vec<(CategorieConventionnelle, String)>,
         /// Vrai : la convention ne distingue que le cadre et le non-cadre, et la case cadre de la fiche le dit.
         pub cadre_ou_non_cadre: Option<bool>,
         /// La categorie de chaque niveau de la grille 3090 (`emplois-base.json`, `classification_3090.niveau`).
-        pub par_niveau_3090: Option<BTreeMap<String, String>>,
+        #[serde(default, deserialize_with = "categories_des_niveaux")]
+        pub par_niveau_3090: Option<BTreeMap<CleDeGrille, CategorieConventionnelle>>,
     }
+}
+
+/// Une categorie que la convention nomme (`CategorieConventionnelle::de_la_convention`), `non_cadre` compris.
+fn de_la_convention<E: serde::de::Error>(texte: &str) -> Result<CategorieConventionnelle, E> {
+    CategorieConventionnelle::de_la_convention(texte).map_err(|e| E::custom(e.phrase))
+}
+
+/// Les categories d'une convention, dans l'ordre du texte, chacune dite en mots.
+fn categories_en_ordre<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<(CategorieConventionnelle, String)>, D::Error> {
+    let lues: Vec<(String, String)> = en_ordre(d)?;
+    lues.into_iter().map(|(k, v)| Ok((de_la_convention(&k)?, v))).collect()
+}
+
+/// La categorie de chaque niveau de la grille 3090, quand la convention la dit.
+fn categories_des_niveaux<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<BTreeMap<CleDeGrille, CategorieConventionnelle>>, D::Error> {
+    let lues: Option<BTreeMap<CleDeGrille, String>> = Deserialize::deserialize(d)?;
+    lues.map(|l| l.into_iter().map(|(k, v)| Ok((k, de_la_convention(&v)?))).collect()).transpose()
+}
+
+/// Le preavis de chaque categorie, quand la convention le dit par categorie.
+fn preavis_par_categorie<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<BTreeMap<CategorieConventionnelle, PreavisDeLaCategorie>>, D::Error> {
+    let lus: Option<BTreeMap<String, PreavisDeLaCategorie>> = Deserialize::deserialize(d)?;
+    lus.map(|l| l.into_iter().map(|(k, v)| Ok((de_la_convention(&k)?, v))).collect()).transpose()
 }
 
 forme! {
@@ -91,7 +116,8 @@ forme! {
         /// Les motifs de rupture (S21.G00.62.002) qui n'ouvrent pas ce preavis, chacun avec la phrase qui le dit.
         pub motifs_hors_preavis: Option<BTreeMap<MotifDeRupture, String>>,
         pub toutes_categories: Option<Vec<TranchePreavis>>,
-        pub par_categorie: Option<BTreeMap<String, PreavisDeLaCategorie>>,
+        #[serde(default, deserialize_with = "preavis_par_categorie")]
+        pub par_categorie: Option<BTreeMap<CategorieConventionnelle, PreavisDeLaCategorie>>,
         /// Ajoute a l'age du salarie, au licenciement (et a la demission si `supplement_age_demission`).
         pub supplement_age: Option<Vec<SupplementAge>>,
         pub supplement_age_demission: Option<bool>,
@@ -147,7 +173,7 @@ forme! {
         pub majorations_age: Option<Vec<MajorationParAge>>,
         pub plafond_majore_mois: Option<Nombre>,
         /// Les clauses de chaque annexe (« 1 », « 3 »).
-        pub par_annexe: Option<BTreeMap<String, ClausesDAnnexe>>,
+        pub par_annexe: Option<BTreeMap<AnnexeConvention, ClausesDAnnexe>>,
     }
 }
 
@@ -385,14 +411,14 @@ forme! {
     /// sous un plafond, du salaire conventionnel de la grille en vigueur.
     pub struct PrimeAnciennete {
         pub article: String,
-        pub annexe: String,
+        pub annexe: AnnexeConvention,
         pub apres_annees: i64,
         pub pourcentage_par_annee: i64,
         pub plafond_pourcentage: i64,
         /// Les familles de metiers payees a la grille du costume.
         pub familles_costume: Option<Vec<String>>,
         /// La ligne de la grille de chaque niveau 3090.
-        pub niveaux: BTreeMap<String, String>,
+        pub niveaux: BTreeMap<CleDeGrille, CleDeGrille>,
         /// Les grilles, dans l'ordre de leurs dates.
         pub salaires_conventionnels: Vec<GrilleDeSalaires>,
     }
@@ -403,9 +429,10 @@ forme! {
     /// de la salle (dans l'ordre du texte).
     pub struct GrilleDeSalaires {
         pub depuis: Jour,
-        pub costume: BTreeMap<String, Nombre>,
+        pub costume: BTreeMap<CleDeGrille, Nombre>,
+        /// Par jauge de la salle, la case de la fiche Entreprise (`jauge_annexe_1`).
         #[serde(deserialize_with = "en_ordre")]
-        pub technique: Vec<(String, BTreeMap<String, Nombre>)>,
+        pub technique: Vec<(JaugeAnnexe1, BTreeMap<CleDeGrille, Nombre>)>,
     }
 }
 
@@ -439,7 +466,7 @@ forme! {
     pub struct RemiseDuContrat {
         pub article: String,
         pub jours_ouvrables_avant: i64,
-        pub metiers: Vec<String>,
+        pub metiers: Vec<emplois::CodeEmploi>,
     }
 }
 
@@ -524,18 +551,22 @@ pub fn idcc_nomme(nom: &str) -> R<Option<crate::fiche::Idcc>> {
 }
 
 /// Une categorie de la convention dite en mots (« agent de maîtrise », « non-cadre »), telle que la fiche la nomme.
-pub fn categorie_en_mots(c: &str) -> String {
+pub fn categorie_en_mots(c: &CategorieConventionnelle) -> String {
     match c {
-        "employe" => "employé".into(),
-        "agent_de_maitrise" => "agent de maîtrise".into(),
-        "non_cadre" => "non-cadre".into(),
-        autre => autre.replace('_', " "),
+        CategorieConventionnelle::Artiste => "artiste",
+        CategorieConventionnelle::Employe => "employé",
+        CategorieConventionnelle::Technicien => "technicien",
+        CategorieConventionnelle::AgentDeMaitrise => "agent de maîtrise",
+        CategorieConventionnelle::Cadre => "cadre",
+        CategorieConventionnelle::CadreDeDirection => "cadre de direction",
+        CategorieConventionnelle::NonCadre => "non-cadre",
     }
+    .into()
 }
 
 /// La categorie `c` dite par la convention `idcc`, telle que le bulletin l'imprime (la premiere phrase de son libelle),
 /// ou `None` si la convention ne la nomme pas.
-pub fn categorie_imprimee(idcc: Option<&Idcc>, c: &str) -> R<Option<String>> {
+pub fn categorie_imprimee(idcc: Option<&Idcc>, c: &CategorieConventionnelle) -> R<Option<String>> {
     let t = table()?;
     let dite = t.convention(idcc).and_then(|conv| conv.categories.as_ref()).and_then(|s| s.valeurs.iter().find(|(k, _)| k == c));
     let premiere_phrase = |l: &str| match l.split_once(". ") {
@@ -554,7 +585,7 @@ fn non_relevees(idcc: Option<&Idcc>) -> String {
 /// quand l'engagement le dit ; `Default` : il ne dit rien.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DitParLEngagement {
-    pub categorie_conventionnelle: Option<String>,
+    pub categorie_conventionnelle: Option<CategorieConventionnelle>,
     pub statut: Option<Statut>,
     /// Le code emploi (`metier`).
     pub metier: Option<emplois::CodeEmploi>,
@@ -576,8 +607,8 @@ impl DitParLEngagement {
 /// lire sans deviner, et `source` dit alors pourquoi ; `grille` est celle du niveau 3090 du metier.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Profil {
-    pub categorie: Option<String>,
-    pub grille: Option<String>,
+    pub categorie: Option<CategorieConventionnelle>,
+    pub grille: Option<CleDeGrille>,
     pub source: String,
 }
 
@@ -591,20 +622,19 @@ pub fn profil(idcc: Option<&Idcc>, fiche: &ChampsSalarie, au_mois: Option<&AuMoi
     let m = e.metier_lu(fiche)?;
     let c3090 = m.as_ref().and_then(|m| m.classification_3090());
     let grille = c3090.map(|c| c.grille.clone());
-    let profil = |categorie: Option<&str>, source: String| Profil { categorie: categorie.map(str::to_string), grille: grille.clone(), source };
+    let profil = |categorie: Option<CategorieConventionnelle>, source: String| Profil { categorie, grille: grille.clone(), source };
 
-    let de_la_fiche = au_mois.and_then(|a| fiche.permanent.ouvrir(a).categorie_conventionnelle.code());
-    let dit = e.categorie_conventionnelle.clone().or_else(|| de_la_fiche.map(str::to_string));
-    if let Some(dit) = dit {
+    let de_la_fiche = au_mois.and_then(|a| fiche.permanent.ouvrir(a).categorie_conventionnelle.dite().copied());
+    if let Some(dit) = e.categorie_conventionnelle.or(de_la_fiche) {
         if let Some(valeurs) = sec.map(|s| &s.valeurs).filter(|v| !v.is_empty() && !v.iter().any(|(k, _)| *k == dit)) {
             return Ok(profil(None, format!(
                 "la catégorie dans la convention de la fiche ({}) est inconnue de {} (catégories : {})",
-                repr(&dit),
+                repr(dit.as_str()),
                 nom(idcc),
                 valeurs.iter().map(|(c, _)| categorie_en_mots(c)).collect::<Vec<_>>().join(", ")
             )));
         }
-        return Ok(profil(Some(&dit), "la fiche du salarié (« Catégorie dans la convention »)".into()));
+        return Ok(profil(Some(dit), "la fiche du salarié (« Catégorie dans la convention »)".into()));
     }
 
     let statut = match (e.statut, &e.metier, &m) {
@@ -613,32 +643,32 @@ pub fn profil(idcc: Option<&Idcc>, fiche: &ChampsSalarie, au_mois: Option<&AuMoi
         _ => fiche.statut.dite().copied(),
     };
     if statut == Some(Statut::Artiste) {
-        return Ok(profil(Some("artiste"), "le statut artiste".into()));
+        return Ok(profil(Some(CategorieConventionnelle::Artiste), "le statut artiste".into()));
     }
     // Cadre : l'engagement le dit, sinon la fiche (son statut categoriel, S21.G00.40.003) ; ni l'un ni l'autre, la
     // categorie ne se lit pas.
     let est_cadre = match (e.cadre, fiche.statut_categoriel_rc.dite()) {
         (Some(c), _) => c,
-        (None, Some(rc)) => crate::fiche::Choix::code(rc) == "01",
+        (None, Some(rc)) => *rc == crate::fiche::StatutCategorielRc::Cadre,
         (None, None) => return Ok(profil(None, "ni l'engagement ni la fiche (statut catégoriel) ne disent si le salarié est cadre".into())),
     };
     let niveau = c3090.map(|c| c.niveau.clone());
-    let selon_niveau = sec.and_then(|s| s.par_niveau_3090.as_ref().zip(niveau.as_ref()).and_then(|(m, n)| m.get(n))).filter(|c| !c.is_empty());
+    let selon_niveau = sec.and_then(|s| s.par_niveau_3090.as_ref().zip(niveau.as_ref()).and_then(|(m, n)| m.get(n)));
     if est_cadre {
-        return Ok(profil(Some("cadre"), "la case cadre".into()));
+        return Ok(profil(Some(CategorieConventionnelle::Cadre), "la case cadre".into()));
     }
     if sec.is_some_and(|s| s.cadre_ou_non_cadre == Some(true)) {
-        return Ok(profil(Some("non_cadre"), "la case cadre, non cochée".into()));
+        return Ok(profil(Some(CategorieConventionnelle::NonCadre), "la case cadre, non cochée".into()));
     }
-    if let (Some(c), Some(code), Some(niveau)) = (selon_niveau, code.as_deref(), niveau.as_deref()) {
-        if c == "cadre" {
+    if let (Some(c), Some(code), Some(niveau)) = (selon_niveau, code.as_deref(), niveau.as_ref()) {
+        if *c == CategorieConventionnelle::Cadre {
             return Ok(profil(None, format!(
                 "le métier {} est de niveau {} dans la grille 3090, et la fiche le \
                     déclare non cadre : agent de maîtrise ou employé, le logiciel ne le devine pas",
                 code, niveau
             )));
         }
-        return Ok(profil(Some(c), format!("le niveau 3090 du métier {} ({})", code, niveau)));
+        return Ok(profil(Some(*c), format!("le niveau 3090 du métier {} ({})", code, niveau)));
     }
     let code_dit = match &code {
         Some(c) => c.as_ref(),
@@ -660,7 +690,7 @@ pub struct PreavisDit {
 
 /// Le motif est un code de la norme (S21.G00.62.002) : les listes d'une convention suivent son texte, plus large que les
 /// motifs qu'une nature permet (089).
-pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&str>, anciennete: Decimal, motif: Option<MotifDeRupture>, age: Option<Decimal>) -> R<PreavisDit> {
+pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionnelle>, anciennete: Decimal, motif: Option<MotifDeRupture>, age: Option<Decimal>) -> R<PreavisDit> {
     let (a, age) = (P::depuis(anciennete), age.map(P::depuis));
     let rien = |article: Option<String>, pourquoi: String| PreavisDit { mois: None, article, jours: None, pourquoi: Some(pourquoi) };
     let t = table()?;
@@ -675,7 +705,6 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&str>, anciennete: De
     if let Some(hors) = motif.and_then(|m| sec.motifs_hors_preavis.as_ref().and_then(|h| h.get(&m))).filter(|h| !h.is_empty()) {
         return Ok(PreavisDit { mois: Some(P::ZERO), article: Some(article), jours: None, pourquoi: Some(hors.clone()) });
     }
-    let categorie = categorie.filter(|c| !c.is_empty());
     let demission = motif == Some(MotifDeRupture::Demission);
     let tranches: &[TranchePreavis] = match sec.toutes_categories.as_deref() {
         Some(t) if !t.is_empty() => t,
@@ -785,18 +814,18 @@ impl Bareme {
 // ----------------------------------------------- l'indemnite de licenciement
 /// La clause d'annexe qui s'applique a ce salarie, ou `None`. Le personnel technique de l'annexe I se lit sur la
 /// GRILLE du metier.
-pub fn clause_d_annexe(idcc: Option<&Idcc>, annexe: Option<&str>, prof: &Profil, motif: Option<MotifDeRupture>) -> R<Option<ClauseDAnnexe>> {
+pub fn clause_d_annexe(idcc: Option<&Idcc>, annexe: Option<AnnexeConvention>, prof: &Profil, motif: Option<MotifDeRupture>) -> R<Option<ClauseDAnnexe>> {
     let t = table()?;
     let par = t
         .convention(idcc)
         .and_then(|c| c.indemnite_licenciement.as_ref())
-        .and_then(|s| s.par_annexe.as_ref().zip(annexe).and_then(|(m, a)| m.get(a.trim())));
+        .and_then(|s| s.par_annexe.as_ref().zip(annexe).and_then(|(m, a)| m.get(&a)));
     let Some(par) = par else { return Ok(None) };
-    let cat = prof.categorie.as_deref();
+    let cat = prof.categorie.as_ref();
     let choix = match (&par.cadre_de_direction, &par.technicien, &par.artiste) {
-        (Some(c), _, _) if cat == Some("cadre_de_direction") => Some(c),
-        (_, Some(c), _) if prof.grille.as_deref() == Some("technique") && cat != Some("artiste") && cat != Some("cadre_de_direction") => Some(c),
-        (_, _, Some(c)) if cat == Some("artiste") => Some(c),
+        (Some(c), _, _) if cat == Some(&CategorieConventionnelle::CadreDeDirection) => Some(c),
+        (_, Some(c), _) if prof.grille.as_ref() == Some(&crate::minima::TECHNIQUE) && cat != Some(&CategorieConventionnelle::Artiste) && cat != Some(&CategorieConventionnelle::CadreDeDirection) => Some(c),
+        (_, _, Some(c)) if cat == Some(&CategorieConventionnelle::Artiste) => Some(c),
         _ => None,
     };
     Ok(choix.filter(|c| !motif.is_some_and(|mo| c.motifs_legaux_seulement.iter().flatten().any(|m| *m == mo))).cloned())
@@ -820,7 +849,7 @@ pub struct Indemnite {
 
 pub fn indemnite_licenciement(
     idcc: Option<&Idcc>,
-    annexe: Option<&str>,
+    annexe: Option<AnnexeConvention>,
     prof: &Profil,
     anciennete: Decimal,
     reference: &mut dyn FnMut() -> R<Decimal>,
@@ -1104,8 +1133,8 @@ pub const RUBRIQUE_PRIME_ANCIENNETE: crate::catalogue::CodeDeRubrique = crate::c
 pub const IDCC_CCNEAC: Idcc = Idcc::du_moteur("1285");
 
 /// La prime d'anciennete de la convention `idcc`, si elle en porte une pour l'annexe `annexe`.
-fn prime_de_l_annexe<'t>(t: &'t Table, idcc: Option<&Idcc>, annexe: Option<&str>) -> Option<&'t PrimeAnciennete> {
-    t.convention(idcc).and_then(|c| c.prime_anciennete.as_ref()).filter(|sec| annexe.map(str::trim) == Some(sec.annexe.as_str()))
+fn prime_de_l_annexe<'t>(t: &'t Table, idcc: Option<&Idcc>, annexe: Option<AnnexeConvention>) -> Option<&'t PrimeAnciennete> {
+    t.convention(idcc).and_then(|c| c.prime_anciennete.as_ref()).filter(|sec| annexe == Some(sec.annexe))
 }
 
 /// La classification 3090 d'un metier que la prime vise : sa grille technique. Le titre III de l'annexe I vaut pour le
@@ -1113,14 +1142,14 @@ fn prime_de_l_annexe<'t>(t: &'t Table, idcc: Option<&Idcc>, annexe: Option<&str>
 /// `atelier/reference/sources/legifrance-3090-annexe-I/legifrance-3090-annexe-I-20261110.txt`) : ni les
 /// administratifs, ni les artistes.
 fn grille_technique(m: &emplois::Metier) -> Option<&emplois::Classification3090> {
-    m.classification_3090().filter(|c| c.grille == "technique")
+    m.classification_3090().filter(|c| c.grille == crate::minima::TECHNIQUE)
 }
 
 /// La prime d'anciennete peut-elle viser un engagement de la compagnie (convention `idcc`, annexe `annexe`) dont la carte
 /// dit ce `metier` et ce `statut` : les conditions de `prime_anciennete`, quelle que soit la nature du contrat (l'art.
 /// 3.1 de l'annexe I nomme le CDI et le CDD du personnel technique, l'art. 3.11 « chaque technicien »). Ce que la carte
 /// ne dit pas encore (son metier, son statut) ne l'ecarte pas.
-pub fn prime_anciennete_possible(idcc: Option<&Idcc>, annexe: Option<&str>, metier: Option<&CodeEmploiFt>, statut: Option<Statut>) -> R<bool> {
+pub fn prime_anciennete_possible(idcc: Option<&Idcc>, annexe: Option<AnnexeConvention>, metier: Option<&CodeEmploiFt>, statut: Option<Statut>) -> R<bool> {
     let t = table()?;
     if prime_de_l_annexe(&t, idcc, annexe).is_none() || statut == Some(Statut::Artiste) {
         return Ok(false);
@@ -1134,13 +1163,13 @@ pub fn prime_anciennete_possible(idcc: Option<&Idcc>, annexe: Option<&str>, meti
 /// La prime d'anciennete d'un technicien de l'annexe de la convention qui en porte une, pour le mois qui finit `jour`,
 /// ou `None` si elle ne le concerne pas. La jauge de la salle est une case du metier (`fiche::Piece::Metier`) : `jauge`
 /// ne la lit qu'avec la cle de la grille de l'annexe, qu'un technicien de l'annexe seul donne.
-pub fn prime_anciennete<'j>(
+pub fn prime_anciennete(
     idcc: Option<&Idcc>,
-    annexe: Option<&str>,
+    annexe: Option<AnnexeConvention>,
     fiche: &ChampsSalarie,
     e: &DitParLEngagement,
     jour: &Jour,
-    jauge: impl FnOnce(&crate::minima::ParLaGrille) -> Option<&'j str>,
+    jauge: impl FnOnce(&crate::minima::ParLaGrille) -> Option<JaugeAnnexe1>,
 ) -> R<Option<Prime>> {
     let t = table()?;
     let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
@@ -1179,14 +1208,14 @@ pub fn prime_anciennete<'j>(
             premiere
         )))));
     };
-    let Some(niveau) = sec.niveaux.get(&c3090.niveau).filter(|n| !n.is_empty()) else {
+    let Some(niveau) = sec.niveaux.get(&c3090.niveau) else {
         return Ok(Some(prime(None, Some(format!("le niveau 3090 du metier {} n'est pas connu", code)))));
     };
     let base = if sec.familles_costume.iter().flatten().any(|f| f == famille) {
         g.costume.get(niveau).ok_or_else(|| manque(&format!("prime_anciennete.salaires_conventionnels.costume.{}", niveau)))?
     } else {
         let jauge = jauge(&crate::minima::ParLaGrille::de_l_annexe());
-        let Some((_, salaires)) = jauge.and_then(|j| g.technique.iter().find(|(k, _)| k == j)) else {
+        let Some((_, salaires)) = jauge.and_then(|j| g.technique.iter().find(|(k, _)| *k == j)) else {
             let cles: Vec<String> = g.technique.iter().map(|(k, _)| format!("\"{}\"", k)).collect();
             return Ok(Some(prime(None, Some(format!(
                 "le salaire conventionnel d'un technicien de l'annexe I depend de la JAUGE de la \

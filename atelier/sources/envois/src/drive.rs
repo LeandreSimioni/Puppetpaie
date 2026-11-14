@@ -345,16 +345,16 @@ impl Adresses {
 /// l'adresse du compte. Ce module n'ouvre jamais le coffre.
 pub struct Autorisation {
     pub application: Application,
-    pub rafraichissement: Result<Option<String>, ErreurGoogle>,
+    pub rafraichissement: Result<Option<socle::secret::Secret>, ErreurGoogle>,
     pub compte: Option<String>,
 }
 
 /// Le jeton d'acces ne vit qu'en memoire.
 pub struct Client {
     application: Application,
-    rafraichissement: Result<Option<String>, ErreurGoogle>,
+    rafraichissement: Result<Option<socle::secret::Secret>, ErreurGoogle>,
     compte: Option<String>,
-    acces: Option<String>,
+    acces: Option<socle::secret::Secret>,
     adresses: Adresses,
 }
 
@@ -373,11 +373,11 @@ impl Client {
     // ------------------------------------------------------------- transport
 
     /// `Client.jeton_acces` : le jeton d'acces, demande a Google au premier appel.
-    pub fn jeton_acces(&mut self) -> Result<String, ErreurGoogle> {
-        if let Some(a) = self.acces.as_ref().filter(|a| !a.is_empty()) {
+    pub fn jeton_acces(&mut self) -> Result<socle::secret::Secret, ErreurGoogle> {
+        if let Some(a) = self.acces.as_ref().filter(|a| !a.devoiler().is_empty()) {
             return Ok(a.clone());
         }
-        let Some(rafraichissement) = self.rafraichissement.clone()?.filter(|r| !r.is_empty()) else {
+        let Some(rafraichissement) = self.rafraichissement.clone()?.filter(|r| !r.devoiler().is_empty()) else {
             return Err(ErreurGoogle::google(
                 "Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.",
             ));
@@ -421,7 +421,7 @@ impl Client {
     }
 
     fn appel_une_fois(&mut self, url: &Url, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<Vec<u8>, ErreurGoogle> {
-        let autorisation = format!("Bearer {}", self.jeton_acces()?);
+        let autorisation = format!("Bearer {}", self.jeton_acces()?.devoiler());
         let entetes = [("Authorization", autorisation.as_str())];
         let requete = Requete { donnees, content_type, entetes: &entetes, methode, ..Requete::get(url, DELAI_APPEL) };
         match envoyer(&requete) {

@@ -11,7 +11,7 @@ use socle::echec::Classe;
 use socle::date::Jour;
 use socle::paris::Moment;
 use super::Cadre;
-use envois::releve_retours::{Client, Panne};
+use envois::releve_retours::{Client, EnvironnementNetEntreprises, Panne};
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec {
@@ -20,7 +20,7 @@ pub static SPEC: Spec = Spec {
     options: &[
         Opt::valeur("depuis"),
         Opt::valeur("jusqu-a"),
-        Opt::choix("environnement", &["production", "editeur"], Some("production")),
+        Opt::choix("environnement", EnvironnementNetEntreprises::NOMS, Some("production")),
         Opt::drapeau("json"),
     ],
 };
@@ -39,14 +39,18 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         dire!("Mot de passe absent. Le poser une fois : `route coffre-poser, service net-entreprises`.");
         return Ok(2);
     };
-    let environnement = args.exige("environnement")?;
-    let client = Client::dsn(&cadre.ctx, environnement, Some(mdp)).map_err(|p| Echec { classe: None, ..p.echec })?;
+    let client = Client::dsn(&cadre.ctx, environnement(args)?, Some(mdp));
     derouler(args, client)
+}
+
+/// La plate-forme que la ligne de commande nomme (`--environnement`).
+fn environnement(args: &Args) -> Result<EnvironnementNetEntreprises, Echec> {
+    EnvironnementNetEntreprises::lire(args.exige("environnement")?)
 }
 
 /// Le compte rendu, avec un client donne (un test le pointe sur un faux serveur local).
 pub fn derouler(args: &Args, mut client: Client) -> Result<i32, Echec> {
-    let environnement = args.exige("environnement")?;
+    let environnement = environnement(args)?;
     let (debut, fin) = fenetre(args)?;
     dire!("Depots {}, du {} au {}.\n", environnement, debut.jour_de_paris().jj_mm_aaaa(), fin.jour_de_paris().jj_mm_aaaa());
     let mut depots = Vec::new();

@@ -38,6 +38,11 @@ fn lu(l: &Lecture) -> &BulletinLu {
     }
 }
 
+/// Les avertissements d'un bulletin lu, par leur phrase.
+fn textes(a: &[import::bulletin_lu::Avertissement]) -> Vec<String> {
+    a.iter().map(import::bulletin_lu::Avertissement::texte).collect()
+}
+
 fn s(v: &Value, chemin: &str) -> Value {
     chemin.split('.').fold(v.clone(), |v, k| v.get(k).cloned().unwrap_or(Value::Null))
 }
@@ -70,7 +75,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
     assert_eq!(l.len(), 3);
     assert_eq!(l.iter().map(|x| x.page).collect::<Vec<_>>(), [1, 2, 3]);
     let b = lu(&l[0]);
-    assert_eq!(b.avertissements, Vec::<String>::new());
+    assert_eq!(textes(&b.avertissements), Vec::<String>::new());
     let v = socle::ecriture::en_valeur(b);
     let mut sans_cotisations = v.clone();
     sans_cotisations.as_object_mut().unwrap().remove("cotisations");
@@ -148,7 +153,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
     assert_eq!(m["brut"], json!("660.00"));
     assert_eq!(m["net_imposable"], json!("560.00"));
     assert_eq!(m["cumuls"]["cout_employeur"], json!({"periode": "915.53", "cumul": "1761.06"}));
-    assert_eq!(lu(&l[1]).avertissements, Vec::<String>::new());
+    assert_eq!(textes(&lu(&l[1]).avertissements), Vec::<String>::new());
 
     // Les heures d'un non cadre : ni numero d'objet ni spectacle, le cumul des heures.
     let h = socle::ecriture::en_valeur(lu(&l[2]));
@@ -160,7 +165,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
     assert_eq!(h["cumuls"]["heures"], json!({"periode": "40.00", "cumul": "112.00"}));
     assert!(h["cumuls"].get("cachets").is_none());
     assert_eq!(h["jours_travailles"].as_array().unwrap().len(), 5);
-    assert_eq!(lu(&l[2]).avertissements, Vec::<String>::new());
+    assert_eq!(textes(&lu(&l[2]).avertissements), Vec::<String>::new());
 }
 
 #[test]
@@ -171,7 +176,7 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
     let l = lire(&chemin).unwrap();
     assert_eq!(l.len(), 1);
     let b = lu(&l[0]);
-    assert_eq!(b.avertissements, Vec::<String>::new());
+    assert_eq!(textes(&b.avertissements), Vec::<String>::new());
     let v = socle::ecriture::en_valeur(b);
     let mut sans_cotisations = v.clone();
     sans_cotisations.as_object_mut().unwrap().remove("cotisations");
@@ -243,7 +248,7 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
     pdf(vec![page_b(&p)], &dessus);
     let l = lire(&dessus).unwrap();
     let b = lu(&l[0]);
-    assert_eq!(b.avertissements, Vec::<String>::new());
+    assert_eq!(textes(&b.avertissements), Vec::<String>::new());
     assert_eq!((b.lignes[1].libelle.as_str(), b.lignes[1].soumis), ("Défraiement non soumis", false));
 }
 
@@ -259,12 +264,13 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
     let l = lire(&chemin).unwrap();
     let b = lu(&l[0]);
     assert_eq!(
-        b.avertissements,
+        textes(&b.avertissements),
         vec![
             "incohérent : le brut lu (600.00) n'est pas la somme des lignes soumises (590.00)",
             "incohérent : le net à payer lu (487.80) n'est pas le net avant impôt moins l'impôt prélevé (487.82)",
         ]
     );
+    assert!(b.avertissements.iter().all(|a| matches!(a, import::bulletin_lu::Avertissement::Incoherence(_))), "{:?}", b.avertissements);
     // Rien n'est corrige : les montants sont ceux de la page.
     assert_eq!(b.brut.to_string(), "600.00");
     assert_eq!(b.net_a_payer.to_string(), "487.80");
@@ -279,7 +285,11 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
     let l = lire(&sans_net).unwrap();
     let b = lu(&l[0]);
     assert_eq!(b.net_a_payer.to_string(), "477.82");
-    assert!(b.avertissements.iter().any(|a| a.starts_with("le net à payer n'est pas imprimé")), "{:?}", b.avertissements);
+    assert!(
+        b.avertissements.iter().any(|a| matches!(a, import::bulletin_lu::Avertissement::Lecture(t) if t.starts_with("le net à payer n'est pas imprimé"))),
+        "{:?}",
+        b.avertissements
+    );
 }
 
 // ------------------------------------------------------------------------------------------------- les compteurs

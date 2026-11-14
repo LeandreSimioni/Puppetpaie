@@ -109,7 +109,7 @@ pub struct PieceNotee {
 #[serde(untagged)]
 pub enum EmpreinteNotee {
     Saisie(socle::fichiers::EmpreinteCourte),
-    Annee(std::collections::BTreeMap<socle::mois::Mois, String>),
+    Annee(std::collections::BTreeMap<socle::mois::Mois, socle::fichiers::EmpreinteDeSaisie>),
 }
 
 /// La note de la piece `fichier` au journal des ecritures (`PieceNotee`) ; aucune si le moteur ne l'a pas ecrite.

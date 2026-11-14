@@ -76,7 +76,7 @@ fn cinema_spectacle(c: &ContratDeclare) -> bool {
 /// de sa premiere periode (comme sur le formulaire).
 struct Periode {
     /// Le numero, le debut, la fin et le numero d'objet (s'il est dit) du contrat.
-    contrat: Option<(String, String, String, Option<String>)>,
+    contrat: Option<(engagement::numeros::NumeroContrat, String, String, Option<String>)>,
     debut: Jour,
     fin: Jour,
     heures: Decimal,
@@ -92,7 +92,7 @@ struct Periode {
 fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois::Mois) -> R<Option<DsnLue>> {
     let Some(l) = crate::etats::etat_dsn_du_mois(lignes, m, None, ctx.entreprise.nic_principal()) else { return Ok(None) };
     let Some(fichier) = l.fichier else { return Ok(None) };
-    let chemin = ctx.racine.join("sorties").join(m.to_string()).join(&fichier);
+    let chemin = documents::fichier_depose(&ctx.racine.join("sorties").join(m.to_string()), fichier.texte());
     declarations::dsn_lue::lire_une_dsn(&chemin)
 }
 
@@ -128,7 +128,7 @@ fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_moi
 fn periode(c: &ContratDeclare, numero: &engagement::numeros::NumeroContrat, x: &Mesures, debut: Jour, fin: Jour, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> Periode {
     let (d, f) = (m.premier_jour(), m.dernier_jour());
     Periode {
-        contrat: premiere.then(|| (numero.to_string(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), c.objet.as_ref().map(|o| o.to_string()))),
+        contrat: premiere.then(|| (numero.clone(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), c.objet.as_ref().map(|o| o.to_string()))),
         debut: if debut > d { debut } else { d },
         fin: if fin < f { fin } else { f },
         heures: x.heures,
@@ -398,11 +398,11 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         let (x0, x1) = xs[i];
         let r = |y0: i64, y1: i64| [x0, y0, x1, y1];
         if let Some((numero, deb, fin, objet)) = &p.contrat {
-            f.imprime(2, &format!("CON_NUMERO_{}", n), r(82, 100), numero, m("8.5"), Alignement::Centre);
+            f.imprime(2, &format!("CON_NUMERO_{}", n), r(82, 100), numero.as_str(), m("8.5"), Alignement::Centre);
             f.imprime(2, &format!("CON_NUM_DT_DEB_{}", n), r(105, 120), deb, m("8.5"), Alignement::Centre);
             f.imprime(2, &format!("CON_NUM_DT_FIN_{}", n), r(125, 140), fin, m("8.5"), Alignement::Centre);
             f.imprime_dite(2, &format!("CON_OBJET_{}", n), r(145, 172), objet.as_deref(), pt(8), Alignement::Centre);
-            let idcc_contrat = d.contrats_de(ind.nir.as_ref()).find(|c| c.numero.as_deref() == Some(numero.as_str())).and_then(|c| c.idcc.as_deref()).filter(|i| !i.is_empty());
+            let idcc_contrat = d.contrats_de(ind.nir.as_ref()).find(|c| c.numero.as_ref() == Some(numero)).and_then(|c| c.idcc.as_deref()).filter(|i| !i.is_empty());
             if let Some(idcc_contrat) = idcc_contrat.filter(|i| Some(*i) != idcc.map(|j| &**j)) {
                 f.imprime(2, &format!("CON_IDCC_{}", n), r(184, 206), idcc_contrat, m("8.5"), Alignement::Centre);
             }

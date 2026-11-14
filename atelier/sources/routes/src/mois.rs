@@ -358,7 +358,16 @@ struct Passe {
     numero_objet: Option<NumeroObjetSpectacle>,
     spectacle: Option<droit::contexte::IdSpectacle>,
     dates: Vec<Jour>,
-    source: &'static str,
+    source: SourceDuContratPasse,
+}
+
+/// D'OU LE CALENDRIER TIENT UN CONTRAT PASSE : un engagement du logiciel (`paie`), ou l'historique de l'ancien logiciel
+/// (`historique`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SourceDuContratPasse {
+    Paie,
+    Historique,
 }
 
 #[derive(Debug, Serialize)]
@@ -381,7 +390,7 @@ struct Emploi {
 #[derive(Debug, Serialize)]
 struct TauxQuiChange {
     rang: usize,
-    rubrique: String,
+    rubrique: catalogue::CodeDeRubrique,
     taux_avant: Option<Decimal>,
     taux: Option<Decimal>,
 }
@@ -666,7 +675,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
         let taux_cachet = derniere
             .into_iter()
             .flat_map(|p| p.lignes.iter())
-            .find(|l| l.rubrique.as_deref() == Some("cachet"))
+            .find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET))
             .and_then(|l| l.taux);
         let taux = match taux_cachet.filter(|t| !t.is_zero()) {
             Some(t) => Some(t),
@@ -894,7 +903,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
                 numero_objet,
                 spectacle: e.spectacle.clone(),
                 dates: dates.into_iter().filter(|j| j.mois_civil() == mois).collect(),
-                source: "paie",
+                source: SourceDuContratPasse::Paie,
             };
             match deja {
                 Some(i) => out[i] = contrat,
@@ -929,7 +938,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             jours: a.jours,
             numero_objet: a.numero_objet,
             dates: Vec::new(),
-            source: "historique",
+            source: SourceDuContratPasse::Historique,
         });
     }
     out.sort_by(|a, b| (&a.salarie, &a.debut, &a.fin).cmp(&(&b.salarie, &b.debut, &b.fin)));
@@ -1192,7 +1201,7 @@ fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: usize) -> Ce
             continue; // restee sans taux : rien a ecrire
         }
         if ta != tb {
-            lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().to_string(), taux_avant: ta, taux: tb });
+            lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb });
         }
     }
     let salaire = |e: &SaisieCarte| e.salaire_mensuel.as_ref().map(|n| n.decimal().into_iter().next());
@@ -1241,7 +1250,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         .map(|l| {
             let taux = match l.taux {
                 Some(t) => format!("{} à {}", l.rubrique, socle::texte::euros(t)),
-                None => l.rubrique.clone(),
+                None => l.rubrique.to_string(),
             };
             match l.taux_avant {
                 Some(a) => format!("{} au lieu de {}", taux, socle::texte::euros(a)),
@@ -1562,7 +1571,7 @@ pub(crate) struct ContratVu {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct CaseDeFrais {
     ligne: usize,
-    case: String,
+    case: engagement::CaseDeFrais,
     libelle: &'static str,
     aide: Option<String>,
 }
@@ -1689,7 +1698,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             (Some(n), false) => format!("bulletin {}", n),
             (None, false) => "bulletin".to_string(),
         }];
-        if let Some(n) = e.numero.as_deref() {
+        if let Some(n) = e.numero.as_ref() {
             m.push(format!("contrat {}", n));
         }
         let mut bornes = match &e.fin {
@@ -1774,7 +1783,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             .filter_map(|l| l.marques())
             .filter_map(|m| Some((m.rang?, m)))
             .flat_map(|(i, m)| {
-                m.cases.iter().map(move |k| CaseDeFrais { ligne: i, case: k.cle().to_string(), libelle: libelle_de_case(*k), aide: m.aides.get(k).cloned() })
+                m.cases.iter().map(move |k| CaseDeFrais { ligne: i, case: *k, libelle: libelle_de_case(*k), aide: m.aides.get(k).cloned() })
             })
             .collect(),
         remuneration: p

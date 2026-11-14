@@ -28,7 +28,7 @@ use droit::fiche::Lue as _;
 use serde::Serialize;
 
 use crate::enveloppe::Dite;
-use droit::bareme::{self, RisqueAtmp};
+use droit::bareme::{self, CodeRisqueAt, RisqueAtmp};
 use droit::contexte::Contexte;
 use droit::fiche::{Etablissement, FicheEntrepriseDatee, Montant, NotificationAtmp, ProvenanceAtmp, TauxAtmp};
 use socle::date::Jour;
@@ -119,7 +119,7 @@ fn inscrire_selon(ctx: &Contexte, an: i32, socle: droit::forme_bareme::Pile) -> 
         if de_l_annee.is_some_and(|d| d.an > an || l.valeur.is_some()) {
             return None;
         }
-        let code = l.code_risque.clone().filter(|c| !c.is_empty())?;
+        let code = l.code_risque.clone()?;
         let r = risques.iter().find(|r| r.code == code)?;
         let t = bareme::taux_de_l_arrete(r, neuf, alsace)?;
         Some(TauxAtmp {
@@ -206,7 +206,8 @@ fn nom_de(e: &Etablissement) -> String {
 /// Un risque du socle, tel que l'ecran le montre.
 #[derive(Debug, Serialize)]
 struct RisqueDit {
-    code: String,
+    code: CodeRisqueAt,
+    /// Le code tel que l'arrete l'ecrit (`92.3AD`).
     code_arrete: Option<String>,
     libelle: String,
     precisions: Option<String>,
@@ -216,14 +217,14 @@ struct RisqueDit {
 }
 
 fn risque_dit(r: &RisqueAtmp) -> RisqueDit {
-    RisqueDit { code: r.code.clone(), code_arrete: r.code_arrete.clone(), libelle: r.libelle.clone(), precisions: r.precisions.clone(), taux: r.taux, tc: r.tc }
+    RisqueDit { code: r.code.clone(), code_arrete: r.code_arrete.as_ref().map(CodeRisqueAt::a_l_arrete), libelle: r.libelle.clone(), precisions: r.precisions.clone(), taux: r.taux, tc: r.tc }
 }
 
 /// UNE LIGNE DE LA CASE, telle que l'ecran et le LLM la lisent : son code, son taux, sa date, d'ou elle vient, et la
 /// phrase qui la dit.
 #[derive(Debug, Serialize)]
 struct LigneDite {
-    code_risque: Option<String>,
+    code_risque: Option<CodeRisqueAt>,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux: Option<socle::num::Decimal>,
     depuis: Option<Jour>,
@@ -353,9 +354,9 @@ pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
     let an = aujourdhui.an;
     let socle = socle_de(an)?;
     let risques: Vec<RisqueAtmp> = socle.iter().flat_map(bareme::risques_de).collect();
-    let nom_de_code = |code: &Option<String>| -> (Option<String>, Option<&RisqueAtmp>) {
+    let nom_de_code = |code: &Option<CodeRisqueAt>| -> (Option<String>, Option<&RisqueAtmp>) {
         let r = code.as_ref().and_then(|c| risques.iter().find(|r| r.code == *c));
-        (r.and_then(|r| r.code_arrete.clone()).or_else(|| code.clone()), r)
+        (r.and_then(|r| r.code_arrete.as_ref().map(CodeRisqueAt::a_l_arrete)).or_else(|| code.as_ref().map(CodeRisqueAt::to_string)), r)
     };
     let brute = ctx.entreprise_brute();
     let siege: Vec<droit::fiche::Datee<TauxAtmp>> = brute.taux_atmp.iter().flatten().cloned().collect();

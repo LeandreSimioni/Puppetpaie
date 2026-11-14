@@ -45,6 +45,7 @@ use std::path::{Path, PathBuf};
 use rust_decimal::Decimal;
 
 use documents::bulletin::fmt_heures;
+use documents::{PieceDuMois, SorteDePieceProduite};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
@@ -68,11 +69,11 @@ pub struct Message<Pour> {
 /// `{annee}`, `{liste}`, `{notes}`, `{france_travail}`, `{signataire}`, `{raison_sociale}`.
 pub const CORPS: &str = "Bonjour {prenom},\n\nTu trouveras ci-joint tes documents pour {mois} {annee} :\n\n{liste}\n\n{notes}{france_travail}\nBien à toi,\n{signataire}\n{raison_sociale}\n";
 
-/// UNE PIECE QU'UN SALARIE RECOIT : son champ, le prefixe de son fichier, son libelle dans la liste du message, son nom
-/// court (l'objet, ou l'on n'a pas la place des libelles longs) et sa note.
+/// UNE PIECE QU'UN SALARIE RECOIT : son champ, sa sorte et son dossier (une piece d'un mois), son libelle dans la liste
+/// du message, son nom court (l'objet, ou l'on n'a pas la place des libelles longs) et sa note.
 pub struct Piece {
     pub champ: &'static str,
-    pub prefixe: &'static str,
+    pub sorte: PieceDuMois,
     pub libelle: &'static str,
     pub court: &'static str,
     pub note: &'static str,
@@ -82,14 +83,14 @@ pub struct Piece {
 pub const PIECES: [Piece; 3] = [
     Piece {
         champ: "bulletin",
-        prefixe: "Bulletin",
+        sorte: PieceDuMois::Bulletin,
         libelle: "le bulletin de paie",
         court: "bulletin",
         note: "Le bulletin est à conserver sans limitation de durée.",
     },
     Piece {
         champ: "certificat_cs",
-        prefixe: "CertificatCS",
+        sorte: PieceDuMois::CertificatCs,
         libelle: "le certificat d'emploi Congés Spectacles",
         court: "certificat Congés Spectacles",
         note: "Le certificat d'emploi Congés Spectacles te sert à faire valoir tes droits à congé auprès d'Audiens : \
@@ -97,7 +98,7 @@ pub const PIECES: [Piece; 3] = [
     },
     Piece {
         champ: "aer",
-        prefixe: "AER",
+        sorte: PieceDuMois::Aer,
         libelle: "l'attestation employeur France Travail (AER Cinéma Spectacle)",
         court: "attestation France Travail",
         note: "L'attestation employeur est celle qui compte pour France Travail. Elle est éditée par France Travail à \
@@ -201,8 +202,15 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
 
 
 
-pub fn nom_fichier(prefixe: &str, cle: &droit::contexte::IdSalarie, etiq: &str) -> String {
-    format!("{}_{}_{}.pdf", prefixe, cle, etiq)
+/// Le nom du fichier d'une piece d'un salarie pour un mois : `<prefixe de sa sorte><cle>_<Mois>.pdf`.
+pub fn nom_fichier(sorte: SorteDePieceProduite, cle: &droit::contexte::IdSalarie, etiq: &str) -> String {
+    format!("{}{}_{}.pdf", sorte.prefixe(), cle, etiq)
+}
+
+/// Le fichier d'une piece d'un salarie pour un mois (`nom_fichier`), dans le dossier du mois ou elle se range
+/// (`PieceDuMois::dossier`), sous les sorties du mois `sorties` (`sorties/<mois>/`).
+pub fn chemin_de_la_piece(piece: PieceDuMois, sorties: &Path, cle: &droit::contexte::IdSalarie, etiq: &str) -> PathBuf {
+    piece.dossier().sous(sorties).join(nom_fichier(piece.sorte(), cle, etiq))
 }
 
 /// « a, b et c ». Suit les pieces REELLEMENT jointes : promettre dans l'objet une AER qui n'est pas la serait un
@@ -246,7 +254,7 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
         let e = &p.engagement;
         let mut dates = e.dates_travail.clone();
         dates.sort();
-        let heures = e.heures.filter(|h| !h.is_zero()).map(fmt_heures);
+        let heures = e.heures.filter(|h| !h.is_zero());
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
             debut: e.debut,
@@ -282,11 +290,31 @@ pub struct ContratResume {
     pub spectacle: Option<String>,
     pub jours: Vec<socle::date::Jour>,
     pub cachets: i64,
-    /// Ses heures, s'il en a.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub heures: Option<String>,
+    /// Ses heures, s'il en a, ecrites comme le bulletin les ecrit (`heures_ecrites`).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "heures_ecrites")]
+    pub heures: Option<Decimal>,
     pub brut: Decimal,
     pub net: Decimal,
+}
+
+/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`fmt_heures` : « 13,5 », « 24 ») et relues dans
+/// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
+mod heures_ecrites {
+    use serde::{Deserialize, Serialize};
+    use socle::num::Decimal;
+
+    pub fn serialize<S: serde::Serializer>(h: &Option<Decimal>, s: S) -> Result<S::Ok, S::Error> {
+        h.map(super::fmt_heures).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Decimal>, D::Error> {
+        let Some(t) = Option::<String>::deserialize(d)? else { return Ok(None) };
+        let h = socle::num::dec_texte(&t.replacen(',', ".", 1)).map_err(|e| serde::de::Error::custom(e.phrase))?;
+        if super::fmt_heures(h) != t {
+            return Err(serde::de::Error::custom(format!("heures {} : elles s'écrivent comme le bulletin les écrit (« 13,5 »).", socle::fichiers::repr(&t))));
+        }
+        Ok(Some(h))
+    }
 }
 
 /// CE QUI A CHANGE depuis l'envoi des documents, en lignes pretes pour le courriel : ce qui a change dans les
@@ -316,12 +344,13 @@ pub const RIEN_DANS_LE_RESUME: &str = "  - le détail de ton bulletin ; tes jour
 /// `renvois` (cle -> `Renvoi`) : ceux dont la paie a change depuis l'envoi de leurs documents recoivent le courriel de
 /// renvoi (`CORPS_RENVOI`), qui dit ce qui a change ; les autres, le premier courriel (`CORPS`).
 /// `a_part` (cle -> pieces) : ce qui est du au salarie et ne part pas avec ce courriel, tel que le moteur le decide
-/// (`aer`, `attestation_fctu`) ; le courriel le dit, sans rien promettre.
+/// (`aer`, `attestation_fctu`) ; le courriel le dit, sans rien promettre. Chaque piece, dans le dossier de sa sorte sous
+/// les sorties du mois `sorties` (`chemin_de_la_piece`).
 pub fn preparer_avec(
     paies: &[Paie],
     ent: &droit::fiche::ChampsEntreprise,
     m: socle::mois::Mois,
-    dossier: &Path,
+    sorties: &Path,
     renvois: &std::collections::HashMap<droit::contexte::IdSalarie, Renvoi>,
     a_part: &std::collections::HashMap<droit::contexte::IdSalarie, Vec<&'static str>>,
 ) -> R<Vec<Message<droit::contexte::IdSalarie>>> {
@@ -339,18 +368,20 @@ pub fn preparer_avec(
             c.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent(k))
         }
         let email = s.email.dite().filter(|e| !e.is_empty());
+        // Une fiche sans adresse : `Illisible`, la fiche ne dit pas ce que l'envoi demande.
         let Some(email) = email else {
             return Err(socle::refus!(
                 "Pas d'adresse e-mail pour {} {} : saisir son courriel dans sa fiche, ou imprimer ses documents.",
                 texte(&s.nom, "nom")?,
                 texte(&s.prenom, "prenom")?
-            ));
+            )
+            .reclasser(socle::echec::Classe::Illisible));
         };
         let mut pieces = Vec::new();
         let mut libelles = Vec::new();
         let mut presents: Vec<&Piece> = Vec::new();
         for piece in &PIECES {
-            let chemin = dossier.join(nom_fichier(piece.prefixe, &cle, &etiq));
+            let chemin = chemin_de_la_piece(piece.sorte, sorties, &cle, &etiq);
             if chemin.exists() {
                 pieces.push(chemin);
                 libelles.push(format!("  - {}", piece.libelle));

@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use documents::{DossierDuMois, SorteDePieceProduite};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::organismes::IdentifiantDOrganisme;
@@ -155,7 +156,7 @@ impl Dite for Historique {
 #[derive(Debug, Serialize)]
 struct Document {
     nom: String,
-    sorte: &'static str,
+    sorte: RubriqueDeLHistorique,
     salarie: Option<droit::contexte::IdSalarie>,
     chemin: CheminRelatif,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,7 +168,7 @@ struct Document {
 struct Envoi {
     quoi: &'static str,
     acte: String,
-    mode: &'static str,
+    mode: envois::ligne::Mode,
     quand: socle::paris::InstantOuJour,
     fichier: Option<NomDeFichier>,
     flux: Option<IdDeFlux>,
@@ -240,7 +241,7 @@ impl Anomalie {
 /// CE QUI EST REVENU D'UN CONTRAT PARTI (`envois::etats::revenus`), lu : le contrat ou l'avenant, de qui, et comment (une
 /// reponse « Je signe », une mention a la main, ou son retrait) ; la piece signee s'il y en a une.
 fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) -> R<RetourLu> {
-    let piece = match (r.avenant, r.numero.as_deref()) {
+    let piece = match (r.avenant, r.numero.as_ref()) {
         (None, Some(n)) => format!("Contrat n° {}", n),
         (None, None) => "Contrat sans numéro".to_string(),
         (Some(a), Some(n)) => format!("Avenant n° {} au contrat n° {}", a, n),
@@ -274,12 +275,15 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
         Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration, e.detail.type_declaration),
         Ligne::Dpae(_) => "DPAE".into(),
         Ligne::Documents(_) => "Documents aux salariés".into(),
-        Ligne::ContratSignature(e) => match (e.detail.main_propre, e.detail.acte == Some(envois::journal::ActeDuContrat::Avenant)) {
-            (true, true) => "Avenant imprimé, à remettre en main propre".into(),
-            (true, false) => "Contrat imprimé, à remettre en main propre".into(),
-            (false, true) => "Avenant envoyé à la signature".into(),
-            (false, false) => "Contrat envoyé à la signature".into(),
-        },
+        Ligne::ContratSignature(e) => {
+            let piece = if e.detail.acte == Some(envois::journal::ActeDuContrat::Avenant) { "Avenant" } else { "Contrat" };
+            let par = etats::ModeDeRemise::de(e.detail.main_propre);
+            let remise = etats::mot_de_la_remise(Some(par), etats::PlaceDeLaRemise::Recit);
+            match par {
+                etats::ModeDeRemise::Imprime => format!("{} {}, à remettre en main propre", piece, remise),
+                etats::ModeDeRemise::Courriel => format!("{} {}", piece, remise),
+            }
+        }
         Ligne::ContratContresigne(e) => format!("Contrat contresigné renvoyé — {}", qui_du_contrat(ctx, &e.detail.nom, &e.detail.salarie)),
         Ligne::RegularisationCasc(_) => "Régularisation Congés Spectacles".into(),
         Ligne::DossierSalarie(_) => "Dossier d'un salarié".into(),
@@ -289,27 +293,83 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
 
 // ------------------------------------------------------------------ les documents
 
-/// Les sortes de documents, dans l'ordre ou on les cherche, par le debut du nom (les fichiers du mois et ceux d'envoi).
-const SORTES: [(&str, &[&str]); 8] = [
-    ("Bulletins de paie", &["Bulletins_", "Bulletin_"]),
-    ("Certificats Congés Spectacles", &["CertificatsCS_", "CertificatCS_"]),
-    ("Attestations employeur (AER)", &["AER_"]),
-    ("Contrats", &["Contrats_", "Contrat_", "Avenant"]),
-    ("DPAE", &["DPAE_"]),
-    ("DSN", &["DSN_"]),
-    ("Demandes de taux de prélèvement à la source", &["Amorcage"]),
-    ("AEM", &["AEM_"]),
-];
+/// LA RUBRIQUE DE L'HISTORIQUE ou se range un document du mois, dans l'ordre ou elles se lisent (l'ordre du type) ;
+/// ecrite par son libelle (`libelle`), dans la reponse de `historique-mois` et la phrase de l'apercu d'un envoi.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum RubriqueDeLHistorique {
+    Bulletins,
+    Certificats,
+    Attestations,
+    Contrats,
+    Dpae,
+    Dsn,
+    DemandesDeTaux,
+    /// Les fichiers de l'ancien logiciel (`AEM_…`), que le moteur n'ecrit pas : ce ne sont pas des pieces qu'il produit.
+    Aem,
+    /// Un document qui n'est d'aucune autre : elle se range apres elles.
+    Autres,
+}
 
-/// La sorte d'un document dont le nom ne commence comme aucune autre : elle se range apres elles.
-const AUTRES: &str = "Autres pièces";
+impl RubriqueDeLHistorique {
+    /// Son libelle, tel que l'Historique l'ecrit.
+    pub(crate) fn libelle(self) -> &'static str {
+        match self {
+            RubriqueDeLHistorique::Bulletins => "Bulletins de paie",
+            RubriqueDeLHistorique::Certificats => "Certificats Congés Spectacles",
+            RubriqueDeLHistorique::Attestations => "Attestations employeur (AER)",
+            RubriqueDeLHistorique::Contrats => "Contrats",
+            RubriqueDeLHistorique::Dpae => "DPAE",
+            RubriqueDeLHistorique::Dsn => "DSN",
+            RubriqueDeLHistorique::DemandesDeTaux => "Demandes de taux de prélèvement à la source",
+            RubriqueDeLHistorique::Aem => "AEM",
+            RubriqueDeLHistorique::Autres => "Autres pièces",
+        }
+    }
+}
+
+impl Serialize for RubriqueDeLHistorique {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.libelle())
+    }
+}
+
+/// La rubrique de l'Historique ou se range une piece produite.
+fn rubrique_de_la_piece(sorte: SorteDePieceProduite) -> RubriqueDeLHistorique {
+    use RubriqueDeLHistorique as R;
+    match sorte {
+        SorteDePieceProduite::Bulletins | SorteDePieceProduite::Bulletin => R::Bulletins,
+        SorteDePieceProduite::CertificatsCs | SorteDePieceProduite::CertificatCs => R::Certificats,
+        SorteDePieceProduite::Aer => R::Attestations,
+        SorteDePieceProduite::Contrat | SorteDePieceProduite::Avenant => R::Contrats,
+        SorteDePieceProduite::Dpae => R::Dpae,
+        SorteDePieceProduite::Dsn => R::Dsn,
+        SorteDePieceProduite::Amorcage => R::DemandesDeTaux,
+        SorteDePieceProduite::CertificatDeTravail
+        | SorteDePieceProduite::RecuSoldeToutCompte
+        | SorteDePieceProduite::Dossier
+        | SorteDePieceProduite::Dossiers
+        | SorteDePieceProduite::Impression
+        | SorteDePieceProduite::Signature
+        | SorteDePieceProduite::SignalementArret
+        | SorteDePieceProduite::SignalementReprise
+        | SorteDePieceProduite::SignalementFinContrat
+        | SorteDePieceProduite::Compta
+        | SorteDePieceProduite::Exercice
+        | SorteDePieceProduite::FicheDeSalarie => R::Autres,
+    }
+}
 
 /// CE QUE LA PERSONNE LIT d'une demande de taux de prelevement a la source (le signalement d'amorcage,
 /// `amorcage_demande::produire` : `Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`, et sa note
 /// `Amorcage<motif>_<AAAAMMJJ>_recapitulatif.txt`) : pour qui, et quel jour. Un autre nom se lit tel quel.
 fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
     let jour = |t: &str| socle::piece::Zone::lue(t, socle::piece::format::Aaaammjj).valeur().map(|j| j.jj_mm_aaaa());
-    let Some(reste) = nom.strip_prefix("Amorcage").and_then(|r| r.get(3..)) else { return nom.to_string() };
+    let Some(reste) = (match SorteDePieceProduite::du_nom(nom) {
+        Some((SorteDePieceProduite::Amorcage, r)) => r.get(3..),
+        _ => None,
+    }) else {
+        return nom.to_string();
+    };
     if let Some(j) = reste.strip_suffix("_recapitulatif.txt").and_then(jour) {
         return format!("Note des demandes du {}", j);
     }
@@ -342,11 +402,13 @@ fn identite(ctx: &Contexte, l: &Ligne) -> String {
     morceaux.join(" · ")
 }
 
-/// La sorte d'un document, par le debut de son nom (`SORTES`, sinon `AUTRES`).
-pub(crate) fn sorte_de(nom: &str) -> &'static str {
-    match SORTES.iter().find(|(_, p)| p.iter().any(|x| nom.starts_with(x))) {
-        Some((s, _)) => s,
-        None => AUTRES,
+/// La rubrique d'un document, par le debut de son nom : celle de sa piece produite, `Aem` pour un fichier de l'ancien
+/// logiciel, sinon `Autres`.
+pub(crate) fn rubrique_de(nom: &str) -> RubriqueDeLHistorique {
+    match SorteDePieceProduite::du_nom(nom) {
+        Some((s, _)) => rubrique_de_la_piece(s),
+        None if nom.starts_with("AEM_") => RubriqueDeLHistorique::Aem,
+        None => RubriqueDeLHistorique::Autres,
     }
 }
 
@@ -356,57 +418,59 @@ pub(crate) fn sorte_de(nom: &str) -> &'static str {
 fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let mut out: Vec<Document> = Vec::new();
     let sorties = CheminRelatif::sorties(mois);
-    let envoi = sorties.joint(&const { NomDeFichier::du_moteur("envoi") });
+    let envoi = DossierDuMois::Envoi.sous_le_chemin(&sorties);
     let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
     for nom in noms.filter(|n| !n.texte().ends_with(".zip")) {
-        out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), fichier: None, nom: nom.into() });
+        out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), fichier: None, nom: nom.into() });
     }
     for d in crate::archives::pieces_de_l_envoi(ctx, mois)? {
-        out.push(Document { sorte: sorte_de(&d.nom), salarie: d.salarie, chemin: envoi.joint(&NomDeFichier::lire(&d.nom)?), fichier: None, nom: d.nom });
+        out.push(Document { sorte: rubrique_de(&d.nom), salarie: d.salarie, chemin: envoi.joint(&NomDeFichier::lire(&d.nom)?), fichier: None, nom: d.nom });
     }
     // CE QUE LE JOURNAL DIT PARTI, meme si son fichier manque : `fichier` le nomme pour `piece-partie`, qui le refait
     // (`depart::piece_partie`) et rend son chemin.
-    for nom in pieces_du_journal(lignes) {
+    for (nom, quoi) in pieces_du_journal(lignes) {
         if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
-        let dans_l_envoi = ["Bulletin_", "CertificatCS_", "AER_", "Contrat_", "Avenant"].iter().any(|p| nom.texte().starts_with(p));
-        let chemin = if dans_l_envoi { envoi.joint(&nom) } else { sorties.joint(&nom) };
-        out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
+        // Le dossier du mois de ce qu'il est : sa piece, ou les sorties du mois pour un fichier que la compagnie y a pose.
+        let chemin = quoi.dossier().sous_le_chemin(&sorties).joint(&nom);
+        out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
     for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
-        out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
+        out.push(Document { nom, sorte: RubriqueDeLHistorique::Bulletins, salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
     }
     for d in out.iter_mut() {
         d.nom = nom_lisible(ctx, &d.nom);
     }
-    // Dans l'ordre des sortes, les autres pieces a la fin.
-    out.sort_by_key(|d| {
-        let rang = SORTES.iter().position(|(s, _)| *s == d.sorte);
-        (rang.is_none(), rang)
-    });
+    // Dans l'ordre des rubriques, les autres pieces a la fin.
+    out.sort_by_key(|d| d.sorte);
     Ok(out)
 }
 
 /// Les noms des pieces que les lignes acceptees du journal d'un mois disent parties : le fichier d'un depot, les contrats
-/// d'une demande de signature, les pieces d'un envoi de documents.
-fn pieces_du_journal(lignes: &[Ligne]) -> Vec<NomDeFichier> {
-    let mut noms: Vec<NomDeFichier> = Vec::new();
-    let mut noter = |n: &NomDeFichier| {
-        if !noms.contains(n) {
-            noms.push(n.clone());
+/// d'une demande de signature, les pieces d'un envoi de documents ; chacun avec ce qu'il est, par l'acte de sa ligne (le
+/// fichier d'une DSN ou d'une DPAE, `du_depot` ; sinon une piece d'un envoi, `de_l_envoi`).
+fn pieces_du_journal(lignes: &[Ligne]) -> Vec<(NomDeFichier, documents::FichierDuJournal)> {
+    let mut noms: Vec<(NomDeFichier, documents::FichierDuJournal)> = Vec::new();
+    let mut noter = |n: &NomDeFichier, de: fn(&str) -> documents::FichierDuJournal| {
+        if !noms.iter().any(|(m, _)| m == n) {
+            noms.push((n.clone(), de(n.texte())));
         }
     };
     for l in lignes.iter().filter(|l| l.accepte()) {
+        let de: fn(&str) -> documents::FichierDuJournal = match l {
+            Ligne::Dsn(_) | Ligne::Dpae(_) => documents::FichierDuJournal::du_depot,
+            Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => documents::FichierDuJournal::de_l_envoi,
+        };
         if let Some(f) = l.fichier() {
-            noter(f);
+            noter(f, de);
         }
         match l {
-            Ligne::ContratSignature(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier)),
-            Ligne::ContratContresigne(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier)),
-            Ligne::Documents(e) => e.detail.salaries.iter().flat_map(|s| &s.pieces).for_each(|p| noter(p)),
+            Ligne::ContratSignature(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier, de)),
+            Ligne::ContratContresigne(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier, de)),
+            Ligne::Documents(e) => e.detail.salaries.iter().flat_map(|s| &s.pieces).for_each(|p| noter(p, de)),
             _ => {}
         }
     }
@@ -497,7 +561,7 @@ fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: 
                     } else if x.deja_existante {
                         "déjà enregistrée auparavant".to_string()
                     } else {
-                        format!("refusée{}", morceau(" : ", joint([dit(&x.code), dit(&x.libelle)], " — ").as_deref(), ""))
+                        format!("refusée : {} — {}", x.code, x.code.libelle())
                     };
                     l.phrases.push(format!("{}{} : {}.", morceau("", qui.as_deref(), ""), morceau(" (embauche du ", x.embauche.map(|j| j.iso()).as_deref(), ")"), etat));
                 }
@@ -994,7 +1058,13 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             }
             let anomalies: Vec<Anomalie> = r.anomalies().into_iter().flatten().map(|a| Anomalie::du_message(a)).collect();
             for d in r.personnes().into_iter().flatten() {
-                let etat = if d.enregistree { "enregistrée".to_string() } else if d.deja_existante { "déjà enregistrée auparavant".into() } else { format!("refusée : {}", d.libelle) };
+                let etat = if d.enregistree {
+                    "enregistrée".to_string()
+                } else if d.deja_existante {
+                    "déjà enregistrée auparavant".into()
+                } else {
+                    format!("refusée : {}", d.libelle)
+                };
                 phrases.push(format!("{} : {}.", joint([dit(&d.nom), dit(&d.prenom)], " ").into_iter().collect::<String>(), etat));
             }
             (None, anomalies, false, None, None)
@@ -1076,7 +1146,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
         envois.push(Envoi {
             quoi: l.acte().nom(),
             acte: acte(ctx, l),
-            mode: l.mode().nom(),
+            mode: l.mode(),
             quand: l.quand(),
             fichier: l.fichier().cloned(),
             flux: l.flux().cloned(),
@@ -1089,7 +1159,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
         });
     }
     // Le plus recent en premier : c'est le dernier envoi qu'on vient lire ; a la meme heure, le reel devant son test.
-    envois.sort_by(|a, b| (&b.quand, b.mode == "reel").cmp(&(&a.quand, a.mode == "reel")));
+    envois.sort_by(|a, b| (&b.quand, b.mode == envois::ligne::Mode::Reel).cmp(&(&a.quand, a.mode == envois::ligne::Mode::Reel)));
     let documents = documents(ctx, le_mois, &lignes)?;
     let phrase = format!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
     Ok(Historique { phrase, mois: le_mois, documents, envois })

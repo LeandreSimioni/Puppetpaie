@@ -19,6 +19,11 @@ use crate::outils::{debloquer, dossier_de_test, installation};
 
 const ADMIN: &str = "administrateur-essai-1";
 
+/// Le mot de passe de l'administrateur de ces essais.
+fn admin() -> socle::secret::Secret {
+    socle::secret::Secret::nouveau(ADMIN)
+}
+
 fn inst(test: &str) -> PathBuf {
     installation(&dossier_de_test("compagnie_supprimee", test), "2026.10.22")
 }
@@ -36,8 +41,8 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
     let p = poste(&i);
     let a = ajouter_venant(&i, "Compagnie A", Venue::Neuve).unwrap().racine;
     let b = ajouter_venant(&i, "Compagnie B", Venue::Neuve).unwrap().racine;
-    p.coffre(&a).poser_ouverture(ADMIN, None).unwrap();
-    administrateur::rattacher(&i, &b, ADMIN, None, &p).unwrap();
+    p.coffre(&a).poser_ouverture(&admin(), None).unwrap();
+    administrateur::rattacher(&i, &b, &admin(), None, &p).unwrap();
     assert!(administrateur::est_rattachee(&i, &b).unwrap());
     let q = socle::ecriture::en_valeur(&suppression::question(&b).unwrap());
     assert_eq!((q["genre"].clone(), q["mot_de_passe"].clone()), (json!("reelle"), json!(true)), "{}", q);
@@ -49,16 +54,16 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
 
     let appele = Cell::new(false);
     // Sans mot de passe : personne pour le taper ici, refuse ; un mauvais, refuse. Rien n'est efface.
-    for m in [None, Some(""), Some("pas-le-bon-1")] {
-        assert!(supprimer(&i, &b, m, &p, &|_| appele.set(true)).is_err(), "{:?}", m);
+    for m in [None, Some(""), Some("pas-le-bon-1")].map(|m| m.map(socle::secret::Secret::nouveau)) {
+        assert!(supprimer(&i, &b, m.as_ref(), &p, &|_| appele.set(true)).is_err(), "{:?}", m);
         assert!(!appele.get() && b.join("config/entreprise.json").is_file(), "{:?} : rien n'est efface", m);
         assert!(administrateur::est_rattachee(&i, &b).unwrap());
     }
     // Une compagnie reelle sans mot de passe du logiciel pose : rien ne prouve qui la supprime.
     let c = ajouter_venant(&i, "Compagnie C", Venue::Neuve).unwrap().racine;
-    assert!(supprimer(&i, &c, Some(ADMIN), &p, &sans_rien).is_err() && c.is_dir());
+    assert!(supprimer(&i, &c, Some(&admin()), &p, &sans_rien).is_err() && c.is_dir());
 
-    assert_eq!(supprimer(&i, &b, Some(ADMIN), &p, &|_| appele.set(true)).unwrap(), "Compagnie B");
+    assert_eq!(supprimer(&i, &b, Some(&admin()), &p, &|_| appele.set(true)).unwrap(), "Compagnie B");
     assert!(appele.get() && !b.exists());
     assert!(liste_de(&i).unwrap().iter().all(|x| x.racine != b), "la tuile a disparu");
     assert_eq!(administrateur::rattachees(&i).unwrap(), vec![a.clone()], "le registre l'oublie");

@@ -25,8 +25,6 @@ use socle::echec::Classe;
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::paris::{InstantOuJour, Moment};
-use socle::piece::format::Jjmmaaaa;
-use socle::piece::Zone;
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
 use crate::retours::{Bilan, IdDeFlux, Reception, Verdict};
@@ -297,8 +295,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
         let texte: String = octets.iter().map(|&b| b as char).collect();
         let (mut embauches, mut quand, mut mois) = (Vec::new(), None, None);
         for ligne in declarations::dpae::relire(&texte)? {
-            let (Some(nir), Some(emb)) = (ligne.nir.clone(), ligne.date_embauche.as_deref()) else { continue };
-            let Some(debut) = Zone::lue(emb, Jjmmaaaa).valeur() else { continue };
+            let (Some(nir), Some(debut)) = (ligne.nir.clone(), ligne.date_embauche) else { continue };
             let iso = debut.iso();
             let Some((_, cle)) = par_nir.iter().find(|(n, _)| *n == nir) else {
                 // On ne devine pas qui c'est : un NIR qu'on ne reconnait pas est peut-etre une fiche archivee sous une autre cle, ou
@@ -310,14 +307,9 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
                 mois = Some(Mois::du_jour(&debut));
             }
             embauches.push(EmbaucheAttestee { salarie: cle.clone(), debut });
-            // L'horodatage `JJMMAAAAHHMM`.
-            if let (None, Some(h)) = (quand, ligne.horodatage.as_deref().filter(|h| h.len() == 12 && h.is_ascii())) {
-                let heure = socle::num::entier_de_chiffres(&h[8..10]).filter(|x| (0..24).contains(x));
-                let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x));
-                quand = Zone::lue(&h[..8], Jjmmaaaa).valeur()
-                    .zip(heure.zip(minute))
-                    // L'heure de Paris telle qu'ecrite : une heure qui n'existe pas a Paris ne se lit pas.
-                    .and_then(|(j, (hh, mm))| Moment::a_paris(j, hh, mm, 0).filter(|m| m.jour_de_paris() == j && m.seconde_du_jour_de_paris() == hh * 3_600 + mm * 60));
+            // L'horodatage de la premiere embauche reconnue.
+            if quand.is_none() {
+                quand = ligne.horodatage;
             }
         }
         let Some(flux) = flux_du_nom(nom.texte()) else { continue };

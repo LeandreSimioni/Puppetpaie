@@ -93,12 +93,74 @@ impl<'de> Deserialize<'de> for TauxDePas {
 
 impl crate::fiche::FormeDeCase for TauxDePas {}
 
+/// L'IDENTIFIANT DU TAUX DE PAS (S21.G00.50.008) : « Identifiant du taux porté par le CRM PAS [...] transmis par la
+/// DGFIP. En cas de contrat à durée déterminée dont le terme initial n'excède pas deux mois ou dont le terme est imprécis
+/// cette rubrique doit être valorisée à « -1 » » ; `N [1,18]`, « CSL 00 : -1|0|[1-9][0-9]{0,17} »
+/// (`atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, l. 165-178). `SansCrm` (« -1 ») ou le numero que la DGFiP
+/// donne, garde tel que lu ; il s'ecrit comme il a ete lu. Que portent un taux recu de la fiche, ce qu'un compte rendu PAS
+/// releve, le taux qui vaut, le prelevement d'un versement, la paie versee d'un engagement importe et la DSN lue.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum IdentifiantDuTauxPas {
+    SansCrm,
+    Numero(String),
+}
+
+impl IdentifiantDuTauxPas {
+    /// L'identifiant ecrit `texte`, ou la phrase qui le refuse (la CSL 00 de la norme).
+    pub fn lire(texte: &str) -> R<IdentifiantDuTauxPas> {
+        if texte == "-1" {
+            return Ok(IdentifiantDuTauxPas::SansCrm);
+        }
+        let chiffres = !texte.is_empty() && texte.len() <= 18 && texte.bytes().all(|b| b.is_ascii_digit());
+        if chiffres && (texte == "0" || !texte.starts_with('0')) {
+            return Ok(IdentifiantDuTauxPas::Numero(texte.to_string()));
+        }
+        Err(socle::refus!(
+            "Identifiant du taux de PAS {} : -1, 0, ou un nombre de 1 à 18 chiffres qui ne commence pas par 0 (S21.G00.50.008).",
+            repr(texte)
+        ))
+    }
+
+    /// « -1 » : le contrat court ou au terme imprecis, sans compte rendu de la DGFiP.
+    pub fn sans_crm(&self) -> bool {
+        *self == IdentifiantDuTauxPas::SansCrm
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            IdentifiantDuTauxPas::SansCrm => "-1",
+            IdentifiantDuTauxPas::Numero(n) => n,
+        }
+    }
+}
+
+impl std::fmt::Display for IdentifiantDuTauxPas {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for IdentifiantDuTauxPas {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for IdentifiantDuTauxPas {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let t = String::deserialize(d)?;
+        IdentifiantDuTauxPas::lire(&t).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+impl crate::fiche::FormeDeCase for IdentifiantDuTauxPas {}
+
 /// Un taux qui vaut : taux, type, identifiant, tels que le compte rendu les donne.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Triplet {
     pub taux: Option<TauxDePas>,
     pub type_taux: Option<TypeDeTauxPas>,
-    pub identifiant: Option<String>,
+    pub identifiant: Option<IdentifiantDuTauxPas>,
 }
 
 // ------------------------------------------------------------- peremption
@@ -301,7 +363,7 @@ pub struct Versement {
     pub taux: Montant,
     #[serde(rename = "type")]
     pub type_taux: Option<TypeDeTauxPas>,
-    pub identifiant: Option<String>,
+    pub identifiant: Option<IdentifiantDuTauxPas>,
     #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
     pub abattement: Decimal,
     #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
@@ -463,7 +525,7 @@ pub struct Situation {
     pub taux: Option<TauxDePas>,
     #[serde(rename = "type")]
     pub type_taux: Option<TypeDeTauxPas>,
-    pub identifiant: Option<String>,
+    pub identifiant: Option<IdentifiantDuTauxPas>,
     pub valable_jusqu_a: Option<Jour>,
     pub a_demander: bool,
     #[serde(with = "socle::paris::ecrit::compacte::option")]
@@ -584,7 +646,7 @@ mod tests {
     fn un_taux_vaut_pour_tout_paiement_a_partir_de_sa_mise_a_disposition() {
         let taux = |id: &str, le: &str| recu("9.40", id, le, None);
         let recus = vec![taux("480747943", "20260313070000"), taux("985249073", "20260415100000")];
-        let id = |le: Jour| en_vigueur(&recus, le, None).and_then(|e| e.identifiant.clone());
+        let id = |le: Jour| en_vigueur(&recus, le, None).and_then(|e| e.identifiant.as_ref().map(|i| i.to_string()));
         assert_eq!(id(jour(2026, 3, 12)), None);
         assert_eq!(id(jour(2026, 3, 13)), Some("480747943".to_string()));
         assert_eq!(id(jour(2026, 3, 14)), Some("480747943".to_string()));
@@ -613,7 +675,7 @@ mod tests {
     fn le_taux_en_retour_de_la_dsn_d_un_mois_vaut_pour_les_mois_qui_suivent() {
         let taux = |id: &str, le: &str, retour: Option<&str>| recu("2.30", id, le, retour);
         let recus = vec![taux("157352475", "20261005194311", Some("2026-09")), taux("713288315", "20261221184328", Some("2026-12"))];
-        let id = |le: Jour, mois: Mois| en_vigueur(&recus, le, Some(mois)).and_then(|e| e.identifiant.clone());
+        let id = |le: Jour, mois: Mois| en_vigueur(&recus, le, Some(mois)).and_then(|e| e.identifiant.as_ref().map(|i| i.to_string()));
         let decembre = Mois::nouveau(2026, 12).unwrap();
         assert_eq!(id(jour(2026, 12, 31), decembre), Some("157352475".to_string()));
         assert_eq!(id(jour(2027, 1, 5), decembre), Some("157352475".to_string()));

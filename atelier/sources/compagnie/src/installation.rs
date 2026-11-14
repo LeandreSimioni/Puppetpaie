@@ -161,14 +161,37 @@ pub fn marqueur(racine: &Path) -> R<Option<Marqueur>> {
     lire_s_il_est_la(&racine.join(MARQUEUR), "Le marqueur de la compagnie (COPIE-DE-DEVELOPPEMENT.json) ne se lit pas.")
 }
 
-/// Ce que le marqueur d'une copie dit qu'elle copie (`copie_de`) ; `None` hors d'une copie.
-pub fn copie_de(racine: &Path) -> R<Option<String>> {
-    Ok(marqueur(racine)?.map(|m| m.copie_de))
+/// CE QU'UNE COPIE EST : une fictive (ses envois sont joues), la compagnie d'essai (ses depots partent en test), ou une copie
+/// de developpement (aucune des deux). Le marqueur l'ecrit dans sa phrase, `copie_de`, que le logiciel ecrit lui-meme :
+/// elle commence par `MARQUE_FICTIVE` ou par `essai::MARQUE_ESSAI` ; `Marqueur::sorte` est sa seule lecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDeCopie {
+    Fictive,
+    Essai,
+    Developpement,
+}
+
+impl Marqueur {
+    /// La sorte de la copie, lue au debut de `copie_de`.
+    pub fn sorte(&self) -> SorteDeCopie {
+        if self.copie_de.starts_with(MARQUE_FICTIVE) {
+            SorteDeCopie::Fictive
+        } else if self.copie_de.starts_with(crate::essai::MARQUE_ESSAI) {
+            SorteDeCopie::Essai
+        } else {
+            SorteDeCopie::Developpement
+        }
+    }
+}
+
+/// Ce qu'est la copie `racine`, lu de son marqueur ; `None` hors d'une copie.
+pub fn sorte_de_copie(racine: &Path) -> R<Option<SorteDeCopie>> {
+    Ok(marqueur(racine)?.map(|m| m.sorte()))
 }
 
 /// Une COMPAGNIE FICTIVE : son marqueur le dit (ses envois sont joues, rien n'en part).
 pub fn est_fictive(racine: &Path) -> R<bool> {
-    Ok(copie_de(racine)?.is_some_and(|c| c.starts_with(MARQUE_FICTIVE)))
+    Ok(sorte_de_copie(racine)? == Some(SorteDeCopie::Fictive))
 }
 
 /// LA FICTIVE AJOUTEE : la compagnie que le « + » d'un logiciel bride ajoute. C'est une
@@ -183,7 +206,7 @@ pub fn est_fictive(racine: &Path) -> R<bool> {
 pub fn est_ajoutee(racine: &Path) -> R<bool> {
     let m = marqueur(racine)?;
     let marque = m.as_ref().is_some_and(|m| m.ajoutee == Some(true));
-    let fictive = m.as_ref().is_some_and(|m| m.copie_de.starts_with(MARQUE_FICTIVE));
+    let fictive = m.as_ref().is_some_and(|m| m.sorte() == SorteDeCopie::Fictive);
     let sous_les_fictives = racine.parent().and_then(Path::file_name).is_some_and(|n| n == DOSSIER_FICTIVES);
     Ok(marque || (sous_les_fictives && !fictive))
 }

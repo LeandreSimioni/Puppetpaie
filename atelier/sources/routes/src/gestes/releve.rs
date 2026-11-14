@@ -4,7 +4,7 @@
 
 use droit::contexte::Contexte;
 use envois::ordre_signalements::OrdreConnu;
-use envois::releve_retours::{CanalDesRetours, Client, Releve};
+use envois::releve_retours::{CanalDesRetours, Client, EnvironnementNetEntreprises, Releve};
 use envois::suites::Suites;
 use socle::echec::R;
 use socle::paris::Moment;
@@ -22,7 +22,7 @@ fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<Releve> {
 
 /// Releve les retours du canal `canal` (la DPAE avec un client Urssaf donne) : `client` donne, ou celui de la
 /// consultation net-entreprises.
-pub fn relever_retours(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, environnement: &str, client: Option<Client>, canal: CanalDesRetours) -> R<Releve> {
+pub fn relever_retours(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, environnement: EnvironnementNetEntreprises, client: Option<Client>, canal: CanalDesRetours) -> R<Releve> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
@@ -61,7 +61,7 @@ pub(crate) fn dernier_ordre_connu(ctx: &Contexte, client: Option<Client>) -> R<O
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
-        None => client_dsn(ctx, b, "production")?,
+        None => client_dsn(ctx, b, EnvironnementNetEntreprises::Production)?,
     };
     let mut s = Suites::default();
     let r = envois::ordre_signalements::dernier_ordre_connu(ctx, b, client, &mut s);

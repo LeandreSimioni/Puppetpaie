@@ -12,12 +12,11 @@
 //! le message ne releve rien. Ce qu'elle trouve en chemin et qui touche a la compagnie (les incidents des retours, les
 //! attestations France Travail a ranger) va dans les suites (`suites::Suites`).
 
+use socle::secret::Secret;
 use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
-use droit::contexte::{Contexte, TypeDeParametreNeores};
+use droit::contexte::{Contexte, EffectifEcrit, EffectifsParAnnee, FichierEffectifs, TypeDeParametreNeores};
 use socle::echec::R;
 use socle::fichiers::CheminRelatif;
 use socle::mois::Annee;
@@ -76,41 +75,80 @@ pub struct Adresses {
     pub service: Option<String>,
 }
 
-fn adresses_dsn(environnement: &str) -> Result<Adresses, Panne> {
+/// LA PLATE-FORME DE NET-ENTREPRISES a laquelle le client de la DSN parle : la production, ou la plate-forme d'essai de
+/// l'editeur (rien n'y est declare). Une liste du logiciel, ecrite `production`, `editeur` (la ligne de commande la
+/// nomme ainsi, `NOMS`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvironnementNetEntreprises {
+    Production,
+    Editeur,
+}
+
+impl EnvironnementNetEntreprises {
+    /// Leurs noms, dans l'ordre, tels que la ligne de commande les propose.
+    pub const NOMS: &'static [&'static str] = &["production", "editeur"];
+
+    /// Son nom.
+    pub fn nom(self) -> &'static str {
+        match self {
+            EnvironnementNetEntreprises::Production => "production",
+            EnvironnementNetEntreprises::Editeur => "editeur",
+        }
+    }
+
+    /// La plate-forme que `texte` nomme ; un autre texte se refuse en le nommant.
+    pub fn lire(texte: &str) -> R<EnvironnementNetEntreprises> {
+        match texte {
+            "production" => Ok(EnvironnementNetEntreprises::Production),
+            "editeur" => Ok(EnvironnementNetEntreprises::Editeur),
+            autre => Err(erreur(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
+        }
+    }
+}
+
+impl std::fmt::Display for EnvironnementNetEntreprises {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
+fn adresses_dsn(environnement: EnvironnementNetEntreprises) -> Adresses {
     // L'atelier seulement : un faux net-entreprises local (`redirection`). Le service reste celui de l'environnement.
     #[cfg(feature = "atelier")]
     if let Some(b) = crate::redirection::base(crate::redirection::VARIABLE_DSN) {
-        let service = if environnement == "editeur" { SERVICE_DSN_REGIME_GENERAL_TEST } else { SERVICE_DSN_REGIME_GENERAL };
-        return Ok(Adresses {
+        let service = match environnement {
+            EnvironnementNetEntreprises::Editeur => SERVICE_DSN_REGIME_GENERAL_TEST,
+            EnvironnementNetEntreprises::Production => SERVICE_DSN_REGIME_GENERAL,
+        };
+        return Adresses {
             authentification: b.joindre("/authentifier/"),
             retours: b.joindre("/lister-retours-declarant/1.0/"),
             retours_flux: b.joindre("/lister-retours-flux/1.0/"),
             depot: b.joindre("/deposer-dsn/1.0/"),
             service: Some(service.into()),
-        });
+        };
     }
     let (auth, hote_consultation, depot, service) = match environnement {
-        "production" => (
+        EnvironnementNetEntreprises::Production => (
             Url::du_moteur("https://services.net-entreprises.fr/authentifier/1.0/"),
             Url::du_moteur("https://consultation.dsnrg.net-entreprises.fr"),
             Url::du_moteur("https://depot.dsnrg.net-entreprises.fr/deposer-dsn/1.0/"),
             SERVICE_DSN_REGIME_GENERAL,
         ),
-        "editeur" => (
+        EnvironnementNetEntreprises::Editeur => (
             Url::du_moteur("https://test-services.net-entreprises.fr/authentifier/1.0/"),
             Url::du_moteur("https://consultation-edit.dsnrg.net-entreprises.fr"),
             Url::du_moteur("https://depot-edit.dsnrg.net-entreprises.fr/deposer-dsn/1.0/"),
             SERVICE_DSN_REGIME_GENERAL_TEST,
         ),
-        autre => return Err(panne(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
     };
-    Ok(Adresses {
+    Adresses {
         authentification: auth,
         retours: hote_consultation.joindre("/lister-retours-declarant/1.0/"),
         retours_flux: hote_consultation.joindre("/lister-retours-flux/1.0/"),
         depot,
         service: Some(service.into()),
-    })
+    }
 }
 
 fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
@@ -138,32 +176,32 @@ fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
 /// `netentreprises.Client` et `dpae_api.ClientDpae`.
 pub struct Client {
     pub adresses: Adresses,
-    pub jeton: Option<String>,
+    pub jeton: Option<Secret>,
     pub declarant: crate::transport::Identite,
-    motdepasse: Option<String>,
+    motdepasse: Option<Secret>,
     variable: &'static str,
     majuscules: bool,
 }
 
 impl Client {
     /// `Client(ctx, environnement, motdepasse=...)` : le compte net-entreprises de la DSN.
-    pub fn dsn(ctx: &Contexte, environnement: &str, motdepasse: Option<String>) -> Result<Client, Panne> {
+    pub fn dsn(ctx: &Contexte, environnement: EnvironnementNetEntreprises, motdepasse: Option<Secret>) -> Client {
         let declarant = crate::transport::declarant(&ctx.entreprise);
-        Ok(Client {
-            adresses: adresses_dsn(environnement)?,
+        Client {
+            adresses: adresses_dsn(environnement),
             jeton: None,
             declarant,
             motdepasse,
             variable: VARIABLE_MOTDEPASSE,
             majuscules: false,
-        })
+        }
     }
 
     /// `ClientDpae(ctx, majuscules, motdepasse)` : le compte Urssaf, qui n'est pas celui de la DSN.
-    pub fn dpae(ctx: &Contexte, majuscules: bool, motdepasse: Option<String>) -> Client {
+    pub fn dpae(ctx: &Contexte, majuscules: bool, motdepasse: Option<Secret>) -> Client {
         // Sans compte DPAE dit, le declarant est l'entreprise, sans nom ni prenom, et le service n'est pas dit.
         let compte = ctx.entreprise.api_dpae.dite();
-        let siret = compte.and_then(|c| c.siret.en_texte()).or_else(|| ctx.entreprise.siret.en_texte());
+        let siret = compte.and_then(|c| c.siret.dite()).or_else(|| ctx.entreprise.siret.dite()).cloned();
         Client {
             adresses: adresses_dpae(compte),
             jeton: None,
@@ -176,27 +214,27 @@ impl Client {
 
     /// Le mot de passe que l'appelant a donne (le moteur le prend a l'environnement ou au coffre) : le client n'en
     /// cherche aucun.
-    fn secret(&self) -> Option<String> {
-        self.motdepasse.clone().filter(|m| !m.is_empty())
+    fn secret(&self) -> Option<&Secret> {
+        self.motdepasse.as_ref().filter(|m| !m.devoiler().is_empty())
     }
 
     /// `ClientDpae.verifier_identifiants` : ce qui ferait echouer la connexion MtoM. Le mot de passe ne
     /// quitte pas le client : on ne sait que s'il porte un `@`.
     pub fn verifier_identifiants(&self) -> Result<Vec<String>, Echec> {
-        let arobase = self.secret().is_some_and(|m| m.contains('@'));
+        let arobase = self.secret().is_some_and(|m| m.devoiler().contains('@'));
         crate::depot::identifiants(&self.declarant, arobase)
     }
 
     /// `Client.authentifier` : ouvre une session. Le mot de passe ne survit pas a cet appel.
     pub fn authentifier(&mut self) -> Result<(), Panne> {
-        let mdp = self.secret().map(|m| if self.majuscules { m.to_uppercase() } else { m });
+        let mdp = self.secret().map(|m| if self.majuscules { m.transforme(str::to_uppercase) } else { m.clone() });
         let session = crate::transport::authentifier(&crate::transport::Authentification {
             url: &self.adresses.authentification,
             declarant: &self.declarant,
-            motdepasse: mdp.as_deref(),
+            motdepasse: mdp.as_ref(),
             variable: self.variable,
             service: self.adresses.service.as_deref(),
-            jeton: self.jeton.as_deref(),
+            jeton: self.jeton.as_ref(),
         })?;
         self.jeton = Some(session.jeton);
         Ok(())
@@ -204,20 +242,20 @@ impl Client {
 
     pub fn assurer_session(&mut self) -> Result<(), Panne> {
         // Un jeton vide n'ouvre pas de session.
-        if !self.jeton.as_deref().is_some_and(|j| !j.is_empty()) {
+        if !self.jeton.as_ref().is_some_and(|j| !j.devoiler().is_empty()) {
             self.authentifier()?;
         }
         Ok(())
     }
 
     fn appel(&self, url: &Url) -> Result<(Vec<u8>, crate::transport::Entetes), Panne> {
-        Ok(crate::transport::appeler(url, self.jeton.as_deref())?)
+        Ok(crate::transport::appeler(url, self.jeton.as_ref())?)
     }
 
     /// La consultation d'une plage.
     fn consulter(&mut self, base: &Url, debut: Moment, fin: Option<Moment>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
-        Ok(crate::transport::consulter(base, self.jeton.as_deref(), debut, fin)?)
+        Ok(crate::transport::consulter(base, self.jeton.as_ref(), debut, fin)?)
     }
 
     pub fn lister_retours(&mut self, debut: Moment, fin: Moment) -> Result<Vec<Annonce>, Panne> {
@@ -562,7 +600,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
         return Ok(None);
     }
     let (Some(mois), Some(fichier)) = (l.mois(), l.fichier()) else { return Ok(None) };
-    let chemin = ctx.racine.join("sorties").join(mois.to_string()).join(fichier);
+    let chemin = documents::fichier_depose(&ctx.racine.join("sorties").join(mois.to_string()), fichier.texte());
     // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
@@ -795,50 +833,16 @@ struct Mesure118 {
 /// Ce que `config/effectifs.json` dit de lui-meme.
 const QUOI_EFFECTIFS: &str = "Effectifs par année civile. A01 = effectif de sécurité sociale (art. L. 130-1 CSS), celui des seuils de cotisation. Ceux que l'Urssaf calcule et renvoie en compte rendu de nature 118 s'écrivent au relevé des retours ; ceux que la compagnie dit (dit_le) pour une année sans 118, par la route effectif, jusqu'à ce qu'un 118 de cette année les remplace.";
 
-/// LE FICHIER DES EFFECTIFS (`config/effectifs.json`) : par annee civile et par code, l'effectif.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FichierEffectifs {
-    quoi: String,
-    annees: Annees,
-}
-
-/// Les effectifs par annee, puis par code.
-type Annees = std::collections::BTreeMap<Annee, std::collections::BTreeMap<TypeDeParametreNeores, EffectifEcrit>>;
-
-/// UN EFFECTIF ECRIT : celui qu'un 118 a calcule (`calcule_le`, `source` : le jour du calcul, l'archive du compte rendu),
-/// ou celui que la compagnie a dit (`dit_le`), qu'un 118 de la meme annee remplace.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EffectifEcrit {
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::court")]
-    valeur: Decimal,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
-    calcule_le: Option<socle::paris::Moment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<CheminRelatif>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dit_le: Option<Jour>,
-}
-
-fn chemin_des_effectifs(racine: &Path) -> PathBuf {
-    racine.join(droit::contexte::EFFECTIFS)
-}
-
-/// `config/effectifs.json` lu ; aucun s'il n'existe pas.
+/// `config/effectifs.json` lu par sa forme (`droit::contexte::effectifs_lus`) ; aucun s'il n'existe pas.
 fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
-    let p = chemin_des_effectifs(racine);
-    if !p.exists() {
-        return Ok(None);
-    }
-    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| m.reclasser(Classe::Illisible))
+    droit::contexte::effectifs_lus(racine).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
-fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: Annees) -> R<()> {
+fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: EffectifsParAnnee) -> R<()> {
     let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
-        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
+        socle::ecriture::ecrire_json(&racine.join(droit::contexte::EFFECTIFS), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     }
     Ok(())
 }
@@ -877,7 +881,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         }
     }
     noms.sort();
-    let mut annees = Annees::new();
+    let mut annees = EffectifsParAnnee::new();
     for nom in &noms {
         let p = dossier.join(nom);
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
@@ -907,7 +911,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
 pub fn poser_effectif(racine: &Path, an: i32, valeur: Decimal, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
-    let mut annees: Annees = existant.iter().flat_map(|f| f.annees.clone()).collect();
+    let mut annees: EffectifsParAnnee = existant.iter().flat_map(|f| f.annees.iter()).map(|(an, c)| (*an, c.clone())).collect();
     let codes = annees.entry(Annee::nouvelle(i64::from(an))?).or_default();
     if codes.get(&TypeDeParametreNeores::EffectifMoyen).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);

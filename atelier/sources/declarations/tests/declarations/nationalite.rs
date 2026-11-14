@@ -10,23 +10,19 @@
 //! le pays hors liste : une décision d'éditeur ; le registre : C. trav., D1221-23
 //! (`atelier/reference/sources/code-du-travail/xml/D1221-23.xml`).
 
-use crate::outils::saisie;
-use declarations::champs::{Anomalie, Gravite, Saisie};
+use crate::outils::anomalies;
+use declarations::champs::{Anomalie, Gravite};
 use std::collections::HashMap;
 
 #[test]
 fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
-    let erreurs = |s: Saisie| -> Vec<Anomalie> {
-        declarations::champs::verifier_fiche(droit::fiche::NomDeFiche::Salarie, &s)
-            .unwrap()
-            .into_iter()
-            .filter(|a| a.champ == droit::fiche::CaseSalarie::CodeNationaliteDsn.into() && a.gravite == Gravite::Erreur)
-            .collect()
+    let erreurs = |a: Vec<Anomalie>| -> Vec<Anomalie> {
+        a.into_iter().filter(|a| a.champ == droit::fiche::CaseSalarie::CodeNationaliteDsn.into() && a.gravite == Gravite::Erreur).collect()
     };
     let avec = |k: &[(&str, &str)]| {
         let mut cases = vec![("nom", "ANDERSEN"), ("prenom", "INGRID"), ("sexe", "2")];
         cases.extend_from_slice(k);
-        saisie(droit::fiche::NomDeFiche::Salarie, &cases)
+        anomalies(droit::fiche::NomDeFiche::Salarie, &cases)
     };
     assert_eq!(erreurs(avec(&[("code_nationalite_dsn", "03")])).len(), 1, "un 03 sans pays se dit dans la fiche");
     assert!(erreurs(avec(&[("code_nationalite_dsn", "03"), ("pays_nationalite", "NO")])).is_empty());
@@ -42,10 +38,10 @@ fn le_questionnaire_lit_le_pays_dans_la_liste_et_en_deduit_la_codification() {
     for (reponse, pays, code) in [("norvégienne", "NO", "03"), ("Marocain", "MA", "04"), ("italienne", "IT", "02"), ("liechtensteinoise", "LI", "03"), ("britannique", "GB", "04"), ("Suisse", "CH", "04"), ("Islande", "IS", "03"), ("française", "FR", "01")] {
         let (d, illisible) = lire("nationalite", reponse);
         assert!(illisible.is_empty(), "{} : {:?}", reponse, illisible);
-        assert_eq!((d.pays_nationalite.as_deref(), d.code_nationalite_dsn.as_deref()), (Some(pays), Some(code)), "{}", reponse);
+        assert_eq!((d.pays_nationalite.as_deref(), d.code_nationalite_dsn.map(|c| c.as_str())), (Some(pays), Some(code)), "{}", reponse);
     }
     // Des noms que l'ancienne table courte ne connaissait pas.
-    let pays_lu = |t: &str| pays_lu(t).unwrap().map(|(code, ue)| (code.to_string(), ue));
+    let pays_lu = |t: &str| pays_lu(t).unwrap().map(|(code, ue)| (code.to_string(), Some(ue.as_str())));
     assert_eq!(pays_lu("Sénégal").map(|p| p.0), Some("SN".into()));
     assert_eq!(pays_lu("Géorgie").map(|p| p.0), Some("GE".into()));
     assert_eq!(pays_lu("Islande"), Some(("IS".into(), Some("03"))));
@@ -57,7 +53,7 @@ fn le_questionnaire_lit_le_pays_dans_la_liste_et_en_deduit_la_codification() {
     let (d, illisible) = fiche_depuis_reponses(&rep).unwrap();
     assert!(d.pays_naissance.is_none(), "{:?}", d);
     assert_eq!(illisible, vec!["pays de naissance : « Atlantide »".to_string()]);
-    assert_eq!((d.pays_nationalite.as_deref(), d.code_nationalite_dsn.as_deref()), (Some("VN"), Some("04")));
+    assert_eq!((d.pays_nationalite.as_deref(), d.code_nationalite_dsn.map(|c| c.as_str())), (Some("VN"), Some("04")));
     // Un pays de naissance que le COG n'a pas, mais la table « Pays » de la DSN si, se lit par son libelle.
     let (d, illisible) = lire("pays", "Kosovo");
     assert_eq!(d.pays_naissance.as_deref(), Some("XK"), "{:?} {:?}", d, illisible);

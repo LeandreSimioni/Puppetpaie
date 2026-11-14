@@ -180,7 +180,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         let q = requis(l.quantite(), "quantite")?;
         let taux = requis(l.taux(), "taux")?;
-        let signe = if r.sens == "-" { -Decimal::ONE } else { Decimal::ONE };
+        let signe = r.sens.signe();
         // Le signe porte aussi sur les heures : une absence en retire.
         let h = r.heures(q, l.heures());
         let dsn_autres_bruts = code_54(&r, l.genre())?;
@@ -215,7 +215,7 @@ pub struct LigneCotisation {
     /// La cotisation de la ligne.
     pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
-    pub famille: String,
+    pub famille: droit::forme_bareme::FamilleDeCotisation,
     pub libelle: String,
     pub base: Decimal,
     pub taux_pat: Option<Decimal>,
@@ -267,9 +267,9 @@ impl LigneCotisation {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeductionForfaitaire {
     /// « 20 » ou « 25 » : le taux de l'article 5 de l'annexe IV du CGI (redaction du 31/12/2000) que la profession porte.
-    pub categorie: String,
+    pub categorie: droit::forme_bareme::CategorieDfs,
     /// La profession de la fiche (`deduction_forfaitaire.professions` du bareme).
-    pub profession: String,
+    pub profession: droit::fiche::ProfessionDfs,
     /// Le taux de l'annee (bareme), en pourcent.
     pub taux: Decimal,
     /// Les lignes du bulletin dont l'assiette est abattue.
@@ -287,7 +287,7 @@ impl DeductionForfaitaire {
     pub fn forme(&self) -> FormeDeLaDeduction {
         FormeDeLaDeduction {
             categorie: self.categorie.clone(),
-            profession: self.profession.clone(),
+            profession: self.profession,
             taux: self.taux,
             rubriques: self.rubriques.clone(),
             montant: self.montant,
@@ -299,7 +299,7 @@ impl DeductionForfaitaire {
     pub(crate) fn de_la_forme(f: &FormeDeLaDeduction) -> DeductionForfaitaire {
         DeductionForfaitaire {
             categorie: f.categorie.clone(),
-            profession: f.profession.clone(),
+            profession: f.profession,
             taux: f.taux,
             rubriques: f.rubriques.clone(),
             montant: f.montant,
@@ -555,7 +555,7 @@ fn bref(l: &LigneBrut) -> String {
 pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Decimal) -> LigneCotisation {
     LigneCotisation {
         id: droit::forme_bareme::REDUCTION_GENERALE,
-        famille: FAMILLE_ALLEGEMENTS.into(),
+        famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
         libelle: "Réduction générale dégressive unique".into(),
         base: brut,
         taux_pat: None,
@@ -587,8 +587,8 @@ pub(crate) const DFS_SALARIE_REFUS: &str = "refus";
 /// les autres.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptionDfs {
-    pub profession: String,
-    pub categorie: String,
+    pub profession: droit::fiche::ProfessionDfs,
+    pub categorie: droit::forme_bareme::CategorieDfs,
     pub taux: Decimal,
     pub rubriques: Vec<IdDeCotisation>,
     pub plafond_annuel: Decimal,
@@ -615,7 +615,7 @@ fn refus_detaille(phrase: impl Into<String>, cle: Option<&str>, detail: String) 
 /// CGI dans sa redaction en vigueur au 31/12/2000 (`atelier/reference/sources/dfs/cgi-annexe4-art5/`) et l'annexe 1 de
 /// l'arrete ; leur taux de l'annee, le bareme (art. 9, II et III). Une section du bareme non marquee verifiee refuse.
 pub(crate) fn deduction_forfaitaire(bar: &Pile, sal: &ChampsSalarie, ent: &ChampsEntreprise) -> R<Option<OptionDfs>> {
-    let Some(profession) = sal.deduction_forfaitaire.dite().map(|p| p.as_str().to_string()) else {
+    let Some(profession) = sal.deduction_forfaitaire.dite().copied() else {
         return Ok(None);
     };
     let qui = crate::qui_de(sal)?;
@@ -623,7 +623,12 @@ pub(crate) fn deduction_forfaitaire(bar: &Pile, sal: &ChampsSalarie, ent: &Champ
     let dfs = bar.deduction_forfaitaire.as_ref();
     let professions = dfs.map(|d| &d.professions);
     let connues = || match professions {
-        Some(p) => p.keys().cloned().collect::<Vec<_>>().join(", "),
+        Some(p) => {
+            // Dans l'ordre de leurs noms, comme le bareme les ecrit (la cle se trie dans l'ordre de sa declaration).
+            let mut noms: Vec<&str> = p.keys().map(|k| k.as_str()).collect();
+            noms.sort_unstable();
+            noms.join(", ")
+        }
         None => "aucune".to_string(),
     };
     let Some(fiche_prof) = professions.and_then(|p| p.get(&profession)) else {
@@ -762,7 +767,7 @@ cette reintegration (assiette du chomage, bloc 54 de type 35) : rien n'est calcu
                 if o.frais_hors_assiette.is_empty() {
                     "aucun".to_string()
                 } else {
-                    o.frais_hors_assiette.join(", ")
+                    o.frais_hors_assiette.iter().map(droit::catalogue::CodeDeRubrique::as_str).collect::<Vec<_>>().join(", ")
                 }
             )));
         }
@@ -850,8 +855,6 @@ contrat, {} (CSS R. 242-1, al. 6 ; arrêté du 4 septembre 2025, art. 9, I, dern
 }
 
 // ---------------------------------------------------------------- calculer
-
-pub(crate) const FAMILLE_ALLEGEMENTS: &str = "EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS";
 
 /// Les assiettes d'un montant de salaire (§7.4) : celles qui se calculent par rubrique de salaire
 /// (`Assiette::par_rubrique`).
@@ -1110,9 +1113,9 @@ pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(
         eng.nature,
         eng.motif_recours,
-        &droit::cpf_cdd::le_contrat(eng.numero.as_deref(), &eng.salarie),
+        &crate::numeros::le_contrat(eng.numero.as_ref(), &eng.salarie),
     )?;
-    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref());
+    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref())?;
     bareme_du_salarie(ctx, &p.salarie, &nat, &eng.fin_periode(), caisse, cpf_cdd, majoration)
 }
 
@@ -1269,7 +1272,7 @@ fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &
     };
     let jours = rust_decimal::prelude::ToPrimitive::to_i64(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?;
     let artiste = sal.statut.dite() == Some(&Statut::Artiste);
-    let plafond = droit::essai::plafond(nat, &eng.debut, eng.fin.as_ref(), sal.statut_conventionnel.dite().map(|s| s.as_str()), artiste, ctx.entreprise.idcc.dite())?;
+    let plafond = droit::essai::plafond(nat, &eng.debut, eng.fin.as_ref(), sal.statut_conventionnel.dite().copied(), artiste, ctx.entreprise.idcc.dite())?;
     droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle))
 }
 
@@ -1339,9 +1342,9 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(
         eng.nature,
         eng.motif_recours,
-        &droit::cpf_cdd::le_contrat(eng.numero.as_deref(), &eng.salarie),
+        &crate::numeros::le_contrat(eng.numero.as_ref(), &eng.salarie),
     )?;
-    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref());
+    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref())?;
     let bar = bareme_du_salarie(ctx, &sal, &nat, &fin_periode, caisse, cpf_cdd, majoration)?;
     let rubriques_bulletin = &bar.rubriques_bulletin;
     let jours = Decimal::from(eng.jours);
@@ -1498,7 +1501,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         avis_dfs.extend(a.avis);
         dfs = Some(DeductionForfaitaire {
             categorie: o.categorie.clone(),
-            profession: o.profession.clone(),
+            profession: o.profession,
             taux: o.taux,
             rubriques: o.rubriques.clone(),
             montant: a.deduction,
@@ -1891,7 +1894,11 @@ pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Decimal> 
 ///   montants specifiques ; BOSS § 1090 : ils « ne sont pas eligibles a la reduction du plafond », et « sont notamment
 ///   vises les artistes du spectacle ».
 /// Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Sa forme ecrite dans une paie (`paie_ecrite::FormeDePaie::plafond_temps_partiel`) : `non_concerne`, `proratise`,
+/// `entier`, `exclu` ; une autre valeur rend la paie illisible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PlafondTempsPartiel {
     /// Un intermittent (contrat d'usage, sans duree du travail : 40.014 = 99), ou un temps plein : la question ne se
     /// pose pas, le plafond n'est pas corrige a la quotite, et 40.084 ne s'ecrit pas (norme 2027.1.2 : conditionnelle).
@@ -1903,34 +1910,6 @@ pub enum PlafondTempsPartiel {
     /// Temps partiel d'un artiste du spectacle : exclu de la proratisation (L. 242-10, 1° ; BOSS § 1090), le plafond
     /// entier quel que soit le choix de l'etablissement.
     Exclu,
-}
-
-impl PlafondTempsPartiel {
-    const CODES: [(PlafondTempsPartiel, &'static str); 4] = [
-        (PlafondTempsPartiel::NonConcerne, "non_concerne"),
-        (PlafondTempsPartiel::Proratise, "proratise"),
-        (PlafondTempsPartiel::Entier, "entier"),
-        (PlafondTempsPartiel::Exclu, "exclu"),
-    ];
-
-    /// Sa forme ecrite dans une paie (`relire::PLAFOND_TEMPS_PARTIEL`).
-    pub fn code(self) -> &'static str {
-        match self {
-            PlafondTempsPartiel::NonConcerne => Self::CODES[0].1,
-            PlafondTempsPartiel::Proratise => Self::CODES[1].1,
-            PlafondTempsPartiel::Entier => Self::CODES[2].1,
-            PlafondTempsPartiel::Exclu => Self::CODES[3].1,
-        }
-    }
-
-    /// Depuis sa forme ecrite ; une autre valeur est une paie illisible.
-    pub(crate) fn lire(code: &str) -> R<PlafondTempsPartiel> {
-        Self::CODES
-            .iter()
-            .find(|(_, c)| *c == code)
-            .map(|(p, _)| *p)
-            .ok_or_else(|| socle::echec::a_la_cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel", code))
-    }
 }
 
 /// Le plafond du salarie `sal` (sa fiche telle que la paie la lit, pour son statut) a temps partiel de l'engagement `e`,
@@ -1963,7 +1942,7 @@ pub(crate) fn plafond_temps_partiel(ent: &ChampsEntreprise, e: &Engagement, sal:
 /// une ligne d'heures tapee a la main ne dit pas si elle en est, et refuse plutot que de le deviner.
 pub(crate) fn duree_du_temps_partiel(e: &Engagement) -> R<(Decimal, Decimal)> {
     let nat = e.nat()?;
-    if let Some(l) = e.lignes.iter().find(|l| l.rubrique() == "heure") {
+    if let Some(l) = e.lignes.iter().find(|l| *l.rubrique() == droit::catalogue::HEURE) {
         return Err(socle::refus!(
             "{} : le plafond de Securite sociale de ce salarie a temps partiel se corrige a la duree de son \
 contrat << majoree du nombre d'heures complementaires >> du mois (CSS R. 242-2, I, dernier alinea), et la paie porte des \
@@ -2049,7 +2028,7 @@ impl Paie {
             plafond: self.plafond,
             plafond_urssaf: self.plafond_urssaf(ctx)?,
             periodes: self.periodes.iter().map(|p| p.forme(ctx, avis, ecrite)).collect::<R<_>>()?,
-            plafond_temps_partiel: ecrite.then(|| self.plafond_temps_partiel.code().to_string()),
+            plafond_temps_partiel: ecrite.then_some(self.plafond_temps_partiel),
         })
     }
 }
@@ -2086,7 +2065,7 @@ mod tests {
         let a = smic_d_une_absence(&[mois.clone(), absence.clone(), prime], smic).unwrap();
         assert_eq!((a.percue, a.habituelle), (dec_de("1000"), dec_de("2000")));
         assert_eq!(eur(mul(dec_de("11.65"), a.heures.unwrap())), dec_de("883.46"));
-        let subrogee = ligne(&droit::catalogue::RubriqueDuMois::IjssNettes.code(),"300", "0", false, false, false);
+        let subrogee = ligne(droit::catalogue::RubriqueDuMois::IjssNettes.code().as_str(),"300", "0", false, false, false);
         assert_eq!(smic_d_une_absence(&[mois.clone(), absence.clone(), subrogee], smic).unwrap().percue, dec_de("1000"));
         let maintien = ligne("maintien_salaire", "1000", "0", false, true, true);
         let entier = smic_d_une_absence(&[mois.clone(), absence, maintien], smic).unwrap();

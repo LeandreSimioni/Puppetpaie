@@ -71,7 +71,7 @@ fn lisible(e: &Etablissement) -> String {
     .join(" ");
     let mut morceaux = vec![nom(e), format!("SIRET {}", e.siret.remplie().map(str::to_string).into_iter().collect::<String>()), adresse];
     if let Some(t) = &e.taux_atmp {
-        if let Some(code) = t.code_risque.remplie() {
+        if let Some(code) = t.code_risque.dite() {
             let taux = t.valeur.as_ref().map(|v| format!(", taux {} %", v.ecrit().replace('.', ","))).into_iter().collect::<String>();
             morceaux.push(format!("code risque {}{}", code, taux));
         }
@@ -188,8 +188,8 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
             griefs.push(format!("{} : sa date d'ouverture", nom));
             continue;
         };
-        if o.taux_atmp.as_ref().and_then(|t| t.code_risque.remplie()).is_none() {
-            let du_siege = ctx.entreprise_au(&ouverture).taux_atmp.and_then(|t| t.code_risque).filter(|c| !c.is_empty());
+        if o.taux_atmp.as_ref().and_then(|t| t.code_risque.dite()).is_none() {
+            let du_siege = ctx.entreprise_au(&ouverture).taux_atmp.and_then(|t| t.code_risque);
             match du_siege {
                 Some(code) => o.taux_atmp.get_or_insert_with(droit::fiche::TauxAtmp::default).code_risque = Some(code),
                 None => griefs.push(format!("{} : son code risque AT/MP, tel que la CARSAT le notifie", nom)),

@@ -264,7 +264,7 @@ domaine « bulletin ») : ils se déposeront au prochain `moissonner`.
 
 ### Ce que le moteur en fait
 
-`bulletin::Modele` et `bulletin::modele_du_bulletin` : le **simplifié** est le bulletin de V2g, inchangé
+`droit::fiche::ModeleBulletin` et `bulletin::modele_du_bulletin` : le **simplifié** est le bulletin de V2g, inchangé
 Le **complet** garde chaque ligne du modèle, son libellé, sa place, son regroupement et
 ses montants ; il ajoute, **sans rien retirer**, une colonne « Taux employeur » et, **sous** la ligne regroupée « Autres
 charges dues par l'employeur », une ligne « dont … » par contribution (libellé, base, taux et montant du barème). Que ce

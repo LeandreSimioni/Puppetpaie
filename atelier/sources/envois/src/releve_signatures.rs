@@ -101,7 +101,7 @@ impl ReleveSignatures {
                     .iter()
                     .map(|c| {
                         n += 1;
-                        match (c.avenant, c.numero.as_deref()) {
+                        match (c.avenant, c.numero.as_ref()) {
                             (Some(a), Some(n)) => format!("avenant {} au {}", a, n),
                             (Some(a), None) => format!("avenant {} au contrat sans numéro", a),
                             (None, Some(n)) => n.to_string(),

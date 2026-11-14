@@ -3,8 +3,6 @@
 //! Agirc-Arrco, sa limite sous deduction forfaitaire specifique, et le seuil de SMIC d'une cotisation qui ne s'applique
 //! qu'au-dela. Le droit recoit le bareme, le brut et les heures ; l'engagement l'appelle a son calcul.
 
-use std::str::FromStr;
-
 use rust_decimal::prelude::*;
 use serde::Serialize;
 
@@ -70,7 +68,7 @@ pub fn reduction_generale(
     }
     let smic_ref = eur(mul(requis(rg.smic_horaire_reference.map(|n| n.0), "smic_horaire_reference")?, heures));
     let plafond = requis(rg.plafond_smic.map(|n| n.0), "plafond_smic")?;
-    let fillon = rg.formule.as_deref() == Some("fillon");
+    let fillon = rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon);
     let mut coefficient;
     if brut >= mul(plafond, smic_ref) {
         coefficient = Decimal::ZERO;
@@ -84,15 +82,9 @@ pub fn reduction_generale(
         let terme = crochet.checked_powd(puissance).ok_or_else(|| socle::refus!("la réduction générale ne se calcule pas : {} puissance {}", crochet, puissance))?;
         coefficient = add(requis(rg.tmin.map(|n| n.0), "tmin")?, mul(requis(rg.tdelta.map(|n| n.0), "tdelta")?, terme));
     }
-    if let Some(t) = rg.majoration_caisse_conges.as_deref().filter(|t| !t.is_empty()) {
+    if let Some(m) = rg.majoration_caisse_conges {
         if caisse_conges && !coefficient.is_zero() {
-            let parts: Vec<&str> = t.split('/').collect();
-            if parts.len() != 2 {
-                return Err(socle::refus!("fraction illisible : {}", socle::fichiers::repr(t)));
-            }
-            let lire = |s: &str| Decimal::from_str(s).map_err(|_| socle::echec::refus(socle::num::illisible(s)));
-            let (num, den) = (lire(parts[0])?, lire(parts[1])?);
-            coefficient = diviser(mul(coefficient, num), den)?;
+            coefficient = diviser(mul(coefficient, m.numerateur), m.denominateur)?;
         }
     }
     let coefficient = if coefficient.is_zero() { coefficient } else { quantifier4(coefficient) };
@@ -108,7 +100,7 @@ pub fn reduction_au_coefficient(rg: Option<&Parametres>, coefficient: Decimal, b
 }
 
 fn repartir_la_reduction(rg: &Parametres, coefficient: Decimal, montant: Decimal, smic_ref: Decimal, heures: Decimal) -> R<ReductionGenerale> {
-    let total_points = if rg.formule.as_deref() == Some("fillon") { requis(rg.t.map(|n| n.0), "t")? } else { requis(rg.tmin.map(|n| n.0), "tmin")? + requis(rg.tdelta.map(|n| n.0), "tdelta")? };
+    let total_points = if rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon) { requis(rg.t.map(|n| n.0), "t")? } else { requis(rg.tmin.map(|n| n.0), "tmin")? + requis(rg.tdelta.map(|n| n.0), "tdelta")? };
     let part = |taux: Option<Decimal>, cle: &str| -> R<Decimal> {
         if montant.is_zero() {
             return Ok(Decimal::new(0, 2));

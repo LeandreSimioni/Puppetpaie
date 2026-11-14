@@ -38,6 +38,7 @@ use droit::cumul::{self, Constantes, Declare, Fenetre};
 use droit::forme_bareme::Pile;
 use socle::date::Jour;
 use droit::emplois;
+use droit::emplois::AnnexeChomage as Annexe;
 use droit::minima::Par;
 
 use socle::num::{div, Decimal};
@@ -250,32 +251,12 @@ impl Banque {
     }
 }
 
-/// L'annexe du regime des intermittents dont releve un salarie : X (artistes), VIII (techniciens).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Annexe {
-    X,
-    Viii,
-}
-
-impl Annexe {
-    /// Son nom, tel qu'une source le porte (`droit::source::Source::annexe`).
-    fn nom(self) -> &'static str {
-        match self {
-            Annexe::X => "X",
-            Annexe::Viii => "VIII",
-        }
-    }
-}
-
-/// Les deux annexes : X (artistes), VIII (techniciens).
-const LES_DEUX: [&str; 2] = ["X", "VIII"];
-
 /// Les annexes dont parle un conseil sur ce salarie : la sienne, lue de son metier ; les deux quand son metier ne la
 /// dit pas (rien ne se devine : la regle citee vaut alors pour l'une ou l'autre).
-fn annexes_en_jeu(annexe: Option<Annexe>) -> Vec<&'static str> {
+fn annexes_en_jeu(annexe: Option<Annexe>) -> Vec<Annexe> {
     match annexe {
-        Some(a) => vec![a.nom()],
-        None => LES_DEUX.to_vec(),
+        Some(a) => vec![a],
+        None => Annexe::LES_DEUX.to_vec(),
     }
 }
 
@@ -324,11 +305,11 @@ enum Livree {
     /// `bareme:deduction_forfaitaire/plafond_annuel`
     PlafondDeduction,
     /// `bareme:deduction_forfaitaire/taux/<taux>`
-    TauxDeduction(String),
+    TauxDeduction(droit::forme_bareme::CategorieDfs),
     /// `bareme:rubriques_bulletin/id=<rubrique>/taux_pat`
     TauxPatronal(droit::forme_bareme::IdDeCotisation),
     /// `minima:conventions/<idcc>/annexes/<annexe>/repetition/cachet`
-    CachetDeRepetition { idcc: droit::fiche::Idcc, annexe: String },
+    CachetDeRepetition { idcc: droit::fiche::Idcc, annexe: droit::fiche::AnnexeConvention },
 }
 
 impl<'de> Deserialize<'de> for Gabarit {
@@ -416,12 +397,15 @@ fn lire_livree(chemin: &str, bareme: bool) -> R<Livree> {
         (true, ["plafond_securite_sociale", "mensuel"]) => Livree::PlafondMensuel,
         (true, ["plafond_securite_sociale", "horaire"]) => Livree::PlafondHoraire,
         (true, ["deduction_forfaitaire", "plafond_annuel"]) => Livree::PlafondDeduction,
-        (true, ["deduction_forfaitaire", "taux", taux]) => Livree::TauxDeduction(taux.to_string()),
+        (true, ["deduction_forfaitaire", "taux", taux]) => Livree::TauxDeduction(droit::forme_bareme::CategorieDfs::lire(taux)?),
         (true, ["rubriques_bulletin", id, "taux_pat"]) => match id.strip_prefix("id=") {
             Some(id) => Livree::TauxPatronal(droit::forme_bareme::IdDeCotisation::lire(id)?),
             None => return Err(inconnue()),
         },
-        (false, ["conventions", idcc, "annexes", annexe, "repetition", "cachet"]) => Livree::CachetDeRepetition { idcc: droit::fiche::Idcc::lire(idcc)?, annexe: annexe.to_string() },
+        (false, ["conventions", idcc, "annexes", annexe, "repetition", "cachet"]) => match droit::fiche::AnnexeConvention::du_code(annexe) {
+            Some(annexe) => Livree::CachetDeRepetition { idcc: droit::fiche::Idcc::lire(idcc)?, annexe },
+            None => return Err(inconnue()),
+        },
         _ => return Err(inconnue()),
     })
 }
@@ -587,10 +571,10 @@ pub(crate) struct ConseilVu {
 /// Le conseil rendu ; rien si l'un de ses gabarits ne se resout pas. Une source tiree d'une annexe (`annexe` : « X » ou
 /// « VIII ») n'est citee que si cette annexe est en jeu (`annexes` : celles des salaries dont le conseil parle) ; une
 /// source sans annexe l'est toujours.
-fn vue(b: &Banque, c: &Conseil, d: &Donnees, vals: &Valeurs, annexes: &[&str]) -> R<Option<ConseilVu>> {
+fn vue(b: &Banque, c: &Conseil, d: &Donnees, vals: &Valeurs, annexes: &[Annexe]) -> R<Option<ConseilVu>> {
     let mut references = Vec::new();
     for s in &c.source {
-        let d_une_autre_annexe = matches!(s.annexe.as_deref(), Some(a) if !annexes.contains(&a));
+        let d_une_autre_annexe = matches!(s.annexe, Some(a) if !annexes.contains(&a));
         if !d_une_autre_annexe {
             references.push(b.reference_de(s)?);
         }
@@ -608,7 +592,7 @@ fn vue(b: &Banque, c: &Conseil, d: &Donnees, vals: &Valeurs, annexes: &[&str]) -
 
 /// Le premier conseil de la banque pour cette condition (`quand`), rendu avec ces valeurs : un conseil dont un gabarit
 /// ne se resout pas cede la place au suivant ; rien s'il n'en reste aucun.
-fn conseil(b: &Banque, d: &Donnees, quand: Quand, vals: &Valeurs, annexes: &[&str]) -> R<Option<ConseilVu>> {
+fn conseil(b: &Banque, d: &Donnees, quand: Quand, vals: &Valeurs, annexes: &[Annexe]) -> R<Option<ConseilVu>> {
     for c in b.conseils.iter().filter(|c| c.quand == quand) {
         if let Some(v) = vue(b, c, d, vals, annexes)? {
             return Ok(Some(v));
@@ -670,7 +654,7 @@ fn pas(n: usize) -> usize {
 fn generaux(b: &Banque, d: &Donnees) -> R<Vec<ConseilVu>> {
     let mut out = Vec::new();
     for c in b.conseils.iter().filter(|c| c.quand == Quand::Toujours) {
-        if let Some(v) = vue(b, c, d, &Valeurs::new(), &LES_DEUX)? {
+        if let Some(v) = vue(b, c, d, &Valeurs::new(), &Annexe::LES_DEUX)? {
             out.push(v);
         }
     }
@@ -750,7 +734,7 @@ fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: Decimal) -> R<Option
     let saisies = p.saisies();
     let (mut heures_avant, mut gain, mut jours, mut montant) = (Decimal::ZERO, Decimal::ZERO, 0i64, Decimal::ZERO);
     for (l, s) in p.remuneration.iter().zip(saisies) {
-        if l.code != "repetition" || l.heures_annexes.is_zero() {
+        if l.code != droit::catalogue::REPETITION || l.heures_annexes.is_zero() {
             continue;
         }
         // Une ligne sans saisie n'a pas de dates connues.
@@ -979,7 +963,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                     let mut trouve = None;
                     for l in &p.remuneration {
                         let r = droit::catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au)?;
-                        if r.compte_pour != "ouverture_des_droits" {
+                        if r.compte_pour != droit::catalogue::ComptePour::OuvertureDesDroits {
                             continue;
                         }
                         if let Some(pl) = r.plafond_annuel_heures {
@@ -994,7 +978,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                 _ => None,
             };
             if let Some(v) = vals {
-                if let Some(x) = conseil(&b, &d, quand, &v, &[annexe.nom()])? {
+                if let Some(x) = conseil(&b, &d, quand, &v, &[annexe])? {
                     out[i] = Some(x);
                     break;
                 }
@@ -1166,7 +1150,7 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
     }
     // Les annexes de ceux que la phrase nomme : la reference cite X pour un artiste, VIII pour un technicien, les deux
     // quand la liste les mele.
-    let mut en_jeu: Vec<&str> = Vec::new();
+    let mut en_jeu: Vec<Annexe> = Vec::new();
     for (_, fiche, _) in &fiches {
         let annexe = match fiche {
             Some(f) => annexe_de(f)?,

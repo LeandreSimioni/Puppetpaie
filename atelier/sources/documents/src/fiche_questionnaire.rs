@@ -2,7 +2,7 @@
 //! Les `QUESTIONS`, `questionnaire`, `CodeDeDemande` (et `code_au_hasard`), `lire_reponses`, `fiche_depuis_reponses`.
 //!
 //! Les textes (questions, objet, corps, HTML) et les deux tables (pays, nationalites) sont ecrits mot pour mot du questionnaire. Les deux tables ne portent que le code
-//! ISO : la codification UE (quatre valeurs) se deduit dans `codification_ue`. Les pays se
+//! ISO : la codification UE (quatre valeurs) se deduit dans `droit::nationalite`. Les pays se
 //! lisent dans la liste livree (`pays.rs`, COG de l'INSEE) ; seule la table des nationalites (adjectifs) reste ici. Ce que la personne a repondu se lit, et ce qu'on ne sait pas lire
 //! laisse la case VIDE et le dit (`illisible`) : rien n'est complete au hasard. Le departement et le pays de
 //! naissance se lisent dans le NIR.
@@ -137,7 +137,7 @@ pub const CORPS: &str = "Bonjour{virgule_prenom},\n\nPour préparer ton contrat,
 pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton : une réponse s'ouvre avec les questions. Écris chaque réponse après les deux-points, puis envoie-la. Une question dont tu n'as pas la réponse reste vide.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{mailto}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si le bouton ne fait rien, réponds simplement à ce message en recopiant ces lignes avec tes réponses :</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n";
 
 /// Les nationalites (adjectifs) : (mot sans accent, code ISO du pays). La fiche garde le pays (`pays_nationalite`) ;
-/// la codification UE s'en deduit (`codification_ue::code_du_pays`).
+/// la codification UE s'en deduit (`droit::nationalite::code_du_pays`).
 const NATIONALITES: [(&str, &str); 60] = [
     ("francaise", "FR"),
     ("francais", "FR"),
@@ -372,9 +372,9 @@ pub fn date_lue(texte: &str) -> Option<Jour> {
 
 /// (code ISO, codification UE) d'un pays de la liste nomme en francais, ou de son code a deux lettres ;
 /// `None` pour ce que la liste ne connait pas.
-pub fn pays_lu(texte: &str) -> R<Option<(socle::pays::CodePays, Option<&'static str>)>> {
+pub fn pays_lu(texte: &str) -> R<Option<(socle::pays::CodePays, droit::fiche::CodeNationalite)>> {
     let t = sans_accents(texte).replace('\u{2019}', "'");
-    let lu = |p: socle::pays::Pays| (p.code.clone(), Some(socle::pays::codification(&p)));
+    let lu = |p: socle::pays::Pays| (p.code.clone(), droit::nationalite::codification(&p));
     if t.chars().count() == 2 && t.chars().all(|c| c.is_ascii_lowercase()) {
         return Ok(socle::pays::du_code(&t)?.map(lu));
     }
@@ -406,17 +406,17 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anniversaire_droits: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_postal: Option<String>,
+    pub code_postal: Option<droit::fiche::CodePostal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nir: Option<droit::fiche::Nir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nir_cle: Option<droit::fiche::CleNir>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sexe: Option<String>,
+    pub sexe: Option<droit::fiche::Sexe>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pays_naissance: Option<socle::pays::CodePays>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_nationalite_dsn: Option<String>,
+    pub code_nationalite_dsn: Option<droit::fiche::CodeNationalite>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pays_nationalite: Option<socle::pays::CodePays>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -424,7 +424,7 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub banque: Option<BanqueLue>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub departement_naissance: Option<String>,
+    pub departement_naissance: Option<droit::fiche::DepartementNaissance>,
 }
 
 /// Le compte bancaire que les reponses donnent : l'IBAN et le BIC, chacun s'il est lisible.
@@ -466,7 +466,10 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
     if let Some(r) = reponse("code_postal") {
         let cp: String = r.chars().filter(|c| !espace(*c)).collect();
         if cp.chars().count() == 5 && cp.chars().all(chiffre) {
-            d.code_postal = Some(cp);
+            match droit::fiche::CodePostal::lire(&cp) {
+                Ok(cp) => d.code_postal = Some(cp),
+                Err(e) => illisible.push(format!("code postal : « {} » ({})", r, e.phrase)),
+            }
         } else {
             illisible.push(format!("code postal : « {} »", r));
         }
@@ -490,8 +493,8 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
     if let Some(r) = reponse("sexe").filter(|_| d.nir.is_none()) {
         let s = sans_accents(r);
         match s.chars().next() {
-            Some('f') => d.sexe = Some("2".into()),
-            Some('h') | Some('m') => d.sexe = Some("1".into()),
+            Some('f') => d.sexe = Some(droit::fiche::Sexe::Feminin),
+            Some('h') | Some('m') => d.sexe = Some(droit::fiche::Sexe::Masculin),
             _ => illisible.push(format!("sexe : « {} »", r)),
         }
     }
@@ -519,14 +522,14 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
         let t = sans_accents(r);
         let pays = match NATIONALITES.iter().find(|(n, _)| *n == t) {
             Some((_, c)) => Some(c.to_string()),
-            None => pays_lu(&t)?.and_then(|(c, ue)| ue.map(|_| c.to_string())),
+            None => pays_lu(&t)?.map(|(c, _)| c.to_string()),
         };
         match pays {
             Some(pays) => {
                 // La codification se lit dans la liste (un territoire suit son pays de rattachement), `pays.rs`.
                 match socle::pays::du_code(&pays)? {
                     Some(p) => {
-                        d.code_nationalite_dsn = Some(socle::pays::codification(&p).to_string());
+                        d.code_nationalite_dsn = Some(droit::nationalite::codification(&p));
                         d.pays_nationalite = Some(p.code);
                     }
                     None => illisible.push(format!("nationalité : « {} »", r)),
@@ -558,7 +561,7 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
         d.banque = Some(banque);
     }
     // Ce que le NIR ecrit de la naissance complete ce que les reponses ne disent pas.
-    if let Some((departement, pays)) = d.nir.as_ref().and_then(naissance_depuis_nir) {
+    if let Some((departement, pays)) = d.nir.as_ref().map(naissance_depuis_nir).transpose()?.flatten() {
         d.departement_naissance = Some(departement);
         if d.pays_naissance.is_none() {
             d.pays_naissance = pays;
@@ -570,15 +573,15 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
 /// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger), et le pays
 /// de naissance qu'il en deduit (la France, hors 99). Deux cas se taisent : la Corse d'avant 1976 (« 20 ») et un NIR
 /// incomplet.
-fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> Option<(String, Option<socle::pays::CodePays>)> {
+fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> R<Option<(droit::fiche::DepartementNaissance, Option<socle::pays::CodePays>)>> {
     let c: Vec<char> = nir.chars().collect();
     if !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
-        return None;
+        return Ok(None);
     }
-    let dep: String = c[5..7].iter().collect();
-    if dep == "20" {
-        return None;
+    let dep = droit::fiche::DepartementNaissance::lire(&c[5..7].iter().collect::<String>())?;
+    if dep.est_l_ancienne_corse() {
+        return Ok(None);
     }
-    let pays = (dep != "99").then(socle::pays::CodePays::france);
-    Some((dep, pays))
+    let pays = (!dep.est_etranger()).then(socle::pays::CodePays::france);
+    Ok(Some((dep, pays)))
 }

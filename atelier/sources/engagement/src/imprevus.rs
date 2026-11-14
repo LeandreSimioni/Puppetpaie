@@ -488,19 +488,26 @@ pub fn motif_de_suspension(code: MotifDeSuspension) -> R<Option<ProprietesDeSusp
     droit::permanents::motif_de_suspension(code)
 }
 
-/// Ce que le motif d'une suspension interdit de declarer : un motif que `permanents-base.json` ne dit pas, ou le 200
-/// (conges payes).
-pub fn verifier_motif_de_suspension(code: MotifDeSuspension, qui: &str) -> R<ProprietesDeSuspension> {
-    let Some(m) = motif_de_suspension(code)? else {
-        return Err(socle::echec::cle(
+/// Les proprietes du motif d'une suspension de `qui` ; un motif que `permanents-base.json` ne dit pas se refuse, en
+/// nommant la cle `motif`.
+pub fn proprietes_du_motif(code: MotifDeSuspension, qui: &str) -> R<ProprietesDeSuspension> {
+    match motif_de_suspension(code)? {
+        Some(m) => Ok(m),
+        None => Err(socle::echec::cle(
             format!(
                 "{} : motif de suspension inconnu ({}), que le logiciel ne connaît pas : le choisir dans la liste des motifs.",
                 qui,
                 repr(code.code())
             ),
             "motif",
-        ));
-    };
+        )),
+    }
+}
+
+/// Ce que le motif d'une suspension interdit de declarer : un motif que `permanents-base.json` ne dit pas, ou le 200
+/// (conges payes).
+pub fn verifier_motif_de_suspension(code: MotifDeSuspension, qui: &str) -> R<ProprietesDeSuspension> {
+    let m = proprietes_du_motif(code, qui)?;
     if let Some(pourquoi) = &m.ne_se_declare_pas {
         return Err(socle::refus!(
             "Motif de suspension {} ({}) : {} Les conges payes pris se saisissent dans le mois (« conges pris »).",
@@ -575,7 +582,7 @@ pub fn suspendu_sans_remuneration(
         if !du_contrat(&imp, cle, numero, contrat_debut)? || !croise(&imp, debut, fin)? {
             continue;
         }
-        let remunere = motif_de_suspension(code)?.is_none_or(|m| m.remunere);
+        let remunere = proprietes_du_motif(code, &cle.to_string())?.remunere;
         if !remunere {
             siennes.push(imp);
         }
@@ -614,7 +621,7 @@ pub fn jours_de_conges_non_acquis(
         if !du_contrat(&imp, cle, numero, contrat_debut)? {
             continue;
         }
-        let acquiert = motif_de_suspension(code)?.is_none_or(|m| m.acquiert_conges);
+        let acquiert = proprietes_du_motif(code, &cle.to_string())?.acquiert_conges;
         if acquiert {
             continue;
         }
@@ -648,7 +655,7 @@ pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour
         if imp.salarie() != cle {
             continue;
         }
-        let Some(motif) = motif_de_suspension(code)? else { continue };
+        let motif = proprietes_du_motif(code, &cle.to_string())?;
         if motif.remunere {
             continue;
         }

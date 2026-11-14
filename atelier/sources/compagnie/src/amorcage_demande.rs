@@ -180,7 +180,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: NatureDEvenementDeclench
 /// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent.
 pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, mois: Mois, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
-    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let dossier = documents::PieceDuMois::Amorcage.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string()));
     let premier = droit::natures::NumeroDOrdre::suivant(envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Disque))?;
     let mut fichiers = Vec::new();
@@ -194,7 +194,7 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureD
             date_constitution: Some(constitution),
         };
         let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| e.en_classe(Classe::Refuse))?;
-        let cible = dossier.join(format!("Amorcage{}_{}_{}.dsn", motif, l.salarie, constitution.aaaammjj()));
+        let cible = dossier.join(format!("{}{}_{}_{}.dsn", documents::SorteDePieceProduite::Amorcage.prefixe(), motif, l.salarie, constitution.aaaammjj()));
         crate::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
         declarations::dsn::ecrire(&texte, &cible).map_err(|e| e.reclasser(Classe::Disque))?;
         crate::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::pieces_ecrites::cle_de_piece(&cible), None, None)?;
@@ -233,7 +233,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         return Err(erreur(Classe::AmorcageImpossible, format!("Taux de PAS non demandé : {}.", raisons.join(" ; "))));
     }
     let mois = d.mois;
-    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let dossier = documents::PieceDuMois::Amorcage.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string()));
     let fichiers = ecrire(ctx, paies, &retenus, d.motif, mois, d.constitution, d.envoi_test)?;
     ecrits.extend(fichiers.iter().cloned());
     // Le recapitulatif : ce qu'on lit avant de deposer -- et apres, pour savoir ce qu'on attend.
@@ -250,10 +250,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         "DEMANDES :".into(),
     ];
     for l in &retenus {
-        let contrat = match l.contrat.as_deref() {
-            Some(c) => format!("contrat {}", c),
-            None => "sans numéro de contrat".to_string(),
-        };
+        let contrat = engagement::numeros::numero_dit(l.contrat.as_ref(), "contrat ", "", "sans numéro de contrat");
         out.push(format!("  {} {} {} ({})", gauche(l.salarie.as_str(), 14), gauche(&l.libelle, 22), contrat, mois));
     }
     if !ecartes.is_empty() {
@@ -263,7 +260,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
             out.push(format!("  {} {}", gauche(l.salarie.as_str(), 14), l.pourquoi_pas));
         }
     }
-    let recap = dossier.join(format!("Amorcage{}_{}_recapitulatif.txt", d.motif, jour));
+    let recap = dossier.join(format!("{}{}_{}_recapitulatif.txt", documents::SorteDePieceProduite::Amorcage.prefixe(), d.motif, jour));
     std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| socle::echec::du_disque(&recap, &e).reclasser(Classe::Disque))?;
     Ok(Lot { motif: d.motif, dossier, fichiers, lignes: retenus, ecartes, recapitulatif: recap })
 }

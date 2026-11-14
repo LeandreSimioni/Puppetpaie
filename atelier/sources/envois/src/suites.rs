@@ -13,7 +13,7 @@ pub struct DepotRefuse {
     /// Une DSN ou une DPAE.
     pub quoi: crate::journal::Acte,
     pub reel: bool,
-    pub classe: String,
+    pub classe: Option<socle::echec::Classe>,
     pub message: String,
     /// Ce qui a ouvert le depot reel (`None` pour un test).
     pub repetition: Option<crate::journal::Ouverture>,

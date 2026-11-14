@@ -188,7 +188,7 @@ pub struct PaieVersee {
     pub pas: Option<Decimal>,
     pub taux_pas: Option<Decimal>,
     pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant_pas: Option<String>,
+    pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
     pub verse_le: Option<Jour>,
     /// Le depot de la DSN qui la declare, et la copie de son fichier.
     pub depose_le: Option<Jour>,
@@ -244,9 +244,9 @@ pub struct DatesTravaillees {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CotisationImprimee {
-    pub famille: Option<String>,
+    pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
     pub libelle: String,
-    pub cotisation: Option<String>,
+    pub cotisation: Option<crate::ecarts::RegroupementDeComparaison>,
     pub base: Option<Decimal>,
     pub taux_employeur: Option<Decimal>,
     pub montant_employeur: Option<Decimal>,
@@ -275,9 +275,16 @@ pub struct EmploiImprime {
 pub struct BulletinSource {
     pub fichier: NomDeFichier,
     pub page: u64,
-    pub logiciel: Option<String>,
+    pub logiciel: Option<LogicielDUnBulletin>,
     pub numero: Option<String>,
-    pub contrat: Option<String>,
+    pub contrat: Option<NumeroContrat>,
+}
+
+droit::cle_opaque! {
+    /// LE LOGICIEL DE PAIE D'UN BULLETIN IMPORTE, reconnu a sa signature : une cle de `logiciels` de la table de lecture
+    /// des bulletins (`bulletins-lecture-base.json`). Une cle du logiciel (`droit::cle_opaque!`) ; aucun : un autre
+    /// logiciel.
+    pub struct LogicielDUnBulletin, "logiciel d'un bulletin";
 }
 
 /// UN CONTRAT ATTESTE, AVEC LES BORNES DE SON ENGAGEMENT : la ligne que l'import manipule, de la lecture de la piece a
@@ -643,12 +650,13 @@ pub struct LigneDeRemuneration {
     pub soumis: bool,
 }
 
-/// Une ligne de cotisation d'une paie importee, sous la cotisation que l'import lui a donnee (`None` : il ne l'a pas
-/// qualifiee) ; ce que le bulletin n'imprime pas est vide.
+/// Une ligne de cotisation d'une paie importee, sous la cotisation ou le regroupement que l'import lui a donne (`None` :
+/// il ne l'a pas qualifiee) ; ce que le bulletin n'imprime pas est vide. Celle d'une paie validee porte sa cotisation
+/// (`etats::PaieDuMois::cotisations`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneDeCotisation {
-    pub id: Option<droit::forme_bareme::IdDeCotisation>,
-    pub famille: Option<String>,
+    pub id: Option<crate::ecarts::RegroupementDeComparaison>,
+    pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
     pub libelle: String,
     pub base: Option<Decimal>,
     pub taux_pat: Option<Decimal>,
@@ -663,7 +671,7 @@ pub struct LigneDeCotisation {
 pub struct PasImporte {
     pub taux: Option<Decimal>,
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant: Option<String>,
+    pub identifiant: Option<droit::pas::IdentifiantDuTauxPas>,
     pub prelevement: Decimal,
 }
 
@@ -733,7 +741,7 @@ impl Importe {
             fin,
             numero: match self.carte().numero.clone() {
                 Some(n) => Some(n),
-                None => p.bulletin.as_ref().and_then(|b| b.contrat.as_deref()).and_then(NumeroContrat::d_une_piece),
+                None => p.bulletin.as_ref().and_then(|b| b.contrat.clone()),
             },
             mois,
             planning: Vec::new(),
@@ -786,19 +794,17 @@ impl Importe {
             .cotisations
             .iter()
             .flatten()
-            .map(|l| {
-                Ok(LigneDeCotisation {
-                    id: l.cotisation.as_deref().filter(|c| !c.is_empty()).map(droit::forme_bareme::IdDeCotisation::lire).transpose()?,
-                    famille: l.famille.clone().filter(|f| !f.is_empty()),
-                    libelle: l.libelle.clone(),
-                    base: l.base,
-                    taux_pat: taux(l.taux_employeur),
-                    montant_pat: l.montant_employeur,
-                    taux_sal: taux(l.taux_salarie),
-                    montant_sal: l.montant_salarie,
-                })
+            .map(|l| LigneDeCotisation {
+                id: l.cotisation.clone(),
+                famille: l.famille.clone(),
+                libelle: l.libelle.clone(),
+                base: l.base,
+                taux_pat: taux(l.taux_employeur),
+                montant_pat: l.montant_employeur,
+                taux_sal: taux(l.taux_salarie),
+                montant_sal: l.montant_salarie,
             })
-            .collect::<R<_>>()?;
+            .collect();
 
         // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let mut bases: BTreeMap<Assiette, Decimal> = BTreeMap::new();
@@ -807,8 +813,15 @@ impl Importe {
         }
         let fin_periode = engagement.fin_periode();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
-        let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref()))?;
-        for (id, base) in cotisations.iter().filter_map(|l| l.id.as_ref().zip(l.base)).filter(|(_, b)| !b.is_zero()) {
+        let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref())?)?;
+        // Un regroupement n'est pas une rubrique du bareme : sa base ne se range pas.
+        fn de_cotisation(l: &LigneDeCotisation) -> Option<&droit::forme_bareme::IdDeCotisation> {
+            match &l.id {
+                Some(crate::ecarts::RegroupementDeComparaison::Cotisation(id)) => Some(id),
+                Some(_) | None => None,
+            }
+        }
+        for (id, base) in cotisations.iter().filter_map(|l| de_cotisation(l).zip(l.base)).filter(|(_, b)| !b.is_zero()) {
             if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
                 bases.entry(cle).or_insert(base);
             }

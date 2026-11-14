@@ -427,6 +427,18 @@ impl<'de> Deserialize<'de> for Verdict {
     }
 }
 
+/// LE COMPTE RENDU D'UN TEST DE DEPOT, ecrit en minuscules : son bilan attendu (`attendu`, aucun certificat ni refus
+/// encore), conforme (`ok`), refuse (`ko`). Que portent le test conforme d'un fichier (`etats::Repetition`, `null` sans
+/// test conforme) et l'ouverture d'un depot reel au journal des envois (`ligne::Ouverture`), qui garde ce qu'il valait
+/// quand le depot est parti (un depot parti avant son bilan a ecrit `attendu`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompteRenduDuTest {
+    Attendu,
+    Ok,
+    Ko,
+}
+
 droit::codes_fermes! {
     /// LE STATUT QU'UNE LISTE DES RETOURS DONNE A UN RETOUR (`flux.retour.statut`) : « OK », « KO », « ANO », « EN COURS »
     /// (avec une espace : guide de l'API DSN v6.8, l. 87 et 1733-1745,
@@ -1886,8 +1898,13 @@ impl Entree94 {
         let (Some(nir), Some(identifiant)) = (self.nir.clone(), self.identifiant.clone()) else { return Ok(None) };
         let taux = self.taux.as_deref().map(taux_de_pas).transpose()?;
         let type_taux = self.type_.as_deref().map(type_de_taux).transpose()?;
-        Ok(Some(ReleveTauxPas { nir, taux, type_taux, identifiant }))
+        Ok(Some(ReleveTauxPas { nir, taux, type_taux, identifiant: identifiant_de_pas(&identifiant)? }))
     }
+}
+
+/// Un identifiant de taux de PAS lu dans un compte rendu (S21.G00.50.008) ; une autre forme refuse la piece.
+fn identifiant_de_pas(t: &str) -> R<droit::pas::IdentifiantDuTauxPas> {
+    droit::pas::IdentifiantDuTauxPas::lire(t).map_err(|e| e.reclasser(Classe::Illisible))
 }
 
 /// Un taux de PAS lu dans un compte rendu (S21.G00.50.006) ; une autre forme refuse la piece.
@@ -1908,7 +1925,7 @@ pub struct ReleveTauxPas {
     pub taux: Option<droit::pas::TauxDePas>,
     #[serde(rename = "type")]
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant: String,
+    pub identifiant: droit::pas::IdentifiantDuTauxPas,
 }
 
 /// LES TAUX DE PAS D'UN COMPTE RENDU, et la strategie qui les a lus (`None` : aucune n'a rien trouve).
@@ -1977,7 +1994,7 @@ fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
             Some(t) => (Some(taux_de_pas(&t)?), Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip)),
             None => (None, None),
         };
-        releves.push(ReleveTauxPas { nir, taux, type_taux, identifiant: identifiant.to_string() });
+        releves.push(ReleveTauxPas { nir, taux, type_taux, identifiant: identifiant_de_pas(identifiant)? });
     }
     Ok(releves)
 }
@@ -2079,7 +2096,7 @@ fn pas_par_balayage(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
                 cur.taux = Some(v.clone());
             } else if cur.type_.is_none() && droit::type_taux_pas::TypeDeTauxPas::du_code(v).is_some() {
                 cur.type_ = Some(v.clone());
-            } else if cur.identifiant.is_none() && (v == "-1" || ((1..=18).contains(&v.chars().count()) && v.chars().all(|c| c.is_ascii_digit()))) {
+            } else if cur.identifiant.is_none() && droit::pas::IdentifiantDuTauxPas::lire(v).is_ok() {
                 cur.identifiant = Some(v.clone());
             }
         }
@@ -2565,30 +2582,27 @@ pub fn rattacher(quis: &[&str], index: &[(droit::contexte::IdSalarie, String)]) 
 
 /// UN TAUX AT/MP NOTIFIE, tel qu'un compte rendu de nature 34 le porte : l'etablissement de la declaration a laquelle il
 /// est rattache (`SIREN`, `nic_affectation`), puis un element `taux_AT` (`code_ctn`, `section`, `code_risque`,
-/// `temoin_bureau`, `taux`, `date_effet`, `date_calcul`).
+/// `temoin_bureau`, `taux`, `date_effet`, `date_calcul`). Le code CTN et la section ne se lisent pas : rien ne s'en sert.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TauxAtmpNotifie {
     pub siren: droit::fiche::Siren,
     pub nic: droit::fiche::Nic,
-    pub code_ctn: String,
-    pub section: String,
     /// Le code risque tel que la DSN le declare (S21.G00.40.040) : celui de la notification, suivi du « B » quand le taux
     /// est celui des fonctions support.
-    pub code_risque: String,
+    pub code_risque: droit::bareme::CodeRisqueAt,
     /// En pourcentage (1.50 pour 1,50 %).
     pub taux: socle::num::Decimal,
     pub date_effet: socle::date::Jour,
     pub date_calcul: Option<socle::date::Jour>,
 }
 
-/// AAAAMMJJ (le format du schema des bilans) ou AAAA-MM-JJ.
-fn jour_aaaammjj(t: &str) -> Option<socle::date::Jour> {
-    let c: Vec<u32> = t.chars().filter_map(|x| x.to_digit(10)).collect();
-    if c.len() != 8 {
-        return None;
+/// Le jour d'une zone d'une notification : `AAAAMMJJ`, ou une date de XML Schema (`AAAA-MM-JJ`, avec ou sans fuseau :
+/// `2026-01-01Z`, le type `xs:date` du schema des bilans), le jour tel qu'ecrit ; ces formes seules.
+fn jour_notifie(t: &str) -> Option<socle::date::Jour> {
+    match Zone::lue(t, format::Aaaammjj).valeur().filter(|j| j.aaaammjj() == t) {
+        Some(j) => Some(j),
+        None => Zone::lue(t, format::DateXsd).valeur().map(|(jour, _fuseau)| jour),
     }
-    let nombre = |chiffres: &[u32]| chiffres.iter().fold(0, |n, d| n * 10 + d);
-    socle::date::Jour::nouveau(nombre(&c[..4]) as i32, nombre(&c[4..6]), nombre(&c[6..8]))
 }
 
 /// LES TAUX AT/MP QU'UNE NOTIFICATION DE NATURE 34 COMMUNIQUE. Le guide de l'API DSN (§5.26.1 : « CR métier taux AT »,
@@ -2615,33 +2629,31 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
             }
             let siren_lu = droit::fiche::Siren::lire(&siren).map_err(|_| illisible("SIREN", &siren))?;
             let nic_lu = droit::fiche::Nic::lire(&nic).map_err(|_| illisible("NIC", &nic))?;
+            // Le code de la notification a cinq signes (le « B » est son temoin bureau) : sa forme est celle de la DSN.
             let code = champ("code_risque").to_uppercase();
-            let ok_code = code.len() == 5 && code.chars().all(|c| c.is_ascii_digit() || c.is_ascii_uppercase());
-            if !ok_code {
+            let Some(lu) = droit::bareme::CodeRisqueAt::lire(&code).ok().filter(|c| c.as_str().len() == 5) else {
                 return Err(illisible("code risque", &code));
-            }
+            };
             let bureau = champ("temoin_bureau");
             let code_risque = match bureau.as_str() {
-                "" => code,
-                "B" | "b" => format!("{}B", code),
+                "" => lu,
+                "B" | "b" => lu.avec_bureau()?,
                 autre => return Err(illisible("témoin bureau", autre)),
             };
             let brut = champ("taux");
             let taux = socle::num::decimal_a_virgule(&brut).filter(|v| *v > socle::num::Decimal::ZERO && *v < socle::num::Decimal::from(100));
             let Some(taux) = taux else { return Err(illisible("taux", &brut)) };
             let effet = champ("date_effet");
-            let Some(date_effet) = jour_aaaammjj(&effet) else { return Err(illisible("date d'effet", &effet)) };
+            let Some(date_effet) = jour_notifie(&effet) else { return Err(illisible("date d'effet", &effet)) };
             out.push(TauxAtmpNotifie {
                 siren: siren_lu,
                 nic: nic_lu,
-                code_ctn: champ("code_ctn"),
-                section: champ("section"),
                 code_risque,
                 taux,
                 date_effet,
                 date_calcul: match champ("date_calcul") {
                     c if c.is_empty() => None,
-                    c => Some(jour_aaaammjj(&c).ok_or_else(|| illisible("date de calcul", &c))?),
+                    c => Some(jour_notifie(&c).ok_or_else(|| illisible("date de calcul", &c))?),
                 },
             });
         }

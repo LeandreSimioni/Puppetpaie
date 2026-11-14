@@ -25,7 +25,9 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `iso-32000/adobe-iso32000-1-pdf17-20261111.pdf` : transcription (extraits) `iso-32000/adobe-iso32000-1-pdf17-extraits-20261111.md`
 - `spiac-cgt-pav-minima-20260101.xlsx` : transcription `spiac-cgt-pav-minima-20260101.csv`
 - `syndeac-ccneac-artistes-dramatiques-nao-2026.xlsx` : transcription `syndeac-ccneac-artistes-dramatiques-nao-2026.csv`
-- `unedic-circulaire-2016-25-annexes-8-10.pdf` : transcription `unedic-circulaire-2016-25-annexes-8-10.txt`
+- `unedic-circulaire-2016-25-annexes-8-10.pdf` : transcription `unedic-circulaire-2016-25-annexes-8-10.txt` ; le moteur
+  s'en sert dans `droit::fiche::NumeroObjetSpectacle::annee_de_la_demande` (fiche 2, § 1.1.3.2, l'année d'un numéro
+  d'objet)
 - `unicode/unicode-norme-18.0.0-chapitre-3-20261015.html` : transcription (extraits) `unicode/unicode-norme-18.0.0-chapitre-3-extraits-20261015.md`
 - `unicode/unicode-politique-de-stabilite-20261015.html` : transcription (extraits) `unicode/unicode-politique-de-stabilite-extraits-20261015.md`
 
@@ -98,8 +100,10 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `code-general-des-collectivites-territoriales/xml/L2531-4.xml` : `08ab00e3503a6ff59760be7cfb34c3fa28c546da217a946dad2e0ad6fa724883`
 - `code-general-des-collectivites-territoriales/xml/L2531-6.xml` : `ac6b6fe707e5b08816a050780fec99405376ed3eece5bf3cb21ba65f4b95cd45`
 - `dsn-cahier-technique-2026.1-oeth-extrait.md` : `f2736ccd2701bde5a6c62ee406e6e7de1d02d80627eb39c1c0a2a6c4f58b7109`
-- `editeur-dsn/LISEZMOI.md` : `bf2f26c7c69a00c4e7d52031028dc6fcc0fd02b152b510ce88e31cffcacf33ff`
+- `editeur-dsn/LISEZMOI.md` : `770b787afefd5360a392ac924f8f7110aad33db6597f8f8570e8694344c36a3f`
 - `editeur-dsn/charte-editeurs-revue-forme.pdf` : `212eebfad46f3f6c397f174ff69d7b5cbc7aeccbd6d9307782735bc528b8356c`
+- `editeur-dsn/guide-urssaf-regularisation-v5.2-20261019.pdf` : `08981279e6dda69d029e85b3a1c6f80124f6404e1bd9856aaf679ad8f7deedd2`
+- `editeur-dsn/guide-urssaf-regularisation-v5.2-20261019.txt` : `078da9a5d2020fcc6499a99c56cf2aaffdf9ed2588ad0c0242553ae4468dc3e5`
 - `editeur-dsn/guide-urssaf-regularisation.pdf` : `7be4aabb6c3b0c7f118d7232e22580e705e01d7d5d8b0080c3328de5a33c4456`
 - `editeur-dsn/guide-urssaf-regularisation.txt` : `58a110144a4d701024dad4cf8de846f40a6ae3e556e4cb0d6366d087ebb24a4b`
 - `editeur-dsn/mode-operatoire-procedure-editeur.pdf` : `7c19e2bf2284d372a60c616b929c0fc96b04b8b860083c7f3afc22160afaf146`
@@ -153,8 +157,6 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `kali-3252-doublage-directeurs-artistiques-20260929.md` : `5ac8cabfe2f53be6bbcf5293ccb9c7ee1bbadd319b0b8ae5475c4949114f8f30`
 - `kali-3252-frais-sante-art842-financement-20260929.md` : `92d609d60d862c5204fb803884ba54768e9e704c59edec19225263eeb5deef72`
 - `kali-3252-mannequins-annexe-v-avenant-2-20260929.md` : `d2b05a17269eb2e0b2dd9ff3eacac09e9ea5564fa79a7bb3f2eeed041d92a0bb`
-- `kali-entrepot/articles.jsonl.gz` : `c3dab7425d9d050d5076ae4713fe2114ca1c0658d77f42d4f9350574e1bb88a6`
-- `kali-entrepot/etat.json` : `a5e2dacc1521f37aa8eb1ac8d59cfbd3d8029fb9a31e5f41eeace902a57068f2`
 - `lecture-comparee-20260921.md` : `8dc226afbb372b2f089c894a0f609e77787de9840464f2c98f520f966a248f39`
 - `legi-entrepot/articles.jsonl.gz` : `72c8f3bc0d5f98b28ea2232549b33aa178ffec27b5db68229ec3f45fe74d5296`
 - `legi-entrepot/etat.json` : `9959f9cfb436ba7b44459d2a0bb798bae657e4e904c47b94d0085378ce679cb5`
@@ -176,7 +178,15 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `unedic-circulaire-2016-25-annexes-8-10.txt` : `d7959bc19982e8c3d8492e41ee9e813c5b9c8afa4c47bfe1086bbf5516fdeac7`
 - `urssaf-codes-types-personnel-20261013.LISEZ-MOI.md` : `4e4df5d86de57ea9ef50b68e354aac98d8588db02d5d38510ebd691d6951a95e`
 - `urssaf-codes-types-personnel-20261013.csv` : `00499ac0a3f9b4b314352f4b941445a3570d2f8789a6382c222d9db1430609b6`
+- `urssaf-codes-types-personnel-20261029.LISEZ-MOI.md` : `b4ef761c5fb24279f2c8047f371c87f403867cff14d729dc5d91f060d3cc2280`
+- `urssaf-codes-types-personnel-20261029.csv` : `523c21bbff70d747ebf6f0689ce3ef39790c6d7ad0158d716888084e45d6b75c`
+- `urssaf-codes-types-personnel-20261029.xml` : `0b226ebaa58b900d55d472a0fa57689f16df0b57ccf5f5ce07ca5eb3b17e1afb`
+- `urssaf-codes-types-personnel-historique-20261029.csv` : `4e68d20f2c6281ebaa3f71f1bf477f5e4e87dab8661f02a8607f2a43e769f1b9`
+- `urssaf-codes-types-personnel-historique-20261029.xml` : `36772f6ff4ea6ef5fd9dc2a897f798d6c3db44967bb017fc74c57d3835979fc9`
 - `urssaf-codes-types-personnel.csv` : `12b280d883c49c3bcad7971ab9269e372a628d64bfc7f0254def1ce31ab73171`
 - `urssaf-liste-des-sites-et-des-activites.csv` : `95fd488047c8a70ae70d447616ff5433d790bbe5d6e3eb6061dd77bd42423c04`
 - `urssaf-table-des-urssaf-20260618.csv` : `60c86ab3781bd9874e6a8e5cdf06044e8ad36ea7f108039a6f806127f2869ca2`
+- `urssaf-taux-versement-mobilite-20261114.LISEZ-MOI.md` : `26073b27c869102b838ccba60b576f869a93993722e32a2008fa2b85b8eec7ec`
+- `urssaf-taux-versement-mobilite-20261114.csv` : `c6b166d24447efa149a9577ca3e464586c2e9919b3c5821ab1c1f7b9255dca1d`
+- `urssaf-taux-vmrr-20260101.xlsx` : `42d7d79289afa82df4067e78058a17b20a03b848dd3d7d16a93f13173a986488`
 - `veille-kali.json` : `58be405cd7ea5147a013aa66fb951ac83dbfa25e44cfc9a4f77089b9eeefecca`

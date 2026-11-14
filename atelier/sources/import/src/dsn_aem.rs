@@ -9,10 +9,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use declarations::champs::Saisie;
-
 use declarations::dsn_lue::{Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
-use droit::fiche::{Nir, NumeroObjetSpectacle};
+use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, Nir, NumeroObjetSpectacle};
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::fichiers::NomDeFichier;
@@ -37,8 +35,9 @@ pub struct SalarieDeclare {
 }
 
 impl SalarieDeclare {
-    /// La fiche salarie que la DSN remplit : son identite, puis son emploi.
-    pub fn fiche(&self) -> socle::echec::R<Saisie> {
+    /// La fiche salarie que la DSN remplit : son identite, puis son emploi ; et la faute de chaque case que la DSN porte
+    /// hors de son type (la case reste vide).
+    pub fn fiche(&self) -> socle::echec::R<(ChampsSalarie, Vec<FauteDeCase>)> {
         #[derive(Serialize)]
         struct Fiche<'a> {
             #[serde(flatten)]
@@ -46,13 +45,14 @@ impl SalarieDeclare {
             #[serde(flatten)]
             emploi: &'a Option<EmploiDeclare>,
         }
-        crate::proposee::de(droit::fiche::NomDeFiche::Salarie, &Fiche { individu: &self.individu, emploi: &self.emploi })
+        crate::proposee::de(&Fiche { individu: &self.individu, emploi: &self.emploi })
     }
 }
 
-/// La fiche Entreprise que la DSN remplit (`champs-base.json`), telle que les fiches la lisent.
-pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<Saisie> {
-    crate::proposee::de(droit::fiche::NomDeFiche::Entreprise, e)
+/// La fiche Entreprise que la DSN remplit (`champs-base.json`), telle que les fiches la lisent, et la faute de chaque case
+/// qu'elle porte hors de son type.
+pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<(ChampsEntreprise, Vec<FauteDeCase>)> {
+    crate::proposee::de(e)
 }
 
 /// Un numero d'objet spectacle, vu dans une DSN ou dans une AEM.
@@ -61,7 +61,8 @@ pub struct ObjetDeclare {
     pub premier_mois: Mois,
     pub dernier_mois: Mois,
     pub contrats: i64,
-    pub source: &'static str,
+    /// La piece qui le declare.
+    pub source: crate::reponse::Source,
 }
 
 /// UN CONTRAT QU'UN VERSEMENT DE LA DSN PAIE, avec ce que la DSN lui attribue (`PaieDuContrat` : son brut, son salaire
@@ -94,7 +95,7 @@ pub struct LectureDsn {
     pub paies: BTreeMap<(Mois, Option<Nir>, engagement::numeros::NumeroContrat), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
-    pub atmp: BTreeMap<i32, (Mois, String, Option<Decimal>)>,
+    pub atmp: BTreeMap<i32, (Mois, droit::bareme::CodeRisqueAt, Option<Decimal>)>,
     /// Les adhesions prevoyance de la derniere DSN qui en declare.
     pub adhesions: Vec<Adhesion>,
     /// Les conventions collectives que chaque DSN declare, dans l'ordre des mois (`conventions_divergentes`).
@@ -214,7 +215,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             }
         }
         // Le code risque de la DSN : un seul pour tous ses contrats, sinon rien (on ne choisit pas).
-        let risques: BTreeSet<(String, Option<Decimal>)> =
+        let risques: BTreeSet<(droit::bareme::CodeRisqueAt, Option<Decimal>)> =
             info.contrats.iter().filter_map(|c| c.code_risque.clone().map(|r| (r, c.taux_at))).collect();
         if risques.len() == 1 {
             if let Some((code, taux)) = risques.into_iter().next() {
@@ -234,7 +235,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                         premier_mois: mois,
                         dernier_mois: mois,
                         contrats: 0,
-                        source: "DSN",
+                        source: crate::reponse::Source::Dsn,
                     });
                     out.objets.len() - 1
                 });
@@ -252,7 +253,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             let c = dernier_contrat.get(&nir.as_ref()).copied();
             // Les initiales du numero de son dernier contrat (avant le premier point) ; aucune sans numero.
             let initiales: String =
-                c.and_then(|c| c.numero.as_deref()).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();
+                c.and_then(|c| c.numero.as_ref()).map(engagement::numeros::NumeroContrat::as_str).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();
             let avant = index_salaries.get(&nir).and_then(|&i| out.salaries[i].premier_contrat);
             let premier = info.contrats.iter().filter(|x| x.nir == nir).filter_map(|x| x.debut).chain(avant).min();
             let decl = SalarieDeclare {
@@ -292,7 +293,8 @@ pub struct ContratAtteste {
     pub nir: Nir,
     pub debut: socle::date::Jour,
     pub fin: socle::date::Jour,
-    /// Le numero d'objet de la zone 638..650 : a blanc ou hors de sa forme, aucun (`NumeroObjetSpectacle::d_une_piece`).
+    /// Le numero d'objet de la zone 638..650 : a blanc ou hors de sa forme, aucun (`NumeroObjetSpectacle::d_une_piece` ; hors
+    /// de sa forme, sa faute est une anomalie de la lecture, `lire_aem`).
     pub numero_objet: Option<NumeroObjetSpectacle>,
     pub(crate) heures: i128,
     /// Les cachets, et les cachets « groupes » (la case que le gabarit garde a 00).
@@ -323,14 +325,15 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     ContratLu { salarie, debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
 }
 
-/// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, et les
-/// fichiers ou enregistrements illisibles. Un `CalculImpossible` (un brut qui n'est pas un nombre)
-/// n'est pas rattrape.
-pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), socle::echec::Echec> {
+/// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, les fichiers ou enregistrements illisibles (ignores),
+/// et les fautes des cases laissees vides d'un enregistrement repris (un numero d'objet hors de sa forme). Un
+/// `CalculImpossible` (un brut qui n'est pas un nombre) n'est pas rattrape.
+pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec<String>), socle::echec::Echec> {
     use socle::num::{decimal_lu, entier_lu};
     let mut vus: Vec<(Vec<String>, ContratAtteste)> = Vec::new();
     let mut connus: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
     let mut illisibles = Vec::new();
+    let mut fautes = Vec::new();
     // `glob.glob(".../*.txt")` : pas de fichier cache, ordre des chaines.
     let noms: Vec<String> = noms_tries(dossier)?.into_iter().filter(|n| !n.starts_with('.') && n.ends_with(".txt")).collect();
     for nom in noms {
@@ -370,7 +373,15 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                 }
             };
             let objet_ecrit = champ(&l, 638, 650).trim_matches(blanc).to_string();
-            let numero_objet = NumeroObjetSpectacle::d_une_piece(&objet_ecrit);
+            // Hors de sa forme, la case reste vide sans refuser l'enregistrement (#439), et sa faute est une anomalie de
+            // l'import.
+            let numero_objet = match NumeroObjetSpectacle::d_une_piece(&objet_ecrit) {
+                Ok(n) => n,
+                Err(e) => {
+                    fautes.push(format!("{} : {} ; le contrat se reprend sans lui.", nom, e.phrase));
+                    None
+                }
+            };
             let entiers = [(650, 653), (653, 655), (655, 657), (657, 659)].map(|(a, b)| entier_lu(&champ(&l, a, b)));
             let [Some(heures), Some(c1), Some(c2), Some(jours)] = entiers else {
                 illisible(&mut illisibles);
@@ -412,7 +423,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
     }
     let mut contrats: Vec<ContratAtteste> = vus.into_iter().map(|(_, c)| c).collect();
     contrats.sort_by(|a, b| (a.debut, a.fin, &a.nir).cmp(&(b.debut, b.fin, &b.nir)));
-    Ok((contrats, illisibles))
+    Ok((contrats, illisibles, fautes))
 }
 
 // ------------------------------------------------------------------ l'entreprise de chaque piece
@@ -534,8 +545,8 @@ mod tests_parametrage {
         let lu = super::lire_dsn(&d).unwrap();
         std::fs::remove_dir_all(&d).ok();
         let c = lu.entreprise.declarant_dsn.clone().unwrap();
-        assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.as_deref()), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
-        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
+        assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.map(|c| c.as_str())), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
+        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), droit::bareme::CodeRisqueAt::lire("923AD").unwrap(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
         assert_eq!(lu.adhesions[0].organisme, Some(droit::organismes::AUDIENS));
     }

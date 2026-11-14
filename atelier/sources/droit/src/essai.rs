@@ -41,7 +41,7 @@ fn jours_de_mois(debut: &Jour, n: u32) -> R<i64> {
 /// classement conventionnel du salarie (S21.G00.40.002), `artiste` dit s'il est artiste du spectacle, `idcc` la
 /// convention de la compagnie. `None` quand le texte ne permet pas de le dire (un CDD sans terme, un CDI d'une
 /// categorie que la loi ne nomme pas, ou sans classement).
-pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Option<&str>, artiste: bool, idcc: Option<&crate::fiche::Idcc>) -> R<Option<Plafond>> {
+pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Option<crate::fiche::StatutConventionnel>, artiste: bool, idcc: Option<&crate::fiche::Idcc>) -> R<Option<Plafond>> {
     if !nat.duree_indeterminee {
         let Some(fin) = fin else { return Ok(None) };
         let duree = fin.moins(debut) + 1;
@@ -76,11 +76,12 @@ pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Optio
             ),
         }));
     }
+    use crate::fiche::StatutConventionnel::{AgentDeMaitrise, Cadre03, Cadre04, Employe06, Employe07};
     let (mois, qui, alinea) = match classement {
-        Some("03" | "04") => (4, "un cadre", "3°"),
-        Some("05") => (3, "un agent de maîtrise ou un technicien", "2°"),
-        Some("06" | "07") => (2, "un ouvrier ou un employé", "1°"),
-        _ => return Ok(None),
+        Some(Cadre03 | Cadre04) => (4, "un cadre", "3°"),
+        Some(AgentDeMaitrise) => (3, "un agent de maîtrise ou un technicien", "2°"),
+        Some(Employe06 | Employe07) => (2, "un ouvrier ou un employé", "1°"),
+        None => return Ok(None),
     };
     let jours = jours_de_mois(debut, mois)?;
     Ok(Some(Plafond {

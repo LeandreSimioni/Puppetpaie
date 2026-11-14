@@ -116,18 +116,11 @@ pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, contr
         return Ok(r);
     }
     let hc = loi()?.heures_complementaires;
-    let part = |nom: &str| -> R<Decimal> {
-        match nom {
-            "dixieme" => Ok(contrat / Decimal::from(10)),
-            "tiers" => Ok(contrat / Decimal::from(3)),
-            autre => Err(socle::refus!("heures complémentaires : une part du contrat inconnue, {}", autre)),
-        }
-    };
     let mut debut = Decimal::ZERO;
     let mut reste = heures;
     let mut derniere = Decimal::ZERO;
     for p in &hc.paliers {
-        let fin = part(p.jusqu_au.nom())?;
+        let fin = p.jusqu_au.de(contrat);
         derniere = p.majoration;
         let ici = (fin - debut).max(Decimal::ZERO).min(reste);
         if ici > Decimal::ZERO {
@@ -143,16 +136,15 @@ pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, contr
     let plafond = match crate::clauses::releve(idcc)?.and_then(|c| c.heures_complementaires) {
         Some(c) => c.plafond,
         None => hc.plafond_sans_accord,
-    }
-    .nom();
-    let limite = part(plafond)?;
+    };
+    let limite = plafond.de(contrat);
     if heures > limite {
         r.avis.push(format!(
             "{} heures complémentaires pour un contrat de {} heures par mois : au-delà du {} de la durée du contrat que la loi ou la \
              convention permettent (C. trav. L3123-20, L3123-28). Le logiciel les paie ; au-delà, la durée du contrat se revoit.",
             virgule(heures),
             virgule(contrat.round_dp(2)),
-            plafond.replace("dixieme", "dixième")
+            plafond.en_mots()
         ));
     }
     Ok(r)

@@ -8,8 +8,10 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::fiches::{aujourd_hui, creer_dossier, ecrire, refus};
 use crate::ouverture::{EcranDeLImage, Identite, ImageIdentite};
 use droit::contexte::Contexte;
-use socle::echec::{Echec, R};
+use socle::echec::R;
 use socle::num::Decimal;
+use documents::SorteDImage;
+use fabrique_pdf::alleger::FormatDImage;
 
 const QUOI_IDENTITE: Champ = Champ { nom: "quoi", libelle: Affiche::new("Signature, cachet ou logo"), forme: Forme::Texte, sens: "signature, cachet ou logo", avance: false };
 
@@ -130,14 +132,17 @@ struct ChargeQuoi {
 
 // ------------------------------------------------------------------ l'identite
 
-const IDENTITES: [&str; 3] = ["signature", "cachet", "logo"];
 const OCTETS_MAX: usize = 2 * 1024 * 1024;
 /// Le poids visé d'une image dans chaque document, en Ko, que l'écran propose (`identite`).
 const POIDS_VISE_KO: u32 = 20;
 
+/// L'image que la charge nomme (`quoi`), ou ce qui la refuse.
 #[track_caller]
-fn identite_inconnue(quoi: &str) -> Echec {
-    refus(format!("Identite inconnue : {}. Connues : cachet, logo, signature.", socle::fichiers::repr(quoi)))
+fn sorte_d_image(quoi: &str) -> R<SorteDImage> {
+    match SorteDImage::du_nom(quoi) {
+        Some(s) => Ok(s),
+        None => Err(refus(format!("Identite inconnue : {}. Connues : cachet, logo, signature.", socle::fichiers::repr(quoi)))),
+    }
 }
 
 fn dossier_identite(ctx: &Contexte) -> PathBuf {
@@ -145,31 +150,8 @@ fn dossier_identite(ctx: &Contexte) -> PathBuf {
 }
 
 /// Le fichier pose pour `quoi`, quelle que soit son extension.
-fn chemin_identite(dossier: &Path, quoi: &str) -> Option<PathBuf> {
-    [".png", ".jpg", ".svg"].iter().map(|e| dossier.join(format!("{}{}", quoi, e))).find(|f| f.exists())
-}
-
-/// Le format de ces octets, reconnu sur l'en-tete et non sur l'extension.
-fn format_de(o: &[u8]) -> Option<&'static str> {
-    if o.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
-        return Some("png");
-    }
-    if o.starts_with(&[0xff, 0xd8, 0xff]) {
-        return Some("jpeg");
-    }
-    let tete = &o[..o.len().min(2048)];
-    // Que des blancs : rien d'un SVG.
-    let tete = match tete.iter().position(|c| !c.is_ascii_whitespace() && *c != 0x0b) {
-        Some(debut) => &tete[debut..],
-        None => return None,
-    };
-    if tete.starts_with(b"<?xml") || tete.starts_with(b"<svg") || tete.starts_with(b"<!--") {
-        let long = o[..o.len().min(8192)].to_ascii_lowercase();
-        if long.windows(4).any(|w| w == b"<svg") {
-            return Some("svg");
-        }
-    }
-    None
+fn chemin_identite(dossier: &Path, quoi: SorteDImage) -> Option<PathBuf> {
+    FormatDImage::TOUS.iter().map(|f| dossier.join(format!("{}{}", quoi.nom(), f.extension()))).find(|f| f.exists())
 }
 
 fn avant(f: &Path) -> R<()> {
@@ -179,10 +161,7 @@ fn avant(f: &Path) -> R<()> {
 }
 
 fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> {
-    let quoi = charge.quoi.as_str();
-    if !IDENTITES.contains(&quoi) {
-        return Err(identite_inconnue(quoi));
-    }
+    let quoi = sorte_d_image(&charge.quoi)?;
     // Une adresse data: porte son en-tete avant la virgule ; le base64 seul n'en a pas.
     let utile = match charge.contenu.rsplit_once(',') {
         Some((_, b)) => b,
@@ -195,7 +174,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     if octets.len() > OCTETS_MAX {
         return Err(refus(format!("Le fichier fait {} ; la limite est de 2 Mo.", compagnie::sauvegarde::en_mo(octets.len() as u64, '.'))));
     }
-    format_de(&octets).ok_or_else(|| {
+    FormatDImage::des_octets(&octets).ok_or_else(|| {
         refus("Ce fichier n'est ni un PNG, ni un JPEG, ni un SVG (ses premiers octets ne sont ceux d'aucun des trois). Rien n'a ete ecrit.")
     })?;
     // Le poids visé est dit par la charge : l'écran le propose (`poids_vise_ko` de `identite`), la personne le garde ou
@@ -213,7 +192,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     }
     // L'image part dans chaque document qui la porte : elle est allégée avant d'être posée, à la largeur que les
     // documents impriment (`documents::largeur_imprimee`) et au poids visé (en octets, tronque).
-    let largeur = documents::largeur_imprimee(quoi).ok_or_else(|| identite_inconnue(quoi))?;
+    let largeur = quoi.largeur_imprimee();
     let octets_vises = match rust_decimal::prelude::ToPrimitive::to_usize(&(objectif_ko * Decimal::from(1024)).trunc()) {
         Some(o) => o,
         None => unreachable!("un poids de 1 a 2 048 Ko tient en octets"),
@@ -228,14 +207,9 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     if let Some(ancien) = chemin_identite(&dossier, quoi) {
         avant(&ancien)?;
     }
-    let extension = match format {
-        "png" => ".png",
-        "jpeg" => ".jpg",
-        _ => ".svg",
-    };
-    let cible = dossier.join(format!("{}{}", quoi, extension));
+    let cible = dossier.join(format!("{}{}", quoi.nom(), format.extension()));
     std::fs::write(&cible, &octets).map_err(|e| socle::echec::du_disque(&cible, &e).reclasser(socle::echec::Classe::Disque))?;
-    if quoi == "signature" {
+    if quoi == SorteDImage::Signature {
         // Pour qui elle est posee : la personne qui signe CE JOUR-LA.
         let mut registre = crate::ouverture::registre_identite(&dossier)?;
         let signataire = crate::ouverture::signataire_de(&ctx.entreprise);
@@ -256,16 +230,16 @@ fn ko(octets: usize) -> String {
 }
 
 /// Ce que l'image posée pèsera dans chaque document, et pourquoi on l'a allégée.
-fn dire_le_poids(quoi: &str, a: &fabrique_pdf::alleger::Allegee, objectif_ko: Decimal) -> String {
+fn dire_le_poids(quoi: SorteDImage, a: &fabrique_pdf::alleger::Allegee, objectif_ko: Decimal) -> String {
     let nom = match quoi {
-        "signature" => "La signature",
-        "cachet" => "Le tampon",
-        _ => "Le logo",
+        SorteDImage::Signature => "La signature",
+        SorteDImage::Cachet => "Le tampon",
+        SorteDImage::Logo => "Le logo",
     };
     let pourquoi = "Chaque document part par courriel et se garde : une image lourde l'alourdit chaque fois.";
-    let poids = if a.format == "svg" { format!("environ {}", ko(a.octets.len())) } else { ko(a.octets.len()) };
+    let poids = if a.format == FormatDImage::Svg { format!("environ {}", ko(a.octets.len())) } else { ko(a.octets.len()) };
     let mut dit = format!("{} pèsera {} dans chaque document qui le porte", nom, poids);
-    if quoi == "signature" {
+    if quoi == SorteDImage::Signature {
         dit = dit.replace("qui le porte", "qui la porte");
     }
     if !a.telle_quelle {
@@ -279,10 +253,7 @@ fn dire_le_poids(quoi: &str, a: &fabrique_pdf::alleger::Allegee, objectif_ko: De
 }
 
 fn retirer_identite(ctx: &Contexte, charge: ChargeQuoi) -> R<Identite> {
-    let quoi = charge.quoi.as_str();
-    if !IDENTITES.contains(&quoi) {
-        return Err(identite_inconnue(quoi));
-    }
+    let quoi = sorte_d_image(&charge.quoi)?;
     if let Some(f) = chemin_identite(&dossier_identite(ctx), quoi) {
         avant(&f)?;
     }
@@ -345,7 +316,7 @@ fn ecran_de_l_identite(v: &mut Identite) {
         // Ce que dit l'image posee (sa forme, son poids, son jour), et les mots de ses gestes.
         // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`).
         let pose_dit = match (e.pose, &e.format, e.octets, &e.quand) {
-            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.to_uppercase(), ko(octets as usize), quand.dit())),
+            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.nom().to_uppercase(), ko(octets as usize), quand.dit())),
             _ => None,
         };
         e.ecran = Some(EcranDeLImage {

@@ -1227,7 +1227,7 @@ pub fn preparer_les_fictives(inst: &Path, depot: &DepotDesMisesAJour, d: &Publie
 /// exactement ce que porte chaque fictive livree (`fictives/<nom>/COPIE-DE-DEVELOPPEMENT.json`). Une fictive copiee et
 /// renommee sur le poste dit encore le nom de celle qu'elle copie : ce n'est pas le sien.
 fn marquee_comme_livree(dossier: &Path, nom: &NomDeFichier) -> R<bool> {
-    Ok(crate::installation::copie_de(dossier)? == Some(format!("{} {}", crate::installation::MARQUE_FICTIVE, nom)))
+    Ok(crate::installation::marqueur(dossier)?.map(|m| m.copie_de) == Some(format!("{} {}", crate::installation::MARQUE_FICTIVE, nom)))
 }
 
 /// AU LANCEMENT, avant toute fenetre (`interface::preparer_l_installation`) : la livraison de fictives prete se pose.

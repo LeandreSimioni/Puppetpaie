@@ -17,7 +17,7 @@ use socle::echec::Lieu;
 use socle::num::Decimal;
 
 use socle::date::{repr_texte, Jour};
-use socle::fichiers::dossier_du_code;
+use socle::fichiers::{dossier_du_code, CheminRelatif};
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, Echec, R};
 use socle::texte::cle_recherche;
@@ -204,37 +204,56 @@ pub fn cinquante_salaries_et_plus(fiche: &ChampsEntreprise) -> bool {
     fiche.avec_permanents().is_some_and(|cle| fiche.avec_permanents.ouvrir(&cle).cinquante_salaries_et_plus.oui())
 }
 
-/// `config/effectifs.json` : les effectifs par annee civile et par code, ceux que l'Urssaf renvoie en 118 (`calcule_le`,
-/// `source`) et ceux que la compagnie a dits (`dit_le`) ; ecrit par `envois::releve_retours`.
-#[derive(Debug, serde::Deserialize)]
+/// LE FICHIER DES EFFECTIFS (`config/effectifs.json`), sa seule forme : les effectifs par annee civile et par code, ceux
+/// que l'Urssaf renvoie en 118 (`calcule_le`, `source`) et ceux que la compagnie a dits (`dit_le`). Ecrit par
+/// `envois::releve_retours` seul ; lu par `effectifs_lus` seule.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FichierEffectifs {
-    #[serde(rename = "quoi")]
-    _quoi: Option<String>,
-    annees: Option<BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>>,
+pub struct FichierEffectifs {
+    /// Ce que le fichier dit de lui-meme.
+    pub quoi: String,
+    pub annees: EffectifsParAnnee,
 }
 
-/// L'effectif d'un code pour une annee.
-#[derive(Debug, serde::Deserialize)]
+/// Les effectifs par annee, puis par code.
+pub type EffectifsParAnnee = BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>;
+
+/// UN EFFECTIF ECRIT : celui qu'un 118 a calcule (`calcule_le`, `source` : le jour du calcul, l'archive du compte rendu),
+/// ou celui que la compagnie a dit (`dit_le`), qu'un 118 de la meme annee remplace.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EffectifEcrit {
-    #[serde(deserialize_with = "socle::forme::court")]
-    valeur: Decimal,
-    #[serde(rename = "calcule_le", default, with = "socle::paris::ecrit::seconde::option")]
-    _calcule_le: Option<socle::paris::Moment>,
-    #[serde(rename = "source")]
-    _source: Option<socle::fichiers::CheminRelatif>,
-    #[serde(rename = "dit_le")]
-    _dit_le: Option<Jour>,
+pub struct EffectifEcrit {
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::court")]
+    pub valeur: Decimal,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
+    pub calcule_le: Option<socle::paris::Moment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<CheminRelatif>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dit_le: Option<Jour>,
+}
+
+impl FichierEffectifs {
+    /// L'effectif du code `code` pour l'annee `annee`, s'il est ecrit.
+    pub fn du_118(&self, annee: Annee, code: TypeDeParametreNeores) -> Option<Decimal> {
+        self.annees.get(&annee).and_then(|c| c.get(&code)).map(|e| e.valeur)
+    }
+}
+
+/// `config/effectifs.json` de la compagnie, lu par sa forme ; aucun s'il n'existe pas.
+pub fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
+    let p = racine.join(EFFECTIFS);
+    if !socle::fichiers::existe(&p) {
+        return Ok(None);
+    }
+    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie (config/effectifs.json) ne se lit pas.").map(Some)
 }
 
 /// Lit `config/effectifs.json` (absent : vide).
 pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
-    let p = racine.join(EFFECTIFS);
     let mut annees = BTreeMap::new();
-    if socle::fichiers::existe(&p) {
-        let lu: FichierEffectifs = socle::forme::lire_fichier(&p, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.")?;
-        for (an, codes) in lu.annees.into_iter().flatten() {
+    if let Some(lu) = effectifs_lus(racine)? {
+        for (an, codes) in lu.annees {
             if let Some(a01) = codes.get(&TypeDeParametreNeores::EffectifMoyen) {
                 annees.insert(an.nombre(), a01.valeur);
             }
@@ -606,7 +625,7 @@ pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> R<()> 
             }
         }
         // Le code risque se dit toujours ; le taux de la periode, c'est la paie qui le demande (`bareme::surcharger`).
-        if e.taux_atmp.dite().and_then(|t| t.code_risque.remplie()).is_none_or(|c| c.trim().is_empty()) {
+        if e.taux_atmp.dite().and_then(|t| t.code_risque.dite()).is_none() {
             griefs.push(format!(
                 "{} : son code risque AT/MP, tel que la CARSAT le notifie a CET etablissement (Configuration › \
 Entreprise › Avancé, « Établissements »)",
@@ -642,7 +661,7 @@ declare dans sa propre DSN, avec ce qui est a lui.\n  - {}",
 fn controler_secteur(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
     let Some(sec) = &pile.secteurs else { return Ok(()) };
     let dit = sec.champ.dit(fiche);
-    if sec.portes.iter().any(|p| Some(p.as_str()) == dit) {
+    if sec.portes.iter().any(|p| Some(*p) == dit) {
         return Ok(());
     }
     // Les secteurs viennent de la couche d'une convention : celle que la fiche dit.
@@ -653,21 +672,21 @@ fn controler_secteur(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
         sec.refus,
         sec.libelle,
         match dit {
-            Some(d) => d,
+            Some(d) => d.as_str(),
             None => "non renseigné",
         },
-        sec.portes.join(", ")
+        sec.portes.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
     ))
 }
 
 /// L'organisation patronale de la fiche est-elle une de celles du bareme ?
 fn controler_organisation_patronale(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
-    let Some(nom) = fiche.organisation_patronale.portee().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string) else {
+    let Some(nom) = fiche.organisation_patronale.dite() else {
         return Ok(());
     };
     let annee = pile.annee;
-    let connues: Vec<&str> = pile.par_organisation_patronale.keys().map(String::as_str).collect();
-    let Some(couche) = crate::bareme::couche_organisation(pile, &nom) else {
+    let connues: Vec<&str> = pile.par_organisation_patronale.keys().map(crate::forme_bareme::OrganisationPatronale::as_str).collect();
+    let Some((_, couche)) = pile.organisation(nom) else {
         return Err(socle::echec::refus_avec(
             "L'organisation patronale de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
             Lieu {
@@ -683,7 +702,7 @@ parametrage de l'organisme), puis a ecrire dans \
 \x20 Une compagnie qui n'adhere a rien laisse ce champ vide, et rien \
 ne change pour elle.",
                     annee,
-                    repr_texte(&nom),
+                    repr_texte(nom.as_str()),
                     if connues.is_empty() { "aucune".to_string() } else { connues.join(", ") },
                     annee
                 )),
@@ -1207,6 +1226,19 @@ pub const SPECTACLES: &str = "config/spectacles.json";
 pub const EFFECTIFS: &str = "config/effectifs.json";
 /// Les baremes propres a la compagnie (`<annee>.json`), sous sa racine.
 pub const BAREMES: &str = "config/baremes";
+
+/// LA SURCOUCHE DE LA COMPAGNIE POUR L'ANNEE `an`, sous sa racine : `config/baremes/<an>.json`. Le seul ecrivain de ce
+/// chemin : le bareme le lit, son controle le nomme, la raison d'un recalcul le reconnait (`engagement::etats`).
+pub fn surcouche(an: i32) -> R<CheminRelatif> {
+    CheminRelatif::lire(&format!("{}/{}.json", BAREMES, an))
+}
+
+/// L'annee de la surcouche que `chemin` nomme, s'il en est une (`surcouche`, dont c'est la seule relecture).
+pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<i32> {
+    let an = chemin.texte().strip_prefix(BAREMES)?.strip_prefix('/')?.strip_suffix(".json")?;
+    let an = i32::try_from(socle::num::entier_de_chiffres(an)?).ok()?;
+    surcouche(an).is_ok_and(|c| c == *chemin).then_some(an)
+}
 /// Le fichier des organismes et contrats de la DSN, sous `config/`.
 pub const ORGANISMES: &str = "organismes.json";
 
@@ -1360,19 +1392,19 @@ impl Contexte {
     /// Ce dont depend le bareme lu a `jour` : la compagnie, sa fiche entreprise a ce jour, et la signature (date, taille)
     /// des fichiers qui le composent.
     pub fn empreinte_bareme(&self, jour: &Jour) -> R<String> {
-        Ok(self.empreinte_bareme_de(jour.an, &self.entreprise_au(jour)))
+        self.empreinte_bareme_de(jour.an, &self.entreprise_au(jour))
     }
 
-    fn empreinte_bareme_de(&self, an: i32, ent: &ChampsEntreprise) -> String {
+    fn empreinte_bareme_de(&self, an: i32, ent: &ChampsEntreprise) -> R<String> {
         let cfg = self.racine.join(socle::fichiers::CONFIG);
         let sig: Vec<_> = [
-            socle::fichiers::signature(&cfg.join("baremes").join(format!("{}.json", an))),
+            socle::fichiers::signature(&self.racine.join(surcouche(an)?)),
             socle::fichiers::signature(&self.code.join("baremes").join(format!("{}.json", an))),
             socle::fichiers::signature(&cfg.join("effectifs.json")),
         ]
         .into_iter()
         .collect();
-        format!("{}|{}|{}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu)
+        Ok(format!("{}|{}|{}|{:?}|{:?}|{:?}", self.racine.display(), self.code.display(), an, sig, ent, self.atmp_lu))
     }
 
     /// LA PILE DE `jour` : le socle livre + la couche de la convention que la fiche `ent` nomme + la surcouche de la
@@ -1383,11 +1415,11 @@ impl Contexte {
         type Cache = Mutex<HashMap<String, socle::fichiers::Notee<Arc<PileLue>>>>;
         static CACHE: OnceLock<Cache> = OnceLock::new();
         let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        let cle = format!("{}|{}", self.empreinte_bareme_de(jour.an, ent), jour.iso());
+        let cle = format!("{}|{}", self.empreinte_bareme_de(jour.an, ent)?, jour.iso());
         socle::fichiers::garde_notee(cache, cle, || {
             let (pile, regles) = self.empiler(jour, ent)?;
             // Le controle est ici, le seul endroit qui compose un bareme.
-            controler(&pile, ent, &effectif_de(&self.racine, ent)?, &format!("config/baremes/{}.json", jour.an))?;
+            controler(&pile, ent, &effectif_de(&self.racine, ent)?, surcouche(jour.an)?.texte())?;
             Ok(Arc::new(PileLue { pile: Arc::new(pile), regles }))
         })
     }
@@ -1398,46 +1430,11 @@ impl Contexte {
     /// SMIC compris).
     fn empiler(&self, jour: &Jour, ent: &ChampsEntreprise) -> R<(Pile, Vec<Jour>)> {
         let an = jour.an;
-        let ou = format!("config/baremes/{}.json", an);
-        let dossier = self.code.join("baremes");
-        let organisation = ent.organisation_patronale.dite().map(String::as_str);
-        let p = self.racine.join(BAREMES).join(format!("{}.json", an));
+        let chemin = surcouche(an)?;
+        let ou = chemin.texte();
+        let organisation = ent.organisation_patronale.dite();
         let mut regles = Vec::new();
-        // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
-        let surcouche = match socle::fichiers::existe(&p) {
-            true => crate::forme_bareme::lire_la_surcouche(&p)?,
-            false if fichier_du_socle(&dossier, an).is_some() => Surcouche {
-                annee: an,
-                socle: an,
-                quoi: None,
-                versement_mobilite: None,
-                rubriques: None,
-                cotisations_dsn: None,
-                par_statut: None,
-                par_nature: None,
-                source: None,
-                note: None,
-            },
-            false => {
-                return Err(socle::refus!(
-                    "Le logiciel n'a pas les taux de {} (SMIC, plafond de la Sécurité sociale, cotisations) : il a ceux de {}. Une paie de {} ne se calcule pas avec cette version.",
-                    an,
-                    disponibles(&dossier),
-                    an
-                ))
-            }
-        };
-        let Some(fichier) = fichier_du_socle(&dossier, surcouche.socle) else {
-            return Err(socle::refus!(
-                "Bareme {} : {} demande le socle {}, qui n'est pas livre.\n\
-\x20 Socles disponibles : {}. Un socle neuf s'ecrit en janvier, \
-depuis le plus recent.",
-                an,
-                ou,
-                surcouche.socle,
-                disponibles(&dossier)
-            ));
-        };
+        let (surcouche, fichier) = self.socle_de_l_annee(an)??;
         // Les trois etages, dans l'ordre : droit commun, convention, compagnie.
         let (mut pile, r) = crate::forme_bareme::lire_le_socle(&fichier, jour, organisation)?;
         regles.extend(r);
@@ -1464,6 +1461,73 @@ depuis le plus recent.",
         regles.sort();
         regles.dedup();
         Ok((pile, regles))
+    }
+
+    /// LE SOCLE QUE LE BAREME DE L'ANNEE `an` REPREND, lu seul (`forme_bareme::socle_seul` : sans la convention, la
+    /// compagnie ni son taux AT/MP) : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee. Ce
+    /// contre quoi une organisation patronale se reconnait (`Pile::organisation`). `Ok(Err)` : le logiciel n'a pas le
+    /// bareme de l'annee (`socle_de_l_annee`) ; `Err` : tout le reste (le disque, un socle illisible, l'annee).
+    pub fn socle_repris(&self, an: i32) -> R<Result<Arc<Pile>, Echec>> {
+        let fichier = match self.socle_de_l_annee(an)? {
+            Ok((_, f)) => f,
+            Err(sans_bareme) => return Ok(Err(sans_bareme)),
+        };
+        crate::forme_bareme::socle_seul(&fichier, an).map(Ok)
+    }
+
+    /// L'ORGANISATION PATRONALE `o` (la case de la fiche entreprise, un alias peut-etre) RECONNUE DANS LE SOCLE QUE LE
+    /// BAREME DE L'ANNEE `an` REPREND (`socle_repris`, `Pile::organisation`, la seule porte) : sa cle, celle que nomment
+    /// les signataires d'un accord (`minima::signataire`). `None` : la fiche n'en dit pas, ou ce socle ne la couvre pas
+    /// (le bareme la refuse alors, `controler_organisation_patronale`).
+    pub fn organisation_reconnue(&self, an: i32, o: Option<&crate::forme_bareme::OrganisationPatronale>) -> R<Option<crate::forme_bareme::OrganisationPatronale>> {
+        let Some(o) = o else { return Ok(None) };
+        Ok(self.socle_repris(an)??.organisation(o).map(|(k, _)| k.clone()))
+    }
+
+    /// LA SURCOUCHE DE L'ANNEE `an` ET LE FICHIER DU SOCLE QU'ELLE REPREND ; sans surcouche, la compagnie n'a rien change
+    /// au socle livre de l'annee. Sans l'une ni l'autre, ou une surcouche qui nomme un socle non livre : le refus du bareme,
+    /// rendu a part (`Ok(Err)`) ; une surcouche illisible, le disque ou l'annee : `Err`.
+    fn socle_de_l_annee(&self, an: i32) -> R<Result<(Surcouche, PathBuf), Echec>> {
+        let chemin = surcouche(an)?;
+        let ou = chemin.texte();
+        let dossier = self.code.join("baremes");
+        let p = self.racine.join(&chemin);
+        // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
+        let surcouche = match socle::fichiers::existe(&p) {
+            true => crate::forme_bareme::lire_la_surcouche(&p)?,
+            false if fichier_du_socle(&dossier, an).is_some() => Surcouche {
+                annee: an,
+                socle: an,
+                quoi: None,
+                versement_mobilite: None,
+                rubriques: None,
+                cotisations_dsn: None,
+                par_statut: None,
+                par_nature: None,
+                source: None,
+                note: None,
+            },
+            false => {
+                return Ok(Err(socle::refus!(
+                    "Le logiciel n'a pas les taux de {} (SMIC, plafond de la Sécurité sociale, cotisations) : il a ceux de {}. Une paie de {} ne se calcule pas avec cette version.",
+                    an,
+                    disponibles(&dossier),
+                    an
+                )))
+            }
+        };
+        let Some(fichier) = fichier_du_socle(&dossier, surcouche.socle) else {
+            return Ok(Err(socle::refus!(
+                "Bareme {} : {} demande le socle {}, qui n'est pas livre.\n\
+\x20 Socles disponibles : {}. Un socle neuf s'ecrit en janvier, \
+depuis le plus recent.",
+                an,
+                ou,
+                surcouche.socle,
+                disponibles(&dossier)
+            )));
+        };
+        Ok(Ok((surcouche, fichier)))
     }
 
     /// LE JOUR OU SE LIT LE TAUX AT/MP DE L'ANNEE `an` : aujourd'hui dans l'annee en cours, son dernier jour pour une
@@ -1552,7 +1616,7 @@ depuis le plus recent.",
         let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(None) };
         let ent = self.entreprise_au(jour);
         let Some(idcc) = ent.idcc.dite() else { return Ok(None) };
-        let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite().map(String::as_str))?;
+        let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;
         Ok(convention(&socle_an, idcc)?.map(lire))
     }
 

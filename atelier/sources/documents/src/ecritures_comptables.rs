@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use droit::catalogue::{self, HorsAssiette};
 use droit::contexte::Contexte;
 use droit::forme_bareme::{CHOMAGE, MALADIE, REDUCTION_GENERALE, RETRAITE_T1};
+use engagement::ecarts::RegroupementDeComparaison;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 use socle::num::{eur2, zero2, Decimal};
@@ -24,11 +25,30 @@ fn manque_au_plan(m: String, cle: String) -> Echec {
         .reclasser(Classe::Refuse)
 }
 
+droit::cle_opaque! {
+    /// LE CODE D'UN JOURNAL COMPTABLE (`journal` du plan comptable : « OD ») : celui de chaque ligne d'ecriture. Sa largeur
+    /// et ses lettres, chaque logiciel du comptable les borne a l'ecriture (`plan_comptable::controler_plan`).
+    pub struct CodeJournal, "code journal";
+}
+
+droit::cle_opaque! {
+    /// LE NUMERO D'UN COMPTE du plan comptable (« 641100 », un sous-compte individuel « 421001 ») : ceux du brut, du net,
+    /// des frais, du prelevement a la source, des retenues, des lignes, des tiers et de la provision de conges, celui de
+    /// chaque ligne d'ecriture. Sa largeur et ses chiffres, chaque logiciel du comptable les borne a l'ecriture.
+    pub struct NumeroDeCompte, "numéro de compte";
+}
+
+droit::cle_opaque! {
+    /// LE POSTE ANALYTIQUE d'Oxygene (`poste_analytique` du plan comptable, la zone CODAGE) : celui des lignes ventilees,
+    /// que seule la compagnie dit.
+    pub struct PosteAnalytique, "poste analytique";
+}
+
 /// Une ligne du journal de paie : date, journal, compte, libelle, debit, credit, analytique, auxiliaire.
 pub struct Ecriture {
-    pub journal: String,
+    pub journal: CodeJournal,
     pub date: socle::date::Jour,
-    pub compte: String,
+    pub compte: NumeroDeCompte,
     pub libelle: String,
     pub debit: Decimal,
     pub credit: Decimal,
@@ -37,7 +57,7 @@ pub struct Ecriture {
     pub analytique: Option<String>,
     pub mois: Mois,
     /// Le sous-compte individuel du salarie, quand le plan en tient un (`net.par_salarie`).
-    pub auxiliaire: Option<String>,
+    pub auxiliaire: Option<NumeroDeCompte>,
     /// Le libelle du sous-compte : le salarie.
     pub auxiliaire_libelle: Option<String>,
     /// Posee par les etats des ecritures comptables (« PAIE-AAAA-MM »).
@@ -63,10 +83,10 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
 
     let mut brut_par_spectacle: BTreeMap<String, Decimal> = BTreeMap::new();
     let mut net_par_salarie: BTreeMap<String, Decimal> = BTreeMap::new();
-    let mut compte_de: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut compte_de: BTreeMap<String, Option<NumeroDeCompte>> = BTreeMap::new();
     let mut frais_par_spectacle: BTreeMap<String, Decimal> = BTreeMap::new();
-    let mut charge: BTreeMap<(String, String), Decimal> = BTreeMap::new();
-    let mut tiers: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut charge: BTreeMap<(NumeroDeCompte, String), Decimal> = BTreeMap::new();
+    let mut tiers: BTreeMap<NumeroDeCompte, Decimal> = BTreeMap::new();
     // LE PRELEVEMENT A LA SOURCE : celui du bulletin (`prelevement::des_paies`, la meme lecture, la meme position), retenu sur
     // le net et du a la DGFiP (compte 4421 « Prelevements a la source (Impot sur le revenu) » du plan
     // comptable general, atelier/reference/sources/plan-comptable-general/LISEZ-MOI.md), tel que la paie le porte. Le PAS d'un
@@ -79,7 +99,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
     // saisie est due a un tiers (427 « Personnel - Oppositions »), plan de comptes de l'ANC (meme LISEZ-MOI). Le plan
     // dit le compte de chaque rubrique (`retenues`) ; une retenue qu'il ne nomme pas fait refuser. Par (compte,
     // libelle, salarie).
-    let mut retenues: BTreeMap<(String, String, String), Decimal> = BTreeMap::new();
+    let mut retenues: BTreeMap<(NumeroDeCompte, String, String), Decimal> = BTreeMap::new();
     let ajouter = |m: &mut BTreeMap<String, Decimal>, k: String, v: Decimal| {
         let e = m.entry(k).or_insert(zero);
         *e += v;
@@ -154,13 +174,17 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             let Some(id) = l.id.as_ref() else {
                 return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle)));
             };
-            let Some(regle) = plan.lignes.get(id) else {
+            let Some(regle) = plan.regle(id) else {
+                let parmi = match id {
+                    RegroupementDeComparaison::Cotisation(_) => "les lignes",
+                    _ => "les regroupements",
+                };
                 return Err(manque_au_plan(
                     format!(
-                        "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les lignes, avec un compte de charge et un compte de tiers.",
-                        id, l.libelle
+                        "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi {}, avec un compte de charge et un compte de tiers.",
+                        id, l.libelle, parmi
                     ),
-                    format!("lignes.{}", id),
+                    crate::plan_comptable::cle_dans_le_plan(id),
                 ));
             };
             // Le libelle du plan, sinon celui du bulletin.
@@ -170,7 +194,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             };
             // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
             let (pat, sal) = (l.montant_pat.map(eur2), l.montant_sal.map(eur2));
-            if *id == REDUCTION_GENERALE {
+            if *id == RegroupementDeComparaison::Cotisation(REDUCTION_GENERALE) {
                 if let (Some(rg), Some(pat)) = (reduction_generale, pat) {
                     // La RGDU : une charge negative, ventilee au tiers de chaque part telle que la paie l'a calculee.
                     *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += pat;
@@ -194,7 +218,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
     }
 
     let mut out: Vec<Ecriture> = Vec::new();
-    let mut ligne = |compte: &str, libelle: &str, debit: Decimal, credit: Decimal, analytique: Option<&str>, auxiliaire: Option<&str>| {
+    let mut ligne = |compte: &NumeroDeCompte, libelle: &str, debit: Decimal, credit: Decimal, analytique: Option<&str>, auxiliaire: Option<&NumeroDeCompte>| {
         if debit.is_zero() && credit.is_zero() {
             return;
         }
@@ -211,13 +235,13 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         out.push(Ecriture {
             journal: jrn.clone(),
             date,
-            compte: compte.to_string(),
+            compte: compte.clone(),
             libelle: format!("{} -- {}", libelle, lib_mois),
             debit: eur2(debit),
             credit: eur2(credit),
             analytique: analytique.map(str::to_string),
             mois,
-            auxiliaire: auxiliaire.map(str::to_string),
+            auxiliaire: auxiliaire.cloned(),
             auxiliaire_libelle: auxiliaire.and(analytique).map(str::to_string),
             piece: String::new(),
             numero: 0,
@@ -249,8 +273,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         ligne(c, lib, *m, zero, Some(qui), None);
     }
     for (qui, m) in &net_par_salarie {
-        // Un modele qui se remplit a vide ne fait pas de sous-compte.
-        let aux = compte_de.get(qui).and_then(|c| c.as_deref()).filter(|c| !c.is_empty());
+        let aux = compte_de.get(qui).and_then(Option::as_ref);
         ligne(&plan.net.compte, &plan.net.libelle, zero, *m, Some(qui), aux);
     }
 
@@ -288,11 +311,11 @@ pub fn csv_compta(ecritures: &[Ecriture]) -> Vec<u8> {
     for e in ecritures {
         let date = e.date.jj_mm_aaaa();
         let compte = match &e.auxiliaire {
-            Some(a) => a.clone(),
-            None => e.compte.clone(),
+            Some(a) => a.to_string(),
+            None => e.compte.to_string(),
         };
         let montant = |m: Decimal| (!m.is_zero()).then(|| m.to_string().replace('.', ","));
-        rang(&[Some(e.journal.clone()), Some(date), Some(compte), Some(e.libelle.clone()), montant(e.debit), montant(e.credit), e.analytique.clone()]);
+        rang(&[Some(e.journal.to_string()), Some(date), Some(compte), Some(e.libelle.clone()), montant(e.debit), montant(e.credit), e.analytique.clone()]);
     }
     t.into_bytes()
 }

@@ -51,7 +51,7 @@ fn requis_manque(cle: &str) -> Echec {
     socle::fichiers::absent(cle).reclasser(Classe::Manque)
 }
 
-use documents::marqueurs::Marqueur;
+use droit::marqueurs::Marqueur;
 
 /// Les clauses qu'un avenant peut modifier : ce que L1242-12 et les conventions mettent au contrat et qui bouge
 /// d'une paie a l'autre -- l'emploi, les dates, le lieu, la remuneration.
@@ -310,13 +310,11 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: Mois, paies: &[Paie
 /// compagnie et ces `salaries` (`(cle, fiche)`) : tout ce qui manque, d'un coup, avant d'ecrire le moindre PDF. Un
 /// avenant est un contrat : il passe par le meme controle.
 fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a IdSalarie, &'a ChampsSalarie)>) -> R<()> {
-    use declarations::champs::Saisie;
-    use droit::fiche::NomDeFiche;
-    let mut saisies: Vec<(NomDeFiche, String, Saisie)> = vec![(NomDeFiche::Entreprise, "la fiche entreprise".into(), Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)?)];
+    use declarations::champs::FicheAJuger;
+    let mut fiches: Vec<(FicheAJuger<'_>, String)> = vec![(FicheAJuger::Entreprise(&ctx.entreprise), "la fiche entreprise".into())];
     for (cle, s) in salaries {
-        saisies.push((NomDeFiche::Salarie, format!("la fiche de {}", crate::nom_a_l_ecran(s, cle)), Saisie::de_la_fiche(NomDeFiche::Salarie, s)?));
+        fiches.push((FicheAJuger::Salarie(s), format!("la fiche de {}", crate::nom_a_l_ecran(s, cle))));
     }
-    let fiches: Vec<(NomDeFiche, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Contrat, &fiches, &[])? {
         Some(m) => Err(refus(m)),
         None => Ok(()),
@@ -374,20 +372,27 @@ fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit
 /// porte plusieurs (une page par contrat).
 fn nom_du_pdf(cle: &IdSalarie, ps: &[Paie], etiq: &str, suffixe: &str) -> R<NomDeFichier> {
     let numeros: Vec<String> = ps.iter().map(|p| numero_de_fichier(p.engagement.numero.as_ref())).collect();
-    NomDeFichier::lire(&format!("Contrat{}_{}_{}_{}{}.pdf", if ps.len() > 1 { "s" } else { "" }, cle, numeros.join("+"), etiq, suffixe))
+    NomDeFichier::lire(&format!(
+        "{}{}_{}_{}_{}{}.pdf",
+        documents::SorteDePieceProduite::Contrat.prefixe(),
+        if ps.len() > 1 { "s" } else { "" },
+        cle,
+        numeros.join("+"),
+        etiq,
+        suffixe
+    ))
 }
 
 // ------------------------------------------------------------------ contrats-imprimer
-/// LE PDF A IMPRIMER : les pieces `pieces`, dans leur ordre, reunies en un seul fichier `<dossier>/Impression_<quoi>_<etiq>.pdf`
-/// (une impression d'un mois remplace la precedente : les pieces parties gardent chacune leur fichier).
-/// Le debut du nom du PDF a imprimer : ce fichier n'est la piece de personne, il ne se liste pas parmi les documents.
-pub(crate) const PREFIXE_IMPRESSION: &str = "Impression_";
-
-pub(crate) fn reunir_pour_imprimer(dossier: &std::path::Path, quoi: &str, etiq: &str, pieces: &[std::path::PathBuf]) -> R<std::path::PathBuf> {
+/// LE PDF A IMPRIMER : les pieces `pieces`, dans leur ordre, reunies en un seul fichier `Impression_<quoi>_<etiq>.pdf`,
+/// dans le dossier de sa sorte sous les sorties du mois `sorties` (une impression d'un mois remplace la precedente : les
+/// pieces parties gardent chacune leur fichier).
+pub(crate) fn reunir_pour_imprimer(sorties: &std::path::Path, quoi: &str, etiq: &str, pieces: &[std::path::PathBuf]) -> R<std::path::PathBuf> {
     let octets = documents::fabrique::fusion_pieces(&pieces.iter().map(|p| (p.clone(), None)).collect::<Vec<_>>())?;
-    let f = dossier.join(format!("{}{}_{}.pdf", PREFIXE_IMPRESSION, quoi, etiq));
+    let dossier = documents::PieceDuMois::Impression.dossier().sous(sorties);
+    let f = dossier.join(format!("{}{}_{}.pdf", documents::SorteDePieceProduite::Impression.prefixe(), quoi, etiq));
     // Un mois dont seul un avenant s'imprime n'a pas encore son dossier d'envoi.
-    std::fs::create_dir_all(dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
+    std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     std::fs::write(&f, octets).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::Disque))?;
     Ok(f)
 }
@@ -423,7 +428,8 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         return Err(refus(format!("Aucun contrat a imprimer pour {}.", mois)));
     }
     controler_avenants(ctx, avenants)?;
-    let dossier = ctx.racine.join("sorties").join(s_mois.to_string()).join("envoi");
+    let sorties = ctx.racine.join("sorties").join(s_mois.to_string());
+    let dossier = documents::PieceDuMois::Contrat.dossier().sous(&sorties);
     let etiq = s_mois.etiquette();
     let ent = documents::avenant::ent_du_mois(ctx, s_mois);
     let (mut fichiers, mut contrats) = (Vec::new(), Vec::new());
@@ -445,7 +451,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
             lignes_avenants.push(c);
         }
     }
-    let impression = reunir_pour_imprimer(&dossier, "contrats", &etiq, &fichiers)?;
+    let impression = reunir_pour_imprimer(&sorties, "contrats", &etiq, &fichiers)?;
     let nom_impression = NomDeFichier::du(&impression)?;
     let le_mois = Some(mois);
     if !contrats.is_empty() {
@@ -494,7 +500,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois, None, &departs)?;
     let s_mois = data.mois;
-    let dossier = ctx.racine.join("sorties").join(s_mois.to_string()).join("envoi");
+    let dossier = documents::PieceDuMois::Contrat.dossier().sous(&ctx.racine.join("sorties").join(s_mois.to_string()));
     let etiq = s_mois.etiquette();
 
     let (an, nom_mois) = (s_mois.annee(), s_mois.nom(socle::mois::Graphie::Accentuee));
@@ -503,7 +509,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     // autres partent. Les adresses se lisent avant d'ecrire le moindre PDF : un refus ne laisse rien sur le disque.
     let (par_salarie, noms_sans) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
 
-    let mut remplacements: Vec<((IdSalarie, Jour, String), (String, Jour))> = Vec::new();
+    let mut remplacements: Vec<((IdSalarie, Jour, NumeroContrat), (String, Jour))> = Vec::new();
     if remplace {
         let lignes = envois::journal::lire(&ctx.racine, None, None, false)?;
         for (k, ps, _) in &par_salarie {
@@ -522,8 +528,8 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
                 }
                 let numero = numero_dit(parti.numero.as_ref(), "", "", SANS_NUMERO);
                 // Le contrat qui remplace se reconnait a son numero : sans numero, rien ne le designe.
-                if let Some(propre) = p.engagement.numero.as_deref() {
-                    remplacements.push(((k.clone(), debut, propre.to_string()), (numero, parti.date())));
+                if let Some(propre) = p.engagement.numero.as_ref() {
+                    remplacements.push(((k.clone(), debut, propre.clone()), (numero, parti.date())));
                 }
             }
         }
@@ -624,7 +630,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             if remplace {
                 c.acte = Some(ActeDuContrat::Remplace);
                 // Le contrat remplace est celui parti sous le meme numero (`envois::etats::contrat_parti`).
-                c.remplace = p.engagement.numero.as_ref().filter(|propre| remplacements.iter().any(|(k, _)| *k == (cle.clone(), debut, propre.to_string()))).cloned();
+                c.remplace = p.engagement.numero.as_ref().filter(|propre| remplacements.iter().any(|((s, d, n), _)| s == cle && *d == debut && n == *propre)).cloned();
             }
             contrats.push(c);
         }
@@ -767,7 +773,7 @@ pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<Dema
 fn deja_parti_dit(etats: &[crate::contrats::ContratASigner], salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Option<String> {
     let c = etats.iter().rev().find(|c| c.salarie == *salarie && c.numero.as_ref() == numero)?;
     let quand = c.demande_le?.jour().jj_mm_aaaa();
-    let comment = if c.par == Some("imprime") { "imprimé" } else { "envoyé" };
+    let comment = envois::etats::mot_de_la_remise(c.par, envois::etats::PlaceDeLaRemise::Phrase);
     Some(format!("Contrat n° {} de {} : déjà parti, {} le {}.", numero_dit(numero, "", "", SANS_NUMERO), c.nom, comment, quand))
 }
 
@@ -959,7 +965,7 @@ fn avenant_ecrit(
     let p = &paies[rang_p];
     let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement)?;
     let ent = documents::avenant::ent_du_mois(ctx, mois_a);
-    let dossier = ctx.racine.join("sorties").join(mois_a.to_string()).join("envoi");
+    let dossier = documents::PieceDuMois::Avenant.dossier().sous(&ctx.racine.join("sorties").join(mois_a.to_string()));
     let pdf = match &a.repris {
         Some(Repris { fichier, .. }) => {
             let f = dossier.join(fichier);
@@ -973,7 +979,14 @@ fn avenant_ecrit(
             f
         }
         None => {
-            let f = dossier.join(format!("Avenant{}_{}_{}_{}.pdf", a.numero, salarie, numero_de_fichier(a.contrat.as_ref()), a.mois.etiquette()));
+            let f = dossier.join(format!(
+                "{}{}_{}_{}_{}.pdf",
+                documents::SorteDePieceProduite::Avenant.prefixe(),
+                a.numero,
+                salarie,
+                numero_de_fichier(a.contrat.as_ref()),
+                a.mois.etiquette()
+            ));
             // Le modele du contrat qu'il modifie, dont il suit l'avenant : celui avec lequel ce contrat est parti ; signe
             // hors du logiciel, celui que son engagement suit.
             let modele = if ailleurs {

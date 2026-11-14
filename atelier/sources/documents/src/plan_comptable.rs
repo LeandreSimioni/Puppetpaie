@@ -15,9 +15,176 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use droit::contexte::Contexte;
+use droit::fiche::CodeAnalytique;
 use droit::forme_bareme::IdDeCotisation;
+use engagement::ecarts::RegroupementDeComparaison;
 use socle::echec::{erreur, Classe, Echec, R};
+
+use crate::ecritures_comptables::{CodeJournal, NumeroDeCompte, PosteAnalytique};
 use socle::fichiers::repr;
+
+// ------------------------------------------------------------------ les listes des exports
+
+/// UNE LISTE DU LOGICIEL que les tables des exports (`exports_tables.json`), la charge d'`exporter` et ses lecteurs
+/// nomment : chaque valeur s'ecrit, se lit et se trie par son texte ; une autre se refuse a sa lecture.
+macro_rules! liste_des_exports {
+    ($(#[$m:meta])* pub enum $nom:ident, $quoi:literal { $( $var:ident = $txt:literal ),* $(,)? }) => {
+        $(#[$m])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum $nom { $( $var ),* }
+
+        impl $nom {
+            /// Son texte.
+            pub fn as_str(self) -> &'static str {
+                match self { $( $nom::$var => $txt ),* }
+            }
+
+            /// Celle qu'ecrit `texte`, ou la phrase qui le refuse.
+            pub fn lire(texte: &str) -> R<$nom> {
+                match texte {
+                    $( $txt => Ok($nom::$var), )*
+                    _ => Err(socle::refus!(concat!($quoi, " : « {} »."), texte)),
+                }
+            }
+        }
+
+        impl std::fmt::Display for $nom {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl Ord for $nom {
+            fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+                self.as_str().cmp(autre.as_str())
+            }
+        }
+
+        impl PartialOrd for $nom {
+            fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(autre))
+            }
+        }
+
+        impl Serialize for $nom {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(self.as_str())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $nom {
+            fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                let texte = String::deserialize(d)?;
+                $nom::lire(&texte).map_err(|e| serde::de::Error::custom(e.phrase))
+            }
+        }
+    };
+}
+
+liste_des_exports! {
+    /// UN ETAT QUE LA PAGE DES EXPORTS PROPOSE (`etats` et `au_mois` des tables) : ce qu'`exporter` fait, ce qu'une
+    /// convention ou la taxe sur les salaires reserve, l'etat d'un tableau rendu.
+    pub enum EtatDExport, "État inconnu" {
+        LivreDePaie = "livre-de-paie",
+        LivreDePaieDetaille = "livre-de-paie-detaille",
+        RecapitulatifAnnuel = "recapitulatif-annuel",
+        MasseSalariale = "masse-salariale",
+        EtatDesVirements = "etat-des-virements",
+        PrelevementALaSource = "prelevement-a-la-source",
+        CotisationsParOrganisme = "cotisations-par-organisme",
+        VersementsOrganismes = "versements-organismes",
+        BordereauUrssaf = "bordereau-urssaf",
+        ReductionGenerale = "reduction-generale",
+        Assiettes = "assiettes",
+        RegularisationCascSvp = "regularisation-casc-svp",
+        FcapSvp = "fcap-svp",
+        Afdas2642 = "afdas-2642",
+        ParitarismeBranche = "paritarisme-branche",
+        EcrituresComptables = "ecritures-comptables",
+        GrandLivrePaie = "grand-livre-paie",
+        BalancePaie = "balance-paie",
+        TaxeSurLesSalaires = "taxe-sur-les-salaires",
+        CoutParSpectacle = "cout-par-spectacle",
+        HeuresEtCachets = "heures-et-cachets",
+        Contrats = "contrats",
+        RegistreDuPersonnel = "registre-du-personnel",
+        FichierDuPersonnel = "fichier-du-personnel",
+        JournalDesDeclarations = "journal-des-declarations",
+        ProvisionConges = "provision-conges",
+    }
+}
+
+liste_des_exports! {
+    /// LE FORMAT D'UN EXPORT : les six de la machinerie des tableaux (`tableaux_export::FORMATS_TABLEAU`), puis ceux des
+    /// logiciels du comptable (`etats_compta::FORMATS_ECRITURES`).
+    pub enum FormatDExport, "Format inconnu" {
+        Csv = "csv",
+        Tsv = "tsv",
+        Xlsx = "xlsx",
+        Pdf = "pdf",
+        Html = "html",
+        Json = "json",
+        Fec = "fec",
+        Ximport = "ximport",
+        Oxygene = "oxygene",
+        Sage = "sage",
+        Quadra = "quadra",
+        Ebp = "ebp",
+        Pennylane = "pennylane",
+    }
+}
+
+liste_des_exports! {
+    /// LE REGROUPEMENT D'UN ETAT : les groupes du livre de paie (par salarie, par mois, par spectacle), ceux des
+    /// cotisations (par organisme, par mois).
+    pub enum RegroupementDEtat, "Regroupement inconnu" {
+        Mois = "mois",
+        Organisme = "organisme",
+        Salarie = "salarie",
+        Spectacle = "spectacle",
+    }
+}
+
+liste_des_exports! {
+    /// LE LOGICIEL DU COMPTABLE (`logiciels` des tables) : il fixe le format des ecritures comptables ; `config/compta.json`
+    /// garde celui que la compagnie a retenu.
+    pub enum LogicielComptable, "Logiciel inconnu" {
+        Oxygene = "oxygene",
+        Sage = "sage",
+        Quadra = "quadra",
+        Ciel = "ciel",
+        Ebp = "ebp",
+        Pennylane = "pennylane",
+        Paheko = "paheko",
+        Acd = "acd",
+        Loop = "loop",
+        Isacompta = "isacompta",
+        Autre = "autre",
+    }
+}
+
+liste_des_exports! {
+    /// LA PERIODE QU'UN ETAT PROPOSE (`periodes` d'un etat) : une annee, un mois, toutes les annees.
+    pub enum PeriodeDExport, "Période inconnue" {
+        Annee = "annee",
+        Mois = "mois",
+        Toutes = "toutes",
+    }
+}
+
+liste_des_exports! {
+    /// LA COLONNE D'UN ETAT que le livre de paie totalise (`etats_paie::CUMULABLES`) : sa cle, sous laquelle le total
+    /// rendu la nomme, et sous laquelle se compte ce qu'un bulletin ne declare pas.
+    pub enum ColonneDEtat, "Colonne inconnue" {
+        Brut = "brut",
+        CotisationsSalariales = "cotisations_salariales",
+        CotisationsPatronales = "cotisations_patronales",
+        NetImposable = "net_imposable",
+        NetAPayer = "net_a_payer",
+        Pas = "pas",
+        CoutEmployeur = "cout_employeur",
+    }
+}
 
 // ------------------------------------------------------------------ les tables des exports
 
@@ -33,14 +200,14 @@ pub struct Tables {
     /// de conges payes : `engagement::conges::provision_conges_de`), ranges a part. Leur place dit leur piece.
     au_mois: Vec<EtatLivre>,
     /// L'etat -> les conventions (IDCC) qui le demandent.
-    pub si_convention: BTreeMap<String, Vec<droit::fiche::Idcc>>,
+    pub si_convention: BTreeMap<EtatDExport, Vec<droit::fiche::Idcc>>,
     /// Les etats qui ne servent qu'a une compagnie qui doit la taxe sur les salaires une des annees a exporter.
-    pub si_taxe_sur_les_salaires: Vec<String>,
+    pub si_taxe_sur_les_salaires: Vec<EtatDExport>,
     pub formats: Vec<FormatLivre>,
     pub regroupements: Vec<RegroupementLivre>,
     pub logiciels: Vec<Logiciel>,
     /// Le format -> les largeurs de ses zones.
-    pub limites: BTreeMap<String, Limite>,
+    pub limites: BTreeMap<FormatDExport, Limite>,
 }
 
 impl Tables {
@@ -54,22 +221,22 @@ impl Tables {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EtatLivre {
-    pub etat: String,
+    pub etat: EtatDExport,
     pub quoi: String,
     pub famille: String,
     pub questions: Vec<String>,
     pub bouton: String,
     pub apercu: bool,
-    pub formats: Vec<String>,
-    pub regroupements: Vec<String>,
-    pub periodes: Vec<String>,
+    pub formats: Vec<FormatDExport>,
+    pub regroupements: Vec<RegroupementDEtat>,
+    pub periodes: Vec<PeriodeDExport>,
 }
 
 /// Un format de fichier, et ce qu'il est.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormatLivre {
-    pub format: String,
+    pub format: FormatDExport,
     pub quoi: String,
 }
 
@@ -77,7 +244,7 @@ pub struct FormatLivre {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegroupementLivre {
-    pub regroupement: String,
+    pub regroupement: RegroupementDEtat,
     pub quoi: String,
 }
 
@@ -86,9 +253,9 @@ pub struct RegroupementLivre {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Logiciel {
-    pub logiciel: String,
+    pub logiciel: LogicielComptable,
     pub nom: String,
-    pub format: String,
+    pub format: FormatDExport,
     pub pourquoi: String,
     pub format_lisible: String,
     pub analytique: bool,
@@ -113,8 +280,8 @@ pub fn tables() -> &'static Tables {
 }
 
 /// Les logiciels du comptable que les ecritures comptables connaissent.
-pub fn logiciels_connus() -> Vec<&'static str> {
-    tables().logiciels.iter().map(|l| l.logiciel.as_str()).collect()
+pub fn logiciels_connus() -> Vec<LogicielComptable> {
+    tables().logiciels.iter().map(|l| l.logiciel).collect()
 }
 
 
@@ -122,8 +289,9 @@ pub fn logiciels_connus() -> Vec<&'static str> {
 pub const PLAN_COMPTABLE: &str = "config/plan-comptable.json";
 
 /// UN OBJET DONT L'ORDRE COMPTE, lu dans l'ordre du fichier (`socle::forme::en_ordre`) : les lignes, les tiers et les
-/// retenues du plan, ou la premiere ligne qui porte un compte lui donne son libelle. `K` : sa cle, un texte (un compte,
-/// une rubrique) ou la cotisation d'une ligne du bulletin (`IdDeCotisation`), lue a la porte.
+/// retenues du plan, ou la premiere ligne qui porte un compte lui donne son libelle. `K` : sa cle, un texte (une
+/// rubrique), un compte (`NumeroDeCompte`), la cotisation d'une ligne du bulletin (`IdDeCotisation`) ou son
+/// regroupement (`RegroupementDeComparaison`), lue a la porte.
 #[derive(Debug, Clone)]
 pub struct Ordonne<T, K = String>(pub Vec<(K, T)>);
 
@@ -156,20 +324,97 @@ impl<T, K: PartialEq> Ordonne<T, K> {
     }
 }
 
+/// Une cle de `lignes` qui n'est pas une cotisation (un regroupement ou un total d'un bulletin), en une phrase.
+fn hors_des_cotisations(lignes: &Ordonne<RegleLigne, IdDeCotisation>) -> Option<String> {
+    lignes.iter().find_map(|(k, _)| match RegroupementDeComparaison::lire(k.as_str()) {
+        Ok(RegroupementDeComparaison::Cotisation(_)) => None,
+        Ok(_) => Some(format!("« {} » nomme un regroupement ou un total d'un bulletin, pas une cotisation : un regroupement a sa place sous « regroupements », pas sous « lignes ».", k)),
+        Err(e) => Some(e.phrase),
+    })
+}
+
+/// Une cle de `regroupements` qui n'est pas un regroupement des lignes d'un bulletin importe, en une phrase.
+fn hors_des_regroupements(regroupements: &Ordonne<RegleLigne, RegroupementDeComparaison>) -> Option<String> {
+    regroupements.iter().find_map(|(k, _)| match k {
+        RegroupementDeComparaison::Autres | RegroupementDeComparaison::Convention | RegroupementDeComparaison::Apec => None,
+        RegroupementDeComparaison::Cotisation(_) | RegroupementDeComparaison::Total(_) => Some(format!(
+            "« {} » n'est pas un regroupement des lignes d'un bulletin importé (autres, convention, apec) : une cotisation a sa place sous « lignes », pas sous « regroupements ».",
+            k
+        )),
+    })
+}
+
+/// `lignes` du plan : des cotisations seules.
+fn cotisations_seules<'de, D: Deserializer<'de>>(d: D) -> Result<Ordonne<RegleLigne, IdDeCotisation>, D::Error> {
+    let lignes = Ordonne::<RegleLigne, IdDeCotisation>::deserialize(d)?;
+    match hors_des_cotisations(&lignes) {
+        Some(faute) => Err(serde::de::Error::custom(faute)),
+        None => Ok(lignes),
+    }
+}
+
+/// `lignes` d'un plan propre, quand il les dit : des cotisations seules.
+fn cotisations_seules_dites<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Ordonne<RegleLigne, IdDeCotisation>>, D::Error> {
+    let lignes = Option::<Ordonne<RegleLigne, IdDeCotisation>>::deserialize(d)?;
+    match lignes.as_ref().and_then(hors_des_cotisations) {
+        Some(faute) => Err(serde::de::Error::custom(faute)),
+        None => Ok(lignes),
+    }
+}
+
+/// `sections` du plan : le titre d'un spectacle -> son code analytique ; un code vide n'en choisit pas, il ne se garde
+/// pas.
+fn sections_dites<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeMap<String, CodeAnalytique>>, D::Error> {
+    let Some(ecrites) = Option::<BTreeMap<String, String>>::deserialize(d)? else { return Ok(None) };
+    let mut sections = BTreeMap::new();
+    for (titre, code) in ecrites.into_iter().filter(|(_, c)| !c.is_empty()) {
+        let code = CodeAnalytique::lire(&code).map_err(|e| serde::de::Error::custom(e.phrase))?;
+        sections.insert(titre, code);
+    }
+    Ok(Some(sections))
+}
+
+/// `regroupements` du plan : des regroupements seuls.
+fn regroupements_seuls<'de, D: Deserializer<'de>>(d: D) -> Result<Ordonne<RegleLigne, RegroupementDeComparaison>, D::Error> {
+    let regroupements = Ordonne::<RegleLigne, RegroupementDeComparaison>::deserialize(d)?;
+    match hors_des_regroupements(&regroupements) {
+        Some(faute) => Err(serde::de::Error::custom(faute)),
+        None => Ok(regroupements),
+    }
+}
+
+/// `regroupements` d'un plan propre, quand il les dit : des regroupements seuls.
+fn regroupements_seuls_dits<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Ordonne<RegleLigne, RegroupementDeComparaison>>, D::Error> {
+    let regroupements = Option::<Ordonne<RegleLigne, RegroupementDeComparaison>>::deserialize(d)?;
+    match regroupements.as_ref().and_then(hors_des_regroupements) {
+        Some(faute) => Err(serde::de::Error::custom(faute)),
+        None => Ok(regroupements),
+    }
+}
+
+/// La cle du plan qui dit les comptes d'une ligne de cotisation (`Plan::regle`) : `lignes.<cotisation>` ou
+/// `regroupements.<regroupement>`.
+pub fn cle_dans_le_plan(id: &RegroupementDeComparaison) -> String {
+    match id {
+        RegroupementDeComparaison::Cotisation(c) => format!("lignes.{}", c),
+        autre => format!("regroupements.{}", autre),
+    }
+}
+
 /// Un compte et son libelle.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Compte {
-    pub compte: String,
+    pub compte: NumeroDeCompte,
     pub libelle: String,
 }
 
 /// LE NET : le compte 421, son libelle, et le modele du sous-compte individuel (`par_salarie`), absent quand le
-/// comptable tient un seul 421.
+/// comptable tient un seul 421. Le modele n'est pas un compte : il en fait un par salarie (`compte_du_salarie`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompteNet {
-    pub compte: String,
+    pub compte: NumeroDeCompte,
     pub libelle: String,
     pub par_salarie: Option<String>,
 }
@@ -178,7 +423,7 @@ pub struct CompteNet {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Retenue {
-    pub compte: String,
+    pub compte: NumeroDeCompte,
     pub libelle: Option<String>,
 }
 
@@ -186,8 +431,8 @@ pub struct Retenue {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegleLigne {
-    pub charge: String,
-    pub tiers: String,
+    pub charge: NumeroDeCompte,
+    pub tiers: NumeroDeCompte,
     pub libelle: Option<String>,
 }
 
@@ -210,7 +455,7 @@ pub struct Plan {
     pub quoi: Option<String>,
     pub note: Option<String>,
     pub source: Option<String>,
-    pub journal: String,
+    pub journal: CodeJournal,
     /// Le libelle du journal, au FEC (`JournalLib`).
     pub journal_libelle: String,
     pub brut: Compte,
@@ -218,12 +463,20 @@ pub struct Plan {
     pub frais: Compte,
     pub pas: Compte,
     pub retenues: Ordonne<Retenue>,
-    pub tiers: Ordonne<String>,
+    /// Le compte d'un tiers -> son nom.
+    pub tiers: Ordonne<String, NumeroDeCompte>,
     /// La cotisation d'une ligne du bulletin -> ses comptes.
+    #[serde(deserialize_with = "cotisations_seules")]
     pub lignes: Ordonne<RegleLigne, IdDeCotisation>,
+    /// LE REGROUPEMENT d'une ligne qu'un bulletin importe imprime pour plusieurs cotisations (`autres`, `convention`,
+    /// `apec` : `engagement::ecarts::RegroupementDeComparaison`) -> ses comptes. A part des cotisations : un regroupement
+    /// n'est pas une ligne du calcul.
+    #[serde(deserialize_with = "regroupements_seuls")]
+    pub regroupements: Ordonne<RegleLigne, RegroupementDeComparaison>,
     pub provision_conges: ProvisionConges,
-    pub sections: Option<BTreeMap<String, String>>,
-    pub poste_analytique: Option<String>,
+    #[serde(default, deserialize_with = "sections_dites")]
+    pub sections: Option<BTreeMap<String, CodeAnalytique>>,
+    pub poste_analytique: Option<PosteAnalytique>,
 }
 
 /// `config/plan-comptable.json` : ce que la compagnie change au plan livre. Chaque cle dite remplace la sienne ;
@@ -234,18 +487,22 @@ struct PlanPropre {
     quoi: Option<String>,
     note: Option<String>,
     source: Option<String>,
-    journal: Option<String>,
+    journal: Option<CodeJournal>,
     journal_libelle: Option<String>,
     brut: Option<Compte>,
     net: Option<CompteNet>,
     frais: Option<Compte>,
     pas: Option<Compte>,
     retenues: Option<Ordonne<Retenue>>,
-    tiers: Option<Ordonne<String>>,
+    tiers: Option<Ordonne<String, NumeroDeCompte>>,
+    #[serde(default, deserialize_with = "cotisations_seules_dites")]
     lignes: Option<Ordonne<RegleLigne, IdDeCotisation>>,
+    #[serde(default, deserialize_with = "regroupements_seuls_dits")]
+    regroupements: Option<Ordonne<RegleLigne, RegroupementDeComparaison>>,
     provision_conges: Option<ProvisionConges>,
-    sections: Option<BTreeMap<String, String>>,
-    poste_analytique: Option<String>,
+    #[serde(default, deserialize_with = "sections_dites")]
+    sections: Option<BTreeMap<String, CodeAnalytique>>,
+    poste_analytique: Option<PosteAnalytique>,
 }
 
 impl Plan {
@@ -281,10 +538,22 @@ impl Plan {
         if let Some(l) = p.lignes {
             self.lignes.recouvrir(l);
         }
+        if let Some(r) = p.regroupements {
+            self.regroupements.recouvrir(r);
+        }
+    }
+
+    /// Les comptes d'une ligne de cotisation d'une paie du mois : ceux de sa cotisation (`lignes`), ou ceux de son
+    /// regroupement (`regroupements`) ; aucun si le plan ne la nomme pas.
+    pub fn regle(&self, id: &RegroupementDeComparaison) -> Option<&RegleLigne> {
+        match id {
+            RegroupementDeComparaison::Cotisation(c) => self.lignes.get(c),
+            autre => self.regroupements.get(autre),
+        }
     }
 
     /// Le libelle du tiers `compte`, s'il est dit (et non vide).
-    pub fn nom_du_tiers(&self, compte: &str) -> Option<&str> {
+    pub fn nom_du_tiers(&self, compte: &NumeroDeCompte) -> Option<&str> {
         self.tiers.get(compte).map(String::as_str).filter(|n| !n.is_empty())
     }
 }
@@ -311,51 +580,47 @@ pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
 
 /// Ce qui, dans le plan comptable, ne
 /// passerait pas dans ce format -- avant l'export.
-pub fn controler_plan(ctx: &Contexte, format: &str) -> R<Vec<String>> {
+pub fn controler_plan(ctx: &Contexte, format: FormatDExport) -> R<Vec<String>> {
     // Un format dont les tables ne bornent pas les zones n'a rien qui depasse.
-    Ok(tables().limites.get(format).map(|lim| controler_contre(ctx, format, lim)).transpose()?.into_iter().flatten().collect())
+    Ok(tables().limites.get(&format).map(|lim| controler_contre(ctx, format, lim)).transpose()?.into_iter().flatten().collect())
 }
 
-fn controler_contre(ctx: &Contexte, format: &str, lim: &Limite) -> R<Vec<String>> {
+fn controler_contre(ctx: &Contexte, format: FormatDExport, lim: &Limite) -> R<Vec<String>> {
     let plan = plan_comptable(ctx)?;
     let (lim_journal, nom_format) = (lim.journal, lim.nom.as_str());
-    let mut comptes: HashSet<String> = HashSet::new();
+    let mut comptes: HashSet<NumeroDeCompte> = HashSet::new();
     for c in [&plan.brut.compte, &plan.net.compte, &plan.pas.compte] {
         comptes.insert(c.clone());
     }
-    for (_, regle) in plan.lignes.iter() {
+    for regle in plan.lignes.iter().map(|(_, r)| r).chain(plan.regroupements.iter().map(|(_, r)| r)) {
         for c in [&regle.charge, &regle.tiers] {
-            if !c.is_empty() {
-                comptes.insert(c.clone());
-            }
+            comptes.insert(c.clone());
         }
     }
     comptes.extend(plan.tiers.iter().map(|(k, _)| k.clone()));
     for (_, regle) in plan.retenues.iter() {
-        if !regle.compte.is_empty() {
-            comptes.insert(regle.compte.clone());
-        }
+        comptes.insert(regle.compte.clone());
     }
     let mut msgs: Vec<String> = Vec::new();
     let mut fiches: Vec<(&droit::contexte::IdSalarie, &droit::fiche::FicheSalarie)> = ctx.salaries.iter().collect();
     fiches.sort_by(|a, b| a.0.cmp(b.0));
     for (cle, s) in fiches {
         match compte_du_salarie(&plan, s, cle) {
-            Ok(Some(c)) if !c.is_empty() => {
+            Ok(Some(c)) => {
                 comptes.insert(c);
             }
-            Ok(_) => {}
+            Ok(None) => {}
             Err(Refus::Operation(m)) => msgs.push(m),
             Err(Refus::Autre(e)) => return Err(e),
         }
     }
-    let journal = plan.journal.clone();
-    let mut tries: Vec<&String> = comptes.iter().collect();
+    let journal = plan.journal.as_str();
+    let mut tries: Vec<&NumeroDeCompte> = comptes.iter().collect();
     tries.sort();
-    for c in tries {
+    for c in tries.into_iter().map(NumeroDeCompte::as_str) {
         if let Some(lim_compte) = lim.compte.filter(|l| c.chars().count() > *l) {
             msgs.push(format!("{} : le compte « {} » a {} caractères, la zone en prend {}.", nom_format, c, c.chars().count(), lim_compte));
-        } else if format == "quadra" && !(!c.is_empty() && c.chars().all(|x| x.is_ascii_digit())) {
+        } else if format == FormatDExport::Quadra && !c.chars().all(|x| x.is_ascii_digit()) {
             msgs.push(format!(
                 "Quadra : le compte « {} » n'est pas numérique ; Quadra range les comptes de lettres parmi les tiers (clients, fournisseurs).",
                 c
@@ -365,7 +630,7 @@ fn controler_contre(ctx: &Contexte, format: &str, lim: &Limite) -> R<Vec<String>
     if journal.chars().count() > lim_journal {
         msgs.push(format!("{} : le journal « {} » a {} caractères, la zone en prend {}.", nom_format, journal, journal.chars().count(), lim_journal));
     }
-    if format == "pennylane" && !(!journal.is_empty() && journal.chars().all(char::is_alphabetic)) {
+    if format == FormatDExport::Pennylane && !journal.chars().all(char::is_alphabetic) {
         msgs.push(format!("Pennylane : le code journal « {} » ne doit porter que des lettres.", journal));
     }
     Ok(msgs)
@@ -377,8 +642,9 @@ pub enum Refus {
     Autre(Echec),
 }
 
-/// Le sous-compte 421 d'un salarie, ou `None` si le plan n'en tient pas (`net.par_salarie` absent).
-pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -> Result<Option<String>, Refus> {
+/// Le sous-compte 421 d'un salarie, ou `None` si le plan n'en tient pas (`net.par_salarie` absent) ou que son modele se
+/// remplit a vide (aucun sous-compte).
+pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -> Result<Option<NumeroDeCompte>, Refus> {
     let Some(modele) = &plan.net.par_salarie else { return Ok(None) };
     if modele.is_empty() {
         return Err(Refus::Operation(
@@ -391,7 +657,7 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         })?,
         None => None,
     };
-    formater(modele, code, cle.as_str(), 0).map(Some).map_err(|(classe, message)| {
+    let rempli = formater(modele, code, cle.as_str(), 0).map_err(|(classe, message)| {
         // `compte_du_salarie` ne rattrape qu'une valeur illisible ou qui manque ; le reste traverse.
         match classe {
             Classe::Illisible | Classe::Manque => {}
@@ -415,7 +681,17 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
             cle,
             message
         ))
-    })
+    })?;
+    if rempli.is_empty() {
+        return Ok(None);
+    }
+    match NumeroDeCompte::lire(&rempli) {
+        Ok(c) => Ok(Some(c)),
+        Err(e) => Err(Refus::Operation(format!(
+            "Le modèle du compte individuel « {} » (net.par_salarie du plan comptable) donne pour {} le compte « {} », que le logiciel ne prend pas : {}",
+            modele, cle, rempli, e.phrase
+        ))),
+    }
 }
 
 /// Un entier écrit : le signe, les chiffres, un tiret bas entre deux chiffres ; `None` pour un code qui n'est pas un
