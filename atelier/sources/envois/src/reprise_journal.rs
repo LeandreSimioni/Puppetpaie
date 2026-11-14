@@ -38,9 +38,13 @@ fn accepte(b: &Bilan) -> bool {
     b.verdict() == Some(Verdict::Ok)
 }
 
-/// Un depot reel (`essai_reel` 02), et non d'essai.
-fn reel(b: &Bilan) -> bool {
-    b.essai_reel == Some(droit::nature_declaration::EssaiOuReel::Reel)
+/// Le mode du depot : reel s'il est dit reel (`essai_reel` 02) ; un essai (01), ou un bilan qui ne le dit pas, un test.
+fn mode(b: &Bilan) -> Mode {
+    use droit::nature_declaration::EssaiOuReel;
+    match b.essai_reel {
+        Some(EssaiOuReel::Reel) => Mode::Reel,
+        Some(EssaiOuReel::Essai) | None => Mode::Test,
+    }
 }
 
 /// Un depot dont une piece de `retours/` temoigne.
@@ -165,14 +169,14 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
         // reviennent dans les retours de la compagnie. Un test n'engage rien : absent du journal, il vient d'ailleurs.
         // Il compte pourtant pour l'ordre (`ordre_signalements::dernier_ordre_des_mensuelles`, lu en silence). Un REEL
         // absent du journal est un depot de la compagnie (l'atelier n'en fait jamais) : il se reprend.
-        if !reel(b) && !d.deja {
+        if mode(b) == Mode::Test && !d.deja {
             continue;
         }
         let vue = DepotVu {
             flux: d.flux.clone(),
             quand: b.recu_le.clone(),
             mois: b.mois,
-            mode: Mode::de(reel(b)),
+            mode: mode(b),
             accepte: accepte(b),
             verdict_connu: b.etat_declaration.is_some(),
             logiciel: b.logiciel.clone(),
@@ -215,7 +219,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
             Some(c) => c.as_str(),
             None => SANS_CERTIFICAT,
         };
-        let mut e = Envoi::nouveau(Mode::de(reel(b)), qui, accepte(b), "net-entreprises", reponse, detail);
+        let mut e = Envoi::nouveau(mode(b), qui, accepte(b), "net-entreprises", reponse, detail);
         e.mois = b.mois;
         e.flux = Some(d.flux.clone());
         journal::noter(&ctx.racine, Ligne::Dsn(e), None, journal::Datation::Lue { quand, origine: format!("retours/{}", piece) })?;
@@ -377,7 +381,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
         // verdict, que seuls les retours rattaches a la ligne donnent (`etats::verdict_dpae`) ; tant qu'aucun n'y est
         // range, la DPAE est partie, sans bilan connu. Le mode reel est une INFERENCE : aucun bilan ne dit l'essai.
         let (mode, accepte_) = match &b {
-            Some(b) => (Mode::de(reel(b)), accepte(b)),
+            Some(b) => (mode(b), accepte(b)),
             None => (Mode::Reel, true),
         };
         let deja = connus.contains(&entier);

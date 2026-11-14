@@ -47,6 +47,23 @@ impl Mode {
     }
 }
 
+/// L'ECRITURE D'UN MODE EN BOOLEEN, celle d'une charge ou d'une reponse de route qui dit `reel` : vrai en reel, faux en
+/// test.
+pub mod en_booleen {
+    use super::Mode;
+
+    pub fn serialize<S: serde::Serializer>(m: &Mode, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bool(*m == Mode::Reel)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Mode, D::Error> {
+        match <bool as serde::Deserialize>::deserialize(d)? {
+            true => Ok(Mode::Reel),
+            false => Ok(Mode::Test),
+        }
+    }
+}
+
 /// La sorte d'un envoi, telle que `quoi` l'ecrit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

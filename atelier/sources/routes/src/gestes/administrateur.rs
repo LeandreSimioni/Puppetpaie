@@ -55,6 +55,7 @@ use crate::enveloppe::Dite;
 use crate::rappels::{EcheanceDite, EtapeDEcheance, GenreDEcheance};
 use droit::contexte::Contexte;
 use envois::etats;
+use envois::journal::Mode;
 use envois::retours::IdDeFlux;
 use socle::echec::erreur;
 use socle::echec::Echec;
@@ -568,17 +569,39 @@ impl Etape {
     }
 }
 
-/// Ce qui est pret a partir : en test (ecrit, pas encore essaye), en reel (teste, conforme, et le fichier est reel).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Pret {
-    pub test: bool,
-    pub reel: bool,
+/// CE QUI EST PRET A PARTIR : rien (aucun fichier ecrit a deposer), en test (ecrit, pas encore essaye), en reel (teste,
+/// conforme, et le fichier est reel). Le tableau garde l'ecrit en deux booleens (`PretEcrit`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PretEcrit", into = "PretEcrit")]
+pub enum Pret {
+    Rien,
+    Pour(Mode),
 }
 
-impl Pret {
-    /// Rien de pret : aucun fichier ecrit a deposer.
-    pub const RIEN: Pret = Pret { test: false, reel: false };
+/// La forme de `Pret` dans le tableau garde : `test`, `reel`, jamais les deux.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PretEcrit {
+    test: bool,
+    reel: bool,
+}
+
+impl TryFrom<PretEcrit> for Pret {
+    type Error = socle::echec::Echec;
+    fn try_from(p: PretEcrit) -> R<Pret> {
+        match (p.test, p.reel) {
+            (false, false) => Ok(Pret::Rien),
+            (true, false) => Ok(Pret::Pour(Mode::Test)),
+            (false, true) => Ok(Pret::Pour(Mode::Reel)),
+            (true, true) => Err(socle::refus!("Une déclaration du tableau gardé se dit prête en test et en réel : refaire le tableau.")),
+        }
+    }
+}
+
+impl From<Pret> for PretEcrit {
+    fn from(p: Pret) -> PretEcrit {
+        PretEcrit { test: p == Pret::Pour(Mode::Test), reel: p == Pret::Pour(Mode::Reel) }
+    }
 }
 
 /// UNE DECLARATION DU TABLEAU D'UNE COMPAGNIE, telle qu'elle se garde (`TableauCompagnie`) : sa cle (celle du rappel),
@@ -738,7 +761,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 ou: Vec::new(),
                 fichier: None,
                 etape: None,
-                pret: Pret::RIEN,
+                pret: Pret::Rien,
             }
         }
         GenreDEcheance::Obligation => {
@@ -764,7 +787,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 };
                 (Genre::HorsDsn, "Elle ne part pas avec la DSN : à faire sur le service de l'organisme, puis à dire faite dans la compagnie.", lieux)
             };
-            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::RIEN }
+            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::Rien }
         }
         GenreDEcheance::Dpae => {
             let jour = r.date;
@@ -781,7 +804,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 ou: Vec::new(),
                 fichier: None,
                 etape: None,
-                pret: Pret::RIEN,
+                pret: Pret::Rien,
             }
         }
         GenreDEcheance::DeLAnnee(_) => return Ok(None),
@@ -791,7 +814,11 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         let Some(etape) = etape_du_fichier(ctx, lignes, &f, mensuelle)? else { return Ok(None) };
         let octets = std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?;
         let reel_code = declarations::dsn_lue::lire(&octets, None)?.reel();
-        d.pret = Pret { test: etape == Etape::ATester, reel: etape == Etape::Testee && reel_code };
+        d.pret = match etape {
+            Etape::ATester => Pret::Pour(Mode::Test),
+            Etape::Testee if reel_code => Pret::Pour(Mode::Reel),
+            Etape::Testee | Etape::EnTest | Etape::TestRefuse | Etape::PaieChangee => Pret::Rien,
+        };
         d.fichier = Some(f);
         d.etape = Some(etape);
         d.marche = Some(etape.marche().into());
@@ -917,8 +944,8 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, R<TableauCompagnie>)>, ga
             Ok(t) => (t.declarations, Some(t.le), None),
             Err(m) => (Vec::new(), None, Some(m.phrase)),
         };
-        let pt = decl.iter().filter(|d| d.pret.test).count();
-        let pr = decl.iter().filter(|d| d.pret.reel).count();
+        let pt = decl.iter().filter(|d| d.pret == Pret::Pour(Mode::Test)).count();
+        let pr = decl.iter().filter(|d| d.pret == Pret::Pour(Mode::Reel)).count();
         test_n += pt;
         reel_n += pr;
         test_k += usize::from(pt > 0);
@@ -1100,7 +1127,8 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
 #[derive(Debug, Serialize)]
 pub struct DepotGroupe {
     pub phrase: String,
-    pub reel: bool,
+    #[serde(rename = "reel", serialize_with = "envois::journal::en_booleen::serialize")]
+    pub mode: Mode,
     pub partis: usize,
     pub refuses: usize,
     pub resultats: Vec<Resultat>,
@@ -1113,11 +1141,11 @@ impl Dite for DepotGroupe {
     }
 }
 
-/// LE DEPOT GROUPE : ce qui est pret (`reel` : teste et conforme ; sinon : ecrit et pas encore essaye) dans les compagnies
+/// LE DEPOT GROUPE : ce qui est pret dans `mode` (en reel : teste et conforme ; en test : ecrit et pas encore essaye) dans les compagnies
 /// de l'administrateur part, compagnie par compagnie, par la route `deposer` de chacune. `motdepasse` (reel) : celui que la
 /// fenetre a fait taper au moment de l'acte ; sans lui, le moteur le demande a un humain. Rend, declaration par
 /// declaration, ce qui est parti et ce qui a refuse, et le tableau refait.
-pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::secret::Secret>) -> R<DepotGroupe> {
+pub fn deposer(o: &Options, inst: &Path, mode: Mode, motdepasse: Option<socle::secret::Secret>) -> R<DepotGroupe> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
         return Err(erreur(Classe::Refuse, "Ce logiciel n'a pas d'administrateur : chaque compagnie dépose depuis sa page. Rien n'est parti."));
@@ -1130,7 +1158,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
         match refaire_compagnie(o, r) {
             Ok(t) => {
                 for d in t.declarations {
-                    if if reel { d.pret.reel } else { d.pret.test } {
+                    if d.pret == Pret::Pour(mode) {
                         a_faire.push((r.clone(), nom.clone(), d));
                     }
                 }
@@ -1140,16 +1168,15 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
     }
     // RIEN DE PRET : rien ne part, et la phrase dit pourquoi (ce n'est pas un refus : il n'y a rien a corriger).
     if a_faire.is_empty() {
-        let phrase = if reel {
-            "Aucune déclaration n'est prête à partir pour de vrai : une déclaration part en réel après un test revenu conforme."
-        } else {
-            "Aucune déclaration écrite n'attend son dépôt de test."
+        let phrase = match mode {
+            Mode::Reel => "Aucune déclaration n'est prête à partir pour de vrai : une déclaration part en réel après un test revenu conforme.",
+            Mode::Test => "Aucune déclaration écrite n'attend son dépôt de test.",
         };
         let refuses = resultats.len();
-        return Ok(DepotGroupe { phrase: phrase.into(), reel, partis: 0, refuses, resultats, tableau: tableau(o, inst, false)? });
+        return Ok(DepotGroupe { phrase: phrase.into(), mode, partis: 0, refuses, resultats, tableau: tableau(o, inst, false)? });
     }
     let mut mdp: Option<socle::secret::Secret> = None;
-    if reel {
+    if mode == Mode::Reel {
         let m = match motdepasse.filter(|m| !m.devoiler().is_empty()) {
             Some(m) => m,
             None => {
@@ -1167,16 +1194,16 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
         mdp = Some(m);
     }
     for (racine, nom, d) in &a_faire {
-        let charge = en_charge(ChargeDeposer::de(designation(d)?, reel, mdp.clone()))?;
+        // La charge de `deposer` dit encore son mode en booleen (`depots::ChargeDeposer`).
+        let charge = en_charge(ChargeDeposer::de(designation(d)?, mode == Mode::Reel, mdp.clone()))?;
         let avant = envois::journal::lu(racine)?.lignes.len();
         let rep = crate::servir_la_route(&o_de(o, racine), Route::Deposer, &charge);
         compagnie::coffre::oublier_mot_de_passe_tape();
         let (parti, phrase, refus, classe, flux) = match rep.en_refus() {
             Ok(_) => {
-                let phrase = if reel {
-                    "Partie pour de vrai : son bilan arrive avec les retours."
-                } else {
-                    "Partie en test, compte rendu attendu : le dépôt réel se fait une fois le test revenu conforme."
+                let phrase = match mode {
+                    Mode::Reel => "Partie pour de vrai : son bilan arrive avec les retours.",
+                    Mode::Test => "Partie en test, compte rendu attendu : le dépôt réel se fait une fois le test revenu conforme.",
                 };
                 // Le flux de ce qui est parti : la ligne que le depot a ecrite au journal des envois.
                 let journal = envois::journal::lu(racine)?;
@@ -1192,8 +1219,8 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
             Genre::Dsn | Genre::Signalement => Some(Quoi::Dsn),
             Genre::HorsDsn => None,
         };
-        let suivre = match (reel && parti, quoi, racine.strip_prefix(inst)) {
-            (true, Some(quoi), Ok(dossier)) => Some(ASuivre {
+        let suivre = match (mode, parti, quoi, racine.strip_prefix(inst)) {
+            (Mode::Reel, true, Some(quoi), Ok(dossier)) => Some(ASuivre {
                 dossier: dossier.to_path_buf(),
                 depot: crate::depots::ChargeSuivre { quoi, flux: flux.clone(), mois: d.mois },
             }),
@@ -1205,7 +1232,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
     let refuses = resultats.len() - partis;
     let refuses_dit: String = (refuses > 0).then(|| format!(", {}", socle::ecran::compte(refuses, "refusée", "refusées"))).into_iter().collect();
     let phrase = format!("{}{}.", socle::ecran::compte(partis, "déclaration partie", "déclarations parties"), refuses_dit);
-    Ok(DepotGroupe { phrase, reel, partis, refuses, resultats, tableau: tableau(o, inst, false)? })
+    Ok(DepotGroupe { phrase, mode, partis, refuses, resultats, tableau: tableau(o, inst, false)? })
 }
 
 /// La designation de la declaration `d` du tableau : la DSN de son mois, ou le signalement ecrit.

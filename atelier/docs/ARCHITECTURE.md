@@ -825,6 +825,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | tournure d'une échéance | `droit::echeances::Tournure` | `droit/src/echeances.rs` |
 | origine d'un mois des états | `documents::etats_paie::OrigineDuMois` | `documents/src/etats_paie.rs` |
 | étape du dépôt d'une déclaration écrite | `EtapeDuDepot` | `routes/src/etapes.rs` |
+| mode d'un envoi | `envois::ligne::Mode` | `envois/src/ligne.rs` |
+| ce qui est prêt à partir au tableau de l'administrateur | `routes::gestes::administrateur::Pret` | `routes/src/gestes/administrateur.rs` |
 | mode de remise d'une pièce remise aux salariés | `ModeDeRemise` | `envois/src/etats.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
@@ -1093,6 +1095,12 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (l'ancien logiciel l'a payé) ; écrite dans aucun fichier ; que porte `Periode.dispo`.
 - **étape du dépôt d'une déclaration écrite** : la paie a changé depuis son écriture, ou l'état de son test
   (`envois::etats::EtatDuTest`) ; le geste d'une case qui dépose s'en choisit.
+- **mode d'un envoi** : réel (il engage) ou test (un dépôt de test, qui ne conserve rien). La ligne du journal l'écrit
+  `reel`, `test` ; une charge ou une réponse de route qui dit `reel` l'écrit en booléen (`en_booleen` : la charge et la
+  réponse du dépôt groupé). À unifier (#419) : des `bool` (`reel`, `envoi_test`, `test`) ailleurs.
+- **ce qui est prêt à partir au tableau de l'administrateur** : rien, ou une déclaration prête pour un `Mode` (en test :
+  écrite, pas encore essayée ; en réel : testée, conforme, et le fichier est réel). Le tableau gardé l'écrit `test`,
+  `reel`, jamais les deux.
 - **mode de remise d'une pièce remise aux salariés** : comment un contrat (ou un avenant), ou les documents d'un mois
   (bulletin, certificat, attestation), sont partis : imprimés (remis en main propre) ou par courriel ; écrit `imprime`,
   `courriel`. Une ligne du journal des envois dit sa remise si elle en a une (`Ligne::remise` : une demande de

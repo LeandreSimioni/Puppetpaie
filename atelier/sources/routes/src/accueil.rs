@@ -221,7 +221,8 @@ pub struct ChargeTableau {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDeposer {
-    reel: bool,
+    #[serde(rename = "reel", with = "envois::journal::en_booleen")]
+    mode: envois::journal::Mode,
 }
 
 /// La charge de `administrateur-suivre` : les declarations a suivre, telles que le depot groupe les a rendues
@@ -415,7 +416,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::AdministrateurDeposer => {
             let c: ChargeDeposer = charge.lire()?;
-            let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().cloned())?;
+            let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.mode, charge.mot_de_passe().cloned())?;
             en_json(depot)
         }
         Route::AdministrateurSuivre => {
