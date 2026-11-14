@@ -963,7 +963,7 @@ fn signalement_dsn(
         // qui part avec elle (le texte du report parle de « la declaration sociale nominative » sans distinguer).
         let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, evenement.mois_civil()).map_err(|m| m.reclasser(Classe::Illisible))?;
         m.subrogation = Some(true);
-        m.echeance_dsn = Some(echeance.dite());
+        m.echeance_dsn = Some(echeance.dite()?);
         // La connaissance ne compte pas : le delai court du mois de l'evenement.
         let ev = Depart::du_jour(evenement, "le jour de l'événement (sa DSN mensuelle est celle de son mois)", None);
         m.conclure(aujourdhui, Some(&ev), echeance.jour, Some(declarations::echeance_dsn::MINUTE_LIMITE), &d.dit, fait);

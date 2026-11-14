@@ -38,11 +38,9 @@
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
+use socle::paris::{ecrit::jour_et_heure, InstantOuJour, Moment};
 
-/// L'heure limite du depot le jour de l'echeance (cahier technique DSN 2026.1, § 1.4.2).
-pub const HEURE_LIMITE: &str = "12:00";
-
-/// Les minutes depuis minuit de `HEURE_LIMITE`.
+/// L'heure limite du depot le jour de l'echeance, midi, en minutes depuis minuit (cahier technique DSN 2026.1, § 1.4.2).
 pub const MINUTE_LIMITE: u32 = 12 * 60;
 
 const JOURS: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
@@ -157,33 +155,58 @@ impl Echeance {
         format!("{} à midi", lisible(&self.jour))
     }
 
+    /// L'instant limite du depot : son jour, a l'heure limite (`MINUTE_LIMITE`, a Paris).
+    pub fn limite(&self) -> R<Moment> {
+        match jour_et_heure::a_la_minute(self.jour, i64::from(MINUTE_LIMITE)) {
+            Some(InstantOuJour::Instant(m)) => Ok(m),
+            _ => Err(refus(format!("L'échéance du {} à midi n'est pas une heure de Paris.", self.jour.jj_mm_aaaa()))),
+        }
+    }
+
     /// Ce que les routes rendent a cote de leur date (`echeance_depot`).
-    pub fn dite(&self) -> EcheanceDite {
-        EcheanceDite {
-            jour: self.jour,
-            heure: HEURE_LIMITE,
+    pub fn dite(&self) -> R<EcheanceDite> {
+        Ok(EcheanceDite {
+            limite: self.limite()?,
             nominale: self.nominale,
             reportee: self.reportee(),
             pourquoi: self.pourquoi(),
             phrase: self.phrase(),
-            veille_annule_et_remplace: Some(self.veille.iso()),
+            veille_annule_et_remplace: Some(self.veille),
             textes: TEXTES,
             inference: INFERENCE,
-        }
+        })
     }
 }
 
-/// L'echeance telle que les routes la rendent : son jour et son heure limite, la nominale, si elle est reportee et
-/// pourquoi, sa phrase, la veille de l'annule-et-remplace, ses textes et l'inference qu'elle porte.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+/// L'echeance telle que les routes la rendent : son instant limite (ecrit en deux champs, `jour` et `heure` `HH:MM` :
+/// `socle::paris::ecrit::jour_et_heure`), la nominale, si elle est reportee et pourquoi, sa phrase, la veille de
+/// l'annule-et-remplace, ses textes et l'inference qu'elle porte.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EcheanceDite {
-    pub jour: Jour,
-    pub heure: &'static str,
+    pub limite: Moment,
     pub nominale: Jour,
     pub reportee: bool,
     pub pourquoi: Option<String>,
     pub phrase: String,
-    pub veille_annule_et_remplace: Option<String>,
+    pub veille_annule_et_remplace: Option<Jour>,
     pub textes: [&'static str; 4],
     pub inference: &'static str,
+}
+
+impl serde::Serialize for EcheanceDite {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let (jour, heure) = jour_et_heure::champs(InstantOuJour::Instant(self.limite));
+        let mut e = s.serialize_struct("EcheanceDite", 9)?;
+        e.serialize_field("jour", &jour)?;
+        e.serialize_field("heure", &heure)?;
+        e.serialize_field("nominale", &self.nominale)?;
+        e.serialize_field("reportee", &self.reportee)?;
+        e.serialize_field("pourquoi", &self.pourquoi)?;
+        e.serialize_field("phrase", &self.phrase)?;
+        e.serialize_field("veille_annule_et_remplace", &self.veille_annule_et_remplace)?;
+        e.serialize_field("textes", &self.textes)?;
+        e.serialize_field("inference", &self.inference)?;
+        e.end()
+    }
 }

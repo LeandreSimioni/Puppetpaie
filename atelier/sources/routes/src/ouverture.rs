@@ -1113,7 +1113,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
             depose_le: quand,
             documents_dit: Some(if sortes.is_empty() { "aucun document".to_string() } else { sortes.join(" · ") }),
             echeance: Some(limite),
-            echeance_depot: Some(echeance.dite()),
+            echeance_depot: Some(echeance.dite()?),
             // Deposee, passee, et l'echeance derriere : la correction part dans
             // la DSN du mois courant.
             corrigeable: lu.partie() && en_retard && !importe,

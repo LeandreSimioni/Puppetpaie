@@ -9,7 +9,7 @@
 //! - les fetes legales : L. 3133-1 (`logiciel/donnees/feries-base.json`).
 
 use socle::date::Jour;
-use declarations::echeance_dsn::{reporter, Echeance, HEURE_LIMITE};
+use declarations::echeance_dsn::{reporter, Echeance, MINUTE_LIMITE};
 
 /// L'echeance de la DSN du mois `numero` de l'annee `an`.
 fn du_mois(an: i32, numero: u32, jour: u32) -> socle::echec::R<Echeance> {
@@ -73,10 +73,13 @@ fn une_date_ouvree_ne_bouge_pas() {
 #[test]
 fn l_heure_limite_est_midi_et_la_veille_suit_le_report() {
     let e = reporter(j(2026, 11, 15)).unwrap();
-    assert_eq!(HEURE_LIMITE, "12:00");
-    let v = e.dite();
-    assert_eq!((v.jour.iso().as_str(), v.heure, v.nominale.iso().as_str()), ("2026-11-16", "12:00", "2026-11-15"));
-    assert_eq!(v.veille_annule_et_remplace.as_deref(), Some("2026-11-15"));
+    assert_eq!(MINUTE_LIMITE, 12 * 60);
+    let v = e.dite().unwrap();
+    assert_eq!(
+        (v.limite.jour_de_paris().iso().as_str(), v.limite.seconde_du_jour_de_paris(), v.nominale.iso().as_str()),
+        ("2026-11-16", 12 * 3_600, "2026-11-15")
+    );
+    assert_eq!(v.veille_annule_et_remplace.map(|j| j.iso()).as_deref(), Some("2026-11-15"));
     assert!(!v.inference.is_empty(), "l'inference se dit comme telle");
     assert!(v.textes.iter().any(|t| t.contains("R133-14.xml")));
     assert!(e.phrase().contains("lundi 16/11/2026"), "{}", e.phrase());
