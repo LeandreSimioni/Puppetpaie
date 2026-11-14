@@ -945,7 +945,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **étape du dépôt d'une déclaration écrite** : la paie a changé depuis son écriture, ou l'état de son test
   (`envois::etats::EtatDuTest`) ; le geste d'une case qui dépose s'en choisit.
 - **mode de remise d'un contrat parti** : imprimé (remis en main propre) ou par courriel ; écrit `imprime`, `courriel`,
-  dit « imprimé », « envoyé » ; lu au journal des envois (`contrats_partis_par`).
+  dit « imprimé », « envoyé » par une seule fonction (`mot_de_la_remise`) ; lu au journal des envois
+  (`contrats_partis_par`, les lignes acceptées). Un contrat parti sans remise notée est parti par un courriel coupé en
+  route (sa ligne n'est pas acceptée, elle a servi le salarié) : « envoyé ».
 - **case** : un champ d'une fiche ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé.
 - **rubrique** : une ligne du catalogue de paie ; `droit::catalogue::Rubrique` est sa définition. Son code,
   `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut

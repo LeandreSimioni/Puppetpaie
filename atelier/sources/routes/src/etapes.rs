@@ -2595,11 +2595,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         Some(c) if !ailleurs => format!("CDI, signé en {}", c.signe_en.libelle(Graphie::Accentuee)),
         _ => "Contrat".to_string(),
     };
-    // Sans remise notee au journal, la phrase dit « envoyé ».
-    let par_dit = match s.par {
-        Some(m) => m.en_mots(),
-        None => "envoyé",
-    };
+    let par_dit = etats::mot_de_la_remise(s.par);
     let (etat, phrase, geste) = match pt.contrat {
         PointContrat::AEnvoyer => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
         PointContrat::ARefaire if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),

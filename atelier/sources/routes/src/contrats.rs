@@ -948,11 +948,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         };
         // Le jour du depart, « JJ/MM », s'il est dit.
         let le: String = depuis.map(|q| q.jour()).map(|j| format!(" le {:02}/{:02}", j.jour, j.mois)).into_iter().collect();
-        // Sans remise notee au journal, la phrase dit « envoyé ».
-        let remis = match par {
-            Some(m) => m.en_mots(),
-            None => "envoyé",
-        };
+        let remis = etats::mot_de_la_remise(par);
         let attente = format!("{}{}{}", ce, remis, le);
         let numero = p.engagement.numero.clone();
         let demande_par_courriel = demandes_par_courriel.contains(&k);

@@ -196,13 +196,14 @@ pub enum ModeDeRemise {
     Courriel,
 }
 
-impl ModeDeRemise {
-    /// Le participe de la phrase : « imprimé », « envoyé ».
-    pub fn en_mots(self) -> &'static str {
-        match self {
-            ModeDeRemise::Imprime => "imprimé",
-            ModeDeRemise::Courriel => "envoyé",
-        }
+/// LE MOT DE LA REMISE d'un contrat parti, dans les phrases : « imprimé », « envoyé ». SANS REMISE NOTEE (`None`) : le
+/// contrat est parti (`engagement::departs`, `journal::noter_ligne`) par un courriel coupe en route
+/// (`ligne_d_envoi::noter_echec_d_envoi`), dont la ligne n'est pas acceptee mais a servi le salarie, et que
+/// `contrats_partis_par`, qui ne lit que les lignes acceptees, ne retient pas : c'etait un courriel, « envoyé ».
+pub fn mot_de_la_remise(par: Option<ModeDeRemise>) -> &'static str {
+    match par {
+        Some(ModeDeRemise::Imprime) => "imprimé",
+        Some(ModeDeRemise::Courriel) | None => "envoyé",
     }
 }
 
