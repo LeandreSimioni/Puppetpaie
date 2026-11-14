@@ -71,8 +71,8 @@ use socle::fichiers::{NomDeFichier, MARQUEUR_COPIE};
 use std::path::PathBuf;
 use crate::catalogue::{Ecran, Place};
 
-/// La trace de la derniere ouverture : `config/.ouverture.json`.
-const TRACE: &str = ".ouverture.json";
+/// La trace de la derniere ouverture, sous la compagnie.
+pub const TRACE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/.ouverture.json");
 
 // ------------------------------------------------------------------ les options et les clients
 
@@ -492,7 +492,7 @@ pub fn etape_en_cours(racine: &Path) -> R<Option<String>> {
 // ------------------------------------------------------------------ la trace
 
 fn chemin_trace(ctx: &Contexte) -> std::path::PathBuf {
-    ctx.racine.join(socle::fichiers::CONFIG).join(TRACE)
+    TRACE.dans(&ctx.racine)
 }
 
 /// LA TRACE DE LA DERNIERE OUVERTURE (`config/.ouverture.json`), que le bandeau de la fenetre lit : quand, combien de
@@ -539,7 +539,7 @@ pub struct SignatureNotee {
 /// `derniere_ouverture` : la trace, ou `None` quand aucune ouverture ne l'a encore ecrite. Une trace qui ne se lit pas se
 /// refuse.
 pub fn derniere_ouverture(racine: &std::path::Path) -> R<Option<Trace>> {
-    let p = racine.join(socle::fichiers::CONFIG).join(TRACE);
+    let p = TRACE.dans(racine);
     if !p.exists() {
         return Ok(None);
     }

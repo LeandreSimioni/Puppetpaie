@@ -77,7 +77,7 @@ fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 /// La marque d'une livraison (`LIVREE`) non plus : la livraison l'ajoute elle-meme.
 fn hors_d_une_fictive_livree() -> [CheminRelatif; 5] {
     [
-        CheminRelatif::du_moteur("config/coffre.bin"),
+        CheminRelatif::from(socle::fichiers::CONFIG).joint(&socle::fichiers::NomDeFichier::du_moteur(compagnie::coffre::FICHIER)),
         routes::coffre::JETON_GOOGLE,
         CheminRelatif::du_moteur("config/.jeton-interface"),
         compagnie::installation::JOURNAL_INTERFACE,

@@ -403,11 +403,11 @@ impl DossierDuMois {
     }
 
     /// Le dossier qui tient les sorties de chaque mois, relatif a la compagnie : le nom `sorties` n'est ecrit qu'ici.
-    pub const DES_MOIS: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("sorties");
+    pub const DES_MOIS: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("sorties");
 
     /// Ce dossier du mois `mois`, relatif a la compagnie (`sorties/<mois>`, ou son `envoi`).
     pub fn chemin(self, mois: socle::mois::Mois) -> socle::fichiers::CheminRelatif {
-        let sorties = DossierDuMois::DES_MOIS.joint(&socle::fichiers::NomDeFichier::from(mois));
+        let sorties = socle::fichiers::CheminRelatif::from(DossierDuMois::DES_MOIS).joint(&socle::fichiers::NomDeFichier::from(mois));
         match self.nom() {
             Some(n) => sorties.joint(&n),
             None => sorties,
@@ -421,7 +421,7 @@ impl DossierDuMois {
 
     /// Le dossier qui tient les sorties de chaque mois (`DES_MOIS`), sous la compagnie `racine`.
     pub fn des_mois(racine: &std::path::Path) -> std::path::PathBuf {
-        DossierDuMois::DES_MOIS.dans(racine)
+        racine.join(DossierDuMois::DES_MOIS)
     }
 }
 

@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
-use socle::fichiers::{Empreinte, EmpreinteCourte};
+use socle::fichiers::{CheminRelatif, Empreinte, EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
 use socle::paris::{InstantOuJour, Moment};
@@ -33,14 +33,14 @@ use socle::paris::{InstantOuJour, Moment};
 pub use crate::ligne::*;
 
 /// Le dossier du journal d'une compagnie, sous sa racine : ce qui est parti, les incidents, les messages.
-pub const JOURNAL: &str = "journal";
+pub const JOURNAL: NomDeFichier = NomDeFichier::du_moteur("journal");
 
 /// Le journal de ce qui est parti, sous la racine de la compagnie.
-pub const DEPOTS: &str = "journal/depots.jsonl";
+pub const DEPOTS: CheminRelatif = CheminRelatif::du_moteur("journal/depots.jsonl");
 
 /// `<racine>/journal/depots.jsonl`.
 pub fn chemin(racine: &Path) -> PathBuf {
-    racine.join(DEPOTS)
+    DEPOTS.dans(racine)
 }
 
 /// L'empreinte d'un fichier, comme le journal l'écrit.

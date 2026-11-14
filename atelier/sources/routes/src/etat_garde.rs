@@ -298,8 +298,8 @@ fn signer_dossier(h: &mut Sha256, base: &Path, rel: &str, profond: bool, garder:
 ///   `importation-etat` ;
 /// - `journal/incidents.json` : le journal des incidents.
 const HORS_DE_L_ECRAN: [CheminRelatif; 7] = [
-    CheminRelatif::du_moteur("config/.ouverture.json"),
-    CheminRelatif::du_moteur("config/.sauvegarde.json"),
+    crate::gestes::ouverture::TRACE,
+    compagnie::sauvegarde::INDEX,
     compagnie::incidents::DIAGNOSTIC,
     compagnie::installation::FICHIER_HORLOGE,
     compagnie::problemes::SIGNALEMENTS,
@@ -308,7 +308,8 @@ const HORS_DE_L_ECRAN: [CheminRelatif; 7] = [
     crate::gestes::administrateur::TABLEAU,
 ];
 
-/// L'empreinte de tout ce dont l'etat `cle` est tire, au jour `jour` (AAAA-MM-JJ).
+/// L'empreinte de tout ce dont l'etat d'un mois (`Some`) ou de l'ouverture (`None`) est tire, au jour `jour`
+/// (AAAA-MM-JJ). Le tableau de l'administrateur porte celle de l'ouverture.
 ///
 /// Pour un MOIS : ni le coffre (un `.bin` : ce qu'il dit se relit a chaque lecture), ni ce que l'ecran ne lit pas
 /// (`HORS_DE_L_ECRAN`), ni les sorties des autres mois.
@@ -318,12 +319,7 @@ const HORS_DE_L_ECRAN: [CheminRelatif; 7] = [
 /// (la configuration dit si la boite courriel est liee, `boite_liee` : rien n'en est lu ici, ni ailleurs dans
 /// l'empreinte), et l'adresse de la boite posee dans l'environnement (`COURRIEL_COMPTE`). Ce qui ne s'y lit pas reste
 /// dehors (`HORS_DE_L_ECRAN` : les signalements se lisent a chaque ouverture, a cote).
-pub(crate) fn empreinte_de(racine: &Path, cle: Cle, jour: socle::date::Jour) -> Empreinte {
-    // Le tableau de l'administrateur est sous l'empreinte de l'ouverture : toute la compagnie.
-    let mois = match cle {
-        Cle::Mois(m) => Some(m),
-        Cle::Ouverture | Cle::Tableau => None,
-    };
+pub(crate) fn empreinte_de(racine: &Path, mois: Option<Mois>, jour: Jour) -> Empreinte {
     let ouverture = mois.is_none();
     let mut h = Sha256::new();
     let mut marques = vec![env!("PAIE_SOURCES").to_string(), jour.iso(), absolu(racine), absolu(&socle::fichiers::dossier_du_code())];
@@ -347,7 +343,7 @@ pub(crate) fn empreinte_de(racine: &Path, cle: Cle, jour: socle::date::Jour) -> 
     signer_dossier(&mut h, racine, socle::fichiers::CONFIG.texte(), true, &|n| {
         (ouverture || !n.ends_with(".bin")) && !n.ends_with(".tmp") && !HORS_DE_L_ECRAN.iter().any(|c| c.texte() == n)
     });
-    signer_dossier(&mut h, racine, envois::journal::JOURNAL, false, &|n| n.ends_with(".json") && !HORS_DE_L_ECRAN.iter().any(|c| c.texte() == n));
+    signer_dossier(&mut h, racine, envois::journal::JOURNAL.texte(), false, &|n| n.ends_with(".json") && !HORS_DE_L_ECRAN.iter().any(|c| c.texte() == n));
     for d in [engagement::imprevus::DOSSIER, import::mois::HISTORIQUE, envois::retours::RETOURS] {
         signer_dossier(&mut h, racine, d.texte(), true, &|n| !n.ends_with(".tmp"));
     }
@@ -366,11 +362,6 @@ pub(crate) fn empreinte_de(racine: &Path, cle: Cle, jour: socle::date::Jour) -> 
     let code = socle::fichiers::dossier_du_code();
     signer_dossier(&mut h, &code, "", true, &|_| true);
     Empreinte::du_hachage(h)
-}
-
-/// L'empreinte de l'etat `cle` de la compagnie `racine`, au jour `jour`.
-fn empreinte(racine: &Path, cle: Cle, jour: &Jour) -> Empreinte {
-    empreinte_de(racine, cle, *jour)
 }
 
 /// Le jour de l'empreinte : celui d'un `Contexte` (`aujourdhui`, que `date` ne regle pas).
@@ -668,7 +659,7 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: Empreinte) -> R<E
 fn tableau_juste(ctx: &Contexte) -> R<Garde> {
     let f = crate::gestes::administrateur::TABLEAU.dans(&ctx.racine);
     if f.is_file() {
-        let empreinte = empreinte(&ctx.racine, Cle::Ouverture, &ctx.aujourdhui);
+        let empreinte = empreinte_de(&ctx.racine, None, ctx.aujourdhui);
         match socle::forme::lire_fichier::<TableauCompagnie>(&f, "Le tableau gardé de la compagnie ne se lit pas.") {
             Ok(t) if t.empreinte == empreinte => return Ok(Garde::Tableau(Arc::new(t))),
             Ok(_) => {}
@@ -688,12 +679,12 @@ fn refaire(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
             Cle::Mois(m) => Some(m),
             Cle::Ouverture => None,
         };
-        let avant = empreinte(&ctx.racine, cle, &ctx.aujourdhui);
+        let avant = empreinte_de(&ctx.racine, mois, ctx.aujourdhui);
         let garde = match mois {
             Some(m) => Garde::Mois(Arc::new(refaire_le_mois(o, ctx, m, avant.clone())?)),
             None => Garde::Ouverture(Arc::new(refaire_l_ouverture(o, ctx, avant.clone())?)),
         };
-        let stable = empreinte(&ctx.racine, cle, &ctx.aujourdhui) == avant;
+        let stable = empreinte_de(&ctx.racine, mois, ctx.aujourdhui) == avant;
         if stable {
             if let Garde::Ouverture(e) = &garde {
                 // Une ecriture impossible ne change rien au resultat : la prochaine lecture refera.
@@ -734,7 +725,7 @@ pub fn lire(o: &Options, ctx: &Contexte, cle: Cle) -> R<()> {
 
 fn garde_juste(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
     if cle == Cle::Ouverture {
-        if let Some(e) = ouverture_ecrite(&ctx.racine).filter(|e| e.empreinte == empreinte(&ctx.racine, cle, &ctx.aujourdhui)) {
+        if let Some(e) = ouverture_ecrite(&ctx.racine).filter(|e| e.empreinte == empreinte_de(&ctx.racine, None, ctx.aujourdhui)) {
             return Ok(Garde::Ouverture(Arc::new(e)));
         }
     }
@@ -1012,15 +1003,15 @@ impl FileDesEtats {
     fn connu(&self, cle: Cle, jour: &Jour) -> Option<(Garde, bool)> {
         match cle {
             Cle::Ouverture => ouverture_ecrite(&self.racine).map(|e| {
-                let juste = e.empreinte == empreinte(&self.racine, cle, jour);
+                let juste = e.empreinte == empreinte_de(&self.racine, None, *jour);
                 (Garde::Ouverture(Arc::new(e)), juste)
             }),
-            Cle::Mois(_) => {
+            Cle::Mois(m) => {
                 let e = match self.verrou().fait.get(&cle) {
                     Some((_, Ok(Garde::Mois(e)))) => e.clone(),
                     _ => return None,
                 };
-                let juste = e.empreinte == empreinte(&self.racine, cle, jour);
+                let juste = e.empreinte == empreinte_de(&self.racine, Some(m), *jour);
                 Some((Garde::Mois(e), juste))
             }
             Cle::Tableau => None,

@@ -546,12 +546,16 @@ impl Plan {
 
 /// Le plan comptable de la compagnie, et d'ou il vient (`config/plan-comptable.json` ou le plan livre).
 pub fn plan(ctx: &Contexte) -> R<(Plan, String)> {
-    Ok((plan_comptable(ctx)?, origine(ctx)))
+    Ok((plan_comptable(ctx)?, origine(ctx)?))
 }
 
 /// D'ou vient le plan comptable de la compagnie : `config/plan-comptable.json`, ou le plan livre.
-pub fn origine(ctx: &Contexte) -> String {
-    if PLAN_COMPTABLE.dans(&ctx.racine).exists() { PLAN_COMPTABLE.to_string() } else { "plan livré avec le logiciel (plan-comptable-base.json)".to_string() }
+pub fn origine(ctx: &Contexte) -> R<String> {
+    Ok(if socle::fichiers::existe_lu(&PLAN_COMPTABLE.dans(&ctx.racine))? {
+        PLAN_COMPTABLE.to_string()
+    } else {
+        "plan livré avec le logiciel (plan-comptable-base.json)".to_string()
+    })
 }
 
 /// Le plan livre, recouvert par `config/plan-comptable.json`.
@@ -559,7 +563,7 @@ pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
     let mut plan: Plan = socle::forme::lire_fichier(&ctx.code.join("plan-comptable-base.json"), "Le plan comptable livré ne se lit pas : le signaler au développeur.")
         .map_err(|m| m.reclasser(Classe::Illisible))?;
     let propre = PLAN_COMPTABLE.dans(&ctx.racine);
-    if propre.exists() {
+    if socle::fichiers::existe_lu(&propre)? {
         let p: PlanPropre = socle::forme::lire_fichier(&propre, "Le plan comptable de la compagnie (config/plan-comptable.json) ne se lit pas : le corriger.")
             .map_err(|m| m.reclasser(Classe::Illisible))?;
         plan.recouvrir(p);

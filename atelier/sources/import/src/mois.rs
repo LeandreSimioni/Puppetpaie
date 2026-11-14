@@ -43,8 +43,18 @@ pub struct BulletinRepris {
 /// Le dossier de l'historique importe, dans la compagnie : il ne tient que les copies (`BULLETINS_REPRIS`).
 pub const HISTORIQUE: NomDeFichier = NomDeFichier::du_moteur("historique");
 
-/// Le dossier des copies que l'import garde, dans la compagnie.
-pub const BULLETINS_REPRIS: CheminRelatif = CheminRelatif::du_moteur("historique/bulletins");
+/// Le dossier des copies que l'import garde, dans `HISTORIQUE`.
+const BULLETINS_REPRIS: NomDeFichier = NomDeFichier::du_moteur("bulletins");
+
+/// Le dossier des copies que l'import garde, relatif a la compagnie (`historique/bulletins`).
+fn bulletins_repris_relatif() -> CheminRelatif {
+    CheminRelatif::from(HISTORIQUE).joint(&BULLETINS_REPRIS)
+}
+
+/// Le dossier des copies que l'import garde, sous la compagnie `racine`.
+pub fn dossier_des_bulletins(racine: &Path) -> std::path::PathBuf {
+    bulletins_repris_relatif().dans(racine)
+}
 
 /// LES BULLETINS REPRIS DE `mois` : la copie que l'import garde de chaque fichier lu (`historique/bulletins/`, le nom que
 /// porte la paie importee), un par fichier, avec le salarie qu'il paie. Un fichier qui manque ne se liste pas.
@@ -55,7 +65,7 @@ pub fn bulletins_repris(racine: &Path, mois: Mois) -> R<Vec<BulletinRepris>> {
             continue;
         }
         let Some(fichier) = p.paie.bulletin.as_ref().map(|b| &b.fichier) else { continue };
-        let chemin = BULLETINS_REPRIS.joint(fichier);
+        let chemin = bulletins_repris_relatif().joint(fichier);
         if !chemin.dans(racine).is_file() || out.iter().any(|x| x.chemin == chemin) {
             continue;
         }

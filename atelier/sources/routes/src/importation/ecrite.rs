@@ -605,7 +605,7 @@ fn avertissement_differents(differents: &[String], ou: &str) -> String {
 
 /// Ou l'import du dossier copie ce qu'il reprend.
 fn dossier_bulletins(ctx: &Contexte) -> PathBuf {
-    import::mois::BULLETINS_REPRIS.dans(&ctx.racine)
+    import::mois::dossier_des_bulletins(&ctx.racine)
 }
 
 /// La copie de ce que le dossier lu reprend, dans `historique/bulletins/`, sous le nom de sa copie. RIEN NE S'ECRASE :

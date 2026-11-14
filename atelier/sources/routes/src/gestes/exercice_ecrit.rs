@@ -171,7 +171,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     let plan = plan_comptable(ctx)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let propre = documents::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine);
-    let origine = documents::plan_comptable::origine(ctx);
+    let origine = documents::plan_comptable::origine(ctx)?;
     let mut mois: Vec<Mois> = Vec::new();
     for m in mois_de_l_annee(ctx, annee)? {
         let n = m.numero();

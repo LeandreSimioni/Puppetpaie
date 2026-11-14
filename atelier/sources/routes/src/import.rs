@@ -929,7 +929,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
 /// Les pieces copiees sous `historique/bulletins/` : aucune tant que le dossier n'existe pas. Un dossier qui ne se lit
 /// pas se refuse.
 fn copies_reprises(racine: &Path) -> R<usize> {
-    let dossier = import::mois::BULLETINS_REPRIS.dans(racine);
+    let dossier = import::mois::dossier_des_bulletins(racine);
     if !dossier.exists() {
         return Ok(0);
     }

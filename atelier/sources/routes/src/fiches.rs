@@ -688,7 +688,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
 
 /// Ou l'import copie les pieces qu'il reprend de l'ancien logiciel, les DSN deposees comprises (`historique/bulletins/`).
 pub fn pieces_importees(ctx: &Contexte) -> std::path::PathBuf {
-    import::mois::BULLETINS_REPRIS.dans(&ctx.racine)
+    import::mois::dossier_des_bulletins(&ctx.racine)
 }
 
 /// `usages_declares` : combien de DSN deja deposees declarent cette valeur dans la rubrique de la case (`rubrique`, de la

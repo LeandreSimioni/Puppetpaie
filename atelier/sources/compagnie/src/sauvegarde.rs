@@ -28,7 +28,8 @@ use envois::drive::ErreurGoogle;
 
 pub const RACINE_DRIVE: &str = "PuppetPaie";
 pub const DOSSIER_DRIVE: &str = "sauvegarde";
-pub const INDEX: &str = ".sauvegarde.json";
+/// L'index local de la sauvegarde, sous la compagnie (`chemin_index`).
+pub const INDEX: CheminRelatif = CheminRelatif::du_moteur("config/.sauvegarde.json");
 
 /// Ce qui ne monte pas (`NOMS_EXCLUS`).
 const NOMS_EXCLUS: [&str; 6] = ["google-jeton.bin", ".jeton-interface", ".compteurs.verrou", ".sauvegarde.json", ".ouverture.json", ".ouverture-etape.json"];
@@ -370,7 +371,7 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(CheminRelatif, Etat)>, usize), 
 /// `chemin_index` : `config/`, et pas `journal/` : de l'etat machine, pas un document. Il est
 /// ecarte de la sauvegarde (`NOMS_EXCLUS`).
 pub fn chemin_index(racine: &Path) -> PathBuf {
-    racine.join(socle::fichiers::CONFIG).join(INDEX)
+    INDEX.dans(racine)
 }
 
 /// L'INDEX DE LA SAUVEGARDE (`config/.sauvegarde.json`) : quand le dernier passage s'est fait, vers quelle racine du

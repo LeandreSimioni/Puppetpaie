@@ -259,7 +259,7 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
             out.push(e);
         }
     }
-    if !crate::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine).exists() {
+    if !socle::fichiers::existe_lu(&crate::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine))? {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
     }
     Ok((out, plan, origine))

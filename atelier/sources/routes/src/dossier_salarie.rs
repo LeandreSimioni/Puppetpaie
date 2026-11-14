@@ -915,7 +915,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
 /// dans la periode par le mois de la paie. Une copie qui manque se dit ; rien d'autre ne se devine.
 fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &mut Dossier) -> R<Vec<Page>> {
     let lignes = engagement::importe::paies_lues(&ctx.racine)?;
-    let dossier = import::mois::BULLETINS_REPRIS.dans(&ctx.racine);
+    let dossier = import::mois::dossier_des_bulletins(&ctx.racine);
     let (mut pages, mut manquent): (Vec<Page>, Vec<NomDeFichier>) = (Vec::new(), Vec::new());
     for x in lignes {
         let Some(b) = &x.paie.bulletin else { continue };
