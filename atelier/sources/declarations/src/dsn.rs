@@ -4290,11 +4290,10 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
         Some(n) => n,
         None => s.id.to_string(),
     };
-    let mut saisies = vec![(droit::fiche::NomDeFiche::Entreprise, "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Entreprise, ent)?)];
+    let mut fiches = vec![(crate::champs::FicheAJuger::Entreprise(ent), "la fiche entreprise".to_string())];
     for s in &vues {
-        saisies.push((droit::fiche::NomDeFiche::Salarie, format!("la fiche de {}", nomme(s)), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &s.champs)?));
+        fiches.push((crate::champs::FicheAJuger::Salarie(&s.champs), format!("la fiche de {}", nomme(s))));
     }
-    let fiches: Vec<(droit::fiche::NomDeFiche, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     let sauf: Vec<droit::fiche::CaseDeFiche> = if caisse_conges { Vec::new() } else { vec![documents::conges_spectacles::CLE_ADHERENT.into()] };
     match crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dsn, &fiches, &sauf)? {
         Some(m) => Err(refus(m)),

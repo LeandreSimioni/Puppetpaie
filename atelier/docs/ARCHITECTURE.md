@@ -692,6 +692,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
 | faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |
+| fiche à juger (l'une des trois, typée) | `FicheAJuger` | `declarations/src/champs.rs` |
 | ce qu'une case écrit | `MotEcrit` | `socle/src/ecriture.rs` |
 | valeur d'une case d'une fiche | `ValeurDeCase` | `socle/src/ecriture.rs` |
 | liste lue élément par élément | `socle::forme::Liste` | `socle/src/forme.rs` |

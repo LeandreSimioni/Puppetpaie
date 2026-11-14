@@ -82,9 +82,8 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
                 let c = fiche.iter().find(|c| c.cle.nom() == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
                 assert!(montre(c.cle.nom()), "{} : « {} » demande, case masquee", nom, champ);
             }
-            let lue = declarations::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Entreprise, &ent).unwrap();
             for c in &fiche {
-                if c.exige(&lue) {
+                if c.exige(&ent) {
                     assert!(montre(c.cle.nom()), "{} : « {} » exige et masque", nom, c.cle);
                 }
             }

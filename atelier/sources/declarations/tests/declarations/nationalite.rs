@@ -10,23 +10,19 @@
 //! le pays hors liste : une décision d'éditeur ; le registre : C. trav., D1221-23
 //! (`atelier/reference/sources/code-du-travail/xml/D1221-23.xml`).
 
-use crate::outils::saisie;
-use declarations::champs::{Anomalie, Gravite, Saisie};
+use crate::outils::anomalies;
+use declarations::champs::{Anomalie, Gravite};
 use std::collections::HashMap;
 
 #[test]
 fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
-    let erreurs = |s: Saisie| -> Vec<Anomalie> {
-        declarations::champs::verifier_fiche(droit::fiche::NomDeFiche::Salarie, &s)
-            .unwrap()
-            .into_iter()
-            .filter(|a| a.champ == droit::fiche::CaseSalarie::CodeNationaliteDsn.into() && a.gravite == Gravite::Erreur)
-            .collect()
+    let erreurs = |a: Vec<Anomalie>| -> Vec<Anomalie> {
+        a.into_iter().filter(|a| a.champ == droit::fiche::CaseSalarie::CodeNationaliteDsn.into() && a.gravite == Gravite::Erreur).collect()
     };
     let avec = |k: &[(&str, &str)]| {
         let mut cases = vec![("nom", "ANDERSEN"), ("prenom", "INGRID"), ("sexe", "2")];
         cases.extend_from_slice(k);
-        saisie(droit::fiche::NomDeFiche::Salarie, &cases)
+        anomalies(droit::fiche::NomDeFiche::Salarie, &cases)
     };
     assert_eq!(erreurs(avec(&[("code_nationalite_dsn", "03")])).len(), 1, "un 03 sans pays se dit dans la fiche");
     assert!(erreurs(avec(&[("code_nationalite_dsn", "03"), ("pays_nationalite", "NO")])).is_empty());

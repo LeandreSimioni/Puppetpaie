@@ -242,6 +242,15 @@ fn une_entree<T: DeserializeOwned>(v: &Value, sous: &str) -> Result<T, (String, 
     }
 }
 
+/// LE TEXTE `texte` QUE LE MOTEUR POSE DANS UNE CASE (une forme declaree qu'il fabrique de la lisible), lu dans le type de
+/// sa case comme un changement `{nom_cle: cle, nom_valeur: texte}` qui se saisit : sa faute, le chemin et ce qui ne va pas.
+pub fn un_texte_pose<T: DeserializeOwned>(nom_cle: &str, cle: &str, nom_valeur: &str, texte: &str) -> Result<T, (String, String)> {
+    let mut entree = serde_json::Map::new();
+    entree.insert(nom_cle.to_string(), Value::String(cle.to_string()));
+    entree.insert(nom_valeur.to_string(), Value::String(texte.to_string()));
+    une_entree(&Value::Object(entree), nom_valeur)
+}
+
 /// UNE LISTE QUE SA FORME LIT ELEMENT PAR ELEMENT (les changements d'une fiche, `droit::fiche::Changements`) : chacun lu
 /// seul, une faute ne faisant pas taire les suivants (`chacun`).
 #[derive(Clone, Debug, PartialEq)]

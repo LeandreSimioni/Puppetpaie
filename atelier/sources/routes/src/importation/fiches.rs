@@ -16,11 +16,23 @@ use crate::fiches::{self, Forcer, SorteDeFiche};
 /// montre telles : verifier la fiche avant derivation ferait crier chaque champ que le bulletin ou la DSN imprime en
 /// minuscules (« 3 quai de la Fosse ») « doit etre en MAJUSCULES » sous sa forme lisible, alors que l'ecriture le declare
 /// bien en majuscules. Chaque anomalie porte le libelle de sa case (`libelle`), celui que la fiche montre.
+///
+/// LE PONT, tant que l'import compose ses fiches en saisies : la saisie se lit en fiche typee (`droit::fiche::lire_saisie`,
+/// comme a l'ecriture) ; une case que son type refuse refuse l'apercu entier.
 pub(crate) fn verifier_comme_a_l_ecriture(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Anomalie>> {
-    let mut s = donnees.clone();
-    fiches::deriver(nom, &mut s, true, &|_| true)?;
-    let mut anomalies = champs::verifier_fiche(nom, &s)?;
-    fiches::avec_libelles(nom, &mut anomalies)?;
+    match nom {
+        NomDeFiche::Entreprise => verifier::<FicheEntrepriseDatee>(donnees),
+        NomDeFiche::Salarie => verifier::<FicheSalarieDatee>(donnees),
+        NomDeFiche::Spectacle => verifier::<FicheSpectacleDatee>(donnees),
+    }
+}
+
+fn verifier<F: SorteDeFiche>(donnees: &Saisie) -> R<Vec<Anomalie>> {
+    let mut lue: F::Plate = droit::fiche::lire_saisie(donnees, F::FICHIER).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let fautes = F::deriver(&mut lue, true, &|_| true)?;
+    let mut anomalies = champs::verifier_fiche(F::a_juger(&lue))?;
+    anomalies.extend(champs::des_fautes(F::NOM, &fautes)?);
+    fiches::avec_libelles(F::NOM, &mut anomalies)?;
     Ok(anomalies)
 }
 

@@ -172,6 +172,17 @@ impl FauteDeCase {
     }
 }
 
+impl FauteDeCase {
+    /// LE TEXTE `texte` QUE LE MOTEUR POSE DANS LA CASE `case` (une forme declaree fabriquee de la lisible), lu dans le type
+    /// de la case comme un changement `C` : ce que le type refuse est la faute de la case.
+    pub fn pose<C: DeserializeOwned>(case: CaseDeFiche, texte: &str) -> Result<C, FauteDeCase> {
+        match socle::forme::un_texte_pose::<C>("case", case.nom(), "valeur", texte) {
+            Ok(ch) => Ok(ch),
+            Err((chemin, phrase)) => Err(FauteDeCase::de(case, chemin, phrase)),
+        }
+    }
+}
+
 pub use socle::ecriture::{MotEcrit, ValeurDeCase};
 
 /// UNE FICHE QUE LA TABLE DES CASES JUGE (`declarations::champs`) : l'entreprise, un salarie, un spectacle, typee. Ce
@@ -204,7 +215,7 @@ pub trait FicheSaisie: Sized + Default + Clone {
 /// Ce mot ecrit dit-il quelque chose (`FicheSaisie::dite`) ?
 pub fn dit(m: &MotEcrit) -> bool {
     match m {
-        MotEcrit::Vide => false,
+        MotEcrit::Vide | MotEcrit::StructureVide => false,
         MotEcrit::Mot(t) => !t.is_empty(),
         MotEcrit::OuiNon(b) => *b,
         MotEcrit::Structure => true,
@@ -1965,7 +1976,7 @@ macro_rules! fiche {
             /// vide (`Objet::sans_textes_blancs`) ; la faute d'une case s'ajoute (`FauteDeCase`) et la lecture continue.
             /// Ses notes se lisent en texte ; la ligne de l'histoire (`historique`), que la page renvoie, ne se lit pas.
             /// Une cle qui n'est pas une case de la fiche refuse le formulaire.
-            pub fn lire_cases(o: &socle::forme::Objet, fiche: &str) -> R<($plate, Vec<FauteDeCase>)> {
+            pub fn lire_cases_de_la_fiche(o: &socle::forme::Objet, fiche: &str) -> R<($plate, Vec<FauteDeCase>)> {
                 let o = o.sans_textes_blancs();
                 let cases = $plate::cases();
                 let lue = |k: &str| k != NomDeCase::HISTORIQUE.nom() && !$plate::NOTES.contains(&k);
@@ -2850,7 +2861,7 @@ macro_rules! fiche_saisie {
                     $plate::ecrite_au_chemin(self, k, chemin)
                 }
                 fn lire_cases(o: &socle::forme::Objet) -> R<(Self, Vec<FauteDeCase>)> {
-                    $plate::lire_cases(o, NomDeFiche::$nom.nom())
+                    $plate::lire_cases_de_la_fiche(o, NomDeFiche::$nom.nom())
                 }
                 fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase> {
                     $plate::valeur_ecrite(self, k)
