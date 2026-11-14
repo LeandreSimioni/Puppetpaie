@@ -481,7 +481,7 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
     }
     let Some(cachets) = p.lignes.iter().find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET)) else { return Ok(None) };
     let (Some(q), Some(t)) = (cachets.quantite, cachets.taux) else { return Ok(None) };
-    let (quantite, taux) = (Some(q), Some(t));
+    let (quantite, taux) = (Some(socle::grandeurs::Quantite::du_decimal(q)), Some(socle::grandeurs::MontantUnitaire::du_decimal(t)));
     if dates.is_empty() {
         return Ok(None);
     }

@@ -46,7 +46,7 @@ use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
-use socle::grandeurs::{Heures, Montant};
+use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire, Quantite};
 use socle::num::{div, mul, Decimal};
 use droit::catalogue::CodeDeRubrique;
 
@@ -706,16 +706,15 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
                 plancher,
             })
         });
-        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, quantite: q, taux: div(montant, q).normalize(), reconstitution }));
+        let taux = MontantUnitaire::du_decimal(div(montant, q).normalize());
+        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, quantite: Quantite::du_decimal(q), taux, reconstitution }));
     }
     if dmois.ij_subrogees_jours > 0 {
         let j = Decimal::from(dmois.ij_subrogees_jours);
-        let ij = |rubrique: droit::catalogue::CodeDeRubrique, montant: Decimal, assiette_pas: Option<Decimal>| {
-            LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique, jours: j, taux: div(montant, j).normalize(), assiette_pas })
-        };
-        out.push(ij(IJ_BRUTES, plancher, None));
+        let taux = |montant: Decimal| MontantUnitaire::du_decimal(div(montant, j).normalize());
+        out.push(LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique: IJ_BRUTES, jours: Jours::du_decimal(j), taux: taux(plancher), assiette_pas: None }));
         let nettes = Montant::du_decimal(dmois.ij_subrogees_nettes).au_centime().decimal();
-        out.push(LignePaie::ij_nettes(au, j, div(nettes, j).normalize(), Montant::du_decimal(dmois.assiette_pas).au_centime().decimal()));
+        out.push(LignePaie::ij_nettes(au, Jours::du_decimal(j), taux(nettes), Montant::du_decimal(dmois.assiette_pas).au_centime()));
     }
     out
 }
@@ -870,8 +869,9 @@ pub fn avec_le_montant(lignes: &[LignePaie], montant: Decimal) -> Vec<LignePaie>
         .map(|l| match l {
             LignePaie::Maintien(m) if m.reconstitution.is_some() => {
                 // La ligne du maintien porte toujours sa quantite (`lignes`) : ses heures d'absence, ou 1.
-                let q = if m.quantite > Decimal::ZERO { m.quantite } else { Decimal::ONE };
-                LignePaie::Maintien(Maintien { rubrique: m.rubrique.clone(), quantite: q, taux: div(montant, q).normalize(), reconstitution: None })
+                let q = if m.quantite.decimal() > Decimal::ZERO { m.quantite.decimal() } else { Decimal::ONE };
+                let taux = MontantUnitaire::du_decimal(div(montant, q).normalize());
+                LignePaie::Maintien(Maintien { rubrique: m.rubrique.clone(), quantite: Quantite::du_decimal(q), taux, reconstitution: None })
             }
             autre => autre.clone(),
         })
@@ -926,7 +926,7 @@ mod tests {
             };
             let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
             let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);
-            l[0].taux().unwrap()
+            l[0].taux().unwrap().decimal()
         };
         assert_eq!(montant(500, 300, 0), Decimal::from(500));
         assert_eq!(montant(300, 500, 0), Decimal::from(500));

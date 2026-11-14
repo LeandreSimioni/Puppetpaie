@@ -18,9 +18,9 @@ fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<i64> {
         if r.compte_pour != droit::catalogue::ComptePour::OuvertureDesDroits {
             continue;
         }
-        let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
         // Le signe porte aussi sur les heures, comme au calcul (`calcul::lignes_brut`) : une ligne « - » en retire.
-        let h = r.heures(q, l.heures());
+        let h = r.heures(q, l.heures().map(socle::grandeurs::Heures::decimal));
         heures += if r.sens == droit::catalogue::Sens::Moins { -h } else { h };
     }
     heures_entieres(heures)

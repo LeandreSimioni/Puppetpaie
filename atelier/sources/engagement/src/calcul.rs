@@ -176,13 +176,12 @@ impl LigneBrut {
 pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>> {
     let mut out = Vec::new();
     for l in &eng.lignes {
-        let requis = |x: Option<Decimal>, cle: &str| x.ok_or_else(|| socle::fichiers::absent(cle));
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        let q = requis(l.quantite(), "quantite")?;
-        let taux = requis(l.taux(), "taux")?;
+        let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
+        let taux = l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal();
         let signe = r.sens.signe();
         // Le signe porte aussi sur les heures : une absence en retire.
-        let h = r.heures(q, l.heures());
+        let h = r.heures(q, l.heures().map(socle::grandeurs::Heures::decimal));
         let dsn_autres_bruts = code_54(&r, l.genre())?;
         out.push(LigneBrut {
             code: r.code.into(),
@@ -1749,7 +1748,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     for (l, b) in eng.lignes.iter().zip(lb.iter()) {
         if droit::catalogue::RubriqueDuMois::IjssNettes.nomme(&b.code) {
             *bases.entry(Assiette::IjSubrogeesNettes).or_insert(zero) += b.montant;
-            *bases.entry(Assiette::IjSubrogeesAssiettePas).or_insert(zero) += l.assiette_pas().ok_or_else(|| socle::fichiers::absent("assiette_pas"))?;
+            *bases.entry(Assiette::IjSubrogeesAssiettePas).or_insert(zero) += l.assiette_pas().ok_or_else(|| socle::fichiers::absent("assiette_pas"))?.decimal();
         }
     }
 
@@ -1955,7 +1954,7 @@ contrat << majoree du nombre d'heures complementaires >> du mois (CSS R. 242-2, 
 heures en plus du salaire mensuel ({} h) : heures complementaires ou non, le logiciel ne le sait pas. Refus : il ne les \
 devine pas.",
             e.qui(),
-            l.quantite().iter().map(Decimal::to_string).collect::<String>()
+            l.quantite().iter().map(|q| q.decimal().to_string()).collect::<String>()
         ));
     }
     let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", &format!("{}.quotite_reference_defaut", nat.libelle)))?;
@@ -1968,7 +1967,7 @@ devine pas.",
         .lignes
         .iter()
         .filter(|l| *l.rubrique() == crate::heures_en_plus::HEURE_COMPLEMENTAIRE)
-        .map(|l| l.quantite().ok_or_else(|| refus("nombre attendu, lu null")))
+        .map(|l| l.quantite().map(socle::grandeurs::Quantite::decimal).ok_or_else(|| refus("nombre attendu, lu null")))
         .sum::<R<Decimal>>()?;
     Ok((socle::grandeurs::Heures::du_decimal(e.quotite()? + complementaires), socle::grandeurs::Heures::du_decimal(reference)))
 }

@@ -7,6 +7,7 @@ use serde::Serialize;
 use socle::forme::NombreLu;
 use crate::LignePaie;
 use socle::num::Decimal;
+use socle::grandeurs::{MontantUnitaire, Quantite};
 
 use crate::departs::{Depart, Departs, Envoi};
 use crate::etats::{ses_departs, ARefaire, Valide};
@@ -274,12 +275,13 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
         for k in 0..xs.len().max(ys.len()) {
             match (xs.get(k), ys.get(k)) {
                 (Some(_), None) => out.push(format!("{} : retiré", lib)),
-                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, nombre_en_mots(y.quantite(), false))),
+                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, nombre_en_mots(y.quantite().map(Quantite::decimal), false))),
                 (Some(x), Some(y)) => {
-                    if x.quantite() != y.quantite() {
-                        out.push(format!("{} : {} → {}", au_pluriel(&lib), nombre_en_mots(x.quantite(), false), nombre_en_mots(y.quantite(), false)));
+                    let (qx, qy) = (x.quantite().map(Quantite::decimal), y.quantite().map(Quantite::decimal));
+                    if qx != qy {
+                        out.push(format!("{} : {} → {}", au_pluriel(&lib), nombre_en_mots(qx, false), nombre_en_mots(qy, false)));
                     }
-                    let (tx, ty) = (nombre_en_mots(x.taux(), true), nombre_en_mots(y.taux(), true));
+                    let (tx, ty) = (nombre_en_mots(x.taux().map(MontantUnitaire::decimal), true), nombre_en_mots(y.taux().map(MontantUnitaire::decimal), true));
                     if tx != ty {
                         out.push(format!("{} : {} → {}", nom_du_taux(&lib, unite), tx, ty));
                     }

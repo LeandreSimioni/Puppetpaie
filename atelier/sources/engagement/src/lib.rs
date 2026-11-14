@@ -59,6 +59,7 @@ use socle::mois::{Graphie, Mois};
 use droit::emplois;
 
 use socle::{echec::{refus, Echec, R}, num::{court, Decimal}};
+use socle::grandeurs::{Heures, Montant, MontantUnitaire, Quantite};
 
 #[derive(Debug, Clone)]
 pub struct Engagement {
@@ -337,7 +338,7 @@ impl Engagement {
         };
         for l in &lignes {
             let r = rubrique(racine, l.rubrique(), &jour_lu)?;
-            let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+            let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
             if r.unite == droit::catalogue::Unite::Cachet {
                 cachets_somme += q;
                 premier_cachet.get_or_insert(l);
@@ -345,7 +346,7 @@ impl Engagement {
                 // Le signe porte aussi sur les heures, comme au calcul
                 // (`calcul::lignes_brut`) : une absence en retire. Un acompte,
                 // au forfait et sans heures, n'en retire aucune.
-                let h = r.heures(q, l.heures());
+                let h = r.heures(q, l.heures().map(Heures::decimal));
                 autres += if r.sens == droit::catalogue::Sens::Moins { -h } else { h };
             }
         }
@@ -363,7 +364,7 @@ impl Engagement {
         // contrat qui ne paie aucun cachet n'a pas de taux de cachet, et le moteur n'en invente pas (regle 1).
         let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::court).transpose()?;
         if let Some(l) = premier_cachet {
-            taux_cachet = Some(court(l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?));
+            taux_cachet = Some(court(l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal()));
         }
 
         // Les jours travailles : un fait qui se saisit, sinon les dates distinctes.
@@ -753,7 +754,7 @@ impl Engagement {
             salarie: self.salarie.clone(),
             spectacle: self.spectacle.clone(),
             dates_travail: self.dates_travail.clone(),
-            lignes: self.lignes.iter().map(LignePaie::canon).collect::<R<Vec<_>>>()?,
+            lignes: self.lignes.iter().map(LignePaie::canon).collect(),
             debut: self.debut,
             fin: self.fin,
             numero: self.numero.clone(),
@@ -859,11 +860,11 @@ pub(crate) fn lignes_du_planning(racine: &Path, source: &[LignePaie], mois: Mois
         }
         let unite = rubrique(racine, l.rubrique(), &mois.dernier_jour())?.unite;
         let par_date = matches!(unite, droit::catalogue::Unite::Cachet | droit::catalogue::Unite::Jour | droit::catalogue::Unite::Service);
-        let quantite = Some(Decimal::from(if par_date { dedans.len() as i64 } else { 0 }));
+        let quantite = Some(socle::grandeurs::Quantite::du_decimal(Decimal::from(if par_date { dedans.len() as i64 } else { 0 })));
         lignes.push(match l.avec_les_jours(dedans, apres) {
             LignePaie::Unites(x) => LignePaie::Unites(ligne::Unites { quantite, ..x }),
             LignePaie::UnitesEtHeures(x) => {
-                let heures = x.heures.filter(|h| par_date && !h.is_zero());
+                let heures = x.heures.filter(|h| par_date && !h.est_nul());
                 LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { quantite, heures, ..x })
             }
             LignePaie::Frais(x) => LignePaie::Frais(ligne::Frais { quantite, ..x }),
@@ -1187,13 +1188,13 @@ pub(crate) fn a_finir(phrase: impl Into<String>) -> Echec {
 /// LE TARIF DE LA CONVENTION d'une rubrique a ce jour (`tarifs_conventionnels.<code>` de la couche de la convention du
 /// bareme, liste datee : l'avenant qui le fixe et sa date d'effet y sont cites). `None` : la convention n'en fixe pas, ou
 /// pas encore a ce jour ; le taux se saisit.
-pub fn tarif_conventionnel(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<Decimal>> {
+pub fn tarif_conventionnel(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<MontantUnitaire>> {
     let bar = ctx.bareme(jour)?;
     Ok(bar.tarifs_conventionnels.as_ref().and_then(|t| {
         if *code == REPAS {
-            t.repas.and_then(|n| n.0).map(socle::grandeurs::MontantUnitaire::decimal)
+            t.repas.and_then(|n| n.0)
         } else if *code == NUITEE {
-            t.nuitee.and_then(|n| n.0).map(socle::grandeurs::MontantUnitaire::decimal)
+            t.nuitee.and_then(|n| n.0)
         } else {
             None
         }
@@ -1359,7 +1360,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
         };
         l.marques.rang = Some(rang);
         let mut cases: Vec<CaseDeFrais> = Vec::new();
-        let taux = l.taux;
+        let taux = l.taux.map(MontantUnitaire::decimal);
         let dates: Vec<DateDeLigne> = l.dates.clone();
         let jour = match dates.first() {
             Some(x) => x.jour(),
@@ -1436,7 +1437,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
             au_dela.push(LignePaie::Composee(ligne::Composee {
                 rubrique: lim.au_dela.clone(),
                 quantite,
-                taux: (taux - limite).normalize(),
+                taux: MontantUnitaire::du_decimal((taux - limite).normalize()),
                 heures: None,
                 precision: None,
                 dates,
@@ -1461,8 +1462,8 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                     case
                 ),
             });
-            l.marques.taux_saisi = Some(taux.normalize());
-            l.taux = Some(limite.normalize());
+            l.marques.taux_saisi = Some(MontantUnitaire::du_decimal(taux.normalize()));
+            l.taux = Some(MontantUnitaire::du_decimal(limite.normalize()));
         }
         out.push(LignePaie::Frais(l));
     }
@@ -1511,9 +1512,9 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
     let mut es: Vec<Etrangere> = Vec::new();
     for (i, lieu) in etrangeres {
         let (i, l) = (*i, &lignes[*i]);
-        let Some(taux) = l.taux() else { continue };
+        let Some(taux) = l.taux().map(MontantUnitaire::decimal) else { continue };
         // La quantite d'une ligne saisie est dite (`lignes_dites`).
-        let quantite = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let quantite = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
         if l.dates().is_empty() {
             return Err(socle::refus!("{} : une ligne de frais à l'étranger dit ses jours : l'indemnité de mission est celle d'un jour. Rien n'est calculé.", qui));
         }
@@ -1587,16 +1588,16 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         if soumis > Decimal::ZERO {
             let quantite_ligne = e.unites * Decimal::from(e.jours.len() as u64);
             let l = frais(&mut lignes[e.rang])?;
-            l.marques.taux_saisi = Some(e.taux.normalize());
-            l.taux = Some((e.taux - soumis / quantite_ligne).normalize());
+            l.marques.taux_saisi = Some(MontantUnitaire::du_decimal(e.taux.normalize()));
+            l.taux = Some(MontantUnitaire::du_decimal((e.taux - soumis / quantite_ligne).normalize()));
         }
         for (ecart, dates) in groupes.into_iter().filter(|(g, _)| *g > Decimal::ZERO) {
             let quantite = e.unites * Decimal::from(dates.len() as u64);
             let premier = dates.first().map(DateDeLigne::jour);
             parts.push(LignePaie::Composee(ligne::Composee {
                 rubrique: au_dela.clone(),
-                quantite: quantite.normalize(),
-                taux: (ecart / e.unites).normalize(),
+                quantite: Quantite::du_decimal(quantite.normalize()),
+                taux: MontantUnitaire::du_decimal((ecart / e.unites).normalize()),
                 heures: None,
                 precision: None,
                 dates,
@@ -1653,12 +1654,12 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
         let ligne = format!("sa ligne {} (« {} »)", i + 1, r.libelle);
         // Ce que la ligne dit qu'elle paie (une quantite, une base, ou rien a compter : un montant), et son prix.
         let (quantite, taux, quoi, prix) = match l {
-            LignePaie::Unites(x) => (Some(x.quantite), x.taux, "la quantité", "le montant"),
-            LignePaie::UnitesEtHeures(x) => (Some(x.quantite), x.taux, "la quantité", "le montant"),
-            LignePaie::Frais(x) => (Some(x.quantite), x.taux, "la quantité", "le montant"),
-            LignePaie::Pourcentage(x) => (Some(x.base), x.taux_majoration, "la base", "le pourcentage"),
-            LignePaie::Montant(x) => (None, x.montant, "", "le montant"),
-            LignePaie::AvantageEnNature(x) => (None, x.montant, "", "le montant"),
+            LignePaie::Unites(x) => (Some(x.quantite.map(Quantite::decimal)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::UnitesEtHeures(x) => (Some(x.quantite.map(Quantite::decimal)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::Frais(x) => (Some(x.quantite.map(Quantite::decimal)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::Pourcentage(x) => (Some(x.base.map(Montant::decimal)), x.taux_majoration.is_some(), "la base", "le pourcentage"),
+            LignePaie::Montant(x) => (None, x.montant.is_some(), "", "le montant"),
+            LignePaie::AvantageEnNature(x) => (None, x.montant.is_some(), "", "le montant"),
             // UNE LIGNE QUE LE MOTEUR POSE ne se saisit pas.
             LignePaie::Composee(_) | LignePaie::RetenueArret(_) | LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) | LignePaie::Importee(_) => {
                 return Err(socle::refus!("{} : {} ne se saisit pas : le moteur la pose lui-même. Retirez-la.", qui, ligne));
@@ -1692,7 +1693,7 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
                 )));
             }
         }
-        if taux.is_none() {
+        if !taux {
             return Err(a_finir(format!("{}{}{} de {}.", qui, LIGNE_A_DIRE, prix, ligne)));
         }
     }
@@ -1719,7 +1720,7 @@ fn heures_dites(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
             continue;
         }
         let quantite = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
-        if quantite.is_zero() || l.heures().is_some_and(|h| !h.is_zero()) {
+        if quantite.est_nul() || l.heures().is_some_and(|h| !h.est_nul()) {
             continue;
         }
         return Err(a_finir(format!(

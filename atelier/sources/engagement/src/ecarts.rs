@@ -418,16 +418,19 @@ fn comparer_une(
         let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
         let forme = FormeSaisie::de(&lue)?;
         // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
-        let montant = Some(quantite * taux);
+        let montant = Some(socle::grandeurs::Montant::du_decimal(quantite * taux));
+        let heures = l.heures.map(socle::grandeurs::Heures::du_decimal);
+        let (base, taux_majoration) = (Some(socle::grandeurs::Montant::du_decimal(quantite)), Some(socle::grandeurs::Taux::du_decimal(taux * Decimal::ONE_HUNDRED)));
+        let (quantite, taux) = (socle::grandeurs::Quantite::du_decimal(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux));
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = forme else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux, heures: l.heures, precision: None, dates: jours.clone() }));
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux, heures, precision: None, dates: jours.clone() }));
             continue;
         };
         let (rubrique, quantite, taux, dates) = (lue.code, Some(quantite), Some(taux), jours.clone());
         saisies.push(match forme {
             FormeSaisie::Unites => LignePaie::Unites(ligne::Unites { rubrique, quantite, taux, lieu: None, dates, planning: Vec::new() }),
-            FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux, heures: l.heures, lieu: None, dates, planning: Vec::new() }),
+            FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux, heures, lieu: None, dates, planning: Vec::new() }),
             FormeSaisie::Frais | FormeSaisie::FraisSansLimite => LignePaie::Frais(ligne::Frais {
                 rubrique,
                 quantite,
@@ -439,8 +442,8 @@ fn comparer_une(
                 planning: Vec::new(),
                 marques: ligne::Marques::default(),
             }),
-            FormeSaisie::Pourcentage => LignePaie::Pourcentage(ligne::Pourcentage { rubrique, base: quantite, taux_majoration: taux.map(|t| t * Decimal::ONE_HUNDRED) }),
-            FormeSaisie::Montant => LignePaie::Montant(ligne::Montant { rubrique, montant }),
+            FormeSaisie::Pourcentage => LignePaie::Pourcentage(ligne::EnPourcentage { rubrique, base, taux_majoration }),
+            FormeSaisie::Montant => LignePaie::Montant(ligne::AuMontant { rubrique, montant }),
             FormeSaisie::AvantageEnNature => LignePaie::AvantageEnNature(ligne::AvantageEnNature { rubrique, montant, genre: None }),
         });
     }

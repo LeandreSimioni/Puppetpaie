@@ -102,8 +102,8 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, qu
         let taux = (horaire * (Decimal::ONE_HUNDRED + p.majoration) / Decimal::ONE_HUNDRED).round_dp(4);
         out.push(crate::LignePaie::Composee(crate::ligne::Composee {
             rubrique: rubrique.clone(),
-            quantite: court(p.heures),
-            taux: court(taux),
+            quantite: socle::grandeurs::Quantite::du_decimal(court(p.heures)),
+            taux: socle::grandeurs::MontantUnitaire::du_decimal(court(taux)),
             heures: None,
             precision: Some(format!("majorées de {} %", virgule(p.majoration.normalize()))),
             dates: Vec::new(),

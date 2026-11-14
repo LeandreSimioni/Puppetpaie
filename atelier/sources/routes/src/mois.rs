@@ -494,7 +494,7 @@ fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<Decimal>> {
     if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != droit::catalogue::Unite::Cachet {
         return Ok(None);
     }
-    Ok(l.taux().filter(|t| !t.is_zero()))
+    Ok(l.taux().filter(|t| !t.est_nul()).map(socle::grandeurs::MontantUnitaire::decimal))
 }
 
 /// Les lignes d'un permanent, calculees. Une saisie incomplete (un engagement qui ne dit pas encore tout,
@@ -539,9 +539,9 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     for (i, (l, src)) in p.remuneration.iter().zip(brutes).enumerate() {
         let saisi = p.engagement.lignes.get(i).and_then(|x| x.marques()).and_then(|m| m.taux_saisi);
         // Le nombre que l'ecran montre : sa forme la plus courte.
-        let (quantite, taux) = (Some(socle::num::court(l.quantite)), Some(match saisi {
+        let (quantite, taux) = (Some(socle::grandeurs::Quantite::du_decimal(socle::num::court(l.quantite))), Some(match saisi {
             Some(t) => t,
-            None => socle::num::court(l.taux),
+            None => socle::grandeurs::MontantUnitaire::du_decimal(socle::num::court(l.taux)),
         }));
         out.push(match src.clone() {
             LignePaie::Unites(x) => LignePaie::Unites(engagement::ligne::Unites { quantite, taux, ..x }),
@@ -772,7 +772,7 @@ fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<i64> {
         if catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != catalogue::Unite::Cachet {
             continue;
         }
-        if let Some(q) = l.quantite() {
+        if let Some(q) = l.quantite().map(socle::grandeurs::Quantite::decimal) {
             cachets += i64::try_from(q.trunc()).map_err(|_| erreur(Classe::CalculImpossible, socle::fichiers::entier_hors_limites(&q.to_string())))?;
         }
     }
@@ -1197,7 +1197,7 @@ pub(crate) fn manque_de(ctx: &Contexte, data: &VueDuMois, i: usize) -> Option<Ec
 fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: usize) -> CeQuiChange {
     let mut lignes = Vec::new();
     for (rang, (a, b)) in avant.lignes().iter().zip(apres.lignes().iter()).enumerate() {
-        let (ta, tb) = (a.taux(), b.taux());
+        let (ta, tb) = (a.taux().map(socle::grandeurs::MontantUnitaire::decimal), b.taux().map(socle::grandeurs::MontantUnitaire::decimal));
         if ta.is_none() && tb.is_none_or(|t| t.is_zero()) {
             continue; // restee sans taux : rien a ecrire
         }
@@ -1676,7 +1676,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         }
     }
     let taux_cachet = match premier_cachet {
-        Some(l) => Some(socle::forme::NombreLu::de_decimal(l.taux().ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?)),
+        Some(l) => Some(socle::forme::NombreLu::de_decimal(l.taux().ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?.decimal())),
         None => match &brut.taux_cachet {
             Some(t) => Some(t.clone()),
             None => data.taux_cachet.clone(),
@@ -2057,7 +2057,7 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
     for l in &p.remuneration {
         let mut tarif = None;
         for j in &jours {
-            match engagement::tarif_conventionnel(ctx, &l.rubrique, j)? {
+            match engagement::tarif_conventionnel(ctx, &l.rubrique, j)?.map(socle::grandeurs::MontantUnitaire::decimal) {
                 Some(t) if t == l.taux => {
                     tarif = Some(t);
                     break;

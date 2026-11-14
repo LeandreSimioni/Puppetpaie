@@ -18,7 +18,7 @@ use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Montant, MontantUnitaire, Quantite};
 use socle::num::{add, court, div, mul, Decimal};
 use droit::permanents::{self, anciennete_mois, arrondir_jours, jours_acquis, IndemniteDePreavis};
 
@@ -33,12 +33,12 @@ struct Solde {
 
 /// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit.
 fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: Decimal, taux: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), court(quantite), court(taux))
+    LignePaie::composee(rubrique.clone(), Quantite::du_decimal(court(quantite)), MontantUnitaire::du_decimal(court(taux)))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
 fn ligne_unique(rubrique: &droit::catalogue::CodeDeRubrique, montant: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), Decimal::ONE, court(montant))
+    LignePaie::composee(rubrique.clone(), Quantite::du_decimal(Decimal::ONE), MontantUnitaire::du_decimal(court(montant)))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite.
@@ -1341,7 +1341,7 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
             continue;
         }
         let signe = r.sens.signe();
-        total = add(total, mul(signe, Montant::du_decimal(mul(requis(l.taux(), "taux")?, requis(l.quantite(), "quantite")?)).au_centime().decimal()));
+        total = add(total, mul(signe, Montant::du_decimal(mul(requis(l.taux().map(MontantUnitaire::decimal), "taux")?, requis(l.quantite().map(Quantite::decimal), "quantite")?)).au_centime().decimal()));
     }
     Ok(total)
 }

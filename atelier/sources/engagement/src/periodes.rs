@@ -68,7 +68,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
             ));
         }
     };
-    let salaire_apres = ligne.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
+    let salaire_apres = ligne.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal();
     let quotite_apres = eng.quotite()?;
     let avenant = jour_de_l_avenant(eng)?;
     let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle)).and_then(|c| c.dec());
@@ -93,9 +93,9 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let (q, h) = (court(part.fraction), court(Heures::du_decimal(quotite).au_centieme().decimal()));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
-            quantite: q,
-            taux: court(salaire),
-            heures: Some(h),
+            quantite: socle::grandeurs::Quantite::du_decimal(q),
+            taux: socle::grandeurs::MontantUnitaire::du_decimal(court(salaire)),
+            heures: Some(Heures::du_decimal(h)),
             precision: part.sur_le_bulletin(droit::conges::heures_par_jour(quotite, &horaire.jours)),
             dates: Vec::new(),
         })];

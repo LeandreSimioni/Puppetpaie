@@ -228,7 +228,12 @@ impl LigneImprimee {
     /// taux et ses heures (son libelle et son montant restent ceux du bulletin, `remuneration_lue`).
     pub fn en_ligne_de_paie(&self) -> Option<crate::LignePaie> {
         let rubrique = self.rubrique.clone()?;
-        Some(crate::LignePaie::Importee(crate::ligne::Importee { rubrique, quantite: self.quantite, taux: self.taux, heures: self.heures }))
+        Some(crate::LignePaie::Importee(crate::ligne::Importee {
+            rubrique,
+            quantite: self.quantite.map(socle::grandeurs::Quantite::du_decimal),
+            taux: self.taux.map(socle::grandeurs::MontantUnitaire::du_decimal),
+            heures: self.heures.map(socle::grandeurs::Heures::du_decimal),
+        }))
     }
 }
 

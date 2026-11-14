@@ -102,6 +102,13 @@ grandeurs! {
     Jours, "DES JOURS : une quantite de jours (`4.92`).";
     Coefficient, "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).";
     MontantUnitaire, "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.";
+    Quantite, "LA QUANTITE D'UNE LIGNE DE PAIE, dans l'unite que sa rubrique dit (`droit::catalogue::Unite` : des heures, des cachets, des jours, des services, des semaines, une part du mois ; un forfait compte 1, une ligne en pourcentage compte sa base) : la ligne ne connait pas son unite, sa rubrique la dit.";
+}
+
+/// LA FORME CANONIQUE D'UNE GRANDEUR, pour les empreintes et les oracles : sans zero inutile (`12.50` devient `12.5`,
+/// `-0` devient `0`), comme l'ecrit `num::nombre`.
+pub fn forme_courte<G: Grandeur>(g: G) -> G {
+    G::du(g.en_decimal().normalize())
 }
 
 impl Montant {
@@ -173,11 +180,30 @@ macro_rules! au_montant_unitaire {
     )*};
 }
 
-au_montant_unitaire!(Heures, Cachets, Jours);
+au_montant_unitaire!(Heures, Cachets, Jours, Quantite);
 
 /// LES LECTURES D'UNE GRANDEUR AUTRES QUE LA SIENNE (`forme::decimal_en_nombre`) : un champ les dit par son attribut serde
 /// (`…::deserialize`, `…::option::deserialize` pour un `Option`).
 pub mod lu {
+    /// Comme `forme::decimal` : un nombre, ou un nombre ecrit en texte (une ligne de paie, une paie ecrite : le moteur
+    /// les ecrit en texte, la page envoie un nombre ou un texte).
+    pub mod nombre_ou_texte {
+        use crate::grandeurs::Grandeur;
+
+        pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<G, D::Error> {
+            crate::forme::decimal(d).map(<G as crate::grandeurs::Scelle>::du)
+        }
+
+        /// Un `Option` lu ainsi : absent (avec `#[serde(default)]`) ou nul, il est vide.
+        pub mod option {
+            use crate::grandeurs::Grandeur;
+
+            pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<Option<G>, D::Error> {
+                crate::forme::decimal_opt(d).map(|o| o.map(<G as crate::grandeurs::Scelle>::du))
+            }
+        }
+    }
+
     /// Comme `forme::court` : un nombre (jamais un texte), dans sa forme la plus courte, une decimale au moins (`24` se
     /// lit `24.0`).
     pub mod court {
@@ -284,23 +310,19 @@ pub mod ecrit {
             s.serialize_str(&crate::num::nombre(g.en_decimal()))
         }
 
-        pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<G, D::Error> {
-            crate::forme::decimal(d).map(<G as crate::grandeurs::Scelle>::du)
-        }
+        pub use crate::grandeurs::lu::nombre_ou_texte::deserialize;
 
         /// Un `Option` dans cette ecriture : `None` s'ecrit `null`, et se relit absent ou nul.
         pub mod option {
             use crate::grandeurs::Grandeur;
+
+            pub use crate::grandeurs::lu::nombre_ou_texte::option::deserialize;
 
             pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &Option<G>, s: S) -> Result<S::Ok, S::Error> {
                 match g {
                     Some(g) => super::serialize(g, s),
                     None => s.serialize_none(),
                 }
-            }
-
-            pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<Option<G>, D::Error> {
-                crate::forme::decimal_opt(d).map(|o| o.map(<G as crate::grandeurs::Scelle>::du))
             }
         }
     }

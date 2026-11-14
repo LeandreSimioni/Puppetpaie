@@ -21,6 +21,7 @@ use socle::forme::NombreLu;
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
+use socle::grandeurs::{forme_courte as canon, Heures, Jours, Montant, MontantUnitaire, Quantite, Taux};
 use socle::num::Decimal;
 
 /// UN NOMBRE TEL QU'IL EST SAISI : un nombre, ou un nombre ecrit en texte. La page envoie `""` pour une case vide ; la
@@ -174,18 +175,16 @@ impl CaseDeFrais {
     }
 }
 
-/// Un nombre d'une ligne saisie : `null` tant que la case n'est pas remplie.
-type Case = Option<Decimal>;
-
-/// UNE LIGNE EN UNITES : quantite x taux (`saisie` : `quantite`, `taux`), ses jours, ou elle se joue.
+/// UNE LIGNE EN UNITES : quantite x taux (`saisie` : `quantite`, `taux`), ses jours, ou elle se joue. Une case pas encore
+/// remplie est `null`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Unites {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub quantite: Case,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub taux: Case,
+    #[serde(with = "texte_option")]
+    pub quantite: Option<Quantite>,
+    #[serde(with = "texte_option")]
+    pub taux: Option<MontantUnitaire>,
     pub lieu: Option<String>,
     /// Ses jours du mois.
     pub dates: Vec<DateDeLigne>,
@@ -198,12 +197,12 @@ pub struct Unites {
 #[serde(deny_unknown_fields)]
 pub struct UnitesEtHeures {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub quantite: Case,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub taux: Case,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub heures: Case,
+    #[serde(with = "texte_option")]
+    pub quantite: Option<Quantite>,
+    #[serde(with = "texte_option")]
+    pub taux: Option<MontantUnitaire>,
+    #[serde(with = "texte_option")]
+    pub heures: Option<Heures>,
     pub lieu: Option<String>,
     pub dates: Vec<DateDeLigne>,
     pub planning: Vec<DateDeLigne>,
@@ -215,10 +214,10 @@ pub struct UnitesEtHeures {
 #[serde(deny_unknown_fields)]
 pub struct Frais {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub quantite: Case,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub taux: Case,
+    #[serde(with = "texte_option")]
+    pub quantite: Option<Quantite>,
+    #[serde(with = "texte_option")]
+    pub taux: Option<MontantUnitaire>,
     pub territoire: Option<LieuDeFrais>,
     pub cases: Vec<CaseDeFrais>,
     pub lieu: Option<String>,
@@ -312,22 +311,22 @@ impl TerritoireHorsMetropole {
 /// paie en quantite (la base) et taux (le pourcentage sur cent).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Pourcentage {
+pub struct EnPourcentage {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub base: Case,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub taux_majoration: Case,
+    #[serde(with = "texte_option")]
+    pub base: Option<Montant>,
+    #[serde(with = "texte_option")]
+    pub taux_majoration: Option<Taux>,
 }
 
 /// UNE LIGNE AU MONTANT (`saisie` : `montant` : une prime, un acompte, une indemnite, un defraiement au reel) : une fois
 /// son montant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Montant {
+pub struct AuMontant {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub montant: Case,
+    #[serde(with = "texte_option")]
+    pub montant: Option<Montant>,
 }
 
 /// UN AVANTAGE EN NATURE (`saisie` : `montant`, `genre`) : son montant, et son genre (S21.G00.54.001,
@@ -336,8 +335,8 @@ pub struct Montant {
 #[serde(deny_unknown_fields)]
 pub struct AvantageEnNature {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub montant: Case,
+    #[serde(with = "texte_option")]
+    pub montant: Option<Montant>,
     pub genre: Option<AutreElementDeRevenuBrut>,
 }
 
@@ -347,12 +346,12 @@ pub struct AvantageEnNature {
 #[serde(deny_unknown_fields)]
 pub struct Composee {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub quantite: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub taux: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub heures: Option<Decimal>,
+    #[serde(with = "texte")]
+    pub quantite: Quantite,
+    #[serde(with = "texte")]
+    pub taux: MontantUnitaire,
+    #[serde(with = "texte_option")]
+    pub heures: Option<Heures>,
     pub precision: Option<String>,
     pub dates: Vec<DateDeLigne>,
 }
@@ -363,10 +362,10 @@ pub struct Composee {
 #[serde(deny_unknown_fields)]
 pub struct RetenueArret {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub quantite: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub taux: Decimal,
+    #[serde(with = "texte")]
+    pub quantite: Quantite,
+    #[serde(with = "texte")]
+    pub taux: MontantUnitaire,
 }
 
 /// UNE INDEMNITE JOURNALIERE SUBROGEE (`maintien::lignes`) : ses jours a son taux, aucune heure (S21.G00.53 : les heures
@@ -376,12 +375,12 @@ pub struct RetenueArret {
 #[serde(deny_unknown_fields)]
 pub struct IndemniteJournaliere {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub jours: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub taux: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub assiette_pas: Option<Decimal>,
+    #[serde(with = "texte")]
+    pub jours: Jours,
+    #[serde(with = "texte")]
+    pub taux: MontantUnitaire,
+    #[serde(with = "texte_option")]
+    pub assiette_pas: Option<Montant>,
 }
 
 /// LE MAINTIEN DU SALAIRE (`maintien::lignes`) : une somme, pas des heures de travail. Garanti en net, il porte ce qu'il
@@ -391,10 +390,10 @@ pub struct IndemniteJournaliere {
 #[serde(deny_unknown_fields)]
 pub struct Maintien {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub quantite: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub taux: Decimal,
+    #[serde(with = "texte")]
+    pub quantite: Quantite,
+    #[serde(with = "texte")]
+    pub taux: MontantUnitaire,
     #[serde(skip)]
     pub reconstitution: Option<Box<crate::maintien::Reconstitution>>,
 }
@@ -406,12 +405,12 @@ pub struct Maintien {
 #[serde(deny_unknown_fields)]
 pub struct Importee {
     pub rubrique: CodeDeRubrique,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub quantite: Option<Decimal>,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub taux: Option<Decimal>,
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub heures: Option<Decimal>,
+    #[serde(with = "texte_option")]
+    pub quantite: Option<Quantite>,
+    #[serde(with = "texte_option")]
+    pub taux: Option<MontantUnitaire>,
+    #[serde(with = "texte_option")]
+    pub heures: Option<Heures>,
 }
 
 /// UNE LIGNE DE PAIE, sa forme dite (`forme`).
@@ -421,8 +420,8 @@ pub enum LignePaie {
     Unites(Unites),
     UnitesEtHeures(UnitesEtHeures),
     Frais(Frais),
-    Pourcentage(Pourcentage),
-    Montant(Montant),
+    Pourcentage(EnPourcentage),
+    Montant(AuMontant),
     AvantageEnNature(AvantageEnNature),
     Composee(Composee),
     RetenueArret(RetenueArret),
@@ -439,12 +438,19 @@ pub struct Marques {
     pub rang: Option<usize>,
     pub cases: Vec<CaseDeFrais>,
     pub aides: BTreeMap<CaseDeFrais, String>,
-    pub taux_saisi: Option<Decimal>,
+    pub taux_saisi: Option<MontantUnitaire>,
 }
 
-/// La forme canonique d'un decimal : sa forme ecrite normalisee (`socle::num::nombre`).
-fn canon(x: Decimal) -> R<Decimal> {
-    socle::num::dec_texte(&socle::num::nombre(x))
+/// Un nombre d'une ligne : ecrit en texte, son echelle gardee (`ecrit::texte`) ; lu d'un nombre ou d'un texte.
+mod texte {
+    pub use socle::grandeurs::ecrit::texte::serialize;
+    pub use socle::grandeurs::lu::nombre_ou_texte::deserialize;
+}
+
+/// `texte`, une case : `null` tant qu'elle n'est pas remplie.
+mod texte_option {
+    pub use socle::grandeurs::ecrit::texte::option::serialize;
+    pub use socle::grandeurs::lu::nombre_ou_texte::option::deserialize;
 }
 
 impl LignePaie {
@@ -452,18 +458,18 @@ impl LignePaie {
     /// UNE LIGNE D'UNE RUBRIQUE DE LA PIECE D'UN SALARIE AU MOIS (`droit::catalogue::RubriqueDuMois`), que seul le calcul
     /// qui tient la cle d'un contrat paye au mois (`droit::natures::AuMois`) compose : sur la paie d'un intermittent, elle
     /// ne compile pas.
-    pub fn du_mois(_cle: &droit::natures::AuMois, rubrique: droit::catalogue::RubriqueDuMois, quantite: Decimal, taux: Decimal) -> LignePaie {
+    pub fn du_mois(_cle: &droit::natures::AuMois, rubrique: droit::catalogue::RubriqueDuMois, quantite: Quantite, taux: MontantUnitaire) -> LignePaie {
         LignePaie::composee(rubrique.code(), quantite, taux)
     }
 
     /// LE REVERSEMENT DES INDEMNITES JOURNALIERES NETTES d'une compagnie subrogee (`maintien::lignes`) : une rubrique de la
     /// piece d'un salarie au mois (`RubriqueDuMois::IjssNettes`), que seul le calcul qui tient sa cle compose.
-    pub fn ij_nettes(_cle: &droit::natures::AuMois, jours: Decimal, taux: Decimal, assiette_pas: Decimal) -> LignePaie {
+    pub fn ij_nettes(_cle: &droit::natures::AuMois, jours: Jours, taux: MontantUnitaire, assiette_pas: Montant) -> LignePaie {
         let rubrique = droit::catalogue::RubriqueDuMois::IjssNettes.code();
         LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique, jours, taux, assiette_pas: Some(assiette_pas) })
     }
 
-    pub fn composee(rubrique: CodeDeRubrique, quantite: Decimal, taux: Decimal) -> LignePaie {
+    pub fn composee(rubrique: CodeDeRubrique, quantite: Quantite, taux: MontantUnitaire) -> LignePaie {
         LignePaie::Composee(Composee { rubrique, quantite, taux, heures: None, precision: None, dates: Vec::new() })
     }
 
@@ -484,31 +490,33 @@ impl LignePaie {
         }
     }
 
-    /// SA QUANTITE : celle qu'elle dit, sa base en pourcentage, une fois un montant ; `None` : la case n'est pas remplie.
-    pub fn quantite(&self) -> Option<Decimal> {
+    /// SA QUANTITE : celle qu'elle dit, sa base en pourcentage (des euros), une fois un montant ; `None` : la case n'est
+    /// pas remplie.
+    pub fn quantite(&self) -> Option<Quantite> {
         match self {
             LignePaie::Unites(l) => l.quantite,
             LignePaie::UnitesEtHeures(l) => l.quantite,
             LignePaie::Frais(l) => l.quantite,
-            LignePaie::Pourcentage(l) => l.base,
-            LignePaie::Montant(_) | LignePaie::AvantageEnNature(_) => Some(Decimal::ONE),
+            LignePaie::Pourcentage(l) => l.base.map(|b| Quantite::du_decimal(b.decimal())),
+            LignePaie::Montant(_) | LignePaie::AvantageEnNature(_) => Some(Quantite::du_decimal(Decimal::ONE)),
             LignePaie::Composee(l) => Some(l.quantite),
             LignePaie::RetenueArret(l) => Some(l.quantite),
-            LignePaie::IndemniteJournaliere(l) => Some(l.jours),
+            LignePaie::IndemniteJournaliere(l) => Some(Quantite::du_decimal(l.jours.decimal())),
             LignePaie::Maintien(l) => Some(l.quantite),
             LignePaie::Importee(l) => l.quantite,
         }
     }
 
-    /// SON TAUX : celui qu'elle dit, son pourcentage sur cent, son montant ; `None` : la case n'est pas remplie.
-    pub fn taux(&self) -> Option<Decimal> {
+    /// SON TAUX : celui qu'elle dit, son pourcentage sur cent (des euros par euro de base), son montant ; `None` : la case
+    /// n'est pas remplie.
+    pub fn taux(&self) -> Option<MontantUnitaire> {
         match self {
             LignePaie::Unites(l) => l.taux,
             LignePaie::UnitesEtHeures(l) => l.taux,
             LignePaie::Frais(l) => l.taux,
             LignePaie::Pourcentage(l) => l.taux_majoration.map(sur_cent),
-            LignePaie::Montant(l) => l.montant,
-            LignePaie::AvantageEnNature(l) => l.montant,
+            LignePaie::Montant(l) => l.montant.map(|m| MontantUnitaire::du_decimal(m.decimal())),
+            LignePaie::AvantageEnNature(l) => l.montant.map(|m| MontantUnitaire::du_decimal(m.decimal())),
             LignePaie::Composee(l) => Some(l.taux),
             LignePaie::RetenueArret(l) => Some(l.taux),
             LignePaie::IndemniteJournaliere(l) => Some(l.taux),
@@ -519,7 +527,7 @@ impl LignePaie {
 
     /// Le taux de la ligne devient `taux` (le tarif de la convention, la limite d'un frais) ; une ligne dont le taux n'est
     /// pas une case n'en change pas : refus.
-    pub fn poser_taux(&mut self, taux: Decimal) -> R<()> {
+    pub fn poser_taux(&mut self, taux: MontantUnitaire) -> R<()> {
         match self {
             LignePaie::Unites(l) => l.taux = Some(taux),
             LignePaie::UnitesEtHeures(l) => l.taux = Some(taux),
@@ -532,12 +540,12 @@ impl LignePaie {
 
     /// SES HEURES PAR UNITE, quand elle en dit (`Rubrique::heures`) ; aucune pour une indemnite journaliere et le
     /// maintien, qui ne sont pas du travail.
-    pub fn heures(&self) -> Option<Decimal> {
+    pub fn heures(&self) -> Option<Heures> {
         match self {
             LignePaie::UnitesEtHeures(l) => l.heures,
             LignePaie::Composee(l) => l.heures,
             LignePaie::Importee(l) => l.heures,
-            LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => Some(Decimal::ZERO),
+            LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => Some(Heures::ZERO),
             LignePaie::Unites(_) | LignePaie::Frais(_) | LignePaie::Pourcentage(_) | LignePaie::Montant(_) | LignePaie::AvantageEnNature(_) | LignePaie::RetenueArret(_) => None,
         }
     }
@@ -661,7 +669,7 @@ impl LignePaie {
     }
 
     /// L'assiette du prelevement a la source d'une indemnite journaliere nette reversee.
-    pub fn assiette_pas(&self) -> Option<Decimal> {
+    pub fn assiette_pas(&self) -> Option<Montant> {
         match self {
             LignePaie::IndemniteJournaliere(l) => l.assiette_pas,
             _ => None,
@@ -689,7 +697,7 @@ impl LignePaie {
     /// Une ligne en pourcentage, sa base et son pourcentage positifs ; une autre passe.
     pub fn verifier_pourcentage(&self) -> R<()> {
         let LignePaie::Pourcentage(l) = self else { return Ok(()) };
-        if l.base.is_some_and(|b| b < Decimal::ZERO) || l.taux_majoration.is_some_and(|p| p < Decimal::ZERO) {
+        if l.base.is_some_and(|b| b.decimal() < Decimal::ZERO) || l.taux_majoration.is_some_and(|p| p.decimal() < Decimal::ZERO) {
             return Err(socle::refus!("Ligne << {} >> : base et pourcentage sont positifs.", l.rubrique));
         }
         Ok(())
@@ -697,34 +705,37 @@ impl LignePaie {
 
     /// SA FORME CANONIQUE, pour les empreintes et les oracles : ses nombres en texte normalise, sans ce que le moteur pose
     /// pour l'ecran (`Marques`).
-    pub fn canon(&self) -> R<LignePaie> {
-        let o = |x: Option<Decimal>| x.map(canon).transpose();
-        Ok(match self.clone() {
-            LignePaie::Unites(l) => LignePaie::Unites(Unites { quantite: o(l.quantite)?, taux: o(l.taux)?, ..l }),
-            LignePaie::UnitesEtHeures(l) => LignePaie::UnitesEtHeures(UnitesEtHeures { quantite: o(l.quantite)?, taux: o(l.taux)?, heures: o(l.heures)?, ..l }),
-            LignePaie::Frais(l) => LignePaie::Frais(Frais { quantite: o(l.quantite)?, taux: o(l.taux)?, marques: Marques::default(), ..l }),
-            LignePaie::Pourcentage(l) => LignePaie::Pourcentage(Pourcentage { base: o(l.base)?, taux_majoration: o(l.taux_majoration)?, ..l }),
-            LignePaie::Montant(l) => LignePaie::Montant(Montant { montant: o(l.montant)?, ..l }),
-            LignePaie::AvantageEnNature(l) => LignePaie::AvantageEnNature(AvantageEnNature { montant: o(l.montant)?, ..l }),
-            LignePaie::Composee(l) => LignePaie::Composee(Composee { quantite: canon(l.quantite)?, taux: canon(l.taux)?, heures: o(l.heures)?, ..l }),
-            LignePaie::RetenueArret(l) => LignePaie::RetenueArret(RetenueArret { quantite: canon(l.quantite)?, taux: canon(l.taux)?, ..l }),
+    pub fn canon(&self) -> LignePaie {
+        fn o<G: socle::grandeurs::Grandeur>(x: Option<G>) -> Option<G> {
+            x.map(canon)
+        }
+        match self.clone() {
+            LignePaie::Unites(l) => LignePaie::Unites(Unites { quantite: o(l.quantite), taux: o(l.taux), ..l }),
+            LignePaie::UnitesEtHeures(l) => LignePaie::UnitesEtHeures(UnitesEtHeures { quantite: o(l.quantite), taux: o(l.taux), heures: o(l.heures), ..l }),
+            LignePaie::Frais(l) => LignePaie::Frais(Frais { quantite: o(l.quantite), taux: o(l.taux), marques: Marques::default(), ..l }),
+            LignePaie::Pourcentage(l) => LignePaie::Pourcentage(EnPourcentage { base: o(l.base), taux_majoration: o(l.taux_majoration), ..l }),
+            LignePaie::Montant(l) => LignePaie::Montant(AuMontant { montant: o(l.montant), ..l }),
+            LignePaie::AvantageEnNature(l) => LignePaie::AvantageEnNature(AvantageEnNature { montant: o(l.montant), ..l }),
+            LignePaie::Composee(l) => LignePaie::Composee(Composee { quantite: canon(l.quantite), taux: canon(l.taux), heures: o(l.heures), ..l }),
+            LignePaie::RetenueArret(l) => LignePaie::RetenueArret(RetenueArret { quantite: canon(l.quantite), taux: canon(l.taux), ..l }),
             LignePaie::IndemniteJournaliere(l) => {
-                LignePaie::IndemniteJournaliere(IndemniteJournaliere { jours: canon(l.jours)?, taux: canon(l.taux)?, assiette_pas: o(l.assiette_pas)?, ..l })
+                LignePaie::IndemniteJournaliere(IndemniteJournaliere { jours: canon(l.jours), taux: canon(l.taux), assiette_pas: o(l.assiette_pas), ..l })
             }
-            LignePaie::Maintien(l) => LignePaie::Maintien(Maintien { quantite: canon(l.quantite)?, taux: canon(l.taux)?, ..l }),
-            LignePaie::Importee(l) => LignePaie::Importee(Importee { quantite: o(l.quantite)?, taux: o(l.taux)?, heures: o(l.heures)?, ..l }),
-        })
+            LignePaie::Maintien(l) => LignePaie::Maintien(Maintien { quantite: canon(l.quantite), taux: canon(l.taux), ..l }),
+            LignePaie::Importee(l) => LignePaie::Importee(Importee { quantite: o(l.quantite), taux: o(l.taux), heures: o(l.heures), ..l }),
+        }
     }
 }
 
-/// UN POURCENTAGE SUR CENT : le quotient exact, a l'exposant ideal, qui garde au moins l'echelle du pourcentage
-/// (`12.5` -> `0.125`, `30.0` -> `0.30`).
-fn sur_cent(pct: Decimal) -> Decimal {
+/// UN POURCENTAGE SUR CENT, en euros par euro de base : le quotient exact, a l'exposant ideal, qui garde au moins
+/// l'echelle du pourcentage (`12.5` -> `0.125`, `30.0` -> `0.30`).
+fn sur_cent(pct: Taux) -> MontantUnitaire {
+    let pct = pct.decimal();
     let mut taux = socle::num::div(pct, Decimal::ONE_HUNDRED).normalize();
     if taux.scale() < pct.scale() {
         taux.rescale(pct.scale());
     }
-    taux
+    MontantUnitaire::du_decimal(taux)
 }
 
 // ------------------------------------------------------------------ la porte
@@ -845,12 +856,12 @@ impl FormeSaisie {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LigneDonnee {
     pub rubrique: Option<CodeDeRubrique>,
-    pub quantite: Option<Case>,
-    pub taux: Option<Case>,
-    pub heures: Option<Case>,
-    pub base: Option<Case>,
-    pub taux_majoration: Option<Case>,
-    pub montant: Option<Case>,
+    pub quantite: Option<Option<Quantite>>,
+    pub taux: Option<Option<MontantUnitaire>>,
+    pub heures: Option<Option<Heures>>,
+    pub base: Option<Option<Montant>>,
+    pub taux_majoration: Option<Option<Taux>>,
+    pub montant: Option<Option<Montant>>,
     pub genre: Option<Option<AutreElementDeRevenuBrut>>,
     pub territoire: Option<Option<LieuDeFrais>>,
     pub cases: Option<Vec<CaseDeFrais>>,
@@ -877,22 +888,22 @@ impl<'de> Deserialize<'de> for LigneDonnee {
                     Ok(())
                 }
                 /// Un nombre, ou `null`.
-                struct Nombre(Case);
-                impl<'de> Deserialize<'de> for Nombre {
-                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Nombre, D::Error> {
-                        socle::forme::decimal_opt(d).map(Nombre)
+                struct Nombre<G>(Option<G>);
+                impl<'de, G: socle::grandeurs::Grandeur> Deserialize<'de> for Nombre<G> {
+                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Nombre<G>, D::Error> {
+                        socle::grandeurs::lu::nombre_ou_texte::option::deserialize(d).map(Nombre)
                     }
                 }
                 let mut l = LigneDonnee::default();
                 while let Some(cle) = m.next_key::<Cle>()? {
                     match cle {
                         Cle::Rubrique => une(&mut l.rubrique, m.next_value::<CodeDeRubrique>()?, cle)?,
-                        Cle::Quantite => une(&mut l.quantite, m.next_value::<Nombre>()?.0, cle)?,
-                        Cle::Taux => une(&mut l.taux, m.next_value::<Nombre>()?.0, cle)?,
-                        Cle::Heures => une(&mut l.heures, m.next_value::<Nombre>()?.0, cle)?,
-                        Cle::Base => une(&mut l.base, m.next_value::<Nombre>()?.0, cle)?,
-                        Cle::TauxMajoration => une(&mut l.taux_majoration, m.next_value::<Nombre>()?.0, cle)?,
-                        Cle::Montant => une(&mut l.montant, m.next_value::<Nombre>()?.0, cle)?,
+                        Cle::Quantite => une(&mut l.quantite, m.next_value::<Nombre<_>>()?.0, cle)?,
+                        Cle::Taux => une(&mut l.taux, m.next_value::<Nombre<_>>()?.0, cle)?,
+                        Cle::Heures => une(&mut l.heures, m.next_value::<Nombre<_>>()?.0, cle)?,
+                        Cle::Base => une(&mut l.base, m.next_value::<Nombre<_>>()?.0, cle)?,
+                        Cle::TauxMajoration => une(&mut l.taux_majoration, m.next_value::<Nombre<_>>()?.0, cle)?,
+                        Cle::Montant => une(&mut l.montant, m.next_value::<Nombre<_>>()?.0, cle)?,
                         Cle::Genre => une(&mut l.genre, m.next_value::<Option<AutreElementDeRevenuBrut>>()?, cle)?,
                         Cle::Territoire => une(&mut l.territoire, m.next_value::<Option<LieuDeFrais>>()?, cle)?,
                         Cle::Cases => une(&mut l.cases, m.next_value::<Vec<CaseDeFrais>>()?, cle)?,
@@ -975,7 +986,9 @@ impl LigneDonnee {
         }
         let rubrique = r.code.clone();
         // Chaque cle obligatoire est dite (la verification vient d'etre faite) ; une facultative absente est vide.
-        let dit = |x: Option<Case>| x.flatten();
+        fn dit<G>(x: Option<Option<G>>) -> Option<G> {
+            x.flatten()
+        }
         let jours = |x: Option<Vec<DateDeLigne>>| x.into_iter().flatten().collect::<Vec<_>>();
         let texte = |x: Option<Option<String>>| x.flatten();
         Ok(match forme {
@@ -1023,8 +1036,8 @@ impl LigneDonnee {
                 planning: jours(self.planning),
                 marques: Marques::default(),
             }),
-            FormeSaisie::Pourcentage => LignePaie::Pourcentage(Pourcentage { rubrique, base: dit(self.base), taux_majoration: dit(self.taux_majoration) }),
-            FormeSaisie::Montant => LignePaie::Montant(Montant { rubrique, montant: dit(self.montant) }),
+            FormeSaisie::Pourcentage => LignePaie::Pourcentage(EnPourcentage { rubrique, base: dit(self.base), taux_majoration: dit(self.taux_majoration) }),
+            FormeSaisie::Montant => LignePaie::Montant(AuMontant { rubrique, montant: dit(self.montant) }),
             FormeSaisie::AvantageEnNature => LignePaie::AvantageEnNature(AvantageEnNature { rubrique, montant: dit(self.montant), genre: self.genre.flatten() }),
         })
     }

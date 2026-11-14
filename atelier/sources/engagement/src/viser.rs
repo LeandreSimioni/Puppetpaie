@@ -11,6 +11,7 @@ use crate::saisie::{Carte, VueDuMois};
 use droit::contexte::Contexte;
 use socle::echec::Echec;
 use socle::num::Decimal;
+use socle::grandeurs::{MontantUnitaire, Quantite};
 
 /// Ce qui se vise : le brut, le cout employeur, le net a payer ; la charge du montant vise le dit `brut`, `cout`, `net`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -58,14 +59,9 @@ fn taux_saisi(l: &LignePaie) -> bool {
     matches!(l, LignePaie::Unites(_) | LignePaie::UnitesEtHeures(_) | LignePaie::Frais(_))
 }
 
-/// Un taux, une quantite absents ou nuls.
-fn absent_ou_zero(v: Option<Decimal>) -> bool {
-    v.is_none_or(|x| x.is_zero())
-}
-
 /// Un SALAIRE se hausse ; un defraiement, une prime, un acompte, non.
 fn ligne_ajustable(ctx: &Contexte, ligne: &LignePaie) -> R<bool> {
-    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == droit::catalogue::NatureDeRubrique::Salaire && !absent_ou_zero(ligne.taux()))
+    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == droit::catalogue::NatureDeRubrique::Salaire && !ligne.taux().is_none_or(MontantUnitaire::est_nul))
 }
 
 /// Une ligne dont le taux est une case vide.
@@ -96,7 +92,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
                 continue;
             }
             let r = rubrique_de(ctx, ligne)?;
-            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && absent_ou_zero(ligne.taux()) && !absent_ou_zero(ligne.quantite()) {
+            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && ligne.taux().is_none_or(MontantUnitaire::est_nul) && !ligne.quantite().is_none_or(Quantite::est_nul) {
                 sans_taux.push((k, r.libelle));
             }
         }
@@ -115,7 +111,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
             )));
         }
         if let Some(l) = sans_taux.first().and_then(|(k, _)| e.lignes.as_mut().and_then(|ls| ls.get_mut(*k))) {
-            l.poser_taux(Decimal::ONE).map_err(RefusVisee::Refus)?;
+            l.poser_taux(MontantUnitaire::du_decimal(Decimal::ONE)).map_err(RefusVisee::Refus)?;
         }
     }
     // Les AUTRES blocs du mois repartent comme la page les enverrait d'ordinaire : sans leurs lignes incompletes.
@@ -123,7 +119,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
         let Some(ls) = e.lignes.as_mut() else { continue };
         if rangs.contains(&i) {
             for l in ls.iter_mut().filter(|l| taux_vide(l)) {
-                l.poser_taux(Decimal::ZERO).map_err(RefusVisee::Refus)?;
+                l.poser_taux(MontantUnitaire::du_decimal(Decimal::ZERO)).map_err(RefusVisee::Refus)?;
             }
         } else {
             ls.retain(|l| !taux_vide(l));
@@ -152,8 +148,9 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
         }
         if let Some(t) = l.taux() {
             // Le taux au centime, dans sa forme la plus courte (`mis_a_l_echelle`).
-            let p = t.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-            l.poser_taux(socle::num::court(socle::grandeurs::Montant::du_decimal(p).au_centime().decimal())).map_err(RefusVisee::Refus)?;
+            let p = t.decimal().checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
+            let taux = socle::num::court(socle::grandeurs::Montant::du_decimal(p).au_centime().decimal());
+            l.poser_taux(MontantUnitaire::du_decimal(taux)).map_err(RefusVisee::Refus)?;
         }
         touche = true;
     }

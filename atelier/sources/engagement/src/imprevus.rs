@@ -856,7 +856,13 @@ nomme cette absence. Rien n'est calcule.",
                     libelle_du_motif(&motif)
                 ), "arrets-base.json"));
             };
-            lignes.extend(retenue()?.map(|(quantite, taux)| crate::LignePaie::RetenueArret(crate::ligne::RetenueArret { rubrique, quantite, taux })));
+            lignes.extend(retenue()?.map(|(quantite, taux)| {
+                crate::LignePaie::RetenueArret(crate::ligne::RetenueArret {
+                    rubrique,
+                    quantite: socle::grandeurs::Quantite::du_decimal(quantite),
+                    taux: socle::grandeurs::MontantUnitaire::du_decimal(taux),
+                })
+            }));
             absents += jours;
             avert.push(info(format!(
                 "{} : arrêt de travail ({}) du {} au {} : {} ; la DSN de chaque mois qu'il traverse le déclare.",
@@ -882,7 +888,9 @@ nomme cette absence. Rien n'est calcule.",
                     motif.texte()
                 )));
             } else {
-                lignes.extend(retenue()?.map(|(quantite, taux)| crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, quantite, taux)));
+                lignes.extend(retenue()?.map(|(quantite, taux)| {
+                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, socle::grandeurs::Quantite::du_decimal(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux))
+                }));
                 absents += jours;
                 avert.push(info(format!(
                     "{} : absence ({}) du {} au {} : {} ; la DSN de chaque mois qu'elle traverse la déclare.",
@@ -972,8 +980,8 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &I
                 libelle: libelle_rubrique(&ctx.racine, &rubrique, &ctx.lue_au)?,
                 rubrique,
                 dates: dedans,
-                quantite: l.quantite(),
-                taux: l.taux(),
+                quantite: l.quantite().map(socle::grandeurs::Quantite::decimal),
+                taux: l.taux().map(socle::grandeurs::MontantUnitaire::decimal),
             });
         }
     }

@@ -196,7 +196,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 |---|---|---|
 | montant | `Montant` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| quantité | `Heures`, `Cachets`, `Jours` ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
+| quantité | `Heures`, `Cachets`, `Jours` ; celle d'une ligne de paie : `Quantite` ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
 | coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure) | `droit/src/plafond.rs` |
@@ -205,13 +205,15 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 **Le détail**
 
 - **montant** : une somme en euros, au centime ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant` ; le
-  nombre d'une fiche, `droit::fiche::NombreDeFiche`, est une écriture (il garde ce qu'on a tapé), pas un montant ; `engagement::ligne::Montant` est une ligne au montant, à renommer. L'arrondi au centime
+  nombre d'une fiche, `droit::fiche::NombreDeFiche`, est une écriture (il garde ce qu'on a tapé), pas un montant ; `engagement::ligne::AuMontant` et `EnPourcentage` sont des lignes de paie, pas des montants. L'arrondi au centime
   est un seul, `Montant::au_centime` (la moitié vers le haut, deux décimales écrites).
 - **taux** : un pourcentage appliqué à une base ; aujourd'hui aussi `Decimal` (le solde de la taxe d'apprentissage se lit dans la forme
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le
   taux de PAS est sa notion à lui, `droit::pas::TauxDePas`.
 - **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui `Decimal`, `i64`,
-  `engagement::ligne::Chiffre`.
+  `engagement::ligne::Chiffre`. La quantité d'une ligne de paie (`Quantite`) est dans l'unité que dit sa rubrique
+  (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois ; un forfait compte 1, une ligne
+  en pourcentage sa base) : la ligne ne connaît pas son unité ; quantité × montant unitaire = montant.
 - **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
   coefficient de la réduction générale) ; montant × coefficient = montant.
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le « taux » d'une ligne de paie, le
