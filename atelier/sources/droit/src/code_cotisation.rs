@@ -189,21 +189,25 @@ codes_fermes! {
 #[serde(try_from = "String")]
 pub struct CleDeCotisationDsn {
     pub code: CodeCotisation81,
-    pub affectation: Option<AffectationDeCotisation>,
+    pub affectation: Option<IdentifiantDAffiliation>,
 }
 
 crate::cle_opaque! {
-    /// L'AFFECTATION D'UNE COTISATION DE LA DSN (`202`, `203`) : la place de l'adhesion sous laquelle elle se declare,
-    /// quand plusieurs cotisations du corps du bareme partagent un code 81.001 (`CotisationDsn::affectation`) ; elle
-    /// distingue leur cle (`059:203`).
-    pub struct AffectationDeCotisation, "affectation d'une cotisation de la DSN";
+    /// L'IDENTIFIANT TECHNIQUE D'UNE AFFILIATION (`202`, `203`) : « Identifiant technique Affiliation », que le bloc 70
+    /// declare (S21.G00.70.012) et que la base 31 cite (S21.G00.78.005), la meme rubrique de la norme sous ses deux
+    /// blocs (`atelier/reference/norme-dsn/texte/bloc-S21.G00.70.txt` l. 75-80, `bloc-S21.G00.78.txt` l. 409-417 : elle
+    /// « fait le lien avec l'identifiant technique affiliation Prévoyance renseigné dans la rubrique "Identifiant
+    /// technique Affiliation - S21.G00.70.012" »). Le bareme le nomme pour une cotisation quand plusieurs cotisations du
+    /// corps partagent un code 81.001 (`CotisationDsn::affectation`, la place de l'adhesion sous laquelle elle se
+    /// declare) ; il distingue leur cle (`059:203`).
+    pub struct IdentifiantDAffiliation, "identifiant d'une affiliation de la DSN";
 }
 
 impl CleDeCotisationDsn {
     /// La cle ecrite `texte`.
     pub fn lire(texte: &str) -> socle::echec::R<CleDeCotisationDsn> {
         let (code, affectation) = match texte.split_once(':') {
-            Some((c, a)) if !a.is_empty() => (c, Some(AffectationDeCotisation::lire(a)?)),
+            Some((c, a)) if !a.is_empty() => (c, Some(IdentifiantDAffiliation::lire(a)?)),
             Some(_) => return Err(socle::refus!("cle de cotisation de la DSN {} : affectation vide", socle::fichiers::repr(texte))),
             None => (texte, None),
         };

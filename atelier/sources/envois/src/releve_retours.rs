@@ -16,9 +16,7 @@ use socle::secret::Secret;
 use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
-use droit::contexte::{Contexte, TypeDeParametreNeores};
+use droit::contexte::{Contexte, EffectifEcrit, EffectifsParAnnee, FichierEffectifs, TypeDeParametreNeores};
 use socle::echec::R;
 use socle::fichiers::CheminRelatif;
 use socle::mois::Annee;
@@ -835,50 +833,16 @@ struct Mesure118 {
 /// Ce que `config/effectifs.json` dit de lui-meme.
 const QUOI_EFFECTIFS: &str = "Effectifs par année civile. A01 = effectif de sécurité sociale (art. L. 130-1 CSS), celui des seuils de cotisation. Ceux que l'Urssaf calcule et renvoie en compte rendu de nature 118 s'écrivent au relevé des retours ; ceux que la compagnie dit (dit_le) pour une année sans 118, par la route effectif, jusqu'à ce qu'un 118 de cette année les remplace.";
 
-/// LE FICHIER DES EFFECTIFS (`config/effectifs.json`) : par annee civile et par code, l'effectif.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FichierEffectifs {
-    quoi: String,
-    annees: Annees,
-}
-
-/// Les effectifs par annee, puis par code.
-type Annees = std::collections::BTreeMap<Annee, std::collections::BTreeMap<TypeDeParametreNeores, EffectifEcrit>>;
-
-/// UN EFFECTIF ECRIT : celui qu'un 118 a calcule (`calcule_le`, `source` : le jour du calcul, l'archive du compte rendu),
-/// ou celui que la compagnie a dit (`dit_le`), qu'un 118 de la meme annee remplace.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EffectifEcrit {
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::court")]
-    valeur: Decimal,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
-    calcule_le: Option<socle::paris::Moment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<CheminRelatif>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dit_le: Option<Jour>,
-}
-
-fn chemin_des_effectifs(racine: &Path) -> PathBuf {
-    racine.join(droit::contexte::EFFECTIFS)
-}
-
-/// `config/effectifs.json` lu ; aucun s'il n'existe pas.
+/// `config/effectifs.json` lu par sa forme (`droit::contexte::effectifs_lus`) ; aucun s'il n'existe pas.
 fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
-    let p = chemin_des_effectifs(racine);
-    if !p.exists() {
-        return Ok(None);
-    }
-    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| m.reclasser(Classe::Illisible))
+    droit::contexte::effectifs_lus(racine).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
-fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: Annees) -> R<()> {
-    let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
+fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: EffectifsParAnnee) -> R<()> {
+    let donnees = FichierEffectifs { quoi: Some(QUOI_EFFECTIFS.to_string()), annees: Some(annees) };
     if existant != Some(&donnees) {
-        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
+        socle::ecriture::ecrire_json(&racine.join(droit::contexte::EFFECTIFS), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     }
     Ok(())
 }
@@ -893,7 +857,7 @@ pub fn effectif_dit_par_la_compagnie(racine: &Path, an: i32) -> R<bool> {
 fn dits(existant: Option<&FichierEffectifs>) -> Vec<(Annee, EffectifEcrit)> {
     existant
         .into_iter()
-        .flat_map(|f| f.annees.iter())
+        .flat_map(|f| f.annees.iter().flatten())
         .filter_map(|(an, c)| c.get(&TypeDeParametreNeores::EffectifMoyen).filter(|a| a.dit_le.is_some()).map(|a| (*an, a.clone())))
         .collect()
 }
@@ -917,7 +881,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         }
     }
     noms.sort();
-    let mut annees = Annees::new();
+    let mut annees = EffectifsParAnnee::new();
     for nom in &noms {
         let p = dossier.join(nom);
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
@@ -947,7 +911,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
 pub fn poser_effectif(racine: &Path, an: i32, valeur: Decimal, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
-    let mut annees: Annees = existant.iter().flat_map(|f| f.annees.clone()).collect();
+    let mut annees: EffectifsParAnnee = existant.iter().flat_map(|f| f.annees.iter().flatten()).map(|(an, c)| (*an, c.clone())).collect();
     let codes = annees.entry(Annee::nouvelle(i64::from(an))?).or_default();
     if codes.get(&TypeDeParametreNeores::EffectifMoyen).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);

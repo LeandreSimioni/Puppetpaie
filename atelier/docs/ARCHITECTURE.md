@@ -767,7 +767,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | organisation patronale | `OrganisationPatronale` | `droit/src/forme_bareme.rs` |
 | catégorie de la DFS | `CategorieDfs` | `droit/src/forme_bareme.rs` |
 | formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
-| affectation d'une cotisation de la DSN | `AffectationDeCotisation` | `droit/src/code_cotisation.rs` |
+| identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectif | `droit::contexte::Effectif` | `droit/src/contexte.rs` |
 
@@ -1044,7 +1044,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   établissements (`nic_principal`, `nics`, `etablissement`), la carte et l'engagement, la fiche d'un contrat
   (`SalarieDuContrat`), la DSN fabriquée et lue, le journal des envois, la désignation d'un dépôt ; aucun (`None`) : le
   siège.
-- **effectif** : l'effectif que l'Urssaf calcule.
+- **effectif** : l'effectif que l'Urssaf calcule. Son fichier, `config/effectifs.json`, a une seule forme,
+  `droit::contexte::FichierEffectifs` (par `Annee`, puis par `TypeDeParametreNeores`, un `EffectifEcrit`), lue par
+  `droit::contexte::effectifs_lus` seule (l'effectif A01, la CSA et l'OETH, le relevé des retours), écrite par
+  `envois::releve_retours` seul.
 - **type de contrat de la DPAE** : C_TYPE_CONTRAT du Format 120 (1 CDD, 2 CDI, 3 CTT), `codes_fermes!` avec son libellé ;
   que portent la DPAE d'une nature (`contrats-base.json`) et une DPAE relue.
 - **rôle d'un contrat d'organisme** : la prévoyance ou la santé d'un salarié payé au mois (`role` de
@@ -1066,11 +1069,14 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.
 - **formule de la réduction générale** : celle que le barème nomme (`formule`) : `fillon`, au coefficient `t` ; sans
   elle, le coefficient se calcule par `tmin`, `tdelta` et `puissance`. Une liste du logiciel.
-- **affectation d'une cotisation de la DSN** : la place de l'adhésion sous laquelle une cotisation du barème se déclare
-  (`202`, `203`), quand plusieurs partagent un code 81.001 ; elle distingue leur clé (`059:203`, `CleDeCotisationDsn`).
-  La DSN l'écrit en S21.G00.78.005 à la place de l'adhésion du contrat, faite depuis ce nombre
-  (`declarations::dsn::affectation_de_la_place`) : que portent la cotisation de la DSN (`dsn::Cotisation`), la
-  contribution d'un mois et la ligne 81 d'une DSN relue.
+- **identifiant d'une affiliation** : l'« Identifiant technique Affiliation » de la norme, une seule rubrique sous deux
+  blocs : le bloc 70 le déclare (S21.G00.70.012), la base 31 le cite (S21.G00.78.005) (`bloc-S21.G00.70.txt` l. 75-80,
+  `bloc-S21.G00.78.txt` l. 409-417). Le moteur le fait depuis la place de l'adhésion du contrat (`202` et suivants,
+  `declarations::dsn::affiliation_de_la_place`) ; le barème le nomme pour une cotisation (`affectation`, `202`, `203`)
+  quand plusieurs partagent un code 81.001, et il distingue leur clé (`059:203`, `CleDeCotisationDsn`). Que portent la
+  cotisation de la DSN (`dsn::Cotisation`), la contribution d'un mois, les affiliations d'un versement écrit ou déclaré
+  (avec leur référence d'adhésion, 70.013), la ligne 81 d'une DSN relue et les relectures du fichier en cours
+  (composants de versement, contrôles CCH-13 et SIG-23).
 
 ## Le principe
 

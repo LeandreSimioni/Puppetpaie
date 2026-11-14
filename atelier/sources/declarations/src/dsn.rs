@@ -13,7 +13,7 @@ use rust_decimal::RoundingStrategy;
 
 use droit::assiette::Assiette;
 use droit::base_assujettie::{BaseAssujettie, TypeDeComposant};
-use droit::code_cotisation::{AffectationDeCotisation, CleDeTotalisation, CodeCotisation81};
+use droit::code_cotisation::{CleDeTotalisation, CodeCotisation81, IdentifiantDAffiliation};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
@@ -598,9 +598,9 @@ pub struct Cotisation {
     /// ne porte pas de montant.
     pub code81: Option<CodeCotisation81>,
     pub org: Option<IdentifiantDOrganisme>,
-    /// L'affectation de sa base 31 (S21.G00.78.005) : celle du bareme, puis la place de l'adhesion du contrat
-    /// (`affectation_de_la_place`).
-    pub affectation: Option<AffectationDeCotisation>,
+    /// L'affiliation que cite sa base 31 (S21.G00.78.005) : celle du bareme, puis la place de l'adhesion du contrat
+    /// (`affiliation_de_la_place`).
+    pub affectation: Option<IdentifiantDAffiliation>,
     pub cle_total: Option<CleDeTotalisation>,
     pub code_insee: Option<droit::fiche::CodeInsee>,
     pub base81: Option<Decimal>,
@@ -630,18 +630,18 @@ pub struct ContributionDuMois {
     pub reference: String,
     pub libelle: String,
     pub lignes: Vec<IdDeCotisation>,
-    pub natures: std::collections::BTreeMap<droit::natures::Paie, AffectationDeCotisation>,
+    pub natures: std::collections::BTreeMap<droit::natures::Paie, IdentifiantDAffiliation>,
 }
 
-/// L'AFFECTATION D'UNE BASE 31 A LA PLACE `n` (S21.G00.78.005 : « 202 » et suivants, la place de l'adhesion parmi les
-/// references du contrat, `rattachements`), faite depuis ce nombre.
-fn affectation_de_la_place(n: i64) -> R<AffectationDeCotisation> {
-    AffectationDeCotisation::lire(&n.to_string())
+/// L'IDENTIFIANT DE L'AFFILIATION A LA PLACE `n` (S21.G00.70.012, que cite 78.005 : « 202 » et suivants, la place de
+/// l'adhesion parmi les references du contrat, `rattachements`), fait depuis ce nombre.
+fn affiliation_de_la_place(n: i64) -> R<IdentifiantDAffiliation> {
+    IdentifiantDAffiliation::lire(&n.to_string())
 }
 
-/// La place qu'une affectation ecrit (`affectation_de_la_place`) ; `None` : elle n'ecrit pas un nombre, et l'appelant
-/// le refuse.
-fn place_de(a: &AffectationDeCotisation) -> Option<i64> {
+/// La place qu'un identifiant d'affiliation ecrit (`affiliation_de_la_place`) ; `None` : il n'ecrit pas un nombre, et
+/// l'appelant le refuse.
+fn place_de(a: &IdentifiantDAffiliation) -> Option<i64> {
     match a.as_str().trim().parse::<i64>() {
         Ok(n) => Some(n),
         Err(_) => None,
@@ -1451,7 +1451,7 @@ d'affiliation par contrat). Rien n'est ecrit.",
                 refs.len()
             ));
         }
-        natures.insert(n, affectation_de_la_place(202 + refs.len() as i64)?);
+        natures.insert(n, affiliation_de_la_place(202 + refs.len() as i64)?);
     }
     Ok(Some(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: base.dsn.lignes_bulletin.clone(), natures }))
 }
@@ -1508,7 +1508,7 @@ contrat). Rien n'est ecrit.",
                     places
                 ));
             }
-            natures.insert(n, affectation_de_la_place(202 + place as i64)?);
+            natures.insert(n, affiliation_de_la_place(202 + place as i64)?);
             *deja.entry(n).or_insert(0) += 1;
         }
         out.push(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: spec.lignes.clone(), natures });
@@ -1942,7 +1942,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.008"), Some(conjoint.to_string()))?;
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.011"), Some(enfants.to_string()))?;
         }
-        si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.012"), Some((202 + places * (rang - 1) + a.place as i64).to_string()))?;
+        si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.012"), Some(affiliation_de_la_place(202 + places * (rang - 1) + a.place as i64)?.to_string()))?;
         f.add(droit::rubrique!("S21.G00.70.013"), a.reference);
         if let Some(d) = a.debut {
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.014"), Some(d.jjmmaaaa()))?;
@@ -2327,7 +2327,7 @@ pub fn bases_et_cotisations(
     bases_exclues: &[BaseAssujettie],
 ) -> R<()> {
     let e = &p.engagement;
-    let mut courant: Option<(BaseAssujettie, Option<AffectationDeCotisation>, Decimal)> = None;
+    let mut courant: Option<(BaseAssujettie, Option<IdentifiantDAffiliation>, Decimal)> = None;
     let places = places_par_contrat(bar);
     let composants = usage_admet(f, droit::rubrique!("S21.G00.79.001"), nature_dsn)?;
     for mut c in cotisations(p, bar)? {
@@ -2336,7 +2336,7 @@ pub fn bases_et_cotisations(
         }
         if let Some(a) = &c.affectation {
             let n = place_de(a).ok_or_else(|| refus!("affectation illisible : {}", a))?;
-            c.affectation = Some(affectation_de_la_place(n + places * (rang - 1))?);
+            c.affectation = Some(affiliation_de_la_place(n + places * (rang - 1))?);
         }
         let cle = (c.bloc78, c.affectation.clone(), c.base78);
         if courant.as_ref() != Some(&cle) {
@@ -2461,7 +2461,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
         dater_le_58(f, dates);
         f.add(droit::rubrique!("S21.G00.58.003"), "03");
         f.add(droit::rubrique!("S21.G00.58.004"), "0.00");
-        let mut vues: Vec<Option<AffectationDeCotisation>> = Vec::new();
+        let mut vues: Vec<Option<IdentifiantDAffiliation>> = Vec::new();
         let places = places_par_contrat(bar);
         for c in cotisations(p, bar)? {
             if c.bloc78 != BaseAssujettie::PrevoyanceSanteRetraite || vues.contains(&c.affectation) {
@@ -2474,7 +2474,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
             f.add(droit::rubrique!("S21.G00.78.004"), "0.00");
             if let Some(a) = &c.affectation {
                 let n = place_de(a).ok_or_else(|| refus!("affectation illisible : {}", a))?;
-                f.add(droit::rubrique!("S21.G00.78.005"), affectation_de_la_place(n + places * (rang - 1))?);
+                f.add(droit::rubrique!("S21.G00.78.005"), affiliation_de_la_place(n + places * (rang - 1))?);
             }
             if !f.contrat_unique {
                 f.add_opt(droit::rubrique!("S21.G00.78.006"), e.numero.clone())?;
@@ -2504,7 +2504,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
 /// Un versement tel que la mensuelle l'ecrit pour un contrat : les affiliations du contrat (S21.G00.70.012, 70.013) et
 /// les rubriques de son versement (blocs 50 a 81), dans l'ordre ou elles s'ecrivent.
 pub struct VersementEcrit {
-    pub affiliations: Vec<(String, String)>,
+    pub affiliations: Vec<(IdentifiantDAffiliation, String)>,
     pub rubriques: Vec<(RubriqueDeLaNorme, String)>,
 }
 
@@ -2519,10 +2519,10 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
     let bar = bar_du(ctx, ent, &orgs, &nic, mois)?;
     let e = &p.engagement;
     let refs = affiliations(&orgs, &*e.nat()?, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
-    let affiliations = rattachements(p, &orgs, &bar.entreprise.fiche, refs)?
-        .into_iter()
-        .map(|a| ((202 + a.place as i64).to_string(), a.reference))
-        .collect();
+    let mut affiliations = Vec::new();
+    for a in rattachements(p, &orgs, &bar.entreprise.fiche, refs)? {
+        affiliations.push((affiliation_de_la_place(202 + a.place as i64)?, a.reference));
+    }
     let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(mois)?);
     bloc_versement(&mut f, p, &bar, 1, None)?;
     Ok(VersementEcrit { affiliations, rubriques: f.rubriques()? })
@@ -2530,7 +2530,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
 
 /// Les affiliations que CE fichier a deja ecrites pour le contrat `numero` de l'individu en cours :
 /// (S21.G00.70.013, S21.G00.70.012).
-fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat) -> R<Vec<(String, String)>> {
+fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat) -> R<Vec<(String, IdentifiantDAffiliation)>> {
     const NIR: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.001");
     const DEBUT_CONTRAT: RubriqueDeLaNorme = droit::rubrique!("S21.G00.40.001");
     const NUMERO_CONTRAT: RubriqueDeLaNorme = droit::rubrique!("S21.G00.40.009");
@@ -2544,12 +2544,12 @@ fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat
         None => &rubriques[..],
     };
     let mut out = Vec::new();
-    let (mut du_contrat, mut id) = (false, None::<String>);
+    let (mut du_contrat, mut id) = (false, None::<IdentifiantDAffiliation>);
     for (k, v) in lignes {
         match *k {
             DEBUT_CONTRAT | VERSEMENT => du_contrat = false,
             NUMERO_CONTRAT => du_contrat = engagement::numeros::NumeroContrat::lire(v)? == *numero,
-            AFFILIATION if du_contrat => id = Some(v.clone()),
+            AFFILIATION if du_contrat => id = Some(IdentifiantDAffiliation::lire(v)?),
             REFERENCE if du_contrat => {
                 if let Some(i) = id.take() {
                     out.push((v.clone(), i));
@@ -2571,11 +2571,12 @@ fn annuler_le_declare(f: &mut Fichier, r: &Regularisation, blocs: &[&str]) -> R<
     let lignes: Vec<(RubriqueDeLaNorme, String)> = d.blocs(blocs).cloned().collect();
     for (k, v) in lignes {
         if k == droit::rubrique!("S21.G00.78.005") {
-            let reference = d.affiliations.iter().find(|(id, _)| *id == v).map(|(_, rf)| rf.clone()).ok_or_else(|| {
+            let citee = IdentifiantDAffiliation::lire(&v)?;
+            let reference = d.affiliations.iter().find(|(id, _)| *id == citee).map(|(_, rf)| rf.clone()).ok_or_else(|| {
                 refus!(
                     "Correction de {} (contrat {}) : {} cite l'affiliation {} en S21.G00.78.005 sans la \
 declarer dans les blocs 70 du contrat. L'annulation ne sait pas a quoi la rattacher. Rien n'est ecrit.",
-                    r.mois, numero, d.fichier, v
+                    r.mois, numero, d.fichier, citee
                 )
             })?;
             let id = ecrites.iter().find(|(rf, _)| *rf == reference).map(|(_, i)| i.clone()).ok_or_else(|| {
@@ -2884,7 +2885,7 @@ struct Ligne81 {
     base: Option<Decimal>,
     montant: Option<Decimal>,
     /// 78.005 du bloc 78 en cours : l'affiliation (70.012) dans la DSN deposee.
-    affiliation: Option<AffectationDeCotisation>,
+    affiliation: Option<IdentifiantDAffiliation>,
 }
 
 /// Les blocs 78 (78.001, 78.004) et les lignes 81 du versement declare.
@@ -2898,7 +2899,7 @@ fn lignes_declarees(d: &crate::versement_declare::VersementDeclare) -> R<(Vec<(B
     const MONTANT_81: RubriqueDeLaNorme = droit::rubrique!("S21.G00.81.004");
     let lu = |k: RubriqueDeLaNorme, v: &str| -> R<Decimal> { v.parse().map_err(|_| crate::versement_declare::illisible(k, v, &d.fichier)) };
     let (mut b78, mut l81): (Vec<(BaseAssujettie, Decimal)>, Vec<Ligne81>) = (Vec::new(), Vec::new());
-    let (mut bloc, mut affiliation) = (None::<BaseAssujettie>, None::<AffectationDeCotisation>);
+    let (mut bloc, mut affiliation) = (None::<BaseAssujettie>, None::<IdentifiantDAffiliation>);
     for (k, v) in d.blocs(&["78", "81"]) {
         let k = *k;
         match k {
@@ -2909,7 +2910,7 @@ fn lignes_declarees(d: &crate::versement_declare::VersementDeclare) -> R<(Vec<(B
                 affiliation = None;
             }
             MONTANT_78 => b78.push((bloc.ok_or_else(|| refus!("{} sans S21.G00.78.001 dans {}", k, d.fichier))?, lu(k, v)?)),
-            AFFILIATION_78 => affiliation = Some(AffectationDeCotisation::lire(v)?),
+            AFFILIATION_78 => affiliation = Some(IdentifiantDAffiliation::lire(v)?),
             CODE_81 => l81.push(Ligne81 {
                 code: CodeCotisation81::du_code(v).ok_or_else(|| {
                     refus!("La DSN déposée {} porte, en {}, « {} », qui n'est pas un code de sa liste dans la norme.", d.fichier, k, v)
@@ -3800,11 +3801,11 @@ pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
     let mut adhesions: HashMap<String, (String, IdentifiantDOrganisme)> = HashMap::new();
     let (mut lib15, mut org15) = (String::new(), None::<IdentifiantDOrganisme>);
     // 70.012 -> 70.013, pour l'individu en cours (les identifiants y sont uniques, `bloc_contrat`).
-    let mut ids: HashMap<String, String> = HashMap::new();
-    let mut id70: Option<String> = None;
+    let mut ids: HashMap<IdentifiantDAffiliation, String> = HashMap::new();
+    let mut id70: Option<IdentifiantDAffiliation> = None;
     let mut nom = String::new();
     // La base 78 en cours : (78.002, 78.003, 78.005) ; et le code de la cotisation 81 en cours.
-    let mut base: Option<(String, String, Option<String>)> = None;
+    let mut base: Option<(String, String, Option<IdentifiantDAffiliation>)> = None;
     let mut code81 = String::new();
     let mut out: Vec<Composant> = Vec::new();
     for l in lignes {
@@ -3827,7 +3828,7 @@ pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
                 nom.clear();
             }
             NOM => nom = v,
-            AFFILIATION_70 => id70 = Some(v),
+            AFFILIATION_70 => id70 = Some(IdentifiantDAffiliation::lire(&v)?),
             REFERENCE_70 => {
                 if let Some(i) = id70.take() {
                     ids.insert(i, v);
@@ -3846,7 +3847,7 @@ pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
             }
             AFFILIATION_78 => {
                 if let Some(b) = base.as_mut() {
-                    b.2 = Some(v);
+                    b.2 = Some(IdentifiantDAffiliation::lire(&v)?);
                 }
             }
             CODE_81 => code81 = v,
@@ -4126,12 +4127,14 @@ fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: 
 
 /// CCH-13 et SIG-23, verifies ici plutot qu'au point de depot.
 fn verifier_affiliations(texte: &str) -> R<()> {
-    let mut affiliations: BTreeSet<(String, String)> = BTreeSet::new();
-    let mut bases: BTreeSet<(String, String)> = BTreeSet::new();
-    let mut vus: HashSet<(String, String, String, String)> = HashSet::new();
-    let mut doublons: BTreeSet<String> = BTreeSet::new();
+    let mut affiliations: BTreeSet<(String, IdentifiantDAffiliation)> = BTreeSet::new();
+    // La base 31 qui ne cite aucune affiliation (sans 78.005) : `None`.
+    let mut bases: BTreeSet<(String, Option<IdentifiantDAffiliation>)> = BTreeSet::new();
+    let mut vus: HashSet<(Option<IdentifiantDAffiliation>, String, String, String)> = HashSet::new();
+    let mut doublons: BTreeSet<Option<IdentifiantDAffiliation>> = BTreeSet::new();
     let mut contrat = String::new();
-    let mut courant: Option<[String; 4]> = None;
+    // La base 31 en cours : 78.002, 78.003, 78.005, et son contrat (78.006, sinon le dernier 40.009).
+    let mut courant: Option<(String, String, Option<IdentifiantDAffiliation>, String)> = None;
     const NOM: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.002");
     const NUMERO_CONTRAT: RubriqueDeLaNorme = droit::rubrique!("S21.G00.40.009");
     const AFFILIATION_70: RubriqueDeLaNorme = droit::rubrique!("S21.G00.70.012");
@@ -4147,25 +4150,25 @@ fn verifier_affiliations(texte: &str) -> R<()> {
             Some(NOM) => vus.clear(),
             Some(NUMERO_CONTRAT) => contrat = valeur,
             Some(AFFILIATION_70) => {
-                affiliations.insert((contrat.clone(), valeur));
+                affiliations.insert((contrat.clone(), IdentifiantDAffiliation::lire(&valeur)?));
             }
             Some(CODE_78) => {
                 // Sans 78.006 (contrat unique, p. 298), la base se rattache au contrat de l'individu : le dernier 40.009.
-                courant = if BaseAssujettie::du_code(&valeur) == Some(BaseAssujettie::PrevoyanceSanteRetraite) { Some([String::new(), String::new(), String::new(), contrat.clone()]) } else { None };
+                courant = if BaseAssujettie::du_code(&valeur) == Some(BaseAssujettie::PrevoyanceSanteRetraite) { Some((String::new(), String::new(), None, contrat.clone())) } else { None };
             }
             _ => {
                 if let Some(c) = courant.as_mut() {
                     match rubrique {
-                        Some(DEBUT_78) => c[0] = valeur,
-                        Some(FIN_78) => c[1] = valeur,
-                        Some(AFFILIATION_78) => c[2] = valeur,
-                        Some(CONTRAT_78) => c[3] = valeur,
+                        Some(DEBUT_78) => c.0 = valeur,
+                        Some(FIN_78) => c.1 = valeur,
+                        Some(AFFILIATION_78) => c.2 = Some(IdentifiantDAffiliation::lire(&valeur)?),
+                        Some(CONTRAT_78) => c.3 = valeur,
                         Some(MONTANT_81) => {
-                            bases.insert((c[3].clone(), c[2].clone()));
+                            bases.insert((c.3.clone(), c.2.clone()));
                             let signe = if valeur.starts_with('-') { "-" } else { "+" };
-                            let cle = (c[2].clone(), c[0].clone(), c[1].clone(), signe.to_string());
+                            let cle = (c.2.clone(), c.0.clone(), c.1.clone(), signe.to_string());
                             if vus.contains(&cle) {
-                                doublons.insert(c[2].clone());
+                                doublons.insert(c.2.clone());
                             }
                             vus.insert(cle);
                             courant = None;
@@ -4181,17 +4184,17 @@ fn verifier_affiliations(texte: &str) -> R<()> {
             "Affiliation(s) prevoyance declarees DEUX FOIS en base 31 pour un meme individu, meme periode et meme \
 signe : {} (S21.G00.78.001/SIG-23).\n  Ce n'est admis que sur un contrat de mission (S21.G00.40.007 = 03). Les \
 `cotisations_dsn` du bareme en declarent deux pour la meme affiliation.",
-            doublons.into_iter().collect::<Vec<_>>().join(", ")
+            doublons.iter().map(citee_par_la_base).collect::<Vec<_>>().join(", ")
         )), ..Lieu::default() }));
     }
     let mut manquantes: Vec<String> = affiliations
         .iter()
-        .filter(|(c, a)| !bases.contains(&(c.clone(), a.clone())))
+        .filter(|(c, a)| !bases.contains(&(c.clone(), Some(a.clone()))))
         .map(|(c, a)| format!("{} (contrat {})", a, c))
         .collect();
     manquantes.sort();
     if !manquantes.is_empty() {
-        let mut dites: Vec<String> = bases.iter().map(|(_, a)| a.clone()).collect();
+        let mut dites: Vec<String> = bases.iter().map(|(_, a)| citee_par_la_base(a)).collect();
         dites.sort();
         return Err(refus_avec("Le barème de l'année ne déclare pas la base de chaque affiliation de prévoyance : le signaler au développeur.", Lieu { detail: Some(format!(
             "Affiliation(s) prevoyance sans base assujettie de code 31 : {} (S21.G00.78.001/CCH-13).\n  Le bloc 70 \
@@ -4204,6 +4207,15 @@ entiere.\n  Une base 31 par affiliation, meme a 0.00, et sous chacune une et une
         )), ..Lieu::default() }));
     }
     Ok(())
+}
+
+/// L'affiliation qu'une base 31 cite, telle que le fichier l'ecrit en 78.005 : une base qui n'en cite aucune (78.005
+/// absente, `None`) n'y ecrit rien.
+fn citee_par_la_base(a: &Option<IdentifiantDAffiliation>) -> String {
+    match a {
+        Some(a) => a.to_string(),
+        None => String::new(),
+    }
 }
 
 // ----------------------------------------------------------- la generation
@@ -5259,7 +5271,7 @@ mod tests {
         assert_eq!(c.reference, "100");
         assert_eq!(c.lignes, [droit::forme_bareme::CCN]);
         // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
-        assert_eq!(c.natures, std::collections::BTreeMap::from([(droit::natures::Paie::Activite, AffectationDeCotisation::lire("204").unwrap())]));
+        assert_eq!(c.natures, std::collections::BTreeMap::from([(droit::natures::Paie::Activite, IdentifiantDAffiliation::lire("204").unwrap())]));
     }
 
     // `atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`.
