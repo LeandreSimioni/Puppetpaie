@@ -369,7 +369,9 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<NumeroObjetSpectacle>)
     (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
     if let Some(n) = &d.nets {
         (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
-        (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, n.taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
+        // Un taux que la DSN n'ecrit pas comme la norme (`droit::pas::TauxDePas::du_nombre`) n'en est pas un : vide.
+        let taux_pas = n.taux_pas.filter(|d| droit::pas::TauxDePas::du_nombre(*d).is_some());
+        (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
     }
     (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
     x

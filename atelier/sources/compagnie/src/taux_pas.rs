@@ -33,6 +33,27 @@ impl TauxRecu {
     }
 }
 
+/// CE QUE LA DERNIERE DSN DEPOSEE D'UN SALARIE DIT DE SON TAUX DE PAS : un taux transmis par la DGFiP, ou un taux qu'elle
+/// n'ecrit pas comme la norme (S21.G00.50.006), qui n'en est pas un : il ne pose rien, et se dit (le jour du versement
+/// qui l'applique). Un taux transmis se recoit (`recu`, dont le `taux` est `taux`).
+#[derive(Debug, Clone)]
+pub enum TauxDUneDsn {
+    Transmis { taux: droit::pas::TauxDePas, recu: TauxRecu },
+    Illisible { salarie: droit::contexte::IdSalarie, verse_le: Jour },
+}
+
+impl TauxDUneDsn {
+    /// Les taux transmis de `l`, a recevoir (`routes::gestes::taux_pas::enregistrer`).
+    pub fn transmis(l: &[TauxDUneDsn]) -> Vec<TauxRecu> {
+        l.iter()
+            .filter_map(|t| match t {
+                TauxDUneDsn::Transmis { recu, .. } => Some(recu.clone()),
+                TauxDUneDsn::Illisible { .. } => None,
+            })
+            .collect()
+    }
+}
+
 /// Le debut du jour `j` (`AAAAMMJJ000000`).
 fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
     socle::paris::Moment::a_paris(j, 0, 0, 0).ok_or_else(|| socle::refus!("Le jour {} sort du calendrier.", j.jj_mm_aaaa()))
@@ -51,12 +72,12 @@ fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
 /// taux n'en porte pas la date. INFERENCE (aucun texte ne date un taux lu dans une DSN) : le releve est date du jour du versement
 /// (`mis_a_disposition`), la mise a disposition la plus tardive que les textes permettent ; le compte rendu de la DSN suivante
 /// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse ; un taux qui ne s'y
-/// lit pas laisse la case vide (`taux` : `None`).
-pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle::echec::R<Vec<TauxRecu>> {
+/// lit pas n'est pas un taux (`TauxDUneDsn::Illisible`).
+pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle::echec::R<Vec<TauxDUneDsn>> {
     let par_nir: std::collections::HashMap<&droit::fiche::Nir, &droit::contexte::IdSalarie> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.dite().map(|n| (n, cle))).collect();
     let fichiers = declarations::dsn_lue::fichiers(dossier)?;
     // salarie -> mois -> releve (dans l'ordre d'insertion des salaries, mois tries).
-    let mut trouve: Vec<(droit::contexte::IdSalarie, std::collections::BTreeMap<socle::mois::Mois, TauxRecu>)> = Vec::new();
+    let mut trouve: Vec<(droit::contexte::IdSalarie, std::collections::BTreeMap<socle::mois::Mois, TauxDUneDsn>)> = Vec::new();
     for f in fichiers {
         let Some(d) = declarations::dsn_lue::lire_une_dsn(&f)? else { continue };
         let Some(mois) = d.mois else { continue };
@@ -66,16 +87,21 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
             let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| !i.sans_crm()), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
                 continue;
             };
-            // Un taux que la DSN n'ecrit pas comme la norme (deux chiffres, deux decimales au plus) laisse la case vide :
-            // une DSN venue d'ailleurs se lit au mieux, et le compte rendu de l'import le dit.
-            let taux = v.taux_pas.and_then(droit::pas::TauxDePas::du_nombre);
-            let rel = TauxRecu {
-                salarie: (*cle).clone(),
-                taux,
-                type_taux: v.type_pas,
-                identifiant: id.clone(),
-                mis_a_disposition: instant_du_jour(j)?,
-                en_retour_de: None,
+            // Un taux que la DSN n'ecrit pas comme la norme (deux chiffres, deux decimales au plus) n'en pose aucun : une
+            // DSN venue d'ailleurs se lit au mieux, et le compte rendu de l'import le dit.
+            let rel = match v.taux_pas.and_then(droit::pas::TauxDePas::du_nombre) {
+                Some(t) => TauxDUneDsn::Transmis {
+                    taux: t,
+                    recu: TauxRecu {
+                        salarie: (*cle).clone(),
+                        taux: Some(t),
+                        type_taux: v.type_pas,
+                        identifiant: id.clone(),
+                        mis_a_disposition: instant_du_jour(j)?,
+                        en_retour_de: None,
+                    },
+                },
+                None => TauxDUneDsn::Illisible { salarie: (*cle).clone(), verse_le: j },
             };
             match trouve.iter_mut().find(|(k, _)| k == *cle) {
                 Some((_, mm)) => {

@@ -201,29 +201,33 @@ pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
 /// l'applique (`compagnie::taux_pas::derniers_taux_des_dsn`, une inference). La validite se lit ensuite comme pour tout taux recu (`droit::pas`).
 fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
     let dossier = ctx.racine.join("historique").join("bulletins");
-    let releves = match compagnie::taux_pas::derniers_taux_des_dsn(ctx, &dossier) {
+    let lus = match compagnie::taux_pas::derniers_taux_des_dsn(ctx, &dossier) {
         Ok(r) => r,
         Err(e) => return faits.push(e.phrase),
     };
-    let changes = match crate::gestes::taux_pas::enregistrer(ctx, &releves, "DSN reprises par l'import") {
+    let changes = match crate::gestes::taux_pas::enregistrer(ctx, &compagnie::taux_pas::TauxDUneDsn::transmis(&lus), "DSN reprises par l'import") {
         Ok(c) => c,
         Err(e) => return faits.push(format!("Les taux de prélèvement à la source des DSN reprises ne s'enregistrent pas : {}", e.phrase)),
     };
-    for r in &releves {
-        let cle = r.salarie.clone();
-        if !changes.iter().any(|c| c.starts_with(&format!("{} :", cle))) {
-            continue;
+    let qui = |cle: &droit::contexte::IdSalarie| match ctx.salaries.get(cle).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
+        Some(q) => q,
+        None => cle.to_string(),
+    };
+    for l in &lus {
+        match l {
+            compagnie::taux_pas::TauxDUneDsn::Transmis { taux, recu } => {
+                if !changes.iter().any(|c| c.starts_with(&format!("{} :", recu.salarie))) {
+                    continue;
+                }
+                // Le mois du versement qui l'applique (`mis_a_disposition`, le jour du versement) : celui que la DSN declare.
+                let mois = recu.mis_a_disposition.jour_de_paris().mois_civil().libelle(socle::mois::Graphie::Accentuee);
+                faits.push(format!("Prélèvement à la source de {} : taux {} % transmis par la DGFiP, appliqué dans la DSN de {} (S21.G00.50.006 à .008).", qui(&recu.salarie), taux.to_string().replace('.', ","), mois));
+            }
+            compagnie::taux_pas::TauxDUneDsn::Illisible { salarie, verse_le } => {
+                let mois = verse_le.mois_civil().libelle(socle::mois::Graphie::Accentuee);
+                faits.push(format!("Prélèvement à la source de {} : la DSN de {} applique un taux transmis par la DGFiP qu'elle n'écrit pas comme la norme (S21.G00.50.006) : il ne se lit pas, et sa fiche reste comme elle était.", qui(salarie), mois));
+            }
         }
-        let qui = match ctx.salaries.get(&cle).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
-            Some(q) => q,
-            None => cle.to_string(),
-        };
-        // Le mois du versement qui l'applique (`mis_a_disposition`, le jour du versement) : celui que la DSN declare.
-        let mois = r.mis_a_disposition.jour_de_paris().mois_civil().libelle(socle::mois::Graphie::Accentuee);
-        faits.push(match r.taux {
-            Some(t) => format!("Prélèvement à la source de {} : taux {} % transmis par la DGFiP, appliqué dans la DSN de {} (S21.G00.50.006 à .008).", qui, t.to_string().replace('.', ","), mois),
-            None => format!("Prélèvement à la source de {} : la DSN de {} applique un taux transmis par la DGFiP qu'elle n'écrit pas comme la norme (S21.G00.50.006) ; sa fiche le garde sans taux.", qui, mois),
-        });
     }
 }
 

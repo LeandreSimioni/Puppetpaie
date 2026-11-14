@@ -40,11 +40,16 @@ fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
         dire!("Dossier introuvable : {}", export.display());
         return Ok(1);
     }
-    let releves = compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
-    let chgts = routes::gestes::taux_pas::enregistrer(ctx, &releves, &format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
+    let lus = compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
+    let chgts = routes::gestes::taux_pas::enregistrer(ctx, &compagnie::taux_pas::TauxDUneDsn::transmis(&lus),&format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
     dire!("Amorcage depuis les DSN deposees ({}) :", export.display());
     for c in &chgts {
         dire!("  {}", c);
+    }
+    for l in &lus {
+        if let compagnie::taux_pas::TauxDUneDsn::Illisible { salarie, verse_le } = l {
+            dire!("  {} : le taux du versement du {} ne s'ecrit pas comme la norme (S21.G00.50.006), rien de pose", salarie, verse_le.jj_mm_aaaa());
+        }
     }
     if chgts.is_empty() {
         dire!("  rien a changer.");
