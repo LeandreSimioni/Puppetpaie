@@ -1001,8 +1001,9 @@ pub fn modele_de(nom: &NomDeFichier, gabarits: Option<&Path>, poste: &Path) -> P
 
 /// LE NOM D'UN FICHIER, seul, sans son dossier : le fichier parti (`Contrat_ALBARET_AL3.26.01_Mai2026.pdf`), le modele
 /// d'un contrat (`contrat-cddu.modele`), l'archive d'une version (`puppetpaie-2026.11.12-windows.zip`). Il n'est pas
-/// vide, ne porte ni `/`, ni `\`, ni caractere nul, et n'est ni `.` ni `..` : joint a un dossier, il y reste. Il s'ecrit
-/// tel quel et se trie par son texte.
+/// vide, ne porte ni `/`, ni `\`, ni `:`, ni caractere nul, et n'est ni `.` ni `..` : joint a un dossier, il y reste
+/// (sous Windows, un nom ne porte jamais `:`, et joindre `C:` ou `C:x` remplacerait tout le chemin). Il s'ecrit tel
+/// quel et se trie par son texte.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct NomDeFichier(std::borrow::Cow<'static, str>);
@@ -1023,7 +1024,7 @@ impl NomDeFichier {
         }
         let mut i = 0;
         while i < o.len() {
-            if matches!(o[i], b'/' | b'\\' | 0) {
+            if matches!(o[i], b'/' | b'\\' | b':' | 0) {
                 return false;
             }
             i += 1;
@@ -1114,7 +1115,7 @@ impl CheminRelatif {
                     return false;
                 }
                 debut = i + 1;
-            } else if matches!(o[i], b'\\' | 0) {
+            } else if matches!(o[i], b'\\' | b':' | 0) {
                 return false;
             }
             i += 1;
@@ -1140,6 +1141,18 @@ impl CheminRelatif {
     /// refuse.
     pub fn du(rel: &Path) -> R<CheminRelatif> {
         CheminRelatif::lire(&CheminRelatif::en_barres(rel))
+    }
+
+    /// LE CHEMIN QU'ECRIT UN AUTRE SYSTEME : le nom d'une entree d'archive (le `Compress-Archive` de Windows ecrit
+    /// `sous\paie.dsn`), un chemin relatif lu sur le disque. La barre inverse s'y lit barre droite, et les noms vides ou
+    /// `.` se retirent (`./a`, `a//b`, `a/./b` : `a`, `a/b`) ; un chemin absolu, un nom `..`, un prefixe de lecteur
+    /// (`C:`), ou rien qui reste, se refusent.
+    pub fn ecrit_ailleurs(texte: &str) -> R<CheminRelatif> {
+        let barres = texte.replace('\\', "/");
+        if barres.starts_with('/') {
+            return Err(crate::refus!("{} est un chemin absolu.", repr(texte)));
+        }
+        CheminRelatif::lire(&barres.split('/').filter(|n| !n.is_empty() && *n != ".").collect::<Vec<_>>().join("/"))
     }
 
     /// Le chemin relatif `rel`, ecrit avec des barres droites ; un nom qui n'est pas en UTF-8 garde son caractere
@@ -1177,7 +1190,8 @@ impl CheminRelatif {
         &self.0
     }
 
-    /// Ce chemin sous la racine `racine`, joint nom par nom : le separateur est celui du systeme.
+    /// Ce chemin sous la racine `racine`, joint nom par nom : le separateur est celui du systeme. Aucun nom n'a de
+    /// racine ni de prefixe de lecteur (ni `/`, ni `\`, ni `:`) : le chemin reste sous `racine`.
     pub fn dans(&self, racine: &Path) -> PathBuf {
         self.0.split('/').fold(racine.to_path_buf(), |p, n| p.join(n))
     }

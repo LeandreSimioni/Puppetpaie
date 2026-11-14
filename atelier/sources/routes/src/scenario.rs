@@ -330,7 +330,8 @@ fn instant_de_l_heure(h: InstantOuJour) -> Option<Moment> {
     }
 }
 
-/// Les fichiers d'un dossier, relatifs a lui, dans l'ordre des noms.
+/// Les fichiers d'un dossier, relatifs a lui, dans l'ordre des noms ; un chemin se lit comme l'ecrit son systeme
+/// (`CheminRelatif::ecrit_ailleurs`).
 fn fichiers_de(dossier: &Path) -> R<Vec<(CheminRelatif, PathBuf)>> {
     fn parcourir(base: &Path, d: &Path, out: &mut Vec<(CheminRelatif, PathBuf)>) -> R<()> {
         for e in std::fs::read_dir(d).map_err(|e| du_disque(d, &e))? {
@@ -338,7 +339,8 @@ fn fichiers_de(dossier: &Path) -> R<Vec<(CheminRelatif, PathBuf)>> {
             if p.is_dir() {
                 parcourir(base, &p, out)?;
             } else {
-                out.push((CheminRelatif::sous(base, &p)?, p.clone()));
+                let r = p.strip_prefix(base).map_err(|e| du_disque(&p, &e))?;
+                out.push((CheminRelatif::ecrit_ailleurs(&r.to_string_lossy())?, p.clone()));
             }
         }
         Ok(())

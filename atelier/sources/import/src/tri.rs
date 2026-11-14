@@ -18,8 +18,8 @@
 //!
 //! RIEN NE SE DEVINE (regle 1) : un fichier qu'on ne reconnait pas est `autre`, pas « sans doute une DSN ».
 //! Rien n'est ecrit dans les donnees de la compagnie : seuls les zip s'ouvrent, et dans `travail/`
-//! seulement, un sous-dossier par archive ; une entree dont le nom ne fait pas un chemin sous le dossier ne s'ecrit
-//! pas, elle est mise de cote (`MiseDeCote`).
+//! seulement, un sous-dossier par archive ; une entree dont le nom ne fait pas un chemin sous l'archive
+//! (`CheminRelatif::ecrit_ailleurs`) ne s'ecrit pas, elle est mise de cote (`MiseDeCote`).
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -105,16 +105,36 @@ pub struct Fichier {
     pub mois: Option<socle::mois::Mois>,
 }
 
-/// UNE ENTREE MISE DE COTE : un nom qui ne fait pas un chemin sous le dossier trie (il porte `..`, une barre inverse,
-/// un nom vide, ou il est absolu), ou une entree d'archive qui ne se lit pas. Elle ne s'ecrit jamais sur le disque ; le
-/// compte rendu la dit (`dit`), et le reste se trie.
+/// UNE ENTREE MISE DE COTE : un nom qui ne fait pas un chemin sous le dossier trie, ou une entree qui ne se lit pas.
+/// Elle ne s'ecrit jamais sur le disque ; le compte rendu la dit (`dit`), et le reste se trie.
 #[derive(Clone, Debug)]
 pub struct MiseDeCote {
     /// Le dossier ou l'archive qui la porte ; aucun a la racine du dossier trie.
     pub dans: Option<CheminRelatif>,
-    /// Son nom tel qu'il est ecrit.
+    /// Son nom tel qu'il est ecrit ; une entree qui ne se lit pas n'en a pas : « entrée n° N ».
     pub nom: String,
-    pub raison: String,
+    pub raison: RaisonDeMiseDeCote,
+}
+
+/// POURQUOI UNE ENTREE EST MISE DE COTE, avec sa phrase.
+#[derive(Clone, Debug)]
+pub enum RaisonDeMiseDeCote {
+    /// Le nom d'une entree d'archive ne fait pas un chemin sous l'archive (`CheminRelatif::ecrit_ailleurs`).
+    HorsDeLArchive,
+    /// Le nom d'un fichier du disque n'est pas un `NomDeFichier`.
+    PasUnNom,
+    /// L'entree ne se lit pas : l'erreur, telle que le disque ou l'archive la dit.
+    Illisible(String),
+}
+
+impl std::fmt::Display for RaisonDeMiseDeCote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RaisonDeMiseDeCote::HorsDeLArchive => f.write_str("son nom n'est pas un chemin sous l'archive (il remonte par « .. », porte « : », ne nomme rien, ou il est absolu)"),
+            RaisonDeMiseDeCote::PasUnNom => f.write_str("son nom n'est pas un nom de fichier (il porte « : » ou une barre inverse)"),
+            RaisonDeMiseDeCote::Illisible(e) => write!(f, "l'entrée ne se lit pas ({})", e),
+        }
+    }
 }
 
 impl MiseDeCote {
@@ -124,9 +144,6 @@ impl MiseDeCote {
         format!("« {} »{} est mis de côté, sans être lu : {}.", self.nom, dans, self.raison)
     }
 }
-
-/// La raison d'un nom qui ne fait pas un chemin sous le dossier trie.
-const NOM_HORS_DU_DOSSIER: &str = "son nom n'est pas un chemin sous le dossier (il remonte par « .. », porte une barre inverse ou un nom vide, ou il est absolu)";
 
 /// Le tri d'un dossier : chaque fichier, dans l'ordre du parcours (noms tries, une archive suivie de
 /// son contenu), et les entrees mises de cote.
@@ -176,29 +193,34 @@ impl Trieur {
         }
     }
 
-    /// Un dossier qui ne se lit pas : sous le dossier trie, il se dit illisible ; le dossier trie lui-meme, son erreur
-    /// remonte.
-    fn dossier_illisible(&mut self, dossier: &Path, prefixe: Option<&CheminRelatif>, archive: Option<&CheminRelatif>, raison: String, e: &std::io::Error) -> R<()> {
-        let Some(p) = prefixe else { return Err(socle::echec::du_disque(dossier, e).reclasser(socle::echec::Classe::Disque)) };
-        let mut f = self.nouveau(p.clone(), dossier.to_path_buf(), archive);
-        f.sorte = Sorte::Illisible;
-        f.raison = Some(raison);
-        self.fichiers.push(f);
-        Ok(())
-    }
-
     /// Les entrees d'un dossier, par nom, sous-dossiers compris ; `prefixe` est son chemin sous le dossier trie (aucun
-    /// pour le dossier trie lui-meme).
+    /// pour le dossier trie lui-meme). Le dossier trie qui ne se lit pas : son erreur remonte ; un sous-dossier se dit
+    /// illisible ; une entree qui ne se lit pas est mise de cote.
     fn parcourir(&mut self, dossier: &Path, prefixe: Option<&CheminRelatif>, archive: Option<&CheminRelatif>, profondeur: usize) -> R<()> {
-        let lues = match std::fs::read_dir(dossier) {
-            Ok(l) => l,
-            Err(e) => return self.dossier_illisible(dossier, prefixe, archive, format!("dossier qui ne se lit pas ({})", e), &e),
+        let lues = match (std::fs::read_dir(dossier), prefixe) {
+            (Ok(l), _) => l,
+            (Err(e), None) => return Err(socle::echec::du_disque(dossier, &e).reclasser(socle::echec::Classe::Disque)),
+            (Err(e), Some(p)) => {
+                let mut f = self.nouveau(p.clone(), dossier.to_path_buf(), archive);
+                f.sorte = Sorte::Illisible;
+                f.raison = Some(format!("dossier qui ne se lit pas ({})", e));
+                self.fichiers.push(f);
+                return Ok(());
+            }
         };
         let mut entrees: Vec<(String, PathBuf, std::fs::FileType)> = Vec::new();
-        for e in lues {
-            match e.and_then(|e| Ok((e.file_name().to_string_lossy().into_owned(), e.path(), e.file_type()?))) {
-                Ok(x) => entrees.push(x),
-                Err(e) => self.dossier_illisible(dossier, prefixe, archive, format!("une entrée du dossier ne se lit pas ({})", e), &e)?,
+        for (i, e) in lues.enumerate() {
+            let e = match e {
+                Ok(e) => e,
+                Err(x) => {
+                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom: format!("entrée n° {}", i + 1), raison: RaisonDeMiseDeCote::Illisible(x.to_string()) });
+                    continue;
+                }
+            };
+            let nom = e.file_name().to_string_lossy().into_owned();
+            match e.file_type() {
+                Ok(genre) => entrees.push((nom, e.path(), genre)),
+                Err(x) => self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom, raison: RaisonDeMiseDeCote::Illisible(x.to_string()) }),
             }
         }
         entrees.sort_by(|a, b| a.0.cmp(&b.0));
@@ -206,7 +228,7 @@ impl Trieur {
             let nom_lu = match NomDeFichier::lire(&nom) {
                 Ok(n) => n,
                 Err(_) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom, raison: NOM_HORS_DU_DOSSIER.to_string() });
+                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom, raison: RaisonDeMiseDeCote::PasUnNom });
                     continue;
                 }
             };
@@ -330,17 +352,17 @@ impl Trieur {
             let mut e = match z.by_index(i) {
                 Ok(e) => e,
                 Err(err) => {
-                    let raison = format!("l'entrée d'archive ne se lit pas ({})", err);
-                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: format!("entrée n° {}", i + 1), raison });
+                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: format!("entrée n° {}", i + 1), raison: RaisonDeMiseDeCote::Illisible(err.to_string()) });
                     continue;
                 }
             };
-            // Le nom de l'entree, sans la barre d'un dossier : un chemin sous l'archive, ou elle ne s'ecrit pas.
+            // Le nom de l'entree, tel qu'un autre systeme l'ecrit (la barre finale d'un dossier, `/` ou `\`, se retire) :
+            // un chemin sous l'archive, ou elle ne s'ecrit pas.
             let brut = e.name().to_string();
-            let rel = match CheminRelatif::lire(brut.trim_end_matches('/')) {
+            let rel = match CheminRelatif::ecrit_ailleurs(&brut) {
                 Ok(r) => r,
                 Err(_) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: brut, raison: NOM_HORS_DU_DOSSIER.to_string() });
+                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: brut, raison: RaisonDeMiseDeCote::HorsDeLArchive });
                     continue;
                 }
             };
@@ -485,4 +507,55 @@ fn lire_aem(f: &mut Fichier, octets: &[u8]) {
         }
     }
     f.sorte = Sorte::Aem;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{trier, RaisonDeMiseDeCote, Tri};
+    use std::io::Write;
+
+    /// Un dossier `import/` qui ne porte que `lot.zip`, fait des entrees `entrees`, trie.
+    fn trier_le_zip(test: &str, entrees: &[&str]) -> (std::path::PathBuf, Tri) {
+        let d = std::env::temp_dir().join(format!("puppetpaie-tri-{}-{}", test, std::process::id()));
+        if d.exists() {
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+        let import = d.join("import");
+        std::fs::create_dir_all(&import).unwrap();
+        let mut z = zip::ZipWriter::new(std::fs::File::create(import.join("lot.zip")).unwrap());
+        for nom in entrees {
+            z.start_file(*nom, zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored)).unwrap();
+            if !nom.ends_with('\\') {
+                z.write_all(nom.as_bytes()).unwrap();
+            }
+        }
+        z.finish().unwrap();
+        let tri = trier(&import, &d.join("travail")).unwrap();
+        (d, tri)
+    }
+
+    /// Le `Compress-Archive` de PowerShell ecrit ses entrees avec des barres inverses (`sous\paie.dsn`) : le zip
+    /// s'importe, son contenu sous ses dossiers ; `./a`, `a//b` se lisent `a`, `a/b`.
+    #[test]
+    fn un_zip_fait_sous_windows_s_importe() {
+        let (d, tri) = trier_le_zip("windows", &["sous\\", "sous\\paie.txt", "./a.txt", "b//c.txt"]);
+        let chemins: Vec<String> = tri.fichiers.iter().map(|f| f.chemin.to_string()).collect();
+        std::fs::remove_dir_all(&d).unwrap();
+        assert!(tri.mises_de_cote.is_empty(), "{:?}", tri.mises_de_cote);
+        assert_eq!(chemins, ["lot.zip", "lot.zip/a.txt", "lot.zip/b/c.txt", "lot.zip/sous/paie.txt"]);
+    }
+
+    /// Une entree qui porterait un prefixe de lecteur (`C:x`, `C:\x`), qui remonte ou qui est absolue est mise de cote,
+    /// et rien ne s'ecrit hors du dossier de l'archive : sous Windows, joindre `C:x` remplacerait tout le chemin.
+    #[test]
+    fn une_entree_piegee_ne_s_ecrit_pas_hors_de_l_archive() {
+        let (d, tri) = trier_le_zip("piege", &["C:x.txt", "C:\\x.txt", "..\\x.txt", "\\x.txt", "bon.txt"]);
+        let chemins: Vec<String> = tri.fichiers.iter().map(|f| f.chemin.to_string()).collect();
+        let hors = [d.join("x.txt"), d.join("import").join("x.txt"), d.join("travail").join("x.txt")].iter().any(|p| p.exists());
+        std::fs::remove_dir_all(&d).unwrap();
+        assert_eq!(chemins, ["lot.zip", "lot.zip/bon.txt"]);
+        assert_eq!(tri.mises_de_cote.len(), 4);
+        assert!(tri.mises_de_cote.iter().all(|m| matches!(m.raison, RaisonDeMiseDeCote::HorsDeLArchive)));
+        assert!(!hors);
+    }
 }
