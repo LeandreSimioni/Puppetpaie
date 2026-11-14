@@ -4,42 +4,7 @@
 //! la DSN le dit (`declarations::dsn::assiettes_ctp`).
 
 use crate::assiette::Assiette;
-use socle::fichiers::repr;
-
-macro_rules! noms_fermes {
-    ($(#[$a:meta])* $nom:ident, $quoi:literal { $( $(#[$va:meta])* $v:ident = $n:literal, )* }) => {
-        $(#[$a])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum $nom {
-            $( $(#[$va])* $v, )*
-        }
-
-        impl $nom {
-            pub const TOUTES: &'static [$nom] = &[ $( $nom::$v, )* ];
-
-            /// Son nom, le seul endroit ou il s'ecrit.
-            pub fn nom(self) -> &'static str {
-                match self { $( $nom::$v => $n, )* }
-            }
-        }
-
-        impl std::fmt::Display for $nom {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str(self.nom())
-            }
-        }
-
-        impl<'de> serde::Deserialize<'de> for $nom {
-            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                let nom = <String as serde::Deserialize>::deserialize(d)?;
-                $nom::TOUTES.iter().copied().find(|a| a.nom() == nom).ok_or_else(|| {
-                    let connues: Vec<&str> = $nom::TOUTES.iter().map(|a| a.nom()).collect();
-                    serde::de::Error::custom(format!("{} inconnu : {}. Connus : {}.", $quoi, repr(&nom), connues.join(", ")))
-                })
-            }
-        }
-    };
-}
+use socle::noms_fermes;
 
 noms_fermes! {
     /// UNE ASSIETTE AGREGEE DU BORDEREAU URSSAF (S21.G00.23.004) : la somme, sur les paies du mois, d'une assiette de

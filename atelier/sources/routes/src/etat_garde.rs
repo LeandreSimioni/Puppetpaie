@@ -666,7 +666,7 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: Empreinte) -> R<E
 /// LE TABLEAU DE L'ADMINISTRATEUR pour cette compagnie (`config/.tableau.json`) : le garde s'il porte l'empreinte
 /// d'aujourd'hui de toute la compagnie (celle de l'ouverture), sinon refait.
 fn tableau_juste(ctx: &Contexte) -> R<Garde> {
-    let f = ctx.racine.join(crate::gestes::administrateur::TABLEAU);
+    let f = crate::gestes::administrateur::TABLEAU.dans(&ctx.racine);
     if f.is_file() {
         let empreinte = empreinte(&ctx.racine, Cle::Ouverture, &ctx.aujourdhui);
         match socle::forme::lire_fichier::<TableauCompagnie>(&f, "Le tableau gardé de la compagnie ne se lit pas.") {

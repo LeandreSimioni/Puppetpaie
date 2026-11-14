@@ -299,12 +299,8 @@ pub struct Etat {
 /// Un nom ou un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin relatif
 /// (le nom du fichier compris). La restauration s'en sert aussi : elle ne redescend que ce que la sauvegarde envoie.
 pub(crate) fn ecarte(relatif: &CheminRelatif) -> bool {
-    let relatif: &Path = relatif.as_ref();
     let exclu = |nom: &str| NOMS_EXCLUS.contains(&nom) || SUFFIXES_EXCLUS.iter().any(|s| nom.ends_with(s));
-    if relatif.file_name().is_some_and(|n| exclu(&n.to_string_lossy())) {
-        return true;
-    }
-    relatif.components().any(|c| DOSSIERS_EXCLUS.contains(&c.as_os_str().to_string_lossy().as_ref()))
+    exclu(relatif.nom().texte()) || relatif.texte().split('/').any(|n| DOSSIERS_EXCLUS.contains(&n))
 }
 
 /// Les entrees (fichiers et liens, pas les dossiers) sous `dossier`, relatives a `racine`. Un dossier lien n'est pas

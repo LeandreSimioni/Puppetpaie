@@ -64,7 +64,7 @@ use crate::importation::fiches::{redemandees, verifier_comme_a_l_ecriture};
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 use socle::echec::erreur;
 use crate::importation::completer as completer;
@@ -140,7 +140,7 @@ pub(crate) fn apercu_dossier(ctx: &Contexte, dossier: &Path) -> R<Importation> {
 /// copie de l'import et le texte des pages refusees s'y lisent encore. `deposes` : le nom que la personne a donne a un
 /// fichier du dossier, par son chemin dans le dossier, quand le dossier lu est fait de copies (`import::ecrite`) ; tout
 /// ce que l'import dit d'un fichier (« lu dans… », le compte rendu) le nomme ainsi.
-pub(crate) fn lire_dossier<T>(ctx: &Contexte, dossier: &Path, deposes: &HashMap<String, String>, suite: impl FnOnce(DossierLu) -> R<T>) -> R<T> {
+pub(crate) fn lire_dossier<T>(ctx: &Contexte, dossier: &Path, deposes: &HashMap<CheminRelatif, CheminRelatif>, suite: impl FnOnce(DossierLu) -> R<T>) -> R<T> {
     let travail = ri::dossier_de_travail();
     match trier_et_lire(ctx, dossier, &travail, deposes).and_then(suite) {
         Ok(t) => socle::fichiers::effacer(&travail).map(|()| t),
@@ -253,7 +253,7 @@ fn idcc_lu(texte: &str) -> Option<droit::fiche::Idcc> {
     droit::fiche::Idcc::lire(&apres).ok()
 }
 
-fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashMap<String, String>) -> R<DossierLu> {
+fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashMap<CheminRelatif, CheminRelatif>) -> R<DossierLu> {
     let mut tri = import::tri::trier(dossier, travail)?;
     for f in &mut tri.fichiers {
         if let Some(nom) = deposes.get(&f.chemin) {
@@ -291,7 +291,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let lectures = match bulletin_lu::lire_avec(&f.disque, &table) {
             Ok(l) => l,
             Err(m) => {
-                illisibles.insert(i, m.phrase.replace(&*f.disque.to_string_lossy(), &f.chemin));
+                illisibles.insert(i, m.phrase.replace(&*f.disque.to_string_lossy(), f.chemin.texte()));
                 continue;
             }
         };
@@ -303,7 +303,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let (certificats_du_fichier, aer, aem) = match lues {
             (Ok(c), Ok(r), Ok(a)) => (c, r, a),
             (Err(m), _, _) | (_, Err(m), _) | (_, _, Err(m)) => {
-                illisibles.insert(i, m.phrase.replace(&*f.disque.to_string_lossy(), &f.chemin));
+                illisibles.insert(i, m.phrase.replace(&*f.disque.to_string_lossy(), f.chemin.texte()));
                 continue;
             }
         };
@@ -959,7 +959,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         Datee(Jour, Jour),
     }
     // Deux pages qui disent la meme paie du meme salarie : la copie et la page de la premiere, ses montants.
-    let mut prises: HashMap<(Nir, PaieDeLaPage), (String, usize, Decimal, Decimal)> = HashMap::new();
+    let mut prises: HashMap<(Nir, PaieDeLaPage), (CheminRelatif, usize, Decimal, Decimal)> = HashMap::new();
     let (mut paies_nouvelles, mut paies_completees) = (0usize, 0usize);
     let mut paies_liste: Vec<PaieLue> = Vec::new();
     let mut contrats_liste: Vec<ContratLu> = Vec::new();
@@ -1412,6 +1412,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         comptes,
         total: tri.fichiers.len(),
         non_repris: (!non_repris.is_empty()).then_some(NonRepris { fichiers: non_repris, phrase: REESSAYER }),
+        mises_de_cote: tri.mises_de_cote.iter().map(import::tri::MiseDeCote::dit).collect(),
         dit: String::new(),
     };
     reponse.bulletins = BlocBulletins {
@@ -1608,7 +1609,7 @@ fn libelle_salarie(fiche: &droit::fiche::ChampsSalarie) -> String {
 
 /// Note dans l'entree d'un salarie ce que ses bulletins completent, chaque case avec le bulletin le plus recent qui
 /// l'imprime (`identite`) ; l'adresse, le statut, l'anciennete et la cle du NIR, avec le plus recent.
-fn noter_par_champ(entree: &mut FicheImportee, champs: &ChampsSalarie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> String) -> R<()> {
+fn noter_par_champ(entree: &mut FicheImportee, champs: &ChampsSalarie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> CheminRelatif) -> R<()> {
     let Some(dernier) = ls.last() else { return Ok(()) };
     let par: HashMap<CaseDeFiche, &Lu> = identite(ls).into_iter().map(|(cle, _, l)| (cle.into(), l)).collect();
     let table = declarations::champs::fiche(NomDeFiche::Salarie)?;
@@ -1652,7 +1653,7 @@ fn identite<'a>(ls: &[&'a Lu]) -> Vec<(CaseSalarie, String, &'a Lu)> {
 
 /// Les champs d'identite que les bulletins disent autrement que la fiche (compares sans casse ni accents). L'emploi
 /// change d'un contrat a l'autre, le code salarie d'un logiciel a l'autre : ils ne sont pas compares.
-fn ecarts_salarie(fiche: &ChampsSalarie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> String) -> Vec<Ecart> {
+fn ecarts_salarie(fiche: &ChampsSalarie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> CheminRelatif) -> Vec<Ecart> {
     let mut out = Vec::new();
     for (cle, lu, l) in identite(ls) {
         if !matches!(cle, CaseSalarie::Nom | CaseSalarie::Prenom | CaseSalarie::DateNaissance | CaseSalarie::NumCongesSpectacles) {
@@ -1671,7 +1672,7 @@ fn ecarts_salarie(fiche: &ChampsSalarie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> Str
 
 /// Ce que le bulletin dit de l'entreprise autrement que la fiche (compare sans casse ni accents) : le Siret, le NAF, et
 /// la raison sociale, l'adresse, l'IDCC et le compte Urssaf -- ce que `fiche_entreprise` en lit (`lue`).
-fn ecarts_entreprise(fiche: &ChampsEntreprise, lue: &ChampsEntreprise, l: &Lu, chemin: &str) -> Vec<Ecart> {
+fn ecarts_entreprise(fiche: &ChampsEntreprise, lue: &ChampsEntreprise, l: &Lu, chemin: &CheminRelatif) -> Vec<Ecart> {
     let mut out = Vec::new();
     use droit::fiche::CaseEntreprise as E;
     let t = |k: E| fiche.ecrite(k.into()).mot().map(str::to_string);
@@ -1696,7 +1697,7 @@ fn ecarts_entreprise(fiche: &ChampsEntreprise, lue: &ChampsEntreprise, l: &Lu, c
         if crate::fiches::case_vide(Some(&a)) || a.ecrite().mot().is_some_and(|m| compare(m) == compare(&lu)) {
             continue;
         }
-        out.push(Ecart::new(cle, a, DitPar::Bulletin { bulletin: lu, fichier: chemin.to_string(), page: l.page }));
+        out.push(Ecart::new(cle, a, DitPar::Bulletin { bulletin: lu, fichier: chemin.clone(), page: l.page }));
     }
     out
 }

@@ -595,8 +595,9 @@ function compteRenduImport(tri, pastilles) {
     return `<tr><td>${echapper(f.chemin)}${de}</td><td style="white-space:nowrap">${pastilleSort(f.sort, pastilles)}</td>
       <td>${echapper(f.raison)}${pages}</td></tr>`;
   }).join("");
+  const mises = tri.mises_de_cote.map((m) => `<div class="encart attention">${echapper(m)}</div>`).join("");
   return `<h3>Fichier par fichier</h3>
-    <p class="note">${echapper(tri.dit)} &nbsp; ${comptes}</p>
+    <p class="note">${echapper(tri.dit)} &nbsp; ${comptes}</p>${mises}
     <table class="tableau-detail"><thead><tr><th>Fichier</th><th>Sort</th><th>Raison</th></tr></thead>
       <tbody>${lignes}</tbody></table>`;
 }

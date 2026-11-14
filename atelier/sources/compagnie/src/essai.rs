@@ -364,7 +364,7 @@ fn installation() -> R<PathBuf> {
 fn source(fictive: &str) -> R<PathBuf> {
     let p = PathBuf::from(fictive);
     let d = if fictive.contains('/') || fictive.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::installation::DOSSIER_FICTIVES).join(fictive) };
-    if !d.join(droit::contexte::ENTREPRISE).is_file() {
+    if !droit::contexte::ENTREPRISE.dans(&d).is_file() {
         return Err(refus_avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }
     // Seulement une FICTIVE : jamais `prive/` ni une autre compagnie reelle, dont les salaries partiraient sous un autre SIREN.
@@ -474,8 +474,8 @@ pub fn monter(dossier: &Path, fictive: &str, texte: Option<&str>) -> R<Montage> 
     };
     // La fiche sous la nouvelle identite, calculee AVANT toute ecriture.
     let base_fiche = match &src {
-        Some(s) => s.join(droit::contexte::ENTREPRISE),
-        None => dossier.join(droit::contexte::ENTREPRISE),
+        Some(s) => droit::contexte::ENTREPRISE.dans(s),
+        None => droit::contexte::ENTREPRISE.dans(dossier),
     };
     let fiche: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&base_fiche, droit::contexte::ENTREPRISE.texte())?;
     let fiche = id.appliquer(&fiche)?;
@@ -495,7 +495,7 @@ pub fn monter(dossier: &Path, fictive: &str, texte: Option<&str>) -> R<Montage> 
         std::fs::write(dossier.join(".gitignore"), "# Compagnie d'essai : l'identite d'une vraie compagnie. Rien ici ne se commite.\n*\n")
             .map_err(|e| socle::echec::du_disque(&dossier, &e))?;
     }
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
+    socle::ecriture::ecrire_json(&droit::contexte::ENTREPRISE.dans(dossier), &fiche, 2)?;
     Ok(Montage { dossier: absolu(dossier)?, fictive: nom, neuf: !deja })
 }
 

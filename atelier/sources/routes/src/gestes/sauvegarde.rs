@@ -122,7 +122,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 en_echec.insert(relatif.clone());
                 continue;
             }
-            let chemin = racine.join(relatif);
+            let chemin = relatif.dans(racine);
             let nom = relatif.nom();
             let mut faire = || -> Result<Option<EtatFichier>, ErreurGoogle> {
                 let locale = EmpreinteMd5::du_fichier(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;

@@ -169,7 +169,7 @@ fn ecrire_registre(inst: &Path, entrees: &[EntreeRegistre]) -> R<()> {
 /// Les compagnies rattachees a l'administrateur, telles qu'elles sont sur le disque (un dossier parti n'y est plus). Une
 /// compagnie fictive n'y entre pas : `rattacher` la refuse.
 pub fn rattachees(inst: &Path) -> R<Vec<PathBuf>> {
-    Ok(lire_registre(inst)?.into_iter().map(|e| inst.join(e.dossier)).filter(|racine| racine.join(droit::contexte::ENTREPRISE).is_file()).collect())
+    Ok(lire_registre(inst)?.into_iter().map(|e| e.dossier.dans(inst)).filter(|racine| droit::contexte::ENTREPRISE.dans(racine).is_file()).collect())
 }
 
 /// UNE COMPAGNIE SUPPRIMEE (`accueil::suppression`) sort du registre : une compagnie creee plus tard sous

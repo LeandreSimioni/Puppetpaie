@@ -346,7 +346,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
     // `--racine` nomme une compagnie (son dossier porte sa fiche entreprise) : l'installation est la sienne. Un autre
     // dossier n'en est pas une, et son parent n'est pas une installation : rien ne s'y ecrit.
     if let Some(r) = &o.racine {
-        if !r.join(droit::contexte::ENTREPRISE).is_file() {
+        if !droit::contexte::ENTREPRISE.dans(&r).is_file() {
             let lieu = socle::echec::Lieu {
                 chemin: Some(r.to_string_lossy().into_owned()),
                 detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
@@ -490,9 +490,9 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
     let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());
     let fiche = <droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate);
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::SALARIES), &droit::fiche::Salaries::default(), 2)?;
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::SPECTACLES), &droit::fiche::Spectacles::default(), 2)?;
+    socle::ecriture::ecrire_json(&droit::contexte::ENTREPRISE.dans(&dossier), &fiche, 2)?;
+    socle::ecriture::ecrire_json(&droit::contexte::SALARIES.dans(&dossier), &droit::fiche::Salaries::default(), 2)?;
+    socle::ecriture::ecrire_json(&droit::contexte::SPECTACLES.dans(&dossier), &droit::fiche::Spectacles::default(), 2)?;
     let quand = Creation {
         le: creation,
         venue,

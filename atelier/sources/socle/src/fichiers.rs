@@ -229,9 +229,9 @@ impl CheminLu {
     /// Le chemin sur le disque, sous la compagnie `racine` ou le code `code`.
     pub fn sur_le_disque(&self, racine: &Path, code: &Path) -> PathBuf {
         match self {
-            CheminLu::Racine(Some(c)) => racine.join(c),
+            CheminLu::Racine(Some(c)) => c.dans(racine),
             CheminLu::Racine(None) => racine.to_path_buf(),
-            CheminLu::Code(Some(c)) => code.join(c),
+            CheminLu::Code(Some(c)) => c.dans(code),
             CheminLu::Code(None) => code.to_path_buf(),
             CheminLu::Absolu(p) => p.clone(),
         }
@@ -1153,6 +1153,11 @@ impl CheminRelatif {
         CheminRelatif(std::borrow::Cow::Owned(format!("{}/{}", self.0, nom)))
     }
 
+    /// Ce chemin, suivi du chemin `rel` : le chemin de `rel` sous celui-ci.
+    pub fn suivi(&self, rel: &CheminRelatif) -> CheminRelatif {
+        CheminRelatif(std::borrow::Cow::Owned(format!("{}/{}", self.0, rel.0)))
+    }
+
     /// Le chemin du dossier qui le contient ; `None` pour un nom seul, a la racine.
     pub fn parent(&self) -> Option<CheminRelatif> {
         self.0.rsplit_once('/').map(|(d, _)| CheminRelatif(std::borrow::Cow::Owned(d.to_string())))
@@ -1187,12 +1192,6 @@ impl From<NomDeFichier> for CheminRelatif {
 impl std::fmt::Display for CheminRelatif {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl AsRef<Path> for CheminRelatif {
-    fn as_ref(&self) -> &Path {
-        Path::new(self.texte())
     }
 }
 

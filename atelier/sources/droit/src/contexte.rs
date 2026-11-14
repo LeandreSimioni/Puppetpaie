@@ -1432,7 +1432,7 @@ impl Contexte {
     fn empreinte_bareme_de(&self, an: i32, ent: &ChampsEntreprise) -> R<String> {
         let cfg = self.racine.join(socle::fichiers::CONFIG);
         let sig: Vec<_> = [
-            socle::fichiers::signature(&self.racine.join(surcouche(an)?)),
+            socle::fichiers::signature(&surcouche(an)?.dans(&self.racine)),
             socle::fichiers::signature(&self.code.join("baremes").join(format!("{}.json", an))),
             socle::fichiers::signature(&cfg.join("effectifs.json")),
         ]
@@ -1524,7 +1524,7 @@ impl Contexte {
     fn socle_de_l_annee(&self, an: i32) -> R<Result<(Surcouche, PathBuf), BaremeAbsent>> {
         let chemin = surcouche(an)?;
         let dossier = self.code.join("baremes");
-        let p = self.racine.join(&chemin);
+        let p = chemin.dans(&self.racine);
         // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
         let surcouche = match socle::fichiers::existe_lu(&p)? {
             true => crate::forme_bareme::lire_la_surcouche(&p)?,

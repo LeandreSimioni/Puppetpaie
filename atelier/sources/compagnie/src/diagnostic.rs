@@ -348,7 +348,7 @@ fn construire(racine: &Path) -> Personnes {
             Err(e) => inconnues = Some(format!("les fiches des salariés ne se lisent pas ({})", e.phrase)),
         }
     }
-    let entreprise = racine.join(droit::contexte::ENTREPRISE);
+    let entreprise = droit::contexte::ENTREPRISE.dans(racine);
     if entreprise.is_file() {
         match droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&entreprise, droit::contexte::ENTREPRISE.texte()) {
             Ok(e) => {
@@ -389,7 +389,7 @@ type Signatures = (Option<(SystemTime, u64)>, Option<(SystemTime, u64)>);
 fn personnes(racine: Option<&Path>) -> Arc<Personnes> {
     static CACHE: OnceLock<Mutex<HashMap<PathBuf, (Signatures, Arc<Personnes>)>>> = OnceLock::new();
     let Some(racine) = racine else { return Arc::new(Personnes { une: Vec::new(), toutes: None, inconnues: None }) };
-    let sig = (signature(&racine.join(droit::contexte::SALARIES)), signature(&racine.join(droit::contexte::ENTREPRISE)));
+    let sig = (signature(&droit::contexte::SALARIES.dans(racine)), signature(&droit::contexte::ENTREPRISE.dans(racine)));
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some((s, p)) = socle::memoire::tenu(cache).get(racine) {
         if *s == sig {

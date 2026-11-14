@@ -16,7 +16,7 @@ use droit::fiche::{CaseDeFiche, FicheNommee, NomDeFiche, ValeurDeCase};
 use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
 use socle::date::Jour;
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::{Graphie, Mois};
 use std::path::PathBuf;
 
@@ -224,7 +224,7 @@ impl Attestant {
 pub struct Origine {
     pub source: Source,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fichier: Option<String>,
+    pub fichier: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -237,12 +237,12 @@ impl Origine {
     }
 
     /// Un bulletin : son fichier et sa page, quand on les sait.
-    pub fn bulletin(fichier: Option<String>, page: Option<usize>) -> Origine {
+    pub fn bulletin(fichier: Option<CheminRelatif>, page: Option<usize>) -> Origine {
         Origine { source: Source::Bulletin, fichier, page, mois: None }
     }
 
     /// Une piece : ce qu'elle est, son fichier, sa page, son mois.
-    pub fn piece(source: Source, fichier: String, page: usize, mois: Option<Mois>) -> Origine {
+    pub fn piece(source: Source, fichier: CheminRelatif, page: usize, mois: Option<Mois>) -> Origine {
         Origine { source, fichier: Some(fichier), page: Some(page), mois }
     }
 
@@ -293,9 +293,9 @@ pub struct Completee {
 #[serde(untagged)]
 pub enum DitPar {
     Dsn { dsn: ValeurDeCase, mois: Mois },
-    Bulletin { bulletin: String, fichier: String, page: usize },
-    Certificat { certificat: String, fichier: String, page: usize },
-    Aem { aem: String, fichier: String, page: usize },
+    Bulletin { bulletin: String, fichier: CheminRelatif, page: usize },
+    Certificat { certificat: String, fichier: CheminRelatif, page: usize },
+    Aem { aem: String, fichier: CheminRelatif, page: usize },
 }
 
 /// UN ECART : une case que la fiche dit, qu'une piece disait autrement ; la fiche fait foi.
@@ -582,7 +582,7 @@ impl PageVu {
 /// Le compte rendu d'un fichier du dossier.
 #[derive(Debug, Clone, Serialize)]
 pub struct FichierVu {
-    pub chemin: String,
+    pub chemin: CheminRelatif,
     /// La sorte du fichier, au tri (`tri::Sorte::nom`).
     pub sorte: &'static str,
     pub pages: Vec<PageVu>,
@@ -592,9 +592,9 @@ pub struct FichierVu {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub copie: Option<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub doublon_de: Option<String>,
+    pub doublon_de: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub archive: Option<String>,
+    pub archive: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<Mois>,
     /// D'ou il vient : une copie, une archive.
@@ -618,7 +618,7 @@ impl FichierVu {
                 Some(m) => format!("page {} ({})", p.page, m.libelle(Graphie::Accentuee)),
                 None => format!("page {}", p.page),
             };
-            p.ou_dit = if nb > 1 { format!("{}, page {}", self.chemin, p.page) } else { self.chemin.clone() };
+            p.ou_dit = if nb > 1 { format!("{}, page {}", self.chemin, p.page) } else { self.chemin.to_string() };
         }
     }
 }
@@ -626,7 +626,7 @@ impl FichierVu {
 /// Un fichier qui n'est pas repris, pour l'encart.
 #[derive(Debug, Clone, Serialize)]
 pub struct NonReprisVu {
-    pub chemin: String,
+    pub chemin: CheminRelatif,
     pub sort: Sort,
     pub raison: String,
 }
@@ -649,6 +649,8 @@ pub struct TriVu {
     pub comptes: ParSort<usize>,
     pub total: usize,
     pub non_repris: Option<NonRepris>,
+    /// Les entrees mises de cote au tri, sans etre lues (`tri::MiseDeCote::dit`).
+    pub mises_de_cote: Vec<String>,
     /// « 12 fichiers dans … ».
     pub dit: String,
 }
@@ -656,7 +658,7 @@ pub struct TriVu {
 impl TriVu {
     /// Aucun dossier lu encore.
     pub fn aucun() -> TriVu {
-        TriVu { dossier: PathBuf::new(), fichiers: Vec::new(), comptes: ParSort::a_zero(), total: 0, non_repris: None, dit: String::new() }
+        TriVu { dossier: PathBuf::new(), fichiers: Vec::new(), comptes: ParSort::a_zero(), total: 0, non_repris: None, mises_de_cote: Vec::new(), dit: String::new() }
     }
 }
 

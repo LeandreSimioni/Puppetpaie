@@ -80,7 +80,7 @@ fn de_l_installation(inst: &Path, racine: &Path) -> R<bool> {
     let (i, r) = (absolu(inst)?, absolu(racine)?);
     // Un chemin sans nom (une racine du disque) n'est le dossier d'aucune compagnie.
     let nommee = r.file_name().is_some_and(|n| !n.to_string_lossy().starts_with('.'));
-    if !nommee || !r.join(droit::contexte::ENTREPRISE).is_file() {
+    if !nommee || !droit::contexte::ENTREPRISE.dans(&r).is_file() {
         return Ok(false);
     }
     Ok(r == i.join("prive") || r.parent().is_some_and(|p| p == i.join("compagnies") || p == i.join(installation::DOSSIER_FICTIVES)))

@@ -228,7 +228,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     let mut deja: BTreeSet<CheminRelatif> = BTreeSet::new();
     let mut ecarts: Vec<String> = Vec::new();
     for (relatif, _) in &presents {
-        let chemin = cible.join(relatif);
+        let chemin = relatif.dans(&cible);
         let locale = EmpreinteMd5::du_fichier(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
         match distants.get(relatif) {
             Some(d) if d.md5.as_ref() == Some(&locale) => {
