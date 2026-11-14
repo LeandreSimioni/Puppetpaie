@@ -176,7 +176,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
 | taxe sur les salaires | `TaxeSurLesSalaires` | à unifier (#419) : `fiche::`, `forme_bareme::` |
 | déduction forfaitaire spécifique d'une paie | `calcul::DeductionForfaitaire` | à unifier (#419) : `forme_bareme::DeductionForfaitaire`, `AbattementDfs` |
-| réduction générale d'une paie | `droit::reduction::ReductionGenerale` | à unifier (#419) : ses montants en `Decimal` ; `forme_bareme::ReductionGenerale`, `ReductionDsn` sont des formes, à renommer |
+| réduction générale d'une paie | `droit::reduction::ReductionGenerale` | à unifier (#419) : son montant et ses parts sont des `Montant`, son SMIC de référence, ses heures et son coefficient des `Decimal` ; `forme_bareme::ReductionGenerale`, `ReductionDsn` sont des formes, à renommer |
 | maintien de salaire | `MaintienDeSalaire` | à unifier (#419) : `maintien::{Regime, Tranche, Droit}`, `permanents::Maintien`, `engagement::maintien::*`, `ligne::Maintien` |
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |

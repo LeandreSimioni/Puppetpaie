@@ -313,3 +313,14 @@ pub(crate) mod decimal_texte {
         t.parse().map_err(|_| serde::de::Error::custom(format!("{} n'est pas un nombre", socle::ecriture::json_en_ligne(&t))))
     }
 }
+
+/// Un montant ecrit comme `decimal_texte` : la porte d'un montant du compteur de conges ecrit dans la paie.
+pub(crate) mod montant_texte {
+    use socle::grandeurs::Montant;
+    pub fn serialize<S: serde::Serializer>(x: &Montant, s: S) -> Result<S::Ok, S::Error> {
+        super::decimal_texte::serialize(&x.decimal(), s)
+    }
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Montant, D::Error> {
+        super::decimal_texte::deserialize(d).map(Montant::du_decimal)
+    }
+}

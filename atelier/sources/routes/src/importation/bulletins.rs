@@ -1192,6 +1192,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let c = &cl.c;
         let est_aem = cl.aem.is_some();
         let (Some(nir), Some(debut), Some(fin), Some(brut)) = (&c.nir, c.debut, c.fin, c.brut) else { continue };
+        // Le brut que la piece dit (un nombre de sa lecture, `certificat_lu`, encore en decimal) : sa porte.
+        let brut = Montant::du_decimal(brut);
         let nom = cl.nom();
         let du_au = format!("du {} au {}", debut.jj_mm_aaaa(), fin.jj_mm_aaaa());
         let mut infos = InfosPage { debut: Some(debut), fin: Some(fin), mois: cl.mois(), ..InfosPage::default() };
@@ -1231,14 +1233,13 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             // L'ecart, quand les contrats confirmes tiennent dans les dates de la piece (un certificat coupe au 31 mars
             // n'en porte qu'une part).
             if pareils.iter().all(|a| a.tient_dans(debut, fin)) {
-                // Les montants lus d'une piece (`brut`, l'AEM, le certificat) sont encore des decimaux ici : la somme s'y ouvre.
-                let somme: Option<Decimal> = pareils.iter().map(|a| a.brut).try_fold(Montant::ZERO, |s, b| b.map(|b| s + b)).map(Montant::decimal);
+                let somme: Option<Montant> = pareils.iter().map(|a| a.brut).try_fold(Montant::ZERO, |s, b| b.map(|b| s + b));
                 let (cachets, jours): (Option<i64>, Option<i64>) = (pareils.iter().map(|a| a.cachets).sum(), pareils.iter().map(|a| a.jours).sum());
                 let n = |x: Option<i64>| dit(x.map(|v| v.to_string()));
                 match &cl.aem {
                     Some(a) => {
                         if let Some(s) = somme.filter(|s| *s != brut) {
-                            phrases.push(format!("écart noté : l'{} dit {} de brut, les contrats {}", cl.nom(), euros(brut), euros(s)));
+                            phrases.push(format!("écart noté : l'{} dit {} de brut, les contrats {}", cl.nom(), euros(brut.decimal()), euros(s.decimal())));
                         }
                         // Les jours, l'AEM ne les dit que si sa colonne se lit : seuls ceux qu'elle dit se comparent.
                         if Some(a.cachets()) != cachets || a.jours.is_some_and(|j| Some(j) != jours) {
@@ -1254,8 +1255,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     }
                     None => {
                         if let Some(s) = somme {
-                            if Decimal::from(documents::conges_spectacles::arrondi_euro(s)?) != brut {
-                                phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut), euros(s)));
+                            // Le certificat ecrit son brut a l'euro (`arrondi_euro`, son ecriture) : la somme s'y compare ainsi.
+                            if Decimal::from(documents::conges_spectacles::arrondi_euro(s.decimal())?) != brut.decimal() {
+                                phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut.decimal()), euros(s.decimal())));
                             }
                         }
                         if let Some(nombre) = c.nombre.filter(|x| Some(*x) != cachets && Some(*x) != jours) {
@@ -1305,7 +1307,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     _ => "ni cachet ni jour".to_string(),
                 };
                 let brut_reste: String = l.contrat.brut.map(|b| format!(", {} de brut", euros(b))).into_iter().collect();
-                Ok((l, format!("{}{} : ce que dit le certificat moins ce que disent les autres pièces ; son brut, {}, est arrondi à l'euro", quoi, brut_reste, euros(brut))))
+                Ok((l, format!("{}{} : ce que dit le certificat moins ce que disent les autres pièces ; son brut, {}, est arrondi à l'euro", quoi, brut_reste, euros(brut.decimal()))))
             }
             (None, None) => {
                 let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_ref())?;
@@ -1320,11 +1322,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Ok((ligne, quoi)) => {
                 infos.contrat = Some(EtatContrat::Nouveau);
                 let raison = if est_aem {
-                    format!("{} {} : contrat attesté ajouté ({}, {} de brut)", nom, du_au, quoi, euros(brut))
+                    format!("{} {} : contrat attesté ajouté ({}, {} de brut)", nom, du_au, quoi, euros(brut.decimal()))
                 } else if est_reste {
                     format!("certificat Congés Spectacles {} contrat attesté ajouté ({}) ; les heures, que le certificat ne porte pas, n'y sont pas", du_au, quoi)
                 } else {
-                    format!("certificat Congés Spectacles {} : contrat attesté ajouté ({}, {} de brut arrondi à l'euro) ; les heures, que le certificat ne porte pas, n'y sont pas", du_au, quoi, euros(brut))
+                    format!("certificat Congés Spectacles {} : contrat attesté ajouté ({}, {} de brut arrondi à l'euro) ; les heures, que le certificat ne porte pas, n'y sont pas", du_au, quoi, euros(brut.decimal()))
                 };
                 let bloc = if est_aem { BlocDImport::AemPdf } else { BlocDImport::Certificats };
                 let raison = std::iter::once(raison).chain(registre.ajouter(nir, ligne, cl.piece(), bloc)).collect::<Vec<_>>().join(" ; ");

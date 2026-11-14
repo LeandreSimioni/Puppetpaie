@@ -198,8 +198,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                 if let (Some(rg), Some(pat)) = (reduction_generale, pat) {
                     // La RGDU : une charge negative, ventilee au tiers de chaque part telle que la paie l'a calculee.
                     *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += pat;
-                    // Les parts de la reduction generale sont encore des decimaux de `droit::reduction` : leur porte.
-                    for (part, id_tiers) in [(rg.urssaf, MALADIE), (rg.chomage, CHOMAGE), (rg.agirc_arrco, RETRAITE_T1)].map(|(p, i)| (Montant::du_decimal(p), i)) {
+                    for (part, id_tiers) in [(rg.urssaf, MALADIE), (rg.chomage, CHOMAGE), (rg.agirc_arrco, RETRAITE_T1)] {
                         if !part.est_nul() {
                             let r = plan.lignes.get(&id_tiers).ok_or_else(|| socle::fichiers::absent(id_tiers.as_str()).reclasser(Classe::Manque))?;
                             *tiers.entry(r.tiers.clone()).or_insert(zero) -= part;

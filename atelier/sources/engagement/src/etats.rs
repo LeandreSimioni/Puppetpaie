@@ -892,8 +892,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     // Sans subrogation, aucune avance.
     let avance = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).and_then(|b| b.montant());
     let assiette = avance.into_iter().fold(p.net_imposable, |a, m| a + m);
-    // `droit::pas::du_versement` prend encore un decimal : sa porte.
-    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, assiette.decimal(), Some(fin), court, droit::pas::ZONE_DEFAUT)?))
+    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, assiette, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
 }
 
 /// Le prelevement a la source du versement d'une correction, verse avec le mois `mois_du_versement` : la difference de
@@ -911,17 +910,17 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
 ///
 /// Un bareme sans grille refuse, comme pour une paie (regle 1).
 pub fn prelevement_de_la_correction(
-    ctx: &Contexte, apres: &Paie, net_imposable_declare: Decimal, taux_origine: Option<&droit::pas::TauxDePas>, versement: Mois,
+    ctx: &Contexte, apres: &Paie, net_imposable_declare: Montant, taux_origine: Option<&droit::pas::TauxDePas>, versement: Mois,
 ) -> R<PrelevementDeLaCorrection> {
     let (debut, fin) = (versement.premier_jour(), versement.dernier_jour());
-    let difference = socle::num::sub(apres.net_imposable.decimal(), net_imposable_declare);
+    let difference = apres.net_imposable - net_imposable_declare;
     let e = &apres.engagement;
     let taux = droit::pas::taux_dgfip(ctx, &apres.salarie.id, Some(fin), Some(versement))?;
     let bareme = ctx.bareme(&debut)?;
     let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
     let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)?;
-    let prelevement = if difference < Decimal::ZERO {
-        taux_origine.map(|t| t.prelevement(Montant::du_decimal(difference)).au_centime().decimal())
+    let prelevement = if difference < Montant::ZERO {
+        taux_origine.map(|t| t.prelevement(difference).au_centime().decimal())
     } else {
         Some(versement.taux.prelevement(versement.montant_soumis).au_centime().decimal())
     };
@@ -931,7 +930,7 @@ pub fn prelevement_de_la_correction(
 /// Ce que `prelevement_de_la_correction` rend.
 pub struct PrelevementDeLaCorrection {
     /// La difference de net imposable (S21.G00.50.002 du versement de la correction).
-    pub difference: Decimal,
+    pub difference: Montant,
     /// Le taux, son type, son identifiant et le montant soumis du versement (S21.G00.50.006 a .008, .013).
     pub versement: droit::pas::Versement,
     /// Ce que la correction preleve (positif) ou rend (negatif) ; `None` : un trop-verse sans taux d'origine.
@@ -941,7 +940,7 @@ pub struct PrelevementDeLaCorrection {
 impl PrelevementDeLaCorrection {
     /// Un trop-verse : la difference baisse.
     pub fn indu(&self) -> bool {
-        self.difference < Decimal::ZERO
+        self.difference < Montant::ZERO
     }
 }
 

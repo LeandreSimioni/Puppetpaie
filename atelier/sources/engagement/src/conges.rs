@@ -177,8 +177,8 @@ pub struct CompteurConges {
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
     pub pris: Decimal,
     /// L'assiette du dixieme.
-    #[serde(with = "crate::paie_ecrite::decimal_texte")]
-    pub remuneration_periode: Decimal,
+    #[serde(with = "crate::paie_ecrite::montant_texte")]
+    pub remuneration_periode: Montant,
     /// Ce qui reste des jours acquis sur la periode precedente.
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
     pub reports: Decimal,
@@ -187,8 +187,8 @@ pub struct CompteurConges {
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
     pub acquis_report: Decimal,
     /// L'assiette du dixieme de la periode du report (zero sans report).
-    #[serde(with = "crate::paie_ecrite::decimal_texte")]
-    pub remuneration_report: Decimal,
+    #[serde(with = "crate::paie_ecrite::montant_texte")]
+    pub remuneration_report: Montant,
     /// Les jours pris que l'ancien logiciel a deja imputes sur la periode en
     /// cours (reprise) : ils ne consomment pas le report.
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
@@ -206,8 +206,9 @@ impl CompteurConges {
     /// L'indemnite de `jours` de conges pris sur ce compteur, le maintien `maintien` compare au total : la regle de
     /// `droit::permanents::indemnite_des_jours` (L3141-24) sur ce que le compteur a acquis.
     pub fn indemnite_des_jours(&self, jours: Decimal, maintien: Decimal) -> R<IndemniteDesJours> {
-        let report = Acquisition { jours: self.acquis_report, remuneration: self.remuneration_report };
-        let en_cours = Acquisition { jours: self.acquis, remuneration: self.remuneration_periode };
+        // `droit::permanents::indemnite_des_jours` compte encore en decimaux : la remuneration s'y ouvre.
+        let report = Acquisition { jours: self.acquis_report, remuneration: self.remuneration_report.decimal() };
+        let en_cours = Acquisition { jours: self.acquis, remuneration: self.remuneration_periode.decimal() };
         droit::permanents::indemnite_des_jours(jours, self.report_restant(), report, en_cours, maintien)
     }
 
@@ -450,21 +451,21 @@ pub(crate) fn empreinte_des_mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &I
 struct Tenue {
     acquis: Decimal,
     pris: Decimal,
-    brut: Decimal,
+    brut: Montant,
     avis: Vec<Avis>,
 }
 
 impl Tenue {
     /// Ce que la periode [debut, fin] tient de la reprise de l'ancien logiciel, avant tout mois produit ici.
     fn ouvrir(rep: Option<&Reprise>, debut: &Jour, fin: &Jour) -> R<Tenue> {
-        let mut t = Tenue { acquis: Decimal::ZERO, pris: Decimal::ZERO, brut: Montant::ZERO.decimal(), avis: Vec::new() };
+        let mut t = Tenue { acquis: Decimal::ZERO, pris: Decimal::ZERO, brut: Montant::ZERO, avis: Vec::new() };
         let Some(r) = rep else { return Ok(t) };
         if *debut <= r.date && r.date <= *fin {
             t.acquis = add(t.acquis, r.acquis);
             t.pris += r.pris;
-            t.brut = add(t.brut, r.remuneration_periode);
+            t.brut += r.remuneration_periode;
         } else if *fin == periode_de_reference(&r.date)?.0.plus_jours(-1)? {
-            t.brut = add(t.brut, r.remuneration_report);
+            t.brut += r.remuneration_report;
         }
         Ok(t)
     }
@@ -512,8 +513,7 @@ impl Tenue {
         let avant_la_reprise = rep.is_some_and(|r| fin_du_mois < r.date);
         // L'assiette du dixieme : tout le brut du salarie dans un mois ou il est present.
         if remuneration && present && !avant_la_reprise {
-            // Le compteur (`CompteurConges::remuneration_periode`) compte encore en decimaux : le brut s'y ouvre.
-            self.brut = paies.iter().fold(self.brut, |a, p| add(a, p.brut.decimal()));
+            self.brut = paies.iter().fold(self.brut, |a, p| a + p.brut);
         }
         Ok(())
     }
@@ -530,7 +530,7 @@ fn periode(
     fin: &Jour,
     lus: Lus,
     remuneration: bool,
-) -> R<(Decimal, Decimal, Decimal, Vec<Avis>)> {
+) -> R<(Decimal, Decimal, Montant, Vec<Avis>)> {
     let rep = reprise_conges(ctx, au, cle_salarie)?;
     let mut t = Tenue::ouvrir(rep.as_ref(), debut, fin)?;
     let cle = cle_de_fiche(ctx, cle_salarie)?;
@@ -553,7 +553,7 @@ fn compteur(
     // Un jour du report se paie au dixieme de la periode ou il a ete acquis (`indemnite_des_jours`).
     let remuneration_report = match (report.debut, report.fin) {
         (Some(rd), Some(rf)) if report.reports > Decimal::ZERO => periode(ctx, au, cle_salarie, &rd, &rf, lus, true)?.2,
-        _ => Montant::ZERO.decimal(),
+        _ => Montant::ZERO,
     };
     let avis_du_report = report.avertissements.len();
     let mut avertissements = report.avertissements;
@@ -671,7 +671,7 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jou
     let remuneration_report = match (report_debut, report_fin) {
         (Some(_), Some(_)) if reste > Decimal::ZERO && parcourue => tenue.brut,
         (Some(_), Some(_)) if reste > Decimal::ZERO => c.remuneration_report,
-        _ => Montant::ZERO.decimal(),
+        _ => Montant::ZERO,
     };
     let ouverte = Tenue::ouvrir(rep.as_ref(), &debut, &fin)?;
     let pris_sur_la_periode = pris_de_la_reprise(ctx, au, cle_salarie, &debut, &fin)?;
@@ -741,7 +741,7 @@ fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debut_courant: &
         out.acquis = r.acquis_report;
         out.debut = Some(avant_debut);
         out.fin = Some(avant_fin);
-        if reste > Decimal::ZERO && r.remuneration_report == Decimal::ZERO {
+        if reste > Decimal::ZERO && r.remuneration_report.est_nul() {
             avert.push(info(format!(
                 "{} : {} jour(s) repris de l'ancien logiciel sans le brut de \
                  leur periode (fiche salarie, conges a la reprise) : ils se \
@@ -797,8 +797,8 @@ pub struct Reprise {
     pub acquis_report: Decimal,
     pub acquis: Decimal,
     pub pris: Decimal,
-    pub remuneration_report: Decimal,
-    pub remuneration_periode: Decimal,
+    pub remuneration_report: Montant,
+    pub remuneration_periode: Montant,
 }
 
 /// Le solde repris de l'ancien logiciel, ou `None` (la fiche n'en dit pas, ou ne dit pas sa date). Datee, la reprise dit
@@ -822,8 +822,9 @@ pub(crate) fn reprise_conges(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalari
         acquis_report: nombre(&r.acquis_report, "conges_reprise.acquis_report")?,
         acquis: nombre(&r.acquis, "conges_reprise.acquis")?,
         pris: nombre(&r.pris, "conges_reprise.pris")?,
-        remuneration_report: nombre(&r.remuneration_report, "conges_reprise.remuneration_report")?,
-        remuneration_periode: nombre(&r.remuneration_periode, "conges_reprise.remuneration_periode")?,
+        // Les deux remunerations, lues de leur case (un `NombreDeFiche`, encore en decimal) : leur porte.
+        remuneration_report: Montant::du_decimal(nombre(&r.remuneration_report, "conges_reprise.remuneration_report")?),
+        remuneration_periode: Montant::du_decimal(nombre(&r.remuneration_periode, "conges_reprise.remuneration_periode")?),
     }))
 }
 
@@ -1291,7 +1292,7 @@ pub struct Provision {
 /// `salaire_mensuel` : la valeur de l'engagement ; absente, elle se refuse. `None` : un contrat sans compteur de
 /// l'employeur (declare a la caisse des Conges Spectacles). Refus : une paie validee qui ne porte pas le compteur
 /// qu'elle devrait.
-pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: socle::num::Decimal, salaire_mensuel: Option<&NombreLu>) -> R<Option<Provision>> {
+pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: Montant, salaire_mensuel: Option<&NombreLu>) -> R<Option<Provision>> {
     let Some(ecrit) = paie.conges.as_ref() else {
         if paie.declaree_a_la_caisse_des_conges()? {
             return Ok(None);
@@ -1302,24 +1303,26 @@ pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: socle::num::De
         ));
     };
     let mut cpt = ecrit.clone();
-    cpt.remuneration_periode = add(cpt.remuneration_periode, brut_du_mois);
+    cpt.remuneration_periode += brut_du_mois;
     let Some(salaire) = salaire_mensuel else {
         return Err(socle::refus!(
             "{} : son engagement payé au mois ne dit pas son salaire mensuel brut : l'indemnité de ses congés au maintien ne se calcule pas. Le saisir dans la case « Salaire mensuel brut ».",
             paie.engagement.salarie
         ));
     };
-    provision_du_compteur(cpt, mois, Chiffre::Nombre(salaire.clone()).dec()?).map(Some)
+    // Le salaire mensuel de l'engagement, lu de sa saisie (un `NombreLu`, encore en decimal) : sa porte.
+    provision_du_compteur(cpt, mois, Montant::du_decimal(Chiffre::Nombre(salaire.clone()).dec()?)).map(Some)
 }
 
 /// LA PROVISION D'UN COMPTEUR a la fin de `mois` : son solde, et l'indemnite de ce solde quand il est positif, le
 /// dixieme ou le maintien (C. trav. L3141-24, `droit::permanents::indemnite_des_jours`), le maintien au salaire
 /// `salaire` du mois reparti sur ses jours ouvrables.
-pub fn provision_du_compteur(cpt: CompteurConges, mois: Mois, salaire: Decimal) -> R<Provision> {
+pub fn provision_du_compteur(cpt: CompteurConges, mois: Mois, salaire: Montant) -> R<Provision> {
     let solde = cpt.solde();
     let ouvrables = crate::solde::ouvrables_du_mois(mois, None)?;
     let indemnite = if solde > Decimal::ZERO {
-        Some(cpt.indemnite_des_jours(solde, Montant::du_decimal(mul(div(salaire, ouvrables), solde)).au_centime().decimal())?)
+        // Le maintien se repartit sur des jours, et `indemnite_des_jours` compte encore en decimaux : le salaire s'y ouvre.
+        Some(cpt.indemnite_des_jours(solde, Montant::du_decimal(mul(div(salaire.decimal(), ouvrables), solde)).au_centime().decimal())?)
     } else {
         None
     };

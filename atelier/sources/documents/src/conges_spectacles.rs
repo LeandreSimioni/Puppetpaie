@@ -16,6 +16,7 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use engagement::Engagement;
 use engagement::numeros::NumeroDeCertificat;
+use socle::grandeurs::Montant;
 use socle::num::{court, Decimal};
 use socle::echec::{erreur, refus, Classe, Echec, R};
 
@@ -245,7 +246,7 @@ pub struct ContratCs {
 pub struct MoisPaye {
     pub fin: Jour,
     pub jours: i64,
-    pub brut: Decimal,
+    pub brut: Montant,
 }
 
 impl ContratCs {
@@ -273,7 +274,7 @@ impl ContratCs {
 #[derive(Debug, Clone)]
 pub struct PaieCs {
     pub engagement: ContratCs,
-    pub brut: Decimal,
+    pub brut: Montant,
     pub salarie: droit::fiche::ChampsSalarie,
 }
 
@@ -342,8 +343,8 @@ pub struct Certificat {
     pub debut: Jour,
     pub fin: Jour,
     pub nb_jours_ou_cachets: i64,
-    pub brut: Decimal,
-    pub base: Decimal,
+    pub brut: Montant,
+    pub base: Montant,
     pub emission: Jour,
 }
 
@@ -372,9 +373,10 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
             paie.brut
         } else {
             match e.taux_cachet {
-                Some(t) => court(t) * Decimal::from(*nb),
+                // Le taux de cachet du contrat (`ContratCs`, une copie de l'engagement) est encore un decimal : sa porte.
+                Some(t) => Montant::du_decimal(court(t) * Decimal::from(*nb)),
                 // Aucun cachet ni jour dans la periode : rien a repartir, quel que soit le taux.
-                None if *nb == 0 => Decimal::ZERO,
+                None if *nb == 0 => Montant::ZERO,
                 None => {
                     return Err(erreur(
                         Classe::Illisible,
@@ -400,7 +402,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
         });
     }
     if parts.len() > 1 {
-        let total = out.iter().fold(Decimal::ZERO, |a, c| a + c.brut);
+        let total = out.iter().fold(Montant::ZERO, |a, c| a + c.brut);
         if total != paie.brut {
             let qui = match &e.numero {
                 Some(n) => n.to_string(),
@@ -410,7 +412,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
                 Classe::Illisible,
                 format!(
                     "Découpage au 31 mars incohérent pour {} : {} répartis pour un brut de {}.",
-                    qui, socle::texte::euros(total), socle::texte::euros(paie.brut)
+                    qui, socle::texte::euros(total.decimal()), socle::texte::euros(paie.brut.decimal())
                 ),
             ));
         }
@@ -424,7 +426,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
 /// regime, `atelier/reference/sources/audiens-dsn/audiens-conges-spectacles-mode-emploi-employeur-20261030.txt`,
 /// l. 201-206) : le 31 mars finit un mois, et chaque periode porte les jours travailles et le brut des mois qu'elle
 /// couvre, sans repartition.
-fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Decimal)>> {
+fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Montant)>> {
     let mut bornes = bornes_31_mars(e.debut, e.fin);
     bornes.push(e.fin);
     let mut out = Vec::new();
@@ -432,7 +434,7 @@ fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Decimal)>> {
     for borne in bornes {
         let couverts: Vec<&MoisPaye> = e.mois_payes.iter().filter(|m| debut <= m.fin && (m.fin <= borne || borne == e.fin)).collect();
         let jours: i64 = couverts.iter().map(|m| m.jours).sum();
-        out.push(((debut, borne, Vec::new(), jours, jours), couverts.iter().fold(Decimal::ZERO, |a, m| a + m.brut)));
+        out.push(((debut, borne, Vec::new(), jours, jours), couverts.iter().fold(Montant::ZERO, |a, m| a + m.brut)));
         debut = borne.plus_jours(1)?;
     }
     Ok(out)
@@ -509,8 +511,8 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     out.push(("debut", cases_date(&c.debut)));
     out.push(("fin", cases_date(&c.fin)));
     out.push(("nb_cachets", c.nb_jours_ou_cachets.to_string()));
-    out.push(("base_conge", arrondi_euro(c.base)?.to_string()));
-    out.push(("salaire_brut", arrondi_euro(c.brut)?.to_string()));
+    out.push(("base_conge", arrondi_euro(c.base.decimal())?.to_string()));
+    out.push(("salaire_brut", arrondi_euro(c.brut.decimal())?.to_string()));
     let e = c.emission;
     out.push(("date", format!("{:02}/{:02}/{:02}", e.jour, e.mois, e.an % 100)));
     out.push(("signataire", texte_requis(&sig.nom, "nom")?));
@@ -644,8 +646,8 @@ pub fn recapitulatif(paires: &[(&PaieCs, NumeroDeCertificat)], ent: &ChampsEntre
                 c.debut.jj_mm_aaaa(),
                 c.fin.jj_mm_aaaa(),
                 c.nb_jours_ou_cachets,
-                arrondi_euro(c.brut)?,
-                arrondi_euro(c.base)?
+                arrondi_euro(c.brut.decimal())?,
+                arrondi_euro(c.base.decimal())?
             ));
         }
     }

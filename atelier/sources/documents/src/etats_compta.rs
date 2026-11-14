@@ -1274,7 +1274,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 /// Le taux REEL des cotisations patronales d'un salarie -- ses cotisations patronales sur son
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
-fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Decimal>, i64)> {
+fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Taux>, i64)> {
     let depart = jusqu_a.plus(-12).map_err(|x| x.reclasser(Classe::Illisible))?;
     let (mut brut, mut pat, mut n) = (Montant::ZERO, Montant::ZERO, 0i64);
     for l in lignes {
@@ -1286,11 +1286,9 @@ fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte
         pat += c;
         n += 1;
     }
-    if brut.est_nul() {
-        return Ok((None, 0));
-    }
-    // Le taux rendu reste un decimal, comme la provision qui le lit (`provision_conges`, son compteur en decimaux).
-    Ok((Some(quant(div(mul(pat.decimal(), Decimal::ONE_HUNDRED), brut.decimal()), 2)), n))
+    // Montant / montant = coefficient ; sans brut, pas de taux.
+    let Some(part) = pat.rapport(brut) else { return Ok((None, 0)) };
+    Ok((Some(part.en_taux().a_deux_decimales()), n))
 }
 
 /// LA PROVISION D'UNE ANNEE REPRISE D'UN ANCIEN LOGICIEL, au dernier jour du dernier mois repris `m` : celle de chaque
@@ -1329,8 +1327,7 @@ fn provision_d_une_annee_importee(
     let paies = lecture.paies(m)?;
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
     // brut que les pieces taisent, la somme ne se fait pas (`None`).
-    // Le compteur de conges (`engagement::conges::CompteurConges`) compte encore en decimaux : la somme s'y ouvre.
-    let mut bruts = |cle: &droit::contexte::IdSalarie, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
+    let mut bruts = |cle: &droit::contexte::IdSalarie, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Montant, bool)>> {
         let mut total = Montant::ZERO;
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
             for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == *cle) {
@@ -1338,7 +1335,7 @@ fn provision_d_une_annee_importee(
                 total += brut;
             }
         }
-        Ok(Some((total.decimal(), premier_importe <= du.mois_civil())))
+        Ok(Some((total, premier_importe <= du.mois_civil())))
     };
     for pa in paies.iter().filter_map(engagement::etats::PaieDuMois::importee) {
         let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
@@ -1361,12 +1358,12 @@ fn provision_d_une_annee_importee(
         };
         // Un bulletin repris qui ne dit pas son brut ne couvre pas sa periode : la remuneration est celle que la fiche recopie.
         if let Some((periode, true)) = bruts(&cle, &cpt.periode_debut, &fin)? {
-            if !cpt.remuneration_periode.is_zero() && cpt.remuneration_periode != periode {
+            if !cpt.remuneration_periode.est_nul() && cpt.remuneration_periode != periode {
                 avert.push(format!(
                     "{} : la rémunération de la période que sa fiche recopie ({}) n'est pas la somme des bruts de ses bulletins repris ({}) ; la provision prend les bulletins.",
                     ctx.nomme(&cle),
-                    euros(cpt.remuneration_periode),
-                    euros(periode)
+                    euros(cpt.remuneration_periode.decimal()),
+                    euros(periode.decimal())
                 ));
             }
             cpt.remuneration_periode = periode;
@@ -1386,7 +1383,7 @@ fn provision_d_une_annee_importee(
             sans_compteur += 1;
             continue;
         };
-        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire.decimal()).map_err(|x| x.reclasser(Classe::Refuse))?;
+        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.clone(), nat.libelle.clone(), provision));
     }
     Ok(sans_compteur)
@@ -1423,7 +1420,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     continue;
                 }
                 let brut_du_mois = paies.iter().filter(|q| cle_de(q) == cle).fold(Montant::ZERO, |a, q| a + q.brut);
-                let Some(cpt) = engagement::conges::provision_conges_de(pa, m, brut_du_mois.decimal(), e.salaire_mensuel.as_ref())? else { continue };
+                let Some(cpt) = engagement::conges::provision_conges_de(pa, m, brut_du_mois, e.salaire_mensuel.as_ref())? else { continue };
                 a_provisionner.push((cle, e.numero.clone(), nat.libelle.clone(), cpt));
             }
             m
@@ -1460,7 +1457,8 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if taux.is_none() {
             avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle));
         }
-        let charges = taux.map(|t| Montant::du_decimal(retenu).fois_taux(Taux::du_decimal(t)).au_centime().decimal());
+        // L'indemnite (`droit::conges::IndemniteDesJours`) est encore en decimaux : sa porte.
+        let charges = taux.map(|t| Montant::du_decimal(retenu).fois_taux(t).au_centime().decimal());
         indemnites = add(indemnites, retenu);
         if let Some(c) = charges {
             charges_dites = add(charges_dites, c);
@@ -1475,7 +1473,8 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         l.ot("contrat", contrat).t("nature", nature);
         l.d("report", arrondir_jours(cpt.report_restant)).d("acquis", arrondir_jours(cpt.acquis)).d("pris", arrondir_jours(cpt.pris)).d("solde", arrondir_jours(cpt.solde));
         l.d("dixieme", dixieme).d("maintien", maintien).d("indemnite", retenu).t("regle", regle);
-        l.od("taux_patronal", taux).n("bulletins", n).od("charges", charges);
+        // Le taux s'ecrit a deux decimales (`12.50`).
+        l.od("taux_patronal", taux.map(|t| quant(t.decimal(), 2))).n("bulletins", n).od("charges", charges);
         l.od("total", charges.map(|c| add(retenu, c)));
         lignes.push(l);
     }

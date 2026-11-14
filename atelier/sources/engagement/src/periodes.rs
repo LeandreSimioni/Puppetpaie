@@ -125,9 +125,9 @@ fn poser_reduction(p: &mut Paie, rg: Option<ReductionGenerale>) {
         let l = p.lignes.remove(i);
         p.total_pat -= l.montant_pat;
     }
-    if let Some(r) = rg.as_ref().filter(|r| !r.montant.is_zero()) {
+    if let Some(r) = rg.as_ref().filter(|r| !r.montant.est_nul()) {
         p.lignes.push(ligne_de_reduction(r, p.brut));
-        p.total_pat -= Montant::du_decimal(r.montant);
+        p.total_pat -= r.montant;
     }
     p.cout_employeur = p.brut + p.total_pat;
     p.reduction_generale = rg;
@@ -274,14 +274,15 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     m.reduction_generale = du_mois.map(|d| {
         let rgs: Vec<&ReductionGenerale> = parts.iter().filter_map(|p| p.reduction_generale.as_ref()).collect();
         let s = |f: &dyn Fn(&ReductionGenerale) -> Decimal| rgs.iter().fold(zero, |a, r| a + f(r));
+        let somme = |f: &dyn Fn(&ReductionGenerale) -> Montant| rgs.iter().fold(Montant::ZERO, |a, r| a + f(r));
         ReductionGenerale {
             coefficient: d.coefficient,
-            montant: s(&|r| r.montant),
+            montant: somme(&|r| r.montant),
             smic_reference: s(&|r| r.smic_reference),
             heures: rgs.iter().fold(Decimal::ZERO, |a, r| a + r.heures),
-            urssaf: s(&|r| r.urssaf),
-            chomage: s(&|r| r.chomage),
-            agirc_arrco: s(&|r| r.agirc_arrco),
+            urssaf: somme(&|r| r.urssaf),
+            chomage: somme(&|r| r.chomage),
+            agirc_arrco: somme(&|r| r.agirc_arrco),
         }
     });
     m.deduction_forfaitaire = derniere.deduction_forfaitaire.clone();

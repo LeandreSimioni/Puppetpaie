@@ -660,7 +660,7 @@ pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Montant) -> Ligne
         libelle: "Réduction générale dégressive unique".into(),
         base: BaseDeCotisation::Montant(brut),
         taux_pat: None,
-        montant_pat: Montant::du_decimal(-rg.montant),
+        montant_pat: -rg.montant,
         taux_sal: None,
         montant_sal: Montant::ZERO,
         masquer_base_et_taux: true,
@@ -1836,9 +1836,10 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         }
         r
     });
-    if let Some(rg) = rg.as_ref().filter(|rg| !rg.montant.is_zero()) {
+    if let Some(rg) = rg.as_ref().filter(|rg| !rg.montant.est_nul()) {
         lignes.push(ligne_de_reduction(rg, Montant::du_decimal(brut)));
-        tot_pat -= rg.montant;
+        // Le total patronal compte encore en decimaux : la reduction s'y ouvre.
+        tot_pat -= rg.montant.decimal();
     }
 
     // 7.9 bis : les heures en plus d'un salarie paye au mois (`heures_en_plus`) : la reduction de cotisations salariales,

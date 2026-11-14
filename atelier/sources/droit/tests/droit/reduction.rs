@@ -39,5 +39,5 @@ fn le_coefficient_majore_ne_s_arrondit_qu_une_fois() {
     // ... x 100/90 = 0,28337... -> 0,2834 ; arrondir avant la majoration donnerait 0,2550 x 100/90 -> 0,2833.
     let avec = reduction_generale(technicien, Some(droit::fiche::Statut::Technicien), dec("100"), dec("7"), true).unwrap().unwrap();
     assert_eq!(avec.coefficient, dec("0.2834"));
-    assert_eq!(avec.montant, dec("28.34"));
+    assert_eq!(avec.montant.decimal(), dec("28.34"));
 }

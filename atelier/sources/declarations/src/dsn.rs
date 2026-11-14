@@ -918,7 +918,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         );
     }
     if let Some(rg) = &p.reduction_generale {
-        if !rg.montant.is_zero() {
+        if !rg.montant.est_nul() {
             let dsn = bar.dsn_de_la_reduction()?;
             let urssaf = Some(org_de(&bar, CodeCotisation81::AssuranceMaladie, PART_URSSAF)?);
             let ft = Some(org_de(&bar, CodeCotisation81::AssuranceChomage, PART_CHOMAGE)?);
@@ -932,7 +932,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
                 // S21.G00.81.002, « AGIRC-ARRCO : non concerné » (`bloc-S21.G00.81.txt` l. 372).
                 (dsn.code81_retraite, None, rg.agirc_arrco, dsn.code81_retraite.into()),
             ] {
-                if !part.is_zero() {
+                if !part.est_nul() {
                     out.push(Cotisation {
                         bloc78: BaseAssujettie::BruteDeplafonnee,
                         base78: brut_03,
@@ -943,7 +943,8 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
                         code_insee: None,
                         base81: Some(brut_03),
                         taux: None,
-                        montant: Some(-part),
+                        // La cotisation de la DSN compte encore en decimaux : la part s'y ouvre.
+                        montant: Some((-part).decimal()),
                         composant79: None,
                         cet: false,
                     });
@@ -2068,7 +2069,7 @@ pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> R<()> {
 /// lit dans l'ecart entre 50.002 et 50.013 (norme 2026.1, p. 245). S21.G00.50.012 est reservee aux abattements des
 /// assistants maternels et familiaux, que seuls PAJEmploi et les departements declarent : le moteur ne l'ecrit pas.
 fn pas_du_versement(
-    taux_pas: Option<&Triplet>, bar: &Pile, montant: Decimal, le: Jour, court: bool,
+    taux_pas: Option<&Triplet>, bar: &Pile, montant: Montant, le: Jour, court: bool,
 ) -> R<(droit::pas::TauxDePas, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<droit::pas::IdentifiantDuTauxPas>, Montant)> {
     let r = pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT)?;
     Ok((r.taux, r.type_taux, r.identifiant, r.montant_soumis))
@@ -2446,7 +2447,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     // sans paie n'en a pas : son versement nul porte le taux qui vaut pour le salarie.
     let (taux, type_taux, identifiant, soumis) = match &p.pas {
         Some(v) => (v.taux.clone(), v.type_taux.clone(), v.identifiant.clone(), v.montant_soumis),
-        None if e.sans_paie() => pas_du_versement(taux_pas, bar, p.net_imposable.decimal(), fin, court(p, fin)?)?,
+        None if e.sans_paie() => pas_du_versement(taux_pas, bar, p.net_imposable, fin, court(p, fin)?)?,
         None => {
             return Err(socle::echec::cle(format!(
                 "La paie de {} pour {} ne porte pas de prelevement a la source. Revalider l'engagement.",
@@ -2746,7 +2747,7 @@ fn bloc_regularisation(
     let d_ni = pas_c.difference;
     let d_net = sub(apres.net_verse().decimal(), r.declare.net_verse);
     f.add(droit::rubrique!("S21.G00.50.001"), fin_mois.jjmmaaaa());
-    f.add(droit::rubrique!("S21.G00.50.002"), mt(d_ni));
+    f.add(droit::rubrique!("S21.G00.50.002"), mt(d_ni.decimal()));
     f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(numero)?);
     f.add(droit::rubrique!("S21.G00.50.004"), mt(d_net));
     let v = &pas_c.versement;
@@ -2757,7 +2758,7 @@ fn bloc_regularisation(
     if type_taux.transmis() {
         f.add_opt(droit::rubrique!("S21.G00.50.008"), identifiant.as_ref())?;
     }
-    let indu = d_ni < Decimal::ZERO;
+    let indu = d_ni < Montant::ZERO;
     f.add(droit::rubrique!("S21.G00.50.009"), if indu { "0.00".into() } else { mt(taux.prelevement(soumis).au_centime().decimal()) });
     f.add(droit::rubrique!("S21.G00.50.013"), if indu { "0.00".into() } else { mt(soumis.decimal()) });
 
@@ -2791,10 +2792,10 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
         };
         f.add(droit::rubrique!("S21.G00.56.001"), format!("{:02}{:04}", r.mois.numero(), r.mois.annee()));
         f.add(droit::rubrique!("S21.G00.56.002"), "03");
-        f.add(droit::rubrique!("S21.G00.56.003"), mt(d_ni));
+        f.add(droit::rubrique!("S21.G00.56.003"), mt(d_ni.decimal()));
         f.add(droit::rubrique!("S21.G00.56.006"), taux_o);
-        f.add(droit::rubrique!("S21.G00.56.007"), mt(taux_o.prelevement(Montant::du_decimal(d_ni)).au_centime().decimal()));
-        f.add(droit::rubrique!("S21.G00.56.010"), mt(d_ni));
+        f.add(droit::rubrique!("S21.G00.56.007"), mt(taux_o.prelevement(d_ni).au_centime().decimal()));
+        f.add(droit::rubrique!("S21.G00.56.010"), mt(d_ni.decimal()));
     }
     blocs_58_de_la_correction(f, r, &debut, &fin, fin_mois)?;
     if !avant.engagement.sans_paie() {
@@ -2875,7 +2876,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
     let org = |code: CodeCotisation81, pour: &str| -> R<Option<IdentifiantDOrganisme>> { Ok(Some(org_de(&pile, code, pour)?)) };
     l.blocs.push((BaseAssujettie::BruteDeplafonnee, Assiette::Brut));
     // Les trois parts de la reduction generale, pour une paie qui en a une (`cotisations` ne les ecrit qu'alors).
-    if p.reduction_generale.as_ref().is_some_and(|r| !r.montant.is_zero()) {
+    if p.reduction_generale.as_ref().is_some_and(|r| !r.montant.est_nul()) {
         let dsn = pile.dsn_de_la_reduction()?;
         for (code, org, part, cle) in [
             (dsn.code81_urssaf, org(CodeCotisation81::AssuranceMaladie, PART_URSSAF)?, "urssaf", dsn.cle_total_urssaf),
@@ -3039,7 +3040,7 @@ fn lignes_81(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Ligne81>> {
 /// permanent), lue dans son nominatif comme celle d'une DSN deposee (`Lecture::reduction_a_l_urssaf`) : une seule
 /// lecture pour le bordereau courant et le bordereau regularise.
 fn reduction_a_l_urssaf(p: &Paie, bar: &BaremeDuMois) -> R<Decimal> {
-    if p.reduction_generale.as_ref().is_none_or(|r| r.montant.is_zero()) {
+    if p.reduction_generale.as_ref().is_none_or(|r| r.montant.est_nul()) {
         return Ok(Montant::ZERO.decimal());
     }
     let numero = p.engagement.numero_declare()?;
@@ -5128,7 +5129,7 @@ certificat de conformite du depot precedent.",
         for (k, (rang, r)) in rangs_regs.iter().zip(&corrections).enumerate() {
             let b = bar_de(r.mois)?;
             let numero = (lot.len() + k + 1) as i64;
-            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable, r.taux_pas_origine.as_ref(), mois)?;
+            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, Montant::du_decimal(r.declare.net_imposable), r.taux_pas_origine.as_ref(), mois)?;
             bloc_regularisation(&mut f, r, &b, *rang, numero, &pas_c, fin_m)?;
         }
         f.contrat_unique = false;

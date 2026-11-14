@@ -37,19 +37,23 @@ fn diviser(a: Decimal, b: Decimal) -> R<Decimal> {
 pub struct ReductionGenerale {
     #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
     pub coefficient: Decimal,
-    #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
-    pub montant: Decimal,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub montant: Montant,
     #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
     pub smic_reference: Decimal,
     #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
     pub heures: Decimal,
-    #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
-    pub urssaf: Decimal,
-    #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
-    pub chomage: Decimal,
-    #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
-    pub agirc_arrco: Decimal,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub urssaf: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub chomage: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub agirc_arrco: Montant,
 }
+
+/// 130 % : la limite de la reduction sous deduction forfaitaire specifique, au regard de celle du brut entier (arrete du
+/// 4 decembre 2019, art. 1er ; `reduction_generale_sous_dfs`).
+const LIMITE_SOUS_DFS: Coefficient = Coefficient::du_decimal(Decimal::from_parts(130, 0, 0, false, 2));
 
 fn en_nombre<S: serde::Serializer>(x: &Decimal, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(&nombre(*x))
@@ -96,17 +100,18 @@ pub fn reduction_generale(
 pub fn reduction_au_coefficient(rg: Option<&Parametres>, coefficient: Decimal, brut: Decimal, heures: Decimal) -> R<ReductionGenerale> {
     let rg = rg.ok_or_else(|| socle::echec::a_la_cle("Le barème de l'année ne porte pas la réduction générale des cotisations : le signaler au développeur.", "reduction_generale", ""))?;
     let smic_ref = Montant::du_decimal(mul(requis(rg.smic_horaire_reference.map(MontantUnitaire::decimal), "smic_horaire_reference")?, heures)).au_centime().decimal();
-    let montant = Montant::du_decimal(mul(brut, coefficient)).au_centime().decimal();
+    let montant = Montant::du_decimal(mul(brut, coefficient)).au_centime();
     repartir_la_reduction(rg, coefficient, montant, smic_ref, heures)
 }
 
-fn repartir_la_reduction(rg: &Parametres, coefficient: Decimal, montant: Decimal, smic_ref: Decimal, heures: Decimal) -> R<ReductionGenerale> {
+fn repartir_la_reduction(rg: &Parametres, coefficient: Decimal, montant: Montant, smic_ref: Decimal, heures: Decimal) -> R<ReductionGenerale> {
     let total_points = if rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon) { requis(rg.t.map(|n| n.0.decimal()), "t")? } else { requis(rg.tmin.map(Coefficient::decimal), "tmin")? + requis(rg.tdelta.map(Coefficient::decimal), "tdelta")? };
-    let part = |taux: Option<Decimal>, cle: &str| -> R<Decimal> {
-        if montant.is_zero() {
-            return Ok(Montant::ZERO.decimal());
+    // Le partage compte encore en decimaux, avec les points de la formule : le montant s'y ouvre.
+    let part = |taux: Option<Decimal>, cle: &str| -> R<Montant> {
+        if montant.est_nul() {
+            return Ok(Montant::ZERO);
         }
-        Ok(Montant::du_decimal(diviser(div(mul(montant, requis(taux, cle)?), Decimal::ONE_HUNDRED), total_points)?).au_centime().decimal())
+        Ok(Montant::du_decimal(diviser(div(mul(montant.decimal(), requis(taux, cle)?), Decimal::ONE_HUNDRED), total_points)?).au_centime())
     };
     let chomage = part(rg.imputation.as_ref().and_then(|i| i.chomage).map(|n| n.0.decimal()), "imputation.chomage")?;
     let agirc = part(rg.imputation.as_ref().and_then(|i| i.agirc_arrco).map(Taux::decimal), "imputation.agirc_arrco")?;
@@ -132,7 +137,7 @@ pub fn reduction_generale_sous_dfs(
     let Some(sans) = reduction_generale(rg, statut, brut, heures, caisse_conges)? else {
         return Err(socle::echec::refus("La réduction générale s'ouvre sur le brut abattu mais pas sur le brut entier : le signaler au développeur."));
     };
-    let limite = Montant::du_decimal(mul(sans.montant, Decimal::new(130, 2))).au_centime().decimal();
+    let limite = (sans.montant * LIMITE_SOUS_DFS).au_centime();
     if apres.montant <= limite {
         return Ok(Some(apres));
     }

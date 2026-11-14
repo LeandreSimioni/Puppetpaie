@@ -381,12 +381,12 @@ pub struct Versement {
 /// d'identifiant (S21.G00.50.008 est interdite hors taux DGFiP).
 pub fn rubriques_par_defaut(
     bareme: &Pile,
-    remuneration_nette_fiscale: Decimal,
+    remuneration_nette_fiscale: Montant,
     le: Option<Jour>,
     contrat_court: bool,
     zone: &str,
 ) -> RPas<Versement> {
-    let rnf = Montant::du_decimal(remuneration_nette_fiscale).au_centime();
+    let rnf = remuneration_nette_fiscale.au_centime();
     let abat = if contrat_court { abattement(bareme)? } else { Montant::ZERO };
     // L'abattement ne creuse pas : il se limite a ce qu'il y a a abattre.
     let abat = abat.min(plancher(rnf)).au_centime();
@@ -450,7 +450,7 @@ pub fn sans_taux_recus(fiche: &crate::fiche::ChampsSalarie) -> crate::fiche::Cha
 pub fn du_versement(
     taux: Option<&Triplet>,
     bareme: &Pile,
-    remuneration_nette_fiscale: Decimal,
+    remuneration_nette_fiscale: Montant,
     le: Option<Jour>,
     contrat_court: bool,
     zone: &str,
@@ -467,7 +467,7 @@ pub fn du_versement(
     // La grille (`rubriques_par_defaut`) plancher deja a zero ; le taux DGFiP aussi. Le cas : un mois sans salaire ou la
     // part patronale de sante reste due et se reintegre (CGI 83, 1° quater, meme dossier, `legi-extrait-code-general-des-
     // impots-20261015.md`).
-    let soumis = plancher(Montant::du_decimal(remuneration_nette_fiscale).au_centime());
+    let soumis = plancher(remuneration_nette_fiscale.au_centime());
     Ok(Versement {
         taux,
         type_taux: t.type_taux,

@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use droit::contexte::Contexte;
 use droit::forme_bareme::{CHOMAGE, MALADIE, RETRAITE_T1};
+use engagement::calcul::BaseDeCotisation;
 use engagement::ecarts::RegroupementDeComparaison;
 use droit::organismes::QualifiantDAssiette;
 use socle::echec::{erreur, refus_avec, Lieu, Classe};
@@ -97,16 +98,17 @@ fn idcc_de(ctx: &Contexte) -> R<Idcc> {
 
 /// Une ligne de cumul : un organisme, une cotisation, ses taux -- dans l'ordre ou on l'a vue.
 struct Cumul {
-    cle: (Option<Mois>, String, String, String, Option<Decimal>, Option<Decimal>),
+    cle: (Option<Mois>, String, String, String, Option<Taux>, Option<Taux>),
     mois: Mois,
     organisme: String,
     code: String,
     libelle: String,
-    taux_sal: Option<Decimal>,
-    taux_pat: Option<Decimal>,
-    base: Decimal,
-    part_sal: Decimal,
-    part_pat: Decimal,
+    taux_sal: Option<Taux>,
+    taux_pat: Option<Taux>,
+    /// La somme des bases : aucune tant qu'aucune ligne n'en porte.
+    base: Option<BaseDeCotisation>,
+    part_sal: Montant,
+    part_pat: Montant,
 }
 
 /// Ce qui est du a chaque organisme, rubrique par rubrique.
@@ -129,8 +131,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
     let mut cumul: Vec<Cumul> = Vec::new();
     let mut manque: BTreeSet<String> = BTreeSet::new();
-    let zero = Montant::ZERO.decimal();
-    let mut ajouter = |m: Mois, org: &str, code: &str, libelle: &str, base: Option<Decimal>, ts: Option<Decimal>, ms: Option<Decimal>, tp: Option<Decimal>, mp: Option<Decimal>| {
+    let mut ajouter = |m: Mois, org: &str, code: &str, libelle: &str, base: Option<BaseDeCotisation>, ts: Option<Taux>, ms: Option<Montant>, tp: Option<Taux>, mp: Option<Montant>| -> R<()> {
         let cle = (par_mois.then_some(m), org.to_string(), code.to_string(), libelle.to_string(), ts, tp);
         let i = match cumul.iter().position(|c| c.cle == cle) {
             Some(i) => i,
@@ -143,31 +144,35 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     libelle: libelle.to_string(),
                     taux_sal: ts,
                     taux_pat: tp,
-                    base: zero,
-                    part_sal: zero,
-                    part_pat: zero,
+                    base: None,
+                    part_sal: Montant::ZERO,
+                    part_pat: Montant::ZERO,
                 });
                 cumul.len() - 1
             }
         };
         let c = &mut cumul[i];
-        if let Some(b) = base.filter(|b| !b.is_zero()) {
-            c.base = add(c.base, b);
+        if let Some(b) = base.filter(|b| !b.est_nulle()) {
+            c.base = Some(match c.base {
+                Some(deja) => deja.plus(b)?,
+                None => b,
+            });
         }
         // Une part que la ligne ne porte pas (la colonne qu'un bulletin importe laisse vide) n'ajoute rien.
-        if let Some(ms) = ms.filter(|x| !x.is_zero()) {
-            c.part_sal = add(c.part_sal, ms);
+        if let Some(ms) = ms.filter(|x| !x.est_nul()) {
+            c.part_sal += ms;
         }
-        if let Some(mp) = mp.filter(|x| !x.is_zero()) {
-            c.part_pat = add(c.part_pat, mp);
+        if let Some(mp) = mp.filter(|x| !x.est_nul()) {
+            c.part_pat += mp;
         }
+        Ok(())
     };
     // CE QUE LES PIECES IMPORTEES NE VENTILENT PAS : une paie reprise de la seule DSN (ses lignes de cotisation sont sur
     // un bulletin qu'on n'a pas), et une ligne de bulletin que la lecture de l'import ne rattache a aucune cotisation
     // (`importe::Importe::paie` : elle garde son libelle, sans cotisation). Son organisme ne se devine pas (regle 1) ;
     // l'etat dit ce qui n'y est pas, le plan comptable n'y est pour rien.
     let mut sans_bulletin: BTreeSet<Mois> = BTreeSet::new();
-    let mut non_rattachees: BTreeMap<String, (BTreeSet<Mois>, Decimal)> = BTreeMap::new();
+    let mut non_rattachees: BTreeMap<String, (BTreeSet<Mois>, Montant)> = BTreeMap::new();
     for m in p.mois.clone() {
         for paie in lecture.paies(m)?.iter() {
             let cotisations = paie.cotisations();
@@ -177,10 +182,10 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for c in &cotisations {
                 let Some(cle) = c.id.as_ref() else {
                     if paie.importee().is_some() {
-                        let (mois, total) = non_rattachees.entry(c.libelle.clone()).or_default();
+                        let (mois, total) = non_rattachees.entry(c.libelle.clone()).or_insert_with(|| (BTreeSet::new(), Montant::ZERO));
                         mois.insert(m);
                         // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
-                        *total = [c.montant_sal, c.montant_pat].into_iter().flatten().map(|x| x.au_centime().decimal()).fold(*total, add);
+                        *total = [c.montant_sal, c.montant_pat].into_iter().flatten().map(Montant::au_centime).fold(*total, |a, x| a + x);
                     } else {
                         manque.insert(format!("sans cotisation ({})", c.libelle));
                     }
@@ -191,31 +196,31 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     manque.insert(format!("{} ({})", id, c.libelle));
                     continue;
                 };
-                let (ts, tp) = (c.taux_sal.map(Taux::decimal), c.taux_pat.map(Taux::decimal));
+                let (ts, tp) = (c.taux_sal, c.taux_pat);
                 if *cle == RegroupementDeComparaison::Cotisation(droit::forme_bareme::REDUCTION_GENERALE) {
                     if let Some(rg) = paie.validee().and_then(|v| v.reduction_generale.as_ref()) {
-                        let mut reparti = zero;
+                        let mut reparti = Montant::ZERO;
                         for (part, id_org, quoi) in [(rg.urssaf, MALADIE, "part Urssaf"), (rg.chomage, CHOMAGE, "part chômage"), (rg.agirc_arrco, RETRAITE_T1, "part retraite")] {
-                            if !part.is_zero() {
+                            if !part.est_nul() {
                                 let o = org_de(&RegroupementDeComparaison::Cotisation(id_org.clone())).ok_or_else(|| socle::fichiers::absent(id_org.as_str()).reclasser(Classe::Manque))?;
-                                ajouter(m, &o, id, &format!("{} — {}", c.libelle, quoi), None, None, None, None, Some(-part));
-                                reparti = add(reparti, part);
+                                ajouter(m, &o, id, &format!("{} — {}", c.libelle, quoi), None, None, None, None, Some(-part))?;
+                                reparti += part;
                             }
                         }
                         let calculee = c.montant_pat.ok_or_else(|| socle::fichiers::absent("montant_pat").reclasser(Classe::Illisible))?;
-                        if -reparti != calculee.decimal() {
+                        if -reparti != calculee {
                             avert.push(format!(
                                 "{}, {} : la réduction générale ({}) ne tombe pas sur la somme de ses parts ({}).",
                                 libelle_mois(m),
                                 qui(paie.salarie())?,
                                 calculee.au_centime().decimal(),
-                                -reparti
+                                (-reparti).decimal()
                             ));
                         }
                         continue;
                     }
                 }
-                ajouter(m, &org, id, &c.libelle, c.base.map(|x| x.au_centime().decimal()), ts, c.montant_sal.map(|x| x.au_centime().decimal()), tp, c.montant_pat.map(|x| x.au_centime().decimal()));
+                ajouter(m, &org, id, &c.libelle, c.base.map(BaseDeCotisation::au_centime), ts, c.montant_sal.map(Montant::au_centime), tp, c.montant_pat.map(Montant::au_centime))?;
             }
         }
     }
@@ -234,13 +239,16 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         avert.push(format!("Paies reprises de la seule DSN, sans leur bulletin, hors de l'état : {}.", mois_dits(&sans_bulletin)));
     }
     for (libelle, (mois, total)) in &non_rattachees {
-        avert.push(format!("Ligne « {} » des bulletins repris ({}) : la lecture de l'import ne la rattache à aucune cotisation, hors de l'état ({}).", libelle, mois_dits(mois), socle::texte::euros(*total)));
+        avert.push(format!("Ligne « {} » des bulletins repris ({}) : la lecture de l'import ne la rattache à aucune cotisation, hors de l'état ({}).", libelle, mois_dits(mois), socle::texte::euros(total.decimal())));
     }
     let mut lignes = Vec::new();
     for c in cumul {
         let mut l = Ligne::nouvelle();
-        l.m("mois", c.mois).t("organisme", c.organisme).t("code", c.code).t("libelle", c.libelle).od("taux_sal", c.taux_sal).od("taux_pat", c.taux_pat);
-        l.od("base", if c.base == zero { None } else { Some(c.base) }).d("part_sal", c.part_sal).d("part_pat", c.part_pat).d("total", add(c.part_sal, c.part_pat));
+        l.m("mois", c.mois).t("organisme", c.organisme).t("code", c.code).t("libelle", c.libelle).od("taux_sal", c.taux_sal.map(Taux::decimal)).od("taux_pat", c.taux_pat.map(Taux::decimal));
+        l.od("base", c.base.filter(|b| !b.est_nulle()).map(BaseDeCotisation::decimal))
+            .d("part_sal", c.part_sal.decimal())
+            .d("part_pat", c.part_pat.decimal())
+            .d("total", (c.part_sal + c.part_pat).decimal());
         lignes.push(l);
     }
     let tri = |l: &Ligne| vec![l.texte("code"), l.texte("libelle")];

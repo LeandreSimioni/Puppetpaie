@@ -461,7 +461,7 @@ fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [
 
 /// `Paie` -> ce que le certificat en lit : le brut est celui du calcul, a deux decimales.
 pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
-    Ok(PaieCs { engagement: ContratCs::de(&p.engagement)?, brut: p.brut.au_centime().decimal(), salarie: p.salarie.champs.clone() })
+    Ok(PaieCs { engagement: ContratCs::de(&p.engagement)?, brut: p.brut.au_centime(), salarie: p.salarie.champs.clone() })
 }
 
 /// Ce que l'ancien logiciel a verse en `mois` pour un contrat qui continue ici : le brut, les cachets (une ligne, aux
@@ -531,15 +531,14 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
         let (brut_du_mois, jours_du_mois) = (paie.brut.au_centime(), paie.engagement.jours);
         bruts += brut_du_mois;
         jours += jours_du_mois;
-        // Le certificat (`PaieCs`, `MoisPaye`) porte encore ses montants en decimaux : sa porte.
-        mois_payes.push(MoisPaye { fin: m.dernier_jour(), jours: jours_du_mois, brut: brut_du_mois.decimal() });
+        mois_payes.push(MoisPaye { fin: m.dernier_jour(), jours: jours_du_mois, brut: brut_du_mois });
     }
-    let brut = (bruts + p.brut.au_centime()).decimal();
+    let brut = bruts + p.brut.au_centime();
     // Un contrat paye au mois n'a ni cachet ni date jouee : son certificat porte ses bornes, et ses jours travailles et son
     // brut mois par mois (`conges::lignes_du_mois`) ; le 31 mars le coupe entre deux mois.
     if eng.nat()?.mensuelle() {
         let fin_du_mois = eng.fin_mois();
-        mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: p.brut.au_centime().decimal() });
+        mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: p.brut.au_centime() });
         let contrat = ContratCs { jours: jours + eng.jours, dates_travail: Vec::new(), cachets: 0, heures: None, taux_cachet: None, mois_payes, ..ContratCs::de(eng)? };
         return Ok((PaieCs { engagement: contrat, brut, salarie: p.salarie.champs.clone() }, manquants));
     }

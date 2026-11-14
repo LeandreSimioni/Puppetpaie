@@ -1253,7 +1253,8 @@ pub fn reduction_generale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             l.m("mois", m).t("salarie", qui(&paie.salarie)?).ot("contrat", paie.engagement.numero.clone());
             let c = |x: Decimal| Montant::du_decimal(x).au_centime().decimal();
             l.d("brut", paie.brut.au_centime().decimal()).d("heures", ou_zero(rg.heures)).d("smic", c(rg.smic_reference)).d("coefficient", ou_zero(rg.coefficient));
-            l.d("montant", c(rg.montant)).d("urssaf", c(rg.urssaf)).d("chomage", c(rg.chomage)).d("retraite", c(rg.agirc_arrco));
+            let euros = |x: Montant| x.au_centime().decimal();
+            l.d("montant", euros(rg.montant)).d("urssaf", euros(rg.urssaf)).d("chomage", euros(rg.chomage)).d("retraite", euros(rg.agirc_arrco));
             lignes.push(l);
         }
     }

@@ -143,7 +143,7 @@ fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, TypeDeTauxPas)>> {
 
 fn versement_du_cas(c: &CasDuVersement) -> Suite<Rendu<Versement>> {
     let t = c.recu.as_ref().map(|r| Triplet { taux: r.taux, type_taux: r.type_taux, identifiant: r.identifiant.clone() });
-    suite(montants().into_iter().map(|m| du_versement(t.as_ref(), &pile(c.bareme, c.le), m, c.le, c.contrat_court, &c.zone).into()).collect())
+    suite(montants().into_iter().map(|m| du_versement(t.as_ref(), &pile(c.bareme, c.le), socle::grandeurs::Montant::du_decimal(m), c.le, c.contrat_court, &c.zone).into()).collect())
 }
 
 #[test]

@@ -707,7 +707,7 @@ impl DocumentsFabriques {
 fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: Mois) -> R<documents::bulletin::Ecart> {
     let taux_parti = parti.pas.as_ref().map(|p| p.taux);
     let d_net = (apres.net_a_payer - parti.net_a_payer).decimal();
-    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable.decimal(), taux_parti.as_ref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
+    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_ref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
     let indu = pas_c.indu();
     let prelevement = match pas_c.prelevement {
         Some(montant) => {
@@ -728,7 +728,7 @@ fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois
         net_avant: parti.net_a_payer.decimal(),
         net_apres: apres.net_a_payer.decimal(),
         difference_net: d_net,
-        difference_net_imposable: pas_c.difference,
+        difference_net_imposable: pas_c.difference.decimal(),
         mois_versement,
         prelevement,
         a_verser,
