@@ -7,7 +7,7 @@ use socle::forme::NombreLu;
 use crate::{Chiffre, LignePaie};
 
 use crate::calcul::Paie;
-use crate::saisie::{Carte, VueDuMois};
+use crate::saisie::{Carte, RangDansLeMois, VueDuMois};
 use droit::contexte::Contexte;
 use socle::echec::Echec;
 use socle::num::Decimal;
@@ -71,12 +71,12 @@ fn taux_vide(l: &LignePaie) -> bool {
 }
 
 /// L'engagement de rang `i` de la saisie.
-fn engagement_de(data: &mut VueDuMois, i: usize) -> R<&mut Carte> {
-    data.engagements.get_mut(i).ok_or_else(|| refus(format!("La saisie n'a pas d'engagement de rang {}.", i + 1)))
+fn engagement_de(data: &mut VueDuMois, i: RangDansLeMois) -> R<&mut Carte> {
+    i.dans_mut(&mut data.engagements).ok_or_else(|| refus(format!("La saisie n'a pas d'engagement de rang {}.", i)))
 }
 
 /// Une ligne de salaire SANS TAUX recoit un taux provisoire de 1 EUR.
-fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize]) -> R<()> {
+fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[RangDansLeMois]) -> R<()> {
     for &i in rangs {
         let e = engagement_de(data, i)?;
         let lignes = e.lignes().to_vec();
@@ -116,7 +116,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
         }
     }
     // Les AUTRES blocs du mois repartent comme la page les enverrait d'ordinaire : sans leurs lignes incompletes.
-    for (i, e) in data.engagements.iter_mut().enumerate() {
+    for (i, e) in RangDansLeMois::de_chacun(data.engagements.iter_mut()) {
         let Some(ls) = e.lignes.as_mut() else { continue };
         if rangs.contains(&i) {
             for l in ls.iter_mut().filter(|l| taux_vide(l)) {
@@ -158,10 +158,10 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
     Ok(touche)
 }
 
-fn somme(paies: &[Paie], rangs: &[usize], cible: Cible) -> R<Decimal> {
+fn somme(paies: &[Paie], rangs: &[RangDansLeMois], cible: Cible) -> R<Decimal> {
     let mut total = socle::grandeurs::Montant::ZERO;
     for &i in rangs {
-        let p = paies.get(i).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
+        let p = i.dans(paies).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
         total += match cible {
             Cible::Net => p.net_a_payer,
             Cible::Brut => p.brut,
@@ -175,7 +175,7 @@ fn somme(paies: &[Paie], rangs: &[usize], cible: Cible) -> R<Decimal> {
 /// atteindre `vise` a leur `cible` additionnee. Une ligne de salaire sans taux en recoit un provisoire ; le facteur se
 /// cherche par approches successives (au plus `TOURS` essais) et le MEILLEUR essai gagne, jamais le dernier : a egale
 /// distance, celui qui ne depasse pas.
-pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vise: Montant) -> R<Visee> {
+pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[RangDansLeMois], cible: Cible, vise: Montant) -> R<Visee> {
     let vise = vise.decimal();
     let mut data = data.clone();
     // Une ligne au tarif de la convention a son taux : elle n'est pas une ligne sans taux.

@@ -4060,7 +4060,7 @@ pub fn paies_declarees_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&Nic>, de
     let declarees = |data: engagement::saisie::VueDuMois| -> R<Vec<Paie>> {
         let ctx_m = ctx.du_mois(mois)?;
         let mut out = Vec::new();
-        for (i, e) in engagement::etats::du_mois(ctx, mois, departs)?.iter().enumerate() {
+        for (i, e) in engagement::saisie::RangDansLeMois::de_chacun(&engagement::etats::du_mois(ctx, mois, departs)?) {
             let Some(v) = e.valide() else { continue };
             let p = match engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, mois)? {
                 Some(p) => p,

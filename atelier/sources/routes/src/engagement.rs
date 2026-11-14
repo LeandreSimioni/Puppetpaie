@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use engagement::carte::{Brouillon, Changements};
+use engagement::saisie::RangDansLeMois;
 use engagement::stock::Identite;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
@@ -186,7 +187,7 @@ pub(super) fn refus(m: impl Into<String>) -> Echec {
 
 /// L'ENGAGEMENT QU'UNE CARTE MONTRE : celui que designe son identite, que le moteur lui a rendue
 /// (`engagement::stock::identites`). Refus : une identite que l'ecran de `mois` ne montre pas.
-fn designe(ctx: &Contexte, mois: Mois, id: &Identite) -> R<(usize, engagement::stock::Objet)> {
+fn designe(ctx: &Contexte, mois: Mois, id: &Identite) -> R<(RangDansLeMois, engagement::stock::Objet)> {
     engagement::stock::designe(&ctx.racine, mois, id).map_err(|e| e.reclasser(Classe::Refuse))
 }
 
@@ -228,7 +229,7 @@ pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Vali
     }
     engagement::etats::valider(ctx, mois, i, &departs).map_err(|m| crate::mois::refus_du_calcul(ctx, &data, m))?;
     brouillon.ecrire()?;
-    if let Some(e) = data.engagements.get(i) {
+    if let Some(e) = i.dans(&data.engagements) {
         if let Some(cle) = &e.salarie {
             crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, e.debut_lu())?;
         }
@@ -284,7 +285,7 @@ fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification
     };
     brouillon.ecrire()?;
     let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?;
-    if let Some(e) = vue.as_ref().and_then(|d| d.engagements.get(i)) {
+    if let Some(e) = vue.as_ref().and_then(|d| i.dans(&d.engagements)) {
         if let Some(cle) = &e.salarie {
             crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, e.debut_lu())?;
         }
@@ -333,7 +334,7 @@ fn a_partir_de(o: &engagement::stock::Objet, devenu: &engagement::stock::Objet, 
 /// La modification elle-meme, dans le brouillon de fichiers ouvert : la carte de `mois` de l'engagement `o`, de rang
 /// `i`, prend ses changements ; l'engagement se rouvre, prend la carte changee et se revalide. Ce qu'elle rend dit si
 /// elle s'ecrit (`Issue::Ecrite`).
-fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: usize, o: &engagement::stock::Objet, changements: Changements, confirme: bool, jour: Option<u32>) -> R<Issue> {
+fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: RangDansLeMois, o: &engagement::stock::Objet, changements: Changements, confirme: bool, jour: Option<u32>) -> R<Issue> {
     let qui = engagement::etats::qui_de(ctx, o);
     let vue = o.vue(lu)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
     let mut carte = Brouillon::de_la_carte(&vue, &qui).map_err(|e| e.reclasser(Classe::Refuse))?;

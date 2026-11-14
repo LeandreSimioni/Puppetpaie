@@ -31,7 +31,7 @@ use socle::forme::NombreLu;
 use socle::fichiers::{EmpreinteDeSaisie, ValeurLue};
 
 use droit::contexte::{Contexte, IdSalarie};
-use crate::saisie::{Avant, Carte, Champ, Groupe, VueDuMois};
+use crate::saisie::{Avant, Carte, Champ, Groupe, RangDansLeMois, VueDuMois};
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::paris::Moment;
@@ -762,12 +762,11 @@ pub fn identites(objets: &[Objet]) -> Vec<Identite> {
 
 /// L'ENGAGEMENT QUE DESIGNE L'IDENTITE `id` (`identites`) dans l'ecran de `mois`, et sa place dans cet ecran (l'ordre
 /// de `vue_du_mois`). Refus : une identite que l'ecran ne montre pas.
-pub fn designe(racine: &Path, mois: Mois, id: &Identite) -> R<(usize, Objet)> {
+pub fn designe(racine: &Path, mois: Mois, id: &Identite) -> R<(RangDansLeMois, Objet)> {
     let objets = objets_du_mois(racine, mois)?;
-    let k = identites(&objets).iter().position(|x| x == id).ok_or_else(|| {
-        socle::refus!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", mois.libelle(Graphie::Accentuee))
-    })?;
-    Ok((k, objets.into_iter().nth(k).expect("la place vient de la liste")))
+    let absent = || socle::refus!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", mois.libelle(Graphie::Accentuee));
+    let k = RangDansLeMois::du_premier(&identites(&objets), |x| x == id).ok_or_else(absent)?;
+    Ok((k, k.pris(objets).ok_or_else(absent)?))
 }
 
 /// Les engagements non actifs qui toucheraient `mois` s'ils l'etaient encore : ce qui se lit d'eux.
@@ -1043,10 +1042,10 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
 /// partir du `jour` de ce mois quand il est dit, du 1er sinon. Refus : un engagement valide, un jour qui n'est pas un
 /// jour du contrat dans ce mois, ou des bornes qui laisseraient hors du contrat un mois ou il a des jours payes ; rien
 /// n'est ecrit.
-pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: usize, saisie: &Carte, jour: Option<u32>) -> R<()> {
-    let mut o = objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
+pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie: &Carte, jour: Option<u32>) -> R<()> {
+    let mut o = objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang))?;
     if o.est_valide() {
-        return Err(socle::refus!("{} : l'engagement de rang {} est valide, il ne prend pas de saisie", mois, rang + 1));
+        return Err(socle::refus!("{} : l'engagement de rang {} est valide, il ne prend pas de saisie", mois, rang));
     }
     let le = match jour {
         None => None,
@@ -1281,8 +1280,8 @@ impl Objet {
 }
 
 /// L'engagement que designe, dans le mois `mois`, le rang `rang` de son ecran.
-pub fn objet_du_mois(racine: &Path, mois: Mois, rang: usize) -> R<Option<Objet>> {
-    Ok(objets_du_mois(racine, mois)?.into_iter().nth(rang))
+pub fn objet_du_mois(racine: &Path, mois: Mois, rang: RangDansLeMois) -> R<Option<Objet>> {
+    Ok(rang.pris(objets_du_mois(racine, mois)?))
 }
 
 /// Remplace l'objet `o` dans son fichier (meme fichier, meme rang), tel qu'il est maintenant.

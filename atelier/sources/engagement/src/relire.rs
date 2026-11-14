@@ -140,7 +140,7 @@ pub fn paies(ctx: &Contexte, data: &crate::saisie::VueDuMois, ecrites: &[&FormeD
 }
 
 /// La saisie `data` reduite a son engagement `i` : ce que la relecture d'une seule paie lit.
-pub fn saisie_d_un_engagement(data: &crate::saisie::VueDuMois, i: usize) -> R<crate::saisie::VueDuMois> {
-    let e = data.engagements.get(i).cloned().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "engagements"))?;
+pub fn saisie_d_un_engagement(data: &crate::saisie::VueDuMois, i: crate::saisie::RangDansLeMois) -> R<crate::saisie::VueDuMois> {
+    let e = i.dans(&data.engagements).cloned().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "engagements"))?;
     Ok(crate::saisie::VueDuMois { mois: data.mois, taux_cachet: data.taux_cachet.clone(), engagements: vec![e] })
 }

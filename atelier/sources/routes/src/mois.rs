@@ -33,7 +33,7 @@ use crate::etapes::ChargeMois;
 use engagement::calcul::Paie;
 use droit::natures::NatureDeContrat;
 use engagement::carte::{Brouillon, Changements};
-use engagement::saisie::{Carte as SaisieCarte, VueDuMois};
+use engagement::saisie::{Carte as SaisieCarte, RangDansLeMois, VueDuMois};
 use engagement::stock::Identite;
 use engagement::viser::Cible;
 use droit::catalogue;
@@ -399,7 +399,7 @@ struct TauxQuiChange {
 /// Ce qui a change, pour l'engagement ajuste : son salaire du mois s'il change, ses lignes dont le taux change.
 #[derive(Debug, Serialize)]
 struct CeQuiChange {
-    index: usize,
+    index: RangDansLeMois,
     #[serde(skip_serializing_if = "Option::is_none")]
     salaire_mensuel: Option<Option<socle::forme::NombreLu>>,
     lignes: Vec<TauxQuiChange>,
@@ -1170,13 +1170,13 @@ pub(crate) fn manques_de_la_saisie(ctx: &Contexte, data: &VueDuMois) -> Vec<Opti
 /// CE QUI MANQUE A L'ENGAGEMENT `i` DE LA SAISIE `data` (`manques_de_la_saisie`), sur ce que son calcul lit : les
 /// engagements de son salarie (une paie ne lit que les siens, `engagement::etats`) et ceux qui portent son numero de
 /// contrat (un numero est celui d'un seul salarie). Les autres salaries du mois ne se calculent pas pour lui.
-pub(crate) fn manque_de(ctx: &Contexte, data: &VueDuMois, i: usize) -> Option<Echec> {
-    let e = data.engagements.get(i)?;
+pub(crate) fn manque_de(ctx: &Contexte, data: &VueDuMois, i: RangDansLeMois) -> Option<Echec> {
+    let e = i.dans(&data.engagements)?;
     let cle = &e.salarie;
     let numero = e.numero.as_ref();
     let mut rang = 0;
     let mut siens = Vec::new();
-    for (j, x) in data.engagements.iter().enumerate() {
+    for (j, x) in RangDansLeMois::de_chacun(&data.engagements) {
         let meme_salarie = cle.is_some() && x.salarie == *cle;
         let meme_numero = numero.is_some() && x.numero.as_ref() == numero;
         if j == i {
@@ -1194,7 +1194,7 @@ pub(crate) fn manque_de(ctx: &Contexte, data: &VueDuMois, i: usize) -> Option<Ec
 
 
 /// Ce qui a change, de l'engagement `avant` a l'engagement `apres` (la saisie que la recherche a ajustee).
-fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: usize) -> CeQuiChange {
+fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: RangDansLeMois) -> CeQuiChange {
     let mut lignes = Vec::new();
     for (rang, (a, b)) in avant.lignes().iter().zip(apres.lignes().iter()).enumerate() {
         let (ta, tb) = (a.taux().map(engagement::ligne::TauxDeLigne::decimal), b.taux().map(engagement::ligne::TauxDeLigne::decimal));
@@ -1228,18 +1228,18 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
     }
     let texte = c.mois.libelle(Graphie::Accentuee);
     let (data, ids) = mois_designe(ctx, c.mois, c.modifications)?;
-    let i = ids.iter().position(|x| *x == c.engagement).ok_or_else(|| {
+    let i = RangDansLeMois::du_premier(&ids, |x| *x == c.engagement).ok_or_else(|| {
         refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", texte))
     })?;
     let v = engagement::viser::viser(ctx, &data, &[i], c.cible, Montant::du_decimal(vise)).map_err(|r| match r {
         engagement::viser::RefusVisee::Refus(m) => m,
         engagement::viser::RefusVisee::Calcul(m) => refus_du_calcul(ctx, &data, m),
     })?;
-    let (avant, apres) = match (data.engagements.get(i), v.saisie.engagements.get(i)) {
-        (Some(a), Some(b)) => (a, b),
+    let (avant, apres, paie) = match (i.dans(&data.engagements), i.dans(&v.saisie.engagements), i.dans(&v.paies)) {
+        (Some(a), Some(b), Some(p)) => (a, b, p),
         _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", texte)),
     };
-    let vue = vue_paie(ctx, &v.paies[i], apres, &v.saisie)?;
+    let vue = vue_paie(ctx, paie, apres, &v.saisie)?;
     let atteint = v.atteint.au_centime().decimal();
     let mut facteur = v.facteur.decimal().round_dp(6);
     facteur.rescale(6);
@@ -1374,7 +1374,7 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> 
             // Un mois d'apres le present n'a pas encore de paie ecrite : l'engagement valide s'y calcule pour l'ecran.
             let apres_le_present = mois > engagement::etats::mois_present(ctx);
             let mut trouve = None;
-            for (j, x) in etats.iter().enumerate() {
+            for (j, x) in RangDansLeMois::de_chacun(&etats) {
                 let a_venir = apres_le_present && x.paie_ecrite(mois)?.is_none();
                 if x.valide().is_some() && !a_venir && sien.1.is_some() && qui(x.objet().carte()) == sien {
                     trouve = Some((j, x));

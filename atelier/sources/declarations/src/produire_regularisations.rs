@@ -66,7 +66,7 @@ pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Depart
 /// ete declare pour lui (vide : rien).
 pub struct Due {
     pub valide: engagement::etats::Valide,
-    pub rang: usize,
+    pub rang: engagement::saisie::RangDansLeMois,
     pub declarees: Vec<engagement::etats::Declaree>,
 }
 
@@ -76,7 +76,7 @@ pub struct Due {
 /// a cote de lui, et un engagement en saisie n'est pas encore une correction (ce qui n'est pas valide n'est pas paye).
 pub fn corrections_dues(ctx: &Contexte, mois: Mois, porteur: Option<Mois>, departs: &engagement::departs::Departs) -> R<Vec<Due>> {
     let mut out = Vec::new();
-    for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
+    for (rang, e) in engagement::saisie::RangDansLeMois::de_chacun(engagement::etats::du_mois(ctx, mois, departs)?) {
         let Some(v) = e.valide().cloned() else { continue };
         if let Some(declarees) =
             engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(|m| m.reclasser(Classe::MoisNonRegularisable))?

@@ -496,3 +496,44 @@ impl VueDuMois {
         VueDuMois { mois, taux_cachet: None, engagements: Vec::new() }
     }
 }
+
+/// LE RANG D'UN ENGAGEMENT DANS L'ECRAN DE SON MOIS : sa place parmi les engagements que le mois montre, dans l'ordre de
+/// l'ecran (`stock::objets_du_mois`, `VueDuMois::engagements`). Ecrit en nombre, a partir de zero ; il se dit a partir
+/// de un (`Display`). Ce n'est ni le rang d'un engagement dans son fichier (`stock::Objet::rang`), ni celui d'une ligne
+/// (`ligne::RangDeLigne`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RangDansLeMois(usize);
+
+impl RangDansLeMois {
+    /// Chaque engagement du mois (ou ce qui se range comme eux), avec son rang.
+    pub fn de_chacun<I: IntoIterator>(liste: I) -> impl Iterator<Item = (RangDansLeMois, I::Item)> {
+        liste.into_iter().enumerate().map(|(i, x)| (RangDansLeMois(i), x))
+    }
+
+    /// Le rang du premier que `est` reconnait.
+    pub fn du_premier<T>(liste: &[T], est: impl FnMut(&T) -> bool) -> Option<RangDansLeMois> {
+        liste.iter().position(est).map(RangDansLeMois)
+    }
+
+    /// Celui de ce rang.
+    pub fn dans<T>(self, liste: &[T]) -> Option<&T> {
+        liste.get(self.0)
+    }
+
+    /// Celui de ce rang, a changer.
+    pub fn dans_mut<T>(self, liste: &mut [T]) -> Option<&mut T> {
+        liste.get_mut(self.0)
+    }
+
+    /// Celui de ce rang, pris de la liste.
+    pub fn pris<T>(self, liste: Vec<T>) -> Option<T> {
+        liste.into_iter().nth(self.0)
+    }
+}
+
+impl std::fmt::Display for RangDansLeMois {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0 + 1)
+    }
+}

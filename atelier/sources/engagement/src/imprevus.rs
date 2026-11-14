@@ -948,7 +948,7 @@ pub fn cachets_dans(ctx: &Contexte, imp: &Imprevu) -> R<Vec<CachetPaye>> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CachetPaye {
     pub mois: Mois,
-    pub engagement: usize,
+    pub engagement: crate::saisie::RangDansLeMois,
     pub numero: Option<crate::numeros::NumeroContrat>,
     pub spectacle: Option<droit::contexte::IdSpectacle>,
     pub ligne: crate::ligne::RangDeLigne,
@@ -961,7 +961,7 @@ pub struct CachetPaye {
 
 fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &IdSalarie, premier: &Jour, dernier: &Jour) -> R<Vec<CachetPaye>> {
     let mut out = Vec::new();
-    for (i, e) in data.engagements.iter().enumerate() {
+    for (i, e) in crate::saisie::RangDansLeMois::de_chacun(&data.engagements) {
         if e.salarie.as_ref() != Some(cle) {
             continue;
         }
@@ -1029,7 +1029,7 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
                     dernier.jj_mm_aaaa()
                 ),
             };
-            if let Some(a) = out.get_mut(i) {
+            if let Some(a) = i.dans_mut(&mut out) {
                 a.push(avertir(format!(
                     "{} {} : {} le {} paye(s) pendant {}. Retirer ce jour de la ligne, ou corriger les dates de l'imprevu.",
                     imp.salarie(),
