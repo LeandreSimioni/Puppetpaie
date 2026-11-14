@@ -1107,7 +1107,7 @@ fn base_de(r: &Rubrique) -> R<Assiette> {
 
 /// Le taux patronal d'une rubrique, s'il n'est pas nul.
 fn part_patronale(r: &Rubrique) -> Option<Decimal> {
-    r.taux_pat.map(|t| t.0).filter(|t| !t.is_zero())
+    r.taux_pat.map(|t| t.0.decimal()).filter(|t| !t.is_zero())
 }
 
 /// La pile de bareme sur laquelle se calcule la paie `p` (celle de `calculer_periode`, du meme cache).
@@ -1374,7 +1374,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
 
     // 7.3 : la prevoyance dans l'assiette CSG.
     let (prev, taux_prev) = match bar.rubrique(&PREVOYANCE) {
-        Some(p @ Rubrique { taux_pat: Some(t), .. }) => (p, t.0),
+        Some(p @ Rubrique { taux_pat: Some(t), .. }) => (p, t.0.decimal()),
         _ => {
             return Err(refus_detaille("Le barème de l'année n'a pas de prévoyance avec un taux patronal : le signaler au développeur.", None, format!(
                 "Bareme {}{} : aucune rubrique `prevoyance` avec un taux \
@@ -1625,22 +1625,22 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             vec![base]
         };
         let (mut m_pat, mut m_sal) = (zero, zero);
-        let (mut taux_pat, mut taux_sal) = (r.taux_pat.map(|t| t.0), r.taux_sal.map(|t| t.0));
-        let non_vide = |c: &Option<Vec<socle::forme::Court>>| c.as_ref().map(|c| c.iter().map(|t| t.0).collect::<Vec<Decimal>>()).filter(|c| !c.is_empty());
+        let (mut taux_pat, mut taux_sal) = (r.taux_pat.map(|t| t.0.decimal()), r.taux_sal.map(socle::grandeurs::Taux::decimal));
+        let non_vide = |c: &Option<Vec<socle::grandeurs::Taux>>| c.as_ref().map(|c| c.iter().map(|t| t.decimal()).collect::<Vec<Decimal>>()).filter(|c| !c.is_empty());
         let (mut comp_pat, mut comp_sal) = (non_vide(&r.composants_pat), non_vide(&r.composants_sal));
         let manque = || socle::echec::cle("Le barème ne donne pas le taux de cette ligne : le complément ne s'ajoute à rien.", id.as_str());
         // Le complement au-dela d'un seuil : le taux reduit, plus le complement.
         if let Some(compl) = &r.complement {
             // Sans seuil, le complement s'ajoute toujours.
-            let depasse = compl.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), brut, Decimal::ZERO.max(heures_annexes), n.0)).transpose()?;
+            let depasse = compl.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), brut, Decimal::ZERO.max(heures_annexes), n.decimal())).transpose()?;
             if depasse.is_none_or(|d| d) {
-                taux_pat = Some(taux_compose(add(taux_pat.ok_or_else(manque)?, compl.taux)));
+                taux_pat = Some(taux_compose(add(taux_pat.ok_or_else(manque)?, compl.taux.decimal())));
             }
         }
         // La CET des cadres, fondue dans T1 et T2 : l'arrondi se fait en deux parts.
         if let Some(cet) = &r.cet_si_depasse {
             if bases.get(&Assiette::Cet).is_some_and(|c| !c.is_zero()) {
-                let (cet_pat, cet_sal) = (cet.pat, cet.sal);
+                let (cet_pat, cet_sal) = (cet.pat.decimal(), cet.sal.decimal());
                 let mut cp = match comp_pat.take() {
                     Some(c) => c,
                     None => vec![taux_pat.ok_or_else(manque)?],

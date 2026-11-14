@@ -74,7 +74,7 @@ pub fn reduction_generale(
     if brut >= mul(plafond, smic_ref) {
         coefficient = Decimal::ZERO;
     } else if fillon {
-        let t = requis(rg.t.map(|n| n.0), "t")?;
+        let t = requis(rg.t.map(|n| n.0.decimal()), "t")?;
         let x = mul(diviser(t, Decimal::new(6, 1))?, sub(diviser(mul(plafond, smic_ref), brut)?, Decimal::ONE));
         coefficient = quantifier4(t.min(x));
     } else {
@@ -101,14 +101,14 @@ pub fn reduction_au_coefficient(rg: Option<&Parametres>, coefficient: Decimal, b
 }
 
 fn repartir_la_reduction(rg: &Parametres, coefficient: Decimal, montant: Decimal, smic_ref: Decimal, heures: Decimal) -> R<ReductionGenerale> {
-    let total_points = if rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon) { requis(rg.t.map(|n| n.0), "t")? } else { requis(rg.tmin.map(Coefficient::decimal), "tmin")? + requis(rg.tdelta.map(Coefficient::decimal), "tdelta")? };
+    let total_points = if rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon) { requis(rg.t.map(|n| n.0.decimal()), "t")? } else { requis(rg.tmin.map(Coefficient::decimal), "tmin")? + requis(rg.tdelta.map(Coefficient::decimal), "tdelta")? };
     let part = |taux: Option<Decimal>, cle: &str| -> R<Decimal> {
         if montant.is_zero() {
             return Ok(Montant::ZERO.decimal());
         }
         Ok(Montant::du_decimal(diviser(div(mul(montant, requis(taux, cle)?), Decimal::ONE_HUNDRED), total_points)?).au_centime().decimal())
     };
-    let chomage = part(rg.imputation.as_ref().and_then(|i| i.chomage).map(|n| n.0), "imputation.chomage")?;
+    let chomage = part(rg.imputation.as_ref().and_then(|i| i.chomage).map(|n| n.0.decimal()), "imputation.chomage")?;
     let agirc = part(rg.imputation.as_ref().and_then(|i| i.agirc_arrco).map(Taux::decimal), "imputation.agirc_arrco")?;
     Ok(ReductionGenerale {
         coefficient, montant, smic_reference: smic_ref, heures,

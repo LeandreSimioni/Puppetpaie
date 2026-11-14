@@ -31,7 +31,7 @@ use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeL
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, Lieu, R};
-use socle::grandeurs::{Montant, Taux};
+use socle::grandeurs::Montant;
 use socle::{num::{add, mul, sub, Decimal}, refus};
 use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, QualifiantDAssiette, ReferenceDAdhesion, Versement};
 use engagement::numeros::NumeroContrat;
@@ -846,7 +846,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let bases = bases(p, &bar)?;
     let mut out: Vec<Cotisation> = Vec::new();
     for c in &bar.cotisations_dsn {
-        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, n.0)).transpose()? == Some(false) {
+        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, n.decimal())).transpose()? == Some(false) {
             continue;
         }
         let bloc78 = c.bloc78;
@@ -871,10 +871,10 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         } else if let Some(taux) = c.taux.map(|t| t.0) {
             let b = abattue(c.base.ok_or_else(|| socle::fichiers::absent("base"))?)?;
             l.base81 = Some(b);
-            l.taux = Some(taux);
+            l.taux = Some(taux.decimal());
             l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
-                Some(composants) => composants.iter().fold(Montant::ZERO.decimal(), |s, t| add(s, Montant::du_decimal(b).fois_taux(Taux::du_decimal(t.0)).au_centime().decimal())),
-                None => Montant::du_decimal(b).fois_taux(Taux::du_decimal(taux)).au_centime().decimal(),
+                Some(composants) => composants.iter().fold(Montant::ZERO.decimal(), |s, t| add(s, Montant::du_decimal(b).fois_taux(*t).au_centime().decimal())),
+                None => Montant::du_decimal(b).fois_taux(taux).au_centime().decimal(),
             });
         }
         // Une cotisation qui porte un montant se declare sous son code (81.001) : le bareme le dit.
@@ -1049,10 +1049,10 @@ fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) 
     let Some(cet) = r.cet_si_depasse.as_ref().filter(|_| base_de_la_paie(p, Assiette::Cet).is_some_and(|b| !b.is_zero())) else {
         return Ok((l.montant_pat, None));
     };
-    let cet_pat = cet.pat;
+    let cet_pat = cet.pat.decimal();
     let comp = match r.composants_pat.as_deref() {
-        Some(c) if !c.is_empty() => c.iter().map(|t| t.0).collect(),
-        _ => vec![r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0],
+        Some(c) if !c.is_empty() => c.iter().map(|t| t.decimal()).collect(),
+        _ => vec![r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0.decimal()],
     };
     let sans = droit::bareme::somme_pct(l.base, &comp);
     let mut avec = comp;
@@ -1128,7 +1128,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
         let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
         let (montant, cet) = sans_la_cet(p, l, r)?;
         let taux = match &cet {
-            Some(_) => r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0,
+            Some(_) => r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0.decimal(),
             None => l.taux_pat.ok_or_else(|| refus!("La ligne « {} » du bulletin n'a pas de taux patronal : sa part Agirc-Arrco ne se declare pas.", id))?,
         };
         if let Some((m, t)) = cet {

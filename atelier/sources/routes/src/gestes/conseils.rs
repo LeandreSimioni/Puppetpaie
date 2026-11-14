@@ -518,7 +518,7 @@ impl Donnees {
             Livree::PlafondDeduction => b.deduction_forfaitaire.as_ref().map(|d| d.plafond_annuel.decimal()),
             Livree::TauxDeduction(t) => b.deduction_forfaitaire.as_ref().and_then(|d| d.taux.get(t)).map(|n| n.decimal()),
             Livree::TauxPatronal(id) => match b.rubrique(id).and_then(|r| r.taux_pat) {
-                Some(t) => Some(t.0),
+                Some(t) => Some(t.0.decimal()),
                 None => None,
             },
             Livree::CachetDeRepetition { .. } => None,

@@ -1191,9 +1191,9 @@ pub fn tarif_conventionnel(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -
     let bar = ctx.bareme(jour)?;
     Ok(bar.tarifs_conventionnels.as_ref().and_then(|t| {
         if *code == REPAS {
-            t.repas.and_then(|n| n.0)
+            t.repas.and_then(|n| n.0).map(socle::grandeurs::MontantUnitaire::decimal)
         } else if *code == NUITEE {
-            t.nuitee.and_then(|n| n.0)
+            t.nuitee.and_then(|n| n.0).map(socle::grandeurs::MontantUnitaire::decimal)
         } else {
             None
         }

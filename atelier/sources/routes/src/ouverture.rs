@@ -1502,10 +1502,10 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
         .flat_map(|r| r.niveaux.iter())
         .map(|(n, t)| NiveauDeSante {
             niveau: n.clone(),
-            assure: t.assure,
-            conjoint: t.conjoint,
-            enfant: t.enfant,
-            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, t.assure),
+            assure: t.assure.decimal(),
+            conjoint: t.conjoint.decimal(),
+            enfant: t.enfant.decimal(),
+            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, t.assure.decimal()),
         })
         .collect())
 }

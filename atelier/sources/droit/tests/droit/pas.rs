@@ -4,7 +4,7 @@
 //! sont tous le meme. `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit les references.
 
 use crate::outils::typee::{cas_de, code_livre, jouer, lire};
-use droit::forme_bareme::{GrillePas, NombreDate, PasParDefaut, Pile};
+use droit::forme_bareme::{GrandeurDatee, GrillePas, PasParDefaut, Pile};
 use droit::pas::{du_versement, taux_par_defaut, ErreurPas, TauxDePas, Triplet, Versement};
 use droit::type_taux_pas::TypeDeTauxPas;
 use serde::{Deserialize, Serialize};
@@ -67,7 +67,7 @@ fn pile(b: Bareme, le: Option<Jour>) -> Pile {
             let s = socle(if b == Bareme::Brut2025 { 2025 } else { 2026 }).pas_taux_par_defaut;
             let mut vues: Vec<&AbattementDate> = s.abattement_contrats_courts.iter().filter(|e| le.is_none_or(|l| e.depuis <= l)).collect();
             vues.sort_by_key(|e| e.depuis);
-            Some(PasParDefaut { abattement_contrats_courts: vues.last().map(|e| NombreDate(e.valeur.0)), grilles: s.grilles, ..PasParDefaut::default() })
+            Some(PasParDefaut { abattement_contrats_courts: vues.last().map(|e| GrandeurDatee(socle::grandeurs::Montant::du_decimal(e.valeur.0))), grilles: s.grilles, ..PasParDefaut::default() })
         }
     };
     // Le reste de la pile est celui d'un socle livre : le PAS n'en lit que sa section.
