@@ -587,6 +587,21 @@ texte_borne! {
 l'étranger), ce que la DPAE et la DSN écrivent (norme DPAE v5.3, zone « Code du département de naissance » ; DSN, S21.G00.30.014). Corrigez-le";
 }
 
+/// S21.G00.30.014 (`atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`, l. 254-262) : « Pour les personnes nées
+/// à l'étranger, renseigner 99 » ; « La valeur 20 n'est acceptée que pour les personnes nées avant 1976 », l'ancien code
+/// de la Corse (2A et 2B depuis).
+impl DepartementNaissance {
+    /// 99 : une naissance a l'etranger.
+    pub fn est_etranger(&self) -> bool {
+        self.0 == "99"
+    }
+
+    /// 20 : l'ancien code de la Corse, avant 1976.
+    pub fn est_l_ancienne_corse(&self) -> bool {
+        self.0 == "20"
+    }
+}
+
 texte_borne! {
     /// LE NUMERO DE SECURITE SOCIALE d'un salarie, sans sa cle : 13 caracteres. La DPAE en ecrit 13 (N_SECU_SOC, positions
     /// 348-360 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 309-315) ; la DSN aussi (S21.G00.30.001,
