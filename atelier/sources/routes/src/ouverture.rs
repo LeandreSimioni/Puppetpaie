@@ -1251,7 +1251,7 @@ pub(crate) struct RubriqueDeLaPage {
     unite: droit::catalogue::Unite,
     nature: droit::catalogue::NatureDeRubrique,
     saisie: Vec<droit::catalogue::CaseSaisie>,
-    sens: droit::catalogue::Sens,
+    sens: socle::grandeurs::Signe,
     heures_forfait: Option<NombreLu>,
     plafond: Option<droit::catalogue::Unite>,
     aem: Option<droit::catalogue::Unite>,

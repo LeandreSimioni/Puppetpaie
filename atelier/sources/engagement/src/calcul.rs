@@ -192,7 +192,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
         // Le montant qu'un bulletin importe lit se garde tel quel ; toute autre ligne paie sa quantite a son taux.
         let montant = match l.montant_lu() {
             Some(lu) => lu,
-            None => r.sens.signe().de(paiement.montant().au_centime()),
+            None => r.sens.de(paiement.montant().au_centime()),
         };
         out.push(LigneBrut {
             code: r.code.into(),
@@ -224,7 +224,7 @@ pub(crate) fn rattacher(code: &droit::catalogue::CodeDeRubrique, paiement: impl 
     let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
     let paiement = paiement(r.unite)?;
     let h = Heures::du_decimal(r.heures(paiement.quantite().decimal(), heures.map(Heures::decimal)));
-    let heures_annexes = r.sens.signe().de(h);
+    let heures_annexes = r.sens.de(h);
     Ok((r, paiement, heures_annexes))
 }
 

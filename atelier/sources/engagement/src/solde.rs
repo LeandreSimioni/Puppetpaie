@@ -1350,7 +1350,7 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Montant> {
         // Le montant qu'un bulletin importe lit se garde tel quel, comme `calcul::lignes_brut`.
         let montant = match l.montant_lu() {
             Some(lu) => lu,
-            None => r.sens.signe().de(l.paiement(r.unite)?.montant().au_centime()),
+            None => r.sens.de(l.paiement(r.unite)?.montant().au_centime()),
         };
         total += montant;
     }

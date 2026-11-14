@@ -110,35 +110,7 @@ pub enum HorsAssiette {
     Mouvement,
 }
 
-/// LE SENS D'UNE RUBRIQUE : ce que sa ligne fait au brut, l'ajouter (`+`) ou l'en retirer (`-`) (`sens` de
-/// `rubriques-base.json`). Une liste du logiciel ; un autre sens se refuse a la lecture de la rubrique.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum Sens {
-    #[serde(rename = "+")]
-    Plus,
-    #[serde(rename = "-")]
-    Moins,
-}
-
-impl Sens {
-    /// Son nom ecrit.
-    pub fn cle(self) -> &'static str {
-        match self {
-            Sens::Plus => "+",
-            Sens::Moins => "-",
-        }
-    }
-
-    /// Le signe qu'il donne au montant ou aux heures d'une ligne.
-    pub fn signe(self) -> socle::grandeurs::Signe {
-        match self {
-            Sens::Plus => socle::grandeurs::Signe::Plus,
-            Sens::Moins => socle::grandeurs::Signe::Moins,
-        }
-    }
-}
-
-impl crate::fiche::FormeDeCase for Sens {}
+impl crate::fiche::FormeDeCase for socle::grandeurs::Signe {}
 
 /// CE QU'UNE RUBRIQUE COMPTE POUR LES DROITS DES ANNEXES VIII ET X (`compte_pour` de `rubriques-base.json`) : ses heures
 /// et son montant, ou ses heures pour l'ouverture des droits seulement. Une liste du logiciel ; une autre valeur se
@@ -286,7 +258,7 @@ pub struct Rubrique {
     pub imposable: bool,
     pub conges_spectacles: bool,
     pub source: String,
-    pub sens: Sens,
+    pub sens: socle::grandeurs::Signe,
     pub heures_forfait: Option<Decimal>,
     pub plafond: Option<Unite>,
     pub aem: Option<Unite>,

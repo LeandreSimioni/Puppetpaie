@@ -137,10 +137,13 @@ pub fn courte<G: Grandeur>(g: G) -> G {
 }
 
 /// LE SIGNE QU'UNE LIGNE DONNE A SES GRANDEURS : les garder (`Plus`), ou les retirer (`Moins`, l'oppose). Un zero n'a pas
-/// de signe : il reste le zero qu'il est, son echelle gardee. Signe x grandeur = grandeur de meme nom (`de`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// de signe : il reste le zero qu'il est, son echelle gardee. Signe x grandeur = grandeur de meme nom (`de`). Ecrit `+`
+/// ou `-` (le `sens` d'une rubrique de `rubriques-base.json`) ; un autre signe se refuse a la lecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Signe {
+    #[serde(rename = "+")]
     Plus,
+    #[serde(rename = "-")]
     Moins,
 }
 

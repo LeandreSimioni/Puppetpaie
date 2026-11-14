@@ -3162,7 +3162,7 @@ fiche! {
         Imposable(bool) = "imposable" => imposable,
         CongesSpectacles(bool) = "conges_spectacles" => conges_spectacles,
         Source(String) = "source" => source,
-        Sens(crate::catalogue::Sens) = "sens" => sens,
+        Sens(socle::grandeurs::Signe) = "sens" => sens,
         HeuresForfait(NombreDeFiche) = "heures_forfait" => heures_forfait,
         Plafond(crate::catalogue::Unite) = "plafond" => plafond,
         Aem(crate::catalogue::Unite) = "aem" => aem,

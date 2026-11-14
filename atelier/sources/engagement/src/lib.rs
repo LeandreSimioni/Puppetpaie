@@ -382,7 +382,7 @@ impl Engagement {
                 // (`calcul::lignes_brut`) : une absence en retire. Un acompte,
                 // au forfait et sans heures, n'en retire aucune.
                 let h = r.heures(q, l.heures().map(Heures::decimal));
-                autres += if r.sens == droit::catalogue::Sens::Moins { -h } else { h };
+                autres += if r.sens == socle::grandeurs::Signe::Moins { -h } else { h };
             }
         }
         // Un nombre de cachets se compte en entiers : la partie entiere de la somme.
