@@ -493,7 +493,7 @@ mod tests {
         let f = base.join("fictives").join("fictive-essai");
         std::fs::create_dir_all(f.join(socle::fichiers::CONFIG)).unwrap();
         std::fs::write(f.join("COPIE-DE-DEVELOPPEMENT.json"), "{\"copie_de\": \"compagnie fictive (essai)\", \"quoi\": \"essai\"}").unwrap();
-        std::fs::write(f.join(droit::contexte::ENTREPRISE), "{\"nom_affichage\": \"Essai\"}").unwrap();
+        std::fs::write(droit::contexte::ENTREPRISE.dans(&f), "{\"nom_affichage\": \"Essai\"}").unwrap();
         std::fs::write(base.join("fictives").join("LISEZ-MOI.md"), "Les fictives.\n").unwrap();
     }
 

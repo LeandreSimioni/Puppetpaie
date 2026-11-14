@@ -477,7 +477,7 @@ pub fn monter(dossier: &Path, fictive: &str, texte: Option<&str>) -> R<Montage> 
         Some(s) => s.join(droit::contexte::ENTREPRISE),
         None => dossier.join(droit::contexte::ENTREPRISE),
     };
-    let fiche: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&base_fiche, droit::contexte::ENTREPRISE)?;
+    let fiche: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&base_fiche, droit::contexte::ENTREPRISE.texte())?;
     let fiche = id.appliquer(&fiche)?;
 
     if let Some(s) = &src {

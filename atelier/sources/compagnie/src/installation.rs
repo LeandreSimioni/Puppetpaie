@@ -20,7 +20,7 @@ pub const JOURNAL_INTERFACE: CheminRelatif = CheminRelatif::du_moteur("journal/i
 /// pas (`essai`).
 pub const FICHIER_HORLOGE: CheminRelatif = CheminRelatif::du_moteur("config/horloge.json");
 
-pub const MARQUEUR: NomDeFichier = NomDeFichier::du_moteur("COPIE-DE-DEVELOPPEMENT.json");
+pub const MARQUEUR: NomDeFichier = socle::fichiers::MARQUEUR_COPIE;
 /// La couleur d'une compagnie qui n'en a pas choisi : le rouge de la charte de l'accueil.
 const COULEUR_DE_LA_CHARTE: CouleurDeCompagnie = CouleurDeCompagnie(std::borrow::Cow::Borrowed("#B22222"));
 /// La couleur de la compagnie, sous sa racine.
@@ -224,7 +224,7 @@ pub const PREFIXE_AJOUTEE: &str = "ajoutee-";
 
 /// La fiche entreprise telle qu'elle vaut aujourd'hui.
 fn fiche(racine: &Path) -> R<droit::fiche::ChampsEntreprise> {
-    let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE)?;
+    let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&droit::contexte::ENTREPRISE.dans(racine), droit::contexte::ENTREPRISE.texte())?;
     Ok(f.au(&droit::contexte::jour_reel()))
 }
 
@@ -438,7 +438,7 @@ fn sous_dossiers(dossier: &Path) -> R<Vec<PathBuf>> {
     let mut v = Vec::new();
     for e in entrees {
         let d = e.map_err(|e| socle::echec::du_disque(dossier, &e))?.path();
-        if !est_cache(&d) && d.join(droit::contexte::ENTREPRISE).is_file() {
+        if !est_cache(&d) && droit::contexte::ENTREPRISE.dans(&d).is_file() {
             v.push(d);
         }
     }

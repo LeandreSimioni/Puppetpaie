@@ -272,7 +272,7 @@ pub fn logiciels_connus() -> Vec<LogicielComptable> {
 
 
 /// Le plan comptable propre a la compagnie, sous sa racine.
-pub const PLAN_COMPTABLE: &str = "config/plan-comptable.json";
+pub const PLAN_COMPTABLE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/plan-comptable.json");
 
 /// UN OBJET DONT L'ORDRE COMPTE, lu dans l'ordre du fichier (`socle::forme::en_ordre`) : les lignes, les tiers et les
 /// retenues du plan, ou la premiere ligne qui porte un compte lui donne son libelle. `K` : sa cle, un texte (une
@@ -545,17 +545,20 @@ impl Plan {
 }
 
 /// Le plan comptable de la compagnie, et d'ou il vient (`config/plan-comptable.json` ou le plan livre).
-pub fn plan(ctx: &Contexte) -> R<(Plan, &'static str)> {
-    let p = plan_comptable(ctx)?;
-    let origine = if ctx.racine.join(PLAN_COMPTABLE).exists() { PLAN_COMPTABLE } else { "plan livré avec le logiciel (plan-comptable-base.json)" };
-    Ok((p, origine))
+pub fn plan(ctx: &Contexte) -> R<(Plan, String)> {
+    Ok((plan_comptable(ctx)?, origine(ctx)))
+}
+
+/// D'ou vient le plan comptable de la compagnie : `config/plan-comptable.json`, ou le plan livre.
+pub fn origine(ctx: &Contexte) -> String {
+    if PLAN_COMPTABLE.dans(&ctx.racine).exists() { PLAN_COMPTABLE.to_string() } else { "plan livré avec le logiciel (plan-comptable-base.json)".to_string() }
 }
 
 /// Le plan livre, recouvert par `config/plan-comptable.json`.
 pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
     let mut plan: Plan = socle::forme::lire_fichier(&ctx.code.join("plan-comptable-base.json"), "Le plan comptable livré ne se lit pas : le signaler au développeur.")
         .map_err(|m| m.reclasser(Classe::Illisible))?;
-    let propre = ctx.racine.join(PLAN_COMPTABLE);
+    let propre = PLAN_COMPTABLE.dans(&ctx.racine);
     if propre.exists() {
         let p: PlanPropre = socle::forme::lire_fichier(&propre, "Le plan comptable de la compagnie (config/plan-comptable.json) ne se lit pas : le corriger.")
             .map_err(|m| m.reclasser(Classe::Illisible))?;

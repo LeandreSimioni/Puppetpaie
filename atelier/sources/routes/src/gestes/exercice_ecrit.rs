@@ -170,8 +170,8 @@ fn dossier_exercices(ctx: &Contexte) -> PathBuf {
 pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecrire: bool) -> R<ExportCompta> {
     let plan = plan_comptable(ctx)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let propre = ctx.racine.join(documents::plan_comptable::PLAN_COMPTABLE);
-    let origine = if propre.exists() { documents::plan_comptable::PLAN_COMPTABLE } else { "plan livré avec le logiciel (plan-comptable-base.json)" };
+    let propre = documents::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine);
+    let origine = documents::plan_comptable::origine(ctx);
     let mut mois: Vec<Mois> = Vec::new();
     for m in mois_de_l_annee(ctx, annee)? {
         let n = m.numero();
@@ -218,7 +218,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
         compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&f), lues, None)?;
         fichier = Some(f);
     }
-    Ok(ExportCompta { annee, du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine.to_string(), avertissements: avert })
+    Ok(ExportCompta { annee, du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine, avertissements: avert })
 }
 
 /// LES SAISIES DE L'ANNEE, PAR LEUR EMPREINTE : `{"AAAA-MM": empreinte}` pour chaque mois saisi de l'annee, l'empreinte

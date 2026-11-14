@@ -325,9 +325,9 @@ fn construire(racine: &Path) -> Personnes {
             Err(e) => *inconnues = Some(format!("les noms de {} ne se cherchent pas ({})", quoi, e)),
         }
     };
-    let salaries = racine.join(droit::contexte::SALARIES);
+    let salaries = droit::contexte::SALARIES.dans(racine);
     if salaries.is_file() {
-        match droit::fiche::lire_fichier::<droit::fiche::Salaries>(&salaries, droit::contexte::SALARIES) {
+        match droit::fiche::lire_fichier::<droit::fiche::Salaries>(&salaries, droit::contexte::SALARIES.texte()) {
             Ok(fiches) => {
                 for (rang, (cle, datee)) in fiches.fiches.iter().enumerate() {
                     let fiche = TextesDeFiche::de(datee);
@@ -350,7 +350,7 @@ fn construire(racine: &Path) -> Personnes {
     }
     let entreprise = racine.join(droit::contexte::ENTREPRISE);
     if entreprise.is_file() {
-        match droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&entreprise, droit::contexte::ENTREPRISE) {
+        match droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&entreprise, droit::contexte::ENTREPRISE.texte()) {
             Ok(e) => {
                 let fiche = TextesDeFiche::de(&e);
                 let mut noms = Vec::new();

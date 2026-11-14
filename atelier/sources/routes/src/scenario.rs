@@ -65,7 +65,7 @@ use crate::enveloppe::{Charge, Options, Refus, Reponse};
 /// Le fichier des gestes, dans le dossier du scenario.
 pub const GESTES: &str = "gestes.jsonl";
 /// Le dossier des pieces deposees, par empreinte.
-pub const PIECES: &str = "pieces";
+pub const PIECES: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("pieces");
 /// La version du format.
 pub const FORMAT: u64 = 1;
 
@@ -175,7 +175,7 @@ pub struct Piece {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fichier: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nom: Option<String>,
+    pub nom: Option<socle::fichiers::NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dans_la_compagnie: Option<socle::fichiers::CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -206,16 +206,16 @@ const CLES_DE_DEPOT: [&str; 4] = ["dossier", "export", "fichier", "chemin"];
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Depots {
-    dossier: Option<String>,
-    export: Option<String>,
-    fichier: Option<String>,
-    chemin: Option<String>,
+    dossier: Option<PathBuf>,
+    export: Option<PathBuf>,
+    fichier: Option<PathBuf>,
+    chemin: Option<PathBuf>,
 }
 
 #[cfg(feature = "atelier")]
 impl Depots {
     /// Chaque cle, dans l'ordre de `CLES_DE_DEPOT`, et le chemin qu'elle nomme.
-    fn chacun(&self) -> [(&'static str, Option<&str>); 4] {
+    fn chacun(&self) -> [(&'static str, Option<&Path>); 4] {
         [
             (CLES_DE_DEPOT[0], self.dossier.as_deref()),
             (CLES_DE_DEPOT[1], self.export.as_deref()),
@@ -418,11 +418,11 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
             (None, Some(f)) => f.iter().map(|(rel, sha)| (rel.clone(), source_de_piece(scenario, sha))).collect(),
             (None, None) => return Err(refus!("Pièce {} : elle ne dit ni son chemin ni ses fichiers.", cle)),
         };
-        let nom = p.nom.clone().or_else(|| p.chemin.as_ref().map(|c| c.nom().into()));
+        let nom = p.nom.clone().or_else(|| p.chemin.as_ref().map(|c| c.nom()));
         let est_fichier = p.fichier == Some(true) || (fichiers.len() == 1 && fichiers[0].0 == ".");
         let dans = p.dans_la_compagnie.as_ref();
         let cible = match dans {
-            Some(rel) => racine.join(rel),
+            Some(rel) => rel.dans(racine),
             None => travail.join(rang.to_string()).join(cle),
         };
         if est_fichier {
@@ -711,7 +711,7 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
         }
         for p in g.pieces.iter().flat_map(BTreeMap::values) {
             for sha in p.fichiers.iter().flat_map(BTreeMap::values) {
-                copier(&Path::new(PIECES).join(sha.texte()))?;
+                copier(&Path::new(PIECES.texte()).join(sha.texte()))?;
             }
             if let Some(c) = &p.chemin {
                 let source = scenario.join(c);
@@ -1168,9 +1168,9 @@ mod enregistreur {
             let mut out = BTreeMap::new();
             let depots: Depots = charge.lire_cles(&CLES_DE_DEPOT)?;
             for (cle, valeur) in depots.chacun() {
-                let chemin = match valeur.map(str::trim) {
-                    Some(s) if !s.is_empty() => {
-                        let p = PathBuf::from(crate::depots::normaliser(s));
+                let chemin = match valeur.map(Path::to_string_lossy) {
+                    Some(s) if !s.trim().is_empty() => {
+                        let p = PathBuf::from(crate::depots::normaliser(s.trim()));
                         if p.is_absolute() {
                             p
                         } else {
@@ -1194,7 +1194,7 @@ mod enregistreur {
                         continue;
                     }
                     fichiers.insert(".".to_string(), self.recopier(&chemin)?);
-                    Piece { fichier: Some(true), nom: chemin.file_name().map(|n| n.to_string_lossy().into_owned()), ..Piece::default() }
+                    Piece { fichier: Some(true), nom: Some(socle::fichiers::NomDeFichier::du(&chemin)?), ..Piece::default() }
                 } else if chemin.is_dir() {
                     for (rel, p) in fichiers_de(&chemin)? {
                         fichiers.insert(rel, self.recopier(&p)?);

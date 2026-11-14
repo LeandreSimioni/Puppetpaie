@@ -977,7 +977,7 @@ pub fn ecriture_impossible(e: &std::io::Error, chemin: &Path) -> String {
 pub const CONFIG: NomDeFichier = NomDeFichier::du_moteur("config");
 
 /// Le marqueur d'une compagnie qui n'est pas la vraie (une compagnie fictive, une copie de developpement).
-pub const MARQUEUR_COPIE: &str = "COPIE-DE-DEVELOPPEMENT.json";
+pub const MARQUEUR_COPIE: NomDeFichier = NomDeFichier::du_moteur("COPIE-DE-DEVELOPPEMENT.json");
 
 /// Le modele `nom` (gabarit de contrat, de DPAE, de certificat) : celui de la compagnie (son dossier `gabarits`),
 /// a defaut celui du poste (`poste`), a defaut celui livre avec le logiciel (`donnees/modeles/`). Une compagnie qui

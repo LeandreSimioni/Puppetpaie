@@ -694,7 +694,7 @@ fn ecrire_compte_dpae(ctx: &Contexte, propres: Vec<(&'static str, String)>) -> R
         *case = Some(v);
     }
     crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::ApiDpae(Some(cfg)), Some(ctx.aujourdhui))?;
-    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&ctx.racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE)?.au(&ctx.aujourdhui))
+    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&droit::contexte::ENTREPRISE.dans(&ctx.racine), droit::contexte::ENTREPRISE.texte())?.au(&ctx.aujourdhui))
 }
 
 // ------------------------------------------------------------------ le mot de passe du logiciel

@@ -113,7 +113,7 @@ fn tenir(logiciel: &str, quoi: &str, v: &str, n: usize) -> R<String> {
         #[derive(Serialize)]
         struct Zone {
             zone: String,
-            fichier: &'static str,
+            fichier: socle::fichiers::CheminRelatif,
         }
         return Err(socle::echec::refus_avec(
             format!("{} : « {} » a {} caractères, {} en prend {} au plus dans ce logiciel. {}.", logiciel, t, c, porte, n, conseil),
@@ -249,7 +249,7 @@ fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
 
 /// Les ecritures de la periode, numerotees -- une ecriture (une piece) par mois, ses lignes dans
 /// l'ordre de `ecritures_du_mois`.
-fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<(Vec<Ecriture>, Plan, &'static str)> {
+fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<(Vec<Ecriture>, Plan, String)> {
     let (plan, origine) = crate::plan_comptable::plan(ctx)?;
     let mut out = Vec::new();
     for (n, &m) in p.mois.iter().enumerate() {
@@ -259,7 +259,7 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
             out.push(e);
         }
     }
-    if !ctx.racine.join(crate::plan_comptable::PLAN_COMPTABLE).exists() {
+    if !crate::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine).exists() {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
     }
     Ok((out, plan, origine))

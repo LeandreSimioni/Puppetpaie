@@ -67,12 +67,12 @@ pub fn de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> R<Option<Signature>>
 
 /// La signature de la compagnie de `racine` (`config/entreprise.json`).
 pub fn du_poste(racine: &Path) -> R<Option<Signature>> {
-    let p = racine.join(droit::contexte::ENTREPRISE);
+    let p = droit::contexte::ENTREPRISE.dans(racine);
     if !p.exists() {
         return Ok(None);
     }
     // La fiche telle qu'elle vaut aujourd'hui, lue par sa forme : le fichier est date.
-    let ent = droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&p, droit::contexte::ENTREPRISE)?.au(&droit::contexte::jour_reel());
+    let ent = droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&p, droit::contexte::ENTREPRISE.texte())?.au(&droit::contexte::jour_reel());
     de_la_fiche(&ent)
 }
 

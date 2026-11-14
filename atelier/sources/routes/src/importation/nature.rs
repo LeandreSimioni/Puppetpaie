@@ -92,7 +92,7 @@ fn jours_payes(i: &Importe) -> R<Option<(Jour, Jour)>> {
 
 /// Le nom d'un salarié à l'écran, tel que sa fiche le porte aujourd'hui ; sa clé quand aucune fiche ne le nomme.
 fn nom_du_salarie(racine: &Path, cle: &IdSalarie) -> R<String> {
-    let lues = droit::fiche::lire_fichier::<droit::fiche::Salaries>(&racine.join(droit::contexte::SALARIES), droit::contexte::SALARIES)?;
+    let lues = droit::fiche::lire_fichier::<droit::fiche::Salaries>(&droit::contexte::SALARIES.dans(racine), droit::contexte::SALARIES.texte())?;
     Ok(match lues.fiches.get(cle).and_then(|f| f.au(&socle::temps::jour_de_paris()).nomme()) {
         Some(n) => n,
         None => cle.to_string(),

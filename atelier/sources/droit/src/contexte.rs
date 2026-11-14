@@ -245,7 +245,7 @@ impl FichierEffectifs {
 
 /// `config/effectifs.json` de la compagnie, lu par sa forme ; aucun s'il n'existe pas.
 pub fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
-    let p = racine.join(EFFECTIFS);
+    let p = EFFECTIFS.dans(racine);
     if !socle::fichiers::existe_lu(&p)? {
         return Ok(None);
     }
@@ -1216,7 +1216,7 @@ fn lire_fiches(cfg: &Path) -> R<Arc<Fiches>> {
     type Cache = Mutex<HashMap<PathBuf, ([Signature; 3], Arc<Fiches>)>>;
     static CACHE: OnceLock<Cache> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let chemins = [cfg.join("entreprise.json"), cfg.join("salaries.json"), cfg.join("spectacles.json")];
+    let chemins = [ENTREPRISE, SALARIES, SPECTACLES].map(|c| cfg.join(c.nom()));
     let [a, b, c] = chemins.clone().map(|p| socle::fichiers::signature(&p));
     let sig = [a?, b?, c?];
     let connue = sig.iter().all(Option::is_some);
@@ -1228,9 +1228,9 @@ fn lire_fiches(cfg: &Path) -> R<Arc<Fiches>> {
             }
         }
     }
-    let entreprise = crate::fiche::lire_fichier(&chemins[0], ENTREPRISE)?;
-    let salaries = crate::fiche::lire_fichier(&chemins[1], SALARIES)?;
-    let spectacles = crate::fiche::lire_fichier(&chemins[2], SPECTACLES)?;
+    let entreprise = crate::fiche::lire_fichier(&chemins[0], ENTREPRISE.texte())?;
+    let salaries = crate::fiche::lire_fichier(&chemins[1], SALARIES.texte())?;
+    let spectacles = crate::fiche::lire_fichier(&chemins[2], SPECTACLES.texte())?;
     let f = Arc::new(Fiches { entreprise, salaries, spectacles });
     if connue {
         cache.lock().unwrap().insert(cfg.to_path_buf(), (sig, f.clone()));
@@ -1254,12 +1254,12 @@ fn salaries_au(s: &Salaries, jour: &Jour) -> IndexMap<IdSalarie, FicheSalarie> {
 }
 
 /// Les fiches d'une compagnie et ce qu'elle a dit d'elle-meme, sous sa racine.
-pub const ENTREPRISE: &str = "config/entreprise.json";
-pub const SALARIES: &str = "config/salaries.json";
-pub const SPECTACLES: &str = "config/spectacles.json";
-pub const EFFECTIFS: &str = "config/effectifs.json";
+pub const ENTREPRISE: CheminRelatif = CheminRelatif::du_moteur("config/entreprise.json");
+pub const SALARIES: CheminRelatif = CheminRelatif::du_moteur("config/salaries.json");
+pub const SPECTACLES: CheminRelatif = CheminRelatif::du_moteur("config/spectacles.json");
+pub const EFFECTIFS: CheminRelatif = CheminRelatif::du_moteur("config/effectifs.json");
 /// Les baremes propres a la compagnie (`<annee>.json`), sous sa racine.
-pub const BAREMES: &str = "config/baremes";
+pub const BAREMES: CheminRelatif = CheminRelatif::du_moteur("config/baremes");
 
 /// LA SURCOUCHE DE LA COMPAGNIE POUR L'ANNEE `an`, sous sa racine : `config/baremes/<an>.json`. Le seul ecrivain de ce
 /// chemin : le bareme le lit, son controle le nomme, la raison d'un recalcul le reconnait (`engagement::etats`).
@@ -1269,7 +1269,7 @@ pub fn surcouche(an: i32) -> R<CheminRelatif> {
 
 /// L'annee de la surcouche que `chemin` nomme, s'il en est une (`surcouche`, dont c'est la seule relecture).
 pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<i32> {
-    let an = chemin.texte().strip_prefix(BAREMES)?.strip_prefix('/')?.strip_suffix(".json")?;
+    let an = chemin.texte().strip_prefix(BAREMES.texte())?.strip_prefix('/')?.strip_suffix(".json")?;
     let an = i32::try_from(socle::num::entier_de_chiffres(an)?).ok()?;
     surcouche(an).is_ok_and(|c| c == *chemin).then_some(an)
 }

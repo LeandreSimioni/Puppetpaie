@@ -34,7 +34,7 @@ use socle::piece::Zone;
 use crate::source::forme_notee;
 
 /// Le dossier des tables, sous les donnees livrees.
-const DOSSIER: &str = "missions";
+const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("missions");
 
 /// UN LIEU DE LA TABLE DES INDEMNITES DE MISSION A L'ETRANGER : un pays, ou une ville que la table distingue de son pays,
 /// par son code (`code_pays` de `indemnites.csv` et de `change.csv`, les clés de `villes.json`) : deux lettres capitales,

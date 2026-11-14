@@ -760,7 +760,7 @@ pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
     }
     let mut gardees = Vec::new();
     for r in v {
-        if !crate::installation::est_cache(&r) && r.join(droit::contexte::ENTREPRISE).is_file() && (!crate::installation::est_copie(&r) || crate::installation::est_fictive(&r)?) {
+        if !crate::installation::est_cache(&r) && droit::contexte::ENTREPRISE.dans(&r).is_file() && (!crate::installation::est_copie(&r) || crate::installation::est_fictive(&r)?) {
             gardees.push(r);
         }
     }
