@@ -211,10 +211,8 @@ pub fn cinquante_salaries_et_plus(fiche: &ChampsEntreprise) -> bool {
 #[serde(deny_unknown_fields)]
 pub struct FichierEffectifs {
     /// Ce que le fichier dit de lui-meme.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub quoi: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub annees: Option<EffectifsParAnnee>,
+    pub quoi: String,
+    pub annees: EffectifsParAnnee,
 }
 
 /// Les effectifs par annee, puis par code.
@@ -238,7 +236,7 @@ pub struct EffectifEcrit {
 impl FichierEffectifs {
     /// L'effectif du code `code` pour l'annee `annee`, s'il est ecrit.
     pub fn du_118(&self, annee: Annee, code: TypeDeParametreNeores) -> Option<Decimal> {
-        self.annees.as_ref().and_then(|a| a.get(&annee)).and_then(|c| c.get(&code)).map(|e| e.valeur)
+        self.annees.get(&annee).and_then(|c| c.get(&code)).map(|e| e.valeur)
     }
 }
 
@@ -248,14 +246,14 @@ pub fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
     if !socle::fichiers::existe(&p) {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.").map(Some)
+    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie (config/effectifs.json) ne se lit pas.").map(Some)
 }
 
 /// Lit `config/effectifs.json` (absent : vide).
 pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
     let mut annees = BTreeMap::new();
     if let Some(lu) = effectifs_lus(racine)? {
-        for (an, codes) in lu.annees.into_iter().flatten() {
+        for (an, codes) in lu.annees {
             if let Some(a01) = codes.get(&TypeDeParametreNeores::EffectifMoyen) {
                 annees.insert(an.nombre(), a01.valeur);
             }

@@ -236,7 +236,8 @@ publication : il peut retarder sur les sources).
 dans `atelier/sources`) se lance **une fois avant chaque PR, par l'orchestrateur**, en arrière-plan ; à l'arrivée d'un
 lot, il ne lance que les tests des crates que le lot touche (`-p <crate>` ; dans `moteur`, le binaire concerné :
 `-p moteur --test routes`, `--test rejeu`…). Avant, `rm -rf "${CARGO_TARGET_DIR:-target}/tmp"` (les dossiers de travail
-des tests, ~3 Go).
+des tests, ~3 Go). **Toute compilation et tout test de l'orchestrateur se lancent en arrière-plan**, sans exception
+(Léandre : « en tant qu'orchestrateur, il faut que tu sois disponible ») : il attend leur fin en parlant avec Léandre.
 
 - **On compile peu** (Léandre : « on code et après on compile », pas « tout le temps parce qu'on peut ») : l'exécutant,
   `cargo check` seulement ; l'orchestrateur, à l'arrivée du lot, ce que le lot touche ; après une correction, seul ce

@@ -840,7 +840,7 @@ fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
 fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: EffectifsParAnnee) -> R<()> {
-    let donnees = FichierEffectifs { quoi: Some(QUOI_EFFECTIFS.to_string()), annees: Some(annees) };
+    let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
         socle::ecriture::ecrire_json(&racine.join(droit::contexte::EFFECTIFS), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     }
@@ -857,7 +857,7 @@ pub fn effectif_dit_par_la_compagnie(racine: &Path, an: i32) -> R<bool> {
 fn dits(existant: Option<&FichierEffectifs>) -> Vec<(Annee, EffectifEcrit)> {
     existant
         .into_iter()
-        .flat_map(|f| f.annees.iter().flatten())
+        .flat_map(|f| f.annees.iter())
         .filter_map(|(an, c)| c.get(&TypeDeParametreNeores::EffectifMoyen).filter(|a| a.dit_le.is_some()).map(|a| (*an, a.clone())))
         .collect()
 }
@@ -911,7 +911,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
 pub fn poser_effectif(racine: &Path, an: i32, valeur: Decimal, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
-    let mut annees: EffectifsParAnnee = existant.iter().flat_map(|f| f.annees.iter().flatten()).map(|(an, c)| (*an, c.clone())).collect();
+    let mut annees: EffectifsParAnnee = existant.iter().flat_map(|f| f.annees.iter()).map(|(an, c)| (*an, c.clone())).collect();
     let codes = annees.entry(Annee::nouvelle(i64::from(an))?).or_default();
     if codes.get(&TypeDeParametreNeores::EffectifMoyen).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);
