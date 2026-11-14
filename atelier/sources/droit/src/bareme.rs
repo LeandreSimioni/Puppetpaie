@@ -6,7 +6,6 @@
 //! Avec elle, parce que la pile les appelle : la lecture du catalogue de prevoyance de branche (module `prevoyance`
 //! ci-dessous) et l'etablissement du salarie (`etablissement_de`, `surcharger`).
 
-use socle::texte::sans_accent;
 use crate::forme_bareme::{
     CotisationDsn, CotisationModifiee, CotisationSupplementaire, FamilleDeCotisation, IdDeCotisation, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, TauxAtmp,
     TauxDate, VersementMobiliteEcrit, CADRE, CADRE_PERMANENT, CCN, MUTUELLE, PREVOYANCE, PREVOYANCE_T2, REGIME_LOCAL, RETRAITE_T1, VERSEMENT_MOBILITE,
@@ -1375,26 +1374,6 @@ ne porte pas le taux du regime local (`regime_local_alsace_moselle`).",
 
 // ------------------------------------------- la retraite en tranche 1
 
-/// « Scène Ensemble » -> « SCENE ENSEMBLE ».
-fn sigle(v: &str) -> String {
-    let s: String = sans_accent(v).chars().filter(char::is_ascii).collect();
-    s.to_uppercase().split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-impl crate::forme_bareme::OrganisationPatronale {
-    /// L'organisation que la compagnie nomme `nom` est-elle celle-ci : son sigle, ou un alias de sa couche (`couche`),
-    /// sans egard aux accents, a la casse ni aux blancs ? Un nom vide n'en nomme aucune.
-    pub fn reconnait(&self, couche: &crate::forme_bareme::Organisation, nom: &str) -> bool {
-        let cle = sigle(nom);
-        !cle.is_empty() && (cle == sigle(self.as_str()) || couche.alias.iter().flatten().any(|a| cle == sigle(a)))
-    }
-}
-
-/// La couche de l'organisation patronale `nom` (sigle ou alias), ou `None`.
-pub fn couche_organisation<'a>(bar: &'a Pile, nom: &str) -> Option<&'a crate::forme_bareme::Organisation> {
-    bar.par_organisation_patronale.iter().find(|(k, c)| k.reconnait(c, nom)).map(|(_, c)| c)
-}
-
 /// UNE PART DE LA TRANCHE 1 : la part employeur ou salariee d'une repartition de la retraite complementaire en tranche 1
 /// (`RepartitionDeLaTrancheUne::parts`), `num/den` irreductible, ce que le calcul partage (`parts_t1`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1603,8 +1582,8 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
         let (p, s) = parts_t1(rep.taux_droit_commun, part_sal);
         return poser_t1(bar, p, s);
     }
-    let couche = match ent.organisation_patronale.portee().and_then(|n| couche_organisation(&bar, n)) {
-        Some(c) if c.applicable => c.clone(),
+    let couche = match ent.organisation_patronale.dite().and_then(|o| bar.organisation(o)) {
+        Some((_, c)) if c.applicable => c.clone(),
         _ => return Ok(bar),
     };
     let statut = *sal.statut.exigee("statut")?;

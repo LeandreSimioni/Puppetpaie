@@ -3021,7 +3021,7 @@ fiche! {
         CongesspectaclesAdherent(String) = "congesspectacles_adherent" => congesspectacles_adherent,
         AffiliationFranceTravail(String) = "affiliation_france_travail" => affiliation_france_travail,
         RetraiteComplementaire(String) = "retraite_complementaire" => retraite_complementaire,
-        OrganisationPatronale(String) = "organisation_patronale" => organisation_patronale,
+        OrganisationPatronale(crate::forme_bareme::OrganisationPatronale) = "organisation_patronale" => organisation_patronale,
         OrganisationPatronaleDepuis(Jour) = "organisation_patronale_depuis" => organisation_patronale_depuis,
         EmploieDesPermanents(bool) = "emploie_des_permanents" => emploie_des_permanents,
         DateDeVersementIntermittents(crate::versement::Versement) = "date_de_versement_intermittents" => date_de_versement_intermittents,

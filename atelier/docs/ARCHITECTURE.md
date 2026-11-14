@@ -172,7 +172,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   d'un jour, une obligation d'un arrêt dite faite ou une connaissance sans heure). Écrit en un champ
   (`AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`), ou en deux, le jour et l'heure `HH:MM` (`socle::paris::ecrit::jour_et_heure` :
   la fiche de suivi des obligations d'un arrêt et ce que ses routes rendent, l'instant limite de l'échéance d'une DSN,
-  `declarations::echeance_dsn::EcheanceDite`). Le butoir d'une obligation (`routes::obligations::Obligation.butoir`)
+  `declarations::echeance_dsn::EcheanceDite`) ; l'heure qu'une charge saisit (`H:M`, un ou deux chiffres) se lit à sa
+  porte par `jour_et_heure::saisie` (les charges des obligations d'un arrêt). Le butoir d'une obligation (`routes::obligations::Obligation.butoir`)
   s'écrit aussi en deux champs, `butoir` et `butoir_heure`, où un instant à minuit est la fin du jour d'avant, écrite
   `24:00` (« jusqu'à minuit »).
 - **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone.
@@ -221,6 +222,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | numéro d'objet spectacle | `NumeroObjetSpectacle` | `droit/src/fiche.rs` |
 | IDCC | `Idcc` | `droit/src/fiche.rs` |
 | identifiant d'organisme | `IdentifiantDOrganisme` | `droit/src/organismes.rs` |
+| référence d'un contrat chez l'organisme | `ReferenceDeContrat` | `droit/src/organismes.rs` |
 | code caisse | `CodeCaisse` | `droit/src/organismes.rs` |
 | salarié | `IdSalarie` | `droit/src/contexte.rs` |
 | salarié désigné | `SalarieDesigne` | `droit/src/contexte.rs` |
@@ -353,6 +355,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   de la plate-forme ou un compte rendu d'organisme complémentaire nomme (`envois::retours`) ; `AUDIENS`,
   `SIRET_FRANCE_TRAVAIL`, `DGFIP` sont des constantes. Le code caisse d'un mois sans individu (S20.G00.08.001) est une
   autre notion.
+- **référence d'un contrat chez l'organisme** : S21.G00.15.001, la « référence contrat » de la fiche de paramétrage DSN,
+  de 1 à 30 caractères (le cahier technique), telle que la compagnie la saisit (`organismes-enregistrer`, la DSN
+  reprise) : sans blancs de bord, en capitales, lue à sa porte (`droit::organismes::Saisie::lue`) avec le code de
+  l'organisme. Celle que `config/organismes.json` garde reste son texte (`Adhesion.libelle`).
 - **code caisse** : l'organisme qui n'a plus d'individu rattaché, dans une DSN sans individu (S20.G00.08.001),
   « X [2,6] » de la table ODRT : Agirc-Arrco 88, France Travail 93, Congés Spectacles 97 ; que porte `sans_individu` de
   `organismes-base.json`.
@@ -1075,8 +1081,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   niveaux du relevé santé du barème, des options d'un contrat d'organisme, la case `sante_svp.niveau` ; une clé du
   logiciel, non vide.
 - **organisation patronale** : la clé d'une couche du barème par organisation (`par_organisation_patronale`, son
-  sigle). Celle que la compagnie nomme dans sa fiche est son texte, que la couche reconnaît par son sigle ou un alias
-  (`reconnait`).
+  sigle), la case de la fiche entreprise, et un signataire d'un accord de salaires (`minima::Convention::signataires`,
+  tel que l'accord le nomme). Lue à l'entrée par sigle ou alias : une saisie se range en sigle, se reconnaît dans le
+  barème de l'année de l'écran (`Pile::organisation`, la seule porte, qui compare par
+  `OrganisationPatronale::designee_par`) et s'écrit par sa clé ; une organisation qu'il ne couvre pas est la faute de
+  sa case. Une fiche écrite avant sous un alias se reconnaît de même à chaque lecture.
 - **catégorie de la DFS** : la catégorie d'une profession de la déduction forfaitaire spécifique (`20`, `25` : art. 5
   de l'annexe IV du CGI), la clé des taux de l'année ; que portent une profession du barème, la DFS d'un contrat et sa
   forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.

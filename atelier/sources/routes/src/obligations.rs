@@ -349,15 +349,6 @@ fn s(n: i64) -> &'static str {
     }
 }
 
-/// `HH:MM` -> minutes depuis minuit.
-fn lire_heure(h: &str) -> Option<u32> {
-    let (a, b) = h.trim().split_once(':')?;
-    // Un ou deux chiffres de chaque cote.
-    let nombre = |t: &str| (!t.is_empty() && t.len() <= 2 && t.bytes().all(|c| c.is_ascii_digit())).then(|| t.bytes().fold(0u32, |n, c| n * 10 + u32::from(c - b'0')));
-    let (a, b) = (nombre(a)?, nombre(b)?);
-    (a < 24 && b < 60).then_some(a * 60 + b)
-}
-
 // ------------------------------------------------------------ ce qui est saisi
 
 /// Ce que la compagnie a dit des obligations de ses arrets : `imprevus/obligations.json`, a cote du magasin des imprevus.
@@ -1411,25 +1402,13 @@ fn jour_saisi(ctx: &Contexte, j: Option<Jour>, quoi: &str) -> R<Option<Jour>> {
     Ok(Some(j))
 }
 
-/// L'heure saisie (`HH:MM`) : sa minute du jour ; une heure illisible se refuse.
-fn heure_saisie(heure: Option<&str>) -> R<Option<u32>> {
-    match heure {
-        None => Ok(None),
-        Some(h) => match lire_heure(h) {
-            Some(m) => Ok(Some(m)),
-            None => Err(refus(format!("Heure {} illisible : HH:MM, de 00:00 a 23:59. Rien n'est ecrit.", repr(&h)))),
-        },
-    }
-}
-
-/// Le jour saisi, a la minute saisie s'il y en a une ; une heure qui n'existe pas a Paris ce jour-la se refuse.
-fn quand_saisi(jour: Jour, minute: Option<u32>) -> R<InstantOuJour> {
-    match minute {
-        None => Ok(InstantOuJour::Jour(jour)),
-        Some(m) => jour_et_heure::a_la_minute(jour, i64::from(m)).ok_or_else(|| {
-            refus(format!("Le {} à {}, cette heure n'existe pas à Paris (le passage à l'heure d'été la saute). Rien n'est ecrit.", jour.jj_mm_aaaa(), heure_lisible(m)))
-        }),
-    }
+/// Le jour saisi, a l'heure saisie s'il y en a une (lue a la porte de la charge, `jour_et_heure::saisie`) ; une heure qui
+/// n'existe pas a Paris ce jour-la se refuse.
+fn quand_saisi(jour: Jour, heure: Option<HeureEcrite>) -> R<InstantOuJour> {
+    jour_et_heure::quand(jour, heure).ok_or_else(|| {
+        let h: String = heure.iter().map(HeureEcrite::to_string).collect();
+        refus(format!("Le {} à {}, cette heure n'existe pas à Paris (le passage à l'heure d'été la saute). Rien n'est ecrit.", jour.jj_mm_aaaa(), h))
+    })
 }
 
 /// Les obligations de l'arret `a`, comptees aujourd'hui, et leur phrase.
@@ -1447,7 +1426,8 @@ pub(crate) struct ChargeConnaissance {
     dernier_jour: Jour,
     de: DeQuoi,
     jour: Option<Jour>,
-    heure: Option<TexteDit>,
+    #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+    heure: Option<HeureEcrite>,
 }
 
 /// Le jour (et l'heure) ou la compagnie a connu l'arret ou l'accident, tel qu'on le dit : `arret-connaissance`, et
@@ -1456,7 +1436,8 @@ pub(crate) struct ChargeConnaissance {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ConnaissanceDite {
     jour: Option<Jour>,
-    heure: Option<TexteDit>,
+    #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+    heure: Option<HeureEcrite>,
 }
 
 /// `arret-connaissance` : le jour (et l'heure) ou la compagnie a connu l'arret ou l'accident ; un `jour` vide efface ce
@@ -1477,7 +1458,7 @@ pub(crate) fn connaissance_saisie(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, di
             a.salarie, a.motif
         )));
     }
-    let heure = heure_saisie(dite.heure.as_deref())?;
+    let heure = dite.heure;
     // Une heure dite sans jour : le jour de l'accident, celui que la saisie pre-remplit (`ConnaissanceDemandee`).
     let j = match (jour_saisi(ctx, dite.jour, "La connaissance")?, &heure, de) {
         (None, Some(_), DeQuoi::Accident) => a.date_accident,
@@ -1561,7 +1542,8 @@ pub(crate) struct ChargeFaite {
     dernier_jour: Jour,
     le: Option<Jour>,
     depot: Option<LieuHorsDsn>,
-    heure: Option<TexteDit>,
+    #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+    heure: Option<HeureEcrite>,
     reference: Option<TexteDit>,
 }
 
@@ -1642,7 +1624,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
                 }
             }
             Some(ObligationFaite {
-                quand: quand_saisi(le, heure_saisie(charge.heure.as_deref())?)?,
+                quand: quand_saisi(le, charge.heure)?,
                 depot,
                 reference: charge.reference.as_deref().map(str::to_string),
                 saisi_le: compagnie::maintenant(),
@@ -1682,7 +1664,8 @@ pub(crate) struct ChargeArretObligations {
     date_accident: Option<Jour>,
     connaissance_arret: Option<Jour>,
     connaissance_accident: Option<Jour>,
-    connaissance_heure: Option<TexteDit>,
+    #[serde(default, deserialize_with = "jour_et_heure::saisie")]
+    connaissance_heure: Option<HeureEcrite>,
 }
 
 /// L'arret tel qu'il s'ecrirait (`imprevus::arret_a_ecrire`), sa subrogation tiree du contrat suspendu et du droit
@@ -1742,19 +1725,20 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     };
     // Ce que la compagnie dit avoir connu, tape et lisible ; une heure de l'accident dite sans jour est celle du jour de
     // l'accident, comme a l'enregistrement (`connaissance_saisie`).
-    // Une heure illisible, ou qui n'existe pas a Paris ce jour-la, n'est pas dite.
-    let connue = |jour: Option<Jour>, minute: Option<u32>| {
+    // Une heure illisible se refuse a la porte de la charge (`jour_et_heure::saisie`) ; une heure qui n'existe pas a
+    // Paris ce jour-la n'est pas dite (la boite le montre avant l'enregistrement, qui la refuse : `quand_saisi`).
+    let connue = |jour: Option<Jour>, heure: Option<HeureEcrite>| {
         jour.map(|j| {
-            let quand = match minute.and_then(|m| jour_et_heure::a_la_minute(j, i64::from(m))) {
+            let quand = match jour_et_heure::quand(j, heure) {
                 Some(q) => q,
                 None => InstantOuJour::Jour(j),
             };
             ConnaissanceSaisie { quand, saisi_le: compagnie::maintenant() }
         })
     };
-    let minute_accident = c.connaissance_heure.as_deref().and_then(lire_heure);
-    let jour_accident = c.connaissance_accident.or_else(|| minute_accident.and(c.date_accident));
-    let (arret_connu, accident_connu) = (connue(c.connaissance_arret, None), connue(jour_accident, minute_accident));
+    let heure_accident = c.connaissance_heure;
+    let jour_accident = c.connaissance_accident.or_else(|| heure_accident.and(c.date_accident));
+    let (arret_connu, accident_connu) = (connue(c.connaissance_arret, None), connue(jour_accident, heure_accident));
     let dit = CeQueDitLaCompagnie { connaissance_arret: arret_connu.as_ref(), connaissance_accident: accident_connu.as_ref(), ..CeQueDitLaCompagnie::rien() };
     let obligations = obligations_de(ctx, &a, &[], dit, ctx.aujourdhui)?;
     // Ce que la boite d'un arret pas encore ecrit dit de ce qu'il fera naitre, en une ligne.

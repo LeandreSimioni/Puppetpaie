@@ -14,7 +14,8 @@ use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::forme::{Court, Nombre};
 use socle::echec::R;
 use socle::num::Decimal;
-use socle::texte::sigle;
+
+use crate::forme_bareme::OrganisationPatronale;
 
 use crate::source::forme_notee;
 
@@ -43,8 +44,8 @@ forme_notee! {
         pub etendu: Option<bool>,
         /// Le jour ou l'extension de l'accord prend effet (sa publication au JORF).
         pub etendu_le: Option<Jour>,
-        /// Les organisations d'employeurs signataires de l'accord.
-        pub signataires: Option<Vec<String>>,
+        /// Les organisations d'employeurs signataires de l'accord, telles que l'accord les nomme.
+        pub signataires: Option<Vec<OrganisationPatronale>>,
         pub annexes: Option<BTreeMap<crate::fiche::AnnexeConvention, Annexe>>,
         pub clauses_communes: Option<ClausesCommunes>,
         pub cachets: Option<BTreeMap<CleDeGrille, GrilleDeCachets>>,
@@ -612,8 +613,8 @@ crate::cle_opaque! {
 }
 
 /// La compagnie adherente de `organisation` l'est-elle d'une organisation d'employeurs signataire de l'accord ?
-pub fn signataire(accord: &Convention, organisation: Option<&str>) -> bool {
-    organisation.map(sigle).filter(|s| !s.is_empty()).is_some_and(|s| accord.signataires.iter().flatten().any(|x| sigle(x) == s))
+pub fn signataire(accord: &Convention, organisation: Option<&OrganisationPatronale>) -> bool {
+    organisation.is_some_and(|o| accord.signataires.iter().flatten().any(|x| x.designee_par(None, o)))
 }
 
 /// LE JOUR OU UNE STIPULATION D'UN ACCORD, DATEE `depuis` PAR L'ACCORD, LIE LA COMPAGNIE ADHERENTE DE `organisation` :
@@ -623,7 +624,7 @@ pub fn signataire(accord: &Convention, organisation: Option<&str>) -> bool {
 /// pas. Les deux articles : `atelier/reference/sources/legi-entrepot/articles.jsonl.gz`. Les minima d'un accord
 /// (`grille_au`) et les valeurs datees du bareme qui en viennent (`accord` dans l'entree,
 /// `droit::contexte::dater_les_accords`) se lisent ici.
-pub fn lie_depuis(accord: &Convention, organisation: Option<&str>, depuis: Jour) -> Option<Jour> {
+pub fn lie_depuis(accord: &Convention, organisation: Option<&OrganisationPatronale>, depuis: Jour) -> Option<Jour> {
     if signataire(accord, organisation) {
         return Some(depuis);
     }
@@ -634,7 +635,7 @@ pub fn lie_depuis(accord: &Convention, organisation: Option<&str>, depuis: Jour)
 /// les minima (`en_vigueur`) la lient a ce jour (`lie_depuis`), avec le jour depuis lequel il la lie ; a defaut, la
 /// grille de la convention elle-meme. `None` : la table ne connait pas la convention. Avec elle, la cle des cases du
 /// metier (`ParLaGrille`) : seule une grille trouvee les ouvre.
-pub fn grille_au<'a>(t: &'a Table, idcc: &crate::fiche::Idcc, organisation: Option<&str>, jour: Option<Jour>) -> Option<(&'a Convention, Option<Jour>, ParLaGrille)> {
+pub fn grille_au<'a>(t: &'a Table, idcc: &crate::fiche::Idcc, organisation: Option<&OrganisationPatronale>, jour: Option<Jour>) -> Option<(&'a Convention, Option<Jour>, ParLaGrille)> {
     let base = t.convention(idcc)?;
     let lie = |a: &'a Convention| {
         // Un accord qui ne dit pas quand ses minima entrent en vigueur ne lie personne.

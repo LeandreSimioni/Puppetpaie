@@ -510,19 +510,70 @@ impl Adhesion {
     }
 }
 
+/// LA REFERENCE D'UN CONTRAT CHEZ L'ORGANISME (S21.G00.15.001, la « référence contrat » de la fiche de parametrage DSN)
+/// que la compagnie saisit : de 1 a 30 caracteres (le cahier technique), sans blancs de bord, en capitales.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceDeContrat(String);
+
+impl ReferenceDeContrat {
+    /// La reference saisie `texte`, sans ses blancs autour et en capitales ; des blancs seuls ne disent rien (`None`).
+    /// Plus de 30 caracteres se refusent.
+    pub fn saisie(texte: &str) -> R<Option<ReferenceDeContrat>> {
+        let Some(t) = rangee(texte) else { return Ok(None) };
+        if t.chars().count() > 30 {
+            return Err(socle::refus!("La référence du contrat « {} » dépasse 30 caractères, ce que la DSN n'admet pas.", t));
+        }
+        Ok(Some(ReferenceDeContrat(t)))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Une case saisie d'un contrat, sans ses blancs autour et en capitales ; des blancs seuls ne disent rien.
+fn rangee(texte: &str) -> Option<String> {
+    Some(texte.trim()).filter(|t| !t.is_empty()).map(str::to_uppercase)
+}
+
 /// Ce que l'ecran saisit d'un contrat (`organismes-enregistrer`, `contrats` : cle -> saisie) : sa reference chez
-/// l'organisme et le code de l'organisme. Une case vide est absente ou nulle ; `""` se refuse a la porte (`TexteDit`).
+/// l'organisme et le code de l'organisme, chacun lu dans son type a la porte (`Saisie::lue`). Une case vide est absente
+/// ou nulle ; `""` se refuse a la porte (`TexteDit`) ; des blancs seuls ne disent rien.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, try_from = "SaisieEcrite")]
 pub struct Saisie {
-    pub libelle: Option<socle::forme::TexteDit>,
-    pub organisme: Option<socle::forme::TexteDit>,
+    pub libelle: Option<ReferenceDeContrat>,
+    pub organisme: Option<IdentifiantDOrganisme>,
+}
+
+/// La saisie d'un contrat telle que la charge l'ecrit.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaisieEcrite {
+    libelle: Option<socle::forme::TexteDit>,
+    organisme: Option<socle::forme::TexteDit>,
+}
+
+impl TryFrom<SaisieEcrite> for Saisie {
+    type Error = socle::echec::Echec;
+    fn try_from(s: SaisieEcrite) -> R<Saisie> {
+        Saisie::lue(s.libelle.as_deref(), s.organisme.as_deref())
+    }
 }
 
 impl Saisie {
-    /// Une case saisie, sans ses blancs autour et en capitales ; des blancs seuls ne disent rien.
-    fn dite(case: &Option<socle::forme::TexteDit>) -> Option<String> {
-        case.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_uppercase)
+    /// LA SAISIE D'UN CONTRAT, sa seule porte : la reference (`ReferenceDeContrat::saisie`) et le code de l'organisme,
+    /// sans blancs autour et en capitales (`IdentifiantDOrganisme::lire`) ; des blancs seuls ne disent rien.
+    pub fn lue(libelle: Option<&str>, organisme: Option<&str>) -> R<Saisie> {
+        let libelle = match libelle {
+            Some(l) => ReferenceDeContrat::saisie(l)?,
+            None => None,
+        };
+        let organisme = match organisme.and_then(rangee) {
+            Some(o) => Some(IdentifiantDOrganisme::lire(&o)?),
+            None => None,
+        };
+        Ok(Saisie { libelle, organisme })
     }
 }
 
@@ -866,12 +917,12 @@ pub fn composer(
         let l = ligne(&spec, saisi);
         let maintenant = saisies.get(&spec.cle);
         let libelle = match maintenant {
-            Some(s) if !l.libelle_fixe => Saisie::dite(&s.libelle),
+            Some(s) if !l.libelle_fixe => s.libelle.as_ref().map(|r| r.as_str().to_string()),
             _ => l.libelle.clone(),
         };
         let organisme = match maintenant {
-            Some(s) if !l.organisme_fixe => Saisie::dite(&s.organisme),
-            _ => l.organisme.clone().map(String::from),
+            Some(s) if !l.organisme_fixe => s.organisme.clone(),
+            _ => l.organisme.clone(),
         };
         let quoi = spec.quoi.trim().to_string();
         let Some(libelle) = libelle else {
@@ -892,7 +943,7 @@ pub fn composer(
             return Err(socle::refus!("{} : « {} » dépasse 30 caractères, ce que la DSN n'admet pas.", quoi, libelle));
         }
         let organisme = match organisme {
-            Some(o) if (5..=9).contains(&o.chars().count()) && !o.contains(char::is_whitespace) => IdentifiantDOrganisme::lire(&o)?,
+            Some(o) if (5..=9).contains(&o.as_str().chars().count()) && !o.as_str().contains(char::is_whitespace) => o,
             autre => {
                 let dit = match autre {
                     Some(o) => format!("« {} »", o),

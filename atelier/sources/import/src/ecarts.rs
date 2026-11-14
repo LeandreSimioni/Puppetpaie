@@ -63,7 +63,7 @@ pub enum Detail {
         logiciel: LogicielDuRapport,
         idcc: Option<droit::fiche::Idcc>,
         annexe: Option<AnnexeConvention>,
-        organisation_patronale: Option<String>,
+        organisation_patronale: Option<droit::forme_bareme::OrganisationPatronale>,
         cas: Vec<Cas>,
     },
     NonComparee {
@@ -163,8 +163,12 @@ impl Propre<'_> {
         l.iter().map(|x| self.texte(x)).collect()
     }
 
-    fn option(&mut self, x: &Option<String>) -> Option<String> {
-        x.as_ref().map(|t| self.texte(t))
+    /// L'organisation patronale, caviardee comme tout texte du rapport.
+    fn organisation(&mut self, x: Option<&droit::forme_bareme::OrganisationPatronale>) -> R<Option<droit::forme_bareme::OrganisationPatronale>> {
+        match x {
+            Some(o) => Ok(Some(droit::forme_bareme::OrganisationPatronale::lire(&self.texte(o.as_str()))?)),
+            None => Ok(None),
+        }
     }
 }
 
@@ -197,7 +201,7 @@ pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<EmpreinteCourte>)> {
 fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> {
     let e = &ctx.entreprise;
     let (idcc, annexe, organisation) =
-        (e.idcc.dite().cloned(), e.annexe_convention.dite().copied(), e.organisation_patronale.remplie().map(String::from));
+        (e.idcc.dite().cloned(), e.annexe_convention.dite().copied(), e.organisation_patronale.dite().cloned());
     let mut connus = Connus::default();
     ajouter_les_fiches(ctx, &mut connus)?;
     let mut propre = Propre { connus: &connus, vus: Default::default() };
@@ -265,7 +269,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
             logiciel,
             idcc: idcc.clone(),
             annexe,
-            organisation_patronale: propre.option(&organisation),
+            organisation_patronale: propre.organisation(organisation.as_ref())?,
             cas,
         };
         sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });

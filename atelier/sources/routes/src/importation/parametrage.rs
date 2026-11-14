@@ -124,16 +124,27 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
         }
     }
     let organisme = |a: &Adhesion| a.organisme.as_ref().map(|o| o.to_string());
+    // La saisie est celle de l'ecran (`organismes-enregistrer`), lue par sa porte (`Saisie::lue`).
     let mut saisies = std::collections::BTreeMap::new();
+    let mut lues = Ok(());
     for (l, a, _) in &paires {
-        // La saisie est celle de l'ecran (`organismes-enregistrer`) : une case vide ne s'y ecrit pas `""`.
-        let libelle = socle::forme::TexteDit::lire(&libelle(a))?;
-        let organisme = organisme(a).as_deref().map(socle::forme::TexteDit::lire).transpose()?;
-        saisies.insert(l.cle.clone(), droit::organismes::Saisie { libelle: Some(libelle), organisme });
+        match droit::organismes::Saisie::lue(Some(&libelle(a)), organisme(a).as_deref()) {
+            Ok(s) => {
+                saisies.insert(l.cle.clone(), s);
+            }
+            Err(e) => {
+                lues = Err(e);
+                break;
+            }
+        }
     }
-    let enregistre = match saisies.is_empty() {
-        true => false,
-        false => match compagnie::organismes::enregistrer(ctx, compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)) {
+    let enregistre = match (lues, saisies.is_empty()) {
+        (Err(e), _) => {
+            faits.push(format!("Les contrats de la DSN reprise ne s'enregistrent pas : {}", e.phrase));
+            false
+        }
+        (Ok(()), true) => false,
+        (Ok(()), false) => match compagnie::organismes::enregistrer(ctx, compagnie::organismes::ChargeEnregistrer::des_contrats(saisies)) {
             Ok(_) => true,
             Err(e) => {
                 faits.push(format!("Les contrats de la DSN reprise ne s'enregistrent pas : {}", e.phrase));

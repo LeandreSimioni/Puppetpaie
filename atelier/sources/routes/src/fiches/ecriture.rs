@@ -92,6 +92,11 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     /// Ce que le moteur pose dans la fiche changee `apres`, d'apres celle que l'ecran a montree (`avant`), avant tout
     /// controle (la forme d'un code risque, la notification d'un taux AT/MP que la saisie change).
     fn ajuster(_avant: &Self::Plate, _apres: &mut Self::Plate) {}
+    /// Ce que le bareme reconnait d'une case saisie, ecrit par sa cle (l'organisation patronale) ; ce qu'il ne reconnait
+    /// pas est la faute de sa case.
+    fn reconnaitre(_ctx: &Contexte, _avant: &Self::Plate, _apres: &mut Self::Plate) -> R<Vec<FauteDeCase>> {
+        Ok(Vec::new())
+    }
     /// Ce qu'une ecriture refuse, `forcer` ou non (un NIR, un matricule, un numero d'objet deja pris).
     fn refuser(_ctx: &Contexte, _cle: Option<&Self::Cle>, _avant: &Self::Plate, _apres: &Self::Plate) -> R<()> {
         Ok(())
@@ -222,6 +227,29 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         let Some(t) = apres.taux_atmp.as_mut() else { return };
         t.provenance = Some(droit::fiche::ProvenanceAtmp::Saisie);
         t.notification = None;
+    }
+    /// L'ORGANISATION PATRONALE SAISIE se reconnait dans le bareme de l'annee que l'ecran montre (`ctx.lue_au`), par son
+    /// sigle ou un alias de sa couche (`Pile::organisation`, la seule porte), et s'ecrit par sa cle ; une organisation que
+    /// ce bareme ne couvre pas est la faute de sa case. Une case qui ne change pas ne se relit pas ici.
+    fn reconnaitre(ctx: &Contexte, avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
+        let Some(nom) = apres.organisation_patronale.clone() else { return Ok(Vec::new()) };
+        if apres.organisation_patronale == avant.organisation_patronale {
+            return Ok(Vec::new());
+        }
+        let an = ctx.lue_au.an;
+        let pile = droit::contexte::socle_livre_lu(an)?;
+        if let Some((cle, _)) = pile.as_ref().and_then(|p| p.organisation(&nom)) {
+            apres.organisation_patronale = Some(cle.clone());
+            return Ok(Vec::new());
+        }
+        let connues: Vec<&str> = pile.iter().flat_map(|p| p.par_organisation_patronale.keys()).map(|k| k.as_str()).collect();
+        let phrase = format!(
+            "« {} » n'est pas une organisation que le barème {} couvre. Couvertes : {}.",
+            nom,
+            an,
+            if connues.is_empty() { "aucune".to_string() } else { connues.join(", ") }
+        );
+        Ok(vec![FauteDeCase { case: CaseEntreprise::OrganisationPatronale.into(), chemin: None, phrase }])
     }
     /// La ligne du taux AT/MP qui ne se lit pas comme la DSN le declare (`droit::bareme::taux_atmp_refuse`) ; une ligne
     /// ne se retire pas (une autre la remplace, a sa date).
@@ -1101,12 +1129,13 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, ch
     let mut apres = avant.clone();
     let nommees = changer(&mut apres);
     F::ajuster(&avant, &mut apres);
+    let mut fautes = F::reconnaitre(ctx, &avant, &mut apres)?;
     F::refuser(ctx, cle, &avant, &apres)?;
     if cle.is_none() {
         F::completer_neuve(ctx, &mut apres)?;
     }
     // Ce que le type d'une forme declaree refuse refuse la fiche, quoi qu'on force : elle ne se relirait pas.
-    let fautes = F::deriver(&mut apres, true, &|c| nommees.contains(&c))?;
+    fautes.extend(F::deriver(&mut apres, true, &|c| nommees.contains(&c))?);
     if !fautes.is_empty() {
         return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
     }

@@ -127,7 +127,7 @@ struct Entree<T> {
 /// plus tot), et le `depuis` de chaque valeur datee retenue.
 struct Lecture {
     jour: socle::date::Jour,
-    organisation: Option<String>,
+    organisation: Option<OrganisationPatronale>,
     retenues: Vec<socle::date::Jour>,
 }
 
@@ -142,10 +142,10 @@ thread_local! {
 pub(crate) fn lire_au<T: serde::de::DeserializeOwned>(
     fichier: &std::path::Path,
     jour: &socle::date::Jour,
-    organisation: Option<&str>,
+    organisation: Option<&OrganisationPatronale>,
     phrase: &str,
 ) -> socle::echec::R<(T, Vec<socle::date::Jour>)> {
-    LECTURE.with(|l| *l.borrow_mut() = Some(Lecture { jour: *jour, organisation: organisation.map(str::to_string), retenues: Vec::new() }));
+    LECTURE.with(|l| *l.borrow_mut() = Some(Lecture { jour: *jour, organisation: organisation.cloned(), retenues: Vec::new() }));
     let lu = socle::forme::lire_fichier::<T>(fichier, phrase);
     let lecture = LECTURE.with(|l| l.borrow_mut().take());
     let mut retenues = lecture.ok_or_else(|| socle::echec::refus("La lecture du barème a perdu ses dates : le signaler au développeur."))?.retenues;
@@ -191,7 +191,7 @@ pub(crate) mod datee {
                     let t = crate::minima::table()?;
                     let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree("minima-conventionnels.json", source.as_str()))?;
                     let ecrit = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Une valeur du barème datée par un accord ne dit pas son jour : le signaler au développeur.", "depuis", &source))?;
-                    match crate::minima::lie_depuis(accord, lecture.organisation.as_deref(), ecrit) {
+                    match crate::minima::lie_depuis(accord, lecture.organisation.as_ref(), ecrit) {
                         Some(j) => Some(j),
                         None => continue,
                     }
@@ -1219,9 +1219,34 @@ forme! {
 }
 
 crate::cle_opaque! {
-    /// L'ORGANISATION PATRONALE D'UNE COUCHE DU BAREME : la cle de `par_organisation_patronale`, son sigle. Celle que la
-    /// compagnie nomme (le texte de sa fiche) la designe par son sigle ou un alias de sa couche (`reconnait`).
+    /// L'ORGANISATION PATRONALE : la cle d'une couche du bareme (`par_organisation_patronale`, son sigle), la case de la
+    /// fiche entreprise qui la nomme, et un signataire d'un accord de salaires (`minima::Convention::signataires`). Une
+    /// saisie se range en sigle (`FormeDeCase::RANGER`), se reconnait par son sigle ou un alias de sa couche dans le
+    /// bareme du jour (`Pile::organisation`, la seule porte) et s'ecrit par sa cle ; une fiche ecrite avant sous un alias
+    /// se reconnait de meme, a chaque lecture.
     pub struct OrganisationPatronale, "organisation patronale";
+}
+
+impl OrganisationPatronale {
+    /// LE NOM `nom` DESIGNE-T-IL CETTE ORGANISATION : son sigle, ou l'un des `alias` (ceux de sa couche), sans egard aux
+    /// accents, a la casse ni aux blancs (`socle::texte::sigle`). La seule comparaison de deux organisations.
+    pub fn designee_par(&self, alias: Option<&Vec<String>>, nom: &OrganisationPatronale) -> bool {
+        let cle = socle::texte::sigle(nom.as_str());
+        !cle.is_empty() && (cle == socle::texte::sigle(self.as_str()) || alias.into_iter().flatten().any(|a| cle == socle::texte::sigle(a)))
+    }
+}
+
+/// Une organisation saisie se range en sigle : « Scène Ensemble » se lit « SCENE ENSEMBLE ».
+impl crate::fiche::FormeDeCase for OrganisationPatronale {
+    const RANGER: Option<fn(&str) -> String> = Some(socle::texte::sigle);
+}
+
+impl Pile {
+    /// L'ORGANISATION `o` DANS CE BAREME : sa cle et sa couche, reconnues par son sigle ou un alias de la couche
+    /// (`OrganisationPatronale::designee_par`) ; `None` : le bareme ne la couvre pas.
+    pub fn organisation(&self, o: &OrganisationPatronale) -> Option<(&OrganisationPatronale, &Organisation)> {
+        self.par_organisation_patronale.iter().find(|(k, c)| k.designee_par(c.alias.as_ref(), o))
+    }
 }
 
 forme! {
@@ -1503,7 +1528,7 @@ pub struct TauxAtmp {
 
 /// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`) : la phrase d'un refus est celle d'un bareme que le moteur ne sait pas
 /// lire, la cle a part.
-pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&str>) -> socle::echec::R<(Pile, Vec<socle::date::Jour>)> {
+pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&OrganisationPatronale>) -> socle::echec::R<(Pile, Vec<socle::date::Jour>)> {
     lire_au(fichier, jour, organisation, "Le barème de l'année porte une clé ou une valeur que le moteur ne sait pas lire : le signaler au développeur.")
 }
 

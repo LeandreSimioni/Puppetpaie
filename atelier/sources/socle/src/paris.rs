@@ -477,9 +477,39 @@ pub mod ecrit {
             }
         }
 
+        impl HeureEcrite {
+            /// L'HEURE QU'UNE CHARGE SAISIT, sa seule lecture : `H:M`, un ou deux chiffres de chaque cote, sans ses blancs
+            /// autour, de 00:00 a 23:59 ; `None` sinon.
+            fn saisie(texte: &str) -> Option<HeureEcrite> {
+                let (a, b) = texte.trim().split_once(':')?;
+                let nombre = |t: &str| (!t.is_empty() && t.len() <= 2 && t.bytes().all(|c| c.is_ascii_digit())).then(|| t.bytes().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')));
+                let (heure, minute) = (nombre(a)?, nombre(b)?);
+                (heure < 24 && minute < 60).then_some(HeureEcrite { heure, minute })
+            }
+        }
+
+        impl std::fmt::Display for HeureEcrite {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{:02}:{:02}", self.heure, self.minute)
+            }
+        }
+
+        /// L'HEURE FACULTATIVE D'UNE CHARGE (`#[serde(default, deserialize_with = "…::saisie")]`) : absente ou nulle, aucune ;
+        /// `""` ne dit rien et se refuse, comme tout texte d'une charge ; sinon `HeureEcrite::saisie`, ou le refus.
+        pub fn saisie<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<HeureEcrite>, D::Error> {
+            let Some(t) = <Option<String> as serde::Deserialize>::deserialize(d)? else { return Ok(None) };
+            if t.is_empty() {
+                return Err(serde::de::Error::custom("un texte vide ne dit rien : le vide s'écrit absent ou null"));
+            }
+            match HeureEcrite::saisie(&t) {
+                Some(h) => Ok(Some(h)),
+                None => Err(serde::de::Error::custom(format!("Heure {} illisible : HH:MM, de 00:00 a 23:59.", crate::date::repr_texte(&t)))),
+            }
+        }
+
         impl serde::Serialize for HeureEcrite {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                s.serialize_str(&format!("{:02}:{:02}", self.heure, self.minute))
+                s.serialize_str(&self.to_string())
             }
         }
 

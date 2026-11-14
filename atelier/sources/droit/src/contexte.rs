@@ -681,12 +681,12 @@ fn controler_secteur(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
 
 /// L'organisation patronale de la fiche est-elle une de celles du bareme ?
 fn controler_organisation_patronale(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
-    let Some(nom) = fiche.organisation_patronale.portee().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string) else {
+    let Some(nom) = fiche.organisation_patronale.dite() else {
         return Ok(());
     };
     let annee = pile.annee;
     let connues: Vec<&str> = pile.par_organisation_patronale.keys().map(crate::forme_bareme::OrganisationPatronale::as_str).collect();
-    let Some(couche) = crate::bareme::couche_organisation(pile, &nom) else {
+    let Some((_, couche)) = pile.organisation(nom) else {
         return Err(socle::echec::refus_avec(
             "L'organisation patronale de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
             Lieu {
@@ -702,7 +702,7 @@ parametrage de l'organisme), puis a ecrire dans \
 \x20 Une compagnie qui n'adhere a rien laisse ce champ vide, et rien \
 ne change pour elle.",
                     annee,
-                    repr_texte(&nom),
+                    repr_texte(nom.as_str()),
                     if connues.is_empty() { "aucune".to_string() } else { connues.join(", ") },
                     annee
                 )),
@@ -1433,7 +1433,7 @@ impl Contexte {
         let chemin = surcouche(an)?;
         let ou = chemin.texte();
         let dossier = self.code.join("baremes");
-        let organisation = ent.organisation_patronale.dite().map(String::as_str);
+        let organisation = ent.organisation_patronale.dite();
         let p = self.racine.join(&chemin);
         let mut regles = Vec::new();
         // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
@@ -1585,7 +1585,7 @@ depuis le plus recent.",
         let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(None) };
         let ent = self.entreprise_au(jour);
         let Some(idcc) = ent.idcc.dite() else { return Ok(None) };
-        let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite().map(String::as_str))?;
+        let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;
         Ok(convention(&socle_an, idcc)?.map(lire))
     }
 

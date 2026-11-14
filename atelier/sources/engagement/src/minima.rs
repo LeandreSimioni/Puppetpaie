@@ -123,7 +123,7 @@ struct Cx<'a> {
     paie: &'a Paie,
     ent: &'a droit::fiche::ChampsEntreprise,
     annexe: Option<AnnexeConvention>,
-    organisation: Option<String>,
+    organisation: Option<droit::forme_bareme::OrganisationPatronale>,
     nb_cachets: i64,
 }
 
@@ -223,7 +223,7 @@ impl<'a> Cx<'a> {
         let texte = premiere_partie(self.grille)?;
         let Some(depuis) = self.lie_depuis else { return Ok(texte) };
         let le = depuis.jj_mm_aaaa();
-        Ok(match self.organisation.as_deref().filter(|o| signataire(self.grille, Some(o))) {
+        Ok(match self.organisation.as_ref().filter(|o| signataire(self.grille, Some(o))) {
             Some(o) => format!("{}, que la compagnie doit depuis le {} comme adhérente de {}", texte, le, o),
             None => format!("{}, dû par toute compagnie depuis le {}", texte, le),
         })
@@ -913,8 +913,8 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
         .to_string()
         .parse::<i64>()
         .map_err(|e| refus(e.to_string()))?;
-    let organisation = ent.organisation_patronale.dite().filter(|o| !o.is_empty()).cloned();
-    let Some((grille, lie_depuis, par_la_grille)) = grille_au(t, &idcc, organisation.as_deref(), premier_jour(paie)) else { return Ok(None) };
+    let organisation = ent.organisation_patronale.dite().cloned();
+    let Some((grille, lie_depuis, par_la_grille)) = grille_au(t, &idcc, organisation.as_ref(), premier_jour(paie)) else { return Ok(None) };
     let cx = Cx {
         t,
         idcc: &idcc,
@@ -1156,8 +1156,7 @@ pub fn cases_du_metier(ctx: &Contexte, code: &droit::fiche::CodeEmploiFt, jour: 
     let Some(m) = emplois::metier(code)? else { return Ok(lues) };
     let tab = table()?;
     let t: &Table = &tab;
-    let organisation = ent.organisation_patronale.dite().filter(|o| !o.is_empty()).cloned();
-    let Some((grille, _, _)) = grille_au(t, idcc, organisation.as_deref(), Some(*jour)) else { return Ok(lues) };
+    let Some((grille, _, _)) = grille_au(t, idcc, ent.organisation_patronale.dite(), Some(*jour)) else { return Ok(lues) };
     let statut = m.statut();
     if *idcc == IDCC_CCNEAC && statut == Statut::Technicien {
         let groupe = m.au_catalogue().and_then(|f| f.classification_1285.as_ref()).and_then(|c| c.groupe).map(|g| CleDeGrille::lire(&g.to_string())).transpose()?;
