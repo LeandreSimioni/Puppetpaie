@@ -113,7 +113,17 @@ coefficient de périodicité), pas une cotisation.
 - `texte/bloc-S21.G00.50.txt` l. 183 (`S21.G00.50.009`, montant du PAS) : « Il prend en compte la règle de l'arrondi sur
   les deux décimales après la virgule, en application du f) du 3° de l'article 39 C de l'annexe III au Code général des
   impôts. Exemple : Si le montant de PAS calculé s'élève à 120,5678 €, la somme à renseigner dans cette rubrique sera
-  120,57 €. » L'exemple ne tombe pas sur un demi ; l'article cité n'est pas déposé (voir plus bas).
+  120,57 €. » L'exemple ne tombe pas sur un demi ; l'article cité le tranche (ci-dessous).
+
+**Le CGI dit le demi-centime vers le haut, pour le montant du prélèvement à la source.** CGI, annexe III, art. 39 C, 3°,
+f) (version en vigueur depuis le 02/06/2024, décret n° 2024-496), imprimé de Légifrance par Léandre le 14/11/2026 (le
+nuage reçoit un 403) : `legifrance-cgi-annexe3-art39c-20261114.pdf`, tel que reçu, et sa transcription `.txt`
+(`pdftotext -layout`) :
+
+> f) Le montant de prélèvement à la source, arrondi à la deuxième décimale la plus proche, la fraction de décimale égale à
+> 0,005 comptant pour 0,01 ;
+
+Il vise le seul montant du PAS déclaré en DSN (`S21.G00.50.009`), pas une cotisation ni une ligne de bulletin.
 - `texte/bloc-S89.G00.89.txt` l. 67 (et `S89.G00.87` l. 61, `S89.G00.88` l. 67 ; mêmes mots en 2027,
   `texte-2027/`) : « La valeur indiquée comprend deux chiffres après la virgule. A titre d'exemple, une valeur unitaire d'un
   montant de 0,385 euro sera indiquée à "0.38", une valeur unitaire d'un montant de 0,386 euro sera indiquée à "0.39" ».
@@ -131,7 +141,7 @@ centime d'euro supérieur »), CSS D. 241-7-1 (un taux, « au centième le plus 
 
 **Ce qu'on en tire.** Aucun texte déposé ne dit l'arrondi au centime d'une cotisation, d'une ligne de bulletin ou d'un
 montant nominatif de la DSN, ni son demi. Quand un texte dit le demi, il le porte vers le haut : la loi pour l'euro des
-cotisations (CSS L. 133-10), la DGFiP pour le centime du PAS (BOFiP ci-dessus), le Conseil pour le centime de conversion
+cotisations (CSS L. 133-10), le CGI et la DGFiP pour le centime du PAS (ann. III art. 39 C, BOFiP), le Conseil pour le centime de conversion
 (règlement 1103/97, art. 5). Appliquer le demi vers le haut aux montants de paie est **une inférence par analogie** de ces
 trois textes, non un fondement au sens de `FONDER-UN-TAUX` : aucun ne vise ces montants. La norme DSN donne un exemple
 contraire, pour un autre objet (les blocs S89).
@@ -164,3 +174,5 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `cjue-arret-c-19-03-arrondi-euro-20040914.txt` : `46393b08a9c27d721777b42a455e2dbd0ce64cb2d18b5c9e4d544f8598b58eca`
 - `eurlex-reglement-1103-97-introduction-euro-19970619.html` : `1f11f46eaf67fa2eca78af2f25f5badf5ae0118562d5d64ed3f41b816736256a`
 - `eurlex-reglement-1103-97-introduction-euro-19970619.txt` : `64432f17a25555cf485cccfeb883730d045d3a160d31a58840d618d4446c9b81`
+- `legifrance-cgi-annexe3-art39c-20261114.pdf` : `2e5fa386591b70e76aa24786226c10febb92817382a84af2257d9c5062dadb06`
+- `legifrance-cgi-annexe3-art39c-20261114.txt` : `1c4e6000d8779c3c401f653dd798dd284d9b4a088a2377d8212781e6ffdd552e`

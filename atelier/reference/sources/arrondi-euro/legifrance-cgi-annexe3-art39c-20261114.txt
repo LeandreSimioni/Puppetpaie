@@ -1,0 +1,75 @@
+Code général des impôts, annexe III
+EN VIGUEUR AU 14/11/2026
+
+
+   Livre premier : Assiette et liquidation de l'impôt (Articles 2 sexies à 350 quindecies)
+        Première partie : Impôts d'État (Articles 2 sexies à 313-0 BR bis)
+            Titre premier : Impôts directs et taxes assimilées (Articles 2 sexies à 65)
+                 Chapitre Ier : Impôt sur le revenu (Articles 2 sexies à 46 F)
+                      Section I : Détermination des bénéfices ou revenus nets des diverses catégories
+                      de revenus (Articles 2 sexies à 41 DG ter)
+                          VI : Traitements, salaires, pensions et rentes viagères (Articles 38-0
+                          septdecies à 39 G)
+                               D : Obligations des employeurs (Articles 39 à 39 G)
+                               Article 39 Article 39-0 A Article 39-0 A bis Article 39 A Article 39 B
+
+                                 Déclaration annuelle de données sociales (Articles 39 C à 39 G)
+
+
+
+ Article 39 C
+  EN VIGUEUR DEPUIS LE 02 JUIN 2024
+
+ Modifié par Décret n°2024-496 du 30 mai 2024 - art. 3
+
+ La déclaration mentionnée à l'article 87-0 A du code général des impôts comporte :
+
+ 1° Pour la personne tenue d'effectuer la retenue à la source :
+
+ a) Les numéros d'identification mentionnés à l'article R. 123-221 du code de commerce ;
+
+ b) Le numéro de la nomenclature d'activités française mentionné au 1° de l'article R. 123-223 du
+ même code ;
+
+ 2° Pour l'émetteur de la déclaration, lorsqu'il n'est pas la personne mentionnée à l'article 87-0 A
+ du code général des impôts : le nom ou la raison sociale et les numéros d'identification
+ mentionnés à l'article R. 123-221 du code de commerce ;
+
+ 3° Pour chaque bénéficiaire de revenu :
+a) Les éléments d'identification mentionnés aux a, b, c, e et g du 3° du V de l'article R. 133-14 du
+code de la sécurité sociale ;
+
+b) La dernière adresse connue de son domicile ;
+
+c) La date à laquelle les sommes ou avantages imposables ont été versées ou accordés ;
+
+d) Le montant net imposable à l'impôt sur le revenu, déterminé dans les conditions prévues à
+l'article 204 F du code général des impôts, des sommes et avantages mentionnés au c ;
+
+e) Le taux du prélèvement à la source appliqué ;
+
+f) Le montant de prélèvement à la source, arrondi à la deuxième décimale la plus proche, la
+fraction de décimale égale à 0,005 comptant pour 0,01 ;
+
+g) L'identifiant du taux de prélèvement à la source mentionné au b du 2° de l'article 46 F ;
+
+h) Le cas échéant, la date de fin de la relation contractuelle avec la personne mentionnée au 1° ;
+
+4° Concernant le télérèglement :
+
+a) Les dates de début et de fin de la période au titre de laquelle la déclaration est déposée ;
+
+b) Le numéro de compte bancaire international (IBAN) et le code d'identification des banques
+(BIC) du compte depuis lequel est effectué le versement ;
+
+c) Le montant global du versement ;
+
+d) S'il diffère du numéro d'identification mentionné au a du 1°, le numéro d'identification
+mentionné au second alinéa de l'article R. 123-221 du code de commerce de l'établissement qui
+effectue le versement.
+
+
+NOTA :
+Modifications effectuées en conséquence de l'article 3-3° et 45 de la décret n° 2022-1014 du 19
+juillet 2022.
+
