@@ -26,7 +26,7 @@ pub fn en_valeur<T: Serialize + ?Sized>(v: &T) -> Value {
     }
 }
 
-/// CE QU'UNE CASE ECRIT, tel que son fichier l'ecrit : rien (nulle), un mot (un texte, un nombre ecrit), oui ou non, une
+/// CE QU'UNE CASE ECRIT, tel que son fichier l'ecrit : rien (nulle), un texte, un nombre (son ecriture), oui ou non, une
 /// structure (un objet ou une liste) qui porte quelque chose, ou une structure sans rien dedans (`{}`, `[]` : une liste de
 /// jours qui n'en coche aucun). C'est la valeur typee dans son ecriture, pas un texte tape : ce que lisent les regles de
 /// `champs-base.json`, ecrites dans la meme ecriture (`declarations::champs`).
@@ -34,6 +34,8 @@ pub fn en_valeur<T: Serialize + ?Sized>(v: &T) -> Value {
 pub enum MotEcrit {
     Vide,
     Mot(String),
+    /// Un nombre, tel qu'il s'ecrit : les regles de forme d'un texte (`champs-base.json`) ne s'y appliquent pas.
+    Nombre(String),
     OuiNon(bool),
     Structure,
     StructureVide,
@@ -43,7 +45,7 @@ impl MotEcrit {
     /// Le mot ecrit, s'il en est un (un texte ou un nombre).
     pub fn mot(&self) -> Option<&str> {
         match self {
-            MotEcrit::Mot(m) => Some(m),
+            MotEcrit::Mot(m) | MotEcrit::Nombre(m) => Some(m),
             MotEcrit::Vide | MotEcrit::OuiNon(_) | MotEcrit::Structure | MotEcrit::StructureVide => None,
         }
     }
@@ -143,7 +145,7 @@ fn mot_de_la_valeur(v: &Value) -> MotEcrit {
     match v {
         Value::Null => MotEcrit::Vide,
         Value::String(t) => MotEcrit::Mot(t.clone()),
-        Value::Number(n) => MotEcrit::Mot(nombre_ecrit(n)),
+        Value::Number(n) => MotEcrit::Nombre(nombre_ecrit(n)),
         Value::Bool(b) => MotEcrit::OuiNon(*b),
         Value::Array(l) if l.is_empty() => MotEcrit::StructureVide,
         Value::Object(o) if o.is_empty() => MotEcrit::StructureVide,

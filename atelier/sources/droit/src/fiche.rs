@@ -216,7 +216,7 @@ pub trait FicheSaisie: Sized + Default + Clone {
 pub fn dit(m: &MotEcrit) -> bool {
     match m {
         MotEcrit::Vide | MotEcrit::StructureVide => false,
-        MotEcrit::Mot(t) => !t.is_empty(),
+        MotEcrit::Mot(t) | MotEcrit::Nombre(t) => !t.is_empty(),
         MotEcrit::OuiNon(b) => *b,
         MotEcrit::Structure => true,
     }

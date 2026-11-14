@@ -236,7 +236,7 @@ enum VueDeLaPage {
 fn comme_la_page(v: MotEcrit) -> VueDeLaPage {
     match v {
         MotEcrit::Vide => VueDeLaPage::Vide,
-        MotEcrit::Mot(s) => VueDeLaPage::Mot(s.trim().to_string()),
+        MotEcrit::Mot(s) | MotEcrit::Nombre(s) => VueDeLaPage::Mot(s.trim().to_string()),
         MotEcrit::OuiNon(b) => VueDeLaPage::Mot(b.to_string()),
         MotEcrit::Structure | MotEcrit::StructureVide => VueDeLaPage::Structure,
     }

@@ -753,11 +753,39 @@ fn deriver_etablissements(p: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
                 Err(e) => faute(Some(e.phrase)),
             }
         }
+        // Les taux d'une ligne arrivent de la page en texte (« 0.5 », « 1,5 % ») : ils s'ecrivent en nombre, comme la
+        // fiche les porte deja, sinon une ligne renvoyee telle quelle se dirait changee et s'ecrirait en texte.
+        if let Some(t) = o.taux_atmp.as_mut() {
+            faute(montant_saisi(&mut t.valeur, "Taux AT/MP"));
+        }
+        if let Some(vm) = o.versement_mobilite.as_mut() {
+            faute(montant_saisi(&mut vm.taux, "Taux du versement mobilité"));
+        }
         if o.versement_mobilite.as_ref().is_some_and(droit::fiche::VersementMobilite::est_vide) {
             o.versement_mobilite = None;
         }
     }
     Ok(fautes)
+}
+
+/// UN MONTANT SAISI EN TEXTE (`12,5`, `1.5 %`) S'ECRIT EN NOMBRE, dans sa forme la plus courte, comme un nombre lu du
+/// fichier ; un texte blanc ne dit rien. Rend la faute d'un texte qui n'est pas un nombre.
+fn montant_saisi(m: &mut Option<droit::fiche::Montant>, quoi: &str) -> Option<String> {
+    let Some(droit::fiche::Montant::Texte(brut)) = m.as_ref() else { return None };
+    let brut = brut.replace('%', "");
+    let brut = brut.trim();
+    if brut.is_empty() {
+        *m = None;
+        return None;
+    }
+    let Some(d) = socle::num::decimal_a_virgule(brut) else { return Some(format!("{} illisible : {}.", quoi, brut)) };
+    match socle::forme::lire_texte::<droit::fiche::Montant>(&socle::num::court(d).to_string(), "Le nombre ne se lit pas.") {
+        Ok(lu) => {
+            *m = Some(lu);
+            None
+        }
+        Err(e) => Some(format!("{} illisible : {} ({}).", quoi, brut, e.phrase)),
+    }
 }
 
 // ------------------------------------------------------------------ ce qui change
@@ -779,6 +807,7 @@ pub(crate) fn vide(v: Option<&Valeur>) -> bool {
 pub(crate) fn case_vide(v: Option<&ValeurDeCase>) -> bool {
     v.is_none_or(|v| match v.ecrite() {
         MotEcrit::Mot(t) => t.trim().is_empty() || t.trim().eq_ignore_ascii_case(A_COMPLETER),
+        MotEcrit::Nombre(_) => false,
         MotEcrit::Vide | MotEcrit::StructureVide => true,
         MotEcrit::OuiNon(_) => false,
         // Une liste, ou une structure dont une case est ecrite.
@@ -814,7 +843,7 @@ fn meme(a: &ValeurDeCase, b: &ValeurDeCase, lisibles: &[CaseDeFiche]) -> bool {
     }
     // Deux valeurs simples se comparent par leur nombre ou leur mot ; une structure ou une liste d'un cote seulement
     // n'est pas la meme valeur.
-    let simple = |v: &ValeurDeCase| matches!(v.ecrite(), MotEcrit::Mot(_) | MotEcrit::OuiNon(_));
+    let simple = |v: &ValeurDeCase| matches!(v.ecrite(), MotEcrit::Mot(_) | MotEcrit::Nombre(_) | MotEcrit::OuiNon(_));
     simple(a)
         && simple(b)
         && match (a.nombre(), b.nombre()) {
