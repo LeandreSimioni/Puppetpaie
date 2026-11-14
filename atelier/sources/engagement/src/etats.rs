@@ -292,7 +292,7 @@ fn paie_sur_son_ecrite(mut paie: Paie, x: &PaieEcrite) -> Paie {
 /// `numero` : le numero de son bulletin, le premier N CE de son certificat. Ils se relisent ensuite (`numeros_ecrits`) :
 /// un document reparti a l'identique garde ses numeros. Une paie deja numerotee ne change pas de
 /// numero.
-pub fn poser_numeros_des_documents(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &crate::numeros::NumeroContrat, bulletin: Option<&crate::numeros::NumeroDeBulletin>, ce: Option<i64>) -> R<()> {
+pub fn poser_numeros_des_documents(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &crate::numeros::NumeroContrat, bulletin: Option<&crate::numeros::NumeroDeBulletin>, ce: Option<crate::numeros::NumeroDeCertificat>) -> R<()> {
     let o = stock::objets_du_mois(&ctx.racine, mois)?
         .into_iter()
         .find(|o| o.carte().salarie.as_ref() == Some(cle) && o.carte().numero.as_ref() == Some(numero))
@@ -862,7 +862,7 @@ pub fn numeros_des_documents(ctx: &Contexte, mois: Mois, departs: &Departs) -> R
 #[derive(Debug, Clone, Default)]
 pub struct NumerosEcrits {
     pub bulletin: Option<crate::numeros::NumeroDeBulletin>,
-    pub premier_ce: Option<i64>,
+    pub premier_ce: Option<crate::numeros::NumeroDeCertificat>,
     pub rectifie: Option<crate::numeros::NumeroDeBulletin>,
 }
 

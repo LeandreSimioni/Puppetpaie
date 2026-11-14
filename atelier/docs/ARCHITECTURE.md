@@ -250,6 +250,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | numéro de contrat | `NumeroContrat` | `engagement/src/numeros.rs` |
 | clé d'une paie versée | `CleDePaieVersee` | `engagement/src/importe.rs` |
 | numéro de bulletin | `NumeroDeBulletin` | `engagement/src/numeros.rs` |
+| numéro d'un certificat Congés Spectacles (N CE, le premier d'une paie partie) | `NumeroDeCertificat` | `engagement/src/numeros.rs` |
+| rang d'une ligne parmi celles de sa carte | `RangDeLigne` | `engagement/src/ligne.rs` |
 | numéro d'objet spectacle | `NumeroObjetSpectacle` | `droit/src/fiche.rs` |
 | IDCC | `Idcc` | `droit/src/fiche.rs` |
 | identifiant d'organisme | `IdentifiantDOrganisme` | `droit/src/organismes.rs` |

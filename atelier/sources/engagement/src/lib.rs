@@ -1396,7 +1396,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                 continue;
             }
         };
-        l.marques.rang = Some(rang);
+        l.marques.rang = Some(ligne::RangDeLigne(rang));
         let mut cases: Vec<CaseDeFrais> = Vec::new();
         let taux = l.taux.map(MontantUnitaire::decimal);
         let dates: Vec<DateDeLigne> = l.dates.clone();

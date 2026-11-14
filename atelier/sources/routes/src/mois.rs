@@ -1571,7 +1571,7 @@ pub(crate) struct ContratVu {
 /// Une case qu'une ligne de frais appelle : le rang de la ligne dans la saisie, la case, ce qu'elle dit, son aide.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct CaseDeFrais {
-    ligne: usize,
+    ligne: engagement::ligne::RangDeLigne,
     case: engagement::CaseDeFrais,
     libelle: &'static str,
     aide: Option<String>,

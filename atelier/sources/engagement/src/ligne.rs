@@ -439,11 +439,17 @@ pub enum LignePaie {
 /// detache.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Marques {
-    pub rang: Option<usize>,
+    pub rang: Option<RangDeLigne>,
     pub cases: Vec<CaseDeFrais>,
     pub aides: BTreeMap<CaseDeFrais, String>,
     pub taux_saisi: Option<MontantUnitaire>,
 }
+
+/// LE RANG D'UNE LIGNE parmi les lignes de sa carte, 0 pour la premiere : ce que la page lit pour la designer (une case
+/// d'une ligne de frais, une ligne payee pendant un imprevu). Il s'ecrit en nombre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct RangDeLigne(pub usize);
 
 /// Un nombre d'une ligne : ecrit en texte, son echelle gardee (`ecrit::texte`) ; lu d'un nombre ou d'un texte.
 mod texte {

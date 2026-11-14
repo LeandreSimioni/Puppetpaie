@@ -754,7 +754,7 @@ fn mois_puppetpaie(
         let mut paires: Vec<(IdSalarie, Vec<(&PaieCs, i64)>)> = Vec::new();
         for (i, p) in paies.iter().enumerate() {
             let cle = cle_de(p);
-            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.debut), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
+            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.debut), ecrits.get(i).and_then(|e| e.premier_ce).map(|n| n.0)) else { continue };
             let combien = conges_spectacles::decouper(&pc.engagement)?.len() as i64;
             tous.extend(n..n + combien);
             if cles.contains(&cle) {

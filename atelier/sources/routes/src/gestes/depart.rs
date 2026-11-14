@@ -666,7 +666,7 @@ impl DocumentsFabriques {
     pub(crate) fn engager(self, ctx: &Contexte, mois: Mois) -> R<()> {
         self.reserves.valider(ctx)?;
         for (cle, numero, bulletin, ce) in &self.a_poser {
-            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_ref(), ce.map(|c| c.0))?;
+            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_ref(), ce.map(|c| engagement::numeros::NumeroDeCertificat(c.0)))?;
         }
         Ok(())
     }
@@ -687,7 +687,7 @@ impl DocumentsFabriques {
             if let Some((_, dernier)) = ce {
                 ce_max = Some(ce_max.into_iter().chain([*dernier]).fold(*dernier, i64::max));
             }
-            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_ref(), ce.map(|c| c.0))?;
+            engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_ref(), ce.map(|c| engagement::numeros::NumeroDeCertificat(c.0)))?;
         }
         if let Some((an, n)) = bulletin_max {
             bornes.enregistrer(an, Suite::Bulletin, n);
@@ -853,7 +853,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     for (cle, debut, pc) in &pour_cs {
         let Some(pc) = pc else { continue };
         let Some(i) = (0..paies.len()).find(|i| cle_de(&paies[*i]) == *cle && paies[*i].engagement.debut == *debut) else { continue };
-    let n = match ecrits.get(i).and_then(|e| e.premier_ce) {
+    let n = match ecrits.get(i).and_then(|e| e.premier_ce).map(|n| n.0) {
             Some(n) => n,
             None if part(&paies[i]) => {
                 let n = match prochain_ce {
@@ -1569,7 +1569,7 @@ fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::
                 rectificatifs.insert(paies.len(), documents::bulletin::Rectificatif { rectifie: r.clone(), mois_origine: mois, ecart });
             }
             numeros.push(if p.engagement.sans_paie() { None } else { p.numero_bulletin.clone() });
-            premiers_ce.push(ecrite.as_ref().and_then(|x| x.ce));
+            premiers_ce.push(ecrite.as_ref().and_then(|x| x.ce).map(|n| n.0));
             paies.push(p);
         }
         let (mut pour_cs, _) = crate::dossier_salarie::certificats_dus(&ctx, &paies)?;

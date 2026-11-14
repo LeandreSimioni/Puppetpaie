@@ -33,7 +33,7 @@ pub struct PaieEcrite {
     pub conges_avant: Option<crate::conges::Avant>,
     /// Le numero du bulletin et le premier N CE, ecrits quand ses documents sont partis (`etats::poser_numeros_des_documents`).
     pub bulletin: Option<crate::numeros::NumeroDeBulletin>,
-    pub ce: Option<i64>,
+    pub ce: Option<crate::numeros::NumeroDeCertificat>,
     /// Le numero du bulletin d'une paie partie que celle-ci rectifie.
     pub rectifie: Option<crate::numeros::NumeroDeBulletin>,
     /// Pourquoi la paie s'est recalculee d'elle-meme, et quand.

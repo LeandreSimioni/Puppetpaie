@@ -113,6 +113,12 @@ impl From<NumeroContrat> for String {
     }
 }
 
+/// LE NUMERO D'UN CERTIFICAT CONGES SPECTACLES (N CE) : un nombre, le premier des certificats d'une paie partie
+/// (`paie_ecrite::PaieEcrite::ce`), ecrit et lu tel quel ; les suivants le continuent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct NumeroDeCertificat(pub i64);
+
 /// LE NUMERO D'UN BULLETIN DU LOGICIEL, `N/AAAA` : son rang dans la suite des bulletins de l'annee, puis l'annee. Il se
 /// donne par `numeroter`, et par le depart des documents d'un mois sur la suite qu'il reserve
 /// (`routes::gestes::depart::fabriquer_documents`) ; l'apercu d'un bulletin en montre un (`du_rang`). La paie ecrite le
