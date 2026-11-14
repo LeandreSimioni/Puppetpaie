@@ -182,6 +182,10 @@ fn somme(data: &VueDuMois, paies: &[Paie], rangs: &[RangDansLeMois], cible: Cibl
 /// cherche par approches successives (au plus `TOURS` essais) et le MEILLEUR essai gagne, jamais le dernier : a egale
 /// distance, celui qui ne depasse pas.
 pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[RangDansLeMois], cible: Cible, vise: Montant) -> R<Visee> {
+    // Un engagement ne se vise qu'une fois : un rang en double dans la charge se refuse, nomme.
+    if let Some(double) = rangs.iter().enumerate().find_map(|(k, r)| rangs[..k].contains(r).then_some(*r)) {
+        return Err(refus(format!("Le rang {} est en double dans la charge : un engagement ne se vise qu'une fois.", double)));
+    }
     let vise = vise.decimal();
     let mut data = data.clone();
     // Une ligne au tarif de la convention a son taux : elle n'est pas une ligne sans taux.
