@@ -171,7 +171,11 @@ impl From<CodeCtp> for String {
 /// déclarer une déduction de cotisation », et R, « Format propre à la déclaration d'une réduction de cotisations sur
 /// heures supplémentaires », « ont la particularité de porter un signe négatif » ; « Y : Ce format s'applique uniquement
 /// pour le CTP 901 » ; « Z : [...] notamment pour les lignes mobilité (hors VMRR) » ; « V : Taux à renseigner hors taux
-/// AT ». B et C sont dans la table, que le guide ne decrit pas. La liste est celle de la table livree.
+/// AT ». B et C sont dans la table, que le tableau du guide ne decrit pas (version 5.2 non plus,
+/// `editeur-dsn/guide-urssaf-regularisation-v5.2-20261019.txt`, l. 345-386) ; le meme guide dit ou leur montant se
+/// porte (l. 387-394) : « le montant associé au code type devra systématiquement être porté dans la rubrique 23.004
+/// (montant d'assiette), sauf si le CTP [...] est de format "R" ou "F" » : une assiette, comme A. La liste est celle de
+/// la table livree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormatDeCtp {
     A,

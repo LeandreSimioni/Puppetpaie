@@ -291,6 +291,9 @@ urssaf-codes-types-personnel). Rien n'est ecrit.",
             let a = l.assiette.ok_or_else(|| socle::fichiers::absent("assiette"))?;
             part_at(a).ok_or_else(|| socle::fichiers::absent("taux_at"))
         }
+        // C, que le tableau des formats ne decrit pas, porte son assiette comme tout format hors R et F (guide Urssaf
+        // v5.2, `editeur-dsn/guide-urssaf-regularisation-v5.2-20261019.txt`, l. 387-394) ; qu'il se valorise comme A
+        // (assiette × taux de la table) est une INFERENCE.
         FormatDeCtp::A | FormatDeCtp::C | FormatDeCtp::D | FormatDeCtp::E | FormatDeCtp::K => {
             let plafonne = l.qualifiant == QualifiantDAssiette::AssiettePlafonnee;
             let Some(tx) = (if plafonne { t.plafonne } else { t.deplafonne }) else {

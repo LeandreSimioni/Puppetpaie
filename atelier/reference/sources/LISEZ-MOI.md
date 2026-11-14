@@ -100,8 +100,10 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `code-general-des-collectivites-territoriales/xml/L2531-4.xml` : `08ab00e3503a6ff59760be7cfb34c3fa28c546da217a946dad2e0ad6fa724883`
 - `code-general-des-collectivites-territoriales/xml/L2531-6.xml` : `ac6b6fe707e5b08816a050780fec99405376ed3eece5bf3cb21ba65f4b95cd45`
 - `dsn-cahier-technique-2026.1-oeth-extrait.md` : `f2736ccd2701bde5a6c62ee406e6e7de1d02d80627eb39c1c0a2a6c4f58b7109`
-- `editeur-dsn/LISEZMOI.md` : `bf2f26c7c69a00c4e7d52031028dc6fcc0fd02b152b510ce88e31cffcacf33ff`
+- `editeur-dsn/LISEZMOI.md` : `770b787afefd5360a392ac924f8f7110aad33db6597f8f8570e8694344c36a3f`
 - `editeur-dsn/charte-editeurs-revue-forme.pdf` : `212eebfad46f3f6c397f174ff69d7b5cbc7aeccbd6d9307782735bc528b8356c`
+- `editeur-dsn/guide-urssaf-regularisation-v5.2-20261019.pdf` : `08981279e6dda69d029e85b3a1c6f80124f6404e1bd9856aaf679ad8f7deedd2`
+- `editeur-dsn/guide-urssaf-regularisation-v5.2-20261019.txt` : `078da9a5d2020fcc6499a99c56cf2aaffdf9ed2588ad0c0242553ae4468dc3e5`
 - `editeur-dsn/guide-urssaf-regularisation.pdf` : `7be4aabb6c3b0c7f118d7232e22580e705e01d7d5d8b0080c3328de5a33c4456`
 - `editeur-dsn/guide-urssaf-regularisation.txt` : `58a110144a4d701024dad4cf8de846f40a6ae3e556e4cb0d6366d087ebb24a4b`
 - `editeur-dsn/mode-operatoire-procedure-editeur.pdf` : `7c19e2bf2284d372a60c616b929c0fc96b04b8b860083c7f3afc22160afaf146`
@@ -155,8 +157,6 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `kali-3252-doublage-directeurs-artistiques-20260929.md` : `5ac8cabfe2f53be6bbcf5293ccb9c7ee1bbadd319b0b8ae5475c4949114f8f30`
 - `kali-3252-frais-sante-art842-financement-20260929.md` : `92d609d60d862c5204fb803884ba54768e9e704c59edec19225263eeb5deef72`
 - `kali-3252-mannequins-annexe-v-avenant-2-20260929.md` : `d2b05a17269eb2e0b2dd9ff3eacac09e9ea5564fa79a7bb3f2eeed041d92a0bb`
-- `kali-entrepot/articles.jsonl.gz` : `c3dab7425d9d050d5076ae4713fe2114ca1c0658d77f42d4f9350574e1bb88a6`
-- `kali-entrepot/etat.json` : `a5e2dacc1521f37aa8eb1ac8d59cfbd3d8029fb9a31e5f41eeace902a57068f2`
 - `lecture-comparee-20260921.md` : `8dc226afbb372b2f089c894a0f609e77787de9840464f2c98f520f966a248f39`
 - `legi-entrepot/articles.jsonl.gz` : `72c8f3bc0d5f98b28ea2232549b33aa178ffec27b5db68229ec3f45fe74d5296`
 - `legi-entrepot/etat.json` : `9959f9cfb436ba7b44459d2a0bb798bae657e4e904c47b94d0085378ce679cb5`

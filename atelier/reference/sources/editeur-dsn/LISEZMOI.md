@@ -8,6 +8,7 @@ données ; `sha256sum <fichier>` pour vérifier qu'une copie n'a pas bougé.
 | `charte-editeurs-revue-forme.pdf` | Charte de partenariat DSN entre les éditeurs de logiciels de paie et le GIP-MDS, version mars 2024 (mise à jour 05/03/2024), 6 pages. | https://www.net-entreprises.fr/media/documentation/charte-editeurs-revue-forme.pdf | `212eebfad46f3f6c397f174ff69d7b5cbc7aeccbd6d9307782735bc528b8356c` |
 | `mode-operatoire-procedure-editeur.pdf` | Mode opératoire de signature de la charte (avril 2024), 10 pages : identifiants reçus par mail de « Déploiement DSN », code à usage unique, espace éditeur, « Valider la nouvelle charte éditeur », code éditeur. | https://www.net-entreprises.fr/media/documentation/mode-operatoire-procedure-editeur.pdf | `7c19e2bf2284d372a60c616b929c0fc96b04b8b860083c7f3afc22160afaf146` |
 | `guide-urssaf-regularisation.pdf` | Guide Urssaf « Comment déclarer et régulariser les cotisations Urssaf en DSN », version du 04/06/2026, 41 pages (1 001 122 octets). **Téléchargé à la main par Léandre le 18/09/2026** : urssaf.fr coupe les connexions automatisées (deux essais le 17/09), le fichier n'est donc pas relevable par `sources`. | https://www.urssaf.fr/files/live/sites/urssaffr/files/outils-documentation/guides/Guide-declaration-regularisation-cotisations-sociales-Urssaf-DSN.pdf | `7be4aabb6c3b0c7f118d7232e22580e705e01d7d5d8b0080c3328de5a33c4456` |
+| `guide-urssaf-regularisation-v5.2-20261019.pdf` | Le même guide, **version 5.2** (« Mise à jour du 19/10/2026 par rapport à la version 5.1 du 04/06/2026 »), 56 pages (1 162 902 octets). **Déposé par Léandre le 14/11/2026.** Transcription `guide-urssaf-regularisation-v5.2-20261019.txt` (`pdftotext -layout`). | https://www.urssaf.fr/files/live/sites/urssaffr/files/outils-documentation/guides/Guide-declaration-regularisation-cotisations-sociales-Urssaf-DSN.pdf | `08981279e6dda69d029e85b3a1c6f80124f6404e1bd9856aaf679ad8f7deedd2` |
 
 Page d'origine : https://www.net-entreprises.fr/declaration/charte-editeurs-dsn/
 (liste des signataires 2024 : https://www.net-entreprises.fr/media/documentation/liste-des-signataires-2024.pdf).
@@ -162,3 +163,16 @@ la réduction écrit le 669 (801 pour le 671), qualifiant 921 (DIDA l. 654 : « 
 nécessaires ») : `dsn::lignes_regularisees` et `ctp_de_regularisation`, qui lit `reduction_generale.dsn.ctp_regularisation`
 du barème (`par_nature.permanent` : 669 ; `par_statut.technicien` : 801). Le montant du bordereau ne change pas (669 et
 801 sont valorisés à 100 % par la table des CTP). Preuve : `tests/regularisation_declaree.rs`.
+
+## Les formats des CTP, et le format B (lu le 14/11/2026, version 5.2)
+
+Transcription : `guide-urssaf-regularisation-v5.2-20261019.txt`.
+
+- § 1.3 (lignes 345-386) : le tableau des formats décrit A, K, D, E, F, R, Y, Z et V, **pas B ni C**, que la table des
+  CTP porte (le CTP 312 « Artistes cas général abattement 30 % », que le moteur déclare, est en B).
+- Lignes 387-394 : « l'exploitation du format du code type de personnel permet de savoir si c'est le montant
+  d'assiette ou le montant de cotisation qui doit être complété en DSN. Ainsi, le montant associé au code type devra
+  systématiquement être porté dans la rubrique 23.004 (montant d'assiette), sauf si le CTP […] est de format "R" ou "F"
+  dans la table des CTP de type CSV ». Un CTP en B ou en C porte donc son **assiette** (23.004). Ce que le guide ne dit
+  pas : si un taux AT s'y renseigne. Le guide renvoie à la « table des CTP de type XML » (champ `fmtco`) : à déposer.
+- **Où le moteur s'en sert** : `droit::organismes::FormatDeCtp` (et `documents::bordereau`) le cite pour B et C.
