@@ -18,7 +18,8 @@ use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
-use socle::grandeurs::{Montant, MontantUnitaire, Quantite};
+use socle::forme::Nombre;
+use socle::grandeurs::{Montant, MontantUnitaire};
 use socle::num::{add, court, div, mul, Decimal};
 use droit::permanents::{self, anciennete_mois, arrondir_jours, jours_acquis, IndemniteDePreavis};
 
@@ -33,12 +34,12 @@ struct Solde {
 
 /// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit.
 fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: Decimal, taux: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), Quantite::du_decimal(court(quantite)), MontantUnitaire::du_decimal(court(taux)))
+    LignePaie::composee(rubrique.clone(), Nombre(court(quantite)), MontantUnitaire::du_decimal(court(taux)))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
 fn ligne_unique(rubrique: &droit::catalogue::CodeDeRubrique, montant: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), Quantite::du_decimal(Decimal::ONE), MontantUnitaire::du_decimal(court(montant)))
+    LignePaie::composee(rubrique.clone(), Nombre(Decimal::ONE), MontantUnitaire::du_decimal(court(montant)))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite.
@@ -1333,7 +1334,6 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, V
 /// Le brut que portent des lignes deja construites, sans les charger : la
 /// meme somme que `calcul.calculer`.
 fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
-    let requis = |x: Option<Decimal>, cle: &str| -> R<Decimal> { x.ok_or_else(|| socle::fichiers::absent(cle)) };
     let mut total = Montant::ZERO.decimal();
     for l in lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
@@ -1341,7 +1341,9 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
             continue;
         }
         let signe = r.sens.signe();
-        total = add(total, mul(signe, Montant::du_decimal(mul(requis(l.taux().map(MontantUnitaire::decimal), "taux")?, requis(l.quantite().map(Quantite::decimal), "quantite")?)).au_centime().decimal()));
+        let taux = l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
+        let quantite = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        total = add(total, mul(signe, quantite.fois(taux).au_centime().decimal()));
     }
     Ok(total)
 }

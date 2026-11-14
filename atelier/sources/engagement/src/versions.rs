@@ -7,7 +7,7 @@ use serde::Serialize;
 use socle::forme::NombreLu;
 use crate::LignePaie;
 use socle::num::Decimal;
-use socle::grandeurs::{MontantUnitaire, Quantite};
+use socle::grandeurs::MontantUnitaire;
 
 use crate::departs::{Depart, Departs, Envoi};
 use crate::etats::{ses_departs, ARefaire, Valide};
@@ -275,9 +275,9 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
         for k in 0..xs.len().max(ys.len()) {
             match (xs.get(k), ys.get(k)) {
                 (Some(_), None) => out.push(format!("{} : retiré", lib)),
-                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, nombre_en_mots(y.quantite().map(Quantite::decimal), false))),
+                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, nombre_en_mots(y.quantite_ecrite(), false))),
                 (Some(x), Some(y)) => {
-                    let (qx, qy) = (x.quantite().map(Quantite::decimal), y.quantite().map(Quantite::decimal));
+                    let (qx, qy) = (x.quantite_ecrite(), y.quantite_ecrite());
                     if qx != qy {
                         out.push(format!("{} : {} → {}", au_pluriel(&lib), nombre_en_mots(qx, false), nombre_en_mots(qy, false)));
                     }

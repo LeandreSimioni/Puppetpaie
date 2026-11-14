@@ -46,7 +46,8 @@ use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
-use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire, Quantite};
+use socle::forme::Nombre;
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire};
 use socle::num::{div, mul, Decimal};
 use droit::catalogue::CodeDeRubrique;
 
@@ -707,7 +708,7 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
             })
         });
         let taux = MontantUnitaire::du_decimal(div(montant, q).normalize());
-        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, quantite: Quantite::du_decimal(q), taux, reconstitution }));
+        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, quantite: Nombre(q), taux, reconstitution }));
     }
     if dmois.ij_subrogees_jours > 0 {
         let j = Decimal::from(dmois.ij_subrogees_jours);
@@ -869,9 +870,9 @@ pub fn avec_le_montant(lignes: &[LignePaie], montant: Decimal) -> Vec<LignePaie>
         .map(|l| match l {
             LignePaie::Maintien(m) if m.reconstitution.is_some() => {
                 // La ligne du maintien porte toujours sa quantite (`lignes`) : ses heures d'absence, ou 1.
-                let q = if m.quantite.decimal() > Decimal::ZERO { m.quantite.decimal() } else { Decimal::ONE };
+                let q = if m.quantite.0 > Decimal::ZERO { m.quantite.0 } else { Decimal::ONE };
                 let taux = MontantUnitaire::du_decimal(div(montant, q).normalize());
-                LignePaie::Maintien(Maintien { rubrique: m.rubrique.clone(), quantite: Quantite::du_decimal(q), taux, reconstitution: None })
+                LignePaie::Maintien(Maintien { rubrique: m.rubrique.clone(), quantite: Nombre(q), taux, reconstitution: None })
             }
             autre => autre.clone(),
         })

@@ -859,7 +859,7 @@ nomme cette absence. Rien n'est calcule.",
             lignes.extend(retenue()?.map(|(quantite, taux)| {
                 crate::LignePaie::RetenueArret(crate::ligne::RetenueArret {
                     rubrique,
-                    quantite: socle::grandeurs::Quantite::du_decimal(quantite),
+                    quantite: socle::forme::Nombre(quantite),
                     taux: socle::grandeurs::MontantUnitaire::du_decimal(taux),
                 })
             }));
@@ -889,7 +889,7 @@ nomme cette absence. Rien n'est calcule.",
                 )));
             } else {
                 lignes.extend(retenue()?.map(|(quantite, taux)| {
-                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, socle::grandeurs::Quantite::du_decimal(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux))
+                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, socle::forme::Nombre(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux))
                 }));
                 absents += jours;
                 avert.push(info(format!(
@@ -980,7 +980,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &I
                 libelle: libelle_rubrique(&ctx.racine, &rubrique, &ctx.lue_au)?,
                 rubrique,
                 dates: dedans,
-                quantite: l.quantite().map(socle::grandeurs::Quantite::decimal),
+                quantite: l.quantite_ecrite(),
                 taux: l.taux().map(socle::grandeurs::MontantUnitaire::decimal),
             });
         }

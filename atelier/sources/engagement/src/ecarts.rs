@@ -422,7 +422,7 @@ fn comparer_une(
         let montant = Some(socle::grandeurs::Montant::du_decimal(quantite * taux));
         let heures = l.heures.map(socle::grandeurs::Heures::du_decimal);
         let (base, taux_majoration) = (Some(socle::grandeurs::Montant::du_decimal(quantite)), Some(socle::grandeurs::Taux::du_decimal(taux * Decimal::ONE_HUNDRED)));
-        let (quantite, taux) = (socle::grandeurs::Quantite::du_decimal(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux));
+        let (quantite, taux) = (socle::forme::Nombre(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux));
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = forme else {
             saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux, heures, precision: None, dates: jours.clone() }));

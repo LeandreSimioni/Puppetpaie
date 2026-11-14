@@ -93,7 +93,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let (q, h) = (court(part.fraction), court(Heures::du_decimal(quotite).au_centieme().decimal()));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
-            quantite: socle::grandeurs::Quantite::du_decimal(q),
+            quantite: socle::forme::Nombre(q),
             taux: socle::grandeurs::MontantUnitaire::du_decimal(court(salaire)),
             heures: Some(Heures::du_decimal(h)),
             precision: part.sur_le_bulletin(droit::conges::heures_par_jour(quotite, &horaire.jours)),

@@ -196,7 +196,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 |---|---|---|
 | montant | `Montant` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| quantité | `Heures`, `Cachets`, `Jours` ; celle d'une ligne de paie : `Quantite` ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
+| quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
+| quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, la part du mois payée, ou la base en euros d'une ligne en pourcentage) | `engagement/src/ligne.rs` |
 | coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | base d'une ligne de cotisation, valeur d'une assiette d'une paie | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures`) | `engagement/src/calcul.rs` |
@@ -212,9 +213,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le
   taux de PAS est sa notion à lui, `droit::pas::TauxDePas`.
 - **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui `Decimal`, `i64`,
-  `engagement::ligne::Chiffre`. La quantité d'une ligne de paie (`Quantite`) est dans l'unité que dit sa rubrique
-  (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois ; un forfait compte 1, une ligne
-  en pourcentage sa base) : la ligne ne connaît pas son unité ; quantité × montant unitaire = montant.
+  `engagement::ligne::Chiffre`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
+  (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait, la base en
+  euros d'une ligne en pourcentage ; une ligne au montant compte 1) : la ligne écrite ne garde que son nombre, et prend
+  son unité quand sa rubrique est lue ; quantité × montant unitaire = montant.
 - **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
   coefficient de la réduction générale) ; montant × coefficient = montant.
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le « taux » d'une ligne de paie, le

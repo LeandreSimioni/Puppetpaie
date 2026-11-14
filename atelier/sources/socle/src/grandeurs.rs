@@ -1,5 +1,5 @@
-//! L'ARGENT ET LES QUANTITES : un montant, un taux, des heures, des cachets, des jours, un coefficient, un montant
-//! unitaire (« Le glossaire »). Chacun porte un decimal exact, son echelle gardee (`24.0` reste `24.0`) ; il n'en sort
+//! L'ARGENT ET LES QUANTITES : un montant, un taux, des heures, des cachets, des jours, des services, des semaines, des
+//! unites d'un forfait, un coefficient, un montant unitaire (« Le glossaire »). Chacun porte un decimal exact, son echelle gardee (`24.0` reste `24.0`) ; il n'en sort
 //! que par une porte nommee (`decimal`), la ou une ecriture ou la norme l'exige. Seules les operations qui ont un sens
 //! se font : montant + montant, montant x taux = montant, heures x montant unitaire = montant ; montant + heures ne
 //! compile pas. L'arithmetique est celle de toute la paie (`num::add`, `mul`, `div` : `d28`) ; l'arrondi au centime se
@@ -119,7 +119,9 @@ grandeurs! {
     Jours, "DES JOURS : une quantite de jours (`4.92`).";
     Coefficient, "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).";
     MontantUnitaire, "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.";
-    Quantite, "LA QUANTITE D'UNE LIGNE DE PAIE, dans l'unite que sa rubrique dit (`droit::catalogue::Unite` : des heures, des cachets, des jours, des services, des semaines, une part du mois ; un forfait compte 1, une ligne en pourcentage compte sa base) : la ligne ne connait pas son unite, sa rubrique la dit.";
+    Services, "DES SERVICES : une quantite de services de repetition (`14`).";
+    Semaines, "DES SEMAINES : une quantite de semaines (`2`).";
+    Unites, "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
 }
 
 /// LA FORME CANONIQUE D'UNE GRANDEUR, pour les empreintes et les oracles : sans zero inutile (`12.50` devient `12.5`,
@@ -197,7 +199,25 @@ macro_rules! au_montant_unitaire {
     )*};
 }
 
-au_montant_unitaire!(Heures, Cachets, Jours, Quantite);
+au_montant_unitaire!(Heures, Cachets, Jours, Services, Semaines, Unites);
+
+/// La part d'une unite (la part du mois payee : 12/31) fois le montant de l'unite entiere (le salaire mensuel) : un
+/// montant.
+impl std::ops::Mul<MontantUnitaire> for Coefficient {
+    type Output = Montant;
+    fn mul(self, u: MontantUnitaire) -> Montant {
+        Montant(num::mul(self.0, u.0))
+    }
+}
+
+/// Une base en euros fois ce que chacun de ses euros paie (une ligne de paie en pourcentage : son pourcentage sur cent) :
+/// un montant.
+impl std::ops::Mul<MontantUnitaire> for Montant {
+    type Output = Montant;
+    fn mul(self, u: MontantUnitaire) -> Montant {
+        Montant(num::mul(self.0, u.0))
+    }
+}
 
 /// LES LECTURES D'UNE GRANDEUR AUTRES QUE LA SIENNE (`forme::decimal_en_nombre`) : un champ les dit par son attribut serde
 /// (`…::deserialize`, `…::option::deserialize` pour un `Option`).

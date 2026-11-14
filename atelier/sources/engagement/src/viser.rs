@@ -11,7 +11,8 @@ use crate::saisie::{Carte, VueDuMois};
 use droit::contexte::Contexte;
 use socle::echec::Echec;
 use socle::num::Decimal;
-use socle::grandeurs::{MontantUnitaire, Quantite};
+use crate::ligne::QuantiteDeLigne;
+use socle::grandeurs::MontantUnitaire;
 
 /// Ce qui se vise : le brut, le cout employeur, le net a payer ; la charge du montant vise le dit `brut`, `cout`, `net`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -92,7 +93,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
                 continue;
             }
             let r = rubrique_de(ctx, ligne)?;
-            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && ligne.taux().is_none_or(MontantUnitaire::est_nul) && !ligne.quantite().is_none_or(Quantite::est_nul) {
+            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && ligne.taux().is_none_or(MontantUnitaire::est_nul) && !ligne.quantite(r.unite).is_none_or(QuantiteDeLigne::est_nul) {
                 sans_taux.push((k, r.libelle));
             }
         }

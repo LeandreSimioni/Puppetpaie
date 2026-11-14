@@ -230,7 +230,7 @@ impl LigneImprimee {
         let rubrique = self.rubrique.clone()?;
         Some(crate::LignePaie::Importee(crate::ligne::Importee {
             rubrique,
-            quantite: self.quantite.map(socle::grandeurs::Quantite::du_decimal),
+            quantite: self.quantite.map(socle::forme::Nombre),
             taux: self.taux.map(socle::grandeurs::MontantUnitaire::du_decimal),
             heures: self.heures.map(socle::grandeurs::Heures::du_decimal),
         }))

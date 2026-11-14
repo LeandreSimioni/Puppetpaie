@@ -20,7 +20,8 @@ use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, court, div, mul, sub, Decimal};
-use socle::grandeurs::{Heures, Montant, MontantUnitaire, Quantite, Taux};
+use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
+use crate::ligne::QuantiteDeLigne;
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
 use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
@@ -48,7 +49,8 @@ pub struct LigneBrut {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: Unite,
-    pub quantite: Quantite,
+    /// Sa quantite, dans l'unite de sa rubrique (`unite`).
+    pub quantite: QuantiteDeLigne,
     pub taux: MontantUnitaire,
     pub montant: Montant,
     pub heures_annexes: Heures,
@@ -136,7 +138,7 @@ impl LigneBrut {
             code: self.code.clone(),
             libelle: self.libelle.clone(),
             unite: self.unite,
-            quantite: self.quantite,
+            quantite: socle::forme::Nombre(self.quantite.decimal()),
             taux: self.taux,
             montant: self.montant,
             heures_annexes: self.heures_annexes,
@@ -160,7 +162,7 @@ impl LigneBrut {
             code: f.code.clone(),
             libelle: f.libelle.clone(),
             unite: f.unite,
-            quantite: f.quantite,
+            quantite: QuantiteDeLigne::de_l_unite(f.unite, f.quantite.0),
             taux: f.taux,
             montant: f.montant,
             heures_annexes: f.heures_annexes,
@@ -184,7 +186,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
     let mut out = Vec::new();
     for l in &eng.lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
         let taux = l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
         let signe = r.sens.signe();
         // Le signe porte aussi sur les heures : une absence en retire.
@@ -196,7 +198,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
             unite: r.unite,
             quantite: q,
             taux,
-            montant: Montant::du_decimal(signe * (q * taux).au_centime().decimal()),
+            montant: Montant::du_decimal(signe * q.fois(taux).au_centime().decimal()),
             // Des heures nulles gardent le signe de la ligne et leur echelle.
             heures_annexes: Heures::du_decimal(if h.is_zero() { if signe.is_sign_negative() { -h } else { h } } else { signe * h }),
             soumis: r.soumis,
@@ -571,9 +573,11 @@ impl Paie {
 pub fn en_bref(lignes: &[LigneBrut]) -> String {
     let mut groupes: Vec<LigneBrut> = Vec::new();
     for l in lignes.iter().filter(|l| l.code != crate::NUITEE_AU_DELA && l.code != crate::REPAS_AU_DELA) {
-        match groupes.iter_mut().find(|g| g.code == l.code && g.precision == l.precision) {
-            Some(g) => {
-                g.quantite += l.quantite;
+        // Deux quantites d'une meme rubrique sont de la meme grandeur ; deux grandeurs ne s'ajouteraient pas, et se diraient
+        // a part.
+        match groupes.iter_mut().find(|g| g.code == l.code && g.precision == l.precision).and_then(|g| g.quantite.plus(l.quantite).map(|q| (g, q))) {
+            Some((g, q)) => {
+                g.quantite = q;
                 g.montant += l.montant;
             }
             None => groupes.push(l.clone()),
@@ -2028,7 +2032,7 @@ contrat << majoree du nombre d'heures complementaires >> du mois (CSS R. 242-2, 
 heures en plus du salaire mensuel ({} h) : heures complementaires ou non, le logiciel ne le sait pas. Refus : il ne les \
 devine pas.",
             e.qui(),
-            l.quantite().iter().map(|q| q.decimal().to_string()).collect::<String>()
+            l.quantite_ecrite().iter().map(|q| q.to_string()).collect::<String>()
         ));
     }
     let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", &format!("{}.quotite_reference_defaut", nat.libelle)))?;
@@ -2041,7 +2045,8 @@ devine pas.",
         .lignes
         .iter()
         .filter(|l| *l.rubrique() == crate::heures_en_plus::HEURE_COMPLEMENTAIRE)
-        .map(|l| l.quantite().map(socle::grandeurs::Quantite::decimal).ok_or_else(|| refus("nombre attendu, lu null")))
+        // Leur rubrique compte des heures (`rubriques-base.json`, `heure_complementaire`).
+        .map(|l| l.quantite_ecrite().ok_or_else(|| refus("nombre attendu, lu null")))
         .sum::<R<Decimal>>()?;
     Ok((socle::grandeurs::Heures::du_decimal(e.quotite()? + complementaires), socle::grandeurs::Heures::du_decimal(reference)))
 }
@@ -2118,7 +2123,7 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: Quantite::du_decimal(Decimal::ONE), taux: MontantUnitaire::du_decimal(dec_de(montant)),
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: QuantiteDeLigne::de_l_unite(Unite::Mois, Decimal::ONE), taux: MontantUnitaire::du_decimal(dec_de(montant)),
             montant: Montant::du_decimal(dec_de(montant)), heures_annexes: Heures::du_decimal(dec_de(heures)), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,

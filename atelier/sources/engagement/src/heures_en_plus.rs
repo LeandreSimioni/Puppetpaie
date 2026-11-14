@@ -12,6 +12,7 @@ use socle::forme::NombreLu;
 
 use crate::calcul::{BaseDeCotisation, LigneBrut, LigneCotisation};
 use crate::conges::{avertir, info, qui};
+use crate::ligne::QuantiteDeLigne;
 use crate::saisie::Carte;
 use crate::Avis;
 use droit::catalogue::CodeDeRubrique;
@@ -102,7 +103,7 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, qu
         let taux = (horaire * (Decimal::ONE_HUNDRED + p.majoration) / Decimal::ONE_HUNDRED).round_dp(4);
         out.push(crate::LignePaie::Composee(crate::ligne::Composee {
             rubrique: rubrique.clone(),
-            quantite: socle::grandeurs::Quantite::du_decimal(court(p.heures)),
+            quantite: socle::forme::Nombre(court(p.heures)),
             taux: socle::grandeurs::MontantUnitaire::du_decimal(court(taux)),
             heures: None,
             precision: Some(format!("majorées de {} %", virgule(p.majoration.normalize()))),
@@ -155,8 +156,13 @@ pub(crate) fn apres_les_cotisations(
     if remuneration <= Montant::ZERO || brut <= Montant::ZERO {
         return Ok(None);
     }
-    let heures = siennes.iter().fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite.decimal()));
-    let supplementaires = siennes.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite.decimal()));
+    // Leurs rubriques comptent des heures (`rubriques-base.json`) ; une autre grandeur se refuse.
+    let heures_de = |l: &LigneBrut| match l.quantite {
+        QuantiteDeLigne::Heures(h) => Ok(h),
+        _ => Err(socle::refus!("La ligne {} des heures en plus ne compte pas des heures : le signaler au développeur.", l.code)),
+    };
+    let heures = siennes.iter().try_fold(Heures::ZERO, |a, l| heures_de(l).map(|h| a + h))?;
+    let supplementaires = siennes.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).try_fold(Heures::ZERO, |a, l| heures_de(l).map(|h| a + h))?;
     let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(Montant::ZERO, |a, l| a + l.montant_sal);
     let mut avis = Vec::new();
 

@@ -59,7 +59,7 @@ use socle::mois::{Graphie, Mois};
 use droit::emplois;
 
 use socle::{echec::{refus, Echec, R}, num::{court, Decimal}};
-use socle::grandeurs::{Heures, Montant, MontantUnitaire, Quantite};
+use socle::grandeurs::{Heures, Montant, MontantUnitaire};
 
 #[derive(Debug, Clone)]
 pub struct Engagement {
@@ -338,7 +338,7 @@ impl Engagement {
         };
         for l in &lignes {
             let r = rubrique(racine, l.rubrique(), &jour_lu)?;
-            let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
+            let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
             if r.unite == droit::catalogue::Unite::Cachet {
                 cachets_somme += q;
                 premier_cachet.get_or_insert(l);
@@ -860,7 +860,7 @@ pub(crate) fn lignes_du_planning(racine: &Path, source: &[LignePaie], mois: Mois
         }
         let unite = rubrique(racine, l.rubrique(), &mois.dernier_jour())?.unite;
         let par_date = matches!(unite, droit::catalogue::Unite::Cachet | droit::catalogue::Unite::Jour | droit::catalogue::Unite::Service);
-        let quantite = Some(socle::grandeurs::Quantite::du_decimal(Decimal::from(if par_date { dedans.len() as i64 } else { 0 })));
+        let quantite = Some(socle::forme::Nombre(Decimal::from(if par_date { dedans.len() as i64 } else { 0 })));
         lignes.push(match l.avec_les_jours(dedans, apres) {
             LignePaie::Unites(x) => LignePaie::Unites(ligne::Unites { quantite, ..x }),
             LignePaie::UnitesEtHeures(x) => {
@@ -1514,7 +1514,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         let (i, l) = (*i, &lignes[*i]);
         let Some(taux) = l.taux().map(MontantUnitaire::decimal) else { continue };
         // La quantite d'une ligne saisie est dite (`lignes_dites`).
-        let quantite = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
+        let quantite = l.quantite_ecrite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
         if l.dates().is_empty() {
             return Err(socle::refus!("{} : une ligne de frais à l'étranger dit ses jours : l'indemnité de mission est celle d'un jour. Rien n'est calculé.", qui));
         }
@@ -1596,7 +1596,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
             let premier = dates.first().map(DateDeLigne::jour);
             parts.push(LignePaie::Composee(ligne::Composee {
                 rubrique: au_dela.clone(),
-                quantite: Quantite::du_decimal(quantite.normalize()),
+                quantite: socle::forme::Nombre(quantite.normalize()),
                 taux: MontantUnitaire::du_decimal((ecart / e.unites).normalize()),
                 heures: None,
                 precision: None,
@@ -1654,9 +1654,9 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
         let ligne = format!("sa ligne {} (« {} »)", i + 1, r.libelle);
         // Ce que la ligne dit qu'elle paie (une quantite, une base, ou rien a compter : un montant), et son prix.
         let (quantite, taux, quoi, prix) = match l {
-            LignePaie::Unites(x) => (Some(x.quantite.map(Quantite::decimal)), x.taux.is_some(), "la quantité", "le montant"),
-            LignePaie::UnitesEtHeures(x) => (Some(x.quantite.map(Quantite::decimal)), x.taux.is_some(), "la quantité", "le montant"),
-            LignePaie::Frais(x) => (Some(x.quantite.map(Quantite::decimal)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::Unites(x) => (Some(x.quantite.map(|n| n.0)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::UnitesEtHeures(x) => (Some(x.quantite.map(|n| n.0)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::Frais(x) => (Some(x.quantite.map(|n| n.0)), x.taux.is_some(), "la quantité", "le montant"),
             LignePaie::Pourcentage(x) => (Some(x.base.map(Montant::decimal)), x.taux_majoration.is_some(), "la base", "le pourcentage"),
             LignePaie::Montant(x) => (None, x.montant.is_some(), "", "le montant"),
             LignePaie::AvantageEnNature(x) => (None, x.montant.is_some(), "", "le montant"),
@@ -1719,7 +1719,7 @@ fn heures_dites(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
         if !r.heures_a_saisir() {
             continue;
         }
-        let quantite = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let quantite = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
         if quantite.est_nul() || l.heures().is_some_and(|h| !h.est_nul()) {
             continue;
         }
@@ -2122,5 +2122,5 @@ pub(crate) fn lignes_coupees_a_la_fin(partie: &[LignePaie], presentes: &[LignePa
         attendues.push((l.avec_les_jours(gardes, l.planning().to_vec()), coupee));
     }
     presentes.len() == attendues.len()
-        && presentes.iter().zip(&attendues).all(|(p, (a, coupee))| if *coupee { p.sans_quantite() == a.sans_quantite() && p.quantite() <= a.quantite() } else { p == a })
+        && presentes.iter().zip(&attendues).all(|(p, (a, coupee))| if *coupee { p.sans_quantite() == a.sans_quantite() && p.quantite_ecrite() <= a.quantite_ecrite() } else { p == a })
 }

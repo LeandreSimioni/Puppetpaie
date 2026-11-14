@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::grandeurs::{Heures, Montant, MontantUnitaire, Quantite, Taux};
+use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
 
 use crate::calcul::BaseDeCotisation;
 use crate::{Avis, ContratEcrit, LignePaie};
@@ -173,8 +173,9 @@ pub struct FormeDeRemuneration {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: droit::catalogue::Unite,
-    #[serde(with = "nombre")]
-    pub quantite: Quantite,
+    /// Sa quantite, sans son unite : relue, elle la prend de `unite` (`calcul::LigneBrut::de_la_forme`).
+    #[serde(serialize_with = "nombre_ecrit")]
+    pub quantite: socle::forme::Nombre,
     #[serde(with = "nombre")]
     pub taux: MontantUnitaire,
     #[serde(with = "nombre")]
