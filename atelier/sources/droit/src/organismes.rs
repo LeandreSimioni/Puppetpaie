@@ -510,6 +510,13 @@ impl Adhesion {
     }
 }
 
+crate::cle_opaque! {
+    /// LA REFERENCE D'UNE ADHESION (S21.G00.15.005, l'« identifiant technique Adhésion », que le bloc 70 d'un salarie
+    /// cite en S21.G00.70.013) : celle que le moteur attribue a une adhesion (`Adhesion.reference`) ou qu'une
+    /// contribution de branche porte. Les relectures d'une DSN que le moteur ecrit la lisent (`declarations::dsn`).
+    pub struct ReferenceDAdhesion, "référence d'adhésion";
+}
+
 /// LA REFERENCE D'UN CONTRAT CHEZ L'ORGANISME (S21.G00.15.001, la « référence contrat » de la fiche de parametrage DSN)
 /// que la compagnie saisit : de 1 a 30 caracteres (le cahier technique), sans blancs de bord, en capitales.
 #[derive(Debug, Clone, PartialEq, Eq)]

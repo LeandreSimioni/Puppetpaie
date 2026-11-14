@@ -1731,8 +1731,8 @@ fn croises_spectacle(d: &ChampsSpectacle) -> Vec<Constat> {
             };
             out.push(constat(P::Titre, Gravite::Avertissement, message));
         }
-        if let Some(code) = texte_dit(&d.code_analytique) {
-            if !code.chars().all(|c| c.is_ascii() && (c.is_alphanumeric() || c == '-' || c == '_')) {
+        if let Some(code) = d.code_analytique.dite() {
+            if !code.as_str().chars().all(|c| c.is_ascii() && (c.is_alphanumeric() || c == '-' || c == '_')) {
                 out.push(constat(
                     P::CodeAnalytique,
                     Gravite::Erreur,

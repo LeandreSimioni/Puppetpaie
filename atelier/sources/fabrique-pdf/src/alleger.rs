@@ -26,6 +26,9 @@ pub enum FormatDImage {
 }
 
 impl FormatDImage {
+    /// Les trois, dans l'ordre ou l'on cherche l'image posee.
+    pub const TOUS: [FormatDImage; 3] = [FormatDImage::Png, FormatDImage::Jpeg, FormatDImage::Svg];
+
     /// L'extension du fichier qui le porte, avec son point.
     pub fn extension(self) -> &'static str {
         match self {
@@ -33,6 +36,49 @@ impl FormatDImage {
             FormatDImage::Jpeg => ".jpg",
             FormatDImage::Svg => ".svg",
         }
+    }
+
+    /// Son nom, l'extension sans son point.
+    pub fn nom(self) -> &'static str {
+        match self {
+            FormatDImage::Png => "png",
+            FormatDImage::Jpeg => "jpg",
+            FormatDImage::Svg => "svg",
+        }
+    }
+
+    /// Son type MIME.
+    pub fn mime(self) -> &'static str {
+        match self {
+            FormatDImage::Png => "image/png",
+            FormatDImage::Jpeg => "image/jpeg",
+            FormatDImage::Svg => "image/svg+xml",
+        }
+    }
+
+    /// LE FORMAT DE CES OCTETS, reconnu a leurs premiers octets et non a une extension, la seule reconnaissance : la
+    /// signature d'un PNG ou d'un JPEG ; un SVG commence, apres ses blancs, par `<?xml`, `<svg` ou `<!--`, et porte
+    /// `<svg` dans ses 8 192 premiers octets.
+    pub fn des_octets(o: &[u8]) -> Option<FormatDImage> {
+        if o.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Some(FormatDImage::Png);
+        }
+        if o.starts_with(&[0xFF, 0xD8, 0xFF]) {
+            return Some(FormatDImage::Jpeg);
+        }
+        let tete = &o[..o.len().min(2048)];
+        // Que des blancs : rien d'un SVG.
+        let tete = match tete.iter().position(|c| !c.is_ascii_whitespace() && *c != 0x0b) {
+            Some(debut) => &tete[debut..],
+            None => return None,
+        };
+        if tete.starts_with(b"<?xml") || tete.starts_with(b"<svg") || tete.starts_with(b"<!--") {
+            let long = o[..o.len().min(8192)].to_ascii_lowercase();
+            if long.windows(4).any(|w| w == b"<svg") {
+                return Some(FormatDImage::Svg);
+            }
+        }
+        None
     }
 }
 
@@ -47,18 +93,6 @@ pub struct Allegee {
     pub avant: usize,
     /// L'image reçue est gardée telle quelle.
     pub telle_quelle: bool,
-}
-
-fn format_de(o: &[u8]) -> Option<FormatDImage> {
-    if o.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some(FormatDImage::Png)
-    } else if o.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        Some(FormatDImage::Jpeg)
-    } else if String::from_utf8_lossy(&o[..o.len().min(8192)]).to_ascii_lowercase().contains("<svg") {
-        Some(FormatDImage::Svg)
-    } else {
-        None
-    }
 }
 
 fn png(image: &DynamicImage) -> Result<Vec<u8>, Refus> {
@@ -123,7 +157,7 @@ fn ecrire(image: &DynamicImage, objectif: usize) -> Result<(Vec<u8>, FormatDImag
 /// `octets` (PNG, JPEG ou SVG) allégée pour être imprimée sur `largeur_points` au plus, à `objectif` octets au
 /// plus si la résolution le permet (voir l'en-tête du module).
 pub fn alleger(octets: &[u8], largeur_points: Mesure, objectif: usize) -> Result<Allegee, Refus> {
-    let format = format_de(octets).ok_or_else(|| Refus::illisible("ni un PNG, ni un JPEG, ni un SVG"))?;
+    let format = FormatDImage::des_octets(octets).ok_or_else(|| Refus::illisible("ni un PNG, ni un JPEG, ni un SVG"))?;
     if format == FormatDImage::Svg {
         return Ok(Allegee { octets: octets.to_vec(), format, largeur: 0, avant: octets.len(), telle_quelle: true });
     }

@@ -16,10 +16,6 @@ use droit::fiche::{CaseDeFiche, CaseEntreprise, ChampsEntreprise, NomDeFiche};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 
-/// Dans la fiche d'un spectacle : le titre que l'import a lu dans les bulletins de l'ancien logiciel, propose, et ou il
-/// l'a lu (la ligne « Spectacle », ou la case « Analytique »). « Pour démarrer » le propose dans la case du titre.
-pub const TITRE_PROPOSE: &str = "titre_propose";
-pub const TITRE_LU_DANS: &str = "titre_lu_dans";
 /// Le titre d'un spectacle que l'import n'a pas ecrit.
 const TITRE_A_COMPLETER: &str = "A COMPLETER";
 
@@ -270,7 +266,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     }
     // LE TITRE D'UN SPECTACLE QUE L'IMPORT N'A PAS ECRIT (« A COMPLETER » sur une fiche active : le contrat et le bulletin
     // l'imprimeraient tel quel) : la case se demande, avec le titre que les bulletins de l'ancien logiciel portent
-    // (`TITRE_PROPOSE`), a valider ou a corriger, et le numero d'objet auquel il correspond.
+    // (la note `titre_propose` de sa fiche), a valider ou a corriger, et le numero d'objet auquel il correspond.
     for (cle, sp) in ctx.spectacles.iter().filter(|(_, s)| !s.archivee()) {
         let lu = |t: Option<&str>| t.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
         if !lu(sp.titre.remplie()).is_none_or(|t| t.eq_ignore_ascii_case(TITRE_A_COMPLETER)) {

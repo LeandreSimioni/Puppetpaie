@@ -376,7 +376,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<NumeroObjetSpectacle>)
 }
 
 /// UN SPECTACLE QUE L'IMPORT CREE d'un numero d'objet qu'aucune fiche ne porte : sans titre (les pieces n'en impriment
-/// pas, ou il se propose a valider : `declarations::demarrage::TITRE_PROPOSE`), actif s'il a ete declare dans l'annee.
+/// pas, ou il se propose a valider : la note `titre_propose` de la fiche), actif s'il a ete declare dans l'annee.
 #[derive(Serialize)]
 pub(crate) struct SpectacleDesPieces {
     pub(crate) titre: &'static str,

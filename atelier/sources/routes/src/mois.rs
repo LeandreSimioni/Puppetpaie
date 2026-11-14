@@ -358,7 +358,16 @@ struct Passe {
     numero_objet: Option<NumeroObjetSpectacle>,
     spectacle: Option<droit::contexte::IdSpectacle>,
     dates: Vec<Jour>,
-    source: &'static str,
+    source: SourceDuContratPasse,
+}
+
+/// D'OU LE CALENDRIER TIENT UN CONTRAT PASSE : un engagement du logiciel (`paie`), ou l'historique de l'ancien logiciel
+/// (`historique`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SourceDuContratPasse {
+    Paie,
+    Historique,
 }
 
 #[derive(Debug, Serialize)]
@@ -894,7 +903,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
                 numero_objet,
                 spectacle: e.spectacle.clone(),
                 dates: dates.into_iter().filter(|j| j.mois_civil() == mois).collect(),
-                source: "paie",
+                source: SourceDuContratPasse::Paie,
             };
             match deja {
                 Some(i) => out[i] = contrat,
@@ -929,7 +938,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             jours: a.jours,
             numero_objet: a.numero_objet,
             dates: Vec::new(),
-            source: "historique",
+            source: SourceDuContratPasse::Historique,
         });
     }
     out.sort_by(|a, b| (&a.salarie, &a.debut, &a.fin).cmp(&(&b.salarie, &b.debut, &b.fin)));

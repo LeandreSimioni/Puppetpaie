@@ -15,6 +15,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use droit::contexte::Contexte;
+use droit::fiche::CodeAnalytique;
 use droit::forme_bareme::IdDeCotisation;
 use engagement::ecarts::RegroupementDeComparaison;
 use socle::echec::{erreur, Classe, Echec, R};
@@ -361,6 +362,18 @@ fn cotisations_seules_dites<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Or
     }
 }
 
+/// `sections` du plan : le titre d'un spectacle -> son code analytique ; un code vide n'en choisit pas, il ne se garde
+/// pas.
+fn sections_dites<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeMap<String, CodeAnalytique>>, D::Error> {
+    let Some(ecrites) = Option::<BTreeMap<String, String>>::deserialize(d)? else { return Ok(None) };
+    let mut sections = BTreeMap::new();
+    for (titre, code) in ecrites.into_iter().filter(|(_, c)| !c.is_empty()) {
+        let code = CodeAnalytique::lire(&code).map_err(|e| serde::de::Error::custom(e.phrase))?;
+        sections.insert(titre, code);
+    }
+    Ok(Some(sections))
+}
+
 /// `regroupements` du plan : des regroupements seuls.
 fn regroupements_seuls<'de, D: Deserializer<'de>>(d: D) -> Result<Ordonne<RegleLigne, RegroupementDeComparaison>, D::Error> {
     let regroupements = Ordonne::<RegleLigne, RegroupementDeComparaison>::deserialize(d)?;
@@ -461,7 +474,8 @@ pub struct Plan {
     #[serde(deserialize_with = "regroupements_seuls")]
     pub regroupements: Ordonne<RegleLigne, RegroupementDeComparaison>,
     pub provision_conges: ProvisionConges,
-    pub sections: Option<BTreeMap<String, String>>,
+    #[serde(default, deserialize_with = "sections_dites")]
+    pub sections: Option<BTreeMap<String, CodeAnalytique>>,
     pub poste_analytique: Option<PosteAnalytique>,
 }
 
@@ -486,7 +500,8 @@ struct PlanPropre {
     #[serde(default, deserialize_with = "regroupements_seuls_dits")]
     regroupements: Option<Ordonne<RegleLigne, RegroupementDeComparaison>>,
     provision_conges: Option<ProvisionConges>,
-    sections: Option<BTreeMap<String, String>>,
+    #[serde(default, deserialize_with = "sections_dites")]
+    sections: Option<BTreeMap<String, CodeAnalytique>>,
     poste_analytique: Option<PosteAnalytique>,
 }
 

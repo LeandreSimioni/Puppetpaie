@@ -6,7 +6,7 @@
 
 use declarations::champs::{self, Anomalie};
 use droit::contexte::Contexte;
-use droit::fiche::{FauteDeCase, FicheEntrepriseDatee, FicheNommee, FicheSaisie, FicheSalarieDatee, FicheSpectacleDatee};
+use droit::fiche::{FauteDeCase, FicheEntrepriseDatee, FicheNommee, FicheSaisie, FicheSalarieDatee, FicheSpectacleDatee, NoteDeFiche};
 use import::proposee::{deux_sortes, FicheProposee};
 use import::reponse::FicheVisee;
 use socle::echec::{erreur, Classe, R};
@@ -55,19 +55,22 @@ pub(crate) fn redemandees<P: FicheSaisie>(fiche: &P, fautes: &[FauteDeCase]) -> 
 
 /// UNE FICHE QUE L'IMPORT CREE, ecrite comme celles de l'ecran (`fiches::ecrire_fiche`, `forcer` : une fiche importee
 /// avec des anomalies est ecrite quand meme). Rend la fiche ecrite (nommee par sa cle ; l'entreprise, qui n'en a pas,
-/// reste la fiche a creer qu'elle etait) et ses anomalies, chacune avec le libelle de sa case.
-pub(crate) fn ecrire_fiche(ctx: &Contexte, donnees: &FicheProposee, note: &str) -> R<(FicheVisee, Vec<Anomalie>)> {
+/// reste la fiche a creer qu'elle etait) et ses anomalies, chacune avec le libelle de sa case : celles de l'ecriture,
+/// puis les fautes des pieces (`fautes`) dont la case reste vide, qui se redemandent comme a une fiche qui existe.
+pub(crate) fn ecrire_fiche(ctx: &Contexte, donnees: &FicheProposee, fautes: &[FauteDeCase], note: &str) -> R<(FicheVisee, Vec<Anomalie>)> {
     match donnees {
-        FicheProposee::Entreprise(p) => ecrire::<FicheEntrepriseDatee>(ctx, p.clone(), note),
-        FicheProposee::Salarie(p) => ecrire::<FicheSalarieDatee>(ctx, p.clone(), note),
-        FicheProposee::Spectacle(p) => ecrire::<FicheSpectacleDatee>(ctx, p.clone(), note),
+        FicheProposee::Entreprise(p) => ecrire::<FicheEntrepriseDatee>(ctx, p.clone(), fautes, note),
+        FicheProposee::Salarie(p) => ecrire::<FicheSalarieDatee>(ctx, p.clone(), fautes, note),
+        FicheProposee::Spectacle(p) => ecrire::<FicheSpectacleDatee>(ctx, p.clone(), fautes, note),
     }
 }
 
-fn ecrire<F: SorteDeFiche>(ctx: &Contexte, lue: F::Plate, note: &str) -> R<(FicheVisee, Vec<Anomalie>)> {
+fn ecrire<F: SorteDeFiche>(ctx: &Contexte, lue: F::Plate, fautes: &[FauteDeCase], note: &str) -> R<(FicheVisee, Vec<Anomalie>)> {
+    let restees = restent_vides(&lue, fautes);
     let p = fiches::preparer::<F>(ctx, None, |plate| poser_les_cases::<F>(plate, lue))?;
     let e = fiches::ecrire_fiche::<F>(ctx, p, Forcer::Tout, None, Some(note))?;
     let mut anomalies = e.anomalies;
+    anomalies.extend(champs::des_fautes(F::NOM, &restees)?);
     fiches::avec_libelles(F::NOM, &mut anomalies)?;
     let fiche = match e.cle {
         Some(k) => FicheVisee::Nommee(F::nommee(k)),
@@ -116,8 +119,8 @@ fn completer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, champs: &F::
         ecrits.prendre(champs, k);
     }
     let notes_de_la_fiche = au.notes_dites();
-    let vide = |k: &str| notes_de_la_fiche.iter().find(|(n, _)| *n == k).is_none_or(|(_, t)| t.trim().is_empty());
-    let notes_vides: Vec<&str> = champs.notes_dites().into_iter().map(|(k, _)| k).filter(|k| vide(k)).collect();
+    let vide = |k: NoteDeFiche| notes_de_la_fiche.iter().find(|(n, _)| *n == k).is_none_or(|(_, t)| t.trim().is_empty());
+    let notes_vides: Vec<NoteDeFiche> = champs.notes_dites().into_iter().map(|(k, _)| k).filter(|k| vide(*k)).collect();
     for k in notes_vides {
         ecrits.prendre_la_note(champs, k);
     }

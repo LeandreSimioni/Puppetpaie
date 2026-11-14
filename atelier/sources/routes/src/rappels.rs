@@ -917,9 +917,10 @@ fn dsn_a_venir(st: &Etat, mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     e.mois = Some(mois);
     e.detail = dsn_detail(modele, &echeance)?;
     e.source = formater(&modele.source, &[])?;
-    e.date = Some(echeance.jour);
+    let dite = echeance.dite()?;
+    e.date = Some(dite.limite.jour_de_paris());
     e.quand_dit = echeance.phrase();
-    e.echeance_depot = Some(echeance.dite()?);
+    e.echeance_depot = Some(dite);
     Ok(e)
 }
 
@@ -1341,10 +1342,11 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     // et on le dit.
     let echeance = declarations::echeance_dsn::de_la_compagnie(st.ctx, le_mois)?;
     r.etat = if echeance.passee_au(&st.aujourdhui) { EnRetard } else { AFaire };
-    r.date = Some(echeance.jour);
+    let dite = echeance.dite()?;
+    r.date = Some(dite.limite.jour_de_paris());
     r.quand_dit = echeance.phrase();
     r.source = formater(&modele.source, &[])?;
-    r.echeance_depot = Some(echeance.dite()?);
+    r.echeance_depot = Some(dite);
 
     if !engagement::stock::a_une_saisie(&st.ctx.racine, mois)? {
         r.etape = Some(EtapeDEcheance::ASaisir);

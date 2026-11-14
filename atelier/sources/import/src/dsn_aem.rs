@@ -371,7 +371,11 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                 }
             };
             let objet_ecrit = champ(&l, 638, 650).trim_matches(blanc).to_string();
-            let numero_objet = NumeroObjetSpectacle::d_une_piece(&objet_ecrit);
+            // Hors de sa forme, la case reste vide sans refuser l'enregistrement (#439) : sa faute ne se note pas ici.
+            let numero_objet = match NumeroObjetSpectacle::d_une_piece(&objet_ecrit) {
+                Ok(n) => n,
+                Err(_) => None,
+            };
             let entiers = [(650, 653), (653, 655), (655, 657), (657, 659)].map(|(a, b)| entier_lu(&champ(&l, a, b)));
             let [Some(heures), Some(c1), Some(c2), Some(jours)] = entiers else {
                 illisible(&mut illisibles);

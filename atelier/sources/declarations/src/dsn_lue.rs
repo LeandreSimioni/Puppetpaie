@@ -1073,9 +1073,9 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             "S21.G00.06.001" => premier(&mut e.siren, &fautes.lue(rub, &v, SIREN, Siren::lire)),
             "S21.G00.06.002" => premier(&mut nic_siege, &fautes.lue(rub, &v, NIC, Nic::lire)),
-            "S21.G00.06.003" => premier(&mut e.naf, &dans_sa_forme(&v, CodeNaf::lire)),
+            "S21.G00.06.003" => premier(&mut e.naf, &dans_sa_forme(&v, CodeNaf::d_une_piece)),
             "S21.G00.06.004" => premier(&mut adresse_siege, &plein),
-            "S21.G00.06.005" => premier(&mut code_postal_siege, &dans_sa_forme(&v, CodePostal::lire)),
+            "S21.G00.06.005" => premier(&mut code_postal_siege, &dans_sa_forme(&v, CodePostal::d_une_piece)),
             "S21.G00.06.006" => premier(&mut commune_siege, &plein),
             "S21.G00.11.001" => {
                 let nic = fautes.lue(rub, &v, NIC, Nic::lire);
@@ -1084,9 +1084,9 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     etablissements.push(nic);
                 }
             }
-            "S21.G00.11.002" => premier(&mut apet, &dans_sa_forme(&v, CodeNaf::lire)),
+            "S21.G00.11.002" => premier(&mut apet, &dans_sa_forme(&v, CodeNaf::d_une_piece)),
             "S21.G00.11.003" => premier(&mut e.adresse, &plein),
-            "S21.G00.11.004" => premier(&mut e.code_postal, &dans_sa_forme(&v, CodePostal::lire)),
+            "S21.G00.11.004" => premier(&mut e.code_postal, &dans_sa_forme(&v, CodePostal::d_une_piece)),
             "S21.G00.11.005" => premier(&mut e.commune, &plein),
             "S21.G00.11.022" => premier(&mut e.idcc, &fautes.lue(rub, &v, IDCC, Idcc::lire)),
             "S21.G00.11.025" => spst = v,
@@ -1123,7 +1123,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     b.iban = iban;
                 }
             }
-            "S21.G00.30.001" => individus.push(IndividuDeclare::de(plein.as_deref().and_then(Nir::d_une_piece))),
+            "S21.G00.30.001" => individus.push(IndividuDeclare::de(plein.as_deref().and_then(|n| dans_sa_forme(n, Nir::d_une_piece)))),
             "S21.G00.30.006" => {
                 let Some(i) = individu else { continue };
                 individus[i].date_naissance = fautes.valeur(rub, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
@@ -1154,7 +1154,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let s = &mut individus[i];
                 match k {
                     "S21.G00.30.005" => s.sexe = sexe_de_la_fiche(&v),
-                    "S21.G00.30.009" => s.code_postal = dans_sa_forme(&v, CodePostal::lire),
+                    "S21.G00.30.009" => s.code_postal = dans_sa_forme(&v, CodePostal::d_une_piece),
                     "S21.G00.30.013" => s.code_nationalite_dsn = CodeNationalite::du_code(&v),
                     "S21.G00.30.014" => s.departement_naissance = dans_sa_forme(&v, DepartementNaissance::lire),
                     _ => s.pays_naissance = dans_sa_forme(&v, CodePays::lire),

@@ -223,6 +223,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | IDCC | `Idcc` | `droit/src/fiche.rs` |
 | identifiant d'organisme | `IdentifiantDOrganisme` | `droit/src/organismes.rs` |
 | référence d'un contrat chez l'organisme | `ReferenceDeContrat` | `droit/src/organismes.rs` |
+| référence d'une adhésion | `ReferenceDAdhesion` | `droit/src/organismes.rs` |
 | code caisse | `CodeCaisse` | `droit/src/organismes.rs` |
 | salarié | `IdSalarie` | `droit/src/contexte.rs` |
 | salarié désigné | `SalarieDesigne` | `droit/src/contexte.rs` |
@@ -359,6 +360,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   de 1 à 30 caractères (le cahier technique), telle que la compagnie la saisit (`organismes-enregistrer`, la DSN
   reprise) : sans blancs de bord, en capitales, lue à sa porte (`droit::organismes::Saisie::lue`) avec le code de
   l'organisme. Celle que `config/organismes.json` garde reste son texte (`Adhesion.libelle`).
+- **référence d'une adhésion** : S21.G00.15.005, l'« identifiant technique Adhésion », que le bloc 70 d'un salarié cite
+  en S21.G00.70.013 : une clé du logiciel (`droit::cle_opaque!`). Que portent les relectures d'une DSN que le moteur
+  écrit (`declarations::dsn` : les affiliations d'un versement écrit ou déclaré, les composants de versement) ; à
+  unifier (#419) : `Adhesion.reference` et les écrivains du bloc 15 la gardent en texte.
 - **code caisse** : l'organisme qui n'a plus d'individu rattaché, dans une DSN sans individu (S20.G00.08.001),
   « X [2,6] » de la table ODRT : Agirc-Arrco 88, France Travail 93, Congés Spectacles 97 ; que porte `sans_individu` de
   `organismes-base.json`.
@@ -705,6 +710,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
 | numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
 | poste analytique | `PosteAnalytique` | `documents/src/ecritures_comptables.rs` |
+| code analytique d'un spectacle | `CodeAnalytique` | `droit/src/fiche.rs` |
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
 | code retour d'une DPAE | `declarations::dpae::CodeRetourDpae` | `declarations/src/dpae.rs` |
 | code retour du lot | `declarations::dpae::CodeRetourDuLot` | `declarations/src/dpae.rs` |
@@ -723,15 +729,18 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
+| d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
 | source de la durée d'un préavis | `SourceDuPreavis` | `engagement/src/solde.rs` |
+| durée d'un préavis | `DureeDuPreavis` | `engagement/src/solde.rs` |
 | fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
 | faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |
 | fiche proposée (par l'import, l'une des trois, typée) | `FicheProposee` | `import/src/proposee.rs` |
+| note d'une fiche | `NoteDeFiche` | `droit/src/fiche.rs` |
 | fiche à juger (l'une des trois, typée) | `FicheAJuger` | `declarations/src/champs.rs` |
 | ce qu'une case écrit | `MotEcrit` | `socle/src/ecriture.rs` |
 | valeur d'une case d'une fiche | `ValeurDeCase` | `socle/src/ecriture.rs` |
@@ -837,6 +846,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   portent le plan comptable et une ligne d'écriture (`ecritures_comptables::Ecriture`), ce que rend `export-compta`. Le
   modèle du sous-compte (`net.par_salarie`, « 421{code:03} ») n'est pas un compte ; le code analytique d'un spectacle
   (`sections`) est une autre notion.
+- **code analytique d'un spectacle** : la section où l'export comptable ventile les salaires bruts d'un spectacle, une
+  clé de la compagnie (`droit::cle_opaque!`, une saisie sans ses blancs de bord) : la case `code_analytique` de la fiche
+  spectacle, les `sections` du plan comptable propre (titre → code ; un code vide n'en choisit pas), le code qu'un
+  bulletin importé imprime, celui que l'export tire du titre (`etats_compta::codes_sections`).
 - **formalité d'une DPAE** : ce que le certificat de conformité d'une DPAE dit fait : CERTIF, IMMA, MT, PMF5 (Format 120,
   I_CERTIF à I_PMF5). Une liste de la norme, que portent une ligne du certificat et la personne certifiée au journal des
   envois.
@@ -887,6 +900,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   attestations (`import::attestes::Atteste`) et la paie qu'un bulletin complète (`EcartPaie.source`).
 - **bloc du compte rendu d'un import** : les déclarations (les contrats d'une DSN), les bulletins, les certificats, les
   AEM en PDF ; que porte un contrat que l'import retient (`import::attestes::Retenu`).
+- **d'où le calendrier tient un contrat passé** : un engagement du logiciel (`paie`) ou l'historique de l'ancien
+  logiciel (`historique`) ; que porte un contrat de `contrats-passes` (`routes::mois`).
 - **nature d'une AEM qui corrige** : complémentaire ou rectificative (sa case cochée) ; une telle AEM ne se reprend pas
   seule.
 - **avertissement d'un bulletin lu** : ce qu'un bulletin lu signale sans être refusé : une incohérence (la page se
@@ -897,10 +912,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **image de l'identité de la compagnie** : sa signature, son cachet (le tampon), son logo ; écrite `signature`,
   `cachet`, `logo` (le nom du fichier posé et de la charge) ; la largeur qu'un document en imprime
   (`largeur_imprimee`).
-- **format d'une image posée** : PNG, JPEG ou SVG, reconnu à ses premiers octets ; l'extension du fichier (`.png`,
-  `.jpg`, `.svg`).
+- **format d'une image posée** : PNG, JPEG ou SVG, reconnu à ses premiers octets (`FormatDImage::des_octets`, la seule
+  reconnaissance) ; l'extension du fichier (`.png`, `.jpg`, `.svg`, et son nom sans point que rend `identite`) et son
+  type MIME, dits par lui ; l'image posée se cherche dans ses formats (`FormatDImage::TOUS`).
 - **source de la durée d'un préavis** : le motif de la rupture (aucun préavis), la loi (L1234-1), ou l'article de la
-  convention ; dite par `Preavis::qui`.
+  convention ; dite par `DureeDuPreavis::qui`.
+- **durée d'un préavis** : une durée qui se compte, en mois, avec sa source, l'une n'allant pas sans l'autre
+  (`Preavis.duree` ; aucune quand elle ne se compte pas, `Preavis.pourquoi` le dit).
 - **fiche saisie** : la saisie d'une fiche est la fiche typée elle-même (`ChampsEntreprise`, `ChampsSalarie`,
   `ChampsSpectacle`), ses fautes à côté ; chaque case se nettoie et se type une fois, à l'entrée (`lire_cases`, la seule
   porte d'un formulaire ; `Changements::lire` pour `enregistrer-fiche`), et personne ne relit le texte tapé. La table
@@ -913,8 +931,12 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   redemande tant que la case reste vide ; la pièce ne se refuse pas pour elle.
 - **fiche proposée** : la fiche que l'import propose, de l'entreprise, d'un salarié ou d'un spectacle, typée, lue des
   formes des pièces par la porte d'une fiche saisie (`import::proposee::de`, `lire_cases`) ; écrite à plat comme sa
-  fiche. Que portent une fiche de la réponse de l'import (`FicheImportee.donnees`), une fiche que l'import crée
-  (`ACreer`, avec les fautes de ses pièces) ou complète (`ACompleter`).
+  fiche. Que portent une fiche de la réponse de l'import (`FicheImportee.donnees`, ses cases sans ses notes), une fiche
+  que l'import crée (`ACreer`, avec les fautes de ses pièces, qui se redisent après son écriture tant que leur case
+  reste vide) ou complète (`ACompleter`).
+- **note d'une fiche** : un texte qu'une fiche porte et qui n'est pas une case (d'où elle vient, le titre que l'import
+  propose à un spectacle), nommée par `fiche!` seul ; que lisent l'import qui complète une fiche (`notes_dites`,
+  `prendre_la_note`).
 - **ce qu'une case écrit** : vide, un mot (un texte, un nombre écrit), oui ou non, une structure ; la valeur typée dans
   l'écriture de son fichier (`socle::ecriture::mot`), ce que lisent les règles de `champs-base.json` (`si`, `exige_si`,
   `avance`, la norme, la longueur).

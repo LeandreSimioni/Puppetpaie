@@ -1135,10 +1135,10 @@ impl Fenetre {
         }
         let Some(sorte) = documents::SorteDImage::du_nom(quoi) else { return rien() };
         let dossier = racine.join("gabarits").join("identite");
-        for (ext, mime) in [(".png", "image/png"), (".jpg", "image/jpeg"), (".svg", "image/svg+xml")] {
-            let f = dossier.join(format!("{}{}", sorte.nom(), ext));
+        for format in fabrique_pdf::alleger::FormatDImage::TOUS {
+            let f = dossier.join(format!("{}{}", sorte.nom(), format.extension()));
             match std::fs::read(&f) {
-                Ok(o) => return Reponse::nouvelle(200, mime, o),
+                Ok(o) => return Reponse::nouvelle(200, format.mime(), o),
                 // Pas d'image dans ce format : le suivant.
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", socle::echec::du_disque(&f, &e).phrase),

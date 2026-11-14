@@ -459,7 +459,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     let mut ecrits: BTreeSet<PathBuf> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
     for a in &imp.a_creer {
-        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, &a.donnees, note)?;
+        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, &a.donnees, &a.fautes, note)?;
         let emplacement = match (a.donnees.nom(), a.rang) {
             (NomDeFiche::Entreprise, _) => reponse.entreprise.as_mut(),
             (NomDeFiche::Salarie, Some(i)) => reponse.salaries.get_mut(i),
@@ -725,7 +725,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         fiches.push(socle::ecran::compte(de(&reponse.spectacles), "spectacle", "spectacles"));
     }
     // UN SPECTACLE SANS TITRE (`completer::A_COMPLETER`) : les bulletins en proposent un a valider
-    // (`demarrage::TITRE_PROPOSE`), ou les pieces ne portent que son numero d'objet ; le contrat imprime le titre, la phrase
+    // (la note `titre_propose`), ou les pieces ne portent que son numero d'objet ; le contrat imprime le titre, la phrase
     // le dit. Lu dans les fiches telles que l'import les a ecrites.
     let (mut proposes, mut sans_titre) = (0, 0);
     let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;

@@ -407,9 +407,9 @@ impl FicheImportee {
         f
     }
 
-    /// Ce que porte la fiche a creer (ses cases et ses notes), et ses anomalies.
+    /// Ce que porte la fiche a creer (ses cases, sans ses notes), et ses anomalies.
     pub fn poser(&mut self, donnees: &FicheProposee, anomalies: Vec<Anomalie>) {
-        self.donnees = donnees.clone();
+        self.donnees = donnees.sans_notes();
         self.anomalies = anomalies;
     }
 

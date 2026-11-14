@@ -86,7 +86,7 @@ pub struct VersementDeclare {
     /// est celui de la periode d'origine (les rappels sont dans `rappels_net_social`).
     pub lignes: Vec<(RubriqueDeLaNorme, String)>,
     /// Les affiliations du contrat : (S21.G00.70.012, S21.G00.70.013).
-    pub affiliations: Vec<(droit::code_cotisation::IdentifiantDAffiliation, String)>,
+    pub affiliations: Vec<(droit::code_cotisation::IdentifiantDAffiliation, droit::organismes::ReferenceDAdhesion)>,
     /// S21.G00.50.006 du versement du mois d'origine : le taux de prelevement a la source applique ce mois-la, que le
     /// bloc 56 d'un indu cite (S21.G00.56.006, « le taux applique le mois de l'erreur ou de l'indu », cahier technique
     /// 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.56.txt`). Apres une correction deja portee, il reste

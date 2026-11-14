@@ -32,7 +32,8 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::{num::{add, div, mul, pct, sub, zero2, Decimal}, refus};
-use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, QualifiantDAssiette, Versement};
+use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, QualifiantDAssiette, ReferenceDAdhesion, Versement};
+use engagement::numeros::NumeroContrat;
 use droit::pas::{self, Triplet, ZONE_DEFAUT};
 
 pub const LOGICIEL: &str = "PUPPETPAIE";
@@ -985,7 +986,17 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         // L'affectation d'une base 31 (78.005) : « 202 » et suivants, la place de l'adhesion.
         let place = match &c.affectation {
             Some(a) => match place_de(a).map(usize::try_from) {
-                Some(Ok(n)) => n.checked_sub(202),
+                Some(Ok(n)) => match n.checked_sub(202) {
+                    Some(x) => Some(x),
+                    // Le moteur fait les identifiants d'affiliation a partir de 202 (`affiliation_de_la_place`) : un
+                    // plus petit est une faute du logiciel.
+                    None => {
+                        return Err(socle::echec::erreur(
+                            socle::echec::Classe::DefautDuLogiciel,
+                            format!("{} : l'affectation {} d'une base {} est avant la premiere place (202) : le signaler au developpeur.", qui_contrat(p), a, c.bloc78),
+                        ))
+                    }
+                },
                 _ => return Err(refus!("{} : l'affectation {} d'une base {} ne se lit pas.", qui_contrat(p), socle::fichiers::repr(a.as_str().trim()), c.bloc78)),
             },
             None => None,
@@ -2504,7 +2515,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
 /// Un versement tel que la mensuelle l'ecrit pour un contrat : les affiliations du contrat (S21.G00.70.012, 70.013) et
 /// les rubriques de son versement (blocs 50 a 81), dans l'ordre ou elles s'ecrivent.
 pub struct VersementEcrit {
-    pub affiliations: Vec<(IdentifiantDAffiliation, String)>,
+    pub affiliations: Vec<(IdentifiantDAffiliation, ReferenceDAdhesion)>,
     pub rubriques: Vec<(RubriqueDeLaNorme, String)>,
 }
 
@@ -2521,7 +2532,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
     let refs = affiliations(&orgs, &*e.nat()?, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
     let mut affiliations = Vec::new();
     for a in rattachements(p, &orgs, &bar.entreprise.fiche, refs)? {
-        affiliations.push((affiliation_de_la_place(202 + a.place as i64)?, a.reference));
+        affiliations.push((affiliation_de_la_place(202 + a.place as i64)?, ReferenceDAdhesion::lire(&a.reference)?));
     }
     let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(mois)?);
     bloc_versement(&mut f, p, &bar, 1, None)?;
@@ -2530,7 +2541,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
 
 /// Les affiliations que CE fichier a deja ecrites pour le contrat `numero` de l'individu en cours :
 /// (S21.G00.70.013, S21.G00.70.012).
-fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat) -> R<Vec<(String, IdentifiantDAffiliation)>> {
+fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat) -> R<Vec<(ReferenceDAdhesion, IdentifiantDAffiliation)>> {
     const NIR: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.001");
     const DEBUT_CONTRAT: RubriqueDeLaNorme = droit::rubrique!("S21.G00.40.001");
     const NUMERO_CONTRAT: RubriqueDeLaNorme = droit::rubrique!("S21.G00.40.009");
@@ -2552,7 +2563,7 @@ fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat
             AFFILIATION if du_contrat => id = Some(IdentifiantDAffiliation::lire(v)?),
             REFERENCE if du_contrat => {
                 if let Some(i) = id.take() {
-                    out.push((v.clone(), i));
+                    out.push((ReferenceDAdhesion::lire(v)?, i));
                 }
             }
             _ => {}
@@ -3798,10 +3809,10 @@ pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
     const CODE_81: RubriqueDeLaNorme = droit::rubrique!("S21.G00.81.001");
     const MONTANT_81: RubriqueDeLaNorme = droit::rubrique!("S21.G00.81.004");
     // 15.005 -> (15.001, 15.002)
-    let mut adhesions: HashMap<String, (String, IdentifiantDOrganisme)> = HashMap::new();
+    let mut adhesions: HashMap<ReferenceDAdhesion, (String, IdentifiantDOrganisme)> = HashMap::new();
     let (mut lib15, mut org15) = (String::new(), None::<IdentifiantDOrganisme>);
     // 70.012 -> 70.013, pour l'individu en cours (les identifiants y sont uniques, `bloc_contrat`).
-    let mut ids: HashMap<IdentifiantDAffiliation, String> = HashMap::new();
+    let mut ids: HashMap<IdentifiantDAffiliation, ReferenceDAdhesion> = HashMap::new();
     let mut id70: Option<IdentifiantDAffiliation> = None;
     let mut nom = String::new();
     // La base 78 en cours : (78.002, 78.003, 78.005) ; et le code de la cotisation 81 en cours.
@@ -3821,7 +3832,7 @@ pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
             ORGANISME_15 => org15 = Some(IdentifiantDOrganisme::lire(&v)?),
             REFERENCE_15 => {
                 let org = org15.clone().ok_or_else(|| refus!("S21.G00.15.005 {} sans S21.G00.15.002 : l'adhésion n'a pas d'organisme.", v))?;
-                adhesions.insert(v, (lib15.clone(), org));
+                adhesions.insert(ReferenceDAdhesion::lire(&v)?, (lib15.clone(), org));
             }
             NIR => {
                 ids.clear();
@@ -3831,7 +3842,7 @@ pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
             AFFILIATION_70 => id70 = Some(IdentifiantDAffiliation::lire(&v)?),
             REFERENCE_70 => {
                 if let Some(i) = id70.take() {
-                    ids.insert(i, v);
+                    ids.insert(i, ReferenceDAdhesion::lire(&v)?);
                 }
             }
             CODE_78 => base = Some((String::new(), String::new(), None)),
@@ -4127,14 +4138,15 @@ fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: 
 
 /// CCH-13 et SIG-23, verifies ici plutot qu'au point de depot.
 fn verifier_affiliations(texte: &str) -> R<()> {
-    let mut affiliations: BTreeSet<(String, IdentifiantDAffiliation)> = BTreeSet::new();
+    // Le contrat : `None` avant le premier 40.009 du fichier.
+    let mut affiliations: BTreeSet<(Option<NumeroContrat>, IdentifiantDAffiliation)> = BTreeSet::new();
     // La base 31 qui ne cite aucune affiliation (sans 78.005) : `None`.
-    let mut bases: BTreeSet<(String, Option<IdentifiantDAffiliation>)> = BTreeSet::new();
+    let mut bases: BTreeSet<(Option<NumeroContrat>, Option<IdentifiantDAffiliation>)> = BTreeSet::new();
     let mut vus: HashSet<(Option<IdentifiantDAffiliation>, String, String, String)> = HashSet::new();
     let mut doublons: BTreeSet<Option<IdentifiantDAffiliation>> = BTreeSet::new();
-    let mut contrat = String::new();
+    let mut contrat: Option<NumeroContrat> = None;
     // La base 31 en cours : 78.002, 78.003, 78.005, et son contrat (78.006, sinon le dernier 40.009).
-    let mut courant: Option<(String, String, Option<IdentifiantDAffiliation>, String)> = None;
+    let mut courant: Option<(String, String, Option<IdentifiantDAffiliation>, Option<NumeroContrat>)> = None;
     const NOM: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.002");
     const NUMERO_CONTRAT: RubriqueDeLaNorme = droit::rubrique!("S21.G00.40.009");
     const AFFILIATION_70: RubriqueDeLaNorme = droit::rubrique!("S21.G00.70.012");
@@ -4148,7 +4160,7 @@ fn verifier_affiliations(texte: &str) -> R<()> {
         let (rubrique, valeur) = ligne_ecrite(ligne);
         match rubrique {
             Some(NOM) => vus.clear(),
-            Some(NUMERO_CONTRAT) => contrat = valeur,
+            Some(NUMERO_CONTRAT) => contrat = Some(NumeroContrat::lire(&valeur)?),
             Some(AFFILIATION_70) => {
                 affiliations.insert((contrat.clone(), IdentifiantDAffiliation::lire(&valeur)?));
             }
@@ -4162,7 +4174,7 @@ fn verifier_affiliations(texte: &str) -> R<()> {
                         Some(DEBUT_78) => c.0 = valeur,
                         Some(FIN_78) => c.1 = valeur,
                         Some(AFFILIATION_78) => c.2 = Some(IdentifiantDAffiliation::lire(&valeur)?),
-                        Some(CONTRAT_78) => c.3 = valeur,
+                        Some(CONTRAT_78) => c.3 = Some(NumeroContrat::lire(&valeur)?),
                         Some(MONTANT_81) => {
                             bases.insert((c.3.clone(), c.2.clone()));
                             let signe = if valeur.starts_with('-') { "-" } else { "+" };
@@ -4190,7 +4202,7 @@ signe : {} (S21.G00.78.001/SIG-23).\n  Ce n'est admis que sur un contrat de miss
     let mut manquantes: Vec<String> = affiliations
         .iter()
         .filter(|(c, a)| !bases.contains(&(c.clone(), Some(a.clone()))))
-        .map(|(c, a)| format!("{} (contrat {})", a, c))
+        .map(|(c, a)| format!("{} (contrat {})", a, c.iter().map(NumeroContrat::to_string).collect::<String>()))
         .collect();
     manquantes.sort();
     if !manquantes.is_empty() {

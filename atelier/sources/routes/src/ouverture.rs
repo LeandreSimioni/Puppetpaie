@@ -607,8 +607,8 @@ pub(crate) struct ImageIdentite {
     dossier: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) octets: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "format_ecrit")]
+    pub(crate) format: Option<fabrique_pdf::alleger::FormatDImage>,
     #[serde(skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
     pub(crate) quand: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::fichiers::ecrire_chemin")]
@@ -624,6 +624,14 @@ pub(crate) struct ImageIdentite {
     pub(crate) pastille: Option<socle::ecran::Pastille>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub(crate) ecran: Option<EcranDeLImage>,
+}
+
+/// Le format d'une image posee, ecrit par son nom (`png`, `jpg`, `svg`), l'extension de son fichier.
+fn format_ecrit<S: serde::Serializer>(f: &Option<fabrique_pdf::alleger::FormatDImage>, s: S) -> Result<S::Ok, S::Error> {
+    match f {
+        Some(f) => s.serialize_str(f.nom()),
+        None => s.serialize_none(),
+    }
 }
 
 /// Ce que l'ecran de la signature et du tampon dit d'une image : son titre, ce qu'elle engage et ou elle va, ce que dit
@@ -652,7 +660,7 @@ pub(crate) struct Identite {
 pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
     let dossier = gabarits.join("identite");
     let image = |quoi: documents::SorteDImage| -> R<ImageIdentite> {
-        let pose = [".png", ".jpg", ".svg"].iter().map(|ext| dossier.join(format!("{}{}", quoi.nom(), ext))).find(|f| f.exists());
+        let pose = fabrique_pdf::alleger::FormatDImage::TOUS.into_iter().map(|f| (dossier.join(format!("{}{}", quoi.nom(), f.extension())), f)).find(|(c, _)| c.exists());
         let mut e = ImageIdentite {
             pose: pose.is_some(),
             automatique: quoi == documents::SorteDImage::Cachet,
@@ -670,10 +678,10 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
         };
         match pose {
             None => e.dossier = Some(dossier.clone()),
-            Some(f) => {
+            Some((f, format)) => {
                 let st = std::fs::metadata(&f).map_err(|x| socle::echec::du_disque(&f, &x).reclasser(Classe::Disque))?;
                 e.octets = Some(st.len());
-                e.format = f.extension().map(|x| x.to_string_lossy().into_owned());
+                e.format = Some(format);
                 // Datee hors du calendrier, l'image posee se dit sans sa date.
                 e.quand = socle::paris::mtime(&st).map(socle::paris::Moment::a_la_seconde);
                 e.fichier = Some(f);

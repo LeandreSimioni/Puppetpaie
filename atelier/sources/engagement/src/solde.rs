@@ -115,13 +115,18 @@ fn age(ctx: &Contexte, e: &Carte) -> R<Option<Decimal>> {
 // ------------------------------------------------------------ le preavis
 
 pub struct Preavis {
-    pub mois: Option<Decimal>,
+    /// Sa duree et d'ou elle vient ; aucune quand elle ne se compte pas (`pourquoi` le dit).
+    pub duree: Option<DureeDuPreavis>,
     pub legal: Option<Decimal>,
     pub convention: Option<Decimal>,
-    /// D'ou vient sa duree ; aucune quand elle ne se compte pas.
-    pub source: Option<SourceDuPreavis>,
     pub dit: String,
     pub pourquoi: Option<String>,
+}
+
+/// LA DUREE D'UN PREAVIS QUI SE COMPTE, en mois, et d'ou elle vient : l'une ne va pas sans l'autre.
+pub struct DureeDuPreavis {
+    pub mois: Decimal,
+    pub source: SourceDuPreavis,
 }
 
 /// D'OU VIENT LA DUREE D'UN PREAVIS : le motif de la rupture (il n'en donne aucun), la loi (L1234-1), ou l'article de la
@@ -133,14 +138,13 @@ pub enum SourceDuPreavis {
     Convention(String),
 }
 
-impl Preavis {
-    /// Qui donne sa duree, en mots (« la loi (L1234-1) », l'article de la convention) ; rien quand elle ne se compte pas.
+impl DureeDuPreavis {
+    /// Qui donne la duree, en mots (« la loi (L1234-1) », l'article de la convention).
     pub fn qui(&self) -> &str {
         match &self.source {
-            Some(SourceDuPreavis::MotifDeRupture) => "le motif de rupture",
-            Some(SourceDuPreavis::Loi) => "la loi (L1234-1)",
-            Some(SourceDuPreavis::Convention(article)) => article,
-            None => "",
+            SourceDuPreavis::MotifDeRupture => "le motif de rupture",
+            SourceDuPreavis::Loi => "la loi (L1234-1)",
+            SourceDuPreavis::Convention(article) => article,
         }
     }
 }
@@ -170,7 +174,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
     let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
     let conv_article = || conv.article.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention donne une durée sans dire son article"));
     let categorie_dite: String = categorie.map(clauses::categorie_en_mots).into_iter().collect();
-    let mut out = Preavis { mois: None, legal, convention: conv_mois, source: None, dit: String::new(), pourquoi: None };
+    let mut out = Preavis { duree: None, legal, convention: conv_mois, dit: String::new(), pourquoi: None };
     let rel = clauses::releve(idcc)?;
     let releve = rel.as_ref().is_some_and(|r| r.loi_seule(clauses::Section::Preavis).is_none());
     // La rupture anticipee d'un CDD par le salarie qui part pour un CDI (L1243-2) : un preavis en jours, que ni la loi du
@@ -181,8 +185,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
         return Ok(out);
     }
     if legal == Some(Decimal::ZERO) || conv_mois == Some(Decimal::ZERO) {
-        out.mois = Some(Decimal::ZERO);
-        out.source = Some(SourceDuPreavis::MotifDeRupture);
+        out.duree = Some(DureeDuPreavis { mois: Decimal::ZERO, source: SourceDuPreavis::MotifDeRupture });
         out.pourquoi = if conv_mois == Some(Decimal::ZERO) { conv.pourquoi.clone() } else { None };
         return Ok(out);
     }
@@ -214,14 +217,14 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
         ));
         return Ok(out);
     }
-    out.mois = Some(candidats.iter().copied().fold(candidats[0], plus_grand));
+    let mois = candidats.iter().copied().fold(candidats[0], plus_grand);
     // La categorie entre parentheses, quand le preavis de la convention en depend.
     let pour_la_categorie = if categorie_dite.is_empty() { String::new() } else { format!(" ({})", categorie_dite) };
     if conv_mois.is_none() {
-        out.source = Some(SourceDuPreavis::Loi);
+        out.duree = Some(DureeDuPreavis { mois, source: SourceDuPreavis::Loi });
         out.dit = format!("L1234-1 ; {} : seule la loi est calculée", conv_pourquoi()?);
     } else if legal.is_none() || conv_mois > legal {
-        out.source = Some(SourceDuPreavis::Convention(conv_article()?.to_string()));
+        out.duree = Some(DureeDuPreavis { mois, source: SourceDuPreavis::Convention(conv_article()?.to_string()) });
         out.dit = format!(
             "{}{} ; {}",
             conv_article()?,
@@ -232,7 +235,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
             }
         );
     } else {
-        out.source = Some(SourceDuPreavis::Loi);
+        out.duree = Some(DureeDuPreavis { mois, source: SourceDuPreavis::Loi });
         out.dit = format!(
             "L1234-1 ; {} en donne {}{}",
             conv_article()?,
@@ -439,16 +442,16 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
         )));
     } else if let Some(indemnite) = &indemnite {
         let duree = duree_du_preavis(ctx, e, anciennete, motif)?;
-        let mut mois_preavis = duree.mois;
+        let mut mois_preavis = duree.duree.as_ref().map(|d| d.mois);
         if let Some(saisi) = &e.preavis_mois {
             let saisi = dec_de(saisi)?;
-            if let Some(m) = mois_preavis {
-                if saisi < m {
+            if let Some(d) = &duree.duree {
+                if saisi < d.mois {
                     return Err(socle::refus!(
                         "{} : preavis de {} mois saisi, et {} en donne {}. Un \
                          contrat peut accorder plus que la loi et la convention, \
                          jamais moins.",
-                        qui, saisi, duree.qui(), m
+                        qui, saisi, d.qui(), d.mois
                     ));
                 }
             }

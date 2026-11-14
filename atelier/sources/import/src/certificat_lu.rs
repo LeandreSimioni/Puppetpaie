@@ -276,7 +276,11 @@ pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(Nir, Option<String>, usize
         }
     }
     let (nir, cle) = Nir::et_sa_cle(&tout)?;
-    Some((Nir::d_une_piece(nir)?, cle.map(str::to_string), pris))
+    // Ce qui n'est pas un NIR n'en ouvre pas le rang : le rang n'a pas de NIR en tete.
+    match Nir::d_une_piece(nir) {
+        Ok(n) => Some((n, cle.map(str::to_string), pris)),
+        Err(_) => None,
+    }
 }
 
 /// Une page : `None` si ce n'est pas un certificat d'emploi Congés Spectacles (son titre, la Caisse, ses rubriques de

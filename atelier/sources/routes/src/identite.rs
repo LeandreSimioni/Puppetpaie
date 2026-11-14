@@ -151,30 +151,7 @@ fn dossier_identite(ctx: &Contexte) -> PathBuf {
 
 /// Le fichier pose pour `quoi`, quelle que soit son extension.
 fn chemin_identite(dossier: &Path, quoi: SorteDImage) -> Option<PathBuf> {
-    [".png", ".jpg", ".svg"].iter().map(|e| dossier.join(format!("{}{}", quoi.nom(), e))).find(|f| f.exists())
-}
-
-/// Le format de ces octets, reconnu sur l'en-tete et non sur l'extension.
-fn format_de(o: &[u8]) -> Option<FormatDImage> {
-    if o.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
-        return Some(FormatDImage::Png);
-    }
-    if o.starts_with(&[0xff, 0xd8, 0xff]) {
-        return Some(FormatDImage::Jpeg);
-    }
-    let tete = &o[..o.len().min(2048)];
-    // Que des blancs : rien d'un SVG.
-    let tete = match tete.iter().position(|c| !c.is_ascii_whitespace() && *c != 0x0b) {
-        Some(debut) => &tete[debut..],
-        None => return None,
-    };
-    if tete.starts_with(b"<?xml") || tete.starts_with(b"<svg") || tete.starts_with(b"<!--") {
-        let long = o[..o.len().min(8192)].to_ascii_lowercase();
-        if long.windows(4).any(|w| w == b"<svg") {
-            return Some(FormatDImage::Svg);
-        }
-    }
-    None
+    FormatDImage::TOUS.iter().map(|f| dossier.join(format!("{}{}", quoi.nom(), f.extension()))).find(|f| f.exists())
 }
 
 fn avant(f: &Path) -> R<()> {
@@ -197,7 +174,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     if octets.len() > OCTETS_MAX {
         return Err(refus(format!("Le fichier fait {} ; la limite est de 2 Mo.", compagnie::sauvegarde::en_mo(octets.len() as u64, '.'))));
     }
-    format_de(&octets).ok_or_else(|| {
+    FormatDImage::des_octets(&octets).ok_or_else(|| {
         refus("Ce fichier n'est ni un PNG, ni un JPEG, ni un SVG (ses premiers octets ne sont ceux d'aucun des trois). Rien n'a ete ecrit.")
     })?;
     // Le poids visé est dit par la charge : l'écran le propose (`poids_vise_ko` de `identite`), la personne le garde ou
@@ -339,7 +316,7 @@ fn ecran_de_l_identite(v: &mut Identite) {
         // Ce que dit l'image posee (sa forme, son poids, son jour), et les mots de ses gestes.
         // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`).
         let pose_dit = match (e.pose, &e.format, e.octets, &e.quand) {
-            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.to_uppercase(), ko(octets as usize), quand.dit())),
+            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.nom().to_uppercase(), ko(octets as usize), quand.dit())),
             _ => None,
         };
         e.ecran = Some(EcranDeLImage {

@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use droit::contexte::Contexte;
+use droit::fiche::CodeAnalytique;
 use socle::echec::{erreur, Classe};
 use socle::mois::Mois;
 use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
@@ -271,7 +272,7 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
 struct Envoi<'a> {
     plan: &'a Plan,
     ctx: &'a Contexte,
-    sections: Option<BTreeMap<String, String>>,
+    sections: Option<BTreeMap<String, CodeAnalytique>>,
     /// Le format, quand ses zones sont bornees, et les libelles courts que la compagnie y a valides.
     borne: Option<FormatBorne>,
     courts: Option<Courts>,
@@ -341,7 +342,7 @@ impl Envoi<'_> {
         if e.compte != self.plan.brut.compte {
             return None;
         }
-        sections.get(e.analytique.as_ref()?).cloned()
+        sections.get(e.analytique.as_ref()?).map(CodeAnalytique::to_string)
     }
 }
 
@@ -353,35 +354,34 @@ fn code_du_titre(titre: &str) -> String {
 
 /// `codes_des_fiches` : titre -> code analytique, lu sur les fiches spectacle. La fiche active l'emporte, puis le
 /// numero le plus recent.
-fn codes_des_fiches(spectacles: Vec<&droit::fiche::ChampsSpectacle>) -> BTreeMap<String, String> {
+fn codes_des_fiches(spectacles: Vec<&droit::fiche::ChampsSpectacle>) -> BTreeMap<String, CodeAnalytique> {
     let mut rangees = spectacles;
     rangees.sort_by_cached_key(|v| (!v.archivee(), v.numero_objet.en_texte()));
     let mut out = BTreeMap::new();
     for v in rangees {
-        if let (Some(titre), Some(code)) = (v.titre.remplie(), v.code_analytique.portee()) {
-            out.insert(titre.to_string(), code.trim().to_string());
+        if let (Some(titre), Some(code)) = (v.titre.remplie(), v.code_analytique.dite()) {
+            out.insert(titre.to_string(), code.clone());
         }
     }
     out
 }
 
 /// `codes_sections` : le code de chaque spectacle -- celui de sa fiche, sinon celui du plan, sinon tire du titre.
-fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &BTreeMap<String, String>) -> R<BTreeMap<String, String>> {
+fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &BTreeMap<String, CodeAnalytique>) -> R<BTreeMap<String, CodeAnalytique>> {
     let brut = &plan.brut.compte;
-    // Les codes choisis : ceux du plan, puis ceux des fiches ; un code vide n'en choisit pas.
-    let mut propres: BTreeMap<String, String> = BTreeMap::new();
+    // Les codes choisis : ceux du plan, puis ceux des fiches.
+    let mut propres: BTreeMap<String, CodeAnalytique> = BTreeMap::new();
     if let Some(s) = &plan.sections {
         propres.extend(s.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
     propres.extend(fiches.iter().map(|(k, v)| (k.clone(), v.clone())));
-    propres.retain(|_, v| !v.is_empty());
     let mut out = BTreeMap::new();
-    let mut qui: BTreeMap<String, String> = BTreeMap::new();
+    let mut qui: BTreeMap<CodeAnalytique, String> = BTreeMap::new();
     let titres: BTreeSet<&String> = ecritures.iter().filter(|e| e.compte == *brut).filter_map(|e| e.analytique.as_ref()).filter(|a| !a.is_empty()).collect();
     for titre in titres {
         let choisi = propres.get(titre);
         let code = match choisi {
-            Some(c) => c.clone(),
+            Some(c) => c.to_string(),
             None => code_du_titre(titre),
         };
         if code.is_empty() || code.chars().count() > largeur {
@@ -390,6 +390,7 @@ fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &
                 code, titre, largeur
             )));
         }
+        let code = CodeAnalytique::lire(&code)?;
         if let Some(autre) = qui.get(&code) {
             let meme_choix = choisi.is_some() && propres.get(autre) == Some(&code);
             if !meme_choix {
@@ -1107,7 +1108,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 }
 
 /// Ce qu'un ecrivain recoit pour `format` : le plan, les sections, et les libelles courts valides de ce format.
-fn envoi<'a>(ctx: &'a Contexte, plan: &'a Plan, sections: Option<BTreeMap<String, String>>, format: FormatDExport) -> R<Envoi<'a>> {
+fn envoi<'a>(ctx: &'a Contexte, plan: &'a Plan, sections: Option<BTreeMap<String, CodeAnalytique>>, format: FormatDExport) -> R<Envoi<'a>> {
     let borne = FormatBorne::de(format);
     let courts = match borne {
         Some(f) => crate::libelles_courts::lire(&ctx.racine)?.formats.remove(&f),

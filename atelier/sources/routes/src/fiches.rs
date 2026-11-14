@@ -1223,8 +1223,11 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             break;
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
-        let (lue, illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
-        let mut recue: droit::fiche::ChampsSalarie = droit::fiche::lire_saisie(&lue, droit::contexte::SALARIES).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let (lue, mut illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
+        // La reponse se lit par la porte d'une fiche saisie : une case hors de son type reste vide, et se dit a completer
+        // dans la note, avec ce que le questionnaire n'a pas lu.
+        let (mut recue, fautes) = import::proposee::de::<droit::fiche::ChampsSalarie, _>(&lue).map_err(|m| m.reclasser(Classe::Illisible))?;
+        illisible.extend(fautes.into_iter().map(|f| format!("{} : {}", f.case.nom(), f.phrase)));
         recue.email = Some(de.clone());
         let nom = [recue.prenom_affichage.remplie(), recue.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
         if nom.trim().is_empty() {

@@ -189,10 +189,32 @@ fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
     }
 }
 
-/// Le Siret imprime, ses chiffres ; des chiffres qui ne font pas un Siret, le bulletin ne le dit pas.
-fn siret_lu(b: &BulletinLu) -> Option<droit::fiche::Siret> {
+/// Le Siret imprime, ses chiffres, lu par sa lecture de piece ; aucun s'il n'est pas imprime.
+fn siret_imprime(b: &BulletinLu) -> Option<R<droit::fiche::Siret>> {
     let s: String = b.entreprise.siret.as_deref()?.chars().filter(char::is_ascii_digit).collect();
-    droit::fiche::Siret::d_une_piece(&s)
+    Some(droit::fiche::Siret::d_une_piece(&s))
+}
+
+/// Le Siret imprime, quand ses chiffres font un Siret : ce que les comparaisons lisent. Ceux qui n'en font pas se disent
+/// en faute de la case de la fiche (`fiche_entreprise`).
+fn siret_lu(b: &BulletinLu) -> Option<droit::fiche::Siret> {
+    match siret_imprime(b) {
+        Some(Ok(s)) => Some(s),
+        Some(Err(_)) | None => None,
+    }
+}
+
+/// UNE CASE QU'UNE PIECE IMPRIME, lue par la lecture de piece de son type (`d_une_piece`) : hors de sa forme, la case
+/// reste vide et sa faute se note (`FauteDeCase`), comme toute valeur d'une piece que le type de sa case refuse.
+fn de_la_piece<T>(lue: Option<R<T>>, case: impl Into<CaseDeFiche>, fautes: &mut Vec<FauteDeCase>) -> Option<T> {
+    match lue {
+        Some(Ok(t)) => Some(t),
+        Some(Err(e)) => {
+            fautes.push(FauteDeCase { case: case.into(), chemin: None, phrase: e.phrase });
+            None
+        }
+        None => None,
+    }
 }
 
 /// Une adresse imprimee : les rangs avant le code postal, puis « 99999 Commune ». Sans rang de code postal, rien
@@ -779,7 +801,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
         };
         // Ce que les bulletins proposent a la fiche : le code analytique qu'ils impriment, s'ils en impriment un.
-        let code = ChampsSpectacle { code_analytique: analytique.clone(), ..ChampsSpectacle::default() };
+        let (code, fautes_du_code) = code_propose(analytique.as_deref());
         if let Some(cle) = connus.get(numero) {
             let fiche: &ChampsSpectacle = &ctx.spectacles[cle];
             let titre_dit = fiche.valeur_ecrite(CaseSpectacle::Titre.into()).filter(|v| !crate::fiches::case_vide(Some(v)));
@@ -806,6 +828,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             let entree = fiche_existante(&mut reponse.spectacles, &FicheNommee::Spectacle(cle.clone()), || format!("{} ({})", titre_de_la_fiche, numero));
             entree.ajouter_ecarts(ec);
             entree.noter(&champs.valeurs_dites(), &origine);
+            entree.ajouter_anomalies(redemandees(fiche, &fautes_du_code)?);
             completer::ajouter(&mut ap.a_completer, FicheNommee::Spectacle(cle.clone()), &champs)?;
             continue;
         }
@@ -817,6 +840,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             let Some(s) = FicheSpectacleDatee::de_la_proposee(&mut a.donnees) else { return Err(import::proposee::deux_sortes(NomDeFiche::Spectacle, nom)) };
             proposition(s);
             s.completer_de(&code);
+            a.fautes.extend(fautes_du_code);
             let anomalies = verifier_comme_a_l_ecriture(&a.donnees, &a.fautes)?;
             reponse.spectacles[rang].poser(&a.donnees, anomalies);
             continue;
@@ -1657,7 +1681,7 @@ fn ecarts_entreprise(fiche: &ChampsEntreprise, lue: &ChampsEntreprise, l: &Lu, c
     let de = |k: E| lue.ecrite(k.into()).mot().map(str::to_string);
     for (cle, a, lu) in [
         (E::Siret, siret_fiche, siret_lu(&l.b).map(|s| s.to_string())),
-        (E::Naf, t(E::Naf), l.b.entreprise.naf.clone()),
+        (E::Naf, t(E::Naf), de(E::Naf)),
         (E::RaisonSociale, t(E::RaisonSociale), de(E::RaisonSociale)),
         (E::Adresse, t(E::Adresse), de(E::Adresse)),
         (E::CodePostal, t(E::CodePostal), de(E::CodePostal)),
@@ -1734,6 +1758,7 @@ fn lisibles_de_la_piece_sur<F: SorteDeFiche>(fiche: &F::Plate, proposees: &F::Pl
 /// plus recent (`ls` dans l'ordre du temps) ; et la faute de chaque case qu'ils impriment hors de son type.
 fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
     let mut s = SalarieLu::de(nir);
+    let mut fautes = Vec::new();
     for (cle, v, _) in identite(ls) {
         if let Some(case) = s.case(cle) {
             *case = Some(v);
@@ -1742,7 +1767,8 @@ fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<
     s.date_naissance = ls.iter().rev().find_map(|l| l.b.salarie.naissance);
     if let Some((rue, cp, commune)) = ls.iter().rev().find_map(|l| adresse_lue(&l.b.salarie.adresse)) {
         s.adresse = Some(rue).filter(|r| !r.is_empty());
-        (s.code_postal, s.commune) = (CodePostal::d_une_piece(&cp), Some(commune));
+        s.code_postal = de_la_piece(Some(CodePostal::d_une_piece(&cp)), CaseSalarie::CodePostal, &mut fautes);
+        s.commune = Some(commune);
     }
     s.nir_cle = ls.iter().rev().find_map(|l| l.cle_nir.clone()).or_else(|| droit::fiche::CleNir::du_nir(nir));
     s.date_anciennete = ls.iter().map(|l| l.b.debut).min();
@@ -1750,7 +1776,9 @@ fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<
     // Une salariee recoit le metier au feminin, comme dans sa fiche (`routes::mois::emploi`) : le sexe que porte son NIR.
     let femme = nir.sexe() == Some(droit::fiche::Sexe::Feminin);
     let metier = statut_et_metier(statut, s.emploi.as_deref(), femme, idcc)?;
-    salarie_propose(s, &metier)
+    let (fiche, f_fautes) = salarie_propose(s, &metier)?;
+    fautes.extend(f_fautes);
+    Ok((fiche, fautes))
 }
 
 /// CE QU'UNE PIECE IMPRIME D'UN SALARIE, sous les cases de sa fiche.
@@ -1905,24 +1933,28 @@ fn licences_lues(lus: &[Lu]) -> Vec<(Mois, String)> {
 
 /// La fiche de l'entreprise, des bulletins : le plus recent pour l'identite, la premiere licence (`poser_licence`).
 fn fiche_entreprise(lus: &[Lu], l: &Lu) -> R<(ChampsEntreprise, Vec<FauteDeCase>)> {
+    use droit::fiche::CaseEntreprise as E;
     let e = &l.b.entreprise;
-    let siret = siret_lu(&l.b);
+    let mut fautes = Vec::new();
+    let siret = de_la_piece(siret_imprime(&l.b), E::Siret, &mut fautes);
     let adresse = adresse_lue(&e.adresse);
     let f = EntrepriseLue {
         raison_sociale: e.nom.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
         siren: siret.as_ref().map(droit::fiche::Siret::siren),
         nic: siret.as_ref().map(droit::fiche::Siret::nic),
         siret: siret.clone(),
-        naf: e.naf.as_deref().and_then(CodeNaf::d_une_piece),
+        naf: de_la_piece(e.naf.as_deref().map(CodeNaf::d_une_piece), E::Naf, &mut fautes),
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),
-        code_postal: adresse.as_ref().and_then(|a| CodePostal::d_une_piece(&a.1)),
+        code_postal: de_la_piece(adresse.as_ref().map(|a| CodePostal::d_une_piece(&a.1)), E::CodePostal, &mut fautes),
         commune: adresse.as_ref().map(|a| a.2.clone()),
         idcc: idcc_du_bulletin(&l.b)?,
         urssaf_compte: urssaf_lu(&l.b),
         licence_spectacle: licences_lues(lus).first().map(|x| x.1.clone()),
         ..EntrepriseLue::default()
     };
-    entreprise_proposee(f)
+    let (fiche, f_fautes) = entreprise_proposee(f)?;
+    fautes.extend(f_fautes);
+    Ok((fiche, fautes))
 }
 
 /// LA CONVENTION COLLECTIVE QU'UN BULLETIN IMPRIME : son IDCC (« IDCC n° 3090 »), sinon la convention que son nom
@@ -2116,10 +2148,28 @@ fn marque_d_intermittent(b: &BulletinLu) -> bool {
         })
 }
 
-/// LE NUMERO D'OBJET QU'UN BULLETIN IMPRIME, la seule lecture de sa case : a blanc ou hors de sa forme, aucun
-/// (`NumeroObjetSpectacle::d_une_piece`).
+/// LE CODE ANALYTIQUE QU'UN BULLETIN IMPRIME, propose a la fiche du spectacle : lu dans le type de sa case comme ce que
+/// le moteur y pose (`FauteDeCase::pose`) ; hors de sa forme, la case reste vide et sa faute se dit.
+fn code_propose(texte: Option<&str>) -> (ChampsSpectacle, Vec<FauteDeCase>) {
+    let mut code = ChampsSpectacle::default();
+    let Some(t) = texte else { return (code, Vec::new()) };
+    match FauteDeCase::pose::<droit::fiche::ChangementSpectacle>(CaseSpectacle::CodeAnalytique.into(), t) {
+        Ok(ch) => {
+            <FicheSpectacleDatee as droit::fiche::FicheDatee>::appliquer(&mut code, ch);
+            (code, Vec::new())
+        }
+        Err(f) => (code, vec![f]),
+    }
+}
+
+/// LE NUMERO D'OBJET QU'UN BULLETIN IMPRIME, la seule lecture de sa case (`NumeroObjetSpectacle::d_une_piece`) : a blanc,
+/// aucun. Un numero hors de sa forme ne range le bulletin sous aucun spectacle : aucune fiche ne recoit sa case, et le
+/// spectacle a creer ne nait que d'un numero lu.
 fn objet_imprime(b: &BulletinLu) -> Option<NumeroObjetSpectacle> {
-    b.numero_objet.as_deref().and_then(NumeroObjetSpectacle::d_une_piece)
+    match b.numero_objet.as_deref().map(NumeroObjetSpectacle::d_une_piece) {
+        Some(Ok(n)) => n,
+        Some(Err(_)) | None => None,
+    }
 }
 
 /// Le rang de la fiche de spectacle de la reponse qui porte ce numero d'objet (sans regarder la casse) ; `a_creer` : parmi
@@ -2177,6 +2227,7 @@ impl Attestee {
 fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche::Idcc>) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
     let dernier = |g: &dyn Fn(&import::certificat_lu::Certificat) -> Option<String>| ls.iter().rev().find_map(|l| g(&l.c).filter(|x| !x.trim().is_empty()));
     let adresse = ls.iter().rev().find_map(|l| adresse_lue(&l.c.adresse));
+    let mut fautes = Vec::new();
     let s = SalarieLu {
         nir_cle: ls.iter().rev().find_map(|l| l.c.cle_nir.clone()).or_else(|| droit::fiche::CleNir::du_nir(nir)),
         nom: dernier(&|c| c.nom.clone()),
@@ -2184,7 +2235,7 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
         // L'AEM dit la date de naissance, et artiste ou technicien par sa case ; le certificat, ni l'un ni l'autre.
         date_naissance: ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.naissance)),
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),
-        code_postal: adresse.as_ref().and_then(|a| CodePostal::d_une_piece(&a.1)),
+        code_postal: de_la_piece(adresse.as_ref().map(|a| CodePostal::d_une_piece(&a.1)), CaseSalarie::CodePostal, &mut fautes),
         commune: adresse.as_ref().map(|a| a.2.clone()),
         date_anciennete: ls.iter().filter_map(|l| l.c.debut).min(),
         ..SalarieLu::de(nir)
@@ -2194,7 +2245,9 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
     let emploi = dernier(&|c| c.emploi.clone());
     let femme = nir.sexe() == Some(droit::fiche::Sexe::Feminin);
     let metier = metier_dit(statut, rc, emploi.as_deref(), femme, idcc)?;
-    salarie_propose(s, &metier)
+    let (fiche, f_fautes) = salarie_propose(s, &metier)?;
+    fautes.extend(f_fautes);
+    Ok((fiche, fautes))
 }
 
 /// La fiche de l'entreprise qu'un certificat ou une AEM donne : son Siret, sa raison sociale, son numero d'adherent a la
@@ -2202,12 +2255,14 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
 /// de l'AEM : `documents::conges_spectacles::CLE_ADHERENT`) ; l'AEM dit aussi le code APE, l'IDCC, le code postal et la
 /// commune.
 fn entreprise_du_certificat(p: &Attestee) -> R<(ChampsEntreprise, Vec<FauteDeCase>)> {
+    use droit::fiche::CaseEntreprise as E;
     let c = &p.c;
     let aem = p.aem.as_ref();
+    let mut fautes = Vec::new();
     let f = EntrepriseLue {
-        naf: aem.and_then(|a| a.ape.as_deref()).and_then(CodeNaf::d_une_piece),
+        naf: de_la_piece(aem.and_then(|a| a.ape.as_deref()).map(CodeNaf::d_une_piece), E::Naf, &mut fautes),
         idcc: aem.and_then(|a| a.idcc.clone()),
-        code_postal: aem.and_then(|a| a.employeur_code_postal.as_deref()).and_then(CodePostal::d_une_piece),
+        code_postal: de_la_piece(aem.and_then(|a| a.employeur_code_postal.as_deref()).map(CodePostal::d_une_piece), E::CodePostal, &mut fautes),
         commune: aem.and_then(|a| a.employeur_commune.clone()),
         raison_sociale: c.employeur.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
         siren: c.siret.as_ref().map(droit::fiche::Siret::siren),
@@ -2216,7 +2271,9 @@ fn entreprise_du_certificat(p: &Attestee) -> R<(ChampsEntreprise, Vec<FauteDeCas
         adherent: c.compte.clone(),
         ..EntrepriseLue::default()
     };
-    entreprise_proposee(f)
+    let (fiche, f_fautes) = entreprise_proposee(f)?;
+    fautes.extend(f_fautes);
+    Ok((fiche, fautes))
 }
 
 /// Artiste ou technicien : la fiche qui existe, sinon celle que l'import cree (DSN, bulletin), sinon le metier du

@@ -101,6 +101,15 @@ impl FicheProposee {
         cases.into_iter().filter_map(|k| self.valeur_ecrite(k).map(|v| (k, v))).collect()
     }
 
+    /// Ses cases, sans ses notes.
+    pub fn sans_notes(&self) -> FicheProposee {
+        match self {
+            FicheProposee::Entreprise(f) => FicheProposee::Entreprise(f.clone().sans_notes()),
+            FicheProposee::Salarie(f) => FicheProposee::Salarie(f.clone().sans_notes()),
+            FicheProposee::Spectacle(f) => FicheProposee::Spectacle(f.clone().sans_notes()),
+        }
+    }
+
     /// Dit-elle une case ou une note ?
     pub fn est_dite(&self) -> bool {
         match self {

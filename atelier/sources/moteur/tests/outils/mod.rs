@@ -107,7 +107,7 @@ pub fn ecrire(racine: &Path, rel: &str, v: &Value) {
 
 /// Une fiche de la configuration datee, lue par sa forme `F` (`droit::fiche::FicheDatee`) au `jour`.
 pub fn fiche_au<F: droit::fiche::FicheDatee>(datee: &Value, jour: socle::date::Jour) -> Value {
-    socle::ecriture::en_valeur(&droit::fiche::lire_saisie::<F>(datee, "test").unwrap().au(&jour))
+    socle::ecriture::en_valeur(&socle::forme::lire::<F>(datee, "test").unwrap().au(&jour))
 }
 
 /// Le mois `numero` de l'annee `an`, que le test ecrit.

@@ -185,6 +185,18 @@ impl FauteDeCase {
 
 pub use socle::ecriture::{MotEcrit, ValeurDeCase};
 
+/// UNE NOTE D'UNE FICHE : un texte qu'elle porte et qui n'est pas une case (d'ou elle vient, le titre que l'import
+/// propose a un spectacle). Seul `fiche!` en fait une, du nom qu'il declare : une note ne se nomme pas par un texte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NoteDeFiche(&'static str);
+
+impl NoteDeFiche {
+    /// Son nom, la cle que le fichier ecrit.
+    pub fn nom(self) -> &'static str {
+        self.0
+    }
+}
+
 /// UNE FICHE QUE LA TABLE DES CASES JUGE (`declarations::champs`) : l'entreprise, un salarie, un spectacle, typee. Ce
 /// qu'une case ecrit (`ecrite`), si elle est remplie (`dite`), et sa seule porte depuis un formulaire (`lire_cases`).
 pub trait FicheSaisie: Sized + Default + Clone {
@@ -215,11 +227,11 @@ pub trait FicheSaisie: Sized + Default + Clone {
     /// Les cases qu'elle dit, dans l'ordre de la forme.
     fn cases_dites(&self) -> Vec<CaseDeFiche>;
 
-    /// Les notes qu'elle dit : leur cle et leur texte.
-    fn notes_dites(&self) -> Vec<(&'static str, &str)>;
+    /// Les notes qu'elle dit : leur nom et leur texte.
+    fn notes_dites(&self) -> Vec<(NoteDeFiche, &str)>;
 
-    /// La note `cle` telle que `autre` la dit.
-    fn prendre_la_note(&mut self, autre: &Self, cle: &str);
+    /// La note `note` telle que `autre` la dit.
+    fn prendre_la_note(&mut self, autre: &Self, note: NoteDeFiche);
 
     /// Ce qu'ecrit la case `k`.
     fn ecrite(&self, k: CaseDeFiche) -> MotEcrit {
@@ -476,30 +488,25 @@ la DSN écrivent (norme DPAE v5.3, zone « Code NAF » ; DSN, S21.G00.06.003). C
 
 impl CodePostal {
     /// LE CODE POSTAL QU'UNE PIECE IMPORTEE IMPRIME (un bulletin, une AEM, un certificat d'un autre logiciel), ses blancs
-    /// de bord retires : hors de sa forme, la case reste vide et se redemande (`Nir::d_une_piece`).
-    pub fn d_une_piece(texte: &str) -> Option<CodePostal> {
-        match CodePostal::lire(texte.trim()) {
-            Ok(c) => Some(c),
-            Err(_) => None,
-        }
+    /// de bord retires, ou la faute qui le refuse : hors de sa forme, la case reste vide et se redemande
+    /// (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> R<CodePostal> {
+        CodePostal::lire(texte.trim())
     }
 }
 
 impl CodeNaf {
     /// LE CODE APE QU'UNE PIECE IMPORTEE IMPRIME, ses blancs de bord retires, et sans le point de la notation de l'INSEE
     /// (« 90.01Z », les deux chiffres de la division puis le point : `atelier/reference/sources/insee-naf-2025/`, ses
-    /// classeurs et son `LISEZ-MOI.md`) : la DPAE et la DSN l'ecrivent sans lui (« 9001Z »). Hors de sa forme, la case
-    /// reste vide et se redemande (`Nir::d_une_piece`).
-    pub fn d_une_piece(texte: &str) -> Option<CodeNaf> {
+    /// classeurs et son `LISEZ-MOI.md`) : la DPAE et la DSN l'ecrivent sans lui (« 9001Z »). Hors de sa forme, la faute
+    /// qui le refuse : la case reste vide et se redemande (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> R<CodeNaf> {
         let t = texte.trim();
         let sans_point = match (t.get(..2), t.get(2..3), t.get(3..)) {
             (Some(division), Some("."), Some(reste)) => format!("{}{}", division, reste),
             _ => t.to_string(),
         };
-        match CodeNaf::lire(&sans_point) {
-            Ok(c) => Some(c),
-            Err(_) => None,
-        }
+        CodeNaf::lire(&sans_point)
     }
 }
 
@@ -697,14 +704,11 @@ impl Nir {
         }
     }
 
-    /// LE NIR QU'UNE PIECE IMPORTEE PORTE (une DSN lue, une AEM, une AER, un certificat, un bulletin d'autrui) : hors de sa
-    /// forme, la case reste vide, comme un code hors de nos listes ; la piece d'un tiers se lit, elle ne se refuse pas
-    /// pour lui. Les retours de la norme le lisent strictement (`lire`).
-    pub fn d_une_piece(texte: &str) -> Option<Nir> {
-        match Nir::lire(texte) {
-            Ok(n) => Some(n),
-            Err(_) => None,
-        }
+    /// LE NIR QU'UNE PIECE IMPORTEE PORTE (une DSN lue, une AEM, une AER, un certificat, un bulletin d'autrui), ou la
+    /// faute qui le refuse : la piece d'un tiers se lit, elle ne se refuse pas pour lui ; hors de sa forme, la case reste
+    /// vide et sa faute se dit (`FauteDeCase`). Les retours de la norme le lisent strictement (`lire`).
+    pub fn d_une_piece(texte: &str) -> R<Nir> {
+        Nir::lire(texte)
     }
 }
 
@@ -972,13 +976,10 @@ impl Siret {
         cle_de_luhn_juste(&self.0)
     }
 
-    /// LE SIRET QU'UNE PIECE IMPORTEE IMPRIME (un bulletin d'un autre logiciel), ses chiffres : hors de sa forme, la case
-    /// reste vide et se redemande ; la piece d'un tiers se lit, elle ne se refuse pas pour lui (`Nir::d_une_piece`).
-    pub fn d_une_piece(texte: &str) -> Option<Siret> {
-        match Siret::lire(texte) {
-            Ok(s) => Some(s),
-            Err(_) => None,
-        }
+    /// LE SIRET QU'UNE PIECE IMPORTEE IMPRIME (un bulletin d'un autre logiciel), ses chiffres, ou la faute qui le refuse :
+    /// hors de sa forme, la case reste vide et se redemande (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> R<Siret> {
+        Siret::lire(texte)
     }
 }
 
@@ -1145,14 +1146,15 @@ impl NumeroObjetSpectacle {
         }
     }
 
-    /// LE NUMERO D'OBJET QU'UNE PIECE IMPORTEE PORTE (une AEM, une AER, un bulletin d'autrui) : sans ses
-    /// blancs de bord ; a blanc ou hors de sa forme, la case reste vide, comme un code hors de nos listes (la piece d'un
-    /// tiers se lit, elle ne se refuse pas pour lui).
-    pub fn d_une_piece(texte: &str) -> Option<NumeroObjetSpectacle> {
-        match NumeroObjetSpectacle::lire(&NumeroObjetSpectacle::rangee(texte)) {
-            Ok(n) => Some(n),
-            Err(_) => None,
+    /// LE NUMERO D'OBJET QU'UNE PIECE IMPORTEE PORTE (une AEM, une AER, un bulletin d'autrui) : sans ses blancs de bord ;
+    /// a blanc, aucun ; hors de sa forme, la faute qui le refuse (la case reste vide et sa faute se dit,
+    /// `Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> R<Option<NumeroObjetSpectacle>> {
+        let range = NumeroObjetSpectacle::rangee(texte);
+        if range.is_empty() {
+            return Ok(None);
         }
+        NumeroObjetSpectacle::lire(&range).map(Some)
     }
 
     /// Le meme numero que `autre`, sans regarder la casse : une piece et une fiche l'ecrivent en capitales ou non.
@@ -2075,15 +2077,15 @@ macro_rules! fiche {
                 out
             }
 
-            /// Les notes qu'elle dit : leur cle et leur texte.
-            pub fn notes_dites(&self) -> Vec<(&'static str, &str)> {
-                let toutes: Vec<(&'static str, Option<&str>)> = vec![$($( (stringify!($note), self.$note.as_deref()) ),*)?];
+            /// Les notes qu'elle dit : leur nom et leur texte.
+            pub fn notes_dites(&self) -> Vec<(NoteDeFiche, &str)> {
+                let toutes: Vec<(NoteDeFiche, Option<&str>)> = vec![$($( (NoteDeFiche(stringify!($note)), self.$note.as_deref()) ),*)?];
                 toutes.into_iter().filter_map(|(k, t)| t.map(|t| (k, t))).collect()
             }
 
-            /// La note `cle` telle que `autre` la dit ; une fiche sans notes n'a rien a y lire (`_autre`, `_cle`).
-            pub fn prendre_la_note(&mut self, _autre: &$plate, _cle: &str) {
-                $( $( if _cle == stringify!($note) {
+            /// La note `note` telle que `autre` la dit ; une fiche sans notes n'a rien a y lire (`_autre`, `_note`).
+            pub fn prendre_la_note(&mut self, _autre: &$plate, _note: NoteDeFiche) {
+                $( $( if _note == NoteDeFiche(stringify!($note)) {
                     self.$note = _autre.$note.clone();
                 } )* )?
             }
@@ -3092,13 +3094,25 @@ choix! {
     pub enum FormatCinema { Long = "long", Court = "court" }
 }
 
+crate::cle_opaque! {
+    /// LE CODE ANALYTIQUE D'UN SPECTACLE : la section ou l'export comptable ventile ses salaires bruts, une cle de la
+    /// compagnie (la case `code_analytique` de sa fiche, les `sections` du plan comptable propre). Une saisie se lit sans
+    /// ses blancs de bord. Ce que le logiciel du comptable en admet se dit a part (`declarations::champs`, la largeur de
+    /// sa zone : `documents::etats_compta`).
+    pub struct CodeAnalytique, "code analytique";
+}
+
+impl FormeDeCase for CodeAnalytique {
+    const RANGER: Option<fn(&str) -> String> = Some(sans_blancs_de_bord);
+}
+
 fiche! {
     /// LA FICHE D'UN SPECTACLE a un jour (`config/spectacles.json`). Ses notes, ecrites par l'import, disent d'ou il
     /// vient et le titre que les bulletins de l'ancien logiciel proposent (`declarations::demarrage`).
     pub struct ChampsSpectacle, datee FicheSpectacleDatee, changement ChangementSpectacle, cles CaseSpectacle {
         Titre(String) = "titre" => titre,
         NumeroObjet(NumeroObjetSpectacle) = "numero_objet" => numero_objet,
-        CodeAnalytique(String) = "code_analytique" => code_analytique,
+        CodeAnalytique(CodeAnalytique) = "code_analytique" => code_analytique,
         GenreAudiovisuel(GenreAudiovisuel) = "genre_audiovisuel" => genre_audiovisuel,
         EmissionTv1734(bool) = "emission_tv_1734" => emission_tv_1734,
         FormatCinema(FormatCinema) = "format_cinema" => format_cinema,
@@ -3182,11 +3196,11 @@ macro_rules! fiche_saisie {
                 fn cases_dites(&self) -> Vec<CaseDeFiche> {
                     $plate::cases_dites(self)
                 }
-                fn notes_dites(&self) -> Vec<(&'static str, &str)> {
+                fn notes_dites(&self) -> Vec<(NoteDeFiche, &str)> {
                     $plate::notes_dites(self)
                 }
-                fn prendre_la_note(&mut self, autre: &Self, cle: &str) {
-                    $plate::prendre_la_note(self, autre, cle)
+                fn prendre_la_note(&mut self, autre: &Self, note: NoteDeFiche) {
+                    $plate::prendre_la_note(self, autre, note)
                 }
             }
         )*
@@ -3437,17 +3451,6 @@ compagnie à nouveau (« Ajouter une compagnie », d'un logiciel précédent) ou
     )
 }
 
-/// Le refus d'une ecriture de fiche que sa forme ne lit pas : rien ne s'ecrit, la valeur se corrige.
-fn refus_d_ecriture(fichier: &str, chemin: &str, detail: &str) -> String {
-    let ou = if chemin.is_empty() { String::new() } else { format!(", à « {} »", chemin) };
-    format!("{}{} ne s'écrirait pas : {}. Rien n'est écrit : corriger cette valeur.", fichier, ou, detail)
-}
-
-/// CE QU'UNE ECRITURE VA POSER DANS LE FICHIER `fichier`, lu par sa forme avant de s'ecrire : ce qui ne se lit pas se
-/// refuse en nommant la cle jusqu'a sa case, et rien n'est ecrit.
-pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: &str) -> R<T> {
-    socle::forme::relire_en_phrase(v, |chemin, detail| refus_d_ecriture(fichier, chemin, detail))
-}
 
 #[cfg(test)]
 mod tests {
