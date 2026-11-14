@@ -318,7 +318,11 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   nom de famille, prénoms, date de naissance (S21.G00.31.008 à .011). Une liste de la norme : `TOUTES` dans l'ordre du
   bloc 31, sa rubrique (`r31`), son libellé, la case de la fiche qui la porte ; sa valeur telle que le bloc 30 l'écrit
   est privée au fichier.
-- **SIREN, NIC, SIRET** : l'entreprise, l'établissement, les deux.
+- **SIREN, NIC, SIRET** : l'entreprise, l'établissement, les deux. Le SIRET qu'imprime une pièce importée se lit par
+  `Siret::d_une_piece` (hors forme : aucun).
+- **code NAF, code postal** : cinq caractères chacun. Celui qu'imprime une pièce importée se lit par `d_une_piece`, ses
+  blancs de bord retirés (hors forme : aucun) ; le code NAF, sans le point de la notation de l'INSEE (« 90.01Z » :
+  `9001Z`).
 - **IBAN, BIC** : un compte bancaire ; leurs contrôles, `socle/src/iban.rs`.
 - **numéro de contrat** : S21.G00.40.009 : il se lit, ne se recalcule pas. Ni `Deref` ni comparaison à un texte : il se
   compare à un numéro, s'imprime par `Display` (`numero_dit` quand il peut manquer ; le contrat d'un salarié dans un
@@ -712,6 +716,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
+| ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
@@ -865,13 +870,15 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   vient d'écrire), ou la sorte d'une fiche encore à créer, sans clé. `Nommee(FicheNommee)`, `ACreer(NomDeFiche)` ;
   écrite en deux champs, `nom` et `cle` (`null` pour l'entreprise et une fiche à créer) ; que porte une fiche de la
   réponse de l'import (`FicheImportee`).
-- **pièce d'où vient une valeur reprise** : la DSN, un bulletin, un certificat Congés Spectacles, une AEM, ou
-  l'historique déjà repris ; écrite `dsn`, `bulletin`, `certificat`, `AEM`, `historique` (`nom()`), « DSN » sur une
-  carte d'un mois importé (`import::mois`), `DSN`, `certificats`, `bulletins` dans l'état de l'import
-  (`routes::import`, une reprise). Que portent l'origine d'une valeur de la réponse (`Origine`), la paie qu'un
-  bulletin complète (`EcartPaie.source`), un contrat du registre des attestations (`import::attestes::Atteste`), d'où
-  vient chaque montant d'une carte et la pièce qui y déclare la paie. Ce qui atteste un contrat
-  (`engagement::importe::Attestation`) est une autre notion : un contrat de l'historique garde la sienne.
+- **pièce d'où vient une valeur reprise** : la DSN, un bulletin, un certificat Congés Spectacles, une AEM ; écrite
+  `dsn`, `bulletin`, `certificat`, `AEM` (`nom()`), « DSN » sur une carte d'un mois importé (`import::mois`), `DSN`,
+  `AEM`, `certificats`, `bulletins` dans l'état de l'import (`routes::import`, une reprise). Que portent l'origine d'une
+  valeur de la réponse (`Origine`), un numéro d'objet que la DSN déclare (`dsn_aem::ObjetDeclare`), d'où vient chaque
+  montant d'une carte et la pièce qui y déclare la paie. Ce qui atteste un contrat (`engagement::importe::Attestation`)
+  est une autre notion : un contrat de l'historique garde la sienne.
+- **ce qui atteste un contrat ou complète une paie** : une pièce de cet import (`Piece(Source)`), ou l'historique déjà
+  repris (`Historique`) ; écrit par son nom (`historique` pour l'historique). Que portent un contrat du registre des
+  attestations (`import::attestes::Atteste`) et la paie qu'un bulletin complète (`EcartPaie.source`).
 - **bloc du compte rendu d'un import** : les déclarations (les contrats d'une DSN), les bulletins, les certificats, les
   AEM en PDF ; que porte un contrat que l'import retient (`import::attestes::Retenu`).
 - **nature d'une AEM qui corrige** : complémentaire ou rectificative (sa case cochée) ; une telle AEM ne se reprend pas

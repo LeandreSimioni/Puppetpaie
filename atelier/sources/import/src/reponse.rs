@@ -165,15 +165,13 @@ pub fn pastilles_des_sorts() -> ParSort<Pastille> {
 
 // ------------------------------------------------------------------ d'ou vient une valeur
 
-/// LA PIECE D'OU VIENT UNE VALEUR REPRISE, ou un contrat atteste, ou la paie qu'un bulletin complete : une piece de
-/// l'import (la DSN, un bulletin, un certificat, une AEM), ou l'historique deja repris.
+/// LA PIECE D'OU VIENT UNE VALEUR REPRISE : une piece de l'import (la DSN, un bulletin, un certificat, une AEM).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Source {
     Dsn,
     Bulletin,
     Certificat,
     Aem,
-    Historique,
 }
 
 impl Serialize for Source {
@@ -190,7 +188,30 @@ impl Source {
             Source::Bulletin => "bulletin",
             Source::Certificat => "certificat",
             Source::Aem => "AEM",
-            Source::Historique => "historique",
+        }
+    }
+}
+
+/// CE QUI ATTESTE UN CONTRAT, OU LA PAIE QU'UN BULLETIN COMPLETE : une piece de cet import (`Source`), ou l'historique
+/// deja repris. Il s'ecrit par son nom, celui de la piece ou « historique ».
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Attestant {
+    Piece(Source),
+    Historique,
+}
+
+impl Serialize for Attestant {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+impl Attestant {
+    /// Son nom, tel que la reponse et le compte rendu l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            Attestant::Piece(p) => p.nom(),
+            Attestant::Historique => "historique",
         }
     }
 }
@@ -239,7 +260,6 @@ impl Origine {
             Source::Certificat => format!("le certificat Congés Spectacles{}{}", de_mois, fichier),
             Source::Bulletin => format!("le bulletin{}", fichier),
             Source::Dsn => format!("la DSN{}", de_mois),
-            Source::Historique => format!("l'historique{}", de_mois),
         }
     }
 }
@@ -481,7 +501,7 @@ pub enum EtatContrat {
 pub struct EcartPaie {
     pub champ: &'static str,
     /// D'ou vient la paie : la DSN, l'historique, ou le bulletin lui-meme.
-    pub source: Source,
+    pub source: Attestant,
     pub valeur: String,
     pub bulletin: String,
     pub le_bulletin_l_emporte: bool,
@@ -490,7 +510,7 @@ pub struct EcartPaie {
 }
 
 impl EcartPaie {
-    pub fn new(champ: &'static str, source: Source, valeur: String, gagne: bool, bulletin: String) -> EcartPaie {
+    pub fn new(champ: &'static str, source: Attestant, valeur: String, gagne: bool, bulletin: String) -> EcartPaie {
         let champ_dit = match champ {
             "brut" => "brut",
             "net_imposable" => "net imposable",

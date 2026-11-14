@@ -21,7 +21,7 @@ use std::collections::{BTreeSet, HashMap};
 use droit::contexte::Contexte;
 use droit::fiche::Nir;
 use engagement::importe::{Attestation, ContratLu};
-use crate::reponse::Source;
+use crate::reponse::{Attestant, Source};
 use socle::date::Jour;
 use socle::echec::R;
 use socle::num::Decimal;
@@ -34,7 +34,7 @@ pub struct Atteste {
     /// Sa fin ; aucune pour un contrat qui court toujours.
     pub(crate) fin: Option<Jour>,
     /// L'AEM, le bulletin, le certificat (la piece de cet import), ou l'historique.
-    pub(crate) source: Source,
+    pub(crate) source: Attestant,
     /// Ce qui l'atteste.
     pub par: Attestation,
     pub(crate) heures: Option<i64>,
@@ -51,8 +51,8 @@ impl Atteste {
     /// Son nom dans le compte rendu.
     pub fn d_ou(&self) -> String {
         match (self.source, self.par) {
-            (Source::Historique, Attestation::Certificat) => "historique, d'un certificat".into(),
-            (Source::Historique, Attestation::Aem) => "historique, d'une AEM".into(),
+            (Attestant::Historique, Attestation::Certificat) => "historique, d'un certificat".into(),
+            (Attestant::Historique, Attestation::Aem) => "historique, d'une AEM".into(),
             (s, _) => s.nom().into(),
         }
     }
@@ -95,7 +95,7 @@ pub fn en_mots(heures: Option<i64>, cachets: Option<i64>, jours: Option<i64>, br
 }
 
 /// Ce qu'un contrat atteste dit, pour le registre.
-fn lu(nir: &Nir, ligne: &ContratLu, source: Source) -> Atteste {
+fn lu(nir: &Nir, ligne: &ContratLu, source: Attestant) -> Atteste {
     let c = &ligne.contrat;
     Atteste {
         nir: nir.clone(),
@@ -108,7 +108,7 @@ fn lu(nir: &Nir, ligne: &ContratLu, source: Source) -> Atteste {
         jours: c.jours,
         brut: c.brut,
         ligne: ligne.clone(),
-        historique: (source == Source::Historique).then(|| ligne.clone()),
+        historique: (source == Attestant::Historique).then(|| ligne.clone()),
     }
 }
 
@@ -253,13 +253,13 @@ impl Registre {
                 continue;
             };
             if !permanent {
-                tous.push(lu(nir, &c, Source::Historique));
+                tous.push(lu(nir, &c, Attestant::Historique));
                 continue;
             }
             for (mois, p) in i.paies() {
                 let m = *mois;
                 let (premier, dernier) = (m.premier_jour(), m.dernier_jour());
-                let mut a = lu(nir, &c, Source::Historique);
+                let mut a = lu(nir, &c, Attestant::Historique);
                 a.debut = Some(match debut {
                     Some(d) => premier.max(d),
                     None => premier,
@@ -289,14 +289,14 @@ impl Registre {
     /// Ce qu'un certificat atteste seul, une fois retires les mois que les contrats `pareils` (ni des certificats, ni
     /// vides) attestent : `reste_du_certificat`.
     pub fn reste_du_certificat(&self, nir: &Nir, ligne: &ContratLu, pareils: &[Atteste]) -> Reste {
-        reste_du_certificat(&lu(nir, ligne, Source::Certificat), &pareils.iter().collect::<Vec<_>>())
+        reste_du_certificat(&lu(nir, ligne, Attestant::Piece(Source::Certificat)),&pareils.iter().collect::<Vec<_>>())
     }
 
     /// Retient le contrat `ligne` de la piece `source`, compte au bloc `bloc`. Il remplace, du meme salarie et aux dates
     /// qui chevauchent les siennes, les mois des certificats qu'il atteste, et, pour un bulletin, le contrat d'une AEM
     /// (l'appelant l'a compare : d'autres compteurs). Rend une phrase par contrat remplace.
     pub fn ajouter(&mut self, nir: &Nir, ligne: ContratLu, source: Source, bloc: BlocDImport) -> Remplaces {
-        let a = lu(nir, &ligne, source);
+        let a = lu(nir, &ligne, Attestant::Piece(source));
         let mut phrases = Vec::new();
         if let (false, Some(debut), Some(fin)) = (a.de_certificat(), a.debut, a.fin) {
             let remplaces: Vec<usize> = (0..self.tous.len())

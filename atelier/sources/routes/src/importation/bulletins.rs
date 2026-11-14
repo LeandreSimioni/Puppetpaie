@@ -73,7 +73,7 @@ use engagement::numeros::NumeroContrat;
 use crate::import::{self as ri, ACreer, Apercu, SpectacleDesPieces};
 use droit::contexte::IdSalarie;
 use import::reponse::{
-    BlocBulletins, BlocPieces, DitPar, Ecart, EcartPaie, EtatContrat, EtatFiche, EtatPaie, FicheImportee, FicheVisee, FichierVu, Importation, InfosPage, NonRepris, NonReprisVu,
+    Attestant, BlocBulletins, BlocPieces, DitPar, Ecart, EcartPaie, EtatContrat, EtatFiche, EtatPaie, FicheImportee, FicheVisee, FichierVu, Importation, InfosPage, NonRepris, NonReprisVu,
     Origine, PageVu, ParSort, Sort, Source, TriVu,
 };
 
@@ -187,16 +187,7 @@ fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
 /// Le Siret imprime, ses chiffres ; des chiffres qui ne font pas un Siret, le bulletin ne le dit pas.
 fn siret_lu(b: &BulletinLu) -> Option<droit::fiche::Siret> {
     let s: String = b.entreprise.siret.as_deref()?.chars().filter(char::is_ascii_digit).collect();
-    piece_dans_sa_forme(&s, droit::fiche::Siret::lire)
-}
-
-/// UNE CASE QU'UNE PIECE IMPORTEE IMPRIME, lue dans son type : hors de sa forme, elle reste vide et se redemande, comme
-/// une piece qui ne la dirait pas (une piece importee se lit au mieux : elle ne se refuse pas pour une case).
-fn piece_dans_sa_forme<T>(texte: &str, lire: fn(&str) -> R<T>) -> Option<T> {
-    match lire(texte) {
-        Ok(t) => Some(t),
-        Err(_) => None,
-    }
+    droit::fiche::Siret::d_une_piece(&s)
 }
 
 /// Une adresse imprimee : les rangs avant le code postal, puis « 99999 Commune ». Sans rang de code postal, rien
@@ -1018,15 +1009,15 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         prises.insert(ident, (chemin.clone(), l.page, l.b.brut, l.b.net_a_payer));
 
         // La paie.
-        let (mut ligne, source, avant): (PaieLue, Source, Option<PaieLue>) = match &cible {
+        let (mut ligne, source, avant): (PaieLue, Attestant, Option<PaieLue>) = match &cible {
             Some((_, _, Cible::Dsn(k))) => {
                 let x = ap.paies[*k].clone();
                 let avant = hist_par_cle.get(&x.cle()).cloned();
-                (x, Source::Dsn, avant)
+                (x, Attestant::Piece(Source::Dsn), avant)
             }
             Some((_, _, Cible::Historique(c))) => {
                 let x = hist_par_cle[c].clone();
-                (x.clone(), Source::Historique, Some(x))
+                (x.clone(), Attestant::Historique, Some(x))
             }
             None => {
                 let contrat = match &l.b.numero {
@@ -1037,7 +1028,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.debut), Some(l.b.fin), Some(copie.clone()));
                 let x = PaieLue { mois: l.mois, salarie: salarie.clone(), paie };
                 let avant = hist_par_cle.get(&x.cle()).cloned();
-                (x, Source::Bulletin, avant)
+                (x, Attestant::Piece(Source::Bulletin), avant)
             }
         };
         let ecarts = completer(&mut ligne.paie, &l.b, &copie, l.page, convention_des(&[rang]).as_ref())?;
@@ -1049,7 +1040,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         let etat_paie = if avant.as_ref().map(PaieLue::sans_date_d_import) == Some(ligne.sans_date_d_import()) {
             EtatPaie::Deja
-        } else if source == Source::Bulletin {
+        } else if source == Attestant::Piece(Source::Bulletin) {
             EtatPaie::Nouvelle
         } else {
             EtatPaie::Completee
@@ -1070,7 +1061,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let mut phrases: Vec<String> = vec![match (etat_paie, source) {
             (EtatPaie::Deja, _) => "paie déjà dans l'historique".to_string(),
             (EtatPaie::Nouvelle, _) => "paie nouvelle : aucune DSN ne la déclare".to_string(),
-            (_, Source::Dsn) => format!("complète la paie déclarée en DSN ({})", ligne.mois),
+            (_, Attestant::Piece(Source::Dsn)) => format!("complète la paie déclarée en DSN ({})", ligne.mois),
             _ => format!("complète la paie de l'historique ({})", ligne.mois),
         }];
         if !ecarts.is_empty() {
@@ -1743,7 +1734,7 @@ fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<
     s.date_naissance = ls.iter().rev().find_map(|l| l.b.salarie.naissance);
     if let Some((rue, cp, commune)) = ls.iter().rev().find_map(|l| adresse_lue(&l.b.salarie.adresse)) {
         s.adresse = Some(rue).filter(|r| !r.is_empty());
-        (s.code_postal, s.commune) = (piece_dans_sa_forme(&cp, CodePostal::lire), Some(commune));
+        (s.code_postal, s.commune) = (CodePostal::d_une_piece(&cp), Some(commune));
     }
     s.nir_cle = ls.iter().rev().find_map(|l| l.cle_nir.clone()).or_else(|| droit::fiche::CleNir::du_nir(nir));
     s.date_anciennete = ls.iter().map(|l| l.b.debut).min();
@@ -1915,9 +1906,9 @@ fn fiche_entreprise(lus: &[Lu], l: &Lu) -> R<Saisie> {
         siren: siret.as_ref().map(droit::fiche::Siret::siren),
         nic: siret.as_ref().map(droit::fiche::Siret::nic),
         siret: siret.clone(),
-        naf: e.naf.as_deref().filter(|x| !x.is_empty()).and_then(|x| piece_dans_sa_forme(x, CodeNaf::lire)),
+        naf: e.naf.as_deref().and_then(CodeNaf::d_une_piece),
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),
-        code_postal: adresse.as_ref().and_then(|a| piece_dans_sa_forme(&a.1, CodePostal::lire)),
+        code_postal: adresse.as_ref().and_then(|a| CodePostal::d_une_piece(&a.1)),
         commune: adresse.as_ref().map(|a| a.2.clone()),
         idcc: idcc_du_bulletin(&l.b)?,
         urssaf_compte: urssaf_lu(&l.b),
@@ -2190,7 +2181,7 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
         // L'AEM dit la date de naissance, et artiste ou technicien par sa case ; le certificat, ni l'un ni l'autre.
         date_naissance: ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.naissance)),
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),
-        code_postal: adresse.as_ref().and_then(|a| piece_dans_sa_forme(&a.1, CodePostal::lire)),
+        code_postal: adresse.as_ref().and_then(|a| CodePostal::d_une_piece(&a.1)),
         commune: adresse.as_ref().map(|a| a.2.clone()),
         date_anciennete: ls.iter().filter_map(|l| l.c.debut).min(),
         ..SalarieLu::de(nir)
@@ -2211,9 +2202,9 @@ fn entreprise_du_certificat(p: &Attestee) -> R<Saisie> {
     let c = &p.c;
     let aem = p.aem.as_ref();
     let f = EntrepriseLue {
-        naf: aem.and_then(|a| a.ape.as_deref()).and_then(|x| piece_dans_sa_forme(x, CodeNaf::lire)),
+        naf: aem.and_then(|a| a.ape.as_deref()).and_then(CodeNaf::d_une_piece),
         idcc: aem.and_then(|a| a.idcc.clone()),
-        code_postal: aem.and_then(|a| a.employeur_code_postal.as_deref()).and_then(|x| piece_dans_sa_forme(x, CodePostal::lire)),
+        code_postal: aem.and_then(|a| a.employeur_code_postal.as_deref()).and_then(CodePostal::d_une_piece),
         commune: aem.and_then(|a| a.employeur_commune.clone()),
         raison_sociale: c.employeur.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
         siren: c.siret.as_ref().map(droit::fiche::Siret::siren),

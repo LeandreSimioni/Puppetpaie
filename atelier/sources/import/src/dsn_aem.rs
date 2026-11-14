@@ -61,7 +61,8 @@ pub struct ObjetDeclare {
     pub premier_mois: Mois,
     pub dernier_mois: Mois,
     pub contrats: i64,
-    pub source: &'static str,
+    /// La piece qui le declare.
+    pub source: crate::reponse::Source,
 }
 
 /// UN CONTRAT QU'UN VERSEMENT DE LA DSN PAIE, avec ce que la DSN lui attribue (`PaieDuContrat` : son brut, son salaire
@@ -234,7 +235,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                         premier_mois: mois,
                         dernier_mois: mois,
                         contrats: 0,
-                        source: "DSN",
+                        source: crate::reponse::Source::Dsn,
                     });
                     out.objets.len() - 1
                 });

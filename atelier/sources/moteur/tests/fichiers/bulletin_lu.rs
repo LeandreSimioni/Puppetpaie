@@ -270,6 +270,7 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
             "incohérent : le net à payer lu (487.80) n'est pas le net avant impôt moins l'impôt prélevé (487.82)",
         ]
     );
+    assert!(b.avertissements.iter().all(|a| matches!(a, import::bulletin_lu::Avertissement::Incoherence(_))), "{:?}", b.avertissements);
     // Rien n'est corrige : les montants sont ceux de la page.
     assert_eq!(b.brut.to_string(), "600.00");
     assert_eq!(b.net_a_payer.to_string(), "487.80");
@@ -284,7 +285,11 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
     let l = lire(&sans_net).unwrap();
     let b = lu(&l[0]);
     assert_eq!(b.net_a_payer.to_string(), "477.82");
-    assert!(textes(&b.avertissements).iter().any(|a| a.starts_with("le net à payer n'est pas imprimé")), "{:?}", b.avertissements);
+    assert!(
+        b.avertissements.iter().any(|a| matches!(a, import::bulletin_lu::Avertissement::Lecture(t) if t.starts_with("le net à payer n'est pas imprimé"))),
+        "{:?}",
+        b.avertissements
+    );
 }
 
 // ------------------------------------------------------------------------------------------------- les compteurs

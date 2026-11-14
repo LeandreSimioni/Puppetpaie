@@ -554,7 +554,7 @@ pub(crate) fn apercu_lu(
     let mut objets: Vec<Objet> = lecture
         .objets
         .iter()
-        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
+        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == Source::Aem })
         .collect();
     for c in &contrats {
         let Some(numero) = &c.numero_objet else {
@@ -861,7 +861,6 @@ fn source_de_la_reprise<S: serde::Serializer>(source: &Source, s: S) -> Result<S
         Source::Aem => "AEM",
         Source::Certificat => "certificats",
         Source::Bulletin => "bulletins",
-        Source::Historique => "historique",
     })
 }
 

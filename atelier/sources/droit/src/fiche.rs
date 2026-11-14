@@ -453,6 +453,35 @@ texte_borne! {
 la DSN écrivent (norme DPAE v5.3, zone « Code NAF » ; DSN, S21.G00.06.003). Corrigez-le";
 }
 
+impl CodePostal {
+    /// LE CODE POSTAL QU'UNE PIECE IMPORTEE IMPRIME (un bulletin, une AEM, un certificat d'un autre logiciel), ses blancs
+    /// de bord retires : hors de sa forme, la case reste vide et se redemande (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> Option<CodePostal> {
+        match CodePostal::lire(texte.trim()) {
+            Ok(c) => Some(c),
+            Err(_) => None,
+        }
+    }
+}
+
+impl CodeNaf {
+    /// LE CODE APE QU'UNE PIECE IMPORTEE IMPRIME, ses blancs de bord retires, et sans le point de la notation de l'INSEE
+    /// (« 90.01Z », les deux chiffres de la division puis le point : `atelier/reference/sources/insee-naf-2025/`, ses
+    /// classeurs et son `LISEZ-MOI.md`) : la DPAE et la DSN l'ecrivent sans lui (« 9001Z »). Hors de sa forme, la case
+    /// reste vide et se redemande (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> Option<CodeNaf> {
+        let t = texte.trim();
+        let sans_point = match (t.get(..2), t.get(2..3), t.get(3..)) {
+            (Some(division), Some("."), Some(reste)) => format!("{}{}", division, reste),
+            _ => t.to_string(),
+        };
+        match CodeNaf::lire(&sans_point) {
+            Ok(c) => Some(c),
+            Err(_) => None,
+        }
+    }
+}
+
 texte_borne! {
     /// LE CODE PCS-ESE d'un emploi (S21.G00.40.004) : « Table PCSESE - Code profession et catégorie socioprofessionnelle
     /// PCS-ESE », « X [4,4] » (cahier technique DSN 2026.1, p. 183, `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`
@@ -920,6 +949,15 @@ impl Siret {
     /// Sa cle de Luhn est-elle juste (`cle_de_luhn_juste`) ?
     pub fn cle_juste(&self) -> bool {
         cle_de_luhn_juste(&self.0)
+    }
+
+    /// LE SIRET QU'UNE PIECE IMPORTEE IMPRIME (un bulletin d'un autre logiciel), ses chiffres : hors de sa forme, la case
+    /// reste vide et se redemande ; la piece d'un tiers se lit, elle ne se refuse pas pour lui (`Nir::d_une_piece`).
+    pub fn d_une_piece(texte: &str) -> Option<Siret> {
+        match Siret::lire(texte) {
+            Ok(s) => Some(s),
+            Err(_) => None,
+        }
     }
 }
 
