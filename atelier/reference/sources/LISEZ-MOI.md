@@ -178,9 +178,11 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `unedic-circulaire-2016-25-annexes-8-10.txt` : `d7959bc19982e8c3d8492e41ee9e813c5b9c8afa4c47bfe1086bbf5516fdeac7`
 - `urssaf-codes-types-personnel-20261013.LISEZ-MOI.md` : `4e4df5d86de57ea9ef50b68e354aac98d8588db02d5d38510ebd691d6951a95e`
 - `urssaf-codes-types-personnel-20261013.csv` : `00499ac0a3f9b4b314352f4b941445a3570d2f8789a6382c222d9db1430609b6`
-- `urssaf-codes-types-personnel-20261029.LISEZ-MOI.md` : `55a6d7ebc7d58a2a7cafbbd01648449266770bd9814581a8d7e0bc5cf7208f6e`
+- `urssaf-codes-types-personnel-20261029.LISEZ-MOI.md` : `b4ef761c5fb24279f2c8047f371c87f403867cff14d729dc5d91f060d3cc2280`
 - `urssaf-codes-types-personnel-20261029.csv` : `523c21bbff70d747ebf6f0689ce3ef39790c6d7ad0158d716888084e45d6b75c`
+- `urssaf-codes-types-personnel-20261029.xml` : `0b226ebaa58b900d55d472a0fa57689f16df0b57ccf5f5ce07ca5eb3b17e1afb`
 - `urssaf-codes-types-personnel-historique-20261029.csv` : `4e68d20f2c6281ebaa3f71f1bf477f5e4e87dab8661f02a8607f2a43e769f1b9`
+- `urssaf-codes-types-personnel-historique-20261029.xml` : `36772f6ff4ea6ef5fd9dc2a897f798d6c3db44967bb017fc74c57d3835979fc9`
 - `urssaf-codes-types-personnel.csv` : `12b280d883c49c3bcad7971ab9269e372a628d64bfc7f0254def1ce31ab73171`
 - `urssaf-liste-des-sites-et-des-activites.csv` : `95fd488047c8a70ae70d447616ff5433d790bbe5d6e3eb6061dd77bd42423c04`
 - `urssaf-table-des-urssaf-20260618.csv` : `60c86ab3781bd9874e6a8e5cdf06044e8ad36ea7f108039a6f806127f2869ca2`
