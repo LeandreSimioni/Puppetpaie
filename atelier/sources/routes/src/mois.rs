@@ -1231,7 +1231,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
     let i = ids.iter().position(|x| *x == c.engagement).ok_or_else(|| {
         refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", texte))
     })?;
-    let v = engagement::viser::viser(ctx, &data, &[i], c.cible, vise).map_err(|r| match r {
+    let v = engagement::viser::viser(ctx, &data, &[i], c.cible, Montant::du_decimal(vise)).map_err(|r| match r {
         engagement::viser::RefusVisee::Refus(m) => m,
         engagement::viser::RefusVisee::Calcul(m) => refus_du_calcul(ctx, &data, m),
     })?;
@@ -1240,8 +1240,8 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", texte)),
     };
     let vue = vue_paie(ctx, &v.paies[i], apres, &v.saisie)?;
-    let atteint = Montant::du_decimal(v.atteint).au_centime().decimal();
-    let mut facteur = v.facteur.round_dp(6);
+    let atteint = v.atteint.au_centime().decimal();
+    let mut facteur = v.facteur.decimal().round_dp(6);
     facteur.rescale(6);
     let change = ce_qui_a_change(avant, apres, i);
     // Le taux qu'il faudrait : chaque ligne qui change, puis le salaire du mois s'il change.
@@ -1274,7 +1274,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         cible: c.cible,
         vise,
         atteint,
-        depart: Montant::du_decimal(v.depart).au_centime().decimal(),
+        depart: v.depart.au_centime().decimal(),
         ecart,
         facteur,
         tours: v.tours,

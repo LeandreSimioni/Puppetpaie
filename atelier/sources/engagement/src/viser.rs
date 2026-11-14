@@ -12,7 +12,7 @@ use droit::contexte::Contexte;
 use socle::echec::Echec;
 use socle::num::Decimal;
 use crate::ligne::{QuantiteDeLigne, TauxDeLigne};
-use socle::grandeurs::MontantUnitaire;
+use socle::grandeurs::{Coefficient, Montant, MontantUnitaire};
 
 /// Ce qui se vise : le brut, le cout employeur, le net a payer ; la charge du montant vise le dit `brut`, `cout`, `net`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -35,9 +35,9 @@ pub enum RefusVisee {
 pub struct Visee {
     pub saisie: VueDuMois,
     pub paies: Vec<Paie>,
-    pub atteint: Decimal,
-    pub depart: Decimal,
-    pub facteur: Decimal,
+    pub atteint: Montant,
+    pub depart: Montant,
+    pub facteur: Coefficient,
     pub tours: usize,
 }
 
@@ -175,7 +175,8 @@ fn somme(paies: &[Paie], rangs: &[usize], cible: Cible) -> R<Decimal> {
 /// atteindre `vise` a leur `cible` additionnee. Une ligne de salaire sans taux en recoit un provisoire ; le facteur se
 /// cherche par approches successives (au plus `TOURS` essais) et le MEILLEUR essai gagne, jamais le dernier : a egale
 /// distance, celui qui ne depasse pas.
-pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vise: Decimal) -> R<Visee> {
+pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vise: Montant) -> R<Visee> {
+    let vise = vise.decimal();
     let mut data = data.clone();
     // Une ligne au tarif de la convention a son taux : elle n'est pas une ligne sans taux.
     crate::saisie_au_tarif(ctx, &mut data).map_err(RefusVisee::Calcul)?;
@@ -211,8 +212,8 @@ pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vi
     let mut meilleur: Option<Visee> = None;
     for tour in 1..=TOURS {
         let (d, paies, atteint) = essai(facteur)?;
-        if meilleur.as_ref().is_none_or(|m| rang_essai(atteint) < rang_essai(m.atteint)) {
-            meilleur = Some(Visee { saisie: d, paies, atteint, depart, facteur, tours: tour });
+        if meilleur.as_ref().is_none_or(|m| rang_essai(atteint) < rang_essai(m.atteint.decimal())) {
+            meilleur = Some(Visee { saisie: d, paies, atteint: Montant::du_decimal(atteint), depart: Montant::du_decimal(depart), facteur: Coefficient::du_decimal(facteur), tours: tour });
         }
         if atteint == vise || atteint <= Decimal::ZERO {
             break;

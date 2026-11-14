@@ -1167,7 +1167,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         Some(m) => m == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel,
         None => quotite < reference,
     };
-    let (l, a) = crate::heures_en_plus::lignes(ctx, e, mois, salaire, quotite, partiel)?;
+    let (l, a) = crate::heures_en_plus::lignes(ctx, e, mois, Montant::du_decimal(salaire), Heures::du_decimal(quotite), partiel)?;
     lignes.extend(l);
     avert.extend(a);
 
