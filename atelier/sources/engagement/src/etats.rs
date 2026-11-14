@@ -606,11 +606,11 @@ impl PaieDuMois {
     }
 
     pub fn total_sal(&self) -> Option<Decimal> {
-        self.montant(|p| p.total_sal, |p| p.total_sal)
+        self.montant(|p| p.total_sal.decimal(), |p| p.total_sal)
     }
 
     pub fn total_pat(&self) -> Option<Decimal> {
-        self.montant(|p| p.total_pat, |p| p.total_pat)
+        self.montant(|p| p.total_pat.decimal(), |p| p.total_pat)
     }
 
     pub fn net_a_payer(&self) -> Option<Decimal> {
@@ -631,14 +631,15 @@ impl PaieDuMois {
 
     /// L'assiette de la CSG : celle du calcul, ou celle que les pieces disent.
     pub fn base_csg(&self) -> Option<Decimal> {
-        self.montant(|p| p.base_csg, |p| p.bases.get(&droit::assiette::Assiette::Csg).copied())
+        self.montant(|p| p.base_csg.decimal(), |p| p.bases.get(&droit::assiette::Assiette::Csg).copied())
     }
 
-    /// Les assiettes, chacune par son nombre : celles du calcul, ou celles que les pieces disent.
-    pub fn bases(&self) -> BTreeMap<droit::assiette::Assiette, Decimal> {
+    /// Les assiettes, chacune dans ce qu'elle compte : celles du calcul, ou celles que les pieces disent, que leur assiette
+    /// range (`BaseDeCotisation::de_l_assiette`).
+    pub fn bases(&self) -> BTreeMap<droit::assiette::Assiette, crate::calcul::BaseDeCotisation> {
         match self {
-            PaieDuMois::Validee(p) => p.bases.iter().map(|(a, b)| (*a, b.decimal())).collect(),
-            PaieDuMois::Importee(p) => p.bases.clone(),
+            PaieDuMois::Validee(p) => p.bases.clone(),
+            PaieDuMois::Importee(p) => p.bases.iter().map(|(a, d)| (*a, crate::calcul::BaseDeCotisation::de_l_assiette(*a, *d))).collect(),
         }
     }
 

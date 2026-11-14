@@ -597,8 +597,8 @@ fn comparer_une(
     // Les totaux du bulletin, sans ce qu'il imprime apres eux : l'ecart relatif seulement.
     let hors = |f: &dyn Fn(&LigneCotisation) -> Decimal| -> Decimal { paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l, &garanties))).map(f).sum() };
     for (cle, notre, leur) in [
-        (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal.decimal()), p.cotisations_salariales),
-        (TotalDuBulletin::CotisationsPatronales, paie.total_pat - hors(&|l| l.montant_pat.decimal()), p.cotisations_patronales),
+        (TotalDuBulletin::CotisationsSalariales, paie.total_sal.decimal() - hors(&|l| l.montant_sal.decimal()), p.cotisations_salariales),
+        (TotalDuBulletin::CotisationsPatronales, paie.total_pat.decimal() - hors(&|l| l.montant_pat.decimal()), p.cotisations_patronales),
         (TotalDuBulletin::NetSocial, paie.net_social, p.net_social),
         (TotalDuBulletin::NetImposable, paie.net_imposable, p.net_imposable),
     ] {

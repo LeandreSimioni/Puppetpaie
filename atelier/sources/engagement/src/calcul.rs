@@ -276,6 +276,14 @@ impl BaseDeCotisation {
         }
     }
 
+    /// Ses euros, quand elle en compte ; `None` pour des heures, qui ne sont pas un montant.
+    pub fn montant(self) -> Option<Montant> {
+        match self {
+            BaseDeCotisation::Montant(m) => Some(m),
+            BaseDeCotisation::Heures(_) => None,
+        }
+    }
+
     /// Est-elle nulle ?
     pub fn est_nulle(self) -> bool {
         match self {
@@ -411,14 +419,14 @@ pub struct Contenu {
     /// La fiche du spectacle telle que le calcul l'a lue ; `None` pour un contrat paye au mois.
     pub spectacle: Option<droit::fiche::Spectacle>,
     pub brut: Decimal,
-    pub base_csg: Decimal,
+    pub base_csg: Montant,
     pub plafond: Decimal,
     /// Le SMIC horaire de la periode, dans sa forme la plus courte (`Contexte::smic`).
-    pub smic: Decimal,
+    pub smic: MontantUnitaire,
     pub heures: Decimal,
     pub lignes: Vec<LigneCotisation>,
-    pub total_pat: Decimal,
-    pub total_sal: Decimal,
+    pub total_pat: Montant,
+    pub total_sal: Montant,
     /// Ce qui se paie au salarie avant impot : le brut, moins les cotisations salariales, plus ou moins TOUTES les
     /// lignes hors assiette (defraiements, acompte retenu, indemnites).
     pub net_a_payer: Decimal,
@@ -438,11 +446,11 @@ pub struct Contenu {
     pub reduction_generale: Option<ReductionGenerale>,
     pub deduction_forfaitaire: Option<DeductionForfaitaire>,
     pub avertissements: Vec<Avis>,
-    pub salaire_de_base: Decimal,
-    pub salaire_retabli: Decimal,
-    pub assiette_chomage: Decimal,
-    pub heures_travaillees: Decimal,
-    pub heures_absence: Decimal,
+    pub salaire_de_base: Montant,
+    pub salaire_retabli: Montant,
+    pub assiette_chomage: Montant,
+    pub heures_travaillees: Heures,
+    pub heures_absence: Heures,
     /// Les periodes elementaires de paie d'un mois decoupe (`periodes`), chacune une paie calculee sur ses
     /// bornes, sa fiche et sa pile ; vide pour un mois d'un seul tenant. La paie du mois en est la somme ; la DSN declare
     /// leurs remunerations (51) et leurs bases (78, 79, 81) une par une.
@@ -465,18 +473,18 @@ impl Paie {
     /// Les champs sans valeur par defaut ; les autres partent a zero ou vides.
     pub(crate) fn nouveau(
         engagement: Engagement, salarie: SalarieDuContrat, spectacle: Option<droit::fiche::Spectacle>, brut: Decimal,
-        base_csg: Decimal, plafond: Decimal, smic: Decimal, heures: Decimal,
+        base_csg: Montant, plafond: Decimal, smic: MontantUnitaire, heures: Decimal,
         plafond_temps_partiel: PlafondTempsPartiel,
     ) -> Paie {
-        let zero = socle::grandeurs::Montant::ZERO.decimal();
+        let zero = Montant::ZERO.decimal();
         Paie(Contenu {
             engagement, salarie, spectacle, brut, base_csg, plafond, smic, heures,
-            lignes: Vec::new(), total_pat: zero, total_sal: zero, net_a_payer: zero, net_social: zero,
+            lignes: Vec::new(), total_pat: Montant::ZERO, total_sal: Montant::ZERO, net_a_payer: zero, net_social: zero,
             net_imposable: zero, cout_employeur: zero, numero_bulletin: None,
             bases: BTreeMap::new(), remuneration: Vec::new(), reduction_generale: None,
-            deduction_forfaitaire: None, avertissements: Vec::new(), salaire_de_base: zero,
-            salaire_retabli: zero, assiette_chomage: zero, heures_travaillees: socle::grandeurs::Heures::ZERO.decimal(),
-            heures_absence: socle::grandeurs::Heures::ZERO.decimal(), periodes: Vec::new(), pas: None, conges: None, conges_avant: None, plafond_temps_partiel,
+            deduction_forfaitaire: None, avertissements: Vec::new(), salaire_de_base: Montant::ZERO,
+            salaire_retabli: Montant::ZERO, assiette_chomage: Montant::ZERO, heures_travaillees: Heures::ZERO,
+            heures_absence: Heures::ZERO, periodes: Vec::new(), pas: None, conges: None, conges_avant: None, plafond_temps_partiel,
         })
     }
 
@@ -488,7 +496,7 @@ impl Paie {
         engagement.lignes.clear();
         (engagement.jours, engagement.cachets, engagement.heures) = (0, 0, None);
         let zero = socle::grandeurs::Montant::ZERO.decimal();
-        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), zero, zero, zero, self.smic, socle::grandeurs::Heures::ZERO.decimal(), self.plafond_temps_partiel);
+        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), zero, Montant::ZERO, zero, self.smic, socle::grandeurs::Heures::ZERO.decimal(), self.plafond_temps_partiel);
         p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::de_l_assiette(*k, zero))).collect();
         p
     }
@@ -1883,12 +1891,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         (base_51, retabli, chomage)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, base_csg, plafond, smic, heures, tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, Montant::du_decimal(base_csg), plafond, MontantUnitaire::du_decimal(smic), heures, tp);
     let p = paie.ecrire();
-    p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Heures::ZERO).fold(Decimal::ZERO, |a, l| a + l.heures_annexes.decimal());
+    p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Heures::ZERO).fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     p.lignes = lignes;
-    p.total_pat = tot_pat;
-    p.total_sal = tot_sal;
+    p.total_pat = Montant::du_decimal(tot_pat);
+    p.total_sal = Montant::du_decimal(tot_sal);
     p.net_a_payer = net;
     p.net_social = brut - tot_sal + hors_assiette_revenu;
     p.net_imposable = brut - tot_sal + hors_assiette_imposable + reintegrations(&p.lignes) - exonere;
@@ -1900,10 +1908,10 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     if let Some(h) = heures_en_plus {
         p.avertissements.extend(h.avis.into_iter().map(|texte| Avis { info: false, texte }));
     }
-    p.salaire_de_base = base_51;
-    p.salaire_retabli = retabli;
-    p.assiette_chomage = chomage_51;
-    p.heures_travaillees = Decimal::ZERO.max(heures_annexes);
+    p.salaire_de_base = Montant::du_decimal(base_51);
+    p.salaire_retabli = Montant::du_decimal(retabli);
+    p.assiette_chomage = Montant::du_decimal(chomage_51);
+    p.heures_travaillees = Heures::du_decimal(Decimal::ZERO.max(heures_annexes));
     p.remuneration = lb;
     Ok(paie)
 }
@@ -2084,17 +2092,17 @@ impl Paie {
             engagement.lignes = self.engagement.lignes.iter().map(crate::LignePaie::sans_marques).collect();
         }
         Ok(FormeDePaie {
-            assiette_chomage: Montant::du_decimal(self.assiette_chomage),
+            assiette_chomage: self.assiette_chomage,
             avertissements: self.avertissements.iter().map(avis).collect(),
-            base_csg: Montant::du_decimal(self.base_csg),
+            base_csg: self.base_csg,
             bases: self.bases.clone(),
             brut: Montant::du_decimal(self.brut),
             cout_employeur: Montant::du_decimal(self.cout_employeur),
             deduction_forfaitaire: self.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::forme),
             engagement,
             heures: Heures::du_decimal(self.heures),
-            heures_absence: Heures::du_decimal(self.heures_absence),
-            heures_travaillees: Heures::du_decimal(self.heures_travaillees),
+            heures_absence: self.heures_absence,
+            heures_travaillees: self.heures_travaillees,
             lignes: self.lignes.iter().map(LigneCotisation::forme).collect(),
             net_a_payer: Montant::du_decimal(self.net_a_payer),
             net_imposable: Montant::du_decimal(self.net_imposable),
@@ -2102,13 +2110,13 @@ impl Paie {
             numero_bulletin: self.numero_bulletin.clone(),
             reduction_generale: self.reduction_generale.clone(),
             remuneration: self.remuneration.iter().map(LigneBrut::forme).collect(),
-            salaire_de_base: Montant::du_decimal(self.salaire_de_base),
-            salaire_retabli: Montant::du_decimal(self.salaire_retabli),
+            salaire_de_base: self.salaire_de_base,
+            salaire_retabli: self.salaire_retabli,
             salarie: Cle { cle: self.salarie.id.clone() },
-            smic: MontantUnitaire::du_decimal(court(self.smic)),
+            smic: MontantUnitaire::du_decimal(court(self.smic.decimal())),
             spectacle: self.spectacle.as_ref().map(|s| Cle { cle: s.cle.clone() }),
-            total_pat: Montant::du_decimal(self.total_pat),
-            total_sal: Montant::du_decimal(self.total_sal),
+            total_pat: self.total_pat,
+            total_sal: self.total_sal,
             plafond: Montant::du_decimal(self.plafond),
             plafond_urssaf: Montant::du_decimal(self.plafond_urssaf(ctx)?),
             periodes: self.periodes.iter().map(|p| p.forme(ctx, avis, ecrite)).collect::<R<_>>()?,

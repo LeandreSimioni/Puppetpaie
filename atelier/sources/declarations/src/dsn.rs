@@ -653,10 +653,11 @@ fn place_de(a: &IdentifiantDAffiliation) -> Option<i64> {
 pub fn bases(p: &Paie, bar: &Pile) -> R<HashMap<Assiette, Decimal>> {
     let b = &p.bases;
     let mut out = HashMap::new();
-    let lue = |a: Assiette| -> R<Decimal> { b.get(&a).map(|x| x.decimal()).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, a.nom())) };
+    // Une base en euros ; une base en heures n'est pas un montant que la DSN declare.
+    let lue = |a: Assiette| -> R<Decimal> { b.get(&a).and_then(|x| x.montant()).map(Montant::decimal).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, a.nom())) };
     out.insert(Assiette::Brut, p.brut);
     out.insert(Assiette::BrutCs, lue(Assiette::BrutCs)?);
-    out.insert(Assiette::Csg, p.base_csg);
+    out.insert(Assiette::Csg, p.base_csg.decimal());
     out.insert(Assiette::BrutX115, lue(Assiette::BrutX115)?);
     out.insert(Assiette::BrutX110, lue(Assiette::BrutX110)?);
     out.insert(Assiette::Zero, Montant::ZERO.decimal());
@@ -671,16 +672,16 @@ pub fn bases(p: &Paie, bar: &Pile) -> R<HashMap<Assiette, Decimal>> {
         Assiette::T2Conventionnelle, Assiette::BrutPlafonne, Assiette::BrutX115Plafonne, Assiette::BrutChomage,
         Assiette::T1MensuelleX115,
     ] {
-        if let Some(x) = b.get(&a) {
-            out.insert(a, x.decimal());
+        if b.contains_key(&a) {
+            out.insert(a, lue(a)?);
         }
     }
     // Les assiettes abattues d'une paie sous deduction forfaitaire specifique (`calcul::calculer`, 7.5 bis), que
     // `cle_abattue` fait lire aux bases de securite sociale et d'Agirc-Arrco.
     if p.deduction_forfaitaire.is_some() {
         for a in [Assiette::BrutDfs, Assiette::BrutX115Dfs, Assiette::BrutX110Dfs, Assiette::BrutPlafonneDfs, Assiette::BrutX115PlafonneDfs] {
-            if let Some(x) = b.get(&a) {
-                out.insert(a, x.decimal());
+            if b.contains_key(&a) {
+                out.insert(a, lue(a)?);
             }
         }
     }
@@ -819,8 +820,9 @@ pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<
     };
     Ok(match cle_abattue(p, bloc78, cle)? {
         Assiette::Brut => p.brut,
-        Assiette::Csg => p.base_csg,
-        k => p.bases.get(&k).map(|b| b.decimal()).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom()))?,
+        Assiette::Csg => p.base_csg.decimal(),
+        // Une base en euros ; une base en heures n'est pas un montant que la DSN declare.
+        k => p.bases.get(&k).and_then(|b| b.montant()).map(Montant::decimal).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom()))?,
     })
 }
 
@@ -846,7 +848,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let bases = bases(p, &bar)?;
     let mut out: Vec<Cotisation> = Vec::new();
     for c in &bar.cotisations_dsn {
-        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, n.decimal())).transpose()? == Some(false) {
+        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees.decimal(), n.decimal())).transpose()? == Some(false) {
             continue;
         }
         let bloc78 = c.bloc78;
@@ -2083,9 +2085,9 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe:
     for &t in nat.types_remuneration() {
         let montant = match t {
             TypeDeRemuneration::Brute => brut_du_51(p),
-            TypeDeRemuneration::AssietteChomage => p.assiette_chomage,
-            TypeDeRemuneration::SalaireRetabli => p.salaire_retabli,
-            TypeDeRemuneration::SalaireDeBase => p.salaire_de_base,
+            TypeDeRemuneration::AssietteChomage => p.assiette_chomage.decimal(),
+            TypeDeRemuneration::SalaireRetabli => p.salaire_retabli.decimal(),
+            TypeDeRemuneration::SalaireDeBase => p.salaire_de_base.decimal(),
         };
         f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
@@ -2151,8 +2153,8 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, Decimal, UniteDeMes
         out.push((u.type_activite, valeur, u.code));
     }
     if let Some(a) = nat.unite_absence() {
-        if !p.heures_absence.is_zero() {
-            out.push((a.type_activite, p.heures_absence, a.code));
+        if !p.heures_absence.est_nul() {
+            out.push((a.type_activite, p.heures_absence.decimal(), a.code));
         }
     }
     Ok(out)

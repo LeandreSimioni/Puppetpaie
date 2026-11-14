@@ -275,7 +275,7 @@ pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
             ));
         }
     }
-    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures), euros(p.smic)))
+    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures), euros(p.smic.decimal())))
 }
 
 /// (IDCC, libellé) de la convention d'un contrat, pour ce qui s'imprime : le libellé se lit au catalogue des conventions
@@ -797,11 +797,12 @@ fn tableau_modele(p: &Paie, garanties: &[IdDeCotisation]) -> R<Vec<Ligne>> {
     let (oblig_sal, oblig_pat) = somme_des_rangs(&rangees, &obligatoire);
     let (fac_sal, fac_pat) = somme_des_rangs(&rangees, &|r| matches!(r, Rang::Facultative(_)));
     let (all_sal, all_pat) = somme_des_rangs(&rangees, &|r| *r == Rang::Allegement);
-    if oblig_sal + fac_sal + all_sal != p.total_sal || oblig_pat + fac_pat + all_pat != p.total_pat {
+    let (total_sal, total_pat) = (p.total_sal.decimal(), p.total_pat.decimal());
+    if oblig_sal + fac_sal + all_sal != total_sal || oblig_pat + fac_pat + all_pat != total_pat {
         return Err(socle::refus!(
             "Le bulletin ne retrouve pas les totaux de la paie : salarie {} + {} + {} pour {}, employeur {} + {} + {} \
              pour {}. Une ligne de cotisation n'a pas trouve sa place dans le modele.",
-            oblig_sal, fac_sal, all_sal, p.total_sal, oblig_pat, fac_pat, all_pat, p.total_pat
+            oblig_sal, fac_sal, all_sal, total_sal, oblig_pat, fac_pat, all_pat, total_pat
         ));
     }
     let mut out = vec![ligne(vec![cel(OBLIGATOIRES, COLONNES)], style_section())];

@@ -123,13 +123,13 @@ fn poser_reduction(p: &mut Paie, rg: Option<ReductionGenerale>) {
     let p = p.ecrire();
     if let Some(i) = p.lignes.iter().position(|l| l.est(&droit::forme_bareme::REDUCTION_GENERALE)) {
         let l = p.lignes.remove(i);
-        p.total_pat -= l.montant_pat.decimal();
+        p.total_pat -= l.montant_pat;
     }
     if let Some(r) = rg.as_ref().filter(|r| !r.montant.is_zero()) {
         p.lignes.push(ligne_de_reduction(r, p.brut));
-        p.total_pat -= r.montant;
+        p.total_pat -= Montant::du_decimal(r.montant);
     }
-    p.cout_employeur = p.brut + p.total_pat;
+    p.cout_employeur = p.brut + p.total_pat.decimal();
     p.reduction_generale = rg;
 }
 
@@ -188,14 +188,14 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     // La reduction generale du mois, puis sa part dans chaque periode.
     let zero = Montant::ZERO.decimal();
     let brut_mois = parts.iter().fold(zero, |a, p| a + p.brut);
-    let heures_mois = parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures_travaillees);
+    let heures_mois = parts.iter().fold(Heures::ZERO, |a, p| a + p.heures_travaillees);
     let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| b.decimal() > Decimal::ZERO));
     let pile = pile_de_la_paie(ctx, derniere)?;
-    let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois, heures_mois, caisse)?;
+    let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois, heures_mois.decimal(), caisse)?;
     for p in parts.iter_mut() {
         let rg = match &du_mois {
-            Some(m) if p.brut > Decimal::ZERO && p.heures_travaillees > Decimal::ZERO => {
-                Some(reduction_au_coefficient(pile_de_la_paie(ctx, p)?.reduction_generale.as_ref(), m.coefficient, p.brut, p.heures_travaillees)?)
+            Some(m) if p.brut > Decimal::ZERO && p.heures_travaillees > Heures::ZERO => {
+                Some(reduction_au_coefficient(pile_de_la_paie(ctx, p)?.reduction_generale.as_ref(), m.coefficient, p.brut, p.heures_travaillees.decimal())?)
             }
             _ => None,
         };
@@ -213,7 +213,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         derniere.salarie.clone(),
         derniere.spectacle.clone(),
         somme(&|p| p.brut),
-        somme(&|p| p.base_csg),
+        parts.iter().fold(Montant::ZERO, |a, p| a + p.base_csg),
         somme(&|p| p.plafond),
         derniere.smic,
         parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures),
@@ -254,8 +254,9 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         lignes.push(l);
     }
     m.lignes = lignes;
-    m.total_pat = somme(&|p| p.total_pat);
-    m.total_sal = somme(&|p| p.total_sal);
+    let montants = |f: &dyn Fn(&Paie) -> Montant| parts.iter().fold(Montant::ZERO, |a, p| a + f(p));
+    m.total_pat = montants(&|p| p.total_pat);
+    m.total_sal = montants(&|p| p.total_sal);
     m.net_a_payer = somme(&|p| p.net_a_payer);
     m.net_social = somme(&|p| p.net_social);
     m.net_imposable = somme(&|p| p.net_imposable);
@@ -282,11 +283,11 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         }
     });
     m.deduction_forfaitaire = derniere.deduction_forfaitaire.clone();
-    m.salaire_de_base = somme(&|p| p.salaire_de_base);
-    m.salaire_retabli = somme(&|p| p.salaire_retabli);
-    m.assiette_chomage = somme(&|p| p.assiette_chomage);
-    m.heures_travaillees = parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures_travaillees);
-    m.heures_absence = parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures_absence);
+    m.salaire_de_base = montants(&|p| p.salaire_de_base);
+    m.salaire_retabli = montants(&|p| p.salaire_retabli);
+    m.assiette_chomage = montants(&|p| p.assiette_chomage);
+    m.heures_travaillees = heures_mois;
+    m.heures_absence = parts.iter().fold(Heures::ZERO, |a, p| a + p.heures_absence);
     let decrites: Vec<String> = parts
         .iter()
         .filter_map(|p| p.engagement.periode.map(|b| (p, b)))

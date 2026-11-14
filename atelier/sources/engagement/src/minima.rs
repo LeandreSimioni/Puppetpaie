@@ -361,7 +361,7 @@ impl<'a> Cx<'a> {
             Some(j) if j <= 4 => (div(semaine, d("31.5")?), "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h"),
             Some(j) if j >= 89 => {
                 let mensuel = mul(semaine, d("3.8")?);
-                let smic = mul(mul(self.paie.smic, d("151.67")?), d("1.3")?);
+                let smic = ((socle::grandeurs::Heures::du_decimal(d("151.67")?) * self.paie.smic) * socle::grandeurs::Coefficient::du_decimal(d("1.3")?)).decimal();
                 let mensuel = if smic > mensuel { smic } else { mensuel };
                 (div(mensuel, d("151.67")?), "contrat de 3 mois ou plus : la semaine x 3,8 par mois de 151,67 h, pas moins de 130 % du SMIC")
             }

@@ -1308,7 +1308,11 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             l.m("mois", m).t("salarie", qui(paie.salarie())?).ot("contrat", paie.engagement().numero.clone());
             l.od("plafond", paie.plafond().map(|x| Montant::du_decimal(x).au_centime().decimal()));
             for (k, v) in paie.bases() {
-                l.d(&format!("b_{}", k), Montant::du_decimal(v).au_centime().decimal());
+                let v = match v {
+                    engagement::calcul::BaseDeCotisation::Montant(m) => m.au_centime().decimal(),
+                    engagement::calcul::BaseDeCotisation::Heures(h) => h.au_centieme().decimal(),
+                };
+                l.d(&format!("b_{}", k), v);
                 vues.insert(k);
             }
             if !paie.bases().contains_key(&Assiette::Csg) {
