@@ -59,7 +59,7 @@ pub fn document_modele(lu: &ModeleLu, valeurs: &Valeurs) -> forme::Modele {
 
 /// Les valeurs que le modele lit dans cette paie (sa forme canonique, `Paie::canon`).
 pub fn valeurs_de_paie(ctx: &Contexte, ent: &EntrepriseDuDocument, p: &Paie) -> R<Valeurs> {
-    Ok(valeurs_de_la_paie(ctx, ent, &p.canon(ctx)?, None)?)
+    Ok(valeurs_de_la_paie(ctx, ent, &p.canon()?, None)?)
 }
 
 /// Ce qu'un refus de modele porte a part : le modele, le marqueur en cause, et ce qu'il faut ecrire a sa place.

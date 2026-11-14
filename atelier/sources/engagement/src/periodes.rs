@@ -214,6 +214,9 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         brut_mois,
         parts.iter().fold(Montant::ZERO, |a, p| a + p.base_csg),
         parts.iter().fold(Montant::ZERO, |a, p| a + p.plafond),
+        // Un mois decoupe : la somme des plafonds de ses periodes (BOSS, assiette generale, § 730 : « les differentes
+        // regles d'ajustement du plafond sont cumulables »).
+        parts.iter().fold(Montant::ZERO, |a, p| a + p.plafond_urssaf),
         derniere.smic,
         parts.iter().fold(Heures::ZERO, |a, p| a + p.heures),
         derniere.plafond_temps_partiel,

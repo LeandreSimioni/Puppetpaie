@@ -15,8 +15,8 @@ use socle::num::court;
 
 /// La forme ecrite d'une paie : sa forme canonique, ses avertissements (`{"texte", "info"}`), les lignes de son
 /// engagement telles quelles (celles d'un permanent, deduites) et le plafond d'un temps partiel.
-pub fn ecrire(ctx: &Contexte, p: &Paie) -> R<FormeDePaie<Avis>> {
-    p.forme(ctx, &Avis::clone, true)
+pub fn ecrire(p: &Paie) -> R<FormeDePaie<Avis>> {
+    p.forme(&Avis::clone, true)
 }
 
 
@@ -97,7 +97,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         Some(crate::fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
     let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, MontantUnitaire::du_decimal(court(v.smic.decimal())), v.heures, tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, v.plafond_urssaf, MontantUnitaire::du_decimal(court(v.smic.decimal())), v.heures, tp);
     // Les periodes elementaires d'un mois decoupe : chacune sur l'engagement borne a sa periode, aux termes qu'elle porte.
     let mut periodes_lues = Vec::new();
     for (n, x) in v.periodes.iter().enumerate() {

@@ -1373,7 +1373,7 @@ pub fn jeux_et_description(
             paie: p,
             numero: numeros[i].as_ref(),
             colonnes: colonnes_par_salarie.get(cle).map(Vec::as_slice),
-            plafond: p.plafond_urssaf(ctx)?.decimal(),
+            plafond: p.plafond_urssaf.decimal(),
             conges: p.conges.as_ref(),
             pas,
             rectificatif: rectificatifs.get(&i),

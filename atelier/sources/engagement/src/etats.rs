@@ -994,7 +994,7 @@ fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[usize]) -> R<Vec<Paie
                 let (salarie, spectacle) = (&p.engagement.salarie, p.engagement.spectacle.as_ref());
                 let config = empreinte::configuration(ctx, &p.engagement.fin_periode(), salarie, spectacle.map(|s| s.as_str()))?;
                 let entree_fiches = empreinte::fiches(ctx, mois, salarie, spectacle)?;
-                Ok((relire::ecrire(ctx, p)?, relire::FichesDuCalcul::de(p), prelevement(ctx, p)?, conges, p.engagement.fin_periode(), config, entree_fiches))
+                Ok((relire::ecrire(p)?, relire::FichesDuCalcul::de(p), prelevement(ctx, p)?, conges, p.engagement.fin_periode(), config, entree_fiches))
             })
             .collect::<R<Vec<_>>>()
     })?;

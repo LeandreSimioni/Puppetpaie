@@ -422,6 +422,9 @@ pub struct Contenu {
     pub brut: Montant,
     pub base_csg: Montant,
     pub plafond: Montant,
+    /// Le « Plafond Urssaf » du bas de bulletin, tel que le calcul l'a pose (`plafond_urssaf`) et que la paie ecrite le
+    /// garde : un document le lit, il ne le recalcule pas.
+    pub plafond_urssaf: Montant,
     /// Le SMIC horaire de la periode, dans sa forme la plus courte (`Contexte::smic`).
     pub smic: MontantUnitaire,
     pub heures: Heures,
@@ -474,11 +477,11 @@ impl Paie {
     /// Les champs sans valeur par defaut ; les autres partent a zero ou vides.
     pub(crate) fn nouveau(
         engagement: Engagement, salarie: SalarieDuContrat, spectacle: Option<droit::fiche::Spectacle>, brut: Montant,
-        base_csg: Montant, plafond: Montant, smic: MontantUnitaire, heures: Heures,
+        base_csg: Montant, plafond: Montant, plafond_urssaf: Montant, smic: MontantUnitaire, heures: Heures,
         plafond_temps_partiel: PlafondTempsPartiel,
     ) -> Paie {
         Paie(Contenu {
-            engagement, salarie, spectacle, brut, base_csg, plafond, smic, heures,
+            engagement, salarie, spectacle, brut, base_csg, plafond, plafond_urssaf, smic, heures,
             lignes: Vec::new(), total_pat: Montant::ZERO, total_sal: Montant::ZERO, net_a_payer: Montant::ZERO, net_social: Montant::ZERO,
             net_imposable: Montant::ZERO, cout_employeur: Montant::ZERO, numero_bulletin: None,
             bases: BTreeMap::new(), remuneration: Vec::new(), reduction_generale: None,
@@ -496,7 +499,7 @@ impl Paie {
         engagement.lignes.clear();
         (engagement.jours, engagement.cachets, engagement.heures) = (0, 0, None);
         let zero = socle::grandeurs::Montant::ZERO.decimal();
-        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), Montant::ZERO, Montant::ZERO, Montant::ZERO, self.smic, Heures::ZERO, self.plafond_temps_partiel);
+        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), Montant::ZERO, Montant::ZERO, Montant::ZERO, self.plafond_urssaf, self.smic, Heures::ZERO, self.plafond_temps_partiel);
         p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::de_l_assiette(*k, zero))).collect();
         p
     }
@@ -1903,7 +1906,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         (base_51, retabli, chomage)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spec, Montant::du_decimal(brut), Montant::du_decimal(base_csg), Montant::du_decimal(plafond), MontantUnitaire::du_decimal(smic), Heures::du_decimal(heures), tp);
+    let plafond_urssaf = plafond_de_l_engagement(ctx, eng, &sal)?;
+    let mut paie = Paie::nouveau(eng.clone(), sal, spec, Montant::du_decimal(brut), Montant::du_decimal(base_csg), Montant::du_decimal(plafond), plafond_urssaf, MontantUnitaire::du_decimal(smic), Heures::du_decimal(heures), tp);
     let p = paie.ecrire();
     p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Heures::ZERO).fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     p.lignes = lignes;
@@ -2072,29 +2076,14 @@ devine pas.",
 }
 
 impl Paie {
-    /// Le « Plafond Urssaf » du bas de bulletin.
-    pub fn plafond_urssaf(&self, ctx: &Contexte) -> R<Montant> {
-        // Un mois decoupe : la somme des plafonds de ses periodes (BOSS, assiette generale, § 730 : « les differentes
-        // regles d'ajustement du plafond sont cumulables »).
-        if !self.periodes.is_empty() {
-            let mut total = Montant::ZERO;
-            for p in &self.periodes {
-                total = total + p.plafond_urssaf(ctx)?;
-            }
-            return Ok(total);
-        }
-        plafond_de_l_engagement(ctx, &self.engagement, &self.salarie)
-    }
-
-    /// La forme canonique d'une paie, ecriture stable pour les empreintes et les oracles (`ctx` pour le plafond Urssaf) :
-    /// chaque avis par son seul texte.
-    pub fn canon(&self, ctx: &Contexte) -> R<FormeDePaie<String>> {
-        self.forme(ctx, &|a: &Avis| a.texte.clone(), false)
+    /// La forme canonique d'une paie, ecriture stable pour les empreintes et les oracles : chaque avis par son seul texte.
+    pub fn canon(&self) -> R<FormeDePaie<String>> {
+        self.forme(&|a: &Avis| a.texte.clone(), false)
     }
 
     /// Sa forme (`paie_ecrite::FormeDePaie`), chaque avis par `avis` ; `ecrite` : celle que la validation ecrit
     /// (`relire::ecrire`), les lignes de l'engagement telles quelles et le plafond d'un temps partiel.
-    pub(crate) fn forme<A>(&self, ctx: &Contexte, avis: &dyn Fn(&Avis) -> A, ecrite: bool) -> R<FormeDePaie<A>> {
+    pub(crate) fn forme<A>(&self, avis: &dyn Fn(&Avis) -> A, ecrite: bool) -> R<FormeDePaie<A>> {
         let mut engagement = self.engagement.canon()?;
         // Le jour du versement que la paie declare et imprime (`Engagement::versement_dit`) : le contrat le dit ; une paie
         // importee dont les pieces ne le disent pas l'ecrit vide.
@@ -2130,8 +2119,8 @@ impl Paie {
             total_pat: self.total_pat,
             total_sal: self.total_sal,
             plafond: self.plafond,
-            plafond_urssaf: self.plafond_urssaf(ctx)?,
-            periodes: self.periodes.iter().map(|p| p.forme(ctx, avis, ecrite)).collect::<R<_>>()?,
+            plafond_urssaf: self.plafond_urssaf,
+            periodes: self.periodes.iter().map(|p| p.forme(avis, ecrite)).collect::<R<_>>()?,
             plafond_temps_partiel: ecrite.then_some(self.plafond_temps_partiel),
         })
     }
