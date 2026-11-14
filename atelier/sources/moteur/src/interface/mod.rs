@@ -361,11 +361,15 @@ fn fichier_de_la_page(chemin: &str) -> R<Option<(Vec<u8>, &'static str)>> {
     std::fs::read(&vrai).map(|o| Some((o, mime))).map_err(|e| socle::echec::du_disque(&vrai, &e))
 }
 
+/// Le fichier du jeton d'une fenetre, dans son dossier sur le poste (`navigateur::dossier_local`), hors de toute
+/// compagnie : ni la sauvegarde ni la publication ne le croisent.
+const JETON_DE_LA_FENETRE: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur(".jeton-interface");
+
 /// Le jeton de cette fenetre, tire une fois et garde dans son dossier sur le poste (`navigateur::dossier_local`).
 /// Un jeton garde d'une autre forme se tire a neuf. UN TIRAGE QUI ECHOUE REFUSE : la fenetre ne demarre pas avec un jeton
 /// previsible.
 fn jeton(local: &Path) -> R<socle::secret::Secret> {
-    let p = local.join(socle::fichiers::JETON_DE_LA_FENETRE);
+    let p = local.join(JETON_DE_LA_FENETRE);
     match std::fs::read_to_string(&p) {
         Ok(j) => {
             let j = j.trim();

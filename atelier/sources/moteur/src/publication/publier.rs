@@ -71,15 +71,14 @@ fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
     Ok(())
 }
 
-/// Ce qu'une compagnie fictive porte sur un poste sans que ce soit la compagnie livree : ses secrets et son jeton (une
-/// fictive ouverte pose elle aussi un coffre), le journal de la fenetre. Ni l'archive ni le depot ne les portent (les memes
+/// Ce qu'une compagnie fictive porte sur un poste sans que ce soit la compagnie livree : ses secrets et son jeton
+/// Google (une fictive ouverte pose elle aussi un coffre), le journal de la fenetre. Ni l'archive ni le depot ne les portent (les memes
 /// exclusions que le `.gitignore` du depot public, « LES COMPAGNIES FICTIVES »).
 /// La marque d'une livraison (`LIVREE`) non plus : la livraison l'ajoute elle-meme.
-fn hors_d_une_fictive_livree() -> [CheminRelatif; 5] {
+fn hors_d_une_fictive_livree() -> [CheminRelatif; 4] {
     [
         CheminRelatif::from(socle::fichiers::CONFIG).joint(&compagnie::coffre::FICHIER),
         socle::fichiers::JETON_GOOGLE,
-        CheminRelatif::from(socle::fichiers::CONFIG).joint(&socle::fichiers::JETON_DE_LA_FENETRE),
         compagnie::installation::JOURNAL_INTERFACE,
         LIVREE.into(),
     ]

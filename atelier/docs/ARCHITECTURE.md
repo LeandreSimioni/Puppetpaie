@@ -529,13 +529,15 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   l'écrivain de la DSN passe à `dsn::Fichier::add` restent des littéraux.
 - **nom de fichier** : le nom d'un fichier seul, sans son dossier : le fichier parti que le journal des envois note, le
   modèle d'un contrat, une table de la norme livrée, l'archive d'une version, la copie d'une pièce importée. Ni vide, ni
-  `.` ni `..`, sans `/`, `\`, `:` (un nom sous Windows ne le porte jamais) ni caractère nul ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans
+  `.` ni `..`, sans `/`, `\` ni caractère nul ; il peut porter `:`, permis sous Mac et Linux (« Relevé 03/2026.pdf »
+  du Finder s'écrit `Relevé 03:2026.pdf`), jamais lu sur un disque Windows, et refusé dans un nom écrit ailleurs
+  (`CheminRelatif::ecrit_ailleurs`, la restauration sous Windows) ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans
   nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur` ; le nom du dossier d'un mois, de son `Mois`.
 - **chemin relatif** : un chemin sous une racine que son champ dit (la compagnie, le dossier de la sauvegarde) : la trace
   d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris. Des
   `NomDeFichier` séparés par des barres droites sur tous les systèmes, ni vide ni avec une racine ; il se fait d'un
   chemin par `CheminRelatif::sous(racine, chemin)`, d'un chemin qu'écrit un autre système (une entrée d'archive, la
-  barre inverse lue droite, les noms vides et `.` retirés) par `CheminRelatif::ecrit_ailleurs`, ou s'écrit en Rust (`CheminRelatif::du_moteur` : les fichiers que le
+  barre inverse lue droite, les noms vides et `.` retirés, `:` refusé sur tous les systèmes) par `CheminRelatif::ecrit_ailleurs`, ou s'écrit en Rust (`CheminRelatif::du_moteur` : les fichiers que le
   moteur nomme sous la compagnie, `config/…`, `journal/…`), et se joint à sa racine nom par nom (`dans`, la seule
   jointure : il n'est pas un `Path`) ; la clé d'une lecture notée s'écrit avec la même écriture. Un dossier de premier
   niveau de la compagnie (`config`, `sorties`, `journal`, `historique`, `retours`…) est un `NomDeFichier` : un nom seul
@@ -551,7 +553,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **entrée mise de côté au tri d'un import** : une entrée d'archive dont le nom ne fait pas un chemin sous l'archive
   (`..`, `:`, un chemin absolu, rien qui reste), un fichier du disque dont le nom n'est pas un `NomDeFichier`, ou une
   entrée, d'archive ou du disque, qui ne se lit pas : elle ne s'écrit jamais sur le disque, le reste se trie, et le
-  compte rendu la dit (`TriVu.mises_de_cote`).
+  compte rendu la dit (`TriVu.mises_de_cote`), par son nom, ou par son rang quand elle n'en a pas (`nom` vide).
 - **raison d'une mise de côté** : laquelle des trois, avec sa phrase ; celle d'une entrée illisible porte l'erreur.
 - **clé de dépôt du banc** : la clé d'une charge qui nomme ce que la route lit hors du moteur (`dossier`, `export`,
   `fichier`, `chemin`) ; une liste du logiciel (`socle::noms_fermes!`), sous laquelle un scénario garde ses pièces.
@@ -1218,7 +1220,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **genre d'un imprévu** : un arrêt de travail (bloc 60) ou une autre suspension du contrat (bloc 65), écrit `arret`,
   `suspension` en tête de chaque imprévu du magasin (`genre`, l'étiquette de `engagement::imprevus::Imprevu`, qui dit
   sa forme : `ArretSaisi` ou `SuspensionSaisie`, qui ne le portent pas) ; une liste du logiciel
-  (`socle::noms_fermes!`), par laquelle une lecture du magasin choisit les uns ou les autres (`Imprevu::genre`). Que
+  (`socle::noms_fermes!`), déclarée avec `Imprevu` par un seul appel (`imprevus!`), où chaque nom s'écrit une fois pour
+  le genre et pour l'étiquette ; par elle une lecture du magasin choisit les uns ou les autres (`Imprevu::genre`). Que
   portent le résumé d'un arrêt et celui d'une suspension.
 - **type de contrat de la DPAE** : C_TYPE_CONTRAT du Format 120 (1 CDD, 2 CDI, 3 CTT), `codes_fermes!` avec son libellé ;
   que portent la DPAE d'une nature (`contrats-base.json`) et une DPAE relue.

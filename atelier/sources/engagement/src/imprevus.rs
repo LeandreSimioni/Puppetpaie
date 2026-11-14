@@ -36,15 +36,6 @@ use socle::fichiers::repr;
 use socle::echec::R;
 use socle::num::{div, eur2, mul, Decimal};
 
-socle::noms_fermes! {
-    /// LE GENRE D'UN IMPREVU, tel que le magasin l'ecrit.
-    GenreDImprevu, "Genre d'imprévu" {
-        /// Un arret de travail (bloc S21.G00.60).
-        Arret = "arret",
-        /// Une autre suspension du contrat (bloc S21.G00.65).
-        Suspension = "suspension",
-    }
-}
 /// Le dossier du magasin, sous les donnees de la compagnie.
 pub const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::MAGASIN_DES_IMPREVUS;
 
@@ -143,15 +134,38 @@ pub struct SuspensionSaisie {
     pub note: Option<String>,
 }
 
-/// UN IMPREVU DU MAGASIN : un arret de travail ou une suspension, que son genre distingue ; le genre s'ecrit en tete
-/// de l'imprevu, `genre`, par son nom (`GenreDImprevu`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "genre")]
-pub enum Imprevu {
-    #[serde(rename = "arret")]
-    Arret(ArretSaisi),
-    #[serde(rename = "suspension")]
-    Suspension(SuspensionSaisie),
+/// Les imprevus et leur genre, declares ensemble : le nom d'un genre ne s'ecrit qu'a leur appel.
+macro_rules! imprevus {
+    ($( $(#[$va:meta])* $v:ident($t:ty) = $n:literal, )*) => {
+        socle::noms_fermes! {
+            /// LE GENRE D'UN IMPREVU, tel que le magasin l'ecrit.
+            GenreDImprevu, "Genre d'imprévu" { $( $(#[$va])* $v = $n, )* }
+        }
+
+        /// UN IMPREVU DU MAGASIN : un arret de travail ou une suspension, que son genre distingue ; le genre s'ecrit en
+        /// tete de l'imprevu, `genre`, par son nom (`GenreDImprevu`).
+        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+        #[serde(tag = "genre")]
+        pub enum Imprevu {
+            $( #[serde(rename = $n)] $v($t), )*
+        }
+
+        impl Imprevu {
+            /// Son genre.
+            pub fn genre(&self) -> GenreDImprevu {
+                match self {
+                    $( Imprevu::$v(_) => GenreDImprevu::$v, )*
+                }
+            }
+        }
+    };
+}
+
+imprevus! {
+    /// Un arret de travail (bloc S21.G00.60).
+    Arret(ArretSaisi) = "arret",
+    /// Une autre suspension du contrat (bloc S21.G00.65).
+    Suspension(SuspensionSaisie) = "suspension",
 }
 
 /// LE FICHIER D'UN MOIS DU MAGASIN : ce qu'il range, son mois, ses imprevus.
@@ -218,14 +232,6 @@ impl Suspend for Imprevu {
 
 
 impl Imprevu {
-    /// Son genre.
-    pub fn genre(&self) -> GenreDImprevu {
-        match self {
-            Imprevu::Arret(_) => GenreDImprevu::Arret,
-            Imprevu::Suspension(_) => GenreDImprevu::Suspension,
-        }
-    }
-
     /// L'arret qu'il est, s'il en est un.
     pub fn arret(&self) -> Option<&ArretSaisi> {
         match self {

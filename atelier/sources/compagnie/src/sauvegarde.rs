@@ -32,9 +32,9 @@ pub const DOSSIER_DRIVE: &str = "sauvegarde";
 pub const INDEX: CheminRelatif = CheminRelatif::du_moteur("config/.sauvegarde.json");
 
 /// Ce qui ne monte pas : les fichiers d'etat de la machine, par leur nom (`noms_exclus`), des suffixes, des dossiers.
-fn noms_exclus() -> [NomDeFichier; 6] {
-    use socle::fichiers::{ETAPE_DE_L_OUVERTURE, JETON_DE_LA_FENETRE, JETON_GOOGLE, TRACE_DE_L_OUVERTURE};
-    [JETON_GOOGLE.nom(), JETON_DE_LA_FENETRE, socle::verrou::COMPTEURS.nom(), INDEX.nom(), TRACE_DE_L_OUVERTURE.nom(), ETAPE_DE_L_OUVERTURE.nom()]
+fn noms_exclus() -> [NomDeFichier; 5] {
+    use socle::fichiers::{ETAPE_DE_L_OUVERTURE, JETON_GOOGLE, TRACE_DE_L_OUVERTURE};
+    [JETON_GOOGLE.nom(), socle::verrou::COMPTEURS.nom(), INDEX.nom(), TRACE_DE_L_OUVERTURE.nom(), ETAPE_DE_L_OUVERTURE.nom()]
 }
 const SUFFIXES_EXCLUS: [&str; 4] = [".pyc", ".tmp", ".lock", ".part"];
 const DOSSIERS_EXCLUS: [&str; 2] = ["__pycache__", ".git"];

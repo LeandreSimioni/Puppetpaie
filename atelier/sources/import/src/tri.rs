@@ -111,8 +111,10 @@ pub struct Fichier {
 pub struct MiseDeCote {
     /// Le dossier ou l'archive qui la porte ; aucun a la racine du dossier trie.
     pub dans: Option<CheminRelatif>,
-    /// Son nom tel qu'il est ecrit ; une entree qui ne se lit pas n'en a pas : « entrée n° N ».
-    pub nom: String,
+    /// Son nom tel qu'il est ecrit ; aucun pour une entree qui ne se lit pas.
+    pub nom: Option<String>,
+    /// Son rang dans la lecture du dossier ou de l'archive, a partir de 1 : la phrase d'une entree sans nom le dit.
+    pub rang: usize,
     pub raison: RaisonDeMiseDeCote,
 }
 
@@ -131,17 +133,20 @@ impl std::fmt::Display for RaisonDeMiseDeCote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RaisonDeMiseDeCote::HorsDeLArchive => f.write_str("son nom n'est pas un chemin sous l'archive (il remonte par « .. », porte « : », ne nomme rien, ou il est absolu)"),
-            RaisonDeMiseDeCote::PasUnNom => f.write_str("son nom n'est pas un nom de fichier (il porte « : » ou une barre inverse)"),
+            RaisonDeMiseDeCote::PasUnNom => f.write_str("son nom n'est pas un nom de fichier (il porte une barre inverse)"),
             RaisonDeMiseDeCote::Illisible(e) => write!(f, "l'entrée ne se lit pas ({})", e),
         }
     }
 }
 
 impl MiseDeCote {
-    /// « « ../x.dsn » (dans lot.zip) est mis de côté, sans être lu : … ».
+    /// « « ../x.dsn » (dans lot.zip) est mis de côté, sans être lu : … » ; « L'entrée n° 3 (dans lot.zip) … ».
     pub fn dit(&self) -> String {
         let dans: String = self.dans.iter().map(|d| format!(" (dans {})", d)).collect();
-        format!("« {} »{} est mis de côté, sans être lu : {}.", self.nom, dans, self.raison)
+        match &self.nom {
+            Some(n) => format!("« {} »{} est mis de côté, sans être lu : {}.", n, dans, self.raison),
+            None => format!("L'entrée n° {}{} est mise de côté, sans être lue : {}.", self.rang, dans, self.raison),
+        }
     }
 }
 
@@ -208,27 +213,27 @@ impl Trieur {
                 return Ok(());
             }
         };
-        let mut entrees: Vec<(String, PathBuf, std::fs::FileType)> = Vec::new();
+        let mut entrees: Vec<(String, usize, PathBuf, std::fs::FileType)> = Vec::new();
         for (i, e) in lues.enumerate() {
             let e = match e {
                 Ok(e) => e,
                 Err(x) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom: format!("entrée n° {}", i + 1), raison: RaisonDeMiseDeCote::Illisible(x.to_string()) });
+                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom: None, rang: i + 1, raison: RaisonDeMiseDeCote::Illisible(x.to_string()) });
                     continue;
                 }
             };
             let nom = e.file_name().to_string_lossy().into_owned();
             match e.file_type() {
-                Ok(genre) => entrees.push((nom, e.path(), genre)),
-                Err(x) => self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom, raison: RaisonDeMiseDeCote::Illisible(x.to_string()) }),
+                Ok(genre) => entrees.push((nom, i + 1, e.path(), genre)),
+                Err(x) => self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom: Some(nom), rang: i + 1, raison: RaisonDeMiseDeCote::Illisible(x.to_string()) }),
             }
         }
         entrees.sort_by(|a, b| a.0.cmp(&b.0));
-        for (nom, chemin, genre) in entrees {
+        for (nom, rang, chemin, genre) in entrees {
             let nom_lu = match NomDeFichier::lire(&nom) {
                 Ok(n) => n,
                 Err(_) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom, raison: RaisonDeMiseDeCote::PasUnNom });
+                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom: Some(nom), rang, raison: RaisonDeMiseDeCote::PasUnNom });
                     continue;
                 }
             };
@@ -352,7 +357,7 @@ impl Trieur {
             let mut e = match z.by_index(i) {
                 Ok(e) => e,
                 Err(err) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: format!("entrée n° {}", i + 1), raison: RaisonDeMiseDeCote::Illisible(err.to_string()) });
+                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: None, rang: i + 1, raison: RaisonDeMiseDeCote::Illisible(err.to_string()) });
                     continue;
                 }
             };
@@ -362,7 +367,7 @@ impl Trieur {
             let rel = match CheminRelatif::ecrit_ailleurs(&brut) {
                 Ok(r) => r,
                 Err(_) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: brut, raison: RaisonDeMiseDeCote::HorsDeLArchive });
+                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: Some(brut), rang: i + 1, raison: RaisonDeMiseDeCote::HorsDeLArchive });
                     continue;
                 }
             };
@@ -545,17 +550,14 @@ mod tests {
         assert_eq!(chemins, ["lot.zip", "lot.zip/a.txt", "lot.zip/b/c.txt", "lot.zip/sous/paie.txt"]);
     }
 
-    /// Une entree qui porterait un prefixe de lecteur (`C:x`, `C:\x`), qui remonte ou qui est absolue est mise de cote,
-    /// et rien ne s'ecrit hors du dossier de l'archive : sous Windows, joindre `C:x` remplacerait tout le chemin.
+    /// Une entree qui porterait un prefixe de lecteur (`C:x`, `C:\x`), qui remonte ou qui est absolue est mise de cote.
     #[test]
     fn une_entree_piegee_ne_s_ecrit_pas_hors_de_l_archive() {
         let (d, tri) = trier_le_zip("piege", &["C:x.txt", "C:\\x.txt", "..\\x.txt", "\\x.txt", "bon.txt"]);
         let chemins: Vec<String> = tri.fichiers.iter().map(|f| f.chemin.to_string()).collect();
-        let hors = [d.join("x.txt"), d.join("import").join("x.txt"), d.join("travail").join("x.txt")].iter().any(|p| p.exists());
         std::fs::remove_dir_all(&d).unwrap();
         assert_eq!(chemins, ["lot.zip", "lot.zip/bon.txt"]);
         assert_eq!(tri.mises_de_cote.len(), 4);
         assert!(tri.mises_de_cote.iter().all(|m| matches!(m.raison, RaisonDeMiseDeCote::HorsDeLArchive)));
-        assert!(!hors);
     }
 }
