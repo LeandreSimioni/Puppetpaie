@@ -108,13 +108,14 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     Ok(out)
 }
 
-/// Ajoute `x` a l'assiette `a` de `m`.
-fn cumuler(m: &mut BTreeMap<Assiette, BaseDeCotisation>, a: Assiette, x: BaseDeCotisation) {
-    let avant = match m.get(&a) {
-        Some(b) => b.decimal(),
-        None => Montant::ZERO.decimal(),
+/// Ajoute `x` a l'assiette `a` de `m` (`BaseDeCotisation::plus`).
+fn cumuler(m: &mut BTreeMap<Assiette, BaseDeCotisation>, a: Assiette, x: BaseDeCotisation) -> R<()> {
+    let somme = match m.get(&a) {
+        Some(b) => b.plus(x)?,
+        None => x,
     };
-    m.insert(a, BaseDeCotisation::de_l_assiette(a, avant + x.decimal()));
+    m.insert(a, somme);
+    Ok(())
 }
 
 /// Remplace la reduction generale de la periode `p` par `rg` : sa ligne, le total patronal et le cout employeur.
@@ -262,7 +263,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let mut bases = BTreeMap::new();
     for p in &parts {
         for (k, v) in &p.bases {
-            cumuler(&mut bases, *k, *v);
+            cumuler(&mut bases, *k, *v)?;
         }
     }
     m.bases = bases;

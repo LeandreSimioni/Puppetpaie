@@ -410,13 +410,13 @@ impl<'de> Deserialize<'de> for TranchePas {
                 let valeurs: Vec<String> = autre
                     .iter()
                     .map(|v| match v {
-                        Some(c) => c.0.to_string(),
+                        Some(c) => socle::texte::nombre_dit(c.0),
                         None => "null".to_string(),
                     })
                     .collect();
                 Err(serde::de::Error::custom(format!(
                     "Une tranche de la grille du PAS s'écrit [bas, haut, taux] : trois nombres, seul le haut de la dernière tranche à null ; celle-ci s'écrit [{}].",
-                    valeurs.join(", ")
+                    valeurs.join(" ; ")
                 )))
             }
         }

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use droit::bareme::{bareme_applique, SANTE_SUSPENSION, SANTE_SUSPENSION_MAINTENUE, SANTE_SUSPENSION_SUSPENDUE};
 use droit::natures::{AuMois, Nature};
-use droit::fiche::{AccordDfs, ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie, OptionDfs as DfsEmployeur, SalarieDuContrat, Statut};
+use droit::fiche::{AccordDfs, ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie, OptionDfs, SalarieDuContrat, Statut};
 use droit::catalogue::{code_54, rubrique, HorsAssiette, Unite};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
@@ -235,13 +235,25 @@ impl BaseDeCotisation {
         }
     }
 
-    /// La base `d` ecrite de la ligne de la cotisation `id` : des heures pour la deduction des heures supplementaires, des
-    /// euros pour toute autre (une ligne du bareme s'assoit sur une assiette en euros, la reduction generale sur le brut).
-    pub fn de_la_cotisation(id: &IdDeCotisation, d: Decimal) -> BaseDeCotisation {
+    /// LA BASE `d` ECRITE DE LA LIGNE DE LA COTISATION `id`, relue sur les piles de bareme de sa paie (`piles` : celle de
+    /// la paie, puis celles de ses periodes elementaires) : la grandeur que dit l'assiette de la cotisation dans le
+    /// bareme, comme au calcul (`de_l_assiette`). Les lignes que le calcul compose hors du bareme disent la leur, comme au
+    /// calcul : la reduction generale (`ligne_de_reduction`, sur le brut) et la reduction salariale des heures en plus (sur
+    /// leur remuneration) en euros, la deduction patronale des heures supplementaires en heures (`heures_en_plus`). Une
+    /// cotisation qu'aucune pile ne connait se refuse en se nommant.
+    pub(crate) fn relue(piles: &[Arc<Pile>], id: &IdDeCotisation, d: Decimal) -> R<BaseDeCotisation> {
+        if *id == droit::forme_bareme::REDUCTION_GENERALE || *id == crate::heures_en_plus::REDUCTION {
+            return Ok(BaseDeCotisation::Montant(Montant::du_decimal(d)));
+        }
         if *id == crate::heures_en_plus::DEDUCTION {
-            BaseDeCotisation::Heures(Heures::du_decimal(d))
-        } else {
-            BaseDeCotisation::Montant(Montant::du_decimal(d))
+            return Ok(BaseDeCotisation::Heures(Heures::du_decimal(d)));
+        }
+        match piles.iter().find_map(|p| p.rubrique(id)) {
+            Some(r) => Ok(BaseDeCotisation::de_l_assiette(base_de(r)?, d)),
+            None => Err(socle::echec::cle(
+                format!("La paie porte la cotisation {}, que le barème de sa période ne connaît pas : elle ne se relit pas. Le signaler au développeur.", id),
+                id.as_str(),
+            )),
         }
     }
 
@@ -298,7 +310,7 @@ impl LigneCotisation {
             id: self.id.clone(),
             famille: self.famille.clone(),
             libelle: self.libelle.clone(),
-            base: self.base,
+            base: socle::forme::Nombre(self.base.decimal()),
             taux_pat: self.taux_pat.map(taux_court),
             montant_pat: self.montant_pat,
             taux_sal: self.taux_sal.map(taux_court),
@@ -307,19 +319,19 @@ impl LigneCotisation {
         }
     }
 
-    /// Relue de sa forme ecrite.
-    pub(crate) fn de_la_forme(f: &FormeDeCotisation) -> LigneCotisation {
-        LigneCotisation {
+    /// Relue de sa forme ecrite, sa base dans la grandeur que son bareme dit (`BaseDeCotisation::relue`).
+    pub(crate) fn de_la_forme(f: &FormeDeCotisation, piles: &[Arc<Pile>]) -> R<LigneCotisation> {
+        Ok(LigneCotisation {
             id: f.id.clone(),
             famille: f.famille.clone(),
             libelle: f.libelle.clone(),
-            base: f.base,
+            base: BaseDeCotisation::relue(piles, &f.id, f.base.0)?,
             taux_pat: f.taux_pat.map(taux_court),
             montant_pat: f.montant_pat,
             taux_sal: f.taux_sal.map(taux_court),
             montant_sal: f.montant_sal,
             masquer_base_et_taux: f.masquer_base_et_taux,
-        }
+        })
     }
 }
 
@@ -640,11 +652,12 @@ pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Decimal) -> Ligne
 /// application au 1er janvier de l'annee suivante. » Le consentement est annuel : la fiche le date (son historique),
 /// `droit::fiche::AccordDfs`.
 ///
-/// L'option de DFS qui vaut pour ce salarie : sa profession, son taux de l'annee, les lignes abattues, le plafond annuel,
-/// les remboursements de frais que l'annexe 2 de l'arrete laisse hors de l'assiette et la tolerance du BOSS qui y laisse
-/// les autres.
+/// LA DFS QUI VAUT POUR CE SALARIE : sa profession, son taux de l'annee, les lignes abattues, le plafond annuel, les
+/// remboursements de frais que l'annexe 2 de l'arrete laisse hors de l'assiette et la tolerance du BOSS qui y laisse les
+/// autres. Une autre notion que l'option de l'employeur (`droit::fiche::OptionDfs`, la case de sa fiche), qui n'en est
+/// qu'une condition.
 #[derive(Debug, Clone, PartialEq)]
-pub struct OptionDfs {
+pub struct DfsDuSalarie {
     pub profession: droit::fiche::ProfessionDfs,
     pub categorie: droit::forme_bareme::CategorieDfs,
     pub taux: Taux,
@@ -672,7 +685,7 @@ fn refus_detaille(phrase: impl Into<String>, cle: Option<&str>, detail: String) 
 /// (`atelier/reference/sources/dfs/arrete-2025-frais-professionnels/`) ; les professions, l'article 5 de l'annexe IV du
 /// CGI dans sa redaction en vigueur au 31/12/2000 (`atelier/reference/sources/dfs/cgi-annexe4-art5/`) et l'annexe 1 de
 /// l'arrete ; leur taux de l'annee, le bareme (art. 9, II et III). Une section du bareme non marquee verifiee refuse.
-pub(crate) fn deduction_forfaitaire(bar: &Pile, sal: &ChampsSalarie, ent: &ChampsEntreprise) -> R<Option<OptionDfs>> {
+pub(crate) fn deduction_forfaitaire(bar: &Pile, sal: &ChampsSalarie, ent: &ChampsEntreprise) -> R<Option<DfsDuSalarie>> {
     let Some(profession) = sal.deduction_forfaitaire.dite().copied() else {
         return Ok(None);
     };
@@ -710,8 +723,8 @@ social et economique, ou, a defaut, salarie par salarie. Rien n'est calcule.",
                 qui, profession
             ))
         }
-        Some(DfsEmployeur::AccordCollectif | DfsEmployeur::AccordCse) => {}
-        Some(DfsEmployeur::AccordIndividuel) => match sal.deduction_forfaitaire_accord.dite() {
+        Some(OptionDfs::AccordCollectif | OptionDfs::AccordCse) => {}
+        Some(OptionDfs::AccordIndividuel) => match sal.deduction_forfaitaire_accord.dite() {
             Some(AccordDfs::Contrat | AccordDfs::ConsentementAnnuel) => {}
             Some(AccordDfs::Refus) => return Ok(None),
             None => {
@@ -742,7 +755,7 @@ section verifiee.",
             qui, profession, annee, categorie
         )
     })?;
-    Ok(Some(OptionDfs {
+    Ok(Some(DfsDuSalarie {
         profession,
         categorie,
         taux,
@@ -775,7 +788,7 @@ section verifiee.",
 ///   [...] >>. Aucun texte depose ne dit si une autre indemnite hors assiette (une indemnite de rupture exoneree par sa
 ///   propre regle) s'y reintegre : refus (regle 1). Un acompte, un mouvement de tresorerie, n'est rien de tout cela.
 fn dfs_applicable(
-    eng: &Engagement, nat: &Nature, o: &OptionDfs, lb: &[LigneBrut], sal: &ChampsSalarie, racine: &std::path::Path,
+    eng: &Engagement, nat: &Nature, o: &DfsDuSalarie, lb: &[LigneBrut], sal: &ChampsSalarie, racine: &std::path::Path,
     jour: &Jour,
 ) -> R<()> {
     let qui = eng.qui();
@@ -871,7 +884,7 @@ pub struct AbattementDfs {
 ///   la DSN (`heures_par_cachet`), aucun texte depose ne dit les heures travaillees d'un cachet.
 /// Quand l'une ou l'autre ramene la deduction, l'assiette abattue se repartit entre les rubriques au prorata de leur
 /// montant, le dernier centime sur la derniere.
-pub(crate) fn abattement_dfs(o: &OptionDfs, montants: &[Decimal], brut: Decimal, deja: Decimal, assiette_minimale: Decimal) -> AbattementDfs {
+pub(crate) fn abattement_dfs(o: &DfsDuSalarie, montants: &[Decimal], brut: Decimal, deja: Decimal, assiette_minimale: Decimal) -> AbattementDfs {
     let zero = socle::grandeurs::Montant::ZERO.decimal();
     let facteur = sub(Decimal::ONE, div(o.taux.decimal(), Decimal::ONE_HUNDRED));
     let theoriques: Vec<Decimal> = montants.iter().map(|m| socle::grandeurs::Montant::du_decimal(mul(*m, facteur)).au_centime().decimal()).collect();
@@ -1342,11 +1355,11 @@ fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &
 /// Le SMIC de la reduction generale d'un mois ou une absence retire du salaire.
 pub(crate) struct SmicDUneAbsence {
     /// La remuneration percue hors elements non affectes par l'absence (S21.G00.51.011 = 028).
-    pub percue: Decimal,
+    pub percue: Montant,
     /// La remuneration habituelle du mois complet hors ces elements (S21.G00.51.011 = 029).
-    pub habituelle: Decimal,
+    pub habituelle: Montant,
     /// Les heures dont le SMIC horaire fait le SMIC du mois, quand le bareme dit le SMIC horaire de la reduction.
-    pub heures: Option<Decimal>,
+    pub heures: Option<Heures>,
 }
 
 /// CSS D. 241-7, IV, dernier alinea (`atelier/reference/sources/code-de-la-securite-sociale/xml/D241-7.xml`) : quand le
@@ -1365,20 +1378,22 @@ pub(crate) struct SmicDUneAbsence {
 /// denominateur le salaire de base. Le SMIC du mois du salaire de base (`smic_horaire` x ses heures, au centime) prend le
 /// rapport, comme la fiche l'ecrit ; les autres heures payees (en plus du mois) restent entieres. `heures` est ce SMIC
 /// rapporte au SMIC horaire : la reduction le retrouve (`droit::reduction`). Sans ligne `retabli` non nulle : aucun rapport.
-pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<Decimal>) -> Option<SmicDUneAbsence> {
-    let somme = |f: &dyn Fn(&LigneBrut) -> bool, v: &dyn Fn(&LigneBrut) -> Decimal| lb.iter().filter(|l| f(l)).fold(Decimal::ZERO, |a, l| a + v(l));
+pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<MontantUnitaire>) -> Option<SmicDUneAbsence> {
+    let rien = Montant::du_decimal(Decimal::ZERO);
+    let montants = |f: &dyn Fn(&LigneBrut) -> bool| lb.iter().filter(|l| f(l)).fold(rien, |a, l| a + l.montant);
+    let heures = |f: &dyn Fn(&LigneBrut) -> bool| lb.iter().filter(|l| f(l)).fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     if !lb.iter().any(|l| l.retabli && !l.montant.est_nul()) {
         return None;
     }
-    let habituelle = somme(&|l| l.salaire_de_base, &|l| l.montant.decimal());
-    if habituelle <= Decimal::ZERO {
+    let habituelle = montants(&|l| l.salaire_de_base);
+    if habituelle <= rien {
         return None;
     }
-    let percue = Decimal::ZERO.max(habituelle + somme(&|l| l.retabli && l.soumis, &|l| l.montant.decimal()));
-    let heures = smic_horaire.filter(|s| *s > Decimal::ZERO).map(|s| {
-        let smic_du_salaire = socle::grandeurs::Montant::du_decimal(mul(s, somme(&|l| l.salaire_de_base, &|l| l.heures_annexes.decimal()))).au_centime().decimal();
-        let autres = somme(&|l| !l.salaire_de_base && !l.retabli, &|l| l.heures_annexes.decimal());
-        Decimal::ZERO.max(div(div(mul(smic_du_salaire, percue), habituelle), s) + autres)
+    let percue = rien.max(habituelle + montants(&|l| l.retabli && l.soumis));
+    let heures = smic_horaire.filter(|s| *s > MontantUnitaire::du_decimal(Decimal::ZERO)).map(|s| {
+        let smic_du_salaire = (heures(&|l| l.salaire_de_base) * s).au_centime();
+        let autres = heures(&|l| !l.salaire_de_base && !l.retabli);
+        Heures::ZERO.max(Heures::du_decimal(div(div(mul(smic_du_salaire.decimal(), percue.decimal()), habituelle.decimal()), s.decimal())) + autres)
     });
     Some(SmicDUneAbsence { percue, habituelle, heures })
 }
@@ -1759,15 +1774,15 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite de 130 % de celle du brut entier
     // (`reduction_generale_sous_dfs`).
     // Le SMIC horaire de la reduction (`smic_horaire_reference`) ; sans lui, pas de reduction.
-    let smic_horaire_rg = bar.reduction_generale.as_ref().and_then(|r| r.smic_horaire_reference).map(socle::grandeurs::MontantUnitaire::decimal);
+    let smic_horaire_rg = bar.reduction_generale.as_ref().and_then(|r| r.smic_horaire_reference);
     let absence = smic_d_une_absence(&lb, smic_horaire_rg);
     let heures_rg = match absence.as_ref().and_then(|a| a.heures) {
-        Some(h) => h,
+        Some(h) => h.decimal(),
         None => heures_annexes,
     };
     if let Some(a) = &absence {
-        bases.insert(Assiette::RemunerationPercueHorsEna, a.percue);
-        bases.insert(Assiette::RemunerationHabituelleHorsEna, a.habituelle);
+        bases.insert(Assiette::RemunerationPercueHorsEna, a.percue.decimal());
+        bases.insert(Assiette::RemunerationHabituelleHorsEna, a.habituelle.decimal());
     }
     let rg = match bases.get(&Assiette::BrutDfs).filter(|_| dfs.is_some()) {
         Some(abattu) => reduction_generale_sous_dfs(bar.reduction_generale.as_ref(), statut, brut, *abattu, heures_rg, caisse_conges)?,
@@ -2121,19 +2136,19 @@ mod tests {
     /// 11,65). Une IJSS subrogee, non soumise, n'entre pas au rapport ; un maintien integral garde le SMIC entier.
     #[test]
     fn le_smic_d_un_mois_d_absence_suit_le_rapport_des_remunerations() {
-        let smic = Some(dec_de("11.65"));
+        let smic = Some(MontantUnitaire::du_decimal(dec_de("11.65")));
         // 35 x 52 / 12 heures, comme la fiche compte le SMIC du mois (1 766,92).
         let mois = ligne("mois", "2000", "151.6667", true, false, true);
         let prime = ligne("prime", "3833.33", "0", false, false, true);
         let absence = ligne("absence_maladie", "-1000", "-75.83", false, true, true);
         let a = smic_d_une_absence(&[mois.clone(), absence.clone(), prime], smic).unwrap();
-        assert_eq!((a.percue, a.habituelle), (dec_de("1000"), dec_de("2000")));
-        assert_eq!(socle::grandeurs::Montant::du_decimal(mul(dec_de("11.65"), a.heures.unwrap())).au_centime().decimal(), dec_de("883.46"));
+        assert_eq!((a.percue.decimal(), a.habituelle.decimal()), (dec_de("1000"), dec_de("2000")));
+        assert_eq!((a.heures.unwrap() * smic.unwrap()).au_centime().decimal(), dec_de("883.46"));
         let subrogee = ligne(droit::catalogue::RubriqueDuMois::IjssNettes.code().as_str(),"300", "0", false, false, false);
-        assert_eq!(smic_d_une_absence(&[mois.clone(), absence.clone(), subrogee], smic).unwrap().percue, dec_de("1000"));
+        assert_eq!(smic_d_une_absence(&[mois.clone(), absence.clone(), subrogee], smic).unwrap().percue.decimal(), dec_de("1000"));
         let maintien = ligne("maintien_salaire", "1000", "0", false, true, true);
         let entier = smic_d_une_absence(&[mois.clone(), absence, maintien], smic).unwrap();
-        assert_eq!(socle::grandeurs::Montant::du_decimal(mul(dec_de("11.65"), entier.heures.unwrap())).au_centime().decimal(), dec_de("1766.92"));
+        assert_eq!((entier.heures.unwrap() * smic.unwrap()).au_centime().decimal(), dec_de("1766.92"));
         assert!(smic_d_une_absence(&[mois], smic).is_none());
     }
 }

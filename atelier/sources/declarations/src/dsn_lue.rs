@@ -1256,8 +1256,15 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let m = fautes.montant(rub, &v);
                 versement.into_iter().for_each(|x| x.net_verse = m);
             }
+            // Un taux ecrit en decimal simple (« 7 », « 7.5 », « 7.50 ») se lit ; toute autre ecriture (« +7 », « 1_0 »,
+            // « 75e-1 ») laisse la case vide : une DSN venue d'ailleurs se lit au mieux, rien ne s'y devine.
             "S21.G00.50.006" => {
-                let t = fautes.nombre(rub, &v);
+                let chiffres = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
+                let simple = match v.split_once('.') {
+                    Some((entier, decimales)) => chiffres(entier) && chiffres(decimales),
+                    None => chiffres(&v),
+                };
+                let t = if simple { socle::num::decimal_lu(&v) } else { None };
                 versement.into_iter().for_each(|x| x.taux_pas = t);
             }
             "S21.G00.50.007" => {

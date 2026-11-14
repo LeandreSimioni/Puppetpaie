@@ -46,7 +46,7 @@ use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
-use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire, Quantite};
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire, Quantite};
 use socle::num::{div, mul, Decimal};
 use droit::catalogue::CodeDeRubrique;
 
@@ -149,10 +149,10 @@ fn capacites(r: &Regime, debut: &Jour) -> R<Vec<Option<i64>>> {
 
 /// LE POURCENTAGE DE CHAQUE JOUR D'UN ARRET, du premier au dernier jour d'absence, en fraction (zero : pas indemnise) :
 /// la carence, puis les tranches, diminuees d'abord de `deja` jours deja indemnises dans les douze mois.
-pub fn taux_des_jours(r: &Regime, premier: &Jour, dernier: &Jour, deja: i64) -> R<Vec<Decimal>> {
+pub fn taux_des_jours(r: &Regime, premier: &Jour, dernier: &Jour, deja: i64) -> R<Vec<Coefficient>> {
     let n = (dernier.moins(premier) + 1).max(0);
     let carence = r.carence.max(0);
-    let mut out = vec![Decimal::ZERO; n as usize];
+    let mut out = vec![Coefficient::du_decimal(Decimal::ZERO); n as usize];
     let mut caps = capacites(r, &premier.plus_jours(carence)?)?;
     let mut reste = deja.max(0);
     for c in caps.iter_mut() {
@@ -171,7 +171,7 @@ pub fn taux_des_jours(r: &Regime, premier: &Jour, dernier: &Jour, deja: i64) -> 
         if k >= caps.len() {
             break;
         }
-        out[i as usize] = dm::fraction(r.tranches[k].taux).decimal();
+        out[i as usize] = dm::fraction(r.tranches[k].taux);
         dans += 1;
     }
     Ok(out)
@@ -215,7 +215,7 @@ pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte)
         let taux = taux_des_jours(r, &ap, &ad, deja_indemnises(ctx, &autre, nat, t)?)?;
         for (i, x) in taux.iter().enumerate() {
             let j = ap.plus_jours(i as i64)?;
-            if *x > Decimal::ZERO && j >= debut_fenetre && j < premier {
+            if *x > Coefficient::du_decimal(Decimal::ZERO) && j >= debut_fenetre && j < premier {
                 total += 1;
             }
         }
@@ -278,7 +278,7 @@ pub struct AuNet {
     pub texte: String,
     pub net: bool,
     pub plafond_net: bool,
-    pub parts: Vec<(Decimal, Decimal)>,
+    pub parts: Vec<(Decimal, Coefficient)>,
     pub ij_nettes_hors_bulletin: Decimal,
     pub ij_nettes_hors_garantie: Decimal,
     pub complement_brut: Decimal,
@@ -307,8 +307,8 @@ fn jours_de_la_caisse(origine: Origine) -> R<(i64, Option<i64>)> {
 }
 
 /// Une suite de jours d'absence du mois au meme pourcentage : ses bornes et son pourcentage.
-fn suites(taux: &[Decimal], premier: &Jour, debut: &Jour, fin: &Jour) -> R<Vec<(Jour, Jour, Decimal)>> {
-    let mut out: Vec<(Jour, Jour, Decimal)> = Vec::new();
+fn suites(taux: &[Coefficient], premier: &Jour, debut: &Jour, fin: &Jour) -> R<Vec<(Jour, Jour, Coefficient)>> {
+    let mut out: Vec<(Jour, Jour, Coefficient)> = Vec::new();
     for (i, x) in taux.iter().enumerate() {
         let j = premier.plus_jours(i as i64)?;
         if j < *debut || j > *fin {
@@ -423,8 +423,8 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
             let (x, h) = retenue(m, taux_horaire, &a, &b)?;
             let (ib, inet) = ij_de(&a, &b)?;
             parts.push((x, f));
-            if f > Decimal::ZERO {
-                let gs = mul(x, f);
+            if f > Coefficient::du_decimal(Decimal::ZERO) {
+                let gs = (Montant::du_decimal(x) * f).decimal();
                 garantie += gs;
                 deduit += ib;
                 complement += (gs - ib).max(Decimal::ZERO);
@@ -776,7 +776,7 @@ pub fn au_net(
         let mut c = net_abs + hors_garantie;
         if retire > Decimal::ZERO {
             for (x, f) in &parts {
-                c += mul(div(mul(perdu, *x), retire), *f);
+                c += (Montant::du_decimal(div(mul(perdu, *x), retire)) * *f).decimal();
             }
         }
         Some(Montant::du_decimal(c).au_centime().decimal())

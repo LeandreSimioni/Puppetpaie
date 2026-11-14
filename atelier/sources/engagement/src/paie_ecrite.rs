@@ -137,17 +137,18 @@ pub struct Cle<I> {
 }
 
 /// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite. Sa base s'ecrit en nombre, des euros ou des
-/// heures : la cotisation de la ligne dit lesquels (`BaseDeCotisation::de_la_cotisation`).
+/// heures : relue, elle prend la grandeur que l'assiette de sa cotisation dit dans le bareme de la paie
+/// (`BaseDeCotisation::relue`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, from = "CotisationLue")]
+#[serde(deny_unknown_fields)]
 pub struct FormeDeCotisation {
     /// La cotisation de la ligne.
     pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
     pub famille: droit::forme_bareme::FamilleDeCotisation,
     pub libelle: String,
-    #[serde(serialize_with = "base_en_nombre")]
-    pub base: BaseDeCotisation,
+    #[serde(serialize_with = "nombre_ecrit")]
+    pub base: socle::forme::Nombre,
     #[serde(with = "nombre::option")]
     pub taux_pat: Option<Taux>,
     #[serde(with = "nombre")]
@@ -159,46 +160,10 @@ pub struct FormeDeCotisation {
     pub masquer_base_et_taux: bool,
 }
 
-fn base_en_nombre<S: serde::Serializer>(b: &BaseDeCotisation, s: S) -> Result<S::Ok, S::Error> {
-    match b {
-        BaseDeCotisation::Montant(m) => nombre::serialize(m, s),
-        BaseDeCotisation::Heures(h) => nombre::serialize(h, s),
-    }
-}
-
-/// `FormeDeCotisation` telle qu'elle se lit : sa base en nombre, que sa cotisation range.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CotisationLue {
-    id: droit::forme_bareme::IdDeCotisation,
-    famille: droit::forme_bareme::FamilleDeCotisation,
-    libelle: String,
-    base: socle::forme::Nombre,
-    #[serde(with = "nombre::option")]
-    taux_pat: Option<Taux>,
-    #[serde(with = "nombre")]
-    montant_pat: Montant,
-    #[serde(with = "nombre::option")]
-    taux_sal: Option<Taux>,
-    #[serde(with = "nombre")]
-    montant_sal: Montant,
-    masquer_base_et_taux: bool,
-}
-
-impl From<CotisationLue> for FormeDeCotisation {
-    fn from(c: CotisationLue) -> FormeDeCotisation {
-        FormeDeCotisation {
-            base: BaseDeCotisation::de_la_cotisation(&c.id, c.base.0),
-            id: c.id,
-            famille: c.famille,
-            libelle: c.libelle,
-            taux_pat: c.taux_pat,
-            montant_pat: c.montant_pat,
-            taux_sal: c.taux_sal,
-            montant_sal: c.montant_sal,
-            masquer_base_et_taux: c.masquer_base_et_taux,
-        }
-    }
+/// Un nombre ecrit sans son unite (sa ligne la dit a la relecture), en texte normalise (`socle::num::nombre`) ; il se
+/// relit d'un nombre ou d'un texte (`socle::forme::Nombre`).
+fn nombre_ecrit<S: serde::Serializer>(n: &socle::forme::Nombre, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&socle::num::nombre(n.0))
 }
 
 /// Une ligne de remuneration (`calcul::LigneBrut`) sous sa forme ecrite, avec sa designation au bulletin.

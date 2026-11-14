@@ -199,19 +199,39 @@ pub fn euros(x: rust_decimal::Decimal) -> String {
         Some(e_c) => e_c,
         None => (t, "00"),
     };
-    let mut milliers = String::new();
+    format!("{}{},{}\u{a0}€", signe, milliers(entier), centimes)
+}
+
+/// Des chiffres, les milliers separes par une espace insecable (« 1 500 »).
+fn milliers(entier: &str) -> String {
+    let mut dit = String::new();
     for (i, c) in entier.chars().enumerate() {
         if i > 0 && (entier.len() - i) % 3 == 0 {
-            milliers.push('\u{a0}');
+            dit.push('\u{a0}');
         }
-        milliers.push(c);
+        dit.push(c);
     }
-    format!("{}{},{}\u{a0}€", signe, milliers, centimes)
+    dit
 }
 
 /// UNE QUANTITÉ TELLE QU'ON LA LIT (des heures, des jours, un nombre de cachets) : la virgule décimale, sans zéro
 /// inutile (« 151,67 », « 8 », « 2,5 »).
 pub fn virgule(x: rust_decimal::Decimal) -> String {
     x.normalize().to_string().replace('.', ",")
+}
+
+/// UN NOMBRE TEL QU'ON LE LIT dans une phrase qui cite une valeur d'un fichier : la virgule décimale, sans zéro inutile,
+/// les milliers séparés par une espace insécable (« 1 500 », « 12,5 »).
+pub fn nombre_dit(x: rust_decimal::Decimal) -> String {
+    let t = virgule(x);
+    let (signe, t) = match t.strip_prefix('-') {
+        Some(r) => ("-", r),
+        None => ("", t.as_str()),
+    };
+    let (entier, decimales) = match t.split_once(',') {
+        Some((e, d)) => (e, format!(",{}", d)),
+        None => (t, String::new()),
+    };
+    format!("{}{}{}", signe, milliers(entier), decimales)
 }
 

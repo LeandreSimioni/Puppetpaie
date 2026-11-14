@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 
-use crate::calcul::{fiche_de_l_engagement, DeductionForfaitaire, LigneBrut, LigneCotisation, Paie};
+use crate::calcul::{fiche_de_l_engagement, pile_de_la_paie, DeductionForfaitaire, LigneBrut, LigneCotisation, Paie};
 use crate::paie_ecrite::FormeDePaie;
 use crate::{Avis, Engagement, LignePaie};
 use droit::contexte::Contexte;
@@ -97,6 +97,22 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     };
     let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?;
     let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut.decimal(), v.base_csg.decimal(), v.plafond.decimal(), court(v.smic.decimal()), v.heures.decimal(), tp);
+    // Les periodes elementaires d'un mois decoupe : chacune sur l'engagement borne a sa periode, aux termes qu'elle porte.
+    let mut periodes_lues = Vec::new();
+    for (n, x) in v.periodes.iter().enumerate() {
+        let e = &x.engagement;
+        let mut sub = eng.clone();
+        sub.periode = Some((e.debut_periode, e.fin_periode));
+        sub.lignes = e.lignes.clone();
+        sub.quotite_contrat = Some(court(e.quotite.decimal()));
+        sub.heures = e.heures.map(|h| court(h.decimal()));
+        periodes_lues.push(paie_lue(ctx, sub, x, periodes.get(n), &[])?);
+    }
+    // Les piles de bareme de la paie et de ses periodes : la base de chaque ligne de cotisation y prend sa grandeur.
+    let mut piles = vec![pile_de_la_paie(ctx, &paie)?];
+    for q in &periodes_lues {
+        piles.push(pile_de_la_paie(ctx, q)?);
+    }
     let p = paie.ecrire();
     p.total_pat = v.total_pat.decimal();
     p.total_sal = v.total_sal.decimal();
@@ -110,22 +126,13 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     p.heures_travaillees = v.heures_travaillees.decimal();
     p.heures_absence = v.heures_absence.decimal();
     p.numero_bulletin = v.numero_bulletin.clone();
-    p.lignes = v.lignes.iter().map(LigneCotisation::de_la_forme).collect();
+    p.lignes = v.lignes.iter().map(|l| LigneCotisation::de_la_forme(l, &piles)).collect::<R<_>>()?;
     p.remuneration = v.remuneration.iter().map(LigneBrut::de_la_forme).collect();
     p.bases = v.bases.clone();
     p.reduction_generale = v.reduction_generale.clone();
     p.deduction_forfaitaire = v.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::de_la_forme);
     p.avertissements = v.avertissements.clone();
-    // Les periodes elementaires d'un mois decoupe : chacune sur l'engagement borne a sa periode, aux termes qu'elle porte.
-    for (n, x) in v.periodes.iter().enumerate() {
-        let e = &x.engagement;
-        let mut sub = eng.clone();
-        sub.periode = Some((e.debut_periode, e.fin_periode));
-        sub.lignes = e.lignes.clone();
-        sub.quotite_contrat = Some(court(e.quotite.decimal()));
-        sub.heures = e.heures.map(|h| court(h.decimal()));
-        p.periodes.push(paie_lue(ctx, sub, x, periodes.get(n), &[])?);
-    }
+    p.periodes = periodes_lues;
     Ok(paie)
 }
 

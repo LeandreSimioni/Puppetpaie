@@ -50,7 +50,8 @@ fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
 /// transmis le mois au cours duquel la DSN […] a été déposée » (meme page, § 30), mais la DSN qui applique le
 /// taux n'en porte pas la date. INFERENCE (aucun texte ne date un taux lu dans une DSN) : le releve est date du jour du versement
 /// (`mis_a_disposition`), la mise a disposition la plus tardive que les textes permettent ; le compte rendu de la DSN suivante
-/// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse.
+/// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse ; un taux qui ne s'y
+/// lit pas laisse la case vide (`taux` : `None`).
 pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle::echec::R<Vec<TauxRecu>> {
     let par_nir: std::collections::HashMap<&droit::fiche::Nir, &droit::contexte::IdSalarie> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.dite().map(|n| (n, cle))).collect();
     let fichiers = declarations::dsn_lue::fichiers(dossier)?;
@@ -65,12 +66,9 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
             let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| !i.sans_crm()), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
                 continue;
             };
-            let taux = match v.taux_pas {
-                Some(t) => Some(droit::pas::TauxDePas::du_nombre(t).ok_or_else(|| {
-                    socle::refus!("La DSN de {} porte en S21.G00.50.006 le taux {}, qui n'a pas la forme de la norme : corrigez-la ou retirez-la, puis recommencez.", mois, t)
-                })?),
-                None => None,
-            };
+            // Un taux que la DSN n'ecrit pas comme la norme (deux chiffres, deux decimales au plus) laisse la case vide :
+            // une DSN venue d'ailleurs se lit au mieux, et le compte rendu de l'import le dit.
+            let taux = v.taux_pas.and_then(droit::pas::TauxDePas::du_nombre);
             let rel = TauxRecu {
                 salarie: (*cle).clone(),
                 taux,
