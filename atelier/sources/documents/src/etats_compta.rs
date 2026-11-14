@@ -1581,7 +1581,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             )))
         }
     };
-    let abatt = if bar.abattement_csg.is_zero() { Decimal::ONE } else { bar.abattement_csg };
+    let abatt = if bar.abattement_csg.est_nul() { Decimal::ONE } else { bar.abattement_csg.decimal() };
     let zero = Montant::ZERO.decimal();
     // cle -> (salarie, brut, base, mois) dans l'ordre d'insertion
     let mut ordre: Vec<String> = Vec::new();
@@ -1620,11 +1620,11 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             x.3.insert(m);
         }
     }
-    let s1 = ts.seuil_1;
-    let s2 = ts.seuil_2;
-    let taux_normal = ts.taux_normal;
-    let maj_1 = ts.majoration_1;
-    let maj_2 = ts.majoration_2;
+    let s1 = ts.seuil_1.decimal();
+    let s2 = ts.seuil_2.decimal();
+    let taux_normal = ts.taux_normal.decimal();
+    let maj_1 = ts.majoration_1.decimal();
+    let maj_2 = ts.majoration_2.decimal();
     let cent = Decimal::ONE_HUNDRED;
     let mut rangs: Vec<&String> = ordre.iter().collect();
     rangs.sort_by(|a, b| par[*a].0.cmp(&par[*b].0));
@@ -1648,8 +1648,8 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         Some(pct) => (pct, quant(div(mul(brute, pct), cent), 0)),
         None => (Decimal::ZERO, zero),
     };
-    let franchise = ts.franchise;
-    let limite = ts.decote_jusqu_a;
+    let franchise = ts.franchise.decimal();
+    let limite = ts.decote_jusqu_a.decimal();
     let mut etapes = vec![format!("taxe brute {} × {} % taxés (CGI art. 231, 1) = {}", euros(brute), socle::texte::virgule(pct_a), euros(due))];
     let mut net;
     if due <= franchise {
@@ -1663,7 +1663,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         net = due;
     }
     if regime.association && net > Decimal::ZERO {
-        let ab = ts.abattement_1679a;
+        let ab = ts.abattement_1679a.decimal();
         let reste = sub(net, ab);
         let reste = if reste > zero { reste } else { zero };
         etapes.push(format!("abattement des associations (art. 1679 A) : {}, reste {}", euros(ab), euros(reste)));
@@ -1693,8 +1693,8 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_m("brut", "Brut"),
         col_m("base", "Base (assiette CSG sans réduction)"),
         col_m("taux_normal", "4,25 %"),
-        col_m("majoration_1", &format!("+4,25 % au-delà de {}", euros(ts.seuil_1))),
-        col_m("majoration_2", &format!("+9,35 % au-delà de {}", euros(ts.seuil_2))),
+        col_m("majoration_1", &format!("+4,25 % au-delà de {}", euros(ts.seuil_1.decimal()))),
+        col_m("majoration_2", &format!("+9,35 % au-delà de {}", euros(ts.seuil_2.decimal()))),
         col_m("taxe", "Taxe brute"),
     ];
     t.sources = vec!["CGI art. 231 et 1679 A ; notices 2501-SD et 2502-SD de la DGFiP (seuils, franchise, décote, abattement de l'année)".to_string()];

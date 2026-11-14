@@ -17,6 +17,7 @@ use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
 use serde::Deserialize;
 use socle::forme::{Court, Nombre};
+use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
 
 /// Les notes d'une valeur, communes a chaque type : elles ne se lisent pas au calcul.
@@ -227,27 +228,23 @@ forme! {
         pub annee: i32,
         pub quoi: Option<String>,
         pub smic_horaire: Vec<Datee>,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub heures_par_cachet: Decimal,
+        pub heures_par_cachet: Heures,
         pub logement_grand_deplacement: Option<FraisParZone>,
         pub repas_deplacement: Option<FraisDeRepas>,
         pub frais_hors_metropole: Option<FraisHorsMetropole>,
         pub taxe_sur_les_salaires: Option<TaxeSurLesSalaires>,
-        pub solde_taxe_apprentissage: Option<Taux>,
+        pub solde_taxe_apprentissage: Option<SoldeTaxeApprentissage>,
         pub pas_taux_par_defaut: Option<PasParDefaut>,
         pub plafond_securite_sociale: Option<PlafondSecuriteSociale>,
         /// La part minimale de l'employeur a la complementaire sante collective (CSS L. 911-7, III).
         pub sante_obligatoire: Option<SanteObligatoire>,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub abattement_csg: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub majoration_conges_115: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub majoration_conges_110: Decimal,
+        pub abattement_csg: Coefficient,
+        pub majoration_conges_115: Coefficient,
+        pub majoration_conges_110: Coefficient,
         /// Le plafond journalier (T1 d'un jour travaille) des intermittents, et les multiples de la T2 et de l'Apec.
-        pub plafond_journalier: Option<Nombre>,
-        pub t2_multiple: Option<Nombre>,
-        pub apec_multiple: Option<Nombre>,
+        pub plafond_journalier: Option<Montant>,
+        pub t2_multiple: Option<Coefficient>,
+        pub apec_multiple: Option<Coefficient>,
         /// Les textes de ces plafonds.
         pub plafonds_des_intermittents: Option<Notes>,
         pub rubriques_bulletin: Vec<Rubrique>,
@@ -300,7 +297,7 @@ forme! {
     /// Le taux du versement mobilite et la commune (code INSEE) de l'etablissement, l'autorite qui le fixe.
     #[derive(Default)]
     pub struct VersementMobiliteTaux {
-        pub taux: Option<Nombre>,
+        pub taux: Option<Taux>,
         pub code_insee: Option<crate::fiche::CodeInsee>,
         pub autorite: Option<String>,
     }
@@ -318,36 +315,30 @@ forme! {
     /// taux, sa cotisation au nominatif.
     pub struct MajorationChomage {
         pub rubrique: IdDeCotisation,
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub taux: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub taux: Taux,
         pub code81: CodeCotisation81,
     }
 }
 
 forme! {
     pub struct FraisParZone {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub paris: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub autres: Decimal,
+        pub paris: Montant,
+        pub autres: Montant,
     }
 }
 
 forme! {
     pub struct FraisDeRepas {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub restaurant: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub hors_restaurant: Decimal,
+        pub restaurant: Montant,
+        pub hors_restaurant: Montant,
     }
 }
 
 forme! {
     pub struct LogementEtRepas {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub logement: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub repas: Decimal,
+        pub logement: Montant,
+        pub repas: Montant,
     }
 }
 
@@ -361,40 +352,31 @@ forme! {
 
 forme! {
     pub struct TaxeSurLesSalaires {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux_normal: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub majoration_1: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub majoration_2: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub seuil_1: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub seuil_2: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub franchise: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub decote_jusqu_a: Decimal,
-        #[serde(rename = "abattement_1679A", deserialize_with = "socle::forme::decimal")]
-        pub abattement_1679a: Decimal,
+        pub taux_normal: Taux,
+        pub majoration_1: Taux,
+        pub majoration_2: Taux,
+        pub seuil_1: Montant,
+        pub seuil_2: Montant,
+        pub franchise: Montant,
+        pub decote_jusqu_a: Montant,
+        #[serde(rename = "abattement_1679A")]
+        pub abattement_1679a: Montant,
         pub plafonds_franchise: PlafondsFranchise,
     }
 }
 
 forme! {
     pub struct PlafondsFranchise {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub prestations_de_services: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub total: Decimal,
+        pub prestations_de_services: Montant,
+        pub total: Montant,
         pub en_vigueur_depuis: socle::date::Jour,
     }
 }
 
 forme! {
-    pub struct Taux {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux: Decimal,
+    /// Le solde de la taxe d'apprentissage : son taux.
+    pub struct SoldeTaxeApprentissage {
+        pub taux: Taux,
     }
 }
 
@@ -420,17 +402,14 @@ forme! {
 forme! {
     /// La part de l'employeur a la complementaire sante collective obligatoire, en pourcent : au moins la moitie.
     pub struct SanteObligatoire {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub part_employeur_minimum: Decimal,
+        pub part_employeur_minimum: Taux,
     }
 }
 
 forme! {
     pub struct PlafondSecuriteSociale {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub mensuel: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub horaire: Decimal,
+        pub mensuel: Montant,
+        pub horaire: MontantUnitaire,
     }
 }
 
@@ -914,8 +893,8 @@ forme! {
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
-        pub majoration_conges_115: Option<Nombre>,
-        pub majoration_conges_110: Option<Nombre>,
+        pub majoration_conges_115: Option<Coefficient>,
+        pub majoration_conges_110: Option<Coefficient>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,
         pub cotisation_sante_patronale: Option<CotisationSupplementaire>,
         pub cpf_cdd: Option<CpfCdd>,
@@ -948,8 +927,8 @@ forme! {
         pub du_corps: Option<DuCorps>,
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub cotisations_dsn_retirees: Option<Vec<CodeCotisation81>>,
-        pub majoration_conges_115: Option<Nombre>,
-        pub majoration_conges_110: Option<Nombre>,
+        pub majoration_conges_115: Option<Coefficient>,
+        pub majoration_conges_110: Option<Coefficient>,
     }
 }
 

@@ -1264,13 +1264,13 @@ struct Limites {
 static FRAIS_LIMITES: [Limites; 2] = [
     Limites {
         rubrique: NUITEE, au_dela: NUITEE_AU_DELA, cle: "logement_grand_deplacement", case: PARIS,
-        metropole: |b| b.logement_grand_deplacement.as_ref().map(|f| (f.paris, f.autres)),
-        hors_metropole: |z| z.logement, nom_hors_metropole: "logement",
+        metropole: |b| b.logement_grand_deplacement.as_ref().map(|f| (f.paris.decimal(), f.autres.decimal())),
+        hors_metropole: |z| z.logement.decimal(), nom_hors_metropole: "logement",
     },
     Limites {
         rubrique: REPAS, au_dela: REPAS_AU_DELA, cle: "repas_deplacement", case: RESTAURANT,
-        metropole: |b| b.repas_deplacement.as_ref().map(|f| (f.restaurant, f.hors_restaurant)),
-        hors_metropole: |z| z.repas, nom_hors_metropole: "repas",
+        metropole: |b| b.repas_deplacement.as_ref().map(|f| (f.restaurant.decimal(), f.hors_restaurant.decimal())),
+        hors_metropole: |z| z.repas.decimal(), nom_hors_metropole: "repas",
     },
 ];
 

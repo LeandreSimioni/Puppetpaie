@@ -1386,7 +1386,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             )))
         }
     };
-    let plafond_journalier = bar.plafond_journalier.map(|n| n.0).filter(|p| !p.is_zero());
+    let plafond_journalier = bar.plafond_journalier.map(socle::grandeurs::Montant::decimal).filter(|p| !p.is_zero());
     let t1_du_contrat = |p: Decimal| -> R<Decimal> { Ok(socle::grandeurs::Montant::du_decimal(mul(p, jours)).au_centime().decimal()) };
     let mut plafond_prev = None;
     if prev.base == Some(Assiette::T1Journaliere) {
@@ -1441,7 +1441,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     }
 
     // 7.4 : les assiettes, par rubrique de salaire.
-    let (abattement, maj115, maj110) = (bar.abattement_csg, bar.majoration_conges_115, bar.majoration_conges_110);
+    let (abattement, maj115, maj110) = (bar.abattement_csg.decimal(), bar.majoration_conges_115.decimal(), bar.majoration_conges_110.decimal());
     let assiettes = |montant: Decimal, cs: bool| -> Assiettes {
         let mut base_prev = montant;
         if let Some(pp) = plafond_prev {
@@ -1484,7 +1484,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
 
     // 7.5 : le SMIC retenu pour la DSN.
     let smic = ctx.smic(&fin_periode)?;
-    let hpc = bar.heures_par_cachet;
+    let hpc = bar.heures_par_cachet.decimal();
     let heures_annexes = lb.iter().fold(Decimal::ZERO, |a, l| a + l.heures_annexes);
     let heures = if nat.mensuelle() { Decimal::ZERO.max(heures_annexes) } else { heures_annexes.min(mul(hpc, jours)) };
     let plafond = socle::grandeurs::Montant::du_decimal(mul(smic, heures)).au_centime().decimal();
@@ -1532,7 +1532,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     if let Some(pj) = plafond_journalier.filter(|_| !nat.mensuelle() && droit::bareme::est_cadre(&sal)) {
         let t1 = t1_du_contrat(pj)?;
         let mult = |m: Option<Decimal>, cle: &str| -> R<Decimal> { Ok(m.ok_or_else(|| socle::fichiers::absent(cle))?.trunc()) };
-        let (t2_mult, apec_mult) = (mult(bar.t2_multiple.map(|n| n.0), "t2_multiple")?, mult(bar.apec_multiple.map(|n| n.0), "apec_multiple")?);
+        let (t2_mult, apec_mult) = (mult(bar.t2_multiple.map(socle::grandeurs::Coefficient::decimal), "t2_multiple")?, mult(bar.apec_multiple.map(socle::grandeurs::Coefficient::decimal), "apec_multiple")?);
         bases.insert(Assiette::T2Journaliere, zero.max(brut.min(t2_mult * t1) - t1));
         // L'Apec, sur le brut dans la limite de quatre plafonds (Audiens, Parametres ; Agirc-Arrco, aide DSN) : en tout,
         // et au-dela de la T1.

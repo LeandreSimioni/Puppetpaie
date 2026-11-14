@@ -20,7 +20,7 @@ use droit::forme_bareme::{IdDeCotisation, CSG_CRDS_ND, CSG_DED, MUTUELLE, VIEIL_
 use socle::texte::{euros, virgule};
 use socle::echec::{refus, R};
 use socle::mois::Mois;
-use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
 use socle::num::{court, Decimal};
 
 /// Les faits du mois, sur la carte d'un salarie paye au mois.
@@ -205,7 +205,7 @@ pub(crate) fn apres_les_cotisations(
     }
 
     // L'exoneration d'impot : le net des heures.
-    let abattement = Coefficient::du_decimal(bar.abattement_csg);
+    let abattement = bar.abattement_csg;
     // La CSG deductible que la paie retient (une paie sans CSG n'en deduit rien) ; sa ligne porte son taux.
     let taux_csg = Taux::du_decimal(
         lignes

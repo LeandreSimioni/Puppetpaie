@@ -860,7 +860,7 @@ caracteres) de la commune de l'etablissement : les deux se \
 lisent sur la deliberation de l'autorite ou sur le bordereau \
 Urssaf.",
                 match t.taux {
-                    Some(x) => x.0.to_string(),
+                    Some(x) => x.decimal().to_string(),
                     None => "absent".to_string(),
                 },
                 match t.code_insee.as_deref() {
@@ -1663,7 +1663,7 @@ impl Contexte {
         let jour = Jour::nouveau(annee, 1, 1).ok_or_else(|| socle::refus!("Année {} hors du calendrier.", annee))?;
         let lue = self.pile_lue(&jour, &self.entreprise)?;
         let entier = |x: Decimal| i64::try_from(x.trunc()).map_err(|e| refus(e.to_string()));
-        let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| Ok::<_, Echec>((entier(p.mensuel)?, entier(p.horaire)?))).transpose()?;
+        let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| Ok::<_, Echec>((entier(p.mensuel.decimal())?, entier(p.horaire.decimal())?))).transpose()?;
         match plafond.filter(|(m, h)| *m != 0 && *h != 0) {
             Some(mh) => Ok(mh),
             None => Err(socle::echec::refus_avec(

@@ -328,8 +328,8 @@ par un humain, le moteur refuse.",
             cotisations_dsn: sec.cotisations_dsn.as_ref(),
             prevoyance_retraite_supp: sec.cotisation_prevoyance_retraite_supp.as_ref(),
             sante_patronale: sec.cotisation_sante_patronale.as_ref(),
-            majoration_conges_115: sec.majoration_conges_115.map(|n| n.0),
-            majoration_conges_110: sec.majoration_conges_110.map(|n| n.0),
+            majoration_conges_115: sec.majoration_conges_115,
+            majoration_conges_110: sec.majoration_conges_110,
             reduction_generale: sec.reduction_generale.as_ref(),
         },
     ))
@@ -392,7 +392,7 @@ pub fn bareme_majoration_chomage(mut bar: Pile, due: bool) -> R<Pile> {
     if due || !porte {
         return Ok(bar);
     }
-    let taux = sec.taux;
+    let taux = sec.taux.decimal();
     let r = bar.rubriques_bulletin.iter_mut().find(|r| r.id == sec.rubrique).ok_or_else(|| {
         socle::echec::a_la_cle("Le barème de l'année est incomplet : le signaler au développeur.", "majoration_chomage_cddu.rubrique", &sec.rubrique)
     })?;
@@ -441,8 +441,8 @@ struct Couche<'a> {
     cotisations_dsn: Option<&'a Vec<CotisationDsn>>,
     prevoyance_retraite_supp: Option<&'a CotisationSupplementaire>,
     sante_patronale: Option<&'a CotisationSupplementaire>,
-    majoration_conges_115: Option<Decimal>,
-    majoration_conges_110: Option<Decimal>,
+    majoration_conges_115: Option<socle::grandeurs::Coefficient>,
+    majoration_conges_110: Option<socle::grandeurs::Coefficient>,
     reduction_generale: Option<&'a ReductionGenerale>,
 }
 
@@ -661,7 +661,7 @@ permanents » : le taux du contrat (en % du plafond mensuel, pour le salarié se
         }
         let total = taux_contrat.decimal()?;
         let pp = choix.and_then(|c| c.part_patronale.dite());
-        let minimum = bar.sante_obligatoire.as_ref().ok_or_else(|| socle::fichiers::absent("sante_obligatoire"))?.part_employeur_minimum;
+        let minimum = bar.sante_obligatoire.as_ref().ok_or_else(|| socle::fichiers::absent("sante_obligatoire"))?.part_employeur_minimum.decimal();
         let Some(pp) = pp else {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Santé des permanents », part employeur : à remplir (au moins {} %, art. L911-7 du \
@@ -940,8 +940,8 @@ par_caisse_conges['{}'] marquee \"verifie\": true. Le payer comme sa nature le d
             cotisations_dsn: None,
             prevoyance_retraite_supp: None,
             sante_patronale: None,
-            majoration_conges_115: sec.majoration_conges_115.map(|n| n.0),
-            majoration_conges_110: sec.majoration_conges_110.map(|n| n.0),
+            majoration_conges_115: sec.majoration_conges_115,
+            majoration_conges_110: sec.majoration_conges_110,
             reduction_generale: None,
         },
     );
@@ -1265,7 +1265,7 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
         bar.versement_mobilite = None;
     } else if let Some(v) = vm {
         bar.versement_mobilite = Some(VersementMobiliteEcrit::Ecrit(crate::forme_bareme::VersementMobiliteTaux {
-            taux: taux_vm.map(socle::forme::Nombre),
+            taux: taux_vm.map(socle::grandeurs::Taux::du_decimal),
             code_insee: v.code_insee.dite().cloned(),
             ..Default::default()
         }));
@@ -1292,7 +1292,7 @@ pub fn versement_mobilite(bar: &Pile) -> R<Option<VersementMobilite>> {
         return Ok(None);
     };
     match (taux, code_insee) {
-        (Some(taux), Some(insee)) => Ok(Some(VersementMobilite { taux: taux.0, code_insee: insee.clone(), autorite: autorite.clone() })),
+        (Some(taux), Some(insee)) => Ok(Some(VersementMobilite { taux: taux.decimal(), code_insee: insee.clone(), autorite: autorite.clone() })),
         _ => Err(refus(
             "Le versement mobilité est écrit sans son taux ou sans le code de la commune de l'établissement : les lire sur le bordereau Urssaf.",
             format!(

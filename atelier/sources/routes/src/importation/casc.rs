@@ -220,7 +220,7 @@ fn plafond_mensuel(mois: Mois) -> R<Option<Decimal>> {
     let an = mois.annee();
     let Some(socle) = droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))? else { return Ok(None) };
     match socle.plafond_securite_sociale {
-        Some(p) => Ok(Some(p.mensuel)),
+        Some(p) => Ok(Some(p.mensuel.decimal())),
         None => Err(erreur(Classe::DefautDuLogiciel, format!("Le barème livré de {} n'a pas le plafond de la Sécurité sociale : le signaler au développeur.", an))),
     }
 }

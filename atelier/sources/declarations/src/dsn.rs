@@ -4128,7 +4128,7 @@ fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: 
         .iter()
         .find_map(|c| c.org.clone().filter(|_| c.code81 == Some(CodeCotisation81::AssuranceMaladie)))
         .ok_or_else(|| refus("Le solde de la taxe d'apprentissage se declare a l'Urssaf (81.002), et le bareme ne nomme l'Urssaf sur aucune cotisation 075. Rien n'est ecrit."))?;
-    let montant = Montant::du_decimal(assiette).fois_taux(Taux::du_decimal(taux)).au_centime().decimal();
+    let montant = Montant::du_decimal(assiette).fois_taux(taux).au_centime().decimal();
     Ok(Some(SoldeTa { annee, assiette, montant, org }))
 }
 

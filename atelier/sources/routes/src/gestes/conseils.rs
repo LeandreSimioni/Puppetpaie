@@ -510,9 +510,9 @@ impl Donnees {
             },
         };
         Ok(match l {
-            Livree::AbattementCsg => Some(b.abattement_csg),
-            Livree::PlafondMensuel => b.plafond_securite_sociale.as_ref().map(|p| p.mensuel),
-            Livree::PlafondHoraire => b.plafond_securite_sociale.as_ref().map(|p| p.horaire),
+            Livree::AbattementCsg => Some(b.abattement_csg.decimal()),
+            Livree::PlafondMensuel => b.plafond_securite_sociale.as_ref().map(|p| p.mensuel.decimal()),
+            Livree::PlafondHoraire => b.plafond_securite_sociale.as_ref().map(|p| p.horaire.decimal()),
             Livree::PlafondDeduction => b.deduction_forfaitaire.as_ref().map(|d| d.plafond_annuel),
             Livree::TauxDeduction(t) => b.deduction_forfaitaire.as_ref().and_then(|d| d.taux.get(t)).map(|n| n.0),
             Livree::TauxPatronal(id) => match b.rubrique(id).and_then(|r| r.taux_pat) {

@@ -240,7 +240,7 @@ pub struct QuestionFranchise {
 /// de services, total. `None` si le bareme ne les porte pas.
 pub fn plafonds_franchise(bar: Option<&droit::forme_bareme::Pile>) -> Option<(Decimal, Decimal)> {
     let pf = &bar?.taxe_sur_les_salaires.as_ref()?.plafonds_franchise;
-    Some((pf.prestations_de_services, pf.total))
+    Some((pf.prestations_de_services.decimal(), pf.total.decimal()))
 }
 
 /// La question des plafonds pour les remunerations de `annee` (le chiffre d'affaires de `annee - 1`), depuis le bareme

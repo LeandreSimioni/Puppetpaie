@@ -137,7 +137,7 @@ fn table_boss() -> std::path::PathBuf {
 fn pss(annee: i32) -> R<droit::plafond::Pss> {
     let lu = |m: Decimal, h: Decimal| droit::plafond::Pss { mensuel: Montant::du_decimal(m), horaire: socle::grandeurs::MontantUnitaire::du_decimal(h) };
     if let Some(p) = droit::contexte::socle_livre_lu(annee)?.and_then(|pile| pile.plafond_securite_sociale) {
-        return Ok(lu(p.mensuel, p.horaire));
+        return Ok(droit::plafond::Pss { mensuel: p.mensuel, horaire: p.horaire });
     }
     let chemin = table_boss();
     let octets = std::fs::read(&chemin).map_err(|e| refus!("{} : {}", chemin.display(), e))?;

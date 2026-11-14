@@ -155,8 +155,8 @@ fn assiettes_taxe_sur_les_salaires(annee: &[MoisDeLAnnee], bar: &droit::forme_ba
             "taxe_sur_les_salaires.seuil_1",
         )
     })?;
-    let (s1, s2) = (ts.seuil_1, ts.seuil_2);
-    let abattement = if bar.abattement_csg.is_zero() { Decimal::ONE } else { bar.abattement_csg };
+    let (s1, s2) = (ts.seuil_1.decimal(), ts.seuil_2.decimal());
+    let abattement = if bar.abattement_csg.est_nul() { Decimal::ONE } else { bar.abattement_csg.decimal() };
     let mut par_salarie: BTreeMap<String, Decimal> = BTreeMap::new();
     for m in annee {
         match m {
