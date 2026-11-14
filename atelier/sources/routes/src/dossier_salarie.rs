@@ -773,8 +773,10 @@ fn mois_puppetpaie(
         let textes = if archive.exists() { Some(texte_pdf(&archive)?) } else { None };
         match textes {
             None if !paires.is_empty() => d.refus.push(format!(
-                "{} : certificats Congés Spectacles non joints — {} n'est pas dans sorties/{}/, et un certificat remis ne se réimprime pas.",
-                lib, nom_archive, mois
+                "{} : certificats Congés Spectacles non joints — {} n'est pas dans {}/, et un certificat remis ne se réimprime pas.",
+                lib,
+                nom_archive,
+                documents::PieceDuMois::CertificatsCs.dossier().sous_le_chemin(&socle::fichiers::CheminRelatif::sorties(le_mois))
             )),
             Some(t) if !paires.is_empty() && t.len() != tous.len() => d.refus.push(format!(
                 "{} : certificats Congés Spectacles non joints — {} a {} page(s), les paies en attendent {}. Le fichier ne dit pas ce que les paies disent : rien n'est joint à sa place.",

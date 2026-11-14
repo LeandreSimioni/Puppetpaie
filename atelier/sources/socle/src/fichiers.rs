@@ -974,7 +974,7 @@ pub fn ecriture_impossible(e: &std::io::Error, chemin: &Path) -> String {
 }
 
 /// Le dossier de la configuration d'une compagnie, sous sa racine.
-pub const CONFIG: &str = "config";
+pub const CONFIG: NomDeFichier = NomDeFichier::du_moteur("config");
 
 /// Le marqueur d'une compagnie qui n'est pas la vraie (une compagnie fictive, une copie de developpement).
 pub const MARQUEUR_COPIE: &str = "COPIE-DE-DEVELOPPEMENT.json";

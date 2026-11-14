@@ -85,12 +85,12 @@ pub(crate) struct MetiersAjoutes {
 const QUOI_METIERS: &str = "Les metiers que cette compagnie a coches ou decoches dans Configuration > Metiers : `codes`, pris a une autre convention collective ; `retires`, decoches dans la sienne. Preference d'affichage : aucun calcul ne change. Le catalogue est livre avec le logiciel (donnees/emplois-base.json).";
 
 /// Les metiers que la compagnie a ajoutes ou retires, sous sa racine.
-pub(crate) const METIERS_AJOUTES: &str = "config/metiers-ajoutes.json";
+pub(crate) const METIERS_AJOUTES: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/metiers-ajoutes.json");
 
 impl MetiersAjoutes {
     /// LA SEULE LECTURE de `config/metiers-ajoutes.json` ; rien de pose s'il n'existe pas.
     pub(crate) fn lire(racine: &Path) -> R<MetiersAjoutes> {
-        let p = racine.join(METIERS_AJOUTES);
+        let p = METIERS_AJOUTES.dans(racine);
         if !p.exists() {
             return Ok(MetiersAjoutes { quoi: QUOI_METIERS.into(), codes: Vec::new(), retires: Vec::new() });
         }
@@ -99,7 +99,7 @@ impl MetiersAjoutes {
     }
 
     fn ecrire(&self, ctx: &Contexte) -> R<()> {
-        let p = ctx.racine.join(METIERS_AJOUTES);
+        let p = METIERS_AJOUTES.dans(&ctx.racine);
         if let Some(parent) = p.parent() {
             creer_dossier(parent)?;
         }

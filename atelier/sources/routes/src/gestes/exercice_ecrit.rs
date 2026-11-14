@@ -289,7 +289,7 @@ const DECEMBRE: u32 = 12;
 // ------------------------------------------------------------------ la cloture
 
 /// Les exercices clos de la compagnie, sous sa racine.
-pub(crate) const EXERCICES: &str = "config/exercices.json";
+pub(crate) const EXERCICES: CheminRelatif = CheminRelatif::du_moteur("config/exercices.json");
 
 /// `config/exercices.json` : chaque annee close (`clos`, sa cloture sous son annee) et les clotures retirees (`rouverts`),
 /// dans l'ordre ou elles l'ont ete. Lu par sa forme (`lire_exercices`), ecrit par `ecrire_exercices`.
@@ -350,7 +350,7 @@ impl Exercices {
 /// `config/exercices.json`, lu par sa forme : aucune annee close s'il n'existe pas. Le texte est lu une fois tant qu'il
 /// ne change pas (l'etat d'un mois le demande pour chaque mois) ; le refus d'un fichier illisible ne se garde pas.
 pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
-    let p = racine.join(EXERCICES);
+    let p = EXERCICES.dans(racine);
     match socle::forme::partagee::<Exercices>(&p, "Le fichier des exercices clos ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))? {
         Some(e) => Ok((*e).clone()),
         None => Ok(Exercices { clos: BTreeMap::new(), rouverts: Vec::new() }),
@@ -358,7 +358,7 @@ pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
 }
 
 fn ecrire_exercices(ctx: &Contexte, tous: &Exercices) -> R<()> {
-    let chemin = ctx.racine.join(EXERCICES);
+    let chemin = EXERCICES.dans(&ctx.racine);
     socle::ecriture::ecrire_json(&chemin, tous, 1).map_err(|m| m.reclasser(Classe::Disque))
 }
 
@@ -454,10 +454,6 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     // Les retours DSN a la racine des retours, ceux des DPAE sous `dpae/`.
     for canal in [envois::releve_retours::CanalDesRetours::Dsn, envois::releve_retours::CanalDesRetours::Dpae] {
         let d = canal.chemin(&ctx.racine);
-        let prefixe = match canal.dossier() {
-            Some(s) => format!("{}/", s),
-            None => String::new(),
-        };
         if d.is_dir() {
             let mut noms: Vec<(String, PathBuf)> = Vec::new();
             for e in std::fs::read_dir(&d).map_err(|e| en_os(&e, &d))? {
@@ -467,7 +463,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             noms.sort_by(|a, b| a.1.cmp(&b.1));
             for (nom, p) in noms {
                 if p.is_file() && (nom.starts_with(&de_l_annee) || nom.starts_with(&suivante)) {
-                    entrees.push(entree_fichier(&p, format!("retours/{}{}", prefixe, nom))?);
+                    entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
                 }
             }
         }
@@ -479,8 +475,9 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     let cfg = ctx.racine.join(socle::fichiers::CONFIG);
     let fiches: [&str; 6] = ["entreprise.json", "salaries.json", "spectacles.json", "organismes.json", "rubriques.json", "compteurs.json"];
     for nom in fiches {
-        if cfg.join(nom).exists() {
-            entrees.push(entree_fichier(&cfg.join(nom), format!("config/{}", nom))?);
+        let p = cfg.join(nom);
+        if p.exists() {
+            entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
         }
     }
     let surcouche = droit::contexte::surcouche(annee.nombre())?;

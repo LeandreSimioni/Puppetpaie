@@ -338,7 +338,7 @@ pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) ->
     for d in engagement::stock::dossiers_tenus() {
         signer_dossier(&mut h, racine, d, true, &|n| n.ends_with(".json"));
     }
-    signer_dossier(&mut h, racine, socle::fichiers::CONFIG, true, &|n| {
+    signer_dossier(&mut h, racine, socle::fichiers::CONFIG.texte(), true, &|n| {
         (ouverture || !n.ends_with(".bin")) && !n.ends_with(".tmp") && !HORS_DE_L_ECRAN.contains(&n)
     });
     signer_dossier(&mut h, racine, envois::journal::JOURNAL, false, &|n| n.ends_with(".json") && !HORS_DE_L_ECRAN.contains(&n));

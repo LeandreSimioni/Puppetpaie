@@ -1197,7 +1197,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     }
     Err(socle::echec::refus_avec(
         "Ce document n'est plus dans les sorties de son mois : le journal dit qu'il est parti, le fichier a été déplacé ou effacé.",
-        socle::echec::Lieu { chemin: Some(format!("sorties/{}", mois)), fichier: Some(nom.to_string()), ..Default::default() },
+        socle::echec::Lieu { chemin: Some(socle::fichiers::CheminRelatif::sorties(mois).to_string()), fichier: Some(nom.to_string()), ..Default::default() },
     )
     .reclasser(Classe::Refuse))
 }

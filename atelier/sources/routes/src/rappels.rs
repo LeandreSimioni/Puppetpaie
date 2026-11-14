@@ -1111,7 +1111,7 @@ fn echeancier_base() -> socle::echec::R<EcheancierBase> {
 // ------------------------------------------------------ ce que la compagnie a coche
 
 /// Ce que l'utilisateur a coche dans l'echeancier, sous la racine de la compagnie.
-pub(crate) const ECHEANCIER: &str = "config/echeancier.json";
+pub(crate) const ECHEANCIER: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/echeancier.json");
 
 /// `config/echeancier.json` : les echeances que la compagnie a dites faites (« quoi:AAAA »), quand et par qui.
 #[derive(Debug, Deserialize, Serialize)]
@@ -1134,7 +1134,7 @@ struct Coche {
 /// `config/echeancier.json`, lu : rien de coche s'il n'existe pas. La seule lecture du fichier ; `marquer_echeance` est
 /// la seule ecriture.
 fn cochees(ctx: &Contexte) -> socle::echec::R<Cochees> {
-    let p = ctx.racine.join(ECHEANCIER);
+    let p = ECHEANCIER.dans(&ctx.racine);
     if !p.exists() {
         return Ok(Cochees { quoi: QUOI_COCHEES.to_string(), fait: BTreeMap::new() });
     }
@@ -1161,7 +1161,7 @@ fn marquer_echeance(ctx: &Contexte, cle: &CleDEcheance, fait: bool, qui: &str) -
         c.fait.remove(cle);
     }
     c.quoi = QUOI_COCHEES.to_string();
-    let p = ctx.racine.join(ECHEANCIER);
+    let p = ECHEANCIER.dans(&ctx.racine);
     if let Some(parent) = p.parent() {
         crate::fiches::creer_dossier(parent)?;
     }

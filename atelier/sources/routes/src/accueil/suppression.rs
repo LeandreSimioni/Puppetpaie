@@ -47,7 +47,7 @@ use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::mois::Mois;
 
 /// La mention de demo d'une compagnie gardee.
-pub(crate) const FICHIER_DEMO: &str = "config/demo.json";
+pub(crate) const FICHIER_DEMO: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/demo.json");
 /// Le debut du nom d'un dossier en cours d'effacement.
 pub(crate) const PREFIXE_RESTE: &str = ".supprimee-";
 /// Ce que la boite d'une compagnie reelle rappelle avant de la supprimer (code du travail, article L3243-4, `atelier/
@@ -345,9 +345,9 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
         mois: engagement::stock::mois_saisis(racine)?,
         quoi: QUOI_DEMO.to_string(),
     };
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &mention, 2)?;
+    socle::ecriture::ecrire_json(&FICHIER_DEMO.dans(racine), &mention, 2)?;
     if let Err(e) = std::fs::rename(racine, &cible) {
-        return Err(socle::fichiers::effacer_apres(socle::refus!("{} ne se garde pas ({}) : rien n'a changé.", nom, e), &racine.join(FICHIER_DEMO)));
+        return Err(socle::fichiers::effacer_apres(socle::refus!("{} ne se garde pas ({}) : rien n'a changé.", nom, e), &FICHIER_DEMO.dans(racine)));
     }
     // Sans marqueur : une compagnie reelle. S'il ne s'efface pas, elle resterait une fictive ajoutee hors de `fictives/` :
     // le dire, plutot que la laisser envoyer sans le savoir... ou ne jamais envoyer.
@@ -431,7 +431,7 @@ const QUOI_DEMO: &str = "Cette compagnie a ete creee dans la version demo de Pup
 
 /// `config/demo.json`, lu par sa forme ; `None` pour une compagnie qui n'a pas ete creee en demo.
 fn lire_la_demo(racine: &Path) -> R<Option<FichierDemo>> {
-    let p = racine.join(FICHIER_DEMO);
+    let p = FICHIER_DEMO.dans(racine);
     if !p.is_file() {
         return Ok(None);
     }
@@ -476,5 +476,5 @@ pub(crate) fn sortir_de_la_demo(racine: &Path, mois: Mois) -> R<()> {
     if d.mois.len() == avant {
         return Ok(());
     }
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &d, 2)
+    socle::ecriture::ecrire_json(&FICHIER_DEMO.dans(racine), &d, 2)
 }
