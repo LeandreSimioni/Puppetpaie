@@ -2177,7 +2177,7 @@ fn croises_entreprise(d: &ChampsEntreprise) -> R<Vec<Constat>> {
                 Some(cp) => crate::urssaf::base()?.du_code_postal(cp.as_ref()),
                 None => None,
             };
-            if let Some(deduit) = deduit.filter(|d| *d != choisi) {
+            if let Some(deduit) = deduit.filter(|d| d.as_str() != choisi) {
                 out.push(constat(
                     E::CodeUrssaf,
                     Gravite::Avertissement,

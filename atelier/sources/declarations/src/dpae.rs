@@ -28,13 +28,14 @@ use socle::fichiers::{modele_de, repr};
 use socle::paris::Moment;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
+use crate::urssaf::CodeUrssafDpae;
 use crate::usages::strip;
 
 
 pub const LONGUEUR: usize = 990;
 
 /// L'heure d'embauche que porte la DPAE : 8 h. Rien ne la demande.
-pub const HEURE_EMBAUCHE: &str = "0800";
+const HEURE_EMBAUCHE: i64 = 8;
 
 /// POSITIONS 0-BASED, [debut, fin). Le dessin d'enregistrement officiel
 /// (Format 120, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.pdf`) compte a
@@ -177,11 +178,6 @@ fn zone_texte(texte: &str, jeu: &Jeu, largeur: usize, faute: fn(&str) -> Option<
     Ok(ljust(&entiere(&normaliser(texte, jeu), largeur, faute)?, largeur))
 }
 
-/// Non vide, et rien que des chiffres.
-fn tout_chiffres(t: &str) -> bool {
-    !t.is_empty() && t.chars().all(socle::texte::est_chiffre)
-}
-
 /// Les chiffres d'un numéro de téléphone.
 fn chiffres(t: &str) -> String {
     t.chars().filter(|&c| socle::texte::est_chiffre(c)).collect()
@@ -291,11 +287,25 @@ pub fn employeur(ent: &ChampsEntreprise) -> R<Vec<(&'static str, String)>> {
 
 // ------------------------------------------------------- l'Urssaf
 
+/// LE CODE URSSAF DE LA FICHE ENTREPRISE (`code_urssaf`, tape), sans ses blancs, lu en C_URSSAF : trois chiffres, sinon
+/// le refus nomme la case.
+pub fn code_urssaf_saisi(brut: &str) -> R<CodeUrssafDpae> {
+    let (a, b) = champ("code_urssaf");
+    match CodeUrssafDpae::lire(strip(brut)) {
+        Ok(code) => Ok(code),
+        Err(_) => Err(socle::echec::a_la_cle(
+            &format!("Le code Urssaf de la fiche entreprise s'écrit en {} chiffres : le lire sur un bordereau Urssaf.", b - a),
+            "code_urssaf",
+            repr(brut),
+        )),
+    }
+}
+
 /// L'Urssaf qui recoit la DPAE d'un salarie d'un autre etablissement que le siege : celle « dans le ressort territorial
 /// duquel est situe l'etablissement devant employer le salarie » (code du travail, R. 1221-3, 1°,
 /// `atelier/reference/sources/code-du-travail/xml/R1221-3.xml`), lue au departement de son code postal
 /// (`urssaf-dpae-base.json`, `par_departement`). Le code de la fiche entreprise est celui du siege.
-fn urssaf_d_un_etablissement(vue: &ChampsEntreprise) -> R<String> {
+fn urssaf_d_un_etablissement(vue: &ChampsEntreprise) -> R<CodeUrssafDpae> {
     let (siret, cp) = (vue.siret.ecrite("siret")?, vue.code_postal.ecrite("code_postal")?);
     match crate::urssaf::base()?.du_code_postal(cp) {
         Some(code) => Ok(code),
@@ -324,13 +334,26 @@ pub struct Embauche {
     pub spectacle: Option<droit::fiche::Spectacle>,
 }
 
+impl Embauche {
+    /// L'instant de l'embauche : son premier jour, a l'heure que la DPAE porte (`HEURE_EMBAUCHE`, a Paris).
+    pub fn instant(&self) -> R<Moment> {
+        Moment::a_paris(self.debut, HEURE_EMBAUCHE, 0, 0)
+            .ok_or_else(|| socle::refus!("L'embauche du {} à {} h n'est pas une heure de Paris.", self.debut.jj_mm_aaaa(), HEURE_EMBAUCHE))
+    }
+}
+
+/// L'heure et la minute de `m` a Paris, chacune sur deux chiffres, separees par `entre` (HHMM, HHhMM).
+fn heure_minute(m: Moment, entre: &str) -> String {
+    let s = m.seconde_du_jour_de_paris();
+    format!("{:02}{}{:02}", s / 3_600, entre, s / 60 % 60)
+}
+
 /// Les parametres communs d'une ecriture.
 pub struct Parametres<'a> {
     /// La minute de l'ecriture, donnee par l'appelant (heure de Paris), que la zone ecrit JJMMAAAAHHMM.
     pub horodatage: Moment,
-    pub heure_embauche: String,
-    /// Le code Urssaf voulu, tel que l'appelant l'a donne (`None` : celui du gabarit).
-    pub code_urssaf: Option<String>,
+    /// Le code Urssaf voulu (`code_urssaf_saisi`, `None` : celui du gabarit).
+    pub code_urssaf: Option<CodeUrssafDpae>,
     pub ent: Option<&'a EntrepriseDuDocument>,
     pub chemins: &'a Chemins,
 }
@@ -375,30 +398,22 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
             code_urssaf = Some(urssaf_d_un_etablissement(etab)?);
         }
     }
-    if let Some(brut) = &code_urssaf {
-        let (a, b) = champ("code_urssaf");
-        let v = strip(brut);
-        if v.chars().count() != b - a || !tout_chiffres(v) {
-            return Err(socle::echec::a_la_cle(
-                &format!("Le code Urssaf de la fiche entreprise s'écrit en {} chiffres : le lire sur un bordereau Urssaf.", b - a),
-                "code_urssaf",
-                repr(brut),
-            ));
-        }
-        // ET LE CODE DOIT EXISTER. Trois chiffres bien formes
-        // suffisaient ; le point de depot, lui, repond << Code URSSAF invalide
+    if let Some(code) = &code_urssaf {
+        // LE CODE DOIT EXISTER. Trois chiffres bien formes (`code_urssaf_saisi`)
+        // ne suffisent pas ; le point de depot, lui, repond << Code URSSAF invalide
         // -- n'appartenant pas a la liste des Codes Urssaf >>, des jours plus
         // tard, sur une embauche qui n'est alors pas declaree. La liste est
         // celle de la Table des Urssaf (`urssaf-codes-types-personnel.csv`), relevee et
         // datee.
-        if !crate::urssaf::base()?.existe(v) {
+        if !crate::urssaf::base()?.existe(code) {
             return Err(socle::echec::a_la_cle(
                 "Le code Urssaf de la fiche entreprise n'est pas celui d'un organisme de recouvrement connu : le point de dépôt le refuserait. Le code se lit sur les bordereaux Urssaf de la compagnie.",
                 "code_urssaf",
-                repr(brut),
+                repr(code.as_str()),
             ));
         }
-        ecrire_zone(&mut buf, "code_urssaf", a, b, v)?;
+        let (a, b) = champ("code_urssaf");
+        ecrire_zone(&mut buf, "code_urssaf", a, b, code.as_str())?;
     }
 
     let s = &e.salarie;
@@ -433,8 +448,9 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     poser(&mut buf, "lieu_naissance", &zone_texte(s.lieu_naissance.ecrite("lieu_naissance")?, &LIEU, zone("lieu_naissance"), droit::fiche::LieuNaissance::faute)?)?;
     let (a, b) = RESERVE_APRES_LIEU;
     ecrire_zone(&mut buf, "reserve", a, b, &" ".repeat(b - a))?;
-    poser(&mut buf, "date_embauche", &e.debut.jjmmaaaa())?;
-    poser(&mut buf, "heure_embauche", &p.heure_embauche)?;
+    let embauche = e.instant()?;
+    poser(&mut buf, "date_embauche", &embauche.jour_de_paris().jjmmaaaa())?;
+    poser(&mut buf, "heure_embauche", &heure_minute(embauche, ""))?;
     poser(&mut buf, "sexe", sexe)?;
     poser(&mut buf, "dept_naissance", s.departement_naissance.ecrite("departement_naissance")?)?;
     let nat = nature_de(e)?;
@@ -639,14 +655,8 @@ fn nature_de(e: &Embauche) -> R<std::sync::Arc<natures::Nature>> {
     e.nature.proprietes()
 }
 
-/// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises. `heure_embauche` (HHMM) se dit `HHhMM`.
-pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &str) -> R<String> {
-    let h: Vec<char> = heure_embauche.chars().collect();
-    let heure = format!(
-        "{}h{}",
-        h.iter().take(2).collect::<String>(),
-        h.iter().skip(2).collect::<String>()
-    );
+/// Texte a recopier si l'on prefere la saisie en ligne sur net-entreprises. L'heure d'embauche s'y dit `HHhMM`.
+pub fn recapitulatif(embauches: &[Embauche]) -> R<String> {
     let mut lignes: Vec<String> = vec!["DPAE - a declarer avant le debut de chaque contrat".into(), String::new()];
     for e in embauches {
         let s = &e.salarie;
@@ -676,7 +686,8 @@ pub fn recapitulatif(embauches: &[Embauche], heure_embauche: &str) -> R<String> 
             Some(nir) => format!("  NIR {}{}", nir, s.nir_cle.ecrite("nir_cle")?),
             None => "  NIR : aucun -- cette DPAE vaut demande d'immatriculation (formalite IMMA)".to_string(),
         });
-        lignes.push(format!("  Embauche le {} a {}{}", e.debut.jj_mm_aaaa(), heure, terme));
+        let embauche = e.instant()?;
+        lignes.push(format!("  Embauche le {} a {}{}", embauche.jour_de_paris().jj_mm_aaaa(), heure_minute(embauche, "h"), terme));
         lignes.push(format!("  Emploi : {} - {}{}", s.emploi.ecrite("emploi")?, nat.libelle, ou));
         lignes.push(String::new());
     }
@@ -718,19 +729,31 @@ fn tranche(r: &[char], a: usize, b: usize) -> String {
 /// UN ENREGISTREMENT DPAE RELU : les zones (`CHAMPS`) qu'on en lit, chacune sans ses blancs ; a blanc, elle est vide.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnregistrementRelu {
-    /// `JJMMAAAAHHMM`, sans secondes.
-    pub horodatage: Option<String>,
+    /// Ecrit `JJMMAAAAHHMM`, sans secondes, a Paris (`horodatage_relu`).
+    pub horodatage: Option<Moment>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
     /// A blanc, le salarie n'avait pas de NIR (`ecrire`) ; rempli, c'est le NIR que nous avons ecrit.
     pub nir: Option<droit::fiche::Nir>,
-    /// `JJMMAAAA`.
-    pub date_naissance: Option<String>,
-    /// `JJMMAAAA`.
-    pub date_embauche: Option<String>,
+    /// Ecrite `JJMMAAAA`.
+    pub date_naissance: Option<Jour>,
+    /// Ecrite `JJMMAAAA`.
+    pub date_embauche: Option<Jour>,
     pub type_contrat: Option<droit::natures::TypeContratDpae>,
-    /// `JJMMAAAA`, la fin prevue du CDD.
-    pub date_fin: Option<String>,
+    /// Ecrite `JJMMAAAA`, la fin prevue du CDD.
+    pub date_fin: Option<Jour>,
+}
+
+/// L'HORODATAGE D'UNE DPAE RELUE (D_CREATION, H_CREATION : `JJMMAAAAHHMM`), l'heure de Paris telle qu'ecrite : un texte
+/// d'une autre forme, ou une heure qui n'existe pas a Paris, ne se lit pas.
+fn horodatage_relu(h: &str) -> Option<Moment> {
+    if h.len() != 12 || !h.is_ascii() {
+        return None;
+    }
+    let heure = socle::num::entier_de_chiffres(&h[8..10]).filter(|x| (0..24).contains(x))?;
+    let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x))?;
+    let j = socle::piece::Zone::lue(&h[..8], socle::piece::format::Jjmmaaaa).valeur()?;
+    Moment::a_paris(j, heure, minute, 0).filter(|m| m.jour_de_paris() == j && m.seconde_du_jour_de_paris() == heure * 3_600 + minute * 60)
 }
 
 /// Chaque enregistrement par ses zones (`CHAMPS`) ; une zone NIR remplie qui n'est pas un NIR le refuse.
@@ -752,15 +775,23 @@ pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
                 })?),
                 None => None,
             };
+            // Une zone datee hors de sa forme ne dit rien.
+            let jour = |nom: &str| match zone(nom) {
+                Some(t) => socle::piece::Zone::lue(&t, socle::piece::format::Jjmmaaaa).valeur(),
+                None => None,
+            };
             Ok(EnregistrementRelu {
-                horodatage: zone("horodatage"),
+                horodatage: match zone("horodatage") {
+                    Some(h) => horodatage_relu(&h),
+                    None => None,
+                },
                 nom: zone("nom"),
                 prenom: zone("prenom"),
                 nir,
-                date_naissance: zone("date_naissance"),
-                date_embauche: zone("date_embauche"),
+                date_naissance: jour("date_naissance"),
+                date_embauche: jour("date_embauche"),
                 type_contrat,
-                date_fin: zone("date_fin"),
+                date_fin: jour("date_fin"),
             })
         })
         .collect()
@@ -1075,12 +1106,16 @@ mod tests {
         }
     }
 
-    fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<&str>, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: Moment::a_paris(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap(), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
+    fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<CodeUrssafDpae>, chemins: &'a Chemins) -> Parametres<'a> {
+        Parametres { horodatage: Moment::a_paris(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap(), code_urssaf: code, ent, chemins }
     }
 
     fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {
         let c = chemins();
+        let code = match code {
+            Some(brut) => Some(code_urssaf_saisi(brut)?),
+            None => None,
+        };
         enregistrements(std::slice::from_ref(e), &parametres(ent, code, &c)).map(|mut v| v.remove(0))
     }
 
@@ -1175,7 +1210,7 @@ mod tests {
         let mut e = embauche(N::Cdi, None);
         e.salarie.etablissement = Some(droit::fiche::Nic::lire("00024").unwrap());
         let t = enr(&e, Some(&ent), Some("117")).unwrap();
-        assert_eq!(zone(&t, "code_urssaf"), nantes);
+        assert_eq!(zone(&t, "code_urssaf"), nantes.as_str());
         let t = enr(&embauche(N::Cdi, None), Some(&ent), Some("117")).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), "117");
     }

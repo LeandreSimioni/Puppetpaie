@@ -439,7 +439,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
         Some(cp) => declarations::urssaf::base()?.du_code_postal(cp),
         None => None,
     };
-    let ecarts = champs::fiche(nom)?.iter().filter(|c| c.ecart(&montree, du_code_postal.as_deref())).map(|c| c.cle).collect();
+    let ecarts = champs::fiche(nom)?.iter().filter(|c| c.ecart(&montree, du_code_postal.as_ref().map(|c| c.as_str()))).map(|c| c.cle).collect();
     Ok(VueFiche {
         quoi_dit,
         geste_dit,
@@ -1532,7 +1532,7 @@ struct SpectacleDeLaListe {
 /// Un organisme de recouvrement que la DPAE fait choisir.
 #[derive(Debug, Clone, serde::Serialize)]
 struct OrganismeUrssaf {
-    code: String,
+    code: declarations::urssaf::CodeUrssafDpae,
     nom: String,
 }
 
@@ -1571,7 +1571,7 @@ pub(crate) struct EtatDeLaPage {
     organismes_urssaf: Vec<OrganismeUrssaf>,
     urssaf_deduit_dit: String,
     /// L'organisme Urssaf que le code postal de la fiche designe, s'il en designe un.
-    urssaf_deduit: Option<String>,
+    urssaf_deduit: Option<declarations::urssaf::CodeUrssafDpae>,
     pays: Vec<droit::nationalite::PaysDeNationalite>,
     pays_naissance: Vec<socle::pays::PaysServi>,
 }

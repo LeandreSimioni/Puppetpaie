@@ -1278,7 +1278,7 @@ fn refaire_la_dpae(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne, cible
     let base = cible.file_stem().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} n'est pas un nom de fichier", nom)))?.to_string_lossy().into_owned();
     let recap = cible.with_file_name(format!("{}_recapitulatif.txt", base));
     let zip = cible.with_file_name(format!("{}.zip", nom));
-    socle::temps::pendant(instant, || crate::depots::ecrire_la_dpae(&ctx_j, &retenues, cible, &recap, declarations::dpae::HEURE_EMBAUCHE, quand))?;
+    socle::temps::pendant(instant, || crate::depots::ecrire_la_dpae(&ctx_j, &retenues, cible, &recap, quand))?;
     garder_si_identique(l, &[cible.to_path_buf(), zip, recap])
 }
 
