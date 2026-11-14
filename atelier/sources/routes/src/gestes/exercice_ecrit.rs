@@ -79,9 +79,9 @@ pub(crate) struct ExportCompta {
 /// Une ecriture de l'export, telle que la route la rend : les montants en texte.
 #[derive(Debug, Serialize)]
 pub(crate) struct EcritureRendue {
-    journal: String,
+    journal: documents::ecritures_comptables::CodeJournal,
     date: socle::date::Jour,
-    compte: String,
+    compte: documents::ecritures_comptables::NumeroDeCompte,
     libelle: String,
     #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
     debit: Decimal,
@@ -89,7 +89,7 @@ pub(crate) struct EcritureRendue {
     credit: Decimal,
     analytique: Option<String>,
     mois: socle::mois::Mois,
-    auxiliaire: Option<String>,
+    auxiliaire: Option<documents::ecritures_comptables::NumeroDeCompte>,
     auxiliaire_libelle: Option<String>,
 }
 

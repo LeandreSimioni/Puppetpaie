@@ -18,7 +18,7 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::mois::Mois;
 use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
-use crate::ecritures_comptables::{ecritures_du_mois, Ecriture};
+use crate::ecritures_comptables::{ecritures_du_mois, Ecriture, NumeroDeCompte};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
 use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielComptable, Plan};
 use socle::texte::euros;
@@ -195,7 +195,7 @@ fn cp1252(lignes: &[String]) -> Vec<u8> {
 
 /// Le libelle d'un compte, lu dans le plan : tiers, brut, net, PAS, retenues, puis les charges
 /// (le premier libelle de ligne qui le porte) ; aucun pour un compte que le plan ne nomme pas.
-fn libelle_compte(plan: &Plan, compte: &str) -> Option<String> {
+fn libelle_compte(plan: &Plan, compte: &NumeroDeCompte) -> Option<String> {
     if let Some(n) = plan.tiers.get(compte) {
         return Some(n.clone());
     }
@@ -204,11 +204,11 @@ fn libelle_compte(plan: &Plan, compte: &str) -> Option<String> {
             return Some(libelle.clone());
         }
     }
-    if let Some((_, regle)) = plan.retenues.iter().find(|(_, r)| r.compte == compte) {
+    if let Some((_, regle)) = plan.retenues.iter().find(|(_, r)| r.compte == *compte) {
         return regle.libelle.clone();
     }
-    let (_, regle) = plan.lignes.iter().find(|(_, r)| r.charge == compte)?;
-    Some(match compte {
+    let (_, regle) = plan.lignes.iter().find(|(_, r)| r.charge == *compte)?;
+    Some(match compte.as_str() {
         "645100" => "Cotisations Urssaf".to_string(),
         "645300" => "Cotisations retraite et prévoyance".to_string(),
         "645400" => "Cotisations assurance chômage".to_string(),
@@ -219,10 +219,10 @@ fn libelle_compte(plan: &Plan, compte: &str) -> Option<String> {
 }
 
 /// Le sous-compte individuel du salarie quand le plan en tient un, le compte general sinon.
-fn compte_de(e: &Ecriture) -> String {
+fn compte_de(e: &Ecriture) -> &NumeroDeCompte {
     match &e.auxiliaire {
-        Some(a) => a.clone(),
-        None => e.compte.clone(),
+        Some(a) => a,
+        None => &e.compte,
     }
 }
 
@@ -238,7 +238,7 @@ fn libelle_de(plan: &Plan, e: &Ecriture) -> Option<String> {
 /// Une ligne d'ecriture pour un tableau.
 fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
-    l.t("journal", e.journal.clone()).t("date", e.date.jj_mm_aaaa()).t("piece", e.piece.clone()).t("compte", compte_de(e));
+    l.t("journal", e.journal.to_string()).t("date", e.date.jj_mm_aaaa()).t("piece", e.piece.clone()).t("compte", compte_de(e).to_string());
     l.ot("libelle_compte", libelle_de(plan, e)).t("libelle", e.libelle.clone());
     l.od("debit", if e.debit.is_zero() { None } else { Some(e.debit) });
     l.od("credit", if e.credit.is_zero() { None } else { Some(e.credit) });
@@ -406,11 +406,11 @@ fn codes_sections(plan: &Plan, ecritures: &[Ecriture], largeur: usize, fiches: &
 }
 
 /// `comptes_utilises` : (compte, libelle) de chaque compte que les ecritures mouvementent, dans l'ordre des numeros.
-fn comptes_utilises(ecritures: &[Ecriture], plan: &Plan) -> Vec<(String, String)> {
-    let mut vus: BTreeMap<String, String> = BTreeMap::new();
+fn comptes_utilises(ecritures: &[Ecriture], plan: &Plan) -> Vec<(NumeroDeCompte, String)> {
+    let mut vus: BTreeMap<NumeroDeCompte, String> = BTreeMap::new();
     for e in ecritures {
         let c = compte_de(e);
-        if !vus.contains_key(&c) {
+        if !vus.contains_key(c) {
             // Un compte que le plan ne nomme pas prend le libelle de sa ligne, sans le mois.
             let lib = match libelle_de(plan, e).filter(|l| !l.is_empty()) {
                 Some(l) => l,
@@ -419,7 +419,7 @@ fn comptes_utilises(ecritures: &[Ecriture], plan: &Plan) -> Vec<(String, String)
                     None => e.libelle.clone(),
                 },
             };
-            vus.insert(c, lib);
+            vus.insert(c.clone(), lib);
         }
     }
     vus.into_iter().collect()
@@ -450,13 +450,13 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         };
         // Un champ « à blanc si non utilisé » (BOI-CF-IOR-60-40-20, § 70) reste vide.
         let champs = [
-            e.journal.clone(),
+            e.journal.to_string(),
             journal_lib.clone(),
             format!("{:04}{:05}", e.date.an, e.numero),
             date.clone(),
-            e.compte.clone(),
+            e.compte.to_string(),
             ou_vide(libelle_compte(plan, &e.compte)),
-            ou_vide(e.auxiliaire.clone()),
+            ou_vide(e.auxiliaire.as_ref().map(NumeroDeCompte::to_string)),
             ou_vide(e.auxiliaire_libelle.clone()),
             e.piece.clone(),
             date,
@@ -561,17 +561,17 @@ fn ximport(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let (s, montant) = sens(e);
         let champs: BTreeMap<&str, String> = [
             ("mouvement", e.numero.to_string()),
-            ("journal", e.journal.clone()),
+            ("journal", e.journal.to_string()),
             ("date", e.date.aaaammjj()),
             ("echeance", String::new()),
             ("piece", e.piece.clone()),
-            ("compte", compte_de(e)),
+            ("compte", compte_de(e).to_string()),
             ("libelle", env.libelle(e, false, 25)),
             ("montant", deux(montant).replace('.', ",")),
             ("sens", s.to_string()),
             ("pointage", String::new()),
             ("analytique", ou_vide(env.section(e))),
-            ("libelle_compte", env.intitule(&compte_de(e), &ou_vide(libelle_de(env.plan, e)), 34)),
+            ("libelle_compte", env.intitule(compte_de(e).as_str(), &ou_vide(libelle_de(env.plan, e)), 34)),
             ("euro", "O".to_string()),
         ]
         .into_iter()
@@ -603,15 +603,15 @@ fn oxygene(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     let zones = zones_oxygene();
     let mut out = vec![zones.join(";")];
     for e in ecritures {
-        borne(FormatDExport::Oxygene, &compte_de(e), &e.journal)?;
+        borne(FormatDExport::Oxygene, compte_de(e).as_str(), e.journal.as_str())?;
         let section = env.section(e);
         let mut z: BTreeMap<&str, String> = zones.iter().map(|k| (k.as_str(), String::new())).collect();
         // Le poste analytique d'une ligne ventilee : celui que la compagnie dit ; sinon la zone reste vide.
-        let poste: String = section.as_ref().and(env.plan.poste_analytique.as_ref()).map(|p| tenir("Oxygène", "CODAGE", p, 9)).transpose()?.into_iter().collect();
+        let poste: String = section.as_ref().and(env.plan.poste_analytique.as_ref()).map(|p| tenir("Oxygène", "CODAGE", p.as_str(), 9)).transpose()?.into_iter().collect();
         let section = ou_vide(section);
         for (k, v) in [
-            ("NUMJL", e.journal.clone()),
-            ("NUMCP", compte_de(e)),
+            ("NUMJL", e.journal.to_string()),
+            ("NUMCP", compte_de(e).to_string()),
             ("DTOPE", e.date.aaaammjj()),
             ("NPIEC", piece_courte(e)),
             ("LIBEC", env.libelle(e, true, 40)),
@@ -629,9 +629,10 @@ fn oxygene(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
 
 /// `oxygene_comptes` : « L'importation du plan comptable », fiche compte (`SOURCE_OXYGENE`, l. 353-371) : le numero,
 /// l'intitule reduit (non obligatoire : laisse vide), l'intitule.
-fn oxygene_comptes(comptes: &[(String, String)], env: &Envoi) -> R<Vec<u8>> {
+fn oxygene_comptes(comptes: &[(NumeroDeCompte, String)], env: &Envoi) -> R<Vec<u8>> {
     let mut out = vec!["NUMCP;CODCP;LIBCP".to_string()];
     for (compte, lib) in comptes {
+        let compte = compte.as_str();
         borne(FormatDExport::Oxygene, compte, "")?;
         out.push([csv_propre(compte), String::new(), csv_propre(&env.intitule(compte, lib, 50))].join(";"));
     }
@@ -656,13 +657,13 @@ fn sage_pnm(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     // Un nom qui ne tient pas laisse la ligne vide : l'export se refuse a la fin (`refus_des_depasses`).
     let mut out = vec![ou_vide(env.tenir_ou_court(Quoi::Compagnie, &nom, &nom, 30))];
     for e in ecritures {
-        borne(FormatDExport::Sage, &compte_de(e), &e.journal)?;
+        borne(FormatDExport::Sage, compte_de(e).as_str(), e.journal.as_str())?;
         let (s, montant) = sens(e);
         let mut champs: BTreeMap<&str, String> = [
-            ("journal", e.journal.clone()),
+            ("journal", e.journal.to_string()),
             ("date", jjmmaa(e.date)),
             ("type_piece", "OD".to_string()),
-            ("compte", compte_de(e)),
+            ("compte", compte_de(e).to_string()),
             ("type_compte", String::new()),
             ("auxiliaire", String::new()),
             ("reference", e.piece.clone()),
@@ -732,8 +733,8 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     for (c, lib) in comptes_utilises(ecritures, env.plan) {
         let mut ch: BTreeMap<&str, String> = BTreeMap::new();
         ch.insert("type", "C".to_string());
-        ch.insert("compte", compte_quadra(&c)?);
-        ch.insert("libelle", env.intitule(&c, &lib, 30));
+        ch.insert("compte", compte_quadra(c.as_str())?);
+        ch.insert("libelle", env.intitule(c.as_str(), &lib, 30));
         for k in ["debit1", "credit1", "debit2", "credit2"] {
             ch.insert(k, "+000000000000".to_string());
         }
@@ -745,15 +746,15 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let centimes = eur2(montant).mantissa();
         let mut ch: BTreeMap<&str, String> = BTreeMap::new();
         ch.insert("type", "M".to_string());
-        ch.insert("compte", compte_quadra(&compte_de(e))?);
-        ch.insert("journal", e.journal.clone());
+        ch.insert("compte", compte_quadra(compte_de(e).as_str())?);
+        ch.insert("journal", e.journal.to_string());
         ch.insert("folio", "000".to_string());
         ch.insert("date", jjmmaa(e.date));
         ch.insert("sens", s.to_string());
         ch.insert("montant", format!("+{:012}", centimes));
         ch.insert("affaire", ou_vide(env.section(e)));
         ch.insert("devise", "EUR".to_string());
-        ch.insert("journal3", e.journal.clone());
+        ch.insert("journal3", e.journal.to_string());
         ch.insert("libelle30", env.libelle(e, false, 30));
         ch.insert("piece10", piece_courte(e));
         sortie.push(quadra_ligne(&ch, &POSITIONS_QUADRA)?);
@@ -778,14 +779,14 @@ fn ebp_zone(s: &str) -> String {
 fn ebp(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     let mut out = Vec::new();
     for (i, e) in ecritures.iter().enumerate() {
-        borne(FormatDExport::Ebp, &compte_de(e), &e.journal)?;
+        borne(FormatDExport::Ebp, compte_de(e).as_str(), e.journal.as_str())?;
         let (s, montant) = sens(e);
         out.push(
             [
                 (i + 1).to_string(),
                 jjmmaa(e.date),
-                e.journal.clone(),
-                compte_de(e),
+                e.journal.to_string(),
+                compte_de(e).to_string(),
                 String::new(),
                 format!("\"{}\"", env.libelle(e, true, 40).replace('"', "'")),
                 ebp_texte("piece", &e.piece, 15)?,
@@ -804,10 +805,11 @@ fn ebp(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
 }
 
 /// `ebp_comptes` : COMPTES.TXT, ses dix zones (`SOURCE_EBP`, l. 137-150).
-fn ebp_comptes(comptes: &[(String, String)], env: &Envoi) -> R<Vec<u8>> {
+fn ebp_comptes(comptes: &[(NumeroDeCompte, String)], env: &Envoi) -> R<Vec<u8>> {
     let out: Vec<String> = comptes
         .iter()
         .map(|(c, lib)| {
+            let c = c.as_str();
             borne(FormatDExport::Ebp, c, "")?;
             let mut z = vec![ebp_zone(c), env.intitule(c, &ebp_zone(lib), 60)];
             z.extend(std::iter::repeat(String::new()).take(8));
@@ -833,17 +835,18 @@ fn pennylane(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     }
     let mut out = vec![entete];
     for e in ecritures {
-        if !(!e.journal.is_empty() && e.journal.chars().all(char::is_alphabetic) && e.journal.chars().count() <= 5) {
-            return Err(refus(format!("Pennylane : le code journal « {} » doit tenir en 5 lettres. Le changer dans le plan comptable de la compagnie.", e.journal)));
+        let journal = e.journal.as_str();
+        if !(journal.chars().all(char::is_alphabetic) && journal.chars().count() <= 5) {
+            return Err(refus(format!("Pennylane : le code journal « {} » doit tenir en 5 lettres. Le changer dans le plan comptable de la compagnie.", journal)));
         }
-        let compte = compte_de(e);
+        let compte = compte_de(e).to_string();
         if !tout_chiffres(&compte) && !PENNYLANE_ALPHANUMERIQUES.iter().any(|p| compte.starts_with(p)) {
             return Err(refus(format!(
                 "Pennylane : le compte « {} » porte des lettres, ce que Pennylane n'accepte que pour les comptes 401, 411, 410, 421, 455 et 467. Le changer dans le plan comptable de la compagnie.",
                 compte
             )));
         }
-        let mut champs = vec![e.date.jj_mm_aaaa(), e.journal.clone(), e.piece.clone(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
+        let mut champs = vec![e.date.jj_mm_aaaa(), journal.to_string(), e.piece.clone(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
         if analytique {
             // Une ligne ventilee porte sa famille, sa categorie (le spectacle) et son code ; les autres laissent les trois
             // colonnes vides.
@@ -876,7 +879,7 @@ struct Ecrivain {
     conseil: String,
     section: Analytique,
     /// (modele du nom, ecrivain, conseil)
-    comptes: Option<(&'static str, fn(&[(String, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
+    comptes: Option<(&'static str, fn(&[(NumeroDeCompte, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
 }
 
 /// `ECRIVAINS.get(format)`.
@@ -1181,17 +1184,17 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
-    let mut par: BTreeMap<String, Vec<Ligne>> = BTreeMap::new();
-    let mut libelles: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut par: BTreeMap<NumeroDeCompte, Vec<Ligne>> = BTreeMap::new();
+    let mut libelles: BTreeMap<NumeroDeCompte, Option<String>> = BTreeMap::new();
     for e in &ecr {
-        par.entry(compte_de(e)).or_default().push(ligne_de(e, &plan));
-        libelles.insert(compte_de(e), libelle_de(&plan, e));
+        par.entry(compte_de(e).clone()).or_default().push(ligne_de(e, &plan));
+        libelles.insert(compte_de(e).clone(), libelle_de(&plan, e));
     }
     let mut t = Tableau::nouveau(EtatDExport::GrandLivrePaie, "Grand livre des comptes de paie", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     // Une section par compte : son numero, et son libelle quand le plan le nomme.
-    t.sections = par.into_iter().map(|(c, l)| Section::nouvelle([Some(c.clone()), libelles[&c].clone()].into_iter().flatten().collect::<Vec<_>>().join(" "), l)).collect();
+    t.sections = par.into_iter().map(|(c, l)| Section::nouvelle([Some(c.to_string()), libelles[&c].clone()].into_iter().flatten().collect::<Vec<_>>().join(" "), l)).collect();
     t.colonnes = vec![
         col_t("compte", "Compte"),
         col_t("date", "Date"),
@@ -1225,13 +1228,13 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
     let zero = zero2();
     // compte -> (libelle, debit, credit)
-    let mut par: BTreeMap<String, (Option<String>, Decimal, Decimal)> = BTreeMap::new();
+    let mut par: BTreeMap<NumeroDeCompte, (Option<String>, Decimal, Decimal)> = BTreeMap::new();
     for e in &ecr {
         let c = compte_de(e);
-        if !par.contains_key(&c) {
+        if !par.contains_key(c) {
             par.insert(c.clone(), (libelle_de(&plan, e), zero, zero));
         }
-        let x = par.get_mut(&c).expect("insere");
+        let x = par.get_mut(c).expect("insere");
         x.1 = add(x.1, e.debit);
         x.2 = add(x.2, e.credit);
     }
@@ -1239,7 +1242,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for (c, (lib, debit, credit)) in &par {
         let v = sub(*debit, *credit);
         let mut l = Ligne::nouvelle();
-        l.t("compte", c.clone()).ot("libelle", lib.clone()).d("debit", *debit).d("credit", *credit);
+        l.t("compte", c.to_string()).ot("libelle", lib.clone()).d("debit", *debit).d("credit", *credit);
         l.od("solde_debiteur", if v > Decimal::ZERO { Some(v) } else { None });
         l.od("solde_crediteur", if v < Decimal::ZERO { Some(-v) } else { None });
         lignes.push(l);

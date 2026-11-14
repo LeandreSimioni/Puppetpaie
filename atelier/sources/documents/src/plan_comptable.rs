@@ -17,6 +17,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use droit::contexte::Contexte;
 use droit::forme_bareme::IdDeCotisation;
 use socle::echec::{erreur, Classe, Echec, R};
+
+use crate::ecritures_comptables::{CodeJournal, NumeroDeCompte, PosteAnalytique};
 use socle::fichiers::repr;
 
 // ------------------------------------------------------------------ les listes des exports
@@ -323,16 +325,16 @@ impl<T, K: PartialEq> Ordonne<T, K> {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Compte {
-    pub compte: String,
+    pub compte: NumeroDeCompte,
     pub libelle: String,
 }
 
 /// LE NET : le compte 421, son libelle, et le modele du sous-compte individuel (`par_salarie`), absent quand le
-/// comptable tient un seul 421.
+/// comptable tient un seul 421. Le modele n'est pas un compte : il en fait un par salarie (`compte_du_salarie`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompteNet {
-    pub compte: String,
+    pub compte: NumeroDeCompte,
     pub libelle: String,
     pub par_salarie: Option<String>,
 }
@@ -341,7 +343,7 @@ pub struct CompteNet {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Retenue {
-    pub compte: String,
+    pub compte: NumeroDeCompte,
     pub libelle: Option<String>,
 }
 
@@ -349,8 +351,8 @@ pub struct Retenue {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegleLigne {
-    pub charge: String,
-    pub tiers: String,
+    pub charge: NumeroDeCompte,
+    pub tiers: NumeroDeCompte,
     pub libelle: Option<String>,
 }
 
@@ -373,7 +375,7 @@ pub struct Plan {
     pub quoi: Option<String>,
     pub note: Option<String>,
     pub source: Option<String>,
-    pub journal: String,
+    pub journal: CodeJournal,
     /// Le libelle du journal, au FEC (`JournalLib`).
     pub journal_libelle: String,
     pub brut: Compte,
@@ -381,12 +383,13 @@ pub struct Plan {
     pub frais: Compte,
     pub pas: Compte,
     pub retenues: Ordonne<Retenue>,
-    pub tiers: Ordonne<String>,
+    /// Le compte d'un tiers -> son nom.
+    pub tiers: Ordonne<String, NumeroDeCompte>,
     /// La cotisation d'une ligne du bulletin -> ses comptes.
     pub lignes: Ordonne<RegleLigne, IdDeCotisation>,
     pub provision_conges: ProvisionConges,
     pub sections: Option<BTreeMap<String, String>>,
-    pub poste_analytique: Option<String>,
+    pub poste_analytique: Option<PosteAnalytique>,
 }
 
 /// `config/plan-comptable.json` : ce que la compagnie change au plan livre. Chaque cle dite remplace la sienne ;
@@ -397,18 +400,18 @@ struct PlanPropre {
     quoi: Option<String>,
     note: Option<String>,
     source: Option<String>,
-    journal: Option<String>,
+    journal: Option<CodeJournal>,
     journal_libelle: Option<String>,
     brut: Option<Compte>,
     net: Option<CompteNet>,
     frais: Option<Compte>,
     pas: Option<Compte>,
     retenues: Option<Ordonne<Retenue>>,
-    tiers: Option<Ordonne<String>>,
+    tiers: Option<Ordonne<String, NumeroDeCompte>>,
     lignes: Option<Ordonne<RegleLigne, IdDeCotisation>>,
     provision_conges: Option<ProvisionConges>,
     sections: Option<BTreeMap<String, String>>,
-    poste_analytique: Option<String>,
+    poste_analytique: Option<PosteAnalytique>,
 }
 
 impl Plan {
@@ -447,7 +450,7 @@ impl Plan {
     }
 
     /// Le libelle du tiers `compte`, s'il est dit (et non vide).
-    pub fn nom_du_tiers(&self, compte: &str) -> Option<&str> {
+    pub fn nom_du_tiers(&self, compte: &NumeroDeCompte) -> Option<&str> {
         self.tiers.get(compte).map(String::as_str).filter(|n| !n.is_empty())
     }
 }
@@ -482,43 +485,39 @@ pub fn controler_plan(ctx: &Contexte, format: FormatDExport) -> R<Vec<String>> {
 fn controler_contre(ctx: &Contexte, format: FormatDExport, lim: &Limite) -> R<Vec<String>> {
     let plan = plan_comptable(ctx)?;
     let (lim_journal, nom_format) = (lim.journal, lim.nom.as_str());
-    let mut comptes: HashSet<String> = HashSet::new();
+    let mut comptes: HashSet<NumeroDeCompte> = HashSet::new();
     for c in [&plan.brut.compte, &plan.net.compte, &plan.pas.compte] {
         comptes.insert(c.clone());
     }
     for (_, regle) in plan.lignes.iter() {
         for c in [&regle.charge, &regle.tiers] {
-            if !c.is_empty() {
-                comptes.insert(c.clone());
-            }
+            comptes.insert(c.clone());
         }
     }
     comptes.extend(plan.tiers.iter().map(|(k, _)| k.clone()));
     for (_, regle) in plan.retenues.iter() {
-        if !regle.compte.is_empty() {
-            comptes.insert(regle.compte.clone());
-        }
+        comptes.insert(regle.compte.clone());
     }
     let mut msgs: Vec<String> = Vec::new();
     let mut fiches: Vec<(&droit::contexte::IdSalarie, &droit::fiche::FicheSalarie)> = ctx.salaries.iter().collect();
     fiches.sort_by(|a, b| a.0.cmp(b.0));
     for (cle, s) in fiches {
         match compte_du_salarie(&plan, s, cle) {
-            Ok(Some(c)) if !c.is_empty() => {
+            Ok(Some(c)) => {
                 comptes.insert(c);
             }
-            Ok(_) => {}
+            Ok(None) => {}
             Err(Refus::Operation(m)) => msgs.push(m),
             Err(Refus::Autre(e)) => return Err(e),
         }
     }
-    let journal = plan.journal.clone();
-    let mut tries: Vec<&String> = comptes.iter().collect();
+    let journal = plan.journal.as_str();
+    let mut tries: Vec<&NumeroDeCompte> = comptes.iter().collect();
     tries.sort();
-    for c in tries {
+    for c in tries.into_iter().map(NumeroDeCompte::as_str) {
         if let Some(lim_compte) = lim.compte.filter(|l| c.chars().count() > *l) {
             msgs.push(format!("{} : le compte « {} » a {} caractères, la zone en prend {}.", nom_format, c, c.chars().count(), lim_compte));
-        } else if format == FormatDExport::Quadra && !(!c.is_empty() && c.chars().all(|x| x.is_ascii_digit())) {
+        } else if format == FormatDExport::Quadra && !c.chars().all(|x| x.is_ascii_digit()) {
             msgs.push(format!(
                 "Quadra : le compte « {} » n'est pas numérique ; Quadra range les comptes de lettres parmi les tiers (clients, fournisseurs).",
                 c
@@ -528,7 +527,7 @@ fn controler_contre(ctx: &Contexte, format: FormatDExport, lim: &Limite) -> R<Ve
     if journal.chars().count() > lim_journal {
         msgs.push(format!("{} : le journal « {} » a {} caractères, la zone en prend {}.", nom_format, journal, journal.chars().count(), lim_journal));
     }
-    if format == FormatDExport::Pennylane && !(!journal.is_empty() && journal.chars().all(char::is_alphabetic)) {
+    if format == FormatDExport::Pennylane && !journal.chars().all(char::is_alphabetic) {
         msgs.push(format!("Pennylane : le code journal « {} » ne doit porter que des lettres.", journal));
     }
     Ok(msgs)
@@ -540,8 +539,9 @@ pub enum Refus {
     Autre(Echec),
 }
 
-/// Le sous-compte 421 d'un salarie, ou `None` si le plan n'en tient pas (`net.par_salarie` absent).
-pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -> Result<Option<String>, Refus> {
+/// Le sous-compte 421 d'un salarie, ou `None` si le plan n'en tient pas (`net.par_salarie` absent) ou que son modele se
+/// remplit a vide (aucun sous-compte).
+pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -> Result<Option<NumeroDeCompte>, Refus> {
     let Some(modele) = &plan.net.par_salarie else { return Ok(None) };
     if modele.is_empty() {
         return Err(Refus::Operation(
@@ -554,7 +554,7 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         })?,
         None => None,
     };
-    formater(modele, code, cle.as_str(), 0).map(Some).map_err(|(classe, message)| {
+    let rempli = formater(modele, code, cle.as_str(), 0).map_err(|(classe, message)| {
         // `compte_du_salarie` ne rattrape qu'une valeur illisible ou qui manque ; le reste traverse.
         match classe {
             Classe::Illisible | Classe::Manque => {}
@@ -578,7 +578,17 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
             cle,
             message
         ))
-    })
+    })?;
+    if rempli.is_empty() {
+        return Ok(None);
+    }
+    match NumeroDeCompte::lire(&rempli) {
+        Ok(c) => Ok(Some(c)),
+        Err(e) => Err(Refus::Operation(format!(
+            "Le modèle du compte individuel « {} » (net.par_salarie du plan comptable) donne pour {} le compte « {} », que le logiciel ne prend pas : {}",
+            modele, cle, rempli, e.phrase
+        ))),
+    }
 }
 
 /// Un entier écrit : le signe, les chiffres, un tiret bas entre deux chiffres ; `None` pour un code qui n'est pas un

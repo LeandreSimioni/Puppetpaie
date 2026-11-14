@@ -684,6 +684,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | logiciel du comptable | `LogicielComptable` | `documents/src/plan_comptable.rs` |
 | période d'export | `PeriodeDExport` | `documents/src/plan_comptable.rs` |
 | colonne d'un état | `ColonneDEtat` ; à unifier (#419) : `tableaux_export::Colonne.cle` | `documents/src/plan_comptable.rs` |
+| code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
+| numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
+| poste analytique | `PosteAnalytique` | `documents/src/ecritures_comptables.rs` |
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
 | code retour d'une DPAE | `declarations::dpae::CodeRetourDpae` | `declarations/src/dpae.rs` |
 | code retour du lot | `declarations::dpae::CodeRetourDuLot` | `declarations/src/dpae.rs` |
@@ -794,6 +797,15 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **colonne d'un état** : une colonne qu'un état totalise ; aujourd'hui celles du livre de paie (`brut`…
   `cout_employeur`), sous lesquelles son total les nomme et compte ce qu'un bulletin ne déclare pas. Les colonnes des
   autres tableaux (`tableaux_export::Colonne.cle`) sont encore la clé texte d'une ligne.
+- **code journal**, **numéro de compte**, **poste analytique** : les codes d'une écriture comptable que le plan
+  comptable dit (`plan-comptable-base.json`, recouvert par `config/plan-comptable.json`) : le journal (`OD`), les comptes
+  (du brut, du net, des frais, du prélèvement à la source, des retenues, des lignes, des tiers, de la provision de
+  congés ; le sous-compte individuel qu'un modèle fait pour chaque salarié, `compte_du_salarie`), le poste analytique
+  d'Oxygène (la zone CODAGE). Des clés du logiciel (`droit::cle_opaque!`), non vides, gardées telles que lues ; chaque
+  logiciel du comptable borne leur largeur et leurs caractères à l'écriture (`plan_comptable::controler_plan`). Que
+  portent le plan comptable et une ligne d'écriture (`ecritures_comptables::Ecriture`), ce que rend `export-compta`. Le
+  modèle du sous-compte (`net.par_salarie`, « 421{code:03} ») n'est pas un compte ; le code analytique d'un spectacle
+  (`sections`) est une autre notion.
 - **formalité d'une DPAE** : ce que le certificat de conformité d'une DPAE dit fait : CERTIF, IMMA, MT, PMF5 (Format 120,
   I_CERTIF à I_PMF5). Une liste de la norme, que portent une ligne du certificat et la personne certifiée au journal des
   envois.
