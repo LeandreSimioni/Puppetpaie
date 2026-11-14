@@ -55,7 +55,7 @@ use import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
 use droit::natures::NatureDeContrat;
-use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, FicheNommee, Nir, NomDeCase, NomDeFiche, NumeroObjetSpectacle};
+use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, FicheNommee, Nir, NomDeCase, NomDeFiche, NumeroObjetSpectacle, Statut};
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
@@ -67,7 +67,7 @@ use import::proposee;
 use import::tri::Sorte;
 use socle::num::Decimal;
 use socle::texte::euros;
-use import::attestes::{Atteste, Registre, Reste};
+use import::attestes::{Atteste, BlocDImport, Registre, Reste};
 use engagement::importe::{Attestation, CleDePaieVersee, ContratAtteste, ContratLu, PaieLue, PaieVersee};
 use engagement::numeros::NumeroContrat;
 use crate::import::{self as ri, ACreer, Apercu, SpectacleDesPieces};
@@ -566,8 +566,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     sans += 1;
                     continue;
                 }
-                if registre.pareils(&c.nir, c.debut, c.fin, "AEM").is_empty() {
-                    registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, cle_de(&c.nir)), "AEM", "declarations");
+                if registre.pareils(&c.nir, c.debut, c.fin, Source::Aem).is_empty() {
+                    registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, cle_de(&c.nir)), Source::Aem, BlocDImport::Declarations);
                     nouveaux += 1;
                 }
             }
@@ -648,9 +648,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             par_salarie_cert.entry(n.clone()).or_default().push(k);
         }
     }
-    // Les fiches que les pieces creent, et parmi elles celles des salaries, par sorte de piece (`Attestee::source`).
-    let mut fiches_certificats: BTreeMap<&str, usize> = BTreeMap::new();
-    let mut salaries_certificats: BTreeMap<&str, usize> = BTreeMap::new();
+    // Les fiches que les pieces creent, et parmi elles celles des salaries, par sorte de piece (`Attestee::piece`).
+    let mut fiches_certificats: BTreeMap<Source, usize> = BTreeMap::new();
+    let mut salaries_certificats: BTreeMap<Source, usize> = BTreeMap::new();
     for (nir, rangs) in &par_salarie_cert {
         let siens: Vec<&Attestee> = rangs.iter().map(|&k| &certificats[k]).collect();
         let dernier = siens[siens.len() - 1];
@@ -676,8 +676,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         reponse.salaries.push(entree);
         ap.a_creer.push(ACreer { nom: NomDeFiche::Salarie, rang: Some(reponse.salaries.len() - 1), donnees: proposees });
         nouvelles_fiches += 1;
-        *fiches_certificats.entry(dernier.source()).or_default() += 1;
-        *salaries_certificats.entry(dernier.source()).or_default() += 1;
+        *fiches_certificats.entry(dernier.piece()).or_default() += 1;
+        *salaries_certificats.entry(dernier.piece()).or_default() += 1;
     }
 
     // 6. L'entreprise : creee des bulletins si ni la fiche ni une DSN ne la donne ; sinon ses ecarts.
@@ -727,7 +727,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         } else if reponse.entreprise.is_none() {
             creer_l_entreprise(ctx, &mut ap.a_creer, &mut reponse, proposees, Some(origine_cert(dernier)))?;
             nouvelles_fiches += 1;
-            *fiches_certificats.entry(dernier.source()).or_default() += 1;
+            *fiches_certificats.entry(dernier.piece()).or_default() += 1;
         }
     }
 
@@ -1009,15 +1009,15 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         prises.insert(ident, (chemin.clone(), l.page, l.b.brut, l.b.net_a_payer));
 
         // La paie.
-        let (mut ligne, source, avant): (PaieLue, &str, Option<PaieLue>) = match &cible {
+        let (mut ligne, source, avant): (PaieLue, Source, Option<PaieLue>) = match &cible {
             Some((_, _, Cible::Dsn(k))) => {
                 let x = ap.paies[*k].clone();
                 let avant = hist_par_cle.get(&x.cle()).cloned();
-                (x, "dsn", avant)
+                (x, Source::Dsn, avant)
             }
             Some((_, _, Cible::Historique(c))) => {
                 let x = hist_par_cle[c].clone();
-                (x.clone(), "historique", Some(x))
+                (x.clone(), Source::Historique, Some(x))
             }
             None => {
                 let contrat = match &l.b.numero {
@@ -1028,7 +1028,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.debut), Some(l.b.fin), Some(copie.clone()));
                 let x = PaieLue { mois: l.mois, salarie: salarie.clone(), paie };
                 let avant = hist_par_cle.get(&x.cle()).cloned();
-                (x, "bulletin", avant)
+                (x, Source::Bulletin, avant)
             }
         };
         let ecarts = completer(&mut ligne.paie, &l.b, &copie, l.page, convention_des(&[rang]).as_ref())?;
@@ -1040,7 +1040,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         let etat_paie = if avant.as_ref().map(PaieLue::sans_date_d_import) == Some(ligne.sans_date_d_import()) {
             EtatPaie::Deja
-        } else if source == "bulletin" {
+        } else if source == Source::Bulletin {
             EtatPaie::Nouvelle
         } else {
             EtatPaie::Completee
@@ -1061,7 +1061,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let mut phrases: Vec<String> = vec![match (etat_paie, source) {
             (EtatPaie::Deja, _) => "paie déjà dans l'historique".to_string(),
             (EtatPaie::Nouvelle, _) => "paie nouvelle : aucune DSN ne la déclare".to_string(),
-            (_, "dsn") => format!("complète la paie déclarée en DSN ({})", ligne.mois),
+            (_, Source::Dsn) => format!("complète la paie déclarée en DSN ({})", ligne.mois),
             _ => format!("complète la paie de l'historique ({})", ligne.mois),
         }];
         if !ecarts.is_empty() {
@@ -1086,7 +1086,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Ok((compte, ligne_contrat)) => {
                 // LE BULLETIN EST LA PIECE DE PAIE : un contrat d'AEM aux memes dates qui compte autre chose
                 // s'efface devant le sien (`import::attestes`) ; un autre contrat atteste reste, et l'ecart se dit.
-                let pareils = registre.pareils(&l.nir, l.b.debut, l.b.fin, "bulletin");
+                let pareils = registre.pareils(&l.nir, l.b.debut, l.b.fin, Source::Bulletin);
                 let le_sien = (Some(compte.heures), Some(compte.cachets), Some(compte.jours), Some(compte.brut));
                 let en_mots = import::attestes::en_mots(le_sien.0, le_sien.1, le_sien.2, le_sien.3);
                 if pareils.iter().any(|a| a.compte() == le_sien) {
@@ -1104,7 +1104,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 } else {
                     phrases.push("contrat attesté ajouté".into());
                     contrats_liste.push(ligne_contrat.clone());
-                    phrases.extend(registre.ajouter(&l.nir, ligne_contrat, "bulletin", "bulletins"));
+                    phrases.extend(registre.ajouter(&l.nir, ligne_contrat, Source::Bulletin, BlocDImport::Bulletins));
                     EtatContrat::Nouveau
                 }
             }
@@ -1167,7 +1167,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         } else {
             infos.certificat = c.numero.clone();
         }
-        let pareils = registre.pareils(nir, debut, fin, cl.source());
+        let pareils = registre.pareils(nir, debut, fin, cl.piece());
         // UN CERTIFICAT DONT D'AUTRES PIECES N'ATTESTENT QUE DES MOIS (un bulletin, une AEM, chacun le sien) atteste seul
         // ses autres mois (`attestes::reste_du_certificat`) ; un certificat deja repris ne se reprend pas deux fois.
         let mut reste: Option<ContratLu> = None;
@@ -1176,7 +1176,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let copie = copie_lue(&tri.fichiers[cl.fichier])?;
         if !est_aem && !pareils.is_empty() && !pareils.iter().any(Atteste::de_certificat) {
             let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_ref())?;
-            match contrat_du_certificat(c, statut.as_deref(), cle_de(nir), &copie) {
+            match contrat_du_certificat(c, statut, cle_de(nir), &copie) {
                 Ok((ligne, _)) => match registre.reste_du_certificat(nir, &ligne, &pareils) {
                     Reste::Rien => {}
                     Reste::Seul(l) => reste = Some(l),
@@ -1275,7 +1275,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
             (None, None) => {
                 let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_ref())?;
-                contrat_du_certificat(c, statut.as_deref(), cle_de(nir), &copie)
+                contrat_du_certificat(c, statut, cle_de(nir), &copie)
             }
         };
         match lu {
@@ -1292,8 +1292,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 } else {
                     format!("certificat Congés Spectacles {} : contrat attesté ajouté ({}, {} de brut arrondi à l'euro) ; les heures, que le certificat ne porte pas, n'y sont pas", du_au, quoi, euros(brut))
                 };
-                let bloc = if est_aem { "aem_pdf" } else { "certificats" };
-                let raison = std::iter::once(raison).chain(registre.ajouter(nir, ligne, cl.source(), bloc)).collect::<Vec<_>>().join(" ; ");
+                let bloc = if est_aem { BlocDImport::AemPdf } else { BlocDImport::Certificats };
+                let raison = std::iter::once(raison).chain(registre.ajouter(nir, ligne, cl.piece(), bloc)).collect::<Vec<_>>().join(" ; ");
                 pages.entry(cl.fichier).or_default().push(PageCr { page: c.page, sort: Sort::Repris, raison, infos });
             }
         }
@@ -1407,16 +1407,17 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         "la date et la commune de naissance (le NIR ne dit que l'année, le mois et le département)",
     ];
     let aem_tait = vec!["le compte bancaire", "le taux de prélèvement à la source", "la commune de naissance"];
-    for (bloc, source, ajoutes, confirmes, tait) in [
-        ("certificats", "certificat", registre.lignes("certificats"), certificats_confirmes, certificat_tait),
-        ("aem_pdf", "AEM", registre.lignes("aem_pdf"), aem_confirmees, aem_tait),
+    for (bloc, source, confirmes, tait) in [
+        (BlocDImport::Certificats, Source::Certificat, certificats_confirmes, certificat_tait),
+        (BlocDImport::AemPdf, Source::Aem, aem_confirmees, aem_tait),
     ] {
-        let siennes: Vec<&Attestee> = certificats.iter().filter(|c| c.source() == source).collect();
+        let ajoutes = registre.lignes(bloc);
+        let siennes: Vec<&Attestee> = certificats.iter().filter(|c| c.piece() == source).collect();
         if siennes.is_empty() {
             continue;
         }
         // Ce que la piece tait reste a saisir dans chaque fiche qu'elle a creee ; aucune fiche creee, rien.
-        let reste: Vec<&'static str> = if salaries_certificats.get(source).is_some_and(|n| *n > 0) { tait } else { Vec::new() };
+        let reste: Vec<&'static str> = if salaries_certificats.get(&source).is_some_and(|n| *n > 0) { tait } else { Vec::new() };
         let lu = BlocPieces {
             lus: siennes.len(),
             du: siennes.iter().filter_map(|c| c.c.debut).min(),
@@ -1428,10 +1429,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             reste_a_saisir: reste,
             dit: String::new(),
         };
-        if bloc == "certificats" {
-            reponse.certificats = Some(lu);
-        } else {
-            reponse.aem_pdf = Some(lu);
+        match bloc {
+            BlocDImport::Certificats => reponse.certificats = Some(lu),
+            BlocDImport::AemPdf => reponse.aem_pdf = Some(lu),
+            BlocDImport::Declarations | BlocDImport::Bulletins => unreachable!("la boucle ne nomme que les certificats et les AEM"),
         }
     }
     if bulletins_d_une_autre_convention > 0 {
@@ -1463,7 +1464,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             reponse.avertissements.push(s.phrase());
         }
     }
-    reponse.contrats_nouveaux = registre.nombre("declarations");
+    reponse.contrats_nouveaux = registre.nombre(BlocDImport::Declarations);
     reponse.rien_a_faire = reponse.rien_a_faire
         && nouvelles_fiches == 0
         && ap.a_completer.is_empty()
@@ -1833,17 +1834,31 @@ fn salarie_propose(s: SalarieLu, metier: &EmploiImprime) -> R<Saisie> {
 /// LE METIER SE RESOUT SOUS LA CONVENTION COLLECTIVE QUE LES PIECES DECLARENT (`idcc`) : un metier peut etre cadre dans
 /// l'une et pas dans l'autre (`emplois::Metier::cadre_par_defaut`). Aucune : celle du catalogue par defaut.
 pub(crate) fn statut_et_metier(statut: Option<&str>, emploi: Option<&str>, femme: bool, idcc: Option<&droit::fiche::Idcc>) -> R<EmploiImprime> {
-    let mut f = EmploiImprime { emploi: emploi.map(str::trim).filter(|i| !i.is_empty()).map(str::to_string), ..EmploiImprime::default() };
     let mots: Vec<String> = statut.into_iter().flat_map(bulletin_lu::jetons).collect();
-    f.statut = mots.iter().find_map(|m| match m.as_str() {
+    let dit = mots.iter().find_map(|m| match m.as_str() {
         "artiste" => Some(droit::fiche::Statut::Artiste),
         "technicien" => Some(droit::fiche::Statut::Technicien),
         _ => None,
     });
-    if let Some(i) = mots.iter().position(|m| m == "cadre" || m == "noncadre") {
+    let rc = mots.iter().position(|m| m == "cadre" || m == "noncadre").map(|i| {
         let non = mots[i] == "noncadre" || (i > 0 && mots[i - 1] == "non");
-        f.statut_categoriel_rc = Some(if non { droit::fiche::StatutCategorielRc::NonCadre } else { droit::fiche::StatutCategorielRc::Cadre });
-    }
+        if non { droit::fiche::StatutCategorielRc::NonCadre } else { droit::fiche::StatutCategorielRc::Cadre }
+    });
+    metier_dit(dit, rc, emploi, femme, idcc)
+}
+
+/// Ce que le statut et la qualite de cadre qu'une piece dit (lus a sa porte) et l'emploi qu'elle imprime disent du
+/// salarie, en champs de sa fiche (`statut_et_metier`).
+fn metier_dit(
+    statut: Option<droit::fiche::Statut>,
+    rc: Option<droit::fiche::StatutCategorielRc>,
+    emploi: Option<&str>,
+    femme: bool,
+    idcc: Option<&droit::fiche::Idcc>,
+) -> R<EmploiImprime> {
+    let mut f = EmploiImprime { emploi: emploi.map(str::trim).filter(|i| !i.is_empty()).map(str::to_string), ..EmploiImprime::default() };
+    f.statut = statut;
+    f.statut_categoriel_rc = rc;
     let Some(intitule) = f.emploi.clone() else { return Ok(f) };
     if let Some((code, feminin)) = droit::emplois::par_intitule(&intitule, compare).map_err(|m| m.reclasser(Classe::Refuse))? {
         let cadre = f.statut_categoriel_rc.map(|s| s == droit::fiche::StatutCategorielRc::Cadre);
@@ -2139,12 +2154,7 @@ impl Attestee {
         }
     }
 
-    /// Sa `source`, dans ce que l'import dit d'ou vient une valeur (et son `atteste_par`).
-    fn source(&self) -> &'static str {
-        if self.aem.is_some() { "AEM" } else { "certificat" }
-    }
-
-    /// La piece qu'elle est, dans la reponse.
+    /// La piece qu'elle est : dans la reponse, dans ce que l'import dit d'ou vient une valeur (et son `atteste_par`).
     fn piece(&self) -> Source {
         if self.aem.is_some() { Source::Aem } else { Source::Certificat }
     }
@@ -2173,15 +2183,11 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
         date_anciennete: ls.iter().filter_map(|l| l.c.debut).min(),
         ..SalarieLu::de(nir)
     };
-    let cadre = ls.iter().rev().find_map(|l| l.c.cadre).map(|c| if c { "cadre" } else { "non cadre" });
+    let rc = ls.iter().rev().find_map(|l| l.c.cadre).map(|c| if c { droit::fiche::StatutCategorielRc::Cadre } else { droit::fiche::StatutCategorielRc::NonCadre });
     let statut = ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.statut));
-    let statut = match (statut, cadre) {
-        (Some(s), Some(c)) => Some(format!("{} {}", s, c)),
-        (s, c) => s.or(c).map(String::from),
-    };
     let emploi = dernier(&|c| c.emploi.clone());
     let femme = nir.sexe() == Some(droit::fiche::Sexe::Feminin);
-    let metier = statut_et_metier(statut.as_deref(), emploi.as_deref(), femme, idcc)?;
+    let metier = metier_dit(statut, rc, emploi.as_deref(), femme, idcc)?;
     salarie_propose(s, &metier)
 }
 
@@ -2209,17 +2215,21 @@ fn entreprise_du_certificat(p: &Attestee) -> R<Saisie> {
 
 /// Artiste ou technicien : la fiche qui existe, sinon celle que l'import cree (DSN, bulletin), sinon le metier du
 /// catalogue que nomme l'emploi du certificat, sous la convention de l'import (`idcc`). `None` : rien ne le dit.
-fn statut_de(ctx: &Contexte, par_nir: &HashMap<Nir, IdSalarie>, a_creer: &[ACreer], nir: &Nir, c: &import::certificat_lu::Certificat, idcc: Option<&droit::fiche::Idcc>) -> R<Option<String>> {
+fn statut_de(ctx: &Contexte, par_nir: &HashMap<Nir, IdSalarie>, a_creer: &[ACreer], nir: &Nir, c: &import::certificat_lu::Certificat, idcc: Option<&droit::fiche::Idcc>) -> R<Option<Statut>> {
     if let Some(s) = par_nir.get(nir).and_then(|k| ctx.salaries.get(k)).and_then(|f| f.statut.dite()) {
-        return Ok(Some(s.as_str().to_string()));
+        return Ok(Some(*s));
     }
     for a in a_creer.iter().filter(|a| a.nom == NomDeFiche::Salarie) {
         if let (Some(s), true) = (a.donnees.mot(CaseSalarie::Statut), a.nir()?.as_ref() == Some(nir)) {
-            return Ok(Some(s));
+            // La fiche que l'import cree ecrit le statut par son choix (`metier_dit`).
+            return match Statut::du_code(&s) {
+                Some(s) => Ok(Some(s)),
+                None => Err(socle::refus!("la fiche proposée du salarié dit le statut « {} », qui n'est ni artiste ni technicien", s)),
+            };
         }
     }
     let femme = nir.sexe() == Some(droit::fiche::Sexe::Feminin);
-    Ok(statut_et_metier(None, c.emploi.as_deref(), femme, idcc)?.statut.map(|s| s.as_str().to_string()))
+    Ok(metier_dit(None, None, c.emploi.as_deref(), femme, idcc)?.statut)
 }
 
 /// Le contrat qu'une AEM en PDF atteste, tel qu'un engagement importe le porte (la forme du contrat d'une AEM deposee,
@@ -2254,15 +2264,15 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
 /// annexes-8-10.txt`, l. 5802) ; le certificat n'a qu'une case pour les deux. Inference : pour un artiste, elle compte
 /// des cachets ; pour un technicien, des jours. Sans statut, rien ne le dit : pas de contrat. Les heures, que le
 /// certificat ne porte pas, ne s'inventent pas (0) ; le brut est celui du certificat, « arrondi à l'euro le plus proche ».
-fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&str>, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
+fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<Statut>, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
     let (Some(debut), Some(fin), Some(nombre), Some(brut)) = (c.debut, c.fin, c.nombre, c.brut) else {
         return Err(socle::echec::refus("le certificat ne dit pas tout ce qu'un contrat demande"));
     };
     let pluriel = |n: i64, mot: &str| format!("{} {}{}", n, mot, if n > 1 { "s" } else { "" });
     let (cachets, jours, quoi) = match statut {
-        Some("artiste") => (nombre, 0, pluriel(nombre, "cachet")),
-        Some(s) if !s.trim().is_empty() => (0, nombre, pluriel(nombre, "jour")),
-        _ => {
+        Some(Statut::Artiste) => (nombre, 0, pluriel(nombre, "cachet")),
+        Some(Statut::Technicien) => (0, nombre, pluriel(nombre, "jour")),
+        None => {
             let emploi = match &c.emploi {
                 Some(e) => format!("l'emploi « {} » ne nomme aucun métier du catalogue", e),
                 None => "le certificat ne dit pas l'emploi".to_string(),

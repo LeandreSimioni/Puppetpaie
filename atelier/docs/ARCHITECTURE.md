@@ -709,6 +709,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche | `droit::fiche::NomDeFiche`, `Datee<T>` | `droit/src/fiche.rs` |
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
+| pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
+| bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
+| nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
 | faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |
 | fiche à juger (l'une des trois, typée) | `FicheAJuger` | `declarations/src/champs.rs` |
@@ -852,6 +855,16 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   vient d'écrire), ou la sorte d'une fiche encore à créer, sans clé. `Nommee(FicheNommee)`, `ACreer(NomDeFiche)` ;
   écrite en deux champs, `nom` et `cle` (`null` pour l'entreprise et une fiche à créer) ; que porte une fiche de la
   réponse de l'import (`FicheImportee`).
+- **pièce d'où vient une valeur reprise** : la DSN, un bulletin, un certificat Congés Spectacles, une AEM, ou
+  l'historique déjà repris ; écrite `dsn`, `bulletin`, `certificat`, `AEM`, `historique` (`nom()`), et « DSN » sur une
+  carte d'un mois importé (`import::mois`). Que portent l'origine d'une valeur de la réponse (`Origine`), la paie qu'un
+  bulletin complète (`EcartPaie.source`), un contrat du registre des attestations (`import::attestes::Atteste`), d'où
+  vient chaque montant d'une carte et la pièce qui y déclare la paie. Ce qui atteste un contrat
+  (`engagement::importe::Attestation`) est une autre notion : un contrat de l'historique garde la sienne.
+- **bloc du compte rendu d'un import** : les déclarations (les contrats d'une DSN), les bulletins, les certificats, les
+  AEM en PDF ; que porte un contrat que l'import retient (`import::attestes::Retenu`).
+- **nature d'une AEM qui corrige** : complémentaire ou rectificative (sa case cochée) ; une telle AEM ne se reprend pas
+  seule.
 - **fiche saisie** : la saisie d'une fiche est la fiche typée elle-même (`ChampsEntreprise`, `ChampsSalarie`,
   `ChampsSpectacle`), ses fautes à côté ; chaque case se nettoie et se type une fois, à l'entrée (`lire_cases`, la seule
   porte d'un formulaire ; `Changements::lire` pour `enregistrer-fiche`), et personne ne relit le texte tapé. La table

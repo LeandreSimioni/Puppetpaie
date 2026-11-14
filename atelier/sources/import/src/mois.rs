@@ -21,6 +21,8 @@ use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratRe
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{Classe, R};
+use socle::ecran::EtatDEcran;
+use crate::reponse::Source;
 use socle::fichiers::CheminRelatif;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
@@ -197,9 +199,30 @@ fn manque(champ: &'static str, libelle: &'static str, phrase: String) -> Manque 
 /// L'ETAT D'UN ACTE D'UNE CARTE (la DPAE, la signature, les documents) : sa couleur, ses mots courts, sa phrase.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EtatDeCarte {
-    pub(crate) couleur: &'static str,
+    /// Son etat, ecrit par sa couleur (`socle::ecran::couleur_de_l_etat`).
+    #[serde(rename = "couleur", serialize_with = "couleur_ecrite")]
+    pub(crate) etat: EtatDEcran,
     courte: &'static str,
     phrase: String,
+}
+
+/// L'etat d'un acte d'une carte, ecrit par sa couleur.
+fn couleur_ecrite<S: serde::Serializer>(etat: &EtatDEcran, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(socle::ecran::couleur_de_l_etat(*etat))
+}
+
+/// LA PIECE D'OU VIENT UNE VALEUR D'UNE CARTE, ecrite comme la page Paie la montre : « DSN » en capitales, les autres
+/// par leur nom (`Source::nom`).
+mod piece_de_la_carte {
+    use crate::reponse::Source;
+
+    pub(super) fn serialize<S: serde::Serializer>(source: &Option<Source>, s: S) -> Result<S::Ok, S::Error> {
+        match source {
+            Some(Source::Dsn) => s.serialize_str("DSN"),
+            Some(autre) => s.serialize_str(autre.nom()),
+            None => s.serialize_none(),
+        }
+    }
 }
 
 /// Les etats des actes d'une carte.
@@ -214,14 +237,14 @@ pub(crate) struct EtatsDeCarte {
 /// de `retours/dpae/` (par le salarie et le jour d'embauche qu'ils attestent).
 fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::InstantOuJour>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&droit::contexte::IdSalarie>, numero: Option<&engagement::numeros::NumeroContrat>, debut: Option<Jour>) -> EtatDeCarte {
     if let Some(q) = salarie.and_then(|s| journal.get(&(s.clone(), numero.cloned()))) {
-        return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE déposée le {}", q.dit()) };
+        return EtatDeCarte { etat: EtatDEcran::Fait, courte: "DPAE faite", phrase: format!("DPAE déposée le {}", q.dit()) };
     }
     let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| Some(&e.salarie) == salarie && Some(e.debut) == debut));
     if let Some(c) = certifiee {
         let quand: String = c.quand.iter().map(|q| format!(" ({})", q.dit())).collect();
-        return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE certifiée par l'Urssaf{}", quand) };
+        return EtatDeCarte { etat: EtatDEcran::Fait, courte: "DPAE faite", phrase: format!("DPAE certifiée par l'Urssaf{}", quand) };
     }
-    EtatDeCarte { couleur: "gris", courte: "avant PuppetPaie", phrase: "DPAE faite avant PuppetPaie : aucun certificat de l'Urssaf n'est relevé pour cette embauche".to_string() }
+    EtatDeCarte { etat: EtatDEcran::Information, courte: "avant PuppetPaie", phrase: "DPAE faite avant PuppetPaie : aucun certificat de l'Urssaf n'est relevé pour cette embauche".to_string() }
 }
 
 /// Les montants qu'une piece importee porte, chacun exact ; un montant qu'aucune ne porte n'y est pas.
@@ -250,24 +273,24 @@ pub(crate) struct Montants {
 /// D'ou vient chaque montant : la DSN, le bulletin, l'AEM, l'historique.
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct Sources {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    brut: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    net_imposable: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    net_a_payer: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pas: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    net_verse: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cotisations_salariales: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cotisations_patronales: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cout_employeur: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    net_avant_impot: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    brut: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    net_imposable: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    net_a_payer: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    pas: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    net_verse: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    cotisations_salariales: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    cotisations_patronales: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    cout_employeur: Option<Source>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "piece_de_la_carte")]
+    net_avant_impot: Option<Source>,
 }
 
 /// Le spectacle d'une carte : sa fiche, son numero d'objet, son titre.
@@ -299,7 +322,8 @@ pub struct CarteImportee {
     montants: Montants,
     sources: Sources,
     lignes: Vec<LigneImprimee>,
-    declare_par: Option<&'static str>,
+    #[serde(with = "piece_de_la_carte")]
+    declare_par: Option<Source>,
     atteste_par: Option<Attestation>,
     pub(crate) bulletin: Option<BulletinSource>,
     pub(crate) etats: EtatsDeCarte,
@@ -327,16 +351,14 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let nombre = |de_la_paie: fn(&PaieVersee) -> Option<i64>, du_contrat: fn(&ContratAtteste) -> Option<i64>| p.and_then(de_la_paie).or_else(|| c.and_then(du_contrat));
     let (cachets, heures, jours) = (nombre(|p| p.cachets, |c| c.cachets), nombre(|p| p.heures, |c| c.heures), nombre(|p| p.jours, |c| c.jours));
     let bulletin = p.and_then(|p| p.bulletin.clone());
-    let declare_par = match p.map(|p| p.contrat.d_un_bulletin()) {
-        Some(false) => Some("DSN"),
-        Some(true) => Some("bulletin"),
-        None => None,
-    };
+    // La piece qui declare la paie : sa cle le dit (`CleDePaieVersee`).
+    let declaree_par = |p: &PaieVersee| if p.contrat.d_un_bulletin() { Source::Bulletin } else { Source::Dsn };
+    let declare_par = p.map(declaree_par);
     let par_aem = c.is_some_and(|c| c.atteste_par == Attestation::Aem);
 
     // Les montants, et d'ou chacun vient : le bulletin fait foi sur ceux qu'il imprime (`import::bulletins::completer`).
     let (mut montants, mut sources) = (Montants::default(), Sources::default());
-    let lus: [(&str, fn(&PaieVersee) -> Option<Decimal>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<&'static str>)); 9] = [
+    let lus: [(&str, fn(&PaieVersee) -> Option<Decimal>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<Source>)); 9] = [
         ("brut", |p| p.brut, |m, s| (&mut m.brut, &mut s.brut)),
         ("net_imposable", |p| p.net_imposable, |m, s| (&mut m.net_imposable, &mut s.net_imposable)),
         ("net_a_payer", |p| p.net_a_payer, |m, s| (&mut m.net_a_payer, &mut s.net_a_payer)),
@@ -349,18 +371,15 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     ];
     for (k, lu, place) in lus {
         // Le montant que la paie porte ; sans paie, le brut que l'AEM atteste.
-        let (v, source) = match (p.and_then(lu), k == "brut" && paie.is_none()) {
-            (Some(d), _) => (Some(d), if bulletin.is_some() && k != "net_verse" { Some("bulletin") } else { declare_par }),
-            (None, true) => (c.and_then(|c| c.brut), Some("AEM")),
-            (None, false) => (None, None),
+        let porte = match (p, k == "brut") {
+            (Some(p), _) => lu(p).map(|d| (d, if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
+            (None, true) => c.and_then(|c| c.brut).map(|b| (b, Source::Aem)),
+            (None, false) => None,
         };
-        if let Some(v) = v {
+        if let Some((v, source)) = porte {
             let (m, s) = place(&mut montants, &mut sources);
             *m = Some(v);
-            *s = Some(match source {
-                Some(s) => s,
-                None => "historique",
-            });
+            *s = Some(source);
         }
     }
 
@@ -387,7 +406,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     if dates.is_empty() {
         let pourquoi = match (bulletin.is_some(), declare_par, par_aem) {
             (true, _, _) => "le bulletin n'imprime pas ses dates travaillées",
-            (false, Some("DSN"), _) => "la DSN ne déclare que le début et la fin du contrat ; le bulletin de cette paie les donnerait",
+            (false, Some(Source::Dsn), _) => "la DSN ne déclare que le début et la fin du contrat ; le bulletin de cette paie les donnerait",
             (false, _, true) => "l'AEM ne porte que le début, la fin et le nombre de cachets ; le bulletin de cette paie les donnerait",
             _ => "aucune pièce importée ne les porte",
         };
@@ -411,7 +430,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
             "net_a_payer",
             "net à payer",
             montants.net_a_payer.is_some(),
-            if declare_par == Some("DSN") {
+            if declare_par == Some(Source::Dsn) {
                 "la DSN ne le déclare pas (son 50.004 est le net versé) ; le bulletin de cette paie le donnerait"
             } else {
                 "aucune pièce importée ne le porte ; le bulletin de cette paie le donnerait"
@@ -427,9 +446,9 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let documents = match &bulletin {
         Some(b) => {
             let n: String = b.numero.iter().filter(|n| !n.is_empty()).map(|n| format!(" n° {}", n)).collect();
-            EtatDeCarte { couleur: "vert", courte: "bulletin importé", phrase: format!("bulletin de l'ancien logiciel{}, copié dans historique/bulletins/", n) }
+            EtatDeCarte { etat: EtatDEcran::Fait, courte: "bulletin importé", phrase: format!("bulletin de l'ancien logiciel{}, copié dans historique/bulletins/", n) }
         }
-        None => EtatDeCarte { couleur: "gris", courte: "avant PuppetPaie", phrase: "documents remis avant PuppetPaie : aucun bulletin importé pour cette paie".to_string() },
+        None => EtatDeCarte { etat: EtatDEcran::Information, courte: "avant PuppetPaie", phrase: "documents remis avant PuppetPaie : aucun bulletin importé pour cette paie".to_string() },
     };
     // CE QUE LA CARTE FERMEE DIT : le spectacle, les cachets et les heures ; au survol, les pieces lues.
     let mut quoi = Vec::new();
@@ -445,7 +464,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     }
     let quoi_dit = if quoi.is_empty() { "spectacle non lu".to_string() } else { quoi.join(" · ") };
     let mut lu = Vec::new();
-    if declare_par == Some("DSN") {
+    if declare_par == Some(Source::Dsn) {
         lu.push("DSN".to_string());
     }
     if let Some(b) = &bulletin {
@@ -490,7 +509,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         bulletin,
         etats: EtatsDeCarte {
             dpae,
-            signature: EtatDeCarte { couleur: "gris", courte: "avant PuppetPaie", phrase: "contrat fait avant PuppetPaie : sa signature n'est pas suivie ici".to_string() },
+            signature: EtatDeCarte { etat: EtatDEcran::Information, courte: "avant PuppetPaie", phrase: "contrat fait avant PuppetPaie : sa signature n'est pas suivie ici".to_string() },
             documents,
         },
         manque: manques,
@@ -504,7 +523,7 @@ pub fn etapes(vue: &VueImportee) -> EtapesImportees {
     let cartes = &vue.paies;
     let n = cartes.len();
     let pl = |n: usize| if n > 1 { "s" } else { "" };
-    let dpae_faites = cartes.iter().filter(|c| c.etats.dpae.couleur == "vert").count();
+    let dpae_faites = cartes.iter().filter(|c| c.etats.dpae.etat == EtatDEcran::Fait).count();
     let bulletins = cartes.iter().filter(|c| c.bulletin.is_some()).count();
     let ailleurs = n - dpae_faites;
     let retrouvees = format!("{} DPAE retrouvée{} dans le journal ou les certificats de l'Urssaf", dpae_faites, pl(dpae_faites));

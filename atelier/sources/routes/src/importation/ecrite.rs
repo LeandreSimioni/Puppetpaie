@@ -31,6 +31,7 @@ use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
+use import::attestes::BlocDImport;
 use import::reponse::{Copie, EtatFiche, Importation};
 
 /// Le fichier de `config/` ou s'ecrit la fiche `nom`.
@@ -522,18 +523,18 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
             }
         }
     }
-    let mut comptes: HashMap<&str, usize> = HashMap::new();
+    let mut comptes: HashMap<BlocDImport, usize> = HashMap::new();
     for (nir, ligne, bloc) in &imp.contrats_attestes {
         let Some(cle) = par_nir.get(nir) else { continue };
         let mut e = ligne.clone();
         e.salarie = Some(cle.clone());
         e.contrat.importe_le = Some(le);
         engagements.push(e);
-        *comptes.entry(bloc).or_default() += 1;
+        *comptes.entry(*bloc).or_default() += 1;
     }
-    let compte = |bloc: &str| -> usize { comptes.iter().filter(|(b, _)| **b == bloc).map(|(_, n)| *n).sum() };
+    let compte = |bloc: BlocDImport| -> usize { comptes.iter().filter(|(b, _)| **b == bloc).map(|(_, n)| *n).sum() };
     let (contrats_aem, contrats_bulletins, contrats_certificats, contrats_aem_pdf) =
-        (compte("declarations"), compte("bulletins"), compte("certificats"), compte("aem_pdf"));
+        (compte(BlocDImport::Declarations), compte(BlocDImport::Bulletins), compte(BlocDImport::Certificats), compte(BlocDImport::AemPdf));
 
     // LES PAIES : on remplace ligne a ligne par la cle (mois, salarie, contrat). Une ligne de DSN qui arrive sur une ligne
     // completee par un bulletin garde ce que le bulletin a ecrit ; une paie de bulletin seul s'efface devant la paie

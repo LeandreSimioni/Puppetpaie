@@ -36,7 +36,7 @@
 
 use std::path::Path;
 
-use droit::fiche::NumeroObjetSpectacle;
+use droit::fiche::{NumeroObjetSpectacle, Statut};
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
@@ -174,8 +174,8 @@ pub struct Aem {
     /// Le numero d'objet imprime ; aucun hors de sa forme (`NumeroObjetSpectacle::d_une_piece`).
     pub numero_objet: Option<NumeroObjetSpectacle>,
     pub cadre: Option<bool>,
-    /// « artiste » (annexe 10) ou « technicien » (annexe 8).
-    pub statut: Option<&'static str>,
+    /// Artiste (annexe 10) ou technicien (annexe 8).
+    pub statut: Option<Statut>,
     /// La date d'embauche et la date de fin du contrat, telles qu'imprimees.
     pub embauche: Option<Jour>,
     pub fin_contrat: Option<Jour>,
@@ -185,12 +185,29 @@ pub struct Aem {
     pub cachets_groupes: Option<i64>,
     pub jours: Option<i64>,
     pub brut: Option<Decimal>,
-    /// « complementaire » ou « rectificative » quand la case est cochee.
-    pub corrige: Option<&'static str>,
+    /// Complementaire ou rectificative quand la case est cochee.
+    pub corrige: Option<NatureDUneAem>,
     /// Une periode d'une AER Cinéma Spectacle (`lire_aer`), qui atteste au meme rang qu'une AEM.
     pub aer: bool,
     /// Ce que la page dit d'elle-meme qui ne tient pas (une cle de NIR fausse, un nombre hors colonne).
     pub faute: Option<String>,
+}
+
+/// CE QU'EST UNE AEM QUI CORRIGE : complementaire (sa case cochee), ou rectificative (« positive » ou « negative »).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NatureDUneAem {
+    Complementaire,
+    Rectificative,
+}
+
+impl NatureDUneAem {
+    /// Son mot, dans la phrase qui la refuse.
+    pub fn en_mots(self) -> &'static str {
+        match self {
+            NatureDUneAem::Complementaire => "complémentaire",
+            NatureDUneAem::Rectificative => "rectificative",
+        }
+    }
 }
 
 impl Aem {
@@ -217,7 +234,7 @@ impl Aem {
         if let Some(c) = self.corrige {
             return Some(format!(
                 "AEM {} : elle corrige une attestation initiale que l'import ne lit pas, elle ne se reprend pas seule ; déposez le bulletin du même mois",
-                c
+                c.en_mots()
             ));
         }
         if let Some(f) = &self.faute {
@@ -708,10 +725,10 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         let Some(lib) = jetons(&mots[l].texte).last().cloned() else { continue };
         let s = section(mots[l].y0);
         match (s, lib.as_str()) {
-            (0, "complementaire") => a.corrige = Some("complémentaire"),
-            (0, "positive" | "negative") => a.corrige = Some("rectificative"),
-            (3, "artiste") => a.statut = Some("artiste"),
-            (3, "technicien" | "ouvrier") => a.statut = Some("technicien"),
+            (0, "complementaire") => a.corrige = Some(NatureDUneAem::Complementaire),
+            (0, "positive" | "negative") => a.corrige = Some(NatureDUneAem::Rectificative),
+            (3, "artiste") => a.statut = Some(Statut::Artiste),
+            (3, "technicien" | "ouvrier") => a.statut = Some(Statut::Technicien),
             (3, "cours") => a.en_cours = true,
             (3, "cadre") => {
                 // « Non cadre » : « Non » juste avant, ou juste au-dessus (le libelle sur deux rangs).

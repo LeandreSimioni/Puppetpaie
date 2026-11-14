@@ -165,17 +165,34 @@ pub fn pastilles_des_sorts() -> ParSort<Pastille> {
 
 // ------------------------------------------------------------------ d'ou vient une valeur
 
-/// La piece d'ou vient une valeur reprise.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// LA PIECE D'OU VIENT UNE VALEUR REPRISE, ou un contrat atteste, ou la paie qu'un bulletin complete : une piece de
+/// l'import (la DSN, un bulletin, un certificat, une AEM), ou l'historique deja repris.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Source {
-    #[serde(rename = "dsn")]
     Dsn,
-    #[serde(rename = "bulletin")]
     Bulletin,
-    #[serde(rename = "certificat")]
     Certificat,
-    #[serde(rename = "AEM")]
     Aem,
+    Historique,
+}
+
+impl Serialize for Source {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+impl Source {
+    /// Son nom, tel que la reponse et le compte rendu l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            Source::Dsn => "dsn",
+            Source::Bulletin => "bulletin",
+            Source::Certificat => "certificat",
+            Source::Aem => "AEM",
+            Source::Historique => "historique",
+        }
+    }
 }
 
 /// D'ou vient une valeur reprise : la DSN d'un mois, un bulletin (fichier, page), un certificat Congés Spectacles ou une
@@ -222,6 +239,7 @@ impl Origine {
             Source::Certificat => format!("le certificat Congés Spectacles{}{}", de_mois, fichier),
             Source::Bulletin => format!("le bulletin{}", fichier),
             Source::Dsn => format!("la DSN{}", de_mois),
+            Source::Historique => format!("l'historique{}", de_mois),
         }
     }
 }
@@ -462,8 +480,8 @@ pub enum EtatContrat {
 #[derive(Debug, Clone, Serialize)]
 pub struct EcartPaie {
     pub champ: &'static str,
-    /// D'ou vient la paie : `dsn`, `historique` ou `bulletin`.
-    pub source: &'static str,
+    /// D'ou vient la paie : la DSN, l'historique, ou le bulletin lui-meme.
+    pub source: Source,
     pub valeur: String,
     pub bulletin: String,
     pub le_bulletin_l_emporte: bool,
@@ -472,7 +490,7 @@ pub struct EcartPaie {
 }
 
 impl EcartPaie {
-    pub fn new(champ: &'static str, source: &'static str, valeur: String, gagne: bool, bulletin: String) -> EcartPaie {
+    pub fn new(champ: &'static str, source: Source, valeur: String, gagne: bool, bulletin: String) -> EcartPaie {
         let champ_dit = match champ {
             "brut" => "brut",
             "net_imposable" => "net imposable",
