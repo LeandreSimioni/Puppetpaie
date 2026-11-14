@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use documents::SorteDePieceProduite;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::organismes::IdentifiantDOrganisme;
@@ -289,27 +290,57 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
 
 // ------------------------------------------------------------------ les documents
 
-/// Les sortes de documents, dans l'ordre ou on les cherche, par le debut du nom (les fichiers du mois et ceux d'envoi).
-const SORTES: [(&str, &[&str]); 8] = [
-    ("Bulletins de paie", &["Bulletins_", "Bulletin_"]),
-    ("Certificats Congés Spectacles", &["CertificatsCS_", "CertificatCS_"]),
-    ("Attestations employeur (AER)", &["AER_"]),
-    ("Contrats", &["Contrats_", "Contrat_", "Avenant"]),
-    ("DPAE", &["DPAE_"]),
-    ("DSN", &["DSN_"]),
-    ("Demandes de taux de prélèvement à la source", &["Amorcage"]),
-    ("AEM", &["AEM_"]),
-];
+const BULLETINS: &str = "Bulletins de paie";
+const CERTIFICATS: &str = "Certificats Congés Spectacles";
+const ATTESTATIONS: &str = "Attestations employeur (AER)";
+const CONTRATS: &str = "Contrats";
+const DPAE: &str = "DPAE";
+const DSN: &str = "DSN";
+const DEMANDES_DE_TAUX: &str = "Demandes de taux de prélèvement à la source";
+/// Les fichiers de l'ancien logiciel (`AEM_…`), que le moteur n'ecrit pas : ce ne sont pas des pieces qu'il produit.
+const AEM: &str = "AEM";
 
-/// La sorte d'un document dont le nom ne commence comme aucune autre : elle se range apres elles.
+/// Les sortes de documents de l'Historique, dans leur ordre (les fichiers du mois et ceux d'envoi).
+const SORTES: [&str; 8] = [BULLETINS, CERTIFICATS, ATTESTATIONS, CONTRATS, DPAE, DSN, DEMANDES_DE_TAUX, AEM];
+
+/// La sorte d'un document qui n'est d'aucune autre : elle se range apres elles.
 const AUTRES: &str = "Autres pièces";
+
+/// La sorte de l'Historique ou se range une piece produite.
+fn sorte_de_la_piece(sorte: SorteDePieceProduite) -> &'static str {
+    match sorte {
+        SorteDePieceProduite::Bulletins | SorteDePieceProduite::Bulletin => BULLETINS,
+        SorteDePieceProduite::CertificatsCs | SorteDePieceProduite::CertificatCs => CERTIFICATS,
+        SorteDePieceProduite::Aer => ATTESTATIONS,
+        SorteDePieceProduite::Contrat | SorteDePieceProduite::Avenant => CONTRATS,
+        SorteDePieceProduite::Dpae => DPAE,
+        SorteDePieceProduite::Dsn => DSN,
+        SorteDePieceProduite::Amorcage => DEMANDES_DE_TAUX,
+        SorteDePieceProduite::CertificatDeTravail
+        | SorteDePieceProduite::RecuSoldeToutCompte
+        | SorteDePieceProduite::Dossier
+        | SorteDePieceProduite::Dossiers
+        | SorteDePieceProduite::Impression
+        | SorteDePieceProduite::Signature
+        | SorteDePieceProduite::SignalementArret
+        | SorteDePieceProduite::SignalementReprise
+        | SorteDePieceProduite::SignalementFinContrat
+        | SorteDePieceProduite::Compta
+        | SorteDePieceProduite::Exercice => AUTRES,
+    }
+}
 
 /// CE QUE LA PERSONNE LIT d'une demande de taux de prelevement a la source (le signalement d'amorcage,
 /// `amorcage_demande::produire` : `Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`, et sa note
 /// `Amorcage<motif>_<AAAAMMJJ>_recapitulatif.txt`) : pour qui, et quel jour. Un autre nom se lit tel quel.
 fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
     let jour = |t: &str| socle::piece::Zone::lue(t, socle::piece::format::Aaaammjj).valeur().map(|j| j.jj_mm_aaaa());
-    let Some(reste) = nom.strip_prefix("Amorcage").and_then(|r| r.get(3..)) else { return nom.to_string() };
+    let Some(reste) = (match SorteDePieceProduite::du_nom(nom) {
+        Some((SorteDePieceProduite::Amorcage, r)) => r.get(3..),
+        _ => None,
+    }) else {
+        return nom.to_string();
+    };
     if let Some(j) = reste.strip_suffix("_recapitulatif.txt").and_then(jour) {
         return format!("Note des demandes du {}", j);
     }
@@ -342,10 +373,12 @@ fn identite(ctx: &Contexte, l: &Ligne) -> String {
     morceaux.join(" · ")
 }
 
-/// La sorte d'un document, par le debut de son nom (`SORTES`, sinon `AUTRES`).
+/// La sorte d'un document, par le debut de son nom : celle de sa piece produite, `AEM` pour un fichier de l'ancien
+/// logiciel, sinon `AUTRES`.
 pub(crate) fn sorte_de(nom: &str) -> &'static str {
-    match SORTES.iter().find(|(_, p)| p.iter().any(|x| nom.starts_with(x))) {
-        Some((s, _)) => s,
+    match SorteDePieceProduite::du_nom(nom) {
+        Some((s, _)) => sorte_de_la_piece(s),
+        None if nom.starts_with("AEM_") => AEM,
         None => AUTRES,
     }
 }
@@ -370,21 +403,21 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
         if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
-        let dans_l_envoi = ["Bulletin_", "CertificatCS_", "AER_", "Contrat_", "Avenant"].iter().any(|p| nom.texte().starts_with(p));
+        let dans_l_envoi = matches!(SorteDePieceProduite::du_nom(nom.texte()), Some((s, _)) if s.dans_l_envoi());
         let chemin = if dans_l_envoi { envoi.joint(&nom) } else { sorties.joint(&nom) };
         out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
     for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
-        out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
+        out.push(Document { nom, sorte: BULLETINS, salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
     }
     for d in out.iter_mut() {
         d.nom = nom_lisible(ctx, &d.nom);
     }
     // Dans l'ordre des sortes, les autres pieces a la fin.
     out.sort_by_key(|d| {
-        let rang = SORTES.iter().position(|(s, _)| *s == d.sorte);
+        let rang = SORTES.iter().position(|s| *s == d.sorte);
         (rang.is_none(), rang)
     });
     Ok(out)
