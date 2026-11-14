@@ -62,6 +62,15 @@ fn fixe(x: Decimal, dp: u32) -> (bool, String) {
     (neg, r.to_string())
 }
 
+/// Le taux d'une ligne de remuneration au bulletin : un montant par unite (« 1 234,50 »), ou le pourcentage de sa base
+/// qu'une ligne en pourcentage paie (« 10 % »).
+fn fmt_taux_de_ligne(t: engagement::ligne::TauxDeLigne) -> String {
+    match t {
+        engagement::ligne::TauxDeLigne::ParUnite(u) => fmt_eur(u.decimal()),
+        engagement::ligne::TauxDeLigne::PartDeLaBase(c) => format!("{} %", socle::texte::virgule(socle::num::mul(c.decimal(), Decimal::ONE_HUNDRED).normalize())),
+    }
+}
+
 /// 1234.5 -> « 1 234,50 ».
 pub fn fmt_eur(x: Decimal) -> String {
     // Au centime, ses deux decimales ecrites (`Montant::au_centime`) : les trois derniers caracteres sont le point et
@@ -1156,7 +1165,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // « MONTANT BRUT » (art. 1, I ; VI : mis en valeur).
     if rem.len() <= 1 {
         let titre = match rem.first() {
-            Some(l) => format!("{} à {}", l.designation(), fmt_eur(l.taux.decimal())),
+            Some(l) => format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux)),
             None => "SALAIRE".to_string(),
         };
         corps.push(ligne(
@@ -1166,7 +1175,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     } else {
         for l in &rem {
             corps.push(ligne(
-                vec![s(format!("{} à {}", l.designation(), fmt_eur(l.taux.decimal()))), s(fmt_eur(l.montant.decimal()))],
+                vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(fmt_eur(l.montant.decimal()))],
                 vec![],
             ));
         }
@@ -1184,7 +1193,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         corps.push(ligne(vec![cel("REMBOURSEMENTS ET DÉDUCTIONS DIVERSES", n)], style_section()));
         for i in &j.remboursements {
             let l = &p.remuneration[*i];
-            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_eur(l.taux.decimal()))), s(fmt_eur(l.montant.decimal()))], vec![]));
+            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(fmt_eur(l.montant.decimal()))], vec![]));
         }
     }
     corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer.decimal(), n));

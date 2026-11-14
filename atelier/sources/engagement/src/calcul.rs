@@ -21,7 +21,7 @@ use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, court, div, mul, sub, Decimal};
 use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
-use crate::ligne::{QuantiteDeLigne, TauxDeLigne};
+use crate::ligne::{PaiementDeLigne, QuantiteDeLigne, TauxDeLigne};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
 use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
@@ -159,12 +159,13 @@ impl LigneBrut {
 
     /// Relue de sa forme ecrite.
     pub(crate) fn de_la_forme(f: &FormeDeRemuneration) -> LigneBrut {
+        let paiement = PaiementDeLigne::de_l_unite(f.unite, f.quantite.0, f.taux.0);
         LigneBrut {
             code: f.code.clone(),
             libelle: f.libelle.clone(),
             unite: f.unite,
-            quantite: QuantiteDeLigne::de_l_unite(f.unite, f.quantite.0),
-            taux: TauxDeLigne::de_l_unite(f.unite, f.taux.0),
+            quantite: paiement.quantite(),
+            taux: paiement.taux(),
             montant: f.montant,
             heures_annexes: f.heures_annexes,
             soumis: f.soumis,
@@ -187,19 +188,24 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
     let mut out = Vec::new();
     for l in &eng.lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
-        let taux = l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
+        let paiement = l.paiement(r.unite)?;
+        let q = paiement.quantite();
         let signe = r.sens.signe();
         // Le signe porte aussi sur les heures : une absence en retire.
         let h = r.heures(q.decimal(), l.heures().map(Heures::decimal));
         let dsn_autres_bruts = code_54(&r, l.genre())?;
+        // Le montant qu'un bulletin importe lit se garde tel quel ; toute autre ligne paie sa quantite a son taux.
+        let montant = match l.montant_lu() {
+            Some(lu) => lu,
+            None => Montant::du_decimal(signe * paiement.montant().au_centime().decimal()),
+        };
         out.push(LigneBrut {
             code: r.code.into(),
             libelle: r.libelle,
             unite: r.unite,
             quantite: q,
-            taux,
-            montant: Montant::du_decimal(signe * q.fois(taux)?.au_centime().decimal()),
+            taux: paiement.taux(),
+            montant,
             // Des heures nulles gardent le signe de la ligne et leur echelle.
             heures_annexes: Heures::du_decimal(if h.is_zero() { if signe.is_sign_negative() { -h } else { h } } else { signe * h }),
             soumis: r.soumis,
@@ -2127,7 +2133,7 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: QuantiteDeLigne::de_l_unite(Unite::Mois, Decimal::ONE), taux: TauxDeLigne::de_l_unite(Unite::Mois, dec_de(montant)),
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: PaiementDeLigne::de_l_unite(Unite::Mois, Decimal::ONE, dec_de(montant)).quantite(), taux: PaiementDeLigne::de_l_unite(Unite::Mois, Decimal::ONE, dec_de(montant)).taux(),
             montant: Montant::du_decimal(dec_de(montant)), heures_annexes: Heures::du_decimal(dec_de(heures)), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,

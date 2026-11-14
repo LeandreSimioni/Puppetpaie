@@ -398,9 +398,11 @@ pub struct Maintien {
     pub reconstitution: Option<Box<crate::maintien::Reconstitution>>,
 }
 
-/// LA LIGNE QU'UN BULLETIN IMPORTE IMPRIME (`importe::LigneImprimee`), rattachee par l'import a une rubrique : sa
-/// quantite, son taux et ses heures, tels qu'il les lit. Une ligne imprimee qu'aucune rubrique ne rattache garde son
-/// libelle et son montant dans la paie importee (`importe::remuneration_lue`) : elle n'est pas une ligne de paie.
+/// LA LIGNE QU'UN BULLETIN IMPORTE IMPRIME (`importe::LigneImprimee`), rattachee par l'import a une rubrique : son
+/// montant, tel qu'il le lit, qui ne se recompose jamais (l'import lit au mieux : ce que le bulletin dit se garde) ; sa
+/// quantite, son taux et ses heures, s'il les lit, pour l'affichage. Une ligne imprimee qu'aucune rubrique ne rattache,
+/// ou sans montant, garde son libelle dans la paie importee (`importe::remuneration_lue`) : elle n'est pas une ligne de
+/// paie.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Importee {
@@ -411,6 +413,8 @@ pub struct Importee {
     pub taux: Option<MontantUnitaire>,
     #[serde(with = "texte_option")]
     pub heures: Option<Heures>,
+    #[serde(with = "texte")]
+    pub montant: Montant,
 }
 
 /// UNE LIGNE DE PAIE, sa forme dite (`forme`).
@@ -534,27 +538,6 @@ impl QuantiteDeLigne {
         self.decimal().is_zero()
     }
 
-    /// Ce qu'elle paie a `taux`, un montant exact (`Montant::au_centime` le fixe) : quantite x montant unitaire, ou base x
-    /// la part qu'une ligne en pourcentage en paie. Une base a un montant unitaire, ou une quantite a une part, ne se
-    /// multiplient pas : refus.
-    pub fn fois(self, taux: TauxDeLigne) -> R<Montant> {
-        use QuantiteDeLigne as Q;
-        use TauxDeLigne::{ParUnite, PartDeLaBase};
-        Ok(match (self, taux) {
-            (Q::Heures(q), ParUnite(u)) => q * u,
-            (Q::Cachets(q), ParUnite(u)) => q * u,
-            (Q::Jours(q), ParUnite(u)) => q * u,
-            (Q::Services(q), ParUnite(u)) => q * u,
-            (Q::Semaines(q), ParUnite(u)) => q * u,
-            (Q::PartDuMois(q), ParUnite(u)) => q * u,
-            (Q::Unites(q), ParUnite(u)) => q * u,
-            (Q::Base(b), PartDeLaBase(c)) => b * c,
-            (Q::Base(_), ParUnite(_)) | (_, PartDeLaBase(_)) => {
-                return Err(socle::refus!("une ligne de paie porte une quantité et un taux qui ne vont pas ensemble : le signaler au développeur"))
-            }
-        })
-    }
-
     /// Deux quantites de la meme grandeur ajoutees (deux lignes de la meme rubrique) ; `None` : deux grandeurs, qui ne
     /// s'ajoutent pas.
     pub fn plus(self, o: QuantiteDeLigne) -> Option<QuantiteDeLigne> {
@@ -584,16 +567,6 @@ pub enum TauxDeLigne {
 }
 
 impl TauxDeLigne {
-    /// Le nombre `d` du taux d'une ligne dans l'unite `unite` de sa rubrique.
-    pub fn de_l_unite(unite: Unite, d: Decimal) -> TauxDeLigne {
-        match unite {
-            Unite::Pourcentage => TauxDeLigne::PartDeLaBase(Coefficient::du_decimal(d)),
-            Unite::Heure | Unite::Cachet | Unite::Jour | Unite::Service | Unite::Semaine | Unite::Mois | Unite::Forfait => {
-                TauxDeLigne::ParUnite(MontantUnitaire::du_decimal(d))
-            }
-        }
-    }
-
     /// Son nombre, a la porte qui l'exige (une ecriture, une phrase).
     pub fn decimal(self) -> Decimal {
         match self {
@@ -605,6 +578,81 @@ impl TauxDeLigne {
     /// Est-il nul ?
     pub fn est_nul(self) -> bool {
         self.decimal().is_zero()
+    }
+}
+
+/// CE QUE PAIE UNE LIGNE DE PAIE : sa quantite et son taux, qui vont ensemble. L'unite de sa rubrique les dit, a ce seul
+/// endroit (`de_l_unite`) : une quantite a un montant unitaire, ou, pour une rubrique en pourcentage, une base en euros
+/// a la part qu'elle en paie. Quantite x taux = montant (`montant`), toujours.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PaiementDeLigne {
+    Heures(Heures, MontantUnitaire),
+    Cachets(socle::grandeurs::Cachets, MontantUnitaire),
+    Jours(Jours, MontantUnitaire),
+    Services(socle::grandeurs::Services, MontantUnitaire),
+    Semaines(socle::grandeurs::Semaines, MontantUnitaire),
+    PartDuMois(Coefficient, MontantUnitaire),
+    Unites(socle::grandeurs::Unites, MontantUnitaire),
+    Base(Montant, Coefficient),
+}
+
+impl PaiementDeLigne {
+    /// La quantite `q` et le taux `t` d'une ligne, dans l'unite `unite` de sa rubrique.
+    pub fn de_l_unite(unite: Unite, q: Decimal, t: Decimal) -> PaiementDeLigne {
+        let u = MontantUnitaire::du_decimal(t);
+        match unite {
+            Unite::Heure => PaiementDeLigne::Heures(Heures::du_decimal(q), u),
+            Unite::Cachet => PaiementDeLigne::Cachets(socle::grandeurs::Cachets::du_decimal(q), u),
+            Unite::Jour => PaiementDeLigne::Jours(Jours::du_decimal(q), u),
+            Unite::Service => PaiementDeLigne::Services(socle::grandeurs::Services::du_decimal(q), u),
+            Unite::Semaine => PaiementDeLigne::Semaines(socle::grandeurs::Semaines::du_decimal(q), u),
+            Unite::Mois => PaiementDeLigne::PartDuMois(Coefficient::du_decimal(q), u),
+            Unite::Forfait => PaiementDeLigne::Unites(socle::grandeurs::Unites::du_decimal(q), u),
+            Unite::Pourcentage => PaiementDeLigne::Base(Montant::du_decimal(q), Coefficient::du_decimal(t)),
+        }
+    }
+
+    /// Sa quantite.
+    pub fn quantite(self) -> QuantiteDeLigne {
+        match self {
+            PaiementDeLigne::Heures(q, _) => QuantiteDeLigne::Heures(q),
+            PaiementDeLigne::Cachets(q, _) => QuantiteDeLigne::Cachets(q),
+            PaiementDeLigne::Jours(q, _) => QuantiteDeLigne::Jours(q),
+            PaiementDeLigne::Services(q, _) => QuantiteDeLigne::Services(q),
+            PaiementDeLigne::Semaines(q, _) => QuantiteDeLigne::Semaines(q),
+            PaiementDeLigne::PartDuMois(q, _) => QuantiteDeLigne::PartDuMois(q),
+            PaiementDeLigne::Unites(q, _) => QuantiteDeLigne::Unites(q),
+            PaiementDeLigne::Base(b, _) => QuantiteDeLigne::Base(b),
+        }
+    }
+
+    /// Son taux.
+    pub fn taux(self) -> TauxDeLigne {
+        match self {
+            PaiementDeLigne::Heures(_, u)
+            | PaiementDeLigne::Cachets(_, u)
+            | PaiementDeLigne::Jours(_, u)
+            | PaiementDeLigne::Services(_, u)
+            | PaiementDeLigne::Semaines(_, u)
+            | PaiementDeLigne::PartDuMois(_, u)
+            | PaiementDeLigne::Unites(_, u) => TauxDeLigne::ParUnite(u),
+            PaiementDeLigne::Base(_, c) => TauxDeLigne::PartDeLaBase(c),
+        }
+    }
+
+    /// Ce qu'elle paie, un montant exact (`Montant::au_centime` le fixe) : quantite x montant unitaire, ou base x la part
+    /// qu'une ligne en pourcentage en paie.
+    pub fn montant(self) -> Montant {
+        match self {
+            PaiementDeLigne::Heures(q, u) => q * u,
+            PaiementDeLigne::Cachets(q, u) => q * u,
+            PaiementDeLigne::Jours(q, u) => q * u,
+            PaiementDeLigne::Services(q, u) => q * u,
+            PaiementDeLigne::Semaines(q, u) => q * u,
+            PaiementDeLigne::PartDuMois(q, u) => q * u,
+            PaiementDeLigne::Unites(q, u) => q * u,
+            PaiementDeLigne::Base(b, c) => b * c,
+        }
     }
 }
 
@@ -626,6 +674,12 @@ impl LignePaie {
 
     pub fn composee(rubrique: CodeDeRubrique, quantite: Nombre, taux: MontantUnitaire) -> LignePaie {
         LignePaie::Composee(Composee { rubrique, quantite, taux, heures: None, precision: None, dates: Vec::new() })
+    }
+
+    /// LA LIGNE QUE LE MOTEUR COMPOSE D'UNE RUBRIQUE EN POURCENTAGE : sa base et son pourcentage (une indemnite de fin de
+    /// contrat), dans la forme d'une ligne en pourcentage.
+    pub fn en_pourcentage(rubrique: CodeDeRubrique, base: Montant, pourcentage: Taux) -> LignePaie {
+        LignePaie::Pourcentage(EnPourcentage { rubrique, base: Some(base), taux_majoration: Some(pourcentage) })
     }
 
     /// Le code de sa rubrique au catalogue (`droit::catalogue::rubrique`).
@@ -685,6 +739,23 @@ impl LignePaie {
             LignePaie::IndemniteJournaliere(l) => Some(ParUnite(l.taux)),
             LignePaie::Maintien(l) => Some(ParUnite(l.taux)),
             LignePaie::Importee(l) => l.taux.map(ParUnite),
+        }
+    }
+
+    /// CE QU'ELLE PAIE, sa quantite et son taux dans l'unite `unite` de sa rubrique (`PaiementDeLigne::de_l_unite`) ; une
+    /// case qui n'est pas remplie se refuse en se nommant.
+    pub fn paiement(&self, unite: Unite) -> R<PaiementDeLigne> {
+        let quantite = self.quantite_ecrite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let taux = self.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
+        Ok(PaiementDeLigne::de_l_unite(unite, quantite, taux.decimal()))
+    }
+
+    /// LE MONTANT QU'UN BULLETIN IMPORTE LUI DONNE (une ligne importee), qui ne se recompose pas ; `None` pour toute
+    /// autre ligne, dont le montant est ce qu'elle paie (`paiement`).
+    pub fn montant_lu(&self) -> Option<Montant> {
+        match self {
+            LignePaie::Importee(l) => Some(l.montant),
+            _ => None,
         }
     }
 
@@ -892,7 +963,7 @@ impl LignePaie {
                 LignePaie::IndemniteJournaliere(IndemniteJournaliere { jours: canon(l.jours), taux: canon(l.taux), assiette_pas: o(l.assiette_pas), ..l })
             }
             LignePaie::Maintien(l) => LignePaie::Maintien(Maintien { quantite: q(l.quantite), taux: canon(l.taux), ..l }),
-            LignePaie::Importee(l) => LignePaie::Importee(Importee { quantite: qo(l.quantite), taux: o(l.taux), heures: o(l.heures), ..l }),
+            LignePaie::Importee(l) => LignePaie::Importee(Importee { quantite: qo(l.quantite), taux: o(l.taux), heures: o(l.heures), montant: canon(l.montant), ..l }),
         }
     }
 }
@@ -973,18 +1044,20 @@ pub enum FormeSaisie {
 impl FormeSaisie {
     /// LA FORME D'UNE LIGNE DE LA RUBRIQUE `r`, telle que son catalogue la declare (`saisie` ; `jours`, celle de la
     /// semaine, ce sont les dates de la ligne) ; `None` : une rubrique que le moteur pose (`saisie` vide), qui ne se saisit
-    /// pas. Une `saisie` que le moteur ne sait pas ranger est une rubrique mal decrite : refus.
+    /// pas. Une `saisie` que le moteur ne sait pas ranger, ou qui ne va pas avec son unite (une base et un pourcentage
+    /// pour une rubrique en pourcentage, une quantite et un taux pour les autres), est une rubrique mal decrite : refus.
     pub fn de(r: &droit::catalogue::Rubrique) -> R<Option<FormeSaisie>> {
         use droit::catalogue::CaseSaisie as C;
         let mut dit: Vec<C> = r.saisie.iter().copied().filter(|s| *s != C::Jours).collect();
         dit.sort_unstable();
         let frais = r.nature == droit::catalogue::NatureDeRubrique::Frais;
+        let pourcentage = r.unite == Unite::Pourcentage;
         Ok(Some(match (dit.as_slice(), frais) {
-            ([C::Quantite, C::Taux], false) => FormeSaisie::Unites,
-            ([C::Quantite, C::Taux], true) if crate::a_une_limite(&r.code) => FormeSaisie::Frais,
-            ([C::Quantite, C::Taux], true) => FormeSaisie::FraisSansLimite,
-            ([C::Quantite, C::Taux, C::Heures], false) => FormeSaisie::UnitesEtHeures,
-            ([C::Base, C::TauxMajoration], _) => FormeSaisie::Pourcentage,
+            ([C::Quantite, C::Taux], false) if !pourcentage => FormeSaisie::Unites,
+            ([C::Quantite, C::Taux], true) if !pourcentage && crate::a_une_limite(&r.code) => FormeSaisie::Frais,
+            ([C::Quantite, C::Taux], true) if !pourcentage => FormeSaisie::FraisSansLimite,
+            ([C::Quantite, C::Taux, C::Heures], false) if !pourcentage => FormeSaisie::UnitesEtHeures,
+            ([C::Base, C::TauxMajoration], _) if pourcentage => FormeSaisie::Pourcentage,
             ([C::Montant], _) => FormeSaisie::Montant,
             ([C::Montant, C::Genre], _) => FormeSaisie::AvantageEnNature,
             ([], _) => return Ok(None),

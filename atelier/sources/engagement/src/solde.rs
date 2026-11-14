@@ -392,8 +392,15 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 // Le taux de la loi : la fiche entreprise ne porte aucun accord qui le change.
                 let montant = permanents::indemnite_precarite(total)?;
                 if montant > Decimal::ZERO {
-                    stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_precarite.rubrique, montant));
-                    let pour_cent = virgule(mul(permanents::regles()?.indemnite_precarite.taux, Decimal::from(100)).normalize());
+                    // Une ligne en pourcentage : sa base, la remuneration totale, et le taux de la loi en pourcentage ; elle
+                    // paie le montant de `indemnite_precarite`.
+                    let pourcentage = mul(permanents::regles()?.indemnite_precarite.taux, Decimal::from(100));
+                    stc.lignes.push(LignePaie::en_pourcentage(
+                        permanents::regles()?.indemnite_precarite.rubrique.clone(),
+                        Montant::du_decimal(court(total)),
+                        socle::grandeurs::Taux::du_decimal(court(pourcentage)),
+                    ));
+                    let pour_cent = virgule(pourcentage.normalize());
                     stc.avertissements.push(info(format!(
                         "{} : indemnité de fin de contrat {} % sur {} de \
                          rémunération totale = {} (L1243-8).",
@@ -1340,10 +1347,12 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
         if !r.soumis {
             continue;
         }
-        let signe = r.sens.signe();
-        let taux = l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
-        let quantite = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
-        total = add(total, mul(signe, quantite.fois(taux)?.au_centime().decimal()));
+        // Le montant qu'un bulletin importe lit se garde tel quel, comme `calcul::lignes_brut`.
+        let montant = match l.montant_lu() {
+            Some(lu) => lu.decimal(),
+            None => mul(r.sens.signe(), l.paiement(r.unite)?.montant().au_centime().decimal()),
+        };
+        total = add(total, montant);
     }
     Ok(total)
 }

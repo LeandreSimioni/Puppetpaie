@@ -202,6 +202,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, la part du mois payée, ou la base en euros d'une ligne en pourcentage) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
+| paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
 | coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
@@ -221,7 +222,12 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   `engagement::ligne::Chiffre`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
   (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait, la base en
   euros d'une ligne en pourcentage ; une ligne au montant compte 1) : la ligne écrite ne garde que son nombre, et prend
-  son unité quand sa rubrique est lue ; quantité × montant unitaire = montant.
+  son unité quand sa rubrique est lue ; quantité × montant unitaire = montant. Sa quantité et son taux se lisent
+  ensemble (`PaiementDeLigne::de_l_unite`) : une rubrique en pourcentage donne une base et la part qu'elle en paie,
+  toute autre une quantité et un montant unitaire ; une ligne composée d'une rubrique en pourcentage a la forme d'une
+  ligne en pourcentage (`LignePaie::en_pourcentage`), et la saisie d'une rubrique dit une base et un pourcentage si,
+  et seulement si, son unité est le pourcentage (`FormeSaisie::de`). Une ligne importée garde le montant que son
+  bulletin dit (`LignePaie::montant_lu`), qui ne se recompose pas.
 - **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
   coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie) ;
   montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant.

@@ -224,8 +224,9 @@ pub struct LigneImprimee {
 }
 
 impl LigneImprimee {
-    /// La ligne de paie qu'elle dit a l'engagement importe, quand l'import l'a rattachee a une rubrique : sa quantite, son
-    /// taux et ses heures (son libelle et son montant restent ceux du bulletin, `remuneration_lue`).
+    /// La ligne de paie qu'elle dit a l'engagement importe, quand l'import l'a rattachee a une rubrique et qu'elle dit son
+    /// montant : ce montant, tel quel, et sa quantite, son taux et ses heures (son libelle reste celui du bulletin,
+    /// `remuneration_lue`).
     pub fn en_ligne_de_paie(&self) -> Option<crate::LignePaie> {
         let rubrique = self.rubrique.clone()?;
         Some(crate::LignePaie::Importee(crate::ligne::Importee {
@@ -233,6 +234,7 @@ impl LigneImprimee {
             quantite: self.quantite.map(socle::forme::Nombre),
             taux: self.taux.map(socle::grandeurs::MontantUnitaire::du_decimal),
             heures: self.heures.map(socle::grandeurs::Heures::du_decimal),
+            montant: socle::grandeurs::Montant::du_decimal(self.montant?),
         }))
     }
 }
