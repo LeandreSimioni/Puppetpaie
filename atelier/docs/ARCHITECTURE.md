@@ -695,6 +695,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte d'une pièce produite | `documents::SorteDePieceProduite` | `documents/src/lib.rs` |
 | rangement d'une pièce produite | `documents::Rangement` | `documents/src/lib.rs` |
 | dossier d'un mois | `documents::DossierDuMois` | `documents/src/lib.rs` |
+| rubrique de l'Historique | `RubriqueDeLHistorique` | `routes/src/historique_mois.rs` |
 | état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
 | format d'export | `FormatDExport` | `documents/src/plan_comptable.rs` |
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
@@ -833,6 +834,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   pas dans un mois n'y compile pas), et le joignent par `sous`. Le bulletin d'origine gardé à côté de son rectificatif
   est un `Bulletin` par son nom, qui ne part à personne : il se range dans les sorties du mois (`BULLETIN_GARDE`) ; un
   nom seul se cherche dans les deux (`TOUS`, `envois::etats::chemin_piece`).
+- **rubrique de l'Historique** : où un document du mois se range dans l'Historique : bulletins, certificats,
+  attestations, contrats, DPAE, DSN, demandes de taux, AEM (l'ancien logiciel), autres pièces ; dans cet ordre, celui du
+  type. Écrite par son libellé (« Bulletins de paie »…), que portent un document de `historique-mois` (`sorte`) et les
+  pièces d'un message de l'aperçu d'un envoi ; dite d'une pièce produite par sa sorte, d'un fichier de l'ancien logiciel
+  par `AEM_` (`rubrique_de`).
 - **état d'export**, **format d'export**, **regroupement d'un état**, **logiciel du comptable**, **période d'export** :
   les listes du logiciel que les tables des exports livrent (`exports_tables.json`) : les états que la page propose
   (`livre-de-paie`…), leurs formats (les six des tableaux, `csv`… `json`, puis ceux des logiciels du comptable, `fec`…

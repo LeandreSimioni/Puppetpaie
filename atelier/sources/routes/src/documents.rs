@@ -188,7 +188,7 @@ struct MessageVu {
     /// Le courriel de la fiche ; vide, ses documents s'impriment.
     destinataire: Option<droit::fiche::Courriel>,
     pieces: Vec<NomDeFichier>,
-    sortes: Vec<&'static str>,
+    sortes: Vec<crate::historique_mois::RubriqueDeLHistorique>,
     renvoi: bool,
     pastille: Option<Pastille>,
     changements: Vec<String>,
@@ -632,7 +632,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
             let pieces = x.pieces.iter().map(|p| NomDeFichier::du(p)).collect::<R<Vec<_>>>()?;
             Ok(MessageVu {
                 // Ce que l'ecran en dit : la sorte de chaque piece, pas son nom de fichier.
-                sortes: pieces.iter().map(|p| crate::historique_mois::sorte_de(p.texte())).collect(),
+                sortes: pieces.iter().map(|p| crate::historique_mois::rubrique_de(p.texte())).collect(),
                 pieces,
                 renvoi: renvoi.is_some(),
                 // Un renvoi : des documents corriges, qui remplacent ceux deja partis (a faire partir).
@@ -646,9 +646,12 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         .collect::<R<_>>()?;
     let mut phrases: Vec<String> = messages
         .iter()
-        .map(|x| match &x.destinataire {
-            Some(d) => format!("{} ({}) : {}", x.nom, d, x.sortes.join(", ")),
-            None => format!("{} : {}", x.nom, x.sortes.join(", ")),
+        .map(|x| {
+            let sortes = x.sortes.iter().map(|s| s.libelle()).collect::<Vec<_>>().join(", ");
+            match &x.destinataire {
+                Some(d) => format!("{} ({}) : {}", x.nom, d, sortes),
+                None => format!("{} : {}", x.nom, sortes),
+            }
         })
         .collect();
     phrases.extend(prets.empechements.iter().chain(&avertissements).chain(&prets.informations).cloned());

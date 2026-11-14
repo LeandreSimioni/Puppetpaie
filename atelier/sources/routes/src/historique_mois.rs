@@ -156,7 +156,7 @@ impl Dite for Historique {
 #[derive(Debug, Serialize)]
 struct Document {
     nom: String,
-    sorte: &'static str,
+    sorte: RubriqueDeLHistorique,
     salarie: Option<droit::contexte::IdSalarie>,
     chemin: CheminRelatif,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -293,32 +293,57 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
 
 // ------------------------------------------------------------------ les documents
 
-const BULLETINS: &str = "Bulletins de paie";
-const CERTIFICATS: &str = "Certificats Congés Spectacles";
-const ATTESTATIONS: &str = "Attestations employeur (AER)";
-const CONTRATS: &str = "Contrats";
-const DPAE: &str = "DPAE";
-const DSN: &str = "DSN";
-const DEMANDES_DE_TAUX: &str = "Demandes de taux de prélèvement à la source";
-/// Les fichiers de l'ancien logiciel (`AEM_…`), que le moteur n'ecrit pas : ce ne sont pas des pieces qu'il produit.
-const AEM: &str = "AEM";
+/// LA RUBRIQUE DE L'HISTORIQUE ou se range un document du mois, dans l'ordre ou elles se lisent (l'ordre du type) ;
+/// ecrite par son libelle (`libelle`), dans la reponse de `historique-mois` et la phrase de l'apercu d'un envoi.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum RubriqueDeLHistorique {
+    Bulletins,
+    Certificats,
+    Attestations,
+    Contrats,
+    Dpae,
+    Dsn,
+    DemandesDeTaux,
+    /// Les fichiers de l'ancien logiciel (`AEM_…`), que le moteur n'ecrit pas : ce ne sont pas des pieces qu'il produit.
+    Aem,
+    /// Un document qui n'est d'aucune autre : elle se range apres elles.
+    Autres,
+}
 
-/// Les sortes de documents de l'Historique, dans leur ordre (les fichiers du mois et ceux d'envoi).
-const SORTES: [&str; 8] = [BULLETINS, CERTIFICATS, ATTESTATIONS, CONTRATS, DPAE, DSN, DEMANDES_DE_TAUX, AEM];
+impl RubriqueDeLHistorique {
+    /// Son libelle, tel que l'Historique l'ecrit.
+    pub(crate) fn libelle(self) -> &'static str {
+        match self {
+            RubriqueDeLHistorique::Bulletins => "Bulletins de paie",
+            RubriqueDeLHistorique::Certificats => "Certificats Congés Spectacles",
+            RubriqueDeLHistorique::Attestations => "Attestations employeur (AER)",
+            RubriqueDeLHistorique::Contrats => "Contrats",
+            RubriqueDeLHistorique::Dpae => "DPAE",
+            RubriqueDeLHistorique::Dsn => "DSN",
+            RubriqueDeLHistorique::DemandesDeTaux => "Demandes de taux de prélèvement à la source",
+            RubriqueDeLHistorique::Aem => "AEM",
+            RubriqueDeLHistorique::Autres => "Autres pièces",
+        }
+    }
+}
 
-/// La sorte d'un document qui n'est d'aucune autre : elle se range apres elles.
-const AUTRES: &str = "Autres pièces";
+impl Serialize for RubriqueDeLHistorique {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.libelle())
+    }
+}
 
-/// La sorte de l'Historique ou se range une piece produite.
-fn sorte_de_la_piece(sorte: SorteDePieceProduite) -> &'static str {
+/// La rubrique de l'Historique ou se range une piece produite.
+fn rubrique_de_la_piece(sorte: SorteDePieceProduite) -> RubriqueDeLHistorique {
+    use RubriqueDeLHistorique as R;
     match sorte {
-        SorteDePieceProduite::Bulletins | SorteDePieceProduite::Bulletin => BULLETINS,
-        SorteDePieceProduite::CertificatsCs | SorteDePieceProduite::CertificatCs => CERTIFICATS,
-        SorteDePieceProduite::Aer => ATTESTATIONS,
-        SorteDePieceProduite::Contrat | SorteDePieceProduite::Avenant => CONTRATS,
-        SorteDePieceProduite::Dpae => DPAE,
-        SorteDePieceProduite::Dsn => DSN,
-        SorteDePieceProduite::Amorcage => DEMANDES_DE_TAUX,
+        SorteDePieceProduite::Bulletins | SorteDePieceProduite::Bulletin => R::Bulletins,
+        SorteDePieceProduite::CertificatsCs | SorteDePieceProduite::CertificatCs => R::Certificats,
+        SorteDePieceProduite::Aer => R::Attestations,
+        SorteDePieceProduite::Contrat | SorteDePieceProduite::Avenant => R::Contrats,
+        SorteDePieceProduite::Dpae => R::Dpae,
+        SorteDePieceProduite::Dsn => R::Dsn,
+        SorteDePieceProduite::Amorcage => R::DemandesDeTaux,
         SorteDePieceProduite::CertificatDeTravail
         | SorteDePieceProduite::RecuSoldeToutCompte
         | SorteDePieceProduite::Dossier
@@ -329,7 +354,7 @@ fn sorte_de_la_piece(sorte: SorteDePieceProduite) -> &'static str {
         | SorteDePieceProduite::SignalementReprise
         | SorteDePieceProduite::SignalementFinContrat
         | SorteDePieceProduite::Compta
-        | SorteDePieceProduite::Exercice => AUTRES,
+        | SorteDePieceProduite::Exercice => R::Autres,
     }
 }
 
@@ -376,13 +401,13 @@ fn identite(ctx: &Contexte, l: &Ligne) -> String {
     morceaux.join(" · ")
 }
 
-/// La sorte d'un document, par le debut de son nom : celle de sa piece produite, `AEM` pour un fichier de l'ancien
-/// logiciel, sinon `AUTRES`.
-pub(crate) fn sorte_de(nom: &str) -> &'static str {
+/// La rubrique d'un document, par le debut de son nom : celle de sa piece produite, `Aem` pour un fichier de l'ancien
+/// logiciel, sinon `Autres`.
+pub(crate) fn rubrique_de(nom: &str) -> RubriqueDeLHistorique {
     match SorteDePieceProduite::du_nom(nom) {
-        Some((s, _)) => sorte_de_la_piece(s),
-        None if nom.starts_with("AEM_") => AEM,
-        None => AUTRES,
+        Some((s, _)) => rubrique_de_la_piece(s),
+        None if nom.starts_with("AEM_") => RubriqueDeLHistorique::Aem,
+        None => RubriqueDeLHistorique::Autres,
     }
 }
 
@@ -395,10 +420,10 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let envoi = DossierDuMois::Envoi.sous_le_chemin(&sorties);
     let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
     for nom in noms.filter(|n| !n.texte().ends_with(".zip")) {
-        out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), fichier: None, nom: nom.into() });
+        out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), fichier: None, nom: nom.into() });
     }
     for d in crate::archives::pieces_de_l_envoi(ctx, mois)? {
-        out.push(Document { sorte: sorte_de(&d.nom), salarie: d.salarie, chemin: envoi.joint(&NomDeFichier::lire(&d.nom)?), fichier: None, nom: d.nom });
+        out.push(Document { sorte: rubrique_de(&d.nom), salarie: d.salarie, chemin: envoi.joint(&NomDeFichier::lire(&d.nom)?), fichier: None, nom: d.nom });
     }
     // CE QUE LE JOURNAL DIT PARTI, meme si son fichier manque : `fichier` le nomme pour `piece-partie`, qui le refait
     // (`depart::piece_partie`) et rend son chemin.
@@ -412,21 +437,18 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
             Some(Rangement::Exercices | Rangement::DossiersDeSalaries) | None => DossierDuMois::Sorties,
         };
         let chemin = dossier.sous_le_chemin(&sorties).joint(&nom);
-        out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
+        out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
     for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
-        out.push(Document { nom, sorte: BULLETINS, salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
+        out.push(Document { nom, sorte: RubriqueDeLHistorique::Bulletins, salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
     }
     for d in out.iter_mut() {
         d.nom = nom_lisible(ctx, &d.nom);
     }
-    // Dans l'ordre des sortes, les autres pieces a la fin.
-    out.sort_by_key(|d| {
-        let rang = SORTES.iter().position(|s| *s == d.sorte);
-        (rang.is_none(), rang)
-    });
+    // Dans l'ordre des rubriques, les autres pieces a la fin.
+    out.sort_by_key(|d| d.sorte);
     Ok(out)
 }
 
