@@ -34,7 +34,7 @@
 //! Preuves : `tests/calcul/bordereau.rs`, dont le rejeu des 75 bordereaux
 //! (`tests/donnees/bordereaux-reels.json`).
 
-use droit::organismes::{CodeCtp, QualifiantDAssiette};
+use droit::organismes::{CodeCtp, FormatDeCtp, QualifiantDAssiette};
 use socle::date::Jour;
 use socle::fichiers::{dossier_du_code, signature};
 use socle::echec::{refus, R};
@@ -58,7 +58,8 @@ pub struct LigneBordereau {
     pub taux_at: Option<TauxDeLaLigne>,
     pub assiette: Option<Decimal>,
     pub montant: Option<Decimal>,
-    pub commune: Option<String>,
+    /// La commune du versement mobilite (S21.G00.23.006).
+    pub commune: Option<droit::fiche::CodeInsee>,
 }
 
 /// LE TAUX QU'UNE LIGNE 23 PORTE (S21.G00.23.003) : le taux AT/MP de la ligne d'un CTP qui le porte, ou celui du
@@ -81,7 +82,7 @@ impl TauxDeLaLigne {
 struct Ligne {
     effet: Jour,
     fin: Option<Jour>,
-    format: String,
+    format: FormatDeCtp,
     plafonne: Option<Decimal>,
     deplafonne: Option<Decimal>,
     libelle: String,
@@ -203,7 +204,7 @@ fn lire(chemin: &Path) -> R<Table> {
         let ligne = Ligne {
             effet,
             fin: date_table(v(c_fin)?)?,
-            format: v(c_fmt)?.trim().to_string(),
+            format: FormatDeCtp::lire(v(c_fmt)?.trim()).map_err(|e| socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel ne se lit pas : le signaler au développeur.", "format", &e.phrase))?,
             plafonne: taux(v(c_pl)?)?,
             deplafonne: taux(v(c_dep)?)?,
             libelle: v(c_lib)?.to_string(),
@@ -279,18 +280,18 @@ urssaf-codes-types-personnel). Rien n'est ecrit.",
     let cent = Decimal::ONE_HUNDRED;
     // La part du taux AT/MP que la ligne porte, valorisee a part ; une ligne sans taux AT n'en a pas.
     let part_at = |a: Decimal| -> Option<Decimal> { l.taux_at.map(|at| euro(div(mul(a, at.taux()), cent))) };
-    match t.format.as_str() {
+    match t.format {
         // F et R : le CTP porte le signe negatif, le montant (23.005) s'ecrit positif (tableau DIDA de l'Urssaf,
         // `chomage-permanents/urssaf-equivalence-dida-20260611.csv`, CTP 003 et 004 ; guide Urssaf du 04/06/2026, format R).
-        "F" | "R" => {
+        FormatDeCtp::F | FormatDeCtp::R => {
             let m = l.montant.ok_or_else(|| socle::fichiers::absent("montant"))?;
             Ok(-euro(m))
         }
-        "Z" => {
+        FormatDeCtp::Z => {
             let a = l.assiette.ok_or_else(|| socle::fichiers::absent("assiette"))?;
             part_at(a).ok_or_else(|| socle::fichiers::absent("taux_at"))
         }
-        "A" | "C" | "D" | "E" | "K" => {
+        FormatDeCtp::A | FormatDeCtp::C | FormatDeCtp::D | FormatDeCtp::E | FormatDeCtp::K => {
             let plafonne = l.qualifiant == QualifiantDAssiette::AssiettePlafonnee;
             let Some(tx) = (if plafonne { t.plafonne } else { t.deplafonne }) else {
                 return Err(socle::refus!(
@@ -309,7 +310,7 @@ Rien n'est ecrit.",
                 None => principale,
             })
         }
-        fmt => Err(socle::refus!(
+        fmt @ (FormatDeCtp::B | FormatDeCtp::V | FormatDeCtp::Y) => Err(socle::refus!(
             "CTP {} ({}) : format {} de la table de l'Urssaf, que le moteur ne sait pas \
 valoriser. Rien n'est ecrit.",
             l.code, t.libelle, fmt

@@ -3177,7 +3177,7 @@ fn taux_23(t: TauxDeLaLigne) -> String {
     }
 }
 
-fn ligne(code: CodeCtp, qualifiant: QualifiantDAssiette, taux_at: Option<TauxDeLaLigne>, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<String>) -> LigneBordereau {
+fn ligne(code: CodeCtp, qualifiant: QualifiantDAssiette, taux_at: Option<TauxDeLaLigne>, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<droit::fiche::CodeInsee>) -> LigneBordereau {
     LigneBordereau { code, qualifiant, taux_at, assiette, montant, commune }
 }
 
@@ -3193,8 +3193,8 @@ fn ecrire_lignes_23(f: &mut Fichier, lignes: &[LigneBordereau]) -> R<()> {
             Some(m) => f.add(droit::rubrique!("S21.G00.23.005"), mt(m)),
             None => f.add_opt(droit::rubrique!("S21.G00.23.004"), l.assiette.map(mt))?,
         }
-        if let Some(c) = l.commune.as_deref().filter(|c| !c.is_empty()) {
-            f.add(droit::rubrique!("S21.G00.23.006"), c);
+        if let Some(c) = &l.commune {
+            f.add(droit::rubrique!("S21.G00.23.006"), c.as_ref());
         }
     }
     Ok(())
@@ -3520,7 +3520,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             if assiette.is_zero() {
                 continue;
             }
-            lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.to_string())));
+            lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.clone())));
         }
     }
     let mut local = zero2();

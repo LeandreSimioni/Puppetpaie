@@ -164,6 +164,72 @@ impl From<CodeCtp> for String {
     }
 }
 
+/// LE FORMAT D'UN CTP dans la table de l'Urssaf (colonne « Format » de `donnees/urssaf-codes-types-personnel.csv`) :
+/// il dit si la ligne 23 porte une assiette (S21.G00.23.004) ou un montant (23.005), et comment elle se valorise. Le
+/// guide Urssaf de la regularisation, § 1.3 (`atelier/reference/sources/editeur-dsn/guide-urssaf-regularisation.txt`,
+/// l. 351-407) : « A, D et K : Taux AT à renseigner » ; « E : Pas de taux AT à renseigner » ; F, « Format utilisé pour
+/// déclarer une déduction de cotisation », et R, « Format propre à la déclaration d'une réduction de cotisations sur
+/// heures supplémentaires », « ont la particularité de porter un signe négatif » ; « Y : Ce format s'applique uniquement
+/// pour le CTP 901 » ; « Z : [...] notamment pour les lignes mobilité (hors VMRR) » ; « V : Taux à renseigner hors taux
+/// AT ». B et C sont dans la table, que le guide ne decrit pas. La liste est celle de la table livree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatDeCtp {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    K,
+    R,
+    V,
+    Y,
+    Z,
+}
+
+impl FormatDeCtp {
+    /// Le format ecrit `texte` dans la table, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<FormatDeCtp> {
+        Ok(match texte {
+            "A" => FormatDeCtp::A,
+            "B" => FormatDeCtp::B,
+            "C" => FormatDeCtp::C,
+            "D" => FormatDeCtp::D,
+            "E" => FormatDeCtp::E,
+            "F" => FormatDeCtp::F,
+            "K" => FormatDeCtp::K,
+            "R" => FormatDeCtp::R,
+            "V" => FormatDeCtp::V,
+            "Y" => FormatDeCtp::Y,
+            "Z" => FormatDeCtp::Z,
+            _ => return Err(socle::refus!("Format de CTP {} inconnu : la table de l'Urssaf écrit A, B, C, D, E, F, K, R, V, Y ou Z.", socle::fichiers::repr(texte))),
+        })
+    }
+
+    /// Son nom dans la table.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FormatDeCtp::A => "A",
+            FormatDeCtp::B => "B",
+            FormatDeCtp::C => "C",
+            FormatDeCtp::D => "D",
+            FormatDeCtp::E => "E",
+            FormatDeCtp::F => "F",
+            FormatDeCtp::K => "K",
+            FormatDeCtp::R => "R",
+            FormatDeCtp::V => "V",
+            FormatDeCtp::Y => "Y",
+            FormatDeCtp::Z => "Z",
+        }
+    }
+}
+
+impl std::fmt::Display for FormatDeCtp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// L'IDENTIFIANT D'UN ORGANISME DE PROTECTION SOCIALE : celui que la DSN paie (S21.G00.20.001), celui d'une cotisation
 /// individuelle (S21.G00.81.002), le code de l'organisme d'une adhesion de prevoyance (S21.G00.15.002). Le cahier
 /// technique DSN 2026.1 nomme les deux premiers « Identifiant Organisme de Protection Sociale », « X [2,14] » (p. 154-155,
