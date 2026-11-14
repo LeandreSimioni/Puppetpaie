@@ -829,6 +829,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | barème absent | `droit::contexte::BaremeAbsent` | `droit/src/contexte.rs` |
 | emploi | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
+| famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | catégorie dans la convention | `CategorieConventionnelle` | `droit/src/fiche.rs` |
@@ -1162,6 +1163,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier :
   `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui
   peut n'en nommer aucun (« 999SPT »).
+- **famille d'un métier** : le groupe d'un métier du catalogue (« Artistes », « Son »…), qui ordonne le déroulant
+  (`emplois::familles` : les artistes en tête) ; une liste du logiciel (`socle::noms_fermes!`), écrite par son nom dans
+  `emplois-base.json` et `familles_costume` des clauses ; un métier hors du catalogue n'en a pas
+  (`Metier::famille`). Que portent un métier du catalogue et celui d'un déroulant, ce que rendent `metiers-catalogue`
+  et la page de configuration ; « Artistes » et « Cirque et rue » disent l'artiste-interprète de la 1734.
 - **annexe du règlement d'assurance chômage** : l'annexe VIII (les ouvriers et techniciens) ou X (les artistes) dont
   relève un intermittent. `Viii`, `X` ; écrite par son nom (`X`, `VIII` : l'annexe d'une rubrique, celle d'une source)
   ou par son numéro (`8`, `10` : `emplois-base.json`, la nomenclature, un métier rendu, `emplois::annexe_en_nombre`).

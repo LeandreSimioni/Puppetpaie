@@ -416,7 +416,7 @@ forme! {
         pub pourcentage_par_annee: i64,
         pub plafond_pourcentage: i64,
         /// Les familles de metiers payees a la grille du costume.
-        pub familles_costume: Option<Vec<String>>,
+        pub familles_costume: Option<Vec<crate::emplois::FamilleDeMetier>>,
         /// La ligne de la grille de chaque niveau 3090.
         pub niveaux: BTreeMap<CleDeGrille, CleDeGrille>,
         /// Les grilles, dans l'ordre de leurs dates.
@@ -1211,7 +1211,7 @@ pub fn prime_anciennete(
     let Some(niveau) = sec.niveaux.get(&c3090.niveau) else {
         return Ok(Some(prime(None, Some(format!("le niveau 3090 du metier {} n'est pas connu", code)))));
     };
-    let base = if sec.familles_costume.iter().flatten().any(|f| f == famille) {
+    let base = if famille.is_some_and(|famille| sec.familles_costume.iter().flatten().any(|f| *f == famille)) {
         g.costume.get(niveau).ok_or_else(|| manque(&format!("prime_anciennete.salaires_conventionnels.costume.{}", niveau)))?
     } else {
         let jauge = jauge(&crate::minima::ParLaGrille::de_l_annexe());

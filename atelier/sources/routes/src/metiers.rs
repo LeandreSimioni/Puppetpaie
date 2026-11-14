@@ -13,7 +13,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::fiches::{creer_dossier, ecrire, refus};
 use compagnie::avant::sauver_avant;
 use droit::contexte::Contexte;
-use droit::emplois::{self, MetierDuDeroulant};
+use droit::emplois::{self, FamilleDeMetier, MetierDuDeroulant};
 use socle::echec::R;
 
 const METIERS_REND: &str = "emplois (les métiers proposés) et emplois_autres (ceux des autres conventions)";
@@ -136,8 +136,8 @@ fn conventions_dites(m: &MetierDuDeroulant, noms: &BTreeMap<Idcc, String>, avec_
 }
 
 /// Les familles, et l'ordre ou les montrer : les artistes en tete.
-fn rang_des_familles(familles: &[String]) -> HashMap<String, usize> {
-    familles.iter().enumerate().map(|(i, f)| (f.clone(), i)).collect()
+fn rang_des_familles(familles: &[FamilleDeMetier]) -> HashMap<FamilleDeMetier, usize> {
+    familles.iter().enumerate().map(|(i, f)| (*f, i)).collect()
 }
 
 /// `metiers` : le catalogue des metiers que le deroulant de cette compagnie montre, groupe par famille (les artistes en
@@ -187,7 +187,7 @@ struct MetierDeLOnglet {
 struct MetiersDuCatalogue {
     phrase: String,
     metiers: Vec<MetierDeLOnglet>,
-    familles: Vec<String>,
+    familles: Vec<FamilleDeMetier>,
 }
 
 /// L'onglet Metiers : tout le catalogue, chaque metier coche ou non.

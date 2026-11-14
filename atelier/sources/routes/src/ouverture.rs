@@ -1581,7 +1581,7 @@ pub(crate) struct EtatDeLaPage {
     spectacles: Vec<SpectacleDeLaListe>,
     rubriques: Vec<RubriqueDeLaPage>,
     emplois: Vec<emplois::MetierDuDeroulant>,
-    familles_emplois: Vec<String>,
+    familles_emplois: Vec<emplois::FamilleDeMetier>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
     types_preavis: Vec<droit::preavis::TypePreavis>,
