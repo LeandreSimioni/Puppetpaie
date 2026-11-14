@@ -172,7 +172,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **instant ou jour** : l'instant d'un geste, ou le jour seul (un bilan qui ne dit que sa date, un geste de scénario dit
   d'un jour, une obligation d'un arrêt dite faite ou une connaissance sans heure). Écrit en un champ
   (`AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`), ou en deux, le jour et l'heure `HH:MM` (`socle::paris::ecrit::jour_et_heure` :
-  la fiche de suivi des obligations d'un arrêt et ce que ses routes rendent).
+  la fiche de suivi des obligations d'un arrêt et ce que ses routes rendent, l'instant limite de l'échéance d'une DSN,
+  `declarations::echeance_dsn::EcheanceDite`).
 - **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone.
 - **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom.
 - **mois ou jour** : le mois d'un acte ou le jour d'un événement.
@@ -288,6 +289,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | numéro d'ordre | `NumeroDOrdre` | `droit/src/natures.rs` |
 | identifiant de déclaration | `IdentifiantDeDeclaration` | `droit/src/natures.rs` |
 | code risque AT/MP | `CodeRisqueAt` | `droit/src/bareme.rs` |
+| code Urssaf de la DPAE | `CodeUrssafDpae` | `declarations/src/urssaf.rs` |
 | identifiant du taux de PAS | `IdentifiantDuTauxPas` | `droit/src/pas.rs` |
 | clé d'un contrat d'organisme | `CleDeContrat` | `droit/src/organismes.rs` |
 | accord de salaires | `AccordDeSalaires` | `droit/src/minima.rs` |
@@ -617,6 +619,11 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   point (`92.3AD` : `de_l_arrete`, `a_l_arrete`) ; une saisie se range sans point ni blanc, en capitales. Que portent la
   case du taux AT/MP, un risque de l'arrêté, le taux du barème, la DSN lue (hors forme : vide), la notification de la
   CARSAT (cinq signes, `avec_bureau`), ce que le simulateur annonce.
+- **code Urssaf de la DPAE** : l'organisme de recouvrement que la DPAE vise en C_URSSAF (positions 133-136, annexe II.1
+  du Format 120) : trois chiffres, s'écrit et se trie comme son texte ; ceux qui existent sont ceux de
+  `urssaf-dpae-base.json` (`existe`). Que portent un organisme de la table et celui du territoire d'un département,
+  les paramètres d'une DPAE, ce que la page propose (`urssaf_deduit`) ; celui que la fiche Entreprise tape
+  (`code_urssaf`, du texte) se lit par `dpae::code_urssaf_saisi`, qui nomme la case.
 - **identifiant du taux de PAS** : S21.G00.50.008, `-1|0|[1-9][0-9]{0,17}` ; `SansCrm` (« -1 », un contrat court sans
   compte rendu) ou le numéro que la DGFiP donne, écrit comme lu. Que portent un taux reçu de la fiche, le compte rendu
   PAS relevé (strict), le taux qui vaut, le prélèvement d'un versement, la paie versée d'un engagement importé, la DSN
@@ -1002,6 +1009,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   elle, le coefficient se calcule par `tmin`, `tdelta` et `puissance`. Une liste du logiciel.
 - **affectation d'une cotisation de la DSN** : la place de l'adhésion sous laquelle une cotisation du barème se déclare
   (`202`, `203`), quand plusieurs partagent un code 81.001 ; elle distingue leur clé (`059:203`, `CleDeCotisationDsn`).
+  La DSN l'écrit en S21.G00.78.005 à la place de l'adhésion du contrat, faite depuis ce nombre
+  (`declarations::dsn::affectation_de_la_place`) : que portent la cotisation de la DSN (`dsn::Cotisation`), la
+  contribution d'un mois et la ligne 81 d'une DSN relue.
 
 ## Le principe
 

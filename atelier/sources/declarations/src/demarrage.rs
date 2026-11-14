@@ -187,7 +187,7 @@ fn une_suspension_non_remuneree(ctx: &Contexte) -> R<Option<droit::natures::AuMo
     use engagement::imprevus::Suspend;
     for imp in engagement::imprevus::tous(&ctx.racine)? {
         let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
-        if engagement::imprevus::motif_de_suspension(code)?.is_some_and(|m| !m.remunere) {
+        if !engagement::imprevus::proprietes_du_motif(code, &imp.salarie().to_string())?.remunere {
             if let Some(cle) = engagement::permanents::cle_du_salarie(ctx, imp.salarie())? {
                 return Ok(Some(cle));
             }
