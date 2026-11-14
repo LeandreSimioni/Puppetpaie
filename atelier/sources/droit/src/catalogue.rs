@@ -129,11 +129,11 @@ impl Sens {
         }
     }
 
-    /// Le signe qu'il donne au montant ou aux heures d'une ligne : 1 ou -1.
-    pub fn signe(self) -> Decimal {
+    /// Le signe qu'il donne au montant ou aux heures d'une ligne.
+    pub fn signe(self) -> socle::grandeurs::Signe {
         match self {
-            Sens::Plus => Decimal::ONE,
-            Sens::Moins => Decimal::NEGATIVE_ONE,
+            Sens::Plus => socle::grandeurs::Signe::Plus,
+            Sens::Moins => socle::grandeurs::Signe::Moins,
         }
     }
 }

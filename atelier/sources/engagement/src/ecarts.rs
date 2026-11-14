@@ -295,11 +295,10 @@ struct Lue {
 }
 
 /// Un centime : l'ecart de montant qu'un arrondi fait sur une ligne, et qui n'est pas un ecart.
-const UN_CENTIME: Montant = Montant::du_decimal(Decimal::from_parts(1, 0, 0, false, 2));
+const UN_CENTIME: Montant = Montant::UN_CENTIME;
 
 /// Cinq dix-milliemes de point : l'ecart de taux qui n'en est pas un.
-const ECART_DE_TAUX_TOLERE: Taux = Taux::du_decimal(Decimal::from_parts(5, 0, 0, false, 4));
-
+const ECART_DE_TAUX_TOLERE: Taux = Taux::CINQ_DIX_MILLIEMES;
 
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
 /// deja comparee, elle ne se compare pas deux fois.
@@ -597,7 +596,7 @@ fn comparer_une(
             continue;
         }
         // Un centime par ligne, du cote qui en a le plus.
-        let tolerance = (0..eux.len().max(nous.len())).fold(Montant::ZERO, |t, _| t + UN_CENTIME);
+        let tolerance = UN_CENTIME.fois(eux.len().max(nous.len()));
         for (grandeur, leur, notre) in [(Grandeur::MontantSalarie, leur_sal, notre_sal), (Grandeur::MontantEmployeur, leur_pat, notre_pat)] {
             if (leur - notre).abs() > tolerance {
                 ecarts.push(ecart(MesureDeLEcart::Relatif(grandeur, relatif(leur, notre))));
@@ -640,7 +639,7 @@ fn comparer_une(
 
 /// (leur - notre) / notre, a 4 decimales ; `None` quand le notre est nul.
 fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
-    (!notre.est_nul()).then(|| Coefficient::du_decimal(((leur - notre).decimal() / notre.decimal()).round_dp(4)))
+    (leur - notre).rapport(notre).map(Coefficient::a_quatre_decimales)
 }
 
 /// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau.

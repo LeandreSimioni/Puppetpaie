@@ -388,7 +388,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                     e.precarite_pourquoi.as_deref().filter(|p| !p.is_empty()).map(|p| format!(" ({})", p)).into_iter().collect::<String>()
                 )));
             } else {
-                let total = remuneration_du_contrat(ctx, e, mois, brut_des_lignes(ctx, deja)?)?;
+                let total = remuneration_du_contrat(ctx, e, mois, brut_des_lignes(ctx, deja)?.decimal())?;
                 // Le taux de la loi : la fiche entreprise ne porte aucun accord qui le change.
                 let montant = permanents::indemnite_precarite(total)?;
                 if montant > Decimal::ZERO {
@@ -1340,8 +1340,8 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, V
 
 /// Le brut que portent des lignes deja construites, sans les charger : la
 /// meme somme que `calcul.calculer`.
-fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
-    let mut total = Montant::ZERO.decimal();
+fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Montant> {
+    let mut total = Montant::ZERO;
     for l in lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         if !r.soumis {
@@ -1349,10 +1349,10 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
         }
         // Le montant qu'un bulletin importe lit se garde tel quel, comme `calcul::lignes_brut`.
         let montant = match l.montant_lu() {
-            Some(lu) => lu.decimal(),
-            None => mul(r.sens.signe(), l.paiement(r.unite)?.montant().au_centime().decimal()),
+            Some(lu) => lu,
+            None => r.sens.signe().de(l.paiement(r.unite)?.montant().au_centime()),
         };
-        total = add(total, montant);
+        total += montant;
     }
     Ok(total)
 }

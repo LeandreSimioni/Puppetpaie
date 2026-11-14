@@ -130,9 +130,41 @@ pub fn forme_courte<G: Grandeur>(g: G) -> G {
     G::du(g.en_decimal().normalize())
 }
 
+/// LE SIGNE QU'UNE LIGNE DONNE A SES GRANDEURS : les garder (`Plus`), ou les retirer (`Moins`, l'oppose). Un zero n'a pas
+/// de signe : il reste le zero qu'il est, son echelle gardee. Signe x grandeur = grandeur de meme nom (`de`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signe {
+    Plus,
+    Moins,
+}
+
+impl Signe {
+    /// La grandeur `g` sous ce signe.
+    pub fn de<G: Grandeur>(self, g: G) -> G {
+        let d = g.en_decimal();
+        match self {
+            Signe::Moins if !d.is_zero() => G::du(-d),
+            Signe::Plus | Signe::Moins => g,
+        }
+    }
+}
+
 impl Montant {
     /// Zero au centime, ses deux decimales ecrites (`0.00`).
     pub const ZERO: Montant = Montant(Decimal::from_parts(0, 0, 0, false, 2));
+
+    /// Un centime (`0.01`) : l'ecart de montant qu'un arrondi fait sur une ligne.
+    pub const UN_CENTIME: Montant = Montant(Decimal::from_parts(1, 0, 0, false, 2));
+
+    /// Ce montant `n` fois (un centime par ligne) : montant x compte = montant.
+    pub fn fois(self, n: usize) -> Montant {
+        Montant(num::mul(self.0, Decimal::from(n)))
+    }
+
+    /// LE RAPPORT de ce montant a `o` : montant / montant = coefficient ; `None` quand `o` est nul.
+    pub fn rapport(self, o: Montant) -> Option<Coefficient> {
+        (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
+    }
 
     /// AU CENTIME, LA MOITIE VERS LE HAUT, ses deux decimales ecrites (2,125 donne 2,13 ; -2,125 donne -2,13, comme son
     /// oppose ; 12,5 s'ecrit 12,50) : l'arrondi au centime de la paie, le seul. Fonde par la convergence que dit
@@ -167,7 +199,17 @@ impl std::ops::Mul<Coefficient> for Montant {
     }
 }
 
+impl Coefficient {
+    /// A quatre decimales, la moitie au pair (un ecart relatif : aucun texte deposé ne dit cet arrondi).
+    pub fn a_quatre_decimales(self) -> Coefficient {
+        Coefficient(self.0.round_dp(4))
+    }
+}
+
 impl Taux {
+    /// Cinq dix-milliemes de point (`0.0005`) : l'ecart qu'un arrondi fait sur un taux imprime.
+    pub const CINQ_DIX_MILLIEMES: Taux = Taux(Decimal::from_parts(5, 0, 0, false, 4));
+
     /// A deux decimales, la moitie au pair (aucun texte deposé ne dit l'arrondi d'un taux moyen : `heures_en_plus`).
     pub fn a_deux_decimales(self) -> Taux {
         Taux(self.0.round_dp(2))
