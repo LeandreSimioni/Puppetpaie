@@ -111,11 +111,16 @@ pub struct Fichier {
 pub struct MiseDeCote {
     /// Le dossier ou l'archive qui la porte ; aucun a la racine du dossier trie.
     pub dans: Option<CheminRelatif>,
-    /// Son nom tel qu'il est ecrit ; aucun pour une entree qui ne se lit pas.
-    pub nom: Option<String>,
-    /// Son rang dans la lecture du dossier ou de l'archive, a partir de 1 : la phrase d'une entree sans nom le dit.
-    pub rang: usize,
+    pub entree: EntreeDeCote,
     pub raison: RaisonDeMiseDeCote,
+}
+
+/// QUELLE ENTREE EST MISE DE COTE : son nom tel qu'il est ecrit, ou, pour une entree qui ne se lit pas, son rang dans la
+/// lecture du dossier ou de l'archive, a partir de 1 (un compte, que la phrase dit).
+#[derive(Clone, Debug)]
+pub enum EntreeDeCote {
+    Nommee(String),
+    SansNom(usize),
 }
 
 /// POURQUOI UNE ENTREE EST MISE DE COTE, avec sa phrase.
@@ -143,9 +148,9 @@ impl MiseDeCote {
     /// « « ../x.dsn » (dans lot.zip) est mis de côté, sans être lu : … » ; « L'entrée n° 3 (dans lot.zip) … ».
     pub fn dit(&self) -> String {
         let dans: String = self.dans.iter().map(|d| format!(" (dans {})", d)).collect();
-        match &self.nom {
-            Some(n) => format!("« {} »{} est mis de côté, sans être lu : {}.", n, dans, self.raison),
-            None => format!("L'entrée n° {}{} est mise de côté, sans être lue : {}.", self.rang, dans, self.raison),
+        match &self.entree {
+            EntreeDeCote::Nommee(n) => format!("« {} »{} est mis de côté, sans être lu : {}.", n, dans, self.raison),
+            EntreeDeCote::SansNom(rang) => format!("L'entrée n° {}{} est mise de côté, sans être lue : {}.", rang, dans, self.raison),
         }
     }
 }
@@ -213,27 +218,27 @@ impl Trieur {
                 return Ok(());
             }
         };
-        let mut entrees: Vec<(String, usize, PathBuf, std::fs::FileType)> = Vec::new();
+        let mut entrees: Vec<(String, PathBuf, std::fs::FileType)> = Vec::new();
         for (i, e) in lues.enumerate() {
             let e = match e {
                 Ok(e) => e,
                 Err(x) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom: None, rang: i + 1, raison: RaisonDeMiseDeCote::Illisible(x.to_string()) });
+                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), entree: EntreeDeCote::SansNom(i + 1), raison: RaisonDeMiseDeCote::Illisible(x.to_string()) });
                     continue;
                 }
             };
             let nom = e.file_name().to_string_lossy().into_owned();
             match e.file_type() {
-                Ok(genre) => entrees.push((nom, i + 1, e.path(), genre)),
-                Err(x) => self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom: Some(nom), rang: i + 1, raison: RaisonDeMiseDeCote::Illisible(x.to_string()) }),
+                Ok(genre) => entrees.push((nom, e.path(), genre)),
+                Err(x) => self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), entree: EntreeDeCote::Nommee(nom), raison: RaisonDeMiseDeCote::Illisible(x.to_string()) }),
             }
         }
         entrees.sort_by(|a, b| a.0.cmp(&b.0));
-        for (nom, rang, chemin, genre) in entrees {
+        for (nom, chemin, genre) in entrees {
             let nom_lu = match NomDeFichier::lire(&nom) {
                 Ok(n) => n,
                 Err(_) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), nom: Some(nom), rang, raison: RaisonDeMiseDeCote::PasUnNom });
+                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), entree: EntreeDeCote::Nommee(nom), raison: RaisonDeMiseDeCote::PasUnNom });
                     continue;
                 }
             };
@@ -357,7 +362,7 @@ impl Trieur {
             let mut e = match z.by_index(i) {
                 Ok(e) => e,
                 Err(err) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: None, rang: i + 1, raison: RaisonDeMiseDeCote::Illisible(err.to_string()) });
+                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), entree: EntreeDeCote::SansNom(i + 1), raison: RaisonDeMiseDeCote::Illisible(err.to_string()) });
                     continue;
                 }
             };
@@ -367,7 +372,7 @@ impl Trieur {
             let rel = match CheminRelatif::ecrit_ailleurs(&brut) {
                 Ok(r) => r,
                 Err(_) => {
-                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), nom: Some(brut), rang: i + 1, raison: RaisonDeMiseDeCote::HorsDeLArchive });
+                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), entree: EntreeDeCote::Nommee(brut), raison: RaisonDeMiseDeCote::HorsDeLArchive });
                     continue;
                 }
             };

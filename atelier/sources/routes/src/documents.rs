@@ -164,11 +164,13 @@ pub(crate) struct DocumentsEnvoyes {
     avertissements: Vec<String>,
 }
 
-/// La charge de `piece-partie` : le mois, et la piece telle que le journal la nomme.
+/// La charge de `piece-partie` : le mois, et la piece telle que le journal la nomme (un nom ecrit ailleurs : la page,
+/// `moteur route`).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargePiecePartie {
     mois: Mois,
+    #[serde(deserialize_with = "socle::fichiers::ecrit_ailleurs::nom")]
     fichier: NomDeFichier,
 }
 

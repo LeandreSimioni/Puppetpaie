@@ -1056,9 +1056,56 @@ impl NomDeFichier {
         }
     }
 
+    /// LE NOM QU'ECRIT UN AUTRE SYSTEME (une charge de route, un scenario du banc) : lu comme un chemin ecrit ailleurs
+    /// (`CheminRelatif::ecrit_ailleurs`, qui refuse `:`), et un nom seul.
+    pub fn ecrit_ailleurs(texte: &str) -> R<NomDeFichier> {
+        let c = CheminRelatif::ecrit_ailleurs(texte)?;
+        match c.parent() {
+            None => Ok(c.nom()),
+            Some(_) => Err(crate::refus!("{} n'est pas un nom de fichier : un nom seul, sans dossier.", repr(texte))),
+        }
+    }
+
     /// Le nom tel qu'ecrit.
     pub fn texte(&self) -> &str {
         &self.0
+    }
+}
+
+/// LES LECTURES D'UN NOM OU D'UN CHEMIN ECRIT AILLEURS, pour le champ d'une forme (`deserialize_with`) : une charge de
+/// route qui porte un nom de fichier, un scenario du banc.
+pub mod ecrit_ailleurs {
+    use super::{CheminRelatif, NomDeFichier};
+    use serde::Deserialize;
+
+    /// Un nom de fichier (`NomDeFichier::ecrit_ailleurs`).
+    pub fn nom<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NomDeFichier, D::Error> {
+        match NomDeFichier::ecrit_ailleurs(&String::deserialize(d)?) {
+            Ok(n) => Ok(n),
+            Err(e) => Err(serde::de::Error::custom(e.phrase)),
+        }
+    }
+
+    /// Un nom de fichier facultatif.
+    pub fn nom_facultatif<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<NomDeFichier>, D::Error> {
+        match Option::<String>::deserialize(d)? {
+            Some(t) => match NomDeFichier::ecrit_ailleurs(&t) {
+                Ok(n) => Ok(Some(n)),
+                Err(e) => Err(serde::de::Error::custom(e.phrase)),
+            },
+            None => Ok(None),
+        }
+    }
+
+    /// Un chemin relatif facultatif (`CheminRelatif::ecrit_ailleurs`).
+    pub fn chemin_facultatif<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<CheminRelatif>, D::Error> {
+        match Option::<String>::deserialize(d)? {
+            Some(t) => match CheminRelatif::ecrit_ailleurs(&t) {
+                Ok(c) => Ok(Some(c)),
+                Err(e) => Err(serde::de::Error::custom(e.phrase)),
+            },
+            None => Ok(None),
+        }
     }
 }
 

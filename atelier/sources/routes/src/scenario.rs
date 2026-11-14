@@ -183,39 +183,16 @@ socle::noms_fermes! {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Piece {
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "chemin_ecrit_ailleurs")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::fichiers::ecrit_ailleurs::chemin_facultatif")]
     pub chemin: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fichier: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "nom_ecrit_ailleurs")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::fichiers::ecrit_ailleurs::nom_facultatif")]
     pub nom: Option<NomDeFichier>,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "chemin_ecrit_ailleurs")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::fichiers::ecrit_ailleurs::chemin_facultatif")]
     pub dans_la_compagnie: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fichiers: Option<BTreeMap<FichierDeLaPiece, socle::fichiers::Empreinte>>,
-}
-
-/// Un chemin du scenario, lu par `CheminRelatif::ecrit_ailleurs`.
-fn chemin_ecrit_ailleurs<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<CheminRelatif>, D::Error> {
-    match Option::<String>::deserialize(d)? {
-        Some(t) => match CheminRelatif::ecrit_ailleurs(&t) {
-            Ok(c) => Ok(Some(c)),
-            Err(e) => Err(serde::de::Error::custom(e.phrase)),
-        },
-        None => Ok(None),
-    }
-}
-
-/// Le nom d'un fichier du scenario, lu par `CheminRelatif::ecrit_ailleurs` : un nom seul.
-fn nom_ecrit_ailleurs<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<NomDeFichier>, D::Error> {
-    match Option::<String>::deserialize(d)? {
-        Some(t) => match CheminRelatif::ecrit_ailleurs(&t) {
-            Ok(c) if c.parent().is_none() => Ok(Some(c.nom())),
-            Ok(_) => Err(serde::de::Error::custom(format!("{} n'est pas un nom de fichier : un nom seul, sans dossier.", socle::fichiers::repr(&t)))),
-            Err(e) => Err(serde::de::Error::custom(e.phrase)),
-        },
-        None => Ok(None),
-    }
 }
 
 /// UN FICHIER D'UNE PIECE DEPOSEE, relatif a elle : la piece elle-meme, quand elle est un fichier seul (ecrite `.`), ou un

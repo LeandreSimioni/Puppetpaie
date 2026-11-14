@@ -533,7 +533,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   modèle d'un contrat, une table de la norme livrée, l'archive d'une version, la copie d'une pièce importée. Ni vide, ni
   `.` ni `..`, sans `/`, `\` ni caractère nul ; il peut porter `:`, permis sous Mac et Linux (« Relevé 03/2026.pdf »
   du Finder s'écrit `Relevé 03:2026.pdf`), jamais lu sur un disque Windows, et refusé dans un nom écrit ailleurs
-  (`CheminRelatif::ecrit_ailleurs`, la restauration sous Windows) ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans
+  (`NomDeFichier::ecrit_ailleurs` : la charge d'une route, un scénario du banc, par `socle::fichiers::ecrit_ailleurs` ;
+  `CheminRelatif::ecrit_ailleurs` ; la restauration sous Windows) ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans
   nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur` ; le nom du dossier d'un mois, de son `Mois`.
 - **chemin relatif** : un chemin sous une racine que son champ dit (la compagnie, le dossier de la sauvegarde) : la trace
   d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris. Des
@@ -555,7 +556,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **entrée mise de côté au tri d'un import** : une entrée d'archive dont le nom ne fait pas un chemin sous l'archive
   (`..`, `:`, un chemin absolu, rien qui reste), un fichier du disque dont le nom n'est pas un `NomDeFichier`, ou une
   entrée, d'archive ou du disque, qui ne se lit pas : elle ne s'écrit jamais sur le disque, le reste se trie, et le
-  compte rendu la dit (`TriVu.mises_de_cote`), par son nom, ou par son rang quand elle n'en a pas (`nom` vide).
+  compte rendu la dit (`TriVu.mises_de_cote`), par son nom, ou par son rang quand elle n'en a pas
+  (`import::tri::EntreeDeCote` : `Nommee` ou `SansNom`, une façon de la désigner, pas une notion).
 - **raison d'une mise de côté** : laquelle des trois, avec sa phrase ; celle d'une entrée illisible porte l'erreur.
 - **clé de dépôt du banc** : la clé d'une charge qui nomme ce que la route lit hors du moteur (`dossier`, `export`,
   `fichier`, `chemin`) ; une liste du logiciel (`socle::noms_fermes!`), sous laquelle un scénario garde ses pièces.
