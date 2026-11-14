@@ -268,7 +268,7 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
             euros(r.declare.brut),
             euros(r.apres.brut),
             euros(r.net_deja_verse),
-            euros(r.apres.net_a_payer),
+            euros(r.apres.net_a_payer.decimal()),
         ));
     }
     Ok(out)

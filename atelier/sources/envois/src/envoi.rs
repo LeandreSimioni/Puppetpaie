@@ -264,10 +264,10 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
             cachets: e.cachets,
             heures,
             brut: p.brut,
-            net: p.net_a_payer,
+            net: p.net_a_payer.decimal(),
         });
         brut += p.brut;
-        net += p.net_a_payer;
+        net += p.net_a_payer.decimal();
     }
     Ok(ResumeDePaie { contrats, brut, net })
 }

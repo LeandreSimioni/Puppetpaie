@@ -101,7 +101,7 @@ fait). Rien n'est écrit.",
     let dite: String = maintien.iter().map(|m| mention(m, &nom, &fin)).collect();
     valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
-    valeurs.insert(Marqueur::SoldeNet, fmt_eur(p.net_a_payer));
+    valeurs.insert(Marqueur::SoldeNet, fmt_eur(p.net_a_payer.decimal()));
     let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste))?;
     ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
     if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {

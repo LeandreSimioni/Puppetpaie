@@ -163,9 +163,9 @@ fn somme(paies: &[Paie], rangs: &[usize], cible: Cible) -> R<Decimal> {
     for &i in rangs {
         let p = paies.get(i).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
         total += match cible {
-            Cible::Net => p.net_a_payer,
+            Cible::Net => p.net_a_payer.decimal(),
             Cible::Brut => p.brut,
-            Cible::Cout => p.cout_employeur,
+            Cible::Cout => p.cout_employeur.decimal(),
         };
     }
     Ok(total)

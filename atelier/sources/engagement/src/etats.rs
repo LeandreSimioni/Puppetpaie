@@ -614,19 +614,19 @@ impl PaieDuMois {
     }
 
     pub fn net_a_payer(&self) -> Option<Decimal> {
-        self.montant(|p| p.net_a_payer, |p| p.net_a_payer)
+        self.montant(|p| p.net_a_payer.decimal(), |p| p.net_a_payer)
     }
 
     pub fn net_imposable(&self) -> Option<Decimal> {
-        self.montant(|p| p.net_imposable, |p| p.net_imposable)
+        self.montant(|p| p.net_imposable.decimal(), |p| p.net_imposable)
     }
 
     pub fn cout_employeur(&self) -> Option<Decimal> {
-        self.montant(|p| p.cout_employeur, |p| p.cout_employeur)
+        self.montant(|p| p.cout_employeur.decimal(), |p| p.cout_employeur)
     }
 
     pub fn plafond(&self) -> Option<Decimal> {
-        self.montant(|p| p.plafond, |p| p.plafond)
+        self.montant(|p| p.plafond.decimal(), |p| p.plafond)
     }
 
     /// L'assiette de la CSG : celle du calcul, ou celle que les pieces disent.
@@ -894,7 +894,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     // cette avance-la, ce que le BOFiP en soumet (`maintien`, `Assiette::IjSubrogeesAssiettePas`).
     // Sans subrogation, aucune avance.
     let avance: Decimal = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).map(|b| b.decimal()).into_iter().sum();
-    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, p.net_imposable + avance, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
+    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, p.net_imposable.decimal() + avance, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
 }
 
 /// Le prelevement a la source du versement d'une correction, verse avec le mois `mois_du_versement` : la difference de
@@ -915,7 +915,7 @@ pub fn prelevement_de_la_correction(
     ctx: &Contexte, apres: &Paie, net_imposable_declare: Decimal, taux_origine: Option<&droit::pas::TauxDePas>, versement: Mois,
 ) -> R<PrelevementDeLaCorrection> {
     let (debut, fin) = (versement.premier_jour(), versement.dernier_jour());
-    let difference = socle::num::sub(apres.net_imposable, net_imposable_declare);
+    let difference = socle::num::sub(apres.net_imposable.decimal(), net_imposable_declare);
     let e = &apres.engagement;
     let taux = droit::pas::taux_dgfip(ctx, &apres.salarie.id, Some(fin), Some(versement))?;
     let bareme = ctx.bareme(&debut)?;

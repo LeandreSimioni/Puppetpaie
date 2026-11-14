@@ -599,8 +599,8 @@ fn comparer_une(
     for (cle, notre, leur) in [
         (TotalDuBulletin::CotisationsSalariales, paie.total_sal.decimal() - hors(&|l| l.montant_sal.decimal()), p.cotisations_salariales),
         (TotalDuBulletin::CotisationsPatronales, paie.total_pat.decimal() - hors(&|l| l.montant_pat.decimal()), p.cotisations_patronales),
-        (TotalDuBulletin::NetSocial, paie.net_social, p.net_social),
-        (TotalDuBulletin::NetImposable, paie.net_imposable, p.net_imposable),
+        (TotalDuBulletin::NetSocial, paie.net_social.decimal(), p.net_social),
+        (TotalDuBulletin::NetImposable, paie.net_imposable.decimal(), p.net_imposable),
     ] {
         let Some(leur) = leur else { continue };
         if (leur - notre).abs() > Decimal::new(1, 2) {

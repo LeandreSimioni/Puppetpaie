@@ -769,8 +769,8 @@ pub fn au_net(
         Ok(out)
     };
     let sans_absence: Vec<LignePaie> = avec(None)?.into_iter().filter(|l| !l.est_retenue_arret()).collect();
-    let net0 = paie(sans_absence)?.net_a_payer;
-    let net_abs = paie(avec(None)?)?.net_a_payer;
+    let net0 = paie(sans_absence)?.net_a_payer.decimal();
+    let net_abs = paie(avec(None)?)?.net_a_payer.decimal();
     let retire: Decimal = parts.iter().map(|p| p.0).sum();
     let perdu = net0 - net_abs;
     let cible = if spec.au_net.net {
@@ -787,7 +787,7 @@ pub fn au_net(
     let mut calculs = 2usize;
     let mut recu = |a: Decimal, calculs: &mut usize| -> R<Decimal> {
         *calculs += 1;
-        Ok(paie(avec(Some(a))?)?.net_a_payer + hors_bulletin)
+        Ok(paie(avec(Some(a))?)?.net_a_payer.decimal() + hors_bulletin)
     };
     let resoudre = |cible: Decimal, recu: &mut dyn FnMut(Decimal, &mut usize) -> R<Decimal>, calculs: &mut usize| -> R<Option<Decimal>> {
         let (mut lo, mut flo) = (plancher, recu(plancher, calculs)? - cible);

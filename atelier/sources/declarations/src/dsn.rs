@@ -2319,7 +2319,7 @@ pub fn net_social(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i6
     }
     dater_le_58(f, dates);
     f.add(droit::rubrique!("S21.G00.58.003"), "03");
-    f.add(droit::rubrique!("S21.G00.58.004"), ms(p.net_social, signe));
+    f.add(droit::rubrique!("S21.G00.58.004"), ms(p.net_social.decimal(), signe));
     // Les indemnites journalieres que la compagnie subrogee reverse, comptees dans le montant net social : « 10 - IJSS
     // subrogees prises en compte dans le calcul du MNS » (S21.G00.58.003, `norme-dsn/texte/bloc-S21.G00.60.txt`, p. 265).
     if let Some(ij) = p.bases.get(&Assiette::IjSubrogeesNettes).map(|b| b.decimal()).filter(|m| !m.is_zero()) {
@@ -2371,7 +2371,7 @@ pub fn bases_et_cotisations(
                 // Le SMIC de reference de la reduction generale, sinon le plafond de la periode.
                 let v = match p.reduction_generale.as_ref() {
                     Some(rg) => rg.smic_reference,
-                    None => p.plafond,
+                    None => p.plafond.decimal(),
                 };
                 f.add(droit::rubrique!("S21.G00.79.004"), ms(v, signe));
             } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
@@ -2437,15 +2437,15 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     // « Date à laquelle le débiteur effectue le versement » (`bloc-S21.G00.50.txt`, l. 50-55 ; CCH-13, l. 61-62 : au plus
     // tard le dernier jour du mois suivant) : le jour ou se fait la retenue, celui du taux de PAS de la paie.
     f.add(droit::rubrique!("S21.G00.50.001"), e.date_du_versement()?.jjmmaaaa());
-    f.add(droit::rubrique!("S21.G00.50.002"), mt(p.net_imposable));
+    f.add(droit::rubrique!("S21.G00.50.002"), mt(p.net_imposable.decimal()));
     // Le versement du mois a le rang de son contrat : un contrat paye ce mois, un versement (`generer`).
     f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(rang)?);
-    f.add(droit::rubrique!("S21.G00.50.004"), mt(p.net_verse()));
+    f.add(droit::rubrique!("S21.G00.50.004"), mt(p.net_verse().decimal()));
     // Le prelevement d'une paie validee est celui qu'elle a ecrit (`Paie::pas`) : la DSN ne le recalcule pas. Un mois
     // sans paie n'en a pas : son versement nul porte le taux qui vaut pour le salarie.
     let (taux, type_taux, identifiant, soumis) = match &p.pas {
         Some(v) => (v.taux.clone(), v.type_taux.clone(), v.identifiant.clone(), v.montant_soumis),
-        None if e.sans_paie() => pas_du_versement(taux_pas, bar, p.net_imposable, fin, court(p, fin)?)?,
+        None if e.sans_paie() => pas_du_versement(taux_pas, bar, p.net_imposable.decimal(), fin, court(p, fin)?)?,
         None => {
             return Err(socle::echec::cle(format!(
                 "La paie de {} pour {} ne porte pas de prelevement a la source. Revalider l'engagement.",
@@ -2677,10 +2677,10 @@ dans une correction. Rien n'est écrit.",
     // annuler ni a redeclarer ; tout son montant net social est verse par la correction, aux dates du mois du versement
     // (BOSS, montant net social, Q 35 : « du mois lors duquel ce rappel ou ce versement est effectue »).
     let ajoute = r.declare.lignes.is_empty() && r.declare.fichier.is_empty() && r.net_deja_verse.is_zero();
-    if !ajoute && apres.net_a_payer == r.net_deja_verse {
-        return origine(f, sub(apres.net_social, rappels));
+    if !ajoute && apres.net_a_payer.decimal() == r.net_deja_verse {
+        return origine(f, sub(apres.net_social.decimal(), rappels));
     }
-    let paye = if ajoute { Decimal::ZERO } else { sub(r.net_deja_verse, sub(avant.net_a_payer, avant.net_social)) };
+    let paye = if ajoute { Decimal::ZERO } else { sub(r.net_deja_verse, sub(avant.net_a_payer.decimal(), avant.net_social.decimal())) };
     if !ajoute && sub(paye, rappels) != r.declare.net_social {
         origine(f, sub(paye, rappels))?;
     }
@@ -2689,7 +2689,7 @@ dans une correction. Rien n'est écrit.",
     f.add(droit::rubrique!("S21.G00.58.001"), d_v.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.58.002"), f_v.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.58.003"), "03");
-    f.add(droit::rubrique!("S21.G00.58.004"), ms(sub(apres.net_social, paye), 1));
+    f.add(droit::rubrique!("S21.G00.58.004"), ms(sub(apres.net_social.decimal(), paye), 1));
     Ok(())
 }
 
@@ -2743,7 +2743,7 @@ fn bloc_regularisation(
     // Le prelevement du versement de la correction est celui que l'engagement rend (`prelevement_de_la_correction`) :
     // la DSN ne le calcule pas.
     let d_ni = pas_c.difference;
-    let d_net = sub(apres.net_verse(), r.declare.net_verse);
+    let d_net = sub(apres.net_verse().decimal(), r.declare.net_verse);
     f.add(droit::rubrique!("S21.G00.50.001"), fin_mois.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.50.002"), mt(d_ni));
     f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(numero)?);

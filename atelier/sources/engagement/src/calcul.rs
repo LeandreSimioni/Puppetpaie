@@ -394,9 +394,9 @@ impl DeductionForfaitaire {
 /// Ce que la remuneration nette fiscale reintegre au net des cotisations : la CSG et la CRDS non deductibles (part
 /// salariale de `csg_crds_nd`) et la part patronale des garanties frais de sante (`mutuelle`) ; norme DSN 2026.1,
 /// p. 60-61 (« AJOUTER ») et p. 244 (50.004). Un seul endroit : `calculer` en tire 50.002, `Paie::net_verse` 50.004.
-fn reintegrations(lignes: &[LigneCotisation]) -> Decimal {
-    let csg_nd = lignes.iter().filter(|l| l.est(&droit::forme_bareme::CSG_CRDS_ND)).take(1).fold(Montant::ZERO.decimal(), |a, l| a + l.montant_sal.decimal());
-    csg_nd + lignes.iter().filter(|l| l.est(&droit::forme_bareme::MUTUELLE)).fold(Montant::ZERO.decimal(), |a, l| a + l.montant_pat.decimal())
+fn reintegrations(lignes: &[LigneCotisation]) -> Montant {
+    let csg_nd = lignes.iter().filter(|l| l.est(&droit::forme_bareme::CSG_CRDS_ND)).take(1).fold(Montant::ZERO, |a, l| a + l.montant_sal);
+    csg_nd + lignes.iter().filter(|l| l.est(&droit::forme_bareme::MUTUELLE)).fold(Montant::ZERO, |a, l| a + l.montant_pat)
 }
 
 /// Une paie d'un engagement : ce que son calcul a produit, ou sa forme ecrite relue (`relire`). Elle se lit partout, ce
@@ -420,24 +420,24 @@ pub struct Contenu {
     pub spectacle: Option<droit::fiche::Spectacle>,
     pub brut: Decimal,
     pub base_csg: Montant,
-    pub plafond: Decimal,
+    pub plafond: Montant,
     /// Le SMIC horaire de la periode, dans sa forme la plus courte (`Contexte::smic`).
     pub smic: MontantUnitaire,
-    pub heures: Decimal,
+    pub heures: Heures,
     pub lignes: Vec<LigneCotisation>,
     pub total_pat: Montant,
     pub total_sal: Montant,
     /// Ce qui se paie au salarie avant impot : le brut, moins les cotisations salariales, plus ou moins TOUTES les
     /// lignes hors assiette (defraiements, acompte retenu, indemnites).
-    pub net_a_payer: Decimal,
+    pub net_a_payer: Montant,
     /// Le montant net social (S21.G00.58.004 de type 03, « Montant net social » du bulletin) : voir `calculer`
     /// (7.10). Le brut, moins les cotisations salariales, plus les lignes hors assiette qui sont un revenu ; ni
     /// remboursement de frais, ni mouvement de tresorerie (acompte).
-    pub net_social: Decimal,
+    pub net_social: Montant,
     /// La remuneration nette fiscale (S21.G00.50.002, « Net imposable » du bulletin, base du PAS) : voir
     /// `calculer` (7.10) ; les lignes hors assiette n'y entrent que si le catalogue les dit imposables.
-    pub net_imposable: Decimal,
-    pub cout_employeur: Decimal,
+    pub net_imposable: Montant,
+    pub cout_employeur: Montant,
     pub numero_bulletin: Option<crate::numeros::NumeroDeBulletin>,
     /// Les assiettes du calcul, que la DSN declare telles quelles, chacune dans ce qu'elle compte.
     pub bases: BTreeMap<Assiette, BaseDeCotisation>,
@@ -473,14 +473,13 @@ impl Paie {
     /// Les champs sans valeur par defaut ; les autres partent a zero ou vides.
     pub(crate) fn nouveau(
         engagement: Engagement, salarie: SalarieDuContrat, spectacle: Option<droit::fiche::Spectacle>, brut: Decimal,
-        base_csg: Montant, plafond: Decimal, smic: MontantUnitaire, heures: Decimal,
+        base_csg: Montant, plafond: Montant, smic: MontantUnitaire, heures: Heures,
         plafond_temps_partiel: PlafondTempsPartiel,
     ) -> Paie {
-        let zero = Montant::ZERO.decimal();
         Paie(Contenu {
             engagement, salarie, spectacle, brut, base_csg, plafond, smic, heures,
-            lignes: Vec::new(), total_pat: Montant::ZERO, total_sal: Montant::ZERO, net_a_payer: zero, net_social: zero,
-            net_imposable: zero, cout_employeur: zero, numero_bulletin: None,
+            lignes: Vec::new(), total_pat: Montant::ZERO, total_sal: Montant::ZERO, net_a_payer: Montant::ZERO, net_social: Montant::ZERO,
+            net_imposable: Montant::ZERO, cout_employeur: Montant::ZERO, numero_bulletin: None,
             bases: BTreeMap::new(), remuneration: Vec::new(), reduction_generale: None,
             deduction_forfaitaire: None, avertissements: Vec::new(), salaire_de_base: Montant::ZERO,
             salaire_retabli: Montant::ZERO, assiette_chomage: Montant::ZERO, heures_travaillees: Heures::ZERO,
@@ -496,7 +495,7 @@ impl Paie {
         engagement.lignes.clear();
         (engagement.jours, engagement.cachets, engagement.heures) = (0, 0, None);
         let zero = socle::grandeurs::Montant::ZERO.decimal();
-        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), zero, Montant::ZERO, zero, self.smic, socle::grandeurs::Heures::ZERO.decimal(), self.plafond_temps_partiel);
+        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), zero, Montant::ZERO, Montant::ZERO, self.smic, Heures::ZERO, self.plafond_temps_partiel);
         p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::de_l_assiette(*k, zero))).collect();
         p
     }
@@ -510,7 +509,7 @@ impl Paie {
     /// deduits le montant de la CSG non deductible, le montant de la CRDS et le montant des contributions des employeurs
     /// destinees a financer des garanties « frais de sante » reintegrees dans la base fiscale » (norme DSN 2026.1,
     /// p. 244). Ce n'est PAS le net a payer : ni defraiement, ni acompte, ni indemnite non imposable n'y entrent.
-    pub fn net_verse(&self) -> Decimal {
+    pub fn net_verse(&self) -> Montant {
         self.net_imposable - reintegrations(&self.lignes)
     }
 
@@ -1891,16 +1890,16 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         (base_51, retabli, chomage)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, Montant::du_decimal(base_csg), plafond, MontantUnitaire::du_decimal(smic), heures, tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, Montant::du_decimal(base_csg), Montant::du_decimal(plafond), MontantUnitaire::du_decimal(smic), Heures::du_decimal(heures), tp);
     let p = paie.ecrire();
     p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Heures::ZERO).fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     p.lignes = lignes;
     p.total_pat = Montant::du_decimal(tot_pat);
     p.total_sal = Montant::du_decimal(tot_sal);
-    p.net_a_payer = net;
-    p.net_social = brut - tot_sal + hors_assiette_revenu;
-    p.net_imposable = brut - tot_sal + hors_assiette_imposable + reintegrations(&p.lignes) - exonere;
-    p.cout_employeur = brut + tot_pat;
+    p.net_a_payer = Montant::du_decimal(net);
+    p.net_social = Montant::du_decimal(brut - tot_sal + hors_assiette_revenu);
+    p.net_imposable = Montant::du_decimal(brut - tot_sal + hors_assiette_imposable) + reintegrations(&p.lignes) - Montant::du_decimal(exonere);
+    p.cout_employeur = Montant::du_decimal(brut + tot_pat);
     p.bases = bases.into_iter().map(|(a, d)| (a, BaseDeCotisation::de_l_assiette(a, d))).collect();
     p.reduction_generale = rg;
     p.deduction_forfaitaire = dfs;
@@ -2097,16 +2096,16 @@ impl Paie {
             base_csg: self.base_csg,
             bases: self.bases.clone(),
             brut: Montant::du_decimal(self.brut),
-            cout_employeur: Montant::du_decimal(self.cout_employeur),
+            cout_employeur: self.cout_employeur,
             deduction_forfaitaire: self.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::forme),
             engagement,
-            heures: Heures::du_decimal(self.heures),
+            heures: self.heures,
             heures_absence: self.heures_absence,
             heures_travaillees: self.heures_travaillees,
             lignes: self.lignes.iter().map(LigneCotisation::forme).collect(),
-            net_a_payer: Montant::du_decimal(self.net_a_payer),
-            net_imposable: Montant::du_decimal(self.net_imposable),
-            net_social: Montant::du_decimal(self.net_social),
+            net_a_payer: self.net_a_payer,
+            net_imposable: self.net_imposable,
+            net_social: self.net_social,
             numero_bulletin: self.numero_bulletin.clone(),
             reduction_generale: self.reduction_generale.clone(),
             remuneration: self.remuneration.iter().map(LigneBrut::forme).collect(),
@@ -2117,7 +2116,7 @@ impl Paie {
             spectacle: self.spectacle.as_ref().map(|s| Cle { cle: s.cle.clone() }),
             total_pat: self.total_pat,
             total_sal: self.total_sal,
-            plafond: Montant::du_decimal(self.plafond),
+            plafond: self.plafond,
             plafond_urssaf: Montant::du_decimal(self.plafond_urssaf(ctx)?),
             periodes: self.periodes.iter().map(|p| p.forme(ctx, avis, ecrite)).collect::<R<_>>()?,
             plafond_temps_partiel: ecrite.then_some(self.plafond_temps_partiel),

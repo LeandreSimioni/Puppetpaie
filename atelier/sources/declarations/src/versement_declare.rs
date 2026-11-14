@@ -217,8 +217,8 @@ pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementDeclare> {
     };
     Ok(VersementDeclare {
         fichier: quoi,
-        net_imposable: p.net_imposable,
-        net_verse: p.net_verse(),
+        net_imposable: p.net_imposable.decimal(),
+        net_verse: p.net_verse().decimal(),
         net_social,
         rappels_net_social: Decimal::ZERO,
         frais,
@@ -263,7 +263,7 @@ pub fn dernier_declare(
     for paire in declarees.windows(2) {
         let (avant, puis) = (&paire[0].paie, &paire[1].paie);
         if avant.net_a_payer != puis.net_a_payer {
-            rappels += puis.net_social - avant.net_social;
+            rappels += (puis.net_social - avant.net_social).decimal();
         }
     }
     if !rappels.is_zero() {
@@ -286,7 +286,7 @@ pub fn dernier_declare(
         etat.debut_contrat = Some(d);
     }
     let bulletin = declarees.iter().rev().find_map(|d| d.paie.numero_bulletin.clone());
-    let net_deja_verse = derniere.paie.net_a_payer;
+    let net_deja_verse = derniere.paie.net_a_payer.decimal();
     let avant = declarees.into_iter().next_back().map(|d| d.paie).ok_or_else(|| refus("aucune paie declaree"))?;
     Ok(Some(DernierDeclare { versement: etat, net_deja_verse, avant, bulletin }))
 }

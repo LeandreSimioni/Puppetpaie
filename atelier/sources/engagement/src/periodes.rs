@@ -129,7 +129,7 @@ fn poser_reduction(p: &mut Paie, rg: Option<ReductionGenerale>) {
         p.lignes.push(ligne_de_reduction(r, p.brut));
         p.total_pat -= Montant::du_decimal(r.montant);
     }
-    p.cout_employeur = p.brut + p.total_pat.decimal();
+    p.cout_employeur = Montant::du_decimal(p.brut) + p.total_pat;
     p.reduction_generale = rg;
 }
 
@@ -214,9 +214,9 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         derniere.spectacle.clone(),
         somme(&|p| p.brut),
         parts.iter().fold(Montant::ZERO, |a, p| a + p.base_csg),
-        somme(&|p| p.plafond),
+        parts.iter().fold(Montant::ZERO, |a, p| a + p.plafond),
         derniere.smic,
-        parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures),
+        parts.iter().fold(Heures::ZERO, |a, p| a + p.heures),
         derniere.plafond_temps_partiel,
     );
     let m = paie.ecrire();
@@ -257,10 +257,10 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let montants = |f: &dyn Fn(&Paie) -> Montant| parts.iter().fold(Montant::ZERO, |a, p| a + f(p));
     m.total_pat = montants(&|p| p.total_pat);
     m.total_sal = montants(&|p| p.total_sal);
-    m.net_a_payer = somme(&|p| p.net_a_payer);
-    m.net_social = somme(&|p| p.net_social);
-    m.net_imposable = somme(&|p| p.net_imposable);
-    m.cout_employeur = somme(&|p| p.cout_employeur);
+    m.net_a_payer = montants(&|p| p.net_a_payer);
+    m.net_social = montants(&|p| p.net_social);
+    m.net_imposable = montants(&|p| p.net_imposable);
+    m.cout_employeur = montants(&|p| p.cout_employeur);
     let mut bases = BTreeMap::new();
     for p in &parts {
         for (k, v) in &p.bases {

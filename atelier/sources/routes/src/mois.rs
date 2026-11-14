@@ -1690,7 +1690,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     let lieu = brut.lieu.clone();
     // Le net paye : le net a payer moins le prelevement a la source que la validation a calcule ; une paie que rien n'a
     // encore validee n'en a pas (`Paie::pas`) : son net paye n'est pas encore connu.
-    let net_paye = p.pas.as_ref().map(|v| (Montant::du_decimal(p.net_a_payer) - v.prelevement).au_centime().decimal());
+    let net_paye = p.pas.as_ref().map(|v| (p.net_a_payer - v.prelevement).au_centime().decimal());
     // CE QUE LE MOTEUR A COMPRIS DE LA CARTE, en une ligne : son bulletin (ou qu'il n'y en a pas), son contrat, ses
     // bornes (et la periode de paie d'un contrat a cheval), ce qu'elle paye, le metier, le brut.
     let resolu_dit = {
@@ -1795,13 +1795,13 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         jours,
         lieu,
         brut: Montant::du_decimal(p.brut).au_centime().decimal(),
-        net_a_payer: Montant::du_decimal(p.net_a_payer).au_centime().decimal(),
+        net_a_payer: p.net_a_payer.au_centime().decimal(),
         // CE QUE LA COMPAGNIE VIRE : la somme effectivement recue par le salarie (C. trav. R. 3243-1, 10°,
         // `atelier/reference/sources/code-du-travail/articles-20261029.md`), le « MONTANT NET À PAYER » du bulletin :
         // le net a payer moins l'impot preleve a la source.
         net_paye,
-        net_imposable: Montant::du_decimal(p.net_imposable).au_centime().decimal(),
-        cout_employeur: Montant::du_decimal(p.cout_employeur).au_centime().decimal(),
+        net_imposable: p.net_imposable.au_centime().decimal(),
+        cout_employeur: p.cout_employeur.au_centime().decimal(),
         avertissements: p.avertissements.iter().filter(|a| !a.info).map(|a| a.texte.clone()).collect(),
         informations: p.avertissements.iter().filter(|a| a.info).map(|a| a.texte.clone()).collect(),
         emploi: EmploiVu { libelle: s.emploi.clone(), code_emploi_ft: s.code_emploi_ft.clone(), statut: s.statut.clone(), cadre: droit::bareme::est_cadre(s) },

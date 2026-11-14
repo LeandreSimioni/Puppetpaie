@@ -275,7 +275,7 @@ pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
             ));
         }
     }
-    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures), euros(p.smic.decimal())))
+    Ok(format!("{} ({} h à {})", euros(p.plafond.decimal()), fmt_heures(p.heures.decimal()), euros(p.smic.decimal())))
 }
 
 /// (IDCC, libellé) de la convention d'un contrat, pour ce qui s'imprime : le libellé se lit au catalogue des conventions
@@ -420,7 +420,7 @@ fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> R<Vec<Ligne>>
             vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(fmt_eur(pas.montant_soumis.decimal())), s(taux), s(fmt_eur(pas.prelevement.decimal()))],
             vec![],
         ),
-        ligne_net("MONTANT NET À PAYER (en Euros)", sub(p.net_a_payer, pas.prelevement.decimal()), colonnes),
+        ligne_net("MONTANT NET À PAYER (en Euros)", sub(p.net_a_payer.decimal(), pas.prelevement.decimal()), colonnes),
     ])
 }
 
@@ -1179,7 +1179,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // L'EMPLOYEUR » ; deux nets egaux ne partagent pas une ligne (la derogation de l'arrete du 31/01/2023 a pris fin
     // au 01/01/2026). Les libelles sont ceux du modele de l'arrete du 25/02/2016, art. 1, I
     // (`legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml`), ecrits avec les accents du francais, capitales comprises.
-    corps.push(ligne_net("MONTANT NET SOCIAL", p.net_social, n));
+    corps.push(ligne_net("MONTANT NET SOCIAL", p.net_social.decimal(), n));
     if !j.remboursements.is_empty() {
         corps.push(ligne(vec![cel("REMBOURSEMENTS ET DÉDUCTIONS DIVERSES", n)], style_section()));
         for i in &j.remboursements {
@@ -1187,9 +1187,9 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_eur(l.taux.decimal()))), s(fmt_eur(l.montant.decimal()))], vec![]));
         }
     }
-    corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer, n));
+    corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer.decimal(), n));
     corps.push(ligne(vec![s("IMPÔT SUR LE REVENU"), s("Base"), s("Taux"), s("Salarié")], style_section()));
-    corps.push(ligne(vec![cel("Montant net imposable", 3), s(fmt_eur(p.net_imposable))], vec![]));
+    corps.push(ligne(vec![cel("Montant net imposable", 3), s(fmt_eur(p.net_imposable.decimal()))], vec![]));
     match j.rectificatif.and_then(|r| r.ecart.as_ref()) {
         Some(ecart) => corps.extend(rectificatif_lignes(ecart, n)?),
         None => corps.extend(lignes_pas_tableau(p, j.pas, n)?),
@@ -1198,7 +1198,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // exonerations deduites) : le cout employeur de la paie, imprime au pied du bulletin
     // (« Coût total employeur »).
     corps.push(ligne(
-        vec![cel("TOTAL VERSÉ PAR L'EMPLOYEUR", n - 1), s(fmt_eur(p.cout_employeur))],
+        vec![cel("TOTAL VERSÉ PAR L'EMPLOYEUR", n - 1), s(fmt_eur(p.cout_employeur.decimal()))],
         vec![gras(), filet_haut(ROUGE, mesure("0.6"))],
     ));
     // Les montants ne se coupent pas : les largeurs de colonnes le permettent.

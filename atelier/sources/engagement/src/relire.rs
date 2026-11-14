@@ -97,7 +97,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         Some(crate::fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
     let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut.decimal(), v.base_csg, v.plafond.decimal(), MontantUnitaire::du_decimal(court(v.smic.decimal())), v.heures.decimal(), tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut.decimal(), v.base_csg, v.plafond, MontantUnitaire::du_decimal(court(v.smic.decimal())), v.heures, tp);
     // Les periodes elementaires d'un mois decoupe : chacune sur l'engagement borne a sa periode, aux termes qu'elle porte.
     let mut periodes_lues = Vec::new();
     for (n, x) in v.periodes.iter().enumerate() {
@@ -117,10 +117,10 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     let p = paie.ecrire();
     p.total_pat = v.total_pat;
     p.total_sal = v.total_sal;
-    p.net_a_payer = v.net_a_payer.decimal();
-    p.net_social = v.net_social.decimal();
-    p.net_imposable = v.net_imposable.decimal();
-    p.cout_employeur = v.cout_employeur.decimal();
+    p.net_a_payer = v.net_a_payer;
+    p.net_social = v.net_social;
+    p.net_imposable = v.net_imposable;
+    p.cout_employeur = v.cout_employeur;
     p.salaire_de_base = v.salaire_de_base;
     p.salaire_retabli = v.salaire_retabli;
     p.assiette_chomage = v.assiette_chomage;

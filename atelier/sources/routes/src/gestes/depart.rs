@@ -706,8 +706,8 @@ impl DocumentsFabriques {
 /// BOI-IR-PAS-30-10-50, § 1 et § 90, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-extrait-regularisation.md`).
 fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: Mois) -> R<documents::bulletin::Ecart> {
     let taux_parti = parti.pas.as_ref().map(|p| p.taux);
-    let d_net = apres.net_a_payer - parti.net_a_payer;
-    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_ref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
+    let d_net = (apres.net_a_payer - parti.net_a_payer).decimal();
+    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable.decimal(), taux_parti.as_ref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
     let indu = pas_c.indu();
     let prelevement = match pas_c.prelevement {
         Some(montant) => {
@@ -725,8 +725,8 @@ fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois
         None => d_net,
     };
     Ok(documents::bulletin::Ecart {
-        net_avant: parti.net_a_payer,
-        net_apres: apres.net_a_payer,
+        net_avant: parti.net_a_payer.decimal(),
+        net_apres: apres.net_a_payer.decimal(),
         difference_net: d_net,
         difference_net_imposable: pas_c.difference,
         mois_versement,
