@@ -234,8 +234,8 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     /// (`Contexte::socle_repris` : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee), lu sans
     /// le taux AT/MP : une compagnie dit son organisation avant son taux, et une annee sans socle livre lit celui que sa
     /// surcouche reprend. Une case qui ne change pas ne se relit pas ici (`avant` : la fiche que l'ecran a montree ; a la
-    /// verification, vide : toute case se relit). Une annee sans bareme : son refus est la faute de la case, avec les
-    /// autres ; une panne remonte.
+    /// verification, vide : toute case se relit). Une annee dont le logiciel n'a pas le bareme (le refus que
+    /// `socle_repris` rend a part) : la faute de la case, avec les autres ; tout le reste remonte entier.
     fn reconnaitre(ctx: &Contexte, avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
         let Some(nom) = apres.organisation_patronale.clone() else { return Ok(Vec::new()) };
         if apres.organisation_patronale == avant.organisation_patronale {
@@ -243,10 +243,9 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         }
         let an = ctx.lue_au.an;
         let faute = |phrase: String| vec![FauteDeCase { case: CaseEntreprise::OrganisationPatronale.into(), chemin: None, phrase }];
-        let pile = match ctx.socle_repris(an) {
+        let pile = match ctx.socle_repris(an)? {
             Ok(p) => p,
-            Err(e) if e.classe.is_none() => return Ok(faute(e.phrase)),
-            Err(e) => return Err(e),
+            Err(sans_bareme) => return Ok(faute(sans_bareme.phrase)),
         };
         if let Some((cle, _)) = pile.organisation(&nom) {
             apres.organisation_patronale = Some(cle.clone());

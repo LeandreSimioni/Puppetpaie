@@ -1434,7 +1434,7 @@ impl Contexte {
         let ou = chemin.texte();
         let organisation = ent.organisation_patronale.dite();
         let mut regles = Vec::new();
-        let (surcouche, fichier) = self.socle_de_l_annee(an)?;
+        let (surcouche, fichier) = self.socle_de_l_annee(an)??;
         // Les trois etages, dans l'ordre : droit commun, convention, compagnie.
         let (mut pile, r) = crate::forme_bareme::lire_le_socle(&fichier, jour, organisation)?;
         regles.extend(r);
@@ -1464,11 +1464,15 @@ impl Contexte {
     }
 
     /// LE SOCLE QUE LE BAREME DE L'ANNEE `an` REPREND, lu seul (`forme_bareme::socle_seul` : sans la convention, la
-    /// compagnie ni son taux AT/MP) : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee ; sans
-    /// l'un ni l'autre, le refus du bareme. Ce contre quoi une organisation patronale se reconnait (`Pile::organisation`).
-    pub fn socle_repris(&self, an: i32) -> R<Arc<Pile>> {
-        let (_, fichier) = self.socle_de_l_annee(an)?;
-        crate::forme_bareme::socle_seul(&fichier, an)
+    /// compagnie ni son taux AT/MP) : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee. Ce
+    /// contre quoi une organisation patronale se reconnait (`Pile::organisation`). `Ok(Err)` : le logiciel n'a pas le
+    /// bareme de l'annee (`socle_de_l_annee`) ; `Err` : tout le reste (le disque, un socle illisible, l'annee).
+    pub fn socle_repris(&self, an: i32) -> R<Result<Arc<Pile>, Echec>> {
+        let fichier = match self.socle_de_l_annee(an)? {
+            Ok((_, f)) => f,
+            Err(sans_bareme) => return Ok(Err(sans_bareme)),
+        };
+        crate::forme_bareme::socle_seul(&fichier, an).map(Ok)
     }
 
     /// L'ORGANISATION PATRONALE `o` (la case de la fiche entreprise, un alias peut-etre) RECONNUE DANS LE SOCLE QUE LE
@@ -1477,12 +1481,13 @@ impl Contexte {
     /// (le bareme la refuse alors, `controler_organisation_patronale`).
     pub fn organisation_reconnue(&self, an: i32, o: Option<&crate::forme_bareme::OrganisationPatronale>) -> R<Option<crate::forme_bareme::OrganisationPatronale>> {
         let Some(o) = o else { return Ok(None) };
-        Ok(self.socle_repris(an)?.organisation(o).map(|(k, _)| k.clone()))
+        Ok(self.socle_repris(an)??.organisation(o).map(|(k, _)| k.clone()))
     }
 
     /// LA SURCOUCHE DE L'ANNEE `an` ET LE FICHIER DU SOCLE QU'ELLE REPREND ; sans surcouche, la compagnie n'a rien change
-    /// au socle livre de l'annee. Sans l'une ni l'autre, ou une surcouche qui nomme un socle non livre : le refus du bareme.
-    fn socle_de_l_annee(&self, an: i32) -> R<(Surcouche, PathBuf)> {
+    /// au socle livre de l'annee. Sans l'une ni l'autre, ou une surcouche qui nomme un socle non livre : le refus du bareme,
+    /// rendu a part (`Ok(Err)`) ; une surcouche illisible, le disque ou l'annee : `Err`.
+    fn socle_de_l_annee(&self, an: i32) -> R<Result<(Surcouche, PathBuf), Echec>> {
         let chemin = surcouche(an)?;
         let ou = chemin.texte();
         let dossier = self.code.join("baremes");
@@ -1503,16 +1508,16 @@ impl Contexte {
                 note: None,
             },
             false => {
-                return Err(socle::refus!(
+                return Ok(Err(socle::refus!(
                     "Le logiciel n'a pas les taux de {} (SMIC, plafond de la Sécurité sociale, cotisations) : il a ceux de {}. Une paie de {} ne se calcule pas avec cette version.",
                     an,
                     disponibles(&dossier),
                     an
-                ))
+                )))
             }
         };
         let Some(fichier) = fichier_du_socle(&dossier, surcouche.socle) else {
-            return Err(socle::refus!(
+            return Ok(Err(socle::refus!(
                 "Bareme {} : {} demande le socle {}, qui n'est pas livre.\n\
 \x20 Socles disponibles : {}. Un socle neuf s'ecrit en janvier, \
 depuis le plus recent.",
@@ -1520,9 +1525,9 @@ depuis le plus recent.",
                 ou,
                 surcouche.socle,
                 disponibles(&dossier)
-            ));
+            )));
         };
-        Ok((surcouche, fichier))
+        Ok(Ok((surcouche, fichier)))
     }
 
     /// LE JOUR OU SE LIT LE TAUX AT/MP DE L'ANNEE `an` : aujourd'hui dans l'annee en cours, son dernier jour pour une

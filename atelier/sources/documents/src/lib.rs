@@ -277,18 +277,46 @@ impl SorteDePieceProduite {
     }
 }
 
-/// CE QU'EST UN FICHIER QU'UNE LIGNE DU JOURNAL NOMME (le fichier d'un depot, une piece d'un envoi), dit par son nom :
-/// une piece d'un mois que le moteur ecrit, par sa sorte ; sinon un fichier que la compagnie a pose dans les sorties du
-/// mois, ou le moteur l'a pris (le depot propose tout `.dsn` de ce dossier, un signalement se designe par son fichier).
+impl PieceDuMois {
+    /// UNE PIECE QU'UN ACTE DE DEPOT ECRIT ET DEPOSE : la DPAE, la DSN, un amorcage, un signalement. Aucune piece de
+    /// l'envoi ni archive du mois ne se depose.
+    pub const fn se_depose(self) -> bool {
+        match self {
+            PieceDuMois::Dpae | PieceDuMois::Dsn | PieceDuMois::Amorcage => true,
+            PieceDuMois::SignalementArret | PieceDuMois::SignalementReprise | PieceDuMois::SignalementFinContrat => true,
+            PieceDuMois::Bulletin | PieceDuMois::Bulletins | PieceDuMois::BulletinGarde | PieceDuMois::CertificatCs => false,
+            PieceDuMois::CertificatsCs | PieceDuMois::Aer | PieceDuMois::Contrat | PieceDuMois::Avenant => false,
+            PieceDuMois::CertificatDeTravail | PieceDuMois::RecuSoldeToutCompte | PieceDuMois::Impression => false,
+            PieceDuMois::Signature => false,
+        }
+    }
+}
+
+/// CE QU'EST UN FICHIER QU'UNE LIGNE DU JOURNAL NOMME, dit par l'acte de la ligne et le nom : le fichier d'un acte de
+/// depot n'est qu'une piece qu'un depot ecrit, ou un fichier pose (`du_depot`) ; une piece d'un envoi (un contrat d'une
+/// demande de signature, une piece d'un envoi de documents), par sa sorte (`de_l_envoi`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FichierDuJournal {
+    /// Une piece d'un mois que le moteur ecrit, par sa sorte.
     Piece(PieceDuMois),
+    /// UN FICHIER QUE LA COMPAGNIE A POSE ET DEPOSE (un `.dsn` des sorties du mois que le depot propose, ou un fichier
+    /// qu'un signalement designe, a n'importe quel chemin) : le journal n'en garde que le nom, et il se cherche dans les
+    /// sorties du mois ; un fichier depose d'ailleurs ne s'y retrouve pas.
     PoseParLaCompagnie,
 }
 
 impl FichierDuJournal {
-    /// Celui du nom `nom`.
-    pub fn du_nom(nom: &str) -> FichierDuJournal {
+    /// LE FICHIER `nom` QU'UN ACTE DE DEPOT NOMME (une DSN, un signalement, un amorcage, une DPAE) : une piece qu'un depot
+    /// ecrit (`PieceDuMois::se_depose`), sinon un fichier pose ; un `ContratCorrige.dsn` n'est pas un contrat.
+    pub fn du_depot(nom: &str) -> FichierDuJournal {
+        match FichierDuJournal::de_l_envoi(nom) {
+            FichierDuJournal::Piece(p) if p.se_depose() => FichierDuJournal::Piece(p),
+            _ => FichierDuJournal::PoseParLaCompagnie,
+        }
+    }
+
+    /// La piece `nom` qu'une ligne d'un envoi nomme, par sa sorte ; un nom d'aucune sorte d'un mois, un fichier pose.
+    pub fn de_l_envoi(nom: &str) -> FichierDuJournal {
         match SorteDePieceProduite::du_nom(nom).and_then(|(s, _)| s.du_mois()) {
             Some(p) => FichierDuJournal::Piece(p),
             None => FichierDuJournal::PoseParLaCompagnie,
@@ -305,9 +333,9 @@ impl FichierDuJournal {
 }
 
 /// LE FICHIER QU'UNE LIGNE DU JOURNAL DIT DEPOSE (une DSN, une DPAE, un signalement), sous les sorties de son mois
-/// `sorties` (`sorties/<mois>/`), dans le dossier de ce qu'il est (`FichierDuJournal`).
+/// `sorties` (`sorties/<mois>/`), dans le dossier de ce qu'il est (`FichierDuJournal::du_depot`).
 pub fn fichier_depose(sorties: &std::path::Path, nom: &str) -> std::path::PathBuf {
-    FichierDuJournal::du_nom(nom).dossier().sous(sorties).join(nom)
+    FichierDuJournal::du_depot(nom).dossier().sous(sorties).join(nom)
 }
 
 /// OU SE RANGE UNE PIECE PRODUITE (`SorteDePieceProduite::rangement`) : dans un dossier d'un mois, ou hors d'un mois.

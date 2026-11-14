@@ -428,12 +428,12 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     }
     // CE QUE LE JOURNAL DIT PARTI, meme si son fichier manque : `fichier` le nomme pour `piece-partie`, qui le refait
     // (`depart::piece_partie`) et rend son chemin.
-    for nom in pieces_du_journal(lignes) {
+    for (nom, quoi) in pieces_du_journal(lignes) {
         if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
         // Le dossier du mois de ce qu'il est : sa piece, ou les sorties du mois pour un fichier que la compagnie y a pose.
-        let chemin = documents::FichierDuJournal::du_nom(nom.texte()).dossier().sous_le_chemin(&sorties).joint(&nom);
+        let chemin = quoi.dossier().sous_le_chemin(&sorties).joint(&nom);
         out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
@@ -450,22 +450,27 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
 }
 
 /// Les noms des pieces que les lignes acceptees du journal d'un mois disent parties : le fichier d'un depot, les contrats
-/// d'une demande de signature, les pieces d'un envoi de documents.
-fn pieces_du_journal(lignes: &[Ligne]) -> Vec<NomDeFichier> {
-    let mut noms: Vec<NomDeFichier> = Vec::new();
-    let mut noter = |n: &NomDeFichier| {
-        if !noms.contains(n) {
-            noms.push(n.clone());
+/// d'une demande de signature, les pieces d'un envoi de documents ; chacun avec ce qu'il est, par l'acte de sa ligne (le
+/// fichier d'une DSN ou d'une DPAE, `du_depot` ; sinon une piece d'un envoi, `de_l_envoi`).
+fn pieces_du_journal(lignes: &[Ligne]) -> Vec<(NomDeFichier, documents::FichierDuJournal)> {
+    let mut noms: Vec<(NomDeFichier, documents::FichierDuJournal)> = Vec::new();
+    let mut noter = |n: &NomDeFichier, de: fn(&str) -> documents::FichierDuJournal| {
+        if !noms.iter().any(|(m, _)| m == n) {
+            noms.push((n.clone(), de(n.texte())));
         }
     };
     for l in lignes.iter().filter(|l| l.accepte()) {
+        let de: fn(&str) -> documents::FichierDuJournal = match l {
+            Ligne::Dsn(_) | Ligne::Dpae(_) => documents::FichierDuJournal::du_depot,
+            Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => documents::FichierDuJournal::de_l_envoi,
+        };
         if let Some(f) = l.fichier() {
-            noter(f);
+            noter(f, de);
         }
         match l {
-            Ligne::ContratSignature(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier)),
-            Ligne::ContratContresigne(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier)),
-            Ligne::Documents(e) => e.detail.salaries.iter().flat_map(|s| &s.pieces).for_each(|p| noter(p)),
+            Ligne::ContratSignature(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier, de)),
+            Ligne::ContratContresigne(e) => e.detail.contrats.iter().for_each(|c| noter(&c.fichier, de)),
+            Ligne::Documents(e) => e.detail.salaries.iter().flat_map(|s| &s.pieces).for_each(|p| noter(p, de)),
             _ => {}
         }
     }
