@@ -195,7 +195,7 @@ pub struct Chemins {
 }
 
 /// Le nom du gabarit livre.
-const NOM_GABARIT: &str = "due_tel_gabarit.txt";
+const NOM_GABARIT: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("due_tel_gabarit.txt");
 
 /// Les 990 premiers caractères du gabarit, lus en latin-1 : un octet, un caractère, et les fins de ligne
 /// CR LF et CR lues comme LF.
@@ -204,7 +204,7 @@ fn gabarit_lu(gabarits: Option<&Path>, chemins: &Chemins) -> R<Vec<char>> {
     // sinon (`donnees/modeles/`, un enregistrement neutre) : il ne donne plus
     // que l'entete constante, tout le reste est reecrit plus bas.
     let chemin = match gabarits {
-        Some(g) => modele_de(NOM_GABARIT, Some(g), &chemins.poste),
+        Some(g) => modele_de(&NOM_GABARIT, Some(g), &chemins.poste),
         None => chemins.defaut.clone(),
     };
     let octets = std::fs::read(&chemin).map_err(|e| refus(socle::fichiers::panne_fichier(&e, &chemin)))?;

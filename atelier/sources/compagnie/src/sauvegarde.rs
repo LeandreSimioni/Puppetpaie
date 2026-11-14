@@ -368,6 +368,22 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(CheminRelatif, Etat)>, usize), 
 
 // --------------------------------------------------------------------- l'index
 
+/// LE CHEMIN D'UN DOSSIER DE LA SAUVEGARDE DANS LE DRIVE : la racine du Drive, `sauvegarde`, puis le dossier de la
+/// compagnie qu'il tient (aucun pour sa racine). L'index y garde l'identifiant de chaque dossier.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct DossierDuDrive(String);
+
+impl DossierDuDrive {
+    /// Le dossier du Drive qui tient `dossier` (aucun : la racine de la compagnie), sous la racine `racine_drive`.
+    pub fn de(racine_drive: &str, dossier: Option<&CheminRelatif>) -> DossierDuDrive {
+        DossierDuDrive(match dossier {
+            Some(d) => format!("{}/{}/{}", racine_drive, DOSSIER_DRIVE, d),
+            None => format!("{}/{}", racine_drive, DOSSIER_DRIVE),
+        })
+    }
+}
+
 /// `chemin_index` : `config/`, et pas `journal/` : de l'etat machine, pas un document. Il est
 /// ecarte de la sauvegarde (`NOMS_EXCLUS`).
 pub fn chemin_index(racine: &Path) -> PathBuf {
@@ -383,7 +399,7 @@ pub struct Index {
     #[serde(with = "socle::paris::ecrit::saisie")]
     pub quand: socle::paris::Moment,
     pub racine_drive: String,
-    pub dossiers: BTreeMap<String, envois::drive::IdDrive>,
+    pub dossiers: BTreeMap<DossierDuDrive, envois::drive::IdDrive>,
     pub fichiers: BTreeMap<CheminRelatif, Etat>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::saisie::option")]
     pub derniere_complete: Option<socle::paris::Moment>,

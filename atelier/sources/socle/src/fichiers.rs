@@ -984,7 +984,7 @@ pub const MARQUEUR_COPIE: NomDeFichier = NomDeFichier::du_moteur("COPIE-DE-DEVEL
 /// ecrit ses propres clauses passe devant ; une copie de la configuration du poste sans son dossier de gabarits reste la
 /// meme compagnie et garde ceux du poste (son gabarit DPAE porte son centre de medecine du travail). Une compagnie qui
 /// porte `MARQUEUR_COPIE` n'emprunte rien au poste : ses documents ne prennent jamais les clauses de la compagnie reelle.
-pub fn modele_de(nom: &str, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
+pub fn modele_de(nom: &NomDeFichier, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
     let propre = match gabarits {
         Some(g) => g.to_path_buf(),
         None => poste.to_path_buf(),

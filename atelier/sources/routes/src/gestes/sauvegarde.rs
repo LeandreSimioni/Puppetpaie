@@ -33,7 +33,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     let (presents, ecartes) = inventaire(racine)?;
     let index = lire_index(racine)?;
     // Tout renvoyer, ou aucun index : aucun dossier n'est connu d'avance, chacun se cherche dans Drive.
-    let mut dossiers: BTreeMap<String, envois::drive::IdDrive> =index.iter().filter(|_| !tout).flat_map(|i| i.dossiers.clone()).collect();
+    let mut dossiers: BTreeMap<compagnie::sauvegarde::DossierDuDrive, envois::drive::IdDrive> = index.iter().filter(|_| !tout).flat_map(|i| i.dossiers.clone()).collect();
 
     let mut resultat = Sauvegarde {
         racine_drive: racine_drive.to_string(),
@@ -58,23 +58,23 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     let mut en_echec: std::collections::HashSet<CheminRelatif> = std::collections::HashSet::new();
     let etat_de: BTreeMap<&CheminRelatif, &Etat> = presents.iter().map(|(r, e)| (r, e)).collect();
 
-    // Par dossier (`.` pour la racine, comme le dit un dossier reporte) : un seul listage Drive sert a tous les fichiers
-    // qu'il porte.
-    let mut par_dossier: BTreeMap<String, Vec<CheminRelatif>> = BTreeMap::new();
+    // Par dossier (aucun pour la racine) : un seul listage Drive sert a tous les fichiers qu'il porte.
+    let mut par_dossier: BTreeMap<Option<CheminRelatif>, Vec<CheminRelatif>> = BTreeMap::new();
     for (relatif, _) in &presents {
-        let parent = match relatif.parent() {
-            Some(d) => d.to_string(),
-            None => ".".to_string(),
-        };
-        par_dossier.entry(parent).or_default().push(relatif.clone());
+        par_dossier.entry(relatif.parent()).or_default().push(relatif.clone());
     }
 
     for (dossier, fichiers) in &par_dossier {
         let mut segments: Vec<&str> = vec![racine_drive, DOSSIER_DRIVE];
-        if dossier != "." && !dossier.is_empty() {
-            segments.extend(dossier.split('/'));
+        if let Some(d) = dossier {
+            segments.extend(d.texte().split('/'));
         }
-        let cle = segments.join("/");
+        let cle = compagnie::sauvegarde::DossierDuDrive::de(racine_drive, dossier.as_ref());
+        // Le dossier, tel qu'un dossier reporte le dit (`.` pour la racine).
+        let dossier = match dossier {
+            Some(d) => d.to_string(),
+            None => ".".to_string(),
+        };
         if indisponibles_de_suite >= INDISPONIBLE_D_AFFILEE {
             resultat.reportes.push(Reporte { quoi: dossier.clone(), dossier: true, cause: GOOGLE_INDISPONIBLE.into() });
             en_echec.extend(fichiers.iter().cloned());

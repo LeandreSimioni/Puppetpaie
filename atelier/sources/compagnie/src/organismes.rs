@@ -46,7 +46,7 @@ impl Lus {
 }
 
 fn chemin(ctx: &Contexte) -> std::path::PathBuf {
-    ctx.racine.join(socle::fichiers::CONFIG).join(droit::contexte::ORGANISMES)
+    droit::contexte::ORGANISMES.dans(&ctx.racine)
 }
 
 

@@ -1273,8 +1273,8 @@ pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<i32> {
     let an = i32::try_from(socle::num::entier_de_chiffres(an)?).ok()?;
     surcouche(an).is_ok_and(|c| c == *chemin).then_some(an)
 }
-/// Le fichier des organismes et contrats de la DSN, sous `config/`.
-pub const ORGANISMES: &str = "organismes.json";
+/// Le fichier des organismes et contrats de la DSN, sous la compagnie.
+pub const ORGANISMES: CheminRelatif = CheminRelatif::du_moteur("config/organismes.json");
 
 impl Contexte {
     /// Le contexte de `racine` a la date `date`. Sans `date`, celle de l'horloge du moteur (`jour_reel`).

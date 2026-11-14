@@ -827,7 +827,7 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync:
     let vues = VUES.get_or_init(Default::default);
     let (lus, tous) = tous(racine)?;
     let mut catalogues = Vec::new();
-    for p in [socle::fichiers::dossier_du_code().join("rubriques-base.json"), racine.join(socle::fichiers::CONFIG).join(droit::catalogue::RUBRIQUES_COMPAGNIE)] {
+    for p in [socle::fichiers::dossier_du_code().join("rubriques-base.json"), droit::catalogue::RUBRIQUES_COMPAGNIE.dans(racine)] {
         // Absent, il est le meme d'une lecture a l'autre ; illisible, il se refuse.
         catalogues.push(match socle::forme::partagee::<serde::de::IgnoredAny>(&p, ABIME)? {
             Some(v) => v,

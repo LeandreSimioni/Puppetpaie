@@ -646,11 +646,11 @@ impl<'de> Deserialize<'de> for Saisies {
 
 /// LA LECTURE DE `config/organismes.json`, la seule ; absent, il ne dit rien.
 pub fn fichier_organismes(ctx: &Contexte) -> R<FichierOrganismes> {
-    let p = ctx.racine.join(socle::fichiers::CONFIG).join(ORGANISMES);
+    let p = ORGANISMES.dans(&ctx.racine);
     if !p.is_file() {
         return Ok(FichierOrganismes::default());
     }
-    crate::fiche::lire_fichier(&p, &format!("config/{}", ORGANISMES))
+    crate::fiche::lire_fichier(&p, ORGANISMES.texte())
 }
 
 /// Le numero d'une reference d'adhesion (S21.G00.15.005) : une reference qui n'en est pas un se refuse.

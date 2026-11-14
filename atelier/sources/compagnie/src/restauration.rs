@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 
 use crate::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle, IdDrive};
-use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, Index, DOSSIER_DRIVE};
+use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, DossierDuDrive, Index, DOSSIER_DRIVE};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 
 /// Un fichier redescendu.
@@ -313,12 +313,8 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         }
         fichiers.insert(relatif.clone(), *etat);
         if let Some(d) = distants.get(relatif) {
-            let mut cle = format!("{}/{}", racine_drive, DOSSIER_DRIVE);
-            if let Some(dossier) = &d.dossier {
-                cle = format!("{}/{}", cle, dossier);
-            }
             if let Some(id) = dossiers.get(&d.dossier) {
-                index_dossiers.insert(cle, id.clone());
+                index_dossiers.insert(DossierDuDrive::de(racine_drive, d.dossier.as_ref()), id.clone());
             }
         }
     }

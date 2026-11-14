@@ -562,11 +562,11 @@ struct RubriquesDeLaCompagnie {
 
 /// Le fichier des rubriques de la compagnie, s'il existe ; absent, il n'en dit aucune.
 fn de_la_compagnie(racine: &Path) -> R<RubriquesDeLaCompagnie> {
-    let p = racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE);
+    let p = RUBRIQUES_COMPAGNIE.dans(racine);
     if !socle::fichiers::existe(&p) {
         return Ok(RubriquesDeLaCompagnie::default());
     }
-    crate::fiche::lire_fichier(&p, &format!("config/{}", RUBRIQUES_COMPAGNIE))
+    crate::fiche::lire_fichier(&p, RUBRIQUES_COMPAGNIE.texte())
 }
 
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
@@ -610,8 +610,8 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubriqu
     Ok(r)
 }
 
-/// Le fichier des rubriques propres a la compagnie, sous `config/`.
-pub const RUBRIQUES_COMPAGNIE: &str = "rubriques-compagnie.json";
+/// Le fichier des rubriques propres a la compagnie, sous la compagnie.
+pub const RUBRIQUES_COMPAGNIE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/rubriques-compagnie.json");
 
 /// Une rubrique de la compagnie a-t-elle une valeur datee ? Sinon le catalogue est le meme a toute date.
 fn rubriques_datees(racine: &Path) -> R<bool> {
@@ -671,7 +671,7 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> R<Arc<Vec<Rubrique>>> {
     let fichiers = format!(
         "{}|{}",
         empreinte(&dossier_du_code().join("rubriques-base.json")),
-        empreinte(&racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE)),
+        empreinte(&RUBRIQUES_COMPAGNIE.dans(racine)),
     );
     let cache = CATALOGUES.get_or_init(|| Mutex::new(HashMap::new()));
     let connue = cache.lock().unwrap().get(&fichiers).map(|(datee, _)| *datee);
@@ -689,7 +689,7 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> R<Arc<Vec<Rubrique>>> {
         socle::fichiers::est_dossier(racine);
         for p in [
             dossier_du_code().join("rubriques-base.json"),
-            racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE),
+            RUBRIQUES_COMPAGNIE.dans(racine),
         ] {
             if socle::fichiers::existe(&p) {
                 socle::fichiers::noter_si_besoin(&p);
