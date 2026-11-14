@@ -466,7 +466,7 @@ impl Metier {
             .and_then(|s| s.par_niveau_3090.as_ref())
             .and_then(|par| par.get(&c.niveau))
             .ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", &format!("conventions.3090.categories.par_niveau_3090.{}", c.niveau)))?;
-        if [crate::clauses::CADRE, crate::clauses::AGENT_DE_MAITRISE].contains(categorie) {
+        if [crate::fiche::CategorieConventionnelle::Cadre, crate::fiche::CategorieConventionnelle::AgentDeMaitrise].contains(categorie) {
             return Ok(Some(StatutConventionnel::AgentDeMaitrise));
         }
         Ok(Some(if c.grille == crate::minima::ADMINISTRATIF { StatutConventionnel::Employe06 } else { StatutConventionnel::Employe07 }))

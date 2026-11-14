@@ -733,7 +733,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
-| catégorie d'une clause | `CategorieDeClause` | `droit/src/clauses.rs` |
+| catégorie dans la convention | `CategorieConventionnelle` | `droit/src/fiche.rs` |
 | annexe de la convention 3090 | `AnnexeConvention` | `droit/src/fiche.rs` |
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
@@ -963,11 +963,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (`TECHNIQUE`, `ADMINISTRATIF`, `ACTEUR`, `CIRQUE`). Le nom d'une grille (`nom`, que `remplace` cite) et les
   classements de ses `valeurs` restent leur texte. Un test de structure tient que chaque clé citée existe là où elle
   désigne (`chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe`).
-- **catégorie d'une clause** : la catégorie d'un salarié dans les clauses d'une convention (`categories.valeurs` de
-  `clauses-conventionnelles-base.json` : `artiste`, `cadre`, `non_cadre`, `cadre_de_direction`…), que nomment le
-  préavis par catégorie, la catégorie d'un niveau 3090 et le profil d'un salarié (`clauses::Profil`). Une clé du
-  logiciel, non vide ; constantes `ARTISTE`, `CADRE`, `NON_CADRE`, `CADRE_DE_DIRECTION`, `AGENT_DE_MAITRISE` ; les six
-  choix de la case « Catégorie dans la convention » en sont (`From<CategorieConventionnelle>`).
+- **catégorie dans la convention** : la catégorie d'un salarié dans les clauses d'une convention. Une liste du
+  logiciel, fermée, écrite par son texte : `artiste`, `employe`, `technicien`, `agent_de_maitrise`, `cadre`,
+  `cadre_de_direction`, et `non_cadre` (une clause qui vaut pour tous ceux qui ne sont pas cadres). Que portent les
+  clauses (`categories.valeurs` de `clauses-conventionnelles-base.json`, le préavis par catégorie, la catégorie d'un
+  niveau 3090, lus par `de_la_convention`), le profil d'un salarié (`clauses::Profil`), ce que l'engagement dit
+  (`clauses::DitParLEngagement`) et la case « Catégorie dans la convention » de la fiche, qui ne porte pas `non_cadre`
+  (la case cadre le dit) : sa lecture le refuse, la faute nomme la case.
 - **annexe de la convention 3090** : l'annexe (`1` à `6`) de la convention du spectacle vivant privé dont relève
   l'entreprise, un choix de sa fiche. Que portent la fiche Entreprise, les annexes des minima, la ligne de minima 3090
   d'un métier, les clauses d'annexe de l'indemnité de licenciement, la prime d'ancienneté, la prévoyance par annexe.

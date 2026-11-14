@@ -99,9 +99,9 @@ pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     Ok(DitParLEngagement { categorie_conventionnelle, statut: e.statut, metier, cadre: e.cadre, debut: e.debut })
 }
 
-/// Une categorie de clause des oracles, ou son vide (`""` : rien n'est dit).
-pub(crate) fn categorie_dite(t: Option<&str>) -> Option<c::CategorieDeClause> {
-    t.filter(|t| !t.is_empty()).map(|t| match c::CategorieDeClause::lire(t) {
+/// Une categorie dans la convention des oracles, ou son vide (`""` : rien n'est dit).
+pub(crate) fn categorie_dite(t: Option<&str>) -> Option<droit::fiche::CategorieConventionnelle> {
+    t.filter(|t| !t.is_empty()).map(|t| match droit::fiche::CategorieConventionnelle::de_la_convention(t) {
         Ok(cat) => cat,
         Err(e) => panic!("la catégorie {:?} de l'oracle n'en est pas une : donnee invalide ({})", t, e.phrase),
     })
@@ -339,7 +339,7 @@ pub(crate) fn rendu<T, U>(r: R<T>, f: impl Fn(T) -> U) -> Rendu<U> {
 }
 
 pub(crate) fn profil_ecrit(p: Profil) -> ProfilLu {
-    ProfilLu { categorie: p.categorie.map(String::from), grille: p.grille.map(String::from), source: p.source }
+    ProfilLu { categorie: p.categorie.map(|c| c.as_str().to_string()), grille: p.grille.map(String::from), source: p.source }
 }
 
 pub(crate) fn preavis_ecrit(p: PreavisDit) -> PreavisLu {

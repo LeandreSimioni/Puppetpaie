@@ -1122,7 +1122,7 @@ fn la_carte_valide_a_une_variante_par_nature() {
 }
 
 /// CHAQUE CLE DES GRILLES ET DES CLAUSES QU'UN FICHIER LIVRE CITE EXISTE DANS CELUI QU'ELLE DESIGNE (`decisions-t8.md`
-/// Q4 (b) : `droit::minima::CleDeGrille` et `droit::clauses::CategorieDeClause` sont opaques, sans liste dans le code).
+/// Q4 (b) : `droit::minima::CleDeGrille` est opaque, sans liste dans le code).
 /// Le niveau 3090 de chaque metier (`emplois-base.json`) a sa categorie dans `par_niveau_3090` de chaque convention qui
 /// en porte, et cette categorie est une de ses `categories.valeurs` ; il a sa ligne dans `niveaux` de chaque prime
 /// d'anciennete, et cette ligne a son salaire dans chacune de ses grilles (`costume`, chaque jauge de `technique`) ; la

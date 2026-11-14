@@ -2393,14 +2393,127 @@ choix! {
     pub enum StagiaireCcneac { Premiere = "1", Deuxieme = "2" }
 }
 
-choix! {
-    pub enum CategorieConventionnelle {
-        Artiste = "artiste",
-        Employe = "employe",
-        Technicien = "technicien",
-        AgentDeMaitrise = "agent_de_maitrise",
-        Cadre = "cadre",
-        CadreDeDirection = "cadre_de_direction",
+/// LA CATEGORIE D'UN SALARIE DANS LA CONVENTION : celle que nomment les clauses d'une convention
+/// (`clauses-conventionnelles-base.json` : `categories.valeurs`, le preavis par categorie, la categorie d'un niveau 3090),
+/// le profil d'un salarie (`clauses::Profil`) et la case « Catégorie dans la convention » de la fiche. Une liste du
+/// logiciel, ecrite par son texte. `NonCadre` (« non cadre » : la clause qui vaut pour tous ceux qui ne sont pas cadres)
+/// ne se dit pas sur la fiche, ou la case cadre le dit : la fiche la refuse en nommant sa case (sa lecture, `DeLaFiche`),
+/// les clauses la lisent (`de_la_convention`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(from = "CategorieDeLaFiche")]
+pub enum CategorieConventionnelle {
+    #[serde(rename = "artiste")]
+    Artiste,
+    #[serde(rename = "employe")]
+    Employe,
+    #[serde(rename = "technicien")]
+    Technicien,
+    #[serde(rename = "agent_de_maitrise")]
+    AgentDeMaitrise,
+    #[serde(rename = "cadre")]
+    Cadre,
+    #[serde(rename = "cadre_de_direction")]
+    CadreDeDirection,
+    #[serde(rename = "non_cadre")]
+    NonCadre,
+}
+
+/// La lecture de la case « Catégorie dans la convention » de la fiche : les six qu'elle porte, une autre refusee
+/// (serde nomme les six), et la case nommee par la faute de la saisie (`FauteDeCase`). Elle se nomme comme la notion dans
+/// ce que serde en dit.
+#[derive(Deserialize)]
+#[serde(rename = "CategorieConventionnelle")]
+enum CategorieDeLaFiche {
+    #[serde(rename = "artiste")]
+    Artiste,
+    #[serde(rename = "employe")]
+    Employe,
+    #[serde(rename = "technicien")]
+    Technicien,
+    #[serde(rename = "agent_de_maitrise")]
+    AgentDeMaitrise,
+    #[serde(rename = "cadre")]
+    Cadre,
+    #[serde(rename = "cadre_de_direction")]
+    CadreDeDirection,
+}
+
+impl From<CategorieDeLaFiche> for CategorieConventionnelle {
+    fn from(c: CategorieDeLaFiche) -> CategorieConventionnelle {
+        match c {
+            CategorieDeLaFiche::Artiste => CategorieConventionnelle::Artiste,
+            CategorieDeLaFiche::Employe => CategorieConventionnelle::Employe,
+            CategorieDeLaFiche::Technicien => CategorieConventionnelle::Technicien,
+            CategorieDeLaFiche::AgentDeMaitrise => CategorieConventionnelle::AgentDeMaitrise,
+            CategorieDeLaFiche::Cadre => CategorieConventionnelle::Cadre,
+            CategorieDeLaFiche::CadreDeDirection => CategorieConventionnelle::CadreDeDirection,
+        }
+    }
+}
+
+impl CategorieConventionnelle {
+    /// Les sept, dans l'ordre de la liste.
+    pub const TOUTES: [CategorieConventionnelle; 7] = [
+        CategorieConventionnelle::Artiste,
+        CategorieConventionnelle::Employe,
+        CategorieConventionnelle::Technicien,
+        CategorieConventionnelle::AgentDeMaitrise,
+        CategorieConventionnelle::Cadre,
+        CategorieConventionnelle::CadreDeDirection,
+        CategorieConventionnelle::NonCadre,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CategorieConventionnelle::Artiste => "artiste",
+            CategorieConventionnelle::Employe => "employe",
+            CategorieConventionnelle::Technicien => "technicien",
+            CategorieConventionnelle::AgentDeMaitrise => "agent_de_maitrise",
+            CategorieConventionnelle::Cadre => "cadre",
+            CategorieConventionnelle::CadreDeDirection => "cadre_de_direction",
+            CategorieConventionnelle::NonCadre => "non_cadre",
+        }
+    }
+
+    /// Celle dont le code est `code`, si elle est des sept.
+    pub fn du_code(code: &str) -> Option<CategorieConventionnelle> {
+        CategorieConventionnelle::TOUTES.into_iter().find(|c| c.as_str() == code)
+    }
+
+    /// LA CATEGORIE QU'UNE CONVENTION NOMME dans ses clauses (`clauses-conventionnelles-base.json`) : l'une des sept,
+    /// `non_cadre` compris ; une autre se refuse.
+    pub fn de_la_convention(texte: &str) -> R<CategorieConventionnelle> {
+        match CategorieConventionnelle::du_code(texte) {
+            Some(c) => Ok(c),
+            None => Err(socle::refus!(
+                "Catégorie dans la convention : {} n'en est pas une ({}).",
+                socle::fichiers::repr(texte),
+                CategorieConventionnelle::TOUTES.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for CategorieConventionnelle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl AsRef<str> for CategorieConventionnelle {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl FormeDeCase for CategorieConventionnelle {
+    /// Les six que la case de la fiche porte.
+    const VALEURS: &'static [&'static str] = &["artiste", "employe", "technicien", "agent_de_maitrise", "cadre", "cadre_de_direction"];
+}
+
+impl Choix for CategorieConventionnelle {
+    fn code(&self) -> &'static str {
+        self.as_str()
     }
 }
 
