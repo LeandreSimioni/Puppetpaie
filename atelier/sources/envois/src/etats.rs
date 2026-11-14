@@ -17,7 +17,8 @@ use socle::mois::Mois;
 use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
 use crate::journal::{chemin, Rangement};
-use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, VerdictDeLaPiece};
+use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, PersonneCertifiee, RetourContrat, RetourOrganisme, VerdictDeLaPiece};
+use socle::mode::Mode;
 use crate::retours::{self, Annonce, CompteRenduDuTest, IdDeFlux, NatureDuRetour, Verdict};
 use socle::echec::{Echec, R};
 use crate::tables_journal::ALNUM;
@@ -97,7 +98,7 @@ pub struct EtatDsnDuMois {
 
 pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&Nic>, principal: Option<&Nic>) -> Option<EtatDsnDuMois> {
     // Un signalement porte le mois de son evenement : ce n'est pas la DSN du mois.
-    let du_mois = crate::journal::filtrer(lignes, Some(Acte::Dsn), Some(mois), true).filter(|l| !l.signalement());
+    let du_mois = crate::journal::filtrer(lignes, Some(Acte::Dsn), Some(mois), Some(Mode::Reel)).filter(|l| !l.signalement());
     let l = de_l_etablissement(du_mois, nic, principal).into_iter().filter(|l| l.accepte()).last()?;
     let e = l.dsn()?;
     let (mut bilan_ok, mut aer, mut anomalies) = (false, false, Vec::new());
@@ -497,7 +498,7 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
 /// c'est l'engagement qui le sait (`journal::departs`) ; ceci n'en dit que le contenu.
 pub fn resumes_des_documents(lignes: &[Ligne], mois: Mois) -> HashMap<IdSalarie, Option<crate::envoi::ResumeDePaie>> {
     let mut out = HashMap::new();
-    for e in crate::journal::filtrer(lignes, Some(Acte::Documents), Some(mois), false).filter_map(Ligne::documents) {
+    for e in crate::journal::filtrer(lignes, Some(Acte::Documents), Some(mois), None).filter_map(Ligne::documents) {
         for s in &e.detail.salaries {
             out.insert(s.cle.clone(), s.resume.clone());
         }
@@ -546,11 +547,13 @@ fn pluriel(n: usize) -> &'static str {
 /// memes lectures que l'etat de l'engagement.
 pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
     let Some(ligne) = ligne else { return "pas encore envoyé".into() };
-    let en_test = ligne.mode() == Mode::Test;
-    let mut quand = ligne.quand().dit();
-    if en_test {
-        quand = format!("en TEST le {}", quand);
-    }
+    let (quand, le) = match ligne.mode() {
+        Mode::Test => {
+            let quand = format!("en TEST le {}", ligne.quand().dit());
+            (quand.clone(), quand)
+        }
+        Mode::Reel => (ligne.quand().dit(), format!("le {}", ligne.quand().dit())),
+    };
     if !ligne.accepte() {
         return format!("envoi du {} refusé au dépôt — {}", quand, ligne.reponse());
     }
@@ -559,7 +562,6 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
         Some(par) => mot_de_la_remise(Some(par), PlaceDeLaRemise::Phrase),
         None => mot_de_l_acte(ligne.acte()),
     };
-    let le = if en_test { quand.clone() } else { format!("le {}", quand) };
     let prefixe = format!("{} {}", parti, le);
     match ligne {
         Ligne::ContratSignature(e) => {
@@ -681,7 +683,7 @@ fn compte_rendu_du_depot(retours: &[RetourOrganisme]) -> CompteRenduDuTest {
 
 /// Le dernier depot reel accepte de ce fichier (`empreinte`), s'il y en a un.
 pub fn deja_depose(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte) -> Option<Ligne> {
-    crate::journal::filtrer(lignes, Some(quoi), None, true).filter(|l| l.accepte() && l.empreinte() == Some(empreinte)).last().cloned()
+    crate::journal::filtrer(lignes, Some(quoi), None, Some(Mode::Reel)).filter(|l| l.accepte() && l.empreinte() == Some(empreinte)).last().cloned()
 }
 
 /// Ce qui a fait echouer un depot de test, en une phrase : les anomalies des retours refuses, sinon la reponse du depot.
@@ -763,7 +765,7 @@ impl Repetition {
 pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom: &NomDeFichier) -> Repetition {
     let mut conforme: Option<&Ligne> = None;
     let (mut ratees, mut perimees) = (Vec::new(), Vec::new());
-    for l in crate::journal::filtrer(lignes, Some(quoi), None, false).filter(|l| l.mode() == Mode::Test) {
+    for l in crate::journal::filtrer(lignes, Some(quoi), None, Some(Mode::Test)) {
         if l.empreinte() == Some(empreinte) {
             if l.accepte() && !refuse_par_un_retour(l) {
                 conforme = Some(l);
@@ -1153,7 +1155,8 @@ pub struct IncidentDeRetour {
 /// dit), et trente anomalies au plus.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DetailIncidentDeRetour {
-    pub reel: bool,
+    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::serialize")]
+    pub mode: Mode,
     pub nature_retour: NatureDuRetour,
     pub type_declaration: Option<droit::type_declaration::TypeDeLaDeclaration>,
     pub anomalies: Vec<AnomalieDeRetour>,
@@ -1219,7 +1222,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
         quoi: quoi_,
         resume,
         detail: DetailIncidentDeRetour {
-            reel: ligne.reel(),
+            mode: ligne.mode(),
             nature_retour: r.nature_retour,
             type_declaration: ligne.dsn().and_then(|e| e.detail.type_declaration),
             anomalies: uniques,
@@ -1477,7 +1480,7 @@ mod tests {
         assert_eq!(inc.len(), 1);
         assert_eq!((inc[0].canal, inc[0].ou.as_str(), inc[0].quoi.as_str()), (crate::releve_retours::CanalDesRetours::Dsn, "retour-dsn", "CST-04"));
         assert_eq!(inc[0].resume, "CST-04 : Code URSSAF invalide");
-        assert!(!inc[0].detail.reel);
+        assert_eq!(inc[0].detail.mode, Mode::Test);
         assert_eq!(inc[0].detail.anomalies[0].rubrique.as_deref(), Some("S21.G00.20.001"));
         // ni le nom du salarie ni la valeur ne partent chez l'editeur
         assert!(!socle::ecriture::json_en_ligne(&inc[0]).contains("FAVART"));

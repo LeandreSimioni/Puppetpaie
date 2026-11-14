@@ -24,6 +24,7 @@ use socle::date::Jour;
 use socle::paris::Moment;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{dossier_du_code, NomDeFichier};
+use socle::mode::Mode;
 use socle::mois::{Graphie, Mois};
 use serde::{Deserialize, Serialize};
 use envois::depot_acte::DepotFait;
@@ -186,8 +187,8 @@ pub(crate) struct ChargeDeposer {
     engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<PathBuf>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reel: Option<bool>,
+    #[serde(rename = "reel", default, skip_serializing_if = "Option::is_none", with = "socle::mode::en_booleen::option")]
+    mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     forcer: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -207,9 +208,9 @@ pub(crate) struct DepotDemande {
 
 impl ChargeDeposer {
     /// Le depot de la declaration `d`, reel ou de test, sous le mot de passe tape.
-    pub(crate) fn de(d: Designation, reel: bool, motdepasse: Option<socle::secret::Secret>) -> DepotDemande {
+    pub(crate) fn de(d: Designation, mode: Mode, motdepasse: Option<socle::secret::Secret>) -> DepotDemande {
         let Designation { quoi, mois, etablissement, engagements, fichier } = d;
-        DepotDemande { charge: ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel: Some(reel), forcer: None, contournement: None }, motdepasse }
+        DepotDemande { charge: ChargeDeposer { quoi, mois, etablissement, engagements, fichier, mode: Some(mode), forcer: None, contournement: None }, motdepasse }
     }
 }
 
@@ -322,7 +323,7 @@ impl Dite for BilanDuTest {
 /// fichier deja depose, le fichier code envoi de test.
 fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
     let mut e = Vec::new();
-    let (deja_depose, reel) = match apercu {
+    let (deja_depose, mode) = match apercu {
         DepotApercu::Dsn(Dit { apercu: a, .. }) => {
             if let Some(remplace) = &a.remplace {
                 e.push(Encart::de(socle::ecran::EtatDEcran::Information, "Annule et remplace", format!("Ce fichier remplace la déclaration {}.", remplace)));
@@ -348,7 +349,7 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
                     "Sans taux transmis par la DGFiP, la grille de l'article 204 H du CGI s'applique ; le dépôt n'est pas bloqué. Elle prélève souvent plus que le taux réel, et le salarié ne récupère la différence qu'à sa déclaration de revenus. Relever les retours avant de déposer peut changer cela.",
                 ));
             }
-            (&a.deja_depose, a.reel)
+            (&a.deja_depose, a.mode)
         }
         DepotApercu::Dpae(Dit { apercu: a, .. }) => {
             let deja = a.embauches.iter().filter(|x| x.deja_declaree).count();
@@ -359,17 +360,20 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
                     "Le fichier porte tout le mois : le déposer les redéclare, et l'Urssaf reçoit deux déclarations pour un seul contrat.",
                 ));
             }
-            (&a.deja_depose, a.reel)
+            (&a.deja_depose, a.mode)
         }
     };
     if let Some(deja) = deja_depose {
         e.push(Encart::de(
             socle::ecran::EtatDEcran::AFaire,
             "Ce fichier a déjà été déposé",
-            format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", deja.quand().dit(), if deja.reel() { "réel" } else { "test" }),
+            format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", deja.quand().dit(), match deja.mode() {
+                Mode::Reel => "réel",
+                Mode::Test => "test",
+            }),
         ));
     }
-    if !reel {
+    if mode != Some(Mode::Reel) {
         e.push(Encart::de(socle::ecran::EtatDEcran::Information, "Envoi de test", "Le fichier est codé envoi de test : déposé pour de vrai, il ne déclarerait rien et rien ne serait conservé."));
     }
     e
@@ -769,7 +773,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<PathBuf>> {
     let principal = ctx.entreprise.nic_principal();
     let nic = d.etablissement.as_ref().or(principal);
     let voulues: Option<BTreeSet<etats::Paire>> = d.engagements.as_ref().filter(|e| !e.is_empty()).map(|e| e.iter().map(|x| (x.salarie.clone(), Some(x.numero.clone()))).collect());
-    let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
+    let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), None).rev().find(|l| match l {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
             let de = l.etablissement().or(principal);
@@ -787,8 +791,13 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<PathBuf>> {
 /// repetition. `forcer` : l'annule-et-remplace voulu, apres l'avertissement que la page affiche sur
 /// `DsnDejaDeposee` -- jamais par defaut.
 fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::Secret>) -> R<Deposee> {
-    let ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel, forcer, contournement } = c;
-    let (reel, forcer) = (reel == Some(true), forcer == Some(true));
+    let ChargeDeposer { quoi, mois, etablissement, engagements, fichier, mode, forcer, contournement } = c;
+    // Un depot que la charge ne demande pas reel est un test (la charge, ci-dessus : « absents, ils ne sont pas demandes »).
+    let mode = match mode {
+        Some(m) => m,
+        None => Mode::Test,
+    };
+    let forcer = forcer == Some(true);
     let d = Designation { quoi, mois, etablissement, engagements, fichier };
     let (fichier, _) = designee(ctx, &d)?;
     let preuve = Preuve::du_mot_de_passe(motdepasse.cloned());
@@ -796,12 +805,12 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     let contournement: String = contournement.iter().map(|c| c.trim()).collect();
     let contournement = contournement.as_str();
     let mut fait = match quoi {
-        Quoi::Dsn => depot_acte::deposer_dsn(ctx, &fichier, reel, Some(&preuve), "interface", forcer, contournement)?,
-        Quoi::Dpae => depot_acte::deposer_dpae(ctx, &fichier, reel, Some(&preuve), "interface", false, contournement)?,
+        Quoi::Dsn => depot_acte::deposer_dsn(ctx, &fichier, mode, Some(&preuve), "interface", forcer, contournement)?,
+        Quoi::Dpae => depot_acte::deposer_dpae(ctx, &fichier, mode, Some(&preuve), "interface", false, contournement)?,
     };
     // LA PHRASE DU DEPOT : ou en est son test, ou ce qu'ont dit les retours du reel s'ils sont deja la (le simulateur repond
     // dans le geste) ; puis ses suites.
-    let tranche = if !reel {
+    let tranche = if mode == Mode::Test {
         let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
         format!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
@@ -811,7 +820,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     };
     let phrase = std::iter::once(tranche).chain(fait.suites.iter().cloned()).collect::<Vec<_>>().join(" ");
     // APRES LA DSN REELLE D'UN MOIS QUI A DES SALARIES, la boite d'avis : leurs documents partent de l'etape 4.
-    let avis = (reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
+    let avis = (mode == Mode::Reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
         .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
     etats::poser_les_pastilles(&mut fait.ligne);
     poser_les_pastilles(&mut fait.deja);
@@ -1000,7 +1009,9 @@ pub(crate) struct ApercuDpae {
     pub(crate) nom: NomDeFichier,
     pub(crate) enregistrements: usize,
     pub(crate) octets: usize,
-    pub(crate) reel: bool,
+    /// Le mode que l'indicateur dit (`120` reel, `TST` test), aucun pour un autre.
+    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::si_dit::serialize")]
+    pub(crate) mode: Option<Mode>,
     pub(crate) indicateur: String,
     pub(crate) mois: Option<Mois>,
     pub(crate) embauches: Vec<EmbaucheDuFichier>,
@@ -1108,7 +1119,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
         nom: nom_fichier,
         enregistrements: enrs.len(),
         octets: contenu.len(),
-        reel: envois::depot::est_reel(&contenu),
+        mode: envois::depot::mode_dpae(&contenu),
         indicateur: envois::depot::indicateur(&contenu),
         mois,
         embauches: lignes,

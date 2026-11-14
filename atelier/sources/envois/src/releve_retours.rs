@@ -593,7 +593,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
 /// ou `None` quand aucune n'est due (France Travail ne publie rien) ; un signalement (nature 04, 05, 07) n'en appelle pas.
 /// Le fichier depose est relu la ou le depot l'a pris (`sorties/<mois>/<fichier>`).
 fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
-    if !l.reel() {
+    if l.mode() == socle::mode::Mode::Test {
         return Ok(None);
     }
     if l.nature_dsn().is_some_and(|n| n != droit::nature_declaration::NatureDeLaDeclaration::Mensuelle) {

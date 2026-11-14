@@ -26,7 +26,8 @@ use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::paris::{InstantOuJour, Moment};
 use crate::etats::AvecIncidents;
-use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
+use socle::mode::Mode;
+use crate::journal::{self, DetailDsn, Envoi, Ligne};
 use crate::retours::{Bilan, IdDeFlux, Reception, Verdict};
 
 /// La reponse d'une ligne reprise sans certificat de conformite : le journal ecrit la reponse en texte
@@ -36,15 +37,6 @@ const SANS_CERTIFICAT: &str = "";
 /// Le depot que le bilan dit accepte : l'etat de la declaration, sinon celui de l'envoi, est OK.
 fn accepte(b: &Bilan) -> bool {
     b.verdict() == Some(Verdict::Ok)
-}
-
-/// Le mode du depot : reel s'il est dit reel (`essai_reel` 02) ; un essai (01), ou un bilan qui ne le dit pas, un test.
-fn mode(b: &Bilan) -> Mode {
-    use droit::nature_declaration::EssaiOuReel;
-    match b.essai_reel {
-        Some(EssaiOuReel::Reel) => Mode::Reel,
-        Some(EssaiOuReel::Essai) | None => Mode::Test,
-    }
 }
 
 /// Un depot dont une piece de `retours/` temoigne.
@@ -101,7 +93,7 @@ fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
             None => par_flux.push((b.flux.clone(), vec![(b, nom.clone())])),
         }
     }
-    let connus: Vec<IdDeFlux> = journal::lire(&ctx.racine, None, None, false)?.iter().filter_map(Ligne::flux).cloned().collect();
+    let connus: Vec<IdDeFlux> = journal::lire(&ctx.racine, None, None, None)?.iter().filter_map(Ligne::flux).cloned().collect();
     let mut out: Vec<Atteste> = Vec::new();
     for (flux, couples) in par_flux {
         let bilans: Vec<Bilan> = couples.iter().map(|(b, _)| b.clone()).collect();
@@ -161,22 +153,27 @@ fn heure_du_bilan(b: &Bilan) -> Option<InstantOuJour> {
 fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut Vec<crate::etats::IncidentDeRetour>) -> R<Reprise> {
     let (attestes, illisibles) = depots_attestes(ctx)?;
     let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], illisibles, ecrit: ecrire, rattaches: 0 };
-    let mut a_ecrire: Vec<&Atteste> = Vec::new();
+    let mut a_ecrire: Vec<(&Atteste, Mode)> = Vec::new();
     for d in &attestes {
         let b = &d.bilan;
+        // Un bilan qui ne dit pas son mode (`essai_reel`) se reprend en test.
+        let mode = match b.essai_reel {
+            Some(m) => m,
+            None => Mode::Test,
+        };
         // UN TEST QUE CE LOGICIEL N'A PAS ENVOYE NE S'AFFICHE PAS ET NE SE REPREND PAS : sous le
         // meme compte net-entreprises, les essais de l'atelier (ligne de commande, `moteur --dev`, seances du nuage)
         // reviennent dans les retours de la compagnie. Un test n'engage rien : absent du journal, il vient d'ailleurs.
         // Il compte pourtant pour l'ordre (`ordre_signalements::dernier_ordre_des_mensuelles`, lu en silence). Un REEL
         // absent du journal est un depot de la compagnie (l'atelier n'en fait jamais) : il se reprend.
-        if mode(b) == Mode::Test && !d.deja {
+        if mode == Mode::Test && !d.deja {
             continue;
         }
         let vue = DepotVu {
             flux: d.flux.clone(),
             quand: b.recu_le.clone(),
             mois: b.mois,
-            mode: mode(b),
+            mode,
             accepte: accepte(b),
             verdict_connu: b.etat_declaration.is_some(),
             logiciel: b.logiciel.clone(),
@@ -194,12 +191,12 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
             continue;
         }
         rapport.ajoutes.push(vue);
-        a_ecrire.push(d);
+        a_ecrire.push((d, mode));
     }
     if !ecrire {
         return Ok(rapport);
     }
-    for d in a_ecrire {
+    for (d, mode) in a_ecrire {
         let b = &d.bilan;
         let (Some(quand), Some(piece)) = (heure_du_bilan(b), d.pieces.last()) else { continue };
         let detail = DetailDsn {
@@ -219,7 +216,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
             Some(c) => c.as_str(),
             None => SANS_CERTIFICAT,
         };
-        let mut e = Envoi::nouveau(mode(b), qui, accepte(b), "net-entreprises", reponse, detail);
+        let mut e = Envoi::nouveau(mode, qui, accepte(b), "net-entreprises", reponse, detail);
         e.mois = b.mois;
         e.flux = Some(d.flux.clone());
         journal::noter(&ctx.racine, Ligne::Dsn(e), None, journal::Datation::Lue { quand, origine: format!("retours/{}", piece) })?;
@@ -355,7 +352,7 @@ pub struct RepriseDpae {
 #[cfg(feature = "atelier")]
 pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
     let (attestees, inconnus) = embauches_attestees(ctx)?;
-    let connus: Vec<IdDeFlux> = journal::lire(&ctx.racine, None, None, false)?.iter().filter_map(Ligne::flux).cloned().collect();
+    let connus: Vec<IdDeFlux> = journal::lire(&ctx.racine, None, None, None)?.iter().filter_map(Ligne::flux).cloned().collect();
 
     // Le bilan XML du meme flux, quand il est la : il porte l'idflux ENTIER et dit si le depot etait reel ou de test.
     let dossier = crate::releve_retours::CanalDesRetours::Dpae.chemin(&ctx.racine);
@@ -381,7 +378,13 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
         // verdict, que seuls les retours rattaches a la ligne donnent (`etats::verdict_dpae`) ; tant qu'aucun n'y est
         // range, la DPAE est partie, sans bilan connu. Le mode reel est une INFERENCE : aucun bilan ne dit l'essai.
         let (mode, accepte_) = match &b {
-            Some(b) => (mode(b), accepte(b)),
+            Some(b) => (
+                match b.essai_reel {
+                    Some(m) => m,
+                    None => Mode::Test,
+                },
+                accepte(b),
+            ),
             None => (Mode::Reel, true),
         };
         let deja = connus.contains(&entier);

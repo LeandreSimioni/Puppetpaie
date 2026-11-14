@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
 use droit::fiche::{Bic, Civilite, CodeMedecine, CodeNaf, CodeNationalite, CodePostal, Courriel, DepartementNaissance, Iban, Idcc, Nic, Nir, NumeroObjetSpectacle, Sexe, Siren};
-use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
+use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
 use droit::type_taux_pas::TypeDeTauxPas;
 use droit::organismes::IdentifiantDOrganisme;
@@ -22,6 +22,7 @@ use engagement::numeros::NumeroContrat;
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
+use socle::mode::Mode;
 use socle::mois::{Mois, MoisOuJour};
 use socle::num::Decimal;
 use socle::pays::CodePays;
@@ -589,7 +590,7 @@ pub struct Mesures {
 pub struct DsnLue {
     /// Le logiciel qui l'a ecrite (S10.G00.00.001), la nature de l'envoi (.005 : `01` test, `02` reel).
     pub logiciel: Option<String>,
-    pub nature_envoi: Option<EssaiOuReel>,
+    pub nature_envoi: Option<Mode>,
     /// Le Siren de l'emetteur (S10.G00.01.001) : celui du cabinet quand un tiers depose (`EntrepriseDeclaree`).
     pub emetteur: Option<Siren>,
     /// La nature de la declaration (S20.G00.05.001 : `01` mensuelle, un signalement sinon).
@@ -624,17 +625,10 @@ pub struct DsnLue {
     rubriques: BTreeSet<(RubriqueDeLaNorme, String)>,
 }
 
-/// La nature d'un envoi reel (S10.G00.00.005 ; `01` : un test).
-pub const NATURE_REEL: EssaiOuReel = EssaiOuReel::Reel;
 /// La nature d'une DSN mensuelle (S20.G00.05.001).
 pub const MENSUELLE: NatureDeLaDeclaration = NatureDeLaDeclaration::Mensuelle;
 
 impl DsnLue {
-    /// Un envoi reel (S10.G00.00.005), pas un test.
-    pub fn reel(&self) -> bool {
-        self.nature_envoi == Some(NATURE_REEL)
-    }
-
     /// La nature de la declaration (S20.G00.05.001), obligatoire dans toute declaration (tableau des usages) : une DSN
     /// qui ne la dit pas refuse, en le disant.
     pub fn nature(&self) -> R<NatureDeLaDeclaration> {
@@ -1052,7 +1046,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
     let (mut mois, mut depot): (Option<Mois>, Option<Jour>) = (None, None);
     let mut type_declaration: Option<TypeDeLaDeclaration> = None;
     let (mut fraction, mut ordre, mut remplace): (Option<Fraction>, Option<NumeroDOrdre>, Option<IdentifiantDeDeclaration>) = (None, None, None);
-    let (mut logiciel, mut nature_envoi): (Option<String>, Option<EssaiOuReel>) = (None, None);
+    let (mut logiciel, mut nature_envoi): (Option<String>, Option<Mode>) = (None, None);
     let mut nature: Option<NatureDeLaDeclaration> = None;
     let mut versements_organismes: Vec<Decimal> = Vec::new();
     let mut e = EntrepriseDeclaree::default();
@@ -1103,7 +1097,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
         let contrat = contrats.last_mut();
         match rub {
             S10_00_001 => premier(&mut logiciel, &plein),
-            EssaiOuReel::RUBRIQUE => premier(&mut nature_envoi, &EssaiOuReel::du_code(&v)),
+            <Mode as ListeDeLaNorme>::RUBRIQUE => premier(&mut nature_envoi, &Mode::du_code_de_la_norme(&v)),
             NatureDeLaDeclaration::RUBRIQUE => {
                 let n = fautes.code(rub, &v);
                 nature = nature.or(n);

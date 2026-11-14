@@ -24,6 +24,7 @@ use engagement::calcul::Paie;
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
+use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::num::{q2, Decimal};
 
@@ -405,8 +406,11 @@ pub(crate) struct ApercuDsn {
     pub(crate) nom: String,
     pub(crate) description: String,
     pub(crate) mois: Mois,
-    pub(crate) nature_envoi: Option<droit::nature_declaration::EssaiOuReel>,
-    pub(crate) reel: bool,
+    /// Le mode que le fichier dit (S10.G00.00.005), ecrit deux fois : par son code, et en booleen.
+    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
+    pub(crate) nature_envoi: Option<Mode>,
+    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::si_dit::serialize")]
+    pub(crate) mode: Option<Mode>,
     pub(crate) signalement: bool,
     #[serde(rename = "nature")]
     pub(crate) nature_declaration: droit::nature_declaration::NatureDeLaDeclaration,
@@ -493,7 +497,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<A
         nom: nom.into(),
         mois,
         nature_envoi: a.nature_envoi,
-        reel: a.reel(),
+        mode: a.nature_envoi,
         signalement,
         nature_declaration: a.nature()?,
         libelle_nature: a.nature_lisible().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001)."))?,

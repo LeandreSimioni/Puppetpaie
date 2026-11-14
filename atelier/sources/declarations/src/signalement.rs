@@ -328,7 +328,7 @@ pub struct Options {
     pub type_declaration: TypeDeLaDeclaration,
     pub ordre: NumeroDOrdre,
     pub remplace: Option<IdentifiantDeDeclaration>,
-    pub envoi_test: bool,
+    pub mode: socle::mode::Mode,
     pub date_constitution: Option<Jour>,
 }
 
@@ -340,7 +340,7 @@ impl Options {
             type_declaration: TypeDeLaDeclaration::Normale,
             ordre: NumeroDOrdre::PREMIER,
             remplace: None,
-            envoi_test: false,
+            mode: socle::mode::Mode::Reel,
             date_constitution: None,
         }
     }
@@ -394,7 +394,7 @@ annule-et-remplace (type 03)."
     f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
-    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.005"), droit::natures::ListeDeLaNorme::code_de_la_norme(o.mode));
     f.ecrire_la_version()?;
     f.add(droit::rubrique!("S10.G00.00.007"), "01");
     f.add(droit::rubrique!("S10.G00.00.008"), "01");

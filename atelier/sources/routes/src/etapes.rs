@@ -1879,7 +1879,7 @@ impl<'a> Moteur<'a> {
     /// plate-forme a pris et qu'aucun bilan n'a refuses (les lignes du journal des envois, telles qu'elles sont).
     pub(crate) fn depots_reels(&mut self, mois: Mois, nic: Option<&Nic>) -> R<Vec<envois::journal::Ligne>> {
         let lignes = self.lignes()?;
-        let reels = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), Some(mois), true);
+        let reels = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), Some(mois), Some(socle::mode::Mode::Reel));
         let mut out = Vec::new();
         for l in etats::de_l_etablissement(reels, nic, self.nic().as_ref()) {
             if !l.accepte() || l.signalement() || etats::refuse_par_un_retour(l) {

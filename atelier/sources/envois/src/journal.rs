@@ -26,6 +26,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use socle::fichiers::{CheminRelatif, Empreinte, EmpreinteCourte, NomDeFichier};
+use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
 use socle::paris::{InstantOuJour, Moment};
@@ -419,16 +420,16 @@ pub fn dater_pendant<T>(quand: Moment, origine: &str, f: impl FnOnce() -> T) -> 
     r
 }
 
-/// Les lignes de `lignes` d'une sorte (`quoi`), d'un mois, reelles seulement ; un filtre absent ne filtre pas.
-pub fn filtrer<'a>(lignes: &'a [Ligne], quoi: Option<Acte>, mois: Option<Mois>, reel_seulement: bool) -> impl DoubleEndedIterator<Item = &'a Ligne> {
+/// Les lignes de `lignes` d'une sorte (`quoi`), d'un mois, d'un mode ; un filtre absent ne filtre pas.
+pub fn filtrer<'a>(lignes: &'a [Ligne], quoi: Option<Acte>, mois: Option<Mois>, mode: Option<Mode>) -> impl DoubleEndedIterator<Item = &'a Ligne> {
     lignes
         .iter()
-        .filter(move |l| quoi.is_none_or(|q| l.acte() == q) && mois.is_none_or(|m| l.mois() == Some(m)) && (!reel_seulement || l.reel()))
+        .filter(move |l| quoi.is_none_or(|q| l.acte() == q) && mois.is_none_or(|m| l.mois() == Some(m)) && mode.is_none_or(|m| l.mode() == m))
 }
 
 /// Les lignes du journal de `racine`, les plus recentes en dernier (`filtrer`).
-pub fn lire(racine: &Path, quoi: Option<Acte>, mois: Option<Mois>, reel_seulement: bool) -> R<Vec<Ligne>> {
-    Ok(filtrer(&lu(racine)?.lignes, quoi, mois, reel_seulement).cloned().collect())
+pub fn lire(racine: &Path, quoi: Option<Acte>, mois: Option<Mois>, mode: Option<Mode>) -> R<Vec<Ligne>> {
+    Ok(filtrer(&lu(racine)?.lignes, quoi, mois, mode).cloned().collect())
 }
 
 impl<D, R> Envoi<D, R> {
@@ -611,7 +612,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
         Acte::Dsn => Envoi::Dsn,
         _ => return,
     };
-    if !l.reel() {
+    if l.mode() == Mode::Test {
         return;
     }
     // Une declaration refusee au depot ou au bilan n'a rien depose (`etats::refuse_par_un_retour`). Un courriel coupe en
@@ -689,7 +690,7 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
 /// n'a rien recu) ne consomme pas de numero.
 pub fn dernier_ordre_des_signalements(racine: &Path) -> R<Option<droit::natures::NumeroDOrdre>> {
     let mut dernier = None;
-    for l in lire(racine, Some(Acte::Dsn), None, true)? {
+    for l in lire(racine, Some(Acte::Dsn), None, Some(Mode::Reel))? {
         let Some(e) = l.dsn() else { continue };
         let signalement = match e.detail.nature_declaration {
             Some(n) => n.signalement_envoye(),

@@ -12,7 +12,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::ouverture::mois_connus;
 use crate::SansCharge;
 use droit::contexte::Contexte;
-use envois::ligne::Mode;
+use socle::mode::Mode;
 use envois::reprise_journal::DepotVu;
 use socle::echec::{Classe, R};
 
@@ -224,18 +224,13 @@ fn ajout_dit(d: DepotVu) -> AjoutDit {
         Some(l) => format!("déposé par {} · flux {}", l, d.flux),
         None => format!("logiciel inconnu · flux {}", d.flux),
     };
-    let reel = d.mode == Mode::Reel;
-    let mots = format!("{}{}", if reel { "dépôt réel" } else { "test" }, if d.accepte { "" } else { " — refusé" });
-    let pastille = socle::ecran::Pastille::de(
-        if !reel {
-            socle::ecran::EtatDEcran::Information
-        } else if d.accepte {
-            socle::ecran::EtatDEcran::Fait
-        } else {
-            socle::ecran::EtatDEcran::Refuse
-        },
-        &mots,
-    );
+    let (acte, etat) = match (d.mode, d.accepte) {
+        (Mode::Test, _) => ("test", socle::ecran::EtatDEcran::Information),
+        (Mode::Reel, true) => ("dépôt réel", socle::ecran::EtatDEcran::Fait),
+        (Mode::Reel, false) => ("dépôt réel", socle::ecran::EtatDEcran::Refuse),
+    };
+    let mots = format!("{}{}", acte, if d.accepte { "" } else { " — refusé" });
+    let pastille = socle::ecran::Pastille::de(etat, &mots);
     AjoutDit { depot: d, dit, origine_dit, pastille }
 }
 

@@ -6,7 +6,8 @@
 use declarations::dsn_lue::DsnLue;
 use droit::natures::NumeroDOrdre;
 use droit::type_declaration::TypeDeLaDeclaration;
-use envois::depot::{basculer_dpae, basculer_dsn, est_reel, renumeroter, verifier};
+use envois::depot::{basculer_dpae, basculer_dsn, mode_dpae, renumeroter, verifier};
+use socle::mode::Mode;
 
 fn lire(octets: &[u8]) -> DsnLue {
     declarations::dsn_lue::lire(octets, None).unwrap()
@@ -34,7 +35,7 @@ fn flux(indicateur: &str, n: usize) -> Vec<u8> {
 fn le_test_ne_part_jamais_en_02() {
     for nature in ["02", "01", "03", "99"] {
         let s = basculer_dsn(&dsn(nature)).unwrap();
-        assert_eq!(lire(&s).nature_envoi, Some(droit::nature_declaration::EssaiOuReel::Essai), "{}", nature);
+        assert_eq!(lire(&s).nature_envoi, Some(Mode::Test), "{}", nature);
     }
 }
 
@@ -45,9 +46,9 @@ fn la_bascule_dpae_repasse_chaque_enregistrement_en_tst() {
     for i in 0..3 {
         assert_eq!(&s[i * 990 + 72..i * 990 + 75], b"TST");
     }
-    assert!(!est_reel(&s));
+    assert_eq!(mode_dpae(&s), Some(Mode::Test));
     // Le fichier d'origine ne bouge pas : la bascule est en memoire.
-    assert!(est_reel(&f));
+    assert_eq!(mode_dpae(&f), Some(Mode::Reel));
 }
 
 #[test]
@@ -64,12 +65,12 @@ fn la_renumerotation_fait_un_annule_et_remplace() {
 
 #[test]
 fn un_reel_demande_sur_un_fichier_de_test_est_refuse() {
-    assert!(verifier(&lire(&dsn("01")), true, true).is_err());
+    assert!(verifier(&lire(&dsn("01")), Mode::Reel, true).is_err());
 }
 
 #[test]
 fn un_reel_exige_une_preuve_et_jamais_rien() {
     let a = lire(&dsn("02"));
-    assert!(verifier(&a, true, false).is_err());
-    assert!(verifier(&a, true, true).is_ok());
+    assert!(verifier(&a, Mode::Reel, false).is_err());
+    assert!(verifier(&a, Mode::Reel, true).is_ok());
 }

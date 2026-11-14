@@ -737,10 +737,9 @@ quotité (40.011), `UniteDeQuotite` ; la modalité de déclaration de la fin (62
 `TypeDeComposant` (`droit/src/base_assujettie.rs`), que porte la santé du barème (`composant_79`). Le qualifiant
 d'assiette d'une ligne du bordereau (23.002), `QualifiantDAssiette` (`droit/src/organismes.rs`), que portent un CTP de
 `organismes-base.json`, la réduction du barème et la ligne du bordereau. Le type d'un bénéficiaire externe de l'OETH
-(13.002), `TypeDeBoethExterne` (`droit/src/cotisation_etablissement.rs`). L'envoi d'essai ou réel (S10.G00.00.005),
-`EssaiOuReel`, que reprennent un bilan, un rapport, un NEOReS (RO.B000.R013) et un compte rendu d'organisme
-complémentaire (`CodeEnvoi`), et la nature de l'événement déclencheur d'un amorçage (S20.G00.05.011), `NatureDEvenementDeclencheur`
-(`droit/src/nature_declaration.rs`). Le code d'une taxe du bloc 44 (44.001), `CodeTaxe` (`droit/src/apprentissage.rs`) ;
+(13.002), `TypeDeBoethExterne` (`droit/src/cotisation_etablissement.rs`). L'envoi d'essai ou réel (S10.G00.00.005) est le
+mode d'un envoi (`socle::mode::Mode`), dont `droit/src/nature_declaration.rs` déclare la liste de la norme ; la nature de
+l'événement déclencheur d'un amorçage (S20.G00.05.011), `NatureDEvenementDeclencheur` (même fichier). Le code d'une taxe du bloc 44 (44.001), `CodeTaxe` (`droit/src/apprentissage.rs`) ;
 son motif de non-assujettissement (44.004, table MNATA) est le choix de la fiche `MotifNonAssujettissement`. Le type
 de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), la liste entière : ceux que nos natures
 déclarent à chaque paie (`contrats-base.json`, 001, 002, 003, 010), les heures en plus (017) et l'absence (028, 029)
@@ -825,7 +824,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | tournure d'une échéance | `droit::echeances::Tournure` | `droit/src/echeances.rs` |
 | origine d'un mois des états | `documents::etats_paie::OrigineDuMois` | `documents/src/etats_paie.rs` |
 | étape du dépôt d'une déclaration écrite | `EtapeDuDepot` | `routes/src/etapes.rs` |
-| mode d'un envoi | `envois::ligne::Mode` | `envois/src/ligne.rs` |
+| mode d'un envoi (test ou réel) | `socle::mode::Mode` | `socle/src/mode.rs` |
 | ce qui est prêt à partir au tableau de l'administrateur | `routes::gestes::administrateur::Pret` | `routes/src/gestes/administrateur.rs` |
 | mode de remise d'une pièce remise aux salariés | `ModeDeRemise` | `envois/src/etats.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
@@ -1095,9 +1094,17 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (l'ancien logiciel l'a payé) ; écrite dans aucun fichier ; que porte `Periode.dispo`.
 - **étape du dépôt d'une déclaration écrite** : la paie a changé depuis son écriture, ou l'état de son test
   (`envois::etats::EtatDuTest`) ; le geste d'une case qui dépose s'en choisit.
-- **mode d'un envoi** : réel (il engage) ou test (un dépôt de test, qui ne conserve rien). La ligne du journal l'écrit
-  `reel`, `test` ; une charge ou une réponse de route qui dit `reel` l'écrit en booléen (`en_booleen` : la charge et la
-  réponse du dépôt groupé). À unifier (#419) : des `bool` (`reel`, `envoi_test`, `test`) ailleurs.
+- **mode d'un envoi (test ou réel)** : réel (il engage) ou test (un dépôt de test, qui ne conserve rien). Que portent
+  une ligne du journal, un dépôt (`envois::depot_acte::Depot`, `DepotFait`), les options d'une DSN, d'un signalement,
+  d'un FCTU et d'une demande de taux (S10.G00.00.005), le mode qu'un fichier lu dit (`DsnLue::nature_envoi`,
+  `envois::depot::mode_dpae`), un bilan, un rapport, un NEOReS et un compte rendu d'organisme complémentaire
+  (`essai_reel`), le filtre du journal (`journal::filtrer`), la base d'un ordre de mensuelle
+  (`dernier_ordre_des_mensuelles`). Ses écritures : la ligne du journal, `reel`, `test` ; la DSN et les retours de la
+  norme, son code `01`, `02` (S10.G00.00.005 : `droit::nature_declaration`, sa liste de la norme, et
+  `code_d_envoi` pour une réponse) ; une charge ou une réponse de route qui dit `reel`, un booléen (`socle::mode::en_booleen` :
+  `deposer`, `administrateur-deposer`, le dépôt groupé, l'incident d'un dépôt ou d'un retour ; `en_booleen::si_dit`,
+  faux aussi quand le fichier ne dit pas son mode : l'aperçu d'une DSN, d'une DPAE) ; la charge d'un signalement qui dit
+  `test` (`test_en_booleen`) ; l'indicateur d'une DPAE (`120`, `TST`) ; le tableau gardé de l'administrateur (`Pret`).
 - **ce qui est prêt à partir au tableau de l'administrateur** : rien, ou une déclaration prête pour un `Mode` (en test :
   écrite, pas encore essayée ; en réel : testée, conforme, et le fichier est réel). Le tableau gardé l'écrit `test`,
   `reel`, jamais les deux.

@@ -1237,7 +1237,7 @@ pub fn machine(racine: &Path) -> Machine {
 pub struct DepotDit {
     quoi: envois::ligne::Acte,
     quand: socle::paris::InstantOuJour,
-    mode: envois::ligne::Mode,
+    mode: socle::mode::Mode,
     accepte: bool,
     retours: Vec<String>,
 }

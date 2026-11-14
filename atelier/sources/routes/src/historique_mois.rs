@@ -25,7 +25,8 @@ use serde::Serialize;
 
 use documents::{DossierDuMois, SorteDePieceProduite};
 use droit::contexte::{Contexte, IdSalarie};
-use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
+use droit::nature_declaration::NatureDeLaDeclaration;
+use socle::mode::Mode;
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
@@ -168,7 +169,7 @@ struct Document {
 struct Envoi {
     quoi: &'static str,
     acte: String,
-    mode: envois::ligne::Mode,
+    mode: Mode,
     quand: socle::paris::InstantOuJour,
     fichier: Option<NomDeFichier>,
     flux: Option<IdDeFlux>,
@@ -645,7 +646,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: NatureDuRetour) -> Lecture {
     if let Some(m) = &rapport.message {
         l.phrases.push(m.clone());
     }
-    if rapport.essai_reel == Some(EssaiOuReel::Essai) {
+    if rapport.essai_reel == Some(Mode::Test) {
         l.phrases.push("Envoi d'essai (test) : rien n'est déclaré ni conservé.".into());
     }
     let etat = rapport.etat_envoi;
@@ -726,7 +727,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
     if crm.remplace {
         l.phrases.push("Ce compte rendu annule et remplace un compte rendu précédent de l'organisme.".into());
     }
-    if crm.essai_reel == Some(EssaiOuReel::Essai) {
+    if crm.essai_reel == Some(Mode::Test) {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
     if let Some(debut) = crm.debut {
@@ -901,7 +902,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         Some(TypeDeCrmOc::Complet) => "Compte rendu complet (CRC)",
         None => "Compte rendu de l'organisme complémentaire",
     });
-    if crm.essai_reel == Some(EssaiOuReel::Essai) {
+    if crm.essai_reel == Some(Mode::Test) {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
     for d in &crm.declarations {
@@ -1114,7 +1115,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
 /// `historique-mois {mois}`.
 fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
     // Les lignes du mois ; un signalement porte le mois de son evenement.
-    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| m.reclasser(Classe::Disque))?;
+    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), None).map_err(|m| m.reclasser(Classe::Disque))?;
     let recus = etats::contrats_recus(&lignes);
     let avenants = etats::avenants_par_contrat(&lignes);
     let mut envois = Vec::new();
@@ -1155,7 +1156,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
         });
     }
     // Le plus recent en premier : c'est le dernier envoi qu'on vient lire ; a la meme heure, le reel devant son test.
-    envois.sort_by(|a, b| (&b.quand, b.mode == envois::ligne::Mode::Reel).cmp(&(&a.quand, a.mode == envois::ligne::Mode::Reel)));
+    envois.sort_by(|a, b| (&b.quand, b.mode).cmp(&(&a.quand, a.mode)));
     let documents = documents(ctx, le_mois, &lignes)?;
     let phrase = format!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
     Ok(Historique { phrase, mois: le_mois, documents, envois })

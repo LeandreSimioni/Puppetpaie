@@ -221,8 +221,8 @@ pub struct ChargeTableau {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDeposer {
-    #[serde(rename = "reel", with = "envois::journal::en_booleen")]
-    mode: envois::journal::Mode,
+    #[serde(rename = "reel", with = "socle::mode::en_booleen")]
+    mode: socle::mode::Mode,
 }
 
 /// La charge de `administrateur-suivre` : les declarations a suivre, telles que le depot groupe les a rendues

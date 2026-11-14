@@ -44,6 +44,7 @@ use engagement::Chiffre;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
+use socle::mode::Mode;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 
@@ -234,8 +235,8 @@ pub(crate) struct ChargeArretSignaler {
     remplace: Option<IdentifiantDeDeclaration>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
     ordre: Option<NumeroDOrdre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    test: Option<bool>,
+    #[serde(rename = "test", default, skip_serializing_if = "Option::is_none", with = "socle::mode::test_en_booleen::option")]
+    mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     le: Option<Jour>,
 }
@@ -243,13 +244,22 @@ pub(crate) struct ChargeArretSignaler {
 impl ChargeArretSignaler {
     /// Le signalement de l'arret de `salarie` qui suit `dernier_jour`, de sa `nature` : le suivant, constitue aujourd'hui.
     pub(crate) fn de(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement) -> ChargeArretSignaler {
-        ChargeArretSignaler { salarie: salarie.into(), dernier_jour, nature, remplace: None, ordre: None, test: None, le: None }
+        ChargeArretSignaler { salarie: salarie.into(), dernier_jour, nature, remplace: None, ordre: None, mode: None, le: None }
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`) : son numero d'ordre et son
     /// jour de constitution, tels que le journal les dit.
     pub(crate) fn refait(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement, ordre: NumeroDOrdre, le: Jour) -> ChargeArretSignaler {
         ChargeArretSignaler { ordre: Some(ordre), le: Some(le), ..ChargeArretSignaler::de(salarie, dernier_jour, nature) }
+    }
+}
+
+/// Le mode qu'un signalement ecrit (S10.G00.00.005) : celui que la charge dit (`test`, le fichier d'essai) ; une charge
+/// qui ne demande pas d'essai ecrit le fichier reel, que son depot de test bascule en memoire.
+fn mode_du_fichier(dit: Option<Mode>) -> Mode {
+    match dit {
+        Some(m) => m,
+        None => Mode::Reel,
     }
 }
 
@@ -302,8 +312,8 @@ pub(crate) struct ChargeFinContratSignaler {
     remplace: Option<IdentifiantDeDeclaration>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
     ordre: Option<NumeroDOrdre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    test: Option<bool>,
+    #[serde(rename = "test", default, skip_serializing_if = "Option::is_none", with = "socle::mode::test_en_booleen::option")]
+    mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     le: Option<Jour>,
 }
@@ -311,7 +321,7 @@ pub(crate) struct ChargeFinContratSignaler {
 impl ChargeFinContratSignaler {
     /// Le signalement de la fin du contrat de `salarie` en `mois` : le suivant, constitue aujourd'hui.
     pub(crate) fn de(mois: Mois, salarie: IdSalarie) -> ChargeFinContratSignaler {
-        ChargeFinContratSignaler { mois, salarie: salarie.into(), remplace: None, ordre: None, test: None, le: None }
+        ChargeFinContratSignaler { mois, salarie: salarie.into(), remplace: None, ordre: None, mode: None, le: None }
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`).
@@ -1959,7 +1969,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let mois = c.mois;
     let salarie = c.salarie.as_str();
     let remplace = c.remplace;
-    let envoi_test = c.test == Some(true);
+    let mode = mode_du_fichier(c.mode);
 
     let (saisie, paies) = validees(ctx, mois)?;
     let cle = cle_du_nom(ctx, &c.salarie)?;
@@ -1989,7 +1999,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
         type_declaration,
         ordre,
         remplace,
-        envoi_test,
+        mode,
         date_constitution: c.le,
     };
     // Les arrets du contrat qui croisent la periode du signalement : le FCTU les reporte (bloc 60), comme la mensuelle,
@@ -2138,7 +2148,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         type_declaration,
         ordre,
         remplace,
-        envoi_test: c.test == Some(true),
+        mode: mode_du_fichier(c.mode),
         date_constitution: Some(constitution),
     };
     let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;

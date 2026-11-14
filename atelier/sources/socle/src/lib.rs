@@ -20,6 +20,7 @@ pub mod json_ascii;
 pub mod lecture_xlsx;
 pub mod ligne;
 pub mod memoire;
+pub mod mode;
 pub mod mois;
 pub mod nfkc;
 pub mod num;

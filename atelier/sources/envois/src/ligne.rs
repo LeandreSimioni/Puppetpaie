@@ -15,54 +15,12 @@ use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
+use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::num::Decimal;
 
 use crate::envoi::IdDeCourriel;
 use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
-
-/// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    Reel,
-    Test,
-}
-
-impl Mode {
-    pub fn de(reel: bool) -> Mode {
-        if reel {
-            Mode::Reel
-        } else {
-            Mode::Test
-        }
-    }
-
-    /// Son nom, tel que la ligne l'ecrit.
-    pub fn nom(self) -> &'static str {
-        match self {
-            Mode::Reel => "reel",
-            Mode::Test => "test",
-        }
-    }
-}
-
-/// L'ECRITURE D'UN MODE EN BOOLEEN, celle d'une charge ou d'une reponse de route qui dit `reel` : vrai en reel, faux en
-/// test.
-pub mod en_booleen {
-    use super::Mode;
-
-    pub fn serialize<S: serde::Serializer>(m: &Mode, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_bool(*m == Mode::Reel)
-    }
-
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Mode, D::Error> {
-        match <bool as serde::Deserialize>::deserialize(d)? {
-            true => Ok(Mode::Reel),
-            false => Ok(Mode::Test),
-        }
-    }
-}
 
 /// La sorte d'un envoi, telle que `quoi` l'ecrit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -204,10 +162,6 @@ impl Ligne {
 
     pub fn mode(&self) -> Mode {
         commun!(self, e => e.mode)
-    }
-
-    pub fn reel(&self) -> bool {
-        self.mode() == Mode::Reel
     }
 
     pub fn qui(&self) -> &str {

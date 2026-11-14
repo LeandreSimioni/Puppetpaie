@@ -55,7 +55,7 @@ use crate::enveloppe::Dite;
 use crate::rappels::{EcheanceDite, EtapeDEcheance, GenreDEcheance};
 use droit::contexte::Contexte;
 use envois::etats;
-use envois::journal::Mode;
+use socle::mode::Mode;
 use envois::retours::IdDeFlux;
 use socle::echec::erreur;
 use socle::echec::Echec;
@@ -813,11 +813,12 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         // Le depot reel de ce contenu est deja note : le rappel se taira au prochain releve.
         let Some(etape) = etape_du_fichier(ctx, lignes, &f, mensuelle)? else { return Ok(None) };
         let octets = std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?;
-        let reel_code = declarations::dsn_lue::lire(&octets, None)?.reel();
-        d.pret = match etape {
-            Etape::ATester => Pret::Pour(Mode::Test),
-            Etape::Testee if reel_code => Pret::Pour(Mode::Reel),
-            Etape::Testee | Etape::EnTest | Etape::TestRefuse | Etape::PaieChangee => Pret::Rien,
+        // Le mode que le fichier dit (S10.G00.00.005) : seul un fichier reel teste part en reel.
+        let mode_du_fichier = declarations::dsn_lue::lire(&octets, None)?.nature_envoi;
+        d.pret = match (etape, mode_du_fichier) {
+            (Etape::ATester, _) => Pret::Pour(Mode::Test),
+            (Etape::Testee, Some(Mode::Reel)) => Pret::Pour(Mode::Reel),
+            (Etape::Testee, Some(Mode::Test) | None) | (Etape::EnTest | Etape::TestRefuse | Etape::PaieChangee, _) => Pret::Rien,
         };
         d.fichier = Some(f);
         d.etape = Some(etape);
@@ -1127,7 +1128,7 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
 #[derive(Debug, Serialize)]
 pub struct DepotGroupe {
     pub phrase: String,
-    #[serde(rename = "reel", serialize_with = "envois::journal::en_booleen::serialize")]
+    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::serialize")]
     pub mode: Mode,
     pub partis: usize,
     pub refuses: usize,
@@ -1194,8 +1195,7 @@ pub fn deposer(o: &Options, inst: &Path, mode: Mode, motdepasse: Option<socle::s
         mdp = Some(m);
     }
     for (racine, nom, d) in &a_faire {
-        // La charge de `deposer` dit encore son mode en booleen (`depots::ChargeDeposer`).
-        let charge = en_charge(ChargeDeposer::de(designation(d)?, mode == Mode::Reel, mdp.clone()))?;
+        let charge = en_charge(ChargeDeposer::de(designation(d)?, mode, mdp.clone()))?;
         let avant = envois::journal::lu(racine)?.lignes.len();
         let rep = crate::servir_la_route(&o_de(o, racine), Route::Deposer, &charge);
         compagnie::coffre::oublier_mot_de_passe_tape();

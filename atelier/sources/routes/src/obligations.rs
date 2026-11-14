@@ -1070,7 +1070,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         Ok(arret.as_ref().map(|arret| arret.a_reporter(mois, &departs)).transpose().map_err(|m| m.reclasser(Classe::Illisible))?.is_some_and(|oui| oui))
     };
     let mut partis = Vec::new();
-    for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
+    for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, Some(socle::mode::Mode::Reel)).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
         let (mois, quand) = (e.mois, e.quand());
         let d = &e.detail;
         let Some(nature) = d.nature_declaration else { continue };
@@ -1300,7 +1300,7 @@ pub(crate) fn fin_signalee_le(journal: &[envois::journal::Ligne], cle: &IdSalari
 /// (`DsnLue::evenement`), dont le fichier est celui que `fin-contrat-signaler` ecrit pour ce salarie.
 fn fctu_depose(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) -> R<Option<Fait>> {
     let nom = format!("{}{}_{}.dsn", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle.as_str().to_uppercase(), fin.aaaammjj()).to_uppercase();
-    let premier = envois::journal::filtrer(journal, Some(envois::journal::Acte::Dsn), None, true)
+    let premier = envois::journal::filtrer(journal, Some(envois::journal::Acte::Dsn), None, Some(socle::mode::Mode::Reel))
         .filter(|l| l.accepte())
         // Un signalement refuse au bilan n'est pas recu (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : il reste du.
         .filter(|l| !envois::etats::refuse_par_un_retour(l))

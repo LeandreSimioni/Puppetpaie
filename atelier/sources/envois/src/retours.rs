@@ -18,7 +18,8 @@ use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_L
 
 use droit::contexte::TypeDeParametreNeores;
 use droit::fiche::{Nic, Nir, Siren, Siret};
-use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
+use droit::nature_declaration::NatureDeLaDeclaration;
+use socle::mode::Mode;
 use droit::natures::{Fraction, ListeDeLaNorme, NumeroDOrdre};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
@@ -1216,7 +1217,8 @@ fn lire_octets(o: &[u8]) -> R<Arbre> {
 pub struct Bilan {
     pub flux: IdDeFlux,
     pub recu_le: Option<Reception>,
-    pub essai_reel: Option<EssaiOuReel>,
+    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
+    pub essai_reel: Option<Mode>,
     pub etat_envoi: Option<Verdict>,
     pub etat_declaration: Option<Verdict>,
     pub mois: Option<socle::mois::Mois>,
@@ -1470,7 +1472,8 @@ pub struct DeclarationIdentifiee {
     pub siren: Option<Siren>,
     pub nic: Option<Nic>,
     pub etat: Option<Verdict>,
-    pub essai_reel: Option<EssaiOuReel>,
+    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
+    pub essai_reel: Option<Mode>,
     pub codes: Vec<String>,
 }
 
@@ -1483,7 +1486,7 @@ fn nature_du_retour(code: Option<&str>) -> R<Option<NatureDeLaDeclaration>> {
 /// L'envoi d'essai ou reel qu'un retour dit (S10.G00.00.005, que reprennent `essai_reel` d'un bilan, RO.B000.R013 d'un
 /// NEOReS et `CodeEnvoi` d'un compte rendu d'organisme complementaire), `None` s'il ne le dit pas : un code hors de la
 /// liste de la norme refuse le retour, qui ne se lit pas.
-fn essai_du_retour(code: Option<&str>) -> R<Option<EssaiOuReel>> {
+fn essai_du_retour(code: Option<&str>) -> R<Option<Mode>> {
     code_du_retour(code, "code d'envoi")
 }
 
@@ -2789,7 +2792,8 @@ pub struct Rapport {
     pub libelle: Option<String>,
     pub message: Option<String>,
     pub etat_envoi: Option<Verdict>,
-    pub essai_reel: Option<EssaiOuReel>,
+    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
+    pub essai_reel: Option<Mode>,
     pub declarations: Vec<DeclarationDuRapport>,
     pub anomalies: Vec<AnomalieDuRapport>,
     pub informations: Vec<InformationCollective>,
@@ -3147,7 +3151,8 @@ pub struct Neores {
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub produit_le: Option<socle::paris::Moment>,
     pub mois: Option<socle::mois::Mois>,
-    pub essai_reel: Option<EssaiOuReel>,
+    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
+    pub essai_reel: Option<Mode>,
     pub ordre: Option<NumeroDOrdre>,
     pub metier: Option<String>,
     pub conformite: Option<Verdict>,
@@ -3476,7 +3481,8 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CrmOc {
     pub type_crm: Option<TypeDeCrmOc>,
-    pub essai_reel: Option<EssaiOuReel>,
+    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
+    pub essai_reel: Option<Mode>,
     pub version: Option<String>,
     pub declarations: Vec<DeclarationOc>,
 }

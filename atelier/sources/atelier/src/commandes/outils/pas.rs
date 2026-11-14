@@ -128,11 +128,16 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         dire!("--motif attend une nature d'evenement declencheur (S20.G00.05.011, de 01 a 07), recu {}", socle::fichiers::repr(motif));
         return Ok(1);
     };
+    // `--test` : les fichiers d'essai (S10.G00.00.005 = 01).
+    let mode = match args.drapeau("test") {
+        true => socle::mode::Mode::Test,
+        false => socle::mode::Mode::Reel,
+    };
     let demande = Demande {
         motif,
         mois,
         salaries: if salaries.is_empty() { None } else { Some(&salaries) },
-        envoi_test: args.drapeau("test"),
+        mode,
         forcer: args.drapeau("forcer"),
         constitution: cadre.aujourdhui,
     };
@@ -149,7 +154,7 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     }
     dire!("\n  recapitulatif : {}", nom(&lot.recapitulatif));
     dire!("\nUN SIGNALEMENT, UN INDIVIDU : chaque fichier se depose separement, par la route `deposer` (avec `fichier`).");
-    if args.drapeau("test") {
+    if mode == socle::mode::Mode::Test {
         dire!("Ces fichiers sont des ESSAIS (S10.G00.00.005 = 01) : ils ne demandent rien.");
     }
     Ok(0)

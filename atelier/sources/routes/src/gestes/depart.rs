@@ -17,6 +17,7 @@
 use droit::fiche::{Lue as _, Nic};
 use socle::echec::Classe;
 use socle::fichiers::{Empreinte, EmpreinteCourte, NomDeFichier};
+use socle::mode::Mode;
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
 use crate::dossier_salarie::cle_de;
@@ -93,7 +94,7 @@ fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&N
     // CE QUE LA PLATE-FORME A VU EN REEL ce mois civil, lu en silence dans les bilans archives
     // (`ordre_signalements::dernier_ordre_des_mensuelles`) : le rang se compte « au cours du mois courant » (cahier
     // technique DSN, p. 136), toutes declarations du SIREN confondues, d'ou qu'elles soient parties (un autre poste).
-    let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, false, ctx.aujourdhui.mois_civil(), le_mois)?;
+    let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, Mode::Reel, ctx.aujourdhui.mois_civil(), le_mois)?;
     let dernier = match dernier {
         Some(d) => vues.ordre.into_iter().fold(d, Ord::max),
         // Une mensuelle du mois acceptee en reel que le journal ignore : la suivante la remplace.
@@ -131,7 +132,7 @@ impl Forme {
     fn options(&self) -> declarations::dsn::Options {
         declarations::dsn::Options {
             date_constitution: Some(self.constitution),
-            envoi_test: false,
+            mode: Mode::Reel,
             type_declaration: self.type_dsn,
             ordre: self.ordre,
             etablissement: self.etablissement.clone(),
@@ -1029,8 +1030,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
 
     // LA DSN MENSUELLE : la derniere ligne qui l'a deposee, le reel devant son test.
-    let deposee = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.reel() == reel);
-    let deposee = deposee(true).or_else(|| deposee(false));
+    let deposee = |mode: Mode| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.mode() == mode);
+    let deposee = deposee(Mode::Reel).or_else(|| deposee(Mode::Test));
     if crate::etapes::est_une_dsn_mensuelle(nom) {
         let Some(rang) = deposee else {
             return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom)));
@@ -1056,8 +1057,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         (None, Some(b)) => b.to_string(),
         (None, None) => nom.to_string(),
     };
-    let dpae = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dpae && l.fichier().map(NomDeFichier::texte) == Some(base.as_str()) && du_mois(l) && l.reel() == reel);
-    match dpae(true).or_else(|| dpae(false)) {
+    let dpae = |mode: Mode| lignes.iter().rposition(|l| l.acte() == Acte::Dpae && l.fichier().map(NomDeFichier::texte) == Some(base.as_str()) && du_mois(l) && l.mode() == mode);
+    match dpae(Mode::Reel).or_else(|| dpae(Mode::Test)) {
         Some(rang) => {
             let dossier = documents::FichierDuJournal::Depose.dossier().sous(&sortie);
             refaire_la_dpae(ctx, mois, &lignes[rang], &dossier.join(&base))?;
@@ -1345,7 +1346,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
                     type_declaration: TypeDeLaDeclaration::Normale,
                     ordre,
                     remplace: None,
-                    envoi_test: false,
+                    mode: Mode::Reel,
                     date_constitution: Some(jour),
                 };
                 let texte = declarations::amorcage::generer(&ctx_j, paie, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(|e| e.en_classe(Classe::Illisible))?;

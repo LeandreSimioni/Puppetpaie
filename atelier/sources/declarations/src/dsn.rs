@@ -29,6 +29,7 @@ use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
 use socle::date::Jour;
+use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::{num::{add, div, mul, pct, sub, zero2, Decimal}, refus};
@@ -549,7 +550,7 @@ pub struct Options {
     pub date_constitution: Option<Jour>,
     pub fraction: Fraction,
     pub type_declaration: TypeDeLaDeclaration,
-    pub envoi_test: bool,
+    pub mode: Mode,
     pub ordre: NumeroDOrdre,
     pub remplace: Option<IdentifiantDeDeclaration>,
     pub etablissement: Option<Nic>,
@@ -565,7 +566,7 @@ impl Options {
             date_constitution: None,
             fraction: Fraction::NON_FRACTIONNEE,
             type_declaration: TypeDeLaDeclaration::Normale,
-            envoi_test: false,
+            mode: Mode::Reel,
             ordre: NumeroDOrdre::PREMIER,
             remplace: None,
             etablissement: None,
@@ -4369,7 +4370,7 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
 /// La DSN mensuelle de `mois` : toutes les paies du mois de cet etablissement.
 ///
 /// Ce que la norme et les depots de test nous ont appris. Les parametres sont `o.etablissement`, `arrets`,
-/// `regs`, `o.envoi_test`, `o.remplace`, `o.ordre`.
+/// `regs`, `o.mode`, `o.remplace`, `o.ordre`.
 ///
 /// `paies` : toutes les paies du mois.
 ///
@@ -4411,7 +4412,7 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
 /// les taux recus de sa fiche (`pas::taux_dgfip`), tant que son taux est VALIDE ; faute d'un taux valide, la
 /// grille de taux par defaut de l'article 204 H du CGI (`pas_du_versement`, ci-dessous).
 ///
-/// `envoi_test` met S10.G00.00.005 a '01' : controles executes et bilan rendu,
+/// Le mode `Test` met S10.G00.00.005 a '01' : controles executes et bilan rendu,
 /// donnees transmises aux organismes pour analyse mais NON CONSERVEES. Un
 /// fichier code '02' est traite comme reel, quoi qu'on en dise par ailleurs.
 ///
@@ -4697,7 +4698,7 @@ certificat de conformite du depot precedent.",
     f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
-    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.005"), o.mode.code_de_la_norme());
     f.ecrire_la_version()?;
     f.add(droit::rubrique!("S10.G00.00.007"), "01");
     f.add(droit::rubrique!("S10.G00.00.008"), if sans_individu { "02" } else { "01" });

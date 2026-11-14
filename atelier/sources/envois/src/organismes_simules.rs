@@ -24,6 +24,7 @@ use socle::num::Decimal;
 use crate::journal::Ligne;
 use crate::retours::{IdDeFlux, NatureDuRetour};
 use declarations::dsn_lue::DsnLue;
+use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::paris::Moment;
 use crate::branchement::Branchement;
@@ -328,14 +329,10 @@ fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
     declarations::dsn_lue::lire(&octets, Some(fichier)).map(Some)
 }
 
-fn reelle(l: &Ligne) -> bool {
-    l.reel()
-}
-
 /// Le refus annonce qui attend ce depot : le premier non servi, annonce au plus tard le jour du depot, du mois du depot
 /// s'il en dit un. Il est servi par ce depot (son flux).
 fn refus_pour(memoire: &mut Memoire, l: &Ligne, flux: &IdDeFlux) -> R<Option<RefusAnnonce>> {
-    if !reelle(l) {
+    if l.mode() == Mode::Test {
         return Ok(None);
     }
     let depot = l.quand().jour();
@@ -508,7 +505,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
 fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, Vec<DsnLue>>> {
     let mut dernieres: BTreeMap<(Mois, Option<&droit::fiche::Nic>), &Ligne> = BTreeMap::new();
     for l in lignes {
-        if l.acte() != crate::journal::Acte::Dsn || !reelle(l) || !l.accepte() || l.nature_dsn() != Some(NatureDeLaDeclaration::Mensuelle) {
+        if l.acte() != crate::journal::Acte::Dsn || l.mode() == Mode::Test || !l.accepte() || l.nature_dsn() != Some(NatureDeLaDeclaration::Mensuelle) {
             continue;
         }
         let Some(mois) = l.mois().filter(|m| m.annee() == an) else { continue };
@@ -560,7 +557,7 @@ pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Memoire, lignes: &[Ligne], l: 
         return Ok(Err(bilans_refuses(flux, publication, l, nature, &r)?));
     }
     let mut pieces = Vec::new();
-    if !reelle(l) {
+    if l.mode() == Mode::Test {
         return Ok(Ok(pieces));
     }
     // La demande de taux par anticipation (BOI-IR-PAS-30-10-20, § 20) : le compte rendu du taux, rien d'autre.

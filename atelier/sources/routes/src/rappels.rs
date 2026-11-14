@@ -1247,7 +1247,7 @@ fn spectacles_a_revoir(ctx: &Contexte, annee: i32, faites: &Cochees) -> R<Vec<Sp
 /// Le mois le plus recent dont la DSN reelle est partie et n'a pas ete
 /// refusee -- passee, ou en attente de son bilan.
 fn derniere_dsn_passee(st: &Etat) -> R<Option<Mois>> {
-    let mois: BTreeSet<Mois> = envois::journal::filtrer(&st.journal, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !l.signalement()).filter_map(|l| l.mois()).collect();
+    let mois: BTreeSet<Mois> = envois::journal::filtrer(&st.journal, Some(envois::journal::Acte::Dsn), None, Some(socle::mode::Mode::Reel)).filter(|l| l.accepte() && !l.signalement()).filter_map(|l| l.mois()).collect();
     let mut passes = Vec::new();
     for m in mois {
         if !etat_dsn::du_mois(st.ctx, m, None)?.a_faire() {

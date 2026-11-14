@@ -148,7 +148,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL
 /// alors que la repetition etait conforme.
 fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()> {
-    let apres_test = d.reel && d.repetition.as_ref().is_some_and(|r| r.test.is_some());
+    let apres_test = d.mode == socle::mode::Mode::Reel && d.repetition.as_ref().is_some_and(|r| r.test.is_some());
     compagnie::incidents::noter(
         &ctx.racine,
         &compagnie::incidents::Note {
@@ -156,7 +156,7 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
             ou: &format!("depot-{}", d.quoi.nom()),
             quoi: socle::echec::classe_notee(d.classe),
             resume: &d.message,
-            detail: DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },
+            detail: DetailDuDepotRefuse { mode: d.mode, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },
             trace: None,
             sans_contexte: false,
         },
@@ -168,7 +168,8 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
 /// cette repetition.
 #[derive(serde::Serialize)]
 struct DetailDuDepotRefuse<'a> {
-    reel: bool,
+    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::serialize")]
+    mode: socle::mode::Mode,
     apres_test_conforme: bool,
     repetition: Option<&'a envois::journal::Ouverture>,
 }

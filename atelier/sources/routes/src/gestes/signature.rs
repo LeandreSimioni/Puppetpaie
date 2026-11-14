@@ -512,7 +512,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
 
     let mut remplacements: Vec<((IdSalarie, Jour, NumeroContrat), (String, Jour))> = Vec::new();
     if remplace {
-        let lignes = envois::journal::lire(&ctx.racine, None, None, false)?;
+        let lignes = envois::journal::lire(&ctx.racine, None, None, None)?;
         for (k, ps, _) in &par_salarie {
             for p in ps {
                 let debut = p.engagement.debut;
