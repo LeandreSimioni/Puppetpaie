@@ -194,7 +194,7 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureD
             date_constitution: Some(constitution),
         };
         let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| e.en_classe(Classe::Refuse))?;
-        let cible = dossier.join(format!("Amorcage{}_{}_{}.dsn", motif, l.salarie, constitution.aaaammjj()));
+        let cible = dossier.join(format!("{}{}_{}_{}.dsn", documents::SorteDePieceProduite::Amorcage.prefixe(), motif, l.salarie, constitution.aaaammjj()));
         crate::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
         declarations::dsn::ecrire(&texte, &cible).map_err(|e| e.reclasser(Classe::Disque))?;
         crate::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::pieces_ecrites::cle_de_piece(&cible), None, None)?;
@@ -260,7 +260,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
             out.push(format!("  {} {}", gauche(l.salarie.as_str(), 14), l.pourquoi_pas));
         }
     }
-    let recap = dossier.join(format!("Amorcage{}_{}_recapitulatif.txt", d.motif, jour));
+    let recap = dossier.join(format!("{}{}_{}_recapitulatif.txt", documents::SorteDePieceProduite::Amorcage.prefixe(), d.motif, jour));
     std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| socle::echec::du_disque(&recap, &e).reclasser(Classe::Disque))?;
     Ok(Lot { motif: d.motif, dossier, fichiers, lignes: retenus, ecartes, recapitulatif: recap })
 }
