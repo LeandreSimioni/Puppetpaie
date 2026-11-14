@@ -1311,7 +1311,7 @@ fn provision_d_une_annee_importee(
 ) -> R<usize> {
     let fin = m.dernier_jour();
     let lendemain = fin.plus_jours(1).map_err(|x| x.reclasser(Classe::Illisible))?;
-    let importes: Vec<Mois> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::IMPORTE).map(|(k, _)| *k).collect();
+    let importes: Vec<Mois> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::OrigineDuMois::Importe).map(|(k, _)| *k).collect();
     // `m` est un mois repris : il y en a au moins un.
     let premier_importe = importes.first().copied().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);

@@ -32,9 +32,14 @@ use crate::tableaux_export::{
     Section, Tableau, FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
-pub const SAISIE: &str = "saisie";
-/// Un mois que seuls des engagements importes touchent : l'ancien logiciel l'a paye.
-pub const IMPORTE: &str = "importe";
+/// D'OU VIENNENT LES PAIES D'UN MOIS DES ETATS. Elle ne s'ecrit nulle part.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrigineDuMois {
+    /// Un mois que la saisie touche.
+    Saisie,
+    /// Un mois que seuls des engagements importes touchent : l'ancien logiciel l'a paye.
+    Importe,
+}
 
 /// Ce qu'un etat demande : la periode (une seule des trois), le format, ce qui ne sort que sur demande.
 #[derive(Clone)]
@@ -129,18 +134,18 @@ const UNE_PERIODE: &str = "Un état se demande pour UNE période : un mois (--mo
 
 /// Ce qu'on a demande, les mois qu'on a, et d'ou ils viennent.
 pub struct Periode {
-    pub dispo: BTreeMap<Mois, &'static str>,
+    pub dispo: BTreeMap<Mois, OrigineDuMois>,
     pub quand: Quand,
     pub mois: Vec<Mois>,
     pub libelle: String,
 }
 
-/// Les mois qu'il y a matiere a exporter : ceux que la saisie touche (`SAISIE`), et ceux ou seuls des engagements
-/// importes ont ete payes (`IMPORTE`).
-pub fn mois_disponibles(ctx: &Contexte) -> R<BTreeMap<Mois, &'static str>> {
+/// Les mois qu'il y a matiere a exporter : ceux que la saisie touche (`Saisie`), et ceux ou seuls des engagements
+/// importes ont ete payes (`Importe`).
+pub fn mois_disponibles(ctx: &Contexte) -> R<BTreeMap<Mois, OrigineDuMois>> {
     let mois = engagement::stock::mois_saisis(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
-    let mut dispo: BTreeMap<Mois, &'static str> = mois_importes(ctx)?.into_iter().map(|m| (m, IMPORTE)).collect();
-    dispo.extend(mois.into_iter().map(|m| (m, SAISIE)));
+    let mut dispo: BTreeMap<Mois, OrigineDuMois> = mois_importes(ctx)?.into_iter().map(|m| (m, OrigineDuMois::Importe)).collect();
+    dispo.extend(mois.into_iter().map(|m| (m, OrigineDuMois::Saisie)));
     Ok(dispo)
 }
 
@@ -195,12 +200,12 @@ impl Periode {
     }
 
     pub fn saisis(&self) -> Vec<Mois> {
-        self.mois.iter().copied().filter(|m| self.dispo.get(m) == Some(&SAISIE)).collect()
+        self.mois.iter().copied().filter(|m| self.dispo.get(m) == Some(&OrigineDuMois::Saisie)).collect()
     }
 
     /// Les mois de la periode que seul l'import a payes.
     pub fn importes(&self) -> Vec<Mois> {
-        self.mois.iter().copied().filter(|m| self.dispo.get(m) == Some(&IMPORTE)).collect()
+        self.mois.iter().copied().filter(|m| self.dispo.get(m) == Some(&OrigineDuMois::Importe)).collect()
     }
 
     pub fn contient(&self, m: Mois) -> bool {
@@ -219,7 +224,7 @@ impl Periode {
 }
 
 /// Les mois demandes qu'on sait exporter -- et le refus qui dit lequel manque.
-fn mois_pris(dispo: &BTreeMap<Mois, &'static str>, quand: &Quand) -> R<Vec<Mois>> {
+fn mois_pris(dispo: &BTreeMap<Mois, OrigineDuMois>, quand: &Quand) -> R<Vec<Mois>> {
     match quand {
         Quand::Toutes => {
             if dispo.is_empty() {

@@ -353,7 +353,7 @@ const ORDRE: [QuelleEtape; 4] = [QuelleEtape::Dpae, QuelleEtape::Signature, Quel
 
 /// L'echeance d'un depot de DSN : `mots` le `jour` a `heure`, d'apres `source`.
 fn echeance_dsn(jour: Jour, heure: &'static str, source: &str) -> Echeance {
-    Echeance { jour, mots: "avant le", heure, source: source.into() }
+    Echeance { jour, mots: droit::echeances::Tournure::AvantLe, heure, source: source.into() }
 }
 
 /// Faire signer les contrats du mois : l'apercu, puis la demande.

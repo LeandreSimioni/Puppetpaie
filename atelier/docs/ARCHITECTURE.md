@@ -289,6 +289,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | identifiant de flux | `IdDeFlux` | `envois/src/retours.rs` |
 | identifiant d'un envoi | `IdDEnvoi` | `envois/src/journal.rs` |
 | nature d'un retour | `NatureDuRetour` | `envois/src/retours.rs` |
+| format d'une pièce de retour | `FormatDuRetour` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
@@ -599,6 +600,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   liste du guide de l'API DSN v6.8 (l. 573-788, chaque code à sa ligne) et le retour 41 de la FAQ de l'API DPAE (p. 5).
   Que portent un retour listé, un retour rangé au journal des envois, son complément, l'incident d'un retour, le nom
   d'une archive (`archive_de_nature`) ; les natures qu'une compagnie reçoit ont leur fiche (libellé, organisme, format).
+- **format d'une pièce de retour** : le « Format phase 3 » de la fiche d'une nature (guide v6.8, l. 573-788) :
+  harmonisé, aucun (un accusé sans document), PDF, NEOReS, organisme complémentaire, AGIRC-ARRCO (non publié) ; une
+  liste du logiciel (`socle::noms_fermes!`), écrite dans aucun fichier ; ce qui dit d'une pièce qu'elle ne se traduit
+  pas, ou qu'un accusé n'a pas de document.
 - **canal des retours** : le canal d'un retour d'organisme (règle 5) : la DSN sur net-entreprises, la DPAE sur l'Urssaf,
   services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
   fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
@@ -799,6 +804,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | genre d'une échéance | `GenreDEcheance` | `routes/src/rappels.rs` |
 | ce que vise l'échéance d'un salarié | `QuoiDuSalarie` | `routes/src/rappels.rs` |
 | étape d'une échéance | `EtapeDEcheance` | `routes/src/rappels.rs` |
+| tournure d'une échéance | `droit::echeances::Tournure` | `droit/src/echeances.rs` |
+| origine d'un mois des états | `documents::etats_paie::OrigineDuMois` | `documents/src/etats_paie.rs` |
 | étape du dépôt d'une déclaration écrite | `EtapeDuDepot` | `routes/src/etapes.rs` |
 | mode de remise d'une pièce remise aux salariés | `ModeDeRemise` | `envois/src/etats.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
@@ -1059,6 +1066,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **étape d'une échéance** : où en est ce qu'elle rappelle : le mois d'une DSN (à saisir, à produire, à déposer, à
   corriger), ou l'état d'une obligation (`DUneObligation(EtatDObligation)`) ; écrite par son nom (`a_saisir`… ; celui
   de l'état), vide pour une échéance qui n'en a pas ; que lit le tableau de l'administrateur.
+- **tournure d'une échéance** : ce qui précède son jour : « avant le » (le jour exclu : la DPAE, la DSN) ou « au plus
+  tard le » (le jour inclus : la remise du contrat), dit « jusqu'au » sans l'année ; écrite dans aucun fichier, elle
+  n'entre que dans les phrases que rend une échéance (`texte`, `court`).
+- **origine d'un mois des états** : d'où viennent les paies d'un mois qu'un état exporte : la saisie, ou l'import seul
+  (l'ancien logiciel l'a payé) ; écrite dans aucun fichier ; que porte `Periode.dispo`.
 - **étape du dépôt d'une déclaration écrite** : la paie a changé depuis son écriture, ou l'état de son test
   (`envois::etats::EtatDuTest`) ; le geste d'une case qui dépose s'en choisit.
 - **mode de remise d'une pièce remise aux salariés** : comment un contrat (ou un avenant), ou les documents d'un mois

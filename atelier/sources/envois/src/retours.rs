@@ -192,50 +192,66 @@ droit::codes_fermes! {
     }
 }
 
+socle::noms_fermes! {
+    /// LE FORMAT D'UNE PIECE DE RETOUR (« Format phase 3 » de la liste des retours, guide v6.8, l. 573-788).
+    FormatDuRetour, "Format de retour" {
+        /// Le schema des bilans (`lire_rapport`).
+        Harmonise = "harmonise",
+        /// Un accuse sans document : son statut dit tout.
+        Aucun = "aucun",
+        /// Une archive d'AER.
+        Pdf = "pdf",
+        /// Le format NEOReS (`lire_neores`, cahier technique depose dans `atelier/reference/sources/neores/`).
+        Neores = "neores",
+        /// Le compte rendu des organismes complementaires (`lire_crm_oc`, specification et schema V1.1.4 deposes dans
+        /// `gip-mds-api-dsn/`).
+        Oc = "oc",
+        /// Le format temporaire de l'AGIRC-ARRCO, que personne ne publie (le guide le cite, [7], sans le joindre), et qui
+        /// ne se traduit donc pas.
+        AgircArrco = "agirc-arrco",
+    }
+}
+
 impl NatureDuRetour {
     /// SA LIGNE de la liste des retours (guide v6.8, l. 573-788), pour les natures qu'une compagnie du spectacle recoit :
     /// son libelle (celui que le journal des envois ecrit, `RetourOrganisme.libelle`), l'organisme qui le rend (la
-    /// colonne « OPS ») et son format (« Format phase 3 ») : « harmonise », le schema des bilans (`lire_rapport`) ;
-    /// « aucun », un accuse sans document, son statut dit tout ; « pdf », une archive d'AER ; « neores », le format
-    /// NEOReS (`lire_neores`, cahier technique depose dans `atelier/reference/sources/neores/`) ; « oc », le compte
-    /// rendu des organismes complementaires (`lire_crm_oc`, specification et schema V1.1.4 deposes dans
-    /// `gip-mds-api-dsn/`) ; « agirc-arrco », le format temporaire de l'AGIRC-ARRCO, que personne ne publie (le guide le
-    /// cite, [7], sans le joindre), et qui ne se traduit donc pas. Le format de la nature 93 n'est pas rempli dans le
-    /// tableau : « harmonise » est une INFERENCE (la nature 95, de la meme DGFiP, a son exemple sous « Format DSN
+    /// colonne « OPS ») et son format (« Format phase 3 », `FormatDuRetour`). Le format de la nature 93 n'est pas rempli
+    /// dans le tableau : « harmonise » est une INFERENCE (la nature 95, de la meme DGFiP, a son exemple sous « Format DSN
     /// harmonise », § 6.3). Une autre nature de la liste n'a pas de fiche ici : elle se lit, se range et se dit par son
     /// code.
-    fn fiche(self) -> Option<(&'static str, &'static str, &'static str)> {
+    fn fiche(self) -> Option<(&'static str, &'static str, FormatDuRetour)> {
+        use FormatDuRetour::{AgircArrco, Aucun, Harmonise, Neores, Oc, Pdf};
         use NatureDuRetour as N;
         Some(match self {
-            N::AccuseDEnregistrement => ("Accuse d'enregistrement electronique / avis de rejet", "le point de dépôt (SI DSN)", "harmonise"),
-            N::CertificatDeConformite => ("Certificat de conformite / bilan d'anomalies", "le point de dépôt (SI DSN)", "harmonise"),
-            N::BilanDIdentification => ("Bilan d'identification des salaries", "le SI DSN", "harmonise"),
-            N::ControlesInterDeclarations => ("Controles inter-declarations / signalement AT-RT", "le SI DSN", "harmonise"),
-            N::ControlesArretSixMois => ("Controles arret de plus de 6 mois", "le SI DSN", "harmonise"),
-            N::ControlesTempsPartielTherapeutique => ("Controles temps partiel therapeutique", "le SI DSN", "harmonise"),
-            N::TauxAtMp => ("Compte-rendu metier taux AT/MP (notification de la Carsat)", "la CNAM (taux AT/MP)", "harmonise"),
-            N::AccuseFranceTravail => ("Accuse de reception France Travail", "France Travail", "aucun"),
-            N::CompteRenduCdduD => ("Compte-rendu metier CDDU-D", "France Travail", "harmonise"),
-            N::AerCdduD => ("AER CDDU-D (archive PDF)", "France Travail", "pdf"),
-            N::Fctu => ("AER ou compte-rendu metier FCTU", "France Travail", "harmonise"),
-            N::CompteRenduSpectacle => ("Compte-rendu metier « cinema, spectacle, expatries »", "France Travail", "harmonise"),
-            N::AerSpectacle => ("AER « cinema, spectacle » (archive PDF)", "France Travail", "pdf"),
-            N::AccuseDeDistributionOc => ("Accuse de distribution a l'organisme complementaire", "l'organisme complémentaire", "aucun"),
-            N::CompteRenduOc => ("Compte-rendu metier de l'organisme complementaire", "l'organisme complémentaire", "oc"),
-            N::AccuseUrssaf => ("Accuse de reception URSSAF", "l'Urssaf", "aucun"),
-            N::CompteRenduUrssafAgregees => ("Compte-rendu metier URSSAF, donnees agregees", "l'Urssaf", "harmonise"),
-            N::AccuseAgircArrco => ("Accuse de reception AGIRC-ARRCO", "l'AGIRC-ARRCO", "aucun"),
-            N::CompteRenduAgircArrco => ("Compte-rendu metier AGIRC-ARRCO", "l'AGIRC-ARRCO", "agirc-arrco"),
-            N::AccuseDgfip => ("Accuse de reception DGFiP", "la DGFiP", "aucun"),
-            N::CompteRenduDgfipAgregees => ("Compte-rendu metier DGFiP, donnees agregees", "la DGFiP", "harmonise"),
-            N::TauxPas => ("Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)", "la DGFiP", "harmonise"),
-            N::TauxSurTaux => ("Compte-rendu metier DGFiP, controles taux sur taux", "la DGFiP", "harmonise"),
-            N::BonusMalus => ("Compte-rendu metier bonus-malus contribution chomage", "l'Urssaf ou la MSA", "harmonise"),
-            N::Effectifs => ("Compte-rendu metier effectifs", "l'Urssaf ou la MSA", "neores"),
-            N::UrssafImmediat => ("Compte-rendu metier URSSAF H+4 (immediat)", "l'Urssaf", "neores"),
-            N::UrssafOpposable => ("Compte-rendu metier URSSAF J+5 (opposable)", "l'Urssaf", "neores"),
-            N::Identite => ("Compte-rendu metier identite", "le SI DSN", "neores"),
-            N::UrssafRappel => ("Compte-rendu metier URSSAF de rappel", "l'Urssaf", "neores"),
+            N::AccuseDEnregistrement => ("Accuse d'enregistrement electronique / avis de rejet", "le point de dépôt (SI DSN)", Harmonise),
+            N::CertificatDeConformite => ("Certificat de conformite / bilan d'anomalies", "le point de dépôt (SI DSN)", Harmonise),
+            N::BilanDIdentification => ("Bilan d'identification des salaries", "le SI DSN", Harmonise),
+            N::ControlesInterDeclarations => ("Controles inter-declarations / signalement AT-RT", "le SI DSN", Harmonise),
+            N::ControlesArretSixMois => ("Controles arret de plus de 6 mois", "le SI DSN", Harmonise),
+            N::ControlesTempsPartielTherapeutique => ("Controles temps partiel therapeutique", "le SI DSN", Harmonise),
+            N::TauxAtMp => ("Compte-rendu metier taux AT/MP (notification de la Carsat)", "la CNAM (taux AT/MP)", Harmonise),
+            N::AccuseFranceTravail => ("Accuse de reception France Travail", "France Travail", Aucun),
+            N::CompteRenduCdduD => ("Compte-rendu metier CDDU-D", "France Travail", Harmonise),
+            N::AerCdduD => ("AER CDDU-D (archive PDF)", "France Travail", Pdf),
+            N::Fctu => ("AER ou compte-rendu metier FCTU", "France Travail", Harmonise),
+            N::CompteRenduSpectacle => ("Compte-rendu metier « cinema, spectacle, expatries »", "France Travail", Harmonise),
+            N::AerSpectacle => ("AER « cinema, spectacle » (archive PDF)", "France Travail", Pdf),
+            N::AccuseDeDistributionOc => ("Accuse de distribution a l'organisme complementaire", "l'organisme complémentaire", Aucun),
+            N::CompteRenduOc => ("Compte-rendu metier de l'organisme complementaire", "l'organisme complémentaire", Oc),
+            N::AccuseUrssaf => ("Accuse de reception URSSAF", "l'Urssaf", Aucun),
+            N::CompteRenduUrssafAgregees => ("Compte-rendu metier URSSAF, donnees agregees", "l'Urssaf", Harmonise),
+            N::AccuseAgircArrco => ("Accuse de reception AGIRC-ARRCO", "l'AGIRC-ARRCO", Aucun),
+            N::CompteRenduAgircArrco => ("Compte-rendu metier AGIRC-ARRCO", "l'AGIRC-ARRCO", AgircArrco),
+            N::AccuseDgfip => ("Accuse de reception DGFiP", "la DGFiP", Aucun),
+            N::CompteRenduDgfipAgregees => ("Compte-rendu metier DGFiP, donnees agregees", "la DGFiP", Harmonise),
+            N::TauxPas => ("Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)", "la DGFiP", Harmonise),
+            N::TauxSurTaux => ("Compte-rendu metier DGFiP, controles taux sur taux", "la DGFiP", Harmonise),
+            N::BonusMalus => ("Compte-rendu metier bonus-malus contribution chomage", "l'Urssaf ou la MSA", Harmonise),
+            N::Effectifs => ("Compte-rendu metier effectifs", "l'Urssaf ou la MSA", Neores),
+            N::UrssafImmediat => ("Compte-rendu metier URSSAF H+4 (immediat)", "l'Urssaf", Neores),
+            N::UrssafOpposable => ("Compte-rendu metier URSSAF J+5 (opposable)", "l'Urssaf", Neores),
+            N::Identite => ("Compte-rendu metier identite", "le SI DSN", Neores),
+            N::UrssafRappel => ("Compte-rendu metier URSSAF de rappel", "l'Urssaf", Neores),
             _ => return None,
         })
     }
@@ -259,7 +275,7 @@ impl NatureDuRetour {
     }
 
     /// Son format, s'il a une fiche.
-    pub fn format(self) -> Option<&'static str> {
+    pub fn format(self) -> Option<FormatDuRetour> {
         self.fiche().map(|f| f.2)
     }
 

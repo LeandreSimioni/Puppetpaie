@@ -548,7 +548,7 @@ impl Lecture {
 /// Une piece lue : le certificat DPAE (nature 41 du canal DPAE, `dpae::lire_certificat`), un rapport au format
 /// harmonise (`retours::lire_rapport`), une archive d'AER (`retours::aer_spectacle`), un PDF. Autre chose ne se
 /// traduit pas : son format est dit, ce qui l'empeche de se lire aussi, et la piece s'ouvre telle quelle.
-fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: Option<&str>) -> Lecture {
+fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: Option<retours::FormatDuRetour>) -> Lecture {
     if canal == CanalDesRetours::Dpae && nature == NatureDuRetour::CertificatDpae {
         let texte: String = o.iter().map(|&b| b as char).collect();
         match declarations::dpae::lire_certificat(&texte) {
@@ -622,7 +622,7 @@ fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: 
         // Le format temporaire de l'AGIRC-ARRCO (guide v6.8, « Documents de reference », [7] : `Schéma XSD RC V07.xsd`,
         // `accuseReceptionDSNDTO.xsd`, `notificationCcmdDSNDTO.xsd`) n'est publie ni avec le guide, ni sur net-entreprises,
         // ni sur agirc-arrco.fr (releve du 20/10/2026 : `atelier/reference/sources/gip-mds-api-dsn/LISEZ-MOI.md`).
-        Some("agirc-arrco") => "Ce compte rendu de l'AGIRC-ARRCO est dans un format que l'AGIRC-ARRCO ne publie pas : ce logiciel ne peut donc pas le traduire. Le statut ci-dessus est celui que donne net-entreprises, et la pièce s'ouvre telle quelle.".to_string(),
+        Some(retours::FormatDuRetour::AgircArrco) => "Ce compte rendu de l'AGIRC-ARRCO est dans un format que l'AGIRC-ARRCO ne publie pas : ce logiciel ne peut donc pas le traduire. Le statut ci-dessus est celui que donne net-entreprises, et la pièce s'ouvre telle quelle.".to_string(),
         _ => "Cette pièce n'a pas la forme que son format annonce : ce logiciel ne sait pas la lire. Le statut ci-dessus est celui que donne net-entreprises, et la pièce s'ouvre telle quelle.".to_string(),
     });
     l.phrases.extend(pas_lus);
@@ -1046,7 +1046,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             // Sans piece lue : ce que le releve en a lu quand il l'a rattachee (`journal.rattacher_retours`), et rien d'autre.
             if let PieceDuRetour::Illisible(m) = &sans {
                 phrases.push(format!("La pièce de ce retour ne se lit pas sur ce poste : {} ; ce qui est dit ici vient du relevé.", m));
-            } else if format == Some("aucun") {
+            } else if format == Some(retours::FormatDuRetour::Aucun) {
                 phrases.push("Un accusé de réception, sans document : son statut dit tout.".into());
             } else if flux.is_some_and(IdDeFlux::est_fictif) {
                 // Le retour d'un depot joue par une compagnie fictive (`envois::releve_retours::rattacher_simulation`, qui
