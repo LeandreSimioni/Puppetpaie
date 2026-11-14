@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
-use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, Nir, NumeroObjetSpectacle, Siren};
+use droit::fiche::{Bic, Civilite, CodeMedecine, CodeNaf, CodeNationalite, CodePostal, Courriel, DepartementNaissance, Iban, Idcc, Nic, Nir, NumeroObjetSpectacle, Sexe, Siren};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
 use droit::organismes::IdentifiantDOrganisme;
@@ -23,6 +23,7 @@ use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
 use socle::mois::{Mois, MoisOuJour};
 use socle::num::Decimal;
+use socle::pays::CodePays;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
 /// Ce qu'on dit d'un fichier qui ne dit pas le mois qu'il declare (`DsnLue::mois_declare`).
@@ -87,7 +88,7 @@ pub struct Contact {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qualite: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub civilite: Option<String>,
+    pub civilite: Option<Civilite>,
 }
 
 /// CE QUE LA DSN DECLARE DE L'ENTREPRISE, sous les cles de sa fiche (`champs-base.json`) : les blocs 06 (l'entreprise),
@@ -109,13 +110,13 @@ pub struct EntrepriseDeclaree {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub siren: Option<Siren>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub naf: Option<String>,
+    pub naf: Option<CodeNaf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nic: Option<Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_postal: Option<String>,
+    pub code_postal: Option<CodePostal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commune: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,7 +135,7 @@ pub struct EntrepriseDeclaree {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub declarant_dsn: Option<Contact>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub medecine_travail: Option<String>,
+    pub medecine_travail: Option<CodeMedecine>,
     /// La licence du premier contrat (S21.G00.40.049) : la fiche la date (`LectureDsn::licences` du moteur).
     #[serde(skip)]
     pub licence: Option<String>,
@@ -200,7 +201,7 @@ pub struct IndividuDeclare {
     pub prenom: Option<String>,
     /// .005.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sexe: Option<String>,
+    pub sexe: Option<Sexe>,
     /// .006.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_naissance: Option<NaissanceDeclaree>,
@@ -212,19 +213,19 @@ pub struct IndividuDeclare {
     pub adresse: Option<String>,
     /// .009.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_postal: Option<String>,
+    pub code_postal: Option<CodePostal>,
     /// .010.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commune: Option<String>,
     /// .013.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_nationalite_dsn: Option<String>,
+    pub code_nationalite_dsn: Option<CodeNationalite>,
     /// .014.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub departement_naissance: Option<String>,
+    pub departement_naissance: Option<DepartementNaissance>,
     /// .015.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pays_naissance: Option<String>,
+    pub pays_naissance: Option<CodePays>,
     /// .018.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<Courriel>,
@@ -722,7 +723,10 @@ impl EntrepriseDeclaree {
         self.siren.is_none()
             && self.nic.is_none()
             && self.idcc.is_none()
-            && [&self.naf, &self.adresse, &self.code_postal, &self.commune, &self.adherent_conges_spectacles, &self.raison_sociale, &self.france_travail_dossier_recouvrement, &self.medecine_travail]
+            && self.naf.is_none()
+            && self.code_postal.is_none()
+            && self.medecine_travail.is_none()
+            && [&self.adresse, &self.commune, &self.adherent_conges_spectacles, &self.raison_sociale, &self.france_travail_dossier_recouvrement]
             .iter()
             .all(|c| c.is_none())
             && self.banque.is_none()
@@ -802,13 +806,22 @@ fn tete(chemin: &Path) -> std::io::Result<Vec<u8>> {
 
 // ------------------------------------------------------------------ la lecture
 
-/// `01` -> `1`, `02` -> `2` (les choix du champ `sexe` de la fiche) ; une autre valeur reste telle quelle, et la fiche
-/// la signalera.
-fn sexe_de_la_fiche(v: &str) -> String {
-    match v.trim() {
-        "01" => "1".into(),
-        "02" => "2".into(),
-        autre => autre.to_string(),
+/// Le sexe declare (S21.G00.30.005 : « 01 - masculin », « 02 - féminin ») en celui de la fiche ; un autre code laisse la
+/// case vide (`dans_sa_forme`).
+fn sexe_de_la_fiche(v: &str) -> Option<Sexe> {
+    match v {
+        "01" => Some(Sexe::Masculin),
+        "02" => Some(Sexe::Feminin),
+        _ => None,
+    }
+}
+
+/// UNE CASE DE LA FICHE QUE LA DSN REMPLIT, lue dans son type : hors de sa forme, elle reste vide, comme une DSN qui ne
+/// la dirait pas (une DSN lue : un inconnu ne s'invente pas, et ne refuse pas l'import).
+fn dans_sa_forme<T>(v: &str, lire: fn(&str) -> R<T>) -> Option<T> {
+    match lire(v) {
+        Ok(t) => Some(t),
+        Err(_) => None,
     }
 }
 
@@ -1036,7 +1049,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             "S10.G00.01.001" => premier(&mut emetteur_siren, &fautes.lue(rub, &v, SIREN, Siren::lire)),
             "S10.G00.01.003" => premier(&mut emetteur_nom, &plein),
-            "S10.G00.02.001" => civilite_emetteur = plein,
+            "S10.G00.02.001" => civilite_emetteur = Civilite::du_code(&v),
             "S10.G00.02.002" => nom_emetteur = plein,
             "S20.G00.05.002" => type_declaration = fautes.code(rub, &v),
             "S20.G00.05.004" => ordre = NumeroDOrdre::lu(&v),
@@ -1060,9 +1073,9 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             "S21.G00.06.001" => premier(&mut e.siren, &fautes.lue(rub, &v, SIREN, Siren::lire)),
             "S21.G00.06.002" => premier(&mut nic_siege, &fautes.lue(rub, &v, NIC, Nic::lire)),
-            "S21.G00.06.003" => premier(&mut e.naf, &plein),
+            "S21.G00.06.003" => premier(&mut e.naf, &dans_sa_forme(&v, CodeNaf::lire)),
             "S21.G00.06.004" => premier(&mut adresse_siege, &plein),
-            "S21.G00.06.005" => premier(&mut code_postal_siege, &plein),
+            "S21.G00.06.005" => premier(&mut code_postal_siege, &dans_sa_forme(&v, CodePostal::lire)),
             "S21.G00.06.006" => premier(&mut commune_siege, &plein),
             "S21.G00.11.001" => {
                 let nic = fautes.lue(rub, &v, NIC, Nic::lire);
@@ -1071,9 +1084,9 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     etablissements.push(nic);
                 }
             }
-            "S21.G00.11.002" => premier(&mut apet, &plein),
+            "S21.G00.11.002" => premier(&mut apet, &dans_sa_forme(&v, CodeNaf::lire)),
             "S21.G00.11.003" => premier(&mut e.adresse, &plein),
-            "S21.G00.11.004" => premier(&mut e.code_postal, &plein),
+            "S21.G00.11.004" => premier(&mut e.code_postal, &dans_sa_forme(&v, CodePostal::lire)),
             "S21.G00.11.005" => premier(&mut e.commune, &plein),
             "S21.G00.11.022" => premier(&mut e.idcc, &fautes.lue(rub, &v, IDCC, Idcc::lire)),
             "S21.G00.11.025" => spst = v,
@@ -1124,26 +1137,28 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     Err(_) => None,
                 };
             }
-            "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.005" | "S21.G00.30.007" | "S21.G00.30.008" | "S21.G00.30.009"
-            | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" => {
+            "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.007" | "S21.G00.30.008" | "S21.G00.30.010" => {
                 let Some(i) = individu else { continue };
                 let s = &mut individus[i];
                 let case = match k {
                     "S21.G00.30.002" => &mut s.nom,
                     "S21.G00.30.004" => &mut s.prenom,
-                    "S21.G00.30.005" => &mut s.sexe,
                     "S21.G00.30.007" => &mut s.lieu_naissance,
                     "S21.G00.30.008" => &mut s.adresse,
-                    "S21.G00.30.009" => &mut s.code_postal,
-                    "S21.G00.30.010" => &mut s.commune,
-                    "S21.G00.30.013" => &mut s.code_nationalite_dsn,
-                    "S21.G00.30.014" => &mut s.departement_naissance,
-                    _ => &mut s.pays_naissance,
+                    _ => &mut s.commune,
                 };
-                *case = Some(match k {
-                    "S21.G00.30.005" => sexe_de_la_fiche(&v),
-                    _ => v,
-                });
+                *case = Some(v);
+            }
+            "S21.G00.30.005" | "S21.G00.30.009" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" => {
+                let Some(i) = individu else { continue };
+                let s = &mut individus[i];
+                match k {
+                    "S21.G00.30.005" => s.sexe = sexe_de_la_fiche(&v),
+                    "S21.G00.30.009" => s.code_postal = dans_sa_forme(&v, CodePostal::lire),
+                    "S21.G00.30.013" => s.code_nationalite_dsn = CodeNationalite::du_code(&v),
+                    "S21.G00.30.014" => s.departement_naissance = dans_sa_forme(&v, DepartementNaissance::lire),
+                    _ => s.pays_naissance = dans_sa_forme(&v, CodePays::lire),
+                }
             }
             "S21.G00.30.018" => {
                 let Some(i) = individu else { continue };
@@ -1332,7 +1347,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
     if let Some(c) = contact.filter(|c| !c.nom_prenom.trim().is_empty()) {
         let mut d = c.clone();
         if emetteur_est_l_entreprise && nom_emetteur.as_deref() == Some(c.nom_prenom.as_str()) {
-            if let Some(civ) = civilite_emetteur.filter(|x| x == "01" || x == "02") {
+            if let Some(civ) = civilite_emetteur {
                 d.civilite = Some(civ);
             }
         }
@@ -1343,7 +1358,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
     // (`CodeMedecine::INTERNE`). L'identifiant d'un service externe ne se reprend pas : sa definition est dans une fiche
     // consigne non deposee, et qu'il soit le code de la DPAE serait une inference.
     if spst == "MT01" {
-        e.medecine_travail = Some(droit::fiche::CodeMedecine::INTERNE.to_string());
+        e.medecine_travail = Some(CodeMedecine::lire(CodeMedecine::INTERNE)?);
     }
     Ok(DsnLue {
         logiciel,

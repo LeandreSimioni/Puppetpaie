@@ -1634,9 +1634,9 @@ p. 322). Corriger la date sur la fiche : le jour ou la personne est entree dans 
 ///
 /// La CCH-11 (p. 182, l. 156-160 : 40.003 = 01 => 40.002 dans 03, 04 ou 08) est un controle bloquant : verifiee ici,
 /// avant de produire.
-pub fn statuts_du_contrat(p: &Paie, idcc: Option<&droit::fiche::Idcc>) -> R<(String, String)> {
+pub fn statuts_du_contrat(p: &Paie, idcc: Option<&droit::fiche::Idcc>) -> R<(droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc)> {
+    use droit::fiche::{StatutCategorielRc as Rc, StatutConventionnel as Sc};
     let s = &p.salarie;
-    let lu = |v: Option<&str>| v.map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
     let code = s.code_emploi_ft.dite();
     let m = match code {
         Some(c) => droit::emplois::metier(c)?.filter(|m| m.au_catalogue().is_some()),
@@ -1647,9 +1647,9 @@ pub fn statuts_du_contrat(p: &Paie, idcc: Option<&droit::fiche::Idcc>) -> R<(Str
         Some(c) => format!("son metier ({}) n'est pas au catalogue des metiers, qui les dirait", c),
         None => "la fiche n'a pas de metier (code emploi)".to_string(),
     };
-    let rc = match (lu(s.statut_categoriel_rc.code()), &m) {
+    let rc = match (s.statut_categoriel_rc.dite().copied(), &m) {
         (Some(rc), _) => rc,
-        (None, Some(m)) if m.cadre_par_defaut(idcc) == Some(false) => "04".to_string(),
+        (None, Some(m)) if m.cadre_par_defaut(idcc) == Some(false) => Rc::NonCadre,
         (None, Some(m)) => {
             return Err(refus!(
                 "{} : le metier {} ({}) est cadre au catalogue, et la fiche ne dit pas cadre ou non cadre \
@@ -1661,7 +1661,7 @@ pub fn statuts_du_contrat(p: &Paie, idcc: Option<&droit::fiche::Idcc>) -> R<(Str
             ))
         }
         (None, None) => {
-            let aussi = if lu(s.statut_conventionnel.code()).is_none() {
+            let aussi = if s.statut_conventionnel.dite().is_none() {
                 ", ni le classement conventionnel (S21.G00.40.002, « Classement conventionnel (DSN) » : 04 cadre, 05 profession \
 intermediaire, 06 employe, 07 ouvrier)"
             } else {
@@ -1677,11 +1677,11 @@ metiers, ou saisir « Cadre ou non cadre » et « Classement conventionnel (DSN)
             ));
         }
     };
-    let sc = match lu(s.statut_conventionnel.code()) {
+    let sc = match s.statut_conventionnel.dite().copied() {
         Some(sc) => Some(sc),
-        None => match (m.as_ref(), rc.as_str()) {
-            (Some(_), "01") => Some("04".to_string()),
-            (Some(m), "04") => m.statut_non_cadre()?.map(|s| s.as_str().to_string()),
+        None => match (m.as_ref(), rc) {
+            (Some(_), Rc::Cadre) => Some(Sc::Cadre04),
+            (Some(m), Rc::NonCadre) => m.statut_non_cadre()?,
             _ => None,
         },
     };
@@ -1697,7 +1697,8 @@ profession intermediaire, 06 employe, 07 ouvrier), et {}. Il ne se devine pas : 
             raison
         ));
     };
-    if rc == "01" && !["03", "04", "08"].contains(&sc.as_str()) {
+    // 08 n'est pas un classement que la fiche porte (`StatutConventionnel`) : un cadre n'y a que 03 ou 04.
+    if rc == Rc::Cadre && !matches!(sc, Sc::Cadre03 | Sc::Cadre04) {
         return Err(refus!(
             "{} : cadre (S21.G00.40.003 = 01) et classe {} en S21.G00.40.002. La norme DSN n'admet pour un cadre que 03 \
 (cadre dirigeant), 04 (autres cadres) ou 08 (CCH-11, cahier technique p. 182) : la declaration serait rejetee. Corriger \
@@ -1751,8 +1752,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     // Les statuts se lisent, ou refusent (`statuts_du_contrat`), avant qu'une ligne du contrat soit ecrite.
     let (statut_conventionnel, statut_categoriel_rc) = statuts_du_contrat(p, ent.idcc.dite())?;
     f.add(droit::rubrique!("S21.G00.40.001"), e.debut.jjmmaaaa());
-    f.add(droit::rubrique!("S21.G00.40.002"), statut_conventionnel);
-    f.add(droit::rubrique!("S21.G00.40.003"), statut_categoriel_rc);
+    f.add(droit::rubrique!("S21.G00.40.002"), statut_conventionnel.as_str());
+    f.add(droit::rubrique!("S21.G00.40.003"), statut_categoriel_rc.as_str());
     f.add_case(droit::rubrique!("S21.G00.40.004"), &s.pcs_ese, "pcs_ese")?;
     // Le complement PCS-ESE : « 999SPT pour les emplois permanents du spectacle » (CCH-18, p. 185) quand la nature le
     // fixe (`contrats-base.json` : cdi, cdd) ; le contrat d'un intermittent (`droit::caisse_conges::intermittent` : un
