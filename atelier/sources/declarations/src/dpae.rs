@@ -477,18 +477,17 @@ pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> R<Vec<String>>
     // CE QUE LA DPAE EXIGE DES FICHES (`exige_par` de `champs-base.json`, la liste que « Pour demarrer » lit : la naissance,
     // zones D_NAISSANCE_SAL, L_LIEU_NAISS_SAL et le departement de naissance, « O », et le sexe sans NIR, zone SEXE,
     // `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`) : tout ce qui manque, d'un coup, avant d'ecrire.
-    let mut saisies: Vec<(droit::fiche::NomDeFiche, String, crate::champs::Saisie)> = Vec::new();
+    let mut fiches: Vec<(crate::champs::FicheAJuger<'_>, String)> = Vec::new();
     if let Some(e) = p.ent {
-        saisies.push((droit::fiche::NomDeFiche::Entreprise, "la fiche entreprise".to_string(), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Entreprise, &e.fiche)?));
+        fiches.push((crate::champs::FicheAJuger::Entreprise(&e.fiche), "la fiche entreprise".to_string()));
     }
     for e in embauches {
         let qui = match e.salarie.nomme() {
             Some(n) => n,
             None => e.salarie.fiche.id.to_string(),
         };
-        saisies.push((droit::fiche::NomDeFiche::Salarie, format!("la fiche de {}", qui), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &e.salarie.champs)?));
+        fiches.push((crate::champs::FicheAJuger::Salarie(&e.salarie.champs), format!("la fiche de {}", qui)));
     }
-    let fiches: Vec<(droit::fiche::NomDeFiche, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     if let Some(m) = crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dpae, &fiches, &[])? {
         return Err(refus(m));
     }

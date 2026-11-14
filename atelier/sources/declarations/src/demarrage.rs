@@ -154,8 +154,7 @@ fn manque_de_la_case(cle: impl Into<CaseDeFiche>, libelle: String, bloque: &str,
 ///   sans spectacle n'a rien a dire ; l'audiovisuel ne voit pas la case.
 pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> R<bool> {
     let c = champ_entreprise(CaseEntreprise::LicenceSpectacle)?;
-    let ent = crate::champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, ent)?;
-    Ok(c.exige(&ent) || (spectacle && crate::champs::condition_remplie(c.si.as_ref(), &ent)))
+    Ok(c.exige(ent) || (spectacle && crate::champs::condition_remplie(c.si.as_ref(), ent)))
 }
 
 /// La compagnie emploie-t-elle des intermittents ? Un spectacle actif le dit : un CDDU se rattache a un spectacle.
@@ -238,7 +237,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // CE QUE LES ACTES EXIGENT DES FICHES (`exige_par` de `champs-base.json`, que chaque acte lit aussi :
     // `champs::refus_des_manques`) : l'entreprise, puis chaque salarie actif ; ce qui ne bloque rien dit ce qui se passe
     // sans lui (`sinon`).
-    for m in crate::champs::manquants(NomDeFiche::Entreprise, &crate::champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, ent)?)? {
+    for m in crate::champs::manquants(ent)? {
         if m.cle.seul() == Some(documents::conges_spectacles::CLE_ADHERENT.into()) && !intermittents {
             continue;
         }
@@ -249,7 +248,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             Some(n) => n,
             None => cle.to_string(),
         };
-        for m in crate::champs::manquants(NomDeFiche::Salarie, &crate::champs::Saisie::de_la_fiche(NomDeFiche::Salarie, &s.champs)?)? {
+        for m in crate::champs::manquants(&s.champs)? {
             out.push(ligne(m, format!("Configuration › Salariés, la fiche de {}", nom), "salarie", Some((cle, &nom))));
         }
     }
@@ -261,7 +260,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             Some(t) => t.to_string(),
             None => cle.to_string(),
         };
-        for m in crate::champs::manquants(NomDeFiche::Spectacle, &crate::champs::Saisie::de_la_fiche(NomDeFiche::Spectacle, sp)?)? {
+        for m in crate::champs::manquants(sp)? {
             let mut l = ligne(m, format!("Configuration › Spectacles, la fiche de {}", titre), "spectacle", None);
             l.cle = format!("{}.{}", l.cle, cle);
             l.spectacle = Some(cle.clone());

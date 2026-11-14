@@ -310,13 +310,11 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: Mois, paies: &[Paie
 /// compagnie et ces `salaries` (`(cle, fiche)`) : tout ce qui manque, d'un coup, avant d'ecrire le moindre PDF. Un
 /// avenant est un contrat : il passe par le meme controle.
 fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a IdSalarie, &'a ChampsSalarie)>) -> R<()> {
-    use declarations::champs::Saisie;
-    use droit::fiche::NomDeFiche;
-    let mut saisies: Vec<(NomDeFiche, String, Saisie)> = vec![(NomDeFiche::Entreprise, "la fiche entreprise".into(), Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)?)];
+    use declarations::champs::FicheAJuger;
+    let mut fiches: Vec<(FicheAJuger<'_>, String)> = vec![(FicheAJuger::Entreprise(&ctx.entreprise), "la fiche entreprise".into())];
     for (cle, s) in salaries {
-        saisies.push((NomDeFiche::Salarie, format!("la fiche de {}", crate::nom_a_l_ecran(s, cle)), Saisie::de_la_fiche(NomDeFiche::Salarie, s)?));
+        fiches.push((FicheAJuger::Salarie(s), format!("la fiche de {}", crate::nom_a_l_ecran(s, cle))));
     }
-    let fiches: Vec<(NomDeFiche, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Contrat, &fiches, &[])? {
         Some(m) => Err(refus(m)),
         None => Ok(()),

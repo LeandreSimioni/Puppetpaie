@@ -121,13 +121,104 @@ pub fn nulle_ou_dite<'de, D: Deserializer<'de>, T: DeserializeOwned + FormeDeCas
 #[derive(Debug, Clone, PartialEq)]
 pub struct Changements<C>(pub Vec<C>);
 
-impl<'de, C: Deserialize<'de>> Deserialize<'de> for Changements<C> {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = Vec::<C>::deserialize(d)?;
-        if v.is_empty() {
-            return Err(serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
+/// La case d'un changement, lue seule : ce que nomme un changement dont la valeur est fautive.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CaseSeule {
+    case: CaseDeFiche,
+    #[serde(default, rename = "valeur", deserialize_with = "socle::forme::non_lue")]
+    _valeur: socle::forme::NonLue,
+}
+
+impl<C: DeserializeOwned> Changements<C> {
+    /// LES CHANGEMENTS TAPES `liste`, CHACUN LU SEUL dans le type de sa case : ceux qui se lisent, et la faute de chacun
+    /// des autres, toutes ensemble (`FauteDeCase`). Une liste vide, ou un changement qui ne nomme pas une case d'une
+    /// fiche, refuse la charge.
+    pub fn lire(liste: &socle::forme::Liste) -> R<(Changements<C>, Vec<FauteDeCase>)> {
+        if liste.est_vide() {
+            return Err(socle::echec::refus("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
         }
-        Ok(Changements(v))
+        let mut lus = Vec::new();
+        let mut fautes = Vec::new();
+        for (case, lu) in liste.chacun::<CaseSeule>("valeur").into_iter().zip(liste.chacun::<C>("valeur")) {
+            let case = case.map_err(|(_, detail)| socle::echec::refus(format!("`changements` : {}", detail)))?.case;
+            match lu {
+                Ok(ch) => lus.push(ch),
+                Err((chemin, phrase)) => fautes.push(FauteDeCase::de(case, chemin, phrase)),
+            }
+        }
+        Ok((Changements(lus), fautes))
+    }
+}
+
+/// UNE FAUTE D'UNE CASE SAISIE : la case, le chemin sous elle dans une structure (`[1].siret`, `email`), et la phrase de
+/// ce que le type de la case refuse. La case reste vide dans la fiche typee ; la faute se dit a cote, avec toutes les
+/// autres du formulaire (`declarations::champs::des_fautes`), et ne se passe pas outre.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FauteDeCase {
+    pub case: CaseDeFiche,
+    pub chemin: Option<String>,
+    pub phrase: String,
+}
+
+impl FauteDeCase {
+    /// La faute de la case `case`, au chemin `chemin` sous elle (vide : la case elle-meme).
+    fn de(case: CaseDeFiche, chemin: String, phrase: String) -> FauteDeCase {
+        let chemin = match chemin.as_str() {
+            "" | "?" => None,
+            _ => Some(chemin),
+        };
+        FauteDeCase { case, chemin, phrase }
+    }
+}
+
+impl FauteDeCase {
+    /// LE TEXTE `texte` QUE LE MOTEUR POSE DANS LA CASE `case` (une forme declaree fabriquee de la lisible), lu dans le type
+    /// de la case comme un changement `C` : ce que le type refuse est la faute de la case.
+    pub fn pose<C: DeserializeOwned>(case: CaseDeFiche, texte: &str) -> Result<C, FauteDeCase> {
+        match socle::forme::un_texte_pose::<C>("case", case.nom(), "valeur", texte) {
+            Ok(ch) => Ok(ch),
+            Err((chemin, phrase)) => Err(FauteDeCase::de(case, chemin, phrase)),
+        }
+    }
+}
+
+pub use socle::ecriture::{MotEcrit, ValeurDeCase};
+
+/// UNE FICHE QUE LA TABLE DES CASES JUGE (`declarations::champs`) : l'entreprise, un salarie, un spectacle, typee. Ce
+/// qu'une case ecrit (`ecrite`), si elle est remplie (`dite`), et sa seule porte depuis un formulaire (`lire_cases`).
+pub trait FicheSaisie: Sized + Default + Clone {
+    const NOM: NomDeFiche;
+
+    /// Ce qu'ecrit la case au bout de `chemin` sous la case `k` (une structure : les cles qui y menent).
+    fn ecrite_au_chemin(&self, k: CaseDeFiche, chemin: &[&str]) -> MotEcrit;
+
+    /// LA FICHE TAPEE `o` (un formulaire), case par case (`lire_cases` de sa forme) : la fiche typee et la faute de
+    /// chaque case que son type refuse.
+    fn lire_cases(o: &socle::forme::Objet) -> R<(Self, Vec<FauteDeCase>)>;
+
+    /// La valeur de la case `k`, ecrite comme le fichier l'ecrit ; vide, aucune.
+    fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase>;
+
+    /// Ce qu'ecrit la case `k`.
+    fn ecrite(&self, k: CaseDeFiche) -> MotEcrit {
+        self.ecrite_au_chemin(k, &[])
+    }
+
+    /// LA CASE `k` EST-ELLE REMPLIE : une valeur, sauf une case a cocher non cochee ; une structure, une de ses cases
+    /// remplie. Zero est une valeur.
+    fn dite(&self, k: CaseDeFiche) -> bool {
+        dit(&self.ecrite(k))
+    }
+}
+
+/// Ce mot ecrit dit-il quelque chose (`FicheSaisie::dite`) ?
+pub fn dit(m: &MotEcrit) -> bool {
+    match m {
+        MotEcrit::Vide | MotEcrit::StructureVide => false,
+        MotEcrit::Mot(t) | MotEcrit::Nombre(t) => !t.is_empty(),
+        MotEcrit::OuiNon(b) => *b,
+        MotEcrit::Structure => true,
     }
 }
 
@@ -1856,6 +1947,54 @@ macro_rules! fiche {
             pub fn sans_notes(self) -> $plate {
                 $plate { $( $( $note: None, )* )? ..self }
             }
+
+            /// CE QU'ECRIT LA CASE au bout de `chemin` sous la case `k` (`socle::ecriture::mot_au_chemin`) ; une case
+            /// que la forme ne declare pas n'ecrit rien.
+            pub fn ecrite_au_chemin(&self, k: CaseDeFiche, chemin: &[&str]) -> MotEcrit {
+                $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
+                    return socle::ecriture::mot_au_chemin(&self.$champ, chemin);
+                } )*
+                $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
+                    return socle::ecriture::mot_au_chemin(&self.$piece.cases.$pchamp, chemin);
+                } )* )*
+                MotEcrit::Vide
+            }
+
+            /// La valeur de la case `k`, ecrite comme le fichier l'ecrit ; vide, aucune.
+            pub fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase> {
+                $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
+                    return ValeurDeCase::de(&self.$champ);
+                } )*
+                $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
+                    return ValeurDeCase::de(&self.$piece.cases.$pchamp);
+                } )* )*
+                None
+            }
+
+            /// LA FICHE TAPEE `o` (un formulaire de la fiche `fiche`), LA SEULE PORTE D'UNE FICHE SAISIE : chaque case
+            /// lue seule dans son type (`$ch`, par `nulle_ou_dite` : son rangement, puis son type), une case blanche
+            /// vide (`Objet::sans_textes_blancs`) ; la faute d'une case s'ajoute (`FauteDeCase`) et la lecture continue.
+            /// Ses notes se lisent en texte ; la ligne de l'histoire (`historique`), que la page renvoie, ne se lit pas.
+            /// Une cle qui n'est pas une case de la fiche refuse le formulaire.
+            pub fn lire_cases_de_la_fiche(o: &socle::forme::Objet, fiche: &str) -> R<($plate, Vec<FauteDeCase>)> {
+                let o = o.sans_textes_blancs();
+                let cases = $plate::cases();
+                let lue = |k: &str| k != NomDeCase::HISTORIQUE.nom() && !$plate::NOTES.contains(&k);
+                let mut plate = $plate::default();
+                let mut fautes = Vec::new();
+                for (k, lu) in o.chacune::<$ch>(lue, "case", "valeur") {
+                    let Some(d) = cases.iter().find(|d| d.cle.nom() == k) else {
+                        let connues: Vec<&str> = cases.iter().map(|d| d.cle.nom()).collect();
+                        return Err(socle::echec::refus(format!("la case « {} » n'existe pas dans la fiche {} ; ses cases sont : {}", k, fiche, connues.join(", "))));
+                    };
+                    match lu {
+                        Ok(ch) => <$datee as FicheDatee>::appliquer(&mut plate, ch),
+                        Err((chemin, phrase)) => fautes.push(FauteDeCase::de(d.cle, chemin, phrase)),
+                    }
+                }
+                $( $( plate.$note = o.lire_une::<Option<String>>(stringify!($note), "Une note de la fiche se lit en texte.")?.flatten(); )* )?
+                Ok((plate, fautes))
+            }
         }
 
         /// UN CHANGEMENT D'UNE CASE DE LA FICHE, comme ceux de la carte (`engagement::carte::Changement`) :
@@ -2712,6 +2851,27 @@ fiche! {
     }
     pieces CasePieceRubrique {}
 }
+
+/// Les trois fiches que la table des cases juge (`FicheSaisie`).
+macro_rules! fiche_saisie {
+    ($($plate:ident = $nom:ident),*) => {
+        $(
+            impl FicheSaisie for $plate {
+                const NOM: NomDeFiche = NomDeFiche::$nom;
+                fn ecrite_au_chemin(&self, k: CaseDeFiche, chemin: &[&str]) -> MotEcrit {
+                    $plate::ecrite_au_chemin(self, k, chemin)
+                }
+                fn lire_cases(o: &socle::forme::Objet) -> R<(Self, Vec<FauteDeCase>)> {
+                    $plate::lire_cases_de_la_fiche(o, NomDeFiche::$nom.nom())
+                }
+                fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase> {
+                    $plate::valeur_ecrite(self, k)
+                }
+            }
+        )*
+    };
+}
+fiche_saisie!(ChampsEntreprise = Entreprise, ChampsSalarie = Salarie, ChampsSpectacle = Spectacle);
 
 impl ChampsSpectacle {
     /// Archivee : `actif: false`. L'absence vaut actif.

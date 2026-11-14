@@ -750,9 +750,8 @@ fn numero_en_nom(n: &NumeroDeBulletin) -> String {
 /// l'entreprise, et le spectacle de chaque paie dont la nature declare un numero d'objet (S21.G00.40.050, la marque des
 /// annexes VIII et X) ; tout ce qui manque, d'un coup, avant que rien ne s'ecrive.
 fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl Iterator<Item = &'a Paie>) -> R<()> {
-    use declarations::champs::Saisie;
-    use droit::fiche::NomDeFiche;
-    let mut saisies: Vec<(NomDeFiche, String, Saisie)> = vec![(NomDeFiche::Entreprise, "la fiche entreprise".to_string(), Saisie::de_la_fiche(NomDeFiche::Entreprise, ent)?)];
+    use declarations::champs::FicheAJuger;
+    let mut fiches: Vec<(FicheAJuger<'_>, String)> = vec![(FicheAJuger::Entreprise(ent), "la fiche entreprise".to_string())];
     let mut spectacles: Vec<&str> = Vec::new();
     for p in paies {
         let Some(sp) = p.spectacle.as_ref() else { continue };
@@ -764,9 +763,8 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
             Some(titre) => format!("Spectacles, la fiche de {}", titre),
             None => format!("Spectacles, la fiche {}", sp.cle),
         };
-        saisies.push((NomDeFiche::Spectacle, qui, Saisie::de_la_fiche(NomDeFiche::Spectacle, &sp.champs)?));
+        fiches.push((FicheAJuger::Spectacle(&sp.champs), qui));
     }
-    let fiches: Vec<(NomDeFiche, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     match declarations::champs::refus_des_manques(declarations::champs::ActeExigeant::Bulletin, &fiches, &[])? {
         Some(m) => Err(erreur(Classe::Refuse, m)),
         None => Ok(()),

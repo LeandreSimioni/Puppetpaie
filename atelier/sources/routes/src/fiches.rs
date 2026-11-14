@@ -15,11 +15,12 @@ use crate::catalogue::Route;
 use crate::documents::client_courriel;
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
-use declarations::champs::{self, Saisie};
+use declarations::champs::{self, FicheAJuger};
+use droit::fiche::ChampsEntreprise;
 use documents::fiche_questionnaire as fq;
 use documents::fiche_questionnaire::CodeDeDemande;
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
-use droit::fiche::{CaseEntreprise, CodeEmploiFt, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, CaseDeFiche, NomDeFiche, Piece};
+use droit::fiche::{CodeEmploiFt, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, CaseDeFiche, NomDeFiche, Piece};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
 use envois::envoi::{self, Message};
@@ -34,7 +35,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
-pub(crate) use ecriture::{avec_libelles, deriver, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, reporter, vide, vue, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
+pub(crate) use ecriture::{avec_libelles, case_vide, comblee, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, vide, vue, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -436,13 +437,16 @@ pub(crate) struct Permanents {
 /// jour : `ouverture::configuration`) ; la page montre ou replie chaque case selon cette reponse, et ne decide rien
 /// quand on coche ou decoche la case des permanents.
 fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
-    let (nom, cle, donnees) = charge.ouverte();
-    let entreprise = if nom == NomDeFiche::Entreprise { donnees.clone() } else { Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)? };
     let jour = ctx.aujourdhui;
     let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
-    let Montres { cases, pieces_ouvertes } = montres(ctx, nom, cle.as_ref(), &donnees, &entreprise, &p)?;
+    // Une case que son type refuse est vide dans la fiche typee : elle ne change pas ce qui se montre.
+    let (Montres { cases, pieces_ouvertes }, entreprise) = match &charge {
+        FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &p)?, &donnees.fiche),
+        FicheEnCours::Salarie { cle, donnees } => (montres(ctx, FicheAJuger::Salarie(&donnees.fiche), cle.as_ref(), &ctx.entreprise, &p)?, &ctx.entreprise),
+        FicheEnCours::Spectacle { donnees } => (montres(ctx, FicheAJuger::Spectacle(&donnees.fiche), None, &ctx.entreprise, &p)?, &ctx.entreprise),
+    };
     Ok(Permanents {
-        phrase: if permanents_de(&entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
+        phrase: if permanents_de(entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
         montres: cases,
         pieces_ouvertes,
     })
@@ -457,8 +461,8 @@ pub(crate) struct Montres {
 }
 
 /// La case des permanents de la fiche entreprise telle que l'ecran la saisit.
-fn permanents_de(entreprise: &Saisie) -> bool {
-    entreprise.case(CaseEntreprise::EmploieDesPermanents) == Some(&champs::Valeur::OuiNon(true))
+fn permanents_de(entreprise: &ChampsEntreprise) -> bool {
+    entreprise.emploie_des_permanents.oui()
 }
 
 /// CE QUE LA FICHE `nom` (de cle `cle` pour un salarie enregistre) MONTRE pour `donnees` : chaque case que
@@ -471,7 +475,8 @@ fn permanents_de(entreprise: &Saisie) -> bool {
 /// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
 /// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
 /// page ne montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
+pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdSalarie>, entreprise: &ChampsEntreprise, p: &engagement::permanents::Permanents) -> R<Montres> {
+    let nom = donnees.nom();
     let au_mois = match nom {
         NomDeFiche::Entreprise => permanents_de(entreprise) || !p.dus.is_empty(),
         // Un salarie pas encore enregistre n'a aucun engagement.
@@ -480,7 +485,11 @@ pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, 
         NomDeFiche::Spectacle => false,
     };
     let avec_permanents = nom == NomDeFiche::Entreprise && permanents_de(entreprise);
-    let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
+    let code_emploi = match donnees {
+        FicheAJuger::Salarie(s) => s.code_emploi_ft.clone(),
+        FicheAJuger::Entreprise(_) | FicheAJuger::Spectacle(_) => None,
+    };
+    let du_metier = cases_des_metiers(ctx, nom, cle, code_emploi)?;
     let (cse, casc) = if nom == NomDeFiche::Entreprise { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
     let ouverte = |piece: Piece, case: CaseDeFiche| match piece {
         Piece::Permanent => au_mois,
@@ -491,7 +500,7 @@ pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, 
     };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != NomDeFiche::Entreprise).then_some(entreprise);
-    let cases = champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements)).map(|c| c.cle).collect();
+    let cases = champs::fiche(nom)?.iter().filter(|c| donnees.montre(c, autre, &ouverte, etablissements)).map(|c| c.cle).collect();
     // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
     let metier = if nom == NomDeFiche::Entreprise { Piece::MetierAuMois } else { Piece::Metier };
     let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc)]
@@ -505,18 +514,15 @@ pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, 
 /// representation du personnel quand un comite peut exister (`Effectif::cse`) et qu'un calcul la lit (une contribution
 /// de la convention qui en depend, ou l'exemption de la CASC-SVP, que cinquante salaries rendent possible) ; l'exemption
 /// de la CASC-SVP quand la compagnie compte cinquante salaries et que la fiche `entreprise`, telle qu'elle est saisie, dit
-/// un CSE (`droit::fiche::ChampsEntreprise::exemption_casc`). La saisie revient dans la fiche par sa forme, case par case
-/// (`reporter`, sans nommer aucune case) : la cle se tire de la fiche typee. Un effectif inconnu n'ouvre rien : c'est lui
-/// que « Pour démarrer » demande (`Effectif::a_dire`).
-fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> {
+/// un CSE (`droit::fiche::ChampsEntreprise::exemption_casc`), sur la fiche typee. Un effectif inconnu n'ouvre rien : c'est
+/// lui que « Pour démarrer » demande (`Effectif::a_dire`).
+fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &ChampsEntreprise) -> R<(bool, bool)> {
     let (jour, eff) = (ctx.aujourdhui, ctx.effectif()?);
     let (cse, cinquante) = (eff.cse(jour.an), eff.cinquante(jour.an));
     let Some(cse) = cse else { return Ok((false, false)) };
     let lue = cinquante.is_some() || ctx.contribution_par_representation(&jour)?;
     let Some(cinquante) = cinquante else { return Ok((lue, false)) };
-    let mut saisie = ctx.entreprise.clone();
-    reporter::<FicheEntrepriseDatee>(&mut saisie, &Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)?, entreprise)?;
-    Ok((lue, saisie.exemption_casc(&cinquante, &cse).is_some()))
+    Ok((lue, entreprise.exemption_casc(&cinquante, &cse).is_some()))
 }
 
 /// LES CASES DU METIER (`droit::fiche::Piece::Metier`) QUE LA FICHE `nom` MONTRE : celles que la grille du metier de
@@ -527,10 +533,9 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> 
 /// l'annexe I, que sa prime
 /// d'anciennete peut viser (`droit::clauses::prime_anciennete_possible`, le metier de la carte ou de la fiche de son
 /// salarie). Un engagement qui n'est plus actif ne demande rien ; une fiche sans engagement, rien.
-fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, donnees: &Saisie) -> R<std::collections::BTreeSet<CaseDeFiche>> {
+fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, de_la_fiche: Option<CodeEmploiFt>) -> R<std::collections::BTreeSet<CaseDeFiche>> {
     let mut cases = std::collections::BTreeSet::new();
-    // Le code emploi de la fiche en cours de saisie, rangé à sa lecture (`Saisie`) ; hors de sa forme, sa faute le dit.
-    let de_la_fiche = donnees.mot(droit::fiche::CaseSalarie::CodeEmploiFt).and_then(|c| CodeEmploiFt::lire(&c).ok());
+    // Le code emploi de la fiche en cours de saisie, type a sa porte ; hors de sa forme, sa faute le dit.
     // (metier, statut dit par la carte, jour, salarie)
     let mut metiers: std::collections::BTreeSet<(CodeEmploiFt, Option<droit::fiche::Statut>, Jour, IdSalarie)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine)? {
@@ -1238,15 +1243,12 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         let existante: Option<IdSalarie> = trouvee.map(|(k, _)| k.clone());
         // Une fiche qui existe deja : on ne complete que ses cases VIDES (ce qu'elle porte a peut-etre deja ete declare) ;
         // une fiche neuve prend toutes celles de la reponse, active. La note dit d'ou viennent les valeurs.
-        let deja = match trouvee {
-            Some((_, s)) => Some(vue::<FicheSalarieDatee>(&s.champs)?),
-            None => None,
-        };
+        let deja = trouvee.map(|(_, s)| s.champs.clone());
         let dites = droit::fiche::ChampsSalarie::default().cases_differentes(&recue);
         let p = preparer::<FicheSalarieDatee>(ctx, existante.as_ref(), |plate| {
             let mut nommees = Vec::new();
             for k in dites {
-                let a_remplir = deja.as_ref().is_none_or(|v| vide(v.valeur(k)));
+                let a_remplir = deja.as_ref().is_none_or(|v| case_vide(v.valeur_ecrite(k).as_ref()));
                 if let (true, Some(ch)) = (a_remplir, <FicheSalarieDatee as droit::fiche::FicheDatee>::changement(&recue, k)) {
                     <FicheSalarieDatee as droit::fiche::FicheDatee>::appliquer(plate, ch);
                     nommees.push(k);
