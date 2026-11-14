@@ -635,6 +635,18 @@ pub fn existe(chemin: &Path) -> bool {
     v
 }
 
+/// `existe`, sans avaler le disque : seule l'absence vraie (un lien cassé compris) est `false` ; le disque qui refuse de
+/// le dire se dit.
+pub fn existe_lu(chemin: &Path) -> R<bool> {
+    let v = match std::fs::metadata(chemin) {
+        Ok(_) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => return Err(crate::echec::du_disque(chemin, &e)),
+    };
+    noter(EXISTE, chemin, ValeurLue::OuiNon(v));
+    Ok(v)
+}
+
 /// `Path::is_dir`, note.
 pub fn est_dossier(chemin: &Path) -> bool {
     let v = chemin.is_dir();

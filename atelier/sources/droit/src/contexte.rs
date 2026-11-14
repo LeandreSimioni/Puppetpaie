@@ -243,7 +243,7 @@ impl FichierEffectifs {
 /// `config/effectifs.json` de la compagnie, lu par sa forme ; aucun s'il n'existe pas.
 pub fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
     let p = racine.join(EFFECTIFS);
-    if !sur_le_disque(&p)? {
+    if !socle::fichiers::existe_lu(&p)? {
         return Ok(None);
     }
     socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie (config/effectifs.json) ne se lit pas.").map(Some)
@@ -416,17 +416,10 @@ impl From<BaremeAbsent> for Echec {
     }
 }
 
-/// `chemin` est-il sur le disque ? `fichiers::existe` le dit et le note (le calcul suit son apparition) ; le disque qui
-/// refuse de le dire remonte (`fichiers::present`) : seule l'absence vraie est `false`.
-fn sur_le_disque(chemin: &Path) -> R<bool> {
-    socle::fichiers::present(chemin)?;
-    Ok(socle::fichiers::existe(chemin))
-}
-
 /// Le fichier du socle livre de l'annee, s'il est livre ; le disque qui refuse de le dire remonte.
 fn fichier_du_socle(dossier: &Path, an: i32) -> R<Option<PathBuf>> {
     let p = dossier.join(format!("{}.json", an));
-    Ok(sur_le_disque(&p)?.then_some(p))
+    Ok(socle::fichiers::existe_lu(&p)?.then_some(p))
 }
 
 /// LE SOCLE LIVRE DE L'ANNEE `an`, seul (sans convention ni compagnie), lu au 1er janvier : ce que la tarification AT/MP
@@ -1530,7 +1523,7 @@ impl Contexte {
         let dossier = self.code.join("baremes");
         let p = self.racine.join(&chemin);
         // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
-        let surcouche = match sur_le_disque(&p)? {
+        let surcouche = match socle::fichiers::existe_lu(&p)? {
             true => crate::forme_bareme::lire_la_surcouche(&p)?,
             false if fichier_du_socle(&dossier, an)?.is_some() => Surcouche {
                 annee: an,
