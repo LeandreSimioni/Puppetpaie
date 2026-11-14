@@ -539,9 +539,9 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     for (i, (l, src)) in p.remuneration.iter().zip(brutes).enumerate() {
         let saisi = p.engagement.lignes.get(i).and_then(|x| x.marques()).and_then(|m| m.taux_saisi);
         // Le nombre que l'ecran montre : sa forme la plus courte.
-        let (quantite, taux) = (Some(socle::grandeurs::Quantite::du_decimal(socle::num::court(l.quantite))), Some(match saisi {
+        let (quantite, taux) = (Some(socle::grandeurs::Quantite::du_decimal(socle::num::court(l.quantite.decimal()))), Some(match saisi {
             Some(t) => t,
-            None => socle::grandeurs::MontantUnitaire::du_decimal(socle::num::court(l.taux)),
+            None => socle::grandeurs::MontantUnitaire::du_decimal(socle::num::court(l.taux.decimal())),
         }));
         out.push(match src.clone() {
             LignePaie::Unites(x) => LignePaie::Unites(engagement::ligne::Unites { quantite, taux, ..x }),
@@ -1790,7 +1790,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         remuneration: p
             .remuneration
             .iter()
-            .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.quantite, taux: l.taux, montant: Montant::du_decimal(l.montant).au_centime().decimal() })
+            .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.quantite.decimal(), taux: l.taux.decimal(), montant: l.montant.au_centime().decimal() })
             .collect(),
         jours,
         lieu,

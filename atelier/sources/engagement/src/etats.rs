@@ -65,7 +65,7 @@ use socle::date::Jour;
 use socle::fichiers::{LectureDatee, ValeurLue};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Montant, Taux};
 use socle::{echec::{refus, Echec, R}, num::Decimal};
 
 /// POURQUOI UNE PAIE SE RECALCULE (`raison`). Elle s'ecrit par sa phrase (`Display`), que la paie ecrite garde
@@ -634,10 +634,11 @@ impl PaieDuMois {
         self.montant(|p| p.base_csg, |p| p.bases.get(&droit::assiette::Assiette::Csg).copied())
     }
 
-    pub fn bases(&self) -> &BTreeMap<droit::assiette::Assiette, Decimal> {
+    /// Les assiettes, chacune par son nombre : celles du calcul, ou celles que les pieces disent.
+    pub fn bases(&self) -> BTreeMap<droit::assiette::Assiette, Decimal> {
         match self {
-            PaieDuMois::Validee(p) => &p.bases,
-            PaieDuMois::Importee(p) => &p.bases,
+            PaieDuMois::Validee(p) => p.bases.iter().map(|(a, b)| (*a, b.decimal())).collect(),
+            PaieDuMois::Importee(p) => p.bases.clone(),
         }
     }
 
@@ -651,11 +652,11 @@ impl PaieDuMois {
                     id: Some(crate::ecarts::RegroupementDeComparaison::Cotisation(l.id.clone())),
                     famille: Some(l.famille.clone()),
                     libelle: l.libelle.clone(),
-                    base: Some(l.base),
-                    taux_pat: l.taux_pat,
-                    montant_pat: Some(l.montant_pat),
-                    taux_sal: l.taux_sal,
-                    montant_sal: Some(l.montant_sal),
+                    base: Some(l.base.decimal()),
+                    taux_pat: l.taux_pat.map(Taux::decimal),
+                    montant_pat: Some(l.montant_pat.decimal()),
+                    taux_sal: l.taux_sal.map(Taux::decimal),
+                    montant_sal: Some(l.montant_sal.decimal()),
                 })
                 .collect(),
             PaieDuMois::Importee(p) => p.lignes.clone(),
@@ -672,10 +673,10 @@ impl PaieDuMois {
                     code: Some(r.code.clone()),
                     libelle: r.libelle.clone(),
                     unite: Some(r.unite),
-                    quantite: Some(r.quantite),
-                    taux: Some(r.taux),
-                    montant: Some(r.montant),
-                    heures_annexes: Some(r.heures_annexes),
+                    quantite: Some(r.quantite.decimal()),
+                    taux: Some(r.taux.decimal()),
+                    montant: Some(r.montant.decimal()),
+                    heures_annexes: Some(r.heures_annexes.decimal()),
                     soumis: r.soumis,
                 })
                 .collect(),
@@ -891,7 +892,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     // l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013, `norme-dsn/texte/bloc-S21.G00.50.txt`) ;
     // cette avance-la, ce que le BOFiP en soumet (`maintien`, `Assiette::IjSubrogeesAssiettePas`).
     // Sans subrogation, aucune avance.
-    let avance: Decimal = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).into_iter().sum();
+    let avance: Decimal = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).map(|b| b.decimal()).into_iter().sum();
     Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, p.net_imposable + avance, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
 }
 

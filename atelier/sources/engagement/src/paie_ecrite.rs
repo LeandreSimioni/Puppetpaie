@@ -81,8 +81,8 @@ pub struct FormeDePaie<A> {
     pub avertissements: Vec<A>,
     #[serde(with = "nombre")]
     pub base_csg: Montant,
-    #[serde(with = "nombre::table")]
-    pub bases: BTreeMap<droit::assiette::Assiette, Montant>,
+    #[serde(with = "bases")]
+    pub bases: BTreeMap<droit::assiette::Assiette, BaseDeCotisation>,
     #[serde(with = "nombre")]
     pub brut: Montant,
     #[serde(with = "nombre")]
@@ -137,7 +137,7 @@ pub struct Cle<I> {
 }
 
 /// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite. Sa base s'ecrit en nombre, des euros ou des
-/// heures : la cotisation de la ligne dit lesquels (`BaseDeCotisation::de`).
+/// heures : la cotisation de la ligne dit lesquels (`BaseDeCotisation::de_la_cotisation`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, from = "CotisationLue")]
 pub struct FormeDeCotisation {
@@ -188,7 +188,7 @@ struct CotisationLue {
 impl From<CotisationLue> for FormeDeCotisation {
     fn from(c: CotisationLue) -> FormeDeCotisation {
         FormeDeCotisation {
-            base: BaseDeCotisation::de(&c.id, c.base.0),
+            base: BaseDeCotisation::de_la_cotisation(&c.id, c.base.0),
             id: c.id,
             famille: c.famille,
             libelle: c.libelle,
@@ -305,6 +305,22 @@ pub struct FormeDEngagement {
 
 /// Une grandeur en texte normalise (`socle::num::nombre`), relue d'un nombre ou d'un texte.
 use socle::grandeurs::ecrit::nombre;
+
+/// Les assiettes d'une paie, chacune en nombre (`socle::num::nombre`) ; relue, sa valeur est ce que l'assiette compte
+/// (`BaseDeCotisation::de_l_assiette`).
+mod bases {
+    use crate::calcul::BaseDeCotisation;
+    use droit::assiette::Assiette;
+    use std::collections::BTreeMap;
+
+    pub fn serialize<S: serde::Serializer>(t: &BTreeMap<Assiette, BaseDeCotisation>, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_map(t.iter().map(|(a, b)| (a, socle::num::nombre(b.decimal()))))
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<Assiette, BaseDeCotisation>, D::Error> {
+        <BTreeMap<Assiette, socle::forme::Nombre> as serde::Deserialize>::deserialize(d).map(|t| t.into_iter().map(|(a, n)| (a, BaseDeCotisation::de_l_assiette(a, n.0))).collect())
+    }
+}
 
 /// Un entier en texte.
 pub(crate) mod entier {

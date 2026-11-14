@@ -199,7 +199,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | quantité | `Heures`, `Cachets`, `Jours` ; celle d'une ligne de paie : `Quantite` ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
 | coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| base d'une ligne de cotisation | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires) | `engagement/src/calcul.rs` |
+| base d'une ligne de cotisation, valeur d'une assiette d'une paie | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures`) | `engagement/src/calcul.rs` |
 | plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure) | `droit/src/plafond.rs` |
 | nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
 

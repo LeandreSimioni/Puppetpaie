@@ -1105,10 +1105,10 @@ fn remuneration_lue(e: &crate::Engagement, lignes: &[LigneImprimee], ctx: &Conte
                     code: Some(b.code),
                     libelle: b.libelle,
                     unite: Some(b.unite),
-                    quantite: Some(b.quantite),
-                    taux: Some(b.taux),
+                    quantite: Some(b.quantite.decimal()),
+                    taux: Some(b.taux.decimal()),
                     montant: l.montant,
-                    heures_annexes: Some(b.heures_annexes),
+                    heures_annexes: Some(b.heures_annexes.decimal()),
                     soumis: b.soumis,
                 });
             }

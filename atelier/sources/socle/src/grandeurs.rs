@@ -52,6 +52,23 @@ macro_rules! grandeurs {
             pub fn est_nul(self) -> bool {
                 self.0.is_zero()
             }
+
+            /// Sa valeur absolue.
+            pub fn abs(self) -> $nom {
+                $nom(self.0.abs())
+            }
+        }
+
+        impl std::ops::AddAssign for $nom {
+            fn add_assign(&mut self, o: $nom) {
+                *self = *self + o;
+            }
+        }
+
+        impl std::ops::SubAssign for $nom {
+            fn sub_assign(&mut self, o: $nom) {
+                *self = *self - o;
+            }
         }
 
         impl Scelle for $nom {
@@ -323,20 +340,6 @@ pub mod ecrit {
                     Some(g) => super::serialize(g, s),
                     None => s.serialize_none(),
                 }
-            }
-        }
-
-        /// Une table dont chaque valeur s'ecrit dans cette ecriture (les assiettes d'une paie ecrite).
-        pub mod table {
-            use crate::grandeurs::Grandeur;
-            use std::collections::BTreeMap;
-
-            pub fn serialize<K: serde::Serialize, G: Grandeur, S: serde::Serializer>(t: &BTreeMap<K, G>, s: S) -> Result<S::Ok, S::Error> {
-                s.collect_map(t.iter().map(|(k, g)| (k, crate::num::nombre(g.en_decimal()))))
-            }
-
-            pub fn deserialize<'de, K: serde::Deserialize<'de> + Ord, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<K, G>, D::Error> {
-                <BTreeMap<K, crate::forme::Nombre> as serde::Deserialize>::deserialize(d).map(|t| t.into_iter().map(|(k, n)| (k, <G as crate::grandeurs::Scelle>::du(n.0))).collect())
             }
         }
     }

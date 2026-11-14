@@ -1308,8 +1308,8 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             l.m("mois", m).t("salarie", qui(paie.salarie())?).ot("contrat", paie.engagement().numero.clone());
             l.od("plafond", paie.plafond().map(|x| Montant::du_decimal(x).au_centime().decimal()));
             for (k, v) in paie.bases() {
-                l.d(&format!("b_{}", k), Montant::du_decimal(*v).au_centime().decimal());
-                vues.insert(*k);
+                l.d(&format!("b_{}", k), Montant::du_decimal(v).au_centime().decimal());
+                vues.insert(k);
             }
             if !paie.bases().contains_key(&Assiette::Csg) {
                 l.od(&format!("b_{}", Assiette::Csg), paie.base_csg().map(|x| Montant::du_decimal(x).au_centime().decimal()));

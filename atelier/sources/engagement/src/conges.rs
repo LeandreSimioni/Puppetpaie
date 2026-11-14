@@ -287,13 +287,13 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
     };
     // Sans deduction forfaitaire, rien n'est deduit ; sans base exoneree, rien n'est exonere.
     let dfs = match &p.deduction_forfaitaire {
-        Some(d) => d.montant,
+        Some(d) => d.montant.decimal(),
         None => Montant::ZERO.decimal(),
     };
     let heures_supplementaires =
-        p.remuneration.iter().filter(|l| l.code == crate::heures_en_plus::HEURE_SUPPLEMENTAIRE).fold(Decimal::ZERO, |a, l| a + l.quantite);
+        p.remuneration.iter().filter(|l| l.code == crate::heures_en_plus::HEURE_SUPPLEMENTAIRE).fold(Decimal::ZERO, |a, l| a + l.quantite.decimal());
     let exonere = match p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere) {
-        Some(x) => *x,
+        Some(x) => x.decimal(),
         None => Montant::ZERO.decimal(),
     };
     Ok(PaieLue { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })

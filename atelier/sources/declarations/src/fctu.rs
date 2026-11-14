@@ -129,7 +129,7 @@ pub fn indemnites_de_preavis_versees(paie: &engagement::calcul::Paie) -> R<Vec<(
     Ok(paie
         .remuneration
         .iter()
-        .filter(|l| !l.montant.is_zero())
+        .filter(|l| !l.montant.est_nul())
         .filter_map(|l| l.dsn_bloc52.filter(|c| codes.contains(c)).map(|c| (c, l.libelle.clone())))
         .collect())
 }

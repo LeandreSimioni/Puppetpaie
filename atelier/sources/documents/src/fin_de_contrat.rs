@@ -151,10 +151,10 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
 fn inventaire(p: &Paie) -> String {
     let mut lignes = Vec::new();
     for l in &p.remuneration {
-        lignes.push(format!("{} : {}", l.libelle, fmt_eur(l.montant)));
+        lignes.push(format!("{} : {}", l.libelle, fmt_eur(l.montant.decimal())));
     }
     for l in &p.lignes {
-        let m = socle::grandeurs::Montant::du_decimal(l.montant_sal).au_centime().decimal();
+        let m = l.montant_sal.au_centime().decimal();
         if m != socle::num::Decimal::ZERO {
             lignes.push(format!("{} : -{}", l.libelle, fmt_eur(m)));
         }

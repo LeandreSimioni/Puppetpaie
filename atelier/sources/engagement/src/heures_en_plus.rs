@@ -10,7 +10,7 @@
 use droit::fiche::Lue;
 use socle::forme::NombreLu;
 
-use crate::calcul::{LigneBrut, LigneCotisation};
+use crate::calcul::{BaseDeCotisation, LigneBrut, LigneCotisation};
 use crate::conges::{avertir, info, qui};
 use crate::saisie::Carte;
 use crate::Avis;
@@ -151,13 +151,13 @@ pub(crate) fn apres_les_cotisations(
     ctx: &Contexte, bar: &droit::forme_bareme::Pile, lb: &[LigneBrut], lignes: &[LigneCotisation], brut: Montant, tot_pat: Montant, deja: impl FnOnce() -> R<Montant>,
 ) -> R<Option<Suites>> {
     let siennes: Vec<&LigneBrut> = lb.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE || l.code == HEURE_COMPLEMENTAIRE).collect();
-    let remuneration = siennes.iter().fold(Montant::ZERO, |a, l| a + Montant::du_decimal(l.montant));
+    let remuneration = siennes.iter().fold(Montant::ZERO, |a, l| a + l.montant);
     if remuneration <= Montant::ZERO || brut <= Montant::ZERO {
         return Ok(None);
     }
-    let heures = siennes.iter().fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite));
-    let supplementaires = siennes.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite));
-    let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(Montant::ZERO, |a, l| a + Montant::du_decimal(l.montant_sal));
+    let heures = siennes.iter().fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite.decimal()));
+    let supplementaires = siennes.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite.decimal()));
+    let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(Montant::ZERO, |a, l| a + l.montant_sal);
     let mut avis = Vec::new();
 
     // La reduction salariale.
@@ -172,11 +172,11 @@ pub(crate) fn apres_les_cotisations(
         id: REDUCTION,
         famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
         libelle: format!("Réduction de cotisations salariales sur heures {}", genre),
-        base: remuneration.decimal(),
+        base: BaseDeCotisation::Montant(remuneration),
         taux_pat: None,
-        montant_pat: Montant::ZERO.decimal(),
-        taux_sal: Some(court(taux.decimal())),
-        montant_sal: (-reduction).decimal(),
+        montant_pat: Montant::ZERO,
+        taux_sal: Some(Taux::du_decimal(court(taux.decimal()))),
+        montant_sal: -reduction,
         masquer_base_et_taux: false,
     }];
 
@@ -194,11 +194,11 @@ pub(crate) fn apres_les_cotisations(
                 id: DEDUCTION,
                 famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
                 libelle: "Déduction patronale sur heures supplémentaires".into(),
-                base: supplementaires.decimal(),
+                base: BaseDeCotisation::Heures(supplementaires),
                 taux_pat: None,
-                montant_pat: (-deduction).decimal(),
+                montant_pat: -deduction,
                 taux_sal: None,
-                montant_sal: Montant::ZERO.decimal(),
+                montant_sal: Montant::ZERO,
                 masquer_base_et_taux: true,
             });
         }
@@ -212,7 +212,7 @@ pub(crate) fn apres_les_cotisations(
             .iter()
             .filter(|l| l.est(&CSG_DED))
             .take(1)
-            .map(|l| l.taux_sal.ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial")))
+            .map(|l| l.taux_sal.map(Taux::decimal).ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial")))
             .sum::<R<Decimal>>()?,
     );
     let csg_deductible = (remuneration * abattement).fois_taux(taux_csg).au_centime();

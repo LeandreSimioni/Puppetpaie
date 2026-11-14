@@ -736,9 +736,10 @@ fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: Decimal) -> R<Option
     let saisies = p.saisies();
     let (mut heures_avant, mut gain, mut jours, mut montant) = (Decimal::ZERO, Decimal::ZERO, 0i64, Decimal::ZERO);
     for (l, s) in p.remuneration.iter().zip(saisies) {
-        if l.code != droit::catalogue::REPETITION || l.heures_annexes.is_zero() {
+        if l.code != droit::catalogue::REPETITION || l.heures_annexes.est_nul() {
             continue;
         }
+        let (quantite, heures_annexes, montant_l) = (l.quantite.decimal(), l.heures_annexes.decimal(), l.montant.decimal());
         // Une ligne sans saisie n'a pas de dates connues.
         let Some(s) = s else { continue };
         let dates: BTreeSet<Jour> = s.dates().iter().map(|j| j.jour()).collect();
@@ -746,16 +747,16 @@ fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: Decimal) -> R<Option
             continue;
         }
         let n = Decimal::from(dates.len() as i64);
-        let services_par_jour = div(l.quantite, n);
-        let heures_jour = div(l.heures_annexes, n);
-        let montant_jour = div(l.montant, n);
+        let services_par_jour = div(quantite, n);
+        let heures_jour = div(heures_annexes, n);
+        let montant_jour = div(montant_l, n);
         if services_par_jour > Decimal::from(2) || heures_jour >= heures_cachet || montant_jour < min.montant {
             continue;
         }
-        heures_avant += l.heures_annexes;
+        heures_avant += heures_annexes;
         gain += (heures_cachet - heures_jour) * n;
         jours += dates.len() as i64;
-        montant += l.montant;
+        montant += montant_l;
     }
     if gain <= Decimal::ZERO {
         return Ok(None);
@@ -786,20 +787,21 @@ struct GainHeures {
 fn gain_heures(ctx: &Contexte, p: &Paie, seuil: Decimal) -> R<Option<GainHeures>> {
     let mut meilleur: Option<GainHeures> = None;
     for (i, l) in p.remuneration.iter().enumerate() {
-        if l.heures_annexes <= Decimal::ZERO || l.montant <= Decimal::ZERO {
+        let (heures, montant) = (l.heures_annexes.decimal(), l.montant.decimal());
+        if heures <= Decimal::ZERO || montant <= Decimal::ZERO {
             continue;
         }
         let Some(m) = p.minimum_de_la_ligne(ctx, i)? else { continue };
         if m.par != Par::Heure || m.montant <= Decimal::ZERO {
             continue;
         }
-        let heures_max = div(l.montant, m.montant).floor();
-        let gain = (heures_max - l.heures_annexes).floor();
+        let heures_max = div(montant, m.montant).floor();
+        let gain = (heures_max - heures).floor();
         if gain < seuil.max(Decimal::ONE) {
             continue;
         }
         if !matches!(&meilleur, Some(g) if gain <= g.gain) {
-            meilleur = Some(GainHeures { heures: l.heures_annexes, montant: l.montant, minimum: m.montant, heures_max, gain });
+            meilleur = Some(GainHeures { heures, montant, minimum: m.montant, heures_max, gain });
         }
     }
     Ok(meilleur)

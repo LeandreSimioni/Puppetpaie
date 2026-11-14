@@ -79,6 +79,12 @@ assiettes! {
 }
 
 impl Assiette {
+    /// SA VALEUR EST-ELLE DES HEURES (le nombre des heures en plus d'un salarie paye au mois, S21.G00.58) ? Toute autre
+    /// est des euros.
+    pub fn en_heures(self) -> bool {
+        matches!(self, Assiette::HeuresEnPlusHeures)
+    }
+
     /// UNE ASSIETTE PAR RUBRIQUE DE SALAIRE se calcule sur chaque rubrique soumise (le calcul, §7.4), et une cotisation
     /// s'y somme rubrique par rubrique, chacune arrondie ; toute autre est globale : une seule valeur pour la paie.
     pub fn par_rubrique(self) -> bool {

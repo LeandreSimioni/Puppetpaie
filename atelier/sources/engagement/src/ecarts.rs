@@ -45,6 +45,7 @@ use socle::echec::{refus, Echec, R};
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
 use socle::num::Decimal;
+use socle::grandeurs::Taux;
 
 /// Ce que l'on compare d'une ligne.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -249,7 +250,7 @@ const REPLIS: [(IdDeCotisation, RegroupementDeComparaison); 2] =
 /// tranches de l'Apec et les garanties de prevoyance de la paie (`garanties`, `calcul::garanties_de_prevoyance`) ; les
 /// autres gardent leur identifiant du bareme.
 pub fn cotisation_de(l: &LigneCotisation, garanties: &[IdDeCotisation]) -> RegroupementDeComparaison {
-    let seule_employeur = l.taux_sal.is_none() && l.montant_sal.is_zero();
+    let seule_employeur = l.taux_sal.is_none() && l.montant_sal.est_nul();
     if garanties.contains(&l.id) {
         return RegroupementDeComparaison::Cotisation(PREVOYANCE);
     }
@@ -476,9 +477,9 @@ fn comparer_une(
     if let Some((taux, montant, base)) = atmp_imprime {
         // Calcule au taux notifie de 1 %, la ligne AT/MP porte le facteur du contrat, et son assiette.
         let ligne = saisie.paies.first().and_then(|p| p.lignes.iter().find(|l| l.est(&droit::forme_bareme::ATMP)));
-        let facteur = ligne.and_then(|l| l.taux_pat).filter(|f| *f > Decimal::ZERO);
+        let facteur = ligne.and_then(|l| l.taux_pat).map(Taux::decimal).filter(|f| *f > Decimal::ZERO);
         let applique = taux.or_else(|| {
-            let b = base.or(ligne.map(|l| l.base)).filter(|b| !b.is_zero())?;
+            let b = base.or(ligne.map(|l| l.base.decimal())).filter(|b| !b.is_zero())?;
             Some((montant? / b * Decimal::from(100)).round_dp(2))
         });
         if let (Some(f), Some(applique)) = (facteur, applique) {
@@ -551,8 +552,8 @@ fn comparer_une(
         };
         let leur_sal: Decimal = eux.iter().filter_map(|l| l.montant_salarie).map(|x| x.abs()).sum();
         let leur_pat: Decimal = eux.iter().filter_map(|l| l.montant_employeur).map(|x| x.abs()).sum();
-        let notre_sal: Decimal = nous.iter().map(|l| l.montant_sal.abs()).sum();
-        let notre_pat: Decimal = nous.iter().map(|l| l.montant_pat.abs()).sum();
+        let notre_sal: Decimal = nous.iter().map(|l| l.montant_sal.abs().decimal()).sum();
+        let notre_pat: Decimal = nous.iter().map(|l| l.montant_pat.abs().decimal()).sum();
         let mut libelles: Vec<String> = Vec::new();
         for l in eux.iter().map(|l| l.libelle.clone()).chain(eux.is_empty().then(|| nous.iter().map(|l| l.libelle.clone())).into_iter().flatten()) {
             if !libelles.contains(&l) {
@@ -580,11 +581,11 @@ fn comparer_une(
         }
         let ([l], [n]) = (eux, nous) else { continue };
         if let Some(b) = l.base.filter(|_| !n.masquer_base_et_taux) {
-            if (b - n.base).abs() > Decimal::new(1, 2) {
-                ecarts.push(ecart(Grandeur::Base, None, None, relatif(b, n.base)));
+            if (b - n.base.decimal()).abs() > Decimal::new(1, 2) {
+                ecarts.push(ecart(Grandeur::Base, None, None, relatif(b, n.base.decimal())));
             }
         }
-        for (grandeur, leur, notre) in [(Grandeur::TauxSalarie, l.taux_salarie, n.taux_sal), (Grandeur::TauxEmployeur, l.taux_employeur, n.taux_pat)] {
+        for (grandeur, leur, notre) in [(Grandeur::TauxSalarie, l.taux_salarie, n.taux_sal.map(Taux::decimal)), (Grandeur::TauxEmployeur, l.taux_employeur, n.taux_pat.map(Taux::decimal))] {
             // Un taux se compare quand chaque cote en a un : une ligne calculee sans taux (la reduction generale, un
             // montant fixe) n'en a pas, et ce que le bulletin imprime a sa place n'en est pas un ; le montant compare.
             let (Some(leur), Some(notre)) = (leur, notre) else { continue };
@@ -596,8 +597,8 @@ fn comparer_une(
     // Les totaux du bulletin, sans ce qu'il imprime apres eux : l'ecart relatif seulement.
     let hors = |f: &dyn Fn(&LigneCotisation) -> Decimal| -> Decimal { paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l, &garanties))).map(f).sum() };
     for (cle, notre, leur) in [
-        (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
-        (TotalDuBulletin::CotisationsPatronales, paie.total_pat - hors(&|l| l.montant_pat), p.cotisations_patronales),
+        (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal.decimal()), p.cotisations_salariales),
+        (TotalDuBulletin::CotisationsPatronales, paie.total_pat - hors(&|l| l.montant_pat.decimal()), p.cotisations_patronales),
         (TotalDuBulletin::NetSocial, paie.net_social, p.net_social),
         (TotalDuBulletin::NetImposable, paie.net_imposable, p.net_imposable),
     ] {

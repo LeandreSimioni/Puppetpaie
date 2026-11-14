@@ -387,7 +387,7 @@ impl<'a> Cx<'a> {
         let statut = self.statut();
         let c3097 = self.m.au_catalogue().and_then(|f| f.classification_3097.as_ref());
         let a_fonction = c3097.is_some();
-        let heures = !ligne.heures_annexes.is_zero();
+        let heures = !ligne.heures_annexes.est_nul();
         if (statut == Statut::Technicien || a_fonction) && (horaire(&ligne.code) || mensuel(&ligne.code)) && heures {
             if permanent(self.paie)? {
                 let emploi = c3097.and_then(|c| c.titre_iv.as_ref());
@@ -523,7 +523,7 @@ impl<'a> Cx<'a> {
         let population = self.paie.engagement.nat()?.paie;
         let statut = self.statut();
         let est_cachet = cachet(&ligne.code);
-        let heures = !ligne.heures_annexes.is_zero();
+        let heures = !ligne.heures_annexes.est_nul();
         let mut out: Vec<&'a Grille> = Vec::new();
         for gr in grilles {
             // Une grille qui ne dit pas sa population ou son statut les vise tous.
@@ -787,7 +787,7 @@ impl<'a> Cx<'a> {
     /// Le plancher d'une ligne, ou rien.
     fn plancher_de(&self, ligne: &LigneBrut) -> R<Option<Plancher>> {
         let statut = self.statut();
-        let heures = !ligne.heures_annexes.is_zero();
+        let heures = !ligne.heures_annexes.est_nul();
         let code = &ligne.code;
         if *self.idcc == IDCC_2642 {
             if statut == Statut::Technicien && (horaire(code) || mensuel(code)) && heures {
@@ -911,7 +911,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
         .remuneration
         .iter()
         .filter(|l| cachet(&l.code))
-        .fold(Decimal::ZERO, |a, l| add(a, l.quantite))
+        .fold(Decimal::ZERO, |a, l| add(a, l.quantite.decimal()))
         .trunc()
         .to_string()
         .parse::<i64>()
@@ -948,7 +948,7 @@ fn minimum_dans(cx: &Cx, l: &LigneBrut, saisie: Option<&crate::LignePaie>) -> R<
     // l'annexe, jamais le cachet de la journee.
     if repetition(&l.code) && *cx.idcc == IDCC_3090 && statut == Statut::Artiste {
         let dates: BTreeSet<Jour> = saisie.iter().flat_map(|s| s.dates().iter()).map(|d| d.jour()).collect();
-        let par_jour = (!dates.is_empty()).then(|| div(l.quantite, Decimal::from(dates.len())));
+        let par_jour = (!dates.is_empty()).then(|| div(l.quantite.decimal(), Decimal::from(dates.len())));
         return Ok(cx.plancher_service_3090(par_jour)?.map(|(montant, quoi, heure)| Minimum {
             montant,
             quoi,
@@ -1037,12 +1037,12 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
             let Some(p) = minimum_dans(cx, l, saisie)? else { continue };
             if p.service_3090 {
                 let (paye, unite) = if p.par == Par::Heure {
-                    if l.heures_annexes.is_zero() {
+                    if l.heures_annexes.est_nul() {
                         continue;
                     }
-                    (pair(div(l.montant, l.heures_annexes)), "l'heure")
+                    (pair(div(l.montant.decimal(), l.heures_annexes.decimal())), "l'heure")
                 } else {
-                    (l.taux, "le service")
+                    (l.taux.decimal(), "le service")
                 };
                 if paye < p.montant {
                     avis.push(a_verifier(
@@ -1066,7 +1066,7 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
             let (paye, unite) = match p.par {
                 // Une grille a l'unite : le taux de la ligne contre le montant de la grille.
                 Par::Unite => (
-                    l.taux,
+                    l.taux.decimal(),
                     if l.code == JOURNEE {
                         "la journée"
                     } else if l.code == SEMAINE {
@@ -1078,13 +1078,13 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                     },
                 ),
                 Par::Heure => {
-                    if l.heures_annexes.is_zero() {
+                    if l.heures_annexes.est_nul() {
                         continue;
                     }
-                    (pair(div(l.montant, l.heures_annexes)), "l'heure")
+                    (pair(div(l.montant.decimal(), l.heures_annexes.decimal())), "l'heure")
                 }
-                Par::Cachet => (l.taux, "le cachet"),
-                Par::Service => (l.taux, "le service"),
+                Par::Cachet => (l.taux.decimal(), "le cachet"),
+                Par::Service => (l.taux.decimal(), "le service"),
             };
             if paye < p.montant {
                 avis.push(a_verifier(
@@ -1119,7 +1119,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
     let smic = ctx.smic(&jour)?;
     let mut avis = Vec::new();
     for l in &paie.remuneration {
-        let heures = l.heures_annexes;
+        let heures = l.heures_annexes.decimal();
         if heures <= Decimal::ZERO {
             continue;
         }
@@ -1127,7 +1127,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
             continue;
         }
         let du = socle::grandeurs::Montant::du_decimal(mul(smic, heures)).au_centime().decimal();
-        let paye = l.montant;
+        let paye = l.montant.decimal();
         if paye >= du {
             continue;
         }

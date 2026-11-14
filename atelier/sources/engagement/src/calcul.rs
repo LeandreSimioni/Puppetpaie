@@ -20,6 +20,7 @@ use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, court, div, mul, sub, Decimal};
+use socle::grandeurs::{Heures, Montant, MontantUnitaire, Quantite, Taux};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
 use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
@@ -34,6 +35,11 @@ fn taux_compose(x: Decimal) -> Decimal {
     court(x.round_dp_with_strategy(3, rust_decimal::RoundingStrategy::MidpointNearestEven))
 }
 
+/// Un taux dans sa forme la plus courte, une decimale au moins (`socle::num::court`), comme la ligne le garde.
+fn taux_court(t: Taux) -> Taux {
+    Taux::du_decimal(court(t.decimal()))
+}
+
 // ------------------------------------------------------ les lignes de brut
 
 /// Une ligne de remuneration : une rubrique, une quantite, un taux.
@@ -42,10 +48,10 @@ pub struct LigneBrut {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: Unite,
-    pub quantite: Decimal,
-    pub taux: Decimal,
-    pub montant: Decimal,
-    pub heures_annexes: Decimal,
+    pub quantite: Quantite,
+    pub taux: MontantUnitaire,
+    pub montant: Montant,
+    pub heures_annexes: Heures,
     pub soumis: bool,
     pub imposable: bool,
     pub conges_spectacles: bool,
@@ -68,7 +74,8 @@ impl LigneBrut {
     /// elle se dit apres lui, dans son unite. Un forfait et un pourcentage se disent par leur seul libelle : leur
     /// quantite n'est pas un nombre de choses.
     pub fn designation(&self) -> String {
-        let q = self.quantite.round_dp(2).normalize();
+        let quantite = self.quantite.decimal();
+        let q = quantite.round_dp(2).normalize();
         let nb = q.to_string().replace('.', ",");
         if matches!(self.unite, Unite::Forfait | Unite::Pourcentage) {
             return self.libelle.clone();
@@ -76,13 +83,13 @@ impl LigneBrut {
         // UN SALAIRE MENSUEL se paie au mois : sa quantite est la fraction du mois payee (`rubriques-base.json`, `mois`).
         // Un mois entier se dit seul ; une fraction se dit en part du mois, pas en decimales.
         if self.unite == Unite::Mois {
-            if self.quantite == Decimal::ONE {
+            if quantite == Decimal::ONE {
                 return self.libelle.clone();
             }
             if let Some(p) = &self.precision {
                 return format!("{} ({})", self.libelle, p);
             }
-            let part = (self.quantite * Decimal::from(100)).round_dp(2).normalize().to_string().replace('.', ",");
+            let part = (quantite * Decimal::from(100)).round_dp(2).normalize().to_string().replace('.', ",");
             return format!("{} ({} % du mois)", self.libelle, part);
         }
         let (tete, reste) = match self.libelle.split_once(' ') {
@@ -129,10 +136,10 @@ impl LigneBrut {
             code: self.code.clone(),
             libelle: self.libelle.clone(),
             unite: self.unite,
-            quantite: socle::grandeurs::Quantite::du_decimal(self.quantite),
-            taux: socle::grandeurs::MontantUnitaire::du_decimal(self.taux),
-            montant: socle::grandeurs::Montant::du_decimal(self.montant),
-            heures_annexes: socle::grandeurs::Heures::du_decimal(self.heures_annexes),
+            quantite: self.quantite,
+            taux: self.taux,
+            montant: self.montant,
+            heures_annexes: self.heures_annexes,
             soumis: self.soumis,
             imposable: self.imposable,
             conges_spectacles: self.conges_spectacles,
@@ -153,10 +160,10 @@ impl LigneBrut {
             code: f.code.clone(),
             libelle: f.libelle.clone(),
             unite: f.unite,
-            quantite: f.quantite.decimal(),
-            taux: f.taux.decimal(),
-            montant: f.montant.decimal(),
-            heures_annexes: f.heures_annexes.decimal(),
+            quantite: f.quantite,
+            taux: f.taux,
+            montant: f.montant,
+            heures_annexes: f.heures_annexes,
             soumis: f.soumis,
             imposable: f.imposable,
             conges_spectacles: f.conges_spectacles,
@@ -177,11 +184,11 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
     let mut out = Vec::new();
     for l in &eng.lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
-        let taux = l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal();
+        let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let taux = l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
         let signe = r.sens.signe();
         // Le signe porte aussi sur les heures : une absence en retire.
-        let h = r.heures(q, l.heures().map(socle::grandeurs::Heures::decimal));
+        let h = r.heures(q.decimal(), l.heures().map(Heures::decimal));
         let dsn_autres_bruts = code_54(&r, l.genre())?;
         out.push(LigneBrut {
             code: r.code.into(),
@@ -189,9 +196,9 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
             unite: r.unite,
             quantite: q,
             taux,
-            montant: signe * socle::grandeurs::Montant::du_decimal(mul(taux, q)).au_centime().decimal(),
+            montant: Montant::du_decimal(signe * (q * taux).au_centime().decimal()),
             // Des heures nulles gardent le signe de la ligne et leur echelle.
-            heures_annexes: if h.is_zero() { if signe.is_sign_negative() { -h } else { h } } else { signe * h },
+            heures_annexes: Heures::du_decimal(if h.is_zero() { if signe.is_sign_negative() { -h } else { h } } else { signe * h }),
             soumis: r.soumis,
             imposable: r.imposable,
             conges_spectacles: r.conges_spectacles,
@@ -209,22 +216,32 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 
 // ----------------------------------------------------------------- sortie
 
-/// LA BASE D'UNE LIGNE DE COTISATION : des euros, ou des heures pour la deduction patronale des heures supplementaires
-/// (`heures_en_plus::DEDUCTION`), dont la base est son nombre d'heures, masquee au bulletin.
+/// LA BASE D'UNE LIGNE DE COTISATION, et la valeur d'une assiette d'une paie (`Contenu::bases`) : des euros, ou des
+/// heures, celles des heures en plus (`Assiette::HeuresEnPlusHeures`) et la base de la deduction patronale des heures
+/// supplementaires (`heures_en_plus::DEDUCTION`), son nombre d'heures, masquee au bulletin.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BaseDeCotisation {
-    Montant(socle::grandeurs::Montant),
-    Heures(socle::grandeurs::Heures),
+    Montant(Montant),
+    Heures(Heures),
 }
 
 impl BaseDeCotisation {
-    /// La base `d` de la ligne de la cotisation `id` : des heures pour la deduction des heures supplementaires, des euros
-    /// sinon.
-    pub fn de(id: &IdDeCotisation, d: Decimal) -> BaseDeCotisation {
-        if *id == crate::heures_en_plus::DEDUCTION {
-            BaseDeCotisation::Heures(socle::grandeurs::Heures::du_decimal(d))
+    /// La valeur `d` de l'assiette `a` : des heures quand l'assiette en compte (`Assiette::en_heures`), des euros sinon.
+    pub fn de_l_assiette(a: Assiette, d: Decimal) -> BaseDeCotisation {
+        if a.en_heures() {
+            BaseDeCotisation::Heures(Heures::du_decimal(d))
         } else {
-            BaseDeCotisation::Montant(socle::grandeurs::Montant::du_decimal(d))
+            BaseDeCotisation::Montant(Montant::du_decimal(d))
+        }
+    }
+
+    /// La base `d` ecrite de la ligne de la cotisation `id` : des heures pour la deduction des heures supplementaires, des
+    /// euros pour toute autre (une ligne du bareme s'assoit sur une assiette en euros, la reduction generale sur le brut).
+    pub fn de_la_cotisation(id: &IdDeCotisation, d: Decimal) -> BaseDeCotisation {
+        if *id == crate::heures_en_plus::DEDUCTION {
+            BaseDeCotisation::Heures(Heures::du_decimal(d))
+        } else {
+            BaseDeCotisation::Montant(Montant::du_decimal(d))
         }
     }
 
@@ -233,6 +250,23 @@ impl BaseDeCotisation {
         match self {
             BaseDeCotisation::Montant(m) => m.decimal(),
             BaseDeCotisation::Heures(h) => h.decimal(),
+        }
+    }
+
+    /// Deux bases de meme grandeur ajoutees (deux periodes d'un mois decoupe) ; des euros et des heures ne s'ajoutent pas.
+    pub fn plus(self, o: BaseDeCotisation) -> R<BaseDeCotisation> {
+        match (self, o) {
+            (BaseDeCotisation::Montant(a), BaseDeCotisation::Montant(b)) => Ok(BaseDeCotisation::Montant(a + b)),
+            (BaseDeCotisation::Heures(a), BaseDeCotisation::Heures(b)) => Ok(BaseDeCotisation::Heures(a + b)),
+            _ => Err(refus("une base en euros et une base en heures ne s'ajoutent pas : le signaler au développeur")),
+        }
+    }
+
+    /// Est-elle nulle ?
+    pub fn est_nulle(self) -> bool {
+        match self {
+            BaseDeCotisation::Montant(m) => m.est_nul(),
+            BaseDeCotisation::Heures(h) => h.est_nul(),
         }
     }
 }
@@ -244,11 +278,11 @@ pub struct LigneCotisation {
     /// Sa famille.
     pub famille: droit::forme_bareme::FamilleDeCotisation,
     pub libelle: String,
-    pub base: Decimal,
-    pub taux_pat: Option<Decimal>,
-    pub montant_pat: Decimal,
-    pub taux_sal: Option<Decimal>,
-    pub montant_sal: Decimal,
+    pub base: BaseDeCotisation,
+    pub taux_pat: Option<Taux>,
+    pub montant_pat: Montant,
+    pub taux_sal: Option<Taux>,
+    pub montant_sal: Montant,
     pub masquer_base_et_taux: bool,
 }
 
@@ -264,11 +298,11 @@ impl LigneCotisation {
             id: self.id.clone(),
             famille: self.famille.clone(),
             libelle: self.libelle.clone(),
-            base: BaseDeCotisation::de(&self.id, self.base),
-            taux_pat: self.taux_pat.map(|t| socle::grandeurs::Taux::du_decimal(court(t))),
-            montant_pat: socle::grandeurs::Montant::du_decimal(self.montant_pat),
-            taux_sal: self.taux_sal.map(|t| socle::grandeurs::Taux::du_decimal(court(t))),
-            montant_sal: socle::grandeurs::Montant::du_decimal(self.montant_sal),
+            base: self.base,
+            taux_pat: self.taux_pat.map(taux_court),
+            montant_pat: self.montant_pat,
+            taux_sal: self.taux_sal.map(taux_court),
+            montant_sal: self.montant_sal,
             masquer_base_et_taux: self.masquer_base_et_taux,
         }
     }
@@ -279,11 +313,11 @@ impl LigneCotisation {
             id: f.id.clone(),
             famille: f.famille.clone(),
             libelle: f.libelle.clone(),
-            base: f.base.decimal(),
-            taux_pat: f.taux_pat.map(|t| court(t.decimal())),
-            montant_pat: f.montant_pat.decimal(),
-            taux_sal: f.taux_sal.map(|t| court(t.decimal())),
-            montant_sal: f.montant_sal.decimal(),
+            base: f.base,
+            taux_pat: f.taux_pat.map(taux_court),
+            montant_pat: f.montant_pat,
+            taux_sal: f.taux_sal.map(taux_court),
+            montant_sal: f.montant_sal,
             masquer_base_et_taux: f.masquer_base_et_taux,
         }
     }
@@ -298,15 +332,15 @@ pub struct DeductionForfaitaire {
     /// La profession de la fiche (`deduction_forfaitaire.professions` du bareme).
     pub profession: droit::fiche::ProfessionDfs,
     /// Le taux de l'annee (bareme), en pourcent.
-    pub taux: Decimal,
+    pub taux: Taux,
     /// Les lignes du bulletin dont l'assiette est abattue.
     pub rubriques: Vec<IdDeCotisation>,
     /// La deduction retenue sur ce contrat : le brut moins l'assiette abattue, apres le plafond annuel et l'assiette
     /// minimum. C'est ce que la DSN declare en bloc 54 de type 10.
-    pub montant: Decimal,
+    pub montant: Montant,
     /// Ce que l'annee civile a deja deduit pour ce salarie avant ce contrat (les mois anterieurs, les contrats
     /// precedents du mois).
-    pub deja: Decimal,
+    pub deja: Montant,
 }
 
 impl DeductionForfaitaire {
@@ -315,10 +349,10 @@ impl DeductionForfaitaire {
         FormeDeLaDeduction {
             categorie: self.categorie.clone(),
             profession: self.profession,
-            taux: socle::grandeurs::Taux::du_decimal(self.taux),
+            taux: self.taux,
             rubriques: self.rubriques.clone(),
-            montant: socle::grandeurs::Montant::du_decimal(self.montant),
-            deja: socle::grandeurs::Montant::du_decimal(self.deja),
+            montant: self.montant,
+            deja: self.deja,
         }
     }
 
@@ -327,10 +361,10 @@ impl DeductionForfaitaire {
         DeductionForfaitaire {
             categorie: f.categorie.clone(),
             profession: f.profession,
-            taux: f.taux.decimal(),
+            taux: f.taux,
             rubriques: f.rubriques.clone(),
-            montant: f.montant.decimal(),
-            deja: f.deja.decimal(),
+            montant: f.montant,
+            deja: f.deja,
         }
     }
 }
@@ -339,9 +373,8 @@ impl DeductionForfaitaire {
 /// salariale de `csg_crds_nd`) et la part patronale des garanties frais de sante (`mutuelle`) ; norme DSN 2026.1,
 /// p. 60-61 (« AJOUTER ») et p. 244 (50.004). Un seul endroit : `calculer` en tire 50.002, `Paie::net_verse` 50.004.
 fn reintegrations(lignes: &[LigneCotisation]) -> Decimal {
-    let zero = socle::grandeurs::Montant::ZERO.decimal();
-    let csg_nd = lignes.iter().filter(|l| l.est(&droit::forme_bareme::CSG_CRDS_ND)).take(1).fold(zero, |a, l| a + l.montant_sal);
-    csg_nd + lignes.iter().filter(|l| l.est(&droit::forme_bareme::MUTUELLE)).fold(zero, |a, l| a + l.montant_pat)
+    let csg_nd = lignes.iter().filter(|l| l.est(&droit::forme_bareme::CSG_CRDS_ND)).take(1).fold(Montant::ZERO.decimal(), |a, l| a + l.montant_sal.decimal());
+    csg_nd + lignes.iter().filter(|l| l.est(&droit::forme_bareme::MUTUELLE)).fold(Montant::ZERO.decimal(), |a, l| a + l.montant_pat.decimal())
 }
 
 /// Une paie d'un engagement : ce que son calcul a produit, ou sa forme ecrite relue (`relire`). Elle se lit partout, ce
@@ -384,8 +417,8 @@ pub struct Contenu {
     pub net_imposable: Decimal,
     pub cout_employeur: Decimal,
     pub numero_bulletin: Option<crate::numeros::NumeroDeBulletin>,
-    /// Les assiettes du calcul, que la DSN declare telles quelles.
-    pub bases: BTreeMap<Assiette, Decimal>,
+    /// Les assiettes du calcul, que la DSN declare telles quelles, chacune dans ce qu'elle compte.
+    pub bases: BTreeMap<Assiette, BaseDeCotisation>,
     /// Les lignes de remuneration (le haut du bulletin), pas les cotisations.
     pub remuneration: Vec<LigneBrut>,
     pub reduction_generale: Option<ReductionGenerale>,
@@ -442,7 +475,7 @@ impl Paie {
         (engagement.jours, engagement.cachets, engagement.heures) = (0, 0, None);
         let zero = socle::grandeurs::Montant::ZERO.decimal();
         let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), zero, zero, zero, self.smic, socle::grandeurs::Heures::ZERO.decimal(), self.plafond_temps_partiel);
-        p.0.bases = self.bases.keys().map(|k| (*k, zero)).collect();
+        p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::de_l_assiette(*k, zero))).collect();
         p
     }
 
@@ -549,7 +582,7 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
             i += 2;
             continue;
         }
-        let rend = i > 0 && groupes[i - 1].montant.is_sign_negative() && g.montant.is_sign_positive() && meme_mesure(&groupes[i - 1], g);
+        let rend = i > 0 && groupes[i - 1].montant.decimal().is_sign_negative() && g.montant.decimal().is_sign_positive() && meme_mesure(&groupes[i - 1], g);
         dits.push(if rend { g.libelle.to_lowercase() } else { bref(g) });
         i += 1;
     }
@@ -559,7 +592,7 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
 /// Une ligne (deja additionnee) dite en bref : un forfait qui se compte dit son nombre (« 8 repas »), des heures de
 /// travail se disent en heures (« 28 h de travail ») ; le reste comme au bulletin.
 fn bref(l: &LigneBrut) -> String {
-    let q = l.quantite.round_dp(2).normalize();
+    let q = l.quantite.decimal().round_dp(2).normalize();
     let (tete, reste) = match l.libelle.split_once(' ') {
         Some((t, r)) => (t, r),
         None => (l.libelle.as_str(), ""),
@@ -584,11 +617,11 @@ pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Decimal) -> Ligne
         id: droit::forme_bareme::REDUCTION_GENERALE,
         famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
         libelle: "Réduction générale dégressive unique".into(),
-        base: brut,
+        base: BaseDeCotisation::Montant(Montant::du_decimal(brut)),
         taux_pat: None,
-        montant_pat: -rg.montant,
+        montant_pat: Montant::du_decimal(-rg.montant),
         taux_sal: None,
-        montant_sal: socle::grandeurs::Montant::ZERO.decimal(),
+        montant_sal: Montant::ZERO,
         masquer_base_et_taux: true,
     }
 }
@@ -604,11 +637,9 @@ pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Decimal) -> Ligne
 /// defaut, l'employeur informe et recueille le consentement annuel du salarie par tout moyen. Lorsque le travailleur
 /// salarie et assimile ne repond pas dans un delai raisonnable a cette consultation, son silence vaut accord. Le salarie
 /// peut toutefois demander a tout moment a son employeur a beneficier ou ne plus beneficier de la deduction, avec
-/// application au 1er janvier de l'annee suivante. » Le consentement est annuel : la fiche le date (son historique).
-pub(crate) const DFS_SALARIE_CONTRAT: &str = "contrat";
-pub(crate) const DFS_SALARIE_CONSENTEMENT: &str = "consentement_annuel";
-pub(crate) const DFS_SALARIE_REFUS: &str = "refus";
-
+/// application au 1er janvier de l'annee suivante. » Le consentement est annuel : la fiche le date (son historique),
+/// `droit::fiche::AccordDfs`.
+///
 /// L'option de DFS qui vaut pour ce salarie : sa profession, son taux de l'annee, les lignes abattues, le plafond annuel,
 /// les remboursements de frais que l'annexe 2 de l'arrete laisse hors de l'assiette et la tolerance du BOSS qui y laisse
 /// les autres.
@@ -616,9 +647,9 @@ pub(crate) const DFS_SALARIE_REFUS: &str = "refus";
 pub struct OptionDfs {
     pub profession: droit::fiche::ProfessionDfs,
     pub categorie: droit::forme_bareme::CategorieDfs,
-    pub taux: Decimal,
+    pub taux: Taux,
     pub rubriques: Vec<IdDeCotisation>,
-    pub plafond_annuel: Decimal,
+    pub plafond_annuel: Montant,
     /// Les rubriques de frais (`defraiement_forfait`, `repas`, `nuitee`, `defraiement_reel`) que l'annexe 2 de l'arrete (I, 2° et 5°) laisse
     /// hors de l'assiette pour cette profession ; tout autre remboursement de frais se reintegrerait (art. 9, I, al. 4).
     pub frais_hors_assiette: Vec<droit::catalogue::CodeDeRubrique>,
@@ -689,7 +720,7 @@ social et economique, ou, a defaut, salarie par salarie. Rien n'est calcule.",
 dit pas l'accord de celui-ci. L'arrete du 4 septembre 2025 (art. 9, I, al. 3) veut qu'il l'accepte, << soit dans le \
 contrat de travail ou soit dans un avenant >>, a defaut par un consentement annuel recueilli << par tout moyen >> (<< son \
 silence vaut accord >>). Dire lequel ({}, {}) ou son refus ({}). Rien n'est calcule.",
-                    qui, DFS_SALARIE_CONTRAT, DFS_SALARIE_CONSENTEMENT, DFS_SALARIE_REFUS
+                    qui, AccordDfs::Contrat, AccordDfs::ConsentementAnnuel, AccordDfs::Refus
                 ))
             }
         },
@@ -705,7 +736,7 @@ section verifiee.",
     let categorie = fiche_prof.categorie.clone();
     // Le taux de l'annee : celui de la profession quand l'arrete lui donne un calendrier a part (art. 9, III, pour les
     // professions hors spectacle vivant), sinon celui de sa categorie (art. 9, II).
-    let taux = fiche_prof.taux.map(socle::grandeurs::Taux::decimal).or_else(|| dfs.taux.get(&categorie).map(|n| n.decimal())).ok_or_else(|| {
+    let taux = fiche_prof.taux.or_else(|| dfs.taux.get(&categorie).copied()).ok_or_else(|| {
         socle::refus!(
             "Deduction forfaitaire specifique de {} ({}) : le bareme {} n'a pas de taux pour la categorie << {} >>.",
             qui, profession, annee, categorie
@@ -716,7 +747,7 @@ section verifiee.",
         categorie,
         taux,
         rubriques: dfs.rubriques_abattues.clone(),
-        plafond_annuel: dfs.plafond_annuel.decimal(),
+        plafond_annuel: dfs.plafond_annuel,
         frais_hors_assiette: fiche_prof.frais_hors_assiette.clone(),
         frais_cumulables: dfs.frais_cumulables,
     }))
@@ -766,7 +797,7 @@ l'Apec). L'assiette de l'Apec sous deduction n'est dans aucun texte depose (atel
             qui
         )));
     }
-    for l in lb.iter().filter(|l| !l.soumis && !l.montant.is_zero()) {
+    for l in lb.iter().filter(|l| !l.soumis && !l.montant.est_nul()) {
         let genre = rubrique(racine, &l.code, jour)?.hors_assiette()?;
         if genre == HorsAssiette::Revenu {
             return Err(refus_detaille(format!("{} : la ligne « {} » est hors assiette sans être un remboursement de frais, et il est sous déduction forfaitaire spécifique : la soumettre, ou en faire un remboursement de frais.", qui, l.libelle), None, format!(
@@ -812,7 +843,7 @@ fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, preced
         let sienne = p.salarie.id == sal.id || p.engagement.salarie == eng.salarie;
         if sienne {
             if let Some(d) = &p.deduction_forfaitaire {
-                deja += d.montant;
+                deja += d.montant.decimal();
             }
         }
     }
@@ -842,17 +873,17 @@ pub struct AbattementDfs {
 /// montant, le dernier centime sur la derniere.
 pub(crate) fn abattement_dfs(o: &OptionDfs, montants: &[Decimal], brut: Decimal, deja: Decimal, assiette_minimale: Decimal) -> AbattementDfs {
     let zero = socle::grandeurs::Montant::ZERO.decimal();
-    let facteur = sub(Decimal::ONE, div(o.taux, Decimal::ONE_HUNDRED));
+    let facteur = sub(Decimal::ONE, div(o.taux.decimal(), Decimal::ONE_HUNDRED));
     let theoriques: Vec<Decimal> = montants.iter().map(|m| socle::grandeurs::Montant::du_decimal(mul(*m, facteur)).au_centime().decimal()).collect();
     let pleine = brut - theoriques.iter().fold(zero, |a, b| a + *b);
     let mut avis = Vec::new();
-    let reste = zero.max(o.plafond_annuel - deja);
+    let reste = zero.max(o.plafond_annuel.decimal() - deja);
     let mut retenue = pleine.min(reste);
     if retenue < pleine {
         avis.push(format!(
             "Déduction forfaitaire spécifique ramenée de {} à {} : le plafond de {} par année civile (arrêté du \
 4 septembre 2025, art. 9) est atteint, {} déjà déduits cette année.",
-            euros(pleine), euros(retenue), euros(o.plafond_annuel), euros(deja)
+            euros(pleine), euros(retenue), euros(o.plafond_annuel.decimal()), euros(deja)
         ));
     }
     if brut - retenue < assiette_minimale {
@@ -1336,17 +1367,17 @@ pub(crate) struct SmicDUneAbsence {
 /// rapporte au SMIC horaire : la reduction le retrouve (`droit::reduction`). Sans ligne `retabli` non nulle : aucun rapport.
 pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<Decimal>) -> Option<SmicDUneAbsence> {
     let somme = |f: &dyn Fn(&LigneBrut) -> bool, v: &dyn Fn(&LigneBrut) -> Decimal| lb.iter().filter(|l| f(l)).fold(Decimal::ZERO, |a, l| a + v(l));
-    if !lb.iter().any(|l| l.retabli && !l.montant.is_zero()) {
+    if !lb.iter().any(|l| l.retabli && !l.montant.est_nul()) {
         return None;
     }
-    let habituelle = somme(&|l| l.salaire_de_base, &|l| l.montant);
+    let habituelle = somme(&|l| l.salaire_de_base, &|l| l.montant.decimal());
     if habituelle <= Decimal::ZERO {
         return None;
     }
-    let percue = Decimal::ZERO.max(habituelle + somme(&|l| l.retabli && l.soumis, &|l| l.montant));
+    let percue = Decimal::ZERO.max(habituelle + somme(&|l| l.retabli && l.soumis, &|l| l.montant.decimal()));
     let heures = smic_horaire.filter(|s| *s > Decimal::ZERO).map(|s| {
-        let smic_du_salaire = socle::grandeurs::Montant::du_decimal(mul(s, somme(&|l| l.salaire_de_base, &|l| l.heures_annexes))).au_centime().decimal();
-        let autres = somme(&|l| !l.salaire_de_base && !l.retabli, &|l| l.heures_annexes);
+        let smic_du_salaire = socle::grandeurs::Montant::du_decimal(mul(s, somme(&|l| l.salaire_de_base, &|l| l.heures_annexes.decimal()))).au_centime().decimal();
+        let autres = somme(&|l| !l.salaire_de_base && !l.retabli, &|l| l.heures_annexes.decimal());
         Decimal::ZERO.max(div(div(mul(smic_du_salaire, percue), habituelle), s) + autres)
     });
     Some(SmicDUneAbsence { percue, habituelle, heures })
@@ -1396,7 +1427,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             )));
         }
     }
-    let rubriques: Vec<Decimal> = soumises.iter().map(|l| l.montant).collect();
+    let rubriques: Vec<Decimal> = soumises.iter().map(|l| l.montant.decimal()).collect();
     let brut = rubriques.iter().fold(socle::grandeurs::Montant::ZERO.decimal(), |a, b| a + *b);
 
     // 7.3 : la prevoyance dans l'assiette CSG.
@@ -1494,7 +1525,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     };
     // L'assiette des Conges Spectacles : les rubriques que le catalogue y met, d'un contrat que l'employeur declare a la
     // caisse -- et d'aucun autre (un CDI, un contrat de douze mois ou plus : `caisse_conges::affilie`).
-    let mut par_rubrique: Vec<Assiettes> = soumises.iter().map(|l| assiettes(l.montant, l.conges_spectacles && caisse)).collect();
+    let mut par_rubrique: Vec<Assiettes> = soumises.iter().map(|l| assiettes(l.montant.decimal(), l.conges_spectacles && caisse)).collect();
     // UN MOIS SANS SALAIRE OU LA PART PATRONALE RESTE DUE (une sante maintenue pendant une suspension non indemnisee :
     // `sante_de_la_suspension`, « maintenue »). Les contributions de l'employeur aux garanties collectives entrent dans
     // l'assiette de la CSG (CSS L136-1-1, I, « toutes les sommes [...] dues [...] a l'occasion d'un travail », dont le III, 2°,
@@ -1512,7 +1543,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.5 : le SMIC retenu pour la DSN.
     let smic = ctx.smic(&fin_periode)?;
     let hpc = bar.heures_par_cachet.decimal();
-    let heures_annexes = lb.iter().fold(Decimal::ZERO, |a, l| a + l.heures_annexes);
+    let heures_annexes = lb.iter().fold(Decimal::ZERO, |a, l| a + l.heures_annexes.decimal());
     let heures = if nat.mensuelle() { Decimal::ZERO.max(heures_annexes) } else { heures_annexes.min(mul(hpc, jours)) };
     let plafond = socle::grandeurs::Montant::du_decimal(mul(smic, heures)).au_centime().decimal();
 
@@ -1523,7 +1554,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     if let Some(o) = deduction_forfaitaire(&bar, &sal, &ctx.entreprise)? {
         dfs_applicable(eng, &nat, &o, &lb, &sal, &ctx.racine, &ctx.lue_au)?;
         let deja = dfs_deja_deduite(ctx, eng, &sal, precedentes)?;
-        let montants: Vec<Decimal> = soumises.iter().map(|l| l.montant).collect();
+        let montants: Vec<Decimal> = soumises.iter().map(|l| l.montant.decimal()).collect();
         let a = abattement_dfs(&o, &montants, brut, deja, plafond);
         for (r, abattu) in par_rubrique.iter_mut().zip(&a.assiettes) {
             r.dfs = Some(*abattu);
@@ -1536,8 +1567,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             profession: o.profession,
             taux: o.taux,
             rubriques: o.rubriques.clone(),
-            montant: a.deduction,
-            deja,
+            montant: Montant::du_decimal(a.deduction),
+            deja: Montant::du_decimal(deja),
         });
     }
 
@@ -1708,18 +1739,18 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             id: id.into(),
             famille: r.famille.clone().ok_or_else(|| socle::fichiers::absent("famille"))?,
             libelle: r.libelle.clone().ok_or_else(|| socle::fichiers::absent("libelle"))?,
-            base,
-            taux_pat,
-            montant_pat: m_pat,
-            taux_sal,
-            montant_sal: m_sal,
+            base: BaseDeCotisation::de_l_assiette(cle_base, base),
+            taux_pat: taux_pat.map(Taux::du_decimal),
+            montant_pat: Montant::du_decimal(m_pat),
+            taux_sal: taux_sal.map(Taux::du_decimal),
+            montant_sal: Montant::du_decimal(m_sal),
             masquer_base_et_taux: r.masquer_base_et_taux == Some(true),
         });
         tot_pat += m_pat;
         tot_sal += m_sal;
     }
     lignes.retain(|l| {
-        !(l.base.is_zero() && l.montant_pat.is_zero() && l.montant_sal.is_zero() && (l.est(&droit::forme_bareme::RETRAITE_T2) || l.est(&droit::forme_bareme::APEC_T2)))
+        !(l.base.est_nulle() && l.montant_pat.est_nul() && l.montant_sal.est_nul() && (l.est(&droit::forme_bareme::RETRAITE_T2) || l.est(&droit::forme_bareme::APEC_T2)))
     });
 
     // 7.9 : la reduction generale, apres les cotisations.
@@ -1775,13 +1806,13 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // net imposable (`etats::prelevement`).
     for (l, b) in eng.lignes.iter().zip(lb.iter()) {
         if droit::catalogue::RubriqueDuMois::IjssNettes.nomme(&b.code) {
-            *bases.entry(Assiette::IjSubrogeesNettes).or_insert(zero) += b.montant;
+            *bases.entry(Assiette::IjSubrogeesNettes).or_insert(zero) += b.montant.decimal();
             *bases.entry(Assiette::IjSubrogeesAssiettePas).or_insert(zero) += l.assiette_pas().ok_or_else(|| socle::fichiers::absent("assiette_pas"))?.decimal();
         }
     }
 
     // 7.10 : la sortie. Ce qui est hors assiette se paie ou se retient quand meme.
-    let hors_assiette = lb.iter().filter(|l| !l.soumis).fold(zero, |a, l| a + l.montant);
+    let hors_assiette = lb.iter().filter(|l| !l.soumis).fold(zero, |a, l| a + l.montant.decimal());
     let net = brut - tot_sal + hors_assiette;
     // La remuneration nette fiscale (S21.G00.50.002) part du brut soumis, deduit les cotisations salariales et
     // reintegre la CSG/CRDS non deductible et la sante patronale (`reintegrations`). Des lignes hors assiette, elle ne
@@ -1789,7 +1820,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // versees a titre de remboursement de frais professionnels » et « AJOUTER les indemnites imposables a l'impot sur
     // le revenu ». Un defraiement, une indemnite exoneree (CGI 80 duodecies) n'y entrent pas ; un acompte non plus : il
     // avance le net du mois, il ne change pas le revenu.
-    let hors_assiette_imposable = lb.iter().filter(|l| !l.soumis && l.imposable).fold(zero, |a, l| a + l.montant);
+    let hors_assiette_imposable = lb.iter().filter(|l| !l.soumis && l.imposable).fold(zero, |a, l| a + l.montant.decimal());
     // Le montant net social (S21.G00.58.004, type 03). C. trav. R. 3243-1, 9° bis, qui renvoie au CSS R. 844-1, II
     // (redaction du decret n° 2023-1378, que le decret n° 2026-535 n'a pas touchee) ; page du BOSS « Montant net
     // social » du 01/10/2026, II.A.1 et Q 20, 27 (textes : atelier/reference/sources/montant-net-social/LISEZ-MOI.md). La
@@ -1804,7 +1835,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let mut hors_assiette_revenu = zero;
     for l in lb.iter().filter(|l| !l.soumis) {
         if rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.hors_assiette()? == HorsAssiette::Revenu {
-            hors_assiette_revenu += l.montant;
+            hors_assiette_revenu += l.montant.decimal();
         }
     }
     // La remuneration nette fiscale reintegre la CSG et la CRDS non deductibles (`reintegrations`) : sans leur ligne, la
@@ -1822,20 +1853,20 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let (base_51, retabli, chomage_51) = if nat.remunerations_au_brut() {
         (brut, brut, brut)
     } else {
-        let base_51 = lb.iter().filter(|l| l.salaire_de_base).fold(zero, |a, l| a + l.montant);
+        let base_51 = lb.iter().filter(|l| l.salaire_de_base).fold(zero, |a, l| a + l.montant.decimal());
         // S21.G00.51.011 = 003, « Salaire rétabli – reconstitué », qui « doit toujours être déclaré pour la période de paie
         // courante dans la DSN mensuelle » (cahier technique 2026.1, bloc S21.G00.51, Type :
         // `atelier/reference/norme-dsn/texte/bloc-S21.G00.51.txt`) : le salaire RECONSTITUE, le brut sans les absences qui
         // l'ont reduit (les rubriques `retabli`). Un mois entierement suspendu declare donc 001 a 0.00 et 003 au salaire du
         // mois.
-        let retabli = brut - lb.iter().filter(|l| l.retabli).fold(zero, |a, l| a + l.montant);
-        let chomage = brut - lb.iter().filter(|l| l.dsn_bloc52.is_some() && l.soumis).fold(zero, |a, l| a + l.montant);
+        let retabli = brut - lb.iter().filter(|l| l.retabli).fold(zero, |a, l| a + l.montant.decimal());
+        let chomage = brut - lb.iter().filter(|l| l.dsn_bloc52.is_some() && l.soumis).fold(zero, |a, l| a + l.montant.decimal());
         (base_51, retabli, chomage)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
     let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, base_csg, plafond, smic, heures, tp);
     let p = paie.ecrire();
-    p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Decimal::ZERO).fold(Decimal::ZERO, |a, l| a + l.heures_annexes);
+    p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Heures::ZERO).fold(Decimal::ZERO, |a, l| a + l.heures_annexes.decimal());
     p.lignes = lignes;
     p.total_pat = tot_pat;
     p.total_sal = tot_sal;
@@ -1843,7 +1874,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     p.net_social = brut - tot_sal + hors_assiette_revenu;
     p.net_imposable = brut - tot_sal + hors_assiette_imposable + reintegrations(&p.lignes) - exonere;
     p.cout_employeur = brut + tot_pat;
-    p.bases = bases;
+    p.bases = bases.into_iter().map(|(a, d)| (a, BaseDeCotisation::de_l_assiette(a, d))).collect();
     p.reduction_generale = rg;
     p.deduction_forfaitaire = dfs;
     p.avertissements.extend(avis_dfs.into_iter().map(|texte| Avis { info: true, texte }));
@@ -2032,12 +2063,11 @@ impl Paie {
             // Telles qu'elles s'ecrivent : sans ce que le moteur pose pour l'ecran (`ligne::Marques`), qui ne s'ecrit pas.
             engagement.lignes = self.engagement.lignes.iter().map(crate::LignePaie::sans_marques).collect();
         }
-        use socle::grandeurs::{Heures, Montant, MontantUnitaire};
         Ok(FormeDePaie {
             assiette_chomage: Montant::du_decimal(self.assiette_chomage),
             avertissements: self.avertissements.iter().map(avis).collect(),
             base_csg: Montant::du_decimal(self.base_csg),
-            bases: self.bases.iter().map(|(a, x)| (*a, Montant::du_decimal(*x))).collect(),
+            bases: self.bases.clone(),
             brut: Montant::du_decimal(self.brut),
             cout_employeur: Montant::du_decimal(self.cout_employeur),
             deduction_forfaitaire: self.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::forme),
@@ -2073,8 +2103,8 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: Decimal::ONE, taux: dec_de(montant),
-            montant: dec_de(montant), heures_annexes: dec_de(heures), soumis, imposable: soumis, conges_spectacles: false,
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: Quantite::du_decimal(Decimal::ONE), taux: MontantUnitaire::du_decimal(dec_de(montant)),
+            montant: Montant::du_decimal(dec_de(montant)), heures_annexes: Heures::du_decimal(dec_de(heures)), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,
         }

@@ -11,7 +11,7 @@ use droit::fiche::Lue;
 
 use socle::forme::NombreLu;
 
-use crate::calcul::{ligne_de_reduction, pile_de_la_paie, LigneCotisation, Paie, ReductionGenerale};
+use crate::calcul::{ligne_de_reduction, pile_de_la_paie, BaseDeCotisation, LigneCotisation, Paie, ReductionGenerale};
 use droit::reduction::{reduction_au_coefficient, reduction_generale};
 use droit::contexte::Contexte;
 use socle::date::Jour;
@@ -109,8 +109,12 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
 }
 
 /// Ajoute `x` a l'assiette `a` de `m`.
-fn cumuler(m: &mut BTreeMap<Assiette, Decimal>, a: Assiette, x: Decimal) {
-    *m.entry(a).or_insert_with(|| Montant::ZERO.decimal()) += x;
+fn cumuler(m: &mut BTreeMap<Assiette, BaseDeCotisation>, a: Assiette, x: BaseDeCotisation) {
+    let avant = match m.get(&a) {
+        Some(b) => b.decimal(),
+        None => Montant::ZERO.decimal(),
+    };
+    m.insert(a, BaseDeCotisation::de_l_assiette(a, avant + x.decimal()));
 }
 
 /// Remplace la reduction generale de la periode `p` par `rg` : sa ligne, le total patronal et le cout employeur.
@@ -118,7 +122,7 @@ fn poser_reduction(p: &mut Paie, rg: Option<ReductionGenerale>) {
     let p = p.ecrire();
     if let Some(i) = p.lignes.iter().position(|l| l.est(&droit::forme_bareme::REDUCTION_GENERALE)) {
         let l = p.lignes.remove(i);
-        p.total_pat -= l.montant_pat;
+        p.total_pat -= l.montant_pat.decimal();
     }
     if let Some(r) = rg.as_ref().filter(|r| !r.montant.is_zero()) {
         p.lignes.push(ligne_de_reduction(r, p.brut));
@@ -184,7 +188,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let zero = Montant::ZERO.decimal();
     let brut_mois = parts.iter().fold(zero, |a, p| a + p.brut);
     let heures_mois = parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures_travaillees);
-    let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| *b > Decimal::ZERO));
+    let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| b.decimal() > Decimal::ZERO));
     let pile = pile_de_la_paie(ctx, derniere)?;
     let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois, heures_mois, caisse)?;
     for p in parts.iter_mut() {
@@ -230,7 +234,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
             match lignes.iter().position(meme) {
                 Some(i) => {
                     let x = &mut lignes[i];
-                    x.base += l.base;
+                    x.base = x.base.plus(l.base)?;
                     x.montant_pat += l.montant_pat;
                     x.montant_sal += l.montant_sal;
                     precedente = Some(i);

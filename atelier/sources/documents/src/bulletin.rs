@@ -13,6 +13,7 @@ use socle::mois::{Graphie, Mois};
 use socle::texte::euros;
 use socle::echec::{refus, R};
 use socle::num::{div, sub, Decimal};
+use socle::grandeurs::Taux;
 use droit::pas::Versement;
 use droit::forme_bareme::{self as cot, IdDeCotisation};
 use engagement::ecarts::RegroupementDeComparaison as Regroupement;
@@ -616,7 +617,7 @@ const FACULTATIVES: &str = "COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES";
 ///
 /// Une garantie de prevoyance de la paie (`garanties`, `engagement::calcul::garanties_de_prevoyance`) est facultative.
 fn rang(l: &engagement::calcul::LigneCotisation, garanties: &[IdDeCotisation]) -> Rang {
-    let seule_employeur = l.taux_sal.is_none() && l.montant_sal.is_zero();
+    let seule_employeur = l.taux_sal.is_none() && l.montant_sal.est_nul();
     if garanties.contains(&l.id) {
         return Rang::Facultative(PREVOYANCE);
     }
@@ -719,14 +720,14 @@ fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> R<(Cellule, Cellule,
     if l.masquer_base_et_taux {
         return Ok((vide(), vide(), vide()));
     }
-    Ok((s(fmt_eur(l.base)), taux_dit(l.taux_sal), taux_dit(l.taux_pat)))
+    Ok((s(fmt_eur(l.base.decimal())), taux_dit(l.taux_sal.map(Taux::decimal)), taux_dit(l.taux_pat.map(Taux::decimal))))
 }
 
 /// Une ligne de cotisation du bulletin : libelle, base (sauf `masquer_base_et_taux`), taux salarial, montant salarial,
 /// montant employeur ; un montant nul ne s'ecrit pas.
 fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) -> R<Ligne> {
-    let base = if l.masquer_base_et_taux { vide() } else { s(fmt_eur(l.base)) };
-    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal), montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
+    let base = if l.masquer_base_et_taux { vide() } else { s(fmt_eur(l.base.decimal())) };
+    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal.map(Taux::decimal)), montant_ou_rien(l.montant_sal.decimal()), montant_ou_rien(l.montant_pat.decimal())], vec![]))
 }
 
 fn titre_groupe(titre: &str, colonnes: i64) -> Ligne {
@@ -754,7 +755,7 @@ fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> 
             }
         }
         Rang::Autres => {
-            let total = lignes.iter().fold(socle::grandeurs::Montant::ZERO.decimal(), |a, l| a + l.montant_pat);
+            let total = lignes.iter().fold(socle::grandeurs::Montant::ZERO.decimal(), |a, l| a + l.montant_pat.decimal());
             out.push(ligne(vec![s(AUTRES), vide(), vide(), vide(), s(fmt_eur(total))], vec![]));
         }
         Rang::Hors(famille) => {
@@ -775,7 +776,7 @@ fn somme_des_rangs(
 ) -> (Decimal, Decimal) {
     let zero = socle::grandeurs::Montant::ZERO.decimal();
     rangees.iter().filter(|(r, _)| filtre(r)).flat_map(|(_, v)| v.iter()).fold((zero, zero), |(s, e), l| {
-        (s + l.montant_sal, e + l.montant_pat)
+        (s + l.montant_sal.decimal(), e + l.montant_pat.decimal())
     })
 }
 
@@ -875,9 +876,9 @@ fn blocs_annexe(p: &Paie, numero: Option<&NumeroDeBulletin>, garanties: &[IdDeCo
                     s(format!("{}{}{}", NBSP, NBSP, l.libelle)),
                     base,
                     ts,
-                    montant_ou_rien(l.montant_sal),
+                    montant_ou_rien(l.montant_sal.decimal()),
                     tp,
-                    montant_ou_rien(l.montant_pat),
+                    montant_ou_rien(l.montant_pat.decimal()),
                 ],
                 vec![],
             ));
@@ -1073,9 +1074,9 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     salarie.push(mt(match &p.deduction_forfaitaire {
         Some(d) => format!(
             " {} % (catégorie {} %, taux de l'année) — {} déduits",
-            fmt_heures(d.taux),
+            fmt_heures(d.taux.decimal()),
             d.categorie,
-            euros(d.montant)
+            euros(d.montant.decimal())
         ),
         None => " 0 %".to_string(),
     }));
@@ -1154,7 +1155,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // « MONTANT BRUT » (art. 1, I ; VI : mis en valeur).
     if rem.len() <= 1 {
         let titre = match rem.first() {
-            Some(l) => format!("{} à {}", l.designation(), fmt_eur(l.taux)),
+            Some(l) => format!("{} à {}", l.designation(), fmt_eur(l.taux.decimal())),
             None => "SALAIRE".to_string(),
         };
         corps.push(ligne(
@@ -1164,7 +1165,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     } else {
         for l in &rem {
             corps.push(ligne(
-                vec![s(format!("{} à {}", l.designation(), fmt_eur(l.taux))), s(fmt_eur(l.montant))],
+                vec![s(format!("{} à {}", l.designation(), fmt_eur(l.taux.decimal()))), s(fmt_eur(l.montant.decimal()))],
                 vec![],
             ));
         }
@@ -1182,7 +1183,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         corps.push(ligne(vec![cel("REMBOURSEMENTS ET DÉDUCTIONS DIVERSES", n)], style_section()));
         for i in &j.remboursements {
             let l = &p.remuneration[*i];
-            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_eur(l.taux))), s(fmt_eur(l.montant))], vec![]));
+            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_eur(l.taux.decimal()))), s(fmt_eur(l.montant.decimal()))], vec![]));
         }
     }
     corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer, n));
