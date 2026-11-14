@@ -59,7 +59,7 @@ pub fn somme<I: IntoIterator<Item = Decimal>>(it: I) -> Decimal {
 /// positif (`2E+2`) devient l'entier ; s'il depasse les 96 bits, on garde la
 /// mantisse la plus juste que `Decimal` porte.
 pub(crate) fn en_decimal(p: P) -> Decimal {
-    let p = if p.e > 28 { p.quantifier(28) } else { p };
+    let p = if p.e > 28 { crate::d28::reduire(p, 28) } else { p };
     if let Some(d) = p.en_decimal() {
         return d;
     }

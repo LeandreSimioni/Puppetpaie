@@ -93,7 +93,7 @@ fn aligner(a: P, b: P) -> (i128, i128, i32) {
 }
 
 /// Ramene `x` a l'echelle `e` (plus grossiere), au pair sur le demi.
-fn reduire(x: P, e: i32) -> P {
+pub(crate) fn reduire(x: P, e: i32) -> P {
     let p = 10i128.pow((x.e - e) as u32);
     let (mut q, r) = (x.m / p, (x.m % p).abs());
     if 2 * r > p || (2 * r == p && q % 2 != 0) {
@@ -179,12 +179,18 @@ impl P {
         arrondi28(q * (self.m.signum() * o.m.signum()), s)
     }
 
-    /// Arrondi à `dp` décimales, au pair sur le demi.
-    pub fn quantifier(self, dp: i32) -> P {
+    /// Arrondi à `dp` décimales, au pair sur le demi ; un nombre trop grand pour s'écrire à `dp` décimales se refuse.
+    pub fn quantifier(self, dp: i32) -> crate::echec::R<P> {
         if self.e > dp {
-            reduire(self, dp)
-        } else {
-            P { m: self.m * 10i128.pow((dp - self.e) as u32), e: dp }
+            return Ok(reduire(self, dp));
+        }
+        let m = match u32::try_from(i64::from(dp) - i64::from(self.e)) {
+            Ok(k) => dix(k).and_then(|p| self.m.checked_mul(p)),
+            Err(_) => None,
+        };
+        match m {
+            Some(m) => Ok(P { m, e: dp }),
+            None => Err(crate::refus!("Le nombre {} est trop grand pour s'écrire à {} décimales : le signaler au développeur.", self, dp)),
         }
     }
 

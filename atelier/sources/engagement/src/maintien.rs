@@ -171,7 +171,7 @@ pub fn taux_des_jours(r: &Regime, premier: &Jour, dernier: &Jour, deja: i64) -> 
         if k >= caps.len() {
             break;
         }
-        out[i as usize] = dm::fraction(r.tranches[k].taux);
+        out[i as usize] = dm::fraction(r.tranches[k].taux).decimal();
         dans += 1;
     }
     Ok(out)

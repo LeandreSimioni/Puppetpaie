@@ -1284,7 +1284,7 @@ pub fn a_une_limite(code: &CodeDeRubrique) -> bool {
 
 /// La reduction de l'indemnite de mission a l'etranger quand le salarie est loge gratuitement (arrete du 3 juillet
 /// 2006, art. 2 ; BOSS § 1390).
-const REDUCTION_LOGE: Decimal = Decimal::from_parts(65, 0, 0, false, 2);
+const REDUCTION_LOGE: socle::grandeurs::Coefficient = socle::grandeurs::Coefficient::du_decimal(Decimal::from_parts(65, 0, 0, false, 2));
 
 /// L'aide d'une case, avec les limites de l'annee (`haute`, `basse`).
 fn aide_de_case(case: CaseDeFrais, rubrique: &CodeDeRubrique, limites: Option<(Decimal, Decimal)>) -> Option<String> {
@@ -1541,7 +1541,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         let indemnite = droit::missions::du_jour(lieu, j).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
         socle::fichiers::noter_lecture(&droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Mission { lieu: lieu.clone(), jour: *j }), indemnite.empreinte());
         let loge = nuitee.is_none() && !nuits.contains(j) && du_jour.iter().any(|(k, _)| cochee(&lignes[es[*k].rang], LOGE));
-        let limite = if loge { socle::grandeurs::Montant::du_decimal(indemnite.euros * (Decimal::ONE - REDUCTION_LOGE)).au_centime().decimal() } else { indemnite.euros };
+        let limite = if loge { (socle::grandeurs::Montant::du_decimal(indemnite.euros) * (socle::grandeurs::Coefficient::du_decimal(Decimal::ONE) - REDUCTION_LOGE)).au_centime().decimal() } else { indemnite.euros };
         let total: Decimal = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();
         let mut reste = (total - limite).max(Decimal::ZERO);
         let mut ordre = du_jour.clone();

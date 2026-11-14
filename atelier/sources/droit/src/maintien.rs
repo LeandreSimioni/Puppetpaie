@@ -18,7 +18,7 @@ use crate::natures::Nature;
 use crate::clauses;
 use socle::date::Duree;
 use socle::echec::R;
-use socle::grandeurs::Taux;
+use socle::grandeurs::{Coefficient, Taux};
 use socle::num::{div, Decimal};
 
 /// Ce qui a cause l'arret, quand c'est une maladie ou un accident : le champ `origine` d'un motif S21.G00.60.001 de
@@ -91,13 +91,13 @@ pub enum Droit {
 
 /// Le pourcentage en fraction : deux tiers exacts pour 66,66 (D1226-1, 2°, « deux tiers ») et 66,66 de la 3090 et de la
 /// 2642 (« 2/3 », « 66,66 % » : le meme deux tiers ecrit au centieme) ; le taux sur cent sinon.
-pub fn fraction(taux: Taux) -> Decimal {
+pub fn fraction(taux: Taux) -> Coefficient {
     let taux = taux.decimal();
-    if taux == Decimal::new(6666, 2) {
+    Coefficient::du_decimal(if taux == Decimal::new(6666, 2) {
         div(Decimal::from(2), Decimal::from(3))
     } else {
         div(taux, Decimal::ONE_HUNDRED)
-    }
+    })
 }
 
 // ------------------------------------------------------------------ la loi
