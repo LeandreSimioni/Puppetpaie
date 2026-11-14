@@ -25,6 +25,7 @@ use serde::Serialize;
 
 use documents::{DossierDuMois, SorteDePieceProduite};
 use droit::contexte::{Contexte, IdSalarie};
+use declarations::dpae::EtatDeLaDpae;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::mode::Mode;
 use droit::organismes::IdentifiantDOrganisme;
@@ -557,12 +558,10 @@ fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: 
                 let mut l = Lecture::nouvelle("Certificat de conformité des DPAE");
                 for x in &lignes {
                     let qui = joint([dit(&x.nom), dit(&x.prenom)], " ");
-                    let etat = if x.enregistree() {
-                        format!("enregistrée{}", morceau(", dossier ", dit(&x.dossier), ""))
-                    } else if x.code == declarations::dpae::CodeRetourDpae::DejaExistante {
-                        "déjà enregistrée auparavant".to_string()
-                    } else {
-                        format!("refusée : {} — {}", x.code, x.code.libelle())
+                    let etat = match &x.etat {
+                        EtatDeLaDpae::Enregistree { dossier } => format!("enregistrée, dossier {}", dossier),
+                        EtatDeLaDpae::DejaExistante => "déjà enregistrée auparavant".to_string(),
+                        EtatDeLaDpae::Refusee => format!("refusée : {} — {}", x.code, x.code.libelle()),
                     };
                     l.phrases.push(format!("{}{} : {}.", morceau("", qui.as_deref(), ""), morceau(" (embauche du ", x.embauche.map(|j| j.iso()).as_deref(), ")"), etat));
                 }
@@ -1055,12 +1054,10 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             }
             let anomalies: Vec<Anomalie> = r.anomalies().into_iter().flatten().map(|a| Anomalie::du_message(a)).collect();
             for d in r.personnes().into_iter().flatten() {
-                let etat = if d.enregistree() {
-                    "enregistrée".to_string()
-                } else if d.code == declarations::dpae::CodeRetourDpae::DejaExistante {
-                    "déjà enregistrée auparavant".into()
-                } else {
-                    format!("refusée : {}", d.libelle)
+                let etat = match d.etat {
+                    EtatDeLaDpae::Enregistree { .. } => "enregistrée".to_string(),
+                    EtatDeLaDpae::DejaExistante => "déjà enregistrée auparavant".into(),
+                    EtatDeLaDpae::Refusee => format!("refusée : {}", d.libelle),
                 };
                 phrases.push(format!("{} : {}.", joint([dit(&d.nom), dit(&d.prenom)], " ").into_iter().collect::<String>(), etat));
             }

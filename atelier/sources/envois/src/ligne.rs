@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use declarations::dpae::EtatDeLaDpae;
 use droit::contexte::IdSalarie;
 use documents::fiche_questionnaire::CodeDeDemande;
 use droit::fiche::{Courriel, Nic};
@@ -434,17 +435,17 @@ impl DetailDpae {
     }
 }
 
-/// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`). Ce qu'elle est
-/// devenue (enregistree, deja existante, refusee) se lit dans son code et son dossier (`LigneDuCertificat::enregistree`) ;
-/// le journal l'ecrit aussi en deux booleens, que sa forme (`PersonneEcrite`) pose et ne relit pas.
+/// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`), et ce qu'elle
+/// est devenue (`EtatDeLaDpae`), lu une fois dans le certificat ; le journal l'ecrit en deux booleens et un dossier, et
+/// le relit tel qu'il l'a ecrit (`PersonneEcrite`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(from = "PersonneEcrite", into = "PersonneEcrite")]
+#[serde(try_from = "PersonneEcrite", into = "PersonneEcrite")]
 pub struct PersonneCertifiee {
     pub nom: String,
     pub prenom: String,
     /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc.
     pub embauche: Option<socle::date::Jour>,
-    pub dossier: String,
+    pub etat: EtatDeLaDpae,
     /// C_RETOUR_AR.
     pub code: declarations::dpae::CodeRetourDpae,
     /// Le libelle de son code (Format 120).
@@ -454,8 +455,8 @@ pub struct PersonneCertifiee {
     pub pastille: Option<socle::ecran::Pastille>,
 }
 
-/// LA FORME D'UNE PERSONNE DU CERTIFICAT AU JOURNAL : `enregistree` et `deja_existante` s'y ecrivent, tires du code et du
-/// dossier ; a la lecture, ils ne se gardent pas (le code les dit).
+/// LA FORME D'UNE PERSONNE DU CERTIFICAT AU JOURNAL : son etat s'y ecrit en `dossier` (`""` hors d'une enregistree),
+/// `enregistree` et `deja_existante`, et se relit de meme ; une autre paire ne se lit pas.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PersonneEcrite {
@@ -474,42 +475,48 @@ struct PersonneEcrite {
     pastille: Option<socle::ecran::Pastille>,
 }
 
-impl From<PersonneEcrite> for PersonneCertifiee {
-    fn from(p: PersonneEcrite) -> PersonneCertifiee {
-        let PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree: _, deja_existante: _, formalites, pastille } = p;
-        PersonneCertifiee { nom, prenom, embauche, dossier, code, libelle, formalites, pastille }
+impl TryFrom<PersonneEcrite> for PersonneCertifiee {
+    type Error = socle::echec::Echec;
+    fn try_from(p: PersonneEcrite) -> Result<PersonneCertifiee, socle::echec::Echec> {
+        let PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille } = p;
+        let etat = match (enregistree, deja_existante, dossier.is_empty()) {
+            (true, false, false) => EtatDeLaDpae::Enregistree { dossier },
+            (false, true, true) => EtatDeLaDpae::DejaExistante,
+            (false, false, true) => EtatDeLaDpae::Refusee,
+            (true, false, true) | (false, _, false) | (true, true, _) => {
+                return Err(socle::refus!(
+                    "Le journal des envois dit de la DPAE de {} enregistree {}, deja existante {}, dossier {} : ce n'est l'etat d'aucune DPAE du certificat (enregistree sous un dossier, deja existante ou refusee, sans dossier). Le signaler au developpeur.",
+                    socle::fichiers::repr(&nom),
+                    enregistree,
+                    deja_existante,
+                    socle::fichiers::repr(&dossier)
+                ))
+            }
+        };
+        Ok(PersonneCertifiee { nom, prenom, embauche, etat, code, libelle, formalites, pastille })
     }
 }
 
 impl From<PersonneCertifiee> for PersonneEcrite {
     fn from(p: PersonneCertifiee) -> PersonneEcrite {
-        let enregistree = p.enregistree();
-        let deja_existante = p.code == declarations::dpae::CodeRetourDpae::DejaExistante;
-        let PersonneCertifiee { nom, prenom, embauche, dossier, code, libelle, formalites, pastille } = p;
+        let PersonneCertifiee { nom, prenom, embauche, etat, code, libelle, formalites, pastille } = p;
+        let (dossier, enregistree, deja_existante) = match etat {
+            EtatDeLaDpae::Enregistree { dossier } => (dossier, true, false),
+            EtatDeLaDpae::DejaExistante => (String::new(), false, true),
+            EtatDeLaDpae::Refusee => (String::new(), false, false),
+        };
         PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille }
     }
 }
 
 impl PersonneCertifiee {
-    /// Enregistree : son code l'enregistre, avec un dossier (`declarations::dpae::LigneDuCertificat::enregistree`).
-    pub fn enregistree(&self) -> bool {
-        declarations::dpae::enregistree(self.code, &self.dossier)
-    }
-
-    /// Refusee : un code retour qui ne l'enregistre pas et ne la dit pas deja existante.
-    pub fn refusee(&self) -> bool {
-        !self.enregistree() && self.code != declarations::dpae::CodeRetourDpae::DejaExistante
-    }
-
     /// Sa pastille : enregistree, faite ; deja existante, une information ; refusee, refusee.
     pub fn pastille_due(&self) -> socle::ecran::Pastille {
         use socle::ecran::{EtatDEcran, Pastille};
-        if self.enregistree() {
-            Pastille::de(EtatDEcran::Fait, &if self.dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée — dossier {}", self.dossier) })
-        } else if self.code == declarations::dpae::CodeRetourDpae::DejaExistante {
-            Pastille::de(EtatDEcran::Information, "déjà existante")
-        } else {
-            Pastille::de(EtatDEcran::Refuse, self.code.libelle())
+        match &self.etat {
+            EtatDeLaDpae::Enregistree { dossier } => Pastille::de(EtatDEcran::Fait, &format!("enregistrée — dossier {}", dossier)),
+            EtatDeLaDpae::DejaExistante => Pastille::de(EtatDEcran::Information, "déjà existante"),
+            EtatDeLaDpae::Refusee => Pastille::de(EtatDEcran::Refuse, self.code.libelle()),
         }
     }
 }

@@ -18,6 +18,7 @@ use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, PersonneCertifiee, RetourContrat, RetourOrganisme, VerdictDeLaPiece};
+use declarations::dpae::EtatDeLaDpae;
 use socle::mode::Mode;
 use crate::retours::{self, Annonce, CompteRenduDuTest, IdDeFlux, NatureDuRetour, Verdict};
 use socle::echec::{Echec, R};
@@ -151,8 +152,8 @@ pub struct EtatEmbauche {
     pub refusee: bool,
     pub anomalies: Vec<String>,
     pub retours: Vec<RetourOrganisme>,
-    pub dossier: Option<String>,
-    pub deja_existante: bool,
+    /// Ce que le certificat dit de sa personne ; aucun sans certificat.
+    pub certifiee: Option<declarations::dpae::EtatDeLaDpae>,
 }
 
 /// Ce que chaque DPAE reelle partie est devenue, par (salarie, numero du contrat).
@@ -177,8 +178,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
                     refusee,
                     anomalies: anomalies.clone(),
                     retours: e.retours.clone(),
-                    dossier: cert.map(|c| c.dossier.clone()),
-                    deja_existante: cert.is_some_and(|c| c.code == declarations::dpae::CodeRetourDpae::DejaExistante),
+                    certifiee: cert.map(|c| c.etat.clone()),
                 },
             );
         }
@@ -615,8 +615,14 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
         return format!("envoyé {} — REFUSÉ{}", le_dit, suite);
     }
     if let Some(c) = certificat {
-        let dossiers: Vec<&str> = c.personnes().into_iter().flatten().filter(|l| l.enregistree()).map(|l| l.dossier.as_str()).collect();
-        let existantes: Vec<&str> = c.personnes().into_iter().flatten().filter(|l| l.code == declarations::dpae::CodeRetourDpae::DejaExistante).map(|l| l.nom.as_str()).collect();
+        let (mut dossiers, mut existantes): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
+        for l in c.personnes().into_iter().flatten() {
+            match &l.etat {
+                EtatDeLaDpae::Enregistree { dossier } => dossiers.push(dossier),
+                EtatDeLaDpae::DejaExistante => existantes.push(&l.nom),
+                EtatDeLaDpae::Refusee => {}
+            }
+        }
         let mut fin = " — certificat de conformité reçu : passée".to_string();
         if !dossiers.is_empty() {
             fin.push_str(&format!(" (dossier{} {})", pluriel(dossiers.len()), dossiers.join(", ")));
@@ -1096,13 +1102,13 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
             nom: l.nom,
             prenom: l.prenom,
             embauche: l.embauche,
-            dossier: l.dossier,
+            etat: l.etat,
             code: l.code,
             formalites: l.formalites,
             pastille: None,
         };
         // Refusee : la ligne le dit dans ses anomalies.
-        if p.refusee() {
+        if p.etat == EtatDeLaDpae::Refusee {
             anomalies.push(format!("{} -- {}", p.libelle, p.nom));
         }
         personnes.push(p);
@@ -1185,7 +1191,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
             .dpae
             .iter()
             .flatten()
-            .filter(|d| d.refusee())
+            .filter(|d| d.etat == EtatDeLaDpae::Refusee)
             .map(|d| AnomalieDeRetour { categorie: None, code: d.code.to_string(), message: d.code.libelle().to_string(), rubrique: None })
             .collect()
     } else {

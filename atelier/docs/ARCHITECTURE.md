@@ -784,6 +784,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | code analytique d'un spectacle | `CodeAnalytique` | `droit/src/fiche.rs` |
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
 | code retour d'une DPAE | `declarations::dpae::CodeRetourDpae` | `declarations/src/dpae.rs` |
+| état d'une personne déclarée par DPAE | `declarations::dpae::EtatDeLaDpae` | `declarations/src/dpae.rs` |
 | code retour du lot | `declarations::dpae::CodeRetourDuLot` | `declarations/src/dpae.rs` |
 | type de contrat de la DPAE | `TypeContratDpae` | `droit/src/natures.rs` |
 | lieu d'une obligation hors DSN | `declarations::obligations::LieuHorsDsn` | `declarations/src/obligations.rs` |
@@ -977,9 +978,14 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   envois.
 - **code retour d'une DPAE** : ce que le certificat de conformité dit de chaque DPAE (C_RETOUR_AR, positions 430-431 du
   Format 120) : 00 enregistrée, 98 déjà existante, 99 autre erreur, les codes d'anomalie. `codes_fermes!` sur l'onglet
-  « Codes retour » du Format 120, avec son libellé mot pour mot, PDF p. 9-10 ; `enregistree()` : 00 et 99. Un code hors
-  de la liste, ou la zone à blanc, refuse le certificat ; que portent une ligne du certificat et la personne certifiée au
-  journal des envois.
+  « Codes retour » du Format 120, avec son libellé mot pour mot, PDF p. 9-10. Un code hors de la liste, ou la zone à
+  blanc, refuse le certificat ; que portent une ligne du certificat et la personne certifiée au journal des envois.
+- **état d'une personne déclarée par DPAE** : ce que le certificat de conformité dit qu'elle est devenue : enregistrée
+  sous son dossier (00 ou 99, avec R_DOSSIER), déjà existante (98), ou refusée (un autre code, ou un code qui enregistre
+  sans dossier). Lu une fois, à la lecture du certificat (`lire_certificat`) ; seule l'enregistrée porte un dossier. Que
+  portent une ligne du certificat, la personne certifiée au journal des envois, qui l'écrit `dossier` (`""` hors d'une
+  enregistrée), `enregistree` et `deja_existante`, et le relit tel quel (`PersonneEcrite` : une autre combinaison ne se
+  lit pas), l'état d'une embauche déclarée (`EtatEmbauche::certifiee`).
 - **code retour du lot** : ce que le certificat de conformité dit du traitement du message (C_RET_AR_LOT, positions
   76-77) : 00 correct, 11, 15. `codes_fermes!`, avec son libellé ; un code hors de la liste refuse le certificat ; à
   blanc, aucun ; que porte une ligne du certificat (un lot autre que correct est une anomalie de la pièce).

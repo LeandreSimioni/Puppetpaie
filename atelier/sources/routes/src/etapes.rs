@@ -1085,8 +1085,8 @@ struct EtatDpae {
     passee: bool,
     refusee: bool,
     anomalies: Option<Vec<String>>,
-    dossier: Option<String>,
-    deja_existante: bool,
+    /// Ce que le certificat dit de sa personne (`envois::etats::EtatEmbauche::certifiee`).
+    certifiee: Option<declarations::dpae::EtatDeLaDpae>,
 }
 
 /// Un CDI en cours, d'un mois d'apres son embauche : le mois de sa signature.
@@ -1142,7 +1142,7 @@ impl Etats {
     /// Ceux d'un engagement auquel il manque un fait : rien n'est a declarer, rien n'est parti.
     fn sans_envoi() -> Etats {
         Etats {
-            dpae: EtatDpae { date_changee: None, a_declarer: false, fait: None, passee: false, refusee: false, anomalies: None, dossier: None, deja_existante: false },
+            dpae: EtatDpae { date_changee: None, a_declarer: false, fait: None, passee: false, refusee: false, anomalies: None, certifiee: None },
             signature: Signature { fait: None, par: None, recu: None, caduc: false, pourquoi: "", avenant: None, avenant_attendu: false, cdi_en_cours: None },
             documents: EtatDocuments { fait: None, caduc: false, pourquoi: "" },
         }
@@ -1658,8 +1658,7 @@ impl<'a> Moteur<'a> {
                 passee: dpae_v.is_some_and(|d| d.passee),
                 refusee,
                 anomalies: dpae_v.map(|d| d.anomalies.clone()),
-                dossier: dpae_v.and_then(|d| d.dossier.clone()),
-                deja_existante: dpae_v.is_some_and(|d| d.deja_existante),
+                certifiee: dpae_v.and_then(|d| d.certifiee.clone()),
             };
             let avenant = refaire.iter().any(|a| matches!(a, ARefaire::Avenant { .. }));
             let mut signature = etat_signature(
@@ -2753,12 +2752,10 @@ fn choix_dpae(p: &Vue) -> R<Choix> {
         return choix(true, true, EtatCase::Refuse, format!("refusée {} — {} — à redéclarer", le, motif));
     }
     if d.passee {
-        let dossier = if d.deja_existante {
-            " (déjà existante à l'Urssaf, rien de créé)".to_string()
-        } else if let Some(x) = d.dossier.as_deref().filter(|x| !x.is_empty()) {
-            format!(" (dossier {})", x)
-        } else {
-            String::new()
+        let dossier = match &d.certifiee {
+            Some(declarations::dpae::EtatDeLaDpae::DejaExistante) => " (déjà existante à l'Urssaf, rien de créé)".to_string(),
+            Some(declarations::dpae::EtatDeLaDpae::Enregistree { dossier }) => format!(" (dossier {})", dossier),
+            Some(declarations::dpae::EtatDeLaDpae::Refusee) | None => String::new(),
         };
         return choix(true, false, EtatCase::Fait, format!("déclarée {} — passée{}", le, dossier));
     }
