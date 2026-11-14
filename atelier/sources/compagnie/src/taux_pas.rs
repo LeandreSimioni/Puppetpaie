@@ -13,7 +13,7 @@ use socle::date::Jour;
 #[derive(Debug, Clone)]
 pub struct TauxRecu {
     pub salarie: droit::contexte::IdSalarie,
-    pub taux: Option<droit::pas::TauxDePas>,
+    pub taux: droit::pas::TauxDePas,
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant: droit::pas::IdentifiantDuTauxPas,
     pub mis_a_disposition: socle::paris::Moment,
@@ -24,7 +24,7 @@ impl TauxRecu {
     /// Le taux tel que la fiche de son salarie l'ecrit.
     pub fn dans_la_fiche(&self) -> droit::fiche::TauxPas {
         droit::fiche::TauxPas {
-            taux: self.taux,
+            taux: Some(self.taux),
             r#type: self.type_taux,
             identifiant: Some(self.identifiant.clone()),
             mis_a_disposition: Some(self.mis_a_disposition),
@@ -35,10 +35,10 @@ impl TauxRecu {
 
 /// CE QUE LA DERNIERE DSN DEPOSEE D'UN SALARIE DIT DE SON TAUX DE PAS : un taux transmis par la DGFiP, ou un taux qu'elle
 /// n'ecrit pas comme la norme (S21.G00.50.006), qui n'en est pas un : il ne pose rien, et se dit (le jour du versement
-/// qui l'applique). Un taux transmis se recoit (`recu`, dont le `taux` est `taux`).
+/// qui l'applique). Un taux transmis se recoit.
 #[derive(Debug, Clone)]
 pub enum TauxDUneDsn {
-    Transmis { taux: droit::pas::TauxDePas, recu: TauxRecu },
+    Transmis(TauxRecu),
     Illisible { salarie: droit::contexte::IdSalarie, verse_le: Jour },
 }
 
@@ -47,7 +47,7 @@ impl TauxDUneDsn {
     pub fn transmis(l: &[TauxDUneDsn]) -> Vec<TauxRecu> {
         l.iter()
             .filter_map(|t| match t {
-                TauxDUneDsn::Transmis { recu, .. } => Some(recu.clone()),
+                TauxDUneDsn::Transmis(recu) => Some(recu.clone()),
                 TauxDUneDsn::Illisible { .. } => None,
             })
             .collect()
@@ -90,17 +90,14 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
             // Un taux que la DSN n'ecrit pas comme la norme (deux chiffres, deux decimales au plus) n'en pose aucun : une
             // DSN venue d'ailleurs se lit au mieux, et le compte rendu de l'import le dit.
             let rel = match v.taux_pas.and_then(droit::pas::TauxDePas::du_nombre) {
-                Some(t) => TauxDUneDsn::Transmis {
+                Some(t) => TauxDUneDsn::Transmis(TauxRecu {
+                    salarie: (*cle).clone(),
                     taux: t,
-                    recu: TauxRecu {
-                        salarie: (*cle).clone(),
-                        taux: Some(t),
-                        type_taux: v.type_pas,
-                        identifiant: id.clone(),
-                        mis_a_disposition: instant_du_jour(j)?,
-                        en_retour_de: None,
-                    },
-                },
+                    type_taux: v.type_pas,
+                    identifiant: id.clone(),
+                    mis_a_disposition: instant_du_jour(j)?,
+                    en_retour_de: None,
+                }),
                 None => TauxDUneDsn::Illisible { salarie: (*cle).clone(), verse_le: j },
             };
             match trouve.iter_mut().find(|(k, _)| k == *cle) {

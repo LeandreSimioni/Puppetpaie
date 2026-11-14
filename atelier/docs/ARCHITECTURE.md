@@ -119,9 +119,6 @@ que par la structure :
     `sortes_de_pieces_produites!`) ;
   - `une_liste_de_la_norme_est_celle_des_versions_livrees` : chaque `ListeDeLaNorme` est l'union des listes relevées
     des versions livrées ;
-  - `aucune_cotisation_du_bareme_n_a_une_base_en_heures` : aucune cotisation d'un barème livré, ni de ses couches, n'a
-    une assiette en heures (`Assiette::en_heures`) ; une paie validée relit donc ses bases sans barème
-    (`engagement::calcul::BaseDeCotisation::relue`) ;
   - `aucun_fichier_livre_ne_porte_une_cle_en_souligne` : aucune clé en `_` dans les données livrées ;
   - `chaque_script_de_la_page_se_charge` : chaque script de la page passe `node --check`, sans nom déclaré deux fois ;
   - `la_page_ne_coupe_aucun_texte` : le CSS de la page ne cache aucun texte ;
@@ -837,6 +834,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | catégorie de la DFS | `CategorieDfs` | `droit/src/forme_bareme.rs` |
 | DFS d'un salarié (sa profession, son taux, ses lignes abattues, son plafond) | `DfsDuSalarie` | `engagement/src/calcul.rs` |
 | option de l'employeur pour la DFS (une case de sa fiche, une condition de la DFS d'un salarié) | `droit::fiche::OptionDfs` | `droit/src/fiche.rs` |
+| taux de PAS que la dernière DSN déposée d'un salarié dit (un taux transmis, qui se reçoit, ou un taux illisible, qui ne pose rien) | `compagnie::taux_pas::TauxDUneDsn` | `compagnie/src/taux_pas.rs` |
 | formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |

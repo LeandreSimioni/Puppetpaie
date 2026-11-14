@@ -26,7 +26,7 @@ pub fn enregistrer(ctx: &Contexte, releves: &[TauxRecu], source: &str) -> Result
                 None => "non dit".to_string(),
             }
         }
-        changements.push(format!("{} : taux {}, type {}, identifiant {}, mis a disposition le {}", cle, dit(&r.taux), dit(&r.type_taux), r.identifiant, mad.jj_mm_aaaa()));
+        changements.push(format!("{} : taux {}, type {}, identifiant {}, mis a disposition le {}", cle, r.taux, dit(&r.type_taux), r.identifiant, mad.jj_mm_aaaa()));
         ecrits.push((cle, lu));
     }
     if !changements.is_empty() {

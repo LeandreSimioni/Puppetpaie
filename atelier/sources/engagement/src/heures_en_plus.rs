@@ -201,7 +201,8 @@ pub(crate) fn apres_les_cotisations(
                 id: DEDUCTION,
                 famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
                 libelle: "Déduction patronale sur heures supplémentaires".into(),
-                base: BaseDeCotisation::Heures(supplementaires),
+                // Sa base compte des heures : la liste des bases en heures le dit (`calcul::BASES_EN_HEURES`).
+                base: BaseDeCotisation::relue(&DEDUCTION, supplementaires.decimal()),
                 taux_pat: None,
                 montant_pat: -deduction,
                 taux_sal: None,

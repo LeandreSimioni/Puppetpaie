@@ -28,8 +28,9 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
         }
     }
     if !s.taux_pas.is_empty() {
-        if let Err(e) = appliquer_taux_pas(ctx, &s.taux_pas) {
-            faites.incidents.push(format!("Taux de PAS recus mais non appliques : {}", e.phrase));
+        match appliquer_taux_pas(ctx, &s.taux_pas) {
+            Ok(sans_taux) => faites.a_faire.extend(sans_taux),
+            Err(e) => faites.incidents.push(format!("Taux de PAS recus mais non appliques : {}", e.phrase)),
         }
     }
     if !s.taux_atmp.is_empty() {
@@ -51,8 +52,9 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// du compte rendu, il ne se devine pas (regle 1). Chaque releve se rattache a une fiche par le NIR ; un NIR qu'aucune
 /// fiche ne porte ne se rattache a personne. La validite court de la mise a disposition (`droit::pas`). Le compte rendu
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
-/// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent.
-fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
+/// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent. Un releve sans taux lisible
+/// ne pose aucun taux : la situation du salarie reste ce qu'elle etait, et la phrase rendue le dit.
+fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<Vec<String>> {
     let nirs: Vec<(droit::contexte::IdSalarie, droit::fiche::Nir)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.dite().map(|nir| (cle.clone(), nir.clone()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<socle::mois::Mois> {
@@ -61,6 +63,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         (l.acte() == envois::journal::Acte::Dsn && l.nature_dsn() == Some(droit::nature_declaration::NatureDeLaDeclaration::Mensuelle)).then(|| l.mois()).flatten()
     };
     let mut tous = Vec::new();
+    let mut sans_taux = Vec::new();
     for (retour, chemin) in crm {
         let en_retour_de = mois_declare(retour);
         let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
@@ -70,9 +73,20 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         for x in &r.rattaches {
             // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
             let mis_a_disposition = retour.publication.ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", nom)))?;
+            let Some(taux) = x.releve.taux else {
+                let qui = match ctx.salaries.get(&x.salarie).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
+                    Some(q) => q,
+                    None => x.salarie.to_string(),
+                };
+                sans_taux.push(format!(
+                    "Prélèvement à la source de {} : le compte rendu de la DGFiP ({}) ne donne pas de taux lisible : aucun taux ne se pose, et sa fiche reste comme elle était.",
+                    qui, nom
+                ));
+                continue;
+            };
             tous.push(compagnie::taux_pas::TauxRecu {
                 salarie: x.salarie.clone(),
-                taux: x.releve.taux,
+                taux,
                 type_taux: x.releve.type_taux,
                 identifiant: x.releve.identifiant.clone(),
                 mis_a_disposition,
@@ -81,7 +95,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         }
     }
     crate::gestes::taux_pas::enregistrer(ctx, &tous, "CRM DGFiP nature 94")?;
-    Ok(())
+    Ok(sans_taux)
 }
 
 /// LES NOTIFICATIONS DU TAUX AT/MP (nature 34) : le code risque et le taux se lisent de la notification (regle 1 ;

@@ -225,13 +225,13 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 
 // ----------------------------------------------------------------- sortie
 
-/// LA BASE D'UNE LIGNE DE COTISATION, et la valeur d'une assiette d'une paie (`Contenu::bases`) : des euros, ou des
-/// heures, celles des heures en plus (`Assiette::HeuresEnPlusHeures`) et la base de la deduction patronale des heures
-/// supplementaires (`heures_en_plus::DEDUCTION`), son nombre d'heures, masquee au bulletin.
 /// LES LIGNES DE COTISATION DONT LA BASE COMPTE DES HEURES : celles que le calcul compose hors du bareme sur des heures,
 /// la deduction patronale des heures supplementaires (`heures_en_plus::DEDUCTION`, D241-24 : par heure).
 const BASES_EN_HEURES: [IdDeCotisation; 1] = [crate::heures_en_plus::DEDUCTION];
 
+/// LA BASE D'UNE LIGNE DE COTISATION, et la valeur d'une assiette d'une paie (`Contenu::bases`) : des euros, ou des
+/// heures, celles des heures en plus (`Assiette::HeuresEnPlusHeures`) et la base de la deduction patronale des heures
+/// supplementaires (`heures_en_plus::DEDUCTION`), son nombre d'heures, masquee au bulletin.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BaseDeCotisation {
     Montant(Montant),
@@ -250,8 +250,8 @@ impl BaseDeCotisation {
 
     /// LA BASE `d` ECRITE DE LA LIGNE DE LA COTISATION `id`, relue sans bareme (une paie validee se relit telle qu'elle
     /// est partie) : des heures pour les lignes que le calcul compose hors du bareme sur des heures
-    /// (`BASES_EN_HEURES`), des euros pour toute autre. Aucune cotisation d'un bareme livre n'a une assiette en heures
-    /// (`moteur/tests/fichiers/structure.rs`, `aucune_cotisation_du_bareme_n_a_une_base_en_heures`).
+    /// (`BASES_EN_HEURES`), des euros pour toute autre : le calcul refuse une cotisation du bareme dont l'assiette compte
+    /// des heures (la boucle des cotisations de `calculer`).
     pub(crate) fn relue(id: &IdDeCotisation, d: Decimal) -> BaseDeCotisation {
         if BASES_EN_HEURES.contains(id) {
             BaseDeCotisation::Heures(Heures::du_decimal(d))
@@ -1702,6 +1702,16 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
                 }
             }
         }
+        // Une cotisation du bareme se paie sur des euros : une assiette en heures (`Assiette::en_heures`), d'ou que vienne
+        // la ligne (bareme livre, prevoyance conventionnelle, surcouche de la compagnie), ne se cotise pas, et une paie
+        // validee relit la base de chacune de ses lignes en euros (`BaseDeCotisation::relue`).
+        if cle_base.en_heures() {
+            return Err(refus(format!(
+                "La cotisation « {} » du barème a pour assiette « {} », qui compte des heures : une cotisation se paie sur des euros. Corriger le barème.",
+                id.as_str(),
+                cle_base.nom()
+            )));
+        }
         let base = *bases.get(&cle_base).ok_or_else(|| socle::fichiers::absent(cle_base.nom()))?;
         let assiettes_r: Vec<Decimal> = if cle_base.par_rubrique() {
             par_rubrique
@@ -1768,7 +1778,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             id: id.into(),
             famille: r.famille.clone().ok_or_else(|| socle::fichiers::absent("famille"))?,
             libelle: r.libelle.clone().ok_or_else(|| socle::fichiers::absent("libelle"))?,
-            base: BaseDeCotisation::de_l_assiette(cle_base, base),
+            base: BaseDeCotisation::Montant(Montant::du_decimal(base)),
             taux_pat: taux_pat.map(Taux::du_decimal),
             montant_pat: Montant::du_decimal(m_pat),
             taux_sal: taux_sal.map(Taux::du_decimal),
