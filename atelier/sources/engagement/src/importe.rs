@@ -788,7 +788,7 @@ impl Importe {
             periode: None,
             ecrit: crate::ContratEcrit::default(),
         };
-        let remuneration = remuneration_lue(&engagement, &lignes_lues, &ctx)?;
+        let remuneration = remuneration_lue(&lignes_lues, &ctx)?;
         let cachets = remuneration.iter().filter(|r| r.unite == Some(droit::catalogue::Unite::Cachet)).filter_map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
         engagement.cachets = cachets.parse().map_err(|_| socle::echec::refus(socle::num::illisible(&cachets)))?;
         let heures: Decimal = remuneration.iter().filter_map(|r| r.heures_annexes).sum();
@@ -1096,26 +1096,23 @@ pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -
 /// LES LIGNES DE REMUNERATION QU'UN BULLETIN IMPORTE IMPRIME, dans les mots du moteur : une ligne que l'import a
 /// rattachee a une rubrique du catalogue (`rubrique`, avec sa quantite et son taux) prend ce que le catalogue dit
 /// d'elle (son unite, ses heures pour les annexes 8 et 10, son assiette : `calcul::lignes_brut`) ; son montant reste
-/// celui du bulletin. Une ligne sans rubrique garde son libelle et son montant, rien de plus.
-fn remuneration_lue(e: &crate::Engagement, lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRemuneration>> {
+/// celui du bulletin, et son rattachement (sa rubrique, sa quantite, son unite) ne depend pas de lui. Une ligne sans
+/// rubrique garde son libelle et son montant, rien de plus.
+fn remuneration_lue(lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRemuneration>> {
     let mut out = Vec::new();
     for l in lignes {
-        let rattachee = l.en_ligne_de_paie().filter(|_| l.quantite.is_some() && l.taux.is_some());
-        if let Some(ligne) = rattachee {
-            let mut seule = e.clone();
-            seule.lignes = vec![ligne];
-            for b in crate::calcul::lignes_brut(&seule, ctx)? {
-                out.push(LigneDeRemuneration {
-                    code: Some(b.code),
-                    libelle: b.libelle,
-                    unite: Some(b.unite),
-                    quantite: Some(b.quantite.decimal()),
-                    taux: Some(b.taux.decimal()),
-                    montant: l.montant,
-                    heures_annexes: Some(b.heures_annexes.decimal()),
-                    soumis: b.soumis,
-                });
-            }
+        if let (Some(code), Some(q), Some(t)) = (&l.rubrique, l.quantite, l.taux) {
+            let (r, paiement, heures_annexes) = crate::calcul::rattacher(code, |unite| Ok(crate::ligne::PaiementDeLigne::de_l_unite(unite, q, t)), l.heures.map(socle::grandeurs::Heures::du_decimal), ctx)?;
+            out.push(LigneDeRemuneration {
+                code: Some(r.code.into()),
+                libelle: r.libelle,
+                unite: Some(r.unite),
+                quantite: Some(paiement.quantite().decimal()),
+                taux: Some(paiement.taux().decimal()),
+                montant: l.montant,
+                heures_annexes: Some(heures_annexes.decimal()),
+                soumis: r.soumis,
+            });
             continue;
         }
         out.push(LigneDeRemuneration { code: None, libelle: l.libelle.clone(), unite: None, quantite: None, taux: None, montant: l.montant, heures_annexes: None, soumis: l.soumis });

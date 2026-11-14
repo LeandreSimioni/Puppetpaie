@@ -15,6 +15,7 @@ use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use engagement::Engagement;
+use engagement::numeros::NumeroDeCertificat;
 use socle::num::{court, Decimal};
 use socle::echec::{erreur, refus, Classe, Echec, R};
 
@@ -337,7 +338,7 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
 
 #[derive(Debug, Clone)]
 pub struct Certificat {
-    pub numero: i64,
+    pub numero: NumeroDeCertificat,
     pub debut: Jour,
     pub fin: Jour,
     pub nb_jours_ou_cachets: i64,
@@ -347,13 +348,13 @@ pub struct Certificat {
 }
 
 /// `certificats` : les certificats dus au titre d'une paie, dans l'ordre des periodes.
-pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
+pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<Certificat>> {
     let e = &paie.engagement;
     if !e.mois_payes.is_empty() {
         let mut out = Vec::new();
-        for (i, ((debut, fin, _dates, nb, _jours), brut)) in periodes_au_mois(e)?.into_iter().enumerate() {
+        for (numero, ((debut, fin, _dates, nb, _jours), brut)) in premier_numero.suite().zip(periodes_au_mois(e)?) {
             out.push(Certificat {
-                numero: premier_numero + i as i64,
+                numero,
                 debut,
                 fin,
                 nb_jours_ou_cachets: nb,
@@ -366,8 +367,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
     }
     let parts = decouper(e)?;
     let mut out = Vec::new();
-    let mut numero = premier_numero;
-    for (debut, fin, _dates, nb, _jours) in &parts {
+    for (numero, (debut, fin, _dates, nb, _jours)) in premier_numero.suite().zip(&parts) {
         let brut = if parts.len() == 1 {
             paie.brut
         } else {
@@ -398,7 +398,6 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
             base: brut,
             emission: *fin,
         });
-        numero += 1;
     }
     if parts.len() > 1 {
         let total = out.iter().fold(Decimal::ZERO, |a, c| a + c.brut);
@@ -613,7 +612,7 @@ pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) 
 }
 
 /// `ecrire_numerotes` : chaque paie vient avec le N CE qui EST le sien ; la description du PDF.
-pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
+pub fn description_numerotee(paires: &[(&PaieCs, NumeroDeCertificat)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     if ent.congesspectacles_adherent.remplie().is_none() {
         return Err(socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent").reclasser(Classe::Illisible));
     }
@@ -628,7 +627,7 @@ pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocume
 
 /// `recapitulatif` : le meme contenu en texte, ce qui va etre imprime et sous quels numeros (la trace des N CE
 /// consommes).
-pub fn recapitulatif(paires: &[(&PaieCs, i64)], ent: &ChampsEntreprise) -> R<String> {
+pub fn recapitulatif(paires: &[(&PaieCs, NumeroDeCertificat)], ent: &ChampsEntreprise) -> R<String> {
     let adherent = ent.congesspectacles_adherent.remplie().ok_or_else(|| socle::fichiers::absent("congesspectacles_adherent"))?.to_string();
     let mut lignes = vec!["Certificats d'emploi Conges Spectacles".to_string(), format!("Compte (adherent Audiens) : {}", adherent), "-".repeat(76)];
     for (p, premier) in paires {

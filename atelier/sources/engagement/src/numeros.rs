@@ -119,6 +119,24 @@ impl From<NumeroContrat> for String {
 #[serde(transparent)]
 pub struct NumeroDeCertificat(pub i64);
 
+impl NumeroDeCertificat {
+    /// Le numero qui le suit dans la sequence continue des certificats.
+    pub fn suivant(self) -> NumeroDeCertificat {
+        NumeroDeCertificat(self.0 + 1)
+    }
+
+    /// La suite des numeros a partir de celui-ci, lui compris : elle se zippe avec les certificats qu'elle numerote.
+    pub fn suite(self) -> impl Iterator<Item = NumeroDeCertificat> {
+        std::iter::successors(Some(self), |n| Some(n.suivant()))
+    }
+}
+
+impl std::fmt::Display for NumeroDeCertificat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// LE NUMERO D'UN BULLETIN DU LOGICIEL, `N/AAAA` : son rang dans la suite des bulletins de l'annee, puis l'annee. Il se
 /// donne par `numeroter`, et par le depart des documents d'un mois sur la suite qu'il reserve
 /// (`routes::gestes::depart::fabriquer_documents`) ; l'apercu d'un bulletin en montre un (`du_rang`). La paie ecrite le

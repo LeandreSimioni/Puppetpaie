@@ -187,27 +187,21 @@ impl LigneBrut {
 pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>> {
     let mut out = Vec::new();
     for l in &eng.lignes {
-        let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        let paiement = l.paiement(r.unite)?;
-        let q = paiement.quantite();
-        let signe = r.sens.signe();
-        // Le signe porte aussi sur les heures : une absence en retire.
-        let h = r.heures(q.decimal(), l.heures().map(Heures::decimal));
+        let (r, paiement, heures_annexes) = rattacher(l.rubrique(), |unite| l.paiement(unite), l.heures(), ctx)?;
         let dsn_autres_bruts = code_54(&r, l.genre())?;
         // Le montant qu'un bulletin importe lit se garde tel quel ; toute autre ligne paie sa quantite a son taux.
         let montant = match l.montant_lu() {
             Some(lu) => lu,
-            None => Montant::du_decimal(signe * paiement.montant().au_centime().decimal()),
+            None => Montant::du_decimal(r.sens.signe() * paiement.montant().au_centime().decimal()),
         };
         out.push(LigneBrut {
             code: r.code.into(),
             libelle: r.libelle,
             unite: r.unite,
-            quantite: q,
+            quantite: paiement.quantite(),
             taux: paiement.taux(),
             montant,
-            // Des heures nulles gardent le signe de la ligne et leur echelle.
-            heures_annexes: Heures::du_decimal(if h.is_zero() { if signe.is_sign_negative() { -h } else { h } } else { signe * h }),
+            heures_annexes,
             soumis: r.soumis,
             imposable: r.imposable,
             conges_spectacles: r.conges_spectacles,
@@ -221,6 +215,18 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
         });
     }
     Ok(out)
+}
+
+/// LE RATTACHEMENT D'UNE LIGNE A SA RUBRIQUE, son montant mis a part : la rubrique lue, la quantite et le taux que son
+/// unite dit (`paiement`), et ses heures des annexes 8 et 10, sous le signe de la rubrique (une absence en retire ; des
+/// heures nulles gardent le signe de la ligne et leur echelle).
+pub(crate) fn rattacher(code: &droit::catalogue::CodeDeRubrique, paiement: impl FnOnce(Unite) -> R<PaiementDeLigne>, heures: Option<Heures>, ctx: &Contexte) -> R<(droit::catalogue::Rubrique, PaiementDeLigne, Heures)> {
+    let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
+    let paiement = paiement(r.unite)?;
+    let signe = r.sens.signe();
+    let h = r.heures(paiement.quantite().decimal(), heures.map(Heures::decimal));
+    let heures_annexes = Heures::du_decimal(if h.is_zero() { if signe.is_sign_negative() { -h } else { h } } else { signe * h });
+    Ok((r, paiement, heures_annexes))
 }
 
 // ----------------------------------------------------------------- sortie
