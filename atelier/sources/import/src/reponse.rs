@@ -3,13 +3,15 @@
 //! et les AEM en PDF lus, chaque fiche que l'import cree, complete ou laisse (`FicheImportee`), et leurs phrases
 //! (`Importation::dire`, une fois tout ecrit).
 //!
-//! Ce que porte une fiche, et la case d'un ecart, sont des saisies de leur fiche (`declarations::champs::Saisie`,
-//! `Valeur`) ; ses anomalies, celles de sa verification (`declarations::champs::Anomalie`).
+//! Ce que porte une fiche est la fiche proposee (`crate::proposee::FicheProposee`) ; la case d'un ecart et ce qui
+//! complete une fiche, la valeur typee d'une case (`droit::fiche::ValeurDeCase`) ; ses anomalies, celles de sa
+//! verification (`declarations::champs::Anomalie`).
 
 use serde::Serialize;
 
-use declarations::champs::{Anomalie, Saisie, Valeur};
-use droit::fiche::{CaseDeFiche, FicheNommee, NomDeFiche};
+use crate::proposee::FicheProposee;
+use declarations::champs::Anomalie;
+use droit::fiche::{CaseDeFiche, FicheNommee, NomDeFiche, ValeurDeCase};
 
 use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
@@ -264,21 +266,6 @@ impl Origine {
     }
 }
 
-/// UNE CASE, EN MOTS DANS UNE PHRASE : un texte ou un nombre tel qu'il s'ecrit, oui ou non, des mots a la suite, une
-/// structure (`cle valeur`), ses lignes (chacune ses valeurs).
-pub fn en_mots(v: &Valeur) -> String {
-    let valeurs = |s: &Saisie| s.cases().iter().map(|(_, x)| en_mots(x)).collect::<Vec<_>>().join(" ");
-    match v {
-        Valeur::Texte(t) => t.clone(),
-        Valeur::Nombre(n) => n.to_string(),
-        Valeur::OuiNon(true) => "oui".to_string(),
-        Valeur::OuiNon(false) => "non".to_string(),
-        Valeur::Mots(l) => l.join(", "),
-        Valeur::Bloc(b) => b.cases().iter().map(|(k, x)| format!("{} {}", k, en_mots(x))).collect::<Vec<_>>().join(", "),
-        Valeur::Lignes(l) => l.iter().map(valeurs).collect::<Vec<_>>().join(", "),
-    }
-}
-
 // ------------------------------------------------------------------ une fiche
 
 /// Ou en est une fiche que l'import reprend.
@@ -295,7 +282,7 @@ pub enum EtatFiche {
 #[derive(Debug, Clone, Serialize)]
 pub struct Completee {
     pub champ: CaseDeFiche,
-    pub valeur: Valeur,
+    pub valeur: ValeurDeCase,
     #[serde(flatten)]
     pub origine: Origine,
     pub dit: String,
@@ -305,7 +292,7 @@ pub struct Completee {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum DitPar {
-    Dsn { dsn: Valeur, mois: Mois },
+    Dsn { dsn: ValeurDeCase, mois: Mois },
     Bulletin { bulletin: String, fichier: String, page: usize },
     Certificat { certificat: String, fichier: String, page: usize },
     Aem { aem: String, fichier: String, page: usize },
@@ -316,21 +303,21 @@ pub enum DitPar {
 pub struct Ecart {
     pub champ: CaseDeFiche,
     /// La case de la fiche, telle qu'elle est (un texte, ou une structure : la banque).
-    pub fiche: Valeur,
+    pub fiche: ValeurDeCase,
     #[serde(flatten)]
     pub par: DitPar,
     pub dit: String,
 }
 
 impl Ecart {
-    pub fn new(champ: impl Into<CaseDeFiche>, fiche: Valeur, par: DitPar) -> Ecart {
+    pub fn new(champ: impl Into<CaseDeFiche>, fiche: ValeurDeCase, par: DitPar) -> Ecart {
         let (ou, lu) = match &par {
             DitPar::Certificat { certificat, fichier, page } => (format!("le certificat ({}, page {}) disait", fichier, page), certificat.clone()),
             DitPar::Aem { aem, fichier, page } => (format!("l'AEM ({}, page {}) disait", fichier, page), aem.clone()),
             DitPar::Bulletin { bulletin, fichier, page } => (format!("le bulletin ({}, page {}) disait", fichier, page), bulletin.clone()),
-            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&mois.libelle(socle::mois::Graphie::Accentuee))), en_mots(dsn)),
+            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&mois.libelle(socle::mois::Graphie::Accentuee))), dsn.en_mots()),
         };
-        let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, en_mots(&fiche));
+        let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, fiche.en_mots());
         Ecart { champ: champ.into(), fiche, par, dit }
     }
 }
@@ -390,7 +377,7 @@ pub struct FicheImportee {
     pub ecarts: Vec<Ecart>,
     pub anomalies: Vec<Anomalie>,
     /// Ce que porte une fiche a creer.
-    pub donnees: Saisie,
+    pub donnees: FicheProposee,
     pub completer: Vec<Completee>,
     /// La piece d'ou vient une fiche a creer, quand ce n'est ni une DSN ni un bulletin.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -402,14 +389,14 @@ pub struct FicheImportee {
 }
 
 impl FicheImportee {
-    pub fn new(fiche: FicheVisee, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
+    pub fn new(fiche: FicheVisee, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &FicheProposee) -> FicheImportee {
         let mut f = FicheImportee {
-            fiche,
             libelle: libelle.to_string(),
             etat,
             ecarts: Vec::new(),
             anomalies: Vec::new(),
-            donnees: Saisie::default(),
+            donnees: FicheProposee::vide(fiche.nom()),
+            fiche,
             completer: Vec::new(),
             lu_dans: None,
             lu_dans_dit: None,
@@ -420,12 +407,19 @@ impl FicheImportee {
         f
     }
 
-    /// Ce que porte la fiche a creer (ses cases, sans ses notes), et ses anomalies.
-    pub fn poser(&mut self, donnees: &Saisie, anomalies: Vec<Anomalie>) {
-        let mut cases = Saisie::default();
-        crate::proposee::fondre(&mut cases, donnees);
-        self.donnees = cases;
+    /// Ce que porte la fiche a creer (ses cases et ses notes), et ses anomalies.
+    pub fn poser(&mut self, donnees: &FicheProposee, anomalies: Vec<Anomalie>) {
+        self.donnees = donnees.clone();
         self.anomalies = anomalies;
+    }
+
+    /// Des anomalies de plus (une piece de plus qui la complete) : une anomalie deja dite ne se redit pas.
+    pub fn ajouter_anomalies(&mut self, anomalies: Vec<Anomalie>) {
+        for a in anomalies {
+            if !self.anomalies.contains(&a) {
+                self.anomalies.push(a);
+            }
+        }
     }
 
     /// Les ecarts d'une piece de plus : une case deja notee garde le sien (la DSN passe avant le bulletin).
@@ -439,18 +433,17 @@ impl FicheImportee {
 
     /// Note ce qui serait complete et d'ou ca vient. Une case deja notee garde sa premiere origine
     /// (`completer::ajouter`).
-    pub fn noter(&mut self, champs: &Saisie, origine: &Origine) {
-        for (k, v) in champs.cases() {
+    pub fn noter(&mut self, valeurs: &[(CaseDeFiche, ValeurDeCase)], origine: &Origine) {
+        for (k, v) in valeurs {
             if !self.completer.iter().any(|c| c.champ == *k) {
                 self.completer.push(Completee { champ: *k, valeur: v.clone(), origine: origine.clone(), dit: String::new() });
             }
         }
     }
 
-    /// Le numero d'objet d'un spectacle a creer. L'import l'y pose d'un `NumeroObjetSpectacle` (une AEM, un bulletin) : un
-    /// texte qui ne se lit pas en numero d'objet est une faute du logiciel, qui se dit.
-    pub fn numero_objet(&self) -> socle::echec::R<Option<droit::fiche::NumeroObjetSpectacle>> {
-        self.donnees.mot(droit::fiche::CaseSpectacle::NumeroObjet).map(|n| droit::fiche::NumeroObjetSpectacle::lire(&n)).transpose()
+    /// Le numero d'objet d'un spectacle a creer.
+    pub fn numero_objet(&self) -> Option<&droit::fiche::NumeroObjetSpectacle> {
+        self.donnees.spectacle().and_then(|s| s.numero_objet.as_ref())
     }
 
     /// La fiche s'ecrit-elle : a creer, ou existante avec des cases a completer.
@@ -470,7 +463,7 @@ impl FicheImportee {
         self.lu_dans_dit = self.lu_dans.as_ref().map(|o| format!("Lu dans {}", o.en_mots()));
         let completee = self.etat == EtatFiche::Completee;
         for c in &mut self.completer {
-            c.dit = format!("{} « {} », lu dans {} : la case était vide", if completee { "a reçu" } else { "recevra" }, en_mots(&c.valeur), c.origine.en_mots());
+            c.dit = format!("{} « {} », lu dans {} : la case était vide", if completee { "a reçu" } else { "recevra" }, c.valeur.en_mots(), c.origine.en_mots());
         }
     }
 }

@@ -9,10 +9,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use declarations::champs::Saisie;
-
 use declarations::dsn_lue::{Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
-use droit::fiche::{Nir, NumeroObjetSpectacle};
+use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, Nir, NumeroObjetSpectacle};
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::fichiers::NomDeFichier;
@@ -37,8 +35,9 @@ pub struct SalarieDeclare {
 }
 
 impl SalarieDeclare {
-    /// La fiche salarie que la DSN remplit : son identite, puis son emploi.
-    pub fn fiche(&self) -> socle::echec::R<Saisie> {
+    /// La fiche salarie que la DSN remplit : son identite, puis son emploi ; et la faute de chaque case que la DSN porte
+    /// hors de son type (la case reste vide).
+    pub fn fiche(&self) -> socle::echec::R<(ChampsSalarie, Vec<FauteDeCase>)> {
         #[derive(Serialize)]
         struct Fiche<'a> {
             #[serde(flatten)]
@@ -46,13 +45,14 @@ impl SalarieDeclare {
             #[serde(flatten)]
             emploi: &'a Option<EmploiDeclare>,
         }
-        crate::proposee::de(droit::fiche::NomDeFiche::Salarie, &Fiche { individu: &self.individu, emploi: &self.emploi })
+        crate::proposee::de(&Fiche { individu: &self.individu, emploi: &self.emploi })
     }
 }
 
-/// La fiche Entreprise que la DSN remplit (`champs-base.json`), telle que les fiches la lisent.
-pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<Saisie> {
-    crate::proposee::de(droit::fiche::NomDeFiche::Entreprise, e)
+/// La fiche Entreprise que la DSN remplit (`champs-base.json`), telle que les fiches la lisent, et la faute de chaque case
+/// qu'elle porte hors de son type.
+pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<(ChampsEntreprise, Vec<FauteDeCase>)> {
+    crate::proposee::de(e)
 }
 
 /// Un numero d'objet spectacle, vu dans une DSN ou dans une AEM.

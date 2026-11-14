@@ -200,6 +200,27 @@ pub trait FicheSaisie: Sized + Default + Clone {
     /// La valeur de la case `k`, ecrite comme le fichier l'ecrit ; vide, aucune.
     fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase>;
 
+    /// Aucune case n'y est ecrite (ses notes ne comptent pas).
+    fn est_vide(&self) -> bool;
+
+    /// Les cases et les notes que `autre` dit remplacent les siennes.
+    fn fondre(&mut self, autre: &Self);
+
+    /// Les cases et les notes que `autre` dit et qu'elle ne dit pas.
+    fn completer_de(&mut self, autre: &Self);
+
+    /// La case `k` telle que `autre` la dit.
+    fn prendre(&mut self, autre: &Self, k: CaseDeFiche);
+
+    /// Les cases qu'elle dit, dans l'ordre de la forme.
+    fn cases_dites(&self) -> Vec<CaseDeFiche>;
+
+    /// Les notes qu'elle dit : leur cle et leur texte.
+    fn notes_dites(&self) -> Vec<(&'static str, &str)>;
+
+    /// La note `cle` telle que `autre` la dit.
+    fn prendre_la_note(&mut self, autre: &Self, cle: &str);
+
     /// Ce qu'ecrit la case `k`.
     fn ecrite(&self, k: CaseDeFiche) -> MotEcrit {
         self.ecrite_au_chemin(k, &[])
@@ -1357,8 +1378,8 @@ impl FicheNommee {
 /// LE NOM D'UNE CASE DECLAREE HORS DES PIECES : un champ d'une fiche ou une case d'une structure, tel que sa forme
 /// l'ecrit. Il ne se fabrique que de la forme (`Declaree`, les cles d'une fiche : `CaseSalarie`, `CaseEntreprise`...) ;
 /// un texte ne devient un nom de case qu'a la porte, contre la forme (`NomDeCase::lire`), et un nom que la forme ne
-/// declare pas s'y refuse. C'est la cle d'une saisie (`declarations::champs::Saisie`) : aucune case ne s'y lit par un
-/// texte. UNE CASE D'UNE PIECE N'EN EST PAS UNE : elle est une `CaseDePiece`, que `fiche!` separe a la declaration.
+/// declare pas s'y refuse. UNE CASE D'UNE PIECE N'EN EST PAS UNE : elle est une `CaseDePiece`, que `fiche!` separe a la
+/// declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NomDeCase(&'static str);
 
@@ -1393,9 +1414,8 @@ impl NomDeCase {
     }
 }
 
-/// UNE CASE D'UNE PIECE (`PieceFermee`), telle que `fiche!` la separe a la declaration : elle n'est pas un `NomDeCase`,
-/// et une saisie ne la lit donc pas par `Saisie::case` ; elle se lit par le seul chemin des pieces, qui la prend
-/// (`declarations::champs::Saisie::piece`). Sa piece est celle que sa forme lui donne (`CaseDePiece::piece`).
+/// UNE CASE D'UNE PIECE (`PieceFermee`), telle que `fiche!` la separe a la declaration : elle n'est pas un `NomDeCase`.
+/// Sa piece est celle que sa forme lui donne (`CaseDePiece::piece`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CaseDePiece {
     Salarie(CasePieceSalarie),
@@ -1603,8 +1623,8 @@ pub struct Declaree<K = NomDeCase> {
 impl<K> Declaree<K> {
     /// LE TEXTE SAISI `texte` RANGE DANS LA FORME DU TYPE DE LA CASE (`FormeDeCase::RANGER`, le seul endroit qui dit
     /// comment une saisie se range), avant tout controle et toute ecriture : ce qui s'ecrit est ce que son lecteur relit.
-    /// Les deux portes d'une saisie l'appliquent, celle d'une saisie de fiche (`declarations::champs::lecture`) et celle
-    /// d'un changement de case (`nulle_ou_dite`) ; rien pour un type qui lit son texte tel quel.
+    /// La seule porte d'une case saisie l'applique, celle d'un changement de case (`nulle_ou_dite`, par laquelle
+    /// `FicheSaisie::lire_cases` lit chaque case) ; rien pour un type qui lit son texte tel quel.
     pub fn rangee(&self, texte: &str) -> Option<String> {
         self.ranger.map(|r| r(texte))
     }
@@ -2010,6 +2030,62 @@ macro_rules! fiche {
             /// Les memes cases, sans ses notes.
             pub fn sans_notes(self) -> $plate {
                 $plate { $( $( $note: None, )* )? ..self }
+            }
+
+            /// Les cases et les notes que `autre` dit remplacent les siennes.
+            pub fn fondre(&mut self, autre: &$plate) {
+                self.par_dessus(autre);
+                $( $( if autre.$note.is_some() {
+                    self.$note = autre.$note.clone();
+                } )* )?
+            }
+
+            /// Les cases et les notes que `autre` dit et qu'elle ne dit pas : la premiere qui en dit une la garde.
+            pub fn completer_de(&mut self, autre: &$plate) {
+                $( if self.$champ.is_none() {
+                    self.$champ = autre.$champ.clone();
+                } )*
+                $( $( if self.$piece.cases.$pchamp.is_none() {
+                    self.$piece.cases.$pchamp = autre.$piece.cases.$pchamp.clone();
+                } )* )*
+                $( $( if self.$note.is_none() {
+                    self.$note = autre.$note.clone();
+                } )* )?
+            }
+
+            /// La case `k` telle que `autre` la dit (vide s'il ne la dit pas).
+            pub fn prendre(&mut self, autre: &$plate, k: CaseDeFiche) {
+                $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
+                    self.$champ = autre.$champ.clone();
+                } )*
+                $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
+                    self.$piece.cases.$pchamp = autre.$piece.cases.$pchamp.clone();
+                } )* )*
+            }
+
+            /// Les cases qu'elle dit, dans l'ordre de la forme.
+            pub fn cases_dites(&self) -> Vec<CaseDeFiche> {
+                let mut out = Vec::new();
+                $( if self.$champ.is_some() {
+                    out.push(CaseDeFiche::Case($cles::$var.into()));
+                } )*
+                $( $( if self.$piece.cases.$pchamp.is_some() {
+                    out.push(CaseDeFiche::Piece($pcles::$pvar.into()));
+                } )* )*
+                out
+            }
+
+            /// Les notes qu'elle dit : leur cle et leur texte.
+            pub fn notes_dites(&self) -> Vec<(&'static str, &str)> {
+                let toutes: Vec<(&'static str, Option<&str>)> = vec![$($( (stringify!($note), self.$note.as_deref()) ),*)?];
+                toutes.into_iter().filter_map(|(k, t)| t.map(|t| (k, t))).collect()
+            }
+
+            /// La note `cle` telle que `autre` la dit ; une fiche sans notes n'a rien a y lire (`_autre`, `_cle`).
+            pub fn prendre_la_note(&mut self, _autre: &$plate, _cle: &str) {
+                $( $( if _cle == stringify!($note) {
+                    self.$note = _autre.$note.clone();
+                } )* )?
             }
 
             /// CE QU'ECRIT LA CASE au bout de `chemin` sous la case `k` (`socle::ecriture::mot_au_chemin`) ; une case
@@ -3090,6 +3166,27 @@ macro_rules! fiche_saisie {
                 }
                 fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase> {
                     $plate::valeur_ecrite(self, k)
+                }
+                fn est_vide(&self) -> bool {
+                    $plate::est_vide(self)
+                }
+                fn fondre(&mut self, autre: &Self) {
+                    $plate::fondre(self, autre)
+                }
+                fn completer_de(&mut self, autre: &Self) {
+                    $plate::completer_de(self, autre)
+                }
+                fn prendre(&mut self, autre: &Self, k: CaseDeFiche) {
+                    $plate::prendre(self, autre, k)
+                }
+                fn cases_dites(&self) -> Vec<CaseDeFiche> {
+                    $plate::cases_dites(self)
+                }
+                fn notes_dites(&self) -> Vec<(&'static str, &str)> {
+                    $plate::notes_dites(self)
+                }
+                fn prendre_la_note(&mut self, autre: &Self, cle: &str) {
+                    $plate::prendre_la_note(self, autre, cle)
                 }
             }
         )*

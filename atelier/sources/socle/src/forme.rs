@@ -291,29 +291,6 @@ pub fn non_lue<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NonLue, D::Erro
     <serde::de::IgnoredAny as serde::Deserialize>::deserialize(d).map(|_| std::marker::PhantomData)
 }
 
-/// UNE FORME QUE SA TABLE TYPE (`DeserializeSeed` : une saisie de fiche, que la table des cases lit case par case selon
-/// la forme de chacune, `declarations::champs::Lecture`) : la donnee `v` lue selon `table`, dans son texte, comme `lire`.
-#[track_caller]
-fn lire_selon<S, U>(v: &Value, table: S, phrase: &str) -> R<U>
-where
-    S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
-{
-    let texte = v.to_string();
-    let mut d = serde_json::Deserializer::from_str(&texte);
-    let mut suivi = serde_path_to_error::Track::new();
-    match table.deserialize(serde_path_to_error::Deserializer::new(&mut d, &mut suivi)) { Ok(u) => Ok(u), Err(e) => Err(refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e))) }
-}
-
-/// UNE FORME ECRITE (`Serialize`, une fiche typee) RELUE SELON UNE TABLE : ce qu'elle ecrit, lu par `lire_selon`.
-#[track_caller]
-pub fn relire_selon<T, S, U>(t: &T, table: S, phrase: &str) -> R<U>
-where
-    T: serde::Serialize + ?Sized,
-    S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
-{
-    lire_selon(&crate::ecriture::en_valeur(t), table, phrase)
-}
-
 /// Le fichier JSON `fichier` lu en `T` (`lire_texte`, sa lecture notee au registre d'un calcul suivi :
 /// `fichiers::lire_texte`). Le disque qui refuse se dit par `echec::du_disque` ; une forme fausse par `phrase`, le
 /// chemin du fichier, la cle et le detail a part.
@@ -436,49 +413,6 @@ pub fn nombre_en_texte<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String,
 fn texte_a_virgule<'de, A: serde::de::MapAccess<'de>>(m: A) -> Result<String, A::Error> {
     use serde::Deserialize;
     serde_json::Number::deserialize(serde::de::value::MapAccessDeserializer::new(m)).map(|n| n.to_string())
-}
-
-/// La cle privee sous laquelle le lecteur JSON passe un nombre a virgule a un `visit_map` (`serde_json`,
-/// `arbitrary_precision`).
-const CLE_DU_NOMBRE: &str = "$serde_json::private::Number";
-
-/// CE QU'UN `visit_map` RECOIT D'UNE CASE QUI PEUT ETRE UN NOMBRE OU UN OBJET (`declarations::champs`) : un nombre a
-/// virgule, ou un vrai objet, rendu entier a son lecteur (`Table`, dont la premiere cle se relit).
-pub enum TableOuNombre<A> {
-    Nombre(NombreLu),
-    Table(Table<A>),
-}
-
-/// Un objet dont la premiere cle a deja ete lue (`table_ou_nombre`) : il la rend d'abord, puis la suite.
-pub struct Table<A> {
-    premiere: Option<String>,
-    reste: A,
-}
-
-/// `m` est-il un nombre a virgule (sa seule cle est la cle privee du lecteur JSON), ou un objet ?
-pub fn table_ou_nombre<'de, A: serde::de::MapAccess<'de>>(mut m: A) -> Result<TableOuNombre<A>, A::Error> {
-    let premiere: Option<String> = m.next_key()?;
-    if premiere.as_deref() == Some(CLE_DU_NOMBRE) {
-        let texte: String = m.next_value()?;
-        return match NombreLu::du_texte(&texte) {
-            Ok(n) => Ok(TableOuNombre::Nombre(n)),
-            Err(e) => Err(serde::de::Error::custom(format!("{} n'est pas un nombre ({})", texte, e))),
-        };
-    }
-    Ok(TableOuNombre::Table(Table { premiere, reste: m }))
-}
-
-impl<'de, A: serde::de::MapAccess<'de>> serde::de::MapAccess<'de> for Table<A> {
-    type Error = A::Error;
-    fn next_key_seed<K: serde::de::DeserializeSeed<'de>>(&mut self, seed: K) -> Result<Option<K::Value>, A::Error> {
-        match self.premiere.take() {
-            Some(cle) => seed.deserialize(serde::de::value::StringDeserializer::<A::Error>::new(cle)).map(Some),
-            None => self.reste.next_key_seed(seed),
-        }
-    }
-    fn next_value_seed<V: serde::de::DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, A::Error> {
-        self.reste.next_value_seed(seed)
-    }
 }
 
 /// UN NOMBRE JSON DE SON TEXTE (un decimal, un instant) : il s'ecrit tel quel, exact (`ecriture::nombre_ecrit`).

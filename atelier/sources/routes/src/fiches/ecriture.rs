@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use declarations::champs::{self, Anomalie, Apercu, FicheAJuger, Gravite, Saisie, Valeur};
+use declarations::champs::{self, Anomalie, Apercu, FicheAJuger, Gravite};
+use import::proposee::FicheProposee;
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
 use droit::fiche::{
     CaseDeFiche, CaseEntreprise, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, FauteDeCase, FicheDatee, FicheEntrepriseDatee, FicheNommee, FicheSaisie, FicheSalarieDatee,
@@ -31,6 +32,10 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     const NOM: NomDeFiche;
     /// La fiche, a juger par la table (`champs::verifier_fiche`).
     fn a_juger(p: &Self::Plate) -> FicheAJuger<'_>;
+    /// La fiche que l'import propose, de cette sorte.
+    fn proposee(p: Self::Plate) -> FicheProposee;
+    /// La fiche de cette sorte qu'est la fiche proposee `f` ; d'une autre sorte, aucune.
+    fn de_la_proposee(f: &mut FicheProposee) -> Option<&mut Self::Plate>;
     /// Aucune case n'y est ecrite (ses notes ne comptent pas).
     fn est_vide(p: &Self::Plate) -> bool;
     /// FABRIQUE LES FORMES DECLAREES DEPUIS LES FORMES LISIBLES (`deriver_par_la_table`, et ce qui est propre a la
@@ -132,6 +137,15 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     }
     fn a_juger(p: &ChampsEntreprise) -> FicheAJuger<'_> {
         FicheAJuger::Entreprise(p)
+    }
+    fn proposee(p: ChampsEntreprise) -> FicheProposee {
+        FicheProposee::Entreprise(p)
+    }
+    fn de_la_proposee(f: &mut FicheProposee) -> Option<&mut ChampsEntreprise> {
+        match f {
+            FicheProposee::Entreprise(p) => Some(p),
+            FicheProposee::Salarie(_) | FicheProposee::Spectacle(_) => None,
+        }
     }
     fn est_vide(p: &ChampsEntreprise) -> bool {
         p.est_vide()
@@ -333,6 +347,15 @@ impl SorteDeFiche for FicheSalarieDatee {
     fn a_juger(p: &ChampsSalarie) -> FicheAJuger<'_> {
         FicheAJuger::Salarie(p)
     }
+    fn proposee(p: ChampsSalarie) -> FicheProposee {
+        FicheProposee::Salarie(p)
+    }
+    fn de_la_proposee(f: &mut FicheProposee) -> Option<&mut ChampsSalarie> {
+        match f {
+            FicheProposee::Salarie(p) => Some(p),
+            FicheProposee::Entreprise(_) | FicheProposee::Spectacle(_) => None,
+        }
+    }
     fn est_vide(p: &ChampsSalarie) -> bool {
         p.est_vide()
     }
@@ -477,6 +500,15 @@ impl SorteDeFiche for FicheSpectacleDatee {
     fn a_juger(p: &ChampsSpectacle) -> FicheAJuger<'_> {
         FicheAJuger::Spectacle(p)
     }
+    fn proposee(p: ChampsSpectacle) -> FicheProposee {
+        FicheProposee::Spectacle(p)
+    }
+    fn de_la_proposee(f: &mut FicheProposee) -> Option<&mut ChampsSpectacle> {
+        match f {
+            FicheProposee::Spectacle(p) => Some(p),
+            FicheProposee::Entreprise(_) | FicheProposee::Salarie(_) => None,
+        }
+    }
     fn est_vide(p: &ChampsSpectacle) -> bool {
         p.est_vide()
     }
@@ -564,12 +596,6 @@ fn matricule_suivant(salaries: &droit::fiche::Salaries) -> R<i64> {
 }
 
 // ------------------------------------------------------------------ la saisie
-
-/// La saisie de l'import de la fiche `F` qu'est `plate` (`champs::Saisie::de_la_fiche`) : le pont de l'import, tant
-/// qu'il compose ses fiches en saisies (`importation::fiches::completer_fiche`).
-pub(crate) fn vue<F: SorteDeFiche>(plate: &F::Plate) -> R<Saisie> {
-    Saisie::de_la_fiche(F::NOM, plate)
-}
 
 /// LA FICHE `plate` TELLE QUE L'ECRAN LA MONTRE, sa forme lisible comblee (`champs::a_combler`) : une fiche d'avant ne
 /// porte que la forme declaree, et l'ecran propose une forme lisible de depart. Rien n'est ecrit pour autant.
@@ -789,18 +815,6 @@ fn montant_saisi(m: &mut Option<droit::fiche::Montant>, quoi: &str) -> Option<St
 }
 
 // ------------------------------------------------------------------ ce qui change
-
-/// Une case vide d'une saisie de l'import (le pont, tant qu'il compose ses fiches en saisies) : absente, un texte blanc ou
-/// « A COMPLETER » (le titre d'un spectacle importe sans nom), une liste ou une structure vides.
-pub(crate) fn vide(v: Option<&Valeur>) -> bool {
-    v.is_none_or(|v| match v {
-        Valeur::Texte(t) => t.trim().is_empty() || t.trim().eq_ignore_ascii_case(A_COMPLETER),
-        Valeur::Mots(l) => l.is_empty(),
-        Valeur::Lignes(l) => l.is_empty(),
-        Valeur::Bloc(b) => !b.est_dite(),
-        Valeur::Nombre(_) | Valeur::OuiNon(_) => false,
-    })
-}
 
 /// UNE CASE VIDE : sans valeur, un texte blanc ou « A COMPLETER » (le titre d'un spectacle importe sans nom), une liste
 /// ou une structure vides. La remplir n'est pas un changement a dater.

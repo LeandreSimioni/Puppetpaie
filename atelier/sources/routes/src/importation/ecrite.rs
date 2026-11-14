@@ -459,8 +459,8 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     let mut ecrits: BTreeSet<PathBuf> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
     for a in &imp.a_creer {
-        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
-        let emplacement = match (a.nom, a.rang) {
+        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, &a.donnees, note)?;
+        let emplacement = match (a.donnees.nom(), a.rang) {
             (NomDeFiche::Entreprise, _) => reponse.entreprise.as_mut(),
             (NomDeFiche::Salarie, Some(i)) => reponse.salaries.get_mut(i),
             (NomDeFiche::Spectacle, Some(i)) => reponse.spectacles.get_mut(i),
@@ -473,7 +473,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
         emplacement.fiche = fiche;
         emplacement.etat = EtatFiche::Creee;
         emplacement.anomalies = anomalies;
-        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)));
+        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.donnees.nom())));
     }
     // Les fiches qui existent : ce qui y est vide ou « A COMPLETER » (`import::completer`), rien d'autre.
     let mut completees = 0usize;
@@ -489,7 +489,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
         };
         if let Some(e) = emplacement {
             e.etat = EtatFiche::Completee;
-            e.completer.retain(|c| faits.valeur(c.champ).is_some());
+            e.completer.retain(|c| faits.valeur_ecrite(c.champ).is_some());
         }
         ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.fiche.nom())));
         completees += 1;

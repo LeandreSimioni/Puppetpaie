@@ -76,9 +76,8 @@ que par la structure :
   du métier de chacun de ses engagements ; celles de l'effectif, par lui ; une pièce qu'aucun engagement ni l'effectif
   ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
   `champs-base.json`. Une case d'une pièce n'est pas un `droit::fiche::NomDeCase` : `fiche!` la déclare à part
-  (`droit::fiche::CaseDePiece`), et une saisie (`declarations::champs::Saisie`) ne la lit pas par `case`, qui ne prend
-  qu'un `NomDeCase`, mais par `piece`, qui prend une `CaseDePiece` ; la mécanique de toutes les cases (la table,
-  l'écriture datée) les nomme ensemble (`droit::fiche::CaseDeFiche`). Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  (`droit::fiche::CaseDePiece`) ; la mécanique de toutes les cases (la table, l'écriture datée) les nomme ensemble
+  (`droit::fiche::CaseDeFiche`). Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
@@ -726,6 +725,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | source de la durée d'un préavis | `SourceDuPreavis` | `engagement/src/solde.rs` |
 | fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
 | faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |
+| fiche proposée (par l'import, l'une des trois, typée) | `FicheProposee` | `import/src/proposee.rs` |
 | fiche à juger (l'une des trois, typée) | `FicheAJuger` | `declarations/src/champs.rs` |
 | ce qu'une case écrit | `MotEcrit` | `socle/src/ecriture.rs` |
 | valeur d'une case d'une fiche | `ValeurDeCase` | `socle/src/ecriture.rs` |
@@ -902,7 +902,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   l'est, une case à cocher non cochée ne l'est pas, une structure l'est par une de ses cases).
 - **faute d'une case saisie** : la case, le chemin sous elle dans une structure, la phrase de ce que son type refuse ;
   la case reste vide dans la fiche typée, la faute devient une anomalie non forçable (`champs::des_fautes`), dite avec
-  toutes les autres.
+  toutes les autres. Une valeur saisie n'a pas d'autre forme : elle est sa case typée, ou cette faute. Celle d'une pièce
+  importée (une valeur qu'elle porte hors du type de sa case) laisse la case vide dans la fiche proposée, et se
+  redemande tant que la case reste vide ; la pièce ne se refuse pas pour elle.
+- **fiche proposée** : la fiche que l'import propose, de l'entreprise, d'un salarié ou d'un spectacle, typée, lue des
+  formes des pièces par la porte d'une fiche saisie (`import::proposee::de`, `lire_cases`) ; écrite à plat comme sa
+  fiche. Que portent une fiche de la réponse de l'import (`FicheImportee.donnees`), une fiche que l'import crée
+  (`ACreer`, avec les fautes de ses pièces) ou complète (`ACompleter`).
 - **ce qu'une case écrit** : vide, un mot (un texte, un nombre écrit), oui ou non, une structure ; la valeur typée dans
   l'écriture de son fichier (`socle::ecriture::mot`), ce que lisent les règles de `champs-base.json` (`si`, `exige_si`,
   `avance`, la norme, la longueur).

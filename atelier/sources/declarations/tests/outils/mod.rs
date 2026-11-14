@@ -1,5 +1,5 @@
-//! Les aides des tests des declarations : les donnees livrees, et une saisie de fiche
-//! lue dans la forme que la table des cases donne a chacune (`Saisie::de_la_fiche`).
+//! Les aides des tests des declarations : les donnees livrees, et les anomalies d'une fiche tapee, lue par sa porte
+//! (`droit::fiche::FicheSaisie::lire_cases`).
 
 use std::path::{Path, PathBuf};
 

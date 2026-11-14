@@ -33,7 +33,6 @@ use serde::Serialize;
 
 use crate::caviardage::{self, Connus};
 use compagnie::incidents;
-use declarations::champs::Saisie;
 use droit::contexte::Contexte;
 use droit::fiche::AnnexeConvention;
 use engagement::ecarts::{Comparaison, Grandeur, OrigineDuTauxAtmp, RegroupementDeComparaison};
@@ -343,10 +342,9 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
         }
     };
     for (_, f) in &ctx.salaries {
-        // Les cases que le releve compare, par la table de la fiche.
-        let s = Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &f.champs)?;
-        use droit::fiche::CaseSalarie as S;
-        let t = |k: S| s.mot(k);
+        // Les cases que le releve compare, telles que la fiche les ecrit.
+        use droit::fiche::{CaseSalarie as S, FicheSaisie as _};
+        let t = |k: S| f.champs.ecrite(k.into()).mot().map(str::to_string);
         for k in [S::Nom, S::NomAffichage] {
             pousser(&mut c.noms, t(k));
         }
