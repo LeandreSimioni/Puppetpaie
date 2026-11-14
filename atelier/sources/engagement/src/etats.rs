@@ -629,9 +629,12 @@ impl PaieDuMois {
         self.montant(|p| p.plafond, |p| p.plafond)
     }
 
-    /// L'assiette de la CSG : celle du calcul, ou celle que les pieces disent.
-    pub fn base_csg(&self) -> Option<Montant> {
-        self.montant(|p| p.base_csg, |p| p.bases.get(&droit::assiette::Assiette::Csg).and_then(|b| b.montant()))
+    /// L'assiette de la CSG : celle du calcul, ou celle que les pieces disent ; une assiette en heures se refuse.
+    pub fn base_csg(&self) -> R<Option<Montant>> {
+        match self {
+            PaieDuMois::Validee(p) => Ok(Some(p.base_csg)),
+            PaieDuMois::Importee(p) => p.bases.get(&droit::assiette::Assiette::Csg).map(|b| b.en_euros(droit::assiette::Assiette::Csg)).transpose(),
+        }
     }
 
     /// Les assiettes, chacune dans ce qu'elle compte : celles du calcul, ou celles que les pieces disent.
@@ -890,7 +893,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     // l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013, `norme-dsn/texte/bloc-S21.G00.50.txt`) ;
     // cette avance-la, ce que le BOFiP en soumet (`maintien`, `Assiette::IjSubrogeesAssiettePas`).
     // Sans subrogation, aucune avance.
-    let avance = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).and_then(|b| b.montant());
+    let avance = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).map(|b| b.en_euros(droit::assiette::Assiette::IjSubrogeesAssiettePas)).transpose()?;
     let assiette = avance.into_iter().fold(p.net_imposable, |a, m| a + m);
     Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, assiette, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
 }

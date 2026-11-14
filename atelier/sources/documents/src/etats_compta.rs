@@ -1603,7 +1603,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
             // (`assujettissement`, bloc S21.G00.44). Le brut ou l'assiette de la CSG que les pieces d'une paie importee
             // taisent ne s'invente pas : la taxe ne se calcule pas sans eux.
-            let (Some(brut), Some(base_csg)) = (pa.brut().map(Montant::decimal), pa.base_csg().map(Montant::decimal)) else {
+            let (Some(brut), Some(base_csg)) = (pa.brut().map(Montant::decimal), pa.base_csg()?.map(Montant::decimal)) else {
                 return Err(refus(format!(
                     "{}, {} : les pièces importées ne disent pas son brut ou son assiette de CSG ; la taxe sur les salaires ne se calcule pas sans eux.",
                     crate::tableaux_export::qui_souple(pa.salarie()),

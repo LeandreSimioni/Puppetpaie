@@ -1322,7 +1322,7 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 vues.insert(*k);
             }
             if !paie.bases().contains_key(&Assiette::Csg) {
-                l.od(&format!("b_{}", Assiette::Csg), paie.base_csg().map(|x| x.au_centime().decimal()));
+                l.od(&format!("b_{}", Assiette::Csg), paie.base_csg()?.map(|x| x.au_centime().decimal()));
                 vues.insert(Assiette::Csg);
             }
             lignes.push(l);

@@ -299,6 +299,19 @@ impl BaseDeCotisation {
         }
     }
 
+    /// LA VALEUR DE L'ASSIETTE `assiette`, qui compte des euros : refus si elle dit des heures (une base qui n'est pas
+    /// dans la grandeur que son assiette attend ne se lit pas).
+    pub fn en_euros(self, assiette: Assiette) -> R<Montant> {
+        match self {
+            BaseDeCotisation::Montant(m) => Ok(m),
+            BaseDeCotisation::Heures(h) => Err(refus(format!(
+                "L'assiette « {} » compte des euros, et la paie en dit des heures ({}) : elle ne se lit pas. Le signaler au développeur.",
+                assiette.nom(),
+                h.decimal()
+            ))),
+        }
+    }
+
     /// Est-elle nulle ?
     pub fn est_nulle(self) -> bool {
         match self {

@@ -814,31 +814,7 @@ impl Importe {
         engagement.jours = engagement.dates_travail.len() as i64;
         engagement.jours_contrat = engagement.jours;
 
-        // Les lignes de cotisation du bulletin, sous leur cotisation ; une ligne que l'import n'a pas qualifiee garde
-        // son libelle, sans cotisation.
-        // Ce que le bulletin imprime se lit ici dans ses grandeurs : une base en euros, des taux, des montants.
-        let taux = |x: Option<Decimal>| x.map(|t| socle::grandeurs::courte(Taux::du_decimal(t)));
-        let cotisations: Vec<LigneDeCotisation> = p
-            .cotisations
-            .iter()
-            .flatten()
-            .map(|l| LigneDeCotisation {
-                id: l.cotisation.clone(),
-                famille: l.famille.clone(),
-                libelle: l.libelle.clone(),
-                base: l.base.map(|b| crate::calcul::BaseDeCotisation::Montant(Montant::du_decimal(b))),
-                taux_pat: taux(l.taux_employeur),
-                montant_pat: l.montant_employeur.map(Montant::du_decimal),
-                taux_sal: taux(l.taux_salarie),
-                montant_sal: l.montant_salarie.map(Montant::du_decimal),
-            })
-            .collect();
-
-        // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
-        let mut bases: BTreeMap<Assiette, crate::calcul::BaseDeCotisation> = BTreeMap::new();
-        if let Some(b) = brut {
-            bases.insert(Assiette::Brut, crate::calcul::BaseDeCotisation::Montant(b));
-        }
+        // Le bareme de la paie range les bases ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let fin_periode = engagement.fin_periode();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref())?)?;
@@ -849,6 +825,46 @@ impl Importe {
                 Some(crate::ecarts::RegroupementDeComparaison::Cotisation(id)) => Some(id),
                 Some(_) | None => None,
             }
+        }
+        // La base d'une ligne de cotisation du bulletin, dans ce que compte l'assiette de sa cotisation au bareme ; une
+        // cotisation que le calcul compose hors du bareme (la deduction des heures supplementaires) se relit comme la
+        // paie validee la relit (`BaseDeCotisation::relue`). Une ligne sans cotisation (un regroupement, une ligne que
+        // l'import n'a pas qualifiee) somme des cotisations du bareme, dont aucune assiette ne compte des heures (le
+        // calcul les refuse) : des euros.
+        let base_imprimee = |l: &CotisationImprimee| -> Option<crate::calcul::BaseDeCotisation> {
+            let b = l.base?;
+            Some(match de_cotisation(l) {
+                Some(id) => match bar.rubrique(id).and_then(|r| r.base) {
+                    Some(cle) => crate::calcul::BaseDeCotisation::de_l_assiette(cle, b),
+                    None => crate::calcul::BaseDeCotisation::relue(id, b),
+                },
+                None => crate::calcul::BaseDeCotisation::Montant(Montant::du_decimal(b)),
+            })
+        };
+
+        // Les lignes de cotisation du bulletin, sous leur cotisation ; une ligne que l'import n'a pas qualifiee garde
+        // son libelle, sans cotisation.
+        // Ce que le bulletin imprime se lit ici dans ses grandeurs : une base, des taux, des montants.
+        let taux = |x: Option<Decimal>| x.map(|t| socle::grandeurs::courte(Taux::du_decimal(t)));
+        let cotisations: Vec<LigneDeCotisation> = p
+            .cotisations
+            .iter()
+            .flatten()
+            .map(|l| LigneDeCotisation {
+                id: l.cotisation.clone(),
+                famille: l.famille.clone(),
+                libelle: l.libelle.clone(),
+                base: base_imprimee(l),
+                taux_pat: taux(l.taux_employeur),
+                montant_pat: l.montant_employeur.map(Montant::du_decimal),
+                taux_sal: taux(l.taux_salarie),
+                montant_sal: l.montant_salarie.map(Montant::du_decimal),
+            })
+            .collect();
+
+        let mut bases: BTreeMap<Assiette, crate::calcul::BaseDeCotisation> = BTreeMap::new();
+        if let Some(b) = brut {
+            bases.insert(Assiette::Brut, crate::calcul::BaseDeCotisation::Montant(b));
         }
         for (id, base) in p.cotisations.iter().flatten().filter_map(|l| de_cotisation(l).zip(l.base)).filter(|(_, b)| !b.is_zero()) {
             if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
@@ -864,7 +880,8 @@ impl Importe {
             }
         }
         // Le plafond applique : la base plafonnee, quand elle est sous le brut.
-        let plafond = brut.and_then(|b| [Assiette::BrutPlafonne, Assiette::T1Mensuelle].iter().find_map(|k| bases.get(k)).and_then(|t| t.montant()).filter(|t| *t < b));
+        let plafonnee = [Assiette::BrutPlafonne, Assiette::T1Mensuelle].into_iter().find_map(|k| bases.get(&k).map(|t| t.en_euros(k))).transpose()?;
+        let plafond = brut.zip(plafonnee).and_then(|(b, t)| (t < b).then_some(t));
         // Le net avant impot : celui que le bulletin imprime, sinon le net paye ou le net verse plus l'impot preleve.
         let net_a_payer = p.net_avant_impot.or_else(|| p.net_a_payer.or(p.net_verse).zip(p.pas).map(|(net, pas)| net + pas));
 
