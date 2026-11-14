@@ -19,11 +19,11 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-const BASE: &str = "norme-dsn-base.json";
+const BASE: NomDeFichier = NomDeFichier::du_moteur("norme-dsn-base.json");
 
 /// UNE DONNEE LIVREE (`logiciel/donnees/<nom>`) EN SA FORME `T`, lue une fois par contenu (`socle::forme::partagee`) et
 /// notee au registre d'un calcul suivi : absente ou fausse, rien que la compagnie puisse corriger.
-pub(crate) fn livree<T: serde::de::DeserializeOwned + Send + Sync + 'static>(nom: &str) -> R<Arc<T>> {
+pub(crate) fn livree<T: serde::de::DeserializeOwned + Send + Sync + 'static>(nom: &NomDeFichier) -> R<Arc<T>> {
     let chemin = socle::fichiers::dossier_du_code().join(nom);
     let lue = socle::forme::partagee::<T>(&chemin, "Une donnée livrée avec le logiciel ne se lit pas : le signaler au développeur.")?;
     socle::fichiers::noter_si_besoin(&chemin);
@@ -126,7 +126,7 @@ pub struct Norme {
 }
 
 fn base() -> R<Arc<Base>> {
-    livree(BASE)
+    livree(&BASE)
 }
 
 /// Les versions livrees, dans l'ordre de la donnee.
@@ -165,14 +165,14 @@ impl Norme {
         let b = base()?;
         match b.versions.iter().find(|(k, _)| *k == self.version) {
             Some((_, v)) => Ok(lire(v)),
-            None => Err(socle::echec::livree(BASE, &format!("versions.{}", self.version))),
+            None => Err(socle::echec::livree(BASE.texte(), &format!("versions.{}", self.version))),
         }
     }
 
     /// Le rang de la version `version` dans la donnee : refus si elle n'y est pas (une borne d'une liste de la norme qui
     /// nomme une version que le logiciel ne livre pas).
     pub fn rang(version: VersionDeLaNorme) -> R<usize> {
-        base()?.versions.iter().position(|(k, _)| *k == version).ok_or_else(|| socle::echec::livree(BASE, &format!("versions.{}", version)))
+        base()?.versions.iter().position(|(k, _)| *k == version).ok_or_else(|| socle::echec::livree(BASE.texte(), &format!("versions.{}", version)))
     }
 
     /// La liste de la norme que `v` remplit a-t-elle son code dans CETTE version ? Le code dit ses bornes

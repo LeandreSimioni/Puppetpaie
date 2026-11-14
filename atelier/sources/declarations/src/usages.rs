@@ -139,7 +139,7 @@ pub fn rubrique_valeur(ligne: &str) -> Option<(RubriqueDeLaNorme, &str)> {
 
 /// Le tableau des usages de cette version de la norme.
 pub fn table_de(norme: &Norme) -> R<Arc<Table>> {
-    crate::norme::livree(norme.table_usages()?.texte())
+    crate::norme::livree(&norme.table_usages()?)
 }
 
 /// La rubrique est-elle au tableau des usages de cette version, quelle que soit la nature ?

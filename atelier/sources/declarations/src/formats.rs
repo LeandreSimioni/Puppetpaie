@@ -347,7 +347,7 @@ impl Regex {
 
 /// La table des formats de cette version de la norme.
 pub fn table_de(norme: &Norme) -> R<Arc<Table>> {
-    crate::norme::livree(norme.table_formats()?.texte())
+    crate::norme::livree(&norme.table_formats()?)
 }
 
 /// Une table des formats (`formats-dsn-base.json`, `formats-dsn-p27v01-base.json`).

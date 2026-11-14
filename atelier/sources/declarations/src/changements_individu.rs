@@ -120,9 +120,8 @@ impl CaseDIdentite {
 /// L'identite d'un individu telle qu'une DSN l'a declaree : chaque case vide quand la DSN ne l'a pas portee.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Declaree {
-    /// Le mois principal declare et le nom du fichier qui l'a portee.
+    /// Le mois principal declare, dont la paie declaree l'a portee.
     pub mois: Mois,
-    pub fichier: String,
     pub nir: Option<Nir>,
     pub nom: Option<String>,
     pub prenoms: Option<String>,
@@ -215,7 +214,6 @@ impl<'a> Declarations<'a> {
                 let nir = s.nir.dite().cloned();
                 tous.push(Declaree {
                     mois,
-                    fichier: "la paie declaree".to_string(),
                     ntt: match nir {
                         None => Some(crate::ntt::numero(self.ctx.entreprise.siren.ecrite("siren")?, s)?),
                         Some(_) => None,
@@ -336,23 +334,21 @@ pub fn ecrire(f: &mut Fichier, salarie: &ChampsSalarie, brute: Option<&FicheSala
         let Some(avant) = d.valeur(case) else { continue };
         if case == CaseDIdentite::Nir && maintenant.is_none() {
             return Err(socle::refus!(
-                "{} a ete declare(e) sous le NIR {} (DSN de {}, {}), et sa fiche n'a plus de NIR : un NIR declare ne se \
+                "{} a ete declare(e) sous le NIR {} (DSN de {}, la paie declaree), et sa fiche n'a plus de NIR : un NIR declare ne se \
 retire pas, il se reporte a l'identique d'une DSN a la suivante (cahier technique, § 2.1.1, p. 18). Remettre le NIR \
 dans la fiche, ou le remplacer par le NIR corrige, date. Rien n'est ecrit.",
                 qui(salarie),
                 avant,
-                d.mois,
-                d.fichier
+                d.mois
             ));
         }
         match date_d_effet(brute, case, &avant, fin) {
             Some(j) => par_date.entry(j).or_default().push((case.r31(), avant.clone())),
             None => sans_date.push(format!(
-                "  - {} : declare(e) \u{ab} {} \u{bb} dans la DSN de {} ({}), {} dans la fiche",
+                "  - {} : declare(e) \u{ab} {} \u{bb} dans la DSN de {} (la paie declaree), {} dans la fiche",
                 case.libelle(),
                 avant,
                 d.mois,
-                d.fichier,
                 match &maintenant {
                     Some(m) => format!("\u{ab} {} \u{bb}", m),
                     None => "rien".to_string(),
@@ -388,7 +384,6 @@ mod tests {
     fn declaree() -> Declaree {
         Declaree {
             mois: Mois::nouveau(2026, 7).unwrap(),
-            fichier: "la paie declaree".into(),
             nir: Some(Nir::lire("2901075999009").unwrap()),
             nom: Some("CLAIRON".into()),
             prenoms: Some("LUCILE".into()),

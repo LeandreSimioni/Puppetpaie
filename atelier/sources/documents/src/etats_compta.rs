@@ -17,6 +17,7 @@ use serde::Serialize;
 use droit::contexte::Contexte;
 use droit::fiche::CodeAnalytique;
 use socle::echec::{erreur, Classe};
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
 use crate::ecritures_comptables::{ecritures_du_mois, Ecriture, NumeroDeCompte};
@@ -1090,12 +1091,14 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let (ecritures, comptes) = fabriquer(ec, &ecr, &env)?;
             env.refus_des_depasses(format)?;
             std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
-            let chemin = dossier.join(ec.fichier.replace("%s", &p.nom()));
+            // Le nom d'un fichier : son modele, la periode a la place de `%s` ; COMPTES.TXT n'en a pas : EBP le cherche
+            // sous ce nom-la, a cote des ecritures.
+            let nom = |modele: &str| NomDeFichier::lire(&modele.replace("%s", &p.nom()));
+            let chemin = dossier.join(nom(ec.fichier)?);
             std::fs::write(&chemin, ecritures).map_err(|e| io(&chemin, e))?;
             t.fichier = Some(chemin);
             if let Some((modele, octets, conseil)) = comptes {
-                // COMPTES.TXT n'a pas de periode dans son nom : EBP le cherche sous ce nom-la, a cote des ecritures.
-                let nom_comptes = if modele.contains("%s") { modele.replace("%s", &p.nom()) } else { modele.to_string() };
+                let nom_comptes = nom(modele)?;
                 let cible = dossier.join(&nom_comptes);
                 std::fs::write(&cible, octets).map_err(|e| io(&cible, e))?;
                 t.avertissements.push(format!("Les comptes et leurs libellés sont dans « {} », à côté : {}", nom_comptes, conseil));
