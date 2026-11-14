@@ -1073,8 +1073,14 @@ pub fn masse_salariale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         C::Libelle.titree("Mois"),
         C::Salaries.colonne(),
         C::Bulletins.colonne(),
+        C::Brut.colonne(),
+        C::CotisationsSalariales.colonne(),
+        C::CotisationsPatronales.colonne(),
+        C::NetImposable.colonne(),
+        C::Pas.colonne(),
+        C::NetAPayer.colonne(),
+        C::CoutEmployeur.colonne(),
     ];
-    t.colonnes.extend(CUMULABLES.iter().map(|(c, _)| c.colonne()));
     t.sources = vec!["cumuls des bulletins du mois".to_string()];
     finir(ctx, &mut t, Some(&p), "masse-salariale", d.format,false)?;
     // Des salaries distincts ne s'additionnent pas d'un mois a l'autre.
