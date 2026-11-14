@@ -44,8 +44,8 @@ pub struct Manque {
     pub sinon: Option<String>,
     pub ou: String,
     pub onglet: String,
-    pub champ: Option<String>,
-    pub case: Option<String>,
+    pub champ: Option<CaseDeFiche>,
+    pub case: Option<crate::champs::CheminDeFiche>,
     pub trouver: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cases: Option<String>,
@@ -65,7 +65,7 @@ pub struct Manque {
 
 impl Manque {
     /// Une ligne qui bloque `bloque`, sur la case `champ` (aucune : ce qui ne se remplit pas dans une fiche).
-    fn bloquante(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Option<&str>, trouver: String) -> Manque {
+    fn bloquante(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Option<CaseDeFiche>, trouver: String) -> Manque {
         Manque {
             cle: cle.to_string(),
             libelle,
@@ -74,8 +74,8 @@ impl Manque {
             sinon: None,
             ou: ou.0.to_string(),
             onglet: ou.1.to_string(),
-            champ: champ.map(String::from),
-            case: champ.map(String::from),
+            champ,
+            case: champ.map(crate::champs::CheminDeFiche::de),
             trouver,
             cases: None,
             salarie: None,
@@ -88,7 +88,7 @@ impl Manque {
     }
 
     /// Une ligne utile a `utile`, sans laquelle `sinon`.
-    pub fn utile(cle: String, libelle: String, utile: String, sinon: &str, ou: (&str, &str), champ: Option<&str>, trouver: String) -> Manque {
+    pub fn utile(cle: String, libelle: String, utile: String, sinon: &str, ou: (&str, &str), champ: Option<CaseDeFiche>, trouver: String) -> Manque {
         Manque { bloque: None, utile: Some(utile), sinon: Some(sinon.to_string()), ..Manque::bloquante(&cle, libelle, "", ou, champ, trouver) }
     }
 }
@@ -102,7 +102,7 @@ pub struct Pose {
     pub texte: String,
     pub ou: String,
     pub onglet: String,
-    pub champ: Option<String>,
+    pub champ: Option<CaseDeFiche>,
 }
 
 /// `pour-demarrer` : sa phrase, chaque ligne et chaque pose en phrase entiere (`phrases`), son titre et sa note, les
@@ -133,7 +133,7 @@ fn champ(cle: impl Into<CaseDeFiche>) -> R<(String, String)> {
 /// valeurs), d'apres la table qui les decrit.
 fn manque_de_la_case(cle: impl Into<CaseDeFiche>, libelle: String, bloque: &str, trouver: String) -> R<Manque> {
     let nom: CaseDeFiche = cle.into();
-    let mut l = Manque::bloquante(nom.nom(), libelle, bloque, ENTREPRISE, Some(nom.nom()), trouver);
+    let mut l = Manque::bloquante(nom.nom(), libelle, bloque, ENTREPRISE, Some(nom), trouver);
     l.cases = champ_entreprise(nom)?.champs.as_deref().map(crate::champs::cases_dites);
     Ok(l)
 }
@@ -187,7 +187,7 @@ fn une_suspension_non_remuneree(ctx: &Contexte) -> R<Option<droit::natures::AuMo
     use engagement::imprevus::Suspend;
     for imp in engagement::imprevus::tous(&ctx.racine)? {
         let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
-        if engagement::imprevus::motif_de_suspension(code)?.is_some_and(|m| !m.remunere) {
+        if !engagement::imprevus::proprietes_du_motif(code, &imp.salarie().to_string())?.remunere {
             if let Some(cle) = engagement::permanents::cle_du_salarie(ctx, imp.salarie())? {
                 return Ok(Some(cle));
             }
@@ -215,8 +215,8 @@ fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(
         sinon,
         ou,
         onglet: onglet.to_string(),
-        champ: Some(racine.to_string()),
-        case: Some(m.ecran.to_string()),
+        champ: Some(racine),
+        case: Some(m.ecran),
         trouver: m.aide,
         cases: m.cases,
         salarie: salarie.map(|(s, _)| s.clone()),
@@ -294,7 +294,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             "les contrats et les bulletins".into(),
             "ils impriment « A COMPLETER »",
             (&format!("Configuration › Spectacles, la fiche du numéro d'objet {}", objet), "spectacle"),
-            Some("titre"),
+            Some(droit::fiche::CaseSpectacle::Titre.into()),
             trouver,
         );
         l.spectacle = Some(cle.clone());
@@ -320,15 +320,14 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // calcule (L. 130-1, I) : celle qui arrive d'un autre logiciel n'a pas ses comptes rendus de nature 118.
     let an = ctx.aujourdhui.an;
     let effectif = ctx.effectif()?;
-    let manquent = effectif.a_dire(an);
-    if !manquent.is_empty() && effectif.premiere_embauche.is_none() {
+    if !effectif.a_dire(an).is_empty() && effectif.premiere_embauche.is_none() {
         let (libelle, _) = champ(CaseEntreprise::PremiereEmbauche)?;
         let m = match effectif.atteint(11, an) {
             Err(m) => m.phrase,
             Ok(_) => format!("L'effectif de {} n'est pas connu.", an - 1),
         };
         out.push(manque_de_la_case(CaseEntreprise::PremiereEmbauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?);
-    } else if !manquent.is_empty() {
+    } else if let Some(manquent) = annees_d_avant_a_dire(&effectif, an) {
         let annees = manquent.iter().map(i32::to_string).collect::<Vec<_>>().join(", ");
         out.push(Manque::bloquante(
             "effectif",
@@ -345,7 +344,6 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // (`droit::contexte::Effectif::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
     let bareme = ctx.bareme(&ctx.aujourdhui);
     let cle = droit::fiche::CasePieceEntreprise::RepresentationPersonnel;
-    let par_representation = |b: &droit::forme_bareme::Pile| b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
     // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
     // lui que la contribution demande, pas le CSE.
     match bareme {
@@ -420,6 +418,35 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     Ok(out)
 }
 
+/// Les annees d'avant PuppetPaie dont l'effectif manque (`Effectif::a_dire`) quand la premiere embauche est dite, et
+/// qu'elle ne remplace donc pas ; aucune sinon.
+fn annees_d_avant_a_dire(effectif: &droit::contexte::Effectif, an: i32) -> Option<Vec<i32>> {
+    let manquent = effectif.a_dire(an);
+    (!manquent.is_empty() && effectif.premiere_embauche.is_some()).then_some(manquent)
+}
+
+/// Le bareme fait-il dependre une contribution de la representation du personnel (`par_representation` : le FNAS de la
+/// CCNEAC, article III.3.1) ?
+fn par_representation(b: &droit::forme_bareme::Pile) -> bool {
+    b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()))
+}
+
+/// L'EFFECTIF QUE « POUR DEMARRER » DEMANDE (sa ligne `effectif`, `manques`) : celui des annees d'avant PuppetPaie qui
+/// manquent (`annees_d_avant_a_dire`), ou celui de l'annee d'avant que la contribution au FNAS lit quand il n'est pas
+/// connu.
+pub fn effectif_a_dire(ctx: &Contexte) -> R<bool> {
+    let an = ctx.aujourdhui.an;
+    let effectif = ctx.effectif()?;
+    if annees_d_avant_a_dire(&effectif, an).is_some() {
+        return Ok(true);
+    }
+    Ok(match ctx.bareme(&ctx.aujourdhui) {
+        Ok(b) => par_representation(&b) && effectif.valeur(an).is_none(),
+        // Un bareme qui ne se lit pas a sa propre ligne (`bareme`, `manques`) : ce n'est pas l'effectif qu'elle demande.
+        Err(_) => false,
+    })
+}
+
 /// LA LIGNE QUI DEMANDE LES CONGES ACQUIS AVANT PUPPETPAIE d'un salarie au mois (`salarie`, `nom` tel que l'ecran le dit),
 /// paye ici depuis `depuis` : la case `conges_reprise` de sa fiche, ou elle mene. « Pour démarrer » la dit, et la carte
 /// d'un contrat commence avant le logiciel la montre avant sa validation (`routes::mois`).
@@ -431,7 +458,7 @@ pub fn conges_a_dire(salarie: &droit::contexte::IdSalarie, nom: &str, depuis: Jo
         "le compteur de ses congés payés".into(),
         "il part de zéro",
         (&format!("la fiche de {}, « Congés payés à la reprise »", nom), "salarie"),
-        Some("conges_reprise"),
+        Some(droit::fiche::CasePieceSalarie::CongesReprise.into()),
         format!("Son contrat a commencé avant que PuppetPaie le paie : recopiez de son dernier bulletin de votre ancien logiciel les jours acquis et pris, avec le {} pour date de reprise.", le),
     );
     l.qui = Some(nom.to_string());
@@ -531,7 +558,7 @@ fn pose_atmp(an: i32, t: droit::forme_bareme::TauxAtmp) -> R<Option<Pose>> {
         texte: format!("{}{}", de, d_ou),
         ou: ENTREPRISE.0.into(),
         onglet: ENTREPRISE.1.into(),
-        champ: Some("taux_atmp".into()),
+        champ: Some(CaseEntreprise::TauxAtmp.into()),
     }))
 }
 

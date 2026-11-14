@@ -195,10 +195,10 @@ struct Urssaf {
 /// Un organisme de la Table des Urssaf.
 #[derive(Serialize)]
 struct Organisme {
-    code: String,
+    code: declarations::urssaf::CodeUrssafDpae,
     codification: String,
     nom: String,
-    siret: String,
+    siret: droit::fiche::Siret,
     emetteur: String,
 }
 
@@ -214,10 +214,10 @@ fn organismes(table: &Path) -> R<Vec<Organisme>> {
         // Les valeurs du CSV sont entourees d'apostrophes pour qu'un tableur ne mange pas les zeros de tete.
         let sans_apostrophes = |c: &str| -> R<String> { Ok(strip(t.exige(l, c, &nom)?).trim_matches('\'').to_string()) };
         liste.push(Organisme {
-            code,
+            code: declarations::urssaf::CodeUrssafDpae::lire(&code)?,
             codification: cod.to_string(),
             nom: strip(t.exige(l, "Dénomination", &nom)?).to_string(),
-            siret: sans_apostrophes("SIRET")?,
+            siret: droit::fiche::Siret::lire(&sans_apostrophes("SIRET")?)?,
             emetteur: sans_apostrophes("Numéro National Emetteur")?,
         });
     }
@@ -323,7 +323,7 @@ fn par_departement(cog: &Path, regions: &EnOrdre<String>, codes: &BTreeSet<Strin
 /// Le releve : les organismes, les anciennes regions, les departements.
 pub fn relever(table: &Path, sites: &Path, cog: &Path, jour: &Jour) -> R<Releve> {
     let organismes = organismes(table)?;
-    let codes: BTreeSet<String> = organismes.iter().map(|o| o.code.clone()).collect();
+    let codes: BTreeSet<String> = organismes.iter().map(|o| o.code.to_string()).collect();
     let regions = par_region(sites, &codes)?;
     let departements = par_departement(cog, &regions, &codes)?;
     let bilan = vec![format!("{} organismes, {} departements", organismes.len(), departements.len())];

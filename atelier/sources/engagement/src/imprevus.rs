@@ -490,7 +490,7 @@ pub fn motif_de_suspension(code: MotifDeSuspension) -> R<Option<ProprietesDeSusp
 
 /// Les proprietes du motif d'une suspension de `qui` ; un motif que `permanents-base.json` ne dit pas se refuse, en
 /// nommant la cle `motif`.
-fn proprietes_du_motif(code: MotifDeSuspension, qui: &str) -> R<ProprietesDeSuspension> {
+pub fn proprietes_du_motif(code: MotifDeSuspension, qui: &str) -> R<ProprietesDeSuspension> {
     match motif_de_suspension(code)? {
         Some(m) => Ok(m),
         None => Err(socle::echec::cle(

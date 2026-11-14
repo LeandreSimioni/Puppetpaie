@@ -178,6 +178,13 @@ impl std::fmt::Display for CheminDeFiche {
     }
 }
 
+/// Ecrit par son texte (`signataire.fonction`), ce que la page lit.
+impl Serialize for CheminDeFiche {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
 impl Serialize for Chemin {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.collect_str(self)
@@ -2177,7 +2184,7 @@ fn croises_entreprise(d: &ChampsEntreprise) -> R<Vec<Constat>> {
                 Some(cp) => crate::urssaf::base()?.du_code_postal(cp.as_ref()),
                 None => None,
             };
-            if let Some(deduit) = deduit.filter(|d| *d != choisi) {
+            if let Some(deduit) = deduit.filter(|d| d.as_str() != choisi) {
                 out.push(constat(
                     E::CodeUrssaf,
                     Gravite::Avertissement,
@@ -2290,7 +2297,8 @@ fn croises_salarie(d: &ChampsSalarie) -> R<Vec<Constat>> {
         // veut dire « ne a l'etranger » (S21.G00.30.001 et .014, `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`).
         // La DPAE et la DSN declarent les deux ; ce qui ne va pas ensemble se dit, sans rien remplacer.
         let dep = d.departement_naissance.en_texte().map(|t| t.to_uppercase());
-        let pays = d.pays_naissance.en_texte();
+        let pays = d.pays_naissance.dite();
+        let france = socle::pays::CodePays::france();
         let du_nir = nir.as_deref().and_then(departement_du_nir);
         if let (Some(lu), Some(dep)) = (&du_nir, &dep) {
             if lu != dep {
@@ -2302,13 +2310,13 @@ fn croises_salarie(d: &ChampsSalarie) -> R<Vec<Constat>> {
             }
         }
         if let Some(dep_vu) = dep.or(du_nir) {
-            if dep_vu == "99" && pays.as_deref() == Some("FR") {
+            if dep_vu == "99" && pays == Some(&france) {
                 out.push(constat(
                     S::PaysNaissance,
                     Gravite::Avertissement,
                     "le département de naissance 99 veut dire « né à l'étranger », et le pays de naissance dit la France. Si la personne est née en France, son NIR ou son département est faux ; sinon, choisir son pays de naissance.",
                 ));
-            } else if !["97", "98", "99"].contains(&dep_vu.as_str()) && pays.as_deref().is_some_and(|p| p != "FR") {
+            } else if !["97", "98", "99"].contains(&dep_vu.as_str()) && pays.is_some_and(|p| *p != france) {
                 out.push(constat(
                     S::PaysNaissance,
                     Gravite::Avertissement,

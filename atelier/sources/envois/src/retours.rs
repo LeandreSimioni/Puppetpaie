@@ -2596,12 +2596,12 @@ pub struct TauxAtmpNotifie {
     pub date_calcul: Option<socle::date::Jour>,
 }
 
-/// Le jour d'une zone d'une notification : `AAAAMMJJ` (le format du schema des bilans) ou `AAAA-MM-JJ`, et ces deux formes
-/// seules.
+/// Le jour d'une zone d'une notification : `AAAAMMJJ`, ou une date de XML Schema (`AAAA-MM-JJ`, avec ou sans fuseau :
+/// `2026-01-01Z`, le type `xs:date` du schema des bilans), le jour tel qu'ecrit ; ces formes seules.
 fn jour_notifie(t: &str) -> Option<socle::date::Jour> {
     match Zone::lue(t, format::Aaaammjj).valeur().filter(|j| j.aaaammjj() == t) {
         Some(j) => Some(j),
-        None => Zone::lue(t, format::JourIso).valeur(),
+        None => Zone::lue(t, format::DateXsd).valeur().map(|(jour, _fuseau)| jour),
     }
 }
 

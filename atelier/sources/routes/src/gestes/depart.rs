@@ -704,15 +704,20 @@ impl DocumentsFabriques {
 /// (`engagement::etats::prelevement_de_la_correction`, au taux du bulletin parti pour un trop-verse : BOFiP,
 /// BOI-IR-PAS-30-10-50, § 1 et § 90, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-extrait-regularisation.md`).
 fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: Mois) -> R<documents::bulletin::Ecart> {
-    let taux_parti = parti.pas.as_ref().map(|p| p.taux.ecrit()).filter(|t| !t.is_empty());
+    let taux_parti = match parti.pas.as_ref().map(|p| p.taux.ecrit()).filter(|t| !t.is_empty()) {
+        Some(t) => Some(droit::pas::TauxDePas::lire(&t).ok_or_else(|| {
+            erreur(Classe::Illisible, format!("Le taux de prélèvement à la source du bulletin parti, {}, n'a pas la forme de la norme (S21.G00.50.006).", socle::fichiers::repr(&t)))
+        })?),
+        None => None,
+    };
     let d_net = apres.net_a_payer - parti.net_a_payer;
-    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_deref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
+    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_ref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
     let indu = pas_c.indu();
     let prelevement = match pas_c.prelevement {
         Some(montant) => {
             let taux = match indu {
                 false => Some(pas_c.versement.taux.clone()),
-                true => taux_parti.map(droit::fiche::Montant::Texte),
+                true => taux_parti.map(|t| droit::fiche::Montant::Texte(t.to_string())),
             };
             let taux = taux.ok_or_else(|| erreur(Classe::Illisible, format!("La correction de {} prélève {} sans taux de prélèvement à la source.", mois_versement.libelle(Graphie::Accentuee), montant)))?;
             Some(documents::bulletin::PrelevementDeLEcart { indu, taux, montant })
@@ -1273,7 +1278,7 @@ fn refaire_la_dpae(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne, cible
     let base = cible.file_stem().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} n'est pas un nom de fichier", nom)))?.to_string_lossy().into_owned();
     let recap = cible.with_file_name(format!("{}_recapitulatif.txt", base));
     let zip = cible.with_file_name(format!("{}.zip", nom));
-    socle::temps::pendant(instant, || crate::depots::ecrire_la_dpae(&ctx_j, &retenues, cible, &recap, declarations::dpae::HEURE_EMBAUCHE, quand))?;
+    socle::temps::pendant(instant, || crate::depots::ecrire_la_dpae(&ctx_j, &retenues, cible, &recap, quand))?;
     garder_si_identique(l, &[cible.to_path_buf(), zip, recap])
 }
 

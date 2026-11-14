@@ -17,7 +17,7 @@ use crate::dsn::{
 use engagement::Engagement;
 use socle::echec::{Classe, R};
 use socle::fichiers::repr;
-use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre};
+use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre, RubriqueDeLaNorme, TypeDeRemuneration};
 use droit::type_declaration::TypeDeLaDeclaration;
 use droit::preavis::{TransactionEnCours, TypeDePreavis};
 use droit::type_de_prime::TypeDePrime;
@@ -576,9 +576,16 @@ ou un annule.",
 /// interdite en S21.G00.78.001) et CCH-15 (au moins trois blocs 51, de types
 /// 001, 002 et 010).
 pub fn verifier_controles_07(texte: &str) -> Result<(), Echec> {
-    let lignes: Vec<&str> = texte.lines().map(str::trim).collect();
-    let valeur = |l: &str| -> String { crate::usages::rubrique_valeur(l).1.to_string() };
-    let mut bases = lignes.iter().filter(|l| l.starts_with("S21.G00.78.001,")).map(|l| BaseAssujettie::du_code(&valeur(l)));
+    // Chaque ligne, sa rubrique (aucune si elle n'en ecrit pas) et sa valeur.
+    let lignes: Vec<(Option<RubriqueDeLaNorme>, &str)> = texte
+        .lines()
+        .map(|l| {
+            let (k, v) = crate::usages::rubrique_valeur(l.trim());
+            (RubriqueDeLaNorme::lue(k), v)
+        })
+        .collect();
+    let de = |r: RubriqueDeLaNorme| lignes.iter().filter(move |(k, _)| *k == Some(r)).map(|(_, v)| *v);
+    let mut bases = de(droit::rubrique!("S21.G00.78.001")).map(BaseAssujettie::du_code);
     if bases.any(|b| b == Some(BaseAssujettie::PrevoyanceSanteRetraite)) {
         return Err(Echec::impossible(
             "CCH-14 : la valeur « 31 » est interdite en S21.G00.78.001 dans un signalement de fin de contrat. Le \
@@ -586,8 +593,12 @@ bareme declare une base assujettie de prevoyance, qui n'a pas sa place ici -- l'
 l'accompagne (78.005) y est interdit lui aussi.",
         ));
     }
-    let types: Vec<String> = lignes.iter().filter(|l| l.starts_with("S21.G00.51.011,")).map(|l| valeur(l)).collect();
-    let manquants: Vec<&str> = ["001", "002", "010"].into_iter().filter(|t| !types.iter().any(|x| x == t)).collect();
+    let types: Vec<Option<TypeDeRemuneration>> = de(droit::rubrique!("S21.G00.51.011")).map(TypeDeRemuneration::du_code).collect();
+    let manquants: Vec<&str> = [TypeDeRemuneration::Brute, TypeDeRemuneration::AssietteChomage, TypeDeRemuneration::SalaireDeBase]
+        .into_iter()
+        .filter(|t| !types.contains(&Some(*t)))
+        .map(TypeDeRemuneration::code)
+        .collect();
     if !manquants.is_empty() {
         return Err(Echec::impossible(format!(
             "CCH-15 : un signalement de fin de contrat porte au moins trois blocs 51 par versement -- « 001 » \

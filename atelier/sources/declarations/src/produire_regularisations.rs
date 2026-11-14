@@ -40,7 +40,7 @@ pub struct Reg {
     pub net_deja_verse: Decimal,
     /// La paie corrigee : celle que la version presente de l'engagement valide a ecrite pour le mois d'origine.
     pub apres: Paie,
-    pub taux_pas_origine: Option<String>,
+    pub taux_pas_origine: Option<droit::pas::TauxDePas>,
 }
 
 /// UN MOIS SE CORRIGE DANS UNE DSN SUIVANTE quand sa DSN reelle est partie (un depart DSN du mois lui-meme, `departs`)

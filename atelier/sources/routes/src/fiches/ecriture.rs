@@ -1469,7 +1469,7 @@ fn suggestions(fiche: FicheAJuger<'_>) -> R<BTreeMap<CaseDeFiche, Suggestion>> {
             propose.insert(
                 CaseEntreprise::CodeUrssaf.into(),
                 Suggestion {
-                    valeur: code,
+                    valeur: code.to_string(),
                     pourquoi: "l'organisme du département, d'après votre code postal — à corriger si le vôtre diffère (versement en lieu unique, pôle grandes entreprises, GUSO)",
                 },
             );
