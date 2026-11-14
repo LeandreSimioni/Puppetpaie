@@ -811,8 +811,8 @@ pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuC
                 rubriques.push(rr);
             }
             prevoyance::Cotisation::Due { t1, t2 } => {
-                rr.taux_pat = Some(TauxDate(t1.taux_pat));
-                rr.taux_sal = Some(Court(t1.taux_sal));
+                rr.taux_pat = Some(TauxDate(t1.taux_pat.decimal()));
+                rr.taux_sal = Some(Court(t1.taux_sal.decimal()));
                 rr.base = Some(t1.base.clone());
                 rubriques.push(rr);
                 if let Some(t2) = t2 {
@@ -820,8 +820,8 @@ pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuC
                         famille: famille.clone(),
                         libelle: Some(if t2.obligatoire { "Prévoyance Tranche 2" } else { "Prévoyance Tranche 2 (extension conventionnelle)" }.into()),
                         base: Some(t2.base.clone()),
-                        taux_pat: Some(TauxDate(t2.taux_pat)),
-                        taux_sal: Some(Court(t2.taux_sal)),
+                        taux_pat: Some(TauxDate(t2.taux_pat.decimal())),
+                        taux_sal: Some(Court(t2.taux_sal.decimal())),
                         ..Rubrique::nommee(PREVOYANCE_T2)
                     });
                 }
