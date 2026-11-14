@@ -314,7 +314,7 @@ fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
     let mut out: Vec<String> = Vec::new();
     for groupe in attestations_archivees(ctx, Some(mois), None)?.values() {
         let Some(att) = groupe.first() else { continue };
-        if !att.cle.as_ref().is_some_and(|cle| dossier.join(envoi::nom_fichier("AER", cle, &etiquette)).exists()) {
+        if !att.cle.as_ref().is_some_and(|cle| dossier.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, cle, &etiquette)).exists()) {
             // Rattachee, la cle de sa fiche ; sinon, le nom que l'attestation porte.
             let nom = match &att.cle {
                 Some(cle) => cle.to_string(),
@@ -462,7 +462,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
         let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir())? };
         let cible = ctx.racine.join("sorties").join(periode.to_string()).join("envoi");
         std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
-        let chemin = cible.join(envoi::nom_fichier("AER", &cle, &periode.etiquette()));
+        let chemin = cible.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &periode.etiquette()));
         std::fs::write(&chemin, donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         fait.ecrits.push((periode, cle, chemin));
     }
@@ -549,12 +549,12 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, doss
         let de_lui = |p: &&engagement::calcul::Paie| p.salarie.id == cle;
         let mut pieces = Vec::new();
         if paies.iter().filter(de_lui).any(|p| !p.engagement.sans_paie()) {
-            pieces.push(dossier.join(envoi::nom_fichier("Bulletin", &cle, &etiq)));
+            pieces.push(dossier.join(envoi::nom_fichier(documents::SorteDePieceProduite::Bulletin, &cle, &etiq)));
         }
         if certificats.iter().any(|(c, _, pc)| *c == cle && pc.is_some()) {
-            pieces.push(dossier.join(envoi::nom_fichier("CertificatCS", &cle, &etiq)));
+            pieces.push(dossier.join(envoi::nom_fichier(documents::SorteDePieceProduite::CertificatCs, &cle, &etiq)));
         }
-        let aer = dossier.join(envoi::nom_fichier("AER", &cle, &etiq));
+        let aer = dossier.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &etiq));
         if aer.exists() {
             pieces.push(aer);
         }
@@ -754,7 +754,8 @@ pub(crate) fn envoyer_documents_de(ctx: &Contexte, mois: Mois, preuve: &Preuve, 
 
 /// Les pieces d'un salarie, dans l'ordre ou elles s'impriment : bulletin, certificat Conges Spectacles, attestation
 /// France Travail (celles qui sont ecrites).
-const PIECES_A_IMPRIMER: [&str; 3] = ["Bulletin", "CertificatCS", "AER"];
+const PIECES_A_IMPRIMER: [documents::SorteDePieceProduite; 3] =
+    [documents::SorteDePieceProduite::Bulletin, documents::SorteDePieceProduite::CertificatCs, documents::SorteDePieceProduite::Aer];
 
 /// La route `documents-imprimer` : les documents du mois des salaries choisis (`salaries`, tous sinon), fabriques comme
 /// pour l'envoi par courriel (`depart::fabriquer_documents`), reunis en un seul PDF a imprimer, salarie par salarie, et
@@ -791,7 +792,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     let mut salaries: Vec<journal::Servi> = Vec::new();
     for cle in &cles {
         let siennes: Vec<std::path::PathBuf> =
-            PIECES_A_IMPRIMER.iter().map(|prefixe| dossier.join(format!("{}_{}_{}.pdf", prefixe, cle, etiq))).filter(|f| f.is_file()).collect();
+            PIECES_A_IMPRIMER.iter().map(|sorte| dossier.join(envoi::nom_fichier(*sorte, cle, &etiq))).filter(|f| f.is_file()).collect();
         salaries.push(journal::Servi {
             cle: cle.clone(),
             nom: noms.get(cle).cloned(),

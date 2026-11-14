@@ -690,6 +690,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
 | modèle du bulletin | `ModeleBulletin` | `droit/src/fiche.rs` |
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
+| sorte d'une pièce produite | `documents::SorteDePieceProduite` | `documents/src/lib.rs` |
 | état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
 | format d'export | `FormatDExport` | `documents/src/plan_comptable.rs` |
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
@@ -811,6 +812,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   certificats Congés Spectacles, attestations, documents de fin, fiche récapitulative. Une liste du logiciel, dans
   l'ordre où le dossier se lit : `TOUTES` ; écrite `bulletins`, `contrats-signes`… Que portent la charge du dossier, le
   dossier rendu, les catégories proposées, le dossier parti au journal des envois (`DetailDossier.categories`).
+- **sorte d'une pièce produite** : ce que le moteur écrit dans les sorties d'un mois ou un dossier de salariés, dit au
+  début du nom de son fichier (`Bulletin_`, `CertificatCS_`, `AER_`, `Contrat`, `Avenant`, `DPAE_`, `DSN_`,
+  `Amorcage`, `Dossiers_`…) ; une seule fonction écrit ce début (`prefixe`), une seule le relit (`du_nom`), et aucun
+  ne commence un autre. Ce n'est pas une catégorie du dossier : la DPAE, la DSN, l'amorçage n'en sont pas.
 - **état d'export**, **format d'export**, **regroupement d'un état**, **logiciel du comptable**, **période d'export** :
   les listes du logiciel que les tables des exports livrent (`exports_tables.json`) : les états que la page propose
   (`livre-de-paie`…), leurs formats (les six des tableaux, `csv`… `json`, puis ceux des logiciels du comptable, `fec`…

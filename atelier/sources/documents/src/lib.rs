@@ -126,6 +126,87 @@ impl CategorieDeDocument {
     }
 }
 
+/// UNE SORTE DE PIECE PRODUITE : ce que le moteur ecrit dans les sorties d'un mois (`sorties/<mois>/`, son `envoi/`) ou
+/// dans un dossier de salaries, dit au debut du nom de son fichier. Une liste du logiciel ; une seule fonction ecrit ce
+/// debut (`prefixe`), une seule le relit (`du_nom`). Aucun prefixe n'en commence un autre : un nom n'est que d'une sorte.
+/// Ce n'est pas une categorie du dossier d'un salarie (`CategorieDeDocument`) : la DPAE, la DSN, l'amorcage n'en sont pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDePieceProduite {
+    /// Les bulletins d'un salarie (`Bulletin_<cle>_<Mois>.pdf`), et celui d'origine garde a cote de son rectificatif.
+    Bulletin,
+    /// L'archive des bulletins du mois (`Bulletins_<Mois>.pdf`).
+    Bulletins,
+    /// Les certificats Conges Spectacles d'un salarie (`CertificatCS_<cle>_<Mois>.pdf`).
+    CertificatCs,
+    /// L'archive des certificats du mois et son recapitulatif (`CertificatsCS_<Mois>.pdf`, `…_recapitulatif.txt`).
+    CertificatsCs,
+    /// L'attestation employeur France Travail d'un salarie, rangee pour l'envoi (`AER_<cle>_<Mois>.pdf`).
+    Aer,
+    /// Le contrat, ou les contrats, d'un salarie (`Contrat_…`, `Contrats_…`).
+    Contrat,
+    /// Un avenant (`Avenant<n>_…`).
+    Avenant,
+    /// La DPAE d'un mois, entiere ou a la minute, et son recapitulatif (`DPAE_<Mois>….txt`).
+    Dpae,
+    /// La DSN mensuelle (`DSN_<Mois>….dsn`).
+    Dsn,
+    /// Un signalement d'amorcage, et la note du lot (`Amorcage<motif>_…`).
+    Amorcage,
+    /// Le certificat de travail (`CertificatTravail_<cle>_<AAAAMMJJ>.pdf`).
+    CertificatDeTravail,
+    /// Le recu pour solde de tout compte (`RecuSoldeToutCompte_<cle>_<AAAAMMJJ>.pdf`).
+    RecuSoldeToutCompte,
+    /// Le dossier d'un salarie (`Dossier_<nom>_<periode>…`).
+    Dossier,
+    /// Le dossier qui reunit tous les salaries (`Dossiers_<periode>…`).
+    Dossiers,
+}
+
+impl SorteDePieceProduite {
+    /// Toutes.
+    pub const TOUTES: [SorteDePieceProduite; 14] = [
+        SorteDePieceProduite::Bulletin,
+        SorteDePieceProduite::Bulletins,
+        SorteDePieceProduite::CertificatCs,
+        SorteDePieceProduite::CertificatsCs,
+        SorteDePieceProduite::Aer,
+        SorteDePieceProduite::Contrat,
+        SorteDePieceProduite::Avenant,
+        SorteDePieceProduite::Dpae,
+        SorteDePieceProduite::Dsn,
+        SorteDePieceProduite::Amorcage,
+        SorteDePieceProduite::CertificatDeTravail,
+        SorteDePieceProduite::RecuSoldeToutCompte,
+        SorteDePieceProduite::Dossier,
+        SorteDePieceProduite::Dossiers,
+    ];
+
+    /// Le debut du nom de son fichier.
+    pub const fn prefixe(self) -> &'static str {
+        match self {
+            SorteDePieceProduite::Bulletin => "Bulletin_",
+            SorteDePieceProduite::Bulletins => "Bulletins_",
+            SorteDePieceProduite::CertificatCs => "CertificatCS_",
+            SorteDePieceProduite::CertificatsCs => "CertificatsCS_",
+            SorteDePieceProduite::Aer => "AER_",
+            SorteDePieceProduite::Contrat => "Contrat",
+            SorteDePieceProduite::Avenant => "Avenant",
+            SorteDePieceProduite::Dpae => "DPAE_",
+            SorteDePieceProduite::Dsn => "DSN_",
+            SorteDePieceProduite::Amorcage => "Amorcage",
+            SorteDePieceProduite::CertificatDeTravail => "CertificatTravail_",
+            SorteDePieceProduite::RecuSoldeToutCompte => "RecuSoldeToutCompte_",
+            SorteDePieceProduite::Dossier => "Dossier_",
+            SorteDePieceProduite::Dossiers => "Dossiers_",
+        }
+    }
+
+    /// La sorte du fichier `nom`, et ce qui suit son prefixe ; aucune si le nom ne commence par aucun.
+    pub fn du_nom(nom: &str) -> Option<(SorteDePieceProduite, &str)> {
+        SorteDePieceProduite::TOUTES.into_iter().find_map(|s| nom.strip_prefix(s.prefixe()).map(|reste| (s, reste)))
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for CategorieDeDocument {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let mot = String::deserialize(d)?;

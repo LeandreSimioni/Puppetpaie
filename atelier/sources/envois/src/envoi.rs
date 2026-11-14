@@ -45,6 +45,7 @@ use std::path::{Path, PathBuf};
 use rust_decimal::Decimal;
 
 use documents::bulletin::fmt_heures;
+use documents::SorteDePieceProduite;
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
@@ -68,11 +69,11 @@ pub struct Message<Pour> {
 /// `{annee}`, `{liste}`, `{notes}`, `{france_travail}`, `{signataire}`, `{raison_sociale}`.
 pub const CORPS: &str = "Bonjour {prenom},\n\nTu trouveras ci-joint tes documents pour {mois} {annee} :\n\n{liste}\n\n{notes}{france_travail}\nBien à toi,\n{signataire}\n{raison_sociale}\n";
 
-/// UNE PIECE QU'UN SALARIE RECOIT : son champ, le prefixe de son fichier, son libelle dans la liste du message, son nom
+/// UNE PIECE QU'UN SALARIE RECOIT : son champ, la sorte de son fichier, son libelle dans la liste du message, son nom
 /// court (l'objet, ou l'on n'a pas la place des libelles longs) et sa note.
 pub struct Piece {
     pub champ: &'static str,
-    pub prefixe: &'static str,
+    pub sorte: SorteDePieceProduite,
     pub libelle: &'static str,
     pub court: &'static str,
     pub note: &'static str,
@@ -82,14 +83,14 @@ pub struct Piece {
 pub const PIECES: [Piece; 3] = [
     Piece {
         champ: "bulletin",
-        prefixe: "Bulletin",
+        sorte: SorteDePieceProduite::Bulletin,
         libelle: "le bulletin de paie",
         court: "bulletin",
         note: "Le bulletin est à conserver sans limitation de durée.",
     },
     Piece {
         champ: "certificat_cs",
-        prefixe: "CertificatCS",
+        sorte: SorteDePieceProduite::CertificatCs,
         libelle: "le certificat d'emploi Congés Spectacles",
         court: "certificat Congés Spectacles",
         note: "Le certificat d'emploi Congés Spectacles te sert à faire valoir tes droits à congé auprès d'Audiens : \
@@ -97,7 +98,7 @@ pub const PIECES: [Piece; 3] = [
     },
     Piece {
         champ: "aer",
-        prefixe: "AER",
+        sorte: SorteDePieceProduite::Aer,
         libelle: "l'attestation employeur France Travail (AER Cinéma Spectacle)",
         court: "attestation France Travail",
         note: "L'attestation employeur est celle qui compte pour France Travail. Elle est éditée par France Travail à \
@@ -201,8 +202,9 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
 
 
 
-pub fn nom_fichier(prefixe: &str, cle: &droit::contexte::IdSalarie, etiq: &str) -> String {
-    format!("{}_{}_{}.pdf", prefixe, cle, etiq)
+/// Le nom du fichier d'une piece d'un salarie pour un mois : `<prefixe de sa sorte><cle>_<Mois>.pdf`.
+pub fn nom_fichier(sorte: SorteDePieceProduite, cle: &droit::contexte::IdSalarie, etiq: &str) -> String {
+    format!("{}{}_{}.pdf", sorte.prefixe(), cle, etiq)
 }
 
 /// « a, b et c ». Suit les pieces REELLEMENT jointes : promettre dans l'objet une AER qui n'est pas la serait un
@@ -372,7 +374,7 @@ pub fn preparer_avec(
         let mut libelles = Vec::new();
         let mut presents: Vec<&Piece> = Vec::new();
         for piece in &PIECES {
-            let chemin = dossier.join(nom_fichier(piece.prefixe, &cle, &etiq));
+            let chemin = dossier.join(nom_fichier(piece.sorte, &cle, &etiq));
             if chemin.exists() {
                 pieces.push(chemin);
                 libelles.push(format!("  - {}", piece.libelle));

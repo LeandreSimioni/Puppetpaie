@@ -372,7 +372,15 @@ fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit
 /// porte plusieurs (une page par contrat).
 fn nom_du_pdf(cle: &IdSalarie, ps: &[Paie], etiq: &str, suffixe: &str) -> R<NomDeFichier> {
     let numeros: Vec<String> = ps.iter().map(|p| numero_de_fichier(p.engagement.numero.as_ref())).collect();
-    NomDeFichier::lire(&format!("Contrat{}_{}_{}_{}{}.pdf", if ps.len() > 1 { "s" } else { "" }, cle, numeros.join("+"), etiq, suffixe))
+    NomDeFichier::lire(&format!(
+        "{}{}_{}_{}_{}{}.pdf",
+        documents::SorteDePieceProduite::Contrat.prefixe(),
+        if ps.len() > 1 { "s" } else { "" },
+        cle,
+        numeros.join("+"),
+        etiq,
+        suffixe
+    ))
 }
 
 // ------------------------------------------------------------------ contrats-imprimer
@@ -975,7 +983,14 @@ fn avenant_ecrit(
             f
         }
         None => {
-            let f = dossier.join(format!("Avenant{}_{}_{}_{}.pdf", a.numero, salarie, numero_de_fichier(a.contrat.as_ref()), a.mois.etiquette()));
+            let f = dossier.join(format!(
+                "{}{}_{}_{}_{}.pdf",
+                documents::SorteDePieceProduite::Avenant.prefixe(),
+                a.numero,
+                salarie,
+                numero_de_fichier(a.contrat.as_ref()),
+                a.mois.etiquette()
+            ));
             // Le modele du contrat qu'il modifie, dont il suit l'avenant : celui avec lequel ce contrat est parti ; signe
             // hors du logiciel, celui que son engagement suit.
             let modele = if ailleurs {

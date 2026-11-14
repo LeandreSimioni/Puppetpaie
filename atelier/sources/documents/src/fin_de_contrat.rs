@@ -71,8 +71,8 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let cle = p.salarie.id.to_string();
     let ent = ctx.entreprise_et_gabarits();
     let poste = ctx.gabarits();
-    let certificat = sortie.join(format!("CertificatTravail_{}_{}.pdf", cle, fin.aaaammjj()));
-    let recu = sortie.join(format!("RecuSoldeToutCompte_{}_{}.pdf", cle, fin.aaaammjj()));
+    let certificat = sortie.join(format!("{}{}_{}.pdf", crate::SorteDePieceProduite::CertificatDeTravail.prefixe(), cle, fin.aaaammjj()));
+    let recu = sortie.join(format!("{}{}_{}.pdf", crate::SorteDePieceProduite::RecuSoldeToutCompte.prefixe(), cle, fin.aaaammjj()));
     let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
     let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| m.reclasser(Classe::Manque))?, p.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?);
