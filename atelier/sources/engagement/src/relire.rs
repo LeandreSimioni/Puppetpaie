@@ -96,23 +96,23 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         Some(crate::fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
     let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, court(v.smic), v.heures, tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut.decimal(), v.base_csg.decimal(), v.plafond.decimal(), court(v.smic.decimal()), v.heures.decimal(), tp);
     let p = paie.ecrire();
-    p.total_pat = v.total_pat;
-    p.total_sal = v.total_sal;
-    p.net_a_payer = v.net_a_payer;
-    p.net_social = v.net_social;
-    p.net_imposable = v.net_imposable;
-    p.cout_employeur = v.cout_employeur;
-    p.salaire_de_base = v.salaire_de_base;
-    p.salaire_retabli = v.salaire_retabli;
-    p.assiette_chomage = v.assiette_chomage;
-    p.heures_travaillees = v.heures_travaillees;
-    p.heures_absence = v.heures_absence;
+    p.total_pat = v.total_pat.decimal();
+    p.total_sal = v.total_sal.decimal();
+    p.net_a_payer = v.net_a_payer.decimal();
+    p.net_social = v.net_social.decimal();
+    p.net_imposable = v.net_imposable.decimal();
+    p.cout_employeur = v.cout_employeur.decimal();
+    p.salaire_de_base = v.salaire_de_base.decimal();
+    p.salaire_retabli = v.salaire_retabli.decimal();
+    p.assiette_chomage = v.assiette_chomage.decimal();
+    p.heures_travaillees = v.heures_travaillees.decimal();
+    p.heures_absence = v.heures_absence.decimal();
     p.numero_bulletin = v.numero_bulletin.clone();
     p.lignes = v.lignes.iter().map(LigneCotisation::de_la_forme).collect();
     p.remuneration = v.remuneration.iter().map(LigneBrut::de_la_forme).collect();
-    p.bases = v.bases.iter().map(|(a, m)| (*a, m.0)).collect();
+    p.bases = v.bases.iter().map(|(a, m)| (*a, m.decimal())).collect();
     p.reduction_generale = v.reduction_generale.clone();
     p.deduction_forfaitaire = v.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::de_la_forme);
     p.avertissements = v.avertissements.clone();
@@ -122,8 +122,8 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         let mut sub = eng.clone();
         sub.periode = Some((e.debut_periode, e.fin_periode));
         sub.lignes = e.lignes.clone();
-        sub.quotite_contrat = Some(court(e.quotite));
-        sub.heures = e.heures.map(court);
+        sub.quotite_contrat = Some(court(e.quotite.decimal()));
+        sub.heures = e.heures.map(|h| court(h.decimal()));
         p.periodes.push(paie_lue(ctx, sub, x, periodes.get(n), &[])?);
     }
     Ok(paie)

@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::num::Decimal;
+use socle::grandeurs::{Heures, Montant, MontantUnitaire, Quantite, Taux};
 
+use crate::calcul::BaseDeCotisation;
 use crate::{Avis, ContratEcrit, LignePaie};
 
 /// UNE PAIE ECRITE.
@@ -76,49 +77,51 @@ impl PaieEcrite {
 #[serde(deny_unknown_fields)]
 pub struct FormeDePaie<A> {
     #[serde(with = "nombre")]
-    pub assiette_chomage: Decimal,
+    pub assiette_chomage: Montant,
     pub avertissements: Vec<A>,
     #[serde(with = "nombre")]
-    pub base_csg: Decimal,
+    pub base_csg: Montant,
+    #[serde(with = "nombre::table")]
     pub bases: BTreeMap<droit::assiette::Assiette, Montant>,
     #[serde(with = "nombre")]
-    pub brut: Decimal,
+    pub brut: Montant,
     #[serde(with = "nombre")]
-    pub cout_employeur: Decimal,
+    pub cout_employeur: Montant,
     pub deduction_forfaitaire: Option<FormeDeLaDeduction>,
     pub engagement: FormeDEngagement,
     #[serde(with = "nombre")]
-    pub heures: Decimal,
+    pub heures: Heures,
     #[serde(with = "nombre")]
-    pub heures_absence: Decimal,
+    pub heures_absence: Heures,
     #[serde(with = "nombre")]
-    pub heures_travaillees: Decimal,
+    pub heures_travaillees: Heures,
     pub lignes: Vec<FormeDeCotisation>,
     #[serde(with = "nombre")]
-    pub net_a_payer: Decimal,
+    pub net_a_payer: Montant,
     #[serde(with = "nombre")]
-    pub net_imposable: Decimal,
+    pub net_imposable: Montant,
     #[serde(with = "nombre")]
-    pub net_social: Decimal,
+    pub net_social: Montant,
     pub numero_bulletin: Option<crate::numeros::NumeroDeBulletin>,
     pub reduction_generale: Option<droit::reduction::ReductionGenerale>,
     pub remuneration: Vec<FormeDeRemuneration>,
     #[serde(with = "nombre")]
-    pub salaire_de_base: Decimal,
+    pub salaire_de_base: Montant,
     #[serde(with = "nombre")]
-    pub salaire_retabli: Decimal,
+    pub salaire_retabli: Montant,
     pub salarie: Cle<droit::contexte::IdSalarie>,
+    /// Le SMIC horaire de la periode.
     #[serde(with = "nombre")]
-    pub smic: Decimal,
+    pub smic: MontantUnitaire,
     pub spectacle: Option<Cle<droit::contexte::IdSpectacle>>,
     #[serde(with = "nombre")]
-    pub total_pat: Decimal,
+    pub total_pat: Montant,
     #[serde(with = "nombre")]
-    pub total_sal: Decimal,
+    pub total_sal: Montant,
     #[serde(with = "nombre")]
-    pub plafond: Decimal,
+    pub plafond: Montant,
     #[serde(with = "nombre")]
-    pub plafond_urssaf: Decimal,
+    pub plafond_urssaf: Montant,
     /// Un mois decoupe : ses periodes elementaires, chacune une paie. Vide pour un mois d'un seul tenant.
     pub periodes: Vec<FormeDePaie<A>>,
     /// Le plafond d'un salarie a temps partiel tel que le calcul l'a applique (`calcul::PlafondTempsPartiel`) : la forme
@@ -133,26 +136,69 @@ pub struct Cle<I> {
     pub cle: I,
 }
 
-/// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite.
+/// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite. Sa base s'ecrit en nombre, des euros ou des
+/// heures : la cotisation de la ligne dit lesquels (`BaseDeCotisation::de`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, from = "CotisationLue")]
 pub struct FormeDeCotisation {
     /// La cotisation de la ligne.
     pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
     pub famille: droit::forme_bareme::FamilleDeCotisation,
     pub libelle: String,
+    #[serde(serialize_with = "base_en_nombre")]
+    pub base: BaseDeCotisation,
+    #[serde(with = "nombre::option")]
+    pub taux_pat: Option<Taux>,
     #[serde(with = "nombre")]
-    pub base: Decimal,
-    #[serde(with = "nombre_opt")]
-    pub taux_pat: Option<Decimal>,
+    pub montant_pat: Montant,
+    #[serde(with = "nombre::option")]
+    pub taux_sal: Option<Taux>,
     #[serde(with = "nombre")]
-    pub montant_pat: Decimal,
-    #[serde(with = "nombre_opt")]
-    pub taux_sal: Option<Decimal>,
-    #[serde(with = "nombre")]
-    pub montant_sal: Decimal,
+    pub montant_sal: Montant,
     pub masquer_base_et_taux: bool,
+}
+
+fn base_en_nombre<S: serde::Serializer>(b: &BaseDeCotisation, s: S) -> Result<S::Ok, S::Error> {
+    match b {
+        BaseDeCotisation::Montant(m) => nombre::serialize(m, s),
+        BaseDeCotisation::Heures(h) => nombre::serialize(h, s),
+    }
+}
+
+/// `FormeDeCotisation` telle qu'elle se lit : sa base en nombre, que sa cotisation range.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CotisationLue {
+    id: droit::forme_bareme::IdDeCotisation,
+    famille: droit::forme_bareme::FamilleDeCotisation,
+    libelle: String,
+    base: socle::forme::Nombre,
+    #[serde(with = "nombre::option")]
+    taux_pat: Option<Taux>,
+    #[serde(with = "nombre")]
+    montant_pat: Montant,
+    #[serde(with = "nombre::option")]
+    taux_sal: Option<Taux>,
+    #[serde(with = "nombre")]
+    montant_sal: Montant,
+    masquer_base_et_taux: bool,
+}
+
+impl From<CotisationLue> for FormeDeCotisation {
+    fn from(c: CotisationLue) -> FormeDeCotisation {
+        FormeDeCotisation {
+            base: BaseDeCotisation::de(&c.id, c.base.0),
+            id: c.id,
+            famille: c.famille,
+            libelle: c.libelle,
+            taux_pat: c.taux_pat,
+            montant_pat: c.montant_pat,
+            taux_sal: c.taux_sal,
+            montant_sal: c.montant_sal,
+            masquer_base_et_taux: c.masquer_base_et_taux,
+        }
+    }
 }
 
 /// Une ligne de remuneration (`calcul::LigneBrut`) sous sa forme ecrite, avec sa designation au bulletin.
@@ -163,13 +209,13 @@ pub struct FormeDeRemuneration {
     pub libelle: String,
     pub unite: droit::catalogue::Unite,
     #[serde(with = "nombre")]
-    pub quantite: Decimal,
+    pub quantite: Quantite,
     #[serde(with = "nombre")]
-    pub taux: Decimal,
+    pub taux: MontantUnitaire,
     #[serde(with = "nombre")]
-    pub montant: Decimal,
+    pub montant: Montant,
     #[serde(with = "nombre")]
-    pub heures_annexes: Decimal,
+    pub heures_annexes: Heures,
     pub soumis: bool,
     pub imposable: bool,
     pub conges_spectacles: bool,
@@ -190,12 +236,12 @@ pub struct FormeDeLaDeduction {
     pub categorie: droit::forme_bareme::CategorieDfs,
     pub profession: droit::fiche::ProfessionDfs,
     #[serde(with = "nombre")]
-    pub taux: Decimal,
+    pub taux: Taux,
     pub rubriques: Vec<droit::forme_bareme::IdDeCotisation>,
     #[serde(with = "nombre")]
-    pub montant: Decimal,
+    pub montant: Montant,
     #[serde(with = "nombre")]
-    pub deja: Decimal,
+    pub deja: Montant,
 }
 
 /// UN ENGAGEMENT SOUS SA FORME CANONIQUE (`Engagement::canon`) : ses champs dans l'ordre ou ils s'ecrivent, les nombres
@@ -218,12 +264,12 @@ pub struct FormeDEngagement {
     #[serde(with = "entier")]
     pub jours_contrat: i64,
     pub date_paiement: Option<Jour>,
-    #[serde(with = "nombre_opt")]
-    pub taux_cachet: Option<Decimal>,
+    #[serde(with = "nombre::option")]
+    pub taux_cachet: Option<MontantUnitaire>,
     #[serde(with = "entier")]
     pub cachets: i64,
-    #[serde(with = "nombre_opt")]
-    pub heures: Option<Decimal>,
+    #[serde(with = "nombre::option")]
+    pub heures: Option<Heures>,
     pub lieu: String,
     pub lieux: BTreeMap<Jour, String>,
     pub emploi: Option<String>,
@@ -235,10 +281,10 @@ pub struct FormeDEngagement {
     pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
     pub etablissement: Option<droit::fiche::Nic>,
     pub nature: droit::natures::NatureDeContrat,
-    #[serde(with = "nombre_opt")]
-    pub quotite_contrat: Option<Decimal>,
-    #[serde(with = "nombre_opt")]
-    pub quotite_reference_saisie: Option<Decimal>,
+    #[serde(with = "nombre::option")]
+    pub quotite_contrat: Option<Heures>,
+    #[serde(with = "nombre::option")]
+    pub quotite_reference_saisie: Option<Heures>,
     pub modalite_temps_travail_saisie: Option<droit::natures::ModaliteDuTempsDeTravail>,
     pub motif_recours: Option<droit::natures::MotifDeRecours>,
     pub motif_rupture: Option<droit::natures::MotifDeRupture>,
@@ -250,53 +296,15 @@ pub struct FormeDEngagement {
     pub debut_periode: Jour,
     pub fin_periode: Jour,
     #[serde(with = "nombre")]
-    pub quotite: Decimal,
+    pub quotite: Heures,
     pub sans_paie: bool,
     pub premier_mois: bool,
     pub dernier_mois: bool,
     pub mois_du_contrat: Vec<Mois>,
 }
 
-/// Un montant en texte normalise (`socle::num::nombre`), relu en decimal.
-pub(crate) mod nombre {
-    use socle::num::Decimal;
-    pub fn serialize<S: serde::Serializer>(x: &Decimal, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&socle::num::nombre(*x))
-    }
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> {
-        socle::forme::decimal(d)
-    }
-}
-
-/// `nombre`, ou nul.
-pub(crate) mod nombre_opt {
-    use socle::num::Decimal;
-    pub fn serialize<S: serde::Serializer>(x: &Option<Decimal>, s: S) -> Result<S::Ok, S::Error> {
-        match x {
-            Some(x) => s.serialize_str(&socle::num::nombre(*x)),
-            None => s.serialize_none(),
-        }
-    }
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Decimal>, D::Error> {
-        socle::forme::decimal_opt(d)
-    }
-}
-
-/// UN MONTANT D'UNE PAIE ECRITE, en `nombre` : la valeur de chacune de ses assiettes (`FormeDePaie::bases`).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Montant(pub Decimal);
-
-impl Serialize for Montant {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        nombre::serialize(&self.0, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for Montant {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        nombre::deserialize(d).map(Montant)
-    }
-}
+/// Une grandeur en texte normalise (`socle::num::nombre`), relue d'un nombre ou d'un texte.
+use socle::grandeurs::ecrit::nombre;
 
 /// Un entier en texte.
 pub(crate) mod entier {

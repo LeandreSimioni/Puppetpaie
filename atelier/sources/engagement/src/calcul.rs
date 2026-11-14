@@ -16,7 +16,7 @@ use socle::date::Jour;
 use socle::texte::euros;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use crate::{Avis, Engagement};
-use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie, FormeDeRemuneration, Montant};
+use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie, FormeDeRemuneration};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, court, div, mul, sub, Decimal};
@@ -129,10 +129,10 @@ impl LigneBrut {
             code: self.code.clone(),
             libelle: self.libelle.clone(),
             unite: self.unite,
-            quantite: self.quantite,
-            taux: self.taux,
-            montant: self.montant,
-            heures_annexes: self.heures_annexes,
+            quantite: socle::grandeurs::Quantite::du_decimal(self.quantite),
+            taux: socle::grandeurs::MontantUnitaire::du_decimal(self.taux),
+            montant: socle::grandeurs::Montant::du_decimal(self.montant),
+            heures_annexes: socle::grandeurs::Heures::du_decimal(self.heures_annexes),
             soumis: self.soumis,
             imposable: self.imposable,
             conges_spectacles: self.conges_spectacles,
@@ -153,10 +153,10 @@ impl LigneBrut {
             code: f.code.clone(),
             libelle: f.libelle.clone(),
             unite: f.unite,
-            quantite: f.quantite,
-            taux: f.taux,
-            montant: f.montant,
-            heures_annexes: f.heures_annexes,
+            quantite: f.quantite.decimal(),
+            taux: f.taux.decimal(),
+            montant: f.montant.decimal(),
+            heures_annexes: f.heures_annexes.decimal(),
             soumis: f.soumis,
             imposable: f.imposable,
             conges_spectacles: f.conges_spectacles,
@@ -209,6 +209,34 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 
 // ----------------------------------------------------------------- sortie
 
+/// LA BASE D'UNE LIGNE DE COTISATION : des euros, ou des heures pour la deduction patronale des heures supplementaires
+/// (`heures_en_plus::DEDUCTION`), dont la base est son nombre d'heures, masquee au bulletin.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BaseDeCotisation {
+    Montant(socle::grandeurs::Montant),
+    Heures(socle::grandeurs::Heures),
+}
+
+impl BaseDeCotisation {
+    /// La base `d` de la ligne de la cotisation `id` : des heures pour la deduction des heures supplementaires, des euros
+    /// sinon.
+    pub fn de(id: &IdDeCotisation, d: Decimal) -> BaseDeCotisation {
+        if *id == crate::heures_en_plus::DEDUCTION {
+            BaseDeCotisation::Heures(socle::grandeurs::Heures::du_decimal(d))
+        } else {
+            BaseDeCotisation::Montant(socle::grandeurs::Montant::du_decimal(d))
+        }
+    }
+
+    /// Son nombre, a la porte qui l'exige.
+    pub fn decimal(self) -> Decimal {
+        match self {
+            BaseDeCotisation::Montant(m) => m.decimal(),
+            BaseDeCotisation::Heures(h) => h.decimal(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneCotisation {
     /// La cotisation de la ligne.
@@ -236,11 +264,11 @@ impl LigneCotisation {
             id: self.id.clone(),
             famille: self.famille.clone(),
             libelle: self.libelle.clone(),
-            base: self.base,
-            taux_pat: self.taux_pat.map(court),
-            montant_pat: self.montant_pat,
-            taux_sal: self.taux_sal.map(court),
-            montant_sal: self.montant_sal,
+            base: BaseDeCotisation::de(&self.id, self.base),
+            taux_pat: self.taux_pat.map(|t| socle::grandeurs::Taux::du_decimal(court(t))),
+            montant_pat: socle::grandeurs::Montant::du_decimal(self.montant_pat),
+            taux_sal: self.taux_sal.map(|t| socle::grandeurs::Taux::du_decimal(court(t))),
+            montant_sal: socle::grandeurs::Montant::du_decimal(self.montant_sal),
             masquer_base_et_taux: self.masquer_base_et_taux,
         }
     }
@@ -251,11 +279,11 @@ impl LigneCotisation {
             id: f.id.clone(),
             famille: f.famille.clone(),
             libelle: f.libelle.clone(),
-            base: f.base,
-            taux_pat: f.taux_pat.map(court),
-            montant_pat: f.montant_pat,
-            taux_sal: f.taux_sal.map(court),
-            montant_sal: f.montant_sal,
+            base: f.base.decimal(),
+            taux_pat: f.taux_pat.map(|t| court(t.decimal())),
+            montant_pat: f.montant_pat.decimal(),
+            taux_sal: f.taux_sal.map(|t| court(t.decimal())),
+            montant_sal: f.montant_sal.decimal(),
             masquer_base_et_taux: f.masquer_base_et_taux,
         }
     }
@@ -287,10 +315,10 @@ impl DeductionForfaitaire {
         FormeDeLaDeduction {
             categorie: self.categorie.clone(),
             profession: self.profession,
-            taux: self.taux,
+            taux: socle::grandeurs::Taux::du_decimal(self.taux),
             rubriques: self.rubriques.clone(),
-            montant: self.montant,
-            deja: self.deja,
+            montant: socle::grandeurs::Montant::du_decimal(self.montant),
+            deja: socle::grandeurs::Montant::du_decimal(self.deja),
         }
     }
 
@@ -299,10 +327,10 @@ impl DeductionForfaitaire {
         DeductionForfaitaire {
             categorie: f.categorie.clone(),
             profession: f.profession,
-            taux: f.taux,
+            taux: f.taux.decimal(),
             rubriques: f.rubriques.clone(),
-            montant: f.montant,
-            deja: f.deja,
+            montant: f.montant.decimal(),
+            deja: f.deja.decimal(),
         }
     }
 }
@@ -2004,34 +2032,35 @@ impl Paie {
             // Telles qu'elles s'ecrivent : sans ce que le moteur pose pour l'ecran (`ligne::Marques`), qui ne s'ecrit pas.
             engagement.lignes = self.engagement.lignes.iter().map(crate::LignePaie::sans_marques).collect();
         }
+        use socle::grandeurs::{Heures, Montant, MontantUnitaire};
         Ok(FormeDePaie {
-            assiette_chomage: self.assiette_chomage,
+            assiette_chomage: Montant::du_decimal(self.assiette_chomage),
             avertissements: self.avertissements.iter().map(avis).collect(),
-            base_csg: self.base_csg,
-            bases: self.bases.iter().map(|(a, x)| (*a, Montant(*x))).collect(),
-            brut: self.brut,
-            cout_employeur: self.cout_employeur,
+            base_csg: Montant::du_decimal(self.base_csg),
+            bases: self.bases.iter().map(|(a, x)| (*a, Montant::du_decimal(*x))).collect(),
+            brut: Montant::du_decimal(self.brut),
+            cout_employeur: Montant::du_decimal(self.cout_employeur),
             deduction_forfaitaire: self.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::forme),
             engagement,
-            heures: self.heures,
-            heures_absence: self.heures_absence,
-            heures_travaillees: self.heures_travaillees,
+            heures: Heures::du_decimal(self.heures),
+            heures_absence: Heures::du_decimal(self.heures_absence),
+            heures_travaillees: Heures::du_decimal(self.heures_travaillees),
             lignes: self.lignes.iter().map(LigneCotisation::forme).collect(),
-            net_a_payer: self.net_a_payer,
-            net_imposable: self.net_imposable,
-            net_social: self.net_social,
+            net_a_payer: Montant::du_decimal(self.net_a_payer),
+            net_imposable: Montant::du_decimal(self.net_imposable),
+            net_social: Montant::du_decimal(self.net_social),
             numero_bulletin: self.numero_bulletin.clone(),
             reduction_generale: self.reduction_generale.clone(),
             remuneration: self.remuneration.iter().map(LigneBrut::forme).collect(),
-            salaire_de_base: self.salaire_de_base,
-            salaire_retabli: self.salaire_retabli,
+            salaire_de_base: Montant::du_decimal(self.salaire_de_base),
+            salaire_retabli: Montant::du_decimal(self.salaire_retabli),
             salarie: Cle { cle: self.salarie.id.clone() },
-            smic: court(self.smic),
+            smic: MontantUnitaire::du_decimal(court(self.smic)),
             spectacle: self.spectacle.as_ref().map(|s| Cle { cle: s.cle.clone() }),
-            total_pat: self.total_pat,
-            total_sal: self.total_sal,
-            plafond: self.plafond,
-            plafond_urssaf: self.plafond_urssaf(ctx)?,
+            total_pat: Montant::du_decimal(self.total_pat),
+            total_sal: Montant::du_decimal(self.total_sal),
+            plafond: Montant::du_decimal(self.plafond),
+            plafond_urssaf: Montant::du_decimal(self.plafond_urssaf(ctx)?),
             periodes: self.periodes.iter().map(|p| p.forme(ctx, avis, ecrite)).collect::<R<_>>()?,
             plafond_temps_partiel: ecrite.then_some(self.plafond_temps_partiel),
         })

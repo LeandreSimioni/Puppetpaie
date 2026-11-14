@@ -325,6 +325,20 @@ pub mod ecrit {
                 }
             }
         }
+
+        /// Une table dont chaque valeur s'ecrit dans cette ecriture (les assiettes d'une paie ecrite).
+        pub mod table {
+            use crate::grandeurs::Grandeur;
+            use std::collections::BTreeMap;
+
+            pub fn serialize<K: serde::Serialize, G: Grandeur, S: serde::Serializer>(t: &BTreeMap<K, G>, s: S) -> Result<S::Ok, S::Error> {
+                s.collect_map(t.iter().map(|(k, g)| (k, crate::num::nombre(g.en_decimal()))))
+            }
+
+            pub fn deserialize<'de, K: serde::Deserialize<'de> + Ord, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<K, G>, D::Error> {
+                <BTreeMap<K, crate::forme::Nombre> as serde::Deserialize>::deserialize(d).map(|t| t.into_iter().map(|(k, n)| (k, <G as crate::grandeurs::Scelle>::du(n.0))).collect())
+            }
+        }
     }
 
     /// En nombre entier JSON (`2`) ; un decimal qui n'est pas un entier ne s'ecrit pas ainsi.

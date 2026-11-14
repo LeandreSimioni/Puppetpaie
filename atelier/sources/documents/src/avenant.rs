@@ -163,7 +163,7 @@ pub(crate) fn ligne_citee(l: &FormeDeRemuneration) -> String {
             texte.push(c);
         }
     }
-    format!("{} à {}", texte, socle::texte::euros(l.taux))
+    format!("{} à {}", texte, socle::texte::euros(l.taux.decimal()))
 }
 
 /// La ligne fait-elle le brut ? (`soumis` de la rubrique.)
@@ -201,7 +201,7 @@ fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> R<St
 /// n'est pas une clause du contrat.
 pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> Option<String> {
     let morceaux: Vec<String> =
-        remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant > socle::num::Decimal::ZERO).map(ligne_citee).collect();
+        remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant.decimal() > socle::num::Decimal::ZERO).map(ligne_citee).collect();
     (!morceaux.is_empty()).then(|| et(&morceaux))
 }
 
@@ -273,10 +273,10 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     poser(Marqueur::RemunerationCachets, e.f.cachets.to_string());
     // Sans taux de cachet, pas de marqueur : un modele qui le cite se refuse (`contrat::refuser_ce_que_le_modele_tairait`).
     if let Some(t) = e.f.taux_cachet {
-        poser(Marqueur::RemunerationTauxCachet, fmt_eur(t));
+        poser(Marqueur::RemunerationTauxCachet, fmt_eur(t.decimal()));
     }
-    poser(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
-    poser(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
+    poser(Marqueur::RemunerationBrut, fmt_eur(paie.brut.decimal()));
+    poser(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer.decimal()));
     poser(Marqueur::SpectacleTitre, case(&sp.titre, "titre")?);
     // LE NUMERO D'OBJET se reporte sur le contrat « a chaque fois que cela est possible » (annexes VIII et X, art. 47 § 3 :
     // atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt l. 1183-1184, et l'annexe X,

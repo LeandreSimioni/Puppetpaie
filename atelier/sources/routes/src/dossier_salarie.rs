@@ -529,7 +529,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
             continue;
         };
         lignes.extend(paie.engagement.lignes.iter().cloned());
-        let (brut_du_mois, jours_du_mois) = (Montant::du_decimal(paie.brut).au_centime().decimal(), paie.engagement.jours);
+        let (brut_du_mois, jours_du_mois) = (paie.brut.au_centime().decimal(), paie.engagement.jours);
         bruts += brut_du_mois;
         jours += jours_du_mois;
         mois_payes.push(MoisPaye { fin: m.dernier_jour(), jours: jours_du_mois, brut: brut_du_mois });

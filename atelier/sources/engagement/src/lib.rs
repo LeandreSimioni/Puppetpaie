@@ -749,7 +749,7 @@ impl Engagement {
 
     /// La forme canonique d'un engagement : une ecriture stable, pour les empreintes et les oracles.
     pub fn canon(&self) -> R<paie_ecrite::FormeDEngagement> {
-        let nombre_f = |x: Option<Decimal>| x.map(court);
+        let nombre_f = |x: Option<Decimal>| x.map(|x| Heures::du_decimal(court(x)));
         Ok(paie_ecrite::FormeDEngagement {
             salarie: self.salarie.clone(),
             spectacle: self.spectacle.clone(),
@@ -764,7 +764,7 @@ impl Engagement {
             jours: self.jours,
             jours_contrat: self.jours_contrat,
             date_paiement: self.date_paiement.clone(),
-            taux_cachet: nombre_f(self.taux_cachet),
+            taux_cachet: self.taux_cachet.map(|t| MontantUnitaire::du_decimal(court(t))),
             cachets: self.cachets,
             heures: nombre_f(self.heures),
             lieu: self.lieu.clone(),
@@ -798,7 +798,7 @@ impl Engagement {
             // Ce qui se deduit de l'engagement : sa periode, sa quotite, ses mois.
             debut_periode: self.debut_periode(),
             fin_periode: self.fin_periode(),
-            quotite: self.quotite()?,
+            quotite: Heures::du_decimal(self.quotite()?),
             sans_paie: self.sans_paie(),
             premier_mois: self.premier_mois(),
             dernier_mois: self.dernier_mois(),

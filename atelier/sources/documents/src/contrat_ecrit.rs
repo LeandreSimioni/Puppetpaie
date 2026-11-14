@@ -103,8 +103,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
             continue;
         }
         if l.salaire_de_base {
-            base = Some(format!("un salaire mensuel brut de {}", euros(l.taux)));
-        } else if l.montant > Decimal::ZERO {
+            base = Some(format!("un salaire mensuel brut de {}", euros(l.taux.decimal())));
+        } else if l.montant.decimal() > Decimal::ZERO {
             morceaux.push(ligne_citee(l));
         }
     }
@@ -118,8 +118,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     if let Some(h) = remuneration_hors_brut(&paie.remuneration) {
         m.insert(Marqueur::RemunerationHorsBrut, h);
     }
-    m.insert(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
-    m.insert(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
+    m.insert(Marqueur::RemunerationBrut, fmt_eur(paie.brut.decimal()));
+    m.insert(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer.decimal()));
     // LA PERIODICITE DU PAIEMENT (R1221-34, 11°) : une fois par mois (L3242-1). INFERENCE : par virement, comme le contrat
     // d'engagement le dit.
     m.insert(Marqueur::ContratPaiement, "chaque mois, par virement".into());
@@ -133,12 +133,13 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     let q = match eng.quotite_contrat {
         Some(q) => q,
         None => eng.quotite,
-    };
+    }
+    .decimal();
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite
     // saisie, sinon une quotite sous la reference de l'entreprise, plafonnee a la duree legale ; sans reference, le temps
     // plein.
     let legale = nat.quotite_reference_defaut();
-    let reference = match (eng.quotite_reference_saisie, legale) {
+    let reference = match (eng.quotite_reference_saisie.map(socle::grandeurs::Heures::decimal), legale) {
         (Some(r), Some(l)) => Some(r.min(l)),
         (r, l) => r.or(l),
     };
