@@ -226,6 +226,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | IDCC | `Idcc` | `droit/src/fiche.rs` |
 | identifiant d'organisme | `IdentifiantDOrganisme` | `droit/src/organismes.rs` |
 | référence d'un contrat chez l'organisme | `ReferenceDeContrat` | `droit/src/organismes.rs` |
+| contrats saisis chez les organismes | `Saisies` ; un contrat saisi : `Saisie` | `droit/src/organismes.rs` |
 | référence d'une adhésion | `ReferenceDAdhesion` | `droit/src/organismes.rs` |
 | code caisse | `CodeCaisse` | `droit/src/organismes.rs` |
 | salarié | `IdSalarie` | `droit/src/contexte.rs` |
@@ -712,6 +713,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
 | sorte d'une pièce produite | `documents::SorteDePieceProduite` | `documents/src/lib.rs` |
 | pièce d'un mois | `documents::PieceDuMois` | `documents/src/lib.rs` |
+| fichier que le journal nomme | `documents::FichierDuJournal` | `documents/src/lib.rs` |
 | rangement d'une pièce produite | `documents::Rangement` | `documents/src/lib.rs` |
 | dossier hors d'un mois | `documents::DossierHorsDuMois` | `documents/src/lib.rs` |
 | dossier d'un mois | `documents::DossierDuMois` | `documents/src/lib.rs` |
@@ -850,13 +852,16 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   seule le relit (`du_nom`), une seule dit où elle se range (`rangement`), et aucun début n'en commence un autre. Ce
   n'est pas une catégorie du dossier : la DPAE, la DSN, l'amorçage n'en sont pas. Un fichier de travail, une pièce reçue
   d'un organisme (l'AER de France Travail, dans `retours/`, dont le nom commence aussi par `AER_`) et un fichier de
-  l'ancien logiciel (`AEM_`) n'en sont pas. Le fichier qu'une ligne du journal dit déposé se trouve par sa sorte
-  (`documents::fichier_depose`) : un nom d'aucune pièce d'un mois se refuse.
+  l'ancien logiciel (`AEM_`) n'en sont pas.
 - **pièce d'un mois** : une sorte qui se range dans un dossier d'un mois, ou une pièce gardée (le bulletin d'origine
   gardé à côté de son rectificatif, `BulletinGarde` : un `Bulletin` par son nom, qui ne part à personne et se range
   dans les sorties du mois) ; son dossier se dit sans condition (`PieceDuMois::dossier`), et une sorte hors d'un mois
   n'en est pas une (`SorteDePieceProduite::du_mois`). Que prennent l'écrivain et les lecteurs d'une pièce d'un mois
   (`envois::envoi::chemin_de_la_piece`, les pièces d'un envoi et d'une impression).
+- **fichier que le journal nomme** : le fichier d'un dépôt, une pièce d'un envoi, dit par son nom : une pièce d'un mois,
+  par sa sorte, ou un fichier que la compagnie a posé dans les sorties du mois et que le moteur y a pris (le dépôt
+  propose tout `.dsn` de ce dossier ; un signalement se désigne par son fichier) ; son dossier, sans condition
+  (`FichierDuJournal::dossier`). Que lisent le fichier déposé (`documents::fichier_depose`) et l'Historique.
 - **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois (`DossierDuMois`), ou hors d'un
   mois (`DossierHorsDuMois`) ; dit par sa sorte (`SorteDePieceProduite::rangement`).
 - **dossier hors d'un mois** : les exercices (`sorties/exercices/`), les dossiers de salariés (`exports/dossiers/`),
@@ -1166,10 +1171,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   une saisie se range en sigle, se reconnaît (`enregistrer-fiche` et `verifier-fiche`, une seule fonction,
   `SorteDeFiche::reconnaitre`) dans le socle que le barème de l'année de l'écran reprend (`Contexte::socle_repris` :
   celui que la surcouche nomme, sinon le socle livré de l'année, lu sans le taux AT/MP), par `Pile::organisation`, la
-  seule porte, et s'écrit par sa clé ; une organisation qu'il ne couvre pas est la faute de sa case. Une fiche écrite
-  avant sous un alias se reconnaît de même à chaque lecture : le socle se lit avec la clé reconnue
-  (`forme_bareme::lire_le_socle`), les minima la demandent à `Contexte::organisation_reconnue`, et un signataire se
-  compare à elle (`minima::signataire`).
+  seule porte, et s'écrit par sa clé ; une organisation qu'il ne couvre pas, ou une année sans barème, est la faute de
+  sa case. Une fiche écrite avant sous un alias se reconnaît de même à chaque lecture : le socle se lit avec la clé
+  reconnue (`forme_bareme::lire_le_socle`), les minima la demandent à `Contexte::organisation_reconnue`, et un
+  signataire se compare à elle (`minima::signataire`). Les cases du métier qu'une fiche montre
+  (`engagement::minima::cases_du_metier`) ne demandent aucun barème : elles lisent la clé que la fiche écrit.
 - **catégorie de la DFS** : la catégorie d'une profession de la déduction forfaitaire spécifique (`20`, `25` : art. 5
   de l'annexe IV du CGI), la clé des taux de l'année ; que portent une profession du barème, la DFS d'un contrat et sa
   forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.

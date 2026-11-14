@@ -1165,8 +1165,9 @@ pub fn cases_du_metier(ctx: &Contexte, code: &droit::fiche::CodeEmploiFt, jour: 
     let Some(m) = emplois::metier(code)? else { return Ok(lues) };
     let tab = table()?;
     let t: &Table = &tab;
-    let organisation = ctx.organisation_reconnue(jour.an, ent.organisation_patronale.dite())?;
-    let Some((grille, _, _)) = grille_au(t, idcc, organisation.as_ref(), Some(*jour)) else { return Ok(lues) };
+    // L'organisation telle que la fiche l'ecrit (sa cle, `reconnaitre` a l'enregistrement) : montrer les cases d'un metier
+    // ne demande aucun bareme ; seul le calcul des minima la reconnait dans celui de l'annee (`avec_cx`).
+    let Some((grille, _, _)) = grille_au(t, idcc, ent.organisation_patronale.dite(), Some(*jour)) else { return Ok(lues) };
     let statut = m.statut();
     if *idcc == IDCC_CCNEAC && statut == Statut::Technicien {
         let groupe = m.au_catalogue().and_then(|f| f.classification_1285.as_ref()).and_then(|c| c.groupe).map(|g| CleDeGrille::lire(&g.to_string())).transpose()?;

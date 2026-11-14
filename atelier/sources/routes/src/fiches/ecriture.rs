@@ -234,14 +234,20 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     /// (`Contexte::socle_repris` : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee), lu sans
     /// le taux AT/MP : une compagnie dit son organisation avant son taux, et une annee sans socle livre lit celui que sa
     /// surcouche reprend. Une case qui ne change pas ne se relit pas ici (`avant` : la fiche que l'ecran a montree ; a la
-    /// verification, vide : toute case se relit).
+    /// verification, vide : toute case se relit). Une annee sans bareme : son refus est la faute de la case, avec les
+    /// autres ; une panne remonte.
     fn reconnaitre(ctx: &Contexte, avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
         let Some(nom) = apres.organisation_patronale.clone() else { return Ok(Vec::new()) };
         if apres.organisation_patronale == avant.organisation_patronale {
             return Ok(Vec::new());
         }
         let an = ctx.lue_au.an;
-        let pile = ctx.socle_repris(an)?;
+        let faute = |phrase: String| vec![FauteDeCase { case: CaseEntreprise::OrganisationPatronale.into(), chemin: None, phrase }];
+        let pile = match ctx.socle_repris(an) {
+            Ok(p) => p,
+            Err(e) if e.classe.is_none() => return Ok(faute(e.phrase)),
+            Err(e) => return Err(e),
+        };
         if let Some((cle, _)) = pile.organisation(&nom) {
             apres.organisation_patronale = Some(cle.clone());
             return Ok(Vec::new());
@@ -253,7 +259,7 @@ impl SorteDeFiche for FicheEntrepriseDatee {
             an,
             if connues.is_empty() { "aucune".to_string() } else { connues.join(", ") }
         );
-        Ok(vec![FauteDeCase { case: CaseEntreprise::OrganisationPatronale.into(), chemin: None, phrase }])
+        Ok(faute(phrase))
     }
     /// La ligne du taux AT/MP qui ne se lit pas comme la DSN le declare (`droit::bareme::taux_atmp_refuse`) ; une ligne
     /// ne se retire pas (une autre la remplace, a sa date).

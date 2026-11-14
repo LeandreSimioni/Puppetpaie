@@ -83,7 +83,7 @@ fn permanent() -> A {
     a.id.code = "8";
     a.id.naissance = "14/07/1985";
     a.id.conges_spectacles = None;
-    a.cotisations.retain(|c| c.2 != "conges_spectacles");
+    a.cotisations.retain(|c| c.2 != "CONGÉS SPECTACLES");
     a.total = ["178,03", "112,18"];
     a.cumuls[3] = ["818,03", "2 622,50"];
     a.total_verse = "818,03";

@@ -92,7 +92,7 @@ struct Periode {
 fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois::Mois) -> R<Option<DsnLue>> {
     let Some(l) = crate::etats::etat_dsn_du_mois(lignes, m, None, ctx.entreprise.nic_principal()) else { return Ok(None) };
     let Some(fichier) = l.fichier else { return Ok(None) };
-    let chemin = documents::fichier_depose(&ctx.racine.join("sorties").join(m.to_string()), fichier.texte())?;
+    let chemin = documents::fichier_depose(&ctx.racine.join("sorties").join(m.to_string()), fichier.texte());
     declarations::dsn_lue::lire_une_dsn(&chemin)
 }
 

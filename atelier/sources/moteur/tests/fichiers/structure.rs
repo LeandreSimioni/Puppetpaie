@@ -226,7 +226,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
     permanent.id.nom = "TARTEMPION";
     permanent.id.nir = "185079999912388";
     permanent.id.conges_spectacles = None;
-    permanent.cotisations.retain(|c| c.2 != "conges_spectacles");
+    permanent.cotisations.retain(|c| c.2 != "CONGÉS SPECTACLES");
     std::fs::create_dir_all(c.join("import")).unwrap();
     pdf(vec![page_a(&artiste)], &c.join("import/artiste.pdf"));
     pdf(vec![page_a(&permanent)], &c.join("import/permanent.pdf"));

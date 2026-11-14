@@ -1115,7 +1115,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     let signale = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.reel() == reel);
     if nom.ends_with(".dsn") {
         if let Some(rang) = signale(true).or_else(|| signale(false)) {
-            let f = documents::fichier_depose(&sortie, nom)?;
+            let f = documents::fichier_depose(&sortie, nom);
             refaire_le_signalement(ctx, mois, &lignes[rang], &f)?;
             return Ok(f);
         }

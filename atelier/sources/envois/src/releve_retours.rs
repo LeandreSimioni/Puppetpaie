@@ -600,7 +600,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
         return Ok(None);
     }
     let (Some(mois), Some(fichier)) = (l.mois(), l.fichier()) else { return Ok(None) };
-    let chemin = documents::fichier_depose(&ctx.racine.join("sorties").join(mois.to_string()), fichier.texte())?;
+    let chemin = documents::fichier_depose(&ctx.racine.join("sorties").join(mois.to_string()), fichier.texte());
     // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,

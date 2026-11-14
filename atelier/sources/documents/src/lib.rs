@@ -277,17 +277,37 @@ impl SorteDePieceProduite {
     }
 }
 
-/// LE FICHIER D'UNE DECLARATION DEPOSEE (le nom qu'une ligne du journal donne : une DSN, une DPAE, un signalement), sous
-/// les sorties de son mois `sorties` (`sorties/<mois>/`), dans le dossier ou sa sorte se range (`du_nom`, `du_mois`). Un
-/// nom d'aucune sorte d'un mois n'est pas un fichier que le moteur ecrit : il se refuse, comme une faute du logiciel.
-pub fn fichier_depose(sorties: &std::path::Path, nom: &str) -> socle::echec::R<std::path::PathBuf> {
-    match SorteDePieceProduite::du_nom(nom).and_then(|(s, _)| s.du_mois()) {
-        Some(p) => Ok(p.dossier().sous(sorties).join(nom)),
-        None => Err(socle::echec::erreur(
-            socle::echec::Classe::DefautDuLogiciel,
-            format!("« {} » : le journal nomme un fichier déposé qui n'est d'aucune pièce d'un mois : le signaler au développeur.", nom),
-        )),
+/// CE QU'EST UN FICHIER QU'UNE LIGNE DU JOURNAL NOMME (le fichier d'un depot, une piece d'un envoi), dit par son nom :
+/// une piece d'un mois que le moteur ecrit, par sa sorte ; sinon un fichier que la compagnie a pose dans les sorties du
+/// mois, ou le moteur l'a pris (le depot propose tout `.dsn` de ce dossier, un signalement se designe par son fichier).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FichierDuJournal {
+    Piece(PieceDuMois),
+    PoseParLaCompagnie,
+}
+
+impl FichierDuJournal {
+    /// Celui du nom `nom`.
+    pub fn du_nom(nom: &str) -> FichierDuJournal {
+        match SorteDePieceProduite::du_nom(nom).and_then(|(s, _)| s.du_mois()) {
+            Some(p) => FichierDuJournal::Piece(p),
+            None => FichierDuJournal::PoseParLaCompagnie,
+        }
     }
+
+    /// Le dossier du mois ou il se trouve : celui de sa piece ; pour un fichier pose, les sorties du mois.
+    pub fn dossier(self) -> DossierDuMois {
+        match self {
+            FichierDuJournal::Piece(p) => p.dossier(),
+            FichierDuJournal::PoseParLaCompagnie => DossierDuMois::Sorties,
+        }
+    }
+}
+
+/// LE FICHIER QU'UNE LIGNE DU JOURNAL DIT DEPOSE (une DSN, une DPAE, un signalement), sous les sorties de son mois
+/// `sorties` (`sorties/<mois>/`), dans le dossier de ce qu'il est (`FichierDuJournal`).
+pub fn fichier_depose(sorties: &std::path::Path, nom: &str) -> std::path::PathBuf {
+    FichierDuJournal::du_nom(nom).dossier().sous(sorties).join(nom)
 }
 
 /// OU SE RANGE UNE PIECE PRODUITE (`SorteDePieceProduite::rangement`) : dans un dossier d'un mois, ou hors d'un mois.

@@ -186,7 +186,7 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, cons
             connus.push(n);
         }
         if let Some(nom) = l.fichier() {
-            let p = documents::fichier_depose(&ctx.racine.join("sorties").join(mois), nom.texte())?;
+            let p = documents::fichier_depose(&ctx.racine.join("sorties").join(mois), nom.texte());
             if p.exists() {
                 let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::du_disque(&e)))?;
                 if let Some(n) = rang_dans_le_fichier(&octets)? {

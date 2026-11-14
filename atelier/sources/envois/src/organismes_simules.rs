@@ -319,7 +319,7 @@ fn mois_de(l: &Ligne) -> R<Mois> {
 /// sous le mois de son fait. `None` : le fichier n'est plus la.
 fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
     let Some(fichier) = l.fichier() else { return Ok(None) };
-    let chemin = documents::fichier_depose(&racine.join("sorties").join(mois_de(l)?.to_string()), fichier.texte())?;
+    let chemin = documents::fichier_depose(&racine.join("sorties").join(mois_de(l)?.to_string()), fichier.texte());
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),

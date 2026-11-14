@@ -432,12 +432,8 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
         if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
-        // Le dossier du mois de sa sorte. Un nom d'aucune sorte d'un mois ne se range nulle part : l'Historique ne le donne
-        // pas (le moteur n'ecrit aucun tel nom dans le journal).
-        let Some(dossier) = SorteDePieceProduite::du_nom(nom.texte()).and_then(|(s, _)| s.du_mois()).map(documents::PieceDuMois::dossier) else {
-            continue;
-        };
-        let chemin = dossier.sous_le_chemin(&sorties).joint(&nom);
+        // Le dossier du mois de ce qu'il est : sa piece, ou les sorties du mois pour un fichier que la compagnie y a pose.
+        let chemin = documents::FichierDuJournal::du_nom(nom.texte()).dossier().sous_le_chemin(&sorties).joint(&nom);
         out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.

@@ -780,7 +780,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     });
     let sorties = ctx.racine.join("sorties").join(mois.to_string());
-    ligne.and_then(Ligne::fichier).map(|f| Ok(documents::fichier_depose(&sorties, f.texte())?.to_string_lossy().into_owned())).transpose()
+    Ok(ligne.and_then(Ligne::fichier).map(|f| documents::fichier_depose(&sorties, f.texte()).to_string_lossy().into_owned()))
 }
 
 /// `deposer` : `motdepasse` est celui DU LOGICIEL, et il ne sert qu'a prouver la presence. Il arrive par le
