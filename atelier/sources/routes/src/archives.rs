@@ -981,7 +981,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
         partis,
         expediteur: compte,
         periode: r.periode,
-        total: r.total,
+        total: socle::grandeurs::Montant::du_decimal(r.total),
         annees,
         eml: emls,
         dossier: garde,
@@ -996,8 +996,8 @@ struct CascEnvoyee {
     partis: Vec<droit::fiche::Courriel>,
     expediteur: droit::fiche::Courriel,
     periode: String,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    total: socle::num::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    total: socle::grandeurs::Montant,
     annees: Vec<RegularisationNotee>,
     eml: Vec<NomDeFichier>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]

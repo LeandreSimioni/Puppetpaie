@@ -7,7 +7,8 @@ use crate::fiche::Lue;
 use socle::date::Jour;
 use socle::feries;
 use socle::echec::R;
-use socle::num::{div, eur2, mul, Decimal};
+use socle::grandeurs::{Heures, Montant};
+use socle::num::{div, mul, Decimal};
 
 /// Le nombre de jours ouvrables entre deux dates, bornes incluses : du lundi
 /// au samedi, moins les feries que l'entreprise chome (`chomes` : ce que sa fiche en dit, `ChampsEntreprise::feries_chomes`).
@@ -156,7 +157,7 @@ fn jours_de_semaine(debut: &Jour, fin: &Jour, dits: Option<&str>, jusqu_a: u32) 
 /// pour un temps plein sur cinq jours. Fiche DSN 2640, « Nb d'heures travaillees/jours oeuvres ». INFERENCE NOMMEE :
 /// la duree se repartit egalement entre les jours travailles (la fiche ne dit pas les heures de chaque jour).
 pub fn heures_par_jour(quotite: Decimal, jours: &JoursTravailles) -> Decimal {
-    div(eur2(div(mul(quotite, Decimal::from(12)), Decimal::from(52))), Decimal::from(jours.par_semaine()))
+    div(Heures::du_decimal(div(mul(quotite, Decimal::from(12)), Decimal::from(52))).au_centieme().decimal(), Decimal::from(jours.par_semaine()))
 }
 
 /// L'indemnite de conges : le dixieme, le maintien, et celui qui gagne.
@@ -170,7 +171,7 @@ pub struct IndemniteDesJours {
 
 /// L'indemnite retenue (L3141-24) : la plus forte du dixieme et du maintien de salaire ; a egalite, le maintien.
 pub fn la_plus_forte(dixieme: Decimal, maintien: Decimal) -> IndemniteDesJours {
-    let maintien = eur2(maintien);
+    let maintien = Montant::du_decimal(maintien).au_centime().decimal();
     IndemniteDesJours {
         dixieme,
         maintien,

@@ -62,7 +62,8 @@ use droit::fiche::{MotifNonAssujettissement, Nic};
 use documents::taxe_sur_les_salaires::{assiette_taxe_sur_les_salaires, fractions_majorees, taxe_sur_les_salaires_de_la_fiche};
 use socle::echec::{refus, R};
 use socle::mois::Mois;
-use socle::num::{add, div, eur, mul, Decimal};
+use socle::grandeurs::{Montant, Taux};
+use socle::num::{add, Decimal};
 
 /// Un bloc S21.G00.44 : le code taxe (44.001) et, s'il y en a un, le montant (44.002). Le millesime (44.003) est
 /// l'annee de la DSN de decembre.
@@ -175,7 +176,7 @@ fn assiettes_taxe_sur_les_salaires(annee: &[MoisDeLAnnee], bar: &droit::forme_ba
         premier = add(premier, f1);
         second = add(second, f2);
     }
-    let part = |x: Decimal| eur(div(mul(x, pct), Decimal::ONE_HUNDRED));
+    let part = |x: Decimal| Montant::du_decimal(x).fois_taux(Taux::du_decimal(pct)).au_centime().decimal();
     Ok((part(normal), part(premier), part(second)))
 }
 
@@ -200,7 +201,7 @@ fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &dr
             MoisDeLAnnee::Contrats(_) => return Err(refus("assiette de la PEEC : un mois sans montants")),
         }
     }
-    Ok(eur(total))
+    Ok(Montant::du_decimal(total).au_centime().decimal())
 }
 
 // ------------------------------------------------------------ le bloc

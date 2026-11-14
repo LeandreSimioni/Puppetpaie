@@ -18,7 +18,8 @@ use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
-use socle::num::{add, court, div, eur2, mul, zero2, Decimal};
+use socle::grandeurs::Montant;
+use socle::num::{add, court, div, mul, Decimal};
 use droit::permanents::{self, anciennete_mois, arrondir_jours, jours_acquis, IndemniteDePreavis};
 
 /// Les lignes et les avertissements du solde.
@@ -62,7 +63,7 @@ fn plus_petit(a: Decimal, b: Decimal) -> Decimal {
 fn du_ou_rien(v: Option<Decimal>) -> Decimal {
     match v {
         Some(x) => x,
-        None => zero2(),
+        None => Montant::ZERO.decimal(),
     }
 }
 
@@ -339,7 +340,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             // aurait percu s'il avait travaille ces jours, le salaire du mois entier reparti sur les jours ouvrables du
             // mois entier, comme les conges pris (`conges::lignes_du_mois`), quel que soit le jour ou le contrat finit.
             let ouvrables = ouvrables_du_mois(mois, chomes)?;
-            let maintien = eur2(mul(div(salaire, ouvrables), solde));
+            let maintien = Montant::du_decimal(mul(div(salaire, ouvrables), solde)).au_centime().decimal();
             // Les jours pris ce mois-ci ont deja consomme le report d'abord :
             // le reste du report est ce qui se paie au dixieme d'avant.
             let entame = plus_petit(pris_ce_mois, cpt.report_restant());
@@ -494,7 +495,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 };
                 // L1234-5 : « indemnité de congés payés comprise » ; un mois de travail acquiert ses jours (L3141-3).
                 let jours = mul(permanents::regles()?.conges_payes.acquisition.jours_par_mois, m);
-                let conges = conges_non_effectues(ctx, e, mois, &fin, jours, salaire, eur2(mul(m, salaire)), &mut stc)?;
+                let conges = conges_non_effectues(ctx, e, mois, &fin, jours, salaire, Montant::du_decimal(mul(m, salaire)).au_centime().decimal(), &mut stc)?;
                 stc.avertissements.push(avertir(format!(
                     "{} : {} mois de préavis non effectué, payés {} \
                      (L1234-5){}. L'article le veut « indemnité de congés payés comprise » : {}{}",
@@ -649,7 +650,7 @@ fn delai_de_prevenance(
         j = f.plus_jours(1)?;
     }
     stc.lignes.push(ligne(&regle.rubrique, fraction, salaire));
-    let montant = eur2(mul(fraction, salaire));
+    let montant = Montant::du_decimal(mul(fraction, salaire)).au_centime().decimal();
     let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&fin.plus_jours(1)?, &delai.expiration)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
     let avantages = if avantages.is_empty() {
@@ -704,7 +705,7 @@ fn conges_non_effectues(
         return Ok("ce temps n'acquiert aucun jour de congé.".to_string());
     }
     let ouvrables = ouvrables_du_mois(mois, ctx.entreprise.feries_chomes())?;
-    let ind =permanents::indemnite_conges(jours, montant, jours, eur2(mul(div(salaire, ouvrables), jours)))?;
+    let ind =permanents::indemnite_conges(jours, montant, jours, Montant::du_decimal(mul(div(salaire, ouvrables), jours)).au_centime().decimal())?;
     let rubrique = permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique.clone();
     let (rang, total_jours, total) = match stc.conges_payes {
         Some((rang, j, m)) => (rang, add(j, jours), add(m, ind.retenu)),
@@ -870,7 +871,7 @@ fn indemnite_de_rupture(
     let pourquoi_legal = || legale.pourquoi.as_deref().ok_or_else(|| socle::refus!("{} : l'indemnité légale de {} n'est pas due et ne dit pas pourquoi", qui, quoi));
 
     let du_legal = legale.du;
-    let m_legal = if du_legal { legale.montant } else { zero2() };
+    let m_legal = if du_legal { legale.montant } else { Montant::ZERO.decimal() };
     let bas = plus_grand(m_legal, du_ou_rien(conv_bas.filter(|b| !b.is_zero())));
     let haut = plus_grand(m_legal, du_ou_rien(conv_haut.filter(|b| !b.is_zero())));
     let du = du_legal || bas > Decimal::ZERO;
@@ -1123,11 +1124,11 @@ fn indemnite_de_licenciement(
     let mut lue = None;
     let legale = permanents::indemnite_licenciement(anciennete, &mut || Ok(salaire_de_reference(&mut lue, ctx, e, mois)?.retenu), motif)?;
     let conv = indemnite_conventionnelle(ctx, e, anciennete, &mut || Ok(salaire_de_reference(&mut lue, ctx, e, mois)?.retenu), motif)?;
-    let m_legal = if legale.du { legale.montant } else { zero2() };
+    let m_legal = if legale.du { legale.montant } else { Montant::ZERO.decimal() };
     let conv_du = conv.du;
     let (conv_bas, conv_haut) = (conv.bas.map(de_p).transpose()?, conv.haut.map(de_p).transpose()?);
-    let bas = plus_grand(m_legal, if conv_du { du_ou_rien(conv_bas) } else { zero2() });
-    let haut = plus_grand(m_legal, if conv_du { du_ou_rien(conv_haut) } else { zero2() });
+    let bas = plus_grand(m_legal, if conv_du { du_ou_rien(conv_bas) } else { Montant::ZERO.decimal() });
+    let haut = plus_grand(m_legal, if conv_du { du_ou_rien(conv_haut) } else { Montant::ZERO.decimal() });
 
     let montant;
     if let Some(saisi) = saisi {
@@ -1333,14 +1334,14 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, V
 /// meme somme que `calcul.calculer`.
 fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
     let requis = |x: Option<Decimal>, cle: &str| -> R<Decimal> { x.ok_or_else(|| socle::fichiers::absent(cle)) };
-    let mut total = zero2();
+    let mut total = Montant::ZERO.decimal();
     for l in lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         if !r.soumis {
             continue;
         }
         let signe = r.sens.signe();
-        total = add(total, mul(signe, eur2(mul(requis(l.taux(), "taux")?, requis(l.quantite(), "quantite")?))));
+        total = add(total, mul(signe, Montant::du_decimal(mul(requis(l.taux(), "taux")?, requis(l.quantite(), "quantite")?)).au_centime().decimal()));
     }
     Ok(total)
 }

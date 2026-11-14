@@ -2319,8 +2319,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
     };
     // Ce que l'AEM dit, et seulement cela : une colonne qu'elle ne porte pas reste vide (les cachets sont leur somme).
     let (heures, cachets, jours) = (a.heures, Some(a.cachets()), a.jours);
-    let mut brut = brut.round_dp(2);
-    brut.rescale(2);
+    let brut = socle::grandeurs::Montant::du_decimal(brut).au_centime().decimal();
     let pluriel = |n: i64, mot: &str| format!("{} {}{}", n, mot, if n > 1 { "s" } else { "" });
     let quoi: Vec<String> = [(heures, "heure"), (cachets, "cachet"), (jours, "jour")].iter().filter_map(|x| x.0.filter(|n| *n > 0).map(|n| pluriel(n, x.1))).collect();
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());

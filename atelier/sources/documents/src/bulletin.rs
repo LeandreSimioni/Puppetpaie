@@ -52,8 +52,8 @@ pub const IDENTITE_EXTENSIONS: [&str; 3] = [".svg", ".png", ".jpg"];
 
 // ------------------------------------------------------------ les formats (util)
 
-/// Un `Decimal` arrondi a `dp` decimales au pair sur le demi (le contexte de
-/// `format(Decimal, ".2f")`), ecrit avec ses decimales ; le signe est celui de l'original.
+/// Un taux arrondi a `dp` decimales au pair sur le demi (aucun texte depose ne dit l'arrondi d'un taux imprime), ecrit
+/// avec ses decimales ; le signe est celui de l'original.
 fn fixe(x: Decimal, dp: u32) -> (bool, String) {
     let neg = x.is_sign_negative();
     let mut r = x.abs().round_dp_with_strategy(dp, RoundingStrategy::MidpointNearestEven);
@@ -63,8 +63,9 @@ fn fixe(x: Decimal, dp: u32) -> (bool, String) {
 
 /// 1234.5 -> « 1 234,50 ».
 pub fn fmt_eur(x: Decimal) -> String {
-    // Deux decimales, toujours ecrites (`fixe`) : les trois derniers caracteres sont le point et les centimes.
-    let (neg, s) = fixe(x, 2);
+    // Au centime, ses deux decimales ecrites (`Montant::au_centime`) : les trois derniers caracteres sont le point et
+    // les centimes ; le signe est celui de l'original.
+    let (neg, s) = (x.is_sign_negative(), socle::grandeurs::Montant::du_decimal(x.abs()).au_centime().decimal().to_string());
     let (entier, point_frac) = s.split_at(s.len() - 3);
     let frac = &point_frac[1..];
     let mut groupes = String::new();
@@ -753,7 +754,7 @@ fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> 
             }
         }
         Rang::Autres => {
-            let total = lignes.iter().fold(Decimal::new(0, 2), |a, l| a + l.montant_pat);
+            let total = lignes.iter().fold(socle::grandeurs::Montant::ZERO.decimal(), |a, l| a + l.montant_pat);
             out.push(ligne(vec![s(AUTRES), vide(), vide(), vide(), s(fmt_eur(total))], vec![]));
         }
         Rang::Hors(famille) => {
@@ -772,7 +773,7 @@ fn somme_des_rangs(
     rangees: &[(Rang, Vec<&engagement::calcul::LigneCotisation>)],
     filtre: &dyn Fn(&Rang) -> bool,
 ) -> (Decimal, Decimal) {
-    let zero = Decimal::new(0, 2);
+    let zero = socle::grandeurs::Montant::ZERO.decimal();
     rangees.iter().filter(|(r, _)| filtre(r)).flat_map(|(_, v)| v.iter()).fold((zero, zero), |(s, e), l| {
         (s + l.montant_sal, e + l.montant_pat)
     })

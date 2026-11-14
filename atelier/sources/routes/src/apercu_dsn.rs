@@ -25,7 +25,8 @@ use envois::etats;
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::mois::Mois;
-use socle::num::{q2, Decimal};
+use socle::grandeurs::{Cachets, Heures, Jours, Montant};
+use socle::num::Decimal;
 
 use crate::depots::{lire_octets, resoudre};
 use socle::fichiers::NomDeFichier;
@@ -103,11 +104,11 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     let mut ecarts = Vec::new();
     // Le brut que la paie declare en 51 de type 001 (`dsn::brut_du_51` : abattu sous deduction forfaitaire specifique), a
     // deux decimales.
-    let brut = declarations::dsn::brut_du_51(p).round_dp(2);
-    match m.brut {
-        Some(f) if f.round_dp(2) == brut => {}
-        Some(f) => ecarts.push(format!("brut : la paie dit {}, le fichier {}", q2(brut), q2(f))),
-        None => ecarts.push(format!("brut : la paie dit {}, le fichier n'en déclare pas", q2(brut))),
+    let brut = Montant::du_decimal(declarations::dsn::brut_du_51(p)).au_centime().decimal();
+    match m.brut.map(|f| Montant::du_decimal(f).au_centime().decimal()) {
+        Some(f) if f == brut => {}
+        Some(f) => ecarts.push(format!("brut : la paie dit {}, le fichier {}", brut, f)),
+        None => ecarts.push(format!("brut : la paie dit {}, le fichier n'en déclare pas", brut)),
     }
     // Les mesures du travail remunere (type 01) que la DSN ecrit pour cette paie (`dsn::mesures_d_activite`).
     let (mut jours, mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
@@ -216,10 +217,10 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                 emploi: c.emploi.clone(),
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
-                brut: m.brut.map(q2),
-                jours: m.jours.normalize(),
-                cachets: m.cachets.normalize(),
-                heures: m.heures.normalize(),
+                brut: m.brut.map(|b| Montant::du_decimal(b).au_centime()),
+                jours: Jours::du_decimal(m.jours),
+                cachets: Cachets::du_decimal(m.cachets),
+                heures: Heures::du_decimal(m.heures),
                 fin_declaree: c.fin_declaree,
                 motif_fin: c.motif_fin,
                 remunere: m.remunere,
@@ -346,14 +347,14 @@ struct ContratDuFichier {
     #[serde(rename = "nature")]
     nature_dsn: Option<String>,
     objet: Option<droit::fiche::NumeroObjetSpectacle>,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
-    brut: Option<Decimal>,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    jours: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    cachets: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    heures: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    brut: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    jours: Jours,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    cachets: Cachets,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    heures: Heures,
     fin_declaree: Option<Jour>,
     motif_fin: Option<droit::natures::MotifDeRupture>,
     remunere: bool,

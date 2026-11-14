@@ -65,7 +65,8 @@ use socle::date::Jour;
 use socle::fichiers::{LectureDatee, ValeurLue};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
-use socle::{echec::{refus, Echec, R}, num::{pct, Decimal}};
+use socle::grandeurs::{Montant, Taux};
+use socle::{echec::{refus, Echec, R}, num::Decimal};
 
 /// POURQUOI UNE PAIE SE RECALCULE (`raison`). Elle s'ecrit par sa phrase (`Display`), que la paie ecrite garde
 /// (`Recalcul::raison`).
@@ -919,9 +920,9 @@ pub fn prelevement_de_la_correction(
     let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
     let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)?;
     let prelevement = if difference < Decimal::ZERO {
-        taux_origine.map(|t| pct(difference, t.decimal()))
+        taux_origine.map(|t| Montant::du_decimal(difference).fois_taux(Taux::du_decimal(t.decimal())).au_centime().decimal())
     } else {
-        Some(pct(versement.montant_soumis, versement.taux.dec()?))
+        Some(Montant::du_decimal(versement.montant_soumis).fois_taux(Taux::du_decimal(versement.taux.dec()?)).au_centime().decimal())
     };
     Ok(PrelevementDeLaCorrection { difference, versement, prelevement })
 }

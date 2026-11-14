@@ -207,7 +207,7 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
     let exoneree = |csa_quotient: Decimal| Csa {
         millesime: n,
         code: CODE_EXONERATION,
-        montant: Decimal::new(0, 2),
+        montant: socle::grandeurs::Montant::ZERO.decimal(),
         quotient: csa_quotient,
         taux: Decimal::ZERO,
         assiette: Decimal::ZERO,

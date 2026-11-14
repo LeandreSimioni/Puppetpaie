@@ -197,14 +197,14 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | quantité | `Heures`, `Cachets`, `Jours` ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
 | coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
+| plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure) | `droit/src/plafond.rs` |
 | nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
 
 **Le détail**
 
 - **montant** : une somme en euros, au centime ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant`,
-  `droit::fiche::Montant` ; `engagement::ligne::Montant` est une ligne au montant, à renommer. Une réponse qui rend un
-  montant ou une quantité en texte garde le `Decimal` (au centime : `socle::num::q2`) et l'écrit par
-  `socle::ecriture::decimal_en_texte`.
+  `droit::fiche::Montant` ; `engagement::ligne::Montant` est une ligne au montant, à renommer. L'arrondi au centime
+  est un seul, `Montant::au_centime` (la moitié vers le haut, deux décimales écrites).
 - **taux** : un pourcentage appliqué à une base ; aujourd'hui `Decimal`, `droit::forme_bareme::Taux` (une forme) ; le
   taux de PAS est sa notion à lui, `droit::pas::TauxDePas`.
 - **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui `Decimal`, `i64`,
@@ -2063,7 +2063,7 @@ La différence ne se voit pas sur un contrat au cachet pur, qui n'a qu'une rubri
 | Charges patronales | 212,99 | 213,00 | **212,99** |
 | Coût employeur | 582,99 | 583,00 | **582,99** |
 
-L'arrondi est **au demi supérieur** (`socle::num::eur`) : c'est ce que montrent les 144 cas ambigus des cotisations
+L'arrondi est **au demi supérieur** (`socle::grandeurs::Montant::au_centime`, le seul arrondi au centime) : c'est ce que montrent les 144 cas ambigus des cotisations
 `S21.G00.81` de ces DSN, 144 sur 144.
 
 ## La nature du contrat, et les salariés permanents

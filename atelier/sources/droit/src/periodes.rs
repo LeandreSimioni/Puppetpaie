@@ -204,7 +204,7 @@ fn dates_en_mots(feries: &[(Jour, String)]) -> String {
 
 /// `jours` jours de `heures_par_jour` heures, au centieme, ecrits a la francaise.
 fn heures_en_mots(heures_par_jour: Decimal, jours: i64) -> String {
-    socle::num::nombre(socle::num::eur2(socle::num::mul(heures_par_jour, Decimal::from(jours)))).replace('.', ",")
+    socle::num::nombre(socle::grandeurs::Heures::du_decimal(socle::num::mul(heures_par_jour, Decimal::from(jours))).au_centieme().decimal()).replace('.', ",")
 }
 
 /// LA PART DU SALAIRE MENSUEL que porte la periode payee [`d`, `f`] du mois qui finit le `fin_mois`.

@@ -35,7 +35,8 @@ use fabrique_pdf::forme::Mesure;
 use import::bulletin_lu::{jetons, Table};
 use socle::date::Jour;
 use socle::echec::{refus, R};
-use socle::num::{eur2, Decimal};
+use socle::grandeurs::{Montant, Taux};
+use socle::num::Decimal;
 
 pub const USAGE: &str = "usage : moteur-atelier fabriquer-bulletins <description.json> <dossier> [--gabarit coolpaie|spaiectacle]";
 
@@ -133,9 +134,10 @@ fn table_boss() -> std::path::PathBuf {
 /// le bareme livre du moteur (`logiciel/donnees/baremes/<annee>.json`, `plafond_securite_sociale`, qui cite sa
 /// source), sinon la table des parametres du BOSS deposee (`table_boss`), sinon refus -- l'annee manque, on ne
 /// l'invente pas.
-fn pss(annee: i32) -> R<(Decimal, Decimal)> {
+fn pss(annee: i32) -> R<droit::plafond::Pss> {
+    let lu = |m: Decimal, h: Decimal| droit::plafond::Pss { mensuel: Montant::du_decimal(m), horaire: socle::grandeurs::MontantUnitaire::du_decimal(h) };
     if let Some(p) = droit::contexte::socle_livre_lu(annee)?.and_then(|pile| pile.plafond_securite_sociale) {
-        return Ok((p.mensuel, p.horaire));
+        return Ok(lu(p.mensuel, p.horaire));
     }
     let chemin = table_boss();
     let octets = std::fs::read(&chemin).map_err(|e| refus!("{} : {}", chemin.display(), e))?;
@@ -148,7 +150,7 @@ fn pss(annee: i32) -> R<(Decimal, Decimal)> {
         socle::num::decimal_a_virgule(c[2]).map(Some).ok_or_else(|| refus!("{} : {} au {} : {} ne se lit pas en nombre", chemin.display(), code, effet, c[2]))
     };
     match (valeur("PSS_M_METROP")?, valeur("PSS_H_METROP")?) {
-        (Some(m), Some(h)) => Ok((m, h)),
+        (Some(m), Some(h)) => Ok(lu(m, h)),
         _ => Err(refus!(
             "pas de plafond de la Sécurité sociale pour {} : ni bareme livré (logiciel/donnees/baremes/{}.json) ni ligne \
              PSS_M_METROP/PSS_H_METROP au 01/01/{} dans {} -- déposez le texte qui le donne",
@@ -372,7 +374,7 @@ fn deux_rangs(texte: &str, largeur: usize, quoi: &str) -> R<[String; 2]> {
 
 /// « 1 234,56 », comme les bulletins l'impriment.
 fn fr(x: Decimal) -> String {
-    let x = eur2(x);
+    let x = Montant::du_decimal(x).au_centime().decimal();
     let s = format!("{:.2}", x.abs());
     let (ent, point_dec) = s.split_at(s.len() - 3);
     let dec = &point_dec[1..];
@@ -409,7 +411,7 @@ fn dmy_court(j: &Jour) -> String {
 }
 
 fn pct(base: Decimal, taux: Option<Decimal>) -> Option<Decimal> {
-    taux.map(|t| socle::num::pct(base, t))
+    taux.map(|t| Montant::du_decimal(base).fois_taux(Taux::du_decimal(t)).au_centime().decimal())
 }
 
 // --------------------------------------------------------------------------------------------- le calcul du faux bulletin
@@ -467,8 +469,9 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
         let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
         droit::plafond::plafond_urssaf(b.debut, b.fin, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
-    .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
-    let assiette_csg = eur2(brut * assiette_csg());
+    .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?
+    .decimal();
+    let assiette_csg = Montant::du_decimal(brut * assiette_csg()).au_centime().decimal();
     let mut cotisations = Vec::new();
     let (mut total_e, mut total_s, mut csg_non_deductible) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
     for (cle, base, ei, si, ep, sp) in COTISATIONS.iter().copied().filter(|_| b.paie.is_none()) {
@@ -500,7 +503,7 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
         Some(p) => (p.net_imposable, p.pas),
         None => {
             let n = net_social + csg_non_deductible;
-            (n, socle::num::pct(n, b.taux_pas))
+            (n, Montant::du_decimal(n).fois_taux(Taux::du_decimal(b.taux_pas)).au_centime().decimal())
         }
     };
     let cout = brut + total_e + non_soumis;
@@ -604,7 +607,7 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
         } else if let Some(u) = r.heures_forfait.or(connu.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE)) {
             heures = q * u;
         }
-        Ok(Ligne { libelle: connu.libelle.clone(), quantite: q, taux, montant: eur2(q * taux), cachets, heures })
+        Ok(Ligne { libelle: connu.libelle.clone(), quantite: q, taux, montant: Montant::du_decimal(q * taux).au_centime().decimal(), cachets, heures })
     };
 
     let mut bulletins = Vec::new();

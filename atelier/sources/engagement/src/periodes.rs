@@ -17,7 +17,8 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use crate::{Avis, Chiffre, Engagement, LignePaie};
 use socle::echec::{refus, R};
-use socle::num::{court, eur2, Decimal};
+use socle::grandeurs::{Heures, Montant};
+use socle::num::{court, Decimal};
 
 
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
@@ -89,7 +90,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let mut e = eng.clone();
         e.periode = Some((*d, *f));
         e.quotite_contrat = Some(court(quotite));
-        let (q, h) = (court(part.fraction), court(eur2(quotite)));
+        let (q, h) = (court(part.fraction), court(Heures::du_decimal(quotite).au_centieme().decimal()));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
             quantite: q,
@@ -109,7 +110,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
 
 /// Ajoute `x` a l'assiette `a` de `m`.
 fn cumuler(m: &mut BTreeMap<Assiette, Decimal>, a: Assiette, x: Decimal) {
-    *m.entry(a).or_insert_with(|| Decimal::new(0, 2)) += x;
+    *m.entry(a).or_insert_with(|| Montant::ZERO.decimal()) += x;
 }
 
 /// Remplace la reduction generale de la periode `p` par `rg` : sa ligne, le total patronal et le cout employeur.
@@ -180,7 +181,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         ));
     }
     // La reduction generale du mois, puis sa part dans chaque periode.
-    let zero = Decimal::new(0, 2);
+    let zero = Montant::ZERO.decimal();
     let brut_mois = parts.iter().fold(zero, |a, p| a + p.brut);
     let heures_mois = parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures_travaillees);
     let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| *b > Decimal::ZERO));

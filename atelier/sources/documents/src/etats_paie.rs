@@ -23,7 +23,8 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::date::Jour;
 use socle::mois::{Annee, Mois};
-use socle::num::{eur2, zero2, Decimal};
+use socle::grandeurs::Montant;
+use socle::num::Decimal;
 use crate::prelevement::Prelevement;
 use crate::plan_comptable::{ColonneDEtat, EtatDExport, FormatDExport, LogicielComptable, RegroupementDEtat};
 use engagement::etats::PaieDuMois;
@@ -400,7 +401,7 @@ impl From<Totaux> for TotauxRendus {
 
 /// La somme de ce qui est DECLARE, colonne par colonne, et le compte de ce qui ne l'est pas.
 fn totaliser_lignes(lignes: &[&LigneLivre]) -> Totaux {
-    let mut t = Totaux { bulletins: lignes.len() as i64, sommes: CUMULABLES.iter().map(|c| (*c, zero2())).collect(), inconnus: Vec::new() };
+    let mut t = Totaux { bulletins: lignes.len() as i64, sommes: CUMULABLES.iter().map(|c| (*c, Montant::ZERO.decimal())).collect(), inconnus: Vec::new() };
     for l in lignes {
         for champ in CUMULABLES {
             match l.montant(champ) {
@@ -500,13 +501,13 @@ fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engag
             libelle_nature: nat_libelle(p)?,
             // `fiche_recapitulative` lit encore le titre en texte : vide sans spectacle.
             spectacle: titre_spectacle(p).into_iter().collect(),
-            brut: p.brut().map(eur2),
-            cotisations_salariales: p.total_sal().map(eur2),
-            cotisations_patronales: p.total_pat().map(eur2),
-            net_imposable: p.net_imposable().map(eur2),
-            net_a_payer: p.net_a_payer().map(eur2),
-            pas: r.as_ref().map(|v| eur2(v.prelevement())),
-            cout_employeur: p.cout_employeur().map(eur2),
+            brut: p.brut().map(|x| Montant::du_decimal(x).au_centime().decimal()),
+            cotisations_salariales: p.total_sal().map(|x| Montant::du_decimal(x).au_centime().decimal()),
+            cotisations_patronales: p.total_pat().map(|x| Montant::du_decimal(x).au_centime().decimal()),
+            net_imposable: p.net_imposable().map(|x| Montant::du_decimal(x).au_centime().decimal()),
+            net_a_payer: p.net_a_payer().map(|x| Montant::du_decimal(x).au_centime().decimal()),
+            pas: r.as_ref().map(|v| Montant::du_decimal(v.prelevement()).au_centime().decimal()),
+            cout_employeur: p.cout_employeur().map(|c| Montant::du_decimal(c).au_centime().decimal()),
             // Une paie importee : ce que ses pieces disent ; une paie du logiciel a toujours son jour.
             verse_le: match p.importee() {
                 Some(_) => e.versement_dit()?,
@@ -921,22 +922,22 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for r in paie.remuneration() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Rémunération");
-                l.ot("code", r.code).t("libelle", r.libelle).od("base", r.quantite).od("taux_sal", r.taux).od("gain", r.montant.map(eur2));
+                l.ot("code", r.code).t("libelle", r.libelle).od("base", r.quantite).od("taux_sal", r.taux).od("gain", r.montant.map(|x| Montant::du_decimal(x).au_centime().decimal()));
                 lignes.push(l);
             }
             for c in paie.cotisations() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Cotisation");
                 l.ot("code", c.id.as_ref().map(|i| i.as_str().to_string()));
-                l.t("libelle", c.libelle).od("base", c.base.map(eur2));
-                l.od("taux_sal", c.taux_sal).od("part_sal", c.montant_sal.map(eur2));
-                l.od("taux_pat", c.taux_pat).od("part_pat", c.montant_pat.map(eur2));
+                l.t("libelle", c.libelle).od("base", c.base.map(|x| Montant::du_decimal(x).au_centime().decimal()));
+                l.od("taux_sal", c.taux_sal).od("part_sal", c.montant_sal.map(|x| Montant::du_decimal(x).au_centime().decimal()));
+                l.od("taux_pat", c.taux_pat).od("part_pat", c.montant_pat.map(|x| Montant::du_decimal(x).au_centime().decimal()));
                 lignes.push(l);
             }
             for (lib, v) in [("Net imposable", paie.net_imposable()), ("Net à payer avant impôt", paie.net_a_payer())] {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Résultat");
-                l.t("libelle", lib).od("net", v.map(eur2));
+                l.t("libelle", lib).od("net", v.map(|x| Montant::du_decimal(x).au_centime().decimal()));
                 lignes.push(l);
             }
             let sec = format!("{} — {}{}", nom, libelle_mois(m), titre.filter(|t| !t.is_empty()).map(|t| format!(" — {}", t)).into_iter().collect::<String>());
@@ -1173,14 +1174,14 @@ pub fn prelevement_a_la_source(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut l = Ligne::nouvelle();
             l.m("mois", m).t("salarie", qui(paie.salarie())?).ot("contrat", paie.engagement().numero.clone());
             l.ot("nir", paie.salarie().nir.portee().filter(|_| coord));
-            l.od("net_imposable", paie.net_imposable().map(eur2));
+            l.od("net_imposable", paie.net_imposable().map(|x| Montant::du_decimal(x).au_centime().decimal()));
             match r {
                 Some(v) => {
                     // Ce que la paie ne dit pas (une paie importee dont les pieces ne l'impriment pas) reste vide.
                     l.od("abattement", v.abattement()).od("assiette", v.montant_soumis());
                     l.ot("type", v.type_taux().map(|t| format!("{} — {}", t, t.libelle())));
                     l.od("taux", v.taux().map_err(|m| m.reclasser(Classe::CalculImpossible))?);
-                    l.d("prelevement", eur2(v.prelevement()));
+                    l.d("prelevement", Montant::du_decimal(v.prelevement()).au_centime().decimal());
                 }
                 None => {
                     l.rien("abattement").rien("assiette").rien("type").rien("taux").rien("prelevement");
@@ -1241,8 +1242,9 @@ pub fn reduction_generale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let Some(rg) = &paie.reduction_generale else { continue };
             let mut l = Ligne::nouvelle();
             l.m("mois", m).t("salarie", qui(&paie.salarie)?).ot("contrat", paie.engagement.numero.clone());
-            l.d("brut", eur2(paie.brut)).d("heures", ou_zero(rg.heures)).d("smic", eur2(rg.smic_reference)).d("coefficient", ou_zero(rg.coefficient));
-            l.d("montant", eur2(rg.montant)).d("urssaf", eur2(rg.urssaf)).d("chomage", eur2(rg.chomage)).d("retraite", eur2(rg.agirc_arrco));
+            let c = |x: Decimal| Montant::du_decimal(x).au_centime().decimal();
+            l.d("brut", c(paie.brut)).d("heures", ou_zero(rg.heures)).d("smic", c(rg.smic_reference)).d("coefficient", ou_zero(rg.coefficient));
+            l.d("montant", c(rg.montant)).d("urssaf", c(rg.urssaf)).d("chomage", c(rg.chomage)).d("retraite", c(rg.agirc_arrco));
             lignes.push(l);
         }
     }
@@ -1304,13 +1306,13 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         for paie in lecture.paies(m)?.iter() {
             let mut l = Ligne::nouvelle();
             l.m("mois", m).t("salarie", qui(paie.salarie())?).ot("contrat", paie.engagement().numero.clone());
-            l.od("plafond", paie.plafond().map(eur2));
+            l.od("plafond", paie.plafond().map(|x| Montant::du_decimal(x).au_centime().decimal()));
             for (k, v) in paie.bases() {
-                l.d(&format!("b_{}", k), eur2(*v));
+                l.d(&format!("b_{}", k), Montant::du_decimal(*v).au_centime().decimal());
                 vues.insert(*k);
             }
             if !paie.bases().contains_key(&Assiette::Csg) {
-                l.od(&format!("b_{}", Assiette::Csg), paie.base_csg().map(eur2));
+                l.od(&format!("b_{}", Assiette::Csg), paie.base_csg().map(|x| Montant::du_decimal(x).au_centime().decimal()));
                 vues.insert(Assiette::Csg);
             }
             lignes.push(l);
@@ -1373,7 +1375,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut l = Ligne::nouvelle();
             l.m("mois", m).t("salarie", qui(paie.salarie())?).t("cle_salarie", paie.salarie().id.to_string());
             l.ot("contrat", e.numero.clone()).ot("spectacle", titre_spectacle(paie)).ot("emploi", emploi).t("debut", jj(&debut)).ot("fin", fin.as_deref().map(jj));
-            l.od("cachets", cachets).od("heures", heures).n("jours", e.dates_travail.len() as i64).od("brut", paie.brut().map(eur2));
+            l.od("cachets", cachets).od("heures", heures).n("jours", e.dates_travail.len() as i64).od("brut", paie.brut().map(|x| Montant::du_decimal(x).au_centime().decimal()));
             lignes.push(l);
         }
     }

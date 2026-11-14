@@ -182,8 +182,7 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Reste {
     let debut = siens[premier].premier_jour().max(debut_c);
     let fin = siens[dernier].dernier_jour().min(fin_c);
     let mut ligne = c.ligne.clone();
-    let mut b = reste_brut.round_dp(2);
-    b.rescale(2);
+    let b = socle::grandeurs::Montant::du_decimal(reste_brut).au_centime().decimal();
     (ligne.debut, ligne.fin) = (Some(debut), Some(fin));
     ligne.contrat.cachets = reste_cachets;
     ligne.contrat.jours = reste_jours;

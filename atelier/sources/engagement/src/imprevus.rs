@@ -34,7 +34,8 @@ use crate::Avis;
 use crate::numeros::NumeroContrat;
 use socle::fichiers::repr;
 use socle::echec::R;
-use socle::num::{div, eur2, mul, Decimal};
+use socle::grandeurs::Heures;
+use socle::num::{div, mul, Decimal};
 
 /// Le genre d'un arret de travail (bloc S21.G00.60).
 pub const ARRET: &str = "arret";
@@ -807,7 +808,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         avis: Vec::new(),
     };
     // Le taux de l'heure d'absence : le salaire du mois sur ses heures de travail (Cass. soc. 11/02/1982).
-    let heures_du_mois = eur2(mul(m.heures_par_jour, Decimal::from(m.jours_payes)));
+    let heures_du_mois = Heures::du_decimal(mul(m.heures_par_jour, Decimal::from(m.jours_payes))).au_centieme().decimal();
     let taux_horaire = if heures_du_mois > Decimal::ZERO { Some(taux_exact(m.salaire_du_mois, heures_du_mois)) } else { None };
     // Un contrat sans date de debut ecrite ne se designe pas : aucun imprevu ne peut le nommer (S21.G00.40.001).
     let imprevus: Vec<_> = e
@@ -825,7 +826,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         } else {
             0
         };
-        let heures = eur2(mul(m.heures_par_jour, Decimal::from(jours)));
+        let heures = Heures::du_decimal(mul(m.heures_par_jour, Decimal::from(jours))).au_centieme().decimal();
         // Les heures retirees et leur taux, quand le mois en retire.
         let retenue = || -> R<Option<(Decimal, Decimal)>> {
             match taux_horaire {

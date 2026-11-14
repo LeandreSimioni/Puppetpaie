@@ -257,7 +257,7 @@ pub fn du_jour(code: &LieuDeMission, jour: &Jour) -> R<Indemnite> {
             .and_then(|l| en_vigueur(l, jour))
             .ok_or_else(|| socle::refus!("La table des taux de chancellerie ne dit pas le taux de {} pour {} au {} : la limite ne se calcule pas.", monnaie, nom, jour.jj_mm_aaaa()))?
     };
-    Ok(Indemnite { euros: socle::num::eur2(montant * change), montant, monnaie, change })
+    Ok(Indemnite { euros: socle::grandeurs::Montant::du_decimal(montant * change).au_centime().decimal(), montant, monnaie, change })
 }
 
 fn pas_un_lieu(code: &str) -> socle::echec::Echec {

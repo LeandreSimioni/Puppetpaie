@@ -23,7 +23,8 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 use socle::mois::{Annee, Mois};
-use socle::num::{zero2, Decimal};
+use socle::grandeurs::Montant;
+use socle::num::Decimal;
 use socle::paris::Moment;
 use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip, Entree};
@@ -83,10 +84,10 @@ pub(crate) struct EcritureRendue {
     date: socle::date::Jour,
     compte: documents::ecritures_comptables::NumeroDeCompte,
     libelle: String,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    debit: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    credit: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    debit: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    credit: Montant,
     analytique: Option<String>,
     mois: socle::mois::Mois,
     auxiliaire: Option<documents::ecritures_comptables::NumeroDeCompte>,
@@ -103,10 +104,10 @@ pub(crate) struct ExportComptaRendu {
     au: u32,
     mois: Vec<Mois>,
     ecritures: Vec<EcritureRendue>,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    total_debit: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    total_credit: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    total_debit: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    total_credit: Montant,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: Option<PathBuf>,
     fichier: Option<NomDeFichier>,
@@ -143,16 +144,16 @@ impl ExportCompta {
                     date: e.date,
                     compte: e.compte,
                     libelle: e.libelle,
-                    debit: e.debit,
-                    credit: e.credit,
+                    debit: Montant::du_decimal(e.debit),
+                    credit: Montant::du_decimal(e.credit),
                     analytique: e.analytique,
                     mois: e.mois,
                     auxiliaire: e.auxiliaire,
                     auxiliaire_libelle: e.auxiliaire_libelle,
                 })
                 .collect(),
-            total_debit: self.total_debit,
-            total_credit: self.total_credit,
+            total_debit: Montant::du_decimal(self.total_debit),
+            total_credit: Montant::du_decimal(self.total_credit),
             dossier,
             fichier,
             plan: self.plan,
@@ -199,7 +200,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     if !propre.exists() {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
     }
-    let zero = zero2();
+    let zero = Montant::ZERO.decimal();
     let total_debit = ecritures.iter().fold(zero, |a, e| a + e.debit);
     let total_credit = ecritures.iter().fold(zero, |a, e| a + e.credit);
     let mut fichier = None;

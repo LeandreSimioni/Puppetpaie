@@ -59,7 +59,7 @@ fn bas(x: Decimal) -> Decimal {
     x.round_dp_with_strategy(2, RoundingStrategy::ToZero)
 }
 
-/// Au centime, au pair sur le demi.
+/// Un taux horaire au centime, au pair sur le demi (aucun texte depose ne dit l'arrondi d'un minimum ramene a l'heure).
 fn pair(x: Decimal) -> Decimal {
     x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven)
 }
@@ -1126,7 +1126,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
         if rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.heures_forfait.is_some() {
             continue;
         }
-        let du = pair(mul(smic, heures));
+        let du = socle::grandeurs::Montant::du_decimal(mul(smic, heures)).au_centime().decimal();
         let paye = l.montant;
         if paye >= du {
             continue;

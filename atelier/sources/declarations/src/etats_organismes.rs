@@ -23,7 +23,8 @@ use socle::echec::{erreur, refus_avec, Lieu, Classe};
 use socle::mois::{Graphie, Mois};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
 use documents::plan_comptable::{EtatDExport, RegroupementDEtat};
-use socle::num::{add, div, eur2, mul, zero2, Decimal};
+use socle::grandeurs::{Montant, Taux};
+use socle::num::{add, Decimal};
 use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
 // ------------------------------------------------------------------ outils
@@ -128,7 +129,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
     let mut cumul: Vec<Cumul> = Vec::new();
     let mut manque: BTreeSet<String> = BTreeSet::new();
-    let zero = zero2();
+    let zero = Montant::ZERO.decimal();
     let mut ajouter = |m: Mois, org: &str, code: &str, libelle: &str, base: Option<Decimal>, ts: Option<Decimal>, ms: Option<Decimal>, tp: Option<Decimal>, mp: Option<Decimal>| {
         let cle = (par_mois.then_some(m), org.to_string(), code.to_string(), libelle.to_string(), ts, tp);
         let i = match cumul.iter().position(|c| c.cle == cle) {
@@ -179,7 +180,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                         let (mois, total) = non_rattachees.entry(c.libelle.clone()).or_default();
                         mois.insert(m);
                         // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
-                        *total = [c.montant_sal, c.montant_pat].into_iter().flatten().map(eur2).fold(*total, add);
+                        *total = [c.montant_sal, c.montant_pat].into_iter().flatten().map(|x| Montant::du_decimal(x).au_centime().decimal()).fold(*total, add);
                     } else {
                         manque.insert(format!("sans cotisation ({})", c.libelle));
                     }
@@ -207,14 +208,14 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                                 "{}, {} : la réduction générale ({}) ne tombe pas sur la somme de ses parts ({}).",
                                 libelle_mois(m),
                                 qui(paie.salarie())?,
-                                eur2(calculee),
+                                Montant::du_decimal(calculee).au_centime().decimal(),
                                 -reparti
                             ));
                         }
                         continue;
                     }
                 }
-                ajouter(m, &org, id, &c.libelle, c.base.map(eur2), ts, c.montant_sal.map(eur2), tp, c.montant_pat.map(eur2));
+                ajouter(m, &org, id, &c.libelle, c.base.map(|x| Montant::du_decimal(x).au_centime().decimal()), ts, c.montant_sal.map(|x| Montant::du_decimal(x).au_centime().decimal()), tp, c.montant_pat.map(|x| Montant::du_decimal(x).au_centime().decimal()));
             }
         }
     }
@@ -486,7 +487,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut avert = Vec::new();
     let (taux, plancher, plafond) = (fp.taux.0, fp.plancher.0, fp.plafond.0);
     let mut par_an: Vec<(String, i64, Decimal)> = Vec::new();
-    let zero = zero2();
+    let zero = Montant::ZERO.decimal();
     let orgs = ctx.organismes().map_err(|e| e.reclasser(Classe::Refuse))?;
     for (m, paies) in paies_des_mois(ctx, &p, &mut avert, &d.departs)? {
         // La tranche A : la base 02 (« assiette brute plafonnee ») de chaque paie (`dsn::base_declaree`).
@@ -525,7 +526,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     par_an.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes = Vec::new();
     for (an, mois, tranche_a) in par_an {
-        let calcule = eur2(div(mul(tranche_a, taux), Decimal::ONE_HUNDRED));
+        let calcule = Montant::du_decimal(tranche_a).fois_taux(Taux::du_decimal(taux)).au_centime().decimal();
         let du = plus_grand(plancher, plus_petit(plafond, calcule));
         let regle = if du == plancher && calcule < plancher {
             "plancher"
@@ -605,7 +606,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
     let mut par_an: Vec<(String, Decimal, Decimal)> = Vec::new();
-    let zero = zero2();
+    let zero = Montant::ZERO.decimal();
     // Un permanent est une nature MENSUELLE du catalogue des contrats.
     let mensuelles: Vec<String> = droit::natures::natures().map_err(|e| e.reclasser(Classe::Refuse))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
@@ -632,7 +633,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         let mut cpnef = zero;
         if let Some(c) = &hb.cpnef_dialogue_social {
-            let brut_cpnef = eur2(div(mul(masse, c.taux), Decimal::ONE_HUNDRED));
+            let brut_cpnef = Montant::du_decimal(masse).fois_taux(Taux::du_decimal(c.taux)).au_centime().decimal();
             let borne = |b: Option<Decimal>, cle: &str| b.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque));
             cpnef = plus_grand(borne(c.plancher.map(|n| n.0), "plancher")?, plus_petit(borne(c.plafond.map(|n| n.0), "plafond")?, brut_cpnef));
         }
@@ -660,7 +661,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         };
         let permanents = match taux_p {
-            Some(t) => eur2(div(mul(masse_permanents, t), Decimal::ONE_HUNDRED)),
+            Some(t) => Montant::du_decimal(masse_permanents).fois_taux(Taux::du_decimal(t)).au_centime().decimal(),
             None => zero,
         };
         let mut l = Ligne::nouvelle();
@@ -711,7 +712,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
     let mut par_an: Vec<(String, Decimal)> = Vec::new();
-    let zero = zero2();
+    let zero = Montant::ZERO.decimal();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
         let Some(brut) = l.brut else { continue };
         let an = format!("{:04}", l.mois.annee());
@@ -732,7 +733,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             .reclasser(Classe::Refuse));
         };
         let taux = f.taux;
-        let mut m = eur2(div(mul(masse, taux), Decimal::ONE_HUNDRED));
+        let mut m = Montant::du_decimal(masse).fois_taux(Taux::du_decimal(taux)).au_centime().decimal();
         if let Some(pl) = f.plancher {
             m = plus_grand(m, pl.0);
         }

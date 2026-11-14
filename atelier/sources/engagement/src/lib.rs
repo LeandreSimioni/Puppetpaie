@@ -1540,7 +1540,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         let indemnite = droit::missions::du_jour(lieu, j).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
         socle::fichiers::noter_lecture(&droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Mission { lieu: lieu.clone(), jour: *j }), indemnite.empreinte());
         let loge = nuitee.is_none() && !nuits.contains(j) && du_jour.iter().any(|(k, _)| cochee(&lignes[es[*k].rang], LOGE));
-        let limite = if loge { socle::num::eur2(indemnite.euros * (Decimal::ONE - REDUCTION_LOGE)) } else { indemnite.euros };
+        let limite = if loge { socle::grandeurs::Montant::du_decimal(indemnite.euros * (Decimal::ONE - REDUCTION_LOGE)).au_centime().decimal() } else { indemnite.euros };
         let total: Decimal = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();
         let mut reste = (total - limite).max(Decimal::ZERO);
         let mut ordre = du_jour.clone();
@@ -2075,7 +2075,7 @@ pub fn embauche(ctx: &Contexte, eng: &Engagement) -> R<calcul::Paie> {
     } else {
         Some(fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
-    let zero = Decimal::new(0, 2);
+    let zero = socle::grandeurs::Montant::ZERO.decimal();
     let tp = calcul::plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
     Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, zero, zero, zero, Decimal::ZERO, zero, tp))
 }

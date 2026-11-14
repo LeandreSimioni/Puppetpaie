@@ -16,7 +16,8 @@ use socle::num::nombre;
 use socle::fichiers::{repr, LectureDatee, ValeurLue};
 use crate::contexte::CleLue;
 use socle::echec::{refus, Echec, R};
-use socle::num::{eur, pct, sub, Decimal};
+use socle::grandeurs::{Montant as Somme, Taux};
+use socle::num::{sub, Decimal};
 
 /// Un refus du module. `SansGrille` : un bareme sans la grille de l'article 204 H (le prelevement ne se devine pas, le
 /// calcul refuse).
@@ -393,14 +394,14 @@ pub fn rubriques_par_defaut(
     contrat_court: bool,
     zone: &str,
 ) -> RPas<Versement> {
-    let rnf = eur(remuneration_nette_fiscale);
-    let zero = Decimal::new(0, 2);
+    let rnf = Somme::du_decimal(remuneration_nette_fiscale).au_centime().decimal();
+    let zero = Somme::ZERO.decimal();
     let abat = if contrat_court { abattement(bareme)? } else { zero };
     // L'abattement ne creuse pas : il se limite a ce qu'il y a a abattre.
-    let abat = eur(abat.min(plancher(rnf, zero)));
-    let soumis = eur(plancher(sub(rnf, abat), zero));
+    let abat = Somme::du_decimal(abat.min(plancher(rnf, zero))).au_centime().decimal();
+    let soumis = Somme::du_decimal(plancher(sub(rnf, abat), zero)).au_centime().decimal();
     let (taux, type_taux) = taux_par_defaut(bareme, soumis, le, zone)?;
-    let prelevement = pct(soumis, taux);
+    let prelevement = Somme::du_decimal(soumis).fois_taux(Taux::du_decimal(taux)).au_centime().decimal();
     Ok(Versement {
         taux: Montant::Texte(taux.to_string()),
         type_taux: Some(type_taux),
@@ -475,14 +476,14 @@ pub fn du_versement(
     // La grille (`rubriques_par_defaut`) plancher deja a zero ; le taux DGFiP aussi. Le cas : un mois sans salaire ou la
     // part patronale de sante reste due et se reintegre (CGI 83, 1° quater, meme dossier, `legi-extrait-code-general-des-
     // impots-20261015.md`).
-    let soumis = plancher(eur(remuneration_nette_fiscale), Decimal::new(0, 2));
+    let soumis = plancher(Somme::du_decimal(remuneration_nette_fiscale).au_centime().decimal(), Somme::ZERO.decimal());
     Ok(Versement {
         taux: Montant::Texte(taux.to_string()),
         type_taux: t.type_taux,
         identifiant: t.identifiant.clone(),
-        abattement: Decimal::new(0, 2),
+        abattement: Somme::ZERO.decimal(),
         montant_soumis: soumis,
-        prelevement: pct(soumis, taux.decimal()),
+        prelevement: Somme::du_decimal(soumis).fois_taux(Taux::du_decimal(taux.decimal())).au_centime().decimal(),
     })
 }
 

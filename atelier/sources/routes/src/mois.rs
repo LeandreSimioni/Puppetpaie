@@ -43,7 +43,8 @@ use engagement::{self, LignePaie};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
-use socle::num::{q2, Decimal};
+use socle::grandeurs::Montant;
+use socle::num::Decimal;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
@@ -1221,7 +1222,7 @@ fn cible_dite(c: Cible) -> &'static str {
 /// Le taux qu'il faudrait, pour que l'engagement `engagement` (son identite ; son brouillon enregistre, ou sa modification
 /// pas encore ecrite, `mois_designe`) coute CE montant. N'ecrit rien.
 fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
-    let vise = q2(c.montant);
+    let vise = Montant::du_decimal(c.montant).au_centime().decimal();
     if vise <= Decimal::ZERO {
         return Err(refus(format!("Un montant vise se dit en euros et il est positif (recu : {}).", vise)));
     }
@@ -1239,7 +1240,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", texte)),
     };
     let vue = vue_paie(ctx, &v.paies[i], apres, &v.saisie)?;
-    let atteint = q2(v.atteint);
+    let atteint = Montant::du_decimal(v.atteint).au_centime().decimal();
     let mut facteur = v.facteur.round_dp(6);
     facteur.rescale(6);
     let change = ce_qui_a_change(avant, apres, i);
@@ -1273,7 +1274,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         cible: c.cible,
         vise,
         atteint,
-        depart: q2(v.depart),
+        depart: Montant::du_decimal(v.depart).au_centime().decimal(),
         ecart,
         facteur,
         tours: v.tours,
@@ -1689,7 +1690,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     let lieu = brut.lieu.clone();
     // Le net paye : le net a payer moins le prelevement a la source que la validation a calcule ; une paie que rien n'a
     // encore validee n'en a pas (`Paie::pas`) : son net paye n'est pas encore connu.
-    let net_paye = p.pas.as_ref().map(|v| q2(p.net_a_payer - v.prelevement));
+    let net_paye = p.pas.as_ref().map(|v| Montant::du_decimal(p.net_a_payer - v.prelevement).au_centime().decimal());
     // CE QUE LE MOTEUR A COMPRIS DE LA CARTE, en une ligne : son bulletin (ou qu'il n'y en a pas), son contrat, ses
     // bornes (et la periode de paie d'un contrat a cheval), ce qu'elle paye, le metier, le brut.
     let resolu_dit = {
@@ -1789,18 +1790,18 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         remuneration: p
             .remuneration
             .iter()
-            .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.quantite, taux: l.taux, montant: q2(l.montant) })
+            .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.quantite, taux: l.taux, montant: Montant::du_decimal(l.montant).au_centime().decimal() })
             .collect(),
         jours,
         lieu,
-        brut: q2(p.brut),
-        net_a_payer: q2(p.net_a_payer),
+        brut: Montant::du_decimal(p.brut).au_centime().decimal(),
+        net_a_payer: Montant::du_decimal(p.net_a_payer).au_centime().decimal(),
         // CE QUE LA COMPAGNIE VIRE : la somme effectivement recue par le salarie (C. trav. R. 3243-1, 10°,
         // `atelier/reference/sources/code-du-travail/articles-20261029.md`), le « MONTANT NET À PAYER » du bulletin :
         // le net a payer moins l'impot preleve a la source.
         net_paye,
-        net_imposable: q2(p.net_imposable),
-        cout_employeur: q2(p.cout_employeur),
+        net_imposable: Montant::du_decimal(p.net_imposable).au_centime().decimal(),
+        cout_employeur: Montant::du_decimal(p.cout_employeur).au_centime().decimal(),
         avertissements: p.avertissements.iter().filter(|a| !a.info).map(|a| a.texte.clone()).collect(),
         informations: p.avertissements.iter().filter(|a| a.info).map(|a| a.texte.clone()).collect(),
         emploi: EmploiVu { libelle: s.emploi.clone(), code_emploi_ft: s.code_emploi_ft.clone(), statut: s.statut.clone(), cadre: droit::bareme::est_cadre(s) },
@@ -1883,12 +1884,12 @@ struct Trois {
 
 /// Le net paye de `vues` : leur somme, quand chacun est connu ; vide sinon.
 fn net_paye_de<'a>(vues: impl Iterator<Item = &'a VuePaie>) -> Option<Decimal> {
-    vues.map(|v| v.net_paye).sum::<Option<Decimal>>().map(q2)
+    vues.map(|v| v.net_paye).sum::<Option<Decimal>>().map(|n| Montant::du_decimal(n).au_centime().decimal())
 }
 
 impl Trois {
     fn de(vues: &[&VuePaie]) -> Trois {
-        let somme = |f: fn(&VuePaie) -> Decimal| q2(vues.iter().map(|v| f(v)).fold(Decimal::new(0, 2), |t, x| t + x));
+        let somme = |f: fn(&VuePaie) -> Decimal| vues.iter().fold(Montant::ZERO, |t, v| t + Montant::du_decimal(f(v))).au_centime().decimal();
         Trois { net_paye: net_paye_de(vues.iter().copied()), brut: somme(|v| v.brut), cout_employeur: somme(|v| v.cout_employeur), engagements: vues.len() }
     }
 }
@@ -2214,7 +2215,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
             v.informations.insert(0, phrase);
         }
     }
-    let total_cout = q2(vues.iter().fold(Decimal::new(0, 2), |t, v| t + v.cout_employeur));
+    let total_cout = vues.iter().fold(Montant::ZERO, |t, v| t + Montant::du_decimal(v.cout_employeur)).au_centime().decimal();
     let total_net = net_paye_de(vues.iter());
     // LES TROIS NOMBRES, sommes ici : par carte (une carte, un engagement) et par salarie (la colonne « Le mois »).
     let blocs = vues.iter().map(|v| Some(Trois::de(&[v]))).collect();

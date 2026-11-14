@@ -114,7 +114,7 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, qu
         qui(ctx, e),
         virgule(reparties.paliers.iter().fold(Decimal::ZERO, |a, p| a + p.heures).normalize()),
         if partiel { "complémentaires" } else { "supplémentaires" },
-        euros(horaire.round_dp(2)),
+        euros(horaire),
         virgule(quotite.round_dp(2).normalize()),
         reparties.paliers.iter().map(|p| format!("{} h majorées de {} %", virgule(p.heures.normalize()), virgule(p.majoration.normalize()))).collect::<Vec<_>>().join(", ")
     ))];
@@ -157,8 +157,7 @@ pub(crate) fn apres_les_cotisations(
     }
     let heures = siennes.iter().fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite));
     let supplementaires = siennes.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite));
-    let rien = Montant::du_decimal(Decimal::ZERO);
-    let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(rien, |a, l| a + Montant::du_decimal(l.montant_sal));
+    let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(Montant::ZERO, |a, l| a + Montant::du_decimal(l.montant_sal));
     let mut avis = Vec::new();
 
     // La reduction salariale.
@@ -219,7 +218,7 @@ pub(crate) fn apres_les_cotisations(
     let csg_deductible = (remuneration * abattement).fois_taux(taux_csg).au_centime();
     let autres = sal(&|l| !(l.est(&CSG_DED) || l.est(&CSG_CRDS_ND) || l.est(&MUTUELLE)));
     let leurs_cotisations = Montant::du_decimal(autres.decimal() * remuneration.decimal() / brut.decimal()).au_centime();
-    let net = (remuneration - csg_deductible - (leurs_cotisations - reduction).max(rien)).max(Montant::ZERO);
+    let net = (remuneration - csg_deductible - (leurs_cotisations - reduction).max(Montant::ZERO)).max(Montant::ZERO);
     let deja = deja()?;
     let limite = Montant::du_decimal(droit::heures_en_plus::limite_de_l_exoneration()?);
     let reste = (limite - deja).max(Montant::ZERO);

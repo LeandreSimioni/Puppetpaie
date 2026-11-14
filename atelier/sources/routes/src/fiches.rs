@@ -29,6 +29,7 @@ use envois::ligne_d_envoi::{noter, par_courriel};
 use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::grandeurs::Montant;
 use socle::ecriture::ecrire_json;
 use socle::paris::{InstantOuJour, Moment};
 use socle::html::{html_echapper, mailto};
@@ -601,10 +602,10 @@ pub(crate) struct ChargeTaxeSurLesSalaires {
 /// Les plafonds de la franchise en base de TVA, au bareme de l'annee.
 #[derive(Debug, Clone, serde::Serialize)]
 struct PlafondsDeLaFranchise {
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    prestations_de_services: socle::num::Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    total: socle::num::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    prestations_de_services: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    total: Montant,
 }
 
 /// Les deux reponses a la question de la franchise : sous les plafonds (`true`), au-dessus (`false`).
@@ -635,8 +636,8 @@ pub(crate) struct RegimeDeLaTaxe {
     consequence: String,
     complet: bool,
     due: bool,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
-    part_taxee: Option<socle::num::Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
+    part_taxee: Option<socle::grandeurs::Taux>,
 }
 
 /// `taxe-sur-les-salaires-regime` : ce que la fiche en cours de saisie dit -- sans lui, celle de la compagnie. Rend la
@@ -667,7 +668,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         franchise: Franchise {
             aide: q.aide,
             choix: ChoixDeLaFranchise { sous: q.sous, dessus: q.dessus },
-            plafonds: q.plafonds.map(|(s, t)| PlafondsDeLaFranchise { prestations_de_services: s.normalize(), total: t.normalize() }),
+            plafonds: q.plafonds.map(|(s, t)| PlafondsDeLaFranchise { prestations_de_services: Montant::du_decimal(s), total: Montant::du_decimal(t) }),
             annee,
         },
         champs: r.champs,
@@ -675,7 +676,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         complet: !matches!(r.decision, Decision::ADire(_)),
         due: matches!(r.decision, Decision::DueSur(_)),
         part_taxee: match r.decision {
-            Decision::DueSur(p) => Some(p.normalize()),
+            Decision::DueSur(p) => Some(socle::grandeurs::Taux::du_decimal(p)),
             _ => None,
         },
     })

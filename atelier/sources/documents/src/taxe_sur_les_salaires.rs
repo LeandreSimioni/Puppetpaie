@@ -5,7 +5,7 @@
 
 use droit::fiche::Lue as _;
 use socle::echec::R;
-use socle::num::{add, eur, mul, sub, Decimal};
+use socle::num::{add, mul, sub, Decimal};
 use socle::texte::euros;
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
@@ -18,7 +18,8 @@ pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fic
 /// `abattement` : le facteur de la CSG du bareme (`abattement_csg`, 0,9825). Le calcul de l'etat « taxe sur les
 /// salaires » (`etats_compta`), mis ici pour que la DSN lise le meme.
 pub fn assiette_taxe_sur_les_salaires(brut: Decimal, base_csg: Decimal, abattement: Decimal) -> Decimal {
-    eur(add(sub(base_csg, eur(mul(brut, abattement))), brut))
+    let au_centime = |x: Decimal| socle::grandeurs::Montant::du_decimal(x).au_centime().decimal();
+    au_centime(add(sub(base_csg, au_centime(mul(brut, abattement))), brut))
 }
 
 /// Les fractions d'une remuneration individuelle annuelle soumises aux taux majores (CGI art. 231, 2 bis) : celle

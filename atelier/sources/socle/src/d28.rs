@@ -188,18 +188,9 @@ impl P {
         }
     }
 
-    /// Deux decimales, la moitie vers le haut.
-    pub fn eur2(self) -> P {
-        if self.e > 2 {
-            let p = 10i128.pow((self.e - 2) as u32);
-            let (mut q, r) = (self.m / p, (self.m % p).abs());
-            if 2 * r >= p {
-                q += self.m.signum();
-            }
-            P { m: q, e: 2 }
-        } else {
-            P { m: self.m * 10i128.pow((2 - self.e) as u32), e: 2 }
-        }
+    /// Un montant au centime (`grandeurs::Montant::au_centime`, l'arrondi unique).
+    pub fn au_centime(self) -> P {
+        P::depuis(crate::grandeurs::Montant::du_decimal(crate::num::en_decimal(self)).au_centime().decimal())
     }
 
     /// `to_integral_value(rounding=ROUND_FLOOR)`.

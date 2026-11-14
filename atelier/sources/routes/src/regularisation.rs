@@ -67,9 +67,9 @@ pub(crate) struct Ecart {
     heures: Option<Heures>,
 }
 
-/// Les montants d'une paie au centime, la moitie au pair, dans l'ordre de `Resume`.
+/// Les montants d'une paie au centime, dans l'ordre de `Resume`.
 fn montants(p: &Paie) -> [Montant; 6] {
-    [p.brut, p.net_a_payer, p.net_imposable, p.total_sal, p.total_pat, p.cout_employeur].map(|x| Montant::du_decimal(x.round_dp(2)))
+    [p.brut, p.net_a_payer, p.net_imposable, p.total_sal, p.total_pat, p.cout_employeur].map(|x| Montant::du_decimal(x).au_centime())
 }
 
 /// Les heures d'une paie au centieme : la somme flottante des lignes (151,67 - 63) ne se montre pas avec ses residus.

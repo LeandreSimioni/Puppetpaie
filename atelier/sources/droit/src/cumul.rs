@@ -174,7 +174,7 @@ impl Position {
     }
 
     pub fn brut(&self) -> Decimal {
-        self.engagements.iter().fold(Decimal::new(0, 2), |a, e| add(a, e.brut))
+        self.engagements.iter().fold(socle::grandeurs::Montant::ZERO.decimal(), |a, e| add(a, e.brut))
     }
 
     /// Heures restant a acquerir pour atteindre le seuil ; 0 si atteint.

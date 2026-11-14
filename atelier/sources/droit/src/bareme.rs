@@ -1765,7 +1765,8 @@ pub fn affiliation_prevoyance(ent: &ChampsEntreprise, sal: &SalarieDuContrat, au
 /// La somme des parts d'une base `a` a chacun des taux `taux` (en pourcent), chacune arrondie au centime : une ligne
 /// dont la part se compose de plusieurs taux.
 pub fn somme_pct(a: Decimal, taux: &[Decimal]) -> Decimal {
-    taux.iter().fold(Decimal::new(0, 2), |m, t| m + socle::num::pct(a, *t))
+    let a = socle::grandeurs::Montant::du_decimal(a);
+    taux.iter().fold(socle::grandeurs::Montant::ZERO, |m, t| m + a.fois_taux(socle::grandeurs::Taux::du_decimal(*t)).au_centime()).decimal()
 }
 
 // ------------------------------------------------------------ les risques AT/MP de l'arrete de l'annee

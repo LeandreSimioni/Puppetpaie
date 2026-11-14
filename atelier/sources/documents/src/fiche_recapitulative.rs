@@ -97,7 +97,7 @@ impl<'a> Recapitulatifs<'a> {
             prevu: Decimal,
             incomplet: bool,
         }
-        let zero = socle::num::zero2();
+        let zero = socle::grandeurs::Montant::ZERO.decimal();
         let mut cotes: [Vec<(String, Cumul)>; 2] = [Vec::new(), Vec::new()];
         for l in etats_paie::lignes_livre(self.ctx, &p, &mut Vec::new(), &self.demande.departs)? {
             for (i, cle) in [l.spectacle.as_str(), l.cle_salarie.as_str()].into_iter().enumerate() {

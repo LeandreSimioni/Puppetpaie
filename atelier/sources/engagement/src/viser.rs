@@ -48,13 +48,6 @@ fn refus(m: impl Into<String>) -> RefusVisee {
 
 const TOURS: usize = 12;
 
-/// Au centime.
-fn centimes(x: Decimal) -> Decimal {
-    let mut r = x.round_dp(2);
-    r.rescale(2);
-    r
-}
-
 /// La rubrique de la ligne ; une rubrique que le catalogue ne connait pas se refuse.
 fn rubrique_de(ctx: &Contexte, ligne: &LignePaie) -> R<droit::catalogue::Rubrique> {
     droit::catalogue::rubrique(&ctx.racine, ligne.rubrique(), &ctx.lue_au).map_err(RefusVisee::Refus)
@@ -143,7 +136,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
 fn mis_a_l_echelle(x: &Chiffre, facteur: Decimal) -> R<NombreLu> {
     let a = x.dec().map_err(RefusVisee::Refus)?;
     let p = a.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-    Ok(NombreLu::de_decimal(centimes(p)))
+    Ok(NombreLu::de_decimal(socle::grandeurs::Montant::du_decimal(p).au_centime().decimal()))
 }
 
 /// L'engagement recopie, ses salaires multiplies -- et rien d'autre. Rend aussi s'il y avait quelque chose a multiplier.
@@ -160,7 +153,7 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
         if let Some(t) = l.taux() {
             // Le taux au centime, dans sa forme la plus courte (`mis_a_l_echelle`).
             let p = t.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-            l.poser_taux(socle::num::court(centimes(p))).map_err(RefusVisee::Refus)?;
+            l.poser_taux(socle::num::court(socle::grandeurs::Montant::du_decimal(p).au_centime().decimal())).map_err(RefusVisee::Refus)?;
         }
         touche = true;
     }
@@ -168,7 +161,7 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
 }
 
 fn somme(paies: &[Paie], rangs: &[usize], cible: Cible) -> R<Decimal> {
-    let mut total = Decimal::new(0, 2);
+    let mut total = socle::grandeurs::Montant::ZERO.decimal();
     for &i in rangs {
         let p = paies.get(i).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
         total += match cible {

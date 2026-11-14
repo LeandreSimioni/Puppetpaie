@@ -115,12 +115,12 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         if porte {
             continue;
         }
-        let mut masse = socle::num::zero2();
+        let mut masse = socle::grandeurs::Montant::ZERO.decimal();
         for b in d.paies().iter().filter_map(|p| p.mesures.brut) {
             masse += b;
         }
         let Some(taux) = base.taux.de(m.annee_civile()) else { return Ok(None) };
-        let cot = (masse * taux / Decimal::from(100)).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+        let cot = socle::grandeurs::Montant::du_decimal(masse * taux / Decimal::from(100)).au_centime().decimal();
         par_mois.push((m, cot));
     }
     if par_mois.is_empty() {

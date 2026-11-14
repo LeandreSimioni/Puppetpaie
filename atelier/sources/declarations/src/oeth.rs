@@ -12,7 +12,8 @@ use socle::echec::{refus_avec, Lieu, R};
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
-use socle::num::{add, eur2, mul, sub, zero2, Decimal};
+use socle::grandeurs::Montant;
+use socle::num::{add, mul, sub, Decimal};
 use std::collections::BTreeMap;
 
 const SEUIL: i64 = 20;
@@ -83,7 +84,7 @@ impl Declaration {
 
     /// Ce que la declaration ajoute au bordereau Urssaf, en euros (`Declaration.a_verser`).
     pub fn a_verser(&self) -> Decimal {
-        self.bordereau().iter().fold(zero2(), |a, (_, m)| a + *m)
+        self.bordereau().iter().fold(Montant::ZERO.decimal(), |a, (_, m)| a + *m)
     }
 
     /// `Declaration.resume` : la phrase que `produire` dit au mois d'avril.
@@ -193,7 +194,7 @@ fn dec(v: Nombre, nom: &str, millesime: i32) -> R<Decimal> {
 
 /// Un montant de `config/oeth.json` que la compagnie n'ecrit que s'il y en a, au centime.
 fn montant(v: Option<Nombre>, nom: &str, millesime: i32) -> R<Option<Decimal>> {
-    v.map(|n| dec(n, nom, millesime).map(eur2)).transpose()
+    v.map(|n| dec(n, nom, millesime).map(|x| Montant::du_decimal(x).au_centime().decimal())).transpose()
 }
 
 /// D5212-20 et D5212-21.
@@ -244,8 +245,8 @@ Rien n'est ecrit.",
         manquants: Decimal::ZERO,
         coefficient: 0,
         smic,
-        brute: zero2(),
-        nette: zero2(),
+        brute: Montant::ZERO.decimal(),
+        nette: Montant::ZERO.decimal(),
         deductions: BTreeMap::new(),
         externes: vec![],
         accord: None,
@@ -329,9 +330,9 @@ pour le dire. Rien n'est ecrit.",
         false
     };
     d.coefficient = coefficient(eff, sans_action);
-    d.brute = eur2(mul(mul(d.manquants, Decimal::from(d.coefficient)), smic));
+    d.brute = Montant::du_decimal(mul(mul(d.manquants, Decimal::from(d.coefficient)), smic)).au_centime().decimal();
 
-    let ecap = eur2(mul(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17)), smic));
+    let ecap = Montant::du_decimal(mul(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17)), smic)).au_centime().decimal();
     d.deductions.insert(CotisationDEtablissement::DeductionEcap, ecap);
     if let Some(s) = sous_traitance {
         d.deductions.insert(CotisationDEtablissement::DeductionSousTraitance, s);
@@ -343,13 +344,13 @@ pour le dire. Rien n'est ecrit.",
     // Les plafonds, sur la contribution brute (D5212-22 et -23).
     let moitie_du_taux = mul(d.beneficiaires, Decimal::ONE_HUNDRED) >= socle::num::div(mul(eff, taux()), Decimal::from(2));
     let part = if moitie_du_taux { Decimal::new(75, 2) } else { Decimal::new(50, 2) };
-    let plafond_st = eur2(mul(d.brute, part));
-    let plafond_dep = eur2(mul(d.brute, Decimal::new(10, 2)));
-    let total_dep = depenses.iter().fold(zero2(), |t, (_, m)| add(t, *m));
-    let sous_traitance_retenue = sous_traitance.iter().fold(zero2(), |t, s| add(t, (*s).min(plafond_st)));
+    let plafond_st = Montant::du_decimal(mul(d.brute, part)).au_centime().decimal();
+    let plafond_dep = Montant::du_decimal(mul(d.brute, Decimal::new(10, 2))).au_centime().decimal();
+    let total_dep = depenses.iter().fold(Montant::ZERO.decimal(), |t, (_, m)| add(t, *m));
+    let sous_traitance_retenue = sous_traitance.iter().fold(Montant::ZERO.decimal(), |t, s| add(t, (*s).min(plafond_st)));
     let retenu = add(add(ecap, sous_traitance_retenue), total_dep.min(plafond_dep));
     let reste = sub(d.brute, retenu);
-    d.nette = if reste > zero2() { reste } else { zero2() };
+    d.nette = if reste > Montant::ZERO.decimal() { reste } else { Montant::ZERO.decimal() };
     Ok(d)
 }
 

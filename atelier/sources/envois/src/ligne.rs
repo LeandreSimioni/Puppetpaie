@@ -318,18 +318,18 @@ pub struct Ouverture {
     pub contournement: Option<String>,
 }
 
-/// Les montants d'une DSN deposee, chacun ecrit en texte tel que `socle::ecriture::decimal_en_texte` l'ecrit, et relu dans
+/// Les montants d'une DSN deposee, chacun ecrit en texte tel que `socle::grandeurs::ecrit::texte` l'ecrit, et relu dans
 /// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
 mod versements_en_texte {
     use serde::{Deserialize, Serialize};
     use socle::num::Decimal;
 
-    /// Un montant ecrit par `decimal_en_texte`.
+    /// Un montant ecrit par `ecrit::texte`.
     struct EnTexte<'a>(&'a Decimal);
 
     impl Serialize for EnTexte<'_> {
         fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-            socle::ecriture::decimal_en_texte::serialize(self.0, s)
+            socle::grandeurs::ecrit::texte::serialize(&socle::grandeurs::Montant::du_decimal(*self.0), s)
         }
     }
 
@@ -372,7 +372,7 @@ pub struct DetailDsn {
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ordre: Option<droit::natures::NumeroDOrdre>,
-    /// Les montants versés aux organismes (S21.G00.20.005), écrits en texte (`socle::ecriture::decimal_en_texte`).
+    /// Les montants versés aux organismes (S21.G00.20.005), écrits en texte (`socle::grandeurs::ecrit::texte`).
     #[serde(default, skip_serializing_if = "Option::is_none", with = "versements_en_texte")]
     pub versements: Option<Vec<Decimal>>,
     #[serde(skip_serializing_if = "Option::is_none")]

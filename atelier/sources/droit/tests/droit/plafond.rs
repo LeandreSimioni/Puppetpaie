@@ -9,6 +9,7 @@
 //! (2025-2026, tous les mois, deux departs, durees 1 a 62 jours, 0, 1, 3 ou 6 cachets, artiste ou technicien), et a
 //! `plafond-dates.json`, ecrit a la main depuis les memes textes.
 
+use socle::grandeurs::{Jours, Montant, MontantUnitaire};
 use socle::num::Decimal;
 use droit::plafond::{plafond_urssaf, pour_paie, EngagementPlafond};
 use socle::date::Jour;
@@ -48,8 +49,18 @@ struct Pss {
 }
 
 /// Le plafond de chaque annee d'une table `{annee: (mensuel, horaire)}`.
-fn pss_depuis_table(table: &HashMap<i32, (i64, i64)>) -> impl Fn(i32) -> R<(Decimal, Decimal)> + '_ {
-    move |annee| table.get(&annee).map(|(m, h)| (Decimal::from(*m), Decimal::from(*h))).ok_or_else(|| socle::refus!("pas de plafond pour {}", annee))
+fn pss_depuis_table(table: &HashMap<i32, (i64, i64)>) -> impl Fn(i32) -> R<droit::plafond::Pss> + '_ {
+    move |annee| {
+        table
+            .get(&annee)
+            .map(|(m, h)| droit::plafond::Pss { mensuel: Montant::du_decimal(Decimal::from(*m)), horaire: MontantUnitaire::du_decimal(Decimal::from(*h)) })
+            .ok_or_else(|| socle::refus!("pas de plafond pour {}", annee))
+    }
+}
+
+/// Des jours dits.
+fn jours(n: i64) -> Jours {
+    Jours::du_decimal(Decimal::from(n))
 }
 
 /// Le jour (an, mois, jour).
@@ -152,7 +163,7 @@ fn la_grille_depuis_le_texte() {
                             let voulu = oracle(&t, duree, artiste, &journees);
                             let lu = plafond_urssaf(debut, fin, artiste, &pss, &journees);
                             match (&voulu, &lu) {
-                                (Ok(v), Ok(l)) => assert_eq!(l, v, "{:?}->{:?} {} cachets, artiste {}", debut, fin, c, artiste),
+                                (Ok(v), Ok(l)) => assert_eq!(l.decimal(), *v, "{:?}->{:?} {} cachets, artiste {}", debut, fin, c, artiste),
                                 (Err(()), Err(m)) if journees.is_empty() => {
                                     let regle = if artiste && duree < 5 { "arrete du 24/01/1975" } else { "BOSS, assiette generale, § 1090" };
                                     assert!(m.phrase.contains(regle), "{}", m.phrase)
@@ -176,7 +187,7 @@ fn les_dates_et_le_mensuel() {
     let pss = pss_depuis_table(&t);
     for (debut, fin, statut, journees, voulu, quoi) in &c.dates {
         let lu = plafond_urssaf(*debut, *fin, statut == "artiste", &pss, journees).unwrap();
-        assert_eq!(lu, *voulu, "{}", quoi);
+        assert_eq!(lu.decimal(), *voulu, "{}", quoi);
     }
     for (debut, fin, voulu) in &c.mensuel {
         let e = EngagementPlafond {
@@ -184,31 +195,31 @@ fn les_dates_et_le_mensuel() {
             artiste: true,
             debut_periode: *debut,
             fin_periode: *fin,
-            debut: j(0, 1, 1), fin: j(0, 1, 1), dates_travail: vec![], jours: 0,
+            debut: j(0, 1, 1), fin: j(0, 1, 1), dates_travail: vec![], jours: jours(0),
         };
-        assert_eq!(pour_paie(&e, &pss).unwrap(), *voulu, "{:?} {:?}", debut, fin);
+        assert_eq!(pour_paie(&e, &pss).unwrap().decimal(), *voulu, "{:?} {:?}", debut, fin);
     }
     // pour_paie d'un intermittent = plafond_urssaf avec ses dates.
     let e = EngagementPlafond {
         mensuelle: false, artiste: true, debut_periode: j(2026, 5, 20), fin_periode: j(2026, 5, 23),
         debut: j(2026, 5, 20), fin: j(2026, 5, 23),
-        dates_travail: vec![j(2026, 5, 20), j(2026, 5, 22)], jours: 2,
+        dates_travail: vec![j(2026, 5, 20), j(2026, 5, 22)], jours: jours(2),
     };
-    assert_eq!(pour_paie(&e, &pss).unwrap(), dec("720.00"));
+    assert_eq!(pour_paie(&e, &pss).unwrap().decimal(), dec("720.00"));
     assert_eq!(pour_paie(&e, &pss).unwrap(), plafond_urssaf(e.debut, e.fin, true, &pss, &e.dates_travail).unwrap());
     // Une journee dite (`jours`) et non datee refuse ; aucune journee dans la paie, aucun plafond.
-    let err = pour_paie(&EngagementPlafond { jours: 3, ..e.clone() }, &pss).unwrap_err().phrase;
+    let err = pour_paie(&EngagementPlafond { jours: jours(3), ..e.clone() }, &pss).unwrap_err().phrase;
     assert!(err.contains("3 jour(s) travaille(s) pour 2 date(s)"), "{}", err);
-    assert_eq!(pour_paie(&EngagementPlafond { jours: 0, dates_travail: vec![], ..e.clone() }, &pss).unwrap(), dec("0.00"));
+    assert_eq!(pour_paie(&EngagementPlafond { jours: jours(0), dates_travail: vec![], ..e.clone() }, &pss).unwrap().decimal(), dec("0.00"));
     // Un technicien : le prorata de ses jours remuneres (BOSS § 1090), 4005 x 2 / 31.
-    assert_eq!(pour_paie(&EngagementPlafond { artiste: false, ..e.clone() }, &pss).unwrap(), dec("258.39"));
+    assert_eq!(pour_paie(&EngagementPlafond { artiste: false, ..e.clone() }, &pss).unwrap().decimal(), dec("258.39"));
     // Une paie de janvier d'un contrat du 20/01 au 10/02/2026 ne compte que ses jours (R. 242-2, « pour
     // chaque paie ») ; une date hors de la periode de paie refuse.
     let janvier = EngagementPlafond {
         mensuelle: false, artiste: true, debut_periode: j(2026, 1, 20), fin_periode: j(2026, 1, 31),
-        debut: j(2026, 1, 20), fin: j(2026, 2, 10), dates_travail: vec![j(2026, 1, 20), j(2026, 1, 22), j(2026, 1, 24)], jours: 3,
+        debut: j(2026, 1, 20), fin: j(2026, 2, 10), dates_travail: vec![j(2026, 1, 20), j(2026, 1, 22), j(2026, 1, 24)], jours: jours(3),
     };
-    assert_eq!(pour_paie(&janvier, &pss).unwrap(), dec("387.58"));
+    assert_eq!(pour_paie(&janvier, &pss).unwrap().decimal(), dec("387.58"));
     let err = pour_paie(&EngagementPlafond { dates_travail: vec![j(2026, 1, 20), j(2026, 1, 22), j(2026, 2, 3)], ..janvier }, &pss).unwrap_err().phrase;
     assert!(err.contains("hors de la periode de paie"), "{}", err);
     // Sans jour remunere date, rien ne se compte : refus.
@@ -224,8 +235,8 @@ fn bornes_incluses_et_exemples_des_bulletins() {
     let pss = pss_depuis_table(&t);
     // FAVART 24/05/2026 : un jour, une journee -> 30 x 12 = 360.
     let r = plafond_urssaf(j(2026, 5, 24), j(2026, 5, 24), true, &pss, &[j(2026, 5, 24)]).unwrap();
-    assert_eq!(r, dec("360"));
+    assert_eq!(r.decimal(), dec("360"));
     // FAVART 13-22/05/2026 : dix jours, un jour remunere, 4005 / 31 (BOSS § 1090).
     let r = plafond_urssaf(j(2026, 5, 13), j(2026, 5, 22), true, &pss, &[j(2026, 5, 15)]).unwrap();
-    assert_eq!(r, dec("129.19"));
+    assert_eq!(r.decimal(), dec("129.19"));
 }

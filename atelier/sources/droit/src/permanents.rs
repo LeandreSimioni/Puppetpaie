@@ -10,7 +10,8 @@ use socle::date::{jours_du_mois, Jour};
 use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::echec::R;
-use socle::num::{add, sub, div, eur2, mul, zero2, Decimal};
+use socle::grandeurs::Montant;
+use socle::num::{add, sub, div, mul, Decimal};
 use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
@@ -747,9 +748,9 @@ pub fn indemnite_conges(
     let taux = regles()?.conges_payes.indemnisation.dixieme;
     // Une periode qui n'a acquis aucun jour ne donne rien au dixieme : le zero est le calcul, pas une absence.
     let dixieme = if jours_acquis_periode > Decimal::ZERO {
-        eur2(div(mul(mul(remuneration_periode, taux), jours_pris), jours_acquis_periode))
+        Montant::du_decimal(div(mul(mul(remuneration_periode, taux), jours_pris), jours_acquis_periode)).au_centime().decimal()
     } else {
-        zero2()
+        Montant::ZERO.decimal()
     };
     Ok(crate::conges::la_plus_forte(dixieme, maintien))
 }
@@ -774,7 +775,7 @@ pub fn indemnite_des_jours(
 ) -> R<crate::conges::IndemniteDesJours> {
     let sur_report = jours.min(report_restant);
     let reste = sub(jours, sur_report);
-    let mut dixieme = zero2();
+    let mut dixieme = Montant::ZERO.decimal();
     // Le dixieme d'une periode est proportionnel a la duree du conge qu'elle a fait due (L3141-24, I,
     // `code-du-travail/articles-20261110.md`) : des jours pris sur une periode qui n'en a acquis aucun (pris par
     // anticipation) n'y ont rien au dixieme ; le maintien (L3141-24, II) les paie.
@@ -808,7 +809,7 @@ pub fn precarite_due(nature: &Nature, motif_rupture: Option<MotifDeRupture>) -> 
 /// 10 % de la remuneration totale brute versee pendant le CDD (L1243-8 ; la fiche entreprise ne porte aucun accord de
 /// L1243-9).
 pub fn indemnite_precarite(remuneration_totale: Decimal) -> R<Decimal> {
-    Ok(eur2(mul(remuneration_totale, regles()?.indemnite_precarite.taux)))
+    Ok(Montant::du_decimal(mul(remuneration_totale, regles()?.indemnite_precarite.taux)).au_centime().decimal())
 }
 
 /// L'anciennete en mois : les mois complets et la fraction du mois entame.
@@ -1002,7 +1003,7 @@ pub struct IndemniteLegale {
 
 impl IndemniteLegale {
     fn non_due(pourquoi: String) -> IndemniteLegale {
-        IndemniteLegale { montant: zero2(), du: false, pourquoi: Some(pourquoi), annees: None }
+        IndemniteLegale { montant: Montant::ZERO.decimal(), du: false, pourquoi: Some(pourquoi), annees: None }
     }
 }
 
@@ -1045,9 +1046,9 @@ pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decima
         ));
     }
     let s = douze_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
-    let moyenne = eur2(div(s, Decimal::from(douze_derniers.len() as i64)));
+    let moyenne = Montant::du_decimal(div(s, Decimal::from(douze_derniers.len() as i64))).au_centime().decimal();
     let s = trois_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
-    let tiers = eur2(div(s, Decimal::from(3)));
+    let tiers = Montant::du_decimal(div(s, Decimal::from(3))).au_centime().decimal();
     Ok(SalaireDeReference {
         moyenne_12_mois: moyenne,
         tiers_3_mois: tiers,
@@ -1100,7 +1101,7 @@ fn bareme_licenciement(anciennete: Decimal, reference: Decimal) -> R<(Decimal, D
             break;
         }
     }
-    Ok((eur2(mul(total, reference)), annees))
+    Ok((Montant::du_decimal(mul(total, reference)).au_centime().decimal(), annees))
 }
 
 /// Les mois complets d'une anciennete en mois.
@@ -1226,7 +1227,7 @@ pub fn indemnite_depart_retraite(anciennete: Decimal, reference: &mut dyn FnMut(
         return Err(socle::echec::livree("permanents-base.json", "depart_a_la_retraite.indemnite.taux"));
     };
     let Some(palier) = tries.iter().filter(|t| annees >= t.anciennete_annees).last() else {
-        return Ok(IndemniteDuDepart { montant: zero2(), du: false, mois: Decimal::ZERO, palier: None, pourquoi: Some(format!(
+        return Ok(IndemniteDuDepart { montant: Montant::ZERO.decimal(), du: false, mois: Decimal::ZERO, palier: None, pourquoi: Some(format!(
             "{} an(s) d'anciennete, et l'indemnite legale de depart a la retraite commence a {} ans \
              (D1237-1) -- il n'y a pas de prorata en dessous. La convention collective, elle, \
              en prevoit souvent une des la premiere annee.",
@@ -1234,7 +1235,7 @@ pub fn indemnite_depart_retraite(anciennete: Decimal, reference: &mut dyn FnMut(
     };
     let mois = palier.mois_de_salaire;
     Ok(IndemniteDuDepart {
-        montant: eur2(mul(mois, reference()?)),
+        montant: Montant::du_decimal(mul(mois, reference()?)).au_centime().decimal(),
         du: true,
         mois,
         palier: Some(palier.anciennete_annees.trunc().to_i64().ok_or_else(|| socle::echec::refus(socle::num::illisible(&palier.anciennete_annees.to_string())))?),

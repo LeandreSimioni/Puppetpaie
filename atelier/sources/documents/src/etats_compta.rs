@@ -23,7 +23,8 @@ use crate::ecritures_comptables::{ecritures_du_mois, Ecriture, NumeroDeCompte};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
 use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielComptable, Plan};
 use socle::texte::euros;
-use socle::num::{add, div, eur, eur2, mul, sub, zero2, Decimal};
+use socle::grandeurs::{Montant, Taux};
+use socle::num::{add, div, mul, sub, Decimal};
 use crate::tableaux_export::{
     col_m, col_n, col_t, col_x, ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, Ligne, Section, Tableau,
     FORMATS_TABLEAU, R, TOTAL_GENERAL,
@@ -135,7 +136,7 @@ fn zone(logiciel: &str, quoi: &str, v: &str, n: usize, cote: char) -> R<String> 
 
 /// `"%.2f" % v` d'un montant a deux decimales.
 fn deux(v: Decimal) -> String {
-    eur2(v).to_string()
+    Montant::du_decimal(v).au_centime().decimal().to_string()
 }
 
 /// Non vide, que des chiffres.
@@ -744,7 +745,7 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     }
     for e in ecritures {
         let (s, montant) = sens(e);
-        let centimes = eur2(montant).mantissa();
+        let centimes = Montant::du_decimal(montant).au_centime().decimal().mantissa();
         let mut ch: BTreeMap<&str, String> = BTreeMap::new();
         ch.insert("type", "M".to_string());
         ch.insert("compte", compte_quadra(compte_de(e).as_str())?);
@@ -1057,7 +1058,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.format = format_possible(Some(format), &FORMATS_ECRITURES)?;
     totaliser(&mut t, TOTAL_GENERAL)?;
     // Le total de chaque colonne : la somme de ce que les lignes portent (aucune ligne, rien).
-    let somme = |k: &str| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(zero2(), add);
+    let somme = |k: &str| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(Montant::ZERO.decimal(), add);
     let (debit, credit) = (somme("debit"), somme("credit"));
     if debit != credit {
         return Err(refus(format!("Le journal n'est pas équilibré (débit {}, crédit {}).", debit, credit)));
@@ -1169,7 +1170,7 @@ pub fn format_retenu(ctx: &Contexte) -> R<Option<FormatDExport>> {
 /// Le solde d'une ligne, dit « débiteur », « créditeur » ou « nul ».
 fn solde(d: &Ligne) -> String {
     // Ce que le compte porte au debit, moins ce qu'il porte au credit (une colonne vide n'y porte rien).
-    let v = [d.decimal("debit"), d.decimal("credit").map(|c| -c)].into_iter().flatten().fold(zero2(), add);
+    let v = [d.decimal("debit"), d.decimal("credit").map(|c| -c)].into_iter().flatten().fold(Montant::ZERO.decimal(), add);
     let t = if v > Decimal::ZERO {
         format!("débiteur {}", v)
     } else if v < Decimal::ZERO {
@@ -1227,7 +1228,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
-    let zero = zero2();
+    let zero = Montant::ZERO.decimal();
     // compte -> (libelle, debit, credit)
     let mut par: BTreeMap<NumeroDeCompte, (Option<String>, Decimal, Decimal)> = BTreeMap::new();
     for e in &ecr {
@@ -1275,7 +1276,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
 fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Decimal>, i64)> {
     let depart = jusqu_a.plus(-12).map_err(|x| x.reclasser(Classe::Illisible))?;
-    let (mut brut, mut pat, mut n) = (zero2(), zero2(), 0i64);
+    let (mut brut, mut pat, mut n) = (Montant::ZERO.decimal(), Montant::ZERO.decimal(), 0i64);
     for l in lignes {
         let (Some(b), Some(c)) = (l.brut, l.cotisations_patronales) else { continue };
         if l.cle_salarie != *cle || !(depart < l.mois && l.mois <= jusqu_a) {
@@ -1328,7 +1329,7 @@ fn provision_d_une_annee_importee(
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
     // brut que les pieces taisent, la somme ne se fait pas (`None`).
     let mut bruts = |cle: &droit::contexte::IdSalarie, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
-        let mut total = zero2();
+        let mut total = Montant::ZERO.decimal();
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
             for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == *cle) {
                 let Some(brut) = q.brut else { return Ok(None) };
@@ -1374,7 +1375,7 @@ fn provision_d_une_annee_importee(
             }
         }
         // Le salaire du maintien : le brut du dernier mois repris ; un bulletin qui ne le dit pas, il ne se lit pas.
-        let Some(salaire) = paies.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle).map(|q| q.brut).try_fold(zero2(), |a, b| b.map(|b| add(a, b))) else {
+        let Some(salaire) = paies.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle).map(|q| q.brut).try_fold(Montant::ZERO.decimal(), |a, b| b.map(|b| add(a, b))) else {
             avert.push(format!(
                 "{} : un de ses bulletins repris de {} ne dit pas son brut : son salaire du mois ne se lit pas, il n'est pas dans la provision.",
                 ctx.nomme(&cle),
@@ -1398,7 +1399,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     }
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
-    let zero = zero2();
+    let zero = Montant::ZERO.decimal();
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.clone();
     // CE QUI SE PROVISIONNE, salarie par salarie : (cle, contrat, nature, compteur et indemnite a la fin du mois `m`).
     let mut a_provisionner: Vec<(droit::contexte::IdSalarie,Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)> = Vec::new();
@@ -1457,7 +1458,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if taux.is_none() {
             avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle));
         }
-        let charges = taux.map(|t| eur(div(mul(retenu, t), Decimal::ONE_HUNDRED)));
+        let charges = taux.map(|t| Montant::du_decimal(retenu).fois_taux(Taux::du_decimal(t)).au_centime().decimal());
         indemnites = add(indemnites, retenu);
         if let Some(c) = charges {
             charges_dites = add(charges_dites, c);
@@ -1581,7 +1582,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         }
     };
     let abatt = if bar.abattement_csg.is_zero() { Decimal::ONE } else { bar.abattement_csg };
-    let zero = zero2();
+    let zero = Montant::ZERO.decimal();
     // cle -> (salarie, brut, base, mois) dans l'ordre d'insertion
     let mut ordre: Vec<String> = Vec::new();
     let mut par: BTreeMap<String, (String, Decimal, Decimal, BTreeSet<Mois>)> = BTreeMap::new();
@@ -1632,10 +1633,10 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for cle in rangs {
         let (nom, brut, base, mois) = &par[cle];
         let b = *base;
-        let normal = eur(div(mul(b, taux_normal), cent));
+        let normal = Montant::du_decimal(div(mul(b, taux_normal), cent)).au_centime().decimal();
         let (au_dela_1, au_dela_2) = crate::taxe_sur_les_salaires::fractions_majorees(b, s1, s2);
-        let m1 = eur(div(mul(au_dela_1, maj_1), cent));
-        let m2 = eur(div(mul(au_dela_2, maj_2), cent));
+        let m1 = Montant::du_decimal(div(mul(au_dela_1, maj_1), cent)).au_centime().decimal();
+        let m2 = Montant::du_decimal(div(mul(au_dela_2, maj_2), cent)).au_centime().decimal();
         let taxe = add(add(normal, m1), m2);
         let mut l = Ligne::nouvelle();
         l.t("salarie", nom.clone()).n("mois", mois.len() as i64).d("brut", *brut).d("base", b).d("taux_normal", normal).d("majoration_1", m1).d("majoration_2", m2).d("taxe", taxe);

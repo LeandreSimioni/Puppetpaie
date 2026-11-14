@@ -17,7 +17,6 @@ use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, R};
-use socle::num::eur2;
 
 /// Ce qu'il faut savoir du reçu et du certificat en les remettant.
 pub const AVIS: &[&str] = &[
@@ -102,7 +101,7 @@ fait). Rien n'est écrit.",
     let dite: String = maintien.iter().map(|m| mention(m, &nom, &fin)).collect();
     valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
-    valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));
+    valeurs.insert(Marqueur::SoldeNet, fmt_eur(p.net_a_payer));
     let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste))?;
     ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
     if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
@@ -152,10 +151,10 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
 fn inventaire(p: &Paie) -> String {
     let mut lignes = Vec::new();
     for l in &p.remuneration {
-        lignes.push(format!("{} : {}", l.libelle, fmt_eur(eur2(l.montant))));
+        lignes.push(format!("{} : {}", l.libelle, fmt_eur(l.montant)));
     }
     for l in &p.lignes {
-        let m = eur2(l.montant_sal);
+        let m = socle::grandeurs::Montant::du_decimal(l.montant_sal).au_centime().decimal();
         if m != socle::num::Decimal::ZERO {
             lignes.push(format!("{} : -{}", l.libelle, fmt_eur(m)));
         }

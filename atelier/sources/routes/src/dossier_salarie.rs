@@ -34,7 +34,8 @@ use engagement::numeros::NumeroContrat;
 use documents::fiche_recapitulative::Recapitulatifs;
 use documents::{CategorieDeDocument, SorteDePieceProduite};
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
-use socle::num::{eur2, Decimal};
+use socle::grandeurs::Montant;
+use socle::num::Decimal;
 use socle::echec::{erreur, Classe, Echec, R};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
@@ -461,7 +462,7 @@ fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [
 
 /// `Paie` -> ce que le certificat en lit : le brut est celui du calcul, a deux decimales.
 pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
-    Ok(PaieCs { engagement: ContratCs::de(&p.engagement)?, brut: eur2(p.brut), salarie: p.salarie.champs.clone() })
+    Ok(PaieCs { engagement: ContratCs::de(&p.engagement)?, brut: Montant::du_decimal(p.brut).au_centime().decimal(), salarie: p.salarie.champs.clone() })
 }
 
 /// Ce que l'ancien logiciel a verse en `mois` pour un contrat qui continue ici : le brut, les cachets (une ligne, aux
@@ -469,7 +470,7 @@ pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
 /// mois reste parmi les manquants (rien ne se devine).
 fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Decimal, Vec<engagement::LignePaie>, i64)>> {
     let Some(p) = i.paies().get(&mois) else { return Ok(None) };
-    let Some(brut) = p.brut.map(eur2) else { return Ok(None) };
+    let Some(brut) = p.brut.map(|b| Montant::du_decimal(b).au_centime().decimal()) else { return Ok(None) };
     let mut dates: Vec<Jour> = Vec::new();
     for d in &p.dates {
         let mut j = d.debut;
@@ -508,7 +509,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
     // Un contrat commence dans l'ancien logiciel : ses mois d'avant sont ceux que l'engagement importe a verses.
     let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.debut), numero: eng.numero.clone(), ..Default::default() };
     let importe = engagement::importe::continue_par(&ctx.racine, &cherche).map_err(|e| e.reclasser(Classe::Illisible))?;
-    let mut bruts = Decimal::new(0, 2);
+    let mut bruts = Montant::ZERO.decimal();
     let mut jours = 0i64;
     let mut mois_payes: Vec<MoisPaye> = Vec::new();
     for &m in mois_du.iter().filter(|m| **m < eng.mois) {
@@ -528,17 +529,17 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
             continue;
         };
         lignes.extend(paie.engagement.lignes.iter().cloned());
-        let (brut_du_mois, jours_du_mois) = (eur2(paie.brut), paie.engagement.jours);
+        let (brut_du_mois, jours_du_mois) = (Montant::du_decimal(paie.brut).au_centime().decimal(), paie.engagement.jours);
         bruts += brut_du_mois;
         jours += jours_du_mois;
         mois_payes.push(MoisPaye { fin: m.dernier_jour(), jours: jours_du_mois, brut: brut_du_mois });
     }
-    let brut = bruts + eur2(p.brut);
+    let brut = bruts + Montant::du_decimal(p.brut).au_centime().decimal();
     // Un contrat paye au mois n'a ni cachet ni date jouee : son certificat porte ses bornes, et ses jours travailles et son
     // brut mois par mois (`conges::lignes_du_mois`) ; le 31 mars le coupe entre deux mois.
     if eng.nat()?.mensuelle() {
         let fin_du_mois = eng.fin_mois();
-        mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: eur2(p.brut) });
+        mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: Montant::du_decimal(p.brut).au_centime().decimal() });
         let contrat = ContratCs { jours: jours + eng.jours, dates_travail: Vec::new(), cachets: 0, heures: None, taux_cachet: None, mois_payes, ..ContratCs::de(eng)? };
         return Ok((PaieCs { engagement: contrat, brut, salarie: p.salarie.champs.clone() }, manquants));
     }

@@ -186,11 +186,11 @@ pub fn salarie_nomme(nom: Option<&str>, nom_affichage: Option<&str>, prenom: Opt
 }
 
 /// UN MONTANT TEL QU'ON LE LIT, et le seul endroit qui en écrit un (une phrase du moteur, une ligne d'écran, un
-/// document imprimé) : « 1 234,50 € », au centime (`num::eur2`), la virgule décimale, les milliers et l'euro séparés par
-/// une espace insécable (le montant ne se coupe pas en fin de ligne ; U+00A0, que toute police d'un PDF porte). Un
-/// fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
+/// document imprimé) : « 1 234,50 € », au centime (`Montant::au_centime`), la virgule décimale, les milliers et l'euro
+/// séparés par une espace insécable (le montant ne se coupe pas en fin de ligne ; U+00A0, que toute police d'un PDF
+/// porte). Un fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
 pub fn euros(x: rust_decimal::Decimal) -> String {
-    let t = crate::num::eur2(x).to_string();
+    let t = crate::grandeurs::Montant::du_decimal(x).au_centime().decimal().to_string();
     let (signe, t) = match t.strip_prefix('-') {
         Some(r) => ("-", r),
         None => ("", t.as_str()),

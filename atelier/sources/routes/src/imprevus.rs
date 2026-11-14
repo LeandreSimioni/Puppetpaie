@@ -1433,7 +1433,7 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
         if x <= Decimal::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }
-        Ok(Some(Chiffre::Texte(socle::num::eur2(x).to_string())))
+        Ok(Some(Chiffre::Texte(socle::grandeurs::Montant::du_decimal(x).au_centime().decimal().to_string())))
     };
     if let Some(x) = montant("ij_brute", &c.ij_brute)? {
         a.ij_brute = Some(x);

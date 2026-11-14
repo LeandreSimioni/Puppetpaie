@@ -9,7 +9,8 @@ use serde::Serialize;
 use crate::fiche::Statut;
 use crate::forme_bareme::ReductionGenerale as Parametres;
 use socle::echec::R;
-use socle::num::{add, div, eur, mul, nombre, sub, Decimal};
+use socle::grandeurs::Montant;
+use socle::num::{add, div, mul, nombre, sub, Decimal};
 
 /// Un parametre exige de la section.
 fn requis(v: Option<Decimal>, cle: &str) -> R<Decimal> {
@@ -66,8 +67,8 @@ pub fn reduction_generale(
     if !rg.statuts.iter().flatten().any(|s| *s == statut) || brut <= Decimal::ZERO || heures <= Decimal::ZERO {
         return Ok(None);
     }
-    let smic_ref = eur(mul(requis(rg.smic_horaire_reference.map(|n| n.0), "smic_horaire_reference")?, heures));
-    let plafond = requis(rg.plafond_smic.map(|n| n.0), "plafond_smic")?;
+    let smic_ref = Montant::du_decimal(mul(requis(rg.smic_horaire_reference.map(|n| n.0), "smic_horaire_reference")?, heures)).au_centime().decimal();
+    let plafond =requis(rg.plafond_smic.map(|n| n.0), "plafond_smic")?;
     let fillon = rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon);
     let mut coefficient;
     if brut >= mul(plafond, smic_ref) {
@@ -94,8 +95,8 @@ pub fn reduction_generale(
 /// La reduction d'un coefficient deja fixe (celui de la regularisation annuelle d'un permanent).
 pub fn reduction_au_coefficient(rg: Option<&Parametres>, coefficient: Decimal, brut: Decimal, heures: Decimal) -> R<ReductionGenerale> {
     let rg = rg.ok_or_else(|| socle::echec::a_la_cle("Le barème de l'année ne porte pas la réduction générale des cotisations : le signaler au développeur.", "reduction_generale", ""))?;
-    let smic_ref = eur(mul(requis(rg.smic_horaire_reference.map(|n| n.0), "smic_horaire_reference")?, heures));
-    let montant = eur(mul(brut, coefficient));
+    let smic_ref = Montant::du_decimal(mul(requis(rg.smic_horaire_reference.map(|n| n.0), "smic_horaire_reference")?, heures)).au_centime().decimal();
+    let montant = Montant::du_decimal(mul(brut, coefficient)).au_centime().decimal();
     repartir_la_reduction(rg, coefficient, montant, smic_ref, heures)
 }
 
@@ -103,9 +104,9 @@ fn repartir_la_reduction(rg: &Parametres, coefficient: Decimal, montant: Decimal
     let total_points = if rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon) { requis(rg.t.map(|n| n.0), "t")? } else { requis(rg.tmin.map(|n| n.0), "tmin")? + requis(rg.tdelta.map(|n| n.0), "tdelta")? };
     let part = |taux: Option<Decimal>, cle: &str| -> R<Decimal> {
         if montant.is_zero() {
-            return Ok(Decimal::new(0, 2));
+            return Ok(Montant::ZERO.decimal());
         }
-        Ok(eur(diviser(div(mul(montant, requis(taux, cle)?), Decimal::ONE_HUNDRED), total_points)?))
+        Ok(Montant::du_decimal(diviser(div(mul(montant, requis(taux, cle)?), Decimal::ONE_HUNDRED), total_points)?).au_centime().decimal())
     };
     let chomage = part(rg.imputation.as_ref().and_then(|i| i.chomage).map(|n| n.0), "imputation.chomage")?;
     let agirc = part(rg.imputation.as_ref().and_then(|i| i.agirc_arrco).map(|n| n.0), "imputation.agirc_arrco")?;
@@ -131,7 +132,7 @@ pub fn reduction_generale_sous_dfs(
     let Some(sans) = reduction_generale(rg, statut, brut, heures, caisse_conges)? else {
         return Err(socle::echec::refus("La réduction générale s'ouvre sur le brut abattu mais pas sur le brut entier : le signaler au développeur."));
     };
-    let limite = eur(mul(sans.montant, Decimal::new(130, 2)));
+    let limite = Montant::du_decimal(mul(sans.montant, Decimal::new(130, 2))).au_centime().decimal();
     if apres.montant <= limite {
         return Ok(Some(apres));
     }
@@ -147,5 +148,5 @@ pub fn au_dela_du_seuil(rg: Option<&Parametres>, brut: Decimal, heures: Decimal,
     if heures <= Decimal::ZERO {
         return Err(socle::echec::refus("Un seuil de SMIC se compare à des heures rémunérées : la paie n'en porte aucune."));
     }
-    Ok(brut > mul(seuil, eur(mul(smic, heures))))
+    Ok(brut > mul(seuil, Montant::du_decimal(mul(smic, heures)).au_centime().decimal()))
 }

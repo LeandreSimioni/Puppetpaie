@@ -1,5 +1,5 @@
-//! L'arithmetique de la paie (`eur`, `pct`, les arrondis) et la lecture d'un nombre ecrit en texte. Un montant, un taux,
-//! une quantite ne sont que des decimaux : le flottant n'existe qu'a la porte d'un fichier (`forme`).
+//! L'arithmetique de la paie (`d28` : `add`, `sub`, `mul`, `div`) et la lecture d'un nombre ecrit en texte ; l'arrondi au
+//! centime est `grandeurs::Montant::au_centime`. Le flottant n'existe qu'a la porte d'un fichier (`forme`).
 
 use rust_decimal::prelude::*;
 use crate::d28::P;
@@ -48,34 +48,9 @@ pub fn court(x: Decimal) -> Decimal {
     c
 }
 
-/// Deux decimales, la moitie toujours vers le haut (jamais au pair) : le cent le plus proche, le milieu au cent superieur
-/// (reglement (CE) n° 1103/97, art. 5, `atelier/reference/sources/arrondi-euro/eurlex-reglement-1103-97-introduction-euro-19970619.txt` ;
-/// lu comme la regle de tout montant du bulletin, et d'un negatif comme de son oppose : inferences dites au
-/// `LISEZ-MOI.md` de ce dossier).
-pub fn eur(x: Decimal) -> Decimal {
-    x.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
-}
-
-/// Un taux en pourcentage applique, arrondi au centime.
-pub fn pct(base: Decimal, taux: Decimal) -> Decimal {
-    eur(div(mul(base, taux), Decimal::ONE_HUNDRED))
-}
-
 /// Une somme de montants, à deux décimales au moins.
 pub fn somme<I: IntoIterator<Item = Decimal>>(it: I) -> Decimal {
-    it.into_iter().fold(zero2(), add)
-}
-
-/// `eur` avec ses deux décimales toujours écrites.
-pub fn eur2(x: Decimal) -> Decimal {
-    let mut e = eur(x);
-    e.rescale(2);
-    e
-}
-
-/// ZERO AU CENTIME, ses deux decimales ecrites (« 0.00 ») : le seul.
-pub fn zero2() -> Decimal {
-    Decimal::new(0, 2)
+    it.into_iter().fold(crate::grandeurs::Montant::ZERO.decimal(), add)
 }
 
 /// Un `P` (28 chiffres significatifs, exposant libre) en `Decimal`. Au-dela
@@ -83,7 +58,7 @@ pub fn zero2() -> Decimal {
 /// au pair sur le demi (le seul second arrondi, inevitable). Un exposant
 /// positif (`2E+2`) devient l'entier ; s'il depasse les 96 bits, on garde la
 /// mantisse la plus juste que `Decimal` porte.
-fn en_decimal(p: P) -> Decimal {
+pub(crate) fn en_decimal(p: P) -> Decimal {
     let p = if p.e > 28 { p.quantifier(28) } else { p };
     if let Some(d) = p.en_decimal() {
         return d;
@@ -125,37 +100,14 @@ pub fn sub(a: Decimal, b: Decimal) -> Decimal {
     en_decimal(P::depuis(a).sub(P::depuis(b)))
 }
 
-thread_local! {
-    /// Pose : `nombre` garde l'echelle du nombre (`48.0`, `0.3230`), comme l'ecrivent les valeurs d'un contrat et le
-    /// calcul que sert `service::calculer_avec` ; sinon il l'ecrit sous sa forme la plus courte.
-    pub static ECHELLE_GARDEE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Un montant en texte : sa forme la plus courte (`48`, `0.323`), ou son echelle quand `ECHELLE_GARDEE` est pose ; « -0 »
-/// s'ecrit « 0 ».
+/// Un nombre en texte, sa forme la plus courte (`48`, `0.323`) ; « -0 » s'ecrit « 0 ».
 pub fn nombre(x: Decimal) -> String {
-    let s = if ECHELLE_GARDEE.with(|f| f.get()) { x.to_string() } else { x.normalize().to_string() };
+    let s = x.normalize().to_string();
     if s == "-0" {
         "0".into()
     } else {
         s
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Reglement (CE) n° 1103/97, art. 5 : « arrondies au cent supérieur ou inférieur le plus proche […] exactement au
-    /// milieu, la somme est arrondie au chiffre supérieur » (`atelier/reference/sources/arrondi-euro/`) ; le negatif
-    /// s'arrondit comme son oppose par INFERENCE (`arrondi-euro/LISEZ-MOI.md`, « Le centime »).
-    #[test]
-    fn eur_arrondit_le_demi_vers_le_haut() {
-        assert_eq!(eur(Decimal::from_str("2.675").unwrap()).to_string(), "2.68");
-        assert_eq!(eur(Decimal::from_str("258.336").unwrap()).to_string(), "258.34");
-        assert_eq!(eur(Decimal::from_str("-0.005").unwrap()).to_string(), "-0.01");
-    }
-
 }
 
 /// Un entier ecrit en texte : le signe, les chiffres, un tiret bas entre deux chiffres, les blancs autour.
@@ -195,13 +147,6 @@ pub fn quotient(n: u128, d: u128, chiffres: u32) -> Option<String> {
 pub fn secondes_au_dixieme(d: std::time::Duration) -> Decimal {
     let ns = Decimal::from_i128_with_scale(d.as_nanos() as i128, 9);
     ns.round_dp_with_strategy(1, RoundingStrategy::MidpointAwayFromZero)
-}
-
-/// Deux décimales, la moitié au pair : `12.5` devient `12.50` (son texte, `ecriture::decimal_en_texte`).
-pub fn q2(d: Decimal) -> Decimal {
-    let mut r = d.round_dp(2);
-    r.rescale(2);
-    r
 }
 
 /// UN DECIMAL ECRIT A LA FRANCAISE OU NON, le seul chemin d'un nombre qu'une personne ou une piece ecrit : les blancs
