@@ -130,6 +130,12 @@ pub fn forme_courte<G: Grandeur>(g: G) -> G {
     G::du(g.en_decimal().normalize())
 }
 
+/// LA FORME LA PLUS COURTE D'UNE GRANDEUR, une decimale au moins (`24` s'ecrit `24.0`, `12.50` `12.5`), comme l'ecrit
+/// `num::court` : celle d'un taux ou d'heures qu'une paie garde.
+pub fn courte<G: Grandeur>(g: G) -> G {
+    G::du(num::court(g.en_decimal()))
+}
+
 /// LE SIGNE QU'UNE LIGNE DONNE A SES GRANDEURS : les garder (`Plus`), ou les retirer (`Moins`, l'oppose). Un zero n'a pas
 /// de signe : il reste le zero qu'il est, son echelle gardee. Signe x grandeur = grandeur de meme nom (`de`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,6 +220,11 @@ impl Taux {
     pub fn a_deux_decimales(self) -> Taux {
         Taux(self.0.round_dp(2))
     }
+}
+
+impl Cachets {
+    /// Zero cachet.
+    pub const ZERO: Cachets = Cachets(Decimal::ZERO);
 }
 
 impl Heures {

@@ -135,8 +135,8 @@ fn zone(logiciel: &str, quoi: &str, v: &str, n: usize, cote: char) -> R<String> 
 }
 
 /// `"%.2f" % v` d'un montant a deux decimales.
-fn deux(v: Decimal) -> String {
-    Montant::du_decimal(v).au_centime().decimal().to_string()
+fn deux(v: Montant) -> String {
+    v.au_centime().decimal().to_string()
 }
 
 /// Non vide, que des chiffres.
@@ -242,8 +242,8 @@ fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
     l.t("journal", e.journal.to_string()).t("date", e.date.jj_mm_aaaa()).t("piece", e.piece.clone()).t("compte", compte_de(e).to_string());
     l.ot("libelle_compte", libelle_de(plan, e)).t("libelle", e.libelle.clone());
-    l.od("debit", if e.debit.is_zero() { None } else { Some(e.debit) });
-    l.od("credit", if e.credit.is_zero() { None } else { Some(e.credit) });
+    l.od("debit", if e.debit.est_nul() { None } else { Some(e.debit.decimal()) });
+    l.od("credit", if e.credit.est_nul() { None } else { Some(e.credit.decimal()) });
     l.ot("analytique", e.analytique.clone()).m("mois", e.mois);
     l
 }
@@ -508,8 +508,8 @@ fn piece_courte(e: &Ecriture) -> String {
 }
 
 /// Le sens (D ou C) et le montant d'une ecriture.
-fn sens(e: &Ecriture) -> (&'static str, Decimal) {
-    if e.debit.is_zero() {
+fn sens(e: &Ecriture) -> (&'static str, Montant) {
+    if e.debit.est_nul() {
         ("C", e.credit)
     } else {
         ("D", e.debit)
@@ -527,8 +527,8 @@ fn csv_propre(s: &str) -> String {
 }
 
 /// Un montant a deux decimales, la virgule pour separateur ; vide s'il est nul.
-fn virgule(v: Decimal) -> String {
-    if v.is_zero() {
+fn virgule(v: Montant) -> String {
+    if v.est_nul() {
         String::new()
     } else {
         deux(v).replace('.', ",")
@@ -745,7 +745,7 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     }
     for e in ecritures {
         let (s, montant) = sens(e);
-        let centimes = Montant::du_decimal(montant).au_centime().decimal().mantissa();
+        let centimes = montant.au_centime().decimal().mantissa();
         let mut ch: BTreeMap<&str, String> = BTreeMap::new();
         ch.insert("type", "M".to_string());
         ch.insert("compte", compte_quadra(compte_de(e).as_str())?);
@@ -1228,25 +1228,25 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
     let (ecr, plan, origine) = ecritures_de(ctx, &p, &mut avert, &d.departs)?;
-    let zero = Montant::ZERO.decimal();
+    let zero = Montant::ZERO;
     // compte -> (libelle, debit, credit)
-    let mut par: BTreeMap<NumeroDeCompte, (Option<String>, Decimal, Decimal)> = BTreeMap::new();
+    let mut par: BTreeMap<NumeroDeCompte, (Option<String>, Montant, Montant)> = BTreeMap::new();
     for e in &ecr {
         let c = compte_de(e);
         if !par.contains_key(c) {
             par.insert(c.clone(), (libelle_de(&plan, e), zero, zero));
         }
         let x = par.get_mut(c).expect("insere");
-        x.1 = add(x.1, e.debit);
-        x.2 = add(x.2, e.credit);
+        x.1 += e.debit;
+        x.2 += e.credit;
     }
     let mut lignes = Vec::new();
     for (c, (lib, debit, credit)) in &par {
-        let v = sub(*debit, *credit);
+        let v = *debit - *credit;
         let mut l = Ligne::nouvelle();
-        l.t("compte", c.to_string()).ot("libelle", lib.clone()).d("debit", *debit).d("credit", *credit);
-        l.od("solde_debiteur", if v > Decimal::ZERO { Some(v) } else { None });
-        l.od("solde_crediteur", if v < Decimal::ZERO { Some(-v) } else { None });
+        l.t("compte", c.to_string()).ot("libelle", lib.clone()).d("debit", debit.decimal()).d("credit", credit.decimal());
+        l.od("solde_debiteur", if v > zero { Some(v.decimal()) } else { None });
+        l.od("solde_crediteur", if v < zero { Some((-v).decimal()) } else { None });
         lignes.push(l);
     }
     let mut t = Tableau::nouveau(EtatDExport::BalancePaie, "Balance des comptes de paie", p.libelle.clone());
@@ -1276,20 +1276,21 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
 fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Decimal>, i64)> {
     let depart = jusqu_a.plus(-12).map_err(|x| x.reclasser(Classe::Illisible))?;
-    let (mut brut, mut pat, mut n) = (Montant::ZERO.decimal(), Montant::ZERO.decimal(), 0i64);
+    let (mut brut, mut pat, mut n) = (Montant::ZERO, Montant::ZERO, 0i64);
     for l in lignes {
         let (Some(b), Some(c)) = (l.brut, l.cotisations_patronales) else { continue };
         if l.cle_salarie != *cle || !(depart < l.mois && l.mois <= jusqu_a) {
             continue;
         }
-        brut = add(brut, b);
-        pat = add(pat, c);
+        brut += b;
+        pat += c;
         n += 1;
     }
-    if brut.is_zero() {
+    if brut.est_nul() {
         return Ok((None, 0));
     }
-    Ok((Some(quant(div(mul(pat, Decimal::ONE_HUNDRED), brut), 2)), n))
+    // Le taux rendu reste un decimal, comme la provision qui le lit (`provision_conges`, son compteur en decimaux).
+    Ok((Some(quant(div(mul(pat.decimal(), Decimal::ONE_HUNDRED), brut.decimal()), 2)), n))
 }
 
 /// LA PROVISION D'UNE ANNEE REPRISE D'UN ANCIEN LOGICIEL, au dernier jour du dernier mois repris `m` : celle de chaque

@@ -282,6 +282,15 @@ impl BaseDeCotisation {
         }
     }
 
+    /// Au centime, ou au centieme d'heure : deux decimales, la moitie vers le haut (`Montant::au_centime`,
+    /// `Heures::au_centieme`).
+    pub fn au_centime(self) -> BaseDeCotisation {
+        match self {
+            BaseDeCotisation::Montant(m) => BaseDeCotisation::Montant(m.au_centime()),
+            BaseDeCotisation::Heures(h) => BaseDeCotisation::Heures(h.au_centieme()),
+        }
+    }
+
     /// Ses euros, quand elle en compte ; `None` pour des heures, qui ne sont pas un montant.
     pub fn montant(self) -> Option<Montant> {
         match self {

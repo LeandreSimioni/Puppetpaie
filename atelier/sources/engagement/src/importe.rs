@@ -46,7 +46,7 @@ use socle::echec::R;
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::num::Decimal;
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Montant, Taux};
 
 /// Dans un engagement importe : ce que l'import a lu de lui (`Pieces`).
 pub const IMPORTE: &str = "importe";
@@ -636,8 +636,9 @@ pub struct PaieImportee {
     pub remuneration: Vec<LigneDeRemuneration>,
     /// Les lignes de cotisation que le bulletin imprime ; vide quand aucun bulletin ne les donne.
     pub lignes: Vec<LigneDeCotisation>,
-    /// Les bases que les pieces disent, la ou le bareme de la paie les range.
-    pub bases: BTreeMap<Assiette, Decimal>,
+    /// Les bases que les pieces disent, la ou le bareme de la paie les range, chacune dans ce que son assiette compte
+    /// (`BaseDeCotisation::de_l_assiette`).
+    pub bases: BTreeMap<Assiette, crate::calcul::BaseDeCotisation>,
     pub brut: Option<Montant>,
     /// Le plafond applique : la base plafonnee que les pieces disent, quand elle est sous le brut.
     pub plafond: Option<Montant>,
@@ -661,10 +662,10 @@ pub struct LigneDeRemuneration {
     pub code: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: String,
     pub unite: Option<droit::catalogue::Unite>,
-    pub quantite: Option<Decimal>,
-    pub taux: Option<Decimal>,
+    pub quantite: Option<crate::ligne::QuantiteDeLigne>,
+    pub taux: Option<crate::ligne::TauxDeLigne>,
     pub montant: Option<Montant>,
-    pub heures_annexes: Option<Decimal>,
+    pub heures_annexes: Option<socle::grandeurs::Heures>,
     /// La ligne est soumise a cotisations : ce que le catalogue dit de sa rubrique, sinon ce que le bulletin imprime.
     pub soumis: bool,
 }
@@ -677,11 +678,11 @@ pub struct LigneDeCotisation {
     pub id: Option<crate::ecarts::RegroupementDeComparaison>,
     pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
     pub libelle: String,
-    pub base: Option<Decimal>,
-    pub taux_pat: Option<Decimal>,
-    pub montant_pat: Option<Decimal>,
-    pub taux_sal: Option<Decimal>,
-    pub montant_sal: Option<Decimal>,
+    pub base: Option<crate::calcul::BaseDeCotisation>,
+    pub taux_pat: Option<Taux>,
+    pub montant_pat: Option<Montant>,
+    pub taux_sal: Option<Taux>,
+    pub montant_sal: Option<Montant>,
 }
 
 /// Le prelevement a la source d'une paie importee : l'impot preleve, et le taux, son type et son identifiant que les
@@ -801,16 +802,22 @@ impl Importe {
             ecrit: crate::ContratEcrit::default(),
         };
         let remuneration = remuneration_lue(&lignes_lues, &ctx)?;
-        let cachets = remuneration.iter().filter(|r| r.unite == Some(droit::catalogue::Unite::Cachet)).filter_map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
+        let cachets = remuneration.iter().fold(socle::grandeurs::Cachets::ZERO, |a, r| match r.quantite {
+            Some(crate::ligne::QuantiteDeLigne::Cachets(c)) => a + c,
+            _ => a,
+        });
+        // `Engagement::cachets` compte des cachets entiers (un nombre de la carte) : la porte de ce compte.
+        let cachets = cachets.decimal().trunc().to_string();
         engagement.cachets = cachets.parse().map_err(|_| socle::echec::refus(socle::num::illisible(&cachets)))?;
-        let heures: Decimal = remuneration.iter().filter_map(|r| r.heures_annexes).sum();
-        engagement.heures = (!heures.is_zero()).then(|| socle::grandeurs::Heures::du_decimal(socle::num::court(heures)));
+        let heures = remuneration.iter().filter_map(|r| r.heures_annexes).fold(socle::grandeurs::Heures::ZERO, |a, h| a + h);
+        engagement.heures = (!heures.est_nul()).then(|| socle::grandeurs::courte(heures));
         engagement.jours = engagement.dates_travail.len() as i64;
         engagement.jours_contrat = engagement.jours;
 
         // Les lignes de cotisation du bulletin, sous leur cotisation ; une ligne que l'import n'a pas qualifiee garde
         // son libelle, sans cotisation.
-        let taux = |x: Option<Decimal>| x.map(socle::num::court);
+        // Ce que le bulletin imprime se lit ici dans ses grandeurs : une base en euros, des taux, des montants.
+        let taux = |x: Option<Decimal>| x.map(|t| socle::grandeurs::courte(Taux::du_decimal(t)));
         let cotisations: Vec<LigneDeCotisation> = p
             .cotisations
             .iter()
@@ -819,32 +826,33 @@ impl Importe {
                 id: l.cotisation.clone(),
                 famille: l.famille.clone(),
                 libelle: l.libelle.clone(),
-                base: l.base,
+                base: l.base.map(|b| crate::calcul::BaseDeCotisation::Montant(Montant::du_decimal(b))),
                 taux_pat: taux(l.taux_employeur),
-                montant_pat: l.montant_employeur,
+                montant_pat: l.montant_employeur.map(Montant::du_decimal),
                 taux_sal: taux(l.taux_salarie),
-                montant_sal: l.montant_salarie,
+                montant_sal: l.montant_salarie.map(Montant::du_decimal),
             })
             .collect();
 
         // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
-        let mut bases: BTreeMap<Assiette, Decimal> = BTreeMap::new();
+        let mut bases: BTreeMap<Assiette, crate::calcul::BaseDeCotisation> = BTreeMap::new();
         if let Some(b) = brut {
-            bases.insert(Assiette::Brut, b.decimal());
+            bases.insert(Assiette::Brut, crate::calcul::BaseDeCotisation::Montant(b));
         }
         let fin_periode = engagement.fin_periode();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref())?)?;
         // Un regroupement n'est pas une rubrique du bareme : sa base ne se range pas.
-        fn de_cotisation(l: &LigneDeCotisation) -> Option<&droit::forme_bareme::IdDeCotisation> {
-            match &l.id {
+        // La base qu'imprime le bulletin (un nombre lu) se range dans ce que l'assiette compte : la porte de cette lecture.
+        fn de_cotisation(l: &CotisationImprimee) -> Option<&droit::forme_bareme::IdDeCotisation> {
+            match &l.cotisation {
                 Some(crate::ecarts::RegroupementDeComparaison::Cotisation(id)) => Some(id),
                 Some(_) | None => None,
             }
         }
-        for (id, base) in cotisations.iter().filter_map(|l| de_cotisation(l).zip(l.base)).filter(|(_, b)| !b.is_zero()) {
+        for (id, base) in p.cotisations.iter().flatten().filter_map(|l| de_cotisation(l).zip(l.base)).filter(|(_, b)| !b.is_zero()) {
             if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
-                bases.entry(cle).or_insert(base);
+                bases.entry(cle).or_insert(crate::calcul::BaseDeCotisation::de_l_assiette(cle, base));
             }
         }
         for (code, m) in &p.bases {
@@ -852,11 +860,11 @@ impl Importe {
             cles.sort();
             cles.dedup();
             if let [cle] = &cles[..] {
-                bases.entry(*cle).or_insert(*m);
+                bases.entry(*cle).or_insert(crate::calcul::BaseDeCotisation::de_l_assiette(*cle, *m));
             }
         }
         // Le plafond applique : la base plafonnee, quand elle est sous le brut.
-        let plafond = brut.and_then(|b| [Assiette::BrutPlafonne, Assiette::T1Mensuelle].iter().find_map(|k| bases.get(k)).map(|t| Montant::du_decimal(*t)).filter(|t| *t < b));
+        let plafond = brut.and_then(|b| [Assiette::BrutPlafonne, Assiette::T1Mensuelle].iter().find_map(|k| bases.get(k)).and_then(|t| t.montant()).filter(|t| *t < b));
         // Le net avant impot : celui que le bulletin imprime, sinon le net paye ou le net verse plus l'impot preleve.
         let net_a_payer = p.net_avant_impot.or_else(|| p.net_a_payer.or(p.net_verse).zip(p.pas).map(|(net, pas)| net + pas));
 
@@ -1119,10 +1127,10 @@ fn remuneration_lue(lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRe
                 code: Some(r.code.into()),
                 libelle: r.libelle,
                 unite: Some(r.unite),
-                quantite: Some(paiement.quantite().decimal()),
-                taux: Some(paiement.taux().decimal()),
+                quantite: Some(paiement.quantite()),
+                taux: Some(paiement.taux()),
                 montant: l.montant,
-                heures_annexes: Some(heures_annexes.decimal()),
+                heures_annexes: Some(heures_annexes),
                 soumis: r.soumis,
             });
             continue;

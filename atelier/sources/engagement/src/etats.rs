@@ -65,7 +65,7 @@ use socle::date::Jour;
 use socle::fichiers::{LectureDatee, ValeurLue};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
-use socle::grandeurs::{Montant, Taux};
+use socle::grandeurs::Montant;
 use socle::{echec::{refus, Echec, R}, num::Decimal};
 
 /// POURQUOI UNE PAIE SE RECALCULE (`raison`). Elle s'ecrit par sa phrase (`Display`), que la paie ecrite garde
@@ -631,15 +631,14 @@ impl PaieDuMois {
 
     /// L'assiette de la CSG : celle du calcul, ou celle que les pieces disent.
     pub fn base_csg(&self) -> Option<Montant> {
-        self.montant(|p| p.base_csg, |p| p.bases.get(&droit::assiette::Assiette::Csg).copied().map(Montant::du_decimal))
+        self.montant(|p| p.base_csg, |p| p.bases.get(&droit::assiette::Assiette::Csg).and_then(|b| b.montant()))
     }
 
-    /// Les assiettes, chacune dans ce qu'elle compte : celles du calcul, ou celles que les pieces disent, que leur assiette
-    /// range (`BaseDeCotisation::de_l_assiette`).
-    pub fn bases(&self) -> BTreeMap<droit::assiette::Assiette, crate::calcul::BaseDeCotisation> {
+    /// Les assiettes, chacune dans ce qu'elle compte : celles du calcul, ou celles que les pieces disent.
+    pub fn bases(&self) -> &BTreeMap<droit::assiette::Assiette, crate::calcul::BaseDeCotisation> {
         match self {
-            PaieDuMois::Validee(p) => p.bases.clone(),
-            PaieDuMois::Importee(p) => p.bases.iter().map(|(a, d)| (*a, crate::calcul::BaseDeCotisation::de_l_assiette(*a, *d))).collect(),
+            PaieDuMois::Validee(p) => &p.bases,
+            PaieDuMois::Importee(p) => &p.bases,
         }
     }
 
@@ -653,11 +652,11 @@ impl PaieDuMois {
                     id: Some(crate::ecarts::RegroupementDeComparaison::Cotisation(l.id.clone())),
                     famille: Some(l.famille.clone()),
                     libelle: l.libelle.clone(),
-                    base: Some(l.base.decimal()),
-                    taux_pat: l.taux_pat.map(Taux::decimal),
-                    montant_pat: Some(l.montant_pat.decimal()),
-                    taux_sal: l.taux_sal.map(Taux::decimal),
-                    montant_sal: Some(l.montant_sal.decimal()),
+                    base: Some(l.base),
+                    taux_pat: l.taux_pat,
+                    montant_pat: Some(l.montant_pat),
+                    taux_sal: l.taux_sal,
+                    montant_sal: Some(l.montant_sal),
                 })
                 .collect(),
             PaieDuMois::Importee(p) => p.lignes.clone(),
@@ -674,10 +673,10 @@ impl PaieDuMois {
                     code: Some(r.code.clone()),
                     libelle: r.libelle.clone(),
                     unite: Some(r.unite),
-                    quantite: Some(r.quantite.decimal()),
-                    taux: Some(r.taux.decimal()),
+                    quantite: Some(r.quantite),
+                    taux: Some(r.taux),
                     montant: Some(r.montant),
-                    heures_annexes: Some(r.heures_annexes.decimal()),
+                    heures_annexes: Some(r.heures_annexes),
                     soumis: r.soumis,
                 })
                 .collect(),

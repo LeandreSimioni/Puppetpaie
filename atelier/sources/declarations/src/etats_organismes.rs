@@ -180,7 +180,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                         let (mois, total) = non_rattachees.entry(c.libelle.clone()).or_default();
                         mois.insert(m);
                         // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
-                        *total = [c.montant_sal, c.montant_pat].into_iter().flatten().map(|x| Montant::du_decimal(x).au_centime().decimal()).fold(*total, add);
+                        *total = [c.montant_sal, c.montant_pat].into_iter().flatten().map(|x| x.au_centime().decimal()).fold(*total, add);
                     } else {
                         manque.insert(format!("sans cotisation ({})", c.libelle));
                     }
@@ -191,7 +191,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     manque.insert(format!("{} ({})", id, c.libelle));
                     continue;
                 };
-                let (ts, tp) = (c.taux_sal, c.taux_pat);
+                let (ts, tp) = (c.taux_sal.map(Taux::decimal), c.taux_pat.map(Taux::decimal));
                 if *cle == RegroupementDeComparaison::Cotisation(droit::forme_bareme::REDUCTION_GENERALE) {
                     if let Some(rg) = paie.validee().and_then(|v| v.reduction_generale.as_ref()) {
                         let mut reparti = zero;
@@ -203,19 +203,19 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                             }
                         }
                         let calculee = c.montant_pat.ok_or_else(|| socle::fichiers::absent("montant_pat").reclasser(Classe::Illisible))?;
-                        if -reparti != calculee {
+                        if -reparti != calculee.decimal() {
                             avert.push(format!(
                                 "{}, {} : la réduction générale ({}) ne tombe pas sur la somme de ses parts ({}).",
                                 libelle_mois(m),
                                 qui(paie.salarie())?,
-                                Montant::du_decimal(calculee).au_centime().decimal(),
+                                calculee.au_centime().decimal(),
                                 -reparti
                             ));
                         }
                         continue;
                     }
                 }
-                ajouter(m, &org, id, &c.libelle, c.base.map(|x| Montant::du_decimal(x).au_centime().decimal()), ts, c.montant_sal.map(|x| Montant::du_decimal(x).au_centime().decimal()), tp, c.montant_pat.map(|x| Montant::du_decimal(x).au_centime().decimal()));
+                ajouter(m, &org, id, &c.libelle, c.base.map(|x| x.au_centime().decimal()), ts, c.montant_sal.map(|x| x.au_centime().decimal()), tp, c.montant_pat.map(|x| x.au_centime().decimal()));
             }
         }
     }
@@ -610,7 +610,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     // Un permanent est une nature MENSUELLE du catalogue des contrats.
     let mensuelles: Vec<String> = droit::natures::natures().map_err(|e| e.reclasser(Classe::Refuse))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        let Some(brut) = l.brut else { continue };
+        let Some(brut) = l.brut.map(Montant::decimal) else { continue };
         let an = format!("{:04}", l.mois.annee());
         let i = match par_an.iter().position(|(a, _, _)| *a == an) {
             Some(i) => i,
@@ -714,7 +714,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut par_an: Vec<(String, Decimal)> = Vec::new();
     let zero = Montant::ZERO.decimal();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        let Some(brut) = l.brut else { continue };
+        let Some(brut) = l.brut.map(Montant::decimal) else { continue };
         let an = format!("{:04}", l.mois.annee());
         match par_an.iter_mut().find(|(a, _)| *a == an) {
             Some(x) => x.1 = add(x.1, brut),

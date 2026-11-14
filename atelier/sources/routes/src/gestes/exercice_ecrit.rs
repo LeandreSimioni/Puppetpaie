@@ -24,7 +24,6 @@ use socle::echec::erreur;
 use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 use socle::mois::{Annee, Mois};
 use socle::grandeurs::Montant;
-use socle::num::Decimal;
 use socle::paris::Moment;
 use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip, Entree};
@@ -70,8 +69,8 @@ pub(crate) struct ExportCompta {
     pub(crate) au: u32,
     pub(crate) mois: Vec<Mois>,
     pub(crate) ecritures: Vec<Ecriture>,
-    pub(crate) total_debit: Decimal,
-    pub(crate) total_credit: Decimal,
+    pub(crate) total_debit: Montant,
+    pub(crate) total_credit: Montant,
     pub(crate) fichier: Option<PathBuf>,
     pub(crate) plan: String,
     pub(crate) avertissements: Vec<String>,
@@ -144,16 +143,16 @@ impl ExportCompta {
                     date: e.date,
                     compte: e.compte,
                     libelle: e.libelle,
-                    debit: Montant::du_decimal(e.debit),
-                    credit: Montant::du_decimal(e.credit),
+                    debit: e.debit,
+                    credit: e.credit,
                     analytique: e.analytique,
                     mois: e.mois,
                     auxiliaire: e.auxiliaire,
                     auxiliaire_libelle: e.auxiliaire_libelle,
                 })
                 .collect(),
-            total_debit: Montant::du_decimal(self.total_debit),
-            total_credit: Montant::du_decimal(self.total_credit),
+            total_debit: self.total_debit,
+            total_credit: self.total_credit,
             dossier,
             fichier,
             plan: self.plan,
@@ -200,7 +199,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     if !propre.exists() {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
     }
-    let zero = Montant::ZERO.decimal();
+    let zero = Montant::ZERO;
     let total_debit = ecritures.iter().fold(zero, |a, e| a + e.debit);
     let total_credit = ecritures.iter().fold(zero, |a, e| a + e.credit);
     let mut fichier = None;
