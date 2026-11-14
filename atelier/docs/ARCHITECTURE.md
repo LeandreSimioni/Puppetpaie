@@ -2163,10 +2163,6 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
 
 - **Une compagnie neuve** n'a qu'à renseigner `premiere_embauche` sur sa fiche :
   avant elle, aucun salarié, et pendant cinq ans aucun seuil ne peut être franchi.
-- **Une compagnie plus ancienne** dont les retours ne servent plus les vieux 118
-  déclare dans `effectifs.json`
-  `"jamais_au_dessus_de": {"seuil": 11, "jusqu_a": AAAA, "source": "..."}` — la
-  seule clé de ce fichier qui s'écrit à la main.
 - Ces seuils-là (formation, FNAL, échéance de la DSN) sont ceux du code de la
   sécurité sociale ; ceux du CSE (CCNEAC, 11 et 50) relèvent du code du travail,
   et le moteur ne les tranche pas avec l'effectif de l'Urssaf : la représentation
