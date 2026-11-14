@@ -2057,7 +2057,7 @@ devine pas.",
     }
     let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", &format!("{}.quotite_reference_defaut", nat.libelle)))?;
     let reference = match e.quotite_reference()? {
-        Some(r) => legale.min(r),
+        Some(r) => legale.min(r.heures("La durée collective du travail")?.decimal()),
         None => legale,
     };
     // « majoree du nombre d'heures complementaires » : celles que le moteur compose du fait du mois (`heures_en_plus`).
@@ -2068,7 +2068,7 @@ devine pas.",
         // Leur rubrique compte des heures (`rubriques-base.json`, `heure_complementaire`).
         .map(|l| l.quantite_ecrite().ok_or_else(|| refus("nombre attendu, lu null")))
         .sum::<R<Decimal>>()?;
-    Ok((socle::grandeurs::Heures::du_decimal(e.quotite()? + complementaires), socle::grandeurs::Heures::du_decimal(reference)))
+    Ok((socle::grandeurs::Heures::du_decimal(e.quotite()?.heures("La durée d'un temps partiel")?.decimal() + complementaires), socle::grandeurs::Heures::du_decimal(reference)))
 }
 
 impl Paie {

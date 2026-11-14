@@ -131,10 +131,9 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     // declare (S21.G00.40.013, `quotite`). Sous la duree de reference, c'est un temps partiel, dont le contrat dit la
     // repartition (L3123-6, 1°).
     let q = match eng.quotite_contrat {
-        Some(q) => q,
-        None => eng.quotite,
-    }
-    .decimal();
+        Some(q) => q.decimal(),
+        None => eng.quotite.0,
+    };
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite
     // saisie, sinon une quotite sous la reference de l'entreprise, plafonnee a la duree legale ; sans reference, le temps
     // plein.

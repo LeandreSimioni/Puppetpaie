@@ -737,7 +737,9 @@ impl Importe {
         if lignes_lues.is_empty() {
             lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, quantite: None, taux: None, rubrique: None, heures: None });
         }
-        let quotite = p.quotite.map(|q| socle::grandeurs::Heures::du_decimal(socle::num::court(q)));
+        // La quotite que la DSN declare (40.013) est, pour un salarie au mois, ses heures par mois (`quotite_contrat`) ; pour
+        // un contrat d'usage, ses jours, que les jours du contrat disent (`Engagement::quotite`).
+        let quotite = p.quotite.filter(|_| nat.mensuelle()).map(|q| socle::grandeurs::Heures::du_decimal(socle::num::court(q)));
         let mut engagement = crate::Engagement {
             salarie: cle.clone(),
             nom: crate::qui_de(&sal)?,

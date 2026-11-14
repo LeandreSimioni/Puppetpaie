@@ -69,7 +69,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         }
     };
     let salaire_apres = ligne.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal();
-    let quotite_apres = eng.quotite()?;
+    let quotite_apres = eng.quotite()?.heures("La durée du contrat d'un salarié au mois")?.decimal();
     let avenant = jour_de_l_avenant(eng)?;
     let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle)).and_then(|c| c.dec());
     let (salaire_avant, quotite_avant) = match &eng.avant {
@@ -297,7 +297,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
                 d.jj_mm_aaaa(),
                 f.jj_mm_aaaa(),
                 cadre,
-                socle::num::nombre(p.engagement.quotite()?),
+                socle::num::nombre(p.engagement.quotite()?.decimal()),
                 p.brut.decimal()
             ))
         })

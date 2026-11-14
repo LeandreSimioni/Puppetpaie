@@ -1038,12 +1038,12 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     if permanent {
         sous_titre = format!(
             "Durée contractuelle : {} h par mois {} durée de référence de l'entreprise : {} h",
-            jours(e.quotite()?),
+            jours(e.quotite()?.decimal()),
             tiret,
-            jours_option(e.quotite_reference()?)?
+            jours_option(e.quotite_reference()?.map(engagement::QuotiteDuContrat::decimal))?
         );
         ligne_caisse = Vec::new();
-        travail = vec![m("Durée du travail :", true, None), mt(format!(" {} h", jours(e.quotite()?)))];
+        travail = vec![m("Durée du travail :", true, None), mt(format!(" {} h", jours(e.quotite()?.decimal())))];
     } else {
         sous_titre =
             format!("Numéro d'objet : {} {} Spectacle : {}", du_spectacle(sp.as_ref(), |s| &s.numero_objet, "numero_objet")?, tiret, du_spectacle(sp.as_ref(), |s| &s.titre, "titre")?);

@@ -1813,7 +1813,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.add_opt(droit::rubrique!("S21.G00.40.010"), e.fin.map(|j| j.jjmmaaaa()))?;
     }
     f.add(droit::rubrique!("S21.G00.40.011"), nat.unite_quotite());
-    let quotite = e.quotite()?;
+    // La quotite dans l'unite que 40.011 vient d'ecrire : son nombre, a la porte de la DSN.
+    let quotite = e.quotite()?.decimal();
     // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
     // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
     let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, valeur: String| -> R<()> {
@@ -1849,7 +1850,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         ))
     };
     depasse(droit::rubrique!("S21.G00.40.013"), "quotite", qt(quotite))?;
-    match e.quotite_reference()? {
+    match e.quotite_reference()?.map(engagement::QuotiteDuContrat::decimal) {
         Some(r) => {
             depasse(droit::rubrique!("S21.G00.40.012"), "quotite de reference", qt(r))?;
             quotite_de_reference_sans_heures_supplementaires(f, p, &nat, r)?;

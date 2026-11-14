@@ -236,6 +236,41 @@ fn jours_et_lieux(liste: &[DateDeLigne]) -> (Vec<Jour>, BTreeMap<Jour, String>) 
     (jours, lieux)
 }
 
+/// LA QUOTITE D'UN CONTRAT (S21.G00.40.012, .013), dans l'unite que dit S21.G00.40.011 (`Nature::unite_quotite`) : des
+/// jours pour un contrat d'usage, des heures par mois pour un salarie au mois.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum QuotiteDuContrat {
+    Heures(Heures),
+    Jours(socle::grandeurs::Jours),
+}
+
+impl QuotiteDuContrat {
+    /// Son nombre, a la porte qui l'exige (la DSN, le bulletin, la forme ecrite).
+    pub fn decimal(self) -> Decimal {
+        match self {
+            QuotiteDuContrat::Heures(h) => h.decimal(),
+            QuotiteDuContrat::Jours(j) => j.decimal(),
+        }
+    }
+
+    /// Ses heures, quand elle en compte ; des jours ne sont pas des heures : refus, qui nomme `quoi`.
+    pub fn heures(self, quoi: &str) -> R<Heures> {
+        match self {
+            QuotiteDuContrat::Heures(h) => Ok(h),
+            QuotiteDuContrat::Jours(_) => Err(socle::refus!("{} compte des heures, et ce contrat compte sa quotité en jours : le signaler au développeur.", quoi)),
+        }
+    }
+
+    /// Est-elle au moins `o` ? Deux quotites de la meme unite se comparent ; des heures et des jours, non : refus.
+    fn au_moins(self, o: QuotiteDuContrat) -> R<bool> {
+        match (self, o) {
+            (QuotiteDuContrat::Heures(a), QuotiteDuContrat::Heures(b)) => Ok(a >= b),
+            (QuotiteDuContrat::Jours(a), QuotiteDuContrat::Jours(b)) => Ok(a >= b),
+            _ => Err(refus("une quotité en heures et une quotité en jours ne se comparent pas : le signaler au développeur")),
+        }
+    }
+}
+
 impl Engagement {
     /// « NOM Prénom, contrat N » : qui une phrase de refus désigne.
     pub fn qui(&self) -> String {
@@ -572,13 +607,13 @@ impl Engagement {
     }
 
     /// S21.G00.40.013 : les jours du contrat (CDDU), les heures du contrat signe (mensuel).
-    pub fn quotite(&self) -> R<Decimal> {
+    pub fn quotite(&self) -> R<QuotiteDuContrat> {
         let nat = self.nat()?;
         if !nat.mensuelle() {
-            return Ok(Decimal::from(self.jours_contrat));
+            return Ok(QuotiteDuContrat::Jours(socle::grandeurs::Jours::du_decimal(Decimal::from(self.jours_contrat))));
         }
         match self.quotite_contrat {
-            Some(q) => Ok(court(q.decimal())),
+            Some(q) => Ok(QuotiteDuContrat::Heures(Heures::du_decimal(court(q.decimal())))),
             None => Err(socle::refus!(
                 "{} : combien d'heures par mois ? La durée du travail se lit sur le contrat signé \
                  (151,67 h pour un temps plein à 35 h) et la DSN la déclare. À taper dans la case « Heures par \
@@ -589,10 +624,10 @@ impl Engagement {
     }
 
     /// S21.G00.40.012 : la quotite de reference de l'entreprise.
-    pub fn quotite_reference(&self) -> R<Option<Decimal>> {
+    pub fn quotite_reference(&self) -> R<Option<QuotiteDuContrat>> {
         let nat = self.nat()?;
         if !nat.mensuelle() {
-            return Ok(Some(court(Decimal::from(self.jours_contrat))));
+            return Ok(Some(QuotiteDuContrat::Jours(socle::grandeurs::Jours::du_decimal(court(Decimal::from(self.jours_contrat))))));
         }
         // Une entreprise a la duree legale ne dit pas de duree collective : sa reference est la duree legale que la nature
         // porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans `contrats-base.json`).
@@ -600,8 +635,8 @@ impl Engagement {
             Some(q) if q.est_nul() => {
                 return Err(socle::refus!("La quotité de référence saisie est nulle : elle dit la durée collective du travail de l'entreprise (en heures par mois), ou ne se saisit pas à la durée légale."))
             }
-            Some(q) => Some(q.decimal()),
-            None => nat.quotite_reference_defaut(),
+            Some(q) => Some(QuotiteDuContrat::Heures(q)),
+            None => nat.quotite_reference_defaut().map(|d| QuotiteDuContrat::Heures(Heures::du_decimal(d))),
         })
     }
 
@@ -625,14 +660,17 @@ impl Engagement {
             return Ok(m);
         }
         let reference = match (self.quotite_reference()?, nat.quotite_reference_defaut().filter(|_| nat.mensuelle())) {
-            (Some(r), Some(legale)) => Some(r.min(legale)),
+            (Some(r), Some(legale)) => {
+                let legale = QuotiteDuContrat::Heures(Heures::du_decimal(legale));
+                Some(if legale.au_moins(r)? { r } else { legale })
+            }
             (r, _) => r,
         };
         let contrat = self.quotite()?;
         let reference = reference.ok_or_else(|| {
             socle::refus!("La quotité de référence de ce contrat manque (la durée collective du travail, en heures par mois) : sans elle, le temps plein ou partiel ne se dit pas.")
         })?;
-        Ok(if contrat >= reference { ModaliteDuTempsDeTravail::TempsPlein } else { ModaliteDuTempsDeTravail::TempsPartiel })
+        Ok(if contrat.au_moins(reference)? { ModaliteDuTempsDeTravail::TempsPlein } else { ModaliteDuTempsDeTravail::TempsPartiel })
     }
 
     /// Le contrat commence ce mois-ci : contrat a imprimer, DPAE a faire.
@@ -798,7 +836,7 @@ impl Engagement {
             // Ce qui se deduit de l'engagement : sa periode, sa quotite, ses mois.
             debut_periode: self.debut_periode(),
             fin_periode: self.fin_periode(),
-            quotite: Heures::du_decimal(self.quotite()?),
+            quotite: socle::forme::Nombre(self.quotite()?.decimal()),
             sans_paie: self.sans_paie(),
             premier_mois: self.premier_mois(),
             dernier_mois: self.dernier_mois(),
