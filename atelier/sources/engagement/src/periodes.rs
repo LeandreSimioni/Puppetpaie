@@ -129,7 +129,7 @@ fn poser_reduction(p: &mut Paie, rg: Option<ReductionGenerale>) {
         p.lignes.push(ligne_de_reduction(r, p.brut));
         p.total_pat -= Montant::du_decimal(r.montant);
     }
-    p.cout_employeur = Montant::du_decimal(p.brut) + p.total_pat;
+    p.cout_employeur = p.brut + p.total_pat;
     p.reduction_generale = rg;
 }
 
@@ -187,15 +187,15 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     }
     // La reduction generale du mois, puis sa part dans chaque periode.
     let zero = Montant::ZERO.decimal();
-    let brut_mois = parts.iter().fold(zero, |a, p| a + p.brut);
+    let brut_mois = parts.iter().fold(Montant::ZERO, |a, p| a + p.brut);
     let heures_mois = parts.iter().fold(Heures::ZERO, |a, p| a + p.heures_travaillees);
     let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| b.decimal() > Decimal::ZERO));
     let pile = pile_de_la_paie(ctx, derniere)?;
-    let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois, heures_mois.decimal(), caisse)?;
+    let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois.decimal(), heures_mois.decimal(), caisse)?;
     for p in parts.iter_mut() {
         let rg = match &du_mois {
-            Some(m) if p.brut > Decimal::ZERO && p.heures_travaillees > Heures::ZERO => {
-                Some(reduction_au_coefficient(pile_de_la_paie(ctx, p)?.reduction_generale.as_ref(), m.coefficient, p.brut, p.heures_travaillees.decimal())?)
+            Some(m) if p.brut > Montant::ZERO && p.heures_travaillees > Heures::ZERO => {
+                Some(reduction_au_coefficient(pile_de_la_paie(ctx, p)?.reduction_generale.as_ref(), m.coefficient, p.brut.decimal(), p.heures_travaillees.decimal())?)
             }
             _ => None,
         };
@@ -207,12 +207,11 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     e.lignes = parts.iter().flat_map(|p| p.engagement.lignes.iter().cloned()).collect();
     let heures: Decimal = parts.iter().filter_map(|p| p.engagement.heures).sum();
     e.heures = if !heures.is_zero() { Some(court(heures)) } else { None };
-    let somme = |f: &dyn Fn(&Paie) -> Decimal| parts.iter().fold(zero, |a, p| a + f(p));
     let mut paie = Paie::nouveau(
         e,
         derniere.salarie.clone(),
         derniere.spectacle.clone(),
-        somme(&|p| p.brut),
+        brut_mois,
         parts.iter().fold(Montant::ZERO, |a, p| a + p.base_csg),
         parts.iter().fold(Montant::ZERO, |a, p| a + p.plafond),
         derniere.smic,
@@ -299,7 +298,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
                 f.jj_mm_aaaa(),
                 cadre,
                 socle::num::nombre(p.engagement.quotite()?),
-                p.brut
+                p.brut.decimal()
             ))
         })
         .collect::<R<_>>()?;

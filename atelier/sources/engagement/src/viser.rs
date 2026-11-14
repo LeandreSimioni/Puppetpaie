@@ -159,16 +159,16 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
 }
 
 fn somme(paies: &[Paie], rangs: &[usize], cible: Cible) -> R<Decimal> {
-    let mut total = socle::grandeurs::Montant::ZERO.decimal();
+    let mut total = socle::grandeurs::Montant::ZERO;
     for &i in rangs {
         let p = paies.get(i).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
         total += match cible {
-            Cible::Net => p.net_a_payer.decimal(),
+            Cible::Net => p.net_a_payer,
             Cible::Brut => p.brut,
-            Cible::Cout => p.cout_employeur.decimal(),
+            Cible::Cout => p.cout_employeur,
         };
     }
-    Ok(total)
+    Ok(total.decimal())
 }
 
 /// Les salaires des engagements de rangs `rangs` (tries, sans doublon, presents dans la saisie `data`) qui font

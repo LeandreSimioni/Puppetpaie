@@ -297,7 +297,7 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
         Some(x) => x.decimal(),
         None => Montant::ZERO.decimal(),
     };
-    Ok(PaieLue { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
+    Ok(PaieLue { brut: p.brut.decimal(), dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
 }
 
 // Le memo d'une derivation : la profondeur des derivations ouvertes, et ce que les paies de chaque (racine, mois,

@@ -2076,9 +2076,8 @@ pub fn embauche(ctx: &Contexte, eng: &Engagement) -> R<calcul::Paie> {
     } else {
         Some(fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
-    let zero = socle::grandeurs::Montant::ZERO.decimal();
     let tp = calcul::plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, zero, Montant::ZERO, Montant::ZERO, MontantUnitaire::du_decimal(Decimal::ZERO), Heures::ZERO, tp))
+    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, Montant::ZERO, Montant::ZERO, Montant::ZERO, MontantUnitaire::du_decimal(Decimal::ZERO), Heures::ZERO, tp))
 }
 
 /// LA SAISIE LUE SANS PAIE (l'ecran, le panneau, les DPAE a faire) : l'embauche de chaque engagement de la saisie `data`

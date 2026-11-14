@@ -655,7 +655,7 @@ pub fn bases(p: &Paie, bar: &Pile) -> R<HashMap<Assiette, Decimal>> {
     let mut out = HashMap::new();
     // Une base en euros ; une base en heures n'est pas un montant que la DSN declare.
     let lue = |a: Assiette| -> R<Decimal> { b.get(&a).and_then(|x| x.montant()).map(Montant::decimal).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, a.nom())) };
-    out.insert(Assiette::Brut, p.brut);
+    out.insert(Assiette::Brut, p.brut.decimal());
     out.insert(Assiette::BrutCs, lue(Assiette::BrutCs)?);
     out.insert(Assiette::Csg, p.base_csg.decimal());
     out.insert(Assiette::BrutX115, lue(Assiette::BrutX115)?);
@@ -720,7 +720,7 @@ pub fn cle_abattue(p: &Paie, bloc78: BaseAssujettie, a: Assiette) -> R<Assiette>
 pub fn brut_du_51(p: &Paie) -> Decimal {
     match (&p.deduction_forfaitaire, base_de_la_paie(p, Assiette::BrutDfs)) {
         (Some(_), Some(abattu)) => abattu,
-        _ => p.brut,
+        _ => p.brut.decimal(),
     }
 }
 
@@ -819,7 +819,7 @@ pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<
         return Ok(Montant::ZERO.decimal());
     };
     Ok(match cle_abattue(p, bloc78, cle)? {
-        Assiette::Brut => p.brut,
+        Assiette::Brut => p.brut.decimal(),
         Assiette::Csg => p.base_csg.decimal(),
         // Une base en euros ; une base en heures n'est pas un montant que la DSN declare.
         k => p.bases.get(&k).and_then(|b| b.montant()).map(Montant::decimal).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom()))?,
@@ -848,7 +848,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let bases = bases(p, &bar)?;
     let mut out: Vec<Cotisation> = Vec::new();
     for c in &bar.cotisations_dsn {
-        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees.decimal(), n.decimal())).transpose()? == Some(false) {
+        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut.decimal(), p.heures_travaillees.decimal(), n.decimal())).transpose()? == Some(false) {
             continue;
         }
         let bloc78 = c.bloc78;
@@ -2214,7 +2214,7 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
     // 2, p. 27, lignes 461-463), par contrat (CCH-16 de 50.001, p. 243, `bloc-S21.G00.50.txt` lignes 82-86). Le montant
     // est ce que la deduction retire du brut soumis : le brut moins le brut abattu du calcul (`brut_dfs`).
     if p.deduction_forfaitaire.is_some() {
-        let deduction = sub(p.brut, brut_du_51(p));
+        let deduction = sub(p.brut.decimal(), brut_du_51(p));
         if !deduction.is_zero() {
             f.ecrire_code(AutreElementDeRevenuBrut::DeductionForfaitaireSpecifique)?;
             f.add(droit::rubrique!("S21.G00.54.002"), ms(deduction, signe));
@@ -2379,7 +2379,7 @@ pub fn bases_et_cotisations(
                 // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur le brut.
                 let (type_79, montant) = match c.composant79 {
                     Some(composant) => composant,
-                    None => (TRANCHE_A, p.brut),
+                    None => (TRANCHE_A, p.brut.decimal()),
                 };
                 f.add(droit::rubrique!("S21.G00.79.001"), type_79);
                 f.add(droit::rubrique!("S21.G00.79.004"), ms(montant, signe));

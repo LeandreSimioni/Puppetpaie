@@ -1420,7 +1420,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 if a_provisionner.iter().any(|(c, ..)| *c == cle) {
                     continue;
                 }
-                let brut_du_mois = paies.iter().filter(|q| cle_de(q) == cle).fold(zero, |a, q| add(a, q.brut));
+                let brut_du_mois = paies.iter().filter(|q| cle_de(q) == cle).fold(zero, |a, q| add(a, q.brut.decimal()));
                 let Some(cpt) = engagement::conges::provision_conges_de(pa, m, brut_du_mois, e.salaire_mensuel.as_ref())? else { continue };
                 a_provisionner.push((cle, e.numero.clone(), nat.libelle.clone(), cpt));
             }

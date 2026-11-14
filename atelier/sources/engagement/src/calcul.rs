@@ -418,7 +418,7 @@ pub struct Contenu {
     pub salarie: SalarieDuContrat,
     /// La fiche du spectacle telle que le calcul l'a lue ; `None` pour un contrat paye au mois.
     pub spectacle: Option<droit::fiche::Spectacle>,
-    pub brut: Decimal,
+    pub brut: Montant,
     pub base_csg: Montant,
     pub plafond: Montant,
     /// Le SMIC horaire de la periode, dans sa forme la plus courte (`Contexte::smic`).
@@ -472,7 +472,7 @@ pub struct Contenu {
 impl Paie {
     /// Les champs sans valeur par defaut ; les autres partent a zero ou vides.
     pub(crate) fn nouveau(
-        engagement: Engagement, salarie: SalarieDuContrat, spectacle: Option<droit::fiche::Spectacle>, brut: Decimal,
+        engagement: Engagement, salarie: SalarieDuContrat, spectacle: Option<droit::fiche::Spectacle>, brut: Montant,
         base_csg: Montant, plafond: Montant, smic: MontantUnitaire, heures: Heures,
         plafond_temps_partiel: PlafondTempsPartiel,
     ) -> Paie {
@@ -495,7 +495,7 @@ impl Paie {
         engagement.lignes.clear();
         (engagement.jours, engagement.cachets, engagement.heures) = (0, 0, None);
         let zero = socle::grandeurs::Montant::ZERO.decimal();
-        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), zero, Montant::ZERO, Montant::ZERO, self.smic, Heures::ZERO, self.plafond_temps_partiel);
+        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), Montant::ZERO, Montant::ZERO, Montant::ZERO, self.smic, Heures::ZERO, self.plafond_temps_partiel);
         p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::de_l_assiette(*k, zero))).collect();
         p
     }
@@ -635,12 +635,12 @@ fn bref(l: &LigneBrut) -> String {
 // ------------------------------------------------------ les allegements
 
 /// La ligne du bulletin qui porte la reduction generale `rg` d'un brut `brut`.
-pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Decimal) -> LigneCotisation {
+pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Montant) -> LigneCotisation {
     LigneCotisation {
         id: droit::forme_bareme::REDUCTION_GENERALE,
         famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
         libelle: "Réduction générale dégressive unique".into(),
-        base: BaseDeCotisation::Montant(Montant::du_decimal(brut)),
+        base: BaseDeCotisation::Montant(brut),
         taux_pat: None,
         montant_pat: Montant::du_decimal(-rg.montant),
         taux_sal: None,
@@ -1807,7 +1807,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         r
     });
     if let Some(rg) = rg.as_ref().filter(|rg| !rg.montant.is_zero()) {
-        lignes.push(ligne_de_reduction(rg, brut));
+        lignes.push(ligne_de_reduction(rg, Montant::du_decimal(brut)));
         tot_pat -= rg.montant;
     }
 
@@ -1890,7 +1890,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         (base_51, retabli, chomage)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, Montant::du_decimal(base_csg), Montant::du_decimal(plafond), MontantUnitaire::du_decimal(smic), Heures::du_decimal(heures), tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spec, Montant::du_decimal(brut), Montant::du_decimal(base_csg), Montant::du_decimal(plafond), MontantUnitaire::du_decimal(smic), Heures::du_decimal(heures), tp);
     let p = paie.ecrire();
     p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Heures::ZERO).fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     p.lignes = lignes;
@@ -2095,7 +2095,7 @@ impl Paie {
             avertissements: self.avertissements.iter().map(avis).collect(),
             base_csg: self.base_csg,
             bases: self.bases.clone(),
-            brut: Montant::du_decimal(self.brut),
+            brut: self.brut,
             cout_employeur: self.cout_employeur,
             deduction_forfaitaire: self.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::forme),
             engagement,

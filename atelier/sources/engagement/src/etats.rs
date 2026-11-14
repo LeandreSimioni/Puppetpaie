@@ -602,7 +602,7 @@ impl PaieDuMois {
     }
 
     pub fn brut(&self) -> Option<Decimal> {
-        self.montant(|p| p.brut, |p| p.brut)
+        self.montant(|p| p.brut.decimal(), |p| p.brut)
     }
 
     pub fn total_sal(&self) -> Option<Decimal> {

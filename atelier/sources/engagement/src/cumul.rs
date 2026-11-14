@@ -82,7 +82,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
         heures,
         cachets: e.cachets,
         jours: e.jours,
-        brut: p.brut,
+        brut: p.brut.decimal(),
         heures_enseignement: heures_enseignement(ctx, &e.lignes)?.min(heures),
     }))
 }

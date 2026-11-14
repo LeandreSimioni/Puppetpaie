@@ -266,7 +266,7 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
             numero,
             r.mois.libelle(socle::mois::Graphie::Accentuee),
             euros(r.declare.brut),
-            euros(r.apres.brut),
+            euros(r.apres.brut.decimal()),
             euros(r.net_deja_verse),
             euros(r.apres.net_a_payer.decimal()),
         ));

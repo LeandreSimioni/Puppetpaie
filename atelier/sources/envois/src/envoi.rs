@@ -177,7 +177,7 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
         } else {
             volume.join(" et ")
         };
-        let mut ligne = format!("  - {} : {}, {} brut", periode, quoi, socle::texte::euros(p.brut));
+        let mut ligne = format!("  - {} : {}, {} brut", periode, quoi, socle::texte::euros(p.brut.decimal()));
         if e.a_cheval() && !e.dernier_mois() {
             // Septembre 2026 : France Travail n'a edite AUCUNE attestation pour le contrat du 29/09 au 16/10 -- elle
             // vient a la fin du contrat. Le salarie declare quand meme ses jours du mois.
@@ -263,10 +263,10 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
             jours: dates,
             cachets: e.cachets,
             heures,
-            brut: p.brut,
+            brut: p.brut.decimal(),
             net: p.net_a_payer.decimal(),
         });
-        brut += p.brut;
+        brut += p.brut.decimal();
         net += p.net_a_payer.decimal();
     }
     Ok(ResumeDePaie { contrats, brut, net })

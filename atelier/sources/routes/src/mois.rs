@@ -1716,7 +1716,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             let cadre = if droit::bareme::est_cadre(s) { " (cadre)" } else { "" };
             m.push(format!("{}{}", emploi.to_lowercase(), cadre));
         }
-        m.push(format!("brut {}", socle::texte::euros(p.brut)));
+        m.push(format!("brut {}", socle::texte::euros(p.brut.decimal())));
         m.join(" · ")
     };
     // LA LIGNE REPLIEE DU CONTRAT : ses bornes, son numero, et ce qu'il fait par rapport au mois (en cours depuis un
@@ -1794,7 +1794,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             .collect(),
         jours,
         lieu,
-        brut: Montant::du_decimal(p.brut).au_centime().decimal(),
+        brut: p.brut.au_centime().decimal(),
         net_a_payer: p.net_a_payer.au_centime().decimal(),
         // CE QUE LA COMPAGNIE VIRE : la somme effectivement recue par le salarie (C. trav. R. 3243-1, 10°,
         // `atelier/reference/sources/code-du-travail/articles-20261029.md`), le « MONTANT NET À PAYER » du bulletin :

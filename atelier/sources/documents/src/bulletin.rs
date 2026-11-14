@@ -1160,7 +1160,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             None => "SALAIRE".to_string(),
         };
         corps.push(ligne(
-            vec![s(format!("{} — MONTANT BRUT", titre)), s(fmt_eur(p.brut))],
+            vec![s(format!("{} — MONTANT BRUT", titre)), s(fmt_eur(p.brut.decimal()))],
             vec![gras(), Opt::Fond(FOND_BRUT)],
         ));
     } else {
@@ -1170,7 +1170,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
                 vec![],
             ));
         }
-        corps.push(ligne(vec![s("MONTANT BRUT"), s(fmt_eur(p.brut))], vec![gras(), Opt::Fond(FOND_BRUT)]));
+        corps.push(ligne(vec![s("MONTANT BRUT"), s(fmt_eur(p.brut.decimal()))], vec![gras(), Opt::Fond(FOND_BRUT)]));
     }
     corps.extend(tableau_modele(p, &j.prevoyance)?);
     // Le bas du tableau : « MONTANT NET SOCIAL », puis « REMBOURSEMENTS ET DÉDUCTIONS DIVERSES », puis
