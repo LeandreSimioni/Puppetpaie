@@ -180,7 +180,7 @@
       "titre": "CCNEAC -- Accord sur les salaires année 2026, texte signé (Paris, 01/07/2026)",
       "editeur": "SYNAVI (copie du texte signe)",
       "url": "https://synavi.org/wp-content/uploads/2026/07/accord-nao-2026.pdf",
-      "contenu": "La page de signature : organisations d'employeurs FNAR, FSICPA, Les Forces musicales, Scene Ensemble, SMA, SYNDEAC ; de salaries F3C CFDT, SNAPAC CFDT, FNSAC CGT, SFA CGT, SNAM CGT, SYNPTAC CGT, Sud Culture Solidaires. La meme liste que la balise SIGNPATRON du texte KALI (kali-1285-accord-salaires-20260701), ou << Les Forces musicales >> s'ecrit << Forces musicales >> : les deux noms sont dans `1285.accords[].signataires` de minima-conventionnels.json.",
+      "contenu": "La page de signature : organisations d'employeurs FNAR, FSICPA, Les Forces musicales, Scene Ensemble, SMA, SYNDEAC ; de salaries F3C CFDT, SNAPAC CFDT, FNSAC CGT, SFA CGT, SNAM CGT, SYNPTAC CGT, Sud Culture Solidaires. La meme liste que la balise SIGNPATRON du texte KALI (kali-1285-accord-salaires-20260701), ou << Les Forces musicales >> s'ecrit << Forces musicales >> : les deux noms sont la meme cle du bareme, LES FORCES MUSICALES, dans `1285.accords[].signataires` de minima-conventionnels.json.",
       "version": "2026-07-01",
       "version_lue_dans": "la date de signature",
       "releve_le": "2026-09-25",

@@ -1432,10 +1432,61 @@ impl Contexte {
         let an = jour.an;
         let chemin = surcouche(an)?;
         let ou = chemin.texte();
-        let dossier = self.code.join("baremes");
         let organisation = ent.organisation_patronale.dite();
-        let p = self.racine.join(&chemin);
         let mut regles = Vec::new();
+        let (surcouche, fichier) = self.socle_de_l_annee(an)?;
+        // Les trois etages, dans l'ordre : droit commun, convention, compagnie.
+        let (mut pile, r) = crate::forme_bareme::lire_le_socle(&fichier, jour, organisation)?;
+        regles.extend(r);
+        regles.extend(smic_en_vigueur(&pile.smic_horaire, jour)?.map(|(j, _)| j));
+        if let Some(idcc) = ent.idcc.dite() {
+            if let Some(c) = convention(&pile, idcc)?.cloned() {
+                fondre_la_convention(&mut pile, &c, idcc)?;
+            }
+        }
+        fondre_la_surcouche(&mut pile, surcouche, &ou)?;
+        // Le taux AT/MP du siege, tel que sa fiche le dit pour l'annee ; ce qui ne se reprend pas d'une autre annee dit
+        // pourquoi, et ce qu'il faut saisir.
+        pile.taux_atmp = match self.taux_atmp_du_siege(an, ent, Some(&pile)) {
+            Some(Ok(t)) => Some(t),
+            Some(Err(pourquoi)) => return Err(pourquoi),
+            None => {
+                return Err(socle::echec::erreur(
+                    socle::echec::Classe::TauxAtmpAbsent,
+                    format!("Le code risque et le taux AT/MP de {} ne sont pas dits. Ils se lisent sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
+                    an),
+                ))
+            }
+        };
+        regles.sort();
+        regles.dedup();
+        Ok((pile, regles))
+    }
+
+    /// LE SOCLE QUE LE BAREME DE L'ANNEE `an` REPREND, lu seul (`forme_bareme::socle_seul` : sans la convention, la
+    /// compagnie ni son taux AT/MP) : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee ; sans
+    /// l'un ni l'autre, le refus du bareme. Ce contre quoi une organisation patronale se reconnait (`Pile::organisation`).
+    pub fn socle_repris(&self, an: i32) -> R<Arc<Pile>> {
+        let (_, fichier) = self.socle_de_l_annee(an)?;
+        crate::forme_bareme::socle_seul(&fichier, an)
+    }
+
+    /// L'ORGANISATION PATRONALE `o` (la case de la fiche entreprise, un alias peut-etre) RECONNUE DANS LE SOCLE QUE LE
+    /// BAREME DE L'ANNEE `an` REPREND (`socle_repris`, `Pile::organisation`, la seule porte) : sa cle, celle que nomment
+    /// les signataires d'un accord (`minima::signataire`). `None` : la fiche n'en dit pas, ou ce socle ne la couvre pas
+    /// (le bareme la refuse alors, `controler_organisation_patronale`).
+    pub fn organisation_reconnue(&self, an: i32, o: Option<&crate::forme_bareme::OrganisationPatronale>) -> R<Option<crate::forme_bareme::OrganisationPatronale>> {
+        let Some(o) = o else { return Ok(None) };
+        Ok(self.socle_repris(an)?.organisation(o).map(|(k, _)| k.clone()))
+    }
+
+    /// LA SURCOUCHE DE L'ANNEE `an` ET LE FICHIER DU SOCLE QU'ELLE REPREND ; sans surcouche, la compagnie n'a rien change
+    /// au socle livre de l'annee. Sans l'une ni l'autre, ou une surcouche qui nomme un socle non livre : le refus du bareme.
+    fn socle_de_l_annee(&self, an: i32) -> R<(Surcouche, PathBuf)> {
+        let chemin = surcouche(an)?;
+        let ou = chemin.texte();
+        let dossier = self.code.join("baremes");
+        let p = self.racine.join(&chemin);
         // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
         let surcouche = match socle::fichiers::existe(&p) {
             true => crate::forme_bareme::lire_la_surcouche(&p)?,
@@ -1471,32 +1522,7 @@ depuis le plus recent.",
                 disponibles(&dossier)
             ));
         };
-        // Les trois etages, dans l'ordre : droit commun, convention, compagnie.
-        let (mut pile, r) = crate::forme_bareme::lire_le_socle(&fichier, jour, organisation)?;
-        regles.extend(r);
-        regles.extend(smic_en_vigueur(&pile.smic_horaire, jour)?.map(|(j, _)| j));
-        if let Some(idcc) = ent.idcc.dite() {
-            if let Some(c) = convention(&pile, idcc)?.cloned() {
-                fondre_la_convention(&mut pile, &c, idcc)?;
-            }
-        }
-        fondre_la_surcouche(&mut pile, surcouche, &ou)?;
-        // Le taux AT/MP du siege, tel que sa fiche le dit pour l'annee ; ce qui ne se reprend pas d'une autre annee dit
-        // pourquoi, et ce qu'il faut saisir.
-        pile.taux_atmp = match self.taux_atmp_du_siege(an, ent, Some(&pile)) {
-            Some(Ok(t)) => Some(t),
-            Some(Err(pourquoi)) => return Err(pourquoi),
-            None => {
-                return Err(socle::echec::erreur(
-                    socle::echec::Classe::TauxAtmpAbsent,
-                    format!("Le code risque et le taux AT/MP de {} ne sont pas dits. Ils se lisent sur la notification de la CARSAT (compte AT/MP sur net-entreprises) et se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
-                    an),
-                ))
-            }
-        };
-        regles.sort();
-        regles.dedup();
-        Ok((pile, regles))
+        Ok((surcouche, fichier))
     }
 
     /// LE JOUR OU SE LIT LE TAUX AT/MP DE L'ANNEE `an` : aujourd'hui dans l'annee en cours, son dernier jour pour une

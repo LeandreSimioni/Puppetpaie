@@ -230,19 +230,23 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     }
     /// L'ORGANISATION PATRONALE SAISIE se reconnait dans le bareme de l'annee que l'ecran montre (`ctx.lue_au`), par son
     /// sigle ou un alias de sa couche (`Pile::organisation`, la seule porte), et s'ecrit par sa cle ; une organisation que
-    /// ce bareme ne couvre pas est la faute de sa case. Une case qui ne change pas ne se relit pas ici.
+    /// ce bareme ne couvre pas est la faute de sa case. La liste est celle du socle que ce bareme reprend
+    /// (`Contexte::socle_repris` : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee), lu sans
+    /// le taux AT/MP : une compagnie dit son organisation avant son taux, et une annee sans socle livre lit celui que sa
+    /// surcouche reprend. Une case qui ne change pas ne se relit pas ici (`avant` : la fiche que l'ecran a montree ; a la
+    /// verification, vide : toute case se relit).
     fn reconnaitre(ctx: &Contexte, avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
         let Some(nom) = apres.organisation_patronale.clone() else { return Ok(Vec::new()) };
         if apres.organisation_patronale == avant.organisation_patronale {
             return Ok(Vec::new());
         }
         let an = ctx.lue_au.an;
-        let pile = droit::contexte::socle_livre_lu(an)?;
-        if let Some((cle, _)) = pile.as_ref().and_then(|p| p.organisation(&nom)) {
+        let pile = ctx.socle_repris(an)?;
+        if let Some((cle, _)) = pile.organisation(&nom) {
             apres.organisation_patronale = Some(cle.clone());
             return Ok(Vec::new());
         }
-        let connues: Vec<&str> = pile.iter().flat_map(|p| p.par_organisation_patronale.keys()).map(|k| k.as_str()).collect();
+        let connues: Vec<&str> = pile.par_organisation_patronale.keys().map(|k| k.as_str()).collect();
         let phrase = format!(
             "« {} » n'est pas une organisation que le barème {} couvre. Couvertes : {}.",
             nom,
@@ -1467,18 +1471,20 @@ impl crate::enveloppe::Dite for FicheVerifiee {
 /// `verifier-fiche` : la fiche tapee, chaque case typee a sa porte (`FicheTapee`), derivee (`SorteDeFiche::deriver`, sans
 /// forcer : seul ce qui est vide ou faux se refait), verifiee comme a l'ecriture : les anomalies de la table, puis les
 /// fautes de ses cases (ce que leur type a refuse, a la porte ou a la derivation), toutes ensemble, chacune sur sa case.
-/// Une case que la fiche ne decrit pas a refuse la charge a la porte.
-pub(crate) fn verifier_fiche(t: FicheTapee) -> R<FicheVerifiee> {
+/// Une case que la fiche ne decrit pas a refuse la charge a la porte. Ce que le bareme reconnait d'une case (l'organisation
+/// patronale) se reconnait comme a l'ecriture (`SorteDeFiche::reconnaitre`), chaque case comme neuve.
+pub(crate) fn verifier_fiche(ctx: &Contexte, t: FicheTapee) -> R<FicheVerifiee> {
     match t {
-        FicheTapee::Entreprise(t) => verifier::<FicheEntrepriseDatee>(t),
-        FicheTapee::Salarie(t) => verifier::<FicheSalarieDatee>(t),
-        FicheTapee::Spectacle(t) => verifier::<FicheSpectacleDatee>(t),
+        FicheTapee::Entreprise(t) => verifier::<FicheEntrepriseDatee>(ctx, t),
+        FicheTapee::Salarie(t) => verifier::<FicheSalarieDatee>(ctx, t),
+        FicheTapee::Spectacle(t) => verifier::<FicheSpectacleDatee>(ctx, t),
     }
 }
 
-fn verifier<F: SorteDeFiche>(t: Tapee<F::Plate>) -> R<FicheVerifiee> {
+fn verifier<F: SorteDeFiche>(ctx: &Contexte, t: Tapee<F::Plate>) -> R<FicheVerifiee> {
     let mut derivee = t.fiche.clone();
     let mut fautes = t.fautes;
+    fautes.extend(F::reconnaitre(ctx, &F::Plate::default(), &mut derivee)?);
     fautes.extend(F::deriver(&mut derivee, false, &|_| true)?);
     let mut anomalies = champs::verifier_fiche(F::a_juger(&derivee))?;
     anomalies.extend(champs::des_fautes(F::NOM, &fautes)?);

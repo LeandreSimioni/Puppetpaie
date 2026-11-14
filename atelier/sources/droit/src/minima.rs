@@ -44,7 +44,8 @@ forme_notee! {
         pub etendu: Option<bool>,
         /// Le jour ou l'extension de l'accord prend effet (sa publication au JORF).
         pub etendu_le: Option<Jour>,
-        /// Les organisations d'employeurs signataires de l'accord, telles que l'accord les nomme.
+        /// Les organisations d'employeurs signataires de l'accord, ecrites par leur cle du bareme
+        /// (`par_organisation_patronale`) ; le nom que l'accord leur donne est dans sa source.
         pub signataires: Option<Vec<OrganisationPatronale>>,
         pub annexes: Option<BTreeMap<crate::fiche::AnnexeConvention, Annexe>>,
         pub clauses_communes: Option<ClausesCommunes>,
@@ -613,8 +614,10 @@ crate::cle_opaque! {
 }
 
 /// La compagnie adherente de `organisation` l'est-elle d'une organisation d'employeurs signataire de l'accord ?
+/// `organisation` est la cle que le bareme reconnait (`forme_bareme::Pile::organisation`, la seule porte :
+/// `Contexte::organisation_reconnue`, `forme_bareme::lire_le_socle`) ; les signataires s'ecrivent par ces cles.
 pub fn signataire(accord: &Convention, organisation: Option<&OrganisationPatronale>) -> bool {
-    organisation.is_some_and(|o| accord.signataires.iter().flatten().any(|x| x.designee_par(None, o)))
+    organisation.is_some_and(|o| accord.signataires.iter().flatten().any(|x| x == o))
 }
 
 /// LE JOUR OU UNE STIPULATION D'UN ACCORD, DATEE `depuis` PAR L'ACCORD, LIE LA COMPAGNIE ADHERENTE DE `organisation` :

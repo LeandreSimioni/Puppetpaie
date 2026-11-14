@@ -1140,10 +1140,14 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   logiciel, non vide.
 - **organisation patronale** : la clé d'une couche du barème par organisation (`par_organisation_patronale`, son
   sigle), la case de la fiche entreprise, et un signataire d'un accord de salaires (`minima::Convention::signataires`,
-  tel que l'accord le nomme). Lue à l'entrée par sigle ou alias : une saisie se range en sigle, se reconnaît dans le
-  barème de l'année de l'écran (`Pile::organisation`, la seule porte, qui compare par
-  `OrganisationPatronale::designee_par`) et s'écrit par sa clé ; une organisation qu'il ne couvre pas est la faute de
-  sa case. Une fiche écrite avant sous un alias se reconnaît de même à chaque lecture.
+  écrit par sa clé du barème ; le nom que l'accord lui donne reste dans sa source). Lue à l'entrée par sigle ou alias :
+  une saisie se range en sigle, se reconnaît (`enregistrer-fiche` et `verifier-fiche`, une seule fonction,
+  `SorteDeFiche::reconnaitre`) dans le socle que le barème de l'année de l'écran reprend (`Contexte::socle_repris` :
+  celui que la surcouche nomme, sinon le socle livré de l'année, lu sans le taux AT/MP), par `Pile::organisation`, la
+  seule porte, et s'écrit par sa clé ; une organisation qu'il ne couvre pas est la faute de sa case. Une fiche écrite
+  avant sous un alias se reconnaît de même à chaque lecture : le socle se lit avec la clé reconnue
+  (`forme_bareme::lire_le_socle`), les minima la demandent à `Contexte::organisation_reconnue`, et un signataire se
+  compare à elle (`minima::signataire`).
 - **catégorie de la DFS** : la catégorie d'une profession de la déduction forfaitaire spécifique (`20`, `25` : art. 5
   de l'annexe IV du CGI), la clé des taux de l'année ; que portent une profession du barème, la DFS d'un contrat et sa
   forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.

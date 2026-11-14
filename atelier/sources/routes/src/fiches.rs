@@ -250,7 +250,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             };
             en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
         }
-        Route::VerifierFiche => en_json(self::ecriture::verifier_fiche(charge.lire()?)?),
+        Route::VerifierFiche => en_json(self::ecriture::verifier_fiche(ctx, charge.lire()?)?),
         Route::EnregistrerFiche => ecriture::enregistrer_fiche(ctx, charge.lire()?),
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).

@@ -1220,7 +1220,8 @@ forme! {
 
 crate::cle_opaque! {
     /// L'ORGANISATION PATRONALE : la cle d'une couche du bareme (`par_organisation_patronale`, son sigle), la case de la
-    /// fiche entreprise qui la nomme, et un signataire d'un accord de salaires (`minima::Convention::signataires`). Une
+    /// fiche entreprise qui la nomme, et un signataire d'un accord de salaires (`minima::Convention::signataires`, ecrit
+    /// par sa cle, compare a la cle que la porte reconnait). Une
     /// saisie se range en sigle (`FormeDeCase::RANGER`), se reconnait par son sigle ou un alias de sa couche dans le
     /// bareme du jour (`Pile::organisation`, la seule porte) et s'ecrit par sa cle ; une fiche ecrite avant sous un alias
     /// se reconnait de meme, a chaque lecture.
@@ -1229,8 +1230,9 @@ crate::cle_opaque! {
 
 impl OrganisationPatronale {
     /// LE NOM `nom` DESIGNE-T-IL CETTE ORGANISATION : son sigle, ou l'un des `alias` (ceux de sa couche), sans egard aux
-    /// accents, a la casse ni aux blancs (`socle::texte::sigle`). La seule comparaison de deux organisations.
-    pub fn designee_par(&self, alias: Option<&Vec<String>>, nom: &OrganisationPatronale) -> bool {
+    /// accents, a la casse ni aux blancs (`socle::texte::sigle`). La seule comparaison d'un nom a une organisation, que
+    /// seule la porte lit (`Pile::organisation`).
+    fn designee_par(&self, alias: Option<&Vec<String>>, nom: &OrganisationPatronale) -> bool {
         let cle = socle::texte::sigle(nom.as_str());
         !cle.is_empty() && (cle == socle::texte::sigle(self.as_str()) || alias.into_iter().flatten().any(|a| cle == socle::texte::sigle(a)))
     }
@@ -1526,10 +1528,34 @@ pub struct TauxAtmp {
     pub manque: Option<socle::echec::Echec>,
 }
 
-/// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`) : la phrase d'un refus est celle d'un bareme que le moteur ne sait pas
-/// lire, la cle a part.
+/// La phrase du refus d'un socle livre que le moteur ne sait pas lire, la cle a part.
+const SOCLE_ILLISIBLE: &str = "Le barème de l'année porte une clé ou une valeur que le moteur ne sait pas lire : le signaler au développeur.";
+
+/// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`), pour la compagnie adherente de `organisation` (la case de sa fiche,
+/// un alias peut-etre) : elle se reconnait d'abord dans ce socle (`socle_seul`, `Pile::organisation`, la seule porte),
+/// et le socle se lit avec sa cle, celle que nomment les signataires d'un accord (`minima::signataire`). Une
+/// organisation que le socle ne couvre pas n'est signataire d'aucun accord (le bareme la refuse ensuite,
+/// `contexte::controler_organisation_patronale`).
 pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&OrganisationPatronale>) -> socle::echec::R<(Pile, Vec<socle::date::Jour>)> {
-    lire_au(fichier, jour, organisation, "Le barème de l'année porte une clé ou une valeur que le moteur ne sait pas lire : le signaler au développeur.")
+    let cle = match organisation {
+        Some(o) => socle_seul(fichier, jour.an)?.organisation(o).map(|(k, _)| k.clone()),
+        None => None,
+    };
+    lire_au(fichier, jour, cle.as_ref(), SOCLE_ILLISIBLE)
+}
+
+/// LE SOCLE LIVRE `fichier` LU SEUL au 1er janvier de `an`, sans organisation, garde tant que le fichier ne change pas :
+/// ce contre quoi une organisation patronale se reconnait (`Pile::organisation`) avant que le bareme se lise avec elle,
+/// et sans le taux AT/MP de la compagnie.
+pub(crate) fn socle_seul(fichier: &std::path::Path, an: i32) -> socle::echec::R<std::sync::Arc<Pile>> {
+    type Cache = std::sync::Mutex<std::collections::HashMap<String, socle::fichiers::Notee<std::sync::Arc<Pile>>>>;
+    static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let cle = format!("{}|{:?}|{}", fichier.display(), socle::fichiers::signature(fichier)?, an);
+    socle::fichiers::garde_notee(cache, cle, || {
+        let jour = socle::date::Jour::nouveau(an, 1, 1).ok_or_else(|| socle::refus!("Année {} hors du calendrier.", an))?;
+        Ok(std::sync::Arc::new(lire_au(fichier, &jour, None, SOCLE_ILLISIBLE)?.0))
+    })
 }
 
 /// LA SURCOUCHE DE LA COMPAGNIE `fichier` : la phrase d'un refus dit ce que la compagnie corrige, la cle a part.

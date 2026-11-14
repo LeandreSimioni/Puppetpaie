@@ -18,8 +18,8 @@ fn un_accord_lie_l_adherente_des_sa_date_et_toute_compagnie_des_son_extension() 
     let o = |org: Option<&str>| org.map(|o| droit::forme_bareme::OrganisationPatronale::lire(o).unwrap());
     let lie = |org: Option<&str>, depuis: socle::date::Jour| lie_depuis(a, o(org).as_ref(), depuis).map(|x| x.iso());
 
-    // Les minima (01/08) et les indemnites (01/09), pour une adherente d'un signataire (sous un nom ou sous un autre).
-    for org in ["SYNDEAC", "syndeac", "Les Forces musicales", "Scène Ensemble"] {
+    // Les minima (01/08) et les indemnites (01/09), pour une adherente d'un signataire (sa cle, que le bareme reconnait).
+    for org in ["SYNDEAC", "LES FORCES MUSICALES", "SCENE ENSEMBLE"] {
         assert_eq!(lie(Some(org), j(2026, 8, 1)).as_deref(), Some("2026-08-01"), "{}", org);
         assert_eq!(lie(Some(org), j(2026, 9, 1)).as_deref(), Some("2026-09-01"), "{}", org);
     }
