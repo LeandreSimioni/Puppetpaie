@@ -328,21 +328,13 @@ pub enum Rangement {
 }
 
 /// LE DOSSIER HORS D'UN MOIS ou se range une piece produite : les exercices (`sorties/exercices/`), les dossiers de
-/// salaries (`exports/dossiers/`), les reponses aux demandes de fiche (`sorties/fiches-salaries/`), les apercus des
-/// modeles (`sorties/apercus/`), les etats exportes (`exports/`), la regularisation de la CASC-SVP
-/// (`exports/casc-svp/`). Leur chemin n'est
+/// salaries (`exports/dossiers/`), les reponses aux demandes de fiche (`sorties/fiches-salaries/`). Leur chemin n'est
 /// ecrit qu'ici (`sous`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DossierHorsDuMois {
     Exercices,
     DossiersDeSalaries,
     FichesDeSalaries,
-    /// L'apercu d'un modele de contrat (`sorties/apercus/`) : rien d'autre ne s'y ecrit, rien n'en part.
-    Apercus,
-    /// Les etats exportes (`exports/`, et le dossier de leur annee : `etats_paie::dossier_exports`).
-    Exports,
-    /// La regularisation de la CASC-SVP (`exports/casc-svp/`) : ses CSV, ses courriels, ses gestes.
-    RegularisationCasc,
 }
 
 impl DossierHorsDuMois {
@@ -350,11 +342,32 @@ impl DossierHorsDuMois {
     pub fn sous(self, racine: &std::path::Path) -> std::path::PathBuf {
         match self {
             DossierHorsDuMois::Exercices => DossierDuMois::des_mois(racine).join("exercices"),
-            DossierHorsDuMois::Exports => racine.join("exports"),
-            DossierHorsDuMois::DossiersDeSalaries => DossierHorsDuMois::Exports.sous(racine).join("dossiers"),
-            DossierHorsDuMois::RegularisationCasc => DossierHorsDuMois::Exports.sous(racine).join("casc-svp"),
+            DossierHorsDuMois::DossiersDeSalaries => DossierDeTravail::Exports.sous(racine).join("dossiers"),
             DossierHorsDuMois::FichesDeSalaries => DossierDuMois::des_mois(racine).join("fiches-salaries"),
-            DossierHorsDuMois::Apercus => DossierDuMois::des_mois(racine).join("apercus"),
+        }
+    }
+}
+
+/// UN DOSSIER DE TRAVAIL de la compagnie, ou le moteur ecrit ce qui n'est pas une piece produite : les apercus des
+/// modeles (`sorties/apercus/`), les etats exportes (`exports/`), la regularisation de la CASC-SVP
+/// (`exports/casc-svp/`). Leur chemin n'est ecrit qu'ici (`sous`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DossierDeTravail {
+    /// L'apercu d'un modele de contrat : rien d'autre ne s'y ecrit, rien n'en part.
+    Apercus,
+    /// Les etats exportes (et le dossier de leur annee : `etats_paie::dossier_exports`).
+    Exports,
+    /// La regularisation de la CASC-SVP : ses CSV, ses courriels, ses gestes.
+    RegularisationCasc,
+}
+
+impl DossierDeTravail {
+    /// Ce dossier, sous la compagnie `racine`.
+    pub fn sous(self, racine: &std::path::Path) -> std::path::PathBuf {
+        match self {
+            DossierDeTravail::Exports => racine.join("exports"),
+            DossierDeTravail::RegularisationCasc => DossierDeTravail::Exports.sous(racine).join("casc-svp"),
+            DossierDeTravail::Apercus => DossierDuMois::des_mois(racine).join("apercus"),
         }
     }
 }
@@ -389,23 +402,26 @@ impl DossierDuMois {
         }
     }
 
-    /// Ce dossier du mois `mois`, sous la compagnie `racine` (`sorties/<mois>/`, ou son `envoi/`) : le nom `sorties`
-    /// d'un mois n'est ecrit qu'ici.
-    pub fn dans(self, racine: &std::path::Path, mois: socle::mois::Mois) -> std::path::PathBuf {
-        self.sous(&DossierDuMois::des_mois(racine).join(mois.to_string()))
-    }
+    /// Le dossier qui tient les sorties de chaque mois, relatif a la compagnie : le nom `sorties` n'est ecrit qu'ici.
+    pub const DES_MOIS: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("sorties");
 
-    /// Le dossier qui tient les sorties de chaque mois (`sorties/`), sous la compagnie `racine`.
-    pub fn des_mois(racine: &std::path::Path) -> std::path::PathBuf {
-        racine.join("sorties")
-    }
-
-    /// Ce dossier, en chemin relatif a la compagnie, sous les sorties du mois `sorties` (`CheminRelatif::sorties`).
-    pub fn sous_le_chemin(self, sorties: &socle::fichiers::CheminRelatif) -> socle::fichiers::CheminRelatif {
+    /// Ce dossier du mois `mois`, relatif a la compagnie (`sorties/<mois>`, ou son `envoi`).
+    pub fn chemin(self, mois: socle::mois::Mois) -> socle::fichiers::CheminRelatif {
+        let sorties = DossierDuMois::DES_MOIS.joint(&socle::fichiers::NomDeFichier::from(mois));
         match self.nom() {
             Some(n) => sorties.joint(&n),
-            None => sorties.clone(),
+            None => sorties,
         }
+    }
+
+    /// Ce dossier du mois `mois`, sous la compagnie `racine`.
+    pub fn dans(self, racine: &std::path::Path, mois: socle::mois::Mois) -> std::path::PathBuf {
+        self.chemin(mois).dans(racine)
+    }
+
+    /// Le dossier qui tient les sorties de chaque mois (`DES_MOIS`), sous la compagnie `racine`.
+    pub fn des_mois(racine: &std::path::Path) -> std::path::PathBuf {
+        DossierDuMois::DES_MOIS.dans(racine)
     }
 }
 

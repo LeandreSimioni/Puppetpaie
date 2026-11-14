@@ -523,11 +523,12 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **nom de fichier** : le nom d'un fichier seul, sans son dossier : le fichier parti que le journal des envois note, le
   modèle d'un contrat, une table de la norme livrée, l'archive d'une version, la copie d'une pièce importée. Ni vide, ni
   `.` ni `..`, sans `/`, `\` ni caractère nul ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans
-  nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur`.
+  nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur` ; le nom du dossier d'un mois, de son `Mois`.
 - **chemin relatif** : un chemin sous une racine que son champ dit (la compagnie, le dossier de la sauvegarde) : la trace
   d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris. Des
   `NomDeFichier` séparés par des barres droites sur tous les systèmes, ni vide ni avec une racine ; il se fait d'un
-  chemin par `CheminRelatif::sous(racine, chemin)`, et se joint à sa racine nom par nom (`dans`) ; la clé d'une lecture
+  chemin par `CheminRelatif::sous(racine, chemin)`, ou s'écrit en Rust (`CheminRelatif::du_moteur` : les fichiers que le
+  moteur nomme sous la compagnie, `config/…`, `journal/…`), et se joint à sa racine nom par nom (`dans`) ; la clé d'une lecture
   notée s'écrit avec la même écriture. Un chemin
   absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin`.
 - **empreinte** : le SHA-256 entier d'un contenu : une source déposée, une archive de mise à jour et les fictives
@@ -722,6 +723,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | rangement d'une pièce produite | `documents::Rangement` | `documents/src/lib.rs` |
 | dossier hors d'un mois | `documents::DossierHorsDuMois` | `documents/src/lib.rs` |
 | dossier d'un mois | `documents::DossierDuMois` | `documents/src/lib.rs` |
+| dossier de travail | `documents::DossierDeTravail` | `documents/src/lib.rs` |
 | rubrique de l'Historique | `RubriqueDeLHistorique` | `routes/src/historique_mois.rs` |
 | état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
 | format d'export | `FormatDExport` | `documents/src/plan_comptable.rs` |
@@ -873,16 +875,18 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (`depart::piece_partie`) et l'Historique.
 - **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois (`DossierDuMois`), ou hors d'un
   mois (`DossierHorsDuMois`) ; dit par sa sorte (`SorteDePieceProduite::rangement`).
-- **dossier hors d'un mois** : les exercices (`sorties/exercices/`), les dossiers de salariés (`exports/dossiers/`),
-  les réponses aux demandes de fiche (`sorties/fiches-salaries/`), les aperçus des modèles (`sorties/apercus/`), les
-  états exportés (`exports/`), la régularisation de la CASC-SVP (`exports/casc-svp/`) ; leur chemin n'est écrit que par
-  `DossierHorsDuMois::sous`.
+- **dossier hors d'un mois** : où se range une pièce produite d'aucun mois : les exercices (`sorties/exercices/`), les
+  dossiers de salariés (`exports/dossiers/`), les réponses aux demandes de fiche (`sorties/fiches-salaries/`) ; leur
+  chemin n'est écrit que par `DossierHorsDuMois::sous`.
+- **dossier de travail** : un dossier de la compagnie où le moteur écrit ce qui n'est pas une pièce produite : les
+  aperçus des modèles (`sorties/apercus/`), les états exportés (`exports/`), la régularisation de la CASC-SVP
+  (`exports/casc-svp/`) ; leur chemin n'est écrit que par `DossierDeTravail::sous`.
 - **dossier d'un mois** : les sorties d'un mois (`sorties/<mois>/` : ses archives, ses déclarations, les documents de
   fin de contrat, le bulletin gardé) ou leur envoi (`sorties/<mois>/envoi/` : ce que le moteur prépare pour les
   salariés, leurs pièces, le PDF qui les réunit pour l'imprimer, la preuve d'une signature). L'écrivain et les
   lecteurs d'une pièce le prennent d'elle (`PieceDuMois::dossier`) et le joignent par `sous`, ou sous la compagnie par
-  `dans` (le seul à écrire `sorties/<mois>`, `des_mois` : `sorties/`) ; un nom seul se cherche dans les deux (`TOUS`,
-  `envois::etats::chemin_piece`).
+  `dans` ; son chemin relatif à la compagnie, `chemin`, est le seul à écrire `sorties/<mois>` (`DES_MOIS` : `sorties`,
+  écrit une fois ; `des_mois` le joint) ; un nom seul se cherche dans les deux (`TOUS`, `envois::etats::chemin_piece`).
 - **rubrique de l'Historique** : où un document du mois se range dans l'Historique : bulletins, certificats,
   attestations, contrats, DPAE, DSN, demandes de taux, AEM (l'ancien logiciel), autres pièces ; dans cet ordre, celui du
   type. Écrite par son libellé (« Bulletins de paie »…), que portent un document de `historique-mois` (`sorte`) et les

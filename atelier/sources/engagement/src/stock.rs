@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use socle::forme::NombreLu;
-use socle::fichiers::{EmpreinteDeSaisie, ValeurLue};
+use socle::fichiers::{EmpreinteDeSaisie, NomDeFichier, ValeurLue};
 
 use droit::contexte::{Contexte, IdSalarie};
 use crate::saisie::{Avant, Carte, Champ, Groupe, VueDuMois};
@@ -38,7 +38,7 @@ use socle::paris::Moment;
 use socle::echec::{refus, R};
 
 /// Le dossier des engagements, sous les donnees de la compagnie : seul le stock le nomme.
-pub(crate) const DOSSIER: &str = "engagements";
+pub(crate) const DOSSIER: NomDeFichier = NomDeFichier::du_moteur("engagements");
 
 /// La phrase d'un fichier d'engagements qui n'a pas sa forme.
 const ABIME: &str = "Un mois d'engagements ne se relit pas : il est abîmé.";
@@ -52,7 +52,7 @@ pub(crate) enum Dossier {
 }
 
 impl Dossier {
-    fn nom(self) -> &'static str {
+    fn nom(self) -> NomDeFichier {
         match self {
             Dossier::Engagements => DOSSIER,
             Dossier::Paies => crate::paies::DOSSIER,
@@ -211,7 +211,7 @@ pub(crate) fn chemin_dans(racine: &Path, d: Dossier, mois: Mois) -> PathBuf {
 
 /// LES DOSSIERS QUE LE STOCK TIENT, sous la racine, pour qui signe leur etat sur le disque sans les lire
 /// (`routes::etat_garde`) : on n'y lit et n'y ecrit que par le stock.
-pub fn dossiers_tenus() -> [&'static str; 2] {
+pub fn dossiers_tenus() -> [NomDeFichier; 2] {
     [Dossier::Engagements.nom(), Dossier::Paies.nom()]
 }
 

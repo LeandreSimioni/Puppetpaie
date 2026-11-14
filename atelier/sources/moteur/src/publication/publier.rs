@@ -17,7 +17,7 @@ use compagnie::maj::{
 };
 
 use socle::echec::{au_chemin, du_disque, refus, R};
-use socle::fichiers::{Empreinte, NomDeFichier};
+use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 
 /// La variable d'environnement ou le flux « Publier » pose la graine (base64) : lue par `publier_depuis_l_environnement`,
 /// jamais affichee.
@@ -75,8 +75,15 @@ fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 /// fictive ouverte pose elle aussi un coffre), le journal de la fenetre. Ni l'archive ni le depot ne les portent (les memes
 /// exclusions que le `.gitignore` du depot public, « LES COMPAGNIES FICTIVES »).
 /// La marque d'une livraison (`LIVREE`) non plus : la livraison l'ajoute elle-meme.
-const HORS_D_UNE_FICTIVE_LIVREE: [&str; 5] =
-    ["config/coffre.bin", routes::coffre::JETON_GOOGLE, "config/.jeton-interface", compagnie::installation::JOURNAL_INTERFACE, LIVREE];
+fn hors_d_une_fictive_livree() -> [CheminRelatif; 5] {
+    [
+        CheminRelatif::du_moteur("config/coffre.bin"),
+        routes::coffre::JETON_GOOGLE,
+        CheminRelatif::du_moteur("config/.jeton-interface"),
+        compagnie::installation::JOURNAL_INTERFACE,
+        LIVREE.into(),
+    ]
+}
 
 /// LES COMPAGNIES FICTIVES LIVREES, a cote du logiciel (`<code>/../fictives/`) : les fichiers que porte l'archive
 /// d'installation (`archiver_installation`), chemins relatifs a `fictives/`, dans l'ordre des noms. Une fictive est un dossier que son marqueur dit fictif
@@ -108,7 +115,7 @@ fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
         fichiers(&e.path(), Path::new(""), &mut dans)?;
         for r in dans {
             let rs = r.to_string_lossy().replace('\\', "/");
-            if !HORS_D_UNE_FICTIVE_LIVREE.contains(&rs.as_str()) {
+            if !hors_d_une_fictive_livree().iter().any(|c| c.texte() == rs) {
                 out.push(Path::new(&nom).join(r));
             }
         }

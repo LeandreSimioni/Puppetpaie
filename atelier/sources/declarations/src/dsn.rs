@@ -2767,7 +2767,7 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
                         r.mois,
                         documents::tableaux_export::qui_souple(&apres.salarie)
                     ),
-                    Lieu { chemin: Some(format!("{}/{}", socle::fichiers::CheminRelatif::sorties(r.mois), r.declare.fichier)), ..Lieu::default() },
+                    Lieu { chemin: Some(format!("{}/{}", documents::DossierDuMois::Sorties.chemin(r.mois), r.declare.fichier)), ..Lieu::default() },
                 ))
             }
         };
@@ -3999,7 +3999,7 @@ fn versement_dgfip(
 portait un versement DGFiP, celle-ci doit en porter un a 0.00 (S21.G00.20.005, norme p. 157). La DSN remplacee n'a \
 pas pu etre relue (le fichier du dernier depot accepte) : on ne devine pas. Rien n'est ecrit.",
                     mois
-                ), Lieu { chemin: Some(format!("{}/", socle::fichiers::CheminRelatif::sorties(mois))), ..Lieu::default() }))
+                ), Lieu { chemin: Some(format!("{}/", documents::DossierDuMois::Sorties.chemin(mois))), ..Lieu::default() }))
             }
         }
     } else {

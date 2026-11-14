@@ -44,12 +44,12 @@ use std::path::{Path, PathBuf};
 use droit::natures::RubriqueDeLaNorme;
 use serde::Deserialize;
 use socle::echec::{refus_avec, Echec, R};
+use socle::fichiers::CheminRelatif;
+
+use crate::installation::MARQUEUR;
 
 /// La variable : l'identite de la compagnie, un objet JSON sur une ligne.
 pub const VARIABLE: &str = "PUPPETPAIE_COMPAGNIE";
-
-/// Le marqueur d'une copie (`commandes::compagnie`, `compagnie::installation`).
-const MARQUEUR: &str = "COPIE-DE-DEVELOPPEMENT.json";
 
 /// Le debut de `copie_de` d'une compagnie d'essai. Ne commence PAS par « compagnie fictive » (`compagnies::MARQUE_FICTIVE`) :
 /// une fictive joue ses depots, une compagnie d'essai les fait en test, pour de vrai.
@@ -63,8 +63,10 @@ pub const FICTIVE_PAR_DEFAUT: &str = "fictive-fil-de-fer";
 pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 
 
-/// Ce que la copie ne prend pas de la fictive (relatif a sa racine), avec ses retours (`envois::retours::RETOURS`).
-const NON_COPIES: [&str; 2] = [MARQUEUR, crate::installation::FICHIER_HORLOGE];
+/// Ce que la copie ne prend pas de la fictive (relatif a sa racine) : son marqueur, son horloge, ses retours.
+fn non_copies() -> [CheminRelatif; 3] {
+    [MARQUEUR.into(), crate::installation::FICHIER_HORLOGE, envois::retours::RETOURS.into()]
+}
 
 /// Une compagnie d'essai : son marqueur le dit (`installation::sorte_de_copie`).
 pub fn est_essai(racine: &Path) -> R<bool> {
@@ -411,7 +413,7 @@ fn copier(src: &Path, dst: &Path, racine: &Path) -> R<()> {
         let e = e.map_err(|e| socle::echec::du_disque(&src, &e))?;
         let s = e.path();
         let rel = s.strip_prefix(racine).map_err(|e| socle::echec::refus(e.to_string()))?.to_string_lossy().replace('\\', "/");
-        if NON_COPIES.contains(&rel.as_str()) || rel == envois::retours::RETOURS.texte() || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
+        if non_copies().iter().any(|c| c.texte() == rel) || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
             continue;
         }
         let d = dst.join(e.file_name());

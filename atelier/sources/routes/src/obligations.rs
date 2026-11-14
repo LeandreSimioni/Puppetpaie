@@ -1077,7 +1077,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         let type_declaration = d.type_declaration;
         let ordre = d.ordre;
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie == *salarie);
-        let dans = |m: Mois| e.fichier.as_ref().map(|nom| CheminRelatif::sorties(m).joint(nom));
+        let dans = |m: Mois| e.fichier.as_ref().map(|nom| documents::DossierDuMois::Sorties.chemin(m).joint(nom));
         use NatureDeLaDeclaration as N;
         match (nature, dj, mois) {
             (N::SignalementArret | N::SignalementReprise, Some(dj), _) if declare_lu.is_some() && d.evenement == declare_lu && du_salarie => {

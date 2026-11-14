@@ -746,7 +746,7 @@ fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> 
 /// Efface le jeton local, sans reseau. L'acces reste accorde cote Google, et se retire sur myaccount.google.com.
 fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<GoogleOublie> {
     exiger_mot_de_passe(&ctx.racine, mdp, "oublier le compte Google")?;
-    let p = ctx.racine.join(JETON_GOOGLE);
+    let p = JETON_GOOGLE.dans(&ctx.racine);
     let efface = p.exists();
     if efface {
         std::fs::remove_file(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
@@ -762,7 +762,7 @@ const FICHIER_APPLICATION: &str = "google-application.json";
 const FICHIER_IDENTIFIANTS: &str = "google.json";
 pub(crate) const FICHIER_JETON: &str = "google-jeton.bin";
 /// Le jeton Google, sous la racine de la compagnie.
-pub const JETON_GOOGLE: &str = "config/google-jeton.bin";
+pub const JETON_GOOGLE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/google-jeton.bin");
 
 /// La description scellee avec le jeton.
 pub(crate) const DESCRIPTION: &str = "moteur de paie - jeton Google";

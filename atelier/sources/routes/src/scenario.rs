@@ -735,7 +735,10 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
 /// en cours d'un passage de la veille, et le journal des incidents (chaque incident porte le fil de la fenetre, ce que la
 /// page a fait avant lui, et la fenetre y note les refus que la page a recus : `compagnie::incidents::noter`).
 fn hors_comparaison(rel: &str) -> bool {
-    rel == compagnie::installation::JOURNAL_INTERFACE || rel == compagnie::incidents::INCIDENTS || rel == "ouverture.etat.json" || rel.ends_with(crate::gestes::ouverture::ETAPE)
+    rel == compagnie::installation::JOURNAL_INTERFACE.texte()
+        || rel == compagnie::incidents::INCIDENTS.texte()
+        || rel == crate::etat_garde::OUVERTURE_ECRITE.texte()
+        || rel.ends_with(crate::gestes::ouverture::ETAPE)
 }
 
 /// Les fichiers d'une compagnie, relatifs (barres droites), hors caches. Une compagnie que le banc n'a pas n'a aucun
@@ -807,7 +810,7 @@ pub fn fictives_de_reference(depot: &Path) -> R<Vec<(String, PathBuf)>> {
 
 /// Ce qu'une fictive livree ne porte pas de son rejeu : le marqueur (reecrit), les incidents du rejeu, les caches.
 fn hors_livraison(rel: &str) -> bool {
-    rel == compagnie::installation::MARQUEUR || rel == compagnie::incidents::INCIDENTS || hors_comparaison(rel)
+    rel == compagnie::installation::MARQUEUR.texte() || rel == compagnie::incidents::INCIDENTS.texte() || hors_comparaison(rel)
 }
 
 /// LIVRER UNE FICTIVE DE REFERENCE : rejoue `scenario` (jusqu'au jour `jusqu_au`, ou entier) dans une installation de
@@ -1003,8 +1006,8 @@ mod enregistreur {
 
     /// Ce qu'une empreinte de la compagnie ne regarde pas : les caches que la fenetre refait en fond, et son journal.
     fn hors_empreinte(rel: &str) -> bool {
-        rel == compagnie::installation::JOURNAL_INTERFACE
-            || rel == "ouverture.etat.json"
+        rel == compagnie::installation::JOURNAL_INTERFACE.texte()
+            || rel == crate::etat_garde::OUVERTURE_ECRITE.texte()
             || rel.ends_with(crate::gestes::ouverture::ETAPE)
             || rel.ends_with(".verrou")
     }

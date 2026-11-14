@@ -23,7 +23,7 @@ use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::ecran::EtatDEcran;
 use crate::reponse::Source;
-use socle::fichiers::CheminRelatif;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use crate::proposee::A_COMPLETER;
@@ -39,6 +39,9 @@ pub struct BulletinRepris {
     pub chemin: CheminRelatif,
     pub salarie: droit::contexte::IdSalarie,
 }
+
+/// Le dossier de l'historique importe, dans la compagnie : il ne tient que les copies (`BULLETINS_REPRIS`).
+pub const HISTORIQUE: NomDeFichier = NomDeFichier::du_moteur("historique");
 
 /// Le dossier des copies que l'import garde, dans la compagnie.
 pub const BULLETINS_REPRIS: CheminRelatif = CheminRelatif::du_moteur("historique/bulletins");

@@ -41,7 +41,7 @@ pub const ARRET: &str = "arret";
 /// Le genre d'une autre suspension du contrat (bloc S21.G00.65).
 pub const SUSPENSION: &str = "suspension";
 /// Le dossier du magasin, sous les donnees de la compagnie.
-pub const DOSSIER: &str = socle::fichiers::MAGASIN_DES_IMPREVUS;
+pub const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::MAGASIN_DES_IMPREVUS;
 
 /// La phrase du refus d'un imprevu qui n'a pas sa forme.
 pub const ILLISIBLE: &str = "Un imprévu ne se lit pas : le signaler au développeur.";

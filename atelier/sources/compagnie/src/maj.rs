@@ -1943,7 +1943,7 @@ pub const LIVRAISON: &str = ".livraison.json";
 /// cette fictive telle que livree. Elle voyage avec la fictive (photo d'origine, remise a zero) ; une copie renommee la
 /// porte aussi, mais sous un autre nom. Une livraison ne reconnait comme sien que le dossier dont le NOM est dans
 /// `posees` ET dont la marque dit L'EMPREINTE qu'elle y a retenue (`poser_les_fictives_pretes`).
-pub const LIVREE: &str = ".livree.json";
+pub const LIVREE: NomDeFichier = NomDeFichier::du_moteur(".livree.json");
 
 /// AU LANCEMENT, avant toute fenetre : une version prete part au relais. Rend `true` si le relais
 /// est parti (le programme doit alors s'arreter sans rien ouvrir). Ce qui echoue s'ecrit dans le journal de la mise a

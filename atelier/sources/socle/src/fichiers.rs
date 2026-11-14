@@ -203,7 +203,7 @@ const DOSSIER: &str = "dossier";
 
 /// Le magasin des imprevus, sous la racine de la compagnie (`engagement::imprevus::DOSSIER`) : la cle des imprevus d'un
 /// salarie le nomme (`CleDeLecture::Imprevus`).
-pub const MAGASIN_DES_IMPREVUS: &str = "imprevus";
+pub const MAGASIN_DES_IMPREVUS: NomDeFichier = NomDeFichier::du_moteur("imprevus");
 
 /// LE CHEMIN QU'UNE LECTURE NOTEE NOMME : sous la compagnie (`racine:<chemin>`), sous le code livre (`code:<chemin>`), ou
 /// ailleurs, en absolu (`abs:<chemin>`). Aucun chemin sous une base : la base elle-meme (`racine:`).
@@ -238,9 +238,9 @@ impl CheminLu {
     }
 
     /// Le chemin est-il le dossier `dossier` de la compagnie, ou dessous ?
-    pub fn dans_la_compagnie(&self, dossier: &str) -> bool {
+    pub fn dans_la_compagnie(&self, dossier: &NomDeFichier) -> bool {
         match self {
-            CheminLu::Racine(Some(c)) => c.texte() == dossier || c.texte().strip_prefix(dossier).is_some_and(|r| r.starts_with('/')),
+            CheminLu::Racine(Some(c)) => c.texte() == dossier.texte() || c.texte().strip_prefix(dossier.texte()).is_some_and(|r| r.starts_with('/')),
             _ => false,
         }
     }
@@ -1071,6 +1071,13 @@ impl TryFrom<String> for NomDeFichier {
     }
 }
 
+/// Le nom d'un dossier d'un mois (`AAAA-MM`) : il a toujours la forme d'un nom.
+impl From<crate::mois::Mois> for NomDeFichier {
+    fn from(m: crate::mois::Mois) -> NomDeFichier {
+        NomDeFichier(std::borrow::Cow::Owned(m.to_string()))
+    }
+}
+
 impl From<NomDeFichier> for String {
     fn from(n: NomDeFichier) -> String {
         n.0.into_owned()
@@ -1139,11 +1146,6 @@ impl CheminRelatif {
     /// illisible (`to_string_lossy`).
     pub(crate) fn en_barres(rel: &Path) -> String {
         rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
-    }
-
-    /// LE DOSSIER DES PIECES DU MOIS `mois` : `sorties/AAAA-MM`.
-    pub fn sorties(mois: crate::mois::Mois) -> CheminRelatif {
-        CheminRelatif(std::borrow::Cow::Owned(format!("sorties/{}", mois)))
     }
 
     /// Ce chemin, suivi du nom `nom`.

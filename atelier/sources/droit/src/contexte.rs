@@ -17,10 +17,13 @@ use socle::echec::Lieu;
 use socle::num::Decimal;
 
 use socle::date::{repr_texte, Jour};
-use socle::fichiers::{dossier_du_code, CheminRelatif};
+use socle::fichiers::{dossier_du_code, CheminRelatif, NomDeFichier};
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, Echec, R};
 use socle::texte::cle_recherche;
+
+/// Le dossier des gabarits de la compagnie (son identite : `gabarits/identite/`), sous sa racine.
+pub const GABARITS: NomDeFichier = NomDeFichier::du_moteur("gabarits");
 
 // ------------------------------------------------------------ les petits outils
 
@@ -1412,7 +1415,7 @@ impl Contexte {
 
     /// Le dossier des gabarits de la compagnie.
     pub fn gabarits(&self) -> PathBuf {
-        self.racine.join("gabarits")
+        self.racine.join(GABARITS)
     }
 
     /// La fiche entreprise de ce contexte, telle qu'un document la lit.

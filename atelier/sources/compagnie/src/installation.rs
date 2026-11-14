@@ -12,22 +12,22 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use socle::echec::R;
-use socle::fichiers::{dossier_du_code, NomDeFichier};
+use socle::fichiers::{dossier_du_code, CheminRelatif, NomDeFichier};
 
 /// Le journal de la fenetre, sous la racine de la compagnie qu'elle sert.
-pub const JOURNAL_INTERFACE: &str = "journal/interface.log";
+pub const JOURNAL_INTERFACE: CheminRelatif = CheminRelatif::du_moteur("journal/interface.log");
 /// La memoire de l'horloge d'une fictive (`horloge`), sous la racine de la compagnie : la compagnie d'essai ne la copie
 /// pas (`essai`).
-pub const FICHIER_HORLOGE: &str = "config/horloge.json";
+pub const FICHIER_HORLOGE: CheminRelatif = CheminRelatif::du_moteur("config/horloge.json");
 
-pub const MARQUEUR: &str = "COPIE-DE-DEVELOPPEMENT.json";
+pub const MARQUEUR: NomDeFichier = NomDeFichier::du_moteur("COPIE-DE-DEVELOPPEMENT.json");
 /// La couleur d'une compagnie qui n'en a pas choisi : le rouge de la charte de l'accueil.
 const COULEUR_DE_LA_CHARTE: CouleurDeCompagnie = CouleurDeCompagnie(std::borrow::Cow::Borrowed("#B22222"));
 /// La couleur de la compagnie, sous sa racine.
-const AFFICHAGE: &str = "config/affichage.json";
-const DOSSIER_ORIGINE: &str = ".origine";
+const AFFICHAGE: CheminRelatif = CheminRelatif::du_moteur("config/affichage.json");
+const DOSSIER_ORIGINE: NomDeFichier = NomDeFichier::du_moteur(".origine");
 /// Ce qui appartient au poste et survit a une remise a zero.
-const PROPRES_AU_POSTE: [&str; 4] =
+const PROPRES_AU_POSTE: [CheminRelatif; 4] =
     [crate::incidents::DIAGNOSTIC, crate::problemes::SIGNALEMENTS, crate::incidents::INCIDENTS, JOURNAL_INTERFACE];
 
 /// Le dossier qui porte `p`. La racine d'un disque n'a pas de dossier au-dessus d'elle : elle se porte elle-meme.
@@ -336,7 +336,7 @@ struct Affichage {
 
 /// La couleur d'une compagnie (`config/affichage.json`) ; celle de la charte tant qu'elle n'en a pas choisi.
 pub fn couleur(racine: &Path) -> R<CouleurDeCompagnie> {
-    let p = racine.join(AFFICHAGE);
+    let p = AFFICHAGE.dans(racine);
     match lire_s_il_est_la::<Affichage>(&p, "La couleur de la compagnie (config/affichage.json) ne se lit pas.")? {
         Some(a) => Ok(a.couleur),
         None => Ok(COULEUR_DE_LA_CHARTE),
@@ -345,7 +345,7 @@ pub fn couleur(racine: &Path) -> R<CouleurDeCompagnie> {
 
 /// Le logo de la compagnie, s'il est pose (svg d'abord).
 pub fn logo(racine: &Path) -> Option<PathBuf> {
-    ["logo.svg", "logo.png"].iter().map(|n| racine.join("gabarits").join("identite").join(n)).find(|p| p.is_file())
+    ["logo.svg", "logo.png"].iter().map(|n| racine.join(droit::contexte::GABARITS).join("identite").join(n)).find(|p| p.is_file())
 }
 
 /// L'IDENTIFIANT D'UNE COMPAGNIE DE L'INSTALLATION, celui de sa tuile : la vraie compagnie du poste (`reelle`), une
@@ -479,7 +479,7 @@ pub fn liste_de(b: &Path) -> R<Vec<Compagnie>> {
 pub fn a_tenir_a_jour(b: &Path) -> R<Vec<PathBuf>> {
     let mut datees = Vec::new();
     for c in liste_de(b)?.into_iter().filter(|c| c.reelle) {
-        let journal = c.racine.join(JOURNAL_INTERFACE);
+        let journal = JOURNAL_INTERFACE.dans(&c.racine);
         let date = match std::fs::metadata(&journal).and_then(|m| m.modified()) {
             Ok(d) => Some(d),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -503,7 +503,7 @@ pub fn racine_choisie(inst: &Path, id: &IdDeCompagnie) -> R<PathBuf> {
 pub fn poser_couleur(inst: &Path, id: &IdDeCompagnie, valeur: &CouleurDeCompagnie) -> R<CouleurDeCompagnie> {
     let c = liste_de(inst)?.into_iter().find(|c| c.id == *id && c.reelle).ok_or_else(|| socle::echec::refus("Seule une compagnie reelle a une couleur a choisir."))?;
     let v = valeur.en_majuscules();
-    socle::ecriture::ecrire_json(&c.racine.join(AFFICHAGE), &Affichage { couleur: v.clone() }, 2)?;
+    socle::ecriture::ecrire_json(&AFFICHAGE.dans(&c.racine), &Affichage { couleur: v.clone() }, 2)?;
     Ok(v)
 }
 
@@ -598,13 +598,13 @@ fn origine(racine: &Path) -> R<PathBuf> {
     Ok(dessus(racine).join(DOSSIER_ORIGINE).join(nom_dossier(racine)?))
 }
 
-fn copier_arbre(de: &Path, vers: &Path, rel: &Path, sauf: &[&str]) -> std::io::Result<()> {
+fn copier_arbre(de: &Path, vers: &Path, rel: &Path, sauf: &[CheminRelatif]) -> std::io::Result<()> {
     std::fs::create_dir_all(vers.join(rel))?;
     for e in std::fs::read_dir(de.join(rel))? {
         let e = e?;
         let r = rel.join(e.file_name());
         let rs = r.to_string_lossy().replace('\\', "/");
-        if sauf.contains(&rs.as_str()) || e.file_name() == "__pycache__" {
+        if sauf.iter().any(|c| c.texte() == rs) || e.file_name() == "__pycache__" {
             continue;
         }
         if e.file_type()?.is_dir() {
@@ -662,13 +662,13 @@ pub fn remettre_a_zero(inst: &Path, id: &IdDeCompagnie) -> R<(String, bool)> {
     }
     copier_arbre(&o, &neuve, Path::new(""), &[]).map_err(|e| socle::echec::du_disque(&neuve, &e))?;
     for rel in PROPRES_AU_POSTE {
-        let source = c.racine.join(rel);
+        let source = rel.dans(&c.racine);
         let octets = match std::fs::read(&source) {
             Ok(o) => o,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Err(socle::echec::du_disque(&source, &e)),
         };
-        let cible = neuve.join(rel);
+        let cible = rel.dans(&neuve);
         let d = dessus(&cible);
         std::fs::create_dir_all(&d).map_err(|e| socle::echec::du_disque(&d, &e))?;
         std::fs::write(&cible, octets).map_err(|e| socle::echec::du_disque(&cible, &e))?;

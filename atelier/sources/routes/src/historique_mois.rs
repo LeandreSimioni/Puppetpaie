@@ -417,8 +417,8 @@ pub(crate) fn rubrique_de(nom: &str) -> RubriqueDeLHistorique {
 /// du fichier de meme nom qui part au depot : elle ne se liste pas.
 fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let mut out: Vec<Document> = Vec::new();
-    let sorties = CheminRelatif::sorties(mois);
-    let envoi = DossierDuMois::Envoi.sous_le_chemin(&sorties);
+    let sorties = DossierDuMois::Sorties.chemin(mois);
+    let envoi = DossierDuMois::Envoi.chemin(mois);
     let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
     for nom in noms.filter(|n| !n.texte().ends_with(".zip")) {
         out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), fichier: None, nom: nom.into() });
@@ -433,7 +433,7 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
             continue;
         }
         // Le dossier du mois de ce qu'il est : sa piece, ou les sorties du mois pour le fichier d'un depot ou un fichier pose.
-        let chemin = quoi.dossier().sous_le_chemin(&sorties).joint(&nom);
+        let chemin = quoi.dossier().chemin(mois).joint(&nom);
         out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.

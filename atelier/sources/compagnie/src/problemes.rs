@@ -32,7 +32,7 @@ const CAPTURE_MAX: usize = 1536 * 1024;
 pub const CAPTURES_MAX: usize = 5;
 const INCIDENTS_JOINTS: usize = 10;
 /// « Un probleme, une idee ? », sous la racine de la compagnie.
-pub const SIGNALEMENTS: &str = "journal/signalements.json";
+pub const SIGNALEMENTS: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("journal/signalements.json");
 
 fn tete(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
@@ -350,7 +350,7 @@ const DOSSIER_ATTENTE: &str = "signalements";
 
 fn chemin_signalements(racine: &Path) -> PathBuf {
     // A cote du journal des incidents, qu'un essai deplace (`incidents::chemin`).
-    incidents::chemin(racine).with_file_name(Path::new(SIGNALEMENTS).file_name().expect("un nom de fichier"))
+    incidents::chemin(racine).with_file_name(SIGNALEMENTS.nom().texte())
 }
 
 /// `journal/signalements/` : le corps exact de chaque message qui attend son depart, un fichier par message.

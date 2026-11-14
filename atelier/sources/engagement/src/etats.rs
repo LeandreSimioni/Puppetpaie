@@ -1287,7 +1287,7 @@ fn imprevus_tiennent(ctx: &Contexte, f: &PaieEcrite) -> R<bool> {
 
 /// Une lecture du magasin des imprevus : les imprevus d'un salarie, ou un chemin du magasin.
 fn du_magasin_des_imprevus(k: &CleLue) -> bool {
-    matches!(k, CleLue::Imprevus { .. }) || k.chemin().is_some_and(|c| c.dans_la_compagnie(crate::imprevus::DOSSIER))
+    matches!(k, CleLue::Imprevus { .. }) || k.chemin().is_some_and(|c| c.dans_la_compagnie(&crate::imprevus::DOSSIER))
 }
 
 /// Ce que la revalidation d'un engagement, apres un imprevu change (`apres_un_imprevu`), a donne.

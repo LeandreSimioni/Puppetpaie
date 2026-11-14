@@ -64,7 +64,7 @@ use socle::mois::Mois;
 /// Le registre de l'administrateur, a la racine de l'installation.
 pub const FICHIER: &str = "administrateur.json";
 /// Le dernier tableau connu d'une compagnie (hors de l'empreinte des etats des mois : `etat_garde::HORS_DE_L_ECRAN`).
-pub const TABLEAU: &str = "config/.tableau.json";
+pub const TABLEAU: CheminRelatif = CheminRelatif::du_moteur("config/.tableau.json");
 
 /// Ce que le registre dit de lui-meme, a qui l'ouvre.
 const QUOI_DU_REGISTRE: &str = "Les compagnies que gere l'administrateur de ce logiciel : un seul mot de passe les ouvre toutes. Aucun secret ici.";
@@ -809,7 +809,7 @@ fn cle_d_urgence(en_retard: bool, butoir: &Option<Jour>) -> (bool, bool, Option<
 pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     // L'EMPREINTE DE TOUTE LA COMPAGNIE, prise avant (celle de l'etat d'ouverture, `etat_garde::empreinte_de`) : le fil de
     // la fenetre ne le refait pas tant qu'elle n'a pas bouge (`FileDesEtats::faire_le_tableau`).
-    let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, crate::etat_garde::OUVERTURE, ctx.aujourdhui);
+    let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, crate::etat_garde::Cle::Ouverture, ctx.aujourdhui);
     let rappels = crate::rappels::rappels(ctx).map_err(|e| e.reclasser(Classe::Refuse))?;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let mut declarations = Vec::new();
@@ -820,7 +820,7 @@ pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     }
     declarations.sort_by_key(|d| cle_d_urgence(d.en_retard, &d.butoir));
     let t = TableauCompagnie { le: ctx.aujourdhui, declarations, empreinte };
-    socle::ecriture::ecrire_json(&ctx.racine.join(TABLEAU), &t, 2)?;
+    socle::ecriture::ecrire_json(&TABLEAU.dans(&ctx.racine), &t, 2)?;
     Ok(t)
 }
 
@@ -965,7 +965,7 @@ pub(crate) fn tableau_garde(inst: &Path) -> R<TableauAdministrateur> {
     let par = rattachees(inst)?
         .into_iter()
         .map(|r| {
-            let f = r.join(TABLEAU);
+            let f = TABLEAU.dans(&r);
             let t = if f.is_file() { socle::forme::lire_fichier(&f, "Le tableau gardé de la compagnie ne se lit pas.") } else { Err(socle::echec::refus("Pas encore lu : le tableau se fait.")) };
             (r, t)
         })

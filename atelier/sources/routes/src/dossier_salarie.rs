@@ -688,7 +688,7 @@ fn mois_puppetpaie(
             let piece = envois::envoi::chemin_de_la_piece(documents::PieceDuMois::Bulletin, &sortie, cle, &etiq);
             if !piece.is_file() {
                 // Le dossier ou il se range, tel que la compagnie le voit (`sorties/<mois>/envoi`).
-                let ou = documents::PieceDuMois::Bulletin.dossier().sous_le_chemin(&socle::fichiers::CheminRelatif::sorties(le_mois));
+                let ou = documents::PieceDuMois::Bulletin.dossier().chemin(le_mois);
                 return Err(erreur_operation(format!(
                     "{}, {} : son bulletin n'est pas dans {}/. Un bulletin remis ne se réimprime pas : rien n'est envoyé à sa place.",
                     lib, cle, ou
@@ -776,7 +776,7 @@ fn mois_puppetpaie(
                 "{} : certificats Congés Spectacles non joints — {} n'est pas dans {}/, et un certificat remis ne se réimprime pas.",
                 lib,
                 nom_archive,
-                documents::PieceDuMois::CertificatsCs.dossier().sous_le_chemin(&socle::fichiers::CheminRelatif::sorties(le_mois))
+                documents::PieceDuMois::CertificatsCs.dossier().chemin(le_mois)
             )),
             Some(t) if !paires.is_empty() && t.len() != tous.len() => d.refus.push(format!(
                 "{} : certificats Congés Spectacles non joints — {} a {} page(s), les paies en attendent {}. Le fichier ne dit pas ce que les paies disent : rien n'est joint à sa place.",

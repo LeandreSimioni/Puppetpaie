@@ -47,7 +47,7 @@ fn empreinte_fiches(ctx: &Contexte, salarie: &IdSalarie, spectacle: Option<&IdSp
 /// Une lecture d'un fichier qui est la saisie d'un mois : elle se compte par la saisie (`stock::cle_de_saisie`), pas par
 /// les octets de son fichier.
 fn est_un_fichier_d_engagements(cle: &CleLue) -> bool {
-    cle.chemin().is_some_and(|c| c.dans_la_compagnie(stock::DOSSIER))
+    cle.chemin().is_some_and(|c| c.dans_la_compagnie(&stock::DOSSIER))
 }
 
 /// `f`, et tout ce qu'il a lu. Les fiches s'y ajoutent paie par paie (`fiches`).

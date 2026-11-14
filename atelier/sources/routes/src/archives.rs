@@ -426,7 +426,7 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
     let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats().filter(|(e, piece)| etat_concerne(ctx, e.etat, *piece, permanents, taxe_due)).map(|(e, _)| e.clone()).collect();
-    let dossier = documents::DossierHorsDuMois::Exports.sous(&ctx.racine);
+    let dossier = documents::DossierDeTravail::Exports.sous(&ctx.racine);
     let ecran = EcranDesExports {
         vide: mois.is_empty().then_some("Aucune paie saisie : il n'y a rien à exporter pour l'instant."),
         regroupement_livre: "Par salarié, ce qu'on envoie au comptable ; par mois, ce qu'on rapproche de la banque ; par spectacle, ce qui justifie une subvention. Les trois disent la même chose, et le total ne bouge pas.",

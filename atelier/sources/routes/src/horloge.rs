@@ -348,7 +348,7 @@ struct DernierRattrapage {
 
 /// La memoire de l'horloge, lue ; aucune tant qu'elle n'a jamais joue (le fichier n'existe pas).
 fn memoire(racine: &Path) -> R<Option<Memoire>> {
-    let f = racine.join(FICHIER_HORLOGE);
+    let f = FICHIER_HORLOGE.dans(racine);
     if !socle::fichiers::existe(&f) {
         return Ok(None);
     }
@@ -484,7 +484,7 @@ fn rattraper_l_horloge(racine: &Path, d: HorlogeFictive, aujourdhui: Option<Jour
         ancien
     };
     let sortie = Memoire { quoi: QUOI.to_string(), le: jour, mois_faits: clos, annees_faites, dernier };
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_HORLOGE), &sortie, 2).map_err(|m| m.reclasser(Classe::Disque))?;
+    socle::ecriture::ecrire_json(&FICHIER_HORLOGE.dans(racine), &sortie, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     Ok(fait)
 }
 
@@ -1097,7 +1097,7 @@ mod tests {
         assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), true).unwrap(), Vec::<String>::new());
         assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), false).unwrap(), Vec::<String>::new());
         assert_eq!(photo(&r), avant, "pas meme config/horloge.json");
-        assert!(!r.join(FICHIER_HORLOGE).exists());
+        assert!(!FICHIER_HORLOGE.dans(&r).exists());
         // Un marqueur de copie de developpement qui n'est PAS une compagnie fictive ne suffit pas.
         std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "prive", "quoi": "copie"}"#).unwrap();
         let avant = photo(&r);

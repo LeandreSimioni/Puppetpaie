@@ -18,7 +18,7 @@ use socle::mois::Mois;
 use socle::echec::R;
 
 /// Le dossier des paies, sous les donnees de la compagnie.
-pub(crate) const DOSSIER: &str = "paies";
+pub(crate) const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("paies");
 
 /// LE FICHIER DES PAIES D'UN MOIS.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

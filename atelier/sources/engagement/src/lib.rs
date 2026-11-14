@@ -1917,7 +1917,7 @@ pub struct Saisie {
 
 /// La saisie de `mois` telle que l'ecran la montre (`stock::vue_du_mois`) ; refus quand aucun engagement ne le touche.
 pub fn vue_requise(racine: &Path, mois: Mois) -> R<saisie::VueDuMois> {
-    stock::vue_du_mois(racine, mois)?.ok_or_else(|| socle::echec::cle(format!("Aucun engagement ne touche le mois {}.", mois), stock::DOSSIER))
+    stock::vue_du_mois(racine, mois)?.ok_or_else(|| socle::echec::cle(format!("Aucun engagement ne touche le mois {}.", mois), stock::DOSSIER.texte()))
 }
 
 /// UN NUMERO DE CONTRAT EST CELUI D'UN SEUL SALARIE (regle 4) : il se lit, il ne se partage pas. Un salarie
