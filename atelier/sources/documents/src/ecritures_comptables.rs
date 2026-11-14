@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use droit::catalogue::{self, HorsAssiette};
 use droit::contexte::Contexte;
 use droit::forme_bareme::{CHOMAGE, MALADIE, REDUCTION_GENERALE, RETRAITE_T1};
+use engagement::ecarts::RegroupementDeComparaison;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 use socle::num::{eur2, zero2, Decimal};
@@ -173,13 +174,17 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             let Some(id) = l.id.as_ref() else {
                 return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle)));
             };
-            let Some(regle) = plan.lignes.get(id) else {
+            let Some(regle) = plan.regle(id) else {
+                let parmi = match id {
+                    RegroupementDeComparaison::Cotisation(_) => "les lignes",
+                    _ => "les regroupements",
+                };
                 return Err(manque_au_plan(
                     format!(
-                        "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les lignes, avec un compte de charge et un compte de tiers.",
-                        id, l.libelle
+                        "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi {}, avec un compte de charge et un compte de tiers.",
+                        id, l.libelle, parmi
                     ),
-                    format!("lignes.{}", id),
+                    crate::plan_comptable::cle_dans_le_plan(id),
                 ));
             };
             // Le libelle du plan, sinon celui du bulletin.
@@ -189,7 +194,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             };
             // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
             let (pat, sal) = (l.montant_pat.map(eur2), l.montant_sal.map(eur2));
-            if *id == REDUCTION_GENERALE {
+            if *id == RegroupementDeComparaison::Cotisation(REDUCTION_GENERALE) {
                 if let (Some(rg), Some(pat)) = (reduction_generale, pat) {
                     // La RGDU : une charge negative, ventilee au tiers de chaque part telle que la paie l'a calculee.
                     *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += pat;

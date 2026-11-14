@@ -159,18 +159,6 @@ impl RegroupementDeComparaison {
             },
         })
     }
-
-    /// LA CLE DE COTISATION QU'UNE LIGNE IMPRIMEE PORTE dans la paie importee (`importe::LigneDeCotisation::id`) : la
-    /// cotisation, ou le nom du regroupement que la table de lecture lui a donne.
-    pub fn cle_de_cotisation(&self) -> IdDeCotisation {
-        match self {
-            RegroupementDeComparaison::Cotisation(id) => id.clone(),
-            RegroupementDeComparaison::Autres => IdDeCotisation::du_moteur("autres"),
-            RegroupementDeComparaison::Convention => IdDeCotisation::du_moteur("convention"),
-            RegroupementDeComparaison::Apec => IdDeCotisation::du_moteur("apec"),
-            RegroupementDeComparaison::Total(t) => IdDeCotisation::du_moteur(t.cle()),
-        }
-    }
 }
 
 impl Ord for RegroupementDeComparaison {

@@ -16,6 +16,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use droit::contexte::Contexte;
 use droit::forme_bareme::IdDeCotisation;
+use engagement::ecarts::RegroupementDeComparaison;
 use socle::echec::{erreur, Classe, Echec, R};
 
 use crate::ecritures_comptables::{CodeJournal, NumeroDeCompte, PosteAnalytique};
@@ -287,8 +288,9 @@ pub fn logiciels_connus() -> Vec<LogicielComptable> {
 pub const PLAN_COMPTABLE: &str = "config/plan-comptable.json";
 
 /// UN OBJET DONT L'ORDRE COMPTE, lu dans l'ordre du fichier (`socle::forme::en_ordre`) : les lignes, les tiers et les
-/// retenues du plan, ou la premiere ligne qui porte un compte lui donne son libelle. `K` : sa cle, un texte (un compte,
-/// une rubrique) ou la cotisation d'une ligne du bulletin (`IdDeCotisation`), lue a la porte.
+/// retenues du plan, ou la premiere ligne qui porte un compte lui donne son libelle. `K` : sa cle, un texte (une
+/// rubrique), un compte (`NumeroDeCompte`), la cotisation d'une ligne du bulletin (`IdDeCotisation`) ou son
+/// regroupement (`RegroupementDeComparaison`), lue a la porte.
 #[derive(Debug, Clone)]
 pub struct Ordonne<T, K = String>(pub Vec<(K, T)>);
 
@@ -318,6 +320,71 @@ impl<T, K: PartialEq> Ordonne<T, K> {
                 None => self.0.push((k, v)),
             }
         }
+    }
+}
+
+/// Une cle de `lignes` qui n'est pas une cotisation (un regroupement ou un total d'un bulletin), en une phrase.
+fn hors_des_cotisations(lignes: &Ordonne<RegleLigne, IdDeCotisation>) -> Option<String> {
+    lignes.iter().find_map(|(k, _)| match RegroupementDeComparaison::lire(k.as_str()) {
+        Ok(RegroupementDeComparaison::Cotisation(_)) => None,
+        Ok(_) => Some(format!("« {} » nomme un regroupement ou un total d'un bulletin, pas une cotisation : un regroupement a sa place sous « regroupements », pas sous « lignes ».", k)),
+        Err(e) => Some(e.phrase),
+    })
+}
+
+/// Une cle de `regroupements` qui n'est pas un regroupement des lignes d'un bulletin importe, en une phrase.
+fn hors_des_regroupements(regroupements: &Ordonne<RegleLigne, RegroupementDeComparaison>) -> Option<String> {
+    regroupements.iter().find_map(|(k, _)| match k {
+        RegroupementDeComparaison::Autres | RegroupementDeComparaison::Convention | RegroupementDeComparaison::Apec => None,
+        RegroupementDeComparaison::Cotisation(_) | RegroupementDeComparaison::Total(_) => Some(format!(
+            "« {} » n'est pas un regroupement des lignes d'un bulletin importé (autres, convention, apec) : une cotisation a sa place sous « lignes », pas sous « regroupements ».",
+            k
+        )),
+    })
+}
+
+/// `lignes` du plan : des cotisations seules.
+fn cotisations_seules<'de, D: Deserializer<'de>>(d: D) -> Result<Ordonne<RegleLigne, IdDeCotisation>, D::Error> {
+    let lignes = Ordonne::<RegleLigne, IdDeCotisation>::deserialize(d)?;
+    match hors_des_cotisations(&lignes) {
+        Some(faute) => Err(serde::de::Error::custom(faute)),
+        None => Ok(lignes),
+    }
+}
+
+/// `lignes` d'un plan propre, quand il les dit : des cotisations seules.
+fn cotisations_seules_dites<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Ordonne<RegleLigne, IdDeCotisation>>, D::Error> {
+    let lignes = Option::<Ordonne<RegleLigne, IdDeCotisation>>::deserialize(d)?;
+    match lignes.as_ref().and_then(hors_des_cotisations) {
+        Some(faute) => Err(serde::de::Error::custom(faute)),
+        None => Ok(lignes),
+    }
+}
+
+/// `regroupements` du plan : des regroupements seuls.
+fn regroupements_seuls<'de, D: Deserializer<'de>>(d: D) -> Result<Ordonne<RegleLigne, RegroupementDeComparaison>, D::Error> {
+    let regroupements = Ordonne::<RegleLigne, RegroupementDeComparaison>::deserialize(d)?;
+    match hors_des_regroupements(&regroupements) {
+        Some(faute) => Err(serde::de::Error::custom(faute)),
+        None => Ok(regroupements),
+    }
+}
+
+/// `regroupements` d'un plan propre, quand il les dit : des regroupements seuls.
+fn regroupements_seuls_dits<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Ordonne<RegleLigne, RegroupementDeComparaison>>, D::Error> {
+    let regroupements = Option::<Ordonne<RegleLigne, RegroupementDeComparaison>>::deserialize(d)?;
+    match regroupements.as_ref().and_then(hors_des_regroupements) {
+        Some(faute) => Err(serde::de::Error::custom(faute)),
+        None => Ok(regroupements),
+    }
+}
+
+/// La cle du plan qui dit les comptes d'une ligne de cotisation (`Plan::regle`) : `lignes.<cotisation>` ou
+/// `regroupements.<regroupement>`.
+pub fn cle_dans_le_plan(id: &RegroupementDeComparaison) -> String {
+    match id {
+        RegroupementDeComparaison::Cotisation(c) => format!("lignes.{}", c),
+        autre => format!("regroupements.{}", autre),
     }
 }
 
@@ -386,7 +453,13 @@ pub struct Plan {
     /// Le compte d'un tiers -> son nom.
     pub tiers: Ordonne<String, NumeroDeCompte>,
     /// La cotisation d'une ligne du bulletin -> ses comptes.
+    #[serde(deserialize_with = "cotisations_seules")]
     pub lignes: Ordonne<RegleLigne, IdDeCotisation>,
+    /// LE REGROUPEMENT d'une ligne qu'un bulletin importe imprime pour plusieurs cotisations (`autres`, `convention`,
+    /// `apec` : `engagement::ecarts::RegroupementDeComparaison`) -> ses comptes. A part des cotisations : un regroupement
+    /// n'est pas une ligne du calcul.
+    #[serde(deserialize_with = "regroupements_seuls")]
+    pub regroupements: Ordonne<RegleLigne, RegroupementDeComparaison>,
     pub provision_conges: ProvisionConges,
     pub sections: Option<BTreeMap<String, String>>,
     pub poste_analytique: Option<PosteAnalytique>,
@@ -408,7 +481,10 @@ struct PlanPropre {
     pas: Option<Compte>,
     retenues: Option<Ordonne<Retenue>>,
     tiers: Option<Ordonne<String, NumeroDeCompte>>,
+    #[serde(default, deserialize_with = "cotisations_seules_dites")]
     lignes: Option<Ordonne<RegleLigne, IdDeCotisation>>,
+    #[serde(default, deserialize_with = "regroupements_seuls_dits")]
+    regroupements: Option<Ordonne<RegleLigne, RegroupementDeComparaison>>,
     provision_conges: Option<ProvisionConges>,
     sections: Option<BTreeMap<String, String>>,
     poste_analytique: Option<PosteAnalytique>,
@@ -446,6 +522,18 @@ impl Plan {
         }
         if let Some(l) = p.lignes {
             self.lignes.recouvrir(l);
+        }
+        if let Some(r) = p.regroupements {
+            self.regroupements.recouvrir(r);
+        }
+    }
+
+    /// Les comptes d'une ligne de cotisation d'une paie du mois : ceux de sa cotisation (`lignes`), ou ceux de son
+    /// regroupement (`regroupements`) ; aucun si le plan ne la nomme pas.
+    pub fn regle(&self, id: &RegroupementDeComparaison) -> Option<&RegleLigne> {
+        match id {
+            RegroupementDeComparaison::Cotisation(c) => self.lignes.get(c),
+            autre => self.regroupements.get(autre),
         }
     }
 
@@ -489,7 +577,7 @@ fn controler_contre(ctx: &Contexte, format: FormatDExport, lim: &Limite) -> R<Ve
     for c in [&plan.brut.compte, &plan.net.compte, &plan.pas.compte] {
         comptes.insert(c.clone());
     }
-    for (_, regle) in plan.lignes.iter() {
+    for regle in plan.lignes.iter().map(|(_, r)| r).chain(plan.regroupements.iter().map(|(_, r)| r)) {
         for c in [&regle.charge, &regle.tiers] {
             comptes.insert(c.clone());
         }

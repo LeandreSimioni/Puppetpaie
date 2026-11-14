@@ -207,7 +207,7 @@ fn libelle_compte(plan: &Plan, compte: &NumeroDeCompte) -> Option<String> {
     if let Some((_, regle)) = plan.retenues.iter().find(|(_, r)| r.compte == *compte) {
         return regle.libelle.clone();
     }
-    let (_, regle) = plan.lignes.iter().find(|(_, r)| r.charge == *compte)?;
+    let regle = plan.lignes.iter().map(|(_, r)| r).chain(plan.regroupements.iter().map(|(_, r)| r)).find(|r| r.charge == *compte)?;
     Some(match compte.as_str() {
         "645100" => "Cotisations Urssaf".to_string(),
         "645300" => "Cotisations retraite et prévoyance".to_string(),

@@ -16,7 +16,8 @@ use droit::fiche::{Idcc, IDCC_1790, IDCC_2642, IDCC_3097};
 use std::collections::{BTreeMap, BTreeSet};
 
 use droit::contexte::Contexte;
-use droit::forme_bareme::{IdDeCotisation, CHOMAGE, MALADIE, RETRAITE_T1};
+use droit::forme_bareme::{CHOMAGE, MALADIE, RETRAITE_T1};
+use engagement::ecarts::RegroupementDeComparaison;
 use droit::organismes::QualifiantDAssiette;
 use socle::echec::{erreur, refus_avec, Lieu, Classe};
 use socle::mois::{Graphie, Mois};
@@ -48,19 +49,18 @@ fn plus_grand(a: Decimal, b: Decimal) -> Decimal {
 
 /// Identifiant de ligne -> nom de l'organisme, lu dans le plan comptable (le meme endroit que
 /// l'export compta : l'etat des cotisations et le credit des comptes 43 ne peuvent pas diverger).
-fn organismes(ctx: &Contexte) -> R<Vec<(IdDeCotisation, String)>> {
+fn organismes(ctx: &Contexte) -> R<Vec<(RegroupementDeComparaison, String)>> {
     let (plan, _) = plan(ctx)?;
     // Un tiers que le plan ne nomme pas se dit par son compte.
+    let nom = |v: &documents::plan_comptable::RegleLigne| match plan.nom_du_tiers(&v.tiers) {
+        Some(n) => n.to_string(),
+        None => format!("Organisme {}", v.tiers),
+    };
     Ok(plan
         .lignes
         .iter()
-        .map(|(k, v)| {
-            let nom = match plan.nom_du_tiers(&v.tiers) {
-                Some(n) => n.to_string(),
-                None => format!("Organisme {}", v.tiers),
-            };
-            (k.clone(), nom)
-        })
+        .map(|(k, v)| (RegroupementDeComparaison::Cotisation(k.clone()), nom(v)))
+        .chain(plan.regroupements.iter().map(|(k, v)| (k.clone(), nom(v))))
         .collect())
 }
 
@@ -124,7 +124,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
     let orgs = organismes(ctx)?;
-    let org_de = |id: &IdDeCotisation| orgs.iter().find(|(k, _)| k == id).map(|(_, v)| v.clone());
+    let org_de = |id: &RegroupementDeComparaison| orgs.iter().find(|(k, _)| k == id).map(|(_, v)| v.clone());
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
     let mut cumul: Vec<Cumul> = Vec::new();
     let mut manque: BTreeSet<String> = BTreeSet::new();
@@ -191,12 +191,12 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     continue;
                 };
                 let (ts, tp) = (c.taux_sal, c.taux_pat);
-                if *cle == droit::forme_bareme::REDUCTION_GENERALE {
+                if *cle == RegroupementDeComparaison::Cotisation(droit::forme_bareme::REDUCTION_GENERALE) {
                     if let Some(rg) = paie.validee().and_then(|v| v.reduction_generale.as_ref()) {
                         let mut reparti = zero;
                         for (part, id_org, quoi) in [(rg.urssaf, MALADIE, "part Urssaf"), (rg.chomage, CHOMAGE, "part chômage"), (rg.agirc_arrco, RETRAITE_T1, "part retraite")] {
                             if !part.is_zero() {
-                                let o = org_de(&id_org).ok_or_else(|| socle::fichiers::absent(id_org.as_str()).reclasser(Classe::Manque))?;
+                                let o = org_de(&RegroupementDeComparaison::Cotisation(id_org.clone())).ok_or_else(|| socle::fichiers::absent(id_org.as_str()).reclasser(Classe::Manque))?;
                                 ajouter(m, &o, id, &format!("{} — {}", c.libelle, quoi), None, None, None, None, Some(-part));
                                 reparti = add(reparti, part);
                             }

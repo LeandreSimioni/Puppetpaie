@@ -927,7 +927,7 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for c in paie.cotisations() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Cotisation");
-                l.ot("code", c.id);
+                l.ot("code", c.id.as_ref().map(|i| i.as_str().to_string()));
                 l.t("libelle", c.libelle).od("base", c.base.map(eur2));
                 l.od("taux_sal", c.taux_sal).od("part_sal", c.montant_sal.map(eur2));
                 l.od("taux_pat", c.taux_pat).od("part_pat", c.montant_pat.map(eur2));

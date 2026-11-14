@@ -916,8 +916,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   seul (`autres`), celles de la convention (`convention`), les tranches de l'Apec (`apec`), ou un total du bulletin
   (`Total(TotalDuBulletin)` : `cotisations_salariales`, `cotisations_patronales`, `net_social`, `net_imposable`).
   Écrit par son texte, trié comme lui ; la clé de `cotisations` de la table de lecture des bulletins. Que portent un
-  écart, la ligne de cotisation qu'un bulletin importé imprime, l'incident d'un écart d'import ; la ligne de cotisation
-  d'une paie importée en garde le nom pour clé de cotisation (`cle_de_cotisation`).
+  écart, la ligne de cotisation qu'un bulletin importé imprime, l'incident d'un écart d'import, la ligne de cotisation
+  d'une paie du mois (`importe::LigneDeCotisation.id` : la cotisation d'une paie validée, la cotisation ou le
+  regroupement d'une paie importée), et les `regroupements` du plan comptable (`autres`, `convention`, `apec` seuls, à
+  part des `lignes`, qui ne prennent que des cotisations).
 - **origine du taux AT/MP comparé** : d'où vient le taux AT/MP du calcul d'une comparaison : la compagnie, ou le
   bulletin importé (l'AT/MP n'est alors pas comparé). Une liste du logiciel, écrite `compagnie`, `bulletin`.
 - **logiciel d'un bulletin importé** : le logiciel de paie qu'un bulletin importé est reconnu avoir fait, à sa signature
@@ -2787,6 +2789,9 @@ patronales = tiers + net), et l'écriture est refusée si ça ne tombe pas.
 Les comptes viennent de `plan-comptable-base.json` (PCG : 641, 645x, 431,
 437x, 421, 4421), recouvert clé par clé par `config/plan-comptable.json` ;
 une ligne de bulletin sans compte fait refuser — on ne devine pas un compte.
+Une ligne prend les comptes de sa cotisation (`lignes`) ; celle qu'un bulletin
+importé imprime pour plusieurs cotisations, ceux de son regroupement
+(`regroupements` : `autres`, `convention`, `apec`), à part.
 Le fichier : `Compta_<année>.csv`, `;`, virgule décimale, UTF-8 avec BOM.
 Pourquoi les bulletins et pas la DSN : le montant Urssaf de la DSN est un
 bordereau recopié, pas un calcul, et les blocs 81 ne couvrent pas tout ce

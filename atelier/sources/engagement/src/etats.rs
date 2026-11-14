@@ -647,7 +647,7 @@ impl PaieDuMois {
                 .lignes
                 .iter()
                 .map(|l| CotisationDuMois {
-                    id: Some(l.id.clone()),
+                    id: Some(crate::ecarts::RegroupementDeComparaison::Cotisation(l.id.clone())),
                     famille: Some(l.famille.clone()),
                     libelle: l.libelle.clone(),
                     base: Some(l.base),
