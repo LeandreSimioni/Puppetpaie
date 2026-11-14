@@ -6,6 +6,7 @@ use crate::outils::typee::{cas_de, jouer, Rendu};
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
+use socle::grandeurs::Montant;
 use socle::num::Decimal;
 
 /// Ce que `indemnite_conges` rend : les deux calculs et la regle retenue.
@@ -111,7 +112,7 @@ fn precarite_due(a: &(Nature, Motif)) -> Rendu<Option<String>> {
     p::precarite_due(&a.0.proprietes().unwrap(), motif(&a.1)).into()
 }
 fn indemnite_precarite(a: &(Decimal,)) -> Rendu<Decimal> {
-    p::indemnite_precarite(a.0).into()
+    p::indemnite_precarite(Montant::du_decimal(a.0)).map(Montant::decimal).into()
 }
 fn anciennete_mois(a: &(Jour, Jour)) -> Decimal {
     p::anciennete_mois(&a.0, &a.1)

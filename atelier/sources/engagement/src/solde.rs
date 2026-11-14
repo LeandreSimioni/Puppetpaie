@@ -19,7 +19,7 @@ use crate::Avis;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::forme::Nombre;
-use socle::grandeurs::{Montant, MontantUnitaire};
+use socle::grandeurs::{courte, forme_courte, Montant, MontantUnitaire};
 use socle::num::{add, court, div, mul, Decimal};
 use droit::permanents::{self, anciennete_mois, arrondir_jours, jours_acquis, IndemniteDePreavis};
 
@@ -388,23 +388,23 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                     e.precarite_pourquoi.as_deref().filter(|p| !p.is_empty()).map(|p| format!(" ({})", p)).into_iter().collect::<String>()
                 )));
             } else {
-                let total = remuneration_du_contrat(ctx, e, mois, brut_des_lignes(ctx, deja)?.decimal())?;
+                let total = remuneration_du_contrat(ctx, e, mois, brut_des_lignes(ctx, deja)?)?;
                 // Le taux de la loi : la fiche entreprise ne porte aucun accord qui le change.
                 let montant = permanents::indemnite_precarite(total)?;
-                if montant > Decimal::ZERO {
+                if montant > Montant::ZERO {
                     // Une ligne en pourcentage : sa base, la remuneration totale, et le taux de la loi en pourcentage ; elle
                     // paie le montant de `indemnite_precarite`.
-                    let pourcentage = mul(permanents::regles()?.indemnite_precarite.taux, Decimal::from(100));
+                    let pourcentage = permanents::regles()?.indemnite_precarite.taux.en_taux();
                     stc.lignes.push(LignePaie::en_pourcentage(
                         permanents::regles()?.indemnite_precarite.rubrique.clone(),
-                        Montant::du_decimal(court(total)),
-                        socle::grandeurs::Taux::du_decimal(court(pourcentage)),
+                        courte(total),
+                        courte(pourcentage),
                     ));
-                    let pour_cent = virgule(pourcentage.normalize());
+                    let pour_cent = virgule(forme_courte(pourcentage).decimal());
                     stc.avertissements.push(info(format!(
                         "{} : indemnité de fin de contrat {} % sur {} de \
                          rémunération totale = {} (L1243-8).",
-                        qui, pour_cent, euros(total), euros(montant)
+                        qui, pour_cent, euros(total.decimal()), euros(montant.decimal())
                     )));
                 } else {
                     // Une indemnite nulle ne s'ecrit pas : la norme refuse `0.00`.
@@ -414,7 +414,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                          contrat a payé quelque chose, ce sont ses mois \
                          précédents dont la saisie manque : l'assiette de \
                          L1243-8 est la rémunération de TOUT le contrat.",
-                        qui, euros(total)
+                        qui, euros(total.decimal())
                     )));
                 }
             }
@@ -1332,7 +1332,8 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, V
         if !crate::stock::a_une_saisie(&ctx.racine, m)? {
             continue;
         }
-        bruts.push(remuneration_du_mois(ctx, m, salarie)?);
+        // `permanents::salaire_de_reference` compte encore en decimaux : le brut s'y ouvre.
+        bruts.push(remuneration_du_mois(ctx, m, salarie)?.decimal());
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))
@@ -1359,13 +1360,13 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Montant> {
 
 /// La remuneration totale brute versee pendant le contrat (L1243-8) : les mois
 /// produits, plus le mois courant, dont le brut arrive tout calcule.
-fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Decimal) -> R<Decimal> {
+fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Montant) -> R<Montant> {
     let salarie = salarie_de(e)?;
     let mut total = ce_mois;
     let debut = debut_de(e)?;
     for m in debut.mois_civil().jusqu_a(mois) {
         if m != mois && crate::stock::a_une_saisie(&ctx.racine, m)? {
-            total = add(total, remuneration_du_mois(ctx, m, salarie)?);
+            total += remuneration_du_mois(ctx, m, salarie)?;
         }
     }
     Ok(total)

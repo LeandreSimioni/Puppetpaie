@@ -132,8 +132,7 @@ forme! {
 forme! {
     /// `indemnite_precarite` : L1243-8 a L1243-10.
     pub struct Precarite {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux: Decimal,
+        pub taux: socle::grandeurs::Coefficient,
         pub rubrique: crate::catalogue::CodeDeRubrique,
         pub dsn_bloc52: CodeDsn,
         /// Les natures de contrat (`contrats-base.json`) qui n'y ont pas droit, et pourquoi.
@@ -808,8 +807,8 @@ pub fn precarite_due(nature: &Nature, motif_rupture: Option<MotifDeRupture>) -> 
 
 /// 10 % de la remuneration totale brute versee pendant le CDD (L1243-8 ; la fiche entreprise ne porte aucun accord de
 /// L1243-9).
-pub fn indemnite_precarite(remuneration_totale: Decimal) -> R<Decimal> {
-    Ok(Montant::du_decimal(mul(remuneration_totale, regles()?.indemnite_precarite.taux)).au_centime().decimal())
+pub fn indemnite_precarite(remuneration_totale: Montant) -> R<Montant> {
+    Ok((remuneration_totale * regles()?.indemnite_precarite.taux).au_centime())
 }
 
 /// L'anciennete en mois : les mois complets et la fraction du mois entame.

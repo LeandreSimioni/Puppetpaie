@@ -240,7 +240,7 @@ impl CompteurConges {
 /// Ce qu'une paie validee apporte au compteur de conges et a la deduction forfaitaire de l'annee.
 #[derive(Debug, Clone)]
 struct PaieLue {
-    brut: Decimal,
+    brut: Montant,
     /// La deduction forfaitaire specifique retenue (zero sans DFS).
     dfs: Decimal,
     /// Un contrat paye au mois : sa presence dans le mois, et ce qu'il en decompte.
@@ -297,7 +297,7 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
         Some(x) => x.decimal(),
         None => Montant::ZERO.decimal(),
     };
-    Ok(PaieLue { brut: p.brut.decimal(), dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
+    Ok(PaieLue { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
 }
 
 // Le memo d'une derivation : la profondeur des derivations ouvertes, et ce que les paies de chaque (racine, mois,
@@ -512,7 +512,8 @@ impl Tenue {
         let avant_la_reprise = rep.is_some_and(|r| fin_du_mois < r.date);
         // L'assiette du dixieme : tout le brut du salarie dans un mois ou il est present.
         if remuneration && present && !avant_la_reprise {
-            self.brut = paies.iter().fold(self.brut, |a, p| add(a, p.brut));
+            // Le compteur (`CompteurConges::remuneration_periode`) compte encore en decimaux : le brut s'y ouvre.
+            self.brut = paies.iter().fold(self.brut, |a, p| add(a, p.brut.decimal()));
         }
         Ok(())
     }
@@ -898,8 +899,8 @@ fn cle_de_fiche(ctx: &Contexte, cle: &IdSalarie) -> R<IdSalarie> {
 }
 
 /// Le brut d'un salarie sur un mois anterieur -- l'assiette du dixieme -- tel que ses paies validees le portent.
-pub(crate) fn remuneration_du_mois(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Decimal> {
-    Ok(paies_du_mois(ctx, mois, &cle_de_fiche(ctx, cle)?)?.iter().fold(Montant::ZERO.decimal(), |a, p| add(a, p.brut)))
+pub(crate) fn remuneration_du_mois(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
+    Ok(paies_du_mois(ctx, mois, &cle_de_fiche(ctx, cle)?)?.iter().fold(Montant::ZERO, |a, p| a + p.brut))
 }
 
 /// La deduction forfaitaire specifique deja retenue pour un salarie dans les mois de la meme annee civile, strictement

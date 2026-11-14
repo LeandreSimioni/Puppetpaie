@@ -596,7 +596,8 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
     let salarie = imp.salarie.clone();
     // La paie validee d'un mois du salarie ; sans elle, rien ne se propose.
     let paie = |mois: Mois| -> R<Option<Decimal>> {
-        Ok(Some(crate::conges::remuneration_du_mois(ctx, mois, &salarie)?).filter(|brut| *brut > Decimal::ZERO))
+        // Les indemnites journalieres comptent encore en decimaux : le brut s'y ouvre.
+        Ok(Some(crate::conges::remuneration_du_mois(ctx, mois, &salarie)?).filter(|brut| *brut > Montant::ZERO).map(Montant::decimal))
     };
     let sans_paie = |mois: Mois| AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : aucune paie validée en {}.", mois.libelle(Graphie::Accentuee)));
     match origine(imp)? {

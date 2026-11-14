@@ -213,6 +213,11 @@ impl Coefficient {
     pub fn a_quatre_decimales(self) -> Coefficient {
         Coefficient(self.0.round_dp(4))
     }
+
+    /// Ce coefficient ecrit en taux, en pourcent (`0.10` donne `10.00`) : coefficient x 100 = taux.
+    pub fn en_taux(self) -> Taux {
+        Taux(num::mul(self.0, Decimal::from(100)))
+    }
 }
 
 impl Taux {

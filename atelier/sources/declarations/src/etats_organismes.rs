@@ -30,7 +30,7 @@ use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, qui, 
 // ------------------------------------------------------------------ outils
 
 /// `min(a, b)` : le premier des deux quand ils sont egaux.
-fn plus_petit(a: Decimal, b: Decimal) -> Decimal {
+fn plus_petit<G: PartialOrd>(a: G, b: G) -> G {
     if b < a {
         b
     } else {
@@ -39,7 +39,7 @@ fn plus_petit(a: Decimal, b: Decimal) -> Decimal {
 }
 
 /// `max(a, b)` : le premier des deux quand ils sont egaux.
-fn plus_grand(a: Decimal, b: Decimal) -> Decimal {
+fn plus_grand<G: PartialOrd>(a: G, b: G) -> G {
     if b > a {
         b
     } else {
@@ -605,23 +605,22 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut par_an: Vec<(String, Decimal, Decimal)> = Vec::new();
-    let zero = Montant::ZERO.decimal();
+    let mut par_an: Vec<(String, Montant, Montant)> = Vec::new();
     // Un permanent est une nature MENSUELLE du catalogue des contrats.
     let mensuelles: Vec<String> = droit::natures::natures().map_err(|e| e.reclasser(Classe::Refuse))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        let Some(brut) = l.brut.map(Montant::decimal) else { continue };
+        let Some(brut) = l.brut else { continue };
         let an = format!("{:04}", l.mois.annee());
         let i = match par_an.iter().position(|(a, _, _)| *a == an) {
             Some(i) => i,
             None => {
-                par_an.push((an, zero, zero));
+                par_an.push((an, Montant::ZERO, Montant::ZERO));
                 par_an.len() - 1
             }
         };
-        par_an[i].1 = add(par_an[i].1, brut);
+        par_an[i].1 += brut;
         if mensuelles.contains(&l.libelle_nature) {
-            par_an[i].2 = add(par_an[i].2, brut);
+            par_an[i].2 += brut;
         }
     }
     par_an.sort_by(|a, b| a.0.cmp(&b.0));
@@ -631,10 +630,10 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             return Err(socle::echec::cle(format!("Le barème {} ne porte pas les contributions Afdas de la {}.", an, idcc), &format!("par_convention.{}.hors_bulletin", idcc))
                 .reclasser(Classe::Refuse));
         };
-        let mut cpnef = zero;
+        let mut cpnef = Montant::ZERO;
         if let Some(c) = &hb.cpnef_dialogue_social {
-            let brut_cpnef = Montant::du_decimal(masse).fois_taux(c.taux).au_centime().decimal();
-            let borne = |b: Option<Montant>, cle: &str| b.map(Montant::decimal).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque));
+            let brut_cpnef = masse.fois_taux(c.taux).au_centime();
+            let borne = |b: Option<Montant>, cle: &str| b.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque));
             cpnef = plus_grand(borne(c.plancher, "plancher")?, plus_petit(borne(c.plafond, "plafond")?, brut_cpnef));
         }
         let tranches = &hb
@@ -652,7 +651,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches").reclasser(Classe::Manque))?
                     .taux,
             ),
-            None if masse_permanents.is_zero() => None,
+            None if masse_permanents.est_nul() => None,
             None => {
                 return Err(refus(format!(
                     "{} : l'effectif de l'année n'est pas connu (retours de nature 118), et le taux de la contribution conventionnelle des permanents en dépend : relever les retours. Rien n'est écrit.",
@@ -661,12 +660,17 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         };
         let permanents = match taux_p {
-            Some(t) => Montant::du_decimal(masse_permanents).fois_taux(t).au_centime().decimal(),
-            None => zero,
+            Some(t) => masse_permanents.fois_taux(t).au_centime(),
+            None => Montant::ZERO,
         };
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone()).d("masse", masse).d("masse_permanents", masse_permanents).d("cpnef", cpnef).od("taux_permanents", taux_p.map(Taux::decimal)).d("permanents", permanents);
-        l.d("total_ht", add(cpnef, permanents));
+        l.t("annee", an.clone())
+            .d("masse", masse.decimal())
+            .d("masse_permanents", masse_permanents.decimal())
+            .d("cpnef", cpnef.decimal())
+            .od("taux_permanents", taux_p.map(Taux::decimal))
+            .d("permanents", permanents.decimal());
+        l.d("total_ht", (cpnef + permanents).decimal());
         l.t("a_payer", format!("avant le 28/02/{}, à l'Afdas (Globaldec')", annee_entiere(&an)? + 1));
         lignes.push(l);
     }
@@ -711,14 +715,13 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let idcc = idcc_de(ctx)?;
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
-    let mut par_an: Vec<(String, Decimal)> = Vec::new();
-    let zero = Montant::ZERO.decimal();
+    let mut par_an: Vec<(String, Montant)> = Vec::new();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        let Some(brut) = l.brut.map(Montant::decimal) else { continue };
+        let Some(brut) = l.brut else { continue };
         let an = format!("{:04}", l.mois.annee());
         match par_an.iter_mut().find(|(a, _)| *a == an) {
-            Some(x) => x.1 = add(x.1, brut),
-            None => par_an.push((an, add(zero, brut))),
+            Some(x) => x.1 += brut,
+            None => par_an.push((an, Montant::ZERO + brut)),
         }
     }
     par_an.sort_by(|a, b| a.0.cmp(&b.0));
@@ -733,12 +736,12 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             .reclasser(Classe::Refuse));
         };
         let taux = f.taux;
-        let mut m = Montant::du_decimal(masse).fois_taux(taux).au_centime().decimal();
+        let mut m = masse.fois_taux(taux).au_centime();
         if let Some(pl) = f.plancher {
-            m = plus_grand(m, pl.decimal());
+            m = plus_grand(m, pl);
         }
         if let Some(pl) = f.plafond {
-            m = plus_petit(m, pl.decimal());
+            m = plus_petit(m, pl);
         }
         // A qui payer, si la couche le dit.
         let a_payer: String = std::iter::once(format!("en {}", annee_entiere(&an)? + 1))
@@ -750,7 +753,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         }
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone()).d("masse", masse).d("taux", taux.decimal()).d("montant", m).t("a_payer", a_payer);
+        l.t("annee", an.clone()).d("masse", masse.decimal()).d("taux", taux.decimal()).d("montant", m.decimal()).t("a_payer", a_payer);
         lignes.push(l);
     }
     avert.push("Assiette : le brut du livre de paie, tous salariés. Le texte parle de masse salariale ou de masse déclarée en retraite complémentaire : pour une compagnie du spectacle, c'est le même brut.".to_string());
