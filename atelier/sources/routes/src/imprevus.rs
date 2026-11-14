@@ -1982,7 +1982,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     // saisie verifiee : la plate-forme ne se consulte pas pour un refus.
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
-    let nom = nom_du_signalement(&format!("SignalementFinContrat_{}_{}", cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
+    let nom = nom_du_signalement(&format!("{}{}_{}", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
     let cible = ctx.racine.join("sorties").join(mois.to_string()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
@@ -2121,8 +2121,12 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     avertissements.extend(plate_forme);
 
     let dernier = arret.dernier_jour_travaille;
+    let sorte = match c.nature {
+        NatureSignalement::Arret => documents::SorteDePieceProduite::SignalementArret,
+        NatureSignalement::Reprise => documents::SorteDePieceProduite::SignalementReprise,
+    };
     let nom = nom_du_signalement(
-        &format!("Signalement{}_{}_{}", if c.nature == NatureSignalement::Arret { "Arret" } else { "Reprise" }, arret.salarie, dernier.aaaammjj()),
+        &format!("{}{}_{}", sorte.prefixe(), arret.salarie, dernier.aaaammjj()),
         type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace,
         ordre,
     )?;

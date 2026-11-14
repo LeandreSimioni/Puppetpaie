@@ -900,7 +900,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
             continue;
         }
         let d = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
-        out.extend(noms_commencant_finissant(&d, &format!("Signature_{}_", cle), ".eml")?.into_iter().map(|n| d.join(n)));
+        out.extend(noms_commencant_finissant(&d, &format!("{}{}_", SorteDePieceProduite::Signature.prefixe(), cle), ".eml")?.into_iter().map(|n| d.join(n)));
     }
     Ok(out)
 }

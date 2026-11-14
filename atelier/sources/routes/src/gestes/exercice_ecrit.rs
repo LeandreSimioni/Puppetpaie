@@ -206,7 +206,8 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     if ecrire {
         let dossier = dossier_exercices(ctx);
         std::fs::create_dir_all(&dossier).map_err(|e| en_os(&e, &dossier))?;
-        let nom = if (du, au) == (1, 12) { format!("Compta_{}.csv", annee) } else { format!("Compta_{}_{:02}-{:02}.csv", annee, du, au) };
+        let compta = documents::SorteDePieceProduite::Compta.prefixe();
+        let nom = if (du, au) == (1, 12) { format!("{}{}.csv", compta, annee) } else { format!("{}{}_{:02}-{:02}.csv", compta, annee, du, au) };
         let f = dossier.join(nom);
         std::fs::write(&f, csv_compta(&ecritures)).map_err(|e| en_os(&e, &f))?;
         // L'export de l'annee entiere note les saisies qu'il a lues (`export_compta_a_jour`).
@@ -241,7 +242,7 @@ pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<
 /// moteur n'a pas notee (`depart::mois_ecrit`).
 pub(crate) fn export_compta_a_jour(racine: &Path, annee: Annee) -> R<bool> {
     use compagnie::pieces_ecrites::EmpreinteNotee;
-    let f = racine.join("sorties").join("exercices").join(format!("Compta_{}.csv", annee));
+    let f = racine.join("sorties").join("exercices").join(format!("{}{}.csv", documents::SorteDePieceProduite::Compta.prefixe(), annee));
     if !f.is_file() {
         return Ok(false);
     }
@@ -414,7 +415,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
 
     let dossier = dossier_exercices(ctx);
     std::fs::create_dir_all(&dossier).map_err(|e| en_os(&e, &dossier))?;
-    let archive = dossier.join(format!("Exercice_{}.zip", annee));
+    let archive = dossier.join(format!("{}{}.zip", documents::SorteDePieceProduite::Exercice.prefixe(), annee));
     let mut entrees: Vec<Entree> = Vec::new();
     // Les engagements qui touchent l'annee : le fichier de chacun de ses mois, et celui du mois ou commence un engagement
     // qui court encore dans l'annee (un contrat commence l'annee d'avant).

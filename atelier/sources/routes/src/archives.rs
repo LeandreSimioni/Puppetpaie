@@ -202,7 +202,7 @@ pub(crate) struct PieceDeLEnvoi {
 }
 
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
-/// a imprimer, qui reunit celles de plusieurs salaries).
+/// a imprimer, qui reunit celles de plusieurs salaries : ce fichier n'est la piece de personne).
 pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnvoi>> {
     let envoi = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
     if !envoi.exists() {
@@ -210,7 +210,7 @@ pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnv
     }
     pdf_de(&envoi)?
         .into_iter()
-        .filter(|nom| !nom.starts_with(crate::gestes::signature::PREFIXE_IMPRESSION))
+        .filter(|nom| !matches!(documents::SorteDePieceProduite::du_nom(nom), Some((documents::SorteDePieceProduite::Impression, _))))
         .map(|nom| {
             // `<Piece>_<cle>_<etiquette>.pdf` : la cle du salarie est le deuxieme morceau.
             let morceaux: Vec<&str> = nom.split('_').collect();

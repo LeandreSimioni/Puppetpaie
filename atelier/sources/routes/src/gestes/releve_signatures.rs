@@ -154,7 +154,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         // La preuve archivee : le message tel qu'il est arrive.
         let dossier = ctx.racine.join("sorties").join(a_mois.to_string()).join("envoi");
         std::fs::create_dir_all(&dossier).map_err(|e| os(format!("{} : {}", dossier.display(), e)))?;
-        let preuve = dossier.join(format!("Signature_{}_{}.eml", a_salarie, code));
+        let preuve = dossier.join(format!("{}{}_{}.eml", documents::SorteDePieceProduite::Signature.prefixe(), a_salarie, code));
         std::fs::write(&preuve, &brut).map_err(|e| os(format!("{} : {}", preuve.display(), e)))?;
         let nom_preuve = NomDeFichier::du(&preuve)?.to_string();
 

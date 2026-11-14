@@ -126,10 +126,13 @@ impl CategorieDeDocument {
     }
 }
 
-/// UNE SORTE DE PIECE PRODUITE : ce que le moteur ecrit dans les sorties d'un mois (`sorties/<mois>/`, son `envoi/`) ou
-/// dans un dossier de salaries, dit au debut du nom de son fichier. Une liste du logiciel ; une seule fonction ecrit ce
-/// debut (`prefixe`), une seule le relit (`du_nom`). Aucun prefixe n'en commence un autre : un nom n'est que d'une sorte.
-/// Ce n'est pas une categorie du dossier d'un salarie (`CategorieDeDocument`) : la DPAE, la DSN, l'amorcage n'en sont pas.
+/// UNE SORTE DE PIECE PRODUITE : ce que le moteur ecrit dans les sorties d'un mois (`sorties/<mois>/`, son `envoi/`),
+/// dans celles des exercices (`sorties/exercices/`) ou dans un dossier de salaries, dit au debut du nom de son fichier.
+/// Une liste du logiciel ; une seule fonction ecrit ce debut (`prefixe`), une seule le relit (`du_nom`), une seule dit
+/// si la piece est rangee dans `sorties/<mois>/envoi/` (`dans_l_envoi`). Aucun prefixe n'en commence un autre : un nom
+/// n'est que d'une sorte. Ce n'est pas une categorie du dossier d'un salarie (`CategorieDeDocument`) : la DPAE, la DSN,
+/// l'amorcage n'en sont pas. Un fichier de travail (un PDF temporaire) n'en est pas une, ni une piece recue d'un
+/// organisme (l'AER de France Travail, archivee avec son retour), ni un fichier de l'ancien logiciel (`AEM_`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SorteDePieceProduite {
     /// Les bulletins d'un salarie (`Bulletin_<cle>_<Mois>.pdf`), et celui d'origine garde a cote de son rectificatif.
@@ -160,11 +163,25 @@ pub enum SorteDePieceProduite {
     Dossier,
     /// Le dossier qui reunit tous les salaries (`Dossiers_<periode>…`).
     Dossiers,
+    /// Le PDF a imprimer, qui reunit les pieces parties d'un mois (`Impression_<quoi>_<Mois>.pdf`) : la piece de personne.
+    Impression,
+    /// La preuve d'une signature, le courriel tel qu'il est arrive (`Signature_<cle>_<code>.eml`).
+    Signature,
+    /// Le signalement d'un arret de travail (`SignalementArret_<cle>_<AAAAMMJJ>….dsn`).
+    SignalementArret,
+    /// Le signalement d'une reprise apres un arret (`SignalementReprise_<cle>_<AAAAMMJJ>….dsn`).
+    SignalementReprise,
+    /// Le signalement d'une fin de contrat (`SignalementFinContrat_<cle>_<AAAAMMJJ>….dsn`).
+    SignalementFinContrat,
+    /// L'export comptable d'une annee, ou d'une partie (`Compta_<annee>….csv`).
+    Compta,
+    /// L'archive d'un exercice clos (`Exercice_<annee>.zip`).
+    Exercice,
 }
 
 impl SorteDePieceProduite {
     /// Toutes.
-    pub const TOUTES: [SorteDePieceProduite; 14] = [
+    pub const TOUTES: [SorteDePieceProduite; 21] = [
         SorteDePieceProduite::Bulletin,
         SorteDePieceProduite::Bulletins,
         SorteDePieceProduite::CertificatCs,
@@ -179,6 +196,13 @@ impl SorteDePieceProduite {
         SorteDePieceProduite::RecuSoldeToutCompte,
         SorteDePieceProduite::Dossier,
         SorteDePieceProduite::Dossiers,
+        SorteDePieceProduite::Impression,
+        SorteDePieceProduite::Signature,
+        SorteDePieceProduite::SignalementArret,
+        SorteDePieceProduite::SignalementReprise,
+        SorteDePieceProduite::SignalementFinContrat,
+        SorteDePieceProduite::Compta,
+        SorteDePieceProduite::Exercice,
     ];
 
     /// Le debut du nom de son fichier.
@@ -198,6 +222,42 @@ impl SorteDePieceProduite {
             SorteDePieceProduite::RecuSoldeToutCompte => "RecuSoldeToutCompte_",
             SorteDePieceProduite::Dossier => "Dossier_",
             SorteDePieceProduite::Dossiers => "Dossiers_",
+            SorteDePieceProduite::Impression => "Impression_",
+            SorteDePieceProduite::Signature => "Signature_",
+            SorteDePieceProduite::SignalementArret => "SignalementArret_",
+            SorteDePieceProduite::SignalementReprise => "SignalementReprise_",
+            SorteDePieceProduite::SignalementFinContrat => "SignalementFinContrat_",
+            SorteDePieceProduite::Compta => "Compta_",
+            SorteDePieceProduite::Exercice => "Exercice_",
+        }
+    }
+
+    /// Rangee dans `sorties/<mois>/envoi/` : la piece qui part au salarie (la sienne, le PDF qui les reunit pour
+    /// l'imprimer, la preuve de sa signature) ; les autres sont dans `sorties/<mois>/`, `sorties/exercices/` ou un dossier
+    /// de salaries. Le bulletin d'origine garde a cote de son rectificatif est, lui, dans `sorties/<mois>/`.
+    pub const fn dans_l_envoi(self) -> bool {
+        match self {
+            SorteDePieceProduite::Bulletin
+            | SorteDePieceProduite::CertificatCs
+            | SorteDePieceProduite::Aer
+            | SorteDePieceProduite::Contrat
+            | SorteDePieceProduite::Avenant
+            | SorteDePieceProduite::Impression
+            | SorteDePieceProduite::Signature => true,
+            SorteDePieceProduite::Bulletins
+            | SorteDePieceProduite::CertificatsCs
+            | SorteDePieceProduite::Dpae
+            | SorteDePieceProduite::Dsn
+            | SorteDePieceProduite::Amorcage
+            | SorteDePieceProduite::CertificatDeTravail
+            | SorteDePieceProduite::RecuSoldeToutCompte
+            | SorteDePieceProduite::Dossier
+            | SorteDePieceProduite::Dossiers
+            | SorteDePieceProduite::SignalementArret
+            | SorteDePieceProduite::SignalementReprise
+            | SorteDePieceProduite::SignalementFinContrat
+            | SorteDePieceProduite::Compta
+            | SorteDePieceProduite::Exercice => false,
         }
     }
 
