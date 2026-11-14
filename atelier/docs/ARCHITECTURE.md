@@ -812,10 +812,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   certificats Congés Spectacles, attestations, documents de fin, fiche récapitulative. Une liste du logiciel, dans
   l'ordre où le dossier se lit : `TOUTES` ; écrite `bulletins`, `contrats-signes`… Que portent la charge du dossier, le
   dossier rendu, les catégories proposées, le dossier parti au journal des envois (`DetailDossier.categories`).
-- **sorte d'une pièce produite** : ce que le moteur écrit dans les sorties d'un mois ou un dossier de salariés, dit au
-  début du nom de son fichier (`Bulletin_`, `CertificatCS_`, `AER_`, `Contrat`, `Avenant`, `DPAE_`, `DSN_`,
-  `Amorcage`, `Dossiers_`…) ; une seule fonction écrit ce début (`prefixe`), une seule le relit (`du_nom`), et aucun
-  ne commence un autre. Ce n'est pas une catégorie du dossier : la DPAE, la DSN, l'amorçage n'en sont pas.
+- **sorte d'une pièce produite** : ce que le moteur écrit dans les sorties d'un mois (et son `envoi/`), celles des
+  exercices ou un dossier de salariés, dit au début du nom de son fichier (`Bulletin_`, `CertificatCS_`, `AER_`,
+  `Contrat`, `Avenant`, `DPAE_`, `DSN_`, `Amorcage`, `SignalementArret_`, `Impression_`, `Signature_`, `Compta_`,
+  `Dossiers_`…) ; une seule fonction écrit ce début (`prefixe`), une seule le relit (`du_nom`), une seule dit si la
+  pièce est rangée dans `sorties/<mois>/envoi/` (`dans_l_envoi`), et aucun début n'en commence un autre. Ce n'est pas
+  une catégorie du dossier : la DPAE, la DSN, l'amorçage n'en sont pas. Un fichier de travail, une pièce reçue d'un
+  organisme (l'AER de France Travail) et un fichier de l'ancien logiciel (`AEM_`) n'en sont pas.
 - **état d'export**, **format d'export**, **regroupement d'un état**, **logiciel du comptable**, **période d'export** :
   les listes du logiciel que les tables des exports livrent (`exports_tables.json`) : les états que la page propose
   (`livre-de-paie`…), leurs formats (les six des tableaux, `csv`… `json`, puis ceux des logiciels du comptable, `fec`…
@@ -945,8 +948,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **étape du dépôt d'une déclaration écrite** : la paie a changé depuis son écriture, ou l'état de son test
   (`envois::etats::EtatDuTest`) ; le geste d'une case qui dépose s'en choisit.
 - **mode de remise d'un contrat parti** : imprimé (remis en main propre) ou par courriel ; écrit `imprime`, `courriel`,
-  dit « imprimé », « envoyé » par une seule fonction (`mot_de_la_remise`) ; lu au journal des envois
-  (`contrats_partis_par`, les lignes acceptées). Un contrat parti sans remise notée est parti par un courriel coupé en
+  dit « imprimé », « envoyé » par une seule fonction (`mot_de_la_remise`, aussi pour la phrase d'un envoi du journal),
+  et « imprimé », « envoyé à la signature » dans le récit de ce qui est parti (`remise_dite`) ; lu au journal des
+  envois, par `main_propre` (`ModeDeRemise::de` ; `contrats_partis_par`, les lignes acceptées). Un contrat parti sans remise notée est parti par un courriel coupé en
   route (sa ligne n'est pas acceptée, elle a servi le salarié) : « envoyé ».
 - **case** : un champ d'une fiche ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé.
 - **rubrique** : une ligne du catalogue de paie ; `droit::catalogue::Rubrique` est sa définition. Son code,
