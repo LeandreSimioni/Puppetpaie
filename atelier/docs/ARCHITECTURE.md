@@ -274,6 +274,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | rubrique de la norme | `RubriqueDeLaNorme` | `droit/src/natures.rs` |
 | nom de fichier | `NomDeFichier` | `socle/src/fichiers.rs` |
 | chemin relatif | `CheminRelatif` | `socle/src/fichiers.rs` |
+| chemin d'un texte déposé | `droit::source::CheminDepose` | `droit/src/source.rs` |
 | empreinte | `Empreinte` | `socle/src/fichiers.rs` |
 | clé de lecture | `CleDeLecture<S, L, P>` | `socle/src/fichiers.rs` |
 | valeur lue | `ValeurLue` | `socle/src/fichiers.rs` |
@@ -530,7 +531,11 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   chemin par `CheminRelatif::sous(racine, chemin)`, ou s'écrit en Rust (`CheminRelatif::du_moteur` : les fichiers que le
   moteur nomme sous la compagnie, `config/…`, `journal/…`), et se joint à sa racine nom par nom (`dans`) ; la clé d'une lecture
   notée s'écrit avec la même écriture. Un chemin
-  absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin`.
+  absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin` ; le fichier
+  qu'une charge nomme (un signalement écrit à déposer, un dépôt du banc), absolu ou relatif, aussi.
+- **chemin d'un texte déposé** : le fichier d'une source, depuis la racine du dépôt, sous `atelier/reference/` (ou le mode
+  d'emploi), suivi pour un article d'un entrepôt de la DILA de son code (`…/articles.jsonl.gz#travail`) ; que portent une
+  `Source` et les titres de la banque des conseils.
 - **empreinte** : le SHA-256 entier d'un contenu : une source déposée, une archive de mise à jour et les fictives
   (`derniere.json`, `.livraison.json`, `.livree.json`), un exercice clos, un état gardé. 64 caractères hexadécimaux
   minuscules ; elle ne se fait que par `Empreinte::des_octets` (ou `du_hachage`, un contenu haché par morceaux ;
