@@ -2753,9 +2753,9 @@ fn choix_dpae(p: &Vue) -> R<Choix> {
     }
     if d.passee {
         let dossier = match &d.certifiee {
-            Some(declarations::dpae::EtatDeLaDpae::DejaExistante) => " (déjà existante à l'Urssaf, rien de créé)".to_string(),
+            Some(declarations::dpae::EtatDeLaDpae::DejaExistante { .. }) => " (déjà existante à l'Urssaf, rien de créé)".to_string(),
             Some(declarations::dpae::EtatDeLaDpae::Enregistree { dossier }) => format!(" (dossier {})", dossier),
-            Some(declarations::dpae::EtatDeLaDpae::Refusee) | None => String::new(),
+            Some(declarations::dpae::EtatDeLaDpae::Refusee { .. }) | None => String::new(),
         };
         return choix(true, false, EtatCase::Fait, format!("déclarée {} — passée{}", le, dossier));
     }

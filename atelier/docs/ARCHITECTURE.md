@@ -985,10 +985,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   blanc, refuse le certificat ; que portent une ligne du certificat et la personne certifiée au journal des envois.
 - **état d'une personne déclarée par DPAE** : ce que le certificat de conformité dit qu'elle est devenue : enregistrée
   sous son dossier (00 ou 99, avec R_DOSSIER), déjà existante (98), ou refusée (un autre code, ou un code qui enregistre
-  sans dossier). Lu une fois, à la lecture du certificat (`lire_certificat`) ; seule l'enregistrée porte un dossier. Que
-  portent une ligne du certificat, la personne certifiée au journal des envois, qui l'écrit `dossier` (`""` hors d'une
-  enregistrée), `enregistree` et `deja_existante`, et le relit tel quel (`PersonneEcrite` : une autre combinaison ne se
-  lit pas), l'état d'une embauche déclarée (`EtatEmbauche::certifiee`).
+  sans dossier). Lu une fois, à la lecture du certificat (`lire_certificat`) ; chaque état porte le dossier que le
+  certificat dit : l'enregistrée toujours, la déjà existante et la refusée quand il en dit un. Que portent une ligne du
+  certificat, la personne certifiée au journal des envois, qui l'écrit `dossier` (`""` : le certificat n'en dit aucun),
+  `enregistree` et `deja_existante`, et le relit tel quel (`PersonneEcrite` : une enregistrée sans dossier, ou
+  enregistrée et déjà existante, ne se lit pas), l'état d'une embauche déclarée (`EtatEmbauche::certifiee`).
 - **code retour du lot** : ce que le certificat de conformité dit du traitement du message (C_RET_AR_LOT, positions
   76-77) : 00 correct, 11, 15. `codes_fermes!`, avec son libellé ; un code hors de la liste refuse le certificat ; à
   blanc, aucun ; que porte une ligne du certificat (un lot autre que correct est une anomalie de la pièce).

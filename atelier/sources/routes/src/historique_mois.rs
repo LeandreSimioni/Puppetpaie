@@ -560,8 +560,8 @@ fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: 
                     let qui = joint([dit(&x.nom), dit(&x.prenom)], " ");
                     let etat = match &x.etat {
                         EtatDeLaDpae::Enregistree { dossier } => format!("enregistrée, dossier {}", dossier),
-                        EtatDeLaDpae::DejaExistante => "déjà enregistrée auparavant".to_string(),
-                        EtatDeLaDpae::Refusee => format!("refusée : {} — {}", x.code, x.code.libelle()),
+                        EtatDeLaDpae::DejaExistante { .. } => "déjà enregistrée auparavant".to_string(),
+                        EtatDeLaDpae::Refusee { .. } => format!("refusée : {} — {}", x.code, x.code.libelle()),
                     };
                     l.phrases.push(format!("{}{} : {}.", morceau("", qui.as_deref(), ""), morceau(" (embauche du ", x.embauche.map(|j| j.iso()).as_deref(), ")"), etat));
                 }
@@ -1056,8 +1056,8 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             for d in r.personnes().into_iter().flatten() {
                 let etat = match d.etat {
                     EtatDeLaDpae::Enregistree { .. } => "enregistrée".to_string(),
-                    EtatDeLaDpae::DejaExistante => "déjà enregistrée auparavant".into(),
-                    EtatDeLaDpae::Refusee => format!("refusée : {}", d.libelle),
+                    EtatDeLaDpae::DejaExistante { .. } => "déjà enregistrée auparavant".into(),
+                    EtatDeLaDpae::Refusee { .. } => format!("refusée : {}", d.libelle),
                 };
                 phrases.push(format!("{} : {}.", joint([dit(&d.nom), dit(&d.prenom)], " ").into_iter().collect::<String>(), etat));
             }

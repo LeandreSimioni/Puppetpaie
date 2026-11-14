@@ -455,8 +455,9 @@ pub struct PersonneCertifiee {
     pub pastille: Option<socle::ecran::Pastille>,
 }
 
-/// LA FORME D'UNE PERSONNE DU CERTIFICAT AU JOURNAL : son etat s'y ecrit en `dossier` (`""` hors d'une enregistree),
-/// `enregistree` et `deja_existante`, et se relit de meme ; une autre paire ne se lit pas.
+/// LA FORME D'UNE PERSONNE DU CERTIFICAT AU JOURNAL : son etat s'y ecrit en `dossier` (`""` : le certificat n'en dit
+/// aucun), `enregistree` et `deja_existante`, et se relit de meme : enregistree sous un dossier, deja existante ou
+/// refusee avec ou sans dossier ; une autre combinaison ne se lit pas.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PersonneEcrite {
@@ -465,7 +466,9 @@ struct PersonneEcrite {
     /// Le journal ecrit `""` une zone a blanc.
     #[serde(with = "socle::forme::vide_si_aucun")]
     embauche: Option<socle::date::Jour>,
-    dossier: String,
+    /// Le journal ecrit `""` un dossier que le certificat ne dit pas.
+    #[serde(with = "socle::forme::vide_si_aucun")]
+    dossier: Option<String>,
     code: declarations::dpae::CodeRetourDpae,
     libelle: String,
     enregistree: bool,
@@ -479,17 +482,16 @@ impl TryFrom<PersonneEcrite> for PersonneCertifiee {
     type Error = socle::echec::Echec;
     fn try_from(p: PersonneEcrite) -> Result<PersonneCertifiee, socle::echec::Echec> {
         let PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille } = p;
-        let etat = match (enregistree, deja_existante, dossier.is_empty()) {
-            (true, false, false) => EtatDeLaDpae::Enregistree { dossier },
-            (false, true, true) => EtatDeLaDpae::DejaExistante,
-            (false, false, true) => EtatDeLaDpae::Refusee,
-            (true, false, true) | (false, _, false) | (true, true, _) => {
+        let etat = match (enregistree, deja_existante, dossier) {
+            (true, false, Some(dossier)) => EtatDeLaDpae::Enregistree { dossier },
+            (false, true, dossier) => EtatDeLaDpae::DejaExistante { dossier },
+            (false, false, dossier) => EtatDeLaDpae::Refusee { dossier },
+            (true, false, None) | (true, true, _) => {
                 return Err(socle::refus!(
-                    "Le journal des envois dit de la DPAE de {} enregistree {}, deja existante {}, dossier {} : ce n'est l'etat d'aucune DPAE du certificat (enregistree sous un dossier, deja existante ou refusee, sans dossier). Le signaler au developpeur.",
+                    "Le journal des envois dit de la DPAE de {} enregistree {}, deja existante {} : ce n'est l'etat d'aucune DPAE du certificat (enregistree sous un dossier, deja existante ou refusee). Le signaler au developpeur.",
                     socle::fichiers::repr(&nom),
                     enregistree,
-                    deja_existante,
-                    socle::fichiers::repr(&dossier)
+                    deja_existante
                 ))
             }
         };
@@ -501,9 +503,9 @@ impl From<PersonneCertifiee> for PersonneEcrite {
     fn from(p: PersonneCertifiee) -> PersonneEcrite {
         let PersonneCertifiee { nom, prenom, embauche, etat, code, libelle, formalites, pastille } = p;
         let (dossier, enregistree, deja_existante) = match etat {
-            EtatDeLaDpae::Enregistree { dossier } => (dossier, true, false),
-            EtatDeLaDpae::DejaExistante => (String::new(), false, true),
-            EtatDeLaDpae::Refusee => (String::new(), false, false),
+            EtatDeLaDpae::Enregistree { dossier } => (Some(dossier), true, false),
+            EtatDeLaDpae::DejaExistante { dossier } => (dossier, false, true),
+            EtatDeLaDpae::Refusee { dossier } => (dossier, false, false),
         };
         PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille }
     }
@@ -515,8 +517,8 @@ impl PersonneCertifiee {
         use socle::ecran::{EtatDEcran, Pastille};
         match &self.etat {
             EtatDeLaDpae::Enregistree { dossier } => Pastille::de(EtatDEcran::Fait, &format!("enregistrée — dossier {}", dossier)),
-            EtatDeLaDpae::DejaExistante => Pastille::de(EtatDEcran::Information, "déjà existante"),
-            EtatDeLaDpae::Refusee => Pastille::de(EtatDEcran::Refuse, self.code.libelle()),
+            EtatDeLaDpae::DejaExistante { .. } => Pastille::de(EtatDEcran::Information, "déjà existante"),
+            EtatDeLaDpae::Refusee { .. } => Pastille::de(EtatDEcran::Refuse, self.code.libelle()),
         }
     }
 }

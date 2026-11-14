@@ -619,8 +619,8 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
         for l in c.personnes().into_iter().flatten() {
             match &l.etat {
                 EtatDeLaDpae::Enregistree { dossier } => dossiers.push(dossier),
-                EtatDeLaDpae::DejaExistante => existantes.push(&l.nom),
-                EtatDeLaDpae::Refusee => {}
+                EtatDeLaDpae::DejaExistante { .. } => existantes.push(&l.nom),
+                EtatDeLaDpae::Refusee { .. } => {}
             }
         }
         let mut fin = " — certificat de conformité reçu : passée".to_string();
@@ -1108,7 +1108,7 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
             pastille: None,
         };
         // Refusee : la ligne le dit dans ses anomalies.
-        if p.etat == EtatDeLaDpae::Refusee {
+        if let EtatDeLaDpae::Refusee { .. } = p.etat {
             anomalies.push(format!("{} -- {}", p.libelle, p.nom));
         }
         personnes.push(p);
@@ -1191,7 +1191,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
             .dpae
             .iter()
             .flatten()
-            .filter(|d| d.etat == EtatDeLaDpae::Refusee)
+            .filter(|d| matches!(d.etat, EtatDeLaDpae::Refusee { .. }))
             .map(|d| AnomalieDeRetour { categorie: None, code: d.code.to_string(), message: d.code.libelle().to_string(), rubrique: None })
             .collect()
     } else {
