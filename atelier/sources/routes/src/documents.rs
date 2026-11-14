@@ -289,7 +289,7 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
     let mut vues: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
     for nom in fichiers {
         let chemin = dossier.join(&nom);
-        let octets = crate::depots::lire_octets(&chemin.to_string_lossy())?;
+        let octets = crate::depots::lire_octets(&chemin)?;
         let liste = envois::retours::aer_spectacle(&octets)?;
         let cles = envois::retours::rattacher(&liste.iter().map(|a| a.qui.as_str()).collect::<Vec<_>>(), &index);
         let mut de_ce_retour: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();

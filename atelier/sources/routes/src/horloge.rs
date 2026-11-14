@@ -247,13 +247,13 @@ impl Joue {
 }
 
 /// JOUE. La re-verification precede l'appel. Rend ce que ses retours laissent a faire.
-fn deposer_dsn_joue(d: &HorlogeFictive, ctx: &Contexte, fichier: &str, reel: bool) -> R<Vec<String>> {
+fn deposer_dsn_joue(d: &HorlogeFictive, ctx: &Contexte, fichier: &Path, reel: bool) -> R<Vec<String>> {
     d.reverifier()?;
     Ok(depot_acte::deposer_dsn(ctx, fichier, reel, None, QUI_HORLOGE, false, "")?.suites)
 }
 
 /// JOUE. La re-verification precede l'appel.
-fn deposer_dpae_joue(d: &HorlogeFictive, ctx: &Contexte, fichier: &str, reel: bool) -> R<()> {
+fn deposer_dpae_joue(d: &HorlogeFictive, ctx: &Contexte, fichier: &Path, reel: bool) -> R<()> {
     d.reverifier()?;
     depot_acte::deposer_dpae(ctx, fichier, reel, None, QUI_HORLOGE, false, "")?;
     Ok(())
@@ -300,7 +300,7 @@ fn deposer_les_dsn(
         // Un signalement qui ne part pas se nomme : le pas est celui de la DSN du mois.
         let signalement = lue.nature_declaration != Some(declarations::dsn_lue::MENSUELLE);
         for reel in [false, true] {
-            a_faire.extend(deposer_dsn_joue(d, ctx, &chemin.to_string_lossy(), reel).map_err(|mut e| {
+            a_faire.extend(deposer_dsn_joue(d, ctx, &chemin, reel).map_err(|mut e| {
                 if signalement {
                     e = Echec { a_part: None, ..e.reformuler(|p| format!("le signalement {} ne part pas : {}", nom, p)) };
                 }
@@ -667,10 +667,9 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             let crate::depots::Dpae::Ecrite(r) = crate::depots::dpae(ctx, *mois, Some(&engagements))? else {
                 return Ok(Joue::Rien);
             };
-            let fichier = r.chemin.to_string_lossy().into_owned();
             // La DPAE emporte la demande de taux de PAS de ses embauches (`depot_acte::deposer_dpae`).
             for reel in [false, true] {
-                deposer_dpae_joue(d, ctx, &fichier, reel)?;
+                deposer_dpae_joue(d, ctx, &r.chemin, reel)?;
             }
             Ok(Joue::Fait)
         }),

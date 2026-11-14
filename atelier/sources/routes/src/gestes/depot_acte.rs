@@ -18,7 +18,7 @@
 
 use droit::fiche::{Lue as _, Nic};
 use socle::echec::Classe;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use droit::contexte::Contexte;
 use declarations::dsn_lue::DsnLue;
@@ -252,7 +252,7 @@ fn remplacement_en_regle(m: &mut crate::etapes::Moteur, le_mois: Mois, a: &DsnLu
 /// 5. seulement alors chercher le secret de l'organisme ; 6. deposer ; 7. NOTER, quoi qu'il arrive.
 pub(crate) fn deposer_dsn(
     ctx: &Contexte,
-    fichier: &str,
+    fichier: &Path,
     reel: bool,
     preuve: Option<&Preuve>,
     qui: &str,
@@ -273,7 +273,7 @@ pub(crate) fn deposer_dsn(
 /// ecriture : `ordre_signalements`).
 pub fn deposer_dsn_dans(
     ctx: &Contexte,
-    fichier: &str,
+    fichier: &Path,
     reel: bool,
     preuve: Option<&Preuve>,
     qui: &str,
@@ -290,8 +290,8 @@ pub fn deposer_dsn_dans(
             format!("L'environnement '{}' est la plate-forme d'essai de l'editeur : rien n'y est declare. Un depot REEL ne part que sur 'production' ; pour essayer, un depot de test. Rien n'est parti.", environnement),
         ));
     }
-    let chemin = PathBuf::from(crate::depots::resoudre(&ctx.racine, fichier)?);
-    let octets = crate::depots::lire_octets(&chemin.to_string_lossy())?;
+    let chemin = crate::depots::resoudre(&ctx.racine, fichier)?;
+    let octets = crate::depots::lire_octets(&chemin)?;
     let apercu = declarations::dsn_lue::lire(&octets, None)?;
     // 2. le mode contre le fichier ; `presence_prouvee` : c'est ICI qu'on la prouve, jamais le transport.
     depot::verifier(&apercu, reel, true)?;
@@ -455,7 +455,7 @@ pub fn deposer_dsn_dans(
 /// declare des EMBAUCHES, et le journal retient lesquelles (salarie, premier jour).
 pub(crate) fn deposer_dpae(
     ctx: &Contexte,
-    fichier: &str,
+    fichier: &Path,
     reel: bool,
     preuve: Option<&Preuve>,
     qui: &str,
@@ -470,7 +470,7 @@ pub(crate) fn deposer_dpae(
 /// d'un client construit ici. Sans client, rien ne change.
 pub(crate) fn deposer_dpae_avec(
     ctx: &Contexte,
-    fichier: &str,
+    fichier: &Path,
     reel: bool,
     preuve: Option<&Preuve>,
     qui: &str,
@@ -480,9 +480,9 @@ pub(crate) fn deposer_dpae_avec(
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
-    let chemin = PathBuf::from(crate::depots::resoudre(&ctx.racine, fichier)?);
-    let apercu = crate::depots::apercu_depot_dpae(ctx, &chemin.to_string_lossy())?;
-    let octets = crate::depots::lire_octets(&chemin.to_string_lossy())?;
+    let chemin = crate::depots::resoudre(&ctx.racine, fichier)?;
+    let apercu = crate::depots::apercu_depot_dpae(ctx, &chemin)?;
+    let octets = crate::depots::lire_octets(&chemin)?;
     let le_mois = apercu.mois.ok_or_else(|| erreur(Classe::Refuse, "Ce fichier ne déclare aucune embauche datée : il ne dit pas son mois. Rien n'est parti."))?;
 
     if reel && !apercu.reel {
@@ -611,16 +611,15 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
     };
     let mut releve = false;
     let mut parties: Vec<String> = Vec::new();
-    for (l, f) in retenues.iter().zip(&fichiers) {
-        let fichier = f.to_string_lossy().into_owned();
-        let repete = if reel { teste(f).and_then(|deja| if deja { Ok(()) } else { deposer_dsn(ctx, &fichier, false, preuve, qui, false, contournement).map(|_| ()) }) } else { Ok(()) };
-        let mut fait = repete.and_then(|()| deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ()));
+    for (l, fichier) in retenues.iter().zip(&fichiers) {
+        let repete = if reel { teste(fichier).and_then(|deja| if deja { Ok(()) } else { deposer_dsn(ctx, fichier, false, preuve, qui, false, contournement).map(|_| ()) }) } else { Ok(()) };
+        let mut fait = repete.and_then(|()| deposer_dsn(ctx, fichier, reel, preuve, qui, false, contournement).map(|_| ()));
         if reel && !releve && matches!(&fait, Err(e) if e.classe == Some(Classe::RepetitionManquante)) {
             releve = true;
             // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place.
             fait = envois::releve_retours::derniere_journee()
                 .and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
-                .and_then(|_| deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ()));
+                .and_then(|_| deposer_dsn(ctx, fichier, reel, preuve, qui, false, contournement).map(|_| ()));
         }
         let qui_demande = ctx.nomme(&l.salarie);
         match fait {

@@ -1212,7 +1212,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
 fn designation(d: &Declaration) -> R<Designation> {
     match (d.genre, d.mois, &d.fichier) {
         (Genre::Dsn, Some(m), _) => Ok(Designation::du_mois(Quoi::Dsn, m)),
-        (_, _, Some(f)) => Ok(Designation::du_fichier(f.to_string_lossy().into_owned())),
+        (_, _, Some(f)) => Ok(Designation::du_fichier(f.clone())),
         _ => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une déclaration prête sans mois ni fichier.")),
     }
 }

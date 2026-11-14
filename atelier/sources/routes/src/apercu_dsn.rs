@@ -455,7 +455,7 @@ fn description(nom: &str, a: &DsnLue) -> String {
 }
 
 /// `apercu_depot_dsn` : ce qui partirait, en clair, sans rien envoyer ni demander.
-pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
+pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<ApercuDsn> {
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
     let a = declarations::dsn_lue::lire(&contenu, None)?;

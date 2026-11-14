@@ -152,7 +152,7 @@ pub struct Designation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) fichier: Option<String>,
+    pub(crate) fichier: Option<PathBuf>,
 }
 
 impl Designation {
@@ -162,8 +162,8 @@ impl Designation {
     }
 
     /// Le signalement ecrit `fichier`.
-    pub(crate) fn du_fichier(fichier: impl Into<String>) -> Designation {
-        Designation { quoi: Quoi::Dsn, mois: None, etablissement: None, engagements: None, fichier: Some(fichier.into()) }
+    pub(crate) fn du_fichier(fichier: PathBuf) -> Designation {
+        Designation { quoi: Quoi::Dsn, mois: None, etablissement: None, engagements: None, fichier: Some(fichier) }
     }
 
     /// L'etablissement nomme (son NIC), s'il l'est.
@@ -185,7 +185,7 @@ pub(crate) struct ChargeDeposer {
     #[serde(skip_serializing_if = "Option::is_none")]
     engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<String>,
+    fichier: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reel: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -718,11 +718,11 @@ pub struct DitALEcriture {
 /// a corriger. La DPAE du mois (`quoi` : dpae, `mois`, `engagements`) : celle de ces embauches, ou de celles qui restent
 /// a declarer (`dpae`, meme reprise) ; une fois partie, il n'en reste aucune a declarer, et c'est celle qui est partie
 /// (`partie`), jamais refaite (regle 4). `fichier` : un signalement ecrit.
-pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
+pub fn designee(ctx: &Contexte, d: &Designation) -> R<(PathBuf, DitALEcriture)> {
     // Un signalement se nomme par son fichier, la declaration du mois par son mois : les deux ne designent pas la meme.
-    let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.is_empty()));
+    let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.as_os_str().is_empty()));
     let Some(le_mois) = le_mois else {
-        return fichier.map(|f| (f.to_string(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque));
+        return fichier.map(|f| (f.to_path_buf(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque));
     };
     if fichier.is_some() {
         return Err(socle::echec::a_la_cle(
@@ -751,11 +751,11 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
         };
         let chemin = chemin.ok_or_else(|| refus("Aucune DSN de cet etablissement ce mois-ci. Rien n'est parti."))?;
         let (avertissements, informations) = dsn.avis();
-        return Ok((chemin.to_string_lossy().into_owned(), DitALEcriture { phrase: None, avertissements, informations }));
+        return Ok((chemin.clone(), DitALEcriture { phrase: None, avertissements, informations }));
     }
     // Ce qui reste a declarer s'ecrit, et un manque refuse ; quand rien ne reste, c'est la DPAE partie.
     match dpae(ctx, le_mois, d.engagements.as_deref())? {
-        Dpae::Ecrite(w) => Ok((w.chemin.to_string_lossy().into_owned(), DitALEcriture { phrase: Some(w.phrase), ..Default::default() })),
+        Dpae::Ecrite(w) => Ok((w.chemin, DitALEcriture { phrase: Some(w.phrase), ..Default::default() })),
         Dpae::Rien(phrase) => partie(ctx, d, le_mois)?.map(|c| (c, DitALEcriture::default())).ok_or_else(|| refus(phrase)),
     }
 }
@@ -763,7 +763,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
 /// CE QUI EST PARTI POUR LA DESIGNATION `d` du mois `mois`, en test ou en reel, lu au journal (`envois::journal::lu`) :
 /// le fichier de la derniere ligne du mois, du meme etablissement (DSN mensuelle) ou des memes embauches (DPAE, quand la
 /// designation les nomme). Rien ne se fabrique.
-fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
+fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<PathBuf>> {
     let lignes = envois::journal::lu(&ctx.racine)?.lignes;
     // Une fiche qui ne dit pas encore son NIC n'a que son siege, et aucune DSN n'en est partie.
     let principal = ctx.entreprise.nic_principal();
@@ -779,7 +779,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
         // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     });
-    Ok(ligne.and_then(Ligne::fichier).map(|f| documents::fichier_depose(&ctx.racine, mois, f.texte()).to_string_lossy().into_owned()))
+    Ok(ligne.and_then(Ligne::fichier).map(|f| documents::fichier_depose(&ctx.racine, mois, f.texte())))
 }
 
 /// `deposer` : `motdepasse` est celui DU LOGICIEL, et il ne sert qu'a prouver la presence. Il arrive par le
@@ -932,43 +932,38 @@ fn existe(t: &str) -> bool {
     !t.contains('\0') && Path::new(t).exists()
 }
 
-/// Un chemin tape a la main, tel quel s'il existe, sinon sous les donnees. Rend le texte du chemin, normalisé. La
+/// Un chemin tape a la main, tel quel s'il existe, sinon sous les donnees. Rend le chemin, normalisé. La
 /// declaration d'un mois se designe par le mois de la charge (`Designation::mois`), jamais par un chemin.
-pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
+pub(crate) fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
+    let t = chemin.to_string_lossy();
     if t.chars().all(socle::texte::blanc) {
         return Err(erreur(Classe::FichierAbsent, "Aucun fichier indique."));
     }
-    let p = normaliser(t);
+    let p = normaliser(&t);
     if existe(&p) || p.starts_with('/') {
-        return Ok(p);
+        return Ok(PathBuf::from(p));
     }
     let base = normaliser(&racine.display().to_string());
     let candidat = normaliser(&format!("{}/{}", base, p));
     if existe(&candidat) {
-        return Ok(candidat);
+        return Ok(PathBuf::from(candidat));
     }
-    Ok(p)
+    Ok(PathBuf::from(p))
 }
 
 /// `read_bytes`, l'erreur du disque sous sa classe.
-fn empreinte_du_fichier(chemin: &str) -> R<socle::fichiers::EmpreinteCourte> {
-    if chemin.contains('\0') {
-        return Err(erreur(Classe::Illisible, "embedded null byte"));
-    }
-    let p = Path::new(chemin);
-    let octets = std::fs::read(p).map_err(|e| erreur_io(&e, p))?;
-    Ok(socle::fichiers::Empreinte::des_octets(&octets).courte())
+fn empreinte_du_fichier(chemin: &Path) -> R<socle::fichiers::EmpreinteCourte> {
+    Ok(socle::fichiers::Empreinte::des_octets(&lire_octets(chemin)?).courte())
 }
 
 // ------------------------------------------------------------------ depot-apercu, la DPAE
 
 /// Le contenu d'un fichier, en octets.
-pub(crate) fn lire_octets(chemin: &str) -> R<Vec<u8>> {
-    if chemin.contains('\0') {
+pub(crate) fn lire_octets(chemin: &Path) -> R<Vec<u8>> {
+    if chemin.as_os_str().as_encoded_bytes().contains(&0) {
         return Err(erreur(Classe::Illisible, "embedded null byte"));
     }
-    let p = Path::new(chemin);
-    std::fs::read(p).map_err(|e| erreur_io(&e, p))
+    std::fs::read(chemin).map_err(|e| erreur_io(&e, chemin))
 }
 
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
@@ -1014,7 +1009,7 @@ pub(crate) struct ApercuDpae {
 }
 
 /// `apercu_depot_dpae` : ce que le fichier DPAE declare, enregistrement par enregistrement.
-pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> {
+pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae> {
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
     let texte: String = contenu.iter().map(|&b| b as char).collect();
@@ -1189,11 +1184,11 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
 fn bilan_de_la_repetition(ctx: &Contexte, d: &Designation) -> R<Repetition> {
     let fichier = match d.mois {
         Some(m) => partie(ctx, d, m)?.ok_or_else(|| refus(format!("Rien n'est parti pour {} : le déposer d'abord en test.", m)))?,
-        None => d.fichier.clone().filter(|f| !f.is_empty()).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque))?,
+        None => d.fichier.clone().filter(|f| !f.as_os_str().is_empty()).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque))?,
     };
     let chemin = resoudre(&ctx.racine, &fichier)?;
     let empreinte = empreinte_du_fichier(&chemin)?;
-    let nom = NomDeFichier::du(Path::new(&chemin))?;
+    let nom = NomDeFichier::du(&chemin)?;
     let lignes = crate::etapes::Moteur::nouveau(ctx).lignes()?;
     Ok(etats::repetition(&lignes, d.quoi.acte(), &empreinte, &nom))
 }

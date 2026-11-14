@@ -920,7 +920,7 @@ pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
     if !a_l_extension(nom, ".dsn") {
         return Ok((0, None, String::new(), Reverse(None), Reverse(nom.to_string())));
     }
-    let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(&chemin.to_string_lossy())?, Some(&NomDeFichier::du(chemin)?))?;
+    let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(chemin)?, Some(&NomDeFichier::du(chemin)?))?;
     // Au plus quinze chiffres (S20.G00.05.004) : le rang tient dans la cle de rangement sans perte.
     let lu = apercu.ordre.map(|o| o.valeur() as i64);
     if apercu.est_signalement() {
@@ -2019,7 +2019,7 @@ impl<'a> Moteur<'a> {
         let mut trouve = None;
         for f in fichiers.de(quoi) {
             let de_l_etablissement = match (quoi == DSN, nic) {
-                (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin.to_string_lossy())?, None)?.etablissement() == Some(n),
+                (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin)?, None)?.etablissement() == Some(n),
                 // Une DPAE, ou une DSN sans etablissement demande : le premier fichier, quel qu'il soit.
                 (true, None) | (false, Some(_)) | (false, None) => true,
             };
@@ -2059,7 +2059,7 @@ impl<'a> Moteur<'a> {
             charge.etablissement = nic.cloned();
         }
         if quoi == DPAE {
-            let a = crate::depots::apercu_depot_dpae(self.ctx, &fichier.chemin.to_string_lossy())?;
+            let a = crate::depots::apercu_depot_dpae(self.ctx, &fichier.chemin)?;
             // La DPAE s'ecrit depuis des engagements valides : chacune de ses embauches a sa fiche et son contrat.
             let designee = |e: crate::depots::EmbaucheDuFichier| match (e.salarie, e.numero) {
                 (Some(salarie), Some(numero)) => Ok(EmbaucheDesignee { salarie, numero }),
