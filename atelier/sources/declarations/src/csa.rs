@@ -135,7 +135,7 @@ pub fn taux(quotient: Decimal, plus_de_deux_mille: bool) -> Option<Decimal> {
 pub(crate) struct Effectifs {
     #[serde(rename = "quoi")]
     _quoi: Option<String>,
-    annees: Option<BTreeMap<String, BTreeMap<String, EffectifDuCode>>>,
+    annees: Option<BTreeMap<socle::mois::Annee, BTreeMap<String, EffectifDuCode>>>,
 }
 
 impl Effectifs {
@@ -149,8 +149,9 @@ impl Effectifs {
     }
 
     /// La valeur du code `code` du CRM 118 pour l'annee `annee`, s'il est ecrit.
-    pub(crate) fn du_118(&self, annee: i32, code: &str) -> Option<Decimal> {
-        self.annees.as_ref()?.get(&annee.to_string())?.get(code).map(|c| c.valeur.0)
+    pub(crate) fn du_118(&self, annee: i32, code: &str) -> R<Option<Decimal>> {
+        let annee = socle::mois::Annee::nouvelle(annee.into())?;
+        Ok(self.annees.as_ref().and_then(|a| a.get(&annee)).and_then(|a| a.get(code)).map(|c| c.valeur.0))
     }
 }
 
@@ -168,7 +169,7 @@ struct EffectifDuCode {
 }
 
 /// La valeur d'un code du CRM 118 pour une annee (`config/effectifs.json`), ou `None`.
-fn effectif_du_118(effectifs: &Effectifs, annee: i32, code: &str) -> Option<Decimal> {
+fn effectif_du_118(effectifs: &Effectifs, annee: i32, code: &str) -> R<Option<Decimal>> {
     effectifs.du_118(annee, code)
 }
 
@@ -219,7 +220,7 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois, departs: &engagement
     }
     let effectifs = Effectifs::lus(ctx)?;
     let (alternants, denominateur) =
-        (effectif_du_118(&effectifs, n, CODE_ALTERNANTS), effectif_du_118(&effectifs, n, CODE_DENOMINATEUR));
+        (effectif_du_118(&effectifs, n, CODE_ALTERNANTS)?, effectif_du_118(&effectifs, n, CODE_DENOMINATEUR)?);
     let (Some(alternants), Some(denominateur)) = (alternants, denominateur) else {
         return Err(socle::refus!(
             "DSN de mars {} : la compagnie compte au moins 250 salaries et doit la taxe d'apprentissage ; la contribution \
@@ -261,7 +262,7 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
     };
     if quotient >= Decimal::new(3, 0) {
         // L. 6242-1, II, dernier alinea : 3 % et une progression d'au moins 10 % sur l'annee precedente.
-        let Some(avant) = effectif_du_118(&effectifs, n - 1, CODE_ALTERNANTS) else {
+        let Some(avant) = effectif_du_118(&effectifs, n - 1, CODE_ALTERNANTS)? else {
             return Err(socle::refus!(
                 "DSN de mars {} : les alternants font {} % de l'effectif en {}, entre 3 et 5 % : la contribution \
 supplementaire a l'apprentissage n'est pas due si leur effectif a progresse d'au moins 10 % sur {} (L. 6242-1, II). \

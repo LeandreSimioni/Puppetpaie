@@ -63,7 +63,7 @@ struct Rev2 {
 /// Une destination NAF 2025 d'une sous-classe NAF rev. 2.
 #[derive(Serialize)]
 struct Vers {
-    code: String,
+    code: droit::fiche::CodeNaf,
     code_insee: String,
     intitule: String,
     contenu: String,
@@ -102,7 +102,7 @@ pub fn relever(structure: &Path, correspondances: &Path, jour: &Jour) -> R<Relev
         if entree.type_ != type_ {
             return Err(refus!("type de correspondance incoherent pour {} : {} et {}", c, repr(&entree.type_), repr(type_)));
         }
-        entree.vers.push(Vers { code: sans_point(vers), code_insee: vers.to_string(), intitule: intitule_vers.to_string(), contenu: contenu.to_string() });
+        entree.vers.push(Vers { code: droit::fiche::CodeNaf::lire(&sans_point(vers))?, code_insee: vers.to_string(), intitule: intitule_vers.to_string(), contenu: contenu.to_string() });
     }
     let mut communs: Vec<&String> = naf_2025.0.iter().map(|(k, _)| k).filter(|k| naf_rev2.valeur(k).is_some()).collect();
     communs.sort();
