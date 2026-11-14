@@ -114,6 +114,8 @@ que par la structure :
   - `champs_base_et_les_fiches_ont_les_memes_cases` : `champs-base.json` et la forme des fiches disent les mêmes choix
     et longueurs ;
   - `la_carte_valide_a_une_variante_par_nature` : une variante par nature de `contrats-base.json` ;
+  - `une_piece_produite_n_est_que_d_une_sorte` : chaque sorte d'une pièce produite est dans `TOUTES`, une fois, aucun
+    préfixe n'en commence un autre, et `du_nom` relit la sorte de son préfixe ;
   - `une_liste_de_la_norme_est_celle_des_versions_livrees` : chaque `ListeDeLaNorme` est l'union des listes relevées
     des versions livrées ;
   - `aucun_fichier_livre_ne_porte_une_cle_en_souligne` : aucune clé en `_` dans les données livrées ;
