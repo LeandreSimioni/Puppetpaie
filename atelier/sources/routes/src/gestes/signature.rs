@@ -372,20 +372,27 @@ fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit
 /// porte plusieurs (une page par contrat).
 fn nom_du_pdf(cle: &IdSalarie, ps: &[Paie], etiq: &str, suffixe: &str) -> R<NomDeFichier> {
     let numeros: Vec<String> = ps.iter().map(|p| numero_de_fichier(p.engagement.numero.as_ref())).collect();
-    NomDeFichier::lire(&format!("Contrat{}_{}_{}_{}{}.pdf", if ps.len() > 1 { "s" } else { "" }, cle, numeros.join("+"), etiq, suffixe))
+    NomDeFichier::lire(&format!(
+        "{}{}_{}_{}_{}{}.pdf",
+        documents::SorteDePieceProduite::Contrat.prefixe(),
+        if ps.len() > 1 { "s" } else { "" },
+        cle,
+        numeros.join("+"),
+        etiq,
+        suffixe
+    ))
 }
 
 // ------------------------------------------------------------------ contrats-imprimer
-/// LE PDF A IMPRIMER : les pieces `pieces`, dans leur ordre, reunies en un seul fichier `<dossier>/Impression_<quoi>_<etiq>.pdf`
-/// (une impression d'un mois remplace la precedente : les pieces parties gardent chacune leur fichier).
-/// Le debut du nom du PDF a imprimer : ce fichier n'est la piece de personne, il ne se liste pas parmi les documents.
-pub(crate) const PREFIXE_IMPRESSION: &str = "Impression_";
-
-pub(crate) fn reunir_pour_imprimer(dossier: &std::path::Path, quoi: &str, etiq: &str, pieces: &[std::path::PathBuf]) -> R<std::path::PathBuf> {
+/// LE PDF A IMPRIMER : les pieces `pieces`, dans leur ordre, reunies en un seul fichier `Impression_<quoi>_<etiq>.pdf`,
+/// dans le dossier de sa sorte sous les sorties du mois `sorties` (une impression d'un mois remplace la precedente : les
+/// pieces parties gardent chacune leur fichier).
+pub(crate) fn reunir_pour_imprimer(sorties: &std::path::Path, quoi: &str, etiq: &str, pieces: &[std::path::PathBuf]) -> R<std::path::PathBuf> {
     let octets = documents::fabrique::fusion_pieces(&pieces.iter().map(|p| (p.clone(), None)).collect::<Vec<_>>())?;
-    let f = dossier.join(format!("{}{}_{}.pdf", PREFIXE_IMPRESSION, quoi, etiq));
+    let dossier = const { documents::SorteDePieceProduite::Impression.dossier_du_mois() }.sous(sorties);
+    let f = dossier.join(format!("{}{}_{}.pdf", documents::SorteDePieceProduite::Impression.prefixe(), quoi, etiq));
     // Un mois dont seul un avenant s'imprime n'a pas encore son dossier d'envoi.
-    std::fs::create_dir_all(dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
+    std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     std::fs::write(&f, octets).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::Disque))?;
     Ok(f)
 }
@@ -421,7 +428,8 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         return Err(refus(format!("Aucun contrat a imprimer pour {}.", mois)));
     }
     controler_avenants(ctx, avenants)?;
-    let dossier = ctx.racine.join("sorties").join(s_mois.to_string()).join("envoi");
+    let sorties = ctx.racine.join("sorties").join(s_mois.to_string());
+    let dossier = const { documents::SorteDePieceProduite::Contrat.dossier_du_mois() }.sous(&sorties);
     let etiq = s_mois.etiquette();
     let ent = documents::avenant::ent_du_mois(ctx, s_mois);
     let (mut fichiers, mut contrats) = (Vec::new(), Vec::new());
@@ -443,7 +451,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
             lignes_avenants.push(c);
         }
     }
-    let impression = reunir_pour_imprimer(&dossier, "contrats", &etiq, &fichiers)?;
+    let impression = reunir_pour_imprimer(&sorties, "contrats", &etiq, &fichiers)?;
     let nom_impression = NomDeFichier::du(&impression)?;
     let le_mois = Some(mois);
     if !contrats.is_empty() {
@@ -492,7 +500,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois, None, &departs)?;
     let s_mois = data.mois;
-    let dossier = ctx.racine.join("sorties").join(s_mois.to_string()).join("envoi");
+    let dossier = const { documents::SorteDePieceProduite::Contrat.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(s_mois.to_string()));
     let etiq = s_mois.etiquette();
 
     let (an, nom_mois) = (s_mois.annee(), s_mois.nom(socle::mois::Graphie::Accentuee));
@@ -765,11 +773,7 @@ pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<Dema
 fn deja_parti_dit(etats: &[crate::contrats::ContratASigner], salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Option<String> {
     let c = etats.iter().rev().find(|c| c.salarie == *salarie && c.numero.as_ref() == numero)?;
     let quand = c.demande_le?.jour().jj_mm_aaaa();
-    // Sans remise notee au journal, la phrase dit « envoyé ».
-    let comment = match c.par {
-        Some(m) => m.en_mots(),
-        None => "envoyé",
-    };
+    let comment = envois::etats::mot_de_la_remise(c.par, envois::etats::PlaceDeLaRemise::Phrase);
     Some(format!("Contrat n° {} de {} : déjà parti, {} le {}.", numero_dit(numero, "", "", SANS_NUMERO), c.nom, comment, quand))
 }
 
@@ -961,7 +965,7 @@ fn avenant_ecrit(
     let p = &paies[rang_p];
     let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement)?;
     let ent = documents::avenant::ent_du_mois(ctx, mois_a);
-    let dossier = ctx.racine.join("sorties").join(mois_a.to_string()).join("envoi");
+    let dossier = const { documents::SorteDePieceProduite::Avenant.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(mois_a.to_string()));
     let pdf = match &a.repris {
         Some(Repris { fichier, .. }) => {
             let f = dossier.join(fichier);
@@ -975,7 +979,14 @@ fn avenant_ecrit(
             f
         }
         None => {
-            let f = dossier.join(format!("Avenant{}_{}_{}_{}.pdf", a.numero, salarie, numero_de_fichier(a.contrat.as_ref()), a.mois.etiquette()));
+            let f = dossier.join(format!(
+                "{}{}_{}_{}_{}.pdf",
+                documents::SorteDePieceProduite::Avenant.prefixe(),
+                a.numero,
+                salarie,
+                numero_de_fichier(a.contrat.as_ref()),
+                a.mois.etiquette()
+            ));
             // Le modele du contrat qu'il modifie, dont il suit l'avenant : celui avec lequel ce contrat est parti ; signe
             // hors du logiciel, celui que son engagement suit.
             let modele = if ailleurs {

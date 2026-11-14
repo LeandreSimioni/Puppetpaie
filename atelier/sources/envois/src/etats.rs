@@ -188,7 +188,8 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 // -------------------------------------------------------------- les contrats
 
 /// COMMENT UN CONTRAT EST PARTI : imprime (remis en main propre, `detail.main_propre`), ou par courriel. Ecrite
-/// `imprime`, `courriel`.
+/// `imprime`, `courriel`. Des documents remis aux salaries partent de meme ; une ligne du journal la dit si elle en a une
+/// (`Ligne::remise`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModeDeRemise {
@@ -197,12 +198,34 @@ pub enum ModeDeRemise {
 }
 
 impl ModeDeRemise {
-    /// Le participe de la phrase : « imprimé », « envoyé ».
-    pub fn en_mots(self) -> &'static str {
-        match self {
-            ModeDeRemise::Imprime => "imprimé",
-            ModeDeRemise::Courriel => "envoyé",
+    /// Celui d'un envoi du journal, par `main_propre` : imprime s'il est remis en main propre, sinon par courriel.
+    pub fn de(main_propre: bool) -> ModeDeRemise {
+        if main_propre {
+            ModeDeRemise::Imprime
+        } else {
+            ModeDeRemise::Courriel
         }
+    }
+}
+
+/// OU SE DIT LA REMISE : dans une phrase (la reponse d'une route, la phrase d'un envoi du journal), ou dans le recit de
+/// ce qui est parti (l'Historique du mois, les pieces d'un contrat).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaceDeLaRemise {
+    Phrase,
+    Recit,
+}
+
+/// LE MOT DE LA REMISE d'une piece partie, a sa place : « imprimé » ; par courriel, « envoyé » dans une phrase,
+/// « envoyé à la signature » dans le recit. SANS REMISE NOTEE (`None`) : le contrat est parti (`engagement::departs`,
+/// `journal::noter_ligne`) par un courriel coupe en route (`ligne_d_envoi::noter_echec_d_envoi`), dont la ligne n'est pas
+/// acceptee mais a servi le salarie, et que `contrats_partis_par`, qui ne lit que les lignes acceptees, ne retient pas :
+/// c'etait un courriel.
+pub fn mot_de_la_remise(par: Option<ModeDeRemise>, place: PlaceDeLaRemise) -> &'static str {
+    match (par, place) {
+        (Some(ModeDeRemise::Imprime), PlaceDeLaRemise::Phrase | PlaceDeLaRemise::Recit) => "imprimé",
+        (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Phrase) => "envoyé",
+        (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Recit) => "envoyé à la signature",
     }
 }
 
@@ -210,7 +233,7 @@ impl ModeDeRemise {
 pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, ModeDeRemise> {
     let mut d = HashMap::new();
     for e in lignes.iter().filter_map(Ligne::signature).filter(|e| e.accepte) {
-        let par = if e.detail.main_propre { ModeDeRemise::Imprime } else { ModeDeRemise::Courriel };
+        let par = ModeDeRemise::de(e.detail.main_propre);
         for c in &e.detail.contrats {
             d.insert(paire(&c.salarie, c.numero.as_ref()), par);
         }
@@ -509,7 +532,12 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
     if !ligne.accepte() {
         return format!("envoi du {} refusé au dépôt — {}", quand, ligne.reponse());
     }
-    let parti = if ligne.main_propre() { "imprimé" } else { "envoyé" };
+    // Une ligne qui a une remise la dit ; une autre n'en a pas (`Ligne::remise`) : deposee ou partie par courriel, son
+    // acte se dit « envoyé ».
+    let parti = match ligne.remise() {
+        Some(par) => mot_de_la_remise(Some(par), PlaceDeLaRemise::Phrase),
+        None => "envoyé",
+    };
     let le = if en_test { quand.clone() } else { format!("le {}", quand) };
     let prefixe = format!("{} {}", parti, le);
     match ligne {
@@ -1302,10 +1330,12 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&Nume
     parti
 }
 
-/// Le fichier d'une piece partie, dans `sorties/<mois>/` ou son `envoi/`. Un NOM, jamais un chemin : le type le tient.
+/// Le fichier d'une piece partie, dans l'un des dossiers du mois (`DossierDuMois::TOUS` : son envoi, puis ses sorties) :
+/// son nom ne dit pas seul son dossier (le bulletin garde a cote de son rectificatif est un `Bulletin`, hors de l'envoi).
+/// Un NOM, jamais un chemin : le type le tient.
 pub fn chemin_piece(racine: &Path, mois: Mois, nom: &NomDeFichier) -> Option<PathBuf> {
     let base = racine.join("sorties").join(mois.to_string());
-    [base.join("envoi").join(nom), base.join(nom)].into_iter().find(|f| f.is_file())
+    documents::DossierDuMois::TOUS.into_iter().map(|d| d.sous(&base).join(nom)).find(|f| f.is_file())
 }
 
 /// Les avenants du contrat parti -- pas ceux d'un contrat qu'il a remplace. `tous` : les avenants de son contrat

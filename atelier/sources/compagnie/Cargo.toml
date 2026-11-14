@@ -23,6 +23,8 @@ droit = { path = "../droit" }
 engagement = { path = "../engagement" }
 # Les états de ce qu'une DSN a porté.
 declarations = { path = "../declarations" }
+# La sorte d'une piece produite (le nom des fichiers d'amorcage).
+documents = { path = "../documents" }
 # Ce qui part et revient, et le journal de ce qui est parti.
 envois = { path = "../envois" }
 serde = { workspace = true }

@@ -202,15 +202,15 @@ pub(crate) struct PieceDeLEnvoi {
 }
 
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
-/// a imprimer, qui reunit celles de plusieurs salaries).
+/// a imprimer, qui reunit celles de plusieurs salaries : ce fichier n'est la piece de personne).
 pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnvoi>> {
-    let envoi = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
+    let envoi = documents::DossierDuMois::Envoi.sous(&ctx.racine.join("sorties").join(mois.to_string()));
     if !envoi.exists() {
         return Ok(Vec::new());
     }
     pdf_de(&envoi)?
         .into_iter()
-        .filter(|nom| !nom.starts_with(crate::gestes::signature::PREFIXE_IMPRESSION))
+        .filter(|nom| !matches!(documents::SorteDePieceProduite::du_nom(nom), Some((documents::SorteDePieceProduite::Impression, _))))
         .map(|nom| {
             // `<Piece>_<cle>_<etiquette>.pdf` : la cle du salarie est le deuxieme morceau.
             let morceaux: Vec<&str> = nom.split('_').collect();
@@ -761,7 +761,7 @@ fn adresses_de(ctx: &Contexte, cles: &[droit::contexte::IdSalarie]) -> R<Vec<Str
 /// Envoie a chaque salarie SON dossier, par la boite de la compagnie.
 /// Irreversible : la meme preuve que les pieces du mois, le meme journal. Un dossier `ensemble` ne part a personne.
 fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: &Preuve, qui: &str, ouvrir: Ouvrir) -> R<DossierEnvoye> {
-    if d.fichiers.iter().map(|f| NomDeFichier::du(f)).collect::<R<Vec<_>>>()?.iter().any(|n| n.texte().starts_with("Dossiers_")) {
+    if d.fichiers.iter().map(|f| NomDeFichier::du(f)).collect::<R<Vec<_>>>()?.iter().any(|n| matches!(documents::SorteDePieceProduite::du_nom(n.texte()), Some((documents::SorteDePieceProduite::Dossiers, _)))) {
         return Err(refus(
             "Un dossier qui réunit tous les salariés ne s'envoie à personne : il porte la paie de chacun. Refaire un fichier par salarié.",
         ));
@@ -842,7 +842,7 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
         .map(|l| documents::etats_personnel::ActeDuJournal {
             quand: l.quand(),
             quoi: l.acte().nom().to_string(),
-            main_propre: l.main_propre(),
+            main_propre: l.remise() == Some(envois::etats::ModeDeRemise::Imprime),
             mois: l.mois(),
             mode: l.mode().nom().to_string(),
             accepte: l.accepte(),

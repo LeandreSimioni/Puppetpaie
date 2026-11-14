@@ -45,6 +45,7 @@ use std::path::{Path, PathBuf};
 use rust_decimal::Decimal;
 
 use documents::bulletin::fmt_heures;
+use documents::SorteDePieceProduite;
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
@@ -68,11 +69,11 @@ pub struct Message<Pour> {
 /// `{annee}`, `{liste}`, `{notes}`, `{france_travail}`, `{signataire}`, `{raison_sociale}`.
 pub const CORPS: &str = "Bonjour {prenom},\n\nTu trouveras ci-joint tes documents pour {mois} {annee} :\n\n{liste}\n\n{notes}{france_travail}\nBien à toi,\n{signataire}\n{raison_sociale}\n";
 
-/// UNE PIECE QU'UN SALARIE RECOIT : son champ, le prefixe de son fichier, son libelle dans la liste du message, son nom
+/// UNE PIECE QU'UN SALARIE RECOIT : son champ, la sorte de son fichier, son libelle dans la liste du message, son nom
 /// court (l'objet, ou l'on n'a pas la place des libelles longs) et sa note.
 pub struct Piece {
     pub champ: &'static str,
-    pub prefixe: &'static str,
+    pub sorte: SorteDePieceProduite,
     pub libelle: &'static str,
     pub court: &'static str,
     pub note: &'static str,
@@ -82,14 +83,14 @@ pub struct Piece {
 pub const PIECES: [Piece; 3] = [
     Piece {
         champ: "bulletin",
-        prefixe: "Bulletin",
+        sorte: SorteDePieceProduite::Bulletin,
         libelle: "le bulletin de paie",
         court: "bulletin",
         note: "Le bulletin est à conserver sans limitation de durée.",
     },
     Piece {
         champ: "certificat_cs",
-        prefixe: "CertificatCS",
+        sorte: SorteDePieceProduite::CertificatCs,
         libelle: "le certificat d'emploi Congés Spectacles",
         court: "certificat Congés Spectacles",
         note: "Le certificat d'emploi Congés Spectacles te sert à faire valoir tes droits à congé auprès d'Audiens : \
@@ -97,7 +98,7 @@ pub const PIECES: [Piece; 3] = [
     },
     Piece {
         champ: "aer",
-        prefixe: "AER",
+        sorte: SorteDePieceProduite::Aer,
         libelle: "l'attestation employeur France Travail (AER Cinéma Spectacle)",
         court: "attestation France Travail",
         note: "L'attestation employeur est celle qui compte pour France Travail. Elle est éditée par France Travail à \
@@ -201,9 +202,25 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
 
 
 
-pub fn nom_fichier(prefixe: &str, cle: &droit::contexte::IdSalarie, etiq: &str) -> String {
-    format!("{}_{}_{}.pdf", prefixe, cle, etiq)
+/// Le nom du fichier d'une piece d'un salarie pour un mois : `<prefixe de sa sorte><cle>_<Mois>.pdf`.
+pub fn nom_fichier(sorte: SorteDePieceProduite, cle: &droit::contexte::IdSalarie, etiq: &str) -> String {
+    format!("{}{}_{}.pdf", sorte.prefixe(), cle, etiq)
 }
+
+/// Le fichier d'une piece d'un salarie pour un mois (`nom_fichier`), dans le dossier du mois ou sa sorte se range
+/// (`SorteDePieceProduite::dossier_du_mois`), sous les sorties du mois `sorties` (`sorties/<mois>/`).
+pub fn chemin_de_la_piece(sorte: SorteDePieceProduite, sorties: &Path, cle: &droit::contexte::IdSalarie, etiq: &str) -> PathBuf {
+    sorte.dossier_du_mois().sous(sorties).join(nom_fichier(sorte, cle, etiq))
+}
+
+// Chaque piece qu'un salarie recoit se range dans un mois : sinon, ceci ne compile pas.
+const _: () = {
+    let mut i = 0;
+    while i < PIECES.len() {
+        PIECES[i].sorte.dossier_du_mois();
+        i += 1;
+    }
+};
 
 /// « a, b et c ». Suit les pieces REELLEMENT jointes : promettre dans l'objet une AER qui n'est pas la serait un
 /// mensonge en premiere ligne.
@@ -336,12 +353,13 @@ pub const RIEN_DANS_LE_RESUME: &str = "  - le détail de ton bulletin ; tes jour
 /// `renvois` (cle -> `Renvoi`) : ceux dont la paie a change depuis l'envoi de leurs documents recoivent le courriel de
 /// renvoi (`CORPS_RENVOI`), qui dit ce qui a change ; les autres, le premier courriel (`CORPS`).
 /// `a_part` (cle -> pieces) : ce qui est du au salarie et ne part pas avec ce courriel, tel que le moteur le decide
-/// (`aer`, `attestation_fctu`) ; le courriel le dit, sans rien promettre.
+/// (`aer`, `attestation_fctu`) ; le courriel le dit, sans rien promettre. Chaque piece, dans le dossier de sa sorte sous
+/// les sorties du mois `sorties` (`chemin_de_la_piece`).
 pub fn preparer_avec(
     paies: &[Paie],
     ent: &droit::fiche::ChampsEntreprise,
     m: socle::mois::Mois,
-    dossier: &Path,
+    sorties: &Path,
     renvois: &std::collections::HashMap<droit::contexte::IdSalarie, Renvoi>,
     a_part: &std::collections::HashMap<droit::contexte::IdSalarie, Vec<&'static str>>,
 ) -> R<Vec<Message<droit::contexte::IdSalarie>>> {
@@ -372,7 +390,7 @@ pub fn preparer_avec(
         let mut libelles = Vec::new();
         let mut presents: Vec<&Piece> = Vec::new();
         for piece in &PIECES {
-            let chemin = dossier.join(nom_fichier(piece.prefixe, &cle, &etiq));
+            let chemin = chemin_de_la_piece(piece.sorte, sorties, &cle, &etiq);
             if chemin.exists() {
                 pieces.push(chemin);
                 libelles.push(format!("  - {}", piece.libelle));

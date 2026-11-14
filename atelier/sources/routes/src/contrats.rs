@@ -948,11 +948,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         };
         // Le jour du depart, « JJ/MM », s'il est dit.
         let le: String = depuis.map(|q| q.jour()).map(|j| format!(" le {:02}/{:02}", j.jour, j.mois)).into_iter().collect();
-        // Sans remise notee au journal, la phrase dit « envoyé ».
-        let remis = match par {
-            Some(m) => m.en_mots(),
-            None => "envoyé",
-        };
+        let remis = etats::mot_de_la_remise(par, etats::PlaceDeLaRemise::Phrase);
         let attente = format!("{}{}{}", ce, remis, le);
         let numero = p.engagement.numero.clone();
         let demande_par_courriel = demandes_par_courriel.contains(&k);
@@ -1418,10 +1414,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
 /// Le fichier d'une piece partie existe-t-il, dans `sorties/<mois>/` ou son `envoi/` ? Un NOM, jamais un chemin.
 fn piece_existe(racine: &Path, mois: Option<Mois>, fichier: &NomDeFichier) -> bool {
     // Une piece sans mois n'est rangee dans aucun dossier de mois.
-    mois.is_some_and(|mois| {
-        let base = racine.join("sorties").join(mois.to_string());
-        [base.join("envoi").join(fichier), base.join(fichier)].iter().any(|c| c.is_file())
-    })
+    mois.is_some_and(|mois| etats::chemin_piece(racine, mois, fichier).is_some())
 }
 
 fn piece(racine: &Path, quoi: String, quand: InstantOuJour, mois: Option<Mois>, fichier: &NomDeFichier) -> PiecePartie {
@@ -1458,7 +1451,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     let mut contrat: Vec<PiecePartie> = Vec::new();
     for l in lignes.iter().filter(|l| l.accepte()) {
         let Some(e) = l.signature() else { continue };
-        let parti = if e.detail.main_propre { "imprimé" } else { "envoyé à la signature" };
+        let parti = etats::mot_de_la_remise(Some(etats::ModeDeRemise::de(e.detail.main_propre)), etats::PlaceDeLaRemise::Recit);
         for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_ref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
             let quoi = match x.acte {

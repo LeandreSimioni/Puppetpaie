@@ -1792,7 +1792,11 @@ impl<'a> Moteur<'a> {
             let dsn: Vec<_> = tous.iter().filter(|f| a_l_extension(&f.0, ".dsn")).collect();
             let dpae: Vec<_> = tous
                 .iter()
-                .filter(|f| f.0.starts_with("DPAE_") && a_l_extension(&f.0, ".txt") && !radical(&f.0).ends_with("_recapitulatif"))
+                .filter(|f| {
+                    matches!(documents::SorteDePieceProduite::du_nom(&f.0), Some((documents::SorteDePieceProduite::Dpae, _)))
+                        && a_l_extension(&f.0, ".txt")
+                        && !radical(&f.0).ends_with("_recapitulatif")
+                })
                 .collect();
             Deposables { dsn: ranger(dsn)?, dpae: ranger(dpae)? }
         };
@@ -2591,11 +2595,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         Some(c) if !ailleurs => format!("CDI, signé en {}", c.signe_en.libelle(Graphie::Accentuee)),
         _ => "Contrat".to_string(),
     };
-    // Sans remise notee au journal, la phrase dit « envoyé ».
-    let par_dit = match s.par {
-        Some(m) => m.en_mots(),
-        None => "envoyé",
-    };
+    let par_dit = etats::mot_de_la_remise(s.par, etats::PlaceDeLaRemise::Phrase);
     let (etat, phrase, geste) = match pt.contrat {
         PointContrat::AEnvoyer => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
         PointContrat::ARefaire if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
@@ -2830,7 +2830,10 @@ fn etat_documents(parti_le: Option<InstantOuJour>, caduc: bool) -> EtatDocuments
 
 /// `DSN_[^\W\d_]+\d{4}(_AR\d+)?\.dsn` : le nom d'une DSN mensuelle.
 pub(crate) fn est_une_dsn_mensuelle(nom: &str) -> bool {
-    nom.strip_prefix("DSN_").and_then(|r| r.strip_suffix(".dsn")).is_some_and(nom_du_mois_et_rang)
+    match documents::SorteDePieceProduite::du_nom(nom) {
+        Some((documents::SorteDePieceProduite::Dsn, reste)) => reste.strip_suffix(".dsn").is_some_and(nom_du_mois_et_rang),
+        _ => false,
+    }
 }
 
 /// `[^\W\d_]+\d{4}(_AR\d+)?` : ce que le nom d'une DSN mensuelle porte entre `DSN_` et `.dsn`.

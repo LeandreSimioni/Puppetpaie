@@ -17,6 +17,7 @@ use declarations::dpae::{Chemins, Embauche, Parametres};
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::calcul::Paie;
 use engagement::numeros::NumeroContrat;
+use documents::SorteDePieceProduite;
 use envois::etats;
 use envois::releve_retours;
 use socle::date::Jour;
@@ -405,7 +406,7 @@ fn ecrire_texte(chemin: &Path, texte: &str) -> R<()> {
 /// Les noms `DPAE_<etiquette>_AAAAMMJJ-HHMM.txt` d'un dossier, du plus grand au plus petit
 /// (le plus récent d'abord). Un dossier absent n'en a aucun ; un dossier qui ne se lit pas se refuse.
 fn fichiers_partiels(dossier: &Path, etiq: &str) -> R<Vec<PathBuf>> {
-    let debut = format!("DPAE_{}_", etiq);
+    let debut = format!("{}{}_", SorteDePieceProduite::Dpae.prefixe(), etiq);
     let lecture = match std::fs::read_dir(dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -441,7 +442,7 @@ fn marque_a_la_minute() -> String {
 pub(crate) fn nom_libre_du_partiel(dossier: &Path, etiq: &str, marque: &str) -> String {
     let mut essai = marque.to_string();
     let mut rang = 2;
-    while dossier.join(format!("DPAE_{}{}.txt", etiq, essai)).exists() {
+    while dossier.join(format!("{}{}{}.txt", SorteDePieceProduite::Dpae.prefixe(), etiq, essai)).exists() {
         essai = format!("{}-{}", marque, rang);
         rang += 1;
     }
@@ -493,7 +494,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>()?
     };
     let etiq = le_mois.etiquette();
-    let sortie = ctx.racine.join("sorties").join(&mois);
+    let sortie = const { SorteDePieceProduite::Dpae.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(&mois));
     // Une embauche par son salarie et son numero de contrat ; une paie sans numero n'en a pas a declarer.
     let cle_de = |p: &Paie| -> Option<(IdSalarie, NumeroContrat)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.clone(), n.clone())) };
 
@@ -575,7 +576,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         let voulu = declarations::dpae::contenu(&embauches, &parametres)?;
         let voulu = latin1(&voulu);
         let mut pareils = Vec::new();
-        let complet = sortie.join(format!("DPAE_{}.txt", etiq));
+        let complet = sortie.join(format!("{}{}.txt", SorteDePieceProduite::Dpae.prefixe(), etiq));
         // LA DPAE DU MOIS DEJA PARTIE ne se recrit pas (regle 4) : ce qui reste a declarer se cherche, et s'ecrit, sous un
         // nom a la minute, a cote.
         let partiel = !marque.is_empty() || compagnie::pieces_ecrites::partie_le(&ctx.racine, &complet)?.is_some();
@@ -603,7 +604,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
             let nom = NomDeFichier::du(&choisi)?;
             marque = nom
                 .texte()
-                .strip_prefix(&format!("DPAE_{}", etiq))
+                .strip_prefix(&format!("{}{}", SorteDePieceProduite::Dpae.prefixe(), etiq))
                 .and_then(|r| r.strip_suffix(".txt"))
                 .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une DPAE du mois ne porte pas son nom.", "fichier", &nom).reclasser(Classe::DefautDuLogiciel))?
                 .to_string();
@@ -617,11 +618,11 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     if f.is_none() && !marque.is_empty() {
         marque = nom_libre_du_partiel(&sortie, &etiq, &marque);
     }
-    let recap = sortie.join(format!("DPAE_{}{}_recapitulatif.txt", etiq, marque));
+    let recap = sortie.join(format!("{}{}{}_recapitulatif.txt", SorteDePieceProduite::Dpae.prefixe(), etiq, marque));
     let f = match f {
         Some(f) => f,
         None => {
-            let cible = sortie.join(format!("DPAE_{}{}.txt", etiq, marque));
+            let cible = sortie.join(format!("{}{}{}.txt", SorteDePieceProduite::Dpae.prefixe(), etiq, marque));
             ecrire_la_dpae(ctx, &retenues, &cible, &recap, socle::temps::secondes().a_la_seconde())?;
             compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
             cible
@@ -772,7 +773,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
             let de = l.etablissement().or(principal);
-            l.fichier().is_some_and(|f| f.texte().starts_with("DSN_")) && de == nic
+            l.fichier().is_some_and(|f| matches!(SorteDePieceProduite::du_nom(f.texte()), Some((SorteDePieceProduite::Dsn, _)))) && de == nic
         }
         Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect::<BTreeSet<_>>() == *v),
         // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.

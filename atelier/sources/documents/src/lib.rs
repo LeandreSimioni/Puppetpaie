@@ -126,6 +126,213 @@ impl CategorieDeDocument {
     }
 }
 
+/// UNE SORTE DE PIECE PRODUITE : ce que le moteur ecrit dans les sorties d'un mois (`sorties/<mois>/`, son `envoi/`),
+/// dans celles des exercices (`sorties/exercices/`) ou dans un dossier de salaries, dit au debut du nom de son fichier.
+/// Une liste du logiciel ; une seule fonction ecrit ce debut (`prefixe`), une seule le relit (`du_nom`), une seule dit
+/// ou elle se range (`rangement`, et le dossier d'un mois, `dossier_du_mois`, que son ecrivain et ses lecteurs y
+/// prennent). Aucun prefixe n'en commence un autre : un nom n'est que d'une sorte. Ce n'est pas une categorie du dossier
+/// d'un salarie (`CategorieDeDocument`) : la DPAE, la DSN, l'amorcage n'en sont pas. Un fichier de travail (un PDF
+/// temporaire) n'en est pas une, ni une piece recue d'un organisme (l'AER de France Travail, dont le nom commence aussi par
+/// `AER_` : une entree de l'archive de son retour, dans `retours/`, ou, qu'aucune fiche ne porte, un fichier de
+/// `retours/aer-a-ranger/` ; jamais dans les sorties, ou se lisent les pieces produites), ni un fichier de l'ancien
+/// logiciel (`AEM_`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDePieceProduite {
+    /// Les bulletins d'un salarie (`Bulletin_<cle>_<Mois>.pdf`), et celui d'origine garde a cote de son rectificatif
+    /// (`Bulletin_<cle>_<Mois>_<N-AAAA>.pdf`, range a part : `DossierDuMois::BULLETIN_GARDE`).
+    Bulletin,
+    /// L'archive des bulletins du mois (`Bulletins_<Mois>.pdf`).
+    Bulletins,
+    /// Les certificats Conges Spectacles d'un salarie (`CertificatCS_<cle>_<Mois>.pdf`).
+    CertificatCs,
+    /// L'archive des certificats du mois et son recapitulatif (`CertificatsCS_<Mois>.pdf`, `…_recapitulatif.txt`).
+    CertificatsCs,
+    /// L'attestation employeur France Travail d'un salarie, rangee pour l'envoi (`AER_<cle>_<Mois>.pdf`).
+    Aer,
+    /// Le contrat, ou les contrats, d'un salarie (`Contrat_…`, `Contrats_…`).
+    Contrat,
+    /// Un avenant (`Avenant<n>_…`).
+    Avenant,
+    /// La DPAE d'un mois, entiere ou a la minute, et son recapitulatif (`DPAE_<Mois>….txt`).
+    Dpae,
+    /// La DSN mensuelle (`DSN_<Mois>….dsn`).
+    Dsn,
+    /// Un signalement d'amorcage, et la note du lot (`Amorcage<motif>_…`).
+    Amorcage,
+    /// Le certificat de travail (`CertificatTravail_<cle>_<AAAAMMJJ>.pdf`).
+    CertificatDeTravail,
+    /// Le recu pour solde de tout compte (`RecuSoldeToutCompte_<cle>_<AAAAMMJJ>.pdf`).
+    RecuSoldeToutCompte,
+    /// Le dossier d'un salarie (`Dossier_<nom>_<periode>…`).
+    Dossier,
+    /// Le dossier qui reunit tous les salaries (`Dossiers_<periode>…`).
+    Dossiers,
+    /// Le PDF a imprimer, qui reunit les pieces parties d'un mois (`Impression_<quoi>_<Mois>.pdf`) : la piece de personne.
+    Impression,
+    /// La preuve d'une signature, le courriel tel qu'il est arrive (`Signature_<cle>_<code>.eml`).
+    Signature,
+    /// Le signalement d'un arret de travail (`SignalementArret_<cle>_<AAAAMMJJ>….dsn`).
+    SignalementArret,
+    /// Le signalement d'une reprise apres un arret (`SignalementReprise_<cle>_<AAAAMMJJ>….dsn`).
+    SignalementReprise,
+    /// Le signalement d'une fin de contrat (`SignalementFinContrat_<cle>_<AAAAMMJJ>….dsn`).
+    SignalementFinContrat,
+    /// L'export comptable d'une annee, ou d'une partie (`Compta_<annee>….csv`).
+    Compta,
+    /// L'archive d'un exercice clos (`Exercice_<annee>.zip`).
+    Exercice,
+}
+
+impl SorteDePieceProduite {
+    /// Toutes.
+    pub const TOUTES: [SorteDePieceProduite; 21] = [
+        SorteDePieceProduite::Bulletin,
+        SorteDePieceProduite::Bulletins,
+        SorteDePieceProduite::CertificatCs,
+        SorteDePieceProduite::CertificatsCs,
+        SorteDePieceProduite::Aer,
+        SorteDePieceProduite::Contrat,
+        SorteDePieceProduite::Avenant,
+        SorteDePieceProduite::Dpae,
+        SorteDePieceProduite::Dsn,
+        SorteDePieceProduite::Amorcage,
+        SorteDePieceProduite::CertificatDeTravail,
+        SorteDePieceProduite::RecuSoldeToutCompte,
+        SorteDePieceProduite::Dossier,
+        SorteDePieceProduite::Dossiers,
+        SorteDePieceProduite::Impression,
+        SorteDePieceProduite::Signature,
+        SorteDePieceProduite::SignalementArret,
+        SorteDePieceProduite::SignalementReprise,
+        SorteDePieceProduite::SignalementFinContrat,
+        SorteDePieceProduite::Compta,
+        SorteDePieceProduite::Exercice,
+    ];
+
+    /// Le debut du nom de son fichier.
+    pub const fn prefixe(self) -> &'static str {
+        match self {
+            SorteDePieceProduite::Bulletin => "Bulletin_",
+            SorteDePieceProduite::Bulletins => "Bulletins_",
+            SorteDePieceProduite::CertificatCs => "CertificatCS_",
+            SorteDePieceProduite::CertificatsCs => "CertificatsCS_",
+            SorteDePieceProduite::Aer => "AER_",
+            SorteDePieceProduite::Contrat => "Contrat",
+            SorteDePieceProduite::Avenant => "Avenant",
+            SorteDePieceProduite::Dpae => "DPAE_",
+            SorteDePieceProduite::Dsn => "DSN_",
+            SorteDePieceProduite::Amorcage => "Amorcage",
+            SorteDePieceProduite::CertificatDeTravail => "CertificatTravail_",
+            SorteDePieceProduite::RecuSoldeToutCompte => "RecuSoldeToutCompte_",
+            SorteDePieceProduite::Dossier => "Dossier_",
+            SorteDePieceProduite::Dossiers => "Dossiers_",
+            SorteDePieceProduite::Impression => "Impression_",
+            SorteDePieceProduite::Signature => "Signature_",
+            SorteDePieceProduite::SignalementArret => "SignalementArret_",
+            SorteDePieceProduite::SignalementReprise => "SignalementReprise_",
+            SorteDePieceProduite::SignalementFinContrat => "SignalementFinContrat_",
+            SorteDePieceProduite::Compta => "Compta_",
+            SorteDePieceProduite::Exercice => "Exercice_",
+        }
+    }
+
+    /// OU ELLE SE RANGE. Dans l'envoi du mois (`sorties/<mois>/envoi/`) : la piece qui part au salarie (la sienne, le
+    /// PDF qui les reunit pour l'imprimer, la preuve de sa signature) ; dans les sorties du mois (`sorties/<mois>/`) :
+    /// les archives du mois, les declarations, les documents de fin de contrat ; les exercices et les dossiers de
+    /// salaries, a part. Le bulletin d'origine garde a cote de son rectificatif est un `Bulletin` qui ne part a personne :
+    /// il se range ailleurs (`DossierDuMois::BULLETIN_GARDE`).
+    pub const fn rangement(self) -> Rangement {
+        match self {
+            SorteDePieceProduite::Bulletin
+            | SorteDePieceProduite::CertificatCs
+            | SorteDePieceProduite::Aer
+            | SorteDePieceProduite::Contrat
+            | SorteDePieceProduite::Avenant
+            | SorteDePieceProduite::Impression
+            | SorteDePieceProduite::Signature => Rangement::DuMois(DossierDuMois::Envoi),
+            SorteDePieceProduite::Bulletins
+            | SorteDePieceProduite::CertificatsCs
+            | SorteDePieceProduite::Dpae
+            | SorteDePieceProduite::Dsn
+            | SorteDePieceProduite::Amorcage
+            | SorteDePieceProduite::CertificatDeTravail
+            | SorteDePieceProduite::RecuSoldeToutCompte
+            | SorteDePieceProduite::SignalementArret
+            | SorteDePieceProduite::SignalementReprise
+            | SorteDePieceProduite::SignalementFinContrat => Rangement::DuMois(DossierDuMois::Sorties),
+            SorteDePieceProduite::Compta | SorteDePieceProduite::Exercice => Rangement::Exercices,
+            SorteDePieceProduite::Dossier | SorteDePieceProduite::Dossiers => Rangement::DossiersDeSalaries,
+        }
+    }
+
+    /// LE DOSSIER DU MOIS ou elle se range, que son ecrivain et ses lecteurs prennent ici. Une piece qui ne se range
+    /// pas dans un mois (un exercice, un dossier de salaries) n'en a pas : appelee en constante (`const { … }`, ou dans
+    /// une table constante), la sienne ne compile pas.
+    pub const fn dossier_du_mois(self) -> DossierDuMois {
+        match self.rangement() {
+            Rangement::DuMois(d) => d,
+            Rangement::Exercices | Rangement::DossiersDeSalaries => panic!("une piece qui ne se range pas dans un mois"),
+        }
+    }
+
+    /// La sorte du fichier `nom`, et ce qui suit son prefixe ; aucune si le nom ne commence par aucun.
+    pub fn du_nom(nom: &str) -> Option<(SorteDePieceProduite, &str)> {
+        SorteDePieceProduite::TOUTES.into_iter().find_map(|s| nom.strip_prefix(s.prefixe()).map(|reste| (s, reste)))
+    }
+}
+
+/// OU SE RANGE UNE PIECE PRODUITE (`SorteDePieceProduite::rangement`) : dans un dossier d'un mois, avec les exercices
+/// (`sorties/exercices/`), ou avec les dossiers de salaries (`exports/dossiers/`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rangement {
+    DuMois(DossierDuMois),
+    Exercices,
+    DossiersDeSalaries,
+}
+
+/// LE DOSSIER D'UN MOIS ou se range une piece produite : ses sorties (`sorties/<mois>/`), ou leur envoi
+/// (`sorties/<mois>/envoi/`), ce qui part aux salaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DossierDuMois {
+    Sorties,
+    Envoi,
+}
+
+impl DossierDuMois {
+    /// Les deux, l'envoi d'abord : la ou se cherche une piece d'un mois dont on ne sait que le nom (un nom qu'aucune
+    /// sorte ne range seule : le bulletin garde est un `Bulletin`, hors de l'envoi).
+    pub const TOUS: [DossierDuMois; 2] = [DossierDuMois::Envoi, DossierDuMois::Sorties];
+
+    /// LE BULLETIN D'ORIGINE GARDE A COTE DE SON RECTIFICATIF (`Bulletin_<cle>_<Mois>_<N-AAAA>.pdf`) : de la sorte
+    /// `Bulletin` par son nom, mais il ne part a personne (ce qui est parti se garde) : il se range dans les sorties du
+    /// mois, pas dans l'envoi. Son ecrivain et ses lecteurs le prennent ici.
+    pub const BULLETIN_GARDE: DossierDuMois = DossierDuMois::Sorties;
+
+    /// Son nom sous les sorties du mois ; aucun : ce sont elles.
+    const fn nom(self) -> Option<socle::fichiers::NomDeFichier> {
+        match self {
+            DossierDuMois::Sorties => None,
+            DossierDuMois::Envoi => Some(socle::fichiers::NomDeFichier::du_moteur("envoi")),
+        }
+    }
+
+    /// Ce dossier, sous les sorties du mois `sorties` (`sorties/<mois>/`).
+    pub fn sous(self, sorties: &std::path::Path) -> std::path::PathBuf {
+        match self.nom() {
+            Some(n) => sorties.join(n.texte()),
+            None => sorties.to_path_buf(),
+        }
+    }
+
+    /// Ce dossier, en chemin relatif a la compagnie, sous les sorties du mois `sorties` (`CheminRelatif::sorties`).
+    pub fn sous_le_chemin(self, sorties: &socle::fichiers::CheminRelatif) -> socle::fichiers::CheminRelatif {
+        match self.nom() {
+            Some(n) => sorties.joint(&n),
+            None => sorties.clone(),
+        }
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for CategorieDeDocument {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let mot = String::deserialize(d)?;

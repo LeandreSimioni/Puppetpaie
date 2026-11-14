@@ -114,6 +114,8 @@ que par la structure :
   - `champs_base_et_les_fiches_ont_les_memes_cases` : `champs-base.json` et la forme des fiches disent les mêmes choix
     et longueurs ;
   - `la_carte_valide_a_une_variante_par_nature` : une variante par nature de `contrats-base.json` ;
+  - `une_piece_produite_n_est_que_d_une_sorte` : chaque sorte d'une pièce produite est dans `TOUTES`, une fois, aucun
+    préfixe n'en commence un autre, et `du_nom` relit la sorte de son préfixe ;
   - `une_liste_de_la_norme_est_celle_des_versions_livrees` : chaque `ListeDeLaNorme` est l'union des listes relevées
     des versions livrées ;
   - `aucun_fichier_livre_ne_porte_une_cle_en_souligne` : aucune clé en `_` dans les données livrées ;
@@ -701,6 +703,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
 | modèle du bulletin | `ModeleBulletin` | `droit/src/fiche.rs` |
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
+| sorte d'une pièce produite | `documents::SorteDePieceProduite` | `documents/src/lib.rs` |
+| rangement d'une pièce produite | `documents::Rangement` | `documents/src/lib.rs` |
+| dossier d'un mois | `documents::DossierDuMois` | `documents/src/lib.rs` |
+| rubrique de l'Historique | `RubriqueDeLHistorique` | `routes/src/historique_mois.rs` |
 | état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
 | format d'export | `FormatDExport` | `documents/src/plan_comptable.rs` |
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
@@ -752,6 +758,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | étape d'une échéance | `EtapeDEcheance` | `routes/src/rappels.rs` |
 | étape du dépôt d'une déclaration écrite | `EtapeDuDepot` | `routes/src/etapes.rs` |
 | mode de remise d'un contrat parti | `ModeDeRemise` | `envois/src/etats.rs` |
+| place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
 | unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
@@ -826,6 +833,27 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   certificats Congés Spectacles, attestations, documents de fin, fiche récapitulative. Une liste du logiciel, dans
   l'ordre où le dossier se lit : `TOUTES` ; écrite `bulletins`, `contrats-signes`… Que portent la charge du dossier, le
   dossier rendu, les catégories proposées, le dossier parti au journal des envois (`DetailDossier.categories`).
+- **sorte d'une pièce produite** : ce que le moteur écrit dans les sorties d'un mois (et son `envoi/`), celles des
+  exercices ou un dossier de salariés, dit au début du nom de son fichier (`Bulletin_`, `CertificatCS_`, `AER_`,
+  `Contrat`, `Avenant`, `DPAE_`, `DSN_`, `Amorcage`, `SignalementArret_`, `Impression_`, `Signature_`, `Compta_`,
+  `Dossiers_`…) ; une seule fonction écrit ce début (`prefixe`), une seule le relit (`du_nom`), une seule dit où elle
+  se range (`rangement`), et aucun début n'en commence un autre. Ce n'est pas une catégorie du dossier : la DPAE, la
+  DSN, l'amorçage n'en sont pas. Un fichier de travail, une pièce reçue d'un organisme (l'AER de France Travail, dans
+  `retours/`, dont le nom commence aussi par `AER_`) et un fichier de l'ancien logiciel (`AEM_`) n'en sont pas.
+- **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois, avec les exercices
+  (`sorties/exercices/`) ou avec les dossiers de salariés (`exports/dossiers/`) ; dit par sa sorte
+  (`SorteDePieceProduite::rangement`).
+- **dossier d'un mois** : les sorties d'un mois (`sorties/<mois>/` : ses archives, ses déclarations, les documents de
+  fin de contrat) ou leur envoi (`sorties/<mois>/envoi/` : ce qui part aux salariés). L'écrivain et les lecteurs d'une
+  pièce le prennent de sa sorte (`dossier_du_mois`, une constante là où la sorte est connue : une pièce qui ne se range
+  pas dans un mois n'y compile pas), et le joignent par `sous`. Le bulletin d'origine gardé à côté de son rectificatif
+  est un `Bulletin` par son nom, qui ne part à personne : il se range dans les sorties du mois (`BULLETIN_GARDE`) ; un
+  nom seul se cherche dans les deux (`TOUS`, `envois::etats::chemin_piece`).
+- **rubrique de l'Historique** : où un document du mois se range dans l'Historique : bulletins, certificats,
+  attestations, contrats, DPAE, DSN, demandes de taux, AEM (l'ancien logiciel), autres pièces ; dans cet ordre, celui du
+  type. Écrite par son libellé (« Bulletins de paie »…), que portent un document de `historique-mois` (`sorte`) et les
+  pièces d'un message de l'aperçu d'un envoi ; dite d'une pièce produite par sa sorte, d'un fichier de l'ancien logiciel
+  par `AEM_` (`rubrique_de`).
 - **état d'export**, **format d'export**, **regroupement d'un état**, **logiciel du comptable**, **période d'export** :
   les listes du logiciel que les tables des exports livrent (`exports_tables.json`) : les états que la page propose
   (`livre-de-paie`…), leurs formats (les six des tableaux, `csv`… `json`, puis ceux des logiciels du comptable, `fec`…
@@ -967,8 +995,16 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   de l'état), vide pour une échéance qui n'en a pas ; que lit le tableau de l'administrateur.
 - **étape du dépôt d'une déclaration écrite** : la paie a changé depuis son écriture, ou l'état de son test
   (`envois::etats::EtatDuTest`) ; le geste d'une case qui dépose s'en choisit.
-- **mode de remise d'un contrat parti** : imprimé (remis en main propre) ou par courriel ; écrit `imprime`, `courriel`,
-  dit « imprimé », « envoyé » ; lu au journal des envois (`contrats_partis_par`).
+- **mode de remise d'un contrat parti** : imprimé (remis en main propre) ou par courriel ; écrit `imprime`, `courriel`.
+  Des documents remis aux salariés partent de même : une ligne du journal des envois dit sa remise si elle en a une
+  (`Ligne::remise` : une demande de signature, un envoi de documents, lus par `main_propre`, `ModeDeRemise::de`) ; une
+  DSN, une DPAE, un dossier, une demande de fiche n'en ont pas, et la phrase d'un envoi (`resume`) dit leur acte
+  « envoyé ». Dit par une seule fonction, à sa place (`mot_de_la_remise`, `PlaceDeLaRemise`) : « imprimé », « envoyé »
+  dans une phrase, « imprimé », « envoyé à la signature » dans le récit de ce qui est parti. `contrats_partis_par` ne lit
+  que les lignes acceptées : un contrat parti sans remise notée est parti par un courriel coupé en route (sa ligne n'est
+  pas acceptée, elle a servi le salarié), et se dit comme un courriel.
+- **place où se dit la remise** : une phrase (la réponse d'une route, la phrase d'un envoi du journal) ou le récit de ce
+  qui est parti (l'Historique du mois, les pièces d'un contrat) ; ce que `mot_de_la_remise` reçoit.
 - **case** : un champ d'une fiche ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé.
 - **rubrique** : une ligne du catalogue de paie ; `droit::catalogue::Rubrique` est sa définition. Son code,
   `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut

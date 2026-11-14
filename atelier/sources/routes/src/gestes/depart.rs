@@ -37,6 +37,7 @@ use socle::echec::erreur;
 use socle::echec::Echec;
 use socle::echec::R;
 use documents::ecrire_documents::{Reserves, Suite};
+use documents::SorteDePieceProduite;
 
 fn info(texte: impl Into<String>) -> Avis {
     Avis { info: true, texte: texte.into() }
@@ -523,7 +524,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_ref())?;
     }
     let etiq = le_mois.etiquette();
-    let sortie = ctx.racine.join("sorties").join(texte);
+    let sortie = const { SorteDePieceProduite::Dsn.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(texte));
 
     // LES CORRECTIONS DES MOIS DEJA DECLARES : la DSN de ce mois les porte, datees de leur mois d'origine.
     let regs = &lu.regs;
@@ -596,8 +597,8 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
     for nic in &nics {
         let n = nic.clone();
         let mut nom = match &n {
-            Some(x) if Some(x) != principal => format!("DSN_{}_{}.dsn", etiq, x),
-            _ => format!("DSN_{}.dsn", etiq),
+            Some(x) if Some(x) != principal => format!("{}{}_{}.dsn", SorteDePieceProduite::Dsn.prefixe(), etiq, x),
+            _ => format!("{}{}.dsn", SorteDePieceProduite::Dsn.prefixe(), etiq),
         };
         let (type_dsn, ordre) = forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_ref())?;
         let mut remplacee_versait_pas = None;
@@ -791,7 +792,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     let an = i64::from(mois.annee());
     let etiq = mois.etiquette();
     let sortie = ctx.racine.join("sorties").join(mois.to_string());
-    let dossier = sortie.join("envoi");
+    let dossier = const { SorteDePieceProduite::Bulletin.dossier_du_mois() }.sous(&sortie);
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let part = |p: &Paie| cles.contains(&p.salarie.id);
     let mut a_poser: HashMap<usize, (Option<NumeroDeBulletin>, Option<(i64, i64)>)> = HashMap::new();
@@ -885,8 +886,8 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     for (i, p) in paies.iter().enumerate().filter(|(i, p)| part(p) && numerotees[*i]) {
         if let (Some(r), true) = (ecrits[i].rectifie.as_ref(), a_poser.get(&i).is_some_and(|x| x.0.is_some())) {
             let cle = cle_de(p);
-            let piece = dossier.join(envois::envoi::nom_fichier("Bulletin", &cle, &etiq));
-            let garde = sortie.join(format!("Bulletin_{}_{}_{}.pdf", cle, etiq, numero_en_nom(r)));
+            let piece = envois::envoi::chemin_de_la_piece(SorteDePieceProduite::Bulletin, &sortie, &cle, &etiq);
+            let garde = documents::DossierDuMois::BULLETIN_GARDE.sous(&sortie).join(format!("{}{}_{}_{}.pdf", SorteDePieceProduite::Bulletin.prefixe(), cle, etiq, numero_en_nom(r)));
             if piece.exists() && !garde.exists() {
                 std::fs::copy(&piece, &garde).map_err(|e| os(&garde, e))?;
             }
@@ -916,6 +917,12 @@ struct Impression<'a> {
     certificats: &'a [(usize, &'a PaieCs, i64)],
 }
 
+/// Le nom d'une piece de l'archive du mois `etiq` : le prefixe de sa sorte, l'etiquette du mois, puis `fin`
+/// (`Bulletins_<Mois>.pdf`, `CertificatsCS_<Mois>.pdf`, `CertificatsCS_<Mois>_recapitulatif.txt`).
+pub(crate) fn archive_du_mois(sorte: SorteDePieceProduite, etiq: &str, fin: &str) -> String {
+    format!("{}{}{}", sorte.prefixe(), etiq, fin)
+}
+
 /// LES DOCUMENTS D'UN ENVOI, ECRITS : un `Bulletin_<cle>_<Mois>.pdf` (tous ses bulletins du mois) et un
 /// `CertificatCS_<cle>_<Mois>.pdf` par salarie de `cles`, dans `sorties/<mois>/envoi/`, et l'archive du mois
 /// (`Bulletins_<Mois>.pdf`, `CertificatsCS_<Mois>.pdf` et son recapitulatif), qui porte tous les documents numerotes.
@@ -923,7 +930,7 @@ struct Impression<'a> {
 fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, imp: &Impression, cles: &[IdSalarie], absents: bool) -> R<()> {
     let (etiq, mois) = (le_mois.etiquette(), &le_mois.to_string());
     let sortie = ctx.racine.join("sorties").join(mois);
-    let dossier = sortie.join("envoi");
+    let dossier = const { SorteDePieceProduite::Bulletin.dossier_du_mois() }.sous(&sortie);
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let a_ecrire = |f: &Path| !(absents && f.exists());
     let paies = imp.paies;
@@ -938,9 +945,9 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
         }
     }
     let siennes = |cle: &IdSalarie| -> Vec<usize> { (0..paies.len()).filter(|i| cle_de(&paies[*i]) == *cle && numerotee(*i)).collect() };
-    let piece_de = |cle: &IdSalarie| dossier.join(envois::envoi::nom_fichier("Bulletin", cle, &etiq));
+    let piece_de = |cle: &IdSalarie| envois::envoi::chemin_de_la_piece(SorteDePieceProduite::Bulletin, &sortie, cle, &etiq);
     let archivees: Vec<usize> = (0..paies.len()).filter(|i| numerotee(*i)).collect();
-    let archive = sortie.join(format!("Bulletins_{}.pdf", etiq));
+    let archive = const { SorteDePieceProduite::Bulletins.dossier_du_mois() }.sous(&sortie).join(archive_du_mois(SorteDePieceProduite::Bulletins, &etiq, ".pdf"));
     let archive_a_ecrire = !archivees.is_empty() && a_ecrire(&archive);
 
     // Ce que les bulletins cumulent se lit une fois, pour tous les salaries qu'ils impriment.
@@ -966,7 +973,7 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
             documents::fabrique::ecrire_pdf(&bulletins(&siennes, Some(paies))?, &piece)?;
         }
         let ses_certificats: Vec<(&PaieCs, i64)> = imp.certificats.iter().filter(|(i, _, _)| cle_de(&paies[*i]) == *cle).map(|(_, pc, n)| (*pc, *n)).collect();
-        let piece = dossier.join(envois::envoi::nom_fichier("CertificatCS", cle, &etiq));
+        let piece = envois::envoi::chemin_de_la_piece(SorteDePieceProduite::CertificatCs, &sortie, cle, &etiq);
         if !ses_certificats.is_empty() && a_ecrire(&piece) {
             let description = conges_spectacles::description_numerotee(&ses_certificats, ent)?;
             documents::fabrique::ecrire_pdf(&description, &piece)?;
@@ -979,12 +986,13 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
     if !imp.certificats.is_empty() {
         let mut paires: Vec<(&PaieCs, i64)> = imp.certificats.iter().map(|(_, pc, n)| (*pc, *n)).collect();
         paires.sort_by_key(|(_, n)| *n);
-        let archive = sortie.join(format!("CertificatsCS_{}.pdf", etiq));
+        let archives = const { SorteDePieceProduite::CertificatsCs.dossier_du_mois() }.sous(&sortie);
+        let archive = archives.join(archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, ".pdf"));
         if a_ecrire(&archive) {
             let description = conges_spectacles::description_numerotee(&paires, ent)?;
             documents::fabrique::ecrire_pdf(&description, &archive)?;
         }
-        let recap = sortie.join(format!("CertificatsCS_{}_recapitulatif.txt", etiq));
+        let recap = archives.join(archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, "_recapitulatif.txt"));
         if a_ecrire(&recap) {
             let texte = conges_spectacles::recapitulatif(&paires, ent)?;
             std::fs::write(&recap, texte).map_err(|e| os(&recap, e))?;
@@ -1025,45 +1033,56 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         let Some(rang) = deposee(true).or_else(|| deposee(false)) else {
             return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom)));
         };
-        refaire_la_dsn(ctx, &mut m, &lignes, rang, &sortie.join(nom))?;
-        return Ok(sortie.join(nom));
+        let f = const { SorteDePieceProduite::Dsn.dossier_du_mois() }.sous(&sortie).join(nom);
+        refaire_la_dsn(ctx, &mut m, &lignes, rang, &f)?;
+        return Ok(f);
     }
 
     // LES DOCUMENTS D'UN ENVOI AUX SALARIES, et l'archive du mois.
-    let des_documents = nom.starts_with("Bulletin_")
-        || nom.starts_with("CertificatCS_")
-        || [format!("Bulletins_{}.pdf", etiq), format!("CertificatsCS_{}.pdf", etiq), format!("CertificatsCS_{}_recapitulatif.txt", etiq)].contains(&nom.to_string());
+    let sorte = SorteDePieceProduite::du_nom(nom);
+    let des_documents = matches!(sorte, Some((SorteDePieceProduite::Bulletin | SorteDePieceProduite::CertificatCs, _)))
+        || [
+            archive_du_mois(SorteDePieceProduite::Bulletins, &etiq, ".pdf"),
+            archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, ".pdf"),
+            archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, "_recapitulatif.txt"),
+        ]
+        .contains(&nom.to_string());
     if des_documents {
         let envois: Vec<usize> = (0..lignes.len()).filter(|r| lignes[*r].acte() == Acte::Documents && du_mois(&lignes[*r])).collect();
         // LE BULLETIN D'ORIGINE GARDE A COTE DE SON RECTIFICATIF (`Bulletin_<cle>_<Mois>_<N-AAAA>.pdf`, ou `N/AAAA` est le
         // numero rectifie) : la piece du salarie telle que l'a ecrite le dernier envoi ou son bulletin portait ce numero.
-        let garde = nom.strip_prefix("Bulletin_").and_then(|r| r.strip_suffix(".pdf")).and_then(|r| r.rsplit_once('_')).and_then(|(tete, n)| {
+        let du_bulletin = match sorte {
+            Some((SorteDePieceProduite::Bulletin, reste)) => Some(reste),
+            _ => None,
+        };
+        let garde = du_bulletin.and_then(|r| r.strip_suffix(".pdf")).and_then(|r| r.rsplit_once('_')).and_then(|(tete, n)| {
             let cle = tete.strip_suffix(etiq.as_str())?.strip_suffix('_')?;
             n.split_once('-').filter(|(a, b)| a.chars().all(|c| c.is_ascii_digit()) && b.len() == 4).map(|(a, b)| (cle.to_string(), format!("{}/{}", a, b)))
         });
         if let Some((cle, numero)) = garde {
             let cle = IdSalarie::lire(&cle).map_err(|_| crate::archives::piece_etrangere(nom))?;
-            let piece = sortie.join("envoi").join(envois::envoi::nom_fichier("Bulletin", &cle, &etiq));
+            let piece = envois::envoi::chemin_de_la_piece(SorteDePieceProduite::Bulletin, &sortie, &cle, &etiq);
+            let gardee = documents::DossierDuMois::BULLETIN_GARDE.sous(&sortie).join(nom);
             for rang in envois.iter().rev() {
                 if !refaire_les_documents(ctx, mois, &lignes, *rang, false)?.iter().any(|(c, n)| *c == cle && n.as_ref().is_some_and(|n| n.to_string() == numero)) {
                     continue;
                 }
                 // Cet envoi ne refait que cette piece : ce qu'il ecrirait d'autre n'est pas le dernier etat parti.
-                let dossiers = [sortie.clone(), sortie.join("envoi")];
+                let dossiers = [documents::DossierDuMois::Sorties, documents::DossierDuMois::Envoi].map(|d| d.sous(&sortie));
                 let avant = fichiers_dans(&dossiers)?;
                 let de_cote = piece.with_extension("pdf.presente");
                 let presente = piece.exists();
                 if presente {
                     std::fs::rename(&piece, &de_cote).map_err(|e| os(&piece, e))?;
                 }
-                let fait = refaire_les_documents(ctx, mois, &lignes, *rang, true).and_then(|_| std::fs::rename(&piece, sortie.join(nom)).map_err(|e| os(&piece, e)));
-                let nettoye = fichiers_dans(&dossiers).and_then(|apres| apres.into_iter().filter(|f| !avant.contains(f) && *f != sortie.join(nom)).try_for_each(|f| socle::fichiers::effacer(&f)));
+                let fait = refaire_les_documents(ctx, mois, &lignes, *rang, true).and_then(|_| std::fs::rename(&piece, &gardee).map_err(|e| os(&piece, e)));
+                let nettoye = fichiers_dans(&dossiers).and_then(|apres| apres.into_iter().filter(|f| !avant.contains(f) && *f != gardee).try_for_each(|f| socle::fichiers::effacer(&f)));
                 if presente {
                     std::fs::rename(&de_cote, &piece).map_err(|e| os(&de_cote, e))?;
                 }
                 fait?;
                 nettoye?;
-                return Ok(sortie.join(nom));
+                return Ok(gardee);
             }
             return Err(refus(format!("{} : aucun envoi de documents de {} n'a fait partir le bulletin n° {}.", nom, mois.libelle(Graphie::Accentuee), numero)));
         }
@@ -1075,7 +1094,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
             .ok_or_else(|| refus(format!("{} : aucun envoi de documents de {} ne l'a fait partir.", nom, mois.libelle(Graphie::Accentuee))));
     }
     // LA DPAE : son enregistrement, son `.zip` et son recapitulatif, d'apres la derniere ligne qui l'a deposee.
-    if nom.starts_with("DPAE_") {
+    if matches!(sorte, Some((SorteDePieceProduite::Dpae, _))) {
         // L'enregistrement que designent son recapitulatif (`<base>_recapitulatif.txt`) et son `.zip` (`<base>.txt.zip`).
         let base = match (recapitulatif_de(nom), nom.strip_suffix(".zip")) {
             (Some(b), _) => format!("{}.txt", b),
@@ -1086,8 +1105,9 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         let Some(rang) = deposee(true).or_else(|| deposee(false)) else {
             return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom)));
         };
-        refaire_la_dpae(ctx, mois, &lignes[rang], &sortie.join(&base))?;
-        return Ok(sortie.join(nom));
+        let dossier = const { SorteDePieceProduite::Dpae.dossier_du_mois() }.sous(&sortie);
+        refaire_la_dpae(ctx, mois, &lignes[rang], &dossier.join(&base))?;
+        return Ok(dossier.join(nom));
     }
     // LES SIGNALEMENTS (amorcage, arret, reprise, fin de contrat) : leur ligne porte le mois de l'evenement, et le fichier
     // est range dans ce mois.
@@ -1099,7 +1119,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         }
     }
     // LE CONTRAT ET L'AVENANT : la derniere ligne qui les a fait partir.
-    if nom.starts_with("Contrat") || nom.starts_with("Avenant") {
+    if let Some((s @ (SorteDePieceProduite::Contrat | SorteDePieceProduite::Avenant), _)) = sorte {
+        let dossier = s.dossier_du_mois().sous(&sortie);
         // L'EXEMPLAIRE CONTRESIGNE : le contrat parti, plus la mention que sa signature a notee (`contresigner`).
         let signe = lignes.iter().rev().filter(|l| l.mois() == Some(le_mois)).flat_map(|l| envois::etats::revenus(l)).find(|r| r.fichier_signe.as_ref() == Some(fichier));
         if let Some(r) = signe {
@@ -1112,13 +1133,13 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
             let Some(code) = r.code.as_ref() else {
                 return Err(refus(format!("{} : la signature notée ne dit pas la demande à laquelle elle répond ; il ne se refait pas.", nom)));
             };
-            let pdf = sortie.join("envoi").join(nom);
-            contresigner(ctx, &lignes, code, &sortie.join("envoi").join(format!("{}.pdf", envoye)), &pdf, &mention)?;
+            let pdf = dossier.join(nom);
+            contresigner(ctx, &lignes, code, &dossier.join(format!("{}.pdf", envoye)), &pdf, &mention)?;
             return Ok(pdf);
         }
         let porte = |l: &Ligne| l.signature().is_some_and(|s| s.detail.contrats.iter().any(|c| c.fichier == *fichier));
         if let Some(rang) = lignes.iter().rposition(|l| du_mois(l) && porte(l)) {
-            let pdf = sortie.join("envoi").join(nom);
+            let pdf = dossier.join(nom);
             // Parti par courriel, il a son empreinte : le refait la redonne, ou il ne s'ecrit pas ; imprime, ses clauses le gardent.
             let empreinte = lignes[rang].signature().and_then(|s| s.detail.contrats.iter().find(|c| c.fichier == *fichier)).and_then(|c| c.empreinte.as_ref());
             match empreinte {
@@ -1128,7 +1149,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
             return Ok(pdf);
         }
     }
-    if nom.starts_with("Amorcage") && recapitulatif_de(nom).is_some() {
+    if matches!(sorte, Some((SorteDePieceProduite::Amorcage, _))) && recapitulatif_de(nom).is_some() {
         return Err(refus(format!(
             "{} est la note qui accompagnait les signalements d'amorçage au moment de les déposer : elle n'est pas partie et ne se refait pas ; les signalements partis s'ouvrent, eux.",
             nom
@@ -1136,7 +1157,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     }
     // L'AER vient de France Travail : elle ne se refait pas, elle se relit dans `retours/` (l'archive du retour 46) et se
     // range de nouveau comme a sa releve (`routes::documents::ranger_aer_detail`), signee au jour de cette releve.
-    if nom.starts_with("AER_") {
+    if matches!(sorte, Some((SorteDePieceProduite::Aer, _))) {
         let mut archives: Vec<(PathBuf, NomDeFichier)> = Vec::new();
         for p in socle::fichiers::entrees(&ctx.racine.join(envois::retours::RETOURS))?.into_iter().flatten() {
             let n = NomDeFichier::du(&p)?;
@@ -1301,9 +1322,11 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
     let refaire = || -> R<()> {
         match nature {
             declarations::amorcage::NATURE => {
-                let motif = nom
-                    .texte()
-                    .strip_prefix("Amorcage")
+                let apres_le_prefixe = match SorteDePieceProduite::du_nom(nom.texte()) {
+                    Some((SorteDePieceProduite::Amorcage, reste)) => Some(reste),
+                    _ => None,
+                };
+                let motif = apres_le_prefixe
                     .and_then(|r| r.get(..2))
                     .and_then(droit::nature_declaration::NatureDEvenementDeclencheur::du_code)
                     .ok_or_else(|| manque("le motif de son amorcage"))?;
