@@ -119,6 +119,9 @@ que par la structure :
     `sortes_de_pieces_produites!`) ;
   - `une_liste_de_la_norme_est_celle_des_versions_livrees` : chaque `ListeDeLaNorme` est l'union des listes relevées
     des versions livrées ;
+  - `aucune_cotisation_du_bareme_n_a_une_base_en_heures` : aucune cotisation d'un barème livré, ni de ses couches, n'a
+    une assiette en heures (`Assiette::en_heures`) ; une paie validée relit donc ses bases sans barème
+    (`engagement::calcul::BaseDeCotisation::relue`) ;
   - `aucun_fichier_livre_ne_porte_une_cle_en_souligne` : aucune clé en `_` dans les données livrées ;
   - `chaque_script_de_la_page_se_charge` : chaque script de la page passe `node --check`, sans nom déclaré deux fois ;
   - `la_page_ne_coupe_aucun_texte` : le CSS de la page ne cache aucun texte ;

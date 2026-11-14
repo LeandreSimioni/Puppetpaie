@@ -221,6 +221,10 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 /// LA BASE D'UNE LIGNE DE COTISATION, et la valeur d'une assiette d'une paie (`Contenu::bases`) : des euros, ou des
 /// heures, celles des heures en plus (`Assiette::HeuresEnPlusHeures`) et la base de la deduction patronale des heures
 /// supplementaires (`heures_en_plus::DEDUCTION`), son nombre d'heures, masquee au bulletin.
+/// LES LIGNES DE COTISATION DONT LA BASE COMPTE DES HEURES : celles que le calcul compose hors du bareme sur des heures,
+/// la deduction patronale des heures supplementaires (`heures_en_plus::DEDUCTION`, D241-24 : par heure).
+const BASES_EN_HEURES: [IdDeCotisation; 1] = [crate::heures_en_plus::DEDUCTION];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BaseDeCotisation {
     Montant(Montant),
@@ -237,25 +241,15 @@ impl BaseDeCotisation {
         }
     }
 
-    /// LA BASE `d` ECRITE DE LA LIGNE DE LA COTISATION `id`, relue sur les piles de bareme de sa paie (`piles` : celle de
-    /// la paie, puis celles de ses periodes elementaires) : la grandeur que dit l'assiette de la cotisation dans le
-    /// bareme, comme au calcul (`de_l_assiette`). Les lignes que le calcul compose hors du bareme disent la leur, comme au
-    /// calcul : la reduction generale (`ligne_de_reduction`, sur le brut) et la reduction salariale des heures en plus (sur
-    /// leur remuneration) en euros, la deduction patronale des heures supplementaires en heures (`heures_en_plus`). Une
-    /// cotisation qu'aucune pile ne connait se refuse en se nommant.
-    pub(crate) fn relue(piles: &[Arc<Pile>], id: &IdDeCotisation, d: Decimal) -> R<BaseDeCotisation> {
-        if *id == droit::forme_bareme::REDUCTION_GENERALE || *id == crate::heures_en_plus::REDUCTION {
-            return Ok(BaseDeCotisation::Montant(Montant::du_decimal(d)));
-        }
-        if *id == crate::heures_en_plus::DEDUCTION {
-            return Ok(BaseDeCotisation::Heures(Heures::du_decimal(d)));
-        }
-        match piles.iter().find_map(|p| p.rubrique(id)) {
-            Some(r) => Ok(BaseDeCotisation::de_l_assiette(base_de(r)?, d)),
-            None => Err(socle::echec::cle(
-                format!("La paie porte la cotisation {}, que le barème de sa période ne connaît pas : elle ne se relit pas. Le signaler au développeur.", id),
-                id.as_str(),
-            )),
+    /// LA BASE `d` ECRITE DE LA LIGNE DE LA COTISATION `id`, relue sans bareme (une paie validee se relit telle qu'elle
+    /// est partie) : des heures pour les lignes que le calcul compose hors du bareme sur des heures
+    /// (`BASES_EN_HEURES`), des euros pour toute autre. Aucune cotisation d'un bareme livre n'a une assiette en heures
+    /// (`moteur/tests/fichiers/structure.rs`, `aucune_cotisation_du_bareme_n_a_une_base_en_heures`).
+    pub(crate) fn relue(id: &IdDeCotisation, d: Decimal) -> BaseDeCotisation {
+        if BASES_EN_HEURES.contains(id) {
+            BaseDeCotisation::Heures(Heures::du_decimal(d))
+        } else {
+            BaseDeCotisation::Montant(Montant::du_decimal(d))
         }
     }
 
@@ -329,19 +323,19 @@ impl LigneCotisation {
         }
     }
 
-    /// Relue de sa forme ecrite, sa base dans la grandeur que son bareme dit (`BaseDeCotisation::relue`).
-    pub(crate) fn de_la_forme(f: &FormeDeCotisation, piles: &[Arc<Pile>]) -> R<LigneCotisation> {
-        Ok(LigneCotisation {
+    /// Relue de sa forme ecrite (`BaseDeCotisation::relue`).
+    pub(crate) fn de_la_forme(f: &FormeDeCotisation) -> LigneCotisation {
+        LigneCotisation {
             id: f.id.clone(),
             famille: f.famille.clone(),
             libelle: f.libelle.clone(),
-            base: BaseDeCotisation::relue(piles, &f.id, f.base.0)?,
+            base: BaseDeCotisation::relue(&f.id, f.base.0),
             taux_pat: f.taux_pat.map(taux_court),
             montant_pat: f.montant_pat,
             taux_sal: f.taux_sal.map(taux_court),
             montant_sal: f.montant_sal,
             masquer_base_et_taux: f.masquer_base_et_taux,
-        })
+        }
     }
 }
 

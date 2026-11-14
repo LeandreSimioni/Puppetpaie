@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 
-use crate::calcul::{fiche_de_l_engagement, pile_de_la_paie, DeductionForfaitaire, LigneBrut, LigneCotisation, Paie};
+use crate::calcul::{fiche_de_l_engagement, DeductionForfaitaire, LigneBrut, LigneCotisation, Paie};
 use crate::paie_ecrite::FormeDePaie;
 use crate::{Avis, Engagement, LignePaie};
 use droit::contexte::Contexte;
@@ -109,11 +109,6 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         sub.heures = e.heures.map(|h| court(h.decimal()));
         periodes_lues.push(paie_lue(ctx, sub, x, periodes.get(n), &[])?);
     }
-    // Les piles de bareme de la paie et de ses periodes : la base de chaque ligne de cotisation y prend sa grandeur.
-    let mut piles = vec![pile_de_la_paie(ctx, &paie)?];
-    for q in &periodes_lues {
-        piles.push(pile_de_la_paie(ctx, q)?);
-    }
     let p = paie.ecrire();
     p.total_pat = v.total_pat;
     p.total_sal = v.total_sal;
@@ -127,7 +122,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     p.heures_travaillees = v.heures_travaillees;
     p.heures_absence = v.heures_absence;
     p.numero_bulletin = v.numero_bulletin.clone();
-    p.lignes = v.lignes.iter().map(|l| LigneCotisation::de_la_forme(l, &piles)).collect::<R<_>>()?;
+    p.lignes = v.lignes.iter().map(LigneCotisation::de_la_forme).collect();
     p.remuneration = v.remuneration.iter().map(LigneBrut::de_la_forme).collect();
     p.bases = v.bases.clone();
     p.reduction_generale = v.reduction_generale.clone();

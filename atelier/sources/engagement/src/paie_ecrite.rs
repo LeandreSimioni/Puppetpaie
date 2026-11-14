@@ -137,8 +137,7 @@ pub struct Cle<I> {
 }
 
 /// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite. Sa base s'ecrit en nombre, des euros ou des
-/// heures : relue, elle prend la grandeur que l'assiette de sa cotisation dit dans le bareme de la paie
-/// (`BaseDeCotisation::relue`).
+/// heures : relue, elle prend la grandeur que sa cotisation dit (`BaseDeCotisation::relue`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormeDeCotisation {
