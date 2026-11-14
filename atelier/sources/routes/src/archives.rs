@@ -303,7 +303,7 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
         mois,
         annees,
         boite_liee: crate::ouverture::boite_liee(ctx)?,
-        dossier: ctx.racine.join("exports").join("dossiers"),
+        dossier: documents::DossierHorsDuMois::DossiersDeSalaries.sous(&ctx.racine),
     })
 }
 

@@ -1769,7 +1769,8 @@ impl<'a> Moteur<'a> {
         if let Some(v) = self.fichiers.get(&mois) {
             return Ok(v.clone());
         }
-        let dossier = self.racine().join("sorties").join(mois.to_string());
+        // Les declarations deposables (la DSN, la DPAE) se rangent dans les sorties du mois.
+        let dossier = documents::DossierDuMois::Sorties.sous(&self.racine().join("sorties").join(mois.to_string()));
         let rendu = if !dossier.is_dir() {
             Deposables::default()
         } else {

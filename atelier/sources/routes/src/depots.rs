@@ -494,7 +494,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>()?
     };
     let etiq = le_mois.etiquette();
-    let sortie = const { SorteDePieceProduite::Dpae.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(&mois));
+    let sortie = documents::PieceDuMois::Dpae.dossier().sous(&ctx.racine.join("sorties").join(&mois));
     // Une embauche par son salarie et son numero de contrat ; une paie sans numero n'en a pas a declarer.
     let cle_de = |p: &Paie| -> Option<(IdSalarie, NumeroContrat)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.clone(), n.clone())) };
 
@@ -779,7 +779,8 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
         // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     });
-    Ok(ligne.and_then(Ligne::fichier).map(|f| ctx.racine.join("sorties").join(mois.to_string()).join(f).to_string_lossy().into_owned()))
+    let sorties = ctx.racine.join("sorties").join(mois.to_string());
+    ligne.and_then(Ligne::fichier).map(|f| Ok(documents::fichier_depose(&sorties, f.texte())?.to_string_lossy().into_owned())).transpose()
 }
 
 /// `deposer` : `motdepasse` est celui DU LOGICIEL, et il ne sert qu'a prouver la presence. Il arrive par le

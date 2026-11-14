@@ -943,9 +943,19 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
 
 // ------------------------------------------------------------- l'historique
 
-/// `SORTES` : les sortes de documents d'un mois, par le debut de leur nom.
-const SORTES: [(&str, &str); 6] =
-    [("Bulletins_", "bulletins"), ("Contrats_", "contrats"), ("DPAE_", "DPAE"), ("DSN_", "DSN"), ("CertificatsCS_", "certificats CS"), ("AEM_", "AEM")];
+/// `SORTES` : les sortes de pieces produites d'un mois que le bilan nomme, dans son ordre, et leur mot (la sorte d'un nom :
+/// `SorteDePieceProduite::du_nom`).
+const SORTES: [(documents::SorteDePieceProduite, &str); 5] = [
+    (documents::SorteDePieceProduite::Bulletins, "bulletins"),
+    (documents::SorteDePieceProduite::Contrat, "contrats"),
+    (documents::SorteDePieceProduite::Dpae, "DPAE"),
+    (documents::SorteDePieceProduite::Dsn, "DSN"),
+    (documents::SorteDePieceProduite::CertificatsCs, "certificats CS"),
+];
+
+/// Les AEM que l'ancien logiciel a laissees dans les sorties d'un mois (`AEM_…`) : pas une piece produite ; le bilan les
+/// nomme apres les autres.
+const AEM_DE_L_ANCIEN_LOGICIEL: (&str, &str) = ("AEM_", "AEM");
 
 /// `mois_connus` : les mois saisis et les mois produits, du plus recent au plus
 /// ancien -- `(mois, fichiers du dossier de sortie)`.
@@ -1068,16 +1078,22 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
         let lu = compagnie::etat_dsn::du_mois(ctx, le_mois, None)?;
         let retard = lu.etat == Etat::ADeposer && en_retard;
         let depose = lu.deposee();
-        let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(p, _)| noms.iter().any(|n| n.texte().starts_with(p))).map(|(_, l)| *l).collect();
+        let de_la_sorte = |s: documents::SorteDePieceProduite| noms.iter().any(|n| documents::SorteDePieceProduite::du_nom(n.texte()).is_some_and(|(x, _)| x == s));
+        let mut sortes: Vec<&'static str> = SORTES.iter().filter(|(s, _)| de_la_sorte(*s)).map(|(_, l)| *l).collect();
+        let (aem, mot_aem) = AEM_DE_L_ANCIEN_LOGICIEL;
+        if noms.iter().any(|n| n.texte().starts_with(aem)) {
+            sortes.push(mot_aem);
+        }
         // Un mois tenu avant : ses bulletins sont ceux de l'ancien logiciel, que l'import garde.
         if importe && !import::mois::bulletins_repris(&ctx.racine, le_mois)?.is_empty() {
             sortes.insert(0, "bulletins repris");
         }
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
         // racine du mois ; elles se nomment avec les autres sortes.
-        if crate::documents::un_nom_commence_et_finit(&ctx.racine.join("sorties").join(le_mois.to_string()).join("envoi"), "AER_", ".pdf")? {
+        let aer = documents::PieceDuMois::Aer;
+        if crate::documents::un_nom_commence_et_finit(&aer.dossier().sous(&ctx.racine.join("sorties").join(le_mois.to_string())), aer.sorte().prefixe(), ".pdf")? {
             // Avant les AEM, ou en dernier.
-            let rang = match sortes.iter().position(|s| *s == "AEM") {
+            let rang = match sortes.iter().position(|s| *s == mot_aem) {
                 Some(r) => r,
                 None => sortes.len(),
             };

@@ -162,7 +162,7 @@ impl ExportCompta {
 }
 
 fn dossier_exercices(ctx: &Contexte) -> PathBuf {
-    ctx.racine.join("sorties").join("exercices")
+    documents::DossierHorsDuMois::Exercices.sous(&ctx.racine)
 }
 
 /// Le journal de paie de l'annee (ou de `du` a `au`), et son fichier CSV.
@@ -242,7 +242,7 @@ pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<
 /// moteur n'a pas notee (`depart::mois_ecrit`).
 pub(crate) fn export_compta_a_jour(racine: &Path, annee: Annee) -> R<bool> {
     use compagnie::pieces_ecrites::EmpreinteNotee;
-    let f = racine.join("sorties").join("exercices").join(format!("{}{}.csv", documents::SorteDePieceProduite::Compta.prefixe(), annee));
+    let f = documents::DossierHorsDuMois::Exercices.sous(racine).join(format!("{}{}.csv", documents::SorteDePieceProduite::Compta.prefixe(), annee));
     if !f.is_file() {
         return Ok(false);
     }

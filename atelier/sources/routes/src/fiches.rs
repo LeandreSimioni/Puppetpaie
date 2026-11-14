@@ -1235,9 +1235,11 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree.", code, de));
             continue;
         }
-        let dossier = ctx.racine.join("sorties").join("fiches-salaries");
+        // La reponse, le courriel tel qu'il est arrive : une piece produite, rangee hors d'un mois.
+        let sorte = documents::SorteDePieceProduite::FicheDeSalarie;
+        let dossier = documents::DossierHorsDuMois::FichesDeSalaries.sous(&ctx.racine);
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-        let eml = dossier.join(format!("Fiche_{}.eml", code));
+        let eml = dossier.join(format!("{}{}.eml", sorte.prefixe(), code));
         std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
         let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
         if !illisible.is_empty() {

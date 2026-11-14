@@ -72,12 +72,9 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let cle = p.salarie.id.to_string();
     let ent = ctx.entreprise_et_gabarits();
     let poste = ctx.gabarits();
-    let certificat = const { crate::SorteDePieceProduite::CertificatDeTravail.dossier_du_mois() }
-        .sous(sortie)
-        .join(format!("{}{}_{}.pdf", crate::SorteDePieceProduite::CertificatDeTravail.prefixe(), cle, fin.aaaammjj()));
-    let recu = const { crate::SorteDePieceProduite::RecuSoldeToutCompte.dossier_du_mois() }
-        .sous(sortie)
-        .join(format!("{}{}_{}.pdf", crate::SorteDePieceProduite::RecuSoldeToutCompte.prefixe(), cle, fin.aaaammjj()));
+    let piece = |p: crate::PieceDuMois| p.dossier().sous(sortie).join(format!("{}{}_{}.pdf", p.sorte().prefixe(), cle, fin.aaaammjj()));
+    let certificat = piece(crate::PieceDuMois::CertificatDeTravail);
+    let recu = piece(crate::PieceDuMois::RecuSoldeToutCompte);
     let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
     let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| m.reclasser(Classe::Manque))?, p.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?);

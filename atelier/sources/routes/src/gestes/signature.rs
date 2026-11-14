@@ -389,7 +389,7 @@ fn nom_du_pdf(cle: &IdSalarie, ps: &[Paie], etiq: &str, suffixe: &str) -> R<NomD
 /// pieces parties gardent chacune leur fichier).
 pub(crate) fn reunir_pour_imprimer(sorties: &std::path::Path, quoi: &str, etiq: &str, pieces: &[std::path::PathBuf]) -> R<std::path::PathBuf> {
     let octets = documents::fabrique::fusion_pieces(&pieces.iter().map(|p| (p.clone(), None)).collect::<Vec<_>>())?;
-    let dossier = const { documents::SorteDePieceProduite::Impression.dossier_du_mois() }.sous(sorties);
+    let dossier = documents::PieceDuMois::Impression.dossier().sous(sorties);
     let f = dossier.join(format!("{}{}_{}.pdf", documents::SorteDePieceProduite::Impression.prefixe(), quoi, etiq));
     // Un mois dont seul un avenant s'imprime n'a pas encore son dossier d'envoi.
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
@@ -429,7 +429,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
     }
     controler_avenants(ctx, avenants)?;
     let sorties = ctx.racine.join("sorties").join(s_mois.to_string());
-    let dossier = const { documents::SorteDePieceProduite::Contrat.dossier_du_mois() }.sous(&sorties);
+    let dossier = documents::PieceDuMois::Contrat.dossier().sous(&sorties);
     let etiq = s_mois.etiquette();
     let ent = documents::avenant::ent_du_mois(ctx, s_mois);
     let (mut fichiers, mut contrats) = (Vec::new(), Vec::new());
@@ -500,7 +500,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois, None, &departs)?;
     let s_mois = data.mois;
-    let dossier = const { documents::SorteDePieceProduite::Contrat.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(s_mois.to_string()));
+    let dossier = documents::PieceDuMois::Contrat.dossier().sous(&ctx.racine.join("sorties").join(s_mois.to_string()));
     let etiq = s_mois.etiquette();
 
     let (an, nom_mois) = (s_mois.annee(), s_mois.nom(socle::mois::Graphie::Accentuee));
@@ -965,7 +965,7 @@ fn avenant_ecrit(
     let p = &paies[rang_p];
     let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement)?;
     let ent = documents::avenant::ent_du_mois(ctx, mois_a);
-    let dossier = const { documents::SorteDePieceProduite::Avenant.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(mois_a.to_string()));
+    let dossier = documents::PieceDuMois::Avenant.dossier().sous(&ctx.racine.join("sorties").join(mois_a.to_string()));
     let pdf = match &a.repris {
         Some(Repris { fichier, .. }) => {
             let f = dossier.join(fichier);

@@ -641,9 +641,14 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
     }))
 }
 
-/// Le fichier d'un signalement ecrit, s'il y en a un : `sorties/<mois>/<nom>` (le nom compare sans casse).
-fn fichier_ecrit(racine: &Path, mois: socle::mois::Mois, nom: &str) -> R<Option<PathBuf>> {
-    let dossier = racine.join("sorties").join(mois.to_string());
+/// Le dossier du mois `mois` ou se range le signalement `piece` (`PieceDuMois::dossier`).
+fn dossier_du_signalement(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois) -> PathBuf {
+    piece.dossier().sous(&racine.join("sorties").join(mois.to_string()))
+}
+
+/// Le fichier d'un signalement ecrit, s'il y en a un, dans le dossier du mois ou il se range (le nom compare sans casse).
+fn fichier_ecrit(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois, nom: &str) -> R<Option<PathBuf>> {
+    let dossier = dossier_du_signalement(racine, mois, piece);
     Ok(fichiers_de(&dossier)?.into_iter().find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(nom))))
 }
 
@@ -672,24 +677,28 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance) ->
     let compact = jour.aaaammjj();
     use crate::obligations::CleDObligation as C;
     use crate::rappels::QuoiDuSalarie as Q;
-    let nom = match genre {
-        Q::Obligation(C::SignalementArret) => format!("SignalementArret_{}_{}.dsn", salarie, compact),
+    use documents::PieceDuMois as P;
+    // Le nom d'un signalement : le prefixe de sa sorte, le salarie, le jour (`imprevus`).
+    let nom = |piece: P| format!("{}{}_{}.dsn", piece.sorte().prefixe(), salarie, compact);
+    let piece = match genre {
+        Q::Obligation(C::SignalementArret) => P::SignalementArret,
         // L'annule-et-remplace s'ecrit a cote du signalement parti, sous `_AR<ordre>` : le dernier ecrit.
         Q::Obligation(C::SignalementArretRectificatif) => {
-            let tete = format!("signalementarret_{}_{}_ar", salarie, compact).to_lowercase();
+            let piece = P::SignalementArret;
+            let tete = format!("{}{}_{}_ar", piece.sorte().prefixe(), salarie, compact).to_lowercase();
             let rang = |p: &PathBuf| -> Option<i64> {
                 let n = p.file_name()?.to_string_lossy().to_lowercase();
                 // Un nom qui ne finit pas par un rang n'est pas un annule-et-remplace.
                 n.strip_prefix(&tete)?.strip_suffix(".dsn")?.parse::<i64>().into_iter().next()
             };
-            let dossier = ctx.racine.join("sorties").join(mois.to_string());
+            let dossier = dossier_du_signalement(&ctx.racine, mois, piece);
             return Ok(fichiers_de(&dossier)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));
         }
-        Q::Obligation(C::SignalementReprise) => format!("SignalementReprise_{}_{}.dsn", salarie, compact),
-        Q::FinContrat => format!("SignalementFinContrat_{}_{}.dsn", salarie, compact),
+        Q::Obligation(C::SignalementReprise) => P::SignalementReprise,
+        Q::FinContrat => P::SignalementFinContrat,
         Q::Obligation(C::SignalementFinContrat | C::DeclarationAccident | C::DeclarationMaladieProfessionnelle | C::AttestationSalaire) => return Ok(None),
     };
-    fichier_ecrit(&ctx.racine, mois, &nom)
+    fichier_ecrit(&ctx.racine, mois, piece, &nom(piece))
 }
 
 /// Le defaut d'un rappel qui ne porte pas ce que son genre exige.

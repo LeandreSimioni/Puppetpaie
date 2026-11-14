@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use documents::{DossierDuMois, Rangement, SorteDePieceProduite};
+use documents::{DossierDuMois, SorteDePieceProduite};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::organismes::IdentifiantDOrganisme;
@@ -354,7 +354,8 @@ fn rubrique_de_la_piece(sorte: SorteDePieceProduite) -> RubriqueDeLHistorique {
         | SorteDePieceProduite::SignalementReprise
         | SorteDePieceProduite::SignalementFinContrat
         | SorteDePieceProduite::Compta
-        | SorteDePieceProduite::Exercice => R::Autres,
+        | SorteDePieceProduite::Exercice
+        | SorteDePieceProduite::FicheDeSalarie => R::Autres,
     }
 }
 
@@ -431,10 +432,10 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
         if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
-        // Le dossier du mois de sa sorte ; un nom d'aucune sorte du mois, dans les sorties du mois.
-        let dossier = match SorteDePieceProduite::du_nom(nom.texte()).map(|(s, _)| s.rangement()) {
-            Some(Rangement::DuMois(d)) => d,
-            Some(Rangement::Exercices | Rangement::DossiersDeSalaries) | None => DossierDuMois::Sorties,
+        // Le dossier du mois de sa sorte. Un nom d'aucune sorte d'un mois ne se range nulle part : l'Historique ne le donne
+        // pas (le moteur n'ecrit aucun tel nom dans le journal).
+        let Some(dossier) = SorteDePieceProduite::du_nom(nom.texte()).and_then(|(s, _)| s.du_mois()).map(documents::PieceDuMois::dossier) else {
+            continue;
         };
         let chemin = dossier.sous_le_chemin(&sorties).joint(&nom);
         out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });

@@ -1297,7 +1297,7 @@ pub(crate) fn mois_a_parcourir(ctx: &Contexte, aujourdhui: Jour) -> socle::echec
 fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, std::path::PathBuf)>> {
     // Le mois n'est ecrit que si le moteur a note sa DSN mensuelle (`depart::mois_ecrit`, le critere de l'horloge
     // et de l'accueil) : un fichier DSN qu'il n'a pas note ne fait pas « le mois est ecrit ».
-    let dossier = st.racine().join("sorties").join(mois.to_string());
+    let dossier = documents::PieceDuMois::Dsn.dossier().sous(&st.racine().join("sorties").join(mois.to_string()));
     if !crate::gestes::depart::mois_ecrit(st.racine(), mois)? || !dossier.is_dir() {
         return Ok(None);
     }

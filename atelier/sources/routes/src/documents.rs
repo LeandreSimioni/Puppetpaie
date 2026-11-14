@@ -314,7 +314,7 @@ fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
     let mut out: Vec<String> = Vec::new();
     for groupe in attestations_archivees(ctx, Some(mois), None)?.values() {
         let Some(att) = groupe.first() else { continue };
-        if !att.cle.as_ref().is_some_and(|cle| envoi::chemin_de_la_piece(documents::SorteDePieceProduite::Aer, &sorties, cle, &etiquette).exists()) {
+        if !att.cle.as_ref().is_some_and(|cle| envoi::chemin_de_la_piece(documents::PieceDuMois::Aer, &sorties, cle, &etiquette).exists()) {
             // Rattachee, la cle de sa fiche ; sinon, le nom que l'attestation porte.
             let nom = match &att.cle {
                 Some(cle) => cle.to_string(),
@@ -460,7 +460,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             }
         }
         let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir())? };
-        let cible = const { documents::SorteDePieceProduite::Aer.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(periode.to_string()));
+        let cible = documents::PieceDuMois::Aer.dossier().sous(&ctx.racine.join("sorties").join(periode.to_string()));
         std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         let chemin = cible.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &periode.etiquette()));
         std::fs::write(&chemin, donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
@@ -550,12 +550,12 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, sort
         let de_lui = |p: &&engagement::calcul::Paie| p.salarie.id == cle;
         let mut pieces = Vec::new();
         if paies.iter().filter(de_lui).any(|p| !p.engagement.sans_paie()) {
-            pieces.push(envoi::chemin_de_la_piece(documents::SorteDePieceProduite::Bulletin, sorties, &cle, &etiq));
+            pieces.push(envoi::chemin_de_la_piece(documents::PieceDuMois::Bulletin, sorties, &cle, &etiq));
         }
         if certificats.iter().any(|(c, _, pc)| *c == cle && pc.is_some()) {
-            pieces.push(envoi::chemin_de_la_piece(documents::SorteDePieceProduite::CertificatCs, sorties, &cle, &etiq));
+            pieces.push(envoi::chemin_de_la_piece(documents::PieceDuMois::CertificatCs, sorties, &cle, &etiq));
         }
-        let aer = envoi::chemin_de_la_piece(documents::SorteDePieceProduite::Aer, sorties, &cle, &etiq);
+        let aer = envoi::chemin_de_la_piece(documents::PieceDuMois::Aer, sorties, &cle, &etiq);
         if aer.exists() {
             pieces.push(aer);
         }
@@ -758,17 +758,7 @@ pub(crate) fn envoyer_documents_de(ctx: &Contexte, mois: Mois, preuve: &Preuve, 
 
 /// Les pieces d'un salarie, dans l'ordre ou elles s'impriment : bulletin, certificat Conges Spectacles, attestation
 /// France Travail (celles qui sont ecrites).
-const PIECES_A_IMPRIMER: [documents::SorteDePieceProduite; 3] =
-    [documents::SorteDePieceProduite::Bulletin, documents::SorteDePieceProduite::CertificatCs, documents::SorteDePieceProduite::Aer];
-
-// Chaque piece qui s'imprime se range dans un mois : sinon, ceci ne compile pas.
-const _: () = {
-    let mut i = 0;
-    while i < PIECES_A_IMPRIMER.len() {
-        PIECES_A_IMPRIMER[i].dossier_du_mois();
-        i += 1;
-    }
-};
+const PIECES_A_IMPRIMER: [documents::PieceDuMois; 3] = [documents::PieceDuMois::Bulletin, documents::PieceDuMois::CertificatCs, documents::PieceDuMois::Aer];
 
 /// La route `documents-imprimer` : les documents du mois des salaries choisis (`salaries`, tous sinon), fabriques comme
 /// pour l'envoi par courriel (`depart::fabriquer_documents`), reunis en un seul PDF a imprimer, salarie par salarie, et

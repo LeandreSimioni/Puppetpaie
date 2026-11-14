@@ -187,9 +187,10 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 
 // -------------------------------------------------------------- les contrats
 
-/// COMMENT UN CONTRAT EST PARTI : imprime (remis en main propre, `detail.main_propre`), ou par courriel. Ecrite
-/// `imprime`, `courriel`. Des documents remis aux salaries partent de meme ; une ligne du journal la dit si elle en a une
-/// (`Ligne::remise`).
+/// LE MODE DE REMISE D'UNE PIECE REMISE AUX SALARIES : comment un contrat (ou un avenant), ou les documents d'un mois
+/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre, `detail.main_propre`), ou par
+/// courriel. Ecrite `imprime`, `courriel`. Une ligne du journal la dit si elle en a une (`Ligne::remise` : la signature
+/// d'un contrat, l'envoi des documents).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModeDeRemise {
@@ -226,6 +227,21 @@ pub fn mot_de_la_remise(par: Option<ModeDeRemise>, place: PlaceDeLaRemise) -> &'
         (Some(ModeDeRemise::Imprime), PlaceDeLaRemise::Phrase | PlaceDeLaRemise::Recit) => "imprimé",
         (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Phrase) => "envoyé",
         (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Recit) => "envoyé à la signature",
+    }
+}
+
+/// LE MOT DU DEPART D'UN ACTE DU JOURNAL, dans une phrase, quand sa ligne n'a pas de remise (`Ligne::remise`) : une
+/// declaration deposee, un courriel parti, s'est « envoyé ». Une ligne qui a une remise la dit (`mot_de_la_remise`).
+fn mot_de_l_acte(acte: Acte) -> &'static str {
+    match acte {
+        Acte::Dsn
+        | Acte::Dpae
+        | Acte::Documents
+        | Acte::ContratSignature
+        | Acte::ContratContresigne
+        | Acte::RegularisationCasc
+        | Acte::DossierSalarie
+        | Acte::FicheDemande => "envoyé",
     }
 }
 
@@ -532,11 +548,10 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
     if !ligne.accepte() {
         return format!("envoi du {} refusé au dépôt — {}", quand, ligne.reponse());
     }
-    // Une ligne qui a une remise la dit ; une autre n'en a pas (`Ligne::remise`) : deposee ou partie par courriel, son
-    // acte se dit « envoyé ».
+    // Une ligne qui a une remise la dit ; une autre n'en a pas (`Ligne::remise`) : son acte se dit (`mot_de_l_acte`).
     let parti = match ligne.remise() {
         Some(par) => mot_de_la_remise(Some(par), PlaceDeLaRemise::Phrase),
-        None => "envoyé",
+        None => mot_de_l_acte(ligne.acte()),
     };
     let le = if en_test { quand.clone() } else { format!("le {}", quand) };
     let prefixe = format!("{} {}", parti, le);

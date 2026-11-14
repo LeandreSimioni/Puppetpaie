@@ -45,7 +45,7 @@ use std::path::{Path, PathBuf};
 use rust_decimal::Decimal;
 
 use documents::bulletin::fmt_heures;
-use documents::SorteDePieceProduite;
+use documents::{PieceDuMois, SorteDePieceProduite};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
@@ -69,11 +69,11 @@ pub struct Message<Pour> {
 /// `{annee}`, `{liste}`, `{notes}`, `{france_travail}`, `{signataire}`, `{raison_sociale}`.
 pub const CORPS: &str = "Bonjour {prenom},\n\nTu trouveras ci-joint tes documents pour {mois} {annee} :\n\n{liste}\n\n{notes}{france_travail}\nBien à toi,\n{signataire}\n{raison_sociale}\n";
 
-/// UNE PIECE QU'UN SALARIE RECOIT : son champ, la sorte de son fichier, son libelle dans la liste du message, son nom
-/// court (l'objet, ou l'on n'a pas la place des libelles longs) et sa note.
+/// UNE PIECE QU'UN SALARIE RECOIT : son champ, sa sorte et son dossier (une piece d'un mois), son libelle dans la liste
+/// du message, son nom court (l'objet, ou l'on n'a pas la place des libelles longs) et sa note.
 pub struct Piece {
     pub champ: &'static str,
-    pub sorte: SorteDePieceProduite,
+    pub sorte: PieceDuMois,
     pub libelle: &'static str,
     pub court: &'static str,
     pub note: &'static str,
@@ -83,14 +83,14 @@ pub struct Piece {
 pub const PIECES: [Piece; 3] = [
     Piece {
         champ: "bulletin",
-        sorte: SorteDePieceProduite::Bulletin,
+        sorte: PieceDuMois::Bulletin,
         libelle: "le bulletin de paie",
         court: "bulletin",
         note: "Le bulletin est à conserver sans limitation de durée.",
     },
     Piece {
         champ: "certificat_cs",
-        sorte: SorteDePieceProduite::CertificatCs,
+        sorte: PieceDuMois::CertificatCs,
         libelle: "le certificat d'emploi Congés Spectacles",
         court: "certificat Congés Spectacles",
         note: "Le certificat d'emploi Congés Spectacles te sert à faire valoir tes droits à congé auprès d'Audiens : \
@@ -98,7 +98,7 @@ pub const PIECES: [Piece; 3] = [
     },
     Piece {
         champ: "aer",
-        sorte: SorteDePieceProduite::Aer,
+        sorte: PieceDuMois::Aer,
         libelle: "l'attestation employeur France Travail (AER Cinéma Spectacle)",
         court: "attestation France Travail",
         note: "L'attestation employeur est celle qui compte pour France Travail. Elle est éditée par France Travail à \
@@ -207,20 +207,11 @@ pub fn nom_fichier(sorte: SorteDePieceProduite, cle: &droit::contexte::IdSalarie
     format!("{}{}_{}.pdf", sorte.prefixe(), cle, etiq)
 }
 
-/// Le fichier d'une piece d'un salarie pour un mois (`nom_fichier`), dans le dossier du mois ou sa sorte se range
-/// (`SorteDePieceProduite::dossier_du_mois`), sous les sorties du mois `sorties` (`sorties/<mois>/`).
-pub fn chemin_de_la_piece(sorte: SorteDePieceProduite, sorties: &Path, cle: &droit::contexte::IdSalarie, etiq: &str) -> PathBuf {
-    sorte.dossier_du_mois().sous(sorties).join(nom_fichier(sorte, cle, etiq))
+/// Le fichier d'une piece d'un salarie pour un mois (`nom_fichier`), dans le dossier du mois ou elle se range
+/// (`PieceDuMois::dossier`), sous les sorties du mois `sorties` (`sorties/<mois>/`).
+pub fn chemin_de_la_piece(piece: PieceDuMois, sorties: &Path, cle: &droit::contexte::IdSalarie, etiq: &str) -> PathBuf {
+    piece.dossier().sous(sorties).join(nom_fichier(piece.sorte(), cle, etiq))
 }
-
-// Chaque piece qu'un salarie recoit se range dans un mois : sinon, ceci ne compile pas.
-const _: () = {
-    let mut i = 0;
-    while i < PIECES.len() {
-        PIECES[i].sorte.dossier_du_mois();
-        i += 1;
-    }
-};
 
 /// « a, b et c ». Suit les pieces REELLEMENT jointes : promettre dans l'objet une AER qui n'est pas la serait un
 /// mensonge en premiere ligne.

@@ -1121,21 +1121,17 @@ fn la_carte_valide_a_une_variante_par_nature() {
     assert_eq!(ecrites, NatureDeContrat::TOUTES.iter().map(|n| n.cle()).collect::<BTreeSet<_>>(), "une variante de la carte par nature du fichier");
 }
 
-/// UNE PIECE PRODUITE N'EST QUE D'UNE SORTE (`documents::SorteDePieceProduite`) : chaque variante que le type declare est
-/// dans `TOUTES`, une fois ; aucun prefixe n'en commence un autre ; `du_nom` relit la sorte de son prefixe.
+/// UNE PIECE PRODUITE N'EST QUE D'UNE SORTE (`documents::SorteDePieceProduite`, dont chaque variante est dans `TOUTES`
+/// par construction : `sortes_de_pieces_produites!`) : aucun prefixe n'en commence un autre ; `du_nom` relit la sorte de
+/// son prefixe.
 #[test]
 fn une_piece_produite_n_est_que_d_une_sorte() {
     use documents::SorteDePieceProduite as Sorte;
-    let source = std::fs::read_to_string(espace().join("documents/src/lib.rs")).unwrap();
-    let corps = source.split_once("pub enum SorteDePieceProduite {").unwrap().1.split_once('}').unwrap().0;
-    let declarees = corps.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("///")).count();
-    let rangs: BTreeSet<usize> = Sorte::TOUTES.iter().map(|s| *s as usize).collect();
-    assert_eq!((Sorte::TOUTES.len(), rangs.len()), (declarees, declarees), "chaque variante dans TOUTES, une fois");
     for a in Sorte::TOUTES {
-        for b in Sorte::TOUTES.into_iter().filter(|b| *b != a) {
+        for b in Sorte::TOUTES.iter().filter(|b| *b != a) {
             assert!(!b.prefixe().starts_with(a.prefixe()), "{} commence {}", a.prefixe(), b.prefixe());
         }
-        assert_eq!(Sorte::du_nom(a.prefixe()), Some((a, "")), "du_nom relit {}", a.prefixe());
+        assert_eq!(Sorte::du_nom(a.prefixe()), Some((*a, "")), "du_nom relit {}", a.prefixe());
     }
 }
 
