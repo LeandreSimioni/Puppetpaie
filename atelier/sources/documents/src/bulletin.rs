@@ -4,7 +4,7 @@
 use engagement::calcul::Paie;
 use engagement::conges::CompteurConges;
 use droit::contexte::Contexte;
-use droit::fiche::{ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie};
+use droit::fiche::{ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie, ModeleBulletin};
 use droit::cumul::{tableau_cumul, Colonne};
 use engagement::cumul::Passe;
 use engagement::numeros::NumeroDeBulletin;
@@ -491,7 +491,7 @@ fn tableau_conges(cpt: &CompteurConges) -> Bloc {
 /// LEGIARTI000049854119.xml) : « Base », « Taux », « Salarié », « Employeur ». Un seul taux : celui du salarie, le seul
 /// que le code du travail exige (R. 3243-1, 8°, a : « pour les cotisations et contributions [...] a la charge du
 /// salarie, leurs taux ») ; le modele met « - » au taux des lignes que l'employeur paie seul (accidents du travail,
-/// famille). Les deux modeles impriment ce tableau-la (voir `Modele`).
+/// famille). Les deux modeles impriment ce tableau-la (voir `ModeleBulletin`).
 const COLONNES: i64 = 5;
 const LARGEURS: [Mesure; 5] = [mesure("0.55"), mesure("0.12"), mesure("0.09"), mesure("0.12"), mesure("0.12")];
 /// L'annexe du modele *complet* : le libelle, la base, le taux et le montant de chaque part.
@@ -515,77 +515,26 @@ const LARGEURS_ANNEXE: [Mesure; 6] = [mesure("0.46"), mesure("0.11"), mesure("0.
 ///
 /// QUI CHOISIT : la compagnie, pour tous (`modele_bulletin` de la fiche entreprise, pose par le selecteur de
 /// Configuration) ; un salarie qui demande l'autre modele l'obtient par la case `modele_bulletin` de sa fiche (Avance),
-/// qui l'emporte. Sans choix : le simplifie. Une valeur inconnue refuse (regle 1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Modele {
-    Simplifie,
-    Complet,
-}
-
-impl Modele {
-    pub const TOUS: [Modele; 2] = [Modele::Simplifie, Modele::Complet];
-
-    /// La valeur de la case (`champs-base.json`, forme « choix »).
-    pub fn cle(self) -> &'static str {
-        match self {
-            Modele::Simplifie => "simplifié",
-            Modele::Complet => "complet",
-        }
-    }
-
-    pub fn nom(self) -> &'static str {
-        match self {
-            Modele::Simplifie => "Simplifié",
-            Modele::Complet => "Complet",
-        }
-    }
-
-    /// Ce que la page en dit, sous l'apercu.
-    pub fn description(self) -> &'static str {
-        match self {
-            Modele::Simplifie => {
-                "Le bulletin clarifié du modèle réglementaire (arrêté du 25 février 2016) : les cotisations regroupées \
-                 sous les lignes du modèle, le taux de la part salariale, les contributions de l'employeur en une ligne."
-            }
-            Modele::Complet => {
-                "Le même bulletin, ligne pour ligne, suivi d'une page annexe qui détaille chaque cotisation et \
-                 contribution sous la ligne du bulletin qui la regroupe : sa base, le taux et le montant de la part \
-                 salariale et de la part employeur."
-            }
-        }
-    }
-
-    /// Le modele que dit le choix `modele_bulletin` d'une fiche lue par sa forme.
-    pub fn du_choix(c: Option<&droit::fiche::ModeleBulletin>) -> Option<Modele> {
-        c.map(|c| match c {
-            droit::fiche::ModeleBulletin::Simplifie => Modele::Simplifie,
-            droit::fiche::ModeleBulletin::Complet => Modele::Complet,
-        })
-    }
-
-    /// Le choix de la fiche qui le dit.
-    pub fn choix(self) -> droit::fiche::ModeleBulletin {
-        match self {
-            Modele::Simplifie => droit::fiche::ModeleBulletin::Simplifie,
-            Modele::Complet => droit::fiche::ModeleBulletin::Complet,
-        }
-    }
-}
-
+/// qui l'emporte. Sans choix : le simplifie. Le modele est un choix de la fiche (`droit::fiche::ModeleBulletin`), lu par
+/// sa forme : une valeur inconnue refuse la fiche (regle 1).
+///
 /// Le modele du bulletin d'une paie : la case de la fiche du salarie l'emporte ; sinon celle de la compagnie. Sans choix,
 /// le bulletin est celui de l'arrete du 25/02/2016, art. 1, I, le simplifie, sans l'annexe que seul le complet ajoute.
-pub fn modele_du_bulletin(ent: &ChampsEntreprise, sal: &FicheSalarie) -> R<Modele> {
+pub fn modele_du_bulletin(ent: &ChampsEntreprise, sal: &FicheSalarie) -> R<ModeleBulletin> {
     Ok(match modele_du_salarie(sal)? {
         Some(m) => m,
         None => modele_de_la_compagnie(ent),
     })
 }
 
-/// Le modele de la compagnie : celui qu'elle a choisi ; sans choix, le simplifie de l'arrete du 25/02/2016, art. 1, I.
-pub fn modele_de_la_compagnie(ent: &ChampsEntreprise) -> Modele {
-    match Modele::du_choix(ent.modele_bulletin.dite()) {
-        Some(m) => m,
-        None => Modele::Simplifie,
+/// LE MODELE DE LA COMPAGNIE : celui qu'elle a choisi ; sans choix, le modele que l'arrete du 25/02/2016 donne, art. 1,
+/// I (redaction du 25/06/2024 ; atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin/
+/// LEGIARTI000049854119.xml, l. 68) : « Les informations mentionnées à l'article R. 3243-1 du code du travail sont
+/// présentées selon le modèle suivant », le simplifie. Le complet n'y ajoute qu'une page annexe.
+pub fn modele_de_la_compagnie(ent: &ChampsEntreprise) -> ModeleBulletin {
+    match ent.modele_bulletin.dite() {
+        Some(m) => *m,
+        None => ModeleBulletin::Simplifie,
     }
 }
 
@@ -651,7 +600,7 @@ const FACULTATIVES: &str = "COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES";
 /// Le rang d'une ligne de cotisation, par son identifiant (le libelle et la famille sont ceux du bareme, que le
 /// bulletin ne lit plus que pour une ligne qu'il ne connait pas). Le modele range la prevoyance, obligatoire ou non,
 /// sous « COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES », sa seule ligne « Prévoyance, Incapacité, Invalidité,
-/// Décès, Autres » (art. 1, I) ; la FAQ du BOSS, Q 18 (meme fichier que `Modele`, l. 192-196) : une cotisation rendue
+/// Décès, Autres » (art. 1, I) ; la FAQ du BOSS, Q 18 (meme fichier que `modele_du_bulletin`, l. 192-196) : une cotisation rendue
 /// obligatoire par un accord de branche, et non par la loi, est facultative.
 ///
 /// La caisse des Conges Spectacles : dans « Autres charges dues par l'employeur », et non sur une ligne
@@ -1290,7 +1239,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
     for j in jeux {
         let modele = modele_du_bulletin(ent, &j.paie.salarie)?;
         documents.push(Document::Blocs(blocs_un(j, ent)?));
-        if modele == Modele::Complet {
+        if modele == ModeleBulletin::Complet {
             documents.push(Document::Blocs(blocs_annexe(j.paie, j.numero, &j.prevoyance)?));
         }
     }
@@ -1432,9 +1381,6 @@ fn exige(c: &Option<String>, cle: &str) -> R<String> {
 }
 
 /// Le modele du bulletin que la fiche du salarie choisit, `None` si elle n'en choisit pas.
-pub fn modele_du_salarie(sal: &FicheSalarie) -> R<Option<Modele>> {
-    Ok(sal.modele_bulletin.dite().map(|m| match m {
-        droit::fiche::ModeleBulletin::Simplifie => Modele::Simplifie,
-        droit::fiche::ModeleBulletin::Complet => Modele::Complet,
-    }))
+pub fn modele_du_salarie(sal: &FicheSalarie) -> R<Option<ModeleBulletin>> {
+    Ok(sal.modele_bulletin.dite().copied())
 }

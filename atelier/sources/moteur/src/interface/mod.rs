@@ -1098,18 +1098,18 @@ impl Fenetre {
         if !self.autorise(r) {
             return interdit;
         }
-        let Some(modele) = r.param("modele").and_then(routes::bulletin::modele_de_l_adresse) else {
+        let Some(modele) = r.param("modele").and_then(droit::fiche::ModeleBulletin::de_l_adresse) else {
             return Reponse::nouvelle(404, "text/plain", Vec::new());
         };
         // La route, comme la page l'appellerait : sa charge et sa reponse lues par leur forme.
         let lire = || -> R<Vec<u8>> {
-            let charge = Charge::de_forme(&routes::bulletin::ChargeModele { modele: modele.cle().to_string() })?;
+            let charge = Charge::de_forme(&routes::bulletin::ChargeModele { modele })?;
             let a: routes::bulletin::ApercuModele = api::route(&racine, Route::BulletinModeleApercu, &charge).lire().map_err(|x| socle::echec::refus(x.phrase))?;
             socle::base64::lire(&a.pdf).map_err(|e| e.reformuler(|p| format!("L'aperçu du bulletin ne se lit pas : {}.", p)))
         };
         match lire() {
             Ok(octets) if octets.starts_with(b"%PDF") => Reponse::nouvelle(200, "application/pdf", octets)
-                .avec("Content-Disposition", format!("inline; filename=\"apercu-bulletin-{}.pdf\"", if modele == documents::bulletin::Modele::Complet { "complet" } else { "simplifie" }))
+                .avec("Content-Disposition", format!("inline; filename=\"apercu-bulletin-{}.pdf\"", modele.dans_l_adresse()))
                 .avec("Content-Security-Policy", "default-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'"),
             Ok(_) => Reponse::nouvelle(500, "text/plain; charset=utf-8", "L'aperçu du bulletin n'est pas un PDF."),
             Err(e) => Reponse::nouvelle(500, "text/plain; charset=utf-8", e.phrase),

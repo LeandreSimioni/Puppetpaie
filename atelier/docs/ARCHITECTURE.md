@@ -674,6 +674,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
+| modèle du bulletin | `ModeleBulletin` | `droit/src/fiche.rs` |
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
 | code retour d'une DPAE | `declarations::dpae::CodeRetourDpae` | `declarations/src/dpae.rs` |
@@ -765,6 +766,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   d'une base, `routes::modeles_contrat`). Que portent la carte, le contrat écrit d'un engagement, un modèle spécial, le
   défaut d'une nature, les supprimés (`gabarits/contrats/modeles.json`), et les charges des routes de modèles, lues à
   leur porte. Le modèle du bulletin (« simplifié », « complet ») est une autre notion.
+- **modèle du bulletin** : le bulletin que la compagnie remet, le simplifié (le modèle de l'arrêté du 25/02/2016, art.
+  1, I) ou le complet (le même, suivi d'une page annexe) ; un choix de la fiche (`modele_bulletin`, écrit `simplifié`,
+  `complet`), celui du salarié l'emportant ; sans choix, le simplifié, que l'arrêté donne
+  (`documents::bulletin::modele_de_la_compagnie`, qui le cite). Que portent les fiches Entreprise et Salarié, la charge
+  et la réponse des routes du modèle ; l'adresse d'un aperçu l'écrit sans accent (`dans_l_adresse`).
 - **catégorie d'un document** : une sorte de pièce du dossier d'un salarié : bulletins, contrats, contrats signés,
   certificats Congés Spectacles, attestations, documents de fin, fiche récapitulative. Une liste du logiciel, dans
   l'ordre où le dossier se lit : `TOUTES` ; écrite `bulletins`, `contrats-signes`… Que portent la charge du dossier, le
