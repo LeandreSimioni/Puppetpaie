@@ -359,13 +359,19 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   `SIRET_FRANCE_TRAVAIL`, `DGFIP` sont des constantes. Le code caisse d'un mois sans individu (S20.G00.08.001) est une
   autre notion.
 - **référence d'un contrat chez l'organisme** : S21.G00.15.001, la « référence contrat » de la fiche de paramétrage DSN,
-  de 1 à 30 caractères (le cahier technique), telle que la compagnie la saisit (`organismes-enregistrer`, la DSN
-  reprise) : sans blancs de bord, en capitales, lue à sa porte (`droit::organismes::Saisie::lue`) avec le code de
-  l'organisme. Celle que `config/organismes.json` garde reste son texte (`Adhesion.libelle`).
+  de 1 à 30 caractères (le cahier technique : la seule règle, écrite une fois, `ReferenceDeContrat::bornee`). Celle que
+  la compagnie saisit (`organismes-enregistrer`, la DSN reprise) se range sans blancs de bord, en capitales, à sa porte
+  (`droit::organismes::Saisie::lue`) avec le code de l'organisme (la charge entière, `Saisies` : les fautes de tous ses
+  contrats se disent ensemble) ; celle qu'un texte donne (`ReferenceDeContrat::du_contrat`,
+  dans `composer`), que `config/organismes.json` garde (`Adhesion.libelle`) ou que `casc-svp-base.json` fixe se lit
+  telle qu'elle est. Que portent l'adhésion, la contribution d'un mois (`ContributionDuMois.libelle`) et les écrivains
+  du bloc 15.
 - **référence d'une adhésion** : S21.G00.15.005, l'« identifiant technique Adhésion », que le bloc 70 d'un salarié cite
-  en S21.G00.70.013 : une clé du logiciel (`droit::cle_opaque!`). Que portent les relectures d'une DSN que le moteur
-  écrit (`declarations::dsn` : les affiliations d'un versement écrit ou déclaré, les composants de versement) ; à
-  unifier (#419) : `Adhesion.reference` et les écrivains du bloc 15 la gardent en texte.
+  en S21.G00.70.013 : une clé du logiciel (`droit::cle_opaque!`). Que portent l'adhésion (`Adhesion.reference`), un
+  contrat que le texte fixe (`Contrat.reference`, la CASC-SVP), un rattachement (`Rattachement.references`), une
+  affiliation et la contribution d'un mois (`declarations::dsn`), les écrivains des blocs 15 et 70, et les relectures
+  d'une DSN que le moteur écrit (les affiliations d'un versement écrit ou déclaré, les composants de versement). Une
+  DSN d'un autre logiciel la lit en texte (`declarations::dsn_lue`), au mieux.
 - **code caisse** : l'organisme qui n'a plus d'individu rattaché, dans une DSN sans individu (S20.G00.08.001),
   « X [2,6] » de la table ODRT : Agirc-Arrco 88, France Travail 93, Congés Spectacles 97 ; que porte `sans_individu` de
   `organismes-base.json`.

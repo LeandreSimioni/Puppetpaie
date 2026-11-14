@@ -412,7 +412,7 @@ pub struct Contrat {
     pub cle: CleDeContrat,
     pub role: Option<RoleDuContrat>,
     pub libelle: Option<String>,
-    pub reference: Option<String>,
+    pub reference: Option<ReferenceDAdhesion>,
     pub r#type: String,
     pub depuis: Option<Jour>,
     pub jusqu_a: Option<Jour>,
@@ -491,10 +491,10 @@ pub struct FichierOrganismes {
 #[serde(deny_unknown_fields)]
 pub struct Adhesion {
     pub cle: CleDeContrat,
-    pub libelle: String,
+    pub libelle: ReferenceDeContrat,
     pub delegataire: IdentifiantDOrganisme,
     pub r#type: String,
-    pub reference: String,
+    pub reference: ReferenceDAdhesion,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contribution: Option<crate::forme_bareme::ContributionDeBranche>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -512,29 +512,66 @@ impl Adhesion {
 
 crate::cle_opaque! {
     /// LA REFERENCE D'UNE ADHESION (S21.G00.15.005, l'« identifiant technique Adhésion », que le bloc 70 d'un salarie
-    /// cite en S21.G00.70.013) : celle que le moteur attribue a une adhesion (`Adhesion.reference`) ou qu'une
-    /// contribution de branche porte. Les relectures d'une DSN que le moteur ecrit la lisent (`declarations::dsn`).
+    /// cite en S21.G00.70.013) : celle que le moteur attribue a une adhesion (`Adhesion.reference`), qu'un texte fixe
+    /// (`Contrat.reference`, la CASC-SVP) ; un rattachement les cite (`Rattachement.references`), les ecrivains des blocs
+    /// 15 et 70 l'ecrivent, les relectures d'une DSN que le moteur ecrit la lisent (`declarations::dsn`).
     pub struct ReferenceDAdhesion, "référence d'adhésion";
 }
 
-/// LA REFERENCE D'UN CONTRAT CHEZ L'ORGANISME (S21.G00.15.001, la « référence contrat » de la fiche de parametrage DSN)
-/// que la compagnie saisit : de 1 a 30 caracteres (le cahier technique), sans blancs de bord, en capitales.
+/// LA REFERENCE D'UN CONTRAT CHEZ L'ORGANISME (S21.G00.15.001, la « référence contrat » de la fiche de parametrage DSN) :
+/// de 1 a 30 caracteres (le cahier technique), la seule regle, ecrite une fois (`bornee`). Celle que la compagnie saisit
+/// se range (sans blancs de bord, en capitales : `saisie`) ; celle qu'un texte donne (`du_contrat`) ou que
+/// `config/organismes.json` garde (`Adhesion.libelle`, sa lecture) se lit telle qu'elle est.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceDeContrat(String);
 
 impl ReferenceDeContrat {
+    /// LA REGLE DU CAHIER TECHNIQUE (S21.G00.15.001, de 1 a 30 caracteres), la seule : la reference `texte` telle qu'elle
+    /// est ; sinon, ce qui la refuse, en mots (« « X » dépasse 30 caractères, ce que la DSN n'admet pas. »).
+    fn bornee(texte: String) -> Result<ReferenceDeContrat, String> {
+        match texte.chars().count() {
+            0 => Err("la référence du contrat est vide.".to_string()),
+            n if n > 30 => Err(format!("« {} » dépasse 30 caractères, ce que la DSN n'admet pas.", texte)),
+            _ => Ok(ReferenceDeContrat(texte)),
+        }
+    }
+
     /// La reference saisie `texte`, sans ses blancs autour et en capitales ; des blancs seuls ne disent rien (`None`).
-    /// Plus de 30 caracteres se refusent.
     pub fn saisie(texte: &str) -> R<Option<ReferenceDeContrat>> {
         let Some(t) = rangee(texte) else { return Ok(None) };
-        if t.chars().count() > 30 {
-            return Err(socle::refus!("La référence du contrat « {} » dépasse 30 caractères, ce que la DSN n'admet pas.", t));
+        match ReferenceDeContrat::bornee(t) {
+            Ok(r) => Ok(Some(r)),
+            Err(pourquoi) => Err(socle::refus!("La référence du contrat {}", pourquoi)),
         }
-        Ok(Some(ReferenceDeContrat(t)))
+    }
+
+    /// La reference `texte` du contrat `quoi`, telle que le texte ou la compagnie la donnent ; le refus nomme le contrat.
+    pub fn du_contrat(quoi: &str, texte: String) -> R<ReferenceDeContrat> {
+        ReferenceDeContrat::bornee(texte).map_err(|pourquoi| socle::refus!("{} : {}", quoi, pourquoi))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl std::fmt::Display for ReferenceDeContrat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Elle s'ecrit comme son texte.
+impl Serialize for ReferenceDeContrat {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+/// Elle se lit telle qu'elle est ecrite, dans sa regle (`bornee`).
+impl<'de> Deserialize<'de> for ReferenceDeContrat {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<ReferenceDeContrat, D::Error> {
+        ReferenceDeContrat::bornee(String::deserialize(d)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -546,8 +583,7 @@ fn rangee(texte: &str) -> Option<String> {
 /// Ce que l'ecran saisit d'un contrat (`organismes-enregistrer`, `contrats` : cle -> saisie) : sa reference chez
 /// l'organisme et le code de l'organisme, chacun lu dans son type a la porte (`Saisie::lue`). Une case vide est absente
 /// ou nulle ; `""` se refuse a la porte (`TexteDit`) ; des blancs seuls ne disent rien.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields, try_from = "SaisieEcrite")]
+#[derive(Debug, Clone, Default)]
 pub struct Saisie {
     pub libelle: Option<ReferenceDeContrat>,
     pub organisme: Option<IdentifiantDOrganisme>,
@@ -561,26 +597,50 @@ struct SaisieEcrite {
     organisme: Option<socle::forme::TexteDit>,
 }
 
-impl TryFrom<SaisieEcrite> for Saisie {
-    type Error = socle::echec::Echec;
-    fn try_from(s: SaisieEcrite) -> R<Saisie> {
-        Saisie::lue(s.libelle.as_deref(), s.organisme.as_deref())
+impl Saisie {
+    /// LA SAISIE D'UN CONTRAT, sa seule porte : la reference (`ReferenceDeContrat::saisie`) et le code de l'organisme,
+    /// sans blancs autour et en capitales (`IdentifiantDOrganisme::lire`) ; des blancs seuls ne disent rien. Les fautes
+    /// des deux cases se disent ensemble.
+    pub fn lue(libelle: Option<&str>, organisme: Option<&str>) -> R<Saisie> {
+        let libelle = match libelle {
+            Some(l) => ReferenceDeContrat::saisie(l),
+            None => Ok(None),
+        };
+        let organisme = match organisme.and_then(rangee) {
+            Some(o) => IdentifiantDOrganisme::lire(&o).map(Some),
+            None => Ok(None),
+        };
+        match (libelle, organisme) {
+            (Ok(libelle), Ok(organisme)) => Ok(Saisie { libelle, organisme }),
+            (Err(e), Ok(_)) | (Ok(_), Err(e)) => Err(e),
+            (Err(a), Err(b)) => Err(socle::refus!("{} ; {}", a.phrase, b.phrase)),
+        }
     }
 }
 
-impl Saisie {
-    /// LA SAISIE D'UN CONTRAT, sa seule porte : la reference (`ReferenceDeContrat::saisie`) et le code de l'organisme,
-    /// sans blancs autour et en capitales (`IdentifiantDOrganisme::lire`) ; des blancs seuls ne disent rien.
-    pub fn lue(libelle: Option<&str>, organisme: Option<&str>) -> R<Saisie> {
-        let libelle = match libelle {
-            Some(l) => ReferenceDeContrat::saisie(l)?,
-            None => None,
-        };
-        let organisme = match organisme.and_then(rangee) {
-            Some(o) => Some(IdentifiantDOrganisme::lire(&o)?),
-            None => None,
-        };
-        Ok(Saisie { libelle, organisme })
+/// LES SAISIES DES CONTRATS D'UNE CHARGE (`organismes-enregistrer`, `contrats` : cle -> saisie), chacune lue a sa porte
+/// (`Saisie::lue`) : les fautes de toutes se disent ensemble, chacune apres la cle de son contrat ; une seule refuse la
+/// charge.
+#[derive(Debug, Clone, Default)]
+pub struct Saisies(pub BTreeMap<CleDeContrat, Saisie>);
+
+impl<'de> Deserialize<'de> for Saisies {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Saisies, D::Error> {
+        let ecrites = BTreeMap::<CleDeContrat, SaisieEcrite>::deserialize(d)?;
+        let mut lues = BTreeMap::new();
+        let mut fautes = Vec::new();
+        for (cle, s) in ecrites {
+            match Saisie::lue(s.libelle.as_deref(), s.organisme.as_deref()) {
+                Ok(lue) => {
+                    lues.insert(cle, lue);
+                }
+                Err(e) => fautes.push(format!("{} : {}", cle, e.phrase)),
+            }
+        }
+        match fautes.is_empty() {
+            true => Ok(Saisies(lues)),
+            false => Err(serde::de::Error::custom(fautes.join(" ; "))),
+        }
     }
 }
 
@@ -593,9 +653,9 @@ pub fn fichier_organismes(ctx: &Contexte) -> R<FichierOrganismes> {
     crate::fiche::lire_fichier(&p, &format!("config/{}", ORGANISMES))
 }
 
-/// Le numero d'une reference d'adhesion (S21.G00.15.001) : une reference qui n'en est pas un se refuse.
-fn numero_de_reference(reference: &str) -> R<u32> {
-    reference.trim().parse::<u32>().map_err(|_| {
+/// Le numero d'une reference d'adhesion (S21.G00.15.005) : une reference qui n'en est pas un se refuse.
+fn numero_de_reference(reference: &ReferenceDAdhesion) -> R<u32> {
+    reference.as_str().parse::<u32>().map_err(|_| {
         socle::refus!("La référence d'adhésion « {} » (S21.G00.15.001) n'est pas un nombre : la corriger dans les organismes de la compagnie.", reference)
     })
 }
@@ -619,7 +679,7 @@ pub fn saisis(ctx: &Contexte) -> R<(Vec<Adhesion>, Vec<u32>)> {
         .into_iter()
         .flatten()
         .filter(|a| {
-            let libelle = a.libelle.trim().to_uppercase();
+            let libelle = a.libelle.as_str().trim().to_uppercase();
             !textes.contains(&libelle) && !a.contribution.as_ref().is_some_and(|c| c.est_le_libelle(&libelle))
         })
         .cloned()
@@ -634,7 +694,7 @@ fn donnes_par_un_texte() -> R<Vec<String>> {
     let base = base()?;
     let mut out: Vec<String> =
         base.tous_les_contrats().filter_map(|c| c.libelle.as_deref()).map(|l| l.trim().to_uppercase()).filter(|l| !l.is_empty()).collect();
-    let l = crate::adhesions::casc_svp_base()?.dsn.contrat.trim().to_uppercase();
+    let l = crate::adhesions::casc_svp_base()?.dsn.contrat.as_str().trim().to_uppercase();
     if !l.is_empty() {
         out.push(l);
     }
@@ -651,7 +711,7 @@ pub struct Attendu {
     pub role: Option<RoleDuContrat>,
     pub libelle: Option<String>,
     pub libelle_defaut: Option<String>,
-    pub reference: Option<String>,
+    pub reference: Option<ReferenceDAdhesion>,
     pub r#type: String,
     pub depuis: Option<Jour>,
     pub jusqu_a: Option<Jour>,
@@ -717,7 +777,7 @@ pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
     if let Some(casc) = crate::adhesions::casc_svp(&ctx.entreprise, &ctx.effectif()?, ctx.lue_au.an)? {
         out.push(Attendu {
             cle: CASC,
-            libelle: Some(casc.libelle),
+            libelle: Some(casc.libelle.to_string()),
             reference: Some(casc.reference),
             r#type: casc.r#type,
             beneficiaires: "tous les salariés".into(),
@@ -761,11 +821,11 @@ fn en_place<'a>(spec: &Attendu, saisi: &'a [Adhesion]) -> Option<&'a Adhesion> {
     if let Some(a) = saisi.iter().find(|a| a.cle == spec.cle) {
         return Some(a);
     }
-    if let Some(reference) = net(&spec.reference) {
-        return saisi.iter().find(|a| a.reference.trim() == reference);
+    if let Some(reference) = &spec.reference {
+        return saisi.iter().find(|a| a.reference == *reference);
     }
     let contribution = spec.contribution.as_ref()?;
-    saisi.iter().find(|a| a.contribution.as_ref().is_some_and(|c| c.est(contribution)) || contribution.est_le_libelle(&a.libelle))
+    saisi.iter().find(|a| a.contribution.as_ref().is_some_and(|c| c.est(contribution)) || contribution.est_le_libelle(a.libelle.as_str()))
 }
 
 /// UNE LIGNE DE L'ECRAN (`organismes-contrats`) : ce que le contrat couvre, et ce qui vaut (le texte quand il le donne,
@@ -797,7 +857,7 @@ pub fn ligne(spec: &Attendu, saisi: &[Adhesion]) -> Ligne {
     let libelle_fixe = spec.libelle_donne().is_some();
     let libelle = match spec.libelle_donne() {
         Some(donne) => Some(donne),
-        None => place.and_then(|a| saisie(&a.libelle)).or_else(|| net(&spec.libelle_defaut)),
+        None => place.and_then(|a| saisie(a.libelle.as_str())).or_else(|| net(&spec.libelle_defaut)),
     };
     let organisme = if spec.organisme_fixe {
         spec.organisme.clone()
@@ -825,7 +885,7 @@ pub fn ligne(spec: &Attendu, saisi: &[Adhesion]) -> Ligne {
 /// socle attend (pour un permanent, la prevoyance puis la sante), ou pourquoi elles manquent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rattachement {
-    pub references: Vec<String>,
+    pub references: Vec<ReferenceDAdhesion>,
     pub a_confirmer: Option<&'static str>,
 }
 
@@ -892,13 +952,13 @@ impl Organismes {
     }
 
     /// L'adhesion d'identifiant `reference` (S21.G00.15.005).
-    pub fn adhesion(&self, reference: &str) -> Option<&Adhesion> {
-        self.adhesions_prevoyance.iter().find(|a| a.reference == reference)
+    pub fn adhesion(&self, reference: &ReferenceDAdhesion) -> Option<&Adhesion> {
+        self.adhesions_prevoyance.iter().find(|a| a.reference == *reference)
     }
 
     /// L'adhesion `reference` vaut-elle pour la periode `debut`..=`fin` ? Une reference qu'aucune adhesion ne porte (une
     /// contribution de branche du bareme) n'a pas de date.
-    pub fn adhesion_en_vigueur(&self, reference: &str, debut: &Jour, fin: &Jour) -> bool {
+    pub fn adhesion_en_vigueur(&self, reference: &ReferenceDAdhesion, debut: &Jour, fin: &Jour) -> bool {
         self.adhesion(reference).is_none_or(|a| a.en_vigueur(debut, fin))
     }
 }
@@ -919,19 +979,24 @@ pub fn composer(
     exiger: Option<(&(Jour, Jour), bool)>,
 ) -> R<Organismes> {
     // Chaque contrat retenu, avec sa reference quand le texte ou la saisie la disent.
-    let mut retenus: Vec<(Attendu, Option<String>, String, IdentifiantDOrganisme)> = Vec::new();
+    let mut retenus: Vec<(Attendu, Option<ReferenceDAdhesion>, ReferenceDeContrat, IdentifiantDOrganisme)> = Vec::new();
     for spec in attendus(ctx)? {
         let l = ligne(&spec, saisi);
         let maintenant = saisies.get(&spec.cle);
+        let quoi = spec.quoi.trim().to_string();
+        // La reference que la compagnie saisit s'est lue a sa porte ; celle que le texte donne, ou que le fichier garde,
+        // se lit ici dans sa regle (S21.G00.15.001, de 1 a 30 caracteres).
         let libelle = match maintenant {
-            Some(s) if !l.libelle_fixe => s.libelle.as_ref().map(|r| r.as_str().to_string()),
-            _ => l.libelle.clone(),
+            Some(s) if !l.libelle_fixe => s.libelle.clone(),
+            _ => match l.libelle.clone() {
+                Some(t) => Some(ReferenceDeContrat::du_contrat(&quoi, t)?),
+                None => None,
+            },
         };
         let organisme = match maintenant {
             Some(s) if !l.organisme_fixe => s.organisme.clone(),
             _ => l.organisme.clone(),
         };
-        let quoi = spec.quoi.trim().to_string();
         let Some(libelle) = libelle else {
             // Un contrat vide ne se reclame pas quand l'ecran ne l'a pas propose : un contrat des permanents a une
             // compagnie qui n'en emploie pas, un contrat que la periode regardee ne couvre pas.
@@ -945,10 +1010,7 @@ pub fn composer(
                 quoi
             ));
         };
-        // Les longueurs du cahier technique : S21.G00.15.001 de 1 a 30, S21.G00.15.002 de 5 a 9.
-        if libelle.chars().count() > 30 {
-            return Err(socle::refus!("{} : « {} » dépasse 30 caractères, ce que la DSN n'admet pas.", quoi, libelle));
-        }
+        // La longueur du cahier technique : S21.G00.15.002 de 5 a 9.
         let organisme = match organisme {
             Some(o) if (5..=9).contains(&o.as_str().chars().count()) && !o.as_str().contains(char::is_whitespace) => o,
             autre => {
@@ -963,9 +1025,9 @@ sur le certificat d'adhésion et la fiche de paramétrage DSN.",
                 ));
             }
         };
-        let reference = match net(&spec.reference) {
-            Some(r) => Some(r),
-            None => en_place(&spec, saisi).map(|a| a.reference.trim().to_string()).filter(|r| !r.is_empty()),
+        let reference = match &spec.reference {
+            Some(r) => Some(r.clone()),
+            None => en_place(&spec, saisi).map(|a| a.reference.clone()),
         };
         if let Some(r) = &reference {
             prises.push(numero_de_reference(r)?);
@@ -984,7 +1046,7 @@ sur le certificat d'adhésion et la fiche de paramétrage DSN.",
                         libre += 1;
                     }
                     prises.push(libre);
-                    libre.to_string()
+                    ReferenceDAdhesion::lire(&libre.to_string())?
                 }
             };
             let a = Adhesion {
@@ -997,15 +1059,15 @@ sur le certificat d'adhésion et la fiche de paramétrage DSN.",
                 depuis: spec.depuis,
                 jusqu_a: spec.jusqu_a,
             };
-            (spec, a)
+            Ok((spec, a))
         })
-        .collect();
+        .collect::<R<_>>()?;
     let role = |r: RoleDuContrat| retenus.iter().find(|(s, _)| s.role == Some(r)).map(|(_, a)| a.reference.clone());
     let permanent = match (role(RoleDuContrat::Prevoyance), role(RoleDuContrat::Sante)) {
         (Some(p), Some(s)) => Rattachement { references: vec![p, s], a_confirmer: None },
         _ => Rattachement { references: Vec::new(), a_confirmer: Some(PERMANENTS_A_SAISIR) },
     };
-    let intermittent: Vec<String> = [TSINTERMITTENTS, INTERBRANCHE]
+    let intermittent: Vec<ReferenceDAdhesion> = [TSINTERMITTENTS, INTERBRANCHE]
         .iter()
         .filter_map(|c| retenus.iter().find(|(s, _)| s.cle == *c).map(|(_, a)| a.reference.clone()))
         .collect();

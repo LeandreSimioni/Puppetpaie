@@ -306,7 +306,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     // Les adhesions prevoyance que le contrat designe, et elles seules -- sauf
     // au changement de logiciel, qui n'affilie rien.
     let orgs = ctx.organismes()?;
-    let rattachees: HashSet<String> = if changement {
+    let rattachees: HashSet<droit::organismes::ReferenceDAdhesion> = if changement {
         HashSet::new()
     } else {
         // Celles auxquelles le salarie est affilie a l'embauche (`dsn::rattachements`) : un bloc 15 que nul bloc 70 ne

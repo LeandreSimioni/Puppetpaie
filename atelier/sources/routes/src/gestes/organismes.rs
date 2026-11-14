@@ -98,7 +98,7 @@ fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<Co
             }
         }
         for (cle, datees) in par_cle.iter_mut() {
-            let valeur = version.valeur.iter().flatten().find(|a| a.cle == *cle).map(|a| ContratSaisi { libelle: a.libelle.trim().to_string(), organisme: a.delegataire.clone() });
+            let valeur = version.valeur.iter().flatten().find(|a| a.cle == *cle).map(|a| ContratSaisi { libelle: a.libelle.as_str().trim().to_string(), organisme: a.delegataire.clone() });
             if datees.last().is_some_and(|d| d.valeur == valeur) {
                 continue;
             }

@@ -628,8 +628,8 @@ const TRANCHE_A: TypeDeComposant = TypeDeComposant::TrancheAPrevoyance;
 /// contrat, `Nature::section_des_organismes`).
 #[derive(Clone, Debug)]
 pub struct ContributionDuMois {
-    pub reference: String,
-    pub libelle: String,
+    pub reference: ReferenceDAdhesion,
+    pub libelle: droit::organismes::ReferenceDeContrat,
     pub lignes: Vec<IdDeCotisation>,
     pub natures: std::collections::BTreeMap<droit::natures::Paie, IdentifiantDAffiliation>,
 }
@@ -1179,7 +1179,7 @@ fn bornes_du_mois(mois: Mois) -> (Jour, Jour) {
 
 /// Les references d'adhesion auxquelles cette nature rattache, parmi celles qui valent pour la
 /// periode `debut`..=`fin`.
-pub fn affiliations(orgs: &Organismes, nat: &Nature, contribs: &[ContributionDuMois], (debut, fin): (Jour, Jour)) -> R<Vec<String>> {
+pub fn affiliations(orgs: &Organismes, nat: &Nature, contribs: &[ContributionDuMois], (debut, fin): (Jour, Jour)) -> R<Vec<ReferenceDAdhesion>> {
     let cle = nat.section_des_organismes();
     let sec = orgs.par_nature.de(cle);
     if sec.references.is_empty() {
@@ -1195,7 +1195,7 @@ population, ce que la plate-forme accepte sans rien dire. Rien n'est écrit.",
             nat.libelle, cle.population(), pourquoi
         ));
     }
-    let mut out: Vec<String> = sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &debut, &fin)).cloned().collect();
+    let mut out: Vec<ReferenceDAdhesion> = sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &debut, &fin)).cloned().collect();
     for c in contribs {
         if c.natures.contains_key(&cle) {
             out.push(c.reference.clone());
@@ -1211,7 +1211,7 @@ pub struct Affiliation {
     /// que `organismes::composer` ecrit et que le socle attend.
     pub place: usize,
     /// La reference de l'adhesion (70.013 = 15.005).
-    pub reference: String,
+    pub reference: ReferenceDAdhesion,
     /// L'option retenue par le salarie (70.004), quand l'organisme la demande pour ce contrat.
     pub option: Option<String>,
     /// Les ayants droit conjoint (70.008) et enfants (70.011), quand ils entrent dans le calcul de la cotisation.
@@ -1298,7 +1298,7 @@ fn places_non_affiliees(p: &Paie, ent: &ChampsEntreprise) -> R<Vec<usize>> {
 /// (`prevoyance_branche_depuis`). La date s'ecrit chaque mois ou le contrat se declare (inference : la condition de la
 /// norme reste vraie ; la liste des cas d'usage de net-entreprises n'est pas dans le depot).
 /// `ent` : la fiche de l'entreprise que la paie a lue (`BaremeDuMois::entreprise`).
-pub fn rattachements(p: &Paie, orgs: &Organismes, ent: &ChampsEntreprise, refs: Vec<String>) -> R<Vec<Affiliation>> {
+pub fn rattachements(p: &Paie, orgs: &Organismes, ent: &ChampsEntreprise, refs: Vec<ReferenceDAdhesion>) -> R<Vec<Affiliation>> {
     let e = &p.engagement;
     let permanent = affiliations_du_permanent(p, ent)?;
     let fin = e.fin_periode();
@@ -1362,9 +1362,9 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
 /// `organismes-base.json` dit que l'organisme les demande pour ce contrat (`contrats`, `options` : la sante des
 /// permanents 3090, fiche de parametrage Audiens version 139, groupes 00003 a 00008). Ils se lisent de `sante_svp`, la
 /// meme fiche que la cotisation (`bareme::bareme_sante`) ; sans elle, ou d'un niveau que la table n'a pas, refus.
-fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &str) -> R<(Option<String>, Option<(i64, i64)>)> {
+fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &ReferenceDAdhesion) -> R<(Option<String>, Option<(i64, i64)>)> {
     let base = droit::organismes::base()?;
-    let libelle = adhesion.libelle.trim();
+    let libelle = adhesion.libelle.as_str().trim();
     let Some(options) = base.options(ent.idcc.dite(), libelle) else {
         return Ok((None, None));
     };
@@ -1417,7 +1417,7 @@ pub fn places_par_contrat(bar: &Pile) -> i64 {
 }
 
 /// Les references de chaque nature (hors `ref`), en vigueur pendant le mois.
-fn refs_du_mois(orgs: &Organismes, sec: &droit::organismes::Rattachement, mois: Mois) -> Vec<String> {
+fn refs_du_mois(orgs: &Organismes, sec: &droit::organismes::Rattachement, mois: Mois) -> Vec<ReferenceDAdhesion> {
     let (debut, fin) = bornes_du_mois(mois);
     sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &debut, &fin)).cloned().collect()
 }
@@ -1436,7 +1436,7 @@ fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Moi
         return Ok(None);
     }
     let contrat = &base.dsn.contrat;
-    let adh = orgs.adhesions_prevoyance.iter().find(|a| a.libelle.trim() == contrat);
+    let adh = orgs.adhesions_prevoyance.iter().find(|a| a.libelle.as_str().trim() == contrat.as_str());
     let adh = match adh {
         Some(a) => a,
         None => {
@@ -1487,7 +1487,7 @@ fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, 
     for spec in specs {
         let nom = spec.contribution.clone();
         let adh = orgs.adhesions_prevoyance.iter().find(|a| {
-            a.contribution.as_ref().is_some_and(|c| c.est(&nom)) || nom.est_le_libelle(&a.libelle)
+            a.contribution.as_ref().is_some_and(|c| c.est(&nom)) || nom.est_le_libelle(a.libelle.as_str())
         });
         let adh = match adh {
             Some(a) => a,
@@ -2532,7 +2532,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
     let refs = affiliations(&orgs, &*e.nat()?, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
     let mut affiliations = Vec::new();
     for a in rattachements(p, &orgs, &bar.entreprise.fiche, refs)? {
-        affiliations.push((affiliation_de_la_place(202 + a.place as i64)?, ReferenceDAdhesion::lire(&a.reference)?));
+        affiliations.push((affiliation_de_la_place(202 + a.place as i64)?, a.reference));
     }
     let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(mois)?);
     bloc_versement(&mut f, p, &bar, 1, None)?;
@@ -4793,7 +4793,7 @@ certificat de conformite du depot precedent.",
         f.add(droit::rubrique!("S21.G00.11.025"), spst);
     }
     let (premier_du_mois, dernier_du_mois) = bornes_du_mois(mois);
-    let mut couvertes: HashSet<String> = HashSet::new();
+    let mut couvertes: HashSet<ReferenceDAdhesion> = HashSet::new();
     // Les adhesions qu'au moins une affiliation du fichier reference : celles des salaries affilies ce mois-la
     // (`rattachements`), pas toutes celles de leur nature (CCH-13 et CCH-14 de 15.004, p. 151).
     for p in paies {
@@ -5260,15 +5260,15 @@ mod tests {
         use droit::organismes::{Adhesion, ParNature, Rattachement};
         let adh = |libelle: &str, reference: &str| Adhesion {
             cle: droit::organismes::CleDeContrat::lire(&libelle.to_lowercase()).unwrap(),
-            libelle: libelle.into(),
+            libelle: droit::organismes::ReferenceDeContrat::du_contrat(libelle, libelle.to_string()).unwrap(),
             delegataire: droit::organismes::AUDIENS,
             r#type: "01".into(),
-            reference: reference.into(),
+            reference: ReferenceDAdhesion::lire(reference).unwrap(),
             contribution: None,
             depuis: None,
             jusqu_a: None,
         };
-        let refs = |r: &[&str]| Rattachement { references: r.iter().map(|x| x.to_string()).collect(), a_confirmer: None };
+        let refs = |r: &[&str]| Rattachement { references: r.iter().map(|x| ReferenceDAdhesion::lire(x).unwrap()).collect(), a_confirmer: None };
         Organismes {
             base: droit::organismes::base().unwrap(),
             adhesions_prevoyance: vec![adh("CASCSVP", "100"), adh("INTERBRANCHE", "102")],
@@ -5280,7 +5280,7 @@ mod tests {
     #[test]
     fn la_dsn_de_la_3090_porte_la_casc_en_troisieme_affiliation() {
         let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &orgs_casc(), Mois::nouveau(2026, 9).unwrap()).unwrap().unwrap();
-        assert_eq!(c.reference, "100");
+        assert_eq!(c.reference.as_str(), "100");
         assert_eq!(c.lignes, [droit::forme_bareme::CCN]);
         // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
         assert_eq!(c.natures, std::collections::BTreeMap::from([(droit::natures::Paie::Activite, IdentifiantDAffiliation::lire("204").unwrap())]));

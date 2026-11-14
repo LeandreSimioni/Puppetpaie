@@ -78,9 +78,9 @@ forme_notee! {
     /// L'adhesion CASCSVP de la DSN : la reference du contrat (15.001), l'organisme (15.002), l'identifiant de
     /// l'adhesion (15.005), et les lignes du bulletin qui font sa cotisation.
     pub struct CascDsn {
-        pub contrat: String,
+        pub contrat: crate::organismes::ReferenceDeContrat,
         pub organisme: crate::organismes::IdentifiantDOrganisme,
-        pub identifiant: String,
+        pub identifiant: crate::organismes::ReferenceDAdhesion,
         pub lignes_bulletin: Vec<crate::forme_bareme::IdDeCotisation>,
     }
 }

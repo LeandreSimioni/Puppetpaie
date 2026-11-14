@@ -70,12 +70,12 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
 
 /// `lire_dsn_casc` : la DSN deposee, et si elle porte la CASC-SVP (un contrat rattache, S21.G00.70.013, a
 /// l'adhesion que la DSN nomme `contrat` en bloc 15). `None` : illisible.
-pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &str) -> R<Option<(declarations::dsn_lue::DsnLue, bool)>> {
+pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::ReferenceDeContrat) -> R<Option<(declarations::dsn_lue::DsnLue, bool)>> {
     let Some(d) = declarations::dsn_lue::lire_une_dsn(chemin)? else { return Ok(None) };
     let porte = d
         .adhesions
         .iter()
-        .filter(|a| a.libelle == contrat)
+        .filter(|a| a.libelle == contrat.as_str())
         .filter_map(|a| a.reference.as_ref())
         .any(|r| d.rattachements.contains(r));
     Ok(Some((d, porte)))

@@ -975,7 +975,8 @@ pub struct FicheDemandee {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeFicheDemander {
-    adresse: String,
+    /// Lue a la porte dans son type (sans blancs de bord, de 6 a 100 caracteres).
+    adresse: droit::fiche::Courriel,
     prenom: Option<socle::forme::TexteDit>,
 }
 
@@ -994,12 +995,12 @@ fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&so
     Ok(DemandeDeFiche { phrase: format!("Demande de fiche envoyée à {} (code {}) : sa fiche se crée à l'arrivée de sa réponse.", d.adresse, d.code), code: d.code, adresse: d.adresse })
 }
 /// compagnie fictive, sinon refus « boite absente ») quand l'appelant n'en donne pas.
-pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>, preuve: &Preuve, qui: &str, client: Option<&mut dyn Courriel>) -> R<FicheDemandee> {
-    let adresse = strip(adresse).to_lowercase();
+pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, prenom: Option<&str>, preuve: &Preuve, qui: &str, client: Option<&mut dyn Courriel>) -> R<FicheDemandee> {
+    // L'adresse lue a la porte s'ecrit en minuscules, comme toute adresse que le moteur ecrit ; elle a la forme x@y.z.
+    let adresse = droit::fiche::Courriel::lire(&adresse.to_lowercase())?;
     if !adresse_valide(&adresse) {
         return Err(refus(format!("« {} » n'est pas une adresse de courriel.", adresse)));
     }
-    let adresse = droit::fiche::Courriel::lire(&adresse)?;
     let mut ouverte: Option<Box<dyn Courriel>> = None;
     let client: &mut dyn Courriel = match client {
         Some(c) => c,
