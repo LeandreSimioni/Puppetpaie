@@ -11,7 +11,7 @@ use crate::fiche::{ExtensionT2, Idcc, Lue};
 use crate::natures::AuMois;
 use socle::echec::Lieu;
 use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::grandeurs::{Montant, Taux};
+use socle::grandeurs::{Coefficient, Montant, Taux};
 use socle::num::{div, mul, sub};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
@@ -262,7 +262,7 @@ charge de l'employeur (XII.2.1.11), et pas plus de 100.",
         ));
     }
     let base = sante.base.clone();
-    Ok(Some(Mutuelle::Pose { base, total: total.decimal(), pat: div(part, Decimal::ONE_HUNDRED) }))
+    Ok(Some(Mutuelle::Pose { base, total, pat: Coefficient::du_decimal(div(part, Decimal::ONE_HUNDRED)) }))
 }
 
 /// `super::minimum_sante`.
@@ -436,7 +436,7 @@ nouveau le laisserait sans couverture pendant un an.",
 /// pas le taux : `contrat_requis`) ni l'obligation cadre n'en fixent.
 fn minimum_t1(reg: &Regime, annexe: Option<&crate::fiche::AnnexeConvention>, cadre: bool) -> R<Option<(Taux, String)>> {
     let mut retenu = reg.obligatoire.taux.map(|t| (t, format!("{} : {} %", reg.texte, pcf(t.decimal()))));
-    let sup = annexe.and_then(|n| reg.annexes.as_ref().and_then(|a| a.get(n)).map(|a| (n, a.taux))).filter(|(_, t)| !t.est_nul());
+    let sup = annexe.and_then(|n| reg.annexes.as_ref().and_then(|a| a.get(n)).map(|a| (n, a.taux)));
     if let Some((n, s)) = sup.filter(|(_, s)| retenu.as_ref().is_none_or(|(t, _)| s > t)) {
         retenu = Some((s, format!("annexe {} de la convention : {} %", n, pcf(s.decimal()))));
     }

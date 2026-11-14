@@ -922,7 +922,7 @@ pub fn prelevement_de_la_correction(
     let prelevement = if difference < Decimal::ZERO {
         taux_origine.map(|t| t.prelevement(Montant::du_decimal(difference)).au_centime().decimal())
     } else {
-        Some(versement.taux.prelevement(Montant::du_decimal(versement.montant_soumis)).au_centime().decimal())
+        Some(versement.taux.prelevement(versement.montant_soumis).au_centime().decimal())
     };
     Ok(PrelevementDeLaCorrection { difference, versement, prelevement })
 }

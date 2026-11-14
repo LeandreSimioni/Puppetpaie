@@ -1105,9 +1105,9 @@ fn base_de(r: &Rubrique) -> R<Assiette> {
     r.base.ok_or_else(|| socle::fichiers::absent("base"))
 }
 
-/// Le taux patronal d'une rubrique, s'il n'est pas nul.
+/// Le taux patronal d'une rubrique, si elle en dit un (0 % est un taux).
 fn part_patronale(r: &Rubrique) -> Option<Decimal> {
-    r.taux_pat.map(|t| t.0.decimal()).filter(|t| !t.is_zero())
+    r.taux_pat.map(|t| t.0.decimal())
 }
 
 /// La pile de bareme sur laquelle se calcule la paie `p` (celle de `calculer_periode`, du meme cache).

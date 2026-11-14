@@ -456,7 +456,7 @@ impl<'de> serde::de::Visitor<'de> for EnDecimal {
     }
     fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
         if !self.texte {
-            return Err(E::invalid_type(serde::de::Unexpected::Str(s), &self));
+            return Err(E::custom(format!("« {} » est écrit en texte : écrire le nombre sans guillemets", s)));
         }
         crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase))
     }

@@ -17,7 +17,7 @@ use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, Nic, SalarieDuContrat, Siret, Statut, StatutCategorielRc, IDCC_3090};
 use socle::date::Jour;
 use socle::echec::{Lieu, Echec, R};
-use socle::grandeurs::Taux;
+use socle::grandeurs::{Coefficient, Taux};
 use socle::num::{add, court, div, mul, sub, Decimal};
 use rust_decimal::RoundingStrategy;
 use std::collections::BTreeMap;
@@ -528,7 +528,8 @@ fn sans_mutuelle(mut bar: Pile) -> Pile {
 }
 
 /// Pose la cotisation de la mutuelle sur sa rubrique.
-fn poser_mutuelle(mut bar: Pile, base: Option<Assiette>, total: Decimal, pat: Decimal, libelle: Option<&str>) -> Pile {
+fn poser_mutuelle(mut bar: Pile, base: Option<Assiette>, total: Taux, pat: Coefficient, libelle: Option<&str>) -> Pile {
+    let (total, pat) = (total.decimal(), pat.decimal());
     for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == MUTUELLE) {
         if let Some(b) = base {
             r.base = Some(b);
@@ -545,7 +546,8 @@ fn poser_mutuelle(mut bar: Pile, base: Option<Assiette>, total: Decimal, pat: De
 /// Ce que la convention fait de la ligne mutuelle.
 pub(crate) enum Mutuelle {
     Sans,
-    Pose { base: Assiette, total: Decimal, pat: Decimal },
+    /// `total` : la cotisation, en % du plafond mensuel ; `pat` : la part de l'employeur.
+    Pose { base: Assiette, total: Taux, pat: Coefficient },
 }
 
 /// Le champ de la fiche entreprise qui dit ce que le contrat de sante de la compagnie fait d'un mois entierement suspendu
@@ -678,8 +680,8 @@ la Securite sociale), et pas plus de 100.",
                 pp.ecrit()
             ));
         }
-        let pat = div(part, Decimal::ONE_HUNDRED);
-        return Ok(poser_mutuelle(bar, Some(Assiette::PssPeriode), total, pat, Some("Complémentaire santé (contrat de l'entreprise)")));
+        let pat = Coefficient::du_decimal(div(part, Decimal::ONE_HUNDRED));
+        return Ok(poser_mutuelle(bar, Some(Assiette::PssPeriode), Taux::du_decimal(total), pat, Some("Complémentaire santé (contrat de l'entreprise)")));
     }
     // La dispense d'un permanent 3090 : l'accord du 19/07/2024 (art. 9.1, 9.2,
     // `atelier/reference/sources/kali-3090-accord-sante-permanents-20240719-20261011.md`) rend l'adhesion obligatoire
@@ -732,8 +734,8 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
     }
     total = add(total, mul(taux.enfant.decimal(), Decimal::from(enfants)));
     // Au moins la moitie a la charge de l'employeur (L911-7) : le releve du bareme dit la part.
-    let part_pat = div(releve.part_employeur.decimal(), Decimal::ONE_HUNDRED);
-    let bar = poser_mutuelle(bar, None, total, part_pat, None);
+    let part_pat = Coefficient::du_decimal(div(releve.part_employeur.decimal(), Decimal::ONE_HUNDRED));
+    let bar = poser_mutuelle(bar, None, Taux::du_decimal(total), part_pat, None);
     Ok(composant_79(bar, &MUTUELLE, releve.composant_79.as_ref().map(|c| c.genre)))
 }
 
@@ -1528,20 +1530,23 @@ du socle.",
     Ok(repartition.parts())
 }
 
-/// Un TAUX global partage (pas un montant) : la part salariale arrondie au centieme, la demie vers le bas, la
-/// patronale en est le reste. Aucun texte ne dit la regle ; elle est celle que donnent les taux publies par Audiens
-/// (`atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt`, p. 3 : 7,87 en 50/50 donne
-/// 3,94 / 3,93), relevee dans la note de `retraite_t1_repartition` du bareme livre : un constat, pas un fondement.
-pub fn parts_t1(total: Decimal, sal: PartDeLaTrancheUne) -> (Decimal, Decimal) {
+/// Un TAUX global partage (pas un montant) : (part patronale, part salariale). La salariale est arrondie au centieme,
+/// la demie vers le bas, la patronale en est le reste. Aucun texte ne dit la regle ; elle est celle que donnent les taux
+/// publies par Audiens (`atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt`, p. 3 : 7,87 en
+/// 50/50 donne 3,94 a l'employeur et 3,93 au salarie), relevee dans la note de `retraite_t1_repartition` du bareme
+/// livre : un constat, pas un fondement.
+pub fn parts_t1(total: Taux, sal: PartDeLaTrancheUne) -> (Taux, Taux) {
+    let total = total.decimal();
     let part_sal = div(mul(total, Decimal::from_i128_with_scale(sal.num, 0)), Decimal::from_i128_with_scale(sal.den, 0))
         .round_dp_with_strategy(2, RoundingStrategy::MidpointTowardZero);
-    (total - part_sal, part_sal)
+    (Taux::du_decimal(total - part_sal), Taux::du_decimal(part_sal))
 }
 
 /// Remplace la retraite de la ligne `retraite_t1` (CEG inchangee) et, dans la
 /// DSN, le 131 (regime unifie Agirc-Arrco, cahier technique 2026.1 p. 302) qui
 /// porte un taux sur la meme assiette.
-fn poser_t1(mut bar: Pile, retraite_pat: Decimal, retraite_sal: Decimal) -> R<Pile> {
+fn poser_t1(mut bar: Pile, retraite_pat: Taux, retraite_sal: Taux) -> R<Pile> {
+    let (retraite_pat, retraite_sal) = (retraite_pat.decimal(), retraite_sal.decimal());
     let ceg = bar.retraite_t1_repartition.as_ref().map(|r| r.ceg.clone()).ok_or_else(|| socle::fichiers::absent("retraite_t1_repartition"))?;
     let (ceg_pat, ceg_sal) = (ceg.pat.decimal(), ceg.sal.decimal());
     let pat = retraite_pat + ceg_pat;
@@ -1582,7 +1587,7 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
             return Ok(bar);
         }
         let (_, part_sal) = repartition_t1(&bar, ent, ColonneDeRepartition::Permanent)?;
-        let (p, s) = parts_t1(rep.taux_droit_commun.decimal(), part_sal);
+        let (p, s) = parts_t1(rep.taux_droit_commun, part_sal);
         return poser_t1(bar, p, s);
     }
     let couche = match ent.organisation_patronale.dite().and_then(|o| bar.organisation(o)) {
@@ -1591,8 +1596,8 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
     };
     let statut = *sal.statut.exigee("statut")?;
     let taux = couche.retraite_t1.as_ref().and_then(|t| match statut {
-        Statut::Artiste => t.artiste.map(Taux::decimal),
-        Statut::Technicien => t.technicien.map(Taux::decimal),
+        Statut::Artiste => t.artiste,
+        Statut::Technicien => t.technicien,
     });
     let Some(taux) = taux else { return Ok(bar) };
     if let Some(avant) = couche.adhesion_avant {
@@ -1602,7 +1607,7 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
 retraite ({} %) qu'aux adherents d'avant le {}. Renseigner \
 « Adhérente depuis le » -- le logiciel ne le devine pas.",
                 couche.libelle,
-                court(taux),
+                court(taux.decimal()),
                 avant.jj_mm_aaaa()
             ));
         };
@@ -1624,7 +1629,7 @@ demander a Audiens, puis a ecrire dans la couche de \
                 sal.nom.remplie().iter().map(|n| format!("{}, ", n)).collect::<String>(),
                 couche.libelle,
                 statut,
-                court(taux)
+                court(taux.decimal())
             ),
         ));
     }

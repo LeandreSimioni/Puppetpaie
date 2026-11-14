@@ -2065,7 +2065,7 @@ pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> R<()> {
 /// assistants maternels et familiaux, que seuls PAJEmploi et les departements declarent : le moteur ne l'ecrit pas.
 fn pas_du_versement(
     taux_pas: Option<&Triplet>, bar: &Pile, montant: Decimal, le: Jour, court: bool,
-) -> R<(droit::pas::TauxDePas, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<droit::pas::IdentifiantDuTauxPas>, Decimal)> {
+) -> R<(droit::pas::TauxDePas, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<droit::pas::IdentifiantDuTauxPas>, Montant)> {
     let r = pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT)?;
     Ok((r.taux, r.type_taux, r.identifiant, r.montant_soumis))
 }
@@ -2457,8 +2457,8 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     if type_taux.transmis() {
         f.add_opt(droit::rubrique!("S21.G00.50.008"), identifiant.as_ref())?;
     }
-    f.add(droit::rubrique!("S21.G00.50.009"), mt(taux.prelevement(Montant::du_decimal(soumis)).au_centime().decimal()));
-    f.add(droit::rubrique!("S21.G00.50.013"), mt(soumis));
+    f.add(droit::rubrique!("S21.G00.50.009"), mt(taux.prelevement(soumis).au_centime().decimal()));
+    f.add(droit::rubrique!("S21.G00.50.013"), mt(soumis.decimal()));
 
     // Un mois decoupe : les remunerations de chaque periode elementaire, datees de ses bornes (« La periode a
     // declarer dans le bloc Remuneration est cette periode elementaire de paie, lorsque le logiciel de paie produit
@@ -2754,8 +2754,8 @@ fn bloc_regularisation(
         f.add_opt(droit::rubrique!("S21.G00.50.008"), identifiant.as_ref())?;
     }
     let indu = d_ni < Decimal::ZERO;
-    f.add(droit::rubrique!("S21.G00.50.009"), if indu { "0.00".into() } else { mt(taux.prelevement(Montant::du_decimal(soumis)).au_centime().decimal()) });
-    f.add(droit::rubrique!("S21.G00.50.013"), if indu { "0.00".into() } else { mt(soumis) });
+    f.add(droit::rubrique!("S21.G00.50.009"), if indu { "0.00".into() } else { mt(taux.prelevement(soumis).au_centime().decimal()) });
+    f.add(droit::rubrique!("S21.G00.50.013"), if indu { "0.00".into() } else { mt(soumis.decimal()) });
 
     annuler_le_declare(f, r, &["51", "53"])?;
     // Une paie d'apres `sans_paie` ecrit ses blocs 51 et 53 a 0.00 : la norme prevoit un montant 51.013 egal a « 0.00 »

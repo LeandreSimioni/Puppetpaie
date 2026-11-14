@@ -406,7 +406,11 @@ impl<'de> Deserialize<'de> for TranchePas {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         match <Vec<Option<Court>>>::deserialize(d)?.as_slice() {
             [Some(b), h, Some(t)] => Ok(TranchePas { bas: Montant::du_decimal(b.0), haut: h.map(|h| Montant::du_decimal(h.0)), taux: Taux::du_decimal(t.0) }),
-            autre => Err(serde::de::Error::custom(format!("une tranche de la grille du PAS porte un bas, un haut et un taux : {:?}", autre))),
+            autre => Err(serde::de::Error::custom(format!(
+                "Une tranche de la grille du PAS s'écrit [bas, haut, taux] : trois nombres, seul le haut de la dernière tranche à null ; celle-ci porte {} valeurs{}.",
+                autre.len(),
+                if autre.len() == 3 { ", dont le bas ou le taux à null" } else { "" }
+            ))),
         }
     }
 }

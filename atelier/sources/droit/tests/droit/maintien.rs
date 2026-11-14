@@ -4,10 +4,11 @@
 use droit::maintien::{conventionnel, Base, Droit, DureeDUneTranche, Origine, Tranche};
 use rust_decimal::Decimal;
 use socle::date::Duree;
+use socle::grandeurs::Taux;
 
 fn tranches(mois: i64) -> Vec<Tranche> {
     let duree = DureeDUneTranche::Duree(Duree::Mois(mois));
-    vec![Tranche { duree: duree.clone(), taux: Decimal::from(100) }, Tranche { duree, taux: Decimal::from(75) }]
+    vec![Tranche { duree: duree.clone(), taux: Taux::du_decimal(Decimal::from(100)) }, Tranche { duree, taux: Taux::du_decimal(Decimal::from(75)) }]
 }
 
 /// « à partir de 6 mois et jusqu'à 1 an d'ancienneté : 1 mois à 100 % et 1 mois à 75 % ; au-delà de 1 an d'ancienneté :
@@ -25,7 +26,7 @@ fn la_1285_maintient_le_brut_selon_l_anciennete() {
     // ancienneté ; la maladie professionnelle, que X.4.7 ne nomme pas, suit X.4.6.
     for o in [Origine::AccidentDuTravail, Origine::Trajet] {
         let Droit::Du(r) = regime(2, o) else { panic!("{:?} : un maintien", o) };
-        assert_eq!(r.tranches, vec![Tranche { duree: DureeDUneTranche::PendantLesIndemnites, taux: Decimal::from(100) }]);
+        assert_eq!(r.tranches, vec![Tranche { duree: DureeDUneTranche::PendantLesIndemnites, taux: Taux::du_decimal(Decimal::from(100)) }]);
     }
     assert!(matches!(regime(2, Origine::MaladieProfessionnelle), Droit::PasDu(_)));
 }

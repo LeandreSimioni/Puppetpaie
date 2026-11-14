@@ -275,6 +275,36 @@ pub mod ecrit {
         ecriture!();
     }
 
+    /// En texte, dans sa forme la plus courte (`12.5`, `12` ; « -0 » s'ecrit « 0 » : `num::nombre`), relue d'un nombre
+    /// ou d'un texte (`forme::decimal`) : l'ecriture des nombres d'une paie ecrite.
+    pub mod nombre {
+        use crate::grandeurs::Grandeur;
+
+        pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_str(&crate::num::nombre(g.en_decimal()))
+        }
+
+        pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<G, D::Error> {
+            crate::forme::decimal(d).map(<G as crate::grandeurs::Scelle>::du)
+        }
+
+        /// Un `Option` dans cette ecriture : `None` s'ecrit `null`, et se relit absent ou nul.
+        pub mod option {
+            use crate::grandeurs::Grandeur;
+
+            pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &Option<G>, s: S) -> Result<S::Ok, S::Error> {
+                match g {
+                    Some(g) => super::serialize(g, s),
+                    None => s.serialize_none(),
+                }
+            }
+
+            pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<Option<G>, D::Error> {
+                crate::forme::decimal_opt(d).map(|o| o.map(<G as crate::grandeurs::Scelle>::du))
+            }
+        }
+    }
+
     /// En nombre entier JSON (`2`) ; un decimal qui n'est pas un entier ne s'ecrit pas ainsi.
     pub mod entier {
         use crate::grandeurs::Grandeur;

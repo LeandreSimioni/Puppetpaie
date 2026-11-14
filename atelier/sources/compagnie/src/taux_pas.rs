@@ -66,7 +66,7 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
                 continue;
             };
             let taux = match v.taux_pas {
-                Some(t) => Some(droit::pas::TauxDePas::du_decimal(t).ok_or_else(|| {
+                Some(t) => Some(droit::pas::TauxDePas::lire(&t.to_string()).ok_or_else(|| {
                     socle::refus!("La DSN de {} porte en S21.G00.50.006 le taux {}, qui n'a pas la forme de la norme : corrigez-la ou retirez-la, puis recommencez.", mois, t)
                 })?),
                 None => None,

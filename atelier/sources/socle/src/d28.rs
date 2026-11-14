@@ -190,17 +190,24 @@ impl P {
 
     /// Un montant au centime, la regle de `grandeurs::Montant::au_centime` (la moitie vers le haut, le negatif comme son
     /// oppose, deux decimales ecrites), sur le `P` exact, une fois : sans passer par les 28 decimales d'un `Decimal`.
-    pub fn au_centime(self) -> P {
+    pub fn au_centime(self) -> crate::echec::R<P> {
         if self.e <= 2 {
-            return P { m: self.m * 10i128.pow((2 - self.e) as u32), e: 2 };
+            let m = match u32::try_from(2i64 - i64::from(self.e)) {
+                Ok(k) => dix(k).and_then(|p| self.m.checked_mul(p)),
+                Err(_) => None,
+            };
+            return match m {
+                Some(m) => Ok(P { m, e: 2 }),
+                None => Err(crate::refus!("Le montant {} est trop grand pour s'écrire au centime : le signaler au développeur.", self)),
+            };
         }
         // Au-dela de 10^38, |m| (28 chiffres au plus) est sous la moitie du diviseur : le centime est zero, exactement.
-        let Some(p) = 10i128.checked_pow((self.e - 2) as u32) else { return P { m: 0, e: 2 } };
+        let Some(p) = 10i128.checked_pow((self.e - 2) as u32) else { return Ok(P { m: 0, e: 2 }) };
         let (mut q, r) = (self.m / p, (self.m % p).abs());
         if r >= p - r {
             q += self.m.signum();
         }
-        P { m: q, e: 2 }
+        Ok(P { m: q, e: 2 })
     }
 
     /// `to_integral_value(rounding=ROUND_FLOOR)`.

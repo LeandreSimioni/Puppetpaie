@@ -1690,7 +1690,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     let lieu = brut.lieu.clone();
     // Le net paye : le net a payer moins le prelevement a la source que la validation a calcule ; une paie que rien n'a
     // encore validee n'en a pas (`Paie::pas`) : son net paye n'est pas encore connu.
-    let net_paye = p.pas.as_ref().map(|v| Montant::du_decimal(p.net_a_payer - v.prelevement).au_centime().decimal());
+    let net_paye = p.pas.as_ref().map(|v| (Montant::du_decimal(p.net_a_payer) - v.prelevement).au_centime().decimal());
     // CE QUE LE MOTEUR A COMPRIS DE LA CARTE, en une ligne : son bulletin (ou qu'il n'y en a pas), son contrat, ses
     // bornes (et la periode de paie d'un contrat a cheval), ce qu'elle paye, le metier, le brut.
     let resolu_dit = {

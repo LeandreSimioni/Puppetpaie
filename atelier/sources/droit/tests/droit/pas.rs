@@ -138,7 +138,7 @@ struct CasDuVersement {
 }
 
 fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, TypeDeTauxPas)>> {
-    suite(montants().into_iter().map(|m| taux_par_defaut(&pile(c.bareme, c.le), m, c.le, &c.zone).map(|(t, g)| (t.to_string(), g)).into()).collect())
+    suite(montants().into_iter().map(|m| taux_par_defaut(&pile(c.bareme, c.le), socle::grandeurs::Montant::du_decimal(m), c.le, &c.zone).map(|(t, g)| (t.to_string(), g)).into()).collect())
 }
 
 fn versement_du_cas(c: &CasDuVersement) -> Suite<Rendu<Versement>> {

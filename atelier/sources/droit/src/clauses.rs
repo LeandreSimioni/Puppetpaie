@@ -898,10 +898,10 @@ pub fn indemnite_licenciement(
         if let Some(plafond) = &sec.plafond_mois {
             mois = mois.min(p(plafond));
         }
-        let mut commun = mois.mul(ref_).au_centime();
+        let mut commun = mois.mul(ref_).au_centime()?;
         if let Some(avant) = sec.taux_avant.as_ref().filter(|avant| a < p(&avant.mois)) {
             // Avant le bareme, une fraction a part.
-            commun = annees.mul(p(&avant.fraction_de_mois)).mul(ref_).au_centime();
+            commun = annees.mul(p(&avant.fraction_de_mois)).mul(ref_).au_centime()?;
         }
         if let Some(majorations) = sec.majorations_age.as_ref().filter(|m| !m.is_empty()) {
             // Plusieurs ages, chacun son pourcentage et son plancher, puis le plafond. L'age en annees revolues ; sans
@@ -919,19 +919,19 @@ pub fn indemnite_licenciement(
             let mut meilleur = commun;
             for m in vises {
                 let f = P::entier(1).add(p(&m.pourcentage).div(P::entier(100)));
-                let mut v = mois.mul(ref_).mul(f).au_centime();
+                let mut v = mois.mul(ref_).mul(f).au_centime()?;
                 if let Some(plancher) = &m.plancher_mois {
-                    v = v.max(p(plancher).mul(ref_).au_centime());
+                    v = v.max(p(plancher).mul(ref_).au_centime()?);
                 }
                 meilleur = meilleur.max(v);
             }
             if let Some(plafond) = &sec.plafond_majore_mois {
-                meilleur = meilleur.min(p(plafond).mul(ref_).au_centime());
+                meilleur = meilleur.min(p(plafond).mul(ref_).au_centime()?);
             }
             commun = meilleur;
         } else if let Some(maj) = sec.majoration_age.as_ref().filter(|m| a >= p(&m.anciennete_mois_min)) {
             // Une majoration a partir d'un age. Sans l'age, les deux lectures.
-            let majore = commun.mul(P::entier(1).add(p(&maj.pourcentage).div(P::entier(100)))).au_centime();
+            let majore = commun.mul(P::entier(1).add(p(&maj.pourcentage).div(P::entier(100)))).au_centime()?;
             match age {
                 None => {
                     set(&mut lectures, "sans_majoration_age", commun);
@@ -965,7 +965,7 @@ pub fn indemnite_licenciement(
             if let Some(plafond) = &c.plafond_mois {
                 mois = mois.min(p(plafond));
             }
-            set(&mut lectures, n, mois.mul(ref_).au_centime());
+            set(&mut lectures, n, mois.mul(ref_).au_centime()?);
         }
     }
     if lectures.is_empty() {
@@ -1025,9 +1025,9 @@ impl Retraite {
 /// sans paies precedentes elle refuserait.
 fn fois_la_reference(mois: P, reference: &mut dyn FnMut() -> R<Decimal>) -> R<P> {
     if mois <= P::ZERO {
-        return Ok(mois.au_centime());
+        return mois.au_centime();
     }
-    Ok(mois.mul(P::depuis(reference()?)).au_centime())
+    mois.mul(P::depuis(reference()?)).au_centime()
 }
 
 /// L'indemnite conventionnelle de mise a la retraite.

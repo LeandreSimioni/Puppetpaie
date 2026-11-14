@@ -70,21 +70,21 @@ pub enum Prelevement {
 impl Prelevement {
     pub fn prelevement(&self) -> socle::num::Decimal {
         match self {
-            Prelevement::Calcule(v) => v.prelevement,
+            Prelevement::Calcule(v) => v.prelevement.decimal(),
             Prelevement::Importe(p) => p.prelevement,
         }
     }
 
     pub fn abattement(&self) -> Option<socle::num::Decimal> {
         match self {
-            Prelevement::Calcule(v) => Some(v.abattement),
+            Prelevement::Calcule(v) => Some(v.abattement.decimal()),
             Prelevement::Importe(_) => None,
         }
     }
 
     pub fn montant_soumis(&self) -> Option<socle::num::Decimal> {
         match self {
-            Prelevement::Calcule(v) => Some(v.montant_soumis),
+            Prelevement::Calcule(v) => Some(v.montant_soumis.decimal()),
             Prelevement::Importe(_) => None,
         }
     }
