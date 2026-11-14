@@ -172,20 +172,6 @@ liste_des_exports! {
     }
 }
 
-liste_des_exports! {
-    /// LA COLONNE D'UN ETAT que le livre de paie totalise (`etats_paie::CUMULABLES`) : sa cle, sous laquelle le total
-    /// rendu la nomme, et sous laquelle se compte ce qu'un bulletin ne declare pas.
-    pub enum ColonneDEtat, "Colonne inconnue" {
-        Brut = "brut",
-        CotisationsSalariales = "cotisations_salariales",
-        CotisationsPatronales = "cotisations_patronales",
-        NetImposable = "net_imposable",
-        NetAPayer = "net_a_payer",
-        Pas = "pas",
-        CoutEmployeur = "cout_employeur",
-    }
-}
-
 // ------------------------------------------------------------------ les tables des exports
 
 /// LES TABLES FIXES DES EXPORTS ET DES ECRITURES COMPTABLES (`exports_tables.json`) : les etats que la page propose,

@@ -174,7 +174,7 @@ impl<'a> Recapitulatifs<'a> {
             let sections: Vec<Section> = t
                 .sections
                 .iter()
-                .map(|s| Section::nouvelle(s.libelle.clone(), s.lignes.iter().filter(|l| l.texte("cle_salarie") == cle.as_str()).cloned().collect()))
+                .map(|s| Section::nouvelle(s.libelle.clone(), s.lignes.iter().filter(|l| l.texte(crate::tableaux_export::ColonneDEtat::CleSalarie) == cle.as_str()).cloned().collect()))
                 .filter(|s| !s.lignes.is_empty())
                 .collect();
             if sections.is_empty() {

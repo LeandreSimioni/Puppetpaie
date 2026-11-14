@@ -723,7 +723,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
 | logiciel du comptable | `LogicielComptable` | `documents/src/plan_comptable.rs` |
 | période d'export | `PeriodeDExport` | `documents/src/plan_comptable.rs` |
-| colonne d'un état | `ColonneDEtat` ; à unifier (#419) : `tableaux_export::Colonne.cle` | `documents/src/plan_comptable.rs` |
+| colonne d'un état | `ColonneDEtat` | `documents/src/tableaux_export.rs` |
 | code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
 | numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
 | poste analytique | `PosteAnalytique` | `documents/src/ecritures_comptables.rs` |
@@ -889,9 +889,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   qu'un état propose (`annee`, `mois`, `toutes`). Chacune s'écrit, se lit et se trie par son texte ; une autre se refuse
   à sa lecture (les tables, la charge d'`exporter`, de `retenir-logiciel` et des libellés courts, `config/compta.json`).
   Que portent la demande d'un état (`etats_paie::Demande`), un tableau rendu, le livre de paie, les limites d'un format.
-- **colonne d'un état** : une colonne qu'un état totalise ; aujourd'hui celles du livre de paie (`brut`…
-  `cout_employeur`), sous lesquelles son total les nomme et compte ce qu'un bulletin ne déclare pas. Les colonnes des
-  autres tableaux (`tableaux_export::Colonne.cle`) sont encore la clé texte d'une ligne.
+- **colonne d'un état** : une colonne d'un tableau exporté, la case d'une de ses lignes, et ce sous quoi le livre de
+  paie nomme ses totaux et compte ce qu'un bulletin ne déclare pas. Déclarées une fois (`colonnes_des_etats!`) : sa clé
+  écrite, ce qu'elle porte (`tableaux_export::Genre`), son en-tête, qu'un état peut titrer autrement ; deux sont la
+  même quand elles s'écrivent sous la même clé. Les états des comptes, du personnel et des organismes la nomment
+  encore par sa clé écrite (`tableaux_export::NommeUneColonne`, lue par `ColonneDEtat::ecrite`).
 - **code journal**, **numéro de compte**, **poste analytique** : les codes d'une écriture comptable que le plan
   comptable dit (`plan-comptable-base.json`, recouvert par `config/plan-comptable.json`) : le journal (`OD`), les comptes
   (du brut, du net, des frais, du prélèvement à la source, des retenues, des lignes, des tiers, de la provision de

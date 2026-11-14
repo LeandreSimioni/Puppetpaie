@@ -603,7 +603,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
                 .iter()
                 .map(|(colonne, n)| {
                     let sur = bulletins.saturating_sub(*n);
-                    format!("{} sur {} bulletin{} sur {}", colonne.as_str().replace('_', " "), sur, if sur == 1 { "" } else { "s" }, bulletins)
+                    format!("{} sur {} bulletin{} sur {}", colonne.cle().replace('_', " "), sur, if sur == 1 { "" } else { "s" }, bulletins)
                 })
                 .collect();
             let (periode, ecrit, avertissements) = (l.periode.clone(), nom(&l.fichier)?.into_iter().collect(), l.avertissements.clone());
