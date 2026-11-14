@@ -1726,19 +1726,16 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     // Ce que la compagnie dit avoir connu, tape et lisible ; une heure de l'accident dite sans jour est celle du jour de
     // l'accident, comme a l'enregistrement (`connaissance_saisie`).
     // Une heure illisible se refuse a la porte de la charge (`jour_et_heure::saisie`) ; une heure qui n'existe pas a
-    // Paris ce jour-la n'est pas dite (la boite le montre avant l'enregistrement, qui la refuse : `quand_saisi`).
-    let connue = |jour: Option<Jour>, heure: Option<HeureEcrite>| {
-        jour.map(|j| {
-            let quand = match jour_et_heure::quand(j, heure) {
-                Some(q) => q,
-                None => InstantOuJour::Jour(j),
-            };
-            ConnaissanceSaisie { quand, saisi_le: compagnie::maintenant() }
-        })
+    // Paris ce jour-la se refuse en le disant, comme a l'enregistrement (`quand_saisi`).
+    let connue = |jour: Option<Jour>, heure: Option<HeureEcrite>| -> R<Option<ConnaissanceSaisie>> {
+        match jour {
+            Some(j) => Ok(Some(ConnaissanceSaisie { quand: quand_saisi(j, heure)?, saisi_le: compagnie::maintenant() })),
+            None => Ok(None),
+        }
     };
     let heure_accident = c.connaissance_heure;
     let jour_accident = c.connaissance_accident.or_else(|| heure_accident.and(c.date_accident));
-    let (arret_connu, accident_connu) = (connue(c.connaissance_arret, None), connue(jour_accident, heure_accident));
+    let (arret_connu, accident_connu) = (connue(c.connaissance_arret, None)?, connue(jour_accident, heure_accident)?);
     let dit = CeQueDitLaCompagnie { connaissance_arret: arret_connu.as_ref(), connaissance_accident: accident_connu.as_ref(), ..CeQueDitLaCompagnie::rien() };
     let obligations = obligations_de(ctx, &a, &[], dit, ctx.aujourdhui)?;
     // Ce que la boite d'un arret pas encore ecrit dit de ce qu'il fera naitre, en une ligne.

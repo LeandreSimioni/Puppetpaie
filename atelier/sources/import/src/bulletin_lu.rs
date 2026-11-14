@@ -53,6 +53,7 @@ use socle::num::Decimal;
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 use droit::catalogue::CodeDeRubrique;
+use droit::forme_bareme::FamilleDeCotisation;
 use engagement::importe::LogicielDUnBulletin;
 
 /// `n` points.
@@ -586,8 +587,8 @@ pub struct Table {
     titres: Vec<String>,
     /// Ce qui ouvre l'annexe d'un bulletin.
     annexe: Vec<Vec<String>>,
-    /// (cle, titres canoniques).
-    familles: Vec<(String, Vec<String>)>,
+    /// (famille, titres canoniques).
+    familles: Vec<(FamilleDeCotisation, Vec<String>)>,
     /// (cotisation, libelles canoniques) : la cotisation qu'une ligne imprimee est.
     cotisations: Vec<(String, Vec<String>)>,
     /// (cle, libelles canoniques).
@@ -610,8 +611,9 @@ struct TableEcrite {
     resumes: ResumesEcrits,
     titres: Libelles,
     annexe: Libelles,
+    /// Chaque famille ecrite comme le bareme l'ecrit (`FamilleDeCotisation`), lue dans son type.
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    familles: Vec<(String, Libelles)>,
+    familles: Vec<(FamilleDeCotisation, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     cotisations: Vec<(String, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
@@ -687,7 +689,9 @@ pub fn textes_de_la_table() -> R<Vec<String>> {
     let r = &t.resumes;
     let mut libelles: Vec<&Libelles> = vec![&e.libelle, &e.base, &e.taux, &e.montant, &e.salarie, &e.employeur, &e.periode, &e.cumul];
     libelles.extend([&r.brut, &r.total, &r.net_social, &r.net_avant_impot, &r.pas, &r.net_imposable, &t.titres, &t.annexe]);
-    libelles.extend(t.mentions.iter().chain(&t.familles).chain(&t.cotisations).chain(&t.cumuls).map(|(_, l)| l));
+    libelles.extend(t.mentions.iter().map(|(_, l)| l));
+    libelles.extend(t.familles.iter().map(|(_, l)| l));
+    libelles.extend(t.cotisations.iter().chain(&t.cumuls).map(|(_, l)| l));
     libelles.extend(t.logiciels.iter().map(|(_, s)| &s.signature));
     let mut out = vec![t.quoi.clone(), t.note.clone()];
     for l in libelles {
@@ -743,7 +747,7 @@ impl Libelles {
 }
 
 /// Des groupes de libelles : (cle, libelles canoniques).
-fn groupes(g: &[(String, Libelles)], ou: &str) -> R<Vec<(String, Vec<String>)>> {
+fn groupes<K: Clone + std::fmt::Display>(g: &[(K, Libelles)], ou: &str) -> R<Vec<(K, Vec<String>)>> {
     g.iter().map(|(k, x)| Ok((k.clone(), x.canoniques(&format!("{}.{}", ou, k))?))).collect()
 }
 
@@ -810,12 +814,12 @@ impl Table {
     }
 
     /// La famille (`familles` de la table) que le titre imprime `libelle` nomme ; `None` : un titre qu'elle ne connait pas.
-    pub fn famille_nommee(&self, libelle: &str) -> Option<&str> {
+    pub fn famille_nommee(&self, libelle: &str) -> Option<&FamilleDeCotisation> {
         self.famille(&canon(libelle))
     }
 
-    fn famille(&self, libelle: &str) -> Option<&str> {
-        self.familles.iter().find(|(_, t)| t.iter().any(|x| x == libelle)).map(|(c, _)| c.as_str())
+    fn famille(&self, libelle: &str) -> Option<&FamilleDeCotisation> {
+        self.familles.iter().find(|(_, t)| t.iter().any(|x| x == libelle)).map(|(c, _)| c)
     }
 
     /// Un titre de famille commence-t-il par ce libelle (titre ecrit sur deux rangs) ?
@@ -903,8 +907,8 @@ pub struct LignePaie {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Cotisation {
-    /// La cle de la famille (`familles` de la table) sous laquelle la ligne est ecrite.
-    pub famille: Option<String>,
+    /// La famille (`familles` de la table) sous laquelle la ligne est ecrite.
+    pub famille: Option<FamilleDeCotisation>,
     pub libelle: String,
     /// LA COTISATION QUE LA LIGNE EST, dans les mots du moteur (`cotisations` de la table, par son libelle : l'identifiant
     /// du bareme, ou le grain auquel le modele de l'arrete du 25/02/2016 regroupe plusieurs lignes) ; `None` : un libelle
@@ -2022,7 +2026,7 @@ impl<'a> Lecteur<'a> {
             NonSoumis,
         }
         let mut phase = Phase::Lignes;
-        let mut famille: Option<String> = None;
+        let mut famille: Option<FamilleDeCotisation> = None;
         let mut famille_apres_total = false;
         let mut titre_en_cours: Option<(String, String)> = None; // (canonique, tel qu'ecrit)
         let mut avertissements = Vec::new();
@@ -2119,7 +2123,7 @@ impl<'a> Lecteur<'a> {
                     if let Some((tc, te)) = titre_en_cours.take() {
                         let (cle, ecrit) = (format!("{} {}", tc, cl), format!("{} {}", te, r.libelle));
                         if let Some(f) = table.famille(&cle) {
-                            famille = Some(f.to_string());
+                            famille = Some(f.clone());
                             famille_apres_total |= phase == Phase::ApresTotal;
                             if !r.nombres.is_empty() {
                                 lu.ajouter(cotisation(table, &famille, ecrit, &r), phase == Phase::ApresTotal);
@@ -2133,7 +2137,7 @@ impl<'a> Lecteur<'a> {
                         avertissements.push(Avertissement::Lecture(format!("rang sans montant : « {} »", te)));
                     }
                     if let Some(f) = table.famille(&cl) {
-                        famille = Some(f.to_string());
+                        famille = Some(f.clone());
                         famille_apres_total |= phase == Phase::ApresTotal;
                         if !r.nombres.is_empty() {
                             lu.ajouter(cotisation(table, &famille, r.libelle.clone(), &r), phase == Phase::ApresTotal);
@@ -2303,7 +2307,7 @@ impl Corps {
     }
 }
 
-fn cotisation(table: &Table, famille: &Option<String>, libelle: String, r: &RangCorps) -> Cotisation {
+fn cotisation(table: &Table, famille: &Option<FamilleDeCotisation>, libelle: String, r: &RangCorps) -> Cotisation {
     Cotisation {
         famille: famille.clone(),
         cotisation: table.cotisation(&libelle).map(str::to_string),

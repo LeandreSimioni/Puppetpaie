@@ -982,6 +982,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 infos.avertissements.push(format!("le bulletin imprime la convention {}, la compagnie relève de la {}", lue, reference));
             }
         }
+        // UN NUMERO D'OBJET HORS DE SA FORME : la case reste vide, la page le dit.
+        infos.avertissements.extend(faute_de_l_objet(&l.b));
         let (debut, fin) = (l.b.debut, l.b.fin);
         let mut candidats: Vec<(Mois, CleDePaieVersee, Cible)> = index.get(&(l.nir.clone(), debut, fin)).into_iter().flatten().cloned().collect();
         if candidats.is_empty() {
@@ -2064,7 +2066,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
             .iter()
             .map(|c| {
                 Ok(CotisationImprimee {
-                    famille: c.famille.as_deref().map(droit::forme_bareme::FamilleDeCotisation::lire).transpose()?,
+                    famille: c.famille.clone(),
                     libelle: c.libelle.clone(),
                     cotisation: c.cotisation.as_deref().map(engagement::ecarts::RegroupementDeComparaison::lire).transpose()?,
                     base: c.base,
@@ -2143,7 +2145,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
 fn marque_d_intermittent(b: &BulletinLu) -> bool {
     objet_imprime(b).is_some()
         || b.cotisations.iter().any(|c| {
-            (c.famille.as_deref() == Some("conges_spectacles") || compare(&c.libelle).contains("congesspectacles"))
+            (c.famille.as_ref() == Some(&droit::forme_bareme::FAMILLE_CONGES_SPECTACLES) || compare(&c.libelle).contains("congesspectacles"))
                 && c.montant_employeur.is_some_and(|m| !m.is_zero())
         })
 }
@@ -2163,12 +2165,29 @@ fn code_propose(texte: Option<&str>) -> (ChampsSpectacle, Vec<FauteDeCase>) {
 }
 
 /// LE NUMERO D'OBJET QU'UN BULLETIN IMPRIME, la seule lecture de sa case (`NumeroObjetSpectacle::d_une_piece`) : a blanc,
-/// aucun. Un numero hors de sa forme ne range le bulletin sous aucun spectacle : aucune fiche ne recoit sa case, et le
-/// spectacle a creer ne nait que d'un numero lu.
+/// aucun ; hors de sa forme, sa faute.
+fn objet_du_bulletin(b: &BulletinLu) -> R<Option<NumeroObjetSpectacle>> {
+    match b.numero_objet.as_deref() {
+        Some(t) => NumeroObjetSpectacle::d_une_piece(t),
+        None => Ok(None),
+    }
+}
+
+/// Le numero d'objet du bulletin (`objet_du_bulletin`). Un numero hors de sa forme ne range le bulletin sous aucun
+/// spectacle : aucune fiche ne recoit sa case, et le spectacle a creer ne nait que d'un numero lu ; sa faute est une
+/// anomalie de la page (`faute_de_l_objet`).
 fn objet_imprime(b: &BulletinLu) -> Option<NumeroObjetSpectacle> {
-    match b.numero_objet.as_deref().map(NumeroObjetSpectacle::d_une_piece) {
-        Some(Ok(n)) => n,
-        Some(Err(_)) | None => None,
+    match objet_du_bulletin(b) {
+        Ok(n) => n,
+        Err(_) => None,
+    }
+}
+
+/// La faute du numero d'objet hors de sa forme qu'un bulletin imprime (`objet_du_bulletin`) : l'anomalie de sa page (#439).
+fn faute_de_l_objet(b: &BulletinLu) -> Option<String> {
+    match objet_du_bulletin(b) {
+        Ok(_) => None,
+        Err(e) => Some(format!("{} ; le bulletin ne se range sous aucun spectacle", e.phrase)),
     }
 }
 

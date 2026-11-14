@@ -63,7 +63,8 @@ pub enum Detail {
         logiciel: LogicielDuRapport,
         idcc: Option<droit::fiche::Idcc>,
         annexe: Option<AnnexeConvention>,
-        organisation_patronale: Option<droit::forme_bareme::OrganisationPatronale>,
+        /// L'organisation patronale de la compagnie, caviardee : un texte du rapport, plus une organisation.
+        organisation_patronale: Option<String>,
         cas: Vec<Cas>,
     },
     NonComparee {
@@ -163,12 +164,10 @@ impl Propre<'_> {
         l.iter().map(|x| self.texte(x)).collect()
     }
 
-    /// L'organisation patronale, caviardee comme tout texte du rapport.
-    fn organisation(&mut self, x: Option<&droit::forme_bareme::OrganisationPatronale>) -> R<Option<droit::forme_bareme::OrganisationPatronale>> {
-        match x {
-            Some(o) => Ok(Some(droit::forme_bareme::OrganisationPatronale::lire(&self.texte(o.as_str()))?)),
-            None => Ok(None),
-        }
+    /// L'organisation patronale, caviardee comme tout texte du rapport : le texte caviarde n'est pas une organisation, il
+    /// reste texte.
+    fn organisation(&mut self, x: Option<&droit::forme_bareme::OrganisationPatronale>) -> Option<String> {
+        x.map(|o| self.texte(o.as_str()))
     }
 }
 
@@ -269,7 +268,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
             logiciel,
             idcc: idcc.clone(),
             annexe,
-            organisation_patronale: propre.organisation(organisation.as_ref())?,
+            organisation_patronale: propre.organisation(organisation.as_ref()),
             cas,
         };
         sortie.push(Rapport { genre: propre.texte(&genre), resume: propre.texte(&resume), detail });

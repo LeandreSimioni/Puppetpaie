@@ -863,16 +863,6 @@ where
     d.deserialize_map(Lues(note, std::marker::PhantomData))
 }
 
-/// UNE FORME ECRITE (`Serialize` : une charge, une fiche composee) RELUE EN `T`, quand la phrase du refus nomme
-/// elle-meme la cle fautive : `phrase(chemin, detail)` la compose (le fichier d'une compagnie, qu'elle corrige :
-/// `droit::fiche`).
-#[track_caller]
-pub fn relire_en_phrase<T: DeserializeOwned>(t: &(impl serde::Serialize + ?Sized), phrase: impl Fn(&str, &str) -> String) -> R<T> {
-    let texte = crate::ecriture::en_valeur(t).to_string();
-    let mut d = serde_json::Deserializer::from_str(&texte);
-    match serde_path_to_error::deserialize(&mut d) { Ok(t) => Ok(t), Err(e) => Err(refus_en_phrase(&phrase, &e)) }
-}
-
 /// `lire_en_phrase`, du fichier JSON `fichier` (sa lecture notee au registre d'un calcul suivi, `fichiers::lire_texte`) ;
 /// le disque qui refuse se dit par `echec::du_disque`.
 #[track_caller]

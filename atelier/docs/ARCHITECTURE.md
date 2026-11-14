@@ -1039,10 +1039,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   relit, en `String`. Ce n'est ni une rubrique du catalogue, ni une cotisation de la DSN.
 - **famille d'une cotisation** : la famille sous laquelle le bulletin range une cotisation (arrêté du 25/02/2016 :
   `RETRAITE`, `SANTÉ`, `ASSURANCE CHÔMAGE`…). Une clé du logiciel (`droit::cle_opaque!`), gardée telle que lue : le
-  barème écrit l'AT/MP avec un tiret court ou un tiret long, la table de lecture des bulletins écrit ses familles en
-  minuscules (`conges_spectacles`) ; celles que le moteur lit ou pose, `FAMILLE_RETRAITE`, `FAMILLE_ALLEGEMENTS`. Que
-  portent une rubrique du barème, sa modification par une couche, une contribution conventionnelle, une ligne de
-  cotisation calculée et sa forme écrite, une ligne qu'un bulletin importé imprime, une ligne de cotisation d'une paie
+  barème écrit l'AT/MP avec un tiret court ou un tiret long. La table de lecture des bulletins (`familles`) écrit chaque
+  famille comme le barème l'écrit (l'AT/MP avec le tiret long, celui du corps du socle), et celles que le barème n'a pas
+  comme l'arrêté les nomme (`COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES`, `EXONÉRATIONS ET ALLÈGEMENTS DE
+  COTISATIONS`) ; elle les lit dans ce type (`import::bulletin_lu`). Celles que le moteur lit ou pose,
+  `FAMILLE_RETRAITE`, `FAMILLE_ALLEGEMENTS`, `FAMILLE_CONGES_SPECTACLES`. Que portent une rubrique du barème, sa
+  modification par une couche, une contribution conventionnelle, une ligne de cotisation calculée et sa forme écrite,
+  une ligne qu'un bulletin importé imprime (`bulletin_lu::Cotisation.famille`), une ligne de cotisation d'une paie
   importée, le rang d'une famille que le bulletin ne range pas.
 - **regroupement de la comparaison** : ce que la comparaison d'un bulletin importé au calcul nomme, au grain où un
   bulletin l'imprime : une cotisation du barème (`Cotisation(IdDeCotisation)`), les contributions que l'employeur paie

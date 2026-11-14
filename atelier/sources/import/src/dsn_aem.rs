@@ -293,7 +293,8 @@ pub struct ContratAtteste {
     pub nir: Nir,
     pub debut: socle::date::Jour,
     pub fin: socle::date::Jour,
-    /// Le numero d'objet de la zone 638..650 : a blanc ou hors de sa forme, aucun (`NumeroObjetSpectacle::d_une_piece`).
+    /// Le numero d'objet de la zone 638..650 : a blanc ou hors de sa forme, aucun (`NumeroObjetSpectacle::d_une_piece` ; hors
+    /// de sa forme, sa faute est une anomalie de la lecture, `lire_aem`).
     pub numero_objet: Option<NumeroObjetSpectacle>,
     pub(crate) heures: i128,
     /// Les cachets, et les cachets « groupes » (la case que le gabarit garde a 00).
@@ -324,14 +325,15 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     ContratLu { salarie, debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
 }
 
-/// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, et les
-/// fichiers ou enregistrements illisibles. Un `CalculImpossible` (un brut qui n'est pas un nombre)
-/// n'est pas rattrape.
-pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), socle::echec::Echec> {
+/// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, les fichiers ou enregistrements illisibles (ignores),
+/// et les fautes des cases laissees vides d'un enregistrement repris (un numero d'objet hors de sa forme). Un
+/// `CalculImpossible` (un brut qui n'est pas un nombre) n'est pas rattrape.
+pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec<String>), socle::echec::Echec> {
     use socle::num::{decimal_lu, entier_lu};
     let mut vus: Vec<(Vec<String>, ContratAtteste)> = Vec::new();
     let mut connus: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
     let mut illisibles = Vec::new();
+    let mut fautes = Vec::new();
     // `glob.glob(".../*.txt")` : pas de fichier cache, ordre des chaines.
     let noms: Vec<String> = noms_tries(dossier)?.into_iter().filter(|n| !n.starts_with('.') && n.ends_with(".txt")).collect();
     for nom in noms {
@@ -371,10 +373,14 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                 }
             };
             let objet_ecrit = champ(&l, 638, 650).trim_matches(blanc).to_string();
-            // Hors de sa forme, la case reste vide sans refuser l'enregistrement (#439) : sa faute ne se note pas ici.
+            // Hors de sa forme, la case reste vide sans refuser l'enregistrement (#439), et sa faute est une anomalie de
+            // l'import.
             let numero_objet = match NumeroObjetSpectacle::d_une_piece(&objet_ecrit) {
                 Ok(n) => n,
-                Err(_) => None,
+                Err(e) => {
+                    fautes.push(format!("{} : {} ; le contrat se reprend sans lui.", nom, e.phrase));
+                    None
+                }
             };
             let entiers = [(650, 653), (653, 655), (655, 657), (657, 659)].map(|(a, b)| entier_lu(&champ(&l, a, b)));
             let [Some(heures), Some(c1), Some(c2), Some(jours)] = entiers else {
@@ -417,7 +423,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
     }
     let mut contrats: Vec<ContratAtteste> = vus.into_iter().map(|(_, c)| c).collect();
     contrats.sort_by(|a, b| (a.debut, a.fin, &a.nir).cmp(&(b.debut, b.fin, &b.nir)));
-    Ok((contrats, illisibles))
+    Ok((contrats, illisibles, fautes))
 }
 
 // ------------------------------------------------------------------ l'entreprise de chaque piece

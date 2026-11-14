@@ -498,9 +498,11 @@ pub const CADRE_PERMANENT: CategorieDuBareme = CategorieDuBareme::du_moteur("cad
 crate::cle_opaque! {
     /// LA FAMILLE D'UNE COTISATION AU BULLETIN (arrete du 25/02/2016 : `RETRAITE`, `SANTÉ`, `ASSURANCE CHÔMAGE`…), sous
     /// laquelle le bulletin la range : `famille` d'une rubrique du bareme, d'une ligne calculee, d'une ligne qu'un bulletin
-    /// importe imprime (la cle de `familles` de la table de lecture). Gardee telle que lue (`cle_opaque!`) : l'AT/MP s'y
-    /// ecrit avec un tiret court ou un tiret long, la table de lecture en minuscules ; celles que le moteur lit ou pose sont
-    /// des constantes (`FAMILLE_RETRAITE`, `FAMILLE_ALLEGEMENTS`).
+    /// importe imprime (la cle de `familles` de la table de lecture, ecrite comme le bareme ecrit la famille ; une famille
+    /// que le bareme n'a pas, comme l'arrete la nomme : `atelier/reference/sources/montant-net-social/
+    /// legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml`). Gardee telle que lue (`cle_opaque!`) : l'AT/MP s'y ecrit
+    /// avec un tiret court ou un tiret long (la table de lecture prend le tiret long, celui du corps du socle) ; celles que
+    /// le moteur lit ou pose sont des constantes (`FAMILLE_RETRAITE`, `FAMILLE_ALLEGEMENTS`, `FAMILLE_CONGES_SPECTACLES`).
     pub struct FamilleDeCotisation, "famille d'une cotisation";
 }
 
@@ -508,6 +510,9 @@ crate::cle_opaque! {
 pub const FAMILLE_RETRAITE: FamilleDeCotisation = FamilleDeCotisation::du_moteur("RETRAITE");
 /// La famille des lignes que le calcul compose pour les reductions et exonerations de cotisations.
 pub const FAMILLE_ALLEGEMENTS: FamilleDeCotisation = FamilleDeCotisation::du_moteur("EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS");
+/// La famille de la cotisation a la caisse des Congés Spectacles, que l'import d'un bulletin lit
+/// (`routes::importation::bulletins`, la marque d'un intermittent).
+pub const FAMILLE_CONGES_SPECTACLES: FamilleDeCotisation = FamilleDeCotisation::du_moteur("CONGÉS SPECTACLES");
 
 /// Les cotisations que le moteur nomme lui-meme (`bareme`) : la mutuelle, la prevoyance, la contribution
 /// conventionnelle, la retraite complementaire (ses deux tranches et la CET), le versement mobilite, le regime local

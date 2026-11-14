@@ -501,11 +501,12 @@ pub(crate) fn apercu_lu(
     cles_a_venir.extend(a_venir.iter().filter(|n| !par_nir.contains_key(*n)).cloned().map(Some));
 
     // 3. Les spectacles, par numero d'objet -- ceux des DSN et ceux des AEM.
-    let (contrats, illisibles) = match &aem {
+    let (contrats, illisibles, fautes) = match &aem {
         Some(d) => dsn_aem::lire_aem(d)?,
-        None => (Vec::new(), Vec::new()),
+        None => (Vec::new(), Vec::new(), Vec::new()),
     };
     avertissements.extend(illisibles.iter().map(|f| format!("AEM illisible, ignoree : {}", f)));
+    avertissements.extend(fautes.iter().map(|f| format!("AEM : {}", f)));
     let n_aem = contrats.iter().map(|c| c.fichier.clone()).collect::<HashSet<_>>().len();
     struct Objet {
         numero: NumeroObjetSpectacle,
