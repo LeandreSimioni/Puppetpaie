@@ -59,7 +59,7 @@ use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::paris::{ecrit, InstantOuJour, Moment};
 use socle::refus;
 
-use compagnie::installation::Venue;
+use compagnie::installation::{IdDeCompagnie, Venue};
 use crate::catalogue::Route;
 use crate::enveloppe::{Charge, Options, Refus, Reponse};
 
@@ -96,9 +96,9 @@ pub struct Geste {
     /// D'ou vient la compagnie ajoutee (`ajouter`, qui l'exige).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub venue: Option<Venue>,
-    /// La compagnie, relative a l'installation ; absente, la derniere ajoutee.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub compagnie: Option<String>,
+    /// La compagnie, ecrite par son dossier relatif a l'installation ; absente, la derniere ajoutee.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "compagnie::installation::en_dossier")]
+    pub compagnie: Option<IdDeCompagnie>,
     /// L'etat refait (`etat`) : un mois, ou l'ouverture.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cle: Option<crate::etat_garde::Cle>,
@@ -277,19 +277,6 @@ pub fn rendre_simulee(racine: &Path) -> R<()> {
     socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2)
 }
 
-/// Le chemin de `racine` relatif a l'installation `inst` (barres droites), ou le chemin entier s'il n'y est pas. L'un et
-/// l'autre existent : un dossier qui ne se resout pas refuse.
-pub fn relatif(inst: &Path, racine: &Path) -> R<String> {
-    let resolu = |p: &Path| std::fs::canonicalize(p).map_err(|e| du_disque(p, &e));
-    let (i, r) = (resolu(inst)?, resolu(racine)?);
-    // Hors de l'installation, le chemin entier.
-    if !r.starts_with(&i) {
-        return Ok(r.display().to_string());
-    }
-    let p = r.strip_prefix(&i).map_err(|e| du_disque(&r, &e))?;
-    Ok(p.to_string_lossy().replace('\\', "/"))
-}
-
 /// L'heure lisible d'un instant, a Paris.
 fn heure(t: Moment) -> String {
     ecrit::seconde::texte(t)
@@ -346,7 +333,7 @@ impl OptionsRejeu {
 #[derive(Debug, Clone)]
 pub struct Rejeu {
     /// Les compagnies rejouees, dans l'ordre de leur « + » : (dossier relatif a l'installation, racine).
-    pub compagnies: Vec<(String, PathBuf)>,
+    pub compagnies: Vec<(IdDeCompagnie, PathBuf)>,
     pub routes_rejouees: usize,
     pub lectures_ecartees: usize,
     /// Les gestes sur une compagnie que le scenario n'a pas ajoutee (une fictive livree ouverte pour voir) : ecartes.
@@ -513,8 +500,8 @@ pub fn rejouer_et_lire(scenario: &Path, inst: &Path, options: &OptionsRejeu, arr
     rendu
 }
 
-/// La racine du rejeu de la compagnie `c` (relative a l'installation) ; sans nom, la derniere ajoutee.
-fn racine_nommee(racines: &BTreeMap<String, PathBuf>, derniere: &Option<PathBuf>, c: Option<&str>) -> Option<PathBuf> {
+/// La racine du rejeu de la compagnie `c` ; sans nom, la derniere ajoutee.
+fn racine_nommee(racines: &std::collections::HashMap<IdDeCompagnie, PathBuf>, derniere: &Option<PathBuf>, c: Option<&IdDeCompagnie>) -> Option<PathBuf> {
     match c {
         Some(c) => racines.get(c).cloned(),
         None => derniere.clone(),
@@ -556,7 +543,7 @@ fn rejouer_les_gestes(
         }
     };
     // Le dossier enregistre -> la racine du rejeu ; un geste qui ne nomme pas sa compagnie vise la derniere ajoutee.
-    let mut racines: BTreeMap<String, PathBuf> = BTreeMap::new();
+    let mut racines: std::collections::HashMap<IdDeCompagnie, PathBuf> = std::collections::HashMap::new();
     let mut derniere: Option<PathBuf> = None;
     for (i, (g, &t)) in gestes.iter().zip(instants).enumerate() {
         let n = match g.n {
@@ -589,19 +576,19 @@ fn rejouer_les_gestes(
         lire_les_soirs(jour, &r);
         socle::temps::figer(t);
         r.fin = Some(t);
-        let compagnie = g.compagnie.as_deref();
+        let compagnie = g.compagnie.as_ref();
         match g.geste {
             Some(Genre::Ajouter) => {
                 let nom = g.nom.as_deref().ok_or_else(|| refus!("Geste {} : une compagnie s'ajoute avec son nom.", n))?;
                 let venue = g.venue.ok_or_else(|| refus!("Geste {} : une compagnie s'ajoute avec sa venue (« neuve » ou « logiciel_precedent »).", n))?;
                 let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| m.reformuler(|p| format!("geste {} : « + » refuse : {}", n, p)))?;
-                let rel = relatif(inst, &c.racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
+                let id = IdDeCompagnie::de_la_racine(inst, &c.racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
                 let nomme = match compagnie {
-                    Some(c) if c != rel => {
-                        r.ecarts.push(format!("geste {} : le « + » a cree {} (enregistre : {})", n, rel, c));
-                        c.to_string()
+                    Some(c) if *c != id => {
+                        r.ecarts.push(format!("geste {} : le « + » a cree {} (enregistre : {})", n, id.dossier(), c.dossier()));
+                        c.clone()
                     }
-                    Some(_) | None => rel,
+                    Some(_) | None => id,
                 };
                 racines.insert(nomme.clone(), c.racine.clone());
                 derniere = Some(c.racine.clone());
@@ -795,8 +782,9 @@ pub fn verifier(scenario: &Path, inst: &Path, travail: &Path) -> R<Vec<String>> 
     socle::fichiers::effacer(travail)?;
     let r = rejouer(scenario, travail, &OptionsRejeu::entier())?;
     let mut ecarts: Vec<String> = r.ecarts.iter().map(|e| format!("au rejeu, {}", e)).collect();
-    for (rel, rejouee) in &r.compagnies {
-        let banc = inst.join(rel);
+    for (id, rejouee) in &r.compagnies {
+        let rel = id.dossier();
+        let banc = rel.dans(inst);
         let (a, b) = (fichiers_compares(&banc)?, fichiers_compares(rejouee)?);
         for (f, p) in &a {
             let Some(q) = b.get(f) else {
@@ -936,8 +924,8 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                     for p in &r.horloge {
                         dire!("      {}", p);
                     }
-                    for (nom, racine) in &r.compagnies {
-                        dire!("{} -> {}", nom, racine.display());
+                    for (id, racine) in &r.compagnies {
+                        dire!("{} -> {}", id.dossier(), racine.display());
                     }
                     dire!(
                         "{} route(s) rejouee(s), {} lecture(s) ecartee(s), {} geste(s) sur une autre compagnie, en {} s.",
@@ -1140,9 +1128,10 @@ mod enregistreur {
             rendu
         }
 
-        /// Le dossier d'une compagnie, tel que le scenario le nomme.
-        pub fn compagnie(&self, racine: &Path) -> R<String> {
-            relatif(&self.inst, racine)
+        /// La compagnie de `racine` dans l'installation du banc, telle que le scenario la nomme ; une compagnie hors de
+        /// l'installation ne s'enregistre pas.
+        pub fn compagnie(&self, racine: &Path) -> R<IdDeCompagnie> {
+            IdDeCompagnie::de_la_racine(&self.inst, racine)
         }
 
         /// UNE ROUTE, servie par `servir` sous l'enregistreur : le temps fige a son debut, ce qu'on avait depose recopie,
@@ -1165,7 +1154,7 @@ mod enregistreur {
             let rep = servir();
             let ecrit = empreinte(racine) != avant;
             socle::temps::defiger();
-            let ligne = |compagnie: String| Geste {
+            let ligne = |compagnie: IdDeCompagnie| Geste {
                 route: Some(nom.nom().to_string()),
                 compagnie: Some(compagnie),
                 charge: Some(charge.sans_les_mots_de_passe()),

@@ -2575,7 +2575,7 @@ fn annuler_le_declare(f: &mut Fichier, r: &Regularisation, blocs: &[&str]) -> R<
                 refus!(
                     "Correction de {} (contrat {}) : {} cite l'affiliation {} en S21.G00.78.005 sans la \
 declarer dans les blocs 70 du contrat. L'annulation ne sait pas a quoi la rattacher. Rien n'est ecrit.",
-                    r.mois, numero, d.fichier, citee
+                    r.mois, numero, d.dit(), citee
                 )
             })?;
             let id = ecrites.iter().find(|(rf, _)| *rf == reference).map(|(_, i)| i.clone()).ok_or_else(|| {
@@ -2583,12 +2583,12 @@ declarer dans les blocs 70 du contrat. L'annulation ne sait pas a quoi la rattac
                     "Correction de {} (contrat {}) : {} rattachait une base a l'adhesion {} \
 (S21.G00.70.013), que le contrat ne declare plus dans cette DSN. L'annulation ne sait pas a quelle affiliation la \
 rattacher. Rien n'est ecrit.",
-                    r.mois, numero, d.fichier, reference
+                    r.mois, numero, d.dit(), reference
                 )
             })?;
             f.add(k, id);
         } else if crate::versement_declare::est_un_montant(k) == Some(true) {
-            let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(k, &v, &d.fichier))?;
+            let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(k, &v, &d.dit()))?;
             f.add(k, ms(m, -1));
         } else {
             f.add(k, v);
@@ -2661,7 +2661,7 @@ dans une correction. Rien n'est écrit.",
     // UN CONTRAT AJOUTE (rien de declare, rien de verse : `produire_regularisations::ajout`) : pas de 58 d'origine a
     // annuler ni a redeclarer ; tout son montant net social est verse par la correction, aux dates du mois du versement
     // (BOSS, montant net social, Q 35 : « du mois lors duquel ce rappel ou ce versement est effectue »).
-    let ajoute = r.declare.lignes.is_empty() && r.declare.fichier.is_empty() && r.net_deja_verse.is_zero();
+    let ajoute = r.declare.lignes.is_empty() && r.declare.declaree.is_none() && r.net_deja_verse.is_zero();
     if !ajoute && apres.net_a_payer == r.net_deja_verse {
         return origine(f, sub(apres.net_social, rappels));
     }
@@ -2702,7 +2702,7 @@ fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: (Jour, Jour)) ->
                 f.add(k, v);
             }
             _ if crate::versement_declare::est_un_montant(k) == Some(true) => {
-                let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(k, &v, &r.declare.fichier))?;
+                let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(k, &v, &r.declare.dit()))?;
                 f.add(k, ms(m, -1));
             }
             _ => f.add(k, v),
@@ -2769,7 +2769,7 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
                         r.mois,
                         documents::tableaux_export::qui_souple(&apres.salarie)
                     ),
-                    Lieu { chemin: Some(format!("{}/{}", documents::DossierDuMois::Sorties.chemin(r.mois), r.declare.fichier)), ..Lieu::default() },
+                    Lieu { chemin: Some(format!("{}/{}", documents::DossierDuMois::Sorties.chemin(r.mois), r.declare.dit())), ..Lieu::default() },
                 ))
             }
         };
@@ -2896,7 +2896,7 @@ fn lignes_declarees(d: &crate::versement_declare::VersementDeclare) -> R<(Vec<(B
     const ORGANISME_81: RubriqueDeLaNorme = droit::rubrique!("S21.G00.81.002");
     const BASE_81: RubriqueDeLaNorme = droit::rubrique!("S21.G00.81.003");
     const MONTANT_81: RubriqueDeLaNorme = droit::rubrique!("S21.G00.81.004");
-    let lu = |k: RubriqueDeLaNorme, v: &str| -> R<Decimal> { v.parse().map_err(|_| crate::versement_declare::illisible(k, v, &d.fichier)) };
+    let lu = |k: RubriqueDeLaNorme, v: &str| -> R<Decimal> { v.parse().map_err(|_| crate::versement_declare::illisible(k, v, &d.dit())) };
     let (mut b78, mut l81): (Vec<(BaseAssujettie, Decimal)>, Vec<Ligne81>) = (Vec::new(), Vec::new());
     let (mut bloc, mut affiliation) = (None::<BaseAssujettie>, None::<IdentifiantDAffiliation>);
     for (k, v) in d.blocs(&["78", "81"]) {
@@ -2904,23 +2904,23 @@ fn lignes_declarees(d: &crate::versement_declare::VersementDeclare) -> R<(Vec<(B
         match k {
             CODE_78 => {
                 bloc = Some(BaseAssujettie::du_code(v).ok_or_else(|| {
-                    refus!("La DSN déposée {} porte, en {}, « {} », qui n'est pas un code de sa liste dans la norme.", d.fichier, k, v)
+                    refus!("La DSN déposée {} porte, en {}, « {} », qui n'est pas un code de sa liste dans la norme.", d.dit(), k, v)
                 })?);
                 affiliation = None;
             }
-            MONTANT_78 => b78.push((bloc.ok_or_else(|| refus!("{} sans S21.G00.78.001 dans {}", k, d.fichier))?, lu(k, v)?)),
+            MONTANT_78 => b78.push((bloc.ok_or_else(|| refus!("{} sans S21.G00.78.001 dans {}", k, d.dit()))?, lu(k, v)?)),
             AFFILIATION_78 => affiliation = Some(IdentifiantDAffiliation::lire(v)?),
             CODE_81 => l81.push(Ligne81 {
                 code: CodeCotisation81::du_code(v).ok_or_else(|| {
-                    refus!("La DSN déposée {} porte, en {}, « {} », qui n'est pas un code de sa liste dans la norme.", d.fichier, k, v)
+                    refus!("La DSN déposée {} porte, en {}, « {} », qui n'est pas un code de sa liste dans la norme.", d.dit(), k, v)
                 })?,
                 org: None, base: None, montant: None, affiliation: affiliation.clone() }),
             ORGANISME_81 | BASE_81 | MONTANT_81 => {
-                let l = l81.last_mut().ok_or_else(|| refus!("{} sans S21.G00.81.001 dans {}", k, d.fichier))?;
+                let l = l81.last_mut().ok_or_else(|| refus!("{} sans S21.G00.81.001 dans {}", k, d.dit()))?;
                 match k {
                     ORGANISME_81 => {
                         l.org = Some(IdentifiantDOrganisme::lire(v).map_err(|_| {
-                            refus!("La DSN déposée {} porte, en {}, « {} », qui n'a pas la forme d'un identifiant d'organisme.", d.fichier, k, v)
+                            refus!("La DSN déposée {} porte, en {}, « {} », qui n'a pas la forme d'un identifiant d'organisme.", d.dit(), k, v)
                         })?)
                     }
                     BASE_81 => l.base = Some(lu(k, v)?),
@@ -3036,7 +3036,7 @@ fn reduction_a_l_urssaf(p: &Paie, bar: &BaremeDuMois) -> R<Decimal> {
 fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R<Decimal>> {
     // Un contrat ajoute apres la limite (`produire_regularisations::ajout`) : rien de declare, toutes ses assiettes sont
     // nulles -- le bordereau du mois d'origine porte tout le corrige.
-    if r.declare.lignes.is_empty() && r.declare.fichier.is_empty() {
+    if r.declare.lignes.is_empty() && r.declare.declaree.is_none() {
         return Ok(Ok(zero2()));
     }
     let p = &r.avant;
@@ -3128,7 +3128,7 @@ fn cumuler_le_declare(
     let (_, l81) = lignes_declarees(d)?;
     let s = Decimal::from(signe);
     for x in &l81 {
-        let montant = x.montant.ok_or_else(|| refus(format!("la cotisation {} de {} n'a pas de S21.G00.81.004", x.code, d.fichier)))?;
+        let montant = x.montant.ok_or_else(|| refus(format!("la cotisation {} de {} n'a pas de S21.G00.81.004", x.code, d.dit())))?;
         let mut cles: Vec<CleDeTotalisation> = l.roles_de(x.code, &x.org).iter().map(|r| r.cle()).collect();
         cles.sort();
         cles.dedup();
@@ -3138,7 +3138,7 @@ fn cumuler_le_declare(
             _ => {
                 return Err(refus(format!(
                     "{} declare la cotisation {}{}, que le bareme de {} {} ; a quel versement elle revient ne se lit pas",
-                    d.fichier,
+                    d.dit(),
                     x.code,
                     x.org.iter().map(|o| format!(" chez {}", o)).collect::<String>(),
                     r.mois,
@@ -3150,7 +3150,7 @@ fn cumuler_le_declare(
         if x.code == CodeCotisation81::PrevoyanceAssuranceMutuelle && x.affiliation.is_none() {
             return Err(refus(format!(
                 "une cotisation 059 de {} n'est rattachee a aucune affiliation (S21.G00.78.005) : son composant de versement (S21.G00.55) ne se lit pas",
-                d.fichier
+                d.dit()
             )));
         }
     }
@@ -3631,7 +3631,7 @@ fn lignes_regularisees(
                     ctp.code,
                     ctp.qualifiant,
                     cle,
-                    r.declare.fichier,
+                    r.declare.dit(),
                     e
                 ))
             })?;
@@ -5074,7 +5074,7 @@ certificat de conformite du depot precedent.",
                     // se declare en entier : sa fin aussi, comme celle de tout contrat termine (bloc 62, « Evenement de fin du
                     // contrat de travail », `norme-dsn/texte/bloc-S21.G00.62.txt`). `bloc_contrat` ne l'ecrit que si le contrat finit dans le mois
                     // de la correction qui le pose.
-                    let ajoute = |x: &Regularisation| x.declare.lignes.is_empty() && x.declare.fichier.is_empty();
+                    let ajoute = |x: &Regularisation| x.declare.lignes.is_empty() && x.declare.declaree.is_none();
                     let fin = groupe.iter().any(|x| ajoute(x) || x.apres.engagement.fin != x.avant.engagement.fin);
                     let debut_bloc = f.lignes.len();
                     let siens: Vec<&Arret> = arrets_du_contrat(&arrets_du_mois, &dernier.apres)?;

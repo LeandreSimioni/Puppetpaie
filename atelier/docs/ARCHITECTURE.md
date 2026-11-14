@@ -397,7 +397,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **compagnie** : l'identifiant d'une compagnie de l'installation, celui de sa tuile. `Reelle`, `Cie(NomDeFichier)`,
   `Fictive(NomDeFichier)`, écrit `reelle`, `cie:<dossier>`, `fictive:<dossier>`. Que portent une tuile de l'accueil, les
   charges de l'accueil (couleur, remise à zéro, compagnies à garder), une compagnie gardée, le tableau de
-  l'administrateur, le choix d'une tuile dans la fenêtre.
+  l'administrateur, le choix d'une tuile dans la fenêtre. Un scénario du banc l'écrit par son dossier relatif à
+  l'installation (`installation::en_dossier` : `prive`, `compagnies/<dossier>`, `fictives/<dossier>`) ; une compagnie
+  hors de l'installation ne s'y enregistre pas (`IdDeCompagnie::de_la_racine`) ; que portent un geste du scénario et les
+  compagnies d'un rejeu.
 - **couleur d'une compagnie** : la couleur qu'une compagnie choisit pour sa tuile et sa page. `#RRGGBB`, gardée telle que
   lue ; `poser_couleur` l'écrit en majuscules ; celle de la charte quand rien n'est posé. Que portent
   `config/affichage.json`, une tuile, la charge et la réponse de `compagnie-couleur`, le tableau de l'administrateur. La

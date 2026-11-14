@@ -457,7 +457,7 @@ fn fin_du_bloc_40(lignes: &[(RubriqueDeLaNorme, String)], debut: usize) -> usize
 pub fn ancienne_date_de_debut(lignes: &mut Vec<(RubriqueDeLaNorme, String)>, debut: usize, r: &crate::dsn::Regularisation, nouveau: &Jour, fin_mois: Jour) -> R<()> {
     let e = &r.apres.engagement;
     let numero = engagement::numeros::numero_dit(e.numero.as_ref(), "", "", "sans numero");
-    if r.declare.lignes.is_empty() && r.declare.fichier.is_empty() {
+    if r.declare.lignes.is_empty() && r.declare.declaree.is_none() {
         return Ok(());
     }
     let Some(ancienne) = r.declare.debut_contrat else {
@@ -474,7 +474,7 @@ date declaree : elle se lit, elle ne se devine pas. Rien n'est ecrit.",
                 r.avant.engagement.debut.jj_mm_aaaa(),
                 nouveau.jj_mm_aaaa()
             ),
-            socle::echec::Lieu { fichier: Some(r.declare.fichier.clone()), ..socle::echec::Lieu::default() },
+            socle::echec::Lieu { fichier: Some(r.declare.dit()), ..socle::echec::Lieu::default() },
         ));
     };
     if ancienne == *nouveau {

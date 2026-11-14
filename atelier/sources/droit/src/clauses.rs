@@ -23,7 +23,7 @@ use std::sync::{Arc, OnceLock};
 
 pub use socle::d28::P;
 
-const FICHIER: &str = "clauses-conventionnelles-base.json";
+const FICHIER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("clauses-conventionnelles-base.json");
 
 // ------------------------------------------------------------ le catalogue
 forme! {
@@ -473,7 +473,7 @@ forme! {
 /// Le catalogue livre. Une clause que la convention laisse a la loi n'est pas aussi relevee.
 pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
-    forme_en_cache(&CACHE, FICHIER, "Les clauses conventionnelles livrées ne se lisent pas : le signaler au développeur.", |t: Table| {
+    forme_en_cache(&CACHE, FICHIER.texte(), "Les clauses conventionnelles livrées ne se lisent pas : le signaler au développeur.", |t: Table| {
         for (idcc, c) in &t.conventions {
             let releves = [
                 (Section::Preavis, c.preavis.is_some()),
@@ -482,7 +482,7 @@ pub fn table() -> R<Arc<Table>> {
                 (Section::DepartALaRetraite, c.depart_a_la_retraite.is_some()),
             ];
             if let Some((s, _)) = releves.iter().find(|(s, releve)| *releve && c.loi_seule.as_ref().is_some_and(|l| l.contains_key(s))) {
-                return Err(socle::echec::livree(FICHIER, &format!("conventions.{}.loi_seule.{:?}", idcc, s)));
+                return Err(socle::echec::livree(FICHIER.texte(), &format!("conventions.{}.loi_seule.{:?}", idcc, s)));
             }
         }
         Ok(t)
@@ -509,7 +509,7 @@ fn p(n: &Nombre) -> P {
 
 #[track_caller]
 fn manque(cle: &str) -> socle::echec::Echec {
-    socle::echec::livree(FICHIER, cle)
+    socle::echec::livree(FICHIER.texte(), cle)
 }
 
 /// Pour les phrases : « la convention 3090 », ou « la convention collective » quand l'IDCC manque.

@@ -235,7 +235,7 @@ fn ajout(mois: Mois, version: u64, decidee_le: Option<Jour>, apres: Paie) -> R<R
         ));
     }
     let declare = VersementDeclare {
-        fichier: String::new(),
+        declaree: None,
         net_imposable: Decimal::ZERO,
         net_verse: Decimal::ZERO,
         net_social: Decimal::ZERO,

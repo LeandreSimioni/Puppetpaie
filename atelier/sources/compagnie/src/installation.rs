@@ -397,6 +397,65 @@ impl From<IdDeCompagnie> for String {
     }
 }
 
+impl IdDeCompagnie {
+    /// SON DOSSIER, RELATIF A L'INSTALLATION (`liste_de`) : `prive`, `compagnies/<dossier>`, `fictives/<dossier>`.
+    pub fn dossier(&self) -> CheminRelatif {
+        match self {
+            IdDeCompagnie::Reelle => CheminRelatif::du_moteur("prive"),
+            IdDeCompagnie::Cie(d) => CheminRelatif::du_moteur("compagnies").joint(d),
+            IdDeCompagnie::Fictive(d) => CheminRelatif::du_moteur(DOSSIER_FICTIVES).joint(d),
+        }
+    }
+
+    /// La compagnie de ce dossier relatif a l'installation (`dossier`) ; un autre dossier se refuse.
+    pub fn du_dossier(rel: &CheminRelatif) -> R<IdDeCompagnie> {
+        let texte = rel.texte();
+        match (texte, texte.split_once('/')) {
+            ("prive", _) => Ok(IdDeCompagnie::Reelle),
+            (_, Some(("compagnies", d))) => Ok(IdDeCompagnie::Cie(NomDeFichier::lire(d)?)),
+            (_, Some((DOSSIER_FICTIVES, d))) => Ok(IdDeCompagnie::Fictive(NomDeFichier::lire(d)?)),
+            (_, Some(_) | None) => Err(socle::refus!(
+                "{} n'est le dossier d'aucune compagnie de l'installation : prive, compagnies/<dossier> ou fictives/<dossier>.",
+                socle::fichiers::repr(texte)
+            )),
+        }
+    }
+
+    /// La compagnie de `racine` dans l'installation `inst` ; une compagnie hors de l'installation se refuse.
+    pub fn de_la_racine(inst: &Path, racine: &Path) -> R<IdDeCompagnie> {
+        let resolu = |p: &Path| std::fs::canonicalize(p).map_err(|e| socle::echec::du_disque(p, &e));
+        let (i, r) = (resolu(inst)?, resolu(racine)?);
+        match r.strip_prefix(&i) {
+            Ok(rel) => IdDeCompagnie::du_dossier(&CheminRelatif::du(rel)?),
+            Err(_) => Err(socle::refus!("{} n'est pas sous l'installation {}.", socle::fichiers::repr(&r.to_string_lossy()), socle::fichiers::repr(&i.to_string_lossy()))),
+        }
+    }
+}
+
+/// L'ECRITURE D'UN IDENTIFIANT DE COMPAGNIE PAR SON DOSSIER RELATIF A L'INSTALLATION (`IdDeCompagnie::dossier`), celle
+/// d'un scenario du banc (`fictives/ajoutee-les-treteaux-du-banc`), d'un identifiant que le scenario peut taire.
+pub mod en_dossier {
+    use super::IdDeCompagnie;
+    use socle::fichiers::CheminRelatif;
+
+    pub fn serialize<S: serde::Serializer>(id: &Option<IdDeCompagnie>, s: S) -> Result<S::Ok, S::Error> {
+        match id {
+            Some(id) => s.serialize_some(&id.dossier()),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IdDeCompagnie>, D::Error> {
+        match <Option<CheminRelatif> as serde::Deserialize>::deserialize(d)? {
+            Some(rel) => match IdDeCompagnie::du_dossier(&rel) {
+                Ok(id) => Ok(Some(id)),
+                Err(e) => Err(serde::de::Error::custom(e.phrase)),
+            },
+            None => Ok(None),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Compagnie {
     pub id: IdDeCompagnie,

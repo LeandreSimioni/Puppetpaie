@@ -348,7 +348,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
                 mois: c,
                 avant: apres.clone(),
                 declare: declarations::versement_declare::VersementDeclare {
-                    fichier: String::new(),
+                    declaree: None,
                     net_imposable: socle::num::Decimal::ZERO,
                     net_verse: socle::num::Decimal::ZERO,
                     net_social: socle::num::Decimal::ZERO,

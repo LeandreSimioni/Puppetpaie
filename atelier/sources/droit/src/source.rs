@@ -17,7 +17,7 @@ use serde::Deserialize;
 pub struct CheminDepose(String);
 
 /// Le mode d'emploi, la seule source hors de `atelier/reference/`.
-pub const MODE_D_EMPLOI: &str = "atelier/README.md";
+pub const MODE_D_EMPLOI: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("atelier/README.md");
 
 /// Le fichier d'un chemin depose, sans le code d'entrepot qui suit son `#`.
 fn sans_code(s: &str) -> &str {
@@ -55,7 +55,8 @@ impl TryFrom<String> for CheminDepose {
     type Error = FauteDeSource;
     fn try_from(s: String) -> Result<Self, FauteDeSource> {
         let fichier = sans_code(&s);
-        if !(fichier.starts_with("atelier/reference/") || fichier == MODE_D_EMPLOI) || fichier.contains("..") {
+        // La porte : le chemin ecrit dans un fichier, compare a celui que le moteur nomme.
+        if !(fichier.starts_with("atelier/reference/") || fichier == MODE_D_EMPLOI.texte()) || fichier.contains("..") {
             return Err(FauteDeSource::HorsDeLaReference);
         }
         if s.contains('#') != fichier.ends_with(".jsonl.gz") {
