@@ -15,6 +15,20 @@ pub struct Jour {
     pub jour: u32,
 }
 
+/// UNE DUREE DE DROIT (« Le glossaire ») : des jours, ou des mois de calendrier, de date a date.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Duree {
+    Jours(i64),
+    Mois(i64),
+}
+
+impl Duree {
+    /// Lue d'un nombre de mois (un champ `…_mois` d'un fichier) : `#[serde(deserialize_with = "socle::date::Duree::en_mois")]`.
+    pub fn en_mois<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duree, D::Error> {
+        <i64 as serde::Deserialize>::deserialize(d).map(Duree::Mois)
+    }
+}
+
 const JOURS_PAR_MOIS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /// Le rang du 1970-01-01 a compter du 0001-01-01, qui vaut 1.

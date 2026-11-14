@@ -1,11 +1,13 @@
 //! Le maintien de salaire que la convention 1285 garantit, lu par `droit::maintien` : X.4.6 « Maladie » et X.4.7
 //! « Accident du travail » (`atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`, l. 579-590).
 
-use droit::maintien::{conventionnel, Base, Droit, Duree, Origine, Tranche};
+use droit::maintien::{conventionnel, Base, Droit, DureeDUneTranche, Origine, Tranche};
 use rust_decimal::Decimal;
+use socle::date::Duree;
 
 fn tranches(mois: i64) -> Vec<Tranche> {
-    vec![Tranche { duree: Duree::Mois(mois), taux: Decimal::from(100) }, Tranche { duree: Duree::Mois(mois), taux: Decimal::from(75) }]
+    let duree = DureeDUneTranche::Duree(Duree::Mois(mois));
+    vec![Tranche { duree: duree.clone(), taux: Decimal::from(100) }, Tranche { duree, taux: Decimal::from(75) }]
 }
 
 /// « à partir de 6 mois et jusqu'à 1 an d'ancienneté : 1 mois à 100 % et 1 mois à 75 % ; au-delà de 1 an d'ancienneté :
@@ -23,7 +25,7 @@ fn la_1285_maintient_le_brut_selon_l_anciennete() {
     // ancienneté ; la maladie professionnelle, que X.4.7 ne nomme pas, suit X.4.6.
     for o in [Origine::AccidentDuTravail, Origine::Trajet] {
         let Droit::Du(r) = regime(2, o) else { panic!("{:?} : un maintien", o) };
-        assert_eq!(r.tranches, vec![Tranche { duree: Duree::PendantLesIndemnites, taux: Decimal::from(100) }]);
+        assert_eq!(r.tranches, vec![Tranche { duree: DureeDUneTranche::PendantLesIndemnites, taux: Decimal::from(100) }]);
     }
     assert!(matches!(regime(2, Origine::MaladieProfessionnelle), Droit::PasDu(_)));
 }

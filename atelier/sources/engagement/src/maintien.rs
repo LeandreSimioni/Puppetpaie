@@ -39,7 +39,8 @@ use crate::imprevus::{ArretSaisi, Imprevu};
 use crate::ligne::{IndemniteJournaliere, LignePaie, Maintien};
 use crate::Avis;
 use droit::contexte::Contexte;
-use droit::maintien::{self as dm, Base, Droit, Duree, Origine, Regime};
+use droit::maintien::{self as dm, Base, Droit, DureeDUneTranche, Origine, Regime};
+use socle::date::Duree;
 use droit::natures::Nature;
 use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::Jour;
@@ -134,9 +135,9 @@ fn capacites(r: &Regime, debut: &Jour) -> R<Vec<Option<i64>>> {
     let mut d0 = debut.clone();
     for t in &r.tranches {
         let c = match t.duree {
-            Duree::Jours(j) => Some(j),
-            Duree::Mois(m) => Some(d0.plus_mois(m)?.moins(&d0)),
-            Duree::PendantLesIndemnites => None,
+            DureeDUneTranche::Duree(Duree::Jours(j)) => Some(j),
+            DureeDUneTranche::Duree(Duree::Mois(m)) => Some(d0.plus_mois(m)?.moins(&d0)),
+            DureeDUneTranche::PendantLesIndemnites => None,
         };
         if let Some(c) = c {
             d0 = d0.plus_jours(c)?;

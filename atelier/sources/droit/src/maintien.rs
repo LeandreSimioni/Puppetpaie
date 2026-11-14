@@ -16,6 +16,7 @@
 
 use crate::natures::Nature;
 use crate::clauses;
+use socle::date::Duree;
 use socle::echec::R;
 use socle::num::{div, Decimal};
 
@@ -44,20 +45,18 @@ impl Origine {
     }
 }
 
-/// Combien dure une tranche.
+/// Combien dure une tranche : une duree de droit (des mois de calendrier comptent de date a date depuis le premier jour
+/// qu'elle indemnise), ou tant que la caisse verse ses indemnites journalieres, jusqu'a la fin de l'arret.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Duree {
-    Jours(i64),
-    /// Des mois de calendrier, de date a date depuis le premier jour qu'elle indemnise.
-    Mois(i64),
-    /// Tant que la caisse verse ses indemnites journalieres : jusqu'a la fin de l'arret.
+pub enum DureeDUneTranche {
+    Duree(Duree),
     PendantLesIndemnites,
 }
 
 /// Une tranche : sa duree et son pourcentage (66,66 se lit deux tiers : `fraction`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tranche {
-    pub duree: Duree,
+    pub duree: DureeDUneTranche,
     pub taux: Decimal,
 }
 
@@ -110,7 +109,7 @@ pub fn legal(nature: &Nature, anciennete_mois: Decimal, origine: Origine) -> R<D
     let carence = crate::permanents::jours_de_carence(origine.professionnelle(), origine == Origine::Trajet)?;
     let tranches = crate::permanents::duree_du_maintien(anciennete_mois)?
         .into_iter()
-        .map(|t| Tranche { duree: Duree::Jours(t.jours), taux: t.taux })
+        .map(|t| Tranche { duree: DureeDUneTranche::Duree(Duree::Jours(t.jours)), taux: t.taux })
         .collect();
     Ok(Droit::Du(Regime {
         texte: "la loi (L1226-1)".into(),
@@ -133,9 +132,9 @@ fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> R<Vec<Tranche>> {
     l.iter()
         .map(|t| {
             let duree = match (t.pendant_ij, t.mois, t.jours) {
-                (Some(true), _, _) => Duree::PendantLesIndemnites,
-                (_, Some(m), _) => Duree::Mois(m),
-                (_, None, Some(j)) => Duree::Jours(j),
+                (Some(true), _, _) => DureeDUneTranche::PendantLesIndemnites,
+                (_, Some(m), _) => DureeDUneTranche::Duree(Duree::Mois(m)),
+                (_, None, Some(j)) => DureeDUneTranche::Duree(Duree::Jours(j)),
                 (_, None, None) => return Err(manque(ou, "jours")),
             };
             Ok(Tranche { duree, taux: t.taux.0 })
@@ -178,8 +177,8 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete_mois: Decimal
                 Some(l) => match l.tranches.as_deref() {
                     Some(t) if !t.is_empty() => Ok(tranches(t, &ou)?),
                     _ => Ok(vec![
-                        Tranche { duree: Duree::Jours(l.jours_90.ok_or_else(|| manque(&ou, "jours_90"))?), taux: Decimal::from(90) },
-                        Tranche { duree: Duree::Jours(l.jours_66.ok_or_else(|| manque(&ou, "jours_66"))?), taux: Decimal::new(6666, 2) },
+                        Tranche { duree: DureeDUneTranche::Duree(Duree::Jours(l.jours_90.ok_or_else(|| manque(&ou, "jours_90"))?)), taux: Decimal::from(90) },
+                        Tranche { duree: DureeDUneTranche::Duree(Duree::Jours(l.jours_66.ok_or_else(|| manque(&ou, "jours_66"))?)), taux: Decimal::new(6666, 2) },
                     ]),
                 },
             };
@@ -225,9 +224,9 @@ pub fn phrase(r: &Regime) -> String {
         .map(|t| {
             let pct = socle::texte::virgule(t.taux);
             match t.duree {
-                Duree::Jours(j) => format!("{} jours à {} %", j, pct),
-                Duree::Mois(m) => format!("{} mois à {} %", m, pct),
-                Duree::PendantLesIndemnites => format!("{} % tant que la caisse indemnise", pct),
+                DureeDUneTranche::Duree(Duree::Jours(j)) => format!("{} jours à {} %", j, pct),
+                DureeDUneTranche::Duree(Duree::Mois(m)) => format!("{} mois à {} %", m, pct),
+                DureeDUneTranche::PendantLesIndemnites => format!("{} % tant que la caisse indemnise", pct),
             }
         })
         .collect();

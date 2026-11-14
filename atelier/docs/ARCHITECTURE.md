@@ -163,7 +163,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | mois ou jour | `MoisOuJour` | `socle/src/mois.rs` |
 | année | `Annee` ; à unifier (#419) : des `i32` | `socle/src/mois.rs` |
 | période | à créer (#419) : `Periode` | — |
-| durée de droit | `droit::maintien::Duree` | `droit/src/maintien.rs` |
+| durée de droit | `Duree` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
 | durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
 
 **Le détail**
@@ -185,7 +185,9 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **année** : une année civile. Écrite en texte (`"2025"`, la clé de `paies_annuelles`), ou en nombre là où la forme le
   dit (`socle::mois::en_nombre` : le nombre de paies parti chez l'éditeur, ce que le serveur du filet lit et rend).
 - **période** : deux jours bornes, du … au … ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres.
-- **durée de droit** : des jours ou des mois de calendrier.
+- **durée de droit** : des jours ou des mois de calendrier ; un nombre de mois d'un fichier se lit par
+  `Duree::en_mois` (l'ouverture de la prévoyance des permanents). La durée d'une tranche de maintien de salaire
+  (`droit::maintien::DureeDUneTranche`) est une durée de droit, ou « tant que la caisse verse ses indemnités ».
 - **durée mesurée** : un temps écoulé ; `envois::ligne::Durees`, à unifier, est des millisecondes : une écriture.
 
 **L'argent et les quantités**
