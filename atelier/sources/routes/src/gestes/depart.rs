@@ -1030,17 +1030,44 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
 
     // LA DSN MENSUELLE : la derniere ligne qui l'a deposee, le reel devant son test.
     let deposee = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.reel() == reel);
+    let deposee = deposee(true).or_else(|| deposee(false));
     if crate::etapes::est_une_dsn_mensuelle(nom) {
-        let Some(rang) = deposee(true).or_else(|| deposee(false)) else {
+        let Some(rang) = deposee else {
             return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom)));
         };
         let f = documents::PieceDuMois::Dsn.dossier().sous(&sortie).join(nom);
         refaire_la_dsn(ctx, &mut m, &lignes, rang, &f)?;
         return Ok(f);
     }
+    // LES SIGNALEMENTS (amorcage, arret, reprise, fin de contrat) : leur ligne porte le mois de l'evenement, et le fichier
+    // est range dans ce mois. Ce qu'une ligne de DSN nomme se lit selon l'acte, jamais par son prefixe
+    // (`documents::fichier_depose`, comme l'Historique) : un `Bulletin_x.dsn` pose n'est pas un bulletin.
+    if let Some(rang) = deposee {
+        let f = documents::fichier_depose(&sortie, nom);
+        refaire_le_signalement(ctx, mois, &lignes[rang], &f)?;
+        return Ok(f);
+    }
+    // LA DPAE : son enregistrement, son `.zip` et son recapitulatif, d'apres la derniere ligne qui l'a deposee ; ce qu'une
+    // ligne de DPAE nomme se lit aussi selon l'acte. L'enregistrement que designent son recapitulatif
+    // (`<base>_recapitulatif.txt`) et son `.zip` (`<base>.txt.zip`).
+    let sorte = SorteDePieceProduite::du_nom(nom);
+    let base = match (recapitulatif_de(nom), nom.strip_suffix(".zip")) {
+        (Some(b), _) => format!("{}.txt", b),
+        (None, Some(b)) => b.to_string(),
+        (None, None) => nom.to_string(),
+    };
+    let dpae = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dpae && l.fichier().map(NomDeFichier::texte) == Some(base.as_str()) && du_mois(l) && l.reel() == reel);
+    match dpae(true).or_else(|| dpae(false)) {
+        Some(rang) => {
+            let dossier = documents::FichierDuJournal::Depose.dossier().sous(&sortie);
+            refaire_la_dpae(ctx, mois, &lignes[rang], &dossier.join(&base))?;
+            return Ok(dossier.join(nom));
+        }
+        None if matches!(sorte, Some((SorteDePieceProduite::Dpae, _))) => return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom))),
+        None => {}
+    }
 
     // LES DOCUMENTS D'UN ENVOI AUX SALARIES, et l'archive du mois.
-    let sorte = SorteDePieceProduite::du_nom(nom);
     let des_documents = matches!(sorte, Some((SorteDePieceProduite::Bulletin | SorteDePieceProduite::CertificatCs, _)))
         || [
             archive_du_mois(SorteDePieceProduite::Bulletins, &etiq, ".pdf"),
@@ -1093,32 +1120,6 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         }
         return envois::etats::chemin_piece(&ctx.racine, le_mois, fichier)
             .ok_or_else(|| refus(format!("{} : aucun envoi de documents de {} ne l'a fait partir.", nom, mois.libelle(Graphie::Accentuee))));
-    }
-    // LA DPAE : son enregistrement, son `.zip` et son recapitulatif, d'apres la derniere ligne qui l'a deposee.
-    if matches!(sorte, Some((SorteDePieceProduite::Dpae, _))) {
-        // L'enregistrement que designent son recapitulatif (`<base>_recapitulatif.txt`) et son `.zip` (`<base>.txt.zip`).
-        let base = match (recapitulatif_de(nom), nom.strip_suffix(".zip")) {
-            (Some(b), _) => format!("{}.txt", b),
-            (None, Some(b)) => b.to_string(),
-            (None, None) => nom.to_string(),
-        };
-        let deposee = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dpae && l.fichier().map(NomDeFichier::texte) == Some(base.as_str()) && du_mois(l) && l.reel() == reel);
-        let Some(rang) = deposee(true).or_else(|| deposee(false)) else {
-            return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom)));
-        };
-        let dossier = documents::PieceDuMois::Dpae.dossier().sous(&sortie);
-        refaire_la_dpae(ctx, mois, &lignes[rang], &dossier.join(&base))?;
-        return Ok(dossier.join(nom));
-    }
-    // LES SIGNALEMENTS (amorcage, arret, reprise, fin de contrat) : leur ligne porte le mois de l'evenement, et le fichier
-    // est range dans ce mois.
-    let signale = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.reel() == reel);
-    if nom.ends_with(".dsn") {
-        if let Some(rang) = signale(true).or_else(|| signale(false)) {
-            let f = documents::fichier_depose(&sortie, nom);
-            refaire_le_signalement(ctx, mois, &lignes[rang], &f)?;
-            return Ok(f);
-        }
     }
     // LE CONTRAT ET L'AVENANT : la derniere ligne qui les a fait partir.
     let contrat_ou_avenant = match sorte {

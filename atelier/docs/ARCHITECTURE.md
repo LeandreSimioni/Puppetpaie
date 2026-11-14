@@ -859,13 +859,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   dans les sorties du mois) ; son dossier se dit sans condition (`PieceDuMois::dossier`), et une sorte hors d'un mois
   n'en est pas une (`SorteDePieceProduite::du_mois`). Que prennent l'écrivain et les lecteurs d'une pièce d'un mois
   (`envois::envoi::chemin_de_la_piece`, les pièces d'un envoi et d'une impression).
-- **fichier que le journal nomme** : le fichier d'un dépôt, une pièce d'un envoi, dit par l'acte de sa ligne et son
-  nom : celui d'un dépôt (DSN, signalement, amorçage, DPAE) n'est qu'une pièce qu'un dépôt écrit
-  (`PieceDuMois::se_depose`) ou un fichier que la compagnie a posé (`FichierDuJournal::du_depot` : un `.dsn` n'est
-  jamais un contrat) ; une pièce d'un envoi, par sa sorte (`de_l_envoi`) ; son dossier, sans condition
-  (`FichierDuJournal::dossier` : les sorties du mois pour un fichier posé). Le journal n'en garde que le nom : un
-  fichier déposé hors des sorties de son mois ne s'y retrouve pas. Que lisent le fichier déposé
-  (`documents::fichier_depose`) et l'Historique.
+- **fichier que le journal nomme** : le fichier d'un dépôt, une pièce d'un envoi, dit par l'acte de sa ligne, jamais
+  par son nom ni son extension seuls : celui d'un dépôt (DSN, signalement, amorçage, DPAE), quel que soit son nom, est
+  dans les sorties du mois (`FichierDuJournal::Depose` : une pièce qu'un dépôt écrit, qui s'y range, ou un fichier
+  que la compagnie a posé) ; une pièce d'un envoi, par sa sorte (`de_l_envoi`) ; son dossier, sans condition
+  (`FichierDuJournal::dossier`). Le journal n'en garde que le nom : un fichier déposé hors des sorties de son mois ne
+  s'y retrouve pas. Que lisent le fichier déposé (`documents::fichier_depose`), une pièce partie
+  (`depart::piece_partie`) et l'Historique.
 - **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois (`DossierDuMois`), ou hors d'un
   mois (`DossierHorsDuMois`) ; dit par sa sorte (`SorteDePieceProduite::rangement`).
 - **dossier hors d'un mois** : les exercices (`sorties/exercices/`), les dossiers de salariés (`exports/dossiers/`),
