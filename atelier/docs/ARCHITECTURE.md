@@ -152,6 +152,44 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 « À unifier (#419) » : le code a encore plusieurs types pour la notion, le type nommé est la cible. « À créer
 (#419) » : la notion circule encore en `String`, `Decimal` ou entier nu.
 
+**Typer, c'est qu'une notion porte son type de bout en bout ; envelopper n'est pas typer.** Une grandeur ne s'ouvre en
+nombre nu (`.decimal()`, `du_decimal`, un `as` entre nombres) qu'à une porte : l'écriture ou la lecture d'un fichier ou
+d'une norme ; le calcul se fait par les opérations des grandeurs (`socle/src/grandeurs.rs`), et une opération qui
+manque s'y ajoute. Un nombre lu d'un fichier se lit tout de suite en sa grandeur. Les champs d'un `Jour` ne s'ouvrent
+pas. Un état ne se code pas en booléens quand il a son type. Les formes d'un fichier, les charges et réponses d'une
+route et les types techniques ne sont pas des notions : ils n'ont pas de ligne ici, mais leurs champs portent les types
+des notions. **Ne sont pas des notions** : un compte (« combien de… », `usize`) ; les notes d'une forme (`NonLue`) ; et,
+jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux gens (`String`).
+
+**Les notions que le typage (#419) unifie ou crée** (la carte du typage ; chacune rejoint sa section quand elle est faite)
+
+| notion | son type | aujourd'hui |
+|---|---|---|
+| paie calculée d'un engagement | `engagement::calcul::Paie` | à unifier (#419) : `PaieEcrite`, `PaieLue`, `PaieRelue`, `PaieDuMois` ; ses sommes en `Decimal` |
+| paie d'un mois importé | `engagement::importe::PaieImportee` | à unifier (#419) : `PaieVersee` |
+| ligne de rémunération | `engagement::ligne::LignePaie` | à unifier (#419) : `calcul::LigneBrut`, `importe::LigneDeRemuneration`, `importe::LigneImprimee` |
+| ligne de cotisation | `engagement::calcul::LigneCotisation` | à unifier (#419) : `importe::LigneDeCotisation`, `importe::CotisationImprimee`, `droit::organismes::Ligne` |
+| contrat (ce que l'engagement fait signer) | `ContratEcrit` | à unifier (#419) : `ContratLu`, `ContratRelu` ; les copies de l'engagement (`ContratCs`, `PaieCs`, `PaieAer`, `avenant::Eng`, `ContratResume`, `ResumeDePaie`) disparaissent |
+| contrat déclaré ou attesté (ce qu'un organisme en dit) | `ContratDeclare` | à unifier (#419) : `changements_contrat::Declare`, `dsn_lue::ContratDeclare`, `ContratAtteste`, `attestes::Atteste` |
+| taux de PAS reçu (son taux, sa date, d'où il vient) | `compagnie::taux_pas::TauxRecu` | à unifier (#419) : `droit::fiche::TauxPas`, `ReleveTauxPas`, `TauxPasLus`, `TauxPasAnnonce`, `PasImporte.taux` |
+| taux AT/MP | `TauxAtmp` | à unifier (#419) : `fiche::TauxAtmp`, `forme_bareme::TauxAtmp`, `organismes::TauxAt`, `TauxAtmpNotifie`, `TauxAtmpAnnonce` |
+| versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
+| taxe sur les salaires | `TaxeSurLesSalaires` | à unifier (#419) : `fiche::`, `forme_bareme::` |
+| déduction forfaitaire spécifique d'une paie | `calcul::DeductionForfaitaire` | à unifier (#419) : `forme_bareme::DeductionForfaitaire`, `AbattementDfs` |
+| réduction générale d'une paie | `droit::reduction::ReductionGenerale` | à unifier (#419) : ses montants en `Decimal` ; `forme_bareme::ReductionGenerale`, `ReductionDsn` sont des formes, à renommer |
+| maintien de salaire | `MaintienDeSalaire` | à unifier (#419) : `maintien::{Regime, Tranche, Droit}`, `permanents::Maintien`, `engagement::maintien::*`, `ligne::Maintien` |
+| préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
+| versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
+| ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
+| nombre écrit (une saisie gardée telle qu'écrite) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie`, `NombreDeFiche`, `ligne::Chiffre` |
+| test ou réel | `envois::ligne::Mode` | à unifier (#419) : des `bool` (`envoi_test`, `reel`, `Pret`) |
+| ancienneté, âge | à créer (#419) : `Anciennete` | des `Decimal` et entiers, calculés à cinq endroits |
+| identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
+| employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
+| taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
+| version d'un engagement | à créer (#419) : `VersionDeLEngagement` | des entiers nus |
+| phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
+
 **Le temps**
 
 | notion | son type | déclaré dans |
