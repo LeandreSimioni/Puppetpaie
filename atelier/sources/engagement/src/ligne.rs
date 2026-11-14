@@ -21,7 +21,7 @@ use socle::forme::{Nombre, NombreLu};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
-use socle::grandeurs::{forme_courte as canon, Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{sans_zero, Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
 
 /// UN NOMBRE TEL QU'IL EST SAISI : un nombre, ou un nombre ecrit en texte. La page envoie `""` pour une case vide ; la
@@ -947,9 +947,9 @@ impl LignePaie {
     /// pour l'ecran (`Marques`).
     pub fn canon(&self) -> LignePaie {
         fn o<G: socle::grandeurs::Grandeur>(x: Option<G>) -> Option<G> {
-            x.map(canon)
+            x.map(sans_zero)
         }
-        // Une quantite, sans zero inutile, comme `canon` une grandeur.
+        // Une quantite, sans zero inutile, comme `sans_zero` une grandeur.
         fn q(x: Nombre) -> Nombre {
             Nombre(x.0.normalize())
         }
@@ -963,13 +963,13 @@ impl LignePaie {
             LignePaie::Pourcentage(l) => LignePaie::Pourcentage(EnPourcentage { base: o(l.base), taux_majoration: o(l.taux_majoration), ..l }),
             LignePaie::Montant(l) => LignePaie::Montant(AuMontant { montant: o(l.montant), ..l }),
             LignePaie::AvantageEnNature(l) => LignePaie::AvantageEnNature(AvantageEnNature { montant: o(l.montant), ..l }),
-            LignePaie::Composee(l) => LignePaie::Composee(Composee { quantite: q(l.quantite), taux: canon(l.taux), heures: o(l.heures), ..l }),
-            LignePaie::RetenueArret(l) => LignePaie::RetenueArret(RetenueArret { quantite: q(l.quantite), taux: canon(l.taux), ..l }),
+            LignePaie::Composee(l) => LignePaie::Composee(Composee { quantite: q(l.quantite), taux: sans_zero(l.taux), heures: o(l.heures), ..l }),
+            LignePaie::RetenueArret(l) => LignePaie::RetenueArret(RetenueArret { quantite: q(l.quantite), taux: sans_zero(l.taux), ..l }),
             LignePaie::IndemniteJournaliere(l) => {
-                LignePaie::IndemniteJournaliere(IndemniteJournaliere { jours: canon(l.jours), taux: canon(l.taux), assiette_pas: o(l.assiette_pas), ..l })
+                LignePaie::IndemniteJournaliere(IndemniteJournaliere { jours: sans_zero(l.jours), taux: sans_zero(l.taux), assiette_pas: o(l.assiette_pas), ..l })
             }
-            LignePaie::Maintien(l) => LignePaie::Maintien(Maintien { quantite: q(l.quantite), taux: canon(l.taux), ..l }),
-            LignePaie::Importee(l) => LignePaie::Importee(Importee { quantite: qo(l.quantite), taux: o(l.taux), heures: o(l.heures), montant: canon(l.montant), ..l }),
+            LignePaie::Maintien(l) => LignePaie::Maintien(Maintien { quantite: q(l.quantite), taux: sans_zero(l.taux), ..l }),
+            LignePaie::Importee(l) => LignePaie::Importee(Importee { quantite: qo(l.quantite), taux: o(l.taux), heures: o(l.heures), montant: sans_zero(l.montant), ..l }),
         }
     }
 }

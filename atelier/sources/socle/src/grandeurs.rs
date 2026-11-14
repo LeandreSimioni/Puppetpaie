@@ -124,14 +124,14 @@ grandeurs! {
     Unites, "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
 }
 
-/// LA FORME CANONIQUE D'UNE GRANDEUR, pour les empreintes et les oracles : sans zero inutile (`12.50` devient `12.5`,
-/// `-0` devient `0`), comme l'ecrit `num::nombre`.
-pub fn forme_courte<G: Grandeur>(g: G) -> G {
+/// UNE GRANDEUR SANS ZERO INUTILE (`12.50` devient `12.5`, `24.0` devient `24`, `-0` devient `0`), comme l'ecrit
+/// `ecrit::sans_zero` : la forme canonique des empreintes et des oracles.
+pub fn sans_zero<G: Grandeur>(g: G) -> G {
     G::du(g.en_decimal().normalize())
 }
 
-/// LA FORME LA PLUS COURTE D'UNE GRANDEUR, une decimale au moins (`24` s'ecrit `24.0`, `12.50` `12.5`), comme l'ecrit
-/// `num::court` : celle d'un taux ou d'heures qu'une paie garde.
+/// UNE GRANDEUR SANS ZERO INUTILE, UNE DECIMALE AU MOINS (`24` s'ecrit `24.0`, `12.50` `12.5`), comme l'ecrit
+/// `num::court` et la lit `lu::court` : celle d'un taux ou d'heures qu'une paie garde.
 pub fn courte<G: Grandeur>(g: G) -> G {
     G::du(num::court(g.en_decimal()))
 }
@@ -164,11 +164,6 @@ impl Montant {
 
     /// Un centime (`0.01`) : l'ecart de montant qu'un arrondi fait sur une ligne.
     pub const UN_CENTIME: Montant = Montant(Decimal::from_parts(1, 0, 0, false, 2));
-
-    /// Ce montant `n` fois (un centime par ligne) : montant x compte = montant.
-    pub fn fois(self, n: usize) -> Montant {
-        Montant(num::mul(self.0, Decimal::from(n)))
-    }
 
     /// LE RAPPORT de ce montant a `o` : montant / montant = coefficient ; `None` quand `o` est nul.
     pub fn rapport(self, o: Montant) -> Option<Coefficient> {

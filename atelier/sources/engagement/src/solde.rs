@@ -19,7 +19,7 @@ use crate::Avis;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::forme::Nombre;
-use socle::grandeurs::{courte, forme_courte, Montant, MontantUnitaire};
+use socle::grandeurs::{courte, sans_zero, Montant, MontantUnitaire};
 use socle::num::{add, court, div, mul, Decimal};
 use droit::permanents::{self, anciennete_mois, arrondir_jours, jours_acquis, IndemniteDePreavis};
 
@@ -400,7 +400,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                         courte(total),
                         courte(pourcentage),
                     ));
-                    let pour_cent = virgule(forme_courte(pourcentage).decimal());
+                    let pour_cent = virgule(sans_zero(pourcentage).decimal());
                     stc.avertissements.push(info(format!(
                         "{} : indemnité de fin de contrat {} % sur {} de \
                          rémunération totale = {} (L1243-8).",
