@@ -1414,10 +1414,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
 /// Le fichier d'une piece partie existe-t-il, dans `sorties/<mois>/` ou son `envoi/` ? Un NOM, jamais un chemin.
 fn piece_existe(racine: &Path, mois: Option<Mois>, fichier: &NomDeFichier) -> bool {
     // Une piece sans mois n'est rangee dans aucun dossier de mois.
-    mois.is_some_and(|mois| {
-        let base = racine.join("sorties").join(mois.to_string());
-        [base.join("envoi").join(fichier), base.join(fichier)].iter().any(|c| c.is_file())
-    })
+    mois.is_some_and(|mois| etats::chemin_piece(racine, mois, fichier).is_some())
 }
 
 fn piece(racine: &Path, quoi: String, quand: InstantOuJour, mois: Option<Mois>, fichier: &NomDeFichier) -> PiecePartie {

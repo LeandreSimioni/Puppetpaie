@@ -180,7 +180,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: NatureDEvenementDeclench
 /// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent.
 pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, mois: Mois, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
-    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let dossier = const { documents::SorteDePieceProduite::Amorcage.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(mois.to_string()));
     let premier = droit::natures::NumeroDOrdre::suivant(envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Disque))?;
     let mut fichiers = Vec::new();
@@ -233,7 +233,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         return Err(erreur(Classe::AmorcageImpossible, format!("Taux de PAS non demandé : {}.", raisons.join(" ; "))));
     }
     let mois = d.mois;
-    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let dossier = const { documents::SorteDePieceProduite::Amorcage.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(mois.to_string()));
     let fichiers = ecrire(ctx, paies, &retenus, d.motif, mois, d.constitution, d.envoi_test)?;
     ecrits.extend(fichiers.iter().cloned());
     // Le recapitulatif : ce qu'on lit avant de deposer -- et apres, pour savoir ce qu'on attend.

@@ -1901,6 +1901,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let p = paie_de_l_engagement(&paies, rang, &cle, c.salarie.as_str(), mois)?;
     let date = constitue_le(ctx, c.le);
     let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    // Les sorties du mois : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
     let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
     Ok(ReponsePapiers {
         phrase: format!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
@@ -1983,7 +1984,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
     let nom = nom_du_signalement(&format!("{}{}_{}", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
-    let cible = ctx.racine.join("sorties").join(mois.to_string()).join(&nom);
+    let cible = const { documents::SorteDePieceProduite::SignalementFinContrat.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(mois.to_string())).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
         type_declaration,
@@ -2130,7 +2131,8 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace,
         ordre,
     )?;
-    let cible = ctx.racine.join("sorties").join(dernier.mois_civil().to_string()).join(&nom);
+    // Arret et reprise : deux sortes du mois, la sienne dit son dossier.
+    let cible = sorte.dossier_du_mois().sous(&ctx.racine.join("sorties").join(dernier.mois_civil().to_string())).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature_declaration: nature,

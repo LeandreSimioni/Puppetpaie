@@ -204,7 +204,7 @@ pub(crate) struct PieceDeLEnvoi {
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
 /// a imprimer, qui reunit celles de plusieurs salaries : ce fichier n'est la piece de personne).
 pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnvoi>> {
-    let envoi = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
+    let envoi = documents::DossierDuMois::Envoi.sous(&ctx.racine.join("sorties").join(mois.to_string()));
     if !envoi.exists() {
         return Ok(Vec::new());
     }

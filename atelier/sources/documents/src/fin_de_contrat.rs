@@ -55,7 +55,8 @@ l'organisme assureur, à l'ouverture et au cours de la période de maintien.",
     )
 }
 
-/// Écrit les deux papiers de la paie `p` (dont l'engagement finit), établis le `date`, dans `sortie` : le certificat
+/// Écrit les deux papiers de la paie `p` (dont l'engagement finit), établis le `date`, dans le dossier de leur sorte sous
+/// les sorties du mois `sortie` (`sorties/<mois>/`) : le certificat
 /// puis le reçu ; les deux ou aucun (un reçu qui ne s'écrit pas emporte le certificat déjà posé).
 pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf; 2]> {
     let e = &p.engagement;
@@ -71,8 +72,12 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let cle = p.salarie.id.to_string();
     let ent = ctx.entreprise_et_gabarits();
     let poste = ctx.gabarits();
-    let certificat = sortie.join(format!("{}{}_{}.pdf", crate::SorteDePieceProduite::CertificatDeTravail.prefixe(), cle, fin.aaaammjj()));
-    let recu = sortie.join(format!("{}{}_{}.pdf", crate::SorteDePieceProduite::RecuSoldeToutCompte.prefixe(), cle, fin.aaaammjj()));
+    let certificat = const { crate::SorteDePieceProduite::CertificatDeTravail.dossier_du_mois() }
+        .sous(sortie)
+        .join(format!("{}{}_{}.pdf", crate::SorteDePieceProduite::CertificatDeTravail.prefixe(), cle, fin.aaaammjj()));
+    let recu = const { crate::SorteDePieceProduite::RecuSoldeToutCompte.dossier_du_mois() }
+        .sous(sortie)
+        .join(format!("{}{}_{}.pdf", crate::SorteDePieceProduite::RecuSoldeToutCompte.prefixe(), cle, fin.aaaammjj()));
     let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
     let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| m.reclasser(Classe::Manque))?, p.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?);

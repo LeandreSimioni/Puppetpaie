@@ -309,12 +309,12 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
 /// `aer_manquantes` : les salaries dont France Travail a renvoye l'AER du mois, mais dont le PDF signe
 /// n'est pas dans `sorties/<mois>/envoi/`.
 fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
-    let dossier = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
+    let sorties = ctx.racine.join("sorties").join(mois.to_string());
     let etiquette = mois.etiquette();
     let mut out: Vec<String> = Vec::new();
     for groupe in attestations_archivees(ctx, Some(mois), None)?.values() {
         let Some(att) = groupe.first() else { continue };
-        if !att.cle.as_ref().is_some_and(|cle| dossier.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, cle, &etiquette)).exists()) {
+        if !att.cle.as_ref().is_some_and(|cle| envoi::chemin_de_la_piece(documents::SorteDePieceProduite::Aer, &sorties, cle, &etiquette).exists()) {
             // Rattachee, la cle de sa fiche ; sinon, le nom que l'attestation porte.
             let nom = match &att.cle {
                 Some(cle) => cle.to_string(),
@@ -460,7 +460,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             }
         }
         let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir())? };
-        let cible = ctx.racine.join("sorties").join(periode.to_string()).join("envoi");
+        let cible = const { documents::SorteDePieceProduite::Aer.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(periode.to_string()));
         std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         let chemin = cible.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &periode.etiquette()));
         std::fs::write(&chemin, donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
@@ -529,8 +529,9 @@ struct Message {
 /// Un message par salarie, et les pieces qui lui sont DUES, nommees sans etre fabriquees : le bulletin d'une paie qui a des
 /// cachets, le certificat Conges Spectacles d'un contrat qui finit (`certificats_dus`), l'AER que France Travail a rendue
 /// et qui est rangee. Le corps n'est pas compose : seuls ses refus (`Manque` d'une fiche entreprise sans nom
-/// d'affichage ou sans signataire) sont gardes.
-fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, dossier: &Path) -> R<Vec<Message>> {
+/// d'affichage ou sans signataire) sont gardes. Chaque piece, dans le dossier de sa sorte sous les sorties du mois
+/// `sorties`.
+fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, sorties: &Path) -> R<Vec<Message>> {
     let etiq = mois.etiquette();
     let ent = &ctx.entreprise;
     let requis = |c: &Option<String>, k: &str| if c.is_none() { Err(socle::fichiers::absent(k).reclasser(Classe::Manque)) } else { Ok(()) };
@@ -549,12 +550,12 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, doss
         let de_lui = |p: &&engagement::calcul::Paie| p.salarie.id == cle;
         let mut pieces = Vec::new();
         if paies.iter().filter(de_lui).any(|p| !p.engagement.sans_paie()) {
-            pieces.push(dossier.join(envoi::nom_fichier(documents::SorteDePieceProduite::Bulletin, &cle, &etiq)));
+            pieces.push(envoi::chemin_de_la_piece(documents::SorteDePieceProduite::Bulletin, sorties, &cle, &etiq));
         }
         if certificats.iter().any(|(c, _, pc)| *c == cle && pc.is_some()) {
-            pieces.push(dossier.join(envoi::nom_fichier(documents::SorteDePieceProduite::CertificatCs, &cle, &etiq)));
+            pieces.push(envoi::chemin_de_la_piece(documents::SorteDePieceProduite::CertificatCs, sorties, &cle, &etiq));
         }
-        let aer = dossier.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &etiq));
+        let aer = envoi::chemin_de_la_piece(documents::SorteDePieceProduite::Aer, sorties, &cle, &etiq);
         if aer.exists() {
             pieces.push(aer);
         }
@@ -587,11 +588,11 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     let m = Moteur::nouveau(ctx);
     let prets = documents_prets(ctx, mois, &paies)?;
     let pret = prets.empechements.is_empty();
-    let dossier = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
+    let sorties = ctx.racine.join("sorties").join(mois.to_string());
     // A QUI ILS PARTENT : le meme choix que l'envoi (`choisir`).
     let choix = choisir(ctx, mois, &paies)?;
     // CE QUI PARTIRA, nomme sans etre fabrique : les documents s'ecrivent, numerotes, a l'envoi (`envoyer_documents`).
-    let messages = if pret { preparer(ctx, &paies, mois, &dossier)? } else { Vec::new() };
+    let messages = if pret { preparer(ctx, &paies, mois, &sorties)? } else { Vec::new() };
     let tous_a_jour = messages.iter().all(|x| choix.a_jour.contains(&x.cle));
     let messages = choix.garder(messages, |x| &x.cle);
     let (mut expediteur, mut avertissements) = (String::new(), Vec::<String>::new());
@@ -757,6 +758,15 @@ pub(crate) fn envoyer_documents_de(ctx: &Contexte, mois: Mois, preuve: &Preuve, 
 const PIECES_A_IMPRIMER: [documents::SorteDePieceProduite; 3] =
     [documents::SorteDePieceProduite::Bulletin, documents::SorteDePieceProduite::CertificatCs, documents::SorteDePieceProduite::Aer];
 
+// Chaque piece qui s'imprime se range dans un mois : sinon, ceci ne compile pas.
+const _: () = {
+    let mut i = 0;
+    while i < PIECES_A_IMPRIMER.len() {
+        PIECES_A_IMPRIMER[i].dossier_du_mois();
+        i += 1;
+    }
+};
+
 /// La route `documents-imprimer` : les documents du mois des salaries choisis (`salaries`, tous sinon), fabriques comme
 /// pour l'envoi par courriel (`depart::fabriquer_documents`), reunis en un seul PDF a imprimer, salarie par salarie, et
 /// remis en main propre. L'IMPRESSION EST UN DEPART : ce qui est remis au salarie est parti. Les numeros des bulletins et
@@ -786,13 +796,13 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     }
     let choix = choisir(ctx, mois, &paies)?;
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, qui)?;
-    let dossier = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
+    let sorties = ctx.racine.join("sorties").join(mois.to_string());
     let etiq = c.mois.etiquette();
     let mut pieces: Vec<std::path::PathBuf> = Vec::new();
     let mut salaries: Vec<journal::Servi> = Vec::new();
     for cle in &cles {
         let siennes: Vec<std::path::PathBuf> =
-            PIECES_A_IMPRIMER.iter().map(|sorte| dossier.join(envoi::nom_fichier(*sorte, cle, &etiq))).filter(|f| f.is_file()).collect();
+            PIECES_A_IMPRIMER.iter().map(|sorte| envoi::chemin_de_la_piece(*sorte, &sorties, cle, &etiq)).filter(|f| f.is_file()).collect();
         salaries.push(journal::Servi {
             cle: cle.clone(),
             nom: noms.get(cle).cloned(),
@@ -806,7 +816,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
         return Err(refus(format!("Aucun document écrit pour {} : rien à imprimer.", mois.libelle(Graphie::Accentuee))));
     }
     let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.contains(cle))?;
-    let impression = crate::gestes::signature::reunir_pour_imprimer(&dossier, "documents", &etiq, &pieces)?;
+    let impression = crate::gestes::signature::reunir_pour_imprimer(&sorties, "documents", &etiq, &pieces)?;
     let nom_impression = NomDeFichier::du(&impression)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, mois)?;
@@ -998,7 +1008,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
             format!("{} : aucun engagement validé, aucun document à envoyer. Rien ne part d'un engagement en saisie.", mois.libelle(Graphie::Accentuee)),
         ));
     }
-    let dossier = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
+    let sorties = ctx.racine.join("sorties").join(mois.to_string());
     let choix = choisir(ctx, mois, &paies)?;
     // LES DOCUMENTS SE FABRIQUENT ICI, pour ceux a qui ils partent : depuis les paies ecrites, a leurs numeros.
     let mut cles: Vec<IdSalarie> = Vec::new();
@@ -1033,7 +1043,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     };
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id)).cloned().collect();
-    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?)?;
+    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &sorties, &choix.renvois, &dues_a_part(&paies_servies)?)?;
     // Les cles sont deja gardees (`Choix::garder`, plus haut) : leurs messages partent tous.
     let messages: Vec<envoi::Message<IdSalarie>> = messages.into_iter().filter(|m| cles.contains(&m.pour)).collect();
     let mut avertissements: Vec<String> = documents.avertissements.clone();

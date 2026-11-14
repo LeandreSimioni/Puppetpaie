@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use documents::SorteDePieceProduite;
+use documents::{DossierDuMois, Rangement, SorteDePieceProduite};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::organismes::IdentifiantDOrganisme;
@@ -392,7 +392,7 @@ pub(crate) fn sorte_de(nom: &str) -> &'static str {
 fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let mut out: Vec<Document> = Vec::new();
     let sorties = CheminRelatif::sorties(mois);
-    let envoi = sorties.joint(&const { NomDeFichier::du_moteur("envoi") });
+    let envoi = DossierDuMois::Envoi.sous_le_chemin(&sorties);
     let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
     for nom in noms.filter(|n| !n.texte().ends_with(".zip")) {
         out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin: sorties.joint(&nom), fichier: None, nom: nom.into() });
@@ -406,8 +406,12 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
         if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
-        let dans_l_envoi = matches!(SorteDePieceProduite::du_nom(nom.texte()), Some((s, _)) if s.dans_l_envoi());
-        let chemin = if dans_l_envoi { envoi.joint(&nom) } else { sorties.joint(&nom) };
+        // Le dossier du mois de sa sorte ; un nom d'aucune sorte du mois, dans les sorties du mois.
+        let dossier = match SorteDePieceProduite::du_nom(nom.texte()).map(|(s, _)| s.rangement()) {
+            Some(Rangement::DuMois(d)) => d,
+            Some(Rangement::Exercices | Rangement::DossiersDeSalaries) | None => DossierDuMois::Sorties,
+        };
+        let chemin = dossier.sous_le_chemin(&sorties).joint(&nom);
         out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.

@@ -635,7 +635,7 @@ fn mois_puppetpaie(
     let mois = &le_mois.to_string();
     let sortie = ctx.racine.join("sorties").join(mois);
     let etiq = le_mois.etiquette();
-    let envoi_dir = sortie.join("envoi");
+    let dossier_des_contrats = const { SorteDePieceProduite::Contrat.dossier_du_mois() }.sous(&sortie);
     let (_, paies) = charger(ctx, le_mois)?;
     // Les documents du mois sont partis quand une paie porte le numero de son bulletin (ecrit a son depart).
     let numerote = |p: &Paie| p.numero_bulletin.is_some();
@@ -685,7 +685,7 @@ fn mois_puppetpaie(
             if !siennes.iter().any(|i| cle_de(&paies[*i]) == *cle && numerote(&paies[*i])) {
                 continue;
             }
-            let piece = envoi_dir.join(envois::envoi::nom_fichier(SorteDePieceProduite::Bulletin, cle, &etiq));
+            let piece = envois::envoi::chemin_de_la_piece(SorteDePieceProduite::Bulletin, &sortie, cle, &etiq);
             if !piece.is_file() {
                 return Err(erreur_operation(format!(
                     "{}, {} : son bulletin n'est pas dans sorties/{}/envoi/. Un bulletin remis ne se réimprime pas : rien n'est envoyé à sa place.",
@@ -766,7 +766,7 @@ fn mois_puppetpaie(
         // Les certificats remis sont dans `CertificatsCS_<Mois>.pdf`, un par page, dans l'ordre de leurs N CE
         // (`depart::fabriquer_documents`) ; la page porte le nom du salarie, sinon le fichier ne dit pas ce que les paies
         // disent, et rien ne se joint. Comme les bulletins : la page meme, jamais un certificat reimprime (regle 4).
-        let archive = sortie.join(crate::gestes::depart::archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, ".pdf"));
+        let archive = const { SorteDePieceProduite::CertificatsCs.dossier_du_mois() }.sous(&sortie).join(crate::gestes::depart::archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, ".pdf"));
         let nom_archive = NomDeFichier::du(&archive)?;
         let textes = if archive.exists() { Some(texte_pdf(&archive)?) } else { None };
         match textes {
@@ -835,9 +835,9 @@ fn mois_puppetpaie(
                 }
             }
         }
-        if categories.contains(&CategorieDeDocument::ContratsSignes) && envoi_dir.is_dir() {
-            for nom in contrats_signes_de(&envoi_dir, cle)? {
-                let f = envoi_dir.join(&nom);
+        if categories.contains(&CategorieDeDocument::ContratsSignes) && dossier_des_contrats.is_dir() {
+            for nom in contrats_signes_de(&dossier_des_contrats, cle)? {
+                let f = dossier_des_contrats.join(&nom);
                 // Le contrat signe est pris tel quel ; ses numeros, eux, se CONFRONTENT a ceux du
                 // mois ecrit.
                 let portes: std::collections::BTreeSet<NumeroContrat> = numeros_de_contrat(&nom)?.into_iter().collect();
@@ -864,7 +864,7 @@ fn mois_puppetpaie(
             }
         }
         if categories.contains(&CategorieDeDocument::Attestations) {
-            let f = envoi_dir.join(envois::envoi::nom_fichier(SorteDePieceProduite::Aer, cle, &etiq));
+            let f = envois::envoi::chemin_de_la_piece(SorteDePieceProduite::Aer, &sortie, cle, &etiq);
             if f.exists() {
                 for i in 0..pages_pdf(&f)? {
                     pages.push(Page { categorie: CategorieDeDocument::Attestations, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
@@ -874,8 +874,9 @@ fn mois_puppetpaie(
         if categories.contains(&CategorieDeDocument::DocumentsFin) {
             for sorte in [SorteDePieceProduite::CertificatDeTravail, SorteDePieceProduite::RecuSoldeToutCompte] {
                 let debut = format!("{}{}_", sorte.prefixe(), cle);
-                for nom in noms_commencant_finissant(&sortie, &debut, ".pdf")? {
-                    let f = sortie.join(&nom);
+                let dossier = sorte.dossier_du_mois().sous(&sortie);
+                for nom in noms_commencant_finissant(&dossier, &debut, ".pdf")? {
+                    let f = dossier.join(&nom);
                     for i in 0..pages_pdf(&f)? {
                         pages.push(Page { categorie: CategorieDeDocument::DocumentsFin, cle: cle.clone(), tri: Some((le_mois, None)), source: f.clone(), numero: i });
                     }
@@ -899,7 +900,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
         if !p.contient(mois) {
             continue;
         }
-        let d = ctx.racine.join("sorties").join(mois.to_string()).join("envoi");
+        let d = const { SorteDePieceProduite::Signature.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(mois.to_string()));
         out.extend(noms_commencant_finissant(&d, &format!("{}{}_", SorteDePieceProduite::Signature.prefixe(), cle), ".eml")?.into_iter().map(|n| d.join(n)));
     }
     Ok(out)

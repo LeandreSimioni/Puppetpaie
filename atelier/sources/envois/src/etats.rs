@@ -1330,10 +1330,12 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&Nume
     parti
 }
 
-/// Le fichier d'une piece partie, dans `sorties/<mois>/` ou son `envoi/`. Un NOM, jamais un chemin : le type le tient.
+/// Le fichier d'une piece partie, dans l'un des dossiers du mois (`DossierDuMois::TOUS` : son envoi, puis ses sorties) :
+/// son nom ne dit pas seul son dossier (le bulletin garde a cote de son rectificatif est un `Bulletin`, hors de l'envoi).
+/// Un NOM, jamais un chemin : le type le tient.
 pub fn chemin_piece(racine: &Path, mois: Mois, nom: &NomDeFichier) -> Option<PathBuf> {
     let base = racine.join("sorties").join(mois.to_string());
-    [base.join("envoi").join(nom), base.join(nom)].into_iter().find(|f| f.is_file())
+    documents::DossierDuMois::TOUS.into_iter().map(|d| d.sous(&base).join(nom)).find(|f| f.is_file())
 }
 
 /// Les avenants du contrat parti -- pas ceux d'un contrat qu'il a remplace. `tous` : les avenants de son contrat

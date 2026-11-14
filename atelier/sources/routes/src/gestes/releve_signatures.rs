@@ -152,7 +152,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         let Some(Reponse { identifiant: ident, brut, de, quand }) = retenue else { continue };
 
         // La preuve archivee : le message tel qu'il est arrive.
-        let dossier = ctx.racine.join("sorties").join(a_mois.to_string()).join("envoi");
+        let dossier = const { documents::SorteDePieceProduite::Signature.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(a_mois.to_string()));
         std::fs::create_dir_all(&dossier).map_err(|e| os(format!("{} : {}", dossier.display(), e)))?;
         let preuve = dossier.join(format!("{}{}_{}.eml", documents::SorteDePieceProduite::Signature.prefixe(), a_salarie, code));
         std::fs::write(&preuve, &brut).map_err(|e| os(format!("{} : {}", preuve.display(), e)))?;
@@ -172,7 +172,8 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         let mention = a.nom.as_deref().map(|n| documents::contrat::mention_signature(n, &quand_lisible, &de, code.texte()));
         let mut signes: Vec<(NomDeFichier, PathBuf)> = Vec::new();
         for (mois_f, nom_f) in &fichiers {
-            let envoye = ctx.racine.join("sorties").join(mois_f.to_string()).join("envoi").join(nom_f);
+            // Un contrat ou un avenant parti : ils se rangent dans le meme dossier du mois.
+            let envoye = const { documents::SorteDePieceProduite::Contrat.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(mois_f.to_string())).join(nom_f);
             // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
             let souche = match envoye.file_stem() {
                 Some(s) => s.to_string_lossy().into_owned(),

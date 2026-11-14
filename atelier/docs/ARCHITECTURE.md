@@ -691,6 +691,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | modèle du bulletin | `ModeleBulletin` | `droit/src/fiche.rs` |
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
 | sorte d'une pièce produite | `documents::SorteDePieceProduite` | `documents/src/lib.rs` |
+| rangement d'une pièce produite | `documents::Rangement` | `documents/src/lib.rs` |
+| dossier d'un mois | `documents::DossierDuMois` | `documents/src/lib.rs` |
 | état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
 | format d'export | `FormatDExport` | `documents/src/plan_comptable.rs` |
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
@@ -816,10 +818,19 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **sorte d'une pièce produite** : ce que le moteur écrit dans les sorties d'un mois (et son `envoi/`), celles des
   exercices ou un dossier de salariés, dit au début du nom de son fichier (`Bulletin_`, `CertificatCS_`, `AER_`,
   `Contrat`, `Avenant`, `DPAE_`, `DSN_`, `Amorcage`, `SignalementArret_`, `Impression_`, `Signature_`, `Compta_`,
-  `Dossiers_`…) ; une seule fonction écrit ce début (`prefixe`), une seule le relit (`du_nom`), une seule dit si la
-  pièce est rangée dans `sorties/<mois>/envoi/` (`dans_l_envoi`), et aucun début n'en commence un autre. Ce n'est pas
-  une catégorie du dossier : la DPAE, la DSN, l'amorçage n'en sont pas. Un fichier de travail, une pièce reçue d'un
-  organisme (l'AER de France Travail) et un fichier de l'ancien logiciel (`AEM_`) n'en sont pas.
+  `Dossiers_`…) ; une seule fonction écrit ce début (`prefixe`), une seule le relit (`du_nom`), une seule dit où elle
+  se range (`rangement`), et aucun début n'en commence un autre. Ce n'est pas une catégorie du dossier : la DPAE, la
+  DSN, l'amorçage n'en sont pas. Un fichier de travail, une pièce reçue d'un organisme (l'AER de France Travail, dans
+  `retours/`, dont le nom commence aussi par `AER_`) et un fichier de l'ancien logiciel (`AEM_`) n'en sont pas.
+- **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois, avec les exercices
+  (`sorties/exercices/`) ou avec les dossiers de salariés (`exports/dossiers/`) ; dit par sa sorte
+  (`SorteDePieceProduite::rangement`).
+- **dossier d'un mois** : les sorties d'un mois (`sorties/<mois>/` : ses archives, ses déclarations, les documents de
+  fin de contrat) ou leur envoi (`sorties/<mois>/envoi/` : ce qui part aux salariés). L'écrivain et les lecteurs d'une
+  pièce le prennent de sa sorte (`dossier_du_mois`, une constante là où la sorte est connue : une pièce qui ne se range
+  pas dans un mois n'y compile pas), et le joignent par `sous`. Le bulletin d'origine gardé à côté de son rectificatif
+  est un `Bulletin` par son nom, qui ne part à personne : il se range dans les sorties du mois (`BULLETIN_GARDE`) ; un
+  nom seul se cherche dans les deux (`TOUS`, `envois::etats::chemin_piece`).
 - **état d'export**, **format d'export**, **regroupement d'un état**, **logiciel du comptable**, **période d'export** :
   les listes du logiciel que les tables des exports livrent (`exports_tables.json`) : les états que la page propose
   (`livre-de-paie`…), leurs formats (les six des tableaux, `csv`… `json`, puis ceux des logiciels du comptable, `fec`…

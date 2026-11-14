@@ -207,6 +207,21 @@ pub fn nom_fichier(sorte: SorteDePieceProduite, cle: &droit::contexte::IdSalarie
     format!("{}{}_{}.pdf", sorte.prefixe(), cle, etiq)
 }
 
+/// Le fichier d'une piece d'un salarie pour un mois (`nom_fichier`), dans le dossier du mois ou sa sorte se range
+/// (`SorteDePieceProduite::dossier_du_mois`), sous les sorties du mois `sorties` (`sorties/<mois>/`).
+pub fn chemin_de_la_piece(sorte: SorteDePieceProduite, sorties: &Path, cle: &droit::contexte::IdSalarie, etiq: &str) -> PathBuf {
+    sorte.dossier_du_mois().sous(sorties).join(nom_fichier(sorte, cle, etiq))
+}
+
+// Chaque piece qu'un salarie recoit se range dans un mois : sinon, ceci ne compile pas.
+const _: () = {
+    let mut i = 0;
+    while i < PIECES.len() {
+        PIECES[i].sorte.dossier_du_mois();
+        i += 1;
+    }
+};
+
 /// « a, b et c ». Suit les pieces REELLEMENT jointes : promettre dans l'objet une AER qui n'est pas la serait un
 /// mensonge en premiere ligne.
 fn enumerer(mots: &[&str]) -> String {
@@ -338,12 +353,13 @@ pub const RIEN_DANS_LE_RESUME: &str = "  - le détail de ton bulletin ; tes jour
 /// `renvois` (cle -> `Renvoi`) : ceux dont la paie a change depuis l'envoi de leurs documents recoivent le courriel de
 /// renvoi (`CORPS_RENVOI`), qui dit ce qui a change ; les autres, le premier courriel (`CORPS`).
 /// `a_part` (cle -> pieces) : ce qui est du au salarie et ne part pas avec ce courriel, tel que le moteur le decide
-/// (`aer`, `attestation_fctu`) ; le courriel le dit, sans rien promettre.
+/// (`aer`, `attestation_fctu`) ; le courriel le dit, sans rien promettre. Chaque piece, dans le dossier de sa sorte sous
+/// les sorties du mois `sorties` (`chemin_de_la_piece`).
 pub fn preparer_avec(
     paies: &[Paie],
     ent: &droit::fiche::ChampsEntreprise,
     m: socle::mois::Mois,
-    dossier: &Path,
+    sorties: &Path,
     renvois: &std::collections::HashMap<droit::contexte::IdSalarie, Renvoi>,
     a_part: &std::collections::HashMap<droit::contexte::IdSalarie, Vec<&'static str>>,
 ) -> R<Vec<Message<droit::contexte::IdSalarie>>> {
@@ -374,7 +390,7 @@ pub fn preparer_avec(
         let mut libelles = Vec::new();
         let mut presents: Vec<&Piece> = Vec::new();
         for piece in &PIECES {
-            let chemin = dossier.join(nom_fichier(piece.sorte, &cle, &etiq));
+            let chemin = chemin_de_la_piece(piece.sorte, sorties, &cle, &etiq);
             if chemin.exists() {
                 pieces.push(chemin);
                 libelles.push(format!("  - {}", piece.libelle));

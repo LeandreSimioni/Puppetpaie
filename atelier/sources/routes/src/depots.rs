@@ -494,7 +494,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>()?
     };
     let etiq = le_mois.etiquette();
-    let sortie = ctx.racine.join("sorties").join(&mois);
+    let sortie = const { SorteDePieceProduite::Dpae.dossier_du_mois() }.sous(&ctx.racine.join("sorties").join(&mois));
     // Une embauche par son salarie et son numero de contrat ; une paie sans numero n'en a pas a declarer.
     let cle_de = |p: &Paie| -> Option<(IdSalarie, NumeroContrat)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.clone(), n.clone())) };
 
