@@ -6,7 +6,7 @@
 
 use crate::norme::Norme;
 use droit::nature_declaration::NatureDeLaDeclaration;
-use droit::natures::RubriqueDeLaNorme;
+use droit::natures::{ListeDeLaNorme, RubriqueDeLaNorme};
 use socle::echec::{refus_avec, Lieu, R};
 use serde::de::{Error as _, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -127,12 +127,14 @@ impl<'de> Visitor<'de> for LectureDEntree {
 
 pub(crate) use socle::texte::{blanc as espace, lignes_du_texte as lignes, strip};
 
-/// `ligne.partition(",")` puis la valeur sans espaces ni apostrophes.
-pub fn rubrique_valeur(ligne: &str) -> (&str, &str) {
-    match ligne.split_once(',') {
+/// La rubrique que la ligne ecrit avant sa virgule (toute la ligne sans virgule, valeur vide), et sa valeur sans espaces
+/// ni apostrophes ; `None` si elle n'ecrit pas une rubrique de la norme.
+pub fn rubrique_valeur(ligne: &str) -> Option<(RubriqueDeLaNorme, &str)> {
+    let (r, v) = match ligne.split_once(',') {
         Some((r, v)) => (r, strip(v).trim_matches('\'')),
         None => (ligne, ""),
-    }
+    };
+    Some((RubriqueDeLaNorme::lue(r)?, v))
 }
 
 /// Le tableau des usages de cette version de la norme.
@@ -209,7 +211,7 @@ pub fn verifier(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<
 /// La nature declaree dans le fichier lui-meme (S20.G00.05.001), `None` s'il n'en porte pas ; un code hors de la liste
 /// de la norme refuse.
 pub fn nature_du_fichier(texte: &str) -> R<Option<NatureDeLaDeclaration>> {
-    let Some(code) = lignes(texte).into_iter().find_map(|ligne| ligne.strip_prefix("S20.G00.05.001,").map(|reste| strip(reste).trim_matches('\''))) else {
+    let Some((_, code)) = lignes(texte).into_iter().filter(|l| l.contains(',')).find_map(|l| rubrique_valeur(l).filter(|(r, _)| *r == NatureDeLaDeclaration::RUBRIQUE)) else {
         return Ok(None);
     };
     NatureDeLaDeclaration::du_code(code).map(Some).ok_or_else(|| {

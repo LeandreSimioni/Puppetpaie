@@ -298,8 +298,7 @@ La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit
 /// -- ses tables d'usages et de formats sont celles d'une version.
 pub fn du_fichier(texte: &str) -> R<Norme> {
     for ligne in lignes(texte) {
-        let (r, v) = rubrique_valeur(ligne);
-        if RubriqueDeLaNorme::lue(r) == Some(VersionDeLaNorme::RUBRIQUE) {
+        if let Some((_, v)) = rubrique_valeur(ligne).filter(|(r, _)| *r == VersionDeLaNorme::RUBRIQUE) {
             let lue = match VersionDeLaNorme::du_code(v) {
                 Some(version) => Norme::connue(version),
                 None => Err(inconnue(v)?),
@@ -346,9 +345,8 @@ pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
     let mut refus = Vec::new();
     let mut a_ne_pas = Vec::new();
     for ligne in lignes(texte) {
-        let (r, v) = rubrique_valeur(ligne);
         // Une ligne qui n'ecrit pas une rubrique n'est dans aucune table.
-        let Some(r) = RubriqueDeLaNorme::lue(r) else { continue };
+        let Some((r, v)) = rubrique_valeur(ligne) else { continue };
         if let Some(pourquoi) = hors_de_sa_liste(&tables, r, v) {
             let dit = format!("    {} = '{}' : {}", r, v, pourquoi);
             if !refus.contains(&dit) {
