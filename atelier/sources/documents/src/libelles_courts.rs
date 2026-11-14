@@ -27,15 +27,16 @@ pub enum FormatBorne {
 }
 
 impl FormatBorne {
-    /// Le format d'un nom de format (`ximport`…), s'il borne ses zones de texte.
-    pub fn de(format: &str) -> Option<FormatBorne> {
+    /// Le format d'export (`ximport`…), s'il borne ses zones de texte.
+    pub fn de(format: crate::plan_comptable::FormatDExport) -> Option<FormatBorne> {
+        use crate::plan_comptable::FormatDExport as F;
         match format {
-            "ximport" => Some(FormatBorne::Ximport),
-            "oxygene" => Some(FormatBorne::Oxygene),
-            "sage" => Some(FormatBorne::Sage),
-            "quadra" => Some(FormatBorne::Quadra),
-            "ebp" => Some(FormatBorne::Ebp),
-            _ => None,
+            F::Ximport => Some(FormatBorne::Ximport),
+            F::Oxygene => Some(FormatBorne::Oxygene),
+            F::Sage => Some(FormatBorne::Sage),
+            F::Quadra => Some(FormatBorne::Quadra),
+            F::Ebp => Some(FormatBorne::Ebp),
+            F::Csv | F::Tsv | F::Xlsx | F::Pdf | F::Html | F::Json | F::Fec | F::Pennylane => None,
         }
     }
 

@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use documents::libelles_courts::{self as lc, Depasse, FormatBorne, Quoi};
+use documents::plan_comptable::FormatDExport;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Echec, R};
 
@@ -77,15 +78,27 @@ impl Dite for Libelles {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeLire {
-    format: Option<String>,
+    #[serde(default, deserialize_with = "format_ou_aucun")]
+    format: Option<FormatDExport>,
 }
 
 /// La charge de « libelles-courts-enregistrer » : le format, et les valeurs courtes validees.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeEnregistrer {
-    format: Option<String>,
+    #[serde(default, deserialize_with = "format_ou_aucun")]
+    format: Option<FormatDExport>,
     libelles: Vec<Valide>,
+}
+
+/// Le format d'une charge : absent, `null` ou vide (la page n'a pas de format choisi : son menu est vide), aucun ;
+/// sinon un format d'export, ou le refus qui le dit.
+fn format_ou_aucun<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<FormatDExport>, D::Error> {
+    match Option::<String>::deserialize(d)? {
+        None => Ok(None),
+        Some(t) if t.is_empty() => Ok(None),
+        Some(t) => FormatDExport::lire(&t).map(Some).map_err(|e| serde::de::Error::custom(e.phrase)),
+    }
 }
 
 /// Une valeur courte validee : ce qu'elle remplace (`quoi`, `cle`, tels que rendus), et elle.
@@ -100,7 +113,7 @@ struct Valide {
 /// Ce que rend la page des libelles courts.
 #[derive(Debug, Serialize)]
 struct Libelles {
-    format: Option<String>,
+    format: Option<FormatDExport>,
     nom: Option<&'static str>,
     libelles: Vec<Ligne>,
     phrase: String,
@@ -120,15 +133,15 @@ struct Ligne {
 }
 
 /// Le format de la charge, ou celui du logiciel retenu ; `None` s'il n'y en a pas.
-fn format_de(ctx: &Contexte, format: Option<String>) -> R<Option<String>> {
-    match format.filter(|f| !f.is_empty()) {
+fn format_de(ctx: &Contexte, format: Option<FormatDExport>) -> R<Option<FormatDExport>> {
+    match format {
         Some(f) => Ok(Some(f)),
         None => documents::etats_compta::format_retenu(ctx),
     }
 }
 
 /// Ce qui depasse les zones de `format`, sur tous les mois de la compagnie.
-fn depasses(ctx: &Contexte, format: &str) -> R<Vec<Depasse>> {
+fn depasses(ctx: &Contexte, format: FormatDExport) -> R<Vec<Depasse>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     documents::etats_compta::trop_longs(ctx, format, &departs)
 }
@@ -145,7 +158,7 @@ fn zone(d: &Depasse) -> String {
 fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
     let (format, borne) = match format_de(ctx, c.format)? {
         None => return Ok(Libelles { format: None, nom: None, libelles: Vec::new(), phrase: "Aucun logiciel du comptable retenu : rien à raccourcir.".to_string() }),
-        Some(f) => match FormatBorne::de(&f) {
+        Some(f) => match FormatBorne::de(f) {
             Some(b) => (f, b),
             None => {
                 let phrase = format!("Le format « {} » ne borne pas ses libellés : rien à raccourcir.", f);
@@ -153,7 +166,7 @@ fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
             }
         },
     };
-    let libelles: Vec<Ligne> = depasses(ctx, &format)?
+    let libelles: Vec<Ligne> = depasses(ctx, format)?
         .into_iter()
         .map(|d| Ligne { quoi: d.quoi, zone: zone(&d), propose: lc::proposer(&d.long, d.largeur), cle: d.cle, long: d.long, largeur: d.largeur, court: d.court })
         .collect();
@@ -180,14 +193,14 @@ fn enregistrer(ctx: &Contexte, c: ChargeEnregistrer) -> R<Libelles> {
     let Some(format) = format_de(ctx, c.format)? else {
         return Err(erreur(socle::echec::Classe::Refuse, "Aucun logiciel du comptable retenu : aucun libellé court ne s'enregistre. Le choisir dans les Exports."));
     };
-    let Some(borne) = FormatBorne::de(&format) else {
-        return Err(faute(format!("Le format « {} » ne borne pas ses libellés : il n'a pas de libellé court.", format), &format));
+    let Some(borne) = FormatBorne::de(format) else {
+        return Err(faute(format!("Le format « {} » ne borne pas ses libellés : il n'a pas de libellé court.", format), format.as_str()));
     };
     if c.libelles.is_empty() {
         let phrase = format!("Aucun libellé court à enregistrer pour {} : rien n'est écrit.", borne.nom());
         return Ok(Libelles { format: Some(format), nom: Some(borne.nom()), libelles: Vec::new(), phrase });
     }
-    let trop: Vec<Depasse> = depasses(ctx, &format)?;
+    let trop: Vec<Depasse> = depasses(ctx, format)?;
     let mut fichier = lc::lire(&ctx.racine)?;
     let courts = fichier.formats.entry(borne).or_default();
     let mut vus = BTreeSet::new();

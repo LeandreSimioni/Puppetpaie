@@ -678,6 +678,12 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
 | modèle du bulletin | `ModeleBulletin` | `droit/src/fiche.rs` |
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
+| état d'export | `EtatDExport` | `documents/src/plan_comptable.rs` |
+| format d'export | `FormatDExport` | `documents/src/plan_comptable.rs` |
+| regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
+| logiciel du comptable | `LogicielComptable` | `documents/src/plan_comptable.rs` |
+| période d'export | `PeriodeDExport` | `documents/src/plan_comptable.rs` |
+| colonne d'un état | `ColonneDEtat` ; à unifier (#419) : `tableaux_export::Colonne.cle` | `documents/src/plan_comptable.rs` |
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
 | code retour d'une DPAE | `declarations::dpae::CodeRetourDpae` | `declarations/src/dpae.rs` |
 | code retour du lot | `declarations::dpae::CodeRetourDuLot` | `declarations/src/dpae.rs` |
@@ -777,6 +783,17 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   certificats Congés Spectacles, attestations, documents de fin, fiche récapitulative. Une liste du logiciel, dans
   l'ordre où le dossier se lit : `TOUTES` ; écrite `bulletins`, `contrats-signes`… Que portent la charge du dossier, le
   dossier rendu, les catégories proposées, le dossier parti au journal des envois (`DetailDossier.categories`).
+- **état d'export**, **format d'export**, **regroupement d'un état**, **logiciel du comptable**, **période d'export** :
+  les listes du logiciel que les tables des exports livrent (`exports_tables.json`) : les états que la page propose
+  (`livre-de-paie`…), leurs formats (les six des tableaux, `csv`… `json`, puis ceux des logiciels du comptable, `fec`…
+  `pennylane`), leurs regroupements (`mois`, `organisme`, `salarie`, `spectacle`), les logiciels du comptable
+  (`oxygene`… `autre`, chacun avec son format ; `FormatBorne` dit ceux dont la notice borne les zones), les périodes
+  qu'un état propose (`annee`, `mois`, `toutes`). Chacune s'écrit, se lit et se trie par son texte ; une autre se refuse
+  à sa lecture (les tables, la charge d'`exporter`, de `retenir-logiciel` et des libellés courts, `config/compta.json`).
+  Que portent la demande d'un état (`etats_paie::Demande`), un tableau rendu, le livre de paie, les limites d'un format.
+- **colonne d'un état** : une colonne qu'un état totalise ; aujourd'hui celles du livre de paie (`brut`…
+  `cout_employeur`), sous lesquelles son total les nomme et compte ce qu'un bulletin ne déclare pas. Les colonnes des
+  autres tableaux (`tableaux_export::Colonne.cle`) sont encore la clé texte d'une ligne.
 - **formalité d'une DPAE** : ce que le certificat de conformité d'une DPAE dit fait : CERTIF, IMMA, MT, PMF5 (Format 120,
   I_CERTIF à I_PMF5). Une liste de la norme, que portent une ligne du certificat et la personne certifiée au journal des
   envois.

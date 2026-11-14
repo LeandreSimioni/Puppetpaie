@@ -21,6 +21,7 @@ use droit::organismes::QualifiantDAssiette;
 use socle::echec::{erreur, refus_avec, Lieu, Classe};
 use socle::mois::{Graphie, Mois};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
+use documents::plan_comptable::{EtatDExport, RegroupementDEtat};
 use socle::num::{add, div, eur2, mul, zero2, Decimal};
 use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
@@ -109,10 +110,17 @@ struct Cumul {
 
 /// Ce qui est du a chaque organisme, rubrique par rubrique.
 pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
-    let regroupement = d.regroupement.as_str();
-    if !["organisme", "mois"].contains(&regroupement) {
-        return Err(refus(format!("Regroupement inconnu pour les cotisations : « {} » (organisme ou mois).", regroupement)));
-    }
+    let regroupement = match d.regroupement {
+        Some(r @ (RegroupementDEtat::Organisme | RegroupementDEtat::Mois)) => r,
+        autre => {
+            let ecrit = match autre {
+                Some(r) => r.as_str(),
+                None => "",
+            };
+            return Err(refus(format!("Regroupement inconnu pour les cotisations : « {} » (organisme ou mois).", ecrit)));
+        }
+    };
+    let par_mois = regroupement == RegroupementDEtat::Mois;
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
     let orgs = organismes(ctx)?;
@@ -122,7 +130,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut manque: BTreeSet<String> = BTreeSet::new();
     let zero = zero2();
     let mut ajouter = |m: Mois, org: &str, code: &str, libelle: &str, base: Option<Decimal>, ts: Option<Decimal>, ms: Option<Decimal>, tp: Option<Decimal>, mp: Option<Decimal>| {
-        let cle = ((regroupement == "mois").then_some(m), org.to_string(), code.to_string(), libelle.to_string(), ts, tp);
+        let cle = (par_mois.then_some(m), org.to_string(), code.to_string(), libelle.to_string(), ts, tp);
         let i = match cumul.iter().position(|c| c.cle == cle) {
             Some(i) => i,
             None => {
@@ -235,15 +243,15 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         lignes.push(l);
     }
     let tri = |l: &Ligne| vec![l.texte("code"), l.texte("libelle")];
-    let mut t = Tableau::nouveau("cotisations-par-organisme", "Cotisations par organisme", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::CotisationsParOrganisme, "Cotisations par organisme", p.libelle.clone());
     t.mois = p.mois.clone();
-    t.sections = if regroupement == "mois" {
+    t.sections = if par_mois {
         sections_de(lignes, |l| (l.mois("mois"), l.texte("organisme")), |k| Ok(format!("{} — {}", section_du_mois(&k.0)?, k.1)), Some(&tri))?
     } else {
         sections_de(lignes, |l| l.texte("organisme"), |k| Ok(k.clone()), Some(&tri))?
     };
     // Par organisme, la section porte deja son nom : une colonne qui le repeterait ne dirait rien de plus.
-    let mut cols = if regroupement == "mois" { vec![col_t("mois", "Mois"), col_t("organisme", "Organisme")] } else { Vec::new() };
+    let mut cols = if par_mois { vec![col_t("mois", "Mois"), col_t("organisme", "Organisme")] } else { Vec::new() };
     cols.extend([
         col_t("libelle", "Cotisation"),
         col_t("code", "Code"),
@@ -262,7 +270,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     ];
     avert.push("Les « autres contributions dues par l'employeur » (FNAL, CSA, dialogue social, formation) sont versées à l'Urssaf sans ventilation, comme le bulletin les imprime.".to_string());
     t.avertissements = avert;
-    finir(ctx, &mut t, Some(&p), &format!("cotisations-par-organisme-{}", regroupement), &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), &format!("cotisations-par-organisme-{}", regroupement), d.format,d.ecrire)?;
     Ok(t)
 }
 
@@ -378,7 +386,7 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
     if lignes.iter().any(|l| l.texte("date").is_empty()) {
         avert.push("Un versement sans date de paiement est prélevé à l'échéance légale de l'organisme.".to_string());
     }
-    let mut t = Tableau::nouveau("versements-organismes", "Versements aux organismes (DSN)", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::VersementsOrganismes, "Versements aux organismes (DSN)", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, None)?;
@@ -397,7 +405,7 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
     t.sources = vec![
         "bloc S21.G00.20 « Versement organisme de protection sociale » (cahier technique DSN 2026.1), tiré de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; libellés : donnees/organismes-base.json".to_string(),
     ];
-    finir(ctx, &mut t, Some(&p), "versements-organismes", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), "versements-organismes", d.format,d.ecrire)?;
     Ok(t)
 }
 
@@ -430,7 +438,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
             }
         }
     }
-    let mut t = Tableau::nouveau("bordereau-urssaf", "Bordereau Urssaf (DSN)", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::BordereauUrssaf, "Bordereau Urssaf (DSN)", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, None)?;
@@ -449,7 +457,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
         "blocs S21.G00.22 « Bordereau de cotisation due » et S21.G00.23 « Cotisation agrégée » (cahier technique DSN 2026.1), tirés de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN".to_string(),
         "libellés : table des codes types de personnel, open.urssaf.fr (histocodestypescsv), relevée le 18/09/2026".to_string(),
     ];
-    finir(ctx, &mut t, Some(&p), "bordereau-urssaf", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), "bordereau-urssaf", d.format,d.ecrire)?;
     Ok(t)
 }
 
@@ -550,7 +558,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         lignes.push(l);
     }
     avert.push("Le FCAP-SVP se paie hors DSN, au FCAP-SVP (ou à l'organisme à qui il délègue la collecte, art. 5.2), en début d'année civile (art. 5.3). Que la tranche A soit celle de l'année écoulée est une inférence, à confirmer sur un appel du FCAP-SVP.".to_string());
-    let mut t = Tableau::nouveau("fcap-svp", "FCAP-SVP — financement du paritarisme (IDCC 3090)", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::FcapSvp, "FCAP-SVP — financement du paritarisme (IDCC 3090)", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.avec_total = false;
@@ -569,7 +577,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         "CCN 3090, titre V, articles 5.1 (0,1 % de la tranche A, plancher 80 €, plafond 300 € par an et par entreprise), 5.2 et 5.3 — base KALI de la DILA, relevée le 23/09/2026".to_string(),
         "tranche A : assiette brute plafonnée que la DSN déclare (S21.G00.78.001 = 02), de chaque paie : écrite, ou importée (la DSN ou le bulletin de l'ancien logiciel)".to_string(),
     ];
-    finir(ctx, &mut t, Some(&p), "fcap-svp", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), "fcap-svp", d.format,d.ecrire)?;
     Ok(t)
 }
 
@@ -667,7 +675,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         avert.push("Montants hors taxes : l'Afdas facture la TVA en plus. Le taux de la CPNEF est celui de l'Afdas, qui collecte (0,004 %, 15 à 2 000 € HT) ; la web-conférence Audiens 2026 donne l'inverse — à confirmer sur le premier appel de l'Afdas.".to_string());
     }
     avert.push("La contribution conventionnelle des intermittents (0,10 % et un forfait) n'est pas ici : elle est traitée comme sous la 3090.".to_string());
-    let mut t = Tableau::nouveau("afdas-2642", format!("Contributions Afdas de {}", branche), p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::Afdas2642, format!("Contributions Afdas de {}", branche), p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.avec_total = false;
@@ -688,7 +696,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if idcc == IDCC_1790 { "CCN 1790, avenant n° 52, article 1.5 ; plaquette Afdas « Loisirs 2026 »" } else { "plaquette Afdas « Contributions 2026 Audiovisuel » (janvier 2026)" }.to_string(),
         "masse salariale : le livre de paie, bulletin par bulletin".to_string(),
     ];
-    finir(ctx, &mut t, Some(&p), "afdas-2642", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), "afdas-2642", d.format,d.ecrire)?;
     Ok(t)
 }
 
@@ -745,13 +753,13 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         lignes.push(l);
     }
     avert.push("Assiette : le brut du livre de paie, tous salariés. Le texte parle de masse salariale ou de masse déclarée en retraite complémentaire : pour une compagnie du spectacle, c'est le même brut.".to_string());
-    let mut t = Tableau::nouveau("paritarisme-branche", format!("Financement du paritarisme de la convention {}", idcc), p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::ParitarismeBranche, format!("Financement du paritarisme de la convention {}", idcc), p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.avec_total = false;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![col_t("annee", "Année de la masse"), col_m("masse", "Masse salariale"), col_x("taux", "Taux %"), col_m("montant", "Contribution"), col_t("a_payer", "À payer")];
     t.sources = vec!["la couche de la convention, `hors_bulletin`".to_string(), "masse salariale : le livre de paie, bulletin par bulletin".to_string()];
-    finir(ctx, &mut t, Some(&p), "paritarisme-branche", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), "paritarisme-branche", d.format,d.ecrire)?;
     Ok(t)
 }

@@ -19,6 +19,169 @@ use droit::forme_bareme::IdDeCotisation;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::repr;
 
+// ------------------------------------------------------------------ les listes des exports
+
+/// UNE LISTE DU LOGICIEL que les tables des exports (`exports_tables.json`), la charge d'`exporter` et ses lecteurs
+/// nomment : chaque valeur s'ecrit, se lit et se trie par son texte ; une autre se refuse a sa lecture.
+macro_rules! liste_des_exports {
+    ($(#[$m:meta])* pub enum $nom:ident, $quoi:literal { $( $var:ident = $txt:literal ),* $(,)? }) => {
+        $(#[$m])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum $nom { $( $var ),* }
+
+        impl $nom {
+            /// Son texte.
+            pub fn as_str(self) -> &'static str {
+                match self { $( $nom::$var => $txt ),* }
+            }
+
+            /// Celle qu'ecrit `texte`, ou la phrase qui le refuse.
+            pub fn lire(texte: &str) -> R<$nom> {
+                match texte {
+                    $( $txt => Ok($nom::$var), )*
+                    _ => Err(socle::refus!(concat!($quoi, " : « {} »."), texte)),
+                }
+            }
+        }
+
+        impl std::fmt::Display for $nom {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl Ord for $nom {
+            fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+                self.as_str().cmp(autre.as_str())
+            }
+        }
+
+        impl PartialOrd for $nom {
+            fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(autre))
+            }
+        }
+
+        impl Serialize for $nom {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(self.as_str())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $nom {
+            fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                let texte = String::deserialize(d)?;
+                $nom::lire(&texte).map_err(|e| serde::de::Error::custom(e.phrase))
+            }
+        }
+    };
+}
+
+liste_des_exports! {
+    /// UN ETAT QUE LA PAGE DES EXPORTS PROPOSE (`etats` et `au_mois` des tables) : ce qu'`exporter` fait, ce qu'une
+    /// convention ou la taxe sur les salaires reserve, l'etat d'un tableau rendu.
+    pub enum EtatDExport, "État inconnu" {
+        LivreDePaie = "livre-de-paie",
+        LivreDePaieDetaille = "livre-de-paie-detaille",
+        RecapitulatifAnnuel = "recapitulatif-annuel",
+        MasseSalariale = "masse-salariale",
+        EtatDesVirements = "etat-des-virements",
+        PrelevementALaSource = "prelevement-a-la-source",
+        CotisationsParOrganisme = "cotisations-par-organisme",
+        VersementsOrganismes = "versements-organismes",
+        BordereauUrssaf = "bordereau-urssaf",
+        ReductionGenerale = "reduction-generale",
+        Assiettes = "assiettes",
+        RegularisationCascSvp = "regularisation-casc-svp",
+        FcapSvp = "fcap-svp",
+        Afdas2642 = "afdas-2642",
+        ParitarismeBranche = "paritarisme-branche",
+        EcrituresComptables = "ecritures-comptables",
+        GrandLivrePaie = "grand-livre-paie",
+        BalancePaie = "balance-paie",
+        TaxeSurLesSalaires = "taxe-sur-les-salaires",
+        CoutParSpectacle = "cout-par-spectacle",
+        HeuresEtCachets = "heures-et-cachets",
+        Contrats = "contrats",
+        RegistreDuPersonnel = "registre-du-personnel",
+        FichierDuPersonnel = "fichier-du-personnel",
+        JournalDesDeclarations = "journal-des-declarations",
+        ProvisionConges = "provision-conges",
+    }
+}
+
+liste_des_exports! {
+    /// LE FORMAT D'UN EXPORT : les six de la machinerie des tableaux (`tableaux_export::FORMATS_TABLEAU`), puis ceux des
+    /// logiciels du comptable (`etats_compta::FORMATS_ECRITURES`).
+    pub enum FormatDExport, "Format inconnu" {
+        Csv = "csv",
+        Tsv = "tsv",
+        Xlsx = "xlsx",
+        Pdf = "pdf",
+        Html = "html",
+        Json = "json",
+        Fec = "fec",
+        Ximport = "ximport",
+        Oxygene = "oxygene",
+        Sage = "sage",
+        Quadra = "quadra",
+        Ebp = "ebp",
+        Pennylane = "pennylane",
+    }
+}
+
+liste_des_exports! {
+    /// LE REGROUPEMENT D'UN ETAT : les groupes du livre de paie (par salarie, par mois, par spectacle), ceux des
+    /// cotisations (par organisme, par mois).
+    pub enum RegroupementDEtat, "Regroupement inconnu" {
+        Mois = "mois",
+        Organisme = "organisme",
+        Salarie = "salarie",
+        Spectacle = "spectacle",
+    }
+}
+
+liste_des_exports! {
+    /// LE LOGICIEL DU COMPTABLE (`logiciels` des tables) : il fixe le format des ecritures comptables ; `config/compta.json`
+    /// garde celui que la compagnie a retenu.
+    pub enum LogicielComptable, "Logiciel inconnu" {
+        Oxygene = "oxygene",
+        Sage = "sage",
+        Quadra = "quadra",
+        Ciel = "ciel",
+        Ebp = "ebp",
+        Pennylane = "pennylane",
+        Paheko = "paheko",
+        Acd = "acd",
+        Loop = "loop",
+        Isacompta = "isacompta",
+        Autre = "autre",
+    }
+}
+
+liste_des_exports! {
+    /// LA PERIODE QU'UN ETAT PROPOSE (`periodes` d'un etat) : une annee, un mois, toutes les annees.
+    pub enum PeriodeDExport, "Période inconnue" {
+        Annee = "annee",
+        Mois = "mois",
+        Toutes = "toutes",
+    }
+}
+
+liste_des_exports! {
+    /// LA COLONNE D'UN ETAT que le livre de paie totalise (`etats_paie::CUMULABLES`) : sa cle, sous laquelle le total
+    /// rendu la nomme, et sous laquelle se compte ce qu'un bulletin ne declare pas.
+    pub enum ColonneDEtat, "Colonne inconnue" {
+        Brut = "brut",
+        CotisationsSalariales = "cotisations_salariales",
+        CotisationsPatronales = "cotisations_patronales",
+        NetImposable = "net_imposable",
+        NetAPayer = "net_a_payer",
+        Pas = "pas",
+        CoutEmployeur = "cout_employeur",
+    }
+}
+
 // ------------------------------------------------------------------ les tables des exports
 
 /// LES TABLES FIXES DES EXPORTS ET DES ECRITURES COMPTABLES (`exports_tables.json`) : les etats que la page propose,
@@ -33,14 +196,14 @@ pub struct Tables {
     /// de conges payes : `engagement::conges::provision_conges_de`), ranges a part. Leur place dit leur piece.
     au_mois: Vec<EtatLivre>,
     /// L'etat -> les conventions (IDCC) qui le demandent.
-    pub si_convention: BTreeMap<String, Vec<droit::fiche::Idcc>>,
+    pub si_convention: BTreeMap<EtatDExport, Vec<droit::fiche::Idcc>>,
     /// Les etats qui ne servent qu'a une compagnie qui doit la taxe sur les salaires une des annees a exporter.
-    pub si_taxe_sur_les_salaires: Vec<String>,
+    pub si_taxe_sur_les_salaires: Vec<EtatDExport>,
     pub formats: Vec<FormatLivre>,
     pub regroupements: Vec<RegroupementLivre>,
     pub logiciels: Vec<Logiciel>,
     /// Le format -> les largeurs de ses zones.
-    pub limites: BTreeMap<String, Limite>,
+    pub limites: BTreeMap<FormatDExport, Limite>,
 }
 
 impl Tables {
@@ -54,22 +217,22 @@ impl Tables {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EtatLivre {
-    pub etat: String,
+    pub etat: EtatDExport,
     pub quoi: String,
     pub famille: String,
     pub questions: Vec<String>,
     pub bouton: String,
     pub apercu: bool,
-    pub formats: Vec<String>,
-    pub regroupements: Vec<String>,
-    pub periodes: Vec<String>,
+    pub formats: Vec<FormatDExport>,
+    pub regroupements: Vec<RegroupementDEtat>,
+    pub periodes: Vec<PeriodeDExport>,
 }
 
 /// Un format de fichier, et ce qu'il est.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormatLivre {
-    pub format: String,
+    pub format: FormatDExport,
     pub quoi: String,
 }
 
@@ -77,7 +240,7 @@ pub struct FormatLivre {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegroupementLivre {
-    pub regroupement: String,
+    pub regroupement: RegroupementDEtat,
     pub quoi: String,
 }
 
@@ -86,9 +249,9 @@ pub struct RegroupementLivre {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Logiciel {
-    pub logiciel: String,
+    pub logiciel: LogicielComptable,
     pub nom: String,
-    pub format: String,
+    pub format: FormatDExport,
     pub pourquoi: String,
     pub format_lisible: String,
     pub analytique: bool,
@@ -113,8 +276,8 @@ pub fn tables() -> &'static Tables {
 }
 
 /// Les logiciels du comptable que les ecritures comptables connaissent.
-pub fn logiciels_connus() -> Vec<&'static str> {
-    tables().logiciels.iter().map(|l| l.logiciel.as_str()).collect()
+pub fn logiciels_connus() -> Vec<LogicielComptable> {
+    tables().logiciels.iter().map(|l| l.logiciel).collect()
 }
 
 
@@ -311,12 +474,12 @@ pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
 
 /// Ce qui, dans le plan comptable, ne
 /// passerait pas dans ce format -- avant l'export.
-pub fn controler_plan(ctx: &Contexte, format: &str) -> R<Vec<String>> {
+pub fn controler_plan(ctx: &Contexte, format: FormatDExport) -> R<Vec<String>> {
     // Un format dont les tables ne bornent pas les zones n'a rien qui depasse.
-    Ok(tables().limites.get(format).map(|lim| controler_contre(ctx, format, lim)).transpose()?.into_iter().flatten().collect())
+    Ok(tables().limites.get(&format).map(|lim| controler_contre(ctx, format, lim)).transpose()?.into_iter().flatten().collect())
 }
 
-fn controler_contre(ctx: &Contexte, format: &str, lim: &Limite) -> R<Vec<String>> {
+fn controler_contre(ctx: &Contexte, format: FormatDExport, lim: &Limite) -> R<Vec<String>> {
     let plan = plan_comptable(ctx)?;
     let (lim_journal, nom_format) = (lim.journal, lim.nom.as_str());
     let mut comptes: HashSet<String> = HashSet::new();
@@ -355,7 +518,7 @@ fn controler_contre(ctx: &Contexte, format: &str, lim: &Limite) -> R<Vec<String>
     for c in tries {
         if let Some(lim_compte) = lim.compte.filter(|l| c.chars().count() > *l) {
             msgs.push(format!("{} : le compte « {} » a {} caractères, la zone en prend {}.", nom_format, c, c.chars().count(), lim_compte));
-        } else if format == "quadra" && !(!c.is_empty() && c.chars().all(|x| x.is_ascii_digit())) {
+        } else if format == FormatDExport::Quadra && !(!c.is_empty() && c.chars().all(|x| x.is_ascii_digit())) {
             msgs.push(format!(
                 "Quadra : le compte « {} » n'est pas numérique ; Quadra range les comptes de lettres parmi les tiers (clients, fournisseurs).",
                 c
@@ -365,7 +528,7 @@ fn controler_contre(ctx: &Contexte, format: &str, lim: &Limite) -> R<Vec<String>
     if journal.chars().count() > lim_journal {
         msgs.push(format!("{} : le journal « {} » a {} caractères, la zone en prend {}.", nom_format, journal, journal.chars().count(), lim_journal));
     }
-    if format == "pennylane" && !(!journal.is_empty() && journal.chars().all(char::is_alphabetic)) {
+    if format == FormatDExport::Pennylane && !(!journal.is_empty() && journal.chars().all(char::is_alphabetic)) {
         msgs.push(format!("Pennylane : le code journal « {} » ne doit porter que des lettres.", journal));
     }
     Ok(msgs)

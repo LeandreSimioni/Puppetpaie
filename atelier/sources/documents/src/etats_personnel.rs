@@ -12,6 +12,7 @@ use socle::echec::Classe;
 use socle::date::Jour;
 use socle::mois::Mois;
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
+use crate::plan_comptable::EtatDExport;
 use socle::num::{eur2, Decimal};
 use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
@@ -80,7 +81,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if contrats.iter().any(|c| c.contrat.is_none()) {
         avert.push("Contrat sans numéro : son mois n'a pas été produit, aucun numéro n'est figé. Rien n'est inventé.".to_string());
     }
-    let mut t = Tableau::nouveau("contrats", "Liste des contrats", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::Contrats, "Liste des contrats", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, Some(&|l| vec![l.texte("salarie"), l.texte("debut"), l.texte("contrat")]))?;
@@ -97,7 +98,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_m("brut", "Brut du mois"),
     ];
     t.sources = vec!["paies écrites des engagements validés ; paies des engagements importés, telles que l'import les a lues".to_string()];
-    finir(ctx, &mut t, Some(&p), "contrats", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), "contrats", d.format,d.ecrire)?;
     Ok(t)
 }
 
@@ -185,7 +186,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     avert.push("La nationalité est le pays de nationalité de la fiche, suivi de la catégorie déclarée en DSN (française, Union européenne, EEE hors Union, reste du monde) ; une fiche sans pays n'en montre que la catégorie. Pour un salarié étranger hors UE, le registre doit aussi porter le type et le numéro du titre de travail (art. D1221-24) — à compléter à la main.".to_string());
     avert.extend(a_preciser);
     avert.push("Registre unique du personnel : il porte des données personnelles et se conserve cinq ans après le départ de chaque salarié. Il se présente à l'inspection du travail sur demande.".to_string());
-    let mut t = Tableau::nouveau("registre-du-personnel", "Registre unique du personnel", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::RegistreDuPersonnel, "Registre unique du personnel", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
@@ -206,7 +207,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_t("sortie", "Sortie"),
     ];
     t.sources = vec!["Code du travail, art. L1221-13 (registre, ordre des embauches), D1221-23 (mentions : nationalité, date de naissance, sexe, emploi, qualification, dates d'entrée et de sortie), D1221-24 (type de contrat, titre de travail), Légifrance, relevé le 23/09/2026".to_string()];
-    finir(ctx, &mut t, Some(&p), "registre-du-personnel", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), "registre-du-personnel", d.format,d.ecrire)?;
     Ok(t)
 }
 
@@ -240,7 +241,7 @@ pub fn fichier_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if lignes.is_empty() {
         return Err(refus("Aucune fiche de salarié."));
     }
-    let mut t = Tableau::nouveau("fichier-du-personnel", "Fichier du personnel", "fiches au jour de l'export");
+    let mut t = Tableau::nouveau(EtatDExport::FichierDuPersonnel, "Fichier du personnel", "fiches au jour de l'export");
     t.avec_total = false;
     t.donnees_personnelles = true;
     t.sections = vec![Section::nouvelle("", lignes)];
@@ -262,7 +263,7 @@ pub fn fichier_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         col_t("actif", "Fiche"),
     ];
     t.sources = vec![droit::contexte::SALARIES.to_string()];
-    finir(ctx, &mut t, None, "fichier-du-personnel", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, None, "fichier-du-personnel", d.format,d.ecrire)?;
     Ok(t)
 }
 
@@ -340,7 +341,7 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
     if lignes.is_empty() {
         return Err(refus(format!("Aucun acte au journal sur la période ({}).", p.libelle)));
     }
-    let mut t = Tableau::nouveau("journal-des-declarations", "Journal des déclarations et envois", p.libelle.clone());
+    let mut t = Tableau::nouveau(EtatDExport::JournalDesDeclarations, "Journal des déclarations et envois", p.libelle.clone());
     t.mois = lignes.iter().filter_map(|l| l.mois("mois")).collect::<BTreeSet<_>>().into_iter().collect();
     t.avec_total = false;
     t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, Some(&|l| vec![l.texte("quand")]))?;
@@ -356,6 +357,6 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
         col_t("origine", "Reconstitué depuis"),
     ];
     t.sources = vec!["journal des actes de PuppetPaie : une ligne écrite après chaque acte, jamais avant".to_string()];
-    finir(ctx, &mut t, Some(&p), "journal-des-declarations", &d.format, d.ecrire)?;
+    finir(ctx, &mut t, Some(&p), "journal-des-declarations", d.format,d.ecrire)?;
     Ok(t)
 }
