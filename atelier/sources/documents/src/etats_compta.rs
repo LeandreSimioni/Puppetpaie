@@ -1329,15 +1329,16 @@ fn provision_d_une_annee_importee(
     let paies = lecture.paies(m)?;
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
     // brut que les pieces taisent, la somme ne se fait pas (`None`).
+    // Le compteur de conges (`engagement::conges::CompteurConges`) compte encore en decimaux : la somme s'y ouvre.
     let mut bruts = |cle: &droit::contexte::IdSalarie, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
-        let mut total = Montant::ZERO.decimal();
+        let mut total = Montant::ZERO;
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
             for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == *cle) {
                 let Some(brut) = q.brut else { return Ok(None) };
-                total = add(total, brut.decimal());
+                total += brut;
             }
         }
-        Ok(Some((total, premier_importe <= du.mois_civil())))
+        Ok(Some((total.decimal(), premier_importe <= du.mois_civil())))
     };
     for pa in paies.iter().filter_map(engagement::etats::PaieDuMois::importee) {
         let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
@@ -1376,7 +1377,7 @@ fn provision_d_une_annee_importee(
             }
         }
         // Le salaire du maintien : le brut du dernier mois repris ; un bulletin qui ne le dit pas, il ne se lit pas.
-        let Some(salaire) = paies.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle).map(|q| q.brut).try_fold(Montant::ZERO.decimal(), |a, b| b.map(|b| add(a, b.decimal()))) else {
+        let Some(salaire) = paies.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle).map(|q| q.brut).try_fold(Montant::ZERO, |a, b| b.map(|b| a + b)) else {
             avert.push(format!(
                 "{} : un de ses bulletins repris de {} ne dit pas son brut : son salaire du mois ne se lit pas, il n'est pas dans la provision.",
                 ctx.nomme(&cle),
@@ -1385,7 +1386,7 @@ fn provision_d_une_annee_importee(
             sans_compteur += 1;
             continue;
         };
-        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
+        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire.decimal()).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.clone(), nat.libelle.clone(), provision));
     }
     Ok(sans_compteur)
@@ -1421,8 +1422,8 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 if a_provisionner.iter().any(|(c, ..)| *c == cle) {
                     continue;
                 }
-                let brut_du_mois = paies.iter().filter(|q| cle_de(q) == cle).fold(zero, |a, q| add(a, q.brut.decimal()));
-                let Some(cpt) = engagement::conges::provision_conges_de(pa, m, brut_du_mois, e.salaire_mensuel.as_ref())? else { continue };
+                let brut_du_mois = paies.iter().filter(|q| cle_de(q) == cle).fold(Montant::ZERO, |a, q| a + q.brut);
+                let Some(cpt) = engagement::conges::provision_conges_de(pa, m, brut_du_mois.decimal(), e.salaire_mensuel.as_ref())? else { continue };
                 a_provisionner.push((cle, e.numero.clone(), nat.libelle.clone(), cpt));
             }
             m

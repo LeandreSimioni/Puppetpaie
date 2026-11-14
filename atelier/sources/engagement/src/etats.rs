@@ -890,8 +890,10 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     // l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013, `norme-dsn/texte/bloc-S21.G00.50.txt`) ;
     // cette avance-la, ce que le BOFiP en soumet (`maintien`, `Assiette::IjSubrogeesAssiettePas`).
     // Sans subrogation, aucune avance.
-    let avance: Decimal = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).map(|b| b.decimal()).into_iter().sum();
-    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, p.net_imposable.decimal() + avance, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
+    let avance = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).and_then(|b| b.montant());
+    let assiette = avance.into_iter().fold(p.net_imposable, |a, m| a + m);
+    // `droit::pas::du_versement` prend encore un decimal : sa porte.
+    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, assiette.decimal(), Some(fin), court, droit::pas::ZONE_DEFAUT)?))
 }
 
 /// Le prelevement a la source du versement d'une correction, verse avec le mois `mois_du_versement` : la difference de

@@ -24,7 +24,7 @@ use engagement::importe::{Attestation, ContratLu};
 use crate::reponse::{Attestant, Source};
 use socle::date::Jour;
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 
 /// Un contrat atteste : de qui (NIR), quand, par quoi, et ce qu'il compte.
 #[derive(Clone, Debug)]
@@ -40,7 +40,7 @@ pub struct Atteste {
     pub(crate) heures: Option<i64>,
     pub cachets: Option<i64>,
     pub jours: Option<i64>,
-    pub brut: Option<Decimal>,
+    pub brut: Option<Montant>,
     /// Sa ligne, telle qu'elle s'ecrit.
     ligne: ContratLu,
     /// Pour un contrat de l'historique : sa ligne telle que l'historique la porte (l'ecriture la retrouve par elle).
@@ -62,7 +62,7 @@ impl Atteste {
     }
 
     /// Ce qu'il compte : ses heures, ses cachets, ses jours, son brut.
-    pub fn compte(&self) -> (Option<i64>, Option<i64>, Option<i64>, Option<Decimal>) {
+    pub fn compte(&self) -> (Option<i64>, Option<i64>, Option<i64>, Option<Montant>) {
         (self.heures, self.cachets, self.jours, self.brut)
     }
 
@@ -86,9 +86,9 @@ fn compteur(x: Option<i64>, mot: &str) -> String {
 }
 
 /// Des compteurs et un brut, en mots.
-pub fn en_mots(heures: Option<i64>, cachets: Option<i64>, jours: Option<i64>, brut: Option<Decimal>) -> String {
+pub fn en_mots(heures: Option<i64>, cachets: Option<i64>, jours: Option<i64>, brut: Option<Montant>) -> String {
     let brut = match brut {
-        Some(b) => format!("{} de brut", socle::texte::euros(b)),
+        Some(b) => format!("{} de brut", socle::texte::euros(b.decimal())),
         None => "brut illisible".to_string(),
     };
     format!("{}, {}, {}, {}", compteur(heures, "heure"), compteur(cachets, "cachet"), compteur(jours, "jour"), brut)
@@ -106,7 +106,8 @@ fn lu(nir: &Nir, ligne: &ContratLu, source: Attestant) -> Atteste {
         heures: c.heures,
         cachets: c.cachets,
         jours: c.jours,
-        brut: c.brut,
+        // Le brut que la ligne lue ecrit (un nombre de sa forme) : sa porte.
+        brut: c.brut.map(Montant::du_decimal),
         ligne: ligne.clone(),
         historique: (source == Attestant::Historique).then(|| ligne.clone()),
     }
@@ -160,7 +161,7 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Reste {
     }
     let somme = |f: fn(&Atteste) -> Option<i64>| -> Option<i64> { coupants.iter().map(|p| f(p)).sum() };
     let (heures, cachets, jours) = (somme(|p| p.heures), somme(|p| p.cachets), somme(|p| p.jours));
-    let brut: Option<Decimal> = coupants.iter().map(|p| p.brut).sum();
+    let brut: Option<Montant> = coupants.iter().map(|p| p.brut).try_fold(Montant::ZERO, |a, b| b.map(|b| a + b));
     // Le certificat compte dans une seule unite (des cachets ou des jours) : le reste se compte dans la sienne ; l'autre
     // reste ce que le certificat en dit.
     let reste = |le_sien: Option<i64>, ailleurs: Option<i64>| match le_sien {
@@ -168,7 +169,7 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Reste {
         autre => autre,
     };
     let (reste_cachets, reste_jours) = (reste(c.cachets, cachets), reste(c.jours, jours));
-    let reste_brut = c.brut.zip(brut).map(|(a, b)| a - b).filter(|b| *b > Decimal::ZERO);
+    let reste_brut = c.brut.zip(brut).map(|(a, b)| a - b).filter(|b| *b > Montant::ZERO);
     let unite_lue = c.cachets.is_none_or(|n| n == 0 || cachets.is_some_and(|x| x > 0)) && c.jours.is_none_or(|n| n == 0 || jours.is_some_and(|x| x > 0));
     let positifs = matches!((reste_cachets, reste_jours), (Some(a), Some(b)) if a >= 0 && b >= 0 && a + b > 0);
     let (true, true, Some(reste_brut)) = (unite_lue, positifs, reste_brut) else {
@@ -182,7 +183,8 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Reste {
     let debut = siens[premier].premier_jour().max(debut_c);
     let fin = siens[dernier].dernier_jour().min(fin_c);
     let mut ligne = c.ligne.clone();
-    let b = socle::grandeurs::Montant::du_decimal(reste_brut).au_centime().decimal();
+    // La ligne lue ecrit son brut en nombre (`ContratLu`) : sa porte.
+    let b = reste_brut.au_centime().decimal();
     (ligne.debut, ligne.fin) = (Some(debut), Some(fin));
     ligne.contrat.cachets = reste_cachets;
     ligne.contrat.jours = reste_jours;
@@ -267,7 +269,7 @@ impl Registre {
                     Some(f) => dernier.min(f),
                     None => dernier,
                 });
-                (a.heures, a.cachets, a.jours, a.brut) = (p.heures, p.cachets, p.jours, p.brut.map(socle::grandeurs::Montant::decimal));
+                (a.heures, a.cachets, a.jours, a.brut) = (p.heures, p.cachets, p.jours, p.brut);
                 tous.push(a);
             }
         }

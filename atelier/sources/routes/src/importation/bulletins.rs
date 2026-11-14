@@ -1116,7 +1116,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 // LE BULLETIN EST LA PIECE DE PAIE : un contrat d'AEM aux memes dates qui compte autre chose
                 // s'efface devant le sien (`import::attestes`) ; un autre contrat atteste reste, et l'ecart se dit.
                 let pareils = registre.pareils(&l.nir, l.b.debut, l.b.fin, Source::Bulletin);
-                let le_sien = (Some(compte.heures), Some(compte.cachets), Some(compte.jours), Some(compte.brut));
+                // Le brut que le bulletin lu dit (un nombre de sa lecture) : sa porte.
+                let le_sien = (Some(compte.heures), Some(compte.cachets), Some(compte.jours), Some(Montant::du_decimal(compte.brut)));
                 let en_mots = import::attestes::en_mots(le_sien.0, le_sien.1, le_sien.2, le_sien.3);
                 if pareils.iter().any(|a| a.compte() == le_sien) {
                     phrases.push("contrat déjà attesté".into());
@@ -1230,7 +1231,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             // L'ecart, quand les contrats confirmes tiennent dans les dates de la piece (un certificat coupe au 31 mars
             // n'en porte qu'une part).
             if pareils.iter().all(|a| a.tient_dans(debut, fin)) {
-                let somme: Option<Decimal> = pareils.iter().map(|a| a.brut).sum();
+                // Les montants lus d'une piece (`brut`, l'AEM, le certificat) sont encore des decimaux ici : la somme s'y ouvre.
+                let somme: Option<Decimal> = pareils.iter().map(|a| a.brut).try_fold(Montant::ZERO, |s, b| b.map(|b| s + b)).map(Montant::decimal);
                 let (cachets, jours): (Option<i64>, Option<i64>) = (pareils.iter().map(|a| a.cachets).sum(), pareils.iter().map(|a| a.jours).sum());
                 let n = |x: Option<i64>| dit(x.map(|v| v.to_string()));
                 match &cl.aem {

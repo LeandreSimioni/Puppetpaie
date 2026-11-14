@@ -13,7 +13,7 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use crate::plan_comptable::EtatDExport;
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
 // ============================================================ 13. les contrats
@@ -33,7 +33,7 @@ struct ContratMois {
     debut: Jour,
     /// La fin du contrat, sinon son dernier jour travaille.
     fin: Option<Jour>,
-    brut: Option<Decimal>,
+    brut: Option<Montant>,
 }
 
 /// Chaque contrat de la periode, une ligne par mois de paie, lu dans les paies du mois (`Lecture::paies` : la paie
@@ -57,7 +57,7 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
                 objet: paie.spectacle().and_then(|s| s.numero_objet.dite()).cloned(),
                 debut: e.debut,
                 fin: e.fin.or(e.dates_travail.last().copied()),
-                brut: paie.brut().map(|b| b.au_centime().decimal()),
+                brut: paie.brut().map(Montant::au_centime),
             });
         }
     }
@@ -75,7 +75,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let mut l = Ligne::nouvelle();
         l.m("mois", c.mois).t("cle", c.cle.to_string()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
         l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.as_ref().map(|o| o.to_string())).t("debut", c.debut.jj_mm_aaaa()).ot("fin", c.fin.map(|j| j.jj_mm_aaaa()));
-        l.od("brut", c.brut);
+        l.od("brut", c.brut.map(Montant::decimal));
         lignes.push(l);
     }
     if contrats.iter().any(|c| c.contrat.is_none()) {
