@@ -812,6 +812,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | famille d'une cotisation | `FamilleDeCotisation` | `droit/src/forme_bareme.rs` |
 | regroupement de la comparaison | `RegroupementDeComparaison`, `TotalDuBulletin` | `engagement/src/ecarts.rs` |
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
+| mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
 | logiciel d'un bulletin importé | `LogicielDUnBulletin` | `engagement/src/importe.rs` |
 | raison d'un recalcul | `RaisonDuRecalcul` | `engagement/src/etats.rs` |
 | cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |

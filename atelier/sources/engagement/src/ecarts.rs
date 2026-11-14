@@ -45,7 +45,7 @@ use socle::echec::{refus, Echec, R};
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
 use socle::num::Decimal;
-use socle::grandeurs::Taux;
+use socle::grandeurs::{Coefficient, Montant, Taux};
 
 /// Ce que l'on compare d'une ligne.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -208,12 +208,29 @@ pub struct Ecart {
     pub cotisation: RegroupementDeComparaison,
     /// Les libelles du bulletin importe pour cette cotisation (les notres quand il ne l'imprime pas).
     pub libelles: Vec<String>,
-    pub grandeur: Grandeur,
-    pub notre_taux: Option<Decimal>,
-    pub leur_taux: Option<Decimal>,
-    /// (le leur - le notre) / le notre, a 4 decimales, pour une base ou un montant ; `None` pour un taux, ou quand le
-    /// notre est nul.
-    pub ecart_relatif: Option<Decimal>,
+    pub mesure: MesureDeLEcart,
+}
+
+/// CE QU'UN ECART MESURE, selon ce qui differe : une base ou un montant, son ecart relatif ; un taux, le notre et le
+/// leur ; une cotisation d'un seul cote, rien.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MesureDeLEcart {
+    /// Une base ou un montant (`Grandeur::Base`, `MontantSalarie`, `MontantEmployeur`) : (le leur - le notre) / le
+    /// notre, a 4 decimales ; `None` quand le notre est nul.
+    Relatif(Grandeur, Option<Coefficient>),
+    /// Un taux (`Grandeur::TauxSalarie`, `TauxEmployeur`) : le notre et le leur.
+    Taux { grandeur: Grandeur, notre: Taux, leur: Taux },
+    /// Une cotisation d'un seul cote (`Grandeur::AbsenteDuBulletin`, `AbsenteDuCalcul`).
+    Absente(Grandeur),
+}
+
+impl MesureDeLEcart {
+    /// Ce qui differe.
+    pub fn grandeur(self) -> Grandeur {
+        match self {
+            MesureDeLEcart::Relatif(g, _) | MesureDeLEcart::Taux { grandeur: g, .. } | MesureDeLEcart::Absente(g) => g,
+        }
+    }
 }
 
 /// La comparaison d'une paie importee (un mois de l'engagement).
@@ -270,12 +287,18 @@ pub fn cotisation_de(l: &LigneCotisation, garanties: &[IdDeCotisation]) -> Regro
 #[derive(Clone, Debug)]
 struct Lue {
     libelle: String,
-    base: Option<Decimal>,
-    taux_salarie: Option<Decimal>,
-    taux_employeur: Option<Decimal>,
-    montant_salarie: Option<Decimal>,
-    montant_employeur: Option<Decimal>,
+    base: Option<Montant>,
+    taux_salarie: Option<Taux>,
+    taux_employeur: Option<Taux>,
+    montant_salarie: Option<Montant>,
+    montant_employeur: Option<Montant>,
 }
+
+/// Un centime : l'ecart de montant qu'un arrondi fait sur une ligne, et qui n'est pas un ecart.
+const UN_CENTIME: Montant = Montant::du_decimal(Decimal::from_parts(1, 0, 0, false, 2));
+
+/// Cinq dix-milliemes de point : l'ecart de taux qui n'en est pas un.
+const ECART_DE_TAUX_TOLERE: Taux = Taux::du_decimal(Decimal::from_parts(5, 0, 0, false, 4));
 
 
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
@@ -498,11 +521,11 @@ fn comparer_une(
     for l in cotisations {
         let lue = Lue {
             libelle: l.libelle.clone(),
-            base: l.base,
-            taux_salarie: l.taux_salarie,
-            taux_employeur: l.taux_employeur,
-            montant_salarie: l.montant_salarie,
-            montant_employeur: l.montant_employeur,
+            base: l.base.map(Montant::du_decimal),
+            taux_salarie: l.taux_salarie.map(Taux::du_decimal),
+            taux_employeur: l.taux_employeur.map(Taux::du_decimal),
+            montant_salarie: l.montant_salarie.map(Montant::du_decimal),
+            montant_employeur: l.montant_employeur.map(Montant::du_decimal),
         };
         if lue.montant_salarie.is_none() && lue.montant_employeur.is_none() {
             continue;
@@ -537,7 +560,7 @@ fn comparer_une(
     let mut codes: Vec<&RegroupementDeComparaison> = leurs.keys().chain(nos.keys()).collect();
     codes.sort();
     codes.dedup();
-    let zero = Decimal::ZERO;
+    let somme = |montants: &mut dyn Iterator<Item = Montant>| montants.fold(Montant::ZERO, |a, m| a + m.abs());
     for code in codes {
         if atmp_lu && *code == RegroupementDeComparaison::Cotisation(ATMP) {
             continue;
@@ -550,70 +573,74 @@ fn comparer_une(
             Some(v) => v,
             None => &[],
         };
-        let leur_sal: Decimal = eux.iter().filter_map(|l| l.montant_salarie).map(|x| x.abs()).sum();
-        let leur_pat: Decimal = eux.iter().filter_map(|l| l.montant_employeur).map(|x| x.abs()).sum();
-        let notre_sal: Decimal = nous.iter().map(|l| l.montant_sal.abs().decimal()).sum();
-        let notre_pat: Decimal = nous.iter().map(|l| l.montant_pat.abs().decimal()).sum();
+        let leur_sal = somme(&mut eux.iter().filter_map(|l| l.montant_salarie));
+        let leur_pat = somme(&mut eux.iter().filter_map(|l| l.montant_employeur));
+        let notre_sal = somme(&mut nous.iter().map(|l| l.montant_sal));
+        let notre_pat = somme(&mut nous.iter().map(|l| l.montant_pat));
         let mut libelles: Vec<String> = Vec::new();
         for l in eux.iter().map(|l| l.libelle.clone()).chain(eux.is_empty().then(|| nous.iter().map(|l| l.libelle.clone())).into_iter().flatten()) {
             if !libelles.contains(&l) {
                 libelles.push(l);
             }
         }
-        let ecart = |grandeur, notre_taux, leur_taux, ecart_relatif| Ecart { cotisation: code.clone(), libelles: libelles.clone(), grandeur, notre_taux, leur_taux, ecart_relatif };
-        let (chez_eux, chez_nous) = (leur_sal + leur_pat > zero, notre_sal + notre_pat > zero);
+        let ecart = |mesure| Ecart { cotisation: code.clone(), libelles: libelles.clone(), mesure };
+        let (chez_eux, chez_nous) = (leur_sal + leur_pat > Montant::ZERO, notre_sal + notre_pat > Montant::ZERO);
         if chez_nous && !chez_eux {
-            ecarts.push(ecart(Grandeur::AbsenteDuBulletin, None, None, None));
+            ecarts.push(ecart(MesureDeLEcart::Absente(Grandeur::AbsenteDuBulletin)));
             continue;
         }
         if chez_eux && !chez_nous {
-            ecarts.push(ecart(Grandeur::AbsenteDuCalcul, None, None, None));
+            ecarts.push(ecart(MesureDeLEcart::Absente(Grandeur::AbsenteDuCalcul)));
             continue;
         }
         if !chez_eux {
             continue;
         }
-        let tolerance = Decimal::new(1, 2) * Decimal::from(eux.len().max(nous.len()) as i64);
+        // Un centime par ligne, du cote qui en a le plus.
+        let tolerance = (0..eux.len().max(nous.len())).fold(Montant::ZERO, |t, _| t + UN_CENTIME);
         for (grandeur, leur, notre) in [(Grandeur::MontantSalarie, leur_sal, notre_sal), (Grandeur::MontantEmployeur, leur_pat, notre_pat)] {
             if (leur - notre).abs() > tolerance {
-                ecarts.push(ecart(grandeur, None, None, relatif(leur, notre)));
+                ecarts.push(ecart(MesureDeLEcart::Relatif(grandeur, relatif(leur, notre))));
             }
         }
         let ([l], [n]) = (eux, nous) else { continue };
-        if let Some(b) = l.base.filter(|_| !n.masquer_base_et_taux) {
-            if (b - n.base.decimal()).abs() > Decimal::new(1, 2) {
-                ecarts.push(ecart(Grandeur::Base, None, None, relatif(b, n.base.decimal())));
+        // Une base en heures (la deduction des heures supplementaires) est masquee au bulletin : elle ne se compare pas.
+        if let (Some(b), crate::calcul::BaseDeCotisation::Montant(notre)) = (l.base.filter(|_| !n.masquer_base_et_taux), n.base) {
+            if (b - notre).abs() > UN_CENTIME {
+                ecarts.push(ecart(MesureDeLEcart::Relatif(Grandeur::Base, relatif(b, notre))));
             }
         }
-        for (grandeur, leur, notre) in [(Grandeur::TauxSalarie, l.taux_salarie, n.taux_sal.map(Taux::decimal)), (Grandeur::TauxEmployeur, l.taux_employeur, n.taux_pat.map(Taux::decimal))] {
+        for (grandeur, leur, notre) in [(Grandeur::TauxSalarie, l.taux_salarie, n.taux_sal), (Grandeur::TauxEmployeur, l.taux_employeur, n.taux_pat)] {
             // Un taux se compare quand chaque cote en a un : une ligne calculee sans taux (la reduction generale, un
             // montant fixe) n'en a pas, et ce que le bulletin imprime a sa place n'en est pas un ; le montant compare.
             let (Some(leur), Some(notre)) = (leur, notre) else { continue };
-            if (leur - notre).abs() > Decimal::new(5, 4) {
-                ecarts.push(ecart(grandeur, Some(notre), Some(leur), None));
+            if (leur - notre).abs() > ECART_DE_TAUX_TOLERE {
+                ecarts.push(ecart(MesureDeLEcart::Taux { grandeur, notre, leur }));
             }
         }
     }
     // Les totaux du bulletin, sans ce qu'il imprime apres eux : l'ecart relatif seulement.
-    let hors = |f: &dyn Fn(&LigneCotisation) -> Decimal| -> Decimal { paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l, &garanties))).map(f).sum() };
+    let hors = |f: &dyn Fn(&LigneCotisation) -> Montant| -> Montant {
+        paie.lignes.iter().filter(|l| hors_total.contains(&cotisation_de(l, &garanties))).fold(Montant::ZERO, |a, l| a + f(l))
+    };
     for (cle, notre, leur) in [
-        (TotalDuBulletin::CotisationsSalariales, paie.total_sal.decimal() - hors(&|l| l.montant_sal.decimal()), p.cotisations_salariales),
-        (TotalDuBulletin::CotisationsPatronales, paie.total_pat.decimal() - hors(&|l| l.montant_pat.decimal()), p.cotisations_patronales),
-        (TotalDuBulletin::NetSocial, paie.net_social.decimal(), p.net_social),
-        (TotalDuBulletin::NetImposable, paie.net_imposable.decimal(), p.net_imposable),
+        (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
+        (TotalDuBulletin::CotisationsPatronales, paie.total_pat - hors(&|l| l.montant_pat), p.cotisations_patronales),
+        (TotalDuBulletin::NetSocial, paie.net_social, p.net_social),
+        (TotalDuBulletin::NetImposable, paie.net_imposable, p.net_imposable),
     ] {
-        let Some(leur) = leur else { continue };
-        if (leur - notre).abs() > Decimal::new(1, 2) {
+        let Some(leur) = leur.map(Montant::du_decimal) else { continue };
+        if (leur - notre).abs() > UN_CENTIME {
             let grandeur = if cle == TotalDuBulletin::CotisationsPatronales { Grandeur::MontantEmployeur } else { Grandeur::MontantSalarie };
-            ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), grandeur, notre_taux: None, leur_taux: None, ecart_relatif: relatif(leur, notre) });
+            ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), mesure: MesureDeLEcart::Relatif(grandeur, relatif(leur, notre)) });
         }
     }
     Ok(ecarts)
 }
 
 /// (leur - notre) / notre, a 4 decimales ; `None` quand le notre est nul.
-fn relatif(leur: Decimal, notre: Decimal) -> Option<Decimal> {
-    (!notre.is_zero()).then(|| ((leur - notre) / notre).round_dp(4))
+fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
+    (!notre.est_nul()).then(|| Coefficient::du_decimal(((leur - notre).decimal() / notre.decimal()).round_dp(4)))
 }
 
 /// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau.
