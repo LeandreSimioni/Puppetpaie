@@ -1001,7 +1001,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   établissements (`nic_principal`, `nics`, `etablissement`), la carte et l'engagement, la fiche d'un contrat
   (`SalarieDuContrat`), la DSN fabriquée et lue, le journal des envois, la désignation d'un dépôt ; aucun (`None`) : le
   siège.
-- **effectif** : l'effectif que l'Urssaf calcule.
+- **effectif** : l'effectif que l'Urssaf calcule. Son fichier, `config/effectifs.json`, a une seule forme,
+  `droit::contexte::FichierEffectifs` (par `Annee`, puis par `TypeDeParametreNeores`, un `EffectifEcrit`), lue par
+  `droit::contexte::effectifs_lus` seule (l'effectif A01, la CSA et l'OETH, le relevé des retours), écrite par
+  `envois::releve_retours` seul.
 - **type de contrat de la DPAE** : C_TYPE_CONTRAT du Format 120 (1 CDD, 2 CDI, 3 CTT), `codes_fermes!` avec son libellé ;
   que portent la DPAE d'une nature (`contrats-base.json`) et une DPAE relue.
 - **rôle d'un contrat d'organisme** : la prévoyance ou la santé d'un salarié payé au mois (`role` de

@@ -204,36 +204,57 @@ pub fn cinquante_salaries_et_plus(fiche: &ChampsEntreprise) -> bool {
     fiche.avec_permanents().is_some_and(|cle| fiche.avec_permanents.ouvrir(&cle).cinquante_salaries_et_plus.oui())
 }
 
-/// `config/effectifs.json` : les effectifs par annee civile et par code, ceux que l'Urssaf renvoie en 118 (`calcule_le`,
-/// `source`) et ceux que la compagnie a dits (`dit_le`) ; ecrit par `envois::releve_retours`.
-#[derive(Debug, serde::Deserialize)]
+/// LE FICHIER DES EFFECTIFS (`config/effectifs.json`), sa seule forme : les effectifs par annee civile et par code, ceux
+/// que l'Urssaf renvoie en 118 (`calcule_le`, `source`) et ceux que la compagnie a dits (`dit_le`). Ecrit par
+/// `envois::releve_retours` seul ; lu par `effectifs_lus` seule.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FichierEffectifs {
-    #[serde(rename = "quoi")]
-    _quoi: Option<String>,
-    annees: Option<BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>>,
+pub struct FichierEffectifs {
+    /// Ce que le fichier dit de lui-meme.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quoi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annees: Option<EffectifsParAnnee>,
 }
 
-/// L'effectif d'un code pour une annee.
-#[derive(Debug, serde::Deserialize)]
+/// Les effectifs par annee, puis par code.
+pub type EffectifsParAnnee = BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>;
+
+/// UN EFFECTIF ECRIT : celui qu'un 118 a calcule (`calcule_le`, `source` : le jour du calcul, l'archive du compte rendu),
+/// ou celui que la compagnie a dit (`dit_le`), qu'un 118 de la meme annee remplace.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EffectifEcrit {
-    #[serde(deserialize_with = "socle::forme::court")]
-    valeur: Decimal,
-    #[serde(rename = "calcule_le", default, with = "socle::paris::ecrit::seconde::option")]
-    _calcule_le: Option<socle::paris::Moment>,
-    #[serde(rename = "source")]
-    _source: Option<socle::fichiers::CheminRelatif>,
-    #[serde(rename = "dit_le")]
-    _dit_le: Option<Jour>,
+pub struct EffectifEcrit {
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::court")]
+    pub valeur: Decimal,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
+    pub calcule_le: Option<socle::paris::Moment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<CheminRelatif>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dit_le: Option<Jour>,
+}
+
+impl FichierEffectifs {
+    /// L'effectif du code `code` pour l'annee `annee`, s'il est ecrit.
+    pub fn du_118(&self, annee: Annee, code: TypeDeParametreNeores) -> Option<Decimal> {
+        self.annees.as_ref().and_then(|a| a.get(&annee)).and_then(|c| c.get(&code)).map(|e| e.valeur)
+    }
+}
+
+/// `config/effectifs.json` de la compagnie, lu par sa forme ; aucun s'il n'existe pas.
+pub fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
+    let p = racine.join(EFFECTIFS);
+    if !socle::fichiers::existe(&p) {
+        return Ok(None);
+    }
+    socle::forme::lire_fichier(&p, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.").map(Some)
 }
 
 /// Lit `config/effectifs.json` (absent : vide).
 pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
-    let p = racine.join(EFFECTIFS);
     let mut annees = BTreeMap::new();
-    if socle::fichiers::existe(&p) {
-        let lu: FichierEffectifs = socle::forme::lire_fichier(&p, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.")?;
+    if let Some(lu) = effectifs_lus(racine)? {
         for (an, codes) in lu.annees.into_iter().flatten() {
             if let Some(a01) = codes.get(&TypeDeParametreNeores::EffectifMoyen) {
                 annees.insert(an.nombre(), a01.valeur);

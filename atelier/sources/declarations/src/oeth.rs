@@ -438,7 +438,8 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<Decimal> {
 /// seuil ; sinon la regle des cinq ans (L. 130-1, II, CSS) : un effectif qu'elle ne departage pas refuse, en disant
 /// quelles annees manquent (`Effectif::atteint`).
 fn assujetti_selon_l_effectif(ctx: &Contexte, millesime: i32) -> R<bool> {
-    if let Some(a04) = crate::csa::Effectifs::lus(ctx)?.du_118(millesime, "A04")? {
+    let effectifs = droit::contexte::effectifs_lus(&ctx.racine)?;
+    if let Some(a04) = crate::csa::effectif_du_118(effectifs.as_ref(), millesime, droit::contexte::TypeDeParametreNeores::EffectifOeth)? {
         if a04 < Decimal::from(SEUIL) {
             return Ok(false);
         }
