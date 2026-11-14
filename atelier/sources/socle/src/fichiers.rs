@@ -1010,8 +1010,8 @@ pub fn modele_de(nom: &NomDeFichier, gabarits: Option<&Path>, poste: &Path) -> P
 /// d'un contrat (`contrat-cddu.modele`), l'archive d'une version (`puppetpaie-2026.11.12-windows.zip`). Il n'est pas
 /// vide, ne porte ni `/`, ni `\`, ni caractere nul, et n'est ni `.` ni `..`. Il peut porter `:`, un caractere permis
 /// sous Mac et Linux (le Finder ecrit « Releve 03/2026.pdf » `Releve 03:2026.pdf`) ; sous Windows, un nom lu sur le
-/// disque ne le porte jamais, et un nom ecrit ailleurs n'entre que par `CheminRelatif::ecrit_ailleurs` ou la
-/// restauration, qui le refusent : joindre `C:` ou `C:x` y remplacerait tout le chemin. Il s'ecrit tel quel et se trie
+/// disque ne le porte jamais, et un nom ecrit ailleurs n'entre que par `CheminRelatif::ecrit_ailleurs`,
+/// `ecrit_ailleurs::nom` ou la restauration, qui le refusent : joindre `C:` ou `C:x` y remplacerait tout le chemin. Il s'ecrit tel quel et se trie
 /// par son texte.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "String", into = "String")]
@@ -1056,7 +1056,7 @@ impl NomDeFichier {
         }
     }
 
-    /// LE NOM QU'ECRIT UN AUTRE SYSTEME (une charge de route, un scenario du banc) : lu comme un chemin ecrit ailleurs
+    /// LE NOM QU'ECRIT UN AUTRE SYSTEME (un scenario du banc) : lu comme un chemin ecrit ailleurs
     /// (`CheminRelatif::ecrit_ailleurs`, qui refuse `:`), et un nom seul.
     pub fn ecrit_ailleurs(texte: &str) -> R<NomDeFichier> {
         let c = CheminRelatif::ecrit_ailleurs(texte)?;
@@ -1075,18 +1075,24 @@ impl NomDeFichier {
 /// LES LECTURES D'UN NOM OU D'UN CHEMIN ECRIT AILLEURS, pour le champ d'une forme (`deserialize_with`) : une charge de
 /// route qui porte un nom de fichier, un scenario du banc.
 pub mod ecrit_ailleurs {
-    use super::{CheminRelatif, NomDeFichier};
+    use super::{repr, CheminRelatif, NomDeFichier};
     use serde::Deserialize;
 
-    /// Un nom de fichier (`NomDeFichier::ecrit_ailleurs`).
+    /// Le nom de fichier qu'une charge de route porte, lu strict : un nom seul, tel qu'il est (`NomDeFichier::lire` :
+    /// ni barre, ni `.`, ni `..`), sans `:` (un prefixe de lecteur sous Windows) ; la phrase du refus dit quoi corriger.
+    /// Rien ne s'y retire : `./x.pdf`, `x.pdf/`, `x\` se refusent.
     pub fn nom<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NomDeFichier, D::Error> {
-        match NomDeFichier::ecrit_ailleurs(&String::deserialize(d)?) {
+        let texte = String::deserialize(d)?;
+        if texte.contains(':') {
+            return Err(serde::de::Error::custom(format!("{} porte « : », qu'un nom ne porte pas sous Windows : l'écrire sans.", repr(&texte))));
+        }
+        match NomDeFichier::lire(&texte) {
             Ok(n) => Ok(n),
             Err(e) => Err(serde::de::Error::custom(e.phrase)),
         }
     }
 
-    /// Un nom de fichier facultatif.
+    /// Un nom de fichier facultatif d'un scenario du banc (`NomDeFichier::ecrit_ailleurs`).
     pub fn nom_facultatif<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<NomDeFichier>, D::Error> {
         match Option::<String>::deserialize(d)? {
             Some(t) => match NomDeFichier::ecrit_ailleurs(&t) {
