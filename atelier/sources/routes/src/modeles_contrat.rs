@@ -898,7 +898,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         .ok_or_else(|| refus(format!("Aucun engagement validé de {} du {} en {} : en choisir un de la liste.", vise.salarie, vise.debut.jj_mm_aaaa(), vise.mois.etiquette())))?;
     let modele = modele_lu(nom.clone(), s.is_none(), &texte_de(&nat, s, Partie::Contrat)?, &texte_de(&nat, s, Partie::Avenant)?)?;
     let ent = documents::avenant::ent_du_mois(ctx, vise.mois);
-    let d = ctx.racine.join("sorties").join("apercus");
+    let d = documents::DossierHorsDuMois::Apercus.sous(&ctx.racine);
     std::fs::create_dir_all(&d).map_err(|e| disque(&d, e))?;
     let (sorte, quoi) = match c.partie {
         Partie::Contrat => ("contrat", "le contrat"),

@@ -538,7 +538,7 @@ fn deja_faites(ctx: &Contexte) -> R<String> {
 /// L'ecriture de la regularisation : `exports/casc-svp/` -- les CSV, les deux courriels, la liste des gestes. Rend le
 /// dossier ecrit.
 pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<std::path::PathBuf> {
-    let dossier = ctx.racine.join("exports").join("casc-svp");
+    let dossier = documents::DossierHorsDuMois::RegularisationCasc.sous(&ctx.racine);
     let io = |p: &Path, e: std::io::Error| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque);
     std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
     let virgule = |d: &Decimal| d.to_string().replace('.', ",");

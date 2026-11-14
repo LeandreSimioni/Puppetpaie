@@ -1174,7 +1174,7 @@ mod enregistreur {
                             continue;
                         }
                     }
-                    _ if cle == "dossier" && lit_la_boite_aux_lettres(route) => racine.join("import"),
+                    _ if cle == "dossier" && lit_la_boite_aux_lettres(route) => racine.join(import::BOITE_AUX_LETTRES),
                     _ => continue,
                 };
                 // Son chemin dans la compagnie ; aucun, hors d'elle.

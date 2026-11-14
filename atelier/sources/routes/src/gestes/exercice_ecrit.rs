@@ -189,7 +189,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     let mut avert: Vec<String> = Vec::new();
     let mut ecritures: Vec<Ecriture> = Vec::new();
     for &m in &mois {
-        if !ctx.racine.join("sorties").join(m.to_string()).is_dir() {
+        if !documents::DossierDuMois::Sorties.dans(&ctx.racine, m).is_dir() {
             avert.push(format!("{} : saisi mais jamais écrit (pas de bulletin) -- pris quand même, depuis la saisie.", m));
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));
@@ -438,14 +438,13 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
         }
     }
     for m in &mois {
-        let d = ctx.racine.join("sorties").join(m.to_string());
+        let d = documents::DossierDuMois::Sorties.dans(&ctx.racine, *m);
         if d.is_dir() {
             let mut fichiers = Vec::new();
             fichiers_sous(&d, &mut fichiers)?;
             fichiers.sort();
             for p in fichiers {
-                let rel: Vec<String> = p.strip_prefix(&d).map_err(|e| refus(e.to_string()))?.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
-                entrees.push(entree_fichier(&p, format!("sorties/{}/{}", m, rel.join("/")))?);
+                entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
             }
         }
     }

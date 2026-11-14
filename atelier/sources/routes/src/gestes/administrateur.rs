@@ -643,7 +643,7 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
 
 /// Le dossier du mois `mois` ou se range le signalement `piece` (`PieceDuMois::dossier`).
 fn dossier_du_signalement(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois) -> PathBuf {
-    piece.dossier().sous(&racine.join("sorties").join(mois.to_string()))
+    piece.dossier().dans(racine, mois)
 }
 
 /// Le fichier d'un signalement ecrit, s'il y en a un, dans le dossier du mois ou il se range (le nom compare sans casse).

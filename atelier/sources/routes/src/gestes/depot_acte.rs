@@ -172,7 +172,6 @@ fn ordre_dit(o: Option<NumeroDOrdre>) -> R<NumeroDOrdre> {
 /// acceptee dans la base d'essai, meme venue d'ailleurs, fait partir l'essai en annule-et-remplace. Trop grand ne coute
 /// rien ; trop petit, c'est B1-208-11. `constitution` : le mois de constitution du fichier (`AAAA-MM`, S20.G00.05.007).
 fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, constitution: Mois) -> R<Option<NumeroDOrdre>> {
-    let mois = &le_mois.to_string();
     let du_mois = envois::journal::lire(&ctx.racine, Some(Acte::Dsn), Some(le_mois), false).map_err(|m| m.reclasser(Classe::Disque))?;
     let essais: Vec<&Ligne> = etats::de_l_etablissement(&du_mois, nic, ctx.entreprise.nic_principal()).into_iter().filter(|l| !l.reel() && !l.signalement()).collect();
     let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, true, constitution, le_mois)?;
@@ -186,7 +185,7 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, cons
             connus.push(n);
         }
         if let Some(nom) = l.fichier() {
-            let p = documents::fichier_depose(&ctx.racine.join("sorties").join(mois), nom.texte());
+            let p = documents::fichier_depose(&ctx.racine, le_mois, nom.texte());
             if p.exists() {
                 let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::du_disque(&e)))?;
                 if let Some(n) = rang_dans_le_fichier(&octets)? {

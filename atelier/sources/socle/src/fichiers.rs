@@ -1169,6 +1169,11 @@ impl CheminRelatif {
     pub fn texte(&self) -> &str {
         &self.0
     }
+
+    /// Ce chemin sous la racine `racine`, joint nom par nom : le separateur est celui du systeme.
+    pub fn dans(&self, racine: &Path) -> PathBuf {
+        self.0.split('/').fold(racine.to_path_buf(), |p, n| p.join(n))
+    }
 }
 
 impl From<NomDeFichier> for CheminRelatif {

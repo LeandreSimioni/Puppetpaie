@@ -60,7 +60,7 @@ pub struct Demande {
 
 /// `exports/`, et le sous-dossier de l'annee quand il y en a une.
 pub fn dossier_exports(ctx: &Contexte, annee: Option<Annee>) -> PathBuf {
-    let d = ctx.racine.join("exports");
+    let d = crate::DossierHorsDuMois::Exports.sous(&ctx.racine);
     match annee {
         Some(a) => d.join(a.to_string()),
         None => d,

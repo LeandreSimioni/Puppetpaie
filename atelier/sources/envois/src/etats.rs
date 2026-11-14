@@ -1349,8 +1349,7 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&Nume
 /// son nom ne dit pas seul son dossier (le bulletin garde a cote de son rectificatif est un `Bulletin`, hors de l'envoi).
 /// Un NOM, jamais un chemin : le type le tient.
 pub fn chemin_piece(racine: &Path, mois: Mois, nom: &NomDeFichier) -> Option<PathBuf> {
-    let base = racine.join("sorties").join(mois.to_string());
-    documents::DossierDuMois::TOUS.into_iter().map(|d| d.sous(&base).join(nom)).find(|f| f.is_file())
+    documents::DossierDuMois::TOUS.into_iter().map(|d| d.dans(racine, mois).join(nom)).find(|f| f.is_file())
 }
 
 /// Les avenants du contrat parti -- pas ceux d'un contrat qu'il a remplace. `tous` : les avenants de son contrat

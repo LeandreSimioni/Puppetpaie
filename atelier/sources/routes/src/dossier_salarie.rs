@@ -633,7 +633,7 @@ fn mois_puppetpaie(
 ) -> R<Vec<Page>> {
     let mut pages = Vec::new();
     let mois = &le_mois.to_string();
-    let sortie = ctx.racine.join("sorties").join(mois);
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, le_mois);
     let etiq = le_mois.etiquette();
     let dossier_des_contrats = documents::PieceDuMois::Contrat.dossier().sous(&sortie);
     let (_, paies) = charger(ctx, le_mois)?;
@@ -902,7 +902,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
         if !p.contient(mois) {
             continue;
         }
-        let d = documents::PieceDuMois::Signature.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string()));
+        let d = documents::PieceDuMois::Signature.dossier().dans(&ctx.racine, mois);
         out.extend(noms_commencant_finissant(&d, &format!("{}{}_", SorteDePieceProduite::Signature.prefixe(), cle), ".eml")?.into_iter().map(|n| d.join(n)));
     }
     Ok(out)
@@ -913,7 +913,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
 /// dans la periode par le mois de la paie. Une copie qui manque se dit ; rien d'autre ne se devine.
 fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &mut Dossier) -> R<Vec<Page>> {
     let lignes = engagement::importe::paies_lues(&ctx.racine)?;
-    let dossier = ctx.racine.join("historique").join("bulletins");
+    let dossier = import::mois::BULLETINS_REPRIS.dans(&ctx.racine);
     let (mut pages, mut manquent): (Vec<Page>, Vec<NomDeFichier>) = (Vec::new(), Vec::new());
     for x in lignes {
         let Some(b) = &x.paie.bulletin else { continue };

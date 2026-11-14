@@ -502,7 +502,7 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     // VENUE D'UN LOGICIEL PRECEDENT, elle commence par reprendre son passe : la boite ou poser ses pieces (`import/`,
     // celle que `importation-etat` nomme) est la des le premier jour.
     if matches!(venue, Venue::LogicielPrecedent) {
-        let import = dossier.join("import");
+        let import = dossier.join(import::BOITE_AUX_LETTRES);
         std::fs::create_dir_all(&import).map_err(|e| socle::echec::du_disque(&import, &e))?;
     }
     let nom_du_dossier = nom_dossier(&dossier)?;

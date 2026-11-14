@@ -1770,7 +1770,7 @@ impl<'a> Moteur<'a> {
             return Ok(v.clone());
         }
         // Les declarations deposables (la DSN, la DPAE) se rangent dans les sorties du mois.
-        let dossier = documents::DossierDuMois::Sorties.sous(&self.racine().join("sorties").join(mois.to_string()));
+        let dossier = documents::DossierDuMois::Sorties.dans(self.racine(), mois);
         let rendu = if !dossier.is_dir() {
             Deposables::default()
         } else {

@@ -527,7 +527,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **chemin relatif** : un chemin sous une racine que son champ dit (la compagnie, le dossier de la sauvegarde) : la trace
   d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris. Des
   `NomDeFichier` séparés par des barres droites sur tous les systèmes, ni vide ni avec une racine ; il se fait d'un
-  chemin par `CheminRelatif::sous(racine, chemin)` ; la clé d'une lecture notée s'écrit avec la même écriture. Un chemin
+  chemin par `CheminRelatif::sous(racine, chemin)`, et se joint à sa racine nom par nom (`dans`) ; la clé d'une lecture
+  notée s'écrit avec la même écriture. Un chemin
   absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin`.
 - **empreinte** : le SHA-256 entier d'un contenu : une source déposée, une archive de mise à jour et les fictives
   (`derniere.json`, `.livraison.json`, `.livree.json`), un exercice clos, un état gardé. 64 caractères hexadécimaux
@@ -873,13 +874,15 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois (`DossierDuMois`), ou hors d'un
   mois (`DossierHorsDuMois`) ; dit par sa sorte (`SorteDePieceProduite::rangement`).
 - **dossier hors d'un mois** : les exercices (`sorties/exercices/`), les dossiers de salariés (`exports/dossiers/`),
-  les réponses aux demandes de fiche (`sorties/fiches-salaries/`) ; leur chemin n'est écrit que par
+  les réponses aux demandes de fiche (`sorties/fiches-salaries/`), les aperçus des modèles (`sorties/apercus/`), les
+  états exportés (`exports/`), la régularisation de la CASC-SVP (`exports/casc-svp/`) ; leur chemin n'est écrit que par
   `DossierHorsDuMois::sous`.
 - **dossier d'un mois** : les sorties d'un mois (`sorties/<mois>/` : ses archives, ses déclarations, les documents de
   fin de contrat, le bulletin gardé) ou leur envoi (`sorties/<mois>/envoi/` : ce que le moteur prépare pour les
   salariés, leurs pièces, le PDF qui les réunit pour l'imprimer, la preuve d'une signature). L'écrivain et les
-  lecteurs d'une pièce le prennent d'elle (`PieceDuMois::dossier`) et le joignent par `sous` ; un nom seul se cherche
-  dans les deux (`TOUS`, `envois::etats::chemin_piece`).
+  lecteurs d'une pièce le prennent d'elle (`PieceDuMois::dossier`) et le joignent par `sous`, ou sous la compagnie par
+  `dans` (le seul à écrire `sorties/<mois>`, `des_mois` : `sorties/`) ; un nom seul se cherche dans les deux (`TOUS`,
+  `envois::etats::chemin_piece`).
 - **rubrique de l'Historique** : où un document du mois se range dans l'Historique : bulletins, certificats,
   attestations, contrats, DPAE, DSN, demandes de taux, AEM (l'ancien logiciel), autres pièces ; dans cet ordre, celui du
   type. Écrite par son libellé (« Bulletins de paie »…), que portent un document de `historique-mois` (`sorte`) et les

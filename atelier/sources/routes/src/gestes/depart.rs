@@ -77,7 +77,7 @@ fn fichiers_dans(dossiers: &[PathBuf]) -> R<Vec<PathBuf>> {
 /// l'etape de depot (`routes::etapes`).
 pub(crate) fn mois_ecrit(racine: &Path, mois: Mois) -> R<bool> {
     let prefixe = format!("{}/", mois);
-    let sorties = racine.join("sorties");
+    let sorties = documents::DossierDuMois::des_mois(racine);
     Ok(journal_des_ecritures(racine)?
         .keys()
         .any(|k| k.strip_prefix(&prefixe).is_some_and(crate::etapes::est_une_dsn_mensuelle) && sorties.join(k).is_file()))
@@ -467,7 +467,7 @@ fn pas_avant(ctx: &Contexte, mois: Mois) -> R<()> {
 /// un mois dont aucun engagement n'est valide alors qu'il en a (rien ne part d'un engagement en saisie) ; un mois
 /// deja declare dont l'annule-et-remplace n'est plus admis.
 pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFabriquee> {
-    let (mois, texte) = (le_mois, &le_mois.to_string());
+    let mois = le_mois;
     import::mois::refuser_la_dsn_de_l_ancien_logiciel(ctx, mois)?;
     let _verrou = documents::ecrire_documents::prendre_le_verrou(ctx, qui)?;
     crate::mois::refuser_si_clos(ctx, mois)?;
@@ -524,7 +524,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_ref())?;
     }
     let etiq = le_mois.etiquette();
-    let sortie = documents::PieceDuMois::Dsn.dossier().sous(&ctx.racine.join("sorties").join(texte));
+    let sortie = documents::PieceDuMois::Dsn.dossier().dans(&ctx.racine, le_mois);
 
     // LES CORRECTIONS DES MOIS DEJA DECLARES : la DSN de ce mois les porte, datees de leur mois d'origine.
     let regs = &lu.regs;
@@ -791,7 +791,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     let ecrits = engagement::etats::numeros_des_documents(ctx, mois, &departs)?;
     let an = i64::from(mois.annee());
     let etiq = mois.etiquette();
-    let sortie = ctx.racine.join("sorties").join(mois.to_string());
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     let dossier = documents::PieceDuMois::Bulletin.dossier().sous(&sortie);
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let part = |p: &Paie| cles.contains(&p.salarie.id);
@@ -929,8 +929,8 @@ pub(crate) fn archive_du_mois(sorte: SorteDePieceProduite, etiq: &str, fin: &str
 /// (`Bulletins_<Mois>.pdf`, `CertificatsCS_<Mois>.pdf` et son recapitulatif), qui porte tous les documents numerotes.
 /// `absents` : seuls les fichiers qui manquent s'ecrivent (une piece partie refaite pour se lire).
 fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, imp: &Impression, cles: &[IdSalarie], absents: bool) -> R<()> {
-    let (etiq, mois) = (le_mois.etiquette(), &le_mois.to_string());
-    let sortie = ctx.racine.join("sorties").join(mois);
+    let etiq = le_mois.etiquette();
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, le_mois);
     let dossier = documents::PieceDuMois::Bulletin.dossier().sous(&sortie);
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let a_ecrire = |f: &Path| !(absents && f.exists());
@@ -1026,7 +1026,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     use envois::journal::{Acte, Ligne};
     let du_mois = |l: &Ligne| l.mois() == Some(le_mois) && l.accepte();
     let etiq = le_mois.etiquette();
-    let sortie = ctx.racine.join("sorties").join(mois.to_string());
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
 
     // LA DSN MENSUELLE : la derniere ligne qui l'a deposee, le reel devant son test.
     let deposee = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.reel() == reel);
@@ -1035,7 +1035,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         let Some(rang) = deposee else {
             return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom)));
         };
-        let f = documents::PieceDuMois::Dsn.dossier().sous(&sortie).join(nom);
+        let f = documents::PieceDuMois::Dsn.dossier().dans(&ctx.racine, mois).join(nom);
         refaire_la_dsn(ctx, &mut m, &lignes, rang, &f)?;
         return Ok(f);
     }
@@ -1043,7 +1043,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     // est range dans ce mois. Ce qu'une ligne de DSN nomme se lit selon l'acte, jamais par son prefixe
     // (`documents::fichier_depose`, comme l'Historique) : un `Bulletin_x.dsn` pose n'est pas un bulletin.
     if let Some(rang) = deposee {
-        let f = documents::fichier_depose(&sortie, nom);
+        let f = documents::fichier_depose(&ctx.racine, mois, nom);
         refaire_le_signalement(ctx, mois, &lignes[rang], &f)?;
         return Ok(f);
     }

@@ -971,7 +971,7 @@ pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<NomDeFichier>)>> {
     };
     let mut dossiers: BTreeMap<Mois, PathBuf> = BTreeMap::new();
     // Les dossiers AAAA-MM seulement : `sorties/exercices/` n'est pas un mois.
-    for d in socle::fichiers::nommes_d_un_mois(&racine.join("sorties"), None, false)? {
+    for d in socle::fichiers::nommes_d_un_mois(&documents::DossierDuMois::des_mois(racine), None, false)? {
         vus.insert(d.mois);
         dossiers.insert(d.mois, d.chemin);
     }
@@ -1091,7 +1091,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
         // racine du mois ; elles se nomment avec les autres sortes.
         let aer = documents::PieceDuMois::Aer;
-        if crate::documents::un_nom_commence_et_finit(&aer.dossier().sous(&ctx.racine.join("sorties").join(le_mois.to_string())), aer.sorte().prefixe(), ".pdf")? {
+        if crate::documents::un_nom_commence_et_finit(&aer.dossier().dans(&ctx.racine, le_mois), aer.sorte().prefixe(), ".pdf")? {
             // Avant les AEM, ou en dernier.
             let rang = match sortes.iter().position(|s| *s == mot_aem) {
                 Some(r) => r,

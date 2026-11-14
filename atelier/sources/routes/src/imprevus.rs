@@ -1900,7 +1900,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let (rang, _) = engagement_qui_finit(&saisie, &cle, c.salarie.as_str(), mois)?;
     let p = paie_de_l_engagement(&paies, rang, &cle, c.salarie.as_str(), mois)?;
     let date = constitue_le(ctx, c.le);
-    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let dossier = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     // Les sorties du mois : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
     let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
     Ok(ReponsePapiers {
@@ -1984,7 +1984,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
     let nom = nom_du_signalement(&format!("{}{}_{}", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
-    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string())).join(&nom);
+    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().dans(&ctx.racine, mois).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
         type_declaration,
@@ -2132,7 +2132,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         ordre,
     )?;
     // Arret et reprise : deux pieces du mois, la sienne dit son dossier.
-    let cible = piece.dossier().sous(&ctx.racine.join("sorties").join(dernier.mois_civil().to_string())).join(&nom);
+    let cible = piece.dossier().dans(&ctx.racine, dernier.mois_civil()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature_declaration: nature,

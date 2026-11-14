@@ -152,7 +152,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         let Some(Reponse { identifiant: ident, brut, de, quand }) = retenue else { continue };
 
         // La preuve archivee : le message tel qu'il est arrive.
-        let dossier = documents::PieceDuMois::Signature.dossier().sous(&ctx.racine.join("sorties").join(a_mois.to_string()));
+        let dossier = documents::PieceDuMois::Signature.dossier().dans(&ctx.racine, a_mois);
         std::fs::create_dir_all(&dossier).map_err(|e| os(format!("{} : {}", dossier.display(), e)))?;
         let preuve = dossier.join(format!("{}{}_{}.eml", documents::SorteDePieceProduite::Signature.prefixe(), a_salarie, code));
         std::fs::write(&preuve, &brut).map_err(|e| os(format!("{} : {}", preuve.display(), e)))?;
@@ -178,7 +178,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             Some(envois::journal::ActeDuContrat::Remplace) | None => documents::PieceDuMois::Contrat,
         };
         for (mois_f, nom_f) in &fichiers {
-            let envoye = parti.dossier().sous(&ctx.racine.join("sorties").join(mois_f.to_string())).join(nom_f);
+            let envoye = parti.dossier().dans(&ctx.racine, *mois_f).join(nom_f);
             // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
             let souche = match envoye.file_stem() {
                 Some(s) => s.to_string_lossy().into_owned(),

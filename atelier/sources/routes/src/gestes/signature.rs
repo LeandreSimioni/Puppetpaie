@@ -428,7 +428,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         return Err(refus(format!("Aucun contrat a imprimer pour {}.", mois)));
     }
     controler_avenants(ctx, avenants)?;
-    let sorties = ctx.racine.join("sorties").join(s_mois.to_string());
+    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, s_mois);
     let dossier = documents::PieceDuMois::Contrat.dossier().sous(&sorties);
     let etiq = s_mois.etiquette();
     let ent = documents::avenant::ent_du_mois(ctx, s_mois);
@@ -500,7 +500,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois, None, &departs)?;
     let s_mois = data.mois;
-    let dossier = documents::PieceDuMois::Contrat.dossier().sous(&ctx.racine.join("sorties").join(s_mois.to_string()));
+    let dossier = documents::PieceDuMois::Contrat.dossier().dans(&ctx.racine, s_mois);
     let etiq = s_mois.etiquette();
 
     let (an, nom_mois) = (s_mois.annee(), s_mois.nom(socle::mois::Graphie::Accentuee));
@@ -965,7 +965,7 @@ fn avenant_ecrit(
     let p = &paies[rang_p];
     let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement)?;
     let ent = documents::avenant::ent_du_mois(ctx, mois_a);
-    let dossier = documents::PieceDuMois::Avenant.dossier().sous(&ctx.racine.join("sorties").join(mois_a.to_string()));
+    let dossier = documents::PieceDuMois::Avenant.dossier().dans(&ctx.racine, mois_a);
     let pdf = match &a.repris {
         Some(Repris { fichier, .. }) => {
             let f = dossier.join(fichier);
