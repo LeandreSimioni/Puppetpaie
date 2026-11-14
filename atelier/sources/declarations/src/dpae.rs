@@ -775,10 +775,15 @@ pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
                 })?),
                 None => None,
             };
-            // Une zone datee hors de sa forme ne dit rien.
-            let jour = |nom: &str| match zone(nom) {
-                Some(t) => socle::piece::Zone::lue(&t, socle::piece::format::Jjmmaaaa).valeur(),
-                None => None,
+            // Une zone datee que nous avons ecrite, hors de sa forme : le fichier n'est pas le notre, il se refuse.
+            let jour = |nom: &str| -> R<Option<Jour>> {
+                match zone(nom) {
+                    Some(t) => match socle::piece::Zone::lue(&t, socle::piece::format::Jjmmaaaa).valeur() {
+                        Some(j) => Ok(Some(j)),
+                        None => Err(socle::refus!("DPAE relue, zone {} : {} n'est pas une date JJMMAAAA.", nom, socle::fichiers::repr(&t))),
+                    },
+                    None => Ok(None),
+                }
             };
             Ok(EnregistrementRelu {
                 horodatage: match zone("horodatage") {
@@ -788,10 +793,10 @@ pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
                 nom: zone("nom"),
                 prenom: zone("prenom"),
                 nir,
-                date_naissance: jour("date_naissance"),
-                date_embauche: jour("date_embauche"),
+                date_naissance: jour("date_naissance")?,
+                date_embauche: jour("date_embauche")?,
                 type_contrat,
-                date_fin: jour("date_fin"),
+                date_fin: jour("date_fin")?,
             })
         })
         .collect()
