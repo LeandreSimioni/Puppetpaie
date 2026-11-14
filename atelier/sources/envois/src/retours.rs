@@ -281,7 +281,7 @@ impl NatureDuRetour {
 }
 
 /// Le dossier des retours des organismes, sous la racine d'une compagnie.
-pub const RETOURS: &str = "retours";
+pub const RETOURS: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("retours");
 
 /// L'IDENTIFIANT D'UN FLUX : ce que la plate-forme donne a un depot, et par quoi elle range ses retours (« Identifiant du
 /// flux DSN », `depot.idflux` et `flux.id`, « [0-9A-Za-z.-_]* », [1,50] : guide d'implementation de l'API DSN v6.8,

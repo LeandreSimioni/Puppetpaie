@@ -253,7 +253,7 @@ pub(crate) fn un_nom_commence_et_finit(dossier: &Path, prefixe: &str, suffixe: &
 // ------------------------------------------------------------------ envoi-apercu
 
 /// Le dossier des retours ou vont les attestations qu'aucune fiche ne porte.
-const A_RANGER: &str = "aer-a-ranger";
+const A_RANGER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("aer-a-ranger");
 
 /// Le nom d'une piece dans l'archive d'un retour, sans ses dossiers.
 fn nom_dans_l_archive(chemin: &str) -> &str {

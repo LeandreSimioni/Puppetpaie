@@ -63,8 +63,8 @@ pub const FICTIVE_PAR_DEFAUT: &str = "fictive-fil-de-fer";
 pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 
 
-/// Ce que la copie ne prend pas de la fictive (relatif a sa racine).
-const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::installation::FICHIER_HORLOGE];
+/// Ce que la copie ne prend pas de la fictive (relatif a sa racine), avec ses retours (`envois::retours::RETOURS`).
+const NON_COPIES: [&str; 2] = [MARQUEUR, crate::installation::FICHIER_HORLOGE];
 
 /// Une compagnie d'essai : son marqueur le dit (`installation::sorte_de_copie`).
 pub fn est_essai(racine: &Path) -> R<bool> {
@@ -411,7 +411,7 @@ fn copier(src: &Path, dst: &Path, racine: &Path) -> R<()> {
         let e = e.map_err(|e| socle::echec::du_disque(&src, &e))?;
         let s = e.path();
         let rel = s.strip_prefix(racine).map_err(|e| socle::echec::refus(e.to_string()))?.to_string_lossy().replace('\\', "/");
-        if NON_COPIES.contains(&rel.as_str()) || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
+        if NON_COPIES.contains(&rel.as_str()) || rel == envois::retours::RETOURS.texte() || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
             continue;
         }
         let d = dst.join(e.file_name());
