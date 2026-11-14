@@ -699,7 +699,7 @@ forme! {
         /// La base de la ligne s'arrete au plafond de la periode.
         pub plafond: Option<bool>,
         pub composants: Option<Vec<Court>>,
-        pub affectation: Option<crate::code_cotisation::AffectationDeCotisation>,
+        pub affectation: Option<crate::code_cotisation::IdentifiantDAffiliation>,
         /// L'adhesion sous laquelle se declare la base 31 de la cotisation, nommee pour qui lit le bareme : la reference
         /// du contrat chez l'organisme (S21.G00.15.001 : `INTERBRANCHE`, `TSINTERMITTENTS`) ou son role (`PREVOYANCE`,
         /// `SANTE`). Ce n'est pas un organisme ; c'est `affectation` (la place de l'adhesion) que la DSN ecrit.
