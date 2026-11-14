@@ -278,8 +278,8 @@ impl Ligne {
     /// regularisation de la CASC, un dossier, une demande de fiche, un contrat contresigne ne partent que par courriel.
     pub fn remise(&self) -> Option<crate::etats::ModeDeRemise> {
         match self {
-            Ligne::ContratSignature(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
-            Ligne::Documents(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
+            Ligne::ContratSignature(e) => Some(e.detail.remise),
+            Ligne::Documents(e) => Some(e.detail.remise),
             Ligne::Dsn(_) | Ligne::Dpae(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => None,
         }
     }
@@ -609,7 +609,8 @@ pub struct Servi {
 #[serde(deny_unknown_fields)]
 pub struct DetailDocuments {
     pub salaries: Vec<Servi>,
-    pub main_propre: bool,
+    #[serde(rename = "main_propre", with = "crate::etats::en_main_propre")]
+    pub remise: crate::etats::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -719,7 +720,8 @@ impl ArticleModifie {
 #[serde(deny_unknown_fields)]
 pub struct DetailSignature {
     pub contrats: Vec<ContratParti>,
-    pub main_propre: bool,
+    #[serde(rename = "main_propre", with = "crate::etats::en_main_propre")]
+    pub remise: crate::etats::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]

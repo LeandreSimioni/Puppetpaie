@@ -188,7 +188,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 // -------------------------------------------------------------- les contrats
 
 /// LE MODE DE REMISE D'UNE PIECE REMISE AUX SALARIES : comment un contrat (ou un avenant), ou les documents d'un mois
-/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre, `detail.main_propre`), ou par
+/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre, `detail.remise`, ecrit `main_propre` : `en_main_propre`), ou par
 /// courriel. Ecrite `imprime`, `courriel`. Une ligne du journal la dit si elle en a une (`Ligne::remise` : la signature
 /// d'un contrat, l'envoi des documents).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -198,13 +198,19 @@ pub enum ModeDeRemise {
     Courriel,
 }
 
-impl ModeDeRemise {
-    /// Celui d'un envoi du journal, par `main_propre` : imprime s'il est remis en main propre, sinon par courriel.
-    pub fn de(main_propre: bool) -> ModeDeRemise {
-        if main_propre {
-            ModeDeRemise::Imprime
-        } else {
-            ModeDeRemise::Courriel
+/// L'ECRITURE D'UN MODE DE REMISE AU JOURNAL DES ENVOIS : `main_propre`, vrai s'il est imprime (remis en main propre),
+/// faux par courriel.
+pub mod en_main_propre {
+    use super::ModeDeRemise;
+
+    pub fn serialize<S: serde::Serializer>(m: &ModeDeRemise, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bool(*m == ModeDeRemise::Imprime)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<ModeDeRemise, D::Error> {
+        match <bool as serde::Deserialize>::deserialize(d)? {
+            true => Ok(ModeDeRemise::Imprime),
+            false => Ok(ModeDeRemise::Courriel),
         }
     }
 }
@@ -249,7 +255,7 @@ fn mot_de_l_acte(acte: Acte) -> &'static str {
 pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, ModeDeRemise> {
     let mut d = HashMap::new();
     for e in lignes.iter().filter_map(Ligne::signature).filter(|e| e.accepte) {
-        let par = ModeDeRemise::de(e.detail.main_propre);
+        let par = e.detail.remise;
         for c in &e.detail.contrats {
             d.insert(paire(&c.salarie, c.numero.as_ref()), par);
         }
@@ -264,7 +270,7 @@ pub fn contrats_demandes_par_courriel(lignes: &[Ligne]) -> HashSet<Paire> {
     lignes
         .iter()
         .filter_map(Ligne::signature)
-        .filter(|e| e.accepte && !e.detail.main_propre)
+        .filter(|e| e.accepte && e.detail.remise == ModeDeRemise::Courriel)
         .flat_map(|e| e.detail.contrats.iter().filter(|c| !c.est_avenant()).map(|c| paire(&c.salarie, c.numero.as_ref())))
         .collect()
 }
@@ -453,7 +459,7 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
                 let liste = out.entry(paire(&c.salarie, c.numero.as_ref())).or_default();
                 // Un courriel a demande de signer CETTE piece (le meme fichier) : un avenant refait sous le meme numero
                 // est une autre piece, qu'aucun courriel n'a encore demandee.
-                let par_courriel = !e.detail.main_propre || liste.iter().any(|a| a.numero == c.avenant && a.fichier == c.fichier && a.par_courriel);
+                let par_courriel = e.detail.remise == ModeDeRemise::Courriel || liste.iter().any(|a| a.numero == c.avenant && a.fichier == c.fichier && a.par_courriel);
                 liste.retain(|a| a.numero != c.avenant);
                 liste.push(AvenantParti {
                     numero: c.avenant,

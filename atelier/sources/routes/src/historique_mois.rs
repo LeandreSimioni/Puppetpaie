@@ -277,7 +277,7 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
         Ligne::Documents(_) => "Documents aux salariés".into(),
         Ligne::ContratSignature(e) => {
             let piece = if e.detail.acte == Some(envois::journal::ActeDuContrat::Avenant) { "Avenant" } else { "Contrat" };
-            let par = etats::ModeDeRemise::de(e.detail.main_propre);
+            let par = e.detail.remise;
             let remise = etats::mot_de_la_remise(Some(par), etats::PlaceDeLaRemise::Recit);
             match par {
                 etats::ModeDeRemise::Imprime => format!("{} {}, à remettre en main propre", piece, remise),

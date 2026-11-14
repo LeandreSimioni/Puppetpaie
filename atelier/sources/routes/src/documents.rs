@@ -815,7 +815,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     let nom_impression = NomDeFichier::du(&impression)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, mois)?;
-    let detail = journal::DetailDocuments { salaries, main_propre: true, expediteur: None, durees_ms: None, partis: None, echec_a: None };
+    let detail = journal::DetailDocuments { salaries, remise: envois::etats::ModeDeRemise::Imprime, expediteur: None, durees_ms: None, partis: None, echec_a: None };
     let reponse = format!("documents de {} salarie(s) imprimes pour une remise en main propre", cles.len());
     noter(ctx, journal::Ligne::Documents(par_courriel(Some(c.mois), qui, true, "", &reponse, detail, Some(versions))))?;
     let qui_les_recoit: Vec<String> = cles.iter().filter_map(|cle| noms.get(cle).map(|nom| nom_a_l_ecran(ctx, cle, nom))).collect();
@@ -1093,7 +1093,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     let le_mois = Some(mois);
     let detail = |servis: &[journal::Servi]| journal::DetailDocuments {
         salaries: servis.to_vec(),
-        main_propre: false,
+        remise: envois::etats::ModeDeRemise::Courriel,
         expediteur: Some(expediteur.clone()),
         durees_ms: Some(durees.clone()),
         partis: None,

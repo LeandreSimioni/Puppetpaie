@@ -1096,7 +1096,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **mode de remise d'une pièce remise aux salariés** : comment un contrat (ou un avenant), ou les documents d'un mois
   (bulletin, certificat, attestation), sont partis : imprimés (remis en main propre) ou par courriel ; écrit `imprime`,
   `courriel`. Une ligne du journal des envois dit sa remise si elle en a une (`Ligne::remise` : une demande de
-  signature, un envoi de documents, lus par `main_propre`, `ModeDeRemise::de`) ; une DSN, une DPAE, un dossier, une
+  signature, un envoi de documents : leur `remise`, que le journal écrit `main_propre`, vrai si imprimé,
+  `etats::en_main_propre`) ; une DSN, une DPAE, un dossier, une
   demande de fiche n'en ont pas, et la phrase d'un envoi (`resume`) dit leur acte (`mot_de_l_acte` : « envoyé »). Dit
   par une seule fonction, à sa place (`mot_de_la_remise`, `PlaceDeLaRemise`) : « imprimé », « envoyé »
   dans une phrase, « imprimé », « envoyé à la signature » dans le récit de ce qui est parti. `contrats_partis_par` ne lit
