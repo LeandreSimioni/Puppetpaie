@@ -516,7 +516,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
 }
 
 fn fichier_suivi(ctx: &Contexte) -> std::path::PathBuf {
-    ctx.racine.join(declarations::casc::CASC_SVP)
+    declarations::casc::CASC_SVP.dans(&ctx.racine)
 }
 
 /// UNE CELLULE DE LA LISTE : ce que la fiche dit ; une case qu'elle ne dit pas reste une cellule vide.

@@ -960,7 +960,7 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
 }
 
 /// Le logiciel du comptable et l'analytique que la compagnie a retenus, sous sa racine.
-const COMPTA: &str = "config/compta.json";
+const COMPTA: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/compta.json");
 
 /// `config/compta.json` : le logiciel du comptable (absent : aucun) et l'analytique, retenus une fois pour toutes. Lu
 /// par `ChoixCompta::lu` seule (les ecritures comptables, la page des exports), ecrit par `ChoixCompta::ecrire` seule
@@ -983,7 +983,7 @@ impl ChoixCompta {
 
     /// `config/compta.json`, lu par sa forme ; rien de retenu s'il n'existe pas.
     pub fn lu(racine: &std::path::Path) -> R<ChoixCompta> {
-        let chemin = racine.join(COMPTA);
+        let chemin = COMPTA.dans(racine);
         if !chemin.exists() {
             return Ok(ChoixCompta::nouveau(None, false));
         }
@@ -992,7 +992,7 @@ impl ChoixCompta {
 
     /// Le choix ecrit dans `config/compta.json`.
     pub fn ecrire(&self, racine: &std::path::Path) -> R<()> {
-        socle::ecriture::ecrire_json(&racine.join(COMPTA), self, 2).map_err(|m| m.reclasser(Classe::Disque))
+        socle::ecriture::ecrire_json(&COMPTA.dans(racine), self, 2).map_err(|m| m.reclasser(Classe::Disque))
     }
 
     /// Le logiciel retenu, s'il en est un.

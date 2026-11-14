@@ -20,7 +20,7 @@ fn os(chemin: &std::path::Path, e: std::io::Error) -> Echec {
 }
 
 /// La suite des numeros de chaque annee, sous la racine de la compagnie.
-const COMPTEURS: &str = "config/compteurs.json";
+const COMPTEURS: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/compteurs.json");
 
 /// Une suite de numeros que les compteurs tiennent : les bulletins (`17/2026`), les certificats Congés Spectacles (N CE,
 /// une suite qui ne repart pas a 1 chaque an).
@@ -62,7 +62,7 @@ impl CompteursDeLAnnee {
 
 /// `config/compteurs.json`, lu par sa forme, ou vide s'il n'existe pas. La seule lecture du fichier.
 pub fn compteurs(racine: &std::path::Path) -> R<Compteurs> {
-    let p = racine.join(COMPTEURS);
+    let p = COMPTEURS.dans(racine);
     if !p.exists() {
         return Ok(Compteurs::new());
     }
@@ -165,7 +165,7 @@ impl Reserves {
         if self.ordre.is_empty() {
             return Ok(());
         }
-        let p = ctx.racine.join(COMPTEURS);
+        let p = COMPTEURS.dans(&ctx.racine);
         let mut c = compteurs(&ctx.racine)?;
         for k in &self.ordre {
             c.entry(Annee::nouvelle(k.0)?).or_default().poser(k.1, self.valeurs[k]);

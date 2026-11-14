@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 const SEUIL: i64 = 20;
 /// Le fichier des chiffres OETH de la compagnie, un par millesime.
-const OETH: &str = "config/oeth.json";
+const OETH: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/oeth.json");
 const MOIS_DE_DECLARATION: u32 = 4;
 const CTP_CONTRIBUTION: CodeCtp = CodeCtp::du_moteur("730");
 const CTP_ACCORD: CodeCtp = CodeCtp::du_moteur("740");
@@ -365,7 +365,7 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois) -> R<Option<Declarat
         return Ok(None);
     }
     let millesime = mois.annee() - 1;
-    let chemin = ctx.racine.join(OETH);
+    let chemin = OETH.dans(&ctx.racine);
     let mut fichier: FichierOeth = if socle::fichiers::existe(&chemin) {
         socle::forme::lire_fichier(&chemin, "Les chiffres OETH de la compagnie (config/oeth.json) ne se lisent pas : les corriger.")?
     } else {
