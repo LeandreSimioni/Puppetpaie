@@ -534,19 +534,18 @@ pub fn racine_du_poste() -> PathBuf {
 }
 
 /// `DOCUMENTS_IDENTITE` : ou va chaque image.
-fn documents_identite(quoi: &str) -> &'static [&'static str] {
+fn documents_identite(quoi: documents::SorteDImage) -> &'static [&'static str] {
     match quoi {
-        "signature" => &[
+        documents::SorteDImage::Signature => &[
             "les contrats d'engagement", "l'AEM en PDF", "l'attestation employeur (AER)",
             "le certificat Congés Spectacles",
             "le certificat de travail et le reçu pour solde de tout compte",
         ],
-        "cachet" => &["l'attestation employeur (AER), case « Cachet de l'entreprise »"],
-        "logo" => &[
+        documents::SorteDImage::Cachet => &["l'attestation employeur (AER), case « Cachet de l'entreprise »"],
+        documents::SorteDImage::Logo => &[
             "les bulletins de paie", "les contrats d'engagement",
             "le certificat de travail et le reçu pour solde de tout compte",
         ],
-        _ => &[],
     }
 }
 
@@ -652,11 +651,11 @@ pub(crate) struct Identite {
 /// (`contexte.GABARITS`).
 pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
     let dossier = gabarits.join("identite");
-    let image = |quoi: &str| -> R<ImageIdentite> {
-        let pose = [".png", ".jpg", ".svg"].iter().map(|ext| dossier.join(format!("{}{}", quoi, ext))).find(|f| f.exists());
+    let image = |quoi: documents::SorteDImage| -> R<ImageIdentite> {
+        let pose = [".png", ".jpg", ".svg"].iter().map(|ext| dossier.join(format!("{}{}", quoi.nom(), ext))).find(|f| f.exists());
         let mut e = ImageIdentite {
             pose: pose.is_some(),
-            automatique: quoi == "cachet",
+            automatique: quoi == documents::SorteDImage::Cachet,
             dossier: None,
             octets: None,
             format: None,
@@ -682,7 +681,7 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
         }
         Ok(e)
     };
-    let mut signature = image("signature")?;
+    let mut signature = image(documents::SorteDImage::Signature)?;
     // LA SIGNATURE EST CELLE D'UNE PERSONNE : celle que la fiche Entreprise nomme sous « Qui signe ». Si l'image a ete
     // posee pour une autre, la page le dit.
     let signataire = signataire_de(&ctx.entreprise);
@@ -690,13 +689,13 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
     signature.autre_personne = Some(matches!((&pour, &signataire.nom), (Some(p), Some(n)) if p != n));
     signature.posee_pour = pour;
     signature.signataire = Some(signataire);
-    Ok(Identite { signature, cachet: image("cachet")?, logo: image("logo")? })
+    Ok(Identite { signature, cachet: image(documents::SorteDImage::Cachet)?, logo: image(documents::SorteDImage::Logo)? })
 }
 
 impl Identite {
     /// Les trois images, dans l'ordre ou l'ecran les montre.
-    pub(crate) fn images_mut(&mut self) -> [(&'static str, &mut ImageIdentite); 3] {
-        [("signature", &mut self.signature), ("cachet", &mut self.cachet), ("logo", &mut self.logo)]
+    pub(crate) fn images_mut(&mut self) -> [(documents::SorteDImage, &mut ImageIdentite); 3] {
+        [(documents::SorteDImage::Signature, &mut self.signature), (documents::SorteDImage::Cachet, &mut self.cachet), (documents::SorteDImage::Logo, &mut self.logo)]
     }
 }
 

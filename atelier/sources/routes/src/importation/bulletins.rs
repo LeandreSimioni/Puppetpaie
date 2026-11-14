@@ -366,7 +366,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             let refus = |sort: Sort, raison: String, infos: InfosPage| PageCr { page: l.page, sort, raison, infos };
             let mois_saisi = saisis.contains(&mois);
             // LE BULLETIN FAIT FOI : une page qui se contredit (un centime sur le net) est reprise telle qu'imprimee.
-            let incoherences: Vec<String> = b.avertissements.iter().filter(|a| a.starts_with("incohérent")).cloned().collect();
+            let incoherences: Vec<String> = b.avertissements.iter().filter(|a| matches!(a, bulletin_lu::Avertissement::Incoherence(_))).map(bulletin_lu::Avertissement::texte).collect();
             let (nir, cle_nir) = match nir_lu(&b) {
                 Ok(Some(n)) => n,
                 Ok(None) => {
@@ -1126,7 +1126,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             .b
             .avertissements
             .iter()
-            .filter_map(|a| a.strip_prefix("libellé inconnu : ").map(String::from))
+            .filter_map(|a| match a {
+                bulletin_lu::Avertissement::LibelleInconnu(l) => Some(format!("« {} »", l)),
+                bulletin_lu::Avertissement::Incoherence(_) | bulletin_lu::Avertissement::Lecture(_) => None,
+            })
             .collect();
         let sort = if etat_paie == EtatPaie::Deja && etat_contrat != EtatContrat::Nouveau {
             Sort::DejaRepris

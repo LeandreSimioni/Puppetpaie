@@ -1133,12 +1133,10 @@ impl Fenetre {
                 None => rien(),
             };
         }
-        if !["cachet", "logo", "signature"].contains(&quoi) {
-            return rien();
-        }
+        let Some(sorte) = documents::SorteDImage::du_nom(quoi) else { return rien() };
         let dossier = racine.join("gabarits").join("identite");
         for (ext, mime) in [(".png", "image/png"), (".jpg", "image/jpeg"), (".svg", "image/svg+xml")] {
-            let f = dossier.join(format!("{}{}", quoi, ext));
+            let f = dossier.join(format!("{}{}", sorte.nom(), ext));
             match std::fs::read(&f) {
                 Ok(o) => return Reponse::nouvelle(200, mime, o),
                 // Pas d'image dans ce format : le suivant.

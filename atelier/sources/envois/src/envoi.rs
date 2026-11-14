@@ -359,12 +359,14 @@ pub fn preparer_avec(
             c.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent(k))
         }
         let email = s.email.dite().filter(|e| !e.is_empty());
+        // Une fiche sans adresse : `Illisible`, la fiche ne dit pas ce que l'envoi demande.
         let Some(email) = email else {
             return Err(socle::refus!(
                 "Pas d'adresse e-mail pour {} {} : saisir son courriel dans sa fiche, ou imprimer ses documents.",
                 texte(&s.nom, "nom")?,
                 texte(&s.prenom, "prenom")?
-            ));
+            )
+            .reclasser(socle::echec::Classe::Illisible));
         };
         let mut pieces = Vec::new();
         let mut libelles = Vec::new();

@@ -118,9 +118,31 @@ pub struct Preavis {
     pub mois: Option<Decimal>,
     pub legal: Option<Decimal>,
     pub convention: Option<Decimal>,
-    pub qui: String,
+    /// D'ou vient sa duree ; aucune quand elle ne se compte pas.
+    pub source: Option<SourceDuPreavis>,
     pub dit: String,
     pub pourquoi: Option<String>,
+}
+
+/// D'OU VIENT LA DUREE D'UN PREAVIS : le motif de la rupture (il n'en donne aucun), la loi (L1234-1), ou l'article de la
+/// convention qui en donne plus.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceDuPreavis {
+    MotifDeRupture,
+    Loi,
+    Convention(String),
+}
+
+impl Preavis {
+    /// Qui donne sa duree, en mots (« la loi (L1234-1) », l'article de la convention) ; rien quand elle ne se compte pas.
+    pub fn qui(&self) -> &str {
+        match &self.source {
+            Some(SourceDuPreavis::MotifDeRupture) => "le motif de rupture",
+            Some(SourceDuPreavis::Loi) => "la loi (L1234-1)",
+            Some(SourceDuPreavis::Convention(article)) => article,
+            None => "",
+        }
+    }
 }
 
 /// LE TERME D'UN PREAVIS DE `mois` MOIS ENTIERS qui suit la fin `fin` du travail : le meme quantieme `mois` mois plus tard,
@@ -148,7 +170,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
     let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
     let conv_article = || conv.article.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention donne une durée sans dire son article"));
     let categorie_dite: String = categorie.map(clauses::categorie_en_mots).into_iter().collect();
-    let mut out = Preavis { mois: None, legal, convention: conv_mois, qui: String::new(), dit: String::new(), pourquoi: None };
+    let mut out = Preavis { mois: None, legal, convention: conv_mois, source: None, dit: String::new(), pourquoi: None };
     let rel = clauses::releve(idcc)?;
     let releve = rel.as_ref().is_some_and(|r| r.loi_seule(clauses::Section::Preavis).is_none());
     // La rupture anticipee d'un CDD par le salarie qui part pour un CDI (L1243-2) : un preavis en jours, que ni la loi du
@@ -160,7 +182,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
     }
     if legal == Some(Decimal::ZERO) || conv_mois == Some(Decimal::ZERO) {
         out.mois = Some(Decimal::ZERO);
-        out.qui = "le motif de rupture".into();
+        out.source = Some(SourceDuPreavis::MotifDeRupture);
         out.pourquoi = if conv_mois == Some(Decimal::ZERO) { conv.pourquoi.clone() } else { None };
         return Ok(out);
     }
@@ -196,10 +218,10 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
     // La categorie entre parentheses, quand le preavis de la convention en depend.
     let pour_la_categorie = if categorie_dite.is_empty() { String::new() } else { format!(" ({})", categorie_dite) };
     if conv_mois.is_none() {
-        out.qui = "la loi (L1234-1)".into();
+        out.source = Some(SourceDuPreavis::Loi);
         out.dit = format!("L1234-1 ; {} : seule la loi est calculée", conv_pourquoi()?);
     } else if legal.is_none() || conv_mois > legal {
-        out.qui = conv_article()?.to_string();
+        out.source = Some(SourceDuPreavis::Convention(conv_article()?.to_string()));
         out.dit = format!(
             "{}{} ; {}",
             conv_article()?,
@@ -210,7 +232,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
             }
         );
     } else {
-        out.qui = "la loi (L1234-1)".into();
+        out.source = Some(SourceDuPreavis::Loi);
         out.dit = format!(
             "L1234-1 ; {} en donne {}{}",
             conv_article()?,
@@ -426,7 +448,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                         "{} : preavis de {} mois saisi, et {} en donne {}. Un \
                          contrat peut accorder plus que la loi et la convention, \
                          jamais moins.",
-                        qui, saisi, duree.qui, m
+                        qui, saisi, duree.qui(), m
                     ));
                 }
             }

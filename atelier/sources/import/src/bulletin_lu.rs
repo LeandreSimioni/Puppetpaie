@@ -971,7 +971,35 @@ pub struct BulletinLu {
     /// Les cumuls, dans l'ordre de la page : `cachets`, `jours`, `heures`, `brut`, `plafond`, `cout_employeur`...
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub cumuls: Vec<(String, Cumul)>,
-    pub avertissements: Vec<String>,
+    pub avertissements: Vec<Avertissement>,
+}
+
+/// CE QU'UN BULLETIN LU SIGNALE SANS ETRE REFUSE : la page se contredit (`controler`), un libelle de ligne est absent de
+/// la table (`Refus::LibelleInconnu`), ou une autre faute de lecture. Il s'ecrit par sa phrase (`texte`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Avertissement {
+    /// Ce qui se contredit, sans le mot « incohérent » qui le precede a l'ecrit.
+    Incoherence(String),
+    /// Le libelle absent de la table.
+    LibelleInconnu(String),
+    Lecture(String),
+}
+
+impl Avertissement {
+    /// Sa phrase.
+    pub fn texte(&self) -> String {
+        match self {
+            Avertissement::Incoherence(d) => Refus::Incoherent(d.clone()).message(),
+            Avertissement::LibelleInconnu(l) => Refus::LibelleInconnu(l.clone()).message(),
+            Avertissement::Lecture(t) => t.clone(),
+        }
+    }
+}
+
+impl serde::Serialize for Avertissement {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.texte())
+    }
 }
 
 /// Pourquoi une page n'est pas un bulletin lu.
@@ -1252,7 +1280,7 @@ struct Lecteur<'a> {
     debuts: Vec<Option<usize>>,
     /// Les mots pris par la valeur d'une mention.
     pris: Vec<usize>,
-    avertissements: Vec<String>,
+    avertissements: Vec<Avertissement>,
 }
 
 /// Un rang du corps : son libelle et ses nombres, chacun avec sa colonne.
@@ -1369,13 +1397,13 @@ impl<'a> Lecteur<'a> {
         for (a, b) in &dates_travaillees {
             let n = b.moins(a);
             if !(0..=INTERVALLE_MAX).contains(&n) {
-                self.avertissements.push(format!("dates travaillées du {} au {} : intervalle non déplié", a.iso(), b.iso()));
+                self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : intervalle non déplié", a.iso(), b.iso())));
                 continue;
             }
             for k in 0..=n {
                 match a.plus_jours(k) {
                     Ok(x) => jours_travailles.push(x),
-                    Err(e) => self.avertissements.push(format!("dates travaillées du {} au {} : {}", a.iso(), b.iso(), e.phrase)),
+                    Err(e) => self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : {}", a.iso(), b.iso(), e.phrase))),
                 }
             }
         }
@@ -1392,10 +1420,10 @@ impl<'a> Lecteur<'a> {
         let net_a_payer = match (nombre(&valeurs, "net_a_payer"), corps.lu.net_avant_impot, pas.as_ref().and_then(|p| p.montant)) {
             (Some(n), _, _) => n,
             (None, Some(avant), Some(impot)) => {
-                self.avertissements.push(format!(
+                self.avertissements.push(Avertissement::Lecture(format!(
                     "le net à payer n'est pas imprimé : lu comme le net avant impôt ({}) moins l'impôt prélevé ({}), imprimés",
                     avant, impot
-                ));
+                )));
                 avant - impot
             }
             _ => {
@@ -1622,7 +1650,7 @@ impl<'a> Lecteur<'a> {
                         Some(Valeur::Periode(lire_date(textes[1])?, lire_date(textes[3])?))
                     }
                     _ => {
-                        self.avertissements.push(format!("{} : « {} » n'est pas une période du ... au ...", m.nom, textes.join(" ")));
+                        self.avertissements.push(Avertissement::Lecture(format!("{} : « {} » n'est pas une période du ... au ...", m.nom, textes.join(" "))));
                         None
                     }
                 }
@@ -1646,7 +1674,7 @@ impl<'a> Lecteur<'a> {
                     l = textes.iter().filter_map(|x| lire_date(x)).map(|j| (j, j)).collect();
                 }
                 if l.is_empty() {
-                    self.avertissements.push(format!("{} : « {} » ne se lit pas en dates", m.nom, textes.join(" ")));
+                    self.avertissements.push(Avertissement::Lecture(format!("{} : « {} » ne se lit pas en dates", m.nom, textes.join(" "))));
                     return None;
                 }
                 Some(Valeur::Intervalles(l))
@@ -1756,7 +1784,7 @@ impl<'a> Lecteur<'a> {
         blocs.sort_by(|a, b| a.0.cmp(&b.0));
         let (employeurs, salaries): (Vec<_>, Vec<_>) = blocs.into_iter().map(|(_, b)| b).partition(|b| b.employeur);
         if employeurs.len() > 1 {
-            self.avertissements.push(format!("{} adresses d'employeur : la première est gardée", employeurs.len()));
+            self.avertissements.push(Avertissement::Lecture(format!("{} adresses d'employeur : la première est gardée", employeurs.len())));
         }
         let mut salaries = salaries.into_iter();
         let salarie = salaries.next();
@@ -1801,7 +1829,7 @@ impl<'a> Lecteur<'a> {
                 return (Some(mots[n..].join(" ")), Some(mots[..n].join(" ")));
             }
         }
-        self.avertissements.push(format!("nom et prénom non séparés : « {} »", complet));
+        self.avertissements.push(Avertissement::Lecture(format!("nom et prénom non séparés : « {} »", complet)));
         (None, None)
     }
 
@@ -1959,15 +1987,15 @@ impl<'a> Lecteur<'a> {
                 .min_by(|&a, &b| (sortie[a].cy - n.boite.cy()).abs().cmp(&(sortie[b].cy - n.boite.cy()).abs()));
             match proche {
                 Some(k) if col.is_some() && places[k].iter().any(|(_, c, _)| *c == col) => {
-                    self.avertissements.push(format!("« {} » : deux nombres dans une même colonne", sortie[k].libelle));
+                    self.avertissements.push(Avertissement::Lecture(format!("« {} » : deux nombres dans une même colonne", sortie[k].libelle)));
                 }
                 Some(k) => {
                     if col.is_none() {
-                        self.avertissements.push(format!("« {} » : le nombre {} est hors des colonnes du tableau", sortie[k].libelle, n.valeur));
+                        self.avertissements.push(Avertissement::Lecture(format!("« {} » : le nombre {} est hors des colonnes du tableau", sortie[k].libelle, n.valeur)));
                     }
                     places[k].push((n.boite.x1, col, n.valeur));
                 }
-                None => self.avertissements.push(format!("nombre {} sans libellé à sa hauteur", n.valeur)),
+                None => self.avertissements.push(Avertissement::Lecture(format!("nombre {} sans libellé à sa hauteur", n.valeur))),
             }
         }
         for (r, mut l) in sortie.iter_mut().zip(places) {
@@ -2001,7 +2029,7 @@ impl<'a> Lecteur<'a> {
         let mut fin: Option<Mesure> = None;
         // Une ligne de paie : sa quantite en tete, son montant au dernier nombre, son taux a l'avant-dernier ou dans son
         // libelle (« Cachets à 150,00 »).
-        let ligne = |libelle: &str, quantite: Option<Decimal>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<String>| {
+        let ligne = |libelle: &str, quantite: Option<Decimal>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<Avertissement>| {
             let (libelle, taux_ecrit) = taux_du_libelle(libelle);
             let (libelle, quantite) = match quantite {
                 Some(q) => (libelle, Some(q)),
@@ -2012,7 +2040,7 @@ impl<'a> Lecteur<'a> {
             let (rubrique, heures, soumis) = match table.lignes.iter().find(|x| x.canon == cl) {
                 Some(x) => (x.rubrique.clone(), x.heures, soumis && !x.non_soumise),
                 None => {
-                    avertissements.push(Refus::LibelleInconnu(libelle.clone()).message());
+                    avertissements.push(Avertissement::LibelleInconnu(libelle.clone()));
                     (None, None, soumis)
                 }
             };
@@ -2078,7 +2106,7 @@ impl<'a> Lecteur<'a> {
                         lu.total_salarie = r.colonne(Genre::Montant, Some(Part::Salarie));
                         phase = Phase::ApresTotal;
                         if let Some((_, ecrit)) = titre_en_cours.take() {
-                            avertissements.push(format!("rang sans montant : « {} »", ecrit));
+                            avertissements.push(Avertissement::Lecture(format!("rang sans montant : « {} »", ecrit)));
                         }
                         continue;
                     }
@@ -2102,7 +2130,7 @@ impl<'a> Lecteur<'a> {
                             titre_en_cours = Some((cle, ecrit));
                             continue;
                         }
-                        avertissements.push(format!("rang sans montant : « {} »", te));
+                        avertissements.push(Avertissement::Lecture(format!("rang sans montant : « {} »", te)));
                     }
                     if let Some(f) = table.famille(&cl) {
                         famille = Some(f.to_string());
@@ -2124,7 +2152,7 @@ impl<'a> Lecteur<'a> {
                         continue;
                     }
                     if r.nombres.is_empty() {
-                        avertissements.push(format!("cotisation sans montant : « {} »", r.libelle));
+                        avertissements.push(Avertissement::Lecture(format!("cotisation sans montant : « {} »", r.libelle)));
                     }
                     lu.ajouter(cotisation(table, &famille, r.libelle.clone(), &r), phase == Phase::ApresTotal);
                 }
@@ -2293,11 +2321,11 @@ fn cotisation(table: &Table, famille: &Option<String>, libelle: String, r: &Rang
 fn controler(b: &mut BulletinLu) {
     let soumises: Vec<&LignePaie> = b.lignes.iter().filter(|l| l.soumis).collect();
     if soumises.iter().any(|l| l.montant.is_none()) {
-        b.avertissements.push("une ligne soumise n'a pas de montant : le brut ne se contrôle pas".into());
+        b.avertissements.push(Avertissement::Lecture("une ligne soumise n'a pas de montant : le brut ne se contrôle pas".into()));
     } else if !soumises.is_empty() {
         let somme: Decimal = soumises.iter().filter_map(|l| l.montant).sum();
         if somme != b.brut {
-            b.avertissements.push(format!("incohérent : le brut lu ({}) n'est pas la somme des lignes soumises ({})", b.brut, somme));
+            b.avertissements.push(Avertissement::Incoherence(format!("le brut lu ({}) n'est pas la somme des lignes soumises ({})", b.brut, somme)));
         }
     }
     if let (Some(avant), Some(salarie)) = (b.net_avant_impot, b.total_salarie) {
@@ -2305,23 +2333,23 @@ fn controler(b: &mut BulletinLu) {
         let hors_total: Decimal = b.cotisations.iter().filter(|c| c.hors_total).filter_map(|c| c.montant_salarie).sum();
         let attendu = b.brut - salarie - hors_total + non_soumis;
         if attendu != avant {
-            b.avertissements.push(format!(
-                "incohérent : le net avant impôt lu ({}) n'est pas brut - cotisations salariales + lignes non soumises ({})",
+            b.avertissements.push(Avertissement::Incoherence(format!(
+                "le net avant impôt lu ({}) n'est pas brut - cotisations salariales + lignes non soumises ({})",
                 avant, attendu
-            ));
+            )));
         }
     }
     match (b.net_avant_impot, b.pas.as_ref().and_then(|p| p.montant)) {
         (Some(avant), Some(impot)) => {
             if avant - impot != b.net_a_payer {
-                b.avertissements.push(format!(
-                    "incohérent : le net à payer lu ({}) n'est pas le net avant impôt moins l'impôt prélevé ({})",
+                b.avertissements.push(Avertissement::Incoherence(format!(
+                    "le net à payer lu ({}) n'est pas le net avant impôt moins l'impôt prélevé ({})",
                     b.net_a_payer,
                     avant - impot
-                ));
+                )));
             }
         }
-        _ => b.avertissements.push("le net à payer ne se contrôle pas (net avant impôt ou impôt prélevé absent)".into()),
+        _ => b.avertissements.push(Avertissement::Lecture("le net à payer ne se contrôle pas (net avant impôt ou impôt prélevé absent)".into())),
     }
 }
 

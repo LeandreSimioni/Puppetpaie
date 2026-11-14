@@ -423,7 +423,7 @@ pub fn verifier(donnees: &[u8], paies: &[PaieAer]) -> R<Vec<String>> {
 
 /// La largeur des cases « Signature de l'employeur » et « Cachet de l'entreprise » du cadre 5 de l'attestation, en
 /// points : celles du formulaire de France Travail (relevées sur une vraie attestation, le gabarit de la fictive les
-/// reprend : `envois::aer_fictive`). Ce qu'il faut de pixels à une image posée là (`crate::largeur_imprimee`).
+/// reprend : `envois::aer_fictive`). Ce qu'il faut de pixels à une image posée là (`crate::SorteDImage::largeur_imprimee`).
 pub const CASE_SIGNATURE: Mesure = Mesure::entier(121);
 pub const CASE_CACHET: Mesure = Mesure::entier(161);
 

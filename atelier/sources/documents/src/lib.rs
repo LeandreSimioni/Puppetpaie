@@ -26,24 +26,47 @@ pub mod prelevement;
 pub mod tableaux_export;
 pub mod taxe_sur_les_salaires;
 
-/// La plus grande largeur, en points, à laquelle un document imprime l'image d'identité `quoi` (`logo`,
-/// `signature`, `cachet`) : ce qu'il faut de pixels, et pas plus (`fabrique_pdf::alleger`). Le logo : en tête des
-/// bulletins et des contrats (`bulletin::LOGO_LARGEUR`). La signature : dans le contrat
-/// (`fabrique_pdf::style_contrat::SIGNATURE_LARGEUR`), le certificat Congés Spectacles (`conges_spectacles`, son cadre)
-/// et l'AER (`aer::cadre_signature` dans la case du formulaire, `aer::CASE_SIGNATURE`). Le tampon : la case cachet de
-/// l'AER (`aer::CASE_CACHET`).
-pub fn largeur_imprimee(quoi: &str) -> Option<Mesure> {
-    match quoi {
-        "logo" => Some(bulletin::LOGO_LARGEUR),
-        "signature" => [
-            fabrique_pdf::style_contrat::SIGNATURE_LARGEUR,
-            conges_spectacles::SIGNATURE_LARGEUR,
-            { let r = aer::cadre_signature([Mesure::ZERO, Mesure::ZERO, aer::CASE_SIGNATURE, Mesure::UN]); r[2] - r[0] },
-        ]
-        .into_iter()
-        .max(),
-        "cachet" => Some(aer::CASE_CACHET),
-        _ => None,
+/// UNE IMAGE DE L'IDENTITE DE LA COMPAGNIE : sa signature, son cachet (le tampon), son logo. Une liste du logiciel,
+/// dans l'ordre ou l'ecran les montre (`TOUTES`) ; elle s'ecrit par son nom (`signature`, `cachet`, `logo`), celui du
+/// fichier pose (`gabarits/identite/<nom>.png`) et de la charge qui la designe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDImage {
+    Signature,
+    Cachet,
+    Logo,
+}
+
+impl SorteDImage {
+    pub const TOUTES: [SorteDImage; 3] = [SorteDImage::Signature, SorteDImage::Cachet, SorteDImage::Logo];
+
+    /// Son nom.
+    pub fn nom(self) -> &'static str {
+        match self {
+            SorteDImage::Signature => "signature",
+            SorteDImage::Cachet => "cachet",
+            SorteDImage::Logo => "logo",
+        }
+    }
+
+    /// Celle de ce nom, si c'en est une.
+    pub fn du_nom(nom: &str) -> Option<SorteDImage> {
+        SorteDImage::TOUTES.into_iter().find(|s| s.nom() == nom)
+    }
+
+    /// La plus grande largeur, en points, à laquelle un document l'imprime : ce qu'il faut de pixels, et pas plus
+    /// (`fabrique_pdf::alleger`). Le logo : en tête des bulletins et des contrats (`bulletin::LOGO_LARGEUR`). La
+    /// signature : dans le contrat (`fabrique_pdf::style_contrat::SIGNATURE_LARGEUR`), le certificat Congés Spectacles
+    /// (`conges_spectacles`, son cadre) et l'AER (`aer::cadre_signature` dans la case du formulaire, `aer::CASE_SIGNATURE`).
+    /// Le tampon : la case cachet de l'AER (`aer::CASE_CACHET`).
+    pub fn largeur_imprimee(self) -> Mesure {
+        match self {
+            SorteDImage::Logo => bulletin::LOGO_LARGEUR,
+            SorteDImage::Signature => {
+                let aer = { let r = aer::cadre_signature([Mesure::ZERO, Mesure::ZERO, aer::CASE_SIGNATURE, Mesure::UN]); r[2] - r[0] };
+                fabrique_pdf::style_contrat::SIGNATURE_LARGEUR.max(conges_spectacles::SIGNATURE_LARGEUR).max(aer)
+            }
+            SorteDImage::Cachet => aer::CASE_CACHET,
+        }
     }
 }
 

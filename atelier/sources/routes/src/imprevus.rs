@@ -2328,8 +2328,8 @@ fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
     // ni pour la rupture d'un CDD par le salarie (L1243-2), que la convention du licenciement ne regle pas.
     if duree != Some(Decimal::ZERO) && regle.is_none() {
         let tout = engagement::preavis(ctx, e, anciennete, motif)?;
-        if let (Some(conv), true) = (tout.convention, tout.qui != "la loi (L1234-1)") {
-            dit.push_str(&format!(" {} en donne {} : c'est elle qui s'applique.", tout.qui, conv));
+        if let (Some(conv), true) = (tout.convention, tout.source != Some(engagement::solde::SourceDuPreavis::Loi)) {
+            dit.push_str(&format!(" {} en donne {} : c'est elle qui s'applique.", tout.qui(), conv));
         } else if tout.mois.is_none() {
             if let Some(pourquoi) = &tout.pourquoi {
                 dit.push_str(&format!(" Et {}.", pourquoi.trim_end_matches('.')));

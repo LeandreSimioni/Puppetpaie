@@ -1484,13 +1484,11 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     }
     contrat.sort_by(|a, b| a.quand.cmp(&b.quand));
     let de: String = qui.as_ref().map(|cle| format!(" de {}", ctx.nomme(cle))).into_iter().collect();
+    // La DPAE garde ses capitales ; une piece du contrat se dit en minuscule initiale.
     let dites: Vec<String> = dpae
         .iter()
-        .chain(contrat.iter())
-        .map(|p| {
-            let quoi = if p.quoi.starts_with("DPAE") { p.quoi.clone() } else { p.quoi[..1].to_lowercase() + &p.quoi[1..] };
-            format!("{} le {}", quoi, p.quand_dit)
-        })
+        .map(|p| format!("{} le {}", p.quoi, p.quand_dit))
+        .chain(contrat.iter().map(|p| format!("{} le {}", p.quoi[..1].to_lowercase() + &p.quoi[1..], p.quand_dit)))
         .collect();
     let phrase = if dites.is_empty() { format!("Contrat {}{} : rien n'est parti.", numero, de) } else { format!("Contrat {}{} : {}.", numero, de, dites.join(" ; ")) };
     Ok(PiecesParties { phrase, dpae, contrat })

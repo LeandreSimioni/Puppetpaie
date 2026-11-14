@@ -17,12 +17,30 @@ pub const RESOLUTION_MIN: Mesure = Mesure::entier(120);
 /// Les qualités JPEG essayées, de la meilleure à la plus légère.
 const QUALITES: [u8; 4] = [85, 75, 65, 55];
 
+/// LE FORMAT D'UNE IMAGE POSEE : PNG, JPEG ou SVG, reconnu à ses premiers octets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatDImage {
+    Png,
+    Jpeg,
+    Svg,
+}
+
+impl FormatDImage {
+    /// L'extension du fichier qui le porte, avec son point.
+    pub fn extension(self) -> &'static str {
+        match self {
+            FormatDImage::Png => ".png",
+            FormatDImage::Jpeg => ".jpg",
+            FormatDImage::Svg => ".svg",
+        }
+    }
+}
+
 /// L'image allégée.
 pub struct Allegee {
     /// Les octets à poser.
     pub octets: Vec<u8>,
-    /// `png`, `jpeg` ou `svg`.
-    pub format: &'static str,
+    pub format: FormatDImage,
     /// Sa largeur en pixels (0 pour un SVG).
     pub largeur: u32,
     /// Le poids de l'image reçue.
@@ -31,13 +49,13 @@ pub struct Allegee {
     pub telle_quelle: bool,
 }
 
-fn format_de(o: &[u8]) -> Option<&'static str> {
+fn format_de(o: &[u8]) -> Option<FormatDImage> {
     if o.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some("png")
+        Some(FormatDImage::Png)
     } else if o.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        Some("jpeg")
+        Some(FormatDImage::Jpeg)
     } else if String::from_utf8_lossy(&o[..o.len().min(8192)]).to_ascii_lowercase().contains("<svg") {
-        Some("svg")
+        Some(FormatDImage::Svg)
     } else {
         None
     }
@@ -75,7 +93,7 @@ fn pixels(points: Mesure, resolution: Mesure) -> u32 {
 /// L'écriture de `image` (à sa taille) : PNG, sans perte, si l'image est transparente, si le PNG tient dans `objectif`
 /// ou s'il pèse moins que le JPEG de qualité 85 ; sinon le JPEG de la meilleure qualité qui tient dans `objectif`, ou
 /// le plus léger.
-fn ecrire(image: &DynamicImage, objectif: usize) -> Result<(Vec<u8>, &'static str), Refus> {
+fn ecrire(image: &DynamicImage, objectif: usize) -> Result<(Vec<u8>, FormatDImage), Refus> {
     let transparente = image.color().has_alpha() && image.pixels().any(|(_, _, p)| p.0[3] < 255);
     // Une image opaque perd son canal alpha : il ne porterait que des 255, et un masque de plus dans chaque document.
     let opaque;
@@ -87,11 +105,11 @@ fn ecrire(image: &DynamicImage, objectif: usize) -> Result<(Vec<u8>, &'static st
     };
     let en_png = png(image)?;
     if transparente {
-        return Ok((en_png, "png"));
+        return Ok((en_png, FormatDImage::Png));
     }
     let mut meilleur = jpeg(image, QUALITES[0])?;
     if en_png.len() <= meilleur.len() || en_png.len() <= objectif {
-        return Ok((en_png, "png"));
+        return Ok((en_png, FormatDImage::Png));
     }
     for q in &QUALITES[1..] {
         if meilleur.len() <= objectif {
@@ -99,14 +117,14 @@ fn ecrire(image: &DynamicImage, objectif: usize) -> Result<(Vec<u8>, &'static st
         }
         meilleur = jpeg(image, *q)?;
     }
-    Ok((meilleur, "jpeg"))
+    Ok((meilleur, FormatDImage::Jpeg))
 }
 
 /// `octets` (PNG, JPEG ou SVG) allégée pour être imprimée sur `largeur_points` au plus, à `objectif` octets au
 /// plus si la résolution le permet (voir l'en-tête du module).
 pub fn alleger(octets: &[u8], largeur_points: Mesure, objectif: usize) -> Result<Allegee, Refus> {
     let format = format_de(octets).ok_or_else(|| Refus::illisible("ni un PNG, ni un JPEG, ni un SVG"))?;
-    if format == "svg" {
+    if format == FormatDImage::Svg {
         return Ok(Allegee { octets: octets.to_vec(), format, largeur: 0, avant: octets.len(), telle_quelle: true });
     }
     let image = image::load_from_memory(octets).map_err(|e| Refus::illisible(format!("l'image est illisible ({})", e)))?;

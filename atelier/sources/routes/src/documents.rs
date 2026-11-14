@@ -1032,7 +1032,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     };
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id)).cloned().collect();
-    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?).map_err(refus_de_preparation)?;
+    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?)?;
     // Les cles sont deja gardees (`Choix::garder`, plus haut) : leurs messages partent tous.
     let messages: Vec<envoi::Message<IdSalarie>> = messages.into_iter().filter(|m| cles.contains(&m.pour)).collect();
     let mut avertissements: Vec<String> = documents.avertissements.clone();
@@ -1153,16 +1153,5 @@ pub(crate) fn sans_courriel(ctx: &Contexte, mois: Mois) -> R<Vec<(IdSalarie, Str
     }
     let choix = choisir(ctx, mois, &paies)?;
     Ok(cles.into_iter().filter(|c| !choix.a_jour.contains(c) && !a_un_courriel(&paies, c)).map(|c| { let nom = nom_de_la_paie(&paies, &c); (c, nom) }).collect())
-}
-
-/// Le refus de `envoi.preparer` : une fiche sans adresse est `Illisible`, une cle absente `Manque`.
-fn refus_de_preparation(m: Echec) -> Echec {
-    if m.phrase.starts_with("Pas d'adresse e-mail") {
-        m.reclasser(Classe::Illisible)
-    } else if m.phrase.starts_with("champ ") && m.phrase.ends_with(" absent") {
-        m.reclasser(Classe::Manque)
-    } else {
-        m
-    }
 }
 

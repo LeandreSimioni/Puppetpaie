@@ -83,7 +83,7 @@ const COURIER: &str = "cour";
 
 /// Le cadre de la signature : x0, y0, x1, y1.
 const SIGNATURE_CADRE: (Mesure, Mesure, Mesure, Mesure) = (mesure("441.84"), mesure("775.50"), mesure("521.84"), mesure("809.10"));
-/// La largeur de ce cadre (`largeur_imprimee`) : 80 points.
+/// La largeur de ce cadre (`SorteDImage::largeur_imprimee`) : 80 points.
 pub const SIGNATURE_LARGEUR: Mesure = Mesure::entier(80);
 
 // Les corps du certificat.

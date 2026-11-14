@@ -714,6 +714,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
+| avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
+| image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
+| format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
+| source de la durée d'un préavis | `SourceDuPreavis` | `engagement/src/solde.rs` |
 | fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
 | faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |
 | fiche à juger (l'une des trois, typée) | `FicheAJuger` | `declarations/src/champs.rs` |
@@ -870,6 +874,16 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   AEM en PDF ; que porte un contrat que l'import retient (`import::attestes::Retenu`).
 - **nature d'une AEM qui corrige** : complémentaire ou rectificative (sa case cochée) ; une telle AEM ne se reprend pas
   seule.
+- **avertissement d'un bulletin lu** : ce qu'un bulletin lu signale sans être refusé : une incohérence (la page se
+  contredit, le bulletin fait foi), un libellé absent de la table de lecture, une autre faute de lecture ; écrit par sa
+  phrase (`texte`, « incohérent : … », « libellé inconnu : « … » »).
+- **image de l'identité de la compagnie** : sa signature, son cachet (le tampon), son logo ; écrite `signature`,
+  `cachet`, `logo` (le nom du fichier posé et de la charge) ; la largeur qu'un document en imprime
+  (`largeur_imprimee`).
+- **format d'une image posée** : PNG, JPEG ou SVG, reconnu à ses premiers octets ; l'extension du fichier (`.png`,
+  `.jpg`, `.svg`).
+- **source de la durée d'un préavis** : le motif de la rupture (aucun préavis), la loi (L1234-1), ou l'article de la
+  convention ; dite par `Preavis::qui`.
 - **fiche saisie** : la saisie d'une fiche est la fiche typée elle-même (`ChampsEntreprise`, `ChampsSalarie`,
   `ChampsSpectacle`), ses fautes à côté ; chaque case se nettoie et se type une fois, à l'entrée (`lire_cases`, la seule
   porte d'un formulaire ; `Changements::lire` pour `enregistrer-fiche`), et personne ne relit le texte tapé. La table
