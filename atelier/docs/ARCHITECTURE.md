@@ -160,6 +160,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | instant ou jour | `InstantOuJour` | `socle/src/paris.rs` |
 | jour | `Jour` | `socle/src/date.rs` |
 | mois | `Mois` | `socle/src/mois.rs` |
+| mois de l'année | `MoisDeLAnnee` | `socle/src/mois.rs` |
 | mois ou jour | `MoisOuJour` | `socle/src/mois.rs` |
 | année | `Annee` ; à unifier (#419) : des `i32` | `socle/src/mois.rs` |
 | période | à créer (#419) : `Periode` | — |
@@ -181,6 +182,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   `24:00` (« jusqu'à minuit »).
 - **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone.
 - **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom.
+- **mois de l'année** : janvier à décembre, sans année (la colonne d'un mois au récapitulatif annuel) ; il porte la
+  table des noms de mois.
 - **mois ou jour** : le mois d'un acte ou le jour d'un événement.
 - **année** : une année civile. Écrite en texte (`"2025"`, la clé de `paies_annuelles`), ou en nombre là où la forme le
   dit (`socle::mois::en_nombre` : le nombre de paies parti chez l'éditeur, ce que le serveur du filet lit et rend).
@@ -891,9 +894,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   Que portent la demande d'un état (`etats_paie::Demande`), un tableau rendu, le livre de paie, les limites d'un format.
 - **colonne d'un état** : une colonne d'un tableau exporté, la case d'une de ses lignes, et ce sous quoi le livre de
   paie nomme ses totaux et compte ce qu'un bulletin ne déclare pas. Déclarées une fois (`colonnes_des_etats!`) : sa clé
-  écrite, ce qu'elle porte (`tableaux_export::Genre`), son en-tête, qu'un état peut titrer autrement ; deux sont la
-  même quand elles s'écrivent sous la même clé. Les états des comptes, du personnel et des organismes la nomment
-  encore par sa clé écrite (`tableaux_export::NommeUneColonne`, lue par `ColonneDEtat::ecrite`).
+  écrite, ce qu'elle porte (`tableaux_export::Genre`), son en-tête, qu'un état peut titrer autrement. Une clé écrite
+  peut porter deux notions (`mois`, `base`, `assiette`, `du`) : deux variantes, qu'aucun état ne pose ensemble ; un
+  état nomme toujours sa colonne par sa variante.
 - **code journal**, **numéro de compte**, **poste analytique** : les codes d'une écriture comptable que le plan
   comptable dit (`plan-comptable-base.json`, recouvert par `config/plan-comptable.json`) : le journal (`OD`), les comptes
   (du brut, du net, des frais, du prélèvement à la source, des retenues, des lignes, des tiers, de la provision de

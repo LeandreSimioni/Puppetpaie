@@ -991,7 +991,7 @@ pub fn recapitulatif_annuel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         ligne.n(C::Bulletins, *n);
         // Le brut du mois : ce que les bulletins du mois en declarent ; un mois sans brut declare reste vide.
         if let Some(brut) = l.brut {
-            cumuler(ligne, C::DuMois(l.mois), brut);
+            cumuler(ligne, C::DuMois(l.mois.de_l_annee()), brut);
         }
         for (champ, v) in [
             (C::Brut, l.brut),
@@ -1013,9 +1013,7 @@ pub fn recapitulatif_annuel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     }
     let mut cols = vec![C::Salarie.colonne()];
     // Une colonne par mois de l'annee (l'annee n'y paraît pas).
-    for i in 1..=12 {
-        cols.push(C::DuMois(socle::mois::Mois::nouveau(1, i).map_err(|e| e.reclasser(Classe::Illisible))?).colonne());
-    }
+    cols.extend(socle::mois::MoisDeLAnnee::TOUS.map(|m| C::DuMois(m).colonne()));
     cols.extend([
         C::Brut.titree("Brut annuel"),
         C::NetImposable.colonne(),

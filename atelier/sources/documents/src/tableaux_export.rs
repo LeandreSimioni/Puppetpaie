@@ -29,7 +29,7 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::num::Decimal;
 use socle::echec::Echec;
-use socle::mois::Mois;
+use socle::mois::{Mois, MoisDeLAnnee};
 pub use socle::echec::R;
 use crate::plan_comptable::{EtatDExport, FormatDExport};
 
@@ -101,22 +101,19 @@ impl Serialize for Val {
 /// (`ColonneDEtat::titree`).
 macro_rules! colonnes_des_etats {
     ($( $(#[$m:meta])* $var:ident = $cle:literal, $genre:ident, $entete:literal; )*) => {
-        /// LA COLONNE D'UN ETAT (voir la declaration). Deux colonnes sont la meme quand elles s'ecrivent sous la meme
-        /// cle : une ligne n'a qu'une case par cle.
-        #[derive(Debug, Clone, Copy)]
+        /// LA COLONNE D'UN ETAT (voir la declaration). Deux variantes qui s'ecrivent sous la meme cle ne se posent
+        /// jamais dans un meme etat : une ligne n'a qu'une case par cle.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum ColonneDEtat {
             $( $(#[$m])* $var, )*
             /// Le brut d'un mois de l'annee, au recapitulatif annuel : `m01` a `m12`, sous le nom abrege du mois avec son
-            /// point (« Janv. ») ; l'annee n'y compte pas.
-            DuMois(Mois),
+            /// point (« Janv. »).
+            DuMois(MoisDeLAnnee),
             /// Une assiette du calcul, a l'etat des assiettes : `b_` et son nom, sous son nom.
             DeLAssiette(Assiette),
         }
 
         impl ColonneDEtat {
-            /// Les colonnes de cle fixe, dans l'ordre de la declaration.
-            const FIXES: &'static [ColonneDEtat] = &[$( ColonneDEtat::$var ),*];
-
             /// Sa cle ecrite.
             pub fn cle(self) -> Cow<'static, str> {
                 match self {
@@ -281,15 +278,6 @@ colonnes_des_etats! {
     VerseLe = "verse_le", Texte, "Versé le";
 }
 
-/// Deux colonnes sont la meme quand elles s'ecrivent sous la meme cle.
-impl PartialEq for ColonneDEtat {
-    fn eq(&self, autre: &ColonneDEtat) -> bool {
-        self.cle() == autre.cle()
-    }
-}
-
-impl Eq for ColonneDEtat {}
-
 impl Serialize for ColonneDEtat {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.cle())
@@ -305,36 +293,6 @@ impl ColonneDEtat {
     /// La colonne d'un tableau, sous l'en-tete que l'etat lui donne.
     pub fn titree(self, libelle: impl Into<String>) -> Colonne {
         Colonne { cle: self, libelle: libelle.into(), genre: self.genre() }
-    }
-
-    /// La colonne qu'ecrit `cle` (la premiere declaree sous elle), ou le refus d'une cle que la declaration n'a pas.
-    pub fn ecrite(cle: &str) -> R<ColonneDEtat> {
-        match ColonneDEtat::FIXES.iter().find(|c| c.cle() == cle) {
-            Some(c) => Ok(*c),
-            None => Err(refus(format!("Colonne inconnue : « {} ».", cle))),
-        }
-    }
-}
-
-/// CE QUI NOMME UNE COLONNE dans une ligne : la colonne, ou sa cle ecrite, que les etats des comptes, du personnel et
-/// des organismes nomment en texte (lue par `ColonneDEtat::ecrite`). Ces cles sont dans le code : une qui n'est pas
-/// declaree est une faute du code, qui arrete le programme.
-pub trait NommeUneColonne {
-    fn nommee(self) -> ColonneDEtat;
-}
-
-impl NommeUneColonne for ColonneDEtat {
-    fn nommee(self) -> ColonneDEtat {
-        self
-    }
-}
-
-impl NommeUneColonne for &str {
-    fn nommee(self) -> ColonneDEtat {
-        match ColonneDEtat::ecrite(self) {
-            Ok(c) => c,
-            Err(e) => unreachable!("{}", e.phrase),
-        }
     }
 }
 
@@ -353,8 +311,7 @@ impl Ligne {
     }
 
     /// `d[k] = v` : remplace en gardant la place, ou ajoute a la fin.
-    pub fn poser(&mut self, k: impl NommeUneColonne, v: Option<Val>) -> &mut Ligne {
-        let k = k.nommee();
+    pub fn poser(&mut self, k: ColonneDEtat, v: Option<Val>) -> &mut Ligne {
         match self.champs.iter_mut().find(|(c, _)| *c == k) {
             Some(x) => x.1 = v,
             None => self.champs.push((k, v)),
@@ -362,53 +319,52 @@ impl Ligne {
         self
     }
 
-    pub fn t(&mut self, k: impl NommeUneColonne, s: impl Into<String>) -> &mut Ligne {
+    pub fn t(&mut self, k: ColonneDEtat, s: impl Into<String>) -> &mut Ligne {
         self.poser(k, Some(Val::Txt(s.into())))
     }
 
     /// Un texte, ou rien quand il est vide.
-    pub fn ot(&mut self, k: impl NommeUneColonne, s: Option<impl Into<String>>) -> &mut Ligne {
+    pub fn ot(&mut self, k: ColonneDEtat, s: Option<impl Into<String>>) -> &mut Ligne {
         self.poser(k, s.map(|s| Val::Txt(s.into())))
     }
 
-    pub fn m(&mut self, k: impl NommeUneColonne, m: Mois) -> &mut Ligne {
+    pub fn m(&mut self, k: ColonneDEtat, m: Mois) -> &mut Ligne {
         self.poser(k, Some(Val::Mois(m)))
     }
 
-    pub fn d(&mut self, k: impl NommeUneColonne, v: Decimal) -> &mut Ligne {
+    pub fn d(&mut self, k: ColonneDEtat, v: Decimal) -> &mut Ligne {
         self.poser(k, Some(Val::Dec(v)))
     }
 
-    pub fn od(&mut self, k: impl NommeUneColonne, v: Option<Decimal>) -> &mut Ligne {
+    pub fn od(&mut self, k: ColonneDEtat, v: Option<Decimal>) -> &mut Ligne {
         self.poser(k, v.map(Val::Dec))
     }
 
-    pub fn n(&mut self, k: impl NommeUneColonne, v: i64) -> &mut Ligne {
+    pub fn n(&mut self, k: ColonneDEtat, v: i64) -> &mut Ligne {
         self.poser(k, Some(Val::entier(v)))
     }
 
-    pub fn rien(&mut self, k: impl NommeUneColonne) -> &mut Ligne {
+    pub fn rien(&mut self, k: ColonneDEtat) -> &mut Ligne {
         self.poser(k, None)
     }
 
     /// `d.get(k)` distinguant l'absente (`None`) de la presente a `None` (`Some(None)`).
-    pub fn get(&self, k: impl NommeUneColonne) -> Option<&Option<Val>> {
-        let k = k.nommee();
+    pub fn get(&self, k: ColonneDEtat) -> Option<&Option<Val>> {
         self.champs.iter().find(|(c, _)| *c == k).map(|(_, v)| v)
     }
 
     /// La valeur, ou rien.
-    pub fn val(&self, k: impl NommeUneColonne) -> Option<&Val> {
+    pub fn val(&self, k: ColonneDEtat) -> Option<&Val> {
         self.get(k).and_then(|v| v.as_ref())
     }
 
     /// Le texte de la case `k`, tel qu'il s'ecrit : rien pour une case vide (absente ou `None`). C'est ce qui range et
     /// groupe les lignes.
-    pub fn texte(&self, k: impl NommeUneColonne) -> String {
+    pub fn texte(&self, k: ColonneDEtat) -> String {
         self.val(k).map(Val::en_texte_ecrit).into_iter().collect()
     }
 
-    pub fn decimal(&self, k: impl NommeUneColonne) -> Option<Decimal> {
+    pub fn decimal(&self, k: ColonneDEtat) -> Option<Decimal> {
         match self.val(k) {
             Some(Val::Dec(d)) => Some(*d),
             _ => None,
@@ -416,7 +372,7 @@ impl Ligne {
     }
 
     /// Le mois de la case `k`, quand elle en porte un (`m`).
-    pub fn mois(&self, k: impl NommeUneColonne) -> Option<Mois> {
+    pub fn mois(&self, k: ColonneDEtat) -> Option<Mois> {
         match self.val(k) {
             Some(Val::Mois(m)) => Some(*m),
             _ => None,
@@ -467,26 +423,6 @@ impl Colonne {
     pub fn a_droite(&self) -> bool {
         matches!(self.genre, Genre::Montant | Genre::Nombre | Genre::Taux)
     }
-}
-
-/// Une colonne de texte, nommee par sa cle ecrite (`NommeUneColonne`).
-pub fn col_t(cle: &str, libelle: &str) -> Colonne {
-    Colonne { cle: cle.nommee(), libelle: libelle.into(), genre: Genre::Texte }
-}
-
-/// Une colonne de montant, nommee par sa cle ecrite.
-pub fn col_m(cle: &str, libelle: &str) -> Colonne {
-    Colonne { cle: cle.nommee(), libelle: libelle.into(), genre: Genre::Montant }
-}
-
-/// Une colonne de quantite, nommee par sa cle ecrite.
-pub fn col_n(cle: &str, libelle: &str) -> Colonne {
-    Colonne { cle: cle.nommee(), libelle: libelle.into(), genre: Genre::Nombre }
-}
-
-/// Une colonne de taux (a droite, jamais totalisee), nommee par sa cle ecrite.
-pub fn col_x(cle: &str, libelle: &str) -> Colonne {
-    Colonne { cle: cle.nommee(), libelle: libelle.into(), genre: Genre::Taux }
 }
 
 #[derive(Clone, Debug, Serialize)]

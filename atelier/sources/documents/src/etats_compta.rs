@@ -25,7 +25,7 @@ use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielCompta
 use socle::texte::euros;
 use socle::num::{add, div, eur, eur2, mul, sub, zero2, Decimal};
 use crate::tableaux_export::{
-    col_m, col_n, col_t, col_x, ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, Ligne, Section, Tableau,
+    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, ColonneDEtat as C, Ligne, Section, Tableau,
     FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
@@ -239,11 +239,11 @@ fn libelle_de(plan: &Plan, e: &Ecriture) -> Option<String> {
 /// Une ligne d'ecriture pour un tableau.
 fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
-    l.t("journal", e.journal.to_string()).t("date", e.date.jj_mm_aaaa()).t("piece", e.piece.clone()).t("compte", compte_de(e).to_string());
-    l.ot("libelle_compte", libelle_de(plan, e)).t("libelle", e.libelle.clone());
-    l.od("debit", if e.debit.is_zero() { None } else { Some(e.debit) });
-    l.od("credit", if e.credit.is_zero() { None } else { Some(e.credit) });
-    l.ot("analytique", e.analytique.clone()).m("mois", e.mois);
+    l.t(C::Journal, e.journal.to_string()).t(C::Date, e.date.jj_mm_aaaa()).t(C::Piece, e.piece.clone()).t(C::Compte, compte_de(e).to_string());
+    l.ot(C::LibelleCompte, libelle_de(plan, e)).t(C::Libelle, e.libelle.clone());
+    l.od(C::Debit, if e.debit.is_zero() { None } else { Some(e.debit) });
+    l.od(C::Credit, if e.credit.is_zero() { None } else { Some(e.credit) });
+    l.ot(C::Analytique, e.analytique.clone()).m(C::Mois, e.mois);
     l
 }
 
@@ -1039,14 +1039,14 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         t.sections.push(Section::nouvelle(libelle_mois(m), lignes));
     }
     t.colonnes = vec![
-        col_t("journal", "Journal"),
-        col_t("date", "Date"),
-        col_t("piece", "N° pièce"),
-        col_t("compte", "N° compte"),
-        col_t("libelle", "Libellé"),
-        col_m("debit", "Débit"),
-        col_m("credit", "Crédit"),
-        col_t("analytique", "Analytique"),
+        C::Journal.colonne(),
+        C::Date.colonne(),
+        C::Piece.titree("N° pièce"),
+        C::Compte.titree("N° compte"),
+        C::Libelle.colonne(),
+        C::Debit.colonne(),
+        C::Credit.colonne(),
+        C::Analytique.colonne(),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
     let ecr_format = ecrivain(format);
@@ -1057,8 +1057,8 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.format = format_possible(Some(format), &FORMATS_ECRITURES)?;
     totaliser(&mut t, TOTAL_GENERAL)?;
     // Le total de chaque colonne : la somme de ce que les lignes portent (aucune ligne, rien).
-    let somme = |k: &str| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(zero2(), add);
-    let (debit, credit) = (somme("debit"), somme("credit"));
+    let somme = |k: C| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(zero2(), add);
+    let (debit, credit) = (somme(C::Debit), somme(C::Credit));
     if debit != credit {
         return Err(refus(format!("Le journal n'est pas équilibré (débit {}, crédit {}).", debit, credit)));
     }
@@ -1169,7 +1169,7 @@ pub fn format_retenu(ctx: &Contexte) -> R<Option<FormatDExport>> {
 /// Le solde d'une ligne, dit « débiteur », « créditeur » ou « nul ».
 fn solde(d: &Ligne) -> String {
     // Ce que le compte porte au debit, moins ce qu'il porte au credit (une colonne vide n'y porte rien).
-    let v = [d.decimal("debit"), d.decimal("credit").map(|c| -c)].into_iter().flatten().fold(zero2(), add);
+    let v = [d.decimal(C::Debit), d.decimal(C::Credit).map(|c| -c)].into_iter().flatten().fold(zero2(), add);
     let t = if v > Decimal::ZERO {
         format!("débiteur {}", v)
     } else if v < Decimal::ZERO {
@@ -1197,13 +1197,13 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     // Une section par compte : son numero, et son libelle quand le plan le nomme.
     t.sections = par.into_iter().map(|(c, l)| Section::nouvelle([Some(c.to_string()), libelles[&c].clone()].into_iter().flatten().collect::<Vec<_>>().join(" "), l)).collect();
     t.colonnes = vec![
-        col_t("compte", "Compte"),
-        col_t("date", "Date"),
-        col_t("piece", "Pièce"),
-        col_t("libelle", "Libellé"),
-        col_t("analytique", "Analytique"),
-        col_m("debit", "Débit"),
-        col_m("credit", "Crédit"),
+        C::Compte.colonne(),
+        C::Date.colonne(),
+        C::Piece.colonne(),
+        C::Libelle.colonne(),
+        C::Analytique.colonne(),
+        C::Debit.colonne(),
+        C::Credit.colonne(),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
     t.format = format_possible(d.format, &FORMATS_TABLEAU)?;
@@ -1211,7 +1211,7 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
             let dit = format!("solde {}", solde(tot));
-            tot.t("analytique", dit);
+            tot.t(C::Analytique, dit);
         }
     }
     if d.ecrire {
@@ -1243,9 +1243,9 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for (c, (lib, debit, credit)) in &par {
         let v = sub(*debit, *credit);
         let mut l = Ligne::nouvelle();
-        l.t("compte", c.to_string()).ot("libelle", lib.clone()).d("debit", *debit).d("credit", *credit);
-        l.od("solde_debiteur", if v > Decimal::ZERO { Some(v) } else { None });
-        l.od("solde_crediteur", if v < Decimal::ZERO { Some(-v) } else { None });
+        l.t(C::Compte, c.to_string()).ot(C::Libelle, lib.clone()).d(C::Debit, *debit).d(C::Credit, *credit);
+        l.od(C::SoldeDebiteur, if v > Decimal::ZERO { Some(v) } else { None });
+        l.od(C::SoldeCrediteur, if v < Decimal::ZERO { Some(-v) } else { None });
         lignes.push(l);
     }
     let mut t = Tableau::nouveau(EtatDExport::BalancePaie, "Balance des comptes de paie", p.libelle.clone());
@@ -1253,12 +1253,12 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![
-        col_t("compte", "Compte"),
-        col_t("libelle", "Libellé"),
-        col_m("debit", "Total débit"),
-        col_m("credit", "Total crédit"),
-        col_m("solde_debiteur", "Solde débiteur"),
-        col_m("solde_crediteur", "Solde créditeur"),
+        C::Compte.colonne(),
+        C::Libelle.colonne(),
+        C::Debit.titree("Total débit"),
+        C::Credit.titree("Total crédit"),
+        C::SoldeDebiteur.colonne(),
+        C::SoldeCrediteur.colonne(),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
     t.format = format_possible(d.format, &FORMATS_TABLEAU)?;
@@ -1465,15 +1465,15 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let fiche = ctx.salaries.get(&cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
         let nom = fiche.nom.exigee("nom").map_err(|m| m.reclasser(Classe::Manque))?;
         let mut l = Ligne::nouvelle();
-        l.t("salarie", match fiche.prenom.portee() {
+        l.t(C::Salarie, match fiche.prenom.portee() {
             Some(prenom) => format!("{} {}", nom, prenom),
             None => nom.to_string(),
         });
-        l.ot("contrat", contrat).t("nature", nature);
-        l.d("report", arrondir_jours(cpt.report_restant)).d("acquis", arrondir_jours(cpt.acquis)).d("pris", arrondir_jours(cpt.pris)).d("solde", arrondir_jours(cpt.solde));
-        l.d("dixieme", dixieme).d("maintien", maintien).d("indemnite", retenu).t("regle", regle);
-        l.od("taux_patronal", taux).n("bulletins", n).od("charges", charges);
-        l.od("total", charges.map(|c| add(retenu, c)));
+        l.ot(C::Contrat, contrat).t(C::Nature, nature);
+        l.d(C::Report, arrondir_jours(cpt.report_restant)).d(C::Acquis, arrondir_jours(cpt.acquis)).d(C::Pris, arrondir_jours(cpt.pris)).d(C::Solde, arrondir_jours(cpt.solde));
+        l.d(C::Dixieme, dixieme).d(C::Maintien, maintien).d(C::Indemnite, retenu).t(C::Regle, regle);
+        l.od(C::TauxPatronal, taux).n(C::Bulletins, n).od(C::Charges, charges);
+        l.od(C::Total, charges.map(|c| add(retenu, c)));
         lignes.push(l);
     }
     if lignes.is_empty() && sans_compteur == 0 {
@@ -1504,32 +1504,34 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![
-        col_t("salarie", "Salarié"),
-        col_t("contrat", "Contrat"),
-        col_t("nature", "Nature"),
-        col_n("report", "Report N-1 (j)"),
-        col_n("acquis", "Acquis N (j)"),
-        col_n("pris", "Pris (j)"),
-        col_n("solde", "Solde (j)"),
-        col_m("dixieme", "Au dixième"),
-        col_m("maintien", "Au maintien"),
-        col_m("indemnite", "Indemnité retenue"),
-        col_t("regle", "Règle"),
-        col_x("taux_patronal", "Taux patronal réel"),
-        col_m("charges", "Charges patronales"),
-        col_m("total", "Provision"),
+        C::Salarie.colonne(),
+        C::Contrat.colonne(),
+        C::Nature.colonne(),
+        C::Report.colonne(),
+        C::Acquis.colonne(),
+        C::Pris.colonne(),
+        C::Solde.colonne(),
+        C::Dixieme.colonne(),
+        C::Maintien.colonne(),
+        C::Indemnite.colonne(),
+        C::Regle.colonne(),
+        C::TauxPatronal.colonne(),
+        C::Charges.colonne(),
+        C::Total.titree("Provision"),
     ];
     t.sources = vec!["compteur de congés écrit dans la paie validée du mois, indemnité L3141-24 comme au solde de tout compte, taux patronal = cotisations patronales / brut des bulletins des douze derniers mois".to_string()];
     finir(ctx, &mut t, Some(&p), "provision-conges", d.format,false)?;
+    // Les jours, le taux et le nombre de bulletins d'un salarie ne s'additionnent pas : leur total reste vide.
+    const SANS_TOTAL: [C; 6] = [C::Report, C::Acquis, C::Pris, C::Solde, C::TauxPatronal, C::Bulletins];
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
-            for c in ["report", "acquis", "pris", "solde", "taux_patronal", "bulletins"] {
+            for c in SANS_TOTAL {
                 tot.rien(c);
             }
         }
     }
     if let Some(tot) = t.total.as_mut() {
-        for c in ["report", "acquis", "pris", "solde", "taux_patronal", "bulletins"] {
+        for c in SANS_TOTAL {
             tot.rien(c);
         }
     }
@@ -1638,7 +1640,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let m2 = eur(div(mul(au_dela_2, maj_2), cent));
         let taxe = add(add(normal, m1), m2);
         let mut l = Ligne::nouvelle();
-        l.t("salarie", nom.clone()).n("mois", mois.len() as i64).d("brut", *brut).d("base", b).d("taux_normal", normal).d("majoration_1", m1).d("majoration_2", m2).d("taxe", taxe);
+        l.t(C::Salarie, nom.clone()).n(C::NombreDeMois, mois.len() as i64).d(C::Brut, *brut).d(C::BaseDeLaTaxe, b).d(C::TauxNormal, normal).d(C::MajorationUn, m1).d(C::MajorationDeux, m2).d(C::Taxe, taxe);
         brute = add(brute, taxe);
         lignes.push(l);
     }
@@ -1687,24 +1689,24 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![
-        col_t("salarie", "Salarié"),
-        col_n("mois", "Mois"),
-        col_m("brut", "Brut"),
-        col_m("base", "Base (assiette CSG sans réduction)"),
-        col_m("taux_normal", "4,25 %"),
-        col_m("majoration_1", &format!("+4,25 % au-delà de {}", euros(ts.seuil_1))),
-        col_m("majoration_2", &format!("+9,35 % au-delà de {}", euros(ts.seuil_2))),
-        col_m("taxe", "Taxe brute"),
+        C::Salarie.colonne(),
+        C::NombreDeMois.colonne(),
+        C::Brut.colonne(),
+        C::BaseDeLaTaxe.colonne(),
+        C::TauxNormal.colonne(),
+        C::MajorationUn.titree(format!("+4,25 % au-delà de {}", euros(ts.seuil_1))),
+        C::MajorationDeux.titree(format!("+9,35 % au-delà de {}", euros(ts.seuil_2))),
+        C::Taxe.colonne(),
     ];
     t.sources = vec!["CGI art. 231 et 1679 A ; notices 2501-SD et 2502-SD de la DGFiP (seuils, franchise, décote, abattement de l'année)".to_string()];
     finir(ctx, &mut t, Some(&p), "taxe-sur-les-salaires", d.format,false)?;
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
-            tot.rien("mois");
+            tot.rien(C::NombreDeMois);
         }
     }
     if let Some(tot) = t.total.as_mut() {
-        tot.rien("mois");
+        tot.rien(C::NombreDeMois);
     }
     if d.ecrire {
         ecrire_fini(ctx, &mut t, Some(&p), "taxe-sur-les-salaires")?;
