@@ -1037,7 +1037,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let regle = regle_du_mois_incomplet(ctx, &salarie, &debut, &fin, &debut_mois, &fin_mois)?;
     let horaire = horaire_du_mois(ctx, au, &salarie, &debut_saisi, &debut_mois, &fin_mois)?;
     let part = droit::periodes::part_du_mois(&debut, &fin, &fin_mois, regle, &horaire)?;
-    let fraction = part.fraction;
+    let fraction = part.fraction.decimal();
     let heures_par_jour = droit::conges::heures_par_jour(quotite, &horaire.jours);
     let mut avert = Vec::new();
     if fraction != Decimal::ONE {

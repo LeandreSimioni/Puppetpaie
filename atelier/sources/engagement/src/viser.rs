@@ -11,7 +11,7 @@ use crate::saisie::{Carte, VueDuMois};
 use droit::contexte::Contexte;
 use socle::echec::Echec;
 use socle::num::Decimal;
-use crate::ligne::QuantiteDeLigne;
+use crate::ligne::{QuantiteDeLigne, TauxDeLigne};
 use socle::grandeurs::MontantUnitaire;
 
 /// Ce qui se vise : le brut, le cout employeur, le net a payer ; la charge du montant vise le dit `brut`, `cout`, `net`.
@@ -62,7 +62,7 @@ fn taux_saisi(l: &LignePaie) -> bool {
 
 /// Un SALAIRE se hausse ; un defraiement, une prime, un acompte, non.
 fn ligne_ajustable(ctx: &Contexte, ligne: &LignePaie) -> R<bool> {
-    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == droit::catalogue::NatureDeRubrique::Salaire && !ligne.taux().is_none_or(MontantUnitaire::est_nul))
+    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == droit::catalogue::NatureDeRubrique::Salaire && !ligne.taux().is_none_or(TauxDeLigne::est_nul))
 }
 
 /// Une ligne dont le taux est une case vide.
@@ -93,7 +93,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
                 continue;
             }
             let r = rubrique_de(ctx, ligne)?;
-            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && ligne.taux().is_none_or(MontantUnitaire::est_nul) && !ligne.quantite(r.unite).is_none_or(QuantiteDeLigne::est_nul) {
+            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && ligne.taux().is_none_or(TauxDeLigne::est_nul) && !ligne.quantite(r.unite).is_none_or(QuantiteDeLigne::est_nul) {
                 sans_taux.push((k, r.libelle));
             }
         }

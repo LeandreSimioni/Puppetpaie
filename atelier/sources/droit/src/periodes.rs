@@ -31,6 +31,7 @@ use socle::date::Jour;
 
 use crate::conges::JoursTravailles;
 use socle::echec::R;
+use socle::grandeurs::Coefficient;
 use socle::num::{div, Decimal};
 
 /// Ce que `avant` (les termes du contrat avant un avenant en cours de mois) peut dire.
@@ -120,11 +121,13 @@ pub struct Horaire {
     pub feries_non_payes: Vec<(Jour, String)>,
 }
 
-/// La part du mois qu'une periode payee porte de son salaire mensuel (`part_du_mois`).
+/// LE DECOMPTE DE LA PART DU MOIS qu'une periode payee porte de son salaire mensuel (`part_du_mois`) : la part, et ce
+/// qui la compte (ses jours, sa regle, ses feries non payes), que le bulletin dit. La part seule est un `Coefficient`,
+/// le nombre qu'une ligne de paie garde (`engagement::ligne::QuantiteDeLigne::PartDuMois`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct PartDuMois {
+pub struct DecompteDuMois {
     /// La fraction du salaire mensuel payee : 1 pour un mois entier.
-    pub fraction: Decimal,
+    pub fraction: Coefficient,
     /// Les jours travailles payes de la periode (`JoursTravailles::jours_entre`, moins les feries non payes).
     pub jours: i64,
     /// Ceux du mois entier (horaire reel), ou 21 (CCN 1285).
@@ -136,11 +139,11 @@ pub struct PartDuMois {
     pub feries_non_payes: Vec<(Jour, String)>,
 }
 
-impl PartDuMois {
+impl DecompteDuMois {
     /// Ce que la ligne du bulletin dit de la part payee, pour un contrat de `heures_par_jour` heures par jour travaille ;
     /// `None` pour un mois entier.
     pub fn sur_le_bulletin(&self, heures_par_jour: Decimal) -> Option<String> {
-        if self.fraction == Decimal::ONE {
+        if self.fraction.decimal() == Decimal::ONE {
             return None;
         }
         let part = match self.regle {
@@ -177,7 +180,7 @@ art. X.3 : le premier ou le dernier mois incomplet d'un artiste)",
                 self.jours_travailles.en_mots()
             ),
         };
-        if self.regle == RegleDuMoisIncomplet::Ccneac1285Artiste && self.fraction > Decimal::ONE {
+        if self.regle == RegleDuMoisIncomplet::Ccneac1285Artiste && self.fraction.decimal() > Decimal::ONE {
             dit.push_str(
                 ". C'est plus que le salaire mensuel : l'article X.3 ne borne pas le mois incomplet, le logiciel non plus",
             );
@@ -224,12 +227,12 @@ fn heures_en_mots(heures_par_jour: Decimal, jours: i64) -> String {
 /// LA CCN 1285, pour un artiste (`regle_du_mois_incomplet`) : les jours travailles de la periode, a 1/21 chacun.
 /// INFERENCE NOMMEE : « les jours ouvres figurant au contrat » sont les jours que l'horaire du salarie programme, feries
 /// compris. L'article ne borne pas le resultat au salaire mensuel (un mois de 23 jours ouvres dont un manque en donne
-/// 22/21) : le logiciel ne le borne pas, et le dit (`PartDuMois::methode`).
+/// 22/21) : le logiciel ne le borne pas, et le dit (`DecompteDuMois::methode`).
 ///
 /// Une periode qui couvre le mois entier, sans ferie non paye, en porte tout le salaire. Le plafond de la securite
 /// sociale, lui, se proratise aux jours calendaires (CSS R. 242-2, `plafond::prorata_calendaire`) : ce n'est pas le
 /// salaire.
-pub fn part_du_mois(d: &Jour, f: &Jour, fin_mois: &Jour, regle: RegleDuMoisIncomplet, horaire: &Horaire) -> R<PartDuMois> {
+pub fn part_du_mois(d: &Jour, f: &Jour, fin_mois: &Jour, regle: RegleDuMoisIncomplet, horaire: &Horaire) -> R<DecompteDuMois> {
     let premier = Jour::nouveau(fin_mois.an, fin_mois.mois, 1).ok_or_else(|| socle::echec::cle("Le moteur ne calcule pas ce mois : le signaler au développeur.", "part_du_mois"))?;
     let feries_non_payes: Vec<(Jour, String)> =
         horaire.feries_non_payes.iter().filter(|(j, _)| d <= j && j <= f && horaire.jours.travaille(j)).cloned().collect();
@@ -241,5 +244,5 @@ pub fn part_du_mois(d: &Jour, f: &Jour, fin_mois: &Jour, regle: RegleDuMoisIncom
         RegleDuMoisIncomplet::HoraireReel => (du_mois, div(Decimal::from(jours), Decimal::from(du_mois))),
         RegleDuMoisIncomplet::Ccneac1285Artiste => (21, div(Decimal::from(jours), Decimal::from(21))),
     };
-    Ok(PartDuMois { fraction, jours, jours_du_mois, regle, jours_travailles: horaire.jours, feries_non_payes })
+    Ok(DecompteDuMois { fraction: Coefficient::du_decimal(fraction), jours, jours_du_mois, regle, jours_travailles: horaire.jours, feries_non_payes })
 }

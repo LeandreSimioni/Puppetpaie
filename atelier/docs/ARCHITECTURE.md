@@ -201,6 +201,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, la part du mois payée, ou la base en euros d'une ligne en pourcentage) | `engagement/src/ligne.rs` |
+| taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
+| décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un `Coefficient` | `droit/src/periodes.rs` |
 | coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | base d'une ligne de cotisation, valeur d'une assiette d'une paie | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures`) | `engagement/src/calcul.rs` |
@@ -221,9 +223,11 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   euros d'une ligne en pourcentage ; une ligne au montant compte 1) : la ligne écrite ne garde que son nombre, et prend
   son unité quand sa rubrique est lue ; quantité × montant unitaire = montant.
 - **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
-  coefficient de la réduction générale) ; montant × coefficient = montant.
-- **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le « taux » d'une ligne de paie, le
-  plafond de la sécurité sociale horaire, le SMIC horaire ; quantité × montant unitaire = montant.
+  coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie) ;
+  montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant.
+- **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le taux d'une ligne de paie qui se
+  paie à l'unité (`TauxDeLigne::ParUnite`), le plafond de la sécurité sociale horaire, le SMIC horaire ; quantité ×
+  montant unitaire = montant.
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
   Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`), dits par
   l'attribut serde du champ. Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`.
@@ -825,6 +829,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | niveau de garantie santé | `NiveauDeGarantie` | `droit/src/forme_bareme.rs` |
 | organisation patronale | `OrganisationPatronale` | `droit/src/forme_bareme.rs` |
 | catégorie de la DFS | `CategorieDfs` | `droit/src/forme_bareme.rs` |
+| DFS d'un salarié (sa profession, son taux, ses lignes abattues, son plafond) | `DfsDuSalarie` | `engagement/src/calcul.rs` |
+| option de l'employeur pour la DFS (une case de sa fiche, une condition de la DFS d'un salarié) | `droit::fiche::OptionDfs` | `droit/src/fiche.rs` |
 | formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |

@@ -646,7 +646,7 @@ fn delai_de_prevenance(
         let debut_mois = socle::date::Jour { an: j.an, mois: j.mois, jour: 1 };
         let horaire = crate::conges::horaire_du_mois(ctx, au, salarie_de(e)?, &debut, &debut_mois, &fin_mois)?;
         let part = droit::periodes::part_du_mois(&j, &f, &fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
-        fraction = add(fraction, part.fraction);
+        fraction = add(fraction, part.fraction.decimal());
         jours += part.jours;
         j = f.plus_jours(1)?;
     }
@@ -1343,7 +1343,7 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
         let signe = r.sens.signe();
         let taux = l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
         let quantite = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
-        total = add(total, mul(signe, quantite.fois(taux).au_centime().decimal()));
+        total = add(total, mul(signe, quantite.fois(taux)?.au_centime().decimal()));
     }
     Ok(total)
 }

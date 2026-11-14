@@ -175,8 +175,9 @@ pub struct FormeDeRemuneration {
     /// Sa quantite, sans son unite : relue, elle la prend de `unite` (`calcul::LigneBrut::de_la_forme`).
     #[serde(serialize_with = "nombre_ecrit")]
     pub quantite: socle::forme::Nombre,
-    #[serde(with = "nombre")]
-    pub taux: MontantUnitaire,
+    /// Son taux, sans son unite : relu, il la prend de `unite` (`ligne::TauxDeLigne::de_l_unite`).
+    #[serde(serialize_with = "nombre_ecrit")]
+    pub taux: socle::forme::Nombre,
     #[serde(with = "nombre")]
     pub montant: Montant,
     #[serde(with = "nombre")]

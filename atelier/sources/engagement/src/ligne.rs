@@ -21,7 +21,7 @@ use socle::forme::{Nombre, NombreLu};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
-use socle::grandeurs::{forme_courte as canon, Heures, Jours, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{forme_courte as canon, Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
 
 /// UN NOMBRE TEL QU'IL EST SAISI : un nombre, ou un nombre ecrit en texte. La page envoie `""` pour une case vide ; la
@@ -534,18 +534,25 @@ impl QuantiteDeLigne {
         self.decimal().is_zero()
     }
 
-    /// Ce qu'elle paie a `taux` : quantite x montant unitaire, un montant exact (`Montant::au_centime` le fixe).
-    pub fn fois(self, taux: MontantUnitaire) -> Montant {
-        match self {
-            QuantiteDeLigne::Heures(q) => q * taux,
-            QuantiteDeLigne::Cachets(q) => q * taux,
-            QuantiteDeLigne::Jours(q) => q * taux,
-            QuantiteDeLigne::Services(q) => q * taux,
-            QuantiteDeLigne::Semaines(q) => q * taux,
-            QuantiteDeLigne::PartDuMois(q) => q * taux,
-            QuantiteDeLigne::Unites(q) => q * taux,
-            QuantiteDeLigne::Base(q) => q * taux,
-        }
+    /// Ce qu'elle paie a `taux`, un montant exact (`Montant::au_centime` le fixe) : quantite x montant unitaire, ou base x
+    /// la part qu'une ligne en pourcentage en paie. Une base a un montant unitaire, ou une quantite a une part, ne se
+    /// multiplient pas : refus.
+    pub fn fois(self, taux: TauxDeLigne) -> R<Montant> {
+        use QuantiteDeLigne as Q;
+        use TauxDeLigne::{ParUnite, PartDeLaBase};
+        Ok(match (self, taux) {
+            (Q::Heures(q), ParUnite(u)) => q * u,
+            (Q::Cachets(q), ParUnite(u)) => q * u,
+            (Q::Jours(q), ParUnite(u)) => q * u,
+            (Q::Services(q), ParUnite(u)) => q * u,
+            (Q::Semaines(q), ParUnite(u)) => q * u,
+            (Q::PartDuMois(q), ParUnite(u)) => q * u,
+            (Q::Unites(q), ParUnite(u)) => q * u,
+            (Q::Base(b), PartDeLaBase(c)) => b * c,
+            (Q::Base(_), ParUnite(_)) | (_, PartDeLaBase(_)) => {
+                return Err(socle::refus!("une ligne de paie porte une quantité et un taux qui ne vont pas ensemble : le signaler au développeur"))
+            }
+        })
     }
 
     /// Deux quantites de la meme grandeur ajoutees (deux lignes de la meme rubrique) ; `None` : deux grandeurs, qui ne
@@ -563,6 +570,41 @@ impl QuantiteDeLigne {
             (Q::Base(a), Q::Base(b)) => Q::Base(a + b),
             _ => return None,
         })
+    }
+}
+
+/// LE TAUX D'UNE LIGNE DE PAIE : ce que paie une unite de sa quantite (un montant unitaire : par heure, par cachet, le
+/// montant d'une ligne au montant pour sa seule unite), ou, pour une ligne en pourcentage, la part de sa base qu'elle
+/// paie (son pourcentage sur cent, un coefficient). Une ligne ecrite ne garde que son nombre, et reprend son taux dans
+/// l'unite de sa rubrique a la relecture (`de_l_unite`). Quantite x taux = montant (`QuantiteDeLigne::fois`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TauxDeLigne {
+    ParUnite(MontantUnitaire),
+    PartDeLaBase(Coefficient),
+}
+
+impl TauxDeLigne {
+    /// Le nombre `d` du taux d'une ligne dans l'unite `unite` de sa rubrique.
+    pub fn de_l_unite(unite: Unite, d: Decimal) -> TauxDeLigne {
+        match unite {
+            Unite::Pourcentage => TauxDeLigne::PartDeLaBase(Coefficient::du_decimal(d)),
+            Unite::Heure | Unite::Cachet | Unite::Jour | Unite::Service | Unite::Semaine | Unite::Mois | Unite::Forfait => {
+                TauxDeLigne::ParUnite(MontantUnitaire::du_decimal(d))
+            }
+        }
+    }
+
+    /// Son nombre, a la porte qui l'exige (une ecriture, une phrase).
+    pub fn decimal(self) -> Decimal {
+        match self {
+            TauxDeLigne::ParUnite(u) => u.decimal(),
+            TauxDeLigne::PartDeLaBase(c) => c.decimal(),
+        }
+    }
+
+    /// Est-il nul ?
+    pub fn est_nul(self) -> bool {
+        self.decimal().is_zero()
     }
 }
 
@@ -627,21 +669,22 @@ impl LignePaie {
         self.quantite_ecrite().map(|d| QuantiteDeLigne::de_l_unite(unite, d))
     }
 
-    /// SON TAUX : celui qu'elle dit, son pourcentage sur cent (des euros par euro de base), son montant ; `None` : la case
-    /// n'est pas remplie.
-    pub fn taux(&self) -> Option<MontantUnitaire> {
+    /// SON TAUX (`TauxDeLigne`) : celui qu'elle dit, la part de sa base qu'une ligne en pourcentage paie, le montant d'une
+    /// ligne au montant pour sa seule unite ; `None` : la case n'est pas remplie.
+    pub fn taux(&self) -> Option<TauxDeLigne> {
+        use TauxDeLigne::{ParUnite, PartDeLaBase};
         match self {
-            LignePaie::Unites(l) => l.taux,
-            LignePaie::UnitesEtHeures(l) => l.taux,
-            LignePaie::Frais(l) => l.taux,
-            LignePaie::Pourcentage(l) => l.taux_majoration.map(sur_cent),
-            LignePaie::Montant(l) => l.montant.map(|m| MontantUnitaire::du_decimal(m.decimal())),
-            LignePaie::AvantageEnNature(l) => l.montant.map(|m| MontantUnitaire::du_decimal(m.decimal())),
-            LignePaie::Composee(l) => Some(l.taux),
-            LignePaie::RetenueArret(l) => Some(l.taux),
-            LignePaie::IndemniteJournaliere(l) => Some(l.taux),
-            LignePaie::Maintien(l) => Some(l.taux),
-            LignePaie::Importee(l) => l.taux,
+            LignePaie::Unites(l) => l.taux.map(ParUnite),
+            LignePaie::UnitesEtHeures(l) => l.taux.map(ParUnite),
+            LignePaie::Frais(l) => l.taux.map(ParUnite),
+            LignePaie::Pourcentage(l) => l.taux_majoration.map(|t| PartDeLaBase(sur_cent(t))),
+            LignePaie::Montant(l) => l.montant.map(|m| ParUnite(MontantUnitaire::du_decimal(m.decimal()))),
+            LignePaie::AvantageEnNature(l) => l.montant.map(|m| ParUnite(MontantUnitaire::du_decimal(m.decimal()))),
+            LignePaie::Composee(l) => Some(ParUnite(l.taux)),
+            LignePaie::RetenueArret(l) => Some(ParUnite(l.taux)),
+            LignePaie::IndemniteJournaliere(l) => Some(ParUnite(l.taux)),
+            LignePaie::Maintien(l) => Some(ParUnite(l.taux)),
+            LignePaie::Importee(l) => l.taux.map(ParUnite),
         }
     }
 
@@ -854,15 +897,15 @@ impl LignePaie {
     }
 }
 
-/// UN POURCENTAGE SUR CENT, en euros par euro de base : le quotient exact, a l'exposant ideal, qui garde au moins
-/// l'echelle du pourcentage (`12.5` -> `0.125`, `30.0` -> `0.30`).
-fn sur_cent(pct: Taux) -> MontantUnitaire {
+/// UN POURCENTAGE SUR CENT, la part de la base : le quotient exact, a l'exposant ideal, qui garde au moins l'echelle du
+/// pourcentage (`12.5` -> `0.125`, `30.0` -> `0.30`).
+fn sur_cent(pct: Taux) -> Coefficient {
     let pct = pct.decimal();
     let mut taux = socle::num::div(pct, Decimal::ONE_HUNDRED).normalize();
     if taux.scale() < pct.scale() {
         taux.rescale(pct.scale());
     }
-    MontantUnitaire::du_decimal(taux)
+    Coefficient::du_decimal(taux)
 }
 
 // ------------------------------------------------------------------ la porte

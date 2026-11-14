@@ -7,7 +7,7 @@ use serde::Serialize;
 use socle::forme::NombreLu;
 use crate::LignePaie;
 use socle::num::Decimal;
-use socle::grandeurs::MontantUnitaire;
+use crate::ligne::TauxDeLigne;
 
 use crate::departs::{Depart, Departs, Envoi};
 use crate::etats::{ses_departs, ARefaire, Valide};
@@ -281,7 +281,7 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
                     if qx != qy {
                         out.push(format!("{} : {} → {}", au_pluriel(&lib), nombre_en_mots(qx, false), nombre_en_mots(qy, false)));
                     }
-                    let (tx, ty) = (nombre_en_mots(x.taux().map(MontantUnitaire::decimal), true), nombre_en_mots(y.taux().map(MontantUnitaire::decimal), true));
+                    let (tx, ty) = (nombre_en_mots(x.taux().map(TauxDeLigne::decimal), true), nombre_en_mots(y.taux().map(TauxDeLigne::decimal), true));
                     if tx != ty {
                         out.push(format!("{} : {} → {}", nom_du_taux(&lib, unite), tx, ty));
                     }

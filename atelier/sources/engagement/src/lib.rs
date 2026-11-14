@@ -1512,7 +1512,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
     let mut es: Vec<Etrangere> = Vec::new();
     for (i, lieu) in etrangeres {
         let (i, l) = (*i, &lignes[*i]);
-        let Some(taux) = l.taux().map(MontantUnitaire::decimal) else { continue };
+        let Some(taux) = l.taux().map(ligne::TauxDeLigne::decimal) else { continue };
         // La quantite d'une ligne saisie est dite (`lignes_dites`).
         let quantite = l.quantite_ecrite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
         if l.dates().is_empty() {

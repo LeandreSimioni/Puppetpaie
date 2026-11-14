@@ -494,7 +494,7 @@ fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<Decimal>> {
     if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != droit::catalogue::Unite::Cachet {
         return Ok(None);
     }
-    Ok(l.taux().filter(|t| !t.est_nul()).map(socle::grandeurs::MontantUnitaire::decimal))
+    Ok(l.taux().filter(|t| !t.est_nul()).map(engagement::ligne::TauxDeLigne::decimal))
 }
 
 /// Les lignes d'un permanent, calculees. Une saisie incomplete (un engagement qui ne dit pas encore tout,
@@ -1197,7 +1197,7 @@ pub(crate) fn manque_de(ctx: &Contexte, data: &VueDuMois, i: usize) -> Option<Ec
 fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: usize) -> CeQuiChange {
     let mut lignes = Vec::new();
     for (rang, (a, b)) in avant.lignes().iter().zip(apres.lignes().iter()).enumerate() {
-        let (ta, tb) = (a.taux().map(socle::grandeurs::MontantUnitaire::decimal), b.taux().map(socle::grandeurs::MontantUnitaire::decimal));
+        let (ta, tb) = (a.taux().map(engagement::ligne::TauxDeLigne::decimal), b.taux().map(engagement::ligne::TauxDeLigne::decimal));
         if ta.is_none() && tb.is_none_or(|t| t.is_zero()) {
             continue; // restee sans taux : rien a ecrire
         }

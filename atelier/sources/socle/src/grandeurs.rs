@@ -210,15 +210,6 @@ impl std::ops::Mul<MontantUnitaire> for Coefficient {
     }
 }
 
-/// Une base en euros fois ce que chacun de ses euros paie (une ligne de paie en pourcentage : son pourcentage sur cent) :
-/// un montant.
-impl std::ops::Mul<MontantUnitaire> for Montant {
-    type Output = Montant;
-    fn mul(self, u: MontantUnitaire) -> Montant {
-        Montant(num::mul(self.0, u.0))
-    }
-}
-
 /// LES LECTURES D'UNE GRANDEUR AUTRES QUE LA SIENNE (`forme::decimal_en_nombre`) : un champ les dit par son attribut serde
 /// (`…::deserialize`, `…::option::deserialize` pour un `Option`).
 pub mod lu {

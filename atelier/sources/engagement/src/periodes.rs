@@ -90,7 +90,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let mut e = eng.clone();
         e.periode = Some((*d, *f));
         e.quotite_contrat = Some(court(quotite));
-        let (q, h) = (court(part.fraction), court(Heures::du_decimal(quotite).au_centieme().decimal()));
+        let (q, h) = (court(part.fraction.decimal()), court(Heures::du_decimal(quotite).au_centieme().decimal()));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
             quantite: socle::forme::Nombre(q),

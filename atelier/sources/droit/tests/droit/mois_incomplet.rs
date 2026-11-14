@@ -36,14 +36,14 @@ fn un_mois_incomplet_se_paie_a_l_horaire_reel() {
     // L'entree au lundi 12/01/2026 : 15 jours ouvres sur les 22 de janvier (le jeudi 1er, ferie, en est un).
     let entree = part_du_mois(&j(2026, 1, 12), &j(2026, 1, 31), &j(2026, 1, 31), h, &lv).unwrap();
     assert_eq!((entree.jours, entree.jours_du_mois), (15, 22));
-    assert_eq!(entree.fraction, div(Decimal::from(15), Decimal::from(22)));
+    assert_eq!(entree.fraction.decimal(), div(Decimal::from(15), Decimal::from(22)));
     assert_eq!(entree.sur_le_bulletin(Decimal::from(7)).as_deref(), Some("105 h sur les 154 h du mois"));
     // La sortie au mercredi 25/02/2026 : 18 jours ouvres sur 20, et non 25 jours sur 28.
     let sortie = part_du_mois(&j(2026, 2, 1), &j(2026, 2, 25), &j(2026, 2, 28), h, &lv).unwrap();
     assert_eq!((sortie.jours, sortie.jours_du_mois), (18, 20));
     // Janvier 2024 entier : 23 jours ouvres, et tout le salaire.
     let entier = part_du_mois(&j(2024, 1, 1), &j(2024, 1, 31), &j(2024, 1, 31), h, &lv).unwrap();
-    assert_eq!((entier.jours_du_mois, entier.fraction), (23, Decimal::ONE));
+    assert_eq!((entier.jours_du_mois, entier.fraction.decimal()), (23, Decimal::ONE));
     assert_eq!(regle_du_mois_incomplet(Some(&droit::fiche::IDCC_3090), Statut::Artiste, true), h);
     assert_eq!(regle_du_mois_incomplet(Some(&droit::clauses::IDCC_CCNEAC), Statut::Technicien, true), h);
     assert_eq!(regle_du_mois_incomplet(Some(&droit::clauses::IDCC_CCNEAC), Statut::Artiste, false), h);
@@ -97,5 +97,5 @@ fn le_premier_mois_d_un_artiste_de_la_1285_se_paie_au_vingt_et_unieme() {
     assert_eq!(r, RegleDuMoisIncomplet::Ccneac1285Artiste);
     let p = part_du_mois(&j(2026, 1, 12), &j(2026, 1, 31), &j(2026, 1, 31), r, &horaire_du_lundi_au_vendredi()).unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (15, 21));
-    assert_eq!(p.fraction, div(Decimal::from(15), Decimal::from(21)));
+    assert_eq!(p.fraction.decimal(), div(Decimal::from(15), Decimal::from(21)));
 }

@@ -21,7 +21,7 @@ use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, court, div, mul, sub, Decimal};
 use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
-use crate::ligne::QuantiteDeLigne;
+use crate::ligne::{QuantiteDeLigne, TauxDeLigne};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
 use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
@@ -51,7 +51,8 @@ pub struct LigneBrut {
     pub unite: Unite,
     /// Sa quantite, dans l'unite de sa rubrique (`unite`).
     pub quantite: QuantiteDeLigne,
-    pub taux: MontantUnitaire,
+    /// Son taux, dans l'unite de sa rubrique.
+    pub taux: TauxDeLigne,
     pub montant: Montant,
     pub heures_annexes: Heures,
     pub soumis: bool,
@@ -64,7 +65,7 @@ pub struct LigneBrut {
     pub arret_de_travail: bool,
     pub dsn_autres_bruts: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
     /// Ce que la ligne dit d'elle-meme sur le bulletin quand sa quantite ne suffit pas : la part payee d'un mois incomplet
-    /// (`droit::periodes::PartDuMois::sur_le_bulletin`).
+    /// (`droit::periodes::DecompteDuMois::sur_le_bulletin`).
     pub precision: Option<String>,
 }
 
@@ -139,7 +140,7 @@ impl LigneBrut {
             libelle: self.libelle.clone(),
             unite: self.unite,
             quantite: socle::forme::Nombre(self.quantite.decimal()),
-            taux: self.taux,
+            taux: socle::forme::Nombre(self.taux.decimal()),
             montant: self.montant,
             heures_annexes: self.heures_annexes,
             soumis: self.soumis,
@@ -163,7 +164,7 @@ impl LigneBrut {
             libelle: f.libelle.clone(),
             unite: f.unite,
             quantite: QuantiteDeLigne::de_l_unite(f.unite, f.quantite.0),
-            taux: f.taux,
+            taux: TauxDeLigne::de_l_unite(f.unite, f.taux.0),
             montant: f.montant,
             heures_annexes: f.heures_annexes,
             soumis: f.soumis,
@@ -198,7 +199,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
             unite: r.unite,
             quantite: q,
             taux,
-            montant: Montant::du_decimal(signe * q.fois(taux).au_centime().decimal()),
+            montant: Montant::du_decimal(signe * q.fois(taux)?.au_centime().decimal()),
             // Des heures nulles gardent le signe de la ligne et leur echelle.
             heures_annexes: Heures::du_decimal(if h.is_zero() { if signe.is_sign_negative() { -h } else { h } } else { signe * h }),
             soumis: r.soumis,
@@ -2124,7 +2125,7 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: QuantiteDeLigne::de_l_unite(Unite::Mois, Decimal::ONE), taux: MontantUnitaire::du_decimal(dec_de(montant)),
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: QuantiteDeLigne::de_l_unite(Unite::Mois, Decimal::ONE), taux: TauxDeLigne::de_l_unite(Unite::Mois, dec_de(montant)),
             montant: Montant::du_decimal(dec_de(montant)), heures_annexes: Heures::du_decimal(dec_de(heures)), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,

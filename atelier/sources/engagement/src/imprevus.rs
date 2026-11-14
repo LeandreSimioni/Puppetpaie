@@ -981,7 +981,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &I
                 rubrique,
                 dates: dedans,
                 quantite: l.quantite_ecrite(),
-                taux: l.taux().map(socle::grandeurs::MontantUnitaire::decimal),
+                taux: l.taux().map(crate::ligne::TauxDeLigne::decimal),
             });
         }
     }
