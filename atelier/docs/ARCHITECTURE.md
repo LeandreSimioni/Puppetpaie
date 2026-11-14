@@ -275,6 +275,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | nom de fichier | `NomDeFichier` | `socle/src/fichiers.rs` |
 | chemin relatif | `CheminRelatif` | `socle/src/fichiers.rs` |
 | chemin d'un texte déposé | `droit::source::CheminDepose` | `droit/src/source.rs` |
+| dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
+| entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
+| clé de dépôt du banc | `routes::scenario::CleDeDepot` | `routes/src/scenario.rs` |
+| fichier d'une pièce du banc | `routes::scenario::FichierDeLaPiece` | `routes/src/scenario.rs` |
 | empreinte | `Empreinte` | `socle/src/fichiers.rs` |
 | clé de lecture | `CleDeLecture<S, L, P>` | `socle/src/fichiers.rs` |
 | valeur lue | `ValeurLue` | `socle/src/fichiers.rs` |
@@ -529,13 +533,25 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris. Des
   `NomDeFichier` séparés par des barres droites sur tous les systèmes, ni vide ni avec une racine ; il se fait d'un
   chemin par `CheminRelatif::sous(racine, chemin)`, ou s'écrit en Rust (`CheminRelatif::du_moteur` : les fichiers que le
-  moteur nomme sous la compagnie, `config/…`, `journal/…`), et se joint à sa racine nom par nom (`dans`) ; la clé d'une lecture
-  notée s'écrit avec la même écriture. Un chemin
+  moteur nomme sous la compagnie, `config/…`, `journal/…`), et se joint à sa racine nom par nom (`dans`, la seule
+  jointure : il n'est pas un `Path`) ; la clé d'une lecture notée s'écrit avec la même écriture. Un dossier de premier
+  niveau de la compagnie (`config`, `sorties`, `journal`, `historique`, `retours`…) est un `NomDeFichier` : un nom seul
+  sous la racine. Les fichiers que trie un import aussi sont des chemins relatifs, au dossier trié. Un chemin
   absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin` ; le fichier
   qu'une charge nomme (un signalement écrit à déposer, un dépôt du banc), absolu ou relatif, aussi.
 - **chemin d'un texte déposé** : le fichier d'une source, depuis la racine du dépôt, sous `atelier/reference/` (ou le mode
   d'emploi), suivi pour un article d'un entrepôt de la DILA de son code (`…/articles.jsonl.gz#travail`) ; que portent une
   `Source` et les titres de la banque des conseils.
+- **dossier de la sauvegarde dans le Drive** : la racine du Drive de la compagnie, `sauvegarde`, puis le dossier de la
+  compagnie qu'il tient, écrit avec des barres droites ; une seule construction (`DossierDuDrive::de`), pour la
+  sauvegarde et la restauration. Que porte l'index de la sauvegarde (`config/.sauvegarde.json`, `dossiers`).
+- **entrée mise de côté au tri d'un import** : un nom qui ne fait pas un chemin sous le dossier trié (`..`, une barre
+  inverse, un nom vide, un chemin absolu, dans une archive comme sur le disque), ou une entrée d'archive qui ne se lit
+  pas : elle ne s'écrit jamais sur le disque, le reste se trie, et le compte rendu la dit (`TriVu.mises_de_cote`).
+- **clé de dépôt du banc** : la clé d'une charge qui nomme ce que la route lit hors du moteur (`dossier`, `export`,
+  `fichier`, `chemin`) ; une liste du logiciel (`socle::noms_fermes!`), sous laquelle un scénario garde ses pièces.
+- **fichier d'une pièce du banc** : un fichier d'une pièce déposée, relatif à elle : la pièce elle-même quand elle est
+  un fichier seul (écrite `.`), ou un chemin relatif sous le dossier qu'elle est.
 - **empreinte** : le SHA-256 entier d'un contenu : une source déposée, une archive de mise à jour et les fictives
   (`derniere.json`, `.livraison.json`, `.livree.json`), un exercice clos, un état gardé. 64 caractères hexadécimaux
   minuscules ; elle ne se fait que par `Empreinte::des_octets` (ou `du_hachage`, un contenu haché par morceaux ;
@@ -821,6 +837,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectif | `droit::contexte::Effectif` | `droit/src/contexte.rs` |
+| genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
 
 **Le détail**
 
@@ -1176,6 +1193,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   `droit::contexte::FichierEffectifs` (par `Annee`, puis par `TypeDeParametreNeores`, un `EffectifEcrit`), lue par
   `droit::contexte::effectifs_lus` seule (l'effectif A01, la CSA et l'OETH, le relevé des retours), écrite par
   `envois::releve_retours` seul.
+- **genre d'un imprévu** : un arrêt de travail (bloc 60) ou une autre suspension du contrat (bloc 65), écrit `arret`,
+  `suspension` dans le magasin des imprévus ; une liste du logiciel (`socle::noms_fermes!`), par laquelle une lecture du
+  magasin choisit les uns ou les autres. Que portent le résumé d'un arrêt et celui d'une suspension.
 - **type de contrat de la DPAE** : C_TYPE_CONTRAT du Format 120 (1 CDD, 2 CDI, 3 CTT), `codes_fermes!` avec son libellé ;
   que portent la DPAE d'une nature (`contrats-base.json`) et une DPAE relue.
 - **rôle d'un contrat d'organisme** : la prévoyance ou la santé d'un salarié payé au mois (`role` de

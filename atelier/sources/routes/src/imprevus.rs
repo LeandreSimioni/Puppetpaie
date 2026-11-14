@@ -37,7 +37,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60, MotifDArret, MotifDeReprise, SubrogationDeLArret};
 use droit::permanents::MotifDeSuspension;
-use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
+use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, GenreDImprevu};
 use engagement::numeros::{numero_dit, NumeroContrat};
 use engagement::saisie::{Carte, Preavis, VueDuMois};
 use engagement::Chiffre;
@@ -838,7 +838,7 @@ impl EtatDuSignalement {
 pub(crate) struct ResumeDArret {
     #[serde(flatten)]
     base: ArretResume,
-    genre: &'static str,
+    genre: GenreDImprevu,
     premier_jour: Jour,
     dernier_jour: Jour,
     jours_deja_indemnises: Option<Chiffre>,
@@ -891,7 +891,7 @@ impl ResumeDArret {
 /// (`Dit`), puis, dans la liste, ce qui en est `parti`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ResumeDeSuspension {
-    genre: &'static str,
+    genre: GenreDImprevu,
     salarie: IdSalarie,
     contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
@@ -1292,7 +1292,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
     })?;
     Ok(ResumeDArret {
         base,
-        genre: ARRET,
+        genre: GenreDImprevu::Arret,
         premier_jour: premier,
         dernier_jour: dernier,
         jours_deja_indemnises: a.jours_deja_indemnises.clone(),
@@ -1328,7 +1328,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         signalements: &[],
     })?;
     Ok(ResumeDeSuspension {
-        genre: SUSPENSION,
+        genre: GenreDImprevu::Suspension,
         salarie: s.salarie.clone(),
         contrat: s.contrat_numero.clone(),
         contrat_debut: s.contrat_debut,
