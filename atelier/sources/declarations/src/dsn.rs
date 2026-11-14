@@ -4327,13 +4327,13 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
             let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(m)?);
             let refs: Vec<&Paie> = autres.iter().collect();
             bloc_contrat(&mut f, &declaree, &ent_e, orgs, 1, &bar, true, &[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
-            let bloc: Vec<(String, String)> = f
+            let bloc: Vec<(RubriqueDeLaNorme, String)> = f
                 .lignes
                 .iter()
                 .filter_map(|l| l.split_once(','))
                 .filter(|(k, _)| k.starts_with("S21.G00.40."))
-                .map(|(k, x)| (k.to_string(), x.trim_matches('\'').to_string()))
-                .collect();
+                .map(|(k, x)| Ok((RubriqueDeLaNorme::lire(k)?, x.trim_matches('\'').to_string())))
+                .collect::<R<_>>()?;
             return Ok(Some(crate::changements_contrat::Declare { mois: m, siret: droit::fiche::Siret::de(ctx_m.entreprise.siren.exigee("siren")?, &nic), nic, bloc }));
         }
         m = m.precedent();
