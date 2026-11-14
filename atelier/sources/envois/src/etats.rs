@@ -188,12 +188,31 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 // -------------------------------------------------------------- les contrats
 
 /// COMMENT UN CONTRAT EST PARTI : imprime (remis en main propre, `detail.main_propre`), ou par courriel. Ecrite
-/// `imprime`, `courriel`.
+/// `imprime`, `courriel`. La phrase d'un envoi du journal (`resume`) dit de meme tout envoi par son `main_propre`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModeDeRemise {
     Imprime,
     Courriel,
+}
+
+impl ModeDeRemise {
+    /// Celui d'un envoi du journal, par `main_propre` : imprime s'il est remis en main propre, sinon par courriel.
+    pub fn de(main_propre: bool) -> ModeDeRemise {
+        if main_propre {
+            ModeDeRemise::Imprime
+        } else {
+            ModeDeRemise::Courriel
+        }
+    }
+}
+
+/// LA REMISE D'UN CONTRAT PARTI, dite dans le recit de ce qui est parti : « imprimé », « envoyé à la signature ».
+pub fn remise_dite(par: ModeDeRemise) -> &'static str {
+    match par {
+        ModeDeRemise::Imprime => "imprimé",
+        ModeDeRemise::Courriel => "envoyé à la signature",
+    }
 }
 
 /// LE MOT DE LA REMISE d'un contrat parti, dans les phrases : « imprimé », « envoyé ». SANS REMISE NOTEE (`None`) : le
@@ -211,7 +230,7 @@ pub fn mot_de_la_remise(par: Option<ModeDeRemise>) -> &'static str {
 pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, ModeDeRemise> {
     let mut d = HashMap::new();
     for e in lignes.iter().filter_map(Ligne::signature).filter(|e| e.accepte) {
-        let par = if e.detail.main_propre { ModeDeRemise::Imprime } else { ModeDeRemise::Courriel };
+        let par = ModeDeRemise::de(e.detail.main_propre);
         for c in &e.detail.contrats {
             d.insert(paire(&c.salarie, c.numero.as_ref()), par);
         }
@@ -510,7 +529,7 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
     if !ligne.accepte() {
         return format!("envoi du {} refusé au dépôt — {}", quand, ligne.reponse());
     }
-    let parti = if ligne.main_propre() { "imprimé" } else { "envoyé" };
+    let parti = mot_de_la_remise(Some(ModeDeRemise::de(ligne.main_propre())));
     let le = if en_test { quand.clone() } else { format!("le {}", quand) };
     let prefixe = format!("{} {}", parti, le);
     match ligne {
