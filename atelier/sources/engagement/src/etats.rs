@@ -909,7 +909,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
 ///
 /// Un bareme sans grille refuse, comme pour une paie (regle 1).
 pub fn prelevement_de_la_correction(
-    ctx: &Contexte, apres: &Paie, net_imposable_declare: Decimal, taux_origine: Option<&str>, versement: Mois,
+    ctx: &Contexte, apres: &Paie, net_imposable_declare: Decimal, taux_origine: Option<&droit::pas::TauxDePas>, versement: Mois,
 ) -> R<PrelevementDeLaCorrection> {
     let (debut, fin) = (versement.premier_jour(), versement.dernier_jour());
     let difference = socle::num::sub(apres.net_imposable, net_imposable_declare);
@@ -919,10 +919,7 @@ pub fn prelevement_de_la_correction(
     let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
     let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)?;
     let prelevement = if difference < Decimal::ZERO {
-        match taux_origine.filter(|t| !t.is_empty()) {
-            Some(t) => Some(pct(difference, socle::num::dec_texte(t)?)),
-            None => None,
-        }
+        taux_origine.map(|t| pct(difference, t.decimal()))
     } else {
         Some(pct(versement.montant_soumis, versement.taux.dec()?))
     };
