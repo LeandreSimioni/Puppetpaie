@@ -221,7 +221,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if !manque.is_empty() {
         return Err(refus_avec(
             format!(
-                "Lignes de bulletin sans organisme dans le plan comptable : {}. Les y ajouter parmi les lignes : on ne devine pas à qui une cotisation est due.",
+                "Lignes de bulletin sans organisme dans le plan comptable : {}. Les y ajouter parmi les lignes (une cotisation) ou les regroupements (autres, convention, apec) : on ne devine pas à qui une cotisation est due.",
                 manque.into_iter().collect::<Vec<_>>().join(", ")
             ),
             Lieu { fichier: Some(documents::plan_comptable::PLAN_COMPTABLE.to_string()), cle: Some("lignes".to_string()), ..Default::default() },

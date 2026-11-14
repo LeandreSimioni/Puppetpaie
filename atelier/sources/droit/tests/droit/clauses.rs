@@ -92,7 +92,8 @@ pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
     let metier = dite(&e.metier).map(|c| droit::emplois::CodeEmploi::lire(&c)).transpose()?;
-    let categorie_conventionnelle = dite(&e.categorie_conventionnelle).map(|c| match droit::fiche::CategorieConventionnelle::du_code(&c) {
+    let de_la_fiche = |c: &str| <droit::fiche::CategorieConventionnelle as droit::fiche::FormeDeCase>::VALEURS.contains(&c);
+    let categorie_conventionnelle = dite(&e.categorie_conventionnelle).map(|c| match droit::fiche::CategorieConventionnelle::du_code(&c).filter(|_| de_la_fiche(&c)) {
         Some(cat) => cat,
         None => panic!("la catégorie {:?} de l'oracle n'est pas un choix de la fiche : donnee invalide", c),
     });

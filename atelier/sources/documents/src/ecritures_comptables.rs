@@ -315,7 +315,7 @@ pub fn csv_compta(ecritures: &[Ecriture]) -> Vec<u8> {
             None => e.compte.to_string(),
         };
         let montant = |m: Decimal| (!m.is_zero()).then(|| m.to_string().replace('.', ","));
-        rang(&[Some(e.journal.to_string()), Some(date), Some(compte),Some(e.libelle.clone()), montant(e.debit), montant(e.credit), e.analytique.clone()]);
+        rang(&[Some(e.journal.to_string()), Some(date), Some(compte), Some(e.libelle.clone()), montant(e.debit), montant(e.credit), e.analytique.clone()]);
     }
     t.into_bytes()
 }
