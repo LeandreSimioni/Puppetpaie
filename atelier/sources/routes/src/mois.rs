@@ -1235,8 +1235,10 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         engagement::viser::RefusVisee::Refus(m) => m,
         engagement::viser::RefusVisee::Calcul(m) => refus_du_calcul(ctx, &data, m),
     })?;
-    let (avant, apres, paie) = match (i.dans(&data.engagements), i.dans(&v.saisie.engagements), i.dans(&v.paies)) {
-        (Some(a), Some(b), Some(p)) => (a, b, p),
+    // Le calcul rend une paie par engagement de la saisie visee, dans son ordre.
+    let apres_et_paie = RangDansLeMois::de_chacun(&v.saisie.engagements).zip(&v.paies).find(|((j, _), _)| *j == i).map(|((_, e), p)| (e, p));
+    let (avant, apres, paie) = match (i.dans(&data.engagements), apres_et_paie) {
+        (Some(a), Some((b, p))) => (a, b, p),
         _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", texte)),
     };
     let vue = vue_paie(ctx, paie, apres, &v.saisie)?;

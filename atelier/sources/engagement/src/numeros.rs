@@ -117,9 +117,12 @@ impl From<NumeroContrat> for String {
 /// (`paie_ecrite::PaieEcrite::ce`), ecrit et lu tel quel ; les suivants le continuent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub struct NumeroDeCertificat(pub i64);
+pub struct NumeroDeCertificat(i64);
 
 impl NumeroDeCertificat {
+    /// Le premier numero de la suite.
+    pub const PREMIER: NumeroDeCertificat = NumeroDeCertificat(1);
+
     /// Le numero qui le suit dans la sequence continue des certificats.
     pub fn suivant(self) -> NumeroDeCertificat {
         NumeroDeCertificat(self.0 + 1)

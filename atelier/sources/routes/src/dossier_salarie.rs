@@ -30,7 +30,7 @@ use documents::conges_spectacles::{self, ContratCs, MoisPaye, PaieCs};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use engagement::{self, Engagement};
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{NumeroContrat, NumeroDeCertificat};
 use documents::fiche_recapitulative::Recapitulatifs;
 use documents::{CategorieDeDocument, SorteDePieceProduite};
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
@@ -750,13 +750,13 @@ fn mois_puppetpaie(
         let ecrits = engagement::etats::numeros_des_documents(ctx, le_mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
         let trouve = |cle: &IdSalarie, debut: socle::date::Jour| pour_cs.iter().find(|(c, de, _)| c == cle && *de == debut).and_then(|(_, _, v)| v.as_ref());
         // Chaque certificat parti, et tous les N CE de l'archive du mois.
-        let mut tous: Vec<i64> = Vec::new();
-        let mut paires: Vec<(IdSalarie, Vec<(&PaieCs, i64)>)> = Vec::new();
+        let mut tous: Vec<NumeroDeCertificat> = Vec::new();
+        let mut paires: Vec<(IdSalarie, Vec<(&PaieCs, NumeroDeCertificat)>)> = Vec::new();
         for (i, p) in paies.iter().enumerate() {
             let cle = cle_de(p);
-            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.debut), ecrits.get(i).and_then(|e| e.premier_ce).map(|n| n.0)) else { continue };
-            let combien = conges_spectacles::decouper(&pc.engagement)?.len() as i64;
-            tous.extend(n..n + combien);
+            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.debut), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
+            let combien = conges_spectacles::decouper(&pc.engagement)?.len();
+            tous.extend(n.suite().take(combien));
             if cles.contains(&cle) {
                 match paires.iter_mut().find(|(c, _)| *c == cle) {
                     Some((_, v)) => v.push((pc, n)),
@@ -789,14 +789,14 @@ fn mois_puppetpaie(
                     let (pc, _) = siens.first().ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un salarié sans certificat dans la liste des certificats."))?;
                     let nom = pc.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?.to_string();
                     let mut ses_pages: Vec<usize> = Vec::new();
-                    let mut etrangeres: Vec<i64> = Vec::new();
+                    let mut etrangeres: Vec<NumeroDeCertificat> = Vec::new();
                     for (pc, n) in siens {
-                        for k in 0..conges_spectacles::decouper(&pc.engagement)?.len() as i64 {
-                            let page = tous.iter().position(|x| *x == n + k);
+                        for x in n.suite().take(conges_spectacles::decouper(&pc.engagement)?.len()) {
+                            let page = tous.iter().position(|y| *y == x);
                             if let Some(page) = page.filter(|&i| t.get(i).is_some_and(|p| sans_accents(p).contains(&sans_accents(&nom)))) {
                                 ses_pages.push(page);
                             } else {
-                                etrangeres.push(n + k);
+                                etrangeres.push(x);
                             }
                         }
                     }

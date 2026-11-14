@@ -158,15 +158,21 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
     Ok(touche)
 }
 
-fn somme(paies: &[Paie], rangs: &[RangDansLeMois], cible: Cible) -> R<Decimal> {
+/// La `cible` additionnee des paies des engagements de rangs `rangs` : le calcul du mois rend une paie par engagement de
+/// la saisie `data`, dans son ordre.
+fn somme(data: &VueDuMois, paies: &[Paie], rangs: &[RangDansLeMois], cible: Cible) -> R<Decimal> {
     let mut total = socle::grandeurs::Montant::ZERO;
-    for &i in rangs {
-        let p = i.dans(paies).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
+    let mut vues = 0;
+    for (_, p) in RangDansLeMois::de_chacun(&data.engagements).zip(paies).filter(|((i, _), _)| rangs.contains(i)) {
+        vues += 1;
         total += match cible {
             Cible::Net => p.net_a_payer,
             Cible::Brut => p.brut,
             Cible::Cout => p.cout_employeur,
         };
+    }
+    if vues != rangs.len() {
+        return Err(refus("le calcul du mois n'a pas cette paie"));
     }
     Ok(total.decimal())
 }
@@ -195,7 +201,7 @@ pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[RangDansLeMois], cible: 
             ));
         }
         let paies = crate::charger_donnees(ctx, &d).map_err(RefusVisee::Calcul)?.paies;
-        let atteint = somme(&paies, rangs, cible)?;
+        let atteint = somme(&d, &paies, rangs, cible)?;
         Ok((d, paies, atteint))
     };
 

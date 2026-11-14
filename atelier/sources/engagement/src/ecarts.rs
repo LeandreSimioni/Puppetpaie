@@ -47,9 +47,9 @@ use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::grandeurs::{Coefficient, Montant, Taux};
 
-/// Ce que l'on compare d'une ligne.
+/// Ce que l'on compare d'une ligne, et qui differe (`MesureDeLEcart::ce_qui_differe`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Grandeur {
+pub enum CeQuiDiffere {
     Base,
     TauxSalarie,
     TauxEmployeur,
@@ -61,29 +61,29 @@ pub enum Grandeur {
     AbsenteDuCalcul,
 }
 
-impl Grandeur {
+impl CeQuiDiffere {
     pub fn code(self) -> &'static str {
         match self {
-            Grandeur::Base => "base",
-            Grandeur::TauxSalarie => "taux_salarie",
-            Grandeur::TauxEmployeur => "taux_employeur",
-            Grandeur::MontantSalarie => "montant_salarie",
-            Grandeur::MontantEmployeur => "montant_employeur",
-            Grandeur::AbsenteDuBulletin => "absente_du_bulletin",
-            Grandeur::AbsenteDuCalcul => "absente_du_calcul",
+            CeQuiDiffere::Base => "base",
+            CeQuiDiffere::TauxSalarie => "taux_salarie",
+            CeQuiDiffere::TauxEmployeur => "taux_employeur",
+            CeQuiDiffere::MontantSalarie => "montant_salarie",
+            CeQuiDiffere::MontantEmployeur => "montant_employeur",
+            CeQuiDiffere::AbsenteDuBulletin => "absente_du_bulletin",
+            CeQuiDiffere::AbsenteDuCalcul => "absente_du_calcul",
         }
     }
 
     /// En francais, pour un resume.
     pub fn dite(self) -> &'static str {
         match self {
-            Grandeur::Base => "base",
-            Grandeur::TauxSalarie => "taux salarial",
-            Grandeur::TauxEmployeur => "taux employeur",
-            Grandeur::MontantSalarie => "montant salarial",
-            Grandeur::MontantEmployeur => "montant employeur",
-            Grandeur::AbsenteDuBulletin => "calculée ici, absente du bulletin importé",
-            Grandeur::AbsenteDuCalcul => "sur le bulletin importé, que ce moteur ne calcule pas",
+            CeQuiDiffere::Base => "base",
+            CeQuiDiffere::TauxSalarie => "taux salarial",
+            CeQuiDiffere::TauxEmployeur => "taux employeur",
+            CeQuiDiffere::MontantSalarie => "montant salarial",
+            CeQuiDiffere::MontantEmployeur => "montant employeur",
+            CeQuiDiffere::AbsenteDuBulletin => "calculée ici, absente du bulletin importé",
+            CeQuiDiffere::AbsenteDuCalcul => "sur le bulletin importé, que ce moteur ne calcule pas",
         }
     }
 }
@@ -211,24 +211,33 @@ pub struct Ecart {
     pub mesure: MesureDeLEcart,
 }
 
-/// CE QU'UN ECART MESURE, selon ce qui differe : une base ou un montant, son ecart relatif ; un taux, le notre et le
-/// leur ; une cotisation d'un seul cote, rien.
+/// CE QU'UN ECART MESURE, selon ce qui differe (sa variante le dit) : une base ou un montant, son ecart relatif, (le leur
+/// - le notre) / le notre, a 4 decimales, `None` quand le notre est nul ; un taux, le notre et le leur ; une cotisation
+/// d'un seul cote, rien.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MesureDeLEcart {
-    /// Une base ou un montant (`Grandeur::Base`, `MontantSalarie`, `MontantEmployeur`) : (le leur - le notre) / le
-    /// notre, a 4 decimales ; `None` quand le notre est nul.
-    Relatif(Grandeur, Option<Coefficient>),
-    /// Un taux (`Grandeur::TauxSalarie`, `TauxEmployeur`) : le notre et le leur.
-    Taux { grandeur: Grandeur, notre: Taux, leur: Taux },
-    /// Une cotisation d'un seul cote (`Grandeur::AbsenteDuBulletin`, `AbsenteDuCalcul`).
-    Absente(Grandeur),
+    Base(Option<Coefficient>),
+    MontantSalarie(Option<Coefficient>),
+    MontantEmployeur(Option<Coefficient>),
+    TauxSalarie { notre: Taux, leur: Taux },
+    TauxEmployeur { notre: Taux, leur: Taux },
+    /// Le bulletin importe n'imprime pas une cotisation que ce moteur calcule.
+    AbsenteDuBulletin,
+    /// Le bulletin importe imprime une cotisation que ce moteur ne calcule pas.
+    AbsenteDuCalcul,
 }
 
 impl MesureDeLEcart {
     /// Ce qui differe.
-    pub fn grandeur(self) -> Grandeur {
+    pub fn ce_qui_differe(self) -> CeQuiDiffere {
         match self {
-            MesureDeLEcart::Relatif(g, _) | MesureDeLEcart::Taux { grandeur: g, .. } | MesureDeLEcart::Absente(g) => g,
+            MesureDeLEcart::Base(_) => CeQuiDiffere::Base,
+            MesureDeLEcart::MontantSalarie(_) => CeQuiDiffere::MontantSalarie,
+            MesureDeLEcart::MontantEmployeur(_) => CeQuiDiffere::MontantEmployeur,
+            MesureDeLEcart::TauxSalarie { .. } => CeQuiDiffere::TauxSalarie,
+            MesureDeLEcart::TauxEmployeur { .. } => CeQuiDiffere::TauxEmployeur,
+            MesureDeLEcart::AbsenteDuBulletin => CeQuiDiffere::AbsenteDuBulletin,
+            MesureDeLEcart::AbsenteDuCalcul => CeQuiDiffere::AbsenteDuCalcul,
         }
     }
 }
@@ -585,11 +594,11 @@ fn comparer_une(
         let ecart = |mesure| Ecart { cotisation: code.clone(), libelles: libelles.clone(), mesure };
         let (chez_eux, chez_nous) = (leur_sal + leur_pat > Montant::ZERO, notre_sal + notre_pat > Montant::ZERO);
         if chez_nous && !chez_eux {
-            ecarts.push(ecart(MesureDeLEcart::Absente(Grandeur::AbsenteDuBulletin)));
+            ecarts.push(ecart(MesureDeLEcart::AbsenteDuBulletin));
             continue;
         }
         if chez_eux && !chez_nous {
-            ecarts.push(ecart(MesureDeLEcart::Absente(Grandeur::AbsenteDuCalcul)));
+            ecarts.push(ecart(MesureDeLEcart::AbsenteDuCalcul));
             continue;
         }
         if !chez_eux {
@@ -597,24 +606,30 @@ fn comparer_une(
         }
         // Un centime par ligne, du cote qui en a le plus.
         let tolerance = UN_CENTIME.fois(eux.len().max(nous.len()));
-        for (grandeur, leur, notre) in [(Grandeur::MontantSalarie, leur_sal, notre_sal), (Grandeur::MontantEmployeur, leur_pat, notre_pat)] {
+        let montants: [(fn(Option<Coefficient>) -> MesureDeLEcart, Montant, Montant); 2] =
+            [(MesureDeLEcart::MontantSalarie, leur_sal, notre_sal), (MesureDeLEcart::MontantEmployeur, leur_pat, notre_pat)];
+        for (mesure, leur, notre) in montants {
             if (leur - notre).abs() > tolerance {
-                ecarts.push(ecart(MesureDeLEcart::Relatif(grandeur, relatif(leur, notre))));
+                ecarts.push(ecart(mesure(relatif(leur, notre))));
             }
         }
         let ([l], [n]) = (eux, nous) else { continue };
         // Une base en heures (la deduction des heures supplementaires) est masquee au bulletin : elle ne se compare pas.
         if let (Some(b), crate::calcul::BaseDeCotisation::Montant(notre)) = (l.base.filter(|_| !n.masquer_base_et_taux), n.base) {
             if (b - notre).abs() > UN_CENTIME {
-                ecarts.push(ecart(MesureDeLEcart::Relatif(Grandeur::Base, relatif(b, notre))));
+                ecarts.push(ecart(MesureDeLEcart::Base(relatif(b, notre))));
             }
         }
-        for (grandeur, leur, notre) in [(Grandeur::TauxSalarie, l.taux_salarie, n.taux_sal), (Grandeur::TauxEmployeur, l.taux_employeur, n.taux_pat)] {
+        let taux: [(fn(Taux, Taux) -> MesureDeLEcart, Option<Taux>, Option<Taux>); 2] = [
+            (|notre, leur| MesureDeLEcart::TauxSalarie { notre, leur }, l.taux_salarie, n.taux_sal),
+            (|notre, leur| MesureDeLEcart::TauxEmployeur { notre, leur }, l.taux_employeur, n.taux_pat),
+        ];
+        for (mesure, leur, notre) in taux {
             // Un taux se compare quand chaque cote en a un : une ligne calculee sans taux (la reduction generale, un
             // montant fixe) n'en a pas, et ce que le bulletin imprime a sa place n'en est pas un ; le montant compare.
             let (Some(leur), Some(notre)) = (leur, notre) else { continue };
             if (leur - notre).abs() > ECART_DE_TAUX_TOLERE {
-                ecarts.push(ecart(MesureDeLEcart::Taux { grandeur, notre, leur }));
+                ecarts.push(ecart(mesure(notre, leur)));
             }
         }
     }
@@ -630,8 +645,9 @@ fn comparer_une(
     ] {
         let Some(leur) = leur else { continue };
         if (leur - notre).abs() > UN_CENTIME {
-            let grandeur = if cle == TotalDuBulletin::CotisationsPatronales { Grandeur::MontantEmployeur } else { Grandeur::MontantSalarie };
-            ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), mesure: MesureDeLEcart::Relatif(grandeur, relatif(leur, notre)) });
+            let r = relatif(leur, notre);
+            let mesure = if cle == TotalDuBulletin::CotisationsPatronales { MesureDeLEcart::MontantEmployeur(r) } else { MesureDeLEcart::MontantSalarie(r) };
+            ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), mesure });
         }
     }
     Ok(ecarts)

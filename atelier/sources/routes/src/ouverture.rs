@@ -905,11 +905,11 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // Les compteurs de la derniere annee, en une ligne : ce que l'en-tete de la Paie montre.
     let compteurs = documents::ecrire_documents::compteurs(&ctx.racine)?;
     let compteurs_dit = compteurs.iter().next_back().map(|(an, c)| {
-        let n = |x: Option<i64>| match x {
-            Some(n) => n.to_string(),
+        let n = |x: Option<String>| match x {
+            Some(n) => n,
             None => "aucun".to_string(),
         };
-        format!("compteurs {} — bulletin {} · CS {}", an, n(c.bulletin), n(c.certificat_cs))
+        format!("compteurs {} — bulletin {} · CS {}", an, n(c.bulletin.map(|b| b.to_string())), n(c.certificat_cs.map(|c| c.to_string())))
     });
     let fiches_attendues = fiches_attendues(ctx)?;
     let liste = |un: &str, les: &str| MotsDeLaListe { nouvelle: format!("+ un {}", un), aucun: format!("Aucun {} actif", un), archives: format!("Afficher les {} archivés", les) };

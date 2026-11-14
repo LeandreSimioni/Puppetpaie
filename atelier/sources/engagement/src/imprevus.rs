@@ -965,25 +965,32 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &I
         if e.salarie.as_ref() != Some(cle) {
             continue;
         }
-        for (j, l) in e.lignes().iter().enumerate() {
-            let dedans: Vec<Jour> = l.jours().into_iter().filter(|x| premier <= x && x <= dernier).collect();
-            if dedans.is_empty() {
-                continue;
-            }
-            let rubrique = l.rubrique().clone();
-            out.push(CachetPaye {
-                mois: data.mois,
-                engagement: i,
-                numero: e.numero.clone(),
-                spectacle: e.spectacle.clone(),
-                ligne: crate::ligne::RangDeLigne(j),
-                libelle: libelle_rubrique(&ctx.racine, &rubrique, &ctx.lue_au)?,
-                rubrique,
-                dates: dedans,
-                quantite: l.quantite_ecrite(),
-                taux: l.taux().map(crate::ligne::TauxDeLigne::decimal),
-            });
+        out.extend(cachets_de_l_engagement(ctx, data.mois, i, e, premier, dernier)?);
+    }
+    Ok(out)
+}
+
+/// Les lignes de l'engagement `e` (de rang `i` dans `mois`) datees entre `premier` et `dernier`.
+fn cachets_de_l_engagement(ctx: &Contexte, mois: Mois, i: crate::saisie::RangDansLeMois, e: &crate::saisie::Carte, premier: &Jour, dernier: &Jour) -> R<Vec<CachetPaye>> {
+    let mut out = Vec::new();
+    for (j, l) in e.lignes().iter().enumerate() {
+        let dedans: Vec<Jour> = l.jours().into_iter().filter(|x| premier <= x && x <= dernier).collect();
+        if dedans.is_empty() {
+            continue;
         }
+        let rubrique = l.rubrique().clone();
+        out.push(CachetPaye {
+            mois,
+            engagement: i,
+            numero: e.numero.clone(),
+            spectacle: e.spectacle.clone(),
+            ligne: crate::ligne::RangDeLigne(j),
+            libelle: libelle_rubrique(&ctx.racine, &rubrique, &ctx.lue_au)?,
+            rubrique,
+            dates: dedans,
+            quantite: l.quantite_ecrite(),
+            taux: l.taux().map(crate::ligne::TauxDeLigne::decimal),
+        });
     }
     Ok(out)
 }
@@ -995,7 +1002,6 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &I
 /// (bloc S21.G00.65, p. 281).
 pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) -> R<Vec<Vec<Avis>>> {
     let engagements = &data.engagements;
-    let mut out: Vec<Vec<Avis>> = vec![Vec::new(); engagements.len()];
     // Les imprevus des seuls salaries de la saisie (`du_salarie`).
     let mut salaries: Vec<IdSalarie> = Vec::new();
     for cle in engagements.iter().filter_map(|e| e.salarie.clone()) {
@@ -1007,41 +1013,49 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
     for cle in &salaries {
         siens.extend(du_salarie(&ctx.racine, cle)?);
     }
-    for imp in &siens {
-        let (premier, dernier) = (premier_jour(imp)?, dernier_jour(imp)?);
-        for c in cachets_de_la_saisie(ctx, data, imp.salarie(), &premier, &dernier)? {
-            let i = c.engagement;
-            let dates: Vec<String> = c.dates.iter().map(Jour::jj_mm_aaaa).collect();
-            let quoi = match imp {
-                Imprevu::Arret(a) => {
-                    let motif = droit::arrets::motif_d_arret(a.motif)?;
-                    format!(
-                        "l'arret de travail ({}) du {} au {} : un salarie en arret ne peut exercer son activite (bloc S21.G00.60)",
-                        libelle_du_motif(&motif),
-                        premier.jj_mm_aaaa(),
-                        dernier.jj_mm_aaaa()
-                    )
-                }
-                Imprevu::Suspension(s) => format!(
-                    "la suspension {} du {} au {} : le contrat est suspendu (bloc S21.G00.65)",
-                    s.motif,
-                    premier.jj_mm_aaaa(),
-                    dernier.jj_mm_aaaa()
-                ),
-            };
-            if let Some(a) = i.dans_mut(&mut out) {
-                a.push(avertir(format!(
-                    "{} {} : {} le {} paye(s) pendant {}. Retirer ce jour de la ligne, ou corriger les dates de l'imprevu.",
-                    imp.salarie(),
-                    c.numero.iter().map(|n| format!("(contrat {})", n)).collect::<String>(),
-                    c.libelle,
-                    dates.join(", "),
-                    quoi
-                )));
+    // Les avertissements de chaque engagement, l'un apres l'autre : ceux de ses lignes, imprevu par imprevu.
+    let mut out: Vec<Vec<Avis>> = Vec::new();
+    for (i, e) in crate::saisie::RangDansLeMois::de_chacun(engagements) {
+        let mut siens_avis = Vec::new();
+        for imp in siens.iter().filter(|imp| e.salarie.as_ref() == Some(imp.salarie())) {
+            let (premier, dernier) = (premier_jour(imp)?, dernier_jour(imp)?);
+            for c in cachets_de_l_engagement(ctx, data.mois, i, e, &premier, &dernier)? {
+                siens_avis.push(avertir_un_jour_paye(imp, &c, &premier, &dernier)?);
             }
         }
+        out.push(siens_avis);
     }
     Ok(out)
+}
+
+/// L'avertissement d'une ligne `c` datee d'un jour de l'imprevu `imp`, du `premier` au `dernier` jour.
+fn avertir_un_jour_paye(imp: &Imprevu, c: &CachetPaye, premier: &Jour, dernier: &Jour) -> R<Avis> {
+    let dates: Vec<String> = c.dates.iter().map(Jour::jj_mm_aaaa).collect();
+    let quoi = match imp {
+        Imprevu::Arret(a) => {
+            let motif = droit::arrets::motif_d_arret(a.motif)?;
+            format!(
+                "l'arret de travail ({}) du {} au {} : un salarie en arret ne peut exercer son activite (bloc S21.G00.60)",
+                libelle_du_motif(&motif),
+                premier.jj_mm_aaaa(),
+                dernier.jj_mm_aaaa()
+            )
+        }
+        Imprevu::Suspension(s) => format!(
+            "la suspension {} du {} au {} : le contrat est suspendu (bloc S21.G00.65)",
+            s.motif,
+            premier.jj_mm_aaaa(),
+            dernier.jj_mm_aaaa()
+        ),
+    };
+    Ok(avertir(format!(
+        "{} {} : {} le {} paye(s) pendant {}. Retirer ce jour de la ligne, ou corriger les dates de l'imprevu.",
+        imp.salarie(),
+        c.numero.iter().map(|n| format!("(contrat {})", n)).collect::<String>(),
+        c.libelle,
+        dates.join(", "),
+        quoi
+    )))
 }
 
 #[cfg(test)]

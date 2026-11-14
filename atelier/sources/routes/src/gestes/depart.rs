@@ -36,7 +36,7 @@ use engagement::Avis;
 use socle::echec::erreur;
 use socle::echec::Echec;
 use socle::echec::R;
-use documents::ecrire_documents::{Reserves, Suite};
+use documents::ecrire_documents::Reserves;
 use documents::SorteDePieceProduite;
 
 fn info(texte: impl Into<String>) -> Avis {
@@ -690,10 +690,10 @@ impl DocumentsFabriques {
             engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_ref(), ce.map(|(premier, _)| premier))?;
         }
         if let Some((an, n)) = bulletin_max {
-            bornes.enregistrer(an, Suite::Bulletin, n);
+            bornes.enregistrer_bulletin(an, n);
         }
         if let Some(n) = ce_max {
-            bornes.enregistrer(an, Suite::CertificatCs, n.0);
+            bornes.enregistrer_certificat(an, n);
         }
         bornes.valider(ctx)
     }
@@ -812,8 +812,8 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
             if paies[i].engagement.sans_paie() || numerotees[i] {
                 continue;
             }
-            let n = faits.reserves.prochain(ctx, Suite::Bulletin, an)?;
-            faits.reserves.enregistrer(an, Suite::Bulletin, n);
+            let n = faits.reserves.prochain_bulletin(ctx, an)?;
+            faits.reserves.enregistrer_bulletin(an, n);
             let numero = NumeroDeBulletin::du_rang(n, mois.annee());
             numeros[i] = Some(numero.clone());
             a_poser.entry(i).or_default().0 = Some(numero);
@@ -858,12 +858,12 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
             None if part(&paies[i]) => {
                 let n = match prochain_ce {
                     Some(n) => n,
-                    None => NumeroDeCertificat(documents::ecrire_documents::prochain_continu(ctx, Suite::CertificatCs, 1)?),
+                    None => documents::ecrire_documents::prochain_certificat(ctx)?,
                 };
                 // Un numero par periode de conges du contrat, a partir de `n`.
                 if let Some(dernier) = n.suite().zip(conges_spectacles::decouper(&pc.engagement)?).map(|(x, _)| x).last() {
                     prochain_ce = Some(dernier.suivant());
-                    faits.reserves.enregistrer(an, Suite::CertificatCs, dernier.0);
+                    faits.reserves.enregistrer_certificat(an, dernier);
                     a_poser.entry(i).or_default().1 = Some((n, dernier));
                 }
                 if ctx.fiche_de(cle).map_err(|e| e.reclasser(Classe::Illisible))?.nir.is_none() {
