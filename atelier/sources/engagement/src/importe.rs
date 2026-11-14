@@ -735,7 +735,7 @@ impl Importe {
         if lignes_lues.is_empty() {
             lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, quantite: None, taux: None, rubrique: None, heures: None });
         }
-        let quotite = p.quotite.map(socle::num::court);
+        let quotite = p.quotite.map(|q| socle::grandeurs::Heures::du_decimal(socle::num::court(q)));
         let mut engagement = crate::Engagement {
             salarie: cle.clone(),
             nom: crate::qui_de(&sal)?,
@@ -788,7 +788,7 @@ impl Importe {
         let cachets = remuneration.iter().filter(|r| r.unite == Some(droit::catalogue::Unite::Cachet)).filter_map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
         engagement.cachets = cachets.parse().map_err(|_| socle::echec::refus(socle::num::illisible(&cachets)))?;
         let heures: Decimal = remuneration.iter().filter_map(|r| r.heures_annexes).sum();
-        engagement.heures = (!heures.is_zero()).then(|| socle::num::court(heures));
+        engagement.heures = (!heures.is_zero()).then(|| socle::grandeurs::Heures::du_decimal(socle::num::court(heures)));
         engagement.jours = engagement.dates_travail.len() as i64;
         engagement.jours_contrat = engagement.jours;
 

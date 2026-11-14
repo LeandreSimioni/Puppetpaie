@@ -74,7 +74,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
         return Ok(None);
     }
     // Un engagement sans heures n'en declare aucune.
-    let heures = e.heures.into_iter().map(heures_entieres).sum::<R<i64>>()?;
+    let heures = e.heures.into_iter().map(|h| heures_entieres(h.decimal())).sum::<R<i64>>()?;
     Ok(Some(Declare {
         salarie: p.salarie.id.clone(),
         debut: e.debut_periode(),

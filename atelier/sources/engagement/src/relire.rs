@@ -10,7 +10,7 @@ use crate::paie_ecrite::FormeDePaie;
 use crate::{Avis, Engagement, LignePaie};
 use droit::contexte::Contexte;
 use socle::echec::R;
-use socle::grandeurs::MontantUnitaire;
+use socle::grandeurs::{Heures, MontantUnitaire};
 use socle::num::court;
 
 /// La forme ecrite d'une paie : sa forme canonique, ses avertissements (`{"texte", "info"}`), les lignes de son
@@ -105,8 +105,8 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         let mut sub = eng.clone();
         sub.periode = Some((e.debut_periode, e.fin_periode));
         sub.lignes = e.lignes.clone();
-        sub.quotite_contrat = Some(court(e.quotite.decimal()));
-        sub.heures = e.heures.map(|h| court(h.decimal()));
+        sub.quotite_contrat = Some(Heures::du_decimal(court(e.quotite.decimal())));
+        sub.heures = e.heures.map(|h| Heures::du_decimal(court(h.decimal())));
         periodes_lues.push(paie_lue(ctx, sub, x, periodes.get(n), &[])?);
     }
     let p = paie.ecrire();

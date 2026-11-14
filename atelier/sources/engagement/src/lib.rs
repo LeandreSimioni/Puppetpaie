@@ -90,9 +90,9 @@ pub struct Engagement {
     pub versement: Option<droit::versement::Versement>,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que l'engagement ou son mois ecrit ; sinon `None`
     /// (regle 1 : aucun taux par defaut, aucun texte n'en fixe).
-    pub taux_cachet: Option<Decimal>,
+    pub taux_cachet: Option<MontantUnitaire>,
     pub cachets: i64,
-    pub heures: Option<Decimal>,
+    pub heures: Option<Heures>,
     pub lieu: String,
     pub lieux: BTreeMap<Jour, String>,
     pub emploi: Option<String>,
@@ -109,8 +109,8 @@ pub struct Engagement {
     pub etablissement: Option<droit::fiche::Nic>,
     /// Sa nature de contrat, toujours dite (regle 6).
     pub nature: NatureDeContrat,
-    pub quotite_contrat: Option<Decimal>,
-    pub quotite_reference_saisie: Option<Decimal>,
+    pub quotite_contrat: Option<Heures>,
+    pub quotite_reference_saisie: Option<Heures>,
     pub modalite_temps_travail_saisie: Option<ModaliteDuTempsDeTravail>,
     pub motif_recours: Option<MotifDeRecours>,
     pub motif_rupture: Option<MotifDeRupture>,
@@ -359,12 +359,12 @@ impl Engagement {
         // courante, elle sera rejetee par l'assurance chomage » (fiche DSN 2640, `atelier/reference/sources/suspension-
         // non-remuneree/net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.txt`, « Regles generales »).
         let autres = if mensuel { autres.max(Decimal::ZERO) } else { autres };
-        let heures = if !autres.is_zero() { Some(court(autres)) } else { None };
+        let heures = if !autres.is_zero() { Some(Heures::du_decimal(court(autres))) } else { None };
         // Le taux du cachet : celui de la premiere ligne de cachet ; sans cachet, celui qui est ecrit ; sinon aucun. Un
         // contrat qui ne paie aucun cachet n'a pas de taux de cachet, et le moteur n'en invente pas (regle 1).
-        let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::court).transpose()?;
+        let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::court).transpose()?.map(MontantUnitaire::du_decimal);
         if let Some(l) = premier_cachet {
-            taux_cachet = Some(court(l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal()));
+            taux_cachet = Some(MontantUnitaire::du_decimal(court(l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal())));
         }
 
         // Les jours travailles : un fait qui se saisit, sinon les dates distinctes.
@@ -528,8 +528,8 @@ impl Engagement {
             statut_categoriel_rc: v.statut_categoriel_rc.clone(),
             etablissement: v.etablissement.clone(),
             nature,
-            quotite_contrat: v.quotite_contrat.as_ref().map(Chiffre::court).transpose()?,
-            quotite_reference_saisie: v.quotite_reference_saisie.as_ref().map(Chiffre::court).transpose()?,
+            quotite_contrat: v.quotite_contrat.as_ref().map(Chiffre::court).transpose()?.map(Heures::du_decimal),
+            quotite_reference_saisie: v.quotite_reference_saisie.as_ref().map(Chiffre::court).transpose()?.map(Heures::du_decimal),
             modalite_temps_travail_saisie: v.modalite_temps_travail_saisie.clone(),
             motif_recours: v.motif_recours.clone(),
             motif_rupture: v.motif_rupture.clone(),
@@ -578,7 +578,7 @@ impl Engagement {
             return Ok(Decimal::from(self.jours_contrat));
         }
         match self.quotite_contrat {
-            Some(q) => Ok(court(q)),
+            Some(q) => Ok(court(q.decimal())),
             None => Err(socle::refus!(
                 "{} : combien d'heures par mois ? La durée du travail se lit sur le contrat signé \
                  (151,67 h pour un temps plein à 35 h) et la DSN la déclare. À taper dans la case « Heures par \
@@ -597,10 +597,10 @@ impl Engagement {
         // Une entreprise a la duree legale ne dit pas de duree collective : sa reference est la duree legale que la nature
         // porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans `contrats-base.json`).
         Ok(match self.quotite_reference_saisie {
-            Some(q) if q.is_zero() => {
+            Some(q) if q.est_nul() => {
                 return Err(socle::refus!("La quotité de référence saisie est nulle : elle dit la durée collective du travail de l'entreprise (en heures par mois), ou ne se saisit pas à la durée légale."))
             }
-            Some(q) => Some(q),
+            Some(q) => Some(q.decimal()),
             None => nat.quotite_reference_defaut(),
         })
     }
@@ -749,7 +749,7 @@ impl Engagement {
 
     /// La forme canonique d'un engagement : une ecriture stable, pour les empreintes et les oracles.
     pub fn canon(&self) -> R<paie_ecrite::FormeDEngagement> {
-        let nombre_f = |x: Option<Decimal>| x.map(|x| Heures::du_decimal(court(x)));
+        let nombre_f = |x: Option<Heures>| x.map(|x| Heures::du_decimal(court(x.decimal())));
         Ok(paie_ecrite::FormeDEngagement {
             salarie: self.salarie.clone(),
             spectacle: self.spectacle.clone(),
@@ -764,7 +764,7 @@ impl Engagement {
             jours: self.jours,
             jours_contrat: self.jours_contrat,
             date_paiement: self.date_paiement.clone(),
-            taux_cachet: self.taux_cachet.map(|t| MontantUnitaire::du_decimal(court(t))),
+            taux_cachet: self.taux_cachet.map(|t| MontantUnitaire::du_decimal(court(t.decimal()))),
             cachets: self.cachets,
             heures: nombre_f(self.heures),
             lieu: self.lieu.clone(),

@@ -89,7 +89,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let part = droit::periodes::part_du_mois(d, f, &fin_mois, regle, &horaire)?;
         let mut e = eng.clone();
         e.periode = Some((*d, *f));
-        e.quotite_contrat = Some(court(quotite));
+        e.quotite_contrat = Some(Heures::du_decimal(court(quotite)));
         let (q, h) = (court(part.fraction.decimal()), court(Heures::du_decimal(quotite).au_centieme().decimal()));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
@@ -102,7 +102,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         // Les heures que la DSN mesure (S21.G00.53, « heures » d'un contrat paye au mois) : celles de la ligne de la
         // periode, comme `Engagement::nouveau` les tire des lignes du mois.
         let heures = droit::catalogue::rubrique(&ctx.racine, &crate::conges::MOIS_PAYE, &ctx.lue_au)?.heures(q, Some(h));
-        e.heures = if !heures.is_zero() { Some(heures) } else { None };
+        e.heures = if !heures.is_zero() { Some(Heures::du_decimal(heures)) } else { None };
         out.push(e);
     }
     Ok(out)
@@ -205,8 +205,8 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let mut e = eng.clone();
     e.lignes = parts.iter().flat_map(|p| p.engagement.lignes.iter().cloned()).collect();
-    let heures: Decimal = parts.iter().filter_map(|p| p.engagement.heures).sum();
-    e.heures = if !heures.is_zero() { Some(court(heures)) } else { None };
+    let heures: Decimal = parts.iter().filter_map(|p| p.engagement.heures).map(Heures::decimal).sum();
+    e.heures = if !heures.is_zero() { Some(Heures::du_decimal(court(heures))) } else { None };
     let mut paie = Paie::nouveau(
         e,
         derniere.salarie.clone(),

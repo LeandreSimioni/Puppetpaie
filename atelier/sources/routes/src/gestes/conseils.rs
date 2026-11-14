@@ -861,7 +861,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
             continue;
         }
         let x = du_mois.entry(p.salarie.id.to_string()).or_insert((0, 0));
-        if let Some(h) = e.heures {
+        if let Some(h) = e.heures.map(socle::grandeurs::Heures::decimal) {
             x.0 += i64::try_from(h.round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointNearestEven)).map_err(|e| socle::echec::refus(format!("{} heures : {}", h, e)))?;
         }
         x.0 += e.cachets * c.heures_par_cachet;
@@ -978,7 +978,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                     trouve
                 }
                 Quand::Suspension if !e.suspensions.is_empty() => Some(base(vec![])),
-                Quand::CachetsEtHeures if annexe == Annexe::X && e.cachets > 0 && e.heures.is_some_and(|h| h > socle::num::Decimal::ZERO) => Some(base(vec![])),
+                Quand::CachetsEtHeures if annexe == Annexe::X && e.cachets > 0 && e.heures.is_some_and(|h| h.decimal() > socle::num::Decimal::ZERO) => Some(base(vec![])),
                 _ => None,
             };
             if let Some(v) = vals {

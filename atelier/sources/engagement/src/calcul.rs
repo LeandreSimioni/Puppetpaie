@@ -856,7 +856,7 @@ cette reintegration (assiette du chomage, bloc 54 de type 35) : rien n'est calcu
 /// (`conges::dfs_du_mois`, recalcules depuis leurs saisies) et les contrats precedents du meme mois (`precedentes`).
 /// Arrete du 4 septembre 2025, art. 9, I, al. 1 : << dans la limite de 7 600 euros par annee civile >>. INFERENCE, ecrite comme
 /// telle : l'annee est celle de la periode de paie, et les contrats d'un mois se suivent dans l'ordre de la saisie.
-fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, precedentes: &[Paie]) -> R<Decimal> {
+fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, precedentes: &[Paie]) -> R<Montant> {
     let mut deja = crate::conges::dfs_des_mois_anterieurs(ctx, eng.fin_periode().mois_civil(), &sal.id)?;
     for p in precedentes {
         let sienne = p.salarie.id == sal.id || p.engagement.salarie == eng.salarie;
@@ -866,14 +866,14 @@ fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, preced
             }
         }
     }
-    Ok(deja)
+    Ok(Montant::du_decimal(deja))
 }
 
 /// Ce que la deduction retire d'un contrat, et les assiettes abattues de ses rubriques de salaire.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AbattementDfs {
-    pub deduction: Decimal,
-    pub assiettes: Vec<Decimal>,
+    pub deduction: Montant,
+    pub assiettes: Vec<Montant>,
     pub avis: Vec<String>,
 }
 
@@ -890,7 +890,9 @@ pub struct AbattementDfs {
 ///   la DSN (`heures_par_cachet`), aucun texte depose ne dit les heures travaillees d'un cachet.
 /// Quand l'une ou l'autre ramene la deduction, l'assiette abattue se repartit entre les rubriques au prorata de leur
 /// montant, le dernier centime sur la derniere.
-pub(crate) fn abattement_dfs(o: &DfsDuSalarie, montants: &[Decimal], brut: Decimal, deja: Decimal, assiette_minimale: Decimal) -> AbattementDfs {
+pub(crate) fn abattement_dfs(o: &DfsDuSalarie, montants: &[Montant], brut: Montant, deja: Montant, assiette_minimale: Montant) -> AbattementDfs {
+    let (brut, deja, assiette_minimale) = (brut.decimal(), deja.decimal(), assiette_minimale.decimal());
+    let montants: Vec<Decimal> = montants.iter().map(|m| m.decimal()).collect();
     let zero = socle::grandeurs::Montant::ZERO.decimal();
     let facteur = sub(Decimal::ONE, div(o.taux.decimal(), Decimal::ONE_HUNDRED));
     let theoriques: Vec<Decimal> = montants.iter().map(|m| socle::grandeurs::Montant::du_decimal(mul(*m, facteur)).au_centime().decimal()).collect();
@@ -928,7 +930,7 @@ contrat, {} (CSS R. 242-1, al. 6 ; arrêté du 4 septembre 2025, art. 9, I, dern
         out
     };
     let deduction = brut - assiettes.iter().fold(zero, |a, b| a + *b);
-    AbattementDfs { deduction, assiettes, avis }
+    AbattementDfs { deduction: Montant::du_decimal(deduction), assiettes: assiettes.into_iter().map(Montant::du_decimal).collect(), avis }
 }
 
 // ---------------------------------------------------------------- calculer
@@ -1477,7 +1479,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     if nat.mensuelle() {
         // Le plafond de la periode, le meme partout (`plafond_de_l_engagement`) : corrige a la quotite d'un temps
         // partiel, sauf renonciation de l'etablissement ou artiste (`plafond_temps_partiel`).
-        let p = plafond_de_l_engagement(ctx, eng, &sal)?;
+        let p = plafond_de_l_engagement(ctx, eng, &sal)?.decimal();
         pss_prev = Some(p);
         if prev.base == Some(Assiette::T1Mensuelle) {
             plafond_prev = Some(p);
@@ -1516,7 +1518,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let mutuelle = bar.rubrique(&MUTUELLE).and_then(part_patronale);
     let pss_sante = if nat.mensuelle() { Some(plafond_de_la_sante(ctx, eng)?) } else { None };
     if let (Some(m), Some(pss)) = (mutuelle, pss_sante) {
-        tranches_prev += socle::grandeurs::Montant::du_decimal(pss).fois_taux(socle::grandeurs::Taux::du_decimal(m)).au_centime().decimal();
+        tranches_prev += pss.fois_taux(socle::grandeurs::Taux::du_decimal(m)).au_centime().decimal();
     }
 
     // 7.4 : les assiettes, par rubrique de salaire.
@@ -1575,12 +1577,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     if let Some(o) = deduction_forfaitaire(&bar, &sal, &ctx.entreprise)? {
         dfs_applicable(eng, &nat, &o, &lb, &sal, &ctx.racine, &ctx.lue_au)?;
         let deja = dfs_deja_deduite(ctx, eng, &sal, precedentes)?;
-        let montants: Vec<Decimal> = soumises.iter().map(|l| l.montant.decimal()).collect();
-        let a = abattement_dfs(&o, &montants, brut, deja, plafond);
-        for (r, abattu) in par_rubrique.iter_mut().zip(&a.assiettes) {
-            r.dfs = Some(*abattu);
-            r.x115_dfs = Some(socle::grandeurs::Montant::du_decimal(mul(*abattu, maj115)).au_centime().decimal());
-            r.x110_dfs = Some(socle::grandeurs::Montant::du_decimal(mul(*abattu, maj110)).au_centime().decimal());
+        let montants: Vec<Montant> = soumises.iter().map(|l| l.montant).collect();
+        let a = abattement_dfs(&o, &montants, Montant::du_decimal(brut), deja, Montant::du_decimal(plafond));
+        for (r, abattu) in par_rubrique.iter_mut().zip(a.assiettes.iter().map(|m| m.decimal())) {
+            r.dfs = Some(abattu);
+            r.x115_dfs = Some(socle::grandeurs::Montant::du_decimal(mul(abattu, maj115)).au_centime().decimal());
+            r.x110_dfs = Some(socle::grandeurs::Montant::du_decimal(mul(abattu, maj110)).au_centime().decimal());
         }
         avis_dfs.extend(a.avis);
         dfs = Some(DeductionForfaitaire {
@@ -1588,8 +1590,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             profession: o.profession,
             taux: o.taux,
             rubriques: o.rubriques.clone(),
-            montant: Montant::du_decimal(a.deduction),
-            deja: Montant::du_decimal(deja),
+            montant: a.deduction,
+            deja,
         });
     }
 
@@ -1622,11 +1624,11 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         bases.insert(Assiette::Cet, if brut > t1 { brut.min(t2_mult * t1) } else { zero });
     }
     if nat.mensuelle() {
-        let pss = plafond_de_l_engagement(ctx, eng, &sal)?;
+        let pss = plafond_de_l_engagement(ctx, eng, &sal)?.decimal();
         // `pss_periode` : l'assiette du forfait de sante (rubrique `mutuelle`, base 18 du bloc 79), le plafond de la
         // periode sans la correction du temps partiel (`plafond_de_la_sante`). Les tranches (`t1_mensuelle`...) suivent,
         // elles, le plafond corrige.
-        bases.insert(Assiette::PssPeriode, pss_sante.ok_or_else(|| refus("le plafond de la santé d'un contrat payé au mois manque : le signaler au développeur"))?);
+        bases.insert(Assiette::PssPeriode, pss_sante.ok_or_else(|| refus("le plafond de la santé d'un contrat payé au mois manque : le signaler au développeur"))?.decimal());
         bases.insert(Assiette::T1Mensuelle, brut.min(pss));
         // Le FNAL plafonne d'un permanent declare a la caisse (CDD de moins de douze mois d'un
         // artiste) : seul le montant plafonne se majore (lettre circulaire Acoss 2013-019, annexe 1, R2), comme
@@ -1655,7 +1657,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // limite d'un plafond fixe a quatre fois le plafond mentionne a l'article L. 241-3 » (annexes VIII et X du
         // 15/11/2024, art. 49). Sous le plafond, rien ne bouge : les bases sont le brut, et le brut majore tel qu'il
         // etait.
-        let plafond_ss = plafond_de_l_engagement(ctx, eng, &sal)?;
+        let plafond_ss = plafond_de_l_engagement(ctx, eng, &sal)?.decimal();
         plafond_intermittent = Some(plafond_ss);
         let x115 = bases[&Assiette::BrutX115];
         bases.insert(Assiette::BrutPlafonne, brut.min(plafond_ss));
@@ -1916,7 +1918,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
 /// vise que les artistes ; un technicien, comme un artiste engage cinq jours ou plus, a le plafond proratise sur les
 /// jours remuneres de la paie (BOSS, assiette generale, § 1090, `atelier/reference/sources/boss/`). Textes :
 /// atelier/reference/sources/plafond-intermittents/LISEZ-MOI.md.
-pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &ChampsSalarie) -> R<Decimal> {
+pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &ChampsSalarie) -> R<Montant> {
     let nat = e.nat()?;
     // Le plafond d'un salarie au mois ne depend pas de son statut.
     if nat.mensuelle() {
@@ -1924,7 +1926,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
             PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(e)?),
             _ => None,
         };
-        return plafond_permanent(e.debut_periode(), e.fin_periode(), tp, &pss_du_contexte(ctx)).map(socle::grandeurs::Montant::decimal);
+        return plafond_permanent(e.debut_periode(), e.fin_periode(), tp, &pss_du_contexte(ctx));
     }
     // Le plafond d'un intermittent depend de son statut (artiste : arrete du 24/01/1975, art. 3 ; technicien : R. 242-2
     // CSS).
@@ -1940,7 +1942,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
         dates_travail: e.dates_travail.clone(),
         jours: socle::grandeurs::Jours::du_decimal(Decimal::from(e.jours)),
     };
-    pour_paie(&ep, &pss_du_contexte(ctx)).map(socle::grandeurs::Montant::decimal)
+    pour_paie(&ep, &pss_du_contexte(ctx))
 }
 
 /// Le plafond sur lequel se pose le forfait de sante d'un salarie au mois (`pss_periode`, la rubrique `mutuelle` et la
@@ -1961,8 +1963,8 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
 /// au plafond de la securite sociale vise a l'article L. 241-3 » (IDCC 1285, titre XII, `kali-1285-titres-ii-iii-x-xi-
 /// xii-20260923.md`, l. 73), le plafond que R. 242-2 corrige ; elle suit le plafond corrige, comme la retraite
 /// complementaire (`plafond_de_l_engagement`). Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
-pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Decimal> {
-    plafond_permanent(e.debut_periode(), e.fin_periode(), None, &pss_du_contexte(ctx)).map(socle::grandeurs::Montant::decimal)
+pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Montant> {
+    plafond_permanent(e.debut_periode(), e.fin_periode(), None, &pss_du_contexte(ctx))
 }
 
 /// Le plafond d'un salarie a temps partiel, et ce que S21.G00.40.084 en declare.
@@ -2055,13 +2057,13 @@ devine pas.",
 
 impl Paie {
     /// Le « Plafond Urssaf » du bas de bulletin.
-    pub fn plafond_urssaf(&self, ctx: &Contexte) -> R<Decimal> {
+    pub fn plafond_urssaf(&self, ctx: &Contexte) -> R<Montant> {
         // Un mois decoupe : la somme des plafonds de ses periodes (BOSS, assiette generale, § 730 : « les differentes
         // regles d'ajustement du plafond sont cumulables »).
         if !self.periodes.is_empty() {
-            let mut total = socle::grandeurs::Montant::ZERO.decimal();
+            let mut total = Montant::ZERO;
             for p in &self.periodes {
-                total += p.plafond_urssaf(ctx)?;
+                total = total + p.plafond_urssaf(ctx)?;
             }
             return Ok(total);
         }
@@ -2112,7 +2114,7 @@ impl Paie {
             total_pat: self.total_pat,
             total_sal: self.total_sal,
             plafond: self.plafond,
-            plafond_urssaf: Montant::du_decimal(self.plafond_urssaf(ctx)?),
+            plafond_urssaf: self.plafond_urssaf(ctx)?,
             periodes: self.periodes.iter().map(|p| p.forme(ctx, avis, ecrite)).collect::<R<_>>()?,
             plafond_temps_partiel: ecrite.then_some(self.plafond_temps_partiel),
         })

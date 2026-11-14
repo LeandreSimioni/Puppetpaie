@@ -2141,7 +2141,7 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, Decimal, UniteDeMes
             Mesure::Cachets => Decimal::from(e.cachets),
             // Les heures sont la somme de celles des lignes (ARCHITECTURE, « Heures, cachets et jours ») : sans ligne en
             // heures, aucune.
-            Mesure::Heures => e.heures.iter().filter(|h| !h.is_zero()).fold(Decimal::ZERO, |a, h| a + *h),
+            Mesure::Heures => e.heures.iter().map(|h| h.decimal()).filter(|h| !h.is_zero()).fold(Decimal::ZERO, |a, h| a + h),
         };
         if u.si_non_nul == Some(true) && valeur.is_zero() {
             continue;
