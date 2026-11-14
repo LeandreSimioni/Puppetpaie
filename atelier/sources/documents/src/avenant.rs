@@ -20,7 +20,7 @@ use crate::bulletin::{convention_du_contrat, fmt_eur};
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie, FormeDeRemuneration};
-use engagement::saisie::Valeur;
+use engagement::saisie::{Champ, Valeur};
 use socle::date::Jour;
 use socle::mois::Mois;
 use droit::emplois::{emploi_de, EmploiEngagement};
@@ -466,27 +466,27 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
 
 /// Un terme du contrat, tel que l'avenant d'un contrat signe hors du logiciel le nomme : son titre, et son nom dans une
 /// phrase.
-fn terme_nomme(terme: &str) -> (&'static str, &'static str) {
+fn terme_nomme(terme: Champ) -> (&'static str, &'static str) {
     match terme {
-        "salaire_mensuel" => ("Rémunération mensuelle brute", "la rémunération mensuelle brute"),
-        "quotite_contrat" => ("Durée du travail", "la durée du travail"),
-        "quotite_reference" => ("Durée de référence", "la durée de référence"),
-        "modalite_temps_travail" => ("Temps de travail", "la modalité du temps de travail"),
-        "emploi" => ("Emploi", "l'emploi"),
-        "metier" => ("Métier", "le métier"),
-        "cadre" => ("Statut de cadre", "le statut de cadre"),
-        "statut" => ("Statut", "le statut"),
-        "nature" => ("Nature du contrat", "la nature du contrat"),
-        "motif_recours" => ("Motif de recours", "le motif de recours"),
-        "lieu" => ("Lieu de travail", "le lieu de travail"),
-        "spectacle" => ("Spectacle", "le spectacle"),
+        Champ::SalaireMensuel => ("Rémunération mensuelle brute", "la rémunération mensuelle brute"),
+        Champ::QuotiteContrat => ("Durée du travail", "la durée du travail"),
+        Champ::QuotiteReference => ("Durée de référence", "la durée de référence"),
+        Champ::ModaliteTempsTravail => ("Temps de travail", "la modalité du temps de travail"),
+        Champ::Emploi => ("Emploi", "l'emploi"),
+        Champ::Metier => ("Métier", "le métier"),
+        Champ::Cadre => ("Statut de cadre", "le statut de cadre"),
+        Champ::Statut => ("Statut", "le statut"),
+        Champ::Nature => ("Nature du contrat", "la nature du contrat"),
+        Champ::MotifRecours => ("Motif de recours", "le motif de recours"),
+        Champ::Lieu => ("Lieu de travail", "le lieu de travail"),
+        Champ::Spectacle => ("Spectacle", "le spectacle"),
         _ => ("Clause du contrat", "une clause du contrat"),
     }
 }
 
 /// La valeur d'un terme en clair : un montant en euros, une duree en heures par mois (S21.G00.40.013), une nature, un
 /// motif ou un spectacle par son nom.
-fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v: &Valeur) -> R<String> {
+fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v: &Valeur) -> R<String> {
     let texte = match v {
         Valeur::Nature(n) => return Ok(n.proprietes()?.libelle.clone()),
         Valeur::Texte(s) => s.clone(),
@@ -499,13 +499,13 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
         match v {
             Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).dec(),
             Valeur::Texte(s) => socle::num::decimal_a_virgule(s).ok_or_else(|| refus(socle::num::illisible(s))),
-            Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme, texte)),
+            Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
         }
     };
     Ok(match terme {
-        "salaire_mensuel" => socle::texte::euros(nombre()?),
-        "quotite_contrat" | "quotite_reference" => format!("{} heures par mois", socle::texte::virgule(nombre()?)),
-        "cadre" => {
+        Champ::SalaireMensuel => socle::texte::euros(nombre()?),
+        Champ::QuotiteContrat | Champ::QuotiteReference => format!("{} heures par mois", socle::texte::virgule(nombre()?)),
+        Champ::Cadre => {
             let cadre = match v {
                 Valeur::Oui(b) => *b,
                 Valeur::Nombre(n) => !n.est_nul(),
@@ -514,9 +514,9 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
             };
             if cadre { "cadre".into() } else { "non cadre".into() }
         }
-        "motif_recours" => droit::natures::MotifDeRecours::du_code(&texte).and_then(|m| nat.libelle_motif_recours(m)).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
-        "spectacle" => droit::fiche::Lue::ecrite(&ctx.spectacle(&texte)?.titre, "titre")?.to_string(),
-        "emploi" => format!("« {} »", texte),
+        Champ::MotifRecours => droit::natures::MotifDeRecours::du_code(&texte).and_then(|m| nat.libelle_motif_recours(m)).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
+        Champ::Spectacle => droit::fiche::Lue::ecrite(&ctx.spectacle(&texte)?.titre, "titre")?.to_string(),
+        Champ::Emploi => format!("« {} »", texte),
         _ => texte,
     })
 }
@@ -540,8 +540,8 @@ pub fn changements_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, change
     changes
         .iter()
         .map(|c| {
-            let (titre, nom) = terme_nomme(c.terme.nom());
-            let dit = |v: &Option<Valeur>| v.as_ref().map(|x| valeur_en_clair(ctx, nat, c.terme.nom(), x)).transpose();
+            let (titre, nom) = terme_nomme(c.terme);
+            let dit = |v: &Option<Valeur>| v.as_ref().map(|x| valeur_en_clair(ctx, nat, c.terme, x)).transpose();
             let (avant, apres) = (dit(&c.avant)?, dit(&c.apres)?);
             let quand = format!("À compter du {}", c.jour.jj_mm_aaaa());
             let phrase = match (&avant, &apres) {

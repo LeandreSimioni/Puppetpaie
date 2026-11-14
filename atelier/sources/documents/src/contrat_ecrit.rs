@@ -235,10 +235,10 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     let artiste = sal.statut.dite() == Some(&droit::fiche::Statut::Artiste);
     let categorie = match sal.statut_conventionnel.dite().map(|c| natures::categorie_d_emploi(*c, artiste)).transpose()?.flatten() {
         Some(c) => c,
-        None => match sal.statut_categoriel_rc.code() {
-            Some("01" | "02") => "cadre".to_string(),
-            Some("04") => "non cadre".to_string(),
-            _ => sal.statut.code().map(str::to_string).ok_or_else(|| {
+        None => match sal.statut_categoriel_rc.dite() {
+            Some(droit::fiche::StatutCategorielRc::Cadre | droit::fiche::StatutCategorielRc::Extension) => "cadre".to_string(),
+            Some(droit::fiche::StatutCategorielRc::NonCadre) => "non cadre".to_string(),
+            None => sal.statut.code().map(str::to_string).ok_or_else(|| {
                 socle::refus!("La fiche de {} ne dit pas sa catégorie d'emploi, que le contrat écrit porte (R. 1221-34, 3°) : choisir son métier dans la liste, ou saisir son classement conventionnel sur sa fiche. Rien n'est écrit.", nom)
             })?,
         },
