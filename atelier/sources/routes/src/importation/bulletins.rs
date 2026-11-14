@@ -771,7 +771,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             (None, None) => None,
         };
         let analytique = analytique.filter(|_| titre.is_some());
-        // Le titre propose, en notes de la fiche (`declarations::demarrage::TITRE_PROPOSE`, `TITRE_LU_DANS`).
+        // Le titre propose, en notes de la fiche (`titre_propose`, `titre_lu_dans`), que « Pour démarrer » lit.
         let proposition = |s: &mut ChampsSpectacle| {
             if let Some((t, lu_dans)) = &propose {
                 s.titre_propose = Some(t.clone());
