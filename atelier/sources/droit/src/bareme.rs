@@ -1591,8 +1591,8 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
     };
     let statut = *sal.statut.exigee("statut")?;
     let taux = couche.retraite_t1.as_ref().and_then(|t| match statut {
-        Statut::Artiste => t.artiste.map(|c| c.0),
-        Statut::Technicien => t.technicien.map(|c| c.0),
+        Statut::Artiste => t.artiste.map(Taux::decimal),
+        Statut::Technicien => t.technicien.map(Taux::decimal),
     });
     let Some(taux) = taux else { return Ok(bar) };
     if let Some(avant) = couche.adhesion_avant {

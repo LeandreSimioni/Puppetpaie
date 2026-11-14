@@ -16,7 +16,7 @@ use crate::natures::Paie;
 use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
 use serde::Deserialize;
-use socle::forme::{Court, Nombre};
+use socle::forme::Court;
 use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
 
@@ -96,8 +96,7 @@ impl<'de> Deserialize<'de> for TauxDate {
 #[serde(deny_unknown_fields)]
 pub struct Datee {
     pub depuis: Option<socle::date::Jour>,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub valeur: Decimal,
+    pub valeur: MontantUnitaire,
     pub source: Fondement,
 }
 
@@ -390,7 +389,25 @@ forme! {
         pub zone: String,
         #[serde(rename = "type")]
         pub genre: crate::type_taux_pas::TypeDeTauxPas,
-        pub tranches: Vec<Vec<Option<Court>>>,
+        pub tranches: Vec<TranchePas>,
+    }
+}
+
+/// UNE TRANCHE D'UNE GRILLE DU PAS, ecrite `[bas, haut, taux]` (chacun comme `forme::court`) : la remuneration
+/// mensuelle des le bas et sous le haut (la derniere tranche n'a pas de haut, `null`), son taux.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TranchePas {
+    pub bas: Montant,
+    pub haut: Option<Montant>,
+    pub taux: Taux,
+}
+
+impl<'de> Deserialize<'de> for TranchePas {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match <Vec<Option<Court>>>::deserialize(d)?.as_slice() {
+            [Some(b), h, Some(t)] => Ok(TranchePas { bas: Montant::du_decimal(b.0), haut: h.map(|h| Montant::du_decimal(h.0)), taux: Taux::du_decimal(t.0) }),
+            autre => Err(serde::de::Error::custom(format!("une tranche de la grille du PAS porte un bas, un haut et un taux : {:?}", autre))),
+        }
     }
 }
 
@@ -876,9 +893,9 @@ forme! {
     #[derive(Default)]
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
-        pub plafond_journalier: Option<Nombre>,
-        pub t2_multiple: Option<Nombre>,
-        pub apec_multiple: Option<Nombre>,
+        pub plafond_journalier: Option<Montant>,
+        pub t2_multiple: Option<Coefficient>,
+        pub apec_multiple: Option<Coefficient>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,
@@ -1252,8 +1269,10 @@ forme! {
 
 forme! {
     pub struct RetraiteT1ParStatut {
-        pub artiste: Option<Court>,
-        pub technicien: Option<Court>,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub artiste: Option<Taux>,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub technicien: Option<Taux>,
     }
 }
 
@@ -1486,17 +1505,15 @@ forme! {
 forme! {
     pub struct TauxJusquA {
         pub jusqu_a: Option<i64>,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux: Decimal,
+        pub taux: Taux,
     }
 }
 
 forme! {
     pub struct Paritarisme {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux: Decimal,
-        pub plancher: Option<Nombre>,
-        pub plafond: Option<Nombre>,
+        pub taux: Taux,
+        pub plancher: Option<Montant>,
+        pub plafond: Option<Montant>,
         /// L'assiette telle que le texte la dit, en mots : une phrase, que le calcul ne lit pas.
         #[serde(rename = "assiette")]
         pub assiette_dite: Option<String>,

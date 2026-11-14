@@ -633,9 +633,9 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         let mut cpnef = zero;
         if let Some(c) = &hb.cpnef_dialogue_social {
-            let brut_cpnef = Montant::du_decimal(masse).fois_taux(Taux::du_decimal(c.taux)).au_centime().decimal();
-            let borne = |b: Option<Decimal>, cle: &str| b.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque));
-            cpnef = plus_grand(borne(c.plancher.map(|n| n.0), "plancher")?, plus_petit(borne(c.plafond.map(|n| n.0), "plafond")?, brut_cpnef));
+            let brut_cpnef = Montant::du_decimal(masse).fois_taux(c.taux).au_centime().decimal();
+            let borne = |b: Option<Montant>, cle: &str| b.map(Montant::decimal).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque));
+            cpnef = plus_grand(borne(c.plancher, "plancher")?, plus_petit(borne(c.plafond, "plafond")?, brut_cpnef));
         }
         let tranches = &hb
             .contribution_conventionnelle_permanents
@@ -661,11 +661,11 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         };
         let permanents = match taux_p {
-            Some(t) => Montant::du_decimal(masse_permanents).fois_taux(Taux::du_decimal(t)).au_centime().decimal(),
+            Some(t) => Montant::du_decimal(masse_permanents).fois_taux(t).au_centime().decimal(),
             None => zero,
         };
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone()).d("masse", masse).d("masse_permanents", masse_permanents).d("cpnef", cpnef).od("taux_permanents", taux_p).d("permanents", permanents);
+        l.t("annee", an.clone()).d("masse", masse).d("masse_permanents", masse_permanents).d("cpnef", cpnef).od("taux_permanents", taux_p.map(Taux::decimal)).d("permanents", permanents);
         l.d("total_ht", add(cpnef, permanents));
         l.t("a_payer", format!("avant le 28/02/{}, à l'Afdas (Globaldec')", annee_entiere(&an)? + 1));
         lignes.push(l);
@@ -733,12 +733,12 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             .reclasser(Classe::Refuse));
         };
         let taux = f.taux;
-        let mut m = Montant::du_decimal(masse).fois_taux(Taux::du_decimal(taux)).au_centime().decimal();
+        let mut m = Montant::du_decimal(masse).fois_taux(taux).au_centime().decimal();
         if let Some(pl) = f.plancher {
-            m = plus_grand(m, pl.0);
+            m = plus_grand(m, pl.decimal());
         }
         if let Some(pl) = f.plafond {
-            m = plus_petit(m, pl.0);
+            m = plus_petit(m, pl.decimal());
         }
         // A qui payer, si la couche le dit.
         let a_payer: String = std::iter::once(format!("en {}", annee_entiere(&an)? + 1))
@@ -750,7 +750,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         }
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone()).d("masse", masse).d("taux", taux).d("montant", m).t("a_payer", a_payer);
+        l.t("annee", an.clone()).d("masse", masse).d("taux", taux.decimal()).d("montant", m).t("a_payer", a_payer);
         lignes.push(l);
     }
     avert.push("Assiette : le brut du livre de paie, tous salariés. Le texte parle de masse salariale ou de masse déclarée en retraite complémentaire : pour une compagnie du spectacle, c'est le même brut.".to_string());

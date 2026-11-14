@@ -429,7 +429,7 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<Decimal> {
     let mut val = None;
     for e in entrees {
         if e.depuis.is_none_or(|d| d <= jour) {
-            val = Some(e.valeur);
+            val = Some(e.valeur.decimal());
         }
     }
     val.ok_or_else(|| socle::refus!("Aucun SMIC au {} dans le socle {}.", jour.iso(), millesime))

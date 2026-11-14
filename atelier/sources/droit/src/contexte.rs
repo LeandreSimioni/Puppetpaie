@@ -930,7 +930,7 @@ fn smic_en_vigueur(liste: &[crate::forme_bareme::Datee], jour: &Jour) -> R<Optio
     let mut entrees: Vec<(Jour, Decimal)> = Vec::new();
     for e in liste {
         let depuis = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Le barème de l'année est incomplet : le signaler au développeur.", "smic_horaire.depuis", ""))?;
-        entrees.push((depuis, e.valeur));
+        entrees.push((depuis, e.valeur.decimal()));
     }
     entrees.sort_by_key(|(j, _)| *j);
     Ok(entrees.into_iter().filter(|(j, _)| j <= jour).last())

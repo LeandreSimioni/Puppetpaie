@@ -351,19 +351,11 @@ pub fn grille<'a>(bareme: &'a Pile, le: Option<Jour>, zone: &str) -> RPas<&'a Gr
 pub fn taux_par_defaut(bareme: &Pile, montant: Decimal, le: Option<Jour>, zone: &str) -> RPas<(TauxDePas, TypeDeTauxPas)> {
     let g = grille(bareme, le, zone)?;
     for t in &g.tranches {
-        let (bas, haut, taux) = match t.as_slice() {
-            [Some(b), h, Some(x)] => (b.0, h.map(|h| h.0), x.0),
-            _ => {
-                return Err(ErreurPas::Autre(socle::echec::refus_avec(
-                    "Une tranche de la grille du PAS ne se lit pas : elle porte un bas, un haut et un taux.",
-                    socle::echec::Lieu { cle: Some("pas_taux_par_defaut".to_string()), detail: Some(format!("{:?}", t)), ..Default::default() },
-                )))
-            }
-        };
+        let (bas, haut) = (t.bas.decimal(), t.haut.map(Montant::decimal));
         // La derniere tranche n'a pas de haut.
         if montant >= bas && haut.is_none_or(|h| montant < h) {
             // Le taux de la grille (CGI 204 H, III) a deux decimales au plus : il s'ecrit avec ses deux decimales.
-            let mut taux = taux.round_dp(2);
+            let mut taux = t.taux.decimal().round_dp(2);
             taux.rescale(2);
             return match TauxDePas::du_decimal(taux) {
                 Some(t) => Ok((t, g.genre)),
