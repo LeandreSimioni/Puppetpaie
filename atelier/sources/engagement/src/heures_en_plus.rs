@@ -20,7 +20,8 @@ use droit::forme_bareme::{IdDeCotisation, CSG_CRDS_ND, CSG_DED, MUTUELLE, VIEIL_
 use socle::texte::{euros, virgule};
 use socle::echec::{refus, R};
 use socle::mois::Mois;
-use socle::num::{court, eur2, Decimal};
+use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
+use socle::num::{court, Decimal};
 
 /// Les faits du mois, sur la carte d'un salarie paye au mois.
 pub const HEURES_SUPPLEMENTAIRES: &str = "heures_supplementaires";
@@ -124,11 +125,11 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, qu
 /// Ce que les heures en plus d'une paie font apres ses cotisations.
 pub(crate) struct Suites {
     pub lignes: Vec<LigneCotisation>,
-    pub reduction: Decimal,
-    pub deduction: Decimal,
-    pub remuneration: Decimal,
-    pub heures: Decimal,
-    pub exonere: Decimal,
+    pub reduction: Montant,
+    pub deduction: Montant,
+    pub remuneration: Montant,
+    pub heures: Heures,
+    pub exonere: Montant,
     pub avis: Vec<String>,
 }
 
@@ -147,83 +148,90 @@ pub(crate) struct Suites {
 ///   autres cotisations salariales, a leur taux moyen sur le brut, laissent apres la reduction ; la limite annuelle de
 ///   7 500 EUR se compte sur ce net, dans l'annee civile, chez l'employeur (`deja`).
 pub(crate) fn apres_les_cotisations(
-    ctx: &Contexte, bar: &droit::forme_bareme::Pile, lb: &[LigneBrut], lignes: &[LigneCotisation], brut: Decimal, tot_pat: Decimal, deja: impl FnOnce() -> R<Decimal>,
+    ctx: &Contexte, bar: &droit::forme_bareme::Pile, lb: &[LigneBrut], lignes: &[LigneCotisation], brut: Montant, tot_pat: Montant, deja: impl FnOnce() -> R<Montant>,
 ) -> R<Option<Suites>> {
     let siennes: Vec<&LigneBrut> = lb.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE || l.code == HEURE_COMPLEMENTAIRE).collect();
-    let remuneration = siennes.iter().fold(Decimal::new(0, 2), |a, l| a + l.montant);
-    if remuneration <= Decimal::ZERO || brut <= Decimal::ZERO {
+    let remuneration = siennes.iter().fold(Montant::ZERO, |a, l| a + Montant::du_decimal(l.montant));
+    if remuneration <= Montant::ZERO || brut <= Montant::ZERO {
         return Ok(None);
     }
-    let heures = siennes.iter().fold(Decimal::ZERO, |a, l| a + l.quantite);
-    let supplementaires = siennes.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).fold(Decimal::ZERO, |a, l| a + l.quantite);
-    let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(Decimal::ZERO, |a, l| a + l.montant_sal);
+    let heures = siennes.iter().fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite));
+    let supplementaires = siennes.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).fold(Heures::ZERO, |a, l| a + Heures::du_decimal(l.quantite));
+    let rien = Montant::du_decimal(Decimal::ZERO);
+    let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(rien, |a, l| a + Montant::du_decimal(l.montant_sal));
     let mut avis = Vec::new();
 
     // La reduction salariale.
     let vieillesse = sal(&|l| l.famille == droit::forme_bareme::FAMILLE_RETRAITE);
-    let taux = (vieillesse / brut * Decimal::ONE_HUNDRED).min(droit::heures_en_plus::taux_maximum_de_reduction()?).round_dp(2);
+    let taux = Taux::du_decimal(vieillesse.decimal() / brut.decimal() * Decimal::ONE_HUNDRED)
+        .min(Taux::du_decimal(droit::heures_en_plus::taux_maximum_de_reduction()?))
+        .a_deux_decimales();
     let de_base = sal(&|l| l.est(&VIEIL_PLAF) || l.est(&VIEIL_DEPLAF));
-    let reduction = eur2(remuneration * taux / Decimal::ONE_HUNDRED).min(de_base).max(Decimal::new(0, 2));
-    let genre = if supplementaires.is_zero() { "complémentaires" } else { "supplémentaires" };
+    let reduction = remuneration.fois_taux(taux).au_centime().min(de_base).max(Montant::ZERO);
+    let genre = if supplementaires.est_nul() { "complémentaires" } else { "supplémentaires" };
     let mut out = vec![LigneCotisation {
         id: REDUCTION,
         famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
         libelle: format!("Réduction de cotisations salariales sur heures {}", genre),
-        base: remuneration,
+        base: remuneration.decimal(),
         taux_pat: None,
-        montant_pat: Decimal::new(0, 2),
-        taux_sal: Some(court(taux)),
-        montant_sal: -reduction,
+        montant_pat: Montant::ZERO.decimal(),
+        taux_sal: Some(court(taux.decimal())),
+        montant_sal: (-reduction).decimal(),
         masquer_base_et_taux: false,
     }];
 
     // La deduction patronale, des heures supplementaires seules.
-    let mut deduction = Decimal::new(0, 2);
-    if !supplementaires.is_zero() {
+    let mut deduction = Montant::ZERO;
+    if !supplementaires.est_nul() {
         let annee = ctx.lue_au.an;
         let au_moins_20 = ctx.effectif()?.atteint(20, annee).map_err(|e| {
             e.reformuler(|p| format!("La déduction patronale des heures supplémentaires dépend de l'effectif (CSS L241-18, L241-18-1 : moins de vingt salariés ou au moins vingt). {}", p))
         })?;
-        deduction = eur2(supplementaires * droit::heures_en_plus::deduction_par_heure(au_moins_20)?).min(tot_pat.max(Decimal::new(0, 2)));
-        if !deduction.is_zero() {
+        let par_heure = MontantUnitaire::du_decimal(droit::heures_en_plus::deduction_par_heure(au_moins_20)?);
+        deduction = (supplementaires * par_heure).au_centime().min(tot_pat.max(Montant::ZERO));
+        if !deduction.est_nul() {
             out.push(LigneCotisation {
                 id: DEDUCTION,
                 famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
                 libelle: "Déduction patronale sur heures supplémentaires".into(),
-                base: supplementaires,
+                base: supplementaires.decimal(),
                 taux_pat: None,
-                montant_pat: -deduction,
+                montant_pat: (-deduction).decimal(),
                 taux_sal: None,
-                montant_sal: Decimal::new(0, 2),
+                montant_sal: Montant::ZERO.decimal(),
                 masquer_base_et_taux: true,
             });
         }
     }
 
     // L'exoneration d'impot : le net des heures.
-    let abattement = bar.abattement_csg;
+    let abattement = Coefficient::du_decimal(bar.abattement_csg);
     // La CSG deductible que la paie retient (une paie sans CSG n'en deduit rien) ; sa ligne porte son taux.
-    let taux_csg = lignes
-        .iter()
-        .filter(|l| l.est(&CSG_DED))
-        .take(1)
-        .map(|l| l.taux_sal.ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial")))
-        .sum::<R<Decimal>>()?;
-    let csg_deductible = eur2(remuneration * abattement * taux_csg / Decimal::ONE_HUNDRED);
+    let taux_csg = Taux::du_decimal(
+        lignes
+            .iter()
+            .filter(|l| l.est(&CSG_DED))
+            .take(1)
+            .map(|l| l.taux_sal.ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial")))
+            .sum::<R<Decimal>>()?,
+    );
+    let csg_deductible = (remuneration * abattement).fois_taux(taux_csg).au_centime();
     let autres = sal(&|l| !(l.est(&CSG_DED) || l.est(&CSG_CRDS_ND) || l.est(&MUTUELLE)));
-    let leurs_cotisations = eur2(autres * remuneration / brut);
-    let net = (remuneration - csg_deductible - (leurs_cotisations - reduction).max(Decimal::ZERO)).max(Decimal::new(0, 2));
+    let leurs_cotisations = Montant::du_decimal(autres.decimal() * remuneration.decimal() / brut.decimal()).au_centime();
+    let net = (remuneration - csg_deductible - (leurs_cotisations - reduction).max(rien)).max(Montant::ZERO);
     let deja = deja()?;
-    let reste = (droit::heures_en_plus::limite_de_l_exoneration()? - deja).max(Decimal::new(0, 2));
+    let limite = Montant::du_decimal(droit::heures_en_plus::limite_de_l_exoneration()?);
+    let reste = (limite - deja).max(Montant::ZERO);
     let exonere = net.min(reste);
     if exonere < net {
         avis.push(format!(
             "Heures en plus : {} nets exonérés d'impôt cette année avant ce mois ; la limite de {} (CGI 81 quater) laisse {} \
              exonérés ce mois, le reste ({}) est imposable.",
-            euros(deja),
-            euros(droit::heures_en_plus::limite_de_l_exoneration()?),
-            euros(exonere),
-            euros(net - exonere)
+            euros(deja.decimal()),
+            euros(limite.decimal()),
+            euros(exonere.decimal()),
+            euros((net - exonere).decimal())
         ));
     }
     Ok(Some(Suites { lignes: out, reduction, deduction, remuneration, heures, exonere, avis }))

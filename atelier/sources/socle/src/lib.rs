@@ -14,6 +14,7 @@ pub mod fichiers;
 pub mod fil_de_fond;
 pub mod forme;
 pub mod garde_reseau;
+pub mod grandeurs;
 pub mod html;
 pub mod iban;
 pub mod json_ascii;

@@ -192,9 +192,11 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 
 | notion | son type | déclaré dans |
 |---|---|---|
-| montant | à créer (#419) : `Montant` | `socle` |
-| taux | à créer (#419) : `Taux` | — |
-| quantité | à créer (#419) : `Heures`, `Cachets`, `Jours` | — |
+| montant | `Montant` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
+| taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
+| quantité | `Heures`, `Cachets`, `Jours` ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
+| coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
+| montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
 
 **Le détail**
@@ -207,6 +209,13 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   taux de PAS est sa notion à lui, `droit::pas::TauxDePas`.
 - **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui `Decimal`, `i64`,
   `engagement::ligne::Chiffre`.
+- **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
+  coefficient de la réduction générale) ; montant × coefficient = montant.
+- **montant unitaire** : des euros par unité d'une ligne de paie (par heure, par cachet, par jour), le « taux » d'une
+  ligne ; quantité × montant unitaire = montant.
+- Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
+  Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`), dits par
+  l'attribut serde du champ. Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`.
 - **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte.
 
 **Les identifiants**

@@ -1725,17 +1725,18 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.9 bis : les heures en plus d'un salarie paye au mois (`heures_en_plus`) : la reduction de cotisations salariales,
     // la deduction patronale, et le net exonere d'impot, que la remuneration nette fiscale ne prend pas.
     let mois_paye = fin_periode.mois_civil();
-    let heures_en_plus =
-        crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, tot_pat, || crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id))?;
+    let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, socle::grandeurs::Montant::du_decimal(brut), socle::grandeurs::Montant::du_decimal(tot_pat), || {
+        crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id).map(socle::grandeurs::Montant::du_decimal)
+    })?;
     let mut exonere = zero;
     if let Some(h) = &heures_en_plus {
         lignes.extend(h.lignes.iter().cloned());
-        tot_sal -= h.reduction;
-        tot_pat -= h.deduction;
-        exonere = h.exonere;
-        bases.insert(Assiette::HeuresEnPlus, h.remuneration);
-        bases.insert(Assiette::HeuresEnPlusHeures, h.heures);
-        bases.insert(Assiette::HeuresEnPlusExonere, h.exonere);
+        tot_sal -= h.reduction.decimal();
+        tot_pat -= h.deduction.decimal();
+        exonere = h.exonere.decimal();
+        bases.insert(Assiette::HeuresEnPlus, h.remuneration.decimal());
+        bases.insert(Assiette::HeuresEnPlusHeures, h.heures.decimal());
+        bases.insert(Assiette::HeuresEnPlusExonere, h.exonere.decimal());
     }
     // Les indemnites journalieres que la compagnie subrogee reverse (`maintien::lignes`) : le montant net social les
     // compte, la DSN les dit en S21.G00.58 de type 10, et le prelevement a la source les prend pour assiette, a cote du

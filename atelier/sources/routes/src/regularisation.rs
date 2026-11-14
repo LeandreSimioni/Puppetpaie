@@ -13,9 +13,9 @@ use socle::echec::Classe;
 use engagement::calcul::Paie;
 use engagement::numeros::NumeroContrat;
 use droit::contexte::Contexte;
-use socle::echec::R;
+use socle::echec::{refus, R};
+use socle::grandeurs::{ecrit, Cachets, Heures, Jours, Montant};
 use socle::mois::{Graphie, Mois};
-use socle::num::{q2, Decimal};
 use crate::etapes::Moteur;
 
 // ------------------------------------------------------------------ le mois d'origine
@@ -23,94 +23,86 @@ use crate::etapes::Moteur;
 /// Le resume d'une paie, comme la DSN la declare : ses montants au centime, son activite.
 #[derive(Debug, Serialize)]
 pub(crate) struct Resume {
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    brut: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    net_a_payer: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    net_imposable: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    cotisations_salariales: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    cotisations_patronales: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    cout_employeur: Decimal,
-    cachets: i64,
+    #[serde(serialize_with = "ecrit::centimes::serialize")]
+    brut: Montant,
+    #[serde(serialize_with = "ecrit::centimes::serialize")]
+    net_a_payer: Montant,
+    #[serde(serialize_with = "ecrit::centimes::serialize")]
+    net_imposable: Montant,
+    #[serde(serialize_with = "ecrit::centimes::serialize")]
+    cotisations_salariales: Montant,
+    #[serde(serialize_with = "ecrit::centimes::serialize")]
+    cotisations_patronales: Montant,
+    #[serde(serialize_with = "ecrit::centimes::serialize")]
+    cout_employeur: Montant,
+    #[serde(serialize_with = "ecrit::entier::serialize")]
+    cachets: Cachets,
     /// Les heures au centieme ; `None` : un engagement qui ne compte pas d'heures.
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
-    heures: Option<Decimal>,
-    jours: i64,
+    #[serde(serialize_with = "ecrit::sans_zero::option::serialize")]
+    heures: Option<Heures>,
+    #[serde(serialize_with = "ecrit::entier::serialize")]
+    jours: Jours,
     remuneration: Vec<String>,
 }
 
 /// Ce que la correction declare : l'ecart de chaque montant et de l'activite, de la paie declaree a la presente.
 #[derive(Debug, Serialize)]
 pub(crate) struct Ecart {
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    brut: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    net_a_payer: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    net_imposable: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    cotisations_salariales: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    cotisations_patronales: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    cout_employeur: Decimal,
-    cachets: i64,
+    #[serde(serialize_with = "ecrit::texte::serialize")]
+    brut: Montant,
+    #[serde(serialize_with = "ecrit::texte::serialize")]
+    net_a_payer: Montant,
+    #[serde(serialize_with = "ecrit::texte::serialize")]
+    net_imposable: Montant,
+    #[serde(serialize_with = "ecrit::texte::serialize")]
+    cotisations_salariales: Montant,
+    #[serde(serialize_with = "ecrit::texte::serialize")]
+    cotisations_patronales: Montant,
+    #[serde(serialize_with = "ecrit::texte::serialize")]
+    cout_employeur: Montant,
+    #[serde(serialize_with = "ecrit::entier::serialize")]
+    cachets: Cachets,
     /// `None` : l'une des deux paies ne compte pas d'heures.
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
-    heures: Option<Decimal>,
+    #[serde(serialize_with = "ecrit::sans_zero::option::serialize")]
+    heures: Option<Heures>,
 }
 
-/// Les montants d'une paie au centime, dans l'ordre de `Resume`.
-fn montants(p: &Paie) -> [Decimal; 6] {
-    [p.brut, p.net_a_payer, p.net_imposable, p.total_sal, p.total_pat, p.cout_employeur].map(|x| x.round_dp(2))
+/// Les montants d'une paie au centime, la moitie au pair, dans l'ordre de `Resume`.
+fn montants(p: &Paie) -> [Montant; 6] {
+    [p.brut, p.net_a_payer, p.net_imposable, p.total_sal, p.total_pat, p.cout_employeur].map(|x| Montant::du_decimal(x.round_dp(2)))
 }
 
 /// Les heures d'une paie au centieme : la somme flottante des lignes (151,67 - 63) ne se montre pas avec ses residus.
-fn heures(p: &Paie) -> R<Option<Decimal>> {
-    match p.engagement.heures {
-        Some(h) => Ok(Some(h.round_dp(2).normalize())),
-        None => Ok(None),
+fn heures(p: &Paie) -> Option<Heures> {
+    p.engagement.heures.map(|h| Heures::du_decimal(h.round_dp(2)))
+}
+
+fn resume(p: &Paie) -> Resume {
+    let [brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur] = montants(p);
+    Resume {
+        brut,
+        net_a_payer,
+        net_imposable,
+        cotisations_salariales,
+        cotisations_patronales,
+        cout_employeur,
+        cachets: Cachets::du_decimal(p.engagement.cachets.into()),
+        heures: heures(p),
+        jours: Jours::du_decimal(p.engagement.jours.into()),
+        remuneration: p.remuneration.iter().map(|l| l.designation()).collect(),
     }
 }
 
-fn resume(p: &Paie) -> R<Resume> {
-    let [brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur] = montants(p).map(q2);
-    Ok(Resume {
-        brut,
-        net_a_payer,
-        net_imposable,
-        cotisations_salariales,
-        cotisations_patronales,
-        cout_employeur,
-        cachets: p.engagement.cachets,
-        heures: heures(p)?,
-        jours: p.engagement.jours,
-        remuneration: p.remuneration.iter().map(|l| l.designation()).collect(),
-    })
-}
-
 /// L'ecart de `avant` a `apres` : la page le montre sans le calculer (regle 2).
-fn ecart(avant: &Paie, apres: &Paie) -> R<Ecart> {
+fn ecart(avant: &Paie, apres: &Paie) -> Ecart {
     let (a, b) = (montants(avant), montants(apres));
     let [brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur] = std::array::from_fn(|i| b[i] - a[i]);
-    let heures = match (heures(avant)?, heures(apres)?) {
-        (Some(x), Some(y)) => Some((y - x).normalize()),
+    let heures = match (heures(avant), heures(apres)) {
+        (Some(x), Some(y)) => Some(y - x),
         _ => None,
     };
-    Ok(Ecart {
-        brut,
-        net_a_payer,
-        net_imposable,
-        cotisations_salariales,
-        cotisations_patronales,
-        cout_employeur,
-        cachets: apres.engagement.cachets - avant.engagement.cachets,
-        heures,
-    })
+    let cachets = |p: &Paie| Cachets::du_decimal(p.engagement.cachets.into());
+    Ecart { brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur, cachets: cachets(apres) - cachets(avant), heures }
 }
 
 /// Ce que la page dit d'une correction qui change les dates du contrat : les dates declarees, les corrigees, ce que la
@@ -299,9 +291,9 @@ fn nom_de(p: &Paie) -> String {
 /// qu'aucune DSN n'a declare ; `apres` : celle de la version presente), resumees comme la DSN les declare, et ce que la
 /// correction en declare.
 fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> {
-    let r_avant = avant.map(resume).transpose()?;
-    let r_apres = resume(apres)?;
-    let ecart = avant.map(|a| ecart(a, apres)).transpose()?;
+    let r_avant = avant.map(resume);
+    let r_apres = resume(apres);
+    let ecart = avant.map(|a| ecart(a, apres));
     let dates = match avant {
         Some(a) if bornes(a) != bornes(apres) => Some(phrase_des_dates(mois, &bornes(a), &bornes(apres))),
         _ => None,
@@ -310,9 +302,10 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
         Some(n) => format!("contrat {}, {}", n, apres.engagement.debut.jj_mm_aaaa()),
         None => format!("contrat du {}", apres.engagement.debut.jj_mm_aaaa()),
     };
+    let dit = |m: Montant| ecrit::centimes::texte(m).map_err(refus);
     let montants = match &r_avant {
-        Some(a) => format!("brut {} → {}, net {} → {}", a.brut, r_apres.brut, a.net_a_payer, r_apres.net_a_payer),
-        None => format!("ajouté : brut {}, net {}", r_apres.brut, r_apres.net_a_payer),
+        Some(a) => format!("brut {} → {}, net {} → {}", dit(a.brut)?, dit(r_apres.brut)?, dit(a.net_a_payer)?, dit(r_apres.net_a_payer)?),
+        None => format!("ajouté : brut {}, net {}", dit(r_apres.brut)?, dit(r_apres.net_a_payer)?),
     };
     Ok(Correction {
         infos_dit: format!("{} — {}", contrat, montants),
