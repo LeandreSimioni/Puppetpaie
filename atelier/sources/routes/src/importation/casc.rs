@@ -660,7 +660,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
-        let artiste = c.pcs_ese.as_ref().is_some_and(|p| p.starts_with("354"));
+        let artiste = c.pcs_ese.as_ref().is_some_and(droit::fiche::CodePcsEse::est_un_artiste_du_spectacle);
         let nir = i.nir.clone();
         let cle = (x.annee, nir.clone());
         let total = match cumul.iter_mut().find(|(k, _)| *k == cle) {

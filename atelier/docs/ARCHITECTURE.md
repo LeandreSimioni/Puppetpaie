@@ -715,6 +715,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
+| sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
 | source de la durée d'un préavis | `SourceDuPreavis` | `engagement/src/solde.rs` |
@@ -865,8 +866,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   écrite en deux champs, `nom` et `cle` (`null` pour l'entreprise et une fiche à créer) ; que porte une fiche de la
   réponse de l'import (`FicheImportee`).
 - **pièce d'où vient une valeur reprise** : la DSN, un bulletin, un certificat Congés Spectacles, une AEM, ou
-  l'historique déjà repris ; écrite `dsn`, `bulletin`, `certificat`, `AEM`, `historique` (`nom()`), et « DSN » sur une
-  carte d'un mois importé (`import::mois`). Que portent l'origine d'une valeur de la réponse (`Origine`), la paie qu'un
+  l'historique déjà repris ; écrite `dsn`, `bulletin`, `certificat`, `AEM`, `historique` (`nom()`), « DSN » sur une
+  carte d'un mois importé (`import::mois`), `DSN`, `certificats`, `bulletins` dans l'état de l'import
+  (`routes::import`, une reprise). Que portent l'origine d'une valeur de la réponse (`Origine`), la paie qu'un
   bulletin complète (`EcartPaie.source`), un contrat du registre des attestations (`import::attestes::Atteste`), d'où
   vient chaque montant d'une carte et la pièce qui y déclare la paie. Ce qui atteste un contrat
   (`engagement::importe::Attestation`) est une autre notion : un contrat de l'historique garde la sienne.
@@ -877,6 +879,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **avertissement d'un bulletin lu** : ce qu'un bulletin lu signale sans être refusé : une incohérence (la page se
   contredit, le bulletin fait foi), un libellé absent de la table de lecture, une autre faute de lecture ; écrit par sa
   phrase (`texte`, « incohérent : … », « libellé inconnu : « … » »).
+- **sorte d'un message à l'éditeur** : un incident de ce poste, ou un signalement que la compagnie lui a envoyé ; écrite
+  `incident`, `signalement` (l'état de l'import, `canal`).
 - **image de l'identité de la compagnie** : sa signature, son cachet (le tampon), son logo ; écrite `signature`,
   `cachet`, `logo` (le nom du fichier posé et de la charge) ; la largeur qu'un document en imprime
   (`largeur_imprimee`).

@@ -167,7 +167,7 @@ struct Document {
 struct Envoi {
     quoi: &'static str,
     acte: String,
-    mode: &'static str,
+    mode: envois::ligne::Mode,
     quand: socle::paris::InstantOuJour,
     fichier: Option<NomDeFichier>,
     flux: Option<IdDeFlux>,
@@ -1082,7 +1082,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
         envois.push(Envoi {
             quoi: l.acte().nom(),
             acte: acte(ctx, l),
-            mode: l.mode().nom(),
+            mode: l.mode(),
             quand: l.quand(),
             fichier: l.fichier().cloned(),
             flux: l.flux().cloned(),
@@ -1095,7 +1095,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
         });
     }
     // Le plus recent en premier : c'est le dernier envoi qu'on vient lire ; a la meme heure, le reel devant son test.
-    envois.sort_by(|a, b| (&b.quand, b.mode == "reel").cmp(&(&a.quand, a.mode == "reel")));
+    envois.sort_by(|a, b| (&b.quand, b.mode == envois::ligne::Mode::Reel).cmp(&(&a.quand, a.mode == envois::ligne::Mode::Reel)));
     let documents = documents(ctx, le_mois, &lignes)?;
     let phrase = format!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
     Ok(Historique { phrase, mois: le_mois, documents, envois })

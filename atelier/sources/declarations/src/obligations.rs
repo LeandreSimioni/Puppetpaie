@@ -228,6 +228,17 @@ impl CleDObligation {
         }
     }
 
+    /// Un signalement d'evenement, qui part en DSN (arret, son rectificatif, reprise, fin de contrat) ?
+    pub fn est_un_signalement(self) -> bool {
+        match self {
+            CleDObligation::SignalementArret
+            | CleDObligation::SignalementArretRectificatif
+            | CleDObligation::SignalementReprise
+            | CleDObligation::SignalementFinContrat => true,
+            CleDObligation::DeclarationAccident | CleDObligation::DeclarationMaladieProfessionnelle | CleDObligation::AttestationSalaire => false,
+        }
+    }
+
     /// L'obligation dont `nom` est le nom ; `None` pour un nom qui n'en est aucun.
     pub fn de_son_nom(nom: &str) -> Option<CleDObligation> {
         [

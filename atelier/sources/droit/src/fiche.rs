@@ -464,6 +464,17 @@ texte_borne! {
 (S21.G00.40.004). Corrigez-le";
 }
 
+impl CodePcsEse {
+    /// UN EMPLOI D'ARTISTE DU SPECTACLE : un code du groupe 354. Les rubriques deposees de ce groupe sont des artistes
+    /// « dans le cadre d'un spectacle vivant ou audiovisuel » (Insee, PCS-ESE 2017,
+    /// `atelier/reference/sources/insee-pcs-ese-2017-fiches/354b.txt`, `354c.txt`, `354e.txt`, l. 34-35), et les
+    /// « Artistes du cirque et des spectacles divers » (`354f.txt`, l. 34). INFERENCE : le groupe entier se lit ainsi ;
+    /// ses autres rubriques ne sont pas deposees.
+    pub fn est_un_artiste_du_spectacle(&self) -> bool {
+        self.0.starts_with("354")
+    }
+}
+
 /// LE CODE EMPLOI DECLARE d'un emploi (S21.G00.40.005, « Code complément PCS-ESE ») : « X [2,6] », d'une des tables
 /// « CCP - Code Complément PCS-ESE, NEHMED [...], NEHNMED [...], ART - Code détaillé des professions du spectacle
 /// (complément PCS-ESE), NET, NNE et FESAIEG [...], CMET » (cahier technique DSN 2026.1, p. 183-185,

@@ -21,7 +21,7 @@ use serde::Serialize;
 
 use import::dsn_aem::{self, SalarieDeclare};
 use import::proposee;
-use import::reponse::{en_mots, n_mots, DitPar, Ecart, EtatFiche, FicheImportee, FicheVisee, Importation, Origine};
+use import::reponse::{en_mots, n_mots, DitPar, Ecart, EtatFiche, FicheImportee, FicheVisee, Importation, Origine, Source};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, OPERATION, SALARIE};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
@@ -216,9 +216,9 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
         Some(code) => droit::emplois::metier(code)?,
         None => None,
     };
-    let statut = match (&m, emploi.and_then(|e| e.pcs_ese.as_deref())) {
+    let statut = match (&m, emploi.and_then(|e| e.pcs_ese.as_ref())) {
         (Some(m), _) => Some(m.statut()),
-        (None, Some(pcs)) if pcs.starts_with("354") => Some(droit::fiche::Statut::Artiste),
+        (None, Some(pcs)) if pcs.est_un_artiste_du_spectacle() => Some(droit::fiche::Statut::Artiste),
         (None, Some(_)) => Some(droit::fiche::Statut::Technicien),
         (None, None) => None,
     };
@@ -744,12 +744,12 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let attend_editeur = editeur.iter().filter(|x| !x.repondu).count();
     let reprises = reprises_faites(racine, &contrats, &paies)?;
     // L'historique repris en une ligne (`repris_dit`), et son titre : le jour de la derniere reprise.
-    let nombre = |source: &str| -> usize { reprises.iter().filter(|r| r.source == source).map(|r| r.nombre).sum() };
-    let declarations: usize = reprises.iter().filter(|r| r.source == "DSN").filter_map(|r| r.declarations).sum();
+    let nombre = |source: Source| -> usize { reprises.iter().filter(|r| r.source == source).map(|r| r.nombre).sum() };
+    let declarations: usize = reprises.iter().filter(|r| r.source == Source::Dsn).filter_map(|r| r.declarations).sum();
     let quoi: Vec<String> = [
-        n_mots(nombre("bulletins"), "bulletin"),
-        n_mots(declarations + nombre("AEM"), "déclaration"),
-        n_mots(nombre("certificats"), "certificat"),
+        n_mots(nombre(Source::Bulletin), "bulletin"),
+        n_mots(declarations + nombre(Source::Aem), "déclaration"),
+        n_mots(nombre(Source::Certificat), "certificat"),
         n_mots(contrats.len(), "contrat"),
     ]
     .into_iter()
@@ -837,7 +837,8 @@ impl Dite for EtatImportation {
 /// Une source reprise, telle que la page la lit.
 #[derive(Debug, Serialize)]
 struct RepriseVue {
-    source: &'static str,
+    #[serde(serialize_with = "source_de_la_reprise")]
+    source: Source,
     quoi: &'static str,
     nombre: usize,
     du: Option<MoisOuJour>,
@@ -853,10 +854,30 @@ struct RepriseVue {
     copies: Option<usize>,
 }
 
+/// La piece d'une reprise, ecrite comme l'etat de l'import la montre : `DSN`, `AEM`, `certificats`, `bulletins`.
+fn source_de_la_reprise<S: serde::Serializer>(source: &Source, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(match source {
+        Source::Dsn => "DSN",
+        Source::Aem => "AEM",
+        Source::Certificat => "certificats",
+        Source::Bulletin => "bulletins",
+        Source::Historique => "historique",
+    })
+}
+
+/// CE QUI PARLE A L'EDITEUR : un incident de ce poste, ou un signalement que la compagnie lui a envoye ; ecrit
+/// `incident`, `signalement`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum SorteDeMessage {
+    Incident,
+    Signalement,
+}
+
 /// Un incident ou un signalement de ce poste qui parle de l'import, tel que la page le lit.
 #[derive(Debug, Serialize)]
 struct MessageEditeur {
-    canal: &'static str,
+    canal: SorteDeMessage,
     #[serde(with = "socle::paris::ecrit::seconde")]
     quand: socle::paris::Moment,
     resume: String,
@@ -911,7 +932,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
     }
     let copies = copies_reprises(racine)?;
     let mut out = Vec::new();
-    let base = |source: &'static str, quoi: &'static str, r: &Reprise| RepriseVue {
+    let base = |source: Source, quoi: &'static str, r: &Reprise| RepriseVue {
         source,
         quoi,
         nombre: r.nombre,
@@ -923,16 +944,16 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
         copies: None,
     };
     if dsn.nombre > 0 {
-        out.push(RepriseVue { declarations: Some(mois_dsn.len()), ..base("DSN", "versements déclarés", &dsn) });
+        out.push(RepriseVue { declarations: Some(mois_dsn.len()), ..base(Source::Dsn, "versements déclarés", &dsn) });
     }
     if aem.nombre > 0 {
-        out.push(base("AEM", "contrats attestés", &aem));
+        out.push(base(Source::Aem, "contrats attestés", &aem));
     }
     if certificats.nombre > 0 {
-        out.push(base("certificats", "certificats Congés Spectacles", &certificats));
+        out.push(base(Source::Certificat, "certificats Congés Spectacles", &certificats));
     }
     if bulletins.nombre > 0 || contrats_bulletins.nombre > 0 || copies > 0 {
-        let mut b = RepriseVue { contrats: Some(contrats_bulletins.nombre), copies: Some(copies), ..base("bulletins", "bulletins de paie", &bulletins) };
+        let mut b = RepriseVue { contrats: Some(contrats_bulletins.nombre), copies: Some(copies), ..base(Source::Bulletin, "bulletins de paie", &bulletins) };
         if b.le.is_none() {
             b.le = contrats_bulletins.le;
         }
@@ -981,22 +1002,25 @@ fn attend_l_editeur(racine: &Path) -> R<Vec<MessageEditeur>> {
         }
         let parti = l.envoi.etat == compagnie::incidents::DEPOSE;
         let dit = if l.resume.is_empty() { l.genre } else { l.resume };
-        out.push(message("incident", l.quand,Some(dit), parti, false));
+        out.push(message(SorteDeMessage::Incident, l.quand,Some(dit), parti, false));
     }
     for s in compagnie::problemes::signalements(racine)? {
         if !parle_d_import(&s.garde.texte) {
             continue;
         }
         let (parti, repondu) = (s.etat == compagnie::problemes::EtatDuMessage::Arrive, s.garde.reponse.is_some());
-        out.push(message("signalement", s.garde.quand,Some(s.garde.texte), parti, repondu));
+        out.push(message(SorteDeMessage::Signalement, s.garde.quand,Some(s.garde.texte), parti, repondu));
     }
     Ok(out)
 }
 
 /// Un message a l'editeur, son titre et sa pastille : la reponse recue, faite ; le reste attend l'editeur, rien que la
 /// compagnie ait a faire.
-fn message(canal: &'static str, quand: socle::paris::Moment,resume: Option<String>, parti: bool, repondu: bool) -> MessageEditeur {
-    let quoi = if canal == "signalement" { "Message à l'éditeur" } else { "Incident" };
+fn message(canal: SorteDeMessage, quand: socle::paris::Moment,resume: Option<String>, parti: bool, repondu: bool) -> MessageEditeur {
+    let quoi = match canal {
+        SorteDeMessage::Signalement => "Message à l'éditeur",
+        SorteDeMessage::Incident => "Incident",
+    };
     let titre_dit = format!("{} du {}", quoi, quand.dit());
     let pastille = match (repondu, parti) {
         (true, _) => socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "réponse reçue"),
