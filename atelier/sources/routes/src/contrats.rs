@@ -354,7 +354,7 @@ pub(crate) struct ContratASigner {
     pub(crate) numero: Option<NumeroContrat>,
     pub(crate) demande_le: Option<InstantOuJour>,
     pastille: Option<Pastille>,
-    pub(crate) par: Option<&'static str>,
+    pub(crate) par: Option<etats::ModeDeRemise>,
     /// Un courriel a deja demande de signer ce contrat (le journal le dit) : le redemander est un rappel.
     #[serde(skip)]
     pub(crate) demande_par_courriel: bool,
@@ -948,7 +948,12 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         };
         // Le jour du depart, « JJ/MM », s'il est dit.
         let le: String = depuis.map(|q| q.jour()).map(|j| format!(" le {:02}/{:02}", j.jour, j.mois)).into_iter().collect();
-        let attente = format!("{}{}{}", ce, if par == Some("imprime") { "imprimé" } else { "envoyé" }, le);
+        // Sans remise notee au journal, la phrase dit « envoyé ».
+        let remis = match par {
+            Some(m) => m.en_mots(),
+            None => "envoyé",
+        };
+        let attente = format!("{}{}{}", ce, remis, le);
         let numero = p.engagement.numero.clone();
         let demande_par_courriel = demandes_par_courriel.contains(&k);
         let (recu_g, relancer) = if en_attente {

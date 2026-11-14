@@ -469,8 +469,8 @@ pub(crate) struct ChoixEtablissement {
     /// Le NIC de l'etablissement ; aucun pour le siege (un engagement du siege n'en ecrit pas).
     nic: Option<droit::fiche::Nic>,
     nom: String,
-    ouverture: Option<String>,
-    fermeture: Option<String>,
+    ouverture: Option<socle::date::Jour>,
+    fermeture: Option<socle::date::Jour>,
 }
 
 /// CE QU'UN ENGAGEMENT CHOISIT quand la compagnie a d'autres etablissements que le siege : le siege (`nic` absent) puis
@@ -501,7 +501,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
             None => format!("ouvert le {}", o.jj_mm_aaaa()),
         });
         let nom = if nom.is_empty() { nic.to_string() } else { nom };
-        out.push(ChoixEtablissement { periode_dit, nom, nic: Some(nic), ouverture: e.ouverture.map(|j| j.iso()), fermeture: fermeture.map(|j| j.iso()) });
+        out.push(ChoixEtablissement { periode_dit, nom, nic: Some(nic), ouverture: e.ouverture, fermeture });
     }
     Ok(Some(out))
 }

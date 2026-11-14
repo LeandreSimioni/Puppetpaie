@@ -737,7 +737,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             let a = crate::metier::imprevus::tous_les_arrets(ctx)?.into_iter().find(|x| x.salarie == *salarie && x.dernier_jour_travaille == *dernier);
             let Some(a) = a else { return Ok(Joue::Rien) };
             let obligations = crate::obligations::de_l_arret(ctx, &a, &crate::obligations::Suivi::lire(ctx)?, ctx.aujourdhui)?;
-            if !une_due(&obligations, *cle, ctx.aujourdhui) {
+            if !une_due(&obligations, *cle, ctx.aujourdhui)? {
                 return Ok(Joue::Rien);
             }
             d.reverifier()?;
@@ -748,7 +748,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         Geste::Fin { mois, salarie, fin } => pas(d, quoi, quand, |ctx| {
             let mut encore = false;
             for x in crate::imprevus::fins_a_signaler(ctx, *mois, ctx.aujourdhui)? {
-                encore |= x.salarie == *salarie && x.fin == *fin && due(&x.obligation, ctx.aujourdhui).is_some();
+                encore |= x.salarie == *salarie && x.fin == *fin && due(&x.obligation, ctx.aujourdhui)?.is_some();
             }
             if !encore {
                 return Ok(Joue::Rien);
@@ -906,21 +906,26 @@ fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &droit::contexte::IdSalarie,
 // ------------------------------------------------------------------ les signalements
 
 /// Une obligation que le moteur dit a faire (ou en retard) : sa date butoir, qu'elle soit passee ou non.
-fn a_faire(o: &crate::obligations::Obligation) -> Option<Jour> {
+fn a_faire(o: &crate::obligations::Obligation) -> R<Option<Jour>> {
     if !o.etat.du() {
-        return None;
+        return Ok(None);
     }
-    o.butoir
+    o.jour_butoir()
 }
 
 /// Une obligation a faire (`a_faire`) dont la date butoir est passee ou d'aujourd'hui : sa butoir.
-fn due(o: &crate::obligations::Obligation, jour: Jour) -> Option<Jour> {
-    a_faire(o).filter(|b| *b <= jour)
+fn due(o: &crate::obligations::Obligation, jour: Jour) -> R<Option<Jour>> {
+    Ok(a_faire(o)?.filter(|b| *b <= jour))
 }
 
 /// Une obligation de cette cle est-elle due ce jour (`due`) ?
-fn une_due(obligations: &[crate::obligations::Obligation], cle: crate::obligations::CleDObligation, jour: Jour) -> bool {
-    obligations.iter().filter(|o| o.cle == cle).any(|o| due(o, jour).is_some())
+fn une_due(obligations: &[crate::obligations::Obligation], cle: crate::obligations::CleDObligation, jour: Jour) -> R<bool> {
+    for o in obligations.iter().filter(|o| o.cle == cle) {
+        if due(o, jour)?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// LES SIGNALEMENTS DU MOIS que le moteur dit dus au jour `jour` (`obligations::de_l_arret`, `imprevus::fins_a_signaler`) :
@@ -936,7 +941,7 @@ fn une_due(obligations: &[crate::obligations::Obligation], cle: crate::obligatio
 /// 30/01, signalee jusqu'au 06/02, quand la DSN de janvier est due le 05/02), et un mois fait ne se relit plus. Pas celui
 /// qui attend la saisie : il est a la personne.
 fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) -> R<Vec<Pas>> {
-    let du = |o: &crate::obligations::Obligation| -> Option<Jour> { if cloture { a_faire(o) } else { due(o, jour) } };
+    let du = |o: &crate::obligations::Obligation| -> R<Option<Jour>> { if cloture { a_faire(o) } else { due(o, jour) } };
     let mut dus = Vec::new();
     use crate::imprevus::NatureSignalement;
     let natures = [(crate::obligations::CleDObligation::SignalementArret, NatureSignalement::Arret, "d'arrêt"), (crate::obligations::CleDObligation::SignalementReprise, NatureSignalement::Reprise, "de reprise")];
@@ -949,7 +954,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
         let obligations = crate::obligations::de_l_arret(ctx, &a, &suivi, jour)?;
         for (cle, nature, dit) in natures {
             let Some(o) = obligations.iter().find(|o| o.cle == cle) else { continue };
-            let Some(butoir) = du(o) else { continue };
+            let Some(butoir) = du(o)? else { continue };
             dus.push(Pas {
                 quand: a_l_heure(butoir, 9, 30)?,
                 quoi: format!("signalement {} de {} (dernier jour travaillé le {}) déposé", dit, a.salarie, dernier.jj_mm_aaaa()),
@@ -958,7 +963,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
         }
     }
     for f in crate::imprevus::fins_a_signaler(ctx, le_mois, jour)? {
-        let Some(butoir) = du(&f.obligation) else { continue };
+        let Some(butoir) = du(&f.obligation)? else { continue };
         if cloture && !f.a_saisir.is_empty() {
             continue;
         }

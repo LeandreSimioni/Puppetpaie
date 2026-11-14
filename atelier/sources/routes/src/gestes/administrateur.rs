@@ -52,7 +52,7 @@ use compagnie::installation::{self as compagnies, Compagnie};
 use crate::catalogue::Route;
 use crate::depots::{ChargeDeposer, Designation, Quoi};
 use crate::enveloppe::Dite;
-use crate::rappels::{EcheanceDite, GenreDEcheance};
+use crate::rappels::{EcheanceDite, EtapeDEcheance, GenreDEcheance};
 use droit::contexte::Contexte;
 use envois::etats;
 use envois::retours::IdDeFlux;
@@ -706,13 +706,13 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         GenreDEcheance::Dsn => {
             let mois = r.mois.ok_or_else(|| rappel_incomplet("de DSN"))?;
             let e = r.echeance_depot.as_ref().ok_or_else(|| rappel_incomplet("de DSN"))?;
-            let marche = match r.etape.as_str() {
-                "a_saisir" => Some("Saisir le mois dans la compagnie (vide s'il n'y a pas eu de paie : une DSN « néant » se dépose aussi)."),
-                "a_produire" => Some("Écrire le mois dans la compagnie : la DSN s'écrit avec les bulletins, puis se teste."),
-                "a_corriger" => Some("Corriger dans la compagnie, réécrire le mois, puis retester."),
-                _ => None,
+            let marche = match r.etape {
+                Some(EtapeDEcheance::ASaisir) => Some("Saisir le mois dans la compagnie (vide s'il n'y a pas eu de paie : une DSN « néant » se dépose aussi)."),
+                Some(EtapeDEcheance::AProduire) => Some("Écrire le mois dans la compagnie : la DSN s'écrit avec les bulletins, puis se teste."),
+                Some(EtapeDEcheance::ACorriger) => Some("Corriger dans la compagnie, réécrire le mois, puis retester."),
+                Some(EtapeDEcheance::ADeposer | EtapeDEcheance::DUneObligation(_)) | None => None,
             };
-            if r.etape == "a_deposer" {
+            if r.etape == Some(EtapeDEcheance::ADeposer) {
                 fichier = r.fichier.clone();
                 mensuelle = Some(mois);
             }
@@ -734,11 +734,8 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         }
         GenreDEcheance::Obligation => {
             let ob = r.obligation.as_ref().ok_or_else(|| rappel_incomplet("d'obligation"))?;
-            let quand_dit = ob.butoir.map(|b| match ob.heure_du_butoir.as_deref() {
-                Some("24:00") => format!("le {}, jusqu'à minuit", b.jj_mm_aaaa()),
-                Some(h) => format!("le {} à {}", b.jj_mm_aaaa(), h),
-                None => format!("le {}", b.jj_mm_aaaa()),
-            });
+            let butoir = ob.jour_butoir()?;
+            let quand_dit = ob.quand_dit()?;
             let detail = if ob.phrase.is_empty() { r.detail.clone() } else { ob.phrase.clone() };
             let (genre, marche, ou) = if ob.cle.nom().starts_with("signalement_") {
                 fichier = fichier_du_signalement(ctx, &r.cle)?;
@@ -758,7 +755,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 };
                 (Genre::HorsDsn, "Elle ne part pas avec la DSN : à faire sur le service de l'organisme, puis à dire faite dans la compagnie.", lieux)
             };
-            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir: ob.butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::RIEN }
+            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::RIEN }
         }
         GenreDEcheance::Dpae => {
             let jour = r.date;

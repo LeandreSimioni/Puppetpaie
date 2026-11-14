@@ -187,12 +187,30 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 
 // -------------------------------------------------------------- les contrats
 
-/// Comment chaque contrat est parti la derniere fois : `imprime` (remis en main propre, `detail.main_propre`) ou
-/// `courriel`.
-pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, &'static str> {
+/// COMMENT UN CONTRAT EST PARTI : imprime (remis en main propre, `detail.main_propre`), ou par courriel. Ecrite
+/// `imprime`, `courriel`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModeDeRemise {
+    Imprime,
+    Courriel,
+}
+
+impl ModeDeRemise {
+    /// Le participe de la phrase : « imprimé », « envoyé ».
+    pub fn en_mots(self) -> &'static str {
+        match self {
+            ModeDeRemise::Imprime => "imprimé",
+            ModeDeRemise::Courriel => "envoyé",
+        }
+    }
+}
+
+/// Comment chaque contrat est parti la derniere fois.
+pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, ModeDeRemise> {
     let mut d = HashMap::new();
     for e in lignes.iter().filter_map(Ligne::signature).filter(|e| e.accepte) {
-        let par = if e.detail.main_propre { "imprime" } else { "courriel" };
+        let par = if e.detail.main_propre { ModeDeRemise::Imprime } else { ModeDeRemise::Courriel };
         for c in &e.detail.contrats {
             d.insert(paire(&c.salarie, c.numero.as_ref()), par);
         }

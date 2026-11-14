@@ -480,6 +480,14 @@ enum Attente {
     Aucune,
 }
 
+/// OU EN EST LE DEPOT D'UNE DECLARATION ECRITE (`chemin_de_depot`) : la paie a change depuis son ecriture (la DSN se
+/// refait), ou l'etat de son test (`envois::etats::EtatDuTest`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EtapeDuDepot {
+    PaieChangee,
+    Test(etats::EtatDuTest),
+}
+
 /// Le point d'un engagement sur la ligne DPAE. `RienADeclarer` : un contrat commence avant le logiciel.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PointDpae {
@@ -973,8 +981,8 @@ pub(crate) struct Globales {
     pub(crate) recus: HashMap<etats::Paire, Moment>,
     pub(crate) renvoyes: HashSet<etats::Paire>,
     pub(crate) avenants: HashMap<etats::Paire, Vec<envois::journal::AvenantParti>>,
-    /// Comment chaque contrat est parti la derniere fois : `imprime` ou `courriel`.
-    pub(crate) par: HashMap<etats::Paire, &'static str>,
+    /// Comment chaque contrat est parti la derniere fois.
+    pub(crate) par: HashMap<etats::Paire, etats::ModeDeRemise>,
 }
 
 // ------------------------------------------------------------ l'etat d'un engagement
@@ -1092,7 +1100,7 @@ pub(crate) struct CdiEnCours {
 #[derive(Debug, Clone)]
 pub(crate) struct Signature {
     pub(crate) fait: Option<InstantOuJour>,
-    pub(crate) par: Option<&'static str>,
+    pub(crate) par: Option<etats::ModeDeRemise>,
     pub(crate) recu: Option<Moment>,
     pub(crate) caduc: bool,
     pub(crate) pourquoi: &'static str,
@@ -1995,7 +2003,7 @@ impl<'a> Moteur<'a> {
     /// paie changee), le fichier, et ce qu'un test refuse a dit ; `None` sans fichier a deposer, ou s'il est deja parti.
     /// `nic` : pour la DSN d'une compagnie a plusieurs etablissements, celle de cet etablissement (son en-tete,
     /// S21.G00.11.001) ; aucun : le premier fichier, quel qu'il soit.
-    fn chemin_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&Nic>) -> R<Option<(&'static str, Deposable, Option<String>)>> {
+    fn chemin_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&Nic>) -> R<Option<(EtapeDuDepot, Deposable, Option<String>)>> {
         // « Ecrite » pour une DSN : le meme critere que l'horloge, l'accueil et les rappels (`depart::mois_ecrit`,
         // la DSN mensuelle notee au journal des ecritures), pas un fichier pose dans `sorties/<mois>/`. Un mois passe lu a
         // l'ouverture (`ecrit`) ne demande que ce qui reste, pas le geste qui l'ouvre.
@@ -2028,12 +2036,12 @@ impl<'a> Moteur<'a> {
         let nom = NomDeFichier::du(&chemin)?;
         let r = etats::repetition(&lignes, acte, &empreinte, &nom);
         let etape = if quoi == DSN && self.paie_changee_depuis_l_ecriture(le_mois, &chemin)?.is_some() {
-            "paie_changee"
+            EtapeDuDepot::PaieChangee
         } else {
-            r.etat.nom()
+            EtapeDuDepot::Test(r.etat)
         };
         // UN TEST REFUSE SE DIT AVEC SES ANOMALIES, la ou l'on propose d'envoyer : le code et le message du bilan.
-        let refus = r.motif.as_deref().filter(|_| etape == "test_refuse").map(|m| m.trim_end_matches('.').to_string());
+        let refus = r.motif.as_deref().filter(|_| etape == EtapeDuDepot::Test(etats::EtatDuTest::TestRefuse)).map(|m| m.trim_end_matches('.').to_string());
         Ok(Some((etape, premier, refus)))
     }
 
@@ -2059,11 +2067,11 @@ impl<'a> Moteur<'a> {
         let action = match etape {
             // Le fichier ecrit ne declare plus la paie : la DSN se refait depuis les engagements valides, et repasse par
             // le test.
-            "paie_changee" => deposer_dsn(le_mois, nic, format!("Réécrire {} et la tester…", nom)),
-            "ecrite" => deposer(format!("Tester {}…", nom)),
-            "en_test" => deposer("Voir le test en cours…".into()),
-            "testee" => deposer(format!("Envoyer {} testée…", nom)),
-            _ => deposer("Voir le refus du test…".into()),
+            EtapeDuDepot::PaieChangee => deposer_dsn(le_mois, nic, format!("Réécrire {} et la tester…", nom)),
+            EtapeDuDepot::Test(etats::EtatDuTest::Ecrite) => deposer(format!("Tester {}…", nom)),
+            EtapeDuDepot::Test(etats::EtatDuTest::EnTest) => deposer("Voir le test en cours…".into()),
+            EtapeDuDepot::Test(etats::EtatDuTest::Testee) => deposer(format!("Envoyer {} testée…", nom)),
+            EtapeDuDepot::Test(etats::EtatDuTest::TestRefuse) => deposer("Voir le refus du test…".into()),
         };
         Ok((Some(action), refus.map(|r| format!("test refusé : {}", r))))
     }
@@ -2583,7 +2591,11 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         Some(c) if !ailleurs => format!("CDI, signé en {}", c.signe_en.libelle(Graphie::Accentuee)),
         _ => "Contrat".to_string(),
     };
-    let par_dit = if s.par == Some("imprime") { "imprimé" } else { "envoyé" };
+    // Sans remise notee au journal, la phrase dit « envoyé ».
+    let par_dit = match s.par {
+        Some(m) => m.en_mots(),
+        None => "envoyé",
+    };
     let (etat, phrase, geste) = match pt.contrat {
         PointContrat::AEnvoyer => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
         PointContrat::ARefaire if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
@@ -2848,7 +2860,7 @@ pub(crate) const CONTRAT_AILLEURS_A_MODIFIER: &str = "un terme du contrat signé
 /// version sur laquelle il est parti (`a_refaire_signer`, `engagement::etats::a_refaire`), ou il porte un autre numero
 /// que celui que la DSN declare. Un contrat renvoye attend une NOUVELLE signature : celle de l'ancien ne compte plus.
 pub(crate) fn etat_signature(
-    fait: Option<InstantOuJour>, par: Option<&'static str>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
+    fait: Option<InstantOuJour>, par: Option<etats::ModeDeRemise>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
     a_refaire_signer: bool, ailleurs: bool,
 ) -> Signature {
     let recu = if renvoye { None } else { recu.cloned() };

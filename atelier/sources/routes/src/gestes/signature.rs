@@ -765,7 +765,11 @@ pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<Dema
 fn deja_parti_dit(etats: &[crate::contrats::ContratASigner], salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Option<String> {
     let c = etats.iter().rev().find(|c| c.salarie == *salarie && c.numero.as_ref() == numero)?;
     let quand = c.demande_le?.jour().jj_mm_aaaa();
-    let comment = if c.par == Some("imprime") { "imprimé" } else { "envoyé" };
+    // Sans remise notee au journal, la phrase dit « envoyé ».
+    let comment = match c.par {
+        Some(m) => m.en_mots(),
+        None => "envoyé",
+    };
     Some(format!("Contrat n° {} de {} : déjà parti, {} le {}.", numero_dit(numero, "", "", SANS_NUMERO), c.nom, comment, quand))
 }
 

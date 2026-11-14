@@ -492,12 +492,37 @@ impl EtatEcheance {
     }
 }
 
-/// Ou en est le mois dont on rappelle la DSN (`etape`) : un mois sans saisie se cree, un
-/// mois saisi se produit, un mois produit se depose, une DSN refusee se corrige.
-const A_SAISIR: &str = "a_saisir";
-const A_PRODUIRE: &str = "a_produire";
-const A_DEPOSER: &str = "a_deposer";
-const A_CORRIGER: &str = "a_corriger";
+/// OU EN EST LA CHOSE QU'UNE ECHEANCE RAPPELLE : le mois dont on rappelle la DSN (un mois sans saisie se cree, un mois
+/// saisi se produit, un mois produit se depose, une DSN refusee se corrige), ou l'etat d'une obligation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EtapeDEcheance {
+    ASaisir,
+    AProduire,
+    ADeposer,
+    ACorriger,
+    DUneObligation(crate::obligations::EtatDObligation),
+}
+
+impl EtapeDEcheance {
+    /// Son nom, tel que la reponse l'ecrit (`a_saisir`… ; celui de l'etat d'une obligation).
+    fn nom(self) -> &'static str {
+        match self {
+            EtapeDEcheance::ASaisir => "a_saisir",
+            EtapeDEcheance::AProduire => "a_produire",
+            EtapeDEcheance::ADeposer => "a_deposer",
+            EtapeDEcheance::ACorriger => "a_corriger",
+            EtapeDEcheance::DUneObligation(e) => e.nom(),
+        }
+    }
+}
+
+/// L'etape d'une echeance, ecrite par son nom ; une echeance sans etape (une DPAE, une echeance de l'annee) l'ecrit vide.
+fn etape_ecrite<S: serde::Serializer>(etape: &Option<EtapeDEcheance>, s: S) -> Result<S::Ok, S::Error> {
+    match etape {
+        Some(e) => s.serialize_str(e.nom()),
+        None => s.serialize_str(""),
+    }
+}
 
 /// L'echeancier va jusqu'a douze mois devant.
 const MOIS_A_VENIR: i32 = 12;
@@ -520,8 +545,8 @@ pub(crate) struct Echeance {
     etat: EtatEcheance,
     /// DUE MAINTENANT : son moment est venu et elle n'est pas faite. Les rappels sont exactement celles-ci.
     due: bool,
-    /// Ou en est la chose : le mois d'une DSN (`a_saisir`, `a_produire`, `a_deposer`, `a_corriger`), l'etat d'une obligation.
-    etape: String,
+    /// Ou en est la chose : le mois d'une DSN, l'etat d'une obligation ; aucune pour les autres.
+    etape: Option<EtapeDEcheance>,
     /// Seule la compagnie peut la dire faite (`echeance-faite`).
     cochable: bool,
     /// Le mois sur lequel elle porte (la DSN de ce mois, la DPAE d'un engagement de ce mois).
@@ -574,7 +599,7 @@ impl Echeance {
             quand_dit: String::new(),
             etat: AFaire,
             due: true,
-            etape: String::new(),
+            etape: None,
             cochable: false,
             mois: None,
             annee: None,
@@ -689,7 +714,7 @@ impl Echeance {
             etat: self.etat,
             en_retard: self.etat == EnRetard,
             rappel: self.due,
-            etape: self.etape.clone(),
+            etape: self.etape,
             cochable: self.cochable,
             pastille: Pastille::de(self.etat.a_l_ecran(), self.etat.mots()),
             mois: self.mois,
@@ -729,7 +754,8 @@ pub(crate) struct EcheanceDite {
     pub(crate) en_retard: bool,
     /// Due maintenant : un rappel la dit.
     pub(crate) rappel: bool,
-    pub(crate) etape: String,
+    #[serde(serialize_with = "etape_ecrite")]
+    pub(crate) etape: Option<EtapeDEcheance>,
     pub(crate) cochable: bool,
     /// Sa pastille : la couleur et les mots de son etat.
     pub(crate) pastille: Pastille,
@@ -1321,7 +1347,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
     r.echeance_depot = Some(echeance.dite()?);
 
     if !engagement::stock::a_une_saisie(&st.ctx.racine, mois)? {
-        r.etape = A_SAISIR.into();
+        r.etape = Some(EtapeDEcheance::ASaisir);
         r.detail = format!(
             "Aucun engagement saisi pour {}. S'il n'y a eu aucun cachet, une DSN « néant » se dépose quand même : le mois s'écrit vide, puis se dépose.",
             lib
@@ -1334,7 +1360,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
 
     let etat = etat_dsn::du_mois(st.ctx, mois, None)?;
     if etat.refusee() {
-        r.etape = A_CORRIGER.into();
+        r.etape = Some(EtapeDEcheance::ACorriger);
         let motif = match etat.anomalies.as_deref() {
             Some(a) if !a.is_empty() => a.join(" ; "),
             _ => "motif non lu".to_string(),
@@ -1345,7 +1371,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
 
     let s = |n: i64| if n == 1 { "" } else { "s" };
     if let Some((nom, chemin)) = dsn_deposable(st, mois)? {
-        r.etape = A_DEPOSER.into();
+        r.etape = Some(EtapeDEcheance::ADeposer);
         r.detail = format!(
             "{} engagement{}, {} validé{}. Le mois est écrit ({}) ; la DSN n'est pas partie.",
             r.engagements,
@@ -1356,7 +1382,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
         );
         r.fichier = Some(chemin);
     } else {
-        r.etape = A_PRODUIRE.into();
+        r.etape = Some(EtapeDEcheance::AProduire);
         r.detail = format!(
             "{} engagement{} saisi{}, {} validé{}. Le mois n'est pas encore écrit : bulletins, DSN et le reste s'écrivent d'abord, puis la DSN se dépose.",
             r.engagements,
@@ -1432,10 +1458,10 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
             format!("Signaler la fin du contrat de {}", salarie),
             format!("{} s'est terminé le {}.", numero, f.fin.jj_mm_aaaa()),
             Objet::Fin(Box::new(f.clone())),
-        );
+        )?;
         r.mois = Some(f.mois);
         r.salarie = Some(f.salarie.clone());
-        r.etape = if a_saisir.is_empty() { A_PRODUIRE } else { A_SAISIR }.into();
+        r.etape = Some(if a_saisir.is_empty() { EtapeDEcheance::AProduire } else { EtapeDEcheance::ASaisir });
         if !a_saisir.is_empty() {
             r.detail.push_str(&format!(" À saisir d'abord, dans la carte du contrat : {}", a_saisir.join(" ")));
         }
@@ -1464,7 +1490,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
                     format!("{} — {}", o.libelle, nom),
                     format!("{}.", resume.en_clair()),
                     Objet::Arret(Box::new(resume.clone())),
-                );
+                )?;
                 r.mois = Some(dernier.mois_civil());
                 r.salarie = Some(a.salarie.clone());
                 out.push(r);
@@ -1485,12 +1511,12 @@ fn du(o: &crate::obligations::Obligation) -> bool {
 
 /// Le rappel d'une obligation : son titre, sa question, et ce que le moteur en a calcule -- la date butoir (`jour`), le
 /// retard, la phrase -- ; `objet` : ce sur quoi elle porte, que la page repasse au geste qui la fait.
-fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: CleDEcheance, titre: String, question: String, objet: Objet) -> Echeance {
+fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: CleDEcheance, titre: String, question: String, objet: Objet) -> R<Echeance> {
     // La date butoir, quand le delai se compte ; une obligation sans date butoir ne tombe dans aucun mois.
-    let butoir = o.butoir;
+    let butoir = o.jour_butoir()?;
     let mut r = Echeance::nouveau(GenreDEcheance::Obligation, cle, titre, question, butoir.map(|j| j.mois_civil()));
     r.etat = if o.etat == crate::obligations::EtatDObligation::EnRetard { EnRetard } else { AFaire };
-    r.etape = o.etat.nom().to_string();
+    r.etape = Some(EtapeDEcheance::DUneObligation(o.etat));
     if let Some(j) = butoir {
         r.le(&j);
     }
@@ -1500,7 +1526,7 @@ fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: CleDEcheance, ti
     };
     r.obligation = Some(o.clone());
     r.objet = Some(objet);
-    r
+    Ok(r)
 }
 
 // ------------------------------------------------------------- les DPAE

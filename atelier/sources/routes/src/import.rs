@@ -261,7 +261,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
 #[derive(Serialize, Default)]
 pub(crate) struct EntrepriseDesPieces {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) siret: Option<String>,
+    pub(crate) siret: Option<droit::fiche::Siret>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) licence_spectacle: Option<String>,
 }
@@ -286,7 +286,7 @@ pub(crate) fn entreprise_comblee(f: &Saisie) -> R<Saisie> {
 fn fiche_entreprise(lecture: &dsn_aem::LectureDsn) -> R<Saisie> {
     let mut e = dsn_aem::fiche_entreprise(&lecture.entreprise)?;
     let siret = match (&lecture.entreprise.siren, &lecture.entreprise.nic) {
-        (Some(s), Some(n)) => Some(format!("{}{}", s, n)),
+        (Some(s), Some(n)) => Some(droit::fiche::Siret::de(s, n)),
         _ => None,
     };
     let pieces = EntrepriseDesPieces { siret, licence_spectacle: lecture.licences.first().map(|l| l.1.clone()) };

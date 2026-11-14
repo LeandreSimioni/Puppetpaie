@@ -173,7 +173,9 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   d'un jour, une obligation d'un arrêt dite faite ou une connaissance sans heure). Écrit en un champ
   (`AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`), ou en deux, le jour et l'heure `HH:MM` (`socle::paris::ecrit::jour_et_heure` :
   la fiche de suivi des obligations d'un arrêt et ce que ses routes rendent, l'instant limite de l'échéance d'une DSN,
-  `declarations::echeance_dsn::EcheanceDite`).
+  `declarations::echeance_dsn::EcheanceDite`). Le butoir d'une obligation (`routes::obligations::Obligation.butoir`)
+  s'écrit aussi en deux champs, `butoir` et `butoir_heure`, où un instant à minuit est la fin du jour d'avant, écrite
+  `24:00` (« jusqu'à minuit »).
 - **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone.
 - **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom.
 - **mois ou jour** : le mois d'un acte ou le jour d'un événement.
@@ -722,6 +724,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | échéance de l'année | `CleDAnnuelle` | `routes/src/rappels.rs` |
 | genre d'une échéance | `GenreDEcheance` | `routes/src/rappels.rs` |
 | ce que vise l'échéance d'un salarié | `QuoiDuSalarie` | `routes/src/rappels.rs` |
+| étape d'une échéance | `EtapeDEcheance` | `routes/src/rappels.rs` |
+| étape du dépôt d'une déclaration écrite | `EtapeDuDepot` | `routes/src/etapes.rs` |
+| mode de remise d'un contrat parti | `ModeDeRemise` | `envois/src/etats.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
 | unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
@@ -898,6 +903,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **ce que vise l'échéance d'un salarié** : la fin de son contrat à signaler, ou une obligation qu'un arrêt fait naître.
   `FinContrat` (écrit `fin-contrat`), `Obligation(CleDObligation)` (écrit son nom) ; le `quoi` d'une clé d'échéance
   `<quoi>:<salarié>:<jour>`.
+- **étape d'une échéance** : où en est ce qu'elle rappelle : le mois d'une DSN (à saisir, à produire, à déposer, à
+  corriger), ou l'état d'une obligation (`DUneObligation(EtatDObligation)`) ; écrite par son nom (`a_saisir`… ; celui
+  de l'état), vide pour une échéance qui n'en a pas ; que lit le tableau de l'administrateur.
+- **étape du dépôt d'une déclaration écrite** : la paie a changé depuis son écriture, ou l'état de son test
+  (`envois::etats::EtatDuTest`) ; le geste d'une case qui dépose s'en choisit.
+- **mode de remise d'un contrat parti** : imprimé (remis en main propre) ou par courriel ; écrit `imprime`, `courriel`,
+  dit « imprimé », « envoyé » ; lu au journal des envois (`contrats_partis_par`).
 - **case** : un champ d'une fiche ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé.
 - **rubrique** : une ligne du catalogue de paie ; `droit::catalogue::Rubrique` est sa définition. Son code,
   `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut
