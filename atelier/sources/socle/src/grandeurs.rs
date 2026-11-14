@@ -7,7 +7,8 @@
 //!
 //! Une facon d'ecrire n'est pas un type : chaque forme dit la sienne par l'attribut serde du champ
 //! (`#[serde(serialize_with = "socle::grandeurs::ecrit::centimes::serialize")]`), dans `ecrit`. Une grandeur se lit
-//! comme `forme::decimal` (un entier garde son echelle nulle) ; un champ lu comme `forme::court` le dit
+//! d'un nombre JSON, jamais d'un texte, comme `forme::decimal` (un entier garde son echelle nulle) ; un champ lu comme
+//! `forme::court` le dit
 //! (`#[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]`).
 
 use crate::num::{self, Decimal};
@@ -66,7 +67,7 @@ macro_rules! grandeurs {
 
         impl<'de> serde::Deserialize<'de> for $nom {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<$nom, D::Error> {
-                crate::forme::decimal(d).map($nom)
+                crate::forme::decimal_en_nombre(d).map($nom)
             }
         }
 
@@ -100,7 +101,7 @@ grandeurs! {
     Cachets, "DES CACHETS : une quantite de cachets (`2`).";
     Jours, "DES JOURS : une quantite de jours (`4.92`).";
     Coefficient, "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).";
-    MontantUnitaire, "UN MONTANT UNITAIRE : des euros par unite d'une ligne de paie (par heure, par cachet : `1.50`).";
+    MontantUnitaire, "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.";
 }
 
 impl Montant {
@@ -124,6 +125,12 @@ impl Montant {
     /// Le montant que le taux `t` en prend, exact (`au_centime` le fixe).
     pub fn fois_taux(self, t: Taux) -> Montant {
         Montant(num::div(num::mul(self.0, t.0), Decimal::ONE_HUNDRED))
+    }
+
+    /// La part de ce montant que `part` heures font sur `tout` (le plafond d'un temps partiel), exacte : le produit,
+    /// puis le quotient (`au_centime` la fixe). `tout` n'est pas nul : l'appelant le refuse.
+    pub fn prorata(self, part: Heures, tout: Heures) -> Montant {
+        Montant(num::div(num::mul(self.0, part.0), tout.0))
     }
 }
 
@@ -168,7 +175,7 @@ macro_rules! au_montant_unitaire {
 
 au_montant_unitaire!(Heures, Cachets, Jours);
 
-/// LES LECTURES D'UNE GRANDEUR AUTRES QUE LA SIENNE (`forme::decimal`) : un champ les dit par son attribut serde
+/// LES LECTURES D'UNE GRANDEUR AUTRES QUE LA SIENNE (`forme::decimal_en_nombre`) : un champ les dit par son attribut serde
 /// (`…::deserialize`, `…::option::deserialize` pour un `Option`).
 pub mod lu {
     /// Comme `forme::court` : un nombre (jamais un texte), dans sa forme la plus courte, une decimale au moins (`24` se

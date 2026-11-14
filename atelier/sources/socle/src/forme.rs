@@ -427,26 +427,39 @@ pub fn nombre_du_texte(t: &str) -> serde_json::Number {
 /// (`1.0` reste `1.0`, `decimal_ecrit`), un nombre ecrit en texte se lit (`num::dec_texte`).
 /// `#[serde(deserialize_with = "socle::forme::decimal")]`.
 pub fn decimal<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
-    struct EnDecimal;
-    impl<'de> serde::de::Visitor<'de> for EnDecimal {
-        type Value = crate::num::Decimal;
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.write_str("un nombre")
-        }
-        fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<Self::Value, E> {
-            Ok(i.into())
-        }
-        fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Self::Value, E> {
-            Ok(u.into())
-        }
-        fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Self::Value, A::Error> {
-            decimal_ecrit(&texte_a_virgule(m)?).map_err(|e| serde::de::Error::custom(e.phrase))
-        }
-        fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
-            crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase))
-        }
+    d.deserialize_any(EnDecimal { texte: true })
+}
+
+/// `decimal`, strict : un nombre JSON, jamais un texte (la lecture d'une grandeur, `grandeurs`).
+pub(crate) fn decimal_en_nombre<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
+    d.deserialize_any(EnDecimal { texte: false })
+}
+
+/// Le visiteur de `decimal` ; `texte` : un nombre ecrit en texte se lit aussi.
+struct EnDecimal {
+    texte: bool,
+}
+
+impl<'de> serde::de::Visitor<'de> for EnDecimal {
+    type Value = crate::num::Decimal;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("un nombre")
     }
-    d.deserialize_any(EnDecimal)
+    fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<Self::Value, E> {
+        Ok(i.into())
+    }
+    fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Self::Value, E> {
+        Ok(u.into())
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Self::Value, A::Error> {
+        decimal_ecrit(&texte_a_virgule(m)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+    fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
+        if !self.texte {
+            return Err(E::invalid_type(serde::de::Unexpected::Str(s), &self));
+        }
+        crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase))
+    }
 }
 
 /// `decimal`, quand la valeur peut manquer ou etre nulle (avec `#[serde(default)]`).

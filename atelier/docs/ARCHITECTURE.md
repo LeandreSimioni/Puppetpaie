@@ -212,8 +212,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   `engagement::ligne::Chiffre`.
 - **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
   coefficient de la réduction générale) ; montant × coefficient = montant.
-- **montant unitaire** : des euros par unité d'une ligne de paie (par heure, par cachet, par jour), le « taux » d'une
-  ligne ; quantité × montant unitaire = montant.
+- **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le « taux » d'une ligne de paie, le
+  plafond de la sécurité sociale horaire, le SMIC horaire ; quantité × montant unitaire = montant.
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
   Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`), dits par
   l'attribut serde du champ. Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`.

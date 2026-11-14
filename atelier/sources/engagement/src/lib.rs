@@ -2077,7 +2077,7 @@ pub fn embauche(ctx: &Contexte, eng: &Engagement) -> R<calcul::Paie> {
     };
     let zero = socle::grandeurs::Montant::ZERO.decimal();
     let tp = calcul::plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, zero, zero, zero, Decimal::ZERO, zero, tp))
+    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, zero, zero, zero, Decimal::ZERO, socle::grandeurs::Heures::ZERO.decimal(), tp))
 }
 
 /// LA SAISIE LUE SANS PAIE (l'ecran, le panneau, les DPAE a faire) : l'embauche de chaque engagement de la saisie `data`

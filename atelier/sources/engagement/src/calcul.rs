@@ -401,8 +401,8 @@ impl Paie {
             net_imposable: zero, cout_employeur: zero, numero_bulletin: None,
             bases: BTreeMap::new(), remuneration: Vec::new(), reduction_generale: None,
             deduction_forfaitaire: None, avertissements: Vec::new(), salaire_de_base: zero,
-            salaire_retabli: zero, assiette_chomage: zero, heures_travaillees: zero,
-            heures_absence: zero, periodes: Vec::new(), pas: None, conges: None, conges_avant: None, plafond_temps_partiel,
+            salaire_retabli: zero, assiette_chomage: zero, heures_travaillees: socle::grandeurs::Heures::ZERO.decimal(),
+            heures_absence: socle::grandeurs::Heures::ZERO.decimal(), periodes: Vec::new(), pas: None, conges: None, conges_avant: None, plafond_temps_partiel,
         })
     }
 
@@ -414,7 +414,7 @@ impl Paie {
         engagement.lignes.clear();
         (engagement.jours, engagement.cachets, engagement.heures) = (0, 0, None);
         let zero = socle::grandeurs::Montant::ZERO.decimal();
-        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), zero, zero, zero, self.smic, zero, self.plafond_temps_partiel);
+        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), zero, zero, zero, self.smic, socle::grandeurs::Heures::ZERO.decimal(), self.plafond_temps_partiel);
         p.0.bases = self.bases.keys().map(|k| (*k, zero)).collect();
         p
     }
