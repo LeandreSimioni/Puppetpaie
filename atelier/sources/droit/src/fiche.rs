@@ -2793,16 +2793,33 @@ cases! {
     }
 }
 
-cases! {
-    /// UN TAUX DE PAS RECU (`droit::pas`) : le taux, son type, l'identifiant et l'instant de sa mise a disposition
-    /// (AAAAMMJJHHMMSS), et le mois de la DSN a laquelle il repond.
-    pub struct TauxPas {
-        taux: crate::pas::TauxDePas,
-        r#type: crate::type_taux_pas::TypeDeTauxPas,
-        identifiant: crate::pas::IdentifiantDuTauxPas,
-        #[serde(default, with = "socle::paris::ecrit::compacte::option")]
-        mis_a_disposition: socle::paris::Moment,
-        en_retour_de: Mois,
+/// UN TAUX DE PAS RECU (`droit::pas`) : le taux, toujours ecrit (un compte rendu sans taux lisible n'en pose aucun), son
+/// type, l'identifiant et l'instant de sa mise a disposition (AAAAMMJJHHMMSS), et le mois de la DSN a laquelle il
+/// repond. Une entree d'une liste de la fiche, pas une case : ses autres champs sont facultatifs, comme ceux d'une
+/// structure de cases (`cases!`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TauxPas {
+    pub taux: crate::pas::TauxDePas,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<crate::type_taux_pas::TypeDeTauxPas>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identifiant: Option<crate::pas::IdentifiantDuTauxPas>,
+    #[serde(default, with = "socle::paris::ecrit::compacte::option", skip_serializing_if = "Option::is_none")]
+    pub mis_a_disposition: Option<socle::paris::Moment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub en_retour_de: Option<Mois>,
+}
+
+impl FormeDeCase for TauxPas {
+    fn cases() -> Vec<Declaree> {
+        vec![
+            declaree::<crate::pas::TauxDePas>("taux"),
+            declaree::<crate::type_taux_pas::TypeDeTauxPas>(stringify!(r#type)),
+            declaree::<crate::pas::IdentifiantDuTauxPas>("identifiant"),
+            declaree::<socle::paris::Moment>("mis_a_disposition"),
+            declaree::<Mois>("en_retour_de"),
+        ]
     }
 }
 

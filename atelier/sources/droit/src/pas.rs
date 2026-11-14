@@ -562,7 +562,7 @@ pub fn situation(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option
         salarie: cle.clone(),
         situation: quoi,
         libelle: quoi.libelle(),
-        taux: e.and_then(|e| e.taux),
+        taux: e.map(|e| e.taux),
         type_taux: e.and_then(|e| e.r#type),
         identifiant: e.and_then(|e| e.identifiant.clone()),
         valable_jusqu_a: e.and_then(fin_de_validite),

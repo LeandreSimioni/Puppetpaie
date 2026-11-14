@@ -24,7 +24,7 @@ impl TauxRecu {
     /// Le taux tel que la fiche de son salarie l'ecrit.
     pub fn dans_la_fiche(&self) -> droit::fiche::TauxPas {
         droit::fiche::TauxPas {
-            taux: Some(self.taux),
+            taux: self.taux,
             r#type: self.type_taux,
             identifiant: Some(self.identifiant.clone()),
             mis_a_disposition: Some(self.mis_a_disposition),
