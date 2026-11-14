@@ -188,7 +188,8 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 // -------------------------------------------------------------- les contrats
 
 /// COMMENT UN CONTRAT EST PARTI : imprime (remis en main propre, `detail.main_propre`), ou par courriel. Ecrite
-/// `imprime`, `courriel`. La phrase d'un envoi du journal (`resume`) dit de meme tout envoi par son `main_propre`.
+/// `imprime`, `courriel`. Des documents remis aux salaries partent de meme ; une ligne du journal la dit si elle en a une
+/// (`Ligne::remise`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModeDeRemise {
@@ -207,22 +208,24 @@ impl ModeDeRemise {
     }
 }
 
-/// LA REMISE D'UN CONTRAT PARTI, dite dans le recit de ce qui est parti : « imprimé », « envoyé à la signature ».
-pub fn remise_dite(par: ModeDeRemise) -> &'static str {
-    match par {
-        ModeDeRemise::Imprime => "imprimé",
-        ModeDeRemise::Courriel => "envoyé à la signature",
-    }
+/// OU SE DIT LA REMISE : dans une phrase (la reponse d'une route, la phrase d'un envoi du journal), ou dans le recit de
+/// ce qui est parti (l'Historique du mois, les pieces d'un contrat).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaceDeLaRemise {
+    Phrase,
+    Recit,
 }
 
-/// LE MOT DE LA REMISE d'un contrat parti, dans les phrases : « imprimé », « envoyé ». SANS REMISE NOTEE (`None`) : le
-/// contrat est parti (`engagement::departs`, `journal::noter_ligne`) par un courriel coupe en route
-/// (`ligne_d_envoi::noter_echec_d_envoi`), dont la ligne n'est pas acceptee mais a servi le salarie, et que
-/// `contrats_partis_par`, qui ne lit que les lignes acceptees, ne retient pas : c'etait un courriel, « envoyé ».
-pub fn mot_de_la_remise(par: Option<ModeDeRemise>) -> &'static str {
-    match par {
-        Some(ModeDeRemise::Imprime) => "imprimé",
-        Some(ModeDeRemise::Courriel) | None => "envoyé",
+/// LE MOT DE LA REMISE d'une piece partie, a sa place : « imprimé » ; par courriel, « envoyé » dans une phrase,
+/// « envoyé à la signature » dans le recit. SANS REMISE NOTEE (`None`) : le contrat est parti (`engagement::departs`,
+/// `journal::noter_ligne`) par un courriel coupe en route (`ligne_d_envoi::noter_echec_d_envoi`), dont la ligne n'est pas
+/// acceptee mais a servi le salarie, et que `contrats_partis_par`, qui ne lit que les lignes acceptees, ne retient pas :
+/// c'etait un courriel.
+pub fn mot_de_la_remise(par: Option<ModeDeRemise>, place: PlaceDeLaRemise) -> &'static str {
+    match (par, place) {
+        (Some(ModeDeRemise::Imprime), PlaceDeLaRemise::Phrase | PlaceDeLaRemise::Recit) => "imprimé",
+        (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Phrase) => "envoyé",
+        (Some(ModeDeRemise::Courriel) | None, PlaceDeLaRemise::Recit) => "envoyé à la signature",
     }
 }
 
@@ -529,7 +532,12 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
     if !ligne.accepte() {
         return format!("envoi du {} refusé au dépôt — {}", quand, ligne.reponse());
     }
-    let parti = mot_de_la_remise(Some(ModeDeRemise::de(ligne.main_propre())));
+    // Une ligne qui a une remise la dit ; une autre n'en a pas (`Ligne::remise`) : deposee ou partie par courriel, son
+    // acte se dit « envoyé ».
+    let parti = match ligne.remise() {
+        Some(par) => mot_de_la_remise(Some(par), PlaceDeLaRemise::Phrase),
+        None => "envoyé",
+    };
     let le = if en_test { quand.clone() } else { format!("le {}", quand) };
     let prefixe = format!("{} {}", parti, le);
     match ligne {

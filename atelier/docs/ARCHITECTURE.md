@@ -738,6 +738,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | étape d'une échéance | `EtapeDEcheance` | `routes/src/rappels.rs` |
 | étape du dépôt d'une déclaration écrite | `EtapeDuDepot` | `routes/src/etapes.rs` |
 | mode de remise d'un contrat parti | `ModeDeRemise` | `envois/src/etats.rs` |
+| place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
 | unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
@@ -947,11 +948,16 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   de l'état), vide pour une échéance qui n'en a pas ; que lit le tableau de l'administrateur.
 - **étape du dépôt d'une déclaration écrite** : la paie a changé depuis son écriture, ou l'état de son test
   (`envois::etats::EtatDuTest`) ; le geste d'une case qui dépose s'en choisit.
-- **mode de remise d'un contrat parti** : imprimé (remis en main propre) ou par courriel ; écrit `imprime`, `courriel`,
-  dit « imprimé », « envoyé » par une seule fonction (`mot_de_la_remise`, aussi pour la phrase d'un envoi du journal),
-  et « imprimé », « envoyé à la signature » dans le récit de ce qui est parti (`remise_dite`) ; lu au journal des
-  envois, par `main_propre` (`ModeDeRemise::de` ; `contrats_partis_par`, les lignes acceptées). Un contrat parti sans remise notée est parti par un courriel coupé en
-  route (sa ligne n'est pas acceptée, elle a servi le salarié) : « envoyé ».
+- **mode de remise d'un contrat parti** : imprimé (remis en main propre) ou par courriel ; écrit `imprime`, `courriel`.
+  Des documents remis aux salariés partent de même : une ligne du journal des envois dit sa remise si elle en a une
+  (`Ligne::remise` : une demande de signature, un envoi de documents, lus par `main_propre`, `ModeDeRemise::de`) ; une
+  DSN, une DPAE, un dossier, une demande de fiche n'en ont pas, et la phrase d'un envoi (`resume`) dit leur acte
+  « envoyé ». Dit par une seule fonction, à sa place (`mot_de_la_remise`, `PlaceDeLaRemise`) : « imprimé », « envoyé »
+  dans une phrase, « imprimé », « envoyé à la signature » dans le récit de ce qui est parti. `contrats_partis_par` ne lit
+  que les lignes acceptées : un contrat parti sans remise notée est parti par un courriel coupé en route (sa ligne n'est
+  pas acceptée, elle a servi le salarié), et se dit comme un courriel.
+- **place où se dit la remise** : une phrase (la réponse d'une route, la phrase d'un envoi du journal) ou le récit de ce
+  qui est parti (l'Historique du mois, les pièces d'un contrat) ; ce que `mot_de_la_remise` reçoit.
 - **case** : un champ d'une fiche ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé.
 - **rubrique** : une ligne du catalogue de paie ; `droit::catalogue::Rubrique` est sa définition. Son code,
   `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut

@@ -948,7 +948,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         };
         // Le jour du depart, « JJ/MM », s'il est dit.
         let le: String = depuis.map(|q| q.jour()).map(|j| format!(" le {:02}/{:02}", j.jour, j.mois)).into_iter().collect();
-        let remis = etats::mot_de_la_remise(par);
+        let remis = etats::mot_de_la_remise(par, etats::PlaceDeLaRemise::Phrase);
         let attente = format!("{}{}{}", ce, remis, le);
         let numero = p.engagement.numero.clone();
         let demande_par_courriel = demandes_par_courriel.contains(&k);
@@ -1454,7 +1454,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     let mut contrat: Vec<PiecePartie> = Vec::new();
     for l in lignes.iter().filter(|l| l.accepte()) {
         let Some(e) = l.signature() else { continue };
-        let parti = etats::remise_dite(etats::ModeDeRemise::de(e.detail.main_propre));
+        let parti = etats::mot_de_la_remise(Some(etats::ModeDeRemise::de(e.detail.main_propre)), etats::PlaceDeLaRemise::Recit);
         for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_ref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
             let quoi = match x.acte {

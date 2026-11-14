@@ -272,12 +272,15 @@ impl Ligne {
         }
     }
 
-    /// Un envoi remis en main propre (des contrats ou des documents imprimes).
-    pub fn main_propre(&self) -> bool {
+    /// SA REMISE, dite seulement par les lignes qui en ont une : celles qui donnent une piece au salarie imprimee (a
+    /// remettre en main propre) ou par courriel, et le notent (`main_propre`) : des contrats a signer, des documents
+    /// (bulletins, certificats, attestations). Les autres n'ont pas de remise : une DSN, une DPAE se deposent ; une
+    /// regularisation de la CASC, un dossier, une demande de fiche, un contrat contresigne ne partent que par courriel.
+    pub fn remise(&self) -> Option<crate::etats::ModeDeRemise> {
         match self {
-            Ligne::ContratSignature(e) => e.detail.main_propre,
-            Ligne::Documents(e) => e.detail.main_propre,
-            Ligne::Dsn(_) | Ligne::Dpae(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
+            Ligne::ContratSignature(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
+            Ligne::Documents(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
+            Ligne::Dsn(_) | Ligne::Dpae(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => None,
         }
     }
 

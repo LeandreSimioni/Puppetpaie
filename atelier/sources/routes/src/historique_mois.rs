@@ -278,9 +278,10 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
         Ligne::ContratSignature(e) => {
             let piece = if e.detail.acte == Some(envois::journal::ActeDuContrat::Avenant) { "Avenant" } else { "Contrat" };
             let par = etats::ModeDeRemise::de(e.detail.main_propre);
+            let remise = etats::mot_de_la_remise(Some(par), etats::PlaceDeLaRemise::Recit);
             match par {
-                etats::ModeDeRemise::Imprime => format!("{} {}, à remettre en main propre", piece, etats::remise_dite(par)),
-                etats::ModeDeRemise::Courriel => format!("{} {}", piece, etats::remise_dite(par)),
+                etats::ModeDeRemise::Imprime => format!("{} {}, à remettre en main propre", piece, remise),
+                etats::ModeDeRemise::Courriel => format!("{} {}", piece, remise),
             }
         }
         Ligne::ContratContresigne(e) => format!("Contrat contresigné renvoyé — {}", qui_du_contrat(ctx, &e.detail.nom, &e.detail.salarie)),
