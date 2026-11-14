@@ -133,7 +133,7 @@ impl NumeroDeCertificat {
 
 impl std::fmt::Display for NumeroDeCertificat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        std::fmt::Display::fmt(&self.0, f)
     }
 }
 

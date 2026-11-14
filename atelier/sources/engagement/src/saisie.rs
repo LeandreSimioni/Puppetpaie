@@ -534,6 +534,6 @@ impl RangDansLeMois {
 
 impl std::fmt::Display for RangDansLeMois {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0 + 1)
+        std::fmt::Display::fmt(&(self.0 + 1), f)
     }
 }
