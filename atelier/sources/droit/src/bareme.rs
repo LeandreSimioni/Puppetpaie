@@ -624,7 +624,7 @@ pub fn sante_hors_fiche(ent: &ChampsEntreprise) -> R<Option<String>> {
 }
 
 /// Le nombre entier d'un montant de la fiche (le nombre d'enfants).
-fn entier_de(m: &crate::fiche::Montant) -> R<i64> {
+fn entier_de(m: &crate::fiche::NombreDeFiche) -> R<i64> {
     use rust_decimal::prelude::ToPrimitive;
     let d = m.decimal()?;
     d.trunc().to_i64().ok_or_else(|| socle::echec::refus(socle::num::illisible(&d.to_string())))
@@ -1259,7 +1259,7 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
     // « aucun », ou un taux de zero : la commune de l'etablissement n'en a pas, ou il y emploie moins de onze salaries
     // (CGCT, L. 2333-64, I, l'effectif « employe dans chacune des zones »).
     let vm = e.versement_mobilite.dite();
-    let taux_vm = vm.and_then(|v| v.taux.dite()).map(crate::fiche::Montant::decimal).transpose()?;
+    let taux_vm = vm.and_then(|v| v.taux.dite()).map(crate::fiche::NombreDeFiche::decimal).transpose()?;
     let aucun = taux_vm.is_some_and(|t| t.is_zero());
     if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.as_ref().is_none_or(VersementMobiliteEcrit::est_vide)) {
         bar.versement_mobilite = None;
@@ -1528,8 +1528,10 @@ du socle.",
     Ok(repartition.parts())
 }
 
-/// Un taux global partage : la part salariale arrondie au centieme, la demie
-/// vers le bas, la patronale en est le reste.
+/// Un TAUX global partage (pas un montant) : la part salariale arrondie au centieme, la demie vers le bas, la
+/// patronale en est le reste. Aucun texte ne dit la regle ; elle est celle que donnent les taux publies par Audiens
+/// (`atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt`, p. 3 : 7,87 en 50/50 donne
+/// 3,94 / 3,93), relevee dans la note de `retraite_t1_repartition` du bareme livre : un constat, pas un fondement.
 pub fn parts_t1(total: Decimal, sal: PartDeLaTrancheUne) -> (Decimal, Decimal) {
     let part_sal = div(mul(total, Decimal::from_i128_with_scale(sal.num, 0)), Decimal::from_i128_with_scale(sal.den, 0))
         .round_dp_with_strategy(2, RoundingStrategy::MidpointTowardZero);
@@ -1979,7 +1981,7 @@ mod tests_risques_atmp {
         let s26 = crate::contexte::socle_livre_lu(2026).unwrap().unwrap();
         let ligne = |code: &str, t: Decimal| crate::fiche::TauxAtmp {
             code_risque: Some(CodeRisqueAt::lire(code).unwrap()),
-            valeur: Some(crate::fiche::Montant::Flottant(t)),
+            valeur: Some(crate::fiche::NombreDeFiche::Flottant(t)),
             depuis: Some(Jour::nouveau(2025, 1, 1).unwrap()),
             ..Default::default()
         };
@@ -1989,7 +1991,7 @@ mod tests_risques_atmp {
         assert!(taux_atmp_de_l_annee(&ligne("921CC", t210), 2026, Some(&s26), false).unwrap().is_err());
         assert_eq!(taux_atmp_de_l_annee(&ligne("923AD", t165), 2026, Some(&s26), false).unwrap().unwrap().valeur, Some(Decimal::new(165, 2)));
         assert!(taux_atmp_de_l_annee(&ligne("923AD", t165), 2026, Some(&s26), true).unwrap().is_err());
-        assert!(taux_atmp_de_l_annee(&crate::fiche::TauxAtmp { valeur: Some(crate::fiche::Montant::Flottant(t165)), ..Default::default() }, 2026, Some(&s26), false).is_none());
+        assert!(taux_atmp_de_l_annee(&crate::fiche::TauxAtmp { valeur: Some(crate::fiche::NombreDeFiche::Flottant(t165)), ..Default::default() }, 2026, Some(&s26), false).is_none());
     }
 }
 
@@ -2023,7 +2025,7 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: i32, socle_an: Opt
             an, nom, pourquoi),
         )))
     };
-    let valeur = match dit.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose() {
+    let valeur = match dit.valeur.as_ref().map(crate::fiche::NombreDeFiche::decimal).transpose() {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
     };
@@ -2057,7 +2059,7 @@ fn code_risque_valide(code: &str) -> bool {
 /// un taux sans la date a partir de laquelle il vaut (celle de la notification). `None` : rien a redire.
 pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> R<Option<String>> {
     let code = t.code_risque.as_ref();
-    let valeur = t.valeur.as_ref().map(crate::fiche::Montant::decimal).transpose()?;
+    let valeur = t.valeur.as_ref().map(crate::fiche::NombreDeFiche::decimal).transpose()?;
     Ok(match (code, valeur) {
         (None, Some(_)) => Some("Le taux AT/MP se dit avec son code risque, tel que la notification de la CARSAT les écrit.".to_string()),
         (Some(c), Some(_)) if *c == SANS_NOTIFICATION => Some("Avec 999ZZ (pas encore de notification), la DSN ne déclare aucun taux (norme DSN, S21.G00.40.043) : laissez le taux vide.".to_string()),

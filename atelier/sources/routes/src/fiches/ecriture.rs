@@ -833,8 +833,8 @@ fn deriver_etablissements(p: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
 
 /// UN MONTANT SAISI EN TEXTE (`12,5`, `1.5 %`) S'ECRIT EN NOMBRE, dans sa forme la plus courte, comme un nombre lu du
 /// fichier ; un texte blanc ne dit rien. Rend la faute d'un texte qui n'est pas un nombre.
-fn montant_saisi(m: &mut Option<droit::fiche::Montant>, quoi: &str) -> Option<String> {
-    let Some(droit::fiche::Montant::Texte(brut)) = m.as_ref() else { return None };
+fn montant_saisi(m: &mut Option<droit::fiche::NombreDeFiche>, quoi: &str) -> Option<String> {
+    let Some(droit::fiche::NombreDeFiche::Texte(brut)) = m.as_ref() else { return None };
     let brut = brut.replace('%', "");
     let brut = brut.trim();
     if brut.is_empty() {
@@ -842,7 +842,7 @@ fn montant_saisi(m: &mut Option<droit::fiche::Montant>, quoi: &str) -> Option<St
         return None;
     }
     let Some(d) = socle::num::decimal_a_virgule(brut) else { return Some(format!("{} illisible : {}.", quoi, brut)) };
-    match socle::forme::lire_texte::<droit::fiche::Montant>(&socle::num::court(d).to_string(), "Le nombre ne se lit pas.") {
+    match socle::forme::lire_texte::<droit::fiche::NombreDeFiche>(&socle::num::court(d).to_string(), "Le nombre ne se lit pas.") {
         Ok(lu) => {
             *m = Some(lu);
             None

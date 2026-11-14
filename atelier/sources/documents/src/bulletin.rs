@@ -372,7 +372,7 @@ pub struct Ecart {
 #[derive(Debug, Clone)]
 pub struct PrelevementDeLEcart {
     pub indu: bool,
-    pub taux: droit::fiche::Montant,
+    pub taux: droit::pas::TauxDePas,
     pub montant: Decimal,
 }
 
@@ -401,7 +401,7 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
         "Impôt sur le revenu prélevé à la source sur la différence"
     };
     out.push(ligne(
-        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux(p.taux.dec()?)), colonnes - 1), s(fmt_eur(p.montant))],
+        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux(p.taux.decimal())), colonnes - 1), s(fmt_eur(p.montant))],
         vec![],
     ));
     out.push(ligne_net(if r.a_verser >= Decimal::ZERO { "NET À VERSER" } else { "NET À RETENIR" }, r.a_verser.abs(), colonnes));
@@ -413,7 +413,7 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
 /// (le montant soumis, apres l'abattement d'un contrat court ; C. trav. R. 3243-1, 9°), son taux, son montant. Le
 /// « Cumul annuel » du modele (art. 1, V) n'est pas imprime : le moteur ne le calcule pas.
 fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> R<Vec<Ligne>> {
-    let taux = fmt_taux(pas.taux.dec()?);
+    let taux = fmt_taux(pas.taux.decimal());
     Ok(vec![
         ligne(
             vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(fmt_eur(pas.montant_soumis)), s(taux), s(fmt_eur(pas.prelevement))],

@@ -196,7 +196,7 @@ struct Bulletin {
     analytique: Option<String>,
     lignes: Vec<Ligne>,
     non_soumis: Vec<Ligne>,
-    taux_pas: Decimal,
+    taux_pas: droit::pas::TauxDePas,
     regle_le: Jour,
     /// Ce que la paie a calcule, quand la description le porte : le bulletin l'imprime au lieu de le calculer.
     paie: Option<Paie>,
@@ -503,7 +503,7 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
         Some(p) => (p.net_imposable, p.pas),
         None => {
             let n = net_social + csg_non_deductible;
-            (n, Montant::du_decimal(n).fois_taux(Taux::du_decimal(b.taux_pas)).au_centime().decimal())
+            (n, b.taux_pas.prelevement(Montant::du_decimal(n)).au_centime().decimal())
         }
     };
     let cout = brut + total_e + non_soumis;
@@ -640,6 +640,9 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
             return Err(refus!("{} : le gabarit CoolPaie n'a pas de case « Analytique »", ou));
         }
         let paie = lire_paie(b.cotisations, b.net_imposable, b.pas, &g, gabarit, &ou)?;
+        let Some(taux_pas) = droit::pas::TauxDePas::du_nombre(b.taux_pas.0) else {
+            return Err(refus!("{} : `taux_pas` {} n'est pas un taux de PAS (deux chiffres au plus, deux décimales au plus)", ou, b.taux_pas.0));
+        };
         bulletins.push(Bulletin {
             rang: k + 1,
             salarie,
@@ -653,7 +656,7 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
             analytique: b.analytique,
             lignes,
             non_soumis,
-            taux_pas: b.taux_pas.0,
+            taux_pas,
             regle_le: b.regle_le,
             paie,
         });
@@ -895,7 +898,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         cotisations,
         total: [fr(c.total_employeur), fr(c.total_salarie)],
         net: fr(c.net_avant_impot),
-        pas: [fr(c.net_imposable), format!("{:.3}", b.taux_pas.round_dp(3)), format!("{:.2}", c.pas), fr(c.annee.pas)],
+        pas: [fr(c.net_imposable), format!("{:.3}", b.taux_pas.decimal()), format!("{:.2}", c.pas), fr(c.annee.pas)],
         net_imposable: [fr(c.net_imposable), fr(c.annee.net_imposable)],
         net_a_payer: fr(c.net_a_payer),
         regle: dmy(&b.regle_le),
@@ -973,7 +976,7 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         entete_pas: vec![(m("280.9"), "base"), (m("339"), "taux personnalisé"), (m("442.2"), "montant"), (m("502.7"), "cumul annuel")],
         pas: (
             "IMPOT SUR LE REVENU PRELEVE A LA SOURCE".into(),
-            vec![(m("316.1"), fr(c.net_imposable)), (m("412.2"), fr(b.taux_pas)), (m("487"), fr(c.pas)), (m("563"), fr(c.annee.pas))],
+            vec![(m("316.1"), fr(c.net_imposable)), (m("412.2"), fr(b.taux_pas.decimal())), (m("487"), fr(c.pas)), (m("563"), fr(c.annee.pas))],
         ),
         net_imposable: Some((fr(c.net_imposable), fr(c.annee.net_imposable))),
         cumuls,

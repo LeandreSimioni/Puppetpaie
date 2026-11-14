@@ -380,7 +380,9 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         if x < socle::num::Decimal::ZERO {
             return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", v.ecrit())));
         }
-        // Tronque au centieme (R. 130-1, I).
+        // Un effectif, pas un montant : tronque au centieme, CSS R. 130-1, I
+        // (`atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la
+        // fraction d'effectif au-delà de la deuxième décimale »).
         let x = x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToZero);
         if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, ctx.aujourdhui)? {
             return Err(erreur(Classe::Refuse, format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
@@ -409,7 +411,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 #[serde(deny_unknown_fields)]
 struct ChargeEffectif {
     annee: Option<i32>,
-    valeur: Option<droit::fiche::Montant>,
+    valeur: Option<droit::fiche::NombreDeFiche>,
 }
 
 /// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les

@@ -1581,7 +1581,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             )))
         }
     };
-    let abatt = if bar.abattement_csg.est_nul() { Decimal::ONE } else { bar.abattement_csg.decimal() };
+    let abatt = bar.abattement_csg.decimal();
     let zero = Montant::ZERO.decimal();
     // cle -> (salarie, brut, base, mois) dans l'ordre d'insertion
     let mut ordre: Vec<String> = Vec::new();

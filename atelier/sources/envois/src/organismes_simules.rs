@@ -256,8 +256,9 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<Decimal> {
 }
 
 /// L'effectif salarie annuel de `an` : la moyenne des effectifs des mois de l'annee, les mois sans salarie ecartes, le
-/// resultat tronque au centieme (L. 130-1, I, et R. 130-1, I, du code de la securite sociale, memes releves). `None` quand
-/// aucun mois n'a de salarie.
+/// resultat tronque au centieme (L. 130-1, I, et R. 130-1, I, du code de la securite sociale,
+/// `atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la fraction
+/// d'effectif au-delà de la deuxième décimale ») : un effectif, pas un montant. `None` quand aucun mois n'a de salarie.
 fn effectif_annuel(an: i32, dsn_par_mois: &BTreeMap<u32, Vec<DsnLue>>) -> R<Option<Decimal>> {
     let mut mois: Vec<Decimal> = Vec::new();
     for (m, d) in dsn_par_mois {

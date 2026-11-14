@@ -411,10 +411,10 @@ impl Rubrique {
     /// Un mois de permanent : `quantite` = la fraction du mois payee,
     /// `heures` = la quotite du contrat (`conges::lignes_du_mois`). Le produit
     /// se compte au centieme d'heure, comme la DSN l'ecrit.
-    /// Le centieme d'heure se prend au plus pres, la moitie loin de zero ; le nombre rendu est dans sa forme la plus
-    /// courte (`socle::num::court`).
+    /// Le centieme d'heure est `Heures::au_centieme` ; le nombre rendu est dans sa forme la plus courte
+    /// (`socle::num::court`).
     pub fn heures(&self, quantite: Decimal, heures_saisies: Option<Decimal>) -> Decimal {
-        let centieme = |x: Decimal| socle::num::court(socle::num::mul(x, quantite).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero));
+        let centieme = |x: Decimal| socle::num::court(socle::grandeurs::Heures::du_decimal(socle::num::mul(x, quantite)).au_centieme().decimal());
         if let Some(f) = self.heures_forfait {
             return centieme(f);
         }

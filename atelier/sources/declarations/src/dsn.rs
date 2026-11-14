@@ -330,10 +330,11 @@ pub fn mt(x: Decimal) -> String {
 
 /// Le montant a deux decimales, tel que la DSN l'ecrit (`mt`), jamais -0.00.
 pub fn a_deux_decimales(x: Decimal) -> Decimal {
-    if x.is_zero() {
+    let c = Montant::du_decimal(x).au_centime();
+    if c.est_nul() {
         Montant::ZERO.decimal()
     } else {
-        Montant::du_decimal(x).au_centime().decimal()
+        c.decimal()
     }
 }
 
@@ -2064,7 +2065,7 @@ pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> R<()> {
 /// assistants maternels et familiaux, que seuls PAJEmploi et les departements declarent : le moteur ne l'ecrit pas.
 fn pas_du_versement(
     taux_pas: Option<&Triplet>, bar: &Pile, montant: Decimal, le: Jour, court: bool,
-) -> R<(droit::fiche::Montant, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<droit::pas::IdentifiantDuTauxPas>, Decimal)> {
+) -> R<(droit::pas::TauxDePas, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<droit::pas::IdentifiantDuTauxPas>, Decimal)> {
     let r = pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT)?;
     Ok((r.taux, r.type_taux, r.identifiant, r.montant_soumis))
 }
@@ -2450,13 +2451,13 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
             ), "pas"))
         }
     };
-    f.add(droit::rubrique!("S21.G00.50.006"), taux.ecrit());
+    f.add(droit::rubrique!("S21.G00.50.006"), taux.to_string());
     let type_taux = type_taux.ok_or_else(|| absente(droit::rubrique!("S21.G00.50.007")))?;
     f.ecrire_code(type_taux)?;
     if type_taux.transmis() {
         f.add_opt(droit::rubrique!("S21.G00.50.008"), identifiant.as_ref())?;
     }
-    f.add(droit::rubrique!("S21.G00.50.009"), mt(Montant::du_decimal(soumis).fois_taux(Taux::du_decimal(taux.dec()?)).au_centime().decimal()));
+    f.add(droit::rubrique!("S21.G00.50.009"), mt(taux.prelevement(Montant::du_decimal(soumis)).au_centime().decimal()));
     f.add(droit::rubrique!("S21.G00.50.013"), mt(soumis));
 
     // Un mois decoupe : les remunerations de chaque periode elementaire, datees de ses bornes (« La periode a
@@ -2746,14 +2747,14 @@ fn bloc_regularisation(
     f.add(droit::rubrique!("S21.G00.50.004"), mt(d_net));
     let v = &pas_c.versement;
     let (taux, type_taux, identifiant, soumis) = (&v.taux, &v.type_taux, &v.identifiant, v.montant_soumis);
-    f.add(droit::rubrique!("S21.G00.50.006"), taux.ecrit());
+    f.add(droit::rubrique!("S21.G00.50.006"), taux.to_string());
     let type_taux = type_taux.ok_or_else(|| absente(droit::rubrique!("S21.G00.50.007")))?;
     f.ecrire_code(type_taux)?;
     if type_taux.transmis() {
         f.add_opt(droit::rubrique!("S21.G00.50.008"), identifiant.as_ref())?;
     }
     let indu = d_ni < Decimal::ZERO;
-    f.add(droit::rubrique!("S21.G00.50.009"), if indu { "0.00".into() } else { mt(Montant::du_decimal(soumis).fois_taux(Taux::du_decimal(taux.dec()?)).au_centime().decimal()) });
+    f.add(droit::rubrique!("S21.G00.50.009"), if indu { "0.00".into() } else { mt(taux.prelevement(Montant::du_decimal(soumis)).au_centime().decimal()) });
     f.add(droit::rubrique!("S21.G00.50.013"), if indu { "0.00".into() } else { mt(soumis) });
 
     annuler_le_declare(f, r, &["51", "53"])?;
@@ -2788,7 +2789,7 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
         f.add(droit::rubrique!("S21.G00.56.002"), "03");
         f.add(droit::rubrique!("S21.G00.56.003"), mt(d_ni));
         f.add(droit::rubrique!("S21.G00.56.006"), taux_o);
-        f.add(droit::rubrique!("S21.G00.56.007"), mt(Montant::du_decimal(d_ni).fois_taux(Taux::du_decimal(taux_o.decimal())).au_centime().decimal()));
+        f.add(droit::rubrique!("S21.G00.56.007"), mt(taux_o.prelevement(Montant::du_decimal(d_ni)).au_centime().decimal()));
         f.add(droit::rubrique!("S21.G00.56.010"), mt(d_ni));
     }
     blocs_58_de_la_correction(f, r, &debut, &fin, fin_mois)?;

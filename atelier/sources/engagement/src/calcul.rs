@@ -1386,7 +1386,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             )))
         }
     };
-    let plafond_journalier = bar.plafond_journalier.map(socle::grandeurs::Montant::decimal).filter(|p| !p.is_zero());
+    let plafond_journalier = bar.plafond_journalier.map(socle::grandeurs::Montant::decimal);
     let t1_du_contrat = |p: Decimal| -> R<Decimal> { Ok(socle::grandeurs::Montant::du_decimal(mul(p, jours)).au_centime().decimal()) };
     let mut plafond_prev = None;
     if prev.base == Some(Assiette::T1Journaliere) {
@@ -1701,7 +1701,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite de 130 % de celle du brut entier
     // (`reduction_generale_sous_dfs`).
     // Le SMIC horaire de la reduction (`smic_horaire_reference`) ; sans lui, pas de reduction.
-    let smic_horaire_rg = bar.reduction_generale.as_ref().and_then(|r| r.smic_horaire_reference).map(socle::grandeurs::MontantUnitaire::decimal).filter(|s| !s.is_zero());
+    let smic_horaire_rg = bar.reduction_generale.as_ref().and_then(|r| r.smic_horaire_reference).map(socle::grandeurs::MontantUnitaire::decimal);
     let absence = smic_d_une_absence(&lb, smic_horaire_rg);
     let heures_rg = match absence.as_ref().and_then(|a| a.heures) {
         Some(h) => h,

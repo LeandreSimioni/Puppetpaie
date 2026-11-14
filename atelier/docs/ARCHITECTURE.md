@@ -202,8 +202,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 
 **Le détail**
 
-- **montant** : une somme en euros, au centime ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant`,
-  `droit::fiche::Montant` ; `engagement::ligne::Montant` est une ligne au montant, à renommer. L'arrondi au centime
+- **montant** : une somme en euros, au centime ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant` ; le
+  nombre d'une fiche, `droit::fiche::NombreDeFiche`, est une écriture (il garde ce qu'on a tapé), pas un montant ; `engagement::ligne::Montant` est une ligne au montant, à renommer. L'arrondi au centime
   est un seul, `Montant::au_centime` (la moitié vers le haut, deux décimales écrites).
 - **taux** : un pourcentage appliqué à une base ; aujourd'hui aussi `Decimal` (le solde de la taxe d'apprentissage se lit dans la forme
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le

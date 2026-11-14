@@ -41,6 +41,7 @@ use droit::emplois;
 use droit::emplois::AnnexeChomage as Annexe;
 use droit::minima::Par;
 
+use socle::grandeurs::Montant;
 use socle::num::{div, Decimal};
 use socle::echec::R;
 
@@ -444,7 +445,8 @@ fn val_entier(n: i64) -> Valeur {
 }
 
 /// Un nombre en francais : milliers separes par une espace insecable, virgule decimale ; `decimales` fixe, sinon les
-/// zeros de queue tombent (1,3 ; 4 005 ; 15,5).
+/// zeros de queue tombent (1,3 ; 4 005 ; 15,5). Son arrondi est celui d'un affichage (les decimales que le gabarit ou
+/// la phrase demandent), pas celui d'un montant : un montant y arrive deja au centime (`Montant::au_centime`).
 fn nombre_fr(x: Decimal, decimales: Option<u32>) -> String {
     let x = match decimales {
         Some(d) => x.round_dp_with_strategy(d, rust_decimal::RoundingStrategy::MidpointAwayFromZero),
@@ -941,7 +943,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                         ("heures_avant", val_nombre(g.heures_avant)),
                         ("nb_jours", val_entier(g.jours)),
                         ("montant_jour", val_texte(nombre_fr(div(g.montant, Decimal::from(g.jours)), Some(2)))),
-                        ("minimum", val_texte(nombre_fr(g.minimum.montant, Some(2)))),
+                        ("minimum", val_texte(nombre_fr(Montant::du_decimal(g.minimum.montant).au_centime().decimal(), Some(2)))),
                         ("gain", val_nombre(g.gain)),
                     ];
                     avec_jours(&mut v, jours_bruts(g.gain, &a30));
@@ -950,7 +952,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                 Quand::HeuresPourLaMemeSomme if assure.is_none() && !sature => hrs.as_ref().map(|g| {
                     let mut v = vec![
                         ("heures", val_nombre(g.heures)),
-                        ("montant", val_texte(nombre_fr(g.montant, Some(2)))),
+                        ("montant", val_texte(nombre_fr(Montant::du_decimal(g.montant).au_centime().decimal(), Some(2)))),
                         ("taux", val_texte(nombre_fr(div(g.montant, g.heures), Some(2)))),
                         ("minimum", val_texte(nombre_fr(g.minimum, Some(2)))),
                         ("heures_max", val_nombre(g.heures_max)),

@@ -70,6 +70,7 @@ use socle::echec::erreur;
 use crate::importation::completer as completer;
 use import::proposee;
 use import::tri::Sorte;
+use socle::grandeurs::Montant;
 use socle::num::Decimal;
 use socle::texte::euros;
 use import::attestes::{Atteste, BlocDImport, Registre, Reste};
@@ -2115,8 +2116,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
         .heures_enseignement
         .map(|h| h.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven).to_i64().ok_or_else(|| refus("heures d'enseignement hors limites")))
         .transpose()?;
-    let mut brut = l.b.brut;
-    brut.rescale(2);
+    let brut = Montant::du_decimal(l.b.brut).au_centime().decimal();
     let (debut, fin) = (l.b.debut, l.b.fin);
     let compte = Compte { heures, cachets, jours, brut };
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
@@ -2319,7 +2319,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
     };
     // Ce que l'AEM dit, et seulement cela : une colonne qu'elle ne porte pas reste vide (les cachets sont leur somme).
     let (heures, cachets, jours) = (a.heures, Some(a.cachets()), a.jours);
-    let brut = socle::grandeurs::Montant::du_decimal(brut).au_centime().decimal();
+    let brut = Montant::du_decimal(brut).au_centime().decimal();
     let pluriel = |n: i64, mot: &str| format!("{} {}{}", n, mot, if n > 1 { "s" } else { "" });
     let quoi: Vec<String> = [(heures, "heure"), (cachets, "cachet"), (jours, "jour")].iter().filter_map(|x| x.0.filter(|n| *n > 0).map(|n| pluriel(n, x.1))).collect();
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
@@ -2360,8 +2360,7 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<S
             ));
         }
     };
-    let mut brut = brut;
-    brut.rescale(2);
+    let brut = Montant::du_decimal(brut).au_centime().decimal();
     // Le certificat Congés Spectacles atteste un engagement du spectacle (D. 7121-41 du code du travail,
     // `atelier/reference/sources/caisse-conges-affiliation/LISEZ-MOI.md`) : un contrat d'usage.
     let mut a = ContratAtteste::vide(Attestation::Certificat, Some(NatureDeContrat::CdduSpectacle));

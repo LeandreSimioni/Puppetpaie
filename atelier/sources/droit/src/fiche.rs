@@ -255,11 +255,11 @@ pub fn dit(m: &MotEcrit) -> bool {
     }
 }
 
-/// UN MONTANT OU UN NOMBRE D'UNE FICHE : un nombre JSON, ou un texte qui se lit en decimal (`12,5` compris), garde tel
+/// UN NOMBRE D'UNE FICHE (un montant, un taux, une quantite), une ecriture et non une grandeur : un nombre JSON, ou un texte qui se lit en decimal (`12,5` compris), garde tel
 /// qu'il est ecrit (`socle::forme::NombreEcrit`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(from = "socle::forme::NombreEcrit")]
-pub enum Montant {
+pub enum NombreDeFiche {
     Entier(i64),
     Naturel(u64),
     /// Un nombre ecrit avec sa virgule, dans sa forme la plus courte (`socle::forme::NombreEcrit::Flottant`).
@@ -268,14 +268,14 @@ pub enum Montant {
     Texte(String),
 }
 
-impl Montant {
+impl NombreDeFiche {
     /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un texte illisible se refuse.
     pub fn decimal(&self) -> R<Decimal> {
         match self {
-            Montant::Entier(i) => Ok(Decimal::from(*i)),
-            Montant::Naturel(u) => Ok(Decimal::from(*u)),
-            Montant::Flottant(x) => Ok(*x),
-            Montant::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::echec::refus(socle::num::illisible(s))),
+            NombreDeFiche::Entier(i) => Ok(Decimal::from(*i)),
+            NombreDeFiche::Naturel(u) => Ok(Decimal::from(*u)),
+            NombreDeFiche::Flottant(x) => Ok(*x),
+            NombreDeFiche::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::echec::refus(socle::num::illisible(s))),
         }
     }
 
@@ -283,7 +283,7 @@ impl Montant {
     /// se lit sans virgule.
     pub fn dec(&self) -> R<Decimal> {
         match self {
-            Montant::Texte(s) => socle::num::dec_texte(s),
+            NombreDeFiche::Texte(s) => socle::num::dec_texte(s),
             autre => autre.decimal(),
         }
     }
@@ -298,41 +298,41 @@ impl Montant {
     /// entier ecrit (un naturel hors des entiers signes, un flottant). Un texte illisible se refuse.
     pub fn entier(&self) -> R<Option<i64>> {
         match self {
-            Montant::Entier(i) => Ok(Some(*i)),
-            Montant::Texte(s) => s.trim().parse().map(Some).map_err(|_| socle::echec::refus(socle::num::illisible(s))),
-            Montant::Naturel(_) | Montant::Flottant(_) => Ok(None),
+            NombreDeFiche::Entier(i) => Ok(Some(*i)),
+            NombreDeFiche::Texte(s) => s.trim().parse().map(Some).map_err(|_| socle::echec::refus(socle::num::illisible(s))),
+            NombreDeFiche::Naturel(_) | NombreDeFiche::Flottant(_) => Ok(None),
         }
     }
 
     /// Tel qu'il est ecrit, pour un message : un texte tel quel, un nombre sous sa forme ecrite.
     pub fn ecrit(&self) -> String {
         match self {
-            Montant::Entier(i) => i.to_string(),
-            Montant::Naturel(u) => u.to_string(),
-            Montant::Flottant(x) => x.to_string(),
-            Montant::Texte(s) => s.clone(),
+            NombreDeFiche::Entier(i) => i.to_string(),
+            NombreDeFiche::Naturel(u) => u.to_string(),
+            NombreDeFiche::Flottant(x) => x.to_string(),
+            NombreDeFiche::Texte(s) => s.clone(),
         }
     }
 }
 
-impl Serialize for Montant {
+impl Serialize for NombreDeFiche {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
-            Montant::Entier(i) => s.serialize_i64(*i),
-            Montant::Naturel(u) => s.serialize_u64(*u),
-            Montant::Flottant(x) => socle::forme::ecrire_a_virgule(x, s),
-            Montant::Texte(t) => s.serialize_str(t),
+            NombreDeFiche::Entier(i) => s.serialize_i64(*i),
+            NombreDeFiche::Naturel(u) => s.serialize_u64(*u),
+            NombreDeFiche::Flottant(x) => socle::forme::ecrire_a_virgule(x, s),
+            NombreDeFiche::Texte(t) => s.serialize_str(t),
         }
     }
 }
 
-impl From<socle::forme::NombreEcrit> for Montant {
-    fn from(n: socle::forme::NombreEcrit) -> Montant {
+impl From<socle::forme::NombreEcrit> for NombreDeFiche {
+    fn from(n: socle::forme::NombreEcrit) -> NombreDeFiche {
         match n {
-            socle::forme::NombreEcrit::Entier(i) => Montant::Entier(i),
-            socle::forme::NombreEcrit::Naturel(u) => Montant::Naturel(u),
-            socle::forme::NombreEcrit::Flottant(x) => Montant::Flottant(x),
-            socle::forme::NombreEcrit::Texte(s) => Montant::Texte(s),
+            socle::forme::NombreEcrit::Entier(i) => NombreDeFiche::Entier(i),
+            socle::forme::NombreEcrit::Naturel(u) => NombreDeFiche::Naturel(u),
+            socle::forme::NombreEcrit::Flottant(x) => NombreDeFiche::Flottant(x),
+            socle::forme::NombreEcrit::Texte(s) => NombreDeFiche::Texte(s),
         }
     }
 }
@@ -1682,7 +1682,7 @@ impl FormeDeCase for bool {}
 impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
-impl FormeDeCase for Montant {}
+impl FormeDeCase for NombreDeFiche {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
 impl FormeDeCase for crate::bareme::CodeRisqueAt {
@@ -2777,19 +2777,19 @@ cases! {
 
 cases! {
     /// La complementaire sante d'un permanent : le niveau souscrit et la composition couverte.
-    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: Montant }
+    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: NombreDeFiche }
 }
 
 cases! {
     /// Les conges a la reprise, lus sur le dernier bulletin de l'ancien logiciel.
     pub struct CongesReprise {
         date: Jour,
-        report: Montant,
-        acquis_report: Montant,
-        remuneration_report: Montant,
-        acquis: Montant,
-        pris: Montant,
-        remuneration_periode: Montant,
+        report: NombreDeFiche,
+        acquis_report: NombreDeFiche,
+        remuneration_report: NombreDeFiche,
+        acquis: NombreDeFiche,
+        pris: NombreDeFiche,
+        remuneration_periode: NombreDeFiche,
     }
 }
 
@@ -2817,7 +2817,7 @@ cases! {
 }
 
 cases! {
-    pub struct TauxPrevoyance { t1_non_cadre: Montant, t1_cadre: Montant, part_patronale: Montant }
+    pub struct TauxPrevoyance { t1_non_cadre: NombreDeFiche, t1_cadre: NombreDeFiche, part_patronale: NombreDeFiche }
 }
 
 cases! {
@@ -2826,12 +2826,12 @@ cases! {
 }
 
 cases! {
-    pub struct SantePermanents { taux_contrat: Montant, part_patronale: Montant }
+    pub struct SantePermanents { taux_contrat: NombreDeFiche, part_patronale: NombreDeFiche }
 }
 
 cases! {
     /// Le bloc S21.G00.44 : la compagnie doit-elle la taxe sur les salaires.
-    pub struct TaxeSurLesSalaires { tva: Tva, part_tva: Montant, sous_franchise: bool, association_1679a: bool }
+    pub struct TaxeSurLesSalaires { tva: Tva, part_tva: NombreDeFiche, sous_franchise: bool, association_1679a: bool }
 }
 
 cases! {
@@ -2853,7 +2853,7 @@ cases! {
     /// `notification` celle d'ou elle vient.
     pub struct TauxAtmp, cles CaseTauxAtmp {
         CodeRisque(crate::bareme::CodeRisqueAt) = "code_risque" => code_risque,
-        Valeur(Montant) = "valeur" => valeur,
+        Valeur(NombreDeFiche) = "valeur" => valeur,
         Depuis(Jour) = "depuis" => depuis,
         Provenance(ProvenanceAtmp) = "provenance" => provenance,
         Notification(NotificationAtmp) = "notification" => notification,
@@ -2861,7 +2861,7 @@ cases! {
 }
 
 cases! {
-    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(Montant) = "taux" => taux, CodeInsee(CodeInsee) = "code_insee" => code_insee }
+    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(NombreDeFiche) = "taux" => taux, CodeInsee(CodeInsee) = "code_insee" => code_insee }
 }
 
 cases! {
@@ -3146,7 +3146,7 @@ fiche! {
         CongesSpectacles(bool) = "conges_spectacles" => conges_spectacles,
         Source(String) = "source" => source,
         Sens(crate::catalogue::Sens) = "sens" => sens,
-        HeuresForfait(Montant) = "heures_forfait" => heures_forfait,
+        HeuresForfait(NombreDeFiche) = "heures_forfait" => heures_forfait,
         Plafond(crate::catalogue::Unite) = "plafond" => plafond,
         Aem(crate::catalogue::Unite) = "aem" => aem,
         DsnType(String) = "dsn_type" => dsn_type,

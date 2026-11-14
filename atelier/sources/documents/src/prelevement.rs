@@ -99,7 +99,7 @@ impl Prelevement {
     /// Le taux, son echelle gardee ; `None` : les pieces d'une paie importee ne le disent pas.
     pub fn taux(&self) -> R<Option<socle::num::Decimal>> {
         match self {
-            Prelevement::Calcule(v) => v.taux.dec().map(Some),
+            Prelevement::Calcule(v) => Ok(Some(v.taux.decimal())),
             Prelevement::Importe(p) => Ok(p.taux),
         }
     }

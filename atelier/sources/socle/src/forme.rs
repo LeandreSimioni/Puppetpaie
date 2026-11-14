@@ -664,7 +664,7 @@ fn ranger_les_textes(v: &mut Value, chemin: &mut Vec<String>, rangee: &dyn Fn(&[
 }
 
 /// UN NOMBRE TEL QU'IL EST ECRIT : un entier, un flottant, ou un texte qui se lit en decimal (`num::decimal_lu`, `12,5`
-/// compris), garde tel quel pour se reecrire de meme (`droit::fiche::Montant`). Un nombre ecrit avec sa virgule se garde
+/// compris), garde tel quel pour se reecrire de meme (`droit::fiche::NombreDeFiche`). Un nombre ecrit avec sa virgule se garde
 /// en decimal, dans sa forme la plus courte (`num::court` : `130.0` reste `130.0`), et se reecrit en nombre a virgule
 /// (`ecrire_a_virgule`).
 #[derive(Debug, Clone, PartialEq)]
