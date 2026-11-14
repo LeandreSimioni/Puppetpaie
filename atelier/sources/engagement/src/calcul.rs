@@ -678,7 +678,7 @@ section verifiee.",
     let categorie = fiche_prof.categorie.clone();
     // Le taux de l'annee : celui de la profession quand l'arrete lui donne un calendrier a part (art. 9, III, pour les
     // professions hors spectacle vivant), sinon celui de sa categorie (art. 9, II).
-    let taux = fiche_prof.taux.map(|n| n.0).or_else(|| dfs.taux.get(&categorie).map(|n| n.0)).ok_or_else(|| {
+    let taux = fiche_prof.taux.map(socle::grandeurs::Taux::decimal).or_else(|| dfs.taux.get(&categorie).map(|n| n.decimal())).ok_or_else(|| {
         socle::refus!(
             "Deduction forfaitaire specifique de {} ({}) : le bareme {} n'a pas de taux pour la categorie << {} >>.",
             qui, profession, annee, categorie
@@ -689,7 +689,7 @@ section verifiee.",
         categorie,
         taux,
         rubriques: dfs.rubriques_abattues.clone(),
-        plafond_annuel: dfs.plafond_annuel,
+        plafond_annuel: dfs.plafond_annuel.decimal(),
         frais_hors_assiette: fiche_prof.frais_hors_assiette.clone(),
         frais_cumulables: dfs.frais_cumulables,
     }))
@@ -1701,7 +1701,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite de 130 % de celle du brut entier
     // (`reduction_generale_sous_dfs`).
     // Le SMIC horaire de la reduction (`smic_horaire_reference`) ; sans lui, pas de reduction.
-    let smic_horaire_rg = bar.reduction_generale.as_ref().and_then(|r| r.smic_horaire_reference).map(|n| n.0).filter(|s| !s.is_zero());
+    let smic_horaire_rg = bar.reduction_generale.as_ref().and_then(|r| r.smic_horaire_reference).map(socle::grandeurs::MontantUnitaire::decimal).filter(|s| !s.is_zero());
     let absence = smic_d_une_absence(&lb, smic_horaire_rg);
     let heures_rg = match absence.as_ref().and_then(|a| a.heures) {
         Some(h) => h,

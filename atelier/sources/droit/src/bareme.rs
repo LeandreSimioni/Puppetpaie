@@ -1902,7 +1902,7 @@ pub fn taux_de_l_arrete(r: &RisqueAtmp, collectif: bool, alsace_moselle: bool) -
 
 /// Les risques que la pile `bar` connait (`risques_atmp` de son socle).
 pub fn risques_de(bar: &Pile) -> Vec<RisqueAtmp> {
-    let deux = |t: &socle::forme::Nombre| t.0.round_dp(2);
+    let deux = |t: &socle::grandeurs::Taux| t.a_deux_decimales().decimal();
     let texte = |t: &Option<String>| dit(t).map(|s| s.trim()).filter(|s| !s.is_empty()).map(String::from);
     bar.risques_atmp
         .iter()

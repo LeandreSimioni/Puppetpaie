@@ -2230,7 +2230,7 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
             // Le taux couvre la prevoyance du statut ; une garantie qu'une couche range avec elle (la tranche B d'un
             // cadre technicien de la CCNEAC, XII.2.2.2) est aussi « incluse dans la base CSG » : sa part patronale s'ajoute.
             CotisationSupplementaire::SurUneBase(t) => {
-                let sur_la_base = Montant::du_decimal(base(&bases(p, &bp)?, t.base)?).fois_taux(Taux::du_decimal(t.taux_sur_la_base.0)).au_centime().decimal();
+                let sur_la_base = Montant::du_decimal(base(&bases(p, &bp)?, t.base)?).fois_taux(t.taux_sur_la_base).au_centime().decimal();
                 if type_54 == AutreElementDeRevenuBrut::CotisationPrevoyanceRetraiteSupplementaire {
                     let ajoutees: Vec<IdDeCotisation> = bp.garanties_de_prevoyance().into_iter().filter(|g| *g != PREVOYANCE).collect();
                     add(sur_la_base, somme_lignes(p, &ajoutees, true))

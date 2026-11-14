@@ -765,7 +765,7 @@ forme! {
     /// cle `taux_sur_brut`, quelle que soit la base.
     pub struct TauxSurUneBase {
         #[serde(rename = "taux_sur_brut")]
-        pub taux_sur_la_base: Nombre,
+        pub taux_sur_la_base: Taux,
         pub base: Assiette,
     }
 }
@@ -793,12 +793,12 @@ forme! {
         pub verifie: Option<bool>,
         pub statuts: Option<Vec<Statut>>,
         pub formule: Option<FormuleDeReduction>,
-        pub tmin: Option<Nombre>,
-        pub tdelta: Option<Nombre>,
-        pub puissance: Option<Nombre>,
+        pub tmin: Option<Coefficient>,
+        pub tdelta: Option<Coefficient>,
+        pub puissance: Option<Coefficient>,
         pub t: Option<NombreDate>,
-        pub plafond_smic: Option<Nombre>,
-        pub smic_horaire_reference: Option<Nombre>,
+        pub plafond_smic: Option<Coefficient>,
+        pub smic_horaire_reference: Option<MontantUnitaire>,
         pub imputation: Option<Imputation>,
         pub dsn: Option<ReductionDsn>,
         /// La fraction du coefficient d'un salarie declare a la caisse des Conges Spectacles (`100/90`).
@@ -839,7 +839,7 @@ impl<'de> Deserialize<'de> for MajorationCaisseConges {
 forme! {
     pub struct Imputation {
         pub chomage: Option<NombreDate>,
-        pub agirc_arrco: Option<Nombre>,
+        pub agirc_arrco: Option<Taux>,
     }
 }
 
@@ -951,9 +951,8 @@ forme! {
         pub verifie: Option<bool>,
         pub professions: BTreeMap<crate::fiche::ProfessionDfs, Profession>,
         pub frais_cumulables: bool,
-        pub taux: BTreeMap<CategorieDfs, socle::forme::Nombre>,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub plafond_annuel: Decimal,
+        pub taux: BTreeMap<CategorieDfs, Taux>,
+        pub plafond_annuel: Montant,
         pub rubriques_abattues: Vec<IdDeCotisation>,
     }
 }
@@ -963,7 +962,7 @@ forme! {
         pub libelle: String,
         pub categorie: CategorieDfs,
         pub frais_hors_assiette: Vec<crate::catalogue::CodeDeRubrique>,
-        pub taux: Option<Nombre>,
+        pub taux: Option<Taux>,
     }
 }
 
@@ -979,7 +978,7 @@ forme! {
         pub code: crate::bareme::CodeRisqueAt,
         #[serde(default, deserialize_with = "crate::bareme::ecrit_a_l_arrete::deserialize")]
         pub code_arrete: Option<crate::bareme::CodeRisqueAt>,
-        pub taux: Option<Nombre>,
+        pub taux: Option<Taux>,
         pub tc: bool,
         pub alsace_moselle: Option<AtmpAlsaceMoselle>,
         pub libelle: String,
@@ -992,7 +991,7 @@ forme! {
 #[serde(deny_unknown_fields)]
 pub struct AtmpAlsaceMoselle {
     pub groupe: i64,
-    pub taux: Nombre,
+    pub taux: Taux,
     pub source: Option<Fondement>,
     pub note: Option<String>,
 }
@@ -1131,7 +1130,7 @@ impl Effet {
                 let r = pile.par_statut.get(statut)?.reduction_generale.as_ref()?;
                 match parametre {
                     ParametreReduction::T => r.t.map(|n| n.0),
-                    ParametreReduction::Tdelta => r.tdelta.map(|n| n.0),
+                    ParametreReduction::Tdelta => r.tdelta.map(Coefficient::decimal),
                 }
                 .map(Lu::Parametre)
             }
