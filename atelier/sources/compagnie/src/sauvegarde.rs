@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 use socle::echec::Classe;
-use socle::fichiers::CheminRelatif;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::paris::Moment;
 use std::path::{Path, PathBuf};
 
@@ -31,8 +31,11 @@ pub const DOSSIER_DRIVE: &str = "sauvegarde";
 /// L'index local de la sauvegarde, sous la compagnie (`chemin_index`).
 pub const INDEX: CheminRelatif = CheminRelatif::du_moteur("config/.sauvegarde.json");
 
-/// Ce qui ne monte pas (`NOMS_EXCLUS`).
-const NOMS_EXCLUS: [&str; 6] = ["google-jeton.bin", ".jeton-interface", ".compteurs.verrou", ".sauvegarde.json", ".ouverture.json", ".ouverture-etape.json"];
+/// Ce qui ne monte pas : les fichiers d'etat de la machine, par leur nom (`noms_exclus`), des suffixes, des dossiers.
+fn noms_exclus() -> [NomDeFichier; 6] {
+    use socle::fichiers::{ETAPE_DE_L_OUVERTURE, JETON_DE_LA_FENETRE, JETON_GOOGLE, TRACE_DE_L_OUVERTURE};
+    [JETON_GOOGLE.nom(), JETON_DE_LA_FENETRE, socle::verrou::COMPTEURS.nom(), INDEX.nom(), TRACE_DE_L_OUVERTURE.nom(), ETAPE_DE_L_OUVERTURE.nom()]
+}
 const SUFFIXES_EXCLUS: [&str; 4] = [".pyc", ".tmp", ".lock", ".part"];
 const DOSSIERS_EXCLUS: [&str; 2] = ["__pycache__", ".git"];
 
@@ -300,8 +303,8 @@ pub struct Etat {
 /// Un nom ou un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin relatif
 /// (le nom du fichier compris). La restauration s'en sert aussi : elle ne redescend que ce que la sauvegarde envoie.
 pub(crate) fn ecarte(relatif: &CheminRelatif) -> bool {
-    let exclu = |nom: &str| NOMS_EXCLUS.contains(&nom) || SUFFIXES_EXCLUS.iter().any(|s| nom.ends_with(s));
-    exclu(relatif.nom().texte()) || relatif.texte().split('/').any(|n| DOSSIERS_EXCLUS.contains(&n))
+    let nom = relatif.nom();
+    noms_exclus().contains(&nom) || SUFFIXES_EXCLUS.iter().any(|s| nom.texte().ends_with(s)) || relatif.texte().split('/').any(|n| DOSSIERS_EXCLUS.contains(&n))
 }
 
 /// Les entrees (fichiers et liens, pas les dossiers) sous `dossier`, relatives a `racine`. Un dossier lien n'est pas
@@ -377,15 +380,27 @@ pub struct DossierDuDrive(String);
 impl DossierDuDrive {
     /// Le dossier du Drive qui tient `dossier` (aucun : la racine de la compagnie), sous la racine `racine_drive`.
     pub fn de(racine_drive: &str, dossier: Option<&CheminRelatif>) -> DossierDuDrive {
-        DossierDuDrive(match dossier {
-            Some(d) => format!("{}/{}/{}", racine_drive, DOSSIER_DRIVE, d),
-            None => format!("{}/{}", racine_drive, DOSSIER_DRIVE),
-        })
+        DossierDuDrive(DossierDuDrive::segments(racine_drive, dossier).join("/"))
+    }
+
+    /// Ses dossiers, de la racine du Drive au sien, un par un : ce que le Drive parcourt.
+    pub fn segments<'a>(racine_drive: &'a str, dossier: Option<&'a CheminRelatif>) -> Vec<&'a str> {
+        let mut segments = vec![racine_drive, DOSSIER_DRIVE];
+        if let Some(d) = dossier {
+            segments.extend(d.texte().split('/'));
+        }
+        segments
+    }
+}
+
+impl std::fmt::Display for DossierDuDrive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
 /// `chemin_index` : `config/`, et pas `journal/` : de l'etat machine, pas un document. Il est
-/// ecarte de la sauvegarde (`NOMS_EXCLUS`).
+/// ecarte de la sauvegarde (`noms_exclus`).
 pub fn chemin_index(racine: &Path) -> PathBuf {
     INDEX.dans(racine)
 }

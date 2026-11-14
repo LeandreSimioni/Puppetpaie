@@ -35,9 +35,12 @@ impl Verrouille {
     }
 }
 
+/// Le verrou des compteurs, sous la racine de donnees.
+pub const COMPTEURS: crate::fichiers::CheminRelatif = crate::fichiers::CheminRelatif::du_moteur("config/.compteurs.verrou");
+
 /// `config/.compteurs.verrou` d'une racine de donnees.
 pub fn chemin_compteurs(racine: &Path) -> PathBuf {
-    racine.join(crate::fichiers::CONFIG).join(".compteurs.verrou")
+    COMPTEURS.dans(racine)
 }
 
 /// La marque que le detenteur ecrit : `QUI pid N JJ/MM/AAAA HH:MM:SS`.

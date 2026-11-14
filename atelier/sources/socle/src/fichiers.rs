@@ -979,6 +979,15 @@ pub const CONFIG: NomDeFichier = NomDeFichier::du_moteur("config");
 /// Le marqueur d'une compagnie qui n'est pas la vraie (une compagnie fictive, une copie de developpement).
 pub const MARQUEUR_COPIE: NomDeFichier = NomDeFichier::du_moteur("COPIE-DE-DEVELOPPEMENT.json");
 
+/// LES FICHIERS D'ETAT DE LA MACHINE, nommes ici parce que des crates de plusieurs etages les nomment (la sauvegarde
+/// ne les monte pas, `compagnie::sauvegarde::ecarte`) : le jeton Google scelle (`routes::coffre`) ; la trace de la
+/// derniere ouverture et l'etape en cours d'un passage (`routes::gestes::ouverture`).
+pub const JETON_GOOGLE: CheminRelatif = CheminRelatif::du_moteur("config/google-jeton.bin");
+pub const TRACE_DE_L_OUVERTURE: CheminRelatif = CheminRelatif::du_moteur("config/.ouverture.json");
+pub const ETAPE_DE_L_OUVERTURE: CheminRelatif = CheminRelatif::du_moteur("config/.ouverture-etape.json");
+/// Le jeton d'une fenetre, garde dans son dossier sur le poste (`moteur::interface`).
+pub const JETON_DE_LA_FENETRE: NomDeFichier = NomDeFichier::du_moteur(".jeton-interface");
+
 /// Le modele `nom` (gabarit de contrat, de DPAE, de certificat) : celui de la compagnie (son dossier `gabarits`),
 /// a defaut celui du poste (`poste`), a defaut celui livre avec le logiciel (`donnees/modeles/`). Une compagnie qui
 /// ecrit ses propres clauses passe devant ; une copie de la configuration du poste sans son dossier de gabarits reste la

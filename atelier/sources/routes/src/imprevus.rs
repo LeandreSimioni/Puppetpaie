@@ -37,7 +37,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60, MotifDArret, MotifDeReprise, SubrogationDeLArret};
 use droit::permanents::MotifDeSuspension;
-use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, GenreDImprevu};
+use engagement::imprevus::{self, ArretSaisi, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, GenreDImprevu};
 use engagement::numeros::{numero_dit, NumeroContrat};
 use engagement::saisie::{Carte, Preavis, VueDuMois};
 use engagement::Chiffre;
@@ -1652,7 +1652,6 @@ fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<
     let debut = c.debut;
     let contrat = contrat_suspendu(ctx, &cle, &debut, c.contrat.as_ref())?;
     let s = SuspensionSaisie {
-        genre: GenreSuspension::Suspension,
         salarie: cle.clone(),
         contrat_debut: contrat.debut.clone(),
         contrat_numero: contrat.numero.clone(),

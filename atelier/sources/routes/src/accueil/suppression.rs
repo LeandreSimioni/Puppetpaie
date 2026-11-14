@@ -133,7 +133,7 @@ pub fn question(racine: &Path) -> R<Suppression> {
     };
     let sauvegarde = match g {
         Genre::Reelle => {
-            let liee = racine.join(socle::fichiers::CONFIG).join(crate::coffre::FICHIER_JETON).is_file();
+            let liee = socle::fichiers::JETON_GOOGLE.dans(racine).is_file();
             let derniere = compagnie::sauvegarde::derniere(racine).map_err(|e| e.echec)?.map(|d| d.quand);
             let phrase = match &derniere {
                 Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", q.dit()),

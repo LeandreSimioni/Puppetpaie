@@ -298,7 +298,7 @@ fn signer_dossier(h: &mut Sha256, base: &Path, rel: &str, profond: bool, garder:
 ///   `importation-etat` ;
 /// - `journal/incidents.json` : le journal des incidents.
 const HORS_DE_L_ECRAN: [CheminRelatif; 7] = [
-    crate::gestes::ouverture::TRACE,
+    socle::fichiers::TRACE_DE_L_OUVERTURE,
     compagnie::sauvegarde::INDEX,
     compagnie::incidents::DIAGNOSTIC,
     compagnie::installation::FICHIER_HORLOGE,

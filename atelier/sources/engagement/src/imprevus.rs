@@ -15,8 +15,8 @@
 //!
 //! UN SEUL MAGASIN : `imprevus/AAAA-MM.json` sous les donnees de la compagnie, au mois ou l'imprevu se range (le dernier
 //! jour travaille d'un arret, le premier jour d'une suspension) : `{"quoi", "mois", "imprevus": [...]}`. Chaque
-//! imprevu dit son `genre` (`arret` ou `suspension`) ; sa forme est `ArretSaisi` ou `SuspensionSaisie`, et tout autre
-//! champ refuse.
+//! imprevu dit son `genre` en tete (`arret` ou `suspension`, l'etiquette de `Imprevu`) ; sa forme est `ArretSaisi` ou
+//! `SuspensionSaisie`, et tout autre champ refuse.
 
 use std::path::{Path, PathBuf};
 
@@ -57,20 +57,6 @@ const ABIME: &str = "Un mois du magasin des imprévus ne se relit pas : il est a
 /// La rubrique de la retenue d'une absence non remuneree.
 const ABSENCE_NON_REMUNEREE: droit::catalogue::CodeDeRubrique = droit::catalogue::CodeDeRubrique::du_moteur("absence_non_remuneree");
 
-/// Le genre d'un arret, tel qu'il s'ecrit (`GenreDImprevu::Arret`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GenreArret {
-    #[serde(rename = "arret")]
-    Arret,
-}
-
-/// Le genre d'une suspension, tel qu'il s'ecrit (`GenreDImprevu::Suspension`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GenreSuspension {
-    #[serde(rename = "suspension")]
-    Suspension,
-}
-
 /// UN ARRET DE TRAVAIL, dans l'ordre ou il s'ecrit ; chaque cle est ecrite, nulle quand elle n'a pas de valeur, et sa
 /// lecture refuse celle qui manque. Ses champs de la norme (motif, dernier
 /// jour travaille, fin previsionnelle, subrogation, reprise, accident) sont ceux du bloc 60 et du signalement
@@ -85,7 +71,6 @@ pub enum GenreSuspension {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArretSaisi {
-    pub genre: GenreArret,
     pub salarie: droit::contexte::IdSalarie,
     pub contrat_debut: Jour,
     pub contrat_numero: Option<crate::numeros::NumeroContrat>,
@@ -146,7 +131,6 @@ pub struct RepriseNotee {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SuspensionSaisie {
-    pub genre: GenreSuspension,
     pub salarie: droit::contexte::IdSalarie,
     pub contrat_debut: Jour,
     pub contrat_numero: Option<crate::numeros::NumeroContrat>,
@@ -159,11 +143,14 @@ pub struct SuspensionSaisie {
     pub note: Option<String>,
 }
 
-/// UN IMPREVU DU MAGASIN : un arret de travail ou une suspension, que son genre distingue.
+/// UN IMPREVU DU MAGASIN : un arret de travail ou une suspension, que son genre distingue ; le genre s'ecrit en tete
+/// de l'imprevu, `genre`, par son nom (`GenreDImprevu`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "genre")]
 pub enum Imprevu {
+    #[serde(rename = "arret")]
     Arret(ArretSaisi),
+    #[serde(rename = "suspension")]
     Suspension(SuspensionSaisie),
 }
 

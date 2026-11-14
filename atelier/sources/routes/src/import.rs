@@ -930,7 +930,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
 /// pas se refuse.
 fn copies_reprises(racine: &Path) -> R<usize> {
     let dossier = import::mois::dossier_des_bulletins(racine);
-    if !dossier.exists() {
+    if !socle::fichiers::existe_lu(&dossier)? {
         return Ok(0);
     }
     let disque = |e: std::io::Error| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque);

@@ -169,16 +169,15 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         ErreurGoogle::nouvelle(
             socle::echec::Classe::SauvegardeAbsente,
             format!(
-                "Pas de sauvegarde dans le Drive{} : le dossier {}/{} est introuvable. Le compte relie est-il celui de la \
+                "Pas de sauvegarde dans le Drive{} : le dossier {} est introuvable. Le compte relie est-il celui de la \
                  compagnie ? Seuls les dossiers crees par PuppetPaie, avec la meme application Google, sont visibles.",
                 compte.as_deref().map(|c| format!(" de {}", c)).into_iter().collect::<String>(),
-                racine_drive,
-                DOSSIER_DRIVE
+                DossierDuDrive::de(racine_drive, None)
             ),
         )
     };
     let racine_id = le_dossier(client, &IdDrive::RACINE, racine_drive, racine_drive)?.ok_or_else(absente)?;
-    let sauvegarde_id = le_dossier(client, &racine_id, DOSSIER_DRIVE, &format!("{}/{}", racine_drive, DOSSIER_DRIVE))?.ok_or_else(absente)?;
+    let sauvegarde_id = le_dossier(client, &racine_id, DOSSIER_DRIVE, &DossierDuDrive::de(racine_drive, None).to_string())?.ok_or_else(absente)?;
 
     let mut distants: BTreeMap<CheminRelatif, Entree> = BTreeMap::new();
     let mut dossiers: BTreeMap<Option<CheminRelatif>, IdDrive> = BTreeMap::new();

@@ -5385,7 +5385,6 @@ mod tests {
     fn arret(reprise: Option<Jour>, fin_previsionnelle: Jour) -> Arret {
         Arret {
             saisi: engagement::imprevus::ArretSaisi {
-                genre: engagement::imprevus::GenreArret::Arret,
                 salarie: IdSalarie::lire("Audinot").unwrap(),
                 contrat_debut: j(2025, 9, 1),
                 contrat_numero: Some(engagement::numeros::NumeroContrat::lire("AU.25.01").unwrap()),

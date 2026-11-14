@@ -746,7 +746,7 @@ fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> 
 /// Efface le jeton local, sans reseau. L'acces reste accorde cote Google, et se retire sur myaccount.google.com.
 fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<GoogleOublie> {
     exiger_mot_de_passe(&ctx.racine, mdp, "oublier le compte Google")?;
-    let p = JETON_GOOGLE.dans(&ctx.racine);
+    let p = socle::fichiers::JETON_GOOGLE.dans(&ctx.racine);
     let efface = p.exists();
     if efface {
         std::fs::remove_file(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
@@ -758,11 +758,8 @@ fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<Goog
 /// `client_secret`. Le secret ne s'ecrit pas dans le source Rust.
 const FICHIER_APPLICATION: &str = "google-application.json";
 
-/// L'application Google propre a la compagnie, sous `config/`, et le jeton scelle.
+/// L'application Google propre a la compagnie, sous `config/` ; le jeton scelle : `socle::fichiers::JETON_GOOGLE`.
 const FICHIER_IDENTIFIANTS: &str = "google.json";
-pub(crate) const FICHIER_JETON: &str = "google-jeton.bin";
-/// Le jeton Google, sous la racine de la compagnie.
-pub const JETON_GOOGLE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/google-jeton.bin");
 
 /// La description scellee avec le jeton.
 pub(crate) const DESCRIPTION: &str = "moteur de paie - jeton Google";
@@ -835,7 +832,7 @@ enum Jeton {
 impl Jeton {
     /// Le jeton scelle sous la racine de la compagnie.
     fn de(racine: &Path) -> Jeton {
-        let p = config(racine).join(FICHIER_JETON);
+        let p = socle::fichiers::JETON_GOOGLE.dans(racine);
         if !p.exists() {
             return Jeton::Absent;
         }
@@ -953,7 +950,7 @@ fn sceller_le_jeton(racine: &Path, jeton: &envois::google_autorisation::JetonGoo
         .map_err(|e| e.reformuler(|m| format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", m)).reclasser(Classe::Google))?;
     let dossier = config(racine);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Google))?;
-    let chemin = dossier.join(FICHIER_JETON);
+    let chemin = socle::fichiers::JETON_GOOGLE.dans(racine);
     std::fs::write(&chemin, scelle).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Google))?;
     Ok(jeton.compte.clone())
 }

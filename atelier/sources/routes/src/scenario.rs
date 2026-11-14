@@ -249,34 +249,6 @@ struct HorlogeDeLOuverture {
     horloge: Vec<String>,
 }
 
-/// Les cles d'une charge qui nomment un dossier ou un fichier que la route LIT (une boite aux lettres d'import, un export
-/// d'un autre logiciel) : ce qu'il contient entre dans le scenario.
-#[cfg(feature = "atelier")]
-const CLES_DE_DEPOT: [&str; 4] = [CleDeDepot::Dossier.nom(), CleDeDepot::Export.nom(), CleDeDepot::Fichier.nom(), CleDeDepot::Chemin.nom()];
-
-/// CE QUE LA CHARGE NOMME A LIRE HORS DU MOTEUR, aux cles `CLES_DE_DEPOT`, lu en sa forme : un chemin chacune, ou rien.
-#[cfg(feature = "atelier")]
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Depots {
-    dossier: Option<PathBuf>,
-    export: Option<PathBuf>,
-    fichier: Option<PathBuf>,
-    chemin: Option<PathBuf>,
-}
-
-#[cfg(feature = "atelier")]
-impl Depots {
-    /// Chaque cle, dans l'ordre de `CLES_DE_DEPOT`, et le chemin qu'elle nomme.
-    fn chacun(&self) -> [(CleDeDepot, Option<&Path>); 4] {
-        [
-            (CleDeDepot::Dossier, self.dossier.as_deref()),
-            (CleDeDepot::Export, self.export.as_deref()),
-            (CleDeDepot::Fichier, self.fichier.as_deref()),
-            (CleDeDepot::Chemin, self.chemin.as_deref()),
-        ]
-    }
-}
 
 /// Les routes dont la cle `dossier` vide (ou absente) veut dire `import/` de la compagnie (`crate::import::dossier_import`).
 #[cfg(feature = "atelier")]
@@ -793,7 +765,7 @@ fn hors_comparaison(rel: &CheminRelatif) -> bool {
     rel == compagnie::installation::JOURNAL_INTERFACE.texte()
         || rel == compagnie::incidents::INCIDENTS.texte()
         || rel == crate::etat_garde::OUVERTURE_ECRITE.texte()
-        || rel.ends_with(crate::gestes::ouverture::ETAPE)
+        || rel.ends_with(socle::fichiers::ETAPE_DE_L_OUVERTURE.nom().texte())
 }
 
 /// Les fichiers d'une compagnie, relatifs, hors caches. Une compagnie que le banc n'a pas n'a aucun
@@ -1064,7 +1036,7 @@ mod enregistreur {
         let rel = rel.texte();
         rel == compagnie::installation::JOURNAL_INTERFACE.texte()
             || rel == crate::etat_garde::OUVERTURE_ECRITE.texte()
-            || rel.ends_with(crate::gestes::ouverture::ETAPE)
+            || rel.ends_with(socle::fichiers::ETAPE_DE_L_OUVERTURE.nom().texte())
             || rel.ends_with(".verrou")
     }
 
@@ -1218,13 +1190,14 @@ mod enregistreur {
             Ok(sha)
         }
 
-        /// Ce que la route lit hors du moteur : un dossier ou un fichier nomme par la charge (`CLES_DE_DEPOT`), ou la
-        /// boite aux lettres `import/` de la compagnie. Chaque fichier entre dans `pieces/`.
+        /// Ce que la route lit hors du moteur : un dossier ou un fichier nomme par la charge (a une `CleDeDepot`, un chemin
+        /// chacune, ou rien), ou la boite aux lettres `import/` de la compagnie. Chaque fichier entre dans `pieces/`.
         fn recopier_les_pieces(&self, racine: &Path, route: Route, charge: &Charge) -> R<BTreeMap<CleDeDepot, Piece>> {
             let mut out = BTreeMap::new();
-            let depots: Depots = charge.lire_cles(&CLES_DE_DEPOT)?;
-            for (cle, valeur) in depots.chacun() {
-                let chemin = match valeur.map(Path::to_string_lossy) {
+            let noms: Vec<&str> = CleDeDepot::TOUTES.iter().map(|c| c.nom()).collect();
+            let depots: BTreeMap<CleDeDepot, Option<PathBuf>> = charge.lire_cles(&noms)?;
+            for &cle in CleDeDepot::TOUTES {
+                let chemin = match depots.get(&cle).and_then(Option::as_deref).map(Path::to_string_lossy) {
                     Some(s) if !s.trim().is_empty() => {
                         let p = PathBuf::from(crate::depots::normaliser(s.trim()));
                         if p.is_absolute() {

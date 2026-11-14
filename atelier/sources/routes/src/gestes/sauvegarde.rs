@@ -10,7 +10,7 @@ use envois::drive::{Client, Drive, EmpreinteMd5, ErreurGoogle};
 
 use compagnie::sauvegarde::{
     cause_de, ecrire_index, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
-    DOSSIER_DRIVE, GOOGLE_INDISPONIBLE,
+    GOOGLE_INDISPONIBLE,
 };
 
 /// Echecs passagers de suite (chacun deja retente par le client) au-dela desquels le reste du passage est reporte sans appel.
@@ -65,10 +65,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     }
 
     for (dossier, fichiers) in &par_dossier {
-        let mut segments: Vec<&str> = vec![racine_drive, DOSSIER_DRIVE];
-        if let Some(d) = dossier {
-            segments.extend(d.texte().split('/'));
-        }
+        let segments = compagnie::sauvegarde::DossierDuDrive::segments(racine_drive, dossier.as_ref());
         let cle = compagnie::sauvegarde::DossierDuDrive::de(racine_drive, dossier.as_ref());
         // Le dossier, tel qu'un dossier reporte le dit (`.` pour la racine).
         let dossier = match dossier {

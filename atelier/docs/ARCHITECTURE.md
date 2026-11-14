@@ -545,8 +545,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   d'emploi), suivi pour un article d'un entrepôt de la DILA de son code (`…/articles.jsonl.gz#travail`) ; que portent une
   `Source` et les titres de la banque des conseils.
 - **dossier de la sauvegarde dans le Drive** : la racine du Drive de la compagnie, `sauvegarde`, puis le dossier de la
-  compagnie qu'il tient, écrit avec des barres droites ; une seule construction (`DossierDuDrive::de`), pour la
-  sauvegarde et la restauration. Que porte l'index de la sauvegarde (`config/.sauvegarde.json`, `dossiers`).
+  compagnie qu'il tient, écrit avec des barres droites ; une seule construction (`DossierDuDrive::segments`, que le
+  Drive parcourt, et `de`, qui les joint), pour la sauvegarde et la restauration. Que porte l'index de la sauvegarde (`config/.sauvegarde.json`, `dossiers`).
 - **entrée mise de côté au tri d'un import** : une entrée d'archive dont le nom ne fait pas un chemin sous l'archive
   (`..`, `:`, un chemin absolu, rien qui reste), un fichier du disque dont le nom n'est pas un `NomDeFichier`, ou une
   entrée, d'archive ou du disque, qui ne se lit pas : elle ne s'écrit jamais sur le disque, le reste se trie, et le
@@ -1198,8 +1198,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   `droit::contexte::effectifs_lus` seule (l'effectif A01, la CSA et l'OETH, le relevé des retours), écrite par
   `envois::releve_retours` seul.
 - **genre d'un imprévu** : un arrêt de travail (bloc 60) ou une autre suspension du contrat (bloc 65), écrit `arret`,
-  `suspension` dans le magasin des imprévus ; une liste du logiciel (`socle::noms_fermes!`), par laquelle une lecture du
-  magasin choisit les uns ou les autres. Que portent le résumé d'un arrêt et celui d'une suspension.
+  `suspension` en tête de chaque imprévu du magasin (`genre`, l'étiquette de `engagement::imprevus::Imprevu`, qui dit
+  sa forme : `ArretSaisi` ou `SuspensionSaisie`, qui ne le portent pas) ; une liste du logiciel
+  (`socle::noms_fermes!`), par laquelle une lecture du magasin choisit les uns ou les autres (`Imprevu::genre`). Que
+  portent le résumé d'un arrêt et celui d'une suspension.
 - **type de contrat de la DPAE** : C_TYPE_CONTRAT du Format 120 (1 CDD, 2 CDI, 3 CTT), `codes_fermes!` avec son libellé ;
   que portent la DPAE d'une nature (`contrats-base.json`) et une DPAE relue.
 - **rôle d'un contrat d'organisme** : la prévoyance ou la santé d'un salarié payé au mois (`role` de

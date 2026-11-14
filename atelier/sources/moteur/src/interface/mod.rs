@@ -365,7 +365,7 @@ fn fichier_de_la_page(chemin: &str) -> R<Option<(Vec<u8>, &'static str)>> {
 /// Un jeton garde d'une autre forme se tire a neuf. UN TIRAGE QUI ECHOUE REFUSE : la fenetre ne demarre pas avec un jeton
 /// previsible.
 fn jeton(local: &Path) -> R<socle::secret::Secret> {
-    let p = local.join(".jeton-interface");
+    let p = local.join(socle::fichiers::JETON_DE_LA_FENETRE);
     match std::fs::read_to_string(&p) {
         Ok(j) => {
             let j = j.trim();
