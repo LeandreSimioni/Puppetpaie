@@ -256,11 +256,11 @@ impl EmploiDeclare {
             v.clone().filter(|v| !natures.iter().any(|nat| nat.code(rubrique).as_deref() == Some(v.as_ref())))
         }
         Ok(EmploiDeclare {
-            statut_conventionnel: garder(&natures, droit::rubrique!("S21.G00.40.002"), &self.statut_conventionnel),
-            statut_categoriel_rc: garder(&natures, droit::rubrique!("S21.G00.40.003"), &self.statut_categoriel_rc),
-            pcs_ese: garder(&natures, droit::rubrique!("S21.G00.40.004"), &self.pcs_ese),
-            code_emploi_ft: garder(&natures, droit::rubrique!("S21.G00.40.005"), &self.code_emploi_ft),
-            emploi: garder(&natures, droit::rubrique!("S21.G00.40.006"), &self.emploi),
+            statut_conventionnel: garder(&natures, S21_40_002, &self.statut_conventionnel),
+            statut_categoriel_rc: garder(&natures, S21_40_003, &self.statut_categoriel_rc),
+            pcs_ese: garder(&natures, S21_40_004, &self.pcs_ese),
+            code_emploi_ft: garder(&natures, S21_40_005, &self.code_emploi_ft),
+            emploi: garder(&natures, S21_40_006, &self.emploi),
         })
     }
 }

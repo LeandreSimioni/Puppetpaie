@@ -517,7 +517,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   (`S21.G00.40.021`, cahier technique, chapitre 3, règles de nommage). Que portent la rubrique d'une liste de la norme
   (`ListeDeLaNorme::RUBRIQUE`), les clés des tables d'usages et de formats, les `codes`, `champs`, `absents` et
   `interdits` d'une nature de `contrats-base.json`, la rubrique d'une case de `champs-base.json`, ce que la lecture
-  d'une DSN garde ; une rubrique que le moteur nomme se vérifie à la compilation (`droit::rubrique!`). Les rubriques que
+  d'une DSN garde, chaque ligne que l'écrivain pose (`dsn::Fichier::lignes`, qu'il reparcourt par bloc :
+  `du_meme_bloc`) ; une rubrique que le moteur nomme se vérifie à la compilation (`droit::rubrique!`). Les rubriques que
   l'écrivain de la DSN passe à `dsn::Fichier::add` restent des littéraux.
 - **nom de fichier** : le nom d'un fichier seul, sans son dossier : le fichier parti que le journal des envois note, le
   modèle d'un contrat, une table de la norme livrée, l'archive d'une version, la copie d'une pièce importée. Ni vide, ni

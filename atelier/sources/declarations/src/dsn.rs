@@ -69,7 +69,8 @@ pub(crate) fn code_admis<T: droit::natures::ListeDeLaNorme>(norme: &crate::norme
 
 /// L'accumulateur de lignes DSN, et la version de la norme du fichier qu'il fabrique.
 pub struct Fichier {
-    pub lignes: Vec<String>,
+    /// Les lignes ecrites, `(rubrique, valeur)`, dans l'ordre : une ligne garde sa rubrique jusqu'au texte (`texte`).
+    pub lignes: Vec<(RubriqueDeLaNorme, String)>,
     norme: Option<crate::norme::Norme>,
     /// L'individu en cours d'ecriture n'a qu'UN bloc « Contrat - S21.G00.40 » dans la declaration : S21.G00.78.006 ne
     /// s'ecrit pas. « Dans le cas de la declaration d'un contrat unique, cette rubrique n'est pas a renseigner. »
@@ -118,7 +119,7 @@ impl Fichier {
     }
 
     pub fn add(&mut self, rubrique: RubriqueDeLaNorme, valeur: impl Display) {
-        self.lignes.push(format!("{},'{}'", rubrique, valeur));
+        self.lignes.push((rubrique, valeur.to_string()));
     }
 
     /// Une valeur absente ne s'ecrit pas « None » : c'est un refus.
@@ -159,24 +160,9 @@ impl Fichier {
         }
     }
 
-    /// Les rubriques ecrites, `(rubrique, valeur)`, dans l'ordre ; une ligne qui n'ecrit pas une rubrique est une faute
-    /// de l'ecriture, qui remonte.
-    pub fn rubriques(&self) -> R<Vec<(RubriqueDeLaNorme, String)>> {
-        self.lignes
-            .iter()
-            .map(|l| {
-                let (k, v) = l.split_once(',').ok_or_else(|| refus!("la ligne {} de la DSN ecrite n'ecrit pas une rubrique", socle::fichiers::repr(l)))?;
-                let v = match v.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
-                    Some(entre) => entre.to_string(),
-                    None => v.to_string(),
-                };
-                Ok((RubriqueDeLaNorme::lire(k)?, v))
-            })
-            .collect()
-    }
-
+    /// Le texte du fichier : chaque ligne `rubrique,'valeur'`, terminee par CR LF.
     pub fn texte(&self) -> String {
-        let mut t = self.lignes.join("\r\n");
+        let mut t = self.lignes.iter().map(|(r, v)| format!("{},'{}'", r, v)).collect::<Vec<_>>().join("\r\n");
         t.push_str("\r\n");
         t
     }
@@ -2536,7 +2522,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
     }
     let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(mois)?);
     bloc_versement(&mut f, p, &bar, 1, None)?;
-    Ok(VersementEcrit { affiliations, rubriques: f.rubriques()? })
+    Ok(VersementEcrit { affiliations, rubriques: f.lignes })
 }
 
 /// Les affiliations que CE fichier a deja ecrites pour le contrat `numero` de l'individu en cours :
@@ -2548,7 +2534,7 @@ fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat
     const VERSEMENT: RubriqueDeLaNorme = droit::rubrique!("S21.G00.50.001");
     const AFFILIATION: RubriqueDeLaNorme = droit::rubrique!("S21.G00.70.012");
     const REFERENCE: RubriqueDeLaNorme = droit::rubrique!("S21.G00.70.013");
-    let rubriques = f.rubriques()?;
+    let rubriques = &f.lignes;
     // L'individu en cours commence a son NIR ; sans lui, le fichier entier.
     let lignes = match rubriques.iter().rposition(|(k, _)| *k == NIR) {
         Some(depart) => &rubriques[depart..],
@@ -3794,7 +3780,7 @@ ne les contient toutes deux. Rien n'est ecrit.",
 
 /// Les composants de versement que declarent les lignes `lignes` (le fichier en cours, individus ecrits), dans l'ordre
 /// ou ils apparaissent, cumules par organisme, code d'affectation et periode.
-pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
+pub fn composants_de_versement(lignes: &[(RubriqueDeLaNorme, String)]) -> R<Vec<Composant>> {
     const LIBELLE_15: RubriqueDeLaNorme = droit::rubrique!("S21.G00.15.001");
     const ORGANISME_15: RubriqueDeLaNorme = droit::rubrique!("S21.G00.15.002");
     const REFERENCE_15: RubriqueDeLaNorme = droit::rubrique!("S21.G00.15.005");
@@ -3806,6 +3792,7 @@ pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
     const DEBUT_78: RubriqueDeLaNorme = droit::rubrique!("S21.G00.78.002");
     const FIN_78: RubriqueDeLaNorme = droit::rubrique!("S21.G00.78.003");
     const AFFILIATION_78: RubriqueDeLaNorme = droit::rubrique!("S21.G00.78.005");
+    const COMPOSANT_79: RubriqueDeLaNorme = droit::rubrique!("S21.G00.79.001");
     const CODE_81: RubriqueDeLaNorme = droit::rubrique!("S21.G00.81.001");
     const MONTANT_81: RubriqueDeLaNorme = droit::rubrique!("S21.G00.81.004");
     // 15.005 -> (15.001, 15.002)
@@ -3819,12 +3806,9 @@ pub fn composants_de_versement(lignes: &[String]) -> R<Vec<Composant>> {
     let mut base: Option<(String, String, Option<IdentifiantDAffiliation>)> = None;
     let mut code81 = String::new();
     let mut out: Vec<Composant> = Vec::new();
-    for l in lignes {
-        let (Some(k), v) = ligne_ecrite(l) else {
-            base = None;
-            continue;
-        };
-        if !matches!(k.to_string().get(..10), Some("S21.G00.78" | "S21.G00.79" | "S21.G00.81")) {
+    for (k, v) in lignes {
+        let (k, v) = (*k, v.clone());
+        if ![CODE_78, COMPOSANT_79, CODE_81].iter().any(|b| k.du_meme_bloc(*b)) {
             base = None;
         }
         match k {
@@ -3904,7 +3888,7 @@ contrats ouvert sur le mois déclaré. Rien n'est écrit.",
 /// Le bloc 20 d'un organisme complementaire et ses composants 55, ou rien si aucun composant ne porte de montant.
 fn versement_complementaire(
     v: &Versement, ent: &ChampsEntreprise, banque: &droit::fiche::Banque, composants: &[&Composant], debut: Jour, fin: Jour, echeance: Option<Jour>,
-) -> R<Vec<String>> {
+) -> R<Vec<(RubriqueDeLaNorme, String)>> {
     if composants.iter().all(|c| c.montant.is_zero()) {
         return Ok(Vec::new());
     }
@@ -3972,13 +3956,12 @@ sur le RIB de la compagnie). Rien n'est ecrit.",
 /// regularisations positives) et des S21.G00.56.007 (regularisations d'un indu, negatives). INFERENCE : la norme ne
 /// nomme pas cette somme ; le versement DGFiP est le « montant des cotisations reglees » (20.005, p. 156) et le PAS
 /// precompte est celui des 50.009 (p. 245) corrige des 56.007 (p. 263).
-pub fn pas_retenu(lignes: &[String]) -> R<Decimal> {
+pub fn pas_retenu(lignes: &[(RubriqueDeLaNorme, String)]) -> R<Decimal> {
     let mut s = zero2();
-    for l in lignes {
-        let Some((k, v)) = l.split_once(',') else { continue };
-        if RubriqueDeLaNorme::lue(k).is_some_and(|r| r == droit::rubrique!("S21.G00.50.009") || r == droit::rubrique!("S21.G00.56.007")) {
-            let v = v.trim_matches('\'');
-            let m: Decimal = v.parse().map_err(|_| socle::echec::a_la_cle(&format!("Un montant ne se lit pas ({}).", k), k, v))?;
+    for (k, v) in lignes {
+        if *k == droit::rubrique!("S21.G00.50.009") || *k == droit::rubrique!("S21.G00.56.007") {
+            let k = k.to_string();
+            let m: Decimal = v.parse().map_err(|_| socle::echec::a_la_cle(&format!("Un montant ne se lit pas ({}).", k), &k, v))?;
             s = add(s, m);
         }
     }
@@ -3989,7 +3972,7 @@ pub fn pas_retenu(lignes: &[String]) -> R<Decimal> {
 /// remplace (type 03 ou 05), et `remplacee_versait_pas` dit si la declaration remplacee portait un versement DGFiP.
 fn versement_dgfip(
     du: Decimal, mois: Mois, debut: Jour, fin: Jour, banque: &droit::fiche::Banque, remplace: bool, remplacee_versait_pas: Option<bool>,
-) -> R<Vec<String>> {
+) -> R<Vec<(RubriqueDeLaNorme, String)>> {
     // « arrondi a l'entier le plus proche (les deux decimales etant valorisees a zero) » (p. 157, ligne 194) ; le demi
     // va a l'euro superieur (`bordereau::euro`) : CGI art. 1724, « La liquidation de toutes sommes a recevoir [...] est
     // arrondie a l'euro le plus proche. La fraction d'euro egale a 0,50 est comptee pour 1 »
@@ -4327,13 +4310,8 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
             let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(m)?);
             let refs: Vec<&Paie> = autres.iter().collect();
             bloc_contrat(&mut f, &declaree, &ent_e, orgs, 1, &bar, true, &[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
-            let bloc: Vec<(RubriqueDeLaNorme, String)> = f
-                .lignes
-                .iter()
-                .filter_map(|l| l.split_once(','))
-                .filter(|(k, _)| k.starts_with("S21.G00.40."))
-                .map(|(k, x)| Ok((RubriqueDeLaNorme::lire(k)?, x.trim_matches('\'').to_string())))
-                .collect::<R<_>>()?;
+            let bloc: Vec<(RubriqueDeLaNorme, String)> =
+                f.lignes.into_iter().filter(|(k, _)| k.du_meme_bloc(crate::changements_contrat::DEBUT_CONTRAT)).collect();
             return Ok(Some(crate::changements_contrat::Declare { mois: m, siret: droit::fiche::Siret::de(ctx_m.entreprise.siren.exigee("siren")?, &nic), nic, bloc }));
         }
         m = m.precedent();
@@ -5318,10 +5296,7 @@ mod tests {
     // `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, `bloc-S21.G00.56.txt` (la somme est une inference, `pas_retenu`).
     #[test]
     fn le_pas_retenu_compte_les_50_009_et_les_regularisations_d_indu() {
-        let l: Vec<String> = ["S21.G00.50.009,'187.18'", "S21.G00.50.013,'2000.00'", "S21.G00.50.009,'12.40'", "S21.G00.56.007,'-30.08'"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let l = [l("S21.G00.50.009", "187.18"), l("S21.G00.50.013", "2000.00"), l("S21.G00.50.009", "12.40"), l("S21.G00.56.007", "-30.08")];
         assert_eq!(pas_retenu(&l).unwrap(), Decimal::from_str_exact("169.50").unwrap());
     }
 
@@ -5332,7 +5307,7 @@ mod tests {
         let (debut, fin) = (Jour::nouveau(2026, 7, 1).unwrap(), Jour::nouveau(2026, 7, 31).unwrap());
         let montant = |du: &str| -> Option<String> {
             let l = versement_dgfip(Decimal::from_str_exact(du).unwrap(), debut.mois_civil(), debut, fin, &banque, false, None).unwrap();
-            l.iter().find_map(|x| x.strip_prefix("S21.G00.20.005,").map(str::to_string))
+            l.iter().find(|(k, _)| *k == droit::rubrique!("S21.G00.20.005")).map(|(_, v)| format!("'{}'", v))
         };
         assert_eq!(montant("187.18"), Some("'187.00'".into()));
         assert_eq!(montant("187.50"), Some("'188.00'".into()));
@@ -5345,12 +5320,12 @@ mod tests {
 
     // ------------------------------------------------------------ les composants du versement (bloc 55)
 
-    fn l(k: &str, v: &str) -> String {
-        format!("{},'{}'", k, v)
+    fn l(k: &str, v: &str) -> (RubriqueDeLaNorme, String) {
+        (RubriqueDeLaNorme::lire(k).unwrap(), v.to_string())
     }
 
     /// Un individu, une adhesion, une base 31 rattachee : le minimum que `composants_de_versement` lit.
-    fn fichier_55(debut: &str, fin: &str, aff: &str, avec_15: bool) -> Vec<String> {
+    fn fichier_55(debut: &str, fin: &str, aff: &str, avec_15: bool) -> Vec<(RubriqueDeLaNorme, String)> {
         let mut f = Vec::new();
         if avec_15 {
             f.extend([l("S21.G00.15.001", "CONTRAT A"), l("S21.G00.15.002", "P0983"), l("S21.G00.15.004", "01"), l("S21.G00.15.005", "100")]);

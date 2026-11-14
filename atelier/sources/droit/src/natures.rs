@@ -170,6 +170,11 @@ impl RubriqueDeLaNorme {
             None => panic!("rubrique de la norme mal formee"),
         }
     }
+
+    /// Les deux rubriques sont d'un meme bloc : meme structure, meme bloc (`S21.G00.40.001` et `S21.G00.40.009`).
+    pub fn du_meme_bloc(self, autre: RubriqueDeLaNorme) -> bool {
+        self.structure == autre.structure && self.bloc == autre.bloc
+    }
 }
 
 /// LA RUBRIQUE QUE LE MOTEUR NOMME A L'ENDROIT OU IL S'EN SERT (`rubrique!("S21.G00.40.049")`) : evaluee a la

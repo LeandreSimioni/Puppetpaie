@@ -435,7 +435,7 @@ mod tests {
         let b = fiche(r#"{"nom": "CLAIRON"}"#, &[("nom", Jour::nouveau(2026, 9, 15).unwrap(), "DUVAL")]);
         let mut f = Fichier::nouveau();
         ecrire(&mut f, &s, Some(&b), Some(&declaree()), fin().mois_civil(), &fin()).unwrap();
-        assert_eq!(f.lignes, vec!["S21.G00.31.001,'15092026'", "S21.G00.31.009,'CLAIRON'"]);
+        assert_eq!(f.texte(), "S21.G00.31.001,'15092026'\r\nS21.G00.31.009,'CLAIRON'\r\n");
         // Une fiche qui n'a jamais porte la valeur declaree ne date rien.
         let b = fiche(r#"{"nom": "AUTRE"}"#, &[("nom", Jour::nouveau(2026, 9, 15).unwrap(), "DUVAL")]);
         let e = ecrire(&mut Fichier::nouveau(), &s, Some(&b), Some(&declaree()), fin().mois_civil(), &fin()).unwrap_err();
