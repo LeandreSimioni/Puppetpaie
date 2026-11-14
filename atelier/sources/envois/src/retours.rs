@@ -3542,6 +3542,31 @@ pub struct RetourMetierOc {
     pub contexte: Vec<ContexteOc>,
 }
 
+socle::noms_fermes! {
+    /// LE GENRE D'UN RETOUR METIER d'un compte rendu d'organisme complementaire, que dit la premiere lettre de son code :
+    /// « codes retour [...] de type "E" (erreur) ou de type "I" (information) » (schema CRM DSN OC P3 V1.1.4,
+    /// `gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt` l. 276).
+    GenreDeRetourOc, "Genre d'un retour métier" {
+        Erreur = "E",
+        Information = "I",
+    }
+}
+
+impl GenreDeRetourOc {
+    /// Celui que dit la premiere lettre du code `code` ; aucun pour une autre lettre.
+    pub fn du_code(code: &str) -> Option<GenreDeRetourOc> {
+        GenreDeRetourOc::TOUTES.iter().copied().find(|g| code.starts_with(g.nom()))
+    }
+
+    /// Son mot.
+    pub fn mot(self) -> &'static str {
+        match self {
+            GenreDeRetourOc::Erreur => "erreur",
+            GenreDeRetourOc::Information => "information",
+        }
+    }
+}
+
 /// Un `ContexteRetourMetier` : la rubrique, son libelle, la valeur et son libelle.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ContexteOc {

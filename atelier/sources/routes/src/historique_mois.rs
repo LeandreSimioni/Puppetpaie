@@ -33,7 +33,7 @@ use envois::journal::Ligne;
 use envois::releve_retours::CanalDesRetours;
 use envois::retours::{
     self, AnomalieDuRapport, CriticiteOc, CrmOc, DeclencheurNeores, IdDeFlux, NatureDuRetour, Neores, Rapport, ResultatDuControleNeores, StatutDuRetour, SubstituableNeores, TypeDActionNeores,
-    TypeDInformationCollective, TypeDInformationLu, TypeDeCrmOc, Verdict,
+    GenreDeRetourOc, TypeDInformationCollective, TypeDInformationLu, TypeDeCrmOc, Verdict,
 };
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
@@ -950,24 +950,20 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
             l.phrases.push(format!("Contact chez l'organisme : {}.", contact));
         }
         for r in &d.retours {
-            let genre = match lu(&r.code).and_then(|c| c.chars().next()) {
-                Some('E') => Some("erreur"),
-                Some('I') => Some("information"),
-                _ => None,
-            };
+            let genre = lu(&r.code).and_then(GenreDeRetourOc::du_code);
             let mut message: Vec<String> = lu(&r.libelle).into_iter().chain(lu(&r.description)).map(String::from).collect();
             if let Some(v) = joint([lu(&r.valeur), lu(&r.libelle_valeur).map(|x| format!("({})", x)).as_deref()], " ") {
                 message.push(format!("déclaré « {} »", v));
             }
             if let Some(c) = joint([lu(&r.corrigee), lu(&r.libelle_corrigee).map(|x| format!("({})", x)).as_deref()], " ") {
-                message.push(format!("{} « {} »", if genre == Some("information") { "pris en compte" } else { "attendu" }, c));
+                message.push(format!("{} « {} »", if genre == Some(GenreDeRetourOc::Information) { "pris en compte" } else { "attendu" }, c));
             }
             if let Some(e) = r.date_evenement {
                 message.push(format!("événement du {}", e.jj_mm_aaaa()));
             }
             l.anomalies.push(Anomalie {
                 code: lu(&r.code).map(String::from),
-                categorie: joint([genre, r.criticite.map(CriticiteOc::libelle)], ", "),
+                categorie: joint([genre.map(GenreDeRetourOc::mot), r.criticite.map(CriticiteOc::libelle)], ", "),
                 message: joint(message.iter().map(|m| Some(m.as_str())), " — "),
                 rubrique: joint([lu(&r.rubrique), lu(&r.libelle_rubrique).map(|x| format!("({})", x)).as_deref()], " "),
                 ligne: None,

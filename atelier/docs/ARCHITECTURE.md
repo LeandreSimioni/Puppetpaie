@@ -291,6 +291,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | nature d'un retour | `NatureDuRetour` | `envois/src/retours.rs` |
 | format d'une pièce de retour | `FormatDuRetour` | `envois/src/retours.rs` |
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
+| genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
@@ -613,6 +614,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   qu'un rapport donne (`TypeDInformationLu`) est un type prévu, ou le texte d'un type que le schéma ne prévoit pas,
   gardé et dit tel (« Information (…) ») ; un rapport qui ne le dit pas n'en a pas. Que porte une information d'un
   rapport (`InformationCollective`), que la lecture d'une pièce traduit.
+- **genre d'un retour métier OC** : erreur ou information, que dit la première lettre (`E`, `I`) du code d'un retour
+  métier d'un compte rendu d'organisme complémentaire (schéma CRM DSN OC P3 V1.1.4, l. 276) ; une liste du texte
+  (`socle::noms_fermes!`), `du_code` ; un code d'une autre lettre n'en a pas. Ce que la lecture d'un compte rendu en
+  dit (la catégorie de l'anomalie, « pris en compte » ou « attendu »).
 - **canal des retours** : le canal d'un retour d'organisme (règle 5) : la DSN sur net-entreprises, la DPAE sur l'Urssaf,
   services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
   fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
