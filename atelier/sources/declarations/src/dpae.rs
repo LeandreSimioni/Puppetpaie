@@ -980,16 +980,24 @@ pub struct LigneDuCertificat {
     pub embauche: Option<Jour>,
     /// R_DOSSIER, la reference sous laquelle la DPAE est enregistree.
     pub dossier: String,
-    /// C_RETOUR_AR.
+    /// C_RETOUR_AR : enregistree avec un dossier (`enregistree`), deja existante (98), ou refusee.
     pub code: CodeRetourDpae,
-    /// 00 ou 99 avec un dossier.
-    pub enregistree: bool,
-    /// 98.
-    pub deja_existante: bool,
     /// Celles a O : CERTIF, IMMA, MT, PMF5.
     pub formalites: Vec<FormaliteDpae>,
     /// C_RET_AR_LOT ; aucun quand la zone est a blanc.
     pub lot: Option<CodeRetourDuLot>,
+}
+
+/// ENREGISTREE : un code qui enregistre (`CodeRetourDpae::enregistree`), avec une reference de dossier.
+pub fn enregistree(code: CodeRetourDpae, dossier: &str) -> bool {
+    code.enregistree() && !dossier.is_empty()
+}
+
+impl LigneDuCertificat {
+    /// Enregistree (`enregistree`).
+    pub fn enregistree(&self) -> bool {
+        enregistree(self.code, &self.dossier)
+    }
 }
 
 /// Le certificat de conformite (nature 41), DPAE par DPAE. Un retour de la norme se lit strictement : un NIR, un
@@ -1034,17 +1042,13 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             "" => None,
             n => Some(droit::fiche::Nir::lire(n).map_err(|e| e.reformuler(|p| format!("Certificat de conformité des DPAE : {}", p)))?),
         };
-        let dossier = z("dossier");
-        let enregistree = code.enregistree() && !dossier.is_empty();
         out.push(LigneDuCertificat {
             nom: c("nom"),
             prenom: c("prenom"),
             nir,
             embauche,
-            dossier,
-            deja_existante: code == CodeRetourDpae::DejaExistante,
+            dossier: z("dossier"),
             code,
-            enregistree,
             formalites: FormaliteDpae::TOUTES.into_iter().filter(|f| z(f.zone()) == "O").collect(),
             lot,
         });
@@ -1348,18 +1352,18 @@ mod tests {
         assert_eq!(c[0].dossier, "D1234");
         assert_eq!(c[0].code, CodeRetourDpae::AutreErreur);
         assert_eq!(c[0].code.libelle(), "Autre erreur (erreur concernant des données facultatives)");
-        assert!(c[0].enregistree);
+        assert!(c[0].enregistree());
         assert_eq!(c[0].formalites, [FormaliteDpae::Certif, FormaliteDpae::Mt]);
         // 98 : deja existante, et pas enregistree
-        assert!(c[1].deja_existante);
-        assert!(!c[1].enregistree);
+        assert_eq!(c[1].code, CodeRetourDpae::DejaExistante);
+        assert!(!c[1].enregistree());
         assert_eq!(c[1].formalites, [FormaliteDpae::Imma]);
         // un refus de la DPAE (38)
         assert_eq!(c[2].code, CodeRetourDpae::NumeroDeSecuriteSocialeInvalide);
-        assert!(!c[2].enregistree && !c[2].deja_existante);
+        assert!(!c[2].enregistree());
         // un lot en erreur ; le code `00` sans dossier n'est pas enregistre
         assert_eq!(c[3].lot, Some(CodeRetourDuLot::CodeVersionIncorrect));
-        assert!(!c[3].enregistree);
+        assert!(!c[3].enregistree());
         // un code inconnu du Format 120 refuse le certificat
         let e = lire_certificat(&flux(1, |r, _| poser_texte(r, 429, "77"))).unwrap_err();
         assert!(e.phrase.contains("77") && e.phrase.contains("C_RETOUR_AR"), "{}", e.phrase);

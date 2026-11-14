@@ -463,40 +463,79 @@ impl DetailDpae {
     }
 }
 
-/// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`).
+/// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`). Ce qu'elle est
+/// devenue (enregistree, deja existante, refusee) se lit dans son code et son dossier (`LigneDuCertificat::enregistree`) ;
+/// le journal l'ecrit aussi en deux booleens, que sa forme (`PersonneEcrite`) pose et ne relit pas.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "PersonneEcrite", into = "PersonneEcrite")]
 pub struct PersonneCertifiee {
     pub nom: String,
     pub prenom: String,
-    /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc (le journal l'ecrit `""`).
-    #[serde(with = "socle::forme::vide_si_aucun")]
+    /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc.
     pub embauche: Option<socle::date::Jour>,
     pub dossier: String,
     /// C_RETOUR_AR.
     pub code: declarations::dpae::CodeRetourDpae,
     /// Le libelle de son code (Format 120).
     pub libelle: String,
-    pub enregistree: bool,
-    pub deja_existante: bool,
     pub formalites: Vec<declarations::dpae::FormaliteDpae>,
     /// Ce que la page en montre (`routes::depots`) : pose sur ce qu'une route rend, jamais ecrit ni lu au journal.
-    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub pastille: Option<socle::ecran::Pastille>,
 }
 
+/// LA FORME D'UNE PERSONNE DU CERTIFICAT AU JOURNAL : `enregistree` et `deja_existante` s'y ecrivent, tires du code et du
+/// dossier ; a la lecture, ils ne se gardent pas (le code les dit).
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PersonneEcrite {
+    nom: String,
+    prenom: String,
+    /// Le journal ecrit `""` une zone a blanc.
+    #[serde(with = "socle::forme::vide_si_aucun")]
+    embauche: Option<socle::date::Jour>,
+    dossier: String,
+    code: declarations::dpae::CodeRetourDpae,
+    libelle: String,
+    enregistree: bool,
+    deja_existante: bool,
+    formalites: Vec<declarations::dpae::FormaliteDpae>,
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pastille: Option<socle::ecran::Pastille>,
+}
+
+impl From<PersonneEcrite> for PersonneCertifiee {
+    fn from(p: PersonneEcrite) -> PersonneCertifiee {
+        let PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree: _, deja_existante: _, formalites, pastille } = p;
+        PersonneCertifiee { nom, prenom, embauche, dossier, code, libelle, formalites, pastille }
+    }
+}
+
+impl From<PersonneCertifiee> for PersonneEcrite {
+    fn from(p: PersonneCertifiee) -> PersonneEcrite {
+        let enregistree = p.enregistree();
+        let deja_existante = p.code == declarations::dpae::CodeRetourDpae::DejaExistante;
+        let PersonneCertifiee { nom, prenom, embauche, dossier, code, libelle, formalites, pastille } = p;
+        PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille }
+    }
+}
+
 impl PersonneCertifiee {
+    /// Enregistree : son code l'enregistre, avec un dossier (`declarations::dpae::LigneDuCertificat::enregistree`).
+    pub fn enregistree(&self) -> bool {
+        declarations::dpae::enregistree(self.code, &self.dossier)
+    }
+
     /// Refusee : un code retour qui ne l'enregistre pas et ne la dit pas deja existante.
     pub fn refusee(&self) -> bool {
-        !self.enregistree && !self.deja_existante
+        !self.enregistree() && self.code != declarations::dpae::CodeRetourDpae::DejaExistante
     }
 
     /// Sa pastille : enregistree, faite ; deja existante, une information ; refusee, refusee.
     pub fn pastille_due(&self) -> socle::ecran::Pastille {
         use socle::ecran::{EtatDEcran, Pastille};
-        if self.enregistree {
+        if self.enregistree() {
             Pastille::de(EtatDEcran::Fait, &if self.dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée — dossier {}", self.dossier) })
-        } else if self.deja_existante {
+        } else if self.code == declarations::dpae::CodeRetourDpae::DejaExistante {
             Pastille::de(EtatDEcran::Information, "déjà existante")
         } else {
             Pastille::de(EtatDEcran::Refuse, self.code.libelle())

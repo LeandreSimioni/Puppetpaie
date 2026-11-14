@@ -177,7 +177,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
                     anomalies: anomalies.clone(),
                     retours: e.retours.clone(),
                     dossier: cert.map(|c| c.dossier.clone()),
-                    deja_existante: cert.is_some_and(|c| c.deja_existante),
+                    deja_existante: cert.is_some_and(|c| c.code == declarations::dpae::CodeRetourDpae::DejaExistante),
                 },
             );
         }
@@ -613,8 +613,8 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
         return format!("envoyé {} — REFUSÉ{}", le_dit, suite);
     }
     if let Some(c) = certificat {
-        let dossiers: Vec<&str> = c.personnes().into_iter().flatten().filter(|l| l.enregistree && !l.dossier.is_empty()).map(|l| l.dossier.as_str()).collect();
-        let existantes: Vec<&str> = c.personnes().into_iter().flatten().filter(|l| l.deja_existante).map(|l| l.nom.as_str()).collect();
+        let dossiers: Vec<&str> = c.personnes().into_iter().flatten().filter(|l| l.enregistree()).map(|l| l.dossier.as_str()).collect();
+        let existantes: Vec<&str> = c.personnes().into_iter().flatten().filter(|l| l.code == declarations::dpae::CodeRetourDpae::DejaExistante).map(|l| l.nom.as_str()).collect();
         let mut fin = " — certificat de conformité reçu : passée".to_string();
         if !dossiers.is_empty() {
             fin.push_str(&format!(" (dossier{} {})", pluriel(dossiers.len()), dossiers.join(", ")));
@@ -1096,13 +1096,11 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
             embauche: l.embauche,
             dossier: l.dossier,
             code: l.code,
-            enregistree: l.enregistree,
-            deja_existante: l.deja_existante,
             formalites: l.formalites,
             pastille: None,
         };
         // Refusee : la ligne le dit dans ses anomalies.
-        if !p.enregistree && !p.deja_existante {
+        if p.refusee() {
             anomalies.push(format!("{} -- {}", p.libelle, p.nom));
         }
         personnes.push(p);

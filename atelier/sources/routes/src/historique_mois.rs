@@ -556,9 +556,9 @@ fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: 
                 let mut l = Lecture::nouvelle("Certificat de conformité des DPAE");
                 for x in &lignes {
                     let qui = joint([dit(&x.nom), dit(&x.prenom)], " ");
-                    let etat = if x.enregistree {
+                    let etat = if x.enregistree() {
                         format!("enregistrée{}", morceau(", dossier ", dit(&x.dossier), ""))
-                    } else if x.deja_existante {
+                    } else if x.code == declarations::dpae::CodeRetourDpae::DejaExistante {
                         "déjà enregistrée auparavant".to_string()
                     } else {
                         format!("refusée : {} — {}", x.code, x.code.libelle())
@@ -1054,9 +1054,9 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             }
             let anomalies: Vec<Anomalie> = r.anomalies().into_iter().flatten().map(|a| Anomalie::du_message(a)).collect();
             for d in r.personnes().into_iter().flatten() {
-                let etat = if d.enregistree {
+                let etat = if d.enregistree() {
                     "enregistrée".to_string()
-                } else if d.deja_existante {
+                } else if d.code == declarations::dpae::CodeRetourDpae::DejaExistante {
                     "déjà enregistrée auparavant".into()
                 } else {
                     format!("refusée : {}", d.libelle)
