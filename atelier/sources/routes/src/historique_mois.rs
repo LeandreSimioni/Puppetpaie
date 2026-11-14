@@ -432,7 +432,7 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
         if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
-        // Le dossier du mois de ce qu'il est : sa piece, ou les sorties du mois pour un fichier que la compagnie y a pose.
+        // Le dossier du mois de ce qu'il est : sa piece, ou les sorties du mois pour le fichier d'un depot ou un fichier pose.
         let chemin = quoi.dossier().sous_le_chemin(&sorties).joint(&nom);
         out.push(Document { sorte: rubrique_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
@@ -451,7 +451,7 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
 
 /// Les noms des pieces que les lignes acceptees du journal d'un mois disent parties : le fichier d'un depot, les contrats
 /// d'une demande de signature, les pieces d'un envoi de documents ; chacun avec ce qu'il est, par l'acte de sa ligne (le
-/// fichier d'une DSN ou d'une DPAE, `du_depot` ; sinon une piece d'un envoi, `de_l_envoi`).
+/// fichier d'une DSN ou d'une DPAE, `Depose` ; sinon une piece d'un envoi, `de_l_envoi`).
 fn pieces_du_journal(lignes: &[Ligne]) -> Vec<(NomDeFichier, documents::FichierDuJournal)> {
     let mut noms: Vec<(NomDeFichier, documents::FichierDuJournal)> = Vec::new();
     let mut noter = |n: &NomDeFichier, de: fn(&str) -> documents::FichierDuJournal| {
@@ -461,7 +461,7 @@ fn pieces_du_journal(lignes: &[Ligne]) -> Vec<(NomDeFichier, documents::FichierD
     };
     for l in lignes.iter().filter(|l| l.accepte()) {
         let de: fn(&str) -> documents::FichierDuJournal = match l {
-            Ligne::Dsn(_) | Ligne::Dpae(_) => documents::FichierDuJournal::du_depot,
+            Ligne::Dsn(_) | Ligne::Dpae(_) => |_| documents::FichierDuJournal::Depose,
             Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => documents::FichierDuJournal::de_l_envoi,
         };
         if let Some(f) = l.fichier() {

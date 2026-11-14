@@ -796,6 +796,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | clé de totalisation | `CleDeTotalisation` | `droit/src/code_cotisation.rs` |
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
 | barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
+| barème absent | `droit::contexte::BaremeAbsent` | `droit/src/contexte.rs` |
 | emploi | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
@@ -867,13 +868,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   dans les sorties du mois) ; son dossier se dit sans condition (`PieceDuMois::dossier`), et une sorte hors d'un mois
   n'en est pas une (`SorteDePieceProduite::du_mois`). Que prennent l'écrivain et les lecteurs d'une pièce d'un mois
   (`envois::envoi::chemin_de_la_piece`, les pièces d'un envoi et d'une impression).
-- **fichier que le journal nomme** : le fichier d'un dépôt, une pièce d'un envoi, dit par l'acte de sa ligne et son
-  nom : celui d'un dépôt (DSN, signalement, amorçage, DPAE) n'est qu'une pièce qu'un dépôt écrit
-  (`PieceDuMois::se_depose`) ou un fichier que la compagnie a posé (`FichierDuJournal::du_depot` : un `.dsn` n'est
-  jamais un contrat) ; une pièce d'un envoi, par sa sorte (`de_l_envoi`) ; son dossier, sans condition
-  (`FichierDuJournal::dossier` : les sorties du mois pour un fichier posé). Le journal n'en garde que le nom : un
-  fichier déposé hors des sorties de son mois ne s'y retrouve pas. Que lisent le fichier déposé
-  (`documents::fichier_depose`) et l'Historique.
+- **fichier que le journal nomme** : le fichier d'un dépôt, une pièce d'un envoi, dit par l'acte de sa ligne, jamais
+  par son nom ni son extension seuls : celui d'un dépôt (DSN, signalement, amorçage, DPAE), quel que soit son nom, est
+  dans les sorties du mois (`FichierDuJournal::Depose` : une pièce qu'un dépôt écrit, qui s'y range, ou un fichier
+  que la compagnie a posé) ; une pièce d'un envoi, par sa sorte (`de_l_envoi`) ; son dossier, sans condition
+  (`FichierDuJournal::dossier`). Le journal n'en garde que le nom : un fichier déposé hors des sorties de son mois ne
+  s'y retrouve pas. Que lisent le fichier déposé (`documents::fichier_depose`), une pièce partie
+  (`depart::piece_partie`) et l'Historique.
 - **rangement d'une pièce produite** : où elle se range : dans un dossier d'un mois (`DossierDuMois`), ou hors d'un
   mois (`DossierHorsDuMois`) ; dit par sa sorte (`SorteDePieceProduite::rangement`).
 - **dossier hors d'un mois** : les exercices (`sorties/exercices/`), les dossiers de salariés (`exports/dossiers/`),
@@ -1110,6 +1111,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   versements de la DSN.
 - **assiette** : ce sur quoi une cotisation se calcule.
 - **barème** : les taux d'un jour, en trois étages.
+- **barème absent** : l'année dont le logiciel n'a pas le barème (ni surcouche ni socle livré, ou une surcouche qui
+  nomme un socle non livré), avec les années livrées ; `Contexte::socle_repris` le rend à part, un refus ailleurs.
 - **emploi** : ce que fait le salarié.
 - **code d'un métier** : un code de la nomenclature des emplois du spectacle de France Travail
   (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est
@@ -1184,7 +1187,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   `SorteDeFiche::reconnaitre`) dans le socle que le barème de l'année de l'écran reprend (`Contexte::socle_repris` :
   celui que la surcouche nomme, sinon le socle livré de l'année, lu sans le taux AT/MP), par `Pile::organisation`, la
   seule porte, et s'écrit par sa clé ; une organisation qu'il ne couvre pas, ou une année dont le logiciel n'a pas le
-  barème (le refus que `socle_repris` rend à part), est la faute de sa case ; tout autre refus remonte entier. Une
+  barème (`BaremeAbsent`, que `socle_repris` rend à part), est la faute de sa case ; tout autre refus remonte entier. Une
   fiche écrite avant sous un alias se reconnaît de même à chaque lecture : le socle se lit avec la clé reconnue
   (`forme_bareme::lire_le_socle`), les minima la demandent à `Contexte::organisation_reconnue`, et un signataire se
   compare à elle (`minima::signataire`). Les cases du métier qu'une fiche montre
