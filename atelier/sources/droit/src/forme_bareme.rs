@@ -545,6 +545,8 @@ pub const PARITARISME: IdDeCotisation = IdDeCotisation::du_moteur("paritarisme")
 /// (l'etat des cotisations par organisme, les ecritures comptables ; la part retraite : `RETRAITE_T1`).
 pub const MALADIE: IdDeCotisation = IdDeCotisation::du_moteur("maladie");
 pub const CHOMAGE: IdDeCotisation = IdDeCotisation::du_moteur("chomage");
+/// Les allocations familiales, que le modele du bulletin imprime sur sa ligne « Famille » (`documents::bulletin`).
+pub const ALLOCATIONS_FAMILIALES: IdDeCotisation = IdDeCotisation::du_moteur("famille");
 /// La ligne que le calcul compose lui-meme, hors du bareme, pour la reduction generale (celles des heures en plus :
 /// `engagement::heures_en_plus`).
 pub const REDUCTION_GENERALE: IdDeCotisation = IdDeCotisation::du_moteur("reduction_generale");

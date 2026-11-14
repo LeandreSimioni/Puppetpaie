@@ -14,7 +14,8 @@ use socle::texte::euros;
 use socle::echec::{refus, R};
 use socle::num::{div, sub, Decimal};
 use droit::pas::Versement;
-use droit::forme_bareme::{IdDeCotisation, APEC_T1, APEC_T2};
+use droit::forme_bareme::{self as cot, IdDeCotisation};
+use engagement::ecarts::RegroupementDeComparaison as Regroupement;
 use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Mesure, Morceau};
 use fabrique_pdf::mesure::mesure;
@@ -618,23 +619,32 @@ fn rang(l: &engagement::calcul::LigneCotisation, garanties: &[IdDeCotisation]) -
     if garanties.contains(&l.id) {
         return Rang::Facultative(PREVOYANCE);
     }
-    if l.id == APEC_T1 || l.id == APEC_T2 {
+    let id = &l.id;
+    if Regroupement::DE_L_APEC.contains(id) {
         return Rang::Ligne(5, APEC);
     }
-    match l.id.as_str() {
-        "maladie" | "regime_local" | "mutuelle" => Rang::Sante,
-        "atmp" => Rang::Ligne(1, ATMP),
-        "vieil_plaf" | "vieil_deplaf" | "retraite_t1" | "retraite_t2" | "cet" => Rang::Retraite,
-        "famille" => Rang::Ligne(3, FAMILLE),
-        "chomage" => Rang::Ligne(4, CHOMAGE),
-        "autres_1" | "autres_2" | "autres_3" | "autres_4" | "versement_mobilite" | "conges_spec" if seule_employeur => {
-            Rang::Autres
-        }
-        "ccn" | "fcap" | "paritarisme" => Rang::Ligne(8, CONVENTION),
-        "csg_ded" => Rang::Ligne(9, CSG_DEDUCTIBLE),
-        "csg_crds_nd" => Rang::Ligne(10, CSG_NON_DEDUCTIBLE),
-        "reduction_generale" | "reduction_heures_en_plus" | "deduction_heures_supplementaires" => Rang::Allegement,
-        _ => Rang::Hors(l.famille.clone()),
+    if [cot::MALADIE, cot::REGIME_LOCAL, cot::MUTUELLE].contains(id) {
+        Rang::Sante
+    } else if *id == cot::ATMP {
+        Rang::Ligne(1, ATMP)
+    } else if [cot::VIEIL_PLAF, cot::VIEIL_DEPLAF, cot::RETRAITE_T1, cot::RETRAITE_T2, cot::CET].contains(id) {
+        Rang::Retraite
+    } else if *id == cot::ALLOCATIONS_FAMILIALES {
+        Rang::Ligne(3, FAMILLE)
+    } else if *id == cot::CHOMAGE {
+        Rang::Ligne(4, CHOMAGE)
+    } else if seule_employeur && (Regroupement::DE_L_EMPLOYEUR_SEUL.contains(id) || *id == cot::CONGES_SPEC) {
+        Rang::Autres
+    } else if Regroupement::DE_LA_CONVENTION.contains(id) {
+        Rang::Ligne(8, CONVENTION)
+    } else if *id == cot::CSG_DED {
+        Rang::Ligne(9, CSG_DEDUCTIBLE)
+    } else if *id == cot::CSG_CRDS_ND {
+        Rang::Ligne(10, CSG_NON_DEDUCTIBLE)
+    } else if [cot::REDUCTION_GENERALE, engagement::heures_en_plus::REDUCTION, engagement::heures_en_plus::DEDUCTION].contains(id) {
+        Rang::Allegement
+    } else {
+        Rang::Hors(l.famille.clone())
     }
 }
 
@@ -675,14 +685,17 @@ fn rangees<'p>(p: &'p Paie, garanties: &[IdDeCotisation]) -> Vec<(Rang, Vec<&'p 
 /// local d'Alsace-Moselle, la CET d'un permanent, que le moteur calcule sur T1 + T2 sans la partager entre les deux
 /// tranches) gardent le leur.
 fn libelle_du_modele(l: &engagement::calcul::LigneCotisation) -> String {
-    match l.id.as_str() {
-        "maladie" => SANTE_SECU.into(),
-        "mutuelle" => SANTE_COMPLEMENTAIRE.into(),
-        "vieil_plaf" => "Sécurité Sociale Vieillesse plafonnée".into(),
-        "vieil_deplaf" => "Sécurité Sociale Vieillesse déplafonnée".into(),
-        "retraite_t1" => "Retraite complémentaire, CEG et CET T1".into(),
-        "retraite_t2" => "Retraite complémentaire, CEG et CET T2".into(),
-        _ => l.libelle.clone(),
+    const DU_MODELE: [(IdDeCotisation, &str); 6] = [
+        (cot::MALADIE, SANTE_SECU),
+        (cot::MUTUELLE, SANTE_COMPLEMENTAIRE),
+        (cot::VIEIL_PLAF, "Sécurité Sociale Vieillesse plafonnée"),
+        (cot::VIEIL_DEPLAF, "Sécurité Sociale Vieillesse déplafonnée"),
+        (cot::RETRAITE_T1, "Retraite complémentaire, CEG et CET T1"),
+        (cot::RETRAITE_T2, "Retraite complémentaire, CEG et CET T2"),
+    ];
+    match DU_MODELE.iter().find(|(id, _)| *id == l.id) {
+        Some((_, libelle)) => (*libelle).to_string(),
+        None => l.libelle.clone(),
     }
 }
 

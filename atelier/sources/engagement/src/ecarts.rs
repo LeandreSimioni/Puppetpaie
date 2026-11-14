@@ -125,6 +125,16 @@ impl TotalDuBulletin {
 }
 
 impl RegroupementDeComparaison {
+    /// Les contributions que l'employeur paie seul et que le modele du bulletin agrege dans « Autres charges dues par
+    /// l'employeur » (arrete du 25/02/2016, art. 3), quand la ligne n'a pas de part salariale : `Autres`. La caisse des
+    /// Conges Spectacles y va aussi au bulletin ; la comparaison ne l'y range que si le bulletin importe ne l'imprime pas
+    /// a part (`REPLIS`).
+    pub const DE_L_EMPLOYEUR_SEUL: [IdDeCotisation; 5] = [AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, VERSEMENT_MOBILITE];
+    /// Les cotisations de la convention (FNAS, FCAP, paritarisme), sur une ligne du modele : `Convention`.
+    pub const DE_LA_CONVENTION: [IdDeCotisation; 3] = [CCN, FCAP, PARITARISME];
+    /// Les tranches de l'Apec, sur une ligne du modele : `Apec`.
+    pub const DE_L_APEC: [IdDeCotisation; 2] = [APEC_T1, APEC_T2];
+
     /// Son nom ecrit : la cle de la cotisation, ou celle du regroupement ou du total.
     pub fn as_str(&self) -> &str {
         match self {
@@ -255,13 +265,13 @@ pub fn cotisation_de(l: &LigneCotisation, garanties: &[IdDeCotisation]) -> Regro
     if garanties.contains(&l.id) {
         return RegroupementDeComparaison::Cotisation(PREVOYANCE);
     }
-    if l.id == APEC_T1 || l.id == APEC_T2 {
+    if RegroupementDeComparaison::DE_L_APEC.contains(&l.id) {
         return RegroupementDeComparaison::Apec;
     }
-    if seule_employeur && [AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, VERSEMENT_MOBILITE].contains(&l.id) {
+    if seule_employeur && RegroupementDeComparaison::DE_L_EMPLOYEUR_SEUL.contains(&l.id) {
         return RegroupementDeComparaison::Autres;
     }
-    if [CCN, FCAP, PARITARISME].contains(&l.id) {
+    if RegroupementDeComparaison::DE_LA_CONVENTION.contains(&l.id) {
         return RegroupementDeComparaison::Convention;
     }
     RegroupementDeComparaison::Cotisation(l.id.clone())
