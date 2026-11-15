@@ -41,8 +41,10 @@
                 "planning": []
               }
             ],
-            "debut": "2026-11-20",
-            "fin": "2026-11-21",
+            "contrat": {
+              "du": "2026-11-20",
+              "au": "2026-11-21"
+            },
             "numero": "FU1.26.01",
             "mois": "2026-11",
             "planning": [],
@@ -1827,7 +1829,7 @@
       },
       "2026-11/DSN_Novembre2026.dsn": {
         "quand": "2026-12-15T10:00:00",
-        "empreinte_saisie": "d49f89b882476ef3",
+        "empreinte_saisie": "41035291e015afd6",
         "versions_portees": []
       }
     },
@@ -1877,8 +1879,10 @@
                     "planning": []
                   }
                 ],
-                "debut": "2026-11-20",
-                "fin": "2026-11-21",
+                "contrat": {
+                  "du": "2026-11-20",
+                  "au": "2026-11-21"
+                },
                 "numero": "FU1.26.01",
                 "mois": "2026-11",
                 "planning": [],
