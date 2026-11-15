@@ -84,20 +84,14 @@ fn fmt_taux_de_pas(t: droit::pas::TauxDePas) -> String {
     fmt_taux(t.taux())
 }
 
-/// 24 -> « 24 », 13.5 -> « 13,5 ».
-pub fn fmt_heures(x: Decimal) -> String {
-    x.normalize().to_string().replace('.', ",")
-}
-
 /// « 2,5 », et « 2 » quand c'est rond (`quantize` au pair, comme le contexte).
 pub fn jours(x: Decimal) -> String {
-    let q = x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven).normalize();
-    q.to_string().replace('.', ",")
+    socle::texte::nombre_dit(x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven))
 }
 
 /// Des jours de conges comme `jours` les ecrit : au centieme, sans zero inutile, la virgule decimale.
 fn jours_de_conges(j: socle::grandeurs::Jours) -> String {
-    socle::grandeurs::ecrit::sans_zero::dit(j.a_deux_decimales()).replace('.', ",")
+    socle::texte::virgule(j.a_deux_decimales())
 }
 
 /// `jours` d'un nombre de jours facultatif : refuse quand il manque.
@@ -276,12 +270,12 @@ pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
             return Ok(format!(
                 "{} ({} h à {})",
                 euros(rg.smic_reference),
-                fmt_heures(rg.heures.decimal()),
+                socle::texte::virgule(rg.heures),
                 euros(horaire)
             ));
         }
     }
-    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures.decimal()), euros(p.smic)))
+    Ok(format!("{} ({} h à {})", euros(p.plafond), socle::texte::virgule(p.heures), euros(p.smic)))
 }
 
 /// (IDCC, libellé) de la convention d'un contrat, pour ce qui s'imprime : le libellé se lit au catalogue des conventions
@@ -1092,7 +1086,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     salarie.push(mt(match &p.deduction_forfaitaire {
         Some(d) => format!(
             " {} % (catégorie {} %, taux de l'année) — {} déduits",
-            fmt_heures(d.taux.decimal()),
+            socle::texte::virgule(d.taux),
             d.categorie,
             euros(d.montant)
         ),

@@ -195,8 +195,8 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
             "{} (art. {}) demande {} mois d'anciennete ; il y en a {}.",
             nom,
             article,
-            minimum.mois().normalize().to_string().replace('.', ","),
-            anciennete.mois().round_dp(1).normalize().to_string().replace('.', ",")
+            socle::texte::nombre_dit(minimum.mois()),
+            socle::texte::nombre_dit(anciennete.mois().round_dp(1))
         ))));
     }
     let tranches = match liste {

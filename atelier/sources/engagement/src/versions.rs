@@ -98,10 +98,10 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
         Some(Valeur::Oui(b)) => if *b { "oui" } else { "non" }.into(),
         Some(Valeur::Nombre(n)) => match (nombre(n), en_euros) {
             (Some(x), true) => euros(Montant::du_decimal(x)),
-            (Some(x), false) => x.normalize().to_string().replace('.', ","),
+            (Some(x), false) => socle::texte::nombre_dit(x),
             (None, _) => n.to_string(),
         },
-        Some(Valeur::Heures(h)) => socle::grandeurs::ecrit::sans_zero::dit(*h).replace('.', ","),
+        Some(Valeur::Heures(h)) => socle::texte::virgule(*h),
         Some(Valeur::Montant(m)) => euros(*m),
         Some(Valeur::Texte(t)) if en_euros => match socle::num::decimal_a_virgule(t) {
             Some(x) => euros(Montant::du_decimal(x)),
@@ -117,7 +117,7 @@ fn nombre_en_mots(x: Option<Decimal>, en_euros: bool) -> String {
     match x {
         None => "—".into(),
         Some(x) if en_euros => euros(Montant::du_decimal(x)),
-        Some(x) => x.normalize().to_string().replace('.', ","),
+        Some(x) => socle::texte::nombre_dit(x),
     }
 }
 

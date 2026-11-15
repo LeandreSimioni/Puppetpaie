@@ -357,8 +357,8 @@ fn periode(debut: Option<Jour>, fin: Option<Jour>) -> String {
 
 /// Une quantite telle qu'on l'ecrit en francais : « 151,67 », « 12 » ; « aucun » quand rien ne la dit.
 fn nombre<G: socle::grandeurs::Grandeur>(g: Option<G>) -> String {
-    match g.map(socle::grandeurs::ecrit::sans_zero::dit) {
-        Some(t) => t.replace('.', ","),
+    match g {
+        Some(g) => socle::texte::virgule(g),
         None => "aucun".to_string(),
     }
 }

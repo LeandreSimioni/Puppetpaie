@@ -1445,7 +1445,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
             motif_recours_exige: n.motif_recours_exige(),
             quotite_defaut: n.quotite_reference_defaut(),
-            temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::grandeurs::ecrit::sans_zero::dit(h).replace('.', ","))),
+            temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::texte::virgule(h))),
             motif_rupture_vide_dit: match n.motif_rupture_par_defaut() {
                 Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
                 _ => "— à choisir —".to_string(),

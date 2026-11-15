@@ -524,7 +524,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<A
 /// Un nombre du fichier, a la francaise ; une correction le signe d'un vrai moins (« −184 » : ce qui s'ajoute a ce qui a
 /// deja ete declare).
 fn nombre_dit(x: Decimal) -> String {
-    x.normalize().to_string().replace('.', ",").replacen('-', "−", 1)
+    socle::texte::nombre_dit(x).replacen('-', "−", 1)
 }
 
 /// L'ACTIVITE D'UN CONTRAT EN UNE COLONNE : « 4 cachets · 4 j », « 151,67 h » ; « correction : » devant celle d'un mois

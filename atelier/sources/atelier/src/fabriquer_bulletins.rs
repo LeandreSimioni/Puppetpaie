@@ -411,16 +411,6 @@ fn taux3(x: Decimal) -> String {
     t.to_string().replace('.', ",")
 }
 
-/// Un nombre sans zeros inutiles (une quantite : « 3 », « 7,5 »).
-fn quantite(x: Decimal) -> String {
-    x.normalize().to_string().replace('.', ",")
-}
-
-/// Une grandeur sans zeros inutiles, a la francaise (« 3 », « 7,5 »).
-fn grandeur_dite<G: socle::grandeurs::Grandeur>(g: G) -> String {
-    socle::grandeurs::ecrit::sans_zero::dit(g).replace('.', ",")
-}
-
 fn dmy(j: &Jour) -> String {
     j.jj_mm_aaaa()
 }
@@ -902,7 +892,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         true => ("Cachets:", fr_quantite(c.periode.cachets)?, fr_quantite(c.annee.cachets)?),
         false => ("Heures:", fr_quantite(c.periode.heures.au_centieme())?, fr_quantite(c.annee.heures.au_centieme())?),
     };
-    let lignes: Vec<(String, String, String, String)> = b.lignes.iter().map(|l| (quantite(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant))).collect();
+    let lignes: Vec<(String, String, String, String)> = b.lignes.iter().map(|l| (socle::texte::nombre_dit(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant))).collect();
     // La page tient-elle ? Le pied finit a 72 points sous le net a payer, la signature est a 810.
     let bas = m("308") + m("11.2") * (lignes.len() + 1 + cotisations.len()) as i64 + m("14.2") + m("22") + m("20.3") + m("11") + m("11.5") + m("14") + m("8.5") + m("8.5") + m("13") + m("72");
     if bas > m("800") {
@@ -951,7 +941,7 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         let montant = |m: &Option<Decimal>| m.map(fr).into_iter().collect::<String>();
         cotisations.push((x, libelle.into(), famille, fr(*base), ts.map(taux3).into_iter().collect(), montant(ms), montant(me)));
     }
-    let ligne = |l: &Ligne| (quantite(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant));
+    let ligne = |l: &Ligne| (socle::texte::nombre_dit(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant));
     let lignes: Vec<_> = b.lignes.iter().map(ligne).collect();
     let non_soumis: Vec<_> = b.non_soumis.iter().map(ligne).collect();
     let titres = cotisations.iter().filter(|c| c.0 < m("50")).count() as i64;
@@ -1049,9 +1039,9 @@ pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) ->
             fin.iso(),
             fr(c.brut),
             fr(c.net_a_payer),
-            grandeur_dite(c.cachets),
-            grandeur_dite(c.heures),
-            grandeur_dite(c.jours)
+            socle::texte::virgule(c.cachets),
+            socle::texte::virgule(c.heures),
+            socle::texte::virgule(c.jours)
         );
         pages.push((nom, pdf_octets(vec![page])?, ligne));
     }

@@ -55,7 +55,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
             Err(m) => Err(m.phrase),
         };
         let dit = match taux {
-            Some(v) => format!("taux {} %", v.normalize().to_string().replace('.', ",")),
+            Some(v) => format!("taux {} %", socle::texte::nombre_dit(*v)),
             None => "sans taux (pas encore de notification)".to_string(),
         };
         faits.push(match ecrit {

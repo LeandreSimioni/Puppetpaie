@@ -241,7 +241,7 @@ fn quantite(d: Decimal) -> String {
     if d.is_zero() {
         String::new()
     } else {
-        d.normalize().to_string().replace('.', ",")
+        socle::texte::nombre_dit(d)
     }
 }
 

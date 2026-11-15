@@ -469,13 +469,12 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     if let Some(t) = titre.clone().or_else(|| numero.as_ref().map(ToString::to_string)) {
         quoi.push(t);
     }
-    let virgule = |t: String| t.replace('.', ",");
     if let Some(n) = cachets.filter(|n| !n.est_nul()) {
-        let dit = virgule(socle::grandeurs::ecrit::sans_zero::dit(n));
+        let dit = socle::texte::virgule(n);
         quoi.push(format!("{} {}", dit, if n > Cachets::UN { "cachets" } else { "cachet" }));
     }
     if let Some(n) = heures.filter(|n| !n.est_nul()) {
-        quoi.push(format!("{} h", virgule(socle::grandeurs::ecrit::sans_zero::dit(n))));
+        quoi.push(format!("{} h", socle::texte::virgule(n)));
     }
     let quoi_dit = if quoi.is_empty() { "spectacle non lu".to_string() } else { quoi.join(" · ") };
     let mut lu = Vec::new();

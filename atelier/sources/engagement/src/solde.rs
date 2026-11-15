@@ -402,7 +402,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                         courte(total),
                         courte(pourcentage),
                     ));
-                    let pour_cent = socle::grandeurs::ecrit::sans_zero::dit(pourcentage).replace('.', ",");
+                    let pour_cent = socle::texte::virgule(pourcentage);
                     stc.avertissements.push(info(format!(
                         "{} : indemnité de fin de contrat {} % sur {} de \
                          rémunération totale = {} (L1243-8).",
@@ -515,7 +515,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                     "{} : {} mois de préavis non effectué, payés {} \
                      (L1234-5){}. L'article le veut « indemnité de congés payés comprise » : {}{}",
                     qui,
-                    m.normalize().to_string().replace('.', ","),
+                    socle::texte::nombre_dit(m),
                     euros(paye),
                     if duree.dit.is_empty() { String::new() } else { format!(" -- {}", duree.dit) },
                     conges,
@@ -732,7 +732,7 @@ fn conges_non_effectues(
     Ok(format!(
         "ces jours acquièrent {} jour(s) de congé (L3141-3), payés {} ({}, L3141-24), ajoutés à l'indemnité compensatrice de \
          congés payés.",
-        jours_dits(jours).replace('.', ","),
+        socle::texte::virgule(jours.au_demi_superieur()),
         euros(ind.retenu),
         ind.regle
     ))
@@ -1016,7 +1016,7 @@ fn indemnite_de_rupture(
                  calcule PAS : elle n'est dans aucune section du barème. Sur {} \
                  exonérés, elle vaut {}.",
                 qui,
-                socle::grandeurs::ecrit::sans_zero::dit(taux).replace('.', ","),
+                socle::texte::virgule(taux),
                 euros(montant),
                 euros(montant.fois_taux(taux))
             )));

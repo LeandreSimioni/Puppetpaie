@@ -459,7 +459,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 tableau.push(format!("| {} | {} | {} |", r.libelle, euros(Montant::du_decimal(r.masse)), euros(Montant::du_decimal(r.cotisation))));
             }
         }
-        tableau.push(format!("| **{}, à {} %** | **{}** | **{}** |", a.annee, a.taux.normalize().to_string().replace('.', ","), euros(Montant::du_decimal(a.masse)), euros(Montant::du_decimal(a.cotisation))));
+        tableau.push(format!("| **{}, à {} %** | **{}** | **{}** |", a.annee, socle::texte::nombre_dit(a.taux), euros(Montant::du_decimal(a.masse)), euros(Montant::du_decimal(a.cotisation))));
     }
     let virements: Vec<String> = annees
         .iter()

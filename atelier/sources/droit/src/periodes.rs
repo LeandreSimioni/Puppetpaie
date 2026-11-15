@@ -176,7 +176,7 @@ rémunération horaire » multipliée par « le nombre d'heures de travail réel
                 heures_en_mots(heures_par_jour, self.jours),
                 heures_en_mots(heures_par_jour, self.jours_du_mois),
                 dit(self.jours_du_mois),
-                dit(heures_par_jour).replace('.', ","),
+                socle::texte::virgule(heures_par_jour),
                 self.jours_travailles.en_mots()
             ),
             RegleDuMoisIncomplet::Ccneac1285Artiste => format!(
@@ -213,7 +213,7 @@ fn dates_en_mots(feries: &[(Jour, String)]) -> String {
 
 /// `jours` jours de `heures_par_jour` heures, au centieme, ecrits a la francaise.
 fn heures_en_mots(heures_par_jour: HeuresParUnite, jours: Jours) -> String {
-    dit((jours * heures_par_jour).au_centieme()).replace('.', ",")
+    socle::texte::virgule((jours * heures_par_jour).au_centieme())
 }
 
 /// LA PART DU SALAIRE MENSUEL que porte la periode payee [`d`, `f`] du mois qui finit le `fin_mois`.

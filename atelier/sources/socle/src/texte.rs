@@ -279,13 +279,19 @@ fn milliers(entier: &str, separateur: char) -> String {
 /// UNE GRANDEUR TELLE QU'ON LA LIT dans une phrase (des heures, des jours, un effectif, un taux) : la virgule décimale,
 /// sans zéro inutile (« 151,67 », « 8 », « 2,5 »).
 pub fn virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
-    crate::grandeurs::ecrit::sans_zero::dit(g).replace('.', ",")
+    nombre_dit(g.en_decimal())
 }
 
-/// UN NOMBRE TEL QU'ON LE LIT dans une phrase qui cite une valeur d'un fichier : la virgule décimale, sans zéro inutile,
-/// les milliers séparés par une espace insécable (« 1 500 », « 12,5 »).
+/// UN NOMBRE TEL QU'ON LE LIT dans une phrase, et le seul endroit qui l'écrit ainsi : la virgule décimale, sans zéro
+/// inutile (« 151,67 », « 8 », « 2,5 »).
 pub fn nombre_dit(x: rust_decimal::Decimal) -> String {
-    let t = x.normalize().to_string().replace('.', ",");
+    x.normalize().to_string().replace('.', ",")
+}
+
+/// Le même, les milliers séparés par une espace insécable, dans une phrase qui cite une valeur d'un fichier (« 1 500 »,
+/// « 12,5 »).
+pub fn nombre_dit_par_milliers(x: rust_decimal::Decimal) -> String {
+    let t = nombre_dit(x);
     let (signe, t) = match t.strip_prefix('-') {
         Some(r) => ("-", r),
         None => ("", t.as_str()),

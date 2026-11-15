@@ -87,7 +87,7 @@ impl LigneBrut {
             if let Some(p) = &self.precision {
                 return format!("{} ({})", self.libelle, p);
             }
-            let part = (quantite * Decimal::from(100)).round_dp(2).normalize().to_string().replace('.', ",");
+            let part = socle::texte::nombre_dit((quantite * Decimal::from(100)).round_dp(2));
             return format!("{} ({} % du mois)", self.libelle, part);
         }
         let (tete, reste) = match self.libelle.split_once(' ') {

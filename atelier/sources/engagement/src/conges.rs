@@ -1161,7 +1161,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \
              conventionnel de {}{} = {} -- {}.",
             qui(ctx, e),
-            pourcentage.normalize().to_string().replace('.', ","),
+            socle::texte::nombre_dit(pourcentage),
             pa.annees.nombre_d_ans_revolus()?,
             euros(Montant::du_decimal(base_conv)),
             proratise,

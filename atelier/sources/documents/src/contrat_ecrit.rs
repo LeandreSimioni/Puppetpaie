@@ -134,7 +134,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
         Some(q) => q,
         None => eng.quotite.heures("La durée du travail d'un contrat écrit")?,
     };
-    let dites = |h: Heures| socle::grandeurs::ecrit::sans_zero::dit(h).replace('.', ",");
+    let dites = socle::texte::virgule::<Heures>;
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite
     // saisie, sinon une quotite sous la reference de l'entreprise, plafonnee a la duree legale ; sans reference, le temps
     // plein.

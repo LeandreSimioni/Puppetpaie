@@ -73,7 +73,7 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnit
             "{} : son contrat est à temps partiel ({} h par mois) ; les heures au-delà de son contrat sont des heures \
              complémentaires (C. trav. L3123-20). Les dire dans « Heures complémentaires ». Rien n'est calculé.",
             qui(ctx, e),
-            quotite.round_dp(2).normalize().to_string().replace('.', ",")
+            socle::texte::nombre_dit(quotite.round_dp(2))
         ));
     }
     if !partiel && !comp.is_zero() {
@@ -107,21 +107,21 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnit
             quantite: socle::forme::Nombre(court(p.heures)),
             taux: socle::grandeurs::MontantUnitaire::du_decimal(court(taux)),
             heures: None,
-            precision: Some(format!("majorées de {} %", p.majoration.normalize().to_string().replace('.', ","))),
+            precision: Some(format!("majorées de {} %", socle::texte::nombre_dit(p.majoration))),
             dates: Vec::new(),
         }));
     }
     let mut avis = vec![info(format!(
         "{} : {} heures {} au taux horaire de son contrat ({}, le salaire mensuel sur ses {} h), {}.",
         qui(ctx, e),
-        reparties.paliers.iter().fold(Decimal::ZERO, |a, p| a + p.heures).normalize().to_string().replace('.', ","),
+        socle::texte::nombre_dit(reparties.paliers.iter().fold(Decimal::ZERO, |a, p| a + p.heures)),
         if partiel { "complémentaires" } else { "supplémentaires" },
         euros(Montant::du_decimal(horaire)),
-        quotite.round_dp(2).normalize().to_string().replace('.', ","),
+        socle::texte::nombre_dit(quotite.round_dp(2)),
         reparties
             .paliers
             .iter()
-            .map(|p| format!("{} h majorées de {} %", p.heures.normalize().to_string().replace('.', ","), p.majoration.normalize().to_string().replace('.', ",")))
+            .map(|p| format!("{} h majorées de {} %", socle::texte::nombre_dit(p.heures), socle::texte::nombre_dit(p.majoration)))
             .collect::<Vec<_>>()
             .join(", ")
     ))];

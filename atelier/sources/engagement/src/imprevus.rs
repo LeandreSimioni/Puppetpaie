@@ -855,7 +855,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
                 _ => Ok(None),
             }
         };
-        let en_mots = |h: Heures| socle::grandeurs::ecrit::sans_zero::dit(h).replace('.', ",");
+        let en_mots = socle::texte::virgule::<Heures>;
         let au_reel = format!(
             "{} d'absence ce mois-ci, {} h sur les {} h de travail du mois, retirées au prorata du salaire du mois",
             if jours > Jours::UN { format!("{} jours travaillés", dit(jours)) } else { format!("{} jour travaillé", dit(jours)) },

@@ -512,7 +512,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
     Ok(match terme {
         Champ::SalaireMensuel => socle::texte::euros(Montant::du_decimal(nombre()?)),
         Champ::QuotiteContrat | Champ::QuotiteReference => match v {
-            Valeur::Heures(h) => format!("{} heures par mois", socle::grandeurs::ecrit::sans_zero::dit(*h).replace('.', ",")),
+            Valeur::Heures(h) => format!("{} heures par mois", socle::texte::virgule(*h)),
             _ => return Err(socle::refus!("{} : une durée en heures est attendue, lu {}", terme.nom(), texte)),
         },
         Champ::Cadre => {

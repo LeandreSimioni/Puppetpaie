@@ -80,7 +80,7 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
                 return Err(socle::refus!(
                     "{} heures supplémentaires au-delà de la huitième d'une semaine, pour {} heures supplémentaires dans le mois : \
                      les premières sont une part des secondes. Rien n'est calculé.",
-                    a_50.normalize().to_string().replace('.', ","), heures.normalize().to_string().replace('.', ",")
+                    socle::texte::nombre_dit(a_50), socle::texte::nombre_dit(heures)
                 ));
             }
             let hebdo = loi()?.heures_supplementaires.paliers_hebdomadaires;
@@ -97,8 +97,8 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
             r.avis.push(format!(
                 "Heures supplémentaires de l'année : {} avec ce mois, au-delà du contingent annuel de {} heures de la convention. \
                  Les heures au-delà ouvrent droit à une contrepartie obligatoire en repos (C. trav. L3121-30), à poser hors de la paie.",
-                (deja + heures).normalize().to_string().replace('.', ","),
-                contingent.normalize().to_string().replace('.', ",")
+                socle::texte::nombre_dit(deja + heures),
+                socle::texte::nombre_dit(contingent)
             ));
         }
     }
@@ -141,8 +141,8 @@ pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, contr
         r.avis.push(format!(
             "{} heures complémentaires pour un contrat de {} heures par mois : au-delà du {} de la durée du contrat que la loi ou la \
              convention permettent (C. trav. L3123-20, L3123-28). Le logiciel les paie ; au-delà, la durée du contrat se revoit.",
-            heures.normalize().to_string().replace('.', ","),
-            contrat.round_dp(2).normalize().to_string().replace('.', ","),
+            socle::texte::nombre_dit(heures),
+            socle::texte::nombre_dit(contrat.round_dp(2)),
             plafond.en_mots()
         ));
     }

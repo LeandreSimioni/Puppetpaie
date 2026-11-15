@@ -44,7 +44,7 @@ use std::path::{Path, PathBuf};
 
 use rust_decimal::Decimal;
 
-use documents::bulletin::fmt_heures;
+use socle::texte::nombre_dit;
 use documents::{PieceDuMois, SorteDePieceProduite};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
@@ -165,7 +165,7 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
             volume.push(format!("{} cachet{}", socle::grandeurs::ecrit::sans_zero::dit(e.cachets), if e.cachets > socle::grandeurs::Cachets::UN { "s" } else { "" }));
         }
         if let Some(h) = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero()) {
-            volume.push(format!("{} heure{}", fmt_heures(h), if h > Decimal::ONE { "s" } else { "" }));
+            volume.push(format!("{} heure{}", nombre_dit(h), if h > Decimal::ONE { "s" } else { "" }));
         }
         let (premier, dernier) = (dates[0], dates[dates.len() - 1]);
         let periode = if premier == dernier {
@@ -297,20 +297,20 @@ pub struct ContratResume {
     pub net: Decimal,
 }
 
-/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`fmt_heures` : « 13,5 », « 24 ») et relues dans
+/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`socle::texte::nombre_dit` : « 13,5 », « 24 ») et relues dans
 /// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
 mod heures_ecrites {
     use serde::{Deserialize, Serialize};
     use socle::num::Decimal;
 
     pub fn serialize<S: serde::Serializer>(h: &Option<Decimal>, s: S) -> Result<S::Ok, S::Error> {
-        h.map(super::fmt_heures).serialize(s)
+        h.map(super::nombre_dit).serialize(s)
     }
 
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Decimal>, D::Error> {
         let Some(t) = Option::<String>::deserialize(d)? else { return Ok(None) };
         let h = socle::num::dec_texte(&t.replacen(',', ".", 1)).map_err(|e| serde::de::Error::custom(e.phrase))?;
-        if super::fmt_heures(h) != t {
+        if super::nombre_dit(h) != t {
             return Err(serde::de::Error::custom(format!("heures {} : elles s'écrivent comme le bulletin les écrit (« 13,5 »).", socle::fichiers::repr(&t))));
         }
         Ok(Some(h))

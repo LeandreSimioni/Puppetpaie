@@ -687,7 +687,7 @@ impl<'a> Cx<'a> {
                 };
                 trouves.push(Plancher {
                     montant: h,
-                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(Montant::du_decimal(montant)), par, heures.round_dp(2).normalize().to_string().replace('.', ",")),
+                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(Montant::du_decimal(montant)), par, socle::texte::nombre_dit(heures.round_dp(2))),
                     unite: false,
                 });
             }
