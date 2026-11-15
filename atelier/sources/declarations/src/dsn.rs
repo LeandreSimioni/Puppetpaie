@@ -1912,7 +1912,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     }
     if let Some(fin) = fin_fctu {
         crate::fctu::bloc_62_63(f, fin, e)?;
-    } else if e.dernier_mois() && fin_de_contrat {
+    } else if matches!(e.place_du_mois(), engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Dernier) && fin_de_contrat {
         let fin = e.fin.ok_or_else(|| refus("S21.G00.62.001 : le contrat n'a pas de fin."))?;
         f.add(droit::rubrique!("S21.G00.62.001"), fin.jjmmaaaa());
         let motif = motif_rupture(p, &nat)?;

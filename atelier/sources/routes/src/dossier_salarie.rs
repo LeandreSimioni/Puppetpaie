@@ -596,9 +596,10 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
             continue;
         }
         let (cle, debut) = (cle_de(p), p.engagement.debut);
-        if !p.engagement.dernier_mois() {
+        let place = p.engagement.place_du_mois();
+        if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = place {
             poser(&mut dus, cle, debut, None);
-        } else if !p.engagement.a_cheval() {
+        } else if place == engagement::PlaceDuMois::Seul {
             poser(&mut dus, cle, debut, Some(paie_cs(p)?));
         } else {
             let (entier, manquants) = paie_du_contrat_entier(ctx, p)?;

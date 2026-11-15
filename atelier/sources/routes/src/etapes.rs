@@ -1008,8 +1008,8 @@ enum ContratDit {
 /// (`signature::contrat_signe_dit`), lus tels qu'ils sont.
 #[derive(Debug, Clone, Serialize)]
 struct ContratComplet {
-    premier_mois: bool,
-    dernier_mois: bool,
+    #[serde(flatten, serialize_with = "super::mois::place_ecrite")]
+    place: engagement::PlaceDuMois,
     chevrons: super::mois::Chevrons,
     depuis: Mois,
     jusqu_a: Mois,
@@ -1020,6 +1020,7 @@ struct ContratComplet {
     anterieur: bool,
 }
 
+/// Un engagement a completer ne dit que s'il commence ce mois-ci (`premier_mois`) : sa fin n'est pas sure.
 #[derive(Debug, Clone, Serialize)]
 struct ContratACompleter {
     premier_mois: bool,
@@ -1028,9 +1029,11 @@ struct ContratACompleter {
 }
 
 impl ContratDit {
+    /// Le contrat commence-t-il ce mois-ci : sa place dans le mois (`PlaceDuMois`), ou ce qu'en dit un engagement a
+    /// completer, qui n'a pas de place sure.
     fn premier_mois(&self) -> bool {
         match self {
-            ContratDit::Complet(c) => c.premier_mois,
+            ContratDit::Complet(c) => matches!(c.place, engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Premier),
             ContratDit::ACompleter(c) => c.premier_mois,
         }
     }
@@ -1573,8 +1576,7 @@ impl<'a> Moteur<'a> {
             let (Some(&depuis), Some(&jusqu_a)) = (mois_du_contrat.first(), mois_du_contrat.last()) else {
                 return Err(erreur(Classe::Manque, socle::fichiers::trop_courte("les mois du contrat")));
             };
-            let premier_mois = p.engagement.premier_mois();
-            let dernier_mois = p.engagement.dernier_mois();
+            let place = p.engagement.place_du_mois();
             // Son etablissement (NIC) : la DSN qui le porte.
             let etablissement = nic_de_l_engagement(self.ctx, e)?;
             // LES ECHEANCES de l'engagement : sa DPAE (L. 1221-10) et la remise de son contrat (L. 1242-13, ou la couche
@@ -1600,8 +1602,7 @@ impl<'a> Moteur<'a> {
             let ailleurs = engagement::signe_ailleurs(&self.ctx.racine, &p.engagement)?;
             // ECRIT : le contrat de cet engagement se fait signer ici (`engagement::contrat_a_signer`).
             let contrat = ContratDit::Complet(ContratComplet {
-                premier_mois,
-                dernier_mois,
+                place,
                 chevrons: super::mois::chevrons_dits(&p.engagement)?,
                 depuis,
                 jusqu_a,
@@ -1618,7 +1619,7 @@ impl<'a> Moteur<'a> {
             if !p.engagement.sans_paie() {
                 pieces.push("bulletin");
             }
-            if dernier_mois && p.declaree_a_la_caisse_des_conges()? {
+            if matches!(place, engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Dernier) && p.declaree_a_la_caisse_des_conges()? {
                 pieces.push("certificat_cs");
             }
             if documents::aer::due(p)? {
@@ -1671,7 +1672,7 @@ impl<'a> Moteur<'a> {
                 ailleurs,
             );
             // UN CDI EN COURS N'A PAS D'ETAT DE CONTRAT MENSUEL.
-            if nat.mensuelle() && nat.duree_indeterminee && !premier_mois {
+            if nat.mensuelle() && nat.duree_indeterminee && matches!(place, engagement::PlaceDuMois::Dernier | engagement::PlaceDuMois::Milieu) {
                 let signe_en = match g.recus.get(&k) {
                     Some(r) => r.jour_de_paris().mois_civil(),
                     None => depuis,
@@ -2493,7 +2494,7 @@ impl<'a> Moteur<'a> {
                     continue;
                 }
                 // Un contrat en cours se declare avec son premier mois.
-                if !p.engagement.premier_mois() {
+                if let engagement::PlaceDuMois::Dernier | engagement::PlaceDuMois::Milieu = p.engagement.place_du_mois() {
                     continue;
                 }
                 // UNE DATE D'EMBAUCHE CHANGEE depuis la version sur laquelle la DPAE est partie : reculee, la DPAE de l'ancienne

@@ -235,6 +235,31 @@ fn jours_et_lieux(liste: &[DateDeLigne]) -> (Vec<Jour>, BTreeMap<Jour, String>) 
     (jours, lieux)
 }
 
+/// LA PLACE DU MOIS DANS UN CONTRAT (`Engagement::place_du_mois`) : son seul mois, son premier (il se poursuit), son
+/// dernier (il a commence avant), ou un mois du milieu (il a commence avant et se poursuit). Le contrat qui commence ce
+/// mois-ci se fait imprimer et declarer (DPAE) ; celui qui y finit porte le bloc 62 en DSN et son certificat Conges
+/// Spectacles ; celui qui deborde du mois est « a cheval ».
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaceDuMois {
+    Seul,
+    Premier,
+    Dernier,
+    Milieu,
+}
+
+impl PlaceDuMois {
+    /// SON ECRITURE EN DEUX BOOLEENS, `premier_mois` et `dernier_mois` : celle de la forme canonique d'un engagement
+    /// (`FormeDEngagement`) et des reponses qui disent le contrat d'une paie, aux memes octets.
+    pub fn en_booleens(self) -> (bool, bool) {
+        match self {
+            PlaceDuMois::Seul => (true, true),
+            PlaceDuMois::Premier => (true, false),
+            PlaceDuMois::Dernier => (false, true),
+            PlaceDuMois::Milieu => (false, false),
+        }
+    }
+}
+
 impl Engagement {
     /// « NOM Prénom, contrat N » : qui une phrase de refus désigne.
     pub fn qui(&self) -> String {
@@ -634,18 +659,15 @@ impl Engagement {
         Ok(if contrat >= reference { ModaliteDuTempsDeTravail::TempsPlein } else { ModaliteDuTempsDeTravail::TempsPartiel })
     }
 
-    /// Le contrat commence ce mois-ci : contrat a imprimer, DPAE a faire.
-    pub fn premier_mois(&self) -> bool {
-        self.debut >= self.debut_mois()
-    }
-
-    /// Le contrat finit ce mois-ci : bloc 62 en DSN, certificat Conges Spectacles.
-    pub fn dernier_mois(&self) -> bool {
-        self.fin.is_some_and(|f| f <= self.fin_mois())
-    }
-
-    pub fn a_cheval(&self) -> bool {
-        !(self.premier_mois() && self.dernier_mois())
+    /// La place de son mois dans le contrat (`PlaceDuMois`) : il y commence s'il debute ce mois-ci, il y finit si sa fin
+    /// tombe ce mois-ci.
+    pub fn place_du_mois(&self) -> PlaceDuMois {
+        match (self.debut >= self.debut_mois(), self.fin.is_some_and(|f| f <= self.fin_mois())) {
+            (true, true) => PlaceDuMois::Seul,
+            (true, false) => PlaceDuMois::Premier,
+            (false, true) => PlaceDuMois::Dernier,
+            (false, false) => PlaceDuMois::Milieu,
+        }
     }
 
     /// Le contrat borne au mois : le debut de la periode de paie (de la periode elementaire, quand ce calcul en est
@@ -749,6 +771,7 @@ impl Engagement {
     /// La forme canonique d'un engagement : une ecriture stable, pour les empreintes et les oracles.
     pub fn canon(&self) -> R<paie_ecrite::FormeDEngagement> {
         let nombre_f = |x: Option<Decimal>| x.map(court);
+        let (premier_mois, dernier_mois) = self.place_du_mois().en_booleens();
         Ok(paie_ecrite::FormeDEngagement {
             salarie: self.salarie.clone(),
             spectacle: self.spectacle.clone(),
@@ -799,8 +822,8 @@ impl Engagement {
             fin_periode: self.fin_periode(),
             quotite: self.quotite()?,
             sans_paie: self.sans_paie(),
-            premier_mois: self.premier_mois(),
-            dernier_mois: self.dernier_mois(),
+            premier_mois,
+            dernier_mois,
             mois_du_contrat: self.mois_du_contrat(),
         })
     }
@@ -1829,7 +1852,7 @@ fn suivre_permanent(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     let fiche = fiche_du_salarie(ctx, &eng.salarie)?;
     let qui = qui_de(&fiche)?;
     let libelle = eng.nat()?.libelle.clone();
-    if eng.dernier_mois() {
+    if let PlaceDuMois::Seul | PlaceDuMois::Dernier = eng.place_du_mois() {
         let fin = eng.fin.ok_or_else(|| refus("fin"))?;
         avis.push(Avis {
             info: true,
@@ -1856,7 +1879,8 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     if eng.nat()?.mensuelle() {
         return suivre_permanent(ctx, eng);
     }
-    if !eng.a_cheval() {
+    let place_du_mois = eng.place_du_mois();
+    if place_du_mois == PlaceDuMois::Seul {
         return Ok(avis);
     }
     let fiche = fiche_du_salarie(ctx, &eng.salarie)?;
@@ -1864,7 +1888,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     let fin = eng.fin.ok_or_else(|| refus("contrat a cheval sans fin"))?;
     let bornes = format!("du {} au {}", eng.debut.jj_mm_aaaa(), fin.jj_mm_aaaa());
     let mois_du_contrat = eng.mois_du_contrat();
-    if !eng.premier_mois() {
+    if let PlaceDuMois::Dernier | PlaceDuMois::Milieu = place_du_mois {
         avis.push(Avis {
             info: true,
             texte: format!(
@@ -1877,17 +1901,13 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
             ),
         });
     }
-    if !eng.dernier_mois() {
+    if let PlaceDuMois::Premier | PlaceDuMois::Milieu = place_du_mois {
         let place = mois_du_contrat.iter().position(|m| *m == eng.mois).ok_or_else(|| refus("mois hors du contrat"))?;
         let suivant = mois_du_contrat.get(place + 1).ok_or_else(|| refus(socle::fichiers::trop_courte("les mois du contrat")))?;
-        let fin_de_phrase = if eng.premier_mois() {
-            if eng.planning_connu() {
-                " Le contrat imprimé couvre toutes les dates."
-            } else {
-                " Le contrat imprimé chiffre ce mois-ci et renvoie au planning pour la suite."
-            }
-        } else {
-            ""
+        let fin_de_phrase = match (place_du_mois, eng.planning_connu()) {
+            (PlaceDuMois::Premier, true) => " Le contrat imprimé couvre toutes les dates.",
+            (PlaceDuMois::Premier, false) => " Le contrat imprimé chiffre ce mois-ci et renvoie au planning pour la suite.",
+            (PlaceDuMois::Seul | PlaceDuMois::Dernier | PlaceDuMois::Milieu, _) => "",
         };
         avis.push(Avis {
             info: true,

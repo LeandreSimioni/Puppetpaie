@@ -39,7 +39,7 @@ use engagement::viser::Cible;
 use droit::catalogue;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois;
-use engagement::{self, LignePaie};
+use engagement::{self, LignePaie, PlaceDuMois};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
@@ -1424,7 +1424,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     }
     // Un contrat aux cachets finit son dernier jour travaille ; le bloc 62 s'ecrit ce mois-la et lui seul (fiche n° 3344,
     // `fin_de_contrat` de `contrats-base.json`) : sa rupture se dit ce mois-la.
-    if !e.dernier_mois() {
+    if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.place_du_mois() {
         return Ok(None);
     }
     Ok(Some(Rupture { porte, fin: Some(match e.fin {
@@ -1553,9 +1553,8 @@ pub(crate) struct Periode {
 /// Le contrat par rapport au mois : un contrat qui deborde n'a pas de DPAE ni de contrat imprime hors de son premier mois.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ContratVu {
-    premier_mois: bool,
-    dernier_mois: bool,
-    a_cheval: bool,
+    #[serde(flatten, serialize_with = "place_et_cheval_ecrits")]
+    place: PlaceDuMois,
     chevrons: Chevrons,
     sans_paie: bool,
     depuis: Mois,
@@ -1705,7 +1704,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             Some(f) => format!("{} → {}", e.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
             None => format!("{} →", e.debut.jj_mm_aaaa()),
         };
-        if e.a_cheval() {
+        if e.place_du_mois() != PlaceDuMois::Seul {
             bornes.push_str(&format!(" (paie du {} au {})", e.debut_periode().jj_mm_aaaa(), e.fin_periode().jj_mm_aaaa()));
         }
         m.push(bornes);
@@ -1730,10 +1729,11 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             t.push_str(&format!(" · n° {}", n));
         }
         if e.fin.is_some() {
-            if !e.premier_mois() {
+            let place = e.place_du_mois();
+            if let PlaceDuMois::Dernier | PlaceDuMois::Milieu = place {
                 t.push_str(&format!(" — en cours depuis {}", e.debut.mois_civil().libelle(Graphie::Accentuee)));
             }
-            if !e.dernier_mois() {
+            if let PlaceDuMois::Premier | PlaceDuMois::Milieu = place {
                 t.push_str(&format!(" — se poursuit en {}", e.debut_mois().mois_civil().suivant().libelle(Graphie::Accentuee)));
             }
         }
@@ -1753,9 +1753,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         debut: e.debut,
         fin: e.fin,
         contrat: ContratVu {
-            premier_mois: e.premier_mois(),
-            dernier_mois: e.dernier_mois(),
-            a_cheval: e.a_cheval(),
+            place: e.place_du_mois(),
             chevrons: chevrons_dits(e)?,
             sans_paie: e.sans_paie(),
             depuis: mois_du_contrat.first().copied().ok_or_else(trop_courte)?,
@@ -1819,9 +1817,10 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
     };
     let mois = e.mois_du_contrat();
     let premier = e.debut_mois();
-    let avant = match e.premier_mois() {
-        true => None,
-        false => {
+    let place = e.place_du_mois();
+    let avant = match place {
+        PlaceDuMois::Seul | PlaceDuMois::Premier => None,
+        PlaceDuMois::Dernier | PlaceDuMois::Milieu => {
             let voisin = premier.plus_jours(-1)?.mois_civil();
             Some(match mois.first() {
                 Some(&m) => format!("{} — commencé en {} · voir {}", bornes, clair(m), clair(voisin)),
@@ -1829,14 +1828,41 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
             })
         }
     };
-    let apres = (!e.dernier_mois()).then(|| {
-        let suite = match (&e.fin, mois.last()) {
-            (Some(_), Some(&j)) => format!("se poursuit jusqu'en {}", clair(j)),
-            _ => "se poursuit".to_string(),
-        };
-        format!("{} — {} · voir {}", bornes, suite, clair(premier.mois_civil().suivant()))
-    });
+    let apres = match place {
+        PlaceDuMois::Seul | PlaceDuMois::Dernier => None,
+        PlaceDuMois::Premier | PlaceDuMois::Milieu => {
+            let suite = match (&e.fin, mois.last()) {
+                (Some(_), Some(&j)) => format!("se poursuit jusqu'en {}", clair(j)),
+                _ => "se poursuit".to_string(),
+            };
+            Some(format!("{} — {} · voir {}", bornes, suite, clair(premier.mois_civil().suivant())))
+        }
+    };
     Ok(Chevrons { avant, apres })
+}
+
+/// LA PLACE DU MOIS DANS LE CONTRAT D'UNE CARTE, ecrite `premier_mois` et `dernier_mois` (`PlaceDuMois::en_booleens`),
+/// aux memes octets.
+pub(crate) fn place_ecrite<S: serde::Serializer>(place: &PlaceDuMois, s: S) -> Result<S::Ok, S::Error> {
+    let (premier_mois, dernier_mois) = place.en_booleens();
+    #[derive(Serialize)]
+    struct Ecrite {
+        premier_mois: bool,
+        dernier_mois: bool,
+    }
+    Ecrite { premier_mois, dernier_mois }.serialize(s)
+}
+
+/// La meme, et `a_cheval` : le contrat deborde du mois (tout sauf son seul mois), aux memes octets.
+fn place_et_cheval_ecrits<S: serde::Serializer>(place: &PlaceDuMois, s: S) -> Result<S::Ok, S::Error> {
+    let (premier_mois, dernier_mois) = place.en_booleens();
+    #[derive(Serialize)]
+    struct Ecrite {
+        premier_mois: bool,
+        dernier_mois: bool,
+        a_cheval: bool,
+    }
+    Ecrite { premier_mois, dernier_mois, a_cheval: *place != PlaceDuMois::Seul }.serialize(s)
 }
 
 /// Ce qui, dans ce mois, porte sur une
