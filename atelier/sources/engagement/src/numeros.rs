@@ -362,7 +362,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
 /// l'annee du debut du contrat (`derniers_pris`, lus une fois par annee), en memoire -- celui que sa validation lui
 /// donnerait (`a_la_validation`).
 fn proposer(ctx: &Contexte, p: &mut crate::calcul::Contenu, pris: &mut HashMap<Annee, HashMap<IdSalarie, i64>>, departs: &Departs) -> R<()> {
-    let annee = p.engagement.debut.annee();
+    let annee = p.engagement.contrat.debut().annee();
     let pris = match pris.entry(annee) {
         std::collections::hash_map::Entry::Occupied(x) => x.into_mut(),
         std::collections::hash_map::Entry::Vacant(x) => x.insert(derniers_pris(ctx, annee, departs)?),

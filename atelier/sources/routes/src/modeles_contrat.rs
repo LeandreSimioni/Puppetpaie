@@ -894,7 +894,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
     let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, vise.mois, None, &departs)?;
     let p = paies
         .into_iter()
-        .find(|p| p.salarie.id == vise.salarie && p.engagement.debut == vise.debut)
+        .find(|p| p.salarie.id == vise.salarie && p.engagement.contrat.debut() == vise.debut)
         .ok_or_else(|| refus(format!("Aucun engagement validé de {} du {} en {} : en choisir un de la liste.", vise.salarie, vise.debut.jj_mm_aaaa(), vise.mois.etiquette())))?;
     let modele = modele_lu(nom.clone(), s.is_none(), &texte_de(&nat, s, Partie::Contrat)?, &texte_de(&nat, s, Partie::Avenant)?)?;
     let ent = documents::avenant::ent_du_mois(ctx, vise.mois);
@@ -918,10 +918,10 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
             let contrat = modele.lu.decoupe(&nom).map_err(|m| m.reclasser(Classe::Illisible))?;
             let x = documents::avenant::modification_d_apercu(&contrat, &v).map_err(|m| m.reclasser(Classe::Refuse))?;
             let modifs = [fabrique_pdf::forme::Modification { numero: Some(x.numero as i64), article: x.article, avant: x.avant, apres: x.apres, phrase: None }];
-            documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, 1, p.engagement.debut, ctx.aujourdhui, ctx.aujourdhui, &modele, false)?
+            documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, 1, p.engagement.contrat.debut(), ctx.aujourdhui, ctx.aujourdhui, &modele, false)?
         }
     }
-    Ok(Apercu { phrase: format!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, p.engagement.debut.jj_mm_aaaa()), chemin })
+    Ok(Apercu { phrase: format!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, p.engagement.contrat.debut().jj_mm_aaaa()), chemin })
 }
 
 /// Le nom d'un special : dit, et qu'aucun autre special (que `sauf`) ne porte.

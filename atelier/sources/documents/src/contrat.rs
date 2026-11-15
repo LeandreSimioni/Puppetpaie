@@ -88,7 +88,7 @@ pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], 
         let lu = &modele.lu;
         let v = valeurs_de_paie(ctx, ent, p)?;
         let mut un = document_modele(lu, &v);
-        let (salarie, debut) = (&p.salarie.id, p.engagement.debut);
+        let (salarie, debut) = (&p.salarie.id, p.engagement.contrat.debut());
         let remplace = p.engagement.numero.as_ref().and_then(|n| remplacements.iter().find(|((s, d, k), _)| s == salarie && *d == debut && k == n));
         if let Some((_, (numero, date))) = remplace {
             un.remplace = Some(forme::Remplace { numero: numero.clone(), date: date.jj_mm_aaaa() });

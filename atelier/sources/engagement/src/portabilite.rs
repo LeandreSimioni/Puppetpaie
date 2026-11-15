@@ -71,8 +71,9 @@ pub fn de(ctx: &Contexte, p: &Paie, numero: &crate::numeros::NumeroContrat, fin:
     if !prevoyance && !sante {
         return Ok(None);
     }
-    let depuis = debut_des_contrats_consecutifs(&siens, p.engagement.debut)?;
-    Ok(Some(Portabilite { prevoyance, sante, depuis, consecutifs: depuis < p.engagement.debut, mois: mois_arrondis(&Periode::du_au(depuis, *fin)?)? }))
+    let debut = p.engagement.contrat.debut();
+    let depuis = debut_des_contrats_consecutifs(&siens, debut)?;
+    Ok(Some(Portabilite { prevoyance, sante, depuis, consecutifs: depuis < debut, mois: mois_arrondis(&Periode::du_au(depuis, *fin)?)? }))
 }
 
 /// LES DERNIERS CONTRATS CONSECUTIFS CHEZ LE MEME EMPLOYEUR : en remontant depuis le contrat qui finit (`debut`), chaque

@@ -473,8 +473,8 @@ fn code_urssaf(ent: &droit::fiche::ChampsEntreprise) -> R<declarations::urssaf::
 fn embauche_dpae(p: &Paie, spectacle: bool) -> Embauche {
     Embauche {
         salarie: p.salarie.clone(),
-        debut: p.engagement.debut,
-        fin: p.engagement.fin,
+        debut: p.engagement.contrat.debut(),
+        fin: p.engagement.contrat.fin(),
         nature: p.engagement.nature.clone(),
         spectacle: p.spectacle.clone().filter(|_| spectacle),
     }
@@ -544,7 +544,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         let mut doubles: Vec<String> = Vec::new();
         for i in 1..paies.len() {
             if retenue(i) && (0..i).any(|j| retenue(j) && sans_numero[i] == sans_numero[j]) {
-                let texte = format!("{} au {}", paies[i].salarie.id, paies[i].engagement.debut.iso());
+                let texte = format!("{} au {}", paies[i].salarie.id, paies[i].engagement.contrat.debut().iso());
                 if !doubles.contains(&texte) {
                     doubles.push(texte);
                 }

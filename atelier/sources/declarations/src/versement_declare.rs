@@ -244,7 +244,7 @@ pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementDeclare> {
         lignes,
         affiliations: ecrit.affiliations,
         taux_pas,
-        debut_contrat: Some(p.engagement.debut),
+        debut_contrat: Some(p.engagement.contrat.debut()),
     })
 }
 

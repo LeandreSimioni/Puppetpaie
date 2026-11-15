@@ -61,7 +61,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     let eng = &paie.engagement;
     let nom = qui(m)?;
     // LE TERME (L1242-12, 2°) : un contrat a duree determinee le dit ; un CDI n'en a pas.
-    match eng.fin {
+    match eng.contrat.fin() {
         Some(f) => {
             m.insert(Marqueur::ContratFin, f.jj_mm_aaaa());
         }

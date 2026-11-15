@@ -1125,15 +1125,15 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     }));
 
     let contrat_long = if permanent {
-        let mut long = format!(" ({} depuis le {}", nat.libelle, e.debut.jj_mm_aaaa());
-        if let Some(f) = e.fin {
+        let mut long = format!(" ({} depuis le {}", nat.libelle, e.contrat.debut().jj_mm_aaaa());
+        if let Some(f) = e.contrat.fin() {
             long.push_str(&format!(", jusqu'au {}", f.jj_mm_aaaa()));
         }
         long.push(')');
         long
     } else if e.place_du_mois()? != engagement::PlaceDuMois::Seul {
-        let fin = e.fin.ok_or_else(|| socle::refus!("Le contrat qui court sur plusieurs mois depuis le {} n'a pas de date de fin.", e.debut.jj_mm_aaaa()))?;
-        format!(" (contrat du {} au {})", e.debut.jj_mm_aaaa(), fin.jj_mm_aaaa())
+        let contrat = e.contrat.fermee().ok_or_else(|| socle::refus!("Le contrat qui court sur plusieurs mois depuis le {} n'a pas de date de fin.", e.contrat.debut().jj_mm_aaaa()))?;
+        format!(" (contrat du {} au {})", contrat.debut().jj_mm_aaaa(), contrat.fin().jj_mm_aaaa())
     } else {
         String::new()
     };

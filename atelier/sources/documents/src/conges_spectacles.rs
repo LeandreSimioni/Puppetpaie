@@ -252,7 +252,7 @@ pub struct MoisPaye {
 impl ContratCs {
     pub fn de(e: &Engagement) -> R<ContratCs> {
         Ok(ContratCs {
-            periode: Periode::du_au(e.debut, e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de certificat"))?)?,
+            periode: e.contrat.fermee().ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de certificat"))?,
             dates_travail: e.dates_travail.clone(),
             cachets: e.cachets,
             jours: e.jours,

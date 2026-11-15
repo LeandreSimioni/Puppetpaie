@@ -567,7 +567,7 @@ pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: Moi
     let mut siennes = Vec::new();
     for imp in du_mois_du_salarie(&ctx.racine, mois, Some(GenreDImprevu::Suspension), cle)? {
         if let Some(code) = imp.suspension().map(|s| s.motif) {
-            if du_contrat(&imp, cle, e.numero.as_ref(), &e.debut)? {
+            if du_contrat(&imp, cle, e.numero.as_ref(), &e.contrat.debut())? {
                 siennes.push((code, imp));
             }
         }
@@ -723,7 +723,7 @@ pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, periode: &P
     let mut out = Vec::new();
     for imp in du_salarie(&ctx.racine, cle)? {
         let Imprevu::Arret(a) = imp else { continue };
-        if du_contrat(&a, cle, paie.engagement.numero.as_ref(), &paie.engagement.debut)? && arret_croise(&a, periode)? {
+        if du_contrat(&a, cle, paie.engagement.numero.as_ref(), &paie.engagement.contrat.debut())? && arret_croise(&a, periode)? {
             out.push(a);
         }
     }

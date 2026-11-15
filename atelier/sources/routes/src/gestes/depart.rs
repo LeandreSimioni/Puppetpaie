@@ -854,7 +854,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     let mut certificats: Vec<(usize, &PaieCs, NumeroDeCertificat)> = Vec::new();
     for (cle, debut, pc) in &pour_cs {
         let Some(pc) = pc else { continue };
-        let Some(i) = (0..paies.len()).find(|i| cle_de(&paies[*i]) == *cle && paies[*i].engagement.debut == *debut) else { continue };
+        let Some(i) = (0..paies.len()).find(|i| cle_de(&paies[*i]) == *cle && paies[*i].engagement.contrat.debut() == *debut) else { continue };
         let n = match ecrits.get(i).and_then(|e| e.premier_ce) {
             Some(n) => n,
             None if part(&paies[i]) => {
@@ -1583,7 +1583,7 @@ fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::
         let mut certificats: Vec<(usize, &PaieCs, NumeroDeCertificat)> = Vec::new();
         for (cle, debut, pc) in &pour_cs {
             let Some(pc) = pc else { continue };
-            let Some(i) = (0..paies.len()).find(|i| cle_de(&paies[*i]) == *cle && paies[*i].engagement.debut == *debut) else { continue };
+            let Some(i) = (0..paies.len()).find(|i| cle_de(&paies[*i]) == *cle && paies[*i].engagement.contrat.debut() == *debut) else { continue };
             if let Some(n) = premiers_ce[i] {
                 certificats.push((i, pc, n));
             }

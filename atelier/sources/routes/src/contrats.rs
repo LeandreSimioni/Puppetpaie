@@ -563,7 +563,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         p.salarie.id == *salarie
             && match numero {
                 Some(n) => p.engagement.numero.as_ref() == Some(n),
-                None => p.engagement.debut == c.debut,
+                None => p.engagement.contrat.debut() == c.debut,
             }
     });
     let Some(rang) = trouvee else {
@@ -595,7 +595,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let av = courriel.and_then(|m| m.avenant).or(avenant).filter(|a| *a != 0);
     let retour = journal::RetourContrat {
         salarie: c.salarie.clone(),
-        debut: p.engagement.debut,
+        debut: p.engagement.contrat.debut(),
         recu,
         numero: numero_note.clone(),
         nom: nom.clone(),
@@ -928,7 +928,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
             continue;
         }
         let nom = crate::nom_a_l_ecran(&p.salarie, &p.salarie.id);
-        let (debut, fin) = (p.engagement.debut, p.engagement.fin);
+        let (debut, fin) = (p.engagement.contrat.debut(), p.engagement.contrat.fin());
         // CE QUE LA BOITE EN FAIT : un contrat a envoyer (jamais parti, ou caduc) se coche, et part en avenant s'il est
         // deja parti, signe ou non (`en_avenant`) ; un contrat ou un avenant parti et pas revenu attend : il se note reçu signe
         // (`recu`), et repart par courriel (`relancer` : un rappel, ou un premier courriel s'il n'est parti qu'imprime),
@@ -1305,7 +1305,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     Ok(Some(AvenantLu {
         salarie: c.salarie.clone(),
         debut: c.debut,
-        fin: p.engagement.fin,
+        fin: p.engagement.contrat.fin(),
         nom: crate::nom_a_l_ecran(&p.salarie, salarie),
         spectacle: nomme.spectacle,
         nom_du_contrat: nomme.nom_du_contrat,
@@ -1357,7 +1357,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
     if !engagement::signe_ailleurs(&ctx.racine, &p.engagement)? {
         return Ok(None);
     }
-    let debut = p.engagement.debut;
+    let debut = p.engagement.contrat.debut();
     let Some(v) = version_validee(ctx, mois, salarie, Some(numero), &departs)? else { return Ok(None) };
     // Une version qui ne garde pas sa saisie ne se compare pas : l'avenant se refuse.
     let saisie_de = |s: Option<&engagement::stock::Saisie>| {
@@ -1388,7 +1388,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
     Ok(Some(AvenantLu {
         salarie: c.salarie.clone(),
         debut,
-        fin: p.engagement.fin,
+        fin: p.engagement.contrat.fin(),
         nom: crate::nom_a_l_ecran(&p.salarie, salarie),
         spectacle: nomme.spectacle,
         nom_du_contrat: nomme.nom_du_contrat,

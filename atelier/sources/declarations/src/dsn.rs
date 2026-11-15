@@ -466,7 +466,7 @@ impl Arret {
     /// L'arret suspend-il le contrat de cette paie ? La regle des imprevus (`imprevus::du_contrat`) : le meme salarie, la
     /// meme date de debut du contrat, le meme numero quand l'un et l'autre en ont un.
     fn du_contrat(&self, p: &Paie) -> R<bool> {
-        engagement::imprevus::du_contrat(&self.saisi, &cle_salarie(p), p.engagement.numero.as_ref(), &p.engagement.debut)
+        engagement::imprevus::du_contrat(&self.saisi, &cle_salarie(p), p.engagement.numero.as_ref(), &p.engagement.contrat.debut())
     }
 }
 
@@ -785,8 +785,8 @@ fn bareme_du_contrat(e: &engagement::Engagement, salarie: &droit::fiche::Salarie
     let nat = e.nat()?;
     let fin = e.periode_payee()?.fin();
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(e.nature, e.motif_recours, &engagement::numeros::le_contrat(e.numero.as_ref(), &e.salarie))?;
-    let caisse = droit::caisse_conges::affilie(&nat, salarie, &e.periode_du_contrat()?)?;
-    let majoration = droit::majoration_chomage::due(&nat, e.motif_recours, &e.debut, e.fin.as_ref())?;
+    let caisse = droit::caisse_conges::affilie(&nat, salarie, &e.periode_du_contrat())?;
+    let majoration = droit::majoration_chomage::due(&nat, e.motif_recours, &e.periode_du_contrat())?;
     let cle = format!("{}|{}|{:?}|{}|{}|{}|{}", fin.iso(), nat.cle, salarie, nat.mensuelle(), caisse, cpf_cdd, majoration);
     if let Some(pile) = socle::memoire::tenu(&bar.piles).get(&cle) {
         return Ok(pile.clone());
@@ -1304,7 +1304,7 @@ pub fn rattachements(p: &Paie, orgs: &Organismes, ent: &ChampsEntreprise, refs: 
                     bareme::AffiliationPrevoyance::DesLEmbauche => {}
                     bareme::AffiliationPrevoyance::Le(j) => debut = Some(*j),
                     bareme::AffiliationPrevoyance::AuPlusTardLe(j) => {
-                        if *j > e.debut {
+                        if *j > e.contrat.debut() {
                             return Err(socle::echec::cle(format!(
                                 "{} : la prevoyance de sa convention s'ouvre apres une anciennete DANS LA BRANCHE, et sa \
 fiche ne date que son anciennete dans l'entreprise (« Dans la compagnie depuis ») : assez pour la cotisation, pas pour dire si \
@@ -1313,7 +1313,7 @@ l'affiliation quand ce n'est pas celui du contrat (S21.G00.70.014, cahier techni
 A dire sur sa fiche : Configuration › Salariés, bloc « Salarié au mois », « Dans la branche depuis » : la date de son entree dans la branche (s'il n'y \
 travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
                                 qui_contrat(p),
-                                e.debut.jj_mm_aaaa(),
+                                e.contrat.debut().jj_mm_aaaa(),
                                 j.jj_mm_aaaa()
                             ), "prevoyance_branche_depuis"));
                         }
@@ -1345,7 +1345,7 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
             Some(a) => option_retenue(p, ent, a, &reference)?,
             None => (None, None),
         };
-        out.push(Affiliation { place, reference, option, ayants_droit, debut: debut.filter(|d| *d > e.debut) });
+        out.push(Affiliation { place, reference, option, ayants_droit, debut: debut.filter(|d| *d > e.contrat.debut()) });
     }
     Ok(out)
 }
@@ -1590,7 +1590,7 @@ fn motif_rupture(p: &Paie, nat: &Nature) -> R<MotifDeRupture> {
 finit pas tout seul, et le motif commande les droits du salarie a l'assurance chomage : il se saisit. Motifs : {}.",
         e.numero_declare()?,
         nat.libelle,
-        e.fin.iter().map(|f| f.jjmmaaaa()).collect::<String>(),
+        e.contrat.fin().iter().map(|f| f.jjmmaaaa()).collect::<String>(),
         nat.libelle,
         connus.join(", ")
     ), "motif_rupture"))
@@ -1781,7 +1781,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     };
     // Les statuts se lisent, ou refusent (`statuts_du_contrat`), avant qu'une ligne du contrat soit ecrite.
     let (statut_conventionnel, statut_categoriel_rc) = statuts_du_contrat(p, ent.idcc.dite())?;
-    f.add(droit::rubrique!("S21.G00.40.001"), e.debut.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.40.001"), e.contrat.debut().jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.40.002"), statut_conventionnel.as_str());
     f.add(droit::rubrique!("S21.G00.40.003"), statut_categoriel_rc.as_str());
     f.add_case(droit::rubrique!("S21.G00.40.004"), &s.pcs_ese, "pcs_ese")?;
@@ -1798,8 +1798,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     f.add_opt(droit::rubrique!("S21.G00.40.007"), nat.code(droit::rubrique!("S21.G00.40.007")))?;
     f.add_opt(droit::rubrique!("S21.G00.40.008"), nat.code(droit::rubrique!("S21.G00.40.008")))?;
     f.add_opt(droit::rubrique!("S21.G00.40.009"), e.numero.clone())?;
-    if !nat.duree_indeterminee || e.fin.is_some() {
-        f.add_opt(droit::rubrique!("S21.G00.40.010"), e.fin.map(|j| j.jjmmaaaa()))?;
+    if !nat.duree_indeterminee || e.contrat.fin().is_some() {
+        f.add_opt(droit::rubrique!("S21.G00.40.010"), e.contrat.fin().map(|j| j.jjmmaaaa()))?;
     }
     f.add(droit::rubrique!("S21.G00.40.011"), nat.unite_quotite());
     // La quotite dans l'unite que 40.011 vient d'ecrire : son nombre, a la porte de la DSN.
@@ -1828,9 +1828,9 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             "Contrat {} {} : {} de {}, et la norme DSN la plafonne a {} en unite << {} >> \
 ({}, bloc 40{}). A trancher avant de le declarer.",
             e.numero_declare()?,
-            match e.fin {
-                Some(j) => format!("du {} au {}", e.debut.jjmmaaaa(), j.jjmmaaaa()),
-                None => format!("commence le {}, sans terme", e.debut.jjmmaaaa()),
+            match e.contrat.fin() {
+                Some(j) => format!("du {} au {}", e.contrat.debut().jjmmaaaa(), j.jjmmaaaa()),
+                None => format!("commence le {}, sans terme", e.contrat.debut().jjmmaaaa()),
             },
             quoi,
             valeur,
@@ -1923,7 +1923,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     if let Some(fin) = fin_fctu {
         crate::fctu::bloc_62_63(f, fin, e)?;
     } else if matches!(e.place_du_mois()?, engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Dernier) && fin_de_contrat {
-        let fin = e.fin.ok_or_else(|| refus("S21.G00.62.001 : le contrat n'a pas de fin."))?;
+        let fin = e.contrat.fin().ok_or_else(|| refus("S21.G00.62.001 : le contrat n'a pas de fin."))?;
         f.add(droit::rubrique!("S21.G00.62.001"), fin.jjmmaaaa());
         let motif = motif_rupture(p, &nat)?;
         f.ecrire_code(motif)?;
@@ -2071,7 +2071,7 @@ fn pas_du_versement(
 
 pub fn court(p: &Paie, le: Jour) -> R<bool> {
     let e = &p.engagement;
-    contrat_court(&*e.nat()?, e.debut, e.fin, le)
+    contrat_court(&*e.nat()?, &e.periode_du_contrat(), le)
 }
 
 /// Les quatre blocs 51 d'une paie, et les activites 53 sous le 002.
@@ -4310,7 +4310,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
         e.objet().carte().salarie.as_ref() == Some(&cle) && e.objet().carte().numero.as_ref() == Some(&numero)
     };
     let Some(v) = etats.iter().filter(|e| sienne(e)).find_map(engagement::etats::Etat::valide) else { return Ok(None) };
-    let premier_mois = p.engagement.debut.mois_civil();
+    let premier_mois = p.engagement.contrat.debut().mois_civil();
     let mut m = mois.precedent();
     while m >= premier_mois {
         // La compagnie telle qu'a la fin du mois declare (l'entreprise, ses etablissements) ; la fiche, celle que la paie declaree a lue.
@@ -4660,7 +4660,7 @@ retirer la ligne. Rien n'est ecrit.",
         }
         let mut declare = false;
         for p in paies {
-            if engagement::imprevus::du_contrat(&imp, &cle_salarie(p), p.engagement.numero.as_ref(), &p.engagement.debut)? {
+            if engagement::imprevus::du_contrat(&imp, &cle_salarie(p), p.engagement.numero.as_ref(), &p.engagement.contrat.debut())? {
                 declare = true;
             }
         }
@@ -5097,7 +5097,7 @@ certificat de conformite du depot precedent.",
                     // contrat de travail », `norme-dsn/texte/bloc-S21.G00.62.txt`). `bloc_contrat` ne l'ecrit que si le contrat finit dans le mois
                     // de la correction qui le pose.
                     let ajoute = |x: &Regularisation| x.declare.lignes.is_empty() && x.declare.declaree.is_none();
-                    let fin = groupe.iter().any(|x| ajoute(x) || x.apres.engagement.fin != x.avant.engagement.fin);
+                    let fin = groupe.iter().any(|x| ajoute(x) || x.apres.engagement.contrat.fin() != x.avant.engagement.contrat.fin());
                     let debut_bloc = f.lignes.len();
                     let siens: Vec<&Arret> = arrets_du_contrat(&arrets_du_mois, &dernier.apres)?;
                     bloc_contrat(&mut f, &dernier.apres, &ent_e, &orgs, rg, &b, fin, &siens, NatureDeLaDeclaration::Mensuelle, emplois_multiples(&dernier.apres, &autres))?;
@@ -5108,7 +5108,7 @@ certificat de conformite du depot precedent.",
                         _ => Some(x),
                     });
                     if let Some(d) = declarant {
-                        crate::changements_contrat::ancienne_date_de_debut(&mut f.lignes, debut_bloc, d, &dernier.apres.engagement.debut, fin_m)?;
+                        crate::changements_contrat::ancienne_date_de_debut(&mut f.lignes, debut_bloc, d, &dernier.apres.engagement.contrat.debut(), fin_m)?;
                     }
                     rg
                 }

@@ -4,7 +4,7 @@
 use crate::outils::typee::{reference, verifier, Ligne};
 use droit::natures::{contrat_court, NatureDeContrat};
 use serde::{Deserialize, Serialize};
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 
 /// Un jour tel que la reference l'ecrit : (an, mois, jour).
 type JourEcrit = (i32, u32, u32);
@@ -31,7 +31,8 @@ fn contrat_court_des_natures() {
         .into_iter()
         .map(|l| {
             let n = l.cas.nature.proprietes().unwrap();
-            let court = contrat_court(&n, jour(l.cas.debut), l.cas.fin.map(jour), jour(l.cas.le)).unwrap();
+            let contrat = PeriodeOuverte::du(jour(l.cas.debut), l.cas.fin.map(jour)).unwrap();
+            let court = contrat_court(&n, &contrat, jour(l.cas.le)).unwrap();
             Ligne { cas: l.cas, attendu: court }
         })
         .collect();

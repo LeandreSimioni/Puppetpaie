@@ -221,7 +221,7 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
 /// Le fichier d'un signalement d'amorcage, pret a deposer.
 pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::departs::Departs) -> Result<String, Echec> {
     verifier(paie, o.motif, o.type_declaration, o.remplace)?;
-    let ctx = &ctx.au(&paie.engagement.debut)?;
+    let ctx = &ctx.au(&paie.engagement.contrat.debut())?;
     let e = &paie.engagement;
     let s = &paie.salarie;
     let ent = &ctx.entreprise;
@@ -231,7 +231,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         None => aujourdhui()?,
     };
     // Le bareme ne sert a rien ici : le taux AT/MP est interdit en nature 08.
-    let bar = crate::dsn::BaremeDuMois::nouveau(pile_sans_taux(e.debut.annee()), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
+    let bar = crate::dsn::BaremeDuMois::nouveau(pile_sans_taux(e.contrat.debut().annee()), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
     let remplace = o.remplace;
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference).
@@ -325,7 +325,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
 
     // ------------------------------------------------------------ S21 individu
     crate::dsn::bloc_individu(&mut f, s, true)?;
-    crate::ntt::poser_ntt(&mut f, ent, s, crate::changements_individu::derniere_declaree(ctx, &paie.salarie, &e.debut, departs)?.as_ref())?;
+    crate::ntt::poser_ntt(&mut f, ent, s, crate::changements_individu::derniere_declaree(ctx, &paie.salarie, &e.contrat.debut(), departs)?.as_ref())?;
 
     // ------------------------------------------------------------ S21 contrat
     if !changement {
@@ -337,7 +337,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         // Elle part de `date_anciennete` de la fiche, que la validation du premier engagement pose (comme le FCTU).
         let depuis = *s.date_anciennete.exigee("date_anciennete")?;
         // La norme interdit zero (CCH-12) : un debut avant la date d'anciennete en declare un jour.
-        let jours = Anciennete::en_jours(&depuis, &e.debut);
+        let jours = Anciennete::en_jours(&depuis, &e.contrat.debut());
         bloc_anciennete(&mut f, paie, if jours.nulle() { Duree::jours(1) } else { jours })?;
     }
 

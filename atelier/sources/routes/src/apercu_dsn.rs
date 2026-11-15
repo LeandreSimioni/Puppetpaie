@@ -162,7 +162,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                 }
             }
         }
-        let n = p.engagement.numero.as_ref().ok_or_else(|| socle::refus!("La paie du contrat du {} n'a pas de numéro de contrat.", p.engagement.debut.jj_mm_aaaa()))?.clone();
+        let n = p.engagement.numero.as_ref().ok_or_else(|| socle::refus!("La paie du contrat du {} n'a pas de numéro de contrat.", p.engagement.contrat.debut().jj_mm_aaaa()))?.clone();
         if !par_numero.contains_key(&n) {
             ordre.push(n.clone());
         }
@@ -243,16 +243,16 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
         let p = &liste[par_numero[n]];
         let nom = p.salarie.nomme();
         let dit = match &nom {
-            Some(x) => format!("{} — contrat {}, du {}", x, n, p.engagement.debut.jj_mm_aaaa()),
-            None => format!("Contrat {}, du {}", n, p.engagement.debut.jj_mm_aaaa()),
+            Some(x) => format!("{} — contrat {}, du {}", x, n, p.engagement.contrat.debut().jj_mm_aaaa()),
+            None => format!("Contrat {}, du {}", n, p.engagement.contrat.debut().jj_mm_aaaa()),
         };
         absents.push(AbsentDuFichier {
             salarie: p.salarie.id.clone(),
             dit,
             nom,
             numero: n.clone(),
-            debut: p.engagement.debut,
-            fin: p.engagement.fin,
+            debut: p.engagement.contrat.debut(),
+            fin: p.engagement.contrat.fin(),
             pastille: Pastille::de(socle::ecran::EtatDEcran::AFaire, "absent du fichier"),
         });
     }

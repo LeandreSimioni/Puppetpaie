@@ -41,7 +41,7 @@ use crate::numeros::NumeroContrat;
 use crate::saisie::Carte;
 use crate::stock::{self, Objet};
 use droit::contexte::{Contexte, IdSalarie};
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
@@ -737,16 +737,16 @@ impl Importe {
         };
         // L'emploi que le bulletin imprime ; un bulletin qui ne l'imprime pas n'en dit rien.
         let imprime = |champ: fn(&EmploiImprime) -> &Option<String>| p.emploi_imprime.as_ref().and_then(|i| champ(i).clone());
-        let debut = match (self.carte().debut, p.periode) {
-            (Some(d), _) => d,
-            (None, Some(o)) => o.debut(),
-            (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),
-        };
         // Le contrat d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin.
         let fin = match (self.carte().fin, self.permanent()) {
             (Some(f), _) => Some(f),
             (None, true) => None,
             (None, false) => p.periode.and_then(|o| o.fin()),
+        };
+        let contrat = match (self.carte().debut, p.periode) {
+            (Some(d), _) => PeriodeOuverte::du(d, fin)?,
+            (None, Some(o)) => PeriodeOuverte::du(o.debut(), fin)?,
+            (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),
         };
         let dates_travail: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
         let brut = p.brut;
@@ -767,8 +767,7 @@ impl Importe {
             spectacle: spectacle.clone(),
             dates_travail,
             lignes: lignes_lues.iter().filter_map(LigneImprimee::en_ligne_de_paie).collect(),
-            debut,
-            fin,
+            contrat,
             numero: match self.carte().numero.clone() {
                 Some(n) => Some(n),
                 None => p.bulletin.as_ref().and_then(|b| b.contrat.clone()),
@@ -823,8 +822,8 @@ impl Importe {
 
         // Le bareme de la paie range les bases ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let fin_periode = engagement.periode_payee()?.fin();
-        let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.periode_du_contrat()?)?;
-        let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref())?)?;
+        let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.periode_du_contrat())?;
+        let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.periode_du_contrat())?)?;
         // Un regroupement n'est pas une rubrique du bareme : sa base ne se range pas.
         // La base qu'imprime le bulletin (un nombre lu) se range dans ce que l'assiette compte : la porte de cette lecture.
         fn de_cotisation(l: &CotisationImprimee) -> Option<&droit::forme_bareme::IdDeCotisation> {

@@ -1414,7 +1414,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for (e, pa) in saisie.engagements.iter().zip(paies.iter()) {
                 let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
                 // Un contrat fini ce mois-ci a eu son solde de tout compte : les conges non pris y sont payes, il n'y a plus de dette.
-                if !nat.mensuelle() || pa.engagement.fin.is_some_and(|f| f <= fin) {
+                if !nat.mensuelle() || pa.engagement.contrat.fin().is_some_and(|f| f <= fin) {
                     continue;
                 }
                 let cle = cle_de(pa);

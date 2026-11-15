@@ -1583,18 +1583,17 @@ impl Proprietes {
 
 pub const DUREE_CONTRAT_COURT: Duree<EnMois> = Duree::mois(2);
 
-use socle::date::{Duree, EnMois, Jour};
+use socle::date::{Duree, EnMois, Jour, PeriodeOuverte};
 
-/// L'abattement contrats courts s'applique-t-il a ce versement ? `debut` et
-/// `fin` sont les bornes du CONTRAT SIGNE (`fin` a `None` : terme imprecis),
-/// `le` la date du versement. Le terme : la meme quantieme deux mois plus tard, ramenee au dernier jour du mois
-/// (`Jour::apres`).
-pub fn contrat_court(nat: &Nature, debut: Jour, fin: Option<Jour>, le: Jour) -> R<bool> {
+/// L'abattement contrats courts s'applique-t-il a ce versement ? `contrat` est la periode du CONTRAT SIGNE (sans fin :
+/// terme imprecis), `le` la date du versement. Le terme : la meme quantieme deux mois plus tard, ramenee au dernier jour
+/// du mois (`Jour::apres`).
+pub fn contrat_court(nat: &Nature, contrat: &PeriodeOuverte, le: Jour) -> R<bool> {
     if nat.duree_indeterminee {
         return Ok(false);
     }
-    let terme = debut.apres(DUREE_CONTRAT_COURT)?;
-    if let Some(f) = fin {
+    let terme = contrat.debut().apres(DUREE_CONTRAT_COURT)?;
+    if let Some(f) = contrat.fin() {
         if f > terme {
             return Ok(false);
         }

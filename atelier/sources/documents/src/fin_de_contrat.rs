@@ -62,7 +62,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let Some(numero) = e.numero.as_ref() else {
         return Err(erreur(Classe::Illisible, "Certificat de travail : le contrat n'a pas de numéro, il n'est pas validé. Le valider d'abord."));
     };
-    let Some(fin) = e.fin else {
+    let Some(fin) = e.contrat.fin() else {
         return Err(erreur(
             Classe::Illisible,
             format!("Certificat de travail : le contrat {} n'a pas de date de fin. Il se délivre à l'expiration du contrat (L1234-19).", numero),
@@ -138,7 +138,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
     poser(Marqueur::SalarieCodePostal, ecrite(&s.code_postal, "code_postal")?);
     poser(Marqueur::SalarieCommune, ecrite(&s.commune, "commune")?);
     poser(Marqueur::ContratNumero, numero.to_string());
-    poser(Marqueur::ContratDebut, e.debut.jj_mm_aaaa());
+    poser(Marqueur::ContratDebut, e.contrat.debut().jj_mm_aaaa());
     poser(Marqueur::ContratFin, fin.jj_mm_aaaa());
     poser(Marqueur::ContratEmploi, ecrite(&s.emploi, "emploi")?);
     poser(Marqueur::ContratNature, e.nat().map_err(|m| m.reclasser(Classe::Illisible))?.libelle.clone());

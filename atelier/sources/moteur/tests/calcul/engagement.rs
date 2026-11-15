@@ -22,7 +22,7 @@ fn essai(r: socle::echec::R<Value>) -> Value {
 fn releve(e: &Engagement) -> Value {
     let jours = e.dates_du_contrat();
     let mut lieux: Vec<Jour> = jours.clone();
-    lieux.push(e.debut);
+    lieux.push(e.contrat.debut());
     let par_lieu = |p: bool| {
         Value::Array(e.dates_par_lieu(p).into_iter().map(|(l, ds)| json!([l, iso(&ds)])).collect())
     };

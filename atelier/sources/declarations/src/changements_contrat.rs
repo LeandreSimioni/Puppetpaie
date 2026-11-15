@@ -461,7 +461,7 @@ pub fn ancienne_date_de_debut(lignes: &mut Vec<(RubriqueDeLaNorme, String)>, deb
         return Ok(());
     }
     let Some(ancienne) = r.declare.debut_contrat else {
-        if *nouveau == r.avant.engagement.debut {
+        if *nouveau == r.avant.engagement.contrat.debut() {
             return Ok(());
         }
         return Err(socle::echec::refus_avec(
@@ -471,7 +471,7 @@ declaree (S21.G00.40.001 du contrat). Le bloc Changements contrat (S21.G00.41.02
 date declaree : elle se lit, elle ne se devine pas. Rien n'est ecrit.",
                 r.mois,
                 numero,
-                r.avant.engagement.debut.jj_mm_aaaa(),
+                r.avant.engagement.contrat.debut().jj_mm_aaaa(),
                 nouveau.jj_mm_aaaa()
             ),
             socle::echec::Lieu { detail: Some(r.declare.dit()), ..socle::echec::Lieu::default() },

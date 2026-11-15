@@ -20,7 +20,7 @@
 //! permet ; un controle faux refuserait du licite) ; « six mois », « un mois », « n mois » se comptent du premier jour du
 //! contrat au meme quantieme (le dernier jour du mois s'il ne l'a pas), ce jour exclu.
 
-use socle::date::{Duree, EnJours, EnMois, Jour};
+use socle::date::{Duree, EnJours, EnMois, PeriodeOuverte};
 use socle::echec::R;
 
 use crate::natures::Nature;
@@ -40,14 +40,16 @@ const UN_MOIS: Duree<EnMois> = Duree::mois(1);
 /// « 2 mois de travail effectif » (3090, art. 7.4).
 const ESSAI_D_UN_ARTISTE_3090: Duree<EnMois> = Duree::mois(2);
 
-/// LE PLAFOND DE L'ESSAI d'un contrat de nature `nat`, du `debut` a la `fin` (aucune pour un CDI) : `classement` est le
+/// LE PLAFOND DE L'ESSAI d'un contrat de nature `nat`, de periode `contrat` (sans fin pour un CDI) : `classement` est le
 /// classement conventionnel du salarie (S21.G00.40.002), `artiste` dit s'il est artiste du spectacle, `idcc` la
 /// convention de la compagnie. `None` quand le texte ne permet pas de le dire (un CDD sans terme, un CDI d'une
 /// categorie que la loi ne nomme pas, ou sans classement).
-pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Option<crate::fiche::StatutConventionnel>, artiste: bool, idcc: Option<&crate::fiche::Idcc>) -> R<Option<Plafond>> {
+pub fn plafond(nat: &Nature, contrat: &PeriodeOuverte, classement: Option<crate::fiche::StatutConventionnel>, artiste: bool, idcc: Option<&crate::fiche::Idcc>) -> R<Option<Plafond>> {
+    let debut = &contrat.debut();
     if !nat.duree_indeterminee {
-        let Some(fin) = fin else { return Ok(None) };
-        let par_semaine = Duree::du_au(debut, fin).un_jour_par_semaine_commencee();
+        let Some(ferme) = contrat.fermee() else { return Ok(None) };
+        let fin = &ferme.fin();
+        let par_semaine = ferme.duree().un_jour_par_semaine_commencee();
         let six_mois = *fin < debut.apres(SIX_MOIS)?;
         let (limite, borne) = if six_mois { (DEUX_SEMAINES, "deux semaines au plus, le contrat durant six mois au plus".to_string()) } else {
             (UN_MOIS.en_jours_depuis(debut)?, "un mois au plus, le contrat durant plus de six mois".to_string())

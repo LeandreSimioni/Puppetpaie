@@ -55,8 +55,8 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
                 emploi,
                 spectacle: titre_spectacle(paie),
                 objet: paie.spectacle().and_then(|s| s.numero_objet.dite()).cloned(),
-                debut: e.debut,
-                fin: e.fin.or(e.dates_travail.last().copied()),
+                debut: e.contrat.debut(),
+                fin: e.contrat.fin().or(e.dates_travail.last().copied()),
                 brut: paie.brut().map(Montant::au_centime),
             });
         }

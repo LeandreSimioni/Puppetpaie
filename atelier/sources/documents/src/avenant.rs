@@ -231,7 +231,7 @@ fn dates_travail(e: &Eng) -> R<String> {
         groupes.join(", ")
     };
     if let (PlaceDuMois::Premier | PlaceDuMois::Milieu, true) = (e.f.place, e.f.planning.is_empty()) {
-        let fin = e.f.fin.ok_or_else(|| refus("contrat sans fin"))?;
+        let fin = e.f.contrat.fin().ok_or_else(|| refus("contrat sans fin"))?;
         texte += &format!(", puis les dates du planning jusqu'au {}", fin.jj_mm_aaaa());
     }
     Ok(texte)
@@ -259,7 +259,7 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     poser(Marqueur::EmployeurLicence, licence);
     // Le numero sous lequel la compagnie est affiliee a la Caisse : son numero d'adherent (`conges_spectacles::adherent`).
     poser(Marqueur::EmployeurCongesspectacles, crate::conges_spectacles::adherent(ent)?);
-    poser(Marqueur::ContratFin, e.f.fin.ok_or_else(|| refus("contrat sans fin"))?.jj_mm_aaaa());
+    poser(Marqueur::ContratFin, e.f.contrat.fin().ok_or_else(|| refus("contrat sans fin"))?.jj_mm_aaaa());
     poser(Marqueur::ContratDatesTravail, dates_travail(e)?);
     poser(Marqueur::ContratLieu, lieu_du_contrat(e));
     // Le jour du versement de la paie (`engagement::Engagement::date_du_versement`, que la paie ecrite porte).
@@ -348,11 +348,11 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
         return Err(socle::refus!(
             "Le contrat de {} du {} n'a pas de numéro (S21.G00.40.009) : il ne s'écrit pas. Valider l'engagement le lui donne.",
             e.f.salarie,
-            e.f.debut.jj_mm_aaaa()
+            e.f.contrat.debut().jj_mm_aaaa()
         ));
     };
     poser(Marqueur::ContratNumero, numero.to_string());
-    poser(Marqueur::ContratDebut, e.f.debut.jj_mm_aaaa());
+    poser(Marqueur::ContratDebut, e.f.contrat.debut().jj_mm_aaaa());
     Ok(m)
 }
 
@@ -447,7 +447,7 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
         statut_conventionnel: eng.statut_conventionnel,
         statut_categoriel_rc: eng.statut_categoriel_rc,
     };
-    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.debut)?, &emploi)?;
+    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.contrat.debut())?, &emploi)?;
     let mut m = match &eng.spectacle {
         Some(s) => {
             let sp = ctx.spectacle(s.as_str())?;
