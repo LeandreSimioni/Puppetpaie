@@ -777,7 +777,7 @@ pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
     let base = base()?;
     let mut out: Vec<Attendu> = base.contrats.tous.iter().map(Attendu::from).collect();
     // L'exemption de la CASC-SVP se lit avec l'effectif de l'annee du contexte (le mois que l'on compose), pas du jour.
-    if let Some(casc) = crate::adhesions::casc_svp(&ctx.entreprise, &ctx.effectif()?, ctx.lue_au.an)? {
+    if let Some(casc) = crate::adhesions::casc_svp(&ctx.entreprise, &ctx.effectif()?, ctx.lue_au.annee())? {
         out.push(Attendu {
             cle: CASC,
             libelle: Some(casc.libelle.to_string()),

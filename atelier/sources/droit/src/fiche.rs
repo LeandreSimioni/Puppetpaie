@@ -1173,9 +1173,13 @@ impl NumeroObjetSpectacle {
     /// sont pas deux chiffres : le texte dit deux caractères, pas deux chiffres, et un numero qui ne les a pas ne dit pas
     /// son annee. INFERENCE : le siecle (`2000 +`) ; le texte ne donne que deux caracteres, et le numero n'est exige sur
     /// l'AEM qu'au-dela du 31 mars 2008 (meme fichier, l. 5705).
-    pub fn annee_de_la_demande(&self) -> Option<i32> {
+    pub fn annee_de_la_demande(&self) -> Option<socle::mois::Annee> {
         match self.0.as_bytes() {
-            [d @ b'0'..=b'9', u @ b'0'..=b'9', ..] => Some(2000 + i32::from(d - b'0') * 10 + i32::from(u - b'0')),
+            // De 2000 a 2099 : toujours une annee du calendrier.
+            [d @ b'0'..=b'9', u @ b'0'..=b'9', ..] => match socle::mois::Annee::nouvelle(2000 + i64::from(d - b'0') * 10 + i64::from(u - b'0')) {
+                Ok(a) => Some(a),
+                Err(_) => None,
+            },
             _ => None,
         }
     }

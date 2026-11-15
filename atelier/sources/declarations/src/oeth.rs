@@ -7,8 +7,8 @@ use droit::contexte::Contexte;
 use droit::cotisation_etablissement::{CotisationDEtablissement, TypeDeBoethExterne};
 use droit::organismes::CodeCtp;
 use serde::Deserialize;
-use socle::date::Jour;
 use socle::echec::{refus_avec, Lieu, R};
+use socle::mois::Annee;
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
@@ -37,7 +37,7 @@ fn taux() -> Decimal {
 /// Ce que la DSN d'avril porte pour un millesime.
 #[derive(Clone, Debug)]
 pub struct Declaration {
-    pub millesime: i32,
+    pub millesime: Annee,
     pub effectif: Decimal,
     pub obligation: Decimal,
     pub beneficiaires: Decimal,
@@ -184,7 +184,7 @@ impl Depenses {
 }
 
 /// Un nombre positif ou nul de `config/oeth.json`.
-fn dec(v: Nombre, nom: &str, millesime: i32) -> R<Decimal> {
+fn dec(v: Nombre, nom: &str, millesime: Annee) -> R<Decimal> {
     let x = v.0;
     if x.is_sign_negative() && !x.is_zero() {
         return Err(socle::echec::a_la_cle(&format!("La déclaration OETH de {} porte un chiffre négatif.", millesime), nom, x.to_string()));
@@ -193,7 +193,7 @@ fn dec(v: Nombre, nom: &str, millesime: i32) -> R<Decimal> {
 }
 
 /// Un montant de `config/oeth.json` que la compagnie n'ecrit que s'il y en a, au centime.
-fn montant(v: Option<Nombre>, nom: &str, millesime: i32) -> R<Option<Decimal>> {
+fn montant(v: Option<Nombre>, nom: &str, millesime: Annee) -> R<Option<Decimal>> {
     v.map(|n| dec(n, nom, millesime).map(|x| Montant::du_decimal(x).au_centime().decimal())).transpose()
 }
 
@@ -212,7 +212,7 @@ pub fn coefficient(effectif: Decimal, sans_action: bool) -> i64 {
 
 /// La declaration d'un millesime, depuis son entree de `config/oeth.json` et le
 /// SMIC horaire brut au 31/12 de ce millesime.
-pub fn calculer(millesime: i32, donnees: &EntreeOeth, smic: MontantUnitaire) -> R<Declaration> {
+pub fn calculer(millesime: Annee, donnees: &EntreeOeth, smic: MontantUnitaire) -> R<Declaration> {
     let ou = format!("La déclaration OETH de {}", millesime);
     let source = donnees.source.as_deref().filter(|s| !s.is_empty());
     let manque: Vec<&str> = [
@@ -365,14 +365,14 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois) -> R<Option<Declarat
     if mois.numero() != MOIS_DE_DECLARATION {
         return Ok(None);
     }
-    let millesime = mois.annee() - 1;
+    let millesime = mois.annee().precedente()?;
     let chemin = OETH.dans(&ctx.racine);
     let mut fichier: FichierOeth = if socle::fichiers::existe(&chemin) {
         socle::forme::lire_fichier(&chemin, "Les chiffres OETH de la compagnie (config/oeth.json) ne se lisent pas : les corriger.")?
     } else {
         FichierOeth::new()
     };
-    let Some(donnees) = fichier.remove(&socle::mois::Annee::nouvelle(millesime.into())?).flatten() else {
+    let Some(donnees) = fichier.remove(&millesime).flatten() else {
         if !assujetti_selon_l_effectif(ctx, millesime)? {
             return Ok(None);
         }
@@ -416,8 +416,8 @@ ans d'une entreprise creee a vingt salaries, L5212-4 ; seuil pas encore franchi,
 
 /// Le SMIC horaire brut au 31/12 du millesime (D5212-20, dernier alinea) : national,
 /// lu dans le socle livre ; une annee sans socle se lit chez la compagnie.
-pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<MontantUnitaire> {
-    let jour = Jour::nouveau(millesime, 12, 31).ok_or_else(|| socle::refus!("annee hors limites : {}", millesime))?;
+pub fn smic_au_31_decembre(ctx: &Contexte, millesime: Annee) -> R<MontantUnitaire> {
+    let jour = millesime.dernier_jour();
     let socle = droit::contexte::socle_livre_lu(millesime)?;
     let liste = match socle.as_ref().map(|s| &s.smic_horaire) {
         Some(l) if !l.is_empty() => l,
@@ -432,12 +432,12 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<MontantUnitaire>
 /// L'effectif dit-il l'entreprise assujettie pour ce millesime ? Le code A04 du 118 l'emporte s'il est la et sous le
 /// seuil ; sinon la regle des cinq ans (L. 130-1, II, CSS) : un effectif qu'elle ne departage pas refuse, en disant
 /// quelles annees manquent (`Effectif::atteint`).
-fn assujetti_selon_l_effectif(ctx: &Contexte, millesime: i32) -> R<bool> {
+fn assujetti_selon_l_effectif(ctx: &Contexte, millesime: Annee) -> R<bool> {
     let effectifs = droit::contexte::effectifs_lus(&ctx.racine)?;
-    if let Some(a04) = crate::csa::effectif_du_118(effectifs.as_ref(), millesime, droit::contexte::TypeDeParametreNeores::EffectifOeth)? {
+    if let Some(a04) = crate::csa::effectif_du_118(effectifs.as_ref(), millesime, droit::contexte::TypeDeParametreNeores::EffectifOeth) {
         if a04 < Decimal::from(SEUIL) {
             return Ok(false);
         }
     }
-    ctx.effectif()?.atteint(SEUIL, millesime + 1).map_err(|m| m.reformuler(|m| format!("Déclaration OETH de {} : {}", millesime, m)))
+    ctx.effectif()?.atteint(SEUIL, millesime.suivante()?).map_err(|m| m.reformuler(|m| format!("Déclaration OETH de {} : {}", millesime, m)))
 }

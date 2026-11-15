@@ -88,12 +88,13 @@ fn premier_jour_calculable(donnees: &Path) -> R<socle::date::Jour> {
     for e in lus {
         let nom = e.map_err(|e| socle::echec::du_disque(&dossier, &e))?.file_name();
         if let Some(an) = nom.to_str().and_then(|n| n.strip_suffix(".json")) {
-            ans.push(an.parse::<i32>().map_err(|e| refus!("{} : {}.json n'est pas un barème d'une année ({}).", dossier.display(), an, e))?);
+            let n = an.parse::<i64>().map_err(|e| refus!("{} : {}.json n'est pas un barème d'une année ({}).", dossier.display(), an, e))?;
+            ans.push(socle::mois::Annee::nouvelle(n)?);
         }
     }
     let an = ans
         .into_iter()
         .min()
         .ok_or_else(|| refus!("{} : aucun barème livré, la première année calculable ne se lit pas.", dossier.display()))?;
-    socle::date::Jour::nouveau(an, 1, 1).ok_or_else(|| refus!("année de barème illisible : {}", an))
+    Ok(an.premier_jour())
 }

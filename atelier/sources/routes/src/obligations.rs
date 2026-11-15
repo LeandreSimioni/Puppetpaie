@@ -227,8 +227,8 @@ fn plus(j: Jour, n: i64) -> R<Jour> {
 /// Les feries chomes de la compagnie, annee par annee (`feries::chomes`, la fiche Entreprise).
 struct Calendrier<'a> {
     dits: Option<&'a str>,
-    chomes: HashMap<i32, Vec<Jour>>,
-    legaux: HashMap<i32, Vec<Jour>>,
+    chomes: HashMap<socle::mois::Annee, Vec<Jour>>,
+    legaux: HashMap<socle::mois::Annee, Vec<Jour>>,
 }
 
 impl<'a> Calendrier<'a> {
@@ -237,19 +237,21 @@ impl<'a> Calendrier<'a> {
     }
 
     fn chome(&mut self, j: Jour) -> R<bool> {
-        if !self.chomes.contains_key(&j.an) {
-            let f = socle::feries::chomes(j.an, self.dits).map_err(|m| m.reclasser(Classe::Illisible))?;
-            self.chomes.insert(j.an, f.into_iter().map(|(d, _)| d).collect());
+        let an = j.annee();
+        if !self.chomes.contains_key(&an) {
+            let f = socle::feries::chomes(an, self.dits).map_err(|m| m.reclasser(Classe::Illisible))?;
+            self.chomes.insert(an, f.into_iter().map(|(d, _)| d).collect());
         }
-        Ok(self.chomes[&j.an].contains(&j))
+        Ok(self.chomes[&an].contains(&j))
     }
 
     fn ferie(&mut self, j: Jour) -> R<bool> {
-        if !self.legaux.contains_key(&j.an) {
-            let f = socle::feries::feries(j.an).map_err(|m| m.reclasser(Classe::Illisible))?;
-            self.legaux.insert(j.an, f.into_iter().map(|(d, _)| d).collect());
+        let an = j.annee();
+        if !self.legaux.contains_key(&an) {
+            let f = socle::feries::feries(an).map_err(|m| m.reclasser(Classe::Illisible))?;
+            self.legaux.insert(an, f.into_iter().map(|(d, _)| d).collect());
         }
-        Ok(self.legaux[&j.an].contains(&j))
+        Ok(self.legaux[&an].contains(&j))
     }
 
     /// Le `n`-ieme jour ouvre qui suit `depart` : ni samedi, ni dimanche, ni ferie chome dans la compagnie ; le jour de

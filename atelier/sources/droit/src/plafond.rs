@@ -55,19 +55,19 @@ pub const HEURES_PAR_JOURNEE: Heures = Heures::du_decimal(Decimal::from_parts(12
 
 // ---------------------------------------------------------------- les dates
 
-use socle::date::jours_du_mois;
+use socle::mois::Annee;
 
 // ----------------------------------------------------------------- le calcul
 
 /// Le PSS de l'annee, ses deux valeurs tronquees a l'entier.
-fn valeurs(annee: i32, pss: &dyn Fn(i32) -> R<Pss>) -> R<Pss> {
+fn valeurs(annee: Annee, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Pss> {
     let p = pss(annee)?;
     Ok(Pss { mensuel: Montant::du_decimal(p.mensuel.decimal().trunc()), horaire: MontantUnitaire::du_decimal(p.horaire.decimal().trunc()) })
 }
 
 /// PSS mensuel x jours calendaires du contrat / jours du mois, mois par mois,
 /// somme. Les deux bornes sont incluses.
-pub fn prorata_calendaire(debut: Jour, fin: Jour, pss: &dyn Fn(i32) -> R<Pss>) -> R<Montant> {
+pub fn prorata_calendaire(debut: Jour, fin: Jour, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
     if fin < debut {
         return Err(socle::refus!("fin {} anterieure au debut {}", fin.iso(), debut.iso()));
     }
@@ -78,7 +78,7 @@ pub fn prorata_calendaire(debut: Jour, fin: Jour, pss: &dyn Fn(i32) -> R<Pss>) -
         let derniere = Jour { jour: dans_le_mois, ..jour };
         let borne = fin.min(derniere);
         let jours = borne.jour - jour.jour + 1;
-        let mensuel = valeurs(jour.an, pss)?.mensuel.decimal();
+        let mensuel = valeurs(jour.annee(), pss)?.mensuel.decimal();
         total = add(total, div(mul(mensuel, Decimal::from(jours)), Decimal::from(dans_le_mois)));
         jour = if borne.mois == 12 {
             Jour { an: borne.an + 1, mois: 1, jour: 1 }
@@ -104,11 +104,11 @@ pub fn engagement_court(debut: Jour, fin: Jour, artiste: bool) -> R<bool> {
 
 /// PSS horaire x 12 par journee de travail accomplie (dates distinctes : deux cachets le meme jour font une
 /// journee), au PSS horaire de l'annee de chaque journee. Arrete du 24/01/1975, art. 3, al. 2.
-pub fn plafond_journees(dates: &[Jour], pss: &dyn Fn(i32) -> R<Pss>) -> R<Montant> {
+pub fn plafond_journees(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
     let journees: BTreeSet<Jour> = dates.iter().copied().collect();
     let mut total = Montant::du_decimal(Decimal::ZERO);
     for j in journees {
-        total = total + HEURES_PAR_JOURNEE * valeurs(j.an, pss)?.horaire;
+        total = total + HEURES_PAR_JOURNEE * valeurs(j.annee(), pss)?.horaire;
     }
     Ok(total)
 }
@@ -116,16 +116,16 @@ pub fn plafond_journees(dates: &[Jour], pss: &dyn Fn(i32) -> R<Pss>) -> R<Montan
 /// BOSS, assiette generale, § 1090 (tolerance) et § 700 (la formule) : pour chaque jour ayant donne lieu a
 /// remuneration (dates distinctes), mois par mois : PSS mensuel de l'annee x jours remuneres du mois / jours du mois ;
 /// la somme, non arrondie (la forme de `prorata_calendaire`).
-pub fn plafond_jours_remuneres(dates: &[Jour], pss: &dyn Fn(i32) -> R<Pss>) -> R<Montant> {
+pub fn plafond_jours_remuneres(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
     let jours: BTreeSet<Jour> = dates.iter().copied().collect();
-    let mut par_mois: std::collections::BTreeMap<(i32, u32), i64> = Default::default();
+    let mut par_mois: std::collections::BTreeMap<socle::mois::Mois, i64> = Default::default();
     for j in jours {
-        *par_mois.entry((j.an, j.mois)).or_default() += 1;
+        *par_mois.entry(j.mois_civil()).or_default() += 1;
     }
     let mut total = Decimal::ZERO;
-    for ((an, mois), n) in par_mois {
-        let mensuel = valeurs(an, pss)?.mensuel.decimal();
-        total = add(total, div(mul(mensuel, Decimal::from(n)), Decimal::from(jours_du_mois(an, mois))));
+    for (mois, n) in par_mois {
+        let mensuel = valeurs(mois.annee(), pss)?.mensuel.decimal();
+        total = add(total, div(mul(mensuel, Decimal::from(n)), Decimal::from(mois.jours())));
     }
     Ok(Montant::du_decimal(total))
 }
@@ -150,7 +150,7 @@ fn journees_illisibles(debut: Jour, fin: Jour, court: bool, dites: Jours, datees
 /// tout le contrat). `artiste` : le statut (l'arrete de 1975 ne vise que les artistes). Artiste engage moins de cinq
 /// jours : 12 x PSS horaire par journee (arrete de 1975). Sinon : le prorata du PSS mensuel sur les jours remuneres
 /// (BOSS § 1090). Sans date, ou avec une date hors du contrat : refus.
-pub fn plafond_urssaf(debut: Jour, fin: Jour, artiste: bool, pss: &dyn Fn(i32) -> R<Pss>, dates: &[Jour]) -> R<Montant> {
+pub fn plafond_urssaf(debut: Jour, fin: Jour, artiste: bool, pss: &dyn Fn(Annee) -> R<Pss>, dates: &[Jour]) -> R<Montant> {
     let court = engagement_court(debut, fin, artiste)?;
     if dates.is_empty() {
         return Err(journees_illisibles(debut, fin, court, Jours::du_decimal(Decimal::ZERO), 0));
@@ -175,7 +175,7 @@ pub fn plafond_urssaf(debut: Jour, fin: Jour, artiste: bool, pss: &dyn Fn(i32) -
 /// (duree contractuelle + heures complementaires) / duree legale du travail », et l'exemple « Plafond mensuel x
 /// (121,33 h / 151,67 h) x (12 jours / 31 jours) »). `temps_partiel` : (duree du contrat, duree de reference), `None`
 /// sans correction. Le rapport ne depasse jamais 1. Textes : `atelier/reference/sources/plafond-temps-partiel/`.
-pub fn plafond_permanent(debut_periode: Jour, fin_periode: Jour, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(i32) -> R<Pss>) -> R<Montant> {
+pub fn plafond_permanent(debut_periode: Jour, fin_periode: Jour, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
     let prorata = prorata_calendaire(debut_periode, fin_periode, pss)?;
     match temps_partiel {
         Some((contrat, reference)) if contrat < reference => {
@@ -209,7 +209,7 @@ pub struct EngagementPlafond {
 /// commun sur la periode de paie du mois. Un intermittent : les journees datees de CETTE paie (aucune journee dans le
 /// mois, aucun plafond) : 12 x horaire chacune pour un artiste engage moins de cinq jours, sinon le prorata mensuel
 /// des jours remuneres (BOSS § 1090). Une journee dite et non datee refuse, une date hors de la periode de paie aussi.
-pub fn pour_paie(e: &EngagementPlafond, pss: &dyn Fn(i32) -> R<Pss>) -> R<Montant> {
+pub fn pour_paie(e: &EngagementPlafond, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
     if e.mensuelle {
         return Ok(prorata_calendaire(e.debut_periode, e.fin_periode, pss)?.au_centime());
     }

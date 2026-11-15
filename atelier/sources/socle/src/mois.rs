@@ -53,6 +53,12 @@ impl Mois {
         Ok(Mois { an, numero })
     }
 
+    /// Le mois qu'un texte depose fixe, ecrit en constante (`const`) : hors du calendrier, le code ne compile pas.
+    pub const fn constante(an: i32, numero: u32) -> Mois {
+        assert!(1 <= an && an <= 9999 && 1 <= numero && numero <= 12, "mois hors du calendrier");
+        Mois { an, numero }
+    }
+
     /// Un mois ecrit `AAAA-MM` ; toute autre forme se refuse.
     pub(crate) fn lire(texte: &str) -> R<Mois> {
         let b = texte.as_bytes();
@@ -94,13 +100,14 @@ impl Mois {
         Mois { an: j.an, numero: j.mois }
     }
 
-    pub fn annee(self) -> i32 {
-        self.an
+    /// Son annee civile.
+    pub fn annee(self) -> Annee {
+        Annee(self.an)
     }
 
-    /// Son annee civile.
-    pub fn annee_civile(self) -> Annee {
-        Annee::du_mois(self)
+    /// Le mois `numero` (1 a 12) de l'annee `annee` ; refus sinon.
+    pub fn de_l_an(annee: Annee, numero: u32) -> R<Mois> {
+        Mois::nouveau(annee.0, numero)
     }
 
     /// Le numero du mois, de 1 a 12.
@@ -171,6 +178,15 @@ impl Mois {
     /// Le jour `jour` du mois, s'il existe.
     pub fn jour(self, jour: u32) -> Option<Jour> {
         Jour::nouveau(self.an, self.numero, jour)
+    }
+
+    /// Le jour `jour` du mois, ou le refus qui dit la date impossible.
+    #[track_caller]
+    pub fn jour_exige(self, jour: u32) -> R<Jour> {
+        match self.jour(jour) {
+            Some(j) => Ok(j),
+            None => Err(refus(crate::date::jour_impossible(self.an, self.numero, jour))),
+        }
     }
 
     /// Le jour `j` est-il dans ce mois ?
@@ -256,9 +272,86 @@ impl Annee {
         Annee(m.an)
     }
 
-    /// Son numero (2025).
-    pub fn nombre(self) -> i32 {
+    /// L'annee `an` qu'un texte depose fixe, ecrite en constante (`const`) : hors de 1 a 9999, le code ne compile pas.
+    pub const fn constante(an: i32) -> Annee {
+        assert!(1 <= an && an <= 9999, "année hors du calendrier");
+        Annee(an)
+    }
+
+    /// Son millesime, au calcul du calendrier (`feries`) et aux ecritures du socle.
+    pub(crate) fn nombre(self) -> i32 {
         self.0
+    }
+
+    /// L'annee du jour `j`.
+    pub fn du_jour(j: &Jour) -> Annee {
+        Annee(j.an)
+    }
+
+    /// L'annee `n` ans plus loin (en arriere si `n` est negatif) ; refus hors des annees 1 a 9999.
+    pub fn plus(self, n: i32) -> R<Annee> {
+        Annee::nouvelle(i64::from(self.0) + i64::from(n))
+    }
+
+    /// L'annee d'avant ; refus avant l'an 1.
+    pub fn precedente(self) -> R<Annee> {
+        self.plus(-1)
+    }
+
+    /// L'annee d'apres ; refus apres 9999.
+    pub fn suivante(self) -> R<Annee> {
+        self.plus(1)
+    }
+
+    /// Les annees de celle-ci a `derniere` incluse ; aucune si `derniere` la precede.
+    pub fn jusqu_a(self, derniere: Annee) -> Vec<Annee> {
+        (self.0..=derniere.0).map(Annee).collect()
+    }
+
+    /// Les `n` annees qui la precedent, de la plus ancienne a celle d'avant ; celles d'avant l'an 1 n'existent pas.
+    pub fn les_precedentes(self, n: usize) -> Vec<Annee> {
+        let debut = (i64::from(self.0) - n as i64).max(1);
+        (debut..i64::from(self.0)).map(|a| Annee(a as i32)).collect()
+    }
+
+    /// Le mois `m` de l'annee.
+    pub fn mois(self, m: MoisDeLAnnee) -> Mois {
+        Mois { an: self.0, numero: m.0 }
+    }
+
+    /// Ses douze mois, de janvier a decembre.
+    pub fn les_mois(self) -> [Mois; 12] {
+        MoisDeLAnnee::TOUS.map(|m| self.mois(m))
+    }
+
+    /// Janvier de l'annee.
+    pub fn janvier(self) -> Mois {
+        Mois { an: self.0, numero: 1 }
+    }
+
+    /// Decembre de l'annee.
+    pub fn decembre(self) -> Mois {
+        Mois { an: self.0, numero: 12 }
+    }
+
+    /// Le 1er janvier.
+    pub fn premier_jour(self) -> Jour {
+        self.janvier().premier_jour()
+    }
+
+    /// Le 31 decembre.
+    pub fn dernier_jour(self) -> Jour {
+        self.decembre().dernier_jour()
+    }
+
+    /// Le jour `jour` du mois `mois` (1 a 12) de l'annee, s'il existe.
+    pub fn jour(self, mois: u32, jour: u32) -> Option<Jour> {
+        Jour::nouveau(self.0, mois, jour)
+    }
+
+    /// Est-elle bissextile ?
+    pub fn bissextile(self) -> bool {
+        crate::date::bissextile(self.0)
     }
 }
 
@@ -299,6 +392,19 @@ pub mod en_nombre {
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
         let n = <i64 as serde::Deserialize>::deserialize(d)?;
         Annee::nouvelle(n).map_err(serde::de::Error::custom)
+    }
+
+    /// Une liste d'annees, chacune en nombre (`[2024, 2025]`).
+    pub mod liste {
+        use super::Annee;
+
+        pub fn serialize<S: serde::Serializer>(a: &[Annee], s: S) -> Result<S::Ok, S::Error> {
+            s.collect_seq(a.iter().map(|a| a.0))
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Annee>, D::Error> {
+            <Vec<i64> as serde::Deserialize>::deserialize(d)?.into_iter().map(|n| Annee::nouvelle(n).map_err(serde::de::Error::custom)).collect()
+        }
     }
 
     pub mod option {
@@ -398,7 +504,7 @@ mod tests {
     #[test]
     fn un_mois_se_lit_aaaa_mm_et_rien_d_autre() {
         let m = Mois::lire("2026-12").unwrap();
-        assert_eq!((m.annee(), m.numero(), m.to_string()), (2026, 12, "2026-12".to_string()));
+        assert_eq!((m.annee(), m.numero(), m.to_string()), (Annee::nouvelle(2026).unwrap(), 12, "2026-12".to_string()));
         assert_eq!(m.suivant().to_string(), "2027-01");
         assert_eq!(m.suivant().precedent(), m);
         for faux in ["2026-13", "2026-00", "2026-1", "../config", "2026-06/envoi", "2026-12-01", " 2026-12"] {

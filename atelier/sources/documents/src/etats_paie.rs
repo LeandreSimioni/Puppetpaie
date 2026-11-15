@@ -165,10 +165,10 @@ fn libelle_periode(mois: &[Mois], quand: &Quand) -> String {
         Quand::Mois(m) => libelle_mois(*m),
         Quand::Annee(a) => a.to_string(),
         Quand::Toutes => {
-            let annees: BTreeSet<i32> = mois.iter().map(|m| m.annee()).collect();
+            let annees: BTreeSet<Annee> = mois.iter().map(|m| m.annee()).collect();
             match (annees.first(), annees.last()) {
-                (Some(p), Some(d)) if p != d => format!("toutes les années ({:04} à {:04})", p, d),
-                (Some(p), _) => format!("toutes les années ({:04})", p),
+                (Some(p), Some(d)) if p != d => format!("toutes les années ({} à {})", p, d),
+                (Some(p), _) => format!("toutes les années ({})", p),
                 _ => "toutes les années".to_string(),
             }
         }

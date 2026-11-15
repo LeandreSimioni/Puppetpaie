@@ -1112,7 +1112,7 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<RaisonDuReca
             Some(socle::fichiers::CheminLu::Racine(Some(c))) => droit::contexte::annee_de_la_surcouche(c),
             _ => None,
         })
-        .and_then(|an| Jour::nouveau(an, 1, 1));
+        .map(|an| an.premier_jour());
     if let Some(jour) = config_nouvelle.or(annee_du_bareme) {
         return Ok(RaisonDuRecalcul::RegleDu(jour));
     }

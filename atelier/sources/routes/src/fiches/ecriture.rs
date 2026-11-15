@@ -241,8 +241,8 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         if apres.organisation_patronale == avant.organisation_patronale {
             return Ok(Vec::new());
         }
-        let an = ctx.lue_au.an;
-        let faute = |phrase: String| vec![FauteDeCase { case: CaseEntreprise::OrganisationPatronale.into(), chemin: None, phrase }];
+        let an = ctx.lue_au.annee();
+        let faute =|phrase: String| vec![FauteDeCase { case: CaseEntreprise::OrganisationPatronale.into(), chemin: None, phrase }];
         let pile = match ctx.socle_repris(an)? {
             Ok(p) => p,
             Err(absent) => return Ok(faute(absent.phrase())),
@@ -322,7 +322,8 @@ impl SorteDeFiche for FicheEntrepriseDatee {
             return Ok(Vec::new());
         }
         let mut dit = Vec::new();
-        for an in [ctx.aujourdhui.an, ctx.aujourdhui.an + 1] {
+        let an = ctx.aujourdhui.annee();
+        for an in an.jusqu_a(an.suivante()?) {
             dit.extend(crate::atmp::inscrire_l_arrete(ctx, an)?);
         }
         Ok(dit)

@@ -678,8 +678,8 @@ impl DocumentsFabriques {
     /// depart.
     pub(crate) fn engager_servis(self, ctx: &Contexte, mois: Mois, servis: &[&IdSalarie]) -> R<()> {
         let mut bornes = Reserves::default();
-        let (mut bulletin_max, mut ce_max): (Option<(i64, i64)>, Option<NumeroDeCertificat>) = (None, None);
-        let an = i64::from(mois.annee());
+        let (mut bulletin_max, mut ce_max): (Option<(socle::mois::Annee, i64)>, Option<NumeroDeCertificat>) = (None, None);
+        let an = mois.annee();
         for (cle, numero, bulletin, ce) in self.a_poser.iter().filter(|a| servis.contains(&&a.0)) {
             // Le numero d'un bulletin, `N/AAAA` : son rang dans l'annee.
             if let Some(b) = bulletin {
@@ -786,7 +786,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     let Some((_data, paies)) = validees else { return Ok(faits) };
     faits.avertissements.extend(sans_taux_recu(ctx, paies.iter().filter(|p| cles.contains(&p.salarie.id)))?);
     let ecrits = engagement::etats::numeros_des_documents(ctx, mois, &departs)?;
-    let an = i64::from(mois.annee());
+    let an = mois.annee();
     let etiq = mois.etiquette();
     let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     let dossier = documents::PieceDuMois::Bulletin.dossier().sous(&sortie);

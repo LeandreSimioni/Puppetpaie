@@ -1420,7 +1420,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                 format!(
                     "{} : le barème {} ne porte pas la limite d'exonération de la ligne à {}. Rien n'est calculé.",
                     qui,
-                    jour.an,
+                    jour.annee(),
                     socle::texte::euros(taux)
                 ),
                 cle,

@@ -165,7 +165,7 @@ fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
     let dans = |j: &Jour| mois.contient(j);
     let dehors = d.as_ref().is_some_and(|j| !dans(j)) || f.as_ref().is_some_and(|j| !dans(j));
     let borne = |j: Option<&Jour>, inconnue: &str| match j {
-        Some(j) if dehors && j.an != mois.annee() => j.jj_mm_aaaa(),
+        Some(j) if dehors && j.annee() != mois.annee() =>j.jj_mm_aaaa(),
         Some(j) if dehors => j.jj_mm(),
         Some(j) => j.jour.to_string(),
         None => inconnue.to_string(),

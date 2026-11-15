@@ -159,7 +159,7 @@ impl TypeDeParametreNeores {
     }
 }
 
-const ANNEES_CONSECUTIVES: i32 = 5;
+const ANNEES_CONSECUTIVES: usize = 5;
 /// Le plus petit seuil d'effectif dont un taux depend (la formation des permanents) : une annee qui ne le departage pas
 /// ne departage aucun des autres.
 const PLUS_PETIT_SEUIL: i64 = 11;
@@ -169,9 +169,9 @@ const PLUS_PETIT_SEUIL: i64 = 11;
 /// (`envois::releve_retours::poser_effectif`), qu'un 118 de la meme annee remplace.
 #[derive(Debug, Clone)]
 pub struct Effectif {
-    pub annees: BTreeMap<i32, Decimal>,
+    pub annees: BTreeMap<Annee, Decimal>,
     /// L'annee de la premiere embauche (fiche entreprise) : avant elle, zero.
-    pub premiere_embauche: Option<i32>,
+    pub premiere_embauche: Option<Annee>,
     /// La fiche dit la compagnie d'au moins cinquante salaries (`cinquante_salaries_et_plus`, une compagnie qui emploie des
     /// permanents) : sans elle, aucun seuil de cinquante et plus n'est atteint, et l'effectif ne se lit pas pour eux.
     pub cinquante_salaries: bool,
@@ -197,7 +197,7 @@ const SEUIL_DU_CSE: i64 = 11;
 /// quatre ans au plus (L2314-33, L2314-34), renouvele tant que l'effectif n'est pas reste sous onze salaries les douze
 /// mois d'avant son terme (L2313-10). Un mandat renouvele au plus tard un an apres le dernier mois a onze court quatre
 /// ans de plus : cinq annees.
-const ANNEES_DU_CSE: i32 = 5;
+const ANNEES_DU_CSE: usize = 5;
 
 /// Le plus petit des grands seuils : le FNAL a 0,50 % et le `tdelta` de la reduction generale (bareme,
 /// `seuils_effectif`), l'echeance du 5 (R. 243-6 CSS), la PEEC (CCH L. 313-1), puis la contribution supplementaire a
@@ -262,15 +262,15 @@ pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
     if let Some(lu) = effectifs_lus(racine)? {
         for (an, codes) in lu.annees {
             if let Some(a01) = codes.get(&TypeDeParametreNeores::EffectifMoyen) {
-                annees.insert(an.nombre(), a01.valeur);
+                annees.insert(an, a01.valeur);
             }
         }
     }
-    Ok(Effectif { annees, premiere_embauche: fiche.premiere_embauche.dite().map(|j| j.an), cinquante_salaries: cinquante_salaries_et_plus(fiche) })
+    Ok(Effectif { annees, premiere_embauche: fiche.premiere_embauche.dite().map(Jour::annee), cinquante_salaries: cinquante_salaries_et_plus(fiche) })
 }
 
 impl Effectif {
-    pub fn annee(&self, a: i32) -> Option<Decimal> {
+    pub fn annee(&self, a: Annee) -> Option<Decimal> {
         if let Some(v) = self.annees.get(&a) {
             return Some(*v);
         }
@@ -281,10 +281,10 @@ impl Effectif {
     }
 
     /// L'effectif le plus recent connu pour payer en `annee_paie`, ou `None`.
-    pub fn valeur(&self, annee_paie: i32) -> Option<Decimal> {
+    pub fn valeur(&self, annee_paie: Annee) -> Option<Decimal> {
         match self.annees.range(..annee_paie).next_back() {
             Some((_, v)) => Some(*v),
-            None => self.annee(annee_paie - 1),
+            None => annee_paie.les_precedentes(1).into_iter().find_map(|a| self.annee(a)),
         }
     }
 
@@ -293,13 +293,13 @@ impl Effectif {
     /// annuelle, L. 130-1 CSS : les 118, ou ce que la compagnie en dit, zero avant la premiere embauche), pas celui, mois
     /// par mois, de L1111-2 que le code du travail compte : c'est le seul que le moteur connaisse. `None` : aucune de ces
     /// annees n'atteint onze salaries, ou leur effectif n'est pas connu (`a_dire` le demande).
-    pub fn cse(&self, annee: i32) -> Option<UnCsePossible> {
-        (annee - ANNEES_DU_CSE..annee).any(|a| self.annee(a).is_some_and(|v| v >= Decimal::from(SEUIL_DU_CSE))).then_some(UnCsePossible(()))
+    pub fn cse(&self, annee: Annee) -> Option<UnCsePossible> {
+        annee.les_precedentes(ANNEES_DU_CSE).into_iter().any(|a| self.annee(a).is_some_and(|v| v >= Decimal::from(SEUIL_DU_CSE))).then_some(UnCsePossible(()))
     }
 
     /// LA CLE DE CINQUANTE SALARIES pour `annee` (`CinquanteSalaries`) : la fiche dit la compagnie d'au moins cinquante
     /// salaries (`cinquante_salaries`), et l'effectif connu le plus recent (`valeur`) l'atteint.
-    pub fn cinquante(&self, annee: i32) -> Option<CinquanteSalaries> {
+    pub fn cinquante(&self, annee: Annee) -> Option<CinquanteSalaries> {
         (self.cinquante_salaries && self.valeur(annee).is_some_and(|v| v >= Decimal::from(GRAND_SEUIL))).then_some(CinquanteSalaries(()))
     }
 
@@ -307,32 +307,32 @@ impl Effectif {
     /// petit seuil ne departage pas (`atteint`, L. 130-1, II, CSS) ; ce sont elles qui font les taux a seuil
     /// (`controler_effectif`). Vide : les seuils de la paie sont connus. Ce qui lit l'effectif de l'annee d'avant
     /// (`valeur` : le FNAS de la CCNEAC sans CSE dit) le demande lui-meme.
-    pub fn a_dire(&self, annee_paie: i32) -> Vec<i32> {
-        let fenetre = annee_paie - ANNEES_CONSECUTIVES..annee_paie;
+    pub fn a_dire(&self, annee_paie: Annee) -> Vec<Annee> {
+        let fenetre = annee_paie.les_precedentes(ANNEES_CONSECUTIVES);
         // Une annee connue sous le seuil le departage deja : il n'est pas franchi (`atteint`).
-        if fenetre.clone().any(|a| self.annee(a).is_some_and(|v| v < Decimal::from(PLUS_PETIT_SEUIL))) {
+        if fenetre.iter().copied().any(|a| self.annee(a).is_some_and(|v| v < Decimal::from(PLUS_PETIT_SEUIL))) {
             return Vec::new();
         }
-        fenetre.filter(|a| self.annee(*a).is_none()).collect()
+        fenetre.into_iter().filter(|a| self.annee(*a).is_none()).collect()
     }
 
     /// Le seuil est-il franchi pour payer en `annee_paie` ? (L. 130-1, II, CSS :
     /// cinq annees civiles consecutives.)
     /// Un grand seuil (`GRAND_SEUIL` et plus) n'est atteint que si la fiche dit la compagnie d'au moins cinquante salaries.
-    pub fn atteint(&self, seuil: i64, annee_paie: i32) -> R<bool> {
+    pub fn atteint(&self, seuil: i64, annee_paie: Annee) -> R<bool> {
         let grand = seuil >= GRAND_SEUIL;
         if grand && !self.cinquante_salaries {
             return Ok(false);
         }
-        let fenetre = annee_paie - ANNEES_CONSECUTIVES..annee_paie;
-        let connues: BTreeMap<i32, Decimal> = fenetre.clone().filter_map(|a| self.annee(a).map(|v| (a, v))).collect();
+        let fenetre = annee_paie.les_precedentes(ANNEES_CONSECUTIVES);
+        let connues: BTreeMap<Annee, Decimal> = fenetre.iter().filter_map(|a| self.annee(*a).map(|v| (*a, v))).collect();
         if connues.values().any(|v| *v < Decimal::from(seuil)) {
             return Ok(false);
         }
-        if connues.len() == ANNEES_CONSECUTIVES as usize {
+        if connues.len() == ANNEES_CONSECUTIVES {
             return Ok(true);
         }
-        let manquent: Vec<String> = fenetre.filter(|a| !connues.contains_key(a)).map(|a| a.to_string()).collect();
+        let manquent: Vec<String> = fenetre.into_iter().filter(|a| !connues.contains_key(a)).map(|a| a.to_string()).collect();
         Err(socle::echec::erreur(socle::echec::Classe::EffectifAbsent, format!(
             "Effectif de l'entreprise pour payer en {} : {}. Le seuil de {} salariés ne se franchit qu'après cinq années civiles \
 consécutives au-dessus (CSS, art. L. 130-1, II) : il manque l'effectif de {}. Une compagnie de moins de cinq ans dit la date \
@@ -362,9 +362,9 @@ rendu de nature 118 de l'Urssaf le remplace à son arrivée.{}",
 // ----------------------------------------- les baremes : socle, convention, fusion
 
 /// Les annees dont le socle est livre.
-pub fn annees_du_socle(dossier: &Path) -> R<Vec<i32>> {
+pub fn annees_du_socle(dossier: &Path) -> R<Vec<Annee>> {
     // Un dossier absent ne livre aucune annee.
-    let mut v: Vec<i32> = socle::fichiers::lister(dossier)?
+    let mut v: Vec<Annee> = socle::fichiers::lister(dossier)?
         .into_iter()
         .flatten()
         .filter_map(|p| {
@@ -375,7 +375,12 @@ pub fn annees_du_socle(dossier: &Path) -> R<Vec<i32>> {
             if stem.is_empty() || !stem.chars().all(|c| c.is_ascii_digit()) {
                 return None;
             }
-            stem.bytes().try_fold(0i32, |n, c| n.checked_mul(10)?.checked_add(i32::from(c - b'0')))
+            // Un nom de chiffres qui n'est pas une annee (`0000`, `12345`) n'est pas un socle.
+            let n = stem.bytes().try_fold(0i64, |n, c| n.checked_mul(10)?.checked_add(i64::from(c - b'0')))?;
+            match Annee::nouvelle(n) {
+                Ok(a) => Some(a),
+                Err(_) => None,
+            }
         })
         .collect();
     v.sort();
@@ -388,14 +393,14 @@ pub fn annees_du_socle(dossier: &Path) -> R<Vec<i32>> {
 /// patronale » (`routes::fiches::ecriture`), un refus partout ailleurs (`From`).
 #[derive(Debug)]
 pub enum BaremeAbsent {
-    DeLAnnee { an: i32, livrees: Vec<i32> },
-    SocleNonLivre { an: i32, surcouche: CheminRelatif, socle: i32, livrees: Vec<i32> },
+    DeLAnnee { an: Annee, livrees: Vec<Annee> },
+    SocleNonLivre { an: Annee, surcouche: CheminRelatif, socle: Annee, livrees: Vec<Annee> },
 }
 
 impl BaremeAbsent {
     /// Ce qu'il dit.
     pub fn phrase(&self) -> String {
-        let ecrites = |l: &[i32]| if l.is_empty() { "aucune".to_string() } else { l.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ") };
+        let ecrites = |l: &[Annee]| if l.is_empty() { "aucune".to_string() } else { l.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ") };
         match self {
             BaremeAbsent::DeLAnnee { an, livrees } => format!(
                 "Le logiciel n'a pas les taux de {} (SMIC, plafond de la Sécurité sociale, cotisations) : il a ceux de {}. Une paie de {} ne se calcule pas avec cette version.",
@@ -424,16 +429,16 @@ impl From<BaremeAbsent> for Echec {
 }
 
 /// Le fichier du socle livre de l'annee, s'il est livre ; le disque qui refuse de le dire remonte.
-fn fichier_du_socle(dossier: &Path, an: i32) -> R<Option<PathBuf>> {
+fn fichier_du_socle(dossier: &Path, an: Annee) -> R<Option<PathBuf>> {
     let p = dossier.join(format!("{}.json", an));
     Ok(socle::fichiers::existe_lu(&p)?.then_some(p))
 }
 
 /// LE SOCLE LIVRE DE L'ANNEE `an`, seul (sans convention ni compagnie), lu au 1er janvier : ce que la tarification AT/MP
 /// de l'annee en dit (`bareme::risques_de`, `bareme::arrete_atmp`). `None` : il n'est pas livre.
-pub fn socle_livre_lu(an: i32) -> R<Option<Pile>> {
+pub fn socle_livre_lu(an: Annee) -> R<Option<Pile>> {
     let Some(fichier) = fichier_du_socle(&dossier_du_code().join("baremes"), an)? else { return Ok(None) };
-    let jour = Jour::nouveau(an, 1, 1).ok_or_else(|| socle::refus!("Année {} hors du calendrier.", an))?;
+    let jour = an.premier_jour();
     Ok(Some(crate::forme_bareme::lire_le_socle(&fichier, &jour, None)?.0))
 }
 
@@ -1196,7 +1201,7 @@ pub struct Contexte {
     pub spectacles: IndexMap<IdSpectacle, ChampsSpectacle>,
     /// Le taux AT/MP d'une annee qu'une piece atteste, pour une compagnie qui n'en a pas encore pose
     /// (`avec_le_taux_atmp_lu`) ; en memoire seulement.
-    atmp_lu: Option<(i32, Decimal)>,
+    atmp_lu: Option<(Annee, Decimal)>,
 }
 
 /// LA PILE D'UN JOUR, et le `depuis` de chaque valeur datee qui s'y applique (`Contexte::regles_datees`).
@@ -1267,14 +1272,18 @@ pub const BAREMES: CheminRelatif = CheminRelatif::du_moteur("config/baremes");
 
 /// LA SURCOUCHE DE LA COMPAGNIE POUR L'ANNEE `an`, sous sa racine : `config/baremes/<an>.json`. Le seul ecrivain de ce
 /// chemin : le bareme le lit, son controle le nomme, la raison d'un recalcul le reconnait (`engagement::etats`).
-pub fn surcouche(an: i32) -> R<CheminRelatif> {
+pub fn surcouche(an: Annee) -> R<CheminRelatif> {
     CheminRelatif::lire(&format!("{}/{}.json", BAREMES, an))
 }
 
 /// L'annee de la surcouche que `chemin` nomme, s'il en est une (`surcouche`, dont c'est la seule relecture).
-pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<i32> {
+pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<Annee> {
     let an = chemin.texte().strip_prefix(BAREMES.texte())?.strip_prefix('/')?.strip_suffix(".json")?;
-    let an = i32::try_from(socle::num::entier_de_chiffres(an)?).ok()?;
+    // Un nom qui n'est pas une annee ne nomme pas une surcouche.
+    let an = match Annee::nouvelle(socle::num::entier_de_chiffres(an)?) {
+        Ok(a) => a,
+        Err(_) => return None,
+    };
     surcouche(an).is_ok_and(|c| c == *chemin).then_some(an)
 }
 /// Le fichier des organismes et contrats de la DSN, sous la compagnie.
@@ -1328,7 +1337,7 @@ impl Contexte {
     /// pourcent) quand la compagnie n'a pas dit le sien pour cette annee (`taux_atmp_dit`). Ce taux est propre a
     /// l'etablissement, notifie par l'Assurance Maladie : il ne se devine pas, il se lit, ici du bulletin d'un autre
     /// logiciel qui l'a applique. Rien ne s'ecrit ; une compagnie qui a pose le sien garde le sien.
-    pub fn avec_le_taux_atmp_lu(mut self, an: i32, valeur: Decimal) -> Contexte {
+    pub fn avec_le_taux_atmp_lu(mut self, an: Annee, valeur: Decimal) -> Contexte {
         // Le taux tel qu'un bareme l'ecrit : sa forme la plus courte, un entier gardant sa decimale (`1.0`).
         self.atmp_lu = Some((an, socle::num::court(valeur)));
         self
@@ -1395,7 +1404,7 @@ impl Contexte {
     /// refuse en nommant les annees qui manquent (`Effectif::atteint`).
     pub fn echeance_dsn(&self) -> R<u32> {
         socle::fichiers::noter_lecture(&CleLue::Aujourdhui, socle::fichiers::ValeurLue::Jour(self.aujourdhui));
-        Ok(match self.effectif()?.atteint(GRAND_SEUIL, self.aujourdhui.an)? {
+        Ok(match self.effectif()?.atteint(GRAND_SEUIL, self.aujourdhui.annee())? {
             true => 5,
             false => 15,
         })
@@ -1407,13 +1416,13 @@ impl Contexte {
     pub fn conventions_servies(&self) -> R<BTreeMap<Idcc, crate::forme_bareme::Convention>> {
         let dossier = self.code.join("baremes");
         let jour = self.aujourdhui;
-        let an = match fichier_du_socle(&dossier, jour.an)? {
-            Some(_) => jour.an,
+        let an = match fichier_du_socle(&dossier, jour.annee())? {
+            Some(_) => jour.annee(),
             None => annees_du_socle(&dossier)?.into_iter().max().ok_or_else(|| socle::echec::livree(&SOCLES, "par_convention"))?,
         };
         let fichier = fichier_du_socle(&dossier, an)?.ok_or_else(|| socle::echec::livree(&SOCLES, "par_convention"))?;
         // Le dernier jour de l'annee du socle quand il est d'une annee passee : ses valeurs datees y valent toutes.
-        let a = if an == jour.an { jour } else { Jour::nouveau(an, 12, 31).ok_or_else(|| socle::refus!("{}", socle::date::annee_impossible(an)))? };
+        let a = if an == jour.annee() { jour } else { an.dernier_jour() };
         Ok(crate::forme_bareme::lire_le_socle(&fichier, &a, None)?.0.par_convention)
     }
 
@@ -1430,10 +1439,10 @@ impl Contexte {
     /// Ce dont depend le bareme lu a `jour` : la compagnie, sa fiche entreprise a ce jour, et la signature (date, taille)
     /// des fichiers qui le composent.
     pub fn empreinte_bareme(&self, jour: &Jour) -> R<String> {
-        self.empreinte_bareme_de(jour.an, &self.entreprise_au(jour))
+        self.empreinte_bareme_de(jour.annee(), &self.entreprise_au(jour))
     }
 
-    fn empreinte_bareme_de(&self, an: i32, ent: &ChampsEntreprise) -> R<String> {
+    fn empreinte_bareme_de(&self, an: Annee, ent: &ChampsEntreprise) -> R<String> {
         let cfg = self.racine.join(socle::fichiers::CONFIG);
         let sig: Vec<_> = [
             socle::fichiers::signature(&surcouche(an)?.dans(&self.racine)),
@@ -1453,11 +1462,11 @@ impl Contexte {
         type Cache = Mutex<HashMap<String, socle::fichiers::Notee<Arc<PileLue>>>>;
         static CACHE: OnceLock<Cache> = OnceLock::new();
         let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        let cle = format!("{}|{}", self.empreinte_bareme_de(jour.an, ent)?, jour.iso());
+        let cle = format!("{}|{}", self.empreinte_bareme_de(jour.annee(), ent)?, jour.iso());
         socle::fichiers::garde_notee(cache, cle, || {
             let (pile, regles) = self.empiler(jour, ent)?;
             // Le controle est ici, le seul endroit qui compose un bareme.
-            controler(&pile, ent, &effectif_de(&self.racine, ent)?, surcouche(jour.an)?.texte())?;
+            controler(&pile, ent, &effectif_de(&self.racine, ent)?, surcouche(jour.annee())?.texte())?;
             Ok(Arc::new(PileLue { pile: Arc::new(pile), regles }))
         })
     }
@@ -1467,7 +1476,7 @@ impl Contexte {
     /// que la fiche `ent` dit (`taux_atmp_du_siege`) ; et le `depuis` de chaque valeur datee du bareme qui s'y applique (le
     /// SMIC compris).
     fn empiler(&self, jour: &Jour, ent: &ChampsEntreprise) -> R<(Pile, Vec<Jour>)> {
-        let an = jour.an;
+        let an = jour.annee();
         let chemin = surcouche(an)?;
         let ou = chemin.texte();
         let organisation = ent.organisation_patronale.dite();
@@ -1505,7 +1514,7 @@ impl Contexte {
     /// compagnie ni son taux AT/MP) : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee. Ce
     /// contre quoi une organisation patronale se reconnait (`Pile::organisation`). `Ok(Err)` : le logiciel n'a pas le
     /// bareme de l'annee (`BaremeAbsent`) ; `Err` : tout le reste (le disque, un socle illisible, l'annee).
-    pub fn socle_repris(&self, an: i32) -> R<Result<Arc<Pile>, BaremeAbsent>> {
+    pub fn socle_repris(&self, an: Annee) -> R<Result<Arc<Pile>, BaremeAbsent>> {
         let fichier = match self.socle_de_l_annee(an)? {
             Ok((_, f)) => f,
             Err(sans_bareme) => return Ok(Err(sans_bareme)),
@@ -1517,7 +1526,7 @@ impl Contexte {
     /// BAREME DE L'ANNEE `an` REPREND (`socle_repris`, `Pile::organisation`, la seule porte) : sa cle, celle que nomment
     /// les signataires d'un accord (`minima::signataire`). `None` : la fiche n'en dit pas, ou ce socle ne la couvre pas
     /// (le bareme la refuse alors, `controler_organisation_patronale`).
-    pub fn organisation_reconnue(&self, an: i32, o: Option<&crate::forme_bareme::OrganisationPatronale>) -> R<Option<crate::forme_bareme::OrganisationPatronale>> {
+    pub fn organisation_reconnue(&self, an: Annee, o: Option<&crate::forme_bareme::OrganisationPatronale>) -> R<Option<crate::forme_bareme::OrganisationPatronale>> {
         let Some(o) = o else { return Ok(None) };
         Ok(self.socle_repris(an)??.organisation(o).map(|(k, _)| k.clone()))
     }
@@ -1525,7 +1534,7 @@ impl Contexte {
     /// LA SURCOUCHE DE L'ANNEE `an` ET LE FICHIER DU SOCLE QU'ELLE REPREND ; sans surcouche, la compagnie n'a rien change
     /// au socle livre de l'annee. Sans l'une ni l'autre, ou une surcouche qui nomme un socle non livre : `BaremeAbsent`,
     /// rendu a part (`Ok(Err)`) ; une surcouche illisible, le disque ou l'annee : `Err`.
-    fn socle_de_l_annee(&self, an: i32) -> R<Result<(Surcouche, PathBuf), BaremeAbsent>> {
+    fn socle_de_l_annee(&self, an: Annee) -> R<Result<(Surcouche, PathBuf), BaremeAbsent>> {
         let chemin = surcouche(an)?;
         let dossier = self.code.join("baremes");
         let p = chemin.dans(&self.racine);
@@ -1554,24 +1563,20 @@ impl Contexte {
 
     /// LE JOUR OU SE LIT LE TAUX AT/MP DE L'ANNEE `an` : aujourd'hui dans l'annee en cours, son dernier jour pour une
     /// annee passee, son premier pour une annee a venir.
-    fn jour_du_taux_atmp(&self, an: i32) -> R<Jour> {
-        let jour = match self.aujourdhui.an {
-            a if a < an => Jour::nouveau(an, 1, 1),
-            a if a > an => Jour::nouveau(an, 12, 31),
-            _ => Some(self.aujourdhui),
-        };
-        jour.ok_or_else(|| socle::refus!("Année {} hors du calendrier.", an))
+    fn jour_du_taux_atmp(&self, an: Annee) -> Jour {
+        match self.aujourdhui.annee() {
+            a if a < an => an.premier_jour(),
+            a if a > an => an.dernier_jour(),
+            _ => self.aujourdhui,
+        }
     }
 
     /// LE TAUX AT/MP DE L'ANNEE `an` TEL QUE LE BAREME LE LIT : celui que la fiche entreprise dit (`taux_atmp`), lue au
     /// jour de l'annee (`jour_du_taux_atmp`), avec sa date et d'ou il vient (`taux_atmp_du_siege`). `Some(Err)` : le taux
     /// de l'annee manque, ou un socle illisible ; `None` : aucun code dit. Tout ce qui demande « le taux de l'annee
     /// est-il pose ? » lit ici.
-    pub fn taux_atmp_de(&self, an: i32) -> Option<R<TauxAtmp>> {
-        let jour = match self.jour_du_taux_atmp(an) {
-            Ok(j) => j,
-            Err(e) => return Some(Err(e)),
-        };
+    pub fn taux_atmp_de(&self, an: Annee) -> Option<R<TauxAtmp>> {
+        let jour = self.jour_du_taux_atmp(an);
         let socle_an = match socle_livre_lu(an) {
             Ok(s) => s,
             Err(e) => return Some(Err(e)),
@@ -1581,18 +1586,18 @@ impl Contexte {
 
     /// La compagnie a-t-elle dit son taux AT/MP pour l'annee `an` (sa fiche le porte avec cette annee) ? Sinon, celui
     /// qu'une piece atteste se lit (`avec_le_taux_atmp_lu`).
-    pub fn taux_atmp_dit(&self, an: i32) -> R<bool> {
-        let jour = self.jour_du_taux_atmp(an)?;
-        Ok(self.entreprise_au(&jour).taux_atmp.is_some_and(|t| t.valeur.is_some() && t.depuis.is_some_and(|d| d.an == an)))
+    pub fn taux_atmp_dit(&self, an: Annee) -> bool {
+        let jour = self.jour_du_taux_atmp(an);
+        self.entreprise_au(&jour).taux_atmp.is_some_and(|t| t.valeur.is_some() && t.depuis.is_some_and(|d| d.annee() == an))
     }
 
     /// LE TAUX AT/MP DU SIEGE POUR L'ANNEE `an`, tel que la case de la fiche `ent` le dit (`ChampsEntreprise::taux_atmp`,
     /// datee comme toute la configuration), lue par sa regle (`bareme::taux_atmp_de_l_annee`, d'apres `socle_an`). Le taux
     /// qu'une piece atteste (`atmp_lu`) vaut pour une annee que la case ne dit pas.
-    fn taux_atmp_du_siege(&self, an: i32, ent: &ChampsEntreprise, socle_an: Option<&Pile>) -> Option<R<TauxAtmp>> {
+    fn taux_atmp_du_siege(&self, an: Annee, ent: &ChampsEntreprise, socle_an: Option<&Pile>) -> Option<R<TauxAtmp>> {
         let dit = ent.taux_atmp.as_ref().filter(|t| !t.est_vide());
         if let Some((a, v)) = &self.atmp_lu {
-            if *a == an && !dit.is_some_and(|t| t.valeur.is_some() && t.depuis.is_some_and(|d| d.an == an)) {
+            if *a == an && !dit.is_some_and(|t| t.valeur.is_some() && t.depuis.is_some_and(|d| d.annee() == an)) {
                 return Some(Ok(TauxAtmp { valeur: Some(*v), ..TauxAtmp::default() }));
             }
         }
@@ -1635,7 +1640,7 @@ impl Contexte {
     /// Ce que `lire` tire de la couche de la convention que la fiche entreprise nomme a `jour`, dans le socle de l'annee ;
     /// `None` : une annee sans socle, une fiche sans convention, ou une convention que le socle ne couvre pas.
     fn dans_la_couche<T>(&self, jour: &Jour, lire: impl FnOnce(&CoucheConvention) -> T) -> R<Option<T>> {
-        let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an)? else { return Ok(None) };
+        let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.annee())? else { return Ok(None) };
         let ent = self.entreprise_au(jour);
         let Some(idcc) = ent.idcc.dite() else { return Ok(None) };
         let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;
@@ -1662,12 +1667,12 @@ impl Contexte {
     pub fn entreprise_lue(&self, jour: &Jour) -> R<crate::bareme::EntrepriseLue> {
         let fiche = self.entreprise_au(jour);
         let lu = effectif_de(&self.racine, &fiche)?;
-        Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.an), cse: lu.cse(jour.an), cinquante: lu.cinquante(jour.an), taux_lus: false })
+        Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.annee()), cse: lu.cse(jour.annee()), cinquante: lu.cinquante(jour.annee()), taux_lus: false })
     }
 
     /// (PSS mensuel, PSS horaire) de l'annee, d'apres la fiche entreprise de ce contexte.
-    pub fn plafond_securite_sociale(&self, annee: i32) -> R<(i64, i64)> {
-        let jour = Jour::nouveau(annee, 1, 1).ok_or_else(|| socle::refus!("Année {} hors du calendrier.", annee))?;
+    pub fn plafond_securite_sociale(&self, annee: Annee) -> R<(i64, i64)> {
+        let jour = annee.premier_jour();
         let lue = self.pile_lue(&jour, &self.entreprise)?;
         let entier = |x: Decimal| i64::try_from(x.trunc()).map_err(|e| refus(e.to_string()));
         let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| Ok::<_, Echec>((entier(p.mensuel.decimal())?, entier(p.horaire.decimal())?))).transpose()?;

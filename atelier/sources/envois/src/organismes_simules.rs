@@ -25,7 +25,7 @@ use crate::journal::Ligne;
 use crate::retours::{IdDeFlux, NatureDuRetour};
 use declarations::dsn_lue::DsnLue;
 use socle::mode::Mode;
-use socle::mois::Mois;
+use socle::mois::{Annee, Mois};
 use socle::paris::Moment;
 use crate::branchement::Branchement;
 
@@ -115,7 +115,7 @@ struct AnnonceGardee {
 #[serde(deny_unknown_fields)]
 pub struct Memoire {
     annonces: Vec<AnnonceGardee>,
-    effectifs_rendus: Vec<String>,
+    effectifs_rendus: Vec<Annee>,
 }
 
 fn charger(racine: &Path) -> R<Memoire> {
@@ -212,10 +212,9 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
 /// (motif de recours 01, S21.G00.40.021) n'est pas compte (II, premier alinea, qui renvoie a la deuxieme phrase du 2° de
 /// L. 1111-2). Une personne (son NIR, sinon son NTT) compte au plus une fois par jour, au plus fort de ses contrats de ce
 /// jour. Un contrat sans fin court jusqu'au dernier jour du mois.
-fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<Decimal> {
-    let n = socle::date::jours_du_mois(an, mois);
-    let premier = Jour::nouveau(an, mois, 1).expect("mois");
-    let dernier = Jour::nouveau(an, mois, n).expect("mois");
+fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
+    let n = mois.jours();
+    let (premier, dernier) = (mois.premier_jour(), mois.dernier_jour());
     let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, Vec<Decimal>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
@@ -260,10 +259,10 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<Decimal> {
 /// resultat tronque au centieme (L. 130-1, I, et R. 130-1, I, du code de la securite sociale,
 /// `atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la fraction
 /// d'effectif au-delà de la deuxième décimale ») : un effectif, pas un montant. `None` quand aucun mois n'a de salarie.
-fn effectif_annuel(an: i32, dsn_par_mois: &BTreeMap<u32, Vec<DsnLue>>) -> R<Option<Decimal>> {
+fn effectif_annuel(dsn_par_mois: &BTreeMap<Mois, Vec<DsnLue>>) -> R<Option<Decimal>> {
     let mut mois: Vec<Decimal> = Vec::new();
     for (m, d) in dsn_par_mois {
-        let e = effectif_du_mois(an, *m, d)?;
+        let e = effectif_du_mois(*m, d)?;
         if e > Decimal::ZERO {
             mois.push(e);
         }
@@ -503,7 +502,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
 /// Les DSN mensuelles reelles de l'annee `an` que l'Urssaf a recues et acceptees, par mois : pour chaque mois et chaque
 /// etablissement, la derniere deposee ; une DSN dont le bilan est non conforme n'en est pas une, ni une ligne qui ne dit
 /// pas sa nature.
-fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, Vec<DsnLue>>> {
+fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: Annee) -> R<BTreeMap<Mois, Vec<DsnLue>>> {
     let mut dernieres: BTreeMap<(Mois, Option<&droit::fiche::Nic>), &Ligne> = BTreeMap::new();
     for l in lignes {
         if l.acte() != crate::journal::Acte::Dsn || l.mode() == Mode::Test || !l.accepte() || l.nature_dsn() != Some(NatureDeLaDeclaration::Mensuelle) {
@@ -512,13 +511,13 @@ fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, V
         let Some(mois) = l.mois().filter(|m| m.annee() == an) else { continue };
         dernieres.insert((mois, l.etablissement()), l);
     }
-    let mut out: BTreeMap<u32, Vec<DsnLue>> = BTreeMap::new();
+    let mut out: BTreeMap<Mois, Vec<DsnLue>> = BTreeMap::new();
     for ((mois, _), l) in dernieres {
         if l.retours_organisme().iter().any(|r| r.ko()) {
             continue;
         }
         if let Some(d) = dsn_deposee(racine, l)? {
-            out.entry(mois.numero()).or_default().push(d);
+            out.entry(mois).or_default().push(d);
         }
     }
     Ok(out)
@@ -530,7 +529,7 @@ fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, V
 /// `RO.B004` de type 04, `RO.B008` ; dates AAAA-MM-JJ, date de calcul AAAA-MM-JJThh:mm:ss). La date d'effet et la date de
 /// fin bornent l'annee mesuree, comme `releve_retours::reconstruire_effectifs` les lit (inference : le cahier ne dit pas
 /// quelle annee les dates portent ; c'est la forme des 118 recus que le lecteur range).
-fn crm_effectif(an: i32, valeur: Decimal, flux: &IdDeFlux, publication: Moment) -> Piece {
+fn crm_effectif(an: Annee, valeur: Decimal, flux: &IdDeFlux, publication: Moment) -> Piece {
     let calcule_le = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><RO><RO_R001>P26V01</RO_R001><RO_B000><RO_B000_R001>{}</RO_B000_R001></RO_B000>\
@@ -576,10 +575,10 @@ pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Memoire, lignes: &[Ligne], l: 
         pieces.extend(crm_atmp(memoire, l, &d, flux, publication)?);
     }
     if let Some(an) = l.mois().map(Mois::annee) {
-        let precedente = (an - 1).to_string();
+        let precedente = an.precedente()?;
         if !memoire.effectifs_rendus.contains(&precedente) {
-            if let Some(e) = effectif_annuel(an - 1, &dsn_de_l_annee(&ctx.racine, lignes, an - 1)?)? {
-                pieces.push(crm_effectif(an - 1, e, flux, publication));
+            if let Some(e) = effectif_annuel(&dsn_de_l_annee(&ctx.racine, lignes, precedente)?)? {
+                pieces.push(crm_effectif(precedente, e, flux, publication));
                 memoire.effectifs_rendus.push(precedente);
             }
         }
@@ -629,11 +628,11 @@ mod tests {
     /// salarie hors de la moyenne et le resultat tronque au centieme (I).
     #[test]
     fn l_effectif_annuel_se_compte_comme_r_130_1_le_dit() {
-        let mut par_mois: BTreeMap<u32, Vec<DsnLue>> = BTreeMap::new();
+        let mut par_mois: BTreeMap<Mois, Vec<DsnLue>> = BTreeMap::new();
         // Janvier (31 jours) : un CDI a temps plein tout le mois (1), un mi-temps (75,84 h sur 151,67 : 0,5) du 16 au 31
         // (16 jours : 0,258...), un CDDU de deux jours (2/31), un CDD de remplacement (ecarte).
         par_mois.insert(
-            1,
+            Mois::constante(2025, 1),
             vec![dsn(&[
                 ("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")]),
                 ("2800101999992", &[("16012025", "", "20", "151.67", "75.84", "")]),
@@ -642,10 +641,10 @@ mod tests {
             ])],
         );
         // Fevrier (28 jours) : le seul CDI ; mars a decembre sans salarie, hors de la moyenne.
-        par_mois.insert(2, vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
+        par_mois.insert(Mois::constante(2025, 2), vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
         // Janvier : 1 + 0,5 x 16/31 + 2/31 ; la moyenne avec fevrier (1), tronquee au centieme : 1,16.
-        assert_eq!(effectif_annuel(2025, &par_mois).unwrap(), Some(Decimal::new(116, 2)));
-        assert_eq!(effectif_annuel(2025, &BTreeMap::new()).unwrap(), None);
+        assert_eq!(effectif_annuel(&par_mois).unwrap(), Some(Decimal::new(116, 2)));
+        assert_eq!(effectif_annuel(&BTreeMap::new()).unwrap(), None);
     }
 
     /// Le compte rendu 118 que le simulateur rend se lit par le lecteur des vrais (`releve_retours::reconstruire_effectifs`,
@@ -659,17 +658,18 @@ mod tests {
         std::fs::create_dir_all(racine.join(socle::fichiers::CONFIG)).unwrap();
         // Ce que la compagnie a dit : l'annee que le 118 mesure le remplace, l'autre reste.
         let j = |a, m, d| socle::date::Jour::nouveau(a, m, d).unwrap();
-        assert!(crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j(2027, 1, 5)).unwrap());
-        assert!(crate::releve_retours::poser_effectif(&racine, 2025, Decimal::from(2), j(2027, 1, 5)).unwrap());
-        let p = crm_effectif(2026, Decimal::new(1142, 2), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), Moment::a_paris(j(2027, 2, 15), 10, 0, 0).unwrap());
+        let (a2025, a2026) = (Annee::constante(2025), Annee::constante(2026));
+        assert!(crate::releve_retours::poser_effectif(&racine, a2026, Decimal::from(3), j(2027, 1, 5)).unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, a2025, Decimal::from(2), j(2027, 1, 5)).unwrap());
+        let p = crm_effectif(a2026,Decimal::new(1142, 2), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), Moment::a_paris(j(2027, 2, 15), 10, 0, 0).unwrap());
         let chemin = crate::releve_retours::archiver_retour(&racine, crate::releve_retours::CanalDesRetours::Dsn, &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
         let fiche: droit::fiche::ChampsEntreprise = socle::forme::lire_texte("{}", "la fiche").unwrap();
         let e = droit::contexte::effectif_de(&racine, &fiche).unwrap();
-        assert_eq!(e.annees.get(&2026), Some(&socle::num::Decimal::new(1142, 2)));
-        assert_eq!(e.annees.get(&2025), Some(&socle::num::Decimal::from(2)));
-        assert!(!crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j(2027, 3, 1)).unwrap());
+        assert_eq!(e.annees.get(&a2026), Some(&socle::num::Decimal::new(1142, 2)));
+        assert_eq!(e.annees.get(&a2025), Some(&socle::num::Decimal::from(2)));
+        assert!(!crate::releve_retours::poser_effectif(&racine, a2026,Decimal::from(3), j(2027, 3, 1)).unwrap());
         let _ = std::fs::remove_dir_all(&racine);
     }
 }

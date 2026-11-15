@@ -203,14 +203,14 @@ impl Position {
 pub type Fenetre = (Jour, Jour, String);
 
 /// L'annee civile, arretee a `jusquau` quand on en donne une.
-pub fn fenetre_annee_civile(annee: i32, jusquau: Option<Jour>) -> Fenetre {
-    let mut fin = Jour { an: annee, mois: 12, jour: 31 };
+pub fn fenetre_annee_civile(annee: socle::mois::Annee, jusquau: Option<Jour>) -> Fenetre {
+    let mut fin = annee.dernier_jour();
     if let Some(j) = jusquau {
         if j < fin {
             fin = j;
         }
     }
-    (Jour { an: annee, mois: 1, jour: 1 }, fin, format!("annee civile {}", annee))
+    (annee.premier_jour(), fin, format!("annee civile {}", annee))
 }
 
 /// Les 12 mois precedant une date.

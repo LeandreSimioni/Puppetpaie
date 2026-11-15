@@ -2444,7 +2444,7 @@ impl<'a> Moteur<'a> {
         self.ecrit = true;
         // Un mois passe sans engagement dont la DSN est due (ce que les rappels reclament) s'ouvre aussi.
         for m in crate::rappels::mois_a_parcourir(self.ctx, self.ctx.aujourdhui)? {
-            if m >= courant || self.exercice_clos(m.annee_civile())? {
+            if m >= courant || self.exercice_clos(m.annee())? {
                 continue;
             }
             let reste = self.etapes_restantes(m)?;

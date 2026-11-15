@@ -986,7 +986,7 @@ fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
 
 /// `refuser_si_clos` : un exercice cloture ne bouge plus.
 pub(crate) fn refuser_si_clos(ctx: &Contexte, mois: Mois) -> R<()> {
-    let annee = mois.annee_civile();
+    let annee = mois.annee();
     if let Some(clos) = crate::rappels::exercice_clos(ctx, annee)? {
         let le = clos.le.jour_de_paris().iso();
         return Err(refus(format!(

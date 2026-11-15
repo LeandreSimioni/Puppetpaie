@@ -13,6 +13,7 @@ use socle::grandeurs::{Jours, Montant, MontantUnitaire};
 use socle::num::Decimal;
 use droit::plafond::{plafond_urssaf, pour_paie, EngagementPlafond};
 use socle::date::Jour;
+use socle::mois::Annee;
 use socle::echec::R;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -49,7 +50,7 @@ struct Pss {
 }
 
 /// Le plafond de chaque annee d'une table `{annee: (mensuel, horaire)}`.
-fn pss_depuis_table(table: &HashMap<i32, (i64, i64)>) -> impl Fn(i32) -> R<droit::plafond::Pss> + '_ {
+fn pss_depuis_table(table: &HashMap<Annee, (i64, i64)>) -> impl Fn(Annee) -> R<droit::plafond::Pss> + '_ {
     move |annee| {
         table
             .get(&annee)
@@ -69,9 +70,9 @@ fn j(an: i32, mois: u32, jour: u32) -> Jour {
 }
 
 /// Le PSS : la section `plafond_securite_sociale` du bareme de l'annee (`donnees/baremes/AAAA.json`).
-fn table() -> HashMap<i32, (i64, i64)> {
+fn table() -> HashMap<Annee, (i64, i64)> {
     let mut t = HashMap::new();
-    for annee in [2025, 2026] {
+    for annee in [Annee::constante(2025), Annee::constante(2026)] {
         let b: BaremePss = lire(&code_livre(), &format!("baremes/{}.json", annee));
         t.insert(annee, (b.plafond_securite_sociale.mensuel, b.plafond_securite_sociale.horaire));
     }
@@ -109,8 +110,8 @@ fn jours_du_contrat(debut: Jour, duree: u32) -> Vec<Jour> {
 }
 
 /// L'oracle du texte, ecrit sans le moteur. `annee -> (mensuel, horaire)` : la table du bareme.
-fn oracle(t: &HashMap<i32, (i64, i64)>, duree: u32, artiste: bool, journees: &[Jour]) -> Result<Decimal, ()> {
-    let pss = |a: i32| t.get(&a).copied().ok_or(());
+fn oracle(t: &HashMap<Annee, (i64, i64)>, duree: u32, artiste: bool, journees: &[Jour]) -> Result<Decimal, ()> {
+    let pss = |a: Annee| t.get(&a).copied().ok_or(());
     if artiste && duree < 5 {
         if journees.is_empty() {
             return Err(());
@@ -118,7 +119,7 @@ fn oracle(t: &HashMap<i32, (i64, i64)>, duree: u32, artiste: bool, journees: &[J
         // Arrete du 24/01/1975, art. 3, al. 2 : 12 x le plafond horaire par journee de travail accomplie.
         let mut total = Decimal::ZERO;
         for x in journees {
-            total += Decimal::from(12 * pss(x.an)?.1);
+            total += Decimal::from(12 * pss(x.annee())?.1);
         }
         return Ok(total.round_dp(2));
     }
@@ -127,15 +128,15 @@ fn oracle(t: &HashMap<i32, (i64, i64)>, duree: u32, artiste: bool, journees: &[J
     if journees.is_empty() {
         return Err(());
     }
-    let mut par_mois: std::collections::BTreeMap<(i32, u32), i64> = Default::default();
+    let mut par_mois: std::collections::BTreeMap<(Annee, u32), i64> = Default::default();
     for x in journees.iter().collect::<std::collections::BTreeSet<_>>() {
-        *par_mois.entry((x.an, x.mois)).or_default() += 1;
+        *par_mois.entry((x.annee(), x.mois)).or_default() += 1;
     }
     let mut total = Decimal::ZERO;
     for ((a, m), n) in par_mois {
         let dim = match m {
             4 | 6 | 9 | 11 => 30,
-            2 if (a % 4 == 0 && a % 100 != 0) || a % 400 == 0 => 29,
+            2 if a.bissextile() => 29,
             2 => 28,
             _ => 31,
         };

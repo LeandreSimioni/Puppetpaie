@@ -41,6 +41,7 @@ use droit::contexte::{Contexte, FichierEffectifs, TypeDeParametreNeores};
 use droit::cotisation_etablissement::CotisationDEtablissement;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
+use socle::mois::Annee;
 use socle::num::{add, div, mul, Decimal};
 
 const MOIS_DE_DECLARATION: u32 = 3;
@@ -55,7 +56,7 @@ const CODE_DENOMINATEUR: TypeDeParametreNeores = TypeDeParametreNeores::Effectif
 /// Ce que la DSN de mars porte pour un millesime.
 #[derive(Clone, Debug)]
 pub struct Csa {
-    pub millesime: i32,
+    pub millesime: Annee,
     /// « 079 » (la contribution) ou « 080 » (l'exoneration, a 0.00).
     pub code: CotisationDEtablissement,
     /// Le montant, a l'euro (L. 6242-1, VII).
@@ -125,18 +126,17 @@ pub fn taux(quotient: Decimal, plus_de_deux_mille: bool) -> Option<Decimal> {
 
 /// La valeur d'un code du CRM 118 pour une annee (`config/effectifs.json`, `droit::contexte::effectifs_lus` : sans
 /// fichier, aucun effectif), ou `None`.
-pub(crate) fn effectif_du_118(effectifs: Option<&FichierEffectifs>, annee: i32, code: TypeDeParametreNeores) -> R<Option<Decimal>> {
-    let annee = socle::mois::Annee::nouvelle(annee.into())?;
-    Ok(effectifs.and_then(|e| e.du_118(annee, code)))
+pub(crate) fn effectif_du_118(effectifs: Option<&FichierEffectifs>, annee: Annee, code: TypeDeParametreNeores) -> Option<Decimal> {
+    effectifs.and_then(|e| e.du_118(annee, code))
 }
 
 /// L'effectif « excède deux mille salariés » pour l'annee N : au-dessus les cinq annees civiles N-4 a N (L. 6242-1, V ;
 /// L. 130-1, II, CSS). Une annee a 2 000 ou moins suffit a dire non ; une annee inconnue, sans annee sous le seuil,
 /// refuse.
-fn excede_deux_mille(ctx: &Contexte, n: i32) -> R<bool> {
+fn excede_deux_mille(ctx: &Contexte, n: Annee) -> R<bool> {
     let e = ctx.effectif()?;
     let mut inconnues = Vec::new();
-    for a in n - 4..=n {
+    for a in n.les_precedentes(4).into_iter().chain([n]) {
         match e.annee(a) {
             Some(v) if v <= Decimal::from(SEUIL_DEUX_MILLE) => return Ok(false),
             Some(_au_dela) => {}
@@ -161,7 +161,8 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois, departs: &engagement
     if mois.numero() != MOIS_DE_DECLARATION {
         return Ok(None);
     }
-    let n = mois.annee() - 1;
+    let declaree = mois.annee();
+    let n = declaree.precedente()?;
     // Redevable de la taxe d'apprentissage (L. 6242-1, I) : le motif de non-assujettissement de la fiche.
     if droit::apprentissage::taxe_apprentissage_non_due(&ctx.entreprise, n)? {
         return Ok(None);
@@ -170,14 +171,14 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois, departs: &engagement
     // un grand seuil, que seule une fiche de cinquante salaries et plus atteint (`Effectif::atteint`).
     let assujettie = ctx
         .effectif()?
-        .atteint(SEUIL, n + 1)
-        .map_err(|m| m.reformuler(|m| format!("DSN de mars {}, contribution supplementaire a l'apprentissage {} : {}", n + 1, n, m)))?;
+        .atteint(SEUIL, declaree)
+        .map_err(|m| m.reformuler(|m| format!("DSN de mars {}, contribution supplementaire a l'apprentissage {} : {}", declaree, n, m)))?;
     if !assujettie {
         return Ok(None);
     }
     let effectifs = droit::contexte::effectifs_lus(&ctx.racine)?;
     let (alternants, denominateur) =
-        (effectif_du_118(effectifs.as_ref(), n, CODE_ALTERNANTS)?, effectif_du_118(effectifs.as_ref(), n, CODE_DENOMINATEUR)?);
+        (effectif_du_118(effectifs.as_ref(), n, CODE_ALTERNANTS), effectif_du_118(effectifs.as_ref(), n, CODE_DENOMINATEUR));
     let (Some(alternants), Some(denominateur)) = (alternants, denominateur) else {
         return Err(socle::refus!(
             "DSN de mars {} : la compagnie compte au moins 250 salaries et doit la taxe d'apprentissage ; la contribution \
@@ -186,7 +187,7 @@ calcule et renvoie debut mars en compte rendu metier de nature 118 (fiche net-en
 des contrats favorisant l'insertion professionnelle (code {}) et celui de determination du taux d'alternants (code {}). \
 Le logiciel ne les a pas pour {} : relever les retours, le moteur les garde. Ils ne se \
 saisissent pas. Rien n'est ecrit.",
-            n + 1,
+            declaree,
             n,
             CODE_ALTERNANTS,
             CODE_DENOMINATEUR,
@@ -197,7 +198,7 @@ saisissent pas. Rien n'est ecrit.",
         return Err(socle::refus!(
             "DSN de mars {} : le compte rendu metier 118 donne un effectif de determination du taux d'alternants ({}) nul \
 pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se calcule pas. Rien n'est ecrit.",
-            n + 1,
+            declaree,
             CODE_DENOMINATEUR,
             n
         ));
@@ -219,17 +220,18 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
     };
     if quotient >= Decimal::new(3, 0) {
         // L. 6242-1, II, dernier alinea : 3 % et une progression d'au moins 10 % sur l'annee precedente.
-        let Some(avant) = effectif_du_118(effectifs.as_ref(), n - 1, CODE_ALTERNANTS)? else {
+        let n_moins_un = n.precedente()?;
+        let Some(avant) = effectif_du_118(effectifs.as_ref(), n_moins_un, CODE_ALTERNANTS) else {
             return Err(socle::refus!(
                 "DSN de mars {} : les alternants font {} % de l'effectif en {}, entre 3 et 5 % : la contribution \
 supplementaire a l'apprentissage n'est pas due si leur effectif a progresse d'au moins 10 % sur {} (L. 6242-1, II). \
 Le logiciel n'a pas l'effectif des alternants de {} (code {} du compte rendu metier 118) : relever les retours \
 de {}. Rien n'est ecrit.",
-                n + 1,
+                declaree,
                 quotient_lu,
                 n,
-                n - 1,
-                n - 1,
+                n_moins_un,
+                n_moins_un,
                 CODE_ALTERNANTS,
                 n
             ));
@@ -251,7 +253,7 @@ de {}. Rien n'est ecrit.",
             "DSN de mars {} : la contribution supplementaire a l'apprentissage {} est due (alternants {} % de l'effectif), \
 et aucune paie validee de {} ne porte d'assiette de la taxe d'apprentissage (CTP 992 ou 993) : elle se calcule sur cette \
 assiette (L. 6242-1, III). Rien n'est ecrit.",
-            n + 1,
+            declaree,
             n,
             quotient_lu,
             n

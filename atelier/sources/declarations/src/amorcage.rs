@@ -165,7 +165,7 @@ un manque du logiciel.",
 
 /// La pile d'une declaration qui ne declare aucun taux (le taux AT/MP est interdit en nature 08) : l'annee, et aucune
 /// valeur ni aucune cotisation. Aucun calcul ne la lit.
-fn pile_sans_taux(annee: i32) -> droit::forme_bareme::Pile {
+fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
     use socle::num::Decimal;
     use std::collections::BTreeMap;
     droit::forme_bareme::Pile {
@@ -231,7 +231,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         None => aujourdhui()?,
     };
     // Le bareme ne sert a rien ici : le taux AT/MP est interdit en nature 08.
-    let bar = crate::dsn::BaremeDuMois::nouveau(pile_sans_taux(e.debut.an), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
+    let bar = crate::dsn::BaremeDuMois::nouveau(pile_sans_taux(e.debut.annee()), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
     let remplace = o.remplace;
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference).

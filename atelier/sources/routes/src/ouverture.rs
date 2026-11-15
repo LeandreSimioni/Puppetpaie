@@ -881,7 +881,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // cette phrase.
     let sans_titre: Vec<&droit::fiche::ChampsSpectacle> = ctx.spectacles.values().filter(|s| s.archivee() && s.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case("a completer"))).collect();
     // L'annee ou chaque numero a ete demande (`NumeroObjetSpectacle::annee_de_la_demande`).
-    let ans: Vec<i32> = sans_titre.iter().filter_map(|s| s.numero_objet.dite().and_then(droit::fiche::NumeroObjetSpectacle::annee_de_la_demande)).collect();
+    let ans: Vec<socle::mois::Annee> = sans_titre.iter().filter_map(|s| s.numero_objet.dite().and_then(droit::fiche::NumeroObjetSpectacle::annee_de_la_demande)).collect();
     let numeros_sans_titre = match (sans_titre.len(), ans.iter().min(), ans.iter().max()) {
         (0, _, _) => None,
         (n, de, a) => {
@@ -1139,7 +1139,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
             a_faire,
             sortes,
             fichiers: noms.clone(),
-            clos: Some(m.exercice_clos(le_mois.annee_civile())?),
+            clos: Some(m.exercice_clos(le_mois.annee())?),
         });
     }
     Ok(out)

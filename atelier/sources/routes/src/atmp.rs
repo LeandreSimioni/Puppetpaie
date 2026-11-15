@@ -32,12 +32,13 @@ use droit::bareme::{self, CodeRisqueAt, RisqueAtmp};
 use droit::contexte::Contexte;
 use droit::fiche::{Etablissement, FicheEntrepriseDatee, NombreDeFiche, NotificationAtmp, ProvenanceAtmp, TauxAtmp};
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, R};
+use socle::mois::Annee;
+use socle::echec::{Classe, R};
 use socle::num::Decimal;
 
 /// Le socle livre de l'annee, s'il existe, lu par sa forme (`droit::contexte::socle_livre_lu`) ; un socle livre qui ne se
 /// lit pas se refuse.
-fn socle_de(an: i32) -> R<Option<droit::forme_bareme::Pile>> {
+fn socle_de(an: Annee) -> R<Option<droit::forme_bareme::Pile>> {
     droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
@@ -45,10 +46,6 @@ fn en_pourcent(t: Decimal) -> String {
     let mut t = t.round_dp(2);
     t.rescale(2);
     format!("{} %", t.to_string().replace('.', ","))
-}
-
-fn premier_janvier(an: i32) -> R<Jour> {
-    Jour::nouveau(an, 1, 1).ok_or_else(|| erreur(Classe::Refuse, format!("Année {} hors du calendrier.", an)))
 }
 
 fn decimal(t: &TauxAtmp) -> R<Option<Decimal>> {
@@ -78,7 +75,7 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
     }
     let fiche = crate::fiches::lire_fichier::<FicheEntrepriseDatee>(ctx)?;
     let deja = fiche.taux_atmp.as_deref().and_then(|l| droit::fiche::valeur_au(l, &n.date_effet));
-    if let Some(d) = deja.filter(|d| d.provenance == Some(ProvenanceAtmp::Saisie) && d.depuis.is_some_and(|j| j.an == n.date_effet.an)) {
+    if let Some(d) = deja.filter(|d| d.provenance == Some(ProvenanceAtmp::Saisie) && d.depuis.is_some_and(|j| j.annee() == n.date_effet.annee())) {
         if d.code_risque != t.code_risque || decimal(&d)? != decimal(&t)? {
             return Ok(Some(format!(
                 "Conflit sur le taux AT/MP : vous avez inscrit {} ; la notification de la CARSAT ({}) dit {}. Rien n'est changé : c'est à vous de choisir. Pour prendre celui de la notification, inscrivez-le dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
@@ -99,13 +96,13 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
 /// de ce 1er janvier ou apres (la notification de l'annee, deja recue, ou la saisie) ; une ligne de l'annee qui ne dit que
 /// le code se complete a sa date. Le code est celui de la derniere ligne. Appele a l'ouverture, a l'import, et apres
 /// l'enregistrement de la case (`SorteDeFiche::apres_ecriture`). Rend ce qui s'est inscrit, en phrases.
-pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: i32) -> R<Vec<String>> {
+pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: Annee) -> R<Vec<String>> {
     // Une annee sans socle livre n'a pas d'arrete a inscrire.
     Ok(socle_de(an)?.map(|socle| inscrire_selon(ctx, an, socle)).transpose()?.into_iter().flatten().collect())
 }
 
-fn inscrire_selon(ctx: &Contexte, an: i32, socle: droit::forme_bareme::Pile) -> R<Vec<String>> {
-    let janvier = premier_janvier(an)?;
+fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -> R<Vec<String>> {
+    let janvier = an.premier_jour();
     let risques = bareme::risques_de(&socle);
     let arrete = match bareme::arrete_atmp(&socle) {
         Some(a) => a,
@@ -116,7 +113,7 @@ fn inscrire_selon(ctx: &Contexte, an: i32, socle: droit::forme_bareme::Pile) -> 
     // Une ligne de cette annee qui ne dit que le code (la personne l'a inscrit sans taux) se complete a sa propre date.
     let de_l_arrete = |l: &TauxAtmp, alsace: bool, neuf: bool, depuis: Jour| -> Option<TauxAtmp> {
         let de_l_annee = l.depuis.filter(|d| *d >= janvier);
-        if de_l_annee.is_some_and(|d| d.an > an || l.valeur.is_some()) {
+        if de_l_annee.is_some_and(|d| d.annee() > an || l.valeur.is_some()) {
             return None;
         }
         let code = l.code_risque.clone()?;
@@ -245,7 +242,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
             let le: String = n.as_ref().and_then(|n| n.calcul.or(n.le)).iter().map(|j| format!(" du {}", j.jj_mm_aaaa())).collect();
             format!("reçu par la DSN (notification{})", le)
         }
-        (Some(ProvenanceAtmp::Arrete), _) => format!("taux collectif de l'arrêté{}", t.depuis.iter().map(|j| format!(" {}", j.an)).collect::<String>()),
+        (Some(ProvenanceAtmp::Arrete), _) => format!("taux collectif de l'arrêté{}", t.depuis.iter().map(|j| format!(" {}", j.annee())).collect::<String>()),
         (Some(ProvenanceAtmp::Import), _) => "repris à l'import".to_string(),
         (Some(ProvenanceAtmp::Saisie), _) => "inscrit dans PuppetPaie".to_string(),
         (None, _) => "inscrit".to_string(),
@@ -292,7 +289,7 @@ fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Optio
 }
 
 /// La phrase et l'explication du taux de l'annee lu par la paie (`lu` : `bareme::taux_atmp_de_l_annee`).
-fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: i32, nom: &Option<String>) -> (String, String) {
+fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: Annee, nom: &Option<String>) -> (String, String) {
     match lu {
         Some(Ok(t)) => match t.valeur {
             Some(v) => (format!("Taux AT/MP {} : {}{}.", an, en_pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
@@ -351,7 +348,7 @@ impl Dite for TauxAtmpDit {
 /// `taux-atmp` : la case du siege et celles des autres etablissements, aujourd'hui (voir `TauxAtmpDit`).
 pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
     let aujourdhui = ctx.aujourdhui;
-    let an = aujourdhui.an;
+    let an = aujourdhui.annee();
     let socle = socle_de(an)?;
     let risques: Vec<RisqueAtmp> = socle.iter().flat_map(bareme::risques_de).collect();
     let nom_de_code = |code: &Option<CodeRisqueAt>| -> (Option<String>, Option<&RisqueAtmp>) {
@@ -385,7 +382,7 @@ pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
         risque: risque.map(risque_dit),
         ou_le_lire: "La CARSAT notifie à la compagnie son code risque et son taux : la notification se lit dans le compte AT/MP de net-entreprises (compte entreprise › Accidents du travail et maladies professionnelles).",
         inscrire: "Inscrire le taux d'une notification",
-        propose_depuis: premier_janvier(an + 1)?,
+        propose_depuis: an.suivante()?.premier_jour(),
         codes: risques.iter().map(risque_dit).collect(),
         etablissements,
     })

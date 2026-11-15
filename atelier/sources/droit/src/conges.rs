@@ -132,7 +132,7 @@ pub fn feries_non_payes(
     let trois_mois = socle::date::Anciennete::de_mois(Decimal::from(3));
     let mut out = Vec::new();
     for (j, nom) in feries::chomes_entre(debut, fin, chomes)? {
-        let premier_mai = feries::chomes_de_droit(j.an)?.iter().any(|(x, _)| *x == j);
+        let premier_mai = feries::chomes_de_droit(j.annee())?.iter().any(|(x, _)| *x == j);
         if jours.travaille(&j) && !premier_mai && socle::date::Anciennete::entre(depuis, &j) < trois_mois {
             out.push((j, nom));
         }

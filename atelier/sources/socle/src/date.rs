@@ -335,6 +335,11 @@ impl Jour {
     pub fn mois_civil(&self) -> crate::mois::Mois {
         crate::mois::Mois::du_jour(self)
     }
+
+    /// L'annee civile du jour.
+    pub fn annee(&self) -> crate::mois::Annee {
+        crate::mois::Annee::du_jour(self)
+    }
 }
 
 /// Les refus d'une date qui n'existe pas, avec l'annee, le mois ou la date en cause.

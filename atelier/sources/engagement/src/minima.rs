@@ -919,7 +919,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
     // signataires d'un accord. Sans jour travaille, aucun accord ne lie la compagnie (`grille_au`).
     let jour = premier_jour(paie);
     let organisation = match jour {
-        Some(j) => ctx.organisation_reconnue(j.an, ent.organisation_patronale.dite())?,
+        Some(j) => ctx.organisation_reconnue(j.annee(),ent.organisation_patronale.dite())?,
         None => None,
     };
     let Some((grille, lie_depuis, par_la_grille)) = grille_au(t, &idcc, organisation.as_ref(), jour) else { return Ok(None) };

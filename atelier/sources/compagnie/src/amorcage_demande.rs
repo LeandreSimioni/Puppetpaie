@@ -77,7 +77,7 @@ fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
         if jour.jour_de_la_semaine() >= 5 {
             continue;
         }
-        let feries = socle::feries::feries(jour.an).map_err(|e| e.reclasser(Classe::Illisible))?;
+        let feries = socle::feries::feries(jour.annee()).map_err(|e| e.reclasser(Classe::Illisible))?;
         if feries.iter().any(|(j, _)| *j == jour) {
             continue;
         }

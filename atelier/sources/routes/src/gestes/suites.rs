@@ -127,7 +127,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
                 continue;
             }
         };
-        let mut par_annee: BTreeMap<i32, Vec<envois::retours::TauxAtmpNotifie>> = BTreeMap::new();
+        let mut par_annee: BTreeMap<socle::mois::Annee, Vec<envois::retours::TauxAtmpNotifie>> = BTreeMap::new();
         for t in lus {
             if Some(&t.siren) != ctx.entreprise.siren.dite() || Some(&t.nic) != ctx.entreprise.nic.dite() {
                 a_faire.push(format!(
@@ -136,7 +136,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
                 ));
                 continue;
             }
-            par_annee.entry(t.date_effet.an).or_default().push(t);
+            par_annee.entry(t.date_effet.annee()).or_default().push(t);
         }
         for (an, mut taux) in par_annee {
             taux.sort_by_key(|t| t.date_effet);

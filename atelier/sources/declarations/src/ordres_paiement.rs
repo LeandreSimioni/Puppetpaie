@@ -83,7 +83,7 @@ fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> R<Jour> {
 /// Le `jour` du mois qui suit le mois declare `mois`.
 fn jour_du_mois_suivant(mois: Mois, jour: u32) -> R<Jour> {
     let m = mois.suivant();
-    m.jour(jour).ok_or_else(|| socle::echec::refus(socle::date::jour_impossible(m.annee(), m.numero(), jour)))
+    m.jour_exige(jour)
 }
 
 /// L'organisme est-il une caisse de retraite complementaire Agirc-Arrco (`codes81` porte le 131 ou le 105) ?

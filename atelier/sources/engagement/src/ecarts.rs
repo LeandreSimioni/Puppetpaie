@@ -363,7 +363,7 @@ fn comparer_une(
         Some(None) => return Err(refus("le bulletin compte des jours travaillés qui ne sont pas un nombre entier")),
     };
     let fin = mois.dernier_jour();
-    let annee = format!("{:04}", mois.annee());
+    let annee = mois.annee();
     let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
     if !ctx.code.join("baremes").join(format!("{}.json", annee)).exists() {
         return Err(socle::refus!("aucun barème livré pour {} : la période ne se calcule pas ici", annee));
@@ -391,9 +391,9 @@ fn comparer_une(
     // bulletin qui n'imprime que le montant, sur l'assiette de la ligne AT/MP calculee ici), ramene au taux notifie par
     // le facteur que le bareme applique a ce contrat (`droit::bareme::bareme_atmp`), au centieme de point comme un taux
     // notifie. L'AT/MP n'est alors pas compare : il est l'entree.
-    let an: i32 = annee.parse().map_err(|_| socle::refus!("mois illisible : {}", mois))?;
+    let an = annee;
     let mut atmp_imprime: Option<(Option<Decimal>, Option<Decimal>, Option<Decimal>)> = None;
-    if !ctx.taux_atmp_dit(an)? {
+    if !ctx.taux_atmp_dit(an) {
         let ligne = cotisations.iter().find(|l| l.cotisation == Some(RegroupementDeComparaison::Cotisation(ATMP)));
         atmp_imprime = ligne
             .map(|l| (l.taux_employeur, l.montant_employeur, l.base))

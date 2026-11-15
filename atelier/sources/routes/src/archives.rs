@@ -236,7 +236,7 @@ fn mois_disponibles(ctx: &Contexte) -> R<Vec<Mois>> {
 
 /// Les années des mois, de la plus récente à la plus ancienne.
 fn annees_de(dispo: &[Mois]) -> Vec<Annee> {
-    let mut annees: Vec<Annee> = dispo.iter().map(|m| m.annee_civile()).collect::<HashSet<_>>().into_iter().collect();
+    let mut annees: Vec<Annee> = dispo.iter().map(|m| m.annee()).collect::<HashSet<_>>().into_iter().collect();
     annees.sort();
     annees.reverse();
     annees
@@ -370,7 +370,7 @@ fn etat_concerne(ctx: &Contexte, etat: EtatDExport, piece: Option<droit::fiche::
 /// fiche ne dit pas encore tout compte, l'etat dit ce qu'il faut repondre ; une annee ou elle n'est pas due, non.
 fn taxe_due_une_annee(ctx: &Contexte, annees: &[Annee]) -> R<bool> {
     for a in annees {
-        let Some(fin) = socle::date::Jour::nouveau(a.nombre(), 12, 31) else { continue };
+        let fin = a.dernier_jour();
         let regime = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise_au(&fin), None);
         if regime.decision != documents::taxe_sur_les_salaires::Decision::NonDue {
             return Ok(true);

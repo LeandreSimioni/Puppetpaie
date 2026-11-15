@@ -21,6 +21,7 @@ use engagement::calcul::BaseDeCotisation;
 use engagement::ecarts::RegroupementDeComparaison;
 use droit::organismes::QualifiantDAssiette;
 use socle::echec::{erreur, refus_avec, Lieu, Classe};
+use socle::mois::Annee;
 use socle::mois::{Graphie, Mois};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
 use documents::plan_comptable::{EtatDExport, RegroupementDEtat};
@@ -68,7 +69,7 @@ fn organismes(ctx: &Contexte) -> R<Vec<(RegroupementDeComparaison, String)>> {
 
 /// Ce que la convention `idcc` fait payer hors du bulletin (`hors_bulletin`), dans le socle livre de l'annee `an`, a
 /// defaut dans le plus recent livre.
-fn hors_bulletin(ctx: &Contexte, an: i32, idcc: &Idcc) -> R<Option<droit::forme_bareme::HorsBulletin>> {
+fn hors_bulletin(ctx: &Contexte, an: Annee, idcc: &Idcc) -> R<Option<droit::forme_bareme::HorsBulletin>> {
     let socle = match droit::contexte::socle_livre_lu(an).map_err(|e| e.reclasser(Classe::Disque))? {
         Some(s) => s,
         None => {
@@ -83,10 +84,6 @@ fn hors_bulletin(ctx: &Contexte, an: i32, idcc: &Idcc) -> R<Option<droit::forme_
         }
     };
     Ok(socle.par_convention.get(idcc).and_then(|c| c.hors_bulletin.clone()))
-}
-
-fn annee_entiere(an: &str) -> R<i32> {
-    an.parse::<i32>().map_err(|_| erreur(Classe::Illisible, format!("nombre entier illisible : {}", socle::fichiers::repr(an))))
 }
 
 /// L'IDCC de la fiche entreprise, que chacun de ces etats exige.
@@ -494,7 +491,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::nouvelle(ctx, None, d.annee, d.toutes, true)?;
     let mut avert = Vec::new();
     let (taux, plancher, plafond) = (fp.taux.decimal(), fp.plancher.decimal(), fp.plafond.decimal());
-    let mut par_an: Vec<(String, i64, Decimal)> = Vec::new();
+    let mut par_an: Vec<(Annee, i64, Decimal)> = Vec::new();
     let zero = Montant::ZERO.decimal();
     let orgs = ctx.organismes().map_err(|e| e.reclasser(Classe::Refuse))?;
     for (m, paies) in paies_des_mois(ctx, &p, &mut avert, &d.departs)? {
@@ -522,7 +519,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 }
             }
         }
-        let an = format!("{:04}", m.annee());
+        let an = m.annee();
         match par_an.iter_mut().find(|(a, _, _)| *a == an) {
             Some(x) => {
                 x.1 += 1;
@@ -545,10 +542,10 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         // UNE ANNEE QUE LE LOGICIEL NE TIENT PAS EN ENTIER : la compagnie n'y a de paies (ecrites ou importees) qu'a
         // partir d'un mois apres janvier ; les mois d'avant manquent, la tranche A et la contribution sont partielles.
-        let premier = p.dispo.keys().next().copied().filter(|m| format!("{:04}", m.annee()) == an);
+        let premier = p.dispo.keys().next().copied().filter(|m| m.annee() == an);
         let regle = if let Some(premier) = premier.filter(|m| m.numero() > 1) {
             let titre = |m: socle::mois::Mois| m.libelle(socle::mois::Graphie::Titre);
-            let (janvier, avant) = (socle::mois::Mois::nouveau(premier.annee(), 1)?, premier.precedent());
+            let (janvier, avant) = (premier.annee().janvier(), premier.precedent());
             let manquent = if avant == janvier { titre(avant) } else { format!("{} à {}", titre(janvier), titre(avant)) };
             avert.push(format!(
                 "{} est partielle : le logiciel n'a de paies qu'à partir de {} ; {} manquent. La tranche A et la contribution de {} sont celles des mois lus, pas de l'année.",
@@ -562,8 +559,8 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             regle.to_string()
         };
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an.clone()).n(C::NombreDeMois, mois).d(C::TrancheA, tranche_a).d(C::Taux, taux).d(C::Calcule, calcule).d(C::ContributionDue, du).t(C::Regle, regle);
-        l.t(C::APayer, format!("début {} (inférence : le texte ne dit pas l'année de masse)", annee_entiere(&an)? + 1));
+        l.t(C::Annee, an).n(C::NombreDeMois, mois).d(C::TrancheA, tranche_a).d(C::Taux, taux).d(C::Calcule, calcule).d(C::ContributionDue, du).t(C::Regle, regle);
+        l.t(C::APayer, format!("début {} (inférence : le texte ne dit pas l'année de masse)", an.suivante()?));
         lignes.push(l);
     }
     avert.push("Le FCAP-SVP se paie hors DSN, au FCAP-SVP (ou à l'organisme à qui il délègue la collecte, art. 5.2), en début d'année civile (art. 5.3). Que la tranche A soit celle de l'année écoulée est une inférence, à confirmer sur un appel du FCAP-SVP.".to_string());
@@ -613,12 +610,12 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut par_an: Vec<(String, Montant, Montant)> = Vec::new();
+    let mut par_an: Vec<(Annee, Montant, Montant)> = Vec::new();
     // Un permanent est une nature MENSUELLE du catalogue des contrats.
     let mensuelles: Vec<String> = droit::natures::natures().map_err(|e| e.reclasser(Classe::Refuse))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
         let Some(brut) = l.brut else { continue };
-        let an = format!("{:04}", l.mois.annee());
+        let an = l.mois.annee();
         let i = match par_an.iter().position(|(a, _, _)| *a == an) {
             Some(i) => i,
             None => {
@@ -634,7 +631,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     par_an.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes = Vec::new();
     for (an, masse, masse_permanents) in par_an {
-        let Some(hb) = hors_bulletin(ctx, annee_entiere(&an)?, &idcc)? else {
+        let Some(hb) = hors_bulletin(ctx, an, &idcc)? else {
             return Err(socle::echec::cle(format!("Le barème {} ne porte pas les contributions Afdas de la {}.", an, idcc), &format!("par_convention.{}.hors_bulletin", idcc))
                 .reclasser(Classe::Refuse));
         };
@@ -651,7 +648,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             .par_effectif;
         // LE TAUX DES PERMANENTS SE LIT A L'EFFECTIF DE L'ANNEE (retours de nature 118) : sans lui, il ne se devine pas
         // (regle 1) ; sans masse de permanents, il n'y a rien a calculer.
-        let taux_p = match ctx.effectif()?.valeur(annee_entiere(&an)?) {
+        let taux_p = match ctx.effectif()?.valeur(an) {
             Some(eff) => Some(
                 tranches
                     .iter()
@@ -672,14 +669,14 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             None => Montant::ZERO,
         };
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an.clone())
+        l.t(C::Annee, an)
             .d(C::Masse, masse.decimal())
             .d(C::MassePermanents, masse_permanents.decimal())
             .d(C::Cpnef, cpnef.decimal())
             .od(C::TauxPermanents, taux_p.map(Taux::decimal))
             .d(C::Permanents, permanents.decimal());
         l.d(C::TotalHt, (cpnef + permanents).decimal());
-        l.t(C::APayer, format!("avant le 28/02/{}, à l'Afdas (Globaldec')", annee_entiere(&an)? + 1));
+        l.t(C::APayer, format!("avant le 28/02/{}, à l'Afdas (Globaldec')", an.suivante()?));
         lignes.push(l);
     }
     if idcc == IDCC_1790 {
@@ -724,14 +721,14 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
     // La masse de chaque annee : la somme de ses bruts, a partir de zero au centime.
-    let mut par_an: std::collections::BTreeMap<String, Montant> = std::collections::BTreeMap::new();
+    let mut par_an: std::collections::BTreeMap<Annee, Montant> = std::collections::BTreeMap::new();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
         let Some(brut) = l.brut else { continue };
-        *par_an.entry(format!("{:04}", l.mois.annee())).or_insert(Montant::ZERO) += brut;
+        *par_an.entry(l.mois.annee()).or_insert(Montant::ZERO) += brut;
     }
     let mut lignes = Vec::new();
     for (an, masse) in par_an {
-        let f = hors_bulletin(ctx, annee_entiere(&an)?, &idcc)?.and_then(|h| h.financement_paritarisme);
+        let f = hors_bulletin(ctx, an, &idcc)?.and_then(|h| h.financement_paritarisme);
         let Some(f) = f else {
             return Err(socle::echec::cle(
                 format!("La convention {} n'a pas de paritarisme annuel hors DSN dans le barème {}.", idcc, an),
@@ -748,7 +745,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             m = plus_petit(m, pl);
         }
         // A qui payer, si la couche le dit.
-        let a_payer: String = std::iter::once(format!("en {}", annee_entiere(&an)? + 1))
+        let a_payer: String = std::iter::once(format!("en {}", an.suivante()?))
             .chain(f.collecteur.iter().filter(|c| !c.is_empty()).map(|c| format!(", à {}", c)))
             .collect();
         if let Some(a) = f.avertissement.clone().filter(|a| !a.is_empty()) {
@@ -757,7 +754,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         }
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an.clone()).d(C::Masse, masse.decimal()).d(C::Taux, taux.decimal()).d(C::Montant, m.decimal()).t(C::APayer, a_payer);
+        l.t(C::Annee, an).d(C::Masse, masse.decimal()).d(C::Taux, taux.decimal()).d(C::Montant, m.decimal()).t(C::APayer, a_payer);
         lignes.push(l);
     }
     avert.push("Assiette : le brut du livre de paie, tous salariés. Le texte parle de masse salariale ou de masse déclarée en retraite complémentaire : pour une compagnie du spectacle, c'est le même brut.".to_string());

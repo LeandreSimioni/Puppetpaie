@@ -246,8 +246,8 @@ pub fn plafonds_franchise(bar: Option<&droit::forme_bareme::Pile>) -> Option<(De
 /// La question des plafonds pour les remunerations de `annee` (le chiffre d'affaires de `annee - 1`), depuis le bareme
 /// de `annee` (`bar`, `None` s'il n'y en a pas). Un bareme sans plafonds ne fait pas refuser : la question se pose sans
 /// montants, et le dit ; une date d'entree en vigueur qui ne se lit pas refuse.
-pub fn question_franchise(bar: Option<&droit::forme_bareme::Pile>, annee: i32) -> R<QuestionFranchise> {
-    let avant = annee - 1;
+pub fn question_franchise(bar: Option<&droit::forme_bareme::Pile>, annee: socle::mois::Annee) -> R<QuestionFranchise> {
+    let avant = annee.precedente()?;
     let pf = bar.and_then(|b| b.taxe_sur_les_salaires.as_ref()).map(|t| &t.plafonds_franchise);
     let lus = plafonds_franchise(bar);
     let Some((services, total)) = lus else {
@@ -264,7 +264,7 @@ art. 293 B) : ils se lisent dans cet article, pour le chiffre d'affaires de {}. 
     };
     // Une version de 293 B entree en vigueur en cours d'annee se dit (2025 : le 01/03).
     let vigueur = pf.map(|pf| pf.en_vigueur_depuis);
-    let depuis = if let Some(j) = vigueur.filter(|j| j.an == annee && (j.mois, j.jour) != (1, 1)) {
+    let depuis = if let Some(j) = vigueur.filter(|j| j.annee() == annee && *j != annee.premier_jour()) {
         format!(", en vigueur depuis le {}", j.jj_mm_aaaa())
     } else {
         String::new()

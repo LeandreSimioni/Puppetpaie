@@ -505,12 +505,12 @@ fn nombre_fr(x: Decimal, decimales: Option<u32>) -> String {
 /// Les donnees que les gabarits lisent : le socle livre de l'annee (lu au 1er janvier, a la premiere valeur qu'un
 /// gabarit lui demande), les minima.
 struct Donnees {
-    annee: i32,
+    annee: socle::mois::Annee,
     bareme: OnceCell<Option<Pile>>,
 }
 
 impl Donnees {
-    fn de_l_annee(annee: i32) -> Donnees {
+    fn de_l_annee(annee: socle::mois::Annee) -> Donnees {
         Donnees { annee, bareme: OnceCell::new() }
     }
 
@@ -695,7 +695,7 @@ fn du_jour(ctx: &Contexte, decalage: Option<i64>) -> R<Option<ConseilVu>> {
     }
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(jour.an);
+    let d = Donnees::de_l_annee(jour.annee());
     let liste = generaux(&b, &d)?;
     let n = liste.len();
     if n == 0 {
@@ -880,7 +880,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         return Ok(out);
     }
     let b = banque()?;
-    let d = Donnees::de_l_annee(ctx.aujourdhui.an);
+    let d = Donnees::de_l_annee(ctx.aujourdhui.annee());
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     // Le mois de chaque salarie, chez nous : ses heures (cachets a 12 h) et ses cachets, toutes ses paies de l'ecran.
     let mut du_mois: HashMap<String, (Heures, Cachets)> = HashMap::new();
@@ -1084,7 +1084,7 @@ fn du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> R<Vec<Conseil
 fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::fiche::FicheSalarie) -> R<Vec<ConseilVu>> {
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(jour.an);
+    let d = Donnees::de_l_annee(jour.annee());
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
@@ -1174,7 +1174,7 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
     }
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(jour.an);
+    let d = Donnees::de_l_annee(jour.annee());
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;

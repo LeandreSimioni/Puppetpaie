@@ -341,11 +341,11 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     let lus = crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?;
     let clos = lus.clos();
     let mois_tous: Vec<socle::mois::Mois> = mois_connus(&ctx.racine)?.into_iter().map(|(m, _)| m).collect();
-    let mut annees: BTreeSet<socle::mois::Annee> = mois_tous.iter().map(|m| m.annee_civile()).collect();
+    let mut annees: BTreeSet<socle::mois::Annee> = mois_tous.iter().map(|m| m.annee()).collect();
     annees.extend(clos.keys().copied());
     let mut out = Vec::new();
     for &a in annees.iter().rev() {
-        let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| x.annee_civile() == a).copied().collect();
+        let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| x.annee() == a).copied().collect();
         mois.sort();
         let fichier = const { documents::etats_paie::NomDExport::autour(documents::SorteDePieceProduite::Compta.prefixe(), ".csv") }.de(&a.into());
         let chemin = documents::DossierHorsDuMois::Exercices.sous(&ctx.racine).join(&fichier);

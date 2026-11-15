@@ -134,7 +134,7 @@ fn table_boss() -> std::path::PathBuf {
 /// le bareme livre du moteur (`logiciel/donnees/baremes/<annee>.json`, `plafond_securite_sociale`, qui cite sa
 /// source), sinon la table des parametres du BOSS deposee (`table_boss`), sinon refus -- l'annee manque, on ne
 /// l'invente pas.
-fn pss(annee: i32) -> R<droit::plafond::Pss> {
+fn pss(annee: socle::mois::Annee) -> R<droit::plafond::Pss> {
     let lu = |m: Decimal, h: Decimal| droit::plafond::Pss { mensuel: Montant::du_decimal(m), horaire: socle::grandeurs::MontantUnitaire::du_decimal(h) };
     if let Some(p) = droit::contexte::socle_livre_lu(annee)?.and_then(|pile| pile.plafond_securite_sociale) {
         return Ok(droit::plafond::Pss { mensuel: p.mensuel, horaire: p.horaire });
@@ -1028,22 +1028,22 @@ pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) ->
     let mut ordre: Vec<usize> = (0..desc.bulletins.len()).collect();
     ordre.sort_by_key(|&k| (desc.bulletins[k].fin, desc.bulletins[k].debut, k));
     // Les cumuls de l'annee de chaque salarie, qui partent de rien a son premier bulletin de l'annee.
-    let mut cumuls: HashMap<(usize, i32), Cumuls> = HashMap::new();
-    let mut numeros: HashMap<i32, usize> = HashMap::new();
+    let mut cumuls: HashMap<(usize, socle::mois::Annee), Cumuls> = HashMap::new();
+    let mut numeros: HashMap<socle::mois::Annee, usize> = HashMap::new();
     let mut pages = Vec::new();
     for k in ordre {
         let b = &desc.bulletins[k];
         // Le premier bulletin de l'annee part de cumuls nuls.
-        let annee = cumuls.entry((b.salarie, b.fin.an)).or_insert_with(|| {
+        let annee = cumuls.entry((b.salarie, b.fin.annee())).or_insert_with(|| {
             let z = Decimal::ZERO;
             Cumuls { cachets: Cachets::ZERO, heures: Heures::ZERO, jours: Jours::ZERO, brut: z, plafond: z, cout: z, net_imposable: z, pas: z }
         });
         let c = calculer(b, annee)?;
         *annee = c.annee.clone();
         // CoolPaie numerote ses bulletins dans l'annee : `k/annee`.
-        let n = numeros.entry(b.fin.an).or_insert(0);
+        let n = numeros.entry(b.fin.annee()).or_insert(0);
         *n += 1;
-        let numero = format!("{}/{}", n, b.fin.an);
+        let numero = format!("{}/{}", n, b.fin.annee());
         let page = if desc.gabarit == Gabarit::Coolpaie { page_coolpaie(&desc, b, &c, numero)? } else { page_spaiectacle(&desc, b, &c)? };
         let s = &desc.salaries[b.salarie];
         let nom = format!("{}-{:02}-{}-{:03}.pdf", b.fin.an, b.fin.mois, s.code, b.rang);

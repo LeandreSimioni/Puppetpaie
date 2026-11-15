@@ -335,7 +335,7 @@ struct Memoire {
     quoi: String,
     le: Jour,
     mois_faits: BTreeMap<Mois, EmpreinteCourte>,
-    annees_faites: BTreeSet<i32>,
+    annees_faites: BTreeSet<Annee>,
     dernier: Option<DernierRattrapage>,
 }
 
@@ -379,9 +379,9 @@ enum Geste {
     /// Les documents du mois aux salaries.
     Documents { mois: Mois },
     /// L'exercice `annee` se clot.
-    Cloture { annee: i32 },
+    Cloture { annee: Annee },
     /// L'exercice `annee` s'exporte pour la comptabilite.
-    Export { annee: i32 },
+    Export { annee: Annee },
     /// Un pas que le moteur empeche de regarder : son refus se dit, a l'instant ou l'horloge joue.
     Empeche { refus: Echec },
 }
@@ -447,7 +447,7 @@ fn rattraper_l_horloge(racine: &Path, d: HorlogeFictive, aujourdhui: Option<Jour
         }
     }
     // Les annees depuis le premier mois saisi ; aucune sans saisie.
-    let annees: Vec<i32> = saisis.first().map(|premier| premier.annee()).into_iter().flat_map(|debut| debut..=jour.an).filter(|a| !annees_faites.contains(a)).collect();
+    let annees: Vec<Annee> = saisis.first().map(|premier| premier.annee()).into_iter().flat_map(|debut| debut.jusqu_a(jour.annee())).filter(|a| !annees_faites.contains(a)).collect();
     for annee in &annees {
         les_pas_de_l_annee(*annee, jour, &mut calendrier)?;
     }
@@ -473,7 +473,7 @@ fn rattraper_l_horloge(racine: &Path, d: HorlogeFictive, aujourdhui: Option<Jour
         }
     }
     for annee in annees {
-        if annee_finie(&d, annee - 1)? {
+        if annee_finie(&d, annee.precedente()?)? {
             annees_faites.insert(annee);
         }
     }
@@ -599,12 +599,12 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
 }
 
 /// FIN JANVIER DE `annee`, l'annee d'avant se clot a 10 h, puis s'exporte pour la comptabilite a 11 h.
-fn les_pas_de_l_annee(annee: i32, jour: Jour, calendrier: &mut Vec<Pas>) -> R<()> {
-    let fin_janvier = Jour::nouveau(annee, 1, 31).ok_or_else(|| erreur(Classe::Illisible, "date impossible"))?;
+fn les_pas_de_l_annee(annee: Annee, jour: Jour, calendrier: &mut Vec<Pas>) -> R<()> {
+    let fin_janvier = annee.janvier().dernier_jour();
     if jour < fin_janvier {
         return Ok(());
     }
-    let precedente = annee - 1;
+    let precedente = annee.precedente()?;
     calendrier.push(Pas { quand: a_l_heure(fin_janvier, 10, 0)?, quoi: format!("exercice {} clos", precedente), geste: Geste::Cloture { annee: precedente } });
     calendrier.push(Pas {
         quand: a_l_heure(fin_janvier, 11, 0)?,
@@ -819,8 +819,8 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             fait
         }
         Geste::Cloture { annee } => pas(d, quoi, quand, |ctx| {
-            let annee = Annee::nouvelle(i64::from(*annee))?;
-            let a_des_paies = engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee_civile() == annee);
+            let annee = *annee;
+            let a_des_paies = engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee() == annee);
             if Moteur::nouveau(ctx).exercice_clos(annee)? || !a_des_paies {
                 return Ok(Joue::Rien);
             }
@@ -829,7 +829,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         }),
         Geste::Empeche { refus } => non_joue(quand, quoi, refus),
         Geste::Export { annee } => pas(d, quoi, quand, |ctx| {
-            let annee = Annee::nouvelle(i64::from(*annee))?;
+            let annee = *annee;
             if !Moteur::nouveau(ctx).exercice_clos(annee)? || crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, annee)? {
                 return Ok(Joue::Rien);
             }
@@ -1000,13 +1000,17 @@ fn mois_fait(ctx: &Contexte, mois: socle::mois::Mois, jour: Jour) -> R<bool> {
 
 /// L'annee `annee` est-elle finie pour l'horloge : passee fin janvier de l'annee d'apres, et close et exportee, ou sans
 /// aucun mois dans le logiciel.
-fn annee_finie(d: &HorlogeFictive, annee: i32) -> R<bool> {
-    if Jour::nouveau(annee + 1, 1, 31).is_none_or(|f| d.jour < f) {
+fn annee_finie(d: &HorlogeFictive, annee: Annee) -> R<bool> {
+    // L'an 9999 n'a pas d'annee d'apres : il ne finit pas.
+    let fin_janvier = match annee.suivante() {
+        Ok(s) => s.janvier().dernier_jour(),
+        Err(_) => return Ok(false),
+    };
+    if d.jour < fin_janvier {
         return Ok(false);
     }
     let ctx = d.contexte()?;
-    let annee = Annee::nouvelle(i64::from(annee))?;
-    if !engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee_civile() == annee) {
+    if !engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee() == annee) {
         return Ok(true);
     }
     Ok(Moteur::nouveau(&ctx).exercice_clos(annee)? && crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, annee)?)

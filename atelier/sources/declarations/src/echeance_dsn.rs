@@ -75,7 +75,7 @@ pub fn non_ouvre(j: &Jour) -> R<Option<String>> {
         6 => return Ok(Some("dimanche".into())),
         _ => {}
     }
-    Ok(socle::feries::feries(j.an)?.into_iter().find(|(d, _)| d == j).map(|(_, nom)| format!("{}, fête légale", nom)))
+    Ok(socle::feries::feries(j.annee())?.into_iter().find(|(d, _)| d == j).map(|(_, nom)| format!("{}, fête légale", nom)))
 }
 
 /// `nominale`, reportee au premier jour ouvre qui la suit si elle n'en est pas un (R. 133-14, I ; inferences 1 et 2).
@@ -93,7 +93,7 @@ pub fn reporter(nominale: Jour) -> R<Echeance> {
 /// au premier jour ouvre.
 pub fn du_mois(mois: Mois, jour_du_mois: u32) -> R<Echeance> {
     let suivant = mois.suivant();
-    let nominale = suivant.jour(jour_du_mois).ok_or_else(|| refus(socle::date::jour_impossible(suivant.annee(), suivant.numero(), jour_du_mois)))?;
+    let nominale = suivant.jour_exige(jour_du_mois)?;
     reporter(nominale)
 }
 
@@ -129,8 +129,7 @@ impl Echeance {
     /// nominale (le 5 ou le 15 du mois suivant), soit le meme jour du mois declare ; le cahier ne dit pas d'ou il se
     /// compte. Avant ce jour, la DSN est a venir.
     pub fn premier_depot(&self) -> R<Jour> {
-        let (an, mois) = if self.nominale.mois == 1 { (self.nominale.an - 1, 12) } else { (self.nominale.an, self.nominale.mois - 1) };
-        Jour::nouveau(an, mois, self.nominale.jour).ok_or_else(|| refus(socle::date::jour_impossible(an, mois, self.nominale.jour)))
+        self.nominale.mois_civil().precedent().jour_exige(self.nominale.jour)
     }
 
     /// Pourquoi la date a bouge, ou `None`.

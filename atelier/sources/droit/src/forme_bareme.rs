@@ -19,6 +19,7 @@ use serde::Deserialize;
 use socle::forme::Court;
 use socle::grandeurs::{Coefficient, HeuresParUnite, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
+use socle::mois::Annee;
 
 /// Les notes d'une valeur, communes a chaque type : elles ne se lisent pas au calcul.
 macro_rules! forme {
@@ -219,7 +220,8 @@ pub(crate) mod datee {
 forme! {
     /// LA PILE APPLIQUEE.
     pub struct Pile {
-        pub annee: i32,
+        #[serde(with = "socle::mois::en_nombre")]
+        pub annee: Annee,
         pub quoi: Option<String>,
         pub smic_horaire: Vec<Datee>,
         pub heures_par_cachet: HeuresParUnite,
@@ -1369,8 +1371,10 @@ forme! {
     /// par leur `id` ou leur code (`code81` ou `code81:affectation`). Le moteur la lit, il ne l'ecrit pas ; le taux AT/MP
     /// est dans la fiche entreprise (`fiche::ChampsEntreprise::taux_atmp`).
     pub struct Surcouche {
-        pub annee: i32,
-        pub socle: i32,
+        #[serde(with = "socle::mois::en_nombre")]
+        pub annee: Annee,
+        #[serde(with = "socle::mois::en_nombre")]
+        pub socle: Annee,
         pub quoi: Option<String>,
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
@@ -1557,7 +1561,7 @@ const SOCLE_ILLISIBLE: &str = "Le barème de l'année porte une clé ou une vale
 /// `contexte::controler_organisation_patronale`).
 pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&OrganisationPatronale>) -> socle::echec::R<(Pile, Vec<socle::date::Jour>)> {
     let cle = match organisation {
-        Some(o) => socle_seul(fichier, jour.an)?.organisation(o).map(|(k, _)| k.clone()),
+        Some(o) => socle_seul(fichier, jour.annee())?.organisation(o).map(|(k, _)| k.clone()),
         None => None,
     };
     lire_au(fichier, jour, cle.as_ref(), SOCLE_ILLISIBLE)
@@ -1566,13 +1570,13 @@ pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour,
 /// LE SOCLE LIVRE `fichier` LU SEUL au 1er janvier de `an`, sans organisation, garde tant que le fichier ne change pas :
 /// ce contre quoi une organisation patronale se reconnait (`Pile::organisation`) avant que le bareme se lise avec elle,
 /// et sans le taux AT/MP de la compagnie.
-pub(crate) fn socle_seul(fichier: &std::path::Path, an: i32) -> socle::echec::R<std::sync::Arc<Pile>> {
+pub(crate) fn socle_seul(fichier: &std::path::Path, an: Annee) -> socle::echec::R<std::sync::Arc<Pile>> {
     type Cache = std::sync::Mutex<std::collections::HashMap<String, socle::fichiers::Notee<std::sync::Arc<Pile>>>>;
     static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
     let cle = format!("{}|{:?}|{}", fichier.display(), socle::fichiers::signature(fichier)?, an);
     socle::fichiers::garde_notee(cache, cle, || {
-        let jour = socle::date::Jour::nouveau(an, 1, 1).ok_or_else(|| socle::refus!("Année {} hors du calendrier.", an))?;
+        let jour = an.premier_jour();
         Ok(std::sync::Arc::new(lire_au(fichier, &jour, None, SOCLE_ILLISIBLE)?.0))
     })
 }

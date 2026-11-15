@@ -10,7 +10,7 @@ use crate::contexte::{Contexte, IdSalarie};
 use crate::fiche::{Lue, TauxPas};
 use crate::forme_bareme::{GrillePas, PasParDefaut, Pile};
 use crate::type_taux_pas::TypeDeTauxPas;
-use socle::date::{jours_du_mois, Jour};
+use socle::date::Jour;
 use socle::mois::Mois;
 use socle::fichiers::{repr, LectureDatee, ValeurLue};
 use crate::contexte::CleLue;
@@ -186,7 +186,7 @@ pub struct Triplet {
 /// mis a disposition le 10 fevrier, il est « valide jusqu'au 30 avril »
 /// (BOI-IR-PAS-30-10-20, § 70, `atelier/reference/sources/bofip/
 /// BOI-IR-PAS-30-10-20-20181203.html`).
-pub const VALIDITE_MOIS: u32 = 2;
+pub const VALIDITE_MOIS: i32 = 2;
 
 /// Le jour de la mise a disposition d'un taux recu (`mis_a_disposition`, AAAAMMJJHHMMSS) : d'ou court sa validite.
 pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {
@@ -196,9 +196,11 @@ pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {
 /// Dernier jour ou ce taux est celui du salarie ; `None` si on ne sait pas.
 pub fn fin_de_validite(e: &TauxPas) -> Option<Jour> {
     let debut = mise_a_disposition(e)?;
-    let mois = debut.mois + VALIDITE_MOIS;
-    let (an, m) = (debut.an + ((mois - 1) / 12) as i32, (mois - 1) % 12 + 1);
-    Jour::nouveau(an, m, jours_du_mois(an, m))
+    // Au-dela de 9999, aucune fin de validite ne se sait.
+    match debut.mois_civil().plus(VALIDITE_MOIS) {
+        Ok(m) => Some(m.dernier_jour()),
+        Err(_) => None,
+    }
 }
 
 /// Un taux qu'on ne sait pas dater est traite comme perime ; le bareme (tout

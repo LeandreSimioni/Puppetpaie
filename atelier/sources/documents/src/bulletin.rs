@@ -344,7 +344,7 @@ pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::S
     let libelle = if idcc == droit::fiche::IDCC_1734 {
         "Artistes-interprètes engagés pour des émissions de télévision".to_string()
     } else {
-        droit::bareme::libelle_convention(&idcc, jour.an)?
+        droit::bareme::libelle_convention(&idcc, jour.annee())?
     };
     Ok((idcc, libelle))
 }

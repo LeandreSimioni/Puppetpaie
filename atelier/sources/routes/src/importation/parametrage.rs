@@ -33,7 +33,10 @@ fn libelle_de(l: &Ligne) -> Option<String> {
 /// ce qui s'est inscrit, ou pourquoi rien, en phrases.
 fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
     for (an, (mois, code, taux)) in &lecture.atmp {
-        let (Some(janvier), true) = (socle::date::Jour::nouveau(*an, 1, 1), *an <= ctx.aujourdhui.an) else { continue };
+        if *an > ctx.aujourdhui.annee() {
+            continue;
+        }
+        let janvier = an.premier_jour();
         if ctx.entreprise_au(&janvier).taux_atmp.and_then(|t| t.depuis).is_some_and(|d| d >= janvier) {
             continue;
         }
@@ -61,9 +64,9 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
         });
     }
     // L'annee en cours : le taux collectif de l'arrete pour un risque « TC », comme a l'ouverture.
-    match crate::atmp::inscrire_l_arrete(ctx, ctx.aujourdhui.an) {
+    match crate::atmp::inscrire_l_arrete(ctx, ctx.aujourdhui.annee()) {
         Ok(dits) => faits.extend(dits),
-        Err(e) => faits.push(format!("Accidents du travail {} : le taux collectif de l'arrêté ne s'inscrit pas. {}", ctx.aujourdhui.an, e.phrase)),
+        Err(e) => faits.push(format!("Accidents du travail {} : le taux collectif de l'arrêté ne s'inscrit pas. {}", ctx.aujourdhui.annee(), e.phrase)),
     }
 }
 

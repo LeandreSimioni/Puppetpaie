@@ -848,8 +848,7 @@ fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: 
 }
 
 /// L'effectif de l'annee `an` est-il celui que la compagnie a dit (`dit_le`), et non celui d'un 118 ?
-pub fn effectif_dit_par_la_compagnie(racine: &Path, an: i32) -> R<bool> {
-    let an = Annee::nouvelle(i64::from(an))?;
+pub fn effectif_dit_par_la_compagnie(racine: &Path, an: Annee) -> R<bool> {
     Ok(dits(effectifs_lus(racine)?.as_ref()).iter().any(|(a, _)| *a == an))
 }
 
@@ -909,10 +908,10 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`, « L'effectif au sens de la sécurité sociale ») :
 /// une compagnie venue d'un autre logiciel n'a pas les 118 de ses annees passees. `Ok(false)` : un 118 de cette annee
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
-pub fn poser_effectif(racine: &Path, an: i32, valeur: Decimal, le: Jour) -> R<bool> {
+pub fn poser_effectif(racine: &Path, an: Annee, valeur: Decimal, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
     let mut annees: EffectifsParAnnee = existant.iter().flat_map(|f| f.annees.iter()).map(|(an, c)| (*an, c.clone())).collect();
-    let codes = annees.entry(Annee::nouvelle(i64::from(an))?).or_default();
+    let codes = annees.entry(an).or_default();
     if codes.get(&TypeDeParametreNeores::EffectifMoyen).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);
     }

@@ -281,8 +281,11 @@ pub struct PaieCs {
 
 /// Les 31 mars strictement traverses par un contrat.
 fn bornes_31_mars(debut: Jour, fin: Jour) -> Vec<Jour> {
-    (debut.an..=fin.an)
-        .filter_map(|an| Jour::nouveau(an, 3, 31))
+    debut
+        .annee()
+        .jusqu_a(fin.annee())
+        .into_iter()
+        .filter_map(|an| an.jour(3, 31))
         .filter(|b| debut <= *b && *b < fin)
         .collect()
 }

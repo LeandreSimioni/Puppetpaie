@@ -266,8 +266,8 @@ impl Periode {
         match (mois, annee, toutes) {
             (Some(m), None, false) => Ok(Periode::Mois(m)),
             (None, Some(a), false) => {
-                if a.nombre() < 1000 {
-                    return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", a.nombre())));
+                if a < socle::mois::Annee::constante(1000) {
+                    return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", a)));
                 }
                 Ok(Periode::Annee(a))
             }
@@ -453,7 +453,7 @@ pub(crate) fn charger(ctx: &Contexte, mois: Mois) -> R<(engagement::saisie::VueD
 
 /// `numeroter` d'un mois dont les numeros ne sont pas dans l'archive : les compteurs en attente
 /// d'un mois a l'autre restent dans `attente`, comme `Contexte._compteurs_en_attente`.
-fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [Paie], attente: &mut HashMap<i32, i64>) -> R<()> {
+fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [Paie], attente: &mut HashMap<socle::mois::Annee, i64>) -> R<()> {
     Ok(documents::ecrire_documents::numeroter_en_attente(ctx, paies, data.mois.annee(), attente, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?)
 }
 
@@ -630,7 +630,7 @@ fn mois_puppetpaie(
     d: &mut Dossier,
     aujourdhui: &Jour,
     contrats_vus: &mut HashSet<NumeroContrat>,
-    attente: &mut HashMap<i32, i64>,
+    attente: &mut HashMap<socle::mois::Annee, i64>,
 ) -> R<Vec<Page>> {
     let mut pages = Vec::new();
     let mois = &le_mois.to_string();
@@ -1234,7 +1234,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     let ensemble_cats: HashSet<CategorieDeDocument> = cats.iter().copied().collect();
     let mut pages: Vec<Page> = Vec::new();
     let mut contrats_vus: HashSet<NumeroContrat> = HashSet::new();
-    let mut attente: HashMap<i32, i64> = HashMap::new();
+    let mut attente: HashMap<socle::mois::Annee, i64> = HashMap::new();
     for m in engagement::stock::mois_saisis(&ctx.racine)? {
         if p.contient(m) {
             pages.extend(mois_puppetpaie(ctx, m, &ensemble_cles, &ensemble_cats, tmp, &mut d, &aujourdhui, &mut contrats_vus, &mut attente)?);

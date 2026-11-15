@@ -28,6 +28,7 @@ use envois::journal;
 use envois::ligne_d_envoi::{noter, par_courriel};
 use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
+use socle::mois::Annee;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::grandeurs::Montant;
 use socle::ecriture::ecrire_json;
@@ -343,15 +344,16 @@ const OU_TROUVER_L_EFFECTIF: &str =
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`) ; il ne se dit qu'une annee finie. Sans
 /// `annee` : les annees qui manquent pour payer cette annee (`Effectif::a_dire`).
 fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
-    let an_paie = ctx.aujourdhui.an;
+    let an_paie = ctx.aujourdhui.annee();
     // Les annees qui manquent : celles des seuils (`Effectif::a_dire`), et celle d'avant quand la paie la lit elle-meme et
     // ne la connait pas (le FNAS de la CCNEAC sans CSE dit) : ce que « Pour démarrer » demande (`demarrage::manques`).
-    let a_dire = |ctx: &Contexte| -> R<Vec<i32>> {
+    let a_dire = |ctx: &Contexte| -> R<Vec<Annee>> {
         let e = ctx.effectif()?;
         let mut v = e.a_dire(an_paie);
         let demande = declarations::demarrage::effectif_a_dire(ctx)?;
-        if demande && e.valeur(an_paie).is_none() && !v.contains(&(an_paie - 1)) {
-            v.push(an_paie - 1);
+        let avant = an_paie.precedente()?;
+        if demande && e.valeur(an_paie).is_none() && !v.contains(&avant) {
+            v.push(avant);
             v.sort();
         }
         Ok(v)
@@ -364,7 +366,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
             format!(
                 "Pour payer en {}, il manque l'effectif de {}. {}",
                 an_paie,
-                manquent.iter().map(i32::to_string).collect::<Vec<_>>().join(", "),
+                manquent.iter().map(Annee::to_string).collect::<Vec<_>>().join(", "),
                 OU_TROUVER_L_EFFECTIF
             )
         };
@@ -410,7 +412,8 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeEffectif {
-    annee: Option<i32>,
+    #[serde(default, with = "socle::mois::en_nombre::option")]
+    annee: Option<Annee>,
     valeur: Option<droit::fiche::NombreDeFiche>,
 }
 
@@ -419,11 +422,13 @@ struct ChargeEffectif {
 #[derive(Debug, serde::Serialize)]
 struct EffectifDit {
     phrase: String,
-    annee: Option<i32>,
+    #[serde(with = "socle::mois::en_nombre::option")]
+    annee: Option<Annee>,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     valeur: Option<socle::num::Decimal>,
     source: Option<&'static str>,
-    a_dire: Vec<i32>,
+    #[serde(with = "socle::mois::en_nombre::liste")]
+    a_dire: Vec<Annee>,
 }
 
 // ------------------------------------------------------------------ permanents
@@ -521,7 +526,7 @@ pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdS
 /// lui que « Pour démarrer » demande (`Effectif::a_dire`).
 fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &ChampsEntreprise) -> R<(bool, bool)> {
     let (jour, eff) = (ctx.aujourdhui, ctx.effectif()?);
-    let (cse, cinquante) = (eff.cse(jour.an), eff.cinquante(jour.an));
+    let (cse, cinquante) = (eff.cse(jour.annee()), eff.cinquante(jour.annee()));
     let Some(cse) = cse else { return Ok((false, false)) };
     let lue = cinquante.is_some() || ctx.contribution_par_representation(&jour)?;
     let Some(cinquante) = cinquante else { return Ok((lue, false)) };
@@ -598,7 +603,8 @@ fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeTaxeSurLesSalaires {
     taxe_sur_les_salaires: Option<droit::fiche::TaxeSurLesSalaires>,
-    annee: Option<i64>,
+    #[serde(default, with = "socle::mois::en_nombre::option")]
+    annee: Option<Annee>,
 }
 
 /// Les plafonds de la franchise en base de TVA, au bareme de l'annee.
@@ -625,7 +631,8 @@ struct Franchise {
     aide: String,
     choix: ChoixDeLaFranchise,
     plafonds: Option<PlafondsDeLaFranchise>,
-    annee: i32,
+    #[serde(with = "socle::mois::en_nombre")]
+    annee: Annee,
 }
 
 /// Ce que rend `taxe-sur-les-salaires-regime` : la phrase (la consequence), la question de la franchise, les cases a
@@ -653,13 +660,13 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
     // LES PLAFONDS DE LA FRANCHISE, CHIFFRES : ceux du bareme de l'annee des salaires -- `annee` dans la
     // charge, sinon l'annee en cours. Une annee sans socle livre ne fait pas refuser : la question se pose sans montants.
     let annee = match charge.annee {
-        None => ctx.aujourdhui.an,
-        Some(a) if (1900..=2999).contains(&a) => a as i32,
+        None => ctx.aujourdhui.annee(),
+        Some(a) if (Annee::constante(1900)..=Annee::constante(2999)).contains(&a) => a,
         Some(a) => return Err(erreur(Classe::Illisible, socle::date::annee_impossible(a))),
     };
-    let bar = match (socle::date::Jour::nouveau(annee, 1, 1), droit::contexte::socle_livre_lu(annee)?) {
-        (Some(j), Some(_)) => Some(ctx.bareme(&j)?),
-        _ => None,
+    let bar = match droit::contexte::socle_livre_lu(annee)? {
+        Some(_) => Some(ctx.bareme(&annee.premier_jour())?),
+        None => None,
     };
     let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
     // La conclusion nomme les deux plafonds.
@@ -1369,7 +1376,8 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i6
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCouts {
-    annee: i32,
+    #[serde(with = "socle::mois::en_nombre")]
+    annee: Annee,
 }
 
 /// Le cout d'un spectacle ou d'un salarie (`documents::fiche_recapitulative::Cout`), et sa ligne telle que sa fiche la
@@ -1399,7 +1407,7 @@ dites!(EffectifDit, CoutsDits, DemandeOubliee);
 /// `couts` : le cout de l'annee, au jour du contexte (`documents::fiche_recapitulative::Recapitulatifs::couts_de_l_annee`).
 fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     use socle::texte::euros;
-    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(socle::mois::Annee::nouvelle(i64::from(c.annee))?), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
     let couts = r.couts_de_l_annee()?;
     let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins as usize, "bulletin", "bulletins");
     // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.

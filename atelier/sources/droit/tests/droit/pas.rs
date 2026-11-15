@@ -59,19 +59,19 @@ struct AbattementDate {
 /// La pile d'un bareme au jour `le`, pour ce que le PAS en lit : l'abattement resolu a ce jour (la derniere valeur dont
 /// le `depuis` ne le depasse pas, toutes sans jour), comme `Contexte::bareme` le resout.
 fn pile(b: Bareme, le: Option<Jour>) -> Pile {
-    let socle = |an: i32| -> SocleDuPas { lire(&code_livre(), &format!("baremes/{}.json", an)) };
+    let socle = |an: socle::mois::Annee| -> SocleDuPas { lire(&code_livre(), &format!("baremes/{}.json", an)) };
     let section = match b {
         Bareme::Vide => None,
         Bareme::SansGrille => Some(PasParDefaut::default()),
         Bareme::Brut2025 | Bareme::Brut2026 => {
-            let s = socle(if b == Bareme::Brut2025 { 2025 } else { 2026 }).pas_taux_par_defaut;
+            let s = socle(socle::mois::Annee::constante(if b == Bareme::Brut2025 { 2025 } else { 2026 })).pas_taux_par_defaut;
             let mut vues: Vec<&AbattementDate> = s.abattement_contrats_courts.iter().filter(|e| le.is_none_or(|l| e.depuis <= l)).collect();
             vues.sort_by_key(|e| e.depuis);
             Some(PasParDefaut { abattement_contrats_courts: vues.last().map(|e| GrandeurDatee(socle::grandeurs::Montant::du_decimal(e.valeur.0))), grilles: s.grilles, ..PasParDefaut::default() })
         }
     };
     // Le reste de la pile est celui d'un socle livre : le PAS n'en lit que sa section.
-    let livre: Pile = droit::contexte::socle_livre_lu(2026).unwrap_or_else(|e| panic!("{}", e.phrase)).expect("le socle 2026 est livré");
+    let livre: Pile = droit::contexte::socle_livre_lu(socle::mois::Annee::constante(2026)).unwrap_or_else(|e| panic!("{}", e.phrase)).expect("le socle 2026 est livré");
     Pile { pas_taux_par_defaut: section, ..livre }
 }
 

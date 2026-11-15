@@ -7,6 +7,7 @@
 //! `Jours` : la date et le nom de chaque jour, dans l'ordre du fichier livre.
 
 use crate::date::Jour;
+use crate::mois::Annee;
 use crate::fichiers::{forme_en_cache, FormeGardee};
 use crate::echec::{refus, R};
 use serde::Deserialize;
@@ -105,8 +106,8 @@ fn inserer(out: &mut Jours, jour: Jour, nom: &str) {
 }
 
 /// Le dimanche de Paques (Meeus, comput gregorien).
-pub fn paques(annee: i32) -> R<Jour> {
-    let an = annee as i64;
+pub fn paques(annee: Annee) -> R<Jour> {
+    let an = i64::from(annee.nombre());
     let a = an.rem_euclid(19);
     let (b, c) = (an.div_euclid(100), an.rem_euclid(100));
     let (d_, e) = (b.div_euclid(4), b.rem_euclid(4));
@@ -121,13 +122,13 @@ pub fn paques(annee: i32) -> R<Jour> {
 }
 
 /// Les onze fetes legales de l'annee.
-pub fn feries(annee: i32) -> R<Jours> {
+pub fn feries(annee: Annee) -> R<Jours> {
     let mut out = Jours::new();
     let dimanche = paques(annee)?;
     for f in fetes()?.iter() {
         let jour = match f.quand {
             Quand::Paques(ecart) => dimanche.plus_jours(ecart)?,
-            Quand::Fixe { mois, jour } => date_ou_refus(annee as i64, mois, jour)?,
+            Quand::Fixe { mois, jour } => date_ou_refus(i64::from(annee.nombre()), mois, jour)?,
         };
         inserer(&mut out, jour, &f.nom);
     }
@@ -135,7 +136,7 @@ pub fn feries(annee: i32) -> R<Jours> {
 }
 
 /// Ceux que la loi rend chomes : le 1er mai, et lui seul.
-pub fn chomes_de_droit(annee: i32) -> R<Jours> {
+pub fn chomes_de_droit(annee: Annee) -> R<Jours> {
     let fetes = fetes()?;
     let noms: Vec<&str> = fetes.iter().filter(|f| f.chome_de_droit).map(|f| f.nom.as_str()).collect();
     Ok(feries(annee)?.into_iter().filter(|(_, n)| noms.contains(&n.as_str())).collect())
@@ -146,7 +147,7 @@ pub const TOUS: &str = "tous";
 
 /// Les feries chomes dans cette entreprise, cette annee. `dits` : ce que sa fiche en dit (`jours_feries_chomes` : `tous`,
 /// `1er mai seulement`) ; rien de dit, le plancher legal.
-pub fn chomes(annee: i32, dits: Option<&str>) -> R<Jours> {
+pub fn chomes(annee: Annee, dits: Option<&str>) -> R<Jours> {
     match dits {
         Some(TOUS) => feries(annee),
         _ => chomes_de_droit(annee),
@@ -156,7 +157,7 @@ pub fn chomes(annee: i32, dits: Option<&str>) -> R<Jours> {
 /// Les feries chomes d'une periode, annees a cheval comprises.
 pub fn chomes_entre(debut: &Jour, fin: &Jour, dits: Option<&str>) -> R<Jours> {
     let mut out = Jours::new();
-    for annee in debut.an..=fin.an {
+    for annee in debut.annee().jusqu_a(fin.annee()) {
         for (jour, nom) in chomes(annee, dits)? {
             if *debut <= jour && jour <= *fin {
                 inserer(&mut out, jour, &nom);
@@ -175,14 +176,15 @@ mod tests {
     #[test]
     fn les_feries_de_l_annee() {
         for (an, m, j) in [(2024, 3, 31), (2025, 4, 20), (2026, 4, 5), (2027, 3, 28)] {
-            assert_eq!(paques(an).unwrap(), Jour::nouveau(an, m, j).unwrap());
+            assert_eq!(paques(Annee::nouvelle(an.into()).unwrap()).unwrap(), Jour::nouveau(an, m, j).unwrap());
         }
-        let jours: Vec<String> = feries(2026).unwrap().into_iter().map(|(j, _)| j.iso()).collect();
+        let a2026 = Annee::nouvelle(2026).unwrap();
+        let jours: Vec<String> = feries(a2026).unwrap().into_iter().map(|(j, _)| j.iso()).collect();
         assert_eq!(
             jours,
             ["2026-01-01", "2026-04-06", "2026-05-01", "2026-05-08", "2026-05-14", "2026-05-25", "2026-07-14", "2026-08-15", "2026-11-01", "2026-11-11", "2026-12-25"]
         );
-        let chomes: Vec<String> = chomes_de_droit(2026).unwrap().into_iter().map(|(j, _)| j.iso()).collect();
+        let chomes: Vec<String> = chomes_de_droit(a2026).unwrap().into_iter().map(|(j, _)| j.iso()).collect();
         assert_eq!(chomes, ["2026-05-01"]);
     }
 }

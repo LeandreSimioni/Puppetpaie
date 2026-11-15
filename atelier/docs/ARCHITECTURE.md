@@ -226,7 +226,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   table des noms de mois.
 - **mois ou jour** : le mois d'un acte ou le jour d'un événement.
 - **année** : une année civile. Écrite en texte (`"2025"`, la clé de `paies_annuelles`), ou en nombre là où la forme le
-  dit (`socle::mois::en_nombre` : le nombre de paies parti chez l'éditeur, ce que le serveur du filet lit et rend).
+  dit (`socle::mois::en_nombre` : le nombre de paies parti chez l'éditeur, ce que le serveur du filet lit et rend, le
+  millésime d'un barème, l'année d'une charge ou d'une réponse que la page écrit en nombre). Elle se calcule par ses
+  opérations (`precedente`, `suivante`, `les_precedentes`, `jusqu_a`, ses mois et ses jours), jamais en nombre ; une
+  année qu'un texte fixe s'écrit `Annee::constante`.
 - **période** : deux jours bornes, du … au … ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres.
 - **durée de droit** : des jours ou des mois de calendrier. La durée d'une tranche de maintien de salaire
   (`droit::maintien::DureeDUneTranche`) est une durée de droit, ou « tant que la caisse verse ses indemnités ».

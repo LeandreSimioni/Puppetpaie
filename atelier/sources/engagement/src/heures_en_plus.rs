@@ -190,7 +190,7 @@ pub(crate) fn apres_les_cotisations(
     // La deduction patronale, des heures supplementaires seules.
     let mut deduction = Montant::ZERO;
     if !supplementaires.est_nul() {
-        let annee = ctx.lue_au.an;
+        let annee = ctx.lue_au.annee();
         let au_moins_20 = ctx.effectif()?.atteint(20, annee).map_err(|e| {
             e.reformuler(|p| format!("La déduction patronale des heures supplémentaires dépend de l'effectif (CSS L241-18, L241-18-1 : moins de vingt salariés ou au moins vingt). {}", p))
         })?;

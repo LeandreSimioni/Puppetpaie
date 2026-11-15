@@ -308,11 +308,11 @@ valeur, et la date ne se devine pas. Rien n'a été enregistré.",
     // Le controle que toute lecture de la configuration fait (`droit::contexte`), sur ce qui est ouvert, avant d'ecrire :
     // contre le bareme de cette annee et de l'annee de chaque ouverture (une annee sans socle livre ne se controle pas).
     let fiche = ChampsEntreprise { siren: siege.siren.clone(), nic: siege.nic.clone(), etablissements: Some(lignes), ..ChampsEntreprise::default() };
-    let mut annees: Vec<i32> = std::iter::once(ctx.aujourdhui.an).chain(nouvelles.iter().map(|(o, _)| o.an)).collect();
+    let mut annees: Vec<socle::mois::Annee> = std::iter::once(ctx.aujourdhui.annee()).chain(nouvelles.iter().map(|(o, _)| o.annee())).collect();
     annees.sort();
     annees.dedup();
     for an in annees {
-        let Some(premier) = Jour::nouveau(an, 1, 1) else { continue };
+        let premier = an.premier_jour();
         if droit::contexte::socle_livre_lu(an).map_err(|e| e.reclasser(Classe::Refuse))?.is_some() {
             let bar = ctx.bareme_fondu(&premier).map_err(|e| e.reclasser(Classe::Refuse))?;
             droit::contexte::controler_etablissements(&fiche, &bar).map_err(|e| e.reclasser(Classe::Refuse))?;

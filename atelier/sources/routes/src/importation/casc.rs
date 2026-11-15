@@ -267,7 +267,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     let faits = declarations::casc::mois_regularises(ctx).map_err(|m| m.reclasser(Classe::Disque))?;
     let depuis = base.depuis;
     let mut candidats: Vec<Mois> = import::mois::mois_importes(&ctx.racine)?.into_iter().filter(|m| *m >= depuis && !faits.contains(m)).collect();
-    let annee_de = |m: &Mois| m.annee_civile();
+    let annee_de = |m: &Mois| m.annee();
     if let Some(m) = d.mois {
         candidats.retain(|x| m == *x);
     } else if let Some(a) = d.annee.filter(|_| !d.toutes_les_annees) {

@@ -631,7 +631,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
             if accident < p.plafond_depuis {
                 return Ok(AuReleve(IJ_AU_RELEVE.to_string()));
             }
-            let mensuel = match ctx.plafond_securite_sociale(premier.an) {
+            let mensuel = match ctx.plafond_securite_sociale(premier.annee()) {
                 Ok((mensuel, _)) => mensuel,
                 Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", pourquoi.phrase))),
             };

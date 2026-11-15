@@ -223,7 +223,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
         candidats.extend(changements_dates(depuis).map(|j| (j, format!("{} (`{}`)", ou, c))));
     }
     if md.annuelle && decl.mois.annee() < mois.annee() {
-        candidats.push((Jour { an: debut_m.an, mois: 1, jour: 1 }, "le bareme de l'annee (il vaut du 1er janvier)".into()));
+        candidats.push((debut_m.annee().premier_jour(),"le bareme de l'annee (il vaut du 1er janvier)".into()));
     }
     if md.periodique {
         // INFERENCE : une valeur qui se lit periode de paie par periode de paie change au premier jour de la periode

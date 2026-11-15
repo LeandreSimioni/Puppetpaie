@@ -61,7 +61,7 @@ use droit::fiche::{MotifNonAssujettissement, Nic};
 
 use documents::taxe_sur_les_salaires::{assiette_taxe_sur_les_salaires, fractions_majorees, taxe_sur_les_salaires_de_la_fiche};
 use socle::echec::{refus, R};
-use socle::mois::Mois;
+use socle::mois::{Annee, Mois};
 use socle::grandeurs::{Montant, Taux};
 use socle::num::{add, Decimal};
 
@@ -97,8 +97,7 @@ enum MoisDuCalculAnnuel {
 /// `montants`, sinon leurs seuls contrats. Un mois sans saisie n'a pas eu de salarie.
 fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &Nic, mois: Mois, paies: &[Paie], montants: bool, departs: &engagement::departs::Departs) -> R<Vec<MoisDuCalculAnnuel>> {
     let mut out = Vec::new();
-    for m in 1..=12u32 {
-        let m = Mois::nouveau(mois.annee(), m)?;
+    for m in mois.annee().les_mois() {
         if m == mois {
             out.push(MoisDuCalculAnnuel::Calcules(m, paies.to_vec()));
             continue;
@@ -206,7 +205,7 @@ fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &dr
 
 // ------------------------------------------------------------ le bloc
 
-fn effectif_atteint(ctx: &Contexte, seuil: i64, annee_paie: i32, quoi: &str) -> R<bool> {
+fn effectif_atteint(ctx: &Contexte, seuil: i64, annee_paie: Annee, quoi: &str) -> R<bool> {
     ctx.effectif()?.atteint(seuil, annee_paie).map_err(|m| m.reformuler(|m| format!("Bloc S21.G00.44 (assujettissement fiscal), {} : {}", quoi, m)))
 }
 
@@ -224,7 +223,7 @@ pub fn ctp_sans_la_taxe_non_due(ctps: Vec<droit::organismes::Ctp>, non_due: bool
 /// sinon, le motif lu dans la fiche entreprise. `ctp` : les codes du bordereau, deja sans la taxe quand le motif vaut
 /// (`ctp_sans_la_taxe_non_due`). Un motif hors de la table, le motif 007 a partir du millesime 2026, une fiche qui dit
 /// un motif quand le bordereau paie la taxe (garde-fou : `blocs` lui donne un bordereau qui ne la paie plus) : refus.
-fn taxe_d_apprentissage(ent: &droit::fiche::ChampsEntreprise, ctp: &[CodeCtp], an: i32) -> R<Bloc44> {
+fn taxe_d_apprentissage(ent: &droit::fiche::ChampsEntreprise, ctp: &[CodeCtp], an: Annee) -> R<Bloc44> {
     let paye = ctp.iter().any(|c| CTP_TAXE_APPRENTISSAGE.contains(c));
     let champ = champ_du_motif();
     let motif = motif_de_la_fiche(ent).map_err(|e| e.reformuler(|e| format!("DSN de decembre {} : {}", an, e)))?;
@@ -282,7 +281,7 @@ pub fn blocs(
 
     // La contribution supplementaire : L. 6242-1, I, ne la fait devoir qu'a 250 salaries et plus, l'effectif de l'annee
     // du millesime (V), regle des cinq ans comprise. Un grand seuil : sans la case des cinquante salaries, 004 sans rien lire.
-    let csa = if effectif_atteint(ctx, 250, an + 1, "contribution supplementaire a l'apprentissage")? { CodeTaxe::ContributionSupplementaireApprentissage } else { CodeTaxe::NonContributionSupplementaireApprentissage };
+    let csa = if effectif_atteint(ctx, 250, an.suivante()?,"contribution supplementaire a l'apprentissage")? { CodeTaxe::ContributionSupplementaireApprentissage } else { CodeTaxe::NonContributionSupplementaireApprentissage };
     out.push(Bloc44 { code: csa, montant: None, motif: None });
 
     // Ce qui demande les montants de l'annee : la taxe sur les salaires et la PEEC.
@@ -300,7 +299,7 @@ pas son assiette. Rien n'est ecrit.",
     // L'effectif est celui de l'annee du millesime, comme pour la contribution supplementaire : la PEEC declaree ici est
     // assise sur les salaires de cette annee-la et s'investit l'annee d'apres (BOFiP BOI-TPS-PEEC-20, § 10), et L. 313-1
     // renvoie a L. 130-1 CSS, qui retient l'effectif de l'annee civile precedant l'obligation (INFERENCE).
-    let peec = effectif_atteint(ctx, 50, an + 1, "participation des employeurs a l'effort de construction")?;
+    let peec = effectif_atteint(ctx, 50, an.suivante()?,"participation des employeurs a l'effort de construction")?;
     let annee = mois_de_l_annee(ctx, ent, nic, mois, paies, ts.is_some() || peec, departs)?;
 
     // La PEEC : CCH L. 313-1, cinquante salaries.

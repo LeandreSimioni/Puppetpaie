@@ -76,19 +76,19 @@ pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
 /// Les numeros de contrat (FA1.26.13) et de bulletin (17/2026) que les paies porteraient (`engagement::numeros::numeroter`), en
 /// memoire : l'apercu n'ecrit rien. Un engagement qui PORTE DEJA son numero de contrat le garde (`engagement::numeros`),
 /// une paie partie son numero de bulletin (`engagement::etats::numeros_des_documents`).
-pub fn numeroter(ctx: &Contexte, paies: &mut [Paie], annee: i32, departs: &engagement::departs::Departs) -> Result<(), Echec> {
+pub fn numeroter(ctx: &Contexte, paies: &mut [Paie], annee: Annee, departs: &engagement::departs::Departs) -> Result<(), Echec> {
     numeroter_en_attente(ctx, paies, annee, &mut HashMap::new(), departs)
 }
 
 /// La meme, avec les numeros de bulletin deja RESERVES par un appel precedent du meme processus : `annee -> dernier
 /// numero`, sinon a la suite du compteur de l'annee (`config/compteurs.json`) et des bulletins importes de l'annee
 /// (`engagement::numeros::dernier_bulletin_importe`).
-pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: i32, attente: &mut HashMap<i32, i64>, departs: &engagement::departs::Departs) -> Result<(), Echec> {
+pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: Annee, attente: &mut HashMap<Annee, i64>, departs: &engagement::departs::Departs) -> Result<(), Echec> {
     let n_bull = match attente.get(&annee) {
         Some(v) => v + 1,
         None => {
-            let lu = compteurs(&ctx.racine)?.get(&Annee::nouvelle(annee.into())?).and_then(|c| c.bulletin);
-            lu.into_iter().fold(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee.into())?, i64::max) + 1
+            let lu = compteurs(&ctx.racine)?.get(&annee).and_then(|c| c.bulletin);
+            lu.into_iter().fold(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee)?, i64::max) + 1
         }
     };
     let n_bull = engagement::numeros::numeroter(ctx, paies, annee, n_bull, departs)?;
@@ -102,38 +102,38 @@ pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: i32, atte
 #[derive(Default)]
 pub struct Reserves {
     /// Par annee, les derniers numeros reserves de chaque suite (ce qui n'est pas reserve est vide).
-    valeurs: BTreeMap<i64, CompteursDeLAnnee>,
+    valeurs: BTreeMap<Annee, CompteursDeLAnnee>,
 }
 
 impl Reserves {
     /// Le rang du prochain bulletin de l'annee : le suivant de ce qui est reserve, sinon de ce que `compteurs.json`
     /// porte, apres les bulletins importes de l'annee (`engagement::numeros::dernier_bulletin_importe`).
-    pub fn prochain_bulletin(&self, ctx: &Contexte, annee: i64) -> R<i64> {
+    pub fn prochain_bulletin(&self, ctx: &Contexte, annee: Annee) -> R<i64> {
         if let Some(v) = self.valeurs.get(&annee).and_then(|c| c.bulletin) {
             return Ok(v + 1);
         }
-        let lu = compteurs(&ctx.racine)?.get(&Annee::nouvelle(annee)?).and_then(|c| c.bulletin);
+        let lu = compteurs(&ctx.racine)?.get(&annee).and_then(|c| c.bulletin);
         let importe = engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee)?;
         // Une suite se numerote a partir de 1 : le suivant du plus grand numero lu ou importe.
         Ok(lu.into_iter().chain(Some(importe)).fold(0, i64::max) + 1)
     }
 
     /// Reserve le rang `v` du dernier bulletin de l'annee, sans ecrire.
-    pub fn enregistrer_bulletin(&mut self, annee: i64, v: i64) {
+    pub fn enregistrer_bulletin(&mut self, annee: Annee, v: i64) {
         self.valeurs.entry(annee).or_default().bulletin = Some(v);
     }
 
     /// Reserve le dernier N CE `n`, sans ecrire.
-    pub fn enregistrer_certificat(&mut self, annee: i64, n: NumeroDeCertificat) {
+    pub fn enregistrer_certificat(&mut self, annee: Annee, n: NumeroDeCertificat) {
         self.valeurs.entry(annee).or_default().certificat_cs = Some(n);
     }
 
     /// Les numeros de bulletin des paies, reserves ; leurs numeros de contrat, ceux qu'elles porteraient.
-    pub fn numeroter(&mut self, ctx: &Contexte, paies: &mut [Paie], annee: i32, departs: &engagement::departs::Departs) -> R<()> {
-        let mut attente: HashMap<i32, i64> = self.valeurs.get(&annee.into()).and_then(|c| c.bulletin).map(|v| (annee, v)).into_iter().collect();
+    pub fn numeroter(&mut self, ctx: &Contexte, paies: &mut [Paie], annee: Annee, departs: &engagement::departs::Departs) -> R<()> {
+        let mut attente: HashMap<Annee, i64> = self.valeurs.get(&annee).and_then(|c| c.bulletin).map(|v| (annee, v)).into_iter().collect();
         numeroter_en_attente(ctx, paies, annee, &mut attente, departs)?;
         if let Some(n) = attente.get(&annee) {
-            self.enregistrer_bulletin(annee.into(), *n);
+            self.enregistrer_bulletin(annee, *n);
         }
         Ok(())
     }
@@ -146,7 +146,7 @@ impl Reserves {
         let p = COMPTEURS.dans(&ctx.racine);
         let mut c = compteurs(&ctx.racine)?;
         for (an, r) in &self.valeurs {
-            let e = c.entry(Annee::nouvelle(*an)?).or_default();
+            let e = c.entry(*an).or_default();
             if let Some(b) = r.bulletin {
                 e.bulletin = Some(b);
             }

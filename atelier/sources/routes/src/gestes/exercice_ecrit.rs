@@ -226,7 +226,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
 pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<socle::mois::Mois, socle::fichiers::EmpreinteDeSaisie>> {
     let mut m = BTreeMap::new();
-    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee_civile() == annee) {
+    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee() == annee) {
         if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
             m.insert(mois, e);
         }
@@ -389,7 +389,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     if let Some(clos) = tous.de(annee) {
         return Err(refus(format!("L'exercice {} est déjà clos (le {}).", annee, clos.le.jour_de_paris().iso())));
     }
-    if annee.nombre() >= ctx.aujourdhui.an {
+    if annee >= ctx.aujourdhui.annee() {
         return Err(refus(format!("L'exercice {} n'est pas fini : on clôture une année passée.", annee)));
     }
     let mois = mois_de_l_annee(ctx, annee)?;
@@ -450,7 +450,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     }
     // Les retours des organismes : les fichiers dont le nom commence par l'annee (AAAAMMJJ-HHMMSS_nature..). Ceux de
     // janvier suivant qui repondent a la DSN de decembre sont pris aussi : ils portent sur l'annee close.
-    let (de_l_annee, suivante) = (annee.to_string(), format!("{}01", annee.nombre() + 1));
+    let (de_l_annee, suivante) = (annee.to_string(), format!("{}01", annee.suivante()?));
     // Les retours DSN a la racine des retours, ceux des DPAE sous `dpae/`.
     for canal in [envois::releve_retours::CanalDesRetours::Dsn, envois::releve_retours::CanalDesRetours::Dpae] {
         let d = canal.chemin(&ctx.racine);
@@ -480,7 +480,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
         }
     }
-    let surcouche = droit::contexte::surcouche(annee.nombre())?;
+    let surcouche = droit::contexte::surcouche(annee)?;
     let bar = ctx.racine.join(surcouche.texte());
     if bar.exists() {
         entrees.push(entree_fichier(&bar, surcouche.texte().to_string())?);

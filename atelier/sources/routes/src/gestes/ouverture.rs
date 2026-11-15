@@ -857,7 +857,8 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
 
     // LE TAUX COLLECTIF DE L'ARRETE pour un risque « TC », au 1er janvier de l'annee en cours et, des que son bareme est
     // livre, de la suivante (`routes::atmp::inscrire_l_arrete`) : il s'inscrit dans la case, qui le montre.
-    for an in [ctx.aujourdhui.an, ctx.aujourdhui.an + 1] {
+    let an = ctx.aujourdhui.annee();
+    for an in an.jusqu_a(an.suivante()?) {
         if let Err(e) = crate::atmp::inscrire_l_arrete(ctx, an) {
             r.incidents.push(format!("Taux AT/MP {} : {}", an, e.phrase));
         }

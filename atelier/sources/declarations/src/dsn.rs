@@ -30,7 +30,7 @@ use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
 use socle::date::Jour;
 use socle::mode::Mode;
-use socle::mois::Mois;
+use socle::mois::{Annee, Mois};
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::grandeurs::Montant;
 use socle::{num::{add, mul, sub, Decimal}, refus};
@@ -3509,7 +3509,7 @@ const CODE81_DEDUCTION_HEURES: CodeCotisation81 = CodeCotisation81::DeductionHeu
 /// refuse en nommant les annees qui manquent.
 pub struct Seuils {
     effectif: droit::contexte::Effectif,
-    an: i32,
+    an: Annee,
 }
 
 impl Seuils {
@@ -3527,7 +3527,7 @@ impl Seuils {
 
 /// `assujettissement::taxe_apprentissage_non_due_au_mois` pour le mois `m`.
 fn taxe_apprentissage_non_due_du_mois(ent: &ChampsEntreprise, m: Mois) -> R<bool> {
-    droit::apprentissage::taxe_apprentissage_non_due_au_mois(ent, m.annee(), m.numero())
+    droit::apprentissage::taxe_apprentissage_non_due_au_mois(ent, m)
 }
 
 fn lignes_bordereau(
@@ -3759,9 +3759,9 @@ pub struct Composant {
 /// l'exercice, que le moteur n'ecrit pas) : celle qui contient les periodes cotisees (`periode_d_affectation`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PeriodeDAffectation {
-    Trimestre(i32, u32),
-    Semestre(i32, u32),
-    Annee(i32),
+    Trimestre(Annee, u32),
+    Semestre(Annee, u32),
+    Annee(Annee),
 }
 
 impl Display for PeriodeDAffectation {
@@ -3777,7 +3777,7 @@ impl Display for PeriodeDAffectation {
 /// La plus petite periode civile (trimestre, semestre, annee) qui contient les deux dates JJMMAAAA d'une base 78. Le
 /// trimestre etait deja la periode ecrite pour un mois courant ; la norme l'admet (p. 260, ligne 89).
 fn periode_d_affectation(debut: Jour, fin: Jour) -> R<PeriodeDAffectation> {
-    let ((a1, m1), (a2, m2)) = ((debut.an, debut.mois), (fin.an, fin.mois));
+    let ((a1, m1), (a2, m2)) = ((debut.annee(), debut.mois), (fin.annee(), fin.mois));
     if a1 != a2 {
         return Err(refus!(
             "S21.G00.55.004 : une base de prevoyance couvre du {} au {}, a cheval sur deux annees civiles ; la periode \
@@ -4044,7 +4044,7 @@ pas pu etre relue (le fichier du dernier depot accepte) : on ne devine pas. Rien
 
 /// Le solde de la taxe d'apprentissage d'avril.
 pub struct SoldeTa {
-    pub annee: i32,
+    pub annee: Annee,
     pub assiette: Decimal,
     pub montant: Decimal,
     pub org: IdentifiantDOrganisme,
@@ -4094,10 +4094,9 @@ pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: Mois, nic: &Nic, 
 }
 
 /// Les assiettes des CTP `codes` que les DSN de l'annee `annee` declarent pour l'etablissement `nic`, une par code.
-pub fn assiettes_de_l_annee(ctx: &Contexte, annee: i32, nic: &Nic, codes: &[CodeCtp], departs: &engagement::departs::Departs) -> R<Vec<Decimal>> {
+pub fn assiettes_de_l_annee(ctx: &Contexte, annee: Annee, nic: &Nic, codes: &[CodeCtp], departs: &engagement::departs::Departs) -> R<Vec<Decimal>> {
     let mut total = vec![Montant::ZERO.decimal(); codes.len()];
-    for m in 1..=12 {
-        let mois = Mois::nouveau(annee, m)?;
+    for mois in annee.les_mois() {
         let paies = paies_declarees_du_mois(ctx, mois, Some(nic), departs)?;
         for (t, a) in total.iter_mut().zip(assiettes_des_ctp(ctx, &paies, mois, nic, codes)?) {
             *t = add(*t, a);
@@ -4118,7 +4117,7 @@ fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: 
     if !orgs.ctp_urssaf().iter().any(|c| c.code == CTP_TAXE_PRINCIPALE) {
         return Ok(None);
     }
-    let annee = mois.annee() - 1;
+    let annee = mois.annee().precedente()?;
     // Pas de solde d'une taxe que la fiche dit non due pour l'annee (R12, `assujettissement::taxe_apprentissage_non_due`).
     if droit::apprentissage::taxe_apprentissage_non_due(&ctx.entreprise, annee)? {
         return Ok(None);

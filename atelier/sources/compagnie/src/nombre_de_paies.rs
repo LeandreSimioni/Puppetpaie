@@ -46,7 +46,7 @@ pub const JOUR_DE_JANVIER: u32 = 16;
 /// pas d'annee passee : refus.
 pub fn annee_due(aujourdhui: Jour) -> R<Option<Annee>> {
     if aujourdhui.mois > 1 || aujourdhui.jour >= JOUR_DE_JANVIER {
-        Ok(Some(Annee::nouvelle(i64::from(aujourdhui.an) - 1)?))
+        Ok(Some(aujourdhui.annee().precedente()?))
     } else {
         Ok(None)
     }
@@ -56,8 +56,8 @@ pub fn annee_due(aujourdhui: Jour) -> R<Option<Annee>> {
 /// des paies de ses mois (`engagement::paies::nombre`).
 pub fn compter(ctx: &Contexte, annee: Annee) -> R<usize> {
     let mut n = 0;
-    for m in 1..=12 {
-        n += engagement::paies::nombre(&ctx.racine, socle::mois::Mois::nouveau(annee.nombre(), m)?)?;
+    for m in annee.les_mois() {
+        n += engagement::paies::nombre(&ctx.racine, m)?;
     }
     Ok(n)
 }
