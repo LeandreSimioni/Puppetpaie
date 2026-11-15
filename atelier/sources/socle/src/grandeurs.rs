@@ -247,6 +247,22 @@ impl Heures {
         c.rescale(2);
         Heures(c)
     }
+
+    /// Ces heures reparties egalement sur `n` jours (les heures d'une ligne sur ses dates) : heures / compte = heures. Un
+    /// compte n'est pas une grandeur (« Le glossaire ») : il vient d'un `len()`, jamais nul (l'appelant le refuse).
+    pub fn reparties_sur(self, n: usize) -> Heures {
+        Heures(num::div(self.0, Decimal::from(n)))
+    }
+
+    /// En heures entieres, la moitie au pair : les heures d'un contrat que le cumul des annexes 8 et 10 compte en entiers
+    /// (`droit::cumul::Declare`). Hors des limites d'un entier, refus.
+    pub fn entieres(self) -> crate::echec::R<i64> {
+        let e = self.0.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
+        match rust_decimal::prelude::ToPrimitive::to_i64(&e) {
+            Some(n) => Ok(n),
+            None => Err(crate::echec::refus(crate::fichiers::entier_hors_limites(&e.to_string()))),
+        }
+    }
 }
 
 /// Une quantite fois son montant unitaire : un montant.

@@ -11,6 +11,7 @@ use crate::autre_revenu_brut::AutreElementDeRevenuBrut;
 use socle::echec::Lieu;
 use socle::fichiers::{dossier_du_code, repr, signature};
 use socle::echec::R;
+use socle::grandeurs::{courte, Heures};
 use socle::num::Decimal;
 use crate::fiche::{ChampsRubrique, Datee, FicheDatee, Piece, RubriqueDatee, VoirListe};
 use std::collections::HashMap;
@@ -385,8 +386,8 @@ impl Rubrique {
     /// se compte au centieme d'heure, comme la DSN l'ecrit.
     /// Le centieme d'heure est `Heures::au_centieme` ; le nombre rendu est dans sa forme la plus courte
     /// (`socle::num::court`).
-    pub fn heures(&self, quantite: Decimal, heures_saisies: Option<Decimal>) -> Decimal {
-        let centieme = |x: Decimal| socle::num::court(socle::grandeurs::Heures::du_decimal(socle::num::mul(x, quantite)).au_centieme().decimal());
+    pub fn heures(&self, quantite: Decimal, heures_saisies: Option<Decimal>) -> Heures {
+        let centieme = |x: Decimal| courte(Heures::du_decimal(socle::num::mul(x, quantite)).au_centieme());
         if let Some(f) = self.heures_forfait {
             return centieme(f);
         }
@@ -394,9 +395,10 @@ impl Rubrique {
             return centieme(h);
         }
         if self.unite == Unite::Heure {
-            return socle::num::court(quantite);
+            // La quantite d'une ligne a l'heure compte des heures.
+            return courte(Heures::du_decimal(quantite));
         }
-        socle::num::court(Decimal::ZERO)
+        courte(Heures::ZERO)
     }
 }
 

@@ -102,7 +102,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         // Les heures que la DSN mesure (S21.G00.53, « heures » d'un contrat paye au mois) : celles de la ligne de la
         // periode, comme `Engagement::nouveau` les tire des lignes du mois.
         let heures = droit::catalogue::rubrique(&ctx.racine, &crate::conges::MOIS_PAYE, &ctx.lue_au)?.heures(q, Some(h));
-        e.heures = if !heures.is_zero() { Some(Heures::du_decimal(heures)) } else { None };
+        e.heures = if !heures.est_nul() { Some(heures) } else { None };
         out.push(e);
     }
     Ok(out)

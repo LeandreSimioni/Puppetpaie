@@ -19,29 +19,33 @@ use droit::catalogue::rubrique;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::R;
-use socle::num::{court, div, Decimal};
+use socle::grandeurs::{courte, Heures};
+use socle::num::Decimal;
 use socle::texte::virgule;
 
-/// La duree quotidienne maximale de travail effectif (L. 3121-18), en heures.
-const MAXIMUM_QUOTIDIEN: i64 = 10;
+/// La duree quotidienne maximale de travail effectif (L. 3121-18) : 10 heures.
+const MAXIMUM_QUOTIDIEN: Heures = Heures::du_decimal(Decimal::from_parts(10, 0, 0, false, 0));
 
-/// Une journee, en heures.
-const JOURNEE: i64 = 24;
+/// Une journee : 24 heures.
+const JOURNEE: Heures = Heures::du_decimal(Decimal::from_parts(24, 0, 0, false, 0));
 
-/// Des heures au-dela de `seuil` : un milliardieme d'heure pres, ce qu'une moyenne sur plusieurs jours laisse.
-fn au_dela(h: Decimal, seuil: i64) -> bool {
-    h > Decimal::from(seuil) + Decimal::new(1, 9)
+/// Un milliardieme d'heure : ce qu'une moyenne sur plusieurs jours laisse.
+const UN_MILLIARDIEME: Heures = Heures::du_decimal(Decimal::from_parts(1, 0, 0, false, 9));
+
+/// Des heures au-dela de `seuil`, a un milliardieme d'heure pres.
+fn au_dela(h: Heures, seuil: Heures) -> bool {
+    h > seuil + UN_MILLIARDIEME
 }
 
-/// Des heures d'un jour, pour un message : au centieme.
-fn heures_dites(h: Decimal) -> String {
-    virgule(court(h).round_dp(2))
+/// Des heures d'un jour, pour un message : au centieme (la porte de la phrase).
+fn heures_dites(h: Heures) -> String {
+    virgule(courte(h).decimal().round_dp(2))
 }
 
 /// Les heures de travail de chaque jour des lignes `lignes` d'un engagement, et si l'une d'elles est une moyenne (une
 /// ligne qui repartit ses heures sur plusieurs jours).
-fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (Decimal, bool)>> {
-    let mut jours: BTreeMap<Jour, (Decimal, bool)> = BTreeMap::new();
+fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (Heures, bool)>> {
+    let mut jours: BTreeMap<Jour, (Heures, bool)> = BTreeMap::new();
     for l in lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         let travail = r.nature == droit::catalogue::NatureDeRubrique::Salaire
@@ -58,9 +62,9 @@ fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (De
         // La quantite d'une ligne de travail est dite (`lignes_dites`, avant ce compte) : sans elle, rien ne se compte.
         let quantite = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
         let total = r.heures(quantite, l.heures().map(socle::grandeurs::Heures::decimal));
-        let par_jour = div(total, Decimal::from(dates.len()));
+        let par_jour = total.reparties_sur(dates.len());
         for j in &dates {
-            let x = jours.entry(*j).or_insert((Decimal::ZERO, false));
+            let x = jours.entry(*j).or_insert((Heures::ZERO, false));
             x.0 += par_jour;
             x.1 |= dates.len() > 1;
         }
@@ -70,7 +74,7 @@ fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (De
 
 /// LE REFUS : un jour de plus de 24 heures dans l'engagement `e` de `qui`. `None` quand il n'y en a pas.
 pub fn plus_d_une_journee(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<Option<String>> {
-    let trop: Vec<(Jour, (Decimal, bool))> = heures_par_jour(ctx, lignes)?.into_iter().filter(|(_, (h, _))| au_dela(*h, JOURNEE)).collect();
+    let trop: Vec<(Jour, (Heures, bool))> = heures_par_jour(ctx, lignes)?.into_iter().filter(|(_, (h, _))| au_dela(*h, JOURNEE)).collect();
     let Some((j, (h, moyenne))) = trop.first() else { return Ok(None) };
     Ok(Some(format!(
         "{} : {} h de travail {}le {}{} : saisissez les heures de ce jour-là, ou répartissez-les sur plus de jours.",
@@ -85,7 +89,7 @@ pub fn plus_d_une_journee(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<
 /// CE QUI SE DIT SANS SE REFUSER : les jours de l'engagement `e` de `qui` au-dela de la duree quotidienne maximale
 /// (L. 3121-18). `None` quand il n'y en a pas.
 pub fn au_dela_du_maximum(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<Option<String>> {
-    let longs: Vec<(Jour, (Decimal, bool))> =
+    let longs: Vec<(Jour, (Heures, bool))> =
         heures_par_jour(ctx, lignes)?.into_iter().filter(|(_, (h, _))| au_dela(*h, MAXIMUM_QUOTIDIEN) && !au_dela(*h, JOURNEE)).collect();
     if longs.is_empty() {
         return Ok(None);

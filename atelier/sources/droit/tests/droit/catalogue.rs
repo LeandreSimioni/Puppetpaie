@@ -48,7 +48,7 @@ fn les_heures() {
         .into_iter()
         .map(|c| {
             let r = rubrique(&racine, &c.rubrique, &jour(2026, 10, 28)).unwrap();
-            let heures = r.heures(c.quantite, c.heures_saisies).normalize();
+            let heures = socle::grandeurs::sans_zero(r.heures(c.quantite, c.heures_saisies)).decimal();
             Ligne { cas: c, attendu: heures }
         })
         .collect();

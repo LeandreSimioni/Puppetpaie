@@ -6,13 +6,13 @@ use crate::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::cumul::Declare;
 use socle::echec::R;
+use socle::grandeurs::Heures;
 use socle::mois::Mois;
-use socle::num::Decimal;
 
 /// La part d'enseignement de lignes de paie, en heures entieres : les rubriques dont le catalogue dit
 /// `compte_pour = ouverture_des_droits`.
 fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<i64> {
-    let mut heures = Decimal::ZERO;
+    let mut heures = Heures::ZERO;
     for l in lignes {
         let r = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         if r.compte_pour != droit::catalogue::ComptePour::OuvertureDesDroits {
@@ -20,16 +20,9 @@ fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<i64> {
         }
         let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
         // Le signe porte aussi sur les heures, comme au calcul (`calcul::lignes_brut`) : une ligne « - » en retire.
-        let h = r.heures(q, l.heures().map(socle::grandeurs::Heures::decimal));
-        heures += if r.sens == socle::grandeurs::Signe::Moins { -h } else { h };
+        heures += r.sens.de(r.heures(q, l.heures().map(Heures::decimal)));
     }
-    heures_entieres(heures)
-}
-
-/// Des heures en heures entieres, la moitie au pair.
-fn heures_entieres(h: Decimal) -> R<i64> {
-    let e = h.round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointNearestEven);
-    rust_decimal::prelude::ToPrimitive::to_i64(&e).ok_or_else(|| socle::echec::refus(socle::fichiers::entier_hors_limites(&e.to_string())))
+    heures.entieres()
 }
 
 // ------------------------------------------------------------------- lecture
@@ -74,7 +67,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
         return Ok(None);
     }
     // Un engagement sans heures n'en declare aucune.
-    let heures = e.heures.into_iter().map(|h| heures_entieres(h.decimal())).sum::<R<i64>>()?;
+    let heures = e.heures.into_iter().map(Heures::entieres).sum::<R<i64>>()?;
     Ok(Some(Declare {
         salarie: p.salarie.id.clone(),
         debut: e.debut_periode(),

@@ -59,7 +59,7 @@ use socle::mois::{Graphie, Mois};
 use droit::emplois;
 
 use socle::{echec::{refus, Echec, R}, num::{court, Decimal}};
-use socle::grandeurs::{Heures, Montant, MontantUnitaire};
+use socle::grandeurs::{courte, Heures, Montant, MontantUnitaire};
 
 #[derive(Debug, Clone)]
 pub struct Engagement {
@@ -363,7 +363,7 @@ impl Engagement {
 
         // Ce que la declaration compte : cachets et heures, derives des lignes.
         let mut cachets_somme = Decimal::ZERO;
-        let mut autres = Decimal::ZERO;
+        let mut autres = Heures::ZERO;
         let mut premier_cachet: Option<&LignePaie> = None;
         // Les rubriques se lisent a la fin du mois paye (le mois dit, sinon celui de la premiere date jouee).
         let jour_lu = match (mois_saisi, jours_joues.first()) {
@@ -381,8 +381,7 @@ impl Engagement {
                 // Le signe porte aussi sur les heures, comme au calcul
                 // (`calcul::lignes_brut`) : une absence en retire. Un acompte,
                 // au forfait et sans heures, n'en retire aucune.
-                let h = r.heures(q, l.heures().map(Heures::decimal));
-                autres += if r.sens == socle::grandeurs::Signe::Moins { -h } else { h };
+                autres += r.sens.de(r.heures(q, l.heures().map(Heures::decimal)));
             }
         }
         // Un nombre de cachets se compte en entiers : la partie entiere de la somme.
@@ -393,8 +392,8 @@ impl Engagement {
         // absent sur le mois, avec une valeur a « 0.00 » », et « Si une DSN contient une activite negative sur la periode
         // courante, elle sera rejetee par l'assurance chomage » (fiche DSN 2640, `atelier/reference/sources/suspension-
         // non-remuneree/net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.txt`, « Regles generales »).
-        let autres = if mensuel { autres.max(Decimal::ZERO) } else { autres };
-        let heures = if !autres.is_zero() { Some(Heures::du_decimal(court(autres))) } else { None };
+        let autres = if mensuel { autres.max(Heures::ZERO) } else { autres };
+        let heures = if !autres.est_nul() { Some(courte(autres)) } else { None };
         // Le taux du cachet : celui de la premiere ligne de cachet ; sans cachet, celui qui est ecrit ; sinon aucun. Un
         // contrat qui ne paie aucun cachet n'a pas de taux de cachet, et le moteur n'en invente pas (regle 1).
         let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::court).transpose()?.map(MontantUnitaire::du_decimal);

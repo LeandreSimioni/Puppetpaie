@@ -223,7 +223,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 pub(crate) fn rattacher(code: &droit::catalogue::CodeDeRubrique, paiement: impl FnOnce(Unite) -> R<PaiementDeLigne>, heures: Option<Heures>, ctx: &Contexte) -> R<(droit::catalogue::Rubrique, PaiementDeLigne, Heures)> {
     let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
     let paiement = paiement(r.unite)?;
-    let h = Heures::du_decimal(r.heures(paiement.quantite().decimal(), heures.map(Heures::decimal)));
+    let h = r.heures(paiement.quantite().decimal(), heures.map(Heures::decimal));
     let heures_annexes = r.sens.de(h);
     Ok((r, paiement, heures_annexes))
 }
