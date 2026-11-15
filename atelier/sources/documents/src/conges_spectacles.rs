@@ -287,14 +287,42 @@ fn bornes_31_mars(debut: Jour, fin: Jour) -> Vec<Jour> {
         .collect()
 }
 
-/// Une periode de certificat : (debut, fin, dates, nb, jours).
-pub type Periode = (Jour, Jour, Vec<Jour>, i64, i64);
-
-/// Au bord du `nb` a deux sens du certificat (`Certificat::nb_jours_ou_cachets` : des cachets ou des jours), qui compte
-/// encore en entiers : la forme de ce nombre reste a trancher (#419).
-fn au_bord(n: Option<i64>) -> R<i64> {
-    n.ok_or_else(|| socle::refus!("des cachets ou des jours qui ne sont pas un nombre entier ne se portent pas au certificat : le signaler au développeur"))
+/// LE NOMBRE DU CERTIFICAT CONGES SPECTACLES : sa case « NB JOURS OU CACHETS », une seule colonne pour l'un ou l'autre
+/// (les certificats de la caisse) ; les cachets d'un contrat qui en paie, sinon ses jours.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NombreDuCertificat {
+    Cachets(Cachets),
+    Jours(Jours),
 }
+
+impl NombreDuCertificat {
+    /// Celui d'un contrat de `cachets` et `jours` : ses cachets s'il en a, sinon ses jours.
+    pub fn de(cachets: Cachets, jours: Jours) -> NombreDuCertificat {
+        match cachets.est_nul() {
+            false => NombreDuCertificat::Cachets(cachets),
+            true => NombreDuCertificat::Jours(jours),
+        }
+    }
+
+    /// Est-il nul ?
+    pub fn est_nul(self) -> bool {
+        match self {
+            NombreDuCertificat::Cachets(c) => c.est_nul(),
+            NombreDuCertificat::Jours(j) => j.est_nul(),
+        }
+    }
+
+    /// Tel que sa case l'imprime (`2`).
+    pub fn dit(self) -> String {
+        match self {
+            NombreDuCertificat::Cachets(c) => dit(c),
+            NombreDuCertificat::Jours(j) => dit(j),
+        }
+    }
+}
+
+/// Une periode de certificat : (debut, fin, dates, son nombre).
+pub type Periode = (Jour, Jour, Vec<Jour>, NombreDuCertificat);
 
 /// `decouper` : un contrat -> une ou plusieurs periodes de certificat.
 pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
@@ -302,10 +330,8 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
         return Ok(periodes_au_mois(eng)?.into_iter().map(|(p, _)| p).collect());
     }
     let bornes = bornes_31_mars(eng.debut, eng.fin);
-    let jours = au_bord(eng.jours.en_entier())?;
     if bornes.is_empty() {
-        let nb = if !eng.cachets.est_nul() { au_bord(eng.cachets.en_entier())? } else { jours };
-        return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, jours)]);
+        return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), NombreDuCertificat::de(eng.cachets, eng.jours))]);
     }
     if let Some(h) = eng.heures.filter(|h| !h.is_zero()) {
         return Err(erreur(
@@ -336,8 +362,9 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
     tous.push(eng.fin);
     for borne in tous {
         let dates: Vec<Jour> = eng.dates_travail.iter().copied().filter(|x| debut <= *x && *x <= borne).collect();
-        let nb = dates.len() as i64;
-        periodes.push((debut, borne, dates, nb, nb));
+        // Un cachet et un jour par date travaillee (verifie plus haut).
+        let nb = NombreDuCertificat::de(Cachets::de_dates(dates.len()), Jours::de_dates(dates.len()));
+        periodes.push((debut, borne, dates, nb));
         debut = borne.plus_jours(1)?;
     }
     Ok(periodes)
@@ -350,7 +377,7 @@ pub struct Certificat {
     pub numero: NumeroDeCertificat,
     pub debut: Jour,
     pub fin: Jour,
-    pub nb_jours_ou_cachets: i64,
+    pub nb_jours_ou_cachets: NombreDuCertificat,
     pub brut: Montant,
     pub base: Montant,
     pub emission: Jour,
@@ -361,7 +388,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
     let e = &paie.engagement;
     if !e.mois_payes.is_empty() {
         let mut out = Vec::new();
-        for (numero, ((debut, fin, _dates, nb, _jours), brut)) in premier_numero.suite().zip(periodes_au_mois(e)?) {
+        for (numero, ((debut, fin, _dates, nb), brut)) in premier_numero.suite().zip(periodes_au_mois(e)?) {
             out.push(Certificat {
                 numero,
                 debut,
@@ -376,7 +403,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
     }
     let parts = decouper(e)?;
     let mut out = Vec::new();
-    for (numero, (debut, fin, dates, nb, _jours)) in premier_numero.suite().zip(&parts) {
+    for (numero, (debut, fin, dates, nb)) in premier_numero.suite().zip(&parts) {
         let brut = if parts.len() == 1 {
             paie.brut
         } else {
@@ -384,14 +411,14 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
                 // Un contrat a cheval sur le 31 mars : un cachet par date travaillee de la periode (`decouper`).
                 Some(t) => courte(t).fois(dates.len()),
                 // Aucun cachet ni jour dans la periode : rien a repartir, quel que soit le taux.
-                None if *nb == 0 => Montant::ZERO,
+                None if nb.est_nul() => Montant::ZERO,
                 None => {
                     return Err(erreur(
                         Classe::Illisible,
                         format!(
                             "Contrat {} a cheval sur le 31 mars : {} cachet(s) dans la periode du {} au {}, et aucun taux de cachet n'est ecrit -- le brut de chaque periode de conges ne se repartit pas sans lui, et le moteur ne l'invente pas. Ecrire le taux sur la ligne de cachet de l'engagement.",
                             e.nomme(),
-                            nb,
+                            nb.dit(),
                             debut.jj_mm_aaaa(),
                             fin.jj_mm_aaaa()
                         ),
@@ -441,8 +468,8 @@ fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Montant)>> {
     let mut debut = e.debut;
     for borne in bornes {
         let couverts: Vec<&MoisPaye> = e.mois_payes.iter().filter(|m| debut <= m.fin && (m.fin <= borne || borne == e.fin)).collect();
-        let jours = au_bord(couverts.iter().map(|m| m.jours).sum::<Jours>().en_entier())?;
-        out.push(((debut, borne, Vec::new(), jours, jours), couverts.iter().fold(Montant::ZERO, |a, m| a + m.brut)));
+        let jours = NombreDuCertificat::Jours(couverts.iter().map(|m| m.jours).sum::<Jours>());
+        out.push(((debut, borne, Vec::new(), jours), couverts.iter().fold(Montant::ZERO, |a, m| a + m.brut)));
         debut = borne.plus_jours(1)?;
     }
     Ok(out)
@@ -518,7 +545,7 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     }
     out.push(("debut", cases_date(&c.debut)));
     out.push(("fin", cases_date(&c.fin)));
-    out.push(("nb_cachets", c.nb_jours_ou_cachets.to_string()));
+    out.push(("nb_cachets", c.nb_jours_ou_cachets.dit()));
     out.push(("base_conge", arrondi_euro(c.base.decimal())?.to_string()));
     out.push(("salaire_brut", arrondi_euro(c.brut.decimal())?.to_string()));
     let e = c.emission;
@@ -653,7 +680,7 @@ pub fn recapitulatif(paires: &[(&PaieCs, NumeroDeCertificat)], ent: &ChampsEntre
                 nom,
                 c.debut.jj_mm_aaaa(),
                 c.fin.jj_mm_aaaa(),
-                c.nb_jours_ou_cachets,
+                c.nb_jours_ou_cachets.dit(),
                 arrondi_euro(c.brut.decimal())?,
                 arrondi_euro(c.base.decimal())?
             ));
@@ -686,7 +713,7 @@ mod tests {
         let p = decouper(&c).unwrap();
         assert_eq!(p.len(), 2);
         assert_eq!((p[0].1, p[1].0), (j(2026, 3, 31), j(2026, 4, 1)));
-        assert_eq!((p[0].3, p[1].3), (2, 1));
+        assert_eq!((p[0].3, p[1].3), (NombreDuCertificat::Cachets(Cachets::de_dates(2)), NombreDuCertificat::Cachets(Cachets::de_dates(1))));
     }
 
     #[test]

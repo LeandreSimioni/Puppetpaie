@@ -69,6 +69,7 @@ use crate::importation::completer as completer;
 use import::proposee;
 use import::tri::Sorte;
 use socle::grandeurs::{lu, Cachets, Heures, Jours, Montant};
+use documents::conges_spectacles::NombreDuCertificat;
 use socle::num::Decimal;
 use socle::texte::euros;
 use import::attestes::{Atteste, BlocDImport, Registre, Reste};
@@ -1263,9 +1264,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                                 phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut.decimal()), euros(s.decimal())));
                             }
                         }
-                        // Le nombre du certificat dit des jours ou des cachets (le `nb` a deux sens, en entier) : il se
-                        // compare a l'un et a l'autre.
-                        if let Some(nombre) = c.nombre.filter(|x| cachets.and_then(Cachets::en_entier) != Some(*x) && jours.and_then(Jours::en_entier) != Some(*x)) {
+                        // Le nombre du certificat dit des jours ou des cachets (sa case n'a qu'une colonne) : il se lit
+                        // dans l'une et l'autre grandeur, et se compare a l'une et a l'autre.
+                        if let Some(nombre) = c.nombre.as_deref().filter(|t| cachets != lu::texte_entier(t) && jours != lu::texte_entier(t)) {
                             phrases.push(format!("écart noté : le certificat dit {} jours ou cachets, les contrats {} cachets et {} jours", nombre, n(cachets), n(jours)));
                         }
                     }
@@ -2108,22 +2109,18 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     // LES JOURS TRAVAILLES sont ceux qu'atteste l'attestation employeur mensuelle de l'intermittent (annexes 8 et 10) ;
     // un permanent paye au mois n'en a pas, et son bulletin n'imprime ni dates travaillees ni cumul de jours : son
     // contrat ne compte pas de jours (0), il ne les « ignore » pas.
-    let jours = if c.jours.is_none() && !marque_d_intermittent(&l.b) { Some(Decimal::ZERO) } else { c.jours };
+    let jours = if c.jours.is_none() && !marque_d_intermittent(&l.b) { Some(Jours::ZERO) } else { c.jours };
     let (Some(cachets), Some(heures), Some(jours)) = (c.cachets, c.heures, jours) else {
         let manque: Vec<&str> =
-            [("cachets", c.cachets), ("heures", c.heures), ("jours", c.jours)].iter().filter(|x| x.1.is_none()).map(|x| x.0).collect();
+            [("cachets", c.cachets.is_none()), ("heures", c.heures.is_none()), ("jours", c.jours.is_none())].iter().filter(|x| x.1).map(|x| x.0).collect();
         return Err(refus(format!("{} inconnu(s), on ne les devine pas", manque.join(", "))));
     };
-    let entier = |x: Decimal, quoi: &str| -> R<Decimal> {
-        if !x.fract().is_zero() {
-            return Err(refus(format!("{} non entiers ({})", quoi, x.normalize())));
-        }
-        Ok(x.trunc())
-    };
-    // Les compteurs du bulletin lu se lisent en leurs grandeurs : la porte de sa lecture.
-    let (cachets, jours): (Cachets, Jours) = (lu::nombre(entier(cachets, "cachets")?), lu::nombre(entier(jours, "jours")?));
-    let heures = lu::nombre::<Heures>(heures).entieres();
-    let enseignement = c.heures_enseignement.map(|h| lu::nombre::<Heures>(h).entieres());
+    fn entier<G: socle::grandeurs::Grandeur>(x: G, quoi: &str) -> R<G> {
+        socle::grandeurs::entiere(x).ok_or_else(|| socle::echec::refus(format!("{} non entiers ({})", quoi, socle::grandeurs::ecrit::sans_zero::dit(x))))
+    }
+    let (cachets, jours) = (entier(cachets, "cachets")?, entier(jours, "jours")?);
+    let heures = heures.entieres();
+    let enseignement = c.heures_enseignement.map(Heures::entieres);
     let brut = Montant::du_decimal(l.b.brut).au_centime().decimal();
     let (debut, fin) = (l.b.debut, l.b.fin);
     let compte = Compte { heures, cachets, jours, brut };
@@ -2358,14 +2355,15 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
 /// des cachets ; pour un technicien, des jours. Sans statut, rien ne le dit : pas de contrat. Les heures, que le
 /// certificat ne porte pas, ne s'inventent pas (0) ; le brut est celui du certificat, « arrondi à l'euro le plus proche ».
 fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<Statut>, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
-    let (Some(debut), Some(fin), Some(nombre), Some(brut)) = (c.debut, c.fin, c.nombre, c.brut) else {
+    let (Some(debut), Some(fin), Some(nombre), Some(brut)) = (c.debut, c.fin, c.nombre.as_deref(), c.brut) else {
         return Err(socle::echec::refus("le certificat ne dit pas tout ce qu'un contrat demande"));
     };
-    let pluriel = |n: i64, mot: &str| format!("{} {}{}", n, mot, if n > 1 { "s" } else { "" });
-    // Le nombre du certificat prend ici son sens, des cachets ou des jours : la porte de sa lecture.
-    let (cachets, jours, quoi) = match statut {
-        Some(Statut::Artiste) => (lu::entier(nombre), Jours::ZERO, pluriel(nombre, "cachet")),
-        Some(Statut::Technicien) => (Cachets::ZERO, lu::entier(nombre), pluriel(nombre, "jour")),
+    let illisible = || socle::refus!("le nombre de jours ou cachets du certificat ne se lit pas : {}", socle::fichiers::repr(nombre));
+    // Le nombre du certificat prend ici son sens, des cachets ou des jours, et se lit en sa grandeur : la porte de sa
+    // lecture.
+    let lu = match statut {
+        Some(Statut::Artiste) => NombreDuCertificat::Cachets(lu::texte_entier(nombre).ok_or_else(illisible)?),
+        Some(Statut::Technicien) => NombreDuCertificat::Jours(lu::texte_entier(nombre).ok_or_else(illisible)?),
         None => {
             let emploi = match &c.emploi {
                 Some(e) => format!("l'emploi « {} » ne nomme aucun métier du catalogue", e),
@@ -2376,6 +2374,11 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<S
                 emploi
             ));
         }
+    };
+    let s = |plus: bool| if plus { "s" } else { "" };
+    let (cachets, jours, quoi) = match lu {
+        NombreDuCertificat::Cachets(n) => (n, Jours::ZERO, format!("{} cachet{}", lu.dit(), s(n > Cachets::UN))),
+        NombreDuCertificat::Jours(n) => (Cachets::ZERO, n, format!("{} jour{}", lu.dit(), s(n > Jours::UN))),
     };
     let brut = Montant::du_decimal(brut).au_centime().decimal();
     // Le certificat Congés Spectacles atteste un engagement du spectacle (D. 7121-41 du code du travail,

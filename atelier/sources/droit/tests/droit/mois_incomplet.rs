@@ -61,7 +61,7 @@ fn les_heures_du_mois_se_comptent_sur_les_jours_travailles_de_la_fiche() {
     let p = part_du_mois(&j(2026, 10, 15), &j(2026, 10, 31), &j(2026, 10, 31), RegleDuMoisIncomplet::HoraireReel, &horaire)
         .unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (13, 23));
-    assert_eq!(p.sur_le_bulletin(droit::conges::heures_par_jour(Decimal::new(15167, 2), &jours)).as_deref(), Some("91 h sur les 161 h du mois"));
+    assert_eq!(p.sur_le_bulletin(droit::conges::heures_par_jour(socle::grandeurs::lu::texte("151.67").unwrap(), &jours)).as_deref(), Some("91 h sur les 161 h du mois"));
     assert!(jours_ecrits("[]").is_err());
     assert!(jours_ecrits("null").is_err());
 }

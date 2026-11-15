@@ -361,7 +361,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
         return Ok(None);
     }
     let jour = |nom: &str| v(nom).and_then(|t: String| socle::piece::Zone::lue(&t, socle::piece::format::JourEcrit).valeur());
-    let entier = |nom: &str| v(nom).and_then(|t| entier_de_chiffres(&t.replace([' ', '\u{a0}'], "")));
+    let ecrit = |nom: &str| v(nom).map(|t| t.replace([' ', '\u{a0}'], ""));
     let nir = v("SALARIE_NIR").map(|n| n.replace(' ', ""));
     let chiffres = |nom: &str| v(nom).and_then(|t: String| entier_de_chiffres(&t));
     let naissance = match (chiffres("SALARIE_DT_NAISSANCE_A"), chiffres("SALARIE_DT_NAISSANCE_M"), chiffres("SALARIE_DT_NAISSANCE_J")) {
@@ -456,9 +456,8 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             embauche: Some(debut),
             fin_contrat: Some(fin),
             en_cours: false,
-            // Les nombres du formulaire, en leurs grandeurs : sa porte.
-            heures: entier(&nom("SAL_NB_HEURES_")).map(lu::entier),
-            cachets_isoles: entier(&nom("SAL_NB_CACHET_")).map(lu::entier),
+            heures: ecrit(&nom("SAL_NB_HEURES_")).and_then(|t| entier_de_chiffres(&t).and(lu::texte_entier(&t))),
+            cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| entier_de_chiffres(&t).and(lu::texte_entier(&t))),
             cachets_groupes: None,
             jours: None,
             brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::num::decimal_a_virgule(&t)),
@@ -776,7 +775,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let brut_tete = rs.iter().filter(|r| r.cle == "brut" && section(r.y0) == 3).min_by(|a, b| a.x0.cmp(&b.x0));
     if !en_tetes.is_empty() {
         let haut = en_tetes.iter().map(|(_, m)| m.y1).fold(Mesure::MIN, Mesure::max);
-        let mut par_colonne: std::collections::BTreeMap<&str, Vec<i64>> = std::collections::BTreeMap::new();
+        let mut par_colonne: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
         let mut ambigu = false;
         for u in inconnus.iter().filter(|u| u.y0 >= haut && !brut_tete.is_some_and(|r| u.y1 > r.y0) && section(u.y0) == 3) {
             if let Some((c, _)) = en_tetes.iter().map(|(c, t)| (*c, (t.cx() - u.cx()).abs())).filter(|x| x.1 <= pt(45)).min_by(|a, b| a.1.cmp(&b.1)) {
@@ -798,14 +797,15 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         } else {
             // Une colonne du formulaire sans nombre ne compte rien : son total est la somme de ce qu'elle porte (aucun
             // nombre, zero). C'est une inference, tiree du formulaire lui-meme.
-            let v = |c: &str| -> i64 { par_colonne.get(c).into_iter().flatten().sum() };
+            fn somme<G: socle::grandeurs::Grandeur + std::iter::Sum>(textes: Option<&Vec<&str>>) -> Option<G> {
+                textes.into_iter().flatten().map(|t| grandeur::<G>(t)).sum()
+            }
             let a_l_en_tete = |c: &str| en_tetes.iter().any(|x| x.0 == c);
             if a_l_en_tete("heures") && a_l_en_tete("jours") && (a_l_en_tete("isoles") || a_l_en_tete("groupes")) {
-                // Les nombres de la page, en leurs grandeurs : sa porte.
-                a.heures = Some(lu::entier(v("heures")));
-                a.cachets_isoles = Some(lu::entier(v("isoles")));
-                a.cachets_groupes = Some(lu::entier(v("groupes")));
-                a.jours = Some(lu::entier(v("jours")));
+                match (somme(par_colonne.get("heures")), somme(par_colonne.get("isoles")), somme(par_colonne.get("groupes")), somme(par_colonne.get("jours"))) {
+                    (Some(h), Some(i), Some(g), Some(j)) => (a.heures, a.cachets_isoles, a.cachets_groupes, a.jours) = (Some(h), Some(i), Some(g), Some(j)),
+                    _ => fautes.push("un nombre du mois ne se lit pas en entier"),
+                }
             }
         }
     }
@@ -844,13 +844,19 @@ fn objet_de_la_piece(texte: Option<&str>) -> Option<NumeroObjetSpectacle> {
     }
 }
 
-fn entier(t: &str) -> Option<i64> {
+fn entier(t: &str) -> Option<&str> {
     if !t.chars().all(|c| c.is_ascii_digit() || c == ',') || !t.chars().next()?.is_ascii_digit() {
         return None;
     }
-    match t.split_once(',') {
-        Some((e, d)) if d.chars().all(|c| c == '0') => entier_de_chiffres(e),
-        Some(_) => None,
-        None => entier_de_chiffres(t),
-    }
+    let chiffres = match t.split_once(',') {
+        Some((e, d)) if d.chars().all(|c| c == '0') => e,
+        Some(_) => return None,
+        None => t,
+    };
+    entier_de_chiffres(chiffres).is_some().then_some(chiffres)
+}
+
+/// La grandeur qu'un nombre entier du formulaire ecrit en chiffres seuls (`entier`) : la porte de sa lecture.
+fn grandeur<G: socle::grandeurs::Grandeur>(t: &str) -> Option<G> {
+    entier(t).and_then(lu::texte_entier)
 }

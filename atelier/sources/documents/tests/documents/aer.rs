@@ -166,17 +166,17 @@ fn attestation() -> Vec<u8> {
     formulaire(&champs_aer(2, 12))
 }
 
-fn paie(numero: &str, debut: Jour, fin: Jour, cachets: i128, heures: i128) -> PaieAer {
-    use socle::grandeurs::lu::entier;
-    PaieAer { numero: engagement::numeros::NumeroContrat::lire(numero).unwrap(), debut, fin, cachets: entier(cachets), heures: Some(entier(heures)) }
+fn paie(numero: &str, debut: Jour, fin: Jour, cachets: &str, heures: &str) -> PaieAer {
+    use socle::grandeurs::lu::texte_entier;
+    PaieAer { numero: engagement::numeros::NumeroContrat::lire(numero).unwrap(), debut, fin, cachets: texte_entier(cachets).unwrap(), heures: Some(texte_entier(heures).unwrap()) }
 }
 
 fn paies_justes() -> Vec<PaieAer> {
-    vec![paie("FA1.26.15", jour(2026, 8, 1), jour(2026, 8, 31), 2, 12), paie("MA2.26.15", jour(2026, 8, 5), jour(2026, 8, 6), 1, 0)]
+    vec![paie("FA1.26.15", jour(2026, 8, 1), jour(2026, 8, 31), "2", "12"), paie("MA2.26.15", jour(2026, 8, 5), jour(2026, 8, 6), "1", "0")]
 }
 
 fn paies_fausses() -> Vec<PaieAer> {
-    vec![paie("FA1.26.15", jour(2026, 8, 1), jour(2026, 8, 31), 2, 24), paie("MA2.26.15", jour(2026, 8, 5), jour(2026, 8, 6), 1, 0)]
+    vec![paie("FA1.26.15", jour(2026, 8, 1), jour(2026, 8, 31), "2", "24"), paie("MA2.26.15", jour(2026, 8, 5), jour(2026, 8, 6), "1", "0")]
 }
 
 fn signer(pdf: &[u8], ent: &droit::fiche::ChampsEntreprise, paies: Option<&[PaieAer]>, forcer: bool, signature: Option<&str>, cachet: Option<&str>) -> Result<Vec<u8>, Echec> {
@@ -202,12 +202,12 @@ fn verifier_une_periode_en_trop_ou_en_moins_est_un_ecart() {
     assert_eq!(e.len(), 1, "{:?}", e);
     assert!(e[0].contains("MA2.26.15") && e[0].contains("aucune paie"), "{:?}", e);
     let mut plus = paies_justes();
-    plus.push(paie("FA1.26.15", jour(2026, 7, 1), jour(2026, 7, 31), 9, 99));
+    plus.push(paie("FA1.26.15", jour(2026, 7, 1), jour(2026, 7, 31), "9", "99"));
     let e = aer::verifier(&attestation(), &plus).unwrap();
     assert_eq!(e.len(), 1, "{:?}", e);
     assert!(e[0].contains("2026-07-01") && e[0].contains("ne porte pas"), "{:?}", e);
     // Le meme contrat sous un autre numero (le compteur d'aujourd'hui, pas celui de la DSN) ne s'explique pas.
-    let e = aer::verifier(&attestation(), &[paie("FA1.26.18", jour(2026, 8, 1), jour(2026, 8, 31), 2, 12), paies_justes()[1].clone()]).unwrap();
+    let e = aer::verifier(&attestation(), &[paie("FA1.26.18", jour(2026, 8, 1), jour(2026, 8, 31), "2", "12"), paies_justes()[1].clone()]).unwrap();
     assert_eq!(e.len(), 2, "{:?}", e);
 }
 
@@ -232,7 +232,7 @@ fn deux_mois(heures_oct: u32) -> Vec<u8> {
 
 #[test]
 fn verifier_un_contrat_sur_deux_mois_colonne_par_colonne() {
-    let paies = [paie("SI2.26.19", jour(2026, 9, 29), jour(2026, 9, 30), 0, 8), paie("SI2.26.19", jour(2026, 10, 1), jour(2026, 10, 16), 0, 10)];
+    let paies = [paie("SI2.26.19", jour(2026, 9, 29), jour(2026, 9, 30), "0", "8"), paie("SI2.26.19", jour(2026, 10, 1), jour(2026, 10, 16), "0", "10")];
     let q = aer::lire_quantites(&aer::champs(&deux_mois(10)).unwrap()).unwrap();
     assert_eq!(q.iter().map(|l| l.numero.as_ref().map(engagement::numeros::NumeroContrat::as_str)).collect::<Vec<_>>(), [Some("SI2.26.19"), Some("SI2.26.19")], "la suite du contrat garde son numero");
     assert_eq!(aer::verifier(&deux_mois(10), &paies).unwrap(), Vec::<String>::new());

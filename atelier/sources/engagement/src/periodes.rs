@@ -69,11 +69,12 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         }
     };
     let salaire_apres = ligne.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal();
-    let quotite_apres = eng.quotite()?.heures("La durée du contrat d'un salarié au mois")?.decimal();
+    let quotite_apres = eng.quotite()?.heures("La durée du contrat d'un salarié au mois")?;
     let avenant = jour_de_l_avenant(eng)?;
     let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle)).and_then(|c| c.dec());
     let (salaire_avant, quotite_avant) = match &eng.avant {
-        Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, terme(&a.quotite_contrat, "quotite_contrat")?),
+        // Les termes d'avant l'avenant, des nombres de la saisie : leur porte.
+        Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, Heures::du_decimal(terme(&a.quotite_contrat, "quotite_contrat")?)),
         None => (salaire_apres, quotite_apres),
     };
     let (debut_mois, fin_mois) = (eng.debut_mois(), eng.fin_mois());
@@ -89,9 +90,9 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let part = droit::periodes::part_du_mois(d, f, &fin_mois, regle, &horaire)?;
         let mut e = eng.clone();
         e.periode = Some((*d, *f));
-        e.quotite_contrat = Some(Heures::du_decimal(court(quotite)));
+        e.quotite_contrat = Some(socle::grandeurs::courte(quotite));
         let q = socle::grandeurs::courte(part.fraction);
-        let h = socle::grandeurs::HeuresParUnite::du_decimal(court(Heures::du_decimal(quotite).au_centieme().decimal()));
+        let h = quotite.par_mois();
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
             quantite: socle::forme::Nombre(q.decimal()),

@@ -357,7 +357,7 @@ fn comparer_une(
     jours_comptes: Option<socle::grandeurs::Jours>,
     c: &mut Comparaison,
 ) -> R<Vec<Ecart>> {
-    let jours_comptes = match jours_comptes.map(socle::grandeurs::Jours::en_entier) {
+    let jours_comptes = match jours_comptes.map(socle::grandeurs::entiere) {
         None => None,
         Some(Some(n)) => Some(n),
         Some(None) => return Err(refus("le bulletin compte des jours travaillés qui ne sont pas un nombre entier")),
@@ -424,9 +424,16 @@ fn comparer_une(
     let mensuelle = nature.proprietes()?.mensuelle();
     if jours.is_empty() && !mensuelle {
         if let (Some(d), Some(f)) = (p.debut, p.fin) {
-            let periode = f.moins(&d) + 1;
+            // Les jours de la periode, du premier au dernier.
+            let (mut de_la_periode, mut j) = (Vec::new(), d);
+            while j <= f {
+                de_la_periode.push(j);
+                j = j.plus_jours(1)?;
+            }
+            let periode = socle::grandeurs::Jours::de_dates(de_la_periode.len());
+            let un = socle::grandeurs::Jours::UN;
             let un_mois = (d.an, d.mois) == (f.an, f.mois);
-            let n = if periode == 1 { Some(1) } else { jours_comptes.filter(|n| *n >= 1 && *n <= periode && (*n == periode || un_mois)) };
+            let n = if periode == un { Some(un) } else { jours_comptes.filter(|n| *n >= un && *n <= periode && (*n == periode || un_mois)) };
             let Some(n) = n else {
                 return Err(refus(match jours_comptes {
                     None => "le bulletin imprime sa période sans ses jours travaillés ni leur nombre",
@@ -434,8 +441,12 @@ fn comparer_une(
                     Some(_) => "le bulletin ne dit pas lesquels de ses jours travaillés tombent dans chacun des mois de sa période",
                 }));
             };
-            for i in 0..n {
-                jours.push(crate::DateDeLigne::Nue(d.plus_jours(i)?));
+            // Ses `n` premiers jours en tiennent lieu.
+            for (k, j) in de_la_periode.into_iter().enumerate() {
+                if socle::grandeurs::Jours::de_dates(k + 1) > n {
+                    break;
+                }
+                jours.push(crate::DateDeLigne::Nue(j));
             }
         }
     }
@@ -456,7 +467,7 @@ fn comparer_une(
         let forme = FormeSaisie::de(&lue)?;
         // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
         let montant = Some(socle::grandeurs::Montant::du_decimal(quantite * taux));
-        let heures = l.heures.map(socle::grandeurs::HeuresParUnite::du_decimal);
+        let heures = l.heures;
         let (base, taux_majoration) = (Some(socle::grandeurs::Montant::du_decimal(quantite)), Some(socle::grandeurs::Taux::du_decimal(taux * Decimal::ONE_HUNDRED)));
         let (quantite, taux) = (socle::forme::Nombre(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux));
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.

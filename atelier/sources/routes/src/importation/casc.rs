@@ -17,7 +17,7 @@ use std::path::Path;
 
 use rust_decimal::RoundingStrategy;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use socle::grandeurs::{Cachets, Heures, Jours};
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
@@ -42,7 +42,26 @@ struct Versee {
     debut: Option<Jour>,
     fin: Option<Jour>,
     /// Les cachets, heures et jours que le contrat atteste, quand il tient dans le mois.
-    activite: BTreeMap<&'static str, Decimal>,
+    activite: Activite,
+}
+
+/// L'ACTIVITE D'UN EMPLOI DE LA REGULARISATION : les cachets, les heures et les jours que son contrat atteste, ceux
+/// qu'il dit et qui ne sont pas nuls.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Activite {
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cachets: Option<Cachets>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub heures: Option<Heures>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub jours: Option<Jours>,
+}
+
+impl Activite {
+    /// N'en dit-elle rien ?
+    fn est_vide(&self) -> bool {
+        self.cachets.is_none() && self.heures.is_none() && self.jours.is_none()
+    }
 }
 
 /// Les paies versees de `mois`, d'apres les engagements importes : une par engagement qui a un brut ce mois-la. Un
@@ -56,20 +75,14 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let cle = &p.salarie;
         let salarie = ctx.salaries.get(cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
         let (debut, fin) = (p.paie.debut, p.paie.fin);
-        let mut activite = BTreeMap::new();
+        let mut activite = Activite::default();
         if let Some(c) = i.contrat_lu()? {
             if du_mois(&c.debut) && du_mois(&c.fin) {
-                // L'activite de la regularisation s'ecrit en nombres : sa porte.
-                let quantites = [
-                    ("jours", c.contrat.jours.map(socle::grandeurs::Jours::decimal)),
-                    ("cachets", c.contrat.cachets.map(socle::grandeurs::Cachets::decimal)),
-                    ("heures", c.contrat.heures.map(socle::grandeurs::Heures::decimal)),
-                ];
-                for (quoi, n) in quantites {
-                    if let Some(v) = n.filter(|n| !n.is_zero()) {
-                        activite.insert(quoi, v);
-                    }
-                }
+                activite = Activite {
+                    cachets: c.contrat.cachets.filter(|n| !n.est_nul()),
+                    heures: c.contrat.heures.filter(|n| !n.est_nul()),
+                    jours: c.contrat.jours.filter(|n| !n.est_nul()),
+                };
             }
         }
         let numero = p.paie.contrat.numero_declare().cloned();
@@ -155,7 +168,7 @@ pub struct EmploiReg {
     pub mois: Mois,
     pub individu: IndividuReg,
     pub contrat: ContratReg,
-    pub activite: BTreeMap<&'static str, Decimal>,
+    pub activite: Activite,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -705,15 +718,19 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         }
         ws.nombre(ligne, 24, arrondi(x.brut), &simple);
         ws.nombre(ligne, 36, arrondi(total), &simple);
-        let act = |q: &str| x.activite.get(q);
-        let colonnes: [(u16, &str); 2] = if artiste { [(33, "cachets"), (34, "heures")] } else { [(31, "jours"), (32, "heures")] };
-        for (col, quoi) in colonnes {
-            if let Some(v) = act(quoi).filter(|q| !q.is_zero()) {
-                ws.nombre(ligne, col, *v, &simple);
+        // Les nombres de la liste nominative, ecrits dans ses cases : sa porte.
+        let a = &x.activite;
+        let colonnes: [(u16, Option<Decimal>); 2] = match artiste {
+            true => [(33, a.cachets.map(Cachets::decimal)), (34, a.heures.map(Heures::decimal))],
+            false => [(31, a.jours.map(Jours::decimal)), (32, a.heures.map(Heures::decimal))],
+        };
+        for (col, v) in colonnes {
+            if let Some(v) = v {
+                ws.nombre(ligne, col, v, &simple);
             }
         }
     }
-    let sans: Vec<&EmploiReg> = r.emplois.iter().filter(|x| x.activite.is_empty()).collect();
+    let sans: Vec<&EmploiReg> = r.emplois.iter().filter(|x| x.activite.est_vide()).collect();
     if !sans.is_empty() {
         let mut mois: Vec<Mois> = sans.iter().map(|x| x.mois).collect();
         mois.sort();

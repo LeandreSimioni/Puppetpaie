@@ -137,6 +137,16 @@ pub fn sans_zero<G: Grandeur>(g: G) -> G {
     G::du(g.en_decimal().normalize())
 }
 
+/// LA GRANDEUR ENTIERE QU'ELLE EST, son echelle ramenee a zero (`4.0` jours : `4`) ; `None` : elle n'est pas entiere
+/// (`4.5` jours). Des jours ou des cachets dits « en nombre entier » se tiennent ainsi.
+pub fn entiere<G: Grandeur>(g: G) -> Option<G> {
+    let d = g.en_decimal();
+    match d.fract().is_zero() {
+        true => Some(G::du(d.trunc())),
+        false => None,
+    }
+}
+
 /// UNE GRANDEUR SANS ZERO INUTILE, UNE DECIMALE AU MOINS (`24` s'ecrit `24.0`, `12.50` `12.5`), comme l'ecrit
 /// `num::court` et la lit `lu::court` : celle d'un taux ou d'heures qu'une paie garde.
 pub fn courte<G: Grandeur>(g: G) -> G {
@@ -337,28 +347,6 @@ impl Jours {
     pub fn de_dates(n: usize) -> Jours {
         Jours(Decimal::from(n))
     }
-
-    /// En nombre entier, au bord de ce qui compte encore en entiers (`Jour::plus_jours`, le certificat Conges
-    /// Spectacles) ; `None` : des jours qui ne sont pas entiers, ou hors des limites d'un entier.
-    pub fn en_entier(self) -> Option<i64> {
-        entier(self.0)
-    }
-}
-
-/// Un decimal entier en `i64` ; `None` : il ne l'est pas, ou il deborde.
-fn entier(d: Decimal) -> Option<i64> {
-    match d.fract().is_zero() {
-        true => rust_decimal::prelude::ToPrimitive::to_i64(&d),
-        false => None,
-    }
-}
-
-impl Cachets {
-    /// En nombre entier, au bord de ce qui compte encore en entiers (le certificat Conges Spectacles) ; `None` : des
-    /// cachets qui ne sont pas entiers, ou hors des limites d'un entier.
-    pub fn en_entier(self) -> Option<i64> {
-        entier(self.0)
-    }
 }
 
 impl HeuresParUnite {
@@ -419,6 +407,13 @@ impl Heures {
         let mut e = self.0.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
         e.rescale(0);
         Heures(e)
+    }
+
+    /// LES HEURES D'UN MOIS PAYE, PAR MOIS : la quotite mensuelle d'un contrat paye au mois (`151.67`), au centieme
+    /// d'heure et dans sa forme la plus courte, en heures par unite, l'unite etant le mois ; la ligne « mois », dont la
+    /// quantite est la part du mois payee, compte ainsi ses heures (`QuantiteDeLigne::heures`).
+    pub fn par_mois(self) -> HeuresParUnite {
+        HeuresParUnite(num::court(self.au_centieme().0))
     }
 
     /// Les cachets qu'il faut pour faire ces heures, a `par_cachet` heures chacun, le dernier entame compte (13 h a 12 h le
@@ -485,17 +480,22 @@ impl std::ops::Mul<MontantUnitaire> for Coefficient {
 /// (`…::deserialize`, `…::option::deserialize` pour un `Option`).
 pub mod lu {
     use crate::grandeurs::Grandeur;
+    use crate::num::{self, Decimal};
 
-    /// Un entier lu d'une piece (une zone a largeur fixe de l'AEM, une case d'un formulaire, un certificat), en sa
-    /// grandeur : la porte de sa lecture.
-    pub fn entier<G: Grandeur>(n: impl Into<crate::num::Decimal>) -> G {
-        <G as crate::grandeurs::Scelle>::du(n.into())
+    /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT (une case d'un formulaire, d'une attestation, d'un bulletin), a la
+    /// francaise ou non (`num::decimal_a_virgule` : « 12,5 », « 12.50 »), son echelle gardee : la porte de sa lecture ;
+    /// `None` : le texte n'est pas un nombre.
+    pub fn texte<G: Grandeur>(t: &str) -> Option<G> {
+        num::decimal_a_virgule(t).map(<G as crate::grandeurs::Scelle>::du)
     }
 
-    /// Un nombre lu d'une piece ou d'une saisie (un bulletin lu, une attestation, une case de fiche), en sa grandeur, son
-    /// echelle gardee : la porte de sa lecture.
-    pub fn nombre<G: Grandeur>(d: crate::num::Decimal) -> G {
-        <G as crate::grandeurs::Scelle>::du(d)
+    /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT EN ENTIER (`num::entier_lu` : une zone a largeur fixe de l'AEM, `012`),
+    /// son echelle nulle : la porte de sa lecture ; `None` : le texte n'est pas un entier, ou il deborde.
+    pub fn texte_entier<G: Grandeur>(t: &str) -> Option<G> {
+        match num::entier_lu(t).map(|n| Decimal::try_from_i128_with_scale(n, 0)) {
+            Some(Ok(d)) => Some(<G as crate::grandeurs::Scelle>::du(d)),
+            Some(Err(_)) | None => None,
+        }
     }
 
     /// Comme `forme::decimal` : un nombre, ou un nombre ecrit en texte (une ligne de paie, une paie ecrite : le moteur

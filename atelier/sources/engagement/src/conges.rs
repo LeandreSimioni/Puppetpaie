@@ -130,12 +130,19 @@ pub(crate) fn salaire_mensuel(ctx: &Contexte, e: &Carte) -> R<Decimal> {
 /// LES HEURES PAR MOIS DU CONTRAT d'un salarie au mois (S21.G00.40.013) : celles que la carte dit ; un contrat qui ne
 /// les dit pas est a la duree legale que sa nature porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans
 /// `contrats-base.json`). Des heures nulles se refusent en nommant la case.
-pub(crate) fn quotite_du_contrat(ctx: &Contexte, e: &Carte, nat: &droit::natures::Nature) -> R<Decimal> {
+pub(crate) fn quotite_du_contrat(ctx: &Contexte, e: &Carte, nat: &droit::natures::Nature) -> R<Heures> {
     match &e.quotite_contrat {
-        Some(q) if Chiffre::Nombre(q.clone()).vrai() => dec_de(q),
+        // Un nombre de la saisie : sa porte.
+        Some(q) if Chiffre::Nombre(q.clone()).vrai() => dec_de(q).map(Heures::du_decimal),
         Some(_) => Err(socle::refus!("{} : ses heures par mois sont nulles : la case « Heures par mois » dit la durée du contrat signé.", qui(ctx, e))),
-        None => nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree(&droit::natures::BASE, "quotite_reference_defaut")),
+        None => duree_legale(nat),
     }
+}
+
+/// La duree legale d'un contrat au mois que sa nature porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans
+/// `contrats-base.json`), en heures par mois.
+fn duree_legale(nat: &droit::natures::Nature) -> R<Heures> {
+    nat.quotite_reference_defaut().map(Heures::du_decimal).ok_or_else(|| socle::echec::livree(&droit::natures::BASE, "quotite_reference_defaut"))
 }
 
 /// LES HEURES DE PLUS DE SON CONTRAT d'un salarie au mois, une case de sa carte (`nom`) : la somme de ce qu'elle dit,
@@ -1060,7 +1067,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         rubrique: MOIS_PAYE,
         quantite: Nombre(court(fraction)),
         taux: MontantUnitaire::du_decimal(court(salaire)),
-        heures: Some(socle::grandeurs::HeuresParUnite::du_decimal(court(Heures::du_decimal(quotite).au_centieme().decimal()))),
+        heures: Some(quotite.par_mois()),
         precision: part.sur_le_bulletin(heures_par_jour),
         dates: Vec::new(),
     });
@@ -1161,9 +1168,9 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // --- les heures supplementaires d'un temps plein, complementaires d'un temps partiel
     // Le temps partiel comme la DSN le declare (`Engagement::modalite_temps_travail`) : une duree du contrat inferieure a
     // la plus courte de la duree legale et de la quotite de reference (C. trav. L3123-1).
-    let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree(&droit::natures::BASE, "quotite_reference_defaut"))?;
+    let legale = duree_legale(&nat)?;
     let reference = match &e.quotite_reference {
-        Some(r) if Chiffre::Nombre(r.clone()).vrai() => dec_de(r)?.min(legale),
+        Some(r) if Chiffre::Nombre(r.clone()).vrai() => Heures::du_decimal(dec_de(r)?).min(legale),
         Some(_) => {
             return Err(socle::refus!("{} : la quotité de référence saisie est nulle : elle dit la durée collective du travail de l'entreprise (en heures par mois), ou ne se saisit pas à la durée légale.", qui(ctx, e)))
         }
@@ -1173,7 +1180,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         Some(m) => m == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel,
         None => quotite < reference,
     };
-    let (l, a) = crate::heures_en_plus::lignes(ctx, e, mois, Montant::du_decimal(salaire), Heures::du_decimal(quotite), partiel)?;
+    let (l, a) = crate::heures_en_plus::lignes(ctx, e, mois, Montant::du_decimal(salaire), quotite, partiel)?;
     lignes.extend(l);
     avert.extend(a);
 
@@ -1203,11 +1210,11 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             return Err(socle::refus!("{} : prime d'anciennete ({}) -- {}.", qui(ctx, e), pa.article, pa.pourquoi.into_iter().collect::<String>()));
         };
         let pourcentage = Decimal::from(pa.pourcentage);
-        let reference = Decimal::from_str("151.67").unwrap();
-        let base = Montant::du_decimal(div(mul(base_conv, quotite), reference)).au_centime().decimal();
+        let reference = Heures::du_decimal(Decimal::from_str("151.67").unwrap());
+        let base = Montant::du_decimal(base_conv).prorata(quotite, reference).au_centime().decimal();
         let montant = Montant::du_decimal(div(mul(base, pourcentage), Decimal::ONE_HUNDRED)).au_centime().decimal();
         lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, Nombre(Decimal::ONE), MontantUnitaire::du_decimal(court(montant))));
-        let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite)) } else { String::new() };
+        let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite.decimal())) } else { String::new() };
         avert.push(info(format!(
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \
              conventionnel de {}{} = {} -- {}.",

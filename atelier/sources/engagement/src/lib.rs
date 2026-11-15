@@ -176,8 +176,10 @@ pub struct Assemble {
     pub numero: Option<numeros::NumeroContrat>,
     pub nature: Option<NatureDeContrat>,
     pub taux_cachet: Option<Chiffre>,
-    pub jours: Option<Chiffre>,
-    pub jours_contrat: Option<Chiffre>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub jours: Option<Jours>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub jours_contrat: Option<Jours>,
     pub date_paiement: Option<Jour>,
     pub lieu: Option<String>,
     pub emploi: Option<String>,
@@ -206,18 +208,15 @@ pub struct Assemble {
     pub modele_contrat: Option<carte::IdDeModele>,
 }
 
-/// Des jours dits, en nombre entier (`4`, `4.0`) : la porte de la carte. Un autre nombre, ou un texte, se refuse.
-fn jours_dits(v: &Option<Chiffre>, nom: &str) -> R<Option<Jours>> {
+/// Des jours que la carte dit, en nombre entier (`4`, `4.0`) : la porte de la saisie, ou ils se lisent en leur grandeur.
+/// Un autre nombre se refuse.
+fn jours_dits(v: &Option<NombreLu>, nom: &str) -> R<Option<Jours>> {
     match v {
         None => Ok(None),
-        Some(Chiffre::Nombre(n)) => {
-            let d = n.decimal()?;
-            if !d.fract().is_zero() {
-                return Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n));
-            }
-            Ok(Some(socle::grandeurs::lu::nombre(d.trunc())))
-        }
-        Some(autre) => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, socle::date::repr_texte(&autre.en_texte()))),
+        Some(n) => match socle::grandeurs::entiere(Jours::du_decimal(n.decimal()?)) {
+            Some(j) => Ok(Some(j)),
+            None => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n)),
+        },
     }
 }
 
@@ -413,7 +412,7 @@ impl Engagement {
         }
 
         // Les jours travailles : un fait qui se saisit, sinon les dates distinctes.
-        let jours = match jours_dits(&v.jours, "jours")? {
+        let jours = match v.jours {
             Some(j) => j,
             None => Jours::de_dates(presents.len()),
         };
@@ -495,7 +494,7 @@ impl Engagement {
         };
         let mut dates_contrat: Vec<Jour> = jours_joues.clone();
         dates_contrat.extend(&planning);
-        let jours_contrat = match jours_dits(&v.jours_contrat, "jours_contrat")? {
+        let jours_contrat = match v.jours_contrat {
             Some(n) => n,
             None => Jours::de_dates(dates_contrat.iter().collect::<BTreeSet<_>>().len()),
         };
@@ -1064,12 +1063,11 @@ pub(crate) fn engagements(
             None => None,
         };
         // Les jours travailles d'un contrat paye au mois : ceux que le moteur tire du mois (`conges::lignes_du_mois`).
-        let mut jours_du_mois: Option<Chiffre> = None;
+        let mut jours_du_mois: Option<Jours> = None;
         let lignes = if nat.mensuelle() {
             let (lignes, avis, jours_travailles) = lignes_permanent(ctx, carte, mois_dit)?;
             dits.push(avis);
-            // La forme assemblee ecrit ses jours en nombre : sa porte.
-            jours_du_mois = jours_travailles.map(|j| Chiffre::de_decimal(j.decimal()));
+            jours_du_mois = jours_travailles;
             Some(lignes)
         } else {
             match &carte.lignes {
@@ -1084,13 +1082,12 @@ pub(crate) fn engagements(
                 }
             }
         };
-        let nombre = |x: &Option<NombreLu>| x.clone().map(Chiffre::Nombre);
         // Un contrat d'usage commence dans l'ancien logiciel et continue ici : les jours du contrat entier comptent ceux
         // que les pieces importees attestent (`importe::Importe::jours_du_contrat_continue`).
         let continue_ = match &carte.jours_contrat {
             None if !nat.mensuelle() && carte.debut_lu().is_some_and(|d| d.mois_civil() < mois_dit) => {
                 match crate::importe::continue_par(&ctx.racine, carte)? {
-                    Some(i) => i.jours_du_contrat_continue(carte.jours_du_contrat())?.map(Chiffre::entier),
+                    Some(i) => i.jours_du_contrat_continue(carte.jours_du_contrat()),
                     None => None,
                 }
             }
@@ -1108,8 +1105,8 @@ pub(crate) fn engagements(
             fin: carte.fin,
             numero: carte.numero.clone(),
             mois: Some(mois_dit),
-            jours: nombre(&carte.jours).or(jours_du_mois),
-            jours_contrat: nombre(&carte.jours_contrat).or(continue_),
+            jours: jours_dits(&carte.jours, "jours")?.or(jours_du_mois),
+            jours_contrat: jours_dits(&carte.jours_contrat, "jours_contrat")?.or(continue_),
             planning: carte.planning(),
             lignes,
             date_paiement: carte.date_paiement,
@@ -1136,7 +1133,7 @@ pub(crate) fn engagements(
             dernier_jour_paye: carte.dernier_jour_paye,
             date_modification: carte.date_modification,
             avant: carte.avant.clone(),
-            periode_essai_jours: nombre(&carte.periode_essai_jours),
+            periode_essai_jours: carte.periode_essai_jours.clone().map(Chiffre::Nombre),
             personne_remplacee: termes.personne_remplacee,
             repartition_horaire: termes.repartition_horaire,
             clauses_particulieres: carte.clauses_particulieres.clone(),

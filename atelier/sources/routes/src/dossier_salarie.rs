@@ -557,8 +557,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
         debut: Some(eng.debut),
         fin: eng.fin,
         numero: eng.numero.clone(),
-        // La forme assemblee ecrit ses jours en nombre : sa porte.
-        jours: Some(engagement::Chiffre::de_decimal((jours + eng.jours).decimal())),
+        jours: Some(jours + eng.jours),
         taux_cachet: eng.taux_cachet.map(|t| engagement::Chiffre::de_decimal(t.decimal())),
         date_paiement: eng.date_paiement.clone(),
         lieu: Some(eng.lieu.clone()),

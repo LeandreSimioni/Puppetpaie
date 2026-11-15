@@ -330,7 +330,9 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
 /// et les fautes des cases laissees vides d'un enregistrement repris (un numero d'objet hors de sa forme). Un
 /// `CalculImpossible` (un brut qui n'est pas un nombre) n'est pas rattrape.
 pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec<String>), socle::echec::Echec> {
-    use socle::num::{decimal_lu, entier_lu};
+    use socle::grandeurs::ecrit::sans_zero::dit;
+    use socle::grandeurs::lu::texte_entier;
+    use socle::num::decimal_lu;
     let mut vus: Vec<(Vec<String>, ContratAtteste)> = Vec::new();
     let mut connus: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
     let mut illisibles = Vec::new();
@@ -383,8 +385,15 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                     None
                 }
             };
-            let entiers = [(650, 653), (653, 655), (655, 657), (657, 659)].map(|(a, b)| entier_lu(&champ(&l, a, b)));
-            let [Some(heures), Some(c1), Some(c2), Some(jours)] = entiers else {
+            // Les positions 650-659 de l'AEM, des entiers, en leurs grandeurs : leur porte.
+            let zone = |a: usize, b: usize| champ(&l, a, b);
+            let (heures, c1, c2, jours) = (
+                texte_entier::<Heures>(&zone(650, 653)),
+                texte_entier::<Cachets>(&zone(653, 655)),
+                texte_entier::<Cachets>(&zone(655, 657)),
+                texte_entier::<Jours>(&zone(657, 659)),
+            );
+            let (Some(heures), Some(c1), Some(c2), Some(jours)) = (heures, c1, c2, jours) else {
                 illisible(&mut illisibles);
                 continue;
             };
@@ -398,9 +407,9 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                 debut.iso(),
                 fin.iso(),
                 objet_ecrit,
-                heures.to_string(),
-                (c1 + c2).to_string(),
-                jours.to_string(),
+                dit(heures),
+                dit(c1 + c2),
+                dit(jours),
                 brut.to_string(),
             ];
             if connus.insert(cle.clone()) {
@@ -409,10 +418,9 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                     debut,
                     fin,
                     numero_objet,
-                    // Les positions 650-659 de l'AEM, en entiers : leur porte.
-                    heures: socle::grandeurs::lu::entier(heures),
-                    cachets: socle::grandeurs::lu::entier(c1 + c2),
-                    jours: socle::grandeurs::lu::entier(jours),
+                    heures,
+                    cachets: c1 + c2,
+                    jours,
                     brut,
                     numero_attestation: tranche(&l, 36, 42).trim_matches(blanc).to_string(),
                     date_attestation,

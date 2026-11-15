@@ -250,6 +250,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
 | heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures`) | `socle/src/grandeurs.rs` |
+| nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (`Cachets` ou `Jours`) | `documents/src/conges_spectacles.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, la part du mois payée, ou la base en euros d'une ligne en pourcentage) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
 | quotité d'un contrat (S21.G00.40.012, .013, dans l'unité que dit 40.011 : des jours d'un contrat d'usage, des heures par mois d'un salarié au mois) | `QuotiteDuContrat` | `engagement/src/lib.rs` |

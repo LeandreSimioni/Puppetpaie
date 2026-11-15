@@ -55,7 +55,6 @@ use socle::date::Jour;
 use socle::echec::refus;
 use socle::mois::Mois;
 use socle::grandeurs::{Cachets, Heures};
-use socle::num::Decimal;
 
 /// Les champs du cadre 5, et rien d'autre.
 pub const CHAMPS_TEXTE: [&str; 10] = [
@@ -215,10 +214,11 @@ impl Cadre5 {
     }
 }
 
-/// Une quantite du formulaire -> nombre ; une case vide (ou absente) ne dit aucune quantite (`None`). Un nombre a
-/// virgule se lit tel qu'il est ecrit (« 151,67 » : cent cinquante et une heures soixante-sept), le separateur des
-/// milliers (espace) s'ote ; tout autre texte refuse : une quantite qu'on ne sait pas lire ne se compare pas.
-pub fn quantite(v: Option<&str>) -> socle::echec::R<Option<Decimal>> {
+/// Une quantite du formulaire, en sa grandeur (la porte de l'attestation), sans zero inutile ; une case vide (ou
+/// absente) ne dit aucune quantite (`None`). Un nombre a virgule se lit tel qu'il est ecrit (« 151,67 » : cent
+/// cinquante et une heures soixante-sept), le separateur des milliers (espace) s'ote ; tout autre texte refuse : une
+/// quantite qu'on ne sait pas lire ne se compare pas.
+fn quantite<G: socle::grandeurs::Grandeur>(v: Option<&str>) -> socle::echec::R<Option<G>> {
     let Some(v) = v else { return Ok(None) };
     let t: String = v.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect();
     if t.is_empty() {
@@ -227,7 +227,7 @@ pub fn quantite(v: Option<&str>) -> socle::echec::R<Option<Decimal>> {
     if !t.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',') {
         return Err(socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)));
     }
-    socle::num::decimal_a_virgule(&t).map(|d| Some(d.normalize())).ok_or_else(|| socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)))
+    socle::grandeurs::lu::texte(&t).map(|g| Some(socle::grandeurs::sans_zero(g))).ok_or_else(|| socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)))
 }
 
 /// Deux quantites concordent-elles ? Une quantite que rien ne dit (une case vide de l'attestation, des heures que
@@ -297,9 +297,8 @@ pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
         if debut.is_none() && fin.is_none() {
             continue;
         }
-        let q = |i: usize| quantite(valeur(champs, &nom(QUANTITES[i].1)).as_deref());
-        // Les quantites imprimees se lisent en leur grandeur : la porte de l'attestation.
-        let ligne = Ligne { debut, fin, cachets: q(0)?.map(socle::grandeurs::lu::nombre), heures: q(1)?.map(socle::grandeurs::lu::nombre), numero: numero_courant.clone() };
+        let q = |i: usize| valeur(champs, &nom(QUANTITES[i].1));
+        let ligne = Ligne { debut, fin, cachets: quantite(q(0).as_deref())?, heures: quantite(q(1).as_deref())?, numero: numero_courant.clone() };
         match out.iter_mut().find(|l| l.debut == debut && l.fin == fin && l.numero == ligne.numero) {
             Some(l) => *l = ligne,
             None => out.push(ligne),

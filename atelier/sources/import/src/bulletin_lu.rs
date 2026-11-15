@@ -50,6 +50,7 @@ use std::path::Path;
 use socle::date::Jour;
 use socle::echec::R;
 use socle::num::Decimal;
+use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours};
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 use droit::catalogue::CodeDeRubrique;
@@ -571,7 +572,7 @@ pub struct LigneTable {
     /// Le code du catalogue ; `None` : connu, sans rubrique sure.
     pub rubrique: Option<CodeDeRubrique>,
     /// Les heures d'une unite, quand le libelle les dit (« 4h ») et que la rubrique les fait saisir.
-    pub heures: Option<Decimal>,
+    pub heures: Option<HeuresParUnite>,
     /// La rubrique est hors de l'assiette (`soumis: false` du catalogue livre : un defraiement, un acompte) ; `false`
     /// aussi pour un code que le catalogue livre ne connait pas (les compteurs le refusent).
     pub non_soumise: bool,
@@ -678,7 +679,8 @@ enum LigneEcrite {
 #[serde(deny_unknown_fields)]
 struct LigneDetaillee {
     rubrique: CodeDeRubrique,
-    heures: Option<socle::forme::Nombre>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    heures: Option<HeuresParUnite>,
 }
 
 /// LES TEXTES DE LA TABLE LIVREE, tels qu'ecrits : ses notes, ses libelles, ses signatures, les rubriques de ses lignes
@@ -843,8 +845,8 @@ fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> R<Vec<LigneTable>> {
             None => (None, None),
             Some(LigneEcrite::Rubrique(s)) => (Some(s.clone()), None),
             Some(LigneEcrite::Detail(d)) => match d.heures {
-                Some(socle::forme::Nombre(h)) if h <= Decimal::ZERO => return Err(socle::echec::livree_dite(&FICHIER_TABLE, &format!("{}.heures", o), "table de lecture des bulletins")),
-                h => (Some(d.rubrique.clone()), h.map(|n| n.0)),
+                Some(h) if h <= HeuresParUnite::ZERO => return Err(socle::echec::livree_dite(&FICHIER_TABLE, &format!("{}.heures", o), "table de lecture des bulletins")),
+                h => (Some(d.rubrique.clone()), h),
             },
         };
         let c = canon(libelle);
@@ -902,7 +904,8 @@ pub struct LignePaie {
     pub rubrique: Option<CodeDeRubrique>,
     /// Les heures d'une unite que le libelle dit (« 4h »), d'apres la table : pour une rubrique dont les heures se
     /// saisissent (un service de repetition).
-    pub heures: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub heures: Option<HeuresParUnite>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -2364,20 +2367,24 @@ fn controler(b: &mut BulletinLu) {
 /// `None` : inconnu, pas devine.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Compteurs {
-    pub cachets: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cachets: Option<Cachets>,
     /// Les heures de travail hors cachets : heures, services de repetition, enseignement.
-    pub heures: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub heures: Option<Heures>,
     /// La part de `heures` qui est de l'enseignement (`compte_pour = ouverture_des_droits`).
-    pub heures_enseignement: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub heures_enseignement: Option<Heures>,
     /// Les jours travailles : les dates du bulletin, ou son cumul « Jours ».
-    pub jours: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub jours: Option<Jours>,
     /// Les desaccords avec les cumuls du bulletin, et les lignes qui n'entrent dans aucun compteur.
     pub avertissements: Vec<String>,
 }
 
-fn nombre_ecrit(x: Option<Decimal>) -> String {
+fn nombre_ecrit<G: Grandeur>(x: Option<G>) -> String {
     match x {
-        Some(v) => v.normalize().to_string(),
+        Some(v) => socle::grandeurs::ecrit::sans_zero::dit(v),
         None => "(non compté)".to_string(),
     }
 }
@@ -2386,9 +2393,9 @@ fn nombre_ecrit(x: Option<Decimal>) -> String {
 /// heures que le bulletin n'imprime pas (« 6 Services de répétition », la duree du service se saisit) : ses heures ne
 /// sont pas connues des lignes, les cumuls les disent.
 struct Lignes {
-    cachets: Option<Decimal>,
-    heures: Option<Decimal>,
-    enseignement: Option<Decimal>,
+    cachets: Option<Cachets>,
+    heures: Option<Heures>,
+    enseignement: Option<Heures>,
     sans_duree: bool,
     dates: Vec<Jour>,
     avertissements: Vec<String>,
@@ -2396,10 +2403,9 @@ struct Lignes {
 
 /// Chaque ligne qui porte une rubrique la lit dans le catalogue de la compagnie (voir `compteurs`).
 fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
-    let zero = Decimal::ZERO;
     let mut avertissements = Vec::new();
     let mut sans_duree = false;
-    let (mut cachets, mut heures, mut enseignement) = (Some(zero), Some(zero), Some(zero));
+    let (mut cachets, mut heures, mut enseignement) = (Some(Cachets::ZERO), Some(Heures::ZERO), Some(Heures::ZERO));
     for l in &b.lignes {
         let Some(code) = &l.rubrique else {
             avertissements.push(format!("« {} » : sans rubrique du catalogue, la ligne n'entre dans aucun compteur", l.libelle));
@@ -2407,9 +2413,9 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         };
         let r = droit::catalogue::rubrique(racine, code, &b.fin)?;
         let cachet = r.unite == droit::catalogue::Unite::Cachet;
-        let forfait = r.heures_forfait.map(socle::grandeurs::HeuresParUnite::decimal);
-        let par_unite = forfait.or(l.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE));
-        if !cachet && par_unite.is_none() {
+        // Les heures d'une unite : le forfait du catalogue, sinon celles que le libelle dit ; une heure compte ses heures.
+        let par_unite = r.heures_forfait.or(l.heures);
+        if !cachet && par_unite.is_none() && r.unite != droit::catalogue::Unite::Heure {
             // un defraiement, un acompte : ni cachet ni heure ; une rubrique dont les heures se saisissent : non dites
             sans_duree |= r.saisie.contains(&droit::catalogue::CaseSaisie::Heures);
             continue;
@@ -2427,13 +2433,21 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
             }
             continue;
         };
-        if cachet {
-            cachets = cachets.map(|c| c + q);
-        } else if let Some(u) = par_unite {
-            heures = heures.map(|x| x + q * u);
-            if ens {
-                enseignement = enseignement.map(|x| x + q * u);
+        // La quantite de la ligne prend l'unite de sa rubrique : la porte de sa lecture.
+        use engagement::ligne::QuantiteDeLigne as Q;
+        let h = match (Q::de_l_unite(r.unite, q), par_unite) {
+            (Q::Cachets(c), _) => {
+                cachets = cachets.map(|x| x + c);
+                continue;
             }
+            (q, Some(u)) => q.fois(u).ok_or_else(|| socle::refus!("« {} » : une ligne en pourcentage ne compte pas d'heures par unité", l.libelle))?,
+            (Q::Heures(h), None) => h,
+            // Ni cachet, ni heures par unite, ni heure : la ligne est passee plus haut.
+            (_, None) => continue,
+        };
+        heures = heures.map(|x| x + h);
+        if ens {
+            enseignement = enseignement.map(|x| x + h);
         }
     }
     let mut dates = b.jours_travailles.clone();
@@ -2444,28 +2458,28 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
 
 /// Ce qu'une colonne de la periode dit, face aux lignes de son bulletin et de ses freres du mois (voir `compteurs`).
 #[derive(Debug, PartialEq)]
-enum Accord {
+enum Accord<G> {
     /// Les lignes du bulletin s'accordent (avec la colonne, ou avec elle comme total du mois) : elles restent.
     Tel,
     /// Les lignes ne disent rien : la colonne le dit, seule ou moins ce que comptent les freres du mois.
-    Vaut(Decimal),
+    Vaut(G),
     /// Un bulletin seul dans son mois qui compte autrement que ses lignes : le bulletin l'emporte.
     Seul,
     /// Un total du mois qui ne s'accorde pas aux lignes de ses bulletins (leur somme, quand elle se connait).
-    Mois(Option<Decimal>),
+    Mois(Option<G>),
 }
 
 /// `imprime` : la colonne de ce bulletin ; `lui` : ce que ses lignes comptent ; `freres` : (ce que leurs lignes
 /// comptent, ce que leur colonne imprime) pour les autres bulletins du mois.
-fn accorder(imprime: Decimal, lui: Option<Decimal>, freres: &[(Option<Decimal>, Option<Decimal>)]) -> Accord {
+fn accorder<G: Grandeur + Ord + std::iter::Sum + std::ops::Sub<Output = G>>(imprime: G, lui: Option<G>, freres: &[(Option<G>, Option<G>)]) -> Accord<G> {
     if lui == Some(imprime) {
         return Accord::Tel;
     }
     if freres.is_empty() {
         return if lui.is_none() { Accord::Vaut(imprime) } else { Accord::Seul };
     }
-    let tous: Vec<Option<Decimal>> = std::iter::once(lui).chain(freres.iter().map(|f| f.0)).collect();
-    let somme: Option<Decimal> = tous.iter().copied().sum();
+    let tous: Vec<Option<G>> = std::iter::once(lui).chain(freres.iter().map(|f| f.0)).collect();
+    let somme: Option<G> = tous.iter().copied().sum();
     if somme == Some(imprime) {
         return Accord::Tel;
     }
@@ -2475,7 +2489,7 @@ fn accorder(imprime: Decimal, lui: Option<Decimal>, freres: &[(Option<Decimal>, 
         if lui.is_some() {
             return Accord::Tel; // le frere que ses lignes ne disent pas porte le reste
         }
-        let autres: Decimal = freres.iter().filter_map(|f| f.0).sum();
+        let autres: G = freres.iter().filter_map(|f| f.0).sum();
         return if autres <= imprime { Accord::Vaut(imprime - autres) } else { Accord::Mois(None) };
     }
     if lui.is_none() {
@@ -2510,71 +2524,70 @@ fn accorder(imprime: Decimal, lui: Option<Decimal>, freres: &[(Option<Decimal>, 
 /// cachet groupe a 8 h, la regle d'avant ce decret) ; les compteurs restent ceux des lignes. Une erreur : une rubrique
 /// que le catalogue ne connait pas.
 pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> R<Compteurs> {
-    let zero = Decimal::ZERO;
-    let forfait = droit::catalogue::rubrique(racine, &droit::catalogue::CACHET, &b.fin)?.heures_forfait.map(socle::grandeurs::HeuresParUnite::decimal);
+    let forfait = droit::catalogue::rubrique(racine, &droit::catalogue::CACHET, &b.fin)?.heures_forfait;
     // Le total d'heures que des lignes comptent, cachets convertis ; `None` : inconnu.
-    let total = |l: &Lignes| -> Option<Decimal> {
+    let total = |l: &Lignes| -> Option<Heures> {
         if l.sans_duree {
             return None;
         }
         match (l.heures, l.cachets, forfait) {
-            (Some(h), Some(c), _) if c == zero => Some(h),
+            (Some(h), Some(c), _) if c.est_nul() => Some(h),
             (Some(h), Some(c), Some(f)) => Some(h + c * f),
             _ => None,
         }
     };
-    let jours_de = |l: &Lignes| (!l.dates.is_empty()).then(|| Decimal::from(l.dates.len()));
+    let jours_de = |l: &Lignes| (!l.dates.is_empty()).then(|| Jours::de_dates(l.dates.len()));
+    // La colonne « Période » d'un cumul que la page imprime, un nombre du bulletin lu : sa grandeur se lit ici, a la
+    // porte du bulletin, par le nom du cumul qui la dit.
     let imprime = |b: &BulletinLu, nom: &str| b.cumuls.iter().find(|(n, _)| n == nom).and_then(|(_, c)| c.periode);
+    let cachets_imprimes = |b: &BulletinLu| imprime(b, "cachets").map(Cachets::du_decimal);
+    let jours_imprimes = |b: &BulletinLu| imprime(b, "jours").map(Jours::du_decimal);
+    let heures_imprimees = |b: &BulletinLu| imprime(b, "heures").map(Heures::du_decimal);
     let siennes = lignes_comptees(b, racine)?;
     let autres: Vec<(Lignes, &BulletinLu)> = freres.iter().map(|f| lignes_comptees(f, racine).map(|l| (l, *f))).collect::<R<_>>()?;
     let nombre = autres.len() + 1;
     let mut avertissements = siennes.avertissements.clone();
     let (mut cachets, mut heures, mut enseignement) = (siennes.cachets, siennes.heures, siennes.enseignement);
     let mut jours = jours_de(&siennes);
-    let ecart_du_mois = |quoi: &str, x: Decimal, lui: Option<Decimal>, somme: Option<Decimal>| {
+    // Les phrases, des compteurs deja ecrits (`nombre_ecrit`).
+    let ecart_du_mois = |quoi: &str, x: String, lui: String, somme: String| {
         format!(
             "{} : le bulletin en compte {} ; ses lignes {}, celles de ses {} bulletins du mois {} ; un total du mois ne se répartit pas entre ses contrats : les compteurs restent ceux des lignes",
-            quoi,
-            nombre_ecrit(Some(x)),
-            nombre_ecrit(lui),
-            nombre,
-            nombre_ecrit(somme)
+            quoi, x, lui, nombre, somme
         )
     };
-    let emporte = |quoi: &str, de: &str, x: Decimal, lui: Option<Decimal>| {
-        format!("{} : le bulletin en compte {}, {} {} ; le bulletin l'emporte", quoi, nombre_ecrit(Some(x)), de, nombre_ecrit(lui))
-    };
+    let emporte = |quoi: &str, de: &str, x: String, lui: String| format!("{} : le bulletin en compte {}, {} {} ; le bulletin l'emporte", quoi, x, de, lui);
 
-    if let Some(x) = imprime(b, "cachets") {
-        let f: Vec<_> = autres.iter().map(|(l, fb)| (l.cachets, imprime(fb, "cachets"))).collect();
+    if let Some(x) = cachets_imprimes(b) {
+        let f: Vec<_> = autres.iter().map(|(l, fb)| (l.cachets, cachets_imprimes(fb))).collect();
         match accorder(x, cachets, &f) {
             Accord::Tel => {}
             Accord::Vaut(v) => cachets = Some(v),
             Accord::Seul => {
-                avertissements.push(emporte("cachets", "ses lignes", x, cachets));
+                avertissements.push(emporte("cachets", "ses lignes", nombre_ecrit(Some(x)), nombre_ecrit(cachets)));
                 cachets = Some(x);
             }
-            Accord::Mois(s) => avertissements.push(ecart_du_mois("cachets", x, cachets, s)),
+            Accord::Mois(s) => avertissements.push(ecart_du_mois("cachets", nombre_ecrit(Some(x)), nombre_ecrit(cachets), nombre_ecrit(s))),
         }
     }
-    if let Some(x) = imprime(b, "jours") {
-        let f: Vec<_> = autres.iter().map(|(l, fb)| (jours_de(l), imprime(fb, "jours"))).collect();
+    if let Some(x) = jours_imprimes(b) {
+        let f: Vec<_> = autres.iter().map(|(l, fb)| (jours_de(l), jours_imprimes(fb))).collect();
         match accorder(x, jours, &f) {
             Accord::Tel => {}
             Accord::Vaut(v) => jours = Some(v),
             Accord::Seul => {
-                avertissements.push(emporte("jours", "ses dates travaillées", x, jours));
+                avertissements.push(emporte("jours", "ses dates travaillées", nombre_ecrit(Some(x)), nombre_ecrit(jours)));
                 jours = Some(x);
             }
-            Accord::Mois(s) => avertissements.push(ecart_du_mois("jours", x, jours, s)),
+            Accord::Mois(s) => avertissements.push(ecart_du_mois("jours", nombre_ecrit(Some(x)), nombre_ecrit(jours), nombre_ecrit(s))),
         }
     }
-    if let Some(x) = imprime(b, "heures") {
+    if let Some(x) = heures_imprimees(b) {
         let lui = Lignes { cachets, ..siennes };
         let le_sien = total(&lui);
-        let f: Vec<_> = autres.iter().map(|(l, fb)| (total(l), imprime(fb, "heures"))).collect();
-        let sans_cachet = cachets == Some(zero);
-        let convertis = |t: Option<Decimal>| {
+        let f: Vec<_> = autres.iter().map(|(l, fb)| (total(l), heures_imprimees(fb))).collect();
+        let sans_cachet = cachets.is_some_and(Cachets::est_nul);
+        let convertis = |t: Option<Heures>| {
             format!(
                 "heures : le bulletin en compte {}, cachets convertis compris ; ses lignes {} ({} cachet(s) à {} h et {} h) ; un total où des cachets sont convertis ne se décompose pas : les compteurs restent ceux des lignes",
                 nombre_ecrit(Some(x)),
@@ -2589,17 +2602,22 @@ pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> R<Com
             Accord::Vaut(v) if sans_cachet => heures = Some(v),
             Accord::Vaut(_) => avertissements.push(convertis(le_sien)),
             Accord::Seul if sans_cachet => {
-                avertissements.push(emporte("heures", "ses lignes", x, heures));
+                avertissements.push(emporte("heures", "ses lignes", nombre_ecrit(Some(x)), nombre_ecrit(heures)));
                 heures = Some(x);
             }
             Accord::Seul => avertissements.push(convertis(le_sien)),
-            Accord::Mois(s) => avertissements.push(ecart_du_mois("heures", x, le_sien, s)),
+            Accord::Mois(s) => avertissements.push(ecart_du_mois("heures", nombre_ecrit(Some(x)), nombre_ecrit(le_sien), nombre_ecrit(s))),
         }
     }
     // L'enseignement est une part des heures : jamais plus qu'elles (comme `cumul::engagement_de_paie`).
     if let (Some(e), Some(h)) = (enseignement, heures) {
         enseignement = Some(e.min(h));
     }
-    let net = |x: Option<Decimal>| x.map(|v| v.normalize());
-    Ok(Compteurs { cachets: net(cachets), heures: net(heures), heures_enseignement: net(enseignement), jours: net(jours), avertissements })
+    Ok(Compteurs {
+        cachets: cachets.map(sans_zero),
+        heures: heures.map(sans_zero),
+        heures_enseignement: enseignement.map(sans_zero),
+        jours: jours.map(sans_zero),
+        avertissements,
+    })
 }

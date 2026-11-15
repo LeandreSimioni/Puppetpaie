@@ -551,19 +551,30 @@ impl QuantiteDeLigne {
     /// plus courte (`courte`). Une ligne en pourcentage n'a pas d'heures par unite : refus.
     pub fn heures(self, par_unite: Option<HeuresParUnite>) -> R<Heures> {
         use QuantiteDeLigne as Q;
-        let fois = |h: Heures| courte(h.au_centieme());
         Ok(match (par_unite, self) {
-            (Some(_), Q::Base(_)) => return Err(socle::refus!("une ligne en pourcentage ne compte pas d'heures par unité : le signaler au développeur")),
-            (Some(p), Q::Heures(q)) => fois(q * p),
-            (Some(p), Q::Cachets(q)) => fois(q * p),
-            (Some(p), Q::Jours(q)) => fois(q * p),
-            (Some(p), Q::Services(q)) => fois(q * p),
-            (Some(p), Q::Semaines(q)) => fois(q * p),
-            (Some(p), Q::PartDuMois(q)) => fois(q * p),
-            (Some(p), Q::Unites(q)) => fois(q * p),
+            (Some(p), q) => match q.fois(p) {
+                Some(h) => courte(h.au_centieme()),
+                None => return Err(socle::refus!("une ligne en pourcentage ne compte pas d'heures par unité : le signaler au développeur")),
+            },
             (None, Q::Heures(q)) => courte(q),
             (None, _) => courte(Heures::ZERO),
         })
+    }
+
+    /// QUANTITE x HEURES PAR UNITE, exactes (14 services de 4 h : 56 h) ; `None` : une ligne en pourcentage, dont la
+    /// quantite est une base en euros, n'a pas d'heures par unite.
+    pub fn fois(self, par_unite: HeuresParUnite) -> Option<Heures> {
+        use QuantiteDeLigne as Q;
+        match self {
+            Q::Heures(q) => Some(q * par_unite),
+            Q::Cachets(q) => Some(q * par_unite),
+            Q::Jours(q) => Some(q * par_unite),
+            Q::Services(q) => Some(q * par_unite),
+            Q::Semaines(q) => Some(q * par_unite),
+            Q::PartDuMois(q) => Some(q * par_unite),
+            Q::Unites(q) => Some(q * par_unite),
+            Q::Base(_) => None,
+        }
     }
 
     /// Deux quantites de la meme grandeur ajoutees (deux lignes de la meme rubrique) ; `None` : deux grandeurs, qui ne

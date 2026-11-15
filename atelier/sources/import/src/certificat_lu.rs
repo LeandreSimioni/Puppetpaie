@@ -101,8 +101,10 @@ pub struct Certificat {
     pub cadre: Option<bool>,
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
-    /// Le « NB JOURS OU CACHETS ».
-    pub nombre: Option<i64>,
+    /// Le « NB JOURS OU CACHETS », tel que sa case l'ecrit (des chiffres seuls) : des cachets ou des jours, que la case ne
+    /// dit pas ; le statut du salarie le tranche, et il se lit alors en sa grandeur
+    /// (`documents::conges_spectacles::NombreDuCertificat`).
+    pub nombre: Option<String>,
     pub base_conge: Option<Decimal>,
     pub brut: Option<Decimal>,
     /// La date de signature.
@@ -382,7 +384,7 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                         c.fin = Some(d);
                         let reste = &v[n..];
                         if let [x] = reste {
-                            c.nombre = socle::num::entier_de_chiffres(x);
+                            c.nombre = socle::num::entier_de_chiffres(x).map(|_| x.to_string());
                         }
                     }
                 }

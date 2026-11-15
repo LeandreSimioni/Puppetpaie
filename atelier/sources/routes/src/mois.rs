@@ -863,7 +863,17 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
     connus.reverse();
     for &mc in &connus {
         couverts.insert(mc);
-        for (cle, e) in engagements_du_mois(ctx, mc)? {
+        // Les jours de chaque contrat sont ceux de son engagement (`Engagement::jours`) : une seule regle.
+        let mut du_mois: Vec<(IdSalarie, SaisieCarte, Jours)> = Vec::new();
+        if let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mc)? {
+            let engagements = engagement::engagements_de_la_saisie(ctx, &data)?;
+            for (e, eng) in data.engagements.into_iter().zip(engagements) {
+                if let Some(cle) = e.salarie.clone() {
+                    du_mois.push((cle, e, eng.jours));
+                }
+            }
+        }
+        for (cle, e, jours) in du_mois {
             let (Some(debut), fin) = bornes_brutes(&e) else { continue };
             // Un contrat sans jour finit le jour ou il commence.
             let fin = match fin {
@@ -891,11 +901,6 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             if deja.is_some() && mc != mois {
                 continue;
             }
-            // Les jours que la carte ecrit (un nombre de sa saisie, sa porte) ; sans eux, ses dates.
-            let jours = match e.jours.as_ref().map(socle::forme::NombreLu::decimal).transpose()?.filter(|j| !j.is_zero()) {
-                Some(j) => socle::grandeurs::lu::nombre(j.trunc()),
-                None => Jours::de_dates(dates.len()),
-            };
             let contrat = Passe {
                 dit: dit_du_contrat(debut, fin, Some(cachets), None),
                 nom: ctx.nomme(&cle),

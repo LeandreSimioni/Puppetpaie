@@ -239,7 +239,8 @@ pub struct LigneImprimee {
     pub montant: Option<Montant>,
     pub soumis: bool,
     pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
-    pub heures: Option<Decimal>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub heures: Option<socle::grandeurs::HeuresParUnite>,
 }
 
 impl LigneImprimee {
@@ -252,7 +253,7 @@ impl LigneImprimee {
             rubrique,
             quantite: self.quantite.map(socle::forme::Nombre),
             taux: self.taux.map(socle::grandeurs::MontantUnitaire::du_decimal),
-            heures: self.heures.map(socle::grandeurs::HeuresParUnite::du_decimal),
+            heures: self.heures,
             montant: self.montant?,
         }))
     }
@@ -1012,20 +1013,22 @@ impl Importe {
     /// ici, `propres` etant ceux que la saisie lui donne : les jours que les bulletins importes impriment, plus les siens ;
     /// a defaut d'un bulletin pour chaque mois verse, la quotite que la DSN deposee a declaree pour ce contrat (elle le
     /// dit pour le contrat entier, `norme-dsn/texte/bloc-S21.G00.40.txt`). `None` quand aucune piece ne les donne.
-    pub fn jours_du_contrat_continue(&self, propres: usize) -> R<Option<i64>> {
-        let jours = |p: &PaieVersee| -> Option<i64> {
+    pub fn jours_du_contrat_continue(&self, propres: usize) -> Option<Jours> {
+        let jours = |p: &PaieVersee| -> Option<usize> {
             let n: i64 = p.dates.iter().map(|d| d.fin.moins(&d.debut) + 1).sum();
-            (n > 0).then_some(n)
+            match usize::try_from(n) {
+                Ok(n) if n > 0 => Some(n),
+                Ok(_) | Err(_) => None,
+            }
         };
-        let lus: Option<Vec<i64>> = self.paies().values().map(jours).collect();
+        let lus: Option<Vec<usize>> = self.paies().values().map(jours).collect();
         if let Some(l) = lus.filter(|l| !l.is_empty()) {
-            return Ok(Some(l.iter().sum::<i64>() + propres as i64));
+            return Some(Jours::de_dates(l.iter().sum::<usize>() + propres));
         }
-        let Some(dernier) = self.paies().values().last() else { return Ok(None) };
-        match dernier.quotite.filter(|q| *q > Decimal::ZERO && q.fract().is_zero()) {
-            Some(q) => i64::try_from(q).map(Some).map_err(|_| socle::refus!("quotité déclarée hors de portée : {}", q)),
-            None => Ok(None),
-        }
+        // La quotite que la DSN deposee declare (S21.G00.40.013, un nombre de la norme que la paie versee garde) : des
+        // jours entiers, lus ici en leur grandeur.
+        let dernier = self.paies().values().last()?;
+        dernier.quotite.map(Jours::du_decimal).filter(|q| *q > Jours::ZERO).and_then(socle::grandeurs::entiere)
     }
 }
 
@@ -1145,7 +1148,7 @@ fn remuneration_lue(lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRe
     let mut out = Vec::new();
     for l in lignes {
         if let (Some(code), Some(q), Some(t)) = (&l.rubrique, l.quantite, l.taux) {
-            let (r, paiement, heures_annexes) = crate::calcul::rattacher(code, |unite| Ok(crate::ligne::PaiementDeLigne::de_l_unite(unite, q, t)), l.heures.map(socle::grandeurs::HeuresParUnite::du_decimal), ctx)?;
+            let (r, paiement, heures_annexes) = crate::calcul::rattacher(code, |unite| Ok(crate::ligne::PaiementDeLigne::de_l_unite(unite, q, t)), l.heures, ctx)?;
             out.push(LigneDeRemuneration {
                 code: Some(r.code.into()),
                 libelle: r.libelle,
