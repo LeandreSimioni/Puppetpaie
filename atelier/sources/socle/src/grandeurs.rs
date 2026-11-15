@@ -347,6 +347,40 @@ impl Jours {
     pub fn de_dates(n: usize) -> Jours {
         Jours(Decimal::from(n))
     }
+
+    /// Un demi-jour.
+    pub const DEMI: Jours = Jours(Decimal::from_parts(5, 0, 0, false, 1));
+
+    /// Au demi-jour le plus proche, la moitie loin de zero (1,04 jour : 1 ; 1,3 : 1,5) : des jours qu'une phrase dit
+    /// « environ ». Aucun texte deposé ne dit cet arrondi.
+    pub fn au_demi(self) -> Jours {
+        let deux = Decimal::from(2);
+        Jours(num::div(num::mul(self.0, deux).round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero), deux))
+    }
+}
+
+/// Des jours fois un coefficient (le coefficient de l'art. 30 des annexes 8 et 10 : un jour de travail retire 1,3 jour
+/// d'allocation) : des jours.
+impl std::ops::Mul<Coefficient> for Jours {
+    type Output = Jours;
+    fn mul(self, c: Coefficient) -> Jours {
+        Jours(num::mul(self.0, c.0))
+    }
+}
+
+impl Services {
+    /// Les services que `n` compte, un par un : un compte devient des services.
+    pub fn comptes(n: usize) -> Services {
+        Services(Decimal::from(n))
+    }
+}
+
+impl Montant {
+    /// Les heures que ce montant paie a `par_heure` l'heure : montant / montant unitaire = heures ; `None` quand
+    /// `par_heure` est nul.
+    pub fn en_heures(self, par_heure: MontantUnitaire) -> Option<Heures> {
+        (!par_heure.0.is_zero()).then(|| Heures(num::div(self.0, par_heure.0)))
+    }
 }
 
 impl HeuresParUnite {
@@ -407,6 +441,23 @@ impl Heures {
         let mut e = self.0.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
         e.rescale(0);
         Heures(e)
+    }
+
+    /// LE RAPPORT de ces heures a `o` (des heures comptees sur un seuil) : heures / heures = coefficient ; `None` quand
+    /// `o` est nul.
+    pub fn rapport(self, o: Heures) -> Option<Coefficient> {
+        (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
+    }
+
+    /// Les jours que ces heures font, a `par_jour` heures le jour (art. 30 des annexes 8 et 10 : 10 h font un jour) :
+    /// heures / heures par unite = jours ; `None` quand `par_jour` est nul.
+    pub fn en_jours(self, par_jour: HeuresParUnite) -> Option<Jours> {
+        (!par_jour.0.is_zero()).then(|| Jours(num::div(self.0, par_jour.0)))
+    }
+
+    /// Leur partie entiere, vers le bas (`13.9` h : `13`) : les heures entieres qu'une somme couvre.
+    pub fn entieres_en_dessous(self) -> Heures {
+        Heures(self.0.floor())
     }
 
     /// LES HEURES D'UN MOIS PAYE, PAR MOIS : la quotite mensuelle d'un contrat paye au mois (`151.67`), au centieme
