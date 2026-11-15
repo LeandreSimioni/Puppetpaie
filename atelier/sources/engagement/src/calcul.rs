@@ -253,6 +253,17 @@ impl BaseDeCotisation {
         }
     }
 
+    /// LA BASE `v` QUE LE CALCUL DONNE A L'ASSIETTE `a`, dans la grandeur que l'assiette compte : la regle de
+    /// `de_l_assiette` (`Assiette::en_heures`) ; une base d'une autre grandeur se refuse.
+    pub(crate) fn calculee(a: Assiette, v: BaseDeCotisation) -> R<BaseDeCotisation> {
+        match (a.en_heures(), v) {
+            (true, BaseDeCotisation::Heures(_)) | (false, BaseDeCotisation::Montant(_)) => Ok(v),
+            (true, BaseDeCotisation::Montant(_)) | (false, BaseDeCotisation::Heures(_)) => {
+                Err(refus(format!("L'assiette « {} » ne compte pas la grandeur que le calcul lui donne : le signaler au développeur.", a.nom())))
+            }
+        }
+    }
+
     /// LA BASE `d` ECRITE DE LA LIGNE DE LA COTISATION `id`, relue sans bareme (une paie validee se relit telle qu'elle
     /// est partie) : des heures pour les lignes que le calcul compose hors du bareme sur des heures
     /// (`BASES_EN_HEURES`), des euros pour toute autre : le calcul refuse une cotisation du bareme dont l'assiette compte
@@ -1759,7 +1770,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             vec![base]
         };
         let (mut m_pat, mut m_sal) = (Montant::ZERO, Montant::ZERO);
-        let (mut taux_pat, mut taux_sal) = (r.taux_pat.map(|t| t.0.decimal()), r.taux_sal.map(socle::grandeurs::Taux::decimal));
+        let (mut taux_pat, mut taux_sal) = (part_patronale(r).map(Taux::decimal), r.taux_sal.map(socle::grandeurs::Taux::decimal));
         let non_vide = |c: &Option<Vec<socle::grandeurs::Taux>>| c.as_ref().map(|c| c.iter().map(|t| t.decimal()).collect::<Vec<Decimal>>()).filter(|c| !c.is_empty());
         let (mut comp_pat, mut comp_sal) = (non_vide(&r.composants_pat), non_vide(&r.composants_sal));
         let manque = || socle::echec::cle("Le barème ne donne pas le taux de cette ligne : le complément ne s'ajoute à rien.", id.as_str());
@@ -1868,7 +1879,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id).map(socle::grandeurs::Montant::du_decimal)
     })?;
     let mut exonere = Montant::ZERO;
-    // L'assiette des heures en plus compte des heures (`Assiette::en_heures`), les autres des euros.
+    // Le nombre des heures en plus : sa base se range a la sortie, dans la grandeur que son assiette compte.
     let mut heures_en_plus_heures = None;
     if let Some(h) = &heures_en_plus {
         lignes.extend(h.lignes.iter().cloned());
@@ -1953,10 +1964,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     p.net_social = brut - tot_sal + hors_assiette_revenu;
     p.net_imposable = brut - tot_sal + hors_assiette_imposable + reintegrations(&p.lignes) - exonere;
     p.cout_employeur = brut + tot_pat;
-    p.bases = bases.into_iter().map(|(a, m)| (a, BaseDeCotisation::Montant(m))).collect();
-    if let Some(h) = heures_en_plus_heures {
-        p.bases.insert(Assiette::HeuresEnPlusHeures, BaseDeCotisation::Heures(h));
-    }
+    p.bases = bases
+        .into_iter()
+        .map(|(a, m)| (a, BaseDeCotisation::Montant(m)))
+        .chain(heures_en_plus_heures.map(|h| (Assiette::HeuresEnPlusHeures, BaseDeCotisation::Heures(h))))
+        .map(|(a, v)| Ok((a, BaseDeCotisation::calculee(a, v)?)))
+        .collect::<R<_>>()?;
     p.reduction_generale = rg;
     p.deduction_forfaitaire = dfs;
     p.avertissements.extend(avis_dfs.into_iter().map(|texte| Avis { info: true, texte }));
