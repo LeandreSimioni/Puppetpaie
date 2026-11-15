@@ -12,7 +12,7 @@ use socle::echec::{refus_avec, Lieu, R};
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
-use socle::grandeurs::{Coefficient, Montant, MontantUnitaire};
+use socle::grandeurs::{Montant, MontantUnitaire};
 use socle::num::{add, mul, sub, Decimal};
 use std::collections::BTreeMap;
 
@@ -330,9 +330,9 @@ pour le dire. Rien n'est ecrit.",
         false
     };
     d.coefficient = coefficient(eff, sans_action);
-    d.brute = (Coefficient::du_decimal(mul(d.manquants, Decimal::from(d.coefficient))) * smic).au_centime().decimal();
+    d.brute = Montant::du_decimal(mul(mul(d.manquants, Decimal::from(d.coefficient)), smic.decimal())).au_centime().decimal();
 
-    let ecap = (Coefficient::du_decimal(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17))) * smic).au_centime().decimal();
+    let ecap = Montant::du_decimal(mul(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17)), smic.decimal())).au_centime().decimal();
     d.deductions.insert(CotisationDEtablissement::DeductionEcap, ecap);
     if let Some(s) = sous_traitance {
         d.deductions.insert(CotisationDEtablissement::DeductionSousTraitance, s);
@@ -423,16 +423,10 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<MontantUnitaire>
         Some(l) if !l.is_empty() => l,
         _ => return ctx.smic(&jour),
     };
-    let mut entrees: Vec<&droit::forme_bareme::Datee> = liste.iter().collect();
-    // Une valeur sans `depuis` est celle de tout temps (`droit::forme_bareme::Datee`) : elle vient avant les autres.
-    entrees.sort_by_key(|e| e.depuis);
-    let mut val = None;
-    for e in entrees {
-        if e.depuis.is_none_or(|d| d <= jour) {
-            val = Some(e.valeur);
-        }
+    match droit::contexte::smic_en_vigueur(liste, &jour)? {
+        Some((_, smic)) => Ok(smic),
+        None => Err(socle::refus!("Aucun SMIC au {} dans le socle {}.", jour.iso(), millesime)),
     }
-    val.ok_or_else(|| socle::refus!("Aucun SMIC au {} dans le socle {}.", jour.iso(), millesime))
 }
 
 /// L'effectif dit-il l'entreprise assujettie pour ce millesime ? Le code A04 du 118 l'emporte s'il est la et sous le

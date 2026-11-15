@@ -927,7 +927,7 @@ fn controler(pile: &Pile, fiche: &ChampsEntreprise, eff: &Effectif, ou: &str) ->
 }
 
 /// LE `depuis` DU SMIC EN VIGUEUR a `jour` (la liste reste datee dans la pile : `Contexte::smic`), et sa valeur.
-fn smic_en_vigueur(liste: &[crate::forme_bareme::Datee], jour: &Jour) -> R<Option<(Jour, MontantUnitaire)>> {
+pub fn smic_en_vigueur(liste: &[crate::forme_bareme::Datee], jour: &Jour) -> R<Option<(Jour, MontantUnitaire)>> {
     let mut entrees: Vec<(Jour, MontantUnitaire)> = Vec::new();
     for e in liste {
         let depuis = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Le barème de l'année est incomplet : le signaler au développeur.", "smic_horaire.depuis", ""))?;
