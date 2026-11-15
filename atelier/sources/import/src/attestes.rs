@@ -263,7 +263,7 @@ impl Registre {
             }
             // Le contrat d'un permanent s'atteste mois par mois, aux dates du mois dans le contrat.
             for (mois, p) in i.paies() {
-                let periode = contrat.croise(&Periode::du_mois(*mois)).ok_or_else(|| socle::refus!("{} : sa paie de {} est hors du contrat", quel, mois))?;
+                let periode = engagement::contrat_dans_le_mois(&contrat, *mois, &quel)?;
                 let mut a = lu(nir, &c, periode, Attestant::Historique);
                 (a.heures, a.cachets, a.jours, a.brut) = (p.heures, p.cachets, p.jours, p.brut);
                 tous.push(a);

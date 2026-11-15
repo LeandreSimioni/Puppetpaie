@@ -1838,7 +1838,7 @@ fn unites_du_statut(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
 // ------------------------------------------- le contrat qui deborde du mois
 
 /// LE CONTRAT `contrat` BORNE AU `mois` : la periode de paie ; refus, nommant `qui`, d'un contrat qui ne touche pas le mois.
-pub(crate) fn contrat_dans_le_mois(contrat: &PeriodeOuverte, mois: Mois, qui: &str) -> R<Periode> {
+pub fn contrat_dans_le_mois(contrat: &PeriodeOuverte, mois: Mois, qui: &str) -> R<Periode> {
     contrat
         .croise(&Periode::du_mois(mois))
         .ok_or_else(|| socle::refus!("{} : le contrat du {} ne touche pas {}.", qui, contrat.debut().jj_mm_aaaa(), mois))

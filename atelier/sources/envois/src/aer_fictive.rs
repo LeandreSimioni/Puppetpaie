@@ -124,9 +124,7 @@ fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_moi
 }
 
 fn colonne(c: &ContratDeclare, numero: &engagement::numeros::NumeroContrat, x: &Mesures, du_contrat: &Periode, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> R<ColonneDuCadre4> {
-    let periode = du_contrat
-        .croise(&Periode::du_mois(m))
-        .ok_or_else(|| socle::refus!("contrat {} : la DSN de {} le porte, et il n'a aucun jour dans ce mois", numero, m))?;
+    let periode = engagement::contrat_dans_le_mois(&c.periode, m, &format!("contrat {}", numero))?;
     Ok(ColonneDuCadre4 {
         contrat: premiere.then(|| (numero.clone(), du_contrat.debut().jj_mm_aaaa(), du_contrat.fin().jj_mm_aaaa(), c.objet.as_ref().map(|o| o.to_string()))),
         periode,
