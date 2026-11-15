@@ -394,10 +394,14 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
         let paies: Vec<PaieLue> = gs.iter().flat_map(|g| g.paies.iter().cloned()).collect();
         let declarees: Vec<&PaieLue> = paies.iter().filter(|p| !declaree_par_bulletin(p)).collect();
         // Son debut est celui que la DSN declare, sinon le plus tot de ses groupes.
-        let debut = declarees.iter().find_map(|p| p.paie.periode).or_else(|| gs.iter().filter_map(|g| g.periode).min()).map(|o| o.debut());
+        let premiere = declarees.iter().find_map(|p| p.paie.periode).or_else(|| gs.iter().filter_map(|g| g.periode).min());
         // Sa fin est celle que la DSN declare ; un bulletin ne paie que son mois, il ne dit pas quand le contrat finit.
         let fin = declarees.last().and_then(|p| p.paie.periode).and_then(|o| o.fin());
-        let periode = debut.map(|d| PeriodeOuverte::du(d, fin)).transpose()?;
+        let periode = match (premiere, fin) {
+            (Some(o), Some(f)) => Some(o.sans_fin().fermee_au(f)?.into()),
+            (Some(o), None) => Some(o.sans_fin()),
+            (None, _) => None,
+        };
         // Le contrat entier : ce qu'un bulletin atteste de son seul mois reste a la paie de ce mois.
         let mut contrat = gs.iter().rev().find_map(|g| g.contrat.clone());
         if let Some(c) = contrat.as_mut().filter(|_| gs.len() > 1) {

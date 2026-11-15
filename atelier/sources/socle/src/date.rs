@@ -349,6 +349,11 @@ impl PeriodeOuverte {
         }
     }
 
+    /// Elle SANS SA FIN : le meme premier jour, aucun dernier dit.
+    pub fn sans_fin(&self) -> PeriodeOuverte {
+        PeriodeOuverte { debut: self.debut, fin: None }
+    }
+
     /// `j` en est-il ? Sans fin dite, tout jour a partir du premier en est.
     pub fn contient(&self, j: &Jour) -> bool {
         self.debut <= *j && self.fin.is_none_or(|f| *j <= f)

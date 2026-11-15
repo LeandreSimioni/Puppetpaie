@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use droit::nature_declaration::NatureDeLaDeclaration;
-use socle::date::{Jour, Periode, PeriodeOuverte};
+use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, R};
 use socle::num::Decimal;
 
@@ -227,7 +227,7 @@ fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
             }
             // La fin que le bloc 62 declare passe avant celle du contrat.
             let contrat = match k.fin_declaree {
-                Some(f) => PeriodeOuverte::du(k.periode.debut(), Some(f))?,
+                Some(f) => k.periode.sans_fin().fermee_au(f)?.into(),
                 None => k.periode,
             };
             let Some(presence) = contrat.croise(&le_mois) else { continue };

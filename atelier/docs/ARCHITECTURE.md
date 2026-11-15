@@ -238,7 +238,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - **période ouverte** : un premier jour, et un dernier quand il est dit, pas avant le premier (le contrat qui a commencé
   et dont la fin n'est pas dite : un CDI déclaré en DSN) ; elle ne se construit que par `PeriodeOuverte::du`, qui refuse
   une fin avant le début, ou d'une période (`From`). Ses bornes (`debut`, `fin`, facultative), la période qu'elle est
-  quand sa fin est dite (`fermee`) ou fermée à un jour quand elle ne l'est pas (`fermee_au`), ce qu'elle contient et ce qu'elle a de commun avec une période (`contient`,
+  quand sa fin est dite (`fermee`) ou fermée à un jour quand elle ne l'est pas (`fermee_au`), elle sans sa fin (`sans_fin`), ce qu'elle contient et ce qu'elle a de commun avec une période (`contient`,
   `croise`) se lisent d'elle. Elle s'écrit `{"du": "AAAA-MM-JJ", "au": "AAAA-MM-JJ" | null}`.
 - **durée de droit** : des jours ou des mois de calendrier, jamais négative ; son nombre ne sort pas. **Son unité est
   dans son type** : `Duree<U>`, où `U` est `EnJours` ou `EnMois` (les marqueurs du socle ; `Unite`, scellé, n'en admet

@@ -38,7 +38,7 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
         // Un contrat qui continue ici : ce que les pieces attestent s'arrete a son dernier mois verse, la suite est
         // dans les paies de ce logiciel.
         let periode = match (i.continue_apres(), contrat.fermee()) {
-            (Some(dernier), _) => socle::date::Periode::du_au(contrat.debut(), dernier.dernier_jour())?,
+            (Some(dernier), _) => contrat.sans_fin().fermee_au(dernier.dernier_jour())?,
             (None, Some(p)) => p,
             (None, None) => continue,
         };

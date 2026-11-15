@@ -732,7 +732,7 @@ impl Importe {
                 Some(fin) => c.fermee_au(fin)?.into(),
                 None => c,
             },
-            (None, Some(o)) if self.permanent() => PeriodeOuverte::du(o.debut(), None)?,
+            (None, Some(o)) if self.permanent() => o.sans_fin(),
             (None, Some(o)) => o,
             (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),
         };
