@@ -236,6 +236,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | salarié désigné | `SalarieDesigne` | `droit/src/contexte.rs` |
 | spectacle | `IdSpectacle` | `droit/src/contexte.rs` |
 | compagnie | `IdDeCompagnie` | `compagnie/src/installation.rs` |
+| dossier rattaché | `DossierRattache` | `compagnie/src/installation.rs` |
 | couleur d'une compagnie | `CouleurDeCompagnie` | `compagnie/src/installation.rs` |
 | PCS-ESE | `CodePcsEse` | `droit/src/fiche.rs` |
 | code emploi déclaré | `CodeEmploiFt` | `droit/src/fiche.rs` |
@@ -395,18 +396,19 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   seul endroit, `Contexte::cle_du_salarie`.
 - **spectacle** : la clé de sa fiche.
 - **compagnie** : l'identifiant d'une compagnie de l'installation, celui de sa tuile. `Reelle`, `Cie(NomDeFichier)`,
-  `Fictive(NomDeFichier)`, écrit `reelle`, `cie:<dossier>`, `fictive:<dossier>` ; et deux compagnies qu'aucune tuile ne
-  propose, que le moteur ouvre par leur dossier : `Logiciel` (le logiciel lui-même, vraie compagnie quand `prive/config`
-  manque : `dossier_reel`), `Developpement` (`prive-dev`, règle 11), écrits `logiciel`, `developpement`. Que portent une
-  tuile de l'accueil, les charges de l'accueil (couleur, remise à zéro, compagnies à garder), une compagnie gardée, le
-  tableau de l'administrateur, le choix d'une tuile dans la fenêtre. Un scénario du banc l'écrit par son dossier relatif à
-  l'installation (`installation::en_dossier` : `prive`, `logiciel`, `prive-dev`, `compagnies/<dossier>`,
-  `fictives/<dossier>`) ; une compagnie hors de l'installation ne s'y enregistre pas (`IdDeCompagnie::de_la_racine`) ;
-  que portent un geste du scénario et les compagnies d'un rejeu, et le registre de l'administrateur (`en_dossier::seul`).
-  Son dossier et sa racine ne se disent que par lui (`dossier`, `racine` : la tuile de la vraie compagnie de
-  l'installation du logiciel là où elle est, `prive/` ou le logiciel lui-même), le dossier d'une compagnie neuve par
-  `IdDeCompagnie::libre`, une racine se relit par `IdDeCompagnie::dans`, l'installation d'une racine par
-  `IdDeCompagnie::installation_de`, les racines de l'installation par `installation::racines_de`.
+  `Fictive(NomDeFichier)`, écrit `reelle`, `cie:<dossier>`, `fictive:<dossier>` ; la vraie compagnie est là où
+  `dossier_reel` la met, `prive/` ou le logiciel lui-même. Que portent une tuile de l'accueil, les charges de l'accueil
+  (couleur, remise à zéro, compagnies à garder), une compagnie gardée, le tableau de l'administrateur, le choix d'une
+  tuile dans la fenêtre. Un scénario du banc l'écrit par son dossier relatif à l'installation (`installation::en_dossier` :
+  `prive`, `compagnies/<dossier>`, `fictives/<dossier>`) ; une compagnie hors de l'installation ne s'y enregistre pas
+  (`IdDeCompagnie::de_la_racine`) ; que portent un geste du scénario et les compagnies d'un rejeu. Sa racine ne se dit que
+  par lui (`racine`, dont `IdDeCompagnie::dans` est l'inverse), le dossier d'une compagnie neuve par
+  `IdDeCompagnie::libre`, l'installation d'une racine par `IdDeCompagnie::installation_de`, les racines de
+  l'installation par `installation::racines_de`.
+- **dossier rattaché** : le dossier d'une compagnie rattachée à l'administrateur, tel que son registre l'écrit
+  (`administrateur.json`) : relatif à l'installation, quel qu'il soit (`prive`, `logiciel`, `compagnies/<dossier>`,
+  `prive-dev`, `ma-cie` d'une compagnie ouverte par son dossier). Ce n'est pas une tuile : toute compagnie sous
+  l'installation se rattache. Fait par `DossierRattache::de`, lu tel qu'il s'écrit.
 - **couleur d'une compagnie** : la couleur qu'une compagnie choisit pour sa tuile et sa page. `#RRGGBB`, gardée telle que
   lue ; `poser_couleur` l'écrit en majuscules ; celle de la charte quand rien n'est posé. Que portent
   `config/affichage.json`, une tuile, la charge et la réponse de `compagnie-couleur`, le tableau de l'administrateur. La

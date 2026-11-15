@@ -127,6 +127,11 @@ pub fn dossier_reel() -> PathBuf {
     }
 }
 
+/// `racine` est-elle le logiciel lui-meme (`logiciel`) ? Les chemins se comparent absolus (`absolu`).
+pub fn est_le_logiciel(racine: &Path) -> R<bool> {
+    Ok(absolu(racine)? == absolu(&logiciel())?)
+}
+
 pub fn est_copie(racine: &Path) -> bool {
     racine.join(MARQUEUR).is_file()
 }
@@ -348,18 +353,14 @@ pub fn logo(racine: &Path) -> Option<PathBuf> {
     ["logo.svg", "logo.png"].iter().map(|n| racine.join(droit::contexte::GABARITS).join("identite").join(n)).find(|p| p.is_file())
 }
 
-/// L'IDENTIFIANT D'UNE COMPAGNIE DE L'INSTALLATION : la vraie compagnie du poste (`reelle`, sa tuile, la ou
-/// `dossier_reel` la met), une compagnie sous `compagnies/` (`cie:<dossier>`), une fictive sous `fictives/`
-/// (`fictive:<dossier>`) ; et deux compagnies qu'aucune tuile ne propose, que le moteur ouvre par leur dossier : le
-/// logiciel lui-meme quand il est la vraie compagnie (`logiciel`, `dossier_reel` sans `prive/config`), la copie de
-/// developpement (`developpement`, `prive-dev/` : regle 11, la ligne de commande seulement). Il s'ecrit et se lit par
-/// son texte ; une autre forme se refuse.
+/// L'IDENTIFIANT D'UNE COMPAGNIE DE L'INSTALLATION, celui d'une tuile de l'accueil : la vraie compagnie du poste
+/// (`reelle`, la ou `dossier_reel` la met : `prive/`, sinon le logiciel lui-meme), une compagnie sous `compagnies/`
+/// (`cie:<dossier>`), une fictive sous `fictives/` (`fictive:<dossier>`). Il s'ecrit et se lit par son texte ; une
+/// autre forme se refuse. Le dossier qu'ecrit le registre de l'administrateur est une autre notion (`DossierRattache`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum IdDeCompagnie {
     Reelle,
-    Logiciel,
-    Developpement,
     Cie(NomDeFichier),
     Fictive(NomDeFichier),
 }
@@ -370,11 +371,9 @@ impl IdDeCompagnie {
         let refus = |pourquoi: &str| socle::refus!("Identifiant de compagnie {} : {}", socle::fichiers::repr(texte), pourquoi);
         match (texte, texte.strip_prefix("cie:"), texte.strip_prefix("fictive:")) {
             ("reelle", _, _) => Ok(IdDeCompagnie::Reelle),
-            ("logiciel", _, _) => Ok(IdDeCompagnie::Logiciel),
-            ("developpement", _, _) => Ok(IdDeCompagnie::Developpement),
             (_, Some(d), _) => NomDeFichier::lire(d).map(IdDeCompagnie::Cie).map_err(|e| refus(&e.phrase)),
             (_, None, Some(d)) => NomDeFichier::lire(d).map(IdDeCompagnie::Fictive).map_err(|e| refus(&e.phrase)),
-            (_, None, None) => Err(refus("reelle, logiciel, developpement, cie:<dossier> ou fictive:<dossier>.")),
+            (_, None, None) => Err(refus("reelle, cie:<dossier> ou fictive:<dossier>.")),
         }
     }
 }
@@ -383,8 +382,6 @@ impl std::fmt::Display for IdDeCompagnie {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             IdDeCompagnie::Reelle => f.write_str("reelle"),
-            IdDeCompagnie::Logiciel => f.write_str("logiciel"),
-            IdDeCompagnie::Developpement => f.write_str("developpement"),
             IdDeCompagnie::Cie(d) => write!(f, "cie:{}", d),
             IdDeCompagnie::Fictive(d) => write!(f, "fictive:{}", d),
         }
@@ -410,55 +407,46 @@ const PRIVE: CheminRelatif = CheminRelatif::du_moteur("prive");
 const COMPAGNIES: CheminRelatif = CheminRelatif::du_moteur("compagnies");
 /// Le dossier des fictives, sous l'installation (`DOSSIER_FICTIVES`).
 const FICTIVES: CheminRelatif = CheminRelatif::du_moteur(DOSSIER_FICTIVES);
-/// Le logiciel, sous l'installation : la vraie compagnie quand `prive/config` manque (`dossier_reel`).
-const LOGICIEL: CheminRelatif = CheminRelatif::du_moteur(crate::maj::LOGICIEL);
-/// La copie de developpement, sous l'installation de l'atelier (`moteur --dev`).
-const DEVELOPPEMENT: CheminRelatif = CheminRelatif::du_moteur("prive-dev");
 
 impl IdDeCompagnie {
-    /// SON DOSSIER, RELATIF A L'INSTALLATION (`liste_de`, le registre de l'administrateur) : `prive`, `logiciel`,
-    /// `prive-dev`, `compagnies/<dossier>`, `fictives/<dossier>`.
+    /// SON DOSSIER, RELATIF A L'INSTALLATION, tel qu'il s'ecrit (`en_dossier`) : `prive`, `compagnies/<dossier>`,
+    /// `fictives/<dossier>`. Ou elle est, c'est `racine` qui le dit : la vraie compagnie peut etre le logiciel lui-meme.
     pub fn dossier(&self) -> CheminRelatif {
         match self {
             IdDeCompagnie::Reelle => PRIVE,
-            IdDeCompagnie::Logiciel => LOGICIEL,
-            IdDeCompagnie::Developpement => DEVELOPPEMENT,
             IdDeCompagnie::Cie(d) => COMPAGNIES.joint(d),
             IdDeCompagnie::Fictive(d) => FICTIVES.joint(d),
         }
     }
 
     /// SA RACINE dans l'installation `inst` : son dossier ; la vraie compagnie de l'installation du logiciel, la ou elle
-    /// est (`dossier_reel` : `prive/`, sinon le logiciel lui-meme).
+    /// est (`dossier_reel` : `prive/`, sinon le logiciel lui-meme). `dans` en est l'inverse.
     pub fn racine(&self, inst: &Path) -> PathBuf {
         match self {
             IdDeCompagnie::Reelle if inst == base() => dossier_reel(),
-            IdDeCompagnie::Reelle | IdDeCompagnie::Logiciel | IdDeCompagnie::Developpement | IdDeCompagnie::Cie(_) | IdDeCompagnie::Fictive(_) => {
-                self.dossier().dans(inst)
-            }
+            IdDeCompagnie::Reelle | IdDeCompagnie::Cie(_) | IdDeCompagnie::Fictive(_) => self.dossier().dans(inst),
         }
     }
 
-    /// La compagnie de ce dossier relatif a l'installation (`dossier`) ; `None` pour un autre dossier.
-    fn de_la_forme(rel: &CheminRelatif) -> Option<IdDeCompagnie> {
+    /// La compagnie de ce dossier relatif a l'installation (`dossier`), ecrit par un scenario du banc ; un autre dossier
+    /// se refuse.
+    fn du_dossier(rel: &CheminRelatif) -> R<IdDeCompagnie> {
+        match (rel.parent(), IdDeCompagnie::d_un_groupe(rel)) {
+            (None, _) if *rel == PRIVE => Ok(IdDeCompagnie::Reelle),
+            (_, Some(id)) => Ok(id),
+            (_, None) => Err(socle::refus!(
+                "{} n'est le dossier d'aucune compagnie de l'installation : prive, compagnies/<dossier> ou fictives/<dossier>.",
+                socle::fichiers::repr(rel.texte())
+            )),
+        }
+    }
+
+    /// La compagnie de `compagnies/<dossier>` ou de `fictives/<dossier>` ; `None` pour un autre dossier.
+    fn d_un_groupe(rel: &CheminRelatif) -> Option<IdDeCompagnie> {
         match rel.parent() {
-            None if *rel == PRIVE => Some(IdDeCompagnie::Reelle),
-            None if *rel == LOGICIEL => Some(IdDeCompagnie::Logiciel),
-            None if *rel == DEVELOPPEMENT => Some(IdDeCompagnie::Developpement),
             Some(p) if p == COMPAGNIES => Some(IdDeCompagnie::Cie(rel.nom())),
             Some(p) if p == FICTIVES => Some(IdDeCompagnie::Fictive(rel.nom())),
             Some(_) | None => None,
-        }
-    }
-
-    /// La compagnie de ce dossier relatif a l'installation (`dossier`) ; un autre dossier se refuse.
-    pub fn du_dossier(rel: &CheminRelatif) -> R<IdDeCompagnie> {
-        match IdDeCompagnie::de_la_forme(rel) {
-            Some(id) => Ok(id),
-            None => Err(socle::refus!(
-                "{} n'est le dossier d'aucune compagnie de l'installation : prive, logiciel, prive-dev, compagnies/<dossier> ou fictives/<dossier>.",
-                socle::fichiers::repr(rel.texte())
-            )),
         }
     }
 
@@ -475,13 +463,17 @@ impl IdDeCompagnie {
         Ok((id, racine))
     }
 
-    /// LA COMPAGNIE DE `racine` DANS L'INSTALLATION `inst` (`dossier`) ; `None` pour un dossier qui n'est celui d'aucune
-    /// compagnie de l'installation. Les chemins se comparent absolus (`absolu`).
+    /// LA COMPAGNIE DE `racine` DANS L'INSTALLATION `inst`, l'inverse de `racine` : la vraie la ou elle est, une compagnie
+    /// de `compagnies/` ou de `fictives/` par son dossier ; `None` pour un dossier qui n'est celui d'aucune tuile de
+    /// l'installation. Les chemins se comparent absolus (`absolu`).
     pub fn dans(inst: &Path, racine: &Path) -> R<Option<IdDeCompagnie>> {
         let (i, r) = (absolu(inst)?, absolu(racine)?);
+        if r == absolu(&IdDeCompagnie::Reelle.racine(inst))? {
+            return Ok(Some(IdDeCompagnie::Reelle));
+        }
         match socle::fichiers::sous(&r, &i) {
             Some(rel) if rel.as_os_str().is_empty() => Ok(None),
-            Some(rel) => Ok(IdDeCompagnie::de_la_forme(&CheminRelatif::du(rel)?)),
+            Some(rel) => Ok(IdDeCompagnie::d_un_groupe(&CheminRelatif::du(rel)?)),
             None => Ok(None),
         }
     }
@@ -527,9 +519,34 @@ fn absolu(p: &Path) -> R<PathBuf> {
     })
 }
 
+/// LE DOSSIER D'UNE COMPAGNIE RATTACHEE A L'ADMINISTRATEUR, tel que son registre l'ecrit (`administrateur.json`) :
+/// relatif a l'installation, quel qu'il soit (`prive`, `logiciel`, `compagnies/les-pupazzi`, `prive-dev` sous l'atelier,
+/// `ma-cie` d'une compagnie ouverte par son dossier). Ce n'est pas une tuile (`IdDeCompagnie`) : toute compagnie sous
+/// l'installation se rattache. Fait par `de` seul, lu tel qu'il s'ecrit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DossierRattache(CheminRelatif);
+
+impl DossierRattache {
+    /// Le dossier de `racine` sous l'installation `inst` ; `None` hors de l'installation, ou pour l'installation
+    /// elle-meme. Les chemins se comparent absolus (`absolu`).
+    pub fn de(inst: &Path, racine: &Path) -> R<Option<DossierRattache>> {
+        let (i, r) = (absolu(inst)?, absolu(racine)?);
+        match socle::fichiers::sous(&r, &i) {
+            Some(rel) if rel.as_os_str().is_empty() => Ok(None),
+            Some(rel) => CheminRelatif::du(rel).map(|c| Some(DossierRattache(c))),
+            None => Ok(None),
+        }
+    }
+
+    /// Sa racine dans l'installation `inst`.
+    pub fn racine(&self, inst: &Path) -> PathBuf {
+        self.0.dans(inst)
+    }
+}
+
 /// L'ECRITURE D'UN IDENTIFIANT DE COMPAGNIE PAR SON DOSSIER RELATIF A L'INSTALLATION (`IdDeCompagnie::dossier`), celle
-/// d'un scenario du banc (`fictives/ajoutee-les-treteaux-du-banc`), d'un identifiant que le scenario peut taire ; `seul`,
-/// celle du registre de l'administrateur (`compagnies/les-pupazzi`, `prive`, `logiciel`, `prive-dev`).
+/// d'un scenario du banc (`fictives/ajoutee-les-treteaux-du-banc`), d'un identifiant que le scenario peut taire.
 pub mod en_dossier {
     use super::IdDeCompagnie;
     use socle::fichiers::CheminRelatif;
@@ -543,29 +560,11 @@ pub mod en_dossier {
 
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IdDeCompagnie>, D::Error> {
         match <Option<CheminRelatif> as serde::Deserialize>::deserialize(d)? {
-            Some(rel) => lu(&rel).map(Some),
+            Some(rel) => match IdDeCompagnie::du_dossier(&rel) {
+                Ok(id) => Ok(Some(id)),
+                Err(e) => Err(serde::de::Error::custom(e.phrase)),
+            },
             None => Ok(None),
-        }
-    }
-
-    fn lu<E: serde::de::Error>(rel: &CheminRelatif) -> Result<IdDeCompagnie, E> {
-        match IdDeCompagnie::du_dossier(rel) {
-            Ok(id) => Ok(id),
-            Err(e) => Err(E::custom(e.phrase)),
-        }
-    }
-
-    /// Un identifiant toujours dit.
-    pub mod seul {
-        use super::{lu, IdDeCompagnie};
-        use socle::fichiers::CheminRelatif;
-
-        pub fn serialize<S: serde::Serializer>(id: &IdDeCompagnie, s: S) -> Result<S::Ok, S::Error> {
-            serde::Serialize::serialize(&id.dossier(), s)
-        }
-
-        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<IdDeCompagnie, D::Error> {
-            lu(&<CheminRelatif as serde::Deserialize>::deserialize(d)?)
         }
     }
 }

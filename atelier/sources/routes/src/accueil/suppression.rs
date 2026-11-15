@@ -72,8 +72,9 @@ fn de_l_installation(inst: &Path, racine: &Path) -> R<bool> {
         return Ok(false);
     }
     Ok(match installation::IdDeCompagnie::dans(inst, racine)? {
-        Some(installation::IdDeCompagnie::Reelle | installation::IdDeCompagnie::Cie(_) | installation::IdDeCompagnie::Fictive(_)) => true,
-        Some(installation::IdDeCompagnie::Logiciel | installation::IdDeCompagnie::Developpement) | None => false,
+        Some(installation::IdDeCompagnie::Reelle) => !installation::est_le_logiciel(racine)?,
+        Some(installation::IdDeCompagnie::Cie(_) | installation::IdDeCompagnie::Fictive(_)) => true,
+        None => false,
     })
 }
 
