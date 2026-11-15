@@ -1048,8 +1048,8 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
     })
 }
 
-/// « du 02/11/2026 au 30/11/2026 », « depuis le 02/11/2026 » sans fin.
-fn periode_dite(contrat: &PeriodeOuverte) -> String {
+/// « du 02/11/2026 au 30/11/2026 », « depuis le 02/11/2026 » sans fin : une periode telle qu'une phrase la dit.
+pub(crate) fn periode_dite(contrat: &PeriodeOuverte) -> String {
     match contrat.fin() {
         Some(f) => format!("du {} au {}", contrat.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
         None => format!("depuis le {}", contrat.debut().jj_mm_aaaa()),

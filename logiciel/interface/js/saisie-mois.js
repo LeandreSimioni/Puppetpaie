@@ -221,7 +221,9 @@ async function calculerApercu(lu) {
       const part = rangs[i] == null ? [] : [a.paies[rangs[i]]];
       const p = part[0];
       // Les bornes de l'engagement, telles que le moteur les lit (ses lignes de travail) : la ligne du contrat les montre.
-      div._bornes = p && p.bornes ? { debut: p.bornes.du, fin: p.bornes.au } : null;
+      // Une carte à compléter rend les cases de sa saisie (`debut_lu`, `fin_ecrite`), chacune facultative.
+      div._bornes = p && p.bornes ? { debut: p.bornes.du, fin: p.bornes.au }
+        : p && p.a_completer && (p.debut_lu || p.fin_ecrite) ? { debut: p.debut_lu, fin: p.fin_ecrite } : null;
       div._contratDit = p ? p.contrat_dit : null;
       majContrat(div);
       // CE QUE SA CARTE PROPOSE, le moteur le dit pour cet engagement (`propose` : ses rubriques, celle d'une ligne

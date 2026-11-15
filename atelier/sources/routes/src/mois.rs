@@ -1900,8 +1900,11 @@ struct ParSalarie {
 struct PaieACompleter {
     a_completer: String,
     salarie: CleEcrite,
-    /// La periode de son contrat (`Carte::contrat`), quand elle se lit.
-    bornes: Option<PeriodeOuverte>,
+    /// Ses dates, les cases de sa saisie, chacune facultative (`engagement::Assemble`) : son debut lu
+    /// (`Carte::debut_lu`) et sa fin ecrite ; une carte a completer peut ecrire une fin avant son debut, c'est alors ce
+    /// qui lui manque (`a_completer`).
+    debut_lu: Option<Jour>,
+    fin_ecrite: Option<Jour>,
     avertissements: [String; 0],
     informations: [String; 0],
     contrat: EcritsSeuls,
@@ -2140,12 +2143,11 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                 r.blocs.push(calcules.next().flatten());
             }
             Some(m) => {
-                // Une carte a completer peut ecrire une fin avant son debut : c'est alors ce qui lui manque (`m`, dit dans
-                // `a_completer`), et elle n'a pas de bornes a montrer.
                 r.paies.push(PaieVue::ACompleter(PaieACompleter {
                     a_completer: m.phrase.clone(),
                     salarie: CleEcrite { cle: e.salarie.clone() },
-                    bornes: e.contrat().ok().flatten(),
+                    debut_lu: e.debut_lu(),
+                    fin_ecrite: e.fin,
                     avertissements: [],
                     informations: [],
                     contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?, modeles: if let Some(n) = e.nature { crate::modeles_contrat::au_choix(ctx, n)? } else { Vec::new() } },

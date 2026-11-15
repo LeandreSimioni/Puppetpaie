@@ -757,14 +757,6 @@ fn nom_de_l_etablissement(ent: &droit::fiche::ChampsEntreprise, nic: &Nic) -> St
     }
 }
 
-/// « du 02/11/2026 au 30/11/2026 », « depuis le 02/11/2026 » sans fin : une periode telle qu'une phrase la dit.
-fn periode_dite(debut: Jour, fin: Option<Jour>) -> String {
-    match fin {
-        Some(f) => format!("du {} au {}", debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
-        None => format!("depuis le {}", debut.jj_mm_aaaa()),
-    }
-}
-
 /// Ce qu'ecrit une case (`etat`), et ce qu'un test refuse en a dit, s'il en a dit quelque chose.
 fn avec_refus(etat: &str, refus: Option<String>) -> String {
     match refus {
@@ -1026,10 +1018,14 @@ struct ContratComplet {
     anterieur: bool,
 }
 
-/// Un engagement a completer ne dit que s'il commence ce mois-ci (`DebutDansLeMois`) : sa fin n'est pas sure.
+/// Un engagement a completer ne dit que s'il commence ce mois-ci (`DebutDansLeMois`) : sa fin n'est pas sure. Ses dates
+/// sont les cases de sa saisie, chacune facultative (`engagement::Assemble`) : son debut lu (`Carte::debut_lu`) et sa
+/// fin ecrite ; une carte a completer peut ecrire une fin avant son debut, c'est alors ce qui lui manque.
 #[derive(Debug, Clone, Serialize)]
 struct ContratACompleter {
     debut: DebutDansLeMois,
+    debut_lu: Option<Jour>,
+    fin_ecrite: Option<Jour>,
     repris: bool,
     anterieur: bool,
 }
@@ -1183,7 +1179,8 @@ pub(crate) struct Vue {
     /// Le libelle de sa nature de contrat, quand elle est dite.
     libelle_nature: Option<String>,
     numero: Option<NumeroContrat>,
-    /// La periode de son contrat, quand elle se lit.
+    /// La periode du contrat d'un engagement complet ; aucune pour un engagement a completer, dont les dates sont les
+    /// cases de sa saisie (`ContratACompleter`).
     bornes: Option<PeriodeOuverte>,
     etablissement: Option<Nic>,
     echeances: Option<Echeances>,
@@ -1263,9 +1260,14 @@ impl<'a> LigneDePage<'a> {
     fn de(l: &'a Ligne) -> LigneDePage<'a> {
         let v = &l.vue;
         let valide = v.valide.map(Moment::dit);
-        let embauche = v.bornes.map(|b| format!("embauche le {}", b.debut().jj_mm_aaaa()));
+        let debut = match (&v.bornes, &v.contrat) {
+            (Some(b), _) => Some(b.debut()),
+            (None, ContratDit::ACompleter(c)) => c.debut_lu,
+            (None, ContratDit::Complet(_)) => None,
+        };
+        let embauche = debut.map(|d| format!("embauche le {}", d.jj_mm_aaaa()));
         LigneDePage {
-            periode_dit: v.bornes.map(|b| periode_dite(b.debut(), b.fin())),
+            periode_dit: v.bornes.as_ref().map(crate::contrats::periode_dite),
             valide_dit: valide.as_ref().map(|q| format!("le {}", q)),
             validee_dit: valide.as_ref().map(|q| format!("validée le {}", q)),
             repris_dit: matches!(&v.contrat, ContratDit::Complet(c) if c.repris).then_some("contrat repris"),
@@ -1764,14 +1766,13 @@ impl<'a> Moteur<'a> {
             spectacle,
             libelle_nature,
             numero,
-            // Une carte a completer peut ecrire une fin avant son debut : c'est alors ce qui lui manque (`manque`), et
-            // elle n'a pas de bornes a montrer.
-            bornes: e.contrat().ok().flatten(),
+            // Ses dates sont les cases de sa saisie (`ContratACompleter`), pas la periode d'un contrat.
+            bornes: None,
             etablissement: None,
             echeances: None,
             valide: None,
             recalcul: None,
-            contrat: ContratDit::ACompleter(ContratACompleter { debut: debut_du_contrat, repris: false, anterieur }),
+            contrat: ContratDit::ACompleter(ContratACompleter { debut: debut_du_contrat, debut_lu: debut, fin_ecrite: e.fin, repris: false, anterieur }),
             pieces: Vec::new(),
             etats: Etats::sans_envoi(),
             a_completer: Some(manque.to_string()),
@@ -2922,10 +2923,9 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             None => c.to_string(),
         });
         let contrat = b.saisie.carte.contrat()?.ok_or_else(|| socle::fichiers::absent("debut"))?;
-        let fin_ecrite = b.saisie.carte.fin;
         let dit = match &b.saisie.carte.numero {
-            Some(n) => format!("contrat {}, {}", n, periode_dite(contrat.debut(), fin_ecrite)),
-            None => format!("contrat sans numéro, {}", periode_dite(contrat.debut(), fin_ecrite)),
+            Some(n) => format!("contrat {}, {}", n, crate::contrats::periode_dite(&contrat)),
+            None => format!("contrat sans numéro, {}", crate::contrats::periode_dite(&contrat)),
         };
         out.push(NonActif {
             salarie: cle,
@@ -2996,14 +2996,13 @@ pub(crate) fn le_mois_a_ouvrir(ctx: &Contexte) -> R<(Mois, Rendu)> {
 }
 
 /// Ce que la DPAE d'une embauche declare, en 16 caracteres : l'identite du salarie telle que l'engagement la lit, les
-/// bornes du contrat, le spectacle, la nature ; pas les taux ni les cachets. Un test de DPAE fait sur une autre empreinte
+/// la periode du contrat, le spectacle, la nature ; pas les taux ni les cachets. Un test de DPAE fait sur une autre empreinte
 /// ne vaut plus.
 fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::ChampsSalarie) -> EmpreinteCourte {
     /// Ce que l'empreinte couvre, ecrit en JSON : une case vide y est `null`.
     #[derive(serde::Serialize)]
     struct Embauche<'a> {
-        debut: Jour,
-        fin: Option<Jour>,
+        contrat: PeriodeOuverte,
         spectacle: Option<&'a droit::contexte::IdSpectacle>,
         nir: Option<&'a droit::fiche::Nir>,
         nom: Option<&'a str>,
@@ -3015,8 +3014,7 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
         nature: &'a str,
     }
     let embauche = Embauche {
-        debut: e.contrat().debut(),
-        fin: e.contrat().fin(),
+        contrat: e.contrat(),
         spectacle: e.spectacle.as_ref(),
         nir: sal.nir.dite(),
         nom: sal.nom.portee(),
