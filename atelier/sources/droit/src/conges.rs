@@ -135,14 +135,7 @@ pub fn feries_non_payes(
 /// Les jours de `periode` dont le rang dans la semaine (lundi = 0) est sous `jusqu_a`, moins les feries chomes.
 fn jours_de_semaine(periode: &Periode, dits: Option<&str>, jusqu_a: u32) -> R<i64> {
     let chomes = feries::chomes_entre(periode, dits)?;
-    let (mut n, mut jour) = (0, periode.debut());
-    while jour <= periode.fin() {
-        if jour.jour_de_la_semaine() < jusqu_a && !chomes.iter().any(|(j, _)| *j == jour) {
-            n += 1;
-        }
-        jour = jour.plus_jours(1)?;
-    }
-    Ok(n)
+    Ok(periode.jours().filter(|jour| jour.jour_de_la_semaine() < jusqu_a && !chomes.iter().any(|(j, _)| j == jour)).fold(0, |n, _| n + 1))
 }
 
 /// LES HEURES D'UN JOUR TRAVAILLE d'un contrat paye au mois de quotite `quotite` (heures par mois) : la duree

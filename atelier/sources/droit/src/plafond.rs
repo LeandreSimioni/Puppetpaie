@@ -68,21 +68,12 @@ fn valeurs(annee: Annee, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Pss> {
 /// PSS mensuel x jours calendaires de la `periode` / jours du mois, mois par mois,
 /// somme. Les deux bornes sont incluses.
 pub fn prorata_calendaire(periode: &Periode, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    let fin = periode.fin();
     let mut total = Decimal::ZERO;
-    let mut jour = periode.debut();
-    while jour <= fin {
-        let dans_le_mois = jour.jours_du_mois();
-        let derniere = Jour { jour: dans_le_mois, ..jour };
-        let borne = fin.min(derniere);
-        let jours = borne.jour - jour.jour + 1;
-        let mensuel = valeurs(jour.annee(), pss)?.mensuel.decimal();
-        total = add(total, div(mul(mensuel, Decimal::from(jours)), Decimal::from(dans_le_mois)));
-        jour = if borne.mois == 12 {
-            Jour { an: borne.an + 1, mois: 1, jour: 1 }
-        } else {
-            Jour { mois: borne.mois + 1, jour: 1, ..borne }
-        };
+    for mois in periode.mois() {
+        let Some(commun) = periode.croise(&Periode::du_mois(mois)) else { continue };
+        let jours = Decimal::from(commun.jours().count());
+        let mensuel = valeurs(mois.annee(), pss)?.mensuel.decimal();
+        total = add(total, div(mul(mensuel, jours), Decimal::from(mois.jours())));
     }
     Ok(Montant::du_decimal(total))
 }

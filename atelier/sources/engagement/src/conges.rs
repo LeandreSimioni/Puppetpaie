@@ -481,7 +481,7 @@ impl Tenue {
                 if r.date > presence.fin() {
                     continue;
                 }
-                presence = Periode::du_au(presence.debut().max(r.date), presence.fin())?;
+                presence = presence.bornee(r.date, None)?;
             }
             present = true;
             // La presence, moins les suspensions qui n'acquierent pas (`imprevus::jours_de_conges_non_acquis`).

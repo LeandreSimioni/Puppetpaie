@@ -251,6 +251,11 @@ impl Periode {
         Periode::du_au(self.debut.max(debut), fin.map_or(self.fin, |f| self.fin.min(f)))
     }
 
+    /// Les mois civils qu'elle touche, du premier au dernier.
+    pub fn mois(&self) -> Vec<crate::mois::Mois> {
+        crate::mois::Mois::du_jour(&self.debut).jusqu_a(crate::mois::Mois::du_jour(&self.fin))
+    }
+
     /// Le nombre de ses jours, l'un et l'autre bouts compris.
     pub fn duree(&self) -> Duree<EnJours> {
         Duree::du_au(&self.debut, &self.fin)

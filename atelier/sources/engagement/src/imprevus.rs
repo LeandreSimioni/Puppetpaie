@@ -438,22 +438,30 @@ pub fn croise(imp: &Imprevu, periode: &Periode) -> R<bool> {
     if let Imprevu::Arret(a) = imp {
         return arret_croise(a, periode);
     }
-    Ok(premier_jour(imp)? <= periode.fin() && dernier_jour(imp)? >= periode.debut())
+    Ok(absence(imp)?.is_some_and(|a| a.croise(periode).is_some()))
 }
 
 /// La meme regle pour un arret de travail (un arret de la DSN, `dsn::Arret`).
 pub fn arret_croise(arret: &ArretSaisi, periode: &Periode) -> R<bool> {
-    let dernier = dernier_jour_d_arret(arret)?;
-    Ok(dernier_jour_declare(arret)? <= periode.fin() && dernier >= periode.debut())
+    Ok(Periode::du_au(dernier_jour_declare(arret)?, dernier_jour_d_arret(arret)?)?.croise(periode).is_some())
 }
 
-/// Les jours d'absence du `premier` au `dernier` (`premier_jour`, `dernier_jour`) qui tombent dans `periode` ; aucun
-/// quand le dernier precede le premier (un arret repris le lendemain de son dernier jour declare n'absente aucun jour).
-pub(crate) fn absence_dans(premier: &Jour, dernier: &Jour, periode: &Periode) -> R<Option<Periode>> {
-    if premier > dernier {
-        return Ok(None);
+/// LES JOURS D'ABSENCE D'UN IMPREVU, du `premier_jour` au `dernier_jour` ; aucun quand le dernier precede le premier (un
+/// arret repris le lendemain de son dernier jour declare n'absente aucun jour).
+pub fn absence(imp: &Imprevu) -> R<Option<Periode>> {
+    match imp {
+        Imprevu::Arret(a) => absence_d_arret(a),
+        Imprevu::Suspension(s) => Periode::du_au(s.debut, s.fin).map(Some),
     }
-    Ok(Periode::du_au(*premier, *dernier)?.croise(periode))
+}
+
+/// Les jours d'absence d'un arret (`absence`).
+pub(crate) fn absence_d_arret(arret: &ArretSaisi) -> R<Option<Periode>> {
+    let (premier, dernier) = (premier_jour_d_arret(arret)?, dernier_jour_d_arret(arret)?);
+    match premier <= dernier {
+        true => Periode::du_au(premier, dernier).map(Some),
+        false => Ok(None),
+    }
 }
 
 /// Les imprevus d'un genre (ou de tous les genres) qui croisent le mois `AAAA-MM`.
@@ -632,7 +640,7 @@ pub fn jours_de_conges_non_acquis(
         if acquiert {
             continue;
         }
-        if let Some(commune) = absence_dans(&premier_jour(&imp)?, &dernier_jour(&imp)?, presence)? {
+        if let Some(commune) = absence(&imp)?.and_then(|a| a.croise(presence)) {
             total += droit::permanents::jours_acquis(&commune)?;
         }
     }
@@ -826,7 +834,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         .collect();
     for imp in imprevus {
         let (premier, dernier) = (premier_jour(&imp)?, dernier_jour(&imp)?);
-        let jours = match absence_dans(&premier, &dernier, &m.presence)? {
+        let jours = match absence(&imp)?.and_then(|a| a.croise(&m.presence)) {
             Some(absence) => droit::periodes::part_du_mois(&absence, m.mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours,
             None => Jours::ZERO,
         };
@@ -934,15 +942,12 @@ fn libelle_rubrique(racine: &Path, code: &droit::catalogue::CodeDeRubrique, jour
 /// d'absence. Une ligne par ligne de saisie, avec les seules dates qui tombent dedans, pour qu'on les retire une a une.
 /// Le moteur ne retire rien (regle 1).
 pub fn cachets_dans(ctx: &Contexte, imp: &Imprevu) -> R<Vec<CachetPaye>> {
-    let (premier, dernier) = (premier_jour(imp)?, dernier_jour(imp)?);
     let cle = imp.salarie();
     let mut out = Vec::new();
-    if dernier < premier {
-        return Ok(out);
-    }
-    for mois in Mois::entre(&premier, &dernier) {
+    let Some(absence) = absence(imp)? else { return Ok(out) };
+    for mois in absence.mois() {
         let Some(data) = crate::stock::vue_du_mois(&ctx.racine, mois)? else { continue };
-        out.extend(cachets_de_la_saisie(ctx, &data, cle, &premier, &dernier)?);
+        out.extend(cachets_de_la_saisie(ctx, &data, cle, &absence)?);
     }
     Ok(out)
 }
@@ -964,22 +969,22 @@ pub struct CachetPaye {
     pub taux: Option<Decimal>,
 }
 
-fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &IdSalarie, premier: &Jour, dernier: &Jour) -> R<Vec<CachetPaye>> {
+fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &IdSalarie, absence: &Periode) -> R<Vec<CachetPaye>> {
     let mut out = Vec::new();
     for (i, e) in crate::saisie::RangDansLeMois::de_chacun(&data.engagements) {
         if e.salarie.as_ref() != Some(cle) {
             continue;
         }
-        out.extend(cachets_de_l_engagement(ctx, data.mois, i, e, premier, dernier)?);
+        out.extend(cachets_de_l_engagement(ctx, data.mois, i, e, absence)?);
     }
     Ok(out)
 }
 
-/// Les lignes de l'engagement `e` (de rang `i` dans `mois`) datees entre `premier` et `dernier`.
-fn cachets_de_l_engagement(ctx: &Contexte, mois: Mois, i: crate::saisie::RangDansLeMois, e: &crate::saisie::Carte, premier: &Jour, dernier: &Jour) -> R<Vec<CachetPaye>> {
+/// Les lignes de l'engagement `e` (de rang `i` dans `mois`) datees d'un jour de l'`absence`.
+fn cachets_de_l_engagement(ctx: &Contexte, mois: Mois, i: crate::saisie::RangDansLeMois, e: &crate::saisie::Carte, absence: &Periode) -> R<Vec<CachetPaye>> {
     let mut out = Vec::new();
     for (j, l) in e.lignes().iter().enumerate() {
-        let dedans: Vec<Jour> = l.jours().into_iter().filter(|x| premier <= x && x <= dernier).collect();
+        let dedans: Vec<Jour> = l.jours().into_iter().filter(|x| absence.contient(x)).collect();
         if dedans.is_empty() {
             continue;
         }
@@ -1023,9 +1028,9 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
     for (i, e) in crate::saisie::RangDansLeMois::de_chacun(engagements) {
         let mut siens_avis = Vec::new();
         for imp in siens.iter().filter(|imp| e.salarie.as_ref() == Some(imp.salarie())) {
-            let (premier, dernier) = (premier_jour(imp)?, dernier_jour(imp)?);
-            for c in cachets_de_l_engagement(ctx, data.mois, i, e, &premier, &dernier)? {
-                siens_avis.push(avertir_un_jour_paye(imp, &c, &premier, &dernier)?);
+            let Some(absence) = absence(imp)? else { continue };
+            for c in cachets_de_l_engagement(ctx, data.mois, i, e, &absence)? {
+                siens_avis.push(avertir_un_jour_paye(imp, &c, &absence)?);
             }
         }
         out.push(siens_avis);
@@ -1033,8 +1038,9 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
     Ok(out)
 }
 
-/// L'avertissement d'une ligne `c` datee d'un jour de l'imprevu `imp`, du `premier` au `dernier` jour.
-fn avertir_un_jour_paye(imp: &Imprevu, c: &CachetPaye, premier: &Jour, dernier: &Jour) -> R<Avis> {
+/// L'avertissement d'une ligne `c` datee d'un jour de l'`absence` de l'imprevu `imp`.
+fn avertir_un_jour_paye(imp: &Imprevu, c: &CachetPaye, absence: &Periode) -> R<Avis> {
+    let (premier, dernier) = (absence.debut(), absence.fin());
     let dates: Vec<String> = c.dates.iter().map(Jour::jj_mm_aaaa).collect();
     let quoi = match imp {
         Imprevu::Arret(a) => {

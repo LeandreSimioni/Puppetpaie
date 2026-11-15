@@ -6,7 +6,7 @@
 use crate::natures::{MotifDeRupture, Nature};
 use crate::source::Fondement;
 use serde::{Deserialize, Serialize};
-use socle::date::{jours_du_mois, Anciennete, Duree, EnJours, EnMois, Jour, Periode};
+use socle::date::{Anciennete, Duree, EnJours, EnMois, Jour, Periode};
 use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
@@ -707,15 +707,11 @@ pub fn periode_de_reference(jour: &Jour) -> R<Periode> {
 /// au prorata des jours calendaires de chaque mois traverse.
 pub fn jours_acquis(presence: &Periode) -> R<Decimal> {
     let par_mois = regles()?.conges_payes.acquisition.jours_par_mois;
-    let fin = presence.fin();
-    let (mut total, mut jour) = (Decimal::ZERO, presence.debut());
-    while jour <= fin {
-        let dans_le_mois = jours_du_mois(jour.an, jour.mois);
-        let derniere = Jour { an: jour.an, mois: jour.mois, jour: dans_le_mois };
-        let borne = if fin < derniere { fin } else { derniere };
-        let jours = Decimal::from(borne.moins(&jour) + 1);
-        total = add(total, div(mul(par_mois, jours), Decimal::from(dans_le_mois)));
-        jour = borne.plus_jours(1)?;
+    let mut total = Decimal::ZERO;
+    for mois in presence.mois() {
+        let Some(commun) = presence.croise(&Periode::du_mois(mois)) else { continue };
+        let jours = Decimal::from(commun.jours().count());
+        total = add(total, div(mul(par_mois, jours), Decimal::from(mois.jours())));
     }
     Ok(total)
 }

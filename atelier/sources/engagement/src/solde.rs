@@ -645,19 +645,18 @@ fn delai_de_prevenance(
     }
     // La part non effectuee : du lendemain de la fin au dernier jour du delai, le salaire de chaque mois traverse pour ses
     // heures (`droit::periodes::part_du_mois`, l'horaire reel du mois).
-    let (mut fraction, mut jours, mut j) = (Decimal::ZERO, socle::grandeurs::Jours::ZERO, fin.plus_jours(1)?);
-    while j <= delai.expiration {
-        let mois_de_j = j.mois_civil();
-        let f = mois_de_j.dernier_jour().min(delai.expiration);
+    let non_effectue = Periode::du_au(fin.plus_jours(1)?, delai.expiration)?;
+    let (mut fraction, mut jours) = (Decimal::ZERO, socle::grandeurs::Jours::ZERO);
+    for mois_de_j in non_effectue.mois() {
+        let Some(dans_le_mois) = non_effectue.croise(&Periode::du_mois(mois_de_j)) else { continue };
         let horaire = crate::conges::horaire_du_mois(ctx, au, salarie_de(e)?, &debut, mois_de_j)?;
-        let part = droit::periodes::part_du_mois(&Periode::du_au(j, f)?, mois_de_j, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
+        let part = droit::periodes::part_du_mois(&dans_le_mois, mois_de_j, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
         fraction = add(fraction, part.fraction.decimal());
         jours += part.jours;
-        j = f.plus_jours(1)?;
     }
     stc.lignes.push(ligne(&regle.rubrique, fraction, salaire));
     let montant = Montant::du_decimal(mul(fraction, salaire)).au_centime().decimal();
-    let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&Periode::du_au(fin.plus_jours(1)?, delai.expiration)?)?, salaire, montant, stc)?;
+    let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&non_effectue)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
     let avantages = if avantages.is_empty() {
         "Les avantages : le bulletin de ce mois n'en porte aucun, il n'y a rien à ajouter.".to_string()

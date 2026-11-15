@@ -583,8 +583,8 @@ pub fn emploi_du_mois(ctx: &Contexte, cle: &IdSalarie, periode: &Periode) -> R<F
         }
         let c = CaseDeFiche::from(c);
         let le = ctx.salarie_brut(cle).into_iter().flat_map(|b| b.depuis(c)).flatten().filter(|j| *j > periode.debut() && periode.contient(j)).last();
-        let premier = Jour { jour: 1, ..periode.debut() };
-        let suivant = Jour { jour: 1, ..premier.plus_jours(31)? };
+        let mois = periode.debut().mois_civil();
+        let (premier, suivant) = (mois.premier_jour(), mois.suivant().premier_jour());
         let texte = |v: &Option<String>| match v {
             Some(v) => repr(v),
             None => "(vide)".to_string(),

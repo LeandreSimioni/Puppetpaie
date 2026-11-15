@@ -357,10 +357,9 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         out.avis.push(info(format!("{} : pas de maintien de salaire pour cet arrêt : {}", qui, raisons.join(" "))));
         return Ok(());
     }
-    let (premier, dernier) = (crate::imprevus::premier_jour_d_arret(imp)?, crate::imprevus::dernier_jour_d_arret(imp)?);
-    let Some(absence) = crate::imprevus::absence_dans(&premier, &dernier, &m.presence)? else {
-        return Ok(());
-    };
+    let Some(arret) = crate::imprevus::absence_d_arret(imp)? else { return Ok(()) };
+    let Some(absence) = arret.croise(&m.presence) else { return Ok(()) };
+    let (premier, dernier) = (arret.debut(), arret.fin());
     let heures_du_mois = m.jours_payes * m.heures_par_jour;
     if heures_du_mois <= Heures::ZERO {
         return Ok(());
@@ -375,7 +374,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     let (csg_ded, pas_jours, pas_accident) = (rij.csg_deductible, rij.pas.maladie_jours, rij.pas.accident);
 
     // Les indemnites de la caisse, jour par jour du mois (rang depuis le premier jour d'absence).
-    let ij = match indemnites_des_jours(imp, dr.origine, &premier, &dernier, &absence)? {
+    let ij = match indemnites_des_jours(imp, dr.origine, &arret, &absence)? {
         Ok(ij) => ij,
         Err(majoree) => return Err(crate::a_finir(refus_des_indemnites(&qui, mois, &premier, &dernier, majoree))),
     };
@@ -495,14 +494,14 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
 }
 
 
-/// Les indemnites de chaque jour d'un arret dans `absence` (ses jours dans le mois), en rang depuis son premier jour
-/// (`None` : un jour que la caisse n'indemnise pas, ou hors du mois) ; `Err(majoree)` quand l'arret ne dit pas celles
-/// d'un jour indemnise (`majoree` : seulement celles d'un accident du travail au-dela du vingt-huitieme jour).
-fn indemnites_des_jours(imp: &ArretSaisi, origine: Origine, premier: &Jour, dernier: &Jour, absence: &Periode) -> R<Result<Vec<Option<(Decimal, Decimal)>>, bool>> {
+/// Les indemnites de chaque jour de l'`arret` (ses jours d'absence) dans `absence` (ses jours dans le mois), en rang
+/// depuis son premier jour (`None` : un jour que la caisse n'indemnise pas, ou hors du mois) ; `Err(majoree)` quand
+/// l'arret ne dit pas celles d'un jour indemnise (`majoree` : seulement celles d'un accident du travail au-dela du
+/// vingt-huitieme jour).
+fn indemnites_des_jours(imp: &ArretSaisi, origine: Origine, arret: &Periode, absence: &Periode) -> R<Result<Vec<Option<(Decimal, Decimal)>>, bool>> {
     let (rang_caisse, rang_majore) = jours_de_la_caisse(origine)?;
     let (mut ij, mut manque, mut manque_majoree) = (Vec::new(), false, false);
-    for i in 0..(dernier.moins(premier) + 1) {
-        let j = premier.plus_jours(i)?;
+    for (i, j) in (0..).zip(arret.jours()) {
         if !absence.contient(&j) || i < rang_caisse {
             ij.push(None);
             continue;
@@ -553,11 +552,11 @@ pub fn indemnites_a_dire(ctx: &Contexte, carte: &crate::saisie::Carte, mois: Moi
         if !droits(ctx, &imp, &nat)?.is_some_and(|dr| dr.du()) {
             continue;
         }
-        let (premier, dernier) = (crate::imprevus::premier_jour_d_arret(&imp)?, crate::imprevus::dernier_jour_d_arret(&imp)?);
         let Some(o) = origine(&imp)? else { continue };
-        let Some(absence) = crate::imprevus::absence_dans(&premier, &dernier, &presence)? else { continue };
-        if let Err(majoree) = indemnites_des_jours(&imp, o, &premier, &dernier, &absence)? {
-            return Ok(Some(refus_des_indemnites(&ctx.nomme(salarie), mois, &premier, &dernier, majoree)));
+        let Some(arret) = crate::imprevus::absence_d_arret(&imp)? else { continue };
+        let Some(absence) = arret.croise(&presence) else { continue };
+        if let Err(majoree) = indemnites_des_jours(&imp, o, &arret, &absence)? {
+            return Ok(Some(refus_des_indemnites(&ctx.nomme(salarie), mois, &arret.debut(), &arret.fin(), majoree)));
         }
     }
     Ok(None)
@@ -956,10 +955,10 @@ mod tests {
             "date_accident": null, "jours_deja_indemnises": null, "ij_brute": "40.89", "ij_nette": "38.15", "ij_brute_majoree": null,
             "ij_nette_majoree": null, "prolongations": [], "reprises": [], "saisi_le": "2026-03-09 10:00", "qui": "interface", "note": ""}"#,
             crate::imprevus::ILLISIBLE).unwrap();
-        let (premier, dernier) = (crate::imprevus::premier_jour_d_arret(&imp).unwrap(), crate::imprevus::dernier_jour_d_arret(&imp).unwrap());
+        let arret = crate::imprevus::absence_d_arret(&imp).unwrap().unwrap();
         let premier_indemnise = |o: Origine| {
-            let ij = indemnites_des_jours(&imp, o, &premier, &dernier, &Periode::du_au(premier, dernier).unwrap()).unwrap().unwrap();
-            premier.plus_jours(ij.iter().position(Option::is_some).unwrap() as i64).unwrap().iso()
+            let ij = indemnites_des_jours(&imp, o, &arret, &arret).unwrap().unwrap();
+            arret.jours().nth(ij.iter().position(Option::is_some).unwrap()).unwrap().iso()
         };
         assert_eq!(premier_indemnise(Origine::Maladie), "2026-03-12");
         assert_eq!(premier_indemnise(Origine::AccidentDuTravail), "2026-03-09");

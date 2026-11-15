@@ -244,7 +244,7 @@ pub fn part_du_mois(periode: &Periode, mois: Mois, regle: RegleDuMoisIncomplet, 
         horaire.feries_non_payes.iter().filter(|(j, _)| periode.contient(j) && horaire.jours.travaille(j)).cloned().collect();
     let jours = horaire.jours.jours_entre(periode) - Jours::de_dates(feries_non_payes.len());
     let du_mois = horaire.jours.jours_entre(&le_mois);
-    let entier = periode.contient(&le_mois.debut()) && periode.contient(&le_mois.fin()) && feries_non_payes.is_empty();
+    let entier = periode.croise(&le_mois) == Some(le_mois) && feries_non_payes.is_empty();
     let jours_du_mois = match regle {
         RegleDuMoisIncomplet::Ccneac1285Artiste if !entier => JOURS_DU_MOIS_CCNEAC,
         _ => du_mois,
