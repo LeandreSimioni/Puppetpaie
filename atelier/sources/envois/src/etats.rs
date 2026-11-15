@@ -260,8 +260,8 @@ pub fn revenus(l: &Ligne) -> &[RetourContrat] {
 /// Les contrats repartis apres leur signature sur une autre version de l'engagement que celle signee : ils attendent une
 /// nouvelle signature. Un avenant n'en fait pas un.
 pub fn renvoyes_depuis_la_signature(lignes: &[Ligne]) -> HashSet<Paire> {
-    let mut envoye: HashMap<Paire, Option<u64>> = HashMap::new();
-    let mut signe: HashMap<Paire, Option<u64>> = HashMap::new();
+    let mut envoye: HashMap<Paire, Option<engagement::stock::VersionDeLEngagement>> = HashMap::new();
+    let mut signe: HashMap<Paire, Option<engagement::stock::VersionDeLEngagement>> = HashMap::new();
     let mut renvoye: HashSet<Paire> = HashSet::new();
     for l in lignes.iter().filter(|l| l.accepte()) {
         if let Some(e) = l.signature() {

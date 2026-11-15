@@ -58,7 +58,7 @@ use crate::departs::{Depart, Departs, Envoi};
 use crate::paie_ecrite::{FormeDePaie, PaieEcrite, Recalcul};
 use crate::Avis;
 use crate::saisie::{Carte, Champ, RangDansLeMois};
-use crate::stock::{self, Objet};
+use crate::stock::{self, Objet, VersionDeLEngagement};
 use crate::{empreinte, relire};
 use droit::contexte::{CleLue, Contexte};
 use socle::date::Jour;
@@ -219,7 +219,7 @@ impl Valide {
 
     /// Le numero de sa version (1 tant qu'aucune modification n'a suivi un envoi) ; `None` pour une validation qui ne le
     /// porte pas (`a_revalider`).
-    pub fn version(&self) -> Option<u64> {
+    pub fn version(&self) -> Option<VersionDeLEngagement> {
         self.objet.brut.valide.as_ref()?.version
     }
 
@@ -236,7 +236,7 @@ impl Valide {
 
     /// La version `n`, passee ou presente, telle que l'engagement l'ecrit (sa saisie) ; ses paies se lisent par
     /// `paie_ecrite_de_la_version`.
-    pub fn version_numero(&self, n: u64) -> Option<stock::Version<'_>> {
+    pub fn version_numero(&self, n: VersionDeLEngagement) -> Option<stock::Version<'_>> {
         match &self.objet.brut.valide {
             Some(v) if v.version == Some(n) => Some(stock::Version::Presente(v)),
             _ => self.versions().iter().find(|v| v.version == n).map(stock::Version::Passee),
@@ -1151,14 +1151,14 @@ fn memes_chiffres(a: &BTreeMap<Mois, PaieEcrite>, b: &BTreeMap<Mois, PaieEcrite>
 /// sur elle (`siens`), elle se garde, datee, dans les versions de l'engagement, ses paies sous son numero dans le fichier
 /// de leur mois (`paies::garder_la_version`), et le present prend le numero suivant ; sinon le present garde son numero
 /// `n`, sans historique.
-fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: u64, siens: &[Depart], le: Moment) -> R<u64> {
+fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: VersionDeLEngagement, siens: &[Depart], le: Moment) -> R<VersionDeLEngagement> {
     if !siens.iter().any(|d| d.version == n) {
         return Ok(n);
     }
     crate::paies::garder_la_version(o, n)?;
     let passee = stock::VersionPassee { version: n, valide_le: actuelle.le, remplacee_le: le, saisie: actuelle.saisie.clone() };
     o.brut_mut().versions.push(passee);
-    Ok(n + 1)
+    Ok(n.suivante())
 }
 
 /// « VALIDER L'ENGAGEMENT » : l'engagement de rang `rang` dans l'ecran de `mois` ecrit sa saisie telle qu'elle est, et
@@ -1202,7 +1202,7 @@ pub fn valider(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, departs: &Depar
     let (version, le) = match precedente.as_ref().and_then(|p| Some((p, p.version?))) {
         Some((p, n)) if p.saisie.as_ref() != Some(&saisie) || !memes_chiffres(&gardees, &paies) => (nouvelle_version(&mut o, p, n, &siens, le)?, le),
         Some((p, n)) => (n, p.le),
-        None => (1, le),
+        None => (VersionDeLEngagement::premiere(), le),
     };
     // Sous un autre numero, la validation d'avant n'a plus de paies ; sous le meme, ses mois que celle-ci ne couvre plus.
     if deja.is_some() && avant.carte().numero != o.carte().numero {
@@ -1432,7 +1432,7 @@ pub fn supprimer(ctx: &Contexte, o: &Objet, departs: &Departs) -> R<()> {
 pub struct NonActif {
     objet: Objet,
     le: Moment,
-    version: u64,
+    version: VersionDeLEngagement,
 }
 
 impl NonActif {
@@ -1444,7 +1444,7 @@ impl NonActif {
 
     /// Sa version : celle qui suit la derniere validee. Son present est : rien de paye ; une correction qui le declare
     /// part sur elle.
-    pub fn version(&self) -> u64 {
+    pub fn version(&self) -> VersionDeLEngagement {
         self.version
     }
 
@@ -1468,7 +1468,7 @@ impl NonActif {
     pub fn a_refaire(&self, departs: &Departs) -> Vec<ARefaire> {
         let siens = ses_departs(&self.objet, departs);
         let mut out = Vec::new();
-        let mut mois: BTreeMap<Mois, u64> = BTreeMap::new();
+        let mut mois: BTreeMap<Mois, VersionDeLEngagement> = BTreeMap::new();
         for d in siens.iter().filter(|d| d.envoi == Envoi::Dsn) {
             if let Some(m) = d.mois {
                 mois.insert(m, d.version);
@@ -1499,7 +1499,7 @@ pub fn desactiver(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, departs: &De
     // La validation presente : la derniere version, gardee telle quelle.
     let derniere = o.brut_mut().valide.take();
     // Sa version suit la derniere validee : son present, rien de paye, est une version de plus.
-    let version = o.brut.versions.iter().map(|v| v.version).chain(derniere.as_ref().and_then(|v| v.version)).fold(0, u64::max) + 1;
+    let version = o.brut.versions.iter().map(|v| v.version).chain(derniere.as_ref().and_then(|v| v.version)).max().map_or(VersionDeLEngagement::premiere(), VersionDeLEngagement::suivante);
     if let Some((v, n)) = derniere.and_then(|v| Some((v.clone(), v.version?))) {
         crate::paies::garder_la_version(&o, n)?;
         o.brut_mut().versions.push(stock::VersionPassee { version: n, valide_le: v.le, remplacee_le: le.clone(), saisie: v.saisie });
@@ -1751,14 +1751,14 @@ pub enum ARefaire {
     /// Le contrat (ou son dernier avenant) est parti sur la version `depuis`, et ses clauses ont change : un avenant a
     /// faire signer. `None` : le contrat a ete signe hors du logiciel (`crate::signe_ailleurs`), aucun avenant n'est
     /// parti, et un de ses termes a change depuis le premier mois (`stock::DATES`).
-    Avenant { depuis: Option<u64> },
+    Avenant { depuis: Option<VersionDeLEngagement> },
     /// La DPAE est partie sur la version `depuis` avec la date d'embauche `debut_declare`, qui a change.
-    Dpae { depuis: u64, debut_declare: Option<Jour> },
+    Dpae { depuis: VersionDeLEngagement, debut_declare: Option<Jour> },
     /// Les documents de `mois` sont partis sur la version `depuis`, et sa paie a change : un bulletin rectificatif.
-    Bulletin { mois: Mois, depuis: u64 },
+    Bulletin { mois: Mois, depuis: VersionDeLEngagement },
     /// La DSN de `mois` est partie sur la version `depuis`, et sa paie a change : un annule-et-remplace, ou la correction
     /// dans une DSN suivante (la couche des declarations tranche, a l'echeance).
-    Dsn { mois: Mois, depuis: u64 },
+    Dsn { mois: Mois, depuis: VersionDeLEngagement },
 }
 
 /// LA VERSION EN VIGUEUR AU DEPART de chaque envoi, comparee au present de l'engagement valide `v` : ce qui est a
@@ -1917,7 +1917,7 @@ pub fn version_au_depart<'a>(v: &'a Valide, departs: &Departs, envoi: Envoi) -> 
 /// La version `n` de l'engagement `o`, telle qu'elle est ecrite (`saisie`) : le present, la validation que
 /// « Modifier… » a mise de cote, ou une version passee ; `None` si l'engagement n'a pas de version `n`. Refus : une
 /// version qui ne dit pas tout ce qu'un envoi a emporte (`a_revalider`).
-fn version_ecrite<'a>(ctx: &Contexte, o: &'a Objet, n: u64) -> R<Option<stock::Version<'a>>> {
+fn version_ecrite<'a>(ctx: &Contexte, o: &'a Objet, n: VersionDeLEngagement) -> R<Option<stock::Version<'a>>> {
     let Some(v) = o.brut.version(n) else {
         return Ok(None);
     };
@@ -1979,7 +1979,7 @@ pub fn paie_declaree(ctx: &Contexte, o: &Objet, departs: &Departs, mois: Mois) -
 
 /// La paie de `mois` que la version n° `n` de l'engagement `o` a ecrite (`version_ecrite`, `paie_de_la_version`) ; `None`
 /// si `o` n'a pas cette version ou qu'elle n'a pas de paie pour ce mois.
-pub fn paie_de_la_version_n(ctx: &Contexte, o: &Objet, n: u64, mois: Mois) -> R<Option<Paie>> {
+pub fn paie_de_la_version_n(ctx: &Contexte, o: &Objet, n: VersionDeLEngagement, mois: Mois) -> R<Option<Paie>> {
     match version_ecrite(ctx, o, n)? {
         Some(v) => paie_de_la_version(ctx, o, v, mois),
         None => Ok(None),
@@ -2003,7 +2003,7 @@ pub fn paie_partie(ctx: &Contexte, o: &Objet, departs: &Departs, mois: Mois) -> 
 pub struct Declaree {
     pub par: Option<Mois>,
     /// La version de l'engagement sur laquelle la DSN est partie.
-    pub version: u64,
+    pub version: VersionDeLEngagement,
     pub paie: Paie,
 }
 
@@ -2036,8 +2036,8 @@ pub fn paies_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: Mois,
 
 /// Les versions que `paies_declarees` relit, dans le meme ordre, chacune avec le mois de la DSN qui l'a portee : ce qui
 /// a ete declare, sans en relire les paies.
-fn versions_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: Mois, avant: Option<Mois>) -> R<Vec<(Option<Mois>, u64)>> {
-    let mut chaine: Vec<(Option<Mois>, u64)> = Vec::new();
+fn versions_declarees(ctx: &Contexte, o: &Objet, departs: &Departs, mois: Mois, avant: Option<Mois>) -> R<Vec<(Option<Mois>, VersionDeLEngagement)>> {
+    let mut chaine: Vec<(Option<Mois>, VersionDeLEngagement)> = Vec::new();
     for d in ses_departs(o, departs).iter().filter(|d| d.envoi == Envoi::Dsn && d.mois == Some(mois)) {
         match (d.par, avant) {
             (None, _) => chaine = vec![(None, d.version)],

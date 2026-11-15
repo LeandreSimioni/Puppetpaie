@@ -119,6 +119,32 @@ impl Avenant {
     }
 }
 
+/// LA VERSION D'UN ENGAGEMENT : la premiere a sa premiere validation, la suivante quand une validation change ce qu'un
+/// envoi a emporte (`etats::nouvelle_version`) ou qu'il cesse d'etre actif (`etats::desactiver`). Ecrite et lue comme un
+/// nombre (l'engagement, ses paies gardees, le journal des envois) ; elle se compare, se dit (`Display`), et ne s'ouvre
+/// pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct VersionDeLEngagement(u64);
+
+impl VersionDeLEngagement {
+    /// La version de la premiere validation.
+    pub fn premiere() -> VersionDeLEngagement {
+        VersionDeLEngagement(1)
+    }
+
+    /// La version qui la suit.
+    pub fn suivante(self) -> VersionDeLEngagement {
+        VersionDeLEngagement(self.0 + 1)
+    }
+}
+
+impl std::fmt::Display for VersionDeLEngagement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
 /// UNE VALIDATION : quand, sa version, et la saisie validee (`None` : comptee comme valide par le calcul qui l'ecrit,
 /// `etats::calculer_les_rangs`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -126,7 +152,7 @@ impl Avenant {
 pub struct Validation {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub le: Moment,
-    pub version: Option<u64>,
+    pub version: Option<VersionDeLEngagement>,
     pub saisie: Option<Saisie>,
 }
 
@@ -134,7 +160,7 @@ pub struct Validation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VersionPassee {
-    pub version: u64,
+    pub version: VersionDeLEngagement,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub valide_le: Moment,
     #[serde(with = "socle::paris::ecrit::seconde")]
@@ -152,7 +178,7 @@ pub enum Version<'a> {
 
 impl<'a> Version<'a> {
     /// Son numero ; `None` pour une validation qui ne le porte pas (`etats::a_revalider`).
-    pub fn numero(&self) -> Option<u64> {
+    pub fn numero(&self) -> Option<VersionDeLEngagement> {
         match self {
             Version::Presente(v) => v.version,
             Version::Passee(v) => Some(v.version),
@@ -183,7 +209,7 @@ impl Ecrit {
     }
 
     /// La version `n`, presente ou passee.
-    pub fn version(&self, n: u64) -> Option<Version<'_>> {
+    pub fn version(&self, n: VersionDeLEngagement) -> Option<Version<'_>> {
         self.toutes_les_versions().find(|v| v.numero() == Some(n))
     }
 }
@@ -194,7 +220,7 @@ impl Ecrit {
 pub struct NonActif {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub le: Moment,
-    pub version: u64,
+    pub version: VersionDeLEngagement,
 }
 
 // ------------------------------------------------------------------ les fichiers

@@ -274,14 +274,14 @@ fn engagement_de(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &NumeroCon
 
 /// La paie de `mois` que la version `version` de l'engagement `o` (salarie `cle`, contrat `numero`) a ecrite
 /// (`engagement::etats::paie_de_la_version_n`).
-fn paie_de_la_version(ctx: &Contexte, o: &engagement::stock::Objet, cle: &IdSalarie, numero: &NumeroContrat, mois: Mois, version: u64) -> R<Paie> {
+fn paie_de_la_version(ctx: &Contexte, o: &engagement::stock::Objet, cle: &IdSalarie, numero: &NumeroContrat, mois: Mois, version: engagement::stock::VersionDeLEngagement) -> R<Paie> {
     engagement::etats::paie_de_la_version_n(ctx, o, version, mois)?
         .ok_or_else(|| erreur(Classe::Illisible, format!("{} : la version {} du contrat {} n'a pas de paie de {}.", cle, version, numero, mois.libelle(Graphie::Accentuee))))
 }
 
 /// Le jour ou la version `n` de l'engagement `o` a ete validee (`le` de la presente, `valide_le` d'une passee) ; `None`
 /// si l'engagement ne le dit pas. Un jour qui ne se lit pas se refuse.
-fn valide_le(o: &engagement::stock::Objet, n: u64) -> R<Option<socle::date::Jour>> {
+fn valide_le(o: &engagement::stock::Objet, n: engagement::stock::VersionDeLEngagement) -> R<Option<socle::date::Jour>> {
     use engagement::stock::Version;
     let Some(le) = o.brut.valide.iter().map(Version::Presente).chain(o.brut.versions.iter().map(Version::Passee)).find(|v| v.numero() == Some(n)).and_then(|v| v.valide_le()) else {
         return Ok(None);

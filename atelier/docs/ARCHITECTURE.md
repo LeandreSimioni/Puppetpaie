@@ -188,7 +188,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
-| version d'un engagement | à créer (#419) : `VersionDeLEngagement` | des entiers nus |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
 
 **Le temps**
@@ -333,6 +332,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | numéro d'un certificat Congés Spectacles (N CE, le premier d'une paie partie) | `NumeroDeCertificat` | `engagement/src/numeros.rs` |
 | rang d'une ligne parmi celles de sa carte | `RangDeLigne` | `engagement/src/ligne.rs` |
 | rang d'un engagement dans l'écran de son mois (dit à partir de un) | `RangDansLeMois` | `engagement/src/saisie.rs` |
+| version d'un engagement (la première à sa validation, la suivante quand ce qui est parti change) | `VersionDeLEngagement` | `engagement/src/stock.rs` |
 | numéro d'objet spectacle | `NumeroObjetSpectacle` | `droit/src/fiche.rs` |
 | IDCC | `Idcc` | `droit/src/fiche.rs` |
 | identifiant d'organisme | `IdentifiantDOrganisme` | `droit/src/organismes.rs` |

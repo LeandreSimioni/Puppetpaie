@@ -36,7 +36,7 @@ pub enum Aucun {}
 pub struct Version {
     pub salarie: IdSalarie,
     pub numero: NumeroContrat,
-    pub version: u64,
+    pub version: engagement::stock::VersionDeLEngagement,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<Mois>,
 }

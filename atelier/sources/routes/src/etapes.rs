@@ -891,7 +891,7 @@ fn emportes_a_refaire(
 /// UNE CORRECTION PORTEE, telle que l'empreinte de la saisie la retient (`Moteur::portees`) : le mois corrige, le
 /// salarie, le contrat et la version. Elle s'ecrit en liste.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct Portee(Mois, String, Option<NumeroContrat>, u64);
+pub(crate) struct Portee(Mois, String, Option<NumeroContrat>, engagement::stock::VersionDeLEngagement);
 
 /// Ce dont l'empreinte d'une saisie qui porte des corrections se calcule (`Moteur::empreinte_saisie_avec`).
 #[derive(Serialize)]

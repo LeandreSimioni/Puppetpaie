@@ -10,6 +10,7 @@
 
 
 use engagement::calcul::Paie;
+use engagement::stock::VersionDeLEngagement;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -26,7 +27,7 @@ use crate::versement_declare::{self, VersementDeclare};
 pub struct Reg {
     pub mois: Mois,
     /// La version presente de l'engagement, que la correction declare, et le jour ou elle a ete validee.
-    pub version: u64,
+    pub version: VersionDeLEngagement,
     pub decidee_le: Option<Jour>,
     /// La paie d'avant : la derniere paie declaree du contrat, telle que la version de l'engagement sur laquelle la DSN
     /// est partie la porte (`versement_declare::dernier_declare`) ; ce qui s'en imprime et le contrat qu'elle declare. Ce que la correction
@@ -192,7 +193,7 @@ fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Moi
 pub struct VersionPortee {
     pub salarie: droit::contexte::IdSalarie,
     pub numero: engagement::numeros::NumeroContrat,
-    pub version: u64,
+    pub version: VersionDeLEngagement,
     /// Le mois corrige.
     pub mois: Mois,
 }
@@ -227,7 +228,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &droit::fiche::Nic) -
 /// net-entreprises 1741 : un contrat que le systeme DSN ne connait pas encore se declare en entier dans la DSN mensuelle
 /// qui le porte), et le versement de la correction declare son net. Son bulletin est celui de son mois, qui part avec
 /// les documents de ce mois (`routes::gestes::depart::fabriquer_documents`).
-fn ajout(mois: Mois, version: u64, decidee_le: Option<Jour>, apres: Paie) -> R<Reg> {
+fn ajout(mois: Mois, version: VersionDeLEngagement, decidee_le: Option<Jour>, apres: Paie) -> R<Reg> {
     if apres.engagement.numero.is_none() {
         return Err(erreur(
             Classe::MoisNonRegularisable,

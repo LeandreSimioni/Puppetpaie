@@ -733,7 +733,7 @@ mod tests {
             e.mois = Some(Mois::nouveau(2026, 6).unwrap());
             e.quand = socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 7, 5).unwrap(), 10, 0, 0).unwrap().into();
             e.retours = retours;
-            e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: 1, mois: None }]);
+            e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: engagement::stock::VersionDeLEngagement::premiere(), mois: None }]);
             e
         }
         let ko = vec![retour(AccuseDEnregistrement, Verdict::Ok), retour(CertificatDeConformite, Verdict::Ko)];

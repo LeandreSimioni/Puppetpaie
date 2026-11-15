@@ -232,7 +232,7 @@ pub fn termes_changes(convenue: &Saisie, presente: &Saisie) -> Vec<TermeChange> 
 /// CE QUI A CHANGE DEPUIS LA VERSION `n` de l'engagement valide `v` jusqu'a son present, en mots (`changements`) : ce
 /// que dit la frise, et ce que dit le renvoi des documents partis sur la version `n`. Vide si `n` est le present ; une
 /// version que l'engagement n'a pas se refuse.
-pub fn depuis(ctx: &Contexte, v: &Valide, n: u64) -> R<Vec<String>> {
+pub fn depuis(ctx: &Contexte, v: &Valide, n: crate::stock::VersionDeLEngagement) -> R<Vec<String>> {
     match (v.version_numero(n), &v.objet().brut.valide) {
         (Some(passee), Some(present)) if v.version() != Some(n) => changements(ctx, passee.saisie(), present.saisie.as_ref()),
         (Some(_), Some(_)) => Ok(Vec::new()),
@@ -356,7 +356,7 @@ pub struct Frise {
 /// qui a change depuis la precedente, et ce qui est parti sur elle.
 #[derive(Debug, Clone, Serialize)]
 pub struct VersionDeLaFrise {
-    pub version: Option<u64>,
+    pub version: Option<crate::stock::VersionDeLEngagement>,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub le: socle::paris::Moment,
     /// Son jour tel que la frise l'affiche (« 14/11 »).
