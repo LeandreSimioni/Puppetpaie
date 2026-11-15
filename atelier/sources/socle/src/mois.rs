@@ -11,7 +11,7 @@
 //! `declarations::champs` lit du mois de naissance d'un NIR : jamais au mois d'une paie. Un mois nomme aussi un fichier ou
 //! un dossier : `../config` ou `2026-06/envoi` n'en sont pas.
 
-use crate::date::{jours_du_mois, repr_texte, Jour};
+use crate::date::{jours_du_mois, repr_texte, Duree, Jour};
 use crate::echec::{refus, R};
 
 /// Un mois civil, de 0001-01 a 9999-12. L'ordre est celui du calendrier.
@@ -130,9 +130,22 @@ impl Mois {
         format!("{}{:04}", self.nom(Graphie::Titre), self.an)
     }
 
+    /// LE MOIS QUI SUIT DE `d` CELUI-CI ; refus hors des annees 1 a 9999, et d'une duree en jours, qui ne compte pas des
+    /// mois.
+    #[track_caller]
+    pub fn apres(self, d: Duree) -> R<Mois> {
+        self.plus(d.mois_pour(self)?)
+    }
+
+    /// LE MOIS QUI PRECEDE DE `d` CELUI-CI ; refus hors des annees 1 a 9999, et d'une duree en jours.
+    #[track_caller]
+    pub fn avant(self, d: Duree) -> R<Mois> {
+        self.plus(-d.mois_pour(self)?)
+    }
+
     /// Le mois `n` mois plus loin (en arriere si `n` est negatif) ; refus hors des annees 1 a 9999.
-    pub fn plus(self, n: i32) -> R<Mois> {
-        let rang = i64::from(self.an) * 12 + i64::from(self.numero) - 1 + i64::from(n);
+    fn plus(self, n: i64) -> R<Mois> {
+        let rang = i64::from(self.an) * 12 + i64::from(self.numero) - 1 + n;
         let an = i32::try_from(rang.div_euclid(12)).map_err(|_| refus(crate::date::HORS_CALENDRIER))?;
         Mois::nouveau(an, (rang.rem_euclid(12) + 1) as u32).map_err(|_| refus(crate::date::HORS_CALENDRIER))
     }
@@ -290,7 +303,7 @@ impl Annee {
     }
 
     /// L'annee `n` ans plus loin (en arriere si `n` est negatif) ; refus hors des annees 1 a 9999.
-    pub fn plus(self, n: i32) -> R<Annee> {
+    fn plus(self, n: i32) -> R<Annee> {
         Annee::nouvelle(i64::from(self.0) + i64::from(n))
     }
 
@@ -309,10 +322,16 @@ impl Annee {
         (self.0..=derniere.0).map(Annee).collect()
     }
 
-    /// Les `n` annees qui la precedent, de la plus ancienne a celle d'avant ; celles d'avant l'an 1 n'existent pas.
-    pub fn les_precedentes(self, n: usize) -> Vec<Annee> {
-        let debut = (i64::from(self.0) - n as i64).max(1);
-        (debut..i64::from(self.0)).map(|a| Annee(a as i32)).collect()
+    /// LES ANNEES CIVILES ENTIERES QUE LA DUREE `d` COUVRE AVANT CELLE-CI (cinq ans : les cinq d'avant), de la plus
+    /// ancienne a celle d'avant ; celles d'avant l'an 1 n'existent pas.
+    pub fn les_precedentes(self, d: Duree) -> Vec<Annee> {
+        let debut = match self.premier_jour().avant(d) {
+            Ok(j) if j.mois == 1 && j.jour == 1 => j.an,
+            Ok(j) => j.an + 1,
+            // Plus loin que le 1er janvier de l'an 1 : il est la premiere annee.
+            Err(_) => 1,
+        };
+        (debut..self.0).map(Annee).collect()
     }
 
     /// Le mois `m` de l'annee.

@@ -8,7 +8,7 @@ use crate::outils::typee::{cas_de, chemin_donnee, empreinte, jouer, lire_chemin,
 use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit, Prime, Profil, Retraite, Tranche, P};
 use droit::fiche::{ChampsSalarie, Idcc, Statut};
 use serde::{Deserialize, Serialize};
-use socle::date::{Anciennete, Jour};
+use socle::date::{Anciennete, Duree, Jour};
 use socle::echec::R;
 use socle::num::Decimal;
 use std::str::FromStr;
@@ -315,8 +315,8 @@ pub(crate) struct RetraiteLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     article: Option<String>,
     hors_primes: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    prevenance_mois: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "Duree::ecrite_en_mois_opt", deserialize_with = "Duree::en_mois_opt")]
+    prevenance_mois: Option<Duree>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cadre_de_direction: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

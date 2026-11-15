@@ -16,11 +16,164 @@ pub struct Jour {
     pub jour: u32,
 }
 
-/// UNE DUREE DE DROIT (« Le glossaire ») : des jours, ou des mois de calendrier, de date a date.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Duree {
-    Jours(i64),
-    Mois(i64),
+/// UNE DUREE DE DROIT (« Le glossaire ») : des jours, ou des mois de calendrier, de date a date ; jamais negative. Une
+/// duree qu'un texte fixe s'ecrit `Duree::jours`, `Duree::mois`, `Duree::annees` ; un fichier la dit en nombre, lu en
+/// elle a sa porte (`en_jours`, `en_mois` et leurs facultatives). Elle se compte depuis un jour (`Jour::apres`,
+/// `Jour::avant`), un mois (`Mois::apres`, `Mois::avant`) ou une annee (`Annee::les_precedentes`) ; elle se mesure du
+/// premier au dernier jour d'une suite de jours (`Duree::du_au`) ; deux durees de la meme unite se comparent ; elle se
+/// dit dans une phrase (`Display` : « 3 jours », « 2 mois »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Duree(Compte);
+
+/// L'unite d'une duree, et son nombre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Compte {
+    Jours(u32),
+    Mois(u32),
+}
+
+impl Duree {
+    /// `n` jours, qu'un texte fixe.
+    pub const fn jours(n: u32) -> Duree {
+        Duree(Compte::Jours(n))
+    }
+
+    /// `n` mois de calendrier, qu'un texte fixe.
+    pub const fn mois(n: u32) -> Duree {
+        Duree(Compte::Mois(n))
+    }
+
+    /// `n` annees, qu'un texte fixe : douze mois de calendrier chacune.
+    pub const fn annees(n: u32) -> Duree {
+        Duree(Compte::Mois(n * 12))
+    }
+
+    /// LES JOURS DU `debut` AU `fin`, l'un et l'autre compris ; aucun quand `fin` precede `debut`.
+    pub fn du_au(debut: &Jour, fin: &Jour) -> Duree {
+        // De 0001-01-01 a 9999-12-31, l'ecart tient sur 32 bits ; negatif, la suite est vide.
+        let n = fin.moins(debut) + 1;
+        Duree(Compte::Jours(if n > 0 { n as u32 } else { 0 }))
+    }
+
+    /// LES JOURS QU'ELLE COMPTE A PARTIR DE `debut` : ses jours, ou les jours calendaires de ses mois comptes du `debut`
+    /// au meme quantieme (`Jour::apres`), ce jour exclu.
+    #[track_caller]
+    pub fn en_jours_depuis(self, debut: &Jour) -> R<Duree> {
+        match self.0 {
+            Compte::Jours(_) => Ok(self),
+            Compte::Mois(_) => Ok(Duree::du_au(debut, &debut.apres(self)?.plus_jours(-1)?)),
+        }
+    }
+
+    /// UN JOUR PAR SEMAINE COMMENCEE d'une duree en jours (C. trav. L. 1242-10 : « un jour par semaine ») ; refus d'une
+    /// duree en mois, qui ne se dit pas en semaines.
+    #[track_caller]
+    pub fn un_jour_par_semaine_commencee(self) -> R<Duree> {
+        match self.0 {
+            Compte::Jours(n) => Ok(Duree(Compte::Jours(n.div_ceil(7)))),
+            Compte::Mois(_) => Err(refus(format!("{} ne se compte pas en semaines", self))),
+        }
+    }
+
+    /// ELLE ET `autre` BOUT A BOUT, de la meme unite ; refus de jours et de mois ensemble.
+    #[track_caller]
+    pub fn plus(self, autre: Duree) -> R<Duree> {
+        match (self.0, autre.0) {
+            (Compte::Jours(a), Compte::Jours(b)) => Ok(Duree(Compte::Jours(a + b))),
+            (Compte::Mois(a), Compte::Mois(b)) => Ok(Duree(Compte::Mois(a + b))),
+            _ => Err(refus(format!("{} et {} ne s'ajoutent pas : des jours et des mois", self, autre))),
+        }
+    }
+
+    /// SA MOITIE, arrondie a l'unite du dessous (C. trav. L1225-54 : un conge « pris en compte pour moitié »).
+    pub fn moitie(self) -> Duree {
+        match self.0 {
+            Compte::Jours(a) => Duree(Compte::Jours(a / 2)),
+            Compte::Mois(a) => Duree(Compte::Mois(a / 2)),
+        }
+    }
+
+    /// `n` fois elle, bout a bout (`n` : un compte).
+    pub fn fois(self, n: u32) -> Duree {
+        match self.0 {
+            Compte::Jours(a) => Duree(Compte::Jours(a * n)),
+            Compte::Mois(a) => Duree(Compte::Mois(a * n)),
+        }
+    }
+
+    /// Ses mois, comptes depuis le mois `m` (`Mois::apres`) ; refus d'une duree en jours, qui ne compte pas des mois.
+    #[track_caller]
+    pub(crate) fn mois_pour(self, m: crate::mois::Mois) -> R<i64> {
+        match self.0 {
+            Compte::Mois(n) => Ok(i64::from(n)),
+            Compte::Jours(_) => Err(refus(format!("{} ne se comptent pas en mois depuis {}", self, m))),
+        }
+    }
+
+    /// Est-elle nulle ?
+    pub fn nulle(self) -> bool {
+        matches!(self.0, Compte::Jours(0) | Compte::Mois(0))
+    }
+
+    /// Lue d'un nombre entier de jours : `#[serde(deserialize_with = "socle::date::Duree::en_jours")]`.
+    pub fn en_jours<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duree, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(d).map(Duree::jours)
+    }
+
+    /// `en_jours`, facultatif : `#[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]`.
+    pub fn en_jours_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Duree>, D::Error> {
+        <Option<u32> as serde::Deserialize>::deserialize(d).map(|n| n.map(Duree::jours))
+    }
+
+    /// Lue d'un nombre entier de mois : `#[serde(deserialize_with = "socle::date::Duree::en_mois")]`.
+    pub fn en_mois<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duree, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(d).map(Duree::mois)
+    }
+
+    /// Ecrite en son nombre de jours (un champ `…jours` d'un fichier) : `#[serde(serialize_with =
+    /// "socle::date::Duree::ecrite_en_jours")]` ; une duree en mois ne s'y ecrit pas.
+    pub fn ecrite_en_jours<S: serde::Serializer>(d: &Duree, s: S) -> Result<S::Ok, S::Error> {
+        match d.0 {
+            Compte::Jours(n) => s.serialize_u32(n),
+            Compte::Mois(_) => Err(serde::ser::Error::custom(format!("{} ne s'écrivent pas en jours", d))),
+        }
+    }
+
+    /// Ecrite en son nombre de mois, facultative (un champ `…mois` d'un fichier) : `#[serde(serialize_with =
+    /// "socle::date::Duree::ecrite_en_mois_opt")]` ; une duree en jours ne s'y ecrit pas.
+    pub fn ecrite_en_mois_opt<S: serde::Serializer>(d: &Option<Duree>, s: S) -> Result<S::Ok, S::Error> {
+        match d.map(|d| d.0) {
+            None => s.serialize_none(),
+            Some(Compte::Mois(n)) => s.serialize_some(&n),
+            Some(Compte::Jours(_)) => Err(serde::ser::Error::custom("une durée en jours ne s'écrit pas en mois")),
+        }
+    }
+
+    /// `en_mois`, facultatif : `#[serde(default, deserialize_with = "socle::date::Duree::en_mois_opt")]`.
+    pub fn en_mois_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Duree>, D::Error> {
+        <Option<u32> as serde::Deserialize>::deserialize(d).map(|n| n.map(Duree::mois))
+    }
+}
+
+/// Deux durees de la meme unite se comparent ; des jours et des mois, non (`None`).
+impl PartialOrd for Duree {
+    fn partial_cmp(&self, autre: &Duree) -> Option<std::cmp::Ordering> {
+        match (self.0, autre.0) {
+            (Compte::Jours(a), Compte::Jours(b)) | (Compte::Mois(a), Compte::Mois(b)) => Some(a.cmp(&b)),
+            _ => None,
+        }
+    }
+}
+
+/// « 1 jour », « 3 jours », « 2 mois ».
+impl std::fmt::Display for Duree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Compte::Jours(n) if n <= 1 => write!(f, "{} jour", n),
+            Compte::Jours(n) => write!(f, "{} jours", n),
+            Compte::Mois(n) => write!(f, "{} mois", n),
+        }
+    }
 }
 
 /// UNE ANCIENNETE (« Le glossaire ») : le temps passe depuis un jour, en mois de calendrier ; un age est l'anciennete
@@ -307,10 +460,30 @@ impl Jour {
         match Jour::depuis_ordinal(self.ordinal() + n) { Some(j) => Ok(j), None => Err(refus(HORS_CALENDRIER)) }
     }
 
+    /// LE JOUR QUI SUIT DE `d` CELUI-CI : `d` jours plus tard, ou le meme quantieme `d` mois de calendrier plus tard (le
+    /// dernier jour du mois s'il ne l'a pas) ; refus hors des annees 1 a 9999.
+    #[track_caller]
+    pub fn apres(&self, d: Duree) -> R<Jour> {
+        match d.0 {
+            Compte::Jours(n) => self.plus_jours(i64::from(n)),
+            Compte::Mois(n) => self.plus_mois(i64::from(n)),
+        }
+    }
+
+    /// LE JOUR QUI PRECEDE DE `d` CELUI-CI : `d` jours plus tot, ou le meme quantieme `d` mois de calendrier plus tot (le
+    /// dernier jour du mois s'il ne l'a pas) ; refus hors des annees 1 a 9999.
+    #[track_caller]
+    pub fn avant(&self, d: Duree) -> R<Jour> {
+        match d.0 {
+            Compte::Jours(n) => self.plus_jours(-i64::from(n)),
+            Compte::Mois(n) => self.plus_mois(-i64::from(n)),
+        }
+    }
+
     /// Le meme quantieme `n` mois de calendrier plus tard (`n` negatif : plus tot), ou le dernier jour du mois s'il ne
     /// l'a pas.
     #[track_caller]
-    pub fn plus_mois(&self, n: i64) -> R<Jour> {
+    fn plus_mois(&self, n: i64) -> R<Jour> {
         let total = self.an as i64 * 12 + (self.mois as i64 - 1) + n;
         let (an, mois) = (total.div_euclid(12) as i32, (total.rem_euclid(12) + 1) as u32);
         let jour = self.jour.min(jours_du_mois(an, mois));

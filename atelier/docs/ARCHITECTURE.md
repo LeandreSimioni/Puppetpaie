@@ -230,7 +230,12 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   opérations (`precedente`, `suivante`, `les_precedentes`, `jusqu_a`, ses mois et ses jours), jamais en nombre ; une
   année qu'un texte fixe s'écrit `Annee::constante`.
 - **période** : deux jours bornes, du … au … ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres.
-- **durée de droit** : des jours ou des mois de calendrier. La durée d'une tranche de maintien de salaire
+- **durée de droit** : des jours ou des mois de calendrier, jamais négative ; son nombre ne sort pas. Une durée qu'un
+  texte fixe s'écrit `Duree::jours`, `Duree::mois`, `Duree::annees` ; un fichier la dit en nombre, lu en elle à sa
+  porte (`en_jours`, `en_mois`, et leurs facultatives ; écrite par `ecrite_en_jours`, `ecrite_en_mois_opt`). Elle se
+  compte depuis un jour (`Jour::apres`, `Jour::avant`), un mois (`Mois::apres`, `Mois::avant`), une année
+  (`Annee::les_precedentes`) ; elle se mesure d'une suite de jours (`Duree::du_au`) ; deux de la même unité se
+  comparent et s'ajoutent ; elle se dit dans une phrase (« 3 jours », « 2 mois »). La durée d'une tranche de maintien de salaire
   (`droit::maintien::DureeDUneTranche`) est une durée de droit, ou « tant que la caisse verse ses indemnités ».
 - **ancienneté, âge** : le temps passé depuis un jour, en mois ; un âge est l'ancienneté depuis la naissance
   (`Anciennete::age`). Elle se compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois

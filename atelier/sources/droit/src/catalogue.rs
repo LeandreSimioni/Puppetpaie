@@ -470,7 +470,8 @@ pub struct Annexes {
     /// Les heures qui ouvrent les droits (507).
     pub seuil_heures: Heures,
     /// La fenetre ou elles se comptent, en jours (365).
-    pub fenetre_jours: i64,
+    #[serde(deserialize_with = "socle::date::Duree::en_jours")]
+    pub fenetre_jours: socle::date::Duree,
     #[serde(rename = "note")]
     _note: String,
 }

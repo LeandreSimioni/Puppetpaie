@@ -648,7 +648,7 @@ pub fn jours_de_conges_non_acquis(
 ///
 /// Tous les contrats du salarie comptent : l'anciennete est celle de l'entreprise (`date_anciennete`).
 pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour) -> R<(Jour, Vec<Avis>)> {
-    let mut retranches = 0i64;
+    let mut retranches = socle::date::Duree::jours(0);
     let mut dit = Vec::new();
     for imp in du_salarie(racine, cle)? {
         let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
@@ -663,12 +663,12 @@ pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour
         if f < d {
             continue;
         }
-        let jours = f.moins(&d) + 1;
+        let jours = socle::date::Duree::du_au(&d, &f);
         let libelle = motif.libelle.clone();
         if motif.anciennete == Some(droit::permanents::AncienneteDeSuspension::Moitie) {
-            retranches += jours / 2;
+            retranches = retranches.plus(jours.moitie())?;
             dit.push(info(format!(
-                "{} : {} ({}) du {} au {} -- {} jour(s) compte(s) pour moitie dans l'anciennete (C. trav. L1225-54).",
+                "{} : {} ({}) du {} au {} -- {} comptes pour moitie dans l'anciennete (C. trav. L1225-54).",
                 cle,
                 libelle,
                 code,
@@ -677,9 +677,9 @@ pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour
                 jours
             )));
         } else {
-            retranches += jours;
+            retranches = retranches.plus(jours)?;
             dit.push(avertir(format!(
-                "{} : {} ({}) du {} au {} -- {} jour(s) NON comptes dans l'anciennete : aucun texte depose ne dit comment \
+                "{} : {} ({}) du {} au {} -- {} NON comptes dans l'anciennete : aucun texte depose ne dit comment \
 cette suspension compte (le conge parental seul compte pour moitie, L1225-54). Si la convention ou un accord de la compagnie \
 la compte, a reprendre a la main.",
                 cle,
@@ -691,7 +691,7 @@ la compte, a reprendre a la main.",
             )));
         }
     }
-    Ok((depuis.plus_jours(retranches)?, dit))
+    Ok((depuis.apres(retranches)?, dit))
 }
 
 /// Les arrets du magasin qui suspendent ce contrat et croisent [debut, fin] (le FCTU les reporte, bloc 60).

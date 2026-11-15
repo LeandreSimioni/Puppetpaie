@@ -35,9 +35,7 @@ pub fn par_defaut(nat: &Nature) -> bool {
 /// Le jour ou un contrat commence a durer douze mois : son debut, douze mois plus tard (le dernier jour du mois quand
 /// ce jour n'existe pas : un 29 fevrier). Un contrat dont le lendemain du terme l'atteint dure douze mois ou plus.
 fn douze_mois_apres(debut: &Jour) -> R<Jour> {
-    let an = debut.an + 1;
-    let jour = debut.jour.min(socle::date::jours_du_mois(an, debut.mois));
-    Jour::nouveau(an, debut.mois, jour).ok_or_else(|| socle::refus!("Douze mois après le {} : date illisible.", debut.iso()))
+    debut.apres(socle::date::Duree::mois(12))
 }
 
 /// Le contrat, du `debut` au `fin` signes, dure-t-il douze mois ou plus ?

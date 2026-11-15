@@ -15,7 +15,7 @@ use crate::base_assujettie::{BaseAssujettie, TypeDeComposant};
 use crate::code_cotisation::CodeCotisation81;
 use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, Nic, SalarieDuContrat, Siret, Statut, StatutCategorielRc, IDCC_3090};
-use socle::date::Jour;
+use socle::date::{Duree, Jour};
 use socle::mois::Annee;
 use socle::echec::{Lieu, Echec, R};
 use socle::grandeurs::{Coefficient, Taux};
@@ -1932,6 +1932,9 @@ pub fn risques_de(bar: &Pile) -> Vec<RisqueAtmp> {
 /// `code-de-la-securite-sociale/xml/D242-6-17.xml`).
 const DERNIERE_ANNEE_D242_6_17_DE_2012: Annee = Annee::constante(2026);
 
+/// « Les deux annees civiles suivantes » l'annee de la creation (D. 242-6-17).
+const ANNEES_D_UN_ETABLISSEMENT_NEUF: Duree = Duree::annees(2);
+
 /// UN ETABLISSEMENT NOUVELLEMENT CREE EN `an` : « les taux nets collectifs sont applicables aux etablissements nouvellement
 /// crees durant l'annee de leur creation et les deux annees civiles suivantes, quel que soit leur effectif ou celui de
 /// l'entreprise dont ils relevent » (D. 242-6-17, version applicable aux cotisations jusqu'a 2026,
@@ -1940,7 +1943,7 @@ const DERNIERE_ANNEE_D242_6_17_DE_2012: Annee = Annee::constante(2026);
 /// etablissement issu d'un precedent, le taux unique d'une entreprise qui l'a choisi) se dit par le taux notifie. A compter
 /// de 2027, la version du decret n° 2026-951 ne se lit pas ici.
 pub fn etablissement_neuf(e: &Etablissement, an: Annee) -> bool {
-    e.ouverture.dite().is_some_and(|o| an <= DERNIERE_ANNEE_D242_6_17_DE_2012 && (o.annee() == an || an.les_precedentes(2).contains(&o.annee())))
+    e.ouverture.dite().is_some_and(|o| an <= DERNIERE_ANNEE_D242_6_17_DE_2012 && (o.annee() == an || an.les_precedentes(ANNEES_D_UN_ETABLISSEMENT_NEUF).contains(&o.annee())))
 }
 
 /// L'etablissement est-il dans le Haut-Rhin, le Bas-Rhin ou la Moselle (art. 4 de l'arrete) ? Lu dans les deux premiers

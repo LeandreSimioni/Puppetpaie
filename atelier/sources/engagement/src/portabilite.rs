@@ -19,7 +19,7 @@
 use droit::fiche::Lue as _;
 use droit::contexte::Contexte;
 use droit::forme_bareme::{IdDeCotisation, MUTUELLE};
-use socle::date::Jour;
+use socle::date::{Duree, Jour};
 use socle::echec::R;
 
 use crate::calcul::Paie;
@@ -27,7 +27,9 @@ use crate::stock::Objet;
 use crate::DateDeLigne;
 
 /// Le plafond du maintien, en mois (L. 911-8, 1°).
-const DOUZE_MOIS: u32 = 12;
+const DOUZE_MOIS: Duree = Duree::mois(12);
+/// « arrondie au nombre supérieur de mois » (L. 911-8, 1°) : mois par mois.
+const UN_MOIS: Duree = Duree::mois(1);
 
 /// Ce que le certificat signale.
 #[derive(Debug, Clone, PartialEq)]
@@ -39,7 +41,7 @@ pub struct Portabilite {
     /// D'autres contrats le precedent sans interruption : `depuis` est le debut du premier d'entre eux.
     pub consecutifs: bool,
     /// La duree maximale du maintien, en mois.
-    pub mois: u32,
+    pub mois: Duree,
 }
 
 /// LA PORTABILITE DU CONTRAT QUE LA PAIE `p` TERMINE (son engagement, de numero `numero`, finit le `fin`) ; `None` : rien
@@ -70,7 +72,7 @@ pub fn de(ctx: &Contexte, p: &Paie, numero: &crate::numeros::NumeroContrat, fin:
         return Ok(None);
     }
     let depuis = debut_des_contrats_consecutifs(&siens, p.engagement.debut)?;
-    Ok(Some(Portabilite { prevoyance, sante, depuis, consecutifs: depuis < p.engagement.debut, mois: mois_arrondis(&depuis, fin)?.min(DOUZE_MOIS) }))
+    Ok(Some(Portabilite { prevoyance, sante, depuis, consecutifs: depuis < p.engagement.debut, mois: mois_arrondis(&depuis, fin)? }))
 }
 
 /// LES DERNIERS CONTRATS CONSECUTIFS CHEZ LE MEME EMPLOYEUR : en remontant depuis le contrat qui finit (`debut`), chaque
@@ -99,11 +101,11 @@ fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> R<Jour> {
 /// entier (« arrondie au nombre superieur »), au plus `DOUZE_MOIS`. Le `n`-ieme mois finit la veille du meme quantieme
 /// `n` mois plus tard, ou le dernier jour de ce mois-la quand il n'a pas ce quantieme (du 31/01, le premier mois finit
 /// le 28/02).
-fn mois_arrondis(debut: &Jour, fin: &Jour) -> R<u32> {
-    let mut n = 0;
+fn mois_arrondis(debut: &Jour, fin: &Jour) -> R<Duree> {
+    let mut n = Duree::mois(0);
     while n < DOUZE_MOIS {
-        n += 1;
-        let meme_quantieme = debut.plus_mois(i64::from(n))?;
+        n = n.plus(UN_MOIS)?;
+        let meme_quantieme = debut.apres(n)?;
         let fin_du_mois = if meme_quantieme.jour == debut.jour { meme_quantieme.plus_jours(-1)? } else { meme_quantieme };
         if fin_du_mois >= *fin {
             break;

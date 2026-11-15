@@ -198,7 +198,7 @@ fn base() -> R<BaseDesObligations> {
 }
 
 /// Un nombre que le delai doit porter.
-fn nombre(n: Option<i64>, quoi: &str) -> R<i64> {
+fn nombre<T>(n: Option<T>, quoi: &str) -> R<T> {
     n.ok_or_else(|| declarations::obligations::livree(quoi).reclasser(Classe::Manque))
 }
 
@@ -220,8 +220,16 @@ pub fn signalement_du(motif: MotifDArret) -> R<bool> {
 
 // --------------------------------------------------------------- le calendrier
 
-fn plus(j: Jour, n: i64) -> R<Jour> {
-    j.plus_jours(n).map_err(|m| m.reclasser(Classe::CalculImpossible))
+fn plus(j: Jour, d: socle::date::Duree) -> R<Jour> {
+    j.apres(d).map_err(|m| m.reclasser(Classe::CalculImpossible))
+}
+
+fn lendemain(j: Jour) -> R<Jour> {
+    j.plus_jours(1).map_err(|m| m.reclasser(Classe::CalculImpossible))
+}
+
+fn veille(j: Jour) -> R<Jour> {
+    j.plus_jours(-1).map_err(|m| m.reclasser(Classe::CalculImpossible))
 }
 
 /// Les feries chomes de la compagnie, annee par annee (`feries::chomes`, la fiche Entreprise).
@@ -259,7 +267,7 @@ impl<'a> Calendrier<'a> {
     fn jours_ouvres_apres(&mut self, depart: Jour, n: i64) -> R<Jour> {
         let (mut j, mut reste) = (depart, n);
         while reste > 0 {
-            j = plus(j, 1)?;
+            j = lendemain(j)?;
             if j.jour_de_la_semaine() < 5 && !self.chome(j)? {
                 reste -= 1;
             }
@@ -279,7 +287,7 @@ impl<'a> Calendrier<'a> {
     fn heures_apres(&mut self, depart: Jour, minute: u32, heures: i64) -> R<(Jour, u32)> {
         let (mut j, mut m) = (depart, minute as i64);
         while !self.compte_dans_les_heures(j)? {
-            j = plus(j, 1)?;
+            j = lendemain(j)?;
             m = 0;
         }
         let mut reste = heures * 60;
@@ -289,9 +297,9 @@ impl<'a> Calendrier<'a> {
                 return Ok((j, (m + reste) as u32));
             }
             reste -= dans_ce_jour;
-            j = plus(j, 1)?;
+            j = lendemain(j)?;
             while !self.compte_dans_les_heures(j)? {
-                j = plus(j, 1)?;
+                j = lendemain(j)?;
             }
             m = 0;
         }
@@ -311,7 +319,7 @@ fn heure_lisible(minute: u32) -> String {
 /// L'INSTANT OU UN DELAI EN HEURES EXPIRE : le jour et la minute que `heures_apres` rend (1440 : a la fin de ce
 /// jour-la, soit minuit du lendemain).
 fn fin_du_delai(jour: Jour, minute: u32) -> R<InstantOuJour> {
-    let (j, m) = if minute == 1440 { (plus(jour, 1)?, 0) } else { (jour, minute) };
+    let (j, m) = if minute == 1440 { (lendemain(jour)?, 0) } else { (jour, minute) };
     jour_et_heure::a_la_minute(j, i64::from(m))
         .ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : {} n'est pas une heure de Paris le {}.", heure_lisible(m), j.jj_mm_aaaa())))
 }
@@ -320,7 +328,7 @@ fn fin_du_delai(jour: Jour, minute: u32) -> R<InstantOuJour> {
 /// (1440, « jusqu'à minuit », ecrit `24:00`) ; un jour seul n'a pas de minute.
 fn jour_et_minute(fin: InstantOuJour) -> R<(Jour, Option<u32>)> {
     match jour_et_heure::minute(fin) {
-        Some(0) => Ok((plus(fin.jour(), -1)?, Some(1440))),
+        Some(0) => Ok((veille(fin.jour())?, Some(1440))),
         minute => Ok((fin.jour(), minute)),
     }
 }
@@ -1146,7 +1154,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
     // cessation du travail » (L. 461-5) : le lendemain du dernier jour travaille.
     let debut = a.debut;
     let cessation = match a.dernier {
-        Some(j) => Some(plus(j, 1)?),
+        Some(j) => Some(lendemain(j)?),
         None => None,
     };
     let connu_de_l_arret = |o: &DeBase| -> R<Option<Depart>> {
@@ -1224,7 +1232,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
                             let phrase = if jusqu >= aujourdhui { format!("possibles jusqu'au {}.", lisible(&jusqu)) } else { format!("le délai est passé (le {}).", jusqu.jj_mm_aaaa()) };
                             (Some(jusqu), phrase)
                         }
-                        None => (None, format!("dans les {} jours francs qui suivent la déclaration.", r.jours_francs)),
+                        None => (None, format!("dans les {} francs qui suivent la déclaration.", r.jours_francs)),
                     };
                     suites.push(Suite { cle: "reserves", libelle: r.libelle.clone(), texte: r.texte.clone(), inference: Some(r.inference.clone()), jusqu_au, phrase });
                 }

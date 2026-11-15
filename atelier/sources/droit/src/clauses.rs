@@ -13,7 +13,7 @@ use crate::natures::{AuMois, MotifDeRupture};
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
 use serde::Deserialize;
-use socle::date::{Anciennete, Jour};
+use socle::date::{Anciennete, Duree, Jour};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::forme::{en_ordre, Nombre};
 use socle::echec::R;
@@ -287,7 +287,8 @@ forme! {
         pub en_plus_par_annee_au_dela: Option<Nombre>,
         pub hors_primes: Option<bool>,
         /// Le delai d'information, en mois : rappele, pas paye.
-        pub prevenance_mois: Option<i64>,
+        #[serde(default, deserialize_with = "Duree::en_mois_opt")]
+        pub prevenance_mois: Option<Duree>,
         /// La clause du cadre de direction, relevee et non calculee : l'appelant demande le montant.
         pub cadre_de_direction: Option<CadreDeDirection>,
     }
@@ -308,7 +309,8 @@ forme! {
         pub prorata: Option<Prorata>,
         pub taux: Option<Vec<Tranche>>,
         pub anciennete_minimale_mois: Option<Nombre>,
-        pub prevenance_mois: Option<i64>,
+        #[serde(default, deserialize_with = "Duree::en_mois_opt")]
+        pub prevenance_mois: Option<Duree>,
     }
 }
 
@@ -356,7 +358,8 @@ forme! {
     pub struct MaintienMaladie {
         pub article: String,
         pub anciennete_mois_minimum: Anciennete,
-        pub carence_jours: i64,
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub carence_jours: Duree,
         pub base: BaseDuMaintien,
         pub plafond_net: Option<bool>,
         pub subrogation: Option<Subrogation>,
@@ -371,8 +374,10 @@ pub struct LigneDeMaintien {
     #[serde(deserialize_with = "Anciennete::en_annees")]
     pub anciennete_annees_min: Anciennete,
     pub tranches: Option<Vec<TrancheDeMaintien>>,
-    pub jours_90: Option<i64>,
-    pub jours_66: Option<i64>,
+    #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+    pub jours_90: Option<Duree>,
+    #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+    pub jours_66: Option<Duree>,
 }
 
 forme! {
@@ -382,7 +387,8 @@ forme! {
         pub article: String,
         pub couvre: Vec<crate::maintien::Origine>,
         pub anciennete_mois_minimum: Anciennete,
-        pub carence_jours: i64,
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub carence_jours: Duree,
         pub base: BaseDuMaintien,
         pub plafond_net: Option<bool>,
         pub subrogation: Option<Subrogation>,
@@ -400,8 +406,10 @@ forme! {
 #[serde(deny_unknown_fields)]
 pub struct TrancheDeMaintien {
     pub taux: Nombre,
-    pub jours: Option<i64>,
-    pub mois: Option<i64>,
+    #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+    pub jours: Option<Duree>,
+    #[serde(default, deserialize_with = "Duree::en_mois_opt")]
+    pub mois: Option<Duree>,
     pub pendant_ij: Option<bool>,
 }
 
@@ -1013,7 +1021,7 @@ pub struct Retraite {
     pub palier: Option<i64>,
     pub article: Option<String>,
     pub hors_primes: bool,
-    pub prevenance_mois: Option<i64>,
+    pub prevenance_mois: Option<Duree>,
     /// L'article de la clause du cadre de direction (mise a la retraite).
     pub cadre_de_direction: Option<String>,
     pub pourquoi: Option<String>,

@@ -1581,19 +1581,19 @@ impl Proprietes {
 
 // ------------------------------------ l'abattement << contrats courts >> du PAS
 
-pub const DUREE_CONTRAT_COURT_MOIS: u32 = 2;
+pub const DUREE_CONTRAT_COURT: Duree = Duree::mois(2);
 
-use socle::date::Jour;
+use socle::date::{Duree, Jour};
 
 /// L'abattement contrats courts s'applique-t-il a ce versement ? `debut` et
 /// `fin` sont les bornes du CONTRAT SIGNE (`fin` a `None` : terme imprecis),
 /// `le` la date du versement. Le terme : la meme quantieme deux mois plus tard, ramenee au dernier jour du mois
-/// (`Jour::plus_mois`).
+/// (`Jour::apres`).
 pub fn contrat_court(nat: &Nature, debut: Jour, fin: Option<Jour>, le: Jour) -> R<bool> {
     if nat.duree_indeterminee {
         return Ok(false);
     }
-    let terme = debut.plus_mois(i64::from(DUREE_CONTRAT_COURT_MOIS))?;
+    let terme = debut.apres(DUREE_CONTRAT_COURT)?;
     if let Some(f) = fin {
         if f > terme {
             return Ok(false);

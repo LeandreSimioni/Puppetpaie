@@ -19,7 +19,7 @@ use rust_decimal::RoundingStrategy;
 use crate::calcul::{LigneBrut, Paie};
 use droit::catalogue::{rubrique, CodeDeRubrique, Unite};
 use droit::contexte::Contexte;
-use socle::date::{repr_texte, Jour};
+use socle::date::{repr_texte, Duree, Jour};
 use droit::emplois;
 use crate::{Avis, Engagement};
 use droit::minima::{grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
@@ -73,8 +73,8 @@ fn horaire_du_mensuel(mensuel: Decimal, heures: Decimal) -> Decimal {
 
 
 /// La duree du contrat en jours calendaires, bornes comprises.
-fn jours_du_contrat(eng: &Engagement) -> Option<i64> {
-    Some(eng.fin?.moins(&eng.debut) + 1)
+fn jours_du_contrat(eng: &Engagement) -> Option<Duree> {
+    Some(Duree::du_au(&eng.debut, &eng.fin?))
 }
 
 /// Le dernier jour de la periode payee : celui ou l'anciennete se compte (un CDI n'a pas de fin).
@@ -358,8 +358,8 @@ impl<'a> Cx<'a> {
         };
         let jours = jours_du_contrat(&self.paie.engagement);
         let (h, regle) = match jours {
-            Some(j) if j <= 4 => (div(semaine, d("31.5")?), "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h"),
-            Some(j) if j >= 89 => {
+            Some(j) if j <= Duree::jours(4) => (div(semaine, d("31.5")?), "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h"),
+            Some(j) if j >= Duree::jours(89) => {
                 let mensuel = mul(semaine, d("3.8")?);
                 let smic = ((socle::grandeurs::Heures::du_decimal(d("151.67")?) * self.paie.smic) * socle::grandeurs::Coefficient::du_decimal(d("1.3")?)).decimal();
                 let mensuel = if smic > mensuel { smic } else { mensuel };

@@ -64,7 +64,7 @@ fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
 /// `norme-dsn/texte/bloc-S21.G00.50.txt` : « Identifiant du taux porté par le CRM PAS […] transmis par la DGFIP ») dit
 /// que la DGFiP a transmis ce taux a l'employeur, qui l'applique (CGI, art. 1671, 2,
 /// `atelier/reference/sources/code-general-des-impots/articles-20261021.md`). Sa validite court de sa mise a disposition
-/// (`droit::pas::VALIDITE_MOIS`), que la DSN ne porte pas. Ce que les textes en disent : la retenue se fait « lors du
+/// (`droit::pas::VALIDITE`), que la DSN ne porte pas. Ce que les textes en disent : la retenue se fait « lors du
 /// paiement » (CGI, art. 1671, 1) avec un taux « toujours valide à la date de son application » (BOI-IR-PAS-30-10-20,
 /// § 80, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-20-20181203.html`) : le taux etait donc mis a disposition au
 /// plus tard le jour du versement (S21.G00.50.001) et au plus tot deux mois pleins avant ; le compte rendu « est

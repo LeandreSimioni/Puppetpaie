@@ -136,7 +136,7 @@ pub(crate) fn effectif_du_118(effectifs: Option<&FichierEffectifs>, annee: Annee
 fn excede_deux_mille(ctx: &Contexte, n: Annee) -> R<bool> {
     let e = ctx.effectif()?;
     let mut inconnues = Vec::new();
-    for a in n.les_precedentes(4).into_iter().chain([n]) {
+    for a in n.les_precedentes(socle::date::Duree::annees(4)).into_iter().chain([n]) {
         match e.annee(a) {
             Some(v) if v <= Decimal::from(SEUIL_DEUX_MILLE) => return Ok(false),
             Some(_au_dela) => {}

@@ -159,9 +159,9 @@ fn terme_du_preavis(fin: &socle::date::Jour, mois: Decimal) -> R<Option<socle::d
     if !mois.fract().is_zero() {
         return Ok(None);
     }
-    let n = i32::try_from(mois).map_err(|_| socle::refus!("préavis hors du calendrier : {} mois", mois))?;
-    let m = socle::mois::Mois::nouveau(fin.an, fin.mois)?.plus(n)?;
-    Ok(m.jour(fin.jour.min(m.jours())))
+    // Le preavis est encore un decimal (la quantite de sa ligne) : sa duree s'en lit ici.
+    let n = u32::try_from(mois).map_err(|_| socle::refus!("préavis hors du calendrier : {} mois", mois))?;
+    fin.apres(socle::date::Duree::mois(n)).map(Some)
 }
 
 pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete, motif: Option<MotifDeRupture>) -> R<Preavis> {
@@ -629,7 +629,7 @@ fn delai_de_prevenance(
     }
     let delai = permanents::delai_de_prevenance(&debut, &notification)?;
     let dit = format!(
-        "fin de periode d'essai notifiee le {} apres {} jour(s) de presence : delai de prevenance de {}, jusqu'au {}",
+        "fin de periode d'essai notifiee le {} apres {} de presence : delai de prevenance de {}, jusqu'au {}",
         notification.jj_mm_aaaa(),
         delai.presence_jours,
         delai.texte,
@@ -754,7 +754,7 @@ struct Conventionnelle {
     bas: Option<clauses::P>,
     haut: Option<clauses::P>,
     pourquoi: Option<String>,
-    prevenance_mois: Option<i64>,
+    prevenance_mois: Option<socle::date::Duree>,
 }
 
 impl Conventionnelle {
@@ -1038,9 +1038,9 @@ fn indemnite_de_rupture(
             String::new()
         }
     )));
-    if let Some(prevenance) = c.prevenance_mois.filter(|m| *m != 0 && fin_cdi != permanents::FinDeCdi::RuptureConventionnelle) {
+    if let Some(prevenance) = c.prevenance_mois.filter(|m| !m.nulle() && fin_cdi != permanents::FinDeCdi::RuptureConventionnelle) {
         stc.avertissements.push(avertir(format!(
-            "{} : {} impose un DELAI DE PREVENANCE de {} mois, par lettre \
+            "{} : {} impose un DELAI DE PREVENANCE de {}, par lettre \
              recommandee, a qui prend l'initiative du depart a la retraite. \
              Le moteur ne le verifie pas.",
             qui,
@@ -1328,7 +1328,7 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, V
     let salarie = salarie_de(e)?;
     let mut bruts = Vec::new();
     for i in 1..=12 {
-        let m = mois.plus(-i)?;
+        let m = mois.avant(socle::date::Duree::mois(i))?;
         if !crate::stock::a_une_saisie(&ctx.racine, m)? {
             continue;
         }

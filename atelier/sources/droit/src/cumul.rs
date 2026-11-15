@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::catalogue::{annexes, rubrique};
 use crate::fiche::Lue;
 use crate::contexte::{aujourdhui, Contexte, IdSalarie};
-use socle::date::Jour;
+use socle::date::{Duree, Jour};
 use socle::echec::R;
 use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours};
 use socle::num::{add, Decimal};
@@ -23,7 +23,7 @@ pub struct Constantes {
     /// Seuil d'ouverture des droits (507).
     pub seuil_heures: Heures,
     /// Fenetre des droits, en jours (365).
-    pub fenetre_jours: i64,
+    pub fenetre_jours: Duree,
 }
 
 
@@ -215,14 +215,14 @@ pub fn fenetre_annee_civile(annee: socle::mois::Annee, jusquau: Option<Jour>) ->
 
 /// Les 12 mois precedant une date.
 pub fn fenetre_douze_mois(c: &Constantes, fin: Jour) -> R<Fenetre> {
-    Ok((fin.plus_jours(-c.fenetre_jours)?, fin, format!("12 mois au {}", fin.jj_mm_aaaa())))
+    Ok((fin.avant(c.fenetre_jours)?, fin, format!("12 mois au {}", fin.jj_mm_aaaa())))
 }
 
 /// Les 12 mois PRECEDANT la date anniversaire des droits : l'anniversaire est
 /// la fin de la fenetre, jamais son debut.
 pub fn fenetre_anniversaire(c: &Constantes, anniversaire: Jour) -> R<Fenetre> {
     Ok((
-        anniversaire.plus_jours(-c.fenetre_jours)?,
+        anniversaire.avant(c.fenetre_jours)?,
         anniversaire,
         format!("12 mois au {} (anniversaire des droits)", anniversaire.jj_mm_aaaa()),
     ))

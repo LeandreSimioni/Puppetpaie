@@ -1401,7 +1401,7 @@ fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &
         crate::Chiffre::Texte(t) => socle::num::decimal_a_virgule(t).ok_or_else(|| refus(socle::num::illisible(t)))?,
         nombre => nombre.dec()?,
     };
-    let jours = rust_decimal::prelude::ToPrimitive::to_i64(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?;
+    let jours = socle::date::Duree::jours(rust_decimal::prelude::ToPrimitive::to_u32(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?);
     let artiste = sal.statut.dite() == Some(&Statut::Artiste);
     let plafond = droit::essai::plafond(nat, &eng.debut, eng.fin.as_ref(), sal.statut_conventionnel.dite().copied(), artiste, ctx.entreprise.idcc.dite())?;
     droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle))

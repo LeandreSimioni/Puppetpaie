@@ -549,7 +549,7 @@ pub(crate) fn apercu_lu(
         }
     }
     objets.sort_by(|a, b| a.premier.cmp(&b.premier));
-    let seuil = aujourdhui.mois_civil().plus(-12)?.to_string();
+    let seuil = aujourdhui.mois_civil().avant(socle::date::Duree::mois(12))?.to_string();
     let mut spectacles = Vec::new();
     for o in &objets {
         if let Some(cle) = connus.get(&o.numero.to_uppercase()) {

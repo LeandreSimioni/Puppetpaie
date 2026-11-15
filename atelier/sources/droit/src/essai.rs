@@ -20,7 +20,7 @@
 //! permet ; un controle faux refuserait du licite) ; « six mois », « un mois », « n mois » se comptent du premier jour du
 //! contrat au meme quantieme (le dernier jour du mois s'il ne l'a pas), ce jour exclu.
 
-use socle::date::Jour;
+use socle::date::{Duree, Jour};
 use socle::echec::R;
 
 use crate::natures::Nature;
@@ -28,14 +28,17 @@ use crate::natures::Nature;
 /// La duree maximale de l'essai d'un contrat, en jours, et la phrase qui dit d'ou elle vient.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plafond {
-    pub jours: i64,
+    pub jours: Duree,
     pub pourquoi: String,
 }
 
-/// Les jours calendaires de `n` mois a partir de `debut` (`Jour::plus_mois`, ce jour exclu).
-fn jours_de_mois(debut: &Jour, n: u32) -> R<i64> {
-    Ok(debut.plus_mois(i64::from(n))?.moins(debut))
-}
+/// « dans la limite de deux semaines » (L. 1242-10).
+const DEUX_SEMAINES: Duree = Duree::jours(14);
+/// « au plus égale à six mois », « d'un mois dans les autres cas » (L. 1242-10).
+const SIX_MOIS: Duree = Duree::mois(6);
+const UN_MOIS: Duree = Duree::mois(1);
+/// « 2 mois de travail effectif » (3090, art. 7.4).
+const ESSAI_D_UN_ARTISTE_3090: Duree = Duree::mois(2);
 
 /// LE PLAFOND DE L'ESSAI d'un contrat de nature `nat`, du `debut` a la `fin` (aucune pour un CDI) : `classement` est le
 /// classement conventionnel du salarie (S21.G00.40.002), `artiste` dit s'il est artiste du spectacle, `idcc` la
@@ -44,33 +47,31 @@ fn jours_de_mois(debut: &Jour, n: u32) -> R<i64> {
 pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Option<crate::fiche::StatutConventionnel>, artiste: bool, idcc: Option<&crate::fiche::Idcc>) -> R<Option<Plafond>> {
     if !nat.duree_indeterminee {
         let Some(fin) = fin else { return Ok(None) };
-        let duree = fin.moins(debut) + 1;
-        let semaines = (duree + 6) / 7;
-        let six_mois = *fin < debut.plus_mois(6)?;
-        let (limite, borne) = if six_mois { (14, "deux semaines au plus, le contrat durant six mois au plus".to_string()) } else {
-            (jours_de_mois(debut, 1)?, "un mois au plus, le contrat durant plus de six mois".to_string())
+        let par_semaine = Duree::du_au(debut, fin).un_jour_par_semaine_commencee()?;
+        let six_mois = *fin < debut.apres(SIX_MOIS)?;
+        let (limite, borne) = if six_mois { (DEUX_SEMAINES, "deux semaines au plus, le contrat durant six mois au plus".to_string()) } else {
+            (UN_MOIS.en_jours_depuis(debut)?, "un mois au plus, le contrat durant plus de six mois".to_string())
         };
-        let jours = semaines.min(limite);
+        // Deux durees en jours.
+        let jours = if par_semaine <= limite { par_semaine } else { limite };
         return Ok(Some(Plafond {
             jours,
             pourquoi: format!(
-                "un jour par semaine de contrat ({} semaine{} du {} au {}), {} : {} jour{} (code du travail, art. L. 1242-10)",
-                semaines,
-                if semaines > 1 { "s" } else { "" },
+                "un jour par semaine de contrat commencée du {} au {} ({}), {} : {} (code du travail, art. L. 1242-10)",
                 debut.jj_mm_aaaa(),
                 fin.jj_mm_aaaa(),
+                par_semaine,
                 borne,
-                jours,
-                if jours > 1 { "s" } else { "" }
+                jours
             ),
         }));
     }
     if artiste && idcc == Some(&crate::fiche::IDCC_3090) {
-        let jours = jours_de_mois(debut, 2)?;
+        let jours = ESSAI_D_UN_ARTISTE_3090.en_jours_depuis(debut)?;
         return Ok(Some(Plafond {
             jours,
             pourquoi: format!(
-                "deux mois pour un artiste interprète (convention collective IDCC 3090, art. 7.4), soit {} jours à partir du {}",
+                "deux mois pour un artiste interprète (convention collective IDCC 3090, art. 7.4), soit {} à partir du {}",
                 jours,
                 debut.jj_mm_aaaa()
             ),
@@ -78,16 +79,16 @@ pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Optio
     }
     use crate::fiche::StatutConventionnel::{AgentDeMaitrise, Cadre03, Cadre04, Employe06, Employe07};
     let (mois, qui, alinea) = match classement {
-        Some(Cadre03 | Cadre04) => (4, "un cadre", "3°"),
-        Some(AgentDeMaitrise) => (3, "un agent de maîtrise ou un technicien", "2°"),
-        Some(Employe06 | Employe07) => (2, "un ouvrier ou un employé", "1°"),
+        Some(Cadre03 | Cadre04) => (Duree::mois(4), "un cadre", "3°"),
+        Some(AgentDeMaitrise) => (Duree::mois(3), "un agent de maîtrise ou un technicien", "2°"),
+        Some(Employe06 | Employe07) => (Duree::mois(2), "un ouvrier ou un employé", "1°"),
         None => return Ok(None),
     };
-    let jours = jours_de_mois(debut, mois)?;
+    let jours = mois.en_jours_depuis(debut)?;
     Ok(Some(Plafond {
         jours,
         pourquoi: format!(
-            "{} mois pour {} (code du travail, art. L. 1221-19, {}), soit {} jours à partir du {}",
+            "{} pour {} (code du travail, art. L. 1221-19, {}), soit {} à partir du {}",
             mois,
             qui,
             alinea,
@@ -98,16 +99,15 @@ pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Optio
 }
 
 /// LE REFUS D'UN ESSAI TROP LONG : `jours` stipules au-dela du `plafond` du contrat. `qui` nomme le contrat dans la phrase.
-pub fn refuser_au_dela(jours: i64, plafond: Option<&Plafond>, qui: &str) -> R<()> {
+pub fn refuser_au_dela(jours: Duree, plafond: Option<&Plafond>, qui: &str) -> R<()> {
     match plafond {
         Some(p) if jours > p.jours => Err(socle::refus!(
-            "{} : une période d'essai de {} jours dépasse la durée maximale de ce contrat — {}. La ramener à {} jour{} au \
-             plus, dans « Plus d'options › Contrat » de l'engagement.",
+            "{} : une période d'essai de {} dépasse la durée maximale de ce contrat — {}. La ramener à {} au plus, dans \
+             « Plus d'options › Contrat » de l'engagement.",
             qui,
             jours,
             p.pourquoi,
-            p.jours,
-            if p.jours > 1 { "s" } else { "" }
+            p.jours
         )),
         _ => Ok(()),
     }

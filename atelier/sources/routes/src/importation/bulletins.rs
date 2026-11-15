@@ -627,7 +627,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     ap.reponse.avertissements.extend(avertissements_aem);
 
     let mut reponse = ap.reponse;
-    let seuil = ctx.aujourdhui.mois_civil().plus(-12)?;
+    let seuil = ctx.aujourdhui.mois_civil().avant(socle::date::Duree::mois(12))?;
     let mut nouvelles_fiches = 0usize;
     let chemin_de = |l: &Lu| tri.fichiers[l.fichier].chemin.clone();
 

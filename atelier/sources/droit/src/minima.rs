@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 use serde::Deserialize;
 
 use crate::fiche::Lue;
-use socle::date::Jour;
+use socle::date::{Duree, Jour};
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
 /// Les minima conventionnels livres, sous `donnees/`.
@@ -312,7 +312,8 @@ forme_notee! {
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
         pub anciennete: Option<ConditionDAnciennete>,
-        pub duree_contrat_max_jours: Option<i64>,
+        #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+        pub duree_contrat_max_jours: Option<Duree>,
         /// Les grilles qu'elle remplace, par leur `nom`.
         pub remplace: Option<Vec<String>>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
@@ -337,7 +338,8 @@ forme_notee! {
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
         pub anciennete: Option<ConditionDAnciennete>,
-        pub duree_contrat_max_jours: Option<i64>,
+        #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+        pub duree_contrat_max_jours: Option<Duree>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
         pub par_cle: Vec<(String, Nombre)>,
     }
@@ -461,7 +463,7 @@ pub struct Conditions<'a> {
     pub si_entreprise: Option<&'a SiEntreprise>,
     pub si_salarie: Option<&'a SiSalarie>,
     pub anciennete: Option<&'a ConditionDAnciennete>,
-    pub duree_contrat_max_jours: Option<i64>,
+    pub duree_contrat_max_jours: Option<Duree>,
 }
 
 impl Grille {

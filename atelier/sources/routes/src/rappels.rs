@@ -525,7 +525,7 @@ fn etape_ecrite<S: serde::Serializer>(etape: &Option<EtapeDEcheance>, s: S) -> R
 }
 
 /// L'echeancier va jusqu'a douze mois devant.
-const MOIS_A_VENIR: i32 = 12;
+const MOIS_A_VENIR: socle::date::Duree = socle::date::Duree::mois(12);
 
 /// UNE ECHEANCE est une DONNEE : quoi, quand, ou en est-on, et ce qu'il y a a faire. Elle ne fait rien : « verifier et
 /// envoyer » passe par les operations existantes, avec leurs garde-fous et leur mot de passe.
@@ -833,7 +833,7 @@ pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
 fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
     let st = Etat::de(ctx)?;
     let courant = st.aujourdhui.mois_civil();
-    let fin = courant.plus(MOIS_A_VENIR)?;
+    let fin = courant.apres(MOIS_A_VENIR)?;
     let (mut ce_mois, mut a_venir) = (Vec::new(), Vec::new());
     for e in echeances(&st)? {
         if e.due || e.tombe == Some(courant) {
@@ -892,8 +892,8 @@ pub(crate) fn echeances(st: &Etat) -> R<Vec<Echeance>> {
     out.extend(annuelles(st, &base)?);
     // La DSN du mois passe (quand elle n'est plus reclamee) et des douze qui viennent ; rien avant la premiere embauche.
     let premier = premier_mois(st.ctx)?;
-    for n in -1..MOIS_A_VENIR {
-        let m = st.aujourdhui.mois_civil().plus(n)?;
+    let courant = st.aujourdhui.mois_civil();
+    for m in courant.precedent().jusqu_a(courant.apres(MOIS_A_VENIR)?.precedent()) {
         if reclames.contains(&m) || premier.is_some_and(|p| m < p) {
             continue;
         }
@@ -941,7 +941,7 @@ fn dsn_detail(modele: &ModeleDsn, echeance: &declarations::echeance_dsn::Echeanc
 fn annuelles(st: &Etat, base: &EcheancierBase) -> R<Vec<Echeance>> {
     let ctx = st.ctx;
     let faites = cochees(ctx)?;
-    let derniere = st.aujourdhui.mois_civil().plus(MOIS_A_VENIR)?.annee();
+    let derniere = st.aujourdhui.mois_civil().apres(MOIS_A_VENIR)?.annee();
     let premier = premier_mois(ctx)?;
     let mut out = Vec::new();
     for annee in st.aujourdhui.annee().jusqu_a(derniere) {

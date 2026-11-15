@@ -74,7 +74,7 @@ pub struct Regime {
     /// Le texte, pour les phrases : « la loi (L1226-1) », « la convention 1285 (art. X.4.6) ».
     pub texte: String,
     pub base: Base,
-    pub carence: i64,
+    pub carence: Duree,
     pub tranches: Vec<Tranche>,
     /// « un montant total superieur a la remuneration nette qu'il aurait effectivement percue » est exclu.
     pub plafond_net: bool,
@@ -111,7 +111,7 @@ pub fn legal(nature: &Nature, anciennete: Anciennete, origine: Origine) -> R<Dro
     let carence = crate::permanents::jours_de_carence(origine.professionnelle(), origine == Origine::Trajet)?;
     let tranches = crate::permanents::duree_du_maintien(anciennete)?
         .into_iter()
-        .map(|t| Tranche { duree: DureeDUneTranche::Duree(Duree::Jours(t.jours)), taux: Taux::du_decimal(t.taux) })
+        .map(|t| Tranche { duree: DureeDUneTranche::Duree(t.jours), taux: Taux::du_decimal(t.taux) })
         .collect();
     Ok(Droit::Du(Regime {
         texte: "la loi (L1226-1)".into(),
@@ -135,8 +135,8 @@ fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> R<Vec<Tranche>> {
         .map(|t| {
             let duree = match (t.pendant_ij, t.mois, t.jours) {
                 (Some(true), _, _) => DureeDUneTranche::PendantLesIndemnites,
-                (_, Some(m), _) => DureeDUneTranche::Duree(Duree::Mois(m)),
-                (_, None, Some(j)) => DureeDUneTranche::Duree(Duree::Jours(j)),
+                (_, Some(m), _) => DureeDUneTranche::Duree(m),
+                (_, None, Some(j)) => DureeDUneTranche::Duree(j),
                 (_, None, None) => return Err(manque(ou, "jours")),
             };
             Ok(Tranche { duree, taux: Taux::du_decimal(t.taux.0) })
@@ -178,8 +178,8 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
                 Some(l) => match l.tranches.as_deref() {
                     Some(t) if !t.is_empty() => Ok(tranches(t, &ou)?),
                     _ => Ok(vec![
-                        Tranche { duree: DureeDUneTranche::Duree(Duree::Jours(l.jours_90.ok_or_else(|| manque(&ou, "jours_90"))?)), taux: Taux::du_decimal(Decimal::from(90)) },
-                        Tranche { duree: DureeDUneTranche::Duree(Duree::Jours(l.jours_66.ok_or_else(|| manque(&ou, "jours_66"))?)), taux: Taux::du_decimal(Decimal::new(6666, 2)) },
+                        Tranche { duree: DureeDUneTranche::Duree(l.jours_90.ok_or_else(|| manque(&ou, "jours_90"))?), taux: Taux::du_decimal(Decimal::from(90)) },
+                        Tranche { duree: DureeDUneTranche::Duree(l.jours_66.ok_or_else(|| manque(&ou, "jours_66"))?), taux: Taux::du_decimal(Decimal::new(6666, 2)) },
                     ]),
                 },
             };
@@ -225,8 +225,7 @@ pub fn phrase(r: &Regime) -> String {
         .map(|t| {
             let pct = socle::texte::virgule(t.taux.decimal());
             match t.duree {
-                DureeDUneTranche::Duree(Duree::Jours(j)) => format!("{} jours à {} %", j, pct),
-                DureeDUneTranche::Duree(Duree::Mois(m)) => format!("{} mois à {} %", m, pct),
+                DureeDUneTranche::Duree(d) => format!("{} à {} %", d, pct),
                 DureeDUneTranche::PendantLesIndemnites => format!("{} % tant que la caisse indemnise", pct),
             }
         })
@@ -236,6 +235,6 @@ pub fn phrase(r: &Regime) -> String {
         r.texte,
         tr.join(" puis "),
         if r.base == Base::Net { "net" } else { "brut" },
-        if r.carence == 0 { "sans carence".to_string() } else { format!("après {} jours de carence", r.carence) }
+        if r.carence.nulle() { "sans carence".to_string() } else { format!("après {} de carence", r.carence) }
     )
 }

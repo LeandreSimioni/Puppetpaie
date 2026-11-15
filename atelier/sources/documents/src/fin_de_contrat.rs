@@ -43,7 +43,7 @@ fn mention(m: &engagement::portabilite::Portabilite, nom: &str, fin: &Jour) -> S
         "Maintien des garanties (article L. 911-8 du code de la sécurité sociale) : si la cessation de son contrat de \
 travail lui ouvre droit à une prise en charge par l'assurance chômage, {} bénéficie du maintien à titre gratuit des \
 garanties collectives {} en vigueur dans l'entreprise, à compter du {} et pendant la durée de son indemnisation, dans \
-la limite de {} mois (la durée {}{}, arrondie au mois supérieur, douze mois au plus). Il en justifie auprès de \
+la limite de {} (la durée {}{}, arrondie au mois supérieur, douze mois au plus). Il en justifie auprès de \
 l'organisme assureur, à l'ouverture et au cours de la période de maintien.",
         nom,
         garanties,

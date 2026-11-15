@@ -1277,7 +1277,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// Le taux REEL des cotisations patronales d'un salarie -- ses cotisations patronales sur son
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
 fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Taux>, i64)> {
-    let depart = jusqu_a.plus(-12).map_err(|x| x.reclasser(Classe::Illisible))?;
+    let depart = jusqu_a.avant(socle::date::Duree::mois(12)).map_err(|x| x.reclasser(Classe::Illisible))?;
     let (mut brut, mut pat, mut n) = (Montant::ZERO, Montant::ZERO, 0i64);
     for l in lignes {
         let (Some(b), Some(c)) = (l.brut, l.cotisations_patronales) else { continue };

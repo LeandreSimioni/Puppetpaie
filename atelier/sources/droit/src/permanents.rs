@@ -6,7 +6,7 @@
 use crate::natures::{MotifDeRupture, Nature};
 use crate::source::Fondement;
 use serde::{Deserialize, Serialize};
-use socle::date::{jours_du_mois, Anciennete, Jour};
+use socle::date::{jours_du_mois, Anciennete, Duree, Jour};
 use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
@@ -22,7 +22,7 @@ use std::sync::{Arc, OnceLock};
 /// Une tranche d'indemnisation du maintien : sa duree et son taux (en %).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tranche {
-    pub jours: i64,
+    pub jours: Duree,
     pub taux: Decimal,
 }
 
@@ -189,11 +189,14 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrancheDeDelai {
-    pub presence_moins_de_jours: Option<i64>,
+    #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+    pub presence_moins_de_jours: Option<Duree>,
     #[serde(default, deserialize_with = "socle::date::Anciennete::en_mois_entiers_opt")]
     pub presence_jusqu_a_mois: Option<Anciennete>,
-    pub delai_jours: Option<i64>,
-    pub delai_mois: Option<u32>,
+    #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+    pub delai_jours: Option<Duree>,
+    #[serde(default, deserialize_with = "Duree::en_mois_opt")]
+    pub delai_mois: Option<Duree>,
     pub texte: String,
 }
 
@@ -434,7 +437,8 @@ forme! {
     pub struct Maintien {
         #[serde(deserialize_with = "socle::date::Anciennete::en_mois_entiers")]
         pub anciennete_mois_minimum: Anciennete,
-        pub carence_jours: i64,
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub carence_jours: Duree,
         pub tranches: Vec<TrancheDeMaintien>,
         pub majoration: Majoration,
     }
@@ -442,7 +446,8 @@ forme! {
 
 forme! {
     pub struct TrancheDeMaintien {
-        pub jours: i64,
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub jours: Duree,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub taux: Decimal,
     }
@@ -452,8 +457,10 @@ forme! {
     /// D1226-2 : `jours` de plus par `par_annees` d'anciennete au-dela de la premiere, chaque tranche au plus `plafond_jours`.
     pub struct Majoration {
         pub par_annees: i64,
-        pub jours: i64,
-        pub plafond_jours: i64,
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub jours: Duree,
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub plafond_jours: Duree,
     }
 }
 
@@ -928,7 +935,7 @@ pub struct DelaiDePrevenance {
     /// Ce que la tranche dit (« quarante-huit heures (L1221-25, 2° : ...) »).
     pub texte: String,
     /// Les jours de presence, du premier jour du contrat a la notification, l'un et l'autre compris.
-    pub presence_jours: i64,
+    pub presence_jours: Duree,
     /// Le dernier jour du delai : le salarie l'a recu si le contrat finit ce jour-la ou apres.
     pub expiration: Jour,
 }
@@ -939,7 +946,7 @@ pub struct DelaiDePrevenance {
 /// jusqu'au meme quantieme du mois suivant.
 pub fn delai_de_prevenance(debut: &Jour, notification: &Jour) -> R<DelaiDePrevenance> {
     let rg = regles()?;
-    let presence_jours = notification.moins(debut) + 1;
+    let presence_jours = Duree::du_au(debut, notification);
     let presence = Anciennete::entre(debut, notification);
     let tranche = rg
         .preavis
@@ -953,8 +960,7 @@ pub fn delai_de_prevenance(debut: &Jour, notification: &Jour) -> R<DelaiDePreven
         })
         .ok_or_else(|| socle::echec::livree(&BASE, "preavis.delai_de_prevenance"))?;
     let expiration = match (tranche.delai_jours, tranche.delai_mois) {
-        (Some(j), _) => notification.plus_jours(j)?,
-        (None, Some(m)) => notification.plus_mois(i64::from(m))?,
+        (Some(d), _) | (None, Some(d)) => notification.apres(d)?,
         (None, None) => return Err(socle::fichiers::absent("delai_jours")),
     };
     Ok(DelaiDePrevenance { texte: tranche.texte.clone(), presence_jours, expiration })
@@ -1252,9 +1258,9 @@ pub fn droit_au_maintien(nature: Option<&Nature>, anciennete: Anciennete) -> R<O
 
 /// Sept jours de carence, sauf accident du travail (l'accident de trajet
 /// garde la sienne).
-pub fn jours_de_carence(accident_du_travail: bool, accident_de_trajet: bool) -> R<i64> {
+pub fn jours_de_carence(accident_du_travail: bool, accident_de_trajet: bool) -> R<Duree> {
     if accident_du_travail && !accident_de_trajet {
-        return Ok(0);
+        return Ok(Duree::jours(0));
     }
     Ok(regles()?.maintien_de_salaire.carence_jours)
 }
@@ -1266,6 +1272,14 @@ pub fn duree_du_maintien(anciennete: Anciennete) -> R<Vec<Tranche>> {
     let maj = &r.majoration;
     let annees = anciennete.nombre_d_ans_revolus()?;
     let au_dela = (annees - 1).max(0);
-    let bonus = (au_dela / maj.par_annees) * maj.jours;
-    Ok(r.tranches.iter().map(|t| Tranche { jours: (t.jours + bonus).min(maj.plafond_jours), taux: t.taux }).collect())
+    let par_annees = u32::try_from(au_dela / maj.par_annees).map_err(|_| socle::echec::livree(&BASE, "maintien_de_salaire.majoration.par_annees"))?;
+    let bonus = maj.jours.fois(par_annees);
+    r.tranches
+        .iter()
+        .map(|t| {
+            // Des jours, et des jours.
+            let jours = t.jours.plus(bonus)?;
+            Ok(Tranche { jours: if jours <= maj.plafond_jours { jours } else { maj.plafond_jours }, taux: t.taux })
+        })
+        .collect()
 }

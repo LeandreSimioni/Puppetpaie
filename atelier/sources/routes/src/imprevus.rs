@@ -1287,7 +1287,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
     let motif = magasin(droit::arrets::motif_d_arret(a.motif))?;
     let origine = motif.and_then(|m| m.origine);
     let ouvert = ouvre_le_maintien(ctx, a)?;
-    let majoree = ouvert && origine.is_some_and(|o| o.professionnelle() || o == droit::maintien::Origine::Trajet) && dernier.moins(&premier) >= 28;
+    let majoree = ouvert && origine.is_some_and(|o| o.professionnelle() || o == droit::maintien::Origine::Trajet) && socle::date::Duree::du_au(&premier, &dernier) > socle::date::Duree::jours(28);
     let designe = Designe::Arret { salarie: a.salarie.clone(), dernier_jour: a.dernier_jour_travaille };
     let a_dire = if ouvert { Some(geste_des_indemnites(ctx, &designe, a, majoree)?) } else { None };
     let cours = en_cours(ctx, a)?;
@@ -2526,7 +2526,7 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
 }
 
 /// Combien de mois en arriere un signalement de fin en retard se rappelle : une annee de paies.
-const MOIS_EN_ARRIERE: u32 = 12;
+const MOIS_EN_ARRIERE: socle::date::Duree = socle::date::Duree::mois(12);
 
 /// LES FINS D'AVANT, EN RETARD : celles des mois qui precedent `mois` (sur `MOIS_EN_ARRIERE`) dont le signalement est du
 /// et sa date butoir passee. Une echeance manquee reste due -- le signalement se fait « dans les cinq jours ouvres qui
@@ -2534,12 +2534,9 @@ const MOIS_EN_ARRIERE: u32 = 12;
 /// elle se dit sur le mois qu'on regarde, pas seulement sur celui ou le contrat a fini.
 pub(crate) fn fins_en_retard_avant(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R<Vec<FinASignaler>> {
     let mut out = Vec::new();
-    let mut m = mois;
-    for _ in 0..MOIS_EN_ARRIERE {
-        m = m.precedent();
-        let mut celles: Vec<FinASignaler> = fins_a_signaler(ctx, m, aujourdhui)?.into_iter().filter(|f| f.du && f.en_retard).collect();
-        celles.extend(out);
-        out = celles;
+    // Du plus ancien au mois d'avant.
+    for m in mois.avant(MOIS_EN_ARRIERE)?.jusqu_a(mois.precedent()) {
+        out.extend(fins_a_signaler(ctx, m, aujourdhui)?.into_iter().filter(|f| f.du && f.en_retard));
     }
     Ok(out)
 }

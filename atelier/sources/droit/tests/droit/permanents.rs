@@ -5,7 +5,7 @@
 use crate::outils::typee::{cas_de, jouer, Rendu};
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
-use socle::date::{Anciennete, Jour};
+use socle::date::{Anciennete, Duree, Jour};
 use socle::grandeurs::Montant;
 use socle::num::Decimal;
 
@@ -58,9 +58,15 @@ struct IndemniteDuDepart {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Tranche {
-    jours: i64,
+    #[serde(serialize_with = "Duree::ecrite_en_jours", deserialize_with = "Duree::en_jours")]
+    jours: Duree,
     taux: Decimal,
 }
+
+/// Une duree en jours, ecrite en son nombre dans la reference.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct EnJours(#[serde(serialize_with = "Duree::ecrite_en_jours", deserialize_with = "Duree::en_jours")] Duree);
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -162,8 +168,8 @@ fn droit_au_maintien(a: &(Option<Nature>, Decimal)) -> Rendu<Option<String>> {
     let n = a.0.map(|n| n.proprietes().unwrap());
     p::droit_au_maintien(n.as_deref(), Anciennete::de_mois(a.1)).into()
 }
-fn jours_de_carence(a: &(bool, bool)) -> Rendu<i64> {
-    p::jours_de_carence(a.0, a.1).into()
+fn jours_de_carence(a: &(bool, bool)) -> Rendu<EnJours> {
+    p::jours_de_carence(a.0, a.1).map(EnJours).into()
 }
 fn duree_du_maintien(a: &(Decimal,)) -> Rendu<Vec<Tranche>> {
     p::duree_du_maintien(Anciennete::de_mois(a.0)).map(|t| t.into_iter().map(|t| Tranche { jours: t.jours, taux: t.taux }).collect()).into()

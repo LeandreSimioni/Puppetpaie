@@ -42,6 +42,10 @@ use droit::contexte::Contexte;
 use droit::maintien::{self as dm, Base, Droit, DureeDUneTranche, Origine, Regime};
 use socle::date::Duree;
 use droit::natures::Nature;
+
+/// Les jours deja indemnises se comptent dans les douze mois qui precedent l'arret (D1226-4 : « durant les douze mois
+/// antérieurs », `atelier/reference/sources/code-du-travail/xml/D1226-4.xml`).
+const DOUZE_MOIS: Duree = Duree::mois(12);
 use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::Jour;
 use socle::echec::{refus, R};
@@ -135,13 +139,14 @@ fn capacites(r: &Regime, debut: &Jour) -> R<Vec<Option<i64>>> {
     let mut d0 = debut.clone();
     for t in &r.tranches {
         let c = match t.duree {
-            DureeDUneTranche::Duree(Duree::Jours(j)) => Some(j),
-            DureeDUneTranche::Duree(Duree::Mois(m)) => Some(d0.plus_mois(m)?.moins(&d0)),
+            DureeDUneTranche::Duree(d) => {
+                let fin = d0.apres(d)?;
+                let c = fin.moins(&d0);
+                d0 = fin;
+                Some(c)
+            }
             DureeDUneTranche::PendantLesIndemnites => None,
         };
-        if let Some(c) = c {
-            d0 = d0.plus_jours(c)?;
-        }
         out.push(c);
     }
     Ok(out)
@@ -151,9 +156,10 @@ fn capacites(r: &Regime, debut: &Jour) -> R<Vec<Option<i64>>> {
 /// la carence, puis les tranches, diminuees d'abord de `deja` jours deja indemnises dans les douze mois.
 pub fn taux_des_jours(r: &Regime, premier: &Jour, dernier: &Jour, deja: i64) -> R<Vec<Coefficient>> {
     let n = (dernier.moins(premier) + 1).max(0);
-    let carence = r.carence.max(0);
+    let apres_carence = premier.apres(r.carence)?;
+    let carence = apres_carence.moins(premier);
     let mut out = vec![Coefficient::du_decimal(Decimal::ZERO); n as usize];
-    let mut caps = capacites(r, &premier.plus_jours(carence)?)?;
+    let mut caps = capacites(r, &apres_carence)?;
     let mut reste = deja.max(0);
     for c in caps.iter_mut() {
         if let Some(x) = c {
@@ -181,7 +187,7 @@ pub fn taux_des_jours(r: &Regime, premier: &Jour, dernier: &Jour, deja: i64) -> 
 /// maximale du maintien, que la subrogation declare (ameli, fiche 3028) ; la fin de l'arret pour une tranche qui dure
 /// tant que la caisse indemnise.
 pub fn fin_possible(r: &Regime, premier: &Jour, fin_arret: &Jour) -> R<Jour> {
-    let debut = premier.plus_jours(r.carence.max(0))?;
+    let debut = premier.apres(r.carence)?;
     let mut total = 0i64;
     for c in capacites(r, &debut)? {
         match c {
@@ -197,7 +203,7 @@ pub fn fin_possible(r: &Regime, premier: &Jour, fin_arret: &Jour) -> R<Jour> {
 /// (`jours_deja_indemnises` : ce qu'aucun arret du magasin ne porte).
 pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte) -> R<i64> {
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
-    let debut_fenetre = premier.plus_mois(-12)?;
+    let debut_fenetre = premier.avant(DOUZE_MOIS)?;
     let saisis = imp.jours_deja_indemnises.as_ref().filter(|x| x.vrai()).into_iter().map(entier).sum::<R<i64>>()?;
     let mut total = saisis;
     let cle = &imp.salarie;
