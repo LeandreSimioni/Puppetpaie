@@ -1000,13 +1000,14 @@ fn set(l: &mut Vec<(String, P)>, k: &str, v: P) {
 // ------------------------------------------------------------ la retraite
 /// `(mois de salaire, palier atteint)` d'un bareme par paliers, avec la part au prorata qui le precede quand la
 /// convention en a une.
-pub fn paliers(paliers: &[Palier], prorata: Option<&Prorata>, annees: P) -> (P, Option<Anciennete>) {
+pub fn paliers(paliers: &[Palier], prorata: Option<&Prorata>, anciennete: Anciennete) -> (P, Option<Anciennete>) {
     let mut triees: Vec<&Palier> = paliers.iter().collect();
     triees.sort_by_key(|p| p.anciennete_annees);
-    let atteint = triees.into_iter().filter(|x| annees >= x.anciennete_annees.annees_d28()).last();
+    let atteint = triees.into_iter().filter(|x| anciennete >= x.anciennete_annees).last();
     if let Some(x) = atteint {
         return (p(&x.mois_de_salaire), Some(x.anciennete_annees));
     }
+    let annees = anciennete.annees_d28();
     match prorata {
         Some(pr) if annees >= p(&pr.anciennete_annees_min) => (annees.mul(p(&pr.fraction_de_mois)), None),
         _ => (P::ZERO, None),
@@ -1058,7 +1059,7 @@ pub fn indemnite_mise_a_la_retraite(idcc: Option<&Idcc>, anciennete: Anciennete,
     let annees = anciennete.annees_d28();
     let (a_des_paliers, a_des_taux) = (sec.paliers.as_ref().is_some_and(|p| !p.is_empty()), sec.taux.as_ref().is_some_and(|t| !t.is_empty()));
     let mois = if let Some(pal) = sec.paliers.as_ref().filter(|p| !p.is_empty()) {
-        paliers(pal, sec.prorata.as_ref(), annees).0
+        paliers(pal, sec.prorata.as_ref(), anciennete).0
     } else if let Some(taux) = sec.taux.as_ref().filter(|t| !t.is_empty()) {
         // Le bareme du licenciement, par tranches, avec son plafond.
         let mois = tranches(taux, annees);
@@ -1106,7 +1107,7 @@ pub fn indemnite_depart_retraite(idcc: Option<&Idcc>, anciennete: Anciennete, re
         let minimale = p(sec.anciennete_minimale_mois.as_ref().ok_or_else(|| manque("depart_a_la_retraite.anciennete_minimale_mois"))?);
         (if annees.mul(P::entier(12)) >= minimale { tranches(taux, annees) } else { P::ZERO }, None)
     } else if let Some(pal) = sec.paliers.as_ref().filter(|p| !p.is_empty()) {
-        paliers(pal, sec.prorata.as_ref(), annees)
+        paliers(pal, sec.prorata.as_ref(), anciennete)
     } else {
         return Err(manque("depart_a_la_retraite.paliers"));
     };
@@ -1211,7 +1212,7 @@ pub fn prime_anciennete(
     })?;
     let annees = Anciennete::revolue(&debut, jour).ans_revolus();
     // Un pourcentage par annee de presence a partir de la `apres_annees`-ieme, comprise.
-    let presence_comptee = if annees >= sec.apres_annees { annees.au_dela_de(sec.apres_annees).nombre_d_ans_revolus()? + 1 } else { 0 };
+    let presence_comptee = if annees >= sec.apres_annees { i64::from(annees.au_dela_de(sec.apres_annees).fois_entieres(Anciennete::d_annees(Decimal::ONE))? + 1) } else { 0 };
     let pourcentage = sec.plafond_pourcentage.min(presence_comptee * sec.pourcentage_par_annee);
     if pourcentage <= 0 {
         return Ok(None);

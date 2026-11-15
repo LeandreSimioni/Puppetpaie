@@ -200,7 +200,7 @@ pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Op
         "mise_a_la_retraite" => conv.mise_a_la_retraite.as_ref().map(|m| (m.paliers.as_ref().unwrap(), m.prorata.as_ref())).unwrap(),
         _ => conv.depart_a_la_retraite.as_ref().map(|m| (m.paliers.as_ref().unwrap(), m.prorata.as_ref())).unwrap(),
     };
-    annees(g).into_iter().map(|a| c::paliers(paliers, prorata, a)).map(|(m, p)| (m, p.map(|p| p.nombre_d_ans_revolus().unwrap()))).collect()
+    g.annees.iter().map(|a| c::paliers(paliers, prorata, age_lu(a))).map(|(m, p)| (m, p.map(|p| p.nombre_d_ans_revolus().unwrap()))).collect()
 }
 
 pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option<c::ClauseDAnnexe>>> {
