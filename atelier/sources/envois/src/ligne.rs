@@ -468,7 +468,7 @@ struct PersonneEcrite {
     embauche: Option<socle::date::Jour>,
     /// Le journal ecrit `""` un dossier que le certificat ne dit pas.
     #[serde(with = "socle::forme::vide_si_aucun")]
-    dossier: Option<String>,
+    dossier: Option<declarations::dpae::DossierDpae>,
     code: declarations::dpae::CodeRetourDpae,
     libelle: String,
     enregistree: bool,

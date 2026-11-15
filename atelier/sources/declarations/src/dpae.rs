@@ -929,18 +929,54 @@ impl CodeRetourDpae {
 ///   un dossier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum EtatDeLaDpae {
-    Enregistree { dossier: String },
-    DejaExistante { dossier: Option<String> },
-    Refusee { dossier: Option<String> },
+    Enregistree { dossier: DossierDpae },
+    DejaExistante { dossier: Option<DossierDpae> },
+    Refusee { dossier: Option<DossierDpae> },
+}
+
+/// LE DOSSIER D'UNE DPAE : la reference sous laquelle l'Urssaf l'enregistre (R_DOSSIER, Format 120, positions 425-429),
+/// lue dans le certificat sans ses blancs ; jamais vide. Il s'ecrit tel quel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DossierDpae(String);
+
+impl DossierDpae {
+    /// Le dossier que dit la zone R_DOSSIER, sans ses blancs ; aucun quand elle est a blanc.
+    fn de_la_zone(zone: String) -> Option<DossierDpae> {
+        match zone.is_empty() {
+            true => None,
+            false => Some(DossierDpae(zone)),
+        }
+    }
+
+    /// Tel qu'il s'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for DossierDpae {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for DossierDpae {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<DossierDpae> {
+        DossierDpae::de_la_zone(s).ok_or_else(|| refus("Le dossier d'une DPAE (R_DOSSIER) n'est jamais vide."))
+    }
+}
+
+impl From<DossierDpae> for String {
+    fn from(d: DossierDpae) -> String {
+        d.0
+    }
 }
 
 impl EtatDeLaDpae {
-    /// L'etat que le certificat dit par ce code retour et ce dossier (`""` : la zone a blanc).
-    fn du_certificat(code: CodeRetourDpae, dossier: String) -> EtatDeLaDpae {
-        let dit = match dossier.is_empty() {
-            true => None,
-            false => Some(dossier),
-        };
+    /// L'etat que le certificat dit par ce code retour et ce dossier (aucun : la zone a blanc).
+    fn du_certificat(code: CodeRetourDpae, dit: Option<DossierDpae>) -> EtatDeLaDpae {
         match (code, dit) {
             (CodeRetourDpae::DejaExistante, dossier) => EtatDeLaDpae::DejaExistante { dossier },
             (CodeRetourDpae::Enregistree | CodeRetourDpae::AutreErreur, Some(dossier)) => EtatDeLaDpae::Enregistree { dossier },
@@ -1059,7 +1095,7 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             nir,
             embauche,
             code,
-            etat: EtatDeLaDpae::du_certificat(code, z("dossier")),
+            etat: EtatDeLaDpae::du_certificat(code, DossierDpae::de_la_zone(z("dossier"))),
             formalites: FormaliteDpae::TOUTES.into_iter().filter(|f| z(f.zone()) == "O").collect(),
             lot,
         });
@@ -1363,11 +1399,11 @@ mod tests {
         assert_eq!(c[0].embauche.map(|j| j.iso()).as_deref(), Some("2026-10-01"));
         assert_eq!(c[0].code, CodeRetourDpae::AutreErreur);
         assert_eq!(c[0].code.libelle(), "Autre erreur (erreur concernant des données facultatives)");
-        assert_eq!(c[0].etat, EtatDeLaDpae::Enregistree { dossier: "D1234".into() });
+        assert_eq!(c[0].etat, EtatDeLaDpae::Enregistree { dossier: DossierDpae("D1234".into()) });
         assert_eq!(c[0].formalites, [FormaliteDpae::Certif, FormaliteDpae::Mt]);
         // 98 : deja existante, et pas enregistree ; le dossier que le certificat dit se garde
         assert_eq!(c[1].code, CodeRetourDpae::DejaExistante);
-        assert_eq!(c[1].etat, EtatDeLaDpae::DejaExistante { dossier: Some("111AL".into()) });
+        assert_eq!(c[1].etat, EtatDeLaDpae::DejaExistante { dossier: Some(DossierDpae("111AL".into())) });
         assert_eq!(c[1].formalites, [FormaliteDpae::Imma]);
         // un refus de la DPAE (38)
         assert_eq!(c[2].code, CodeRetourDpae::NumeroDeSecuriteSocialeInvalide);

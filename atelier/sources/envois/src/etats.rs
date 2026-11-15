@@ -618,7 +618,7 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
         let (mut dossiers, mut existantes): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
         for l in c.personnes().into_iter().flatten() {
             match &l.etat {
-                EtatDeLaDpae::Enregistree { dossier } => dossiers.push(dossier),
+                EtatDeLaDpae::Enregistree { dossier } => dossiers.push(dossier.texte()),
                 EtatDeLaDpae::DejaExistante { .. } => existantes.push(&l.nom),
                 EtatDeLaDpae::Refusee { .. } => {}
             }

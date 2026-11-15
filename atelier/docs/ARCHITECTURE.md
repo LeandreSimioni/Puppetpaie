@@ -796,6 +796,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
 | code retour d'une DPAE | `declarations::dpae::CodeRetourDpae` | `declarations/src/dpae.rs` |
 | état d'une personne déclarée par DPAE | `declarations::dpae::EtatDeLaDpae` | `declarations/src/dpae.rs` |
+| dossier d'une DPAE | `declarations::dpae::DossierDpae` | `declarations/src/dpae.rs` |
 | code retour du lot | `declarations::dpae::CodeRetourDuLot` | `declarations/src/dpae.rs` |
 | type de contrat de la DPAE | `TypeContratDpae` | `droit/src/natures.rs` |
 | lieu d'une obligation hors DSN | `declarations::obligations::LieuHorsDsn` | `declarations/src/obligations.rs` |
@@ -1000,6 +1001,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   certificat, la personne certifiée au journal des envois, qui l'écrit `dossier` (`""` : le certificat n'en dit aucun),
   `enregistree` et `deja_existante`, et le relit tel quel (`PersonneEcrite` : une enregistrée sans dossier, ou
   enregistrée et déjà existante, ne se lit pas), l'état d'une embauche déclarée (`EtatEmbauche::certifiee`).
+- **dossier d'une DPAE** : la référence sous laquelle l'Urssaf enregistre une DPAE (R_DOSSIER, positions 425-429), lue
+  dans le certificat sans ses blancs ; jamais vide (la zone à blanc : aucun). S'écrit tel quel ; que portent l'état
+  d'une personne déclarée par DPAE et la personne certifiée au journal.
 - **code retour du lot** : ce que le certificat de conformité dit du traitement du message (C_RET_AR_LOT, positions
   76-77) : 00 correct, 11, 15. `codes_fermes!`, avec son libellé ; un code hors de la liste refuse le certificat ; à
   blanc, aucun ; que porte une ligne du certificat (un lot autre que correct est une anomalie de la pièce).
