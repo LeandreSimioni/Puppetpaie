@@ -181,6 +181,8 @@ pub struct Aem {
     pub embauche: Option<Jour>,
     pub fin_contrat: Option<Jour>,
     pub en_cours: bool,
+    /// La periode que l'AEM atteste, lue avec elle (`periode_attestee`) ; aucune quand ses dates ne la disent pas.
+    pub periode: Option<Periode>,
     pub heures: Option<Heures>,
     pub cachets_isoles: Option<Cachets>,
     pub cachets_groupes: Option<Cachets>,
@@ -211,18 +213,20 @@ impl NatureDUneAem {
     }
 }
 
+/// La periode qu'une AEM atteste, lue avec elle : le contrat imprime (son embauche, sa fin, ou « en cours » jusqu'au mois)
+/// borne au mois de l'attestation. Un contrat qui ne finit pas apres son embauche n'en atteste aucune (`Aem::manque` le
+/// dit).
+fn periode_attestee(mois: Option<Mois>, embauche: Option<Jour>, fin_contrat: Option<Jour>, en_cours: bool) -> Option<Periode> {
+    let mois = mois?;
+    let fin = match (fin_contrat, en_cours) {
+        (Some(f), _) => f,
+        (None, true) => mois.dernier_jour(),
+        (None, false) => return None,
+    };
+    Periode::du_au(embauche?, fin).ok()?.croise(&Periode::du_mois(mois))
+}
+
 impl Aem {
-    /// La periode que l'AEM atteste : le contrat borne au mois de l'attestation.
-    pub fn periode(&self) -> Option<Periode> {
-        let mois = self.mois?;
-        let fin = match (self.fin_contrat, self.en_cours) {
-            (Some(f), _) => f,
-            (None, true) => mois.dernier_jour(),
-            (None, false) => return None,
-        };
-        // Un contrat qui ne finit pas apres son embauche n'atteste aucune periode.
-        Periode::du_au(self.embauche?, fin).ok()?.croise(&Periode::du_mois(mois))
-    }
 
     /// Les cachets du mois : isoles et groupes.
     pub fn cachets(&self) -> Cachets {
@@ -256,7 +260,7 @@ impl Aem {
         if self.brut.is_none() {
             m.push("le salaire brut");
         }
-        if m.is_empty() && self.periode().is_none() {
+        if m.is_empty() && self.periode.is_none() {
             m.push("une période dans le mois de l'attestation");
         }
         (!m.is_empty()).then(|| format!("AEM dont {} ne se lit pas", m.join(", ")))
@@ -264,7 +268,7 @@ impl Aem {
 
     /// Ce que l'AEM dit en commun avec un certificat d'emploi : l'employeur, le salarie, le contrat du mois.
     pub fn commun(&self) -> Certificat {
-        let periode = self.periode();
+        let periode = self.periode;
         let mut adresse: Vec<String> = self.rue.iter().cloned().collect();
         if let (Some(cp), Some(c)) = (&self.code_postal, &self.commune) {
             adresse.push(format!("{} {}", cp, c));
@@ -454,6 +458,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             embauche: Some(debut),
             fin_contrat: Some(fin),
             en_cours: false,
+            periode: periode_attestee(Some(debut.mois_civil()), Some(debut), Some(fin), false),
             heures: ecrit(&nom("SAL_NB_HEURES_")).and_then(|t| entier_de_chiffres(&t).and(lu::texte_entier(&t))),
             cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| entier_de_chiffres(&t).and(lu::texte_entier(&t))),
             cachets_groupes: None,
@@ -655,6 +660,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         embauche: None,
         fin_contrat: None,
         en_cours: false,
+        periode: None,
         heures: None,
         cachets_isoles: None,
         cachets_groupes: None,
@@ -828,6 +834,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
             (!toutes.is_empty()).then(|| toutes.join(" ; "))
         }
     };
+    a.periode = periode_attestee(a.mois, a.embauche, a.fin_contrat, a.en_cours);
     Some(a)
 }
 
