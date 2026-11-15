@@ -30,7 +30,7 @@ fn sans_code(s: &str) -> &str {
 /// CE QU'UNE SOURCE ECRITE A DE FAUX, a sa lecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FauteDeSource {
-    /// Le chemin n'est pas sous `atelier/reference/` (ni le mode d'emploi), ou remonte (`..`).
+    /// Le chemin n'est pas un chemin relatif, n'est pas sous `atelier/reference/` (ni le mode d'emploi), ou remonte (`..`).
     HorsDeLaReference,
     /// Un `#` hors d'un entrepot de la DILA, ou un entrepot sans son code.
     CodeDEntrepot,
@@ -55,8 +55,12 @@ impl TryFrom<String> for CheminDepose {
     type Error = FauteDeSource;
     fn try_from(s: String) -> Result<Self, FauteDeSource> {
         let fichier = sans_code(&s);
-        // La porte : le chemin ecrit dans un fichier, compare a celui que le moteur nomme.
-        if !(fichier.starts_with("atelier/reference/") || fichier == MODE_D_EMPLOI.texte()) || fichier.contains("..") {
+        // La porte : le chemin ecrit dans un fichier se lit en chemin relatif, compare a celui que le moteur nomme.
+        let lu = match socle::fichiers::CheminRelatif::lire(fichier) {
+            Ok(c) => c,
+            Err(_) => return Err(FauteDeSource::HorsDeLaReference),
+        };
+        if !(fichier.starts_with("atelier/reference/") || lu == MODE_D_EMPLOI) || fichier.contains("..") {
             return Err(FauteDeSource::HorsDeLaReference);
         }
         if s.contains('#') != fichier.ends_with(".jsonl.gz") {
