@@ -303,7 +303,7 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
         infos_dit: format!("{} — {}", contrat, montants),
         portee_dit: "prochaine DSN".to_string(),
         salarie: apres.salarie.id.clone(),
-        debut: apres.engagement.contrat().debut(),
+        contrat: apres.engagement.contrat(),
         nom: nom_de(apres),
         spectacle: apres.titre()?,
         numero: apres.engagement.numero.clone(),
@@ -326,7 +326,8 @@ pub(crate) struct Correction {
     infos_dit: String,
     portee_dit: String,
     pub(crate) salarie: droit::contexte::IdSalarie,
-    debut: socle::date::Jour,
+    /// La periode du contrat corrige.
+    contrat: PeriodeOuverte,
     nom: String,
     spectacle: String,
     numero: Option<NumeroContrat>,

@@ -23,7 +23,7 @@ use serde::Serialize;
 use droit::natures;
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::fichiers::{modele_de, repr};
 use socle::paris::Moment;
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -321,14 +321,12 @@ ne couvre (Configuration › Entreprise › Avancé, « Autres établissements �
 // -------------------------------------------- ce que la DPAE lit d'une embauche
 
 /// Ce que la DPAE lit d'une embauche :
-/// la fiche du salarie, le debut et la fin de l'engagement, sa nature, et --
+/// la fiche du salarie, la periode du contrat (son terme, s'il en a un), sa nature, et --
 /// pour le recapitulatif seulement -- le spectacle.
 #[derive(Debug, Clone)]
 pub struct Embauche {
     pub salarie: droit::fiche::SalarieDuContrat,
-    pub debut: Jour,
-    /// Le terme de l'engagement, s'il en a un.
-    pub fin: Option<Jour>,
+    pub contrat: PeriodeOuverte,
     /// Sa nature de contrat.
     pub nature: natures::NatureDeContrat,
     pub spectacle: Option<droit::fiche::Spectacle>,
@@ -337,8 +335,8 @@ pub struct Embauche {
 impl Embauche {
     /// L'instant de l'embauche : son premier jour, a l'heure que la DPAE porte (`HEURE_EMBAUCHE`, a Paris).
     pub fn instant(&self) -> R<Moment> {
-        Moment::a_paris(self.debut, HEURE_EMBAUCHE, 0, 0)
-            .ok_or_else(|| socle::refus!("L'embauche du {} à {} h n'est pas une heure de Paris.", self.debut.jj_mm_aaaa(), HEURE_EMBAUCHE))
+        Moment::a_paris(self.contrat.debut(), HEURE_EMBAUCHE, 0, 0)
+            .ok_or_else(|| socle::refus!("L'embauche du {} à {} h n'est pas une heure de Paris.", self.contrat.debut().jj_mm_aaaa(), HEURE_EMBAUCHE))
     }
 }
 
@@ -459,7 +457,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     // controle 46 (<< date de fin obligatoire >>) ne vise que les contrats de
     // type CDD. Un CDD sans fin, lui, est refuse ici plutot que par l'Urssaf.
     if nat.date_fin_dpae() {
-        let Some(fin) = e.fin else {
+        let Some(fin) = e.contrat.fin() else {
             return Err(socle::echec::cle(
                 format!(
                     "{} : un contrat {} dit sa date de fin ; la DPAE d'un CDD la porte, et l'Urssaf la refuse sans (code retour 46).",
@@ -665,7 +663,7 @@ pub fn recapitulatif(embauches: &[Embauche]) -> R<String> {
         // situe, comme sur le bulletin (`calcul.Paie.__str__`). Ce texte se
         // recopie a la main dans la saisie en ligne -- il ne doit rien dire
         // que le fichier ne dise.
-        let terme = match e.fin {
+        let terme = match e.contrat.fin() {
             Some(fin) => format!(", fin prevue le {}", fin.jj_mm_aaaa()),
             None => ", sans terme".to_string(),
         };
@@ -1132,8 +1130,7 @@ mod tests {
                 id: droit::contexte::IdSalarie::lire("DUPONT").unwrap(),
                 champs: socle::forme::lire_texte(fiche, "la fiche du test").unwrap(),
             }),
-            debut: Jour::nouveau(2026, 10, 1).unwrap(),
-            fin,
+            contrat: PeriodeOuverte::du(Jour::nouveau(2026, 10, 1).unwrap(), fin).unwrap(),
             nature,
             spectacle: None,
         }

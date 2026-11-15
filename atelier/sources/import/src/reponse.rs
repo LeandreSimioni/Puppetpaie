@@ -15,7 +15,7 @@ use droit::fiche::{CaseDeFiche, FicheNommee, NomDeFiche, ValeurDeCase};
 
 use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::{Graphie, Mois};
 use std::path::PathBuf;
@@ -539,10 +539,9 @@ pub struct InfosPage {
     /// creer (`engagement::importe::ecrit_salarie`).
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "ecrit_salarie_de_la_page")]
     pub salarie: Option<Option<droit::contexte::IdSalarie>>,
+    /// La periode qu'elle paie ou atteste.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<Jour>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<Jour>,
+    pub periode: Option<Periode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -671,8 +670,8 @@ pub struct BlocBulletins {
     pub lus: usize,
     pub repris: usize,
     pub par_logiciel: std::collections::BTreeMap<String, usize>,
-    pub du: Option<Jour>,
-    pub au: Option<Jour>,
+    /// Du premier jour au dernier que ses bulletins paient.
+    pub periode: Option<Periode>,
     pub fiches_a_creer: usize,
     pub contrats_nouveaux: usize,
     pub contrats: Vec<ContratLu>,
@@ -691,8 +690,7 @@ impl BlocBulletins {
             lus: 0,
             repris: 0,
             par_logiciel: std::collections::BTreeMap::new(),
-            du: None,
-            au: None,
+            periode: None,
             fiches_a_creer: 0,
             contrats_nouveaux: 0,
             contrats: Vec::new(),
@@ -709,8 +707,8 @@ impl BlocBulletins {
 #[derive(Debug, Clone, Serialize)]
 pub struct BlocPieces {
     pub lus: usize,
-    pub du: Option<Jour>,
-    pub au: Option<Jour>,
+    /// Du premier jour au dernier que ses pieces attestent.
+    pub periode: Option<Periode>,
     pub contrats_nouveaux: usize,
     pub contrats: Vec<ContratLu>,
     pub confirmes: usize,
@@ -844,7 +842,7 @@ impl Importation {
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect();
-            let du: String = b.du.zip(b.au).map(|(d, a)| format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa())).into_iter().collect();
+            let du: String = b.periode.map(|p| format!(" du {} au {}", p.debut().jj_mm_aaaa(), p.fin().jj_mm_aaaa())).into_iter().collect();
             format!(
                 "{} bulletin{} lu{} sur {} page{}{} ; {} {}{}.",
                 b.lus,
@@ -872,7 +870,7 @@ impl Importation {
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect();
-            let du: String = c.du.zip(c.au).map(|(d, a)| format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa())).into_iter().collect();
+            let du: String = c.periode.map(|p| format!(" du {} au {}", p.debut().jj_mm_aaaa(), p.fin().jj_mm_aaaa())).into_iter().collect();
             c.dit = format!(
                 "{} {} lu{}{}{}.{}",
                 c.lus,
@@ -910,7 +908,7 @@ impl Importation {
     pub fn dire_l_apercu(&mut self) {
         self.dire();
         let b = &self.bulletins;
-        let periode: String = b.du.zip(b.au).map(|(du, au)| format!(" (du {} au {})", du.jj_mm_aaaa(), au.jj_mm_aaaa())).into_iter().collect();
+        let periode: String = b.periode.map(|p| format!(" (du {} au {})", p.debut().jj_mm_aaaa(), p.fin().jj_mm_aaaa())).into_iter().collect();
         self.phrase = format!(
             "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",
             b.lus,

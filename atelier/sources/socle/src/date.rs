@@ -244,6 +244,11 @@ impl Periode {
         }
     }
 
+    /// La plus courte periode qui la contient AVEC `autre` : du plus tot de leurs debuts au plus tard de leurs fins.
+    pub fn avec(&self, autre: &Periode) -> Periode {
+        Periode { debut: self.debut.min(autre.debut), fin: self.fin.max(autre.fin) }
+    }
+
     /// Les mois civils qu'elle touche, du premier au dernier.
     pub fn mois(&self) -> Vec<crate::mois::Mois> {
         crate::mois::Mois::du_jour(&self.debut).jusqu_a(crate::mois::Mois::du_jour(&self.fin))

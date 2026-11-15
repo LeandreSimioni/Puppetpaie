@@ -373,15 +373,13 @@ impl DetailDsn {
     }
 }
 
-/// Une embauche qu'une DPAE declare : le salarie, le numero du contrat de son engagement, son premier et son dernier
-/// jour.
+/// Une embauche qu'une DPAE declare : le salarie, le numero du contrat de son engagement, la periode de son contrat.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmbaucheDeclaree {
     pub salarie: IdSalarie,
     pub numero: Option<NumeroContrat>,
-    pub debut: socle::date::Jour,
-    pub fin: Option<socle::date::Jour>,
+    pub contrat: socle::date::PeriodeOuverte,
 }
 
 /// LE DETAIL D'UNE DPAE : ce qui l'a ouverte, ses embauches, ce qui l'a fait echouer ; pour une DPAE reprise des
@@ -561,8 +559,7 @@ pub struct DetailDocuments {
 #[serde(deny_unknown_fields)]
 pub struct ContratParti {
     pub salarie: IdSalarie,
-    pub debut: socle::date::Jour,
-    pub fin: Option<socle::date::Jour>,
+    pub contrat: socle::date::PeriodeOuverte,
     pub numero: Option<NumeroContrat>,
     pub fichier: NomDeFichier,
     pub spectacle: Option<String>,
@@ -666,14 +663,14 @@ pub struct DetailSignature {
     pub echec_a: Option<Courriel>,
 }
 
-/// CE QUI REVIENT D'UN CONTRAT PARTI (`routes::contrats::contrat_recu_avec`) : le contrat (salarie, debut,
+/// CE QUI REVIENT D'UN CONTRAT PARTI (`routes::contrats::contrat_recu_avec`) : le contrat (salarie, periode,
 /// numero, avenant), s'il est revenu signe (`recu`, ou la mention retiree), et, pour une reponse « Je signe » relevee
 /// par courriel (`origine`), ce qui la prouve. `quand`, `qui`, `reponse` : la note.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetourContrat {
     pub salarie: IdSalarie,
-    pub debut: socle::date::Jour,
+    pub contrat: socle::date::PeriodeOuverte,
     pub recu: bool,
     pub numero: Option<NumeroContrat>,
     pub nom: String,
@@ -732,8 +729,7 @@ pub struct AvenantParti {
 #[serde(deny_unknown_fields)]
 pub struct ContratAttendu {
     pub salarie: IdSalarie,
-    pub debut: socle::date::Jour,
-    pub fin: Option<socle::date::Jour>,
+    pub contrat: socle::date::PeriodeOuverte,
     pub numero: Option<NumeroContrat>,
     pub spectacle: Option<String>,
     pub fichier: NomDeFichier,

@@ -398,8 +398,14 @@ impl Carte {
     /// LA PERIODE DE SON CONTRAT, comme `Engagement::nouveau` la deduit : son debut (`debut_lu`) ; sa fin ecrite, sinon le
     /// dernier de ses jours joues et de son planning ; `None` sans debut ; refus d'une fin avant le debut.
     pub fn contrat(&self) -> R<Option<PeriodeOuverte>> {
-        let fin = self.fin.or_else(|| self.dates().iter().chain(self.planning().iter()).map(DateDeLigne::jour).max());
-        self.debut_lu().map(|d| PeriodeOuverte::du(d, fin)).transpose()
+        self.debut_lu().map(|d| PeriodeOuverte::du(d, self.fin_lue())).transpose()
+    }
+
+    /// La fin de son contrat (`contrat`), lue sans son debut : sa fin ecrite, sinon le dernier de ses jours joues et de
+    /// son planning ; `None` sans aucun. Une carte qu'on saisit peut ecrire une fin avant son debut : son dernier mois se
+    /// lit encore (`stock::Objet::dernier_mois`), pour qu'elle se montre et se corrige.
+    pub fn fin_lue(&self) -> Option<Jour> {
+        self.fin.or_else(|| self.dates().iter().chain(self.planning().iter()).map(DateDeLigne::jour).max())
     }
 
     /// Les jours joues de ses lignes de travail (`crate::jours_des_lignes`).

@@ -1542,7 +1542,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
     let aujourdhui = st.aujourdhui;
     let mut jours: BTreeMap<(Mois, Jour), Vec<crate::etapes::DpaeDue>> = BTreeMap::new();
     for e in crate::etapes::Moteur::nouveau(st.ctx).embauches_a_declarer(None)? {
-        jours.entry((e.mois, e.debut)).or_default().push(e);
+        jours.entry((e.mois, e.contrat.debut())).or_default().push(e);
     }
 
     let mut out = Vec::new();

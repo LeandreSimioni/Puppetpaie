@@ -1472,7 +1472,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
             // Le contrat qu'il modifie : parti avant lui, avec son modele fige ; ou signe hors du logiciel (`ailleurs`),
             // date de son premier jour, avec le modele que son engagement suit.
             let (date_contrat, modele) = if premier.ailleurs {
-                (premier.debut, crate::modeles_contrat::du_contrat(&ctx_j, p0)?)
+                (premier.contrat.debut(), crate::modeles_contrat::du_contrat(&ctx_j, p0)?)
             } else {
                 let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero.as_ref())
                     .ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} modifie un contrat qui n'est pas parti avant lui", nom)))?;
@@ -1492,7 +1492,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
                     None => SANS_NUMERO.to_string(),
                 };
                 let le_sien = c.numero.as_ref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?;
-                remplacements.push(((c.salarie.clone(), c.debut, le_sien.clone()), (numero, parti.date())));
+                remplacements.push(((c.salarie.clone(), c.contrat.debut(), le_sien.clone()), (numero, parti.date())));
             }
         }
         // Chaque contrat avec le modele qu'il suivait a son depart.

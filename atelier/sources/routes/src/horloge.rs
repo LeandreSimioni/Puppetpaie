@@ -544,11 +544,11 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         Err(e) => return Err(e),
     };
     for c in apercu.into_iter().flatten() {
-        let Some(quand) = revalide_le(ctx, mois, &c.salarie, c.debut)? else { continue };
+        let Some(quand) = revalide_le(ctx, mois, &c.salarie, c.contrat.debut())? else { continue };
         if quand.jour_de_paris() > jour {
             continue;
         }
-        calendrier.push(Pas { quand, quoi: String::new(), geste: Geste::Avenant { mois: le_mois, salarie: c.salarie, debut: c.debut, nom: c.nom } });
+        calendrier.push(Pas { quand, quoi: String::new(), geste: Geste::Avenant { mois: le_mois, salarie: c.salarie, debut: c.contrat.debut(), nom: c.nom } });
     }
     calendrier.extend(signalements_dus(ctx, le_mois, jour, false)?);
 
@@ -659,7 +659,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         }
         Geste::Dpae { mois, debut } => pas(d, quoi, quand, |ctx| {
             let a_declarer = Moteur::nouveau(ctx).embauches_a_declarer(Some(*mois))?;
-            let attente: Vec<_> = a_declarer.iter().filter(|e| e.debut == *debut).collect();
+            let attente: Vec<_> = a_declarer.iter().filter(|e| e.contrat.debut() == *debut).collect();
             if attente.is_empty() {
                 return Ok(Joue::Rien);
             }
@@ -688,7 +688,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         }),
         Geste::Avenant { mois, salarie, debut, nom } => {
             let du_contrat = |ctx: &Contexte| -> R<Option<ContratASigner>> {
-                Ok(crate::contrats::signature_apercu(ctx, *mois)?.contrats.into_iter().find(|x| x.salarie == *salarie && x.debut == *debut))
+                Ok(crate::contrats::signature_apercu(ctx, *mois)?.contrats.into_iter().find(|x| x.salarie == *salarie && x.contrat.debut() == *debut))
             };
             // La ligne de l'horloge dit ce que le journal dit : parti par courriel, ou imprime et remis en main propre.
             let imprime = std::cell::Cell::new(false);
@@ -886,7 +886,7 @@ fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
         .map(|x| Signable {
             courriel: x.destinataire.is_some(),
             a_envoyer: x.a_envoyer && !x.en_avenant,
-            vise: ContratVise { numero: x.numero.clone(), salarie: x.salarie, debut: x.debut },
+            vise: ContratVise { numero: x.numero.clone(), salarie: x.salarie, debut: x.contrat.debut() },
             nom: x.nom,
         })
         .collect())

@@ -392,14 +392,14 @@ pub(crate) fn deposer_dsn(mois: Mois, nic: Option<&Nic>, libelle: String) -> Act
 /// `avenant` (son numero) ; la route `contrat-recu` rend la phrase qui le dit et de quoi l'annuler. Rien pour un
 /// engagement qui ne dit pas encore son salarie ou son premier jour.
 fn noter_recu(p: &Vue, mois: Mois, libelle: &str, avenant: Option<i64>, recu: bool) -> Option<Action> {
-    let charge = crate::contrats::ChargeRecu { mois, salarie: p.salarie.clone()?, debut: p.debut?, numero: p.numero.clone(), avenant, recu };
+    let charge = crate::contrats::ChargeRecu { mois, salarie: p.salarie.clone()?, debut: p.bornes?.debut(), numero: p.numero.clone(), avenant, recu };
     Some(action(Route::ContratRecu, charge, None, libelle.into()))
 }
 
 /// L'avenant du contrat de l'engagement `p` : l'apercu, puis sa demande de signature. Rien pour un engagement qui ne
 /// dit pas encore son salarie ou son premier jour.
 fn avenant(p: &Vue, mois: Mois) -> Option<Action> {
-    let charge = crate::contrats::ChargeAvenant { salarie: p.salarie.clone()?, debut: p.debut?, numero: p.numero.clone(), mois: Some(mois) };
+    let charge = crate::contrats::ChargeAvenant { salarie: p.salarie.clone()?, debut: p.bornes?.debut(), numero: p.numero.clone(), mois: Some(mois) };
     Some(action(Route::AvenantApercu, charge, Some(Route::DemanderSignature), "Avenant…".into()))
 }
 
@@ -1183,8 +1183,8 @@ pub(crate) struct Vue {
     /// Le libelle de sa nature de contrat, quand elle est dite.
     libelle_nature: Option<String>,
     numero: Option<NumeroContrat>,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
+    /// La periode de son contrat, quand elle se lit.
+    bornes: Option<PeriodeOuverte>,
     etablissement: Option<Nic>,
     echeances: Option<Echeances>,
     valide: Option<Moment>,
@@ -1232,8 +1232,7 @@ struct LigneDePage<'a> {
     spectacle: Option<&'a str>,
     nature: Option<&'a str>,
     numero: Option<&'a engagement::numeros::NumeroContrat>,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
+    bornes: Option<PeriodeOuverte>,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     valide: Option<Moment>,
     recalcul: Option<&'a str>,
@@ -1264,9 +1263,9 @@ impl<'a> LigneDePage<'a> {
     fn de(l: &'a Ligne) -> LigneDePage<'a> {
         let v = &l.vue;
         let valide = v.valide.map(Moment::dit);
-        let embauche = v.debut.map(|d| format!("embauche le {}", d.jj_mm_aaaa()));
+        let embauche = v.bornes.map(|b| format!("embauche le {}", b.debut().jj_mm_aaaa()));
         LigneDePage {
-            periode_dit: v.debut.map(|d| periode_dite(d, v.fin)),
+            periode_dit: v.bornes.map(|b| periode_dite(b.debut(), b.fin())),
             valide_dit: valide.as_ref().map(|q| format!("le {}", q)),
             validee_dit: valide.as_ref().map(|q| format!("validée le {}", q)),
             repris_dit: matches!(&v.contrat, ContratDit::Complet(c) if c.repris).then_some("contrat repris"),
@@ -1281,8 +1280,7 @@ impl<'a> LigneDePage<'a> {
             spectacle: v.spectacle.as_deref(),
             nature: v.libelle_nature.as_deref(),
             numero: v.numero.as_ref(),
-            debut: v.debut,
-            fin: v.fin,
+            bornes: v.bornes,
             valide: v.valide,
             recalcul: v.recalcul.as_deref(),
             contrat: &v.contrat,
@@ -1378,8 +1376,7 @@ pub struct DpaeDue {
     pub numero: NumeroContrat,
     pub nom: String,
     pub spectacle: Option<String>,
-    pub debut: Jour,
-    pub fin: Option<Jour>,
+    pub contrat: PeriodeOuverte,
     pub empreinte: EmpreinteCourte,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pourquoi: Option<String>,
@@ -1710,9 +1707,7 @@ impl<'a> Moteur<'a> {
                 spectacle,
                 libelle_nature: Some(nat.libelle.clone()),
                 numero: p.engagement.numero.clone(),
-                debut: Some(p.engagement.contrat().debut()),
-                // Un CDI n'a pas de fin : rien, comme `Engagement::canon`.
-                fin: p.engagement.contrat().fin(),
+                bornes: Some(p.engagement.contrat()),
                 etablissement,
                 echeances,
                 valide: e.valide().map(|v| v.le()),
@@ -1763,15 +1758,15 @@ impl<'a> Moteur<'a> {
         let debut = e.debut_lu();
         let anterieur = if let Some(d) = debut { engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, d, lu)? } else { false };
         let numero = e.numero.clone();
-        let fin = e.fin;
         Ok(Vue {
             salarie: cle,
             nom,
             spectacle,
             libelle_nature,
             numero,
-            debut,
-            fin,
+            // Une carte a completer peut ecrire une fin avant son debut : c'est alors ce qui lui manque (`manque`), et
+            // elle n'a pas de bornes a montrer.
+            bornes: e.contrat().ok().flatten(),
             etablissement: None,
             echeances: None,
             valide: None,
@@ -2540,8 +2535,7 @@ impl<'a> Moteur<'a> {
                     numero,
                     nom: super::nom_a_l_ecran(&p.salarie, cle),
                     spectacle: titre,
-                    debut: p.engagement.contrat().debut(),
-                    fin: p.engagement.contrat().fin(),
+                    contrat: p.engagement.contrat(),
                     empreinte: empreinte_de_l_embauche(&p.engagement, &p.salarie),
                     pourquoi,
                 });
@@ -2589,7 +2583,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     let o = &p.etats.documents;
     let debut_du_contrat = p.contrat.debut();
     // Un engagement valide dit son premier jour.
-    let Some(debut) = p.debut else {
+    let Some(debut) = p.bornes.map(|b| b.debut()) else {
         return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un engagement valide ne dit pas son premier jour."));
     };
     let debut_dit = debut.jj_mm_aaaa();

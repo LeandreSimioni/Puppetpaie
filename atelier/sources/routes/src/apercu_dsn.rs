@@ -210,8 +210,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                 dates_dit: dates_dites(&c.periode),
                 fin_dit,
                 numero: c.numero.clone(),
-                debut: c.periode.debut(),
-                fin: c.periode.fin(),
+                contrat: c.periode,
                 emploi: c.emploi.clone(),
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
@@ -248,8 +247,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
             dit,
             nom,
             numero: n.clone(),
-            debut: p.engagement.contrat().debut(),
-            fin: p.engagement.contrat().fin(),
+            contrat: p.engagement.contrat(),
             pastille: Pastille::de(socle::ecran::EtatDEcran::AFaire, "absent du fichier"),
         });
     }
@@ -338,8 +336,7 @@ struct ContratDuFichier {
     dates_dit: String,
     fin_dit: String,
     numero: engagement::numeros::NumeroContrat,
-    debut: Jour,
-    fin: Option<Jour>,
+    contrat: PeriodeOuverte,
     emploi: Option<String>,
     /// La nature du contrat telle que la DSN la code (S21.G00.40.007).
     #[serde(rename = "nature")]
@@ -368,8 +365,7 @@ struct AbsentDuFichier {
     salarie: droit::contexte::IdSalarie,
     nom: Option<String>,
     numero: engagement::numeros::NumeroContrat,
-    debut: Jour,
-    fin: Option<Jour>,
+    contrat: PeriodeOuverte,
     dit: String,
     pastille: Pastille,
 }

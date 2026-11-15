@@ -540,8 +540,7 @@ pub(crate) fn deposer_dpae_avec(
             Ok(EmbaucheDeclaree {
                 salarie: l.salarie.clone().ok_or_else(|| socle::refus!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?,
                 numero: l.numero.clone(),
-                debut: l.debut,
-                fin: l.fin,
+                contrat: l.contrat,
             })
         })
         .collect::<R<_>>()?;

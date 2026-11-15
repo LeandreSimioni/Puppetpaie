@@ -40,7 +40,7 @@ use droit::catalogue;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois;
 use engagement::{self, LignePaie, PlaceDuMois};
-use socle::date::{Jour, Periode};
+use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
 use socle::grandeurs::{Cachets, Heures, Jours, Montant};
@@ -1597,8 +1597,8 @@ pub(crate) struct VuePaie {
     /// UN PERMANENT N'A PAS DE SPECTACLE, et `None` est la reponse juste.
     spectacle: Option<SpectacleVu>,
     nature: NatureVue,
-    debut: Jour,
-    fin: Option<Jour>,
+    /// La periode du contrat (`Engagement::contrat`).
+    bornes: PeriodeOuverte,
     contrat: ContratVu,
     dates_travail: Vec<Jour>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
@@ -1738,8 +1738,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         salarie,
         spectacle,
         nature: NatureVue { cle: nat.cle, libelle: nat.libelle.clone(), mensuelle: nat.mensuelle() },
-        debut: e.contrat().debut(),
-        fin: e.contrat().fin(),
+        bornes: e.contrat(),
         contrat: ContratVu {
             place: e.place_du_mois()?,
             chevrons: chevrons_dits(e)?,
@@ -1902,8 +1901,8 @@ struct ParSalarie {
 struct PaieACompleter {
     a_completer: String,
     salarie: CleEcrite,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
+    /// La periode de son contrat (`Carte::contrat`), quand elle se lit.
+    bornes: Option<PeriodeOuverte>,
     avertissements: [String; 0],
     informations: [String; 0],
     contrat: EcritsSeuls,
@@ -2037,7 +2036,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
 fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
     let premier = mois.premier_jour();
     let mut jours = vec![premier];
-    for j in std::iter::once(p.debut).chain(p.fin) {
+    for j in std::iter::once(p.bornes.debut()).chain(p.bornes.fin()) {
         if mois.contient(&j) && !jours.contains(&j) {
             jours.push(j);
         }
@@ -2090,14 +2089,14 @@ fn nom_prenom(nom: Option<&str>, prenom: Option<&str>) -> Option<String> {
 /// `declarations::demarrage::conges_a_dire`) : le compteur de conges part du solde de l'ancien bulletin (L3141-3,
 /// `engagement::conges::reprise_conges`). `brut` : l'engagement tel que la saisie l'ecrit ; `v` : sa vue (`vue_paie`).
 fn dire_l_entree(ctx: &Contexte, mois: Mois, brut: &SaisieCarte, v: &mut VuePaie) -> R<()> {
-    if brut.est_validee() || !engagement::stock::commence_avant_le_logiciel(&ctx.racine, v.debut, mois)? {
+    if brut.est_validee() || !engagement::stock::commence_avant_le_logiciel(&ctx.racine, v.bornes.debut(), mois)? {
         return Ok(());
     }
     let qui = match nom_prenom(v.salarie.nom.as_deref(), v.salarie.prenom.as_deref()) {
         Some(q) => q,
         None => v.salarie.cle.to_string(),
     };
-    let le = v.debut.jj_mm_aaaa();
+    let le = v.bornes.debut().jj_mm_aaaa();
     // L'apercu numerote chaque paie qu'il montre (`ecrire_documents::numeroter`).
     let Some(numero) = v.numero_contrat.as_ref().map(|n| n.as_str().to_string()) else {
         return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une paie de l'aperçu n'a pas de numéro de contrat."));
@@ -2144,13 +2143,10 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
             Some(m) => {
                 // Une carte a completer peut ecrire une fin avant son debut : c'est alors ce qui lui manque (`m`, dit dans
                 // `a_completer`), et elle n'a pas de bornes a montrer.
-                let contrat = e.contrat().ok().flatten();
-                let (debut, fin) = (contrat.map(|c| c.debut()), contrat.and_then(|c| c.fin()));
                 r.paies.push(PaieVue::ACompleter(PaieACompleter {
                     a_completer: m.phrase.clone(),
                     salarie: CleEcrite { cle: e.salarie.clone() },
-                    debut,
-                    fin,
+                    bornes: e.contrat().ok().flatten(),
                     avertissements: [],
                     informations: [],
                     contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?, modeles: if let Some(n) = e.nature { crate::modeles_contrat::au_choix(ctx, n)? } else { Vec::new() } },

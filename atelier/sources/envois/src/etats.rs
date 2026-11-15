@@ -167,13 +167,13 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
-            let cert = certifiees.iter().rev().find(|c| c.embauche == Some(x.debut) && meme_nom(x.salarie.as_str(), &c.nom));
+            let cert = certifiees.iter().rev().find(|c| c.embauche == Some(x.contrat.debut()) && meme_nom(x.salarie.as_str(), &c.nom));
             etat.insert(
                 paire(&x.salarie, Some(n)),
                 EtatEmbauche {
                     quand: e.quand.clone(),
                     fichier: e.fichier.clone(),
-                    fin: x.fin.clone(),
+                    fin: x.contrat.fin(),
                     passee,
                     refusee,
                     anomalies: anomalies.clone(),
@@ -399,8 +399,7 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
             d.apres_signature |= apres_signature;
             d.contrats.push(ContratAttendu {
                 salarie: c.salarie.clone(),
-                debut: c.debut.clone(),
-                fin: c.fin.clone(),
+                contrat: c.contrat,
                 numero: c.numero.clone(),
                 spectacle: c.spectacle.clone(),
                 fichier: c.fichier.clone(),
@@ -1369,7 +1368,7 @@ mod tests {
 
     fn contrat(sal: &str, code: &str) -> String {
         format!(
-            "{{\"salarie\": \"{}\", \"debut\": \"2026-06-04\", \"fin\": \"2026-06-30\", \"numero\": \"SA1.26.01\", \"fichier\": \"c.pdf\", \"spectacle\": null, \
+            "{{\"salarie\": \"{}\", \"contrat\": {{\"du\": \"2026-06-04\", \"au\": \"2026-06-30\"}}, \"numero\": \"SA1.26.01\", \"fichier\": \"c.pdf\", \"spectacle\": null, \
              \"code\": \"{}\", \"empreinte\": \"e100000000000000\", \"message\": \"<m1@test.invalid>\", \"mois\": \"2026-06\", \"ailleurs\": false}}",
             sal, code
         )
@@ -1378,7 +1377,7 @@ mod tests {
     /// Un contrat revenu (`plus` : ce qu'il dit d'autre, en JSON).
     fn recu(sal: &str, recu: bool, plus: &str) -> String {
         format!(
-            "{{\"salarie\": \"{}\", \"debut\": \"2026-06-04\", \"numero\": \"SA1.26.01\", \"nom\": \"{}\", \"recu\": {}, \"quand\": \"2026-06-12T10:00:00\", \"qui\": \"t\", \"reponse\": \"\"{}}}",
+            "{{\"salarie\": \"{}\", \"contrat\": {{\"du\": \"2026-06-04\", \"au\": \"2026-06-30\"}}, \"numero\": \"SA1.26.01\", \"nom\": \"{}\", \"recu\": {}, \"quand\": \"2026-06-12T10:00:00\", \"qui\": \"t\", \"reponse\": \"\"{}}}",
             sal, sal, recu, plus
         )
     }

@@ -282,7 +282,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let mut lus: Vec<Lu> = Vec::new();
     let mut certificats: Vec<Attestee> = Vec::new();
     let mut par_logiciel: BTreeMap<String, usize> = BTreeMap::new();
-    let (mut du, mut au): (Option<Jour>, Option<Jour>) = (None, None);
+    // Du premier jour au dernier que les bulletins paient.
+    let mut lue: Option<Periode> = None;
     let mut n_pages = 0usize;
     for (i, f) in tri.fichiers.iter().enumerate() {
         if f.sorte != Sorte::PdfTexte {
@@ -370,14 +371,15 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 None => "autre".to_string(),
             };
             *par_logiciel.entry(logiciel).or_default() += 1;
-            du = du.into_iter().chain([b.periode.debut()]).min();
-            au = au.into_iter().chain([b.periode.fin()]).max();
+            lue = Some(match lue {
+                Some(p) => p.avec(&b.periode),
+                None => b.periode,
+            });
             let mois = b.periode.fin().mois_civil();
             let infos = InfosPage {
                 logiciel: b.logiciel.clone(),
                 numero: b.numero.clone(),
-                debut: Some(b.periode.debut()),
-                fin: Some(b.periode.fin()),
+                periode: Some(b.periode),
                 mois: Some(mois),
                 ..InfosPage::default()
             };
@@ -1195,7 +1197,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let brut = Montant::du_decimal(brut);
         let nom = cl.nom();
         let du_au = format!("du {} au {}", debut.jj_mm_aaaa(), fin.jj_mm_aaaa());
-        let mut infos = InfosPage { debut: Some(debut), fin: Some(fin), mois: cl.mois(), ..InfosPage::default() };
+        let mut infos = InfosPage { periode: Some(periode), mois: cl.mois(), ..InfosPage::default() };
         if est_aem {
             infos.aem = c.numero.clone();
         } else {
@@ -1430,8 +1432,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         lus: par_logiciel.values().sum(),
         repris: pages_reprises,
         par_logiciel,
-        du,
-        au,
+        periode: lue,
         fiches_a_creer: nouvelles_fiches,
         contrats_nouveaux: contrats_liste.len(),
         contrats: contrats_liste,
@@ -1462,8 +1463,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let reste: Vec<&'static str> = if salaries_certificats.get(&source).is_some_and(|n| *n > 0) { tait } else { Vec::new() };
         let lu = BlocPieces {
             lus: siennes.len(),
-            du: siennes.iter().filter_map(|c| c.c.periode.map(|p| p.debut())).min(),
-            au: siennes.iter().filter_map(|c| c.c.periode.map(|p| p.fin())).max(),
+            periode: siennes.iter().filter_map(|c| c.c.periode).reduce(|a, b| a.avec(&b)),
             contrats_nouveaux: ajoutes.len(),
             contrats: ajoutes,
             confirmes,
@@ -1526,8 +1526,7 @@ fn infos_de(l: &Lu, salarie: Option<&Option<IdSalarie>>) -> InfosPage {
         logiciel: l.b.logiciel.clone(),
         numero: l.b.numero.clone(),
         salarie: salarie.cloned(),
-        debut: Some(l.b.periode.debut()),
-        fin: Some(l.b.periode.fin()),
+        periode: Some(l.b.periode),
         mois: Some(l.mois),
         ..InfosPage::default()
     }

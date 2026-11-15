@@ -333,8 +333,7 @@ pub(crate) fn controler_avenants(ctx: &Contexte, avenants: &[(IdSalarie, Vec<UnA
 fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &IdSalarie, pdf: &std::path::Path, titre: &str, mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, modele: EmpreinteCourte) -> R<ContratParti> {
     Ok(ContratParti {
         salarie: cle.clone(),
-        debut: p.engagement.contrat().debut(),
-        fin: p.engagement.contrat().fin(),
+        contrat: p.engagement.contrat(),
         numero: p.engagement.numero.clone(),
         fichier: NomDeFichier::du(pdf)?,
         spectacle: Some(titre.to_string()),
@@ -1003,8 +1002,7 @@ fn avenant_ecrit(
     };
     let c = ContratParti {
         salarie: salarie.clone(),
-        debut: a.debut,
-        fin: p.engagement.contrat().fin(),
+        contrat: p.engagement.contrat(),
         numero: a.contrat.clone(),
         fichier: NomDeFichier::du(&pdf)?,
         spectacle: Some(p.titre()?),

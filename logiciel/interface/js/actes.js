@@ -249,8 +249,8 @@ function corpsDpae(a) {
         <tr>
           <td>${echapper(x.nom)}</td>
           <td>${x.type_contrat ? echapper(x.type_contrat) : ""}</td>
-          <td>${echapper(jjmmaaaa(x.debut))}</td>
-          <td>${x.fin ? echapper(jjmmaaaa(x.fin))
+          <td>${echapper(jjmmaaaa(x.contrat.du))}</td>
+          <td>${x.contrat.au ? echapper(jjmmaaaa(x.contrat.au))
                       : `<span class="discret">sans terme</span>`}</td>
           <td>${pastilleDeLEtat(x.pastille)}</td>
         </tr>`).join("")}
@@ -620,7 +620,7 @@ async function boiteSignature(mois, seulement) {
       ${contrats.map((c) => `
         <label class="choix">
           <input type="checkbox" class="s-qui" value="${echapper(c.salarie)}"
-                 data-debut="${echapper(c.debut)}"${attributNumero(c)} ${c.en_avenant ? 'data-avenant="1"' : ""}
+                 data-debut="${echapper(c.contrat.du)}"${attributNumero(c)} ${c.en_avenant ? 'data-avenant="1"' : ""}
                  ${coche(c) ? "checked" : ""}>
           <span><b>${echapper(c.nom)}</b> — ${echapper(c.spectacle)},
             ${echapper(c.periode_dit)}
@@ -631,7 +631,7 @@ async function boiteSignature(mois, seulement) {
                   <button type="button" class="lien s-courriel-poser" data-salarie="${echapper(c.salarie)}">Enregistrer</button></span>`) : ""}
             ${c.pastille ? `<br>${pastilleDeLEtat(c.pastille)}` : ""}${c.en_avenant ? `
               <button class="lien s-avenant" data-salarie="${echapper(c.salarie)}"
-                data-debut="${echapper(c.debut)}"${attributNumero(c)}>voir l'avenant</button>` : ""}</span>
+                data-debut="${echapper(c.contrat.du)}"${attributNumero(c)}>voir l'avenant</button>` : ""}</span>
         </label>`).join("")}
     </div>`}
     <div class="actions">
@@ -838,7 +838,7 @@ async function boiteAvenant(mois, salarie, debut, numero) {
   document.getElementById("av-pieces").onclick = (ev) => {
     ev.preventDefault();
     fermerBoite();
-    boitePieces({ salarie, debut, numero, nom: a.nom, fin: a.fin, spectacle: a.spectacle,
+    boitePieces({ salarie, numero, nom: a.nom, bornes: a.bornes, spectacle: a.spectacle,
                 }, "contrat-signature");
   };
   const envoyer = document.getElementById("av-envoyer");

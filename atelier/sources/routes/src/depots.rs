@@ -20,7 +20,7 @@ use engagement::numeros::NumeroContrat;
 use documents::SorteDePieceProduite;
 use envois::etats;
 use envois::releve_retours;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::paris::Moment;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{dossier_du_code, NomDeFichier};
@@ -473,8 +473,7 @@ fn code_urssaf(ent: &droit::fiche::ChampsEntreprise) -> R<declarations::urssaf::
 fn embauche_dpae(p: &Paie, spectacle: bool) -> Embauche {
     Embauche {
         salarie: p.salarie.clone(),
-        debut: p.engagement.contrat().debut(),
-        fin: p.engagement.contrat().fin(),
+        contrat: p.engagement.contrat(),
         nature: p.engagement.nature.clone(),
         spectacle: p.spectacle.clone().filter(|_| spectacle),
     }
@@ -990,9 +989,9 @@ pub(crate) struct EmbaucheDuFichier {
     /// La fiche que l'embauche designe ; `None` : aucune fiche ne porte son identite.
     pub(crate) salarie: Option<IdSalarie>,
     pub(crate) nom: String,
-    pub(crate) debut: Jour,
+    /// Sa date d'embauche, et la fin prevue d'un CDD, telles que le fichier les ecrit.
+    pub(crate) contrat: PeriodeOuverte,
     pub(crate) numero: Option<NumeroContrat>,
-    pub(crate) fin: Option<Jour>,
     pub(crate) type_contrat: Option<String>,
     pub(crate) deja_declaree: bool,
     pastille: Pastille,
@@ -1095,9 +1094,8 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
         lignes.push(EmbaucheDuFichier {
             salarie: trouve.map(|f| f.cle.clone()),
             nom,
-            debut,
+            contrat: PeriodeOuverte::du(debut, e.date_fin).map_err(|x| x.reclasser(Classe::Illisible))?,
             numero,
-            fin: e.date_fin,
             type_contrat,
             deja_declaree: deja,
             // Deja declaree, a voir (elle partirait deux fois) ; a declarer, une information.
