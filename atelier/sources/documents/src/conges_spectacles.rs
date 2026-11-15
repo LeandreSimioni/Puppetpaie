@@ -230,8 +230,7 @@ pub fn arrondi_euro(x: Decimal) -> R<i64> {
 /// Ce que `decouper` et `certificats` lisent d'un engagement.
 #[derive(Debug, Clone)]
 pub struct ContratCs {
-    pub debut: Jour,
-    pub fin: Jour,
+    pub periode: Periode,
     pub dates_travail: Vec<Jour>,
     pub cachets: Cachets,
     pub jours: Jours,
@@ -253,8 +252,7 @@ pub struct MoisPaye {
 impl ContratCs {
     pub fn de(e: &Engagement) -> R<ContratCs> {
         Ok(ContratCs {
-            debut: e.debut,
-            fin: e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de certificat"))?,
+            periode: Periode::du_au(e.debut, e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de certificat"))?)?,
             dates_travail: e.dates_travail.clone(),
             cachets: e.cachets,
             jours: e.jours,
@@ -280,13 +278,14 @@ pub struct PaieCs {
 }
 
 /// Les 31 mars strictement traverses par un contrat.
-fn bornes_31_mars(debut: Jour, fin: Jour) -> Vec<Jour> {
-    debut
+fn bornes_31_mars(contrat: &Periode) -> Vec<Jour> {
+    contrat
+        .debut()
         .annee()
-        .jusqu_a(fin.annee())
+        .jusqu_a(contrat.fin().annee())
         .into_iter()
         .map(|an| an.mois(socle::mois::MoisDeLAnnee::MARS).dernier_jour())
-        .filter(|b| debut <= *b && *b < fin)
+        .filter(|b| contrat.contient(b) && *b != contrat.fin())
         .collect()
 }
 
@@ -330,9 +329,9 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<(Periode, Vec<Jour>, NombreDuCertifica
     if !eng.mois_payes.is_empty() {
         return Ok(periodes_au_mois(eng)?.into_iter().map(|(p, _)| p).collect());
     }
-    let bornes = bornes_31_mars(eng.debut, eng.fin);
+    let bornes = bornes_31_mars(&eng.periode);
     if bornes.is_empty() {
-        return Ok(vec![(Periode::du_au(eng.debut, eng.fin)?, eng.dates_travail.clone(), NombreDuCertificat::de(eng.cachets, eng.jours))]);
+        return Ok(vec![(eng.periode, eng.dates_travail.clone(), NombreDuCertificat::de(eng.cachets, eng.jours))]);
     }
     if let Some(h) = eng.heures.filter(|h| !h.is_zero()) {
         return Err(erreur(
@@ -358,9 +357,9 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<(Periode, Vec<Jour>, NombreDuCertifica
         ));
     }
     let mut periodes = Vec::new();
-    let mut debut = eng.debut;
+    let mut debut = eng.periode.debut();
     let mut tous = bornes;
-    tous.push(eng.fin);
+    tous.push(eng.periode.fin());
     for borne in tous {
         let p = Periode::du_au(debut, borne)?;
         let dates: Vec<Jour> = eng.dates_travail.iter().copied().filter(|x| p.contient(x)).collect();
@@ -461,12 +460,13 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
 /// l. 201-206) : le 31 mars finit un mois, et chaque periode porte les jours travailles et le brut des mois qu'elle
 /// couvre, sans repartition.
 fn periodes_au_mois(e: &ContratCs) -> R<Vec<((Periode, Vec<Jour>, NombreDuCertificat), Montant)>> {
-    let mut bornes = bornes_31_mars(e.debut, e.fin);
-    bornes.push(e.fin);
+    let fin = e.periode.fin();
+    let mut bornes = bornes_31_mars(&e.periode);
+    bornes.push(fin);
     let mut out = Vec::new();
-    let mut debut = e.debut;
+    let mut debut = e.periode.debut();
     for borne in bornes {
-        let couverts: Vec<&MoisPaye> = e.mois_payes.iter().filter(|m| debut <= m.fin && (m.fin <= borne || borne == e.fin)).collect();
+        let couverts: Vec<&MoisPaye> = e.mois_payes.iter().filter(|m| debut <= m.fin && (m.fin <= borne || borne == fin)).collect();
         let jours = NombreDuCertificat::Jours(couverts.iter().map(|m| m.jours).sum::<Jours>());
         out.push(((Periode::du_au(debut, borne)?, Vec::new(), jours), couverts.iter().fold(Montant::ZERO, |a, m| a + m.brut)));
         debut = borne.plus_jours(1)?;
@@ -699,8 +699,8 @@ mod tests {
         Jour::nouveau(an, mo, jo).unwrap()
     }
 
-    fn contrat(debut: Jour, fin: Jour, dates: Vec<Jour>, cachets: usize, jours: usize, heures: Option<Decimal>) -> ContratCs {
-        ContratCs { debut, fin, dates_travail: dates, cachets: Cachets::de_dates(cachets), jours: Jours::de_dates(jours), heures, taux_cachet: Some(socle::grandeurs::MontantUnitaire::du_decimal(Decimal::new(1300, 1))), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
+    fn contrat(periode: Periode, dates: Vec<Jour>, cachets: usize, jours: usize, heures: Option<Decimal>) -> ContratCs {
+        ContratCs { periode, dates_travail: dates, cachets: Cachets::de_dates(cachets), jours: Jours::de_dates(jours), heures, taux_cachet: Some(socle::grandeurs::MontantUnitaire::du_decimal(Decimal::new(1300, 1))), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
     }
 
     /// L'exercice des conges va du 1er avril au 31 mars
@@ -708,7 +708,7 @@ mod tests {
     #[test]
     fn un_contrat_a_cheval_se_coupe_au_31_mars() {
         let dates = vec![j(2026, 3, 30), j(2026, 3, 31), j(2026, 4, 1)];
-        let c = contrat(j(2026, 3, 30), j(2026, 4, 1), dates, 3, 3, None);
+        let c = contrat(Periode::du_au(j(2026, 3, 30), j(2026, 4, 1)).unwrap(), dates, 3, 3, None);
         let p = decouper(&c).unwrap();
         assert_eq!(p.len(), 2);
         assert_eq!((p[0].0.fin(), p[1].0.debut()), (j(2026, 3, 31), j(2026, 4, 1)));
@@ -717,7 +717,7 @@ mod tests {
 
     #[test]
     fn des_heures_sur_le_31_mars_refusent() {
-        let c = contrat(j(2026, 3, 30), j(2026, 4, 1), vec![j(2026, 3, 30)], 1, 1, Some(Decimal::new(60, 1)));
+        let c = contrat(Periode::du_au(j(2026, 3, 30), j(2026, 4, 1)).unwrap(), vec![j(2026, 3, 30)], 1, 1, Some(Decimal::new(60, 1)));
         assert!(decouper(&c).unwrap_err().phrase.contains("porteur d'heures (6.0 h)"));
     }
 }
