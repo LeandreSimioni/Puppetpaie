@@ -481,7 +481,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
     let mut manquants: Vec<Mois> = Vec::new();
     let mut lignes: Vec<engagement::LignePaie> = Vec::new();
     // Un contrat commence dans l'ancien logiciel : ses mois d'avant sont ceux que l'engagement importe a verses.
-    let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.contrat.debut()), numero: eng.numero.clone(), ..Default::default() };
+    let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.contrat().debut()), numero: eng.numero.clone(), ..Default::default() };
     let importe = engagement::importe::continue_par(&ctx.racine, &cherche).map_err(|e| e.reclasser(Classe::Illisible))?;
     let mut bruts = Montant::ZERO;
     let mut jours = socle::grandeurs::Jours::ZERO;
@@ -529,8 +529,8 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
         spectacle: eng.spectacle.clone(),
         dates_travail: dates,
         lignes: Some(lignes),
-        debut: Some(eng.contrat.debut()),
-        fin: eng.contrat.fin(),
+        debut: Some(eng.contrat().debut()),
+        fin: eng.contrat().fin(),
         numero: eng.numero.clone(),
         jours: Some(jours + eng.jours),
         taux_cachet: eng.taux_cachet.map(|t| engagement::Chiffre::de_decimal(t.decimal())),
@@ -570,7 +570,7 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
         if !p.declaree_a_la_caisse_des_conges()? {
             continue;
         }
-        let (cle, debut) = (cle_de(p), p.engagement.contrat.debut());
+        let (cle, debut) = (cle_de(p), p.engagement.contrat().debut());
         let place = p.engagement.place_du_mois()?;
         if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = place {
             poser(&mut dus, cle, debut, None);
@@ -729,7 +729,7 @@ fn mois_puppetpaie(
         let mut paires: Vec<(IdSalarie, Vec<(&PaieCs, NumeroDeCertificat)>)> = Vec::new();
         for (i, p) in paies.iter().enumerate() {
             let cle = cle_de(p);
-            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.contrat.debut()), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
+            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.contrat().debut()), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
             let combien = conges_spectacles::decouper(&pc.engagement)?.len();
             tous.extend(n.suite().take(combien));
             if cles.contains(&cle) {
@@ -805,7 +805,7 @@ fn mois_puppetpaie(
                 if !engagement::signe_ailleurs(&ctx.racine, &p.engagement)? {
                     continue;
                 }
-                for f in crate::gestes::signature::contrat_signe_depose(&ctx.racine, cle, p.engagement.contrat.debut())? {
+                for f in crate::gestes::signature::contrat_signe_depose(&ctx.racine, cle, p.engagement.contrat().debut())? {
                     if !d.deposes_vus.insert(f.clone()) {
                         continue;
                     }

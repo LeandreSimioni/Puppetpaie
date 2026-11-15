@@ -1110,12 +1110,12 @@ pub(crate) fn fiche_de_l_engagement(ctx: &Contexte, eng: &Engagement) -> R<Salar
         let fiche = dispense_de_la_periode(emploi_de(&du_mois, &emploi)?, &au_mois, &derniere)?;
         sante_de_la_suspension(ctx, eng, &au_mois, convention_de_l_employeur(ctx, fiche))?
     } else {
-        convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, &eng.contrat.debut())?, &emploi)?)
+        convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, &eng.contrat().debut())?, &emploi)?)
     };
     let mut fiche = etablissement_du_contrat(fiche, eng);
     // L'embauche que ce contrat est (`DebutDeLAnciennete::Embauche`) date l'anciennete que la fiche ne dit pas encore ;
     // une anciennete ni dite ni lue reste vide, et ce qui la lit refuse en la nommant.
-    match DebutDeLAnciennete::de(&ctx.racine, &fiche.fiche.champs, cle, eng.contrat.debut())? {
+    match DebutDeLAnciennete::de(&ctx.racine, &fiche.fiche.champs, cle, eng.contrat().debut())? {
         DebutDeLAnciennete::Embauche(j) => fiche.fiche.champs.date_anciennete = Some(j),
         DebutDeLAnciennete::Dite(_) | DebutDeLAnciennete::NonDite => {}
     }
@@ -1245,13 +1245,13 @@ fn part_patronale(r: &Rubrique) -> Option<Taux> {
 pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
     let eng = &p.engagement;
     let nat = eng.nat()?;
-    let caisse = droit::caisse_conges::affilie(&nat, &p.salarie, &eng.periode_du_contrat())?;
+    let caisse = droit::caisse_conges::affilie(&nat, &p.salarie, &eng.contrat())?;
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(
         eng.nature,
         eng.motif_recours,
         &crate::numeros::le_contrat(eng.numero.as_ref(), &eng.salarie),
     )?;
-    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.periode_du_contrat())?;
+    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.contrat())?;
     bareme_du_salarie(ctx, &p.salarie, &nat, &eng.periode_payee()?.fin(), caisse, cpf_cdd, majoration)
 }
 
@@ -1330,7 +1330,7 @@ fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mu
     let cle = fiche.id.to_string();
     let payee = eng.periode_payee()?;
     let fin = payee.fin();
-    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id, eng.numero.as_ref(), &eng.contrat.debut(), &payee)?;
+    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id, eng.numero.as_ref(), &eng.contrat().debut(), &payee)?;
     let Some(premiere) = suspensions.first() else { return Ok(fiche) };
     let motifs: Vec<&str> = suspensions.iter().filter_map(|s| s.suspension()).map(|s| s.motif.code()).collect();
     let ent = ctx.entreprise_au(&fin);
@@ -1382,7 +1382,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
 /// son contrat et la fiche qu'elle a lue.
 pub(crate) fn declaree_a_la_caisse_des_conges(p: &Paie) -> R<bool> {
     let e = &p.engagement;
-    droit::caisse_conges::affilie(&*e.nat()?, &p.salarie, &e.periode_du_contrat())
+    droit::caisse_conges::affilie(&*e.nat()?, &p.salarie, &e.contrat())
 }
 
 /// La meme question pour la saisie `e` d'un contrat paye au mois, avant que son engagement ne soit construit (le solde de
@@ -1409,7 +1409,7 @@ fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &
     };
     let jours = socle::date::Duree::jours(rust_decimal::prelude::ToPrimitive::to_u32(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?);
     let artiste = sal.statut.dite() == Some(&Statut::Artiste);
-    let plafond = droit::essai::plafond(nat, &eng.periode_du_contrat(), sal.statut_conventionnel.dite().copied(), artiste, ctx.entreprise.idcc.dite())?;
+    let plafond = droit::essai::plafond(nat, &eng.contrat(), sal.statut_conventionnel.dite().copied(), artiste, ctx.entreprise.idcc.dite())?;
     droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle))
 }
 
@@ -1475,7 +1475,7 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
     };
     // Le contrat est-il declare a la caisse des Conges Spectacles ? (`caisse_conges::affilie` : un CDDU de moins de
     // douze mois, un CDD de droit commun de moins de douze mois d'un artiste.)
-    let caisse = droit::caisse_conges::affilie(&nat, &sal, &eng.periode_du_contrat())?;
+    let caisse = droit::caisse_conges::affilie(&nat, &sal, &eng.contrat())?;
     // Le contrat ouvre-t-il la contribution CPF-CDD (C. trav. L. 6331-6) ? Un CDD de droit commun, ni saisonnier,
     // ni contrat aide (`droit::cpf_cdd`, la regle du bloc 44).
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(
@@ -1483,7 +1483,7 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
         eng.motif_recours,
         &crate::numeros::le_contrat(eng.numero.as_ref(), &eng.salarie),
     )?;
-    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.periode_du_contrat())?;
+    let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.contrat())?;
     let bar = bareme_du_salarie(ctx, &sal, &nat, &fin_periode, caisse, cpf_cdd, majoration)?;
     let rubriques_bulletin = &bar.rubriques_bulletin;
     // Les jours du contrat, que les plafonds journaliers et les heures d'un cachet multiplient.
@@ -2011,7 +2011,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
         artiste,
         periode: e.periode_payee()?,
         // Un contrat paye a l'engagement a son terme (`Engagement::contrat` : sans fin seulement pour un permanent ouvert).
-        contrat: e.contrat.fermee().ok_or_else(|| socle::fichiers::absent("fin"))?,
+        contrat: e.contrat().fermee().ok_or_else(|| socle::fichiers::absent("fin"))?,
         dates_travail: e.dates_travail.clone(),
         jours: e.jours,
     };

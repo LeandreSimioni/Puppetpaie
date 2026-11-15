@@ -1607,8 +1607,8 @@ impl<'a> Moteur<'a> {
             } else {
                 let code_emploi = p.engagement.code_emploi_ft.as_ref().or(sal.code_emploi_ft.dite());
                 let ent = &self.ctx.entreprise;
-                let remise = droit::echeances::remise_du_contrat(&p.engagement.contrat.debut(), ent.idcc.dite(), code_emploi, ent.feries_chomes())?;
-                Some(Echeances { dpae: droit::echeances::dpae(&p.engagement.contrat.debut()), contrat: remise })
+                let remise = droit::echeances::remise_du_contrat(&p.engagement.contrat().debut(), ent.idcc.dite(), code_emploi, ent.feries_chomes())?;
+                Some(Echeances { dpae: droit::echeances::dpae(&p.engagement.contrat().debut()), contrat: remise })
             };
             // RECALCULEE D'ELLE-MEME (`engagement::etats::du_mois`) : pourquoi, et quand.
             let recalcul = match e.valide() {
@@ -1617,7 +1617,7 @@ impl<'a> Moteur<'a> {
             };
             let recalcul = recalcul.as_ref().and_then(engagement::etats::phrase_du_recalcul);
             // REPRIS D'UN ANCIEN LOGICIEL : la carte le dit (`engagement::importe::vient_d_un_ancien_logiciel`).
-            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.contrat.debut(), p.engagement.numero.as_ref())?;
+            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.contrat().debut(), p.engagement.numero.as_ref())?;
             // SIGNE AILLEURS : son contrat ecrit ne se fait pas signer ici, ses avenants si (`engagement::signe_ailleurs`).
             let ailleurs = engagement::signe_ailleurs(&self.ctx.racine, &p.engagement)?;
             // ECRIT : le contrat de cet engagement se fait signer ici (`engagement::contrat_a_signer`).
@@ -1629,8 +1629,8 @@ impl<'a> Moteur<'a> {
                 repris,
                 ecrit: engagement::contrat_a_signer(&self.ctx.racine, &p.engagement)?,
                 ailleurs,
-                dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, p.engagement.contrat.debut())).transpose()?,
-                anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, p.engagement.contrat.debut(), le_mois)?,
+                dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, p.engagement.contrat().debut())).transpose()?,
+                anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, p.engagement.contrat().debut(), le_mois)?,
             });
             // CE QUE CE SALARIE RECOIT POUR CETTE PAIE : le bulletin s'il y a une paie, le certificat Conges Spectacles
             // du contrat declare a la caisse qui finit (`crate::dossier_salarie::certificats_dus`), l'AER Cinema
@@ -1659,7 +1659,7 @@ impl<'a> Moteur<'a> {
             // l'ancienne date vaut-elle (`crate::regularisation::dpae_d_une_date_changee`) ?
             let mut date_changee = None;
             if let Some(avant) = debut_declare(&refaire) {
-                let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(avant, p.engagement.contrat.debut())?;
+                let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(avant, p.engagement.contrat().debut())?;
                 if !vaut {
                     dpae_v = None;
                     partie_le = None;
@@ -1711,9 +1711,9 @@ impl<'a> Moteur<'a> {
                 spectacle,
                 libelle_nature: Some(nat.libelle.clone()),
                 numero: p.engagement.numero.clone(),
-                debut: Some(p.engagement.contrat.debut()),
+                debut: Some(p.engagement.contrat().debut()),
                 // Un CDI n'a pas de fin : rien, comme `Engagement::canon`.
-                fin: p.engagement.contrat.fin(),
+                fin: p.engagement.contrat().fin(),
                 etablissement,
                 echeances,
                 valide: e.valide().map(|v| v.le()),
@@ -2525,7 +2525,7 @@ impl<'a> Moteur<'a> {
                 // quand une date d'embauche a change : le reste du temps, rien a dire.
                 let pourquoi = match ancienne {
                     Some(a) => {
-                        let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(a, p.engagement.contrat.debut())?;
+                        let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(a, p.engagement.contrat().debut())?;
                         if vaut {
                             continue;
                         }
@@ -2541,8 +2541,8 @@ impl<'a> Moteur<'a> {
                     numero,
                     nom: super::nom_a_l_ecran(&p.salarie, cle),
                     spectacle: titre,
-                    debut: p.engagement.contrat.debut(),
-                    fin: p.engagement.contrat.fin(),
+                    debut: p.engagement.contrat().debut(),
+                    fin: p.engagement.contrat().fin(),
                     empreinte: empreinte_de_l_embauche(&p.engagement, &p.salarie),
                     pourquoi,
                 });
@@ -3024,8 +3024,8 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
         nature: &'a str,
     }
     let embauche = Embauche {
-        debut: e.contrat.debut(),
-        fin: e.contrat.fin(),
+        debut: e.contrat().debut(),
+        fin: e.contrat().fin(),
         spectacle: e.spectacle.as_ref(),
         nir: sal.nir.dite(),
         nom: sal.nom.portee(),

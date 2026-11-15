@@ -178,7 +178,7 @@ preavis ({}) -- CCH-12 de S21.G00.62.006.",
 /// salaire habituel precede le debut du preavis (CCH-12) : sans saisie, le moteur refuse plutot que de le deviner.
 pub fn dernier_jour_paye(e: &Engagement) -> R<Jour> {
     let numero = e.numero_declare()?;
-    let fin = e.contrat.fin().ok_or_else(|| socle::refus!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
+    let fin = e.contrat().fin().ok_or_else(|| socle::refus!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
     let preavis = e.preavis.as_ref();
     let type_preavis = preavis.map(|p| p.genre);
     let debut_preavis = preavis.and_then(|p| p.debut);
@@ -200,7 +200,7 @@ precede le debut du preavis (CCH-12, cahier technique DSN p. 275). Il se saisit 
             fin
         }
     };
-    controler_62_006(&jour_paye, &e.contrat.debut(), &fin, type_preavis, debut_preavis.as_ref())
+    controler_62_006(&jour_paye, &e.contrat().debut(), &fin, type_preavis, debut_preavis.as_ref())
         .map_err(|m| m.reformuler(|m| format!("Contrat {} : {}", numero, m)))?;
     Ok(jour_paye)
 }
@@ -255,11 +255,11 @@ clause de preavis applicable », et les dates sont alors interdites.",
             )));
         }
         // CCH-16 : le preavis commence apres le debut du contrat.
-        if pd < e.contrat.debut() {
+        if pd < e.contrat().debut() {
             return Err(Echec::impossible(format!(
                 "Preavis : il commence le {}, avant le debut du contrat ({}) -- CCH-16 de S21.G00.63.002.",
                 pd.iso(),
-                e.contrat.debut().iso()
+                e.contrat().debut().iso()
             )));
         }
         // CCH-13 : le preavis commence apres la notification de la rupture.
@@ -302,12 +302,12 @@ preavis de L1234-1."
 
     // CCH-11 de S21.G00.62.003 : la notification tombe dans le contrat.
     if let Some(nt_j) = fin.notification {
-        if !(e.contrat.debut() <= nt_j && nt_j <= fin.fin) {
+        if !(e.contrat().contient(&nt_j) && nt_j <= fin.fin) {
             return Err(Echec::impossible(format!(
                 "Notifiée le {} : la rupture se notifie pendant le contrat, entre son premier jour, le {}, et sa fin, le \
 {} -- CCH-11 de S21.G00.62.003.",
                 nt_j.jj_mm_aaaa(),
-                e.contrat.debut().jj_mm_aaaa(),
+                e.contrat().debut().jj_mm_aaaa(),
                 fin.fin.jj_mm_aaaa()
             )));
         }
@@ -326,7 +326,7 @@ signalement sans elle. Rien n'est ecrit.",
     // S21.G00.62.006 se lit sur le contrat, comme dans la mensuelle ; ses controles valent aussi contre la fin et le
     // preavis que ce signalement declare (62.001, 63.001, 63.002).
     let jour_paye = dernier_jour_paye(e).map_err(Echec::Impossible)?;
-    controler_62_006(&jour_paye, &e.contrat.debut(), &fin.fin, Some(fin.type_preavis), debut_p.as_ref())
+    controler_62_006(&jour_paye, &e.contrat().debut(), &fin.fin, Some(fin.type_preavis), debut_p.as_ref())
         .map_err(Echec::Impossible)?;
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).

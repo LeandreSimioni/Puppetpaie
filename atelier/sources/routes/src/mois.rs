@@ -1428,14 +1428,14 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     let porte = if nat.duree_indeterminee { "La fin du contrat (licenciement, démission…)" } else { "Une rupture avant terme" };
     // Un contrat paye au mois (CDI, CDD) dit sa fin dans sa case : elle se tape, le mois ou elle a lieu.
     if nat.duree_indeterminee || nat.mensuelle() {
-        return Ok(Some(Rupture { porte, fin: e.contrat.fin() }));
+        return Ok(Some(Rupture { porte, fin: e.contrat().fin() }));
     }
     // Un contrat aux cachets finit son dernier jour travaille ; le bloc 62 s'ecrit ce mois-la et lui seul (fiche n° 3344,
     // `fin_de_contrat` de `contrats-base.json`) : sa rupture se dit ce mois-la.
     if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.place_du_mois()? {
         return Ok(None);
     }
-    Ok(Some(Rupture { porte, fin: Some(match e.contrat.fin() {
+    Ok(Some(Rupture { porte, fin: Some(match e.contrat().fin() {
         Some(f) => f,
         None => e.periode_payee()?.fin(),
     }) }))
@@ -1462,8 +1462,8 @@ fn numero_a_dire(ctx: &Contexte, salarie: &IdSalarie, debut: Jour) -> R<Vec<&'st
 /// Un contrat commence avant le logiciel (`engagement::stock::commence_avant_le_logiciel`) a ete signe ailleurs : il
 /// n'appelle que la case de son numero deja declare en DSN (`NUMERO_DIT`).
 fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Vec<&'static str>> {
-    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, e.contrat.debut(), e.mois)? {
-        return numero_a_dire(ctx, &e.salarie, e.contrat.debut());
+    if engagement::stock::commence_avant_le_logiciel(&ctx.racine, e.contrat().debut(), e.mois)? {
+        return numero_a_dire(ctx, &e.salarie, e.contrat().debut());
     }
     if !engagement::contrat_a_signer(&ctx.racine, e)? {
         return Ok(Vec::new());
@@ -1698,9 +1698,9 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         if let Some(n) = e.numero.as_ref() {
             m.push(format!("contrat {}", n));
         }
-        let mut bornes = match e.contrat.fin() {
-            Some(f) => format!("{} → {}", e.contrat.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
-            None => format!("{} →", e.contrat.debut().jj_mm_aaaa()),
+        let mut bornes = match e.contrat().fin() {
+            Some(f) => format!("{} → {}", e.contrat().debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+            None => format!("{} →", e.contrat().debut().jj_mm_aaaa()),
         };
         if e.place_du_mois()? != PlaceDuMois::Seul {
             let payee = e.periode_payee()?;
@@ -1719,8 +1719,8 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     // LA LIGNE REPLIEE DU CONTRAT : ses bornes, son numero, et ce qu'il fait par rapport au mois (en cours depuis un
     // mois passe, se poursuit au mois suivant) ; un contrat sans terme se dit par son debut.
     let contrat_dit = {
-        let debut = e.contrat.debut();
-        let mut t = match e.contrat.fin() {
+        let debut = e.contrat().debut();
+        let mut t = match e.contrat().fin() {
             Some(f) => format!("Contrat du {} au {}", debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
             None if nat.mensuelle() => format!("Contrat du {}, sans terme", debut.jj_mm_aaaa()),
             None => format!("Contrat du {}", debut.jj_mm_aaaa()),
@@ -1728,7 +1728,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         if let Some(n) = &e.numero {
             t.push_str(&format!(" · n° {}", n));
         }
-        if e.contrat.fin().is_some() {
+        if e.contrat().fin().is_some() {
             let place = e.place_du_mois()?;
             if let PlaceDuMois::Dernier | PlaceDuMois::Milieu = place {
                 t.push_str(&format!(" — en cours depuis {}", debut.mois_civil().libelle(Graphie::Accentuee)));
@@ -1750,8 +1750,8 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         salarie,
         spectacle,
         nature: NatureVue { cle: nat.cle, libelle: nat.libelle.clone(), mensuelle: nat.mensuelle() },
-        debut: e.contrat.debut(),
-        fin: e.contrat.fin(),
+        debut: e.contrat().debut(),
+        fin: e.contrat().fin(),
         contrat: ContratVu {
             place: e.place_du_mois()?,
             chevrons: chevrons_dits(e)?,
@@ -1811,9 +1811,9 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
 /// avant, se poursuit apres), et le mois voisin ou mene le clic. `None` du cote ou il ne deborde pas.
 pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
     let clair = |m: Mois| m.libelle(Graphie::Accentuee);
-    let bornes = match e.contrat.fin() {
-        Some(f) => format!("Contrat du {} au {}", e.contrat.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
-        None => format!("Contrat du {}, sans date de fin", e.contrat.debut().jj_mm_aaaa()),
+    let bornes = match e.contrat().fin() {
+        Some(f) => format!("Contrat du {} au {}", e.contrat().debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+        None => format!("Contrat du {}, sans date de fin", e.contrat().debut().jj_mm_aaaa()),
     };
     let mois = e.mois_du_contrat()?;
     let premier = e.debut_mois();
@@ -1831,7 +1831,7 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
     let apres = match place {
         PlaceDuMois::Seul | PlaceDuMois::Dernier => None,
         PlaceDuMois::Premier | PlaceDuMois::Milieu => {
-            let suite = match (e.contrat.fin(), mois.last()) {
+            let suite = match (e.contrat().fin(), mois.last()) {
                 (Some(_), Some(&j)) => format!("se poursuit jusqu'en {}", clair(j)),
                 _ => "se poursuit".to_string(),
             };

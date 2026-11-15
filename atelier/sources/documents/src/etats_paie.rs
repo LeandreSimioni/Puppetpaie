@@ -1388,9 +1388,9 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 ),
             };
             let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie().emploi.en_texte());
-            let debut = e.contrat.debut().iso();
+            let debut = e.contrat().debut().iso();
             // La fin du contrat, sinon son dernier jour travaille.
-            let fin = match e.contrat.fin() {
+            let fin = match e.contrat().fin() {
                 Some(f) => Some(f.iso()),
                 None => e.dates_travail.last().map(|j| j.iso()),
             };

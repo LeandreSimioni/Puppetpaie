@@ -807,8 +807,8 @@ impl Importe {
 
         // Le bareme de la paie range les bases ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let fin_periode = engagement.periode_payee()?.fin();
-        let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.periode_du_contrat())?;
-        let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.periode_du_contrat())?)?;
+        let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.contrat())?;
+        let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.contrat())?)?;
         // Un regroupement n'est pas une rubrique du bareme : sa base ne se range pas.
         // La base qu'imprime le bulletin (un nombre lu) se range dans ce que l'assiette compte : la porte de cette lecture.
         fn de_cotisation(l: &CotisationImprimee) -> Option<&droit::forme_bareme::IdDeCotisation> {

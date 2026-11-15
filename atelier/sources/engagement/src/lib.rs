@@ -72,7 +72,8 @@ pub struct Engagement {
     pub dates_travail: Vec<Jour>,
     pub lignes: Vec<LignePaie>,
     /// Les dates du contrat : son debut, et sa fin quand elle est dite (seul un contrat permanent ouvert n'en a pas).
-    pub contrat: PeriodeOuverte,
+    /// Elles se lisent par `contrat()`.
+    contrat: PeriodeOuverte,
     /// Le numero du contrat (S21.G00.40.009) : `numeros::former` le donne a la validation ; `None` avant.
     pub numero: Option<numeros::NumeroContrat>,
     pub mois: Mois,
@@ -708,14 +709,14 @@ impl Engagement {
     }
 
     /// Les dates du contrat : son debut, et sa fin quand elle est dite (un permanent ouvert n'en a pas).
-    pub fn periode_du_contrat(&self) -> PeriodeOuverte {
+    pub fn contrat(&self) -> PeriodeOuverte {
         self.contrat
     }
 
     /// La place de son mois dans le contrat (`PlaceDuMois`) : il y commence s'il debute ce mois-ci, il y finit si sa fin
     /// tombe ce mois-ci. Refus : un contrat qui ne touche pas ce mois.
     pub fn place_du_mois(&self) -> R<PlaceDuMois> {
-        let contrat = self.contrat;
+        let contrat = self.contrat();
         let dans = contrat_dans_le_mois(&contrat, self.mois, &self.nom)?;
         Ok(match (dans.debut() == contrat.debut(), Some(dans.fin()) == contrat.fin()) {
             (true, true) => PlaceDuMois::Seul,
@@ -730,7 +731,7 @@ impl Engagement {
     pub fn periode_payee(&self) -> R<Periode> {
         match self.periode {
             Some(p) => Ok(p),
-            None => contrat_dans_le_mois(&self.contrat, self.mois, &self.nom),
+            None => contrat_dans_le_mois(&self.contrat(), self.mois, &self.nom),
         }
     }
 
@@ -762,9 +763,9 @@ impl Engagement {
     /// Les mois AAAA-MM que couvre le contrat, du premier au dernier : un contrat sans fin court jusqu'au mois de paie.
     /// Refus : un contrat sans fin qui commence apres le mois de paie.
     pub fn mois_du_contrat(&self) -> R<Vec<Mois>> {
-        Ok(match self.contrat.fermee() {
+        Ok(match self.contrat().fermee() {
             Some(c) => c.mois(),
-            None => Periode::du_au(self.contrat.debut(), self.fin_mois())?.mois(),
+            None => Periode::du_au(self.contrat().debut(), self.fin_mois())?.mois(),
         })
     }
 
@@ -825,7 +826,7 @@ impl Engagement {
             spectacle: self.spectacle.clone(),
             dates_travail: self.dates_travail.clone(),
             lignes: self.lignes.iter().map(LignePaie::canon).collect(),
-            contrat: self.contrat,
+            contrat: self.contrat(),
             numero: self.numero.clone(),
             mois: self.mois,
             planning: self.planning.clone(),
@@ -1203,7 +1204,7 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
     // L'artiste de cirque en contrat a duree determinee de la 1285 dont le contrat finit dans ce mois : son metier est
     // range « cirque » dans la grille de la 1285 (`emplois-base.json`, `minima`), la grille de X.3.5.
     let fin_mois = eng.fin_mois();
-    let fin_cirque = match eng.contrat.fin().filter(|f| *f <= fin_mois) {
+    let fin_cirque = match eng.contrat().fin().filter(|f| *f <= fin_mois) {
         Some(f) if !eng.nat()?.duree_indeterminee && droit::versement::au_plus_tard_cirque_1285(&f)? < verse => {
             let ent = ctx.entreprise_au(&fin_mois);
             let fiche = crate::calcul::fiche_de_l_engagement(ctx, eng)?;
@@ -1218,11 +1219,11 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
 
 fn notifiee_pendant_le_contrat(e: &saisie::Carte, eng: &Engagement) -> R<()> {
     let Some(n) = e.notification_rupture else { return Ok(()) };
-    if eng.contrat.contient(&n) {
+    if eng.contrat().contient(&n) {
         return Ok(());
     }
-    let debut = eng.contrat.debut().jj_mm_aaaa();
-    let bornes = match eng.contrat.fin() {
+    let debut = eng.contrat().debut().jj_mm_aaaa();
+    let bornes = match eng.contrat().fin() {
         Some(f) => format!("entre son premier jour, le {}, et sa fin, le {}", debut, f.jj_mm_aaaa()),
         None => format!("au plus tôt son premier jour, le {}", debut),
     };
@@ -1886,7 +1887,7 @@ pub fn contrat_a_signer(racine: &Path, eng: &Engagement) -> R<bool> {
 /// document indiquant ces modifications », `atelier/reference/sources/code-du-travail/xml/R1221-40.xml`), qui ne connait
 /// pas son texte et dit en clair ce qui change (`documents::avenant::changements_en_clair`).
 pub fn signe_ailleurs(racine: &Path, eng: &Engagement) -> R<bool> {
-    signe_ailleurs_de(racine, &*eng.nat()?, &eng.salarie, eng.contrat.debut(), eng.numero.as_ref(), eng.mois)
+    signe_ailleurs_de(racine, &*eng.nat()?, &eng.salarie, eng.contrat().debut(), eng.numero.as_ref(), eng.mois)
 }
 
 /// `signe_ailleurs`, de ce que l'engagement dit : sa nature, son salarie, son debut, son numero, et le mois d'ou on le
@@ -1905,7 +1906,7 @@ fn suivre_permanent(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     let qui = qui_de(&fiche)?;
     let libelle = eng.nat()?.libelle.clone();
     if let PlaceDuMois::Seul | PlaceDuMois::Dernier = eng.place_du_mois()? {
-        let fin = eng.contrat.fin().ok_or_else(|| refus("fin"))?;
+        let fin = eng.contrat().fin().ok_or_else(|| refus("fin"))?;
         avis.push(Avis {
             info: true,
             texte: format!(
@@ -1937,7 +1938,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     }
     let fiche = fiche_du_salarie(ctx, &eng.salarie)?;
     let qui = qui_de(&fiche)?;
-    let contrat = eng.contrat.fermee().ok_or_else(|| refus("contrat a cheval sans fin"))?;
+    let contrat = eng.contrat().fermee().ok_or_else(|| refus("contrat a cheval sans fin"))?;
     let bornes = format!("du {} au {}", contrat.debut().jj_mm_aaaa(), contrat.fin().jj_mm_aaaa());
     let mois_du_contrat = eng.mois_du_contrat()?;
     if let PlaceDuMois::Dernier | PlaceDuMois::Milieu = place_du_mois {

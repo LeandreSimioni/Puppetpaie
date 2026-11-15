@@ -108,7 +108,7 @@ pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     if !droit::caisse_conges::intermittent(&*e.nat()?, &p.salarie)? {
         return Ok(false);
     }
-    Ok(e.contrat.fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
+    Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
 }
 
 /// LA FIN DE CONTRAT QUI SE SIGNALE (CDD et CDI de droit commun, CDDU rompu avant son terme : `Nature::signalement_fctu`)
@@ -125,7 +125,7 @@ pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     if !nat.signalement_fctu(e.motif_rupture) {
         return Ok(false);
     }
-    Ok(e.contrat.fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
+    Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
 }
 
 /// Pourquoi une attestation n'est pas rendue.
@@ -333,7 +333,7 @@ impl PaieAer {
     pub fn du_mois(p: &engagement::calcul::Paie) -> socle::echec::R<PaieAer> {
         let e = &p.engagement;
         let numero = e.numero.clone().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
-        if e.contrat.fin().is_none() {
+        if e.contrat().fin().is_none() {
             return Err(socle::refus!("contrat {} sans fin", numero));
         }
         let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures };
@@ -537,7 +537,7 @@ pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies
             continue;
         }
         let numero = e.numero.clone().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
-        let mut m = e.contrat.debut().mois_civil();
+        let mut m = e.contrat().debut().mois_civil();
         while m < periode {
             for q in paies_du_mois(m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_ref() == Some(&numero) && !q.engagement.sans_paie()) {
                 out.push(PaieAer::du_mois(q)?);

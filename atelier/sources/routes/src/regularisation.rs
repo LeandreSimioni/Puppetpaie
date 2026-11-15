@@ -285,14 +285,14 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
     let r_avant = avant.map(resume);
     let r_apres = resume(apres);
     let ecart = avant.map(|a| ecart(a, apres));
-    let corrigees = apres.engagement.periode_du_contrat();
-    let dates = match avant.map(|a| a.engagement.periode_du_contrat()) {
+    let corrigees = apres.engagement.contrat();
+    let dates = match avant.map(|a| a.engagement.contrat()) {
         Some(declarees) if declarees != corrigees => Some(phrase_des_dates(mois, &declarees, &corrigees)),
         _ => None,
     };
     let contrat = match &apres.engagement.numero {
-        Some(n) => format!("contrat {}, {}", n, apres.engagement.contrat.debut().jj_mm_aaaa()),
-        None => format!("contrat du {}", apres.engagement.contrat.debut().jj_mm_aaaa()),
+        Some(n) => format!("contrat {}, {}", n, apres.engagement.contrat().debut().jj_mm_aaaa()),
+        None => format!("contrat du {}", apres.engagement.contrat().debut().jj_mm_aaaa()),
     };
     let dit = |m: Montant| ecrit::centimes::texte(m).map_err(refus);
     let montants = match &r_avant {
@@ -303,7 +303,7 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
         infos_dit: format!("{} — {}", contrat, montants),
         portee_dit: "prochaine DSN".to_string(),
         salarie: apres.salarie.id.clone(),
-        debut: apres.engagement.contrat.debut(),
+        debut: apres.engagement.contrat().debut(),
         nom: nom_de(apres),
         spectacle: apres.titre()?,
         numero: apres.engagement.numero.clone(),

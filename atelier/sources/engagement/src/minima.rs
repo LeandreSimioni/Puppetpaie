@@ -74,7 +74,7 @@ fn horaire_du_mensuel(mensuel: Decimal, heures: Decimal) -> Decimal {
 
 /// La duree du contrat en jours calendaires, bornes comprises.
 fn jours_du_contrat(eng: &Engagement) -> Option<Duree<EnJours>> {
-    eng.contrat.fermee().map(|c| c.duree())
+    eng.contrat().fermee().map(|c| c.duree())
 }
 
 /// Le dernier jour de la periode payee : celui ou l'anciennete se compte (un CDI n'a pas de fin).
@@ -410,7 +410,7 @@ impl<'a> Cx<'a> {
             let Some(fonction) = self.fonction(&IDCC_3097, |f| techniciens.is_some_and(|m| m.contains_key(f)))? else { return Ok(None) };
             let Some(semaine) = techniciens.and_then(|m| m.get(&fonction)) else { return Ok(None) };
             let mut semaine = semaine.0;
-            let debut = self.paie.engagement.contrat.debut().iso();
+            let debut = self.paie.engagement.contrat().debut().iso();
             if debut.as_str() < "2026-05-01" {
                 if let Some(a) = c.avant_2026_05.as_ref().and_then(|a| a.montants.get(&fonction)) {
                     semaine = a.0;

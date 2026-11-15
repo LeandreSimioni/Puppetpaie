@@ -112,9 +112,9 @@ pub(crate) struct Choisis {
 
 /// « du 12/01/2026 au 30/06/2026 », ou « à partir du 12/01/2026 » pour un contrat sans terme.
 fn periode_de(p: &Paie) -> String {
-    match p.engagement.contrat.fin() {
-        Some(f) => format!("du {} au {}", p.engagement.contrat.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
-        None => format!("à partir du {}", p.engagement.contrat.debut().jj_mm_aaaa()),
+    match p.engagement.contrat().fin() {
+        Some(f) => format!("du {} au {}", p.engagement.contrat().debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+        None => format!("à partir du {}", p.engagement.contrat().debut().jj_mm_aaaa()),
     }
 }
 
@@ -260,7 +260,7 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: Mois, paies: &[Paie
     let voulus = &choisis.salaries;
     let cibles = &choisis.contrats;
     // Une cible sans numero vise le contrat de ce salarie qui commence ce jour-la, quel que soit son numero.
-    let vise = |c: &Cible, cle: &IdSalarie, p: &Paie| c.0 == *cle && c.1 == p.engagement.contrat.debut().iso() && c.2.as_ref().is_none_or(|n| p.engagement.numero.as_ref() == Some(n));
+    let vise = |c: &Cible, cle: &IdSalarie, p: &Paie| c.0 == *cle && c.1 == p.engagement.contrat().debut().iso() && c.2.as_ref().is_none_or(|n| p.engagement.numero.as_ref() == Some(n));
     let mut par_salarie: ParSalarie = Vec::new();
     for (rang, p) in paies.iter().enumerate() {
         let cle = cle_de(p);
@@ -333,8 +333,8 @@ pub(crate) fn controler_avenants(ctx: &Contexte, avenants: &[(IdSalarie, Vec<UnA
 fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &IdSalarie, pdf: &std::path::Path, titre: &str, mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, modele: EmpreinteCourte) -> R<ContratParti> {
     Ok(ContratParti {
         salarie: cle.clone(),
-        debut: p.engagement.contrat.debut(),
-        fin: p.engagement.contrat.fin(),
+        debut: p.engagement.contrat().debut(),
+        fin: p.engagement.contrat().fin(),
         numero: p.engagement.numero.clone(),
         fichier: NomDeFichier::du(pdf)?,
         spectacle: Some(titre.to_string()),
@@ -515,7 +515,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         let lignes = envois::journal::lire(&ctx.racine, None, None, None)?;
         for (k, ps, _) in &par_salarie {
             for p in ps {
-                let debut = p.engagement.contrat.debut();
+                let debut = p.engagement.contrat().debut();
                 // Le contrat qui part est remplace, lui (son numero) : un autre contrat du salarie n'a rien a remplacer.
                 let Some(parti) = envois::etats::contrat_parti(&lignes, k, p.engagement.numero.as_ref()) else {
                     return Err(refus(format!("Le contrat de {} du {} n'est jamais parti : il n'a rien à remplacer, il s'envoie. Rien n'est parti.", k, debut.jj_mm_aaaa())));
@@ -621,7 +621,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         )?;
         messages.push(message);
         for (((p, t), fige), rappel) in ps.iter().zip(&titres).zip(figes).zip(&rappels) {
-            let debut = p.engagement.contrat.debut();
+            let debut = p.engagement.contrat().debut();
             let mut c = entree_du_contrat(ctx, p, cle, &pdf, t, s_mois, &ent, fige)?;
             // Ce qu'il faut pour reconnaitre la reponse : le code, et l'adresse dont elle doit venir.
             c.code = Some(code.clone());
@@ -1004,7 +1004,7 @@ fn avenant_ecrit(
     let c = ContratParti {
         salarie: salarie.clone(),
         debut: a.debut,
-        fin: p.engagement.contrat.fin(),
+        fin: p.engagement.contrat().fin(),
         numero: a.contrat.clone(),
         fichier: NomDeFichier::du(&pdf)?,
         spectacle: Some(p.titre()?),

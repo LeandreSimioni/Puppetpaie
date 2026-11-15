@@ -272,11 +272,11 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
     let mensuel = if eng.nat()?.mensuelle() {
         let mut arret = false;
         for imp in crate::imprevus::du_mois_du_salarie(&ctx.racine, mois, None, cle)? {
-            arret |= crate::imprevus::est_un_arret(&imp) && crate::imprevus::du_contrat(&imp, cle, eng.numero.as_ref(), &eng.contrat.debut())?;
+            arret |= crate::imprevus::est_un_arret(&imp) && crate::imprevus::du_contrat(&imp, cle, eng.numero.as_ref(), &eng.contrat().debut())?;
         }
         Some(MoisPaye {
             presence: eng.periode_payee()?,
-            contrat_debut: eng.contrat.debut(),
+            contrat_debut: eng.contrat().debut(),
             numero: eng.numero.clone(),
             pris: conges_pris_de_la_paie(&ctx.racine, p)?,
             arret,
@@ -941,7 +941,7 @@ pub(crate) fn compteur_au_bulletin(ctx: &Contexte, au: &AuMois, paie: &Paie, moi
     if let Some(presence) = eng.periode_payee()?.croise(&reference) {
         let cle_fiche = cle_de_fiche(ctx, cle)?;
         let non_acquis =
-            crate::imprevus::jours_de_conges_non_acquis(&ctx.racine, &cle_fiche, eng.numero.as_ref(), &eng.contrat.debut(), &presence)?;
+            crate::imprevus::jours_de_conges_non_acquis(&ctx.racine, &cle_fiche, eng.numero.as_ref(), &eng.contrat().debut(), &presence)?;
         cpt.acquis = plafonner(add(cpt.acquis, sub(jours_acquis(&presence)?, non_acquis).max(Decimal::ZERO)))?;
     }
     cpt.pris += conges_pris_de_la_paie(&ctx.racine, paie)?;
