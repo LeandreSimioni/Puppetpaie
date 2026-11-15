@@ -195,6 +195,14 @@ pub struct FormeDeRemuneration {
     pub designation: String,
 }
 
+impl FormeDeRemuneration {
+    /// CE QU'ELLE PAIE, sa quantite et son taux relus dans l'unite de sa rubrique (`PaiementDeLigne::de_l_unite`) : la
+    /// lecture de ses deux nombres.
+    pub fn paiement(&self) -> crate::ligne::PaiementDeLigne {
+        crate::ligne::PaiementDeLigne::de_l_unite(self.unite, self.quantite.0, self.taux.0)
+    }
+}
+
 /// La deduction forfaitaire specifique (`calcul::DeductionForfaitaire`) sous sa forme ecrite.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

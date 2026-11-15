@@ -1140,7 +1140,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                 l.designation(),
                 euros(paye),
                 virgule(heures.a_deux_decimales().decimal()),
-                euros(Montant::du_decimal(smic.decimal())),
+                euros(smic),
                 jour.jj_mm_aaaa(),
                 euros(du),
                 euros(du - paye)

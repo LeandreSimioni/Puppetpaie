@@ -355,6 +355,25 @@ impl Taux {
     pub fn a_deux_decimales(self) -> Taux {
         Taux(self.0.round_dp(2))
     }
+
+    /// A `decimales` decimales au plus, la moitie au pair, dans sa forme la plus courte (`courte`) : un taux qu'un
+    /// bareme compose (une part d'un total, un taux par un facteur).
+    pub fn au_pair(self, decimales: u32) -> Taux {
+        Taux(num::court(self.0.round_dp_with_strategy(decimales, RoundingStrategy::MidpointNearestEven)))
+    }
+
+    /// Un taux qu'un texte fixe, en points entiers (`20` : 20 %).
+    pub const fn points(n: u32) -> Taux {
+        Taux(Decimal::from_parts(n, 0, 0, false, 0))
+    }
+}
+
+/// Taux x coefficient = taux (le taux AT/MP par le facteur d'une ligne, une part d'un taux).
+impl std::ops::Mul<Coefficient> for Taux {
+    type Output = Taux;
+    fn mul(self, c: Coefficient) -> Taux {
+        Taux(num::mul(self.0, c.0))
+    }
 }
 
 impl Cachets {

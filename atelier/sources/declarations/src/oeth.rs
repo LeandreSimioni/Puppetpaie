@@ -101,7 +101,7 @@ impl Declaration {
             virgule(self.beneficiaires),
             virgule(self.manquants),
             self.coefficient,
-            euros(Montant::du_decimal(self.smic.decimal())),
+            euros(self.smic),
             euros(Montant::du_decimal(self.brute)),
             euros(Montant::du_decimal(self.nette))
         )

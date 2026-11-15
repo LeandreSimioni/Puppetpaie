@@ -650,6 +650,15 @@ impl TauxDeLigne {
     pub fn est_nul(self) -> bool {
         self.decimal().is_zero()
     }
+
+    /// TEL QU'UNE PHRASE LE DIT (un contrat, un avenant) : un montant unitaire en euros (« 120,00 € »), la part d'une
+    /// ligne en pourcentage en pourcent (« 10,00 % »).
+    pub fn dit(self) -> String {
+        match self {
+            TauxDeLigne::ParUnite(u) => socle::texte::euros(u),
+            TauxDeLigne::PartDeLaBase(c) => socle::texte::pourcent(c.en_taux()),
+        }
+    }
 }
 
 /// CE QUE PAIE UNE LIGNE DE PAIE : sa quantite et son taux, qui vont ensemble. L'unite de sa rubrique les dit, a ce seul

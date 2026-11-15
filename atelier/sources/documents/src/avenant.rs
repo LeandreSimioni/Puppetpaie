@@ -165,7 +165,7 @@ pub(crate) fn ligne_citee(l: &FormeDeRemuneration) -> String {
             texte.push(c);
         }
     }
-    format!("{} à {}", texte, socle::texte::euros(Montant::du_decimal(l.taux.0)))
+    format!("{} à {}", texte, l.paiement().taux().dit())
 }
 
 /// La ligne fait-elle le brut ? (`soumis` de la rubrique.)

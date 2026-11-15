@@ -34,7 +34,8 @@ use droit::fiche::{Etablissement, FicheEntrepriseDatee, NombreDeFiche, Notificat
 use socle::date::Jour;
 use socle::mois::Annee;
 use socle::echec::{Classe, R};
-use socle::num::Decimal;
+use socle::grandeurs::Taux;
+use socle::texte::pourcent;
 
 /// Le socle livre de l'annee, s'il existe, lu par sa forme (`droit::contexte::socle_livre_lu`) ; un socle livre qui ne se
 /// lit pas se refuse.
@@ -42,14 +43,9 @@ fn socle_de(an: Annee) -> R<Option<droit::forme_bareme::Pile>> {
     droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-fn en_pourcent(t: Decimal) -> String {
-    let mut t = t.round_dp(2);
-    t.rescale(2);
-    format!("{} %", t.to_string().replace('.', ","))
-}
-
-fn decimal(t: &TauxAtmp) -> R<Option<Decimal>> {
-    t.valeur.as_ref().map(NombreDeFiche::decimal).transpose().map_err(|m| m.reclasser(Classe::Illisible))
+/// Le taux que la ligne `t` de la case dit, lu de son ecriture (`NombreDeFiche::grandeur`).
+fn taux(t: &TauxAtmp) -> R<Option<Taux>> {
+    t.valeur.as_ref().map(NombreDeFiche::grandeur::<Taux>).transpose().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 // ------------------------------------------------------------------ les sources
@@ -76,7 +72,7 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
     let fiche = crate::fiches::lire_fichier::<FicheEntrepriseDatee>(ctx)?;
     let deja = fiche.taux_atmp.as_deref().and_then(|l| droit::fiche::valeur_au(l, &n.date_effet));
     if let Some(d) = deja.filter(|d| d.provenance == Some(ProvenanceAtmp::Saisie) && d.depuis.is_some_and(|j| j.annee() == n.date_effet.annee())) {
-        if d.code_risque != t.code_risque || decimal(&d)? != decimal(&t)? {
+        if d.code_risque != t.code_risque || taux(&d)? != taux(&t)? {
             return Ok(Some(format!(
                 "Conflit sur le taux AT/MP : vous avez inscrit {} ; la notification de la CARSAT ({}) dit {}. Rien n'est changé : c'est à vous de choisir. Pour prendre celui de la notification, inscrivez-le dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
                 ligne_dite(&d)?.dit,
@@ -222,8 +218,8 @@ fn risque_dit(r: &RisqueAtmp) -> RisqueDit {
 #[derive(Debug, Serialize)]
 struct LigneDite {
     code_risque: Option<CodeRisqueAt>,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    taux: Option<socle::num::Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    taux: Option<Taux>,
     depuis: Option<Jour>,
     /// Pour la ligne d'avant : son dernier jour.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -236,7 +232,7 @@ struct LigneDite {
 }
 
 fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
-    let valeur = decimal(t)?;
+    let valeur = taux(t)?;
     let d_ou = match (t.provenance, &t.notification) {
         (Some(ProvenanceAtmp::Notification), n) => {
             let le: String = n.as_ref().and_then(|n| n.calcul.or(n.le)).iter().map(|j| format!(" du {}", j.jj_mm_aaaa())).collect();
@@ -248,7 +244,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
         (None, _) => "inscrit".to_string(),
     };
     let taux = match valeur {
-        Some(v) => en_pourcent(v),
+        Some(v) => pourcent(v),
         None => "sans taux".to_string(),
     };
     let code: String = t.code_risque.iter().map(|c| format!(", code risque {}", c)).collect();
@@ -292,7 +288,7 @@ fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Optio
 fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: Annee, nom: &Option<String>) -> (String, String) {
     match lu {
         Some(Ok(t)) => match t.valeur {
-            Some(v) => (format!("Taux AT/MP {} : {}{}.", an, en_pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
+            Some(v) => (format!("Taux AT/MP {} : {}{}.", an, pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
             None => (
                 format!("Taux AT/MP {} : pas encore de notification (999ZZ).", an),
                 format!("999ZZ : la compagnie n'a pas encore reçu de notification de la CARSAT. La DSN le déclare ainsi, sans taux. Aucun texte ne dit quel taux le bulletin cotise en attendant : le logiciel ne calcule pas la paie de {} tant que le code et le taux notifiés ne sont pas inscrits.", an),

@@ -189,8 +189,8 @@ pub fn salarie_nomme(nom: Option<&str>, nom_affichage: Option<&str>, prenom: Opt
 /// document imprimé) : « 1 234,50 € », au centime (`Montant::au_centime`), la virgule décimale, les milliers et l'euro
 /// séparés par une espace insécable (le montant ne se coupe pas en fin de ligne ; U+00A0, que toute police d'un PDF
 /// porte). Un fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
-pub fn euros(x: crate::grandeurs::Montant) -> String {
-    let t = x.au_centime().decimal().to_string();
+pub fn euros<E: EnEuros>(x: E) -> String {
+    let t = x.au_centime_ecrit().to_string();
     let (signe, t) = match t.strip_prefix('-') {
         Some(r) => ("-", r),
         None => ("", t.as_str()),
@@ -200,6 +200,40 @@ pub fn euros(x: crate::grandeurs::Montant) -> String {
         None => (t, "00"),
     };
     format!("{}{},{}\u{a0}€", signe, milliers(entier), centimes)
+}
+
+/// CE QUI SE DIT EN EUROS (`euros`) : un montant, ou un montant unitaire (le SMIC horaire, le plafond horaire), et rien
+/// d'autre ; scelle (`scelle::EnEuros` ne se nomme pas dehors).
+pub trait EnEuros: scelle::EnEuros {}
+
+mod scelle {
+    /// Son decimal au centime, que seul `euros` ecrit.
+    pub trait EnEuros {
+        fn au_centime_ecrit(self) -> rust_decimal::Decimal;
+    }
+
+    impl EnEuros for crate::grandeurs::Montant {
+        fn au_centime_ecrit(self) -> rust_decimal::Decimal {
+            self.au_centime().decimal()
+        }
+    }
+
+    impl EnEuros for crate::grandeurs::MontantUnitaire {
+        fn au_centime_ecrit(self) -> rust_decimal::Decimal {
+            self.au_centime().decimal()
+        }
+    }
+}
+
+impl EnEuros for crate::grandeurs::Montant {}
+impl EnEuros for crate::grandeurs::MontantUnitaire {}
+
+/// UN POURCENTAGE TEL QU'ON LE LIT, et le seul endroit qui en écrit un dans une phrase : « 1,50 % », à deux décimales (la
+/// moitié au pair), la virgule décimale.
+pub fn pourcent(t: crate::grandeurs::Taux) -> String {
+    let mut t = t.decimal().round_dp(2);
+    t.rescale(2);
+    format!("{} %", t.to_string().replace('.', ","))
 }
 
 /// Des chiffres, les milliers separes par une espace insecable (« 1 500 »).

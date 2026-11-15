@@ -547,7 +547,7 @@ fn pose_atmp(an: socle::mois::Annee, t: droit::forme_bareme::TauxAtmp) -> R<Opti
         (Some(r), _) => r.code.to_string(),
         (None, code) => code.exigee("taux_atmp.code_risque")?.to_string(),
     };
-    let taux: String = t.valeur.iter().map(|v| format!(", taux {}", format!("{:.2} %", v.round_dp(2)).replace('.', ","))).collect();
+    let taux: String = t.valeur.iter().map(|v| format!(", taux {}", socle::texte::pourcent(*v))).collect();
     let de: String = risque.iter().map(|r| format!("« {} » ", r.libelle)).collect();
     Ok(Some(Pose {
         cle: "taux_atmp".into(),

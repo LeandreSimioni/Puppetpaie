@@ -292,11 +292,11 @@ pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
                 "{} ({} h à {})",
                 euros(rg.smic_reference),
                 fmt_heures(rg.heures.decimal()),
-                euros(Montant::du_decimal(horaire.decimal()))
+                euros(horaire)
             ));
         }
     }
-    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures.decimal()), euros(Montant::du_decimal(p.smic.decimal()))))
+    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures.decimal()), euros(p.smic)))
 }
 
 /// (IDCC, libellé) de la convention d'un contrat, pour ce qui s'imprime : le libellé se lit au catalogue des conventions

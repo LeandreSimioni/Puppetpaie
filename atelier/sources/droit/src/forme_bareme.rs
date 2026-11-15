@@ -1540,7 +1540,7 @@ forme! {
 /// (`fiche::TauxAtmp`, `bareme::taux_atmp_de_l_annee`) : son taux, son code, sa date, d'ou elle vient ; ce qui manque.
 #[derive(Debug, Clone, Default)]
 pub struct TauxAtmp {
-    pub valeur: Option<Decimal>,
+    pub valeur: Option<Taux>,
     pub code_risque: Option<crate::bareme::CodeRisqueAt>,
     pub depuis: Option<socle::date::Jour>,
     pub provenance: Option<crate::fiche::ProvenanceAtmp>,

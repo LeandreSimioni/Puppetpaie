@@ -1202,7 +1202,7 @@ pub struct Contexte {
     pub spectacles: IndexMap<IdSpectacle, ChampsSpectacle>,
     /// Le taux AT/MP d'une annee qu'une piece atteste, pour une compagnie qui n'en a pas encore pose
     /// (`avec_le_taux_atmp_lu`) ; en memoire seulement.
-    atmp_lu: Option<(Annee, Decimal)>,
+    atmp_lu: Option<(Annee, socle::grandeurs::Taux)>,
 }
 
 /// LA PILE D'UN JOUR, et le `depuis` de chaque valeur datee qui s'y applique (`Contexte::regles_datees`).
@@ -1339,8 +1339,9 @@ impl Contexte {
     /// l'etablissement, notifie par l'Assurance Maladie : il ne se devine pas, il se lit, ici du bulletin d'un autre
     /// logiciel qui l'a applique. Rien ne s'ecrit ; une compagnie qui a pose le sien garde le sien.
     pub fn avec_le_taux_atmp_lu(mut self, an: Annee, valeur: Decimal) -> Contexte {
-        // Le taux tel qu'un bareme l'ecrit : sa forme la plus courte, un entier gardant sa decimale (`1.0`).
-        self.atmp_lu = Some((an, socle::num::court(valeur)));
+        // Le taux tel qu'un bareme l'ecrit : sa forme la plus courte, un entier gardant sa decimale (`1.0`). L'import
+        // (`engagement::ecarts`) le lit encore en decimal : il devient un taux ici.
+        self.atmp_lu = Some((an, socle::grandeurs::courte(socle::grandeurs::Taux::du_decimal(valeur))));
         self
     }
 

@@ -32,7 +32,7 @@ use socle::date::{Anciennete, Duree, EnJours, Jour, Periode};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, refus_avec, Lieu, R};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Montant, Taux};
 use socle::{num::{add, mul, sub, Decimal}, refus};
 use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, QualifiantDAssiette, ReferenceDAdhesion, Versement};
 use engagement::numeros::NumeroContrat;
@@ -1763,10 +1763,10 @@ pub fn bloc_contrat_fctu(
     // SIG-11 : sous le code risque 999ZZ (pas encore de notification), le taux (40.043) est interdit ; sous tout autre
     // code, il est obligatoire (`norme-dsn/texte/bloc-S21.G00.40.txt`, l. 1309-1313).
     let code_risque = atmp.and_then(|a| a.code_risque.clone());
-    let valeur_atmp = atmp.and_then(|a| a.valeur).filter(|v| !v.is_zero());
+    let valeur_atmp = atmp.and_then(|a| a.valeur).filter(|v| !v.est_nul());
     let sans_notification = code_risque.as_ref() == Some(&bareme::SANS_NOTIFICATION);
     // Le code risque (40.040) et le taux (40.043, sauf sans notification) que le contrat declare.
-    let atmp_ecrit: Option<(String, Option<Decimal>)> = match (ecrit_atmp, code_risque, valeur_atmp) {
+    let atmp_ecrit: Option<(String, Option<Taux>)> = match (ecrit_atmp, code_risque, valeur_atmp) {
         (false, _, _) => None,
         (true, Some(c), _) if sans_notification => Some((c.to_string(), None)),
         (true, Some(c), Some(v)) => Some((c.to_string(), Some(v))),
@@ -1893,7 +1893,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     if let Some((code, valeur)) = atmp_ecrit {
         si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.040"), Some(code))?;
         if let Some(v) = valeur {
-            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.043"), Some(fmt_f(v, 2)))?;
+            // Le taux s'ecrit dans la forme de la norme : sa porte.
+            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.043"), Some(fmt_f(v.decimal(), 2)))?;
         }
     }
     licence_du_contrat(f, nature_dsn, ent, nat.ecrit(droit::rubrique!("S21.G00.40.050")))?;
@@ -3214,7 +3215,8 @@ fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> R<Option<TauxDeLaLigne>> {
     }
     // LE TAUX DU BAREME DU MOIS DECLARE : il peut changer en cours d'annee (1,69 puis 1,65 au 01/06/2025) ; `taux_at` du CTP
     // dit seulement « cette ligne porte le taux AT » ("bareme"), le taux ne se recopie pas.
-    let Some(valeur) = bar.taux_atmp.as_ref().and_then(|t| t.valeur).filter(|v| !v.is_zero()) else {
+    // Le bordereau compte encore ses taux en decimal (`TauxDeLaLigne`) : le taux s'y ouvre.
+    let Some(valeur) = bar.taux_atmp.as_ref().and_then(|t| t.valeur).filter(|v| !v.est_nul()).map(Taux::decimal) else {
         return Err(socle::echec::cle(
             "Le bareme du mois n'a pas de taux AT/MP, et un CTP de la DSN le porte. C'est le taux notifie par l'Assurance Maladie (Configuration › Entreprise). Rien n'est ecrit.",
             "taux_atmp.valeur",

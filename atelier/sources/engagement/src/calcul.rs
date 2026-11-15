@@ -159,7 +159,7 @@ impl LigneBrut {
 
     /// Relue de sa forme ecrite.
     pub(crate) fn de_la_forme(f: &FormeDeRemuneration) -> LigneBrut {
-        let paiement = PaiementDeLigne::de_l_unite(f.unite, f.quantite.0, f.taux.0);
+        let paiement = f.paiement();
         LigneBrut {
             code: f.code.clone(),
             libelle: f.libelle.clone(),

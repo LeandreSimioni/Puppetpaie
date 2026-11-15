@@ -21,7 +21,6 @@ use droit::marqueurs::Marqueur;
 
 use crate::avenant::{de_devant, et, fait_le_brut, ligne_citee, remuneration_hors_brut};
 use crate::bulletin::fmt_eur;
-use socle::texte::euros;
 use droit::contexte::Contexte;
 use droit::natures::{self, Nature, NatureDeContrat};
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
@@ -103,7 +102,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
             continue;
         }
         if l.salaire_de_base {
-            base = Some(format!("un salaire mensuel brut de {}", euros(socle::grandeurs::Montant::du_decimal(l.taux.0))));
+            base = Some(format!("un salaire mensuel brut de {}", l.paiement().taux().dit()));
         } else if l.montant.decimal() > Decimal::ZERO {
             morceaux.push(ligne_citee(l));
         }
