@@ -18,8 +18,8 @@ use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, Nic, Sal
 use socle::date::{Duree, EnMois, Jour};
 use socle::mois::Annee;
 use socle::echec::{Lieu, Echec, R};
-use socle::grandeurs::{Coefficient, Taux};
-use socle::num::{add, court, div, mul, sub, Decimal};
+use socle::grandeurs::{courte, Coefficient, Taux};
+use socle::num::{add, court, div, mul, Decimal};
 use rust_decimal::RoundingStrategy;
 use std::collections::BTreeMap;
 
@@ -375,10 +375,10 @@ section par_nature['{}'].cpf_cdd qui dise son taux et sa cotisation. Rien n'est 
     }
     let composants = r.composants.get_or_insert_with(Vec::new);
     composants.push(sec.taux);
-    let total = composants.iter().fold(Decimal::ZERO, |a, c| add(a, c.decimal()));
+    let total: Taux = composants.iter().copied().sum();
     // La somme affichee, au millieme comme les composants du bareme (0,30 + 0,016 + 0,55 + 1,0 = 1,866), la moitie
     // loin de zero.
-    r.taux_pat = Some(TauxDate(Taux::du_decimal(court(total.round_dp_with_strategy(3, RoundingStrategy::MidpointAwayFromZero)))));
+    r.taux_pat = Some(TauxDate(total.loin_de_zero(3)));
     bar.cotisations_dsn.push(sec.cotisation_dsn);
     Ok(bar)
 }
@@ -393,12 +393,11 @@ pub fn bareme_majoration_chomage(mut bar: Pile, due: bool) -> R<Pile> {
     if due || !porte {
         return Ok(bar);
     }
-    let taux = sec.taux.decimal();
     let r = bar.rubriques_bulletin.iter_mut().find(|r| r.id == sec.rubrique).ok_or_else(|| {
         socle::echec::a_la_cle("Le barème de l'année est incomplet : le signaler au développeur.", "majoration_chomage_cddu.rubrique", &sec.rubrique)
     })?;
-    let avant = r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0.decimal();
-    r.taux_pat = Some(TauxDate(Taux::du_decimal(court(sub(avant, taux)))));
+    let avant = r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0;
+    r.taux_pat = Some(TauxDate(courte(avant - sec.taux)));
     bar.cotisations_dsn.retain(|c| c.code81 != Some(sec.code81));
     Ok(bar)
 }
@@ -530,13 +529,12 @@ fn sans_mutuelle(mut bar: Pile) -> Pile {
 
 /// Pose la cotisation de la mutuelle sur sa rubrique.
 fn poser_mutuelle(mut bar: Pile, base: Option<Assiette>, total: Taux, pat: Coefficient, libelle: Option<&str>) -> Pile {
-    let (total, pat) = (total.decimal(), pat.decimal());
     for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == MUTUELLE) {
         if let Some(b) = base {
             r.base = Some(b);
         }
-        r.taux_pat = Some(TauxDate(Taux::du_decimal(rond(mul(total, pat), 4))));
-        r.taux_sal = Some(Taux::du_decimal(rond(sub(total, mul(total, pat)), 4)));
+        r.taux_pat = Some(TauxDate((total * pat).au_pair(4)));
+        r.taux_sal = Some((total - total * pat).au_pair(4));
         if let Some(l) = libelle {
             r.libelle = Some(l.to_string());
         }
@@ -808,8 +806,8 @@ pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuC
             prevoyance::Cotisation::SansRegime => {}
             // Pas encore due : la ligne reste, a taux nul, sur l'assiette du bareme.
             prevoyance::Cotisation::PasDue => {
-                rr.taux_pat = Some(TauxDate(Taux::du_decimal(Decimal::ZERO)));
-                rr.taux_sal = Some(Taux::du_decimal(Decimal::ZERO));
+                rr.taux_pat = Some(TauxDate(Taux::points(0)));
+                rr.taux_sal = Some(Taux::points(0));
                 rubriques.push(rr);
             }
             prevoyance::Cotisation::Due { t1, t2 } => {
@@ -1546,12 +1544,11 @@ pub fn parts_t1(total: Taux, sal: PartDeLaTrancheUne) -> (Taux, Taux) {
 /// DSN, le 131 (regime unifie Agirc-Arrco, cahier technique 2026.1 p. 302) qui
 /// porte un taux sur la meme assiette.
 fn poser_t1(mut bar: Pile, retraite_pat: Taux, retraite_sal: Taux) -> R<Pile> {
-    let (retraite_pat, retraite_sal) = (retraite_pat.decimal(), retraite_sal.decimal());
     let ceg = bar.retraite_t1_repartition.as_ref().map(|r| r.ceg.clone()).ok_or_else(|| socle::fichiers::absent("retraite_t1_repartition"))?;
-    let (ceg_pat, ceg_sal) = (ceg.pat.decimal(), ceg.sal.decimal());
+    let (ceg_pat, ceg_sal) = (ceg.pat, ceg.sal);
     let pat = retraite_pat + ceg_pat;
     let sal = retraite_sal + ceg_sal;
-    let taux = |t: Decimal| Taux::du_decimal(court(t));
+    let taux = socle::grandeurs::courte::<Taux>;
     let mut base = None;
     for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == RETRAITE_T1) {
         r.taux_pat = Some(TauxDate(taux(pat)));
@@ -1772,8 +1769,8 @@ pub fn affiliation_prevoyance(ent: &ChampsEntreprise, sal: &SalarieDuContrat, au
 
 /// La somme des parts d'une base `a` a chacun des taux `taux` (en pourcent), chacune arrondie au centime : une ligne
 /// dont la part se compose de plusieurs taux.
-pub fn somme_pct(a: socle::grandeurs::Montant, taux: &[Decimal]) -> socle::grandeurs::Montant {
-    taux.iter().fold(socle::grandeurs::Montant::ZERO, |m, t| m + a.fois_taux(socle::grandeurs::Taux::du_decimal(*t)).au_centime())
+pub fn somme_pct(a: socle::grandeurs::Montant, taux: &[Taux]) -> socle::grandeurs::Montant {
+    taux.iter().fold(socle::grandeurs::Montant::ZERO, |m, t| m + a.fois_taux(*t).au_centime())
 }
 
 // ------------------------------------------------------------ les risques AT/MP de l'arrete de l'annee

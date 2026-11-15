@@ -3,7 +3,7 @@
 //! pas. Le catalogue porte le minimum de la branche ; ce que la compagnie souscrit se dit sur sa fiche
 //! (`prevoyance_permanents`), et le moteur le confronte a ce minimum.
 
-use super::{alsace_moselle, deux_virgule, nom_du_salarie, rond, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
+use super::{alsace_moselle, deux_virgule, nom_du_salarie, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
 use socle::date::Anciennete;
 use socle::echec::R;
 use crate::assiette::Assiette;
@@ -12,7 +12,6 @@ use crate::natures::AuMois;
 use socle::echec::Lieu;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::grandeurs::{Montant, Taux};
-use socle::num::{div, mul, sub};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -483,8 +482,8 @@ pub enum Cotisation {
 
 /// `part_patronale` : la part du taux a la charge de l'employeur, en pourcent du taux.
 fn repartir(taux: Taux, part_patronale: Taux, base: Assiette, obligatoire: bool) -> Part {
-    let pat = rond(div(mul(taux.decimal(), part_patronale.decimal()), Decimal::ONE_HUNDRED), 4);
-    Part { taux_pat: Taux::du_decimal(pat), taux_sal: Taux::du_decimal(rond(sub(taux.decimal(), pat), 4)), base, obligatoire }
+    let pat = (taux * part_patronale.en_coefficient()).au_pair(4);
+    Part { taux_pat: pat, taux_sal: (taux - pat).au_pair(4), base, obligatoire }
 }
 
 /// La part patronale de la tranche 2 d'un bloc : la sienne quand le texte les distingue, sinon celle du bloc, que le

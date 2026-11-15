@@ -66,13 +66,20 @@ fn fixe(x: Decimal, dp: u32) -> (bool, String) {
 /// qu'une ligne en pourcentage paie (« 10 % »).
 fn fmt_taux_de_ligne(t: engagement::ligne::TauxDeLigne) -> String {
     match t {
-        engagement::ligne::TauxDeLigne::ParUnite(u) => fmt_eur(u.decimal()),
+        // Le montant d'une unite.
+        engagement::ligne::TauxDeLigne::ParUnite(u) => fmt_eur(socle::grandeurs::Unites::UNE * u),
         engagement::ligne::TauxDeLigne::PartDeLaBase(c) => format!("{} %", socle::texte::virgule(socle::num::mul(c.decimal(), Decimal::ONE_HUNDRED).normalize())),
     }
 }
 
-/// 1234.5 -> « 1 234,50 ».
-pub fn fmt_eur(x: Decimal) -> String {
+/// Un montant tel que le bulletin l'imprime : 1234.5 -> « 1 234,50 ».
+pub fn fmt_eur(x: Montant) -> String {
+    chiffres_eur(x.decimal())
+}
+
+/// Un nombre ecrit comme un montant du bulletin (`fmt_eur`) : celui d'un montant, ou d'une base de cotisation, que le
+/// bulletin imprime dans la meme colonne qu'elle compte des euros ou des heures.
+fn chiffres_eur(x: Decimal) -> String {
     // Au centime, ses deux decimales ecrites (`Montant::au_centime`) : les trois derniers caracteres sont le point et
     // les centimes ; le signe est celui de l'original.
     let (neg, s) = (x.is_sign_negative(), socle::grandeurs::Montant::du_decimal(x.abs()).au_centime().decimal().to_string());
@@ -88,15 +95,15 @@ pub fn fmt_eur(x: Decimal) -> String {
     format!("{}{},{}", if neg { "-" } else { "" }, groupes, frac)
 }
 
-/// 9.1 -> « 9,100 ».
-pub fn fmt_taux(x: Decimal) -> String {
-    let (neg, s) = fixe(x, 3);
+/// Un taux tel que le bulletin l'imprime : 9.1 -> « 9,100 ».
+fn fmt_taux(t: Taux) -> String {
+    let (neg, s) = fixe(t.decimal(), 3);
     format!("{}{}", if neg { "-" } else { "" }, s.replace('.', ","))
 }
 
-/// Un taux de PAS, imprime comme un taux (`fmt_taux`) : sa porte.
+/// Un taux de PAS, imprime comme un taux (`fmt_taux`).
 fn fmt_taux_de_pas(t: droit::pas::TauxDePas) -> String {
-    fmt_taux(t.taux().decimal())
+    fmt_taux(t.taux())
 }
 
 /// 24 -> « 24 », 13.5 -> « 13,5 ».
@@ -274,7 +281,7 @@ fn tableau(largeurs: &[Mesure], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: 
 /// Une ligne « net », blanc sur rouge, 9,5 pt, en gras.
 fn ligne_net(libelle: &str, montant: Montant, colonnes: i64) -> Ligne {
     ligne(
-        vec![cel(libelle, colonnes - 1), s(fmt_eur(montant.decimal()))],
+        vec![cel(libelle, colonnes - 1), s(fmt_eur(montant))],
         vec![gras(), Opt::Fond(ROUGE), Opt::Couleur(BLANC), Opt::Taille(mesure("9.5"))],
     )
 }
@@ -412,7 +419,7 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
     )];
     // Les montants s'impriment : leur porte.
     for (libelle, montant) in lignes {
-        out.push(ligne(vec![cel(libelle, colonnes - 1), s(fmt_eur(montant.decimal()))], vec![]));
+        out.push(ligne(vec![cel(libelle, colonnes - 1), s(fmt_eur(montant))], vec![]));
     }
     let Some(p) = &r.prelevement else {
         out.push(ligne(vec![cel("Impôt prélevé à la source sur la différence", colonnes - 1), s("non calculé")], vec![]));
@@ -424,7 +431,7 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
         "Impôt sur le revenu prélevé à la source sur la différence"
     };
     out.push(ligne(
-        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux_de_pas(p.taux)), colonnes - 1), s(fmt_eur(p.montant.decimal()))],
+        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux_de_pas(p.taux)), colonnes - 1), s(fmt_eur(p.montant))],
         vec![],
     ));
     out.push(ligne_net(if r.a_verser >= Montant::ZERO { "NET À VERSER" } else { "NET À RETENIR" }, r.a_verser.abs(), colonnes));
@@ -439,7 +446,7 @@ fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> R<Vec<Ligne>>
     let taux = fmt_taux_de_pas(pas.taux);
     Ok(vec![
         ligne(
-            vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(fmt_eur(pas.montant_soumis.decimal())), s(taux), s(fmt_eur(pas.prelevement.decimal()))],
+            vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(fmt_eur(pas.montant_soumis)), s(taux), s(fmt_eur(pas.prelevement))],
             vec![],
         ),
         ligne_net("MONTANT NET À PAYER (en Euros)", p.net_a_payer - pas.prelevement, colonnes),
@@ -725,8 +732,8 @@ fn libelle_du_modele(l: &engagement::calcul::LigneCotisation) -> String {
 }
 
 /// Un montant, que sa case ne dit pas quand il est nul.
-fn montant_ou_rien(x: Decimal) -> Cellule {
-    if x.is_zero() {
+fn montant_ou_rien(x: Montant) -> Cellule {
+    if x.est_nul() {
         vide()
     } else {
         s(fmt_eur(x))
@@ -734,8 +741,14 @@ fn montant_ou_rien(x: Decimal) -> Cellule {
 }
 
 /// Un taux, s'il y en a un.
-fn taux_dit(t: Option<Decimal>) -> Cellule {
+fn taux_dit(t: Option<Taux>) -> Cellule {
     so(t.map(fmt_taux))
+}
+
+/// La base d'une ligne de cotisation, dans la colonne des montants : ses euros, ou ses heures (`chiffres_eur`), le
+/// nombre que sa base porte (`BaseDeCotisation::decimal`) : sa porte.
+fn base_dite(l: &engagement::calcul::LigneCotisation) -> Cellule {
+    s(chiffres_eur(l.base.decimal()))
 }
 
 /// La base d'une ligne, et son taux salarial et son taux employeur ; rien la ou le bareme masque base et taux.
@@ -743,14 +756,14 @@ fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> R<(Cellule, Cellule,
     if l.masquer_base_et_taux {
         return Ok((vide(), vide(), vide()));
     }
-    Ok((s(fmt_eur(l.base.decimal())), taux_dit(l.taux_sal.map(Taux::decimal)), taux_dit(l.taux_pat.map(Taux::decimal))))
+    Ok((base_dite(l), taux_dit(l.taux_sal), taux_dit(l.taux_pat)))
 }
 
 /// Une ligne de cotisation du bulletin : libelle, base (sauf `masquer_base_et_taux`), taux salarial, montant salarial,
 /// montant employeur ; un montant nul ne s'ecrit pas.
 fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) -> R<Ligne> {
-    let base = if l.masquer_base_et_taux { vide() } else { s(fmt_eur(l.base.decimal())) };
-    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal.map(Taux::decimal)), montant_ou_rien(l.montant_sal.decimal()), montant_ou_rien(l.montant_pat.decimal())], vec![]))
+    let base = if l.masquer_base_et_taux { vide() } else { base_dite(l) };
+    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal), montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
 }
 
 fn titre_groupe(titre: &str, colonnes: i64) -> Ligne {
@@ -778,7 +791,7 @@ fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> 
             }
         }
         Rang::Autres => {
-            let total = lignes.iter().fold(socle::grandeurs::Montant::ZERO.decimal(), |a, l| a + l.montant_pat.decimal());
+            let total = lignes.iter().fold(Montant::ZERO, |a, l| a + l.montant_pat);
             out.push(ligne(vec![s(AUTRES), vide(), vide(), vide(), s(fmt_eur(total))], vec![]));
         }
         Rang::Hors(famille) => {
@@ -796,10 +809,9 @@ fn lignes_du_rang(r: &Rang, lignes: &[&engagement::calcul::LigneCotisation]) -> 
 fn somme_des_rangs(
     rangees: &[(Rang, Vec<&engagement::calcul::LigneCotisation>)],
     filtre: &dyn Fn(&Rang) -> bool,
-) -> (Decimal, Decimal) {
-    let zero = socle::grandeurs::Montant::ZERO.decimal();
-    rangees.iter().filter(|(r, _)| filtre(r)).flat_map(|(_, v)| v.iter()).fold((zero, zero), |(s, e), l| {
-        (s + l.montant_sal.decimal(), e + l.montant_pat.decimal())
+) -> (Montant, Montant) {
+    rangees.iter().filter(|(r, _)| filtre(r)).flat_map(|(_, v)| v.iter()).fold((Montant::ZERO, Montant::ZERO), |(s, e), l| {
+        (s + l.montant_sal, e + l.montant_pat)
     })
 }
 
@@ -820,12 +832,13 @@ fn tableau_modele(p: &Paie, garanties: &[IdDeCotisation]) -> R<Vec<Ligne>> {
     let (oblig_sal, oblig_pat) = somme_des_rangs(&rangees, &obligatoire);
     let (fac_sal, fac_pat) = somme_des_rangs(&rangees, &|r| matches!(r, Rang::Facultative(_)));
     let (all_sal, all_pat) = somme_des_rangs(&rangees, &|r| *r == Rang::Allegement);
-    let (total_sal, total_pat) = (p.total_sal.decimal(), p.total_pat.decimal());
+    let (total_sal, total_pat) = (p.total_sal, p.total_pat);
     if oblig_sal + fac_sal + all_sal != total_sal || oblig_pat + fac_pat + all_pat != total_pat {
+        let e = socle::texte::euros;
         return Err(socle::refus!(
             "Le bulletin ne retrouve pas les totaux de la paie : salarie {} + {} + {} pour {}, employeur {} + {} + {} \
              pour {}. Une ligne de cotisation n'a pas trouve sa place dans le modele.",
-            oblig_sal, fac_sal, all_sal, total_sal, oblig_pat, fac_pat, all_pat, total_pat
+            e(oblig_sal), e(fac_sal), e(all_sal), e(total_sal), e(oblig_pat), e(fac_pat), e(all_pat), e(total_pat)
         ));
     }
     let mut out = vec![ligne(vec![cel(OBLIGATOIRES, COLONNES)], style_section())];
@@ -900,16 +913,16 @@ fn blocs_annexe(p: &Paie, numero: Option<&NumeroDeBulletin>, garanties: &[IdDeCo
                     s(format!("{}{}{}", NBSP, NBSP, l.libelle)),
                     base,
                     ts,
-                    montant_ou_rien(l.montant_sal.decimal()),
+                    montant_ou_rien(l.montant_sal),
                     tp,
-                    montant_ou_rien(l.montant_pat.decimal()),
+                    montant_ou_rien(l.montant_pat),
                 ],
                 vec![],
             ));
         }
         Ok(())
     };
-    let total = |libelle: &str, (sal, pat): (Decimal, Decimal)| {
+    let total = |libelle: &str, (sal, pat): (Montant, Montant)| {
         ligne(
             vec![cel(libelle, 3), montant_ou_rien(sal), vide(), s(fmt_eur(pat))],
             vec![gras(), filet_haut(ROUGE, mesure("0.6"))],
@@ -1183,17 +1196,17 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             None => "SALAIRE".to_string(),
         };
         corps.push(ligne(
-            vec![s(format!("{} — MONTANT BRUT", titre)), s(fmt_eur(p.brut.decimal()))],
+            vec![s(format!("{} — MONTANT BRUT", titre)), s(fmt_eur(p.brut))],
             vec![gras(), Opt::Fond(FOND_BRUT)],
         ));
     } else {
         for l in &rem {
             corps.push(ligne(
-                vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(fmt_eur(l.montant.decimal()))],
+                vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(fmt_eur(l.montant))],
                 vec![],
             ));
         }
-        corps.push(ligne(vec![s("MONTANT BRUT"), s(fmt_eur(p.brut.decimal()))], vec![gras(), Opt::Fond(FOND_BRUT)]));
+        corps.push(ligne(vec![s("MONTANT BRUT"), s(fmt_eur(p.brut))], vec![gras(), Opt::Fond(FOND_BRUT)]));
     }
     corps.extend(tableau_modele(p, &j.prevoyance)?);
     // Le bas du tableau : « MONTANT NET SOCIAL », puis « REMBOURSEMENTS ET DÉDUCTIONS DIVERSES », puis
@@ -1207,12 +1220,12 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         corps.push(ligne(vec![cel("REMBOURSEMENTS ET DÉDUCTIONS DIVERSES", n)], style_section()));
         for i in &j.remboursements {
             let l = &p.remuneration[*i];
-            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(fmt_eur(l.montant.decimal()))], vec![]));
+            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(fmt_eur(l.montant))], vec![]));
         }
     }
     corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer, n));
     corps.push(ligne(vec![s("IMPÔT SUR LE REVENU"), s("Base"), s("Taux"), s("Salarié")], style_section()));
-    corps.push(ligne(vec![cel("Montant net imposable", 3), s(fmt_eur(p.net_imposable.decimal()))], vec![]));
+    corps.push(ligne(vec![cel("Montant net imposable", 3), s(fmt_eur(p.net_imposable))], vec![]));
     match j.rectificatif.and_then(|r| r.ecart.as_ref()) {
         Some(ecart) => corps.extend(rectificatif_lignes(ecart, n)?),
         None => corps.extend(lignes_pas_tableau(p, j.pas, n)?),
@@ -1221,7 +1234,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // exonerations deduites) : le cout employeur de la paie, imprime au pied du bulletin
     // (« Coût total employeur »).
     corps.push(ligne(
-        vec![cel("TOTAL VERSÉ PAR L'EMPLOYEUR", n - 1), s(fmt_eur(p.cout_employeur.decimal()))],
+        vec![cel("TOTAL VERSÉ PAR L'EMPLOYEUR", n - 1), s(fmt_eur(p.cout_employeur))],
         vec![gras(), filet_haut(ROUGE, mesure("0.6"))],
     ));
     // Les montants ne se coupent pas : les largeurs de colonnes le permettent.

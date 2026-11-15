@@ -592,7 +592,7 @@ pub struct Cotisation {
     pub code_insee: Option<droit::fiche::CodeInsee>,
     pub base81: Option<Decimal>,
     /// Le taux de la ligne (81.007), tel que le bareme ou le bulletin l'ecrit.
-    pub taux: Option<Decimal>,
+    pub taux: Option<Taux>,
     pub montant: Option<Montant>,
     /// Le composant d'une base 31 (S21.G00.79.001, et son montant 79.004) quand la source du taux de la ligne le dit
     /// (`composant_79`, `bareme::bareme_sante`) ; `None` : la tranche A, sur le brut.
@@ -862,7 +862,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         } else if let Some(taux) = c.taux.map(|t| t.0) {
             let b = abattue(c.base.ok_or_else(|| socle::fichiers::absent("base"))?)?;
             l.base81 = Some(b);
-            l.taux = Some(taux.decimal());
+            l.taux = Some(taux);
             l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
                 Some(composants) => composants.iter().fold(Montant::ZERO, |s, t| s + Montant::du_decimal(b).fois_taux(*t).au_centime()),
                 None => Montant::du_decimal(b).fois_taux(taux).au_centime(),
@@ -1037,17 +1037,17 @@ const LIGNES_AGIRC_ARRCO: [IdDeCotisation; 3] = [droit::forme_bareme::RETRAITE_T
 /// CET en plus) ; la retraite et la CEG seules sont ce que la ligne vaudrait sans elle, au meme arrondi (chaque composant
 /// sur la base de la ligne), et la CET le reste. Une ligne que ce calcul ne retrouve pas au centime refuse : sa CET ne
 /// se separe pas sans deviner.
-fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) -> R<(Montant, Option<(Montant, Decimal)>)> {
+fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) -> R<(Montant, Option<(Montant, Taux)>)> {
     let Some(cet) = r.cet_si_depasse.as_ref().filter(|_| base_de_la_paie(p, Assiette::Cet).is_some_and(|b| !b.is_zero())) else {
         return Ok((l.montant_pat, None));
     };
     let Some(base) = l.base.montant() else {
         return Err(refus!("La ligne « {} » du bulletin a une base en heures : sa part de la CET ne se sépare pas. Rien n'est écrit.", l.id));
     };
-    let cet_pat = cet.pat.decimal();
+    let cet_pat = cet.pat;
     let comp = match r.composants_pat.as_deref() {
-        Some(c) if !c.is_empty() => c.iter().map(|t| t.decimal()).collect(),
-        _ => vec![r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0.decimal()],
+        Some(c) if !c.is_empty() => c.to_vec(),
+        _ => vec![r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0],
     };
     let sans = droit::bareme::somme_pct(base, &comp);
     let mut avec = comp;
@@ -1103,7 +1103,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
         ));
     }
     let org = org_de(pile, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
-    let part = |code: CodeCotisation81, base: Decimal, taux: Decimal, montant: Montant| Cotisation {
+    let part = |code: CodeCotisation81, base: Decimal, taux: Taux, montant: Montant| Cotisation {
         bloc78: l131.bloc78,
         base78: l131.base78,
         code81: Some(code),
@@ -1118,14 +1118,14 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
         cet: false,
     };
     let mut out = Vec::new();
-    let (mut cet_montant, mut cet_base, mut cet_taux) = (Montant::ZERO, Montant::ZERO.decimal(), None::<Decimal>);
+    let (mut cet_montant, mut cet_base, mut cet_taux) = (Montant::ZERO, Montant::ZERO.decimal(), None::<Taux>);
     for id in &ids {
         // La CET d'un non cadre n'existe pas ; une tranche 2 nulle n'est pas au bulletin (`calcul::calculer`).
         let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
         let (montant, cet) = sans_la_cet(p, l, r)?;
         let taux = match &cet {
-            Some(_) => r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0.decimal(),
-            None => l.taux_pat.map(|t| t.decimal()).ok_or_else(|| refus!("La ligne « {} » du bulletin n'a pas de taux patronal : sa part Agirc-Arrco ne se declare pas.", id))?,
+            Some(_) => r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0,
+            None => l.taux_pat.ok_or_else(|| refus!("La ligne « {} » du bulletin n'a pas de taux patronal : sa part Agirc-Arrco ne se declare pas.", id))?,
         };
         if let Some((m, t)) = cet {
             if cet_taux.is_some_and(|x| x != t) {
@@ -2410,7 +2410,8 @@ pub fn bases_et_cotisations(
             f.add(droit::rubrique!("S21.G00.81.005"), insee);
         }
         if let (Some(_), Some(t)) = (&org, c.taux) {
-            f.add(droit::rubrique!("S21.G00.81.007"), fmt_f(t, 3));
+            // Le taux s'ecrit dans la forme de la norme : sa porte.
+            f.add(droit::rubrique!("S21.G00.81.007"), fmt_f(t.decimal(), 3));
         }
     }
     Ok(())

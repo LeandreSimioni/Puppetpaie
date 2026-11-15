@@ -19,8 +19,8 @@ use crate::{Avis, Engagement};
 use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie, FormeDeRemuneration};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
-use socle::num::{add, court, div, mul, sub, Decimal};
-use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
+use socle::num::{court, div, mul, sub, Decimal};
+use socle::grandeurs::{courte, Heures, Montant, MontantUnitaire, Taux};
 use crate::ligne::{PaiementDeLigne, QuantiteDeLigne, TauxDeLigne};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
@@ -32,13 +32,8 @@ use droit::plafond::{plafond_permanent, pour_paie, EngagementPlafond};
 /// Un taux de cotisation qu'une addition compose (le taux reduit et son complement, une part et la CET) : a trois
 /// decimales, la moitie au pair, dans sa forme la plus courte. Aucun texte ne fixe cet arrondi ; les taux additionnes
 /// n'ont pas plus de trois decimales.
-fn taux_compose(x: Decimal) -> Decimal {
-    court(x.round_dp_with_strategy(3, rust_decimal::RoundingStrategy::MidpointNearestEven))
-}
-
-/// Un taux dans sa forme la plus courte, une decimale au moins (`socle::num::court`), comme la ligne le garde.
-fn taux_court(t: Taux) -> Taux {
-    Taux::du_decimal(court(t.decimal()))
+fn taux_compose(x: Taux) -> Taux {
+    x.au_pair(3)
 }
 
 // ------------------------------------------------------ les lignes de brut
@@ -360,9 +355,9 @@ impl LigneCotisation {
             famille: self.famille.clone(),
             libelle: self.libelle.clone(),
             base: socle::forme::Nombre(self.base.decimal()),
-            taux_pat: self.taux_pat.map(taux_court),
+            taux_pat: self.taux_pat.map(courte),
             montant_pat: self.montant_pat,
-            taux_sal: self.taux_sal.map(taux_court),
+            taux_sal: self.taux_sal.map(courte),
             montant_sal: self.montant_sal,
             masquer_base_et_taux: self.masquer_base_et_taux,
         }
@@ -375,9 +370,9 @@ impl LigneCotisation {
             famille: f.famille.clone(),
             libelle: f.libelle.clone(),
             base: BaseDeCotisation::relue(&f.id, f.base.0),
-            taux_pat: f.taux_pat.map(taux_court),
+            taux_pat: f.taux_pat.map(courte),
             montant_pat: f.montant_pat,
-            taux_sal: f.taux_sal.map(taux_court),
+            taux_sal: f.taux_sal.map(courte),
             montant_sal: f.montant_sal,
             masquer_base_et_taux: f.masquer_base_et_taux,
         }
@@ -1778,8 +1773,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             vec![base]
         };
         let (mut m_pat, mut m_sal) = (Montant::ZERO, Montant::ZERO);
-        let (mut taux_pat, mut taux_sal) = (part_patronale(r).map(Taux::decimal), r.taux_sal.map(socle::grandeurs::Taux::decimal));
-        let non_vide = |c: &Option<Vec<socle::grandeurs::Taux>>| c.as_ref().map(|c| c.iter().map(|t| t.decimal()).collect::<Vec<Decimal>>()).filter(|c| !c.is_empty());
+        let (mut taux_pat, mut taux_sal) = (part_patronale(r), r.taux_sal);
+        let non_vide = |c: &Option<Vec<Taux>>| c.clone().filter(|c| !c.is_empty());
         let (mut comp_pat, mut comp_sal) = (non_vide(&r.composants_pat), non_vide(&r.composants_sal));
         let manque = || socle::echec::cle("Le barème ne donne pas le taux de cette ligne : le complément ne s'ajoute à rien.", id.as_str());
         // Le complement au-dela d'un seuil : le taux reduit, plus le complement.
@@ -1787,32 +1782,32 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             // Sans seuil, le complement s'ajoute toujours.
             let depasse = compl.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), brut, Heures::ZERO.max(heures_annexes), n)).transpose()?;
             if depasse.is_none_or(|d| d) {
-                taux_pat = Some(taux_compose(add(taux_pat.ok_or_else(manque)?, compl.taux.decimal())));
+                taux_pat = Some(taux_compose(taux_pat.ok_or_else(manque)? + compl.taux));
             }
         }
         // La CET des cadres, fondue dans T1 et T2 : l'arrondi se fait en deux parts.
         if let Some(cet) = &r.cet_si_depasse {
             if bases.get(&Assiette::Cet).is_some_and(|c| !c.est_nul()) {
-                let (cet_pat, cet_sal) = (cet.pat.decimal(), cet.sal.decimal());
+                let (cet_pat, cet_sal) = (cet.pat, cet.sal);
                 let mut cp = match comp_pat.take() {
                     Some(c) => c,
                     None => vec![taux_pat.ok_or_else(manque)?],
                 };
                 // Le dernier composant prend la CET, sans arrondi : chaque composant s'arrondit au centime (`somme_pct`).
                 if let Some(d) = cp.last_mut() {
-                    *d = court(add(*d, cet_pat));
+                    *d = courte(*d + cet_pat);
                 }
                 let mut cs = match comp_sal.take() {
                     Some(c) => c,
                     None => vec![taux_sal.ok_or_else(manque)?],
                 };
                 if let Some(d) = cs.last_mut() {
-                    *d = court(add(*d, cet_sal));
+                    *d = courte(*d + cet_sal);
                 }
                 comp_pat = Some(cp);
                 comp_sal = Some(cs);
-                taux_pat = Some(taux_compose(add(taux_pat.ok_or_else(manque)?, cet_pat)));
-                taux_sal = Some(taux_compose(add(taux_sal.ok_or_else(manque)?, cet_sal)));
+                taux_pat = Some(taux_compose(taux_pat.ok_or_else(manque)? + cet_pat));
+                taux_sal = Some(taux_compose(taux_sal.ok_or_else(manque)? + cet_sal));
             }
         }
         let composants = non_vide(&r.composants);
@@ -1822,12 +1817,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             } else if let Some(c) = &comp_pat {
                 m_pat += somme_pct(*a, c);
             } else if let Some(t) = taux_pat {
-                m_pat += a.fois_taux(Taux::du_decimal(t)).au_centime();
+                m_pat += a.fois_taux(t).au_centime();
             }
             if let Some(c) = &comp_sal {
                 m_sal += somme_pct(*a, c);
             } else if let Some(t) = taux_sal {
-                m_sal += a.fois_taux(Taux::du_decimal(t)).au_centime();
+                m_sal += a.fois_taux(t).au_centime();
             }
         }
         lignes.push(LigneCotisation {
@@ -1835,9 +1830,9 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             famille: r.famille.clone().ok_or_else(|| socle::fichiers::absent("famille"))?,
             libelle: r.libelle.clone().ok_or_else(|| socle::fichiers::absent("libelle"))?,
             base: BaseDeCotisation::Montant(base),
-            taux_pat: taux_pat.map(Taux::du_decimal),
+            taux_pat,
             montant_pat: m_pat,
-            taux_sal: taux_sal.map(Taux::du_decimal),
+            taux_sal,
             montant_sal: m_sal,
             masquer_base_et_taux: r.masquer_base_et_taux == Some(true),
         });

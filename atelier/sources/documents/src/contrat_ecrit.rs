@@ -117,8 +117,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     if let Some(h) = remuneration_hors_brut(&paie.remuneration) {
         m.insert(Marqueur::RemunerationHorsBrut, h);
     }
-    m.insert(Marqueur::RemunerationBrut, fmt_eur(paie.brut.decimal()));
-    m.insert(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer.decimal()));
+    m.insert(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
+    m.insert(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
     // LA PERIODICITE DU PAIEMENT (R1221-34, 11°) : une fois par mois (L3242-1). INFERENCE : par virement, comme le contrat
     // d'engagement le dit.
     m.insert(Marqueur::ContratPaiement, "chaque mois, par virement".into());

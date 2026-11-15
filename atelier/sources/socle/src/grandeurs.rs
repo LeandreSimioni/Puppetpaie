@@ -362,6 +362,12 @@ impl Taux {
         Taux(num::court(self.0.round_dp_with_strategy(decimales, RoundingStrategy::MidpointNearestEven)))
     }
 
+    /// A `decimales` decimales au plus, la moitie loin de zero, dans sa forme la plus courte (`courte`) : la somme des
+    /// composants d'un taux, telle qu'un bareme l'affiche.
+    pub fn loin_de_zero(self, decimales: u32) -> Taux {
+        Taux(num::court(self.0.round_dp_with_strategy(decimales, RoundingStrategy::MidpointAwayFromZero)))
+    }
+
     /// Un taux qu'un texte fixe, en points entiers (`20` : 20 %).
     pub const fn points(n: u32) -> Taux {
         Taux(Decimal::from_parts(n, 0, 0, false, 0))

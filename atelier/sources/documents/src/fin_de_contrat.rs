@@ -101,7 +101,7 @@ fait). Rien n'est écrit.",
     let dite: String = maintien.iter().map(|m| mention(m, &nom, &fin)).collect();
     valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
-    valeurs.insert(Marqueur::SoldeNet, fmt_eur(p.net_a_payer.decimal()));
+    valeurs.insert(Marqueur::SoldeNet, fmt_eur(p.net_a_payer));
     let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de(&const { socle::fichiers::NomDeFichier::du_moteur("recu-solde-de-tout-compte.modele") }, Some(&ent.gabarits), &poste))?;
     ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
     if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
@@ -151,11 +151,11 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
 fn inventaire(p: &Paie) -> String {
     let mut lignes = Vec::new();
     for l in &p.remuneration {
-        lignes.push(format!("{} : {}", l.libelle, fmt_eur(l.montant.decimal())));
+        lignes.push(format!("{} : {}", l.libelle, fmt_eur(l.montant)));
     }
     for l in &p.lignes {
-        let m = l.montant_sal.au_centime().decimal();
-        if m != socle::num::Decimal::ZERO {
+        let m = l.montant_sal.au_centime();
+        if !m.est_nul() {
             lignes.push(format!("{} : -{}", l.libelle, fmt_eur(m)));
         }
     }
