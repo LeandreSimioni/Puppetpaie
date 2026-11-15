@@ -1442,7 +1442,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     }
     Ok(Some(Rupture { porte, fin: Some(match e.fin {
         Some(f) => f,
-        None => e.fin_periode(),
+        None => e.periode_payee()?.fin(),
     }) }))
 }
 
@@ -1708,7 +1708,8 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             None => format!("{} →", e.debut.jj_mm_aaaa()),
         };
         if e.place_du_mois() != PlaceDuMois::Seul {
-            bornes.push_str(&format!(" (paie du {} au {})", e.debut_periode().jj_mm_aaaa(), e.fin_periode().jj_mm_aaaa()));
+            let payee = e.periode_payee()?;
+            bornes.push_str(&format!(" (paie du {} au {})", payee.debut().jj_mm_aaaa(), payee.fin().jj_mm_aaaa()));
         }
         m.push(bornes);
         let paye = p.paye_en_bref();

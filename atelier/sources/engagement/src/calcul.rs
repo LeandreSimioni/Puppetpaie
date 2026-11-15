@@ -12,7 +12,7 @@ use droit::natures::{AuMois, Nature};
 use droit::fiche::{AccordDfs, ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie, OptionDfs, SalarieDuContrat, Statut};
 use droit::catalogue::{code_54, rubrique, HorsAssiette, Unite};
 use droit::contexte::{Contexte, IdSalarie};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::texte::euros;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use crate::{Avis, Engagement};
@@ -596,8 +596,13 @@ impl Paie {
     }
 
     /// La paie est-elle decoupee au jour `j` (une periode elementaire commence ce jour-la, apres le debut du mois) ?
-    pub fn decoupee_le(&self, j: &Jour) -> bool {
-        self.periodes.iter().skip(1).any(|p| p.engagement.debut_periode() == *j)
+    pub fn decoupee_le(&self, j: &Jour) -> R<bool> {
+        for p in self.periodes.iter().skip(1) {
+            if p.engagement.periode_payee()?.debut() == *j {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub fn ligne(&self, id: &IdDeCotisation) -> Option<&LigneCotisation> {
@@ -904,7 +909,7 @@ cette reintegration (assiette du chomage, bloc 54 de type 35) : rien n'est calcu
 /// Arrete du 4 septembre 2025, art. 9, I, al. 1 : << dans la limite de 7 600 euros par annee civile >>. INFERENCE, ecrite comme
 /// telle : l'annee est celle de la periode de paie, et les contrats d'un mois se suivent dans l'ordre de la saisie.
 fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, precedentes: &[Paie]) -> R<Montant> {
-    let mut deja = crate::conges::dfs_des_mois_anterieurs(ctx, eng.fin_periode().mois_civil(), &sal.id)?;
+    let mut deja = crate::conges::dfs_des_mois_anterieurs(ctx, eng.periode_payee()?.fin().mois_civil(), &sal.id)?;
     for p in precedentes {
         let sienne = p.salarie.id == sal.id || p.engagement.salarie == eng.salarie;
         if sienne {
@@ -1101,9 +1106,8 @@ pub(crate) fn fiche_de_l_engagement(ctx: &Contexte, eng: &Engagement) -> R<Salar
         // (norme DSN 2026.1, § 2.1.2.4, p. 22) ; un mois d'un seul tenant, la periode de paie entiere. La dispense de
         // sante se lit sur ces memes bornes (`dispense_de_la_periode`).
         let derniere = *crate::periodes::bornes(ctx, eng)?.last().ok_or_else(|| refus("aucune periode de paie"))?;
-        let (debut, fin) = (derniere.debut(), derniere.fin());
-        let du_mois = droit::emplois::emploi_du_mois(ctx, cle, &debut, &fin)?;
-        let fiche = dispense_de_la_periode(emploi_de(&du_mois, &emploi)?, &au_mois, &debut, &fin)?;
+        let du_mois = droit::emplois::emploi_du_mois(ctx, cle, &derniere)?;
+        let fiche = dispense_de_la_periode(emploi_de(&du_mois, &emploi)?, &au_mois, &derniere)?;
         sante_de_la_suspension(ctx, eng, &au_mois, convention_de_l_employeur(ctx, fiche))?
     } else {
         convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, &eng.debut)?, &emploi)?)
@@ -1248,7 +1252,7 @@ pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
         &crate::numeros::le_contrat(eng.numero.as_ref(), &eng.salarie),
     )?;
     let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref())?;
-    bareme_du_salarie(ctx, &p.salarie, &nat, &eng.fin_periode(), caisse, cpf_cdd, majoration)
+    bareme_du_salarie(ctx, &p.salarie, &nat, &eng.periode_payee()?.fin(), caisse, cpf_cdd, majoration)
 }
 
 /// Les garanties de prevoyance de la paie `p` : celles de sa pile de bareme (`Pile::garanties_de_prevoyance`).
@@ -1267,18 +1271,18 @@ pub fn garanties_de_prevoyance(ctx: &Contexte, p: &Paie) -> R<Vec<IdDeCotisation
 /// La periode payee entiere dans la dispense : dispense ; entiere dehors : affilie. Une borne en cours de periode
 /// (une dispense qui commence avec le contrat n'en est pas une) refuse : le partage de la cotisation du mois entre
 /// dispense et affiliation n'est dit par aucun texte depose (regle 1).
-pub(crate) fn dispense_de_la_periode(mut fiche: FicheSalarie, au_mois: &AuMois, debut: &Jour, fin: &Jour) -> R<FicheSalarie> {
+pub(crate) fn dispense_de_la_periode(mut fiche: FicheSalarie, au_mois: &AuMois, payee: &Periode) -> R<FicheSalarie> {
     let sienne = fiche.permanent.ouvrir(au_mois);
     if sienne.sante_dispense.remplie().is_none() {
         return Ok(fiche);
     }
     let depuis = sienne.sante_dispense_depuis.dite().copied();
     let jusqu_au = sienne.sante_dispense_jusqu_au.dite().copied();
-    if depuis.is_some_and(|d| d > *fin) || jusqu_au.is_some_and(|j| j < *debut) {
+    if depuis.is_some_and(|d| d > payee.fin()) || jusqu_au.is_some_and(|j| j < payee.debut()) {
         fiche.champs.permanent.ouvrir_mut(au_mois).sante_dispense = None;
         return Ok(fiche);
     }
-    let borne = match (depuis.filter(|d| d > debut), jusqu_au.filter(|j| j < fin)) {
+    let borne = match (depuis.filter(|d| *d > payee.debut()), jusqu_au.filter(|j| *j < payee.fin())) {
         (Some(d), _) => Some(format!("commence le {}", d.jj_mm_aaaa())),
         (None, Some(j)) => Some(format!("finit le {}", j.jj_mm_aaaa())),
         (None, None) => None,
@@ -1292,8 +1296,8 @@ la dispense au premier jour d'un mois (fiche salarie, « Dispense depuis ») ou 
 jusqu'au »), si l'organisme et la convention le permettent ; sinon c'est a trancher. Rien n'est calcule.",
             if qui.is_empty() { "Ce salarie".to_string() } else { qui },
             borne,
-            debut.jj_mm_aaaa(),
-            fin.jj_mm_aaaa()
+            payee.debut().jj_mm_aaaa(),
+            payee.fin().jj_mm_aaaa()
         ));
     }
     Ok(fiche)
@@ -1324,8 +1328,9 @@ fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mu
         return Ok(fiche);
     }
     let cle = fiche.id.to_string();
-    let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
-    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id, eng.numero.as_ref(), &eng.debut, &debut, &fin)?;
+    let payee = eng.periode_payee()?;
+    let fin = payee.fin();
+    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id, eng.numero.as_ref(), &eng.debut, &payee)?;
     let Some(premiere) = suspensions.first() else { return Ok(fiche) };
     let motifs: Vec<&str> = suspensions.iter().filter_map(|s| s.suspension()).map(|s| s.motif.code()).collect();
     let ent = ctx.entreprise_au(&fin);
@@ -1354,7 +1359,7 @@ contrat de sante de la compagnie qui tranche (le maintien est facultatif, instru
 une fois pour toutes : Configuration › Entreprise, « Santé d'un permanent suspendu sans indemnisation » (`{}`) -- « {} » \
 si le contrat suspend les garanties (rien sur la paie), « {} » s'il les maintient avec les cotisations. Rien n'est calcule.",
                     if qui.is_empty() { cle.clone() } else { qui },
-                    debut.jj_mm_aaaa(),
+                    payee.debut().jj_mm_aaaa(),
                     fin.jj_mm_aaaa(),
                     motifs.join(", "),
                     premiere.debut().jj_mm_aaaa(),
@@ -1459,7 +1464,7 @@ pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<MontantU
 pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<Paie> {
     let nat = eng.nat()?;
     let mut avis_dfs: Vec<String> = Vec::new();
-    let fin_periode = eng.fin_periode();
+    let fin_periode = eng.periode_payee()?.fin();
     let ctx = &ctx.au(&fin_periode)?;
     let sal = fiche_de_l_engagement(ctx, eng)?;
     essai_dans_son_plafond(ctx, eng, &nat, &sal)?;
@@ -1996,7 +2001,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
             PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(e)?),
             _ => None,
         };
-        return plafond_permanent(e.debut_periode(), e.fin_periode(), tp, &pss_du_contexte(ctx));
+        return plafond_permanent(&e.periode_payee()?, tp, &pss_du_contexte(ctx));
     }
     // Le plafond d'un intermittent depend de son statut (artiste : arrete du 24/01/1975, art. 3 ; technicien : R. 242-2
     // CSS).
@@ -2004,11 +2009,9 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
     let ep = EngagementPlafond {
         mensuelle: nat.mensuelle(),
         artiste,
-        debut_periode: e.debut_periode(),
-        fin_periode: e.fin_periode(),
-        debut: e.debut,
+        periode: e.periode_payee()?,
         // Un contrat paye a l'engagement a son terme (`Engagement::fin` : `None` seulement pour un permanent ouvert).
-        fin: e.fin.ok_or_else(|| socle::fichiers::absent("fin"))?,
+        contrat: Periode::du_au(e.debut, e.fin.ok_or_else(|| socle::fichiers::absent("fin"))?)?,
         dates_travail: e.dates_travail.clone(),
         jours: e.jours,
     };
@@ -2034,7 +2037,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
 /// xii-20260923.md`, l. 73), le plafond que R. 242-2 corrige ; elle suit le plafond corrige, comme la retraite
 /// complementaire (`plafond_de_l_engagement`). Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
 pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Montant> {
-    plafond_permanent(e.debut_periode(), e.fin_periode(), None, &pss_du_contexte(ctx))
+    plafond_permanent(&e.periode_payee()?, None, &pss_du_contexte(ctx))
 }
 
 /// Le plafond d'un salarie a temps partiel, et ce que S21.G00.40.084 en declare.

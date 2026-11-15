@@ -97,7 +97,7 @@ pub fn jour_ouvrable(depuis: &Jour, n: i64, chomes: Option<&str>) -> R<Jour> {
     let (mut jour, mut reste) = (*depuis, n.abs());
     while reste > 0 {
         jour = jour.plus_jours(pas)?;
-        if crate::conges::jours_ouvrables(&jour, &jour, chomes)? == 1 {
+        if crate::conges::jours_ouvrables(&socle::date::Periode::du_jour(jour), chomes)? == 1 {
             reste -= 1;
         }
     }

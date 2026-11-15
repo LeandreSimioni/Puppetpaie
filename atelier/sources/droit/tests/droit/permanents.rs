@@ -98,8 +98,13 @@ fn plafonner(a: &(Decimal,)) -> Rendu<Decimal> {
 fn periode_de_reference(a: &(Jour,)) -> Rendu<(Jour, Jour)> {
     p::periode_de_reference(&a.0).map(|r| (r.debut(), r.fin())).into()
 }
+/// Une presence vide (le premier jour apres le dernier) n'acquiert rien.
 fn jours_acquis(a: &(Jour, Jour)) -> Rendu<Decimal> {
-    p::jours_acquis(&a.0, &a.1).into()
+    match socle::date::Periode::du_au(a.0, a.1) {
+        Ok(presence) => p::jours_acquis(&presence),
+        Err(_) => Ok(Decimal::ZERO),
+    }
+    .into()
 }
 fn indemnite_conges(a: &(Decimal, Decimal, Decimal, Decimal)) -> Rendu<IndemniteDesJours> {
     p::indemnite_conges(a.0, a.1, a.2, a.3).map(|i| IndemniteDesJours { dixieme: i.dixieme, maintien: i.maintien, retenu: i.retenu, regle: i.regle.to_string() }).into()

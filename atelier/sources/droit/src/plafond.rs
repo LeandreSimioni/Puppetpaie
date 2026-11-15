@@ -33,7 +33,7 @@
 //! Les plafonds (PSS) ne sont pas dans le code : le module recoit un resolveur `annee -> Pss`
 //! (`Contexte::plafond_securite_sociale` en production). Un refus du resolveur passe tel quel.
 
-use socle::date::Jour;
+use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::R;
 use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire};
 use socle::num::{add, div, mul, Decimal};
@@ -48,7 +48,7 @@ pub struct Pss {
 }
 
 /// Arrete du 24/01/1975, art. 3, al. 2 : « periodes d'engagement continu inferieures a cinq jours ».
-pub const JOURS_ENGAGEMENT_CONTINU: Jours = Jours::du_decimal(Decimal::from_parts(5, 0, 0, false, 0));
+pub const JOURS_ENGAGEMENT_CONTINU: Duree<EnJours> = Duree::jours(5);
 
 /// Arrete du 24/01/1975, art. 3, al. 2 : « douze fois le plafond horaire » par journee de travail.
 pub const HEURES_PAR_JOURNEE: Heures = Heures::du_decimal(Decimal::from_parts(12, 0, 0, false, 0));
@@ -65,14 +65,12 @@ fn valeurs(annee: Annee, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Pss> {
     Ok(Pss { mensuel: Montant::du_decimal(p.mensuel.decimal().trunc()), horaire: MontantUnitaire::du_decimal(p.horaire.decimal().trunc()) })
 }
 
-/// PSS mensuel x jours calendaires du contrat / jours du mois, mois par mois,
+/// PSS mensuel x jours calendaires de la `periode` / jours du mois, mois par mois,
 /// somme. Les deux bornes sont incluses.
-pub fn prorata_calendaire(debut: Jour, fin: Jour, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    if fin < debut {
-        return Err(socle::refus!("fin {} anterieure au debut {}", fin.iso(), debut.iso()));
-    }
+pub fn prorata_calendaire(periode: &Periode, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
+    let fin = periode.fin();
     let mut total = Decimal::ZERO;
-    let mut jour = debut;
+    let mut jour = periode.debut();
     while jour <= fin {
         let dans_le_mois = jour.jours_du_mois();
         let derniere = Jour { jour: dans_le_mois, ..jour };
@@ -89,17 +87,10 @@ pub fn prorata_calendaire(debut: Jour, fin: Jour, pss: &dyn Fn(Annee) -> R<Pss>)
     Ok(Montant::du_decimal(total))
 }
 
-/// Le nombre de jours calendaires de la periode d'engagement continu, bornes incluses (du 24 au 24 fait un jour).
-pub fn duree_engagement(debut: Jour, fin: Jour) -> R<Jours> {
-    if fin < debut {
-        return Err(socle::refus!("fin {} anterieure au debut {}", fin.iso(), debut.iso()));
-    }
-    Ok(Jours::du_decimal(Decimal::from(fin.moins(&debut) + 1)))
-}
-
-/// Vrai quand l'arrete du 24/01/1975, art. 3, al. 2 s'applique : un artiste engage moins de cinq jours continus.
-pub fn engagement_court(debut: Jour, fin: Jour, artiste: bool) -> R<bool> {
-    Ok(artiste && duree_engagement(debut, fin)? < JOURS_ENGAGEMENT_CONTINU)
+/// Vrai quand l'arrete du 24/01/1975, art. 3, al. 2 s'applique : un artiste engage moins de cinq jours continus (les
+/// jours calendaires du `contrat`, bornes incluses : du 24 au 24 fait un jour).
+pub fn engagement_court(contrat: &Periode, artiste: bool) -> bool {
+    artiste && contrat.duree() < JOURS_ENGAGEMENT_CONTINU
 }
 
 /// PSS horaire x 12 par journee de travail accomplie (dates distinctes : deux cachets le meme jour font une
@@ -132,7 +123,7 @@ pub fn plafond_jours_remuneres(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) ->
 
 /// Le refus d'un intermittent dont les journees de travail ne se lisent pas.
 #[track_caller]
-fn journees_illisibles(debut: Jour, fin: Jour, court: bool, dites: Jours, datees: usize) -> socle::echec::Echec {
+fn journees_illisibles(contrat: &Periode, court: bool, dites: Jours, datees: usize) -> socle::echec::Echec {
     let regle = if court {
         "le plafond d'un artiste engage moins de cinq jours se compte par journee de travail accomplie, repetitions \
          comprises (arrete du 24/01/1975, art. 3, al. 2)"
@@ -143,20 +134,20 @@ fn journees_illisibles(debut: Jour, fin: Jour, court: bool, dites: Jours, datees
     socle::refus!(
         "Contrat du {} au {} : {}, et la saisie dit {} jour(s) travaille(s) pour {} date(s). Dater chaque journee de \
          travail sur les lignes de paie : elle ne se devine pas.",
-        debut.iso(), fin.iso(), regle, dites.decimal(), datees)
+        contrat.debut().iso(), contrat.fin().iso(), regle, dites.decimal(), datees)
 }
 
 /// Le plafond d'un contrat d'intermittent, arrondi au centime, pour les journees `dates` (celles d'une paie, ou de
 /// tout le contrat). `artiste` : le statut (l'arrete de 1975 ne vise que les artistes). Artiste engage moins de cinq
 /// jours : 12 x PSS horaire par journee (arrete de 1975). Sinon : le prorata du PSS mensuel sur les jours remuneres
 /// (BOSS § 1090). Sans date, ou avec une date hors du contrat : refus.
-pub fn plafond_urssaf(debut: Jour, fin: Jour, artiste: bool, pss: &dyn Fn(Annee) -> R<Pss>, dates: &[Jour]) -> R<Montant> {
-    let court = engagement_court(debut, fin, artiste)?;
+pub fn plafond_urssaf(contrat: &Periode, artiste: bool, pss: &dyn Fn(Annee) -> R<Pss>, dates: &[Jour]) -> R<Montant> {
+    let court = engagement_court(contrat, artiste);
     if dates.is_empty() {
-        return Err(journees_illisibles(debut, fin, court, Jours::du_decimal(Decimal::ZERO), 0));
+        return Err(journees_illisibles(contrat, court, Jours::du_decimal(Decimal::ZERO), 0));
     }
-    if let Some(j) = dates.iter().find(|j| **j < debut || **j > fin) {
-        return Err(socle::refus!("journee de travail le {} hors du contrat du {} au {}", j.iso(), debut.iso(), fin.iso()));
+    if let Some(j) = dates.iter().find(|j| !contrat.contient(j)) {
+        return Err(socle::refus!("journee de travail le {} hors du contrat du {} au {}", j.iso(), contrat.debut().iso(), contrat.fin().iso()));
     }
     if court {
         Ok(plafond_journees(dates, pss)?.au_centime())
@@ -175,8 +166,8 @@ pub fn plafond_urssaf(debut: Jour, fin: Jour, artiste: bool, pss: &dyn Fn(Annee)
 /// (duree contractuelle + heures complementaires) / duree legale du travail », et l'exemple « Plafond mensuel x
 /// (121,33 h / 151,67 h) x (12 jours / 31 jours) »). `temps_partiel` : (duree du contrat, duree de reference), `None`
 /// sans correction. Le rapport ne depasse jamais 1. Textes : `atelier/reference/sources/plafond-temps-partiel/`.
-pub fn plafond_permanent(debut_periode: Jour, fin_periode: Jour, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    let prorata = prorata_calendaire(debut_periode, fin_periode, pss)?;
+pub fn plafond_permanent(periode: &Periode, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
+    let prorata = prorata_calendaire(periode, pss)?;
     match temps_partiel {
         Some((contrat, reference)) if contrat < reference => {
             if reference <= Heures::ZERO {
@@ -195,10 +186,10 @@ pub struct EngagementPlafond {
     pub mensuelle: bool,
     /// Le statut du salarie est `artiste` (vide compris) ; `false` : `technicien`.
     pub artiste: bool,
-    pub debut_periode: Jour,
-    pub fin_periode: Jour,
-    pub debut: Jour,
-    pub fin: Jour,
+    /// La periode de paie.
+    pub periode: Periode,
+    /// Le contrat, du debut a la fin.
+    pub contrat: Periode,
     /// Les jours travailles de la paie, dates (les dates distinctes de toutes les lignes).
     pub dates_travail: Vec<Jour>,
     /// Les jours travailles que la saisie dit (saisis, sinon les dates distinctes).
@@ -211,21 +202,21 @@ pub struct EngagementPlafond {
 /// des jours remuneres (BOSS § 1090). Une journee dite et non datee refuse, une date hors de la periode de paie aussi.
 pub fn pour_paie(e: &EngagementPlafond, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
     if e.mensuelle {
-        return Ok(prorata_calendaire(e.debut_periode, e.fin_periode, pss)?.au_centime());
+        return Ok(prorata_calendaire(&e.periode, pss)?.au_centime());
     }
-    let court = engagement_court(e.debut, e.fin, e.artiste)?;
+    let court = engagement_court(&e.contrat, e.artiste);
     let datees = e.dates_travail.iter().collect::<BTreeSet<_>>().len();
     if e.jours.decimal() != Decimal::from(datees) {
-        return Err(journees_illisibles(e.debut, e.fin, court, e.jours, datees));
+        return Err(journees_illisibles(&e.contrat, court, e.jours, datees));
     }
     if datees == 0 {
         return Ok(Montant::ZERO);
     }
-    if let Some(j) = e.dates_travail.iter().find(|j| **j < e.debut_periode || **j > e.fin_periode) {
+    if let Some(j) = e.dates_travail.iter().find(|j| !e.periode.contient(j)) {
         return Err(socle::refus!(
             "journee de travail le {} hors de la periode de paie du {} au {} : le plafond se retient pour chaque paie \
              (R. 242-2 CSS), sur les jours de cette paie",
-            j.iso(), e.debut_periode.iso(), e.fin_periode.iso()));
+            j.iso(), e.periode.debut().iso(), e.periode.fin().iso()));
     }
-    plafond_urssaf(e.debut, e.fin, e.artiste, pss, &e.dates_travail)
+    plafond_urssaf(&e.contrat, e.artiste, pss, &e.dates_travail)
 }

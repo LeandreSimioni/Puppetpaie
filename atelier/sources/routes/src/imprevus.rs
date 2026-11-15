@@ -41,7 +41,7 @@ use engagement::imprevus::{self, ArretSaisi, Imprevu, Prolongation, RepriseNotee
 use engagement::numeros::{numero_dit, NumeroContrat};
 use engagement::saisie::{Carte, Preavis, VueDuMois};
 use engagement::Chiffre;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
 use socle::mode::Mode;
@@ -1391,7 +1391,7 @@ fn motifs_de_suspension() -> R<Vec<MotifSuspension>> {
 /// et les nomenclatures pour en saisir.
 fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
     let cle = c.salarie.as_ref().map(|s| cle_du_nom(ctx, s)).transpose()?;
-    let bornes = c.mois.map(|m| (m.premier_jour(), m.dernier_jour()));
+    let bornes = c.mois.map(Periode::du_mois);
     let n = nomenclatures()?;
     let suivi = crate::obligations::Suivi::lire(ctx)?;
     let mut out = Vec::new();
@@ -1399,8 +1399,8 @@ fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
         if cle.as_ref().is_some_and(|c| lu.salarie() != c) {
             continue;
         }
-        if let Some((debut, fin)) = &bornes {
-            if !magasin(imprevus::croise(&lu, debut, fin))? {
+        if let Some(mois) = &bornes {
+            if !magasin(imprevus::croise(&lu, mois))? {
                 continue;
             }
         }
@@ -2006,8 +2006,8 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     };
     // Les arrets du contrat qui croisent la periode du signalement : le FCTU les reporte (bloc 60), comme la mensuelle,
     // tires du magasin des imprevus ; ses suspensions (bloc 65) en viennent deja (`imprevus::suspensions_du_mois`).
-    let (debut_p, fin_p) = (paie.engagement.debut_periode(), paie.engagement.fin_periode());
-    let arrets: Vec<declarations::dsn::Arret> = magasin(imprevus::arrets_du_contrat(ctx, &paie, &debut_p, &fin_p))?
+    let payee = paie.engagement.periode_payee()?;
+    let arrets: Vec<declarations::dsn::Arret> = magasin(imprevus::arrets_du_contrat(ctx, &paie, &payee))?
         .into_iter()
         .map(|saisi| declarations::dsn::Arret { saisi })
         .collect();

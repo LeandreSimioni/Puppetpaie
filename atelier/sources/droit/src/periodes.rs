@@ -28,6 +28,7 @@
 //! (`part_du_mois`) ; l'engagement calcule chaque periode et les assemble (`engagement::periodes`).
 
 use socle::date::{Jour, Periode};
+use socle::mois::Mois;
 
 use crate::conges::JoursTravailles;
 use socle::echec::R;
@@ -237,13 +238,13 @@ fn heures_en_mots(heures_par_jour: HeuresParUnite, jours: Jours) -> String {
 /// Une periode qui couvre le mois entier, sans ferie non paye, en porte tout le salaire. Le plafond de la securite
 /// sociale, lui, se proratise aux jours calendaires (CSS R. 242-2, `plafond::prorata_calendaire`) : ce n'est pas le
 /// salaire.
-pub fn part_du_mois(d: &Jour, f: &Jour, fin_mois: &Jour, regle: RegleDuMoisIncomplet, horaire: &Horaire) -> R<DecompteDuMois> {
-    let premier = Jour::nouveau(fin_mois.an, fin_mois.mois, 1).ok_or_else(|| socle::echec::cle("Le moteur ne calcule pas ce mois : le signaler au développeur.", "part_du_mois"))?;
+pub fn part_du_mois(periode: &Periode, mois: Mois, regle: RegleDuMoisIncomplet, horaire: &Horaire) -> R<DecompteDuMois> {
+    let le_mois = Periode::du_mois(mois);
     let feries_non_payes: Vec<(Jour, String)> =
-        horaire.feries_non_payes.iter().filter(|(j, _)| d <= j && j <= f && horaire.jours.travaille(j)).cloned().collect();
-    let jours = horaire.jours.jours_entre(d, f)? - Jours::de_dates(feries_non_payes.len());
-    let du_mois = horaire.jours.jours_entre(&premier, fin_mois)?;
-    let entier = *d <= premier && *f >= *fin_mois && feries_non_payes.is_empty();
+        horaire.feries_non_payes.iter().filter(|(j, _)| periode.contient(j) && horaire.jours.travaille(j)).cloned().collect();
+    let jours = horaire.jours.jours_entre(periode) - Jours::de_dates(feries_non_payes.len());
+    let du_mois = horaire.jours.jours_entre(&le_mois);
+    let entier = periode.contient(&le_mois.debut()) && periode.contient(&le_mois.fin()) && feries_non_payes.is_empty();
     let jours_du_mois = match regle {
         RegleDuMoisIncomplet::Ccneac1285Artiste if !entier => JOURS_DU_MOIS_CCNEAC,
         _ => du_mois,

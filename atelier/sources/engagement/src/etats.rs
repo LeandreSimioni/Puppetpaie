@@ -885,7 +885,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
         return Ok(None);
     }
     let cle = &p.salarie.id;
-    let fin = e.fin_periode();
+    let fin = e.periode_payee()?.fin();
     let taux = droit::pas::taux_dgfip(ctx, cle, Some(e.date_du_versement()?), Some(e.mois))?;
     let bareme = ctx.bareme(&Jour { an: fin.an, mois: fin.mois, jour: 1 })?;
     let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
@@ -994,9 +994,10 @@ fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[RangDansLeMois]) -> R
                 let p = places.get(i).and_then(|j| s.paies.get(*j)).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
                 let conges = crate::conges::compteur_ecrit(ctx, p, mois)?;
                 let (salarie, spectacle) = (&p.engagement.salarie, p.engagement.spectacle.as_ref());
-                let config = empreinte::configuration(ctx, &p.engagement.fin_periode(), salarie, spectacle.map(|s| s.as_str()))?;
+                let fin = p.engagement.periode_payee()?.fin();
+                let config = empreinte::configuration(ctx, &fin, salarie, spectacle.map(|s| s.as_str()))?;
                 let entree_fiches = empreinte::fiches(ctx, mois, salarie, spectacle)?;
-                Ok((relire::ecrire(p)?, relire::FichesDuCalcul::de(p), prelevement(ctx, p)?, conges, p.engagement.fin_periode(), config, entree_fiches))
+                Ok((relire::ecrire(p)?, relire::FichesDuCalcul::de(p), prelevement(ctx, p)?, conges, fin, config, entree_fiches))
             })
             .collect::<R<Vec<_>>>()
     })?;

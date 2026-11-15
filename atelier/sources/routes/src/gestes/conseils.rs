@@ -940,8 +940,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         };
         let assure = if (rep.is_some() || hrs.is_some()) && !sature {
             if !assurees.contains_key(&cle) {
-                let fin = e.fin_periode();
-                let (pos, anniv) = position(ctx, &p.salarie.id, declares.tous()?, fin)?;
+                let (pos, anniv) = position(ctx, &p.salarie.id, declares.tous()?, e.periode_payee()?.fin())?;
                 let h = pos.heures_ouverture()?;
                 let r = (h >= c.seuil_heures).then(|| (h, phrase_fenetre(&b, &pos, anniv)));
                 assurees.insert(cle.clone(), r);
@@ -1050,8 +1049,7 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Pe
             if p.salarie.id != *cle || e.sans_paie() || e.nat()?.mensuelle() {
                 continue;
             }
-            let fp = e.fin_periode();
-            if !f.contient(&fp) {
+            if !f.contient(&e.periode_payee()?.fin()) {
                 continue;
             }
             let repetition = match annexe {

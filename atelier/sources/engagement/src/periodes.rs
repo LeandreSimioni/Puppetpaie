@@ -38,7 +38,7 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<Periode>> {
         return Ok(vec![payee]);
     }
     crate::fiche_du_salarie(ctx, &eng.salarie)?;
-    let mut jours = droit::emplois::jours_de_changement(ctx, &eng.salarie, &payee.debut(), &payee.fin())?;
+    let mut jours = droit::emplois::jours_de_changement(ctx, &eng.salarie, &payee)?;
     jours.extend(jour_de_l_avenant(eng)?);
     droit::periodes::decouper(payee, jours)
 }
@@ -77,17 +77,16 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, a.quotite_contrat.ok_or_else(|| socle::fichiers::absent("quotite_contrat"))?),
         None => (salaire_apres, quotite_apres),
     };
-    let (debut_mois, fin_mois) = (eng.debut_mois(), eng.fin_mois());
+    let mois = eng.mois;
     // Le contrat borne au mois : la regle d'un premier ou d'un dernier mois incomplet le regarde, pas la coupure.
-    let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
-    let regle = crate::conges::regle_du_mois_incomplet(ctx, &eng.salarie, &debut, &fin, &debut_mois, &fin_mois)?;
+    let regle = crate::conges::regle_du_mois_incomplet(ctx, &eng.salarie, &eng.periode_payee()?, mois)?;
     let au = eng.nat()?.au_mois().ok_or_else(|| socle::refus!("{} : ses periodes elementaires sont celles d'un contrat paye au mois, et le sien ne l'est pas : le signaler au développeur.", eng.qui()))?;
-    let horaire = crate::conges::horaire_du_mois(ctx, &au, &eng.salarie, &eng.debut, &debut_mois, &fin_mois)?;
+    let horaire = crate::conges::horaire_du_mois(ctx, &au, &eng.salarie, &eng.debut, mois)?;
     let mut out = Vec::new();
     for p in bornes {
         let (salaire, quotite) = if avenant.is_some_and(|a| p.debut() < a) { (salaire_avant, quotite_avant) } else { (salaire_apres, quotite_apres) };
         // Chaque periode, au salaire de ses termes, par la regle d'un mois incomplet (`droit::periodes::part_du_mois`).
-        let part = droit::periodes::part_du_mois(&p.debut(), &p.fin(), &fin_mois, regle, &horaire)?;
+        let part = droit::periodes::part_du_mois(p, mois, regle, &horaire)?;
         let mut e = eng.clone();
         e.periode = Some(*p);
         e.quotite_contrat = Some(socle::grandeurs::courte(quotite));
@@ -185,7 +184,7 @@ Dater le changement au premier jour d'un mois sur la fiche.",
 forfaitaire specifique. Ni la reduction generale sous deduction (bornee a 130 %), ni le plafond annuel de 7 600 EUR ne se \
 partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
             eng.qui(),
-            p.engagement.debut_periode().jj_mm_aaaa()
+            p.engagement.periode_payee()?.debut().jj_mm_aaaa()
         ));
     }
     // La reduction generale du mois, puis sa part dans chaque periode.

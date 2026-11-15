@@ -4,7 +4,7 @@
 
 
 use crate::fiche::Lue;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::feries;
 use socle::echec::R;
 use socle::grandeurs::{Heures, HeuresParUnite, Montant};
@@ -12,8 +12,8 @@ use socle::num::Decimal;
 
 /// Le nombre de jours ouvrables entre deux dates, bornes incluses : du lundi
 /// au samedi, moins les feries que l'entreprise chome (`chomes` : ce que sa fiche en dit, `ChampsEntreprise::feries_chomes`).
-pub fn jours_ouvrables(debut: &Jour, fin: &Jour, chomes: Option<&str>) -> R<i64> {
-    jours_de_semaine(debut, fin, chomes, 6)
+pub fn jours_ouvrables(periode: &Periode, chomes: Option<&str>) -> R<i64> {
+    jours_de_semaine(periode, chomes, 6)
 }
 
 /// Les jours de la semaine, dans l'ordre (lundi = 0), tels que la fiche les ecrit.
@@ -85,15 +85,8 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
     /// `feries_non_payes` pour les autres). Fiche DSN 2693, exemple 4 (`atelier/reference/sources/suspension-non-remuneree/
     /// net-entreprises-fiche2693-volumes-activite-exemples-20260929.txt`, l. 509) : janvier 2024 entier, « nombre de jours
     /// ouvres du mois [...] 161 heures (23 jours x 7 heures) », le lundi 1er janvier compte parmi les 23.
-    pub fn jours_entre(&self, debut: &Jour, fin: &Jour) -> R<socle::grandeurs::Jours> {
-        let (mut n, mut jour) = (0, *debut);
-        while jour <= *fin {
-            if self.travaille(&jour) {
-                n += 1;
-            }
-            jour = jour.plus_jours(1)?;
-        }
-        Ok(socle::grandeurs::Jours::de_dates(n))
+    pub fn jours_entre(&self, periode: &Periode) -> socle::grandeurs::Jours {
+        socle::grandeurs::Jours::de_dates(periode.jours().filter(|j| self.travaille(j)).count())
     }
 
     /// Les jours, en mots : « du lundi au vendredi » pour une suite, « le lundi, le mardi et le jeudi » sinon.
@@ -123,15 +116,14 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
 /// L'anciennete se compte depuis `depuis` (la fiche, « Dans la compagnie depuis » : les contrats successifs s'y
 /// cumulent, L3133-3, al. 2), au jour du ferie (`Anciennete::entre`).
 pub fn feries_non_payes(
-    debut: &Jour,
-    fin: &Jour,
+    periode: &Periode,
     chomes: Option<&str>,
     jours: &JoursTravailles,
     depuis: &Jour,
 ) -> R<Vec<(Jour, String)>> {
     let trois_mois = socle::date::Anciennete::de_mois(Decimal::from(3));
     let mut out = Vec::new();
-    for (j, nom) in feries::chomes_entre(debut, fin, chomes)? {
+    for (j, nom) in feries::chomes_entre(periode, chomes)? {
         let premier_mai = feries::chomes_de_droit(j.annee())?.iter().any(|(x, _)| *x == j);
         if jours.travaille(&j) && !premier_mai && socle::date::Anciennete::entre(depuis, &j) < trois_mois {
             out.push((j, nom));
@@ -140,11 +132,11 @@ pub fn feries_non_payes(
     Ok(out)
 }
 
-/// Les jours de `debut` a `fin` dont le rang dans la semaine (lundi = 0) est sous `jusqu_a`, moins les feries chomes.
-fn jours_de_semaine(debut: &Jour, fin: &Jour, dits: Option<&str>, jusqu_a: u32) -> R<i64> {
-    let chomes = feries::chomes_entre(debut, fin, dits)?;
-    let (mut n, mut jour) = (0, *debut);
-    while jour <= *fin {
+/// Les jours de `periode` dont le rang dans la semaine (lundi = 0) est sous `jusqu_a`, moins les feries chomes.
+fn jours_de_semaine(periode: &Periode, dits: Option<&str>, jusqu_a: u32) -> R<i64> {
+    let chomes = feries::chomes_entre(periode, dits)?;
+    let (mut n, mut jour) = (0, periode.debut());
+    while jour <= periode.fin() {
         if jour.jour_de_la_semaine() < jusqu_a && !chomes.iter().any(|(j, _)| *j == jour) {
             n += 1;
         }

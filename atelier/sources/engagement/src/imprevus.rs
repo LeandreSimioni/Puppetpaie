@@ -28,7 +28,7 @@ use droit::arrets::{MotifDArret, MotifDeReprise, SubrogationDeLArret};
 use droit::permanents::{MotifDeSuspension, ProprietesDeSuspension};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::SalarieDuContrat;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::mois::Mois;
 use crate::Avis;
 use crate::numeros::NumeroContrat;
@@ -434,17 +434,26 @@ pub fn dernier_jour(imp: &Imprevu) -> R<Jour> {
 /// court du dernier jour travaille qu'il declare (S21.G00.60.002, `dernier_jour_declare`) a son dernier jour d'absence (`dernier_jour`) : la veille de la
 /// reprise, qui est le « premier jour travaille et paye suite a l'arret de travail » (S21.G00.60.010, p. 269), sinon la
 /// fin previsionnelle (S21.G00.60.003, p. 267). Un arret repris le 1er du mois n'a donc aucun jour commun avec ce mois.
-pub fn croise(imp: &Imprevu, debut: &Jour, fin: &Jour) -> R<bool> {
+pub fn croise(imp: &Imprevu, periode: &Periode) -> R<bool> {
     if let Imprevu::Arret(a) = imp {
-        return arret_croise(a, debut, fin);
+        return arret_croise(a, periode);
     }
-    Ok(premier_jour(imp)? <= *fin && dernier_jour(imp)? >= *debut)
+    Ok(premier_jour(imp)? <= periode.fin() && dernier_jour(imp)? >= periode.debut())
 }
 
 /// La meme regle pour un arret de travail (un arret de la DSN, `dsn::Arret`).
-pub fn arret_croise(arret: &ArretSaisi, debut: &Jour, fin: &Jour) -> R<bool> {
+pub fn arret_croise(arret: &ArretSaisi, periode: &Periode) -> R<bool> {
     let dernier = dernier_jour_d_arret(arret)?;
-    Ok(dernier_jour_declare(arret)? <= *fin && dernier >= *debut)
+    Ok(dernier_jour_declare(arret)? <= periode.fin() && dernier >= periode.debut())
+}
+
+/// Les jours d'absence du `premier` au `dernier` (`premier_jour`, `dernier_jour`) qui tombent dans `periode` ; aucun
+/// quand le dernier precede le premier (un arret repris le lendemain de son dernier jour declare n'absente aucun jour).
+pub(crate) fn absence_dans(premier: &Jour, dernier: &Jour, periode: &Periode) -> R<Option<Periode>> {
+    if premier > dernier {
+        return Ok(None);
+    }
+    Ok(Periode::du_au(*premier, *dernier)?.croise(periode))
 }
 
 /// Les imprevus d'un genre (ou de tous les genres) qui croisent le mois `AAAA-MM`.
@@ -453,13 +462,13 @@ pub fn du_mois(racine: &Path, mois: Mois, genre_voulu: Option<GenreDImprevu>) ->
 }
 
 fn croisant(imprevus: Vec<Imprevu>, mois: Mois, genre_voulu: Option<GenreDImprevu>) -> R<Vec<Imprevu>> {
-    let (debut, fin) = (mois.premier_jour(), mois.dernier_jour());
+    let periode = Periode::du_mois(mois);
     let mut out = Vec::new();
     for imp in imprevus {
         if genre_voulu.is_some_and(|gv| gv != imp.genre()) {
             continue;
         }
-        if croise(&imp, &debut, &fin)? {
+        if croise(&imp, &periode)? {
             out.push(imp);
         }
     }
@@ -573,13 +582,12 @@ pub fn suspendu_sans_remuneration(
     cle: &IdSalarie,
     numero: Option<&NumeroContrat>,
     contrat_debut: &Jour,
-    debut: &Jour,
-    fin: &Jour,
+    periode: &Periode,
 ) -> R<Vec<Imprevu>> {
     let mut siennes = Vec::new();
     for imp in du_salarie(racine, cle)? {
         let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
-        if !du_contrat(&imp, cle, numero, contrat_debut)? || !croise(&imp, debut, fin)? {
+        if !du_contrat(&imp, cle, numero, contrat_debut)? || !croise(&imp, periode)? {
             continue;
         }
         let remunere = proprietes_du_motif(code, &cle.to_string())?.remunere;
@@ -588,14 +596,14 @@ pub fn suspendu_sans_remuneration(
         }
     }
     let siennes = par_premier_jour(siennes)?;
-    let mut couvert_jusqu_a = debut.plus_jours(-1)?;
+    let mut couvert_jusqu_a = periode.debut().plus_jours(-1)?;
     for imp in &siennes {
         if premier_jour(imp)? > couvert_jusqu_a.plus_jours(1)? {
             return Ok(Vec::new());
         }
         couvert_jusqu_a = couvert_jusqu_a.max(dernier_jour(imp)?);
     }
-    Ok(if !siennes.is_empty() && couvert_jusqu_a >= *fin { siennes } else { Vec::new() })
+    Ok(if !siennes.is_empty() && couvert_jusqu_a >= periode.fin() { siennes } else { Vec::new() })
 }
 
 /// LES JOURS DE CONGES QU'UNE SUSPENSION N'ACQUIERT PAS sur la presence [debut, fin] du contrat (`cle`, `numero`,
@@ -612,8 +620,7 @@ pub fn jours_de_conges_non_acquis(
     cle: &IdSalarie,
     numero: Option<&NumeroContrat>,
     contrat_debut: &Jour,
-    debut: &Jour,
-    fin: &Jour,
+    presence: &Periode,
 ) -> R<Decimal> {
     let mut total = Decimal::ZERO;
     for imp in du_salarie(racine, cle)? {
@@ -625,9 +632,8 @@ pub fn jours_de_conges_non_acquis(
         if acquiert {
             continue;
         }
-        let (d, f) = (premier_jour(&imp)?.max(*debut), dernier_jour(&imp)?.min(*fin));
-        if d <= f {
-            total += droit::permanents::jours_acquis(&d, &f)?;
+        if let Some(commune) = absence_dans(&premier_jour(&imp)?, &dernier_jour(&imp)?, presence)? {
+            total += droit::permanents::jours_acquis(&commune)?;
         }
     }
     Ok(total)
@@ -695,12 +701,12 @@ la compte, a reprendre a la main.",
 }
 
 /// Les arrets du magasin qui suspendent ce contrat et croisent [debut, fin] (le FCTU les reporte, bloc 60).
-pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, debut: &Jour, fin: &Jour) -> R<Vec<ArretSaisi>> {
+pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, periode: &Periode) -> R<Vec<ArretSaisi>> {
     let cle = &paie.salarie.id;
     let mut out = Vec::new();
     for imp in du_salarie(&ctx.racine, cle)? {
         let Imprevu::Arret(a) = imp else { continue };
-        if du_contrat(&a, cle, paie.engagement.numero.as_ref(), &paie.engagement.debut)? && arret_croise(&a, debut, fin)? {
+        if du_contrat(&a, cle, paie.engagement.numero.as_ref(), &paie.engagement.debut)? && arret_croise(&a, periode)? {
             out.push(a);
         }
     }
@@ -714,9 +720,9 @@ pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, debut: &Jou
 /// (`droit::periodes::part_du_mois`), l'horaire du salarie qui les compte et les heures d'un jour
 /// (`droit::conges::heures_par_jour`).
 pub struct MoisDuContrat<'a> {
-    pub debut: Jour,
-    pub fin: Jour,
-    pub fin_mois: Jour,
+    /// Le contrat borne au mois.
+    pub presence: Periode,
+    pub mois: Mois,
     pub salaire_du_mois: Decimal,
     pub heures_par_jour: socle::grandeurs::HeuresParUnite,
     pub jours_payes: Jours,
@@ -820,11 +826,9 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         .collect();
     for imp in imprevus {
         let (premier, dernier) = (premier_jour(&imp)?, dernier_jour(&imp)?);
-        let (debut, fin) = (premier.max(m.debut), dernier.min(m.fin));
-        let jours = if debut <= fin {
-            droit::periodes::part_du_mois(&debut, &fin, &m.fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours
-        } else {
-            Jours::ZERO
+        let jours = match absence_dans(&premier, &dernier, &m.presence)? {
+            Some(absence) => droit::periodes::part_du_mois(&absence, m.mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours,
+            None => Jours::ZERO,
         };
         let heures = (jours * m.heures_par_jour).au_centieme();
         // Les heures retirees et leur taux, quand le mois en retire : la quantite de la ligne, sa porte.

@@ -419,7 +419,7 @@ impl Arret {
 
     /// Une periode commune avec `p` : la regle du bloc 60 (`imprevus::arret_croise`).
     pub fn couvre(&self, p: &Periode) -> R<bool> {
-        engagement::imprevus::arret_croise(&self.saisi, &p.debut(), &p.fin())
+        engagement::imprevus::arret_croise(&self.saisi, p)
     }
 
     /// L'arret se reporte-t-il dans la DSN mensuelle de `mois` ? Celle de chaque mois qu'il croise ; et, s'il a fini avant
@@ -782,7 +782,7 @@ fn bareme_de(p: &Paie, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
 /// La pile de bareme du contrat `e` de `salarie` (une paie calculee ou importee), sur le bareme du mois choisi.
 fn bareme_du_contrat(e: &engagement::Engagement, salarie: &droit::fiche::SalarieDuContrat, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
     let nat = e.nat()?;
-    let fin = e.fin_periode();
+    let fin = e.periode_payee()?.fin();
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(e.nature, e.motif_recours, &engagement::numeros::le_contrat(e.numero.as_ref(), &e.salarie))?;
     let caisse = droit::caisse_conges::affilie(&nat, salarie, &e.debut, e.fin.as_ref())?;
     let majoration = droit::majoration_chomage::due(&nat, e.motif_recours, &e.debut, e.fin.as_ref())?;
@@ -1225,7 +1225,7 @@ fn affiliations_du_permanent(p: &Paie, ent: &ChampsEntreprise) -> R<Option<Affil
     let Some(au_mois) = p.engagement.nat()?.au_mois() else {
         return Ok(None);
     };
-    let fin = p.engagement.fin_periode();
+    let fin = p.engagement.periode_payee()?.fin();
     let prevoyance = bareme::affiliation_prevoyance(ent, &p.salarie, &au_mois, &fin)?;
     // La dispense (CCNEAC XII.2.1.8 ; 3090, accord du 19/07/2024, art. 9.2 ; `sante_dispense`) : le bulletin n'a plus
     // de mutuelle (`bareme_sante`), et le
@@ -1292,7 +1292,7 @@ fn places_non_affiliees(p: &Paie, ent: &ChampsEntreprise) -> R<Vec<usize>> {
 pub fn rattachements(p: &Paie, orgs: &Organismes, ent: &ChampsEntreprise, refs: Vec<ReferenceDAdhesion>) -> R<Vec<Affiliation>> {
     let e = &p.engagement;
     let permanent = affiliations_du_permanent(p, ent)?;
-    let fin = e.fin_periode();
+    let fin = e.periode_payee()?.fin();
     let mut out = Vec::new();
     for (place, reference) in refs.into_iter().enumerate() {
         let mut debut: Option<Jour> = None;

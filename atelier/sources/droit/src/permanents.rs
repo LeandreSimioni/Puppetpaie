@@ -705,16 +705,14 @@ pub fn periode_de_reference(jour: &Jour) -> R<Periode> {
 
 /// Les jours ouvrables acquis sur une periode de presence : 2,5 par mois,
 /// au prorata des jours calendaires de chaque mois traverse.
-pub fn jours_acquis(debut: &Jour, fin: &Jour) -> R<Decimal> {
+pub fn jours_acquis(presence: &Periode) -> R<Decimal> {
     let par_mois = regles()?.conges_payes.acquisition.jours_par_mois;
-    if fin < debut {
-        return Ok(Decimal::ZERO);
-    }
-    let (mut total, mut jour) = (Decimal::ZERO, *debut);
-    while jour <= *fin {
+    let fin = presence.fin();
+    let (mut total, mut jour) = (Decimal::ZERO, presence.debut());
+    while jour <= fin {
         let dans_le_mois = jours_du_mois(jour.an, jour.mois);
         let derniere = Jour { an: jour.an, mois: jour.mois, jour: dans_le_mois };
-        let borne = if *fin < derniere { *fin } else { derniere };
+        let borne = if fin < derniere { fin } else { derniere };
         let jours = Decimal::from(borne.moins(&jour) + 1);
         total = add(total, div(mul(par_mois, jours), Decimal::from(dans_le_mois)));
         jour = borne.plus_jours(1)?;

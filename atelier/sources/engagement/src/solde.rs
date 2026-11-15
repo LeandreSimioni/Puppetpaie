@@ -22,7 +22,7 @@ use socle::forme::Nombre;
 use socle::grandeurs::{courte, sans_zero, Montant, MontantUnitaire};
 use socle::num::{add, court, div, mul, Decimal};
 use droit::permanents::{self, arrondir_jours, jours_acquis, IndemniteDePreavis};
-use socle::date::Anciennete;
+use socle::date::{Anciennete, Periode};
 
 /// Les lignes et les avertissements du solde.
 #[derive(Default)]
@@ -334,7 +334,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
         for c in e.conges_pris.iter().flatten() {
             pris_ce_mois = add(pris_ce_mois, Decimal::from(jours_ouvrables_de(c, chomes)?));
         }
-        let acquis_ce_mois = jours_acquis(&debut_de(e)?.max(premier), &fin)?;
+        let acquis_ce_mois = jours_acquis(&Periode::du_au(debut_de(e)?.max(premier), fin)?)?;
         let solde = sub(add(cpt.solde(), acquis_ce_mois), pris_ce_mois);
         if solde > Decimal::ZERO {
             // Le maintien (L3141-24, II, `atelier/reference/sources/code-du-travail/xml/L3141-24.xml`) : ce que le salarie
@@ -648,18 +648,17 @@ fn delai_de_prevenance(
     // heures (`droit::periodes::part_du_mois`, l'horaire reel du mois).
     let (mut fraction, mut jours, mut j) = (Decimal::ZERO, socle::grandeurs::Jours::ZERO, fin.plus_jours(1)?);
     while j <= delai.expiration {
-        let fin_mois = socle::date::Jour { an: j.an, mois: j.mois, jour: j.jours_du_mois() };
-        let f = fin_mois.min(delai.expiration);
-        let debut_mois = socle::date::Jour { an: j.an, mois: j.mois, jour: 1 };
-        let horaire = crate::conges::horaire_du_mois(ctx, au, salarie_de(e)?, &debut, &debut_mois, &fin_mois)?;
-        let part = droit::periodes::part_du_mois(&j, &f, &fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
+        let mois_de_j = j.mois_civil();
+        let f = mois_de_j.dernier_jour().min(delai.expiration);
+        let horaire = crate::conges::horaire_du_mois(ctx, au, salarie_de(e)?, &debut, mois_de_j)?;
+        let part = droit::periodes::part_du_mois(&Periode::du_au(j, f)?, mois_de_j, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
         fraction = add(fraction, part.fraction.decimal());
         jours += part.jours;
         j = f.plus_jours(1)?;
     }
     stc.lignes.push(ligne(&regle.rubrique, fraction, salaire));
     let montant = Montant::du_decimal(mul(fraction, salaire)).au_centime().decimal();
-    let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&fin.plus_jours(1)?, &delai.expiration)?, salaire, montant, stc)?;
+    let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&Periode::du_au(fin.plus_jours(1)?, delai.expiration)?)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
     let avantages = if avantages.is_empty() {
         "Les avantages : le bulletin de ce mois n'en porte aucun, il n'y a rien à ajouter.".to_string()
@@ -690,7 +689,7 @@ fn delai_de_prevenance(
 /// repartit le salaire du mois. Un mois en compte toujours (six jours par semaine, hors les feries chomes) : aucun est un
 /// defaut du calendrier, qui remonte.
 pub(crate) fn ouvrables_du_mois(mois: Mois, chomes: Option<&str>) -> R<Decimal> {
-    match jours_ouvrables(&mois.premier_jour(), &mois.dernier_jour(), chomes)? {
+    match jours_ouvrables(&Periode::du_mois(mois), chomes)? {
         0 => Err(socle::refus!("Défaut du logiciel : le mois {} n'a aucun jour ouvrable.", mois)),
         n => Ok(Decimal::from(n)),
     }

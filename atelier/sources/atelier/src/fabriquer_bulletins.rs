@@ -189,8 +189,7 @@ struct Bulletin {
     emploi: String,
     statut: String,
     permanent: bool,
-    debut: Jour,
-    fin: Jour,
+    periode: Periode,
     dates: Vec<Periode>,
     objet: Option<(String, String)>,
     analytique: Option<String>,
@@ -479,10 +478,10 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
     // prorata des jours remuneres pour les autres intermittents.
     let resoudre = pss;
     let plafond = if b.permanent {
-        droit::plafond::plafond_permanent(b.debut, b.fin, None, &resoudre)
+        droit::plafond::plafond_permanent(&b.periode, None, &resoudre)
     } else {
         let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
-        droit::plafond::plafond_urssaf(b.debut, b.fin, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
+        droit::plafond::plafond_urssaf(&b.periode, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
     .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?
     .decimal();
@@ -636,8 +635,7 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
     for (k, b) in d.bulletins.into_iter().enumerate() {
         let ou = format!("bulletin {}", k + 1);
         let salarie = *codes.get(&b.salarie).ok_or_else(|| refus!("{} : aucun salarié de code {}", ou, b.salarie))?;
-        let (debut, fin) = (b.debut, b.fin);
-        let periode = Periode::du_au(debut, fin).map_err(|_| refus!("{} : la fin précède le début", ou))?;
+        let periode = Periode::du_au(b.debut, b.fin).map_err(|_| refus!("{} : la fin précède le début", ou))?;
         if b.dates.is_empty() {
             return Err(refus!("{} : `dates` : au moins une paire [début, fin]", ou));
         }
@@ -669,8 +667,7 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
             emploi: b.emploi,
             statut: b.statut,
             permanent: b.regime == Regime::Permanent,
-            debut,
-            fin,
+            periode,
             dates,
             objet: b.objet.map(|o| (o.numero, o.titre)),
             analytique: b.analytique,
@@ -916,7 +913,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         objet: b.objet.clone(),
         emploi: b.emploi.clone(),
         statut: b.statut.clone(),
-        periode: format!("du {} au {}", dmy(&b.debut), dmy(&b.fin)),
+        periode: format!("du {} au {}", dmy(&b.periode.debut()), dmy(&b.periode.fin())),
         dates: dates_a(&b.dates)?,
         lignes,
         brut: fr(c.brut),
@@ -928,7 +925,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         net_imposable: [fr(c.net_imposable), fr(c.annee.net_imposable)],
         net_a_payer: fr(c.net_a_payer),
         regle: dmy(&b.regle_le),
-        mode: b.fin.an >= 2023,
+        mode: b.periode.fin().an >= 2023,
         unite: unite.into(),
         cumuls: [
             [p, a],
@@ -972,7 +969,7 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         cumuls.push(("Heures".to_string(), fr_quantite(h(&c.periode))?, fr_quantite(h(&c.annee))?));
     }
     cumuls.push(("Salaire brut".to_string(), fr(c.brut), fr(c.annee.brut)));
-    let (d0, d1) = (&b.debut, &b.fin);
+    let (d0, d1) = (&b.periode.debut(), &b.periode.fin());
     let courte = if (d0.an, d0.mois) == (d1.an, d1.mois) {
         format!("du {} au {}/{:02}/{:02}", d0.jour, d1.jour, d1.mois, d1.an % 100)
     } else {
@@ -1020,7 +1017,7 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
 pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) -> R<Vec<String>> {
     let desc = lire_description(d, gabarit, dossier)?;
     let mut ordre: Vec<usize> = (0..desc.bulletins.len()).collect();
-    ordre.sort_by_key(|&k| (desc.bulletins[k].fin, desc.bulletins[k].debut, k));
+    ordre.sort_by_key(|&k| (desc.bulletins[k].periode.fin(), desc.bulletins[k].periode.debut(), k));
     // Les cumuls de l'annee de chaque salarie, qui partent de rien a son premier bulletin de l'annee.
     let mut cumuls: HashMap<(usize, socle::mois::Annee), Cumuls> = HashMap::new();
     let mut numeros: HashMap<socle::mois::Annee, usize> = HashMap::new();
@@ -1028,26 +1025,27 @@ pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) ->
     for k in ordre {
         let b = &desc.bulletins[k];
         // Le premier bulletin de l'annee part de cumuls nuls.
-        let annee = cumuls.entry((b.salarie, b.fin.annee())).or_insert_with(|| {
+        let fin = b.periode.fin();
+        let annee = cumuls.entry((b.salarie, fin.annee())).or_insert_with(|| {
             let z = Decimal::ZERO;
             Cumuls { cachets: Cachets::ZERO, heures: Heures::ZERO, jours: Jours::ZERO, brut: z, plafond: z, cout: z, net_imposable: z, pas: z }
         });
         let c = calculer(b, annee)?;
         *annee = c.annee.clone();
         // CoolPaie numerote ses bulletins dans l'annee : `k/annee`.
-        let n = numeros.entry(b.fin.annee()).or_insert(0);
+        let n = numeros.entry(fin.annee()).or_insert(0);
         *n += 1;
-        let numero = format!("{}/{}", n, b.fin.annee());
+        let numero = format!("{}/{}", n, fin.annee());
         let page = if desc.gabarit == Gabarit::Coolpaie { page_coolpaie(&desc, b, &c, numero)? } else { page_spaiectacle(&desc, b, &c)? };
         let s = &desc.salaries[b.salarie];
-        let nom = format!("{}-{:02}-{}-{:03}.pdf", b.fin.an, b.fin.mois, s.code, b.rang);
+        let nom = format!("{}-{:02}-{}-{:03}.pdf", fin.an, fin.mois, s.code, b.rang);
         let ligne = format!(
             "{}  {} {}  du {} au {}  brut {}  net à payer {}  ({} cachet(s), {} h, {} jour(s))",
             nom,
             s.prenom,
             s.nom,
-            b.debut.iso(),
-            b.fin.iso(),
+            b.periode.debut().iso(),
+            fin.iso(),
             fr(c.brut),
             fr(c.net_a_payer),
             grandeur_dite(c.cachets),

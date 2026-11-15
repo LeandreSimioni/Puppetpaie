@@ -57,8 +57,7 @@ pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_da
 #[derive(Debug, Clone, PartialEq)]
 pub struct Declare {
     pub salarie: IdSalarie,
-    pub debut: Jour,
-    pub fin: Jour,
+    pub periode: Periode,
     pub heures: Heures,
     pub cachets: Cachets,
     pub jours: Jours,
@@ -70,7 +69,7 @@ pub struct Declare {
 impl Declare {
     /// Le mois de la fin, auquel se rattachent les cachets.
     pub fn mois(&self) -> socle::mois::Mois {
-        self.fin.mois_civil()
+        self.periode.fin().mois_civil()
     }
 
     pub fn heures_equivalentes(&self, c: &Constantes) -> Heures {
@@ -237,7 +236,7 @@ pub fn position(
         salarie: salarie.clone(),
         periode: *periode,
         libelle_fenetre: libelle.clone(),
-        engagements: engagements.iter().filter(|e| e.salarie == *salarie && periode.contient(&e.fin)).cloned().collect(),
+        engagements: engagements.iter().filter(|e| e.salarie == *salarie && periode.contient(&e.periode.fin())).cloned().collect(),
         date_naissance,
     }
 }
@@ -249,7 +248,7 @@ pub fn naissance(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<Jour>> {
 
 /// Fin du dernier contrat declare : le depart de la fenetre par defaut.
 pub fn derniere_fin(engagements: &[Declare], salarie: &IdSalarie) -> Option<Jour> {
-    engagements.iter().filter(|e| e.salarie == *salarie).map(|e| e.fin).max()
+    engagements.iter().filter(|e| e.salarie == *salarie).map(|e| e.periode.fin()).max()
 }
 
 /// Position au regard des annexes 8 et 10. `anniversaire` (notifie par France

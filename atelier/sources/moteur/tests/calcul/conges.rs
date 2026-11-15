@@ -18,7 +18,11 @@ fn jours_ouvrables_selon_les_feries_chomes() {
         let dits = c[0].as_str().filter(|d| *d != "<absent>");
         // Le cas, lu par sa forme : (feries chomes, du, au).
         let (_, du, au): (Value, Jour, Jour) = serde_json::from_value(Value::Array(c.as_array().unwrap()[..3].to_vec())).unwrap();
-        c[3] = jours_ouvrables(&du, &au, dits).map_or_else(err, |n| json!(n));
+        // Du `du` au `au` a l'envers : aucun jour, aucun jour ouvrable.
+        c[3] = match socle::date::Periode::du_au(du, au) {
+            Ok(p) => jours_ouvrables(&p, dits).map_or_else(err, |n| json!(n)),
+            Err(_) => json!(0),
+        };
     }
     assert!(!cas.as_array().unwrap().is_empty());
     oracle("conges.json", "/jours_ouvrables", &cas);

@@ -59,23 +59,16 @@ pub(crate) fn debut_de(e: &Carte) -> R<Jour> {
     e.debut.ok_or_else(|| socle::fichiers::absent("debut"))
 }
 
-/// La regle qui paie le mois incomplet [`debut`, `fin`] (borne au mois [`debut_mois`, `fin_mois`]) du contrat de
-/// `salarie` (`droit::periodes::regle_du_mois_incomplet`) : la convention de l'entreprise, le statut de la fiche
+/// La regle qui paie le mois incomplet `presence` (le contrat borne au `mois`) du contrat de `salarie`
+/// (`droit::periodes::regle_du_mois_incomplet`) : la convention de l'entreprise, le statut de la fiche
 /// (`calcul::statut_de`), et si le contrat commence ou finit dans le mois.
-pub(crate) fn regle_du_mois_incomplet(
-    ctx: &Contexte,
-    salarie: &IdSalarie,
-    debut: &Jour,
-    fin: &Jour,
-    debut_mois: &Jour,
-    fin_mois: &Jour,
-) -> R<droit::periodes::RegleDuMoisIncomplet> {
+pub(crate) fn regle_du_mois_incomplet(ctx: &Contexte, salarie: &IdSalarie, presence: &Periode, mois: Mois) -> R<droit::periodes::RegleDuMoisIncomplet> {
     let fiche = ctx.fiche_de(salarie)?;
     let statut = crate::calcul::statut_de(&fiche)?;
-    Ok(droit::periodes::regle_du_mois_incomplet(ctx.entreprise.idcc.dite(), statut, debut > debut_mois || fin < fin_mois))
+    Ok(droit::periodes::regle_du_mois_incomplet(ctx.entreprise.idcc.dite(), statut, *presence != Periode::du_mois(mois)))
 }
 
-/// L'horaire de `salarie` pour le mois [`debut_mois`, `fin_mois`] (`droit::periodes::Horaire`) : ses jours travailles,
+/// L'horaire de `salarie` pour le `mois` (`droit::periodes::Horaire`) : ses jours travailles,
 /// lus sur sa fiche (`droit::conges::JoursTravailles`), et les feries chomes du mois que l'entreprise ne lui doit pas
 /// (`droit::conges::feries_non_payes`, L3133-3), son anciennete comptee depuis sa fiche (« Dans la compagnie depuis »)
 /// ou depuis son embauche, quand ce contrat l'est (`calcul::DebutDeLAnciennete`) ; ni l'une ni l'autre : refus.
@@ -84,13 +77,12 @@ pub(crate) fn horaire_du_mois(
     au: &AuMois,
     salarie: &IdSalarie,
     debut_contrat: &Jour,
-    debut_mois: &Jour,
-    fin_mois: &Jour,
+    mois: Mois,
 ) -> R<droit::periodes::Horaire> {
     let fiche = ctx.fiche_de(salarie)?;
     let jours = droit::conges::JoursTravailles::de_la_fiche(&fiche, au)?;
     let depuis = crate::calcul::DebutDeLAnciennete::de(&ctx.racine, &fiche, salarie, *debut_contrat)?.jour()?;
-    let feries_non_payes = droit::conges::feries_non_payes(debut_mois, fin_mois, ctx.entreprise.feries_chomes(), &jours, &depuis)?;
+    let feries_non_payes = droit::conges::feries_non_payes(&Periode::du_mois(mois), ctx.entreprise.feries_chomes(), &jours, &depuis)?;
     Ok(droit::periodes::Horaire { jours, feries_non_payes })
 }
 
@@ -164,7 +156,7 @@ pub(crate) fn dec_de(n: &NombreLu) -> R<Decimal> {
 /// Les jours ouvrables d'un conge pris dans une entreprise qui chome `chomes` (`droit::conges::jours_ouvrables`).
 pub(crate) fn jours_ouvrables_de(c: &CongePris, chomes: Option<&str>) -> R<i64> {
     let p = c.jours()?;
-    jours_ouvrables(&p.debut(), &p.fin(), chomes)
+    jours_ouvrables(&p, chomes)
 }
 
 // ------------------------------------------------ le compteur de conges
@@ -263,9 +255,8 @@ struct PaieLue {
 
 #[derive(Debug, Clone)]
 struct MoisPaye {
-    /// La presence du mois : le contrat borne au mois (`Engagement::debut_periode`, `fin_periode`).
-    debut: Jour,
-    fin: Jour,
+    /// La presence du mois : le contrat borne au mois (`Engagement::periode_payee`).
+    presence: Periode,
     contrat_debut: Jour,
     numero: Option<crate::numeros::NumeroContrat>,
     /// Les jours de conges que la paie decompte (`conges_pris_de_la_paie`).
@@ -284,8 +275,7 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
             arret |= crate::imprevus::est_un_arret(&imp) && crate::imprevus::du_contrat(&imp, cle, eng.numero.as_ref(), &eng.debut)?;
         }
         Some(MoisPaye {
-            debut: eng.debut_periode(),
-            fin: eng.fin_periode(),
+            presence: eng.periode_payee()?,
             contrat_debut: eng.debut,
             numero: eng.numero.clone(),
             pris: conges_pris_de_la_paie(&ctx.racine, p)?,
@@ -486,25 +476,18 @@ impl Tenue {
         let mut present = false;
         for m in paies.iter().filter_map(|p| p.mensuel.as_ref()) {
             // La presence du mois, bornee a la periode et a la reprise.
-            let mut p_debut = m.debut.max(periode.debut());
+            let Some(mut presence) = m.presence.croise(periode) else { continue };
             if let Some(r) = rep {
-                p_debut = p_debut.max(r.date);
-            }
-            let p_fin = m.fin.min(periode.fin());
-            if p_fin < p_debut {
-                continue;
+                if r.date > presence.fin() {
+                    continue;
+                }
+                presence = Periode::du_au(presence.debut().max(r.date), presence.fin())?;
             }
             present = true;
             // La presence, moins les suspensions qui n'acquierent pas (`imprevus::jours_de_conges_non_acquis`).
-            let non_acquis = crate::imprevus::jours_de_conges_non_acquis(
-                &ctx.racine,
-                cle,
-                m.numero.as_ref(),
-                &m.contrat_debut,
-                &p_debut,
-                &p_fin,
-            )?;
-            self.acquis = add(self.acquis, sub(jours_acquis(&p_debut, &p_fin)?, non_acquis).max(Decimal::ZERO));
+            let non_acquis =
+                crate::imprevus::jours_de_conges_non_acquis(&ctx.racine, cle, m.numero.as_ref(), &m.contrat_debut, &presence)?;
+            self.acquis = add(self.acquis, sub(jours_acquis(&presence)?, non_acquis).max(Decimal::ZERO));
             self.pris += m.pris;
             if m.arret {
                 self.avis.push(avertir(format!(
@@ -957,13 +940,11 @@ pub(crate) fn compteur_au_bulletin(ctx: &Contexte, au: &AuMois, paie: &Paie, moi
     let mut cpt = avant.compteur.clone();
     let reference = periode_de_reference(&fin_du_mois)?;
     // La presence de CE mois, bornee a la periode de reference.
-    let p_debut = eng.debut_periode().max(reference.debut());
-    let p_fin = eng.fin_periode().min(reference.fin());
-    if p_fin >= p_debut {
+    if let Some(presence) = eng.periode_payee()?.croise(&reference) {
         let cle_fiche = cle_de_fiche(ctx, cle)?;
         let non_acquis =
-            crate::imprevus::jours_de_conges_non_acquis(&ctx.racine, &cle_fiche, eng.numero.as_ref(), &eng.debut, &p_debut, &p_fin)?;
-        cpt.acquis = plafonner(add(cpt.acquis, sub(jours_acquis(&p_debut, &p_fin)?, non_acquis).max(Decimal::ZERO)))?;
+            crate::imprevus::jours_de_conges_non_acquis(&ctx.racine, &cle_fiche, eng.numero.as_ref(), &eng.debut, &presence)?;
+        cpt.acquis = plafonner(add(cpt.acquis, sub(jours_acquis(&presence)?, non_acquis).max(Decimal::ZERO)))?;
     }
     cpt.pris += conges_pris_de_la_paie(&ctx.racine, paie)?;
     Ok((cpt, avant))
@@ -984,7 +965,7 @@ pub(crate) fn compteur_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<Option<(
 /// Les jours de conges que CETTE paie decompte, lus sur ses lignes : le
 /// catalogue marque la rubrique.
 pub(crate) fn conges_pris_de_la_paie(racine: &Path, paie: &Paie) -> R<Decimal> {
-    let jour = &paie.engagement.fin_periode();
+    let jour = &paie.engagement.periode_payee()?.fin();
     let mut total = Decimal::ZERO;
     for l in &paie.engagement.lignes {
         let r = rubrique(racine, l.rubrique(), jour)?;
@@ -1010,8 +991,8 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let salaire = salaire_mensuel(ctx, e)?;
     let quotite = quotite_du_contrat(ctx, e, &nat)?;
 
-    let debut_mois = mois.premier_jour();
-    let fin_mois = mois.dernier_jour();
+    let du_mois = Periode::du_mois(mois);
+    let fin_mois = du_mois.fin();
     // La date de debut d'un contrat paye au mois : la meme phrase que `engagement::Engagement` (une saisie neuve sans
     // debut ne refuse pas sur « champ 'debut' absent »).
     let Some(debut_saisi) = e.debut else {
@@ -1022,28 +1003,25 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             nat.libelle
         ));
     };
-    let debut = debut_saisi.max(debut_mois);
-    let fin = match e.fin {
-        Some(f) => f.min(fin_mois),
-        None => fin_mois,
-    };
+    // Le contrat borne au mois.
+    let presence = Periode::du_au(debut_saisi.max(du_mois.debut()), e.fin.map_or(fin_mois, |f| f.min(fin_mois)))?;
     // Le salaire d'un mois incomplet : l'horaire reel du mois, ou la regle de la convention qui en a une
     // (`droit::periodes::part_du_mois`).
     let salarie = salarie_de(e)?.clone();
-    let regle = regle_du_mois_incomplet(ctx, &salarie, &debut, &fin, &debut_mois, &fin_mois)?;
-    let horaire = horaire_du_mois(ctx, au, &salarie, &debut_saisi, &debut_mois, &fin_mois)?;
-    let part = droit::periodes::part_du_mois(&debut, &fin, &fin_mois, regle, &horaire)?;
+    let regle = regle_du_mois_incomplet(ctx, &salarie, &presence, mois)?;
+    let horaire = horaire_du_mois(ctx, au, &salarie, &debut_saisi, mois)?;
+    let part = droit::periodes::part_du_mois(&presence, mois, regle, &horaire)?;
     let fraction = part.fraction.decimal();
     let heures_par_jour = droit::conges::heures_par_jour(quotite, &horaire.jours);
     let mut avert = Vec::new();
     if fraction != Decimal::ONE {
-        let quoi = if debut > debut_mois || fin < fin_mois { "mois incomplet" } else { "mois payé en partie" };
+        let quoi = if presence != du_mois { "mois incomplet" } else { "mois payé en partie" };
         avert.push(info(format!(
             "{} : {}, du {} au {} : {}.",
             qui(ctx, e),
             quoi,
-            debut.jj_mm_aaaa(),
-            fin.jj_mm_aaaa(),
+            presence.debut().jj_mm_aaaa(),
+            presence.fin().jj_mm_aaaa(),
             part.methode(heures_par_jour)
         )));
     }
@@ -1063,7 +1041,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let mut lignes = vec![mois_paye];
     // L'entreprise dit quels jours feries elle chome.
     let chomes = ctx.entreprise.feries_chomes();
-    let ouvrables = Decimal::from(jours_ouvrables(&debut, &fin, chomes)?);
+    let ouvrables = Decimal::from(jours_ouvrables(&presence, chomes)?);
 
     // --- les conges pris : une retenue, et une indemnite qui la couvre
     let mut pris = Decimal::ZERO;
@@ -1077,12 +1055,12 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
                 "{} : {} jour(s) ouvrable(s) de congés pris, et sa période du {} au {} n'a aucun jour ouvrable : un congé pris se date dans la période du contrat.",
                 qui(ctx, e),
                 pris,
-                debut.jj_mm_aaaa(),
-                fin.jj_mm_aaaa()
+                presence.debut().jj_mm_aaaa(),
+                presence.fin().jj_mm_aaaa()
             ));
         }
         let taux_jour_ouvrable = Montant::du_decimal(div(mul(salaire, fraction), ouvrables)).au_centime().decimal();
-        let cpt = compteur_conges(ctx, au, &salarie, &fin, mois)?;
+        let cpt = compteur_conges(ctx, au, &salarie, &presence.fin(), mois)?;
         let maintien = Montant::du_decimal(mul(taux_jour_ouvrable, pris)).au_centime().decimal();
         let ind = indemnite_des_jours(&cpt, pris, maintien)?;
         lignes.push(LignePaie::composee(ABSENCE_CONGES_PAYES, Nombre(court(pris)), MontantUnitaire::du_decimal(court(taux_jour_ouvrable))));
@@ -1115,7 +1093,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             )));
         }
         avert.extend(cpt.avertissements.iter().cloned());
-        avert.extend(avertir_feries(ctx, e, &debut, &fin)?);
+        avert.extend(avertir_feries(ctx, e, &presence)?);
     }
 
     // --- les imprevus : un arret de travail, une suspension, saisis une fois sur le salarie (`imprevus`)
@@ -1123,7 +1101,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         ctx,
         e,
         mois,
-        &crate::imprevus::MoisDuContrat { debut, fin, fin_mois, salaire_du_mois, heures_par_jour, jours_payes: part.jours, horaire: &horaire },
+        &crate::imprevus::MoisDuContrat { presence, mois, salaire_du_mois, heures_par_jour, jours_payes: part.jours, horaire: &horaire },
         au,
     )?;
     lignes.extend(l);
@@ -1135,7 +1113,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // specificites, `atelier/reference/sources/audiens-dsn/audiens-fiche-specificites-conges-spectacles-20261023.txt`,
     // l. 96-102). INFERENCE : aucun texte depose ne dit comment compter les jours d'un contrat paye au mois ; les jours
     // que son horaire programme sont ceux de son salaire (fiche DSN 2640, `droit::conges::JoursTravailles`).
-    let reel = droit::periodes::part_du_mois(&debut, &fin, &fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
+    let reel = droit::periodes::part_du_mois(&presence, mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
     let jours_travailles = (reel.jours - absents).max(socle::grandeurs::Jours::ZERO);
 
     // --- les primes
@@ -1215,7 +1193,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
 
     // --- le solde de tout compte, le mois ou le contrat se termine
     if let Some(f) = e.fin {
-        if debut_mois <= f && f <= fin_mois {
+        if du_mois.contient(&f) {
             let (l, a) = crate::solde::solde_de_tout_compte(ctx, au, e, mois, &lignes)?;
             lignes.extend(l);
             avert.extend(a);
@@ -1233,14 +1211,14 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
 
 /// Ce que le moteur a retire du decompte des jours ouvrables, et ce qu'il n'a
 /// pas pu retirer : a chaque mois qui porte un ferie.
-fn avertir_feries(ctx: &Contexte, e: &Carte, debut: &Jour, fin: &Jour) -> R<Vec<Avis>> {
+fn avertir_feries(ctx: &Contexte, e: &Carte, presence: &Periode) -> R<Vec<Avis>> {
     let dits = ctx.entreprise.feries_chomes();
     let qui = qui(ctx, e);
-    let tous = feries::chomes_entre(debut, fin, Some(feries::TOUS))?;
+    let tous = feries::chomes_entre(presence, Some(feries::TOUS))?;
     if tous.is_empty() {
         return Ok(vec![]);
     }
-    let chomes = feries::chomes_entre(debut, fin, dits)?;
+    let chomes = feries::chomes_entre(presence, dits)?;
     let liste = |l: &feries::Jours| {
         let mut l = l.clone();
         l.sort();

@@ -851,8 +851,8 @@ fn blocs_annexe(p: &Paie, numero: Option<&NumeroDeBulletin>, garanties: &[IdDeCo
                  siens.",
                 bulletin,
                 nom_imprime(sal)?,
-                p.engagement.debut_periode().jj_mm_aaaa(),
-                p.engagement.fin_periode().jj_mm_aaaa(),
+                p.engagement.periode_payee()?.debut().jj_mm_aaaa(),
+                p.engagement.periode_payee()?.fin().jj_mm_aaaa(),
             ))],
             Mesure::entier(7),
             Some(GRIS),
@@ -1141,8 +1141,8 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         m("Période :", true, None),
         mt(format!(
             " du {} au {}{} {} ",
-            e.debut_periode().jj_mm_aaaa(),
-            e.fin_periode().jj_mm_aaaa(),
+            e.periode_payee()?.debut().jj_mm_aaaa(),
+            e.periode_payee()?.fin().jj_mm_aaaa(),
             contrat_long,
             tiret
         )),
@@ -1350,7 +1350,7 @@ pub fn jeux_et_description(
     let mut engagements = passe.engagements(Some(courantes))?;
     if borne_au_mois {
         let fin = mois.dernier_jour();
-        engagements.retain(|e| e.debut <= fin);
+        engagements.retain(|e| e.periode.debut() <= fin);
     }
     for pa in paies {
         let cle = pa.salarie.id.clone();

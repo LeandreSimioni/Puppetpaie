@@ -47,8 +47,7 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
         let a = &c.contrat;
         out.push(Declare {
             salarie: c.salarie.clone(),
-            debut,
-            fin,
+            periode: socle::date::Periode::du_au(debut, fin)?,
             heures: a.heures.ok_or_else(|| socle::fichiers::absent("heures"))?,
             cachets: a.cachets.ok_or_else(|| socle::fichiers::absent("cachets"))?,
             jours: a.jours.ok_or_else(|| socle::fichiers::absent("jours"))?,
@@ -69,8 +68,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
     let heures = e.heures.into_iter().map(Heures::entieres).sum::<Heures>();
     Ok(Some(Declare {
         salarie: p.salarie.id.clone(),
-        debut: e.debut_periode(),
-        fin: e.fin_periode(),
+        periode: e.periode_payee()?,
         heures,
         cachets: e.cachets,
         jours: e.jours,
@@ -149,7 +147,7 @@ impl<'a> Passe<'a> {
         }
         let mut tous: Vec<Declare> = self.importes.borrow().iter().flatten().cloned().collect();
         tous.extend(groupes.into_iter().flat_map(|(_, es)| es));
-        tous.sort_by(|a, b| (a.debut, a.fin, &a.salarie).cmp(&(b.debut, b.fin, &b.salarie)));
+        tous.sort_by(|a, b| (a.periode, &a.salarie).cmp(&(b.periode, &b.salarie)));
         Ok(tous)
     }
 }

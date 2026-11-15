@@ -19,7 +19,7 @@ pub const BASE: CheminRelatif = CheminRelatif::du_moteur("emplois-base.json");
 /// La nomenclature des emplois de France Travail, livree sous `donnees/`.
 const NOMENCLATURE: CheminRelatif = CheminRelatif::du_moteur("nomenclature-emplois-ft.json");
 use socle::echec::R;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 
 use crate::contexte::{Contexte, IdSalarie};
 use crate::fiche::{AnnexeConvention, CaseDeFiche, CaseSalarie, CodeEmploiFt, CodePcsEse, FicheSalarie, Idcc, Lue, Statut, StatutCategorielRc, StatutConventionnel};
@@ -565,7 +565,7 @@ fn valeurs_par_mois(f: &FicheSalarie) -> [(CaseSalarie, Option<String>); 5] {
 const UNE_VALEUR_PAR_MOIS: [CaseSalarie; 5] = [CaseSalarie::StatutCategorielRc, CaseSalarie::StatutConventionnel, CaseSalarie::Statut, CaseSalarie::CodeEmploiFt, CaseSalarie::PcsEse];
 
 /// La fiche salarie `cle` d'un contrat PAYE AU MOIS (CDI, CDD de droit commun), telle qu'elle vaut pour la periode payee
-/// (`debut`, `fin`) : lue a la fin de la periode. Un permanent passe cadre, change de poste, obtient ou perd sa RQTH en
+/// (`periode`) : lue a sa fin. Un permanent passe cadre, change de poste, obtient ou perd sa RQTH en
 /// cours de contrat : la paie et la DSN du mois ou cela prend effet le disent.
 ///
 /// UN CHANGEMENT DANS LA PERIODE REFUSE (`UNE_VALEUR_PAR_MOIS`) : une paie se calcule sur une seule pile de bareme
@@ -574,16 +574,16 @@ const UNE_VALEUR_PAR_MOIS: [CaseSalarie; 5] = [CaseSalarie::StatutCategorielRc, 
 /// bornes : le refus ne garde que l'appel sur une periode qui n'aurait pas ete coupee. Le statut BOETH, qui ne change
 /// pas la paie, peut changer en cours de mois (40.072 se renseigne « pour le contrat concerne dans la periode
 /// declaree », p. 211 : celui de la fin).
-pub fn emploi_du_mois(ctx: &Contexte, cle: &IdSalarie, debut: &Jour, fin: &Jour) -> R<FicheSalarie> {
-    let au_debut = ctx.salarie_au(cle, debut)?;
-    let a_la_fin = ctx.salarie_au(cle, fin)?;
+pub fn emploi_du_mois(ctx: &Contexte, cle: &IdSalarie, periode: &Periode) -> R<FicheSalarie> {
+    let au_debut = ctx.salarie_au(cle, &periode.debut())?;
+    let a_la_fin = ctx.salarie_au(cle, &periode.fin())?;
     for ((c, avant), (_, apres)) in valeurs_par_mois(&au_debut).into_iter().zip(valeurs_par_mois(&a_la_fin)) {
         if avant == apres {
             continue;
         }
         let c = CaseDeFiche::from(c);
-        let le = ctx.salarie_brut(cle).into_iter().flat_map(|b| b.depuis(c)).flatten().filter(|j| j > debut && j <= fin).last();
-        let premier = Jour { jour: 1, ..*debut };
+        let le = ctx.salarie_brut(cle).into_iter().flat_map(|b| b.depuis(c)).flatten().filter(|j| *j > periode.debut() && periode.contient(j)).last();
+        let premier = Jour { jour: 1, ..periode.debut() };
         let suivant = Jour { jour: 1, ..premier.plus_jours(31)? };
         let texte = |v: &Option<String>| match v {
             Some(v) => repr(v),
@@ -608,18 +608,18 @@ vaut pour tout ce mois-ci) ou le {} (il vaut a partir du mois suivant).",
     Ok(a_la_fin)
 }
 
-/// Les jours, apres `debut` et au plus tard `fin` (la periode payee d'un contrat paye au mois), ou la fiche `cle` change
+/// Les jours de `periode`, apres son premier (la periode payee d'un contrat paye au mois), ou la fiche `cle` change
 /// une valeur qui choisit la pile du bareme ou que le bloc 40 porte avec une rubrique en bloc 41 (`UNE_VALEUR_PAR_MOIS`) :
 /// le `depuis` d'une de ces valeurs, quand la fiche de la veille et celle du jour different. C'est la que la paie du mois
 /// se decoupe en periodes elementaires (`periodes::bornes` ; norme DSN 2026.1, § 2.1.3.2, p. 28 : « passage de non
 /// cadre a cadre en cours de periode de paie »). Vide : le mois se paie d'un seul tenant.
-pub fn jours_de_changement(ctx: &Contexte, cle: &IdSalarie, debut: &Jour, fin: &Jour) -> R<Vec<Jour>> {
+pub fn jours_de_changement(ctx: &Contexte, cle: &IdSalarie, periode: &Periode) -> R<Vec<Jour>> {
     let Some(brute) = ctx.salarie_brut(cle) else {
         return Err(socle::refus!("La fiche salarié « {} » n'existe pas : sa paie au mois ne se découpe pas.", cle));
     };
     let mut jours: Vec<Jour> = Vec::new();
     for c in UNE_VALEUR_PAR_MOIS {
-        jours.extend(brute.depuis(c.into()).into_iter().flatten().filter(|j| j > debut && j <= fin));
+        jours.extend(brute.depuis(c.into()).into_iter().flatten().filter(|j| *j > periode.debut() && periode.contient(j)));
     }
     jours.sort();
     jours.dedup();

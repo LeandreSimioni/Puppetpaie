@@ -6,7 +6,7 @@
 //!
 //! `Jours` : la date et le nom de chaque jour, dans l'ordre du fichier livre.
 
-use crate::date::Jour;
+use crate::date::{Jour, Periode};
 use crate::mois::Annee;
 use crate::fichiers::{forme_en_cache, FormeGardee};
 use crate::echec::{refus, R};
@@ -155,11 +155,11 @@ pub fn chomes(annee: Annee, dits: Option<&str>) -> R<Jours> {
 }
 
 /// Les feries chomes d'une periode, annees a cheval comprises.
-pub fn chomes_entre(debut: &Jour, fin: &Jour, dits: Option<&str>) -> R<Jours> {
+pub fn chomes_entre(periode: &Periode, dits: Option<&str>) -> R<Jours> {
     let mut out = Jours::new();
-    for annee in debut.annee().jusqu_a(fin.annee()) {
+    for annee in periode.debut().annee().jusqu_a(periode.fin().annee()) {
         for (jour, nom) in chomes(annee, dits)? {
-            if *debut <= jour && jour <= *fin {
+            if periode.contient(&jour) {
                 inserer(&mut out, jour, &nom);
             }
         }

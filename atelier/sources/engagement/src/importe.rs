@@ -811,7 +811,7 @@ impl Importe {
         engagement.jours_contrat = engagement.jours;
 
         // Le bareme de la paie range les bases ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
-        let fin_periode = engagement.fin_periode();
+        let fin_periode = engagement.periode_payee()?.fin();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref())?)?;
         // Un regroupement n'est pas une rubrique du bareme : sa base ne se range pas.

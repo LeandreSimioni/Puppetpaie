@@ -725,23 +725,7 @@ impl Engagement {
     pub fn periode_payee(&self) -> R<socle::date::Periode> {
         match self.periode {
             Some(p) => Ok(p),
-            None => socle::date::Periode::du_au(self.debut_periode(), self.fin_periode()),
-        }
-    }
-
-    /// Le contrat borne au mois : le debut de la periode de paie (de la periode elementaire, quand ce calcul en est
-    /// une : `periode`).
-    pub fn debut_periode(&self) -> Jour {
-        match self.periode {
-            Some(p) => p.debut(),
-            None => self.debut.max(self.debut_mois()),
-        }
-    }
-
-    pub fn fin_periode(&self) -> Jour {
-        match self.periode {
-            Some(p) => p.fin(),
-            None => self.fin.into_iter().fold(self.fin_mois(), Jour::min),
+            None => socle::date::Periode::du_au(self.debut.max(self.debut_mois()), self.fin.into_iter().fold(self.fin_mois(), Jour::min)),
         }
     }
 
@@ -754,7 +738,7 @@ impl Engagement {
     pub fn versement_dit(&self) -> R<Option<Jour>> {
         match (self.date_paiement, &self.versement) {
             (Some(d), _) => Ok(Some(d)),
-            (None, Some(v)) => v.jour(self.mois, self.fin_periode()).map(Some),
+            (None, Some(v)) => v.jour(self.mois, self.periode_payee()?.fin()).map(Some),
             (None, None) => Ok(None),
         }
     }
