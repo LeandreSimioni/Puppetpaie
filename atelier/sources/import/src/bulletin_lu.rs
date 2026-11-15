@@ -1022,8 +1022,8 @@ pub struct BulletinLu {
     pub analytique: Option<String>,
     /// Le numero du contrat, quand le bulletin l'imprime.
     pub contrat: Option<String>,
-    pub debut: Jour,
-    pub fin: Jour,
+    /// La periode que le bulletin paie (R. 3243-1, 5°).
+    pub periode: Periode,
     /// Les intervalles « du ... au ... » des dates travaillees, tels qu'ecrits.
     pub dates_travaillees: Vec<Periode>,
     /// Les memes, jour par jour.
@@ -1470,10 +1470,7 @@ impl<'a> Lecteur<'a> {
         if nom_s.is_none() && nir.is_none() {
             return Err(Refus::Incomplet("ni le nom du salarié (son adresse) ni son NIR ne se trouvent".into()));
         }
-        let periode = periode.ok_or_else(|| Refus::Incomplet(format!("la période (« {} du ... au ... ») ne se trouve pas", self.libelle_de("periode"))))?;
-        // Le bulletin imprime sa periode en deux dates : la forme lue les garde l'une et l'autre.
-        let (debut, fin) = (periode.debut(), periode.fin());
-        let brut = corps.lu.brut.ok_or_else(|| Refus::Incomplet(format!("le brut (« {} ») ne se trouve pas", self.t.resumes.brut.join(" » ou « "))))?;
+        let periode = periode.ok_or_else(|| Refus::Incomplet(format!("la période (« {} du ... au ... ») ne se trouve pas", self.libelle_de("periode"))))?;        let brut = corps.lu.brut.ok_or_else(|| Refus::Incomplet(format!("le brut (« {} ») ne se trouve pas", self.t.resumes.brut.join(" » ou « "))))?;
         // La somme recue (10°) est le net avant impot moins l'impot preleve (R. 3243-1, 9° et 10° ; le modele de
         // l'arrete du 25/02/2016 les imprime l'un sous l'autre) : un bulletin qui imprime les deux termes sans la
         // somme (un impot nul) la dit par cette identite, et le compte rendu dit qu'elle a ete lue ainsi.
@@ -1516,8 +1513,7 @@ impl<'a> Lecteur<'a> {
             spectacle: texte(&valeurs, "spectacle"),
             analytique: texte(&valeurs, "analytique"),
             contrat: texte(&valeurs, "contrat"),
-            debut,
-            fin,
+            periode,
             dates_travaillees,
             jours_travailles,
             lignes: corps.lu.lignes,
@@ -2473,7 +2469,7 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
             avertissements.push(format!("« {} » : sans rubrique du catalogue, la ligne n'entre dans aucun compteur", l.libelle));
             continue;
         };
-        let r = droit::catalogue::rubrique(racine, code, &b.fin)?;
+        let r = droit::catalogue::rubrique(racine, code, &b.periode.fin())?;
         let cachet = r.unite == droit::catalogue::Unite::Cachet;
         // Les heures d'une unite : le forfait du catalogue, sinon celles que le libelle dit ; une heure compte ses heures.
         let par_unite = r.heures_forfait.or(l.heures);
@@ -2586,7 +2582,7 @@ fn accorder<G: Grandeur + Ord + std::iter::Sum + std::ops::Sub<Output = G>>(impr
 /// cachet groupe a 8 h, la regle d'avant ce decret) ; les compteurs restent ceux des lignes. Une erreur : une rubrique
 /// que le catalogue ne connait pas.
 pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> R<Compteurs> {
-    let forfait = droit::catalogue::rubrique(racine, &droit::catalogue::CACHET, &b.fin)?.heures_forfait;
+    let forfait = droit::catalogue::rubrique(racine, &droit::catalogue::CACHET, &b.periode.fin())?.heures_forfait;
     // Le total d'heures que des lignes comptent, cachets convertis ; `None` : inconnu.
     let total = |l: &Lignes| -> Option<Heures> {
         if l.sans_duree {

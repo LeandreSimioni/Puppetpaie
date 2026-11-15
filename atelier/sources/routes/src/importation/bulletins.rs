@@ -370,14 +370,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 None => "autre".to_string(),
             };
             *par_logiciel.entry(logiciel).or_default() += 1;
-            du = du.into_iter().chain([b.debut]).min();
-            au = au.into_iter().chain([b.fin]).max();
-            let mois = b.fin.mois_civil();
+            du = du.into_iter().chain([b.periode.debut()]).min();
+            au = au.into_iter().chain([b.periode.fin()]).max();
+            let mois = b.periode.fin().mois_civil();
             let infos = InfosPage {
                 logiciel: b.logiciel.clone(),
                 numero: b.numero.clone(),
-                debut: Some(b.debut),
-                fin: Some(b.fin),
+                debut: Some(b.periode.debut()),
+                fin: Some(b.periode.fin()),
                 mois: Some(mois),
                 ..InfosPage::default()
             };
@@ -444,7 +444,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
     }
     let mut lus = gardes;
-    lus.sort_by(|a, b| (a.b.fin, a.b.debut, a.fichier, a.page).cmp(&(b.b.fin, b.b.debut, b.fichier, b.page)));
+    lus.sort_by(|a, b| (a.b.periode.fin(), a.b.periode.debut(), a.fichier, a.page).cmp(&(b.b.periode.fin(), b.b.periode.debut(), b.fichier, b.page)));
     compter(&mut lus, &ctx.racine);
 
     // Les DSN et AEM de la compagnie, copiees la ou `apercu_lu` les lit, sous le nom de leur copie (`nom_copie`).
@@ -778,7 +778,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
     }
     let mut objets: Vec<(NumeroObjetSpectacle, Vec<usize>)> = par_objet.into_iter().collect();
-    objets.sort_by(|a, b| (lus[a.1[0]].b.fin, &a.0).cmp(&(lus[b.1[0]].b.fin, &b.0)));
+    objets.sort_by(|a, b| (lus[a.1[0]].b.periode.fin(), &a.0).cmp(&(lus[b.1[0]].b.periode.fin(), &b.0)));
     for (numero, rangs) in &objets {
         let titre = rangs.iter().rev().find_map(|&k| lus[k].b.spectacle.clone().filter(|t| !t.trim().is_empty()));
         let porteur = rangs.iter().rev().find(|&&k| lus[k].b.spectacle.as_ref().is_some_and(|t| !t.trim().is_empty())).map(|&k| &lus[k]);
@@ -956,7 +956,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     #[derive(PartialEq, Eq, Hash)]
     enum PaieDeLaPage {
         Declaree(Mois, CleDePaieVersee),
-        Datee(Jour, Jour),
+        Datee(socle::date::Periode),
     }
     // Deux pages qui disent la meme paie du meme salarie : la copie et la page de la premiere, ses montants.
     let mut prises: HashMap<(Nir, PaieDeLaPage), (CheminRelatif, usize, Decimal, Decimal)> = HashMap::new();
@@ -984,7 +984,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         // UN NUMERO D'OBJET HORS DE SA FORME : la case reste vide, la page le dit.
         infos.avertissements.extend(faute_de_l_objet(&l.b));
-        let (debut, fin) = (l.b.debut, l.b.fin);
+        let (debut, fin) = (l.b.periode.debut(), l.b.periode.fin());
         let mut candidats: Vec<(Mois, CleDePaieVersee, Cible)> = index.get(&(l.nir.clone(), debut, fin)).into_iter().flatten().cloned().collect();
         if candidats.is_empty() {
             if let Some(n) = l.b.contrat.as_deref().and_then(NumeroContrat::d_une_piece) {
@@ -1022,7 +1022,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             l.nir.clone(),
             match &cible {
                 Some((mois, contrat, _)) => PaieDeLaPage::Declaree(*mois, contrat.clone()),
-                None => PaieDeLaPage::Datee(debut, fin),
+                None => PaieDeLaPage::Datee(l.b.periode),
             },
         );
         if let Some((autre, page, brut, net)) = prises.get(&ident) {
@@ -1053,7 +1053,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     None => CleDePaieVersee::Copie { fichier: copie.clone(), page: (nb_pages > 1).then_some(l.page as u64) },
                 };
                 let mut paie = PaieVersee::vide(contrat);
-                (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.debut), Some(l.b.fin), Some(copie.clone()));
+                (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.periode.debut()), Some(l.b.periode.fin()), Some(copie.clone()));
                 let x = PaieLue { mois: l.mois, salarie: salarie.clone(), paie };
                 let avant = hist_par_cle.get(&x.cle()).cloned();
                 (x, Attestant::Piece(Source::Bulletin), avant)
@@ -1114,7 +1114,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Ok((compte, ligne_contrat)) => {
                 // LE BULLETIN EST LA PIECE DE PAIE : un contrat d'AEM aux memes dates qui compte autre chose
                 // s'efface devant le sien (`import::attestes`) ; un autre contrat atteste reste, et l'ecart se dit.
-                let pareils = registre.pareils(&l.nir, l.b.debut, l.b.fin, Source::Bulletin);
+                let pareils = registre.pareils(&l.nir, l.b.periode.debut(), l.b.periode.fin(), Source::Bulletin);
                 // Le brut que le bulletin lu dit (un nombre de sa lecture) : sa porte.
                 let le_sien = (Some(compte.heures), Some(compte.cachets), Some(compte.jours), Some(Montant::du_decimal(compte.brut)));
                 let en_mots = import::attestes::en_mots(le_sien.0, le_sien.1, le_sien.2, le_sien.3);
@@ -1527,8 +1527,8 @@ fn infos_de(l: &Lu, salarie: Option<&Option<IdSalarie>>) -> InfosPage {
         logiciel: l.b.logiciel.clone(),
         numero: l.b.numero.clone(),
         salarie: salarie.cloned(),
-        debut: Some(l.b.debut),
-        fin: Some(l.b.fin),
+        debut: Some(l.b.periode.debut()),
+        fin: Some(l.b.periode.fin()),
         mois: Some(l.mois),
         ..InfosPage::default()
     }
@@ -1785,7 +1785,7 @@ fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<
         s.commune = Some(commune);
     }
     s.nir_cle = ls.iter().rev().find_map(|l| l.cle_nir.clone()).or_else(|| droit::fiche::CleNir::du_nir(nir));
-    s.date_anciennete = ls.iter().map(|l| l.b.debut).min();
+    s.date_anciennete = ls.iter().map(|l| l.b.periode.debut()).min();
     let statut = ls.iter().rev().find_map(|l| l.b.salarie.statut.as_deref());
     // Une salariee recoit le metier au feminin, comme dans sa fiche (`routes::mois::emploi`) : le sexe que porte son NIR.
     let femme = nir.sexe() == Some(droit::fiche::Sexe::Feminin);
@@ -2122,7 +2122,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     let heures = heures.entieres();
     let enseignement = c.heures_enseignement.map(Heures::entieres);
     let brut = Montant::du_decimal(l.b.brut).au_centime().decimal();
-    let (debut, fin) = (l.b.debut, l.b.fin);
+    let (debut, fin) = (l.b.periode.debut(), l.b.periode.fin());
     let compte = Compte { heures, cachets, jours, brut };
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
     // LA NATURE DU CONTRAT : aucun des bulletins lus ne l'imprime en mention (`bulletins-lecture-base.json`), et rien sur la
@@ -2401,7 +2401,7 @@ fn compter(lus: &mut [Lu], racine: &Path) {
             let freres: Vec<&BulletinLu> = lus
                 .iter()
                 .filter(|s| s.nir == l.nir && s.mois == l.mois && s.b.logiciel == l.b.logiciel)
-                .filter(|s| (&s.b.numero, s.b.debut, s.b.fin) != (&l.b.numero, l.b.debut, l.b.fin))
+                .filter(|s| (&s.b.numero, s.b.periode) != (&l.b.numero, l.b.periode))
                 .map(|s| &s.b)
                 .collect();
             bulletin_lu::compteurs(&l.b, &freres, racine)
