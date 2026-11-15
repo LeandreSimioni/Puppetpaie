@@ -98,11 +98,10 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
             "spectacle": "Les Fictifs en Tournée",
             "analytique": null,
             "contrat": null,
-            "debut": "2026-01-14",
-            "fin": "2026-01-24",
+            "periode": {"du": "2026-01-14", "au": "2026-01-24"},
             "dates_travaillees": [
-                {"debut": "2026-01-14", "fin": "2026-01-14"}, {"debut": "2026-01-18", "fin": "2026-01-18"},
-                {"debut": "2026-01-21", "fin": "2026-01-21"}, {"debut": "2026-01-23", "fin": "2026-01-24"},
+                {"du": "2026-01-14", "au": "2026-01-14"}, {"du": "2026-01-18", "au": "2026-01-18"},
+                {"du": "2026-01-21", "au": "2026-01-21"}, {"du": "2026-01-23", "au": "2026-01-24"},
             ],
             "jours_travailles": ["2026-01-14", "2026-01-18", "2026-01-21", "2026-01-23", "2026-01-24"],
             "lignes": [
@@ -199,8 +198,7 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
             "spectacle": null,
             "analytique": "FICTION",
             "contrat": null,
-            "debut": "2026-04-02",
-            "fin": "2026-04-03",
+            "periode": {"du": "2026-04-02", "au": "2026-04-03"},
             "dates_travaillees": [],
             "jours_travailles": [],
             "lignes": [
