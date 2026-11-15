@@ -39,6 +39,11 @@ macro_rules! liste_des_exports {
                 match self { $( $nom::$var => $txt ),* }
             }
 
+            /// Son texte dans le nom d'un fichier.
+            pub fn nom(self) -> socle::fichiers::NomDeFichier {
+                match self { $( $nom::$var => const { socle::fichiers::NomDeFichier::du_moteur($txt) } ),* }
+            }
+
             /// Celle qu'ecrit `texte`, ou la phrase qui le refuse.
             pub fn lire(texte: &str) -> R<$nom> {
                 match texte {

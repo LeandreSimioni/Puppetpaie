@@ -927,7 +927,7 @@ impl CodeRetourDpae {
 ///   peut y porter un dossier (aucun : la zone a blanc) ;
 /// - REFUSEE : tout autre code, ou un code qui enregistre sans reference de dossier ; le certificat peut aussi y porter
 ///   un dossier.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EtatDeLaDpae {
     Enregistree { dossier: DossierDpae },
     DejaExistante { dossier: Option<DossierDpae> },
@@ -1029,7 +1029,7 @@ fn zone_retour(nom: &str) -> (usize, usize) {
 }
 
 /// Une DPAE du certificat de conformite (nature 41) : chaque zone telle que l'enregistrement la porte, sans ses blancs.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct LigneDuCertificat {
     pub nom: String,
     pub prenom: String,

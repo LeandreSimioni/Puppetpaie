@@ -63,7 +63,7 @@ const ILLISIBLE: &str = "Les jours fériés livrés avec le logiciel ne se lisen
 /// Paques, l'un ou l'autre.
 fn fetes() -> R<Arc<Vec<Fete>>> {
     static CACHE: OnceLock<FormeGardee<Vec<Fete>>> = OnceLock::new();
-    forme_en_cache(&CACHE, &crate::fichiers::CheminRelatif::du_moteur("feries-base.json"), ILLISIBLE, |b: BaseFeries| {
+    forme_en_cache(&CACHE, &const { crate::fichiers::CheminRelatif::du_moteur("feries-base.json") }, ILLISIBLE, |b: BaseFeries| {
         b.jours
             .into_iter()
             .enumerate()

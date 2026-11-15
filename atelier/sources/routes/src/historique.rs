@@ -347,7 +347,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     for &a in annees.iter().rev() {
         let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| x.annee_civile() == a).copied().collect();
         mois.sort();
-        let fichier = socle::fichiers::NomDeFichier::lire(&format!("{}{}.csv", documents::SorteDePieceProduite::Compta.prefixe(), a))?;
+        let fichier = const { documents::etats_paie::NomDExport::autour(documents::SorteDePieceProduite::Compta.prefixe(), ".csv") }.de(&a.into());
         let chemin = documents::DossierHorsDuMois::Exercices.sous(&ctx.racine).join(&fichier);
         let mut acceptees = Vec::new();
         for &x in &mois {

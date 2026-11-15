@@ -907,9 +907,9 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     let classeur = dossier.join("CASC-SVP_liste-nominative.xlsx");
 
     // Chaque courriel porte le nom court de son organisme : celui du `.eml` garde.
-    let messages: Vec<Message<&str>> = vec![
+    let messages: Vec<Message<NomDeFichier>> = vec![
         Message {
-            pour: "audiens",
+            pour: const { NomDeFichier::du_moteur("audiens") },
             nom: "Audiens".into(),
             destinataire: r.courriel_audiens.a.clone(),
             sujet: r.courriel_audiens.objet.clone(),
@@ -918,7 +918,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
             html: Some(courriel_en_html(&r.courriel_audiens.corps)),
         },
         Message {
-            pour: "casc",
+            pour: const { NomDeFichier::du_moteur("casc") },
             nom: "CASC-SVP".into(),
             destinataire: r.courriel_casc.a.clone(),
             sujet: r.courriel_casc.objet.clone(),
@@ -948,8 +948,9 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     };
     // Le nom de chaque `.eml` garde se fait avant l'envoi : rien ne se refuse apres que les courriels sont partis.
     let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
-    let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
-    let emls = messages.iter().map(|m| NomDeFichier::lire(&format!("{}_CASC-SVP_{}.eml", horodate, m.pour))).collect::<R<Vec<_>>>()?;
+    let horodate = NomDeFichier::lire(&format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]))?;
+    let eml = const { documents::etats_paie::NomDExport::autour("_CASC-SVP_", ".eml") };
+    let emls: Vec<NomDeFichier> = messages.iter().map(|m| horodate.suivi_de(&eml.de(&m.pour))).collect();
     let mut copies: Vec<Vec<u8>> = Vec::new();
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,

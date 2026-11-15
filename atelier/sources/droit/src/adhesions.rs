@@ -88,7 +88,7 @@ forme_notee! {
 /// LA LECTURE DE `casc-svp-base.json`, la seule, une fois tant que le fichier ne change pas.
 pub fn casc_svp_base() -> R<Arc<CascSvp>> {
     static CACHE: OnceLock<FormeGardee<CascSvp>> = OnceLock::new();
-    forme_en_cache(&CACHE, &CheminRelatif::du_moteur("casc-svp-base.json"), "La table livrée de la CASC-SVP ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("casc-svp-base.json") }, "La table livrée de la CASC-SVP ne se lit pas : le signaler au développeur.", Ok)
 }
 
 /// L'ADHESION CASC-SVP d'une compagnie de la 3090 qui n'en est pas exemptee (`bareme::casc_exemptee`), ou `None`.

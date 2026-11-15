@@ -137,7 +137,7 @@ struct Ecarte {
 /// La liste livree, dans l'ordre du COG.
 pub fn liste() -> R<Arc<Vec<Pays>>> {
     static CACHE: OnceLock<FormeGardee<Vec<Pays>>> = OnceLock::new();
-    forme_en_cache(&CACHE, &crate::fichiers::CheminRelatif::du_moteur("pays-base.json"), "La liste des pays livrée avec le logiciel ne se lit pas : le signaler au développeur.", |b: BasePays| Ok(b.pays))
+    forme_en_cache(&CACHE, &const { crate::fichiers::CheminRelatif::du_moteur("pays-base.json") }, "La liste des pays livrée avec le logiciel ne se lit pas : le signaler au développeur.", |b: BasePays| Ok(b.pays))
 }
 
 /// Le pays d'un code ISO (casse et blancs ignores), ou `None` s'il n'est pas dans la liste.
@@ -204,7 +204,7 @@ struct BasePaysDsn {
 /// La table « Pays » de la DSN, dans l'ordre de la nomenclature.
 pub fn table_dsn() -> R<Arc<Vec<PaysDsn>>> {
     static CACHE: OnceLock<FormeGardee<Vec<PaysDsn>>> = OnceLock::new();
-    forme_en_cache(&CACHE, &crate::fichiers::CheminRelatif::du_moteur("pays-dsn-base.json"), "La table des pays de la DSN livrée avec le logiciel ne se lit pas : le signaler au développeur.", |b: BasePaysDsn| Ok(b.pays))
+    forme_en_cache(&CACHE, &const { crate::fichiers::CheminRelatif::du_moteur("pays-dsn-base.json") }, "La table des pays de la DSN livrée avec le logiciel ne se lit pas : le signaler au développeur.", |b: BasePaysDsn| Ok(b.pays))
 }
 
 /// Le pays de naissance d'un code (casse et blancs ignores) : sa ligne de la table « Pays » de la DSN, ou `None`.

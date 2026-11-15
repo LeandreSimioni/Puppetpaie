@@ -125,7 +125,7 @@ impl<T: Clone> Nomenclature<T> {
 /// `arrets-base.json`, lu par sa forme (le texte est lu une fois tant qu'il ne change pas).
 pub fn bloc_60() -> R<Bloc60> {
     static CACHE: std::sync::OnceLock<FormeGardee<Bloc60>> = std::sync::OnceLock::new();
-    let b = forme_en_cache(&CACHE, &CheminRelatif::du_moteur("arrets-base.json"), "Les codes du bloc arrêt de travail livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
+    let b = forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("arrets-base.json") }, "Les codes du bloc arrêt de travail livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
     Ok((*b).clone())
 }
 

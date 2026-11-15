@@ -627,18 +627,45 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
     Ok(livre)
 }
 
+/// LE NOM D'UN FICHIER D'EXPORT, ecrit en Rust : autour de la periode (`Periode::nom`, `Quand::nom`, une annee), ou fixe
+/// (`COMPTES.TXT`, qu'EBP cherche sous ce nom-la, a cote des ecritures).
+pub enum NomDExport {
+    Autour(NomDeFichier, NomDeFichier),
+    Fixe(NomDeFichier),
+}
+
+impl NomDExport {
+    /// Le nom autour de la periode : `avant<periode>apres`.
+    pub const fn autour(avant: &'static str, apres: &'static str) -> NomDExport {
+        NomDExport::Autour(NomDeFichier::du_moteur(avant), NomDeFichier::du_moteur(apres))
+    }
+
+    /// Le nom du fichier de la periode `periode`.
+    pub fn de(&self, periode: &NomDeFichier) -> NomDeFichier {
+        match self {
+            NomDExport::Autour(avant, apres) => avant.suivi_de(periode).suivi_de(apres),
+            NomDExport::Fixe(nom) => nom.clone(),
+        }
+    }
+}
+
 /// Ecrit le livre dans `exports/AAAA/livre-de-paie-<periode>-<regroupement>[-coordonnees].<ext>`.
 fn ecrire_livre(ctx: &Contexte, livre: &LivreDePaie, quand: &Quand) -> R<PathBuf> {
     let dossier = quand.dossier(ctx);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-    let nom = format!("livre-de-paie-{}-{}{}.{}", quand.nom(), livre.regroupement, if livre.coordonnees { "-coordonnees" } else { "" }, livre.format);
-    let chemin = dossier.join(nom);
-    let octets = match livre.format {
-        FormatDExport::Csv => csv_livre(livre),
-        FormatDExport::Xlsx => xlsx_livre(livre)?,
-        FormatDExport::Pdf => pdf_livre(ctx, livre)?,
+    let (extension, octets) = match livre.format {
+        FormatDExport::Csv => (const { NomDeFichier::du_moteur(".csv") }, csv_livre(livre)),
+        FormatDExport::Xlsx => (const { NomDeFichier::du_moteur(".xlsx") }, xlsx_livre(livre)?),
+        FormatDExport::Pdf => (const { NomDeFichier::du_moteur(".pdf") }, pdf_livre(ctx, livre)?),
         autre => return Err(refus(format!("Format inconnu : « {} ». Les formats possibles sont csv, pdf, xlsx.", autre))),
     };
+    let groupe = const { NomDeFichier::du_moteur("-") }.suivi_de(&livre.regroupement.nom());
+    let groupe = match livre.coordonnees {
+        true => groupe.suivi_de(&const { NomDeFichier::du_moteur("-coordonnees") }),
+        false => groupe,
+    };
+    let nom = NomDExport::Autour(const { NomDeFichier::du_moteur("livre-de-paie-") }, groupe.suivi_de(&extension)).de(&quand.nom());
+    let chemin = dossier.join(nom);
     std::fs::write(&chemin, octets).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     Ok(chemin)
 }

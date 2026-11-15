@@ -177,7 +177,7 @@ forme! {
 /// Le catalogue livre.
 pub fn catalogue() -> R<Arc<Catalogue>> {
     static CACHE: OnceLock<FormeGardee<Catalogue>> = OnceLock::new();
-    forme_en_cache(&CACHE, &CheminRelatif::du_moteur("prevoyance-conventionnelle-base.json"), "Le catalogue de la prévoyance de branche livré ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("prevoyance-conventionnelle-base.json") }, "Le catalogue de la prévoyance de branche livré ne se lit pas : le signaler au développeur.", Ok)
 }
 
 impl Catalogue {

@@ -208,7 +208,7 @@ fn lire_config<T: serde::de::DeserializeOwned>(cfg: &Path, nom: &str) -> R<Optio
 /// fichier présent mais illisible arrête tout (code 2) : un garde qui ne lit pas ce qu'il protège ne laisse pas passer.
 /// Et le nom d'un salarié n'est jamais dans ce que la commande affiche (`salarie.nir`, pas la clé de sa fiche).
 fn valeurs_reelles(racine: &Path) -> R<Vec<(String, String)>> {
-    let cfg = socle::fichiers::CheminRelatif::du_moteur("prive/config").dans(racine);
+    let cfg = const { socle::fichiers::CheminRelatif::du_moteur("prive/config") }.dans(racine);
     let mut valeurs: Vec<(String, String)> = Vec::new();
     let mut poser = |v: String, quoi: String| match valeurs.iter_mut().find(|(x, _)| *x == v) {
         Some(e) => e.1 = quoi,

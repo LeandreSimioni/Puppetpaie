@@ -143,7 +143,7 @@ fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
 
 /// CE QU'EST DEVENUE UNE EMBAUCHE DECLAREE (la derniere DPAE reelle partie qui la porte) : quand, son fichier, sa fin,
 /// passee, refusee, les anomalies, les retours, et ce que le certificat de l'Urssaf en dit (le dossier, deja existante).
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
 pub struct EtatEmbauche {
     pub quand: InstantOuJour,
     pub fichier: Option<NomDeFichier>,

@@ -19,7 +19,7 @@ use droit::fiche::CodeAnalytique;
 use socle::echec::{erreur, Classe};
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
-use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
+use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, NomDExport, Periode};
 use crate::ecritures_comptables::{ecritures_du_mois, Ecriture, NumeroDeCompte};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
 use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielComptable, Plan};
@@ -884,27 +884,6 @@ struct Ecrivain {
     comptes: Option<(NomDExport, fn(&[(NumeroDeCompte, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
 }
 
-/// LE NOM D'UN FICHIER D'EXPORT, ecrit en Rust : autour de la periode (`Periode::nom`), ou fixe (`COMPTES.TXT`, qu'EBP
-/// cherche sous ce nom-la, a cote des ecritures).
-enum NomDExport {
-    Autour(NomDeFichier, NomDeFichier),
-    Fixe(NomDeFichier),
-}
-
-impl NomDExport {
-    /// Le nom autour de la periode : `avant<periode>apres`.
-    const fn autour(avant: &'static str, apres: &'static str) -> NomDExport {
-        NomDExport::Autour(NomDeFichier::du_moteur(avant), NomDeFichier::du_moteur(apres))
-    }
-
-    /// Le nom du fichier de la periode `periode`.
-    fn de(&self, periode: &NomDeFichier) -> NomDeFichier {
-        match self {
-            NomDExport::Autour(avant, apres) => avant.suivi_de(periode).suivi_de(apres),
-            NomDExport::Fixe(nom) => nom.clone(),
-        }
-    }
-}
 
 /// `ECRIVAINS.get(format)`.
 fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
