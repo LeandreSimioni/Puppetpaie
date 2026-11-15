@@ -32,7 +32,7 @@ macro_rules! dites {
 }
 dites!(CourrielPose, ApercuSignature, ApercuAvenant, PiecesParties, SignaturesDemandees, Imprimes, NoteRecue);
 use droit::contexte::{Contexte, IdSalarie};
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{NumeroContrat, NumeroDAvenant};
 use envois::etats;
 use envois::journal::{self, AvenantParti, ArticleModifie, ContratParti};
 use envois::releve_signatures::ReleveDite;
@@ -282,7 +282,7 @@ pub(crate) struct ChargeRecu {
     pub(crate) salarie: droit::contexte::IdSalarie,
     pub(crate) debut: Jour,
     pub(crate) numero: Option<NumeroContrat>,
-    pub(crate) avenant: Option<i64>,
+    pub(crate) avenant: Option<NumeroDAvenant>,
     pub(crate) recu: bool,
 }
 
@@ -463,7 +463,7 @@ pub(crate) struct ApercuAvenant {
     ailleurs: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     contrat_signe: Option<ContratSigneDit>,
-    numero: i64,
+    numero: NumeroDAvenant,
     effet: Jour,
     modifications: Vec<ModificationDite>,
     avenants: Vec<AvenantDit>,
@@ -544,7 +544,7 @@ pub(crate) struct ParCourriel {
     /// L'acte de la demande (`avenant`, `remplace`) ; aucun pour le contrat lui-meme (la forme du journal des envois,
     /// `envois::etats`).
     pub(crate) acte: Option<envois::journal::ActeDuContrat>,
-    pub(crate) avenant: Option<i64>,
+    pub(crate) avenant: Option<NumeroDAvenant>,
 }
 
 /// UN CONTRAT (OU UN AVENANT) REVENU SIGNE, ou la note retiree (`c.recu`). Une ligne de journal, pas un etat de la saisie :
@@ -577,7 +577,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let p = &paies[rang];
     let numero_note = p.engagement.numero.clone();
     let nom = crate::nom_a_l_ecran(&p.salarie, salarie);
-    let avenant = c.avenant.filter(|a| *a != 0);
+    let avenant = c.avenant;
     let ce = match avenant {
         Some(a) => format!("avenant n° {}", a),
         None => "contrat".to_string(),
@@ -591,7 +591,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         ),
     };
     // CE QUI REVIENT SE RANGE SUR LA LIGNE DE L'ENVOI : la derniere qui a fait partir ce contrat (ou cet avenant).
-    let av = courriel.and_then(|m| m.avenant).or(avenant).filter(|a| *a != 0);
+    let av = courriel.and_then(|m| m.avenant).or(avenant);
     let retour = journal::RetourContrat {
         salarie: c.salarie.clone(),
         contrat: p.engagement.contrat(),
@@ -689,8 +689,19 @@ fn majuscule(t: &str) -> String {
 }
 
 /// « avenant n° 2 », ou « avenant sans numéro ».
-fn avenant_dit(numero: Option<i64>) -> String {
+fn avenant_dit(numero: Option<NumeroDAvenant>) -> String {
     engagement::numeros::numero_dit(numero, "avenant n° ", "", "avenant sans numéro")
+}
+
+/// LE NUMERO DU PROCHAIN AVENANT d'un contrat, le seul endroit qui le donne : le suivant du dernier avenant signe parmi
+/// ceux deja partis (`deja`) ; aucun signe, le premier. Un avenant signe sans numero est un journal mal forme.
+fn prochain_avenant(deja: &[AvenantParti]) -> R<NumeroDAvenant> {
+    let mut dernier: Option<NumeroDAvenant> = None;
+    for a in deja.iter().filter(|a| a.signe.is_some()) {
+        let n = a.numero.ok_or_else(|| erreur(Classe::MalFormee, "Un avenant revenu signé n'a pas de numéro au journal des envois."))?;
+        dernier = dernier.max(Some(n));
+    }
+    Ok(dernier.map_or(NumeroDAvenant::premier(), NumeroDAvenant::suivant))
 }
 
 /// `demander-signature` : faire signer, en un geste, les contrats choisis et les avenants coches. Tous les refus
@@ -1095,7 +1106,7 @@ struct AvenantLu {
     date_contrat: Jour,
     signe: Option<Moment>,
     contrat_signe: Option<ContratSigneDit>,
-    numero: i64,
+    numero: NumeroDAvenant,
     effet: Jour,
     modifications: Vec<ArticleModifie>,
     avenants: Vec<AvenantParti>,
@@ -1291,10 +1302,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     })?;
     let avant = documents::avenant::valeurs_de_la_paie(ctx, &ent, &ancienne, numero_porte)?;
     let modifs = documents::avenant::modifications(&modele, &avant, &vals)?;
-    let mut signes: Vec<i64> = Vec::new();
-    for a in deja.iter().filter(|a| a.signe.is_some()) {
-        signes.push(a.numero.ok_or_else(|| erreur(Classe::MalFormee, "un numero d'avenant n'est pas un entier"))?);
-    }
+    let numero = prochain_avenant(&deja)?;
     let modifications = modifs
         .into_iter()
         .map(|x| ArticleModifie { numero: Some(x.numero), article: x.article, avant: x.avant, apres: x.apres, blocs: x.blocs, phrase: None, jour: None })
@@ -1313,8 +1321,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
         date_contrat: parti.date(),
         signe: parti.signe.clone(),
         contrat_signe: None,
-        // Le numero suit celui du dernier avenant signe ; aucun signe, c'est le premier.
-        numero: signes.iter().max().copied().into_iter().sum::<i64>() + 1,
+        numero,
         effet,
         modifications,
         avenants: deja,
@@ -1378,9 +1385,8 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         None => debut,
     };
     let g = Moteur::nouveau(ctx).globales()?;
-    // Le numero de l'avenant suit celui du dernier avenant signe ; aucun signe, c'est le premier.
     let deja: Vec<AvenantParti> = g.avenants.get(&(p.salarie.id.clone(), p.engagement.numero.clone())).into_iter().flatten().cloned().collect();
-    let signes: i64 = deja.iter().filter(|a| a.signe.is_some()).filter_map(|a| a.numero).max().into_iter().sum();
+    let numero_avenant = prochain_avenant(&deja)?;
     let nomme = ContratNomme::de(p)?;
     Ok(Some(AvenantLu {
         salarie: c.salarie.clone(),
@@ -1395,7 +1401,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         date_contrat: debut,
         signe: None,
         contrat_signe: Some(crate::gestes::signature::contrat_signe_dit(ctx, salarie, debut)?),
-        numero: signes + 1,
+        numero: numero_avenant,
         effet,
         modifications,
         avenants: deja,

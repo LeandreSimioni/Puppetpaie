@@ -207,7 +207,7 @@ pub fn ecrire_avenant(
     ent: &EntrepriseDuDocument,
     chemin: &Path,
     modifs: &[forme::Modification],
-    numero: i64,
+    numero: engagement::numeros::NumeroDAvenant,
     date_contrat: Jour,
     effet: Jour,
     date: Jour,

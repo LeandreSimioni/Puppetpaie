@@ -330,6 +330,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | clé d'une paie versée | `CleDePaieVersee` | `engagement/src/importe.rs` |
 | numéro de bulletin | `NumeroDeBulletin` | `engagement/src/numeros.rs` |
 | numéro d'un certificat Congés Spectacles (N CE, le premier d'une paie partie) | `NumeroDeCertificat` | `engagement/src/numeros.rs` |
+| numéro d'un avenant au contrat | `NumeroDAvenant` | `engagement/src/numeros.rs` |
 | rang d'une ligne parmi celles de sa carte | `RangDeLigne` | `engagement/src/ligne.rs` |
 | rang d'un engagement dans l'écran de son mois (dit à partir de un) | `RangDansLeMois` | `engagement/src/saisie.rs` |
 | version d'un engagement (la première à sa validation, la suivante quand ce qui est parti change) | `VersionDeLEngagement` | `engagement/src/stock.rs` |
@@ -455,17 +456,24 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - **numéro de contrat** : S21.G00.40.009 : il se lit, ne se recalcule pas. Ni `Deref` ni comparaison à un texte : il se
   compare à un numéro, s'imprime par `Display` (`numero_dit` quand il peut manquer ; le contrat d'un salarié dans un
   refus, `numeros::le_contrat`), s'écrit par `as_str` à la porte ; celui qu'imprime une pièce d'autrui se lit par
-  `d_une_piece`.
+  `d_une_piece`. Son rang dans l'année ne sort pas du type : `numeros::former` reçoit le dernier numéro de l'année du
+  salarié (ou aucun) et donne le suivant.
 - **clé d'une paie versée** : ce qui reconnaît une paie versée d'un engagement importé d'un import à l'autre, et ce qui
   l'a déclarée : le numéro de contrat qu'une DSN déposée déclare ; sinon un bulletin seul, par le numéro qu'il imprime
   (le texte d'autrui), ou par sa copie et sa page. `Dsn(NumeroContrat)`, `Bulletin(String)`,
   `Copie { fichier: NomDeFichier, page }`, écrite avec son origine (`{"dsn": …}`, `{"bulletin": …}`,
   `{"copie": {…}}`) ; ce que la carte d'un engagement importé en montre, `dite()` ; que porte `PaieVersee.contrat`.
 - **numéro de bulletin** : le numéro qu'un bulletin du logiciel porte, `N/AAAA` : son rang dans la suite de l'année, puis
-  l'année. `numeroter` en donne un, et le départ des documents d'un mois sur la suite qu'il réserve
-  (`routes::gestes::depart::fabriquer_documents`) ; l'aperçu d'un bulletin en montre un (`du_rang`) ; il se lit
-  strictement. Que portent la paie, sa forme écrite, la paie écrite (`bulletin`, `rectifie`), le bulletin imprimé et son
-  rectificatif, le dernier état déclaré d'un contrat ; celui qu'un bulletin d'autrui imprime est du texte.
+  l'année ; le rang ne sort pas du type. La suite commence au `premier` de l'année, chaque numéro donne son `suivant` ;
+  le prochain d'une année se cherche à un seul endroit (`documents::ecrire_documents::prochain_bulletin` : après ce que
+  l'envoi a réservé, le compteur de `config/compteurs.json`, qui l'écrit par sa forme, et les bulletins importés) ; il
+  se lit strictement. Que portent la paie, sa forme écrite, la paie écrite (`bulletin`, `rectifie`), le bulletin imprimé
+  et son rectificatif, le dernier état déclaré d'un contrat, le compteur ; celui qu'un bulletin d'autrui imprime est du
+  texte.
+- **numéro d'un avenant** : 1 pour le premier avenant d'un contrat, puis le suivant du dernier signé
+  (`routes::contrats::prochain_avenant`, le seul qui le donne) ; écrit en nombre ; il ne se dit que dans une phrase ou
+  un nom de fichier. Que portent le contrat parti et son retour au journal des envois, l'avenant parti, le départ d'un
+  engagement.
 - **numéro d'objet spectacle** : S21.G00.40.050, natures 02 et 10 ; l'année de sa demande, ses deux premiers chiffres
   (`annee_de_la_demande`).
 - **IDCC** : l'identifiant d'une convention collective : la notion « convention ». Quatre chiffres, il s'écrit et se trie

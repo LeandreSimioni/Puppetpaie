@@ -251,7 +251,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
         }
     }
     // Le numero de l'avenant : celui du contrat, sinon celui de la demande.
-    let numero = c.contrats.first().and_then(|x| x.avenant.filter(|v| *v != 0).or(a.avenant));
+    let numero = c.contrats.first().and_then(|x| x.avenant.or(a.avenant));
     let avenant_signe = if nb == 1 { "Ton avenant signé" } else { "Tes avenants signés" };
     let (sujet, quoi) = if c.est_avenant {
         (

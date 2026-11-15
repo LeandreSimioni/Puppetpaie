@@ -14,7 +14,7 @@ use socle::mois::Annee;
 use socle::verrou::Verrou;
 use socle::ecriture::json_indente;
 use engagement::calcul::Paie;
-use engagement::numeros::NumeroDeCertificat;
+use engagement::numeros::{NumeroDeBulletin, NumeroDeCertificat};
 
 fn os(chemin: &std::path::Path, e: std::io::Error) -> Echec {
     socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque)
@@ -32,7 +32,7 @@ pub type Compteurs = BTreeMap<Annee, CompteursDeLAnnee>;
 #[serde(deny_unknown_fields)]
 pub struct CompteursDeLAnnee {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bulletin: Option<i64>,
+    pub bulletin: Option<NumeroDeBulletin>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub certificat_cs: Option<NumeroDeCertificat>,
 }
@@ -81,19 +81,30 @@ pub fn numeroter(ctx: &Contexte, paies: &mut [Paie], annee: Annee, departs: &eng
 }
 
 /// La meme, avec les numeros de bulletin deja RESERVES par un appel precedent du meme processus : `annee -> dernier
-/// numero`, sinon a la suite du compteur de l'annee (`config/compteurs.json`) et des bulletins importes de l'annee
-/// (`engagement::numeros::dernier_bulletin_importe`).
-pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: Annee, attente: &mut HashMap<Annee, i64>, departs: &engagement::departs::Departs) -> Result<(), Echec> {
-    let n_bull = match attente.get(&annee) {
-        Some(v) => v + 1,
+/// numero` (`prochain_bulletin`).
+pub fn numeroter_en_attente(ctx: &Contexte, paies: &mut [Paie], annee: Annee, attente: &mut HashMap<Annee, NumeroDeBulletin>, departs: &engagement::departs::Departs) -> Result<(), Echec> {
+    let prochain = prochain_bulletin(ctx, annee, attente.get(&annee).copied())?;
+    if let Some(dernier) = engagement::numeros::numeroter(ctx, paies, prochain, departs)? {
+        attente.insert(annee, dernier);
+    }
+    Ok(())
+}
+
+/// LE PROCHAIN BULLETIN DE L'ANNEE, le seul endroit qui le cherche : le suivant du dernier `reserve` par ce processus,
+/// sinon du plus haut de ce que `compteurs.json` porte et des bulletins importes de l'annee
+/// (`engagement::numeros::dernier_bulletin_importe`) ; le premier de l'annee sans aucun.
+fn prochain_bulletin(ctx: &Contexte, annee: Annee, reserve: Option<NumeroDeBulletin>) -> R<NumeroDeBulletin> {
+    let dernier = match reserve {
+        Some(_) => reserve,
         None => {
-            let lu = compteurs(&ctx.racine)?.get(&annee).and_then(|c| c.bulletin);
-            lu.into_iter().fold(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee)?, i64::max) + 1
+            let lu = compteurs(&ctx.racine)?.remove(&annee).and_then(|c| c.bulletin);
+            lu.into_iter().chain(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee)?).max()
         }
     };
-    let n_bull = engagement::numeros::numeroter(ctx, paies, annee, n_bull, departs)?;
-    attente.insert(annee, n_bull - 1);
-    Ok(())
+    Ok(match dernier {
+        Some(d) => d.suivant(),
+        None => NumeroDeBulletin::premier(annee),
+    })
 }
 
 // ------------------------------------------------------------- les numeros reserves
@@ -106,21 +117,14 @@ pub struct Reserves {
 }
 
 impl Reserves {
-    /// Le rang du prochain bulletin de l'annee : le suivant de ce qui est reserve, sinon de ce que `compteurs.json`
-    /// porte, apres les bulletins importes de l'annee (`engagement::numeros::dernier_bulletin_importe`).
-    pub fn prochain_bulletin(&self, ctx: &Contexte, annee: Annee) -> R<i64> {
-        if let Some(v) = self.valeurs.get(&annee).and_then(|c| c.bulletin) {
-            return Ok(v + 1);
-        }
-        let lu = compteurs(&ctx.racine)?.get(&annee).and_then(|c| c.bulletin);
-        let importe = engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee)?;
-        // Une suite se numerote a partir de 1 : le suivant du plus grand numero lu ou importe.
-        Ok(lu.into_iter().chain(Some(importe)).fold(0, i64::max) + 1)
+    /// Le prochain bulletin de l'annee, apres ce que ce processus a reserve (`prochain_bulletin`).
+    pub fn prochain_bulletin(&self, ctx: &Contexte, annee: Annee) -> R<NumeroDeBulletin> {
+        prochain_bulletin(ctx, annee, self.valeurs.get(&annee).and_then(|c| c.bulletin))
     }
 
-    /// Reserve le rang `v` du dernier bulletin de l'annee, sans ecrire.
-    pub fn enregistrer_bulletin(&mut self, annee: Annee, v: i64) {
-        self.valeurs.entry(annee).or_default().bulletin = Some(v);
+    /// Reserve `n`, le dernier bulletin de son annee, sans ecrire.
+    pub fn enregistrer_bulletin(&mut self, n: NumeroDeBulletin) {
+        self.valeurs.entry(n.annee()).or_default().bulletin = Some(n);
     }
 
     /// Reserve le dernier N CE `n`, sans ecrire.
@@ -130,10 +134,10 @@ impl Reserves {
 
     /// Les numeros de bulletin des paies, reserves ; leurs numeros de contrat, ceux qu'elles porteraient.
     pub fn numeroter(&mut self, ctx: &Contexte, paies: &mut [Paie], annee: Annee, departs: &engagement::departs::Departs) -> R<()> {
-        let mut attente: HashMap<Annee, i64> = self.valeurs.get(&annee).and_then(|c| c.bulletin).map(|v| (annee, v)).into_iter().collect();
+        let mut attente: HashMap<Annee, NumeroDeBulletin> = self.valeurs.get(&annee).and_then(|c| c.bulletin).map(|v| (annee, v)).into_iter().collect();
         numeroter_en_attente(ctx, paies, annee, &mut attente, departs)?;
-        if let Some(n) = attente.get(&annee) {
-            self.enregistrer_bulletin(annee, *n);
+        if let Some(n) = attente.remove(&annee) {
+            self.enregistrer_bulletin(n);
         }
         Ok(())
     }

@@ -391,7 +391,7 @@ pub(crate) fn deposer_dsn(mois: Mois, nic: Option<&Nic>, libelle: String) -> Act
 /// Le geste d'un carre Contrat en attente : noter revenu signe (`recu`) le contrat de l'engagement `p`, ou l'avenant
 /// `avenant` (son numero) ; la route `contrat-recu` rend la phrase qui le dit et de quoi l'annuler. Rien pour un
 /// engagement qui ne dit pas encore son salarie ou son premier jour.
-fn noter_recu(p: &Vue, mois: Mois, libelle: &str, avenant: Option<i64>, recu: bool) -> Option<Action> {
+fn noter_recu(p: &Vue, mois: Mois, libelle: &str, avenant: Option<engagement::numeros::NumeroDAvenant>, recu: bool) -> Option<Action> {
     let charge = crate::contrats::ChargeRecu { mois, salarie: p.salarie.clone()?, debut: p.bornes?.debut(), numero: p.numero.clone(), avenant, recu };
     Some(action(Route::ContratRecu, charge, None, libelle.into()))
 }

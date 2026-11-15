@@ -7,7 +7,7 @@ use documents::fiche_questionnaire::CodeDeDemande;
 use documents::ModeDeRemise;
 use droit::contexte::IdSalarie;
 use droit::fiche::{Lue as _, Nic};
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{NumeroContrat, NumeroDAvenant};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -317,7 +317,7 @@ pub struct Attendue {
     pub fichier: NomDeFichier,
     /// L'acte du contrat parti (`avenant`, `remplace`) ; aucun pour le contrat lui-meme.
     pub acte: Option<crate::ligne::ActeDuContrat>,
-    pub avenant: Option<i64>,
+    pub avenant: Option<NumeroDAvenant>,
     pub rang: usize,
     pub apres_signature: bool,
     pub envoyes: Vec<crate::envoi::IdDeCourriel>,
@@ -351,8 +351,8 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
     // Les reponses deja relevees, par envoi (son code) et par contrat ou avenant : une reponse ne se note qu'une fois.
     // La mention « signe » retiree a la main l'emporte sur la reponse deja lue ; seul un nouvel envoi (un autre code)
     // attend une nouvelle reponse.
-    let releve = |code: &CodeDeDemande, salarie: &IdSalarie, numero: Option<&NumeroContrat>, avenant: Option<i64>| (code.clone(), salarie.clone(), numero.cloned(), avenant);
-    let deja_releves: HashSet<(CodeDeDemande, IdSalarie, Option<NumeroContrat>, Option<i64>)> = lignes
+    let releve = |code: &CodeDeDemande, salarie: &IdSalarie, numero: Option<&NumeroContrat>, avenant: Option<NumeroDAvenant>| (code.clone(), salarie.clone(), numero.cloned(), avenant);
+    let deja_releves: HashSet<(CodeDeDemande, IdSalarie, Option<NumeroContrat>, Option<NumeroDAvenant>)> = lignes
         .iter()
         .flat_map(revenus)
         .filter(|d| d.recu && d.par_courriel())

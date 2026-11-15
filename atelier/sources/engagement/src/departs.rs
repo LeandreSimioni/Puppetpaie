@@ -35,7 +35,7 @@ pub struct Depart {
     /// DSN d'un mois suivant. `None` : la DSN du mois lui-meme.
     pub par: Option<Mois>,
     /// Le numero de l'avenant quand ce qui est parti est un avenant au contrat, pas le contrat.
-    pub avenant: Option<i64>,
+    pub avenant: Option<crate::numeros::NumeroDAvenant>,
     pub version: crate::stock::VersionDeLEngagement,
     pub le: socle::paris::InstantOuJour,
 }

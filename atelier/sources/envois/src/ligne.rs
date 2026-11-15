@@ -14,7 +14,7 @@ use documents::fiche_questionnaire::CodeDeDemande;
 use droit::fiche::{Courriel, Nic};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{NumeroContrat, NumeroDAvenant};
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mode::Mode;
 use socle::mois::Mois;
@@ -567,7 +567,7 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acte: Option<ActeDuContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub avenant: Option<i64>,
+    pub avenant: Option<NumeroDAvenant>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remplace: Option<NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -675,7 +675,7 @@ pub struct RetourContrat {
     pub numero: Option<NumeroContrat>,
     pub nom: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub avenant: Option<i64>,
+    pub avenant: Option<NumeroDAvenant>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origine: Option<OrigineDuRetourDeContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -711,7 +711,7 @@ impl RetourContrat {
 /// courriel a deja demande de signer cette piece (`par_courriel`) : la redemander par courriel est alors un rappel.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AvenantParti {
-    pub numero: Option<i64>,
+    pub numero: Option<NumeroDAvenant>,
     pub quand: socle::paris::InstantOuJour,
     pub mois: Mois,
     pub fichier: NomDeFichier,
@@ -733,7 +733,7 @@ pub struct ContratAttendu {
     pub numero: Option<NumeroContrat>,
     pub spectacle: Option<String>,
     pub fichier: NomDeFichier,
-    pub avenant: Option<i64>,
+    pub avenant: Option<NumeroDAvenant>,
     pub mois: Mois,
 }
 

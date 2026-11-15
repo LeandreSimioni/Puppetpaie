@@ -678,21 +678,17 @@ impl DocumentsFabriques {
     /// depart.
     pub(crate) fn engager_servis(self, ctx: &Contexte, mois: Mois, servis: &[&IdSalarie]) -> R<()> {
         let mut bornes = Reserves::default();
-        let (mut bulletin_max, mut ce_max): (Option<(socle::mois::Annee, i64)>, Option<NumeroDeCertificat>) = (None, None);
+        let (mut bulletin_max, mut ce_max): (Option<NumeroDeBulletin>, Option<NumeroDeCertificat>) = (None, None);
         let an = mois.annee();
         for (cle, numero, bulletin, ce) in self.a_poser.iter().filter(|a| servis.contains(&&a.0)) {
-            // Le numero d'un bulletin, `N/AAAA` : son rang dans l'annee.
-            if let Some(b) = bulletin {
-                let n = b.rang();
-                bulletin_max = Some((an, bulletin_max.into_iter().map(|(_, m)| m).chain([n]).fold(n, i64::max)));
-            }
+            bulletin_max = bulletin_max.max(*bulletin);
             if let Some((_, dernier)) = ce {
                 ce_max = Some(ce_max.into_iter().chain([*dernier]).fold(*dernier, NumeroDeCertificat::max));
             }
             engagement::etats::poser_numeros_des_documents(ctx, mois, cle, numero, bulletin.as_ref(), ce.map(|(premier, _)| premier))?;
         }
-        if let Some((an, n)) = bulletin_max {
-            bornes.enregistrer_bulletin(an, n);
+        if let Some(n) = bulletin_max {
+            bornes.enregistrer_bulletin(n);
         }
         if let Some(n) = ce_max {
             bornes.enregistrer_certificat(an, n);
@@ -814,10 +810,9 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
             if paies[i].engagement.sans_paie() || numerotees[i] {
                 continue;
             }
-            let n = faits.reserves.prochain_bulletin(ctx, an)?;
-            faits.reserves.enregistrer_bulletin(an, n);
-            let numero = NumeroDeBulletin::du_rang(n, mois.annee());
-            numeros[i] = Some(numero.clone());
+            let numero = faits.reserves.prochain_bulletin(ctx, an)?;
+            faits.reserves.enregistrer_bulletin(numero);
+            numeros[i] = Some(numero);
             a_poser.entry(i).or_default().0 = Some(numero);
             numerotees[i] = true;
         }

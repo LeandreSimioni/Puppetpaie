@@ -220,7 +220,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 // La mention posee : l'exemplaire contresigne se refait du contrat parti et d'elle (`depart::piece_partie`).
                 mention: mention.clone(),
                 acte,
-                avenant: if est_avenant { c.avenant.filter(|n| *n != 0).or(a.avenant) } else { None },
+                avenant: if est_avenant { c.avenant.or(a.avenant) } else { None },
             };
             let debut = c.contrat.debut().iso();
             // Le contrat que cette reponse signe, par son numero : le jumeau du meme jour garde sa propre attente.

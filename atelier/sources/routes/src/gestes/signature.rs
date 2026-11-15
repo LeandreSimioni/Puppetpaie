@@ -853,7 +853,7 @@ pub struct UnAvenant {
     pub debut: Jour,
     pub mois: Mois,
     pub contrat: Option<NumeroContrat>,
-    pub numero: i64,
+    pub numero: engagement::numeros::NumeroDAvenant,
     /// Le jour du contrat qu'il modifie ; aucun pour un avenant repris (la piece est deja ecrite).
     pub date_contrat: Option<Jour>,
     pub effet: Jour,
