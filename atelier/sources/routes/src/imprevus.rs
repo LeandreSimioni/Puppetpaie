@@ -798,8 +798,7 @@ pub(crate) struct ArretResume {
     debut: Jour,
     fin_previsionnelle: Jour,
     subrogation: Option<SubrogationDeLArret>,
-    subrogation_debut: Option<Jour>,
-    subrogation_fin: Option<Jour>,
+    periode_de_subrogation: Option<socle::date::Periode>,
     date_accident: Option<Jour>,
     reprise: Option<Jour>,
     reprise_motif: Option<MotifDeReprise>,
@@ -1507,13 +1506,11 @@ pub(crate) fn poser_la_subrogation(ctx: &Contexte, a: &mut ArretSaisi) -> R<()> 
     match subrogation_tiree(ctx, a)? {
         Some(p) => {
             a.subrogation = Some(SubrogationDeLArret::Oui);
-            a.subrogation_debut = Some(p.debut());
-            a.subrogation_fin = Some(p.fin());
+            a.periode_de_subrogation = Some(p);
         }
         None => {
             a.subrogation = Some(SubrogationDeLArret::Non);
-            a.subrogation_debut = None;
-            a.subrogation_fin = None;
+            a.periode_de_subrogation = None;
         }
     }
     Ok(())
@@ -1581,7 +1578,7 @@ plus tôt, c'est une reprise anticipée, qui se saisit comme telle et se signale
     // jusqu'au maximum du maintien (`engagement::maintien::subrogation`).
     if signalement_subroge(&a)? {
         if let Some(sub) = subrogation_tiree(ctx, &a)? {
-            a.subrogation_fin = Some(sub.fin());
+            a.periode_de_subrogation = Some(sub);
         }
     }
     verifier(&a)?;
@@ -1594,8 +1591,8 @@ plus tôt, c'est une reprise anticipée, qui se saisit comme telle et se signale
         qui: INTERFACE.to_string(),
         fin_avant: avant.fin_previsionnelle,
         fin: a.fin_previsionnelle,
-        subrogation_fin_avant: avant.subrogation_fin,
-        subrogation_fin: a.subrogation_fin,
+        periode_de_subrogation_avant: avant.periode_de_subrogation,
+        periode_de_subrogation: a.periode_de_subrogation,
     });
     liste[i] = Imprevu::Arret(a.clone());
     ecrire(ctx, &dernier, liste)?;
@@ -1618,7 +1615,7 @@ tombent, est à corriger.",
             ));
         }
     }
-    if a.subrogation_fin != avant.subrogation_fin && envoye(ctx, &avant, NatureSignalement::Arret)? {
+    if a.periode_de_subrogation != avant.periode_de_subrogation && envoye(ctx, &avant, NatureSignalement::Arret)? {
         avertissements.push(
             "Le signalement d'arrêt est déjà parti avec l'ancienne fin de subrogation : un signalement d'arrêt annule et \
 remplace porte la nouvelle, le plus vite possible (fiche net-entreprises 1983). Il paraît dans ce qui est dû."
@@ -2049,7 +2046,7 @@ impl Trace<'_> {
         match self {
             Trace::Prolongation(p) => {
                 a.fin_previsionnelle = p.fin_avant.clone();
-                a.subrogation_fin = p.subrogation_fin_avant.clone();
+                a.periode_de_subrogation = p.periode_de_subrogation_avant;
             }
             Trace::Reprise(r) => {
                 a.reprise = r.reprise_avant.clone();
@@ -2205,8 +2202,7 @@ pub(crate) fn resume_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi) -> R<Arre
         debut: a.debut,
         fin_previsionnelle: a.fin_previsionnelle,
         subrogation: a.subrogation,
-        subrogation_debut: a.subrogation_debut,
-        subrogation_fin: a.subrogation_fin,
+        periode_de_subrogation: a.periode_de_subrogation,
         date_accident: a.date_accident,
         reprise: a.reprise,
         reprise_motif: a.reprise_motif,

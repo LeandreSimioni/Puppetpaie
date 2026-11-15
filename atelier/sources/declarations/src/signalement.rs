@@ -198,23 +198,16 @@ et a maintenir le salaire."
                 liste.join(", ")
             ));
         }
-        let (sub_debut, sub_fin) = (v.subrogation_debut, v.subrogation_fin);
+        // Sa fin ne precede pas son debut (CCH-12) : une periode ne s'ecrit pas a l'envers.
         if avec_subrogation(a)? {
-            let (Some(sub_debut), Some(sub_fin)) = (sub_debut, sub_fin) else {
+            if v.periode_de_subrogation.is_none() {
                 return impossible(
                     "Subrogation demandee : ses dates de debut et de fin (S21.G00.60.005 et .006) sont \
 obligatoires -- CCH-11."
                         .into(),
                 );
-            };
-            if sub_fin < sub_debut {
-                return impossible(format!(
-                    "Fin de subrogation ({}) anterieure a son debut ({}) -- CCH-12.",
-                    sub_fin.iso(),
-                    sub_debut.iso()
-                ));
             }
-        } else if sub_debut.is_some() || sub_fin.is_some() {
+        } else if v.periode_de_subrogation.is_some() {
             return impossible(
                 "Sans subrogation, ses dates sont INTERDITES (CCH-11 des rubriques S21.G00.60.005 et .006)."
                     .into(),
@@ -297,7 +290,7 @@ CCH-12.",
     };
     for (libelle, case) in [
         ("Dernier jour travaillé", Some(v.dernier_jour_travaille)),
-        ("Début de subrogation", v.subrogation_debut),
+        ("Début de subrogation", v.periode_de_subrogation.map(|p| p.debut())),
         ("Date de reprise", reprise),
         ("Date de l'accident", accident),
     ] {

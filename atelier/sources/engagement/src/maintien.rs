@@ -366,9 +366,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     }
     // Le salaire du mois est encore un decimal : les heures s'y ouvrent.
     let taux_horaire = div(m.salaire_du_mois, heures_du_mois.decimal());
-    let n = dernier.moins(&premier) + 1;
     let subroge = imp.subrogation == Some(droit::arrets::SubrogationDeLArret::Oui);
-    let (sub_debut, sub_fin) = (imp.subrogation_debut, imp.subrogation_fin);
     let regles = droit::permanents::regles()?;
     let rij = &regles.indemnites_journalieres;
     let (csg_ded, pas_jours, pas_accident) = (rij.csg_deductible, rij.pas.maladie_jours, rij.pas.accident);
@@ -392,10 +390,9 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     // La subrogation : les indemnites des jours qu'elle couvre passent par le bulletin.
     let (mut sb, mut sn) = (Decimal::ZERO, Decimal::ZERO);
     if subroge {
-        if let (Some(a), Some(b)) = (&sub_debut, &sub_fin) {
-            for i in 0..n {
-                let j = premier.plus_jours(i)?;
-                if j < *a || j > *b {
+        if let Some(sub) = &imp.periode_de_subrogation {
+            for (i, j) in (0..).zip(arret.jours()) {
+                if !sub.contient(&j) {
                     continue;
                 }
                 if let Some((x, y)) = ij[i as usize] {
@@ -951,7 +948,7 @@ mod tests {
     fn la_caisse_indemnise_des_le_quatrieme_jour_de_l_incapacite_prescrite() {
         let imp: ArretSaisi = socle::forme::lire_texte(r#"{"salarie": "X", "contrat_debut": "2026-01-01", "contrat_numero": null,
             "motif": "01", "dernier_jour_travaille": "2026-03-06", "debut": "2026-03-09", "fin_previsionnelle": "2026-03-20",
-            "subrogation": null, "subrogation_debut": null, "subrogation_fin": null, "reprise": null, "reprise_motif": null,
+            "subrogation": null, "periode_de_subrogation": null, "reprise": null, "reprise_motif": null,
             "date_accident": null, "jours_deja_indemnises": null, "ij_brute": "40.89", "ij_nette": "38.15", "ij_brute_majoree": null,
             "ij_nette_majoree": null, "prolongations": [], "reprises": [], "saisi_le": "2026-03-09 10:00", "qui": "interface", "note": ""}"#,
             crate::imprevus::ILLISIBLE).unwrap();

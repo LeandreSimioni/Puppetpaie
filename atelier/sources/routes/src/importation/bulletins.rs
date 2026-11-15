@@ -909,7 +909,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         Dsn(usize),
         Historique((Mois, Option<IdSalarie>, CleDePaieVersee)),
     }
-    let mut index: HashMap<(Nir, Jour, Jour), Vec<(Mois, CleDePaieVersee, Cible)>> = HashMap::new();
+    let mut index: HashMap<(Nir, socle::date::Periode), Vec<(Mois, CleDePaieVersee, Cible)>> = HashMap::new();
     // LA PAIE D'UN CONTRAT QUI COURT AU-DELA DU MOIS (un permanent) : la DSN la date des bornes du contrat
     // (S21.G00.40.001 et .010, un CDI sans fin), le bulletin de la periode payee ; les dates ne la rapprochent donc pas.
     // Le numero du contrat (S21.G00.40.009, que le versement rappelle en S21.G00.51.010) et le mois, si : un bulletin qui
@@ -925,8 +925,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     for (k, x) in ap.paies.iter().enumerate() {
         let (mois, Some(nir), contrat, debut, fin) = reperes(x) else { continue };
         vus.insert((mois.clone(), nir.clone(), contrat.clone()));
-        if let (Some(d), Some(f)) = (&debut, &fin) {
-            index.entry((nir.clone(), *d, *f)).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
+        if let (Some(d), Some(f)) = (debut, fin) {
+            index.entry((nir.clone(), socle::date::Periode::du_au(d, f)?)).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
         }
         if let Some(n) = contrat.numero_declare() {
             par_numero.entry((nir.clone(), mois.clone(), n.clone())).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
@@ -949,7 +949,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             de_bulletin.insert(cle.clone());
         }
         if let (Some(d), Some(f)) = (debut, fin) {
-            index.entry((nir, d, f)).or_default().push((mois, contrat, Cible::Historique(cle)));
+            index.entry((nir, socle::date::Periode::du_au(d, f)?)).or_default().push((mois, contrat, Cible::Historique(cle)));
         }
     }
     /// La paie qu'une page de bulletin dit : une paie declaree (son mois, sa cle), ou, rattachee a aucune, ses dates.
@@ -984,8 +984,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         // UN NUMERO D'OBJET HORS DE SA FORME : la case reste vide, la page le dit.
         infos.avertissements.extend(faute_de_l_objet(&l.b));
-        let (debut, fin) = (l.b.periode.debut(), l.b.periode.fin());
-        let mut candidats: Vec<(Mois, CleDePaieVersee, Cible)> = index.get(&(l.nir.clone(), debut, fin)).into_iter().flatten().cloned().collect();
+        let mut candidats: Vec<(Mois, CleDePaieVersee, Cible)> = index.get(&(l.nir.clone(), l.b.periode)).into_iter().flatten().cloned().collect();
         if candidats.is_empty() {
             if let Some(n) = l.b.contrat.as_deref().and_then(NumeroContrat::d_une_piece) {
                 candidats = par_numero.get(&(l.nir.clone(), l.mois, n)).into_iter().flatten().cloned().collect();
@@ -996,7 +995,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 .get(&(l.nir.clone(), l.mois))
                 .into_iter()
                 .flatten()
-                .filter(|(d, f, _, _)| *d <= debut && f.as_ref().is_none_or(|f| fin <= *f))
+                .filter(|(d, f, _, _)| *d <= l.b.periode.debut() && f.as_ref().is_none_or(|f| l.b.periode.fin() <= *f))
                 .map(|(_, _, contrat, cible)| (l.mois, contrat.clone(), cible.clone()))
                 .collect();
             if contient.len() == 1 {

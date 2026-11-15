@@ -962,7 +962,7 @@ fn envoi(envois: &[EnvoiDeLArret], nature: NatureDeLaDeclaration) -> Option<Fait
 fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> Option<(Depart, Option<Fait>)> {
     let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == NatureDeLaDeclaration::SignalementArret).collect();
     let premier = signalements.iter().map(|e| e.quand).min()?;
-    let p = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && ordre(premier, p.saisi_le).is_lt()).last()?;
+    let p = prolongations.iter().filter(|p| p.periode_de_subrogation != p.periode_de_subrogation_avant && ordre(premier, p.saisi_le).is_lt()).last()?;
     let depart = Depart::du_jour(p.le, "le jour où la prolongation de la subrogation a été saisie", None);
     let rectificatif = signalements
         .iter()
@@ -1814,8 +1814,8 @@ mod essais {
             qui: "t".into(),
             fin_avant: jour(6),
             fin: jour(13),
-            subrogation_fin_avant: Some(jour(6)),
-            subrogation_fin: Some(jour(13)),
+            periode_de_subrogation_avant: Some(socle::date::Periode::du_au(jour(3), jour(6)).unwrap()),
+            periode_de_subrogation: Some(socle::date::Periode::du_au(jour(3), jour(13)).unwrap()),
         };
         use TypeDeLaDeclaration::{AnnuleEtRemplace, Normale};
         let avant = [signalement(Normale, 2, 10), signalement(AnnuleEtRemplace, 3, 9)];

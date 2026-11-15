@@ -501,8 +501,9 @@ pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: NatureDeLaDeclaration, banque
                 return Err(refus("Subrogation demandee : l'IBAN et le BIC de la compagnie (S21.G00.60.007 et .008) sont \
 obligatoires -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisissent pas dans l'arret."));
             };
-            f.add(droit::rubrique!("S21.G00.60.005"), v.subrogation_debut.ok_or_else(|| socle::fichiers::absent("subrogation_debut"))?.jjmmaaaa());
-            f.add(droit::rubrique!("S21.G00.60.006"), v.subrogation_fin.ok_or_else(|| socle::fichiers::absent("subrogation_fin"))?.jjmmaaaa());
+            let sub = v.periode_de_subrogation.ok_or_else(|| socle::fichiers::absent("periode_de_subrogation"))?;
+            f.add(droit::rubrique!("S21.G00.60.005"), sub.debut().jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.60.006"), sub.fin().jjmmaaaa());
             f.add(droit::rubrique!("S21.G00.60.007"), iban);
             f.add(droit::rubrique!("S21.G00.60.008"), bic);
         }
@@ -5413,8 +5414,7 @@ mod tests {
                 debut: j(2026, 6, 21),
                 fin_previsionnelle,
                 subrogation: Some(droit::arrets::SubrogationDeLArret::Non),
-                subrogation_debut: None,
-                subrogation_fin: None,
+                periode_de_subrogation: None,
                 reprise,
                 reprise_motif: reprise.map(|_| droit::arrets::MotifDeReprise::Normale),
                 date_accident: None,
