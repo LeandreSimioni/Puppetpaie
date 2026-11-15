@@ -1409,7 +1409,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
     let (mut out, mut au_dela, mut avis) = (Vec::new(), Vec::new(), Vec::new());
     // Les lignes a l'etranger se comptent ensemble, jour par jour, apres les autres : leur rang dans `out`.
     let mut etrangeres: Vec<(usize, droit::missions::LieuDeMission)> = Vec::new();
-    for (rang, l) in lignes.into_iter().enumerate() {
+    for (rang, l) in ligne::RangDeLigne::de_chacun(lignes) {
         let (mut l, lim) = match l {
             LignePaie::Frais(f) => match limites_de(&f) {
                 Some(lim) => (f, lim),
@@ -1423,7 +1423,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                 continue;
             }
         };
-        l.marques.rang = Some(ligne::RangDeLigne(rang));
+        l.marques.rang = Some(rang);
         let mut cases: Vec<CaseDeFrais> = Vec::new();
         let taux = l.taux.map(MontantUnitaire::decimal);
         let dates: Vec<DateDeLigne> = l.dates.clone();

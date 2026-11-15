@@ -992,7 +992,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &I
 /// Les lignes de l'engagement `e` (de rang `i` dans `mois`) datees d'un jour de l'`absence`.
 fn cachets_de_l_engagement(ctx: &Contexte, mois: Mois, i: crate::saisie::RangDansLeMois, e: &crate::saisie::Carte, absence: &Periode) -> R<Vec<CachetPaye>> {
     let mut out = Vec::new();
-    for (j, l) in e.lignes().iter().enumerate() {
+    for (j, l) in crate::ligne::RangDeLigne::de_chacun(e.lignes()) {
         let dedans: Vec<Jour> = l.jours().into_iter().filter(|x| absence.contient(x)).collect();
         if dedans.is_empty() {
             continue;
@@ -1003,7 +1003,7 @@ fn cachets_de_l_engagement(ctx: &Contexte, mois: Mois, i: crate::saisie::RangDan
             engagement: i,
             numero: e.numero.clone(),
             spectacle: e.spectacle.clone(),
-            ligne: crate::ligne::RangDeLigne(j),
+            ligne: j,
             libelle: libelle_rubrique(&ctx.racine, &rubrique, &ctx.lue_au)?,
             rubrique,
             dates: dedans,

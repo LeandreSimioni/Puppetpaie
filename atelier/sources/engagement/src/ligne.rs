@@ -449,7 +449,14 @@ pub struct Marques {
 /// d'une ligne de frais, une ligne payee pendant un imprevu). Il s'ecrit en nombre.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
-pub struct RangDeLigne(pub usize);
+pub struct RangDeLigne(usize);
+
+impl RangDeLigne {
+    /// Chaque ligne de la carte (ou ce qui se range comme elles), avec son rang.
+    pub fn de_chacun<I: IntoIterator>(liste: I) -> impl Iterator<Item = (RangDeLigne, I::Item)> {
+        liste.into_iter().enumerate().map(|(i, x)| (RangDeLigne(i), x))
+    }
+}
 
 /// Un nombre d'une ligne : ecrit en texte, son echelle gardee (`ecrit::texte`) ; lu d'un nombre ou d'un texte.
 mod texte {

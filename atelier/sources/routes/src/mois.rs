@@ -391,7 +391,7 @@ struct Emploi {
 /// se lisent de la saisie, telle que son fichier l'ecrit.
 #[derive(Debug, Serialize)]
 struct TauxQuiChange {
-    rang: usize,
+    rang: engagement::ligne::RangDeLigne,
     rubrique: catalogue::CodeDeRubrique,
     taux_avant: Option<Decimal>,
     taux: Option<Decimal>,
@@ -1188,7 +1188,7 @@ pub(crate) fn manque_de(ctx: &Contexte, data: &VueDuMois, i: RangDansLeMois) -> 
 /// Ce qui a change, de l'engagement `avant` a l'engagement `apres` (la saisie que la recherche a ajustee).
 fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: RangDansLeMois) -> CeQuiChange {
     let mut lignes = Vec::new();
-    for (rang, (a, b)) in avant.lignes().iter().zip(apres.lignes().iter()).enumerate() {
+    for (rang, (a, b)) in engagement::ligne::RangDeLigne::de_chacun(avant.lignes().iter().zip(apres.lignes().iter())) {
         let (ta, tb) = (a.taux().map(engagement::ligne::TauxDeLigne::decimal), b.taux().map(engagement::ligne::TauxDeLigne::decimal));
         if ta.is_none() && tb.is_none_or(|t| t.is_zero()) {
             continue; // restee sans taux : rien a ecrire
@@ -1313,10 +1313,9 @@ fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCou
         return Err(socle::refus!("{} : {} identités pour {} engagements.", texte, ids.len(), v.engagements.len()));
     }
     for m in modifications {
-        let i = ids.iter().position(|x| *x == m.engagement).ok_or_else(|| {
-            refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", texte))
-        })?;
-        let ecrit = v.engagements[i].clone();
+        let ecran = || refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", texte));
+        let i = RangDansLeMois::du_premier(&ids, |x| *x == m.engagement).ok_or_else(ecran)?;
+        let ecrit = i.dans(&v.engagements).ok_or_else(ecran)?.clone();
         if !ecrit.est_validee() {
             return Err(refus(format!(
                 "{} : cet engagement n'est pas validé ; ses changements s'enregistrent (enregistrer-saisie), l'aperçu lit son brouillon.",
@@ -1328,7 +1327,7 @@ fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCou
         let saisie = engagement::stock::en_forme(&b.en_carte()).map_err(|e| e.reclasser(Classe::Refuse))?;
         // L'avenant du mois se deduit des termes dates de l'engagement ecrit (`stock::Objet::vue`) : le brouillon ne le
         // porte pas.
-        v.engagements[i] = SaisieCarte { date_modification: ecrit.date_modification.clone(), avant: ecrit.avant.clone(), ..saisie };
+        *i.dans_mut(&mut v.engagements).ok_or_else(ecran)? = SaisieCarte { date_modification: ecrit.date_modification.clone(), avant: ecrit.avant.clone(), ..saisie };
     }
     Ok((v, ids))
 }

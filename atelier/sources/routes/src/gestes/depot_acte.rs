@@ -183,7 +183,7 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, cons
     let mut connus: Vec<NumeroDOrdre> = vec![NumeroDOrdre::du_nombre(essais.len() as u64)?];
     connus.extend(vues.ordre);
     for l in &essais {
-        if let Some(n) = l.dsn().and_then(|e| e.detail.ordre_test).filter(|n| n.valeur() > 0) {
+        if let Some(n) = l.dsn().and_then(|e| e.detail.ordre_test).filter(|n| *n >= NumeroDOrdre::PREMIER) {
             connus.push(n);
         }
         if let Some(nom) = l.fichier() {
@@ -196,7 +196,7 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, cons
             }
         }
     }
-    connus.into_iter().max().map(|m| m.plus(1)).transpose()
+    NumeroDOrdre::suivant(connus.into_iter().max()).map(Some)
 }
 
 /// Le garde-fou du depot REEL d'une mensuelle, ecrit depuis la
@@ -218,7 +218,7 @@ fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: O
     // Ce qu'elle remplace : le dernier ordre reel connu, ou une mensuelle du mois acceptee dont aucun ordre n'est vu.
     let remplacee = match (dernier, vues.ordre) {
         (Some(d), o) => Some(Some(o.into_iter().fold(d, Ord::max))),
-        (None, Some(o)) if o.valeur() > 0 || vues.du_mois_acceptee => Some(Some(o)),
+        (None, Some(o)) if o >= NumeroDOrdre::PREMIER || vues.du_mois_acceptee => Some(Some(o)),
         (None, None) if vues.du_mois_acceptee => Some(None),
         (None, Some(_)) | (None, None) => None,
     };
@@ -240,7 +240,7 @@ fn remplacement_en_regle(m: &mut crate::etapes::Moteur, le_mois: Mois, a: &DsnLu
                 ordre,
                 mois,
                 dernier,
-                dernier.plus(1)?
+                NumeroDOrdre::suivant(Some(dernier))?
             ),
         ));
     }
@@ -282,7 +282,7 @@ pub fn deposer_dsn_dans(
     environnement: EnvironnementNetEntreprises,
     forcer: bool,
     contournement: &str,
-    ordre_d_essai: Option<i64>,
+    ordre_d_essai: Option<NumeroDOrdre>,
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
@@ -302,13 +302,13 @@ pub fn deposer_dsn_dans(
     let evenement = if apercu.est_signalement() { apercu.evenement() } else { None };
     let ordre_d_essai = match ordre_d_essai {
         Some(n) => {
-            if mode == Mode::Reel || apercu.est_signalement() || n < 1 {
+            if mode == Mode::Reel || apercu.est_signalement() || n < NumeroDOrdre::PREMIER {
                 return Err(erreur(
                     Classe::Refuse,
                     "Un ordre d'essai ne vaut que pour le depot de TEST d'une DSN mensuelle, et c'est un entier positif : un depot reel part a l'ordre du fichier, un signalement a celui que la plate-forme a donne a son ecriture. Rien n'est parti.",
                 ));
             }
-            Some(NumeroDOrdre::du_nombre(n.unsigned_abs())?)
+            Some(n)
         }
         None => None,
     };
@@ -338,7 +338,7 @@ pub fn deposer_dsn_dans(
                     "Ce signalement porte l'ordre {}, et un signalement est déjà parti à l'ordre {} : le numéro d'ordre d'un signalement ne se remet jamais à zéro et ne se prend pas deux fois (cahier technique DSN, p. 136 et 14). Refaire le signalement : il partira à l'ordre {}. Rien n'est parti.",
                     ordre,
                     dernier,
-                    dernier.plus(1)?
+                    NumeroDOrdre::suivant(Some(dernier))?
                 ),
             ));
         }

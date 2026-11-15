@@ -510,25 +510,12 @@ impl NumeroDOrdre {
         Ok(NumeroDOrdre(n))
     }
 
-    /// Le numero `rang` places plus loin ; refus s'il a plus de quinze chiffres.
-    pub fn plus(self, rang: u64) -> R<NumeroDOrdre> {
-        match self.0.checked_add(rang) {
-            Some(n) => NumeroDOrdre::du_nombre(n),
-            None => Err(socle::refus!("Numéro d'ordre de déclaration {} plus {} : il a au plus quinze chiffres (S20.G00.05.004).", self.0, rang)),
-        }
-    }
-
-    /// Le numero qui suit `dernier` ; le premier quand il n'y en a aucun.
+    /// Le numero qui suit `dernier` ; le premier quand il n'y en a aucun ; refus au-dela de quinze chiffres.
     pub fn suivant(dernier: Option<NumeroDOrdre>) -> R<NumeroDOrdre> {
         match dernier {
-            Some(o) => o.plus(1),
+            Some(o) => NumeroDOrdre::du_nombre(o.0 + 1),
             None => Ok(NumeroDOrdre::PREMIER),
         }
-    }
-
-    /// Sa valeur.
-    pub fn valeur(self) -> u64 {
-        self.0
     }
 }
 

@@ -185,11 +185,17 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureD
     let premier = droit::natures::NumeroDOrdre::suivant(envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Disque))?;
     let mut fichiers = Vec::new();
-    for (rang, l) in retenues.iter().enumerate() {
+    let mut ordre: Option<droit::natures::NumeroDOrdre> = None;
+    for l in retenues {
+        let o = match ordre {
+            Some(precedent) => droit::natures::NumeroDOrdre::suivant(Some(precedent))?,
+            None => premier,
+        };
+        ordre = Some(o);
         let options = am::Options {
             motif,
             type_declaration: TypeDeLaDeclaration::Normale,
-            ordre: premier.plus(rang as u64)?,
+            ordre: o,
             remplace: None,
             mode,
             date_constitution: Some(constitution),

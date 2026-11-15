@@ -30,10 +30,10 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     };
     let ordre = match args.texte("ordre").filter(|t| !t.is_empty()) {
         None => None,
-        Some(t) => match t.trim().parse::<i64>() {
+        Some(t) => match droit::natures::NumeroDOrdre::lire(t.trim()) {
             Ok(n) => Some(n),
             Err(e) => {
-                dire!("--ordre N : un entier positif ({}).", e);
+                dire!("--ordre N : un entier positif ({}).", e.phrase);
                 return Ok(2);
             }
         },

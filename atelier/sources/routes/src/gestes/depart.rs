@@ -103,7 +103,7 @@ fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&N
         None => return Ok((TypeDeLaDeclaration::Normale, vues.suivant()?)),
     };
     m.refuser_si_hors_delai(le_mois)?;
-    Ok((TypeDeLaDeclaration::AnnuleEtRemplace, dernier.plus(1)?))
+    Ok((TypeDeLaDeclaration::AnnuleEtRemplace, NumeroDOrdre::suivant(Some(dernier))?))
 }
 
 /// La declaration qu'un annule-et-remplace remplace (la derniere DSN mensuelle partie du mois, `dsn_parties`)

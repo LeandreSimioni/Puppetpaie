@@ -158,7 +158,7 @@ pub fn deposer_dsn(
         let mut contenu = d.octets.to_vec();
         if d.mode == Mode::Test {
             contenu = depot::basculer_dsn(&contenu)?;
-            if let Some(n) = ordre_test.filter(|n| n.valeur() != 0) {
+            if let Some(n) = ordre_test.filter(|n| *n >= droit::natures::NumeroDOrdre::PREMIER) {
                 contenu = depot::renumeroter(&contenu, n)?;
             }
         }

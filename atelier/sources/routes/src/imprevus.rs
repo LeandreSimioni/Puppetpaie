@@ -39,7 +39,7 @@ use droit::arrets::{Bloc60, CodeDuBloc60, MotifDArret, MotifDeReprise, Subrogati
 use droit::permanents::MotifDeSuspension;
 use engagement::imprevus::{self, ArretSaisi, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, GenreDImprevu};
 use engagement::numeros::{numero_dit, NumeroContrat};
-use engagement::saisie::{Carte, Preavis, VueDuMois};
+use engagement::saisie::{Carte, Preavis, RangDansLeMois, VueDuMois};
 use engagement::Chiffre;
 use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, Echec, R};
@@ -1872,12 +1872,12 @@ fn contrat_fini(e: &Carte) -> R<Option<Periode>> {
 /// L'engagement de ce salarie (sa cle) qui se termine ce mois, la periode de son contrat (`contrat_fini`), et son rang
 /// dans la saisie. `nom` : comme on l'a dit, pour la phrase. Un contrat qui a un motif de rupture passe avant les
 /// autres. Un salarie sans engagement ce mois-la n'a pas de paie : la phrase le dit, avec le mois en toutes lettres.
-fn engagement_qui_finit(saisie: &VueDuMois, cle: &IdSalarie, nom: &str, mois: Mois) -> R<(usize, Carte, Periode)> {
-    let siens: Vec<(usize, &Carte)> = saisie.engagements.iter().enumerate().filter(|(_, x)| x.salarie.as_ref() == Some(cle)).collect();
+fn engagement_qui_finit(saisie: &VueDuMois, cle: &IdSalarie, nom: &str, mois: Mois) -> R<(RangDansLeMois, Carte, Periode)> {
+    let siens: Vec<(RangDansLeMois, &Carte)> = RangDansLeMois::de_chacun(&saisie.engagements).filter(|(_, x)| x.salarie.as_ref() == Some(cle)).collect();
     if siens.is_empty() {
         return Err(refus(format!("{} n'a aucun engagement en {} : aucun contrat ne s'y termine.", nom, mois.libelle(Graphie::Accentuee))));
     }
-    let mut finissent: Vec<(usize, Carte, Periode)> = Vec::new();
+    let mut finissent: Vec<(RangDansLeMois, Carte, Periode)> = Vec::new();
     for (i, x) in siens {
         if let Some(contrat) = contrat_fini(x)?.filter(|c| c.fin().mois_civil() == mois) {
             finissent.push((i, x.clone(), contrat));
@@ -1889,9 +1889,8 @@ fn engagement_qui_finit(saisie: &VueDuMois, cle: &IdSalarie, nom: &str, mois: Mo
 }
 
 /// La paie validee de l'engagement de rang `rang` (`paies` : celles de `validees`, au meme rang que sa saisie).
-fn paie_de_l_engagement(paies: &[Paie], rang: usize, cle: &IdSalarie, nom: &str, mois: Mois) -> R<Paie> {
-    paies
-        .get(rang)
+fn paie_de_l_engagement(paies: &[Paie], rang: RangDansLeMois, cle: &IdSalarie, nom: &str, mois: Mois) -> R<Paie> {
+    rang.dans(paies)
         .filter(|p| p.salarie.id == *cle)
         .cloned()
         .ok_or_else(|| refus(format!("{} n'a aucune paie validee en {} pour ce contrat.", nom, mois.libelle(Graphie::Accentuee))))

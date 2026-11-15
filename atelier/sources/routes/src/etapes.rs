@@ -920,8 +920,7 @@ pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
         return Ok((0, None, String::new(), Reverse(None), Reverse(nom.to_string())));
     }
     let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(chemin)?, Some(&NomDeFichier::du(chemin)?))?;
-    // Au plus quinze chiffres (S20.G00.05.004) : le rang tient dans la cle de rangement sans perte.
-    let lu = apercu.ordre.map(|o| o.valeur() as i64);
+    let lu = apercu.ordre;
     if apercu.est_signalement() {
         return Ok((1, lu, nom.to_string(), Reverse(None), Reverse(String::new())));
     }
@@ -931,16 +930,14 @@ pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
 
 /// La cle de rangement d'un fichier deposable (`ordre_de_depot`) : mensuelle ou signalement, l'ordre d'un signalement,
 /// l'etablissement, l'ordre d'une mensuelle (le plus grand d'abord), le nom d'une DPAE (le plus grand d'abord).
-pub(crate) type OrdreDeDepot = (u8, Option<i64>, String, std::cmp::Reverse<Option<i64>>, std::cmp::Reverse<String>);
+pub(crate) type OrdreDeDepot = (u8, Option<NumeroDOrdre>, String, std::cmp::Reverse<Option<NumeroDOrdre>>, std::cmp::Reverse<String>);
 
 /// `DSN_<Mois>[_<NIC>]_AR<n>.dsn` -> (`DSN_<Mois>[_<NIC>].dsn`, Some(n)) ; un autre nom reste tel quel.
-fn sans_annule_et_remplace(nom: &str) -> (String, Option<i64>) {
+fn sans_annule_et_remplace(nom: &str) -> (String, Option<NumeroDOrdre>) {
     if let Some(corps) = nom.strip_suffix(".dsn").or_else(|| nom.strip_suffix(".DSN")) {
         if let Some(i) = corps.rfind("_AR") {
-            // Ce qui suit `_AR` n'est pas un numero : le nom n'est pas celui d'un annule-et-remplace.
-            let suite = &corps[i + 3..];
-            let numero = if suite.is_empty() { None } else { suite.bytes().try_fold(0i64, |n, b| if b.is_ascii_digit() { n.checked_mul(10)?.checked_add(i64::from(b - b'0')) } else { None }) };
-            if let Some(n) = numero {
+            // Ce qui suit `_AR` n'est pas un numero d'ordre : le nom n'est pas celui d'un annule-et-remplace.
+            if let Some(n) = NumeroDOrdre::lu(&corps[i + 3..]) {
                 return (format!("{}.dsn", &corps[..i]), Some(n));
             }
         }
@@ -1942,7 +1939,7 @@ impl<'a> Moteur<'a> {
             return Ok(out);
         };
         out.dernier_ordre = Some(dernier);
-        out.prochain_ordre = dernier.plus(1)?;
+        out.prochain_ordre = NumeroDOrdre::suivant(Some(dernier))?;
         // Ce que la DSN a emporte, compare au present des engagements du mois (`dsn_a_refaire`).
         let mut modifiee = false;
         if derniere.versions().is_some() {
