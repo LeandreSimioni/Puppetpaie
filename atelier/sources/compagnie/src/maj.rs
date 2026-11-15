@@ -753,7 +753,7 @@ fn verifier_la_signature(octets: &[u8], signature: &str, cle_publique: &str) -> 
 /// de developpement.
 pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
     let mut gardees = Vec::new();
-    for (_, r) in crate::installation::compagnies(inst)? {
+    for (_, r) in crate::installation::compagnies(inst, |_| true)? {
         let une_compagnie = !crate::installation::est_cache(&r) && droit::contexte::ENTREPRISE.dans(&r).is_file();
         if une_compagnie && (!crate::installation::est_copie(&r) || crate::installation::est_fictive(&r)?) {
             gardees.push(r);

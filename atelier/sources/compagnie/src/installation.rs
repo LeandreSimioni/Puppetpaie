@@ -637,13 +637,13 @@ pub fn nom_dossier(p: &Path) -> R<NomDeFichier> {
 pub fn liste_de(b: &Path) -> R<Vec<Compagnie>> {
     let bridee = crate::bridage::est_bride_de(b);
     let mut out = Vec::new();
-    for (id, r) in compagnies(b)? {
+    // Bridee, l'accueil ne montre que les fictives, et ne lit pas `compagnies/` ; la vraie, quand elle a sa configuration.
+    for (id, r) in compagnies(b, |groupe| !bridee || *groupe == FICTIVES)? {
         match id {
-            // Bridee, l'accueil ne montre que les fictives ; la vraie, quand elle a sa configuration.
             IdDeCompagnie::Reelle if !bridee && r.join(socle::fichiers::CONFIG).is_dir() => out.push(entree(id, &r, true)?),
-            IdDeCompagnie::Cie(_) if !bridee => out.push(entree(id, &r, true)?),
+            IdDeCompagnie::Reelle => {}
+            IdDeCompagnie::Cie(_) => out.push(entree(id, &r, true)?),
             IdDeCompagnie::Fictive(_) => out.push(entree(id, &r, false)?),
-            IdDeCompagnie::Reelle | IdDeCompagnie::Cie(_) => {}
         }
     }
     Ok(out)
@@ -654,10 +654,11 @@ const GROUPES: [(CheminRelatif, fn(NomDeFichier) -> IdDeCompagnie); 2] = [(COMPA
 
 /// LES COMPAGNIES DE L'INSTALLATION `inst`, LA SEULE LISTE, bridee ou non, dans l'ordre des tuiles : la vraie, la ou
 /// `IdDeCompagnie::racine` la met (qu'elle y soit ou non), puis celles de chaque groupe (`GROUPES`) qui ont leur fiche
-/// entreprise (`sous_dossiers`), par ordre de dossier. Chaque lecteur dit le filtre qu'il veut.
-pub fn compagnies(inst: &Path) -> R<Vec<(IdDeCompagnie, PathBuf)>> {
+/// entreprise (`sous_dossiers`), par ordre de dossier. Chaque lecteur dit le filtre qu'il veut ; `lu` dit les groupes
+/// qui se lisent (un groupe qu'il ecarte n'est pas lu sur le disque).
+pub fn compagnies(inst: &Path, lu: impl Fn(&CheminRelatif) -> bool) -> R<Vec<(IdDeCompagnie, PathBuf)>> {
     let mut v = vec![(IdDeCompagnie::Reelle, IdDeCompagnie::Reelle.racine(inst))];
-    for (groupe, du_groupe) in GROUPES {
+    for (groupe, du_groupe) in GROUPES.into_iter().filter(|(groupe, _)| lu(groupe)) {
         for d in sous_dossiers(&groupe.dans(inst))? {
             v.push((du_groupe(nom_dossier(&d)?), d));
         }
