@@ -213,20 +213,20 @@ impl From<NumeroDeBulletin> for String {
 }
 
 /// LE NUMERO D'UN AVENANT AU CONTRAT : 1 pour le premier, puis le suivant du dernier signe ; ecrit et lu comme un nombre.
-/// Il ne se dit que dans une phrase ou un nom de fichier (`Display`).
+/// Il ne se dit que dans une phrase ou un nom de fichier (`Display`). Aucun avenant n'est numéroté 0 : il ne se lit pas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub struct NumeroDAvenant(u32);
+pub struct NumeroDAvenant(std::num::NonZeroU32);
 
 impl NumeroDAvenant {
     /// Le premier avenant d'un contrat.
     pub fn premier() -> NumeroDAvenant {
-        NumeroDAvenant(1)
+        NumeroDAvenant(std::num::NonZeroU32::MIN)
     }
 
     /// L'avenant qui suit celui-ci.
     pub fn suivant(self) -> NumeroDAvenant {
-        NumeroDAvenant(self.0 + 1)
+        NumeroDAvenant(self.0.saturating_add(1))
     }
 }
 
