@@ -10,7 +10,6 @@
 //! `kali-1285-titre-vi-duree-du-travail-20261102.md`, `kali-3090-titre-viii-duree-du-travail-20261102.md`,
 //! `boss/boss-heures-supplementaires-20260601.txt`.
 
-use socle::texte::virgule;
 use socle::echec::R;
 use socle::num::Decimal;
 
@@ -72,7 +71,7 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
                 debut = fin;
             }
             if reste > Decimal::ZERO {
-                let au_dela = c.au_dela_du_contingent.ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", "heures_supplementaires.au_dela_du_contingent"))?;
+                let au_dela = c.au_dela_du_contingent.ok_or_else(|| socle::echec::livree(&crate::clauses::FICHIER, "heures_supplementaires.au_dela_du_contingent"))?;
                 ajouter(&mut r.paliers, reste, au_dela.0);
             }
         }
@@ -81,13 +80,13 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
                 return Err(socle::refus!(
                     "{} heures supplémentaires au-delà de la huitième d'une semaine, pour {} heures supplémentaires dans le mois : \
                      les premières sont une part des secondes. Rien n'est calculé.",
-                    virgule(a_50), virgule(heures)
+                    socle::texte::nombre_dit(a_50), socle::texte::nombre_dit(heures)
                 ));
             }
             let hebdo = loi()?.heures_supplementaires.paliers_hebdomadaires;
             let (premier, second) = match (hebdo.first(), hebdo.get(1)) {
                 (Some(a), Some(b)) => (a.majoration, b.majoration),
-                _ => return Err(socle::echec::livree("permanents-base.json", "heures_en_plus.heures_supplementaires.paliers_hebdomadaires")),
+                _ => return Err(socle::echec::livree(&crate::permanents::BASE, "heures_en_plus.heures_supplementaires.paliers_hebdomadaires")),
             };
             ajouter(&mut r.paliers, heures - a_50, premier);
             ajouter(&mut r.paliers, a_50, second);
@@ -98,8 +97,8 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
             r.avis.push(format!(
                 "Heures supplémentaires de l'année : {} avec ce mois, au-delà du contingent annuel de {} heures de la convention. \
                  Les heures au-delà ouvrent droit à une contrepartie obligatoire en repos (C. trav. L3121-30), à poser hors de la paie.",
-                virgule(deja + heures),
-                virgule(contingent)
+                socle::texte::nombre_dit(deja + heures),
+                socle::texte::nombre_dit(contingent)
             ));
         }
     }
@@ -142,8 +141,8 @@ pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, contr
         r.avis.push(format!(
             "{} heures complémentaires pour un contrat de {} heures par mois : au-delà du {} de la durée du contrat que la loi ou la \
              convention permettent (C. trav. L3123-20, L3123-28). Le logiciel les paie ; au-delà, la durée du contrat se revoit.",
-            virgule(heures),
-            virgule(contrat.round_dp(2)),
+            socle::texte::nombre_dit(heures),
+            socle::texte::nombre_dit(contrat.round_dp(2)),
             plafond.en_mots()
         ));
     }

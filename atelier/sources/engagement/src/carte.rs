@@ -23,6 +23,7 @@ use droit::contexte::{IdSalarie, IdSpectacle};
 use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NatureDeContrat};
 use socle::date::Jour;
 use socle::forme::NombreLu;
+use socle::grandeurs::{Heures, Montant};
 use socle::echec::{refus, R};
 
 use crate::ligne::{LigneDonnee, LignePaie};
@@ -148,17 +149,18 @@ macro_rules! nature {
     (
         $(#[$a:meta])*
         $nom:ident / $brouillon:ident {
-            obligatoire { $( $o:ident : $to:ty = $co:ident ),* $(,)? }
-            facultatif { $( $f:ident : $tf:ty = $cf:ident ),* $(,)? }
+            obligatoire { $( $o:ident : $to:ty = $co:ident $( ecrite($eo:literal, $eoo:literal) )? ),* $(,)? }
+            facultatif { $( $f:ident : $tf:ty = $cf:ident $( ecrite($ef:literal) )? ),* $(,)? }
             du_motif { $( $m:ident : $tm:ty = $cm:ident ),* $(,)? }
         }
     ) => {
-        /// LE BROUILLON de cette nature : chacune de ses cases, remplie ou non.
+        /// LE BROUILLON de cette nature : chacune de ses cases, remplie ou non. Une case qui dit son ecriture
+        /// (`ecrite(..)` : une grandeur) s'ecrit par elle.
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $brouillon {
-            $( pub $o: Option<$to>, )*
-            $( pub $f: Option<$tf>, )*
+            $( $( #[serde(serialize_with = $eoo)] )? pub $o: Option<$to>, )*
+            $( $( #[serde(serialize_with = $ef)] )? pub $f: Option<$tf>, )*
             $( pub $m: Option<$tm>, )*
         }
 
@@ -188,8 +190,8 @@ macro_rules! nature {
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $nom {
-            $( pub $o: $to, )*
-            $( pub $f: Option<$tf>, )*
+            $( $( #[serde(serialize_with = $eo)] )? pub $o: $to, )*
+            $( $( #[serde(serialize_with = $ef)] )? pub $f: Option<$tf>, )*
             $( pub $m: Option<$tm>, )*
         }
 
@@ -242,7 +244,7 @@ nature! {
             date_paiement: Jour = DatePaiement,
             jours: NombreLu = Jours,
             taux_cachet: NombreLu = TauxCachet,
-            indemnite_licenciement: NombreLu = IndemniteLicenciement,
+            indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
             notification_rupture: Jour = NotificationRupture,
@@ -268,7 +270,7 @@ nature! {
             salarie: IdSalarie = Salarie,
             debut: Jour = Debut,
             salaire_mensuel: NombreLu = SalaireMensuel,
-            quotite_contrat: NombreLu = QuotiteContrat,
+            quotite_contrat: Heures = QuotiteContrat ecrite("socle::grandeurs::ecrit::nombre_json::serialize", "socle::grandeurs::ecrit::nombre_json::option::serialize"),
         }
         facultatif {
             fin: Jour = Fin,
@@ -277,7 +279,7 @@ nature! {
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
-            quotite_reference: NombreLu = QuotiteReference,
+            quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
             emploi: String = Emploi,
             pcs_ese: droit::fiche::CodePcsEse = PcsEse,
@@ -297,7 +299,7 @@ nature! {
             heures_supplementaires: NombreLu = HeuresSupplementaires,
             heures_supplementaires_a_50: NombreLu = HeuresSupplementairesA50,
             heures_complementaires: NombreLu = HeuresComplementaires,
-            indemnite_licenciement: NombreLu = IndemniteLicenciement,
+            indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
             notification_rupture: Jour = NotificationRupture,
@@ -326,7 +328,7 @@ nature! {
             fin: Jour = Fin,
             motif_recours: MotifDeRecours = MotifRecours,
             salaire_mensuel: NombreLu = SalaireMensuel,
-            quotite_contrat: NombreLu = QuotiteContrat,
+            quotite_contrat: Heures = QuotiteContrat ecrite("socle::grandeurs::ecrit::nombre_json::serialize", "socle::grandeurs::ecrit::nombre_json::option::serialize"),
         }
         facultatif {
             numero: crate::numeros::NumeroContrat = Numero,
@@ -334,7 +336,7 @@ nature! {
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
-            quotite_reference: NombreLu = QuotiteReference,
+            quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
             emploi: String = Emploi,
             pcs_ese: droit::fiche::CodePcsEse = PcsEse,
@@ -354,7 +356,7 @@ nature! {
             heures_supplementaires: NombreLu = HeuresSupplementaires,
             heures_supplementaires_a_50: NombreLu = HeuresSupplementairesA50,
             heures_complementaires: NombreLu = HeuresComplementaires,
-            indemnite_licenciement: NombreLu = IndemniteLicenciement,
+            indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
             notification_rupture: Jour = NotificationRupture,
@@ -719,8 +721,8 @@ changements! {
     Cadre(bool) = "cadre" => cadre,
     Lieu(String) = "lieu" => lieu,
     MotifRecours(MotifDeRecours) = "motif_recours" => motif_recours,
-    QuotiteContrat(NombreLu) = "quotite_contrat" => quotite_contrat,
-    QuotiteReference(NombreLu) = "quotite_reference" => quotite_reference,
+    QuotiteContrat(Heures) = "quotite_contrat" => quotite_contrat,
+    QuotiteReference(Heures) = "quotite_reference" => quotite_reference,
     ModaliteTempsTravail(ModaliteDuTempsDeTravail) = "modalite_temps_travail" => modalite_temps_travail,
     SalaireMensuel(NombreLu) = "salaire_mensuel" => salaire_mensuel,
     Emploi(String) = "emploi" => emploi,
@@ -741,7 +743,7 @@ changements! {
     HeuresSupplementaires(NombreLu) = "heures_supplementaires" => heures_supplementaires,
     HeuresSupplementairesA50(NombreLu) = "heures_supplementaires_a_50" => heures_supplementaires_a_50,
     HeuresComplementaires(NombreLu) = "heures_complementaires" => heures_complementaires,
-    IndemniteLicenciement(NombreLu) = "indemnite_licenciement" => indemnite_licenciement,
+    IndemniteLicenciement(Montant) = "indemnite_licenciement" => indemnite_licenciement,
     FauteGrave(bool) = "faute_grave" => faute_grave,
     MotifRupture(MotifDeRupture) = "motif_rupture" => motif_rupture,
     NotificationRupture(Jour) = "notification_rupture" => notification_rupture,

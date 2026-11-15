@@ -116,7 +116,7 @@ pub struct PourDemarrer {
 /// Le champ `cle` de la fiche entreprise (`champs-base.json`), que cette table doit porter.
 fn champ_entreprise(cle: impl Into<CaseDeFiche>) -> R<crate::champs::Champ> {
     let cle = cle.into();
-    crate::champs::champ(NomDeFiche::Entreprise, cle)?.ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)))
+    crate::champs::champ(NomDeFiche::Entreprise, cle)?.ok_or_else(|| socle::echec::livree(&crate::champs::BASE, &format!("entreprise.{}", cle)))
 }
 
 /// Le libelle et l'aide du champ `cle` de la fiche entreprise (`champs-base.json`).
@@ -312,19 +312,20 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // n'est franchi qu'apres « cinq années civiles consécutives » (CSS, art. L. 130-1, II,
     // `atelier/reference/sources/code-de-la-securite-sociale/articles-20261011.md` l. 296), et des taux de chaque paie en
     // dependent (onze et cinquante salaries) : elle est exigee pour l'effectif de la paie.
-    // Une compagnie plus ancienne dit l'effectif de chaque annee qui manque (`Effectif::a_dire`), tel que l'Urssaf l'a
+    // Une compagnie plus ancienne dit l'effectif de chaque annee qui manque (`EffectifsParAnnee::a_dire`), tel que l'Urssaf l'a
     // calcule (L. 130-1, I) : celle qui arrive d'un autre logiciel n'a pas ses comptes rendus de nature 118.
-    let an = ctx.aujourdhui.an;
+    let an = ctx.aujourdhui.annee();
+    let avant = an.precedente()?;
     let effectif = ctx.effectif()?;
     if !effectif.a_dire(an).is_empty() && effectif.premiere_embauche.is_none() {
         let (libelle, _) = champ(CaseEntreprise::PremiereEmbauche)?;
-        let m = match effectif.atteint(11, an) {
+        let m = match effectif.atteint(socle::grandeurs::Effectif::personnes(11), an) {
             Err(m) => m.phrase,
-            Ok(_) => format!("L'effectif de {} n'est pas connu.", an - 1),
+            Ok(_) => format!("L'effectif de {} n'est pas connu.", avant),
         };
         out.push(manque_de_la_case(CaseEntreprise::PremiereEmbauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?);
     } else if let Some(manquent) = annees_d_avant_a_dire(&effectif, an) {
-        let annees = manquent.iter().map(i32::to_string).collect::<Vec<_>>().join(", ");
+        let annees = manquent.iter().map(socle::mois::Annee::to_string).collect::<Vec<_>>().join(", ");
         out.push(Manque::bloquante(
             "effectif",
             format!("L'effectif de {}", annees),
@@ -337,7 +338,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // LE CSE, la ou la convention en fait dependre une contribution (`par_representation` : le FNAS de la CCNEAC,
     // article III.3.1) et seulement quand l'effectif de la paie compte au moins onze salaries : en dessous, la question
     // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Il ne se lit qu'avec la cle de l'effectif
-    // (`droit::contexte::Effectif::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
+    // (`droit::contexte::EffectifsParAnnee::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
     let bareme = ctx.bareme(&ctx.aujourdhui);
     let cle = droit::fiche::CasePieceEntreprise::RepresentationPersonnel;
     // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
@@ -347,7 +348,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             let cse = effectif.cse(an);
             let dit = cse.as_ref().is_some_and(|k| ent.cse.ouvrir(k).representation_personnel.est_dite());
             match effectif.valeur(an) {
-                Some(e) if e >= socle::num::Decimal::from(11) && cse.is_some() && !dit => {
+                Some(e) if e >= socle::grandeurs::Effectif::personnes(11) && cse.is_some() && !dit => {
                     let (libelle, aide) = champ(cle)?;
                     out.push(manque_de_la_case(cle, libelle, "la contribution au FNAS de chaque paie", aide)?);
                 }
@@ -355,11 +356,11 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
                 Some(_) => {}
                 None => out.push(Manque::bloquante(
                     "effectif",
-                    format!("L'effectif de {}", an - 1),
+                    format!("L'effectif de {}", avant),
                     "la contribution au FNAS de chaque paie",
                     ENTREPRISE,
                     None,
-                    format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé ».", an - 1),
+                    format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé ».", avant),
                 )),
             }
         }
@@ -392,7 +393,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // donnent : `droit::organismes`). Sans eux, le mois d'un permanent se refuse (`dsn::affiliations`).
     // Le mois que « Pour demarrer » prepare : celui du jour.
     let mois = ctx.aujourdhui.mois_civil();
-    let permanents = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour())?;
+    let permanents = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_mois(mois))?;
     if permanents.ouverts() && ctx.organismes()?.par_nature.permanent.references.is_empty() {
         out.push(Manque::bloquante(
             "organismes_permanents",
@@ -414,9 +415,9 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     Ok(out)
 }
 
-/// Les annees d'avant PuppetPaie dont l'effectif manque (`Effectif::a_dire`) quand la premiere embauche est dite, et
+/// Les annees d'avant PuppetPaie dont l'effectif manque (`EffectifsParAnnee::a_dire`) quand la premiere embauche est dite, et
 /// qu'elle ne remplace donc pas ; aucune sinon.
-fn annees_d_avant_a_dire(effectif: &droit::contexte::Effectif, an: i32) -> Option<Vec<i32>> {
+fn annees_d_avant_a_dire(effectif: &droit::contexte::EffectifsParAnnee, an: socle::mois::Annee) -> Option<Vec<socle::mois::Annee>> {
     let manquent = effectif.a_dire(an);
     (!manquent.is_empty() && effectif.premiere_embauche.is_some()).then_some(manquent)
 }
@@ -431,7 +432,7 @@ fn par_representation(b: &droit::forme_bareme::Pile) -> bool {
 /// manquent (`annees_d_avant_a_dire`), ou celui de l'annee d'avant que la contribution au FNAS lit quand il n'est pas
 /// connu.
 pub fn effectif_a_dire(ctx: &Contexte) -> R<bool> {
-    let an = ctx.aujourdhui.an;
+    let an = ctx.aujourdhui.annee();
     let effectif = ctx.effectif()?;
     if annees_d_avant_a_dire(&effectif, an).is_some() {
         return Ok(true);
@@ -512,13 +513,13 @@ fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(droit::contexte::IdSalarie, Stri
 /// de l'arrete pour un risque « TC » (`routes::atmp::inscrire_l_arrete`), d'apres sa `provenance`. Le libelle est celui de
 /// l'arrete de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
 pub fn poses(ctx: &Contexte) -> R<Vec<Pose>> {
-    let an = ctx.aujourdhui.an;
+    let an = ctx.aujourdhui.annee();
     // Sans taux AT/MP de l'annee, le moteur n'en a pose aucun ; un taux qui ne se lit pas se refuse.
     Ok(ctx.taux_atmp_de(an).transpose()?.map(|t| pose_atmp(an, t)).transpose()?.flatten().into_iter().collect())
 }
 
 /// Le taux AT/MP `t` de l'annee `an`, s'il est pose par le moteur (sa `provenance`).
-fn pose_atmp(an: i32, t: droit::forme_bareme::TauxAtmp) -> R<Option<Pose>> {
+fn pose_atmp(an: socle::mois::Annee, t: droit::forme_bareme::TauxAtmp) -> R<Option<Pose>> {
     let d_ou = match (&t.notification, t.provenance) {
         (Some(n), Some(droit::fiche::ProvenanceAtmp::Notification)) => format!(
             "Ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN.",
@@ -532,7 +533,7 @@ fn pose_atmp(an: i32, t: droit::forme_bareme::TauxAtmp) -> R<Option<Pose>> {
         ),
         (_, Some(droit::fiche::ProvenanceAtmp::Arrete)) => format!(
             "Le taux collectif de l'arrêté de {} pour ce risque « TC », le même pour toutes les compagnies qui y sont classées (code de la sécurité sociale, art. D. 242-6-14) : le logiciel l'a inscrit. Si votre notification AT/MP (compte AT/MP sur net-entreprises) en dit un autre, inscrivez-le.",
-            t.depuis.exigee("taux_atmp.depuis")?.an
+            t.depuis.exigee("taux_atmp.depuis")?.annee()
         ),
         // Un taux que la compagnie a inscrit elle-meme : le moteur n'a rien pose.
         _ => return Ok(None),
@@ -546,7 +547,7 @@ fn pose_atmp(an: i32, t: droit::forme_bareme::TauxAtmp) -> R<Option<Pose>> {
         (Some(r), _) => r.code.to_string(),
         (None, code) => code.exigee("taux_atmp.code_risque")?.to_string(),
     };
-    let taux: String = t.valeur.iter().map(|v| format!(", taux {}", format!("{:.2} %", v.round_dp(2)).replace('.', ","))).collect();
+    let taux: String = t.valeur.iter().map(|v| format!(", taux {}", socle::texte::pourcent(*v))).collect();
     let de: String = risque.iter().map(|r| format!("« {} » ", r.libelle)).collect();
     Ok(Some(Pose {
         cle: "taux_atmp".into(),

@@ -34,6 +34,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::capitaliser;
 use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use documents::fiche_questionnaire::{code_au_hasard, CodeDeDemande, SorteDeDemande};
+use documents::ModeDeRemise;
 use envois::journal::{ActeDuContrat, ArticleModifie, ContratParti, DetailSignature, Ligne, Version};
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -111,9 +112,9 @@ pub(crate) struct Choisis {
 
 /// « du 12/01/2026 au 30/06/2026 », ou « à partir du 12/01/2026 » pour un contrat sans terme.
 fn periode_de(p: &Paie) -> String {
-    match p.engagement.fin {
-        Some(f) => format!("du {} au {}", p.engagement.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
-        None => format!("à partir du {}", p.engagement.debut.jj_mm_aaaa()),
+    match p.engagement.contrat().fin() {
+        Some(f) => format!("du {} au {}", p.engagement.contrat().debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+        None => format!("à partir du {}", p.engagement.contrat().debut().jj_mm_aaaa()),
     }
 }
 
@@ -259,7 +260,7 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: Mois, paies: &[Paie
     let voulus = &choisis.salaries;
     let cibles = &choisis.contrats;
     // Une cible sans numero vise le contrat de ce salarie qui commence ce jour-la, quel que soit son numero.
-    let vise = |c: &Cible, cle: &IdSalarie, p: &Paie| c.0 == *cle && c.1 == p.engagement.debut.iso() && c.2.as_ref().is_none_or(|n| p.engagement.numero.as_ref() == Some(n));
+    let vise = |c: &Cible, cle: &IdSalarie, p: &Paie| c.0 == *cle && c.1 == p.engagement.contrat().debut().iso() && c.2.as_ref().is_none_or(|n| p.engagement.numero.as_ref() == Some(n));
     let mut par_salarie: ParSalarie = Vec::new();
     for (rang, p) in paies.iter().enumerate() {
         let cle = cle_de(p);
@@ -332,8 +333,7 @@ pub(crate) fn controler_avenants(ctx: &Contexte, avenants: &[(IdSalarie, Vec<UnA
 fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &IdSalarie, pdf: &std::path::Path, titre: &str, mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, modele: EmpreinteCourte) -> R<ContratParti> {
     Ok(ContratParti {
         salarie: cle.clone(),
-        debut: p.engagement.debut,
-        fin: p.engagement.fin,
+        contrat: p.engagement.contrat(),
         numero: p.engagement.numero.clone(),
         fichier: NomDeFichier::du(pdf)?,
         spectacle: Some(titre.to_string()),
@@ -414,7 +414,7 @@ pub(crate) struct Impression {
 /// choisis (`avenants`, deja verifies par la route), chacun dans son PDF dans `sorties/<mois>/envoi/` (la piece partie de
 /// chacun : un PDF de contrats par salarie, un PDF par avenant), et tous reunis en un seul PDF a imprimer (`impression`),
 /// a remettre en main propre. L'IMPRESSION EST UN DEPART : chaque contrat y part sous son numero, chaque avenant sous le
-/// sien, et le journal le note (`contrat-signature`, `main_propre` ; une ligne pour les contrats, une pour les avenants) ;
+/// sien, et le journal le note (`contrat-signature`, `remise` ; une ligne pour les contrats, une pour les avenants) ;
 /// ce qui revient signe se note ensuite d'un clic (`contrat-recu`). Rien ne quitte le poste : aucun mot de passe. `qui` :
 /// la ligne du journal.
 pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Choisis>, avenants: &[(IdSalarie, Vec<UnAvenant>)], qui: &str) -> R<Impression> {
@@ -428,7 +428,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         return Err(refus(format!("Aucun contrat a imprimer pour {}.", mois)));
     }
     controler_avenants(ctx, avenants)?;
-    let sorties = ctx.racine.join("sorties").join(s_mois.to_string());
+    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, s_mois);
     let dossier = documents::PieceDuMois::Contrat.dossier().sous(&sorties);
     let etiq = s_mois.etiquette();
     let ent = documents::avenant::ent_du_mois(ctx, s_mois);
@@ -455,13 +455,13 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
     let nom_impression = NomDeFichier::du(&impression)?;
     let le_mois = Some(mois);
     if !contrats.is_empty() {
-        let detail = DetailSignature { contrats: contrats.clone(), main_propre: true, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
+        let detail = DetailSignature { contrats: contrats.clone(), remise: ModeDeRemise::Imprime, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
         let versions = envois::journal::versions_des_contrats(ctx, &contrats, &departs)?;
         let reponse = format!("{} contrat(s) imprime(s) pour une remise en main propre", contrats.len());
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }
     if !lignes_avenants.is_empty() {
-        let detail = DetailSignature { contrats: lignes_avenants.clone(), main_propre: true, expediteur: None, relance: None, acte: Some(ActeDuContrat::Avenant), partis: None, echec_a: None };
+        let detail = DetailSignature { contrats: lignes_avenants.clone(), remise: ModeDeRemise::Imprime, expediteur: None, relance: None, acte: Some(ActeDuContrat::Avenant), partis: None, echec_a: None };
         let versions = envois::journal::versions_des_contrats(ctx, &lignes_avenants, &departs)?;
         let reponse = format!(
             "{} imprime(s) pour une remise en main propre",
@@ -500,7 +500,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois, None, &departs)?;
     let s_mois = data.mois;
-    let dossier = documents::PieceDuMois::Contrat.dossier().sous(&ctx.racine.join("sorties").join(s_mois.to_string()));
+    let dossier = documents::PieceDuMois::Contrat.dossier().dans(&ctx.racine, s_mois);
     let etiq = s_mois.etiquette();
 
     let (an, nom_mois) = (s_mois.annee(), s_mois.nom(socle::mois::Graphie::Accentuee));
@@ -511,10 +511,10 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
 
     let mut remplacements: Vec<((IdSalarie, Jour, NumeroContrat), (String, Jour))> = Vec::new();
     if remplace {
-        let lignes = envois::journal::lire(&ctx.racine, None, None, false)?;
+        let lignes = envois::journal::lire(&ctx.racine, None, None, None)?;
         for (k, ps, _) in &par_salarie {
             for p in ps {
-                let debut = p.engagement.debut;
+                let debut = p.engagement.contrat().debut();
                 // Le contrat qui part est remplace, lui (son numero) : un autre contrat du salarie n'a rien a remplacer.
                 let Some(parti) = envois::etats::contrat_parti(&lignes, k, p.engagement.numero.as_ref()) else {
                     return Err(refus(format!("Le contrat de {} du {} n'est jamais parti : il n'a rien à remplacer, il s'envoie. Rien n'est parti.", k, debut.jj_mm_aaaa())));
@@ -620,7 +620,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         )?;
         messages.push(message);
         for (((p, t), fige), rappel) in ps.iter().zip(&titres).zip(figes).zip(&rappels) {
-            let debut = p.engagement.debut;
+            let debut = p.engagement.contrat().debut();
             let mut c = entree_du_contrat(ctx, p, cle, &pdf, t, s_mois, &ent, fige)?;
             // Ce qu'il faut pour reconnaitre la reponse : le code, et l'adresse dont elle doit venir.
             c.code = Some(code.clone());
@@ -646,7 +646,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         Ok(p) => p,
         Err(e) => {
             let servis = versions_des_servis(&versions, &messages, e.partis.len());
-            let detail = DetailSignature { contrats: contrats.clone(), main_propre: false, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
+            let detail = DetailSignature { contrats: contrats.clone(), remise: ModeDeRemise::Courriel, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
             noter_echec_d_envoi(ctx, Ligne::ContratSignature, Some(mois), "interface", &e.partis, &e.echoue, &e.echec.phrase, detail, Some(servis))?;
             return Err(e.echec);
         }
@@ -656,7 +656,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         c.message = messages.iter().zip(&identifiants).find(|(m, _)| m.pour == c.salarie).map(|(_, i)| i.clone());
     }
     let n_rappels = contrats.iter().filter(|c| c.relance == Some(true)).count();
-    let detail = DetailSignature { contrats: contrats.clone(), main_propre: false, expediteur: Some(expediteur.clone()), relance: Some(n_rappels == contrats.len()), acte: None, partis: None, echec_a: None };
+    let detail = DetailSignature { contrats: contrats.clone(), remise: ModeDeRemise::Courriel, expediteur: Some(expediteur.clone()), relance: Some(n_rappels == contrats.len()), acte: None, partis: None, echec_a: None };
     let reponse = match n_rappels {
         0 => format!("{} contrat(s) envoye(s) a la signature", contrats.len()),
         n if n == contrats.len() => format!("{} contrat(s) relance(s) a la signature", n),
@@ -853,7 +853,7 @@ pub struct UnAvenant {
     pub debut: Jour,
     pub mois: Mois,
     pub contrat: Option<NumeroContrat>,
-    pub numero: i64,
+    pub numero: engagement::numeros::NumeroDAvenant,
     /// Le jour du contrat qu'il modifie ; aucun pour un avenant repris (la piece est deja ecrite).
     pub date_contrat: Option<Jour>,
     pub effet: Jour,
@@ -965,14 +965,14 @@ fn avenant_ecrit(
     let p = &paies[rang_p];
     let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement)?;
     let ent = documents::avenant::ent_du_mois(ctx, mois_a);
-    let dossier = documents::PieceDuMois::Avenant.dossier().sous(&ctx.racine.join("sorties").join(mois_a.to_string()));
+    let dossier = documents::PieceDuMois::Avenant.dossier().dans(&ctx.racine, mois_a);
     let pdf = match &a.repris {
         Some(Repris { fichier, .. }) => {
             let f = dossier.join(fichier);
             if !f.is_file() {
                 return Err(socle::echec::refus_avec(
                     format!("L'avenant n° {} de {} n'est plus dans les envois de son mois : il ne repart pas tel quel. Rien n'est parti.", a.numero, salarie),
-                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.to_string()), ..Default::default() },
+                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.clone().into()), ..Default::default() },
                 )
                 .reclasser(Classe::Refuse));
             }
@@ -1002,8 +1002,7 @@ fn avenant_ecrit(
     };
     let c = ContratParti {
         salarie: salarie.clone(),
-        debut: a.debut,
-        fin: p.engagement.fin,
+        contrat: p.engagement.contrat(),
         numero: a.contrat.clone(),
         fichier: NomDeFichier::du(&pdf)?,
         spectacle: Some(p.titre()?),
@@ -1169,7 +1168,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
             Ok(p) => p,
             Err(e) => {
                 let servis = versions_des_servis(&versions, std::slice::from_ref(&message), e.partis.len());
-                let detail = DetailSignature { contrats: lignes_contrats.clone(), main_propre: false, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
+                let detail = DetailSignature { contrats: lignes_contrats.clone(), remise: ModeDeRemise::Courriel, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
                 noter_echec_d_envoi(ctx, Ligne::ContratSignature, le_mois, "interface", &e.partis, &e.echoue, &e.echec.phrase, detail, Some(servis))?;
                 return Err(e.echec);
             }
@@ -1183,7 +1182,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
         );
         let detail = DetailSignature {
             contrats: lignes_contrats.clone(),
-            main_propre: false,
+            remise: ModeDeRemise::Courriel,
             expediteur: Some(expediteur.clone()),
             relance: Some(aa.iter().all(UnAvenant::rappel)),
             acte: Some(ActeDuContrat::Avenant),

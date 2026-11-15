@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::echec::R;
+use socle::mois::Annee;
 
 use crate::departs::Departs;
 use crate::stock::{self, Objet};
@@ -90,14 +91,25 @@ impl NumeroContrat {
     }
 
     /// L'annee (2000 + les deux chiffres) et le rang d'un numero que `former` a donne (`FA1.26.16`) ; `None` pour un
-    /// numero d'une autre forme (un contrat repris d'un autre logiciel).
-    pub fn annee_et_rang(&self) -> Option<(i32, i64)> {
+    /// numero d'une autre forme (un contrat repris d'un autre logiciel). Le rang ne sort pas d'ici : il ne sert qu'a
+    /// trouver le plus haut numero pris (`derniers_pris`) et a donner le suivant (`former`).
+    fn annee_et_rang(&self) -> Option<(Annee, u32)> {
         let (tete, rang) = self.0.rsplit_once('.')?;
         let (_, yy) = tete.rsplit_once('.')?;
         if yy.len() != 2 {
             return None;
         }
-        Some((2000 + socle::num::entier_de_chiffres(yy)? as i32, socle::num::entier_de_chiffres(rang)?))
+        // Deux chiffres : de 2000 a 2099, toujours une annee du calendrier.
+        let annee = match Annee::nouvelle(2000 + socle::num::entier_de_chiffres(yy)?) {
+            Ok(a) => a,
+            Err(_) => return None,
+        };
+        Some((annee, u32::try_from(socle::num::entier_de_chiffres(rang)?).ok()?))
+    }
+
+    /// Son rang dans l'annee `annee`, s'il est un numero que `former` a donne cette annee-la.
+    fn rang_en(&self, annee: Annee) -> Option<u32> {
+        self.annee_et_rang().filter(|(a, _)| *a == annee).map(|(_, r)| r)
     }
 }
 
@@ -113,17 +125,43 @@ impl From<NumeroContrat> for String {
     }
 }
 
-/// LE NUMERO D'UN BULLETIN DU LOGICIEL, `N/AAAA` : son rang dans la suite des bulletins de l'annee, puis l'annee. Il se
-/// donne par `numeroter`, et par le depart des documents d'un mois sur la suite qu'il reserve
-/// (`routes::gestes::depart::fabriquer_documents`) ; l'apercu d'un bulletin en montre un (`du_rang`). La paie ecrite le
-/// garde, et il se relit tel qu'il est ecrit (`lire`, ou `serde` : la meme chaine). Celui qu'un bulletin d'autrui imprime
-/// est du texte (`importe::ContratAtteste::numero_bulletin`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+/// LE NUMERO D'UN CERTIFICAT CONGES SPECTACLES (N CE) : un nombre, le premier des certificats d'une paie partie
+/// (`paie_ecrite::PaieEcrite::ce`), ecrit et lu tel quel ; les suivants le continuent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct NumeroDeCertificat(i64);
+
+impl NumeroDeCertificat {
+    /// Le premier numero de la suite.
+    pub const PREMIER: NumeroDeCertificat = NumeroDeCertificat(1);
+
+    /// Le numero qui le suit dans la sequence continue des certificats.
+    pub fn suivant(self) -> NumeroDeCertificat {
+        NumeroDeCertificat(self.0 + 1)
+    }
+
+    /// La suite des numeros a partir de celui-ci, lui compris : elle se zippe avec les certificats qu'elle numerote.
+    pub fn suite(self) -> impl Iterator<Item = NumeroDeCertificat> {
+        std::iter::successors(Some(self), |n| Some(n.suivant()))
+    }
+}
+
+impl std::fmt::Display for NumeroDeCertificat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+/// LE NUMERO D'UN BULLETIN DU LOGICIEL, `N/AAAA` : son rang dans la suite des bulletins de l'annee, puis l'annee. La
+/// suite commence au premier de l'annee (`premier`) et chaque numero donne le suivant (`suivant`) : le rang ne sort pas
+/// d'ici. La paie ecrite le garde, le compteur des bulletins (`config/compteurs.json`) aussi, et il se relit tel qu'il
+/// est ecrit (`lire`, ou `serde` : la meme chaine). Celui qu'un bulletin d'autrui imprime est du texte
+/// (`importe::ContratAtteste::numero_bulletin`). L'ordre est celui de l'annee, puis du rang.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 #[serde(into = "String")]
 pub struct NumeroDeBulletin {
-    texte: String,
-    rang: i64,
-    annee: i64,
+    annee: Annee,
+    rang: u32,
 }
 
 impl<'de> serde::Deserialize<'de> for NumeroDeBulletin {
@@ -136,43 +174,65 @@ impl NumeroDeBulletin {
     /// Le numero ecrit `texte` : des chiffres, `/`, l'annee en quatre chiffres ; toute autre forme se refuse.
     pub fn lire(texte: &str) -> R<NumeroDeBulletin> {
         let lu = texte.split_once('/').and_then(|(n, an)| {
-            let rang = socle::num::entier_de_chiffres(n)?;
+            let rang = u32::try_from(socle::num::entier_de_chiffres(n)?).ok()?;
             let annee = if an.len() == 4 { socle::num::entier_de_chiffres(an) } else { None }?;
             Some((rang, annee))
         });
         match lu {
-            Some((rang, annee)) => Ok(NumeroDeBulletin { texte: texte.to_string(), rang, annee }),
+            Some((rang, annee)) => Ok(NumeroDeBulletin { annee: Annee::nouvelle(annee)?, rang }),
             None => Err(socle::refus!("« {} » n'est pas un numéro de bulletin : son rang, « / », puis l'année en quatre chiffres (12/2026)", texte)),
         }
     }
 
-    /// Le bulletin de rang `rang` de l'annee `annee` : celui que `numeroter` donne, celui que le depart des documents
-    /// d'un mois donne sur la suite qu'il reserve (`routes::gestes::depart::fabriquer_documents`), ou celui que l'apercu
-    /// d'un bulletin montre.
-    pub fn du_rang(rang: i64, annee: i32) -> NumeroDeBulletin {
-        NumeroDeBulletin { texte: format!("{}/{}", rang, annee), rang, annee: i64::from(annee) }
+    /// Le premier bulletin de l'annee `annee` (`1/AAAA`).
+    pub fn premier(annee: Annee) -> NumeroDeBulletin {
+        NumeroDeBulletin { annee, rang: 1 }
     }
 
-    /// Son rang dans la suite de son annee.
-    pub fn rang(&self) -> i64 {
-        self.rang
+    /// Le bulletin qui le suit dans la suite de son annee.
+    pub fn suivant(&self) -> NumeroDeBulletin {
+        NumeroDeBulletin { annee: self.annee, rang: self.rang + 1 }
     }
 
     /// Son annee.
-    pub fn annee(&self) -> i64 {
+    pub fn annee(&self) -> Annee {
         self.annee
     }
 }
 
 impl std::fmt::Display for NumeroDeBulletin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.texte)
+        write!(f, "{}/{}", self.rang, self.annee)
     }
 }
 
 impl From<NumeroDeBulletin> for String {
     fn from(n: NumeroDeBulletin) -> String {
-        n.texte
+        n.to_string()
+    }
+}
+
+/// LE NUMERO D'UN AVENANT AU CONTRAT : 1 pour le premier, puis le suivant du dernier signe ; ecrit et lu comme un nombre.
+/// Il ne se dit que dans une phrase ou un nom de fichier (`Display`). Aucun avenant n'est numéroté 0 : il ne se lit pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct NumeroDAvenant(std::num::NonZeroU32);
+
+impl NumeroDAvenant {
+    /// Le premier avenant d'un contrat.
+    pub fn premier() -> NumeroDAvenant {
+        NumeroDAvenant(std::num::NonZeroU32::MIN)
+    }
+
+    /// L'avenant qui suit celui-ci.
+    pub fn suivant(self) -> NumeroDAvenant {
+        NumeroDAvenant(self.0.saturating_add(1))
+    }
+}
+
+impl std::fmt::Display for NumeroDAvenant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
     }
 }
 
@@ -191,30 +251,33 @@ pub fn le_contrat(numero: Option<&NumeroContrat>, salarie: &IdSalarie) -> String
     numero_dit(numero, "le contrat ", &format!(" de {}", salarie), &format!("le contrat de {}", salarie))
 }
 
-/// Le numero de rang `seq` de l'annee `annee`, pour le salarie de cette fiche : `<initiales><code>.<AA>.<rang>`. Le seul
-/// qui fabrique un numero de contrat (regle 4) ; des initiales ou un code qui le sortiraient de la forme de la norme le
-/// font refuser (`NumeroContrat::lire`).
-pub fn former(fiche: &droit::fiche::ChampsSalarie, annee: i32, seq: i64) -> R<NumeroContrat> {
+/// Le numero de l'annee `annee` qui suit `dernier` (le plus haut que le salarie a pris cette annee, `derniers_pris`),
+/// le premier sans aucun, pour le salarie de cette fiche : `<initiales><code>.<AA>.<rang>`. Le seul qui fabrique un
+/// numero de contrat (regle 4), et le seul calcul du rang suivant ; des initiales ou un code qui le sortiraient de la
+/// forme de la norme le font refuser (`NumeroContrat::lire`).
+pub fn former(fiche: &droit::fiche::ChampsSalarie, annee: Annee, dernier: Option<&NumeroContrat>) -> R<NumeroContrat> {
     use droit::fiche::Lue;
+    let rang = match dernier {
+        Some(d) => d.rang_en(annee).ok_or_else(|| socle::refus!("Défaut du logiciel : le contrat n° {} n'est pas un numéro de {} donné par le logiciel ; aucun numéro ne le suit.", d, annee))? + 1,
+        None => 1,
+    };
     let an = annee.to_string();
-    NumeroContrat::lire(&format!("{}{}.{}.{:02}", fiche.initiales_contrat.ecrite("initiales_contrat")?, fiche.code_salarie.ecrite("code_salarie")?, &an[2.min(an.len())..], seq))
+    NumeroContrat::lire(&format!("{}{}.{}.{:02}", fiche.initiales_contrat.ecrite("initiales_contrat")?, fiche.code_salarie.ecrite("code_salarie")?, &an[2.min(an.len())..], rang))
 }
 
-/// Le dernier rang pris en `annee`, par salarie (la cle de sa fiche) : le plus grand des numeros de cette annee que
-/// portent ses engagements, ou sous lesquels quelque chose est parti pour lui (`departs`).
-fn derniers_pris(ctx: &Contexte, annee: i32, departs: &Departs) -> R<HashMap<IdSalarie, i64>> {
+/// Le dernier numero pris en `annee`, par salarie (la cle de sa fiche) : le plus haut rang des numeros de cette annee
+/// que portent ses engagements, ou sous lesquels quelque chose est parti pour lui (`departs`).
+fn derniers_pris(ctx: &Contexte, annee: Annee, departs: &Departs) -> R<HashMap<IdSalarie, NumeroContrat>> {
     derniers_pris_sauf(ctx, annee, None, departs)
 }
 
 /// La meme, sans l'engagement `sauf` (son fichier et son rang) : celui qui recoit un nouveau numero.
-fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(socle::mois::Mois, usize)>, departs: &Departs) -> R<HashMap<IdSalarie, i64>> {
-    let mut pris: HashMap<IdSalarie, i64> = HashMap::new();
+fn derniers_pris_sauf(ctx: &Contexte, annee: Annee, sauf: Option<(socle::mois::Mois, usize)>, departs: &Departs) -> R<HashMap<IdSalarie, NumeroContrat>> {
+    let mut pris: HashMap<IdSalarie, NumeroContrat> = HashMap::new();
     let mut noter = |cle: IdSalarie, numero: &NumeroContrat| {
-        if let Some((a, seq)) = numero.annee_et_rang() {
-            if a == annee {
-                let v = pris.entry(cle).or_insert(0);
-                *v = (*v).max(seq);
-            }
+        let Some(rang) = numero.rang_en(annee) else { return };
+        if pris.get(&cle).and_then(|p| p.rang_en(annee)).is_none_or(|haut| rang > haut) {
+            pris.insert(cle, numero.clone());
         }
     };
     for o in stock::objets(&ctx.racine)? {
@@ -230,24 +293,22 @@ fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(socle::mois::Moi
     Ok(pris)
 }
 
-/// LE PLUS HAUT NUMERO DE BULLETIN `N/AAAA` DE `annee` QU'UN BULLETIN IMPORTE IMPRIME (0 sans aucun) : la suite des
+/// LE PLUS HAUT NUMERO DE BULLETIN `N/AAAA` DE `annee` QU'UN BULLETIN IMPORTE IMPRIME (aucun sans aucun) : la suite des
 /// bulletins de l'annee continue apres lui, et deux bulletins de la meme annee ne portent jamais le meme numero. Un
-/// numero d'une autre forme n'est pas un rang de cette suite : il ne se lit pas comme tel.
-pub fn dernier_bulletin_importe(racine: &std::path::Path, annee: i64) -> R<i64> {
-    let rang = |t: Option<&str>| -> Option<i64> {
+/// numero d'une autre forme n'est pas un numero de cette suite : il ne se lit pas comme tel.
+pub fn dernier_bulletin_importe(racine: &std::path::Path, annee: Annee) -> R<Option<NumeroDeBulletin>> {
+    let de_l_annee = |t: Option<&str>| -> Option<NumeroDeBulletin> {
         let n = match NumeroDeBulletin::lire(t?.trim()) {
             Ok(n) => n,
             Err(_) => return None,
         };
-        (n.annee() == annee).then_some(n.rang())
+        (n.annee() == annee).then_some(n)
     };
-    let mut haut = 0;
+    let mut haut = None;
     for i in crate::importe::tous(racine)? {
-        let du_contrat = rang(i.contrat().and_then(|c| c.numero_bulletin.as_deref()));
-        let des_paies = i.paies().values().filter_map(|p| rang(p.bulletin.as_ref().and_then(|b| b.numero.as_deref()))).max();
-        for r in du_contrat.into_iter().chain(des_paies) {
-            haut = haut.max(r);
-        }
+        let du_contrat = de_l_annee(i.contrat().and_then(|c| c.numero_bulletin.as_deref()));
+        let des_paies = i.paies().values().filter_map(|p| de_l_annee(p.bulletin.as_ref().and_then(|b| b.numero.as_deref()))).max();
+        haut = haut.into_iter().chain(du_contrat).chain(des_paies).max();
     }
     Ok(haut)
 }
@@ -314,11 +375,9 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
             return Ok(());
         }
     }
-    let annee = debut.an;
-    // Aucun numero pris cette annee : le premier sera le 1.
+    let annee = debut.annee();
     let pris = derniers_pris_sauf(ctx, annee, Some((o.fichier, o.rang)), departs)?;
-    let dernier: i64 = pris.get(&cle).into_iter().copied().sum();
-    let numero = former(&fiche, annee, dernier + 1)?;
+    let numero = former(&fiche, annee, pris.get(&cle))?;
     let e = o.brut_mut();
     e.saisie.carte.numero = Some(numero);
     e.numero_pour = Some(NumeroPour { salarie: cle.clone(), debut, le });
@@ -328,15 +387,15 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
 /// Le numero de contrat que la paie `p`, sans numero, porterait : la suite des numeros `pris` pour son salarie dans
 /// l'annee du debut du contrat (`derniers_pris`, lus une fois par annee), en memoire -- celui que sa validation lui
 /// donnerait (`a_la_validation`).
-fn proposer(ctx: &Contexte, p: &mut crate::calcul::Contenu, pris: &mut HashMap<i32, HashMap<IdSalarie, i64>>, departs: &Departs) -> R<()> {
-    let annee = p.engagement.debut.an;
+fn proposer(ctx: &Contexte, p: &mut crate::calcul::Contenu, pris: &mut HashMap<Annee, HashMap<IdSalarie, NumeroContrat>>, departs: &Departs) -> R<()> {
+    let annee = p.engagement.contrat().debut().annee();
     let pris = match pris.entry(annee) {
         std::collections::hash_map::Entry::Occupied(x) => x.into_mut(),
         std::collections::hash_map::Entry::Vacant(x) => x.insert(derniers_pris(ctx, annee, departs)?),
     };
-    let dernier = pris.entry(p.engagement.salarie.clone()).or_insert(0);
-    *dernier += 1;
-    p.engagement.numero = Some(former(&p.salarie, annee, *dernier)?);
+    let numero = former(&p.salarie, annee, pris.get(&p.engagement.salarie))?;
+    pris.insert(p.engagement.salarie.clone(), numero.clone());
+    p.engagement.numero = Some(numero);
     Ok(())
 }
 
@@ -355,9 +414,10 @@ pub fn numeroter_les_contrats(ctx: &Contexte, paies: &mut [crate::calcul::Paie],
 
 /// LES NUMEROS QUE DES PAIES PORTERAIENT, en memoire : les numeros de contrat (`numeroter_les_contrats`) ; une paie dont le bulletin est
 /// parti garde son numero de bulletin, une autre recoit le `prochain` (`N/AAAA`), puis le suivant. Un mois sans paie n'a pas de
-/// bulletin. Rend le prochain numero de bulletin libre.
-pub fn numeroter(ctx: &Contexte, paies: &mut [crate::calcul::Paie], annee: i32, prochain: i64, departs: &Departs) -> R<i64> {
+/// bulletin. Rend le dernier numero de bulletin donne, aucun quand aucune paie n'en a recu.
+pub fn numeroter(ctx: &Contexte, paies: &mut [crate::calcul::Paie], prochain: NumeroDeBulletin, departs: &Departs) -> R<Option<NumeroDeBulletin>> {
     let mut n_bull = prochain;
+    let mut donne = None;
     let mut pris = HashMap::new();
     for paie in paies.iter_mut() {
         let p = paie.ecrire();
@@ -367,10 +427,11 @@ pub fn numeroter(ctx: &Contexte, paies: &mut [crate::calcul::Paie], annee: i32, 
         if p.engagement.sans_paie() || p.numero_bulletin.is_some() {
             continue;
         }
-        p.numero_bulletin = Some(NumeroDeBulletin::du_rang(n_bull, annee));
-        n_bull += 1;
+        p.numero_bulletin = Some(n_bull);
+        donne = Some(n_bull);
+        n_bull = n_bull.suivant();
     }
-    Ok(n_bull)
+    Ok(donne)
 }
 
 #[cfg(test)]
@@ -388,12 +449,14 @@ mod tests {
             assert!(NumeroContrat::lire(faux).is_err(), "{:?} n'est pas un numero de contrat", faux);
         }
         let n = NumeroContrat::lire("FA1.26.13").unwrap();
-        assert_eq!((n.annee_et_rang(), socle::ecriture::json_en_ligne(&n)), (Some((2026, 13)), r#""FA1.26.13""#.to_string()));
+        assert_eq!(socle::ecriture::json_en_ligne(&n), r#""FA1.26.13""#.to_string());
         assert!(socle::forme::lire_texte::<NumeroContrat>(r#""C1""#, "numero").is_err());
         let fiche = |initiales: &str| -> droit::fiche::ChampsSalarie {
             socle::forme::lire_texte(&format!(r#"{{"initiales_contrat": "{}", "code_salarie": "1"}}"#, initiales), "fiche").unwrap()
         };
-        assert_eq!(former(&fiche("FA"), 2026, 3).ok().map(String::from), Some("FA1.26.03".to_string()));
-        assert!(former(&fiche("F#"), 2026, 3).is_err());
+        let an = Annee::constante(2026);
+        assert_eq!(former(&fiche("FA"), an, None).ok().map(String::from), Some("FA1.26.01".to_string()));
+        assert_eq!(former(&fiche("FA"), an, Some(&n)).ok().map(String::from), Some("FA1.26.14".to_string()));
+        assert!(former(&fiche("F#"), an, None).is_err());
     }
 }

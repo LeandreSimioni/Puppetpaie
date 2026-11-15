@@ -31,6 +31,7 @@ use droit::contexte::Contexte;
 use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, FicheEntrepriseDatee, FicheNommee, FicheSaisie, FicheSalarieDatee, Nir, NomDeFiche, NumeroObjetSpectacle, ValeurDeCase};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
+use socle::grandeurs::Montant;
 use socle::mois::MoisOuJour;
 
 const DOSSIER: Champ = Champ { nom: "dossier", libelle: Affiche::new("Dossier"), forme: Forme::Texte, sens: "le dossier choisi ; la boîte import/ de la compagnie sinon", avance: true };
@@ -128,7 +129,7 @@ pub(crate) struct ChargeDossier {
 /// nomme (`charge.dossier`, le chemin que `importation-etat` lui a donne). Un AUTRE dossier donne qui n'existe pas reste
 /// refuse (`import::tri::trier`).
 pub(crate) fn dossier_import(ctx: &Contexte, charge: &ChargeDossier) -> R<PathBuf> {
-    let boite = ctx.racine.join("import");
+    let boite = ctx.racine.join(import::BOITE_AUX_LETTRES);
     let d = match charge.dossier.as_deref() {
         None => boite.clone(),
         Some(s) => PathBuf::from(crate::depots::normaliser(s)),
@@ -359,16 +360,17 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 /// une date ne se lit pas). Son activite (53) n'y passe pas : les heures, cachets et jours d'une paie sont ceux qu'un
 /// bulletin atteste en unites entieres pour le mois d'un permanent, ceux d'un intermittent sont a son contrat (AEM,
 /// bulletin) ; la DSN les declare en decimal.
-fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
+fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::PeriodeOuverte>, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
     use engagement::importe::{CleDePaieVersee, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
     let mut x = PaieVersee::vide(CleDePaieVersee::Dsn(d.numero.clone()));
     x.nir = d.nir.clone();
     x.numero_objet = objet;
-    (x.debut, x.fin, x.verse_le, x.quotite) = (c.and_then(|c| c.debut), c.and_then(|c| c.fin), d.verse_le, c.and_then(|c| c.quotite));
-    (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
+    (x.periode, x.verse_le, x.quotite) = (periode, d.verse_le, c.and_then(|c| c.quotite));
+    (x.brut, x.bases) = (d.mesures.brut.map(Montant::du_decimal), d.bases.clone());
     if let Some(n) = &d.nets {
         (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
+        // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).
         (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, n.taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
     }
     (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
@@ -524,7 +526,7 @@ pub(crate) fn apercu_lu(
         let Some(numero) = &c.numero_objet else {
             continue;
         };
-        let m = c.fin.mois_civil().to_string();
+        let m = c.periode.fin().mois_civil().to_string();
         let i = match objets.iter().position(|o| o.numero == *numero) {
             Some(i) => i,
             None => {
@@ -546,7 +548,7 @@ pub(crate) fn apercu_lu(
         }
     }
     objets.sort_by(|a, b| a.premier.cmp(&b.premier));
-    let seuil = format!("{:04}-{:02}", aujourdhui.an - 1, aujourdhui.mois);
+    let seuil = aujourdhui.mois_civil().avant(socle::date::Duree::mois(12))?.to_string();
     let mut spectacles = Vec::new();
     for o in &objets {
         if let Some(cle) = connus.get(&o.numero.to_uppercase()) {
@@ -586,8 +588,8 @@ pub(crate) fn apercu_lu(
     // 4. L'historique : les contrats attestes, rattaches par NIR aux fiches -- existantes ou a creer. Lesquels sont
     // nouveaux, c'est le registre de l'import qui le dit (`import::attestes`).
     let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&Some(c.nir.clone()))).count();
-    let contrats_du = contrats.iter().map(|c| c.debut).min();
-    let contrats_au = contrats.iter().map(|c| c.fin).max();
+    let contrats_du = contrats.iter().map(|c| c.periode.debut()).min();
+    let contrats_au = contrats.iter().map(|c| c.periode.fin()).max();
     if sans_fiche > 0 {
         avertissements.push(format!(
             "{} contrat(s) atteste(s) portent un NIR qu'aucune DSN ne declare : ils ne seront pas rattaches a une fiche, donc pas comptes dans les droits. Creer la fiche a la main, puis reimporter.",
@@ -612,8 +614,8 @@ pub(crate) fn apercu_lu(
     let rien_a_faire = a_creer == 0 && a_completer.is_empty() && paies_nouvelles == 0;
     // DEUX SOURCES POUR UNE LIGNE -- les montants viennent de la DSN, le numero d'objet peut
     // venir de l'AEM (rapprochee sur salarie, debut, fin).
-    let objets_aem: HashMap<(Nir, String, String), NumeroObjetSpectacle> =
-        contrats.iter().filter_map(|c| Some(((c.nir.clone(), c.debut.iso(), c.fin.iso()), c.numero_objet.clone()?))).collect();
+    let objets_aem: HashMap<(Nir, socle::date::Periode), NumeroObjetSpectacle> =
+        contrats.iter().filter_map(|c| Some(((c.nir.clone(), c.periode), c.numero_objet.clone()?))).collect();
     let mut paies: Vec<engagement::importe::PaieLue> = Vec::new();
     let mut sans_nets: Vec<SansNets> = Vec::new();
     for ((mois, nir, contrat), v) in &lecture.paies {
@@ -622,10 +624,9 @@ pub(crate) fn apercu_lu(
         }
         let mois = *mois;
         let c = v.contrat.as_ref();
-        let objet = c.and_then(|c| c.objet.clone()).or_else(|| {
-            let (debut, fin) = (c.and_then(|c| c.debut)?, c.and_then(|c| c.fin)?);
-            objets_aem.get(&(nir.clone()?, debut.iso(), fin.iso())).cloned()
-        });
+        // Les dates du contrat que le versement paie ; aucune quand il ne paie aucun contrat declare.
+        let periode = c.map(|c| c.periode);
+        let objet = c.and_then(|c| c.objet.clone()).or_else(|| objets_aem.get(&(nir.clone()?, periode?.fermee()?)).cloned());
         if v.paie.nets.is_none() {
             // Chaque paie lue est celle d'un individu de sa DSN, que `lecture.salaries` porte.
             let qui = match (lecture.salaries.iter().find(|s| s.nir == *nir), nir) {
@@ -636,7 +637,7 @@ pub(crate) fn apercu_lu(
             sans_nets.push(SansNets { mois, nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
         }
         // 50.004 est le net verse, pas le net a payer : la DSN ne declare pas celui-ci, un bulletin le donnera.
-        let paie = paie_declaree(v, objet);
+        let paie = paie_declaree(v, periode, objet);
         paies.push(engagement::importe::PaieLue { mois, salarie: cle_de(nir), paie });
     }
     let reponse = Importation {
@@ -701,8 +702,8 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let contrats = engagement::importe::contrats_lus(racine)?;
     let paies = engagement::importe::paies_lues(racine)?;
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le).chain(paies.iter().filter_map(|p| p.paie.importe_le)).max();
-    let debut = contrats.iter().filter_map(|c| c.debut).min();
-    let fin = contrats.iter().filter_map(|c| c.fin).max();
+    let debut = contrats.iter().filter_map(|c| c.periode).map(|p| p.debut()).min();
+    let fin = contrats.iter().filter_map(|c| c.periode).filter_map(|p| p.fin()).max();
     let salaries: HashSet<&droit::contexte::IdSalarie> = contrats.iter().map(|c| &c.salarie).collect();
     let objets: HashSet<&NumeroObjetSpectacle> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_ref()).collect();
     let editeur = attend_l_editeur(racine)?;
@@ -756,7 +757,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         importe_le,
         du: debut,
         au: fin,
-        dossier: racine.join("import"),
+        dossier: racine.join(import::BOITE_AUX_LETTRES),
         reprises,
         editeur,
         pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
@@ -877,7 +878,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
             Attestation::Certificat => &mut certificats,
             Attestation::Aem => &mut aem,
         };
-        cible.voir(c.debut.map(MoisOuJour::Jour), c.fin.map(MoisOuJour::Jour), c.contrat.importe_le);
+        cible.voir(c.periode.map(|p| MoisOuJour::Jour(p.debut())), c.periode.and_then(|p| p.fin()).map(MoisOuJour::Jour), c.contrat.importe_le);
     }
     let (mut dsn, mut bulletins) = (Reprise::aucune(), Reprise::aucune());
     // Les DSN reprises : une par mois declare (la phrase de l'etat dit des declarations, pas des versements).
@@ -929,8 +930,8 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
 /// Les pieces copiees sous `historique/bulletins/` : aucune tant que le dossier n'existe pas. Un dossier qui ne se lit
 /// pas se refuse.
 fn copies_reprises(racine: &Path) -> R<usize> {
-    let dossier = racine.join("historique").join("bulletins");
-    if !dossier.exists() {
+    let dossier = import::mois::dossier_des_bulletins(racine);
+    if !socle::fichiers::existe_lu(&dossier)? {
         return Ok(0);
     }
     let disque = |e: std::io::Error| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque);

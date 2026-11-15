@@ -1,0 +1,35 @@
+Transcription (extrait : § 180) de bofip-boi-ir-pas-20-20-30-10-20230626.html, tel que servi le 14/11/2026 par
+https://bofip.impots.gouv.fr/bofip/11252-PGP.html (redirigé vers …/identifiant=BOI-IR-PAS-20-20-30-10-20230626, HTTP 200).
+Le reste du texte est dans le .html.
+
+BOI-IR-PAS-20-20-30-10-20230626 — IR - Prélèvement à la source, taux par défaut (version publiée le 26/06/2023)
+
+II-A-2. b. Détermination de la grille en fonction de la périodicité
+
+180
+Lorsque la périodicité usuelle de versement de la rémunération n'est pas mensuelle, le débiteur détermine le taux applicable
+en utilisant l'une des deux méthodes suivantes :
+soit le revenu imposable versé est divisé par un coefficient exprimant le rapport entre la périodicité usuelle de versement et
+le mois ; le montant obtenu est comparé à la grille mensuelle pour déterminer le taux applicable ;
+soit les limites de revenus de la grille mensuelle sont multipliées par le coefficient susmentionné ; le montant imposable du
+revenu versé est ensuite comparé à la grille obtenue.
+Pour le calcul du coefficient, le débiteur utilise les règles suivantes :
+lorsque la périodicité usuelle de versement de la rémunération est annuelle, le montant imposable du revenu versé est divisé
+par 12 ou chaque limite des grilles mensuelles est multipliée par 12 ;
+lorsque la périodicité usuelle de versement de la rémunération est trimestrielle, hebdomadaire, journalière ou horaire, le
+montant imposable du revenu versé est divisé respectivement par trois (12 / 4), 12 / 52, 12 / 312 ou 12 / 1820 ou chaque
+limite des grilles mensuelles est multipliée respectivement par trois (12 / 4), 12 / 52, 12 / 312 ou 12 / 1820 ;
+lorsque la périodicité usuelle de versement est différente de celles mentionnées ci-dessus, le montant imposable du revenu
+versé est divisé, ou chaque limite des grilles est multipliée, par un coefficient tenant compte des règles exposées au présent
+II-A-2-b § 180.
+Les montants obtenus sont arrondis au centime le plus proche, la fraction de centime égale à 0,50 étant comptée pour 1.
+Exemple 1 : Un employeur verse chaque semaine, conformément à la convention applicable, à un salarié intermittent, domicilié
+en métropole et embauché pour un contrat à durée déterminée (CDD) de trois mois, un salaire imposable de 600 €.
+L'administration ne lui transmet aucun taux. L'employeur doit appliquer le taux par défaut.
+Dès lors, l'employeur peut :
+diviser le revenu imposable de 600 € par 12 / 52, soit un montant de 2 600 € : le taux correspondant dans la grille mensuelle
+est de 7,5 % (grille applicable aux revenus 2023) ;
+multiplier les limites de la grille mensuelle par 12 / 52 : les limites d'application du taux de 7,5 % sont respectivement de
+587,08 € (soit 2 544 x 12 / 52) et de 672 € (soit 2 912 x 12 / 52) : le taux correspondant pour un revenu imposable de
+600 € est de 7,5 %.
+Dans les deux cas, le montant de la retenue à la source est égal à : 600 x 7,5 %, soit 45 € par versement.

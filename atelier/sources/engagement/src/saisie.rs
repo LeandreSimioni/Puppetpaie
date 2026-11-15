@@ -7,9 +7,10 @@
 //! groupes et par leurs champs (`Champ`), jamais par le nom d'une cle.
 
 use serde::{Deserialize, Serialize};
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
 use socle::forme::NombreLu;
+use socle::grandeurs::{Heures, Montant};
 
 use crate::ligne::{DateDeLigne, LignePaie};
 
@@ -85,9 +86,12 @@ macro_rules! carte {
                 match c { $( Champ::$variante => self.$champ.is_some(), )* }
             }
 
-            /// Le champ `c` tel qu'il se compare (`socle::ecriture::comparable`).
+            /// Le champ `c` tel qu'il se compare (`socle::ecriture::comparable`) : la carte qui ne dit que lui, ecrite
+            /// comme la carte s'ecrit.
             pub fn comparable_du(&self, c: Champ) -> String {
-                match c { $( Champ::$variante => socle::ecriture::comparable(&self.$champ), )* }
+                let mut seul = $carte::default();
+                seul.prendre(self, c);
+                socle::ecriture::comparable(&seul)
             }
 
             /// La valeur du champ `c` quand elle est un texte, un nombre ou un oui-non (un terme, une clause) ; `None`
@@ -128,9 +132,11 @@ carte! {
         #[champ(Terme, MotifRecours)]
         pub motif_recours: Option<droit::natures::MotifDeRecours>,
         #[champ(Terme, QuotiteContrat)]
-        pub quotite_contrat: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub quotite_contrat: Option<Heures>,
         #[champ(Terme, QuotiteReference)]
-        pub quotite_reference: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub quotite_reference: Option<Heures>,
         #[champ(Terme, ModaliteTempsTravail)]
         pub modalite_temps_travail: Option<droit::natures::ModaliteDuTempsDeTravail>,
         #[champ(Terme, SalaireMensuel)]
@@ -177,7 +183,8 @@ carte! {
         #[champ(Fait, HeuresComplementaires)]
         pub heures_complementaires: Option<NombreLu>,
         #[champ(Fait, IndemniteLicenciement)]
-        pub indemnite_licenciement: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub indemnite_licenciement: Option<Montant>,
         #[champ(Fait, FauteGrave)]
         pub faute_grave: Option<bool>,
         #[champ(Fin, MotifRupture)]
@@ -234,6 +241,12 @@ pub enum Valeur {
     Nature(droit::natures::NatureDeContrat),
     Texte(String),
     Nombre(NombreLu),
+    /// Des heures (la duree du travail, en heures par mois).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    Heures(Heures),
+    /// Un montant (l'indemnite de licenciement retenue).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    Montant(Montant),
     Oui(bool),
 }
 
@@ -312,6 +325,18 @@ impl Simple for NombreLu {
     }
 }
 
+impl Simple for Heures {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Heures(*self))
+    }
+}
+
+impl Simple for Montant {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Montant(*self))
+    }
+}
+
 impl Simple for bool {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Oui(*self))
@@ -380,6 +405,19 @@ impl Carte {
         crate::debut_de(self.debut, self.lignes())
     }
 
+    /// LA PERIODE DE SON CONTRAT, comme `Engagement::nouveau` la deduit : son debut (`debut_lu`) ; sa fin ecrite, sinon le
+    /// dernier de ses jours joues et de son planning ; `None` sans debut ; refus d'une fin avant le debut.
+    pub fn contrat(&self) -> R<Option<PeriodeOuverte>> {
+        self.debut_lu().map(|d| PeriodeOuverte::du(d, self.fin_lue())).transpose()
+    }
+
+    /// La fin de son contrat (`contrat`), lue sans son debut : sa fin ecrite, sinon le dernier de ses jours joues et de
+    /// son planning ; `None` sans aucun. Une carte qu'on saisit peut ecrire une fin avant son debut : son dernier mois se
+    /// lit encore (`stock::Objet::dernier_mois`), pour qu'elle se montre et se corrige.
+    pub fn fin_lue(&self) -> Option<Jour> {
+        self.fin.or_else(|| self.dates().iter().chain(self.planning().iter()).map(DateDeLigne::jour).max())
+    }
+
     /// Les jours joues de ses lignes de travail (`crate::jours_des_lignes`).
     pub fn dates(&self) -> Vec<DateDeLigne> {
         crate::jours_des_lignes(self.lignes(), false)
@@ -427,10 +465,10 @@ pub struct CongePris {
 }
 
 impl CongePris {
-    /// Son premier et son dernier jour, lus ; un jour qui n'est pas dit se refuse en se nommant.
-    pub fn jours(&self) -> R<(Jour, Jour)> {
+    /// Sa periode, du premier au dernier jour, lus ; un jour qui n'est pas dit se refuse en se nommant.
+    pub fn jours(&self) -> R<socle::date::Periode> {
         let lu = |x: Option<Jour>, cle: &str| x.ok_or_else(|| socle::echec::cle("Des congés pris disent leur premier et leur dernier jour.", cle));
-        Ok((lu(self.debut, "debut")?, lu(self.fin, "fin")?))
+        socle::date::Periode::du_au(lu(self.debut, "debut")?, lu(self.fin, "fin")?)
     }
 }
 
@@ -460,7 +498,8 @@ pub struct Preavis {
 #[serde(deny_unknown_fields)]
 pub struct Avant {
     pub salaire_mensuel: Option<NombreLu>,
-    pub quotite_contrat: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub quotite_contrat: Option<Heures>,
 }
 
 /// Un engagement valide, dans la vue de son mois : le jour de sa validation (`null` : compte comme valide par le calcul
@@ -494,5 +533,46 @@ impl VueDuMois {
     /// Un mois sans engagement.
     pub fn vide(mois: socle::mois::Mois) -> VueDuMois {
         VueDuMois { mois, taux_cachet: None, engagements: Vec::new() }
+    }
+}
+
+/// LE RANG D'UN ENGAGEMENT DANS L'ECRAN DE SON MOIS : sa place parmi les engagements que le mois montre, dans l'ordre de
+/// l'ecran (`stock::objets_du_mois`, `VueDuMois::engagements`). Ecrit en nombre, a partir de zero ; il se dit a partir
+/// de un (`Display`). Ce n'est ni le rang d'un engagement dans son fichier (`stock::Objet::rang`), ni celui d'une ligne
+/// (`ligne::RangDeLigne`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RangDansLeMois(usize);
+
+impl RangDansLeMois {
+    /// Chaque engagement du mois (ou ce qui se range comme eux), avec son rang.
+    pub fn de_chacun<I: IntoIterator>(liste: I) -> impl Iterator<Item = (RangDansLeMois, I::Item)> {
+        liste.into_iter().enumerate().map(|(i, x)| (RangDansLeMois(i), x))
+    }
+
+    /// Le rang du premier que `est` reconnait.
+    pub fn du_premier<T>(liste: &[T], est: impl FnMut(&T) -> bool) -> Option<RangDansLeMois> {
+        liste.iter().position(est).map(RangDansLeMois)
+    }
+
+    /// Celui de ce rang.
+    pub fn dans<T>(self, liste: &[T]) -> Option<&T> {
+        liste.get(self.0)
+    }
+
+    /// Celui de ce rang, a changer.
+    pub fn dans_mut<T>(self, liste: &mut [T]) -> Option<&mut T> {
+        liste.get_mut(self.0)
+    }
+
+    /// Celui de ce rang, pris de la liste.
+    pub fn pris<T>(self, liste: Vec<T>) -> Option<T> {
+        liste.into_iter().nth(self.0)
+    }
+}
+
+impl std::fmt::Display for RangDansLeMois {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&(self.0 + 1), f)
     }
 }

@@ -29,7 +29,7 @@ use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::echeances::Echeance;
 use droit::natures::NumeroDOrdre;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
 use engagement;
@@ -338,8 +338,7 @@ struct NonActif {
     salarie: Option<IdSalarie>,
     nom: Option<String>,
     numero: Option<NumeroContrat>,
-    debut: Jour,
-    fin: Option<Jour>,
+    contrat: PeriodeOuverte,
     non_actif: String,
     non_actif_dit: String,
     dit: String,
@@ -353,7 +352,7 @@ const ORDRE: [QuelleEtape; 4] = [QuelleEtape::Dpae, QuelleEtape::Signature, Quel
 
 /// L'echeance d'un depot de DSN : `mots` le `jour` a `heure`, d'apres `source`.
 fn echeance_dsn(jour: Jour, heure: &'static str, source: &str) -> Echeance {
-    Echeance { jour, mots: "avant le", heure, source: source.into() }
+    Echeance { jour, mots: droit::echeances::Tournure::AvantLe, heure, source: source.into() }
 }
 
 /// Faire signer les contrats du mois : l'apercu, puis la demande.
@@ -392,15 +391,15 @@ pub(crate) fn deposer_dsn(mois: Mois, nic: Option<&Nic>, libelle: String) -> Act
 /// Le geste d'un carre Contrat en attente : noter revenu signe (`recu`) le contrat de l'engagement `p`, ou l'avenant
 /// `avenant` (son numero) ; la route `contrat-recu` rend la phrase qui le dit et de quoi l'annuler. Rien pour un
 /// engagement qui ne dit pas encore son salarie ou son premier jour.
-fn noter_recu(p: &Vue, mois: Mois, libelle: &str, avenant: Option<i64>, recu: bool) -> Option<Action> {
-    let charge = crate::contrats::ChargeRecu { mois, salarie: p.salarie.clone()?, debut: p.debut?, numero: p.numero.clone(), avenant, recu };
+fn noter_recu(p: &Vue, mois: Mois, libelle: &str, avenant: Option<engagement::numeros::NumeroDAvenant>, recu: bool) -> Option<Action> {
+    let charge = crate::contrats::ChargeRecu { mois, salarie: p.salarie.clone()?, debut: p.bornes?.debut(), numero: p.numero.clone(), avenant, recu };
     Some(action(Route::ContratRecu, charge, None, libelle.into()))
 }
 
 /// L'avenant du contrat de l'engagement `p` : l'apercu, puis sa demande de signature. Rien pour un engagement qui ne
 /// dit pas encore son salarie ou son premier jour.
 fn avenant(p: &Vue, mois: Mois) -> Option<Action> {
-    let charge = crate::contrats::ChargeAvenant { salarie: p.salarie.clone()?, debut: p.debut?, numero: p.numero.clone(), mois: Some(mois) };
+    let charge = crate::contrats::ChargeAvenant { salarie: p.salarie.clone()?, debut: p.bornes?.debut(), numero: p.numero.clone(), mois: Some(mois) };
     Some(action(Route::AvenantApercu, charge, Some(Route::DemanderSignature), "Avenant…".into()))
 }
 
@@ -562,7 +561,7 @@ struct Point {
 
 impl Point {
     fn de(p: &Vue, dsn: Option<usize>) -> Point {
-        let embauche = p.contrat.premier_mois();
+        let debut = p.contrat.debut();
         // UN CONTRAT COMMENCE AVANT LE LOGICIEL (`engagement::stock::commence_avant_le_logiciel`) : sa DPAE et son contrat
         // se sont faits ailleurs ; ici, rien a declarer ni a signer.
         let anterieur = p.contrat.anterieur();
@@ -571,8 +570,16 @@ impl Point {
         if p.a_completer.is_some() {
             let spectacle = p.spectacle.is_some();
             return Point {
-                dpae: if anterieur { PointDpae::RienADeclarer } else if embauche { PointDpae::ACompleter } else { PointDpae::Fait },
-                contrat: if anterieur { PointContrat::RienASigner } else if embauche && spectacle { PointContrat::ACompleter } else { PointContrat::Fait },
+                dpae: match debut {
+                    _ if anterieur => PointDpae::RienADeclarer,
+                    DebutDansLeMois::CeMois => PointDpae::ACompleter,
+                    DebutDansLeMois::Avant => PointDpae::Fait,
+                },
+                contrat: match debut {
+                    _ if anterieur => PointContrat::RienASigner,
+                    DebutDansLeMois::CeMois if spectacle => PointContrat::ACompleter,
+                    DebutDansLeMois::CeMois | DebutDansLeMois::Avant => PointContrat::Fait,
+                },
                 documents: PointDocuments::ACompleter,
                 dsn,
             };
@@ -583,45 +590,45 @@ impl Point {
         let ailleurs = p.contrat.ailleurs();
         if !p.valide() {
             return Point {
-                dpae: if anterieur { PointDpae::RienADeclarer } else if embauche { PointDpae::AValider } else { PointDpae::Fait },
-                contrat: if anterieur || ailleurs { PointContrat::RienASigner } else if embauche && ecrit { PointContrat::AValider } else { PointContrat::Fait },
+                dpae: match debut {
+                    _ if anterieur => PointDpae::RienADeclarer,
+                    DebutDansLeMois::CeMois => PointDpae::AValider,
+                    DebutDansLeMois::Avant => PointDpae::Fait,
+                },
+                contrat: match debut {
+                    _ if anterieur || ailleurs => PointContrat::RienASigner,
+                    DebutDansLeMois::CeMois if ecrit => PointContrat::AValider,
+                    DebutDansLeMois::CeMois | DebutDansLeMois::Avant => PointContrat::Fait,
+                },
                 documents: PointDocuments::AValider,
                 dsn,
             };
         }
         // LA DPAE A DEPOSER est celle que dit la liste des DPAE a faire (`Moteur::embauches_a_declarer`, `a_declarer`).
         let d = &p.etats.dpae;
-        let dpae = if anterieur {
-            PointDpae::RienADeclarer
-        } else if !embauche {
-            PointDpae::Fait
-        } else if d.refusee {
-            PointDpae::Refuse
-        } else if d.a_declarer {
-            PointDpae::AFaire
-        } else {
-            PointDpae::Fait
+        let dpae = match debut {
+            _ if anterieur => PointDpae::RienADeclarer,
+            DebutDansLeMois::Avant => PointDpae::Fait,
+            DebutDansLeMois::CeMois if d.refusee => PointDpae::Refuse,
+            DebutDansLeMois::CeMois if d.a_declarer => PointDpae::AFaire,
+            DebutDansLeMois::CeMois => PointDpae::Fait,
         };
         let s = &p.etats.signature;
         // Le contrat se fait signer au mois de l'embauche ; un avenant, a chaque mois du contrat : tant qu'il n'est pas
         // revenu signe, chacun de ses mois le dit.
         // Un contrat signe hors du logiciel ne se fait pas signer ici, ses avenants si.
-        let contrat = if (ecrit && !embauche || ailleurs) && s.caduc {
-            PointContrat::ARefaire
-        } else if (ecrit && !embauche || ailleurs) && s.avenant_attendu {
-            PointContrat::EnAttente
-        } else if anterieur || ailleurs {
-            PointContrat::RienASigner
-        } else if !(embauche && ecrit) {
-            PointContrat::Fait
-        } else if !s.parti() {
-            PointContrat::AEnvoyer
-        } else if s.caduc {
-            PointContrat::ARefaire
-        } else if s.recu.is_none() || s.avenant_attendu {
-            PointContrat::EnAttente
-        } else {
-            PointContrat::Fait
+        let contrat = match debut {
+            DebutDansLeMois::Avant if (ecrit || ailleurs) && s.caduc => PointContrat::ARefaire,
+            DebutDansLeMois::CeMois if ailleurs && s.caduc => PointContrat::ARefaire,
+            DebutDansLeMois::Avant if (ecrit || ailleurs) && s.avenant_attendu => PointContrat::EnAttente,
+            DebutDansLeMois::CeMois if ailleurs && s.avenant_attendu => PointContrat::EnAttente,
+            _ if anterieur || ailleurs => PointContrat::RienASigner,
+            DebutDansLeMois::Avant => PointContrat::Fait,
+            DebutDansLeMois::CeMois if !ecrit => PointContrat::Fait,
+            DebutDansLeMois::CeMois if !s.parti() => PointContrat::AEnvoyer,
+            DebutDansLeMois::CeMois if s.caduc => PointContrat::ARefaire,
+            DebutDansLeMois::CeMois if s.recu.is_none() || s.avenant_attendu => PointContrat::EnAttente,
+            DebutDansLeMois::CeMois => PointContrat::Fait,
         };
         let o = &p.etats.documents;
         let documents = if o.caduc {
@@ -747,14 +754,6 @@ fn nom_de_l_etablissement(ent: &droit::fiche::ChampsEntreprise, nic: &Nic) -> St
     match commune {
         Some(c) => c,
         None => format!("NIC {}", nic),
-    }
-}
-
-/// « du 02/11/2026 au 30/11/2026 », « depuis le 02/11/2026 » sans fin : une periode telle qu'une phrase la dit.
-fn periode_dite(debut: Jour, fin: Option<Jour>) -> String {
-    match fin {
-        Some(f) => format!("du {} au {}", debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
-        None => format!("depuis le {}", debut.jj_mm_aaaa()),
     }
 }
 
@@ -892,7 +891,7 @@ fn emportes_a_refaire(
 /// UNE CORRECTION PORTEE, telle que l'empreinte de la saisie la retient (`Moteur::portees`) : le mois corrige, le
 /// salarie, le contrat et la version. Elle s'ecrit en liste.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct Portee(Mois, String, Option<NumeroContrat>, u64);
+pub(crate) struct Portee(Mois, String, Option<NumeroContrat>, engagement::stock::VersionDeLEngagement);
 
 /// Ce dont l'empreinte d'une saisie qui porte des corrections se calcule (`Moteur::empreinte_saisie_avec`).
 #[derive(Serialize)]
@@ -920,9 +919,8 @@ pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
     if !a_l_extension(nom, ".dsn") {
         return Ok((0, None, String::new(), Reverse(None), Reverse(nom.to_string())));
     }
-    let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(&chemin.to_string_lossy())?, Some(&NomDeFichier::du(chemin)?))?;
-    // Au plus quinze chiffres (S20.G00.05.004) : le rang tient dans la cle de rangement sans perte.
-    let lu = apercu.ordre.map(|o| o.valeur() as i64);
+    let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(chemin)?, Some(&NomDeFichier::du(chemin)?))?;
+    let lu = apercu.ordre;
     if apercu.est_signalement() {
         return Ok((1, lu, nom.to_string(), Reverse(None), Reverse(String::new())));
     }
@@ -932,16 +930,14 @@ pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
 
 /// La cle de rangement d'un fichier deposable (`ordre_de_depot`) : mensuelle ou signalement, l'ordre d'un signalement,
 /// l'etablissement, l'ordre d'une mensuelle (le plus grand d'abord), le nom d'une DPAE (le plus grand d'abord).
-pub(crate) type OrdreDeDepot = (u8, Option<i64>, String, std::cmp::Reverse<Option<i64>>, std::cmp::Reverse<String>);
+pub(crate) type OrdreDeDepot = (u8, Option<NumeroDOrdre>, String, std::cmp::Reverse<Option<NumeroDOrdre>>, std::cmp::Reverse<String>);
 
 /// `DSN_<Mois>[_<NIC>]_AR<n>.dsn` -> (`DSN_<Mois>[_<NIC>].dsn`, Some(n)) ; un autre nom reste tel quel.
-fn sans_annule_et_remplace(nom: &str) -> (String, Option<i64>) {
+fn sans_annule_et_remplace(nom: &str) -> (String, Option<NumeroDOrdre>) {
     if let Some(corps) = nom.strip_suffix(".dsn").or_else(|| nom.strip_suffix(".DSN")) {
         if let Some(i) = corps.rfind("_AR") {
-            // Ce qui suit `_AR` n'est pas un numero : le nom n'est pas celui d'un annule-et-remplace.
-            let suite = &corps[i + 3..];
-            let numero = if suite.is_empty() { None } else { suite.bytes().try_fold(0i64, |n, b| if b.is_ascii_digit() { n.checked_mul(10)?.checked_add(i64::from(b - b'0')) } else { None }) };
-            if let Some(n) = numero {
+            // Ce qui suit `_AR` n'est pas un numero d'ordre : le nom n'est pas celui d'un annule-et-remplace.
+            if let Some(n) = NumeroDOrdre::lu(&corps[i + 3..]) {
                 return (format!("{}.dsn", &corps[..i]), Some(n));
             }
         }
@@ -982,7 +978,7 @@ pub(crate) struct Globales {
     pub(crate) renvoyes: HashSet<etats::Paire>,
     pub(crate) avenants: HashMap<etats::Paire, Vec<envois::journal::AvenantParti>>,
     /// Comment chaque contrat est parti la derniere fois.
-    pub(crate) par: HashMap<etats::Paire, etats::ModeDeRemise>,
+    pub(crate) par: HashMap<etats::Paire, documents::ModeDeRemise>,
 }
 
 // ------------------------------------------------------------ l'etat d'un engagement
@@ -1008,8 +1004,7 @@ enum ContratDit {
 /// (`signature::contrat_signe_dit`), lus tels qu'ils sont.
 #[derive(Debug, Clone, Serialize)]
 struct ContratComplet {
-    premier_mois: bool,
-    dernier_mois: bool,
+    place: engagement::PlaceDuMois,
     chevrons: super::mois::Chevrons,
     depuis: Mois,
     jusqu_a: Mois,
@@ -1020,18 +1015,38 @@ struct ContratComplet {
     anterieur: bool,
 }
 
+/// Un engagement a completer ne dit que s'il commence ce mois-ci (`DebutDansLeMois`) : sa fin n'est pas sure. Ses dates
+/// sont les cases de sa saisie, chacune facultative (`engagement::Assemble`) : son debut lu (`Carte::debut_lu`) et sa
+/// fin ecrite ; une carte a completer peut ecrire une fin avant son debut, c'est alors ce qui lui manque.
 #[derive(Debug, Clone, Serialize)]
 struct ContratACompleter {
-    premier_mois: bool,
+    debut: DebutDansLeMois,
+    debut_lu: Option<Jour>,
+    fin_ecrite: Option<Jour>,
     repris: bool,
     anterieur: bool,
 }
 
+/// OU COMMENCE LE CONTRAT, AU MOIS DE L'ETAPE : ce mois-ci (son embauche : la DPAE, le contrat a signer), ou avant. Ce
+/// qu'en sait un engagement a completer, dont la fin n'est pas sure ; un engagement complet le tire de sa place
+/// (`PlaceDuMois`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DebutDansLeMois {
+    CeMois,
+    Avant,
+}
+
 impl ContratDit {
-    fn premier_mois(&self) -> bool {
+    /// Ou commence le contrat, au mois de l'etape : sa place dans le mois (`PlaceDuMois`), ou ce qu'en dit un engagement
+    /// a completer, qui n'a pas de place sure.
+    fn debut(&self) -> DebutDansLeMois {
         match self {
-            ContratDit::Complet(c) => c.premier_mois,
-            ContratDit::ACompleter(c) => c.premier_mois,
+            ContratDit::Complet(c) => match c.place {
+                engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Premier => DebutDansLeMois::CeMois,
+                engagement::PlaceDuMois::Dernier | engagement::PlaceDuMois::Milieu => DebutDansLeMois::Avant,
+            },
+            ContratDit::ACompleter(c) => c.debut,
         }
     }
 
@@ -1085,8 +1100,8 @@ struct EtatDpae {
     passee: bool,
     refusee: bool,
     anomalies: Option<Vec<String>>,
-    dossier: Option<String>,
-    deja_existante: bool,
+    /// Ce que le certificat dit de sa personne (`envois::etats::EtatEmbauche::certifiee`).
+    certifiee: Option<declarations::dpae::EtatDeLaDpae>,
 }
 
 /// Un CDI en cours, d'un mois d'apres son embauche : le mois de sa signature.
@@ -1100,7 +1115,7 @@ pub(crate) struct CdiEnCours {
 #[derive(Debug, Clone)]
 pub(crate) struct Signature {
     pub(crate) fait: Option<InstantOuJour>,
-    pub(crate) par: Option<etats::ModeDeRemise>,
+    pub(crate) par: Option<documents::ModeDeRemise>,
     pub(crate) recu: Option<Moment>,
     pub(crate) caduc: bool,
     pub(crate) pourquoi: &'static str,
@@ -1142,7 +1157,7 @@ impl Etats {
     /// Ceux d'un engagement auquel il manque un fait : rien n'est a declarer, rien n'est parti.
     fn sans_envoi() -> Etats {
         Etats {
-            dpae: EtatDpae { date_changee: None, a_declarer: false, fait: None, passee: false, refusee: false, anomalies: None, dossier: None, deja_existante: false },
+            dpae: EtatDpae { date_changee: None, a_declarer: false, fait: None, passee: false, refusee: false, anomalies: None, certifiee: None },
             signature: Signature { fait: None, par: None, recu: None, caduc: false, pourquoi: "", avenant: None, avenant_attendu: false, cdi_en_cours: None },
             documents: EtatDocuments { fait: None, caduc: false, pourquoi: "" },
         }
@@ -1161,8 +1176,9 @@ pub(crate) struct Vue {
     /// Le libelle de sa nature de contrat, quand elle est dite.
     libelle_nature: Option<String>,
     numero: Option<NumeroContrat>,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
+    /// La periode du contrat d'un engagement complet ; aucune pour un engagement a completer, dont les dates sont les
+    /// cases de sa saisie (`ContratACompleter`).
+    bornes: Option<PeriodeOuverte>,
     etablissement: Option<Nic>,
     echeances: Option<Echeances>,
     valide: Option<Moment>,
@@ -1210,8 +1226,7 @@ struct LigneDePage<'a> {
     spectacle: Option<&'a str>,
     nature: Option<&'a str>,
     numero: Option<&'a engagement::numeros::NumeroContrat>,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
+    bornes: Option<PeriodeOuverte>,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     valide: Option<Moment>,
     recalcul: Option<&'a str>,
@@ -1242,9 +1257,14 @@ impl<'a> LigneDePage<'a> {
     fn de(l: &'a Ligne) -> LigneDePage<'a> {
         let v = &l.vue;
         let valide = v.valide.map(Moment::dit);
-        let embauche = v.debut.map(|d| format!("embauche le {}", d.jj_mm_aaaa()));
+        let debut = match (&v.bornes, &v.contrat) {
+            (Some(b), _) => Some(b.debut()),
+            (None, ContratDit::ACompleter(c)) => c.debut_lu,
+            (None, ContratDit::Complet(_)) => None,
+        };
+        let embauche = debut.map(|d| format!("embauche le {}", d.jj_mm_aaaa()));
         LigneDePage {
-            periode_dit: v.debut.map(|d| periode_dite(d, v.fin)),
+            periode_dit: v.bornes.as_ref().map(crate::contrats::periode_dite),
             valide_dit: valide.as_ref().map(|q| format!("le {}", q)),
             validee_dit: valide.as_ref().map(|q| format!("validée le {}", q)),
             repris_dit: matches!(&v.contrat, ContratDit::Complet(c) if c.repris).then_some("contrat repris"),
@@ -1259,8 +1279,7 @@ impl<'a> LigneDePage<'a> {
             spectacle: v.spectacle.as_deref(),
             nature: v.libelle_nature.as_deref(),
             numero: v.numero.as_ref(),
-            debut: v.debut,
-            fin: v.fin,
+            bornes: v.bornes,
             valide: v.valide,
             recalcul: v.recalcul.as_deref(),
             contrat: &v.contrat,
@@ -1356,8 +1375,7 @@ pub struct DpaeDue {
     pub numero: NumeroContrat,
     pub nom: String,
     pub spectacle: Option<String>,
-    pub debut: Jour,
-    pub fin: Option<Jour>,
+    pub contrat: PeriodeOuverte,
     pub empreinte: EmpreinteCourte,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pourquoi: Option<String>,
@@ -1569,12 +1587,11 @@ impl<'a> Moteur<'a> {
                 },
                 None => None,
             };
-            let mois_du_contrat = p.engagement.mois_du_contrat();
+            let mois_du_contrat = p.engagement.mois_du_contrat()?;
             let (Some(&depuis), Some(&jusqu_a)) = (mois_du_contrat.first(), mois_du_contrat.last()) else {
                 return Err(erreur(Classe::Manque, socle::fichiers::trop_courte("les mois du contrat")));
             };
-            let premier_mois = p.engagement.premier_mois();
-            let dernier_mois = p.engagement.dernier_mois();
+            let place = p.engagement.place_du_mois()?;
             // Son etablissement (NIC) : la DSN qui le porte.
             let etablissement = nic_de_l_engagement(self.ctx, e)?;
             // LES ECHEANCES de l'engagement : sa DPAE (L. 1221-10) et la remise de son contrat (L. 1242-13, ou la couche
@@ -1585,8 +1602,8 @@ impl<'a> Moteur<'a> {
             } else {
                 let code_emploi = p.engagement.code_emploi_ft.as_ref().or(sal.code_emploi_ft.dite());
                 let ent = &self.ctx.entreprise;
-                let remise = droit::echeances::remise_du_contrat(&p.engagement.debut, ent.idcc.dite(), code_emploi, ent.feries_chomes())?;
-                Some(Echeances { dpae: droit::echeances::dpae(&p.engagement.debut), contrat: remise })
+                let remise = droit::echeances::remise_du_contrat(&p.engagement.contrat().debut(), ent.idcc.dite(), code_emploi, ent.feries_chomes())?;
+                Some(Echeances { dpae: droit::echeances::dpae(&p.engagement.contrat().debut()), contrat: remise })
             };
             // RECALCULEE D'ELLE-MEME (`engagement::etats::du_mois`) : pourquoi, et quand.
             let recalcul = match e.valide() {
@@ -1595,21 +1612,20 @@ impl<'a> Moteur<'a> {
             };
             let recalcul = recalcul.as_ref().and_then(engagement::etats::phrase_du_recalcul);
             // REPRIS D'UN ANCIEN LOGICIEL : la carte le dit (`engagement::importe::vient_d_un_ancien_logiciel`).
-            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.debut, p.engagement.numero.as_ref())?;
+            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.contrat().debut(), p.engagement.numero.as_ref())?;
             // SIGNE AILLEURS : son contrat ecrit ne se fait pas signer ici, ses avenants si (`engagement::signe_ailleurs`).
             let ailleurs = engagement::signe_ailleurs(&self.ctx.racine, &p.engagement)?;
             // ECRIT : le contrat de cet engagement se fait signer ici (`engagement::contrat_a_signer`).
             let contrat = ContratDit::Complet(ContratComplet {
-                premier_mois,
-                dernier_mois,
+                place,
                 chevrons: super::mois::chevrons_dits(&p.engagement)?,
                 depuis,
                 jusqu_a,
                 repris,
                 ecrit: engagement::contrat_a_signer(&self.ctx.racine, &p.engagement)?,
                 ailleurs,
-                dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, p.engagement.debut)).transpose()?,
-                anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, p.engagement.debut, le_mois)?,
+                dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, p.engagement.contrat().debut())).transpose()?,
+                anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, p.engagement.contrat().debut(), le_mois)?,
             });
             // CE QUE CE SALARIE RECOIT POUR CETTE PAIE : le bulletin s'il y a une paie, le certificat Conges Spectacles
             // du contrat declare a la caisse qui finit (`crate::dossier_salarie::certificats_dus`), l'AER Cinema
@@ -1618,7 +1634,7 @@ impl<'a> Moteur<'a> {
             if !p.engagement.sans_paie() {
                 pieces.push("bulletin");
             }
-            if dernier_mois && p.declaree_a_la_caisse_des_conges()? {
+            if matches!(place, engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Dernier) && p.declaree_a_la_caisse_des_conges()? {
                 pieces.push("certificat_cs");
             }
             if documents::aer::due(p)? {
@@ -1638,7 +1654,7 @@ impl<'a> Moteur<'a> {
             // l'ancienne date vaut-elle (`crate::regularisation::dpae_d_une_date_changee`) ?
             let mut date_changee = None;
             if let Some(avant) = debut_declare(&refaire) {
-                let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(avant, p.engagement.debut)?;
+                let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(avant, p.engagement.contrat().debut())?;
                 if !vaut {
                     dpae_v = None;
                     partie_le = None;
@@ -1658,8 +1674,7 @@ impl<'a> Moteur<'a> {
                 passee: dpae_v.is_some_and(|d| d.passee),
                 refusee,
                 anomalies: dpae_v.map(|d| d.anomalies.clone()),
-                dossier: dpae_v.and_then(|d| d.dossier.clone()),
-                deja_existante: dpae_v.is_some_and(|d| d.deja_existante),
+                certifiee: dpae_v.and_then(|d| d.certifiee.clone()),
             };
             let avenant = refaire.iter().any(|a| matches!(a, ARefaire::Avenant { .. }));
             let mut signature = etat_signature(
@@ -1672,7 +1687,7 @@ impl<'a> Moteur<'a> {
                 ailleurs,
             );
             // UN CDI EN COURS N'A PAS D'ETAT DE CONTRAT MENSUEL.
-            if nat.mensuelle() && nat.duree_indeterminee && !premier_mois {
+            if nat.mensuelle() && nat.duree_indeterminee && matches!(place, engagement::PlaceDuMois::Dernier | engagement::PlaceDuMois::Milieu) {
                 let signe_en = match g.recus.get(&k) {
                     Some(r) => r.jour_de_paris().mois_civil(),
                     None => depuis,
@@ -1691,9 +1706,7 @@ impl<'a> Moteur<'a> {
                 spectacle,
                 libelle_nature: Some(nat.libelle.clone()),
                 numero: p.engagement.numero.clone(),
-                debut: Some(p.engagement.debut),
-                // Un CDI n'a pas de fin : rien, comme `Engagement::canon`.
-                fin: p.engagement.fin,
+                bornes: Some(p.engagement.contrat()),
                 etablissement,
                 echeances,
                 valide: e.valide().map(|v| v.le()),
@@ -1737,24 +1750,26 @@ impl<'a> Moteur<'a> {
             Some(n) => Some(n.proprietes()?.libelle.clone()),
             None => None,
         };
-        let premier_mois = o.premier_mois() == lu;
+        let debut_du_contrat = match o.premier_mois() {
+            m if m == lu => DebutDansLeMois::CeMois,
+            _ => DebutDansLeMois::Avant,
+        };
         let debut = e.debut_lu();
         let anterieur = if let Some(d) = debut { engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, d, lu)? } else { false };
         let numero = e.numero.clone();
-        let fin = e.fin;
         Ok(Vue {
             salarie: cle,
             nom,
             spectacle,
             libelle_nature,
             numero,
-            debut,
-            fin,
+            // Ses dates sont les cases de sa saisie (`ContratACompleter`), pas la periode d'un contrat.
+            bornes: None,
             etablissement: None,
             echeances: None,
             valide: None,
             recalcul: None,
-            contrat: ContratDit::ACompleter(ContratACompleter { premier_mois, repris: false, anterieur }),
+            contrat: ContratDit::ACompleter(ContratACompleter { debut: debut_du_contrat, debut_lu: debut, fin_ecrite: e.fin, repris: false, anterieur }),
             pieces: Vec::new(),
             etats: Etats::sans_envoi(),
             a_completer: Some(manque.to_string()),
@@ -1770,7 +1785,7 @@ impl<'a> Moteur<'a> {
             return Ok(v.clone());
         }
         // Les declarations deposables (la DSN, la DPAE) se rangent dans les sorties du mois.
-        let dossier = documents::DossierDuMois::Sorties.sous(&self.racine().join("sorties").join(mois.to_string()));
+        let dossier = documents::DossierDuMois::Sorties.dans(self.racine(), mois);
         let rendu = if !dossier.is_dir() {
             Deposables::default()
         } else {
@@ -1866,7 +1881,7 @@ impl<'a> Moteur<'a> {
     /// Le rang d'un depot reel du journal : l'ordre que sa ligne porte (S20.G00.05.004 du fichier parti, noté au depot).
     pub(crate) fn ordre_de_la_ligne(&self, mois: Mois, l: &envois::journal::Ligne) -> R<NumeroDOrdre> {
         let refus = || Echec {
-            a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("ordre".to_string()), ..Default::default() }.into()),
+            a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS), cle: Some("ordre".to_string()), ..Default::default() }.into()),
             ..erreur(
                 Classe::Illisible,
                 format!("Un dépôt réel de la DSN de {} ne porte pas son ordre (S20.G00.05.004) dans le journal des envois : le rang d'un annule-et-remplace ne se devine pas ; le signaler au développeur.", mois),
@@ -1879,7 +1894,7 @@ impl<'a> Moteur<'a> {
     /// plate-forme a pris et qu'aucun bilan n'a refuses (les lignes du journal des envois, telles qu'elles sont).
     pub(crate) fn depots_reels(&mut self, mois: Mois, nic: Option<&Nic>) -> R<Vec<envois::journal::Ligne>> {
         let lignes = self.lignes()?;
-        let reels = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), Some(mois), true);
+        let reels = envois::journal::filtrer(&lignes, Some(documents::Acte::Dsn), Some(mois), Some(socle::mode::Mode::Reel));
         let mut out = Vec::new();
         for l in etats::de_l_etablissement(reels, nic, self.nic().as_ref()) {
             if !l.accepte() || l.signalement() || etats::refuse_par_un_retour(l) {
@@ -1888,7 +1903,7 @@ impl<'a> Moteur<'a> {
             // Le type de la declaration (S20.G00.05.002), que le depot note : une ligne qui ne le dit pas se refuse.
             let Some(t) = l.dsn().and_then(|e| e.detail.type_declaration) else {
                 return Err(Echec {
-                    a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("type_declaration".to_string()), ..Default::default() }.into()),
+                    a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS), cle: Some("type_declaration".to_string()), ..Default::default() }.into()),
                     ..erreur(Classe::Illisible, format!("Un dépôt réel de la DSN de {} ne dit pas son type (S20.G00.05.002) dans le journal des envois ; le signaler au développeur.", mois))
                 });
             };
@@ -1924,7 +1939,7 @@ impl<'a> Moteur<'a> {
             return Ok(out);
         };
         out.dernier_ordre = Some(dernier);
-        out.prochain_ordre = dernier.plus(1)?;
+        out.prochain_ordre = NumeroDOrdre::suivant(Some(dernier))?;
         // Ce que la DSN a emporte, compare au present des engagements du mois (`dsn_a_refaire`).
         let mut modifiee = false;
         if derniere.versions().is_some() {
@@ -2019,7 +2034,7 @@ impl<'a> Moteur<'a> {
         let mut trouve = None;
         for f in fichiers.de(quoi) {
             let de_l_etablissement = match (quoi == DSN, nic) {
-                (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin.to_string_lossy())?, None)?.etablissement() == Some(n),
+                (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin)?, None)?.etablissement() == Some(n),
                 // Une DPAE, ou une DSN sans etablissement demande : le premier fichier, quel qu'il soit.
                 (true, None) | (false, Some(_)) | (false, None) => true,
             };
@@ -2034,7 +2049,7 @@ impl<'a> Moteur<'a> {
         let chemin = premier.chemin.clone();
         let lignes = self.lignes()?;
         let empreinte = envois::journal::empreinte_fichier(&chemin).map_err(|m| m.reclasser(Classe::FichierAbsent))?;
-        let acte = if quoi == DSN { envois::journal::Acte::Dsn } else { envois::journal::Acte::Dpae };
+        let acte = if quoi == DSN { documents::Acte::Dsn } else { documents::Acte::Dpae };
         if etats::deja_depose(&lignes, acte, &empreinte).is_some() {
             return Ok(None);
         }
@@ -2059,7 +2074,7 @@ impl<'a> Moteur<'a> {
             charge.etablissement = nic.cloned();
         }
         if quoi == DPAE {
-            let a = crate::depots::apercu_depot_dpae(self.ctx, &fichier.chemin.to_string_lossy())?;
+            let a = crate::depots::apercu_depot_dpae(self.ctx, &fichier.chemin)?;
             // La DPAE s'ecrit depuis des engagements valides : chacune de ses embauches a sa fiche et son contrat.
             let designee = |e: crate::depots::EmbaucheDuFichier| match (e.salarie, e.numero) {
                 (Some(salarie), Some(numero)) => Ok(EmbaucheDesignee { salarie, numero }),
@@ -2421,7 +2436,7 @@ impl<'a> Moteur<'a> {
         self.ecrit = true;
         // Un mois passe sans engagement dont la DSN est due (ce que les rappels reclament) s'ouvre aussi.
         for m in crate::rappels::mois_a_parcourir(self.ctx, self.ctx.aujourdhui)? {
-            if m >= courant || self.exercice_clos(m.annee_civile())? {
+            if m >= courant || self.exercice_clos(m.annee())? {
                 continue;
             }
             let reste = self.etapes_restantes(m)?;
@@ -2494,7 +2509,7 @@ impl<'a> Moteur<'a> {
                     continue;
                 }
                 // Un contrat en cours se declare avec son premier mois.
-                if !p.engagement.premier_mois() {
+                if let engagement::PlaceDuMois::Dernier | engagement::PlaceDuMois::Milieu = p.engagement.place_du_mois()? {
                     continue;
                 }
                 // UNE DATE D'EMBAUCHE CHANGEE depuis la version sur laquelle la DPAE est partie : reculee, la DPAE de l'ancienne
@@ -2502,7 +2517,7 @@ impl<'a> Moteur<'a> {
                 // quand une date d'embauche a change : le reste du temps, rien a dire.
                 let pourquoi = match ancienne {
                     Some(a) => {
-                        let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(a, p.engagement.debut)?;
+                        let (vaut, phrase) = crate::regularisation::dpae_d_une_date_changee(a, p.engagement.contrat().debut())?;
                         if vaut {
                             continue;
                         }
@@ -2518,8 +2533,7 @@ impl<'a> Moteur<'a> {
                     numero,
                     nom: super::nom_a_l_ecran(&p.salarie, cle),
                     spectacle: titre,
-                    debut: p.engagement.debut,
-                    fin: p.engagement.fin,
+                    contrat: p.engagement.contrat(),
                     empreinte: empreinte_de_l_embauche(&p.engagement, &p.salarie),
                     pourquoi,
                 });
@@ -2565,9 +2579,9 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     let d = &p.etats.dpae;
     let s = &p.etats.signature;
     let o = &p.etats.documents;
-    let embauche = p.contrat.premier_mois();
+    let debut_du_contrat = p.contrat.debut();
     // Un engagement valide dit son premier jour.
-    let Some(debut) = p.debut else {
+    let Some(debut) = p.bornes.map(|b| b.debut()) else {
         return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un engagement valide ne dit pas son premier jour."));
     };
     let debut_dit = debut.jj_mm_aaaa();
@@ -2575,16 +2589,16 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     let route = |a: Action| Some(Geste::Route(a));
 
     // Un engagement valide n'est ni a completer ni a valider : ses points sont ceux de ce qui part.
-    let (etat, phrase, geste) = match pt.dpae {
-        PointDpae::Refuse => {
+    let (etat, phrase, geste) = match (pt.dpae, debut_du_contrat) {
+        (PointDpae::Refuse, _) => {
             let motif = motif_dpae(d);
             (EtatCase::Refuse, format!("DPAE refusée {} : {}", le_jour_de(d.fait.map(InstantOuJour::jour))?, motif), route(historique(mois)))
         }
-        PointDpae::AFaire => (EtatCase::AFaire, "DPAE à déposer".to_string(), route(declarer_embauches(mois))),
-        PointDpae::RienADeclarer => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à déclarer ici", debut_dit), None),
-        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider if !embauche => (EtatCase::Fait, format!("DPAE faite en {}, à l'embauche", depuis), None),
-        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider if d.passee => (EtatCase::Fait, format!("DPAE déposée {}, passée", le_jour_de(d.fait.map(InstantOuJour::jour))?), None),
-        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider => (EtatCase::Fait, format!("DPAE déposée {}, retour pas encore arrivé", le_jour_de(d.fait.map(InstantOuJour::jour))?), None),
+        (PointDpae::AFaire, _) => (EtatCase::AFaire, "DPAE à déposer".to_string(), route(declarer_embauches(mois))),
+        (PointDpae::RienADeclarer, _) => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à déclarer ici", debut_dit), None),
+        (PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider, DebutDansLeMois::Avant) => (EtatCase::Fait, format!("DPAE faite en {}, à l'embauche", depuis), None),
+        (PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider, DebutDansLeMois::CeMois) if d.passee => (EtatCase::Fait, format!("DPAE déposée {}, passée", le_jour_de(d.fait.map(InstantOuJour::jour))?), None),
+        (PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider, DebutDansLeMois::CeMois) => (EtatCase::Fait, format!("DPAE déposée {}, retour pas encore arrivé", le_jour_de(d.fait.map(InstantOuJour::jour))?), None),
     };
     let pieces = Pieces { vide: Some("Aucune DPAE déposée pour cette embauche.".into()), encart: None, gestes: Vec::new() };
     let dpae = Carre { pieces: Some(pieces), ..carre(QuelleEtape::Dpae, "DPAE", etat, phrase, geste, None) };
@@ -2597,13 +2611,13 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         _ => "Contrat".to_string(),
     };
     let par_dit = etats::mot_de_la_remise(s.par, etats::PlaceDeLaRemise::Phrase);
-    let (etat, phrase, geste) = match pt.contrat {
-        PointContrat::AEnvoyer => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
-        PointContrat::ARefaire if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
-        PointContrat::ARefaire => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois))),
+    let (etat, phrase, geste) = match (pt.contrat, debut_du_contrat) {
+        (PointContrat::AEnvoyer, _) => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
+        (PointContrat::ARefaire, _) if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
+        (PointContrat::ARefaire, _) => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois))),
         // Un avenant parti, imprime ou par courriel, se note signe d'un clic, comme le contrat ; la relance est dans la
         // boite des contrats en attente. `par` est celui du dernier depart, l'avenant attendu.
-        PointContrat::EnAttente if s.avenant_attendu => (
+        (PointContrat::EnAttente, _) if s.avenant_attendu => (
             EtatCase::EnAttente,
             match s.avenant.as_ref().and_then(|a| a.numero) {
                 Some(n) => format!("Avenant n° {} {} {}", n, par_dit, le_jour_de(s.avenant.as_ref().map(|a| a.quand.jour()))?),
@@ -2611,13 +2625,13 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
             },
             noter_recu(p, mois, "Noter l'avenant signé", s.avenant.as_ref().and_then(|a| a.numero), true).and_then(&route),
         ),
-        PointContrat::EnAttente => (EtatCase::EnAttente, format!("Contrat {} {}", par_dit, le_jour_de(s.fait.map(InstantOuJour::jour))?), noter_recu(p, mois, "Noter le contrat signé", None, true).and_then(&route)),
-        PointContrat::RienASigner if ailleurs && !p.contrat.anterieur() => (EtatCase::Fait, "Contrat signé hors de PuppetPaie : rien à signer ici".to_string(), geste_du_dossier(dossier)),
-        PointContrat::RienASigner => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à signer ici", debut_dit), geste_du_dossier(dossier)),
-        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if cdi.is_some() => (EtatCase::Fait, format!("CDI en cours depuis {}, sans terme : rien à envoyer", depuis), None),
-        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if !embauche => (EtatCase::Fait, format!("Contrat signé en {}", depuis), None),
-        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if !p.contrat.ecrit() => (EtatCase::Fait, "Pas de contrat à faire signer ici".to_string(), None),
-        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider => (EtatCase::Fait, format!("Contrat signé {}", le_jour_de(s.recu.map(Moment::jour_de_paris))?), None),
+        (PointContrat::EnAttente, _) => (EtatCase::EnAttente, format!("Contrat {} {}", par_dit, le_jour_de(s.fait.map(InstantOuJour::jour))?), noter_recu(p, mois, "Noter le contrat signé", None, true).and_then(&route)),
+        (PointContrat::RienASigner, _) if ailleurs && !p.contrat.anterieur() => (EtatCase::Fait, "Contrat signé hors de PuppetPaie : rien à signer ici".to_string(), geste_du_dossier(dossier)),
+        (PointContrat::RienASigner, _) => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à signer ici", debut_dit), geste_du_dossier(dossier)),
+        (PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider, _) if cdi.is_some() => (EtatCase::Fait, format!("CDI en cours depuis {}, sans terme : rien à envoyer", depuis), None),
+        (PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider, DebutDansLeMois::Avant) => (EtatCase::Fait, format!("Contrat signé en {}", depuis), None),
+        (PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider, DebutDansLeMois::CeMois) if !p.contrat.ecrit() => (EtatCase::Fait, "Pas de contrat à faire signer ici".to_string(), None),
+        (PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider, DebutDansLeMois::CeMois) => (EtatCase::Fait, format!("Contrat signé {}", le_jour_de(s.recu.map(Moment::jour_de_paris))?), None),
     };
     let contrat = Carre { pieces: Some(pieces_du_contrat(p, mois, s, dossier)), ..carre(QuelleEtape::Signature, nom_contrat, etat, phrase, geste, None) };
 
@@ -2735,7 +2749,7 @@ fn choix_dpae(p: &Vue) -> R<Choix> {
     if p.contrat.anterieur() {
         return choix(false, false, EtatCase::Fait, "contrat commencé avant PuppetPaie : rien à déclarer ici".into());
     }
-    if !p.contrat.premier_mois() {
+    if let DebutDansLeMois::Avant = p.contrat.debut() {
         let depuis = p.contrat.depuis();
         return choix(false, false, EtatCase::Fait, format!("contrat en cours depuis {} — sa DPAE a été faite ce mois-là", depuis));
     }
@@ -2753,12 +2767,10 @@ fn choix_dpae(p: &Vue) -> R<Choix> {
         return choix(true, true, EtatCase::Refuse, format!("refusée {} — {} — à redéclarer", le, motif));
     }
     if d.passee {
-        let dossier = if d.deja_existante {
-            " (déjà existante à l'Urssaf, rien de créé)".to_string()
-        } else if let Some(x) = d.dossier.as_deref().filter(|x| !x.is_empty()) {
-            format!(" (dossier {})", x)
-        } else {
-            String::new()
+        let dossier = match &d.certifiee {
+            Some(declarations::dpae::EtatDeLaDpae::DejaExistante { .. }) => " (déjà existante à l'Urssaf, rien de créé)".to_string(),
+            Some(declarations::dpae::EtatDeLaDpae::Enregistree { dossier }) => format!(" (dossier {})", dossier),
+            Some(declarations::dpae::EtatDeLaDpae::Refusee { .. }) | None => String::new(),
         };
         return choix(true, false, EtatCase::Fait, format!("déclarée {} — passée{}", le, dossier));
     }
@@ -2864,7 +2876,7 @@ pub(crate) const CONTRAT_AILLEURS_A_MODIFIER: &str = "un terme du contrat signé
 /// version sur laquelle il est parti (`a_refaire_signer`, `engagement::etats::a_refaire`), ou il porte un autre numero
 /// que celui que la DSN declare. Un contrat renvoye attend une NOUVELLE signature : celle de l'ancien ne compte plus.
 pub(crate) fn etat_signature(
-    fait: Option<InstantOuJour>, par: Option<etats::ModeDeRemise>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
+    fait: Option<InstantOuJour>, par: Option<documents::ModeDeRemise>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
     a_refaire_signer: bool, ailleurs: bool,
 ) -> Signature {
     let recu = if renvoye { None } else { recu.cloned() };
@@ -2907,20 +2919,17 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             Some(f) => super::nom_a_l_ecran(f, c).trim().to_string(),
             None => c.to_string(),
         });
-        let debut = engagement::debut_brut(b).ok_or_else(|| socle::fichiers::absent("debut"))?;
-        let fin_ecrite = b.saisie.carte.fin;
-        let fin = fin_ecrite.or_else(|| b.saisie.carte.dates().iter().map(|j| j.jour()).max());
+        let contrat = b.saisie.carte.contrat()?.ok_or_else(|| socle::fichiers::absent("debut"))?;
         let dit = match &b.saisie.carte.numero {
-            Some(n) => format!("contrat {}, {}", n, periode_dite(debut, fin_ecrite)),
-            None => format!("contrat sans numéro, {}", periode_dite(debut, fin_ecrite)),
+            Some(n) => format!("contrat {}, {}", n, crate::contrats::periode_dite(&contrat)),
+            None => format!("contrat sans numéro, {}", crate::contrats::periode_dite(&contrat)),
         };
         out.push(NonActif {
             salarie: cle,
             nom,
             numero: b.saisie.carte.numero.clone(),
             dit,
-            debut,
-            fin,
+            contrat,
             non_actif: socle::paris::ecrit::seconde::texte(n.le()),
             non_actif_dit: format!("non actif depuis le {}", n.le().dit()),
             a_faire: crate::engagement::a_faire_en_phrases(&n.a_refaire(&departs)),
@@ -2984,14 +2993,13 @@ pub(crate) fn le_mois_a_ouvrir(ctx: &Contexte) -> R<(Mois, Rendu)> {
 }
 
 /// Ce que la DPAE d'une embauche declare, en 16 caracteres : l'identite du salarie telle que l'engagement la lit, les
-/// bornes du contrat, le spectacle, la nature ; pas les taux ni les cachets. Un test de DPAE fait sur une autre empreinte
+/// la periode du contrat, le spectacle, la nature ; pas les taux ni les cachets. Un test de DPAE fait sur une autre empreinte
 /// ne vaut plus.
 fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::ChampsSalarie) -> EmpreinteCourte {
     /// Ce que l'empreinte couvre, ecrit en JSON : une case vide y est `null`.
     #[derive(serde::Serialize)]
     struct Embauche<'a> {
-        debut: Jour,
-        fin: Option<Jour>,
+        contrat: PeriodeOuverte,
         spectacle: Option<&'a droit::contexte::IdSpectacle>,
         nir: Option<&'a droit::fiche::Nir>,
         nom: Option<&'a str>,
@@ -3003,8 +3011,7 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
         nature: &'a str,
     }
     let embauche = Embauche {
-        debut: e.debut,
-        fin: e.fin,
+        contrat: e.contrat(),
         spectacle: e.spectacle.as_ref(),
         nir: sal.nir.dite(),
         nom: sal.nom.portee(),

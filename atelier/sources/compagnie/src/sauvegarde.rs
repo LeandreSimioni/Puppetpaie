@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 use socle::echec::Classe;
-use socle::fichiers::CheminRelatif;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::paris::Moment;
 use std::path::{Path, PathBuf};
 
@@ -28,10 +28,14 @@ use envois::drive::ErreurGoogle;
 
 pub const RACINE_DRIVE: &str = "PuppetPaie";
 pub const DOSSIER_DRIVE: &str = "sauvegarde";
-pub const INDEX: &str = ".sauvegarde.json";
+/// L'index local de la sauvegarde, sous la compagnie (`chemin_index`).
+pub const INDEX: CheminRelatif = CheminRelatif::du_moteur("config/.sauvegarde.json");
 
-/// Ce qui ne monte pas (`NOMS_EXCLUS`).
-const NOMS_EXCLUS: [&str; 6] = ["google-jeton.bin", ".jeton-interface", ".compteurs.verrou", ".sauvegarde.json", ".ouverture.json", ".ouverture-etape.json"];
+/// Ce qui ne monte pas : les fichiers d'etat de la machine, par leur nom (`noms_exclus`), des suffixes, des dossiers.
+fn noms_exclus() -> [NomDeFichier; 5] {
+    use socle::fichiers::{ETAPE_DE_L_OUVERTURE, JETON_GOOGLE, TRACE_DE_L_OUVERTURE};
+    [JETON_GOOGLE.nom(), socle::verrou::COMPTEURS.nom(), INDEX.nom(), TRACE_DE_L_OUVERTURE.nom(), ETAPE_DE_L_OUVERTURE.nom()]
+}
 const SUFFIXES_EXCLUS: [&str; 4] = [".pyc", ".tmp", ".lock", ".part"];
 const DOSSIERS_EXCLUS: [&str; 2] = ["__pycache__", ".git"];
 
@@ -299,12 +303,8 @@ pub struct Etat {
 /// Un nom ou un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin relatif
 /// (le nom du fichier compris). La restauration s'en sert aussi : elle ne redescend que ce que la sauvegarde envoie.
 pub(crate) fn ecarte(relatif: &CheminRelatif) -> bool {
-    let relatif: &Path = relatif.as_ref();
-    let exclu = |nom: &str| NOMS_EXCLUS.contains(&nom) || SUFFIXES_EXCLUS.iter().any(|s| nom.ends_with(s));
-    if relatif.file_name().is_some_and(|n| exclu(&n.to_string_lossy())) {
-        return true;
-    }
-    relatif.components().any(|c| DOSSIERS_EXCLUS.contains(&c.as_os_str().to_string_lossy().as_ref()))
+    let nom = relatif.nom();
+    noms_exclus().contains(&nom) || SUFFIXES_EXCLUS.iter().any(|s| nom.texte().ends_with(s)) || relatif.texte().split('/').any(|n| DOSSIERS_EXCLUS.contains(&n))
 }
 
 /// Les entrees (fichiers et liens, pas les dossiers) sous `dossier`, relatives a `racine`. Un dossier lien n'est pas
@@ -371,10 +371,38 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(CheminRelatif, Etat)>, usize), 
 
 // --------------------------------------------------------------------- l'index
 
+/// LE CHEMIN D'UN DOSSIER DE LA SAUVEGARDE DANS LE DRIVE : la racine du Drive, `sauvegarde`, puis le dossier de la
+/// compagnie qu'il tient (aucun pour sa racine). L'index y garde l'identifiant de chaque dossier.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct DossierDuDrive(String);
+
+impl DossierDuDrive {
+    /// Le dossier du Drive qui tient `dossier` (aucun : la racine de la compagnie), sous la racine `racine_drive`.
+    pub fn de(racine_drive: &str, dossier: Option<&CheminRelatif>) -> DossierDuDrive {
+        DossierDuDrive(DossierDuDrive::segments(racine_drive, dossier).join("/"))
+    }
+
+    /// Ses dossiers, de la racine du Drive au sien, un par un : ce que le Drive parcourt.
+    pub fn segments<'a>(racine_drive: &'a str, dossier: Option<&'a CheminRelatif>) -> Vec<&'a str> {
+        let mut segments = vec![racine_drive, DOSSIER_DRIVE];
+        if let Some(d) = dossier {
+            segments.extend(d.texte().split('/'));
+        }
+        segments
+    }
+}
+
+impl std::fmt::Display for DossierDuDrive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// `chemin_index` : `config/`, et pas `journal/` : de l'etat machine, pas un document. Il est
-/// ecarte de la sauvegarde (`NOMS_EXCLUS`).
+/// ecarte de la sauvegarde (`noms_exclus`).
 pub fn chemin_index(racine: &Path) -> PathBuf {
-    racine.join(socle::fichiers::CONFIG).join(INDEX)
+    INDEX.dans(racine)
 }
 
 /// L'INDEX DE LA SAUVEGARDE (`config/.sauvegarde.json`) : quand le dernier passage s'est fait, vers quelle racine du
@@ -386,7 +414,7 @@ pub struct Index {
     #[serde(with = "socle::paris::ecrit::saisie")]
     pub quand: socle::paris::Moment,
     pub racine_drive: String,
-    pub dossiers: BTreeMap<String, envois::drive::IdDrive>,
+    pub dossiers: BTreeMap<DossierDuDrive, envois::drive::IdDrive>,
     pub fichiers: BTreeMap<CheminRelatif, Etat>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::saisie::option")]
     pub derniere_complete: Option<socle::paris::Moment>,

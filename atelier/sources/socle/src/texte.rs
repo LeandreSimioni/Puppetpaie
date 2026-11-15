@@ -186,32 +186,120 @@ pub fn salarie_nomme(nom: Option<&str>, nom_affichage: Option<&str>, prenom: Opt
 }
 
 /// UN MONTANT TEL QU'ON LE LIT, et le seul endroit qui en écrit un (une phrase du moteur, une ligne d'écran, un
-/// document imprimé) : « 1 234,50 € », au centime (`num::eur2`), la virgule décimale, les milliers et l'euro séparés par
-/// une espace insécable (le montant ne se coupe pas en fin de ligne ; U+00A0, que toute police d'un PDF porte). Un
-/// fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
-pub fn euros(x: rust_decimal::Decimal) -> String {
-    let t = crate::num::eur2(x).to_string();
+/// document imprimé) : « 1 234,50 € », au centime (`Montant::au_centime`), la virgule décimale, les milliers et l'euro
+/// séparés par une espace insécable (le montant ne se coupe pas en fin de ligne ; U+00A0, que toute police d'un PDF
+/// porte). Un fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
+pub fn euros<E: EnEuros>(x: E) -> String {
+    // Le signe est celui du montant au centime : ce qui s'arrondit a zero n'en a plus.
+    let c = au_centime(x.decimal_ecrit());
+    format!("{}\u{a0}€", aux_centimes(c.is_sign_negative(), c.abs(), '\u{a0}'))
+}
+
+/// UN MONTANT TEL QUE LE BULLETIN ET LES DOCUMENTS DU CONTRAT L'IMPRIMENT, dans leurs colonnes et leurs marqueurs :
+/// « 1 234,50 », au centime (`Montant::au_centime`), la virgule décimale, les milliers séparés par une espace ordinaire,
+/// sans « € » ; le signe est celui de l'original (`-0,00` pour un retrait qui s'arrondit à zéro).
+pub fn chiffres_en_euros<E: EnEuros>(x: E) -> String {
+    chiffres(x.decimal_ecrit())
+}
+
+/// DES HEURES DANS UNE COLONNE DE MONTANTS DU BULLETIN (la base d'une ligne de cotisation qui compte des heures), écrites
+/// comme `chiffres_en_euros` : « 1 234,50 », au centième, sans unité.
+pub fn chiffres_d_heures(h: crate::grandeurs::Heures) -> String {
+    chiffres(h.decimal())
+}
+
+/// L'écriture de `chiffres_en_euros` et de `chiffres_d_heures` : au centième, le signe de l'original, les milliers
+/// séparés par une espace ordinaire.
+fn chiffres(d: rust_decimal::Decimal) -> String {
+    aux_centimes(d.is_sign_negative(), au_centime(d.abs()), ' ')
+}
+
+/// Le decimal `d` au centime, par l'arrondi d'un montant (`Montant::au_centime`), ses deux decimales ecrites.
+fn au_centime(d: rust_decimal::Decimal) -> rust_decimal::Decimal {
+    crate::grandeurs::Montant::du_decimal(d).au_centime().decimal()
+}
+
+/// Les chiffres d'un montant au centime `c`, positif, precedes de « - » si `negatif`, les milliers separes par
+/// `separateur`, la virgule decimale : l'ecriture de `euros` et de `chiffres_en_euros`.
+fn aux_centimes(negatif: bool, c: rust_decimal::Decimal, separateur: char) -> String {
+    let t = c.to_string();
+    let (entier, centimes) = match t.split_once('.') {
+        Some(e_c) => e_c,
+        None => (t.as_str(), "00"),
+    };
+    format!("{}{},{}", if negatif { "-" } else { "" }, milliers(entier, separateur), centimes)
+}
+
+/// CE QUI SE DIT EN EUROS (`euros`, `chiffres_en_euros`) : un montant, ou un montant unitaire (le SMIC horaire, le
+/// plafond horaire, le taux d'un cachet), et rien d'autre ; scelle (`scelle::EnEuros` ne se nomme pas dehors).
+pub trait EnEuros: scelle::EnEuros {}
+
+mod scelle {
+    /// Son decimal, que seuls `euros` et `chiffres_en_euros` ecrivent.
+    pub trait EnEuros {
+        fn decimal_ecrit(self) -> rust_decimal::Decimal;
+    }
+
+    impl EnEuros for crate::grandeurs::Montant {
+        fn decimal_ecrit(self) -> rust_decimal::Decimal {
+            self.decimal()
+        }
+    }
+
+    impl EnEuros for crate::grandeurs::MontantUnitaire {
+        fn decimal_ecrit(self) -> rust_decimal::Decimal {
+            self.decimal()
+        }
+    }
+}
+
+impl EnEuros for crate::grandeurs::Montant {}
+impl EnEuros for crate::grandeurs::MontantUnitaire {}
+
+/// UN POURCENTAGE TEL QU'ON LE LIT, et le seul endroit qui en écrit un dans une phrase : « 1,50 % », à deux décimales (la
+/// moitié au pair), la virgule décimale.
+pub fn pourcent(t: crate::grandeurs::Taux) -> String {
+    let mut t = t.decimal().round_dp(2);
+    t.rescale(2);
+    format!("{} %", t.to_string().replace('.', ","))
+}
+
+/// Des chiffres, les milliers separes par `separateur` (« 1 500 »).
+fn milliers(entier: &str, separateur: char) -> String {
+    let mut dit = String::new();
+    for (i, c) in entier.chars().enumerate() {
+        if i > 0 && (entier.len() - i) % 3 == 0 {
+            dit.push(separateur);
+        }
+        dit.push(c);
+    }
+    dit
+}
+
+/// UNE GRANDEUR TELLE QU'ON LA LIT dans une phrase (des heures, des jours, un effectif, un taux) : la virgule décimale,
+/// sans zéro inutile (« 151,67 », « 8 », « 2,5 »).
+pub fn virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
+    nombre_dit(g.en_decimal())
+}
+
+/// UN NOMBRE TEL QU'ON LE LIT dans une phrase, et le seul endroit qui l'écrit ainsi : la virgule décimale, sans zéro
+/// inutile (« 151,67 », « 8 », « 2,5 »).
+pub fn nombre_dit(x: rust_decimal::Decimal) -> String {
+    x.normalize().to_string().replace('.', ",")
+}
+
+/// Le même, les milliers séparés par une espace insécable, dans une phrase qui cite une valeur d'un fichier (« 1 500 »,
+/// « 12,5 »).
+pub fn nombre_dit_par_milliers(x: rust_decimal::Decimal) -> String {
+    let t = nombre_dit(x);
     let (signe, t) = match t.strip_prefix('-') {
         Some(r) => ("-", r),
         None => ("", t.as_str()),
     };
-    let (entier, centimes) = match t.split_once('.') {
-        Some(e_c) => e_c,
-        None => (t, "00"),
+    let (entier, decimales) = match t.split_once(',') {
+        Some((e, d)) => (e, format!(",{}", d)),
+        None => (t, String::new()),
     };
-    let mut milliers = String::new();
-    for (i, c) in entier.chars().enumerate() {
-        if i > 0 && (entier.len() - i) % 3 == 0 {
-            milliers.push('\u{a0}');
-        }
-        milliers.push(c);
-    }
-    format!("{}{},{}\u{a0}€", signe, milliers, centimes)
-}
-
-/// UNE QUANTITÉ TELLE QU'ON LA LIT (des heures, des jours, un nombre de cachets) : la virgule décimale, sans zéro
-/// inutile (« 151,67 », « 8 », « 2,5 »).
-pub fn virgule(x: rust_decimal::Decimal) -> String {
-    x.normalize().to_string().replace('.', ",")
+    format!("{}{}{}", signe, milliers(entier, '\u{a0}'), decimales)
 }
 

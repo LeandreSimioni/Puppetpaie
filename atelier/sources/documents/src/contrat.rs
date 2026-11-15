@@ -59,7 +59,7 @@ pub fn document_modele(lu: &ModeleLu, valeurs: &Valeurs) -> forme::Modele {
 
 /// Les valeurs que le modele lit dans cette paie (sa forme canonique, `Paie::canon`).
 pub fn valeurs_de_paie(ctx: &Contexte, ent: &EntrepriseDuDocument, p: &Paie) -> R<Valeurs> {
-    Ok(valeurs_de_la_paie(ctx, ent, &p.canon(ctx)?, None)?)
+    Ok(valeurs_de_la_paie(ctx, ent, &p.canon()?, None)?)
 }
 
 /// Ce qu'un refus de modele porte a part : le modele, le marqueur en cause, et ce qu'il faut ecrire a sa place.
@@ -88,7 +88,7 @@ pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], 
         let lu = &modele.lu;
         let v = valeurs_de_paie(ctx, ent, p)?;
         let mut un = document_modele(lu, &v);
-        let (salarie, debut) = (&p.salarie.id, p.engagement.debut);
+        let (salarie, debut) = (&p.salarie.id, p.engagement.contrat().debut());
         let remplace = p.engagement.numero.as_ref().and_then(|n| remplacements.iter().find(|((s, d, k), _)| s == salarie && *d == debut && k == n));
         if let Some((_, (numero, date))) = remplace {
             un.remplace = Some(forme::Remplace { numero: numero.clone(), date: date.jj_mm_aaaa() });
@@ -207,7 +207,7 @@ pub fn ecrire_avenant(
     ent: &EntrepriseDuDocument,
     chemin: &Path,
     modifs: &[forme::Modification],
-    numero: i64,
+    numero: engagement::numeros::NumeroDAvenant,
     date_contrat: Jour,
     effet: Jour,
     date: Jour,

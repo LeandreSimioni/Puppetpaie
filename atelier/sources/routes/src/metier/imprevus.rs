@@ -5,12 +5,12 @@
 use compagnie::{maintenant, INTERFACE};
 use droit::arrets::Bloc60;
 use droit::contexte::{Contexte, IdSalarie};
-use engagement::imprevus::{self, ArretSaisi, GenreArret, Imprevu};
+use engagement::imprevus::{self, ArretSaisi, Imprevu};
 use engagement::Chiffre;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::{Classe, R};
 
-/// UN CONTRAT QUI COUVRE UN JOUR, lu dans les saisies : le salarie, son nom, le numero, le debut et la fin, le mois qui le
+/// UN CONTRAT QUI COUVRE UN JOUR, lu dans les saisies : le salarie, son nom, le numero, sa periode, le mois qui le
 /// saisit, le spectacle (tels que l'engagement les ecrit), paye au mois ou non, sa nature ; `arret-contrats` le dit
 /// (`dit`).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -18,8 +18,7 @@ pub(crate) struct ContratAuJour {
     pub(crate) salarie: IdSalarie,
     pub(crate) nom: String,
     pub numero: Option<engagement::numeros::NumeroContrat>,
-    pub debut: Jour,
-    pub(crate) fin: Option<Jour>,
+    pub periode: PeriodeOuverte,
     pub(crate) mois: socle::mois::Mois,
     pub(crate) spectacle: Option<droit::contexte::IdSpectacle>,
     pub(crate) mensuel: bool,
@@ -67,17 +66,15 @@ pub(crate) struct ArretDit<'a> {
 /// subrogation, que le droit tire ensuite : `poser_la_subrogation` ; la reprise ; les indemnites journalieres).
 pub(crate) fn arret_a_ecrire(x: ArretDit) -> ArretSaisi {
     ArretSaisi {
-        genre: GenreArret::Arret,
         salarie: x.cle.clone(),
-        contrat_debut: x.contrat.debut,
+        contrat_debut: x.contrat.periode.debut(),
         contrat_numero: x.contrat.numero.clone(),
         motif: x.motif,
         dernier_jour_travaille: x.dernier_jour,
         debut: x.debut,
         fin_previsionnelle: x.fin,
         subrogation: None,
-        subrogation_debut: None,
-        subrogation_fin: None,
+        periode_de_subrogation: None,
         reprise: None,
         reprise_motif: None,
         date_accident: x.date_accident,

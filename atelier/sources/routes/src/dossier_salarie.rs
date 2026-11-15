@@ -30,11 +30,11 @@ use documents::conges_spectacles::{self, ContratCs, MoisPaye, PaieCs};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use engagement::{self, Engagement};
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{NumeroContrat, NumeroDeCertificat};
 use documents::fiche_recapitulative::Recapitulatifs;
 use documents::{CategorieDeDocument, SorteDePieceProduite};
 use documents::fabrique::{fusion_octets, fusion_pieces, Temporaire};
-use socle::num::{eur2, Decimal};
+use socle::grandeurs::Montant;
 use socle::echec::{erreur, Classe, Echec, R};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
@@ -92,24 +92,6 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
 
 // ------------------------------------------------------------------ les formes
 
-/// L'annee d'une demande, en nombre (AAAA) ou telle que la page la choisit (« 2026 »).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum AnneeDite {
-    Nombre(i64),
-    Texte(socle::mois::Annee),
-}
-
-impl AnneeDite {
-    /// L'annee dite ; une annee qui n'en est pas une se refuse.
-    pub(crate) fn annee(&self) -> socle::echec::R<socle::mois::Annee> {
-        match self {
-            AnneeDite::Nombre(n) => socle::mois::Annee::nouvelle(*n),
-            AnneeDite::Texte(a) => Ok(*a),
-        }
-    }
-}
-
 /// La demande d'un dossier (la charge de `dossier-salarie` ; `dossier-envoyer` la compose) : les salaries (aucun :
 /// chacun), UNE periode (le mois, l'annee, ou toutes les annees), ce qu'il porte (rien : tout), un seul fichier pour
 /// tous (`ensemble`), et `apercu` pour dire ce qui s'ecrirait sans rien ecrire.
@@ -118,7 +100,7 @@ impl AnneeDite {
 pub(crate) struct DemandeDeDossier {
     pub(crate) salaries: Option<Vec<IdSalarie>>,
     pub(crate) mois: Option<Mois>,
-    pub(crate) annee: Option<AnneeDite>,
+    pub(crate) annee: Option<socle::mois::Annee>,
     pub(crate) toutes_les_annees: Option<bool>,
     pub(crate) categories: Option<Vec<CategorieDeDocument>>,
     pub(crate) ensemble: Option<bool>,
@@ -266,8 +248,8 @@ impl Periode {
         match (mois, annee, toutes) {
             (Some(m), None, false) => Ok(Periode::Mois(m)),
             (None, Some(a), false) => {
-                if a.nombre() < 1000 {
-                    return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", a.nombre())));
+                if a < socle::mois::Annee::constante(1000) {
+                    return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", a)));
                 }
                 Ok(Periode::Annee(a))
             }
@@ -453,7 +435,7 @@ pub(crate) fn charger(ctx: &Contexte, mois: Mois) -> R<(engagement::saisie::VueD
 
 /// `numeroter` d'un mois dont les numeros ne sont pas dans l'archive : les compteurs en attente
 /// d'un mois a l'autre restent dans `attente`, comme `Contexte._compteurs_en_attente`.
-fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [Paie], attente: &mut HashMap<i32, i64>) -> R<()> {
+fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [Paie], attente: &mut HashMap<socle::mois::Annee, engagement::numeros::NumeroDeBulletin>) -> R<()> {
     Ok(documents::ecrire_documents::numeroter_en_attente(ctx, paies, data.mois.annee(), attente, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?)
 }
 
@@ -461,30 +443,23 @@ fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [
 
 /// `Paie` -> ce que le certificat en lit : le brut est celui du calcul, a deux decimales.
 pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
-    Ok(PaieCs { engagement: ContratCs::de(&p.engagement)?, brut: eur2(p.brut), salarie: p.salarie.champs.clone() })
+    Ok(PaieCs { engagement: ContratCs::de(&p.engagement)?, brut: p.brut.au_centime(), salarie: p.salarie.champs.clone() })
 }
 
 /// Ce que l'ancien logiciel a verse en `mois` pour un contrat qui continue ici : le brut, les cachets (une ligne, aux
 /// jours que le bulletin imprime) et les jours travailles. `None` sans bulletin qui donne ses jours et ses cachets : le
 /// mois reste parmi les manquants (rien ne se devine).
-fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Decimal, Vec<engagement::LignePaie>, i64)>> {
+fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Montant, Vec<engagement::LignePaie>, socle::grandeurs::Jours)>> {
     let Some(p) = i.paies().get(&mois) else { return Ok(None) };
-    let Some(brut) = p.brut.map(eur2) else { return Ok(None) };
-    let mut dates: Vec<Jour> = Vec::new();
-    for d in &p.dates {
-        let mut j = d.debut;
-        while j <= d.fin {
-            dates.push(j);
-            j = j.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?;
-        }
-    }
+    let Some(brut) = p.brut.map(Montant::au_centime) else { return Ok(None) };
+    let dates: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
     let Some(cachets) = p.lignes.iter().find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET)) else { return Ok(None) };
     let (Some(q), Some(t)) = (cachets.quantite, cachets.taux) else { return Ok(None) };
-    let (quantite, taux) = (Some(q), Some(t));
+    let (quantite, taux) = (Some(socle::forme::Nombre(q)), Some(socle::grandeurs::MontantUnitaire::du_decimal(t)));
     if dates.is_empty() {
         return Ok(None);
     }
-    let jours = dates.len() as i64;
+    let jours = socle::grandeurs::Jours::de_dates(dates.len());
     let cachet = engagement::LignePaie::Unites(engagement::ligne::Unites {
         rubrique: droit::catalogue::CACHET,
         quantite,
@@ -502,14 +477,14 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
 fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
     let eng = &p.engagement;
     let cle = cle_de(p);
-    let mois_du = eng.mois_du_contrat();
+    let mois_du = eng.mois_du_contrat()?;
     let mut manquants: Vec<Mois> = Vec::new();
     let mut lignes: Vec<engagement::LignePaie> = Vec::new();
     // Un contrat commence dans l'ancien logiciel : ses mois d'avant sont ceux que l'engagement importe a verses.
-    let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.debut), numero: eng.numero.clone(), ..Default::default() };
+    let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.contrat().debut()), numero: eng.numero.clone(), ..Default::default() };
     let importe = engagement::importe::continue_par(&ctx.racine, &cherche).map_err(|e| e.reclasser(Classe::Illisible))?;
-    let mut bruts = Decimal::new(0, 2);
-    let mut jours = 0i64;
+    let mut bruts = Montant::ZERO;
+    let mut jours = socle::grandeurs::Jours::ZERO;
     let mut mois_payes: Vec<MoisPaye> = Vec::new();
     for &m in mois_du.iter().filter(|m| **m < eng.mois) {
         let ecrite = match eng.numero.as_ref() {
@@ -528,18 +503,18 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
             continue;
         };
         lignes.extend(paie.engagement.lignes.iter().cloned());
-        let (brut_du_mois, jours_du_mois) = (eur2(paie.brut), paie.engagement.jours);
+        let (brut_du_mois, jours_du_mois) = (paie.brut.au_centime(), paie.engagement.jours);
         bruts += brut_du_mois;
         jours += jours_du_mois;
         mois_payes.push(MoisPaye { fin: m.dernier_jour(), jours: jours_du_mois, brut: brut_du_mois });
     }
-    let brut = bruts + eur2(p.brut);
+    let brut = bruts + p.brut.au_centime();
     // Un contrat paye au mois n'a ni cachet ni date jouee : son certificat porte ses bornes, et ses jours travailles et son
     // brut mois par mois (`conges::lignes_du_mois`) ; le 31 mars le coupe entre deux mois.
     if eng.nat()?.mensuelle() {
         let fin_du_mois = eng.fin_mois();
-        mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: eur2(p.brut) });
-        let contrat = ContratCs { jours: jours + eng.jours, dates_travail: Vec::new(), cachets: 0, heures: None, taux_cachet: None, mois_payes, ..ContratCs::de(eng)? };
+        mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: p.brut.au_centime() });
+        let contrat = ContratCs { jours: jours + eng.jours, dates_travail: Vec::new(), cachets: socle::grandeurs::Cachets::ZERO, heures: None, taux_cachet: None, mois_payes, ..ContratCs::de(eng)? };
         return Ok((PaieCs { engagement: contrat, brut, salarie: p.salarie.champs.clone() }, manquants));
     }
     lignes.extend(eng.lignes.iter().cloned());
@@ -554,11 +529,11 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
         spectacle: eng.spectacle.clone(),
         dates_travail: dates,
         lignes: Some(lignes),
-        debut: Some(eng.debut),
-        fin: eng.fin,
+        debut: Some(eng.contrat().debut()),
+        fin: eng.contrat().fin(),
         numero: eng.numero.clone(),
-        jours: Some(engagement::Chiffre::entier(jours + eng.jours)),
-        taux_cachet: eng.taux_cachet.map(engagement::Chiffre::de_decimal),
+        jours: Some(jours + eng.jours),
+        taux_cachet: eng.taux_cachet.map(|t| engagement::Chiffre::de_decimal(t.decimal())),
         date_paiement: eng.date_paiement.clone(),
         lieu: Some(eng.lieu.clone()),
         emploi: eng.emploi.clone(),
@@ -595,10 +570,11 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
         if !p.declaree_a_la_caisse_des_conges()? {
             continue;
         }
-        let (cle, debut) = (cle_de(p), p.engagement.debut);
-        if !p.engagement.dernier_mois() {
+        let (cle, debut) = (cle_de(p), p.engagement.contrat().debut());
+        let place = p.engagement.place_du_mois()?;
+        if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = place {
             poser(&mut dus, cle, debut, None);
-        } else if !p.engagement.a_cheval() {
+        } else if place == engagement::PlaceDuMois::Seul {
             poser(&mut dus, cle, debut, Some(paie_cs(p)?));
         } else {
             let (entier, manquants) = paie_du_contrat_entier(ctx, p)?;
@@ -629,11 +605,11 @@ fn mois_puppetpaie(
     d: &mut Dossier,
     aujourdhui: &Jour,
     contrats_vus: &mut HashSet<NumeroContrat>,
-    attente: &mut HashMap<i32, i64>,
+    attente: &mut HashMap<socle::mois::Annee, engagement::numeros::NumeroDeBulletin>,
 ) -> R<Vec<Page>> {
     let mut pages = Vec::new();
     let mois = &le_mois.to_string();
-    let sortie = ctx.racine.join("sorties").join(mois);
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, le_mois);
     let etiq = le_mois.etiquette();
     let dossier_des_contrats = documents::PieceDuMois::Contrat.dossier().sous(&sortie);
     let (_, paies) = charger(ctx, le_mois)?;
@@ -688,7 +664,7 @@ fn mois_puppetpaie(
             let piece = envois::envoi::chemin_de_la_piece(documents::PieceDuMois::Bulletin, &sortie, cle, &etiq);
             if !piece.is_file() {
                 // Le dossier ou il se range, tel que la compagnie le voit (`sorties/<mois>/envoi`).
-                let ou = documents::PieceDuMois::Bulletin.dossier().sous_le_chemin(&socle::fichiers::CheminRelatif::sorties(le_mois));
+                let ou = documents::PieceDuMois::Bulletin.dossier().chemin(le_mois);
                 return Err(erreur_operation(format!(
                     "{}, {} : son bulletin n'est pas dans {}/. Un bulletin remis ne se réimprime pas : rien n'est envoyé à sa place.",
                     lib, cle, ou
@@ -749,13 +725,13 @@ fn mois_puppetpaie(
         let ecrits = engagement::etats::numeros_des_documents(ctx, le_mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
         let trouve = |cle: &IdSalarie, debut: socle::date::Jour| pour_cs.iter().find(|(c, de, _)| c == cle && *de == debut).and_then(|(_, _, v)| v.as_ref());
         // Chaque certificat parti, et tous les N CE de l'archive du mois.
-        let mut tous: Vec<i64> = Vec::new();
-        let mut paires: Vec<(IdSalarie, Vec<(&PaieCs, i64)>)> = Vec::new();
+        let mut tous: Vec<NumeroDeCertificat> = Vec::new();
+        let mut paires: Vec<(IdSalarie, Vec<(&PaieCs, NumeroDeCertificat)>)> = Vec::new();
         for (i, p) in paies.iter().enumerate() {
             let cle = cle_de(p);
-            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.debut), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
-            let combien = conges_spectacles::decouper(&pc.engagement)?.len() as i64;
-            tous.extend(n..n + combien);
+            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.contrat().debut()), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
+            let combien = conges_spectacles::decouper(&pc.engagement)?.len();
+            tous.extend(n.suite().take(combien));
             if cles.contains(&cle) {
                 match paires.iter_mut().find(|(c, _)| *c == cle) {
                     Some((_, v)) => v.push((pc, n)),
@@ -773,8 +749,10 @@ fn mois_puppetpaie(
         let textes = if archive.exists() { Some(texte_pdf(&archive)?) } else { None };
         match textes {
             None if !paires.is_empty() => d.refus.push(format!(
-                "{} : certificats Congés Spectacles non joints — {} n'est pas dans sorties/{}/, et un certificat remis ne se réimprime pas.",
-                lib, nom_archive, mois
+                "{} : certificats Congés Spectacles non joints — {} n'est pas dans {}/, et un certificat remis ne se réimprime pas.",
+                lib,
+                nom_archive,
+                documents::PieceDuMois::CertificatsCs.dossier().chemin(le_mois)
             )),
             Some(t) if !paires.is_empty() && t.len() != tous.len() => d.refus.push(format!(
                 "{} : certificats Congés Spectacles non joints — {} a {} page(s), les paies en attendent {}. Le fichier ne dit pas ce que les paies disent : rien n'est joint à sa place.",
@@ -788,14 +766,14 @@ fn mois_puppetpaie(
                     let (pc, _) = siens.first().ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un salarié sans certificat dans la liste des certificats."))?;
                     let nom = pc.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?.to_string();
                     let mut ses_pages: Vec<usize> = Vec::new();
-                    let mut etrangeres: Vec<i64> = Vec::new();
+                    let mut etrangeres: Vec<NumeroDeCertificat> = Vec::new();
                     for (pc, n) in siens {
-                        for k in 0..conges_spectacles::decouper(&pc.engagement)?.len() as i64 {
-                            let page = tous.iter().position(|x| *x == n + k);
+                        for x in n.suite().take(conges_spectacles::decouper(&pc.engagement)?.len()) {
+                            let page = tous.iter().position(|y| *y == x);
                             if let Some(page) = page.filter(|&i| t.get(i).is_some_and(|p| sans_accents(p).contains(&sans_accents(&nom)))) {
                                 ses_pages.push(page);
                             } else {
-                                etrangeres.push(n + k);
+                                etrangeres.push(x);
                             }
                         }
                     }
@@ -827,7 +805,7 @@ fn mois_puppetpaie(
                 if !engagement::signe_ailleurs(&ctx.racine, &p.engagement)? {
                     continue;
                 }
-                for f in crate::gestes::signature::contrat_signe_depose(&ctx.racine, cle, p.engagement.debut)? {
+                for f in crate::gestes::signature::contrat_signe_depose(&ctx.racine, cle, p.engagement.contrat().debut())? {
                     if !d.deposes_vus.insert(f.clone()) {
                         continue;
                     }
@@ -902,7 +880,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
         if !p.contient(mois) {
             continue;
         }
-        let d = documents::PieceDuMois::Signature.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string()));
+        let d = documents::PieceDuMois::Signature.dossier().dans(&ctx.racine, mois);
         out.extend(noms_commencant_finissant(&d, &format!("{}{}_", SorteDePieceProduite::Signature.prefixe(), cle), ".eml")?.into_iter().map(|n| d.join(n)));
     }
     Ok(out)
@@ -913,7 +891,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
 /// dans la periode par le mois de la paie. Une copie qui manque se dit ; rien d'autre ne se devine.
 fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &mut Dossier) -> R<Vec<Page>> {
     let lignes = engagement::importe::paies_lues(&ctx.racine)?;
-    let dossier = ctx.racine.join("historique").join("bulletins");
+    let dossier = import::mois::dossier_des_bulletins(&ctx.racine);
     let (mut pages, mut manquent): (Vec<Page>, Vec<NomDeFichier>) = (Vec::new(), Vec::new());
     for x in lignes {
         let Some(b) = &x.paie.bulletin else { continue };
@@ -934,8 +912,8 @@ fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &m
             continue;
         }
         // L'ordre de lecture : le debut de la paie ; une paie qui ne le dit pas se lit au debut de son mois.
-        let jour = match x.paie.debut {
-            Some(j) => j,
+        let jour = match x.paie.periode {
+            Some(o) => o.debut(),
             None => mois.premier_jour(),
         };
         let tri = Some((jour.mois_civil(), Some(jour)));
@@ -1192,7 +1170,7 @@ fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, V
 /// Le dossier construit (et ecrit, sauf `apercu`). L'envoi (`archives`, `dossier-envoyer`)
 /// en a besoin tel quel : ses salaries, ses fichiers, ses pages.
 pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossier> {
-    let annee = demande.annee.as_ref().map(AnneeDite::annee).transpose()?;
+    let annee = demande.annee;
     let (ensemble, ecrire) = (demande.ensemble == Some(true), demande.apercu != Some(true));
     let p = Periode::nouveau(demande.mois, annee, demande.toutes_les_annees == Some(true))?;
     // Le jour reel de Paris, pas `ctx.aujourdhui`.
@@ -1231,7 +1209,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     let ensemble_cats: HashSet<CategorieDeDocument> = cats.iter().copied().collect();
     let mut pages: Vec<Page> = Vec::new();
     let mut contrats_vus: HashSet<NumeroContrat> = HashSet::new();
-    let mut attente: HashMap<i32, i64> = HashMap::new();
+    let mut attente: HashMap<socle::mois::Annee, engagement::numeros::NumeroDeBulletin> = HashMap::new();
     for m in engagement::stock::mois_saisis(&ctx.racine)? {
         if p.contient(m) {
             pages.extend(mois_puppetpaie(ctx, m, &ensemble_cles, &ensemble_cats, tmp, &mut d, &aujourdhui, &mut contrats_vus, &mut attente)?);

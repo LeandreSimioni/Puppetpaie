@@ -50,7 +50,7 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn candidats_de_cle(_p: &Self::Plate) -> Vec<String> {
         Vec::new()
     }
-    const FICHIER: &'static str;
+    const FICHIER: socle::fichiers::CheminRelatif;
     /// Les cases qui s'ecrivent a part (`ecrire_a_part`).
     fn a_part() -> Vec<CaseDeFiche> {
         Vec::new()
@@ -126,7 +126,7 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
 
 impl SorteDeFiche for FicheEntrepriseDatee {
     const NOM: NomDeFiche = NomDeFiche::Entreprise;
-    const FICHIER: &'static str = droit::contexte::ENTREPRISE;
+    const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::ENTREPRISE;
     type Fichier = FicheEntrepriseDatee;
     type Cle = ();
 
@@ -234,18 +234,18 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     /// (`Contexte::socle_repris` : celui que la surcouche de la compagnie nomme, sinon le socle livre de l'annee), lu sans
     /// le taux AT/MP : une compagnie dit son organisation avant son taux, et une annee sans socle livre lit celui que sa
     /// surcouche reprend. Une case qui ne change pas ne se relit pas ici (`avant` : la fiche que l'ecran a montree ; a la
-    /// verification, vide : toute case se relit). Une annee dont le logiciel n'a pas le bareme (le refus que
-    /// `socle_repris` rend a part) : la faute de la case, avec les autres ; tout le reste remonte entier.
+    /// verification, vide : toute case se relit). Une annee dont le logiciel n'a pas le bareme (`droit::contexte::BaremeAbsent`,
+    /// que `socle_repris` rend a part) : la faute de la case, avec les autres ; tout le reste remonte entier.
     fn reconnaitre(ctx: &Contexte, avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
         let Some(nom) = apres.organisation_patronale.clone() else { return Ok(Vec::new()) };
         if apres.organisation_patronale == avant.organisation_patronale {
             return Ok(Vec::new());
         }
-        let an = ctx.lue_au.an;
-        let faute = |phrase: String| vec![FauteDeCase { case: CaseEntreprise::OrganisationPatronale.into(), chemin: None, phrase }];
+        let an = ctx.lue_au.annee();
+        let faute =|phrase: String| vec![FauteDeCase { case: CaseEntreprise::OrganisationPatronale.into(), chemin: None, phrase }];
         let pile = match ctx.socle_repris(an)? {
             Ok(p) => p,
-            Err(sans_bareme) => return Ok(faute(sans_bareme.phrase)),
+            Err(absent) => return Ok(faute(absent.phrase())),
         };
         if let Some((cle, _)) = pile.organisation(&nom) {
             apres.organisation_patronale = Some(cle.clone());
@@ -322,7 +322,8 @@ impl SorteDeFiche for FicheEntrepriseDatee {
             return Ok(Vec::new());
         }
         let mut dit = Vec::new();
-        for an in [ctx.aujourdhui.an, ctx.aujourdhui.an + 1] {
+        let an = ctx.aujourdhui.annee();
+        for an in an.jusqu_a(an.suivante()?) {
             dit.extend(crate::atmp::inscrire_l_arrete(ctx, an)?);
         }
         Ok(dit)
@@ -368,7 +369,7 @@ pub(crate) fn inscrire_etablissements(ctx: &Contexte, liste: &[droit::fiche::Eta
 
 impl SorteDeFiche for FicheSalarieDatee {
     const NOM: NomDeFiche = NomDeFiche::Salarie;
-    const FICHIER: &'static str = droit::contexte::SALARIES;
+    const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::SALARIES;
     type Fichier = droit::fiche::Salaries;
     type Cle = IdSalarie;
 
@@ -524,7 +525,7 @@ rapproche chacun de ses déclarations par lui. En choisir un autre, ou laisser l
 
 impl SorteDeFiche for FicheSpectacleDatee {
     const NOM: NomDeFiche = NomDeFiche::Spectacle;
-    const FICHIER: &'static str = droit::contexte::SPECTACLES;
+    const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::SPECTACLES;
     type Fichier = droit::fiche::Spectacles;
     type Cle = IdSpectacle;
 
@@ -607,16 +608,16 @@ cette fiche-là, ou corrigez le numéro.",
 
 /// Le fichier de la fiche `F` de la compagnie, lu par sa forme ; absent, il est vide (une compagnie sans fiche encore).
 pub(crate) fn lire_fichier<F: SorteDeFiche>(ctx: &Contexte) -> R<F::Fichier> {
-    let chemin = ctx.racine.join(F::FICHIER);
+    let chemin = F::FICHIER.dans(&ctx.racine);
     if !chemin.exists() {
         return Ok(F::Fichier::default());
     }
-    droit::fiche::lire_fichier(&chemin, F::FICHIER)
+    droit::fiche::lire_fichier(&chemin, F::FICHIER.texte())
 }
 
 /// Le fichier ecrit, l'ancien sauvegarde.
 fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichier) -> R<()> {
-    let chemin = ctx.racine.join(F::FICHIER);
+    let chemin = F::FICHIER.dans(&ctx.racine);
     sauver_avant(&chemin)?;
     ecrire(&chemin, fichier)
 }
@@ -833,8 +834,8 @@ fn deriver_etablissements(p: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
 
 /// UN MONTANT SAISI EN TEXTE (`12,5`, `1.5 %`) S'ECRIT EN NOMBRE, dans sa forme la plus courte, comme un nombre lu du
 /// fichier ; un texte blanc ne dit rien. Rend la faute d'un texte qui n'est pas un nombre.
-fn montant_saisi(m: &mut Option<droit::fiche::Montant>, quoi: &str) -> Option<String> {
-    let Some(droit::fiche::Montant::Texte(brut)) = m.as_ref() else { return None };
+fn montant_saisi(m: &mut Option<droit::fiche::NombreDeFiche>, quoi: &str) -> Option<String> {
+    let Some(droit::fiche::NombreDeFiche::Texte(brut)) = m.as_ref() else { return None };
     let brut = brut.replace('%', "");
     let brut = brut.trim();
     if brut.is_empty() {
@@ -842,7 +843,7 @@ fn montant_saisi(m: &mut Option<droit::fiche::Montant>, quoi: &str) -> Option<St
         return None;
     }
     let Some(d) = socle::num::decimal_a_virgule(brut) else { return Some(format!("{} illisible : {}.", quoi, brut)) };
-    match socle::forme::lire_texte::<droit::fiche::Montant>(&socle::num::court(d).to_string(), "Le nombre ne se lit pas.") {
+    match socle::forme::lire_texte::<droit::fiche::NombreDeFiche>(&socle::num::court(d).to_string(), "Le nombre ne se lit pas.") {
         Ok(lu) => {
             *m = Some(lu);
             None

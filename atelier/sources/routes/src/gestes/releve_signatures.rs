@@ -152,7 +152,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         let Some(Reponse { identifiant: ident, brut, de, quand }) = retenue else { continue };
 
         // La preuve archivee : le message tel qu'il est arrive.
-        let dossier = documents::PieceDuMois::Signature.dossier().sous(&ctx.racine.join("sorties").join(a_mois.to_string()));
+        let dossier = documents::PieceDuMois::Signature.dossier().dans(&ctx.racine, a_mois);
         std::fs::create_dir_all(&dossier).map_err(|e| os(format!("{} : {}", dossier.display(), e)))?;
         let preuve = dossier.join(format!("{}{}_{}.eml", documents::SorteDePieceProduite::Signature.prefixe(), a_salarie, code));
         std::fs::write(&preuve, &brut).map_err(|e| os(format!("{} : {}", preuve.display(), e)))?;
@@ -178,7 +178,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             Some(envois::journal::ActeDuContrat::Remplace) | None => documents::PieceDuMois::Contrat,
         };
         for (mois_f, nom_f) in &fichiers {
-            let envoye = parti.dossier().sous(&ctx.racine.join("sorties").join(mois_f.to_string())).join(nom_f);
+            let envoye = parti.dossier().dans(&ctx.racine, *mois_f).join(nom_f);
             // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
             let souche = match envoye.file_stem() {
                 Some(s) => s.to_string_lossy().into_owned(),
@@ -220,13 +220,13 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 // La mention posee : l'exemplaire contresigne se refait du contrat parti et d'elle (`depart::piece_partie`).
                 mention: mention.clone(),
                 acte,
-                avenant: if est_avenant { c.avenant.filter(|n| *n != 0).or(a.avenant) } else { None },
+                avenant: if est_avenant { c.avenant.or(a.avenant) } else { None },
             };
-            let debut = c.debut.iso();
+            let debut = c.contrat.debut().iso();
             // Le contrat que cette reponse signe, par son numero : le jumeau du meme jour garde sa propre attente.
             let note = match a.mois {
                 Some(mois) => {
-                    let charge = crate::contrats::ChargeRecu { mois, salarie: c.salarie.clone(), debut: c.debut, numero: c.numero.clone(), avenant: None, recu: true };
+                    let charge = crate::contrats::ChargeRecu { mois, salarie: c.salarie.clone(), debut: c.contrat.debut(), numero: c.numero.clone(), avenant: None, recu: true };
                     crate::contrats::contrat_recu(ctx, &charge, qui, Some(&courriel)).map(|_| ())
                 }
                 None => Err(erreur(Classe::Refuse, "la demande de signature ne dit pas son mois")),

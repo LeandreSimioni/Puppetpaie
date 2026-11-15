@@ -48,13 +48,14 @@ use serde::{Deserialize, Serialize};
 
 use compagnie::coffre::Coffre;
 use socle::paris::Moment;
-use compagnie::installation::{self as compagnies, Compagnie};
+use compagnie::installation::{self as compagnies, Compagnie, DossierRattache};
 use crate::catalogue::Route;
 use crate::depots::{ChargeDeposer, Designation, Quoi};
 use crate::enveloppe::Dite;
 use crate::rappels::{EcheanceDite, EtapeDEcheance, GenreDEcheance};
 use droit::contexte::Contexte;
 use envois::etats;
+use socle::mode::Mode;
 use envois::retours::IdDeFlux;
 use socle::echec::erreur;
 use socle::echec::Echec;
@@ -64,7 +65,7 @@ use socle::mois::Mois;
 /// Le registre de l'administrateur, a la racine de l'installation.
 pub const FICHIER: &str = "administrateur.json";
 /// Le dernier tableau connu d'une compagnie (hors de l'empreinte des etats des mois : `etat_garde::HORS_DE_L_ECRAN`).
-pub const TABLEAU: &str = "config/.tableau.json";
+pub const TABLEAU: CheminRelatif = CheminRelatif::du_moteur("config/.tableau.json");
 
 /// Ce que le registre dit de lui-meme, a qui l'ouvre.
 const QUOI_DU_REGISTRE: &str = "Les compagnies que gere l'administrateur de ce logiciel : un seul mot de passe les ouvre toutes. Aucun secret ici.";
@@ -100,52 +101,13 @@ struct Registre {
     compagnies: Vec<EntreeRegistre>,
 }
 
-/// Une compagnie rattachee : son dossier, relatif a l'installation, et depuis quand.
+/// Une compagnie rattachee : son dossier relatif a l'installation (`DossierRattache`), et depuis quand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EntreeRegistre {
-    dossier: CheminRelatif,
+    dossier: DossierRattache,
     #[serde(with = "socle::paris::ecrit::minute")]
     depuis: Moment,
-}
-
-/// L'installation d'une compagnie : `<installation>/compagnies/<nom>` ou `<installation>/prive` (ou `fictives/<nom>`).
-pub(crate) fn installation_de(racine: &Path) -> PathBuf {
-    let parent = match racine.parent() {
-        Some(p) => p,
-        None => racine,
-    };
-    match parent.parent() {
-        Some(haut) if parent.file_name().is_some_and(|n| n == "compagnies" || n == compagnies::DOSSIER_FICTIVES) => haut.to_path_buf(),
-        Some(_) | None => parent.to_path_buf(),
-    }
-}
-
-/// Le chemin absolu, liens suivis. UN DOSSIER QUI N'EXISTE PLUS (une compagnie effacee que le registre nomme encore) n'a
-/// pas de liens a suivre : il se compare par son chemin absolu tel qu'il s'ecrit, ce que le systeme en dit sans le
-/// toucher (`std::path::absolute` : « Makes the path absolute without accessing the filesystem »).
-fn absolu(p: &Path) -> R<PathBuf> {
-    let c = match std::fs::canonicalize(p) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,
-        Err(e) => return Err(socle::echec::du_disque(p, &e)),
-    };
-    Ok(match c.to_string_lossy().strip_prefix(r"\\?\") {
-        Some(s) => PathBuf::from(s),
-        None => c.clone(),
-    })
-}
-
-/// Le dossier d'une compagnie, relatif a l'installation, en barres droites (`compagnies/les-pupazzi`, `prive`) ; `None`
-/// pour un dossier hors de l'installation.
-fn relatif(inst: &Path, racine: &Path) -> R<Option<CheminRelatif>> {
-    let r = absolu(racine)?;
-    let i = absolu(inst)?;
-    match socle::fichiers::sous(&r, &i) {
-        Some(rel) if rel.as_os_str().is_empty() => Ok(None),
-        Some(rel) => CheminRelatif::du(rel).map(Some),
-        None => Ok(None),
-    }
 }
 
 /// Les compagnies du registre : aucune sans registre ; un registre qui ne se lit pas se refuse.
@@ -169,13 +131,13 @@ fn ecrire_registre(inst: &Path, entrees: &[EntreeRegistre]) -> R<()> {
 /// Les compagnies rattachees a l'administrateur, telles qu'elles sont sur le disque (un dossier parti n'y est plus). Une
 /// compagnie fictive n'y entre pas : `rattacher` la refuse.
 pub fn rattachees(inst: &Path) -> R<Vec<PathBuf>> {
-    Ok(lire_registre(inst)?.into_iter().map(|e| inst.join(e.dossier)).filter(|racine| racine.join(droit::contexte::ENTREPRISE).is_file()).collect())
+    Ok(lire_registre(inst)?.into_iter().map(|e| e.dossier.racine(inst)).filter(|racine| droit::contexte::ENTREPRISE.dans(racine).is_file()).collect())
 }
 
 /// UNE COMPAGNIE SUPPRIMEE (`accueil::suppression`) sort du registre : une compagnie creee plus tard sous
 /// le meme dossier n'en herite pas. Rien a faire si elle n'y est pas.
 pub fn oublier(inst: &Path, racine: &Path) -> R<()> {
-    let Some(rel) = relatif(inst, racine)? else { return Ok(()) };
+    let Some(rel) = DossierRattache::de(inst, racine)? else { return Ok(()) };
     let avant = lire_registre(inst)?;
     let apres: Vec<EntreeRegistre> = avant.iter().filter(|e| e.dossier != rel).cloned().collect();
     if apres.len() == avant.len() {
@@ -186,24 +148,24 @@ pub fn oublier(inst: &Path, racine: &Path) -> R<()> {
 
 /// La compagnie `racine` est-elle rattachee a l'administrateur de son installation ?
 pub fn est_rattachee(inst: &Path, racine: &Path) -> R<bool> {
-    let parmi_les_rattachees = |rel: CheminRelatif| -> R<bool> {
+    let parmi_les_rattachees = |rel: DossierRattache| -> R<bool> {
         for r in rattachees(inst)? {
-            if relatif(inst, &r)? == Some(rel.clone()) {
+            if DossierRattache::de(inst, &r)? == Some(rel.clone()) {
                 return Ok(true);
             }
         }
         Ok(false)
     };
     // Une compagnie hors de l'installation n'y est pas rattachee.
-    Ok(relatif(inst, racine)?.map(parmi_les_rattachees).transpose()?.is_some_and(|oui| oui))
+    Ok(DossierRattache::de(inst, racine)?.map(parmi_les_rattachees).transpose()?.is_some_and(|oui| oui))
 }
 
 /// `liste` sans la compagnie `racine`.
 fn sans(liste: Vec<PathBuf>, inst: &Path, racine: &Path) -> R<Vec<PathBuf>> {
-    let rel = relatif(inst, racine)?;
+    let rel = DossierRattache::de(inst, racine)?;
     let mut out = Vec::new();
     for r in liste {
-        if relatif(inst, &r)? != rel {
+        if DossierRattache::de(inst, &r)? != rel {
             out.push(r);
         }
     }
@@ -223,9 +185,9 @@ fn reelles(inst: &Path) -> R<Vec<Compagnie>> {
 
 /// La fiche d'accueil de la compagnie `racine`, si l'installation la liste.
 fn fiche_de(inst: &Path, racine: &Path) -> R<Option<Compagnie>> {
-    let rel = relatif(inst, racine)?;
+    let rel = DossierRattache::de(inst, racine)?;
     for c in compagnies::liste_de(inst)? {
-        if relatif(inst, &c.racine)? == rel {
+        if DossierRattache::de(inst, &c.racine)? == rel {
             return Ok(Some(c));
         }
     }
@@ -295,10 +257,10 @@ pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> R<EtatAdministr
     let autres: Vec<String> = if !groupe.is_empty() {
         noms_de(inst, &sans(groupe.clone(), inst, racine)?)?
     } else {
-        let ici = relatif(inst, racine)?;
+        let ici = DossierRattache::de(inst, racine)?;
         let mut a = Vec::new();
         for c in reelles(inst)? {
-            if relatif(inst, &c.racine)? != ici && exigee(poste, &c.racine)? {
+            if DossierRattache::de(inst, &c.racine)? != ici && exigee(poste, &c.racine)? {
                 a.push(c.nom);
             }
         }
@@ -397,7 +359,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, actu
     if compagnies::est_fictive(racine)? {
         return Err(socle::echec::refus("Une compagnie fictive s'ouvre sans mot de passe : elle n'a pas d'administrateur."));
     }
-    let Some(rel) = relatif(inst, racine)? else {
+    let Some(rel) = DossierRattache::de(inst, racine)? else {
         let a_part = HorsDeLInstallation { chemin: racine.to_string_lossy().into_owned(), installation: inst.to_string_lossy().into_owned() };
         return Err(socle::echec::refus_avec("Ce dossier n'est pas une compagnie de cette installation.", socle::echec::APart::forme(a_part)));
     };
@@ -412,7 +374,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, actu
     if groupe.is_empty() {
         let mut candidates: Vec<Compagnie> = Vec::new();
         for c in reelles(inst)? {
-            if relatif(inst, &c.racine)?.as_ref() != Some(&rel) && exigee(poste, &c.racine)? {
+            if DossierRattache::de(inst, &c.racine)?.as_ref() != Some(&rel) && exigee(poste, &c.racine)? {
                 candidates.push(c);
             }
         }
@@ -447,7 +409,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, actu
     remplacer(&chemin, &octets).map_err(|m| socle::refus!("Le coffre de cette compagnie ne s'écrit pas ({}). Rien n'a changé.", m.phrase))?;
     let mut entrees = lire_registre(inst)?;
     for r in nouvelles.iter().chain(std::iter::once(&racine.to_path_buf())) {
-        if let Some(dossier) = relatif(inst, r)? {
+        if let Some(dossier) = DossierRattache::de(inst, r)? {
             if !entrees.iter().any(|x| x.dossier == dossier) {
                 entrees.push(EntreeRegistre { dossier, depuis: poste.maintenant });
             }
@@ -484,7 +446,7 @@ pub fn detacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, nouve
     }
     let coffre = poste.coffre(racine);
     let octets = coffre.preparer_ouverture(nouveau, Some(admin)).map_err(|e| e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose."))))?;
-    let rel = relatif(inst, racine)?;
+    let rel = DossierRattache::de(inst, racine)?;
     let avant_registre = lire_registre(inst)?;
     let reste: Vec<EntreeRegistre> = avant_registre.iter().filter(|e| Some(&e.dossier) != rel.as_ref()).cloned().collect();
     ecrire_registre(inst, &reste).map_err(|m| socle::refus!("Le registre de l'administrateur ne s'écrit pas ({}). Rien n'a changé.", m.phrase))?;
@@ -568,17 +530,13 @@ impl Etape {
     }
 }
 
-/// Ce qui est pret a partir : en test (ecrit, pas encore essaye), en reel (teste, conforme, et le fichier est reel).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Pret {
-    pub test: bool,
-    pub reel: bool,
-}
-
-impl Pret {
-    /// Rien de pret : aucun fichier ecrit a deposer.
-    pub const RIEN: Pret = Pret { test: false, reel: false };
+/// CE QUI EST PRET A PARTIR : rien (aucun fichier ecrit a deposer), en test (ecrit, pas encore essaye), en reel (teste,
+/// conforme, et le fichier est reel). Il s'ecrit `null`, ou par son mode (`test`, `reel`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Pret {
+    Rien,
+    Pour(Mode),
 }
 
 /// UNE DECLARATION DU TABLEAU D'UNE COMPAGNIE, telle qu'elle se garde (`TableauCompagnie`) : sa cle (celle du rappel),
@@ -623,7 +581,7 @@ pub struct TableauCompagnie {
 fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &Path, mensuelle: Option<Mois>) -> R<Option<Etape>> {
     let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     let empreinte = socle::fichiers::Empreinte::des_octets(&octets).courte();
-    if etats::deja_depose(lignes, envois::journal::Acte::Dsn, &empreinte).is_some() {
+    if etats::deja_depose(lignes, documents::Acte::Dsn, &empreinte).is_some() {
         return Ok(None);
     }
     if let Some(m) = mensuelle {
@@ -632,7 +590,7 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
         }
     }
     let nom = socle::fichiers::NomDeFichier::du(chemin)?;
-    let r = etats::repetition(lignes, envois::journal::Acte::Dsn, &empreinte, &nom);
+    let r = etats::repetition(lignes, documents::Acte::Dsn, &empreinte, &nom);
     Ok(Some(match r.etat {
         etats::EtatDuTest::Ecrite => Etape::ATester,
         etats::EtatDuTest::EnTest => Etape::EnTest,
@@ -643,7 +601,7 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
 
 /// Le dossier du mois `mois` ou se range le signalement `piece` (`PieceDuMois::dossier`).
 fn dossier_du_signalement(racine: &Path, mois: socle::mois::Mois, piece: documents::PieceDuMois) -> PathBuf {
-    piece.dossier().sous(&racine.join("sorties").join(mois.to_string()))
+    piece.dossier().dans(racine, mois)
 }
 
 /// Le fichier d'un signalement ecrit, s'il y en a un, dans le dossier du mois ou il se range (le nom compare sans casse).
@@ -738,7 +696,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 ou: Vec::new(),
                 fichier: None,
                 etape: None,
-                pret: Pret::RIEN,
+                pret: Pret::Rien,
             }
         }
         GenreDEcheance::Obligation => {
@@ -764,7 +722,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 };
                 (Genre::HorsDsn, "Elle ne part pas avec la DSN : à faire sur le service de l'organisme, puis à dire faite dans la compagnie.", lieux)
             };
-            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::RIEN }
+            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::Rien }
         }
         GenreDEcheance::Dpae => {
             let jour = r.date;
@@ -781,7 +739,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 ou: Vec::new(),
                 fichier: None,
                 etape: None,
-                pret: Pret::RIEN,
+                pret: Pret::Rien,
             }
         }
         GenreDEcheance::DeLAnnee(_) => return Ok(None),
@@ -790,8 +748,13 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         // Le depot reel de ce contenu est deja note : le rappel se taira au prochain releve.
         let Some(etape) = etape_du_fichier(ctx, lignes, &f, mensuelle)? else { return Ok(None) };
         let octets = std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?;
-        let reel_code = declarations::dsn_lue::lire(&octets, None)?.reel();
-        d.pret = Pret { test: etape == Etape::ATester, reel: etape == Etape::Testee && reel_code };
+        // Le mode que le fichier dit (S10.G00.00.005) : seul un fichier reel teste part en reel.
+        let mode_du_fichier = declarations::dsn_lue::lire(&octets, None)?.nature_envoi;
+        d.pret = match (etape, mode_du_fichier) {
+            (Etape::ATester, _) => Pret::Pour(Mode::Test),
+            (Etape::Testee, Some(Mode::Reel)) => Pret::Pour(Mode::Reel),
+            (Etape::Testee, Some(Mode::Test) | None) | (Etape::EnTest | Etape::TestRefuse | Etape::PaieChangee, _) => Pret::Rien,
+        };
         d.fichier = Some(f);
         d.etape = Some(etape);
         d.marche = Some(etape.marche().into());
@@ -809,7 +772,7 @@ fn cle_d_urgence(en_retard: bool, butoir: &Option<Jour>) -> (bool, bool, Option<
 pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     // L'EMPREINTE DE TOUTE LA COMPAGNIE, prise avant (celle de l'etat d'ouverture, `etat_garde::empreinte_de`) : le fil de
     // la fenetre ne le refait pas tant qu'elle n'a pas bouge (`FileDesEtats::faire_le_tableau`).
-    let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, crate::etat_garde::OUVERTURE, ctx.aujourdhui);
+    let empreinte = crate::etat_garde::empreinte_de(&ctx.racine, None, ctx.aujourdhui);
     let rappels = crate::rappels::rappels(ctx).map_err(|e| e.reclasser(Classe::Refuse))?;
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let mut declarations = Vec::new();
@@ -820,7 +783,7 @@ pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
     }
     declarations.sort_by_key(|d| cle_d_urgence(d.en_retard, &d.butoir));
     let t = TableauCompagnie { le: ctx.aujourdhui, declarations, empreinte };
-    socle::ecriture::ecrire_json(&ctx.racine.join(TABLEAU), &t, 2)?;
+    socle::ecriture::ecrire_json(&TABLEAU.dans(&ctx.racine), &t, 2)?;
     Ok(t)
 }
 
@@ -917,8 +880,8 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, R<TableauCompagnie>)>, ga
             Ok(t) => (t.declarations, Some(t.le), None),
             Err(m) => (Vec::new(), None, Some(m.phrase)),
         };
-        let pt = decl.iter().filter(|d| d.pret.test).count();
-        let pr = decl.iter().filter(|d| d.pret.reel).count();
+        let pt = decl.iter().filter(|d| d.pret == Pret::Pour(Mode::Test)).count();
+        let pr = decl.iter().filter(|d| d.pret == Pret::Pour(Mode::Reel)).count();
         test_n += pt;
         reel_n += pr;
         test_k += usize::from(pt > 0);
@@ -965,7 +928,7 @@ pub(crate) fn tableau_garde(inst: &Path) -> R<TableauAdministrateur> {
     let par = rattachees(inst)?
         .into_iter()
         .map(|r| {
-            let f = r.join(TABLEAU);
+            let f = TABLEAU.dans(&r);
             let t = if f.is_file() { socle::forme::lire_fichier(&f, "Le tableau gardé de la compagnie ne se lit pas.") } else { Err(socle::echec::refus("Pas encore lu : le tableau se fait.")) };
             (r, t)
         })
@@ -1036,13 +999,12 @@ pub struct Resultat {
     pub suivre: Option<ASuivre>,
 }
 
-/// CE QUI SE SUIT APRES UN DEPOT REEL DU GROUPE : la compagnie (son dossier, relatif a l'installation, tel que le registre
-/// le nomme) et la charge de sa route `suivre-depot`.
+/// CE QUI SE SUIT APRES UN DEPOT REEL DU GROUPE : la compagnie (son dossier rattache, tel que le registre le nomme) et la
+/// charge de sa route `suivre-depot`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ASuivre {
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    pub dossier: PathBuf,
+    pub dossier: DossierRattache,
     #[serde(flatten)]
     pub(crate) depot: crate::depots::ChargeSuivre,
 }
@@ -1076,9 +1038,9 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
     let groupe = rattachees(inst)?;
     let mut suivies = Vec::new();
     for s in a_suivre {
-        let racine = inst.join(&s.dossier);
+        let racine = s.dossier.racine(inst);
         if !groupe.contains(&racine) {
-            return Err(erreur(Classe::Refuse, format!("La compagnie « {} » n'est pas rattachée à l'administrateur : rien n'est suivi.", s.dossier.display())));
+            return Err(erreur(Classe::Refuse, format!("La compagnie « {} » n'est pas rattachée à l'administrateur : rien n'est suivi.", s.dossier)));
         }
         let ctx = crate::service::contexte(&o_de(o, &racine))?;
         let suivi = crate::depots::suivre_depot(&ctx, s.depot)?;
@@ -1100,7 +1062,7 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
 #[derive(Debug, Serialize)]
 pub struct DepotGroupe {
     pub phrase: String,
-    pub reel: bool,
+    pub mode: Mode,
     pub partis: usize,
     pub refuses: usize,
     pub resultats: Vec<Resultat>,
@@ -1113,11 +1075,11 @@ impl Dite for DepotGroupe {
     }
 }
 
-/// LE DEPOT GROUPE : ce qui est pret (`reel` : teste et conforme ; sinon : ecrit et pas encore essaye) dans les compagnies
+/// LE DEPOT GROUPE : ce qui est pret dans `mode` (en reel : teste et conforme ; en test : ecrit et pas encore essaye) dans les compagnies
 /// de l'administrateur part, compagnie par compagnie, par la route `deposer` de chacune. `motdepasse` (reel) : celui que la
 /// fenetre a fait taper au moment de l'acte ; sans lui, le moteur le demande a un humain. Rend, declaration par
 /// declaration, ce qui est parti et ce qui a refuse, et le tableau refait.
-pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::secret::Secret>) -> R<DepotGroupe> {
+pub fn deposer(o: &Options, inst: &Path, mode: Mode, motdepasse: Option<socle::secret::Secret>) -> R<DepotGroupe> {
     let groupe = rattachees(inst)?;
     if groupe.is_empty() {
         return Err(erreur(Classe::Refuse, "Ce logiciel n'a pas d'administrateur : chaque compagnie dépose depuis sa page. Rien n'est parti."));
@@ -1130,7 +1092,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
         match refaire_compagnie(o, r) {
             Ok(t) => {
                 for d in t.declarations {
-                    if if reel { d.pret.reel } else { d.pret.test } {
+                    if d.pret == Pret::Pour(mode) {
                         a_faire.push((r.clone(), nom.clone(), d));
                     }
                 }
@@ -1140,16 +1102,15 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
     }
     // RIEN DE PRET : rien ne part, et la phrase dit pourquoi (ce n'est pas un refus : il n'y a rien a corriger).
     if a_faire.is_empty() {
-        let phrase = if reel {
-            "Aucune déclaration n'est prête à partir pour de vrai : une déclaration part en réel après un test revenu conforme."
-        } else {
-            "Aucune déclaration écrite n'attend son dépôt de test."
+        let phrase = match mode {
+            Mode::Reel => "Aucune déclaration n'est prête à partir pour de vrai : une déclaration part en réel après un test revenu conforme.",
+            Mode::Test => "Aucune déclaration écrite n'attend son dépôt de test.",
         };
         let refuses = resultats.len();
-        return Ok(DepotGroupe { phrase: phrase.into(), reel, partis: 0, refuses, resultats, tableau: tableau(o, inst, false)? });
+        return Ok(DepotGroupe { phrase: phrase.into(), mode, partis: 0, refuses, resultats, tableau: tableau(o, inst, false)? });
     }
     let mut mdp: Option<socle::secret::Secret> = None;
-    if reel {
+    if mode == Mode::Reel {
         let m = match motdepasse.filter(|m| !m.devoiler().is_empty()) {
             Some(m) => m,
             None => {
@@ -1167,16 +1128,15 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
         mdp = Some(m);
     }
     for (racine, nom, d) in &a_faire {
-        let charge = en_charge(ChargeDeposer::de(designation(d)?, reel, mdp.clone()))?;
+        let charge = en_charge(ChargeDeposer::de(designation(d)?, mode, mdp.clone()))?;
         let avant = envois::journal::lu(racine)?.lignes.len();
         let rep = crate::servir_la_route(&o_de(o, racine), Route::Deposer, &charge);
         compagnie::coffre::oublier_mot_de_passe_tape();
         let (parti, phrase, refus, classe, flux) = match rep.en_refus() {
             Ok(_) => {
-                let phrase = if reel {
-                    "Partie pour de vrai : son bilan arrive avec les retours."
-                } else {
-                    "Partie en test, compte rendu attendu : le dépôt réel se fait une fois le test revenu conforme."
+                let phrase = match mode {
+                    Mode::Reel => "Partie pour de vrai : son bilan arrive avec les retours.",
+                    Mode::Test => "Partie en test, compte rendu attendu : le dépôt réel se fait une fois le test revenu conforme.",
                 };
                 // Le flux de ce qui est parti : la ligne que le depot a ecrite au journal des envois.
                 let journal = envois::journal::lu(racine)?;
@@ -1192,9 +1152,9 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
             Genre::Dsn | Genre::Signalement => Some(Quoi::Dsn),
             Genre::HorsDsn => None,
         };
-        let suivre = match (reel && parti, quoi, racine.strip_prefix(inst)) {
-            (true, Some(quoi), Ok(dossier)) => Some(ASuivre {
-                dossier: dossier.to_path_buf(),
+        let suivre = match (mode, parti, quoi) {
+            (Mode::Reel, true, Some(quoi)) => DossierRattache::de(inst, racine)?.map(|dossier| ASuivre {
+                dossier,
                 depot: crate::depots::ChargeSuivre { quoi, flux: flux.clone(), mois: d.mois },
             }),
             _ => None,
@@ -1205,14 +1165,14 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<socle::s
     let refuses = resultats.len() - partis;
     let refuses_dit: String = (refuses > 0).then(|| format!(", {}", socle::ecran::compte(refuses, "refusée", "refusées"))).into_iter().collect();
     let phrase = format!("{}{}.", socle::ecran::compte(partis, "déclaration partie", "déclarations parties"), refuses_dit);
-    Ok(DepotGroupe { phrase, reel, partis, refuses, resultats, tableau: tableau(o, inst, false)? })
+    Ok(DepotGroupe { phrase, mode, partis, refuses, resultats, tableau: tableau(o, inst, false)? })
 }
 
 /// La designation de la declaration `d` du tableau : la DSN de son mois, ou le signalement ecrit.
 fn designation(d: &Declaration) -> R<Designation> {
     match (d.genre, d.mois, &d.fichier) {
         (Genre::Dsn, Some(m), _) => Ok(Designation::du_mois(Quoi::Dsn, m)),
-        (_, _, Some(f)) => Ok(Designation::du_fichier(f.to_string_lossy().into_owned())),
+        (_, _, Some(f)) => Ok(Designation::du_fichier(f.clone())),
         _ => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une déclaration prête sans mois ni fichier.")),
     }
 }

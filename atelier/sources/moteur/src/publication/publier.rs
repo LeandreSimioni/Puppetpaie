@@ -17,7 +17,7 @@ use compagnie::maj::{
 };
 
 use socle::echec::{au_chemin, du_disque, refus, R};
-use socle::fichiers::{Empreinte, NomDeFichier};
+use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 
 /// La variable d'environnement ou le flux « Publier » pose la graine (base64) : lue par `publier_depuis_l_environnement`,
 /// jamais affichee.
@@ -71,12 +71,18 @@ fn fichiers(code: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> R<()> {
     Ok(())
 }
 
-/// Ce qu'une compagnie fictive porte sur un poste sans que ce soit la compagnie livree : ses secrets et son jeton (une
-/// fictive ouverte pose elle aussi un coffre), le journal de la fenetre. Ni l'archive ni le depot ne les portent (les memes
+/// Ce qu'une compagnie fictive porte sur un poste sans que ce soit la compagnie livree : ses secrets et son jeton
+/// Google (une fictive ouverte pose elle aussi un coffre), le journal de la fenetre. Ni l'archive ni le depot ne les portent (les memes
 /// exclusions que le `.gitignore` du depot public, « LES COMPAGNIES FICTIVES »).
 /// La marque d'une livraison (`LIVREE`) non plus : la livraison l'ajoute elle-meme.
-const HORS_D_UNE_FICTIVE_LIVREE: [&str; 5] =
-    ["config/coffre.bin", routes::coffre::JETON_GOOGLE, "config/.jeton-interface", compagnie::installation::JOURNAL_INTERFACE, LIVREE];
+fn hors_d_une_fictive_livree() -> [CheminRelatif; 4] {
+    [
+        CheminRelatif::from(socle::fichiers::CONFIG).joint(&compagnie::coffre::FICHIER),
+        socle::fichiers::JETON_GOOGLE,
+        compagnie::installation::JOURNAL_INTERFACE,
+        LIVREE.into(),
+    ]
+}
 
 /// LES COMPAGNIES FICTIVES LIVREES, a cote du logiciel (`<code>/../fictives/`) : les fichiers que porte l'archive
 /// d'installation (`archiver_installation`), chemins relatifs a `fictives/`, dans l'ordre des noms. Une fictive est un dossier que son marqueur dit fictif
@@ -108,7 +114,7 @@ fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
         fichiers(&e.path(), Path::new(""), &mut dans)?;
         for r in dans {
             let rs = r.to_string_lossy().replace('\\', "/");
-            if !HORS_D_UNE_FICTIVE_LIVREE.contains(&rs.as_str()) {
+            if !hors_d_une_fictive_livree().iter().any(|c| c.texte() == rs) {
                 out.push(Path::new(&nom).join(r));
             }
         }
@@ -486,7 +492,7 @@ mod tests {
         let f = base.join("fictives").join("fictive-essai");
         std::fs::create_dir_all(f.join(socle::fichiers::CONFIG)).unwrap();
         std::fs::write(f.join("COPIE-DE-DEVELOPPEMENT.json"), "{\"copie_de\": \"compagnie fictive (essai)\", \"quoi\": \"essai\"}").unwrap();
-        std::fs::write(f.join(droit::contexte::ENTREPRISE), "{\"nom_affichage\": \"Essai\"}").unwrap();
+        std::fs::write(droit::contexte::ENTREPRISE.dans(&f), "{\"nom_affichage\": \"Essai\"}").unwrap();
         std::fs::write(base.join("fictives").join("LISEZ-MOI.md"), "Les fictives.\n").unwrap();
     }
 

@@ -24,8 +24,11 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use socle::date::Jour;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::date::{Jour, Periode};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
+
+/// La table livree des organismes, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("organismes-base.json");
 use socle::echec::R;
 
 use crate::contexte::{Contexte, ORGANISMES};
@@ -355,8 +358,8 @@ forme_notee! {
         /// La population : `intermittent` ou `permanent` (`ParNature`).
         #[serde(rename = "nature", default, deserialize_with = "crate::natures::population::option::deserialize")]
         pub population: Option<crate::natures::Paie>,
-        pub effectif_au_moins: Option<i64>,
-        pub effectif_sous: Option<i64>,
+        pub effectif_au_moins: Option<socle::grandeurs::Effectif>,
+        pub effectif_sous: Option<socle::grandeurs::Effectif>,
     }
 }
 
@@ -446,7 +449,7 @@ pub struct Niveau {
 /// LA LECTURE DE `donnees/organismes-base.json`, la seule, une fois tant que le fichier ne change pas.
 pub fn base() -> R<Arc<Base>> {
     static CACHE: OnceLock<FormeGardee<Base>> = OnceLock::new();
-    forme_en_cache(&CACHE, "organismes-base.json", "La table livrée des organismes ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &BASE, "La table livrée des organismes ne se lit pas : le signaler au développeur.", Ok)
 }
 
 impl Base {
@@ -504,9 +507,9 @@ pub struct Adhesion {
 }
 
 impl Adhesion {
-    /// L'adhesion vaut-elle pour la periode `debut`..=`fin` (`adhesions::en_vigueur`) ?
-    pub fn en_vigueur(&self, debut: &Jour, fin: &Jour) -> bool {
-        crate::adhesions::en_vigueur(self.depuis, self.jusqu_a, debut, fin)
+    /// L'adhesion vaut-elle pour la periode `p` (`adhesions::en_vigueur`) ?
+    pub fn en_vigueur(&self, p: &Periode) -> bool {
+        crate::adhesions::en_vigueur(self.depuis, self.jusqu_a, p)
     }
 }
 
@@ -646,11 +649,11 @@ impl<'de> Deserialize<'de> for Saisies {
 
 /// LA LECTURE DE `config/organismes.json`, la seule ; absent, il ne dit rien.
 pub fn fichier_organismes(ctx: &Contexte) -> R<FichierOrganismes> {
-    let p = ctx.racine.join(socle::fichiers::CONFIG).join(ORGANISMES);
+    let p = ORGANISMES.dans(&ctx.racine);
     if !p.is_file() {
         return Ok(FichierOrganismes::default());
     }
-    crate::fiche::lire_fichier(&p, &format!("config/{}", ORGANISMES))
+    crate::fiche::lire_fichier(&p, ORGANISMES.texte())
 }
 
 /// Le numero d'une reference d'adhesion (S21.G00.15.005) : une reference qui n'en est pas un se refuse.
@@ -763,8 +766,8 @@ impl Attendu {
     }
 
     /// Le contrat vaut-il pour la periode (`adhesions::en_vigueur`) ?
-    pub fn couvre(&self, (debut, fin): &(Jour, Jour)) -> bool {
-        crate::adhesions::en_vigueur(self.depuis, self.jusqu_a, debut, fin)
+    pub fn couvre(&self, p: &Periode) -> bool {
+        crate::adhesions::en_vigueur(self.depuis, self.jusqu_a, p)
     }
 }
 
@@ -774,7 +777,7 @@ pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
     let base = base()?;
     let mut out: Vec<Attendu> = base.contrats.tous.iter().map(Attendu::from).collect();
     // L'exemption de la CASC-SVP se lit avec l'effectif de l'annee du contexte (le mois que l'on compose), pas du jour.
-    if let Some(casc) = crate::adhesions::casc_svp(&ctx.entreprise, &ctx.effectif()?, ctx.lue_au.an)? {
+    if let Some(casc) = crate::adhesions::casc_svp(&ctx.entreprise, &ctx.effectif()?, ctx.lue_au.annee())? {
         out.push(Attendu {
             cle: CASC,
             libelle: Some(casc.libelle.to_string()),
@@ -956,10 +959,10 @@ impl Organismes {
         self.adhesions_prevoyance.iter().find(|a| a.reference == *reference)
     }
 
-    /// L'adhesion `reference` vaut-elle pour la periode `debut`..=`fin` ? Une reference qu'aucune adhesion ne porte (une
+    /// L'adhesion `reference` vaut-elle pour la periode `p` ? Une reference qu'aucune adhesion ne porte (une
     /// contribution de branche du bareme) n'a pas de date.
-    pub fn adhesion_en_vigueur(&self, reference: &ReferenceDAdhesion, debut: &Jour, fin: &Jour) -> bool {
-        self.adhesion(reference).is_none_or(|a| a.en_vigueur(debut, fin))
+    pub fn adhesion_en_vigueur(&self, reference: &ReferenceDAdhesion, p: &Periode) -> bool {
+        self.adhesion(reference).is_none_or(|a| a.en_vigueur(p))
     }
 }
 
@@ -976,7 +979,7 @@ pub fn composer(
     saisi: &[Adhesion],
     mut prises: Vec<u32>,
     saisies: &BTreeMap<CleDeContrat, Saisie>,
-    exiger: Option<(&(Jour, Jour), bool)>,
+    exiger: Option<(&Periode, bool)>,
 ) -> R<Organismes> {
     // Chaque contrat retenu, avec sa reference quand le texte ou la saisie la disent.
     let mut retenus: Vec<(Attendu, Option<ReferenceDAdhesion>, ReferenceDeContrat, IdentifiantDOrganisme)> = Vec::new();

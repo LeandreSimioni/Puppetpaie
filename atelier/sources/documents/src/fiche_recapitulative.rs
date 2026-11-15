@@ -17,7 +17,7 @@ use crate::tableaux_export::{pdf_tableau, qui, totaliser, Section, Tableau, R, T
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, Echec};
 use socle::mois::Mois;
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 
 /// Un refus qui dit « rien sur la periode » : l'etat est laisse de cote.
 fn est_erreur_operation(e: &Echec) -> bool {
@@ -45,10 +45,14 @@ pub struct CoutsDeLAnnee {
 #[derive(Debug, Serialize)]
 pub struct Cout {
     pub bulletins: i64,
-    pub brut: Decimal,
-    pub charges: Decimal,
-    pub cout: Decimal,
-    pub prevu: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub brut: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub charges: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub cout: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub prevu: Montant,
     pub incomplet: bool,
 }
 
@@ -91,13 +95,13 @@ impl<'a> Recapitulatifs<'a> {
         }
         struct Cumul {
             bulletins: i64,
-            brut: Decimal,
-            charges: Decimal,
-            cout: Decimal,
-            prevu: Decimal,
+            brut: Montant,
+            charges: Montant,
+            cout: Montant,
+            prevu: Montant,
             incomplet: bool,
         }
-        let zero = socle::num::zero2();
+        let zero = Montant::ZERO;
         let mut cotes: [Vec<(String, Cumul)>; 2] = [Vec::new(), Vec::new()];
         for l in etats_paie::lignes_livre(self.ctx, &p, &mut Vec::new(), &self.demande.departs)? {
             for (i, cle) in [l.spectacle.as_str(), l.cle_salarie.as_str()].into_iter().enumerate() {
@@ -118,16 +122,16 @@ impl<'a> Recapitulatifs<'a> {
                 // `incomplet`.
                 let d = &mut cotes[i][pos].1;
                 if l.mois > courant {
-                    d.prevu += l.cout_employeur.into_iter().sum::<Decimal>();
+                    d.prevu = l.cout_employeur.into_iter().fold(d.prevu, |a, m| a + m);
                     continue;
                 }
                 d.bulletins += 1;
-                d.brut += l.brut.into_iter().sum::<Decimal>();
-                d.charges += l.cotisations_patronales.into_iter().sum::<Decimal>();
+                d.brut = l.brut.into_iter().fold(d.brut, |a, m| a + m);
+                d.charges = l.cotisations_patronales.into_iter().fold(d.charges, |a, m| a + m);
                 if l.cout_employeur.is_none() {
                     d.incomplet = true;
                 }
-                d.cout += l.cout_employeur.into_iter().sum::<Decimal>();
+                d.cout = l.cout_employeur.into_iter().fold(d.cout, |a, m| a + m);
             }
         }
         let [spectacles, salaries] = cotes.map(|v| {
@@ -174,7 +178,7 @@ impl<'a> Recapitulatifs<'a> {
             let sections: Vec<Section> = t
                 .sections
                 .iter()
-                .map(|s| Section::nouvelle(s.libelle.clone(), s.lignes.iter().filter(|l| l.texte("cle_salarie") == cle.as_str()).cloned().collect()))
+                .map(|s| Section::nouvelle(s.libelle.clone(), s.lignes.iter().filter(|l| l.texte(crate::tableaux_export::ColonneDEtat::CleSalarie) == cle.as_str()).cloned().collect()))
                 .filter(|s| !s.lignes.is_empty())
                 .collect();
             if sections.is_empty() {

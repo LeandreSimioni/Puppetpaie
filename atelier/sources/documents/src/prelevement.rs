@@ -19,7 +19,7 @@ use socle::echec::R;
 fn deja_declare(ctx: &Contexte, pa: &Paie, lus: &mut Lus, departs: &engagement::departs::Departs) -> R<Option<Versement>> {
     let e = &pa.engagement;
     let Some(numero) = e.numero.clone() else { return Ok(None) };
-    let fin = e.fin_periode();
+    let fin = e.periode_payee()?.fin();
     let mois = fin.mois_civil();
     if !lus.objets.contains_key(&mois) {
         lus.objets.insert(mois, engagement::stock::objets_du_mois(&ctx.racine, mois)?);
@@ -68,21 +68,21 @@ pub enum Prelevement {
 }
 
 impl Prelevement {
-    pub fn prelevement(&self) -> socle::num::Decimal {
+    pub fn prelevement(&self) -> socle::grandeurs::Montant {
         match self {
             Prelevement::Calcule(v) => v.prelevement,
             Prelevement::Importe(p) => p.prelevement,
         }
     }
 
-    pub fn abattement(&self) -> Option<socle::num::Decimal> {
+    pub fn abattement(&self) -> Option<socle::grandeurs::Montant> {
         match self {
             Prelevement::Calcule(v) => Some(v.abattement),
             Prelevement::Importe(_) => None,
         }
     }
 
-    pub fn montant_soumis(&self) -> Option<socle::num::Decimal> {
+    pub fn montant_soumis(&self) -> Option<socle::grandeurs::Montant> {
         match self {
             Prelevement::Calcule(v) => Some(v.montant_soumis),
             Prelevement::Importe(_) => None,
@@ -96,11 +96,11 @@ impl Prelevement {
         }
     }
 
-    /// Le taux, son echelle gardee ; `None` : les pieces d'une paie importee ne le disent pas.
-    pub fn taux(&self) -> R<Option<socle::num::Decimal>> {
+    /// Le taux ; `None` : les pieces d'une paie importee ne le disent pas.
+    pub fn taux(&self) -> Option<droit::pas::TauxDePas> {
         match self {
-            Prelevement::Calcule(v) => v.taux.dec().map(Some),
-            Prelevement::Importe(p) => Ok(p.taux),
+            Prelevement::Calcule(v) => Some(v.taux),
+            Prelevement::Importe(p) => p.taux,
         }
     }
 }

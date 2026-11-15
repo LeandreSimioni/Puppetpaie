@@ -156,7 +156,7 @@ pub fn premier_mois_du(ctx: &Contexte) -> R<Option<Mois>> {
         return Ok(None);
     }
     let journal = envois::journal::lu(&ctx.racine)?;
-    if journal.lignes.iter().any(|l| l.acte() == envois::journal::Acte::Dsn) {
+    if journal.lignes.iter().any(|l| l.acte() == documents::Acte::Dsn) {
         return Ok(None);
     }
     Ok(Some(ctx.aujourdhui.mois_civil()))

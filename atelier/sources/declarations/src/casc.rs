@@ -7,7 +7,7 @@ use socle::echec::R;
 use socle::mois::Mois;
 
 /// Ce que la compagnie dit de ses mois Conges Spectacles regularises hors DSN, sous sa racine.
-pub const CASC_SVP: &str = "config/casc-svp.json";
+pub const CASC_SVP: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/casc-svp.json");
 
 /// `config/casc-svp.json` : les annees regularisees hors DSN, dans l'ordre ou elles ont ete notees.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -33,7 +33,7 @@ pub struct RegularisationNotee {
 
 /// `config/casc-svp.json` de la compagnie, lu par sa forme ; `None` s'il n'existe pas (aucune annee notee).
 pub fn lue(ctx: &Contexte) -> R<Option<CascSvp>> {
-    let p = ctx.racine.join(CASC_SVP);
+    let p = CASC_SVP.dans(&ctx.racine);
     if !p.exists() {
         return Ok(None);
     }

@@ -44,11 +44,12 @@ use std::path::{Path, PathBuf};
 
 use rust_decimal::Decimal;
 
-use documents::bulletin::fmt_heures;
+use socle::texte::nombre_dit;
 use documents::{PieceDuMois, SorteDePieceProduite};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
+use socle::grandeurs::Montant;
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins. `pour` : celui a qui il s'adresse, tel que
 /// l'envoyeur le retrouve apres l'envoi, du type de ce qu'il est (un salarie : `IdSalarie`) ; l'envoi ne le lit pas.
@@ -157,14 +158,14 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
         let mut dates = e.dates_travail.clone();
         dates.sort();
         if dates.is_empty() {
-            dates.push(e.debut);
+            dates.push(e.contrat().debut());
         }
         let mut volume: Vec<String> = Vec::new();
-        if e.cachets != 0 {
-            volume.push(format!("{} cachet{}", e.cachets, if e.cachets > 1 { "s" } else { "" }));
+        if !e.cachets.est_nul() {
+            volume.push(format!("{} cachet{}", socle::grandeurs::ecrit::sans_zero::dit(e.cachets), if e.cachets > socle::grandeurs::Cachets::UN { "s" } else { "" }));
         }
-        if let Some(h) = e.heures.filter(|h| !h.is_zero()) {
-            volume.push(format!("{} heure{}", fmt_heures(h), if h > Decimal::ONE { "s" } else { "" }));
+        if let Some(h) = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero()) {
+            volume.push(format!("{} heure{}", nombre_dit(h), if h > Decimal::ONE { "s" } else { "" }));
         }
         let (premier, dernier) = (dates[0], dates[dates.len() - 1]);
         let periode = if premier == dernier {
@@ -178,10 +179,10 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
             volume.join(" et ")
         };
         let mut ligne = format!("  - {} : {}, {} brut", periode, quoi, socle::texte::euros(p.brut));
-        if e.a_cheval() && !e.dernier_mois() {
+        if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = e.place_du_mois()? {
             // Septembre 2026 : France Travail n'a edite AUCUNE attestation pour le contrat du 29/09 au 16/10 -- elle
             // vient a la fin du contrat. Le salarie declare quand meme ses jours du mois.
-            let fin = e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de date de fin"))?;
+            let fin = e.contrat().fin().ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de date de fin"))?;
             ligne.push_str(&format!(" (contrat en cours jusqu'au {} : son attestation viendra à la fin)", fin.jj_mm_aaaa()));
         }
         lignes.push(ligne);
@@ -254,20 +255,19 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
         let e = &p.engagement;
         let mut dates = e.dates_travail.clone();
         dates.sort();
-        let heures = e.heures.filter(|h| !h.is_zero());
+        let heures = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero());
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
-            debut: e.debut,
-            fin: e.fin,
+            contrat: e.contrat(),
             spectacle,
             jours: dates,
             cachets: e.cachets,
             heures,
-            brut: p.brut,
-            net: p.net_a_payer,
+            brut: p.brut.decimal(),
+            net: p.net_a_payer.decimal(),
         });
-        brut += p.brut;
-        net += p.net_a_payer;
+        brut += p.brut.decimal();
+        net += p.net_a_payer.decimal();
     }
     Ok(ResumeDePaie { contrats, brut, net })
 }
@@ -285,11 +285,11 @@ pub struct ResumeDePaie {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContratResume {
-    pub debut: socle::date::Jour,
-    pub fin: Option<socle::date::Jour>,
+    pub contrat: socle::date::PeriodeOuverte,
     pub spectacle: Option<String>,
     pub jours: Vec<socle::date::Jour>,
-    pub cachets: i64,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
+    pub cachets: socle::grandeurs::Cachets,
     /// Ses heures, s'il en a, ecrites comme le bulletin les ecrit (`heures_ecrites`).
     #[serde(default, skip_serializing_if = "Option::is_none", with = "heures_ecrites")]
     pub heures: Option<Decimal>,
@@ -297,20 +297,20 @@ pub struct ContratResume {
     pub net: Decimal,
 }
 
-/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`fmt_heures` : « 13,5 », « 24 ») et relues dans
+/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`socle::texte::nombre_dit` : « 13,5 », « 24 ») et relues dans
 /// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
 mod heures_ecrites {
     use serde::{Deserialize, Serialize};
     use socle::num::Decimal;
 
     pub fn serialize<S: serde::Serializer>(h: &Option<Decimal>, s: S) -> Result<S::Ok, S::Error> {
-        h.map(super::fmt_heures).serialize(s)
+        h.map(super::nombre_dit).serialize(s)
     }
 
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Decimal>, D::Error> {
         let Some(t) = Option::<String>::deserialize(d)? else { return Ok(None) };
         let h = socle::num::dec_texte(&t.replacen(',', ".", 1)).map_err(|e| serde::de::Error::custom(e.phrase))?;
-        if super::fmt_heures(h) != t {
+        if super::nombre_dit(h) != t {
             return Err(serde::de::Error::custom(format!("heures {} : elles s'écrivent comme le bulletin les écrit (« 13,5 »).", socle::fichiers::repr(&t))));
         }
         Ok(Some(h))
@@ -325,7 +325,12 @@ mod heures_ecrites {
 pub fn ce_qui_a_change(faits: &[String], ancien: Option<&ResumeDePaie>, nouveau: Option<&ResumeDePaie>) -> Vec<String> {
     let mut out: Vec<String> = faits.iter().map(|f| format!("  - {}", f)).collect();
     if let (Some(a), Some(n)) = (ancien, nouveau) {
-        let (brut_a, brut_n, net_a, net_n) = (socle::texte::euros(a.brut), socle::texte::euros(n.brut), socle::texte::euros(a.net), socle::texte::euros(n.net));
+        let (brut_a, brut_n, net_a, net_n) = (
+            socle::texte::euros(Montant::du_decimal(a.brut)),
+            socle::texte::euros(Montant::du_decimal(n.brut)),
+            socle::texte::euros(Montant::du_decimal(a.net)),
+            socle::texte::euros(Montant::du_decimal(n.net)),
+        );
         if brut_a != brut_n {
             out.push(format!("  - Salaire brut : {} → {}", brut_a, brut_n));
         }

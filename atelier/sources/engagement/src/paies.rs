@@ -13,12 +13,12 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::paie_ecrite::PaieEcrite;
-use crate::stock::{self, Dossier, FichierDuStock, Objet, Tenu};
+use crate::stock::{self, Dossier, FichierDuStock, Objet, Tenu, VersionDeLEngagement};
 use socle::mois::Mois;
 use socle::echec::R;
 
 /// Le dossier des paies, sous les donnees de la compagnie.
-pub(crate) const DOSSIER: &str = "paies";
+pub(crate) const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("paies");
 
 /// LE FICHIER DES PAIES D'UN MOIS.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -49,7 +49,7 @@ struct Entree {
     salarie: droit::contexte::IdSalarie,
     numero: crate::numeros::NumeroContrat,
     presente: Option<PaieEcrite>,
-    versions: BTreeMap<String, PaieEcrite>,
+    versions: BTreeMap<VersionDeLEngagement, PaieEcrite>,
 }
 
 /// Le fichier des paies de `mois` tel qu'il est sur le disque (l'archive de l'exercice) ; `None` s'il n'y est pas.
@@ -113,8 +113,8 @@ pub fn presente(o: &Objet, mois: Mois) -> R<Option<Arc<PaieEcrite>>> {
 }
 
 /// La paie de `mois` que la version passee `n` de l'engagement `o` avait ecrite ; `None` si elle n'en a pas.
-pub fn de_la_version(o: &Objet, n: u64, mois: Mois) -> R<Option<PaieEcrite>> {
-    Ok(entree(o, mois)?.and_then(|mut e| e.versions.remove(&n.to_string())))
+pub fn de_la_version(o: &Objet, n: VersionDeLEngagement, mois: Mois) -> R<Option<PaieEcrite>> {
+    Ok(entree(o, mois)?.and_then(|mut e| e.versions.remove(&n)))
 }
 
 /// Toutes les paies ecrites de `mois` de l'engagement `o` : la presente, puis celles des versions passees.
@@ -161,11 +161,11 @@ pub(crate) fn poser(o: &Objet, mois: Mois, paie: Option<PaieEcrite>) -> R<()> {
 
 /// LA VERSION `n` DE L'ENGAGEMENT `o` DEVIENT PASSEE : la paie presente de chaque mois ou il en a une se garde sous son
 /// numero (`de_la_version`).
-pub(crate) fn garder_la_version(o: &Objet, n: u64) -> R<()> {
+pub(crate) fn garder_la_version(o: &Objet, n: VersionDeLEngagement) -> R<()> {
     for m in mois_ecrits(o)? {
         if let Some(p) = presente(o, m)? {
             ecrire(o, m, |e| {
-                e.versions.insert(n.to_string(), (*p).clone());
+                e.versions.insert(n, (*p).clone());
             })?;
         }
     }

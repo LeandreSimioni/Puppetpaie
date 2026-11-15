@@ -243,11 +243,11 @@ fn le_contrat_d_un_permanent_qui_continue_dit_son_debut_et_son_numero() {
     for charge in [
         json!({"salarie": cle, "nature": "cdi"}),
         json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15"}),
-        json!({"salarie": cle, "nature": "cdi", "debut": "2025-05-20", "numero": "00042", "salaire": "2400", "quotite": "151,67"}),
-        json!({"salarie": cle, "nature": "cdd", "debut": "2024-01-15", "numero": "00042", "salaire": "2400", "quotite": "151,67"}),
-        json!({"salarie": cle, "nature": "cdd", "debut": "2024-01-15", "fin": "2025-05-01", "numero": "00042", "salaire": "2400", "quotite": "151,67"}),
+        json!({"salarie": cle, "nature": "cdi", "debut": "2025-05-20", "numero": "00042", "salaire": "2400", "quotite": 151.67}),
+        json!({"salarie": cle, "nature": "cdd", "debut": "2024-01-15", "numero": "00042", "salaire": "2400", "quotite": 151.67}),
+        json!({"salarie": cle, "nature": "cdd", "debut": "2024-01-15", "fin": "2025-05-01", "numero": "00042", "salaire": "2400", "quotite": 151.67}),
         json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15", "numero": "00042"}),
-        json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15", "numero": "00042", "salaire": "0", "quotite": "151.67"}),
+        json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15", "numero": "00042", "salaire": "0", "quotite": 151.67}),
         json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15", "numero": "00042", "salaire": "2400"}),
     ] {
         assert_eq!(route(&racine, "importation-nature", charge.clone())["ok"], json!(false), "{}", charge);
@@ -291,7 +291,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     let i = &importes[0];
     assert_eq!((i.objet().carte().numero.as_ref().map(engagement::numeros::NumeroContrat::as_str), i.objet().carte().fin.map(|j| j.iso())), (Some("FU1.26.01"), Some("2026-12-03".to_string())));
     let paie = i.paies()[&socle::mois::Mois::nouveau(2026, 11).unwrap()].clone();
-    assert_eq!((paie.contrat.d_un_bulletin(), paie.net_a_payer.map(|n| n.to_string())), (false, Some("212.30".to_string())), "{:?}", paie);
+    assert_eq!((paie.contrat.d_un_bulletin(), paie.net_a_payer.map(|n| n.decimal().to_string())), (false, Some("212.30".to_string())), "{:?}", paie);
     assert!(paie.bulletin.is_some(), "le bulletin ne complete pas la paie de la DSN : {:?}", paie);
 
     let avant = engagements_ecrits(&racine);
@@ -313,7 +313,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     assert_eq!((decembre["importes"].clone(), decembre["ferme_aux_neufs"].clone()), (json!([]), Value::Null));
     let r = reussi(&route("contrats-en-cours", json!({"mois": "2026-12"}))).clone();
     let c = &r["contrats"][0];
-    assert_eq!((c["debut"].clone(), c["fin"].clone(), c["numero"].clone()), (json!("2026-11-20"), json!("2026-12-03"), json!("FU1.26.01")), "{}", r);
+    assert_eq!((c["contrat"]["du"].clone(), c["contrat"]["au"].clone(), c["numero"].clone()), (json!("2026-11-20"), json!("2026-12-03"), json!("FU1.26.01")), "{}", r);
     let mut e = c["engagement"].clone();
     e["lignes"] = json!([{"rubrique": "cachet", "quantite": 2, "taux": 150, "lieu": null, "dates": ["2026-12-02", "2026-12-03"], "planning": []}]);
     reussi(&crate::outils::valider(&racine, "2026-12", None, &e, jour));
@@ -335,7 +335,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     }
     let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
     let declares = engagement::cumul::lire_engagements(&ctx, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs).unwrap()).unwrap();
-    assert_eq!(declares.iter().map(|e| e.cachets).sum::<i64>(), 4, "{:?}", declares);
+    assert_eq!(declares.iter().map(|e| e.cachets).sum::<socle::grandeurs::Cachets>(), socle::grandeurs::Cachets::de_dates(4), "{:?}", declares);
 }
 
 /// Le certificat Congés Spectacles d'un salarie du test (`identite_a` : le Siret de `Compagnie des Essais`) ; le NIR,
@@ -386,7 +386,7 @@ fn les_certificats_conges_spectacles_seuls_puis_avec_les_bulletins() {
     assert_eq!(contrats.len(), 2, "{:?}", contrats);
     for c in &contrats {
         assert_eq!(c["atteste_par"], json!("certificat"));
-        assert_eq!((c["debut"].clone(), c["fin"].clone()), (json!("2026-01-14"), json!("2026-01-24")));
+        assert_eq!(c["periode"], json!({"du": "2026-01-14", "au": "2026-01-24"}));
         let attendu = if c["salarie"] == json!(a) { (2, 0, "590.00") } else { (0, 3, "468.00") };
         assert!(c["salarie"] == json!(a) || c["salarie"] == json!(t), "{}", c);
         assert_eq!((c["cachets"].as_i64().unwrap(), c["jours"].as_i64().unwrap(), c["brut"].as_str().unwrap()), attendu, "{}", c);
@@ -481,7 +481,7 @@ fn les_aem_en_pdf_seules_et_le_contrat_d_un_certificat_que_le_bulletin_remplace(
     assert_eq!(contrats.len(), 2, "{:?}", contrats);
     for c in &contrats {
         assert_eq!((&c["atteste_par"], &c["numero_objet"]), (&json!("AEM"), &json!("999Z99999901")), "{}", c);
-        assert_eq!((c["debut"].clone(), c["fin"].clone()), (json!("2026-01-14"), json!("2026-01-24")));
+        assert_eq!(c["periode"], json!({"du": "2026-01-14", "au": "2026-01-24"}));
         let attendu = if c["salarie"] == json!(a) { (0, 2, 2, "590.40") } else { (0, 0, 3, "468.15") };
         let n = |k: &str| c[k].as_i64().unwrap();
         assert_eq!((n("heures"), n("cachets"), n("jours"), c["brut"].as_str().unwrap()), attendu, "{}", c);
@@ -522,7 +522,7 @@ fn le_bulletin_d_un_mois_ne_remplace_que_ce_mois_du_certificat_et_l_emporte_sur_
     let attendus = |racine: &Path| {
         let mut contrats: Vec<(String, String, String, i64, String)> = contrats_importes(racine)
             .iter()
-            .map(|c| (c["atteste_par"].as_str().unwrap().into(), c["debut"].as_str().unwrap().into(), c["fin"].as_str().unwrap().into(), c["cachets"].as_i64().unwrap(), c["brut"].as_str().unwrap().into()))
+            .map(|c| (c["atteste_par"].as_str().unwrap().into(), c["periode"]["du"].as_str().unwrap().into(), c["periode"]["au"].as_str().unwrap().into(), c["cachets"].as_i64().unwrap(), c["brut"].as_str().unwrap().into()))
             .collect();
         contrats.sort();
         assert_eq!(

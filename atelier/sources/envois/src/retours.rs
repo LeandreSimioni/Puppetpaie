@@ -18,7 +18,8 @@ use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_L
 
 use droit::contexte::TypeDeParametreNeores;
 use droit::fiche::{Nic, Nir, Siren, Siret};
-use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
+use droit::nature_declaration::NatureDeLaDeclaration;
+use socle::mode::Mode;
 use droit::natures::{Fraction, ListeDeLaNorme, NumeroDOrdre};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
@@ -192,50 +193,66 @@ droit::codes_fermes! {
     }
 }
 
+socle::noms_fermes! {
+    /// LE FORMAT D'UNE PIECE DE RETOUR (« Format phase 3 » de la liste des retours, guide v6.8, l. 573-788).
+    FormatDuRetour, "Format de retour" {
+        /// Le schema des bilans (`lire_rapport`).
+        Harmonise = "harmonise",
+        /// Un accuse sans document : son statut dit tout.
+        Aucun = "aucun",
+        /// Une archive d'AER.
+        Pdf = "pdf",
+        /// Le format NEOReS (`lire_neores`, cahier technique depose dans `atelier/reference/sources/neores/`).
+        Neores = "neores",
+        /// Le compte rendu des organismes complementaires (`lire_crm_oc`, specification et schema V1.1.4 deposes dans
+        /// `gip-mds-api-dsn/`).
+        Oc = "oc",
+        /// Le format temporaire de l'AGIRC-ARRCO, que personne ne publie (le guide le cite, [7], sans le joindre), et qui
+        /// ne se traduit donc pas.
+        AgircArrco = "agirc-arrco",
+    }
+}
+
 impl NatureDuRetour {
     /// SA LIGNE de la liste des retours (guide v6.8, l. 573-788), pour les natures qu'une compagnie du spectacle recoit :
     /// son libelle (celui que le journal des envois ecrit, `RetourOrganisme.libelle`), l'organisme qui le rend (la
-    /// colonne « OPS ») et son format (« Format phase 3 ») : « harmonise », le schema des bilans (`lire_rapport`) ;
-    /// « aucun », un accuse sans document, son statut dit tout ; « pdf », une archive d'AER ; « neores », le format
-    /// NEOReS (`lire_neores`, cahier technique depose dans `atelier/reference/sources/neores/`) ; « oc », le compte
-    /// rendu des organismes complementaires (`lire_crm_oc`, specification et schema V1.1.4 deposes dans
-    /// `gip-mds-api-dsn/`) ; « agirc-arrco », le format temporaire de l'AGIRC-ARRCO, que personne ne publie (le guide le
-    /// cite, [7], sans le joindre), et qui ne se traduit donc pas. Le format de la nature 93 n'est pas rempli dans le
-    /// tableau : « harmonise » est une INFERENCE (la nature 95, de la meme DGFiP, a son exemple sous « Format DSN
+    /// colonne « OPS ») et son format (« Format phase 3 », `FormatDuRetour`). Le format de la nature 93 n'est pas rempli
+    /// dans le tableau : « harmonise » est une INFERENCE (la nature 95, de la meme DGFiP, a son exemple sous « Format DSN
     /// harmonise », § 6.3). Une autre nature de la liste n'a pas de fiche ici : elle se lit, se range et se dit par son
     /// code.
-    fn fiche(self) -> Option<(&'static str, &'static str, &'static str)> {
+    fn fiche(self) -> Option<(&'static str, &'static str, FormatDuRetour)> {
+        use FormatDuRetour::{AgircArrco, Aucun, Harmonise, Neores, Oc, Pdf};
         use NatureDuRetour as N;
         Some(match self {
-            N::AccuseDEnregistrement => ("Accuse d'enregistrement electronique / avis de rejet", "le point de dépôt (SI DSN)", "harmonise"),
-            N::CertificatDeConformite => ("Certificat de conformite / bilan d'anomalies", "le point de dépôt (SI DSN)", "harmonise"),
-            N::BilanDIdentification => ("Bilan d'identification des salaries", "le SI DSN", "harmonise"),
-            N::ControlesInterDeclarations => ("Controles inter-declarations / signalement AT-RT", "le SI DSN", "harmonise"),
-            N::ControlesArretSixMois => ("Controles arret de plus de 6 mois", "le SI DSN", "harmonise"),
-            N::ControlesTempsPartielTherapeutique => ("Controles temps partiel therapeutique", "le SI DSN", "harmonise"),
-            N::TauxAtMp => ("Compte-rendu metier taux AT/MP (notification de la Carsat)", "la CNAM (taux AT/MP)", "harmonise"),
-            N::AccuseFranceTravail => ("Accuse de reception France Travail", "France Travail", "aucun"),
-            N::CompteRenduCdduD => ("Compte-rendu metier CDDU-D", "France Travail", "harmonise"),
-            N::AerCdduD => ("AER CDDU-D (archive PDF)", "France Travail", "pdf"),
-            N::Fctu => ("AER ou compte-rendu metier FCTU", "France Travail", "harmonise"),
-            N::CompteRenduSpectacle => ("Compte-rendu metier « cinema, spectacle, expatries »", "France Travail", "harmonise"),
-            N::AerSpectacle => ("AER « cinema, spectacle » (archive PDF)", "France Travail", "pdf"),
-            N::AccuseDeDistributionOc => ("Accuse de distribution a l'organisme complementaire", "l'organisme complémentaire", "aucun"),
-            N::CompteRenduOc => ("Compte-rendu metier de l'organisme complementaire", "l'organisme complémentaire", "oc"),
-            N::AccuseUrssaf => ("Accuse de reception URSSAF", "l'Urssaf", "aucun"),
-            N::CompteRenduUrssafAgregees => ("Compte-rendu metier URSSAF, donnees agregees", "l'Urssaf", "harmonise"),
-            N::AccuseAgircArrco => ("Accuse de reception AGIRC-ARRCO", "l'AGIRC-ARRCO", "aucun"),
-            N::CompteRenduAgircArrco => ("Compte-rendu metier AGIRC-ARRCO", "l'AGIRC-ARRCO", "agirc-arrco"),
-            N::AccuseDgfip => ("Accuse de reception DGFiP", "la DGFiP", "aucun"),
-            N::CompteRenduDgfipAgregees => ("Compte-rendu metier DGFiP, donnees agregees", "la DGFiP", "harmonise"),
-            N::TauxPas => ("Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)", "la DGFiP", "harmonise"),
-            N::TauxSurTaux => ("Compte-rendu metier DGFiP, controles taux sur taux", "la DGFiP", "harmonise"),
-            N::BonusMalus => ("Compte-rendu metier bonus-malus contribution chomage", "l'Urssaf ou la MSA", "harmonise"),
-            N::Effectifs => ("Compte-rendu metier effectifs", "l'Urssaf ou la MSA", "neores"),
-            N::UrssafImmediat => ("Compte-rendu metier URSSAF H+4 (immediat)", "l'Urssaf", "neores"),
-            N::UrssafOpposable => ("Compte-rendu metier URSSAF J+5 (opposable)", "l'Urssaf", "neores"),
-            N::Identite => ("Compte-rendu metier identite", "le SI DSN", "neores"),
-            N::UrssafRappel => ("Compte-rendu metier URSSAF de rappel", "l'Urssaf", "neores"),
+            N::AccuseDEnregistrement => ("Accuse d'enregistrement electronique / avis de rejet", "le point de dépôt (SI DSN)", Harmonise),
+            N::CertificatDeConformite => ("Certificat de conformite / bilan d'anomalies", "le point de dépôt (SI DSN)", Harmonise),
+            N::BilanDIdentification => ("Bilan d'identification des salaries", "le SI DSN", Harmonise),
+            N::ControlesInterDeclarations => ("Controles inter-declarations / signalement AT-RT", "le SI DSN", Harmonise),
+            N::ControlesArretSixMois => ("Controles arret de plus de 6 mois", "le SI DSN", Harmonise),
+            N::ControlesTempsPartielTherapeutique => ("Controles temps partiel therapeutique", "le SI DSN", Harmonise),
+            N::TauxAtMp => ("Compte-rendu metier taux AT/MP (notification de la Carsat)", "la CNAM (taux AT/MP)", Harmonise),
+            N::AccuseFranceTravail => ("Accuse de reception France Travail", "France Travail", Aucun),
+            N::CompteRenduCdduD => ("Compte-rendu metier CDDU-D", "France Travail", Harmonise),
+            N::AerCdduD => ("AER CDDU-D (archive PDF)", "France Travail", Pdf),
+            N::Fctu => ("AER ou compte-rendu metier FCTU", "France Travail", Harmonise),
+            N::CompteRenduSpectacle => ("Compte-rendu metier « cinema, spectacle, expatries »", "France Travail", Harmonise),
+            N::AerSpectacle => ("AER « cinema, spectacle » (archive PDF)", "France Travail", Pdf),
+            N::AccuseDeDistributionOc => ("Accuse de distribution a l'organisme complementaire", "l'organisme complémentaire", Aucun),
+            N::CompteRenduOc => ("Compte-rendu metier de l'organisme complementaire", "l'organisme complémentaire", Oc),
+            N::AccuseUrssaf => ("Accuse de reception URSSAF", "l'Urssaf", Aucun),
+            N::CompteRenduUrssafAgregees => ("Compte-rendu metier URSSAF, donnees agregees", "l'Urssaf", Harmonise),
+            N::AccuseAgircArrco => ("Accuse de reception AGIRC-ARRCO", "l'AGIRC-ARRCO", Aucun),
+            N::CompteRenduAgircArrco => ("Compte-rendu metier AGIRC-ARRCO", "l'AGIRC-ARRCO", AgircArrco),
+            N::AccuseDgfip => ("Accuse de reception DGFiP", "la DGFiP", Aucun),
+            N::CompteRenduDgfipAgregees => ("Compte-rendu metier DGFiP, donnees agregees", "la DGFiP", Harmonise),
+            N::TauxPas => ("Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)", "la DGFiP", Harmonise),
+            N::TauxSurTaux => ("Compte-rendu metier DGFiP, controles taux sur taux", "la DGFiP", Harmonise),
+            N::BonusMalus => ("Compte-rendu metier bonus-malus contribution chomage", "l'Urssaf ou la MSA", Harmonise),
+            N::Effectifs => ("Compte-rendu metier effectifs", "l'Urssaf ou la MSA", Neores),
+            N::UrssafImmediat => ("Compte-rendu metier URSSAF H+4 (immediat)", "l'Urssaf", Neores),
+            N::UrssafOpposable => ("Compte-rendu metier URSSAF J+5 (opposable)", "l'Urssaf", Neores),
+            N::Identite => ("Compte-rendu metier identite", "le SI DSN", Neores),
+            N::UrssafRappel => ("Compte-rendu metier URSSAF de rappel", "l'Urssaf", Neores),
             _ => return None,
         })
     }
@@ -259,7 +276,7 @@ impl NatureDuRetour {
     }
 
     /// Son format, s'il a une fiche.
-    pub fn format(self) -> Option<&'static str> {
+    pub fn format(self) -> Option<FormatDuRetour> {
         self.fiche().map(|f| f.2)
     }
 
@@ -281,7 +298,7 @@ impl NatureDuRetour {
 }
 
 /// Le dossier des retours des organismes, sous la racine d'une compagnie.
-pub const RETOURS: &str = "retours";
+pub const RETOURS: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("retours");
 
 /// L'IDENTIFIANT D'UN FLUX : ce que la plate-forme donne a un depot, et par quoi elle range ses retours (« Identifiant du
 /// flux DSN », `depot.idflux` et `flux.id`, « [0-9A-Za-z.-_]* », [1,50] : guide d'implementation de l'API DSN v6.8,
@@ -1200,7 +1217,7 @@ fn lire_octets(o: &[u8]) -> R<Arbre> {
 pub struct Bilan {
     pub flux: IdDeFlux,
     pub recu_le: Option<Reception>,
-    pub essai_reel: Option<EssaiOuReel>,
+    pub essai_reel: Option<Mode>,
     pub etat_envoi: Option<Verdict>,
     pub etat_declaration: Option<Verdict>,
     pub mois: Option<socle::mois::Mois>,
@@ -1454,7 +1471,7 @@ pub struct DeclarationIdentifiee {
     pub siren: Option<Siren>,
     pub nic: Option<Nic>,
     pub etat: Option<Verdict>,
-    pub essai_reel: Option<EssaiOuReel>,
+    pub essai_reel: Option<Mode>,
     pub codes: Vec<String>,
 }
 
@@ -1467,7 +1484,7 @@ fn nature_du_retour(code: Option<&str>) -> R<Option<NatureDeLaDeclaration>> {
 /// L'envoi d'essai ou reel qu'un retour dit (S10.G00.00.005, que reprennent `essai_reel` d'un bilan, RO.B000.R013 d'un
 /// NEOReS et `CodeEnvoi` d'un compte rendu d'organisme complementaire), `None` s'il ne le dit pas : un code hors de la
 /// liste de la norme refuse le retour, qui ne se lit pas.
-fn essai_du_retour(code: Option<&str>) -> R<Option<EssaiOuReel>> {
+fn essai_du_retour(code: Option<&str>) -> R<Option<Mode>> {
     code_du_retour(code, "code d'envoi")
 }
 
@@ -1622,8 +1639,7 @@ pub struct Annonce {
     pub statut: Option<StatutDuRetour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    /// Une adresse vide se lit absente, comme `<url/>` dans la liste XML.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<Url>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub libelle: Option<String>,
@@ -1685,7 +1701,7 @@ struct RetoursJson {
 #[serde(deny_unknown_fields)]
 struct FluxJson {
     /// Un id vide se lit absent, comme `<id/>` dans la liste XML.
-    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    #[serde(default, deserialize_with = "socle::forme::absent_si_vide")]
     id: Option<IdDeFlux>,
     retour: Option<UnOuPlusieurs<RetourJson>>,
 }
@@ -1706,7 +1722,7 @@ struct RetourJson {
     statut: Option<StatutDuRetour>,
     id: Option<String>,
     /// Une adresse vide se lit absente, comme `<url/>` dans la liste XML.
-    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    #[serde(default, deserialize_with = "socle::forme::absent_si_vide")]
     url: Option<Url>,
 }
 
@@ -2749,7 +2765,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
             .filter(|x| x.enfants.is_empty() && !x.texte_net().is_empty() && local(&x.tag) != "type")
             .map(|x| DonneeCollective { nom: local(&x.tag).to_string(), valeur: x.texte_net().to_string() })
             .collect();
-        informations.push(InformationCollective { type_information: premier_texte(&arbre, c, &["type"]).to_string(), donnees });
+        informations.push(InformationCollective { type_information: TypeDInformationLu::du_texte(premier_texte(&arbre, c, &["type"])), donnees });
     }
     Ok(Some(Rapport {
         type_rapport,
@@ -2773,7 +2789,7 @@ pub struct Rapport {
     pub libelle: Option<String>,
     pub message: Option<String>,
     pub etat_envoi: Option<Verdict>,
-    pub essai_reel: Option<EssaiOuReel>,
+    pub essai_reel: Option<Mode>,
     pub declarations: Vec<DeclarationDuRapport>,
     pub anomalies: Vec<AnomalieDuRapport>,
     pub informations: Vec<InformationCollective>,
@@ -2805,12 +2821,46 @@ pub struct AnomalieDuRapport {
     pub salarie: String,
 }
 
-/// Une information collective d'un rapport (§2.6) : son type, et ses donnees.
+/// Une information collective d'un rapport (§2.6) : son type, quand il le dit, et ses donnees.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InformationCollective {
     #[serde(rename = "type")]
-    pub type_information: String,
+    pub type_information: Option<TypeDInformationLu>,
     pub donnees: Vec<DonneeCollective>,
+}
+
+socle::noms_fermes! {
+    /// LE TYPE D'UNE INFORMATION COLLECTIVE que le schema des bilans prevoit (VT2.2, §2.6,
+    /// `gip-mds-api-dsn/gip-mds-specifications-schema-bilans-vt2.2-20201118.txt` l. 291-294).
+    TypeDInformationCollective, "Type d'information collective" {
+        /// Accident du travail et maladie professionnelle.
+        Atmp = "atmp",
+        /// Bonus-malus contribution chomage.
+        Bmcc = "bmcc",
+    }
+}
+
+/// LE TYPE QU'UN RAPPORT DONNE A UNE INFORMATION COLLECTIVE : un type prevu, ou le texte lu d'un type que le schema ne
+/// prevoit pas, garde et dit tel : le lecteur des rapports lit au mieux, et une valeur inconnue ne devient pas une valeur
+/// connue. Il s'ecrit par son texte.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TypeDInformationLu {
+    Prevu(TypeDInformationCollective),
+    NonPrevu(String),
+}
+
+impl TypeDInformationLu {
+    /// Le type ecrit `texte` ; un texte blanc n'en dit aucun.
+    fn du_texte(texte: &str) -> Option<TypeDInformationLu> {
+        if texte.trim().is_empty() {
+            return None;
+        }
+        Some(match TypeDInformationCollective::du_nom(texte) {
+            Some(t) => TypeDInformationLu::Prevu(t),
+            None => TypeDInformationLu::NonPrevu(texte.to_string()),
+        })
+    }
 }
 
 /// Une donnee d'une information collective : son nom et sa valeur.
@@ -3097,7 +3147,7 @@ pub struct Neores {
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub produit_le: Option<socle::paris::Moment>,
     pub mois: Option<socle::mois::Mois>,
-    pub essai_reel: Option<EssaiOuReel>,
+    pub essai_reel: Option<Mode>,
     pub ordre: Option<NumeroDOrdre>,
     pub metier: Option<String>,
     pub conformite: Option<Verdict>,
@@ -3426,7 +3476,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CrmOc {
     pub type_crm: Option<TypeDeCrmOc>,
-    pub essai_reel: Option<EssaiOuReel>,
+    pub essai_reel: Option<Mode>,
     pub version: Option<String>,
     pub declarations: Vec<DeclarationOc>,
 }
@@ -3490,6 +3540,31 @@ pub struct RetourMetierOc {
     pub date_evenement: Option<socle::date::Jour>,
     pub salarie: Option<String>,
     pub contexte: Vec<ContexteOc>,
+}
+
+socle::noms_fermes! {
+    /// LE GENRE D'UN RETOUR METIER d'un compte rendu d'organisme complementaire, que dit la premiere lettre de son code :
+    /// « codes retour [...] de type "E" (erreur) ou de type "I" (information) » (schema CRM DSN OC P3 V1.1.4,
+    /// `gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt` l. 276).
+    GenreDeRetourOc, "Genre d'un retour métier" {
+        Erreur = "E",
+        Information = "I",
+    }
+}
+
+impl GenreDeRetourOc {
+    /// Celui que dit la premiere lettre du code `code` ; aucun pour une autre lettre.
+    pub fn du_code(code: &str) -> Option<GenreDeRetourOc> {
+        GenreDeRetourOc::TOUTES.iter().copied().find(|g| code.starts_with(g.nom()))
+    }
+
+    /// Son mot.
+    pub fn mot(self) -> &'static str {
+        match self {
+            GenreDeRetourOc::Erreur => "erreur",
+            GenreDeRetourOc::Information => "information",
+        }
+    }
 }
 
 /// Un `ContexteRetourMetier` : la rubrique, son libelle, la valeur et son libelle.

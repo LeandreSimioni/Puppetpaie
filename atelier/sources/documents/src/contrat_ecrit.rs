@@ -20,8 +20,7 @@ use crate::marqueurs::{ModeleLu, Valeurs};
 use droit::marqueurs::Marqueur;
 
 use crate::avenant::{de_devant, et, fait_le_brut, ligne_citee, remuneration_hors_brut};
-use crate::bulletin::fmt_eur;
-use socle::texte::{euros, virgule};
+use socle::texte::chiffres_en_euros;
 use droit::contexte::Contexte;
 use droit::natures::{self, Nature, NatureDeContrat};
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
@@ -61,7 +60,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     let eng = &paie.engagement;
     let nom = qui(m)?;
     // LE TERME (L1242-12, 2°) : un contrat a duree determinee le dit ; un CDI n'en a pas.
-    match eng.fin {
+    match eng.contrat.fin() {
         Some(f) => {
             m.insert(Marqueur::ContratFin, f.jj_mm_aaaa());
         }
@@ -103,8 +102,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
             continue;
         }
         if l.salaire_de_base {
-            base = Some(format!("un salaire mensuel brut de {}", euros(l.taux)));
-        } else if l.montant > Decimal::ZERO {
+            base = Some(format!("un salaire mensuel brut de {}", l.paiement().taux().dit()));
+        } else if l.montant.decimal() > Decimal::ZERO {
             morceaux.push(ligne_citee(l));
         }
     }
@@ -118,8 +117,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     if let Some(h) = remuneration_hors_brut(&paie.remuneration) {
         m.insert(Marqueur::RemunerationHorsBrut, h);
     }
-    m.insert(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
-    m.insert(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
+    m.insert(Marqueur::RemunerationBrut, chiffres_en_euros(paie.brut));
+    m.insert(Marqueur::RemunerationNetEstime, chiffres_en_euros(paie.net_a_payer));
     // LA PERIODICITE DU PAIEMENT (R1221-34, 11°) : une fois par mois (L3242-1). INFERENCE : par virement, comme le contrat
     // d'engagement le dit.
     m.insert(Marqueur::ContratPaiement, "chaque mois, par virement".into());
@@ -130,10 +129,12 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     // LA DUREE DU TRAVAIL (R1221-34, 12°) : la quotite du contrat, en heures par mois ; sans elle, celle que la DSN
     // declare (S21.G00.40.013, `quotite`). Sous la duree de reference, c'est un temps partiel, dont le contrat dit la
     // repartition (L3123-6, 1°).
+    use socle::grandeurs::Heures;
     let q = match eng.quotite_contrat {
         Some(q) => q,
-        None => eng.quotite,
+        None => eng.quotite.heures("La durée du travail d'un contrat écrit")?,
     };
+    let dites = socle::texte::virgule::<Heures>;
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite
     // saisie, sinon une quotite sous la reference de l'entreprise, plafonnee a la duree legale ; sans reference, le temps
     // plein.
@@ -146,19 +147,19 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
         Some(m) => m == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel,
         None => reference.is_some_and(|r| q < r),
     };
-    let mut duree = format!("{} heures par mois", virgule(q));
+    let mut duree = format!("{} heures par mois", dites(q));
     if partiel {
-        let plein = if let Some(r) = reference { format!(", pour {} à temps plein", virgule(r)) } else { String::new() };
+        let plein = if let Some(r) = reference { format!(", pour {} à temps plein", dites(r)) } else { String::new() };
         let repartition = ecrit(eng, |c| c.repartition_horaire.as_deref()).ok_or_else(|| {
             socle::refus!(
                 "Le contrat de {} est à temps partiel ({} heures par mois{}) : il dit « la répartition de la durée du travail entre les jours de la semaine ou les semaines du mois » (L. 3123-6, 1°). L'écrire dans l'engagement (Plus d'options › Répartition des horaires). Rien n'est écrit.",
                 nom,
-                virgule(q),
+                dites(q),
                 plein
             )
         })?;
         duree = format!("{}, à temps partiel, réparties ainsi : {}", duree, repartition);
-    } else if q.round_dp(2) == Decimal::new(15167, 2) {
+    } else if legale.is_some_and(|l| q.a_deux_decimales() == l) {
         duree.push_str(", soit la durée légale de trente-cinq heures par semaine (article L. 3121-27 du code du travail)");
     }
     m.insert(Marqueur::ContratDureeTravail, duree);
@@ -258,7 +259,7 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     );
     // LES ORGANISMES : le nom ET l'adresse (L1242-12, 8°) ; une adresse que la donnee ne porte pas ne se devine pas.
     let org = Organismes::lire(ctx, ent)?;
-    let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::Lieu { fichier: Some("organismes-base.json".into()), cle: Some("131".into()), ..Default::default() }))?;
+    let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::Lieu { fichier: Some(droit::organismes::BASE), cle: Some("131".into()), ..Default::default() }))?;
     let manque_adresse = |o: &Organisme| socle::refus!("Le contrat de {} donne « le nom et l'adresse » de {} (L. 1242-12, 8°), et cette adresse n'est pas connue du logiciel. Rien n'est écrit.", nom, o.nom);
     m.insert(Marqueur::OrganismesRetraite, retraite.nom_et_adresse().ok_or_else(|| manque_adresse(&retraite))?);
     use droit::organismes::{INTERBRANCHE, PREVOYANCE_PERMANENTS, SANTE_PERMANENTS, TSINTERMITTENTS};

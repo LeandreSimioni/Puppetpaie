@@ -28,7 +28,9 @@ use envois::journal;
 use envois::ligne_d_envoi::{noter, par_courriel};
 use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
+use socle::mois::Annee;
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::grandeurs::{Effectif, Montant};
 use socle::ecriture::ecrire_json;
 use socle::paris::{InstantOuJour, Moment};
 use socle::html::{html_echapper, mailto};
@@ -340,17 +342,18 @@ const OU_TROUVER_L_EFFECTIF: &str =
 /// que l'Urssaf n'a pas renvoyee en compte rendu de nature 118 (`envois::releve_retours::poser_effectif`). L'effectif
 /// annuel est la moyenne des mois de l'annee civile, tronquee au centieme (CSS, L. 130-1, I, et R. 130-1, I :
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`) ; il ne se dit qu'une annee finie. Sans
-/// `annee` : les annees qui manquent pour payer cette annee (`Effectif::a_dire`).
+/// `annee` : les annees qui manquent pour payer cette annee (`EffectifsParAnnee::a_dire`).
 fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
-    let an_paie = ctx.aujourdhui.an;
-    // Les annees qui manquent : celles des seuils (`Effectif::a_dire`), et celle d'avant quand la paie la lit elle-meme et
+    let an_paie = ctx.aujourdhui.annee();
+    // Les annees qui manquent : celles des seuils (`EffectifsParAnnee::a_dire`), et celle d'avant quand la paie la lit elle-meme et
     // ne la connait pas (le FNAS de la CCNEAC sans CSE dit) : ce que « Pour démarrer » demande (`demarrage::manques`).
-    let a_dire = |ctx: &Contexte| -> R<Vec<i32>> {
+    let a_dire = |ctx: &Contexte| -> R<Vec<Annee>> {
         let e = ctx.effectif()?;
         let mut v = e.a_dire(an_paie);
         let demande = declarations::demarrage::effectif_a_dire(ctx)?;
-        if demande && e.valeur(an_paie).is_none() && !v.contains(&(an_paie - 1)) {
-            v.push(an_paie - 1);
+        let avant = an_paie.precedente()?;
+        if demande && e.valeur(an_paie).is_none() && !v.contains(&avant) {
+            v.push(avant);
             v.sort();
         }
         Ok(v)
@@ -363,24 +366,26 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
             format!(
                 "Pour payer en {}, il manque l'effectif de {}. {}",
                 an_paie,
-                manquent.iter().map(i32::to_string).collect::<Vec<_>>().join(", "),
+                manquent.iter().map(Annee::to_string).collect::<Vec<_>>().join(", "),
                 OU_TROUVER_L_EFFECTIF
             )
         };
         return Ok(EffectifDit { phrase, annee: None, valeur: None, source: None, a_dire: manquent });
     };
-    let en_clair = |x: socle::num::Decimal| socle::texte::virgule(x.round_dp(2));
+    let en_clair = |x: Effectif| socle::texte::virgule(x.a_deux_decimales());
     let mut pose = None;
     if let Some(v) = &charge.valeur {
         if an >= an_paie {
             return Err(erreur(Classe::Refuse, format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
         }
-        let x = v.court().map_err(|m| m.reclasser(Classe::Illisible))?;
-        if x < socle::num::Decimal::ZERO {
+        let x = v.grandeur::<Effectif>().map_err(|m| m.reclasser(Classe::Illisible))?;
+        if x < Effectif::ZERO {
             return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", v.ecrit())));
         }
-        // Tronque au centieme (R. 130-1, I).
-        let x = x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToZero);
+        // Un effectif, pas un montant : tronque au centieme, CSS R. 130-1, I
+        // (`atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la
+        // fraction d'effectif au-delà de la deuxième décimale »).
+        let x = x.tronque_au_centieme();
         if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, ctx.aujourdhui)? {
             return Err(erreur(Classe::Refuse, format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
         }
@@ -407,8 +412,9 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeEffectif {
-    annee: Option<i32>,
-    valeur: Option<droit::fiche::Montant>,
+    #[serde(default)]
+    annee: Option<Annee>,
+    valeur: Option<droit::fiche::NombreDeFiche>,
 }
 
 /// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les
@@ -416,11 +422,11 @@ struct ChargeEffectif {
 #[derive(Debug, serde::Serialize)]
 struct EffectifDit {
     phrase: String,
-    annee: Option<i32>,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    valeur: Option<socle::num::Decimal>,
+    annee: Option<Annee>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    valeur: Option<Effectif>,
     source: Option<&'static str>,
-    a_dire: Vec<i32>,
+    a_dire: Vec<Annee>,
 }
 
 // ------------------------------------------------------------------ permanents
@@ -438,7 +444,7 @@ pub(crate) struct Permanents {
 /// quand on coche ou decoche la case des permanents.
 fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
     let jour = ctx.aujourdhui;
-    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
+    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
     // Une case que son type refuse est vide dans la fiche typee : elle ne change pas ce qui se montre.
     let (Montres { cases, pieces_ouvertes }, entreprise) = match &charge {
         FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &p)?, &donnees.fiche),
@@ -510,15 +516,15 @@ pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdS
     Ok(Montres { cases, pieces_ouvertes })
 }
 
-/// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::Effectif`) : la
-/// representation du personnel quand un comite peut exister (`Effectif::cse`) et qu'un calcul la lit (une contribution
+/// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::EffectifsParAnnee`) : la
+/// representation du personnel quand un comite peut exister (`EffectifsParAnnee::cse`) et qu'un calcul la lit (une contribution
 /// de la convention qui en depend, ou l'exemption de la CASC-SVP, que cinquante salaries rendent possible) ; l'exemption
 /// de la CASC-SVP quand la compagnie compte cinquante salaries et que la fiche `entreprise`, telle qu'elle est saisie, dit
 /// un CSE (`droit::fiche::ChampsEntreprise::exemption_casc`), sur la fiche typee. Un effectif inconnu n'ouvre rien : c'est
-/// lui que « Pour démarrer » demande (`Effectif::a_dire`).
+/// lui que « Pour démarrer » demande (`EffectifsParAnnee::a_dire`).
 fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &ChampsEntreprise) -> R<(bool, bool)> {
     let (jour, eff) = (ctx.aujourdhui, ctx.effectif()?);
-    let (cse, cinquante) = (eff.cse(jour.an), eff.cinquante(jour.an));
+    let (cse, cinquante) = (eff.cse(jour.annee()), eff.cinquante(jour.annee()));
     let Some(cse) = cse else { return Ok((false, false)) };
     let lue = cinquante.is_some() || ctx.contribution_par_representation(&jour)?;
     let Some(cinquante) = cinquante else { return Ok((lue, false)) };
@@ -594,17 +600,18 @@ fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeTaxeSurLesSalaires {
-    taxe_sur_les_salaires: Option<droit::fiche::TaxeSurLesSalaires>,
-    annee: Option<i64>,
+    taxe_sur_les_salaires: Option<droit::fiche::AssujettissementALaTaxe>,
+    #[serde(default)]
+    annee: Option<Annee>,
 }
 
 /// Les plafonds de la franchise en base de TVA, au bareme de l'annee.
 #[derive(Debug, Clone, serde::Serialize)]
 struct PlafondsDeLaFranchise {
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    prestations_de_services: socle::num::Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    total: socle::num::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    prestations_de_services: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    total: Montant,
 }
 
 /// Les deux reponses a la question de la franchise : sous les plafonds (`true`), au-dessus (`false`).
@@ -622,7 +629,7 @@ struct Franchise {
     aide: String,
     choix: ChoixDeLaFranchise,
     plafonds: Option<PlafondsDeLaFranchise>,
-    annee: i32,
+    annee: Annee,
 }
 
 /// Ce que rend `taxe-sur-les-salaires-regime` : la phrase (la consequence), la question de la franchise, les cases a
@@ -635,8 +642,8 @@ pub(crate) struct RegimeDeLaTaxe {
     consequence: String,
     complet: bool,
     due: bool,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
-    part_taxee: Option<socle::num::Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
+    part_taxee: Option<socle::grandeurs::Taux>,
 }
 
 /// `taxe-sur-les-salaires-regime` : ce que la fiche en cours de saisie dit -- sans lui, celle de la compagnie. Rend la
@@ -650,13 +657,13 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
     // LES PLAFONDS DE LA FRANCHISE, CHIFFRES : ceux du bareme de l'annee des salaires -- `annee` dans la
     // charge, sinon l'annee en cours. Une annee sans socle livre ne fait pas refuser : la question se pose sans montants.
     let annee = match charge.annee {
-        None => ctx.aujourdhui.an,
-        Some(a) if (1900..=2999).contains(&a) => a as i32,
+        None => ctx.aujourdhui.annee(),
+        Some(a) if (Annee::constante(1900)..=Annee::constante(2999)).contains(&a) => a,
         Some(a) => return Err(erreur(Classe::Illisible, socle::date::annee_impossible(a))),
     };
-    let bar = match (socle::date::Jour::nouveau(annee, 1, 1), droit::contexte::socle_livre_lu(annee)?) {
-        (Some(j), Some(_)) => Some(ctx.bareme(&j)?),
-        _ => None,
+    let bar = match droit::contexte::socle_livre_lu(annee)? {
+        Some(_) => Some(ctx.bareme(&annee.premier_jour())?),
+        None => None,
     };
     let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
     // La conclusion nomme les deux plafonds.
@@ -667,7 +674,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         franchise: Franchise {
             aide: q.aide,
             choix: ChoixDeLaFranchise { sous: q.sous, dessus: q.dessus },
-            plafonds: q.plafonds.map(|(s, t)| PlafondsDeLaFranchise { prestations_de_services: s.normalize(), total: t.normalize() }),
+            plafonds: q.plafonds.map(|(prestations_de_services, total)| PlafondsDeLaFranchise { prestations_de_services, total }),
             annee,
         },
         champs: r.champs,
@@ -675,7 +682,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         complet: !matches!(r.decision, Decision::ADire(_)),
         due: matches!(r.decision, Decision::DueSur(_)),
         part_taxee: match r.decision {
-            Decision::DueSur(p) => Some(p.normalize()),
+            Decision::DueSur(p) => Some(p),
             _ => None,
         },
     })
@@ -688,7 +695,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
 
 /// Ou l'import copie les pieces qu'il reprend de l'ancien logiciel, les DSN deposees comprises (`historique/bulletins/`).
 pub fn pieces_importees(ctx: &Contexte) -> std::path::PathBuf {
-    ctx.racine.join("historique").join("bulletins")
+    import::mois::dossier_des_bulletins(&ctx.racine)
 }
 
 /// `usages_declares` : combien de DSN deja deposees declarent cette valeur dans la rubrique de la case (`rubrique`, de la
@@ -704,7 +711,7 @@ pub(crate) struct DejaDeclare {
 fn usages_declares(ctx: &Contexte, rubrique: Option<droit::natures::RubriqueDeLaNorme>, valeur: Option<&str>) -> R<DejaDeclare> {
     let (mut n, mut mois) = (0usize, Vec::<socle::mois::Mois>::new());
     if let (Some(rubrique), Some(valeur)) = (rubrique, valeur) {
-        for dossier in [pieces_importees(ctx), ctx.racine.join("sorties")] {
+        for dossier in [pieces_importees(ctx), documents::DossierDuMois::des_mois(&ctx.racine)] {
             for f in declarations::dsn_lue::fichiers(&dossier)? {
                 let Some(d) = declarations::dsn_lue::lire_une_dsn(&f)? else { continue };
                 if d.declare(rubrique, &valeur) {
@@ -891,16 +898,16 @@ pub(crate) fn poser_entreprise(ctx: &Contexte, case: ChangementEntreprise, depui
     poser::<FicheEntrepriseDatee>(ctx, None, vec![case], depuis, None)
 }
 
-/// L'ANCIENNETE D'UN SALARIE PART DE SON EMBAUCHE (`engagement::calcul::Anciennete`, le chemin du calcul) : la validation
+/// L'ANCIENNETE D'UN SALARIE PART DE SON EMBAUCHE (`engagement::calcul::DebutDeLAnciennete`, le chemin du calcul) : la validation
 /// d'un engagement qui est son embauche (aucun engagement anterieur ne le nomme) la pose sur sa fiche, au premier jour de
 /// ce contrat (`debut`), par l'ecrivain de la fiche (`poser`) ; elle se change ensuite dans « Avancé » de la fiche. Une
 /// fiche qui la dit la garde ; une anciennete ni dite ni lue ne se pose pas : ce qui la lit refuse en la nommant.
 pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &IdSalarie, debut: Option<Jour>) -> R<()> {
     let Some(fiche) = ctx.salaries.get(salarie) else { return Ok(()) };
     let debut = debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
-    match engagement::calcul::Anciennete::de(&ctx.racine, fiche, salarie, debut)? {
-        engagement::calcul::Anciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(j))], None, None),
-        engagement::calcul::Anciennete::Dite(_) | engagement::calcul::Anciennete::NonDite => Ok(()),
+    match engagement::calcul::DebutDeLAnciennete::de(&ctx.racine, fiche, salarie, debut)? {
+        engagement::calcul::DebutDeLAnciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(j))], None, None),
+        engagement::calcul::DebutDeLAnciennete::Dite(_) | engagement::calcul::DebutDeLAnciennete::NonDite => Ok(()),
     }
 }
 
@@ -1366,7 +1373,7 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i6
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCouts {
-    annee: i32,
+    annee: Annee,
 }
 
 /// Le cout d'un spectacle ou d'un salarie (`documents::fiche_recapitulative::Cout`), et sa ligne telle que sa fiche la
@@ -1396,7 +1403,7 @@ dites!(EffectifDit, CoutsDits, DemandeOubliee);
 /// `couts` : le cout de l'annee, au jour du contexte (`documents::fiche_recapitulative::Recapitulatifs::couts_de_l_annee`).
 fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     use socle::texte::euros;
-    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(socle::mois::Annee::nouvelle(i64::from(c.annee))?), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
     let couts = r.couts_de_l_annee()?;
     let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins as usize, "bulletin", "bulletins");
     // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.
@@ -1405,7 +1412,7 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
             .into_iter()
             .map(|(k, x)| {
                 // Rien de saisi pour la suite de l'annee : la phrase n'en dit rien.
-                let prevu: String = (!x.prevu.is_zero()).then(|| format!(" · + {} déjà saisis pour la suite de l'année", euros(x.prevu))).into_iter().collect();
+                let prevu: String = (!x.prevu.est_nul()).then(|| format!(" · + {} déjà saisis pour la suite de l'année", euros(x.prevu))).into_iter().collect();
                 let phrase = format!(
                     "coût employeur {} — brut {}, charges {}, {}{}{}",
                     euros(x.cout), euros(x.brut), euros(x.charges), bulletins(&x),
@@ -1416,7 +1423,7 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
             })
             .collect()
     };
-    let mut total = socle::num::Decimal::ZERO;
+    let mut total = socle::grandeurs::Montant::ZERO;
     let mut phrases = Vec::new();
     for (nom, x) in &couts.spectacles {
         total += x.cout;

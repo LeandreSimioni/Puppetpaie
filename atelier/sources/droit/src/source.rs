@@ -17,7 +17,21 @@ use serde::Deserialize;
 pub struct CheminDepose(String);
 
 /// Le mode d'emploi, la seule source hors de `atelier/reference/`.
-pub const MODE_D_EMPLOI: &str = "atelier/README.md";
+pub const MODE_D_EMPLOI: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("atelier/README.md");
+/// La reference de l'atelier, ou se deposent les textes.
+const REFERENCE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("atelier/reference");
+
+/// Le chemin `c` est-il sous la reference : un de ses dossiers l'est-il ?
+fn sous_la_reference(c: &socle::fichiers::CheminRelatif) -> bool {
+    let mut dossier = c.parent();
+    while let Some(d) = dossier {
+        if d == REFERENCE {
+            return true;
+        }
+        dossier = d.parent();
+    }
+    false
+}
 
 /// Le fichier d'un chemin depose, sans le code d'entrepot qui suit son `#`.
 fn sans_code(s: &str) -> &str {
@@ -30,7 +44,7 @@ fn sans_code(s: &str) -> &str {
 /// CE QU'UNE SOURCE ECRITE A DE FAUX, a sa lecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FauteDeSource {
-    /// Le chemin n'est pas sous `atelier/reference/` (ni le mode d'emploi), ou remonte (`..`).
+    /// Le chemin n'est pas un chemin relatif, n'est pas sous `atelier/reference/` (ni le mode d'emploi), ou remonte (`..`).
     HorsDeLaReference,
     /// Un `#` hors d'un entrepot de la DILA, ou un entrepot sans son code.
     CodeDEntrepot,
@@ -55,7 +69,13 @@ impl TryFrom<String> for CheminDepose {
     type Error = FauteDeSource;
     fn try_from(s: String) -> Result<Self, FauteDeSource> {
         let fichier = sans_code(&s);
-        if !(fichier.starts_with("atelier/reference/") || fichier == MODE_D_EMPLOI) || fichier.contains("..") {
+        // La porte : le chemin ecrit dans un fichier se lit en chemin relatif, compare a celui que le moteur nomme.
+        let lu = match socle::fichiers::CheminRelatif::lire(fichier) {
+            Ok(c) => c,
+            Err(_) => return Err(FauteDeSource::HorsDeLaReference),
+        };
+        // Un chemin relatif ne remonte pas (`CheminRelatif::lire` refuse `..`) : sous la reference, il y reste.
+        if !(sous_la_reference(&lu) || lu == MODE_D_EMPLOI) {
             return Err(FauteDeSource::HorsDeLaReference);
         }
         if s.contains('#') != fichier.ends_with(".jsonl.gz") {

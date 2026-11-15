@@ -675,7 +675,7 @@ const PUBLIEE_ILLISIBLE: &str = "La version publiée ne se lit pas : la mise à 
 /// La version publiee (`derniere.json`) qui ne se lit pas : la phrase en mots, la cle a part.
 #[track_caller]
 fn publiee_illisible(cle: &str, detail: impl std::fmt::Display) -> Echec {
-    refus_avec(PUBLIEE_ILLISIBLE, Lieu { fichier: Some(DERNIERE.to_string()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Default::default() })
+    refus_avec(PUBLIEE_ILLISIBLE, Lieu { fichier: Some(const { socle::fichiers::CheminRelatif::du_moteur(DERNIERE) }), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Default::default() })
 }
 
 /// LA SEULE LECTURE DE `derniere.json` : sa forme (`Publiee`, dont la version), puis ce qu'elle ne dit pas d'elle-meme :
@@ -748,19 +748,14 @@ fn verifier_la_signature(octets: &[u8], signature: &str, cle_publique: &str) -> 
     v.verify_strict(octets, &ed25519_dalek::Signature::from_bytes(&sig)).map_err(|e| refus(e.to_string()))
 }
 
-/// Les compagnies de l'installation : la compagnie du poste (`prive/`), les autres (`compagnies/*`), les fictives ; pas
-/// une copie de developpement.
+/// Les compagnies de l'installation (`installation::compagnies`), bridee ou non : la compagnie du poste la ou elle est,
+/// si elle a sa fiche entreprise et n'est pas un dossier cache, les autres (`compagnies/*`), les fictives ; pas une copie
+/// de developpement.
 pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
-    let mut v = vec![inst.join("prive")];
-    let groupes: [&str; 2] = ["compagnies", crate::installation::DOSSIER_FICTIVES];
-    for groupe in groupes {
-        let mut autres: Vec<PathBuf> = socle::fichiers::lister(&inst.join(groupe))?.into_iter().flatten().collect();
-        autres.sort();
-        v.extend(autres);
-    }
     let mut gardees = Vec::new();
-    for r in v {
-        if !crate::installation::est_cache(&r) && r.join(droit::contexte::ENTREPRISE).is_file() && (!crate::installation::est_copie(&r) || crate::installation::est_fictive(&r)?) {
+    for (_, r) in crate::installation::compagnies(inst, |_| true)? {
+        let une_compagnie = !crate::installation::est_cache(&r) && droit::contexte::ENTREPRISE.dans(&r).is_file();
+        if une_compagnie && (!crate::installation::est_copie(&r) || crate::installation::est_fictive(&r)?) {
             gardees.push(r);
         }
     }
@@ -923,7 +918,7 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
     let jeux = jeux_a_essayer(d, &systemes);
     if jeux.is_empty() {
         let phrase = format!("La version publiée n'a pas d'archive pour ce système ({}).", joints(&systemes));
-        return Err((EchecDeMiseAJour::Introuvable, refus_avec(phrase, Lieu { fichier: Some(DERNIERE.to_string()), ..Default::default() })));
+        return Err((EchecDeMiseAJour::Introuvable, refus_avec(phrase, Lieu { fichier: Some(const { socle::fichiers::CheminRelatif::du_moteur(DERNIERE) }), ..Default::default() })));
     }
     let mut manquees = Vec::new();
     let mut mot = EchecDeMiseAJour::Introuvable;
@@ -1834,7 +1829,7 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
     let inst = code.parent().map(Path::to_path_buf).ok_or_else(|| refus_avec("Le logiciel n'est dans aucune installation.", a_part_chemin(code)))?;
     let d = prete_dans(maj)?.ok_or_else(|| refus("aucune version prete a appliquer"))?;
     let version = d.version.clone();
-    let neuf = maj.join(version.texte()).join("logiciel");
+    let neuf = maj.join(version.texte()).join(LOGICIEL);
     let avant = code.join(".avant");
     socle::fichiers::effacer(&avant)?;
     std::fs::create_dir_all(&avant).map_err(|e| refus(e.to_string()))?;
@@ -1943,7 +1938,7 @@ pub const LIVRAISON: &str = ".livraison.json";
 /// cette fictive telle que livree. Elle voyage avec la fictive (photo d'origine, remise a zero) ; une copie renommee la
 /// porte aussi, mais sous un autre nom. Une livraison ne reconnait comme sien que le dossier dont le NOM est dans
 /// `posees` ET dont la marque dit L'EMPREINTE qu'elle y a retenue (`poser_les_fictives_pretes`).
-pub const LIVREE: &str = ".livree.json";
+pub const LIVREE: NomDeFichier = NomDeFichier::du_moteur(".livree.json");
 
 /// AU LANCEMENT, avant toute fenetre : une version prete part au relais. Rend `true` si le relais
 /// est parti (le programme doit alors s'arreter sans rien ouvrir). Ce qui echoue s'ecrit dans le journal de la mise a
@@ -2044,7 +2039,7 @@ pub fn noter(inst: &Path, t: &str) {
 /// relais est parti.
 pub fn lancer_relais(inst: &Path, version: &VersionDuLogiciel) -> R<bool> {
     let maj = dossier_maj(inst);
-    let neuf = maj.join(version.texte()).join("logiciel");
+    let neuf = maj.join(version.texte()).join(LOGICIEL);
     let source = programme(&neuf, "puppetpaie");
     if !source.is_file() {
         return Err(refus_avec(format!("Le programme de la fenêtre manque dans la version {}.", version), a_part_chemin(&source)));

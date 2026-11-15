@@ -93,7 +93,7 @@ fn aligner(a: P, b: P) -> (i128, i128, i32) {
 }
 
 /// Ramene `x` a l'echelle `e` (plus grossiere), au pair sur le demi.
-fn reduire(x: P, e: i32) -> P {
+pub(crate) fn reduire(x: P, e: i32) -> P {
     let p = 10i128.pow((x.e - e) as u32);
     let (mut q, r) = (x.m / p, (x.m % p).abs());
     if 2 * r > p || (2 * r == p && q % 2 != 0) {
@@ -179,27 +179,41 @@ impl P {
         arrondi28(q * (self.m.signum() * o.m.signum()), s)
     }
 
-    /// Arrondi à `dp` décimales, au pair sur le demi.
-    pub fn quantifier(self, dp: i32) -> P {
+    /// Arrondi à `dp` décimales, au pair sur le demi ; un nombre trop grand pour s'écrire à `dp` décimales se refuse.
+    pub fn quantifier(self, dp: i32) -> crate::echec::R<P> {
         if self.e > dp {
-            reduire(self, dp)
-        } else {
-            P { m: self.m * 10i128.pow((dp - self.e) as u32), e: dp }
+            return Ok(reduire(self, dp));
+        }
+        let m = match u32::try_from(i64::from(dp) - i64::from(self.e)) {
+            Ok(k) => dix(k).and_then(|p| self.m.checked_mul(p)),
+            Err(_) => None,
+        };
+        match m {
+            Some(m) => Ok(P { m, e: dp }),
+            None => Err(crate::refus!("Le nombre {} est trop grand pour s'écrire à {} décimales : le signaler au développeur.", self, dp)),
         }
     }
 
-    /// Deux decimales, la moitie vers le haut.
-    pub fn eur2(self) -> P {
-        if self.e > 2 {
-            let p = 10i128.pow((self.e - 2) as u32);
-            let (mut q, r) = (self.m / p, (self.m % p).abs());
-            if 2 * r >= p {
-                q += self.m.signum();
-            }
-            P { m: q, e: 2 }
-        } else {
-            P { m: self.m * 10i128.pow((2 - self.e) as u32), e: 2 }
+    /// Un montant au centime, la regle de `grandeurs::Montant::au_centime` (la moitie vers le haut, le negatif comme son
+    /// oppose, deux decimales ecrites), sur le `P` exact, une fois : sans passer par les 28 decimales d'un `Decimal`.
+    pub fn au_centime(self) -> crate::echec::R<P> {
+        if self.e <= 2 {
+            let m = match u32::try_from(2i64 - i64::from(self.e)) {
+                Ok(k) => dix(k).and_then(|p| self.m.checked_mul(p)),
+                Err(_) => None,
+            };
+            return match m {
+                Some(m) => Ok(P { m, e: 2 }),
+                None => Err(crate::refus!("Le montant {} est trop grand pour s'écrire au centime : le signaler au développeur.", self)),
+            };
         }
+        // Au-dela de 10^38, |m| (28 chiffres au plus) est sous la moitie du diviseur : le centime est zero, exactement.
+        let Some(p) = 10i128.checked_pow((self.e - 2) as u32) else { return Ok(P { m: 0, e: 2 }) };
+        let (mut q, r) = (self.m / p, (self.m % p).abs());
+        if r >= p - r {
+            q += self.m.signum();
+        }
+        Ok(P { m: q, e: 2 })
     }
 
     /// `to_integral_value(rounding=ROUND_FLOOR)`.

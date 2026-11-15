@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::importation::casc::{marquer_regularise, RegularisationNotee};
-use crate::dossier_salarie::{construire, AnneeDite, DemandeDeDossier, DossierEnvoye, DossierRendu};
+use crate::dossier_salarie::{construire, DemandeDeDossier, DossierEnvoye, DossierRendu};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "vire_le", libelle: Affiche::new("Viré le"), forme: Forme::Date, sens: "le jour du virement, AAAA-MM-JJ", avance: false },
             Champ { nom: "montant", libelle: Affiche::new("Montant viré"), forme: Forme::Nombre, sens: "le montant viré", avance: false },
         ],
-        exemple: r#"{"annee":"2025","vire_le":"2026-11-02","montant":"12.80"}"#,
+        exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"12.80"}"#,
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
@@ -204,7 +204,7 @@ pub(crate) struct PieceDeLEnvoi {
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
 /// a imprimer, qui reunit celles de plusieurs salaries : ce fichier n'est la piece de personne).
 pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnvoi>> {
-    let envoi = documents::DossierDuMois::Envoi.sous(&ctx.racine.join("sorties").join(mois.to_string()));
+    let envoi = documents::DossierDuMois::Envoi.dans(&ctx.racine, mois);
     if !envoi.exists() {
         return Ok(Vec::new());
     }
@@ -236,7 +236,7 @@ fn mois_disponibles(ctx: &Contexte) -> R<Vec<Mois>> {
 
 /// Les années des mois, de la plus récente à la plus ancienne.
 fn annees_de(dispo: &[Mois]) -> Vec<Annee> {
-    let mut annees: Vec<Annee> = dispo.iter().map(|m| m.annee_civile()).collect::<HashSet<_>>().into_iter().collect();
+    let mut annees: Vec<Annee> = dispo.iter().map(|m| m.annee()).collect::<HashSet<_>>().into_iter().collect();
     annees.sort();
     annees.reverse();
     annees
@@ -370,7 +370,7 @@ fn etat_concerne(ctx: &Contexte, etat: EtatDExport, piece: Option<droit::fiche::
 /// fiche ne dit pas encore tout compte, l'etat dit ce qu'il faut repondre ; une annee ou elle n'est pas due, non.
 fn taxe_due_une_annee(ctx: &Contexte, annees: &[Annee]) -> R<bool> {
     for a in annees {
-        let Some(fin) = socle::date::Jour::nouveau(a.nombre(), 12, 31) else { continue };
+        let fin = a.dernier_jour();
         let regime = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ctx.entreprise_au(&fin), None);
         if regime.decision != documents::taxe_sur_les_salaires::Decision::NonDue {
             return Ok(true);
@@ -420,13 +420,13 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let permanents = mois
         .first()
         .zip(mois.last())
-        .map(|(premier, dernier)| engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour()))
+        .map(|(premier, dernier)| engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_au(premier.premier_jour(), dernier.dernier_jour())?))
         .transpose()?
         .is_some_and(|p| p.ouverts());
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
     let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats().filter(|(e, piece)| etat_concerne(ctx, e.etat, *piece, permanents, taxe_due)).map(|(e, _)| e.clone()).collect();
-    let dossier = ctx.racine.join("exports");
+    let dossier = documents::DossierDeTravail::Exports.sous(&ctx.racine);
     let ecran = EcranDesExports {
         vide: mois.is_empty().then_some("Aucune paie saisie : il n'y a rien à exporter pour l'instant."),
         regroupement_livre: "Par salarié, ce qu'on envoie au comptable ; par mois, ce qu'on rapproche de la banque ; par spectacle, ce qui justifie une subvention. Les trois disent la même chose, et le total ne bouge pas.",
@@ -495,7 +495,7 @@ enum NombreDit {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCascRegularise {
-    annee: AnneeDite,
+    annee: Annee,
     vire_le: Jour,
     montant: NombreDit,
 }
@@ -520,8 +520,8 @@ fn montant_vire(m: &NombreDit) -> R<socle::num::Decimal> {
 /// Note qu'une annee de CASC-SVP est regularisee (apres le virement).
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     let aujourd_hui = socle::temps::secondes().a_la_seconde().jour_de_paris();
-    let notee = marquer_regularise(ctx, c.annee.annee()?, c.vire_le, montant_vire(&c.montant)?, INTERFACE, aujourd_hui)?;
-    let montant = socle::texte::euros(notee.montant);
+    let notee = marquer_regularise(ctx, c.annee,c.vire_le, montant_vire(&c.montant)?, INTERFACE, aujourd_hui)?;
+    let montant = socle::texte::euros(socle::grandeurs::Montant::du_decimal(notee.montant));
     Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
 }
 
@@ -534,7 +534,7 @@ fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
 pub(crate) struct ChargeExporter {
     etat: EtatDExport,
     mois: Option<Mois>,
-    annee: Option<AnneeDite>,
+    annee: Option<Annee>,
     toutes_les_annees: Option<bool>,
     regroupement: Option<RegroupementDEtat>,
     format: Option<FormatDExport>,
@@ -603,7 +603,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
                 .iter()
                 .map(|(colonne, n)| {
                     let sur = bulletins.saturating_sub(*n);
-                    format!("{} sur {} bulletin{} sur {}", colonne.as_str().replace('_', " "), sur, if sur == 1 { "" } else { "s" }, bulletins)
+                    format!("{} sur {} bulletin{} sur {}", colonne.cle().replace('_', " "), sur, if sur == 1 { "" } else { "s" }, bulletins)
                 })
                 .collect();
             let (periode, ecrit, avertissements) = (l.periode.clone(), nom(&l.fichier)?.into_iter().collect(), l.avertissements.clone());
@@ -653,7 +653,7 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     let format = if forme.formats.is_empty() { None } else { Some(choisi("format", c.format, &forme.formats)?) };
     let d = Demande {
         mois: c.mois,
-        annee: c.annee.as_ref().map(AnneeDite::annee).transpose()?,
+        annee: c.annee,
         toutes: c.toutes_les_annees == Some(true),
         regroupement,
         format,
@@ -716,7 +716,7 @@ const REEDITION_CONTRATS: &str = "Les contrats ont été réédités par notre l
 struct ChargeDossierEnvoyer {
     salaries: Option<Vec<droit::contexte::IdSalarie>>,
     mois: Option<Mois>,
-    annee: Option<AnneeDite>,
+    annee: Option<Annee>,
     toutes_les_annees: Option<bool>,
     categories: Option<Vec<documents::CategorieDeDocument>>,
 }
@@ -841,10 +841,10 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
         .iter()
         .map(|l| documents::etats_personnel::ActeDuJournal {
             quand: l.quand(),
-            quoi: l.acte().nom().to_string(),
-            main_propre: l.remise() == Some(envois::etats::ModeDeRemise::Imprime),
+            quoi: l.acte(),
+            remise: l.remise(),
             mois: l.mois(),
-            mode: l.mode().nom().to_string(),
+            mode: l.mode(),
             accepte: l.accepte(),
             fichier: l.fichier().cloned(),
             destinataire: l.destinataire().to_string(),
@@ -907,9 +907,9 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     let classeur = dossier.join("CASC-SVP_liste-nominative.xlsx");
 
     // Chaque courriel porte le nom court de son organisme : celui du `.eml` garde.
-    let messages: Vec<Message<&str>> = vec![
+    let messages: Vec<Message<NomDeFichier>> = vec![
         Message {
-            pour: "audiens",
+            pour: const { NomDeFichier::du_moteur("audiens") },
             nom: "Audiens".into(),
             destinataire: r.courriel_audiens.a.clone(),
             sujet: r.courriel_audiens.objet.clone(),
@@ -918,7 +918,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
             html: Some(courriel_en_html(&r.courriel_audiens.corps)),
         },
         Message {
-            pour: "casc",
+            pour: const { NomDeFichier::du_moteur("casc") },
             nom: "CASC-SVP".into(),
             destinataire: r.courriel_casc.a.clone(),
             sujet: r.courriel_casc.objet.clone(),
@@ -948,8 +948,10 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     };
     // Le nom de chaque `.eml` garde se fait avant l'envoi : rien ne se refuse apres que les courriels sont partis.
     let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
-    let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
-    let emls = messages.iter().map(|m| NomDeFichier::lire(&format!("{}_CASC-SVP_{}.eml", horodate, m.pour))).collect::<R<Vec<_>>>()?;
+    let horodate = NomDeFichier::lire(&format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]))?;
+    // Le nom d'un `.eml` garde : `<horodate>_CASC-SVP_<pour>.eml`.
+    let casc = horodate.suivi_de(&const { NomDeFichier::du_moteur("_CASC-SVP_") });
+    let emls: Vec<NomDeFichier> = messages.iter().map(|m| casc.suivi_de(&m.pour).avec_l_extension(&const { NomDeFichier::du_moteur("eml") })).collect();
     let mut copies: Vec<Vec<u8>> = Vec::new();
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,
@@ -977,11 +979,11 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     let dites: Vec<String> = annees.iter().map(|a| a.annee.to_string()).collect();
     let notee = if dites.len() > 1 { "notées régularisées" } else { "notée régularisée" };
     Ok(CascEnvoyee {
-        phrase: format!("CASC-SVP, {} : {}, envoyé à {} ; {} {}.", r.periode, socle::texte::euros(r.total), en_liste(&partis, " et "), dites.join(" et "), notee),
+        phrase: format!("CASC-SVP, {} : {}, envoyé à {} ; {} {}.", r.periode, socle::texte::euros(socle::grandeurs::Montant::du_decimal(r.total)), en_liste(&partis, " et "), dites.join(" et "), notee),
         partis,
         expediteur: compte,
         periode: r.periode,
-        total: r.total,
+        total: socle::grandeurs::Montant::du_decimal(r.total),
         annees,
         eml: emls,
         dossier: garde,
@@ -996,8 +998,8 @@ struct CascEnvoyee {
     partis: Vec<droit::fiche::Courriel>,
     expediteur: droit::fiche::Courriel,
     periode: String,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    total: socle::num::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    total: socle::grandeurs::Montant,
     annees: Vec<RegularisationNotee>,
     eml: Vec<NomDeFichier>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
@@ -1072,18 +1074,19 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         let anniv = anniversaire_configure(ctx, cle)?;
         let p = position_droits(ctx, cle, &engs, anniv, None)?;
         let c = &p.constantes;
-        let h = |n: i64| format!("{} h", n);
-        let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), p.cachets().to_string())];
-        if p.cachets_perdus() != 0 {
-            lignes.push((format!("Retenus ({} par mois au plus)", c.cachets_par_mois), p.cachets_retenus().to_string()));
+        use socle::grandeurs::ecrit::sans_zero::dit;
+        let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
+        let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), dit(p.cachets()))];
+        if !p.cachets_perdus().est_nul() {
+            lignes.push((format!("Retenus ({} par mois au plus)", dit(c.cachets_par_mois)), dit(p.cachets_retenus())));
         }
-        lignes.push((format!("Convertis ({} h par cachet)", c.heures_par_cachet), h(p.cachets_retenus() * c.heures_par_cachet)));
+        lignes.push((format!("Convertis ({} h par cachet)", dit(c.heures_par_cachet)), h(p.cachets_retenus() * c.heures_par_cachet)));
         lignes.push(("Heures déclarées".into(), h(p.heures())));
         lignes.push(("Total d'heures équivalentes".into(), h(p.heures_retenues())));
-        if p.heures_enseignement() != 0 {
+        if !p.heures_enseignement().est_nul() {
             // Deux comptes des qu'il y a de l'enseignement : ces heures ouvrent les droits (plafonnees), sans augmenter l'allocation.
             lignes.push(("Dont enseignement".into(), h(p.heures_enseignement())));
-            lignes.push((format!("Enseignement retenu (plafond {} h)", p.plafond_enseignement()?), h(p.heures_enseignement_retenues()?)));
+            lignes.push((format!("Enseignement retenu (plafond {} h)", dit(p.plafond_enseignement()?)), h(p.heures_enseignement_retenues()?)));
             lignes.push(("Pour l'ouverture des droits".into(), h(p.heures_ouverture()?)));
             lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
         }
@@ -1093,23 +1096,23 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
             lignes.push(("Avant le réexamen".into(), format!("{} j", jours)));
         }
         let phrase = if p.atteint()? {
-            format!("Seuil atteint, avec {} h de marge.", p.heures_ouverture()? - c.seuil_heures)
+            format!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - c.seuil_heures))
         } else {
-            format!("Il manque {} h, soit environ {} cachets.", p.manque()?, p.cachets_manquants()?)
+            format!("Il manque {} h, soit environ {} cachets.", dit(p.manque()?), dit(p.cachets_manquants()?))
         };
         let mut notes = Vec::new();
-        if p.cachets_perdus() != 0 {
+        if !p.cachets_perdus().est_nul() {
             notes.push(format!(
                 "{} cachet(s) dépassent les {} d'un mois ({}) : joués, payés et déclarés, mais sans effet sur les droits.",
-                p.cachets_perdus(),
-                c.cachets_par_mois,
+                dit(p.cachets_perdus()),
+                dit(c.cachets_par_mois),
                 p.mois_plafonnes().iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
             ));
         }
-        if p.enseignement_perdu()? != 0 {
-            notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", p.enseignement_perdu()?));
+        if !p.enseignement_perdu()?.est_nul() {
+            notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", dit(p.enseignement_perdu()?)));
         }
-        if p.heures_enseignement() != 0 && p.date_naissance.is_none() {
+        if !p.heures_enseignement().est_nul() && p.date_naissance.is_none() {
             notes.push("Date de naissance absente de la fiche : le plafond bas de l'enseignement s'applique, peut-être à tort.".to_string());
         }
         if anniv.is_none() {
@@ -1117,14 +1120,14 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         }
         let colonnes = tableau_cumul(ctx, cle, mois, &engs)?;
         let rangee = |quoi: &'static str, valeur: &dyn Fn(&droit::cumul::Colonne) -> String| Rangee { quoi, valeurs: colonnes.iter().map(valeur).collect() };
-        let heures = |n: i64| format!("{} h", n);
+        let heures = h;
         let tableau = TableauDesDroits {
             titres: colonnes.iter().map(|x| format!("{} {}", x.titre, x.sous_titre).trim().to_string()).collect(),
             lignes: vec![
-                rangee("Cachets", &|x| x.cachets.to_string()),
+                rangee("Cachets", &|x| dit(x.cachets)),
                 rangee("Heures déclarées", &|x| heures(x.heures)),
                 rangee("Total d'heures", &|x| heures(x.heures_equivalentes)),
-                rangee("Salaire brut", &|x| socle::texte::euros(x.brut)),
+                rangee("Salaire brut", &|x| socle::texte::euros(socle::grandeurs::Montant::du_decimal(x.brut))),
             ],
         };
         // Un engagement dont la fiche n'est plus la se dit par sa cle.

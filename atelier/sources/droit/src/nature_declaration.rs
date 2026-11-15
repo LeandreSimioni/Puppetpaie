@@ -1,5 +1,7 @@
 //! La nature d'une declaration DSN (S20.G00.05.001) : la liste entiere de la norme.
 
+use socle::mode::Mode;
+
 use crate::natures::codes_fermes;
 
 codes_fermes! {
@@ -45,13 +47,42 @@ impl NatureDeLaDeclaration {
     }
 }
 
-codes_fermes! {
-    /// L'ENVOI D'UN FICHIER, D'ESSAI OU REEL (S10.G00.00.005, « Code envoi du fichier d'essai ou réel »), la liste entiere
-    /// de la norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S10.G00.00.txt` ; relevee dans
-    /// `formats-dsn-*-base.json`).
-    EssaiOuReel, "Code envoi du fichier d'essai ou réel", "S10.G00.00.005" {
-        Essai = "01",
-        Reel = "02",
+/// LE MODE D'UN ENVOI (`socle::mode::Mode`), TEL QUE LA DSN L'ECRIT (S10.G00.00.005, « Code envoi du fichier d'essai ou
+/// réel ») : `01` essai, `02` reel, la liste entiere de la norme (cahier technique DSN 2026.1,
+/// `atelier/reference/norme-dsn/texte/bloc-S10.G00.00.txt` ; relevee dans `formats-dsn-*-base.json`). Un bilan, un
+/// rapport, un NEOReS (RO.B000.R013) et un compte rendu d'organisme complementaire (`CodeEnvoi`) le reprennent.
+impl crate::natures::ListeDeLaNorme for Mode {
+    const RUBRIQUE: crate::natures::RubriqueDeLaNorme = crate::natures::RubriqueDeLaNorme::du_moteur("S10.G00.00.005");
+
+    fn toutes() -> &'static [Mode] {
+        &[Mode::Test, Mode::Reel]
+    }
+
+    fn code_de_la_norme(self) -> &'static str {
+        match self {
+            Mode::Test => "01",
+            Mode::Reel => "02",
+        }
+    }
+
+    fn du_code_de_la_norme(code: &str) -> Option<Mode> {
+        match code {
+            "01" => Some(Mode::Test),
+            "02" => Some(Mode::Reel),
+            _ => None,
+        }
+    }
+
+    fn quoi() -> &'static str {
+        "Code envoi du fichier d'essai ou réel"
+    }
+
+    fn depuis(self) -> Option<crate::natures::VersionDeLaNorme> {
+        None
+    }
+
+    fn jusqu_a(self) -> Option<crate::natures::VersionDeLaNorme> {
+        None
     }
 }
 

@@ -72,6 +72,49 @@ impl SorteDImage {
 
 pub use fabrique_pdf::forme::Mesure;
 
+/// LE MODE DE REMISE D'UNE PIECE REMISE AUX SALARIES : comment un contrat (ou un avenant), ou les documents d'un mois
+/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre), ou par courriel. Ecrite
+/// `imprime`, `courriel`. Une ligne du journal des envois la dit si elle en a une (`envois::journal::Ligne::remise` : la
+/// signature d'un contrat, l'envoi des documents) ; le journal des declarations la montre
+/// (`etats_personnel::ActeDuJournal`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModeDeRemise {
+    Imprime,
+    Courriel,
+}
+
+/// LA SORTE D'UN ENVOI AU JOURNAL DES ENVOIS, telle que la ligne l'ecrit (`quoi` : `dsn`, `contrat-signature`...) :
+/// `envois::journal::Ligne::acte` la dit ; le journal des declarations la montre (`etats_personnel::ActeDuJournal`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Acte {
+    Dsn,
+    Dpae,
+    Documents,
+    ContratSignature,
+    ContratContresigne,
+    RegularisationCasc,
+    DossierSalarie,
+    FicheDemande,
+}
+
+impl Acte {
+    /// Son nom, tel que la ligne l'ecrit.
+    pub fn nom(self) -> &'static str {
+        match self {
+            Acte::Dsn => "dsn",
+            Acte::Dpae => "dpae",
+            Acte::Documents => "documents",
+            Acte::ContratSignature => "contrat-signature",
+            Acte::ContratContresigne => "contrat-contresigne",
+            Acte::RegularisationCasc => "regularisation-casc",
+            Acte::DossierSalarie => "dossier-salarie",
+            Acte::FicheDemande => "fiche-demande",
+        }
+    }
+}
+
 /// UNE SORTE DE PIECE DU DOSSIER D'UN SALARIE (`dossier-salarie`, `dossier-envoyer`) : une liste du logiciel, dans
 /// l'ordre ou le dossier se lit (`TOUTES`, l'ordre du type). Elle s'ecrit par son mot (`bulletins`, `contrats-signes`…),
 /// que la charge dit et que le journal des envois garde du dossier parti ; un autre mot se refuse a la lecture.
@@ -277,44 +320,25 @@ impl SorteDePieceProduite {
     }
 }
 
-impl PieceDuMois {
-    /// UNE PIECE QU'UN ACTE DE DEPOT ECRIT ET DEPOSE : la DPAE, la DSN, un amorcage, un signalement. Aucune piece de
-    /// l'envoi ni archive du mois ne se depose.
-    pub const fn se_depose(self) -> bool {
-        match self {
-            PieceDuMois::Dpae | PieceDuMois::Dsn | PieceDuMois::Amorcage => true,
-            PieceDuMois::SignalementArret | PieceDuMois::SignalementReprise | PieceDuMois::SignalementFinContrat => true,
-            PieceDuMois::Bulletin | PieceDuMois::Bulletins | PieceDuMois::BulletinGarde | PieceDuMois::CertificatCs => false,
-            PieceDuMois::CertificatsCs | PieceDuMois::Aer | PieceDuMois::Contrat | PieceDuMois::Avenant => false,
-            PieceDuMois::CertificatDeTravail | PieceDuMois::RecuSoldeToutCompte | PieceDuMois::Impression => false,
-            PieceDuMois::Signature => false,
-        }
-    }
-}
-
-/// CE QU'EST UN FICHIER QU'UNE LIGNE DU JOURNAL NOMME, dit par l'acte de la ligne et le nom : le fichier d'un acte de
-/// depot n'est qu'une piece qu'un depot ecrit, ou un fichier pose (`du_depot`) ; une piece d'un envoi (un contrat d'une
-/// demande de signature, une piece d'un envoi de documents), par sa sorte (`de_l_envoi`).
+/// CE QU'EST UN FICHIER QU'UNE LIGNE DU JOURNAL NOMME, dit par l'acte de la ligne, jamais par le nom seul : le fichier
+/// d'un acte de depot (`Depose`) ; une piece d'un envoi (un contrat d'une demande de signature, une piece d'un envoi de
+/// documents), par sa sorte (`de_l_envoi`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FichierDuJournal {
+    /// LE FICHIER D'UN ACTE DE DEPOT (une DSN, un signalement, un amorcage, une DPAE), quel que soit son nom : une piece
+    /// qu'un depot ecrit (elles se rangent toutes dans les sorties du mois, `sortes_de_pieces_produites!`), ou un fichier
+    /// que la compagnie a pose (un `.dsn` des sorties du mois que le depot propose, ou un fichier qu'un signalement
+    /// designe, a n'importe quel chemin : le journal n'en garde que le nom, et un fichier depose d'ailleurs ne se retrouve
+    /// pas). Il est dans les sorties du mois.
+    Depose,
     /// Une piece d'un mois que le moteur ecrit, par sa sorte.
     Piece(PieceDuMois),
-    /// UN FICHIER QUE LA COMPAGNIE A POSE ET DEPOSE (un `.dsn` des sorties du mois que le depot propose, ou un fichier
-    /// qu'un signalement designe, a n'importe quel chemin) : le journal n'en garde que le nom, et il se cherche dans les
-    /// sorties du mois ; un fichier depose d'ailleurs ne s'y retrouve pas.
+    /// Un fichier qu'une ligne d'un envoi nomme et qu'aucune sorte d'un mois ne dit : il se cherche dans les sorties du
+    /// mois.
     PoseParLaCompagnie,
 }
 
 impl FichierDuJournal {
-    /// LE FICHIER `nom` QU'UN ACTE DE DEPOT NOMME (une DSN, un signalement, un amorcage, une DPAE) : une piece qu'un depot
-    /// ecrit (`PieceDuMois::se_depose`), sinon un fichier pose ; un `ContratCorrige.dsn` n'est pas un contrat.
-    pub fn du_depot(nom: &str) -> FichierDuJournal {
-        match FichierDuJournal::de_l_envoi(nom) {
-            FichierDuJournal::Piece(p) if p.se_depose() => FichierDuJournal::Piece(p),
-            _ => FichierDuJournal::PoseParLaCompagnie,
-        }
-    }
-
     /// La piece `nom` qu'une ligne d'un envoi nomme, par sa sorte ; un nom d'aucune sorte d'un mois, un fichier pose.
     pub fn de_l_envoi(nom: &str) -> FichierDuJournal {
         match SorteDePieceProduite::du_nom(nom).and_then(|(s, _)| s.du_mois()) {
@@ -323,19 +347,20 @@ impl FichierDuJournal {
         }
     }
 
-    /// Le dossier du mois ou il se trouve : celui de sa piece ; pour un fichier pose, les sorties du mois.
+    /// Le dossier du mois ou il se trouve : celui de sa piece ; pour le fichier d'un depot ou un fichier pose, les
+    /// sorties du mois.
     pub fn dossier(self) -> DossierDuMois {
         match self {
             FichierDuJournal::Piece(p) => p.dossier(),
-            FichierDuJournal::PoseParLaCompagnie => DossierDuMois::Sorties,
+            FichierDuJournal::Depose | FichierDuJournal::PoseParLaCompagnie => DossierDuMois::Sorties,
         }
     }
 }
 
-/// LE FICHIER QU'UNE LIGNE DU JOURNAL DIT DEPOSE (une DSN, une DPAE, un signalement), sous les sorties de son mois
-/// `sorties` (`sorties/<mois>/`), dans le dossier de ce qu'il est (`FichierDuJournal::du_depot`).
-pub fn fichier_depose(sorties: &std::path::Path, nom: &str) -> std::path::PathBuf {
-    FichierDuJournal::du_depot(nom).dossier().sous(sorties).join(nom)
+/// LE FICHIER QU'UNE LIGNE DU JOURNAL DIT DEPOSE (une DSN, une DPAE, un signalement) au mois `mois`, sous la compagnie
+/// `racine` (`sorties/<mois>/`) : son acte le dit (`FichierDuJournal::Depose`), pas son nom.
+pub fn fichier_depose(racine: &std::path::Path, mois: socle::mois::Mois, nom: &str) -> std::path::PathBuf {
+    FichierDuJournal::Depose.dossier().dans(racine, mois).join(nom)
 }
 
 /// OU SE RANGE UNE PIECE PRODUITE (`SorteDePieceProduite::rangement`) : dans un dossier d'un mois, ou hors d'un mois.
@@ -359,9 +384,33 @@ impl DossierHorsDuMois {
     /// Ce dossier, sous la compagnie `racine`.
     pub fn sous(self, racine: &std::path::Path) -> std::path::PathBuf {
         match self {
-            DossierHorsDuMois::Exercices => racine.join("sorties").join("exercices"),
-            DossierHorsDuMois::DossiersDeSalaries => racine.join("exports").join("dossiers"),
-            DossierHorsDuMois::FichesDeSalaries => racine.join("sorties").join("fiches-salaries"),
+            DossierHorsDuMois::Exercices => DossierDuMois::des_mois(racine).join("exercices"),
+            DossierHorsDuMois::DossiersDeSalaries => DossierDeTravail::Exports.sous(racine).join("dossiers"),
+            DossierHorsDuMois::FichesDeSalaries => DossierDuMois::des_mois(racine).join("fiches-salaries"),
+        }
+    }
+}
+
+/// UN DOSSIER DE TRAVAIL de la compagnie, ou le moteur ecrit ce qui n'est pas une piece produite : les apercus des
+/// modeles (`sorties/apercus/`), les etats exportes (`exports/`), la regularisation de la CASC-SVP
+/// (`exports/casc-svp/`). Leur chemin n'est ecrit qu'ici (`sous`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DossierDeTravail {
+    /// L'apercu d'un modele de contrat : rien d'autre ne s'y ecrit, rien n'en part.
+    Apercus,
+    /// Les etats exportes (et le dossier de leur annee : `etats_paie::dossier_exports`).
+    Exports,
+    /// La regularisation de la CASC-SVP : ses CSV, ses courriels, ses gestes.
+    RegularisationCasc,
+}
+
+impl DossierDeTravail {
+    /// Ce dossier, sous la compagnie `racine`.
+    pub fn sous(self, racine: &std::path::Path) -> std::path::PathBuf {
+        match self {
+            DossierDeTravail::Exports => racine.join("exports"),
+            DossierDeTravail::RegularisationCasc => DossierDeTravail::Exports.sous(racine).join("casc-svp"),
+            DossierDeTravail::Apercus => DossierDuMois::des_mois(racine).join("apercus"),
         }
     }
 }
@@ -384,7 +433,7 @@ impl DossierDuMois {
     const fn nom(self) -> Option<socle::fichiers::NomDeFichier> {
         match self {
             DossierDuMois::Sorties => None,
-            DossierDuMois::Envoi => Some(socle::fichiers::NomDeFichier::du_moteur("envoi")),
+            DossierDuMois::Envoi => Some(const { socle::fichiers::NomDeFichier::du_moteur("envoi") }),
         }
     }
 
@@ -396,12 +445,26 @@ impl DossierDuMois {
         }
     }
 
-    /// Ce dossier, en chemin relatif a la compagnie, sous les sorties du mois `sorties` (`CheminRelatif::sorties`).
-    pub fn sous_le_chemin(self, sorties: &socle::fichiers::CheminRelatif) -> socle::fichiers::CheminRelatif {
+    /// Le dossier qui tient les sorties de chaque mois, relatif a la compagnie : le nom `sorties` n'est ecrit qu'ici.
+    pub const DES_MOIS: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("sorties");
+
+    /// Ce dossier du mois `mois`, relatif a la compagnie (`sorties/<mois>`, ou son `envoi`).
+    pub fn chemin(self, mois: socle::mois::Mois) -> socle::fichiers::CheminRelatif {
+        let sorties = socle::fichiers::CheminRelatif::from(DossierDuMois::DES_MOIS).joint(&socle::fichiers::NomDeFichier::from(mois));
         match self.nom() {
             Some(n) => sorties.joint(&n),
-            None => sorties.clone(),
+            None => sorties,
         }
+    }
+
+    /// Ce dossier du mois `mois`, sous la compagnie `racine`.
+    pub fn dans(self, racine: &std::path::Path, mois: socle::mois::Mois) -> std::path::PathBuf {
+        self.chemin(mois).dans(racine)
+    }
+
+    /// Le dossier qui tient les sorties de chaque mois (`DES_MOIS`), sous la compagnie `racine`.
+    pub fn des_mois(racine: &std::path::Path) -> std::path::PathBuf {
+        racine.join(DossierDuMois::DES_MOIS)
     }
 }
 

@@ -49,8 +49,9 @@
 use droit::organismes::Versement;
 
 use documents::bordereau::{self, Destinataire};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::R;
+use socle::grandeurs::Montant;
 use socle::mois::Mois;
 
 const SOURCE_011: &str = "Date de paiement écrite dans la DSN (S21.G00.20.011) : « date à prendre en compte par l'organisme dans le cas d'un prélèvement SEPA » (cahier technique DSN 2026.1, bloc S21.G00.20).";
@@ -61,13 +62,12 @@ const SOURCE_AGIRC: &str = "Cahier d'aide à la codification Agirc-Arrco CT2026,
 const SOURCE_AUCUNE: &str = "La DSN ne porte pas de date de paiement pour cet organisme (S21.G00.20.011 absente), et aucun texte relevé par le logiciel ne dit quand il prélève : l'organisme prélève à sa propre échéance.";
 
 /// « d'août 2026 », « de septembre 2026 », ou « du 01/07/2026 au 30/09/2026 ».
-fn periode_lisible(debut: Option<Jour>, fin: Option<Jour>) -> String {
-    match (debut, fin) {
-        (Some(d), Some(f)) if d.mois_civil() == f.mois_civil() && d == d.mois_civil().premier_jour() && f == f.mois_civil().dernier_jour() => {
-            socle::texte::de(&d.mois_civil().libelle(socle::mois::Graphie::Accentuee))
-        }
-        (Some(d), Some(f)) => format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa()),
-        _ => "d'une période illisible dans le fichier".to_string(),
+fn periode_lisible(p: &Periode) -> String {
+    let (d, f) = (p.debut(), p.fin());
+    if *p == Periode::du_mois(d.mois_civil()) {
+        socle::texte::de(&d.mois_civil().libelle(socle::mois::Graphie::Accentuee))
+    } else {
+        format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa())
     }
 }
 
@@ -83,7 +83,7 @@ fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> R<Jour> {
 /// Le `jour` du mois qui suit le mois declare `mois`.
 fn jour_du_mois_suivant(mois: Mois, jour: u32) -> R<Jour> {
     let m = mois.suivant();
-    m.jour(jour).ok_or_else(|| socle::echec::refus(socle::date::jour_impossible(m.annee(), m.numero(), jour)))
+    m.jour_exige(jour)
 }
 
 /// L'organisme est-il une caisse de retraite complementaire Agirc-Arrco (`codes81` porte le 131 ou le 105) ?
@@ -113,9 +113,8 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
         } else {
             format!("Organisme {} (inconnu de la configuration)", o.organisme)
         };
-        let (debut, fin) = (Some(o.debut), Some(o.fin));
-        let periode = periode_lisible(debut, fin);
-        let regularisation = debut.is_some_and(|d| d.mois_civil() != mois);
+        let periode = periode_lisible(&o.periode);
+        let regularisation = o.periode.debut().mois_civil() != mois;
         let quoi = if dgfip {
             "l'impôt sur le revenu prélevé à la source sur les salaires"
         } else if let Some(n) = norme {
@@ -142,20 +141,20 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
         } else if let Some(jour) = jour_norme {
             let j = jour_du_mois_suivant(mois, jour as u32)?;
             (Some(j), format!("le {}", j.jj_mm_aaaa()), SOURCE_AUDIENS)
-        } else if est_agirc_arrco(norme) && fin.is_some() {
-            let j = dernier_ouvre_du_mois_suivant(&fin.expect("fin lue"))?;
+        } else if est_agirc_arrco(norme) {
+            let j = dernier_ouvre_du_mois_suivant(&o.periode.fin())?;
             (Some(j), format!("au plus tard le {}", j.jj_mm_aaaa()), SOURCE_AGIRC)
         } else {
             (None, "date non dite par la DSN".to_string(), SOURCE_AUCUNE)
         };
         let credit = bordereau::credit(o.destinataire, &organisme, o.reste, o.deduit)
-            .map(|c| CreditEnClair { reste: crate::dsn::a_deux_decimales(c.reste), deduit: crate::dsn::a_deux_decimales(c.deduit), titre: c.titre, que_faire: c.que_faire, source: c.source });
+            .map(|c| CreditEnClair { reste: c.reste.au_centime(), deduit: c.deduit.au_centime(), titre: c.titre, que_faire: c.que_faire, source: c.source });
         out.push(OrdreEnClair {
             organisme,
             identifiant: o.organisme.clone(),
             objet,
-            montant: crate::dsn::a_deux_decimales(o.montant),
-            periode: PeriodeEnClair { du: debut, au: fin },
+            montant: o.montant.au_centime(),
+            periode: o.periode,
             date,
             quand_dit,
             source,
@@ -171,8 +170,9 @@ pub struct OrdreEnClair {
     pub organisme: String,
     pub identifiant: droit::organismes::IdentifiantDOrganisme,
     pub objet: String,
-    pub montant: rust_decimal::Decimal,
-    pub periode: PeriodeEnClair,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub montant: Montant,
+    pub periode: Periode,
     pub date: Option<Jour>,
     /// La phrase de la page (« le 15/11/2026 », « date non dite par la DSN »).
     #[serde(rename = "quand")]
@@ -181,19 +181,14 @@ pub struct OrdreEnClair {
     pub credit: Option<CreditEnClair>,
 }
 
-/// La periode d'un ordre : du, au (`AAAA-MM-JJ`).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct PeriodeEnClair {
-    pub du: Option<Jour>,
-    pub au: Option<Jour>,
-}
-
 /// Le trop-verse d'un ordre (`bordereau::credit`) : ce qu'il ne reprend pas, ce qu'il reprend, et ce que la compagnie en
 /// fait.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CreditEnClair {
-    pub reste: rust_decimal::Decimal,
-    pub deduit: rust_decimal::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub reste: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub deduit: Montant,
     pub titre: String,
     pub que_faire: String,
     pub source: &'static str,

@@ -12,7 +12,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::ouverture::mois_connus;
 use crate::SansCharge;
 use droit::contexte::Contexte;
-use envois::ligne::Mode;
+use socle::mode::Mode;
 use envois::reprise_journal::DepotVu;
 use socle::echec::{Classe, R};
 
@@ -38,7 +38,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "forcer", libelle: Affiche::new("Clore malgré tout"), forme: Forme::OuiNon, sens: "vrai : clore malgré un mois sans DSN réelle acceptée", avance: true },
             Champ { nom: "rouvrir", libelle: Affiche::new("Rouvrir l'année"), forme: Forme::OuiNon, sens: "vrai : rouvrir l'année close (son archive reste)", avance: true },
         ],
-        exemple: r#"{"annee":"2025"}"#,
+        exemple: r#"{"annee":2025}"#,
         rend: "annee, archive, fichiers, empreinte, manques (ce qui n'a pu s'archiver) ; rouverte : etait_clos_depuis",
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
@@ -54,7 +54,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "au", libelle: Affiche::new("Au mois"), forme: Forme::Nombre, sens: "le dernier mois, 1 à 12", avance: true },
             Champ { nom: "apercu", libelle: Affiche::new("Aperçu seulement"), forme: Forme::OuiNon, sens: "vrai : dire ce qui s'écrirait, sans écrire", avance: true },
         ],
-        exemple: r#"{"annee":"2026","apercu":true}"#,
+        exemple: r#"{"annee":2026,"apercu":true}"#,
         rend: "les fichiers de l'export, ou ce qu'ils porteraient",
         refus: &[MANQUE, OPERATION],
         acte: Acte::Ecrit,
@@ -224,18 +224,13 @@ fn ajout_dit(d: DepotVu) -> AjoutDit {
         Some(l) => format!("déposé par {} · flux {}", l, d.flux),
         None => format!("logiciel inconnu · flux {}", d.flux),
     };
-    let reel = d.mode == Mode::Reel;
-    let mots = format!("{}{}", if reel { "dépôt réel" } else { "test" }, if d.accepte { "" } else { " — refusé" });
-    let pastille = socle::ecran::Pastille::de(
-        if !reel {
-            socle::ecran::EtatDEcran::Information
-        } else if d.accepte {
-            socle::ecran::EtatDEcran::Fait
-        } else {
-            socle::ecran::EtatDEcran::Refuse
-        },
-        &mots,
-    );
+    let (acte, etat) = match (d.mode, d.accepte) {
+        (Mode::Test, _) => ("test", socle::ecran::EtatDEcran::Information),
+        (Mode::Reel, true) => ("dépôt réel", socle::ecran::EtatDEcran::Fait),
+        (Mode::Reel, false) => ("dépôt réel", socle::ecran::EtatDEcran::Refuse),
+    };
+    let mots = format!("{}{}", acte, if d.accepte { "" } else { " — refusé" });
+    let pastille = socle::ecran::Pastille::de(etat, &mots);
     AjoutDit { depot: d, dit, origine_dit, pastille }
 }
 
@@ -346,13 +341,13 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     let lus = crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?;
     let clos = lus.clos();
     let mois_tous: Vec<socle::mois::Mois> = mois_connus(&ctx.racine)?.into_iter().map(|(m, _)| m).collect();
-    let mut annees: BTreeSet<socle::mois::Annee> = mois_tous.iter().map(|m| m.annee_civile()).collect();
+    let mut annees: BTreeSet<socle::mois::Annee> = mois_tous.iter().map(|m| m.annee()).collect();
     annees.extend(clos.keys().copied());
     let mut out = Vec::new();
     for &a in annees.iter().rev() {
-        let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| x.annee_civile() == a).copied().collect();
+        let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| x.annee() == a).copied().collect();
         mois.sort();
-        let fichier = socle::fichiers::NomDeFichier::lire(&format!("{}{}.csv", documents::SorteDePieceProduite::Compta.prefixe(), a))?;
+        let fichier = const { documents::etats_paie::NomDExport::autour(documents::SorteDePieceProduite::Compta.prefixe(), ".csv") }.de(&a.into());
         let chemin = documents::DossierHorsDuMois::Exercices.sous(&ctx.racine).join(&fichier);
         let mut acceptees = Vec::new();
         for &x in &mois {

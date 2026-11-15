@@ -28,7 +28,7 @@
 //! - contribution supplementaire a l'apprentissage (003/004) : code du travail L. 6242-1 (entreprises d'au moins 250
 //!   salaries redevables de la taxe, effectif de l'annee meme, regle des cinq ans de L. 130-1 CSS) : 003 si l'effectif
 //!   atteint 250, 004 sinon. C'est un grand seuil, comme la PEEC : sans la case « Au moins 50 salariés » de la fiche
-//!   (`cinquante_salaries_et_plus`, `droit::contexte::cinquante_salaries_et_plus`), ni l'un ni l'autre ne lit l'effectif (`Effectif::atteint`) ; cochee,
+//!   (`cinquante_salaries_et_plus`, `droit::contexte::cinquante_salaries_et_plus`), ni l'un ni l'autre ne lit l'effectif (`EffectifsParAnnee::atteint`) ; cochee,
 //!   un effectif qui manque refuse et dit quoi remplir. Le quotient des contrats d'alternance ne se calcule pas en
 //!   decembre (l'Urssaf le renvoie debut mars en CRM 118, codes A05 et A07, et la DSN de mars N+1 declare la
 //!   contribution elle-meme, calculee : `csa`).
@@ -61,15 +61,15 @@ use droit::fiche::{MotifNonAssujettissement, Nic};
 
 use documents::taxe_sur_les_salaires::{assiette_taxe_sur_les_salaires, fractions_majorees, taxe_sur_les_salaires_de_la_fiche};
 use socle::echec::{refus, R};
-use socle::mois::Mois;
-use socle::num::{add, div, eur, mul, Decimal};
+use socle::mois::{Annee, Mois};
+use socle::grandeurs::{Effectif, Montant, Taux};
 
 /// Un bloc S21.G00.44 : le code taxe (44.001) et, s'il y en a un, le montant (44.002). Le millesime (44.003) est
 /// l'annee de la DSN de decembre.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bloc44 {
     pub code: CodeTaxe,
-    pub montant: Option<Decimal>,
+    pub montant: Option<Montant>,
     /// Le motif de non-assujettissement a la taxe d'apprentissage (44.004, table MNATA), pour un 002 seulement.
     pub motif: Option<MotifNonAssujettissement>,
 }
@@ -84,7 +84,7 @@ const CTP_FORMATION: [CodeCtp; 3] = [CodeCtp::du_moteur("983"), CodeCtp::du_mote
 // ------------------------------------------------------------ les mois de l'annee
 
 /// Une paie de l'annee : son salarie (`_cle`), et la paie calculee ou seulement son contrat.
-enum MoisDeLAnnee {
+enum MoisDuCalculAnnuel {
     /// Les paies du mois : celles de la DSN, ou les paies declarees d'un autre mois quand les montants sont necessaires.
     Calcules(Mois, Vec<Paie>),
     /// Les contrats valides du mois (`dsn::contrats_du_mois`), dont seuls comptent nature, dispositif et motif.
@@ -94,12 +94,11 @@ enum MoisDeLAnnee {
 /// Les douze mois de l'annee de la DSN, pour l'etablissement `nic`. Le mois de la DSN est `paies` (celles qu'elle
 /// declare) ; un autre mois se lit dans ses engagements : leurs paies declarees (`dsn::paies_declarees_du_mois`) si
 /// `montants`, sinon leurs seuls contrats. Un mois sans saisie n'a pas eu de salarie.
-fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &Nic, mois: Mois, paies: &[Paie], montants: bool, departs: &engagement::departs::Departs) -> R<Vec<MoisDeLAnnee>> {
+fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &Nic, mois: Mois, paies: &[Paie], montants: bool, departs: &engagement::departs::Departs) -> R<Vec<MoisDuCalculAnnuel>> {
     let mut out = Vec::new();
-    for m in 1..=12u32 {
-        let m = Mois::nouveau(mois.annee(), m)?;
+    for m in mois.annee().les_mois() {
         if m == mois {
-            out.push(MoisDeLAnnee::Calcules(m, paies.to_vec()));
+            out.push(MoisDuCalculAnnuel::Calcules(m, paies.to_vec()));
             continue;
         }
         if !engagement::stock::a_une_saisie(&ctx.racine, m)? {
@@ -107,7 +106,7 @@ fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &N
         }
         if montants {
             let declarees = crate::dsn::paies_declarees_du_mois(ctx, m, Some(nic), departs).map_err(|e| e.reformuler(|e| format!("{} : {}", m, e)))?;
-            out.push(MoisDeLAnnee::Calcules(m, declarees));
+            out.push(MoisDuCalculAnnuel::Calcules(m, declarees));
         } else {
             let mut garde = Vec::new();
             for p in crate::dsn::contrats_du_mois(ctx, m, departs)? {
@@ -115,7 +114,7 @@ fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &N
                     garde.push(p);
                 }
             }
-            out.push(MoisDeLAnnee::Contrats(garde));
+            out.push(MoisDuCalculAnnuel::Contrats(garde));
         }
     }
     Ok(out)
@@ -127,11 +126,11 @@ fn qui(p: &Paie) -> String {
     engagement::numeros::le_contrat(p.engagement.numero.as_ref(), &p.salarie.id)
 }
 
-fn cpf_cdd(annee: &[MoisDeLAnnee]) -> R<bool> {
+fn cpf_cdd(annee: &[MoisDuCalculAnnuel]) -> R<bool> {
     let mut soumis = false;
     for m in annee {
         match m {
-            MoisDeLAnnee::Calcules(_, ps) | MoisDeLAnnee::Contrats(ps) => {
+            MoisDuCalculAnnuel::Calcules(_, ps) | MoisDuCalculAnnuel::Contrats(ps) => {
                 for p in ps {
                     soumis |= droit::cpf_cdd::ouvre_cpf_cdd(p.engagement.nature, p.engagement.motif_recours, &qui(p))?;
                 }
@@ -147,7 +146,7 @@ fn cpf_cdd(annee: &[MoisDeLAnnee]) -> R<bool> {
 /// la part assujettie appliquee a chacune (CGI art. 231, 1 et 2 bis ; BOFiP BOI-TPS-TS-30, § 240 : « en appliquant le
 /// rapport d'assujettissement [...] à chacune des fractions des rémunérations individuelles passibles des taux
 /// majorés »).
-fn assiettes_taxe_sur_les_salaires(annee: &[MoisDeLAnnee], bar: &droit::forme_bareme::Pile, pct: Decimal) -> R<(Decimal, Decimal, Decimal)> {
+fn assiettes_taxe_sur_les_salaires(annee: &[MoisDuCalculAnnuel], bar: &droit::forme_bareme::Pile, pct: Taux) -> R<(Montant, Montant, Montant)> {
     let ts = bar.taxe_sur_les_salaires.as_ref().ok_or_else(|| {
         socle::echec::cle(
             "Le barème de l'année ne porte pas la taxe sur les salaires : ses seuils se lisent sur la notice 2501-SD de l'année ; le signaler au développeur.",
@@ -155,37 +154,36 @@ fn assiettes_taxe_sur_les_salaires(annee: &[MoisDeLAnnee], bar: &droit::forme_ba
         )
     })?;
     let (s1, s2) = (ts.seuil_1, ts.seuil_2);
-    let abattement = if bar.abattement_csg.is_zero() { Decimal::ONE } else { bar.abattement_csg };
-    let mut par_salarie: BTreeMap<String, Decimal> = BTreeMap::new();
+    let abattement = bar.abattement_csg;
+    let mut par_salarie: BTreeMap<String, Montant> = BTreeMap::new();
     for m in annee {
         match m {
-            MoisDeLAnnee::Calcules(_, ps) => {
+            MoisDuCalculAnnuel::Calcules(_, ps) => {
                 for p in ps.iter().filter(|p| !p.engagement.sans_paie()) {
-                    let b = par_salarie.entry(p.salarie.id.to_string()).or_insert(Decimal::ZERO);
-                    *b = add(*b, assiette_taxe_sur_les_salaires(p.brut, p.base_csg, abattement));
+                    *par_salarie.entry(p.salarie.id.to_string()).or_insert(Montant::ZERO) += assiette_taxe_sur_les_salaires(p.brut, p.base_csg, abattement);
                 }
             }
-            MoisDeLAnnee::Contrats(_) => return Err(refus("assiettes de la taxe sur les salaires : un mois sans montants")),
+            MoisDuCalculAnnuel::Contrats(_) => return Err(refus("assiettes de la taxe sur les salaires : un mois sans montants")),
         }
     }
-    let (mut normal, mut premier, mut second) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
+    let (mut normal, mut premier, mut second) = (Montant::ZERO, Montant::ZERO, Montant::ZERO);
     for b in par_salarie.values() {
         let (f1, f2) = fractions_majorees(*b, s1, s2);
-        normal = add(normal, *b);
-        premier = add(premier, f1);
-        second = add(second, f2);
+        normal += *b;
+        premier += f1;
+        second += f2;
     }
-    let part = |x: Decimal| eur(div(mul(x, pct), Decimal::ONE_HUNDRED));
+    let part = |x: Montant| x.fois_taux(pct).au_centime();
     Ok((part(normal), part(premier), part(second)))
 }
 
 /// L'assiette de la PEEC de l'etablissement : les remunerations de l'annee qui servent de base aux cotisations de
 /// securite sociale, la base 03 de chaque contrat (celle que la DSN de chaque mois a declaree ou declare).
-fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &droit::organismes::Organismes, nic: &Nic, annee: &[MoisDeLAnnee]) -> R<Decimal> {
-    let mut total = Decimal::ZERO;
+fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &droit::organismes::Organismes, nic: &Nic, annee: &[MoisDuCalculAnnuel]) -> R<Montant> {
+    let mut total = Montant::ZERO;
     for m in annee {
         match m {
-            MoisDeLAnnee::Calcules(mois, ps) => {
+            MoisDuCalculAnnuel::Calcules(mois, ps) => {
                 if ps.is_empty() {
                     continue;
                 }
@@ -193,19 +191,19 @@ fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &dr
                 // Les periodes elementaires d'un mois decoupe : chacune a sa base 03.
                 for p in ps.iter().flat_map(|p| p.elementaires()) {
                     if let Some(c) = crate::dsn::cotisations(p, &bar)?.into_iter().find(|c| c.bloc78 == droit::base_assujettie::BaseAssujettie::BruteDeplafonnee) {
-                        total = add(total, c.base78);
+                        total += c.base78;
                     }
                 }
             }
-            MoisDeLAnnee::Contrats(_) => return Err(refus("assiette de la PEEC : un mois sans montants")),
+            MoisDuCalculAnnuel::Contrats(_) => return Err(refus("assiette de la PEEC : un mois sans montants")),
         }
     }
-    Ok(eur(total))
+    Ok(total.au_centime())
 }
 
 // ------------------------------------------------------------ le bloc
 
-fn effectif_atteint(ctx: &Contexte, seuil: i64, annee_paie: i32, quoi: &str) -> R<bool> {
+fn effectif_atteint(ctx: &Contexte, seuil: Effectif, annee_paie: Annee, quoi: &str) -> R<bool> {
     ctx.effectif()?.atteint(seuil, annee_paie).map_err(|m| m.reformuler(|m| format!("Bloc S21.G00.44 (assujettissement fiscal), {} : {}", quoi, m)))
 }
 
@@ -223,7 +221,7 @@ pub fn ctp_sans_la_taxe_non_due(ctps: Vec<droit::organismes::Ctp>, non_due: bool
 /// sinon, le motif lu dans la fiche entreprise. `ctp` : les codes du bordereau, deja sans la taxe quand le motif vaut
 /// (`ctp_sans_la_taxe_non_due`). Un motif hors de la table, le motif 007 a partir du millesime 2026, une fiche qui dit
 /// un motif quand le bordereau paie la taxe (garde-fou : `blocs` lui donne un bordereau qui ne la paie plus) : refus.
-fn taxe_d_apprentissage(ent: &droit::fiche::ChampsEntreprise, ctp: &[CodeCtp], an: i32) -> R<Bloc44> {
+fn taxe_d_apprentissage(ent: &droit::fiche::ChampsEntreprise, ctp: &[CodeCtp], an: Annee) -> R<Bloc44> {
     let paye = ctp.iter().any(|c| CTP_TAXE_APPRENTISSAGE.contains(c));
     let champ = champ_du_motif();
     let motif = motif_de_la_fiche(ent).map_err(|e| e.reformuler(|e| format!("DSN de decembre {} : {}", an, e)))?;
@@ -281,7 +279,7 @@ pub fn blocs(
 
     // La contribution supplementaire : L. 6242-1, I, ne la fait devoir qu'a 250 salaries et plus, l'effectif de l'annee
     // du millesime (V), regle des cinq ans comprise. Un grand seuil : sans la case des cinquante salaries, 004 sans rien lire.
-    let csa = if effectif_atteint(ctx, 250, an + 1, "contribution supplementaire a l'apprentissage")? { CodeTaxe::ContributionSupplementaireApprentissage } else { CodeTaxe::NonContributionSupplementaireApprentissage };
+    let csa = if effectif_atteint(ctx, Effectif::personnes(250), an.suivante()?,"contribution supplementaire a l'apprentissage")? { CodeTaxe::ContributionSupplementaireApprentissage } else { CodeTaxe::NonContributionSupplementaireApprentissage };
     out.push(Bloc44 { code: csa, montant: None, motif: None });
 
     // Ce qui demande les montants de l'annee : la taxe sur les salaires et la PEEC.
@@ -299,7 +297,7 @@ pas son assiette. Rien n'est ecrit.",
     // L'effectif est celui de l'annee du millesime, comme pour la contribution supplementaire : la PEEC declaree ici est
     // assise sur les salaires de cette annee-la et s'investit l'annee d'apres (BOFiP BOI-TPS-PEEC-20, § 10), et L. 313-1
     // renvoie a L. 130-1 CSS, qui retient l'effectif de l'annee civile precedant l'obligation (INFERENCE).
-    let peec = effectif_atteint(ctx, 50, an + 1, "participation des employeurs a l'effort de construction")?;
+    let peec = effectif_atteint(ctx, Effectif::personnes(50), an.suivante()?,"participation des employeurs a l'effort de construction")?;
     let annee = mois_de_l_annee(ctx, ent, nic, mois, paies, ts.is_some() || peec, departs)?;
 
     // La PEEC : CCH L. 313-1, cinquante salaries.
@@ -320,10 +318,10 @@ pas son assiette. Rien n'est ecrit.",
         Some(pct) => {
             let (normal, premier, second) = assiettes_taxe_sur_les_salaires(&annee, bar, pct)?;
             out.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalaires, montant: Some(normal), motif: None });
-            if premier > Decimal::ZERO {
+            if premier > Montant::ZERO {
                 majorees.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalairesAuPremierTaux, montant: Some(premier), motif: None });
             }
-            if second > Decimal::ZERO {
+            if second > Montant::ZERO {
                 majorees.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalairesAuDeuxiemeTaux, montant: Some(second), motif: None });
             }
         }

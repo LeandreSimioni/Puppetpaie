@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use droit::contexte::{Contexte, IdSalarie};
 use droit::natures::Nature;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::R;
 
 use crate::stock::Objet;
@@ -38,8 +38,8 @@ pub struct Permanents {
 }
 
 impl Permanents {
-    /// LA REPONSE SUR `debut..=fin` : la case sur la periode, et les engagements payes au mois qui y courent.
-    pub fn de(ctx: &Contexte, debut: &Jour, fin: &Jour) -> R<Permanents> {
+    /// LA REPONSE SUR `periode` : la case sur la periode, et les engagements payes au mois qui y courent.
+    pub fn de(ctx: &Contexte, periode: &Periode) -> R<Permanents> {
         let mut dus = Vec::new();
         for o in crate::stock::objets(&ctx.racine)? {
             if o.est_non_actif() || o.importe_seul() {
@@ -47,17 +47,17 @@ impl Permanents {
             }
             let Some((depuis, nature)) = o.au_mois_depuis()? else { continue };
             let fin_dite = o.carte().fin;
-            if depuis > *fin || fin_dite.is_some_and(|f| f < *debut) {
+            if depuis > periode.fin() || fin_dite.is_some_and(|f| f < periode.debut()) {
                 continue;
             }
             // Un engagement au mois commence sans la case ne se calcule pas (`engagements`) : il n'est du a personne.
-            if !ctx.emploie_des_permanents_pendant(&depuis, &depuis) {
+            if !ctx.emploie_des_permanents_pendant(&Periode::du_jour(depuis)) {
                 continue;
             }
             let Some(salarie) = o.carte().salarie.clone() else { continue };
             dus.push(Du { salarie, nature, depuis, fin: fin_dite });
         }
-        Ok(Permanents { proposes: ctx.emploie_des_permanents_pendant(debut, fin), dus })
+        Ok(Permanents { proposes: ctx.emploie_des_permanents_pendant(periode), dus })
     }
 
     /// Ce qui ne vaut que pour les permanents se montre-t-il (les blocs de la fiche Entreprise, les contrats de prevoyance
@@ -95,7 +95,7 @@ pub fn cle_du_salarie(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<droit::na
             continue;
         }
         let Some((depuis, nature)) = o.au_mois_depuis()? else { continue };
-        if !ctx.emploie_des_permanents_pendant(&depuis, &depuis) {
+        if !ctx.emploie_des_permanents_pendant(&Periode::du_jour(depuis)) {
             continue;
         }
         if let Some(cle) = nature.au_mois() {

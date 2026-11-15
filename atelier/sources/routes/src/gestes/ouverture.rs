@@ -70,9 +70,7 @@ pub const ROUTES: &[Fiche] = &[
 use socle::fichiers::{NomDeFichier, MARQUEUR_COPIE};
 use std::path::PathBuf;
 use crate::catalogue::{Ecran, Place};
-
-/// La trace de la derniere ouverture : `config/.ouverture.json`.
-const TRACE: &str = ".ouverture.json";
+use socle::fichiers::{ETAPE_DE_L_OUVERTURE, TRACE_DE_L_OUVERTURE};
 
 // ------------------------------------------------------------------ les options et les clients
 
@@ -454,12 +452,10 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// explique ce que fait la machine. L'ouverture tourne dans un processus a part (la veille
 /// appelle la route `ouverture`) : elle ecrit son etape dans `config/.ouverture-etape.json` en y entrant, l'efface en
 /// finissant ; la veille de la fenetre la lit (`Veille::etape`) tant qu'un passage tourne. Le fichier ne monte pas au Drive
-/// (`sauvegarde::NOMS_EXCLUS`). Une ecriture qui echoue fait echouer le passage : le disque refuse, la suite le
+/// (`sauvegarde::ecarte`). Une ecriture qui echoue fait echouer le passage : le disque refuse, la suite le
 /// refuserait aussi.
-pub const ETAPE: &str = ".ouverture-etape.json";
-
 fn chemin_etape(racine: &Path) -> std::path::PathBuf {
-    racine.join(socle::fichiers::CONFIG).join(ETAPE)
+    ETAPE_DE_L_OUVERTURE.dans(racine)
 }
 
 /// L'etape d'un passage en cours (`config/.ouverture-etape.json`) : ce qu'il fait, depuis quand.
@@ -492,7 +488,7 @@ pub fn etape_en_cours(racine: &Path) -> R<Option<String>> {
 // ------------------------------------------------------------------ la trace
 
 fn chemin_trace(ctx: &Contexte) -> std::path::PathBuf {
-    ctx.racine.join(socle::fichiers::CONFIG).join(TRACE)
+    TRACE_DE_L_OUVERTURE.dans(&ctx.racine)
 }
 
 /// LA TRACE DE LA DERNIERE OUVERTURE (`config/.ouverture.json`), que le bandeau de la fenetre lit : quand, combien de
@@ -539,8 +535,8 @@ pub struct SignatureNotee {
 /// `derniere_ouverture` : la trace, ou `None` quand aucune ouverture ne l'a encore ecrite. Une trace qui ne se lit pas se
 /// refuse.
 pub fn derniere_ouverture(racine: &std::path::Path) -> R<Option<Trace>> {
-    let p = racine.join(socle::fichiers::CONFIG).join(TRACE);
-    if !p.exists() {
+    let p = TRACE_DE_L_OUVERTURE.dans(racine);
+    if !socle::fichiers::existe_lu(&p)? {
         return Ok(None);
     }
     Ok(Some(socle::forme::lire_fichier(&p, "La trace de la dernière ouverture ne se lit pas.")?))
@@ -861,7 +857,8 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
 
     // LE TAUX COLLECTIF DE L'ARRETE pour un risque « TC », au 1er janvier de l'annee en cours et, des que son bareme est
     // livre, de la suivante (`routes::atmp::inscrire_l_arrete`) : il s'inscrit dans la case, qui le montre.
-    for an in [ctx.aujourdhui.an, ctx.aujourdhui.an + 1] {
+    let an = ctx.aujourdhui.annee();
+    for an in an.jusqu_a(an.suivante()?) {
         if let Err(e) = crate::atmp::inscrire_l_arrete(ctx, an) {
             r.incidents.push(format!("Taux AT/MP {} : {}", an, e.phrase));
         }

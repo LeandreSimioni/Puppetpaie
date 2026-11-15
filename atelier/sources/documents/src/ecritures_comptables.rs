@@ -11,7 +11,7 @@ use droit::forme_bareme::{CHOMAGE, MALADIE, REDUCTION_GENERALE, RETRAITE_T1};
 use engagement::ecarts::RegroupementDeComparaison;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
-use socle::num::{eur2, zero2, Decimal};
+use socle::grandeurs::Montant;
 
 use crate::plan_comptable::{compte_du_salarie, Plan, Refus};
 
@@ -21,7 +21,7 @@ fn refus(m: String) -> Echec {
 
 /// Un compte qui manque au plan comptable de la compagnie : le fichier et la cle a remplir vont a part.
 fn manque_au_plan(m: String, cle: String) -> Echec {
-    socle::echec::refus_avec(m, socle::echec::Lieu { fichier: Some(crate::plan_comptable::PLAN_COMPTABLE.to_string()), cle: Some(cle), ..Default::default() })
+    socle::echec::refus_avec(m, socle::echec::Lieu { fichier: Some(crate::plan_comptable::PLAN_COMPTABLE), cle: Some(cle), ..Default::default() })
         .reclasser(Classe::Refuse)
 }
 
@@ -50,8 +50,8 @@ pub struct Ecriture {
     pub date: socle::date::Jour,
     pub compte: NumeroDeCompte,
     pub libelle: String,
-    pub debit: Decimal,
-    pub credit: Decimal,
+    pub debit: Montant,
+    pub credit: Montant,
     /// Le spectacle (le brut, les frais) ou le salarie (le net, une retenue) que la ligne porte ; aucun pour une charge,
     /// un tiers ou le prelevement a la source.
     pub analytique: Option<String>,
@@ -79,14 +79,14 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
     let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let (date, lib_mois) = date_et_libelle(mois);
     let jrn = plan.journal.clone();
-    let zero = zero2();
+    let zero = Montant::ZERO;
 
-    let mut brut_par_spectacle: BTreeMap<String, Decimal> = BTreeMap::new();
-    let mut net_par_salarie: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut brut_par_spectacle: BTreeMap<String, Montant> = BTreeMap::new();
+    let mut net_par_salarie: BTreeMap<String, Montant> = BTreeMap::new();
     let mut compte_de: BTreeMap<String, Option<NumeroDeCompte>> = BTreeMap::new();
-    let mut frais_par_spectacle: BTreeMap<String, Decimal> = BTreeMap::new();
-    let mut charge: BTreeMap<(NumeroDeCompte, String), Decimal> = BTreeMap::new();
-    let mut tiers: BTreeMap<NumeroDeCompte, Decimal> = BTreeMap::new();
+    let mut frais_par_spectacle: BTreeMap<String, Montant> = BTreeMap::new();
+    let mut charge: BTreeMap<(NumeroDeCompte, String), Montant> = BTreeMap::new();
+    let mut tiers: BTreeMap<NumeroDeCompte, Montant> = BTreeMap::new();
     // LE PRELEVEMENT A LA SOURCE : celui du bulletin (`prelevement::des_paies`, la meme lecture, la meme position), retenu sur
     // le net et du a la DGFiP (compte 4421 « Prelevements a la source (Impot sur le revenu) » du plan
     // comptable general, atelier/reference/sources/plan-comptable-general/LISEZ-MOI.md), tel que la paie le porte. Le PAS d'un
@@ -99,8 +99,8 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
     // saisie est due a un tiers (427 « Personnel - Oppositions »), plan de comptes de l'ANC (meme LISEZ-MOI). Le plan
     // dit le compte de chaque rubrique (`retenues`) ; une retenue qu'il ne nomme pas fait refuser. Par (compte,
     // libelle, salarie).
-    let mut retenues: BTreeMap<(NumeroDeCompte, String, String), Decimal> = BTreeMap::new();
-    let ajouter = |m: &mut BTreeMap<String, Decimal>, k: String, v: Decimal| {
+    let mut retenues: BTreeMap<(NumeroDeCompte, String, String), Montant> = BTreeMap::new();
+    let ajouter = |m: &mut BTreeMap<String, Montant>, k: String, v: Montant| {
         let e = m.entry(k).or_insert(zero);
         *e += v;
     };
@@ -116,8 +116,8 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         let qui = crate::tableaux_export::qui(p.salarie())?;
         // Une ecriture ne s'equilibre qu'avec chacun de ses montants : celui que les pieces d'une paie importee taisent
         // ne s'invente pas, l'ecriture se refuse en le nommant.
-        let dit = |m: Option<Decimal>, quoi: &str| -> R<Decimal> {
-            m.map(eur2).ok_or_else(|| refus(format!("{}, {} : les pièces importées ne disent pas {} ; les écritures comptables du mois ne s'écrivent pas sans lui.", qui, mois, quoi)))
+        let dit = |m: Option<Montant>, quoi: &str| -> R<Montant> {
+            m.map(Montant::au_centime).ok_or_else(|| refus(format!("{}, {} : les pièces importées ne disent pas {} ; les écritures comptables du mois ne s'écrivent pas sans lui.", qui, mois, quoi)))
         };
         let brut = dit(p.brut(), "le brut")?;
         ajouter(&mut brut_par_spectacle, titre.clone(), brut);
@@ -152,14 +152,14 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         // otees : elles ont leur compte.
         let net_a_payer = dit(p.net_a_payer(), "le net à payer")?;
         let hors_brut = net_a_payer - (brut - dit(p.total_sal(), "les cotisations salariales")?) - retenu;
-        if !hors_brut.is_zero() {
+        if !hors_brut.est_nul() {
             ajouter(&mut frais_par_spectacle, titre.clone(), hors_brut);
         }
         // Le net paye est le net a payer moins l'impot retenu (le « MONTANT NET À PAYER » du bulletin) ; l'impot va
         // a l'Etat. Une paie sans prelevement ne retient rien.
         let mut net = net_a_payer;
         if let Some(v) = pas {
-            let prelevement = eur2(v.prelevement());
+            let prelevement = v.prelevement().au_centime();
             pas_du_mois += prelevement;
             net -= prelevement;
         }
@@ -193,13 +193,13 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                 None => l.libelle.clone(),
             };
             // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
-            let (pat, sal) = (l.montant_pat.map(eur2), l.montant_sal.map(eur2));
+            let (pat, sal) = (l.montant_pat.map(Montant::au_centime), l.montant_sal.map(Montant::au_centime));
             if *id == RegroupementDeComparaison::Cotisation(REDUCTION_GENERALE) {
                 if let (Some(rg), Some(pat)) = (reduction_generale, pat) {
                     // La RGDU : une charge negative, ventilee au tiers de chaque part telle que la paie l'a calculee.
                     *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += pat;
                     for (part, id_tiers) in [(rg.urssaf, MALADIE), (rg.chomage, CHOMAGE), (rg.agirc_arrco, RETRAITE_T1)] {
-                        if !part.is_zero() {
+                        if !part.est_nul() {
                             let r = plan.lignes.get(&id_tiers).ok_or_else(|| socle::fichiers::absent(id_tiers.as_str()).reclasser(Classe::Manque))?;
                             *tiers.entry(r.tiers.clone()).or_insert(zero) -= part;
                         }
@@ -207,8 +207,8 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                     continue;
                 }
             }
-            let parts: Vec<Decimal> = [pat, sal].into_iter().flatten().filter(|x| !x.is_zero()).collect();
-            if let Some(pat) = pat.filter(|x| !x.is_zero()) {
+            let parts: Vec<Montant> = [pat, sal].into_iter().flatten().filter(|x| !x.est_nul()).collect();
+            if let Some(pat) = pat.filter(|x| !x.est_nul()) {
                 *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += pat;
             }
             if !parts.is_empty() {
@@ -218,17 +218,17 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
     }
 
     let mut out: Vec<Ecriture> = Vec::new();
-    let mut ligne = |compte: &NumeroDeCompte, libelle: &str, debit: Decimal, credit: Decimal, analytique: Option<&str>, auxiliaire: Option<&NumeroDeCompte>| {
-        if debit.is_zero() && credit.is_zero() {
+    let mut ligne = |compte: &NumeroDeCompte, libelle: &str, debit: Montant, credit: Montant, analytique: Option<&str>, auxiliaire: Option<&NumeroDeCompte>| {
+        if debit.est_nul() && credit.est_nul() {
             return;
         }
         // Un montant negatif change de colonne plutot que de signe : un logiciel de compta n'aime pas un debit negatif.
         let (mut debit, mut credit) = (debit, credit);
-        if debit.is_sign_negative() && !debit.is_zero() {
+        if debit < zero {
             credit = -debit;
             debit = zero;
         }
-        if credit.is_sign_negative() && !credit.is_zero() {
+        if credit < zero {
             debit = -credit;
             credit = zero;
         }
@@ -237,8 +237,8 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             date,
             compte: compte.clone(),
             libelle: format!("{} -- {}", libelle, lib_mois),
-            debit: eur2(debit),
-            credit: eur2(credit),
+            debit: debit.au_centime(),
+            credit: credit.au_centime(),
             analytique: analytique.map(str::to_string),
             mois,
             auxiliaire: auxiliaire.cloned(),
@@ -265,7 +265,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         ligne(c, &nom, zero, *m, None, None);
     }
     // Au credit, une ligne pour le mois : la dette envers la DGFiP, qui la preleve sur la declaration du mois.
-    if !pas_du_mois.is_zero() {
+    if !pas_du_mois.est_nul() {
         ligne(&plan.pas.compte, &plan.pas.libelle, zero, pas_du_mois, None, None);
     }
     // Une retenue est negative sur le bulletin : elle passe au credit (un acompte retenu solde l'avance).
@@ -284,7 +284,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         // manque au plan ou a change de nature. On ne livre pas une ecriture desequilibree.
         return Err(refus(format!(
             "L'écriture de {} n'est pas équilibrée (débit {}, crédit {}) : une ligne de bulletin n'est pas portée comme il faut par le plan comptable.",
-            lib_mois, d, c
+            lib_mois, d.decimal(), c.decimal()
         )));
     }
     Ok(out)
@@ -314,7 +314,7 @@ pub fn csv_compta(ecritures: &[Ecriture]) -> Vec<u8> {
             Some(a) => a.to_string(),
             None => e.compte.to_string(),
         };
-        let montant = |m: Decimal| (!m.is_zero()).then(|| m.to_string().replace('.', ","));
+        let montant = |m: Montant| (!m.est_nul()).then(|| m.decimal().to_string().replace('.', ","));
         rang(&[Some(e.journal.to_string()), Some(date), Some(compte), Some(e.libelle.clone()), montant(e.debit), montant(e.credit), e.analytique.clone()]);
     }
     t.into_bytes()

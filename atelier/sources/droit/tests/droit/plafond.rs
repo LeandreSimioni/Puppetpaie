@@ -9,9 +9,11 @@
 //! (2025-2026, tous les mois, deux departs, durees 1 a 62 jours, 0, 1, 3 ou 6 cachets, artiste ou technicien), et a
 //! `plafond-dates.json`, ecrit a la main depuis les memes textes.
 
+use socle::grandeurs::{Jours, Montant, MontantUnitaire};
 use socle::num::Decimal;
 use droit::plafond::{plafond_urssaf, pour_paie, EngagementPlafond};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
+use socle::mois::Annee;
 use socle::echec::R;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -48,8 +50,18 @@ struct Pss {
 }
 
 /// Le plafond de chaque annee d'une table `{annee: (mensuel, horaire)}`.
-fn pss_depuis_table(table: &HashMap<i32, (i64, i64)>) -> impl Fn(i32) -> R<(Decimal, Decimal)> + '_ {
-    move |annee| table.get(&annee).map(|(m, h)| (Decimal::from(*m), Decimal::from(*h))).ok_or_else(|| socle::refus!("pas de plafond pour {}", annee))
+fn pss_depuis_table(table: &HashMap<Annee, (i64, i64)>) -> impl Fn(Annee) -> R<droit::plafond::Pss> + '_ {
+    move |annee| {
+        table
+            .get(&annee)
+            .map(|(m, h)| droit::plafond::Pss { mensuel: Montant::du_decimal(Decimal::from(*m)), horaire: MontantUnitaire::du_decimal(Decimal::from(*h)) })
+            .ok_or_else(|| socle::refus!("pas de plafond pour {}", annee))
+    }
+}
+
+/// Des jours dits.
+fn jours(n: i64) -> Jours {
+    Jours::du_decimal(Decimal::from(n))
 }
 
 /// Le jour (an, mois, jour).
@@ -57,10 +69,15 @@ fn j(an: i32, mois: u32, jour: u32) -> Jour {
     Jour { an, mois, jour }
 }
 
+/// La periode du `d` au `f`.
+fn du_au(d: Jour, f: Jour) -> Periode {
+    Periode::du_au(d, f).unwrap()
+}
+
 /// Le PSS : la section `plafond_securite_sociale` du bareme de l'annee (`donnees/baremes/AAAA.json`).
-fn table() -> HashMap<i32, (i64, i64)> {
+fn table() -> HashMap<Annee, (i64, i64)> {
     let mut t = HashMap::new();
-    for annee in [2025, 2026] {
+    for annee in [Annee::constante(2025), Annee::constante(2026)] {
         let b: BaremePss = lire(&code_livre(), &format!("baremes/{}.json", annee));
         t.insert(annee, (b.plafond_securite_sociale.mensuel, b.plafond_securite_sociale.horaire));
     }
@@ -98,8 +115,8 @@ fn jours_du_contrat(debut: Jour, duree: u32) -> Vec<Jour> {
 }
 
 /// L'oracle du texte, ecrit sans le moteur. `annee -> (mensuel, horaire)` : la table du bareme.
-fn oracle(t: &HashMap<i32, (i64, i64)>, duree: u32, artiste: bool, journees: &[Jour]) -> Result<Decimal, ()> {
-    let pss = |a: i32| t.get(&a).copied().ok_or(());
+fn oracle(t: &HashMap<Annee, (i64, i64)>, duree: u32, artiste: bool, journees: &[Jour]) -> Result<Decimal, ()> {
+    let pss = |a: Annee| t.get(&a).copied().ok_or(());
     if artiste && duree < 5 {
         if journees.is_empty() {
             return Err(());
@@ -107,7 +124,7 @@ fn oracle(t: &HashMap<i32, (i64, i64)>, duree: u32, artiste: bool, journees: &[J
         // Arrete du 24/01/1975, art. 3, al. 2 : 12 x le plafond horaire par journee de travail accomplie.
         let mut total = Decimal::ZERO;
         for x in journees {
-            total += Decimal::from(12 * pss(x.an)?.1);
+            total += Decimal::from(12 * pss(x.annee())?.1);
         }
         return Ok(total.round_dp(2));
     }
@@ -116,15 +133,15 @@ fn oracle(t: &HashMap<i32, (i64, i64)>, duree: u32, artiste: bool, journees: &[J
     if journees.is_empty() {
         return Err(());
     }
-    let mut par_mois: std::collections::BTreeMap<(i32, u32), i64> = Default::default();
+    let mut par_mois: std::collections::BTreeMap<(Annee, u32), i64> = Default::default();
     for x in journees.iter().collect::<std::collections::BTreeSet<_>>() {
-        *par_mois.entry((x.an, x.mois)).or_default() += 1;
+        *par_mois.entry((x.annee(), x.mois)).or_default() += 1;
     }
     let mut total = Decimal::ZERO;
     for ((a, m), n) in par_mois {
         let dim = match m {
             4 | 6 | 9 | 11 => 30,
-            2 if (a % 4 == 0 && a % 100 != 0) || a % 400 == 0 => 29,
+            2 if a.bissextile() => 29,
             2 => 28,
             _ => 31,
         };
@@ -150,9 +167,9 @@ fn la_grille_depuis_le_texte() {
                         for artiste in [true, false] {
                             cas += 1;
                             let voulu = oracle(&t, duree, artiste, &journees);
-                            let lu = plafond_urssaf(debut, fin, artiste, &pss, &journees);
+                            let lu = plafond_urssaf(&du_au(debut, fin), artiste, &pss, &journees);
                             match (&voulu, &lu) {
-                                (Ok(v), Ok(l)) => assert_eq!(l, v, "{:?}->{:?} {} cachets, artiste {}", debut, fin, c, artiste),
+                                (Ok(v), Ok(l)) => assert_eq!(l.decimal(), *v, "{:?}->{:?} {} cachets, artiste {}", debut, fin, c, artiste),
                                 (Err(()), Err(m)) if journees.is_empty() => {
                                     let regle = if artiste && duree < 5 { "arrete du 24/01/1975" } else { "BOSS, assiette generale, § 1090" };
                                     assert!(m.phrase.contains(regle), "{}", m.phrase)
@@ -175,45 +192,44 @@ fn les_dates_et_le_mensuel() {
     let t = table();
     let pss = pss_depuis_table(&t);
     for (debut, fin, statut, journees, voulu, quoi) in &c.dates {
-        let lu = plafond_urssaf(*debut, *fin, statut == "artiste", &pss, journees).unwrap();
-        assert_eq!(lu, *voulu, "{}", quoi);
+        let lu = plafond_urssaf(&du_au(*debut, *fin), statut == "artiste", &pss, journees).unwrap();
+        assert_eq!(lu.decimal(), *voulu, "{}", quoi);
     }
     for (debut, fin, voulu) in &c.mensuel {
         let e = EngagementPlafond {
             mensuelle: true,
             artiste: true,
-            debut_periode: *debut,
-            fin_periode: *fin,
-            debut: j(0, 1, 1), fin: j(0, 1, 1), dates_travail: vec![], jours: 0,
+            periode: du_au(*debut, *fin),
+            contrat: du_au(j(0, 1, 1), j(0, 1, 1)), dates_travail: vec![], jours: jours(0),
         };
-        assert_eq!(pour_paie(&e, &pss).unwrap(), *voulu, "{:?} {:?}", debut, fin);
+        assert_eq!(pour_paie(&e, &pss).unwrap().decimal(), *voulu, "{:?} {:?}", debut, fin);
     }
     // pour_paie d'un intermittent = plafond_urssaf avec ses dates.
     let e = EngagementPlafond {
-        mensuelle: false, artiste: true, debut_periode: j(2026, 5, 20), fin_periode: j(2026, 5, 23),
-        debut: j(2026, 5, 20), fin: j(2026, 5, 23),
-        dates_travail: vec![j(2026, 5, 20), j(2026, 5, 22)], jours: 2,
+        mensuelle: false, artiste: true, periode: du_au(j(2026, 5, 20), j(2026, 5, 23)),
+        contrat: du_au(j(2026, 5, 20), j(2026, 5, 23)),
+        dates_travail: vec![j(2026, 5, 20), j(2026, 5, 22)], jours: jours(2),
     };
-    assert_eq!(pour_paie(&e, &pss).unwrap(), dec("720.00"));
-    assert_eq!(pour_paie(&e, &pss).unwrap(), plafond_urssaf(e.debut, e.fin, true, &pss, &e.dates_travail).unwrap());
+    assert_eq!(pour_paie(&e, &pss).unwrap().decimal(), dec("720.00"));
+    assert_eq!(pour_paie(&e, &pss).unwrap(), plafond_urssaf(&e.contrat, true, &pss, &e.dates_travail).unwrap());
     // Une journee dite (`jours`) et non datee refuse ; aucune journee dans la paie, aucun plafond.
-    let err = pour_paie(&EngagementPlafond { jours: 3, ..e.clone() }, &pss).unwrap_err().phrase;
+    let err = pour_paie(&EngagementPlafond { jours: jours(3), ..e.clone() }, &pss).unwrap_err().phrase;
     assert!(err.contains("3 jour(s) travaille(s) pour 2 date(s)"), "{}", err);
-    assert_eq!(pour_paie(&EngagementPlafond { jours: 0, dates_travail: vec![], ..e.clone() }, &pss).unwrap(), dec("0.00"));
+    assert_eq!(pour_paie(&EngagementPlafond { jours: jours(0), dates_travail: vec![], ..e.clone() }, &pss).unwrap().decimal(), dec("0.00"));
     // Un technicien : le prorata de ses jours remuneres (BOSS § 1090), 4005 x 2 / 31.
-    assert_eq!(pour_paie(&EngagementPlafond { artiste: false, ..e.clone() }, &pss).unwrap(), dec("258.39"));
+    assert_eq!(pour_paie(&EngagementPlafond { artiste: false, ..e.clone() }, &pss).unwrap().decimal(), dec("258.39"));
     // Une paie de janvier d'un contrat du 20/01 au 10/02/2026 ne compte que ses jours (R. 242-2, « pour
     // chaque paie ») ; une date hors de la periode de paie refuse.
     let janvier = EngagementPlafond {
-        mensuelle: false, artiste: true, debut_periode: j(2026, 1, 20), fin_periode: j(2026, 1, 31),
-        debut: j(2026, 1, 20), fin: j(2026, 2, 10), dates_travail: vec![j(2026, 1, 20), j(2026, 1, 22), j(2026, 1, 24)], jours: 3,
+        mensuelle: false, artiste: true, periode: du_au(j(2026, 1, 20), j(2026, 1, 31)),
+        contrat: du_au(j(2026, 1, 20), j(2026, 2, 10)), dates_travail: vec![j(2026, 1, 20), j(2026, 1, 22), j(2026, 1, 24)], jours: jours(3),
     };
-    assert_eq!(pour_paie(&janvier, &pss).unwrap(), dec("387.58"));
+    assert_eq!(pour_paie(&janvier, &pss).unwrap().decimal(), dec("387.58"));
     let err = pour_paie(&EngagementPlafond { dates_travail: vec![j(2026, 1, 20), j(2026, 1, 22), j(2026, 2, 3)], ..janvier }, &pss).unwrap_err().phrase;
     assert!(err.contains("hors de la periode de paie"), "{}", err);
     // Sans jour remunere date, rien ne se compte : refus.
     for (debut, fin, statut, quoi) in &c.sans_date {
-        let err = plafond_urssaf(*debut, *fin, statut == "artiste", &pss, &[]).unwrap_err().phrase;
+        let err = plafond_urssaf(&du_au(*debut, *fin), statut == "artiste", &pss, &[]).unwrap_err().phrase;
         assert!(err.contains("0 jour(s) travaille(s) pour 0 date(s)"), "{} : {}", quoi, err);
     }
 }
@@ -223,9 +239,9 @@ fn bornes_incluses_et_exemples_des_bulletins() {
     let t = table();
     let pss = pss_depuis_table(&t);
     // FAVART 24/05/2026 : un jour, une journee -> 30 x 12 = 360.
-    let r = plafond_urssaf(j(2026, 5, 24), j(2026, 5, 24), true, &pss, &[j(2026, 5, 24)]).unwrap();
-    assert_eq!(r, dec("360"));
+    let r = plafond_urssaf(&Periode::du_jour(j(2026, 5, 24)), true, &pss, &[j(2026, 5, 24)]).unwrap();
+    assert_eq!(r.decimal(), dec("360"));
     // FAVART 13-22/05/2026 : dix jours, un jour remunere, 4005 / 31 (BOSS § 1090).
-    let r = plafond_urssaf(j(2026, 5, 13), j(2026, 5, 22), true, &pss, &[j(2026, 5, 15)]).unwrap();
-    assert_eq!(r, dec("129.19"));
+    let r = plafond_urssaf(&du_au(j(2026, 5, 13), j(2026, 5, 22)), true, &pss, &[j(2026, 5, 15)]).unwrap();
+    assert_eq!(r.decimal(), dec("129.19"));
 }

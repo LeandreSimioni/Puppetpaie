@@ -1,0 +1,407 @@
+Transcription de cjue-arret-c-19-03-arrondi-euro-20040914.html (balises ôtées, entités décodées), tel que servi par l'Office des
+publications le 14/11/2026 (https://publications.europa.eu/resource/celex/62003CJ0019, Accept: text/html, Accept-Language: fr).
+
+Affaire C-19/03Verbraucher-Zentrale Hamburg eVcontreO2 (Germany) GmbH & Co. OHG(demande de décision préjudicielle, formée par le Landgericht München I)
+«Politique économique et monétaire – Règlement (CE) nº 1103/97 – Introduction de l'euro – Conversion entre les unités monétaires nationales et l'unité euro – Arrondissage des sommes d'argent à payer ou à comptabiliser après application de la conversion – Contrat conclu dans le secteur des télécommunications – Notion de 'sommes d'argent à payer ou à comptabiliser' – Tarification à la minute des communications téléphoniques»
+Conclusions de l'avocat général M. M. Poiares Maduro, présentées le 25 mars 2004
+    
+Arrêt de la Cour (grande chambre) du 14 septembre 2004
+    
+Sommaire de l'arrêt
+Politique économique et monétaire – Introduction de l'euro – Règlement nº 1103/97 – Règle prévoyant l'arrondissage après conversion des sommes d'argent à payer ou à comptabiliser – Application à un tarif téléphonique – Exclusion – Arrondissage dudit tarif appliqué par un opérateur national – Admissibilité – Conditions(Règlement du Conseil nº 1103/97, art. 5) Le règlement nº 1103/97, fixant certaines dispositions relatives à l’introduction de l’euro, d’une part, vise à assurer le
+respect du principe de continuité des contrats, de sorte que le passage à la monnaie unique s’effectue sans affecter les engagements
+déjà souscrits par les citoyens et les entreprises, et, d’autre part, participe de l’objectif de neutralité du passage à l’euro.
+Il ne fixe que des règles minimales relatives aux arrondis de certaines sommes et laisse le soin aux autorités nationales
+de maintenir ou d’adopter des règles qui permettraient de mieux contribuer audit objectif.
+Il s’ensuit que l’article 5, première phrase, dudit règlement, prévoyant l’arrondissage au cent le plus proche des sommes
+d’argent à payer ou à comptabiliser, ne doit pas recevoir une interprétation large. Il ne vise donc pas un tarif fixé par
+un opérateur national, tel que le prix à la minute de la communication téléphonique, consistant en un montant qui n’est pas
+effectivement facturé au consommateur et payé par celui-ci ni n’est inscrit dans un document comptable ou un relevé de compte.
+À cet égard, le fait que ce tarif repose sur un multiple déterminé de l’unité prise comme base pour le calcul du montant final
+de la facture ou que ledit tarif représente l’élément déterminant du prix des biens ou des services pour le consommateur est
+sans incidence sur cette appréciation.
+Néanmoins, le même règlement ne s’oppose pas à ce que des sommes, telles que ledit tarif, soient arrondies au cent le plus
+proche, à condition que cette pratique d’arrondissage soit respectueuse du principe de continuité des contrats et de l’objectif
+de neutralité du passage à l’euro, c’est-à-dire qu’elle n’affecte pas les engagements contractuels souscrits par les agents
+économiques, y compris les consommateurs, et qu’elle n’ait pas d’incidence réelle sur le prix à payer effectivement.
+(cf. points 31-32, 34, 36, 40-43, 57, disp. 1-2)
+ARRÊT DE LA COUR (grande chambre)14 septembre 2004(1)
+«Politique économique et monétaire – Règlement (CE) n° 1103/97 – Introduction de l'euro – Conversion entre les unités monétaires nationales et l'unité euro – Arrondissage des sommes d'argent à payer ou à comptabiliser après application de la conversion – Contrat conclu dans le secteur des télécommunications – Notion de ‘sommes d'argent à payer ou à comptabiliser’ – Tarification à la minute des communications téléphoniques»
+Dans l'affaire C-19/03,ayant pour objet une demande de décision préjudicielle au titre de l'article 234 CE,introduite par le Landgericht München I (Allemagne), par décision du 17 décembre 2002, enregistrée à la Cour le 20 janvier 2003, dans la procédure:
+Verbraucher-Zentrale Hamburg eV
+contre
+O2 (Germany) GmbH & Co. OHG
+LA COUR (grande chambre),,
+composée de M. V. Skouris, président, MM. P. Jann, C. W. A. Timmermans, A. Rosas, C. Gulmann, J.-P. Puissochet (rapporteur)
+et J. N. Cunha Rodrigues, présidents de chambre, M. R. Schintgen, Mmes F. Macken et N. Colneric, et M. S. von Bahr, juges,
+avocat général: M. M. Poiares Maduro,greffier: Mme M. Múgica Arzamendi,administrateur principal,
+vu la procédure écrite et à la suite de l'audience du 13 janvier 2004,considérant les observations présentées:
+–
+pour O2 (Germany) GmbH & Co. OHG, par Me P. Neuwald, Rechtsanwalt,
+–
+pour la Commission des Communautés européennes, par MM. U. Wölker et P. Aalto, en qualité d'agents,
+ayant entendu l'avocat général en ses conclusions à l'audience du 25 mars 2004,
+rend le présent
+Arrêt
+1
+La demande de décision préjudicielle porte sur l’interprétation de l’article 5 du règlement (CE) n° 1103/97 du Conseil, du
+17 juin 1997, fixant certaines dispositions relatives à l’introduction de l’euro (JO L 162, p. 1).
+2
+Cette demande a été présentée dans le cadre d’un litige opposant la Verbraucher-Zentrale Hamburg eV (ci‑après la «Verbraucher‑Zentrale»)
+à O2 (Germany) GmbH & Co. OHG (ci‑après «O2») et portant sur les conditions dans lesquelles cette dernière a converti en euros
+et arrondi le prix à la minute des communications téléphoniques figurant dans ses contrats, jusqu’alors exprimé en marks allemands.
+Le cadre juridique communautaire
+3
+Aux termes de l’article 3 du règlement n° 1103/97,
+«[l]’introduction de l’euro n’a pas pour effet de modifier les termes d’un instrument juridique ou de libérer ou de dispenser
+de son exécution, et elle ne donne pas à une partie le droit de modifier un tel instrument ou d’y mettre fin unilatéralement.
+La présente disposition s’applique sans préjudice de ce dont les parties sont convenues.»
+4
+L’article 4 du même règlement dispose:
+«1.     Les taux de conversion qui sont arrêtés sont exprimés pour la contre‑valeur d’un euro dans chacune des monnaies nationales
+des États membres participants. Ils comportent six chiffres significatifs.
+2.       Les taux de conversion ne peuvent pas être en arrondis ou tronqués lors des conversions.
+3.       Les taux de conversion sont utilisés pour les conversions entre l’unité euro et les unités monétaires nationales et vice-versa. Il est interdit d’utiliser des taux inverses calculés à partir des taux de conversion.
+4.       Toute somme d’argent à convertir d’une unité monétaire nationale dans une autre doit d’abord être convertie dans un montant
+exprimé dans l’unité euro; ce montant ne pouvant être arrondi à moins de trois décimales est ensuite converti dans l’autre
+unité monétaire nationale. Aucune autre méthode de calcul ne peut être utilisée, sauf si elle produit les mêmes résultats.»
+5
+L’article 5 dudit règlement prévoit:
+«Les sommes d’argent à payer ou à comptabiliser, lorsqu’il y a lieu de les arrondir après conversion dans l’unité euro conformément
+à l’article 4, sont arrondies au cent supérieur ou inférieur le plus proche. Les sommes d’argent à payer ou à comptabiliser
+qui sont converties dans une unité monétaire nationale sont arrondies à la subdivision supérieure ou inférieure la plus proche
+ou, à défaut de subdivision, à l’unité la plus proche ou, selon les lois ou pratiques nationales, à un multiple ou à une fraction
+de la subdivision ou de l’unité monétaire nationale. Si l’application du taux de conversion donne un résultat qui se situe
+exactement au milieu, la somme est arrondie au chiffre supérieur.»
+6
+Le règlement (CE) n° 974/98 du Conseil, du 3 mai 1998, concernant l’introduction de l’euro (JO L 139, p. 1), dispose, à son
+article 14:
+«Les références aux unités monétaires nationales qui figurent dans des instruments juridiques existant à la fin de la période
+transitoire doivent être lues comme des références à l’unité euro en appliquant les taux de conversion respectifs. Les règles
+relatives à l’arrondissage des sommes d’argent arrêtées par le règlement (CE) nº 1103/97 s’appliquent.»
+7
+Selon l’article 13 du règlement n° 974/98, l’article 14 précité, notamment, s’applique «à compter de la fin de la période
+transitoire», période qui est définie, à l’article 1er de ce règlement, comme «la période commençant le 1er janvier 1999 et prenant fin le 31 décembre 2001».
+8
+En vertu de l’article 1er du règlement (CE) n° 2866/98 du Conseil, du 31 décembre 1998, concernant les taux de conversion entre l’euro et les monnaies
+des États membres adoptant l’euro (JO L 359, p. 1), le taux de conversion irrévocablement fixé entre l’euro et le mark allemand
+est de 1 euro pour 1,95583 mark.
+Le litige au principal et les questions préjudicielles
+9
+O2, qui s’appelait VIAG Interkom GmbH & Co. jusqu’en avril 2002, est établie à Munich (Allemagne). Elle exploite un réseau
+de téléphonie mobile. Ses contrats de téléphonie mobile stipulent que ses tarifs sont basés sur un prix à la minute, qui varie
+selon l’offre tarifaire choisie par le client, et que les temps de communication donnant lieu à facturation sont décomptés
+par tranche de dix secondes.
+10
+Avant le passage à l’euro, le prix à la minute des différentes offres tarifaires d’O2 était libellé en DEM, avec deux chiffres
+après la virgule, par exemple 0,05 DEM pour l’un des tarifs (tarif «Genion Home», appliqué aux appels passés après 21 heures
+vers le réseau fixe). Le prix de la tranche était, à ce tarif, de 0,00833 DEM et le prix d’un appel de dix minutes de 0,5 DEM.
+11
+Durant l’été 2001, O2 a converti en euros les montants libellés en DEM dans ses contrats. En appliquant le taux de conversion
+de 1,95583 DEM pour 1 EUR, fixé à l’article 1er du règlement nº 2866/98, le prix à la minute au tarif mentionné ci-dessus, qui s’établissait à 0,02556 EUR — en ne retenant
+que les cinq premiers chiffres après la virgule —, a été arrondi au cent d’euro le plus proche, c’est-à-dire le cent d’euro
+supérieur, et fixé en conséquence à 0,03 EUR.
+12
+Constatant que l’application du taux de conversion et l’arrondissage avaient pour effet de majorer le prix des appels soumis
+à ce tarif, le prix d’un appel de dix minutes s’établissant à 0,3 EUR, soit 0,59 DEM au lieu de 0,5 DEM auparavant, la Verbraucher-Zentrale
+(organisme habilité à poursuivre les violations des lois de protection des consommateurs) a estimé que O2 avait violé les
+principes de continuité des contrats et de précision maximale de la conversion qui seraient énoncés par les règlements nºs 1103/97 et 2866/98.
+13
+Par requête du 20 février 2002, elle a saisi le Landgericht, en faisant valoir devant cette juridiction que le prix à la minute
+figurant dans les contrats d’O2 n’était pas une somme à payer ou à comptabiliser, au sens de l’article 5 du règlement nº 1103/97.
+Selon elle, ce prix serait seulement un montant intermédiaire, qui ne devrait pas faire l’objet d’une opération d’arrondissage.
+La conversion et l’arrondissage de ce prix auraient des conséquences négatives pour les consommateurs, alors que le règlement
+nº 1103/97 aurait précisément pour objet de protéger ces derniers.
+14
+O2 a soutenu, à l’inverse, que le prix à la minute constituait à la fois l’élément déterminant de comparaison des prix entre
+les opérateurs de téléphonie mobile et, comme tout prix, une somme à payer par le consommateur, au sens de l’article 5 du
+règlement nº 1103/97, ainsi qu’une somme à comptabiliser, au sens du même article. L’affichage d’un prix à la minute qui serait
+composé de plus de chiffres après la virgule serait contraire aux principes de clarté et de vérité des prix inscrits dans
+le règlement national sur l’indication des prix. O2 a indiqué, en outre, que les prix à la minute d’appels relevant d’autres
+tarifs que celui cité en exemple par la Verbraucher‑Zentrale avaient diminué du fait des opérations de conversion et d’arrondissage,
+de sorte que les clients d’O2 n’auraient pas, dans l’ensemble, pâti des conditions dans lesquelles s’est effectué le passage
+de cette société à l’euro.
+15
+Le Landgericht a considéré que la protection des consommateurs était un objectif poursuivi par le règlement nº 1103/97. Il
+a relevé que O2 n’était en rien tenue par le règlement national sur l’indication des prix de convertir en euros et d’arrondir
+ses prix à la minute et qu’un affichage en marks pouvait satisfaire aux exigences de ce règlement national. Il a souligné
+qu’une violation de l’article 5 du règlement nº 1103/97 ne pouvait être reconnue que si les prix à la minute figurant dans
+les contrats n’étaient pas des sommes à payer ou à comptabiliser au sens de cette disposition et s’il ressortait dudit règlement
+que les sommes autres que celles qui devaient être payées ou comptabilisées ne pouvaient pas être arrondies.
+16
+Le Landgericht, s’attachant d’abord à la lettre de l’article 5 du règlement nº 1103/97, a estimé que le prix à la minute n’était
+qu’une base de calcul et n’était donc ni la somme payée par le client ni celle comptabilisée par O2. Il a considéré que, par
+cette opération de conversion et d’arrondissage, O2 s’était écartée de son engagement contractuel de fournir des services
+téléphoniques à un prix à la minute déterminé, alors que l’article 3 du règlement nº 1103/97 prévoit que l’introduction de
+l’euro et les nécessaires conversions qui y sont liées ne peuvent justifier le non-respect d’obligations légales. Il a cependant
+relevé que le prix à la minute représentait effectivement le critère de comparaison déterminant pour les consommateurs et
+qu’il n’était pas opportun, dans la perspective du passage à l’euro, de continuer à indiquer ce prix en monnaie nationale
+ou avec un nombre illimité de chiffres après la virgule.
+17
+Estimant qu’apparaissait ainsi une opposition entre l’interprétation littérale et l’interprétation téléologique du règlement
+nº 1103/97, le Landgericht München a décidé de surseoir à statuer et de poser à la Cour les questions préjudicielles suivantes:
+«1)
+L’article 5, première phrase, du règlement nº 1103/97 est-il à interpréter en ce sens que, dans le cadre de relations contractuelles
+de droit privé, le montant final d’une facture ou un montant individuel indiqué dans la facture sont les seuls qui peuvent
+ou doivent être arrondis ou le prix de l’unité/tarif (ici, le prix à la minute) également fixé par contrat constitue-t-il
+une somme à payer ou à comptabiliser au sens de la disposition citée? Est‑il déterminant pour juger de la question de savoir
+si un tarif est une somme à payer ou à comptabiliser au sens de l’article 5 du règlement nº 1103/97 que ce tarif repose sur
+un multiple déterminé (en l’espèce le sextuple) de l’unité prise comme base (en l’espèce une tranche de dix secondes) pour
+le calcul du montant final de la facture ou que le tarif représente du point de vue du consommateur le critère déterminant?
+2)
+Le règlement n° 1103/97 (en particulier l’article 5) est‑il à interpréter en ce sens qu’il contient une réglementation exhaustive
+en vertu de laquelle les sommes autres que celles qui doivent être payées ou comptabilisées (si elles devaient exister) ne
+peuvent pas être arrondies de la manière décrite à l’article 5 de sorte qu’elles doivent continuer à être indiquées dans l’ancienne
+monnaie nationale ou qu’il convient d’indiquer avec précision le résultat de la conversion?»
+Sur la première question
+18
+Par sa première question, la juridiction de renvoi demande en substance si un tarif, tel que le prix à la minute auquel O2
+facture les communications téléphoniques à ses clients, constitue une somme d’argent à payer ou à comptabiliser au sens de
+l’article 5, première phrase, du règlement nº 1103/97 ou si seul le montant final effectivement facturé au consommateur peut
+constituer une telle somme.
+Observations soumises à la Cour 
+19
+O2 soutient qu’elle a correctement appliqué la règle d’arrondissage énoncée par l’article 5, première phrase, du règlement
+n° 1103/97 et que, dans l’ensemble, ses clients n’ont pas été pénalisés par ce choix, le passage à l’euro se traduisant, selon
+les différents prix à la minute qu’elle pratique, par des hausses comme par des baisses de tarifs.
+20
+O2 considère que le litige au principal porte uniquement sur la possibilité de convertir en euros et d’arrondir les prix à
+la minute et non sur les modalités d’arrondissage de ces prix après conversion. Seule importerait donc l’interprétation de
+l’article 4 du règlement nº 1103/97, relatif aux possibilités de conversion et d’arrondissage, l’article 5, première phrase,
+de ce règlement ne fixant que les modalités d’arrondissage des sommes d’argent.
+21
+O2 fait valoir qu’elle s’est conformée aux dispositions de l’article 4, paragraphes 2 et 3, du règlement nº 1103/97. Elle
+n’aurait ni arrondi ni tronqué les taux de conversion lors de ses opérations de conversion et elle aurait appliqué le taux
+fixé pour la conversion des marks allemands en euros. Quant à l’article 4, paragraphe 4, du même règlement, il ne serait pas
+applicable en l’espèce, dans la mesure où aucune somme d’argent n’a été convertie d’une monnaie nationale dans une autre.
+22
+Ni ces articles ni aucune autre disposition de droit communautaire ne limiteraient l’application de la règle d’arrondissage
+figurant à l’article 5, première phrase, du règlement nº 1103/97 au montant total effectivement facturé au consommateur. En
+particulier, l’article 4 dudit règlement ne contiendrait aucune règle interdisant la conversion et l’arrondissage d’une somme
+telle que le prix à la minute, qui constituerait la somme déterminante convenue avec le consommateur en tant qu’unité de facturation
+des appels. La Commission aurait d’ailleurs admis que les deux méthodes de conversion, la première consistant à convertir
+chacun des montants intermédiaires, la seconde consistant à ne convertir que le montant final, seraient toutes les deux compatibles
+avec les règles d’arrondissage définies par les règlements relatifs à l’euro.
+23
+O2 soutient enfin que le prix à la minute constitue la somme d’argent à payer convenue avec le consommateur et correspond
+donc effectivement à une «somme d’argent à payer» au sens de l’article 5, première phrase, du règlement nº 1103/97, à laquelle
+la règle d’arrondissage s’applique. En tout état de cause, ce prix, à la base de la facturation des appels, devrait être analysé
+comme une «somme d’argent à comptabiliser» au sens de la même disposition. Il serait sans importance, pour l’examen de la
+question préjudicielle, de savoir si un tarif tel que le prix à la minute repose sur un multiple déterminé de l’unité prise
+comme base pour le calcul de la somme finale de la facture ou si le tarif constitue, du point de vue du consommateur, la référence
+décisive.
+24
+La Commission considère que le règlement nº 1103/97 ne donne pas de définition des sommes d’argent «à payer ou à comptabiliser».
+Il résulterait du onzième considérant de ce texte, selon lequel l’introduction de l’euro «requiert» d’arrondir les sommes
+d’argent, que les règles d’arrondissage ne devraient régir que les éléments indispensables au passage à l’euro.
+25
+La plus petite subdivision de l’euro étant le cent, tous les montants pour lesquels des raisons pratiques interdisent de descendre
+au-dessous de cette plus petite subdivision devraient être considérés comme à payer ou à comptabiliser et, partant, être arrondis
+au cent le plus proche. Il en irait ainsi, par exemple, des dettes d’argent ou des montants mentionnés dans les relevés de
+compte ou les bilans.
+26
+En revanche, un montant servant uniquement à calculer de telles sommes, tel que le prix à la minute en cause dans le litige
+au principal, pour lequel un degré plus élevé de précision n’entraînerait aucun problème pratique, devrait être considéré
+comme un montant intermédiaire, n’ayant pas à être arrondi dans les conditions fixées par l’article 5 du règlement nº 1103/97.
+Le fait que le prix à la minute constitue pour le consommateur le critère de comparaison déterminant serait sans incidence
+sur cette analyse. D’ailleurs, certains opérateurs concurrents d’O2 auraient arrondi leur prix à la minute converti en euro
+à la quatrième décimale et non au cent le plus proche.
+27
+L’article 5, première phrase, du règlement nº 1103/97 devrait donc être interprété en ce sens qu’il ne régit pas des sommes
+telles que les prix à la minute figurant dans les contrats d’O2.
+Réponse de la Cour
+28
+Le règlement nº 1103/97 ne donne aucune définition de la notion de «sommes d’argent à payer ou à comptabiliser» figurant à
+son article 5, première phrase.
+29
+Si le libellé de cette disposition implique clairement que sont incluses dans cette notion, d’une part, des sommes qui donnent
+lieu à paiement de la part du consommateur, c’est‑à‑dire toutes les dettes d’argent, et, d’autre part, des sommes inscrites
+dans des documents comptables ou des relevés de compte, il ne permet pas d’emblée de déterminer si ladite notion recouvre
+également des montants monétaires, tels que les prix à la minute pratiqués par O2, qui servent de base au calcul du prix à
+payer par le consommateur.
+30
+En l’absence d’autre indication résultant du libellé du règlement nº 1103/97, il convient de s’attacher aux finalités de ce
+dernier.
+31
+Il ressort de l’ensemble de ses motifs et de ses dispositions que ce règlement vise à assurer que le passage à la monnaie
+unique s’effectue sans affecter les engagements déjà souscrits par les citoyens et les entreprises. Dans cette perspective,
+son quatrième considérant énonce que «[...] l’établissement précoce de la sécurité juridique permettra aux citoyens et aux
+entreprises de se préparer dans de bonnes conditions». En vertu de son septième considérant, «[...] selon un principe général
+du droit, la continuité des contrats et autres instruments juridiques n’est pas affectée par l’introduction d’une nouvelle
+monnaie». Le même considérant précise que l’objectif des dispositions du règlement n° 1103/97 relatives à la continuité des
+contrats «est de fournir la sécurité juridique et la transparence pour les agents économiques, en particulier les consommateurs
+[…]». L’article 3, première phrase, du règlement n° 1103/97 dispose que «[l]’introduction de l’euro n’a pas pour effet de
+modifier les termes d’un instrument juridique ou de libérer ou de dispenser de son exécution, et elle ne donne pas à une partie
+le droit de modifier un tel instrument ou d’y mettre fin unilatéralement».
+32
+Participe de cet objectif de neutralité du passage à l’euro, la fixation de règles relatives aux opérations de conversion.
+En effet, la recherche de la plus grande neutralité possible de ces opérations, pour les citoyens comme pour les entreprises,
+suppose, comme l’indique le douzième considérant dudit règlement, que soit assuré «un degré élevé de précision pour les opérations
+de conversion». L’article 4, paragraphe 1, du règlement nº 1103/97 prévoit ainsi que les taux de conversion «comportent six
+chiffres significatifs». Le même article précise, à son paragraphe 2, que «[l]es taux de conversion ne peuvent pas être [...]
+arrondis ou tronqués lors des conversions» et, à son paragraphe 3, que «[i]l est interdit d’utiliser des taux inverses calculés
+à partir des taux de conversion», cette dernière prescription visant, selon le dixième considérant du règlement n° 1103/97,
+à éviter «des imprécisions significatives, notamment lorsque la conversion porte sur des montants élevés».
+33
+Au nom du même objectif de neutralité du passage à l’euro, le règlement nº 1103/97 prévoit, à son onzième considérant, que
+les règles pour arrondir les sommes d’argent «ne portent pas atteinte aux pratiques, conventions ou dispositions nationales
+relatives aux arrondis qui assurent un degré plus élevé de précision pour les calculs intermédiaires».
+34
+Il résulte de cet examen des finalités du règlement nº 1103/97 et, en particulier, du renvoi effectué par son onzième considérant
+aux règles nationales en matière d’arrondissage des sommes d’argent que ce règlement ne fixe que des règles minimales relatives
+aux arrondis de certaines sommes et laisse le soin aux autorités nationales de maintenir ou d’adopter des règles qui permettraient
+de mieux contribuer à l’objectif de neutralité du passage à la monnaie unique. Le libellé même de ce onzième considérant indique
+que les modalités d’arrondissage des sommes d’argent figurant dans le règlement nº 1103/97 n’ont pas pour objet de régir de
+façon exhaustive les calculs intermédiaires portant sur ces sommes.
+35
+Or, s’il était interprété en ce sens qu’il vise toutes les sommes d’argent, y compris celles qui ne donnent lieu ni à paiement
+ni à inscription comptable, l’article 5, première phrase, du règlement nº 1103/97 imposerait le respect d’une règle d’arrondissage
+qui ne correspondrait pas dans tous les cas au degré de précision qu’implique l’objectif de neutralité de l’introduction de
+l’euro et qui, par suite, pourrait porter atteinte à des règles plus précises existant au niveau national.
+36
+L’article 5, première phrase, du règlement nº 1103/97 ne doit donc pas recevoir une interprétation large. Il ne peut viser,
+comme l’indique à juste titre la Commission, que les sommes d’argent citées au point 29 du présent arrêt, pour lesquelles
+des raisons pratiques, qu’elles soient commerciales, comptables ou financières, non seulement justifient, mais aussi imposent
+un arrondissage au cent le plus proche.
+37
+En effet, la plus petite subdivision monétaire de l’euro étant le cent, le prix effectivement payé par le consommateur, lorsque
+ce dernier règle ce prix en espèces, ne peut être libellé qu’au cent près. De même, les factures étant arrondies au cent le
+plus proche, les écritures comptables et les relevés de compte correspondant à ces factures ne peuvent être présentés qu’avec
+un degré de précision identique.
+38
+Certes, le développement des moyens de paiement électroniques, tels que les cartes ou les virements bancaires, aurait pu laisser
+place à un degré de précision allant au-delà de cette subdivision. Toutefois, d’évidentes raisons pratiques excluaient que
+de telles exigences, qui ne pouvaient en tout état de cause être respectées pour les paiements en monnaie fiduciaire, fussent
+imposées aux citoyens et aux entreprises.
+39
+Conscient des inévitables imprécisions liées à l’arrondissage des sommes d’argent au cent le plus proche, le législateur communautaire
+s’est donc borné à prévoir que cette pratique devrait s’appliquer aux sommes d’argent donnant lieu à paiement ou à inscription
+comptable et à préciser, à l’article 5, dernière phrase, du règlement nº 1103/97, que, «[s]i l’application du taux de conversion
+donne un résultat qui se situe exactement au milieu, la somme est arrondie au chiffre supérieur».
+40
+En ce qui concerne un tarif, tel que le prix à la minute en cause dans le litige au principal, aucune raison pratique n’impose
+d’arrondir, dans tous les cas, son montant à deux chiffres après la virgule. Le tarif à l’unité des biens et services est
+en effet susceptible d’être présenté avec un degré de précision plus élevé, ainsi que l’attestent les pratiques de nombreux
+opérateurs économiques. Surtout, un tel montant n’est pas effectivement facturé au consommateur et payé par celui-ci et il
+n’est inscrit en tant que tel dans aucun document comptable ou relevé de compte. Dans ces conditions, il ne constitue pas
+une somme d’argent à payer ou à comptabiliser, au sens de l’article 5, première phrase, du règlement nº 1103/97. Il n’a donc
+pas à être arrondi, dans tous les cas, au cent le plus proche.
+41
+Le fait que ce tarif représente l’élément déterminant du prix des biens ou des services proposés au consommateur est sans
+incidence sur cette conclusion. En effet, l’affichage d’un tarif avec un degré de précision limité à deux décimales n’est
+pas nécessairement la meilleure façon d’assurer l’information complète du consommateur.
+42
+La circonstance que ce tarif repose sur un multiple déterminé (le sextuple) de l’unité prise comme base (une tranche de dix
+secondes) pour le calcul du montant final de la facture n’a pas davantage d’incidence sur la réponse à la question préjudicielle.
+Dès lors que ce tarif n’est pas la somme effectivement payée par le consommateur, il n’est pas une somme d’argent à payer
+ou à comptabiliser au sens du règlement nº 1103/97, quels que soient sa structure ou son mode de calcul.
+43
+Il convient donc de répondre à la première question préjudicielle qu’un tarif, tel que le prix à la minute en cause dans le
+litige au principal, ne constitue pas une somme d’argent à payer ou à comptabiliser au sens de l’article 5, première phrase,
+du règlement nº 1103/97 et n’a donc pas à être arrondi, dans tous les cas, au cent le plus proche. Le fait que ce tarif repose
+sur un multiple déterminé de l’unité prise comme base pour le calcul du montant final de la facture ou que ledit tarif représente
+l’élément déterminant du prix des biens ou des services pour le consommateur est sans incidence sur cette appréciation.
+Sur la seconde question
+44
+Par sa seconde question, la juridiction de renvoi demande en substance si le règlement n° 1103/97, en particulier son article
+5, première phrase, doit être interprété en ce sens qu’il s’oppose à ce que les sommes autres que celles qui doivent être
+payées ou comptabilisées soient arrondies au cent le plus proche.
+Observations soumises à la Cour
+45
+O2 soutient que toutes les sommes d’argent constituent des sommes à payer ou à comptabiliser et qu’elles peuvent toutes faire
+l’objet d’opérations de conversion ainsi que, par conséquent, d’arrondissage selon les modalités définies par l’article 5,
+première phrase, du règlement nº 1103/97. Si des sommes d’argent n’étaient ni à payer ni à comptabiliser, elles seraient soustraites
+aux règles d’arrondissage visées par le règlement et devraient rester exprimées dans l’ancienne monnaie nationale ou avec
+une indication précise du résultat de la conversion, ce qui serait incompatible avec l’objectif d’un passage rapide à l’euro.
+46
+O2 fait valoir, à titre subsidiaire, dans l’hypothèse où le prix à la minute ne serait pas analysé comme une somme à payer
+ou à comptabiliser au sens de l’article 5, première phrase, du règlement nº 1103/97, que cette disposition doit être interprétée
+en ce sens qu’elle ne s’oppose pas à ce que d’autres sommes, telles que le prix à la minute en cause dans le litige au principal,
+puissent être arrondies au cent le plus proche.
+47
+La Commission estime que l’on ne peut déduire de l’absence de mention d’autres sommes d’argent dans ladite disposition une
+interdiction formelle d’arrondir d’autres sommes, interdiction qui eût exigé une mention expresse, même si le règlement est
+fondé sur le principe selon lequel la conversion doit s’effectuer avec le maximum de précision possible. L’article 5 ne régirait
+donc que l’arrondissage des sommes qui y sont visées, en fixant un degré minimal de précision et en ne faisant pas obstacle
+à ce que le droit national vise à atteindre, pour d’autres sommes, un degré de précision plus élevé, notamment à partir des
+calculs intermédiaires.
+Réponse de la Cour
+48
+Ainsi qu’il ressort de la réponse à la première question, l’article 5, première phrase, du règlement nº 1103/97 fixe une règle
+d’arrondissage ne s’appliquant qu’aux sommes d’argent qu’il vise. Quant aux autres dispositions de ce règlement, elles ne
+prévoient aucune règle d’arrondissage relative aux autres sommes d’argent, telles que les tarifs à l’unité des biens et des
+services ou les montants intermédiaires permettant de calculer les sommes d’argent à payer ou à comptabiliser. Le règlement
+nº 1103/97 ne pouvait en effet, compte tenu notamment des différences de valeur existant entre les anciennes unités monétaires
+des États membres, déterminer de façon homogène pour l’ensemble des États membres ayant adopté l’euro quel degré de précision
+serait requis pour les opérations d’arrondissage portant sur lesdits tarifs ou montants intermédiaires.
+49
+Toutefois, la circonstance que le règlement n° 1103/97 ne fixe pas lui‑même le degré de précision des opérations d’arrondissage
+portant sur les autres sommes d’argent n’implique pas que ces opérations soient soustraites au principe général de continuité
+des contrats, dont l’article 3 dudit règlement constitue l’expression, ni qu’elles puissent méconnaître l’objectif de neutralité
+du passage à l’euro poursuivi par ce règlement.
+50
+D’une part, la règle d’arrondissage au cent le plus proche énoncée à l’article 5, première phrase, du règlement n° 1103/97
+et celle qui la complète, prévue à la dernière phrase du même article, d’arrondir certaines sommes d’argent au cent supérieur,
+ne sont prescrites aux opérateurs économiques qu’en raison de nécessités pratiques.
+51
+L’effet combiné de ces deux règles entraîne une relative imprécision dans le résultat de la conversion en euros de la valeur
+des biens et des services, imprécision qui peut aller jusqu’à modifier de façon non négligeable des prix convenus par contrat
+et, ainsi, être à l’origine d’une violation des impératifs de continuité des contrats et de neutralité du passage à l’euro.
+Il s’ensuit qu’un arrondissage limité à deux décimales des autres sommes d’argent que celles visées à l’article 5, première
+phrase, du règlement n° 1103/97 ne peut dans tous les cas répondre à l’exigence de précision qu’imposent lesdits impératifs,
+à supposer même qu’une telle pratique d’arrondissage ne soit pas exclue en vertu de dispositions nationales.
+52
+D’autre part, il ressort du onzième considérant du règlement nº 1103/97, qui indique que les règles d’arrondissage de ce règlement
+«ne portent pas atteinte aux pratiques, conventions ou dispositions nationales relatives aux arrondis qui assurent un degré
+plus élevé de précision pour les calculs intermédiaires», que les auteurs du règlement n’ont pas habilité les autorités nationales
+à déroger aux impératifs de continuité et de neutralité dans la fixation des modalités d’arrondissage applicables aux tarifs
+ou aux montants intermédiaires.
+53
+Il résulte de ces considérations que, si le règlement nº 1103/97 ne s’oppose pas de façon générale à ce que d’autres sommes
+d’argent que celles visées à son article 5, première phrase, soient arrondies au cent le plus proche, encore faut‑il que cette
+méthode d’arrondissage n’affecte pas les engagements contractuels souscrits par les agents économiques, y compris les consommateurs,
+et qu’elle n’ait pas d’incidence réelle sur les prix à payer effectivement.
+54
+Ainsi, lorsque le prix à payer résulte de la prise en compte d’un nombre élevé de calculs intermédiaires, l’arrondissage au
+cent le plus proche du tarif à l’unité de ces biens et services ou de chacun des montants intermédiaires entrant dans la facturation
+est susceptible d’avoir une incidence réelle sur le prix effectivement supporté par les consommateurs. Or, si elle n’a pas
+été préalablement convenue entre les parties au contrat concerné, une telle variation du prix est contraire au principe de
+continuité des contrats et à l’objectif de neutralité du passage à l’euro que vise à garantir le règlement n° 1103/97.
+55
+Il appartient au juge national de vérifier, dans le litige dont il est saisi, si l’application de la règle d’arrondissage
+au cent le plus proche a eu une incidence réelle sur le montant que doivent régler les consommateurs et si l’application de
+cette règle a porté atteinte aux engagements contractuels souscrits par les parties.
+56
+Il incombe ainsi au juge de renvoi de vérifier si la décision d’O2 d’arrondir au cent le plus proche l’ensemble de ses tarifs
+à la minute a eu une incidence réelle sur les prix et si elle traduit une violation des engagements contractuels que cette
+société a souscrits à l’égard de sa clientèle.
+57
+Il convient dès lors de répondre à la seconde question que le règlement n° 1103/97 doit être interprété en ce sens qu’il ne
+s’oppose pas à ce que les sommes autres que celles qui doivent être payées ou comptabilisées soient arrondies au cent le plus
+proche, à condition que cette pratique d’arrondissage soit respectueuse du principe de continuité des contrats garanti par
+l’article 3 de ce règlement et de l’objectif de neutralité du passage à l’euro poursuivi par ledit règlement, c’est‑à‑dire
+que cette pratique d’arrondissage n’affecte pas les engagements contractuels souscrits par les agents économiques, y compris
+les consommateurs, et qu’elle n’ait pas d’incidence réelle sur le prix à payer effectivement.
+Sur les dépens
+58
+La procédure revêtant, à l'égard des parties au principal, le caractère d'un incident soulevé devant la juridiction de renvoi,
+il appartient à celle-ci de statuer sur les dépens. Les frais exposés pour soumettre des observations à la Cour, autres que
+ceux desdites parties, ne peuvent faire l'objet d'un remboursement.
+Par ces motifs, la Cour (grande chambre) dit pour droit:
+1)
+Un tarif, tel que le prix à la minute en cause dans le litige au principal, ne constitue pas une somme d’argent à payer ou
+à comptabiliser au sens de l’article 5, première phrase, du règlement (CE) n° 1103/97 du Conseil, du 17 juin 1997, fixant
+certaines dispositions relatives à l’introduction de l’euro, et n’a donc pas à être arrondi, dans tous les cas, au cent le
+plus proche. Le fait que ce tarif repose sur un multiple déterminé de l’unité prise comme base pour le calcul du montant final
+de la facture ou que ledit tarif représente l’élément déterminant du prix des biens ou des services pour le consommateur est
+sans incidence sur cette appréciation.
+2)
+Le règlement n° 1103/97 doit être interprété en ce sens qu’il ne s’oppose pas à ce que les sommes autres que celles qui doivent
+être payées ou comptabilisées soient arrondies au cent le plus proche, à condition que cette pratique d’arrondissage soit
+respectueuse du principe de continuité des contrats garanti par l’article 3 de ce règlement et de l’objectif de neutralité
+du passage à l’euro poursuivi par ledit règlement, c’est‑à‑dire que cette pratique d’arrondissage n’affecte pas les engagements
+contractuels souscrits par les agents économiques, y compris les consommateurs, et qu’elle n’ait pas d’incidence réelle sur
+le prix à payer effectivement.
+Signatures.
+1 –
+Langue de procédure: l'allemand.

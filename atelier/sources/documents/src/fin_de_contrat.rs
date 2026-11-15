@@ -10,14 +10,14 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::forme::{Document, Style};
 
-use crate::bulletin::{fmt_eur, identite_de};
+use crate::bulletin::identite_de;
+use socle::texte::chiffres_en_euros;
 use crate::marqueurs::{ModeleLu, Valeurs};
 use droit::marqueurs::Marqueur;
 use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, R};
-use socle::num::eur2;
 
 /// Ce qu'il faut savoir du reçu et du certificat en les remettant.
 pub const AVIS: &[&str] = &[
@@ -44,7 +44,7 @@ fn mention(m: &engagement::portabilite::Portabilite, nom: &str, fin: &Jour) -> S
         "Maintien des garanties (article L. 911-8 du code de la sécurité sociale) : si la cessation de son contrat de \
 travail lui ouvre droit à une prise en charge par l'assurance chômage, {} bénéficie du maintien à titre gratuit des \
 garanties collectives {} en vigueur dans l'entreprise, à compter du {} et pendant la durée de son indemnisation, dans \
-la limite de {} mois (la durée {}{}, arrondie au mois supérieur, douze mois au plus). Il en justifie auprès de \
+la limite de {} (la durée {}{}, arrondie au mois supérieur, douze mois au plus). Il en justifie auprès de \
 l'organisme assureur, à l'ouverture et au cours de la période de maintien.",
         nom,
         garanties,
@@ -63,7 +63,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let Some(numero) = e.numero.as_ref() else {
         return Err(erreur(Classe::Illisible, "Certificat de travail : le contrat n'a pas de numéro, il n'est pas validé. Le valider d'abord."));
     };
-    let Some(fin) = e.fin else {
+    let Some(fin) = e.contrat().fin() else {
         return Err(erreur(
             Classe::Illisible,
             format!("Certificat de travail : le contrat {} n'a pas de date de fin. Il se délivre à l'expiration du contrat (L1234-19).", numero),
@@ -81,7 +81,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let maintien = engagement::portabilite::de(ctx, p, numero, &fin)?;
     // LE MODELE DU CERTIFICAT : celui de la compagnie (ses `gabarits/`, une copie qu'elle a pu modifier) ou celui livre.
     // Quand un maintien est du, un modele qui ne cite pas sa mention la tairait sans le dire : il se refuse.
-    let chemin_cert = socle::fichiers::modele_de("certificat-travail.modele", Some(&ent.gabarits), &poste);
+    let chemin_cert = socle::fichiers::modele_de(&const { socle::fichiers::NomDeFichier::du_moteur("certificat-travail.modele") }, Some(&ent.gabarits), &poste);
     let lu_cert = ModeleLu::du_fichier(&chemin_cert)?;
     if maintien.is_some() && !lu_cert.cite(Marqueur::CertificatPortabilite) {
         return Err(erreur(
@@ -102,8 +102,8 @@ fait). Rien n'est écrit.",
     let dite: String = maintien.iter().map(|m| mention(m, &nom, &fin)).collect();
     valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
-    valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));
-    let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste))?;
+    valeurs.insert(Marqueur::SoldeNet, chiffres_en_euros(p.net_a_payer));
+    let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de(&const { socle::fichiers::NomDeFichier::du_moteur("recu-solde-de-tout-compte.modele") }, Some(&ent.gabarits), &poste))?;
     ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
     if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
         return Err(socle::fichiers::effacer_apres(e, &certificat));
@@ -139,7 +139,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
     poser(Marqueur::SalarieCodePostal, ecrite(&s.code_postal, "code_postal")?);
     poser(Marqueur::SalarieCommune, ecrite(&s.commune, "commune")?);
     poser(Marqueur::ContratNumero, numero.to_string());
-    poser(Marqueur::ContratDebut, e.debut.jj_mm_aaaa());
+    poser(Marqueur::ContratDebut, e.contrat().debut().jj_mm_aaaa());
     poser(Marqueur::ContratFin, fin.jj_mm_aaaa());
     poser(Marqueur::ContratEmploi, ecrite(&s.emploi, "emploi")?);
     poser(Marqueur::ContratNature, e.nat().map_err(|m| m.reclasser(Classe::Illisible))?.libelle.clone());
@@ -152,12 +152,12 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
 fn inventaire(p: &Paie) -> String {
     let mut lignes = Vec::new();
     for l in &p.remuneration {
-        lignes.push(format!("{} : {}", l.libelle, fmt_eur(eur2(l.montant))));
+        lignes.push(format!("{} : {}", l.libelle, chiffres_en_euros(l.montant)));
     }
     for l in &p.lignes {
-        let m = eur2(l.montant_sal);
-        if m != socle::num::Decimal::ZERO {
-            lignes.push(format!("{} : -{}", l.libelle, fmt_eur(m)));
+        let m = l.montant_sal.au_centime();
+        if !m.est_nul() {
+            lignes.push(format!("{} : -{}", l.libelle, chiffres_en_euros(m)));
         }
     }
     lignes.join("\n")

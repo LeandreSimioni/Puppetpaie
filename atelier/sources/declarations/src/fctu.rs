@@ -9,13 +9,14 @@ use droit::fiche::Lue as _;
 
 use droit::base_assujettie::BaseAssujettie;
 use droit::contexte::{aujourdhui, Contexte};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use crate::dsn::{
     autre_revenu, bases_et_cotisations, bloc_anciennete, bloc_contrat_fctu, primes_et_indemnites,
     remunerations, usage_admet, Arret, Fichier, LOGICIEL, VERSION,
 };
 use engagement::Engagement;
 use socle::echec::{Classe, R};
+use socle::grandeurs::Signe;
 use socle::fichiers::repr;
 use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre, RubriqueDeLaNorme, TypeDeRemuneration};
 use droit::type_declaration::TypeDeLaDeclaration;
@@ -75,7 +76,7 @@ pub fn libelle_preavis(type_preavis: TypeDePreavis) -> R<String> {
 
 /// Le code par defaut d'une nomenclature.
 fn defaut<T: Copy>(n: &droit::preavis::Nomenclature<T>, quoi: &str) -> R<T> {
-    n.defaut().ok_or_else(|| socle::echec::livree("fctu-base.json", quoi))
+    n.defaut().ok_or_else(|| socle::echec::livree(&droit::preavis::FCTU, quoi))
 }
 
 /// La fin d'un contrat, telle qu'elle se declare. Le dernier jour travaille et paye
@@ -129,7 +130,7 @@ pub fn indemnites_de_preavis_versees(paie: &engagement::calcul::Paie) -> R<Vec<(
     Ok(paie
         .remuneration
         .iter()
-        .filter(|l| !l.montant.is_zero())
+        .filter(|l| !l.montant.est_nul())
         .filter_map(|l| l.dsn_bloc52.filter(|c| codes.contains(c)).map(|c| (c, l.libelle.clone())))
         .collect())
 }
@@ -178,7 +179,7 @@ preavis ({}) -- CCH-12 de S21.G00.62.006.",
 /// salaire habituel precede le debut du preavis (CCH-12) : sans saisie, le moteur refuse plutot que de le deviner.
 pub fn dernier_jour_paye(e: &Engagement) -> R<Jour> {
     let numero = e.numero_declare()?;
-    let fin = e.fin.ok_or_else(|| socle::refus!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
+    let fin = e.contrat().fin().ok_or_else(|| socle::refus!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
     let preavis = e.preavis.as_ref();
     let type_preavis = preavis.map(|p| p.genre);
     let debut_preavis = preavis.and_then(|p| p.debut);
@@ -200,7 +201,7 @@ precede le debut du preavis (CCH-12, cahier technique DSN p. 275). Il se saisit 
             fin
         }
     };
-    controler_62_006(&jour_paye, &e.debut, &fin, type_preavis, debut_preavis.as_ref())
+    controler_62_006(&jour_paye, &e.contrat().debut(), &fin, type_preavis, debut_preavis.as_ref())
         .map_err(|m| m.reformuler(|m| format!("Contrat {} : {}", numero, m)))?;
     Ok(jour_paye)
 }
@@ -255,11 +256,11 @@ clause de preavis applicable », et les dates sont alors interdites.",
             )));
         }
         // CCH-16 : le preavis commence apres le debut du contrat.
-        if pd < e.debut {
+        if pd < e.contrat().debut() {
             return Err(Echec::impossible(format!(
                 "Preavis : il commence le {}, avant le debut du contrat ({}) -- CCH-16 de S21.G00.63.002.",
                 pd.iso(),
-                e.debut.iso()
+                e.contrat().debut().iso()
             )));
         }
         // CCH-13 : le preavis commence apres la notification de la rupture.
@@ -302,12 +303,12 @@ preavis de L1234-1."
 
     // CCH-11 de S21.G00.62.003 : la notification tombe dans le contrat.
     if let Some(nt_j) = fin.notification {
-        if !(e.debut <= nt_j && nt_j <= fin.fin) {
+        if !(e.contrat().contient(&nt_j) && nt_j <= fin.fin) {
             return Err(Echec::impossible(format!(
                 "Notifiée le {} : la rupture se notifie pendant le contrat, entre son premier jour, le {}, et sa fin, le \
 {} -- CCH-11 de S21.G00.62.003.",
                 nt_j.jj_mm_aaaa(),
-                e.debut.jj_mm_aaaa(),
+                e.contrat().debut().jj_mm_aaaa(),
                 fin.fin.jj_mm_aaaa()
             )));
         }
@@ -326,7 +327,7 @@ signalement sans elle. Rien n'est ecrit.",
     // S21.G00.62.006 se lit sur le contrat, comme dans la mensuelle ; ses controles valent aussi contre la fin et le
     // preavis que ce signalement declare (62.001, 63.001, 63.002).
     let jour_paye = dernier_jour_paye(e).map_err(Echec::Impossible)?;
-    controler_62_006(&jour_paye, &e.debut, &fin.fin, Some(fin.type_preavis), debut_p.as_ref())
+    controler_62_006(&jour_paye, &e.contrat().debut(), &fin.fin, Some(fin.type_preavis), debut_p.as_ref())
         .map_err(Echec::Impossible)?;
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).
@@ -395,14 +396,14 @@ pub struct Options {
     pub type_declaration: TypeDeLaDeclaration,
     pub ordre: NumeroDOrdre,
     pub remplace: Option<IdentifiantDeDeclaration>,
-    pub envoi_test: bool,
+    pub mode: socle::mode::Mode,
     pub date_constitution: Option<Jour>,
 }
 
 impl Options {
     /// Un premier signalement normal, en reel, constitue le jour de son depot.
     pub fn normale() -> Options {
-        Options { type_declaration: TypeDeLaDeclaration::Normale, ordre: NumeroDOrdre::PREMIER, remplace: None, envoi_test: false, date_constitution: None }
+        Options { type_declaration: TypeDeLaDeclaration::Normale, ordre: NumeroDOrdre::PREMIER, remplace: None, mode: socle::mode::Mode::Reel, date_constitution: None }
     }
 }
 
@@ -447,7 +448,7 @@ ou un annule.",
         Some(j) => j,
         None => aujourdhui()?,
     };
-    let (debut_p, fin_p) = (e.debut_periode(), e.fin_periode());
+    let payee = e.periode_payee()?;
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference :
     // `note`) ; un jour que la donnee ne couvre pas refuse.
@@ -458,7 +459,7 @@ ou un annule.",
     f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
-    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.005"), droit::natures::ListeDeLaNorme::code_de_la_norme(o.mode));
     f.ecrire_la_version()?;
     f.add(droit::rubrique!("S10.G00.00.007"), "01");
     f.add(droit::rubrique!("S10.G00.00.008"), "01");
@@ -534,34 +535,32 @@ ou un annule.",
     // ------------------------------------------------------------ S21 contrat
     let siens: Vec<&Arret> = arrets.iter().collect();
     // Les emplois multiples (`40.036`) : les autres contrats du salarie dans la periode de paie du signalement.
-    let du_mois = crate::dsn::contrats_du_mois(ctx, debut_p.mois_civil(), departs)?;
+    let du_mois = crate::dsn::contrats_du_mois(ctx, payee.debut().mois_civil(), departs)?;
     let emplois = crate::dsn::emplois_multiples(paie, &du_mois.iter().collect::<Vec<_>>());
     bloc_contrat_fctu(&mut f, paie, &ent_l, &orgs, 1, &bar, true, &siens, NATURE, Some(fin), emplois)?;
 
     // ------------------------------------------------------------ S21 versement
     // La date de versement : la fin de la periode de paie.
-    f.add(droit::rubrique!("S21.G00.50.001"), fin_p.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.50.001"), payee.fin().jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.50.003"), "01");
     f.add(droit::rubrique!("S21.G00.50.020"), defaut(&nomenclatures()?.rattachement_versement, "rattachement_versement")?);
     // Un mois decoupe en periodes elementaires : les remunerations et les bases de chacune, datees de ses bornes.
-    let bornes = |q: &engagement::calcul::Paie| -> R<(Jour, Jour)> {
-        if paie.periodes.is_empty() { Ok((debut_p, fin_p)) } else { Ok((q.engagement.debut_periode(), q.engagement.fin_periode())) }
+    let bornes = |q: &engagement::calcul::Paie| -> R<Periode> {
+        if paie.periodes.is_empty() { Ok(payee) } else { q.engagement.periode_payee() }
     };
     for q in paie.elementaires() {
-        let (d, f_) = bornes(q)?;
-        remunerations(&mut f, q, &d, &f_, 1)?;
+        remunerations(&mut f, q, &bornes(q)?, Signe::Plus)?;
     }
-    primes_et_indemnites(&mut f, paie, &debut_p, &fin_p, 1)?;
-    autre_revenu(&mut f, paie, &bar, &debut_p, &fin_p, 1)?;
+    primes_et_indemnites(&mut f, paie, &payee, Signe::Plus)?;
+    autre_revenu(&mut f, paie, &bar, &payee, Signe::Plus)?;
     // Les bases de prevoyance ne partent pas dans un FCTU (CCH-14, p. 293).
     for q in paie.elementaires() {
-        let (d, f_) = bornes(q)?;
-        bases_et_cotisations(&mut f, q, &bar, 1, &d, &f_, 1, NATURE, &BASES_INTERDITES)?;
+        bases_et_cotisations(&mut f, q, &bar, 1, &bornes(q)?, Signe::Plus, NATURE, &BASES_INTERDITES)?;
     }
 
     // ------------------------------------------------------------ S21 anciennete
     let depuis = *s.date_anciennete.exigee("date_anciennete")?;
-    bloc_anciennete(&mut f, paie, fin_jour.moins(&depuis) + 1)?;
+    bloc_anciennete(&mut f, paie, socle::date::Anciennete::en_jours(&depuis, &fin_jour))?;
 
     let n = f.lignes.len() + 2;
     f.add(droit::rubrique!("S90.G00.90.001"), n);
@@ -576,15 +575,9 @@ ou un annule.",
 /// interdite en S21.G00.78.001) et CCH-15 (au moins trois blocs 51, de types
 /// 001, 002 et 010).
 pub fn verifier_controles_07(texte: &str) -> Result<(), Echec> {
-    // Chaque ligne, sa rubrique (aucune si elle n'en ecrit pas) et sa valeur.
-    let lignes: Vec<(Option<RubriqueDeLaNorme>, &str)> = texte
-        .lines()
-        .map(|l| {
-            let (k, v) = crate::usages::rubrique_valeur(l.trim());
-            (RubriqueDeLaNorme::lue(k), v)
-        })
-        .collect();
-    let de = |r: RubriqueDeLaNorme| lignes.iter().filter(move |(k, _)| *k == Some(r)).map(|(_, v)| *v);
+    // Chaque ligne qui ecrit une rubrique, sa rubrique et sa valeur.
+    let lignes: Vec<(RubriqueDeLaNorme, &str)> = texte.lines().filter_map(|l| crate::usages::rubrique_valeur(l.trim())).collect();
+    let de = |r: RubriqueDeLaNorme| lignes.iter().filter(move |(k, _)| *k == r).map(|(_, v)| *v);
     let mut bases = de(droit::rubrique!("S21.G00.78.001")).map(BaseAssujettie::du_code);
     if bases.any(|b| b == Some(BaseAssujettie::PrevoyanceSanteRetraite)) {
         return Err(Echec::impossible(

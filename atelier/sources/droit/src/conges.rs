@@ -4,15 +4,16 @@
 
 
 use crate::fiche::Lue;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::feries;
 use socle::echec::R;
-use socle::num::{div, eur2, mul, Decimal};
+use socle::grandeurs::{Heures, HeuresParUnite, Jours, Montant};
+use socle::num::Decimal;
 
 /// Le nombre de jours ouvrables entre deux dates, bornes incluses : du lundi
 /// au samedi, moins les feries que l'entreprise chome (`chomes` : ce que sa fiche en dit, `ChampsEntreprise::feries_chomes`).
-pub fn jours_ouvrables(debut: &Jour, fin: &Jour, chomes: Option<&str>) -> R<i64> {
-    jours_de_semaine(debut, fin, chomes, 6)
+pub fn jours_ouvrables(periode: &Periode, chomes: Option<&str>) -> R<Jours> {
+    jours_de_semaine(periode, chomes, 6)
 }
 
 /// Les jours de la semaine, dans l'ordre (lundi = 0), tels que la fiche les ecrit.
@@ -84,15 +85,8 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
     /// `feries_non_payes` pour les autres). Fiche DSN 2693, exemple 4 (`atelier/reference/sources/suspension-non-remuneree/
     /// net-entreprises-fiche2693-volumes-activite-exemples-20260929.txt`, l. 509) : janvier 2024 entier, « nombre de jours
     /// ouvres du mois [...] 161 heures (23 jours x 7 heures) », le lundi 1er janvier compte parmi les 23.
-    pub fn jours_entre(&self, debut: &Jour, fin: &Jour) -> R<i64> {
-        let (mut n, mut jour) = (0, *debut);
-        while jour <= *fin {
-            if self.travaille(&jour) {
-                n += 1;
-            }
-            jour = jour.plus_jours(1)?;
-        }
-        Ok(n)
+    pub fn jours_entre(&self, periode: &Periode) -> socle::grandeurs::Jours {
+        socle::grandeurs::Jours::de_dates(periode.jours().filter(|j| self.travaille(j)).count())
     }
 
     /// Les jours, en mots : « du lundi au vendredi » pour une suite, « le lundi, le mardi et le jeudi » sinon.
@@ -119,58 +113,51 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
 /// n'est pas du. Le 1er mai fait exception : « Le chomage du 1er mai ne peut etre une cause de reduction de salaire »
 /// (L3133-5, meme fichier, l. 123), quelle que soit l'anciennete. Seuls comptent les feries que l'entreprise chome
 /// (`feries::chomes_entre`) et qui tombent un jour travaille du salarie : un ferie travaille est un jour de travail.
-/// L'anciennete se compte depuis `anciennete` (la fiche, « Dans la compagnie depuis » : les contrats successifs s'y
-/// cumulent, L3133-3, al. 2), au jour du ferie (`permanents::anciennete_mois`).
+/// L'anciennete se compte depuis `depuis` (la fiche, « Dans la compagnie depuis » : les contrats successifs s'y
+/// cumulent, L3133-3, al. 2), au jour du ferie (`Anciennete::entre`).
 pub fn feries_non_payes(
-    debut: &Jour,
-    fin: &Jour,
+    periode: &Periode,
     chomes: Option<&str>,
     jours: &JoursTravailles,
-    anciennete: &Jour,
+    depuis: &Jour,
 ) -> R<Vec<(Jour, String)>> {
+    let trois_mois = socle::date::Anciennete::de_mois(Decimal::from(3));
     let mut out = Vec::new();
-    for (j, nom) in feries::chomes_entre(debut, fin, chomes)? {
-        let premier_mai = feries::chomes_de_droit(j.an)?.iter().any(|(x, _)| *x == j);
-        if jours.travaille(&j) && !premier_mai && crate::permanents::anciennete_mois(anciennete, &j) < Decimal::from(3) {
+    for (j, nom) in feries::chomes_entre(periode, chomes)? {
+        let premier_mai = feries::chomes_de_droit(j.annee())?.iter().any(|(x, _)| *x == j);
+        if jours.travaille(&j) && !premier_mai && socle::date::Anciennete::entre(depuis, &j) < trois_mois {
             out.push((j, nom));
         }
     }
     Ok(out)
 }
 
-/// Les jours de `debut` a `fin` dont le rang dans la semaine (lundi = 0) est sous `jusqu_a`, moins les feries chomes.
-fn jours_de_semaine(debut: &Jour, fin: &Jour, dits: Option<&str>, jusqu_a: u32) -> R<i64> {
-    let chomes = feries::chomes_entre(debut, fin, dits)?;
-    let (mut n, mut jour) = (0, *debut);
-    while jour <= *fin {
-        if jour.jour_de_la_semaine() < jusqu_a && !chomes.iter().any(|(j, _)| *j == jour) {
-            n += 1;
-        }
-        jour = jour.plus_jours(1)?;
-    }
-    Ok(n)
+/// Les jours de `periode` dont le rang dans la semaine (lundi = 0) est sous `jusqu_a`, moins les feries chomes.
+fn jours_de_semaine(periode: &Periode, dits: Option<&str>, jusqu_a: u32) -> R<Jours> {
+    let chomes = feries::chomes_entre(periode, dits)?;
+    Ok(Jours::de_dates(periode.jours().filter(|jour| jour.jour_de_la_semaine() < jusqu_a && !chomes.iter().any(|(j, _)| j == jour)).count()))
 }
 
 /// LES HEURES D'UN JOUR TRAVAILLE d'un contrat paye au mois de quotite `quotite` (heures par mois) : la duree
 /// hebdomadaire (quotite x 12 / 52, au centieme : 151,67 h font 35,00 h) sur les jours travailles de la semaine -- 7 h
 /// pour un temps plein sur cinq jours. Fiche DSN 2640, « Nb d'heures travaillees/jours oeuvres ». INFERENCE NOMMEE :
 /// la duree se repartit egalement entre les jours travailles (la fiche ne dit pas les heures de chaque jour).
-pub fn heures_par_jour(quotite: Decimal, jours: &JoursTravailles) -> Decimal {
-    div(eur2(div(mul(quotite, Decimal::from(12)), Decimal::from(52))), Decimal::from(jours.par_semaine()))
+pub fn heures_par_jour(quotite: Heures, jours: &JoursTravailles) -> HeuresParUnite {
+    quotite.fois(12).reparties_sur(52).au_centieme().par_jour(jours.jours.iter().filter(|x| **x).count())
 }
 
 /// L'indemnite de conges : le dixieme, le maintien, et celui qui gagne.
 #[derive(Debug, Clone)]
 pub struct IndemniteDesJours {
-    pub dixieme: Decimal,
-    pub maintien: Decimal,
-    pub retenu: Decimal,
+    pub dixieme: Montant,
+    pub maintien: Montant,
+    pub retenu: Montant,
     pub regle: &'static str,
 }
 
 /// L'indemnite retenue (L3141-24) : la plus forte du dixieme et du maintien de salaire ; a egalite, le maintien.
-pub fn la_plus_forte(dixieme: Decimal, maintien: Decimal) -> IndemniteDesJours {
-    let maintien = eur2(maintien);
+pub fn la_plus_forte(dixieme: Montant, maintien: Montant) -> IndemniteDesJours {
+    let maintien = maintien.au_centime();
     IndemniteDesJours {
         dixieme,
         maintien,

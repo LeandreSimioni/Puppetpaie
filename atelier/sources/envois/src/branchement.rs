@@ -56,7 +56,7 @@ pub const PREFIXE_FLUX_FICTIF: &str = "FICTIF-";
 pub const ANCIEN_PREFIXE_FLUX_FICTIF: &str = "DEMO-";
 
 /// Ce que le point de depot aurait repondu a un depot joue (une DSN ou une DPAE) : un flux, et la mention.
-pub fn reponse_fictive(quoi: crate::ligne::Acte, reel: bool) -> R<String> {
+pub fn reponse_fictive(quoi: crate::ligne::Acte, mode: socle::mode::Mode) -> R<String> {
     let acte = match quoi {
         crate::ligne::Acte::Dsn => "DSN",
         crate::ligne::Acte::Dpae => "DPAE",
@@ -69,6 +69,9 @@ pub fn reponse_fictive(quoi: crate::ligne::Acte, reel: bool) -> R<String> {
         "<idflux>{}</idflux>\nCompagnie fictive : {} {} jouee, rien n'a quitte le poste.",
         flux,
         acte,
-        if reel { "reelle" } else { "de test" }
+        match mode {
+            socle::mode::Mode::Reel => "reelle",
+            socle::mode::Mode::Test => "de test",
+        }
     ))
 }

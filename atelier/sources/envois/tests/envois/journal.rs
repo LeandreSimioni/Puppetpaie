@@ -2,8 +2,10 @@
 //! comparable a celles deja ecrites : c'est elle qui dit qu'un fichier est deja parti.
 
 use documents::fiche_questionnaire::CodeDeDemande;
+use documents::Acte;
 use droit::fiche::Courriel;
-use envois::journal::{self, Acte, DetailDsn, Envoi, Ligne, Mode, Revenu, RetourFiche};
+use envois::journal::{self, DetailDsn, Envoi, Ligne, Revenu, RetourFiche};
+use socle::mode::Mode;
 use socle::mois::Mois;
 
 use crate::outils::dossier_de_test;
@@ -41,10 +43,10 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let avant = std::fs::read(journal::chemin(&d)).unwrap();
     journal::noter(&d, Ligne::Dpae(envoi(Mode::Test, journal::DetailDpae::nouveau(false, false))), None, a(3, 11)).unwrap();
     assert!(std::fs::read(journal::chemin(&d)).unwrap().starts_with(&avant), "ce qui etait ecrit au journal a ete reecrit");
-    assert_eq!(journal::lire(&d, None, None, false).unwrap().len(), 2);
-    assert_eq!(journal::lire(&d, Some(Acte::Dpae), None, false).unwrap().len(), 1);
-    assert_eq!(journal::lire(&d, None, None, true).unwrap().len(), 1);
-    assert_eq!(journal::lire(&d, None, Some(Mois::nouveau(2026, 8).unwrap()), false).unwrap().len(), 0);
+    assert_eq!(journal::lire(&d, None, None, None).unwrap().len(), 2);
+    assert_eq!(journal::lire(&d, Some(Acte::Dpae), None, None).unwrap().len(), 1);
+    assert_eq!(journal::lire(&d, None, None, Some(Mode::Reel)).unwrap().len(), 1);
+    assert_eq!(journal::lire(&d, None, Some(Mois::nouveau(2026, 8).unwrap()), None).unwrap().len(), 0);
 
     // DEUX POSTES (regle 9 b) : chacun ajoute au meme journal ce qu'il a fait, et range le meme retour ; leurs journaux mis
     // bout a bout disent tout, sans rien compter deux fois.
@@ -60,7 +62,7 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let mut reunis = std::fs::read(journal::chemin(&d)).unwrap();
     reunis.extend(std::fs::read(journal::chemin(&e)).unwrap());
     std::fs::write(journal::chemin(&e), reunis).unwrap();
-    let lignes = journal::lire(&e, None, None, false).unwrap();
+    let lignes = journal::lire(&e, None, None, None).unwrap();
     let quoi: Vec<Acte> = lignes.iter().map(Ligne::acte).collect();
     assert_eq!(quoi, [Acte::Dsn, Acte::Dpae, Acte::FicheDemande, Acte::FicheDemande, Acte::Dsn]);
     assert_eq!(lignes[2].fiche().unwrap().retours, [retour.clone()]);

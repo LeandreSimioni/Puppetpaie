@@ -10,24 +10,24 @@
 //! indéterminée à l'issue du contrat » : le moteur ne le sait qu'a l'embauche du CDI, apres la paie du contrat ; il ne le
 //! porte pas.
 
-use socle::date::Jour;
+use socle::date::{Duree, EnMois, PeriodeOuverte};
 use socle::echec::R;
 
 use crate::natures::Nature;
 
 /// Le contrat doit-il la majoration ? Un CDD d'usage (nature 02, motif 05 : `cpf_cdd::codes_de`) de trois mois au plus :
-/// sa fin tombe avant le meme quantieme, trois mois apres son debut (le dernier jour du mois quand il n'y est pas). Un
-/// contrat sans terme n'a pas de duree de trois mois au plus.
-pub fn due(nat: &Nature, motif_recours: Option<crate::natures::MotifDeRecours>, debut: &Jour, fin: Option<&Jour>) -> R<bool> {
+/// sa fin tombe avant le meme quantieme, trois mois apres son debut (le dernier jour du mois quand il n'y est pas :
+/// `Jour::apres`). Un contrat sans terme n'a pas de duree de trois mois au plus.
+pub fn due(nat: &Nature, motif_recours: Option<crate::natures::MotifDeRecours>, contrat: &PeriodeOuverte) -> R<bool> {
     let (nature, _, motif) = crate::cpf_cdd::codes_de(nat, motif_recours)?;
     if nature != Some(crate::natures::NatureDuContratDsn::CddDroitPrive) || motif != Some(crate::natures::MotifDeRecours::ContratDUsage) {
         return Ok(false);
     }
-    let (mut an, mut mois) = (debut.an, debut.mois + 3);
-    if mois > 12 {
-        mois -= 12;
-        an += 1;
+    match contrat.fin() {
+        Some(fin) => Ok(fin < contrat.debut().apres(TROIS_MOIS)?),
+        None => Ok(false),
     }
-    let dernier = socle::date::jours_du_mois(an, mois);
-    Ok(fin.is_some_and(|fin| Jour::nouveau(an, mois, debut.jour.min(dernier)).is_some_and(|limite| *fin < limite)))
 }
+
+/// « d'une durée inférieure ou égale à 3 mois » (circulaire Unedic 2025-05, § 2.1.1).
+const TROIS_MOIS: Duree<EnMois> = Duree::mois(3);

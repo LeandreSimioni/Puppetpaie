@@ -27,11 +27,18 @@
 //! Le droit dit ou la paie se coupe (`decouper`, `jour_de_l_avenant`) et quelle part du mois chaque periode porte
 //! (`part_du_mois`) ; l'engagement calcule chaque periode et les assemble (`engagement::periodes`).
 
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
+use socle::mois::Mois;
 
 use crate::conges::JoursTravailles;
 use socle::echec::R;
-use socle::num::{div, Decimal};
+use socle::grandeurs::ecrit::sans_zero::dit;
+use socle::grandeurs::{Coefficient, HeuresParUnite, Jours};
+use socle::num::Decimal;
+
+/// Les jours ouvres d'un mois de la CCN 1285, art. X.3 : « 1/21 du montant du salaire mensuel »
+/// (`atelier/reference/sources/kali-1285-x3-remuneration-artistes-20260929.md`, l. 20).
+const JOURS_DU_MOIS_CCNEAC: Jours = Jours::du_decimal(Decimal::from_parts(21, 0, 0, false, 0));
 
 /// Ce que `avant` (les termes du contrat avant un avenant en cours de mois) peut dire.
 pub const TERMES_D_AVANT: [&str; 2] = ["salaire_mensuel", "quotite_contrat"];
@@ -43,10 +50,10 @@ pub struct TermesDAvant {
     pub quotite_contrat: bool,
 }
 
-/// Le jour ou un avenant decoupe la paie de la periode [`debut`, `fin`] : sa `date_modification`, quand le contrat dit
+/// Le jour ou un avenant decoupe la paie de la periode `payee` : sa `date_modification`, quand le contrat dit
 /// les termes d'avant (`avant`) et qu'elle tombe apres le premier jour de la periode payee. Sans `avant`, rien ; un
 /// `avant` incomplet, sans date, ou qui ne decoupe rien refuse. `qui` nomme le contrat dans un refus.
-pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<Jour>, debut: Jour, fin: Jour, qui: &str) -> R<Option<Jour>> {
+pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<Jour>, payee: &Periode, qui: &str) -> R<Option<Jour>> {
     let Some(avant) = avant else { return Ok(None) };
     let dits = [avant.salaire_mensuel, avant.quotite_contrat];
     if let Some((k, _)) = TERMES_D_AVANT.iter().zip(dits).find(|(_, dit)| !dit) {
@@ -58,14 +65,14 @@ pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<
     let Some(j) = date_modification else {
         return Err(socle::echec::cle(format!("{} : l'avenant ne dit pas quand il prend effet : remplir « À partir de » dans « Modifier l'engagement ».", qui), "date_modification"));
     };
-    if j <= debut || j > fin {
+    if j <= payee.debut() || !payee.contient(&j) {
         return Err(socle::echec::cle(
             format!(
                 "{} : l'avenant prend effet le {}, hors de la période payée du {} au {} : il ne la coupe pas ; un avenant au premier jour de la période se paie sur les termes de la saisie, tout le mois.",
                 qui,
                 j.jj_mm_aaaa(),
-                debut.jj_mm_aaaa(),
-                fin.jj_mm_aaaa()
+                payee.debut().jj_mm_aaaa(),
+                payee.fin().jj_mm_aaaa()
             ),
             "avant",
         ));
@@ -73,19 +80,19 @@ pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<
     Ok(Some(j))
 }
 
-/// Les periodes elementaires de [`debut`, `fin`] coupee aux `jours` ou quelque chose change (chacun est le premier jour
+/// Les periodes elementaires de `p` coupee aux `jours` ou quelque chose change (chacun est le premier jour
 /// d'une periode) ; un jour hors de la periode ne coupe rien.
-pub fn decouper(debut: Jour, fin: Jour, mut jours: Vec<Jour>) -> R<Vec<(Jour, Jour)>> {
-    jours.retain(|j| *j > debut && *j <= fin);
+pub fn decouper(p: Periode, mut jours: Vec<Jour>) -> R<Vec<Periode>> {
+    jours.retain(|j| *j > p.debut() && p.contient(j));
     jours.sort();
     jours.dedup();
     let mut out = Vec::new();
-    let mut d = debut;
+    let mut d = p.debut();
     for j in jours {
-        out.push((d, j.plus_jours(-1)?));
+        out.push(Periode::du_au(d, j.plus_jours(-1)?)?);
         d = j;
     }
-    out.push((d, fin));
+    out.push(Periode::du_au(d, p.fin())?);
     Ok(out)
 }
 
@@ -120,15 +127,17 @@ pub struct Horaire {
     pub feries_non_payes: Vec<(Jour, String)>,
 }
 
-/// La part du mois qu'une periode payee porte de son salaire mensuel (`part_du_mois`).
+/// LE DECOMPTE DE LA PART DU MOIS qu'une periode payee porte de son salaire mensuel (`part_du_mois`) : la part, et ce
+/// qui la compte (ses jours, sa regle, ses feries non payes), que le bulletin dit. La part seule est un `Coefficient`,
+/// le nombre qu'une ligne de paie garde (`engagement::ligne::QuantiteDeLigne::PartDuMois`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct PartDuMois {
+pub struct DecompteDuMois {
     /// La fraction du salaire mensuel payee : 1 pour un mois entier.
-    pub fraction: Decimal,
+    pub fraction: Coefficient,
     /// Les jours travailles payes de la periode (`JoursTravailles::jours_entre`, moins les feries non payes).
-    pub jours: i64,
+    pub jours: Jours,
     /// Ceux du mois entier (horaire reel), ou 21 (CCN 1285).
-    pub jours_du_mois: i64,
+    pub jours_du_mois: Jours,
     pub regle: RegleDuMoisIncomplet,
     /// Les jours de la semaine que l'horaire compte.
     pub jours_travailles: JoursTravailles,
@@ -136,11 +145,11 @@ pub struct PartDuMois {
     pub feries_non_payes: Vec<(Jour, String)>,
 }
 
-impl PartDuMois {
+impl DecompteDuMois {
     /// Ce que la ligne du bulletin dit de la part payee, pour un contrat de `heures_par_jour` heures par jour travaille ;
     /// `None` pour un mois entier.
-    pub fn sur_le_bulletin(&self, heures_par_jour: Decimal) -> Option<String> {
-        if self.fraction == Decimal::ONE {
+    pub fn sur_le_bulletin(&self, heures_par_jour: HeuresParUnite) -> Option<String> {
+        if self.fraction.decimal() == Decimal::ONE {
             return None;
         }
         let part = match self.regle {
@@ -149,7 +158,7 @@ impl PartDuMois {
                 heures_en_mots(heures_par_jour, self.jours),
                 heures_en_mots(heures_par_jour, self.jours_du_mois)
             ),
-            RegleDuMoisIncomplet::Ccneac1285Artiste => format!("{} jour(s) ouvré(s) à 1/21 du mois", self.jours),
+            RegleDuMoisIncomplet::Ccneac1285Artiste => format!("{} jour(s) ouvré(s) à 1/21 du mois", dit(self.jours)),
         };
         Some(match self.feries_non_payes.as_slice() {
             [] => part,
@@ -158,7 +167,7 @@ impl PartDuMois {
     }
 
     /// La methode, en mots, et son texte : ce que l'apercu du bulletin dit d'un mois paye en partie.
-    pub fn methode(&self, heures_par_jour: Decimal) -> String {
+    pub fn methode(&self, heures_par_jour: HeuresParUnite) -> String {
         let mut dit = match self.regle {
             RegleDuMoisIncomplet::HoraireReel => format!(
                 "{} h de travail sur les {} h que l'horaire compte dans le mois ({} jours travaillés de {} h, {}, jours \
@@ -166,18 +175,18 @@ fériés compris), payées au salaire mensuel divisé par les heures du mois (Ca
 rémunération horaire » multipliée par « le nombre d'heures de travail réellement effectuées »)",
                 heures_en_mots(heures_par_jour, self.jours),
                 heures_en_mots(heures_par_jour, self.jours_du_mois),
-                self.jours_du_mois,
-                socle::num::nombre(heures_par_jour).replace('.', ","),
+                dit(self.jours_du_mois),
+                socle::texte::virgule(heures_par_jour),
                 self.jours_travailles.en_mots()
             ),
             RegleDuMoisIncomplet::Ccneac1285Artiste => format!(
                 "{} jour(s) ouvré(s) du contrat dans le mois ({}), payés chacun 1/21 du salaire mensuel (CCN 1285, \
 art. X.3 : le premier ou le dernier mois incomplet d'un artiste)",
-                self.jours,
+                dit(self.jours),
                 self.jours_travailles.en_mots()
             ),
         };
-        if self.regle == RegleDuMoisIncomplet::Ccneac1285Artiste && self.fraction > Decimal::ONE {
+        if self.regle == RegleDuMoisIncomplet::Ccneac1285Artiste && self.fraction.decimal() > Decimal::ONE {
             dit.push_str(
                 ". C'est plus que le salaire mensuel : l'article X.3 ne borne pas le mois incomplet, le logiciel non plus",
             );
@@ -203,8 +212,8 @@ fn dates_en_mots(feries: &[(Jour, String)]) -> String {
 }
 
 /// `jours` jours de `heures_par_jour` heures, au centieme, ecrits a la francaise.
-fn heures_en_mots(heures_par_jour: Decimal, jours: i64) -> String {
-    socle::num::nombre(socle::num::eur2(socle::num::mul(heures_par_jour, Decimal::from(jours)))).replace('.', ",")
+fn heures_en_mots(heures_par_jour: HeuresParUnite, jours: Jours) -> String {
+    socle::texte::virgule((jours * heures_par_jour).au_centieme())
 }
 
 /// LA PART DU SALAIRE MENSUEL que porte la periode payee [`d`, `f`] du mois qui finit le `fin_mois`.
@@ -224,22 +233,25 @@ fn heures_en_mots(heures_par_jour: Decimal, jours: i64) -> String {
 /// LA CCN 1285, pour un artiste (`regle_du_mois_incomplet`) : les jours travailles de la periode, a 1/21 chacun.
 /// INFERENCE NOMMEE : « les jours ouvres figurant au contrat » sont les jours que l'horaire du salarie programme, feries
 /// compris. L'article ne borne pas le resultat au salaire mensuel (un mois de 23 jours ouvres dont un manque en donne
-/// 22/21) : le logiciel ne le borne pas, et le dit (`PartDuMois::methode`).
+/// 22/21) : le logiciel ne le borne pas, et le dit (`DecompteDuMois::methode`).
 ///
 /// Une periode qui couvre le mois entier, sans ferie non paye, en porte tout le salaire. Le plafond de la securite
 /// sociale, lui, se proratise aux jours calendaires (CSS R. 242-2, `plafond::prorata_calendaire`) : ce n'est pas le
 /// salaire.
-pub fn part_du_mois(d: &Jour, f: &Jour, fin_mois: &Jour, regle: RegleDuMoisIncomplet, horaire: &Horaire) -> R<PartDuMois> {
-    let premier = Jour::nouveau(fin_mois.an, fin_mois.mois, 1).ok_or_else(|| socle::echec::cle("Le moteur ne calcule pas ce mois : le signaler au développeur.", "part_du_mois"))?;
+pub fn part_du_mois(periode: &Periode, mois: Mois, regle: RegleDuMoisIncomplet, horaire: &Horaire) -> R<DecompteDuMois> {
+    let le_mois = Periode::du_mois(mois);
     let feries_non_payes: Vec<(Jour, String)> =
-        horaire.feries_non_payes.iter().filter(|(j, _)| d <= j && j <= f && horaire.jours.travaille(j)).cloned().collect();
-    let jours = horaire.jours.jours_entre(d, f)? - feries_non_payes.len() as i64;
-    let du_mois = horaire.jours.jours_entre(&premier, fin_mois)?;
-    let entier = *d <= premier && *f >= *fin_mois && feries_non_payes.is_empty();
-    let (jours_du_mois, fraction) = match regle {
-        _ if entier => (du_mois, Decimal::ONE),
-        RegleDuMoisIncomplet::HoraireReel => (du_mois, div(Decimal::from(jours), Decimal::from(du_mois))),
-        RegleDuMoisIncomplet::Ccneac1285Artiste => (21, div(Decimal::from(jours), Decimal::from(21))),
+        horaire.feries_non_payes.iter().filter(|(j, _)| periode.contient(j) && horaire.jours.travaille(j)).cloned().collect();
+    let jours = horaire.jours.jours_entre(periode) - Jours::de_dates(feries_non_payes.len());
+    let du_mois = horaire.jours.jours_entre(&le_mois);
+    let entier = periode.croise(&le_mois) == Some(le_mois) && feries_non_payes.is_empty();
+    let jours_du_mois = match regle {
+        RegleDuMoisIncomplet::Ccneac1285Artiste if !entier => JOURS_DU_MOIS_CCNEAC,
+        _ => du_mois,
     };
-    Ok(PartDuMois { fraction, jours, jours_du_mois, regle, jours_travailles: horaire.jours, feries_non_payes })
+    let fraction = match entier {
+        true => Coefficient::UN,
+        false => jours.rapport(jours_du_mois).ok_or_else(|| socle::refus!("L'horaire du salarié ne compte aucun jour travaillé dans le mois : la part du salaire ne se dit pas."))?,
+    };
+    Ok(DecompteDuMois { fraction, jours, jours_du_mois, regle, jours_travailles: horaire.jours, feries_non_payes })
 }

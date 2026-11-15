@@ -164,7 +164,7 @@ impl From<NumeroDeRetour> for String {
 #[serde(deny_unknown_fields)]
 pub struct Retour {
     pub numero: NumeroDeRetour,
-    #[serde(deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    #[serde(deserialize_with = "socle::forme::absent_si_vide")]
     pub ticket: Option<Url>,
     pub ticket_numero: Option<i64>,
 }
@@ -192,7 +192,6 @@ pub struct ReponseDuServeur {
 #[serde(deny_unknown_fields)]
 pub struct Paies {
     pub recu: bool,
-    #[serde(with = "socle::mois::en_nombre")]
     pub annee: Annee,
     pub paies: usize,
 }
@@ -225,7 +224,6 @@ struct Incidents<'a, I: Serialize> {
 
 #[derive(Serialize)]
 struct CompteDesPaies {
-    #[serde(with = "socle::mois::en_nombre")]
     annee: Annee,
     paies: usize,
 }

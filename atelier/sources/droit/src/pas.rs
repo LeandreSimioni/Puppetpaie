@@ -7,16 +7,15 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::contexte::{Contexte, IdSalarie};
-use crate::fiche::{Lue, Montant, TauxPas};
+use crate::fiche::{Lue, TauxPas};
 use crate::forme_bareme::{GrillePas, PasParDefaut, Pile};
 use crate::type_taux_pas::TypeDeTauxPas;
-use socle::date::{jours_du_mois, Jour};
+use socle::date::{Duree, EnMois, Jour};
 use socle::mois::Mois;
-use socle::num::nombre;
 use socle::fichiers::{repr, LectureDatee, ValeurLue};
 use crate::contexte::CleLue;
 use socle::echec::{refus, Echec, R};
-use socle::num::{eur, pct, sub, Decimal};
+use socle::grandeurs::{Montant, Taux};
 
 /// Un refus du module. `SansGrille` : un bareme sans la grille de l'article 204 H (le prelevement ne se devine pas, le
 /// calcul refuse).
@@ -46,7 +45,7 @@ type RPas<T> = Result<T, ErreurPas>;
 /// `[0-9]{1,2}\.[0-9]{2}`, `formats-dsn-*-base.json` ; `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`). Il se lit
 /// et s'ecrit dans cette forme, octet pour octet ; un autre texte n'est pas un taux de PAS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TauxDePas(Decimal);
+pub struct TauxDePas(Taux);
 
 impl TauxDePas {
     /// Le taux ecrit `texte`, s'il a la forme de la norme ; `None` sinon.
@@ -56,25 +55,37 @@ impl TauxDePas {
         if !(1..=2).contains(&entier.len()) || decimales.len() != 2 || !chiffres(entier) || !chiffres(decimales) {
             return None;
         }
-        // Ses chiffres, lus un a un : le taux en centiemes de pourcent.
-        let centiemes = entier.bytes().chain(decimales.bytes()).fold(0i64, |n, b| n * 10 + i64::from(b - b'0'));
-        Some(TauxDePas(Decimal::new(centiemes, 2)))
+        socle::grandeurs::lu::norme(texte).map(TauxDePas)
     }
 
-    /// Le taux `d`, s'il s'ecrit dans la forme de la norme (`lire`) ; `None` sinon.
-    pub fn du_decimal(d: Decimal) -> Option<TauxDePas> {
-        TauxDePas::lire(&d.to_string())
+    /// Le taux nul, ses deux decimales ecrites (`0.00`).
+    pub const ZERO: TauxDePas = TauxDePas(Taux::ZERO);
+
+    /// Le taux `t` (la grille du bareme, une DSN lue, une paie importee, une description de l'atelier), ses deux
+    /// decimales ecrites, s'il a la forme de la norme : deux decimales au plus, de 0 a moins de 100 (un ou deux chiffres
+    /// avant le point) ; `None` sinon. Le seul chemin d'un taux a un taux de PAS ; un texte entre par `lire`.
+    pub fn du_taux(t: Taux) -> Option<TauxDePas> {
+        let t = socle::grandeurs::aux_centiemes(t)?;
+        (Taux::ZERO..Taux::CENT_POUR_CENT).contains(&t).then_some(TauxDePas(t))
     }
 
-    /// Le taux, en pourcent.
-    pub fn decimal(self) -> Decimal {
+    /// Le taux, en pourcent, ses deux decimales ecrites : ce qu'un document en imprime.
+    pub fn taux(self) -> Taux {
         self.0
+    }
+
+    /// Le prelevement que ce taux prend sur le montant soumis `soumis`, exact (`Montant::au_centime` le fixe).
+    pub fn prelevement(self, soumis: Montant) -> Montant {
+        soumis.fois_taux(self.0)
     }
 }
 
 impl std::fmt::Display for TauxDePas {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        match socle::grandeurs::ecrit::texte::texte(self.0) {
+            Ok(t) => f.write_str(&t),
+            Err(_) => Err(std::fmt::Error),
+        }
     }
 }
 
@@ -174,7 +185,7 @@ pub struct Triplet {
 /// mis a disposition le 10 fevrier, il est « valide jusqu'au 30 avril »
 /// (BOI-IR-PAS-30-10-20, § 70, `atelier/reference/sources/bofip/
 /// BOI-IR-PAS-30-10-20-20181203.html`).
-pub const VALIDITE_MOIS: u32 = 2;
+pub const VALIDITE: Duree<EnMois> = Duree::mois(2);
 
 /// Le jour de la mise a disposition d'un taux recu (`mis_a_disposition`, AAAAMMJJHHMMSS) : d'ou court sa validite.
 pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {
@@ -184,9 +195,11 @@ pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {
 /// Dernier jour ou ce taux est celui du salarie ; `None` si on ne sait pas.
 pub fn fin_de_validite(e: &TauxPas) -> Option<Jour> {
     let debut = mise_a_disposition(e)?;
-    let mois = debut.mois + VALIDITE_MOIS;
-    let (an, m) = (debut.an + ((mois - 1) / 12) as i32, (mois - 1) % 12 + 1);
-    Jour::nouveau(an, m, jours_du_mois(an, m))
+    // Au-dela de 9999, aucune fin de validite ne se sait.
+    match debut.mois_civil().apres(VALIDITE) {
+        Ok(m) => Some(m.dernier_jour()),
+        Err(_) => None,
+    }
 }
 
 /// Un taux qu'on ne sait pas dater est traite comme perime ; le bareme (tout
@@ -296,7 +309,7 @@ fn section(bareme: &Pile) -> RPas<&PasParDefaut> {
 }
 
 /// L'abattement contrats courts en vigueur : la moitie du SMIC net imposable (le bareme le porte a sa date).
-pub fn abattement(bareme: &Pile) -> RPas<Decimal> {
+pub fn abattement(bareme: &Pile) -> RPas<Montant> {
     section(bareme)?.abattement_contrats_courts.map(|n| n.0).ok_or_else(|| ErreurPas::Autre(socle::fichiers::absent("abattement_contrats_courts")))
 }
 
@@ -331,28 +344,21 @@ pub fn grille<'a>(bareme: &'a Pile, le: Option<Jour>, zone: &str) -> RPas<&'a Gr
 }
 
 /// `(taux, type de taux)` pour un montant DEJA abattu.
-pub fn taux_par_defaut(bareme: &Pile, montant: Decimal, le: Option<Jour>, zone: &str) -> RPas<(Decimal, TypeDeTauxPas)> {
+pub fn taux_par_defaut(bareme: &Pile, montant: Montant, le: Option<Jour>, zone: &str) -> RPas<(TauxDePas, TypeDeTauxPas)> {
     let g = grille(bareme, le, zone)?;
     for t in &g.tranches {
-        let (bas, haut, taux) = match t.as_slice() {
-            [Some(b), h, Some(x)] => (b.0, h.map(|h| h.0), x.0),
-            _ => {
-                return Err(ErreurPas::Autre(socle::echec::refus_avec(
-                    "Une tranche de la grille du PAS ne se lit pas : elle porte un bas, un haut et un taux.",
-                    socle::echec::Lieu { cle: Some("pas_taux_par_defaut".to_string()), detail: Some(format!("{:?}", t)), ..Default::default() },
-                )))
-            }
-        };
         // La derniere tranche n'a pas de haut.
-        if montant >= bas && haut.is_none_or(|h| montant < h) {
+        if montant >= t.bas && t.haut.is_none_or(|h| montant < h) {
             // Le taux de la grille (CGI 204 H, III) a deux decimales au plus : il s'ecrit avec ses deux decimales.
-            let mut taux = taux.round_dp(2);
-            taux.rescale(2);
-            return Ok((taux, g.genre));
+            let taux = t.taux.a_deux_decimales();
+            return match TauxDePas::du_taux(taux) {
+                Some(t) => Ok((t, g.genre)),
+                None => Err(ErreurPas::Autre(socle::refus!("La grille du PAS porte le taux {} : un taux de PAS s'écrit en un ou deux chiffres et deux décimales ; le signaler au développeur.", socle::grandeurs::ecrit::sans_zero::dit(taux)))),
+            };
         }
     }
     // Seul un montant negatif tombe ici : taux zero.
-    Ok((Decimal::new(0, 2), g.genre))
+    Ok((TauxDePas::ZERO, g.genre))
 }
 
 /// LE PRELEVEMENT D'UN VERSEMENT, par l'un des deux chemins : tel que la paie l'ecrit et le relit (les montants en
@@ -360,49 +366,36 @@ pub fn taux_par_defaut(bareme: &Pile, montant: Decimal, le: Option<Jour>, zone: 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Versement {
-    pub taux: Montant,
+    pub taux: TauxDePas,
     #[serde(rename = "type")]
     pub type_taux: Option<TypeDeTauxPas>,
     pub identifiant: Option<IdentifiantDuTauxPas>,
-    #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
-    pub abattement: Decimal,
-    #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
-    pub montant_soumis: Decimal,
-    #[serde(serialize_with = "en_nombre", deserialize_with = "socle::forme::decimal")]
-    pub prelevement: Decimal,
-}
-
-fn en_nombre<S: Serializer>(x: &Decimal, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_str(&nombre(*x))
-}
-
-pub fn plancher(x: Decimal, zero: Decimal) -> Decimal {
-    if zero > x {
-        zero
-    } else {
-        x
-    }
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub abattement: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub montant_soumis: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
+    pub prelevement: Montant,
 }
 
 /// Tout le bloc 50 cote PAS quand aucun taux DGFiP ne s'applique ; pas
 /// d'identifiant (S21.G00.50.008 est interdite hors taux DGFiP).
 pub fn rubriques_par_defaut(
     bareme: &Pile,
-    remuneration_nette_fiscale: Decimal,
+    remuneration_nette_fiscale: Montant,
     le: Option<Jour>,
     contrat_court: bool,
     zone: &str,
 ) -> RPas<Versement> {
-    let rnf = eur(remuneration_nette_fiscale);
-    let zero = Decimal::new(0, 2);
-    let abat = if contrat_court { abattement(bareme)? } else { zero };
+    let rnf = remuneration_nette_fiscale.au_centime();
+    let abat = if contrat_court { abattement(bareme)? } else { Montant::ZERO };
     // L'abattement ne creuse pas : il se limite a ce qu'il y a a abattre.
-    let abat = eur(abat.min(plancher(rnf, zero)));
-    let soumis = eur(plancher(sub(rnf, abat), zero));
+    let abat = abat.min(plancher(rnf)).au_centime();
+    let soumis = plancher(rnf - abat).au_centime();
     let (taux, type_taux) = taux_par_defaut(bareme, soumis, le, zone)?;
-    let prelevement = pct(soumis, taux);
+    let prelevement = taux.prelevement(soumis).au_centime();
     Ok(Versement {
-        taux: Montant::Texte(taux.to_string()),
+        taux,
         type_taux: Some(type_taux),
         identifiant: None,
         abattement: abat,
@@ -458,7 +451,7 @@ pub fn sans_taux_recus(fiche: &crate::fiche::ChampsSalarie) -> crate::fiche::Cha
 pub fn du_versement(
     taux: Option<&Triplet>,
     bareme: &Pile,
-    remuneration_nette_fiscale: Decimal,
+    remuneration_nette_fiscale: Montant,
     le: Option<Jour>,
     contrat_court: bool,
     zone: &str,
@@ -475,15 +468,24 @@ pub fn du_versement(
     // La grille (`rubriques_par_defaut`) plancher deja a zero ; le taux DGFiP aussi. Le cas : un mois sans salaire ou la
     // part patronale de sante reste due et se reintegre (CGI 83, 1° quater, meme dossier, `legi-extrait-code-general-des-
     // impots-20261015.md`).
-    let soumis = plancher(eur(remuneration_nette_fiscale), Decimal::new(0, 2));
+    let soumis = plancher(remuneration_nette_fiscale.au_centime());
     Ok(Versement {
-        taux: Montant::Texte(taux.to_string()),
+        taux,
         type_taux: t.type_taux,
         identifiant: t.identifiant.clone(),
-        abattement: Decimal::new(0, 2),
+        abattement: Montant::ZERO,
         montant_soumis: soumis,
-        prelevement: pct(soumis, taux.decimal()),
+        prelevement: taux.prelevement(soumis).au_centime(),
     })
+}
+
+/// Le montant `x`, ou zero s'il est negatif (a zero, `x` lui-meme).
+fn plancher(x: Montant) -> Montant {
+    if Montant::ZERO > x {
+        Montant::ZERO
+    } else {
+        x
+    }
 }
 
 // ------------------------------------------------------------- diagnostic
@@ -561,7 +563,7 @@ pub fn situation(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option
         salarie: cle.clone(),
         situation: quoi,
         libelle: quoi.libelle(),
-        taux: e.and_then(|e| e.taux),
+        taux: e.map(|e| e.taux),
         type_taux: e.and_then(|e| e.r#type),
         identifiant: e.and_then(|e| e.identifiant.clone()),
         valable_jusqu_a: e.and_then(fin_de_validite),

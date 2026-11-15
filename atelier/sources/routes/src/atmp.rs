@@ -30,29 +30,22 @@ use serde::Serialize;
 use crate::enveloppe::Dite;
 use droit::bareme::{self, CodeRisqueAt, RisqueAtmp};
 use droit::contexte::Contexte;
-use droit::fiche::{Etablissement, FicheEntrepriseDatee, Montant, NotificationAtmp, ProvenanceAtmp, TauxAtmp};
+use droit::fiche::{Etablissement, FicheEntrepriseDatee, NombreDeFiche, NotificationAtmp, ProvenanceAtmp, TauxAtmp};
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, R};
-use socle::num::Decimal;
+use socle::mois::Annee;
+use socle::echec::{Classe, R};
+use socle::grandeurs::Taux;
+use socle::texte::pourcent;
 
 /// Le socle livre de l'annee, s'il existe, lu par sa forme (`droit::contexte::socle_livre_lu`) ; un socle livre qui ne se
 /// lit pas se refuse.
-fn socle_de(an: i32) -> R<Option<droit::forme_bareme::Pile>> {
+fn socle_de(an: Annee) -> R<Option<droit::forme_bareme::Pile>> {
     droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-fn en_pourcent(t: Decimal) -> String {
-    let mut t = t.round_dp(2);
-    t.rescale(2);
-    format!("{} %", t.to_string().replace('.', ","))
-}
-
-fn premier_janvier(an: i32) -> R<Jour> {
-    Jour::nouveau(an, 1, 1).ok_or_else(|| erreur(Classe::Refuse, format!("Année {} hors du calendrier.", an)))
-}
-
-fn decimal(t: &TauxAtmp) -> R<Option<Decimal>> {
-    t.valeur.as_ref().map(Montant::decimal).transpose().map_err(|m| m.reclasser(Classe::Illisible))
+/// Le taux que la ligne `t` de la case dit, lu de son ecriture (`NombreDeFiche::grandeur`).
+fn taux(t: &TauxAtmp) -> R<Option<Taux>> {
+    t.valeur.as_ref().map(NombreDeFiche::grandeur::<Taux>).transpose().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 // ------------------------------------------------------------------ les sources
@@ -65,7 +58,7 @@ fn decimal(t: &TauxAtmp) -> R<Option<Decimal>> {
 pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Option<Jour>, source: &str) -> R<Option<String>> {
     let t = TauxAtmp {
         code_risque: Some(n.code_risque.clone()),
-        valeur: Some(Montant::Flottant(socle::num::court(n.taux))),
+        valeur: Some(NombreDeFiche::Flottant(socle::num::court(n.taux))),
         depuis: Some(n.date_effet),
         provenance: Some(ProvenanceAtmp::Notification),
         notification: Some(NotificationAtmp { le, calcul: n.date_calcul, effet: Some(n.date_effet) }),
@@ -78,8 +71,8 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
     }
     let fiche = crate::fiches::lire_fichier::<FicheEntrepriseDatee>(ctx)?;
     let deja = fiche.taux_atmp.as_deref().and_then(|l| droit::fiche::valeur_au(l, &n.date_effet));
-    if let Some(d) = deja.filter(|d| d.provenance == Some(ProvenanceAtmp::Saisie) && d.depuis.is_some_and(|j| j.an == n.date_effet.an)) {
-        if d.code_risque != t.code_risque || decimal(&d)? != decimal(&t)? {
+    if let Some(d) = deja.filter(|d| d.provenance == Some(ProvenanceAtmp::Saisie) && d.depuis.is_some_and(|j| j.annee() == n.date_effet.annee())) {
+        if d.code_risque != t.code_risque || taux(&d)? != taux(&t)? {
             return Ok(Some(format!(
                 "Conflit sur le taux AT/MP : vous avez inscrit {} ; la notification de la CARSAT ({}) dit {}. Rien n'est changé : c'est à vous de choisir. Pour prendre celui de la notification, inscrivez-le dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
                 ligne_dite(&d)?.dit,
@@ -99,13 +92,13 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
 /// de ce 1er janvier ou apres (la notification de l'annee, deja recue, ou la saisie) ; une ligne de l'annee qui ne dit que
 /// le code se complete a sa date. Le code est celui de la derniere ligne. Appele a l'ouverture, a l'import, et apres
 /// l'enregistrement de la case (`SorteDeFiche::apres_ecriture`). Rend ce qui s'est inscrit, en phrases.
-pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: i32) -> R<Vec<String>> {
+pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: Annee) -> R<Vec<String>> {
     // Une annee sans socle livre n'a pas d'arrete a inscrire.
     Ok(socle_de(an)?.map(|socle| inscrire_selon(ctx, an, socle)).transpose()?.into_iter().flatten().collect())
 }
 
-fn inscrire_selon(ctx: &Contexte, an: i32, socle: droit::forme_bareme::Pile) -> R<Vec<String>> {
-    let janvier = premier_janvier(an)?;
+fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -> R<Vec<String>> {
+    let janvier = an.premier_jour();
     let risques = bareme::risques_de(&socle);
     let arrete = match bareme::arrete_atmp(&socle) {
         Some(a) => a,
@@ -116,7 +109,7 @@ fn inscrire_selon(ctx: &Contexte, an: i32, socle: droit::forme_bareme::Pile) -> 
     // Une ligne de cette annee qui ne dit que le code (la personne l'a inscrit sans taux) se complete a sa propre date.
     let de_l_arrete = |l: &TauxAtmp, alsace: bool, neuf: bool, depuis: Jour| -> Option<TauxAtmp> {
         let de_l_annee = l.depuis.filter(|d| *d >= janvier);
-        if de_l_annee.is_some_and(|d| d.an > an || l.valeur.is_some()) {
+        if de_l_annee.is_some_and(|d| d.annee() > an || l.valeur.is_some()) {
             return None;
         }
         let code = l.code_risque.clone()?;
@@ -124,7 +117,7 @@ fn inscrire_selon(ctx: &Contexte, an: i32, socle: droit::forme_bareme::Pile) -> 
         let t = bareme::taux_de_l_arrete(r, neuf, alsace)?;
         Some(TauxAtmp {
             code_risque: Some(code),
-            valeur: Some(Montant::Flottant(socle::num::court(t))),
+            valeur: Some(NombreDeFiche::Flottant(socle::num::court(t))),
             depuis: Some(match de_l_annee {
                 Some(d) => d.max(depuis),
                 None => depuis,
@@ -225,8 +218,8 @@ fn risque_dit(r: &RisqueAtmp) -> RisqueDit {
 #[derive(Debug, Serialize)]
 struct LigneDite {
     code_risque: Option<CodeRisqueAt>,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    taux: Option<socle::num::Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    taux: Option<Taux>,
     depuis: Option<Jour>,
     /// Pour la ligne d'avant : son dernier jour.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -239,19 +232,19 @@ struct LigneDite {
 }
 
 fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
-    let valeur = decimal(t)?;
+    let valeur = taux(t)?;
     let d_ou = match (t.provenance, &t.notification) {
         (Some(ProvenanceAtmp::Notification), n) => {
             let le: String = n.as_ref().and_then(|n| n.calcul.or(n.le)).iter().map(|j| format!(" du {}", j.jj_mm_aaaa())).collect();
             format!("reçu par la DSN (notification{})", le)
         }
-        (Some(ProvenanceAtmp::Arrete), _) => format!("taux collectif de l'arrêté{}", t.depuis.iter().map(|j| format!(" {}", j.an)).collect::<String>()),
+        (Some(ProvenanceAtmp::Arrete), _) => format!("taux collectif de l'arrêté{}", t.depuis.iter().map(|j| format!(" {}", j.annee())).collect::<String>()),
         (Some(ProvenanceAtmp::Import), _) => "repris à l'import".to_string(),
         (Some(ProvenanceAtmp::Saisie), _) => "inscrit dans PuppetPaie".to_string(),
         (None, _) => "inscrit".to_string(),
     };
     let taux = match valeur {
-        Some(v) => en_pourcent(v),
+        Some(v) => pourcent(v),
         None => "sans taux".to_string(),
     };
     let code: String = t.code_risque.iter().map(|c| format!(", code risque {}", c)).collect();
@@ -264,7 +257,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
 /// code et du meme taux que celle en vigueur, d'ou qu'elle vienne, n'est pas un changement.
 fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Option<LigneDite>, Option<LigneDite>, Option<LigneDite>)> {
     let liste: Vec<droit::fiche::Datee<TauxAtmp>> = liste.iter().map(|d| droit::fiche::Datee { valeur: d.valeur.clone().filter(|t| !t.est_vide()), ..d.clone() }).collect();
-    let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize()).map_err(|e| e.phrase));
+    let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.grandeur::<socle::grandeurs::Taux>().map(socle::grandeurs::sans_zero).map_err(|e| e.phrase));
     let temps = droit::fiche::temps_au(&liste, aujourdhui, |a, b| a.code_risque == b.code_risque && taux(a) == taux(b)).map_err(|m| m.reclasser(Classe::Illisible))?;
     let dite = |devant: &str, t: Option<&TauxAtmp>, depuis: Option<Jour>, jusqu_au: Option<Jour>, note: Option<String>| -> R<LigneDite> {
         let mut l = match t.filter(|t| !t.est_vide()) {
@@ -292,10 +285,10 @@ fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Optio
 }
 
 /// La phrase et l'explication du taux de l'annee lu par la paie (`lu` : `bareme::taux_atmp_de_l_annee`).
-fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: i32, nom: &Option<String>) -> (String, String) {
+fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: Annee, nom: &Option<String>) -> (String, String) {
     match lu {
         Some(Ok(t)) => match t.valeur {
-            Some(v) => (format!("Taux AT/MP {} : {}{}.", an, en_pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
+            Some(v) => (format!("Taux AT/MP {} : {}{}.", an, pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
             None => (
                 format!("Taux AT/MP {} : pas encore de notification (999ZZ).", an),
                 format!("999ZZ : la compagnie n'a pas encore reçu de notification de la CARSAT. La DSN le déclare ainsi, sans taux. Aucun texte ne dit quel taux le bulletin cotise en attendant : le logiciel ne calcule pas la paie de {} tant que le code et le taux notifiés ne sont pas inscrits.", an),
@@ -351,7 +344,7 @@ impl Dite for TauxAtmpDit {
 /// `taux-atmp` : la case du siege et celles des autres etablissements, aujourd'hui (voir `TauxAtmpDit`).
 pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
     let aujourdhui = ctx.aujourdhui;
-    let an = aujourdhui.an;
+    let an = aujourdhui.annee();
     let socle = socle_de(an)?;
     let risques: Vec<RisqueAtmp> = socle.iter().flat_map(bareme::risques_de).collect();
     let nom_de_code = |code: &Option<CodeRisqueAt>| -> (Option<String>, Option<&RisqueAtmp>) {
@@ -385,7 +378,7 @@ pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
         risque: risque.map(risque_dit),
         ou_le_lire: "La CARSAT notifie à la compagnie son code risque et son taux : la notification se lit dans le compte AT/MP de net-entreprises (compte entreprise › Accidents du travail et maladies professionnelles).",
         inscrire: "Inscrire le taux d'une notification",
-        propose_depuis: premier_janvier(an + 1)?,
+        propose_depuis: an.suivante()?.premier_jour(),
         codes: risques.iter().map(risque_dit).collect(),
         etablissements,
     })

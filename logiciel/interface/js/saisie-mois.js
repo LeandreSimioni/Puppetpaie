@@ -221,7 +221,9 @@ async function calculerApercu(lu) {
       const part = rangs[i] == null ? [] : [a.paies[rangs[i]]];
       const p = part[0];
       // Les bornes de l'engagement, telles que le moteur les lit (ses lignes de travail) : la ligne du contrat les montre.
-      div._bornes = p ? { debut: p.debut, fin: p.fin } : null;
+      // Une carte à compléter rend les cases de sa saisie (`debut_lu`, `fin_ecrite`), chacune facultative.
+      div._bornes = p && p.bornes ? { debut: p.bornes.du, fin: p.bornes.au }
+        : p && p.a_completer && (p.debut_lu || p.fin_ecrite) ? { debut: p.debut_lu, fin: p.fin_ecrite } : null;
       div._contratDit = p ? p.contrat_dit : null;
       majContrat(div);
       // CE QUE SA CARTE PROPOSE, le moteur le dit pour cet engagement (`propose` : ses rubriques, celle d'une ligne
@@ -262,7 +264,7 @@ async function calculerApercu(lu) {
       // premier mois, et c'est ici qu'il revient à l'écran quand la saisie
       // ne le portait pas encore.
       // Un numéro que la carte demande de dire (`contrat.ecrits`) ne se reprend pas de l'aperçu : vide, le moteur le donne.
-      if (p && p.numero_contrat && p.contrat && !p.contrat.premier_mois
+      if (p && p.numero_contrat && p.contrat && (p.contrat.place === "dernier" || p.contrat.place === "milieu")
           && !p.contrat.ecrits.includes("numero") && !div.dataset.numero) {
         div.dataset.numero = p.numero_contrat;
         div.dataset.numeroDe = salarieDuBloc(div);
@@ -272,7 +274,7 @@ async function calculerApercu(lu) {
       // place du numéro, et le brut à zéro suit.
       // UN CONTRAT SUR PLUSIEURS MOIS : le chevron au bord de
       // la case, d'après ce que le moteur rend (`poserChevrons`).
-      if (p) poserChevrons(div, p.contrat, p.debut, p.fin);
+      if (p) poserChevrons(div, p.contrat, p.bornes && p.bornes.du, p.bornes && p.bornes.au);
       // Les cases du contrat écrit que le moteur demande pour cet engagement.
       montrerEcrit(div, p && p.contrat && p.contrat.ecrits, p && p.contrat && p.contrat.modeles);
       montrerFaitsAvances(div, p && p.faits_avances);
@@ -358,7 +360,7 @@ function peindreCarte(div) {
   // POUR QUOI. Le spectacle, puis ce qui est payé en mots, et un contrat repris d'un ancien logiciel.
   const pourquoi = [pourQuoi(ligne), p && p.paye_dit, ligne.repris_dit].filter(Boolean).join(" · ");
   // Un contrat sur plusieurs mois porte sa pastille à côté du nom.
-  poserChevrons(div, ligne.contrat, ligne.debut, ligne.fin);
+  poserChevrons(div, ligne.contrat, ligne.bornes?.du, ligne.bornes?.au);
   const net = div._total ? netPaye(div._total.net_paye) : "";
   const detail = [p && p.bulletin_dit, ligne.numero_dit, ligne.validee_dit].filter(Boolean).join(" · ");
   cible.innerHTML = `

@@ -36,6 +36,7 @@
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::fiche::{CaseDeFiche, CaseEntreprise, CasePieceEntreprise, CaseSalarie};
+use droit::natures::RubriqueDeLaNorme;
 use socle::date::Jour;
 use Origine::{Entreprise as E, Etablissement, PieceDeLEntreprise as PE, Salarie as S};
 use socle::mois::{Graphie, Mois};
@@ -43,8 +44,8 @@ use socle::echec::R;
 
 /// Une modalite du contrat qui a sa rubrique en bloc 41 : d'ou son changement tient sa date.
 struct Modalite {
-    r40: &'static str,
-    r41: &'static str,
+    r40: RubriqueDeLaNorme,
+    r41: RubriqueDeLaNorme,
     /// La saisie du mois la porte (`date_modification` de l'engagement la date).
     saisie: bool,
     /// D'ou elle vient, hors de la saisie : les cases des fiches dont l'historique la date, et l'etablissement de la
@@ -98,7 +99,7 @@ recopie pas. Rien n'est ecrit.",
 }
 
 const fn m(r40: &'static str, r41: &'static str, saisie: bool, origines: &'static [Origine]) -> Modalite {
-    Modalite { r40, r41, saisie, origines, annuelle: false, periodique: false, en_cours_de_mois: false, decoupable: false, liste: None }
+    Modalite { r40: RubriqueDeLaNorme::du_moteur(r40), r41: RubriqueDeLaNorme::du_moteur(r41), saisie, origines, annuelle: false, periodique: false, en_cours_de_mois: false, decoupable: false, liste: None }
 }
 
 /// `m`, une modalite que le decoupage de la paie porte en cours de mois.
@@ -165,12 +166,15 @@ pub struct Declare {
     /// Le NIC de l'etablissement qui l'a deposee, et son SIRET (06.001 + 11.001).
     pub nic: droit::fiche::Nic,
     pub siret: droit::fiche::Siret,
-    pub bloc: Vec<(String, String)>,
+    pub bloc: Vec<(RubriqueDeLaNorme, String)>,
 }
 
-
-fn valeur<'a>(bloc: &'a [(String, String)], r: &str) -> Option<&'a str> {
-    bloc.iter().find(|(k, _)| k == r).map(|(_, v)| v.as_str())
+/// S21.G00.40.001, la date de debut du contrat : la premiere rubrique de son bloc 40.
+pub const DEBUT_CONTRAT: RubriqueDeLaNorme = droit::rubrique!("S21.G00.40.001");
+/// S21.G00.41.001, la date de la modification : la premiere rubrique d'un bloc 41.
+const DATE_41: RubriqueDeLaNorme = droit::rubrique!("S21.G00.41.001");
+fn valeur(bloc: &[(RubriqueDeLaNorme, String)], r: RubriqueDeLaNorme) -> Option<&str> {
+    bloc.iter().find(|(k, _)| *k == r).map(|(_, v)| v.as_str())
 }
 
 fn ddmmaaaa(v: &str) -> Option<Jour> {
@@ -200,7 +204,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
         None => "(rien)",
     };
     let (debut_m, fin_b) = (mois.premier_jour(), decl.mois.dernier_jour());
-    let fin_p = p.engagement.fin_periode();
+    let payee = p.engagement.periode_payee()?;
     let mut candidats: Vec<(Jour, String)> = Vec::new();
     if md.saisie {
         if let Some(j) = p.engagement.date_modification {
@@ -219,7 +223,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
         candidats.extend(changements_dates(depuis).map(|j| (j, format!("{} (`{}`)", ou, c))));
     }
     if md.annuelle && decl.mois.annee() < mois.annee() {
-        candidats.push((Jour { an: debut_m.an, mois: 1, jour: 1 }, "le bareme de l'annee (il vaut du 1er janvier)".into()));
+        candidats.push((debut_m.annee().premier_jour(),"le bareme de l'annee (il vaut du 1er janvier)".into()));
     }
     if md.periodique {
         // INFERENCE : une valeur qui se lit periode de paie par periode de paie change au premier jour de la periode
@@ -237,9 +241,9 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
                 mois.libelle(Graphie::Accentuee)
             ));
         }
-        candidats.push((p.engagement.debut_periode(), "la periode de paie (la valeur se lit periode par periode, p. 199)".into()));
+        candidats.push((payee.debut(), "la periode de paie (la valeur se lit periode par periode, p. 199)".into()));
     }
-    candidats.retain(|(j, _)| *j <= fin_p);
+    candidats.retain(|(j, _)| *j <= payee.fin());
     let mut apres_declare: Vec<&(Jour, String)> = candidats.iter().filter(|(j, _)| *j > fin_b).collect();
     apres_declare.sort_by_key(|(j, _)| *j);
     apres_declare.dedup_by_key(|(j, _)| *j);
@@ -285,7 +289,7 @@ correction de mois deja declares, que le logiciel ne fait pas.",
             }
             // En cours de mois : la paie decoupee au jour du changement le porte (; norme, § 2.1.2.5 p. 22-23 :
             // 41.001 au jour, 41.028 au premier du mois), pour ce que le decoupage sait calculer.
-            if *j > debut_m && !md.en_cours_de_mois && !(md.decoupable && p.decoupee_le(j)) {
+            if *j > debut_m && !md.en_cours_de_mois && !(md.decoupable && p.decoupee_le(j)?) {
                 let suivant = Jour { jour: 1, ..debut_m.plus_jours(31)? };
                 let comment = if md.decoupable && md.saisie && md.origines.is_empty() {
                     " La paie se decoupe au jour d'un avenant quand la saisie dit les termes du contrat d'avant (`avant` : \
@@ -319,12 +323,12 @@ intermediaires, ou ne garder qu'un changement.",
 /// Les blocs S21.G00.41 du contrat de `p`, dont le bloc 40 vient d'etre ecrit (`ecrit`), dans la DSN mensuelle de
 /// `mois` de l'etablissement `nics[0]`, en norme `norme` ; `decl` : son bloc 40 declare (`dsn::bloc_40_declare`). Vide au
 /// premier mois du contrat.
-fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[droit::fiche::Nic], ecrit: &[(String, String)], decl: &Declare) -> R<Vec<Vec<(String, String)>>> {
+fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[droit::fiche::Nic], ecrit: &[(RubriqueDeLaNorme, String)], decl: &Declare) -> R<Vec<Vec<(RubriqueDeLaNorme, String)>>> {
     let e = &p.engagement;
     if e.numero.is_none() {
         return Ok(Vec::new());
     }
-    if e.premier_mois() {
+    if let engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Premier = e.place_du_mois()? {
         return Ok(Vec::new());
     }
     let fin_m = mois.dernier_jour();
@@ -334,8 +338,8 @@ fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, n
     // jour que la saisie du mois donne a son avenant ; sinon du dernier jour du mois declare : pour un identifiant autre
     // que le SIRET, « la date de modification du bloc changement peut correspondre a toute date » (§ 2.1.2.3.2, p. 21,
     // `chapitre-2-principes-de-constitution.txt`), au plus tard ce jour-la (CCH-15 de 41.001, p. 217).
-    fn debut_declare<'a>(bloc: &'a [(String, String)], ou: &str, p: &Paie) -> R<&'a str> {
-        valeur(bloc, "S21.G00.40.001").ok_or_else(|| socle::refus!("{} : {} ne porte pas la date de debut du contrat (S21.G00.40.001).", qui(p), ou))
+    fn debut_declare<'a>(bloc: &'a [(RubriqueDeLaNorme, String)], ou: &str, p: &Paie) -> R<&'a str> {
+        valeur(bloc, DEBUT_CONTRAT).ok_or_else(|| socle::refus!("{} : {} ne porte pas la date de debut du contrat (S21.G00.40.001).", qui(p), ou))
     }
     let (avant, apres) = (debut_declare(&decl.bloc, "la DSN deposee", p)?, debut_declare(ecrit, "le bloc contrat ecrit", p)?);
     if avant != apres {
@@ -352,7 +356,7 @@ p. 217).",
                 date.jj_mm_aaaa()
             ), "date_modification"));
         }
-        identifiants.push(vec![("S21.G00.41.001".to_string(), date.jjmmaaaa()), ("S21.G00.41.021".to_string(), avant.to_string())]);
+        identifiants.push(vec![(DATE_41, date.jjmmaaaa()), (droit::rubrique!("S21.G00.41.021"), avant.to_string())]);
     }
     // L'IDENTIFIANT : l'etablissement. Le contrat etait declare par un autre etablissement : son SIRET, date du jour de
     // la mutation (« la datation precise du changement de SIRET est impactante », p. 21).
@@ -372,7 +376,7 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
                 nics[0]
             ));
         };
-        identifiants.push(vec![("S21.G00.41.001".to_string(), date.jjmmaaaa()), ("S21.G00.41.012".to_string(), decl.siret.to_string())]);
+        identifiants.push(vec![(DATE_41, date.jjmmaaaa()), (droit::rubrique!("S21.G00.41.012"), decl.siret.to_string())]);
     }
     // LES MODALITES : une par bloc, l'ancienne valeur, sa date, la profondeur de recalcul.
     let mut modalites = Vec::new();
@@ -398,9 +402,9 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
         modalites.push((
             md.r41,
             vec![
-                ("S21.G00.41.001".to_string(), date.jjmmaaaa()),
-                (md.r41.to_string(), ancienne),
-                ("S21.G00.41.028".to_string(), profondeur.jjmmaaaa()),
+                (DATE_41, date.jjmmaaaa()),
+                (md.r41, ancienne),
+                (droit::rubrique!("S21.G00.41.028"), profondeur.jjmmaaaa()),
             ],
         ));
     }
@@ -411,20 +415,21 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
 
 /// Pose les blocs 41 du contrat de `p` juste apres son bloc 40, qui commence a la ligne `debut` du fichier `f`.
 pub fn poser(f: &mut crate::dsn::Fichier, debut: usize, ctx: &Contexte, p: &Paie, mois: Mois, nics: &[droit::fiche::Nic], declare: Option<&Declare>) -> R<()> {
-    let mut fin = debut;
-    let mut ecrit = Vec::new();
-    while let Some(l) = f.lignes.get(fin).filter(|l| l.starts_with("S21.G00.40.")) {
-        if let Some((k, v)) = l.split_once(',') {
-            ecrit.push((k.to_string(), v.trim_matches('\'').to_string()));
-        }
-        fin += 1;
-    }
+    let fin = fin_du_bloc_40(&f.lignes, debut);
     // Rien de declare : aucun changement a declarer.
     let norme = f.norme()?;
-    let blocs: Vec<Vec<(String, String)>> = declare.map(|d| blocs_41(ctx, p, mois, norme, nics, &ecrit, d)).transpose()?.into_iter().flatten().collect();
-    let neuves: Vec<String> = blocs.into_iter().flatten().map(|(k, v)| format!("{},'{}'", k, v)).collect();
+    let blocs = declare.map(|d| blocs_41(ctx, p, mois, norme, nics, &f.lignes[debut..fin], d)).transpose()?.into_iter().flatten();
+    let neuves: Vec<(RubriqueDeLaNorme, String)> = blocs.flatten().collect();
     f.lignes.splice(fin..fin, neuves);
     Ok(())
+}
+
+/// La ligne qui suit le bloc 40 ecrit a partir de la ligne `debut` : la premiere qui n'est pas de son bloc.
+fn fin_du_bloc_40(lignes: &[(RubriqueDeLaNorme, String)], debut: usize) -> usize {
+    match lignes[debut..].iter().position(|(k, _)| !k.du_meme_bloc(DEBUT_CONTRAT)) {
+        Some(n) => debut + n,
+        None => lignes.len(),
+    }
 }
 
 /// LA DATE DE DEBUT D'UN CONTRAT DECLARE, CORRIGEE APRES LA LIMITE DE L'ANNULE-ET-REMPLACE, par une
@@ -449,14 +454,14 @@ pub fn poser(f: &mut crate::dsn::Fichier, debut: usize, ctx: &Contexte, p: &Paie
 ///
 /// Rien a poser quand la date n'a pas change, ou pour un contrat jamais declare (un contrat ajoute). Refus quand la
 /// date declaree n'est pas dite, ou que le jour de la correction n'est pas connu : le bloc ne se devine pas (regle 1).
-pub fn ancienne_date_de_debut(lignes: &mut Vec<String>, debut: usize, r: &crate::dsn::Regularisation, nouveau: &Jour, fin_mois: Jour) -> R<()> {
+pub fn ancienne_date_de_debut(lignes: &mut Vec<(RubriqueDeLaNorme, String)>, debut: usize, r: &crate::dsn::Regularisation, nouveau: &Jour, fin_mois: Jour) -> R<()> {
     let e = &r.apres.engagement;
     let numero = engagement::numeros::numero_dit(e.numero.as_ref(), "", "", "sans numero");
-    if r.declare.lignes.is_empty() && r.declare.fichier.is_empty() {
+    if r.declare.lignes.is_empty() && r.declare.declaree.is_none() {
         return Ok(());
     }
     let Some(ancienne) = r.declare.debut_contrat else {
-        if *nouveau == r.avant.engagement.debut {
+        if *nouveau == r.avant.engagement.contrat().debut() {
             return Ok(());
         }
         return Err(socle::echec::refus_avec(
@@ -466,10 +471,10 @@ declaree (S21.G00.40.001 du contrat). Le bloc Changements contrat (S21.G00.41.02
 date declaree : elle se lit, elle ne se devine pas. Rien n'est ecrit.",
                 r.mois,
                 numero,
-                r.avant.engagement.debut.jj_mm_aaaa(),
+                r.avant.engagement.contrat().debut().jj_mm_aaaa(),
                 nouveau.jj_mm_aaaa()
             ),
-            socle::echec::Lieu { fichier: Some(r.declare.fichier.clone()), ..socle::echec::Lieu::default() },
+            socle::echec::Lieu { detail: Some(r.declare.dit()), ..socle::echec::Lieu::default() },
         ));
     };
     if ancienne == *nouveau {
@@ -487,11 +492,8 @@ n'est ecrit.",
         ), "decidee_le"));
     };
     let date = decidee.min(fin_mois);
-    let mut fin = debut;
-    while lignes.get(fin).is_some_and(|l| l.starts_with("S21.G00.40.")) {
-        fin += 1;
-    }
-    let bloc = [format!("S21.G00.41.001,'{}'", date.jjmmaaaa()), format!("S21.G00.41.021,'{}'", ancienne.jjmmaaaa())];
+    let fin = fin_du_bloc_40(lignes, debut);
+    let bloc = [(DATE_41, date.jjmmaaaa()), (droit::rubrique!("S21.G00.41.021"), ancienne.jjmmaaaa())];
     lignes.splice(fin..fin, bloc);
     Ok(())
 }

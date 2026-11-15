@@ -82,7 +82,7 @@ async function boitePieces(ligne, acte) {
   // Le moteur rend, avec le carré (`carres[].pieces`), ce que le détail montre : la phrase sans pièce, l'encart d'un
   // contrat qui n'est plus le bon, et les gestes.
   // Le carré d'un acte qui a des pièces (la DPAE, la signature du contrat) les porte toujours.
-  const sienne = lu.engagements.find((l) => l.salarie === ligne.salarie && l.debut === ligne.debut) || ligne;
+  const sienne = lu.engagements.find((l) => l.salarie === ligne.salarie && l.bornes?.du === ligne.bornes?.du) || ligne;
   const carre = sienne.carres.find((c) => c.cle === acte);
   const montre = carre.pieces;
   const titre = carre.titre;

@@ -21,7 +21,7 @@
 
 use crate::natures::Nature;
 use crate::fiche::{Lue, SalarieDuContrat};
-use socle::date::Jour;
+use socle::date::{Jour, Periode, PeriodeOuverte};
 use crate::emplois;
 use socle::echec::R;
 
@@ -35,14 +35,12 @@ pub fn par_defaut(nat: &Nature) -> bool {
 /// Le jour ou un contrat commence a durer douze mois : son debut, douze mois plus tard (le dernier jour du mois quand
 /// ce jour n'existe pas : un 29 fevrier). Un contrat dont le lendemain du terme l'atteint dure douze mois ou plus.
 fn douze_mois_apres(debut: &Jour) -> R<Jour> {
-    let an = debut.an + 1;
-    let jour = debut.jour.min(socle::date::jours_du_mois(an, debut.mois));
-    Jour::nouveau(an, debut.mois, jour).ok_or_else(|| socle::refus!("Douze mois après le {} : date illisible.", debut.iso()))
+    debut.apres(socle::date::Duree::mois(12))
 }
 
-/// Le contrat, du `debut` au `fin` signes, dure-t-il douze mois ou plus ?
-pub fn douze_mois_ou_plus(debut: &Jour, fin: &Jour) -> R<bool> {
-    Ok(fin.plus_jours(1)? >= douze_mois_apres(debut)?)
+/// Le `contrat`, du debut au terme signes, dure-t-il douze mois ou plus ?
+pub fn douze_mois_ou_plus(contrat: &Periode) -> R<bool> {
+    Ok(contrat.fin().plus_jours(1)? >= douze_mois_apres(&contrat.debut())?)
 }
 
 /// LE CONTRAT D'UN INTERMITTENT. Un CDD d'usage (la nature payee a l'activite) l'est toujours ; un CDI jamais ; un CDD
@@ -123,12 +121,12 @@ pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(Stri
 /// - un CDD de droit commun d'un intermittent (`intermittent`) : oui, sauf s'il dure douze mois ou plus ; sans terme,
 ///   refus -- sa duree decide, et le moteur ne la devine pas ;
 /// - un CDD de droit commun d'un autre salarie : non.
-pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, debut: &Jour, fin: Option<&Jour>) -> R<bool> {
+pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, contrat: &PeriodeOuverte) -> R<bool> {
     if !intermittent(nat, sal)? {
         return Ok(false);
     }
-    let fin = match fin {
-        Some(f) => f,
+    let signe = match contrat.fermee() {
+        Some(p) => p,
         None if !nat.mensuelle() => return Ok(true),
         None => {
             return Err(socle::refus!(
@@ -136,9 +134,9 @@ pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, debut: &Jour, fin: Option<&
 declare a la caisse des Conges Spectacles (moins de douze mois : code du travail D. 7121-41, fiche Audiens), et le \
 moteur ne la devine pas.",
                 nat.libelle,
-                debut.jj_mm_aaaa()
+                contrat.debut().jj_mm_aaaa()
             ))
         }
     };
-    Ok(!douze_mois_ou_plus(debut, fin)?)
+    Ok(!douze_mois_ou_plus(&signe)?)
 }

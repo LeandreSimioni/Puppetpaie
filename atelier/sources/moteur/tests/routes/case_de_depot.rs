@@ -18,7 +18,7 @@ fn la_dpae_deposee_emporte_la_demande_de_taux() {
     let jour = "2026-11-20";
     reussi(&valider_la_carte(&c, le_mois(2026, 11), "FULLER", jour));
 
-    reussi(&route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "reel": false}), jour));
+    reussi(&route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "mode": "test"}), jour));
 
     let journal = crate::outils::journal(&c);
     let lignes = journal.as_array().or_else(|| journal["lignes"].as_array()).cloned().unwrap_or_default();
@@ -40,7 +40,7 @@ fn une_dpae_a_qui_il_manque_une_case_refuse_au_lieu_de_reprendre_la_partie() {
     let (_, c) = rejouer_dossier(&sc, &d);
     let jour = "2026-11-20";
     reussi(&valider_la_carte(&c, le_mois(2026, 11), "FULLER", jour));
-    reussi(&route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "reel": false}), jour));
+    reussi(&route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "mode": "test"}), jour));
     let lignes = || -> usize {
         let j = crate::outils::journal(&c);
         j.as_array().or_else(|| j["lignes"].as_array()).map_or(0, |l| l.iter().filter(|x| x["quoi"] == "dpae").count())
@@ -52,7 +52,7 @@ fn une_dpae_a_qui_il_manque_une_case_refuse_au_lieu_de_reprendre_la_partie() {
     s["FULLER"].as_object_mut().unwrap().remove("date_naissance");
     std::fs::write(&chemin, serde_json::to_vec_pretty(&s).unwrap()).unwrap();
 
-    let r = route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "reel": false}), jour);
+    let r = route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "mode": "test"}), jour);
     assert_eq!(r["ok"], json!(false), "la DPAE est repartie sans sa case : {}", r);
     assert_eq!(lignes(), avant, "rien ne part d'un refus");
 }

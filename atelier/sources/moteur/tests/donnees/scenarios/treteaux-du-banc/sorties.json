@@ -41,8 +41,10 @@
                 "planning": []
               }
             ],
-            "debut": "2026-11-20",
-            "fin": "2026-11-21",
+            "contrat": {
+              "du": "2026-11-20",
+              "au": "2026-11-21"
+            },
             "numero": "FU1.26.01",
             "mois": "2026-11",
             "planning": [],
@@ -77,12 +79,15 @@
             "transaction": null,
             "suspensions": [],
             "contrat_ecrit": null,
-            "debut_periode": "2026-11-20",
-            "fin_periode": "2026-11-21",
-            "quotite": "2",
+            "periode": {
+              "du": "2026-11-20",
+              "au": "2026-11-21"
+            },
+            "quotite": {
+              "jours": "2"
+            },
             "sans_paie": false,
-            "premier_mois": true,
-            "dernier_mois": true,
+            "place": "seul",
             "mois_du_contrat": [
               "2026-11"
             ]
@@ -311,7 +316,7 @@
     },
     "config/compteurs.json": {
       "2026": {
-        "bulletin": 1,
+        "bulletin": "1/2026",
         "certificat_cs": 1
       }
     },
@@ -1281,11 +1286,14 @@
         "qui": "interface",
         "accepte": true,
         "destinataire": "loie.fuller@exemple.invalid",
-        "flux": "",
+        "flux": null,
         "retours": [
           {
             "salarie": "FULLER",
-            "debut": "2026-11-20",
+            "contrat": {
+              "du": "2026-11-20",
+              "au": "2026-11-21"
+            },
             "recu": true,
             "numero": "FU1.26.01",
             "nom": "FULLER Loïe",
@@ -1307,8 +1315,10 @@
           "contrats": [
             {
               "salarie": "FULLER",
-              "debut": "2026-11-20",
-              "fin": "2026-11-21",
+              "contrat": {
+                "du": "2026-11-20",
+                "au": "2026-11-21"
+              },
               "numero": "FU1.26.01",
               "fichier": "Contrat_FULLER_FU1.26.01_Novembre2026.pdf",
               "spectacle": "Le Banc des menteurs",
@@ -1332,7 +1342,7 @@
               "modele": "4fd274f6ca0de4b1"
             }
           ],
-          "main_propre": false,
+          "remise": "courriel",
           "expediteur": "fictive@puppetpaie.invalid",
           "relance": false
         },
@@ -1355,7 +1365,7 @@
         "qui": "interface",
         "accepte": true,
         "destinataire": "loie.fuller@exemple.invalid",
-        "flux": "",
+        "flux": null,
         "retours": [],
         "reponse": "contrat contresigne renvoye au salarie",
         "trace": null,
@@ -1366,8 +1376,10 @@
           "contrats": [
             {
               "salarie": "FULLER",
-              "debut": "2026-11-20",
-              "fin": "2026-11-21",
+              "contrat": {
+                "du": "2026-11-20",
+                "au": "2026-11-21"
+              },
               "numero": "FU1.26.01",
               "spectacle": "Le Banc des menteurs",
               "fichier": "Contrat_FULLER_FU1.26.01_Novembre2026.pdf",
@@ -1421,8 +1433,10 @@
             {
               "salarie": "FULLER",
               "numero": "FU1.26.01",
-              "debut": "2026-11-20",
-              "fin": "2026-11-21"
+              "contrat": {
+                "du": "2026-11-20",
+                "au": "2026-11-21"
+              }
             }
           ],
           "certificat": false
@@ -1535,8 +1549,10 @@
             {
               "salarie": "FULLER",
               "numero": "FU1.26.01",
-              "debut": "2026-11-20",
-              "fin": "2026-11-21"
+              "contrat": {
+                "du": "2026-11-20",
+                "au": "2026-11-21"
+              }
             }
           ],
           "certificat": false
@@ -1763,7 +1779,7 @@
         "qui": "horloge",
         "accepte": true,
         "destinataire": "loie.fuller@exemple.invalid",
-        "flux": "",
+        "flux": null,
         "retours": [],
         "reponse": "1 message(s) envoye(s)",
         "trace": null,
@@ -1780,8 +1796,10 @@
               "resume": {
                 "contrats": [
                   {
-                    "debut": "2026-11-20",
-                    "fin": "2026-11-21",
+                    "contrat": {
+                      "du": "2026-11-20",
+                      "au": "2026-11-21"
+                    },
                     "spectacle": "Le Banc des menteurs",
                     "jours": [
                       "2026-11-20",
@@ -1798,7 +1816,7 @@
               "renvoi": false
             }
           ],
-          "main_propre": false,
+          "remise": "courriel",
           "expediteur": "fictive@puppetpaie.invalid",
           "durees_ms": {
             "preparation": 0,
@@ -1816,15 +1834,15 @@
       }
     ],
     "journal/dsn-ecrites.json": {
-      "2026-11/DPAE_Novembre2026_20261120-0700.txt": {
+      "2026-11/Amorcage01_FULLER_20261120.dsn": {
         "quand": "2026-11-20T07:00:00"
       },
-      "2026-11/Amorcage01_FULLER_20261120.dsn": {
+      "2026-11/DPAE_Novembre2026_20261120-0700.txt": {
         "quand": "2026-11-20T07:00:00"
       },
       "2026-11/DSN_Novembre2026.dsn": {
         "quand": "2026-12-15T10:00:00",
-        "empreinte_saisie": "c5a612c758068bc1",
+        "empreinte_saisie": "41035291e015afd6",
         "versions_portees": []
       }
     },
@@ -1874,8 +1892,10 @@
                     "planning": []
                   }
                 ],
-                "debut": "2026-11-20",
-                "fin": "2026-11-21",
+                "contrat": {
+                  "du": "2026-11-20",
+                  "au": "2026-11-21"
+                },
                 "numero": "FU1.26.01",
                 "mois": "2026-11",
                 "planning": [],
@@ -1910,12 +1930,15 @@
                 "transaction": null,
                 "suspensions": [],
                 "contrat_ecrit": null,
-                "debut_periode": "2026-11-20",
-                "fin_periode": "2026-11-21",
-                "quotite": "2",
+                "periode": {
+                  "du": "2026-11-20",
+                  "au": "2026-11-21"
+                },
+                "quotite": {
+                  "jours": "2"
+                },
                 "sans_paie": false,
-                "premier_mois": true,
-                "dernier_mois": true,
+                "place": "seul",
                 "mois_du_contrat": [
                   "2026-11"
                 ]

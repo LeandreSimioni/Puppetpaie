@@ -20,10 +20,10 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"FERRAND","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"heure","quantite":12,"taux":20,"lieu":"Atelier de la compagnie, 71100 Chalon-sur-Saône","dates":["2026-01-19","2026-01-20"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-01","engagement":{"salarie":"FERRAND","debut":"2026-01-19","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-01"}}
-{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-01","reel":true}}
+{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-01","mode":"reel"}}
 {"route":"demander-signature","charge":{"mois":"2026-01","contrats":[{"salarie":"MARCHETOT","debut":"2026-01-19"},{"salarie":"FERRAND","debut":"2026-01-19"}]}}
 {"heure":"2026-02-03T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-01"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-01","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-01","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-01"}}
 {"route":"echeance-faite","charge":{"cle":"fcap-svp:2026"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-02","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
@@ -35,10 +35,10 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-02","carte":{"ecrite":{"salarie":"FERRAND","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"heure","quantite":18,"taux":20,"lieu":"Salle Jean-Moulin, 39100 Dole","dates":["2026-02-06","2026-02-07","2026-02-08"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":3,"lieu":"Salle Jean-Moulin, 39100 Dole","dates":["2026-02-06","2026-02-07","2026-02-08"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-02","engagement":{"salarie":"FERRAND","debut":"2026-02-06","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-02"}}
-{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-02","reel":true}}
+{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-02","mode":"reel"}}
 {"route":"demander-signature","charge":{"mois":"2026-02","contrats":[{"salarie":"MARCHETOT","debut":"2026-02-06"},{"salarie":"FERRAND","debut":"2026-02-06"}]}}
 {"heure":"2026-03-03T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-02"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-02","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-02","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-02"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-03","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-03","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931108"}]}}
@@ -57,10 +57,10 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-03","carte":{"ecrite":{"salarie":"TESSIER","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"heure","quantite":10,"taux":23,"lieu":"Théâtre de la Halle, 71400 Autun","dates":["2026-03-13","2026-03-14"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":2,"lieu":"Théâtre de la Halle, 71400 Autun","dates":["2026-03-13","2026-03-14"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-03","engagement":{"salarie":"TESSIER","debut":"2026-03-13","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-03"}}
-{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-03","reel":true}}
+{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-03","mode":"reel"}}
 {"route":"demander-signature","charge":{"mois":"2026-03","contrats":[{"salarie":"MARCHETOT","debut":"2026-03-13"},{"salarie":"FERRAND","debut":"2026-03-13"},{"salarie":"DELMAS","debut":"2026-03-13"},{"salarie":"TESSIER","debut":"2026-03-13"}]}}
 {"heure":"2026-04-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-03"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-03","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-03","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-03"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-04","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-04","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931107"}]}}
@@ -79,11 +79,11 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-04","carte":{"ecrite":{"salarie":"FERRAND","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"heure","quantite":12,"taux":20,"lieu":"Centre culturel, 42600 Montbrison","dates":["2026-04-09","2026-04-10"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":2,"lieu":"Centre culturel, 42600 Montbrison","dates":["2026-04-09","2026-04-10"],"planning":[]},{"rubrique":"nuitee","taux":null,"territoire":null,"cases":[],"quantite":1,"lieu":"Centre culturel, 42600 Montbrison","dates":["2026-04-09"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-04","engagement":{"salarie":"FERRAND","debut":"2026-04-09","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-04"}}
-{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-04","reel":true}}
+{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-04","mode":"reel"}}
 {"route":"demander-signature","charge":{"mois":"2026-04","contrats":[{"salarie":"MARCHETOT","debut":"2026-04-07"},{"salarie":"FERRAND","debut":"2026-04-07"}]}}
 {"route":"demander-signature","charge":{"mois":"2026-04","contrats":[{"salarie":"MARCHETOT","debut":"2026-04-09"},{"salarie":"FERRAND","debut":"2026-04-09"}]}}
 {"heure":"2026-05-04T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-04"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-04","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-04","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-04"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-05","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-05","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931108"}]}}
@@ -98,10 +98,10 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-05","carte":{"ecrite":{"salarie":"ALBARET","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":2,"taux":140,"lieu":"Théâtre municipal, 39000 Lons-le-Saunier","dates":["2026-05-11","2026-05-12"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":2,"lieu":"Théâtre municipal, 39000 Lons-le-Saunier","dates":["2026-05-11","2026-05-12"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-05","engagement":{"salarie":"ALBARET","debut":"2026-05-11","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-05"}}
-{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-05","reel":true}}
+{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-05","mode":"reel"}}
 {"route":"demander-signature","charge":{"mois":"2026-05","contrats":[{"salarie":"MARCHETOT","debut":"2026-05-11"},{"salarie":"FERRAND","debut":"2026-05-11"},{"salarie":"ALBARET","debut":"2026-05-11"}]}}
 {"heure":"2026-06-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-05"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-05","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-05","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-05"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931107"}]}}
@@ -112,15 +112,15 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"ecrite":{"salarie":"FERRAND","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"heure","quantite":18,"taux":20,"lieu":"Parc des Expositions, 71000 Mâcon","dates":["2026-06-12","2026-06-13","2026-06-14"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":3,"lieu":"Parc des Expositions, 71000 Mâcon","dates":["2026-06-12","2026-06-13","2026-06-14"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-06","engagement":{"salarie":"FERRAND","debut":"2026-06-12","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06"}}
-{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06","reel":true}}
+{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06","mode":"reel"}}
 {"route":"demander-signature","charge":{"mois":"2026-06","contrats":[{"salarie":"MARCHETOT","debut":"2026-06-12"},{"salarie":"FERRAND","debut":"2026-06-12"}]}}
 {"heure":"2026-07-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-06"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-06","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-06","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-06"}}
 {"heure":"2026-08-04T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-07"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-07","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-07","mode":"reel"}}
 {"heure":"2026-09-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-08"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-08","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-08","mode":"reel"}}
 {"heure":"2026-09-08T10:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-09","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-09","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931108"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-09","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":3,"taux":140,"lieu":"Maison de la culture, 58000 Nevers","dates":["2026-09-18","2026-09-19","2026-09-20"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":3,"lieu":"Maison de la culture, 58000 Nevers","dates":["2026-09-18","2026-09-19","2026-09-20"],"planning":[]},{"rubrique":"nuitee","taux":null,"territoire":null,"cases":[],"quantite":2,"lieu":"Maison de la culture, 58000 Nevers","dates":["2026-09-18","2026-09-19"],"planning":[]}]}]}}
@@ -134,15 +134,15 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-09","carte":{"ecrite":{"salarie":"ALBARET","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":3,"taux":140,"lieu":"Maison de la culture, 58000 Nevers","dates":["2026-09-18","2026-09-19","2026-09-20"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":3,"lieu":"Maison de la culture, 58000 Nevers","dates":["2026-09-18","2026-09-19","2026-09-20"],"planning":[]},{"rubrique":"nuitee","taux":null,"territoire":null,"cases":[],"quantite":2,"lieu":"Maison de la culture, 58000 Nevers","dates":["2026-09-18","2026-09-19"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-09","engagement":{"salarie":"ALBARET","debut":"2026-09-18","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-09"}}
-{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-09","reel":true}}
+{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-09","mode":"reel"}}
 {"route":"demander-signature","charge":{"mois":"2026-09","contrats":[{"salarie":"MARCHETOT","debut":"2026-09-18"},{"salarie":"FERRAND","debut":"2026-09-18"},{"salarie":"ALBARET","debut":"2026-09-18"}]}}
 {"heure":"2026-10-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-09"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-09","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-09","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-09"}}
 {"heure":"2026-11-03T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-10"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-10","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-10","mode":"reel"}}
 {"heure":"2026-12-01T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-11"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-11","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-11","mode":"reel"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-12","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-12","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931107"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-12","carte":{"ecrite":{"salarie":"MARCHETOT","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":2,"taux":140,"lieu":"Théâtre des Feuillants, 21000 Dijon","dates":["2026-12-04","2026-12-05"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":2,"lieu":"Théâtre des Feuillants, 21000 Dijon","dates":["2026-12-04","2026-12-05"],"planning":[]}]}]}}
@@ -152,10 +152,10 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-12","carte":{"ecrite":{"salarie":"FERRAND","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"heure","quantite":12,"taux":20,"lieu":"Théâtre des Feuillants, 21000 Dijon","dates":["2026-12-04","2026-12-05"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":2,"lieu":"Théâtre des Feuillants, 21000 Dijon","dates":["2026-12-04","2026-12-05"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-12","engagement":{"salarie":"FERRAND","debut":"2026-12-04","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-12"}}
-{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-12","reel":true}}
+{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-12","mode":"reel"}}
 {"route":"demander-signature","charge":{"mois":"2026-12","contrats":[{"salarie":"MARCHETOT","debut":"2026-12-04"},{"salarie":"FERRAND","debut":"2026-12-04"}]}}
 {"heure":"2027-01-05T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-12"}}
-{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-12","reel":true}}
+{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-12","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-12"}}
 {"heure":"2027-01-12T10:00:00","route":"revue-spectacles","charge":{"annee":2027,"continuent":["objet-256Z00931107","objet-256Z00931108"]}}
 {"route":"exporter","charge":{"etat":"fcap-svp","annee":"2026","format":"csv"}}

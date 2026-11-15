@@ -16,7 +16,9 @@ use socle::echec::{refus_avec, Lieu, R};
 
 use compagnie::installation::MARQUEUR;
 const FICHIER_MODE: &str = ".mode-developpeur.json";
-const NOM_DEV: &str = "prive-dev";
+/// La copie de developpement, sous le dossier qui porte `logiciel/` : dans l'atelier, pas a cote de ce que les gens
+/// recoivent (a la racine : `logiciel/`, `fictives/`, `prive/`).
+const DEVELOPPEMENT: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("atelier/prive-dev");
 
 /// Le dossier qui porte `logiciel/` (celui du depot). `fixer_le_code` a rendu le chemin du
 /// code absolu et sans `..`.
@@ -25,9 +27,9 @@ fn parent_du_logiciel() -> PathBuf {
     compagnie::installation::dessus(&compagnie::installation::logiciel())
 }
 
-/// Dans l'atelier (`atelier/prive-dev`), pas a cote de ce que les gens recoivent (a la racine : `logiciel/`, `fictives/`, `prive/`).
-pub fn dossier_dev() -> PathBuf {
-    parent_du_logiciel().join("atelier").join(NOM_DEV)
+/// La copie de developpement de ce poste (`DEVELOPPEMENT`).
+fn dossier_dev() -> PathBuf {
+    DEVELOPPEMENT.dans(&parent_du_logiciel())
 }
 
 /// `PUPPETPAIE_CLE` le deplace (c'est ainsi que les tests le tiennent hors du poste).

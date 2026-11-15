@@ -14,7 +14,7 @@ fn os(chemin: &Path, e: std::io::Error) -> Echec {
 }
 
 /// Le journal des pieces ecrites, sous la racine de la compagnie.
-const DSN_ECRITES: &str = "journal/dsn-ecrites.json";
+const DSN_ECRITES: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("journal/dsn-ecrites.json");
 
 /// LE JOURNAL DES PIECES ECRITES (`journal/dsn-ecrites.json`) : chaque piece que le moteur ecrit -- une DSN, une
 /// DPAE, un export compta -- y note QUAND, au temps du moteur (`temps.rs`, par `socle::paris::maintenant`). C'est ce que
@@ -25,7 +25,7 @@ const DSN_ECRITES: &str = "journal/dsn-ecrites.json";
 /// mensuelle, la version de chaque engagement d'un mois passe dont elle porte la correction
 /// (`produire_regularisations::versions_portees`), que la ligne du journal de son depot emporte (`versions_portees_de`).
 pub fn noter_piece_ecrite(racine: &Path, cle: &str, empreinte_saisie: Option<EmpreinteNotee>, versions_portees: Option<Vec<envois::journal::Version>>) -> R<()> {
-    let p = racine.join(DSN_ECRITES);
+    let p = DSN_ECRITES.dans(racine);
     let mut d = journal_des_ecritures(racine)?;
     d.insert(cle.to_string(), PieceNotee { quand: socle::temps::secondes().a_la_seconde(), empreinte_saisie, versions_portees });
     if let Some(parent) = p.parent() {
@@ -46,7 +46,7 @@ pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<socle::date::Jour>> {
     let lignes = envois::journal::lu(racine)?.lignes;
     Ok(lignes
         .iter()
-        .filter(|l| l.reel() && l.accepte() && l.empreinte() == Some(&empreinte))
+        .filter(|l| l.mode() == socle::mode::Mode::Reel && l.accepte() && l.empreinte() == Some(&empreinte))
         .find(|l| !envois::etats::refuse_par_un_retour(l))
         .map(|l| l.quand().jour()))
 }
@@ -77,7 +77,7 @@ pub fn cle_de_piece(fichier: &Path) -> String {
 /// Le journal des pieces ecrites : chaque piece sous sa cle `<mois>/<fichier>` (`PieceNotee`). Un journal absent est
 /// vide ; un journal qui ne se lit pas se refuse.
 pub fn journal_des_ecritures(racine: &Path) -> R<std::collections::BTreeMap<String, PieceNotee>> {
-    let p = racine.join(DSN_ECRITES);
+    let p = DSN_ECRITES.dans(racine);
     if !p.exists() {
         return Ok(std::collections::BTreeMap::new());
     }

@@ -427,26 +427,39 @@ pub fn nombre_du_texte(t: &str) -> serde_json::Number {
 /// (`1.0` reste `1.0`, `decimal_ecrit`), un nombre ecrit en texte se lit (`num::dec_texte`).
 /// `#[serde(deserialize_with = "socle::forme::decimal")]`.
 pub fn decimal<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
-    struct EnDecimal;
-    impl<'de> serde::de::Visitor<'de> for EnDecimal {
-        type Value = crate::num::Decimal;
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.write_str("un nombre")
-        }
-        fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<Self::Value, E> {
-            Ok(i.into())
-        }
-        fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Self::Value, E> {
-            Ok(u.into())
-        }
-        fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Self::Value, A::Error> {
-            decimal_ecrit(&texte_a_virgule(m)?).map_err(|e| serde::de::Error::custom(e.phrase))
-        }
-        fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
-            crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase))
-        }
+    d.deserialize_any(EnDecimal { texte: true })
+}
+
+/// `decimal`, strict : un nombre JSON, jamais un texte (la lecture d'une grandeur, `grandeurs`).
+pub(crate) fn decimal_en_nombre<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
+    d.deserialize_any(EnDecimal { texte: false })
+}
+
+/// Le visiteur de `decimal` ; `texte` : un nombre ecrit en texte se lit aussi.
+struct EnDecimal {
+    texte: bool,
+}
+
+impl<'de> serde::de::Visitor<'de> for EnDecimal {
+    type Value = crate::num::Decimal;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("un nombre")
     }
-    d.deserialize_any(EnDecimal)
+    fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<Self::Value, E> {
+        Ok(i.into())
+    }
+    fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Self::Value, E> {
+        Ok(u.into())
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Self::Value, A::Error> {
+        decimal_ecrit(&texte_a_virgule(m)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+    fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
+        if !self.texte {
+            return Err(E::custom(format!("« {} » est écrit en texte : écrire le nombre sans guillemets", s)));
+        }
+        crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase))
+    }
 }
 
 /// `decimal`, quand la valeur peut manquer ou etre nulle (avec `#[serde(default)]`).
@@ -664,7 +677,7 @@ fn ranger_les_textes(v: &mut Value, chemin: &mut Vec<String>, rangee: &dyn Fn(&[
 }
 
 /// UN NOMBRE TEL QU'IL EST ECRIT : un entier, un flottant, ou un texte qui se lit en decimal (`num::decimal_lu`, `12,5`
-/// compris), garde tel quel pour se reecrire de meme (`droit::fiche::Montant`). Un nombre ecrit avec sa virgule se garde
+/// compris), garde tel quel pour se reecrire de meme (`droit::fiche::NombreDeFiche`). Un nombre ecrit avec sa virgule se garde
 /// en decimal, dans sa forme la plus courte (`num::court` : `130.0` reste `130.0`), et se reecrit en nombre a virgule
 /// (`ecrire_a_virgule`).
 #[derive(Debug, Clone, PartialEq)]
@@ -693,23 +706,17 @@ pub fn ecrire_a_virgule_opt<S: serde::Serializer>(d: &Option<crate::num::Decimal
     }
 }
 
-/// UNE VALEUR FACULTATIVE QUE SA FORME ECRIT `""` QUAND ELLE MANQUE (le `flux` d'une ligne du journal des envois, d'un
-/// depot rendu) : `#[serde(with = "socle::forme::vide_si_aucun")]`. `None` s'ecrit `""` ; `""` (ou `null`) se lit `None` ; tout
-/// autre texte se lit dans la forme de la valeur. La facon d'ecrire est celle du fichier, la valeur reste une absence.
-pub mod vide_si_aucun {
-    pub fn serialize<T: serde::Serialize, S: serde::Serializer>(v: &Option<T>, s: S) -> Result<S::Ok, S::Error> {
-        match v {
-            Some(t) => t.serialize(s),
-            None => s.serialize_str(""),
-        }
-    }
-
-    pub fn deserialize<'de, T: serde::de::DeserializeOwned, D: serde::Deserializer<'de>>(d: D) -> Result<Option<T>, D::Error> {
-        let Some(texte) = <Option<String> as serde::Deserialize>::deserialize(d)?.filter(|t| !t.is_empty()) else {
-            return Ok(None);
-        };
-        T::deserialize(serde::de::IntoDeserializer::<D::Error>::into_deserializer(texte)).map(Some)
-    }
+/// UNE ABSENCE QU'UN AUTRE QUE NOUS ECRIT `""` : la liste des retours de l'API de net-entreprises (un `id`, une `url`
+/// non renseignes, comme `<url/>` dans sa liste XML : guide de l'API DSN v6.8,
+/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`), le serveur du
+/// filet (le `ticket` d'un retour qui n'en a pas encore). `#[serde(default, deserialize_with =
+/// "socle::forme::absent_si_vide")]` : `""` ou `null` se lit `None` ; tout autre texte se lit dans la forme de la valeur.
+/// Nos propres formes n'ecrivent jamais `""` pour une absence : `null`, ou rien.
+pub fn absent_si_vide<'de, T: serde::de::DeserializeOwned, D: serde::Deserializer<'de>>(d: D) -> Result<Option<T>, D::Error> {
+    let Some(texte) = <Option<String> as serde::Deserialize>::deserialize(d)?.filter(|t| !t.is_empty()) else {
+        return Ok(None);
+    };
+    T::deserialize(serde::de::IntoDeserializer::<D::Error>::into_deserializer(texte)).map(Some)
 }
 
 impl<'de> serde::Deserialize<'de> for NombreEcrit {
@@ -770,6 +777,18 @@ impl NombreLu {
             (Some(i), _) => Ok(i.into()),
             (_, Some(u)) => Ok(u.into()),
             (None, None) => decimal_ecrit(&self.0.to_string()),
+        }
+    }
+
+    /// Le decimal du nombre, son echelle gardee (`130.0`, sa forme ecrite) : un entier tel quel, un nombre a virgule tel
+    /// qu'il s'ecrit. Un nombre hors de portee d'un decimal se refuse. Sa grandeur se lit par `grandeurs::lu::ecrite`.
+    pub fn decimal_avec_echelle(&self) -> R<crate::num::Decimal> {
+        match (self.0.as_i64(), self.0.as_u64()) {
+            (None, None) => {
+                let s = self.ecrit();
+                crate::num::dec_texte(&s).map_err(|_| crate::refus!("nombre hors de portee : {}", s))
+            }
+            _ => self.decimal(),
         }
     }
 

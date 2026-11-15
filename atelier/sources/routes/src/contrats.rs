@@ -32,11 +32,11 @@ macro_rules! dites {
 }
 dites!(CourrielPose, ApercuSignature, ApercuAvenant, PiecesParties, SignaturesDemandees, Imprimes, NoteRecue);
 use droit::contexte::{Contexte, IdSalarie};
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{NumeroContrat, NumeroDAvenant};
 use envois::etats;
 use envois::journal::{self, AvenantParti, ArticleModifie, ContratParti};
 use envois::releve_signatures::ReleveDite;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::paris::{InstantOuJour, Moment};
 use socle::echec::{erreur, Classe, R};
 use socle::fichiers::NomDeFichier;
@@ -282,7 +282,7 @@ pub(crate) struct ChargeRecu {
     pub(crate) salarie: droit::contexte::IdSalarie,
     pub(crate) debut: Jour,
     pub(crate) numero: Option<NumeroContrat>,
-    pub(crate) avenant: Option<i64>,
+    pub(crate) avenant: Option<NumeroDAvenant>,
     pub(crate) recu: bool,
 }
 
@@ -349,12 +349,11 @@ pub(crate) struct ContratASigner {
     /// Le courriel du salarie, s'il est dit.
     pub(crate) destinataire: Option<droit::fiche::Courriel>,
     spectacle: String,
-    pub(crate) debut: Jour,
-    fin: Option<Jour>,
+    pub(crate) contrat: PeriodeOuverte,
     pub(crate) numero: Option<NumeroContrat>,
     pub(crate) demande_le: Option<InstantOuJour>,
     pastille: Option<Pastille>,
-    pub(crate) par: Option<etats::ModeDeRemise>,
+    pub(crate) par: Option<documents::ModeDeRemise>,
     /// Un courriel a deja demande de signer ce contrat (le journal le dit) : le redemander est un rappel.
     #[serde(skip)]
     pub(crate) demande_par_courriel: bool,
@@ -448,8 +447,8 @@ pub(crate) struct AvenantDit {
 pub(crate) struct ApercuAvenant {
     phrase: String,
     salarie: droit::contexte::IdSalarie,
-    debut: Jour,
-    fin: Option<Jour>,
+    /// La periode du contrat que l'avenant modifie.
+    bornes: PeriodeOuverte,
     nom: String,
     spectacle: String,
     nom_du_contrat: String,
@@ -464,7 +463,7 @@ pub(crate) struct ApercuAvenant {
     ailleurs: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     contrat_signe: Option<ContratSigneDit>,
-    numero: i64,
+    numero: NumeroDAvenant,
     effet: Jour,
     modifications: Vec<ModificationDite>,
     avenants: Vec<AvenantDit>,
@@ -545,7 +544,7 @@ pub(crate) struct ParCourriel {
     /// L'acte de la demande (`avenant`, `remplace`) ; aucun pour le contrat lui-meme (la forme du journal des envois,
     /// `envois::etats`).
     pub(crate) acte: Option<envois::journal::ActeDuContrat>,
-    pub(crate) avenant: Option<i64>,
+    pub(crate) avenant: Option<NumeroDAvenant>,
 }
 
 /// UN CONTRAT (OU UN AVENANT) REVENU SIGNE, ou la note retiree (`c.recu`). Une ligne de journal, pas un etat de la saisie :
@@ -563,7 +562,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         p.salarie.id == *salarie
             && match numero {
                 Some(n) => p.engagement.numero.as_ref() == Some(n),
-                None => p.engagement.debut == c.debut,
+                None => p.engagement.contrat().debut() == c.debut,
             }
     });
     let Some(rang) = trouvee else {
@@ -578,7 +577,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let p = &paies[rang];
     let numero_note = p.engagement.numero.clone();
     let nom = crate::nom_a_l_ecran(&p.salarie, salarie);
-    let avenant = c.avenant.filter(|a| *a != 0);
+    let avenant = c.avenant;
     let ce = match avenant {
         Some(a) => format!("avenant n° {}", a),
         None => "contrat".to_string(),
@@ -592,10 +591,10 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         ),
     };
     // CE QUI REVIENT SE RANGE SUR LA LIGNE DE L'ENVOI : la derniere qui a fait partir ce contrat (ou cet avenant).
-    let av = courriel.and_then(|m| m.avenant).or(avenant).filter(|a| *a != 0);
+    let av = courriel.and_then(|m| m.avenant).or(avenant);
     let retour = journal::RetourContrat {
         salarie: c.salarie.clone(),
-        debut: p.engagement.debut,
+        contrat: p.engagement.contrat(),
         recu,
         numero: numero_note.clone(),
         nom: nom.clone(),
@@ -646,7 +645,7 @@ fn refuser_les_contrats_partis(ctx: &Contexte, mois: Mois, choisis: &Choisis) ->
     }
     let apercu = signature_apercu(ctx, mois)?;
     for c in apercu.contrats.iter().filter(|c| c.en_avenant) {
-        let (salarie, debut, numero) = (&c.salarie, c.debut.iso(), c.numero.as_ref());
+        let (salarie, debut, numero) = (&c.salarie, c.contrat.debut().iso(), c.numero.as_ref());
         let vise = choisis.salaries.as_ref().is_some_and(|l| l.iter().any(|x| *x == *salarie))
             || choisis.contrats.as_ref().is_some_and(|l| l.iter().any(|(s, d, n)| s == salarie && *d == debut && n.as_ref().is_none_or(|n| Some(n) == numero)));
         if vise {
@@ -690,8 +689,22 @@ fn majuscule(t: &str) -> String {
 }
 
 /// « avenant n° 2 », ou « avenant sans numéro ».
-fn avenant_dit(numero: Option<i64>) -> String {
+fn avenant_dit(numero: Option<NumeroDAvenant>) -> String {
     engagement::numeros::numero_dit(numero, "avenant n° ", "", "avenant sans numéro")
+}
+
+/// LE NUMERO DU PROCHAIN AVENANT d'un contrat, le seul endroit qui le donne : le suivant du dernier avenant signe parmi
+/// ceux deja partis (`deja`) ; aucun signe, le premier. Un avenant signe sans numero est un journal mal forme.
+fn prochain_avenant(deja: &[AvenantParti]) -> R<NumeroDAvenant> {
+    let mut dernier: Option<NumeroDAvenant> = None;
+    for a in deja.iter().filter(|a| a.signe.is_some()) {
+        let n = a.numero.ok_or_else(|| erreur(Classe::MalFormee, "Un avenant revenu signé n'a pas de numéro au journal des envois."))?;
+        dernier = dernier.max(Some(n));
+    }
+    Ok(match dernier {
+        Some(n) => n.suivant(),
+        None => NumeroDAvenant::premier(),
+    })
 }
 
 /// `demander-signature` : faire signer, en un geste, les contrats choisis et les avenants coches. Tous les refus
@@ -798,7 +811,7 @@ fn avenants_a_envoyer(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &[ContratA
         let numero = v.numero.as_ref();
         let attend = etats
             .iter()
-            .find(|c| c.salarie == v.salarie && c.debut == v.debut && numero.is_none_or(|n| c.numero.as_ref() == Some(n)))
+            .find(|c| c.salarie == v.salarie && c.contrat.debut() == v.debut && numero.is_none_or(|n| c.numero.as_ref() == Some(n)))
             .filter(|c| c.avenant_attendu && c.en_attente);
         avenants.push(match attend {
             Some(c) => avenant_repris(ctx, c)?,
@@ -827,7 +840,7 @@ fn avenant_neuf(ctx: &Contexte, v: &AvenantVoulu) -> R<UnAvenant> {
     };
     Ok(UnAvenant {
         salarie: apercu.salarie,
-        debut: apercu.debut,
+        debut: apercu.bornes.debut(),
         mois: apercu.mois,
         contrat: apercu.contrat,
         numero: apercu.numero,
@@ -845,13 +858,13 @@ fn avenant_neuf(ctx: &Contexte, v: &AvenantVoulu) -> R<UnAvenant> {
 fn avenant_repris(ctx: &Contexte, c: &ContratASigner) -> R<UnAvenant> {
     let qui = ctx.nomme(&c.salarie);
     let Some(a) = &c.avenant else {
-        return Err(refus(format!("Le contrat de {} du {} n'a aucun avenant en attente de signature. Rien n'est parti.", qui, c.debut.jj_mm_aaaa())));
+        return Err(refus(format!("Le contrat de {} du {} n'a aucun avenant en attente de signature. Rien n'est parti.", qui, c.contrat.debut().jj_mm_aaaa())));
     };
-    let parti = |quoi: &str| refus(format!("L'avenant parti du contrat de {} du {} ne dit pas {} : il ne repart pas tel quel, il se refait. Rien n'est parti.", qui, c.debut.jj_mm_aaaa(), quoi));
+    let parti = |quoi: &str| refus(format!("L'avenant parti du contrat de {} du {} ne dit pas {} : il ne repart pas tel quel, il se refait. Rien n'est parti.", qui, c.contrat.debut().jj_mm_aaaa(), quoi));
     let deja = if a.par_courriel { DejaParti::ParCourriel } else { DejaParti::Imprime { le: a.quand } };
     Ok(UnAvenant {
         salarie: c.salarie.clone(),
-        debut: c.debut,
+        debut: c.contrat.debut(),
         mois: a.mois,
         contrat: a.contrat.clone(),
         numero: a.numero.ok_or_else(|| parti("son numéro"))?,
@@ -928,7 +941,8 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
             continue;
         }
         let nom = crate::nom_a_l_ecran(&p.salarie, &p.salarie.id);
-        let (debut, fin) = (p.engagement.debut, p.engagement.fin);
+        let contrat = p.engagement.contrat();
+        let debut = contrat.debut();
         // CE QUE LA BOITE EN FAIT : un contrat a envoyer (jamais parti, ou caduc) se coche, et part en avenant s'il est
         // deja parti, signe ou non (`en_avenant`) ; un contrat ou un avenant parti et pas revenu attend : il se note reçu signe
         // (`recu`), et repart par courriel (`relancer` : un rappel, ou un premier courriel s'il n'est parti qu'imprime),
@@ -992,8 +1006,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
             salarie: p.salarie.id.clone(),
             destinataire: p.salarie.email.dite().cloned(),
             spectacle: p.titre()?,
-            debut,
-            fin,
+            contrat,
             numero_dit: numero.as_ref().map(|n| format!("contrat n° {}", n)),
             numero,
             demande_le: parti,
@@ -1007,7 +1020,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
             relancer,
             recu_le: etat.recu.clone(),
             caduc: etat.caduc,
-            periode_dit: periode_dite(debut, fin),
+            periode_dit: periode_dite(&contrat),
             pourquoi: etat.pourquoi,
             avenant: etat.avenant.clone(),
             avenant_attendu: etat.avenant_attendu,
@@ -1049,11 +1062,11 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
     })
 }
 
-/// « du 02/11/2026 au 30/11/2026 », « depuis le 02/11/2026 » sans fin.
-fn periode_dite(debut: Jour, fin: Option<Jour>) -> String {
-    match fin {
-        Some(f) => format!("du {} au {}", debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
-        None => format!("depuis le {}", debut.jj_mm_aaaa()),
+/// « du 02/11/2026 au 30/11/2026 », « depuis le 02/11/2026 » sans fin : une periode telle qu'une phrase la dit.
+pub(crate) fn periode_dite(contrat: &PeriodeOuverte) -> String {
+    match contrat.fin() {
+        Some(f) => format!("du {} au {}", contrat.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+        None => format!("depuis le {}", contrat.debut().jj_mm_aaaa()),
     }
 }
 
@@ -1084,8 +1097,8 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
 /// Ce que l'apercu d'un avenant sait avant de le dire (`AvenantLu::dit`).
 struct AvenantLu {
     salarie: droit::contexte::IdSalarie,
-    debut: Jour,
-    fin: Option<Jour>,
+    /// La periode du contrat que l'avenant modifie.
+    bornes: PeriodeOuverte,
     nom: String,
     spectacle: String,
     nom_du_contrat: String,
@@ -1096,7 +1109,7 @@ struct AvenantLu {
     date_contrat: Jour,
     signe: Option<Moment>,
     contrat_signe: Option<ContratSigneDit>,
-    numero: i64,
+    numero: NumeroDAvenant,
     effet: Jour,
     modifications: Vec<ArticleModifie>,
     avenants: Vec<AvenantParti>,
@@ -1165,7 +1178,7 @@ impl AvenantLu {
         let phrases: Vec<String> = std::iter::once(situation.clone()).chain(encarts.iter().map(Encart::en_ligne)).chain(dits).chain(dossier).collect();
         // Le contrat comme l'avenant le nomme (`{{avenant.reference}}`) : signe hors du logiciel, le papier ne porte
         // pas le numero que le logiciel lui a donne.
-        let reference = if ailleurs { format!("commencé le {}", self.debut.jj_mm_aaaa()) } else { contrat };
+        let reference = if ailleurs { format!("commencé le {}", self.bornes.debut().jj_mm_aaaa()) } else { contrat };
         let phrase = format!(
             "Avenant {} au contrat {} de {}, à effet du {} : {}.",
             self.numero,
@@ -1182,8 +1195,7 @@ impl AvenantLu {
         ApercuAvenant {
             phrase,
             salarie: self.salarie,
-            debut: self.debut,
-            fin: self.fin,
+            bornes: self.bornes,
             nom: self.nom,
             spectacle: self.spectacle,
             nom_du_contrat: self.nom_du_contrat,
@@ -1267,7 +1279,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let ent = documents::avenant::ent_du_mois(ctx, mois_parti);
     // Le modele avec lequel le contrat est parti : l'avenant cite ses articles.
     let modele = crate::modeles_contrat::du_contrat_parti(ctx, parti.modele.as_ref(), p)?.lu.decoupe("le modèle du contrat").map_err(|m| m.reclasser(Classe::Illisible))?;
-    let paie_ecrite = engagement::relire::ecrire(ctx, p)?;
+    let paie_ecrite = engagement::relire::ecrire(p)?;
     let numero_porte = p.engagement.numero.as_ref();
     let vals = documents::avenant::valeurs_de_la_paie(ctx, &ent, &paie_ecrite, numero_porte)?;
     // L'ancien texte s'ecrit du modele avec les valeurs de la version partie, au mois compare (ou, pour un contrat sans
@@ -1293,10 +1305,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     })?;
     let avant = documents::avenant::valeurs_de_la_paie(ctx, &ent, &ancienne, numero_porte)?;
     let modifs = documents::avenant::modifications(&modele, &avant, &vals)?;
-    let mut signes: Vec<i64> = Vec::new();
-    for a in deja.iter().filter(|a| a.signe.is_some()) {
-        signes.push(a.numero.ok_or_else(|| erreur(Classe::MalFormee, "un numero d'avenant n'est pas un entier"))?);
-    }
+    let numero = prochain_avenant(&deja)?;
     let modifications = modifs
         .into_iter()
         .map(|x| ArticleModifie { numero: Some(x.numero), article: x.article, avant: x.avant, apres: x.apres, blocs: x.blocs, phrase: None, jour: None })
@@ -1304,8 +1313,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let nomme = ContratNomme::de(p)?;
     Ok(Some(AvenantLu {
         salarie: c.salarie.clone(),
-        debut: c.debut,
-        fin: p.engagement.fin,
+        bornes: p.engagement.contrat(),
         nom: crate::nom_a_l_ecran(&p.salarie, salarie),
         spectacle: nomme.spectacle,
         nom_du_contrat: nomme.nom_du_contrat,
@@ -1316,8 +1324,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
         date_contrat: parti.date(),
         signe: parti.signe.clone(),
         contrat_signe: None,
-        // Le numero suit celui du dernier avenant signe ; aucun signe, c'est le premier.
-        numero: signes.iter().max().copied().into_iter().sum::<i64>() + 1,
+        numero,
         effet,
         modifications,
         avenants: deja,
@@ -1357,7 +1364,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
     if !engagement::signe_ailleurs(&ctx.racine, &p.engagement)? {
         return Ok(None);
     }
-    let debut = p.engagement.debut;
+    let debut = p.engagement.contrat().debut();
     let Some(v) = version_validee(ctx, mois, salarie, Some(numero), &departs)? else { return Ok(None) };
     // Une version qui ne garde pas sa saisie ne se compare pas : l'avenant se refuse.
     let saisie_de = |s: Option<&engagement::stock::Saisie>| {
@@ -1381,14 +1388,12 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         None => debut,
     };
     let g = Moteur::nouveau(ctx).globales()?;
-    // Le numero de l'avenant suit celui du dernier avenant signe ; aucun signe, c'est le premier.
     let deja: Vec<AvenantParti> = g.avenants.get(&(p.salarie.id.clone(), p.engagement.numero.clone())).into_iter().flatten().cloned().collect();
-    let signes: i64 = deja.iter().filter(|a| a.signe.is_some()).filter_map(|a| a.numero).max().into_iter().sum();
+    let numero_avenant = prochain_avenant(&deja)?;
     let nomme = ContratNomme::de(p)?;
     Ok(Some(AvenantLu {
         salarie: c.salarie.clone(),
-        debut,
-        fin: p.engagement.fin,
+        bornes: p.engagement.contrat(),
         nom: crate::nom_a_l_ecran(&p.salarie, salarie),
         spectacle: nomme.spectacle,
         nom_du_contrat: nomme.nom_du_contrat,
@@ -1399,7 +1404,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         date_contrat: debut,
         signe: None,
         contrat_signe: Some(crate::gestes::signature::contrat_signe_dit(ctx, salarie, debut)?),
-        numero: signes + 1,
+        numero: numero_avenant,
         effet,
         modifications,
         avenants: deja,
@@ -1437,7 +1442,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     // `numero` (de ce salarie, quand il est dit) ?
     let ce_contrat = |s: &IdSalarie, n: Option<&NumeroContrat>| n == Some(&numero) && le_salarie.as_ref().is_none_or(|x| x == s);
     let mut dpae = Vec::new();
-    for e in journal::filtrer(&lignes, Some(journal::Acte::Dpae), None, true).filter_map(journal::Ligne::dpae) {
+    for e in journal::filtrer(&lignes, Some(documents::Acte::Dpae), None, Some(socle::mode::Mode::Reel)).filter_map(journal::Ligne::dpae) {
         let Some(fichier) = e.fichier.as_ref() else { continue };
         if !e.accepte {
             continue;
@@ -1451,7 +1456,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     let mut contrat: Vec<PiecePartie> = Vec::new();
     for l in lignes.iter().filter(|l| l.accepte()) {
         let Some(e) = l.signature() else { continue };
-        let parti = etats::mot_de_la_remise(Some(etats::ModeDeRemise::de(e.detail.main_propre)), etats::PlaceDeLaRemise::Recit);
+        let parti = etats::mot_de_la_remise(Some(e.detail.remise), etats::PlaceDeLaRemise::Recit);
         for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_ref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
             let quoi = match x.acte {

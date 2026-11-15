@@ -198,7 +198,7 @@ fn base() -> R<BaseDesObligations> {
 }
 
 /// Un nombre que le delai doit porter.
-fn nombre(n: Option<i64>, quoi: &str) -> R<i64> {
+fn nombre<T>(n: Option<T>, quoi: &str) -> R<T> {
     n.ok_or_else(|| declarations::obligations::livree(quoi).reclasser(Classe::Manque))
 }
 
@@ -220,15 +220,23 @@ pub fn signalement_du(motif: MotifDArret) -> R<bool> {
 
 // --------------------------------------------------------------- le calendrier
 
-fn plus(j: Jour, n: i64) -> R<Jour> {
-    j.plus_jours(n).map_err(|m| m.reclasser(Classe::CalculImpossible))
+fn plus(j: Jour, d: socle::date::Duree<socle::date::EnJours>) -> R<Jour> {
+    j.apres(d).map_err(|m| m.reclasser(Classe::CalculImpossible))
+}
+
+fn lendemain(j: Jour) -> R<Jour> {
+    j.plus_jours(1).map_err(|m| m.reclasser(Classe::CalculImpossible))
+}
+
+fn veille(j: Jour) -> R<Jour> {
+    j.plus_jours(-1).map_err(|m| m.reclasser(Classe::CalculImpossible))
 }
 
 /// Les feries chomes de la compagnie, annee par annee (`feries::chomes`, la fiche Entreprise).
 struct Calendrier<'a> {
     dits: Option<&'a str>,
-    chomes: HashMap<i32, Vec<Jour>>,
-    legaux: HashMap<i32, Vec<Jour>>,
+    chomes: HashMap<socle::mois::Annee, Vec<Jour>>,
+    legaux: HashMap<socle::mois::Annee, Vec<Jour>>,
 }
 
 impl<'a> Calendrier<'a> {
@@ -237,19 +245,21 @@ impl<'a> Calendrier<'a> {
     }
 
     fn chome(&mut self, j: Jour) -> R<bool> {
-        if !self.chomes.contains_key(&j.an) {
-            let f = socle::feries::chomes(j.an, self.dits).map_err(|m| m.reclasser(Classe::Illisible))?;
-            self.chomes.insert(j.an, f.into_iter().map(|(d, _)| d).collect());
+        let an = j.annee();
+        if !self.chomes.contains_key(&an) {
+            let f = socle::feries::chomes(an, self.dits).map_err(|m| m.reclasser(Classe::Illisible))?;
+            self.chomes.insert(an, f.into_iter().map(|(d, _)| d).collect());
         }
-        Ok(self.chomes[&j.an].contains(&j))
+        Ok(self.chomes[&an].contains(&j))
     }
 
     fn ferie(&mut self, j: Jour) -> R<bool> {
-        if !self.legaux.contains_key(&j.an) {
-            let f = socle::feries::feries(j.an).map_err(|m| m.reclasser(Classe::Illisible))?;
-            self.legaux.insert(j.an, f.into_iter().map(|(d, _)| d).collect());
+        let an = j.annee();
+        if !self.legaux.contains_key(&an) {
+            let f = socle::feries::feries(an).map_err(|m| m.reclasser(Classe::Illisible))?;
+            self.legaux.insert(an, f.into_iter().map(|(d, _)| d).collect());
         }
-        Ok(self.legaux[&j.an].contains(&j))
+        Ok(self.legaux[&an].contains(&j))
     }
 
     /// Le `n`-ieme jour ouvre qui suit `depart` : ni samedi, ni dimanche, ni ferie chome dans la compagnie ; le jour de
@@ -257,7 +267,7 @@ impl<'a> Calendrier<'a> {
     fn jours_ouvres_apres(&mut self, depart: Jour, n: i64) -> R<Jour> {
         let (mut j, mut reste) = (depart, n);
         while reste > 0 {
-            j = plus(j, 1)?;
+            j = lendemain(j)?;
             if j.jour_de_la_semaine() < 5 && !self.chome(j)? {
                 reste -= 1;
             }
@@ -277,7 +287,7 @@ impl<'a> Calendrier<'a> {
     fn heures_apres(&mut self, depart: Jour, minute: u32, heures: i64) -> R<(Jour, u32)> {
         let (mut j, mut m) = (depart, minute as i64);
         while !self.compte_dans_les_heures(j)? {
-            j = plus(j, 1)?;
+            j = lendemain(j)?;
             m = 0;
         }
         let mut reste = heures * 60;
@@ -287,9 +297,9 @@ impl<'a> Calendrier<'a> {
                 return Ok((j, (m + reste) as u32));
             }
             reste -= dans_ce_jour;
-            j = plus(j, 1)?;
+            j = lendemain(j)?;
             while !self.compte_dans_les_heures(j)? {
-                j = plus(j, 1)?;
+                j = lendemain(j)?;
             }
             m = 0;
         }
@@ -309,7 +319,7 @@ fn heure_lisible(minute: u32) -> String {
 /// L'INSTANT OU UN DELAI EN HEURES EXPIRE : le jour et la minute que `heures_apres` rend (1440 : a la fin de ce
 /// jour-la, soit minuit du lendemain).
 fn fin_du_delai(jour: Jour, minute: u32) -> R<InstantOuJour> {
-    let (j, m) = if minute == 1440 { (plus(jour, 1)?, 0) } else { (jour, minute) };
+    let (j, m) = if minute == 1440 { (lendemain(jour)?, 0) } else { (jour, minute) };
     jour_et_heure::a_la_minute(j, i64::from(m))
         .ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : {} n'est pas une heure de Paris le {}.", heure_lisible(m), j.jj_mm_aaaa())))
 }
@@ -318,7 +328,7 @@ fn fin_du_delai(jour: Jour, minute: u32) -> R<InstantOuJour> {
 /// (1440, « jusqu'à minuit », ecrit `24:00`) ; un jour seul n'a pas de minute.
 fn jour_et_minute(fin: InstantOuJour) -> R<(Jour, Option<u32>)> {
     match jour_et_heure::minute(fin) {
-        Some(0) => Ok((plus(fin.jour(), -1)?, Some(1440))),
+        Some(0) => Ok((veille(fin.jour())?, Some(1440))),
         minute => Ok((fin.jour(), minute)),
     }
 }
@@ -952,7 +962,7 @@ fn envoi(envois: &[EnvoiDeLArret], nature: NatureDeLaDeclaration) -> Option<Fait
 fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> Option<(Depart, Option<Fait>)> {
     let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == NatureDeLaDeclaration::SignalementArret).collect();
     let premier = signalements.iter().map(|e| e.quand).min()?;
-    let p = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && ordre(premier, p.saisi_le).is_lt()).last()?;
+    let p = prolongations.iter().filter(|p| p.periode_de_subrogation != p.periode_de_subrogation_avant && ordre(premier, p.saisi_le).is_lt()).last()?;
     let depart = Depart::du_jour(p.le, "le jour où la prolongation de la subrogation a été saisie", None);
     let rectificatif = signalements
         .iter()
@@ -1045,13 +1055,11 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     let arret = lu.arret().map(|saisi| declarations::dsn::Arret { saisi: saisi.clone() });
     let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
     // Les mois qu'un arret traverse ; une suspension, ou un arret repris avant son jour declare, n'en traverse aucun.
-    let mut traverses: Vec<socle::mois::Mois> = Vec::new();
-    if let Some(p) = declare_lu {
-        let d = engagement::imprevus::dernier_jour(lu).map_err(|m| m.reclasser(Classe::Illisible))?;
-        if p <= d {
-            traverses = socle::mois::Mois::entre(&p, &d);
-        }
-    }
+    let declares = lu.arret().map(engagement::imprevus::jours_declares).transpose().map_err(|m| m.reclasser(Classe::Illisible))?.flatten();
+    let traverses: Vec<socle::mois::Mois> = match declares {
+        Some(p) => p.mois(),
+        None => Vec::new(),
+    };
     let saisi = match lu {
         Imprevu::Arret(a) => a.saisi_le,
         Imprevu::Suspension(s) => s.saisi_le,
@@ -1070,14 +1078,14 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         Ok(arret.as_ref().map(|arret| arret.a_reporter(mois, &departs)).transpose().map_err(|m| m.reclasser(Classe::Illisible))?.is_some_and(|oui| oui))
     };
     let mut partis = Vec::new();
-    for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
+    for e in envois::journal::filtrer(&lignes, Some(documents::Acte::Dsn), None, Some(socle::mode::Mode::Reel)).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
         let (mois, quand) = (e.mois, e.quand());
         let d = &e.detail;
         let Some(nature) = d.nature_declaration else { continue };
         let type_declaration = d.type_declaration;
         let ordre = d.ordre;
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie == *salarie);
-        let dans = |m: Mois| e.fichier.as_ref().map(|nom| CheminRelatif::sorties(m).joint(nom));
+        let dans = |m: Mois| e.fichier.as_ref().map(|nom| documents::DossierDuMois::Sorties.chemin(m).joint(nom));
         use NatureDeLaDeclaration as N;
         match (nature, dj, mois) {
             (N::SignalementArret | N::SignalementReprise, Some(dj), _) if declare_lu.is_some() && d.evenement == declare_lu && du_salarie => {
@@ -1144,7 +1152,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
     // cessation du travail » (L. 461-5) : le lendemain du dernier jour travaille.
     let debut = a.debut;
     let cessation = match a.dernier {
-        Some(j) => Some(plus(j, 1)?),
+        Some(j) => Some(lendemain(j)?),
         None => None,
     };
     let connu_de_l_arret = |o: &DeBase| -> R<Option<Depart>> {
@@ -1222,7 +1230,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
                             let phrase = if jusqu >= aujourdhui { format!("possibles jusqu'au {}.", lisible(&jusqu)) } else { format!("le délai est passé (le {}).", jusqu.jj_mm_aaaa()) };
                             (Some(jusqu), phrase)
                         }
-                        None => (None, format!("dans les {} jours francs qui suivent la déclaration.", r.jours_francs)),
+                        None => (None, format!("dans les {} francs qui suivent la déclaration.", r.jours_francs)),
                     };
                     suites.push(Suite { cle: "reserves", libelle: r.libelle.clone(), texte: r.texte.clone(), inference: Some(r.inference.clone()), jusqu_au, phrase });
                 }
@@ -1300,7 +1308,7 @@ pub(crate) fn fin_signalee_le(journal: &[envois::journal::Ligne], cle: &IdSalari
 /// (`DsnLue::evenement`), dont le fichier est celui que `fin-contrat-signaler` ecrit pour ce salarie.
 fn fctu_depose(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) -> R<Option<Fait>> {
     let nom = format!("{}{}_{}.dsn", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle.as_str().to_uppercase(), fin.aaaammjj()).to_uppercase();
-    let premier = envois::journal::filtrer(journal, Some(envois::journal::Acte::Dsn), None, true)
+    let premier = envois::journal::filtrer(journal, Some(documents::Acte::Dsn), None, Some(socle::mode::Mode::Reel))
         .filter(|l| l.accepte())
         // Un signalement refuse au bilan n'est pas recu (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : il reste du.
         .filter(|l| !envois::etats::refuse_par_un_retour(l))
@@ -1771,7 +1779,7 @@ mod essais {
         let ligne = |verdict: &str| -> Vec<envois::journal::Ligne> {
             let texte = format!(
                 r#"{{"quoi": "dsn", "mode": "reel", "accepte": true, "mois": "2026-03", "quand": "2026-03-14T10:00:00", "origine": "",
-                    "fichier": "SignalementFinContrat_FANCHON_20260313.dsn", "empreinte": null, "qui": "t", "destinataire": "", "flux": "", "reponse": "", "trace": null,
+                    "fichier": "SignalementFinContrat_FANCHON_20260313.dsn", "empreinte": null, "qui": "t", "destinataire": "", "flux": null, "reponse": "", "trace": null,
                     "detail": {{"nature": "07", "evenement": "2026-03-13", "reconstruit": false, "repetition": null, "ordre_test": null}},
                     "retours": [{{"nature": "11", "verdict": "{}", "libelle": "", "statut": null, "publication": null}}]}}"#,
                 verdict
@@ -1804,8 +1812,8 @@ mod essais {
             qui: "t".into(),
             fin_avant: jour(6),
             fin: jour(13),
-            subrogation_fin_avant: Some(jour(6)),
-            subrogation_fin: Some(jour(13)),
+            periode_de_subrogation_avant: Some(socle::date::Periode::du_au(jour(3), jour(6)).unwrap()),
+            periode_de_subrogation: Some(socle::date::Periode::du_au(jour(3), jour(13)).unwrap()),
         };
         use TypeDeLaDeclaration::{AnnuleEtRemplace, Normale};
         let avant = [signalement(Normale, 2, 10), signalement(AnnuleEtRemplace, 3, 9)];

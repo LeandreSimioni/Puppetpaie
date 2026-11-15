@@ -33,9 +33,10 @@ use socle::forme::Nombre;
 use super::bulletins_fictifs::{m, page_a, page_b, pdf_octets, Identite, RangA, RangB, A, B};
 use fabrique_pdf::forme::Mesure;
 use import::bulletin_lu::{jetons, Table};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
-use socle::num::{eur2, Decimal};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant, Taux};
+use socle::num::Decimal;
 
 pub const USAGE: &str = "usage : moteur-atelier fabriquer-bulletins <description.json> <dossier> [--gabarit coolpaie|spaiectacle]";
 
@@ -133,9 +134,10 @@ fn table_boss() -> std::path::PathBuf {
 /// le bareme livre du moteur (`logiciel/donnees/baremes/<annee>.json`, `plafond_securite_sociale`, qui cite sa
 /// source), sinon la table des parametres du BOSS deposee (`table_boss`), sinon refus -- l'annee manque, on ne
 /// l'invente pas.
-fn pss(annee: i32) -> R<(Decimal, Decimal)> {
+fn pss(annee: socle::mois::Annee) -> R<droit::plafond::Pss> {
+    let lu = |m: Decimal, h: Decimal| droit::plafond::Pss { mensuel: Montant::du_decimal(m), horaire: socle::grandeurs::MontantUnitaire::du_decimal(h) };
     if let Some(p) = droit::contexte::socle_livre_lu(annee)?.and_then(|pile| pile.plafond_securite_sociale) {
-        return Ok((p.mensuel, p.horaire));
+        return Ok(droit::plafond::Pss { mensuel: p.mensuel, horaire: p.horaire });
     }
     let chemin = table_boss();
     let octets = std::fs::read(&chemin).map_err(|e| refus!("{} : {}", chemin.display(), e))?;
@@ -148,7 +150,7 @@ fn pss(annee: i32) -> R<(Decimal, Decimal)> {
         socle::num::decimal_a_virgule(c[2]).map(Some).ok_or_else(|| refus!("{} : {} au {} : {} ne se lit pas en nombre", chemin.display(), code, effet, c[2]))
     };
     match (valeur("PSS_M_METROP")?, valeur("PSS_H_METROP")?) {
-        (Some(m), Some(h)) => Ok((m, h)),
+        (Some(m), Some(h)) => Ok(lu(m, h)),
         _ => Err(refus!(
             "pas de plafond de la Sécurité sociale pour {} : ni bareme livré (logiciel/donnees/baremes/{}.json) ni ligne \
              PSS_M_METROP/PSS_H_METROP au 01/01/{} dans {} -- déposez le texte qui le donne",
@@ -177,8 +179,8 @@ struct Ligne {
     quantite: Decimal,
     taux: Decimal,
     montant: Decimal,
-    cachets: Decimal,
-    heures: Decimal,
+    cachets: Cachets,
+    heures: Heures,
 }
 
 struct Bulletin {
@@ -187,14 +189,13 @@ struct Bulletin {
     emploi: String,
     statut: String,
     permanent: bool,
-    debut: Jour,
-    fin: Jour,
-    dates: Vec<(Jour, Jour)>,
+    periode: Periode,
+    dates: Vec<Periode>,
     objet: Option<(String, String)>,
     analytique: Option<String>,
     lignes: Vec<Ligne>,
     non_soumis: Vec<Ligne>,
-    taux_pas: Decimal,
+    taux_pas: droit::pas::TauxDePas,
     regle_le: Jour,
     /// Ce que la paie a calcule, quand la description le porte : le bulletin l'imprime au lieu de le calculer.
     paie: Option<Paie>,
@@ -299,7 +300,8 @@ struct BulletinLu {
     analytique: Option<String>,
     lignes: Vec<LigneLue>,
     non_soumis: Option<Vec<LigneLue>>,
-    taux_pas: Nombre,
+    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    taux_pas: Taux,
     regle_le: Jour,
     cotisations: Option<Vec<CotisationLue>>,
     net_imposable: Option<Nombre>,
@@ -372,8 +374,22 @@ fn deux_rangs(texte: &str, largeur: usize, quoi: &str) -> R<[String; 2]> {
 
 /// « 1 234,56 », comme les bulletins l'impriment.
 fn fr(x: Decimal) -> String {
-    let x = eur2(x);
-    let s = format!("{:.2}", x.abs());
+    let x = Montant::du_decimal(x).au_centime().decimal();
+    a_la_francaise(&format!("{:.2}", x.abs()), x.is_sign_negative() && !x.is_zero())
+}
+
+/// Une quantite au centieme, « 1 234,50 », comme les cumuls l'impriment : son ecriture au centime
+/// (`grandeurs::ecrit::centimes`), a la francaise.
+fn fr_quantite<G: socle::grandeurs::Grandeur>(g: G) -> R<String> {
+    let t = socle::grandeurs::ecrit::centimes::texte(g).map_err(refus)?;
+    Ok(match t.strip_prefix('-') {
+        Some(t) => a_la_francaise(t, true),
+        None => a_la_francaise(&t, false),
+    })
+}
+
+/// Un nombre ecrit `1234.56`, sans signe, a la francaise : « 1 234,56 », precede de « - » s'il est `negatif`.
+fn a_la_francaise(s: &str, negatif: bool) -> String {
     let (ent, point_dec) = s.split_at(s.len() - 3);
     let dec = &point_dec[1..];
     let mut groupes = Vec::new();
@@ -385,7 +401,7 @@ fn fr(x: Decimal) -> String {
     }
     groupes.push(c[..fin].iter().collect::<String>());
     groupes.reverse();
-    format!("{}{},{}", if x.is_sign_negative() && !x.is_zero() { "-" } else { "" }, groupes.join(" "), dec)
+    format!("{}{},{}", if negatif { "-" } else { "" }, groupes.join(" "), dec)
 }
 
 /// Un taux a trois decimales, « 6,900 ».
@@ -393,11 +409,6 @@ fn taux3(x: Decimal) -> String {
     let mut t = x.round_dp_with_strategy(3, RoundingStrategy::MidpointAwayFromZero);
     t.rescale(3);
     t.to_string().replace('.', ",")
-}
-
-/// Un nombre sans zeros inutiles (une quantite : « 3 », « 7,5 »).
-fn quantite(x: Decimal) -> String {
-    x.normalize().to_string().replace('.', ",")
 }
 
 fn dmy(j: &Jour) -> String {
@@ -409,16 +420,16 @@ fn dmy_court(j: &Jour) -> String {
 }
 
 fn pct(base: Decimal, taux: Option<Decimal>) -> Option<Decimal> {
-    taux.map(|t| socle::num::pct(base, t))
+    taux.map(|t| Montant::du_decimal(base).fois_taux(Taux::du_decimal(t)).au_centime().decimal())
 }
 
 // --------------------------------------------------------------------------------------------- le calcul du faux bulletin
 
 #[derive(Clone)]
 struct Cumuls {
-    cachets: Decimal,
-    heures: Decimal,
-    jours: Decimal,
+    cachets: Cachets,
+    heures: Heures,
+    jours: Jours,
     brut: Decimal,
     plafond: Decimal,
     cout: Decimal,
@@ -441,9 +452,9 @@ struct Calcule {
     pas: Decimal,
     net_a_payer: Decimal,
     cout: Decimal,
-    cachets: Decimal,
-    heures: Decimal,
-    jours: Decimal,
+    cachets: Cachets,
+    heures: Heures,
+    jours: Jours,
     periode: Cumuls,
     annee: Cumuls,
 }
@@ -451,24 +462,21 @@ struct Calcule {
 fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
     let brut: Decimal = b.lignes.iter().map(|l| l.montant).sum();
     let mut jours_travailles: BTreeSet<Jour> = BTreeSet::new();
-    for (d, f) in &b.dates {
-        for k in 0..=f.moins(d) {
-            jours_travailles.insert(d.plus_jours(k).map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?);
-        }
-    }
-    let jours = Decimal::from(jours_travailles.len());
+    jours_travailles.extend(b.dates.iter().flat_map(|p| p.jours()));
+    let jours = Jours::de_dates(jours_travailles.len());
     // LE « PLAFOND URSSAF » IMPRIME, PAR LA REGLE DU MOTEUR (`plafond.rs`, qui cite ses textes) et le PSS d'un texte
     // (`pss`) : le prorata calendaire pour un permanent, les journees de l'artiste engage moins de cinq jours, le
     // prorata des jours remuneres pour les autres intermittents.
     let resoudre = pss;
     let plafond = if b.permanent {
-        droit::plafond::plafond_permanent(b.debut, b.fin, None, &resoudre)
+        droit::plafond::plafond_permanent(&b.periode, None, &resoudre)
     } else {
         let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
-        droit::plafond::plafond_urssaf(b.debut, b.fin, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
+        droit::plafond::plafond_urssaf(&b.periode, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
-    .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
-    let assiette_csg = eur2(brut * assiette_csg());
+    .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?
+    .decimal();
+    let assiette_csg = Montant::du_decimal(brut * assiette_csg()).au_centime().decimal();
     let mut cotisations = Vec::new();
     let (mut total_e, mut total_s, mut csg_non_deductible) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
     for (cle, base, ei, si, ep, sp) in COTISATIONS.iter().copied().filter(|_| b.paie.is_none()) {
@@ -500,12 +508,12 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
         Some(p) => (p.net_imposable, p.pas),
         None => {
             let n = net_social + csg_non_deductible;
-            (n, socle::num::pct(n, b.taux_pas))
+            (n, b.taux_pas.prelevement(Montant::du_decimal(n)).au_centime().decimal())
         }
     };
     let cout = brut + total_e + non_soumis;
-    let cachets: Decimal = b.lignes.iter().map(|l| l.cachets).sum();
-    let heures: Decimal = b.lignes.iter().map(|l| l.heures).sum();
+    let cachets: Cachets = b.lignes.iter().map(|l| l.cachets).sum();
+    let heures: Heures = b.lignes.iter().map(|l| l.heures).sum();
     let periode = Cumuls { cachets, heures, jours, brut, plafond, cout, net_imposable, pas };
     let annee = Cumuls {
         cachets: avant.cachets + cachets,
@@ -545,6 +553,8 @@ struct Description {
     entreprise: EntrepriseLue,
     salaries: Vec<Salarie>,
     bulletins: Vec<Bulletin>,
+    /// Les heures d'un cachet, le forfait du catalogue livre.
+    forfait_cachet: HeuresParUnite,
 }
 
 fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogue: &Path) -> R<Description> {
@@ -598,32 +608,34 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
             ));
         }
         let (q, taux) = (l.quantite.0, l.taux.0);
-        let (mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO);
-        if r.unite == droit::catalogue::Unite::Cachet {
-            cachets = q;
-        } else if let Some(u) = r.heures_forfait.or(connu.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE)) {
-            heures = q * u;
+        // La quantite de la ligne dans l'unite de sa rubrique (`QuantiteDeLigne`), comme le lecteur de bulletins la compte
+        // (`import::bulletin_lu`) : ses cachets, ou ses heures (le forfait du catalogue, sinon celles que le libelle dit ;
+        // une heure compte ses heures).
+        use engagement::ligne::QuantiteDeLigne as Q;
+        let (mut cachets, mut heures) = (Cachets::ZERO, Heures::ZERO);
+        match (Q::de_l_unite(r.unite, q), r.heures_forfait.or(connu.heures)) {
+            (Q::Cachets(c), _) => cachets = c,
+            (q, Some(u)) => heures = q.fois(u).ok_or_else(|| refus!("{} : « {} » est une ligne en pourcentage, sans heures par unité", ou, connu.libelle))?,
+            (Q::Heures(h), None) => heures = h,
+            (_, None) => {}
         }
-        Ok(Ligne { libelle: connu.libelle.clone(), quantite: q, taux, montant: eur2(q * taux), cachets, heures })
+        Ok(Ligne { libelle: connu.libelle.clone(), quantite: q, taux, montant: Montant::du_decimal(q * taux).au_centime().decimal(), cachets, heures })
     };
 
     let mut bulletins = Vec::new();
     for (k, b) in d.bulletins.into_iter().enumerate() {
         let ou = format!("bulletin {}", k + 1);
         let salarie = *codes.get(&b.salarie).ok_or_else(|| refus!("{} : aucun salarié de code {}", ou, b.salarie))?;
-        let (debut, fin) = (b.debut, b.fin);
-        if fin < debut {
-            return Err(refus!("{} : la fin précède le début", ou));
-        }
+        let periode = Periode::du_au(b.debut, b.fin).map_err(|_| refus!("{} : la fin précède le début", ou))?;
         if b.dates.is_empty() {
             return Err(refus!("{} : `dates` : au moins une paire [début, fin]", ou));
         }
         let mut dates = Vec::new();
         for [d0, d1] in b.dates {
-            if d1 < d0 || d0 < debut || d1 > fin {
-                return Err(refus!("{} : `dates` : {} - {} hors de la période", ou, d0.iso(), d1.iso()));
+            match Periode::du_au(d0, d1) {
+                Ok(p) if periode.croise(&p) == Some(p) => dates.push(p),
+                _ => return Err(refus!("{} : `dates` : {} - {} hors de la période", ou, d0.iso(), d1.iso())),
             }
-            dates.push((d0, d1));
         }
         if b.lignes.is_empty() {
             return Err(refus!("{} : `lignes` manque", ou));
@@ -637,25 +649,30 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
             return Err(refus!("{} : le gabarit CoolPaie n'a pas de case « Analytique »", ou));
         }
         let paie = lire_paie(b.cotisations, b.net_imposable, b.pas, &g, gabarit, &ou)?;
+        let Some(taux_pas) = droit::pas::TauxDePas::du_taux(b.taux_pas) else {
+            return Err(refus!("{} : `taux_pas` {} n'est pas un taux de PAS (deux chiffres au plus, deux décimales au plus)", ou, socle::grandeurs::ecrit::sans_zero::dit(b.taux_pas)));
+        };
         bulletins.push(Bulletin {
             rang: k + 1,
             salarie,
             emploi: b.emploi,
             statut: b.statut,
             permanent: b.regime == Regime::Permanent,
-            debut,
-            fin,
+            periode,
             dates,
             objet: b.objet.map(|o| (o.numero, o.titre)),
             analytique: b.analytique,
             lignes,
             non_soumis,
-            taux_pas: b.taux_pas.0,
+            taux_pas,
             regle_le: b.regle_le,
             paie,
         });
     }
-    Ok(Description { gabarit, entreprise: e, salaries, bulletins })
+    let forfait_cachet = droit::catalogue::rubrique(racine_catalogue, &droit::catalogue::CACHET, &droit::contexte::jour_reel())?
+        .heures_forfait
+        .ok_or_else(|| refus("le cachet du catalogue livré ne dit pas ses heures"))?;
+    Ok(Description { gabarit, entreprise: e, salaries, bulletins, forfait_cachet })
 }
 
 /// Les cotisations d'une paie (`cotisations` : les `lignes` d'une paie de PuppetPaie), son `net_imposable` et son impot
@@ -837,8 +854,8 @@ fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
     out
 }
 
-fn dates_a(dates: &[(Jour, Jour)]) -> R<Vec<String>> {
-    let morceaux: Vec<String> = dates.iter().map(|(d, f)| format!("du {} au {}", dmy(d), dmy(f))).collect();
+fn dates_a(dates: &[Periode]) -> R<Vec<String>> {
+    let morceaux: Vec<String> = dates.iter().map(|p| format!("du {} au {}", dmy(&p.debut()), dmy(&p.fin()))).collect();
     let rangs: Vec<String> = morceaux
         .chunks(2)
         .enumerate()
@@ -870,9 +887,12 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         let montant = |m: &Option<Decimal>| m.map(fr).into_iter().collect::<String>();
         cotisations.push((x, libelle.into(), famille, fr(*base), taux(te), montant(me), taux(ts), montant(ms)));
     }
-    let cachets = c.periode.cachets > Decimal::ZERO;
-    let (unite, p, a) = if cachets { ("Cachets:", c.periode.cachets, c.annee.cachets) } else { ("Heures:", c.periode.heures, c.annee.heures) };
-    let lignes: Vec<(String, String, String, String)> = b.lignes.iter().map(|l| (quantite(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant))).collect();
+    let cachets = c.periode.cachets > Cachets::ZERO;
+    let (unite, p, a) = match cachets {
+        true => ("Cachets:", fr_quantite(c.periode.cachets)?, fr_quantite(c.annee.cachets)?),
+        false => ("Heures:", fr_quantite(c.periode.heures.au_centieme())?, fr_quantite(c.annee.heures.au_centieme())?),
+    };
+    let lignes: Vec<(String, String, String, String)> = b.lignes.iter().map(|l| (socle::texte::nombre_dit(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant))).collect();
     // La page tient-elle ? Le pied finit a 72 points sous le net a payer, la signature est a 810.
     let bas = m("308") + m("11.2") * (lignes.len() + 1 + cotisations.len()) as i64 + m("14.2") + m("22") + m("20.3") + m("11") + m("11.5") + m("14") + m("8.5") + m("8.5") + m("13") + m("72");
     if bas > m("800") {
@@ -884,7 +904,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         objet: b.objet.clone(),
         emploi: b.emploi.clone(),
         statut: b.statut.clone(),
-        periode: format!("du {} au {}", dmy(&b.debut), dmy(&b.fin)),
+        periode: format!("du {} au {}", dmy(&b.periode.debut()), dmy(&b.periode.fin())),
         dates: dates_a(&b.dates)?,
         lignes,
         brut: fr(c.brut),
@@ -892,14 +912,14 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         cotisations,
         total: [fr(c.total_employeur), fr(c.total_salarie)],
         net: fr(c.net_avant_impot),
-        pas: [fr(c.net_imposable), format!("{:.3}", b.taux_pas.round_dp(3)), format!("{:.2}", c.pas), fr(c.annee.pas)],
+        pas: [fr(c.net_imposable), format!("{:.3}", b.taux_pas.taux().decimal()), format!("{:.2}", c.pas), fr(c.annee.pas)],
         net_imposable: [fr(c.net_imposable), fr(c.annee.net_imposable)],
         net_a_payer: fr(c.net_a_payer),
         regle: dmy(&b.regle_le),
-        mode: b.fin.an >= 2023,
+        mode: b.periode.fin().an >= 2023,
         unite: unite.into(),
         cumuls: [
-            [fr(p), fr(a)],
+            [p, a],
             [fr(c.brut), fr(c.annee.brut)],
             [fr(c.plafond), fr(c.annee.plafond)],
             [fr(c.cout), fr(c.annee.cout)],
@@ -921,7 +941,7 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         let montant = |m: &Option<Decimal>| m.map(fr).into_iter().collect::<String>();
         cotisations.push((x, libelle.into(), famille, fr(*base), ts.map(taux3).into_iter().collect(), montant(ms), montant(me)));
     }
-    let ligne = |l: &Ligne| (quantite(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant));
+    let ligne = |l: &Ligne| (socle::texte::nombre_dit(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant));
     let lignes: Vec<_> = b.lignes.iter().map(ligne).collect();
     let non_soumis: Vec<_> = b.non_soumis.iter().map(ligne).collect();
     let titres = cotisations.iter().filter(|c| c.0 < m("50")).count() as i64;
@@ -930,17 +950,17 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         return Err(refus!("bulletin {} : trop de lignes pour une page sPAIEctacle", b.rang));
     }
     let mut cumuls = Vec::new();
-    if c.annee.cachets > Decimal::ZERO {
-        cumuls.push(("Cachets".to_string(), fr(c.periode.cachets), fr(c.annee.cachets)));
+    if c.annee.cachets > Cachets::ZERO {
+        cumuls.push(("Cachets".to_string(), fr_quantite(c.periode.cachets)?, fr_quantite(c.annee.cachets)?));
     }
-    cumuls.push(("Jours".to_string(), fr(c.periode.jours), fr(c.annee.jours)));
-    if c.heures > Decimal::ZERO {
-        // sPAIEctacle compte les cachets dans ses heures, a 12 h (le forfait du catalogue) ; les cumuls de l'annee aussi.
-        let h = |x: &Cumuls| x.heures + x.cachets * Decimal::from(12);
-        cumuls.push(("Heures".to_string(), fr(h(&c.periode)), fr(h(&c.annee))));
+    cumuls.push(("Jours".to_string(), fr_quantite(c.periode.jours)?, fr_quantite(c.annee.jours)?));
+    if c.heures > Heures::ZERO {
+        // sPAIEctacle compte les cachets dans ses heures, au forfait du catalogue (12 h) ; les cumuls de l'annee aussi.
+        let h = |x: &Cumuls| (x.heures + x.cachets * d.forfait_cachet).au_centieme();
+        cumuls.push(("Heures".to_string(), fr_quantite(h(&c.periode))?, fr_quantite(h(&c.annee))?));
     }
     cumuls.push(("Salaire brut".to_string(), fr(c.brut), fr(c.annee.brut)));
-    let (d0, d1) = (&b.debut, &b.fin);
+    let (d0, d1) = (&b.periode.debut(), &b.periode.fin());
     let courte = if (d0.an, d0.mois) == (d1.an, d1.mois) {
         format!("du {} au {}/{:02}/{:02}", d0.jour, d1.jour, d1.mois, d1.an % 100)
     } else {
@@ -970,7 +990,7 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         entete_pas: vec![(m("280.9"), "base"), (m("339"), "taux personnalisé"), (m("442.2"), "montant"), (m("502.7"), "cumul annuel")],
         pas: (
             "IMPOT SUR LE REVENU PRELEVE A LA SOURCE".into(),
-            vec![(m("316.1"), fr(c.net_imposable)), (m("412.2"), fr(b.taux_pas)), (m("487"), fr(c.pas)), (m("563"), fr(c.annee.pas))],
+            vec![(m("316.1"), fr(c.net_imposable)), (m("412.2"), fr(b.taux_pas.taux().decimal())), (m("487"), fr(c.pas)), (m("563"), fr(c.annee.pas))],
         ),
         net_imposable: Some((fr(c.net_imposable), fr(c.annee.net_imposable))),
         cumuls,
@@ -988,39 +1008,40 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
 pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) -> R<Vec<String>> {
     let desc = lire_description(d, gabarit, dossier)?;
     let mut ordre: Vec<usize> = (0..desc.bulletins.len()).collect();
-    ordre.sort_by_key(|&k| (desc.bulletins[k].fin, desc.bulletins[k].debut, k));
+    ordre.sort_by_key(|&k| (desc.bulletins[k].periode.fin(), desc.bulletins[k].periode.debut(), k));
     // Les cumuls de l'annee de chaque salarie, qui partent de rien a son premier bulletin de l'annee.
-    let mut cumuls: HashMap<(usize, i32), Cumuls> = HashMap::new();
-    let mut numeros: HashMap<i32, usize> = HashMap::new();
+    let mut cumuls: HashMap<(usize, socle::mois::Annee), Cumuls> = HashMap::new();
+    let mut numeros: HashMap<socle::mois::Annee, usize> = HashMap::new();
     let mut pages = Vec::new();
     for k in ordre {
         let b = &desc.bulletins[k];
         // Le premier bulletin de l'annee part de cumuls nuls.
-        let annee = cumuls.entry((b.salarie, b.fin.an)).or_insert_with(|| {
+        let fin = b.periode.fin();
+        let annee = cumuls.entry((b.salarie, fin.annee())).or_insert_with(|| {
             let z = Decimal::ZERO;
-            Cumuls { cachets: z, heures: z, jours: z, brut: z, plafond: z, cout: z, net_imposable: z, pas: z }
+            Cumuls { cachets: Cachets::ZERO, heures: Heures::ZERO, jours: Jours::ZERO, brut: z, plafond: z, cout: z, net_imposable: z, pas: z }
         });
         let c = calculer(b, annee)?;
         *annee = c.annee.clone();
         // CoolPaie numerote ses bulletins dans l'annee : `k/annee`.
-        let n = numeros.entry(b.fin.an).or_insert(0);
+        let n = numeros.entry(fin.annee()).or_insert(0);
         *n += 1;
-        let numero = format!("{}/{}", n, b.fin.an);
+        let numero = format!("{}/{}", n, fin.annee());
         let page = if desc.gabarit == Gabarit::Coolpaie { page_coolpaie(&desc, b, &c, numero)? } else { page_spaiectacle(&desc, b, &c)? };
         let s = &desc.salaries[b.salarie];
-        let nom = format!("{}-{:02}-{}-{:03}.pdf", b.fin.an, b.fin.mois, s.code, b.rang);
+        let nom = format!("{}-{:02}-{}-{:03}.pdf", fin.an, fin.mois, s.code, b.rang);
         let ligne = format!(
             "{}  {} {}  du {} au {}  brut {}  net à payer {}  ({} cachet(s), {} h, {} jour(s))",
             nom,
             s.prenom,
             s.nom,
-            b.debut.iso(),
-            b.fin.iso(),
+            b.periode.debut().iso(),
+            fin.iso(),
             fr(c.brut),
             fr(c.net_a_payer),
-            quantite(c.cachets),
-            quantite(c.heures),
-            quantite(c.jours)
+            socle::texte::virgule(c.cachets),
+            socle::texte::virgule(c.heures),
+            socle::texte::virgule(c.jours)
         );
         pages.push((nom, pdf_octets(vec![page])?, ligne));
     }

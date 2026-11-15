@@ -22,7 +22,7 @@ fn essai(r: socle::echec::R<Value>) -> Value {
 fn releve(e: &Engagement) -> Value {
     let jours = e.dates_du_contrat();
     let mut lieux: Vec<Jour> = jours.clone();
-    lieux.push(e.debut);
+    lieux.push(e.contrat().debut());
     let par_lieu = |p: bool| {
         Value::Array(e.dates_par_lieu(p).into_iter().map(|(l, ds)| json!([l, iso(&ds)])).collect())
     };
@@ -36,8 +36,8 @@ fn releve(e: &Engagement) -> Value {
     extras.insert("dates_par_lieu".into(), essai(Ok(par_lieu(true))));
     extras.insert("dates_par_lieu_mois".into(), essai(Ok(par_lieu(false))));
     extras.insert("modalite_temps_travail".into(), essai(e.modalite_temps_travail().map(|m| Value::String(m.code().to_string()))));
-    extras.insert("quotite_reference".into(), essai(e.quotite_reference().and_then(nombre)));
-    extras.insert("a_cheval".into(), essai(Ok(Value::Bool(e.a_cheval()))));
+    extras.insert("quotite_reference".into(), essai(e.quotite_reference().and_then(|q| nombre(q.map(engagement::QuotiteDuContrat::decimal)))));
+    extras.insert("a_cheval".into(), essai(e.place_du_mois().map(|p| Value::Bool(p != engagement::PlaceDuMois::Seul))));
     extras.insert("planning_connu".into(), essai(Ok(Value::Bool(e.planning_connu()))));
     extras.insert(
         "lieu_de".into(),

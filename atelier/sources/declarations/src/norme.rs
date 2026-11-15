@@ -11,7 +11,7 @@
 
 use socle::date::Jour;
 use socle::echec::{refus_avec, Lieu, R};
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 use crate::usages::{lignes, rubrique_valeur};
 use droit::natures::{ListeDeLaNorme, RubriqueDeLaNorme, VersionDeLaNorme};
@@ -19,15 +19,15 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-const BASE: &str = "norme-dsn-base.json";
+const BASE: CheminRelatif = CheminRelatif::du_moteur("norme-dsn-base.json");
 
 /// UNE DONNEE LIVREE (`logiciel/donnees/<nom>`) EN SA FORME `T`, lue une fois par contenu (`socle::forme::partagee`) et
 /// notee au registre d'un calcul suivi : absente ou fausse, rien que la compagnie puisse corriger.
-pub(crate) fn livree<T: serde::de::DeserializeOwned + Send + Sync + 'static>(nom: &str) -> R<Arc<T>> {
-    let chemin = socle::fichiers::dossier_du_code().join(nom);
+pub(crate) fn livree<T: serde::de::DeserializeOwned + Send + Sync + 'static>(nom: &CheminRelatif) -> R<Arc<T>> {
+    let chemin = nom.dans(&socle::fichiers::dossier_du_code());
     let lue = socle::forme::partagee::<T>(&chemin, "Une donnée livrée avec le logiciel ne se lit pas : le signaler au développeur.")?;
     socle::fichiers::noter_si_besoin(&chemin);
-    lue.ok_or_else(|| refus_avec("Une donnée livrée avec le logiciel manque : le signaler au développeur.", Lieu { fichier: Some(nom.to_string()), ..Lieu::default() }))
+    lue.ok_or_else(|| refus_avec("Une donnée livrée avec le logiciel manque : le signaler au développeur.", Lieu { fichier: Some(nom.clone()), ..Lieu::default() }))
 }
 
 /// `norme-dsn-base.json`.
@@ -126,7 +126,7 @@ pub struct Norme {
 }
 
 fn base() -> R<Arc<Base>> {
-    livree(BASE)
+    livree(&BASE)
 }
 
 /// Les versions livrees, dans l'ordre de la donnee.
@@ -142,7 +142,7 @@ fn liste_des_versions() -> R<String> {
 fn inconnue(version: &str) -> R<socle::echec::Echec> {
     Ok(refus_avec(
         format!("Version de la norme DSN « {} » inconnue du logiciel (versions livrées : {}). Rien n'est écrit.", version, liste_des_versions()?),
-        Lieu { fichier: Some(BASE.to_string()), ..Lieu::default() },
+        Lieu { fichier: Some(BASE), ..Lieu::default() },
     ))
 }
 
@@ -165,14 +165,14 @@ impl Norme {
         let b = base()?;
         match b.versions.iter().find(|(k, _)| *k == self.version) {
             Some((_, v)) => Ok(lire(v)),
-            None => Err(socle::echec::livree(BASE, &format!("versions.{}", self.version))),
+            None => Err(socle::echec::livree(&BASE, &format!("versions.{}", self.version))),
         }
     }
 
     /// Le rang de la version `version` dans la donnee : refus si elle n'y est pas (une borne d'une liste de la norme qui
     /// nomme une version que le logiciel ne livre pas).
     pub fn rang(version: VersionDeLaNorme) -> R<usize> {
-        base()?.versions.iter().position(|(k, _)| *k == version).ok_or_else(|| socle::echec::livree(BASE, &format!("versions.{}", version)))
+        base()?.versions.iter().position(|(k, _)| *k == version).ok_or_else(|| socle::echec::livree(&BASE, &format!("versions.{}", version)))
     }
 
     /// La liste de la norme que `v` remplit a-t-elle son code dans CETTE version ? Le code dit ses bornes
@@ -194,13 +194,13 @@ impl Norme {
     }
 
     /// La table des usages de cette version (un fichier de `logiciel/donnees/`).
-    pub fn table_usages(&self) -> R<NomDeFichier> {
-        self.entree(|e| e.usages.clone())
+    pub fn table_usages(&self) -> R<CheminRelatif> {
+        self.entree(|e| CheminRelatif::from(e.usages.clone()))
     }
 
     /// La table des formats de cette version.
-    pub fn table_formats(&self) -> R<NomDeFichier> {
-        self.entree(|e| e.formats.clone())
+    pub fn table_formats(&self) -> R<CheminRelatif> {
+        self.entree(|e| CheminRelatif::from(e.formats.clone()))
     }
 
     /// La rubrique est-elle admise (O ou C) pour cette nature dans le tableau des usages de CETTE version ? C'est la
@@ -234,7 +234,7 @@ impl Norme {
 (S21.G00.81.001) sous lequel elle se declare n'est pas tranche. {} Rien n'est ecrit.",
                     self.version, e.note
                 ),
-                Lieu { fichier: Some(BASE.to_string()), cle: Some("cotisation_cet_patronale".to_string()), ..Lieu::default() },
+                Lieu { fichier: Some(BASE), cle: Some("cotisation_cet_patronale".to_string()), ..Lieu::default() },
             )),
         })?
     }
@@ -273,7 +273,7 @@ pub fn de_la_mensuelle(mois: Mois) -> R<Norme> {
 La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit.",
                 mois
             ),
-            Lieu { fichier: Some(BASE.to_string()), detail: Some(plages(|e| &e.mensuelle)?), ..Lieu::default() },
+            Lieu { fichier: Some(BASE), detail: Some(plages(|e| &e.mensuelle)?), ..Lieu::default() },
         )),
     }
 }
@@ -289,7 +289,7 @@ pub fn du_signalement(constitution: &Jour) -> R<Norme> {
 La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit.",
                 constitution.jj_mm_aaaa()
             ),
-            Lieu { fichier: Some(BASE.to_string()), detail: Some(plages(|e| &e.signalements)?), ..Lieu::default() },
+            Lieu { fichier: Some(BASE), detail: Some(plages(|e| &e.signalements)?), ..Lieu::default() },
         )),
     }
 }
@@ -298,8 +298,7 @@ La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit
 /// -- ses tables d'usages et de formats sont celles d'une version.
 pub fn du_fichier(texte: &str) -> R<Norme> {
     for ligne in lignes(texte) {
-        let (r, v) = rubrique_valeur(ligne);
-        if RubriqueDeLaNorme::lue(r) == Some(VersionDeLaNorme::RUBRIQUE) {
+        if let Some((_, v)) = rubrique_valeur(ligne).filter(|(r, _)| *r == VersionDeLaNorme::RUBRIQUE) {
             let lue = match VersionDeLaNorme::du_code(v) {
                 Some(version) => Norme::connue(version),
                 None => Err(inconnue(v)?),
@@ -346,9 +345,8 @@ pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
     let mut refus = Vec::new();
     let mut a_ne_pas = Vec::new();
     for ligne in lignes(texte) {
-        let (r, v) = rubrique_valeur(ligne);
         // Une ligne qui n'ecrit pas une rubrique n'est dans aucune table.
-        let Some(r) = RubriqueDeLaNorme::lue(r) else { continue };
+        let Some((r, v)) = rubrique_valeur(ligne) else { continue };
         if let Some(pourquoi) = hors_de_sa_liste(&tables, r, v) {
             let dit = format!("    {} = '{}' : {}", r, v, pourquoi);
             if !refus.contains(&dit) {
@@ -365,7 +363,7 @@ pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
     if !a_ne_pas.is_empty() {
         return Err(refus_avec(
             format!("Rubrique(s) que la norme {} dit « à ne pas renseigner » :\n{}\n  Rien n'est écrit.", norme.version, a_ne_pas.join("\n")),
-            Lieu { fichier: Some(BASE.to_string()), cle: Some("rubriques_a_ne_pas_renseigner".to_string()), ..Lieu::default() },
+            Lieu { fichier: Some(BASE), cle: Some("rubriques_a_ne_pas_renseigner".to_string()), ..Lieu::default() },
         ));
     }
     if refus.is_empty() {
@@ -377,6 +375,6 @@ pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
             norme.version,
             refus.join("\n")
         ),
-        Lieu { fichier: Some(norme.table_formats()?.to_string()), cle: Some("valeurs".to_string()), ..Lieu::default() },
+        Lieu { fichier: Some(norme.table_formats()?), cle: Some("valeurs".to_string()), ..Lieu::default() },
     ))
 }

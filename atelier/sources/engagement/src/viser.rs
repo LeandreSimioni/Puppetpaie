@@ -7,10 +7,12 @@ use socle::forme::NombreLu;
 use crate::{Chiffre, LignePaie};
 
 use crate::calcul::Paie;
-use crate::saisie::{Carte, VueDuMois};
+use crate::saisie::{Carte, RangDansLeMois, VueDuMois};
 use droit::contexte::Contexte;
 use socle::echec::Echec;
 use socle::num::Decimal;
+use crate::ligne::{QuantiteDeLigne, TauxDeLigne};
+use socle::grandeurs::{Coefficient, Montant, MontantUnitaire};
 
 /// Ce qui se vise : le brut, le cout employeur, le net a payer ; la charge du montant vise le dit `brut`, `cout`, `net`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -33,9 +35,9 @@ pub enum RefusVisee {
 pub struct Visee {
     pub saisie: VueDuMois,
     pub paies: Vec<Paie>,
-    pub atteint: Decimal,
-    pub depart: Decimal,
-    pub facteur: Decimal,
+    pub atteint: Montant,
+    pub depart: Montant,
+    pub facteur: Coefficient,
     pub tours: usize,
 }
 
@@ -48,13 +50,6 @@ fn refus(m: impl Into<String>) -> RefusVisee {
 
 const TOURS: usize = 12;
 
-/// Au centime.
-fn centimes(x: Decimal) -> Decimal {
-    let mut r = x.round_dp(2);
-    r.rescale(2);
-    r
-}
-
 /// La rubrique de la ligne ; une rubrique que le catalogue ne connait pas se refuse.
 fn rubrique_de(ctx: &Contexte, ligne: &LignePaie) -> R<droit::catalogue::Rubrique> {
     droit::catalogue::rubrique(&ctx.racine, ligne.rubrique(), &ctx.lue_au).map_err(RefusVisee::Refus)
@@ -65,14 +60,9 @@ fn taux_saisi(l: &LignePaie) -> bool {
     matches!(l, LignePaie::Unites(_) | LignePaie::UnitesEtHeures(_) | LignePaie::Frais(_))
 }
 
-/// Un taux, une quantite absents ou nuls.
-fn absent_ou_zero(v: Option<Decimal>) -> bool {
-    v.is_none_or(|x| x.is_zero())
-}
-
 /// Un SALAIRE se hausse ; un defraiement, une prime, un acompte, non.
 fn ligne_ajustable(ctx: &Contexte, ligne: &LignePaie) -> R<bool> {
-    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == droit::catalogue::NatureDeRubrique::Salaire && !absent_ou_zero(ligne.taux()))
+    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == droit::catalogue::NatureDeRubrique::Salaire && !ligne.taux().is_none_or(TauxDeLigne::est_nul))
 }
 
 /// Une ligne dont le taux est une case vide.
@@ -81,12 +71,12 @@ fn taux_vide(l: &LignePaie) -> bool {
 }
 
 /// L'engagement de rang `i` de la saisie.
-fn engagement_de(data: &mut VueDuMois, i: usize) -> R<&mut Carte> {
-    data.engagements.get_mut(i).ok_or_else(|| refus(format!("La saisie n'a pas d'engagement de rang {}.", i + 1)))
+fn engagement_de(data: &mut VueDuMois, i: RangDansLeMois) -> R<&mut Carte> {
+    i.dans_mut(&mut data.engagements).ok_or_else(|| refus(format!("La saisie n'a pas d'engagement de rang {}.", i)))
 }
 
 /// Une ligne de salaire SANS TAUX recoit un taux provisoire de 1 EUR.
-fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize]) -> R<()> {
+fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[RangDansLeMois]) -> R<()> {
     for &i in rangs {
         let e = engagement_de(data, i)?;
         let lignes = e.lignes().to_vec();
@@ -103,7 +93,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
                 continue;
             }
             let r = rubrique_de(ctx, ligne)?;
-            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && absent_ou_zero(ligne.taux()) && !absent_ou_zero(ligne.quantite()) {
+            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && ligne.taux().is_none_or(TauxDeLigne::est_nul) && !ligne.quantite(r.unite).is_none_or(QuantiteDeLigne::est_nul) {
                 sans_taux.push((k, r.libelle));
             }
         }
@@ -122,15 +112,15 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
             )));
         }
         if let Some(l) = sans_taux.first().and_then(|(k, _)| e.lignes.as_mut().and_then(|ls| ls.get_mut(*k))) {
-            l.poser_taux(Decimal::ONE).map_err(RefusVisee::Refus)?;
+            l.poser_taux(MontantUnitaire::du_decimal(Decimal::ONE)).map_err(RefusVisee::Refus)?;
         }
     }
     // Les AUTRES blocs du mois repartent comme la page les enverrait d'ordinaire : sans leurs lignes incompletes.
-    for (i, e) in data.engagements.iter_mut().enumerate() {
+    for (i, e) in RangDansLeMois::de_chacun(data.engagements.iter_mut()) {
         let Some(ls) = e.lignes.as_mut() else { continue };
         if rangs.contains(&i) {
             for l in ls.iter_mut().filter(|l| taux_vide(l)) {
-                l.poser_taux(Decimal::ZERO).map_err(RefusVisee::Refus)?;
+                l.poser_taux(MontantUnitaire::du_decimal(Decimal::ZERO)).map_err(RefusVisee::Refus)?;
             }
         } else {
             ls.retain(|l| !taux_vide(l));
@@ -143,7 +133,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
 fn mis_a_l_echelle(x: &Chiffre, facteur: Decimal) -> R<NombreLu> {
     let a = x.dec().map_err(RefusVisee::Refus)?;
     let p = a.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-    Ok(NombreLu::de_decimal(centimes(p)))
+    Ok(NombreLu::de_decimal(socle::grandeurs::Montant::du_decimal(p).au_centime().decimal()))
 }
 
 /// L'engagement recopie, ses salaires multiplies -- et rien d'autre. Rend aussi s'il y avait quelque chose a multiplier.
@@ -159,32 +149,44 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
         }
         if let Some(t) = l.taux() {
             // Le taux au centime, dans sa forme la plus courte (`mis_a_l_echelle`).
-            let p = t.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-            l.poser_taux(socle::num::court(centimes(p))).map_err(RefusVisee::Refus)?;
+            let p = t.decimal().checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
+            let taux = socle::num::court(socle::grandeurs::Montant::du_decimal(p).au_centime().decimal());
+            l.poser_taux(MontantUnitaire::du_decimal(taux)).map_err(RefusVisee::Refus)?;
         }
         touche = true;
     }
     Ok(touche)
 }
 
-fn somme(paies: &[Paie], rangs: &[usize], cible: Cible) -> R<Decimal> {
-    let mut total = Decimal::new(0, 2);
-    for &i in rangs {
-        let p = paies.get(i).ok_or_else(|| refus("le calcul du mois n'a pas cette paie"))?;
+/// La `cible` additionnee des paies des engagements de rangs `rangs` : le calcul du mois rend une paie par engagement de
+/// la saisie `data`, dans son ordre.
+fn somme(data: &VueDuMois, paies: &[Paie], rangs: &[RangDansLeMois], cible: Cible) -> R<Decimal> {
+    let mut total = socle::grandeurs::Montant::ZERO;
+    let mut vues = 0;
+    for (_, p) in RangDansLeMois::de_chacun(&data.engagements).zip(paies).filter(|((i, _), _)| rangs.contains(i)) {
+        vues += 1;
         total += match cible {
             Cible::Net => p.net_a_payer,
             Cible::Brut => p.brut,
             Cible::Cout => p.cout_employeur,
         };
     }
-    Ok(total)
+    if vues != rangs.len() {
+        return Err(refus("le calcul du mois n'a pas cette paie"));
+    }
+    Ok(total.decimal())
 }
 
 /// Les salaires des engagements de rangs `rangs` (tries, sans doublon, presents dans la saisie `data`) qui font
 /// atteindre `vise` a leur `cible` additionnee. Une ligne de salaire sans taux en recoit un provisoire ; le facteur se
 /// cherche par approches successives (au plus `TOURS` essais) et le MEILLEUR essai gagne, jamais le dernier : a egale
 /// distance, celui qui ne depasse pas.
-pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vise: Decimal) -> R<Visee> {
+pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[RangDansLeMois], cible: Cible, vise: Montant) -> R<Visee> {
+    // Un engagement ne se vise qu'une fois : un rang en double dans la charge se refuse, nomme.
+    if let Some(double) = rangs.iter().enumerate().find_map(|(k, r)| rangs[..k].contains(r).then_some(*r)) {
+        return Err(refus(format!("Le rang {} est en double dans la charge : un engagement ne se vise qu'une fois.", double)));
+    }
+    let vise = vise.decimal();
     let mut data = data.clone();
     // Une ligne au tarif de la convention a son taux : elle n'est pas une ligne sans taux.
     crate::saisie_au_tarif(ctx, &mut data).map_err(RefusVisee::Calcul)?;
@@ -203,7 +205,7 @@ pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vi
             ));
         }
         let paies = crate::charger_donnees(ctx, &d).map_err(RefusVisee::Calcul)?.paies;
-        let atteint = somme(&paies, rangs, cible)?;
+        let atteint = somme(&d, &paies, rangs, cible)?;
         Ok((d, paies, atteint))
     };
 
@@ -211,7 +213,7 @@ pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vi
     if depart <= Decimal::ZERO {
         return Err(refus(format!(
             "Cet engagement paie {} : il n'y a pas de taux à faire varier. Poser d'abord une quantité et un taux, puis viser le total.",
-            socle::texte::euros(depart)
+            socle::texte::euros(Montant::du_decimal(depart))
         )));
     }
     let rang_essai = |atteint: Decimal| ((atteint - vise).abs(), atteint > vise);
@@ -220,8 +222,8 @@ pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[usize], cible: Cible, vi
     let mut meilleur: Option<Visee> = None;
     for tour in 1..=TOURS {
         let (d, paies, atteint) = essai(facteur)?;
-        if meilleur.as_ref().is_none_or(|m| rang_essai(atteint) < rang_essai(m.atteint)) {
-            meilleur = Some(Visee { saisie: d, paies, atteint, depart, facteur, tours: tour });
+        if meilleur.as_ref().is_none_or(|m| rang_essai(atteint) < rang_essai(m.atteint.decimal())) {
+            meilleur = Some(Visee { saisie: d, paies, atteint: Montant::du_decimal(atteint), depart: Montant::du_decimal(depart), facteur: Coefficient::du_decimal(facteur), tours: tour });
         }
         if atteint == vise || atteint <= Decimal::ZERO {
             break;

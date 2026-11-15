@@ -28,17 +28,17 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use socle::forme::NombreLu;
-use socle::fichiers::{EmpreinteDeSaisie, ValeurLue};
+use socle::fichiers::{EmpreinteDeSaisie, NomDeFichier, ValeurLue};
 
 use droit::contexte::{Contexte, IdSalarie};
-use crate::saisie::{Avant, Carte, Champ, Groupe, VueDuMois};
+use crate::saisie::{Avant, Carte, Champ, Groupe, RangDansLeMois, VueDuMois};
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::paris::Moment;
 use socle::echec::{refus, R};
 
 /// Le dossier des engagements, sous les donnees de la compagnie : seul le stock le nomme.
-pub(crate) const DOSSIER: &str = "engagements";
+pub(crate) const DOSSIER: NomDeFichier = NomDeFichier::du_moteur("engagements");
 
 /// La phrase d'un fichier d'engagements qui n'a pas sa forme.
 const ABIME: &str = "Un mois d'engagements ne se relit pas : il est abîmé.";
@@ -52,7 +52,7 @@ pub(crate) enum Dossier {
 }
 
 impl Dossier {
-    fn nom(self) -> &'static str {
+    fn nom(self) -> NomDeFichier {
         match self {
             Dossier::Engagements => DOSSIER,
             Dossier::Paies => crate::paies::DOSSIER,
@@ -119,6 +119,32 @@ impl Avenant {
     }
 }
 
+/// LA VERSION D'UN ENGAGEMENT : la premiere a sa premiere validation, la suivante quand une validation change ce qu'un
+/// envoi a emporte (`etats::nouvelle_version`) ou qu'il cesse d'etre actif (`etats::desactiver`). Ecrite et lue comme un
+/// nombre (l'engagement, ses paies gardees, le journal des envois) ; elle se compare, se dit (`Display`), et ne s'ouvre
+/// pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct VersionDeLEngagement(u64);
+
+impl VersionDeLEngagement {
+    /// La version de la premiere validation.
+    pub fn premiere() -> VersionDeLEngagement {
+        VersionDeLEngagement(1)
+    }
+
+    /// La version qui la suit.
+    pub fn suivante(self) -> VersionDeLEngagement {
+        VersionDeLEngagement(self.0 + 1)
+    }
+}
+
+impl std::fmt::Display for VersionDeLEngagement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
 /// UNE VALIDATION : quand, sa version, et la saisie validee (`None` : comptee comme valide par le calcul qui l'ecrit,
 /// `etats::calculer_les_rangs`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -126,7 +152,7 @@ impl Avenant {
 pub struct Validation {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub le: Moment,
-    pub version: Option<u64>,
+    pub version: Option<VersionDeLEngagement>,
     pub saisie: Option<Saisie>,
 }
 
@@ -134,7 +160,7 @@ pub struct Validation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VersionPassee {
-    pub version: u64,
+    pub version: VersionDeLEngagement,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub valide_le: Moment,
     #[serde(with = "socle::paris::ecrit::seconde")]
@@ -152,7 +178,7 @@ pub enum Version<'a> {
 
 impl<'a> Version<'a> {
     /// Son numero ; `None` pour une validation qui ne le porte pas (`etats::a_revalider`).
-    pub fn numero(&self) -> Option<u64> {
+    pub fn numero(&self) -> Option<VersionDeLEngagement> {
         match self {
             Version::Presente(v) => v.version,
             Version::Passee(v) => Some(v.version),
@@ -183,7 +209,7 @@ impl Ecrit {
     }
 
     /// La version `n`, presente ou passee.
-    pub fn version(&self, n: u64) -> Option<Version<'_>> {
+    pub fn version(&self, n: VersionDeLEngagement) -> Option<Version<'_>> {
         self.toutes_les_versions().find(|v| v.numero() == Some(n))
     }
 }
@@ -194,7 +220,7 @@ impl Ecrit {
 pub struct NonActif {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub le: Moment,
-    pub version: u64,
+    pub version: VersionDeLEngagement,
 }
 
 // ------------------------------------------------------------------ les fichiers
@@ -211,7 +237,7 @@ pub(crate) fn chemin_dans(racine: &Path, d: Dossier, mois: Mois) -> PathBuf {
 
 /// LES DOSSIERS QUE LE STOCK TIENT, sous la racine, pour qui signe leur etat sur le disque sans les lire
 /// (`routes::etat_garde`) : on n'y lit et n'y ecrit que par le stock.
-pub fn dossiers_tenus() -> [&'static str; 2] {
+pub fn dossiers_tenus() -> [NomDeFichier; 2] {
     [Dossier::Engagements.nom(), Dossier::Paies.nom()]
 }
 
@@ -437,16 +463,12 @@ impl Objet {
 
     /// Le dernier mois d'un engagement borne (celui de sa fin) ; `None` pour un contrat sans terme.
     pub fn dernier_mois(&self) -> R<Option<Mois>> {
-        let c = self.carte();
         let mensuel = self.mensuel()?;
-        match c.fin {
+        // La fin de son contrat (`Carte::fin_lue` : un contrat d'usage sans fin dite finit a son dernier jour joue ou
+        // planifie) ; sans jour encore, son premier mois : seul un contrat paye au mois court sans terme.
+        match self.carte().fin_lue() {
             Some(f) => Ok(Some(f.mois_civil().max(self.fichier))),
-            None if !mensuel => {
-                // Un contrat d'usage sans fin dite finit a son dernier jour joue ou planifie ; sans jour encore, a son
-                // premier mois : seul un contrat paye au mois court sans terme.
-                let dernier = c.dates().iter().chain(c.planning().iter()).map(|j| j.jour().mois_civil()).max();
-                Ok(Some(dernier.into_iter().fold(self.fichier, Mois::max)))
-            }
+            None if !mensuel => Ok(Some(self.fichier)),
             None => Ok(None),
         }
     }
@@ -597,10 +619,10 @@ impl Objet {
             return Ok(());
         }
         let a = self.termes_a(&j.plus_jours(-1)?);
-        let quotite = |x: &Carte| -> R<Option<NombreLu>> {
-            Ok(match &x.quotite_contrat {
-                Some(q) => Some(q.clone()),
-                None => x.nature_lue()?.quotite_reference_defaut().map(NombreLu::de_decimal),
+        let quotite = |x: &Carte| -> R<Option<socle::grandeurs::Heures>> {
+            Ok(match x.quotite_contrat {
+                Some(q) => Some(q),
+                None => x.nature_lue()?.quotite_reference_defaut().map(socle::grandeurs::courte),
             })
         };
         let avant = Avant { salaire_mensuel: a.salaire_mensuel.clone(), quotite_contrat: quotite(&a)? };
@@ -762,12 +784,11 @@ pub fn identites(objets: &[Objet]) -> Vec<Identite> {
 
 /// L'ENGAGEMENT QUE DESIGNE L'IDENTITE `id` (`identites`) dans l'ecran de `mois`, et sa place dans cet ecran (l'ordre
 /// de `vue_du_mois`). Refus : une identite que l'ecran ne montre pas.
-pub fn designe(racine: &Path, mois: Mois, id: &Identite) -> R<(usize, Objet)> {
+pub fn designe(racine: &Path, mois: Mois, id: &Identite) -> R<(RangDansLeMois, Objet)> {
     let objets = objets_du_mois(racine, mois)?;
-    let k = identites(&objets).iter().position(|x| x == id).ok_or_else(|| {
-        socle::refus!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", mois.libelle(Graphie::Accentuee))
-    })?;
-    Ok((k, objets.into_iter().nth(k).expect("la place vient de la liste")))
+    let absent = || socle::refus!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", mois.libelle(Graphie::Accentuee));
+    let k = RangDansLeMois::du_premier(&identites(&objets), |x| x == id).ok_or_else(absent)?;
+    Ok((k, k.pris(objets).ok_or_else(absent)?))
 }
 
 /// Les engagements non actifs qui toucheraient `mois` s'ils l'etaient encore : ce qui se lit d'eux.
@@ -827,7 +848,7 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync:
     let vues = VUES.get_or_init(Default::default);
     let (lus, tous) = tous(racine)?;
     let mut catalogues = Vec::new();
-    for p in [socle::fichiers::dossier_du_code().join("rubriques-base.json"), racine.join(socle::fichiers::CONFIG).join(droit::catalogue::RUBRIQUES_COMPAGNIE)] {
+    for p in [socle::fichiers::dossier_du_code().join("rubriques-base.json"), droit::catalogue::RUBRIQUES_COMPAGNIE.dans(racine)] {
         // Absent, il est le meme d'une lecture a l'autre ; illisible, il se refuse.
         catalogues.push(match socle::forme::partagee::<serde::de::IgnoredAny>(&p, ABIME)? {
             Some(v) => v,
@@ -1043,10 +1064,10 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
 /// partir du `jour` de ce mois quand il est dit, du 1er sinon. Refus : un engagement valide, un jour qui n'est pas un
 /// jour du contrat dans ce mois, ou des bornes qui laisseraient hors du contrat un mois ou il a des jours payes ; rien
 /// n'est ecrit.
-pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: usize, saisie: &Carte, jour: Option<u32>) -> R<()> {
-    let mut o = objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
+pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie: &Carte, jour: Option<u32>) -> R<()> {
+    let mut o = objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang))?;
     if o.est_valide() {
-        return Err(socle::refus!("{} : l'engagement de rang {} est valide, il ne prend pas de saisie", mois, rang + 1));
+        return Err(socle::refus!("{} : l'engagement de rang {} est valide, il ne prend pas de saisie", mois, rang));
     }
     let le = match jour {
         None => None,
@@ -1082,7 +1103,7 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: usize, saisie: &Carte, 
     // quand la compagnie ne dit pas employer des permanents ce jour-la, comme une premiere carte (`engagements`).
     if !o.mensuel()? {
         if let Some((depuis, nature)) = o.au_mois_depuis()? {
-            if !ctx.emploie_des_permanents_pendant(&depuis, &depuis) {
+            if !ctx.emploie_des_permanents_pendant(&socle::date::Periode::du_jour(depuis)) {
                 return Err(socle::refus!(
                     "{} : à partir du {}, ce contrat deviendrait un contrat payé au mois ({}), et la compagnie ne dit pas \
                      qu'elle emploie des salariés au mois ce jour-là. À faire : cocher « La compagnie emploie aussi des \
@@ -1281,8 +1302,8 @@ impl Objet {
 }
 
 /// L'engagement que designe, dans le mois `mois`, le rang `rang` de son ecran.
-pub fn objet_du_mois(racine: &Path, mois: Mois, rang: usize) -> R<Option<Objet>> {
-    Ok(objets_du_mois(racine, mois)?.into_iter().nth(rang))
+pub fn objet_du_mois(racine: &Path, mois: Mois, rang: RangDansLeMois) -> R<Option<Objet>> {
+    Ok(rang.pris(objets_du_mois(racine, mois)?))
 }
 
 /// Remplace l'objet `o` dans son fichier (meme fichier, meme rang), tel qu'il est maintenant.

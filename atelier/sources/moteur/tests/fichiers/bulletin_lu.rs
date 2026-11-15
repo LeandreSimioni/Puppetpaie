@@ -98,11 +98,10 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
             "spectacle": "Les Fictifs en Tournée",
             "analytique": null,
             "contrat": null,
-            "debut": "2026-01-14",
-            "fin": "2026-01-24",
+            "periode": {"du": "2026-01-14", "au": "2026-01-24"},
             "dates_travaillees": [
-                {"debut": "2026-01-14", "fin": "2026-01-14"}, {"debut": "2026-01-18", "fin": "2026-01-18"},
-                {"debut": "2026-01-21", "fin": "2026-01-21"}, {"debut": "2026-01-23", "fin": "2026-01-24"},
+                {"du": "2026-01-14", "au": "2026-01-14"}, {"du": "2026-01-18", "au": "2026-01-18"},
+                {"du": "2026-01-21", "au": "2026-01-21"}, {"du": "2026-01-23", "au": "2026-01-24"},
             ],
             "jours_travailles": ["2026-01-14", "2026-01-18", "2026-01-21", "2026-01-23", "2026-01-24"],
             "lignes": [
@@ -115,7 +114,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
             "net_social": "477.82",
             "net_avant_impot": "477.82",
             "net_imposable": "491.90",
-            "pas": {"base": "491.90", "taux": "0.000", "montant": "0.00", "cumul": "0.00"},
+            "pas": {"base": "491.90", "taux": "0.00", "montant": "0.00", "cumul": "0.00"},
             "net_a_payer": "477.82",
             "cout_employeur": "845.53",
             "regle_le": "2026-01-24",
@@ -199,8 +198,7 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
             "spectacle": null,
             "analytique": "FICTION",
             "contrat": null,
-            "debut": "2026-04-02",
-            "fin": "2026-04-03",
+            "periode": {"du": "2026-04-02", "au": "2026-04-03"},
             "dates_travaillees": [],
             "jours_travailles": [],
             "lignes": [
@@ -315,7 +313,7 @@ fn bulletin_lu_la_colonne_du_mois_ne_se_met_pas_dans_chaque_contrat() {
     let mut sans_cachet = cachets.clone();
     sans_cachet.lignes.clear();
     sans_cachet.numero = Some("autre".into());
-    assert!(cachets.cumuls.iter().any(|(n, c)| n == "cachets" && c.periode.is_some_and(|x| x.normalize().to_string() == "3")));
+    assert!(cachets.cumuls.iter().any(|(_, c)| matches!(c, import::bulletin_lu::Cumul::Cachets(c) if c.periode.map(socle::grandeurs::ecrit::sans_zero::dit).as_deref() == Some("3"))));
     let de = |b: &BulletinLu, frere: &BulletinLu| socle::ecriture::en_valeur(&compteurs(b, &[frere], &racine()).unwrap());
     assert_eq!(de(&sans_cachet, &cachets)["cachets"], json!("0"));
     assert_eq!(de(&cachets, &sans_cachet)["cachets"], json!("3"));

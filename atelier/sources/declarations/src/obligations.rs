@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 
 use droit::arrets::MotifDArret;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::echec::{Echec, R};
 
 /// `obligations-base.json` : chaque obligation, son delai, son point de depart et ses textes. Ses `quoi` et `note` ne
@@ -159,7 +159,8 @@ pub struct SaufMotifs {
 #[serde(deny_unknown_fields)]
 pub struct Delai {
     pub jours_ouvres: Option<i64>,
-    pub jours: Option<i64>,
+    #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
+    pub jours: Option<socle::date::Duree<socle::date::EnJours>>,
     pub heures: Option<i64>,
     #[serde(rename = "sans_dimanches")]
     _sans_dimanches: Option<bool>,
@@ -185,7 +186,8 @@ pub struct Suites {
 #[serde(deny_unknown_fields)]
 pub struct Reserves {
     pub libelle: String,
-    pub jours_francs: i64,
+    #[serde(deserialize_with = "socle::date::Duree::en_jours")]
+    pub jours_francs: socle::date::Duree<socle::date::EnJours>,
     /// Ce d'ou courent les jours francs, en mots (« la déclaration »).
     #[serde(rename = "depuis")]
     _point_de_depart: String,
@@ -313,13 +315,16 @@ impl DeBase {
 /// Une valeur que la base doit porter, et qu'elle ne porte pas.
 #[track_caller]
 pub fn livree(cle: &str) -> Echec {
-    socle::echec::livree("obligations-base.json", cle)
+    socle::echec::livree(&BASE, cle)
 }
+
+/// La table livree des obligations, sous `donnees/`.
+const BASE: CheminRelatif = CheminRelatif::du_moteur("obligations-base.json");
 
 /// `obligations-base.json`, lu par sa forme (une fois tant que le fichier ne change pas).
 pub fn base() -> R<BaseDesObligations> {
     static CACHE: OnceLock<FormeGardee<BaseDesObligations>> = OnceLock::new();
     let lue: Arc<BaseDesObligations> =
-        forme_en_cache(&CACHE, "obligations-base.json", "Les obligations livrées avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
+        forme_en_cache(&CACHE, &BASE, "Les obligations livrées avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
     Ok((*lue).clone())
 }

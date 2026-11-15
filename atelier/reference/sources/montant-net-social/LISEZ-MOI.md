@@ -170,7 +170,7 @@ ligne `prevoyance` des intermittents, le Fonds santé (santé) du décès (prév
   p. 265 : « à renseigner en période de versement »). **Inférence** : la « période de versement » est le mois de la
   correction, du 1er au dernier jour (la date du versement, 50.001, en est le dernier jour). Une correction suivante
   relit ces rappels (`versement_declare::VersementDeclare::rappels_net_social`). `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1o.md`.
-- **Q 37** (montant négatif affiché négatif) : rien ne borne `Paie::net_social` ; `fmt_eur` et `dsn::ms` écrivent le
+- **Q 37** (montant négatif affiché négatif) : rien ne borne `Paie::net_social` ; `socle::texte::chiffres_en_euros` et `dsn::ms` écrivent le
   signe ; le format CSL de 58.004 admet le `-`. Conforme.
 - **Q 38** (aucun cumul) : le bulletin n'imprime pas de cumul du montant net social. Conforme.
 - **Chèques-vacances, CESU** (tableau du II.A.1, Q 24) : dedans ; le décret les nomme après l'exception, « ainsi

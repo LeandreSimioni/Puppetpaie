@@ -640,7 +640,7 @@ fn ranger(mut t: Table) -> R<Table> {
         (NomDeFiche::Salarie, &mut t.salarie, droit::fiche::ChampsSalarie::cases()),
         (NomDeFiche::Spectacle, &mut t.spectacle, droit::fiche::ChampsSpectacle::cases()),
     ];
-    let faute = |ou: String| socle::echec::livree("champs-base.json", &ou);
+    let faute = |ou: String| socle::echec::livree(&BASE, &ou);
     for (nom, champs, declarees) in fiches {
         for c in champs.iter_mut().filter(|c| c.cle != CaseDeFiche::Case(NomDeCase::HISTORIQUE)) {
             let Some(d) = declarees.iter().find(|d| d.cle == c.cle) else {
@@ -666,9 +666,12 @@ fn ranger(mut t: Table) -> R<Table> {
     Ok(t)
 }
 
+/// La table livree des cases des fiches, sous `donnees/`.
+pub const BASE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("champs-base.json");
+
 /// Les champs de la fiche `nom` (`entreprise`, `salarie`, `spectacle`), tels que la table livree les decrit.
 fn table(nom: NomDeFiche) -> R<&'static [Champ]> {
-    let chemin = dossier_du_code().join("champs-base.json");
+    let chemin = BASE.dans(&dossier_du_code());
     let t = TABLE
         .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur.").and_then(ranger))
         .as_ref()
@@ -711,7 +714,7 @@ pub fn description(nom: NomDeFiche) -> R<Vec<Description<'static>>> {
 /// sans la case) et `utile_pour` (le geste se fait autrement sans elle). Une liste du logiciel, ses actes : la DSN, la
 /// DPAE, le contrat, le bulletin, le certificat Congés Spectacles, toute paie, l'envoi par courriel. Ecrit par son mot
 /// (`dsn`, `dpae`, `contrat`, `bulletin`, `certificat`, `paie`, `envoi`) ; un autre mot refuse la table a sa lecture.
-/// Ce n'est pas la sorte d'un envoi au journal (`envois::ligne::Acte`).
+/// Ce n'est pas la sorte d'un envoi au journal (`documents::Acte`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActeExigeant {

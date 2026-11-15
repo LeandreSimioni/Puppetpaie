@@ -11,7 +11,7 @@ use crate::autre_revenu_brut::AutreElementDeRevenuBrut;
 use socle::echec::Lieu;
 use socle::fichiers::{dossier_du_code, repr, signature};
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::grandeurs::Heures;
 use crate::fiche::{ChampsRubrique, Datee, FicheDatee, Piece, RubriqueDatee, VoirListe};
 use std::collections::HashMap;
 use std::path::Path;
@@ -110,35 +110,51 @@ pub enum HorsAssiette {
     Mouvement,
 }
 
-/// LE SENS D'UNE RUBRIQUE : ce que sa ligne fait au brut, l'ajouter (`+`) ou l'en retirer (`-`) (`sens` de
-/// `rubriques-base.json`). Une liste du logiciel ; un autre sens se refuse a la lecture de la rubrique.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum Sens {
-    #[serde(rename = "+")]
-    Plus,
-    #[serde(rename = "-")]
-    Moins,
-}
+impl crate::fiche::FormeDeCase for socle::grandeurs::Signe {}
 
-impl Sens {
-    /// Son nom ecrit.
-    pub fn cle(self) -> &'static str {
-        match self {
-            Sens::Plus => "+",
-            Sens::Moins => "-",
-        }
-    }
-
-    /// Le signe qu'il donne au montant ou aux heures d'une ligne : 1 ou -1.
-    pub fn signe(self) -> Decimal {
-        match self {
-            Sens::Plus => Decimal::ONE,
-            Sens::Moins => Decimal::NEGATIVE_ONE,
-        }
+socle::noms_fermes! {
+    /// LA SORTE DSN D'UNE RUBRIQUE, un mot du logiciel que `dsn_type` ecrit a la place d'un type de remuneration de la
+    /// norme : une prime, une absence. Rien ne l'applique (`docs/RUBRIQUES.md`, « Les champs que rien n'applique »).
+    SorteDsnDeRubrique, "Sorte DSN d'une rubrique" {
+        Prime = "prime",
+        Absence = "absence",
     }
 }
 
-impl crate::fiche::FormeDeCase for Sens {}
+/// LE `dsn_type` D'UNE RUBRIQUE : un type de remuneration de la norme (`010`, `017` ;
+/// `natures::TypeDeRemuneration`), ou une sorte du logiciel (`prime`, `absence` ; `SorteDsnDeRubrique`). Il s'ecrit par
+/// son texte, et se lit en l'un ou l'autre ; un autre texte se refuse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DsnTypeDeRubrique {
+    Remuneration(crate::natures::TypeDeRemuneration),
+    Sorte(SorteDsnDeRubrique),
+}
+
+impl crate::fiche::FormeDeCase for DsnTypeDeRubrique {}
+
+impl serde::Serialize for DsnTypeDeRubrique {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            DsnTypeDeRubrique::Remuneration(t) => s.serialize_str(t.code()),
+            DsnTypeDeRubrique::Sorte(o) => s.serialize_str(o.nom()),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DsnTypeDeRubrique {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as serde::Deserialize>::deserialize(d)?;
+        match (crate::natures::TypeDeRemuneration::du_code(&texte), SorteDsnDeRubrique::du_nom(&texte)) {
+            (Some(t), _) => Ok(DsnTypeDeRubrique::Remuneration(t)),
+            (None, Some(o)) => Ok(DsnTypeDeRubrique::Sorte(o)),
+            (None, None) => Err(serde::de::Error::custom(format!(
+                "dsn_type inconnu : {}. Un type de rémunération de la norme (S21.G00.51.011), ou : {}.",
+                repr(&texte),
+                SorteDsnDeRubrique::TOUTES.iter().map(|o| o.nom()).collect::<Vec<_>>().join(", ")
+            ))),
+        }
+    }
+}
 
 /// CE QU'UNE RUBRIQUE COMPTE POUR LES DROITS DES ANNEXES VIII ET X (`compte_pour` de `rubriques-base.json`) : ses heures
 /// et son montant, ou ses heures pour l'ouverture des droits seulement. Une liste du logiciel ; une autre valeur se
@@ -210,9 +226,10 @@ pub enum OrigineDeRubrique {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlafondAnnuelHeures {
-    pub moins_de_50_ans: i64,
-    #[serde(rename = "50_ans_et_plus")]
-    pub cinquante_ans_et_plus: i64,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
+    pub moins_de_50_ans: Heures,
+    #[serde(rename = "50_ans_et_plus", serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
+    pub cinquante_ans_et_plus: Heures,
 }
 
 /// LE CODE D'UNE RUBRIQUE : sa cle dans `rubriques` ou `au_mois` de `donnees/rubriques-base.json`, ou dans
@@ -286,14 +303,15 @@ pub struct Rubrique {
     pub imposable: bool,
     pub conges_spectacles: bool,
     pub source: String,
-    pub sens: Sens,
-    pub heures_forfait: Option<Decimal>,
+    pub sens: socle::grandeurs::Signe,
+    pub heures_forfait: Option<socle::grandeurs::HeuresParUnite>,
     pub plafond: Option<Unite>,
     pub aem: Option<Unite>,
-    pub dsn_type: Option<String>,
+    pub dsn_type: Option<DsnTypeDeRubrique>,
     pub dsn_autres_bruts: Option<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub annexe: Option<crate::emplois::AnnexeChomage>,
-    pub plafond_mensuel: Option<i64>,
+    /// Les cachets qu'un mois retient au plus (le cachet : 28, annexe X).
+    pub plafond_mensuel: Option<socle::grandeurs::Cachets>,
     pub plafond_annuel_heures: Option<PlafondAnnuelHeures>,
     pub compte_pour: ComptePour,
     pub salaire_de_base: bool,
@@ -399,32 +417,15 @@ impl Rubrique {
         self.heures_forfait.is_none() && self.saisie.contains(&CaseSaisie::Heures)
     }
 
-    /// Les heures que cette ligne fait compter, au total : le forfait
-    /// l'emporte, sinon les heures saisies, sinon la quantite si l'unite est
-    /// l'heure. Zero pour une rubrique qui demande ses heures et ne les a pas
-    /// recues : la saisie qui la porte a deja ete refusee
-    /// ([`Rubrique::heures_a_saisir`]).
+    /// Les heures par unite qu'une ligne de cette rubrique compte : le forfait l'emporte, sinon celles que la ligne
+    /// dit ; `None` : aucune (la quantite d'une ligne a l'heure compte alors ses heures, une autre n'en compte aucune :
+    /// `engagement::ligne::QuantiteDeLigne::heures`). Une rubrique qui demande ses heures et ne les a pas recues : la
+    /// saisie qui la porte a deja ete refusee ([`Rubrique::heures_a_saisir`]).
     ///
-    /// UNE convention : le `heures` d'une ligne de paie, comme
-    /// `heures_forfait`, compte les heures PAR UNITE, et la quantite les
-    /// multiplie. 14 services de 4 h : `quantite` 14, `heures` 4, soit 56 h.
-    /// Un mois de permanent : `quantite` = la fraction du mois payee,
-    /// `heures` = la quotite du contrat (`conges::lignes_du_mois`). Le produit
-    /// se compte au centieme d'heure, comme la DSN l'ecrit.
-    /// Le centieme d'heure se prend au plus pres, la moitie loin de zero ; le nombre rendu est dans sa forme la plus
-    /// courte (`socle::num::court`).
-    pub fn heures(&self, quantite: Decimal, heures_saisies: Option<Decimal>) -> Decimal {
-        let centieme = |x: Decimal| socle::num::court(socle::num::mul(x, quantite).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero));
-        if let Some(f) = self.heures_forfait {
-            return centieme(f);
-        }
-        if let Some(h) = heures_saisies {
-            return centieme(h);
-        }
-        if self.unite == Unite::Heure {
-            return socle::num::court(quantite);
-        }
-        socle::num::court(Decimal::ZERO)
+    /// Le `heures` d'une ligne de paie, comme `heures_forfait`, compte les heures PAR UNITE : 14 services de 4 h. Un mois
+    /// de permanent : la quotite du contrat par mois entier (`conges::lignes_du_mois`).
+    pub fn heures_par_unite(&self, saisies: Option<socle::grandeurs::HeuresParUnite>) -> Option<socle::grandeurs::HeuresParUnite> {
+        self.heures_forfait.or(saisies)
     }
 }
 
@@ -467,9 +468,10 @@ impl Base {
 #[serde(deny_unknown_fields)]
 pub struct Annexes {
     /// Les heures qui ouvrent les droits (507).
-    pub seuil_heures: i64,
+    pub seuil_heures: Heures,
     /// La fenetre ou elles se comptent, en jours (365).
-    pub fenetre_jours: i64,
+    #[serde(deserialize_with = "socle::date::Duree::en_jours")]
+    pub fenetre_jours: socle::date::Duree<socle::date::EnJours>,
     #[serde(rename = "note")]
     _note: String,
 }
@@ -489,7 +491,7 @@ fn base() -> R<Base> {
         return Err(socle::echec::refus_avec(
             "Les rubriques d'un salarié au mois ne sont pas celles que son calcul compose : le signaler au développeur.".to_string(),
             socle::echec::Lieu {
-                fichier: Some("rubriques-base.json".into()),
+                fichier: Some(const { socle::fichiers::CheminRelatif::du_moteur("rubriques-base.json") }),
                 cle: Some("au_mois".into()),
                 detail: Some(format!("la section porte {:?}, le calcul compose {:?} (`RubriqueDuMois`)", rangees, du_calcul)),
                 ..Default::default()
@@ -562,11 +564,11 @@ struct RubriquesDeLaCompagnie {
 
 /// Le fichier des rubriques de la compagnie, s'il existe ; absent, il n'en dit aucune.
 fn de_la_compagnie(racine: &Path) -> R<RubriquesDeLaCompagnie> {
-    let p = racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE);
+    let p = RUBRIQUES_COMPAGNIE.dans(racine);
     if !socle::fichiers::existe(&p) {
         return Ok(RubriquesDeLaCompagnie::default());
     }
-    crate::fiche::lire_fichier(&p, &format!("config/{}", RUBRIQUES_COMPAGNIE))
+    crate::fiche::lire_fichier(&p, RUBRIQUES_COMPAGNIE.texte())
 }
 
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
@@ -587,13 +589,15 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubriqu
         conges_spectacles: dite(f.conges_spectacles, "conges_spectacles", &faute)?,
         source: dite(f.source, "source", &faute)?,
         sens: dite(f.sens, "sens", &faute)?,
-        heures_forfait: f.heures_forfait.map(|m| m.court()).transpose()?,
+        // Une case de fiche garde le nombre tel qu'on l'a ecrit (`NombreDeFiche`) : sa grandeur se lit ici, a la porte de
+        // la fiche.
+        heures_forfait: f.heures_forfait.map(|m| m.court().map(socle::grandeurs::HeuresParUnite::du_decimal)).transpose()?,
         plafond: f.plafond,
         aem: f.aem,
         dsn_type: f.dsn_type,
         dsn_autres_bruts: f.dsn_autres_bruts,
         annexe: f.annexe,
-        plafond_mensuel: f.plafond_mensuel,
+        plafond_mensuel: f.plafond_mensuel.map(|n| socle::grandeurs::Cachets::du_decimal(socle::num::Decimal::from(n))),
         plafond_annuel_heures: f.plafond_annuel_heures,
         compte_pour: dite(f.compte_pour, "compte_pour", &faute)?,
         salaire_de_base: dite(f.salaire_de_base, "salaire_de_base", &faute)?,
@@ -610,8 +614,8 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubriqu
     Ok(r)
 }
 
-/// Le fichier des rubriques propres a la compagnie, sous `config/`.
-pub const RUBRIQUES_COMPAGNIE: &str = "rubriques-compagnie.json";
+/// Le fichier des rubriques propres a la compagnie, sous la compagnie.
+pub const RUBRIQUES_COMPAGNIE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/rubriques-compagnie.json");
 
 /// Une rubrique de la compagnie a-t-elle une valeur datee ? Sinon le catalogue est le meme a toute date.
 fn rubriques_datees(racine: &Path) -> R<bool> {
@@ -671,7 +675,7 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> R<Arc<Vec<Rubrique>>> {
     let fichiers = format!(
         "{}|{}",
         empreinte(&dossier_du_code().join("rubriques-base.json")),
-        empreinte(&racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE)),
+        empreinte(&RUBRIQUES_COMPAGNIE.dans(racine)),
     );
     let cache = CATALOGUES.get_or_init(|| Mutex::new(HashMap::new()));
     let connue = cache.lock().unwrap().get(&fichiers).map(|(datee, _)| *datee);
@@ -689,7 +693,7 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> R<Arc<Vec<Rubrique>>> {
         socle::fichiers::est_dossier(racine);
         for p in [
             dossier_du_code().join("rubriques-base.json"),
-            racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE),
+            RUBRIQUES_COMPAGNIE.dans(racine),
         ] {
             if socle::fichiers::existe(&p) {
                 socle::fichiers::noter_si_besoin(&p);

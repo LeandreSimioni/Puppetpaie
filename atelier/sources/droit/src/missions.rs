@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use socle::date::Jour;
-use socle::fichiers::dossier_du_code;
+use socle::fichiers::{dossier_du_code, CheminRelatif};
 use socle::echec::R;
 use socle::num::Decimal;
 use socle::piece::format::JourEcrit;
@@ -34,7 +34,7 @@ use socle::piece::Zone;
 use crate::source::forme_notee;
 
 /// Le dossier des tables, sous les donnees livrees.
-const DOSSIER: &str = "missions";
+const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("missions");
 
 /// UN LIEU DE LA TABLE DES INDEMNITES DE MISSION A L'ETRANGER : un pays, ou une ville que la table distingue de son pays,
 /// par son code (`code_pays` de `indemnites.csv` et de `change.csv`, les clés de `villes.json`) : deux lettres capitales,
@@ -153,9 +153,19 @@ fn champs(ligne: &str) -> Vec<&str> {
     ligne.trim_end_matches(['\r', '\n']).trim_start_matches('\u{feff}').split(';').map(str::trim).collect()
 }
 
+/// Les tables livrees des indemnites et du change, sous `donnees/`.
+const INDEMNITES: CheminRelatif = CheminRelatif::du_moteur("missions/indemnites.csv");
+const CHANGE: CheminRelatif = CheminRelatif::du_moteur("missions/change.csv");
+
 /// La premiere ligne d'une table, son en-tete ; une table vide se refuse.
-fn en_tete<'a>(lignes: &mut impl Iterator<Item = &'a str>, fichier: &str) -> R<&'a str> {
+fn en_tete<'a>(lignes: &mut impl Iterator<Item = &'a str>, fichier: &CheminRelatif) -> R<&'a str> {
     lignes.next().ok_or_else(|| socle::echec::livree(fichier, "en-tête"))
+}
+
+/// L'en-tete d'une table relevee, un texte et non un fichier livre : la table se dit a part (`detail`).
+fn en_tete_relevee<'a>(lignes: &mut impl Iterator<Item = &'a str>) -> R<&'a str> {
+    let lieu = socle::echec::Lieu { cle: Some("en-tête".to_string()), detail: Some("table des missions".to_string()), ..Default::default() };
+    lignes.next().ok_or_else(|| socle::echec::refus_avec(socle::echec::LIVREE, lieu))
 }
 
 /// Le cache des tables, meme si un fil s'est arrete en le tenant : il ne garde qu'une lecture entiere.
@@ -177,12 +187,12 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
     let mut t = Tables::default();
     let texte = indemnites;
     let mut lignes = texte.lines();
-    let tete = champs(en_tete(&mut lignes, "missions/indemnites.csv")?);
-    let col = |nom: &str| tete.iter().position(|c| *c == nom).ok_or_else(|| socle::echec::livree("missions/indemnites.csv", nom));
+    let tete = champs(en_tete(&mut lignes, &INDEMNITES)?);
+    let col = |nom: &str| tete.iter().position(|c| *c == nom).ok_or_else(|| socle::echec::livree(&INDEMNITES, nom));
     let (c_code, c_nom, c_monnaie, c_date, c_montant) = (col("code_pays")?, col("nom_pays")?, col("code_monnaie")?, col("date")?, col("groupe_1")?);
     for (n, l) in lignes.enumerate().filter(|(_, l)| !l.trim().is_empty()) {
         let c = champs(l);
-        let ou = |quoi: &str| socle::echec::livree("missions/indemnites.csv", &format!("ligne {} : {}", n + 2, quoi));
+        let ou = |quoi: &str| socle::echec::livree(&INDEMNITES, &format!("ligne {} : {}", n + 2, quoi));
         let cellule = |i: usize, nom: &str| c.get(i).copied().ok_or_else(|| ou(nom));
         let (code, nom, monnaie) = (cellule(c_code, "code_pays")?, cellule(c_nom, "nom_pays")?, cellule(c_monnaie, "code_monnaie")?);
         let code = LieuDeMission::lire(code).map_err(|e| ou(&format!("code_pays ({})", e.phrase)))?;
@@ -198,12 +208,12 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
     }
     let texte = change;
     let mut lignes = texte.lines();
-    let tete = champs(en_tete(&mut lignes, "missions/change.csv")?);
-    let col = |nom: &str| tete.iter().position(|c| *c == nom).ok_or_else(|| socle::echec::livree("missions/change.csv", nom));
+    let tete = champs(en_tete(&mut lignes, &CHANGE)?);
+    let col = |nom: &str| tete.iter().position(|c| *c == nom).ok_or_else(|| socle::echec::livree(&CHANGE, nom));
     let (c_monnaie, c_code, c_date, c_taux) = (col("monnaie_source")?, col("code_pays")?, col("date")?, col("taux")?);
     for (n, l) in lignes.enumerate().filter(|(_, l)| !l.trim().is_empty()) {
         let c = champs(l);
-        let ou = |quoi: &str| socle::echec::livree("missions/change.csv", &format!("ligne {} : {}", n + 2, quoi));
+        let ou = |quoi: &str| socle::echec::livree(&CHANGE, &format!("ligne {} : {}", n + 2, quoi));
         let cellule = |i: usize, nom: &str| c.get(i).copied().ok_or_else(|| ou(nom));
         let (m, code) = (cellule(c_monnaie, "monnaie_source")?, cellule(c_code, "code_pays")?);
         let m = CodeMonnaie::lire(m).map_err(|e| ou(&format!("monnaie_source ({})", e.phrase)))?;
@@ -257,7 +267,7 @@ pub fn du_jour(code: &LieuDeMission, jour: &Jour) -> R<Indemnite> {
             .and_then(|l| en_vigueur(l, jour))
             .ok_or_else(|| socle::refus!("La table des taux de chancellerie ne dit pas le taux de {} pour {} au {} : la limite ne se calcule pas.", monnaie, nom, jour.jj_mm_aaaa()))?
     };
-    Ok(Indemnite { euros: socle::num::eur2(montant * change), montant, monnaie, change })
+    Ok(Indemnite { euros: socle::grandeurs::Montant::du_decimal(montant * change).au_centime().decimal(), montant, monnaie, change })
 }
 
 fn pas_un_lieu(code: &str) -> socle::echec::Echec {
@@ -306,7 +316,7 @@ pub fn verifier(indemnites: &str, change: &str) -> R<(usize, usize)> {
 /// relevee entiere se depose dans les sources (`moteur-atelier releve-missions`). L'en-tete et l'ordre des lignes restent.
 pub fn pour_les_paies(texte: &str, cles: &[&str], depuis: &Jour) -> R<String> {
     let mut lignes = texte.split_inclusive('\n');
-    let tete_brute = en_tete(&mut lignes, "table des missions")?;
+    let tete_brute = en_tete_relevee(&mut lignes)?;
     let tete = champs(tete_brute);
     let col = |nom: &str| tete.iter().position(|c| *c == nom).ok_or_else(|| socle::refus!("table des missions : la colonne « {} » manque.", nom));
     let c_cles: Vec<usize> = cles.iter().map(|c| col(c)).collect::<R<_>>()?;

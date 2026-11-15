@@ -18,6 +18,7 @@ use droit::nature_declaration::NatureDEvenementDeclencheur;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::date::Jour;
 use socle::echec::{erreur, R};
+use socle::mode::Mode;
 use socle::mois::Mois;
 
 /// Ce qu'on demande de produire (l'outil de l'atelier).
@@ -27,7 +28,7 @@ pub struct Demande<'a> {
     pub mois: Mois,
     /// `--salarie` : seulement ceux-la (`None` : tous ceux qui ont un taux a demander).
     pub salaries: Option<&'a [droit::contexte::IdSalarie]>,
-    pub envoi_test: bool,
+    pub mode: Mode,
     pub forcer: bool,
     pub constitution: Jour,
 }
@@ -76,7 +77,7 @@ fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
         if jour.jour_de_la_semaine() >= 5 {
             continue;
         }
-        let feries = socle::feries::feries(jour.an).map_err(|e| e.reclasser(Classe::Illisible))?;
+        let feries = socle::feries::feries(jour.annee()).map_err(|e| e.reclasser(Classe::Illisible))?;
         if feries.iter().any(|(j, _)| *j == jour) {
             continue;
         }
@@ -96,7 +97,7 @@ fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
 pub fn en_cours(ctx: &Contexte, cle: &IdSalarie) -> R<Option<EnCours>> {
     let lignes = envois::journal::lu(&ctx.racine).map_err(|e| e.reclasser(Classe::Disque))?.lignes;
     let pour_lui = |l: &envois::journal::Ligne| l.versions().is_some_and(|v| v.iter().any(|x| x.salarie == *cle));
-    let derniere = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true)
+    let derniere = envois::journal::filtrer(&lignes, Some(documents::Acte::Dsn), None, Some(Mode::Reel))
         .filter(|l| l.accepte() && l.nature_dsn() == Some(declarations::amorcage::NATURE) && pour_lui(l) && !envois::etats::refuse_par_un_retour(l))
         .last();
     let Some(l) = derniere else { return Ok(None) };
@@ -178,19 +179,25 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: NatureDEvenementDeclench
 /// (`Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`), constitue le jour `constitution`. UN NUMERO D'ORDRE PAR FICHIER, a la
 /// suite de tous les signalements deja partis : la sequence ne se remet jamais a zero (cahier technique DSN, p. 136), et
 /// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent.
-pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, mois: Mois, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
+pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, mois: Mois, constitution: Jour, mode: Mode) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
-    let dossier = documents::PieceDuMois::Amorcage.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string()));
+    let dossier = documents::PieceDuMois::Amorcage.dossier().dans(&ctx.racine, mois);
     let premier = droit::natures::NumeroDOrdre::suivant(envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Disque))?;
     let mut fichiers = Vec::new();
-    for (rang, l) in retenues.iter().enumerate() {
+    let mut ordre: Option<droit::natures::NumeroDOrdre> = None;
+    for l in retenues {
+        let o = match ordre {
+            Some(precedent) => droit::natures::NumeroDOrdre::suivant(Some(precedent))?,
+            None => premier,
+        };
+        ordre = Some(o);
         let options = am::Options {
             motif,
             type_declaration: TypeDeLaDeclaration::Normale,
-            ordre: premier.plus(rang as u64)?,
+            ordre: o,
             remplace: None,
-            envoi_test,
+            mode,
             date_constitution: Some(constitution),
         };
         let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| e.en_classe(Classe::Refuse))?;
@@ -233,8 +240,8 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         return Err(erreur(Classe::AmorcageImpossible, format!("Taux de PAS non demandé : {}.", raisons.join(" ; "))));
     }
     let mois = d.mois;
-    let dossier = documents::PieceDuMois::Amorcage.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string()));
-    let fichiers = ecrire(ctx, paies, &retenus, d.motif, mois, d.constitution, d.envoi_test)?;
+    let dossier = documents::PieceDuMois::Amorcage.dossier().dans(&ctx.racine, mois);
+    let fichiers = ecrire(ctx, paies, &retenus, d.motif, mois, d.constitution, d.mode)?;
     ecrits.extend(fichiers.iter().cloned());
     // Le recapitulatif : ce qu'on lit avant de deposer -- et apres, pour savoir ce qu'on attend.
     let jour = d.constitution.aaaammjj();

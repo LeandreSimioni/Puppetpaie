@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 
 use crate::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle, IdDrive};
-use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, Index, DOSSIER_DRIVE};
+use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, DossierDuDrive, Index, DOSSIER_DRIVE};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 
 /// Un fichier redescendu.
@@ -169,16 +169,15 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         ErreurGoogle::nouvelle(
             socle::echec::Classe::SauvegardeAbsente,
             format!(
-                "Pas de sauvegarde dans le Drive{} : le dossier {}/{} est introuvable. Le compte relie est-il celui de la \
+                "Pas de sauvegarde dans le Drive{} : le dossier {} est introuvable. Le compte relie est-il celui de la \
                  compagnie ? Seuls les dossiers crees par PuppetPaie, avec la meme application Google, sont visibles.",
                 compte.as_deref().map(|c| format!(" de {}", c)).into_iter().collect::<String>(),
-                racine_drive,
-                DOSSIER_DRIVE
+                DossierDuDrive::de(racine_drive, None)
             ),
         )
     };
     let racine_id = le_dossier(client, &IdDrive::RACINE, racine_drive, racine_drive)?.ok_or_else(absente)?;
-    let sauvegarde_id = le_dossier(client, &racine_id, DOSSIER_DRIVE, &format!("{}/{}", racine_drive, DOSSIER_DRIVE))?.ok_or_else(absente)?;
+    let sauvegarde_id = le_dossier(client, &racine_id, DOSSIER_DRIVE, &DossierDuDrive::de(racine_drive, None).to_string())?.ok_or_else(absente)?;
 
     let mut distants: BTreeMap<CheminRelatif, Entree> = BTreeMap::new();
     let mut dossiers: BTreeMap<Option<CheminRelatif>, IdDrive> = BTreeMap::new();
@@ -228,7 +227,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     let mut deja: BTreeSet<CheminRelatif> = BTreeSet::new();
     let mut ecarts: Vec<String> = Vec::new();
     for (relatif, _) in &presents {
-        let chemin = cible.join(relatif);
+        let chemin = relatif.dans(&cible);
         let locale = EmpreinteMd5::du_fichier(&chemin).map_err(|e| ErreurGoogle::fichier(&e, &chemin))?;
         match distants.get(relatif) {
             Some(d) if d.md5.as_ref() == Some(&locale) => {
@@ -313,12 +312,8 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         }
         fichiers.insert(relatif.clone(), *etat);
         if let Some(d) = distants.get(relatif) {
-            let mut cle = format!("{}/{}", racine_drive, DOSSIER_DRIVE);
-            if let Some(dossier) = &d.dossier {
-                cle = format!("{}/{}", cle, dossier);
-            }
             if let Some(id) = dossiers.get(&d.dossier) {
-                index_dossiers.insert(cle, id.clone());
+                index_dossiers.insert(DossierDuDrive::de(racine_drive, d.dossier.as_ref()), id.clone());
             }
         }
     }

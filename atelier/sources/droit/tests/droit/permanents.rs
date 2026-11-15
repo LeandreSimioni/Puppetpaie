@@ -5,32 +5,48 @@
 use crate::outils::typee::{cas_de, jouer, Rendu};
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
-use socle::date::Jour;
+use socle::date::{Anciennete, Duree, Jour};
+use socle::grandeurs::{Coefficient, Jours, Montant};
 use socle::num::Decimal;
+
+/// Un montant de la reference, ecrit en texte (`2000.00`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct M(#[serde(with = "socle::grandeurs::ecrit::texte")] Montant);
+
+/// Un coefficient de la reference (des mois de salaire), ecrit en texte (`0.5`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct C(#[serde(with = "socle::grandeurs::ecrit::texte")] Coefficient);
+
+/// Des jours de la reference, ecrits en texte (`2.5`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct J(#[serde(with = "socle::grandeurs::ecrit::texte")] Jours);
 
 /// Ce que `indemnite_conges` rend : les deux calculs et la regle retenue.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IndemniteDesJours {
-    dixieme: Decimal,
-    maintien: Decimal,
-    retenu: Decimal,
+    dixieme: M,
+    maintien: M,
+    retenu: M,
     regle: String,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SalaireDeReference {
-    moyenne_12_mois: Decimal,
-    tiers_3_mois: Decimal,
-    retenu: Decimal,
+    moyenne_12_mois: M,
+    tiers_3_mois: M,
+    retenu: M,
     regle: String,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IndemniteLegale {
-    montant: Decimal,
+    montant: M,
     du: bool,
     pourquoi: Option<String>,
     annees: Option<Decimal>,
@@ -39,7 +55,7 @@ struct IndemniteLegale {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PlancherDeLaRupture {
-    plancher: Option<Decimal>,
+    plancher: Option<M>,
     annees: Decimal,
     pourquoi: Option<String>,
 }
@@ -47,9 +63,9 @@ struct PlancherDeLaRupture {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IndemniteDuDepart {
-    montant: Decimal,
+    montant: M,
     du: bool,
-    mois: Decimal,
+    mois: C,
     palier: Option<i64>,
     pourquoi: Option<String>,
 }
@@ -57,9 +73,15 @@ struct IndemniteDuDepart {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Tranche {
-    jours: i64,
+    #[serde(serialize_with = "Duree::ecrite_en_jours", deserialize_with = "Duree::en_jours")]
+    jours: Duree<socle::date::EnJours>,
     taux: Decimal,
 }
+
+/// Une duree en jours, ecrite en son nombre dans la reference.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct EnJours(#[serde(serialize_with = "Duree::ecrite_en_jours", deserialize_with = "Duree::en_jours")] Duree<socle::date::EnJours>);
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -69,7 +91,7 @@ struct Fin {
 }
 
 fn legale(i: p::IndemniteLegale) -> IndemniteLegale {
-    IndemniteLegale { montant: i.montant, du: i.du, pourquoi: i.pourquoi, annees: i.annees }
+    IndemniteLegale { montant: M(i.montant), du: i.du, pourquoi: i.pourquoi, annees: i.annees }
 }
 
 // Les entrees de chaque fonction : ses arguments, dans l'ordre.
@@ -82,20 +104,22 @@ fn motif(m: &Motif) -> Option<droit::natures::MotifDeRupture> {
     m.as_deref().map(|c| droit::natures::MotifDeRupture::du_code(c).unwrap_or_else(|| panic!("le motif {:?} de l'oracle n'est pas un code de S21.G00.62.002 : donnee invalide", c)))
 }
 
-fn arrondir_jours(a: &(Decimal,)) -> Decimal {
-    p::arrondir_jours(a.0)
+fn arrondir_jours(a: &(J,)) -> J {
+    J(a.0 .0.au_demi_superieur())
 }
-fn plafonner(a: &(Decimal,)) -> Rendu<Decimal> {
-    p::plafonner(a.0).into()
+fn plafonner(a: &(J,)) -> Rendu<J> {
+    p::plafonner(a.0 .0).map(J).into()
 }
 fn periode_de_reference(a: &(Jour,)) -> Rendu<(Jour, Jour)> {
-    p::periode_de_reference(&a.0).into()
+    p::periode_de_reference(&a.0).map(|r| (r.debut(), r.fin())).into()
 }
-fn jours_acquis(a: &(Jour, Jour)) -> Rendu<Decimal> {
-    p::jours_acquis(&a.0, &a.1).into()
+fn jours_acquis(a: &(Jour, Jour)) -> Rendu<J> {
+    socle::date::Periode::du_au(a.0, a.1).and_then(|presence| p::jours_acquis(&presence)).map(J).into()
 }
-fn indemnite_conges(a: &(Decimal, Decimal, Decimal, Decimal)) -> Rendu<IndemniteDesJours> {
-    p::indemnite_conges(a.0, a.1, a.2, a.3).map(|i| IndemniteDesJours { dixieme: i.dixieme, maintien: i.maintien, retenu: i.retenu, regle: i.regle.to_string() }).into()
+fn indemnite_conges(a: &(J, M, J, M)) -> Rendu<IndemniteDesJours> {
+    p::indemnite_conges(a.0 .0, a.1 .0, a.2 .0, a.3 .0)
+        .map(|i| IndemniteDesJours { dixieme: M(i.dixieme), maintien: M(i.maintien), retenu: M(i.retenu), regle: i.regle.to_string() })
+        .into()
 }
 
 #[test]
@@ -110,30 +134,31 @@ fn les_conges() {
 fn precarite_due(a: &(Nature, Motif)) -> Rendu<Option<String>> {
     p::precarite_due(&a.0.proprietes().unwrap(), motif(&a.1)).into()
 }
-fn indemnite_precarite(a: &(Decimal,)) -> Rendu<Decimal> {
-    p::indemnite_precarite(a.0).into()
+fn indemnite_precarite(a: &(M,)) -> Rendu<M> {
+    p::indemnite_precarite(a.0 .0).map(M).into()
 }
 fn anciennete_mois(a: &(Jour, Jour)) -> Decimal {
-    p::anciennete_mois(&a.0, &a.1)
+    Anciennete::entre(&a.0, &a.1).mois()
 }
 fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<Decimal>> {
-    p::preavis_mois(a.0, motif(&a.1), false).into()
+    p::preavis_mois(Anciennete::de_mois(a.0), motif(&a.1), false).into()
 }
-fn salaire_de_reference(a: &(Vec<Decimal>, Vec<Decimal>)) -> SalaireDeReference {
-    let s = p::salaire_de_reference(&a.0, &a.1).unwrap();
-    SalaireDeReference { moyenne_12_mois: s.moyenne_12_mois, tiers_3_mois: s.tiers_3_mois, retenu: s.retenu, regle: s.regle.to_string() }
+fn salaire_de_reference(a: &(Vec<M>, Vec<M>)) -> SalaireDeReference {
+    let montants = |l: &[M]| l.iter().map(|m| m.0).collect::<Vec<Montant>>();
+    let s = p::salaire_de_reference(&montants(&a.0), &montants(&a.1)).unwrap();
+    SalaireDeReference { moyenne_12_mois: M(s.moyenne_12_mois), tiers_3_mois: M(s.tiers_3_mois), retenu: M(s.retenu), regle: s.regle.to_string() }
 }
-fn indemnite_licenciement(a: &(Decimal, Decimal, Motif)) -> Rendu<IndemniteLegale> {
-    p::indemnite_licenciement(a.0, &mut || Ok(a.1), motif(&a.2)).map(legale).into()
+fn indemnite_licenciement(a: &(Decimal, M, Motif)) -> Rendu<IndemniteLegale> {
+    p::indemnite_licenciement(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0), motif(&a.2)).map(legale).into()
 }
-fn indemnite_mise_a_la_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteLegale> {
-    p::indemnite_mise_a_la_retraite(a.0, &mut || Ok(a.1)).map(legale).into()
+fn indemnite_mise_a_la_retraite(a: &(Decimal, M)) -> Rendu<IndemniteLegale> {
+    p::indemnite_mise_a_la_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(legale).into()
 }
-fn indemnite_rupture_conventionnelle(a: &(Decimal, Decimal)) -> Rendu<PlancherDeLaRupture> {
-    p::indemnite_rupture_conventionnelle(a.0, &mut || Ok(a.1)).map(|i| PlancherDeLaRupture { plancher: i.plancher, annees: i.annees, pourquoi: i.pourquoi }).into()
+fn indemnite_rupture_conventionnelle(a: &(Decimal, M)) -> Rendu<PlancherDeLaRupture> {
+    p::indemnite_rupture_conventionnelle(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(|i| PlancherDeLaRupture { plancher: i.plancher.map(M), annees: i.annees, pourquoi: i.pourquoi }).into()
 }
-fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart> {
-    p::indemnite_depart_retraite(a.0, &mut || Ok(a.1)).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
+fn indemnite_depart_retraite(a: &(Decimal, M)) -> Rendu<IndemniteDuDepart> {
+    p::indemnite_depart_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(|i| IndemniteDuDepart { montant: M(i.montant), du: i.du, mois: C(i.mois), palier: i.palier.map(|p| p.nombre_d_ans_revolus().unwrap()), pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
     p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique: rubrique.into() })).into()
@@ -159,13 +184,13 @@ fn la_fin_du_contrat() {
 
 fn droit_au_maintien(a: &(Option<Nature>, Decimal)) -> Rendu<Option<String>> {
     let n = a.0.map(|n| n.proprietes().unwrap());
-    p::droit_au_maintien(n.as_deref(), a.1).into()
+    p::droit_au_maintien(n.as_deref(), Anciennete::de_mois(a.1)).into()
 }
-fn jours_de_carence(a: &(bool, bool)) -> Rendu<i64> {
-    p::jours_de_carence(a.0, a.1).into()
+fn jours_de_carence(a: &(bool, bool)) -> Rendu<EnJours> {
+    p::jours_de_carence(a.0, a.1).map(EnJours).into()
 }
 fn duree_du_maintien(a: &(Decimal,)) -> Rendu<Vec<Tranche>> {
-    p::duree_du_maintien(a.0).map(|t| t.into_iter().map(|t| Tranche { jours: t.jours, taux: t.taux }).collect()).into()
+    p::duree_du_maintien(Anciennete::de_mois(a.0)).map(|t| t.into_iter().map(|t| Tranche { jours: t.jours, taux: t.taux }).collect()).into()
 }
 
 #[test]

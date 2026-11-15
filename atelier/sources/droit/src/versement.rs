@@ -167,7 +167,7 @@ pub fn au_plus_tard_en_dsn(mois: Mois) -> Jour {
 /// Le dernier jour ou se regle le salaire d'un artiste de cirque dont le contrat a duree determinee finit le `fin` :
 /// « au plus tard, la 1re semaine du mois suivant la fin dudit contrat » (CCNEAC, art. X.3.5.4) ; le 7, par inference.
 pub fn au_plus_tard_cirque_1285(fin: &Jour) -> R<Jour> {
-    fin.mois_civil().suivant().premier_jour().plus_jours(6)
+    fin.mois_civil().suivant().premier_jour().apres(socle::date::Duree::jours(6))
 }
 
 /// Le refus d'un versement le `verse` pour `qui`, paye au titre du mois `mois` ; `fin_cirque` : la fin du contrat a duree

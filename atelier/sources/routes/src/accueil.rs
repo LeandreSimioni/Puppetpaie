@@ -24,7 +24,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use compagnie::installation as compagnies;
-use compagnie::installation::{entree, nom_de_dossier, nom_dossier, Compagnie, CouleurDeCompagnie, Creation, IdDeCompagnie, Marqueur, Venue, DOSSIER_FICTIVES, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
+use compagnie::installation::{entree, nom_de_dossier, Compagnie, CouleurDeCompagnie, Creation, IdDeCompagnie, Marqueur, Venue, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
+use socle::fichiers::NomDeFichier;
 use crate::gestes::administrateur;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
@@ -117,10 +118,10 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::AdministrateurDeposer,
         geste: "Déposer d'un geste ce qui est prêt dans chaque compagnie de l'administrateur.",
         charge: &[
-            Champ { nom: "reel", libelle: Affiche::new("En réel"), forme: Forme::OuiNon, sens: "vrai : en réel (les fichiers testés conformes) ; en test sinon", avance: false },
+            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Texte, sens: "test, ou reel (les fichiers testés conformes)", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur ; sans lui, le moteur le demande à un humain", avance: false },
         ],
-        exemple: r#"{"reel":false}"#,
+        exemple: r#"{"mode":"test"}"#,
         rend: "partis, refuses, resultats (par dépôt : la compagnie, ce qui est parti ou le refus, et suivre pour un dépôt réel), tableau ; rien de prêt : phrase",
         refus: &[Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe, tapé par un humain ; rien n'est déposé" }, OPERATION],
         acte: Acte::Engage,
@@ -171,7 +172,7 @@ pub const ROUTES: &[Fiche] = &[
 /// L'installation de la route : celle de la compagnie nommee (`--racine`), sinon celle du programme.
 pub fn installation(o: &Options) -> PathBuf {
     match &o.racine {
-        Some(r) => administrateur::installation_de(r),
+        Some(r) => IdDeCompagnie::installation_de(r),
         None => compagnies::base(),
     }
 }
@@ -221,7 +222,7 @@ pub struct ChargeTableau {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDeposer {
-    reel: bool,
+    mode: socle::mode::Mode,
 }
 
 /// La charge de `administrateur-suivre` : les declarations a suivre, telles que le depot groupe les a rendues
@@ -346,7 +347,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
     // `--racine` nomme une compagnie (son dossier porte sa fiche entreprise) : l'installation est la sienne. Un autre
     // dossier n'en est pas une, et son parent n'est pas une installation : rien ne s'y ecrit.
     if let Some(r) = &o.racine {
-        if !r.join(droit::contexte::ENTREPRISE).is_file() {
+        if !droit::contexte::ENTREPRISE.dans(&r).is_file() {
             let lieu = socle::echec::Lieu {
                 chemin: Some(r.to_string_lossy().into_owned()),
                 detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
@@ -415,7 +416,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::AdministrateurDeposer => {
             let c: ChargeDeposer = charge.lire()?;
-            let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.reel, charge.mot_de_passe().cloned())?;
+            let depot: administrateur::DepotGroupe = administrateur::deposer(o, &inst, c.mode, charge.mot_de_passe().cloned())?;
             en_json(depot)
         }
         Route::AdministrateurSuivre => {
@@ -466,17 +467,11 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
         return Err(socle::echec::refus("Le nom de la compagnie, s'il vous plait."));
     }
     let bride = compagnie::bridage::est_bride_de(inst);
-    let (parent, racine_nom) = if bride {
-        (inst.join(DOSSIER_FICTIVES), format!("{}{}", PREFIXE_AJOUTEE, nom_de_dossier(&nom)))
+    let (id, dossier) = if bride {
+        IdDeCompagnie::libre(inst, IdDeCompagnie::Fictive, &NomDeFichier::lire(&format!("{}{}", PREFIXE_AJOUTEE, nom_de_dossier(&nom)))?)?
     } else {
-        (inst.join("compagnies"), nom_de_dossier(&nom))
+        IdDeCompagnie::libre(inst, IdDeCompagnie::Cie, &NomDeFichier::lire(&nom_de_dossier(&nom))?)?
     };
-    let mut dossier = parent.join(&racine_nom);
-    let mut n = 2;
-    while dossier.exists() {
-        dossier = parent.join(format!("{}-{}", racine_nom, n));
-        n += 1;
-    }
     let cfg = dossier.join(socle::fichiers::CONFIG);
     std::fs::create_dir_all(&cfg).map_err(|e| socle::echec::du_disque(&cfg, &e))?;
     // La raison sociale se deduit du nom comme a chaque enregistrement de la fiche (`SorteDeFiche::deriver` : majuscules
@@ -490,9 +485,9 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
     let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());
     let fiche = <droit::fiche::FicheEntrepriseDatee as droit::fiche::FicheDatee>::neuve(&plate);
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::SALARIES), &droit::fiche::Salaries::default(), 2)?;
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::SPECTACLES), &droit::fiche::Spectacles::default(), 2)?;
+    socle::ecriture::ecrire_json(&droit::contexte::ENTREPRISE.dans(&dossier), &fiche, 2)?;
+    socle::ecriture::ecrire_json(&droit::contexte::SALARIES.dans(&dossier), &droit::fiche::Salaries::default(), 2)?;
+    socle::ecriture::ecrire_json(&droit::contexte::SPECTACLES.dans(&dossier), &droit::fiche::Spectacles::default(), 2)?;
     let quand = Creation {
         le: creation,
         venue,
@@ -502,12 +497,11 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     // VENUE D'UN LOGICIEL PRECEDENT, elle commence par reprendre son passe : la boite ou poser ses pieces (`import/`,
     // celle que `importation-etat` nomme) est la des le premier jour.
     if matches!(venue, Venue::LogicielPrecedent) {
-        let import = dossier.join("import");
+        let import = dossier.join(import::BOITE_AUX_LETTRES);
         std::fs::create_dir_all(&import).map_err(|e| socle::echec::du_disque(&import, &e))?;
     }
-    let nom_du_dossier = nom_dossier(&dossier)?;
     if !bride {
-        return entree(IdDeCompagnie::Cie(nom_du_dossier), &dossier, true);
+        return entree(id, &dossier, true);
     }
     // Le marqueur d'une fictive (`est_fictive`), et la marque qui la dit ajoutee. `copie_de` ne dit pas le nom d'une
     // fictive livree (`maj::marquee_comme_livree` compare « compagnie fictive <nom du dossier> ») : elle n'en est pas une.
@@ -519,5 +513,5 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
         quoi: "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.".to_string(),
     };
     socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;
-    entree(IdDeCompagnie::Fictive(nom_du_dossier), &dossier, false)
+    entree(id, &dossier, false)
 }

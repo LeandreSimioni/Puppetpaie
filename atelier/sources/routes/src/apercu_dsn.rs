@@ -15,17 +15,20 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
+use declarations::dsn::MesureDActivite;
 use declarations::dsn_lue::{ContratDeclare, DsnLue, Mesures, VersementLu};
 use documents::ecrire_documents::paies_aux_numeros_declares;
 use droit::contexte::Contexte;
 use droit::fiche::Lue as _;
-use droit::natures::{Fraction, IdentifiantDeDeclaration, NumeroDOrdre, TypeDActivite, UniteDeMesure};
+use droit::natures::{Fraction, IdentifiantDeDeclaration, NumeroDOrdre, TypeDActivite};
 use engagement::calcul::Paie;
 use envois::etats;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::{erreur, refus, Classe, Echec, R};
+use socle::mode::Mode;
 use socle::mois::Mois;
-use socle::num::{q2, Decimal};
+use socle::grandeurs::{Cachets, Heures, Jours, Montant};
+use socle::num::Decimal;
 
 use crate::depots::{lire_octets, resoudre};
 use socle::fichiers::NomDeFichier;
@@ -44,8 +47,7 @@ fn saisie_aux_numeros_declares(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
 /// (S21.G00.40.009) et son debut (S21.G00.40.001) sont obligatoires : un contrat qui ne les porte pas ne se lit pas.
 struct ContratLu {
     numero: engagement::numeros::NumeroContrat,
-    debut: Jour,
-    fin: Option<Jour>,
+    periode: PeriodeOuverte,
     emploi: Option<String>,
     nature_dsn: Option<String>,
     objet: Option<droit::fiche::NumeroObjetSpectacle>,
@@ -58,12 +60,10 @@ struct ContratLu {
 impl ContratLu {
     fn de(d: &DsnLue, c: &ContratDeclare) -> R<ContratLu> {
         let numero = c.numero.clone().ok_or_else(|| refus("Un contrat du fichier ne porte pas son numéro (S21.G00.40.009)."))?;
-        let debut = c.debut.ok_or_else(|| socle::refus!("Le contrat {} du fichier ne porte pas sa date de début (S21.G00.40.001).", numero))?;
         Ok(ContratLu {
             mois: d.mesures(c.nir.as_ref(), &numero, false),
             rappel: d.mesures(c.nir.as_ref(), &numero, true),
-            debut,
-            fin: c.fin,
+            periode: c.periode,
             emploi: c.emploi.emploi.clone(),
             nature_dsn: c.nature_dsn.clone(),
             objet: c.objet.clone(),
@@ -78,10 +78,13 @@ impl ContratLu {
 #[derive(Debug, Serialize)]
 struct VersementDuFichier {
     date: Option<Jour>,
-    net_verse: Option<Decimal>,
-    net_fiscal: Option<Decimal>,
-    taux_pas: Option<Decimal>,
-    montant_pas: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_verse: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_fiscal: Option<Montant>,
+    taux_pas: Option<droit::pas::TauxDePas>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant_pas: Option<Montant>,
 }
 
 impl VersementDuFichier {
@@ -103,26 +106,26 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     let mut ecarts = Vec::new();
     // Le brut que la paie declare en 51 de type 001 (`dsn::brut_du_51` : abattu sous deduction forfaitaire specifique), a
     // deux decimales.
-    let brut = declarations::dsn::brut_du_51(p).round_dp(2);
-    match m.brut {
-        Some(f) if f.round_dp(2) == brut => {}
-        Some(f) => ecarts.push(format!("brut : la paie dit {}, le fichier {}", q2(brut), q2(f))),
-        None => ecarts.push(format!("brut : la paie dit {}, le fichier n'en déclare pas", q2(brut))),
+    let brut = declarations::dsn::brut_du_51(p)?.au_centime().decimal();
+    match m.brut.map(|f| Montant::du_decimal(f).au_centime().decimal()) {
+        Some(f) if f == brut => {}
+        Some(f) => ecarts.push(format!("brut : la paie dit {}, le fichier {}", brut, f)),
+        None => ecarts.push(format!("brut : la paie dit {}, le fichier n'en déclare pas", brut)),
     }
     // Les mesures du travail remunere (type 01) que la DSN ecrit pour cette paie (`dsn::mesures_d_activite`).
-    let (mut jours, mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
-    for (t, valeur, code) in declarations::dsn::mesures_d_activite(p)? {
+    let (mut jours, mut cachets, mut heures) = (Jours::ZERO, Cachets::ZERO, Heures::ZERO);
+    for (t, valeur, _) in declarations::dsn::mesures_d_activite(p)? {
         if t != TypeDActivite::TravailRemunere {
             continue;
         }
-        match code {
-            UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents => heures += valeur,
-            UniteDeMesure::Journee => jours += valeur,
-            UniteDeMesure::CachetsIsoles => cachets += valeur,
-            _ => {}
+        match valeur {
+            MesureDActivite::Heures(h) => heures += h,
+            MesureDActivite::Jours(j) => jours += j,
+            MesureDActivite::Cachets(c) => cachets += c,
         }
     }
-    for (quoi, paie, fichier) in [("jours", jours, m.jours), ("cachets", cachets, m.cachets), ("heures", heures, m.heures)] {
+    // Les mesures d'une DSN lue sont des nombres (`dsn_lue::Mesures`) : la paie s'y compare ouverte.
+    for (quoi, paie, fichier) in [("jours", jours.decimal(), m.jours), ("cachets", cachets.decimal(), m.cachets), ("heures", heures.decimal(), m.heures)] {
         if paie != fichier {
             ecarts.push(format!("{} : la paie dit {}, le fichier {}", quoi, paie.normalize(), fichier.normalize()));
         }
@@ -160,7 +163,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                 }
             }
         }
-        let n = p.engagement.numero.as_ref().ok_or_else(|| socle::refus!("La paie du contrat du {} n'a pas de numéro de contrat.", p.engagement.debut.jj_mm_aaaa()))?.clone();
+        let n = p.engagement.numero.as_ref().ok_or_else(|| socle::refus!("La paie du contrat du {} n'a pas de numéro de contrat.", p.engagement.contrat().debut().jj_mm_aaaa()))?.clone();
         if !par_numero.contains_key(&n) {
             ordre.push(n.clone());
         }
@@ -208,18 +211,17 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
             };
             contrats.push(ContratDuFichier {
                 activite_dit: activite_dite(m, correction),
-                dates_dit: dates_dites(c.debut, c.fin),
+                dates_dit: dates_dites(&c.periode),
                 fin_dit,
                 numero: c.numero.clone(),
-                debut: c.debut,
-                fin: c.fin,
+                contrat: c.periode,
                 emploi: c.emploi.clone(),
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
-                brut: m.brut.map(q2),
-                jours: m.jours.normalize(),
-                cachets: m.cachets.normalize(),
-                heures: m.heures.normalize(),
+                brut: m.brut.map(|b| Montant::du_decimal(b).au_centime()),
+                jours: Jours::du_decimal(m.jours),
+                cachets: Cachets::du_decimal(m.cachets),
+                heures: Heures::du_decimal(m.heures),
                 fin_declaree: c.fin_declaree,
                 motif_fin: c.motif_fin,
                 remunere: m.remunere,
@@ -241,16 +243,15 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
         let p = &liste[par_numero[n]];
         let nom = p.salarie.nomme();
         let dit = match &nom {
-            Some(x) => format!("{} — contrat {}, du {}", x, n, p.engagement.debut.jj_mm_aaaa()),
-            None => format!("Contrat {}, du {}", n, p.engagement.debut.jj_mm_aaaa()),
+            Some(x) => format!("{} — contrat {}, du {}", x, n, p.engagement.contrat().debut().jj_mm_aaaa()),
+            None => format!("Contrat {}, du {}", n, p.engagement.contrat().debut().jj_mm_aaaa()),
         };
         absents.push(AbsentDuFichier {
             salarie: p.salarie.id.clone(),
             dit,
             nom,
             numero: n.clone(),
-            debut: p.engagement.debut,
-            fin: p.engagement.fin,
+            contrat: p.engagement.contrat(),
             pastille: Pastille::de(socle::ecran::EtatDEcran::AFaire, "absent du fichier"),
         });
     }
@@ -339,21 +340,20 @@ struct ContratDuFichier {
     dates_dit: String,
     fin_dit: String,
     numero: engagement::numeros::NumeroContrat,
-    debut: Jour,
-    fin: Option<Jour>,
+    contrat: PeriodeOuverte,
     emploi: Option<String>,
     /// La nature du contrat telle que la DSN la code (S21.G00.40.007).
     #[serde(rename = "nature")]
     nature_dsn: Option<String>,
     objet: Option<droit::fiche::NumeroObjetSpectacle>,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
-    brut: Option<Decimal>,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    jours: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    cachets: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    heures: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    brut: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    jours: Jours,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    cachets: Cachets,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::serialize")]
+    heures: Heures,
     fin_declaree: Option<Jour>,
     motif_fin: Option<droit::natures::MotifDeRupture>,
     remunere: bool,
@@ -369,8 +369,7 @@ struct AbsentDuFichier {
     salarie: droit::contexte::IdSalarie,
     nom: Option<String>,
     numero: engagement::numeros::NumeroContrat,
-    debut: Jour,
-    fin: Option<Jour>,
+    contrat: PeriodeOuverte,
     dit: String,
     pastille: Pastille,
 }
@@ -405,8 +404,8 @@ pub(crate) struct ApercuDsn {
     pub(crate) nom: String,
     pub(crate) description: String,
     pub(crate) mois: Mois,
-    pub(crate) nature_envoi: Option<droit::nature_declaration::EssaiOuReel>,
-    pub(crate) reel: bool,
+    /// Le mode que le fichier dit (S10.G00.00.005).
+    pub(crate) mode: Option<Mode>,
     pub(crate) signalement: bool,
     #[serde(rename = "nature")]
     pub(crate) nature_declaration: droit::nature_declaration::NatureDeLaDeclaration,
@@ -455,14 +454,14 @@ fn description(nom: &str, a: &DsnLue) -> String {
 }
 
 /// `apercu_depot_dsn` : ce qui partirait, en clair, sans rien envoyer ni demander.
-pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
+pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<ApercuDsn> {
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
     let a = declarations::dsn_lue::lire(&contenu, None)?;
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
     let empreinte = socle::fichiers::Empreinte::des_octets(&contenu).courte();
-    let deja = etats::deja_depose(&lignes, envois::journal::Acte::Dsn, &empreinte);
+    let deja = etats::deja_depose(&lignes, documents::Acte::Dsn, &empreinte);
     let nom = NomDeFichier::du(std::path::Path::new(&chemin))?;
     let signalement = a.est_signalement();
     let mois = a.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}).", declarations::dsn_lue::SANS_MOIS)))?;
@@ -475,7 +474,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
             Err(e) => Recapitulatif::Illisible { erreur: e.phrase },
         })
     };
-    let repetition = etats::repetition(&lignes, envois::journal::Acte::Dsn, &empreinte, &nom);
+    let repetition = etats::repetition(&lignes, documents::Acte::Dsn, &empreinte, &nom);
     // LES ORDRES DE PAIEMENT EN CLAIR : a qui, pour quoi, combien, pour quand -- ceux de la DSN fabriquee
     // depuis les paies qu'elle couvre (`depart::refabriquer`) ; un fichier qui ne dit plus ce que disent les paies n'en
     // montre aucun.
@@ -492,8 +491,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         fichier: std::path::PathBuf::from(&chemin),
         nom: nom.into(),
         mois,
-        nature_envoi: a.nature_envoi,
-        reel: a.reel(),
+        mode: a.nature_envoi,
         signalement,
         nature_declaration: a.nature()?,
         libelle_nature: a.nature_lisible().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001)."))?,
@@ -526,7 +524,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
 /// Un nombre du fichier, a la francaise ; une correction le signe d'un vrai moins (« −184 » : ce qui s'ajoute a ce qui a
 /// deja ete declare).
 fn nombre_dit(x: Decimal) -> String {
-    socle::texte::virgule(x).replacen('-', "−", 1)
+    socle::texte::nombre_dit(x).replacen('-', "−", 1)
 }
 
 /// L'ACTIVITE D'UN CONTRAT EN UNE COLONNE : « 4 cachets · 4 j », « 151,67 h » ; « correction : » devant celle d'un mois
@@ -547,8 +545,9 @@ fn activite_dite(m: &Mesures, correction: bool) -> String {
 }
 
 /// Les dates d'un contrat sur une ligne : « 06/10 → 09/10/2026 » dans une meme annee, le jour seul s'il n'en a qu'un.
-fn dates_dites(debut: Jour, fin: Option<Jour>) -> String {
-    match fin {
+fn dates_dites(periode: &PeriodeOuverte) -> String {
+    let debut = periode.debut();
+    match periode.fin() {
         Some(f) if f != debut => {
             let d = debut.jj_mm_aaaa();
             let d = if debut.iso().get(..4) == f.iso().get(..4) { d.chars().take(5).collect() } else { d };

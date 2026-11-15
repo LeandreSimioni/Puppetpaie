@@ -6,7 +6,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use socle::fichiers::{forme_en_cache, repr, FormeGardee};
+use socle::fichiers::{forme_en_cache, repr, CheminRelatif, FormeGardee};
+
+/// Les codes livres du signalement de fin de contrat, sous `donnees/`.
+pub const FCTU: CheminRelatif = CheminRelatif::du_moteur("fctu-base.json");
 use socle::echec::R;
 
 use crate::natures::codes_fermes;
@@ -156,7 +159,7 @@ pub struct NotificationRupture {
 /// `fctu-base.json`, lu par sa forme.
 pub fn base() -> R<BaseFctu> {
     static CACHE: std::sync::OnceLock<FormeGardee<BaseFctu>> = std::sync::OnceLock::new();
-    let b = forme_en_cache(&CACHE, "fctu-base.json", "Les codes du signalement de fin de contrat livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
+    let b = forme_en_cache(&CACHE, &FCTU, "Les codes du signalement de fin de contrat livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
     Ok((*b).clone())
 }
 
@@ -195,7 +198,7 @@ pub fn desaccord_du_preavis(type_preavis: TypeDePreavis, versees: &[(TypeDePrime
     let t = types.du_code(type_preavis).ok_or_else(|| {
         socle::echec::refus_avec(
             format!("Type de preavis {} inconnu de la norme (S21.G00.63.001).", repr(type_preavis.code())),
-            socle::echec::Lieu { fichier: Some("fctu-base.json".to_string()), cle: Some("types_preavis".to_string()), ..Default::default() },
+            socle::echec::Lieu { fichier: Some(FCTU), cle: Some("types_preavis".to_string()), ..Default::default() },
         )
     })?;
     let nom = format!("« {} - {} »", type_preavis, t.libelle);

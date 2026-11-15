@@ -30,10 +30,6 @@ prive/config/maj-cle-privee.bin
 prive/config/avant/*.bin
 prive/config/avant/*.bin.*
 
-# Le jeton de session de l'interface : un fichier de travail, refait a chaque
-# demarrage, propre a ce poste.
-prive/config/.jeton-interface
-
 # Le verrou des compteurs : un fichier de travail, jamais une donnee.
 .compteurs.verrou
 
@@ -54,7 +50,6 @@ atelier/prive-dev/config/google-jeton.bin
 atelier/prive-dev/config/maj-cle-privee.bin
 atelier/prive-dev/config/avant/*.bin
 atelier/prive-dev/config/avant/*.bin.*
-atelier/prive-dev/config/.jeton-interface
 
 # UN DOSSIER PORTABLE (14/10/2026, moteur/src/compagnie/coffre.rs, MARQUEUR_PORTABLE) : le marqueur dit que la cle du poste vit
 # a cote de logiciel/, et non sur la machine. Ni le marqueur ni la cle ne voyagent par Git : un clone n'est pas une
@@ -89,17 +84,15 @@ exports-logiciel/
 
 # LES COMPAGNIES FICTIVES (25/09/2026 ; `fictives/` depuis le lot U1, `demo/`
 # avant -- un poste peut encore garder l'ancien dossier, avec ce qui n'etait
-# pas suivi) : ouvertes une fois, elles posent elles aussi un coffre et un jeton
-# d'interface. Memes exclusions que prive/ et prive-dev/ -- un fichier scelle
-# qui part dans une histoire y reste.
+# pas suivi) : ouvertes une fois, elles posent elles aussi un coffre. Memes
+# exclusions que prive/ et prive-dev/ -- un fichier scelle qui part dans une
+# histoire y reste.
 fictives/*/config/coffre.bin
 fictives/*/config/google-jeton.bin
 fictives/*/config/maj-cle-privee.bin
-fictives/*/config/.jeton-interface
 demo/*/config/coffre.bin
 demo/*/config/google-jeton.bin
 demo/*/config/maj-cle-privee.bin
-demo/*/config/.jeton-interface
 # ET LEUR JOURNAL DE LA FENETRE (14/10/2026, lot N1) : `journal/interface.log`
 # est ecrit par la fenetre a chaque lancement, avec le chemin du dossier sur
 # le poste. Le moteur le range parmi ce qui appartient au poste et non a la

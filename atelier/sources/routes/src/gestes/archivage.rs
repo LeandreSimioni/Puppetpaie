@@ -43,7 +43,7 @@ fn sortie_absente(dossier: &Path) -> ErreurGoogle {
 /// pour qu'un mois absent se dit avant tout refus du client).
 pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: &str, client: Option<&mut dyn Drive>) -> Result<Archivage, ErreurGoogle> {
     let mois = &le_mois.to_string();
-    let dossier = racine.join("sorties").join(mois);
+    let dossier = documents::DossierDuMois::Sorties.dans(racine, le_mois);
     if !dossier.exists() {
         return Err(sortie_absente(&dossier));
     }

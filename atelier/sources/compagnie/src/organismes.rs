@@ -15,7 +15,7 @@ use serde::Deserialize;
 
 use droit::contexte::Contexte;
 use droit::organismes::{attendus, composer, ligne, saisis, Adhesion, Attendu, CleDeContrat, Saisie, Saisies};
-use socle::date::Jour;
+use socle::date::Periode;
 use std::collections::BTreeMap;
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
@@ -46,7 +46,7 @@ impl Lus {
 }
 
 fn chemin(ctx: &Contexte) -> std::path::PathBuf {
-    ctx.racine.join(socle::fichiers::CONFIG).join(droit::contexte::ORGANISMES)
+    droit::contexte::ORGANISMES.dans(&ctx.racine)
 }
 
 
@@ -58,17 +58,17 @@ fn se_montre(spec: &Attendu, permanents: bool) -> bool {
 }
 
 /// Les contrats des permanents se montrent-ils sur la periode regardee (`engagement::permanents`) ?
-fn permanents_ouverts(ctx: &Contexte, (debut, fin): &(Jour, Jour)) -> R<bool> {
-    Ok(engagement::permanents::Permanents::de(ctx, debut, fin)?.ouverts())
+fn permanents_ouverts(ctx: &Contexte, p: &Periode) -> R<bool> {
+    Ok(engagement::permanents::Permanents::de(ctx, p)?.ouverts())
 }
 
 /// La periode que l'ecran regarde : le mois `mois` de la charge (celui de l'onglet Paie), sinon celui du jour.
-fn periode(ctx: &Contexte, mois: Option<Mois>) -> (Jour, Jour) {
+fn periode(ctx: &Contexte, mois: Option<Mois>) -> Periode {
     let mois = match mois {
         Some(m) => m,
         None => ctx.aujourdhui.mois_civil(),
     };
-    (mois.premier_jour(), mois.dernier_jour())
+    Periode::du_mois(mois)
 }
 
 /// Ce que l'ecran des contrats lit (`lire`).
@@ -83,13 +83,13 @@ pub struct Lus {
 /// regardee (`Attendu::couvre`) ; `a_saisir` : une de ces lignes attend encore ce que la compagnie seule peut dire.
 pub fn lire(ctx: &Contexte, mois: Option<Mois>) -> R<Lus> {
     let periode = periode(ctx, mois);
-    let ctx = &ctx.au(&periode.1)?;
+    let ctx = &ctx.au(&periode.fin())?;
     let (saisi, _) = saisis(ctx)?;
     let permanents = permanents_ouverts(ctx, &periode)?;
     let lignes: Vec<droit::organismes::Ligne> =
         attendus(ctx)?.iter().filter(|s| se_montre(s, permanents) && s.couvre(&periode)).map(|s| ligne(s, &saisi)).collect();
     let a_saisir = lignes.iter().any(|l| l.libelle.is_none() || l.organisme.is_none());
-    Ok(Lus { idcc: ctx.entreprise.idcc.clone(), a_saisir, mois: periode.0.mois_civil(), lignes })
+    Ok(Lus { idcc: ctx.entreprise.idcc.clone(), a_saisir, mois: periode.debut().mois_civil(), lignes })
 }
 
 /// `organismes-enregistrer` : compose les adhesions du mois (sous la configuration du mois) avec ce qui est saisi, refuse
@@ -99,14 +99,14 @@ pub fn lire(ctx: &Contexte, mois: Option<Mois>) -> R<Lus> {
 pub fn enregistrer(ctx: &Contexte, charge: ChargeEnregistrer) -> R<Lus> {
     let saisies: BTreeMap<CleDeContrat, Saisie> = charge.contrats.into_iter().flat_map(|s| s.0).collect();
     let periode = periode(ctx, charge.mois);
-    let du_mois = ctx.au(&periode.1)?;
+    let du_mois = ctx.au(&periode.fin())?;
     let (saisi, prises) = saisis(&du_mois)?;
     let compose = composer(&du_mois, &saisi, prises, &saisies, Some((&periode, permanents_ouverts(&du_mois, &periode)?))).map_err(|e| e.reclasser(socle::echec::Classe::Refuse))?;
     // Ce qu'un texte donne entier (sa reference de contrat et son identifiant) ne s'ecrit pas : il se recompose a la
     // date de chaque mois, sous la convention de ce mois.
     let fixes: Vec<CleDeContrat> = attendus(&du_mois)?.iter().filter(|s| s.libelle_donne().is_some()).map(|s| s.cle.clone()).collect();
     let adhesions: Vec<Adhesion> = compose.adhesions_prevoyance.into_iter().filter(|a| !fixes.contains(&a.cle)).collect();
-    let (en_vigueur, _) = saisis(&du_mois.au(&periode.0)?)?;
+    let (en_vigueur, _) = saisis(&du_mois.au(&periode.debut())?)?;
     // Le fichier ne garde que la saisie : tout autre cle se recompose des textes (`droit::organismes`).
     let mut date = droit::organismes::fichier_organismes(ctx)?;
     date.quoi = Some(
@@ -117,7 +117,7 @@ mois. Ne pas modifier a la main."
     );
     // Rien de saisi en vigueur s'ecrit aussi : la composition du mois devient la saisie de la periode.
     if en_vigueur.is_empty() || en_vigueur != adhesions {
-        droit::fiche::dater(&mut date.adhesions_prevoyance, Some(adhesions), Some(&periode.0), false, None);
+        droit::fiche::dater(&mut date.adhesions_prevoyance, Some(adhesions), Some(&periode.debut()), false, None);
     }
     let p = chemin(ctx);
     if let Some(parent) = p.parent() {

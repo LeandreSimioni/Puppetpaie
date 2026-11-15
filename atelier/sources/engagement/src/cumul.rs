@@ -6,30 +6,23 @@ use crate::calcul::Paie;
 use droit::contexte::Contexte;
 use droit::cumul::Declare;
 use socle::echec::R;
+use socle::grandeurs::Heures;
 use socle::mois::Mois;
-use socle::num::Decimal;
 
 /// La part d'enseignement de lignes de paie, en heures entieres : les rubriques dont le catalogue dit
 /// `compte_pour = ouverture_des_droits`.
-fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<i64> {
-    let mut heures = Decimal::ZERO;
+fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<Heures> {
+    let mut heures = Heures::ZERO;
     for l in lignes {
         let r = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         if r.compte_pour != droit::catalogue::ComptePour::OuvertureDesDroits {
             continue;
         }
-        let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
         // Le signe porte aussi sur les heures, comme au calcul (`calcul::lignes_brut`) : une ligne « - » en retire.
-        let h = r.heures(q, l.heures());
-        heures += if r.sens == droit::catalogue::Sens::Moins { -h } else { h };
+        heures += r.sens.de(q.heures(r.heures_par_unite(l.heures()))?);
     }
-    heures_entieres(heures)
-}
-
-/// Des heures en heures entieres, la moitie au pair.
-fn heures_entieres(h: Decimal) -> R<i64> {
-    let e = h.round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointNearestEven);
-    rust_decimal::prelude::ToPrimitive::to_i64(&e).ok_or_else(|| socle::echec::refus(socle::fichiers::entier_hors_limites(&e.to_string())))
+    Ok(heures.entieres())
 }
 
 // ------------------------------------------------------------------- lecture
@@ -41,25 +34,23 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
     let mut out = Vec::new();
     for i in crate::importe::tous(&ctx.racine)?.into_iter().filter(|i| !i.permanent()) {
         let Some(c) = i.contrat_lu()? else { continue };
-        let Some(debut) = c.debut else { continue };
+        let Some(contrat) = c.periode else { continue };
         // Un contrat qui continue ici : ce que les pieces attestent s'arrete a son dernier mois verse, la suite est
         // dans les paies de ce logiciel.
-        let fin = match (i.continue_apres(), c.fin) {
-            (Some(dernier), _) => dernier.dernier_jour(),
-            (None, Some(fin)) => fin,
+        let periode = match (i.continue_apres(), contrat.fermee()) {
+            (Some(dernier), _) => contrat.sans_fin().fermee_au(dernier.dernier_jour())?,
+            (None, Some(p)) => p,
             (None, None) => continue,
         };
         // Une piece d'intermittent atteste ses compteurs et son brut (l'AEM, le bulletin, le certificat : `import`) ; les
         // heures d'enseignement, seulement celles qu'elle distingue.
         let a = &c.contrat;
-        let compte = |x: Option<i64>, cle: &str| x.ok_or_else(|| socle::fichiers::absent(cle));
         out.push(Declare {
             salarie: c.salarie.clone(),
-            debut,
-            fin,
-            heures: compte(a.heures, "heures")?,
-            cachets: compte(a.cachets, "cachets")?,
-            jours: compte(a.jours, "jours")?,
+            periode,
+            heures: a.heures.ok_or_else(|| socle::fichiers::absent("heures"))?,
+            cachets: a.cachets.ok_or_else(|| socle::fichiers::absent("cachets"))?,
+            jours: a.jours.ok_or_else(|| socle::fichiers::absent("jours"))?,
             brut: a.brut.ok_or_else(|| socle::fichiers::absent("brut"))?,
             heures_enseignement: a.heures_enseignement.into_iter().sum(),
         });
@@ -74,15 +65,14 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
         return Ok(None);
     }
     // Un engagement sans heures n'en declare aucune.
-    let heures = e.heures.into_iter().map(heures_entieres).sum::<R<i64>>()?;
+    let heures = e.heures.into_iter().map(Heures::entieres).sum::<Heures>();
     Ok(Some(Declare {
         salarie: p.salarie.id.clone(),
-        debut: e.debut_periode(),
-        fin: e.fin_periode(),
+        periode: e.periode_payee()?,
         heures,
         cachets: e.cachets,
         jours: e.jours,
-        brut: p.brut,
+        brut: p.brut.decimal(),
         heures_enseignement: heures_enseignement(ctx, &e.lignes)?.min(heures),
     }))
 }
@@ -157,7 +147,7 @@ impl<'a> Passe<'a> {
         }
         let mut tous: Vec<Declare> = self.importes.borrow().iter().flatten().cloned().collect();
         tous.extend(groupes.into_iter().flat_map(|(_, es)| es));
-        tous.sort_by(|a, b| (a.debut, a.fin, &a.salarie).cmp(&(b.debut, b.fin, &b.salarie)));
+        tous.sort_by(|a, b| (a.periode, &a.salarie).cmp(&(b.periode, &b.salarie)));
         Ok(tous)
     }
 }

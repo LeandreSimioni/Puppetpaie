@@ -14,7 +14,9 @@
 //! volet fige sous l'en-tete. Il se prouve par son contenu, pas a l'octet. Le PDF est celui de la
 //! fabrique (`fabrique_pdf`), decrit comme `tableaux.description_pdf`.
 
+use droit::assiette::Assiette;
 use droit::fiche::Lue as _;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -27,7 +29,7 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::num::Decimal;
 use socle::echec::Echec;
-use socle::mois::Mois;
+use socle::mois::{Mois, MoisDeLAnnee};
 pub use socle::echec::R;
 use crate::plan_comptable::{EtatDExport, FormatDExport};
 
@@ -92,13 +94,215 @@ impl Serialize for Val {
     }
 }
 
+// ------------------------------------------------------------------ les colonnes
+
+/// LES COLONNES DES ETATS, declarees une fois : une ligne par colonne, sa cle ecrite (sous laquelle une ligne la porte
+/// et le tableau la nomme), ce qu'elle porte (`Genre`) et son en-tete ; un etat qui la titre autrement le dit
+/// (`ColonneDEtat::titree`).
+macro_rules! colonnes_des_etats {
+    ($( $(#[$m:meta])* $var:ident = $cle:literal, $genre:ident, $entete:literal; )*) => {
+        /// LA COLONNE D'UN ETAT (voir la declaration). Deux variantes qui s'ecrivent sous la meme cle ne se posent
+        /// jamais dans un meme etat : une ligne n'a qu'une case par cle.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum ColonneDEtat {
+            $( $(#[$m])* $var, )*
+            /// Le brut d'un mois de l'annee, au recapitulatif annuel : `m01` a `m12`, sous le nom abrege du mois avec son
+            /// point (« Janv. »).
+            DuMois(MoisDeLAnnee),
+            /// Une assiette du calcul, a l'etat des assiettes : `b_` et son nom, sous son nom.
+            DeLAssiette(Assiette),
+        }
+
+        impl ColonneDEtat {
+            /// Sa cle ecrite.
+            pub fn cle(self) -> Cow<'static, str> {
+                match self {
+                    $( ColonneDEtat::$var => Cow::Borrowed($cle), )*
+                    ColonneDEtat::DuMois(m) => Cow::Owned(format!("m{:02}", m.numero())),
+                    ColonneDEtat::DeLAssiette(a) => Cow::Owned(format!("b_{}", a)),
+                }
+            }
+
+            /// Ce qu'elle porte.
+            pub fn genre(self) -> Genre {
+                match self {
+                    $( ColonneDEtat::$var => Genre::$genre, )*
+                    ColonneDEtat::DuMois(_) | ColonneDEtat::DeLAssiette(_) => Genre::Montant,
+                }
+            }
+
+            /// Son en-tete.
+            pub fn entete(self) -> Cow<'static, str> {
+                match self {
+                    $( ColonneDEtat::$var => Cow::Borrowed($entete), )*
+                    ColonneDEtat::DuMois(m) => Cow::Owned(format!("{}.", m.nom(socle::mois::Graphie::Titre).chars().take(4).collect::<String>())),
+                    ColonneDEtat::DeLAssiette(a) => Cow::Borrowed(a.nom()),
+                }
+            }
+        }
+    };
+}
+
+colonnes_des_etats! {
+    APayer = "a_payer", Texte, "À payer";
+    Abattement = "abattement", Montant, "Abattement";
+    Acquis = "acquis", Nombre, "Acquis N (j)";
+    Acte = "acte", Texte, "Acte";
+    Actif = "actif", Texte, "Fiche";
+    Adresse = "adresse", Texte, "Adresse";
+    Analytique = "analytique", Texte, "Analytique";
+    Annee = "annee", Texte, "Année";
+    /// L'assiette du prelevement a la source d'une paie.
+    AssiettePas = "assiette", Montant, "Assiette PAS";
+    /// L'assiette qu'une ligne du bordereau Urssaf declare : la meme cle qu'`AssiettePas`, a droite sans total.
+    AssietteDeclaree = "assiette", Taux, "Assiette déclarée";
+    Au = "au", Texte, "au";
+    /// La base ou la quantite d'une ligne de bulletin, d'une cotisation : a droite, sans total.
+    Base = "base", Taux, "Base";
+    /// La base de la taxe sur les salaires d'un salarie : la meme cle que `Base`, un montant qui se totalise.
+    BaseDeLaTaxe = "base", Montant, "Base (assiette CSG sans réduction)";
+    Brut = "brut", Montant, "Brut";
+    Bulletins = "bulletins", Nombre, "Bulletins";
+    Cachets = "cachets", Nombre, "Cachets";
+    Calcule = "calcule", Montant, "0,1 % de la tranche A";
+    Charges = "charges", Montant, "Charges patronales";
+    Chomage = "chomage", Montant, "dont chômage";
+    /// La cle de la fiche d'un salarie, sur une ligne de la liste des contrats (la meme notion que `CleSalarie`).
+    Cle = "cle", Texte, "Clé du salarié";
+    /// La cle de la fiche d'un salarie, qui range deux homonymes a part ; aucun tableau ne la montre.
+    CleSalarie = "cle_salarie", Texte, "Clé du salarié";
+    Code = "code", Texte, "Code";
+    Coefficient = "coefficient", Taux, "Coefficient";
+    Commune = "commune", Texte, "Commune";
+    Compte = "compte", Texte, "Compte";
+    Contrat = "contrat", Texte, "Contrat";
+    ContratType = "contrat_type", Texte, "Type de contrat";
+    CotisationsPatronales = "cotisations_patronales", Montant, "Cot. patronales";
+    CotisationsSalariales = "cotisations_salariales", Montant, "Cot. salariales";
+    CoutEmployeur = "cout_employeur", Montant, "Coût employeur";
+    Cp = "cp", Texte, "Code postal";
+    Cpnef = "cpnef", Montant, "CPNEF (dialogue social)";
+    Credit = "credit", Montant, "Crédit";
+    Cs = "cs", Texte, "N° Congés Spectacles";
+    Ctp = "ctp", Texte, "CTP";
+    Date = "date", Texte, "Date";
+    Debit = "debit", Montant, "Débit";
+    Debut = "debut", Texte, "Début";
+    Destinataire = "destinataire", Texte, "Destinataire";
+    Dixieme = "dixieme", Montant, "Au dixième";
+    /// Le premier jour d'une periode de versement.
+    Du = "du", Texte, "Période du";
+    /// La contribution due d'une annee : la meme cle que `Du`, un montant.
+    ContributionDue = "du", Montant, "Contribution due";
+    Email = "email", Texte, "Courriel";
+    Emploi = "emploi", Texte, "Emploi";
+    Entree = "entree", Texte, "Entrée";
+    Fichier = "fichier", Texte, "Fichier";
+    Fin = "fin", Texte, "Fin";
+    Gain = "gain", Montant, "Gain";
+    Genre = "genre", Texte, "Ligne";
+    Heures = "heures", Nombre, "Heures";
+    Identifiant = "identifiant", Texte, "SIRET ou code";
+    Indemnite = "indemnite", Montant, "Indemnité retenue";
+    Issue = "issue", Texte, "Issue";
+    Journal = "journal", Texte, "Journal";
+    Jours = "jours", Nombre, "Jours";
+    Libelle = "libelle", Texte, "Libellé";
+    /// Le libelle d'un compte du plan, sur une ecriture ; aucun tableau ne le montre.
+    LibelleCompte = "libelle_compte", Texte, "Libellé du compte";
+    Lieu = "lieu", Texte, "à";
+    Maintien = "maintien", Montant, "Au maintien";
+    MajorationUn = "majoration_1", Montant, "Première majoration";
+    MajorationDeux = "majoration_2", Montant, "Seconde majoration";
+    Masse = "masse", Montant, "Masse salariale";
+    MassePermanents = "masse_permanents", Montant, "Masse hors intermittents";
+    Mode = "mode", Texte, "Mode";
+    /// Le mois d'une ligne.
+    Mois = "mois", Texte, "Mois";
+    /// Un nombre de mois : la meme cle que `Mois`, une quantite qui se totalise.
+    NombreDeMois = "mois", Nombre, "Mois";
+    Montant = "montant", Montant, "Montant";
+    Naissance = "naissance", Texte, "Date de naissance";
+    Nationalite = "nationalite", Texte, "Nationalité";
+    Nature = "nature", Texte, "Nature";
+    Net = "net", Montant, "Net";
+    NetAPayer = "net_a_payer", Montant, "Net à payer";
+    NetImposable = "net_imposable", Montant, "Net imposable";
+    Nir = "nir", Texte, "NIR";
+    Nom = "nom", Texte, "Nom";
+    Objet = "objet", Texte, "N° d'objet";
+    Ordre = "ordre", Texte, "N°";
+    Organisme = "organisme", Texte, "Organisme";
+    Origine = "origine", Texte, "Reconstitué depuis";
+    PartPat = "part_pat", Montant, "Part patronale";
+    PartSal = "part_sal", Montant, "Part salariale";
+    Pas = "pas", Montant, "PAS";
+    Periode = "periode", Texte, "Période";
+    Permanents = "permanents", Montant, "Contribution conventionnelle";
+    Piece = "piece", Texte, "Pièce";
+    Plafond = "plafond", Taux, "Plafond appliqué";
+    Prelevement = "prelevement", Montant, "Prélevé";
+    Prenom = "prenom", Texte, "Prénom";
+    Pris = "pris", Nombre, "Pris (j)";
+    Qualifiant = "qualifiant", Texte, "Qualifiant";
+    Qualification = "qualification", Texte, "Qualification";
+    Quand = "quand", Texte, "Date";
+    Reference = "reference", Texte, "Référence";
+    Regle = "regle", Texte, "Règle";
+    Reponse = "reponse", Texte, "Réponse";
+    Report = "report", Nombre, "Report N-1 (j)";
+    Retraite = "retraite", Montant, "dont retraite";
+    Salarie = "salarie", Texte, "Salarié";
+    Salaries = "salaries", Nombre, "Salariés";
+    Sexe = "sexe", Texte, "Sexe";
+    Smic = "smic", Montant, "SMIC de référence";
+    Solde = "solde", Nombre, "Solde (j)";
+    SoldeCrediteur = "solde_crediteur", Montant, "Solde créditeur";
+    SoldeDebiteur = "solde_debiteur", Montant, "Solde débiteur";
+    Sortie = "sortie", Texte, "Sortie";
+    Spectacle = "spectacle", Texte, "Spectacle";
+    Statut = "statut", Texte, "Statut";
+    Taux = "taux", Taux, "Taux %";
+    TauxAt = "taux_at", Taux, "Taux AT";
+    TauxNormal = "taux_normal", Montant, "4,25 %";
+    TauxPat = "taux_pat", Taux, "Taux patronal";
+    TauxPatronal = "taux_patronal", Taux, "Taux patronal réel";
+    TauxPermanents = "taux_permanents", Taux, "Taux %";
+    TauxSal = "taux_sal", Taux, "Taux sal. %";
+    Taxe = "taxe", Montant, "Taxe brute";
+    Total = "total", Montant, "Total dû";
+    TotalHt = "total_ht", Montant, "Total HT";
+    TrancheA = "tranche_a", Montant, "Tranche A déclarée";
+    Type = "type", Texte, "Type de taux";
+    Urssaf = "urssaf", Montant, "dont Urssaf";
+    VerseLe = "verse_le", Texte, "Versé le";
+}
+
+impl Serialize for ColonneDEtat {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.cle())
+    }
+}
+
+impl ColonneDEtat {
+    /// La colonne d'un tableau, sous son en-tete.
+    pub fn colonne(self) -> Colonne {
+        Colonne { cle: self, libelle: self.entete().into_owned(), genre: self.genre() }
+    }
+
+    /// La colonne d'un tableau, sous l'en-tete que l'etat lui donne.
+    pub fn titree(self, libelle: impl Into<String>) -> Colonne {
+        Colonne { cle: self, libelle: libelle.into(), genre: self.genre() }
+    }
+}
+
 /// Une ligne : un dictionnaire ordonne (l'ordre d'insertion compte pour le JSON). Une cle presente a `None` s'ecrit
 /// `null` ; une cle absente ne s'ecrit pas.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(transparent)]
 pub struct Ligne {
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
-    pub champs: Vec<(String, Option<Val>)>,
+    pub champs: Vec<(ColonneDEtat, Option<Val>)>,
 }
 
 impl Ligne {
@@ -107,60 +311,101 @@ impl Ligne {
     }
 
     /// `d[k] = v` : remplace en gardant la place, ou ajoute a la fin.
-    pub fn poser(&mut self, k: &str, v: Option<Val>) -> &mut Ligne {
-        match self.champs.iter_mut().find(|(c, _)| c == k) {
+    pub fn poser(&mut self, k: ColonneDEtat, v: Option<Val>) -> &mut Ligne {
+        match self.champs.iter_mut().find(|(c, _)| *c == k) {
             Some(x) => x.1 = v,
-            None => self.champs.push((k.to_string(), v)),
+            None => self.champs.push((k, v)),
         }
         self
     }
 
-    pub fn t(&mut self, k: &str, s: impl Into<String>) -> &mut Ligne {
+    pub fn t(&mut self, k: ColonneDEtat, s: impl Into<String>) -> &mut Ligne {
         self.poser(k, Some(Val::Txt(s.into())))
     }
 
     /// Un texte, ou rien quand il est vide.
-    pub fn ot(&mut self, k: &str, s: Option<impl Into<String>>) -> &mut Ligne {
+    pub fn ot(&mut self, k: ColonneDEtat, s: Option<impl Into<String>>) -> &mut Ligne {
         self.poser(k, s.map(|s| Val::Txt(s.into())))
     }
 
-    pub fn m(&mut self, k: &str, m: Mois) -> &mut Ligne {
+    pub fn m(&mut self, k: ColonneDEtat, m: Mois) -> &mut Ligne {
         self.poser(k, Some(Val::Mois(m)))
     }
 
-    pub fn d(&mut self, k: &str, v: Decimal) -> &mut Ligne {
+    pub fn d(&mut self, k: ColonneDEtat, v: Decimal) -> &mut Ligne {
         self.poser(k, Some(Val::Dec(v)))
     }
 
-    pub fn od(&mut self, k: &str, v: Option<Decimal>) -> &mut Ligne {
+    pub fn od(&mut self, k: ColonneDEtat, v: Option<Decimal>) -> &mut Ligne {
         self.poser(k, v.map(Val::Dec))
     }
 
-    pub fn n(&mut self, k: &str, v: i64) -> &mut Ligne {
+    /// Un montant, dans la case d'un etat : sa porte.
+    pub fn montant(&mut self, k: ColonneDEtat, v: socle::grandeurs::Montant) -> &mut Ligne {
+        self.d(k, v.decimal())
+    }
+
+    /// Un montant, ou rien.
+    pub fn om(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Montant>) -> &mut Ligne {
+        self.od(k, v.map(|m| m.decimal()))
+    }
+
+    /// Un taux, ou rien, dans la case d'un etat (le taux d'une ligne de cotisation) : sa porte.
+    pub fn taux(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Taux>) -> &mut Ligne {
+        self.od(k, v.map(|t| t.decimal()))
+    }
+
+    /// Un taux, ou rien, dans la case d'un etat, a `decimales` decimales toutes ecrites (le taux d'une ligne 23 du
+    /// bordereau, deux decimales comme la DSN l'ecrit) : sa porte. Le taux arrive arrondi a ces decimales.
+    pub fn taux_a(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Taux>, decimales: u32) -> &mut Ligne {
+        self.od(k, v.map(|t| {
+            let mut d = t.decimal();
+            d.rescale(decimales);
+            d
+        }))
+    }
+
+    /// La base d'une ligne de cotisation, ou rien, dans la case d'un etat : ses euros ou ses heures
+    /// (`BaseDeCotisation::decimal`), sa porte.
+    pub fn base(&mut self, k: ColonneDEtat, v: Option<engagement::calcul::BaseDeCotisation>) -> &mut Ligne {
+        self.od(k, v.map(engagement::calcul::BaseDeCotisation::decimal))
+    }
+
+    /// Un taux de PAS, ou rien, dans la case d'un etat (deux decimales, comme la norme l'ecrit) : sa porte.
+    pub fn taux_de_pas(&mut self, k: ColonneDEtat, v: Option<droit::pas::TauxDePas>) -> &mut Ligne {
+        self.od(k, v.map(|t| t.taux().decimal()))
+    }
+
+    /// Des jours, dans la case d'un etat : leur porte.
+    pub fn jours(&mut self, k: ColonneDEtat, v: socle::grandeurs::Jours) -> &mut Ligne {
+        self.d(k, v.decimal())
+    }
+
+    pub fn n(&mut self, k: ColonneDEtat, v: i64) -> &mut Ligne {
         self.poser(k, Some(Val::entier(v)))
     }
 
-    pub fn rien(&mut self, k: &str) -> &mut Ligne {
+    pub fn rien(&mut self, k: ColonneDEtat) -> &mut Ligne {
         self.poser(k, None)
     }
 
     /// `d.get(k)` distinguant l'absente (`None`) de la presente a `None` (`Some(None)`).
-    pub fn get(&self, k: &str) -> Option<&Option<Val>> {
-        self.champs.iter().find(|(c, _)| c == k).map(|(_, v)| v)
+    pub fn get(&self, k: ColonneDEtat) -> Option<&Option<Val>> {
+        self.champs.iter().find(|(c, _)| *c == k).map(|(_, v)| v)
     }
 
     /// La valeur, ou rien.
-    pub fn val(&self, k: &str) -> Option<&Val> {
+    pub fn val(&self, k: ColonneDEtat) -> Option<&Val> {
         self.get(k).and_then(|v| v.as_ref())
     }
 
     /// Le texte de la case `k`, tel qu'il s'ecrit : rien pour une case vide (absente ou `None`). C'est ce qui range et
     /// groupe les lignes.
-    pub fn texte(&self, k: &str) -> String {
+    pub fn texte(&self, k: ColonneDEtat) -> String {
         self.val(k).map(Val::en_texte_ecrit).into_iter().collect()
     }
 
-    pub fn decimal(&self, k: &str) -> Option<Decimal> {
+    pub fn decimal(&self, k: ColonneDEtat) -> Option<Decimal> {
         match self.val(k) {
             Some(Val::Dec(d)) => Some(*d),
             _ => None,
@@ -168,7 +413,7 @@ impl Ligne {
     }
 
     /// Le mois de la case `k`, quand elle en porte un (`m`).
-    pub fn mois(&self, k: &str) -> Option<Mois> {
+    pub fn mois(&self, k: ColonneDEtat) -> Option<Mois> {
         match self.val(k) {
             Some(Val::Mois(m)) => Some(*m),
             _ => None,
@@ -205,7 +450,7 @@ impl Serialize for Genre {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Colonne {
-    pub cle: String,
+    pub cle: ColonneDEtat,
     pub libelle: String,
     #[serde(rename = "type")]
     pub genre: Genre,
@@ -219,26 +464,6 @@ impl Colonne {
     pub fn a_droite(&self) -> bool {
         matches!(self.genre, Genre::Montant | Genre::Nombre | Genre::Taux)
     }
-}
-
-/// Une colonne de texte.
-pub fn col_t(cle: &str, libelle: &str) -> Colonne {
-    Colonne { cle: cle.into(), libelle: libelle.into(), genre: Genre::Texte }
-}
-
-/// Une colonne de montant.
-pub fn col_m(cle: &str, libelle: &str) -> Colonne {
-    Colonne { cle: cle.into(), libelle: libelle.into(), genre: Genre::Montant }
-}
-
-/// Une colonne de quantite.
-pub fn col_n(cle: &str, libelle: &str) -> Colonne {
-    Colonne { cle: cle.into(), libelle: libelle.into(), genre: Genre::Nombre }
-}
-
-/// Une colonne de taux (a droite, jamais totalisee).
-pub fn col_x(cle: &str, libelle: &str) -> Colonne {
-    Colonne { cle: cle.into(), libelle: libelle.into(), genre: Genre::Taux }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -337,7 +562,7 @@ pub fn sans_mois() -> Echec {
 // ------------------------------------------------------------------ totaux
 
 /// La somme de ce qui est DECLARE, ou `None` quand aucune ligne ne l'est.
-fn somme(lignes: &[&Ligne], cle: &str) -> R<Option<Val>> {
+fn somme(lignes: &[&Ligne], cle: ColonneDEtat) -> R<Option<Val>> {
     let mut total: Option<Decimal> = None;
     for l in lignes {
         let v = match l.get(cle) {
@@ -356,13 +581,13 @@ fn somme(lignes: &[&Ligne], cle: &str) -> R<Option<Val>> {
 /// Pose le sous-total de chaque section et le total general. La premiere colonne de
 /// texte porte le libelle (« Total ... »), les colonnes totalisees leur somme, les autres restent vides.
 pub fn totaliser(t: &mut Tableau, libelle_total: &str) -> R<()> {
-    let porte = t.colonnes.iter().find(|c| c.genre == Genre::Texte).map(|c| c.cle.clone());
+    let porte = t.colonnes.iter().find(|c| c.genre == Genre::Texte).map(|c| c.cle);
     let ligne = |colonnes: &[Colonne], lignes: &[&Ligne], libelle: &str| -> R<Ligne> {
         let mut d = Ligne::nouvelle();
         for c in colonnes.iter().filter(|c| c.totalisee()) {
-            d.poser(&c.cle, somme(lignes, &c.cle)?);
+            d.poser(c.cle, somme(lignes, c.cle)?);
         }
-        if let Some(p) = &porte {
+        if let Some(p) = porte {
             d.t(p, libelle);
         }
         Ok(d)
@@ -445,7 +670,7 @@ fn rangees(t: &Tableau) -> Vec<(&Ligne, Rangee)> {
 
 /// `(texte, genre)` de chaque cellule d'une ligne, `—` pour un montant de ligne que la source ne dit pas.
 fn cellule_lisible(l: &Ligne, c: &Colonne, genre: Rangee) -> String {
-    let v = l.get(&c.cle);
+    let v = l.get(c.cle);
     if matches!(v, Some(None)) && c.genre == Genre::Montant && genre == Rangee::Ligne {
         "—".to_string()
     } else {
@@ -486,7 +711,7 @@ pub fn csv_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
         if genre == Rangee::General && precedent == Rangee::Total {
             ligne(&mut s, &[]);
         }
-        ligne(&mut s, &t.colonnes.iter().map(|c| texte(d.val(&c.cle), c)).collect::<Vec<_>>());
+        ligne(&mut s, &t.colonnes.iter().map(|c| texte(d.val(c.cle), c)).collect::<Vec<_>>());
         if genre == Rangee::Total {
             ligne(&mut s, &[]);
         }
@@ -517,7 +742,7 @@ pub fn tsv_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
     for sec in &t.sections {
         for l in &sec.lignes {
             let mut cel: Vec<String> = if groupe { vec![sec.libelle.clone()] } else { Vec::new() };
-            cel.extend(t.colonnes.iter().map(|c| texte(l.val(&c.cle), c)));
+            cel.extend(t.colonnes.iter().map(|c| texte(l.val(c.cle), c)));
             s.push_str(&socle::csv::ligne(&cel, '\t'));
         }
     }
@@ -638,7 +863,7 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
             Rangee::Ligne => (false, CORPS_DU_CLASSEUR),
         };
         for (i, c) in t.colonnes.iter().enumerate() {
-            let cel = cellule_classeur(d.val(&c.cle), c)?;
+            let cel = cellule_classeur(d.val(c.cle), c)?;
             let style = Style { gras, corps, format: if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None }, ..Style::CLASSEUR };
             ecrire_cellule(&mut ws, ligne, i as u16, &cel, &style);
         }
@@ -676,7 +901,7 @@ pub fn html_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     for (d, genre) in rangees(t) {
         let mut cel = String::new();
         for c in &t.colonnes {
-            let v = d.get(&c.cle);
+            let v = d.get(c.cle);
             let s = if matches!(v, Some(None)) && c.genre == Genre::Montant && genre == Rangee::Ligne {
                 "&mdash;".to_string()
             } else {

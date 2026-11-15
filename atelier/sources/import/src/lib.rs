@@ -19,3 +19,6 @@ pub mod proposee;
 pub mod releve;
 pub mod reponse;
 pub mod tri;
+
+/// LA BOITE AUX LETTRES DE L'IMPORT (`import/`, sous la compagnie) : la ou se posent les pieces de l'ancien logiciel.
+pub const BOITE_AUX_LETTRES: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("import");

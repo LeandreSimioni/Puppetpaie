@@ -3,8 +3,9 @@
 
 use std::sync::OnceLock;
 
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::echec::R;
+use socle::mois::{Annee, Mois};
 
 use crate::fiche::{ChampsEntreprise, Lue, MotifNonAssujettissement};
 use crate::source::forme_notee;
@@ -57,7 +58,7 @@ pub const MNATA_ASSOCIATIONS: MotifNonAssujettissement = MotifNonAssujettissemen
 /// `atelier/reference/sources/code-du-travail/xml/L6241-1.xml`). La redaction precedente (16/02/2025 - 21/02/2026,
 /// `code-du-travail/xml-anterieur/L6241-1-v20250216.xml`) ne les nommait pas. Le millesime 2026 couvre des salaires d'avant
 /// le 21/02/2026 : l'association y est redevable pour le reste de l'annee, elle declare 001 (INFERENCE).
-pub const MILLESIME_ASSOCIATIONS_REDEVABLES: i32 = 2026;
+pub const MILLESIME_ASSOCIATIONS_REDEVABLES: Annee = Annee::constante(2026);
 /// La premiere periode d'emploi ou une association a activites non lucratives paie la taxe d'apprentissage : mars 2026.
 /// Guide Urssaf des contributions de formation et d'apprentissage, version du 12/03/2026
 /// (`atelier/reference/sources/majoration-caisses-conges/urssaf-guide-contributions-formation-apprentissage-20260312.txt`,
@@ -65,12 +66,12 @@ pub const MILLESIME_ASSOCIATIONS_REDEVABLES: i32 = 2026;
 /// de la loi n° 2026-103 du 19 février 2026 de finances pour 2026 modifiant l'article L6241-1 du code du travail, la taxe
 /// d'apprentissage est également due par les associations [...] à activités non lucratives ». Les salaires de
 /// janvier et fevrier 2026 n'en portent pas ; le millesime 2026 la porte de mars a decembre, et se declare 001.
-pub const PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES: (i32, u32) = (2026, 3);
+pub const PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES: Mois = Mois::constante(2026, 3);
 
 /// La table MNATA livree : (code, libelle).
 pub fn motifs_mnata() -> R<Vec<(MotifNonAssujettissement, String)>> {
     static CACHE: OnceLock<FormeGardee<TableMnata>> = OnceLock::new();
-    let t = forme_en_cache(&CACHE, "mnata-base.json", "La table MNATA livrée ne se lit pas : le signaler au développeur.", Ok)?;
+    let t = forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("mnata-base.json") }, "La table MNATA livrée ne se lit pas : le signaler au développeur.", Ok)?;
     Ok(t.motifs.iter().map(|m| (m.code, m.libelle.trim().to_string())).collect())
 }
 
@@ -105,17 +106,17 @@ de la DSN (S21.G00.44.004 : {}). {}. Rien n'est ecrit.",
 /// bordereau de chaque mois (`dsn::lignes_bordereau`, `dsn::lignes_regularisees`), le solde d'avril
 /// (`dsn::solde_taxe_apprentissage`) et le bloc 44 de decembre (`blocs`) lisent cette meme decision : le fichier des
 /// organismes garde ses lignes 992/993, comme ses lignes qui dependent du statut ou de l'effectif.
-pub fn taxe_apprentissage_non_due(ent: &ChampsEntreprise, an: i32) -> R<bool> {
+pub fn taxe_apprentissage_non_due(ent: &ChampsEntreprise, an: Annee) -> R<bool> {
     Ok(motif_de_la_fiche(ent)?.is_some_and(|(code, _)| !(code == MNATA_ASSOCIATIONS && an >= MILLESIME_ASSOCIATIONS_REDEVABLES)))
 }
 
-/// La taxe d'apprentissage des salaires de la periode d'emploi `an`-`mois` est-elle due ? Non quand la fiche dit un
+/// La taxe d'apprentissage des salaires de la periode d'emploi `mois` est-elle due ? Non quand la fiche dit un
 /// motif de non-assujettissement (table MNATA) qui vaut pour ce mois. Le 007 (associations) vaut jusqu'a la periode de
 /// fevrier 2026 (`PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES`, guide Urssaf du 12/03/2026). C'est la decision du MOIS,
 /// et la seule : le bareme du contrat (`bareme::bareme_taxe_apprentissage` : la ligne du bulletin et la cotisation
 /// individuelle 130 du bloc 81) et le bordereau (`dsn::lignes_bordereau`, `dsn::lignes_regularisees` : CTP 992 et 993)
 /// la lisent ici, pour que les trois faces disent la meme chose.
-pub fn taxe_apprentissage_non_due_au_mois(ent: &ChampsEntreprise, an: i32, mois: u32) -> R<bool> {
-    Ok(motif_de_la_fiche(ent)?.is_some_and(|(code, _)| !(code == MNATA_ASSOCIATIONS && (an, mois) >= PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES)))
+pub fn taxe_apprentissage_non_due_au_mois(ent: &ChampsEntreprise, mois: Mois) -> R<bool> {
+    Ok(motif_de_la_fiche(ent)?.is_some_and(|(code, _)| !(code == MNATA_ASSOCIATIONS && mois >= PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES)))
 }
 

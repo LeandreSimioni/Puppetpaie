@@ -20,7 +20,8 @@ use crate::courriel_lecture as lecture;
 use documents::fiche_questionnaire::CodeDeDemande;
 use crate::envoi::{self, Message};
 use crate::etats::Attendue;
-use crate::journal::{self, ContratAttendu, DetailContresigne, Envoi, Ligne, Mode};
+use crate::journal::{self, ContratAttendu, DetailContresigne, Envoi, Ligne};
+use socle::mode::Mode;
 use socle::echec::R;
 use socle::mois::{Graphie, Mois};
 use socle::paris::Moment;
@@ -250,7 +251,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
         }
     }
     // Le numero de l'avenant : celui du contrat, sinon celui de la demande.
-    let numero = c.contrats.first().and_then(|x| x.avenant.filter(|v| *v != 0).or(a.avenant));
+    let numero = c.contrats.first().and_then(|x| x.avenant.or(a.avenant));
     let avenant_signe = if nb == 1 { "Ton avenant signé" } else { "Tes avenants signés" };
     let (sujet, quoi) = if c.est_avenant {
         (

@@ -16,7 +16,8 @@ use socle::secret::Secret;
 use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
-use droit::contexte::{Contexte, EffectifEcrit, EffectifsParAnnee, FichierEffectifs, TypeDeParametreNeores};
+use droit::contexte::{Contexte, EffectifEcrit, FichierEffectifs, TypeDeParametreNeores};
+use std::collections::BTreeMap;
 use socle::echec::R;
 use socle::fichiers::CheminRelatif;
 use socle::mois::Annee;
@@ -24,7 +25,7 @@ use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour, StatutDuRetour, Verdict};
 use socle::date::Jour;
-use socle::num::Decimal;
+use socle::grandeurs::Effectif;
 use socle::paris::Moment;
 use socle::garde_reseau::Url;
 
@@ -593,14 +594,14 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
 /// ou `None` quand aucune n'est due (France Travail ne publie rien) ; un signalement (nature 04, 05, 07) n'en appelle pas.
 /// Le fichier depose est relu la ou le depot l'a pris (`sorties/<mois>/<fichier>`).
 fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
-    if !l.reel() {
+    if l.mode() == socle::mode::Mode::Test {
         return Ok(None);
     }
     if l.nature_dsn().is_some_and(|n| n != droit::nature_declaration::NatureDeLaDeclaration::Mensuelle) {
         return Ok(None);
     }
     let (Some(mois), Some(fichier)) = (l.mois(), l.fichier()) else { return Ok(None) };
-    let chemin = documents::fichier_depose(&ctx.racine.join("sorties").join(mois.to_string()), fichier.texte());
+    let chemin = documents::fichier_depose(&ctx.racine, mois, fichier.texte());
     // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
@@ -815,7 +816,7 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
     let mut out = Vec::new();
     for p in crm.parametres {
         let (Some(code), Some(valeur)) = (p.type_parametre, p.valeur) else { continue };
-        let v = socle::num::dec_texte(&valeur).map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
+        let v = socle::grandeurs::lu::en_texte::<Effectif>(&valeur).map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
         out.push(Mesure118 { code, valeur: v, debut: p.effet, fin: p.fin, calcule_le: p.calcule_le });
     }
     Ok(Some(out))
@@ -824,7 +825,7 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
 /// Un effectif qu'un compte rendu de nature 118 communique : son code, sa valeur, sa periode, le jour de son calcul.
 struct Mesure118 {
     code: TypeDeParametreNeores,
-    valeur: Decimal,
+    valeur: Effectif,
     debut: Option<Jour>,
     fin: Option<Jour>,
     calcule_le: Option<socle::paris::Moment>,
@@ -839,17 +840,16 @@ fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
-fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: EffectifsParAnnee) -> R<()> {
+fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>) -> R<()> {
     let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
-        socle::ecriture::ecrire_json(&racine.join(droit::contexte::EFFECTIFS), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
+        socle::ecriture::ecrire_json(&droit::contexte::EFFECTIFS.dans(racine), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     }
     Ok(())
 }
 
 /// L'effectif de l'annee `an` est-il celui que la compagnie a dit (`dit_le`), et non celui d'un 118 ?
-pub fn effectif_dit_par_la_compagnie(racine: &Path, an: i32) -> R<bool> {
-    let an = Annee::nouvelle(i64::from(an))?;
+pub fn effectif_dit_par_la_compagnie(racine: &Path, an: Annee) -> R<bool> {
     Ok(dits(effectifs_lus(racine)?.as_ref()).iter().any(|(a, _)| *a == an))
 }
 
@@ -881,7 +881,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         }
     }
     noms.sort();
-    let mut annees = EffectifsParAnnee::new();
+    let mut annees: BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>> = BTreeMap::new();
     for nom in &noms {
         let p = dossier.join(nom);
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
@@ -909,10 +909,10 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`, « L'effectif au sens de la sécurité sociale ») :
 /// une compagnie venue d'un autre logiciel n'a pas les 118 de ses annees passees. `Ok(false)` : un 118 de cette annee
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
-pub fn poser_effectif(racine: &Path, an: i32, valeur: Decimal, le: Jour) -> R<bool> {
+pub fn poser_effectif(racine: &Path, an: Annee, valeur: Effectif, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
-    let mut annees: EffectifsParAnnee = existant.iter().flat_map(|f| f.annees.iter()).map(|(an, c)| (*an, c.clone())).collect();
-    let codes = annees.entry(Annee::nouvelle(i64::from(an))?).or_default();
+    let mut annees: BTreeMap<_, _> = existant.iter().flat_map(|f| f.annees.iter()).map(|(an, c)| (*an, c.clone())).collect();
+    let codes = annees.entry(an).or_default();
     if codes.get(&TypeDeParametreNeores::EffectifMoyen).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);
     }

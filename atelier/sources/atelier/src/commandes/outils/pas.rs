@@ -40,11 +40,16 @@ fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
         dire!("Dossier introuvable : {}", export.display());
         return Ok(1);
     }
-    let releves = compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
-    let chgts = routes::gestes::taux_pas::enregistrer(ctx, &releves, &format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
+    let lus = compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
+    let chgts = routes::gestes::taux_pas::enregistrer(ctx, &compagnie::taux_pas::TauxDUneDsn::transmis(&lus),&format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
     dire!("Amorcage depuis les DSN deposees ({}) :", export.display());
     for c in &chgts {
         dire!("  {}", c);
+    }
+    for l in &lus {
+        if let compagnie::taux_pas::TauxDUneDsn::Illisible { salarie, verse_le } = l {
+            dire!("  {} : le taux du versement du {} ne s'ecrit pas comme la norme (S21.G00.50.006), rien de pose", salarie, verse_le.jj_mm_aaaa());
+        }
     }
     if chgts.is_empty() {
         dire!("  rien a changer.");
@@ -70,7 +75,7 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
             Some(t) => t.libelle(),
             None => "None",
         };
-        dire!("  {:<12} taux {:<6} type {} ({})", cle, ecrit(e.taux.map(|t| t.to_string())), ecrit(e.r#type.map(|t| t.to_string())), libelle);
+        dire!("  {:<12} taux {:<6} type {} ({})", cle, e.taux.to_string(), ecrit(e.r#type.map(|t| t.to_string())), libelle);
         dire!("  {:<12} identifiant {}, mis a disposition {}", "", dit(e.identifiant.as_ref().map(droit::pas::IdentifiantDuTauxPas::as_str)), ecrit(e.mis_a_disposition.map(socle::paris::ecrit::compacte::texte)));
         match s.valable_jusqu_a {
             Some(j) => dire!("  {:<12} {}, jusqu'au {}\n", "", s.libelle, j.jj_mm_aaaa()),
@@ -128,11 +133,16 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         dire!("--motif attend une nature d'evenement declencheur (S20.G00.05.011, de 01 a 07), recu {}", socle::fichiers::repr(motif));
         return Ok(1);
     };
+    // `--test` : les fichiers d'essai (S10.G00.00.005 = 01).
+    let mode = match args.drapeau("test") {
+        true => socle::mode::Mode::Test,
+        false => socle::mode::Mode::Reel,
+    };
     let demande = Demande {
         motif,
         mois,
         salaries: if salaries.is_empty() { None } else { Some(&salaries) },
-        envoi_test: args.drapeau("test"),
+        mode,
         forcer: args.drapeau("forcer"),
         constitution: cadre.aujourdhui,
     };
@@ -149,7 +159,7 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     }
     dire!("\n  recapitulatif : {}", nom(&lot.recapitulatif));
     dire!("\nUN SIGNALEMENT, UN INDIVIDU : chaque fichier se depose separement, par la route `deposer` (avec `fichier`).");
-    if args.drapeau("test") {
+    if mode == socle::mode::Mode::Test {
         dire!("Ces fichiers sont des ESSAIS (S10.G00.00.005 = 01) : ils ne demandent rien.");
     }
     Ok(0)

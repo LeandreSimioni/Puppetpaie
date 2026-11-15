@@ -7,7 +7,8 @@ use droit::fiche::Courriel;
 use socle::echec::{Classe, R};
 use socle::mois::Mois;
 
-use crate::journal::{self, EnRoute, Envoi, Ligne, Mode, Version};
+use crate::journal::{self, EnRoute, Envoi, Ligne, Version};
+use socle::mode::Mode;
 
 
 /// L'envoi par courriel que `qui` fait du mois `mois`, en mode `reel` (une compagnie fictive aussi) : `versions`, celle de

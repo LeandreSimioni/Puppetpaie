@@ -23,7 +23,7 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 use socle::mois::{Annee, Mois};
-use socle::num::{zero2, Decimal};
+use socle::grandeurs::Montant;
 use socle::paris::Moment;
 use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip, Entree};
@@ -69,8 +69,8 @@ pub(crate) struct ExportCompta {
     pub(crate) au: u32,
     pub(crate) mois: Vec<Mois>,
     pub(crate) ecritures: Vec<Ecriture>,
-    pub(crate) total_debit: Decimal,
-    pub(crate) total_credit: Decimal,
+    pub(crate) total_debit: Montant,
+    pub(crate) total_credit: Montant,
     pub(crate) fichier: Option<PathBuf>,
     pub(crate) plan: String,
     pub(crate) avertissements: Vec<String>,
@@ -83,10 +83,10 @@ pub(crate) struct EcritureRendue {
     date: socle::date::Jour,
     compte: documents::ecritures_comptables::NumeroDeCompte,
     libelle: String,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    debit: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    credit: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    debit: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    credit: Montant,
     analytique: Option<String>,
     mois: socle::mois::Mois,
     auxiliaire: Option<documents::ecritures_comptables::NumeroDeCompte>,
@@ -103,10 +103,10 @@ pub(crate) struct ExportComptaRendu {
     au: u32,
     mois: Vec<Mois>,
     ecritures: Vec<EcritureRendue>,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    total_debit: Decimal,
-    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
-    total_credit: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    total_debit: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    total_credit: Montant,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: Option<PathBuf>,
     fichier: Option<NomDeFichier>,
@@ -170,8 +170,8 @@ fn dossier_exercices(ctx: &Contexte) -> PathBuf {
 pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecrire: bool) -> R<ExportCompta> {
     let plan = plan_comptable(ctx)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let propre = ctx.racine.join(documents::plan_comptable::PLAN_COMPTABLE);
-    let origine = if propre.exists() { documents::plan_comptable::PLAN_COMPTABLE } else { "plan livré avec le logiciel (plan-comptable-base.json)" };
+    let propre = documents::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine);
+    let origine = documents::plan_comptable::origine(ctx)?;
     let mut mois: Vec<Mois> = Vec::new();
     for m in mois_de_l_annee(ctx, annee)? {
         let n = m.numero();
@@ -189,7 +189,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     let mut avert: Vec<String> = Vec::new();
     let mut ecritures: Vec<Ecriture> = Vec::new();
     for &m in &mois {
-        if !ctx.racine.join("sorties").join(m.to_string()).is_dir() {
+        if !documents::DossierDuMois::Sorties.dans(&ctx.racine, m).is_dir() {
             avert.push(format!("{} : saisi mais jamais écrit (pas de bulletin) -- pris quand même, depuis la saisie.", m));
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));
@@ -199,7 +199,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     if !propre.exists() {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
     }
-    let zero = zero2();
+    let zero = Montant::ZERO;
     let total_debit = ecritures.iter().fold(zero, |a, e| a + e.debit);
     let total_credit = ecritures.iter().fold(zero, |a, e| a + e.credit);
     let mut fichier = None;
@@ -218,7 +218,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
         compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&f), lues, None)?;
         fichier = Some(f);
     }
-    Ok(ExportCompta { annee, du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine.to_string(), avertissements: avert })
+    Ok(ExportCompta { annee, du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine, avertissements: avert })
 }
 
 /// LES SAISIES DE L'ANNEE, PAR LEUR EMPREINTE : `{"AAAA-MM": empreinte}` pour chaque mois saisi de l'annee, l'empreinte
@@ -226,7 +226,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
 pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<socle::mois::Mois, socle::fichiers::EmpreinteDeSaisie>> {
     let mut m = BTreeMap::new();
-    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee_civile() == annee) {
+    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee() == annee) {
         if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
             m.insert(mois, e);
         }
@@ -263,7 +263,7 @@ pub(crate) fn export_compta_a_jour(racine: &Path, annee: Annee) -> R<bool> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeExportCompta {
-    annee: crate::dossier_salarie::AnneeDite,
+    annee: Annee,
     du: Option<u32>,
     au: Option<u32>,
     apercu: Option<bool>,
@@ -279,7 +279,7 @@ pub(crate) fn export_compta_route(ctx: &Contexte, c: ChargeExportCompta) -> R<Ex
         Some(m) => m,
         None => DECEMBRE,
     };
-    export_compta(ctx, c.annee.annee()?, du, au, c.apercu != Some(true))?.rendu()
+    export_compta(ctx, c.annee, du, au, c.apercu != Some(true))?.rendu()
 }
 
 /// Le premier et le dernier mois d'une annee.
@@ -289,7 +289,7 @@ const DECEMBRE: u32 = 12;
 // ------------------------------------------------------------------ la cloture
 
 /// Les exercices clos de la compagnie, sous sa racine.
-pub(crate) const EXERCICES: &str = "config/exercices.json";
+pub(crate) const EXERCICES: CheminRelatif = CheminRelatif::du_moteur("config/exercices.json");
 
 /// `config/exercices.json` : chaque annee close (`clos`, sa cloture sous son annee) et les clotures retirees (`rouverts`),
 /// dans l'ordre ou elles l'ont ete. Lu par sa forme (`lire_exercices`), ecrit par `ecrire_exercices`.
@@ -350,7 +350,7 @@ impl Exercices {
 /// `config/exercices.json`, lu par sa forme : aucune annee close s'il n'existe pas. Le texte est lu une fois tant qu'il
 /// ne change pas (l'etat d'un mois le demande pour chaque mois) ; le refus d'un fichier illisible ne se garde pas.
 pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
-    let p = racine.join(EXERCICES);
+    let p = EXERCICES.dans(racine);
     match socle::forme::partagee::<Exercices>(&p, "Le fichier des exercices clos ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))? {
         Some(e) => Ok((*e).clone()),
         None => Ok(Exercices { clos: BTreeMap::new(), rouverts: Vec::new() }),
@@ -358,7 +358,7 @@ pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
 }
 
 fn ecrire_exercices(ctx: &Contexte, tous: &Exercices) -> R<()> {
-    let chemin = ctx.racine.join(EXERCICES);
+    let chemin = EXERCICES.dans(&ctx.racine);
     socle::ecriture::ecrire_json(&chemin, tous, 1).map_err(|m| m.reclasser(Classe::Disque))
 }
 
@@ -389,7 +389,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     if let Some(clos) = tous.de(annee) {
         return Err(refus(format!("L'exercice {} est déjà clos (le {}).", annee, clos.le.jour_de_paris().iso())));
     }
-    if annee.nombre() >= ctx.aujourdhui.an {
+    if annee >= ctx.aujourdhui.annee() {
         return Err(refus(format!("L'exercice {} n'est pas fini : on clôture une année passée.", annee)));
     }
     let mois = mois_de_l_annee(ctx, annee)?;
@@ -438,27 +438,22 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
         }
     }
     for m in &mois {
-        let d = ctx.racine.join("sorties").join(m.to_string());
+        let d = documents::DossierDuMois::Sorties.dans(&ctx.racine, *m);
         if d.is_dir() {
             let mut fichiers = Vec::new();
             fichiers_sous(&d, &mut fichiers)?;
             fichiers.sort();
             for p in fichiers {
-                let rel: Vec<String> = p.strip_prefix(&d).map_err(|e| refus(e.to_string()))?.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
-                entrees.push(entree_fichier(&p, format!("sorties/{}/{}", m, rel.join("/")))?);
+                entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
             }
         }
     }
     // Les retours des organismes : les fichiers dont le nom commence par l'annee (AAAAMMJJ-HHMMSS_nature..). Ceux de
     // janvier suivant qui repondent a la DSN de decembre sont pris aussi : ils portent sur l'annee close.
-    let (de_l_annee, suivante) = (annee.to_string(), format!("{}01", annee.nombre() + 1));
+    let (de_l_annee, suivante) = (annee.to_string(), format!("{}01", annee.suivante()?));
     // Les retours DSN a la racine des retours, ceux des DPAE sous `dpae/`.
     for canal in [envois::releve_retours::CanalDesRetours::Dsn, envois::releve_retours::CanalDesRetours::Dpae] {
         let d = canal.chemin(&ctx.racine);
-        let prefixe = match canal.dossier() {
-            Some(s) => format!("{}/", s),
-            None => String::new(),
-        };
         if d.is_dir() {
             let mut noms: Vec<(String, PathBuf)> = Vec::new();
             for e in std::fs::read_dir(&d).map_err(|e| en_os(&e, &d))? {
@@ -468,7 +463,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             noms.sort_by(|a, b| a.1.cmp(&b.1));
             for (nom, p) in noms {
                 if p.is_file() && (nom.starts_with(&de_l_annee) || nom.starts_with(&suivante)) {
-                    entrees.push(entree_fichier(&p, format!("retours/{}{}", prefixe, nom))?);
+                    entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
                 }
             }
         }
@@ -480,11 +475,12 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     let cfg = ctx.racine.join(socle::fichiers::CONFIG);
     let fiches: [&str; 6] = ["entreprise.json", "salaries.json", "spectacles.json", "organismes.json", "rubriques.json", "compteurs.json"];
     for nom in fiches {
-        if cfg.join(nom).exists() {
-            entrees.push(entree_fichier(&cfg.join(nom), format!("config/{}", nom))?);
+        let p = cfg.join(nom);
+        if p.exists() {
+            entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
         }
     }
-    let surcouche = droit::contexte::surcouche(annee.nombre())?;
+    let surcouche = droit::contexte::surcouche(annee)?;
     let bar = ctx.racine.join(surcouche.texte());
     if bar.exists() {
         entrees.push(entree_fichier(&bar, surcouche.texte().to_string())?);
@@ -561,12 +557,12 @@ pub(crate) enum Cloture {
     Rouverte(ExerciceRouvert),
 }
 
-/// La charge de `cloture` : l'annee (comme `etapes::ChargeAnnee` l'ecrit, ou en nombre), clore malgre un mois sans DSN
-/// acceptee (`forcer`), ou rouvrir ; `qui` : la ligne de commande ecrit `cli`, la page rien (`interface`).
+/// La charge de `cloture` : l'annee, clore malgre un mois sans DSN acceptee (`forcer`), ou rouvrir ; `qui` : la ligne
+/// de commande ecrit `cli`, la page rien (`interface`).
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeCloture {
-    annee: crate::dossier_salarie::AnneeDite,
+    annee: Annee,
     forcer: Option<bool>,
     rouvrir: Option<bool>,
     qui: Option<socle::forme::TexteDit>,
@@ -600,7 +596,7 @@ fn rouvrir_exercice(ctx: &Contexte, annee: Annee, qui: &str) -> R<ExerciceRouver
 
 /// La route `cloture` : clore l'annee, ou la rouvrir.
 pub(crate) fn cloture_route(ctx: &Contexte, c: ChargeCloture) -> R<Cloture> {
-    let annee = c.annee.annee()?;
+    let annee = c.annee;
     // Qui ecrit : la ligne de commande le dit (`cli`), la page non (l'interface).
     let qui = match c.qui {
         Some(q) => q.to_string(),

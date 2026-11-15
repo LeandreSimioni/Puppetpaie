@@ -181,7 +181,7 @@ fn un_engagement_non_actif_fait_annuler_ce_qui_a_ete_declare_pour_lui() {
     assert_eq!(brut(&decembre), brut(&novembre).into_iter().map(|m| -m).collect::<Vec<_>>());
 
     // Partie sur la version du non actif, la correction ne ressort plus et ne se porte plus en janvier.
-    let mut e = envois::journal::Envoi::nouveau(envois::journal::Mode::Reel, "test", true, "", "", envois::journal::DetailDsn::nouveau(false));
+    let mut e = envois::journal::Envoi::nouveau(socle::mode::Mode::Reel, "test", true, "", "", envois::journal::DetailDsn::nouveau(false));
     e.mois = Some(socle::mois::Mois::nouveau(2026, 12).unwrap());
     e.versions = Some(serde_json::from_value(json!([{"salarie": "FULLER", "numero": "FU1.26.01", "version": na.version(), "mois": "2026-11"}])).unwrap());
     let date = envois::journal::Datation::Lue { quand: socle::paris::Moment::a_paris(jour(2027, 1, 5), 10, 0, 0).unwrap().into(), origine: "le test".into() };
@@ -384,7 +384,7 @@ fn la_demande_de_taux_d_une_embauche_part_et_sa_reponse_fait_l_engagement() {
     for s in ["FULLER", "DUNCAN"] {
         outils::reussi(&outils::valider_la_carte(&racine, novembre(), s, "2026-11-16"));
     }
-    outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "reel": false}), "2026-11-16"));
+    outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "mode": "test"}), "2026-11-16"));
 
     let type_ecrit = |s: &str| -> Value { outils::paie_ecrite(&racine, "2026-11", s, None)["pas"]["type"].clone() };
     assert_eq!(type_ecrit("FULLER"), json!("13"), "sans taux recu, la grille");
@@ -440,8 +440,8 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
     for j in [jour(2026, 11, 20), jour(2026, 12, 1)] {
         socle::temps::pendant(instant_naif(j, 9), || routes::horloge::rattraper(&racine, Some(j), true)).unwrap();
     }
-    for reel in [false, true] {
-        outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dsn", "mois": "2026-11", "reel": reel}), "2026-12-14"));
+    for mode in ["test", "reel"] {
+        outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dsn", "mois": "2026-11", "mode": mode}), "2026-12-14"));
     }
     outils::reussi(&outils::route(&racine, "envoyer-documents", json!({"mois": "2026-11"}), "2026-12-14"));
     let etat = outils::reussi(&outils::route(&racine, "etat-du-mois", json!({"mois": "2026-11"}), "2026-12-14")).to_string();
@@ -631,7 +631,7 @@ fn la_fictive_du_fil_de_fer_tient_son_annee_et_se_livre() {
     let (racine, jour) = la_fictive_tient_son_annee_et_se_livre("fictive-fil-de-fer", 2, &["01", "02", "03", "04", "05", "06", "09", "12"]);
     // LES MOIS IMPORTES SE LISENT (le bug du joueur L9 : le FCAP-SVP de 2025 refusait « aucune paie validée ») : la
     // tranche A de 2025 est celle des paies importees de septembre a decembre, et l'annee se dit partielle.
-    let fcap = outils::reussi(&outils::route(&racine, "exporter", json!({"etat": "fcap-svp", "annee": "2025", "format": "csv"}), jour)).clone();
+    let fcap = outils::reussi(&outils::route(&racine, "exporter", json!({"etat": "fcap-svp", "annee": 2025, "format": "csv"}), jour)).clone();
     let ligne = &fcap["sections"][0]["lignes"][0];
     assert_eq!(ligne["mois"], json!(4), "{}", fcap);
     assert!(ligne["regle"].as_str().is_some_and(|r| r.contains("partielle")), "{}", fcap);
@@ -661,7 +661,7 @@ fn la_fictive_de_l_hotel_de_bourgogne_tient_son_annee_et_se_livre() {
     // LES MOIS IMPORTES NE DEMANDENT PAS L'EFFECTIF D'AVANT EUX (le bug : l'export comptable de toutes les annees
     // refusait « effectif de la compagnie non connu », des 2025) : 2025, paye par l'ancien logiciel, lit ses taux sur ses pieces,
     // et le FNAS de la CCNEAC n'a pas a dire l'effectif de 2024 (`bareme::EntrepriseLue::taux_lus`).
-    let balance = outils::route(&racine, "exporter", json!({"etat": "balance-paie", "annee": "2025", "format": "csv", "apercu": true}), jour);
+    let balance = outils::route(&racine, "exporter", json!({"etat": "balance-paie", "annee": 2025, "format": "csv", "apercu": true}), jour);
     assert_eq!(balance["ok"], json!(true), "{}", balance);
     // LES MEMES PIECES REIMPORTEES N'ANNONCENT RIEN (le bug : chaque reimport annoncait 24 contrats, les mois des deux CDI
     // sans terme, et 3 paies de decembre « completees ») : le contrat d'un permanent s'atteste mois par mois, et la paie

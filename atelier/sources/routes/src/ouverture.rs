@@ -26,7 +26,7 @@ use droit::natures::{self, MotifDeRupture, Nature};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
-use socle::fichiers::{dossier_du_code, NomDeFichier};
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use crate::catalogue::{Ecran, Place};
 use crate::fiches::{comblee, SorteDeFiche};
@@ -525,12 +525,7 @@ pub fn racine_du_poste() -> PathBuf {
     if let Some(e) = std::env::var_os("PUPPETPAIE_DONNEES").filter(|e| !e.is_empty()) {
         return PathBuf::from(e);
     }
-    let code = dossier_du_code();
-    let Some(logiciel) = code.parent() else { return code };
-    match logiciel.parent().map(|p| p.join("prive")) {
-        Some(voisin) if voisin.join(socle::fichiers::CONFIG).is_dir() => voisin,
-        _ => logiciel.to_path_buf(),
-    }
+    compagnie::installation::dossier_reel()
 }
 
 /// `DOCUMENTS_IDENTITE` : ou va chaque image.
@@ -848,7 +843,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     temps.extend(temps_des_etablissements(ctx, &jour)?);
     // LES PERMANENTS DU JOUR DE L'ECRAN : ce qui ne vaut que pour eux se montre s'ils se proposent ce jour-la, ou qu'un
     // permanent est du (`engagement::permanents`).
-    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
+    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
     let entreprise = fiche_verifiee::<droit::fiche::FicheEntrepriseDatee>(ctx, None, montree, temps, &ent, &p)?;
     let salaries = ctx
         .salaries
@@ -886,7 +881,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // cette phrase.
     let sans_titre: Vec<&droit::fiche::ChampsSpectacle> = ctx.spectacles.values().filter(|s| s.archivee() && s.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case("a completer"))).collect();
     // L'annee ou chaque numero a ete demande (`NumeroObjetSpectacle::annee_de_la_demande`).
-    let ans: Vec<i32> = sans_titre.iter().filter_map(|s| s.numero_objet.dite().and_then(droit::fiche::NumeroObjetSpectacle::annee_de_la_demande)).collect();
+    let ans: Vec<socle::mois::Annee> = sans_titre.iter().filter_map(|s| s.numero_objet.dite().and_then(droit::fiche::NumeroObjetSpectacle::annee_de_la_demande)).collect();
     let numeros_sans_titre = match (sans_titre.len(), ans.iter().min(), ans.iter().max()) {
         (0, _, _) => None,
         (n, de, a) => {
@@ -905,11 +900,11 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // Les compteurs de la derniere annee, en une ligne : ce que l'en-tete de la Paie montre.
     let compteurs = documents::ecrire_documents::compteurs(&ctx.racine)?;
     let compteurs_dit = compteurs.iter().next_back().map(|(an, c)| {
-        let n = |x: Option<i64>| match x {
-            Some(n) => n.to_string(),
+        let n = |x: Option<String>| match x {
+            Some(n) => n,
             None => "aucun".to_string(),
         };
-        format!("compteurs {} — bulletin {} · CS {}", an, n(c.bulletin), n(c.certificat_cs))
+        format!("compteurs {} — bulletin {} · CS {}", an, n(c.bulletin.map(|b| b.to_string())), n(c.certificat_cs.map(|c| c.to_string())))
     });
     let fiches_attendues = fiches_attendues(ctx)?;
     let liste = |un: &str, les: &str| MotsDeLaListe { nouvelle: format!("+ un {}", un), aucun: format!("Aucun {} actif", un), archives: format!("Afficher les {} archivés", les) };
@@ -971,7 +966,7 @@ pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<NomDeFichier>)>> {
     };
     let mut dossiers: BTreeMap<Mois, PathBuf> = BTreeMap::new();
     // Les dossiers AAAA-MM seulement : `sorties/exercices/` n'est pas un mois.
-    for d in socle::fichiers::nommes_d_un_mois(&racine.join("sorties"), None, false)? {
+    for d in socle::fichiers::nommes_d_un_mois(&documents::DossierDuMois::des_mois(racine), None, false)? {
         vus.insert(d.mois);
         dossiers.insert(d.mois, d.chemin);
     }
@@ -1091,7 +1086,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
         // racine du mois ; elles se nomment avec les autres sortes.
         let aer = documents::PieceDuMois::Aer;
-        if crate::documents::un_nom_commence_et_finit(&aer.dossier().sous(&ctx.racine.join("sorties").join(le_mois.to_string())), aer.sorte().prefixe(), ".pdf")? {
+        if crate::documents::un_nom_commence_et_finit(&aer.dossier().dans(&ctx.racine, le_mois), aer.sorte().prefixe(), ".pdf")? {
             // Avant les AEM, ou en dernier.
             let rang = match sortes.iter().position(|s| *s == mot_aem) {
                 Some(r) => r,
@@ -1144,7 +1139,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
             a_faire,
             sortes,
             fichiers: noms.clone(),
-            clos: Some(m.exercice_clos(le_mois.annee_civile())?),
+            clos: Some(m.exercice_clos(le_mois.annee())?),
         });
     }
     Ok(out)
@@ -1226,20 +1221,6 @@ pub(crate) struct Choix {
     defaut: Option<bool>,
 }
 
-/// Un nombre lu du fichier, rendu entier quand il l'est (`12`, pas `12.0`).
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct NombreLu(socle::num::Decimal);
-
-impl serde::Serialize for NombreLu {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use rust_decimal::prelude::ToPrimitive;
-        match self.0.fract().is_zero().then(|| self.0.to_i64()).flatten().filter(|i| i.unsigned_abs() < 1_000_000_000_000_000) {
-            Some(i) => s.serialize_i64(i),
-            None => socle::forme::ecrire_a_virgule(&self.0, s),
-        }
-    }
-}
-
 /// UNE RUBRIQUE QUI PAIE, telle que la carte d'un engagement la propose : ce que le catalogue en dit, et ce que la page en
 /// tire sans rien decider (ses genres, ses lieux, ses formes, ce qu'elle promet sans que rien ne le tienne, ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1251,18 +1232,20 @@ pub(crate) struct RubriqueDeLaPage {
     unite: droit::catalogue::Unite,
     nature: droit::catalogue::NatureDeRubrique,
     saisie: Vec<droit::catalogue::CaseSaisie>,
-    sens: droit::catalogue::Sens,
-    heures_forfait: Option<NombreLu>,
+    sens: socle::grandeurs::Signe,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    heures_forfait: Option<socle::grandeurs::HeuresParUnite>,
     plafond: Option<droit::catalogue::Unite>,
     aem: Option<droit::catalogue::Unite>,
-    dsn_type: Option<String>,
+    dsn_type: Option<droit::catalogue::DsnTypeDeRubrique>,
     dsn_autres_bruts: Option<AutreElementDeRevenuBrut>,
     annexe: Option<droit::emplois::AnnexeChomage>,
     soumis: bool,
     imposable: bool,
     conges_spectacles: bool,
     compte_pour: droit::catalogue::ComptePour,
-    plafond_mensuel: Option<i64>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    plafond_mensuel: Option<socle::grandeurs::Cachets>,
     plafond_annuel_heures: Option<droit::catalogue::PlafondAnnuelHeures>,
     origine: droit::catalogue::OrigineDeRubrique,
     genres: Vec<Choix>,
@@ -1286,7 +1269,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),
         ("aem", r.aem.is_some()),
-        ("dsn_type", r.dsn_type.as_deref().is_some_and(|s| !s.is_empty())),
+        ("dsn_type", r.dsn_type.is_some()),
     ]
     .into_iter()
     .filter(|(_, dite)| *dite)
@@ -1323,10 +1306,10 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         nature: r.nature,
         saisie: r.saisie.clone(),
         sens: r.sens,
-        heures_forfait: r.heures_forfait.map(NombreLu),
+        heures_forfait: r.heures_forfait,
         plafond: r.plafond,
         aem: r.aem,
-        dsn_type: r.dsn_type.clone(),
+        dsn_type: r.dsn_type,
         dsn_autres_bruts: r.dsn_autres_bruts,
         annexe: r.annexe,
         soumis: r.soumis,
@@ -1417,7 +1400,8 @@ struct NatureDeLaPage {
     motif_rupture_defaut: Option<MotifDeRupture>,
     motifs_recours: Vec<natures::RecoursOffert>,
     motif_recours_exige: bool,
-    quotite_defaut: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    quotite_defaut: Option<socle::grandeurs::Heures>,
     /// Le bouton qui propose la duree d'un temps plein, et le choix vide des motifs de fin (le defaut d'une fin qui ne se
     /// signale pas : le CDDU a son terme).
     temps_plein_dit: Option<String>,
@@ -1460,8 +1444,8 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
             motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
             motif_recours_exige: n.motif_recours_exige(),
-            quotite_defaut: n.quotite_reference_defaut().map(NombreLu),
-            temps_plein_dit: n.quotite_reference_defaut().map(|d| format!("temps plein {} h", socle::texte::virgule(d))),
+            quotite_defaut: n.quotite_reference_defaut(),
+            temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::texte::virgule(h))),
             motif_rupture_vide_dit: match n.motif_rupture_par_defaut() {
                 Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
                 _ => "— à choisir —".to_string(),
@@ -1502,10 +1486,10 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
         .flat_map(|r| r.niveaux.iter())
         .map(|(n, t)| NiveauDeSante {
             niveau: n.clone(),
-            assure: t.assure,
-            conjoint: t.conjoint,
-            enfant: t.enfant,
-            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, t.assure),
+            assure: t.assure.decimal(),
+            conjoint: t.conjoint.decimal(),
+            enfant: t.enfant.decimal(),
+            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, t.assure.decimal()),
         })
         .collect())
 }
@@ -1581,7 +1565,7 @@ pub(crate) struct EtatDeLaPage {
     spectacles: Vec<SpectacleDeLaListe>,
     rubriques: Vec<RubriqueDeLaPage>,
     emplois: Vec<emplois::MetierDuDeroulant>,
-    familles_emplois: Vec<String>,
+    familles_emplois: Vec<emplois::FamilleDeMetier>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
     types_preavis: Vec<droit::preavis::TypePreavis>,
@@ -1658,7 +1642,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         envoi_sans_mot_de_passe: joue || branchement.refus().is_some(),
         // SUPPRIMER LA COMPAGNIE : la Configuration ne le propose que si elle se supprime -- jamais une
         // fictive livree, qui se remet a zero (`accueil::suppression::sorte`).
-        supprimable: crate::accueil::suppression::supprimable(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)?,
+        supprimable: crate::accueil::suppression::supprimable(&compagnie::installation::IdDeCompagnie::installation_de(&ctx.racine), &ctx.racine)?,
         suppression: "Tout son dossier est effacé de ce poste : fiches, paies, documents, journaux.",
         // UNE COMPAGNIE CREEE EN DEMO PUIS GARDEE : sa mention, et les mois saisis en demo, ou la page la montre.
         demo: crate::accueil::suppression::mention(&ctx.racine)?,

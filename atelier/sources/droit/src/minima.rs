@@ -9,8 +9,11 @@ use std::sync::{Arc, OnceLock};
 use serde::Deserialize;
 
 use crate::fiche::Lue;
-use socle::date::Jour;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::date::{Duree, EnJours, Jour};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
+
+/// Les minima conventionnels livres, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("minima-conventionnels.json");
 use socle::forme::{Court, Nombre};
 use socle::echec::R;
 use socle::num::Decimal;
@@ -308,8 +311,9 @@ forme_notee! {
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
-        pub anciennete: Option<Anciennete>,
-        pub duree_contrat_max_jours: Option<i64>,
+        pub anciennete: Option<ConditionDAnciennete>,
+        #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+        pub duree_contrat_max_jours: Option<Duree<EnJours>>,
         /// Les grilles qu'elle remplace, par leur `nom`.
         pub remplace: Option<Vec<String>>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
@@ -333,8 +337,9 @@ forme_notee! {
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
-        pub anciennete: Option<Anciennete>,
-        pub duree_contrat_max_jours: Option<i64>,
+        pub anciennete: Option<ConditionDAnciennete>,
+        #[serde(default, deserialize_with = "Duree::en_jours_opt")]
+        pub duree_contrat_max_jours: Option<Duree<EnJours>>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
         pub par_cle: Vec<(String, Nombre)>,
     }
@@ -343,9 +348,10 @@ forme_notee! {
 /// L'anciennete qu'une grille ou une majoration demande : `ans` revolus depuis la case `champ` de la fiche du salarie.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Anciennete {
+pub struct ConditionDAnciennete {
     pub champ: ChampDAnciennete,
-    pub ans: i64,
+    #[serde(deserialize_with = "socle::date::Anciennete::en_annees_entieres")]
+    pub ans: socle::date::Anciennete,
 }
 
 /// LA CASE D'OU SE COMPTE UNE ANCIENNETE (`anciennete.champ`) : une date de la fiche du salarie, qu'une grille nomme.
@@ -456,8 +462,8 @@ pub struct Conditions<'a> {
     pub si_spectacle: Option<&'a SiSpectacle>,
     pub si_entreprise: Option<&'a SiEntreprise>,
     pub si_salarie: Option<&'a SiSalarie>,
-    pub anciennete: Option<&'a Anciennete>,
-    pub duree_contrat_max_jours: Option<i64>,
+    pub anciennete: Option<&'a ConditionDAnciennete>,
+    pub duree_contrat_max_jours: Option<Duree<EnJours>>,
 }
 
 impl Grille {
@@ -493,7 +499,7 @@ const ILLISIBLE: &str = "Les minima conventionnels livrés avec le logiciel ne s
 /// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme.
 pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
-    forme_en_cache(&CACHE, "minima-conventionnels.json", ILLISIBLE, Ok)
+    forme_en_cache(&CACHE, &BASE, ILLISIBLE, Ok)
 }
 
 // ------------------------------------------------------------ les lectures
@@ -520,7 +526,7 @@ pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: 
         Some(c) => crate::emplois::metier(c)?,
         None => None,
     };
-    match metier.as_ref().and_then(|m| m.au_catalogue()).map(|f| f.famille.as_str()) {
+    match metier.as_ref().and_then(|m| m.famille()) {
         None => Err(socle::refus!(
             "Spectacle {}, émission de télévision (convention 1734) : le métier {} de {} n'est pas au catalogue, et \
              le logiciel ne sait pas s'il est artiste-interprète (1734) ou musicien, metteur en scène, artiste de \
@@ -535,7 +541,7 @@ pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: 
                 None => "ce salarié",
             }
         )),
-        Some("Artistes" | "Cirque et rue") => Ok(crate::fiche::IDCC_1734),
+        Some(crate::emplois::FamilleDeMetier::Artistes | crate::emplois::FamilleDeMetier::CirqueEtRue) => Ok(crate::fiche::IDCC_1734),
         Some(_) => Ok(idcc),
     }
 }
@@ -551,11 +557,6 @@ pub fn plus_bas<T>(v: Vec<T>, valeur: impl Fn(&T) -> Decimal) -> Option<T> {
         }
     }
     mini.map(|(_, x)| x)
-}
-
-/// Les annees revolues de `a` au `b` (une anciennete, un age).
-pub fn ans_revolus(a: Jour, b: Jour) -> i64 {
-    b.an as i64 - a.an as i64 - i64::from((b.mois, b.jour) < (a.mois, a.jour))
 }
 
 /// Un minimum : le montant, d'ou il vient, et s'il se compare a l'unite.

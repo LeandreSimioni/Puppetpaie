@@ -3,15 +3,15 @@
 //! pas. Le catalogue porte le minimum de la branche ; ce que la compagnie souscrit se dit sur sa fiche
 //! (`prevoyance_permanents`), et le moteur le confronte a ce minimum.
 
-use super::{alsace_moselle, deux_virgule, nom_du_salarie, rond, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
+use super::{alsace_moselle, deux_virgule, nom_du_salarie, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
+use socle::date::Anciennete;
 use socle::echec::R;
 use crate::assiette::Assiette;
 use crate::fiche::{ExtensionT2, Idcc, Lue};
 use crate::natures::AuMois;
 use socle::echec::Lieu;
-use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::forme::{Court, Nombre};
-use socle::num::{div, mul, sub};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
+use socle::grandeurs::{Montant, Taux};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -32,10 +32,10 @@ forme! {
     /// l'employeur (l'accord du 17/11/2017, art. 1er, l'oblige a verser la cotisation : `source`), celle d'un cadre dont
     /// la convention n'a pas de bloc `obligatoire_cadre`.
     pub struct ObligationCadre {
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub taux_t1: Decimal,
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub part_patronale: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub taux_t1: Taux,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub part_patronale: Taux,
     }
 }
 
@@ -68,15 +68,18 @@ forme! {
 forme! {
     /// Une cotisation de prevoyance (tous, ou les cadres) : tranche 1, tranche 2, repartition, et ce qui change a une date.
     pub struct Bloc {
-        pub taux: Option<Court>,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub taux: Option<Taux>,
         /// L'assiette de la tranche 1 (celle du bloc `obligatoire` s'applique) et la part de l'employeur, que le catalogue
         /// dit pour chaque bloc.
         pub base: Option<Assiette>,
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub part_patronale: Decimal,
-        pub t2: Option<Court>,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub part_patronale: Taux,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub t2: Option<Taux>,
         pub t2_base: Option<Assiette>,
-        pub t2_part_patronale: Option<Court>,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub t2_part_patronale: Option<Taux>,
         pub ventilation: Option<Ventilation>,
         pub a_partir_du: Option<BTreeMap<Jour, Changement>>,
     }
@@ -85,18 +88,20 @@ forme! {
 forme! {
     /// La part d'un taux par garantie.
     pub struct Ventilation {
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub deces: Decimal,
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub incapacite_invalidite: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub deces: Taux,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub incapacite_invalidite: Taux,
     }
 }
 
 forme! {
     /// Ce qu'un bloc prend a une date : ses nouveaux taux.
     pub struct Changement {
-        pub taux: Option<Court>,
-        pub t2: Option<Court>,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub taux: Option<Taux>,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub t2: Option<Taux>,
         pub ventilation: Option<Ventilation>,
     }
 }
@@ -106,8 +111,10 @@ forme! {
     pub struct Beneficiaires {
         /// Faux : la convention n'a pas de regime pour ses non cadres.
         pub non_cadres: Option<bool>,
-        pub ouverture_cadre_mois: i64,
-        pub ouverture_non_cadre_mois: i64,
+        #[serde(deserialize_with = "Anciennete::en_mois_entiers")]
+        pub ouverture_cadre_mois: Anciennete,
+        #[serde(deserialize_with = "Anciennete::en_mois_entiers")]
+        pub ouverture_non_cadre_mois: Anciennete,
     }
 }
 
@@ -120,46 +127,48 @@ forme! {
 forme! {
     /// L'extension facultative a la tranche 2 : son taux pour tous, ou pour les cadres seuls.
     pub struct Extension {
-        pub tous: Option<Court>,
-        pub cadres: Option<Court>,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub tous: Option<Taux>,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::court::option::deserialize")]
+        pub cadres: Option<Taux>,
         pub base: Assiette,
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub part_patronale: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub part_patronale: Taux,
     }
 }
 
-/// Des valeurs datees : chacune vaut de son jour au suivant.
-pub type Datees = BTreeMap<Jour, Nombre>;
+/// Des taux dates : chacun vaut de son jour au suivant.
+pub type Datees = BTreeMap<Jour, Taux>;
 
 forme! {
     /// La cotisation minimale de la sante des permanents, en % du plafond mensuel : le socle, et ce qu'une annexe impose.
     pub struct SanteMinimum {
         pub socle: Datees,
         pub annexes: Option<BTreeMap<crate::fiche::AnnexeConvention, Datees>>,
-        pub part_patronale_minimum: Nombre,
+        pub part_patronale_minimum: Taux,
     }
 }
 
 forme! {
     /// Une contribution annuelle de l'entreprise, hors DSN et hors bulletin (le FCAP-SVP de la 3090).
     pub struct Financement {
-        pub taux: Nombre,
+        pub taux: Taux,
         /// L'assiette telle que le texte la dit, en mots : une phrase, que le calcul ne lit pas.
         #[serde(rename = "assiette")]
         pub assiette_dite: String,
-        pub plancher: Nombre,
-        pub plafond: Nombre,
+        pub plancher: Montant,
+        pub plafond: Montant,
     }
 }
 
 forme! {
     /// Ce qu'une annexe de la convention ajoute a son regime.
     pub struct Annexe {
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub taux: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub taux: Taux,
         pub base: Assiette,
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub part_patronale: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub part_patronale: Taux,
     }
 }
 
@@ -170,14 +179,14 @@ forme! {
         pub taux: Datees,
         pub taux_alsace_moselle: Option<Datees>,
         /// La part minimale de l'employeur (L. 911-7), que le catalogue dit pour chaque regime de sante.
-        pub part_patronale_minimum: Nombre,
+        pub part_patronale_minimum: Taux,
     }
 }
 
 /// Le catalogue livre.
 pub fn catalogue() -> R<Arc<Catalogue>> {
     static CACHE: OnceLock<FormeGardee<Catalogue>> = OnceLock::new();
-    forme_en_cache(&CACHE, "prevoyance-conventionnelle-base.json", "Le catalogue de la prévoyance de branche livré ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("prevoyance-conventionnelle-base.json") }, "Le catalogue de la prévoyance de branche livré ne se lit pas : le signaler au développeur.", Ok)
 }
 
 impl Catalogue {
@@ -193,8 +202,8 @@ pub fn financement(idcc: &Idcc) -> R<Option<Financement>> {
 }
 
 /// La derniere des valeurs datees jusqu'a `jour` inclus (toutes sans jour), et son jour.
-fn derniere<'a>(table: &'a Datees, jour: Option<&Jour>) -> Option<(&'a Jour, Decimal)> {
-    table.iter().filter(|(k, _)| jour.is_none_or(|j| *k <= j)).next_back().map(|(k, v)| (k, v.0))
+fn derniere<'a>(table: &'a Datees, jour: Option<&Jour>) -> Option<(&'a Jour, Taux)> {
+    table.iter().filter(|(k, _)| jour.is_none_or(|j| *k <= j)).next_back().map(|(k, v)| (k, *v))
 }
 
 /// La convention a-t-elle un regime de sante a elle ?
@@ -229,7 +238,7 @@ en vigueur au {} dans le catalogue de branche.",
         }
     }
     let choix = ent.permanent.ouvrir(au_mois).sante_permanents.dite().and_then(|s| s.part_patronale.dite());
-    let minimum = sante.part_patronale_minimum.0;
+    let minimum = sante.part_patronale_minimum;
     // La part de l'employeur est celle que la compagnie a decidee (au moins le minimum de la convention) : elle seule la
     // connait.
     let Some(choix) = choix else {
@@ -237,22 +246,22 @@ en vigueur au {} dans le catalogue de branche.",
             "Fiche Entreprise, « Santé des permanents », part employeur : à remplir. La convention {} en met au moins {} % \
 à la charge de l'employeur ; la part de la compagnie est sur son contrat de complémentaire santé.",
             idcc,
-            minimum
+            minimum.decimal()
         ));
     };
-    let part = choix.decimal()?;
-    if part < minimum || part > Decimal::ONE_HUNDRED {
+    let part: Taux = choix.grandeur()?;
+    if part < minimum || part > Taux::CENT_POUR_CENT {
         return Err(socle::refus!(
             "Fiche Entreprise, « Santé des permanents », part employeur {} % : \
 la convention {} met au moins {} % de la cotisation sante a la \
 charge de l'employeur (XII.2.1.11), et pas plus de 100.",
             choix.ecrit(),
             idcc,
-            minimum
+            minimum.decimal()
         ));
     }
     let base = sante.base.clone();
-    Ok(Some(Mutuelle::Pose { base, total, pat: div(part, Decimal::ONE_HUNDRED) }))
+    Ok(Some(Mutuelle::Pose { base, total, pat: part.en_coefficient() }))
 }
 
 /// `super::minimum_sante`.
@@ -264,7 +273,7 @@ pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(D
         Some((n, t)) => (t, format!("annexe {}", n)),
         None => (&m.socle, "socle".to_string()),
     };
-    Ok(derniere(table, jour).map(|(depuis, taux)| (taux, format!("{}, depuis le {}", qui, depuis.jj_mm_aaaa()))))
+    Ok(derniere(table, jour).map(|(depuis, taux)| (taux.decimal(), format!("{}, depuis le {}", qui, depuis.jj_mm_aaaa()))))
 }
 
 fn pcf(x: Decimal) -> String {
@@ -356,12 +365,12 @@ fn resume(reg: &Regime) -> String {
     let mut out = Vec::new();
     if reg.beneficiaires.non_cadres == Some(false) {
         out.push("non cadres : aucun regime de branche".to_string());
-    } else if let Some(Court(t)) = reg.obligatoire.taux {
+    } else if let Some(t) = reg.obligatoire.taux.map(Taux::decimal) {
         out.push(format!("non cadres {} % de la tranche 1", pcf(t)));
     }
-    if let Some((oc, taux)) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux.map(|t| (oc, t.0))) {
+    if let Some((oc, taux)) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux.map(|t| (oc, t.decimal()))) {
         let mut s = format!("cadres {} % de la tranche 1", pcf(taux));
-        if let Some(Court(t2)) = oc.t2 {
+        if let Some(t2) = oc.t2.map(Taux::decimal) {
             s += &format!(" et {} % de la tranche 2", pcf(t2));
         }
         out.push(s);
@@ -373,13 +382,13 @@ fn resume(reg: &Regime) -> String {
     }
 }
 
-fn mois_entre(depuis: Option<&Jour>, jusqu_a: Option<&Jour>) -> Option<i64> {
-    let (a, b) = (depuis?, jusqu_a?);
-    Some((b.an - a.an) as i64 * 12 + (b.mois as i64 - a.mois as i64) - if b.jour < a.jour { 1 } else { 0 })
+/// Les mois revolus de `depuis` a `jusqu_a`, quand l'un et l'autre sont dits.
+fn mois_entre(depuis: Option<&Jour>, jusqu_a: Option<&Jour>) -> Option<Anciennete> {
+    Some(Anciennete::revolue(depuis?, jusqu_a?))
 }
 
-/// Le seuil d'anciennete dans la branche qui ouvre la cotisation, en mois.
-fn seuil(reg: &Regime, cadre: bool) -> i64 {
+/// Le seuil d'anciennete dans la branche qui ouvre la cotisation, en mois revolus (`mois_entre`, `Anciennete::atteinte`).
+fn seuil(reg: &Regime, cadre: bool) -> Anciennete {
     if cadre {
         reg.beneficiaires.ouverture_cadre_mois
     } else {
@@ -394,7 +403,7 @@ fn seuil(reg: &Regime, cadre: bool) -> i64 {
 /// Ce temps dans la branche est un fait que seule la fiche dit (`prevoyance_branche_depuis`) : il se demande.
 fn ouverture(reg: &Regime, sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>) -> R<(bool, String)> {
     let seuil = seuil(reg, cadre);
-    if seuil <= 0 {
+    if seuil <= Anciennete::ZERO {
         return Ok((true, "due des l'embauche".to_string()));
     }
     let branche = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite();
@@ -424,25 +433,25 @@ nouveau le laisserait sans couverture pendant un an.",
 
 /// (taux minimum de tranche 1, d'ou il vient) pour ce salarie ; `None` : ni la convention (elle fixe la repartition,
 /// pas le taux : `contrat_requis`) ni l'obligation cadre n'en fixent.
-fn minimum_t1(reg: &Regime, annexe: Option<&crate::fiche::AnnexeConvention>, cadre: bool) -> R<Option<(Decimal, String)>> {
-    let mut retenu = reg.obligatoire.taux.map(|Court(t)| (t, format!("{} : {} %", reg.texte, pcf(t))));
-    let sup = annexe.and_then(|n| reg.annexes.as_ref().and_then(|a| a.get(n)).map(|a| (n, a.taux))).filter(|(_, t)| !t.is_zero());
+fn minimum_t1(reg: &Regime, annexe: Option<&crate::fiche::AnnexeConvention>, cadre: bool) -> R<Option<(Taux, String)>> {
+    let mut retenu = reg.obligatoire.taux.map(|t| (t, format!("{} : {} %", reg.texte, pcf(t.decimal()))));
+    let sup = annexe.and_then(|n| reg.annexes.as_ref().and_then(|a| a.get(n)).map(|a| (n, a.taux)));
     if let Some((n, s)) = sup.filter(|(_, s)| retenu.as_ref().is_none_or(|(t, _)| s > t)) {
-        retenu = Some((s, format!("annexe {} de la convention : {} %", n, pcf(s))));
+        retenu = Some((s, format!("annexe {} de la convention : {} %", n, pcf(s.decimal()))));
     }
     if cadre {
-        if let Some(Court(propre)) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux) {
+        if let Some(propre) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux) {
             let t = match sup {
                 Some((_, s)) => propre.max(s),
                 None => propre,
             };
-            retenu = Some((t, format!("{} : {} % (cadres)", reg.texte, pcf(t))));
+            retenu = Some((t, format!("{} : {} % (cadres)", reg.texte, pcf(t.decimal()))));
         }
         let plancher = catalogue()?.obligation_cadre.taux_t1;
         if retenu.as_ref().is_none_or(|(t, _)| plancher > *t) {
             let pourquoi = match &retenu {
-                Some((_, p)) => format!("{}, porte a {} % par l'obligation cadre (ANI du 17/11/2017)", p, pcf(plancher)),
-                None => format!("l'obligation cadre (ANI du 17/11/2017) : {} %", pcf(plancher)),
+                Some((_, p)) => format!("{}, porte a {} % par l'obligation cadre (ANI du 17/11/2017)", p, pcf(plancher.decimal())),
+                None => format!("l'obligation cadre (ANI du 17/11/2017) : {} %", pcf(plancher.decimal())),
             };
             retenu = Some((plancher, pourquoi));
         }
@@ -454,8 +463,8 @@ fn minimum_t1(reg: &Regime, annexe: Option<&crate::fiche::AnnexeConvention>, cad
 /// convention l'impose (la tranche 2 obligatoire) ou si c'est son extension.
 #[derive(Debug, Clone)]
 pub struct Part {
-    pub taux_pat: Decimal,
-    pub taux_sal: Decimal,
+    pub taux_pat: Taux,
+    pub taux_sal: Taux,
     pub base: Assiette,
     pub obligatoire: bool,
 }
@@ -471,16 +480,17 @@ pub enum Cotisation {
     Due { t1: Part, t2: Option<Part> },
 }
 
-fn repartir(taux: Decimal, part_patronale: Decimal, base: Assiette, obligatoire: bool) -> Part {
-    let pat = rond(div(mul(taux, part_patronale), Decimal::ONE_HUNDRED), 4);
-    Part { taux_pat: pat, taux_sal: rond(sub(taux, pat), 4), base, obligatoire }
+/// `part_patronale` : la part du taux a la charge de l'employeur, en pourcent du taux.
+fn repartir(taux: Taux, part_patronale: Taux, base: Assiette, obligatoire: bool) -> Part {
+    let pat = (taux * part_patronale.en_coefficient()).au_pair(4);
+    Part { taux_pat: pat, taux_sal: (taux - pat).au_pair(4), base, obligatoire }
 }
 
 /// La part patronale de la tranche 2 d'un bloc : la sienne quand le texte les distingue, sinon celle du bloc, que le
 /// texte fixe pour toute la cotisation.
-fn part_t2(b: &Bloc) -> Decimal {
+fn part_t2(b: &Bloc) -> Taux {
     match b.t2_part_patronale {
-        Some(Court(propre)) => propre,
+        Some(propre) => propre,
         None => b.part_patronale,
     }
 }
@@ -540,7 +550,7 @@ minimum de la branche.",
                 pour
             ));
         };
-        let propose = t1_contrat.court()?;
+        let propose = Taux::du_decimal(t1_contrat.court()?);
         if let Some((mini, origine)) = minimum.as_ref().filter(|(mini, _)| propose < *mini) {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Prévoyance des permanents », taux {} : \
@@ -549,13 +559,13 @@ Une entreprise peut souscrire mieux que la convention, \
 jamais moins : le minimum conventionnel s'impose a elle. \
 Corriger le contrat, ou revenir au regime conventionnel.",
                 pour,
-                pcf(propose),
-                pcf(*mini),
+                pcf(propose.decimal()),
+                pcf(mini.decimal()),
                 origine
             ));
         }
         if let Some(p) = part_du_contrat {
-            part_pat = p.court()?;
+            part_pat = Taux::du_decimal(p.court()?);
         }
         propose
     } else {
@@ -586,7 +596,7 @@ l'employeur (ANI du 17/11/2017, art. 1er).",
         Some(b) => Some(b),
         None => Some(obl).filter(|b| b.t2.is_some()),
     };
-    if let Some((b, t2_taux)) = obligatoire_t2.filter(|_| !contrat).and_then(|b| b.t2.map(|t| (b, t.0))) {
+    if let Some((b, t2_taux)) = obligatoire_t2.filter(|_| !contrat).and_then(|b| b.t2.map(|t| (b, t))) {
         let base_t2 = b.t2_base.clone().ok_or_else(|| socle::fichiers::absent("t2_base"))?;
         t2 = Some(repartir(t2_taux, part_t2(b), base_t2, true));
     }
@@ -597,7 +607,7 @@ l'employeur (ANI du 17/11/2017, art. 1er).",
             ExtensionT2::Tous => o.tous,
             ExtensionT2::Cadres => o.cadres,
         });
-        let (Some(opt), Some(Court(propre))) = (opt, propre) else {
+        let (Some(opt), Some(propre)) = (opt, propre) else {
             return Err(socle::refus!(
                 "L'extension T2 << {} >> n'existe pas dans le regime de la \
 convention {}.",
@@ -606,23 +616,12 @@ convention {}.",
             ));
         };
         let part = match part_du_contrat {
-            Some(p) => p.court()?,
+            Some(p) => Taux::du_decimal(p.court()?),
             None => opt.part_patronale,
         };
         t2 = Some(repartir(propre, part, opt.base.clone(), false));
     }
     Ok(Cotisation::Due { t1, t2 })
-}
-
-/// Le premier jour ou `mois_entre(depuis, jour)` atteint `seuil` : le meme quantieme `seuil` mois plus tard, ou le
-/// premier du mois suivant quand ce quantieme n'existe pas (31 janvier + 1 mois : le 1er mars).
-fn anniversaire(depuis: &Jour, seuil: i64) -> Option<Jour> {
-    let rang = depuis.an as i64 * 12 + (depuis.mois as i64 - 1) + seuil;
-    let (an, mois) = ((rang / 12) as i32, (rang % 12) as u32 + 1);
-    Jour::nouveau(an, mois, depuis.jour).or_else(|| {
-        let (an, mois) = if mois == 12 { (an + 1, 1) } else { (an, mois + 1) };
-        Jour::nouveau(an, mois, 1)
-    })
 }
 
 /// L'affiliation d'un permanent a la prevoyance de sa convention au `fin` (bloc S21.G00.70), selon la meme regle que
@@ -635,13 +634,13 @@ pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &
     }
     let reg = a_la_date(regime(entreprise.idcc.exigee("idcc")?)?, Some(fin));
     let seuil = seuil(&reg, cadre);
-    if seuil <= 0 {
+    if seuil <= Anciennete::ZERO {
         return Ok(A::DesLEmbauche);
     }
-    if let Some(j) = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite().copied().and_then(|d| anniversaire(&d, seuil)) {
+    if let Some(j) = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite().copied().and_then(|d| seuil.atteinte(&d)) {
         return Ok(A::Le(j));
     }
-    match sal.date_anciennete.dite().copied().and_then(|d| anniversaire(&d, seuil)) {
+    match sal.date_anciennete.dite().copied().and_then(|d| seuil.atteinte(&d)) {
         Some(j) => Ok(A::AuPlusTardLe(j)),
         None => Err(socle::refus!(
             "{} : la prevoyance s'ouvre apres {} mois d'anciennete dans la branche, et sa fiche ne date ni son \

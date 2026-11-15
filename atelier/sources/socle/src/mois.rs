@@ -11,7 +11,7 @@
 //! `declarations::champs` lit du mois de naissance d'un NIR : jamais au mois d'une paie. Un mois nomme aussi un fichier ou
 //! un dossier : `../config` ou `2026-06/envoi` n'en sont pas.
 
-use crate::date::{jours_du_mois, repr_texte, Jour};
+use crate::date::{jours_du_mois, repr_texte, Duree, EnMois, Jour};
 use crate::echec::{refus, R};
 
 /// Un mois civil, de 0001-01 a 9999-12. L'ordre est celui du calendrier.
@@ -51,6 +51,12 @@ impl Mois {
             return Err(refus(mois_impossible(numero)));
         }
         Ok(Mois { an, numero })
+    }
+
+    /// Le mois qu'un texte depose fixe, ecrit en constante (`const`) : hors du calendrier, le code ne compile pas.
+    pub const fn constante(an: i32, numero: u32) -> Mois {
+        assert!(1 <= an && an <= 9999 && 1 <= numero && numero <= 12, "mois hors du calendrier");
+        Mois { an, numero }
     }
 
     /// Un mois ecrit `AAAA-MM` ; toute autre forme se refuse.
@@ -94,13 +100,9 @@ impl Mois {
         Mois { an: j.an, numero: j.mois }
     }
 
-    pub fn annee(self) -> i32 {
-        self.an
-    }
-
     /// Son annee civile.
-    pub fn annee_civile(self) -> Annee {
-        Annee::du_mois(self)
+    pub fn annee(self) -> Annee {
+        Annee(self.an)
     }
 
     /// Le numero du mois, de 1 a 12.
@@ -108,14 +110,14 @@ impl Mois {
         self.numero
     }
 
-    /// Le nom du mois dans la graphie `g` : la seule table des noms de mois du moteur.
+    /// Le nom du mois dans la graphie `g`.
     pub fn nom(self, g: Graphie) -> &'static str {
-        let table = match g {
-            Graphie::Titre => &MOIS_TITRE,
-            Graphie::Minuscule => &MOIS_MINUSCULE,
-            Graphie::Accentuee => &MOIS_ACCENTUE,
-        };
-        table[(self.numero - 1) as usize]
+        self.de_l_annee().nom(g)
+    }
+
+    /// Le mois de l'annee qu'il est, sans son annee.
+    pub fn de_l_annee(self) -> MoisDeLAnnee {
+        MoisDeLAnnee(self.numero)
     }
 
     /// « octobre 2026 », dans la graphie `g`.
@@ -128,9 +130,21 @@ impl Mois {
         format!("{}{:04}", self.nom(Graphie::Titre), self.an)
     }
 
+    /// LE MOIS QUI SUIT DE `d` CELUI-CI ; refus hors des annees 1 a 9999.
+    #[track_caller]
+    pub fn apres(self, d: Duree<EnMois>) -> R<Mois> {
+        self.plus(d.nombre_de_mois())
+    }
+
+    /// LE MOIS QUI PRECEDE DE `d` CELUI-CI ; refus hors des annees 1 a 9999.
+    #[track_caller]
+    pub fn avant(self, d: Duree<EnMois>) -> R<Mois> {
+        self.plus(-d.nombre_de_mois())
+    }
+
     /// Le mois `n` mois plus loin (en arriere si `n` est negatif) ; refus hors des annees 1 a 9999.
-    pub fn plus(self, n: i32) -> R<Mois> {
-        let rang = i64::from(self.an) * 12 + i64::from(self.numero) - 1 + i64::from(n);
+    fn plus(self, n: i64) -> R<Mois> {
+        let rang = i64::from(self.an) * 12 + i64::from(self.numero) - 1 + n;
         let an = i32::try_from(rang.div_euclid(12)).map_err(|_| refus(crate::date::HORS_CALENDRIER))?;
         Mois::nouveau(an, (rang.rem_euclid(12) + 1) as u32).map_err(|_| refus(crate::date::HORS_CALENDRIER))
     }
@@ -173,14 +187,18 @@ impl Mois {
         Jour::nouveau(self.an, self.numero, jour)
     }
 
+    /// Le jour `jour` du mois, ou le refus qui dit la date impossible.
+    #[track_caller]
+    pub fn jour_exige(self, jour: u32) -> R<Jour> {
+        match self.jour(jour) {
+            Some(j) => Ok(j),
+            None => Err(refus(crate::date::jour_impossible(self.an, self.numero, jour))),
+        }
+    }
+
     /// Le jour `j` est-il dans ce mois ?
     pub fn contient(self, j: &Jour) -> bool {
         Mois::du_jour(j) == self
-    }
-
-    /// Les mois de `debut` a `fin` inclus (`Engagement::mois_du_contrat`) ; aucun si `fin` precede `debut`.
-    pub fn entre(debut: &Jour, fin: &Jour) -> Vec<Mois> {
-        Mois::du_jour(debut).jusqu_a(Mois::du_jour(fin))
     }
 
     /// Les mois de celui-ci a `dernier` inclus ; aucun si `dernier` le precede.
@@ -198,9 +216,52 @@ impl Mois {
     }
 }
 
+/// UN MOIS DE L'ANNEE, sans annee : janvier a decembre (la colonne d'un mois au recapitulatif annuel). Il ne se
+/// fabrique que d'un mois civil (`Mois::de_l_annee`) ou parmi les douze (`MoisDeLAnnee::TOUS`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoisDeLAnnee(u32);
+
+impl MoisDeLAnnee {
+    /// Les douze, de janvier a decembre.
+    pub const TOUS: [MoisDeLAnnee; 12] = [
+        MoisDeLAnnee(1), MoisDeLAnnee(2), MoisDeLAnnee(3), MoisDeLAnnee(4), MoisDeLAnnee(5), MoisDeLAnnee(6),
+        MoisDeLAnnee(7), MoisDeLAnnee(8), MoisDeLAnnee(9), MoisDeLAnnee(10), MoisDeLAnnee(11), MoisDeLAnnee(12),
+    ];
+
+    /// Mars (le 31 mars borne l'annee de conges des certificats Congés Spectacles).
+    pub const MARS: MoisDeLAnnee = MoisDeLAnnee(3);
+
+    /// Son numero, de 1 a 12.
+    pub fn numero(self) -> u32 {
+        self.0
+    }
+
+    /// Son nom dans la graphie `g` : la seule table des noms de mois du moteur.
+    pub fn nom(self, g: Graphie) -> &'static str {
+        let table = match g {
+            Graphie::Titre => &MOIS_TITRE,
+            Graphie::Minuscule => &MOIS_MINUSCULE,
+            Graphie::Accentuee => &MOIS_ACCENTUE,
+        };
+        table[(self.0 - 1) as usize]
+    }
+}
+
+/// La lecture de serde : un mois de l'annee s'ecrit par son numero (`3` : mars) dans un fichier qui le dit ainsi
+/// (`echeancier-base.json`) ; hors de 1 a 12, refus.
+impl<'de> serde::Deserialize<'de> for MoisDeLAnnee {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MoisDeLAnnee, D::Error> {
+        let n = <u32 as serde::Deserialize>::deserialize(d)?;
+        match (1..=12).contains(&n) {
+            true => Ok(MoisDeLAnnee(n)),
+            false => Err(serde::de::Error::custom(format!("{} n'est pas un mois de l'année (1 à 12)", n))),
+        }
+    }
+}
+
 /// UNE ANNEE CIVILE, de 0001 a 9999 : la cle d'une annee de salaires (la CASC-SVP se regularise et se taxe par annee,
-/// `donnees/casc-svp-base.json`). Elle se lit une fois (`serde`) et s'ecrit `AAAA`, en texte dans le
-/// JSON (`"2025"`) ; l'ordre est celui du calendrier.
+/// `donnees/casc-svp-base.json`). Elle se lit une fois (`serde`) et s'ecrit en nombre dans le JSON (`2025`) ; cle d'un
+/// objet, en texte, comme toute cle (`"2025"`) ; l'ordre est celui du calendrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Annee(i32);
 
@@ -214,23 +275,92 @@ impl Annee {
         Ok(Annee(an as i32))
     }
 
-    /// Une annee ecrite `AAAA` (quatre chiffres) ; toute autre forme se refuse.
-    pub(crate) fn lire(texte: &str) -> R<Annee> {
-        let b = texte.as_bytes();
-        if !(b.len() == 4 && b.iter().all(u8::is_ascii_digit)) {
-            return Err(refus(format!("année illisible : {} (attendu : AAAA)", repr_texte(texte))));
-        }
-        Annee::nouvelle(b.iter().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')))
-    }
-
     /// L'annee du mois `m`.
     pub fn du_mois(m: Mois) -> Annee {
         Annee(m.an)
     }
 
-    /// Son numero (2025).
-    pub fn nombre(self) -> i32 {
+    /// L'annee `an` qu'un texte depose fixe, ecrite en constante (`const`) : hors de 1 a 9999, le code ne compile pas.
+    pub const fn constante(an: i32) -> Annee {
+        assert!(1 <= an && an <= 9999, "année hors du calendrier");
+        Annee(an)
+    }
+
+    /// Son millesime, au calcul du calendrier (`feries`) et aux ecritures du socle.
+    pub(crate) fn nombre(self) -> i32 {
         self.0
+    }
+
+    /// L'annee du jour `j`.
+    pub fn du_jour(j: &Jour) -> Annee {
+        Annee(j.an)
+    }
+
+    /// L'annee `n` ans plus loin (en arriere si `n` est negatif) ; refus hors des annees 1 a 9999.
+    fn plus(self, n: i32) -> R<Annee> {
+        Annee::nouvelle(i64::from(self.0) + i64::from(n))
+    }
+
+    /// L'annee d'avant ; refus avant l'an 1.
+    pub fn precedente(self) -> R<Annee> {
+        self.plus(-1)
+    }
+
+    /// L'annee d'apres ; refus apres 9999.
+    pub fn suivante(self) -> R<Annee> {
+        self.plus(1)
+    }
+
+    /// Les annees de celle-ci a `derniere` incluse ; aucune si `derniere` la precede.
+    pub fn jusqu_a(self, derniere: Annee) -> Vec<Annee> {
+        (self.0..=derniere.0).map(Annee).collect()
+    }
+
+    /// LES ANNEES CIVILES ENTIERES QUE LA DUREE `d` COUVRE AVANT CELLE-CI (cinq ans : les cinq d'avant), de la plus
+    /// ancienne a celle d'avant ; celles d'avant l'an 1 n'existent pas.
+    pub fn les_precedentes(self, d: Duree<EnMois>) -> Vec<Annee> {
+        let debut = match self.premier_jour().avant(d) {
+            Ok(j) if j.mois == 1 && j.jour == 1 => j.an,
+            Ok(j) => j.an + 1,
+            // Plus loin que le 1er janvier de l'an 1 : il est la premiere annee.
+            Err(_) => 1,
+        };
+        (debut..self.0).map(Annee).collect()
+    }
+
+    /// Le mois `m` de l'annee.
+    pub fn mois(self, m: MoisDeLAnnee) -> Mois {
+        Mois { an: self.0, numero: m.0 }
+    }
+
+    /// Ses douze mois, de janvier a decembre.
+    pub fn les_mois(self) -> [Mois; 12] {
+        MoisDeLAnnee::TOUS.map(|m| self.mois(m))
+    }
+
+    /// Janvier de l'annee.
+    pub fn janvier(self) -> Mois {
+        Mois { an: self.0, numero: 1 }
+    }
+
+    /// Decembre de l'annee.
+    pub fn decembre(self) -> Mois {
+        Mois { an: self.0, numero: 12 }
+    }
+
+    /// Le 1er janvier.
+    pub fn premier_jour(self) -> Jour {
+        self.janvier().premier_jour()
+    }
+
+    /// Le 31 decembre.
+    pub fn dernier_jour(self) -> Jour {
+        self.decembre().dernier_jour()
+    }
+
+    /// Est-elle bissextile ?
+    pub fn bissextile(self) -> bool {
+        crate::date::bissextile(self.0)
     }
 }
 
@@ -242,53 +372,14 @@ impl std::fmt::Display for Annee {
 
 impl serde::Serialize for Annee {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.to_string())
+        s.serialize_i32(self.0)
     }
 }
 
-/// La lecture de serde, dont le refus se dit dans le sien.
+/// La lecture de serde, un nombre (une cle d'objet, son texte), dont le refus se dit dans le sien.
 impl<'de> serde::Deserialize<'de> for Annee {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
-        Annee::lire(&String::deserialize(d)?).map_err(serde::de::Error::custom)
-    }
-}
-
-impl From<Annee> for String {
-    fn from(a: Annee) -> String {
-        a.to_string()
-    }
-}
-
-/// UNE ANNEE ECRITE EN NOMBRE (`#[serde(with = "socle::mois::en_nombre")]`) : le nombre de paies parti chez l'editeur
-/// (`2025`, ce que le serveur du filet lit et rend) ; `option` pour un `Option<Annee>` (`null` : aucune).
-pub mod en_nombre {
-    use super::Annee;
-
-    pub fn serialize<S: serde::Serializer>(a: &Annee, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_i32(a.0)
-    }
-
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
-        let n = <i64 as serde::Deserialize>::deserialize(d)?;
-        Annee::nouvelle(n).map_err(serde::de::Error::custom)
-    }
-
-    pub mod option {
-        use super::Annee;
-
-        pub fn serialize<S: serde::Serializer>(a: &Option<Annee>, s: S) -> Result<S::Ok, S::Error> {
-            match a {
-                Some(a) => s.serialize_some(&a.0),
-                None => s.serialize_none(),
-            }
-        }
-
-        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Annee>, D::Error> {
-            match <Option<i64> as serde::Deserialize>::deserialize(d)? {
-                Some(n) => Annee::nouvelle(n).map(Some).map_err(serde::de::Error::custom),
-                None => Ok(None),
-            }
-        }
+        Annee::nouvelle(<i64 as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -370,7 +461,7 @@ mod tests {
     #[test]
     fn un_mois_se_lit_aaaa_mm_et_rien_d_autre() {
         let m = Mois::lire("2026-12").unwrap();
-        assert_eq!((m.annee(), m.numero(), m.to_string()), (2026, 12, "2026-12".to_string()));
+        assert_eq!((m.annee(), m.numero(), m.to_string()), (Annee::nouvelle(2026).unwrap(), 12, "2026-12".to_string()));
         assert_eq!(m.suivant().to_string(), "2027-01");
         assert_eq!(m.suivant().precedent(), m);
         for faux in ["2026-13", "2026-00", "2026-1", "../config", "2026-06/envoi", "2026-12-01", " 2026-12"] {

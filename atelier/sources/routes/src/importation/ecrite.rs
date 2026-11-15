@@ -26,8 +26,8 @@ use droit::fiche::NomDeFiche;
 use droit::fiche::FicheNommee;
 use engagement::importe::{Attestation, CleDePaieVersee, ContratLu, ContratRelu, PaieLue, PaieVersee};
 use engagement::numeros::NumeroContrat;
-use socle::date::Jour;
-use socle::fichiers::NomDeFichier;
+use socle::date::PeriodeOuverte;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
@@ -64,7 +64,7 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     if chemin.exists() {
         return Ok(Some(chemin));
     }
-    let a_part = socle::echec::Lieu { fichier: Some(nom.to_string()), ..Default::default() };
+    let a_part = socle::echec::Lieu { fichier: Some(nom.clone().into()), ..Default::default() };
     Err(socle::echec::refus_avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
 }
 
@@ -115,12 +115,12 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         if porte {
             continue;
         }
-        let mut masse = socle::num::zero2();
+        let mut masse = socle::grandeurs::Montant::ZERO.decimal();
         for b in d.paies().iter().filter_map(|p| p.mesures.brut) {
             masse += b;
         }
-        let Some(taux) = base.taux.de(m.annee_civile()) else { return Ok(None) };
-        let cot = (masse * taux / Decimal::from(100)).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+        let Some(taux) = base.taux.de(m.annee()) else { return Ok(None) };
+        let cot = socle::grandeurs::Montant::du_decimal(masse * taux / Decimal::from(100)).au_centime().decimal();
         par_mois.push((m, cot));
     }
     if par_mois.is_empty() {
@@ -133,7 +133,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         "CASC-SVP : {} DSN déposée(s) depuis janvier 2025 ({}) ne portent peut-être pas la cotisation CASC-SVP -- un logiciel qui n'était pas paramétré l'a omise. Si Audiens ne l'a pas encaissée, {} sont à régulariser : Exports > « regularisation-casc-svp » fait le dossier (virements, courriels, liste nominative).",
         par_mois.len(),
         periode,
-        socle::texte::euros(total)
+        socle::texte::euros(socle::grandeurs::Montant::du_decimal(total))
     )))
 }
 
@@ -167,9 +167,9 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
     if ligne.verse_le.is_none() {
         ligne.verse_le = b.verse_le;
     }
-    for (l, x) in [(&mut ligne.heures, &b.heures), (&mut ligne.cachets, &b.cachets), (&mut ligne.jours, &b.jours)] {
-        gagne(l, x);
-    }
+    gagne(&mut ligne.heures, &b.heures);
+    gagne(&mut ligne.cachets, &b.cachets);
+    gagne(&mut ligne.jours, &b.jours);
     for (l, x) in [(&mut ligne.spectacle, &b.spectacle), (&mut ligne.analytique, &b.analytique)] {
         gagne(l, x);
     }
@@ -202,11 +202,11 @@ fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, Option<IdSalarie>, CleD
     for kb in de_bulletin {
         let b = par_cle[&kb].clone();
         // Une paie dont la fiche est encore a creer ne se rapproche de rien.
-        let (Some(debut), Some(fin), Some(_)) = (b.paie.debut, b.paie.fin, &b.salarie) else { continue };
+        let (Some(periode), Some(_)) = (b.paie.periode.and_then(|o| o.fermee()), &b.salarie) else { continue };
         let salarie = b.salarie.clone();
         let mut cibles: Vec<(socle::mois::Mois, Option<IdSalarie>, CleDePaieVersee)> = par_cle
             .iter()
-            .filter(|(_, x)| !declaree_par_bulletin(x) && x.salarie == salarie && x.paie.debut == Some(debut) && x.paie.fin == Some(fin))
+            .filter(|(_, x)| !declaree_par_bulletin(x) && x.salarie == salarie && x.paie.periode == Some(periode.into()))
             .map(|(k, _)| k.clone())
             .collect();
         if cibles.len() > 1 {
@@ -219,7 +219,7 @@ fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, Option<IdSalarie>, CleD
             cibles = par_cle
                 .iter()
                 .filter(|(k, x)| {
-                    !declaree_par_bulletin(x) && k.0 == kb.0 && x.salarie == salarie && x.paie.debut.is_some_and(|d| d <= debut) && x.paie.fin.is_none_or(|f| fin <= f)
+                    !declaree_par_bulletin(x) && k.0 == kb.0 && x.salarie == salarie && x.paie.periode.is_some_and(|o| o.croise(&periode) == Some(periode))
                 })
                 .map(|(k, _)| k.clone())
                 .collect();
@@ -250,12 +250,11 @@ fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, Option<IdSalarie>, CleD
 /// numero tire.
 fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhui: socle::date::Jour) -> R<Vec<engagement::importe::Neuf>> {
     use engagement::importe::{Neuf, Pieces};
-    // Un salarie, et les dates de son engagement (une fin absente : il court encore). Les dates se comparent comme leur
-    // ecriture ISO ; une date absente vient avant toute date.
+    // Un salarie, et les dates de son engagement (une fin absente : il court encore ; aucune quand ses pieces ne disent
+    // pas son debut).
     struct Groupe {
         salarie: Option<IdSalarie>,
-        debut: Option<Jour>,
-        fin: Option<Jour>,
+        periode: Option<PeriodeOuverte>,
         contrat: Option<ContratLu>,
         paies: Vec<PaieLue>,
     }
@@ -271,36 +270,46 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     let permanent = |c: &ContratLu| c.contrat.nature.is_none_or(|n| permanents.contains(&n));
     let mut groupes: Vec<Groupe> = Vec::new();
     for c in contrats {
-        groupes.push(Groupe { salarie: c.salarie.clone(), debut: c.debut, fin: c.fin, contrat: Some(c), paies: Vec::new() });
+        groupes.push(Groupe { salarie: c.salarie.clone(), periode: c.periode, contrat: Some(c), paies: Vec::new() });
     }
     for p in paies {
-        let (s, d, f, o) = (p.salarie.clone(), p.paie.debut, p.paie.fin, p.paie.numero_objet.clone());
-        let mut candidats: Vec<usize> = (0..groupes.len()).filter(|&i| groupes[i].contrat.is_some() && groupes[i].salarie == s && groupes[i].debut == d && groupes[i].fin == f).collect();
+        let (s, dates, o) = (p.salarie.clone(), p.paie.periode, p.paie.numero_objet.clone());
+        let mut candidats: Vec<usize> = (0..groupes.len()).filter(|&i| groupes[i].contrat.is_some() && groupes[i].salarie == s && groupes[i].periode == dates).collect();
         // Le contrat qu'un bulletin atteste porte la periode du mois ; la paie declaree, le contrat entier : la periode
         // du bulletin dans le contrat declare, et l'engagement prend les dates du contrat.
-        if candidats.is_empty() && d.is_some() && !declaree_par_bulletin(&p) {
+        if let (true, Some(declare), false) = (candidats.is_empty(), dates, declaree_par_bulletin(&p)) {
             candidats = (0..groupes.len())
                 .filter(|&i| {
                     let g = &groupes[i];
                     g.paies.is_empty()
                         && g.contrat.as_ref().is_some_and(|c| c.contrat.atteste_par == Attestation::Bulletin)
                         && g.salarie == s
-                        && d <= g.debut
-                        && (f.is_none() || g.fin <= f)
+                        && g.periode.and_then(|x| x.fermee()).is_some_and(|du_mois| declare.croise(&du_mois) == Some(du_mois))
                 })
                 .collect();
             if let [i] = candidats.as_slice() {
-                groupes[*i].debut = d.clone();
-                groupes[*i].fin = f.clone();
+                groupes[*i].periode = dates;
             }
         }
         // LE MOIS D'UN CONTRAT DE PERMANENT : la paie d'un bulletin va au contrat de permanent du salarie qui couvre sa
         // periode.
         if candidats.is_empty() {
+            // Le contrat couvre la paie : il commence au plus tard avec elle, et finit au plus tot avec elle ou ne finit pas.
+            let couvre = |contrat: Option<PeriodeOuverte>| match (contrat, dates) {
+                (None, _) => true,
+                (Some(_), None) => false,
+                (Some(c), Some(x)) => {
+                    c.contient(&x.debut())
+                        && match c.fermee() {
+                            None => true,
+                            Some(cf) => x.fermee().is_some_and(|xf| cf.croise(&xf) == Some(xf)),
+                        }
+                }
+            };
             candidats = (0..groupes.len())
                 .filter(|&i| {
                     let g = &groupes[i];
-                    g.salarie == s && g.contrat.as_ref().is_some_and(permanent) && g.debut <= d && (g.fin.is_none() || (f.is_some() && f <= g.fin))
+                    g.salarie == s && g.contrat.as_ref().is_some_and(permanent) && couvre(g.periode)
                 })
                 .collect();
         }
@@ -321,11 +330,11 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
             Some(i) => i,
             None => match (0..groupes.len()).find(|&i| {
                 let g = &groupes[i];
-                g.contrat.is_none() && g.salarie == s && g.debut == d && g.fin == f && g.paies.first().map(|x| &x.paie.contrat) == Some(&p.paie.contrat) && libre(g)
+                g.contrat.is_none() && g.salarie == s && g.periode == dates && g.paies.first().map(|x| &x.paie.contrat) == Some(&p.paie.contrat) && libre(g)
             }) {
                 Some(i) => i,
                 None => {
-                    groupes.push(Groupe { salarie: s, debut: d, fin: f, contrat: None, paies: Vec::new() });
+                    groupes.push(Groupe { salarie: s, periode: dates, contrat: None, paies: Vec::new() });
                     groupes.len() - 1
                 }
             },
@@ -339,7 +348,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     // numeros, deux contrats, comme la DSN les a declares. Un mois sans numero lu va au contrat declare a partir de lui,
     // sinon au dernier (inference : le numero du contrat en cours ce mois-la).
     let mois_de = |g: &Groupe| -> Vec<Mois> { g.paies.iter().map(|p| p.mois).collect() };
-    let mois_du_debut = |g: &Groupe| g.debut.map(|d| d.mois_civil());
+    let mois_du_debut = |g: &Groupe| g.periode.map(|o| o.debut().mois_civil());
     let du_permanent: HashSet<(Option<IdSalarie>, Mois)> = groupes
         .iter()
         .filter(|g| g.contrat.as_ref().is_some_and(permanent))
@@ -385,9 +394,14 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
         let paies: Vec<PaieLue> = gs.iter().flat_map(|g| g.paies.iter().cloned()).collect();
         let declarees: Vec<&PaieLue> = paies.iter().filter(|p| !declaree_par_bulletin(p)).collect();
         // Son debut est celui que la DSN declare, sinon le plus tot de ses groupes.
-        let debut = declarees.iter().find_map(|p| p.paie.debut).or_else(|| gs.iter().filter_map(|g| g.debut).min());
+        let premiere = declarees.iter().find_map(|p| p.paie.periode).or_else(|| gs.iter().filter_map(|g| g.periode).min());
         // Sa fin est celle que la DSN declare ; un bulletin ne paie que son mois, il ne dit pas quand le contrat finit.
-        let fin = declarees.last().and_then(|p| p.paie.fin);
+        let fin = declarees.last().and_then(|p| p.paie.periode).and_then(|o| o.fin());
+        let periode = match (premiere, fin) {
+            (Some(o), Some(f)) => Some(o.sans_fin().fermee_au(f)?.into()),
+            (Some(o), None) => Some(o.sans_fin()),
+            (None, _) => None,
+        };
         // Le contrat entier : ce qu'un bulletin atteste de son seul mois reste a la paie de ce mois.
         let mut contrat = gs.iter().rev().find_map(|g| g.contrat.clone());
         if let Some(c) = contrat.as_mut().filter(|_| gs.len() > 1) {
@@ -395,7 +409,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
             (a.fichier, a.page, a.numero_bulletin) = (None, None, None);
             (a.heures, a.cachets, a.jours, a.brut) = (None, None, None, None);
         }
-        autres.push(Groupe { salarie, debut, fin, contrat, paies });
+        autres.push(Groupe { salarie, periode, contrat, paies });
     }
     let mut out: Vec<Neuf> = autres
         .into_iter()
@@ -413,8 +427,8 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
                 // Les lignes que l'ecriture garde portent la fiche de leur NIR (`ecrire` : `par_nir`) ; une ligne sans elle
                 // ne fait pas d'engagement.
                 salarie: Some(g.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?),
-                debut: g.debut,
-                fin: g.fin,
+                debut: g.periode.map(|o| o.debut()),
+                fin: g.periode.and_then(|o| o.fin()),
                 numero,
                 ..Default::default()
             };
@@ -605,7 +619,7 @@ fn avertissement_differents(differents: &[String], ou: &str) -> String {
 
 /// Ou l'import du dossier copie ce qu'il reprend.
 fn dossier_bulletins(ctx: &Contexte) -> PathBuf {
-    ctx.racine.join("historique").join("bulletins")
+    import::mois::dossier_des_bulletins(&ctx.racine)
 }
 
 /// La copie de ce que le dossier lu reprend, dans `historique/bulletins/`, sous le nom de sa copie. RIEN NE S'ECRASE :
@@ -652,7 +666,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         crate::importation::incident::noter_les_non_lus(ctx, &lu)?;
         let tri = lu.ap.reponse.tri;
         // La copie se relit sous le nom du fichier depose.
-        let deposes: HashMap<String, String> = lu.copies.iter().map(|(i, nom)| (nom.to_string(), lu.tri.fichiers[*i].chemin.clone())).collect();
+        let deposes: HashMap<CheminRelatif, CheminRelatif> = lu.copies.iter().map(|(i, nom)| (CheminRelatif::from(nom.clone()), lu.tri.fichiers[*i].chemin.clone())).collect();
         Ok((tri, copie, noms, deposes))
     })?;
 

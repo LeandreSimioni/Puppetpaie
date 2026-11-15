@@ -4,7 +4,10 @@
 //! valeurs.
 
 use serde::{Deserialize, Serialize};
-use socle::fichiers::{forme_en_cache, repr, FormeGardee, NomDeFichier};
+use socle::fichiers::{forme_en_cache, repr, CheminRelatif, FormeGardee, NomDeFichier};
+
+/// Les natures de contrat livrees, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("contrats-base.json");
 use socle::echec::R;
 use socle::num::Decimal;
 use std::collections::BTreeMap;
@@ -169,6 +172,11 @@ impl RubriqueDeLaNorme {
             Some(r) => r,
             None => panic!("rubrique de la norme mal formee"),
         }
+    }
+
+    /// Les deux rubriques sont d'un meme bloc : meme structure, meme bloc (`S21.G00.40.001` et `S21.G00.40.009`).
+    pub fn du_meme_bloc(self, autre: RubriqueDeLaNorme) -> bool {
+        self.structure == autre.structure && self.bloc == autre.bloc
     }
 }
 
@@ -502,25 +510,12 @@ impl NumeroDOrdre {
         Ok(NumeroDOrdre(n))
     }
 
-    /// Le numero `rang` places plus loin ; refus s'il a plus de quinze chiffres.
-    pub fn plus(self, rang: u64) -> R<NumeroDOrdre> {
-        match self.0.checked_add(rang) {
-            Some(n) => NumeroDOrdre::du_nombre(n),
-            None => Err(socle::refus!("Numéro d'ordre de déclaration {} plus {} : il a au plus quinze chiffres (S20.G00.05.004).", self.0, rang)),
-        }
-    }
-
-    /// Le numero qui suit `dernier` ; le premier quand il n'y en a aucun.
+    /// Le numero qui suit `dernier` ; le premier quand il n'y en a aucun ; refus au-dela de quinze chiffres.
     pub fn suivant(dernier: Option<NumeroDOrdre>) -> R<NumeroDOrdre> {
         match dernier {
-            Some(o) => o.plus(1),
+            Some(o) => NumeroDOrdre::du_nombre(o.0 + 1),
             None => Ok(NumeroDOrdre::PREMIER),
         }
-    }
-
-    /// Sa valeur.
-    pub fn valeur(self) -> u64 {
-        self.0
     }
 }
 
@@ -998,8 +993,8 @@ struct QuotiteDeLaNature {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QuotiteDeReference {
-    #[serde(deserialize_with = "socle::forme::court")]
-    valeur: Decimal,
+    #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+    valeur: socle::grandeurs::Heures,
     #[serde(rename = "quoi")]
     _quoi: String,
 }
@@ -1233,38 +1228,42 @@ struct Remunerations {
     toutes_au_brut: bool,
 }
 
-/// UN TYPE DE REMUNERATION OBLIGATOIRE (S21.G00.51.011, cahier technique § 2.1.3.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub enum TypeDeRemuneration {
-    /// 001 - Rémunération brute non plafonnée.
-    #[serde(rename = "001")]
-    Brute,
-    /// 002 - Salaire brut servant aux calculs des droits de l'Assurance chômage.
-    #[serde(rename = "002")]
-    AssietteChomage,
-    /// 003 - Salaire rétabli - reconstitué.
-    #[serde(rename = "003")]
-    SalaireRetabli,
-    /// 010 - Salaire de base.
-    #[serde(rename = "010")]
-    SalaireDeBase,
-}
-
-impl TypeDeRemuneration {
-    pub fn code(self) -> &'static str {
-        match self {
-            TypeDeRemuneration::Brute => "001",
-            TypeDeRemuneration::AssietteChomage => "002",
-            TypeDeRemuneration::SalaireRetabli => "003",
-            TypeDeRemuneration::SalaireDeBase => "010",
-        }
-    }
-
-    /// Celui de ce code, s'il est un des quatre.
-    pub fn du_code(code: &str) -> Option<TypeDeRemuneration> {
-        [TypeDeRemuneration::Brute, TypeDeRemuneration::AssietteChomage, TypeDeRemuneration::SalaireRetabli, TypeDeRemuneration::SalaireDeBase]
-            .into_iter()
-            .find(|t| t.code() == code)
+codes_fermes! {
+    /// UN TYPE DE REMUNERATION (S21.G00.51.011), la liste entiere de la norme (les valeurs de `formats-dsn-base.json` et
+    /// de `formats-dsn-p27v01-base.json`). Ceux qu'une nature declare a chaque paie, `contrats-base.json` le dit
+    /// (`Nature::types_remuneration` : 001, 002, 003, 010, cahier technique § 2.1.3.3) ; les heures en plus (017) et
+    /// l'absence (028, 029), `dsn::remunerations`.
+    TypeDeRemuneration, "Type de rémunération", "S21.G00.51.011" {
+        /// 001 - Rémunération brute non plafonnée.
+        Brute = "001",
+        /// 002 - Salaire brut servant aux calculs des droits de l'Assurance chômage.
+        AssietteChomage = "002",
+        /// 003 - Salaire rétabli - reconstitué.
+        SalaireRetabli = "003",
+        /// 010 - Salaire de base.
+        SalaireDeBase = "010",
+        HeuresDEquivalence = "012",
+        HeuresDHabillage = "013",
+        AideADomicileFp = "016",
+        /// 017 - Heures supplémentaires ou complémentaires aléatoires.
+        HeuresAleatoires = "017",
+        HeuresStructurelles = "018",
+        ActivitePartielle = "019",
+        AideADomicileDePublicsFragiles = "020",
+        TauxDeLaSituationAdministrativeFp = "021",
+        ComplementDeTraitementIndiciaireFp = "022",
+        RttMonetises = "023",
+        ChomageIntemperies = "025",
+        /// 028 - Rémunération perçue hors éléments non affectés par l'absence.
+        PercueHorsEna = "028",
+        /// 029 - Rémunération habituelle mois complet hors éléments non affectés par l'absence.
+        HabituelleHorsEna = "029",
+        NouveauTypeA = "030",
+        NouveauTypeD = "031",
+        NouveauTypeE = "032",
+        NouveauTypeB = "034",
+        NouveauTypeC = "035",
+        HeuresAleatoiresHorsReduction = "036" depuis P27V01,
     }
 }
 
@@ -1358,7 +1357,7 @@ impl Proprietes {
     }
 
     /// La quotite de reference d'un contrat au mois (la duree legale, L. 3121-27), ou `None` : la nature n'en a pas.
-    pub fn quotite_reference_defaut(&self) -> Option<Decimal> {
+    pub fn quotite_reference_defaut(&self) -> Option<socle::grandeurs::Heures> {
         self.quotite_reference.as_ref().map(|q| q.valeur)
     }
 
@@ -1569,20 +1568,19 @@ impl Proprietes {
 
 // ------------------------------------ l'abattement << contrats courts >> du PAS
 
-pub const DUREE_CONTRAT_COURT_MOIS: u32 = 2;
+pub const DUREE_CONTRAT_COURT: Duree<EnMois> = Duree::mois(2);
 
-use socle::date::Jour;
+use socle::date::{Duree, EnMois, Jour, PeriodeOuverte};
 
-/// L'abattement contrats courts s'applique-t-il a ce versement ? `debut` et
-/// `fin` sont les bornes du CONTRAT SIGNE (`fin` a `None` : terme imprecis),
-/// `le` la date du versement. Le terme : la meme quantieme deux mois plus tard, ramenee au dernier jour du mois
-/// (`Jour::plus_mois`).
-pub fn contrat_court(nat: &Nature, debut: Jour, fin: Option<Jour>, le: Jour) -> R<bool> {
+/// L'abattement contrats courts s'applique-t-il a ce versement ? `contrat` est la periode du CONTRAT SIGNE (sans fin :
+/// terme imprecis), `le` la date du versement. Le terme : la meme quantieme deux mois plus tard, ramenee au dernier jour
+/// du mois (`Jour::apres`).
+pub fn contrat_court(nat: &Nature, contrat: &PeriodeOuverte, le: Jour) -> R<bool> {
     if nat.duree_indeterminee {
         return Ok(false);
     }
-    let terme = debut.plus_mois(i64::from(DUREE_CONTRAT_COURT_MOIS))?;
-    if let Some(f) = fin {
+    let terme = contrat.debut().apres(DUREE_CONTRAT_COURT)?;
+    if let Some(f) = contrat.fin() {
         if f > terme {
             return Ok(false);
         }
@@ -1644,7 +1642,7 @@ const ILLISIBLE: &str = "Les natures de contrat livrées avec le logiciel ne se 
 /// `TypeContratDpae`).
 fn lu() -> R<Arc<Contrats>> {
     static CACHE: OnceLock<FormeGardee<Contrats>> = OnceLock::new();
-    forme_en_cache(&CACHE, "contrats-base.json", ILLISIBLE, |f: Fichier| {
+    forme_en_cache(&CACHE, &BASE, ILLISIBLE, |f: Fichier| {
         let mut natures = Vec::new();
         for (cle, proprietes) in f.natures {
             natures.push(Arc::new(Nature { cle, proprietes }));

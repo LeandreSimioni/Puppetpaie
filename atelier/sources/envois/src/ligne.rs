@@ -8,74 +8,22 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use declarations::dpae::EtatDeLaDpae;
 use droit::contexte::IdSalarie;
 use documents::fiche_questionnaire::CodeDeDemande;
 use droit::fiche::{Courriel, Nic};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{NumeroContrat, NumeroDAvenant};
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
+use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::num::Decimal;
 
 use crate::envoi::IdDeCourriel;
 use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
 
-/// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    Reel,
-    Test,
-}
-
-impl Mode {
-    pub fn de(reel: bool) -> Mode {
-        if reel {
-            Mode::Reel
-        } else {
-            Mode::Test
-        }
-    }
-
-    /// Son nom, tel que la ligne l'ecrit.
-    pub fn nom(self) -> &'static str {
-        match self {
-            Mode::Reel => "reel",
-            Mode::Test => "test",
-        }
-    }
-}
-
-/// La sorte d'un envoi, telle que `quoi` l'ecrit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Acte {
-    Dsn,
-    Dpae,
-    Documents,
-    ContratSignature,
-    ContratContresigne,
-    RegularisationCasc,
-    DossierSalarie,
-    FicheDemande,
-}
-
-impl Acte {
-    /// Son nom, tel que la ligne l'ecrit.
-    pub fn nom(self) -> &'static str {
-        match self {
-            Acte::Dsn => "dsn",
-            Acte::Dpae => "dpae",
-            Acte::Documents => "documents",
-            Acte::ContratSignature => "contrat-signature",
-            Acte::ContratContresigne => "contrat-contresigne",
-            Acte::RegularisationCasc => "regularisation-casc",
-            Acte::DossierSalarie => "dossier-salarie",
-            Acte::FicheDemande => "fiche-demande",
-        }
-    }
-}
+pub(crate) use documents::Acte;
 
 /// Ce qui ne revient jamais d'un envoi (des documents, un contrat contresigne...) : sa liste `retours` reste vide.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -88,7 +36,7 @@ pub enum Aucun {}
 pub struct Version {
     pub salarie: IdSalarie,
     pub numero: NumeroContrat,
-    pub version: u64,
+    pub version: engagement::stock::VersionDeLEngagement,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<Mois>,
 }
@@ -109,8 +57,7 @@ pub struct Envoi<D, R> {
     pub qui: String,
     pub accepte: bool,
     pub destinataire: String,
-    /// Le flux que la plate-forme a donne au depot ; `""` au fichier quand elle n'en a pas donne.
-    #[serde(with = "socle::forme::vide_si_aucun")]
+    /// Le flux que la plate-forme a donne au depot, si elle en a donne un.
     pub flux: Option<IdDeFlux>,
     pub retours: Vec<R>,
     pub reponse: String,
@@ -187,10 +134,6 @@ impl Ligne {
 
     pub fn mode(&self) -> Mode {
         commun!(self, e => e.mode)
-    }
-
-    pub fn reel(&self) -> bool {
-        self.mode() == Mode::Reel
     }
 
     pub fn qui(&self) -> &str {
@@ -273,13 +216,13 @@ impl Ligne {
     }
 
     /// SA REMISE, dite seulement par les lignes qui en ont une : celles qui donnent une piece au salarie imprimee (a
-    /// remettre en main propre) ou par courriel, et le notent (`main_propre`) : des contrats a signer, des documents
+    /// remettre en main propre) ou par courriel, et le notent (`remise`) : des contrats a signer, des documents
     /// (bulletins, certificats, attestations). Les autres n'ont pas de remise : une DSN, une DPAE se deposent ; une
     /// regularisation de la CASC, un dossier, une demande de fiche, un contrat contresigne ne partent que par courriel.
-    pub fn remise(&self) -> Option<crate::etats::ModeDeRemise> {
+    pub fn remise(&self) -> Option<documents::ModeDeRemise> {
         match self {
-            Ligne::ContratSignature(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
-            Ligne::Documents(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
+            Ligne::ContratSignature(e) => Some(e.detail.remise),
+            Ligne::Documents(e) => Some(e.detail.remise),
             Ligne::Dsn(_) | Ligne::Dpae(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => None,
         }
     }
@@ -318,18 +261,18 @@ pub struct Ouverture {
     pub contournement: Option<String>,
 }
 
-/// Les montants d'une DSN deposee, chacun ecrit en texte tel que `socle::ecriture::decimal_en_texte` l'ecrit, et relu dans
+/// Les montants d'une DSN deposee, chacun ecrit en texte tel que `socle::grandeurs::ecrit::texte` l'ecrit, et relu dans
 /// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
 mod versements_en_texte {
     use serde::{Deserialize, Serialize};
     use socle::num::Decimal;
 
-    /// Un montant ecrit par `decimal_en_texte`.
+    /// Un montant ecrit par `ecrit::texte`.
     struct EnTexte<'a>(&'a Decimal);
 
     impl Serialize for EnTexte<'_> {
         fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-            socle::ecriture::decimal_en_texte::serialize(self.0, s)
+            socle::grandeurs::ecrit::texte::serialize(&socle::grandeurs::Montant::du_decimal(*self.0), s)
         }
     }
 
@@ -372,7 +315,7 @@ pub struct DetailDsn {
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ordre: Option<droit::natures::NumeroDOrdre>,
-    /// Les montants versés aux organismes (S21.G00.20.005), écrits en texte (`socle::ecriture::decimal_en_texte`).
+    /// Les montants versés aux organismes (S21.G00.20.005), écrits en texte (`socle::grandeurs::ecrit::texte`).
     #[serde(default, skip_serializing_if = "Option::is_none", with = "versements_en_texte")]
     pub versements: Option<Vec<Decimal>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -430,15 +373,13 @@ impl DetailDsn {
     }
 }
 
-/// Une embauche qu'une DPAE declare : le salarie, le numero du contrat de son engagement, son premier et son dernier
-/// jour.
+/// Une embauche qu'une DPAE declare : le salarie, le numero du contrat de son engagement, la periode de son contrat.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmbaucheDeclaree {
     pub salarie: IdSalarie,
     pub numero: Option<NumeroContrat>,
-    pub debut: socle::date::Jour,
-    pub fin: Option<socle::date::Jour>,
+    pub contrat: socle::date::PeriodeOuverte,
 }
 
 /// LE DETAIL D'UNE DPAE : ce qui l'a ouverte, ses embauches, ce qui l'a fait echouer ; pour une DPAE reprise des
@@ -463,22 +404,20 @@ impl DetailDpae {
     }
 }
 
-/// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`).
+/// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`), et ce qu'elle
+/// est devenue (`EtatDeLaDpae`), lu une fois dans le certificat.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PersonneCertifiee {
     pub nom: String,
     pub prenom: String,
-    /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc (le journal l'ecrit `""`).
-    #[serde(with = "socle::forme::vide_si_aucun")]
+    /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc.
     pub embauche: Option<socle::date::Jour>,
-    pub dossier: String,
+    pub etat: EtatDeLaDpae,
     /// C_RETOUR_AR.
     pub code: declarations::dpae::CodeRetourDpae,
     /// Le libelle de son code (Format 120).
     pub libelle: String,
-    pub enregistree: bool,
-    pub deja_existante: bool,
     pub formalites: Vec<declarations::dpae::FormaliteDpae>,
     /// Ce que la page en montre (`routes::depots`) : pose sur ce qu'une route rend, jamais ecrit ni lu au journal.
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
@@ -486,20 +425,13 @@ pub struct PersonneCertifiee {
 }
 
 impl PersonneCertifiee {
-    /// Refusee : un code retour qui ne l'enregistre pas et ne la dit pas deja existante.
-    pub fn refusee(&self) -> bool {
-        !self.enregistree && !self.deja_existante
-    }
-
     /// Sa pastille : enregistree, faite ; deja existante, une information ; refusee, refusee.
     pub fn pastille_due(&self) -> socle::ecran::Pastille {
         use socle::ecran::{EtatDEcran, Pastille};
-        if self.enregistree {
-            Pastille::de(EtatDEcran::Fait, &if self.dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée — dossier {}", self.dossier) })
-        } else if self.deja_existante {
-            Pastille::de(EtatDEcran::Information, "déjà existante")
-        } else {
-            Pastille::de(EtatDEcran::Refuse, self.code.libelle())
+        match &self.etat {
+            EtatDeLaDpae::Enregistree { dossier } => Pastille::de(EtatDEcran::Fait, &format!("enregistrée — dossier {}", dossier)),
+            EtatDeLaDpae::DejaExistante { .. } => Pastille::de(EtatDEcran::Information, "déjà existante"),
+            EtatDeLaDpae::Refusee { .. } => Pastille::de(EtatDEcran::Refuse, self.code.libelle()),
         }
     }
 }
@@ -603,13 +535,13 @@ pub struct Servi {
     pub renvoi: bool,
 }
 
-/// LE DETAIL D'UN ENVOI DE DOCUMENTS : les salaries servis, imprimes (`main_propre`) ou partis par courriel (de
+/// LE DETAIL D'UN ENVOI DE DOCUMENTS : les salaries servis, imprimes (`remise`) ou partis par courriel (de
 /// `expediteur`) ; un envoi coupe en route dit ceux qui ont recu (`partis`) et l'adresse ou il a echoue (`echec_a`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailDocuments {
     pub salaries: Vec<Servi>,
-    pub main_propre: bool,
+    pub remise: documents::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -627,8 +559,7 @@ pub struct DetailDocuments {
 #[serde(deny_unknown_fields)]
 pub struct ContratParti {
     pub salarie: IdSalarie,
-    pub debut: socle::date::Jour,
-    pub fin: Option<socle::date::Jour>,
+    pub contrat: socle::date::PeriodeOuverte,
     pub numero: Option<NumeroContrat>,
     pub fichier: NomDeFichier,
     pub spectacle: Option<String>,
@@ -636,7 +567,7 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acte: Option<ActeDuContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub avenant: Option<i64>,
+    pub avenant: Option<NumeroDAvenant>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remplace: Option<NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -713,13 +644,13 @@ impl ArticleModifie {
     }
 }
 
-/// LE DETAIL D'UN ENVOI A LA SIGNATURE : ses contrats (ou ses avenants, `acte`), imprimes (`main_propre`) ou partis par
+/// LE DETAIL D'UN ENVOI A LA SIGNATURE : ses contrats (ou ses avenants, `acte`), imprimes (`remise`) ou partis par
 /// courriel (de `expediteur`, une relance ou non) ; un envoi coupe en route dit ceux qui ont recu et ou il a echoue.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailSignature {
     pub contrats: Vec<ContratParti>,
-    pub main_propre: bool,
+    pub remise: documents::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -732,19 +663,19 @@ pub struct DetailSignature {
     pub echec_a: Option<Courriel>,
 }
 
-/// CE QUI REVIENT D'UN CONTRAT PARTI (`routes::contrats::contrat_recu_avec`) : le contrat (salarie, debut,
+/// CE QUI REVIENT D'UN CONTRAT PARTI (`routes::contrats::contrat_recu_avec`) : le contrat (salarie, periode,
 /// numero, avenant), s'il est revenu signe (`recu`, ou la mention retiree), et, pour une reponse « Je signe » relevee
 /// par courriel (`origine`), ce qui la prouve. `quand`, `qui`, `reponse` : la note.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetourContrat {
     pub salarie: IdSalarie,
-    pub debut: socle::date::Jour,
+    pub contrat: socle::date::PeriodeOuverte,
     pub recu: bool,
     pub numero: Option<NumeroContrat>,
     pub nom: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub avenant: Option<i64>,
+    pub avenant: Option<NumeroDAvenant>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origine: Option<OrigineDuRetourDeContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -780,7 +711,7 @@ impl RetourContrat {
 /// courriel a deja demande de signer cette piece (`par_courriel`) : la redemander par courriel est alors un rappel.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AvenantParti {
-    pub numero: Option<i64>,
+    pub numero: Option<NumeroDAvenant>,
     pub quand: socle::paris::InstantOuJour,
     pub mois: Mois,
     pub fichier: NomDeFichier,
@@ -798,12 +729,11 @@ pub struct AvenantParti {
 #[serde(deny_unknown_fields)]
 pub struct ContratAttendu {
     pub salarie: IdSalarie,
-    pub debut: socle::date::Jour,
-    pub fin: Option<socle::date::Jour>,
+    pub contrat: socle::date::PeriodeOuverte,
     pub numero: Option<NumeroContrat>,
     pub spectacle: Option<String>,
     pub fichier: NomDeFichier,
-    pub avenant: Option<i64>,
+    pub avenant: Option<NumeroDAvenant>,
     pub mois: Mois,
 }
 

@@ -121,10 +121,9 @@ pub fn fil_de_routes<F: FnOnce() + Send + 'static>(f: F) {
 }
 
 /// Le fil remis propre apres une route servie dans la fenetre (`dans_la_fenetre`, `etat_garde::FileDesEtats`) : plus
-/// de mot de passe tape, les nombres a leur ecriture normale, aucun registre de lectures ouvert.
+/// de mot de passe tape, aucun registre de lectures ouvert.
 pub(crate) fn remettre_le_fil() {
     compagnie::coffre::oublier_mot_de_passe_tape();
-    socle::num::ECHELLE_GARDEE.with(|f| f.set(false));
     socle::fichiers::fermer_tout();
 }
 
@@ -132,8 +131,8 @@ pub(crate) fn remettre_le_fil() {
 /// processus (`interface::api::route`, la file des etats), et le fil d'une connexion en sert d'autres ensuite. Cette
 /// fonction fait la route (`servir_la_route`), gardee d'une panique (une route qui tombe rend un refus `DefautDuLogiciel`
 /// et le fil continue), puis remet le fil propre, quoi qu'il soit arrive : le mot de passe tape oublie (`coffre::TAPE` :
-/// il ne survit jamais a sa route), les nombres a leur ecriture normale (`num::ECHELLE_GARDEE`), le registre des lectures
-/// qu'un calcul aurait laisse ouvert en tombant ferme (`fichiers::suivre`).
+/// il ne survit jamais a sa route), le registre des lectures qu'un calcul aurait laisse ouvert en tombant ferme
+/// (`fichiers::suivre`).
 ///
 /// `moteur route` et la ligne de commande (`commandes::Cadre`) appellent `commande` directement : le processus meurt avec
 /// sa commande, et le mot de passe qu'elle a fait taper (`demande::autoriser_acte`) sert a toute la commande.
@@ -207,7 +206,6 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         if !socle::garde_reseau::en_essai() {
             return Err(enveloppe::route_inconnue(route.nom()));
         }
-        socle::num::ECHELLE_GARDEE.with(|f| f.set(true));
         panic!("la route d'essai tombe expres");
     }
     // UNE ROUTE DE L'INSTALLATION (l'accueil des compagnies) ne porte sur aucune compagnie : elle se sert sans contexte.

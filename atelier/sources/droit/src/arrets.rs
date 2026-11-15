@@ -6,7 +6,7 @@
 use crate::maintien::Origine;
 use crate::natures::codes_fermes;
 use socle::echec::R;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
 codes_fermes! {
     /// LE MOTIF DE L'ARRET (S21.G00.60.001), la liste entiere de la norme (cahier technique DSN 2026.1,
@@ -125,7 +125,7 @@ impl<T: Clone> Nomenclature<T> {
 /// `arrets-base.json`, lu par sa forme (le texte est lu une fois tant qu'il ne change pas).
 pub fn bloc_60() -> R<Bloc60> {
     static CACHE: std::sync::OnceLock<FormeGardee<Bloc60>> = std::sync::OnceLock::new();
-    let b = forme_en_cache(&CACHE, "arrets-base.json", "Les codes du bloc arrêt de travail livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
+    let b = forme_en_cache(&CACHE, &const { CheminRelatif::du_moteur("arrets-base.json") }, "Les codes du bloc arrêt de travail livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
     Ok((*b).clone())
 }
 

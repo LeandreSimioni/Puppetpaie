@@ -34,13 +34,14 @@ use serde::{Deserialize, Serialize};
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
-use droit::cumul::{self, Constantes, Declare, Fenetre};
+use droit::cumul::{self, Constantes, Declare};
 use droit::forme_bareme::Pile;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use droit::emplois;
 use droit::emplois::AnnexeChomage as Annexe;
 use droit::minima::Par;
 
+use socle::grandeurs::{sans_zero, Cachets, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Services};
 use socle::num::{div, Decimal};
 use socle::echec::R;
 
@@ -103,7 +104,7 @@ struct Banque {
     #[serde(default, deserialize_with = "socle::forme::non_lue")]
     note: socle::forme::NonLue,
     /// Le titre lisible de chaque texte depose qu'une source cite, par son chemin.
-    documents: BTreeMap<String, String>,
+    documents: BTreeMap<droit::source::CheminDepose, String>,
     annexes: Annexes,
     fenetres: Fenetres,
     /// L'ordre dans lequel les conditions de saisie se demandent : la premiere qui parle donne le conseil de la carte.
@@ -129,12 +130,9 @@ struct Annexes {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Art30 {
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    heures_par_jour: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    coefficient: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    jours_sans_allocation: Decimal,
+    heures_par_jour: HeuresParUnite,
+    coefficient: Coefficient,
+    jours_sans_allocation: Jours,
 }
 
 /// L'article 30 de l'annexe VIII, et les heures retenues par mois d'un technicien pour ses 507 heures (208, 250 avec
@@ -142,14 +140,11 @@ struct Art30 {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Art30Techniciens {
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    heures_par_jour: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    coefficient: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    jours_sans_allocation: Decimal,
-    heures_retenues_par_mois: i64,
-    heures_retenues_plusieurs_employeurs: i64,
+    heures_par_jour: HeuresParUnite,
+    coefficient: Coefficient,
+    jours_sans_allocation: Jours,
+    heures_retenues_par_mois: Heures,
+    heures_retenues_plusieurs_employeurs: Heures,
 }
 
 /// La phrase de la fenetre des droits que la phrase nomme : `{debut}` et `{fin}`.
@@ -225,14 +220,14 @@ struct Conseil {
 /// La banque, lue en sa forme une fois par contenu.
 fn banque() -> R<Arc<Banque>> {
     static CACHE: OnceLock<socle::fichiers::FormeGardee<Banque>> = OnceLock::new();
-    socle::fichiers::forme_en_cache(&CACHE, "conseils.json", ILLISIBLE, Ok)
+    socle::fichiers::forme_en_cache(&CACHE, &const { socle::fichiers::CheminRelatif::du_moteur("conseils.json") }, ILLISIBLE, Ok)
 }
 
 impl Banque {
     /// La reference lisible d'une source : le titre du document, l'article. Un texte que la banque cite sans titre est
     /// une banque mal ecrite.
     fn reference_de(&self, s: &Source) -> R<String> {
-        let titre = self.documents.get(s.fichier.texte()).ok_or_else(|| {
+        let titre = self.documents.get(&s.fichier).ok_or_else(|| {
             socle::echec::refus_avec(ILLISIBLE, socle::echec::Lieu { cle: Some(format!("documents/{}", s.fichier.texte())), detail: Some("le texte cité n'a pas de titre".to_string()), ..Default::default() })
         })?;
         Ok(match (s.article.as_deref().filter(|a| !a.is_empty()), s.fichier.code()) {
@@ -439,12 +434,44 @@ fn val_nombre(n: Decimal) -> Valeur {
     Valeur { texte: nombre_fr(n, None), nombre: Some(n) }
 }
 
-fn val_entier(n: i64) -> Valeur {
-    val_nombre(Decimal::from(n))
+/// Des heures que la phrase cite : sa porte.
+fn val_heures(h: Heures) -> Valeur {
+    val_nombre(sans_zero(h).decimal())
+}
+
+/// Des jours que la phrase cite : sa porte.
+fn val_jours(j: Jours) -> Valeur {
+    val_nombre(sans_zero(j).decimal())
+}
+
+/// Des heures par jour que la phrase cite : sa porte.
+fn val_heures_par_jour(h: HeuresParUnite) -> Valeur {
+    val_nombre(sans_zero(h).decimal())
+}
+
+/// Un coefficient que la phrase cite : sa porte.
+fn val_coefficient(c: Coefficient) -> Valeur {
+    val_nombre(sans_zero(c).decimal())
+}
+
+/// Un montant unitaire que la phrase cite, a deux decimales : sa porte.
+fn val_unitaire(m: MontantUnitaire) -> Valeur {
+    val_texte(nombre_fr(m.decimal(), Some(2)))
+}
+
+/// Un montant que la phrase cite, au centime : sa porte.
+fn val_euros(m: Montant) -> Valeur {
+    val_texte(nombre_fr(m.au_centime().decimal(), Some(2)))
+}
+
+/// Des cachets que la phrase cite : sa porte.
+fn val_cachets(c: Cachets) -> Valeur {
+    val_nombre(sans_zero(c).decimal())
 }
 
 /// Un nombre en francais : milliers separes par une espace insecable, virgule decimale ; `decimales` fixe, sinon les
-/// zeros de queue tombent (1,3 ; 4 005 ; 15,5).
+/// zeros de queue tombent (1,3 ; 4 005 ; 15,5). Son arrondi est celui d'un affichage (les decimales que le gabarit ou
+/// la phrase demandent), pas celui d'un montant : un montant y arrive deja au centime (`Montant::au_centime`).
 fn nombre_fr(x: Decimal, decimales: Option<u32>) -> String {
     let x = match decimales {
         Some(d) => x.round_dp_with_strategy(d, rust_decimal::RoundingStrategy::MidpointAwayFromZero),
@@ -478,12 +505,12 @@ fn nombre_fr(x: Decimal, decimales: Option<u32>) -> String {
 /// Les donnees que les gabarits lisent : le socle livre de l'annee (lu au 1er janvier, a la premiere valeur qu'un
 /// gabarit lui demande), les minima.
 struct Donnees {
-    annee: i32,
+    annee: socle::mois::Annee,
     bareme: OnceCell<Option<Pile>>,
 }
 
 impl Donnees {
-    fn de_l_annee(annee: i32) -> Donnees {
+    fn de_l_annee(annee: socle::mois::Annee) -> Donnees {
         Donnees { annee, bareme: OnceCell::new() }
     }
 
@@ -510,13 +537,13 @@ impl Donnees {
             },
         };
         Ok(match l {
-            Livree::AbattementCsg => Some(b.abattement_csg),
-            Livree::PlafondMensuel => b.plafond_securite_sociale.as_ref().map(|p| p.mensuel),
-            Livree::PlafondHoraire => b.plafond_securite_sociale.as_ref().map(|p| p.horaire),
-            Livree::PlafondDeduction => b.deduction_forfaitaire.as_ref().map(|d| d.plafond_annuel),
-            Livree::TauxDeduction(t) => b.deduction_forfaitaire.as_ref().and_then(|d| d.taux.get(t)).map(|n| n.0),
+            Livree::AbattementCsg => Some(b.abattement_csg.decimal()),
+            Livree::PlafondMensuel => b.plafond_securite_sociale.as_ref().map(|p| p.mensuel.decimal()),
+            Livree::PlafondHoraire => b.plafond_securite_sociale.as_ref().map(|p| p.horaire.decimal()),
+            Livree::PlafondDeduction => b.deduction_forfaitaire.as_ref().map(|d| d.plafond_annuel.decimal()),
+            Livree::TauxDeduction(t) => b.deduction_forfaitaire.as_ref().and_then(|d| d.taux.get(t)).map(|n| n.decimal()),
             Livree::TauxPatronal(id) => match b.rubrique(id).and_then(|r| r.taux_pat) {
-                Some(t) => Some(t.0),
+                Some(t) => Some(t.0.decimal()),
                 None => None,
             },
             Livree::CachetDeRepetition { .. } => None,
@@ -668,7 +695,7 @@ fn du_jour(ctx: &Contexte, decalage: Option<i64>) -> R<Option<ConseilVu>> {
     }
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(jour.an);
+    let d = Donnees::de_l_annee(jour.annee());
     let liste = generaux(&b, &d)?;
     let n = liste.len();
     if n == 0 {
@@ -697,22 +724,23 @@ fn annexe_de(sal: &droit::fiche::ChampsSalarie) -> R<Option<Annexe>> {
 
 /// Les jours d'allocation qu'un nombre d'heures retire un mois indemnise (art. 30 : heures / heures par jour x
 /// coefficient), sans arrondi : une somme sur plusieurs paies s'arrondit une fois (`environ`).
-fn jours_bruts(heures: Decimal, a: &Art30) -> Decimal {
-    div(heures, a.heures_par_jour) * a.coefficient
+fn jours_bruts(heures: Heures, a: &Art30) -> R<Jours> {
+    match heures.en_jours(a.heures_par_jour) {
+        Some(j) => Ok(j * a.coefficient),
+        None => Err(socle::refus!("la banque des conseils dit des jours de travail de zéro heure : le signaler au développeur")),
+    }
 }
 
-/// « environ » : au demi-jour le plus proche (8 heures en annexe X, 1,04 jour, font « environ 1 jour »). Zero quand le cout est de moins d'un quart de jour : la condition ne fournit alors pas `jours_perdus`, et
-/// la variante « -minime » de la banque dit « moins d'un demi-jour » au lieu d'une perte.
-fn environ(jours: Decimal) -> Decimal {
-    (jours * Decimal::from(2)).round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointAwayFromZero) / Decimal::from(2)
-}
-
-/// `jours_perdus`, seulement quand le cout arrondi n'est pas nul.
-fn avec_jours(v: &mut Vec<(&str, Valeur)>, jours: Decimal) {
-    let j = environ(jours);
-    if j > Decimal::ZERO {
-        let t = if j == Decimal::new(5, 1) { "½".to_string() } else { nombre_fr(j, None) };
-        v.push(("jours_perdus", Valeur { texte: t, nombre: Some(j) }));
+/// `jours_perdus`, seulement quand le cout arrondi n'est pas nul : « environ », au demi-jour le plus proche (8 heures en
+/// annexe X, 1,04 jour, font « environ 1 jour ») ; zero quand le cout est de moins d'un quart de jour : la condition ne
+/// fournit alors pas `jours_perdus`, et la variante « -minime » de la banque dit « moins d'un demi-jour » au lieu d'une
+/// perte.
+fn avec_jours(v: &mut Vec<(&str, Valeur)>, jours: Jours) {
+    let j = jours.au_demi();
+    if j > Jours::ZERO {
+        let dit = val_jours(j);
+        let t = if j == Jours::DEMI { "½".to_string() } else { dit.texte };
+        v.push(("jours_perdus", Valeur { texte: t, nombre: dit.nombre }));
     }
 }
 
@@ -722,40 +750,41 @@ fn avec_jours(v: &mut Vec<(&str, Valeur)>, jours: Decimal) {
 /// « Service de repetition » a dates connues, de 1 ou 2 services par jour, de moins de 12 heures par jour, dont la
 /// somme par jour couvre le cachet de repetition : sous le minimum, rien.
 struct GainRepetition {
-    heures_avant: Decimal,
-    gain: Decimal,
-    jours: i64,
-    montant: Decimal,
+    heures_avant: Heures,
+    gain: Heures,
+    jours: Jours,
+    montant: Montant,
     minimum: droit::minima::Minimum,
 }
 
-fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: Decimal) -> R<Option<GainRepetition>> {
+fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: HeuresParUnite) -> R<Option<GainRepetition>> {
     let Some(min) = p.cachet_de_repetition(ctx)? else { return Ok(None) };
+    // Le minimum du cachet de repetition, un montant par jour que la grille des minima dit en nombre : son bord.
+    let minimum_du_jour = MontantUnitaire::du_decimal(min.montant);
     let saisies = p.saisies();
-    let (mut heures_avant, mut gain, mut jours, mut montant) = (Decimal::ZERO, Decimal::ZERO, 0i64, Decimal::ZERO);
+    let (mut heures_avant, mut gain, mut jours, mut montant) = (Heures::ZERO, Heures::ZERO, Jours::ZERO, Montant::ZERO);
     for (l, s) in p.remuneration.iter().zip(saisies) {
-        if l.code != droit::catalogue::REPETITION || l.heures_annexes.is_zero() {
+        if l.code != droit::catalogue::REPETITION || l.heures_annexes.est_nul() {
             continue;
         }
+        let engagement::ligne::QuantiteDeLigne::Services(services) = l.quantite else { continue };
         // Une ligne sans saisie n'a pas de dates connues.
         let Some(s) = s else { continue };
         let dates: BTreeSet<Jour> = s.dates().iter().map(|j| j.jour()).collect();
         if dates.is_empty() {
             continue;
         }
-        let n = Decimal::from(dates.len() as i64);
-        let services_par_jour = div(l.quantite, n);
-        let heures_jour = div(l.heures_annexes, n);
-        let montant_jour = div(l.montant, n);
-        if services_par_jour > Decimal::from(2) || heures_jour >= heures_cachet || montant_jour < min.montant {
+        // Par jour : au plus deux services, moins que les heures d'un cachet, au moins le minimum.
+        let n = Jours::de_dates(dates.len());
+        if services > Services::comptes(2 * dates.len()) || l.heures_annexes >= n * heures_cachet || l.montant < n * minimum_du_jour {
             continue;
         }
         heures_avant += l.heures_annexes;
-        gain += (heures_cachet - heures_jour) * n;
-        jours += dates.len() as i64;
+        gain += n * heures_cachet - l.heures_annexes;
+        jours += n;
         montant += l.montant;
     }
-    if gain <= Decimal::ZERO {
+    if gain <= Heures::ZERO {
         return Ok(None);
     }
     Ok(Some(GainRepetition { heures_avant, gain, jours, montant, minimum: min }))
@@ -774,30 +803,34 @@ fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: Decimal) -> R<Option
 /// gagne que si le salarie est a moins de `gain` heures des 507 : sa chance de servir croit avec le gain, et sous le
 /// poids d'un cachet elle est trop mince pour une ligne sous chaque carte.
 struct GainHeures {
-    heures: Decimal,
-    montant: Decimal,
-    minimum: Decimal,
-    heures_max: Decimal,
-    gain: Decimal,
+    heures: Heures,
+    montant: Montant,
+    minimum: MontantUnitaire,
+    heures_max: Heures,
+    gain: Heures,
 }
 
-fn gain_heures(ctx: &Contexte, p: &Paie, seuil: Decimal) -> R<Option<GainHeures>> {
+fn gain_heures(ctx: &Contexte, p: &Paie, seuil: Heures) -> R<Option<GainHeures>> {
     let mut meilleur: Option<GainHeures> = None;
     for (i, l) in p.remuneration.iter().enumerate() {
-        if l.heures_annexes <= Decimal::ZERO || l.montant <= Decimal::ZERO {
+        let (heures, montant) = (l.heures_annexes, l.montant);
+        if heures <= Heures::ZERO || montant <= Montant::ZERO {
             continue;
         }
         let Some(m) = p.minimum_de_la_ligne(ctx, i)? else { continue };
         if m.par != Par::Heure || m.montant <= Decimal::ZERO {
             continue;
         }
-        let heures_max = div(l.montant, m.montant).floor();
-        let gain = (heures_max - l.heures_annexes).floor();
-        if gain < seuil.max(Decimal::ONE) {
+        // Le minimum horaire, un montant par heure que la grille des minima dit en nombre : son bord.
+        let minimum = MontantUnitaire::du_decimal(m.montant);
+        let Some(heures_max) = montant.en_heures(minimum) else { continue };
+        let heures_max = heures_max.entieres_en_dessous();
+        let gain = (heures_max - heures).entieres_en_dessous();
+        if gain < seuil.max(Heures::UNE) {
             continue;
         }
         if !matches!(&meilleur, Some(g) if gain <= g.gain) {
-            meilleur = Some(GainHeures { heures: l.heures_annexes, montant: l.montant, minimum: m.montant, heures_max, gain });
+            meilleur = Some(GainHeures { heures, montant, minimum, heures_max, gain });
         }
     }
     Ok(meilleur)
@@ -825,7 +858,7 @@ impl<'a> Declares<'a> {
 /// La phrase de la fenetre (`conseils.json`, `fenetres`).
 fn phrase_fenetre(b: &Banque, f: &cumul::Position, anniversaire: bool) -> String {
     let g = if anniversaire { &b.fenetres.anniversaire } else { &b.fenetres.glissante };
-    g.replace("{debut}", &f.debut.jj_mm_aaaa()).replace("{fin}", &f.fin.jj_mm_aaaa())
+    g.replace("{debut}", &f.periode.debut().jj_mm_aaaa()).replace("{fin}", &f.periode.fin().jj_mm_aaaa())
 }
 
 /// La position du salarie sur la fenetre de ses droits : depuis sa date anniversaire si sa fiche la porte, sinon les
@@ -847,25 +880,26 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         return Ok(out);
     }
     let b = banque()?;
-    let d = Donnees::de_l_annee(ctx.aujourdhui.an);
+    let d = Donnees::de_l_annee(ctx.aujourdhui.annee());
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     // Le mois de chaque salarie, chez nous : ses heures (cachets a 12 h) et ses cachets, toutes ses paies de l'ecran.
-    let mut du_mois: HashMap<String, (i64, i64)> = HashMap::new();
+    let mut du_mois: HashMap<String, (Heures, Cachets)> = HashMap::new();
     for p in paies {
         let e = &p.engagement;
         if e.sans_paie() || e.nat()?.mensuelle() {
             continue;
         }
-        let x = du_mois.entry(p.salarie.id.to_string()).or_insert((0, 0));
+        let x = du_mois.entry(p.salarie.id.to_string()).or_insert((Heures::ZERO, Cachets::ZERO));
         if let Some(h) = e.heures {
-            x.0 += i64::try_from(h.round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointNearestEven)).map_err(|e| socle::echec::refus(format!("{} heures : {}", h, e)))?;
+            x.0 += h.entieres();
         }
         x.0 += e.cachets * c.heures_par_cachet;
         x.1 += e.cachets;
     }
+    let heures_cachet = c.heures_par_cachet;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut declares = Declares { ctx, paies, departs: &departs, lus: None };
-    let mut assurees: HashMap<String, Option<(i64, String)>> = HashMap::new();
+    let mut assurees: HashMap<String, Option<(Heures, String)>> = HashMap::new();
     for (i, p) in paies.iter().enumerate() {
         let e = &p.engagement;
         if e.sans_paie() || e.nat()?.mensuelle() {
@@ -882,21 +916,31 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
             let mut v = Valeurs::new();
             v.insert("prenom".into(), val_texte(qui.clone()));
             v.insert("mois".into(), val_texte(mois.clone()));
-            v.insert("heures_cachet".into(), val_entier(c.heures_par_cachet));
+            v.insert("heures_cachet".into(), val_heures_par_jour(heures_cachet));
             for (k, x) in extra {
                 v.insert(k.into(), x);
             }
             v
         };
         let seuil_mois = a30.jours_sans_allocation * a30.heures_par_jour;
-        let sature = Decimal::from(heures_mois) >= seuil_mois;
-        // Les deux conseils « plus d'heures », et ce qui les remplace quand nos contrats assurent les 507 heures.
-        let rep = if annexe == Annexe::X { gain_repetition(ctx, p, Decimal::from(c.heures_par_cachet))? } else { None };
-        let hrs = gain_heures(ctx, p, Decimal::from(c.heures_par_cachet))?;
+        let sature = heures_mois >= seuil_mois;
+        // Les deux conseils « plus d'heures », et ce qui les remplace quand nos contrats assurent les 507 heures. Le seuil
+        // d'un gain d'heures : le poids d'un cachet (`gain_heures`).
+        let rep = if annexe == Annexe::X { gain_repetition(ctx, p, heures_cachet)? } else { None };
+        let hrs = gain_heures(ctx, p, Cachets::UN * heures_cachet)?;
+        // Chaque gain, ses jours d'allocation, et ce qu'il paie par jour ou par heure (un gain a des jours et des heures).
+        let impossible = || socle::refus!("un gain des conseils sans jour ni heure : le signaler au développeur");
+        let rep = match rep {
+            Some(g) => Some((jours_bruts(g.gain, &a30)?, g.montant.par_jour(g.jours).ok_or_else(impossible)?, g)),
+            None => None,
+        };
+        let hrs = match hrs {
+            Some(g) => Some((jours_bruts(g.gain, &a30)?, g.montant.par_heure(g.heures).ok_or_else(impossible)?, g)),
+            None => None,
+        };
         let assure = if (rep.is_some() || hrs.is_some()) && !sature {
             if !assurees.contains_key(&cle) {
-                let fin = e.fin_periode();
-                let (pos, anniv) = position(ctx, &p.salarie.id, declares.tous()?, fin)?;
+                let (pos, anniv) = position(ctx, &p.salarie.id, declares.tous()?, e.periode_payee()?.fin())?;
                 let h = pos.heures_ouverture()?;
                 let r = (h >= c.seuil_heures).then(|| (h, phrase_fenetre(&b, &pos, anniv)));
                 assurees.insert(cle.clone(), r);
@@ -911,52 +955,52 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                     let t = &b.annexes.viii;
                     (annexe == Annexe::Viii && heures_mois > t.heures_retenues_par_mois).then(|| {
                         base(vec![
-                            ("heures", val_entier(heures_mois)),
-                            ("plafond", val_entier(t.heures_retenues_par_mois)),
-                            ("plafond_majore", val_entier(t.heures_retenues_plusieurs_employeurs)),
+                            ("heures", val_heures(heures_mois)),
+                            ("plafond", val_heures(t.heures_retenues_par_mois)),
+                            ("plafond_majore", val_heures(t.heures_retenues_plusieurs_employeurs)),
                         ])
                     })
                 }
                 Quand::MoisSature if sature => Some(base(vec![
-                    ("heures", val_entier(heures_mois)),
-                    ("seuil", val_nombre(seuil_mois)),
-                    ("jours", val_nombre(a30.jours_sans_allocation)),
-                    ("heures_par_jour", val_nombre(a30.heures_par_jour)),
+                    ("heures", val_heures(heures_mois)),
+                    ("seuil", val_heures(seuil_mois)),
+                    ("jours", val_jours(a30.jours_sans_allocation)),
+                    ("heures_par_jour", val_heures_par_jour(a30.heures_par_jour)),
                 ])),
                 Quand::PlusDe28Cachets if annexe == Annexe::X && cachets_mois > c.cachets_par_mois => Some(base(vec![
-                    ("cachets", val_entier(cachets_mois)),
-                    ("plafond", val_entier(c.cachets_par_mois)),
-                    ("perdus", val_entier(cachets_mois - c.cachets_par_mois)),
+                    ("cachets", val_cachets(cachets_mois)),
+                    ("plafond", val_cachets(c.cachets_par_mois)),
+                    ("perdus", val_cachets(cachets_mois - c.cachets_par_mois)),
                 ])),
                 Quand::HeuresAssurees => assure.as_ref().map(|(h, fenetre)| {
                     base(vec![
-                        ("heures", val_entier(*h)),
+                        ("heures", val_heures(*h)),
                         ("fenetre", val_texte(fenetre.clone())),
-                        ("heures_par_jour", val_nombre(a30.heures_par_jour)),
-                        ("coefficient", val_nombre(a30.coefficient)),
+                        ("heures_par_jour", val_heures_par_jour(a30.heures_par_jour)),
+                        ("coefficient", val_coefficient(a30.coefficient)),
                     ])
                 }),
-                Quand::RepetitionEnCachet if assure.is_none() && !sature => rep.as_ref().map(|g| {
+                Quand::RepetitionEnCachet if assure.is_none() && !sature => rep.as_ref().map(|(jours, par_jour, g)| {
                     let mut v = vec![
-                        ("heures_avant", val_nombre(g.heures_avant)),
-                        ("nb_jours", val_entier(g.jours)),
-                        ("montant_jour", val_texte(nombre_fr(div(g.montant, Decimal::from(g.jours)), Some(2)))),
-                        ("minimum", val_texte(nombre_fr(g.minimum.montant, Some(2)))),
-                        ("gain", val_nombre(g.gain)),
+                        ("heures_avant", val_heures(g.heures_avant)),
+                        ("nb_jours", val_jours(g.jours)),
+                        ("montant_jour", val_unitaire(*par_jour)),
+                        ("minimum", val_texte(nombre_fr(Montant::du_decimal(g.minimum.montant).au_centime().decimal(), Some(2)))),
+                        ("gain", val_heures(g.gain)),
                     ];
-                    avec_jours(&mut v, jours_bruts(g.gain, &a30));
+                    avec_jours(&mut v, *jours);
                     base(v)
                 }),
-                Quand::HeuresPourLaMemeSomme if assure.is_none() && !sature => hrs.as_ref().map(|g| {
+                Quand::HeuresPourLaMemeSomme if assure.is_none() && !sature => hrs.as_ref().map(|(jours, par_heure, g)| {
                     let mut v = vec![
-                        ("heures", val_nombre(g.heures)),
-                        ("montant", val_texte(nombre_fr(g.montant, Some(2)))),
-                        ("taux", val_texte(nombre_fr(div(g.montant, g.heures), Some(2)))),
-                        ("minimum", val_texte(nombre_fr(g.minimum, Some(2)))),
-                        ("heures_max", val_nombre(g.heures_max)),
-                        ("gain", val_nombre(g.gain)),
+                        ("heures", val_heures(g.heures)),
+                        ("montant", val_euros(g.montant)),
+                        ("taux", val_unitaire(*par_heure)),
+                        ("minimum", val_unitaire(g.minimum)),
+                        ("heures_max", val_heures(g.heures_max)),
+                        ("gain", val_heures(g.gain)),
                     ];
-                    avec_jours(&mut v, jours_bruts(g.gain, &a30));
+                    avec_jours(&mut v, *jours);
                     base(v)
                 }),
                 Quand::Enseignement => {
@@ -967,14 +1011,14 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                             continue;
                         }
                         if let Some(pl) = r.plafond_annuel_heures {
-                            trouve = Some(base(vec![("plafond", val_entier(pl.moins_de_50_ans)), ("plafond_50", val_entier(pl.cinquante_ans_et_plus))]));
+                            trouve = Some(base(vec![("plafond", val_heures(pl.moins_de_50_ans)), ("plafond_50", val_heures(pl.cinquante_ans_et_plus))]));
                         }
                         break;
                     }
                     trouve
                 }
                 Quand::Suspension if !e.suspensions.is_empty() => Some(base(vec![])),
-                Quand::CachetsEtHeures if annexe == Annexe::X && e.cachets > 0 && e.heures.is_some_and(|h| h > socle::num::Decimal::ZERO) => Some(base(vec![])),
+                Quand::CachetsEtHeures if annexe == Annexe::X && e.cachets > Cachets::ZERO && e.heures.is_some_and(|h| h > Heures::ZERO) => Some(base(vec![])),
                 _ => None,
             };
             if let Some(v) = vals {
@@ -993,33 +1037,32 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
 /// Ce que les conseils de saisie auraient change aux paies de ce salarie sur la fenetre : (heures, jours d'allocation,
 /// avant arrondi). Chaque mois de la fenetre se lit dans les paies ecrites de ses engagements valides
 /// (`engagement::etats::validees_du_mois`) : rien ne se recalcule ; un mois sans engagement valide n'en a pas.
-fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Fenetre, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Decimal, Decimal)> {
+fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Periode, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Heures, Jours)> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
-    let (debut, fin, _) = f;
-    let mut gain = Decimal::ZERO;
-    let mut jours = Decimal::ZERO;
-    for mois in socle::mois::Mois::entre(debut, fin) {
+    let heures_cachet = c.heures_par_cachet;
+    let mut gain = Heures::ZERO;
+    let mut jours = Jours::ZERO;
+    for mois in f.mois() {
         let Some((_, paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else { continue };
         for p in &paies {
             let e = &p.engagement;
             if p.salarie.id != *cle || e.sans_paie() || e.nat()?.mensuelle() {
                 continue;
             }
-            let fp = e.fin_periode();
-            if fp < *debut || fp > *fin {
+            if !f.contient(&e.periode_payee()?.fin()) {
                 continue;
             }
             let repetition = match annexe {
-                Annexe::X => gain_repetition(ctx, p, Decimal::from(c.heures_par_cachet))?,
+                Annexe::X => gain_repetition(ctx, p, heures_cachet)?,
                 Annexe::Viii => None,
             };
             let g = match repetition {
                 Some(r) => Some(r.gain),
-                None => gain_heures(ctx, p, Decimal::from(c.heures_par_cachet))?.map(|h| h.gain),
+                None => gain_heures(ctx, p, Cachets::UN * heures_cachet)?.map(|h| h.gain),
             };
-            if let Some(g) = g.filter(|g| *g > Decimal::ZERO) {
+            if let Some(g) = g.filter(|g| *g > Heures::ZERO) {
                 gain += g;
-                jours += jours_bruts(g, a30);
+                jours += jours_bruts(g, a30)?;
             }
         }
     }
@@ -1038,7 +1081,7 @@ fn du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> R<Vec<Conseil
 fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::fiche::FicheSalarie) -> R<Vec<ConseilVu>> {
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(jour.an);
+    let d = Donnees::de_l_annee(jour.annee());
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
@@ -1055,7 +1098,7 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
         let mut v = Valeurs::new();
         v.insert("prenom".into(), val_texte(qui.clone()));
         v.insert("fenetre".into(), val_texte(fenetre.clone()));
-        v.insert("seuil".into(), val_entier(c.seuil_heures));
+        v.insert("seuil".into(), val_heures(c.seuil_heures));
         for (k, x) in extra {
             v.insert(k.into(), x);
         }
@@ -1063,20 +1106,21 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
     };
     let en_jeu = annexes_en_jeu(annexe);
     let mut a_dire: Vec<(Quand, Valeurs)> = Vec::new();
+    // La part du seuil que des heures font, en pourcent : la phrase la dit.
+    let pourcentage = |h: Heures| h.rapport(c.seuil_heures).map(|r| r.en_taux().decimal()).ok_or_else(|| socle::refus!("le seuil des droits est de zéro heure : le signaler au développeur"));
     if heures >= c.seuil_heures {
-        a_dire.push((Quand::DroitsOuverts, base(vec![("heures", val_entier(heures))])));
+        a_dire.push((Quand::DroitsOuverts, base(vec![("heures", val_heures(heures))])));
         if let Some(a) = &a30 {
-            a_dire.push((Quand::Intense, base(vec![("heures_par_jour", val_nombre(a.heures_par_jour)), ("coefficient", val_nombre(a.coefficient))])));
+            a_dire.push((Quand::Intense, base(vec![("heures_par_jour", val_heures_par_jour(a.heures_par_jour)), ("coefficient", val_coefficient(a.coefficient))])));
         }
     } else {
-        let pct = (Decimal::from(heures * 100) / Decimal::from(c.seuil_heures)).round();
-        a_dire.push((Quand::HeuresComptees, base(vec![("heures", val_entier(heures)), ("pourcentage", val_nombre(pct))])));
+        let pct = pourcentage(heures)?.round();
+        a_dire.push((Quand::HeuresComptees, base(vec![("heures", val_heures(heures)), ("pourcentage", val_nombre(pct))])));
         if let (Some(a), Some(ax)) = (&a30, annexe) {
-            let f: Fenetre = (pos.debut, pos.fin, pos.libelle_fenetre.clone());
-            let (gain, jours) = gains_sur_la_fenetre(ctx, cle, &f, a, ax, &departs)?;
-            if gain > Decimal::ZERO {
-                let pct = (gain * Decimal::from(100) / Decimal::from(c.seuil_heures)).round_dp(1).normalize();
-                let mut v = vec![("gain", val_nombre(gain)), ("pourcentage", val_nombre(pct))];
+            let (gain, jours) = gains_sur_la_fenetre(ctx, cle, &pos.periode, a, ax, &departs)?;
+            if gain > Heures::ZERO {
+                let pct = pourcentage(gain)?.round_dp(1).normalize();
+                let mut v = vec![("gain", val_heures(gain)), ("pourcentage", val_nombre(pct))];
                 avec_jours(&mut v, jours);
                 a_dire.push((Quand::GainDesConseils, base(v)));
             }
@@ -1092,18 +1136,18 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
                 Quand::CachetsPerdus,
                 base(vec![
                     ("mois", val_texte(m.libelle(socle::mois::Graphie::Accentuee))),
-                    ("cachets", val_entier(n)),
-                    ("plafond", val_entier(c.cachets_par_mois)),
-                    ("perdus", val_entier(n - c.cachets_par_mois)),
+                    ("cachets", val_cachets(n)),
+                    ("plafond", val_cachets(c.cachets_par_mois)),
+                    ("perdus", val_cachets(n - c.cachets_par_mois)),
                 ]),
             ));
         }
     }
     let perdu = pos.enseignement_perdu()?;
-    if perdu > 0 {
+    if perdu > Heures::ZERO {
         a_dire.push((
             Quand::EnseignementPerdu,
-            base(vec![("heures", val_entier(pos.heures_enseignement())), ("plafond", val_entier(pos.plafond_enseignement()?)), ("perdus", val_entier(perdu))]),
+            base(vec![("heures", val_heures(pos.heures_enseignement())), ("plafond", val_heures(pos.plafond_enseignement()?)), ("perdus", val_heures(perdu))]),
         ));
     }
     let mut out = Vec::new();
@@ -1126,7 +1170,7 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
     }
     let b = banque()?;
     let jour = ctx.aujourdhui;
-    let d = Donnees::de_l_annee(jour.an);
+    let d = Donnees::de_l_annee(jour.annee());
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
@@ -1175,13 +1219,13 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
         })
         .collect();
     let mut v = Valeurs::new();
-    v.insert("seuil".into(), val_entier(c.seuil_heures));
+    v.insert("seuil".into(), val_heures(c.seuil_heures));
     // `{noms_anniversaire}` (et `{n_anniversaire}`) : ceux dont la fiche porte la date anniversaire ;
     // `{noms_glissants}` : les autres. Un groupe vide ne se pose pas : les conseils qui le nomment se taisent.
     for (groupe, anniv) in [("anniversaire", true), ("glissants", false)] {
         let qui: Vec<String> = noms.iter().filter(|(_, a)| *a == anniv).map(|(n, _)| n.clone()).collect();
         if !qui.is_empty() {
-            v.insert(format!("n_{}", groupe), val_entier(qui.len() as i64));
+            v.insert(format!("n_{}", groupe), val_nombre(Decimal::from(qui.len())));
             v.insert(format!("noms_{}", groupe), val_texte(et(&qui)));
         }
     }

@@ -35,7 +35,7 @@ use crate::caviardage::{self, Connus};
 use compagnie::incidents;
 use droit::contexte::Contexte;
 use droit::fiche::AnnexeConvention;
-use engagement::ecarts::{Comparaison, Grandeur, OrigineDuTauxAtmp, RegroupementDeComparaison};
+use engagement::ecarts::{CeQuiDiffere, Comparaison, MesureDeLEcart, OrigineDuTauxAtmp, RegroupementDeComparaison};
 use engagement::importe::LogicielDUnBulletin;
 use socle::echec::R;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
@@ -220,7 +220,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
         ecart_relatif: None,
     };
 
-    let mut ecarts: BTreeMap<(RegroupementDeComparaison, Grandeur, LogicielDuRapport), (Vec<String>, Vec<Cas>)> = BTreeMap::new();
+    let mut ecarts: BTreeMap<(RegroupementDeComparaison, CeQuiDiffere, LogicielDuRapport), (Vec<String>, Vec<Cas>)> = BTreeMap::new();
     let mut refus: BTreeMap<String, Vec<Cas>> = BTreeMap::new();
     let mut seules: BTreeMap<LogicielDuRapport, Vec<String>> = BTreeMap::new();
     for c in comparaisons {
@@ -232,8 +232,14 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
             }
             Ok(liste) => {
                 for e in liste {
-                    let x = Cas { notre_taux: nombre(e.notre_taux), leur_taux: nombre(e.leur_taux), ecart_relatif: nombre(e.ecart_relatif), ..cas(c) };
-                    let (libelles, v) = ecarts.entry((e.cotisation.clone(), e.grandeur, logiciel(c))).or_default();
+                    // Ce que l'ecart mesure, ecrit dans le rapport.
+                    let (notre_taux, leur_taux, ecart_relatif) = match e.mesure {
+                        MesureDeLEcart::TauxSalarie { notre, leur } | MesureDeLEcart::TauxEmployeur { notre, leur } => (Some(notre.decimal()), Some(leur.decimal()), None),
+                        MesureDeLEcart::Base(r) | MesureDeLEcart::MontantSalarie(r) | MesureDeLEcart::MontantEmployeur(r) => (None, None, r.map(socle::grandeurs::Coefficient::decimal)),
+                        MesureDeLEcart::AbsenteDuBulletin | MesureDeLEcart::AbsenteDuCalcul => (None, None, None),
+                    };
+                    let x = Cas { notre_taux: nombre(notre_taux), leur_taux: nombre(leur_taux), ecart_relatif: nombre(ecart_relatif), ..cas(c) };
+                    let (libelles, v) = ecarts.entry((e.cotisation.clone(), e.mesure.ce_qui_differe(), logiciel(c))).or_default();
                     for l in &e.libelles {
                         if !libelles.contains(l) {
                             libelles.push(l.clone());

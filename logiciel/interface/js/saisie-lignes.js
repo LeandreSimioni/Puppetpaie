@@ -365,7 +365,7 @@ function casesMoisPasse(vue, contrats, avecNom) {
     c.dates.forEach((iso) => ajouter(joue, iso, libelle));
     for (let j = 1; j <= nb; j++) {
       const iso = `${vue}-${String(j).padStart(2, "0")}`;
-      if (iso >= c.debut && iso <= c.fin) ajouter(plage, iso, libelle);
+      if (iso >= c.periode.du && iso <= c.periode.au) ajouter(plage, iso, libelle);
     }
   });
   let cases = "";
@@ -1772,7 +1772,7 @@ async function poserContratsEnCours(mois) {
     // Le moteur rend toujours une ligne de cachets, sans quantité, avec le taux
     // du contrat ou le dernier saisi (`engagement_de_reprise`).
     const e = { ...c.engagement, salarie: c.salarie, spectacle: c.spectacle,
-                debut: c.debut, fin: c.fin, numero: c.numero };
+                debut: c.contrat.du, fin: c.contrat.au, numero: c.numero };
     // Ce que l'engagement repris porte d'autre (la durée de référence,
     // l'emploi et les statuts déclarés…) se montre dans son formulaire
     // (`CHAMPS_RARES`), et s'écrit de là.
@@ -1803,18 +1803,19 @@ function quiEtPourQuoi(ligne) {
  * contrat, et une flèche du côté où il déborde du mois affiché — à gauche
  * s'il a commencé avant, à droite s'il se poursuit après ; ses dates en
  * infobulle. Tout vient du moteur, `contrat` d'un engagement de l'aperçu ou d'une
- * ligne des états du mois (`premier_mois`, `dernier_mois`, `depuis`,
+ * ligne des états du mois (`place`, `depuis`,
  * `jusqu_a`), avec le début et la fin du contrat : la page ne compare aucune
  * date. Un contrat sans terme (un CDI) n'en porte pas : il dure, il n'est
  * pas « sur plusieurs mois ». */
 /* UN CONTRAT SUR PLUSIEURS MOIS : un chevron au bord de la case de l'engagement,
  * à gauche quand le contrat a commencé avant ce mois, à droite quand il se
  * poursuit après (un permanent en CDI aussi) ; cliquer va au mois voisin.
- * Tout vient du moteur (`contrat.premier_mois`, `dernier_mois`, `depuis`,
+ * Tout vient du moteur (`contrat.place`, `depuis`,
  * `jusqu_a`) : la page ne compare aucune date. */
 function marquePlurimensuel(contrat, debut, fin) {
-  if (!contrat || typeof contrat.premier_mois !== "boolean" || typeof contrat.dernier_mois !== "boolean") return "";
-  const avant = !contrat.premier_mois, apres = !contrat.dernier_mois;
+  if (!contrat || typeof contrat.place !== "string") return "";
+  const avant = contrat.place === "dernier" || contrat.place === "milieu";
+  const apres = contrat.place === "premier" || contrat.place === "milieu";
   if (!avant && !apres) return "";
   const x = moisLu(document.getElementById("mois").value);
   const voisin = (pas) => {

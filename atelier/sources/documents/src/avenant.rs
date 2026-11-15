@@ -16,12 +16,15 @@ use droit::marqueurs::Marqueur;
 use fabrique_pdf::modele::{self, Modele};
 use serde::Serialize;
 
-use crate::bulletin::{convention_du_contrat, fmt_eur};
+use crate::bulletin::convention_du_contrat;
+use socle::texte::chiffres_en_euros;
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie, FormeDeRemuneration};
+use engagement::PlaceDuMois;
 use engagement::saisie::{Champ, Valeur};
 use socle::date::Jour;
+use socle::grandeurs::Montant;
 use socle::mois::Mois;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use socle::nfkc::nfkc;
@@ -163,7 +166,7 @@ pub(crate) fn ligne_citee(l: &FormeDeRemuneration) -> String {
             texte.push(c);
         }
     }
-    format!("{} à {}", texte, socle::texte::euros(l.taux))
+    format!("{} à {}", texte, l.paiement().taux().dit())
 }
 
 /// La ligne fait-elle le brut ? (`soumis` de la rubrique.)
@@ -177,7 +180,8 @@ pub(crate) fn fait_le_brut(l: &FormeDeRemuneration) -> bool {
 fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> R<String> {
     let morceaux: Vec<String> = remuneration.iter().filter(|l| fait_le_brut(l)).map(ligne_citee).collect();
     let mut phrase = et(&morceaux);
-    if !e.f.dernier_mois {
+    // Le contrat se poursuit apres le mois.
+    if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.f.place {
         let quand = e.f.mois.libelle(socle::mois::Graphie::Accentuee);
         if !e.f.planning.is_empty() {
             let n = e.f.planning.len();
@@ -201,13 +205,13 @@ fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> R<St
 /// n'est pas une clause du contrat.
 pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> Option<String> {
     let morceaux: Vec<String> =
-        remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant > socle::num::Decimal::ZERO).map(ligne_citee).collect();
+        remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant.decimal() > socle::num::Decimal::ZERO).map(ligne_citee).collect();
     (!morceaux.is_empty()).then(|| et(&morceaux))
 }
 
 /// « le mois d'octobre 2026 » quand le contrat se poursuit apres le mois : le total et le net sont ceux de ce mois.
 fn periode_remuneration(e: &Eng) -> R<Option<String>> {
-    if e.f.dernier_mois {
+    if let PlaceDuMois::Seul | PlaceDuMois::Dernier = e.f.place {
         return Ok(None);
     }
     let mois = e.f.mois;
@@ -228,8 +232,8 @@ fn dates_travail(e: &Eng) -> R<String> {
         }
         groupes.join(", ")
     };
-    if !e.f.dernier_mois && e.f.planning.is_empty() {
-        let fin = e.f.fin.ok_or_else(|| refus("contrat sans fin"))?;
+    if let (PlaceDuMois::Premier | PlaceDuMois::Milieu, true) = (e.f.place, e.f.planning.is_empty()) {
+        let fin = e.f.contrat.fin().ok_or_else(|| refus("contrat sans fin"))?;
         texte += &format!(", puis les dates du planning jusqu'au {}", fin.jj_mm_aaaa());
     }
     Ok(texte)
@@ -257,7 +261,7 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     poser(Marqueur::EmployeurLicence, licence);
     // Le numero sous lequel la compagnie est affiliee a la Caisse : son numero d'adherent (`conges_spectacles::adherent`).
     poser(Marqueur::EmployeurCongesspectacles, crate::conges_spectacles::adherent(ent)?);
-    poser(Marqueur::ContratFin, e.f.fin.ok_or_else(|| refus("contrat sans fin"))?.jj_mm_aaaa());
+    poser(Marqueur::ContratFin, e.f.contrat.fin().ok_or_else(|| refus("contrat sans fin"))?.jj_mm_aaaa());
     poser(Marqueur::ContratDatesTravail, dates_travail(e)?);
     poser(Marqueur::ContratLieu, lieu_du_contrat(e));
     // Le jour du versement de la paie (`engagement::Engagement::date_du_versement`, que la paie ecrite porte).
@@ -270,13 +274,14 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     if let Some(h) = remuneration_hors_brut(remuneration) {
         poser(Marqueur::RemunerationHorsBrut, h);
     }
-    poser(Marqueur::RemunerationCachets, e.f.cachets.to_string());
+    poser(Marqueur::RemunerationCachets, socle::grandeurs::ecrit::sans_zero::dit(e.f.cachets));
     // Sans taux de cachet, pas de marqueur : un modele qui le cite se refuse (`contrat::refuser_ce_que_le_modele_tairait`).
     if let Some(t) = e.f.taux_cachet {
-        poser(Marqueur::RemunerationTauxCachet, fmt_eur(t));
+        // Le montant d'un cachet.
+        poser(Marqueur::RemunerationTauxCachet, chiffres_en_euros(t));
     }
-    poser(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
-    poser(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
+    poser(Marqueur::RemunerationBrut, chiffres_en_euros(paie.brut));
+    poser(Marqueur::RemunerationNetEstime, chiffres_en_euros(paie.net_a_payer));
     poser(Marqueur::SpectacleTitre, case(&sp.titre, "titre")?);
     // LE NUMERO D'OBJET se reporte sur le contrat « a chaque fois que cela est possible » (annexes VIII et X, art. 47 § 3 :
     // atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt l. 1183-1184, et l'annexe X,
@@ -346,11 +351,11 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
         return Err(socle::refus!(
             "Le contrat de {} du {} n'a pas de numéro (S21.G00.40.009) : il ne s'écrit pas. Valider l'engagement le lui donne.",
             e.f.salarie,
-            e.f.debut.jj_mm_aaaa()
+            e.f.contrat.debut().jj_mm_aaaa()
         ));
     };
     poser(Marqueur::ContratNumero, numero.to_string());
-    poser(Marqueur::ContratDebut, e.f.debut.jj_mm_aaaa());
+    poser(Marqueur::ContratDebut, e.f.contrat.debut().jj_mm_aaaa());
     Ok(m)
 }
 
@@ -445,7 +450,7 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
         statut_conventionnel: eng.statut_conventionnel,
         statut_categoriel_rc: eng.statut_categoriel_rc,
     };
-    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.debut)?, &emploi)?;
+    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.contrat.debut())?, &emploi)?;
     let mut m = match &eng.spectacle {
         Some(s) => {
             let sp = ctx.spectacle(s.as_str())?;
@@ -491,6 +496,8 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
         Valeur::Nature(n) => return Ok(n.proprietes()?.libelle.clone()),
         Valeur::Texte(s) => s.clone(),
         Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).en_texte(),
+        Valeur::Heures(h) => socle::grandeurs::ecrit::sans_zero::dit(*h),
+        Valeur::Montant(m) => socle::texte::euros(*m),
         Valeur::Oui(true) => "True".into(),
         Valeur::Oui(false) => "False".into(),
     };
@@ -499,16 +506,21 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
         match v {
             Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).dec(),
             Valeur::Texte(s) => socle::num::decimal_a_virgule(s).ok_or_else(|| refus(socle::num::illisible(s))),
-            Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
+            Valeur::Heures(_) | Valeur::Montant(_) | Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
         }
     };
     Ok(match terme {
-        Champ::SalaireMensuel => socle::texte::euros(nombre()?),
-        Champ::QuotiteContrat | Champ::QuotiteReference => format!("{} heures par mois", socle::texte::virgule(nombre()?)),
+        Champ::SalaireMensuel => socle::texte::euros(Montant::du_decimal(nombre()?)),
+        Champ::QuotiteContrat | Champ::QuotiteReference => match v {
+            Valeur::Heures(h) => format!("{} heures par mois", socle::texte::virgule(*h)),
+            _ => return Err(socle::refus!("{} : une durée en heures est attendue, lu {}", terme.nom(), texte)),
+        },
         Champ::Cadre => {
             let cadre = match v {
                 Valeur::Oui(b) => *b,
                 Valeur::Nombre(n) => !n.est_nul(),
+                Valeur::Heures(h) => !h.est_nul(),
+                Valeur::Montant(m) => !m.est_nul(),
                 Valeur::Texte(s) => !s.is_empty(),
                 Valeur::Nature(_) => true,
             };

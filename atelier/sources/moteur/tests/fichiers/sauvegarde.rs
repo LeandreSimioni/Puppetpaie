@@ -22,7 +22,7 @@ fn racine(nom: &str) -> PathBuf {
     racine_de("sauvegarde", nom)
 }
 
-/// Une compagnie : 8 fichiers a sauvegarder, 7 qui ne partent pas (sans coffre : `le_coffre_monte_le_jeton_google_non`).
+/// Une compagnie : 8 fichiers a sauvegarder, 6 qui ne partent pas (sans coffre : `le_coffre_monte_le_jeton_google_non`).
 fn monde(nom: &str) -> PathBuf {
     let r = racine(nom);
     for (rel, contenu) in [
@@ -36,7 +36,6 @@ fn monde(nom: &str) -> PathBuf {
         ("sorties/2026-06/x.tmp/garde.txt", "dans un dossier x.tmp"),
         // ce qui ne part pas
         ("config/google-jeton.bin", "JETON-INVENTE"),
-        ("config/.jeton-interface", "j"),
         ("config/.compteurs.verrou", "v"),
         ("config/.ouverture.json", "{}"),
         ("paies/__pycache__/m.cpython-311.pyc", "p"),
@@ -101,7 +100,7 @@ fn premiere_passe_tout_part_dans_l_ordre_et_l_index_est_ecrit() {
     assert_eq!(d.journal, journal_de_la_premiere_passe());
     assert_eq!(s.deposes.len(), 8);
     assert!(s.deposes.iter().all(|f| f.etat == EtatFichier::Neuf));
-    assert_eq!((s.identiques, s.exclus, s.disparus, s.hors_ligne), (0, 7, 0, false));
+    assert_eq!((s.identiques, s.exclus, s.disparus, s.hors_ligne), (0, 6, 0, false));
     assert!(s.incidents.is_empty());
     assert_eq!(s.compte.as_deref(), Some("compte@exemple.invalid"));
     assert_eq!(s.racine_drive, RD);
@@ -126,7 +125,7 @@ fn le_coffre_monte_le_jeton_google_non() {
     let arbre = d.arbre();
     assert_eq!(arbre["PuppetPaie/sauvegarde/config/coffre.bin"], ["COFFRE-INVENTE"]);
     assert!(arbre.keys().all(|k| !k.contains("google-jeton")));
-    assert_eq!((s.deposes.len(), s.exclus), (9, 7));
+    assert_eq!((s.deposes.len(), s.exclus), (9, 6));
 }
 
 // ------------------------------------------------------------ rien de change, modifie, ajoute, supprime
@@ -139,7 +138,7 @@ fn rien_de_change_rien_ne_part_et_les_dossiers_connus_ne_sont_pas_recherches() {
     d.journal.clear();
     let s = passer(&r, &mut d);
     assert!(s.deposes.is_empty());
-    assert_eq!((s.identiques, s.exclus), (8, 8)); // l'index ecrit s'ajoute aux ecartes
+    assert_eq!((s.identiques, s.exclus), (8, 7)); // l'index ecrit s'ajoute aux ecartes
     assert_eq!(d.appels("televerser"), 0);
     assert_eq!(d.appels("chemin"), 0, "les identifiants de dossiers viennent de l'index");
     assert_eq!(d.appels("lister"), 8, "un listage par dossier");

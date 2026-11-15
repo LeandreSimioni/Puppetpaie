@@ -22,7 +22,7 @@ use socle::json_ascii::dumps;
 use socle::paris::Moment;
 use socle::secret::Secret;
 
-pub const FICHIER: &str = "coffre.bin";
+pub const FICHIER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("coffre.bin");
 pub const FICHIER_CLE: &str = "cle-poste.bin";
 /// Le nom de la seance gardee, que `Coffre::chemin_gardee` complete de l'empreinte du coffre (un fichier par coffre).
 pub const GARDEE: &str = "ouverture-gardee.bin";

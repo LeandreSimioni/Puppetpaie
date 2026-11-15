@@ -19,11 +19,12 @@ use rust_decimal::RoundingStrategy;
 use crate::calcul::{LigneBrut, Paie};
 use droit::catalogue::{rubrique, CodeDeRubrique, Unite};
 use droit::contexte::Contexte;
-use socle::date::{repr_texte, Jour};
+use socle::date::{repr_texte, Duree, EnJours, Jour};
 use droit::emplois;
 use crate::{Avis, Engagement};
-use droit::minima::{ans_revolus, grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
+use droit::minima::{grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
+use socle::grandeurs::Montant;
 use socle::echec::{refus, Echec, R};
 use socle::num::{add, div, mul, sub, Decimal};
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
@@ -59,7 +60,7 @@ fn bas(x: Decimal) -> Decimal {
     x.round_dp_with_strategy(2, RoundingStrategy::ToZero)
 }
 
-/// Au centime, au pair sur le demi.
+/// Un taux horaire au centime, au pair sur le demi (aucun texte depose ne dit l'arrondi d'un minimum ramene a l'heure).
 fn pair(x: Decimal) -> Decimal {
     x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven)
 }
@@ -73,13 +74,13 @@ fn horaire_du_mensuel(mensuel: Decimal, heures: Decimal) -> Decimal {
 
 
 /// La duree du contrat en jours calendaires, bornes comprises.
-fn jours_du_contrat(eng: &Engagement) -> Option<i64> {
-    Some(eng.fin?.moins(&eng.debut) + 1)
+fn jours_du_contrat(eng: &Engagement) -> Option<Duree<EnJours>> {
+    eng.contrat().fermee().map(|c| c.duree())
 }
 
 /// Le dernier jour de la periode payee : celui ou l'anciennete se compte (un CDI n'a pas de fin).
-fn jour_de_paie(paie: &Paie) -> Jour {
-    paie.engagement.fin_periode()
+fn jour_de_paie(paie: &Paie) -> R<Jour> {
+    Ok(paie.engagement.periode_payee()?.fin())
 }
 
 fn premier_jour(paie: &Paie) -> Option<Jour> {
@@ -105,7 +106,7 @@ fn premiere_partie(c: &Convention) -> R<String> {
 /// Ce qui manque a la table livree, nomme par sa cle.
 #[track_caller]
 fn manque(cle: &str) -> Echec {
-    socle::echec::livree("minima-conventionnels.json", cle)
+    socle::echec::livree(&droit::minima::BASE, cle)
 }
 
 /// Les donnees d'une ligne et de la paie qu'un plancher lit.
@@ -303,7 +304,7 @@ impl<'a> Cx<'a> {
                 groupe,
                 c1285.emploi_xi3.as_str(),
                 d_ou,
-                euros(mensuel)
+                euros(Montant::du_decimal(mensuel))
             ),
         ))
     }
@@ -342,7 +343,7 @@ impl<'a> Cx<'a> {
                 format!(
                     "CCN 2642, {} en CDI ou CDD de droit commun : {} par mois pour 35 h, ramenés à l'heure sur 151,67 h",
                     fonction,
-                    euros(m)
+                    euros(Montant::du_decimal(m))
                 ),
             ));
         }
@@ -358,10 +359,10 @@ impl<'a> Cx<'a> {
         };
         let jours = jours_du_contrat(&self.paie.engagement);
         let (h, regle) = match jours {
-            Some(j) if j <= 4 => (div(semaine, d("31.5")?), "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h"),
-            Some(j) if j >= 89 => {
+            Some(j) if j <= Duree::jours(4) => (div(semaine, d("31.5")?), "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h"),
+            Some(j) if j >= Duree::jours(89) => {
                 let mensuel = mul(semaine, d("3.8")?);
-                let smic = mul(mul(self.paie.smic, d("151.67")?), d("1.3")?);
+                let smic = ((socle::grandeurs::Heures::du_decimal(d("151.67")?) * self.paie.smic) * socle::grandeurs::Coefficient::du_decimal(d("1.3")?)).decimal();
                 let mensuel = if smic > mensuel { smic } else { mensuel };
                 (div(mensuel, d("151.67")?), "contrat de 3 mois ou plus : la semaine x 3,8 par mois de 151,67 h, pas moins de 130 % du SMIC")
             }
@@ -374,7 +375,7 @@ impl<'a> Cx<'a> {
                 "CCN 2642, {} en CDDU, {} : {} la semaine de 35 h ; {} (IV.2.1)",
                 fonction,
                 dit,
-                euros(semaine),
+                euros(Montant::du_decimal(semaine)),
                 regle
             ),
         ))
@@ -387,7 +388,7 @@ impl<'a> Cx<'a> {
         let statut = self.statut();
         let c3097 = self.m.au_catalogue().and_then(|f| f.classification_3097.as_ref());
         let a_fonction = c3097.is_some();
-        let heures = !ligne.heures_annexes.is_zero();
+        let heures = !ligne.heures_annexes.est_nul();
         if (statut == Statut::Technicien || a_fonction) && (horaire(&ligne.code) || mensuel(&ligne.code)) && heures {
             if permanent(self.paie)? {
                 let emploi = c3097.and_then(|c| c.titre_iv.as_ref());
@@ -402,7 +403,7 @@ impl<'a> Cx<'a> {
                         "CCN 3097, titre IV, {} ({}) : {} par mois, salaire de base sans les compléments, ramené à l'heure sur 151,67 h",
                         emploi,
                         niveau.as_str().replace('_', " "),
-                        euros(mensuel)
+                        euros(Montant::du_decimal(mensuel))
                     ),
                 ));
             }
@@ -410,19 +411,19 @@ impl<'a> Cx<'a> {
             let Some(fonction) = self.fonction(&IDCC_3097, |f| techniciens.is_some_and(|m| m.contains_key(f)))? else { return Ok(None) };
             let Some(semaine) = techniciens.and_then(|m| m.get(&fonction)) else { return Ok(None) };
             let mut semaine = semaine.0;
-            let debut = self.paie.engagement.debut.iso();
+            let debut = self.paie.engagement.contrat().debut().iso();
             if debut.as_str() < "2026-05-01" {
                 if let Some(a) = c.avant_2026_05.as_ref().and_then(|a| a.montants.get(&fonction)) {
                     semaine = a.0;
                 }
             }
-            let mut dit = format!("{} la semaine de 39 h (annexe I du titre II)", euros(semaine));
+            let mut dit = format!("{} la semaine de 39 h (annexe I du titre II)", euros(Montant::du_decimal(semaine)));
             if spec.is_some_and(|s| s.champs.derogation_annexe_iii_3097 == Some(true)) {
                 let a = c.annexe_iii.as_ref().ok_or_else(|| manque("3097.annexe_iii"))?;
                 if semaine > a.socle {
                     semaine = add(a.socle, div(mul(sub(semaine, a.socle), a.part_au_dela), Decimal::ONE_HUNDRED));
                 }
-                dit = format!("film sous dérogation de l'annexe III : {} la semaine de 39 h", euros(bas(semaine)));
+                dit = format!("film sous dérogation de l'annexe III : {} la semaine de 39 h", euros(Montant::du_decimal(bas(semaine))));
             }
             let h = bas(div(semaine, c.heures_payees_de_la_semaine.ok_or_else(|| manque("3097.heures_payees_de_la_semaine"))?.0));
             return Ok(plancher(h, format!("CCN 3097, {} : {}, soit 40 h au taux de base (35 h + 4 h à 125 %)", fonction, dit)));
@@ -505,13 +506,12 @@ impl<'a> Cx<'a> {
                     format!(
                         "La fiche de {} ne dit pas la date d'où se compte son ancienneté, et un minimum de la convention en dépend : il change après {} ans. La dire sur sa fiche.",
                         crate::qui_de(self.fiche)?,
-                        a.ans
+                        a.ans.nombre_d_ans_revolus()?
                     ),
                     a.champ.cle().nom(),
                 ));
             };
-            let n = ans_revolus(depuis, jour_de_paie(self.paie));
-            if n < a.ans {
+            if socle::date::Anciennete::revolue(&depuis, &jour_de_paie(self.paie)?) < a.ans {
                 return Ok(false);
             }
         }
@@ -523,7 +523,7 @@ impl<'a> Cx<'a> {
         let population = self.paie.engagement.nat()?.paie;
         let statut = self.statut();
         let est_cachet = cachet(&ligne.code);
-        let heures = !ligne.heures_annexes.is_zero();
+        let heures = !ligne.heures_annexes.est_nul();
         let mut out: Vec<&'a Grille> = Vec::new();
         for gr in grilles {
             // Une grille qui ne dit pas sa population ou son statut les vise tous.
@@ -651,7 +651,7 @@ impl<'a> Cx<'a> {
             if unite == Unite::Cachet {
                 trouves.push(Plancher {
                     montant,
-                    quoi: format!("CCN {}, {}, {} : {} le cachet", idcc, nom, dit, euros(montant)),
+                    quoi: format!("CCN {}, {}, {} : {} le cachet", idcc, nom, dit, euros(Montant::du_decimal(montant))),
                     unite: false,
                 });
             } else if !a_l_heure(gr) {
@@ -663,7 +663,7 @@ impl<'a> Cx<'a> {
                 };
                 trouves.push(Plancher {
                     montant,
-                    quoi: format!("CCN {}, {}, {} : {} {}", idcc, nom, dit, euros(montant), par),
+                    quoi: format!("CCN {}, {}, {} : {} {}", idcc, nom, dit, euros(Montant::du_decimal(montant)), par),
                     unite: true,
                 });
             } else {
@@ -687,7 +687,7 @@ impl<'a> Cx<'a> {
                 };
                 trouves.push(Plancher {
                     montant: h,
-                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(montant), par, virgule(heures.round_dp(2))),
+                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(Montant::du_decimal(montant)), par, socle::texte::nombre_dit(heures.round_dp(2))),
                     unite: false,
                 });
             }
@@ -711,9 +711,10 @@ impl<'a> Cx<'a> {
                 "poste_depuis",
             ));
         };
-        let veille = jour_de_paie(self.paie).plus_jours(-1)?;
-        let ans = i64::from(veille.an) - i64::from(depuis.an) - i64::from((veille.mois, veille.jour) < (depuis.mois, depuis.jour));
-        let e = (ans.div_euclid(5) + 1).clamp(1, 5) as usize;
+        let veille = jour_de_paie(self.paie)?.plus_jours(-1)?;
+        // Un echelon de plus par periode entiere de cinq ans revolus, au plus le cinquieme ; aucun avant la premiere.
+        let periodes = socle::date::Anciennete::revolue(depuis, &veille).au_dela_de(socle::date::Anciennete::ZERO).fois_entieres(socle::date::Anciennete::ans(5))?;
+        let e = (periodes + 1).min(5) as usize;
         Ok((e, format!("échelon {}, dans la fonction depuis le {}", e, depuis.jj_mm_aaaa())))
     }
 
@@ -752,7 +753,7 @@ impl<'a> Cx<'a> {
                     "CCN 3090, grille administrative, {}, {} : {} par mois ramenés à l'heure sur 151,67 h",
                     niveau.as_str().replace('_', " "),
                     d_ou,
-                    euros(montant)
+                    euros(Montant::du_decimal(montant))
                 ),
             ));
         }
@@ -787,7 +788,7 @@ impl<'a> Cx<'a> {
     /// Le plancher d'une ligne, ou rien.
     fn plancher_de(&self, ligne: &LigneBrut) -> R<Option<Plancher>> {
         let statut = self.statut();
-        let heures = !ligne.heures_annexes.is_zero();
+        let heures = !ligne.heures_annexes.est_nul();
         let code = &ligne.code;
         if *self.idcc == IDCC_2642 {
             if statut == Statut::Technicien && (horaire(code) || mensuel(code)) && heures {
@@ -911,7 +912,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
         .remuneration
         .iter()
         .filter(|l| cachet(&l.code))
-        .fold(Decimal::ZERO, |a, l| add(a, l.quantite))
+        .fold(Decimal::ZERO, |a, l| add(a, l.quantite.decimal()))
         .trunc()
         .to_string()
         .parse::<i64>()
@@ -920,7 +921,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
     // signataires d'un accord. Sans jour travaille, aucun accord ne lie la compagnie (`grille_au`).
     let jour = premier_jour(paie);
     let organisation = match jour {
-        Some(j) => ctx.organisation_reconnue(j.an, ent.organisation_patronale.dite())?,
+        Some(j) => ctx.organisation_reconnue(j.annee(),ent.organisation_patronale.dite())?,
         None => None,
     };
     let Some((grille, lie_depuis, par_la_grille)) = grille_au(t, &idcc, organisation.as_ref(), jour) else { return Ok(None) };
@@ -948,7 +949,7 @@ fn minimum_dans(cx: &Cx, l: &LigneBrut, saisie: Option<&crate::LignePaie>) -> R<
     // l'annexe, jamais le cachet de la journee.
     if repetition(&l.code) && *cx.idcc == IDCC_3090 && statut == Statut::Artiste {
         let dates: BTreeSet<Jour> = saisie.iter().flat_map(|s| s.dates().iter()).map(|d| d.jour()).collect();
-        let par_jour = (!dates.is_empty()).then(|| div(l.quantite, Decimal::from(dates.len())));
+        let par_jour = (!dates.is_empty()).then(|| div(l.quantite.decimal(), Decimal::from(dates.len())));
         return Ok(cx.plancher_service_3090(par_jour)?.map(|(montant, quoi, heure)| Minimum {
             montant,
             quoi,
@@ -1037,12 +1038,12 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
             let Some(p) = minimum_dans(cx, l, saisie)? else { continue };
             if p.service_3090 {
                 let (paye, unite) = if p.par == Par::Heure {
-                    if l.heures_annexes.is_zero() {
+                    if l.heures_annexes.est_nul() {
                         continue;
                     }
-                    (pair(div(l.montant, l.heures_annexes)), "l'heure")
+                    (pair(div(l.montant.decimal(), l.heures_annexes.decimal())), "l'heure")
                 } else {
-                    (l.taux, "le service")
+                    (l.taux.decimal(), "le service")
                 };
                 if paye < p.montant {
                     avis.push(a_verifier(
@@ -1052,9 +1053,9 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                             "{}, {} : {} {}. Notre lecture de la convention donne un minimum conventionnel de {} {} ({} ; {}).",
                             qui,
                             l.designation(),
-                            euros(paye),
+                            euros(Montant::du_decimal(paye)),
                             unite,
-                            euros(p.montant),
+                            euros(Montant::du_decimal(p.montant)),
                             unite,
                             p.quoi,
                             texte_source
@@ -1066,7 +1067,7 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
             let (paye, unite) = match p.par {
                 // Une grille a l'unite : le taux de la ligne contre le montant de la grille.
                 Par::Unite => (
-                    l.taux,
+                    l.taux.decimal(),
                     if l.code == JOURNEE {
                         "la journée"
                     } else if l.code == SEMAINE {
@@ -1078,13 +1079,13 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                     },
                 ),
                 Par::Heure => {
-                    if l.heures_annexes.is_zero() {
+                    if l.heures_annexes.est_nul() {
                         continue;
                     }
-                    (pair(div(l.montant, l.heures_annexes)), "l'heure")
+                    (pair(div(l.montant.decimal(), l.heures_annexes.decimal())), "l'heure")
                 }
-                Par::Cachet => (l.taux, "le cachet"),
-                Par::Service => (l.taux, "le service"),
+                Par::Cachet => (l.taux.decimal(), "le cachet"),
+                Par::Service => (l.taux.decimal(), "le service"),
             };
             if paye < p.montant {
                 avis.push(a_verifier(
@@ -1094,9 +1095,9 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                         "{}, {} : {} {}. Notre lecture de la convention donne un minimum conventionnel de {} ({} ; {}).",
                         qui,
                         l.designation(),
-                        euros(paye),
+                        euros(Montant::du_decimal(paye)),
                         unite,
-                        euros(p.montant),
+                        euros(Montant::du_decimal(p.montant)),
                         p.quoi,
                         texte_source
                     ),
@@ -1115,18 +1116,18 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
 /// la comparaison porte sur le total, pas sur un taux reconstitue.
 pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
     let qui = crate::qui_de(&paie.salarie)?;
-    let jour = paie.engagement.fin_periode();
+    let jour = paie.engagement.periode_payee()?.fin();
     let smic = ctx.smic(&jour)?;
     let mut avis = Vec::new();
     for l in &paie.remuneration {
         let heures = l.heures_annexes;
-        if heures <= Decimal::ZERO {
+        if heures <= socle::grandeurs::Heures::ZERO {
             continue;
         }
         if rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.heures_forfait.is_some() {
             continue;
         }
-        let du = pair(mul(smic, heures));
+        let du = (heures * smic).au_centime();
         let paye = l.montant;
         if paye >= du {
             continue;
@@ -1138,11 +1139,11 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                 qui,
                 l.designation(),
                 euros(paye),
-                virgule(heures.round_dp(2)),
+                virgule(heures.a_deux_decimales()),
                 euros(smic),
                 jour.jj_mm_aaaa(),
                 euros(du),
-                euros(sub(du, paye))
+                euros(du - paye)
             ),
         });
     }

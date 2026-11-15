@@ -47,7 +47,7 @@ use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::mois::Mois;
 
 /// La mention de demo d'une compagnie gardee.
-pub(crate) const FICHIER_DEMO: &str = "config/demo.json";
+pub(crate) const FICHIER_DEMO: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/demo.json");
 /// Le debut du nom d'un dossier en cours d'effacement.
 pub(crate) const PREFIXE_RESTE: &str = ".supprimee-";
 /// Ce que la boite d'une compagnie reelle rappelle avant de la supprimer (code du travail, article L3243-4, `atelier/
@@ -63,27 +63,19 @@ pub enum Genre {
     Reelle,
 }
 
-/// Le dossier `p` resolu, et comparable (sous Windows, sans le `\\?\` de `canonicalize`) ; un dossier qui ne se resout
-/// pas se refuse.
-fn absolu(p: &Path) -> R<PathBuf> {
-    let c = std::fs::canonicalize(p).map_err(|e| socle::echec::du_disque(&p, &e))?;
-    let t = c.to_string_lossy();
-    Ok(match t.strip_prefix(r"\\?\") {
-        Some(s) => PathBuf::from(s),
-        None => c.clone(),
-    })
-}
-
-/// La compagnie `racine` est-elle une compagnie de l'installation `inst` -- `prive/`, `compagnies/<nom>`,
-/// `fictives/<nom>`, et rien d'autre (ni `logiciel/`, ni un dossier cache) ?
+/// La compagnie `racine` est-elle une compagnie de l'installation `inst` qui se supprime -- `prive/`, `compagnies/<nom>`,
+/// `fictives/<nom>` (`IdDeCompagnie::dans`), avec sa fiche entreprise, et rien d'autre : ni le logiciel lui-meme (le
+/// supprimer effacerait le programme), ni la copie de developpement (regle 11 : la ligne de commande seulement), ni un
+/// dossier cache ?
 fn de_l_installation(inst: &Path, racine: &Path) -> R<bool> {
-    let (i, r) = (absolu(inst)?, absolu(racine)?);
-    // Un chemin sans nom (une racine du disque) n'est le dossier d'aucune compagnie.
-    let nommee = r.file_name().is_some_and(|n| !n.to_string_lossy().starts_with('.'));
-    if !nommee || !r.join(droit::contexte::ENTREPRISE).is_file() {
+    if installation::est_cache(racine) || !droit::contexte::ENTREPRISE.dans(racine).is_file() {
         return Ok(false);
     }
-    Ok(r == i.join("prive") || r.parent().is_some_and(|p| p == i.join("compagnies") || p == i.join(installation::DOSSIER_FICTIVES)))
+    Ok(match installation::IdDeCompagnie::dans(inst, racine)? {
+        Some(installation::IdDeCompagnie::Reelle) => !installation::est_le_logiciel(racine)?,
+        Some(installation::IdDeCompagnie::Cie(_) | installation::IdDeCompagnie::Fictive(_)) => true,
+        None => false,
+    })
 }
 
 /// Ce qu'est `racine` pour sa suppression : son genre, ou le refus qui dit pourquoi elle ne se supprime pas. Un disque
@@ -125,7 +117,7 @@ pub fn supprimable(inst: &Path, racine: &Path) -> R<bool> {
 /// une compagnie reelle le rappel de la conservation et la sauvegarde a proposer (un Drive lie : la date du dernier
 /// passage). Une compagnie qui ne se supprime pas rend, sans genre, la phrase qui dit pourquoi.
 pub fn question(racine: &Path) -> R<Suppression> {
-    let inst = crate::gestes::administrateur::installation_de(racine);
+    let inst = installation::IdDeCompagnie::installation_de(racine);
     let nom = installation::nom_de(racine)?;
     let g = match sorte(&inst, racine)? {
         Ok(g) => g,
@@ -133,7 +125,7 @@ pub fn question(racine: &Path) -> R<Suppression> {
     };
     let sauvegarde = match g {
         Genre::Reelle => {
-            let liee = racine.join(socle::fichiers::CONFIG).join(crate::coffre::FICHIER_JETON).is_file();
+            let liee = socle::fichiers::JETON_GOOGLE.dans(racine).is_file();
             let derniere = compagnie::sauvegarde::derniere(racine).map_err(|e| e.echec)?.map(|d| d.quand);
             let phrase = match &derniere {
                 Some(q) => format!("Dernière sauvegarde dans le Drive : {}.", q.dit()),
@@ -215,7 +207,7 @@ pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&socle::
     if charge.confirme != Some(true) {
         return question(racine);
     }
-    let inst = crate::gestes::administrateur::installation_de(racine);
+    let inst = installation::IdDeCompagnie::installation_de(racine);
     let nom = supprimer(&inst, racine, motdepasse, &Poste::de_ce_poste(), avant)?;
     Ok(Suppression { phrase: format!("{} est supprimée de ce poste.", nom), supprimee: Some(nom.clone()), ..Suppression::de(nom) })
 }
@@ -288,7 +280,7 @@ pub struct Restes {
 /// pas se dit.
 pub fn effacer_les_restes(inst: &Path) -> R<Restes> {
     let mut r = Restes { partis: Vec::new(), resistent: Vec::new() };
-    for d in [inst.to_path_buf(), inst.join("compagnies"), inst.join(installation::DOSSIER_FICTIVES)] {
+    for d in installation::porteurs(inst) {
         if !socle::fichiers::present(&d)? {
             continue;
         }
@@ -330,33 +322,26 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
     let creee_le = installation::marqueur(racine)?
         .and_then(|m| m.quand)
         .ok_or_else(|| refus("Le marqueur de la compagnie créée en démo ne dit pas quand elle a été créée : rien n'a changé."))?;
-    let parent = inst.join("compagnies");
+    let (id, cible) = installation::IdDeCompagnie::libre(inst, installation::IdDeCompagnie::Cie, &socle::fichiers::NomDeFichier::lire(&installation::nom_de_dossier(&nom))?)?;
+    let parent = installation::dessus(&cible);
     std::fs::create_dir_all(&parent).map_err(|e| socle::echec::du_disque(&parent, &e))?;
-    let base = installation::nom_de_dossier(&nom);
-    let mut cible = parent.join(&base);
-    let mut n = 2;
-    while cible.exists() {
-        cible = parent.join(format!("{}-{}", base, n));
-        n += 1;
-    }
     let mention = FichierDemo {
         creee_le,
         gardee_le: socle::temps::secondes().a_la_seconde(),
         mois: engagement::stock::mois_saisis(racine)?,
         quoi: QUOI_DEMO.to_string(),
     };
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &mention, 2)?;
+    socle::ecriture::ecrire_json(&FICHIER_DEMO.dans(racine), &mention, 2)?;
     if let Err(e) = std::fs::rename(racine, &cible) {
-        return Err(socle::fichiers::effacer_apres(socle::refus!("{} ne se garde pas ({}) : rien n'a changé.", nom, e), &racine.join(FICHIER_DEMO)));
+        return Err(socle::fichiers::effacer_apres(socle::refus!("{} ne se garde pas ({}) : rien n'a changé.", nom, e), &FICHIER_DEMO.dans(racine)));
     }
     // Sans marqueur : une compagnie reelle. S'il ne s'efface pas, elle resterait une fictive ajoutee hors de `fictives/` :
     // le dire, plutot que la laisser envoyer sans le savoir... ou ne jamais envoyer.
     let a_part = || Lieu { chemin: Some(cible.to_string_lossy().into_owned()), ..Default::default() };
     std::fs::remove_file(cible.join(installation::MARQUEUR))
         .map_err(|e| refus_avec("Le marqueur de la fictive ne s'efface pas.", Lieu { detail: Some(e.to_string()), ..a_part() }))?;
-    let gardee = absolu(&cible)?;
     for c in installation::liste_de(inst)? {
-        if absolu(&c.racine)? == gardee {
+        if c.id == id {
             return Ok(c);
         }
     }
@@ -431,7 +416,7 @@ const QUOI_DEMO: &str = "Cette compagnie a ete creee dans la version demo de Pup
 
 /// `config/demo.json`, lu par sa forme ; `None` pour une compagnie qui n'a pas ete creee en demo.
 fn lire_la_demo(racine: &Path) -> R<Option<FichierDemo>> {
-    let p = racine.join(FICHIER_DEMO);
+    let p = FICHIER_DEMO.dans(racine);
     if !p.is_file() {
         return Ok(None);
     }
@@ -476,5 +461,5 @@ pub(crate) fn sortir_de_la_demo(racine: &Path, mois: Mois) -> R<()> {
     if d.mois.len() == avant {
         return Ok(());
     }
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &d, 2)
+    socle::ecriture::ecrire_json(&FICHIER_DEMO.dans(racine), &d, 2)
 }

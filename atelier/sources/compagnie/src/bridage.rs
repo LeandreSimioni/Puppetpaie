@@ -89,7 +89,7 @@ pub fn paquet_soude() -> bool {
 
 /// Le paquet soude de l'installation `inst` (le dossier qui porte `logiciel/`).
 pub fn paquet_soude_de(inst: &Path) -> bool {
-    dit(&inst.join("logiciel").join(FICHIER_INSTALLATION)) == Some(EtatDuBridage::Bride)
+    dit(&inst.join(crate::maj::LOGICIEL).join(FICHIER_INSTALLATION)) == Some(EtatDuBridage::Bride)
 }
 
 /// Bride ou debloque, pour le logiciel qui tourne (`est_bride_de`).

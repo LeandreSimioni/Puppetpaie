@@ -46,7 +46,7 @@ pub const JOUR_DE_JANVIER: u32 = 16;
 /// pas d'annee passee : refus.
 pub fn annee_due(aujourdhui: Jour) -> R<Option<Annee>> {
     if aujourdhui.mois > 1 || aujourdhui.jour >= JOUR_DE_JANVIER {
-        Ok(Some(Annee::nouvelle(i64::from(aujourdhui.an) - 1)?))
+        Ok(Some(aujourdhui.annee().precedente()?))
     } else {
         Ok(None)
     }
@@ -56,8 +56,8 @@ pub fn annee_due(aujourdhui: Jour) -> R<Option<Annee>> {
 /// des paies de ses mois (`engagement::paies::nombre`).
 pub fn compter(ctx: &Contexte, annee: Annee) -> R<usize> {
     let mut n = 0;
-    for m in 1..=12 {
-        n += engagement::paies::nombre(&ctx.racine, socle::mois::Mois::nouveau(annee.nombre(), m)?)?;
+    for m in annee.les_mois() {
+        n += engagement::paies::nombre(&ctx.racine, m)?;
     }
     Ok(n)
 }
@@ -141,7 +141,6 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
 /// pourquoi rien n'est parti, et l'erreur quand le passage suivant recommencera.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BilanDesPaies {
-    #[serde(with = "socle::mois::en_nombre::option")]
     pub annee: Option<Annee>,
     pub envoye: bool,
     pub paies: Option<usize>,
@@ -160,7 +159,6 @@ pub fn annees_parties(racine: &Path) -> R<Vec<AnneePartie>> {
 /// Une annee partie, telle que l'ecran du filet la montre : son nombre de paies, quand il est parti, et ce qui est parti.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AnneePartie {
-    #[serde(with = "socle::mois::en_nombre")]
     pub annee: Annee,
     pub paies: u64,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
@@ -171,7 +169,6 @@ pub struct AnneePartie {
 /// Exactement ce qui a quitte le poste pour une annee.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ContenuParti {
-    #[serde(with = "socle::mois::en_nombre")]
     pub annee: Annee,
     pub paies: u64,
     pub poste: NumeroDePoste,

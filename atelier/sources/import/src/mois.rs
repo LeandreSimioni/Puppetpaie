@@ -17,13 +17,14 @@ use serde::Serialize;
 
 use droit::contexte::{Contexte, IdSpectacle};
 use droit::fiche::NumeroObjetSpectacle;
-use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratRelu, DatesTravaillees, Importe, LigneImprimee, PaieRelue, PaieVersee};
+use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
-use socle::date::Jour;
-use socle::echec::{Classe, R};
+use socle::date::{Jour, Periode};
+use socle::echec::R;
 use socle::ecran::EtatDEcran;
 use crate::reponse::Source;
-use socle::fichiers::CheminRelatif;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
+use socle::grandeurs::{Cachets, Heures, Jours};
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use crate::proposee::A_COMPLETER;
@@ -40,8 +41,21 @@ pub struct BulletinRepris {
     pub salarie: droit::contexte::IdSalarie,
 }
 
-/// Le dossier des copies que l'import garde, dans la compagnie.
-const BULLETINS_REPRIS: CheminRelatif = CheminRelatif::du_moteur("historique/bulletins");
+/// Le dossier de l'historique importe, dans la compagnie : il ne tient que les copies (`BULLETINS_REPRIS`).
+pub const HISTORIQUE: NomDeFichier = NomDeFichier::du_moteur("historique");
+
+/// Le dossier des copies que l'import garde, dans `HISTORIQUE`.
+const BULLETINS_REPRIS: NomDeFichier = NomDeFichier::du_moteur("bulletins");
+
+/// Le dossier des copies que l'import garde, relatif a la compagnie (`historique/bulletins`).
+fn bulletins_repris_relatif() -> CheminRelatif {
+    CheminRelatif::from(HISTORIQUE).joint(&BULLETINS_REPRIS)
+}
+
+/// Le dossier des copies que l'import garde, sous la compagnie `racine`.
+pub fn dossier_des_bulletins(racine: &Path) -> std::path::PathBuf {
+    bulletins_repris_relatif().dans(racine)
+}
 
 /// LES BULLETINS REPRIS DE `mois` : la copie que l'import garde de chaque fichier lu (`historique/bulletins/`, le nom que
 /// porte la paie importee), un par fichier, avec le salarie qu'il paie. Un fichier qui manque ne se liste pas.
@@ -52,8 +66,8 @@ pub fn bulletins_repris(racine: &Path, mois: Mois) -> R<Vec<BulletinRepris>> {
             continue;
         }
         let Some(fichier) = p.paie.bulletin.as_ref().map(|b| &b.fichier) else { continue };
-        let chemin = BULLETINS_REPRIS.joint(fichier);
-        if !racine.join(&chemin).is_file() || out.iter().any(|x| x.chemin == chemin) {
+        let chemin = bulletins_repris_relatif().joint(fichier);
+        if !chemin.dans(racine).is_file() || out.iter().any(|x| x.chemin == chemin) {
             continue;
         }
         out.push(BulletinRepris { chemin, salarie: p.salarie });
@@ -151,7 +165,7 @@ fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
     let dans = |j: &Jour| mois.contient(j);
     let dehors = d.as_ref().is_some_and(|j| !dans(j)) || f.as_ref().is_some_and(|j| !dans(j));
     let borne = |j: Option<&Jour>, inconnue: &str| match j {
-        Some(j) if dehors && j.an != mois.annee() => j.jj_mm_aaaa(),
+        Some(j) if dehors && j.annee() != mois.annee() =>j.jj_mm_aaaa(),
         Some(j) if dehors => j.jj_mm(),
         Some(j) => j.jour.to_string(),
         None => inconnue.to_string(),
@@ -165,22 +179,15 @@ fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
 }
 
 /// Les jours des dates travaillees d'un bulletin, dans `mois`.
-fn jours_du_mois(dates: &[DatesTravaillees], mois: Mois) -> R<Vec<Jour>> {
+fn jours_du_mois(dates: &[Periode], mois: Mois) -> Vec<Jour> {
     let mut out = Vec::new();
-    for d in dates {
-        let (mut j, b) = (d.debut, d.fin);
-        while j <= b {
-            if mois.contient(&j) && !out.contains(&j) {
-                out.push(j);
-            }
-            if j == b {
-                break;
-            }
-            j = j.plus_jours(1).map_err(|m| m.reclasser(Classe::CalculImpossible))?;
+    for j in dates.iter().flat_map(|d| d.jours()) {
+        if mois.contient(&j) && !out.contains(&j) {
+            out.push(j);
         }
     }
     out.sort();
-    Ok(out)
+    out
 }
 
 /// UNE CASE QU'AUCUNE PIECE NE PORTE : laquelle, son libelle, et ce qui l'aurait donnee.
@@ -316,9 +323,12 @@ pub struct CarteImportee {
     fin: Option<Jour>,
     periode: String,
     dates: Vec<Jour>,
-    cachets: Option<i64>,
-    heures: Option<i64>,
-    jours: Option<i64>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    cachets: Option<Cachets>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    heures: Option<Heures>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    jours: Option<Jours>,
     montants: Montants,
     sources: Sources,
     lignes: Vec<LigneImprimee>,
@@ -336,8 +346,9 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
     let salarie = paie.map(|x| x.salarie.clone()).or_else(|| contrat.map(|x| x.salarie.clone()));
-    let debut = p.and_then(|p| p.debut).or_else(|| contrat.and_then(|x| x.debut));
-    let fin = p.and_then(|p| p.fin).or_else(|| contrat.and_then(|x| x.fin));
+    let atteste = contrat.and_then(|x| x.periode);
+    let debut = p.and_then(|p| p.periode).map(|o| o.debut()).or_else(|| atteste.map(|o| o.debut()));
+    let fin = p.and_then(|p| p.periode).and_then(|o| o.fin()).or_else(|| atteste.and_then(|o| o.fin()));
     let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone()));
     let spectacle = numero.as_ref().and_then(|n| spectacle_de(ctx, n));
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
@@ -346,10 +357,13 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         _ => titre_bulletin,
     };
     let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
-    let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).transpose()?.into_iter().flatten().collect();
+    let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).into_iter().flatten().collect();
     // Ce que la piece du mois atteste de lui (la paie d'un mois d'un permanent), sinon le contrat.
-    let nombre = |de_la_paie: fn(&PaieVersee) -> Option<i64>, du_contrat: fn(&ContratAtteste) -> Option<i64>| p.and_then(de_la_paie).or_else(|| c.and_then(du_contrat));
-    let (cachets, heures, jours) = (nombre(|p| p.cachets, |c| c.cachets), nombre(|p| p.heures, |c| c.heures), nombre(|p| p.jours, |c| c.jours));
+    let (cachets, heures, jours) = (
+        p.and_then(|p| p.cachets).or_else(|| c.and_then(|c| c.cachets)),
+        p.and_then(|p| p.heures).or_else(|| c.and_then(|c| c.heures)),
+        p.and_then(|p| p.jours).or_else(|| c.and_then(|c| c.jours)),
+    );
     let bulletin = p.and_then(|p| p.bulletin.clone());
     // La piece qui declare la paie : sa cle le dit (`CleDePaieVersee`).
     let declaree_par = |p: &PaieVersee| if p.contrat.d_un_bulletin() { Source::Bulletin } else { Source::Dsn };
@@ -358,7 +372,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
 
     // Les montants, et d'ou chacun vient : le bulletin fait foi sur ceux qu'il imprime (`import::bulletins::completer`).
     let (mut montants, mut sources) = (Montants::default(), Sources::default());
-    let lus: [(&str, fn(&PaieVersee) -> Option<Decimal>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<Source>)); 9] = [
+    let lus: [(&str, fn(&PaieVersee) -> Option<socle::grandeurs::Montant>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<Source>)); 9] = [
         ("brut", |p| p.brut, |m, s| (&mut m.brut, &mut s.brut)),
         ("net_imposable", |p| p.net_imposable, |m, s| (&mut m.net_imposable, &mut s.net_imposable)),
         ("net_a_payer", |p| p.net_a_payer, |m, s| (&mut m.net_a_payer, &mut s.net_a_payer)),
@@ -372,7 +386,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     for (k, lu, place) in lus {
         // Le montant que la paie porte ; sans paie, le brut que l'AEM atteste.
         let porte = match (p, k == "brut") {
-            (Some(p), _) => lu(p).map(|d| (d, if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
+            (Some(p), _) => lu(p).map(|d| (d.decimal(), if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
             (None, true) => c.and_then(|c| c.brut).map(|b| (b, Source::Aem)),
             (None, false) => None,
         };
@@ -455,12 +469,12 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     if let Some(t) = titre.clone().or_else(|| numero.as_ref().map(ToString::to_string)) {
         quoi.push(t);
     }
-    if let Some(n) = cachets.filter(|n| *n != 0) {
-        let dit = socle::texte::virgule(Decimal::from(n));
-        quoi.push(format!("{} {}", dit, if n > 1 { "cachets" } else { "cachet" }));
+    if let Some(n) = cachets.filter(|n| !n.est_nul()) {
+        let dit = socle::texte::virgule(n);
+        quoi.push(format!("{} {}", dit, if n > Cachets::UN { "cachets" } else { "cachet" }));
     }
-    if let Some(n) = heures.filter(|n| *n != 0) {
-        quoi.push(format!("{} h", socle::texte::virgule(Decimal::from(n))));
+    if let Some(n) = heures.filter(|n| !n.est_nul()) {
+        quoi.push(format!("{} h", socle::texte::virgule(n)));
     }
     let quoi_dit = if quoi.is_empty() { "spectacle non lu".to_string() } else { quoi.join(" · ") };
     let mut lu = Vec::new();

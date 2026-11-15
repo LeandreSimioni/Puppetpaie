@@ -33,14 +33,17 @@ fn libelle_de(l: &Ligne) -> Option<String> {
 /// ce qui s'est inscrit, ou pourquoi rien, en phrases.
 fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
     for (an, (mois, code, taux)) in &lecture.atmp {
-        let (Some(janvier), true) = (socle::date::Jour::nouveau(*an, 1, 1), *an <= ctx.aujourdhui.an) else { continue };
+        if *an > ctx.aujourdhui.annee() {
+            continue;
+        }
+        let janvier = an.premier_jour();
         if ctx.entreprise_au(&janvier).taux_atmp.and_then(|t| t.depuis).is_some_and(|d| d >= janvier) {
             continue;
         }
         let en_clair = mois.libelle(socle::mois::Graphie::Accentuee);
         let t = droit::fiche::TauxAtmp {
             code_risque: Some(code.clone()),
-            valeur: taux.map(|v| droit::fiche::Montant::Flottant(socle::num::court(v))),
+            valeur: taux.map(|v| droit::fiche::NombreDeFiche::Flottant(socle::num::court(v))),
             depuis: Some(janvier),
             provenance: Some(droit::fiche::ProvenanceAtmp::Import),
             notification: None,
@@ -52,7 +55,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
             Err(m) => Err(m.phrase),
         };
         let dit = match taux {
-            Some(v) => format!("taux {} %", v.normalize().to_string().replace('.', ",")),
+            Some(v) => format!("taux {} %", socle::texte::nombre_dit(*v)),
             None => "sans taux (pas encore de notification)".to_string(),
         };
         faits.push(match ecrit {
@@ -61,9 +64,9 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
         });
     }
     // L'annee en cours : le taux collectif de l'arrete pour un risque « TC », comme a l'ouverture.
-    match crate::atmp::inscrire_l_arrete(ctx, ctx.aujourdhui.an) {
+    match crate::atmp::inscrire_l_arrete(ctx, ctx.aujourdhui.annee()) {
         Ok(dits) => faits.extend(dits),
-        Err(e) => faits.push(format!("Accidents du travail {} : le taux collectif de l'arrêté ne s'inscrit pas. {}", ctx.aujourdhui.an, e.phrase)),
+        Err(e) => faits.push(format!("Accidents du travail {} : le taux collectif de l'arrêté ne s'inscrit pas. {}", ctx.aujourdhui.annee(), e.phrase)),
     }
 }
 
@@ -179,7 +182,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
 
 /// Ce que les DSN reprises de la compagnie (`historique/bulletins/`) disent de sa configuration, pose ; rend ce qui l'a ete.
 pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
-    let lecture = match import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins")) {
+    let lecture = match import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(&ctx.racine)) {
         Ok(l) => l,
         Err(e) => return vec![e.phrase],
     };
@@ -200,35 +203,41 @@ pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
 /// (S21.G00.50.006 a .008) : au magasin du PAS, comme un taux recu, date du jour du versement qui
 /// l'applique (`compagnie::taux_pas::derniers_taux_des_dsn`, une inference). La validite se lit ensuite comme pour tout taux recu (`droit::pas`).
 fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
-    let dossier = ctx.racine.join("historique").join("bulletins");
-    let releves = match compagnie::taux_pas::derniers_taux_des_dsn(ctx, &dossier) {
+    let dossier = import::mois::dossier_des_bulletins(&ctx.racine);
+    let lus = match compagnie::taux_pas::derniers_taux_des_dsn(ctx, &dossier) {
         Ok(r) => r,
         Err(e) => return faits.push(e.phrase),
     };
-    let changes = match crate::gestes::taux_pas::enregistrer(ctx, &releves, "DSN reprises par l'import") {
+    let changes = match crate::gestes::taux_pas::enregistrer(ctx, &compagnie::taux_pas::TauxDUneDsn::transmis(&lus), "DSN reprises par l'import") {
         Ok(c) => c,
         Err(e) => return faits.push(format!("Les taux de prélèvement à la source des DSN reprises ne s'enregistrent pas : {}", e.phrase)),
     };
-    for r in &releves {
-        let cle = r.salarie.clone();
-        if !changes.iter().any(|c| c.starts_with(&format!("{} :", cle))) {
-            continue;
+    let qui = |cle: &droit::contexte::IdSalarie| match ctx.salaries.get(cle).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
+        Some(q) => q,
+        None => cle.to_string(),
+    };
+    for l in &lus {
+        match l {
+            compagnie::taux_pas::TauxDUneDsn::Transmis(recu) => {
+                if !changes.iter().any(|c| c.starts_with(&format!("{} :", recu.salarie))) {
+                    continue;
+                }
+                // Le mois du versement qui l'applique (`mis_a_disposition`, le jour du versement) : celui que la DSN declare.
+                let mois = recu.mis_a_disposition.jour_de_paris().mois_civil().libelle(socle::mois::Graphie::Accentuee);
+                faits.push(format!("Prélèvement à la source de {} : taux {} % transmis par la DGFiP, appliqué dans la DSN de {} (S21.G00.50.006 à .008).", qui(&recu.salarie), recu.taux.to_string().replace('.', ","), mois));
+            }
+            compagnie::taux_pas::TauxDUneDsn::Illisible { salarie, verse_le } => {
+                let mois = verse_le.mois_civil().libelle(socle::mois::Graphie::Accentuee);
+                faits.push(format!("Prélèvement à la source de {} : la DSN de {} applique un taux transmis par la DGFiP qu'elle n'écrit pas comme la norme (S21.G00.50.006) : il ne se lit pas, et sa fiche reste comme elle était.", qui(salarie), mois));
+            }
         }
-        let qui = match ctx.salaries.get(&cle).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
-            Some(q) => q,
-            None => cle.to_string(),
-        };
-        let taux: String = r.taux.iter().map(|t| format!(" {} %", t.to_string().replace('.', ","))).collect();
-        // Le mois du versement qui l'applique (`mis_a_disposition`, le jour du versement) : celui que la DSN declare.
-        let mois = format!(", appliqué dans la DSN de {}", r.mis_a_disposition.jour_de_paris().mois_civil().libelle(socle::mois::Graphie::Accentuee));
-        faits.push(format!("Prélèvement à la source de {} : taux{} transmis par la DGFiP{} (S21.G00.50.006 à .008).", qui, taux, mois));
     }
 }
 
 /// Les contrats des permanents que les DSN reprises portent, poses quand la compagnie se met a employer un permanent
 /// (la nature d'un contrat repris dite, `import::nature::dire`) : l'ecran ne les attendait pas encore a l'import.
 pub(crate) fn poser_organismes_repris(ctx: &Contexte) -> socle::echec::R<Vec<String>> {
-    let lecture = import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins"))?;
+    let lecture = import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(&ctx.racine))?;
     let mut faits = Vec::new();
     if lecture.fichiers > 0 {
         poser_organismes(ctx, &lecture, &mut faits)?;

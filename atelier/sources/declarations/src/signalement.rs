@@ -198,23 +198,16 @@ et a maintenir le salaire."
                 liste.join(", ")
             ));
         }
-        let (sub_debut, sub_fin) = (v.subrogation_debut, v.subrogation_fin);
+        // Sa fin ne precede pas son debut (CCH-12) : une periode ne s'ecrit pas a l'envers.
         if avec_subrogation(a)? {
-            let (Some(sub_debut), Some(sub_fin)) = (sub_debut, sub_fin) else {
+            if v.periode_de_subrogation.is_none() {
                 return impossible(
                     "Subrogation demandee : ses dates de debut et de fin (S21.G00.60.005 et .006) sont \
 obligatoires -- CCH-11."
                         .into(),
                 );
-            };
-            if sub_fin < sub_debut {
-                return impossible(format!(
-                    "Fin de subrogation ({}) anterieure a son debut ({}) -- CCH-12.",
-                    sub_fin.iso(),
-                    sub_debut.iso()
-                ));
             }
-        } else if sub_debut.is_some() || sub_fin.is_some() {
+        } else if v.periode_de_subrogation.is_some() {
             return impossible(
                 "Sans subrogation, ses dates sont INTERDITES (CCH-11 des rubriques S21.G00.60.005 et .006)."
                     .into(),
@@ -297,7 +290,7 @@ CCH-12.",
     };
     for (libelle, case) in [
         ("Dernier jour travaillé", Some(v.dernier_jour_travaille)),
-        ("Début de subrogation", v.subrogation_debut),
+        ("Début de subrogation", v.periode_de_subrogation.map(|p| p.debut())),
         ("Date de reprise", reprise),
         ("Date de l'accident", accident),
     ] {
@@ -328,7 +321,7 @@ pub struct Options {
     pub type_declaration: TypeDeLaDeclaration,
     pub ordre: NumeroDOrdre,
     pub remplace: Option<IdentifiantDeDeclaration>,
-    pub envoi_test: bool,
+    pub mode: socle::mode::Mode,
     pub date_constitution: Option<Jour>,
 }
 
@@ -340,7 +333,7 @@ impl Options {
             type_declaration: TypeDeLaDeclaration::Normale,
             ordre: NumeroDOrdre::PREMIER,
             remplace: None,
-            envoi_test: false,
+            mode: socle::mode::Mode::Reel,
             date_constitution: None,
         }
     }
@@ -394,7 +387,7 @@ annule-et-remplace (type 03)."
     f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
-    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.005"), droit::natures::ListeDeLaNorme::code_de_la_norme(o.mode));
     f.ecrire_la_version()?;
     f.add(droit::rubrique!("S10.G00.00.007"), "01");
     f.add(droit::rubrique!("S10.G00.00.008"), "01");
@@ -433,7 +426,7 @@ annule-et-remplace (type 03)."
     // Les adhesions qui valent le dernier jour travaille (`droit::adhesions`).
     let orgs = ctx.organismes()?;
     let jour = engagement::imprevus::dernier_jour_declare(arret)?;
-    for ad in orgs.adhesions_prevoyance.iter().filter(|ad| ad.en_vigueur(&jour, &jour)) {
+    for ad in orgs.adhesions_prevoyance.iter().filter(|ad| ad.en_vigueur(&socle::date::Periode::du_jour(jour))) {
         f.add(droit::rubrique!("S21.G00.15.001"), &ad.libelle);
         f.add(droit::rubrique!("S21.G00.15.002"), &ad.delegataire);
         f.add(droit::rubrique!("S21.G00.15.005"), &ad.reference);

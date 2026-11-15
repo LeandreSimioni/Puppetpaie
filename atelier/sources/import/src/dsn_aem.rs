@@ -14,6 +14,7 @@ use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, Nir, NumeroObje
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::fichiers::NomDeFichier;
+use socle::grandeurs::{Cachets, Heures, Jours};
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use socle::piece::format::Aaaammjj;
@@ -95,7 +96,7 @@ pub struct LectureDsn {
     pub paies: BTreeMap<(Mois, Option<Nir>, engagement::numeros::NumeroContrat), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
-    pub atmp: BTreeMap<i32, (Mois, droit::bareme::CodeRisqueAt, Option<Decimal>)>,
+    pub atmp: BTreeMap<socle::mois::Annee, (Mois, droit::bareme::CodeRisqueAt, Option<Decimal>)>,
     /// Les adhesions prevoyance de la derniere DSN qui en declare.
     pub adhesions: Vec<Adhesion>,
     /// Les conventions collectives que chaque DSN declare, dans l'ordre des mois (`conventions_divergentes`).
@@ -255,7 +256,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             let initiales: String =
                 c.and_then(|c| c.numero.as_ref()).map(engagement::numeros::NumeroContrat::as_str).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();
             let avant = index_salaries.get(&nir).and_then(|&i| out.salaries[i].premier_contrat);
-            let premier = info.contrats.iter().filter(|x| x.nir == nir).filter_map(|x| x.debut).chain(avant).min();
+            let premier = info.contrats.iter().filter(|x| x.nir == nir).map(|x| x.periode.debut()).chain(avant).min();
             let decl = SalarieDeclare {
                 nir: nir.clone(),
                 individu: ind.clone(),
@@ -291,15 +292,15 @@ fn champ(ligne: &[char], a: usize, b: usize) -> String {
 /// Un enregistrement AEM, un contrat tel qu'il a ete atteste.
 pub struct ContratAtteste {
     pub nir: Nir,
-    pub debut: socle::date::Jour,
-    pub fin: socle::date::Jour,
+    /// Ses dates (zones 618..626 et 627..635).
+    pub periode: socle::date::Periode,
     /// Le numero d'objet de la zone 638..650 : a blanc ou hors de sa forme, aucun (`NumeroObjetSpectacle::d_une_piece` ; hors
     /// de sa forme, sa faute est une anomalie de la lecture, `lire_aem`).
     pub numero_objet: Option<NumeroObjetSpectacle>,
-    pub(crate) heures: i128,
+    pub(crate) heures: Heures,
     /// Les cachets, et les cachets « groupes » (la case que le gabarit garde a 00).
-    pub(crate) cachets: i128,
-    pub(crate) jours: i128,
+    pub(crate) cachets: Cachets,
+    pub(crate) jours: Jours,
     /// Le brut en euros, deux décimales.
     pub(crate) brut: socle::num::Decimal,
     /// Le numero de l'attestation (zone 36..42), et sa date de signature (858..866, AAAA-MM-JJ si c'en est une).
@@ -317,19 +318,21 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     // `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`).
     let mut a = Atteste::vide(Attestation::Aem, Some(droit::natures::NatureDeContrat::CdduSpectacle));
     a.numero_objet.clone_from(&c.numero_objet);
-    (a.heures, a.cachets, a.jours) = (Some(c.heures as i64), Some(c.cachets as i64), Some(c.jours as i64));
+    (a.heures, a.cachets, a.jours) = (Some(c.heures), Some(c.cachets), Some(c.jours));
     a.brut = Some(c.brut);
     a.numero_attestation = plein(&c.numero_attestation);
     a.atteste_le = c.date_attestation;
     a.fichier = Some(c.fichier.clone());
-    ContratLu { salarie, debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
+    ContratLu { salarie, periode: Some(c.periode.into()), numero: None, contrat: a }
 }
 
 /// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, les fichiers ou enregistrements illisibles (ignores),
 /// et les fautes des cases laissees vides d'un enregistrement repris (un numero d'objet hors de sa forme). Un
 /// `CalculImpossible` (un brut qui n'est pas un nombre) n'est pas rattrape.
 pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec<String>), socle::echec::Echec> {
-    use socle::num::{decimal_lu, entier_lu};
+    use socle::grandeurs::ecrit::sans_zero::dit;
+    use socle::grandeurs::lu::texte_entier;
+    use socle::num::decimal_lu;
     let mut vus: Vec<(Vec<String>, ContratAtteste)> = Vec::new();
     let mut connus: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
     let mut illisibles = Vec::new();
@@ -362,6 +365,11 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                 illisible(&mut illisibles);
                 continue;
             };
+            // Un contrat qui finirait avant son debut ne se lit pas.
+            let Ok(periode) = socle::date::Periode::du_au(debut, fin) else {
+                illisible(&mut illisibles);
+                continue;
+            };
             // La signature de l'attestation (`AAAAMMJJ`), quand l'AEM en porte une.
             let signee = tranche(&l, 858, 866);
             let date_attestation = match Zone::lue(&signee, Aaaammjj).valeur() {
@@ -382,8 +390,15 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                     None
                 }
             };
-            let entiers = [(650, 653), (653, 655), (655, 657), (657, 659)].map(|(a, b)| entier_lu(&champ(&l, a, b)));
-            let [Some(heures), Some(c1), Some(c2), Some(jours)] = entiers else {
+            // Les positions 650-659 de l'AEM, des entiers, en leurs grandeurs : leur porte.
+            let zone = |a: usize, b: usize| champ(&l, a, b);
+            let (heures, c1, c2, jours) = (
+                texte_entier::<Heures>(&zone(650, 653)),
+                texte_entier::<Cachets>(&zone(653, 655)),
+                texte_entier::<Cachets>(&zone(655, 657)),
+                texte_entier::<Jours>(&zone(657, 659)),
+            );
+            let (Some(heures), Some(c1), Some(c2), Some(jours)) = (heures, c1, c2, jours) else {
                 illisible(&mut illisibles);
                 continue;
             };
@@ -391,24 +406,21 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
             let Some(brut_cts) = decimal_lu(&brut_texte) else {
                 return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), phrase: socle::num::illisible(&brut_texte), a_part: None });
             };
-            let mut brut = brut_cts / socle::num::Decimal::from(100);
-            brut = brut.round_dp(2);
-            brut.rescale(2);
+            let brut = socle::grandeurs::Montant::du_decimal(brut_cts / socle::num::Decimal::from(100)).au_centime().decimal();
             let cle = vec![
                 nir_ecrit,
                 debut.iso(),
                 fin.iso(),
                 objet_ecrit,
-                heures.to_string(),
-                (c1 + c2).to_string(),
-                jours.to_string(),
+                dit(heures),
+                dit(c1 + c2),
+                dit(jours),
                 brut.to_string(),
             ];
             if connus.insert(cle.clone()) {
                 vus.push((cle, ContratAtteste {
                     nir,
-                    debut,
-                    fin,
+                    periode,
                     numero_objet,
                     heures,
                     cachets: c1 + c2,
@@ -422,7 +434,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
         }
     }
     let mut contrats: Vec<ContratAtteste> = vus.into_iter().map(|(_, c)| c).collect();
-    contrats.sort_by(|a, b| (a.debut, a.fin, &a.nir).cmp(&(b.debut, b.fin, &b.nir)));
+    contrats.sort_by(|a, b| (a.periode, &a.nir).cmp(&(b.periode, &b.nir)));
     Ok((contrats, illisibles, fautes))
 }
 
@@ -546,7 +558,7 @@ mod tests_parametrage {
         std::fs::remove_dir_all(&d).ok();
         let c = lu.entreprise.declarant_dsn.clone().unwrap();
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.map(|c| c.as_str())), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
-        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), droit::bareme::CodeRisqueAt::lire("923AD").unwrap(), socle::num::decimal_lu("1.65"))));
+        assert_eq!(lu.atmp.get(&socle::mois::Annee::constante(2025)), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), droit::bareme::CodeRisqueAt::lire("923AD").unwrap(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
         assert_eq!(lu.adhesions[0].organisme, Some(droit::organismes::AUDIENS));
     }

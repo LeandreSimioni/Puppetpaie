@@ -7,6 +7,7 @@ use serde::Serialize;
 use socle::forme::NombreLu;
 use crate::LignePaie;
 use socle::num::Decimal;
+use crate::ligne::TauxDeLigne;
 
 use crate::departs::{Depart, Departs, Envoi};
 use crate::etats::{ses_departs, ARefaire, Valide};
@@ -14,10 +15,11 @@ use crate::saisie::{Carte, Champ, Groupe, Valeur};
 use crate::stock::{Saisie, Version};
 use droit::catalogue::Unite;
 use droit::contexte::Contexte;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::echec::R;
-use socle::texte::{euros, virgule};
+use socle::texte::euros;
+use socle::grandeurs::Montant;
 
 
 /// Ce qui change dans les jours d'une ligne, et seulement cela : « Jours : + 16/11 », « Jours : − 14/11 »,
@@ -36,13 +38,6 @@ fn jours_changes(x: &LignePaie, y: &LignePaie) -> Option<String> {
         .flatten()
         .collect();
     (!parts.is_empty()).then(|| format!("Jours : {}", parts.join(" · ")))
-}
-
-/// Le premier et le dernier jour d'une carte : ses bornes dites, sinon ses jours travailles (`Carte::debut_lu`,
-/// `Carte::dates`).
-fn bornes(s: &Carte) -> (Option<Jour>, Option<Jour>) {
-    // Sans fin dite, le dernier jour de ses dates ; aucun sans date.
-    (s.debut_lu(), s.fin.or_else(|| s.dates().iter().map(|j| j.jour()).max()))
 }
 
 /// « 14/11 » d'une borne ; rien si elle n'est pas dite.
@@ -102,12 +97,14 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
         None => "—".into(),
         Some(Valeur::Oui(b)) => if *b { "oui" } else { "non" }.into(),
         Some(Valeur::Nombre(n)) => match (nombre(n), en_euros) {
-            (Some(x), true) => euros(x),
-            (Some(x), false) => virgule(x),
+            (Some(x), true) => euros(Montant::du_decimal(x)),
+            (Some(x), false) => socle::texte::nombre_dit(x),
             (None, _) => n.to_string(),
         },
+        Some(Valeur::Heures(h)) => socle::texte::virgule(*h),
+        Some(Valeur::Montant(m)) => euros(*m),
         Some(Valeur::Texte(t)) if en_euros => match socle::num::decimal_a_virgule(t) {
-            Some(x) => euros(x),
+            Some(x) => euros(Montant::du_decimal(x)),
             None => t.clone(),
         },
         Some(Valeur::Texte(t)) => t.clone(),
@@ -119,8 +116,8 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
 fn nombre_en_mots(x: Option<Decimal>, en_euros: bool) -> String {
     match x {
         None => "—".into(),
-        Some(x) if en_euros => euros(x),
-        Some(x) => virgule(x),
+        Some(x) if en_euros => euros(Montant::du_decimal(x)),
+        Some(x) => socle::texte::nombre_dit(x),
     }
 }
 
@@ -237,7 +234,7 @@ pub fn termes_changes(convenue: &Saisie, presente: &Saisie) -> Vec<TermeChange> 
 /// CE QUI A CHANGE DEPUIS LA VERSION `n` de l'engagement valide `v` jusqu'a son present, en mots (`changements`) : ce
 /// que dit la frise, et ce que dit le renvoi des documents partis sur la version `n`. Vide si `n` est le present ; une
 /// version que l'engagement n'a pas se refuse.
-pub fn depuis(ctx: &Contexte, v: &Valide, n: u64) -> R<Vec<String>> {
+pub fn depuis(ctx: &Contexte, v: &Valide, n: crate::stock::VersionDeLEngagement) -> R<Vec<String>> {
     match (v.version_numero(n), &v.objet().brut.valide) {
         (Some(passee), Some(present)) if v.version() != Some(n) => changements(ctx, passee.saisie(), present.saisie.as_ref()),
         (Some(_), Some(_)) => Ok(Vec::new()),
@@ -250,12 +247,13 @@ pub fn depuis(ctx: &Contexte, v: &Valide, n: u64) -> R<Vec<String>> {
 
 fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
     let mut out = Vec::new();
-    let ((da, fa), (db, fb)) = (bornes(a), bornes(b));
-    if da != db {
-        out.push(format!("Début : {} → {}", borne_courte(da), borne_courte(db)));
+    let (ca, cb) = (a.contrat()?, b.contrat()?);
+    let (debut, fin) = (|c: Option<PeriodeOuverte>| c.map(|c| c.debut()), |c: Option<PeriodeOuverte>| c.and_then(|c| c.fin()));
+    if debut(ca) != debut(cb) {
+        out.push(format!("Début : {} → {}", borne_courte(debut(ca)), borne_courte(debut(cb))));
     }
-    if fa != fb {
-        out.push(format!("Fin : {} → {}", borne_courte(fa), borne_courte(fb)));
+    if fin(ca) != fin(cb) {
+        out.push(format!("Fin : {} → {}", borne_courte(fin(ca)), borne_courte(fin(cb))));
     }
     let (la, lb) = (a.lignes(), b.lignes());
     let code = |l: &LignePaie| l.rubrique().clone();
@@ -274,12 +272,13 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
         for k in 0..xs.len().max(ys.len()) {
             match (xs.get(k), ys.get(k)) {
                 (Some(_), None) => out.push(format!("{} : retiré", lib)),
-                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, nombre_en_mots(y.quantite(), false))),
+                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, nombre_en_mots(y.quantite_ecrite(), false))),
                 (Some(x), Some(y)) => {
-                    if x.quantite() != y.quantite() {
-                        out.push(format!("{} : {} → {}", au_pluriel(&lib), nombre_en_mots(x.quantite(), false), nombre_en_mots(y.quantite(), false)));
+                    let (qx, qy) = (x.quantite_ecrite(), y.quantite_ecrite());
+                    if qx != qy {
+                        out.push(format!("{} : {} → {}", au_pluriel(&lib), nombre_en_mots(qx, false), nombre_en_mots(qy, false)));
                     }
-                    let (tx, ty) = (nombre_en_mots(x.taux(), true), nombre_en_mots(y.taux(), true));
+                    let (tx, ty) = (nombre_en_mots(x.taux().map(TauxDeLigne::decimal), true), nombre_en_mots(y.taux().map(TauxDeLigne::decimal), true));
                     if tx != ty {
                         out.push(format!("{} : {} → {}", nom_du_taux(&lib, unite), tx, ty));
                     }
@@ -359,7 +358,7 @@ pub struct Frise {
 /// qui a change depuis la precedente, et ce qui est parti sur elle.
 #[derive(Debug, Clone, Serialize)]
 pub struct VersionDeLaFrise {
-    pub version: Option<u64>,
+    pub version: Option<crate::stock::VersionDeLEngagement>,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub le: socle::paris::Moment,
     /// Son jour tel que la frise l'affiche (« 14/11 »).

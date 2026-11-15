@@ -260,7 +260,10 @@ des tests, ~3 Go). **Toute compilation et tout test de l'orchestrateur se lancen
 0. **Ce logiciel n'est écrit pour aucune compagnie en particulier** : celle du poste n'est que le banc d'essai ; un cas
    qu'aucune donnée n'éprouve reste à porter.
 1. **Rien ne se devine.** Un taux de PAS, un identifiant DGFiP se *lisent* ; un bordereau Urssaf se *calcule*. Le moteur
-   refuse plutôt que d'inventer ; on ne « débogue » pas un refus avec une valeur plausible.
+   refuse plutôt que d'inventer ; on ne « débogue » pas un refus avec une valeur plausible. **À l'import**, une pièce
+   propre se prend telle quelle ; une pièce qui ne se lit pas se met de côté, on le dit et on demande les chiffres ; on
+   ne reconstruit rien et on ne distingue pas de cas bizarres. Une DSN importée a a priori été acceptée : elle respecte
+   la norme.
 2. **Toute décision vit dans le moteur, jamais dans un front** : un garde-fou dans un front se contourne par l'autre.
 3. **Les modules de transport ne cherchent jamais un secret.** Ils reçoivent un mot de passe ; ils n'ouvrent pas le coffre.
 4. **Ne jamais régénérer une déclaration déjà déposée** pour la redéposer : les numéros de contrat se renumérotent. Un

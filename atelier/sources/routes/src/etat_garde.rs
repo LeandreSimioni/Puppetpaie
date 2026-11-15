@@ -45,7 +45,7 @@ use sha2::{Digest, Sha256};
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
-use socle::fichiers::Empreinte;
+use socle::fichiers::{CheminRelatif, Empreinte};
 use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Route, ILLISIBLE, MOIS};
@@ -129,7 +129,7 @@ pub const ROUTES: &[Fiche] = &[
 const LECTURES: [Route; 4] = [Route::Saisie, Route::ContratsEnCours, Route::FinsDeContrat, Route::Imprevus];
 
 /// La cle de l'etat garde de l'OUVERTURE dans la file : a cote des mois, jamais confondue avec eux.
-pub(crate) const OUVERTURE: &str = "ouverture";
+const OUVERTURE: &str = "ouverture";
 
 /// La cle du TABLEAU de l'administrateur dans la file : `config/.tableau.json`, refait pour une compagnie
 /// rattachee (`administrateur::tableau_compagnie`), sous l'empreinte de l'ouverture (toute la compagnie).
@@ -149,8 +149,10 @@ const LECTURES_OUVERTURE: [(Route, &str); 6] = [
 ];
 
 /// Le fichier de l'etat de l'OUVERTURE, a la racine de la compagnie : le seul etat qui s'ecrit.
+pub(crate) const OUVERTURE_ECRITE: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("ouverture.etat.json");
+
 fn chemin(racine: &Path) -> PathBuf {
-    racine.join("ouverture.etat.json")
+    racine.join(OUVERTURE_ECRITE)
 }
 
 // ------------------------------------------------------------------------------------------------- les cles
@@ -295,9 +297,9 @@ fn signer_dossier(h: &mut Sha256, base: &Path, rel: &str, profond: bool, garder:
 /// - `journal/signalements.json` : « Un probleme, une idee ? » (`problemes.rs`) ; lu par `signalements` et
 ///   `importation-etat` ;
 /// - `journal/incidents.json` : le journal des incidents.
-const HORS_DE_L_ECRAN: [&str; 7] = [
-    "config/.ouverture.json",
-    "config/.sauvegarde.json",
+const HORS_DE_L_ECRAN: [CheminRelatif; 7] = [
+    socle::fichiers::TRACE_DE_L_OUVERTURE,
+    compagnie::sauvegarde::INDEX,
     compagnie::incidents::DIAGNOSTIC,
     compagnie::installation::FICHIER_HORLOGE,
     compagnie::problemes::SIGNALEMENTS,
@@ -306,7 +308,8 @@ const HORS_DE_L_ECRAN: [&str; 7] = [
     crate::gestes::administrateur::TABLEAU,
 ];
 
-/// L'empreinte de tout ce dont l'etat `cle` est tire, au jour `jour` (AAAA-MM-JJ).
+/// L'empreinte de tout ce dont l'etat d'un mois (`Some`) ou de l'ouverture (`None`) est tire, au jour `jour`
+/// (AAAA-MM-JJ). Le tableau de l'administrateur porte celle de l'ouverture.
 ///
 /// Pour un MOIS : ni le coffre (un `.bin` : ce qu'il dit se relit a chaque lecture), ni ce que l'ecran ne lit pas
 /// (`HORS_DE_L_ECRAN`), ni les sorties des autres mois.
@@ -316,8 +319,8 @@ const HORS_DE_L_ECRAN: [&str; 7] = [
 /// (la configuration dit si la boite courriel est liee, `boite_liee` : rien n'en est lu ici, ni ailleurs dans
 /// l'empreinte), et l'adresse de la boite posee dans l'environnement (`COURRIEL_COMPTE`). Ce qui ne s'y lit pas reste
 /// dehors (`HORS_DE_L_ECRAN` : les signalements se lisent a chaque ouverture, a cote).
-pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) -> Empreinte {
-    let ouverture = cle == OUVERTURE;
+pub(crate) fn empreinte_de(racine: &Path, mois: Option<Mois>, jour: Jour) -> Empreinte {
+    let ouverture = mois.is_none();
     let mut h = Sha256::new();
     let mut marques = vec![env!("PAIE_SOURCES").to_string(), jour.iso(), absolu(racine), absolu(&socle::fichiers::dossier_du_code())];
     if ouverture {
@@ -331,36 +334,34 @@ pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) ->
         h.update(marque.as_bytes());
         h.update([0]);
     }
-    let sorties_du_mois = format!("sorties/{}/", cle);
     // La compagnie : ses engagements (et `engagements/avant/`) et leurs paies, sa configuration, ses journaux, ses
     // imprevus, ses regularisations, son historique importe, ses retours, et ce qui est sorti pour ce mois-ci (pour
     // l'ouverture : pour tous les mois).
     for d in engagement::stock::dossiers_tenus() {
-        signer_dossier(&mut h, racine, d, true, &|n| n.ends_with(".json"));
+        signer_dossier(&mut h, racine, d.texte(), true, &|n| n.ends_with(".json"));
     }
-    signer_dossier(&mut h, racine, socle::fichiers::CONFIG, true, &|n| {
-        (ouverture || !n.ends_with(".bin")) && !n.ends_with(".tmp") && !HORS_DE_L_ECRAN.contains(&n)
+    signer_dossier(&mut h, racine, socle::fichiers::CONFIG.texte(), true, &|n| {
+        (ouverture || !n.ends_with(".bin")) && !n.ends_with(".tmp") && !HORS_DE_L_ECRAN.iter().any(|c| c.texte() == n)
     });
-    signer_dossier(&mut h, racine, envois::journal::JOURNAL, false, &|n| n.ends_with(".json") && !HORS_DE_L_ECRAN.contains(&n));
-    const DOSSIERS_SIGNES: [&str; 3] = ["imprevus", "historique", "retours"];
-    for d in DOSSIERS_SIGNES {
-        signer_dossier(&mut h, racine, d, true, &|n| !n.ends_with(".tmp"));
+    signer_dossier(&mut h, racine, envois::journal::JOURNAL.texte(), false, &|n| n.ends_with(".json") && !HORS_DE_L_ECRAN.iter().any(|c| c.texte() == n));
+    for d in [engagement::imprevus::DOSSIER, import::mois::HISTORIQUE, envois::retours::RETOURS] {
+        signer_dossier(&mut h, racine, d.texte(), true, &|n| !n.ends_with(".tmp"));
     }
-    if ouverture {
-        signer_dossier(&mut h, racine, "sorties", true, &|n| !n.ends_with(".tmp"));
-        signer_dossier(&mut h, racine, "gabarits", true, &|n| !n.ends_with(".tmp"));
-    } else {
-        signer_dossier(&mut h, racine, &format!("sorties/{}", cle), true, &|n| n.starts_with(&sorties_du_mois));
+    match mois {
+        None => {
+            signer_dossier(&mut h, racine, documents::DossierDuMois::DES_MOIS.texte(), true, &|n| !n.ends_with(".tmp"));
+            signer_dossier(&mut h, racine, droit::contexte::GABARITS.texte(), true, &|n| !n.ends_with(".tmp"));
+        }
+        Some(m) => {
+            let du_mois = documents::DossierDuMois::Sorties.chemin(m);
+            let dedans = format!("{}/", du_mois);
+            signer_dossier(&mut h, racine, du_mois.texte(), true, &|n| n.starts_with(&dedans));
+        }
     }
     // Le code livre : baremes, bases, modeles (une mise a jour les change sans changer le moteur).
     let code = socle::fichiers::dossier_du_code();
     signer_dossier(&mut h, &code, "", true, &|_| true);
     Empreinte::du_hachage(h)
-}
-
-/// L'empreinte de l'etat `cle` de la compagnie `racine`, au jour `jour`.
-fn empreinte(racine: &Path, cle: Cle, jour: &Jour) -> Empreinte {
-    empreinte_de(racine, &cle.to_string(), *jour)
 }
 
 /// Le jour de l'empreinte : celui d'un `Contexte` (`aujourdhui`, que `date` ne regle pas).
@@ -656,9 +657,9 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: Empreinte) -> R<E
 /// LE TABLEAU DE L'ADMINISTRATEUR pour cette compagnie (`config/.tableau.json`) : le garde s'il porte l'empreinte
 /// d'aujourd'hui de toute la compagnie (celle de l'ouverture), sinon refait.
 fn tableau_juste(ctx: &Contexte) -> R<Garde> {
-    let f = ctx.racine.join(crate::gestes::administrateur::TABLEAU);
+    let f = crate::gestes::administrateur::TABLEAU.dans(&ctx.racine);
     if f.is_file() {
-        let empreinte = empreinte(&ctx.racine, Cle::Ouverture, &ctx.aujourdhui);
+        let empreinte = empreinte_de(&ctx.racine, None, ctx.aujourdhui);
         match socle::forme::lire_fichier::<TableauCompagnie>(&f, "Le tableau gardé de la compagnie ne se lit pas.") {
             Ok(t) if t.empreinte == empreinte => return Ok(Garde::Tableau(Arc::new(t))),
             Ok(_) => {}
@@ -673,13 +674,17 @@ fn tableau_juste(ctx: &Contexte) -> R<Garde> {
 /// l'empreinte d'apres n'est alors plus celle d'avant, et un second passage, sans recalcul cette fois, la retrouve.
 fn refaire(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
     for passage in 1..=2 {
-        let avant = empreinte(&ctx.racine, cle, &ctx.aujourdhui);
-        let garde = match cle {
+        let mois = match cle {
             Cle::Tableau => return tableau_juste(ctx),
-            Cle::Mois(m) => Garde::Mois(Arc::new(refaire_le_mois(o, ctx, m, avant.clone())?)),
-            Cle::Ouverture => Garde::Ouverture(Arc::new(refaire_l_ouverture(o, ctx, avant.clone())?)),
+            Cle::Mois(m) => Some(m),
+            Cle::Ouverture => None,
         };
-        let stable = empreinte(&ctx.racine, cle, &ctx.aujourdhui) == avant;
+        let avant = empreinte_de(&ctx.racine, mois, ctx.aujourdhui);
+        let garde = match mois {
+            Some(m) => Garde::Mois(Arc::new(refaire_le_mois(o, ctx, m, avant.clone())?)),
+            None => Garde::Ouverture(Arc::new(refaire_l_ouverture(o, ctx, avant.clone())?)),
+        };
+        let stable = empreinte_de(&ctx.racine, mois, ctx.aujourdhui) == avant;
         if stable {
             if let Garde::Ouverture(e) = &garde {
                 // Une ecriture impossible ne change rien au resultat : la prochaine lecture refera.
@@ -720,7 +725,7 @@ pub fn lire(o: &Options, ctx: &Contexte, cle: Cle) -> R<()> {
 
 fn garde_juste(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
     if cle == Cle::Ouverture {
-        if let Some(e) = ouverture_ecrite(&ctx.racine).filter(|e| e.empreinte == empreinte(&ctx.racine, cle, &ctx.aujourdhui)) {
+        if let Some(e) = ouverture_ecrite(&ctx.racine).filter(|e| e.empreinte == empreinte_de(&ctx.racine, None, ctx.aujourdhui)) {
             return Ok(Garde::Ouverture(Arc::new(e)));
         }
     }
@@ -998,15 +1003,15 @@ impl FileDesEtats {
     fn connu(&self, cle: Cle, jour: &Jour) -> Option<(Garde, bool)> {
         match cle {
             Cle::Ouverture => ouverture_ecrite(&self.racine).map(|e| {
-                let juste = e.empreinte == empreinte(&self.racine, cle, jour);
+                let juste = e.empreinte == empreinte_de(&self.racine, None, *jour);
                 (Garde::Ouverture(Arc::new(e)), juste)
             }),
-            Cle::Mois(_) => {
+            Cle::Mois(m) => {
                 let e = match self.verrou().fait.get(&cle) {
                     Some((_, Ok(Garde::Mois(e)))) => e.clone(),
                     _ => return None,
                 };
-                let juste = e.empreinte == empreinte(&self.racine, cle, jour);
+                let juste = e.empreinte == empreinte_de(&self.racine, Some(m), *jour);
                 Some((Garde::Mois(e), juste))
             }
             Cle::Tableau => None,
@@ -1118,7 +1123,7 @@ impl FileDesEtats {
                 Vec::new()
             }
         };
-        let tableau = match crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&self.racine), &self.racine) {
+        let tableau = match crate::gestes::administrateur::est_rattachee(&compagnie::installation::IdDeCompagnie::installation_de(&self.racine), &self.racine) {
             Ok(t) => t,
             Err(m) => {
                 noter("le registre de l'administrateur ne se lit pas", &m);

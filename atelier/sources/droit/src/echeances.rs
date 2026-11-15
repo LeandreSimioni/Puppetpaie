@@ -17,28 +17,54 @@ use serde::Serialize;
 use socle::date::Jour;
 use socle::echec::R;
 
-/// Une echeance : le jour, ce qui le precede (« avant le », « au plus tard le »), l'heure s'il y en a une (« à midi »),
-/// et le texte depose qui la donne. Elle se rend dans sa forme (`EcheanceRendue`).
+/// Une echeance : le jour, ce qui le precede (`Tournure`), l'heure s'il y en a une (« à midi »), et le texte depose qui
+/// la donne. Elle se rend dans sa forme (`EcheanceRendue`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(into = "EcheanceRendue")]
 pub struct Echeance {
     pub jour: Jour,
-    pub mots: &'static str,
+    pub mots: Tournure,
     pub heure: &'static str,
     pub source: String,
+}
+
+/// CE QUI PRECEDE LE JOUR D'UNE ECHEANCE : le jour lui-meme exclu, ou inclus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tournure {
+    /// « avant le » : le jour exclu.
+    AvantLe,
+    /// « au plus tard le » : le jour inclus.
+    AuPlusTardLe,
+}
+
+impl Tournure {
+    /// Avec l'annee : « avant le », « au plus tard le ».
+    fn longue(self) -> &'static str {
+        match self {
+            Tournure::AvantLe => "avant le",
+            Tournure::AuPlusTardLe => "au plus tard le",
+        }
+    }
+
+    /// Sans l'annee : « au plus tard le » dit « jusqu'au » (meme jour limite, inclus).
+    fn courte(self) -> &'static str {
+        match self {
+            Tournure::AvantLe => "avant le",
+            Tournure::AuPlusTardLe => "jusqu'au",
+        }
+    }
 }
 
 impl Echeance {
     /// « avant le 14/11/2026 », « avant le 15/12/2026 à midi ».
     pub fn texte(&self) -> String {
-        Self::dire(self.mots, &self.jour.jj_mm_aaaa(), self.heure)
+        Self::dire(self.mots.longue(), &self.jour.jj_mm_aaaa(), self.heure)
     }
 
-    /// Sans l'annee, et « au plus tard le » dit « jusqu'au » (meme jour limite, inclus) : « avant le 14/11 »,
-    /// « avant le 15/12 à midi », « jusqu'au 24/11 ». C'est ce qu'ecrit une case du panneau.
+    /// Sans l'annee, dans sa tournure courte : « avant le 14/11 », « avant le 15/12 à midi », « jusqu'au 24/11 ». C'est
+    /// ce qu'ecrit une case du panneau.
     pub fn court(&self) -> String {
-        let mots = if self.mots == "au plus tard le" { "jusqu'au" } else { self.mots };
-        Self::dire(mots, &self.jour.jj_mm(), self.heure)
+        Self::dire(self.mots.courte(), &self.jour.jj_mm(), self.heure)
     }
 
     fn dire(mots: &str, jour_dit: &str, heure: &str) -> String {
@@ -71,7 +97,7 @@ pub fn jour_ouvrable(depuis: &Jour, n: i64, chomes: Option<&str>) -> R<Jour> {
     let (mut jour, mut reste) = (*depuis, n.abs());
     while reste > 0 {
         jour = jour.plus_jours(pas)?;
-        if crate::conges::jours_ouvrables(&jour, &jour, chomes)? == 1 {
+        if crate::conges::jours_ouvrables(&socle::date::Periode::du_jour(jour), chomes)? == socle::grandeurs::Jours::UN {
             reste -= 1;
         }
     }
@@ -82,7 +108,7 @@ pub fn jour_ouvrable(depuis: &Jour, n: i64, chomes: Option<&str>) -> R<Jour> {
 pub fn dpae(debut: &Jour) -> Echeance {
     Echeance {
         jour: *debut,
-        mots: "avant le",
+        mots: Tournure::AvantLe,
         heure: "",
         source: "Code du travail, art. L. 1221-10 (atelier/reference/sources/code-du-travail/xml/L1221-10.xml)".into(),
     }
@@ -95,7 +121,7 @@ pub fn remise_du_contrat(debut: &Jour, idcc: Option<&crate::fiche::Idcc>, code_e
     let loi = jour_ouvrable(debut, 2, chomes)?;
     let mut e = Echeance {
         jour: loi,
-        mots: "au plus tard le",
+        mots: Tournure::AuPlusTardLe,
         heure: "",
         source: "Code du travail, art. L. 1242-13 (atelier/reference/sources/code-du-travail/xml/L1242-13.xml)".into(),
     };
@@ -103,7 +129,7 @@ pub fn remise_du_contrat(debut: &Jour, idcc: Option<&crate::fiche::Idcc>, code_e
     if code_emploi.is_some_and(|c| r.metiers.iter().any(|m| crate::fiche::CodeEmploiFt::from(m) == *c)) {
         let jour = jour_ouvrable(debut, -r.jours_ouvrables_avant, chomes)?;
         if jour < e.jour {
-            e = Echeance { jour, mots: "au plus tard le", heure: "", source: format!("{}, art. {}", crate::clauses::nom(idcc), r.article) };
+            e = Echeance { jour, mots: Tournure::AuPlusTardLe, heure: "", source: format!("{}, art. {}", crate::clauses::nom(idcc), r.article) };
         }
     }
     Ok(e)
