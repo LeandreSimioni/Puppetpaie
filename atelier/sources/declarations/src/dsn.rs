@@ -3074,7 +3074,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
     // Les assiettes du bordereau comptent encore en decimaux, comme les lignes deposees (`lignes_declarees`) : le brut
     // declare s'y ouvre.
     let brut = r.declare.brut.decimal();
-    let si =|oui: bool, v: &dyn Fn() -> R<Decimal>| if oui { v() } else { Ok(Montant::ZERO.decimal()) };
+    let si = |oui: bool, v: &dyn Fn() -> R<Decimal>| if oui { v() } else { Ok(Montant::ZERO.decimal()) };
     let base = |a: Assiette| l.base(a, &b78, &l81);
     let t1_ou_majoree = if caisse { Assiette::T1MensuelleX115 } else { Assiette::T1Mensuelle };
     use AssietteDuBordereau as A;
