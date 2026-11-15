@@ -76,6 +76,38 @@ const RANGS: [(&str, &str, &[&str]); 13] = [
 /// Les rubriques qui ne commencent pas un rang : (cle, jetons).
 const SUIVANTES: [(&str, &str); 2] = [("fin", "fin"), ("brut", "salaire brut")];
 
+/// LA CASE « NB JOURS OU CACHETS » D'UN CERTIFICAT LU : ses chiffres, lus une fois dans les deux grandeurs qu'ils
+/// peuvent dire, puisque la case ne dit pas laquelle : les cachets d'un artiste, les jours d'un technicien. Le statut du
+/// salarie choisit (`du_statut`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JoursOuCachetsLus {
+    pub cachets: socle::grandeurs::Cachets,
+    pub jours: socle::grandeurs::Jours,
+}
+
+impl JoursOuCachetsLus {
+    /// La case `t`, des chiffres seuls ; `None` : elle n'en est pas.
+    fn lus(t: &str) -> Option<JoursOuCachetsLus> {
+        socle::num::entier_de_chiffres(t)?;
+        let (cachets, jours) = socle::grandeurs::lu::texte_entier_en_deux(t)?;
+        Some(JoursOuCachetsLus { cachets, jours })
+    }
+
+    /// Le nombre que dit la case pour un salarie de ce statut : des cachets pour un artiste, des jours pour un
+    /// technicien.
+    pub fn du_statut(self, statut: droit::fiche::Statut) -> NombreDuCertificat {
+        match statut {
+            droit::fiche::Statut::Artiste => NombreDuCertificat::Cachets(self.cachets),
+            droit::fiche::Statut::Technicien => NombreDuCertificat::Jours(self.jours),
+        }
+    }
+
+    /// Tel que sa case l'imprime (`2`).
+    pub fn dit(self) -> String {
+        socle::grandeurs::ecrit::sans_zero::dit(self.cachets)
+    }
+}
+
 /// Un certificat d'emploi lu.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Certificat {
@@ -102,10 +134,8 @@ pub struct Certificat {
     pub cadre: Option<bool>,
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
-    /// Le « NB JOURS OU CACHETS » (des chiffres seuls), lu a la lecture de la piece dans les deux grandeurs qu'il peut
-    /// dire, puisque sa case ne dit pas laquelle : les cachets d'un artiste, les jours d'un technicien. Le statut du
-    /// salarie choisit (`documents::conges_spectacles::NombreDuCertificat`).
-    pub nombre: Option<[NombreDuCertificat; 2]>,
+    /// Le « NB JOURS OU CACHETS » (des chiffres seuls), lu une fois, a la lecture de la piece.
+    pub nombre: Option<JoursOuCachetsLus>,
     pub base_conge: Option<Decimal>,
     pub brut: Option<Decimal>,
     /// La date de signature.
@@ -385,8 +415,7 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                         c.fin = Some(d);
                         let reste = &v[n..];
                         if let [x] = reste {
-                            c.nombre = socle::num::entier_de_chiffres(x)
-                                .and_then(|_| Some([NombreDuCertificat::Cachets(socle::grandeurs::lu::texte_entier(x)?), NombreDuCertificat::Jours(socle::grandeurs::lu::texte_entier(x)?)]));
+                            c.nombre = JoursOuCachetsLus::lus(x);
                         }
                     }
                 }

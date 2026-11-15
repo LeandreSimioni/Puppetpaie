@@ -568,6 +568,15 @@ pub mod lu {
         }
     }
 
+    /// LES DEUX GRANDEURS QU'UN MEME TEXTE ENTIER D'UNE PIECE PEUT DIRE (la case « NB JOURS OU CACHETS » d'un
+    /// certificat, qui ne dit pas laquelle), lu une fois comme `texte_entier` ; `None` : le texte n'est pas un entier.
+    pub fn texte_entier_en_deux<A: Grandeur, B: Grandeur>(t: &str) -> Option<(A, B)> {
+        match num::entier_lu(t).map(|n| Decimal::try_from_i128_with_scale(n, 0)) {
+            Some(Ok(d)) => Some((<A as crate::grandeurs::Scelle>::du(d), <B as crate::grandeurs::Scelle>::du(d))),
+            Some(Err(_)) | None => None,
+        }
+    }
+
     /// Comme `forme::decimal` : un nombre, ou un nombre ecrit en texte (une ligne de paie, une paie ecrite : le moteur
     /// les ecrit en texte, la page envoie un nombre ou un texte).
     pub mod nombre_ou_texte {
