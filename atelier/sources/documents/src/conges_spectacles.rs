@@ -16,7 +16,8 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use engagement::Engagement;
 use engagement::numeros::NumeroDeCertificat;
-use socle::grandeurs::{courte, Montant, MontantUnitaire};
+use socle::grandeurs::ecrit::sans_zero::dit;
+use socle::grandeurs::{courte, Cachets, Jours, Montant, MontantUnitaire};
 use socle::num::{court, Decimal};
 use socle::echec::{erreur, refus, Classe, Echec, R};
 
@@ -232,8 +233,8 @@ pub struct ContratCs {
     pub debut: Jour,
     pub fin: Jour,
     pub dates_travail: Vec<Jour>,
-    pub cachets: i64,
-    pub jours: i64,
+    pub cachets: Cachets,
+    pub jours: Jours,
     pub heures: Option<Decimal>,
     pub taux_cachet: Option<MontantUnitaire>,
     pub numero: Option<engagement::numeros::NumeroContrat>,
@@ -245,7 +246,7 @@ pub struct ContratCs {
 #[derive(Debug, Clone)]
 pub struct MoisPaye {
     pub fin: Jour,
-    pub jours: i64,
+    pub jours: Jours,
     pub brut: Montant,
 }
 
@@ -289,15 +290,22 @@ fn bornes_31_mars(debut: Jour, fin: Jour) -> Vec<Jour> {
 /// Une periode de certificat : (debut, fin, dates, nb, jours).
 pub type Periode = (Jour, Jour, Vec<Jour>, i64, i64);
 
+/// Au bord du `nb` a deux sens du certificat (`Certificat::nb_jours_ou_cachets` : des cachets ou des jours), qui compte
+/// encore en entiers : la forme de ce nombre reste a trancher (#419).
+fn au_bord(n: Option<i64>) -> R<i64> {
+    n.ok_or_else(|| socle::refus!("des cachets ou des jours qui ne sont pas un nombre entier ne se portent pas au certificat : le signaler au développeur"))
+}
+
 /// `decouper` : un contrat -> une ou plusieurs periodes de certificat.
 pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
     if !eng.mois_payes.is_empty() {
         return Ok(periodes_au_mois(eng)?.into_iter().map(|(p, _)| p).collect());
     }
     let bornes = bornes_31_mars(eng.debut, eng.fin);
+    let jours = au_bord(eng.jours.en_entier())?;
     if bornes.is_empty() {
-        let nb = if eng.cachets != 0 { eng.cachets } else { eng.jours };
-        return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, eng.jours)]);
+        let nb = if !eng.cachets.est_nul() { au_bord(eng.cachets.en_entier())? } else { jours };
+        return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, jours)]);
     }
     if let Some(h) = eng.heures.filter(|h| !h.is_zero()) {
         return Err(erreur(
@@ -309,15 +317,15 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
             ),
         ));
     }
-    let n = eng.dates_travail.len() as i64;
-    if eng.cachets != n || eng.jours != n {
+    let n = eng.dates_travail.len();
+    if eng.cachets != Cachets::de_dates(n) || eng.jours != Jours::de_dates(n) {
         return Err(erreur(
             Classe::Illisible,
             format!(
                 "Contrat {} a cheval sur le 31 mars : {} cachet(s) et {} jour(s) declares pour {} date(s) travaillee(s). La repartition entre les deux periodes de conges serait arbitraire. Scinder le contrat en deux engagements dans le fichier de paie.",
                 eng.nomme(),
-                eng.cachets,
-                eng.jours,
+                dit(eng.cachets),
+                dit(eng.jours),
                 n
             ),
         ));
@@ -433,7 +441,7 @@ fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Montant)>> {
     let mut debut = e.debut;
     for borne in bornes {
         let couverts: Vec<&MoisPaye> = e.mois_payes.iter().filter(|m| debut <= m.fin && (m.fin <= borne || borne == e.fin)).collect();
-        let jours: i64 = couverts.iter().map(|m| m.jours).sum();
+        let jours = au_bord(couverts.iter().map(|m| m.jours).sum::<Jours>().en_entier())?;
         out.push(((debut, borne, Vec::new(), jours, jours), couverts.iter().fold(Montant::ZERO, |a, m| a + m.brut)));
         debut = borne.plus_jours(1)?;
     }
@@ -665,8 +673,8 @@ mod tests {
         Jour::nouveau(an, mo, jo).unwrap()
     }
 
-    fn contrat(debut: Jour, fin: Jour, dates: Vec<Jour>, cachets: i64, jours: i64, heures: Option<Decimal>) -> ContratCs {
-        ContratCs { debut, fin, dates_travail: dates, cachets, jours, heures, taux_cachet: Some(socle::grandeurs::MontantUnitaire::du_decimal(Decimal::new(1300, 1))), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
+    fn contrat(debut: Jour, fin: Jour, dates: Vec<Jour>, cachets: usize, jours: usize, heures: Option<Decimal>) -> ContratCs {
+        ContratCs { debut, fin, dates_travail: dates, cachets: Cachets::de_dates(cachets), jours: Jours::de_dates(jours), heures, taux_cachet: Some(socle::grandeurs::MontantUnitaire::du_decimal(Decimal::new(1300, 1))), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
     }
 
     /// L'exercice des conges va du 1er avril au 31 mars

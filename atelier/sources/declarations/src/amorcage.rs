@@ -172,7 +172,7 @@ fn pile_sans_taux(annee: i32) -> droit::forme_bareme::Pile {
         annee,
         quoi: None,
         smic_horaire: Vec::new(),
-        heures_par_cachet: socle::grandeurs::Heures::ZERO,
+        heures_par_cachet: socle::grandeurs::HeuresParUnite::ZERO,
         logement_grand_deplacement: None,
         repas_deplacement: None,
         frais_hors_metropole: None,

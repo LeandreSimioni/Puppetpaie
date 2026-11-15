@@ -354,9 +354,14 @@ fn comparer_une(
     mois: Mois,
     p: &PaieVersee,
     nature: NatureDeContrat,
-    jours_comptes: Option<i64>,
+    jours_comptes: Option<socle::grandeurs::Jours>,
     c: &mut Comparaison,
 ) -> R<Vec<Ecart>> {
+    let jours_comptes = match jours_comptes.map(socle::grandeurs::Jours::en_entier) {
+        None => None,
+        Some(Some(n)) => Some(n),
+        Some(None) => return Err(refus("le bulletin compte des jours travaillés qui ne sont pas un nombre entier")),
+    };
     let fin = mois.dernier_jour();
     let annee = format!("{:04}", mois.annee());
     let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
@@ -451,7 +456,7 @@ fn comparer_une(
         let forme = FormeSaisie::de(&lue)?;
         // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
         let montant = Some(socle::grandeurs::Montant::du_decimal(quantite * taux));
-        let heures = l.heures.map(socle::grandeurs::Heures::du_decimal);
+        let heures = l.heures.map(socle::grandeurs::HeuresParUnite::du_decimal);
         let (base, taux_majoration) = (Some(socle::grandeurs::Montant::du_decimal(quantite)), Some(socle::grandeurs::Taux::du_decimal(taux * Decimal::ONE_HUNDRED)));
         let (quantite, taux) = (socle::forme::Nombre(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux));
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.

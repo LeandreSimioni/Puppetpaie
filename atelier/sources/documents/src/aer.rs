@@ -54,6 +54,7 @@ use crate::cachet;
 use socle::date::Jour;
 use socle::echec::refus;
 use socle::mois::Mois;
+use socle::grandeurs::{Cachets, Heures};
 use socle::num::Decimal;
 
 /// Les champs du cadre 5, et rien d'autre.
@@ -231,10 +232,10 @@ pub fn quantite(v: Option<&str>) -> socle::echec::R<Option<Decimal>> {
 
 /// Deux quantites concordent-elles ? Une quantite que rien ne dit (une case vide de l'attestation, des heures que
 /// l'engagement ne dit pas) concorde avec zero, et avec elle seule.
-fn concordent(a: Option<Decimal>, b: Option<Decimal>) -> bool {
+fn concordent<G: socle::grandeurs::Grandeur + PartialEq>(a: Option<G>, b: Option<G>, nul: fn(G) -> bool) -> bool {
     match (a, b) {
         (Some(x), Some(y)) => x == y,
-        (Some(x), None) | (None, Some(x)) => x.is_zero(),
+        (Some(x), None) | (None, Some(x)) => nul(x),
         (None, None) => true,
     }
 }
@@ -266,8 +267,8 @@ pub struct Ligne {
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
     pub numero: Option<engagement::numeros::NumeroContrat>,
-    pub cachets: Option<Decimal>,
-    pub heures: Option<Decimal>,
+    pub cachets: Option<Cachets>,
+    pub heures: Option<Heures>,
 }
 
 fn valeur(champs: &[ChampLu], nom: &str) -> Option<String> {
@@ -297,7 +298,8 @@ pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
             continue;
         }
         let q = |i: usize| quantite(valeur(champs, &nom(QUANTITES[i].1)).as_deref());
-        let ligne = Ligne { debut, fin, cachets: q(0)?, heures: q(1)?, numero: numero_courant.clone() };
+        // Les quantites imprimees se lisent en leur grandeur : la porte de l'attestation.
+        let ligne = Ligne { debut, fin, cachets: q(0)?.map(socle::grandeurs::lu::nombre), heures: q(1)?.map(socle::grandeurs::lu::nombre), numero: numero_courant.clone() };
         match out.iter_mut().find(|l| l.debut == debut && l.fin == fin && l.numero == ligne.numero) {
             Some(l) => *l = ligne,
             None => out.push(ligne),
@@ -313,9 +315,9 @@ pub struct PaieAer {
     pub numero: engagement::numeros::NumeroContrat,
     pub debut: Jour,
     pub fin: Jour,
-    pub cachets: Decimal,
+    pub cachets: Cachets,
     /// `None` : l'engagement au cachet ne dit pas d'heures.
-    pub heures: Option<Decimal>,
+    pub heures: Option<Heures>,
 }
 
 impl PaieAer {
@@ -330,13 +332,13 @@ impl PaieAer {
         let (d, f) = (e.debut_mois(), e.fin_mois());
         let numero = e.numero.clone().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
         let fin = e.fin.ok_or_else(|| socle::refus!("contrat {} sans fin", numero))?;
-        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees.decimal()) } else { e.heures.map(socle::grandeurs::Heures::decimal) };
+        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures };
         Ok(PaieAer {
             numero,
             debut: if e.debut > d { e.debut } else { d },
             fin: if fin < f { fin } else { f },
-            cachets: Decimal::from(e.cachets),
-            heures: heures.map(|h| h.normalize()),
+            cachets: e.cachets,
+            heures: heures.map(socle::grandeurs::sans_zero),
         })
     }
 }
@@ -351,9 +353,9 @@ fn periode(debut: Option<Jour>, fin: Option<Jour>) -> String {
 }
 
 /// Une quantite telle qu'on l'ecrit en francais : « 151,67 », « 12 » ; « aucun » quand rien ne la dit.
-fn nombre(d: Option<Decimal>) -> String {
-    match d {
-        Some(d) => d.normalize().to_string().replace('.', ","),
+fn nombre<G: socle::grandeurs::Grandeur>(g: Option<G>) -> String {
+    match g.map(socle::grandeurs::ecrit::sans_zero::dit) {
+        Some(t) => t.replace('.', ","),
         None => "aucun".to_string(),
     }
 }
@@ -383,17 +385,14 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
             ));
             continue;
         };
-        for (quoi, vu, n) in [("cachets", ligne.cachets, Some(p.cachets)), ("heures", ligne.heures, p.heures)] {
-            if !concordent(vu, n) {
-                ecarts.push(format!(
-                    "{} ({}) : {} {} sur l'attestation, {} dans la paie",
-                    nom_du_contrat(ligne.numero.as_ref()),
-                    periode(ligne.debut, ligne.fin),
-                    nombre(vu),
-                    quoi,
-                    nombre(n)
-                ));
-            }
+        let ecart = |quoi: &str, vu: String, n: String| {
+            format!("{} ({}) : {} {} sur l'attestation, {} dans la paie", nom_du_contrat(ligne.numero.as_ref()), periode(ligne.debut, ligne.fin), vu, quoi, n)
+        };
+        if !concordent(ligne.cachets, Some(p.cachets), Cachets::est_nul) {
+            ecarts.push(ecart("cachets", nombre(ligne.cachets), nombre(Some(p.cachets))));
+        }
+        if !concordent(ligne.heures, p.heures, Heures::est_nul) {
+            ecarts.push(ecart("heures", nombre(ligne.heures), nombre(p.heures)));
         }
     }
     for p in paies {

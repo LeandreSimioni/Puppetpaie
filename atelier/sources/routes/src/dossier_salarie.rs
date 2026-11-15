@@ -467,7 +467,7 @@ pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
 /// Ce que l'ancien logiciel a verse en `mois` pour un contrat qui continue ici : le brut, les cachets (une ligne, aux
 /// jours que le bulletin imprime) et les jours travailles. `None` sans bulletin qui donne ses jours et ses cachets : le
 /// mois reste parmi les manquants (rien ne se devine).
-fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Montant, Vec<engagement::LignePaie>, i64)>> {
+fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Montant, Vec<engagement::LignePaie>, socle::grandeurs::Jours)>> {
     let Some(p) = i.paies().get(&mois) else { return Ok(None) };
     let Some(brut) = p.brut.map(Montant::au_centime) else { return Ok(None) };
     let mut dates: Vec<Jour> = Vec::new();
@@ -484,7 +484,7 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
     if dates.is_empty() {
         return Ok(None);
     }
-    let jours = dates.len() as i64;
+    let jours = socle::grandeurs::Jours::de_dates(dates.len());
     let cachet = engagement::LignePaie::Unites(engagement::ligne::Unites {
         rubrique: droit::catalogue::CACHET,
         quantite,
@@ -509,7 +509,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
     let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.debut), numero: eng.numero.clone(), ..Default::default() };
     let importe = engagement::importe::continue_par(&ctx.racine, &cherche).map_err(|e| e.reclasser(Classe::Illisible))?;
     let mut bruts = Montant::ZERO;
-    let mut jours = 0i64;
+    let mut jours = socle::grandeurs::Jours::ZERO;
     let mut mois_payes: Vec<MoisPaye> = Vec::new();
     for &m in mois_du.iter().filter(|m| **m < eng.mois) {
         let ecrite = match eng.numero.as_ref() {
@@ -539,7 +539,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
     if eng.nat()?.mensuelle() {
         let fin_du_mois = eng.fin_mois();
         mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: p.brut.au_centime() });
-        let contrat = ContratCs { jours: jours + eng.jours, dates_travail: Vec::new(), cachets: 0, heures: None, taux_cachet: None, mois_payes, ..ContratCs::de(eng)? };
+        let contrat = ContratCs { jours: jours + eng.jours, dates_travail: Vec::new(), cachets: socle::grandeurs::Cachets::ZERO, heures: None, taux_cachet: None, mois_payes, ..ContratCs::de(eng)? };
         return Ok((PaieCs { engagement: contrat, brut, salarie: p.salarie.champs.clone() }, manquants));
     }
     lignes.extend(eng.lignes.iter().cloned());
@@ -557,7 +557,8 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
         debut: Some(eng.debut),
         fin: eng.fin,
         numero: eng.numero.clone(),
-        jours: Some(engagement::Chiffre::entier(jours + eng.jours)),
+        // La forme assemblee ecrit ses jours en nombre : sa porte.
+        jours: Some(engagement::Chiffre::de_decimal((jours + eng.jours).decimal())),
         taux_cachet: eng.taux_cachet.map(|t| engagement::Chiffre::de_decimal(t.decimal())),
         date_paiement: eng.date_paiement.clone(),
         lieu: Some(eng.lieu.clone()),

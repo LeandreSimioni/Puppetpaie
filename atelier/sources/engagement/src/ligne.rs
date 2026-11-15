@@ -21,7 +21,7 @@ use socle::forme::{Nombre, NombreLu};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
-use socle::grandeurs::{sans_zero, Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{courte, sans_zero, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
 
 /// UN NOMBRE TEL QU'IL EST SAISI : un nombre, ou un nombre ecrit en texte. La page envoie `""` pour une case vide ; la
@@ -192,7 +192,7 @@ pub struct Unites {
     pub planning: Vec<DateDeLigne>,
 }
 
-/// UNE LIGNE EN UNITES QUI DIT SES HEURES par unite (`saisie` : `quantite`, `taux`, `heures` ; `Rubrique::heures`).
+/// UNE LIGNE EN UNITES QUI DIT SES HEURES par unite (`saisie` : `quantite`, `taux`, `heures` ; `QuantiteDeLigne::heures`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UnitesEtHeures {
@@ -202,7 +202,7 @@ pub struct UnitesEtHeures {
     #[serde(with = "texte_option")]
     pub taux: Option<MontantUnitaire>,
     #[serde(with = "texte_option")]
-    pub heures: Option<Heures>,
+    pub heures: Option<HeuresParUnite>,
     pub lieu: Option<String>,
     pub dates: Vec<DateDeLigne>,
     pub planning: Vec<DateDeLigne>,
@@ -351,7 +351,7 @@ pub struct Composee {
     #[serde(with = "texte")]
     pub taux: MontantUnitaire,
     #[serde(with = "texte_option")]
-    pub heures: Option<Heures>,
+    pub heures: Option<HeuresParUnite>,
     pub precision: Option<String>,
     pub dates: Vec<DateDeLigne>,
 }
@@ -412,7 +412,7 @@ pub struct Importee {
     #[serde(with = "texte_option")]
     pub taux: Option<MontantUnitaire>,
     #[serde(with = "texte_option")]
-    pub heures: Option<Heures>,
+    pub heures: Option<HeuresParUnite>,
     #[serde(with = "texte")]
     pub montant: Montant,
 }
@@ -542,6 +542,28 @@ impl QuantiteDeLigne {
     /// Est-elle nulle ?
     pub fn est_nul(self) -> bool {
         self.decimal().is_zero()
+    }
+
+    /// LES HEURES QU'ELLE FAIT COMPTER, a `par_unite` heures par unite (`Rubrique::heures_par_unite` : le forfait de sa
+    /// rubrique, sinon celles que la ligne dit) : quantite x heures par unite, au centieme d'heure comme la DSN l'ecrit
+    /// (14 services de 4 h : 56 h ; un mois de permanent : la part du mois payee x la quotite du contrat). Sans heures par
+    /// unite, une quantite d'heures compte ses heures, une autre n'en compte aucune. Le nombre rendu est dans sa forme la
+    /// plus courte (`courte`). Une ligne en pourcentage n'a pas d'heures par unite : refus.
+    pub fn heures(self, par_unite: Option<HeuresParUnite>) -> R<Heures> {
+        use QuantiteDeLigne as Q;
+        let fois = |h: Heures| courte(h.au_centieme());
+        Ok(match (par_unite, self) {
+            (Some(_), Q::Base(_)) => return Err(socle::refus!("une ligne en pourcentage ne compte pas d'heures par unité : le signaler au développeur")),
+            (Some(p), Q::Heures(q)) => fois(q * p),
+            (Some(p), Q::Cachets(q)) => fois(q * p),
+            (Some(p), Q::Jours(q)) => fois(q * p),
+            (Some(p), Q::Services(q)) => fois(q * p),
+            (Some(p), Q::Semaines(q)) => fois(q * p),
+            (Some(p), Q::PartDuMois(q)) => fois(q * p),
+            (Some(p), Q::Unites(q)) => fois(q * p),
+            (None, Q::Heures(q)) => courte(q),
+            (None, _) => courte(Heures::ZERO),
+        })
     }
 
     /// Deux quantites de la meme grandeur ajoutees (deux lignes de la meme rubrique) ; `None` : deux grandeurs, qui ne
@@ -778,14 +800,14 @@ impl LignePaie {
         Ok(())
     }
 
-    /// SES HEURES PAR UNITE, quand elle en dit (`Rubrique::heures`) ; aucune pour une indemnite journaliere et le
+    /// SES HEURES PAR UNITE, quand elle en dit (`QuantiteDeLigne::heures`) ; aucune pour une indemnite journaliere et le
     /// maintien, qui ne sont pas du travail.
-    pub fn heures(&self) -> Option<Heures> {
+    pub fn heures(&self) -> Option<HeuresParUnite> {
         match self {
             LignePaie::UnitesEtHeures(l) => l.heures,
             LignePaie::Composee(l) => l.heures,
             LignePaie::Importee(l) => l.heures,
-            LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => Some(Heures::ZERO),
+            LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => Some(HeuresParUnite::ZERO),
             LignePaie::Unites(_) | LignePaie::Frais(_) | LignePaie::Pourcentage(_) | LignePaie::Montant(_) | LignePaie::AvantageEnNature(_) | LignePaie::RetenueArret(_) => None,
         }
     }
@@ -1107,7 +1129,7 @@ pub struct LigneDonnee {
     pub rubrique: Option<CodeDeRubrique>,
     pub quantite: Option<Option<Nombre>>,
     pub taux: Option<Option<MontantUnitaire>>,
-    pub heures: Option<Option<Heures>>,
+    pub heures: Option<Option<HeuresParUnite>>,
     pub base: Option<Option<Montant>>,
     pub taux_majoration: Option<Option<Taux>>,
     pub montant: Option<Option<Montant>>,

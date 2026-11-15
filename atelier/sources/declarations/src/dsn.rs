@@ -2133,8 +2133,9 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, Decimal, UniteDeMes
     let mut out = Vec::new();
     for u in nat.unites_activite() {
         let valeur = match u.mesure {
-            Mesure::Jours => Decimal::from(e.jours),
-            Mesure::Cachets => Decimal::from(e.cachets),
+            // La norme ecrit la mesure en nombre : sa porte.
+            Mesure::Jours => e.jours.decimal(),
+            Mesure::Cachets => e.cachets.decimal(),
             // Les heures sont la somme de celles des lignes (ARCHITECTURE, « Heures, cachets et jours ») : sans ligne en
             // heures, aucune.
             Mesure::Heures => e.heures.iter().map(|h| h.decimal()).filter(|h| !h.is_zero()).fold(Decimal::ZERO, |a, h| a + h),

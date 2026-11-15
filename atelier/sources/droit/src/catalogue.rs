@@ -11,8 +11,7 @@ use crate::autre_revenu_brut::AutreElementDeRevenuBrut;
 use socle::echec::Lieu;
 use socle::fichiers::{dossier_du_code, repr, signature};
 use socle::echec::R;
-use socle::grandeurs::{courte, Heures};
-use socle::num::Decimal;
+use socle::grandeurs::Heures;
 use crate::fiche::{ChampsRubrique, Datee, FicheDatee, Piece, RubriqueDatee, VoirListe};
 use std::collections::HashMap;
 use std::path::Path;
@@ -227,9 +226,10 @@ pub enum OrigineDeRubrique {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlafondAnnuelHeures {
-    pub moins_de_50_ans: i64,
-    #[serde(rename = "50_ans_et_plus")]
-    pub cinquante_ans_et_plus: i64,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
+    pub moins_de_50_ans: Heures,
+    #[serde(rename = "50_ans_et_plus", serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
+    pub cinquante_ans_et_plus: Heures,
 }
 
 /// LE CODE D'UNE RUBRIQUE : sa cle dans `rubriques` ou `au_mois` de `donnees/rubriques-base.json`, ou dans
@@ -304,13 +304,14 @@ pub struct Rubrique {
     pub conges_spectacles: bool,
     pub source: String,
     pub sens: socle::grandeurs::Signe,
-    pub heures_forfait: Option<Decimal>,
+    pub heures_forfait: Option<socle::grandeurs::HeuresParUnite>,
     pub plafond: Option<Unite>,
     pub aem: Option<Unite>,
     pub dsn_type: Option<DsnTypeDeRubrique>,
     pub dsn_autres_bruts: Option<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub annexe: Option<crate::emplois::AnnexeChomage>,
-    pub plafond_mensuel: Option<i64>,
+    /// Les cachets qu'un mois retient au plus (le cachet : 28, annexe X).
+    pub plafond_mensuel: Option<socle::grandeurs::Cachets>,
     pub plafond_annuel_heures: Option<PlafondAnnuelHeures>,
     pub compte_pour: ComptePour,
     pub salaire_de_base: bool,
@@ -416,33 +417,15 @@ impl Rubrique {
         self.heures_forfait.is_none() && self.saisie.contains(&CaseSaisie::Heures)
     }
 
-    /// Les heures que cette ligne fait compter, au total : le forfait
-    /// l'emporte, sinon les heures saisies, sinon la quantite si l'unite est
-    /// l'heure. Zero pour une rubrique qui demande ses heures et ne les a pas
-    /// recues : la saisie qui la porte a deja ete refusee
-    /// ([`Rubrique::heures_a_saisir`]).
+    /// Les heures par unite qu'une ligne de cette rubrique compte : le forfait l'emporte, sinon celles que la ligne
+    /// dit ; `None` : aucune (la quantite d'une ligne a l'heure compte alors ses heures, une autre n'en compte aucune :
+    /// `engagement::ligne::QuantiteDeLigne::heures`). Une rubrique qui demande ses heures et ne les a pas recues : la
+    /// saisie qui la porte a deja ete refusee ([`Rubrique::heures_a_saisir`]).
     ///
-    /// UNE convention : le `heures` d'une ligne de paie, comme
-    /// `heures_forfait`, compte les heures PAR UNITE, et la quantite les
-    /// multiplie. 14 services de 4 h : `quantite` 14, `heures` 4, soit 56 h.
-    /// Un mois de permanent : `quantite` = la fraction du mois payee,
-    /// `heures` = la quotite du contrat (`conges::lignes_du_mois`). Le produit
-    /// se compte au centieme d'heure, comme la DSN l'ecrit.
-    /// Le centieme d'heure est `Heures::au_centieme` ; le nombre rendu est dans sa forme la plus courte
-    /// (`socle::num::court`).
-    pub fn heures(&self, quantite: Decimal, heures_saisies: Option<Decimal>) -> Heures {
-        let centieme = |x: Decimal| courte(Heures::du_decimal(socle::num::mul(x, quantite)).au_centieme());
-        if let Some(f) = self.heures_forfait {
-            return centieme(f);
-        }
-        if let Some(h) = heures_saisies {
-            return centieme(h);
-        }
-        if self.unite == Unite::Heure {
-            // La quantite d'une ligne a l'heure compte des heures.
-            return courte(Heures::du_decimal(quantite));
-        }
-        courte(Heures::ZERO)
+    /// Le `heures` d'une ligne de paie, comme `heures_forfait`, compte les heures PAR UNITE : 14 services de 4 h. Un mois
+    /// de permanent : la quotite du contrat par mois entier (`conges::lignes_du_mois`).
+    pub fn heures_par_unite(&self, saisies: Option<socle::grandeurs::HeuresParUnite>) -> Option<socle::grandeurs::HeuresParUnite> {
+        self.heures_forfait.or(saisies)
     }
 }
 
@@ -485,7 +468,7 @@ impl Base {
 #[serde(deny_unknown_fields)]
 pub struct Annexes {
     /// Les heures qui ouvrent les droits (507).
-    pub seuil_heures: i64,
+    pub seuil_heures: Heures,
     /// La fenetre ou elles se comptent, en jours (365).
     pub fenetre_jours: i64,
     #[serde(rename = "note")]
@@ -605,13 +588,13 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubriqu
         conges_spectacles: dite(f.conges_spectacles, "conges_spectacles", &faute)?,
         source: dite(f.source, "source", &faute)?,
         sens: dite(f.sens, "sens", &faute)?,
-        heures_forfait: f.heures_forfait.map(|m| m.court()).transpose()?,
+        heures_forfait: f.heures_forfait.map(|m| m.court().map(socle::grandeurs::lu::nombre)).transpose()?,
         plafond: f.plafond,
         aem: f.aem,
         dsn_type: f.dsn_type,
         dsn_autres_bruts: f.dsn_autres_bruts,
         annexe: f.annexe,
-        plafond_mensuel: f.plafond_mensuel,
+        plafond_mensuel: f.plafond_mensuel.map(socle::grandeurs::lu::entier),
         plafond_annuel_heures: f.plafond_annuel_heures,
         compte_pour: dite(f.compte_pour, "compte_pour", &faute)?,
         salaire_de_base: dite(f.salaire_de_base, "salaire_de_base", &faute)?,

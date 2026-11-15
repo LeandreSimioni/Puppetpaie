@@ -160,8 +160,8 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
             dates.push(e.debut);
         }
         let mut volume: Vec<String> = Vec::new();
-        if e.cachets != 0 {
-            volume.push(format!("{} cachet{}", e.cachets, if e.cachets > 1 { "s" } else { "" }));
+        if !e.cachets.est_nul() {
+            volume.push(format!("{} cachet{}", socle::grandeurs::ecrit::sans_zero::dit(e.cachets), if e.cachets > socle::grandeurs::Cachets::UN { "s" } else { "" }));
         }
         if let Some(h) = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero()) {
             volume.push(format!("{} heure{}", fmt_heures(h), if h > Decimal::ONE { "s" } else { "" }));
@@ -289,7 +289,8 @@ pub struct ContratResume {
     pub fin: Option<socle::date::Jour>,
     pub spectacle: Option<String>,
     pub jours: Vec<socle::date::Jour>,
-    pub cachets: i64,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
+    pub cachets: socle::grandeurs::Cachets,
     /// Ses heures, s'il en a, ecrites comme le bulletin les ecrit (`heures_ecrites`).
     #[serde(default, skip_serializing_if = "Option::is_none", with = "heures_ecrites")]
     pub heures: Option<Decimal>,

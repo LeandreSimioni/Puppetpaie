@@ -46,7 +46,7 @@ use socle::echec::R;
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::num::Decimal;
-use socle::grandeurs::{Montant, Taux};
+use socle::grandeurs::{Cachets, Heures, Jours, Montant, Taux};
 
 /// Dans un engagement importe : ce que l'import a lu de lui (`Pieces`).
 pub const IMPORTE: &str = "importe";
@@ -82,11 +82,15 @@ pub enum Attestation {
 pub struct ContratAtteste {
     pub atteste_par: Attestation,
     pub numero_objet: Option<NumeroObjetSpectacle>,
-    pub heures: Option<i64>,
-    pub cachets: Option<i64>,
-    pub jours: Option<i64>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    pub heures: Option<Heures>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    pub cachets: Option<Cachets>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    pub jours: Option<Jours>,
     /// Les heures d'enseignement que les heures comptent (annexe 10).
-    pub heures_enseignement: Option<i64>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    pub heures_enseignement: Option<Heures>,
     pub brut: Option<Decimal>,
     /// La base conge qu'un certificat Congés Spectacles porte, pour le contrat entier.
     pub base_conge: Option<Decimal>,
@@ -207,9 +211,12 @@ pub struct PaieVersee {
     /// Les bases assujetties que la DSN declare, par code du bloc 78.
     pub bases: BTreeMap<BaseAssujettie, Decimal>,
     /// Ce que le bulletin d'un mois atteste de ce mois, quand le contrat entier ne le garde pas.
-    pub heures: Option<i64>,
-    pub cachets: Option<i64>,
-    pub jours: Option<i64>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    pub heures: Option<Heures>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    pub cachets: Option<Cachets>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    pub jours: Option<Jours>,
     pub spectacle: Option<String>,
     pub analytique: Option<String>,
     pub lignes: Vec<LigneImprimee>,
@@ -245,7 +252,7 @@ impl LigneImprimee {
             rubrique,
             quantite: self.quantite.map(socle::forme::Nombre),
             taux: self.taux.map(socle::grandeurs::MontantUnitaire::du_decimal),
-            heures: self.heures.map(socle::grandeurs::Heures::du_decimal),
+            heures: self.heures.map(socle::grandeurs::HeuresParUnite::du_decimal),
             montant: self.montant?,
         }))
     }
@@ -768,12 +775,12 @@ impl Importe {
             mois,
             planning: Vec::new(),
             planning_lieux: BTreeMap::new(),
-            jours: 0,
-            jours_contrat: 0,
+            jours: Jours::ZERO,
+            jours_contrat: Jours::ZERO,
             date_paiement: p.verse_le,
             versement: None,
             taux_cachet: None,
-            cachets: 0,
+            cachets: socle::grandeurs::Cachets::ZERO,
             heures: None,
             lieu: String::new(),
             lieux: BTreeMap::new(),
@@ -806,12 +813,11 @@ impl Importe {
             Some(crate::ligne::QuantiteDeLigne::Cachets(c)) => a + c,
             _ => a,
         });
-        // `Engagement::cachets` compte des cachets entiers (un nombre de la carte) : la porte de ce compte.
-        let cachets = cachets.decimal().trunc().to_string();
-        engagement.cachets = cachets.parse().map_err(|_| socle::echec::refus(socle::num::illisible(&cachets)))?;
+        // `Engagement::cachets` compte des cachets entiers.
+        engagement.cachets = cachets.partie_entiere();
         let heures = remuneration.iter().filter_map(|r| r.heures_annexes).fold(socle::grandeurs::Heures::ZERO, |a, h| a + h);
         engagement.heures = (!heures.est_nul()).then(|| socle::grandeurs::courte(heures));
-        engagement.jours = engagement.dates_travail.len() as i64;
+        engagement.jours = Jours::de_dates(engagement.dates_travail.len());
         engagement.jours_contrat = engagement.jours;
 
         // Le bareme de la paie range les bases ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
@@ -1139,7 +1145,7 @@ fn remuneration_lue(lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRe
     let mut out = Vec::new();
     for l in lignes {
         if let (Some(code), Some(q), Some(t)) = (&l.rubrique, l.quantite, l.taux) {
-            let (r, paiement, heures_annexes) = crate::calcul::rattacher(code, |unite| Ok(crate::ligne::PaiementDeLigne::de_l_unite(unite, q, t)), l.heures.map(socle::grandeurs::Heures::du_decimal), ctx)?;
+            let (r, paiement, heures_annexes) = crate::calcul::rattacher(code, |unite| Ok(crate::ligne::PaiementDeLigne::de_l_unite(unite, q, t)), l.heures.map(socle::grandeurs::HeuresParUnite::du_decimal), ctx)?;
             out.push(LigneDeRemuneration {
                 code: Some(r.code.into()),
                 libelle: r.libelle,

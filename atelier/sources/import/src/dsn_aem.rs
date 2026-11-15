@@ -14,6 +14,7 @@ use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, Nir, NumeroObje
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::fichiers::NomDeFichier;
+use socle::grandeurs::{Cachets, Heures, Jours};
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use socle::piece::format::Aaaammjj;
@@ -296,10 +297,10 @@ pub struct ContratAtteste {
     /// Le numero d'objet de la zone 638..650 : a blanc ou hors de sa forme, aucun (`NumeroObjetSpectacle::d_une_piece` ; hors
     /// de sa forme, sa faute est une anomalie de la lecture, `lire_aem`).
     pub numero_objet: Option<NumeroObjetSpectacle>,
-    pub(crate) heures: i128,
+    pub(crate) heures: Heures,
     /// Les cachets, et les cachets « groupes » (la case que le gabarit garde a 00).
-    pub(crate) cachets: i128,
-    pub(crate) jours: i128,
+    pub(crate) cachets: Cachets,
+    pub(crate) jours: Jours,
     /// Le brut en euros, deux décimales.
     pub(crate) brut: socle::num::Decimal,
     /// Le numero de l'attestation (zone 36..42), et sa date de signature (858..866, AAAA-MM-JJ si c'en est une).
@@ -317,7 +318,7 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     // `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`).
     let mut a = Atteste::vide(Attestation::Aem, Some(droit::natures::NatureDeContrat::CdduSpectacle));
     a.numero_objet.clone_from(&c.numero_objet);
-    (a.heures, a.cachets, a.jours) = (Some(c.heures as i64), Some(c.cachets as i64), Some(c.jours as i64));
+    (a.heures, a.cachets, a.jours) = (Some(c.heures), Some(c.cachets), Some(c.jours));
     a.brut = Some(c.brut);
     a.numero_attestation = plein(&c.numero_attestation);
     a.atteste_le = c.date_attestation;
@@ -408,9 +409,10 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                     debut,
                     fin,
                     numero_objet,
-                    heures,
-                    cachets: c1 + c2,
-                    jours,
+                    // Les positions 650-659 de l'AEM, en entiers : leur porte.
+                    heures: socle::grandeurs::lu::entier(heures),
+                    cachets: socle::grandeurs::lu::entier(c1 + c2),
+                    jours: socle::grandeurs::lu::entier(jours),
                     brut,
                     numero_attestation: tranche(&l, 36, 42).trim_matches(blanc).to_string(),
                     date_attestation,

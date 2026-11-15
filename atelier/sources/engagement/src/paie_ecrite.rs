@@ -225,15 +225,15 @@ pub struct FormeDEngagement {
     pub mois: Mois,
     pub planning: Vec<Jour>,
     pub planning_lieux: BTreeMap<Jour, String>,
-    #[serde(with = "entier")]
-    pub jours: i64,
-    #[serde(with = "entier")]
-    pub jours_contrat: i64,
+    #[serde(with = "nombre")]
+    pub jours: socle::grandeurs::Jours,
+    #[serde(with = "nombre")]
+    pub jours_contrat: socle::grandeurs::Jours,
     pub date_paiement: Option<Jour>,
     #[serde(with = "nombre::option")]
     pub taux_cachet: Option<MontantUnitaire>,
-    #[serde(with = "entier")]
-    pub cachets: i64,
+    #[serde(with = "nombre")]
+    pub cachets: socle::grandeurs::Cachets,
     #[serde(with = "nombre::option")]
     pub heures: Option<Heures>,
     pub lieu: String,
@@ -289,17 +289,6 @@ mod bases {
 }
 
 /// Un entier en texte.
-pub(crate) mod entier {
-    use serde::Deserialize;
-    pub fn serialize<S: serde::Serializer>(x: &i64, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&x.to_string())
-    }
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
-        let t = String::deserialize(d)?;
-        t.trim().parse().map_err(|_| serde::de::Error::custom(format!("{} n'est pas un entier", socle::ecriture::json_en_ligne(&t))))
-    }
-}
-
 /// Un decimal en texte tel qu'il est (`Decimal::to_string`, son echelle gardee), relu exactement.
 pub(crate) mod decimal_texte {
     use serde::Deserialize;

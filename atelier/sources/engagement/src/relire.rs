@@ -32,7 +32,7 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
         }
     }
     let appel = Cell::new(0usize);
-    let lignes = |_: &Contexte, _: &crate::saisie::Carte, _: socle::mois::Mois| -> R<(Vec<LignePaie>, Vec<Avis>, Option<i64>)> {
+    let lignes = |_: &Contexte, _: &crate::saisie::Carte, _: socle::mois::Mois| -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>)> {
         let rang = *mensuels.get(appel.get()).ok_or_else(|| socle::echec::refus("rang d'engagement inconnu"))?;
         appel.set(appel.get() + 1);
         let ecrit = &paies.get(rang).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "lignes"))?.engagement;

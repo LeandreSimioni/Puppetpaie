@@ -442,17 +442,18 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
         cellules,
         vec![Opt::Couleur(ROUGE), Opt::Taille(mesure("6.8")), Opt::Fond(FOND_FAMILLE), filet_haut(ROUGE, mesure("0.8"))],
     )];
-    let enseigne = colonnes.iter().any(|c| c.enseignement != 0);
+    let enseigne = colonnes.iter().any(|c| !c.enseignement.est_nul());
     // (libelle, valeur de chaque colonne, suffixe) ; une valeur que la colonne n'a pas laisse sa case vide.
     type Rang = (&'static str, fn(&Colonne) -> Option<String>, &'static str);
+    use socle::grandeurs::ecrit::sans_zero::dit;
     let mut rangs: Vec<Rang> = vec![
-        ("Cachets", |c| Some(c.cachets.to_string()), ""),
-        ("Heures déclarées", |c| Some(c.heures.to_string()), " h"),
-        ("Total heures (cachets × 12 + heures)", |c| Some(c.heures_equivalentes.to_string()), " h"),
+        ("Cachets", |c| Some(dit(c.cachets)), ""),
+        ("Heures déclarées", |c| Some(dit(c.heures)), " h"),
+        ("Total heures (cachets × 12 + heures)", |c| Some(dit(c.heures_equivalentes)), " h"),
     ];
     if enseigne {
-        rangs.push(("dont enseignement (droits seuls, pas le montant)", |c| Some(c.enseignement.to_string()), " h"));
-        rangs.push(("Heures retenues pour les 507 h", |c| c.heures_ouverture.map(|h| h.to_string()), " h"));
+        rangs.push(("dont enseignement (droits seuls, pas le montant)", |c| Some(dit(c.enseignement)), " h"));
+        rangs.push(("Heures retenues pour les 507 h", |c| c.heures_ouverture.map(dit), " h"));
     }
     rangs.push(("Salaire brut", |c| Some(euros(c.brut)), ""));
     let lignes = rangs

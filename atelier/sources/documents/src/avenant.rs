@@ -272,7 +272,7 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     if let Some(h) = remuneration_hors_brut(remuneration) {
         poser(Marqueur::RemunerationHorsBrut, h);
     }
-    poser(Marqueur::RemunerationCachets, e.f.cachets.to_string());
+    poser(Marqueur::RemunerationCachets, socle::grandeurs::ecrit::sans_zero::dit(e.f.cachets));
     // Sans taux de cachet, pas de marqueur : un modele qui le cite se refuse (`contrat::refuser_ce_que_le_modele_tairait`).
     if let Some(t) = e.f.taux_cachet {
         poser(Marqueur::RemunerationTauxCachet, fmt_eur(t.decimal()));

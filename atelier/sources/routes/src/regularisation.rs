@@ -86,9 +86,9 @@ fn resume(p: &Paie) -> Resume {
         cotisations_salariales,
         cotisations_patronales,
         cout_employeur,
-        cachets: Cachets::du_decimal(p.engagement.cachets.into()),
+        cachets: p.engagement.cachets,
         heures: heures(p),
-        jours: Jours::du_decimal(p.engagement.jours.into()),
+        jours: p.engagement.jours,
         remuneration: p.remuneration.iter().map(|l| l.designation()).collect(),
     }
 }
@@ -101,8 +101,7 @@ fn ecart(avant: &Paie, apres: &Paie) -> Ecart {
         (Some(x), Some(y)) => Some(y - x),
         _ => None,
     };
-    let cachets = |p: &Paie| Cachets::du_decimal(p.engagement.cachets.into());
-    Ecart { brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur, cachets: cachets(apres) - cachets(avant), heures }
+    Ecart { brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur, cachets: apres.engagement.cachets - avant.engagement.cachets, heures }
 }
 
 /// Ce que la page dit d'une correction qui change les dates du contrat : les dates declarees, les corrigees, ce que la

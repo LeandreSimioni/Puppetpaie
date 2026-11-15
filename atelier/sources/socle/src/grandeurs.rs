@@ -108,6 +108,12 @@ macro_rules! grandeurs {
                 $nom(-self.0)
             }
         }
+
+        impl std::iter::Sum for $nom {
+            fn sum<I: Iterator<Item = $nom>>(i: I) -> $nom {
+                i.fold($nom(Decimal::ZERO), |a, b| a + b)
+            }
+        }
     )*};
 }
 
@@ -122,6 +128,7 @@ grandeurs! {
     Services, "DES SERVICES : une quantite de services de repetition (`14`).";
     Semaines, "DES SEMAINES : une quantite de semaines (`2`).";
     Unites, "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
+    HeuresParUnite, "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
 }
 
 /// UNE GRANDEUR SANS ZERO INUTILE (`12.50` devient `12.5`, `24.0` devient `24`, `-0` devient `0`), comme l'ecrit
@@ -304,11 +311,81 @@ impl Taux {
 impl Cachets {
     /// Zero cachet.
     pub const ZERO: Cachets = Cachets(Decimal::ZERO);
+
+    /// Un cachet (le singulier d'une phrase : « 1 cachet », « 2 cachets »).
+    pub const UN: Cachets = Cachets(Decimal::ONE);
+
+    /// Les cachets que `n` dates comptent, un par date : un compte devient des cachets.
+    pub fn de_dates(n: usize) -> Cachets {
+        Cachets(Decimal::from(n))
+    }
+
+    /// Sa partie entiere (`2.5` cachets en comptent `2`) : un nombre de cachets declares se compte en entiers.
+    pub fn partie_entiere(self) -> Cachets {
+        Cachets(self.0.trunc())
+    }
 }
+
+impl Jours {
+    /// Zero jour.
+    pub const ZERO: Jours = Jours(Decimal::ZERO);
+
+    /// Un jour (le singulier d'une phrase).
+    pub const UN: Jours = Jours(Decimal::ONE);
+
+    /// Les jours que `n` dates comptent, une par jour : un compte devient des jours.
+    pub fn de_dates(n: usize) -> Jours {
+        Jours(Decimal::from(n))
+    }
+
+    /// En nombre entier, au bord de ce qui compte encore en entiers (`Jour::plus_jours`, le certificat Conges
+    /// Spectacles) ; `None` : des jours qui ne sont pas entiers, ou hors des limites d'un entier.
+    pub fn en_entier(self) -> Option<i64> {
+        entier(self.0)
+    }
+}
+
+/// Un decimal entier en `i64` ; `None` : il ne l'est pas, ou il deborde.
+fn entier(d: Decimal) -> Option<i64> {
+    match d.fract().is_zero() {
+        true => rust_decimal::prelude::ToPrimitive::to_i64(&d),
+        false => None,
+    }
+}
+
+impl Cachets {
+    /// En nombre entier, au bord de ce qui compte encore en entiers (le certificat Conges Spectacles) ; `None` : des
+    /// cachets qui ne sont pas entiers, ou hors des limites d'un entier.
+    pub fn en_entier(self) -> Option<i64> {
+        entier(self.0)
+    }
+}
+
+impl HeuresParUnite {
+    /// Zero heure par unite (une indemnite, le maintien : ce n'est pas du travail).
+    pub const ZERO: HeuresParUnite = HeuresParUnite(Decimal::ZERO);
+}
+
+/// Une quantite fois ses heures par unite : des heures (14 services de 4 h : 56 h).
+macro_rules! aux_heures_par_unite {
+    ($($q:ident),*) => {$(
+        impl std::ops::Mul<HeuresParUnite> for $q {
+            type Output = Heures;
+            fn mul(self, h: HeuresParUnite) -> Heures {
+                Heures(num::mul(self.0, h.0))
+            }
+        }
+    )*};
+}
+
+aux_heures_par_unite!(Heures, Cachets, Jours, Services, Semaines, Unites, Coefficient);
 
 impl Heures {
     /// Zero heure.
     pub const ZERO: Heures = Heures(Decimal::ZERO);
+
+    /// Une heure (le singulier d'une phrase).
+    pub const UNE: Heures = Heures(Decimal::ONE);
 
     /// Au centieme d'heure, la moitie vers le haut, ses deux decimales ecrites (`7.5` s'ecrit `7.50`) : des heures
     /// ramenees au jour, au mois ou a la semaine. Aucun texte deposé ne dit cet arrondi.
@@ -337,13 +414,22 @@ impl Heures {
     }
 
     /// En heures entieres, la moitie au pair : les heures d'un contrat que le cumul des annexes 8 et 10 compte en entiers
-    /// (`droit::cumul::Declare`). Hors des limites d'un entier, refus.
-    pub fn entieres(self) -> crate::echec::R<i64> {
-        let e = self.0.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
-        match rust_decimal::prelude::ToPrimitive::to_i64(&e) {
-            Some(n) => Ok(n),
-            None => Err(crate::echec::refus(crate::fichiers::entier_hors_limites(&e.to_string()))),
+    /// (`droit::cumul::Declare`).
+    pub fn entieres(self) -> Heures {
+        let mut e = self.0.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
+        e.rescale(0);
+        Heures(e)
+    }
+
+    /// Les cachets qu'il faut pour faire ces heures, a `par_cachet` heures chacun, le dernier entame compte (13 h a 12 h le
+    /// cachet : 2 cachets) ; `None` : un cachet de zero heure n'en fait aucune.
+    pub fn cachets_pour(self, par_cachet: HeuresParUnite) -> Option<Cachets> {
+        if par_cachet.0.is_zero() {
+            return None;
         }
+        let mut c = num::div(self.0, par_cachet.0).ceil();
+        c.rescale(0);
+        Some(Cachets(c))
     }
 }
 
@@ -398,6 +484,20 @@ impl std::ops::Mul<MontantUnitaire> for Coefficient {
 /// LES LECTURES D'UNE GRANDEUR AUTRES QUE LA SIENNE (`forme::decimal_en_nombre`) : un champ les dit par son attribut serde
 /// (`…::deserialize`, `…::option::deserialize` pour un `Option`).
 pub mod lu {
+    use crate::grandeurs::Grandeur;
+
+    /// Un entier lu d'une piece (une zone a largeur fixe de l'AEM, une case d'un formulaire, un certificat), en sa
+    /// grandeur : la porte de sa lecture.
+    pub fn entier<G: Grandeur>(n: impl Into<crate::num::Decimal>) -> G {
+        <G as crate::grandeurs::Scelle>::du(n.into())
+    }
+
+    /// Un nombre lu d'une piece ou d'une saisie (un bulletin lu, une attestation, une case de fiche), en sa grandeur, son
+    /// echelle gardee : la porte de sa lecture.
+    pub fn nombre<G: Grandeur>(d: crate::num::Decimal) -> G {
+        <G as crate::grandeurs::Scelle>::du(d)
+    }
+
     /// Comme `forme::decimal` : un nombre, ou un nombre ecrit en texte (une ligne de paie, une paie ecrite : le moteur
     /// les ecrit en texte, la page envoie un nombre ou un texte).
     pub mod nombre_ou_texte {
@@ -518,7 +618,12 @@ pub mod ecrit {
         use crate::grandeurs::Grandeur;
 
         pub fn texte<G: Grandeur>(g: G) -> Result<String, String> {
-            Ok(g.en_decimal().normalize().to_string())
+            Ok(dit(g))
+        }
+
+        /// La meme, telle qu'une phrase ou une case la cite (`2`, `151.67`).
+        pub fn dit<G: Grandeur>(g: G) -> String {
+            g.en_decimal().normalize().to_string()
         }
 
         ecriture!();
@@ -550,6 +655,31 @@ pub mod ecrit {
         }
     }
 
+    /// En nombre JSON, sans zero inutile : entier quand elle l'est (`12`, pas `12.0`), a virgule sinon (`4.5`).
+    pub mod nombre_json {
+        use crate::grandeurs::Grandeur;
+
+        pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
+            let d = g.en_decimal().normalize();
+            match (d.scale(), i64::try_from(d.mantissa())) {
+                (0, Ok(n)) => s.serialize_i64(n),
+                _ => crate::forme::ecrire_a_virgule(&d, s),
+            }
+        }
+
+        /// Un `Option` dans cette ecriture : `None` s'ecrit `null`.
+        pub mod option {
+            use crate::grandeurs::Grandeur;
+
+            pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &Option<G>, s: S) -> Result<S::Ok, S::Error> {
+                match g {
+                    Some(g) => super::serialize(g, s),
+                    None => s.serialize_none(),
+                }
+            }
+        }
+    }
+
     /// En nombre entier JSON (`2`) ; un decimal qui n'est pas un entier ne s'ecrit pas ainsi.
     pub mod entier {
         use crate::grandeurs::Grandeur;
@@ -559,6 +689,18 @@ pub mod ecrit {
             match (d.scale(), i64::try_from(d.mantissa())) {
                 (0, Ok(n)) => s.serialize_i64(n),
                 _ => Err(serde::ser::Error::custom(format!("{} n'est pas un entier", d))),
+            }
+        }
+
+        /// Un `Option` dans cette ecriture : `None` s'ecrit `null`.
+        pub mod option {
+            use crate::grandeurs::Grandeur;
+
+            pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &Option<G>, s: S) -> Result<S::Ok, S::Error> {
+                match g {
+                    Some(g) => super::serialize(g, s),
+                    None => s.serialize_none(),
+                }
             }
         }
     }

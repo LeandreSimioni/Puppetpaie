@@ -167,9 +167,9 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
     if ligne.verse_le.is_none() {
         ligne.verse_le = b.verse_le;
     }
-    for (l, x) in [(&mut ligne.heures, &b.heures), (&mut ligne.cachets, &b.cachets), (&mut ligne.jours, &b.jours)] {
-        gagne(l, x);
-    }
+    gagne(&mut ligne.heures, &b.heures);
+    gagne(&mut ligne.cachets, &b.cachets);
+    gagne(&mut ligne.jours, &b.jours);
     for (l, x) in [(&mut ligne.spectacle, &b.spectacle), (&mut ligne.analytique, &b.analytique)] {
         gagne(l, x);
     }

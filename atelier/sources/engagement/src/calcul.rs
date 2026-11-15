@@ -220,10 +220,10 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 /// LE RATTACHEMENT D'UNE LIGNE A SA RUBRIQUE, son montant mis a part : la rubrique lue, la quantite et le taux que son
 /// unite dit (`paiement`), et ses heures des annexes 8 et 10, sous le signe de la rubrique (une absence en retire ; des
 /// heures nulles gardent leur echelle).
-pub(crate) fn rattacher(code: &droit::catalogue::CodeDeRubrique, paiement: impl FnOnce(Unite) -> R<PaiementDeLigne>, heures: Option<Heures>, ctx: &Contexte) -> R<(droit::catalogue::Rubrique, PaiementDeLigne, Heures)> {
+pub(crate) fn rattacher(code: &droit::catalogue::CodeDeRubrique, paiement: impl FnOnce(Unite) -> R<PaiementDeLigne>, heures: Option<socle::grandeurs::HeuresParUnite>, ctx: &Contexte) -> R<(droit::catalogue::Rubrique, PaiementDeLigne, Heures)> {
     let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
     let paiement = paiement(r.unite)?;
-    let h = r.heures(paiement.quantite().decimal(), heures.map(Heures::decimal));
+    let h = paiement.quantite().heures(r.heures_par_unite(heures))?;
     let heures_annexes = r.sens.de(h);
     Ok((r, paiement, heures_annexes))
 }
@@ -535,7 +535,7 @@ impl Paie {
     pub fn annulee(&self) -> Paie {
         let mut engagement = self.engagement.clone();
         engagement.lignes.clear();
-        (engagement.jours, engagement.cachets, engagement.heures) = (0, 0, None);
+        (engagement.jours, engagement.cachets, engagement.heures) = (socle::grandeurs::Jours::ZERO, socle::grandeurs::Cachets::ZERO, None);
         let zero = socle::grandeurs::Montant::ZERO.decimal();
         let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), Montant::ZERO, Montant::ZERO, Montant::ZERO, self.plafond_urssaf, self.smic, Heures::ZERO, self.plafond_temps_partiel);
         p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::de_l_assiette(*k, zero))).collect();
@@ -1480,11 +1480,8 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
     let majoration = droit::majoration_chomage::due(&nat, eng.motif_recours, &eng.debut, eng.fin.as_ref())?;
     let bar = bareme_du_salarie(ctx, &sal, &nat, &fin_periode, caisse, cpf_cdd, majoration)?;
     let rubriques_bulletin = &bar.rubriques_bulletin;
-    // Les jours du contrat : un compte, que les plafonds journaliers et les heures d'un cachet multiplient.
-    let jours = match usize::try_from(eng.jours) {
-        Ok(n) => n,
-        Err(_) => return Err(refus(format!("{} : le contrat compte {} jours, qui ne sont pas un nombre de jours. Le signaler au développeur.", eng.qui(), eng.jours))),
-    };
+    // Les jours du contrat, que les plafonds journaliers et les heures d'un cachet multiplient.
+    let jours = eng.jours;
 
     // 7.2 : les lignes de remuneration.
     let lb = lignes_brut(eng, ctx)?;
@@ -1518,7 +1515,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         }
     };
     let plafond_journalier = bar.plafond_journalier;
-    let t1_du_contrat = |p: Montant| -> Montant { p.fois(jours).au_centime() };
+    let t1_du_contrat = |p: socle::grandeurs::MontantUnitaire| -> Montant { (jours * p).au_centime() };
     let mut plafond_prev = None;
     if prev.base == Some(Assiette::T1Journaliere) {
         if let Some(p) = plafond_journalier {
@@ -1617,7 +1614,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let smic = ctx.smic(&fin_periode)?;
     let heures_annexes = lb.iter().fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     // Le plafond d'un intermittent : ses heures, dans la limite des heures d'un cachet par jour du contrat.
-    let heures = if nat.mensuelle() { Heures::ZERO.max(heures_annexes) } else { heures_annexes.min(bar.heures_par_cachet.fois(jours)) };
+    let heures = if nat.mensuelle() { Heures::ZERO.max(heures_annexes) } else { heures_annexes.min(jours * bar.heures_par_cachet) };
     let plafond = (heures * smic).au_centime();
 
     // 7.5 bis : la deduction forfaitaire specifique (arrete du 4 septembre 2025, art. 9 ; `abattement_dfs`). Elle abat
@@ -2012,7 +2009,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
         // Un contrat paye a l'engagement a son terme (`Engagement::fin` : `None` seulement pour un permanent ouvert).
         fin: e.fin.ok_or_else(|| socle::fichiers::absent("fin"))?,
         dates_travail: e.dates_travail.clone(),
-        jours: socle::grandeurs::Jours::du_decimal(Decimal::from(e.jours)),
+        jours: e.jours,
     };
     pour_paie(&ep, &pss_du_contexte(ctx))
 }

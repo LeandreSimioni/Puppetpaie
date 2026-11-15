@@ -1074,18 +1074,19 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         let anniv = anniversaire_configure(ctx, cle)?;
         let p = position_droits(ctx, cle, &engs, anniv, None)?;
         let c = &p.constantes;
-        let h = |n: i64| format!("{} h", n);
-        let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), p.cachets().to_string())];
-        if p.cachets_perdus() != 0 {
-            lignes.push((format!("Retenus ({} par mois au plus)", c.cachets_par_mois), p.cachets_retenus().to_string()));
+        use socle::grandeurs::ecrit::sans_zero::dit;
+        let h = |n: socle::grandeurs::Heures| format!("{} h", dit(n));
+        let mut lignes: Vec<(String, String)> = vec![("Cachets déclarés".into(), dit(p.cachets()))];
+        if !p.cachets_perdus().est_nul() {
+            lignes.push((format!("Retenus ({} par mois au plus)", dit(c.cachets_par_mois)), dit(p.cachets_retenus())));
         }
-        lignes.push((format!("Convertis ({} h par cachet)", c.heures_par_cachet), h(p.cachets_retenus() * c.heures_par_cachet)));
+        lignes.push((format!("Convertis ({} h par cachet)", dit(c.heures_par_cachet)), h(p.cachets_retenus() * c.heures_par_cachet)));
         lignes.push(("Heures déclarées".into(), h(p.heures())));
         lignes.push(("Total d'heures équivalentes".into(), h(p.heures_retenues())));
-        if p.heures_enseignement() != 0 {
+        if !p.heures_enseignement().est_nul() {
             // Deux comptes des qu'il y a de l'enseignement : ces heures ouvrent les droits (plafonnees), sans augmenter l'allocation.
             lignes.push(("Dont enseignement".into(), h(p.heures_enseignement())));
-            lignes.push((format!("Enseignement retenu (plafond {} h)", p.plafond_enseignement()?), h(p.heures_enseignement_retenues()?)));
+            lignes.push((format!("Enseignement retenu (plafond {} h)", dit(p.plafond_enseignement()?)), h(p.heures_enseignement_retenues()?)));
             lignes.push(("Pour l'ouverture des droits".into(), h(p.heures_ouverture()?)));
             lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
         }
@@ -1095,23 +1096,23 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
             lignes.push(("Avant le réexamen".into(), format!("{} j", jours)));
         }
         let phrase = if p.atteint()? {
-            format!("Seuil atteint, avec {} h de marge.", p.heures_ouverture()? - c.seuil_heures)
+            format!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - c.seuil_heures))
         } else {
-            format!("Il manque {} h, soit environ {} cachets.", p.manque()?, p.cachets_manquants()?)
+            format!("Il manque {} h, soit environ {} cachets.", dit(p.manque()?), dit(p.cachets_manquants()?))
         };
         let mut notes = Vec::new();
-        if p.cachets_perdus() != 0 {
+        if !p.cachets_perdus().est_nul() {
             notes.push(format!(
                 "{} cachet(s) dépassent les {} d'un mois ({}) : joués, payés et déclarés, mais sans effet sur les droits.",
-                p.cachets_perdus(),
-                c.cachets_par_mois,
+                dit(p.cachets_perdus()),
+                dit(c.cachets_par_mois),
                 p.mois_plafonnes().iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
             ));
         }
-        if p.enseignement_perdu()? != 0 {
-            notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", p.enseignement_perdu()?));
+        if !p.enseignement_perdu()?.est_nul() {
+            notes.push(format!("{} h d'enseignement dépassent le plafond : payées et déclarées, mais sans effet sur les droits.", dit(p.enseignement_perdu()?)));
         }
-        if p.heures_enseignement() != 0 && p.date_naissance.is_none() {
+        if !p.heures_enseignement().est_nul() && p.date_naissance.is_none() {
             notes.push("Date de naissance absente de la fiche : le plafond bas de l'enseignement s'applique, peut-être à tort.".to_string());
         }
         if anniv.is_none() {
@@ -1119,11 +1120,11 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         }
         let colonnes = tableau_cumul(ctx, cle, mois, &engs)?;
         let rangee = |quoi: &'static str, valeur: &dyn Fn(&droit::cumul::Colonne) -> String| Rangee { quoi, valeurs: colonnes.iter().map(valeur).collect() };
-        let heures = |n: i64| format!("{} h", n);
+        let heures = h;
         let tableau = TableauDesDroits {
             titres: colonnes.iter().map(|x| format!("{} {}", x.titre, x.sous_titre).trim().to_string()).collect(),
             lignes: vec![
-                rangee("Cachets", &|x| x.cachets.to_string()),
+                rangee("Cachets", &|x| dit(x.cachets)),
                 rangee("Heures déclarées", &|x| heures(x.heures)),
                 rangee("Total d'heures", &|x| heures(x.heures_equivalentes)),
                 rangee("Salaire brut", &|x| socle::texte::euros(x.brut)),

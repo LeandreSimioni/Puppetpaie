@@ -1007,7 +1007,7 @@ pub(crate) fn conges_pris_de_la_paie(racine: &Path, paie: &Paie) -> R<Decimal> {
 /// L'ordre des lignes est celui du bulletin : le salaire de base, les
 /// absences, les indemnites, les primes, le solde de tout compte, puis les repas et les nuitees que la carte porte en
 /// lignes, aux limites de tout salarie (`crate::frais_au_dela`). Et les jours travailles du mois.
-pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<i64>)> {
+pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>)> {
     let nat = e.nature_lue()?;
     let Some(au) = nat.au_mois() else {
         return Err(socle::refus!("{} n'est pas un contrat paye au mois : ses lignes se saisissent.", nat.libelle));
@@ -1054,13 +1054,13 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         )));
     }
 
-    // `heures` est par unite (`Rubrique::heures`) : un mois vaut la quotite,
+    // `heures` est par unite (`QuantiteDeLigne::heures`) : un mois vaut la quotite,
     // et la fraction, en `quantite`, en fait la part ; `precision` la dit sur le bulletin.
     let mois_paye = LignePaie::Composee(crate::ligne::Composee {
         rubrique: MOIS_PAYE,
         quantite: Nombre(court(fraction)),
         taux: MontantUnitaire::du_decimal(court(salaire)),
-        heures: Some(Heures::du_decimal(court(Heures::du_decimal(quotite).au_centieme().decimal()))),
+        heures: Some(socle::grandeurs::HeuresParUnite::du_decimal(court(Heures::du_decimal(quotite).au_centieme().decimal()))),
         precision: part.sur_le_bulletin(heures_par_jour),
         dates: Vec::new(),
     });
@@ -1142,7 +1142,11 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // l. 96-102). INFERENCE : aucun texte depose ne dit comment compter les jours d'un contrat paye au mois ; les jours
     // que son horaire programme sont ceux de son salaire (fiche DSN 2640, `droit::conges::JoursTravailles`).
     let reel = droit::periodes::part_du_mois(&debut, &fin, &fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
-    let jours_travailles = (reel.jours - absents).max(0);
+    // Un compte de jours de l'horaire (`droit::periodes`, en entiers) : des jours.
+    let jours_travailles = match usize::try_from((reel.jours - absents).max(0)) {
+        Ok(n) => socle::grandeurs::Jours::de_dates(n),
+        Err(e) => return Err(socle::refus!("jours travaillés hors des limites d'un compte : {}", e)),
+    };
 
     // --- les primes
     // Sa rubrique, seule la compagnie la dit : une prime qui ne la dit pas est une saisie a finir, qui nomme la case.

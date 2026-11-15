@@ -43,7 +43,7 @@ use engagement::{self, LignePaie, PlaceDuMois};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 use socle::num::Decimal;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
@@ -352,9 +352,12 @@ struct Passe {
     nom: String,
     debut: Jour,
     fin: Jour,
-    cachets: Option<i64>,
-    heures: Option<i64>,
-    jours: Option<i64>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    cachets: Option<Cachets>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    heures: Option<Heures>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    jours: Option<Jours>,
     titre: Option<String>,
     numero_objet: Option<NumeroObjetSpectacle>,
     spectacle: Option<droit::contexte::IdSpectacle>,
@@ -766,27 +769,28 @@ fn titre_de(spec: Option<&droit::fiche::ChampsSpectacle>, numero: Option<&str>) 
 
 /// Le nombre de cachets d'un engagement : la somme des quantites de ses lignes dont la rubrique est un cachet (une case
 /// vide n'en compte aucun).
-fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<i64> {
-    let mut cachets = 0;
+fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<Cachets> {
+    let mut cachets = Cachets::ZERO;
     for l in e.lignes() {
-        if catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != catalogue::Unite::Cachet {
-            continue;
-        }
-        if let Some(q) = l.quantite_ecrite() {
-            cachets += i64::try_from(q.trunc()).map_err(|_| erreur(Classe::CalculImpossible, socle::fichiers::entier_hors_limites(&q.to_string())))?;
+        let r = catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
+        // Chaque ligne compte ses cachets entiers.
+        if let Some(engagement::ligne::QuantiteDeLigne::Cachets(q)) = l.quantite(r.unite) {
+            cachets += q.partie_entiere();
         }
     }
     Ok(cachets)
 }
 
 /// Ce qu'une ligne de la liste dit d'un contrat passe : ses bornes, ses cachets et ses heures, quand ils sont dits.
-fn dit_du_contrat(debut: Jour, fin: Jour, cachets: Option<i64>, heures: Option<i64>) -> String {
+fn dit_du_contrat(debut: Jour, fin: Jour, cachets: Option<Cachets>, heures: Option<Heures>) -> String {
+    use socle::grandeurs::ecrit::sans_zero::dit as nombre;
     let mut dit = format!("{}→{}", debut.jj_mm(), fin.jj_mm());
     if let Some(c) = cachets {
-        dit.push_str(&format!(" · {}", socle::ecran::compte(c.max(0) as usize, "cachet", "cachets")));
+        let c = c.max(Cachets::ZERO);
+        dit.push_str(&format!(" · {} {}", nombre(c), if c > Cachets::UN { "cachets" } else { "cachet" }));
     }
-    if let Some(h) = heures.filter(|h| *h > 0) {
-        dit.push_str(&format!(" + {} h", h));
+    if let Some(h) = heures.filter(|h| *h > Heures::ZERO) {
+        dit.push_str(&format!(" + {} h", nombre(h)));
     }
     dit
 }
@@ -799,9 +803,9 @@ struct Atteste {
     debut: Jour,
     fin: Jour,
     numero_objet: Option<NumeroObjetSpectacle>,
-    cachets: Option<i64>,
-    heures: Option<i64>,
-    jours: Option<i64>,
+    cachets: Option<Cachets>,
+    heures: Option<Heures>,
+    jours: Option<Jours>,
 }
 
 /// Les contrats que les engagements importes attestent ; un contrat sans ses bornes ne se place dans aucun mois.
@@ -810,7 +814,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
     for i in engagement::importe::tous(&ctx.racine)? {
         let Some(c) = i.contrat_lu()? else { continue };
         let salarie = c.salarie.clone();
-        let atteste = |debut: Jour, fin: Jour, (cachets, heures, jours): (Option<i64>, Option<i64>, Option<i64>)| Atteste {
+        let atteste = |debut: Jour, fin: Jour, (cachets, heures, jours): (Option<Cachets>, Option<Heures>, Option<Jours>)| Atteste {
             salarie: salarie.clone(),
             debut,
             fin,
@@ -887,9 +891,10 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             if deja.is_some() && mc != mois {
                 continue;
             }
+            // Les jours que la carte ecrit (un nombre de sa saisie, sa porte) ; sans eux, ses dates.
             let jours = match e.jours.as_ref().map(socle::forme::NombreLu::decimal).transpose()?.filter(|j| !j.is_zero()) {
-                Some(j) => i64::try_from(j.trunc()).map_err(|m| socle::echec::refus(format!("{} jours : {}", j, m)))?,
-                None => dates.len() as i64,
+                Some(j) => socle::grandeurs::lu::nombre(j.trunc()),
+                None => Jours::de_dates(dates.len()),
             };
             let contrat = Passe {
                 dit: dit_du_contrat(debut, fin, Some(cachets), None),
@@ -1614,7 +1619,8 @@ pub(crate) struct VuePaie {
     fin: Option<Jour>,
     contrat: ContratVu,
     dates_travail: Vec<Jour>,
-    cachets: i64,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
+    cachets: Cachets,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que la carte ou son mois ecrit.
     taux_cachet: Option<socle::forme::NombreLu>,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
@@ -1624,8 +1630,9 @@ pub(crate) struct VuePaie {
     propose: engagement::proposees::Proposees,
     cases: Vec<CaseDeFrais>,
     remuneration: Vec<LigneVue>,
-    /// Les jours que la carte declare, sinon ceux du calcul ; le lieu qu'elle ecrit.
-    jours: socle::forme::NombreLu,
+    /// Les jours de l'engagement (ceux que la carte declare, sinon ceux du calcul) ; le lieu qu'elle ecrit.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
+    jours: Jours,
     lieu: Option<String>,
     brut: Decimal,
     net_a_payer: Decimal,
@@ -1681,11 +1688,6 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             Some(t) => Some(t.clone()),
             None => data.taux_cachet.clone(),
         },
-    };
-    // Les jours que la carte declare ; sans eux, ceux que le calcul compte.
-    let jours = match &brut.jours {
-        Some(j) => j.clone(),
-        None => socle::forme::NombreLu::from(e.jours),
     };
     let lieu = brut.lieu.clone();
     // Le net paye : le net a payer moins le prelevement a la source que la validation a calcule ; une paie que rien n'a
@@ -1791,7 +1793,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             .iter()
             .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.quantite.decimal(), taux: l.taux.decimal(), montant: l.montant.au_centime().decimal() })
             .collect(),
-        jours,
+        jours: e.jours,
         lieu,
         brut: p.brut.au_centime().decimal(),
         net_a_payer: p.net_a_payer.au_centime().decimal(),

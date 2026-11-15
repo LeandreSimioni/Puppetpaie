@@ -60,8 +60,8 @@ fn heures_par_jour(ctx: &Contexte, lignes: &[LignePaie]) -> R<BTreeMap<Jour, (He
             continue;
         }
         // La quantite d'une ligne de travail est dite (`lignes_dites`, avant ce compte) : sans elle, rien ne se compte.
-        let quantite = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
-        let total = r.heures(quantite, l.heures().map(socle::grandeurs::Heures::decimal));
+        let quantite = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let total = quantite.heures(r.heures_par_unite(l.heures()))?;
         let par_jour = total.reparties_sur(dates.len());
         for j in &dates {
             let x = jours.entry(*j).or_insert((Heures::ZERO, false));

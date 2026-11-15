@@ -59,9 +59,15 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let mut activite = BTreeMap::new();
         if let Some(c) = i.contrat_lu()? {
             if du_mois(&c.debut) && du_mois(&c.fin) {
-                for (quoi, n) in [("jours", c.contrat.jours), ("cachets", c.contrat.cachets), ("heures", c.contrat.heures)] {
-                    if let Some(v) = n.filter(|n| *n != 0) {
-                        activite.insert(quoi, Decimal::from(v));
+                // L'activite de la regularisation s'ecrit en nombres : sa porte.
+                let quantites = [
+                    ("jours", c.contrat.jours.map(socle::grandeurs::Jours::decimal)),
+                    ("cachets", c.contrat.cachets.map(socle::grandeurs::Cachets::decimal)),
+                    ("heures", c.contrat.heures.map(socle::grandeurs::Heures::decimal)),
+                ];
+                for (quoi, n) in quantites {
+                    if let Some(v) = n.filter(|n| !n.is_zero()) {
+                        activite.insert(quoi, v);
                     }
                 }
             }

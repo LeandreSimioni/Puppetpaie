@@ -604,7 +604,7 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
         let (mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO);
         if r.unite == droit::catalogue::Unite::Cachet {
             cachets = q;
-        } else if let Some(u) = r.heures_forfait.or(connu.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE)) {
+        } else if let Some(u) = r.heures_forfait.map(socle::grandeurs::HeuresParUnite::decimal).or(connu.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE)) {
             heures = q * u;
         }
         Ok(Ligne { libelle: connu.libelle.clone(), quantite: q, taux, montant: Montant::du_decimal(q * taux).au_centime().decimal(), cachets, heures })

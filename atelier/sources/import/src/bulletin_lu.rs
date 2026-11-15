@@ -2407,7 +2407,7 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         };
         let r = droit::catalogue::rubrique(racine, code, &b.fin)?;
         let cachet = r.unite == droit::catalogue::Unite::Cachet;
-        let forfait = r.heures_forfait;
+        let forfait = r.heures_forfait.map(socle::grandeurs::HeuresParUnite::decimal);
         let par_unite = forfait.or(l.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE));
         if !cachet && par_unite.is_none() {
             // un defraiement, un acompte : ni cachet ni heure ; une rubrique dont les heures se saisissent : non dites
@@ -2511,7 +2511,7 @@ fn accorder(imprime: Decimal, lui: Option<Decimal>, freres: &[(Option<Decimal>, 
 /// que le catalogue ne connait pas.
 pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> R<Compteurs> {
     let zero = Decimal::ZERO;
-    let forfait = droit::catalogue::rubrique(racine, &droit::catalogue::CACHET, &b.fin)?.heures_forfait;
+    let forfait = droit::catalogue::rubrique(racine, &droit::catalogue::CACHET, &b.fin)?.heures_forfait.map(socle::grandeurs::HeuresParUnite::decimal);
     // Le total d'heures que des lignes comptent, cachets convertis ; `None` : inconnu.
     let total = |l: &Lignes| -> Option<Decimal> {
         if l.sans_duree {

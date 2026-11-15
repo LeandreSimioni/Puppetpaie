@@ -59,7 +59,7 @@ use socle::mois::{Graphie, Mois};
 use droit::emplois;
 
 use socle::{echec::{refus, Echec, R}, num::{court, Decimal}};
-use socle::grandeurs::{courte, Heures, Montant, MontantUnitaire};
+use socle::grandeurs::{courte, Cachets, Heures, Jours, Montant, MontantUnitaire};
 
 #[derive(Debug, Clone)]
 pub struct Engagement {
@@ -79,8 +79,8 @@ pub struct Engagement {
     pub mois: Mois,
     pub planning: Vec<Jour>,
     pub planning_lieux: BTreeMap<Jour, String>,
-    pub jours: i64,
-    pub jours_contrat: i64,
+    pub jours: Jours,
+    pub jours_contrat: Jours,
     /// Le jour du versement que la saisie dit pour CET engagement (« Payé le » : un paiement fait un autre jour), ou
     /// `None` : celui que la compagnie a choisi (`versement`).
     pub date_paiement: Option<Jour>,
@@ -91,7 +91,7 @@ pub struct Engagement {
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que l'engagement ou son mois ecrit ; sinon `None`
     /// (regle 1 : aucun taux par defaut, aucun texte n'en fixe).
     pub taux_cachet: Option<MontantUnitaire>,
-    pub cachets: i64,
+    pub cachets: Cachets,
     pub heures: Option<Heures>,
     pub lieu: String,
     pub lieux: BTreeMap<Jour, String>,
@@ -206,19 +206,17 @@ pub struct Assemble {
     pub modele_contrat: Option<carte::IdDeModele>,
 }
 
-/// Un texte dit et non vide.
-/// Un entier dit (un nombre sans decimale) ; un autre nombre, ou un texte, se refuse.
-fn entier_dit(v: &Option<Chiffre>, nom: &str) -> R<Option<i64>> {
+/// Des jours dits, en nombre entier (`4`, `4.0`) : la porte de la carte. Un autre nombre, ou un texte, se refuse.
+fn jours_dits(v: &Option<Chiffre>, nom: &str) -> R<Option<Jours>> {
     match v {
         None => Ok(None),
-        Some(Chiffre::Nombre(n)) => match n.as_i64() {
-            Some(i) => Ok(Some(i)),
-            None => Some(n.decimal()?)
-                .filter(|d| d.fract().is_zero())
-                .and_then(|d| rust_decimal::prelude::ToPrimitive::to_i64(&d))
-                .map(Some)
-                .ok_or_else(|| socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n)),
-        },
+        Some(Chiffre::Nombre(n)) => {
+            let d = n.decimal()?;
+            if !d.fract().is_zero() {
+                return Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n));
+            }
+            Ok(Some(socle::grandeurs::lu::nombre(d.trunc())))
+        }
         Some(autre) => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, socle::date::repr_texte(&autre.en_texte()))),
     }
 }
@@ -375,7 +373,7 @@ impl Engagement {
         }
 
         // Ce que la declaration compte : cachets et heures, derives des lignes.
-        let mut cachets_somme = Decimal::ZERO;
+        let mut cachets_somme = Cachets::ZERO;
         let mut autres = Heures::ZERO;
         let mut premier_cachet: Option<&LignePaie> = None;
         // Les rubriques se lisent a la fin du mois paye (le mois dit, sinon celui de la premiere date jouee).
@@ -386,19 +384,19 @@ impl Engagement {
         };
         for l in &lignes {
             let r = rubrique(racine, l.rubrique(), &jour_lu)?;
-            let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
-            if r.unite == droit::catalogue::Unite::Cachet {
-                cachets_somme += q;
-                premier_cachet.get_or_insert(l);
-            } else {
+            match l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))? {
+                ligne::QuantiteDeLigne::Cachets(q) => {
+                    cachets_somme += q;
+                    premier_cachet.get_or_insert(l);
+                }
                 // Le signe porte aussi sur les heures, comme au calcul
                 // (`calcul::lignes_brut`) : une absence en retire. Un acompte,
                 // au forfait et sans heures, n'en retire aucune.
-                autres += r.sens.de(r.heures(q, l.heures().map(Heures::decimal)));
+                q => autres += r.sens.de(q.heures(r.heures_par_unite(l.heures()))?),
             }
         }
         // Un nombre de cachets se compte en entiers : la partie entiere de la somme.
-        let cachets = rust_decimal::prelude::ToPrimitive::to_i64(&cachets_somme.trunc()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&cachets_somme.to_string())))?;
+        let cachets = cachets_somme.partie_entiere();
         // Les heures de travail remunere d'un contrat paye au mois : la quotite payee moins les absences, comptees au reel
         // (`imprevus::lignes_du_mois`). Au reel, un mois entier d'absence (154 h en septembre 2026) depasse la quotite
         // lissee (151,67 h) : l'activite remuneree est alors 0.00, jamais negative -- « Pour un individu entierement
@@ -415,17 +413,17 @@ impl Engagement {
         }
 
         // Les jours travailles : un fait qui se saisit, sinon les dates distinctes.
-        let jours = match entier_dit(&v.jours, "jours")? {
+        let jours = match jours_dits(&v.jours, "jours")? {
             Some(j) => j,
-            None => presents.len() as i64,
+            None => Jours::de_dates(presents.len()),
         };
-        if jours < 0 || (!lignes.is_empty() && !mensuel && jours == 0) {
+        if jours < Jours::ZERO || (!lignes.is_empty() && !mensuel && jours.est_nul()) {
             return Err(socle::refus!(
                 "{} : {} jour(s) travaillé(s) pour {} ligne(s) de paie. Cochez les jours de ses lignes.\n\
                  Les jours partent dans la déclaration (bloc 53, unité 12) et dans l'AEM, et ce sont eux qui ouvrent \
                  les droits : un mois payé en compte au moins un.",
                 qui,
-                jours,
+                socle::grandeurs::ecrit::sans_zero::dit(jours),
                 lignes.len()
             ));
         }
@@ -497,9 +495,9 @@ impl Engagement {
         };
         let mut dates_contrat: Vec<Jour> = jours_joues.clone();
         dates_contrat.extend(&planning);
-        let jours_contrat = match entier_dit(&v.jours_contrat, "jours_contrat")? {
+        let jours_contrat = match jours_dits(&v.jours_contrat, "jours_contrat")? {
             Some(n) => n,
-            None => dates_contrat.iter().collect::<BTreeSet<_>>().len() as i64,
+            None => Jours::de_dates(dates_contrat.iter().collect::<BTreeSet<_>>().len()),
         };
         if let Some(j) = hors.first() {
             return Err(socle::refus!(
@@ -622,7 +620,7 @@ impl Engagement {
     pub fn quotite(&self) -> R<QuotiteDuContrat> {
         let nat = self.nat()?;
         if !nat.mensuelle() {
-            return Ok(QuotiteDuContrat::Jours(socle::grandeurs::Jours::du_decimal(Decimal::from(self.jours_contrat))));
+            return Ok(QuotiteDuContrat::Jours(self.jours_contrat));
         }
         match self.quotite_contrat {
             Some(q) => Ok(QuotiteDuContrat::Heures(Heures::du_decimal(court(q.decimal())))),
@@ -639,7 +637,7 @@ impl Engagement {
     pub fn quotite_reference(&self) -> R<Option<QuotiteDuContrat>> {
         let nat = self.nat()?;
         if !nat.mensuelle() {
-            return Ok(Some(QuotiteDuContrat::Jours(socle::grandeurs::Jours::du_decimal(court(Decimal::from(self.jours_contrat))))));
+            return Ok(Some(QuotiteDuContrat::Jours(courte(self.jours_contrat))));
         }
         // Une entreprise a la duree legale ne dit pas de duree collective : sa reference est la duree legale que la nature
         // porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans `contrats-base.json`).
@@ -995,7 +993,7 @@ impl Termes {
 
 /// Ce que `conges::lignes_du_mois` rend pour un engagement paye
 /// au mois : les lignes de paie du mois, ce qu'il y a a en dire, et ses jours travailles (`None` : la saisie les dit).
-pub type LignesPermanent<'a> = &'a dyn Fn(&Contexte, &saisie::Carte, Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<i64>)>;
+pub type LignesPermanent<'a> = &'a dyn Fn(&Contexte, &saisie::Carte, Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<Jours>)>;
 
 /// Les engagements d'un fichier de mois,
 /// construits avant tout calcul. `lignes_permanent` fournit les lignes d'un
@@ -1070,7 +1068,8 @@ pub(crate) fn engagements(
         let lignes = if nat.mensuelle() {
             let (lignes, avis, jours_travailles) = lignes_permanent(ctx, carte, mois_dit)?;
             dits.push(avis);
-            jours_du_mois = jours_travailles.map(Chiffre::entier);
+            // La forme assemblee ecrit ses jours en nombre : sa porte.
+            jours_du_mois = jours_travailles.map(|j| Chiffre::de_decimal(j.decimal()));
             Some(lignes)
         } else {
             match &carte.lignes {

@@ -90,18 +90,20 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let mut e = eng.clone();
         e.periode = Some((*d, *f));
         e.quotite_contrat = Some(Heures::du_decimal(court(quotite)));
-        let (q, h) = (court(part.fraction.decimal()), court(Heures::du_decimal(quotite).au_centieme().decimal()));
+        let q = socle::grandeurs::courte(part.fraction);
+        let h = socle::grandeurs::HeuresParUnite::du_decimal(court(Heures::du_decimal(quotite).au_centieme().decimal()));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
-            quantite: socle::forme::Nombre(q),
+            quantite: socle::forme::Nombre(q.decimal()),
             taux: socle::grandeurs::MontantUnitaire::du_decimal(court(salaire)),
-            heures: Some(Heures::du_decimal(h)),
+            heures: Some(h),
             precision: part.sur_le_bulletin(droit::conges::heures_par_jour(quotite, &horaire.jours)),
             dates: Vec::new(),
         })];
         // Les heures que la DSN mesure (S21.G00.53, « heures » d'un contrat paye au mois) : celles de la ligne de la
         // periode, comme `Engagement::nouveau` les tire des lignes du mois.
-        let heures = droit::catalogue::rubrique(&ctx.racine, &crate::conges::MOIS_PAYE, &ctx.lue_au)?.heures(q, Some(h));
+        let par_unite = droit::catalogue::rubrique(&ctx.racine, &crate::conges::MOIS_PAYE, &ctx.lue_au)?.heures_par_unite(Some(h));
+        let heures = crate::ligne::QuantiteDeLigne::PartDuMois(q).heures(par_unite)?;
         e.heures = if !heures.est_nul() { Some(heures) } else { None };
         out.push(e);
     }

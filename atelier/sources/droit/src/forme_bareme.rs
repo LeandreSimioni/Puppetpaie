@@ -17,7 +17,7 @@ use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
 use serde::Deserialize;
 use socle::forme::Court;
-use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Coefficient, HeuresParUnite, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
 
 /// Les notes d'une valeur, communes a chaque type : elles ne se lisent pas au calcul.
@@ -222,7 +222,7 @@ forme! {
         pub annee: i32,
         pub quoi: Option<String>,
         pub smic_horaire: Vec<Datee>,
-        pub heures_par_cachet: Heures,
+        pub heures_par_cachet: HeuresParUnite,
         pub logement_grand_deplacement: Option<FraisParZone>,
         pub repas_deplacement: Option<FraisDeRepas>,
         pub frais_hors_metropole: Option<FraisHorsMetropole>,
@@ -236,7 +236,7 @@ forme! {
         pub majoration_conges_115: Coefficient,
         pub majoration_conges_110: Coefficient,
         /// Le plafond journalier (T1 d'un jour travaille) des intermittents, et les multiples de la T2 et de l'Apec.
-        pub plafond_journalier: Option<Montant>,
+        pub plafond_journalier: Option<MontantUnitaire>,
         pub t2_multiple: Option<Coefficient>,
         pub apec_multiple: Option<Coefficient>,
         /// Les textes de ces plafonds.
@@ -906,7 +906,7 @@ forme! {
     #[derive(Default)]
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
-        pub plafond_journalier: Option<Montant>,
+        pub plafond_journalier: Option<MontantUnitaire>,
         pub t2_multiple: Option<Coefficient>,
         pub apec_multiple: Option<Coefficient>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,

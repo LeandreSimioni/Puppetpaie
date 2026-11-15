@@ -11,18 +11,18 @@ use socle::mois::Mois;
 
 /// La part d'enseignement de lignes de paie, en heures entieres : les rubriques dont le catalogue dit
 /// `compte_pour = ouverture_des_droits`.
-fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<i64> {
+fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<Heures> {
     let mut heures = Heures::ZERO;
     for l in lignes {
         let r = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         if r.compte_pour != droit::catalogue::ComptePour::OuvertureDesDroits {
             continue;
         }
-        let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
+        let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
         // Le signe porte aussi sur les heures, comme au calcul (`calcul::lignes_brut`) : une ligne « - » en retire.
-        heures += r.sens.de(r.heures(q, l.heures().map(Heures::decimal)));
+        heures += r.sens.de(q.heures(r.heures_par_unite(l.heures()))?);
     }
-    heures.entieres()
+    Ok(heures.entieres())
 }
 
 // ------------------------------------------------------------------- lecture
@@ -45,14 +45,13 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
         // Une piece d'intermittent atteste ses compteurs et son brut (l'AEM, le bulletin, le certificat : `import`) ; les
         // heures d'enseignement, seulement celles qu'elle distingue.
         let a = &c.contrat;
-        let compte = |x: Option<i64>, cle: &str| x.ok_or_else(|| socle::fichiers::absent(cle));
         out.push(Declare {
             salarie: c.salarie.clone(),
             debut,
             fin,
-            heures: compte(a.heures, "heures")?,
-            cachets: compte(a.cachets, "cachets")?,
-            jours: compte(a.jours, "jours")?,
+            heures: a.heures.ok_or_else(|| socle::fichiers::absent("heures"))?,
+            cachets: a.cachets.ok_or_else(|| socle::fichiers::absent("cachets"))?,
+            jours: a.jours.ok_or_else(|| socle::fichiers::absent("jours"))?,
             brut: a.brut.ok_or_else(|| socle::fichiers::absent("brut"))?,
             heures_enseignement: a.heures_enseignement.into_iter().sum(),
         });
@@ -67,7 +66,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
         return Ok(None);
     }
     // Un engagement sans heures n'en declare aucune.
-    let heures = e.heures.into_iter().map(Heures::entieres).sum::<R<i64>>()?;
+    let heures = e.heures.into_iter().map(Heures::entieres).sum::<Heures>();
     Ok(Some(Declare {
         salarie: p.salarie.id.clone(),
         debut: e.debut_periode(),

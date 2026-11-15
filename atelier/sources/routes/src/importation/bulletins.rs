@@ -47,8 +47,6 @@ use socle::echec::Classe;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::RoundingStrategy;
 use serde::Serialize;
 
 use import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
@@ -70,7 +68,7 @@ use socle::echec::erreur;
 use crate::importation::completer as completer;
 use import::proposee;
 use import::tri::Sorte;
-use socle::grandeurs::Montant;
+use socle::grandeurs::{lu, Cachets, Heures, Jours, Montant};
 use socle::num::Decimal;
 use socle::texte::euros;
 use import::attestes::{Atteste, BlocDImport, Registre, Reste};
@@ -88,9 +86,9 @@ pub const REESSAYER: &str = "Le logiciel s'améliore sans cesse : réessayez ces
 
 /// Ce qu'un bulletin compte du contrat qu'il atteste : ses heures, ses cachets, ses jours, son brut.
 struct Compte {
-    heures: i64,
-    cachets: i64,
-    jours: i64,
+    heures: Heures,
+    cachets: Cachets,
+    jours: Jours,
     brut: Decimal,
 }
 
@@ -1234,8 +1232,13 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             // n'en porte qu'une part).
             if pareils.iter().all(|a| a.tient_dans(debut, fin)) {
                 let somme: Option<Montant> = pareils.iter().map(|a| a.brut).try_fold(Montant::ZERO, |s, b| b.map(|b| s + b));
-                let (cachets, jours): (Option<i64>, Option<i64>) = (pareils.iter().map(|a| a.cachets).sum(), pareils.iter().map(|a| a.jours).sum());
-                let n = |x: Option<i64>| dit(x.map(|v| v.to_string()));
+                let (cachets, jours): (Option<Cachets>, Option<Jours>) = (pareils.iter().map(|a| a.cachets).sum(), pareils.iter().map(|a| a.jours).sum());
+                fn n<G: socle::grandeurs::Grandeur>(x: Option<G>) -> String {
+                    match x {
+                        Some(g) => socle::grandeurs::ecrit::sans_zero::dit(g),
+                        None => "(non dit)".to_string(),
+                    }
+                }
                 match &cl.aem {
                     Some(a) => {
                         if let Some(s) = somme.filter(|s| *s != brut) {
@@ -1246,7 +1249,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                             phrases.push(format!(
                                 "écart noté : l'{} dit {} cachets et {} jours, les contrats {} cachets et {} jours",
                                 cl.nom(),
-                                a.cachets(),
+                                n(Some(a.cachets())),
                                 n(a.jours),
                                 n(cachets),
                                 n(jours)
@@ -1260,7 +1263,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                                 phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut.decimal()), euros(s.decimal())));
                             }
                         }
-                        if let Some(nombre) = c.nombre.filter(|x| Some(*x) != cachets && Some(*x) != jours) {
+                        // Le nombre du certificat dit des jours ou des cachets (le `nb` a deux sens, en entier) : il se
+                        // compare a l'un et a l'autre.
+                        if let Some(nombre) = c.nombre.filter(|x| cachets.and_then(Cachets::en_entier) != Some(*x) && jours.and_then(Jours::en_entier) != Some(*x)) {
                             phrases.push(format!("écart noté : le certificat dit {} jours ou cachets, les contrats {} cachets et {} jours", nombre, n(cachets), n(jours)));
                         }
                     }
@@ -1302,8 +1307,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             (Some(a), _) => contrat_de_l_aem(a, cle_de(nir), &copie),
             (None, Some(l)) => {
                 let quoi = match (l.contrat.cachets, l.contrat.jours) {
-                    (Some(n), _) if n > 0 => format!("{} cachet(s)", n),
-                    (_, Some(n)) => format!("{} jour(s)", n),
+                    (Some(n), _) if n > Cachets::ZERO => format!("{} cachet(s)", socle::grandeurs::ecrit::sans_zero::dit(n)),
+                    (_, Some(n)) => format!("{} jour(s)", socle::grandeurs::ecrit::sans_zero::dit(n)),
                     _ => "ni cachet ni jour".to_string(),
                 };
                 let brut_reste: String = l.contrat.brut.map(|b| format!(", {} de brut", euros(b))).into_iter().collect();
@@ -2109,18 +2114,16 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
             [("cachets", c.cachets), ("heures", c.heures), ("jours", c.jours)].iter().filter(|x| x.1.is_none()).map(|x| x.0).collect();
         return Err(refus(format!("{} inconnu(s), on ne les devine pas", manque.join(", "))));
     };
-    let entier = |x: Decimal, quoi: &str| -> R<i64> {
+    let entier = |x: Decimal, quoi: &str| -> R<Decimal> {
         if !x.fract().is_zero() {
             return Err(refus(format!("{} non entiers ({})", quoi, x.normalize())));
         }
-        x.to_i64().ok_or_else(|| refus(format!("{} hors limites", quoi)))
+        Ok(x.trunc())
     };
-    let (cachets, jours) = (entier(cachets, "cachets")?, entier(jours, "jours")?);
-    let heures = heures.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven).to_i64().ok_or_else(|| refus("heures hors limites"))?;
-    let enseignement = c
-        .heures_enseignement
-        .map(|h| h.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven).to_i64().ok_or_else(|| refus("heures d'enseignement hors limites")))
-        .transpose()?;
+    // Les compteurs du bulletin lu se lisent en leurs grandeurs : la porte de sa lecture.
+    let (cachets, jours): (Cachets, Jours) = (lu::nombre(entier(cachets, "cachets")?), lu::nombre(entier(jours, "jours")?));
+    let heures = lu::nombre::<Heures>(heures).entieres();
+    let enseignement = c.heures_enseignement.map(|h| lu::nombre::<Heures>(h).entieres());
     let brut = Montant::du_decimal(l.b.brut).au_centime().decimal();
     let (debut, fin) = (l.b.debut, l.b.fin);
     let compte = Compte { heures, cachets, jours, brut };
@@ -2137,7 +2140,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     let mut a = ContratAtteste::vide(Attestation::Bulletin, nature);
     a.numero_objet = objet_imprime(&l.b);
     (a.heures, a.cachets, a.jours, a.brut) = (Some(heures), Some(cachets), Some(jours), Some(brut));
-    a.heures_enseignement = enseignement.filter(|h| *h > 0);
+    a.heures_enseignement = enseignement.filter(|h| *h > Heures::ZERO);
     a.numero_bulletin = plein(&l.b.numero);
     // Le numero du contrat, quand le bulletin l'imprime : il se lit, il ne se tire pas (regle 4).
     a.numero_contrat = l.b.contrat.as_deref().and_then(engagement::numeros::NumeroContrat::d_une_piece);
@@ -2325,8 +2328,16 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
     // Ce que l'AEM dit, et seulement cela : une colonne qu'elle ne porte pas reste vide (les cachets sont leur somme).
     let (heures, cachets, jours) = (a.heures, Some(a.cachets()), a.jours);
     let brut = Montant::du_decimal(brut).au_centime().decimal();
-    let pluriel = |n: i64, mot: &str| format!("{} {}{}", n, mot, if n > 1 { "s" } else { "" });
-    let quoi: Vec<String> = [(heures, "heure"), (cachets, "cachet"), (jours, "jour")].iter().filter_map(|x| x.0.filter(|n| *n > 0).map(|n| pluriel(n, x.1))).collect();
+    let pluriel = |n: String, plus_d_un: bool, mot: &str| format!("{} {}{}", n, mot, if plus_d_un { "s" } else { "" });
+    use socle::grandeurs::ecrit::sans_zero::dit as nombre;
+    let quoi: Vec<String> = [
+        heures.filter(|n| *n > Heures::ZERO).map(|n| pluriel(nombre(n), n > Heures::UNE, "heure")),
+        cachets.filter(|n| *n > Cachets::ZERO).map(|n| pluriel(nombre(n), n > Cachets::UN, "cachet")),
+        jours.filter(|n| *n > Jours::ZERO).map(|n| pluriel(nombre(n), n > Jours::UN, "jour")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
     // L'AEM est l'attestation des annexes 8 et 10, celle d'un contrat d'usage du spectacle (Unédic, circulaire 2016-25,
     // `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`).
@@ -2351,9 +2362,10 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<S
         return Err(socle::echec::refus("le certificat ne dit pas tout ce qu'un contrat demande"));
     };
     let pluriel = |n: i64, mot: &str| format!("{} {}{}", n, mot, if n > 1 { "s" } else { "" });
+    // Le nombre du certificat prend ici son sens, des cachets ou des jours : la porte de sa lecture.
     let (cachets, jours, quoi) = match statut {
-        Some(Statut::Artiste) => (nombre, 0, pluriel(nombre, "cachet")),
-        Some(Statut::Technicien) => (0, nombre, pluriel(nombre, "jour")),
+        Some(Statut::Artiste) => (lu::entier(nombre), Jours::ZERO, pluriel(nombre, "cachet")),
+        Some(Statut::Technicien) => (Cachets::ZERO, lu::entier(nombre), pluriel(nombre, "jour")),
         None => {
             let emploi = match &c.emploi {
                 Some(e) => format!("l'emploi « {} » ne nomme aucun métier du catalogue", e),
@@ -2369,7 +2381,7 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<S
     // Le certificat Congés Spectacles atteste un engagement du spectacle (D. 7121-41 du code du travail,
     // `atelier/reference/sources/caisse-conges-affiliation/LISEZ-MOI.md`) : un contrat d'usage.
     let mut a = ContratAtteste::vide(Attestation::Certificat, Some(NatureDeContrat::CdduSpectacle));
-    (a.heures, a.cachets, a.jours, a.brut) = (Some(0), Some(cachets), Some(jours), Some(brut));
+    (a.heures, a.cachets, a.jours, a.brut) = (Some(Heures::ZERO), Some(cachets), Some(jours), Some(brut));
     a.numero_certificat = c.numero.clone();
     a.base_conge = c.base_conge;
     a.atteste_le = c.signe_le;

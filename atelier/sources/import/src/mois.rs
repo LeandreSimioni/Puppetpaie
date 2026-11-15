@@ -17,13 +17,14 @@ use serde::Serialize;
 
 use droit::contexte::{Contexte, IdSpectacle};
 use droit::fiche::NumeroObjetSpectacle;
-use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratRelu, DatesTravaillees, Importe, LigneImprimee, PaieRelue, PaieVersee};
+use engagement::importe::{Attestation, BulletinSource, ContratRelu, DatesTravaillees, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::ecran::EtatDEcran;
 use crate::reponse::Source;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
+use socle::grandeurs::{Cachets, Heures, Jours};
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use crate::proposee::A_COMPLETER;
@@ -329,9 +330,12 @@ pub struct CarteImportee {
     fin: Option<Jour>,
     periode: String,
     dates: Vec<Jour>,
-    cachets: Option<i64>,
-    heures: Option<i64>,
-    jours: Option<i64>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    cachets: Option<Cachets>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    heures: Option<Heures>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    jours: Option<Jours>,
     montants: Montants,
     sources: Sources,
     lignes: Vec<LigneImprimee>,
@@ -361,8 +365,11 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
     let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).transpose()?.into_iter().flatten().collect();
     // Ce que la piece du mois atteste de lui (la paie d'un mois d'un permanent), sinon le contrat.
-    let nombre = |de_la_paie: fn(&PaieVersee) -> Option<i64>, du_contrat: fn(&ContratAtteste) -> Option<i64>| p.and_then(de_la_paie).or_else(|| c.and_then(du_contrat));
-    let (cachets, heures, jours) = (nombre(|p| p.cachets, |c| c.cachets), nombre(|p| p.heures, |c| c.heures), nombre(|p| p.jours, |c| c.jours));
+    let (cachets, heures, jours) = (
+        p.and_then(|p| p.cachets).or_else(|| c.and_then(|c| c.cachets)),
+        p.and_then(|p| p.heures).or_else(|| c.and_then(|c| c.heures)),
+        p.and_then(|p| p.jours).or_else(|| c.and_then(|c| c.jours)),
+    );
     let bulletin = p.and_then(|p| p.bulletin.clone());
     // La piece qui declare la paie : sa cle le dit (`CleDePaieVersee`).
     let declaree_par = |p: &PaieVersee| if p.contrat.d_un_bulletin() { Source::Bulletin } else { Source::Dsn };
@@ -468,12 +475,13 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     if let Some(t) = titre.clone().or_else(|| numero.as_ref().map(ToString::to_string)) {
         quoi.push(t);
     }
-    if let Some(n) = cachets.filter(|n| *n != 0) {
-        let dit = socle::texte::virgule(Decimal::from(n));
-        quoi.push(format!("{} {}", dit, if n > 1 { "cachets" } else { "cachet" }));
+    let virgule = |t: String| t.replace('.', ",");
+    if let Some(n) = cachets.filter(|n| !n.est_nul()) {
+        let dit = virgule(socle::grandeurs::ecrit::sans_zero::dit(n));
+        quoi.push(format!("{} {}", dit, if n > Cachets::UN { "cachets" } else { "cachet" }));
     }
-    if let Some(n) = heures.filter(|n| *n != 0) {
-        quoi.push(format!("{} h", socle::texte::virgule(Decimal::from(n))));
+    if let Some(n) = heures.filter(|n| !n.est_nul()) {
+        quoi.push(format!("{} h", virgule(socle::grandeurs::ecrit::sans_zero::dit(n))));
     }
     let quoi_dit = if quoi.is_empty() { "spectacle non lu".to_string() } else { quoi.join(" · ") };
     let mut lu = Vec::new();

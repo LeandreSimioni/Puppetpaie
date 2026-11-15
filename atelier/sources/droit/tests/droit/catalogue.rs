@@ -1,11 +1,8 @@
 //! Le catalogue des rubriques de chaque racine de `tests/donnees/racines/` (ce que la compagnie ajuste et ajoute ; ses
-//! rubriques datees, lues a la date ; ses refus) et les heures d'une rubrique (`catalogue-heures.json`).
-//! `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit la reference des heures.
+//! rubriques datees, lues a la date ; ses refus).
 
-use crate::outils::typee::{cas_de, chemin_donnee, verifier, Ligne};
+use crate::outils::typee::chemin_donnee;
 use droit::catalogue::{catalogue, rubrique};
-use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 
 fn jour(an: i32, mois: u32, j: u32) -> Jour {
@@ -28,29 +25,4 @@ fn les_catalogues_et_les_refus() {
         }
     }
     assert_eq!(refus, 9);
-}
-
-/// Une rubrique, la quantite d'une ligne et les heures qu'elle saisit.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CasHeures {
-    rubrique: droit::catalogue::CodeDeRubrique,
-    quantite: Decimal,
-    heures_saisies: Option<Decimal>,
-}
-
-#[test]
-fn les_heures() {
-    let racine = chemin_donnee("racines/a");
-    let cas: Vec<CasHeures> = cas_de("catalogue-heures.json");
-    assert!(cas.len() > 600);
-    let obtenu = cas
-        .into_iter()
-        .map(|c| {
-            let r = rubrique(&racine, &c.rubrique, &jour(2026, 10, 28)).unwrap();
-            let heures = socle::grandeurs::sans_zero(r.heures(c.quantite, c.heures_saisies)).decimal();
-            Ligne { cas: c, attendu: heures }
-        })
-        .collect();
-    verifier("catalogue-heures.json", obtenu);
 }

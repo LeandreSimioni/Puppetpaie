@@ -39,6 +39,7 @@ use std::path::Path;
 use droit::fiche::{NumeroObjetSpectacle, Statut};
 use socle::date::Jour;
 use socle::echec::{refus, R};
+use socle::grandeurs::{lu, Cachets, Heures, Jours};
 use socle::mois::Mois;
 use socle::num::entier_de_chiffres;
 use socle::num::Decimal;
@@ -180,10 +181,10 @@ pub struct Aem {
     pub embauche: Option<Jour>,
     pub fin_contrat: Option<Jour>,
     pub en_cours: bool,
-    pub heures: Option<i64>,
-    pub cachets_isoles: Option<i64>,
-    pub cachets_groupes: Option<i64>,
-    pub jours: Option<i64>,
+    pub heures: Option<Heures>,
+    pub cachets_isoles: Option<Cachets>,
+    pub cachets_groupes: Option<Cachets>,
+    pub jours: Option<Jours>,
     pub brut: Option<Decimal>,
     /// Complementaire ou rectificative quand la case est cochee.
     pub corrige: Option<NatureDUneAem>,
@@ -225,7 +226,7 @@ impl Aem {
     }
 
     /// Les cachets du mois : isoles et groupes.
-    pub fn cachets(&self) -> i64 {
+    pub fn cachets(&self) -> Cachets {
         self.cachets_isoles.into_iter().chain(self.cachets_groupes).sum()
     }
 
@@ -455,8 +456,9 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             embauche: Some(debut),
             fin_contrat: Some(fin),
             en_cours: false,
-            heures: entier(&nom("SAL_NB_HEURES_")),
-            cachets_isoles: entier(&nom("SAL_NB_CACHET_")),
+            // Les nombres du formulaire, en leurs grandeurs : sa porte.
+            heures: entier(&nom("SAL_NB_HEURES_")).map(lu::entier),
+            cachets_isoles: entier(&nom("SAL_NB_CACHET_")).map(lu::entier),
             cachets_groupes: None,
             jours: None,
             brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::num::decimal_a_virgule(&t)),
@@ -799,10 +801,11 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
             let v = |c: &str| -> i64 { par_colonne.get(c).into_iter().flatten().sum() };
             let a_l_en_tete = |c: &str| en_tetes.iter().any(|x| x.0 == c);
             if a_l_en_tete("heures") && a_l_en_tete("jours") && (a_l_en_tete("isoles") || a_l_en_tete("groupes")) {
-                a.heures = Some(v("heures"));
-                a.cachets_isoles = Some(v("isoles"));
-                a.cachets_groupes = Some(v("groupes"));
-                a.jours = Some(v("jours"));
+                // Les nombres de la page, en leurs grandeurs : sa porte.
+                a.heures = Some(lu::entier(v("heures")));
+                a.cachets_isoles = Some(lu::entier(v("isoles")));
+                a.cachets_groupes = Some(lu::entier(v("groupes")));
+                a.jours = Some(lu::entier(v("jours")));
             }
         }
     }

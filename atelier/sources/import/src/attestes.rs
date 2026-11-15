@@ -24,7 +24,7 @@ use engagement::importe::{Attestation, ContratLu};
 use crate::reponse::{Attestant, Source};
 use socle::date::Jour;
 use socle::echec::R;
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 
 /// Un contrat atteste : de qui (NIR), quand, par quoi, et ce qu'il compte.
 #[derive(Clone, Debug)]
@@ -37,9 +37,9 @@ pub struct Atteste {
     pub(crate) source: Attestant,
     /// Ce qui l'atteste.
     pub par: Attestation,
-    pub(crate) heures: Option<i64>,
-    pub cachets: Option<i64>,
-    pub jours: Option<i64>,
+    pub(crate) heures: Option<Heures>,
+    pub cachets: Option<Cachets>,
+    pub jours: Option<Jours>,
     pub brut: Option<Montant>,
     /// Sa ligne, telle qu'elle s'ecrit.
     ligne: ContratLu,
@@ -62,7 +62,7 @@ impl Atteste {
     }
 
     /// Ce qu'il compte : ses heures, ses cachets, ses jours, son brut.
-    pub fn compte(&self) -> (Option<i64>, Option<i64>, Option<i64>, Option<Montant>) {
+    pub fn compte(&self) -> (Option<Heures>, Option<Cachets>, Option<Jours>, Option<Montant>) {
         (self.heures, self.cachets, self.jours, self.brut)
     }
 
@@ -78,15 +78,15 @@ impl Atteste {
 }
 
 /// Un compteur en mots : ce qu'il dit, ou qu'il ne dit rien.
-fn compteur(x: Option<i64>, mot: &str) -> String {
+fn compteur<G: socle::grandeurs::Grandeur>(x: Option<G>, mot: &str) -> String {
     match x {
-        Some(n) => format!("{} {}(s)", n, mot),
+        Some(n) => format!("{} {}(s)", socle::grandeurs::ecrit::sans_zero::dit(n), mot),
         None => format!("{}s non dit(e)s", mot),
     }
 }
 
 /// Des compteurs et un brut, en mots.
-pub fn en_mots(heures: Option<i64>, cachets: Option<i64>, jours: Option<i64>, brut: Option<Montant>) -> String {
+pub fn en_mots(heures: Option<Heures>, cachets: Option<Cachets>, jours: Option<Jours>, brut: Option<Montant>) -> String {
     let brut = match brut {
         Some(b) => format!("{} de brut", socle::texte::euros(b.decimal())),
         None => "brut illisible".to_string(),
@@ -159,19 +159,24 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Reste {
             mois_restants
         ));
     }
-    let somme = |f: fn(&Atteste) -> Option<i64>| -> Option<i64> { coupants.iter().map(|p| f(p)).sum() };
-    let (heures, cachets, jours) = (somme(|p| p.heures), somme(|p| p.cachets), somme(|p| p.jours));
+    fn somme<G: std::iter::Sum<G>>(coupants: &[&&Atteste], f: fn(&Atteste) -> Option<G>) -> Option<G> {
+        coupants.iter().map(|p| f(p)).sum()
+    }
+    let (heures, cachets, jours) = (somme(&coupants, |p| p.heures), somme(&coupants, |p| p.cachets), somme(&coupants, |p| p.jours));
     let brut: Option<Montant> = coupants.iter().map(|p| p.brut).try_fold(Montant::ZERO, |a, b| b.map(|b| a + b));
     // Le certificat compte dans une seule unite (des cachets ou des jours) : le reste se compte dans la sienne ; l'autre
     // reste ce que le certificat en dit.
-    let reste = |le_sien: Option<i64>, ailleurs: Option<i64>| match le_sien {
-        Some(n) if n > 0 => ailleurs.map(|a| n - a),
-        autre => autre,
-    };
-    let (reste_cachets, reste_jours) = (reste(c.cachets, cachets), reste(c.jours, jours));
+    fn reste<G: Copy + PartialOrd + std::ops::Sub<Output = G>>(le_sien: Option<G>, ailleurs: Option<G>, zero: G) -> Option<G> {
+        match le_sien {
+            Some(n) if n > zero => ailleurs.map(|a| n - a),
+            autre => autre,
+        }
+    }
+    let (reste_cachets, reste_jours) = (reste(c.cachets, cachets, Cachets::ZERO), reste(c.jours, jours, Jours::ZERO));
     let reste_brut = c.brut.zip(brut).map(|(a, b)| a - b).filter(|b| *b > Montant::ZERO);
-    let unite_lue = c.cachets.is_none_or(|n| n == 0 || cachets.is_some_and(|x| x > 0)) && c.jours.is_none_or(|n| n == 0 || jours.is_some_and(|x| x > 0));
-    let positifs = matches!((reste_cachets, reste_jours), (Some(a), Some(b)) if a >= 0 && b >= 0 && a + b > 0);
+    let unite_lue = c.cachets.is_none_or(|n| n.est_nul() || cachets.is_some_and(|x| x > Cachets::ZERO)) && c.jours.is_none_or(|n| n.est_nul() || jours.is_some_and(|x| x > Jours::ZERO));
+    // Un reste se compte dans une seule unite : des cachets restants, ou des jours restants.
+    let positifs = matches!((reste_cachets, reste_jours), (Some(a), Some(b)) if a >= Cachets::ZERO && b >= Jours::ZERO && (a > Cachets::ZERO || b > Jours::ZERO));
     let (true, true, Some(reste_brut)) = (unite_lue, positifs, reste_brut) else {
         return Reste::NeSeComptePas(format!(
             "le reste du certificat ({}) ne se compte pas : le certificat dit {}, ce qui l'atteste ailleurs {} ; déposez les bulletins de ces mois",

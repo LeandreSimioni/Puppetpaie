@@ -1247,7 +1247,8 @@ pub(crate) struct RubriqueDeLaPage {
     nature: droit::catalogue::NatureDeRubrique,
     saisie: Vec<droit::catalogue::CaseSaisie>,
     sens: socle::grandeurs::Signe,
-    heures_forfait: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    heures_forfait: Option<socle::grandeurs::HeuresParUnite>,
     plafond: Option<droit::catalogue::Unite>,
     aem: Option<droit::catalogue::Unite>,
     dsn_type: Option<droit::catalogue::DsnTypeDeRubrique>,
@@ -1257,7 +1258,8 @@ pub(crate) struct RubriqueDeLaPage {
     imposable: bool,
     conges_spectacles: bool,
     compte_pour: droit::catalogue::ComptePour,
-    plafond_mensuel: Option<i64>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    plafond_mensuel: Option<socle::grandeurs::Cachets>,
     plafond_annuel_heures: Option<droit::catalogue::PlafondAnnuelHeures>,
     origine: droit::catalogue::OrigineDeRubrique,
     genres: Vec<Choix>,
@@ -1318,7 +1320,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         nature: r.nature,
         saisie: r.saisie.clone(),
         sens: r.sens,
-        heures_forfait: r.heures_forfait.map(NombreLu),
+        heures_forfait: r.heures_forfait,
         plafond: r.plafond,
         aem: r.aem,
         dsn_type: r.dsn_type,
