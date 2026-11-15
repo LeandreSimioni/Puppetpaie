@@ -18,7 +18,7 @@ use crate::Avis;
 use droit::catalogue::CodeDeRubrique;
 use droit::contexte::Contexte;
 use droit::forme_bareme::{IdDeCotisation, CSG_CRDS_ND, CSG_DED, MUTUELLE, VIEIL_DEPLAF, VIEIL_PLAF};
-use socle::texte::{euros, virgule};
+use socle::texte::euros;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
 use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
@@ -73,7 +73,7 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnit
             "{} : son contrat est à temps partiel ({} h par mois) ; les heures au-delà de son contrat sont des heures \
              complémentaires (C. trav. L3123-20). Les dire dans « Heures complémentaires ». Rien n'est calculé.",
             qui(ctx, e),
-            virgule(quotite.round_dp(2).normalize())
+            quotite.round_dp(2).normalize().to_string().replace('.', ",")
         ));
     }
     if !partiel && !comp.is_zero() {
@@ -107,18 +107,23 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnit
             quantite: socle::forme::Nombre(court(p.heures)),
             taux: socle::grandeurs::MontantUnitaire::du_decimal(court(taux)),
             heures: None,
-            precision: Some(format!("majorées de {} %", virgule(p.majoration.normalize()))),
+            precision: Some(format!("majorées de {} %", p.majoration.normalize().to_string().replace('.', ","))),
             dates: Vec::new(),
         }));
     }
     let mut avis = vec![info(format!(
         "{} : {} heures {} au taux horaire de son contrat ({}, le salaire mensuel sur ses {} h), {}.",
         qui(ctx, e),
-        virgule(reparties.paliers.iter().fold(Decimal::ZERO, |a, p| a + p.heures).normalize()),
+        reparties.paliers.iter().fold(Decimal::ZERO, |a, p| a + p.heures).normalize().to_string().replace('.', ","),
         if partiel { "complémentaires" } else { "supplémentaires" },
         euros(Montant::du_decimal(horaire)),
-        virgule(quotite.round_dp(2).normalize()),
-        reparties.paliers.iter().map(|p| format!("{} h majorées de {} %", virgule(p.heures.normalize()), virgule(p.majoration.normalize()))).collect::<Vec<_>>().join(", ")
+        quotite.round_dp(2).normalize().to_string().replace('.', ","),
+        reparties
+            .paliers
+            .iter()
+            .map(|p| format!("{} h majorées de {} %", p.heures.normalize().to_string().replace('.', ","), p.majoration.normalize().to_string().replace('.', ",")))
+            .collect::<Vec<_>>()
+            .join(", ")
     ))];
     avis.extend(reparties.avis.into_iter().map(avertir));
     Ok((out, avis))

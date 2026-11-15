@@ -19,7 +19,7 @@ use droit::catalogue::rubrique;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::R;
-use socle::grandeurs::{courte, Heures};
+use socle::grandeurs::Heures;
 use socle::num::Decimal;
 use socle::texte::virgule;
 
@@ -39,7 +39,7 @@ fn au_dela(h: Heures, seuil: Heures) -> bool {
 
 /// Des heures d'un jour, pour un message : au centieme (la porte de la phrase).
 fn heures_dites(h: Heures) -> String {
-    virgule(courte(h).decimal().round_dp(2))
+    virgule(h.a_deux_decimales())
 }
 
 /// Les heures de travail de chaque jour des lignes `lignes` d'un engagement, et si l'une d'elles est une moyenne (une

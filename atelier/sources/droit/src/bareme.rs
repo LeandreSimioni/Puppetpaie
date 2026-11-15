@@ -883,7 +883,7 @@ conventionnel est la règle « sauf carence »."
                     .to_string(),
             )),
         },
-        // Sans effectif connu, le CSE ne se demande pas : c'est l'effectif qui manque (`contexte::Effectif::a_dire`).
+        // Sans effectif connu, le CSE ne se demande pas : c'est l'effectif qui manque (`contexte::EffectifsParAnnee::a_dire`).
         None => Err(socle::echec::refus("L'effectif de la compagnie n'est pas connu : sous onze salariés, la CCNEAC fixe la contribution au FNAS \
 sans CSE (article III.3.1). Le dire dans « Pour démarrer »."
             .to_string())),
@@ -1137,12 +1137,12 @@ pub fn bareme_applique(
 #[derive(Debug, Clone, PartialEq)]
 pub struct EntrepriseLue {
     pub fiche: ChampsEntreprise,
-    /// L'effectif connu le plus recent avant l'annee (`contexte::Effectif::valeur`) : la CCNEAC fixe le FNAS par lui
+    /// L'effectif connu le plus recent avant l'annee (`contexte::EffectifsParAnnee::valeur`) : la CCNEAC fixe le FNAS par lui
     /// (III.3.1.a et b).
     pub effectif: Option<socle::grandeurs::Effectif>,
-    /// La cle de la representation du personnel (`contexte::Effectif::cse`) : sans elle, aucun comite ne peut exister.
+    /// La cle de la representation du personnel (`contexte::EffectifsParAnnee::cse`) : sans elle, aucun comite ne peut exister.
     pub cse: Option<crate::contexte::UnCsePossible>,
-    /// La cle de cinquante salaries (`contexte::Effectif::cinquante`) : l'exemption de la CASC-SVP la demande.
+    /// La cle de cinquante salaries (`contexte::EffectifsParAnnee::cinquante`) : l'exemption de la CASC-SVP la demande.
     pub cinquante: Option<crate::contexte::CinquanteSalaries>,
     /// La pile d'une paie IMPORTEE : ses taux se lisent sur ses pieces, la pile ne fait que ranger ses bases
     /// (`engagement::importe`). Ce qui ne decide qu'un taux ne se demande pas : la representation du personnel, et

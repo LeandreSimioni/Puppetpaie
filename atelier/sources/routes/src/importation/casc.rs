@@ -26,7 +26,7 @@ use socle::echec::R;
 use socle::echec::erreur;
 use socle::mois::{Annee, Mois};
 use socle::num::Decimal;
-use socle::texte::{euros, virgule};
+use socle::texte::euros;
 
 #[track_caller]
 fn refus(m: impl Into<String>) -> socle::echec::Echec {
@@ -240,7 +240,7 @@ fn plafond_mensuel(mois: Mois) -> R<Option<Decimal>> {
 
 /// L'EXEMPTION DE LA CASC-SVP AU MOIS `m` (« AAAA-MM ») : la fiche entreprise de ce mois, lue avec les cles de l'effectif
 /// `eff` de son annee (`droit::bareme::casc_exemptee`), comme la DSN du mois la lit.
-pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::Effectif, mois: Mois) -> R<bool> {
+pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::EffectifsParAnnee, mois: Mois) -> R<bool> {
     let du_mois = ctx.au(&mois.dernier_jour()).map_err(|e| e.reclasser(Classe::Illisible))?;
     let an = mois.annee();
     Ok(droit::bareme::casc_exemptee(&du_mois.entreprise, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()))
@@ -459,7 +459,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 tableau.push(format!("| {} | {} | {} |", r.libelle, euros(Montant::du_decimal(r.masse)), euros(Montant::du_decimal(r.cotisation))));
             }
         }
-        tableau.push(format!("| **{}, à {} %** | **{}** | **{}** |", a.annee, virgule(a.taux), euros(Montant::du_decimal(a.masse)), euros(Montant::du_decimal(a.cotisation))));
+        tableau.push(format!("| **{}, à {} %** | **{}** | **{}** |", a.annee, a.taux.normalize().to_string().replace('.', ","), euros(Montant::du_decimal(a.masse)), euros(Montant::du_decimal(a.cotisation))));
     }
     let virements: Vec<String> = annees
         .iter()

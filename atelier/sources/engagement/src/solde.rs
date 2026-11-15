@@ -17,7 +17,7 @@ use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{AuMois, MotifDeRupture, Nature};
 use socle::mois::Mois;
 use crate::Avis;
-use socle::texte::{euros, virgule};
+use socle::texte::euros;
 use socle::echec::R;
 use socle::grandeurs::{courte, Coefficient, Jours, Montant, MontantUnitaire};
 use socle::num::{court, mul, Decimal};
@@ -515,7 +515,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                     "{} : {} mois de préavis non effectué, payés {} \
                      (L1234-5){}. L'article le veut « indemnité de congés payés comprise » : {}{}",
                     qui,
-                    virgule(m),
+                    m.normalize().to_string().replace('.', ","),
                     euros(paye),
                     if duree.dit.is_empty() { String::new() } else { format!(" -- {}", duree.dit) },
                     conges,

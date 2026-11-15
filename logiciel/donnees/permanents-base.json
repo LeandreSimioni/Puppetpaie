@@ -322,7 +322,7 @@
       "moins_de_20_salaries": 1.5,
       "au_moins_20_salaries": 0.5,
       "source": {"fichier": "atelier/reference/sources/code-de-la-securite-sociale/xml/D241-24.xml", "emetteur": "loi", "article": "D241-24, I et II", "citation": "Le montant de la déduction forfaitaire des cotisations patronales prévue au I de l'article L. 241-18 est fixé à 1,50 €. II.-Le montant de la déduction forfaitaire des cotisations patronales prévue au I de l'article L. 241-18-1 est fixé à 0,50 €."},
-      "note": "L241-18 (moins de vingt salaries) et L241-18-1 (au moins vingt) : une deduction forfaitaire des cotisations patronales par heure supplementaire (pas les heures complementaires : BOSS § 570), d'un salarie de la reduction generale (L241-13, II), imputee sur ses cotisations patronales a l'Urssaf et dans leur limite. L'effectif : L130-1 (`contexte::Effectif::atteint`)."
+      "note": "L241-18 (moins de vingt salaries) et L241-18-1 (au moins vingt) : une deduction forfaitaire des cotisations patronales par heure supplementaire (pas les heures complementaires : BOSS § 570), d'un salarie de la reduction generale (L241-13, II), imputee sur ses cotisations patronales a l'Urssaf et dans leur limite. L'effectif : L130-1 (`contexte::EffectifsParAnnee::atteint`)."
     },
     "exoneration_impot": {
       "limite_annuelle": 7500,

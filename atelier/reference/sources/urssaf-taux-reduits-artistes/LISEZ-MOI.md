@@ -56,7 +56,7 @@ de 430 et 635 (taux plein, comme son nominatif 102 à 1,80 et 907 à 6,00) : `lo
 50 salariés et plus : 0,35 % » (l. 89-92), « CTP 316 : FNAL artistes totalité ; CTP 334 : FNAL artistes plafonné »
 (l. 148-149). `organismes-base.json` : 334 porte `effectif_sous: 50`, 316 (920, `brut_x115_artiste`, la totalité du brut
 majoré) `effectif_au_moins: 50` ; `dsn::Seuils` lit l'effectif de `config/effectifs.json` (cinq années consécutives,
-`Effectif::atteint`) pour l'année du mois ; un fichier composé avant, sans 316, refuse à cinquante salariés
+`EffectifsParAnnee::atteint`) pour l'année du mois ; un fichier composé avant, sans 316, refuse à cinquante salariés
 (`dsn::fnal_des_artistes`). **Inférence** : à cinquante, le 316 *remplace* le 334 (la page donne un seul taux par tranche).
 Preuve : `tests/plafond_intermittents.rs` (`a_cinquante_salaries_…`).
 

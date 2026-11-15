@@ -929,7 +929,7 @@
    "ecran": true
   },
   {
-   "note": "LES GRANDS SEUILS D'EFFECTIF (cinquante salaries et plus) : le FNAL a 0,50 % et le tdelta de la reduction\ngenerale (bareme, seuils_effectif), la DSN due le 5 (R. 243-6 CSS), la PEEC (CCH L. 313-1) et la contribution\nsupplementaire a l'apprentissage (C. trav. L. 6242-1, 250 salaries). Decochee, aucun n'est atteint et l'effectif ne se\nlit pas pour eux ; cochee, l'effectif de l'Urssaf les decide (regle des cinq ans, CSS L. 130-1, II). Seulement avec des\npermanents : une compagnie d'intermittents n'y arrive pas. Le seul lecteur : `droit::contexte::Effectif::atteint`.",
+   "note": "LES GRANDS SEUILS D'EFFECTIF (cinquante salaries et plus) : le FNAL a 0,50 % et le tdelta de la reduction\ngenerale (bareme, seuils_effectif), la DSN due le 5 (R. 243-6 CSS), la PEEC (CCH L. 313-1) et la contribution\nsupplementaire a l'apprentissage (C. trav. L. 6242-1, 250 salaries). Decochee, aucun n'est atteint et l'effectif ne se\nlit pas pour eux ; cochee, l'effectif de l'Urssaf les decide (regle des cinq ans, CSS L. 130-1, II). Seulement avec des\npermanents : une compagnie d'intermittents n'y arrive pas. Le seul lecteur : `droit::contexte::EffectifsParAnnee::atteint`.",
    "cle": "cinquante_salaries_et_plus",
    "avance": "cas_particulier",
    "libelle": "Au moins 50 salariés",

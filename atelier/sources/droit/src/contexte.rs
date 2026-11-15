@@ -36,11 +36,6 @@ fn exige<T: AsRef<str>>(c: &Option<T>, cle: &str) -> R<String> {
     c.ecrite(cle).map(str::to_string)
 }
 
-/// Un effectif a virgule, sans zeros inutiles (`2,5`, `12`).
-fn nombre_fr(x: socle::grandeurs::Effectif) -> String {
-    sans_zero::dit(x).replace('.', ",")
-}
-
 // ------------------------------------------------- la recherche floue
 
 /// La distance de Levenshtein, sur les caracteres.
@@ -162,7 +157,7 @@ const PLUS_PETIT_SEUIL: socle::grandeurs::Effectif = socle::grandeurs::Effectif:
 /// nature 118, que le releve des retours y ecrit, et ceux que la compagnie dit pour une annee sans 118
 /// (`envois::releve_retours::poser_effectif`), qu'un 118 de la meme annee remplace.
 #[derive(Debug, Clone)]
-pub struct Effectif {
+pub struct EffectifsParAnnee {
     pub annees: BTreeMap<Annee, socle::grandeurs::Effectif>,
     /// L'annee de la premiere embauche (fiche entreprise) : avant elle, zero.
     pub premiere_embauche: Option<Annee>,
@@ -172,7 +167,7 @@ pub struct Effectif {
 }
 
 /// LA CLE DE LA REPRESENTATION DU PERSONNEL (`fiche::Piece::Cse`) : seul l'effectif de la compagnie la donne
-/// (`Effectif::cse`), quand un comite social et economique peut exister a l'annee lue. Il ne se met en place qu'a partir
+/// (`EffectifsParAnnee::cse`), quand un comite social et economique peut exister a l'annee lue. Il ne se met en place qu'a partir
 /// de onze salaries atteints douze mois consecutifs (C. trav. L2311-2,
 /// `atelier/reference/sources/code-du-travail/xml/L2311-2.xml`) ; elu, il dure le mandat de ses membres, quatre ans
 /// (L2314-33), deux a quatre par accord (L2314-34), et ne disparait qu'a son terme, si l'effectif est reste sous onze
@@ -181,7 +176,7 @@ pub struct Effectif {
 pub struct UnCsePossible(());
 
 /// LA CLE DE CE QUI NE VAUT QU'A PARTIR DE CINQUANTE SALARIES (l'exemption de la CASC-SVP, 3090, art. 4.22 B :
-/// `fiche::ChampsEntreprise::exemption_casc`) : seul l'effectif la donne (`Effectif::cinquante`).
+/// `fiche::ChampsEntreprise::exemption_casc`) : seul l'effectif la donne (`EffectifsParAnnee::cinquante`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CinquanteSalaries(());
 
@@ -213,11 +208,9 @@ pub fn cinquante_salaries_et_plus(fiche: &ChampsEntreprise) -> bool {
 pub struct FichierEffectifs {
     /// Ce que le fichier dit de lui-meme.
     pub quoi: String,
-    pub annees: EffectifsParAnnee,
+    /// Les effectifs par annee, puis par code.
+    pub annees: BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>,
 }
-
-/// Les effectifs par annee, puis par code.
-pub type EffectifsParAnnee = BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>;
 
 /// UN EFFECTIF ECRIT : celui qu'un 118 a calcule (`calcule_le`, `source` : le jour du calcul, l'archive du compte rendu),
 /// ou celui que la compagnie a dit (`dit_le`), qu'un 118 de la meme annee remplace.
@@ -251,7 +244,7 @@ pub fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
 }
 
 /// Lit `config/effectifs.json` (absent : vide).
-pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
+pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<EffectifsParAnnee> {
     let mut annees = BTreeMap::new();
     if let Some(lu) = effectifs_lus(racine)? {
         for (an, codes) in lu.annees {
@@ -260,10 +253,10 @@ pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
             }
         }
     }
-    Ok(Effectif { annees, premiere_embauche: fiche.premiere_embauche.dite().map(Jour::annee), cinquante_salaries: cinquante_salaries_et_plus(fiche) })
+    Ok(EffectifsParAnnee { annees, premiere_embauche: fiche.premiere_embauche.dite().map(Jour::annee), cinquante_salaries: cinquante_salaries_et_plus(fiche) })
 }
 
-impl Effectif {
+impl EffectifsParAnnee {
     pub fn annee(&self, a: Annee) -> Option<socle::grandeurs::Effectif> {
         if let Some(v) = self.annees.get(&a) {
             return Some(*v);
@@ -339,7 +332,7 @@ rendu de nature 118 de l'Urssaf le remplace à son arrivée.{}",
             } else {
                 format!(
                     "connu pour {}",
-                    connues.iter().map(|(a, v)| format!("{} ({})", a, nombre_fr(*v))).collect::<Vec<_>>().join(", ")
+                    connues.iter().map(|(a, v)| format!("{} ({})", a, socle::texte::virgule(*v))).collect::<Vec<_>>().join(", ")
                 )
             },
             sans_zero::dit(seuil),
@@ -766,7 +759,7 @@ pas.\n  {}",
 
 /// La pile dit-elle ce qu'il faut pour l'effectif de l'entreprise (`seuils_effectif`) ? Un bareme sans seuils ne se
 /// controle pas.
-fn controler_effectif(pile: &Pile, eff: &Effectif, ou: &str) -> R<()> {
+fn controler_effectif(pile: &Pile, eff: &EffectifsParAnnee, ou: &str) -> R<()> {
     let Some(decl) = &pile.seuils_effectif else { return Ok(()) };
     let an = pile.annee;
     let mut atteints: BTreeMap<socle::grandeurs::Effectif, bool> = BTreeMap::new();
@@ -924,7 +917,7 @@ AT/MP, que lui seul ne peut pas connaitre.",
 }
 
 /// Les quatre, dans l'ordre du plus structurel au plus chiffre.
-fn controler(pile: &Pile, fiche: &ChampsEntreprise, eff: &Effectif, ou: &str) -> R<()> {
+fn controler(pile: &Pile, fiche: &ChampsEntreprise, eff: &EffectifsParAnnee, ou: &str) -> R<()> {
     controler_secteur(pile, fiche)?;
     controler_etablissements(fiche, pile)?;
     controler_organisation_patronale(pile, fiche)?;
@@ -1390,12 +1383,12 @@ impl Contexte {
     }
 
     /// L'effectif de la compagnie (`config/effectifs.json`).
-    pub fn effectif(&self) -> R<Effectif> {
+    pub fn effectif(&self) -> R<EffectifsParAnnee> {
         effectif_de(&self.racine, &self.entreprise)
     }
 
     /// Le 5 a partir de cinquante salaries, le 15 sinon. Un effectif qu'il faudrait et que le moteur ne connait pas se
-    /// refuse en nommant les annees qui manquent (`Effectif::atteint`).
+    /// refuse en nommant les annees qui manquent (`EffectifsParAnnee::atteint`).
     pub fn echeance_dsn(&self) -> R<u32> {
         socle::fichiers::noter_lecture(&CleLue::Aujourdhui, socle::fichiers::ValeurLue::Jour(self.aujourdhui));
         Ok(match self.effectif()?.atteint(GRAND_SEUIL, self.aujourdhui.annee())? {

@@ -312,7 +312,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // n'est franchi qu'apres « cinq années civiles consécutives » (CSS, art. L. 130-1, II,
     // `atelier/reference/sources/code-de-la-securite-sociale/articles-20261011.md` l. 296), et des taux de chaque paie en
     // dependent (onze et cinquante salaries) : elle est exigee pour l'effectif de la paie.
-    // Une compagnie plus ancienne dit l'effectif de chaque annee qui manque (`Effectif::a_dire`), tel que l'Urssaf l'a
+    // Une compagnie plus ancienne dit l'effectif de chaque annee qui manque (`EffectifsParAnnee::a_dire`), tel que l'Urssaf l'a
     // calcule (L. 130-1, I) : celle qui arrive d'un autre logiciel n'a pas ses comptes rendus de nature 118.
     let an = ctx.aujourdhui.annee();
     let avant = an.precedente()?;
@@ -338,7 +338,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // LE CSE, la ou la convention en fait dependre une contribution (`par_representation` : le FNAS de la CCNEAC,
     // article III.3.1) et seulement quand l'effectif de la paie compte au moins onze salaries : en dessous, la question
     // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Il ne se lit qu'avec la cle de l'effectif
-    // (`droit::contexte::Effectif::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
+    // (`droit::contexte::EffectifsParAnnee::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
     let bareme = ctx.bareme(&ctx.aujourdhui);
     let cle = droit::fiche::CasePieceEntreprise::RepresentationPersonnel;
     // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
@@ -415,9 +415,9 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     Ok(out)
 }
 
-/// Les annees d'avant PuppetPaie dont l'effectif manque (`Effectif::a_dire`) quand la premiere embauche est dite, et
+/// Les annees d'avant PuppetPaie dont l'effectif manque (`EffectifsParAnnee::a_dire`) quand la premiere embauche est dite, et
 /// qu'elle ne remplace donc pas ; aucune sinon.
-fn annees_d_avant_a_dire(effectif: &droit::contexte::Effectif, an: socle::mois::Annee) -> Option<Vec<socle::mois::Annee>> {
+fn annees_d_avant_a_dire(effectif: &droit::contexte::EffectifsParAnnee, an: socle::mois::Annee) -> Option<Vec<socle::mois::Annee>> {
     let manquent = effectif.a_dire(an);
     (!manquent.is_empty() && effectif.premiere_embauche.is_some()).then_some(manquent)
 }

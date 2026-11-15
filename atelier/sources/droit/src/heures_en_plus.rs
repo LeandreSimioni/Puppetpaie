@@ -10,7 +10,6 @@
 //! `kali-1285-titre-vi-duree-du-travail-20261102.md`, `kali-3090-titre-viii-duree-du-travail-20261102.md`,
 //! `boss/boss-heures-supplementaires-20260601.txt`.
 
-use socle::texte::virgule;
 use socle::echec::R;
 use socle::num::Decimal;
 
@@ -81,7 +80,7 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
                 return Err(socle::refus!(
                     "{} heures supplémentaires au-delà de la huitième d'une semaine, pour {} heures supplémentaires dans le mois : \
                      les premières sont une part des secondes. Rien n'est calculé.",
-                    virgule(a_50), virgule(heures)
+                    a_50.normalize().to_string().replace('.', ","), heures.normalize().to_string().replace('.', ",")
                 ));
             }
             let hebdo = loi()?.heures_supplementaires.paliers_hebdomadaires;
@@ -98,8 +97,8 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
             r.avis.push(format!(
                 "Heures supplémentaires de l'année : {} avec ce mois, au-delà du contingent annuel de {} heures de la convention. \
                  Les heures au-delà ouvrent droit à une contrepartie obligatoire en repos (C. trav. L3121-30), à poser hors de la paie.",
-                virgule(deja + heures),
-                virgule(contingent)
+                (deja + heures).normalize().to_string().replace('.', ","),
+                contingent.normalize().to_string().replace('.', ",")
             ));
         }
     }
@@ -142,8 +141,8 @@ pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, contr
         r.avis.push(format!(
             "{} heures complémentaires pour un contrat de {} heures par mois : au-delà du {} de la durée du contrat que la loi ou la \
              convention permettent (C. trav. L3123-20, L3123-28). Le logiciel les paie ; au-delà, la durée du contrat se revoit.",
-            virgule(heures),
-            virgule(contrat.round_dp(2)),
+            heures.normalize().to_string().replace('.', ","),
+            contrat.round_dp(2).normalize().to_string().replace('.', ","),
             plafond.en_mots()
         ));
     }

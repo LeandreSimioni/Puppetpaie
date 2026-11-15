@@ -10,7 +10,7 @@ use serde::Deserialize;
 use socle::echec::{refus_avec, Lieu, R};
 use socle::mois::Annee;
 use socle::fichiers::repr;
-use socle::texte::euros;
+use socle::texte::{euros, virgule};
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::{Coefficient, Effectif, Montant, MontantUnitaire, Taux};
 use std::collections::BTreeMap;
@@ -31,11 +31,6 @@ const DEPENSES: [(&str, CotisationDEtablissement, fn(&Depenses) -> Option<Montan
 
 /// L'obligation d'emploi : 6 % de l'effectif d'assujettissement (L5212-2, D5212-2).
 const TAUX: Taux = Taux::points(6);
-
-/// Un effectif dans une phrase : sans zero inutile, la virgule decimale (« 25,5 »).
-fn dit(e: Effectif) -> String {
-    sans_zero::dit(e).replace('.', ",")
-}
 
 /// Ce que la DSN d'avril porte pour un millesime.
 #[derive(Clone, Debug)]
@@ -99,10 +94,10 @@ impl Declaration {
         format!(
             "OETH {} : effectif {}, {} bénéficiaire(s) dû(s), {} employé(s), {} manquant(s) x {} x SMIC {} = {} brute, {} nette (CTP 730).",
             self.millesime,
-            dit(self.effectif),
-            dit(self.obligation),
-            dit(self.beneficiaires),
-            dit(self.manquants),
+            virgule(self.effectif),
+            virgule(self.obligation),
+            virgule(self.beneficiaires),
+            virgule(self.manquants),
             socle::grandeurs::ecrit::sans_zero::dit(self.coefficient),
             euros(self.smic),
             euros(self.brute),
@@ -435,7 +430,7 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: Annee) -> R<MontantUnitair
 
 /// L'effectif dit-il l'entreprise assujettie pour ce millesime ? Le code A04 du 118 l'emporte s'il est la et sous le
 /// seuil ; sinon la regle des cinq ans (L. 130-1, II, CSS) : un effectif qu'elle ne departage pas refuse, en disant
-/// quelles annees manquent (`Effectif::atteint`).
+/// quelles annees manquent (`EffectifsParAnnee::atteint`).
 fn assujetti_selon_l_effectif(ctx: &Contexte, millesime: Annee) -> R<bool> {
     let effectifs = droit::contexte::effectifs_lus(&ctx.racine)?;
     if let Some(a04) = crate::csa::effectif_du_118(effectifs.as_ref(), millesime, droit::contexte::TypeDeParametreNeores::EffectifOeth) {

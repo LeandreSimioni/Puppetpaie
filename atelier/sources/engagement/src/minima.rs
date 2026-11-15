@@ -687,7 +687,7 @@ impl<'a> Cx<'a> {
                 };
                 trouves.push(Plancher {
                     montant: h,
-                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(Montant::du_decimal(montant)), par, virgule(heures.round_dp(2))),
+                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(Montant::du_decimal(montant)), par, heures.round_dp(2).normalize().to_string().replace('.', ",")),
                     unite: false,
                 });
             }
@@ -1139,7 +1139,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                 qui,
                 l.designation(),
                 euros(paye),
-                virgule(heures.a_deux_decimales().decimal()),
+                virgule(heures.a_deux_decimales()),
                 euros(smic),
                 jour.jj_mm_aaaa(),
                 euros(du),

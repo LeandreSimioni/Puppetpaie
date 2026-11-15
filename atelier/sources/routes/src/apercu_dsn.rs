@@ -20,7 +20,7 @@ use declarations::dsn_lue::{ContratDeclare, DsnLue, Mesures, VersementLu};
 use documents::ecrire_documents::paies_aux_numeros_declares;
 use droit::contexte::Contexte;
 use droit::fiche::Lue as _;
-use droit::natures::{Fraction, IdentifiantDeDeclaration, NumeroDOrdre, TypeDActivite, UniteDeMesure};
+use droit::natures::{Fraction, IdentifiantDeDeclaration, NumeroDOrdre, TypeDActivite};
 use engagement::calcul::Paie;
 use envois::etats;
 use socle::date::{Jour, PeriodeOuverte};
@@ -114,15 +114,14 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     }
     // Les mesures du travail remunere (type 01) que la DSN ecrit pour cette paie (`dsn::mesures_d_activite`).
     let (mut jours, mut cachets, mut heures) = (Jours::ZERO, Cachets::ZERO, Heures::ZERO);
-    for (t, valeur, code) in declarations::dsn::mesures_d_activite(p)? {
+    for (t, valeur, _) in declarations::dsn::mesures_d_activite(p)? {
         if t != TypeDActivite::TravailRemunere {
             continue;
         }
-        match (code, valeur) {
-            (UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents, MesureDActivite::Heures(h)) => heures += h,
-            (UniteDeMesure::Journee, MesureDActivite::Jours(j)) => jours += j,
-            (UniteDeMesure::CachetsIsoles, MesureDActivite::Cachets(c)) => cachets += c,
-            _ => {}
+        match valeur {
+            MesureDActivite::Heures(h) => heures += h,
+            MesureDActivite::Jours(j) => jours += j,
+            MesureDActivite::Cachets(c) => cachets += c,
         }
     }
     // Les mesures d'une DSN lue sont des nombres (`dsn_lue::Mesures`) : la paie s'y compare ouverte.
@@ -525,7 +524,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<A
 /// Un nombre du fichier, a la francaise ; une correction le signe d'un vrai moins (« −184 » : ce qui s'ajoute a ce qui a
 /// deja ete declare).
 fn nombre_dit(x: Decimal) -> String {
-    socle::texte::virgule(x).replacen('-', "−", 1)
+    x.normalize().to_string().replace('.', ",").replacen('-', "−", 1)
 }
 
 /// L'ACTIVITE D'UN CONTRAT EN UNE COLONNE : « 4 cachets · 4 j », « 151,67 h » ; « correction : » devant celle d'un mois

@@ -27,7 +27,7 @@
 //!   `config/effectifs.json` (`releve_retours::reconstruire_effectifs`) ; ils ne se saisissent pas (regle 1).
 //!
 //! CE QUI SE LIT, ET D'OU : l'effectif d'assujettissement (250) et celui des 2 000 salaries, A01 avec la regle des cinq
-//! ans (`Effectif`), comme le bloc 44 de decembre (`assujettissement::blocs`) ; le quotient, A05 / A07 de l'annee N ; la
+//! ans (`EffectifsParAnnee`), comme le bloc 44 de decembre (`assujettissement::blocs`) ; le quotient, A05 / A07 de l'annee N ; la
 //! progression, A05 de N contre A05 de N-1 ; l'assiette, celle de la taxe d'apprentissage que les DSN de N declarent, tiree
 //! des paies declarees (`dsn::assiettes_de_l_annee` ; CTP 992, et 993 pour l'Alsace-Moselle), etablissement par
 //! etablissement, comme le solde de la taxe d'avril (`dsn::solde_taxe_apprentissage`). Ce qui manque refuse, en disant quoi.
@@ -39,7 +39,7 @@
 
 use droit::contexte::{Contexte, FichierEffectifs, TypeDeParametreNeores};
 use droit::cotisation_etablissement::CotisationDEtablissement;
-use socle::texte::{euros, pourcent};
+use socle::texte::{euros, pourcent, virgule};
 use socle::echec::R;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::{Coefficient, Effectif, Montant, Taux};
@@ -52,9 +52,9 @@ pub const CTP: droit::organismes::CodeCtp = droit::organismes::CodeCtp::du_moteu
 const SEUIL: Effectif = Effectif::personnes(250);
 const SEUIL_DEUX_MILLE: Effectif = Effectif::personnes(2000);
 
-/// Le quotient dans une phrase : sans zero inutile, la virgule decimale (« 2,5 »).
-fn dit(q: Taux) -> String {
-    sans_zero::dit(q).replace('.', ",")
+/// Le quotient tel qu'une phrase le dit : en pourcent, a trois decimales au plus, la moitie au pair (« 2.5 » %).
+fn en_pourcent(q: Coefficient) -> Taux {
+    q.en_taux().au_pair(3)
 }
 const CODE_ALTERNANTS: TypeDeParametreNeores = TypeDeParametreNeores::EffectifCsaCfip;
 const CODE_DENOMINATEUR: TypeDeParametreNeores = TypeDeParametreNeores::EffectifCsa;
@@ -67,8 +67,8 @@ pub struct Csa {
     pub code: CotisationDEtablissement,
     /// Le montant, a l'euro (L. 6242-1, VII).
     pub montant: Montant,
-    /// Le quotient A05 / A07, en pourcentage.
-    pub quotient: Taux,
+    /// Le quotient A05 / A07 : un rapport d'effectifs.
+    pub quotient: Coefficient,
     /// Le taux applique, en pourcentage (zero pour l'exoneration).
     pub taux: Taux,
     /// Les assiettes de la taxe d'apprentissage declarees pour N : hors et en Alsace-Moselle.
@@ -93,7 +93,7 @@ impl Csa {
             format!(
                 "Contribution supplémentaire à l'apprentissage {} : exonérée (alternants {} % de l'effectif), déclarée en \
 code 080 à 0.00.",
-                self.millesime, dit(self.quotient)
+                self.millesime, virgule(en_pourcent(self.quotient))
             )
         } else {
             format!(
@@ -101,7 +101,7 @@ code 080 à 0.00.",
 {} d'assiette de la taxe d'apprentissage{}).",
                 self.millesime,
                 euros(self.montant),
-                dit(self.quotient),
+                virgule(en_pourcent(self.quotient)),
                 pourcent(self.taux),
                 euros(self.assiette + self.assiette_alsace_moselle),
                 if self.assiette_alsace_moselle.est_nul() {
@@ -114,10 +114,10 @@ code 080 à 0.00.",
     }
 }
 
-/// Le taux de L. 6242-1, IV, en pourcentage, pour un quotient (en pourcentage) sous 5 % ; `None` a 5 % et plus.
-/// Le quotient est un rapport d'effectifs (A05 / A07), dit en pourcentage ; le taux s'applique a l'assiette.
-pub fn taux(quotient: Taux, plus_de_deux_mille: bool) -> Option<Taux> {
-    let p = Taux::points;
+/// Le taux de L. 6242-1, IV, en pourcentage, pour un quotient sous 5 % ; `None` a 5 % et plus. Le quotient est un
+/// rapport d'effectifs (A05 / A07), que le texte compare a des pourcentages ; le taux s'applique a l'assiette.
+pub fn taux(quotient: Coefficient, plus_de_deux_mille: bool) -> Option<Taux> {
+    let p = |n| Taux::points(n).en_coefficient();
     if quotient < p(1) {
         Some(if plus_de_deux_mille { Taux::centiemes_de_point(60) } else { Taux::centiemes_de_point(40) })
     } else if quotient < p(2) {
@@ -175,7 +175,7 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois, departs: &engagement
         return Ok(None);
     }
     // Au moins 250 salaries : l'effectif de l'annee N, la regle des cinq ans (L. 6242-1, V), comme au bloc 44 de decembre ;
-    // un grand seuil, que seule une fiche de cinquante salaries et plus atteint (`Effectif::atteint`).
+    // un grand seuil, que seule une fiche de cinquante salaries et plus atteint (`EffectifsParAnnee::atteint`).
     let assujettie = ctx
         .effectif()?
         .atteint(SEUIL, declaree)
@@ -201,7 +201,7 @@ saisissent pas. Rien n'est ecrit.",
             n
         ));
     };
-    let Some(quotient) = alternants.rapport(denominateur).filter(|_| denominateur > Effectif::ZERO).map(Coefficient::en_taux) else {
+    let Some(quotient) = alternants.rapport(denominateur).filter(|_| denominateur > Effectif::ZERO) else {
         return Err(socle::refus!(
             "DSN de mars {} : le compte rendu metier 118 donne un effectif de determination du taux d'alternants ({}) nul \
 pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se calcule pas. Rien n'est ecrit.",
@@ -210,21 +210,20 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
             n
         ));
     };
-    let quotient_lu = quotient.au_pair(3);
-    let exoneree = |csa_quotient: Taux| Csa {
+    let exoneree = Csa {
         millesime: n,
         code: CODE_EXONERATION,
         montant: Montant::ZERO,
-        quotient: csa_quotient,
+        quotient,
         taux: Taux::ZERO,
         assiette: Montant::ZERO,
         assiette_alsace_moselle: Montant::ZERO,
     };
-    let plus_de_deux_mille = quotient < Taux::points(1) && excede_deux_mille(ctx, n)?;
+    let plus_de_deux_mille = quotient < Taux::points(1).en_coefficient() && excede_deux_mille(ctx, n)?;
     let Some(t) = taux(quotient, plus_de_deux_mille) else {
-        return Ok(Some(exoneree(quotient_lu)));
+        return Ok(Some(exoneree));
     };
-    if quotient >= Taux::points(3) {
+    if quotient >= Taux::points(3).en_coefficient() {
         // L. 6242-1, II, dernier alinea : 3 % et une progression d'au moins 10 % sur l'annee precedente.
         let n_moins_un = n.precedente()?;
         let Some(avant) = effectif_du_118(effectifs.as_ref(), n_moins_un, CODE_ALTERNANTS) else {
@@ -234,7 +233,7 @@ supplementaire a l'apprentissage n'est pas due si leur effectif a progresse d'au
 Le logiciel n'a pas l'effectif des alternants de {} (code {} du compte rendu metier 118) : relever les retours \
 de {}. Rien n'est ecrit.",
                 declaree,
-                sans_zero::dit(quotient_lu),
+                sans_zero::dit(en_pourcent(quotient)),
                 n,
                 n_moins_un,
                 n_moins_un,
@@ -243,7 +242,7 @@ de {}. Rien n'est ecrit.",
             ));
         };
         if alternants.fois(10) >= avant.fois(11) {
-            return Ok(Some(exoneree(quotient_lu)));
+            return Ok(Some(exoneree));
         }
     }
     // L'assiette : celle de la taxe d'apprentissage que les DSN de N declarent, etablissement par etablissement (le
@@ -261,7 +260,7 @@ et aucune paie validee de {} ne porte d'assiette de la taxe d'apprentissage (CTP
 assiette (L. 6242-1, III). Rien n'est ecrit.",
             declaree,
             n,
-            sans_zero::dit(quotient_lu),
+            sans_zero::dit(en_pourcent(quotient)),
             n
         ));
     }
@@ -271,7 +270,7 @@ assiette (L. 6242-1, III). Rien n'est ecrit.",
         millesime: n,
         code: CODE_CONTRIBUTION,
         montant,
-        quotient: quotient_lu,
+        quotient,
         taux: t,
         assiette,
         assiette_alsace_moselle: alsace,
@@ -281,10 +280,11 @@ assiette (L. 6242-1, III). Rien n'est ecrit.",
 #[cfg(test)]
 mod tests {
     use super::taux;
-    use socle::grandeurs::Taux;
+    use socle::grandeurs::{Coefficient, Taux};
 
-    fn d(s: &str) -> Taux {
-        socle::grandeurs::lu::norme(s).unwrap()
+    /// Un quotient, que le texte dit en pourcentage.
+    fn d(s: &str) -> Coefficient {
+        socle::grandeurs::lu::norme::<Taux>(s).unwrap().en_coefficient()
     }
 
     #[test]

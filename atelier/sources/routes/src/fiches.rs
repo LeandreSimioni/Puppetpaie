@@ -342,10 +342,10 @@ const OU_TROUVER_L_EFFECTIF: &str =
 /// que l'Urssaf n'a pas renvoyee en compte rendu de nature 118 (`envois::releve_retours::poser_effectif`). L'effectif
 /// annuel est la moyenne des mois de l'annee civile, tronquee au centieme (CSS, L. 130-1, I, et R. 130-1, I :
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`) ; il ne se dit qu'une annee finie. Sans
-/// `annee` : les annees qui manquent pour payer cette annee (`Effectif::a_dire`).
+/// `annee` : les annees qui manquent pour payer cette annee (`EffectifsParAnnee::a_dire`).
 fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
     let an_paie = ctx.aujourdhui.annee();
-    // Les annees qui manquent : celles des seuils (`Effectif::a_dire`), et celle d'avant quand la paie la lit elle-meme et
+    // Les annees qui manquent : celles des seuils (`EffectifsParAnnee::a_dire`), et celle d'avant quand la paie la lit elle-meme et
     // ne la connait pas (le FNAS de la CCNEAC sans CSE dit) : ce que « Pour démarrer » demande (`demarrage::manques`).
     let a_dire = |ctx: &Contexte| -> R<Vec<Annee>> {
         let e = ctx.effectif()?;
@@ -372,7 +372,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         };
         return Ok(EffectifDit { phrase, annee: None, valeur: None, source: None, a_dire: manquent });
     };
-    let en_clair = |x: Effectif| socle::grandeurs::ecrit::sans_zero::dit(x.a_deux_decimales()).replace('.', ",");
+    let en_clair = |x: Effectif| socle::texte::virgule(x.a_deux_decimales());
     let mut pose = None;
     if let Some(v) = &charge.valeur {
         if an >= an_paie {
@@ -516,12 +516,12 @@ pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdS
     Ok(Montres { cases, pieces_ouvertes })
 }
 
-/// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::Effectif`) : la
-/// representation du personnel quand un comite peut exister (`Effectif::cse`) et qu'un calcul la lit (une contribution
+/// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::EffectifsParAnnee`) : la
+/// representation du personnel quand un comite peut exister (`EffectifsParAnnee::cse`) et qu'un calcul la lit (une contribution
 /// de la convention qui en depend, ou l'exemption de la CASC-SVP, que cinquante salaries rendent possible) ; l'exemption
 /// de la CASC-SVP quand la compagnie compte cinquante salaries et que la fiche `entreprise`, telle qu'elle est saisie, dit
 /// un CSE (`droit::fiche::ChampsEntreprise::exemption_casc`), sur la fiche typee. Un effectif inconnu n'ouvre rien : c'est
-/// lui que « Pour démarrer » demande (`Effectif::a_dire`).
+/// lui que « Pour démarrer » demande (`EffectifsParAnnee::a_dire`).
 fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &ChampsEntreprise) -> R<(bool, bool)> {
     let (jour, eff) = (ctx.aujourdhui, ctx.effectif()?);
     let (cse, cinquante) = (eff.cse(jour.annee()), eff.cinquante(jour.annee()));
@@ -600,7 +600,7 @@ fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeTaxeSurLesSalaires {
-    taxe_sur_les_salaires: Option<droit::fiche::TaxeSurLesSalaires>,
+    taxe_sur_les_salaires: Option<droit::fiche::AssujettissementALaTaxe>,
     #[serde(default)]
     annee: Option<Annee>,
 }

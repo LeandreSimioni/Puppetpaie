@@ -1653,7 +1653,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut etapes = vec![format!(
         "taxe brute {} × {} % taxés (CGI art. 231, 1) = {}",
         euros(brute),
-        crate::taxe_sur_les_salaires::part_dite(pct_a),
+        socle::texte::virgule(pct_a),
         euros(due)
     )];
     let mut net;

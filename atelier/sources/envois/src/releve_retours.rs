@@ -16,7 +16,8 @@ use socle::secret::Secret;
 use droit::fiche::Lue as _;
 use std::path::{Path, PathBuf};
 
-use droit::contexte::{Contexte, EffectifEcrit, EffectifsParAnnee, FichierEffectifs, TypeDeParametreNeores};
+use droit::contexte::{Contexte, EffectifEcrit, FichierEffectifs, TypeDeParametreNeores};
+use std::collections::BTreeMap;
 use socle::echec::R;
 use socle::fichiers::CheminRelatif;
 use socle::mois::Annee;
@@ -839,7 +840,7 @@ fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
-fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: EffectifsParAnnee) -> R<()> {
+fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>) -> R<()> {
     let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
         socle::ecriture::ecrire_json(&droit::contexte::EFFECTIFS.dans(racine), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
@@ -880,7 +881,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         }
     }
     noms.sort();
-    let mut annees = EffectifsParAnnee::new();
+    let mut annees: BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>> = BTreeMap::new();
     for nom in &noms {
         let p = dossier.join(nom);
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
@@ -910,7 +911,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
 pub fn poser_effectif(racine: &Path, an: Annee, valeur: Effectif, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
-    let mut annees: EffectifsParAnnee = existant.iter().flat_map(|f| f.annees.iter()).map(|(an, c)| (*an, c.clone())).collect();
+    let mut annees: BTreeMap<_, _> = existant.iter().flat_map(|f| f.annees.iter()).map(|(an, c)| (*an, c.clone())).collect();
     let codes = annees.entry(an).or_default();
     if codes.get(&TypeDeParametreNeores::EffectifMoyen).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);

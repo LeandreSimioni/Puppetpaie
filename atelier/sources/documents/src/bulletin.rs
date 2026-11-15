@@ -68,7 +68,7 @@ fn fmt_taux_de_ligne(t: engagement::ligne::TauxDeLigne) -> String {
     match t {
         // Le montant d'une unite.
         engagement::ligne::TauxDeLigne::ParUnite(u) => chiffres_en_euros(u),
-        engagement::ligne::TauxDeLigne::PartDeLaBase(c) => format!("{} %", socle::texte::virgule(socle::num::mul(c.decimal(), Decimal::ONE_HUNDRED).normalize())),
+        engagement::ligne::TauxDeLigne::PartDeLaBase(c) => format!("{} %", socle::texte::virgule(c.en_taux())),
     }
 }
 

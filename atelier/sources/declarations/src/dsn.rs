@@ -3511,11 +3511,11 @@ const CODE81_DEDUCTION_HEURES: CodeCotisation81 = CodeCotisation81::DeductionHeu
 
 /// Les seuils d'effectif d'un mois, pour les CTP qui en dependent (`effectif_au_moins`, `effectif_sous` d'une ligne de
 /// `ctp_urssaf`) : l'effectif A01 que l'Urssaf renvoie en CRM 118 (`config/effectifs.json`, regle 8), la regle des cinq
-/// annees civiles consecutives (L. 130-1, II, CSS ; `Effectif::atteint`), pour payer l'annee du mois. Comme
+/// annees civiles consecutives (L. 130-1, II, CSS ; `EffectifsParAnnee::atteint`), pour payer l'annee du mois. Comme
 /// l'echeance de la DSN (`Contexte::echeance_dsn`), un effectif qu'un seuil demande et que le moteur ne connait pas se
 /// refuse en nommant les annees qui manquent.
 pub struct Seuils {
-    effectif: droit::contexte::Effectif,
+    effectif: droit::contexte::EffectifsParAnnee,
     an: Annee,
 }
 
@@ -3525,7 +3525,7 @@ impl Seuils {
     }
 
     /// La ligne `ctp` du fichier des organismes s'ecrit-elle a l'effectif de ce mois ? Un effectif qu'un seuil demande et
-    /// que le moteur ne connait pas se refuse en nommant les annees qui manquent (`Effectif::atteint`).
+    /// que le moteur ne connait pas se refuse en nommant les annees qui manquent (`EffectifsParAnnee::atteint`).
     fn retient(&self, ctp: &Ctp) -> R<bool> {
         let atteint = |seuil: Option<socle::grandeurs::Effectif>| seuil.map(|s| self.effectif.atteint(s, self.an)).transpose();
         Ok(atteint(ctp.effectif_au_moins)?.is_none_or(|a| a) && atteint(ctp.effectif_sous)?.is_none_or(|a| !a))

@@ -1156,12 +1156,12 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let base = Montant::du_decimal(base_conv).prorata(quotite, reference).au_centime().decimal();
         let montant = Montant::du_decimal(div(mul(base, pourcentage), Decimal::ONE_HUNDRED)).au_centime().decimal();
         lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, crate::ligne::QuantiteDeLigne::UNE_FOIS, MontantUnitaire::du_decimal(court(montant))));
-        let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite.decimal())) } else { String::new() };
+        let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite)) } else { String::new() };
         avert.push(info(format!(
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \
              conventionnel de {}{} = {} -- {}.",
             qui(ctx, e),
-            virgule(pourcentage),
+            pourcentage.normalize().to_string().replace('.', ","),
             pa.annees.nombre_d_ans_revolus()?,
             euros(Montant::du_decimal(base_conv)),
             proratise,

@@ -2859,7 +2859,7 @@ cases! {
 
 cases! {
     /// Le bloc S21.G00.44 : la compagnie doit-elle la taxe sur les salaires.
-    pub struct TaxeSurLesSalaires { tva: Tva, part_tva: NombreDeFiche, sous_franchise: bool, association_1679a: bool }
+    pub struct AssujettissementALaTaxe { tva: Tva, part_tva: NombreDeFiche, sous_franchise: bool, association_1679a: bool }
 }
 
 cases! {
@@ -3058,7 +3058,7 @@ fiche! {
         JoursFeriesChomes(JoursFeriesChomes) = "jours_feries_chomes" => jours_feries_chomes,
         DeductionForfaitaireOption(OptionDfs) = "deduction_forfaitaire_option" => deduction_forfaitaire_option,
         PremiereEmbauche(Jour) = "premiere_embauche" => premiere_embauche,
-        TaxeSurLesSalaires(TaxeSurLesSalaires) = "taxe_sur_les_salaires" => taxe_sur_les_salaires,
+        TaxeSurLesSalaires(AssujettissementALaTaxe) = "taxe_sur_les_salaires" => taxe_sur_les_salaires,
         TaxeApprentissageMotifNonAssujettissement(MotifNonAssujettissement) = "taxe_apprentissage_motif_non_assujettissement" => taxe_apprentissage_motif_non_assujettissement,
         TauxAtmp(TauxAtmp) = "taux_atmp" => taux_atmp,
         Etablissements(Vec<Etablissement>) = "etablissements" => etablissements,

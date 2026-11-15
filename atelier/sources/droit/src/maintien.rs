@@ -195,8 +195,8 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
             "{} (art. {}) demande {} mois d'anciennete ; il y en a {}.",
             nom,
             article,
-            socle::texte::virgule(minimum.mois()),
-            socle::texte::virgule(anciennete.mois().round_dp(1))
+            minimum.mois().normalize().to_string().replace('.', ","),
+            anciennete.mois().round_dp(1).normalize().to_string().replace('.', ",")
         ))));
     }
     let tranches = match liste {
@@ -225,7 +225,7 @@ pub fn phrase(r: &Regime) -> String {
         .tranches
         .iter()
         .map(|t| {
-            let pct = socle::texte::virgule(t.taux.decimal());
+            let pct = socle::texte::virgule(t.taux);
             match t.duree {
                 DureeDUneTranche::Jours(d) => format!("{} à {} %", d, pct),
                 DureeDUneTranche::Mois(d) => format!("{} à {} %", d, pct),

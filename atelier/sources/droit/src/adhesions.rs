@@ -97,8 +97,8 @@ pub fn casc_svp_base() -> R<Arc<CascSvp>> {
 /// `atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`), et l'identifiant technique (15.005) est
 /// interne au message DSN (`atelier/reference/norme-dsn/texte/bloc-S21.G00.15.txt`, l. 112-117). La compagnie n'en
 /// saisit donc rien : `Contexte::organismes` la porte meme quand `config/organismes.json` ne la nomme pas.
-/// L'exemption se lit avec les cles de l'effectif `eff` de l'annee `an` (`contexte::Effectif::cinquante`, `cse`).
-pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Effectif, an: socle::mois::Annee) -> R<Option<Adhesion>> {
+/// L'exemption se lit avec les cles de l'effectif `eff` de l'annee `an` (`contexte::EffectifsParAnnee::cinquante`, `cse`).
+pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::EffectifsParAnnee, an: socle::mois::Annee) -> R<Option<Adhesion>> {
     let base = casc_svp_base()?;
     if ent.idcc.dite() != Some(&base.idcc) || crate::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);
@@ -148,7 +148,7 @@ mod tests {
     fn la_casc_svp_d_une_3090_ne_se_saisit_pas() {
         let fiche = |texte: &str| socle::forme::lire_texte::<crate::fiche::ChampsEntreprise>(texte, "la fiche").unwrap();
         let an = |a: i64| socle::mois::Annee::nouvelle(a).unwrap();
-        let soixante = crate::contexte::Effectif { annees: [(an(2025), socle::grandeurs::Effectif::personnes(60))].into(), premiere_embauche: None, cinquante_salaries: true };
+        let soixante = crate::contexte::EffectifsParAnnee { annees: [(an(2025), socle::grandeurs::Effectif::personnes(60))].into(), premiere_embauche: None, cinquante_salaries: true };
         let a = casc_svp(&fiche(r#"{"idcc": "3090"}"#), &soixante, an(2026)).unwrap().unwrap();
         assert_eq!((a.libelle.as_str(), a.delegataire.as_str()), ("CASCSVP", "P0983"));
         assert!(casc_svp(&fiche(r#"{"idcc": "1285"}"#), &soixante, an(2026)).unwrap().is_none());

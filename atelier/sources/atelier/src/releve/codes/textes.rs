@@ -79,7 +79,7 @@ pub static TEXTES: &[Texte] = &[
             // de ses membres, quatre ans (L2314-33), deux a quatre par accord
             // (L2314-34), et n'est pas renouvele a son terme si l'effectif est
             // reste sous onze salaries douze mois consecutifs (L2313-10) :
-            // `contexte::Effectif::cse` ouvre la representation du personnel
+            // `contexte::EffectifsParAnnee::cse` ouvre la representation du personnel
             // tant qu'un comite peut exister.
             Domaine { cle: "effectif_cse", titre: "L'effectif qui compte pour le comite social et economique", numeros: &["L1111-2", "L2311-2", "L2313-10", "L2314-33", "L2314-34", "L2315-61"] },
             // LES MAJORATIONS DES EMPLOYEURS AFFILIES A UNE CAISSE DE CONGES.

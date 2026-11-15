@@ -5,8 +5,7 @@
 
 use droit::fiche::Lue as _;
 use socle::echec::R;
-use socle::texte::euros;
-use socle::grandeurs::ecrit::sans_zero;
+use socle::texte::{euros, virgule};
 use socle::grandeurs::{Coefficient, Montant, Taux};
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
@@ -28,11 +27,6 @@ pub fn fractions_majorees(base: Montant, seuil_1: Montant, seuil_2: Montant) -> 
     let positif = |x: Montant| if x > Montant::ZERO { x } else { Montant::ZERO };
     let premiere = positif(base.min(seuil_2) - seuil_1);
     (premiere, positif(base - seuil_2))
-}
-
-/// La part taxee dans une phrase (« 40 », « 37,5 ») : sans zero inutile, la virgule decimale.
-pub fn part_dite(part: Taux) -> String {
-    sans_zero::dit(part).replace('.', ",")
 }
 
 /// LA TAXE SUR LES SALAIRES SE DEDUIT DE LA TVA. La fiche disait « la compagnie la doit-elle ? »
@@ -149,7 +143,7 @@ compagnie ne doit pas la taxe sur les salaires ; en dessous, elle la doit sur le
                     &format!(
                         "elle est assujettie à la TVA sur {} % de ses recettes de l'an dernier, 90 % ou plus (code général \
 des impôts, art. 231)",
-                        part_dite(part)
+                        virgule(part)
                     ),
                 );
             }
@@ -169,7 +163,7 @@ sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
     let sur = if part_taxee == Taux::CENT_POUR_CENT {
         "sur tous ses salaires".to_string()
     } else {
-        format!("sur {} % de ses salaires, la part de ses recettes qui n'était pas soumise à la TVA", part_dite(part_taxee))
+        format!("sur {} % de ses salaires, la part de ses recettes qui n'était pas soumise à la TVA", virgule(part_taxee))
     };
     match fiche.and_then(|f| f.sous_franchise.dite().copied()) {
         Some(true) => {

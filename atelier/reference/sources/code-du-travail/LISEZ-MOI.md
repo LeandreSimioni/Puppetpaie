@@ -181,7 +181,7 @@ Relevés depuis l'entrepôt LEGI (`relever_les_codes.py`, `assujettissement_fisc
 
 **Où le moteur s'en sert** : `logiciel/donnees/baremes/2025.json` et `2026.json`, `seuils_effectif.valeurs[formation]`
 (`source`, `sous_le_seuil`) ; `contexte::controler_effectif` refuse une surcouche qui porte la formation à une autre valeur que
-0,55 % tant que le seuil n'est pas franchi (`Effectif::atteint`). Test : `tests/calcul/seuils_effectif.rs`.
+0,55 % tant que le seuil n'est pas franchi (`EffectifsParAnnee::atteint`). Test : `tests/calcul/seuils_effectif.rs`.
 
 ## Le maintien de salaire d'un arrêt, et le congé payé suspendu : L1226-1, D1226-1 à D1226-5, L3142-2 (imprévus, 15/10/2026)
 
