@@ -116,7 +116,7 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Montant, qu
         qui(ctx, e),
         virgule(reparties.paliers.iter().fold(Decimal::ZERO, |a, p| a + p.heures).normalize()),
         if partiel { "complémentaires" } else { "supplémentaires" },
-        euros(horaire),
+        euros(Montant::du_decimal(horaire)),
         virgule(quotite.round_dp(2).normalize()),
         reparties.paliers.iter().map(|p| format!("{} h majorées de {} %", virgule(p.heures.normalize()), virgule(p.majoration.normalize()))).collect::<Vec<_>>().join(", ")
     ))];
@@ -235,10 +235,10 @@ pub(crate) fn apres_les_cotisations(
         avis.push(format!(
             "Heures en plus : {} nets exonérés d'impôt cette année avant ce mois ; la limite de {} (CGI 81 quater) laisse {} \
              exonérés ce mois, le reste ({}) est imposable.",
-            euros(deja.decimal()),
-            euros(limite.decimal()),
-            euros(exonere.decimal()),
-            euros((net - exonere).decimal())
+            euros(deja),
+            euros(limite),
+            euros(exonere),
+            euros(net - exonere)
         ));
     }
     Ok(Some(Suites { lignes: out, reduction, deduction, remuneration, heures, exonere, avis }))

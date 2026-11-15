@@ -24,6 +24,7 @@ use droit::emplois;
 use crate::{Avis, Engagement};
 use droit::minima::{grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
+use socle::grandeurs::Montant;
 use socle::echec::{refus, Echec, R};
 use socle::num::{add, div, mul, sub, Decimal};
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
@@ -303,7 +304,7 @@ impl<'a> Cx<'a> {
                 groupe,
                 c1285.emploi_xi3.as_str(),
                 d_ou,
-                euros(mensuel)
+                euros(Montant::du_decimal(mensuel))
             ),
         ))
     }
@@ -342,7 +343,7 @@ impl<'a> Cx<'a> {
                 format!(
                     "CCN 2642, {} en CDI ou CDD de droit commun : {} par mois pour 35 h, ramenés à l'heure sur 151,67 h",
                     fonction,
-                    euros(m)
+                    euros(Montant::du_decimal(m))
                 ),
             ));
         }
@@ -374,7 +375,7 @@ impl<'a> Cx<'a> {
                 "CCN 2642, {} en CDDU, {} : {} la semaine de 35 h ; {} (IV.2.1)",
                 fonction,
                 dit,
-                euros(semaine),
+                euros(Montant::du_decimal(semaine)),
                 regle
             ),
         ))
@@ -402,7 +403,7 @@ impl<'a> Cx<'a> {
                         "CCN 3097, titre IV, {} ({}) : {} par mois, salaire de base sans les compléments, ramené à l'heure sur 151,67 h",
                         emploi,
                         niveau.as_str().replace('_', " "),
-                        euros(mensuel)
+                        euros(Montant::du_decimal(mensuel))
                     ),
                 ));
             }
@@ -416,13 +417,13 @@ impl<'a> Cx<'a> {
                     semaine = a.0;
                 }
             }
-            let mut dit = format!("{} la semaine de 39 h (annexe I du titre II)", euros(semaine));
+            let mut dit = format!("{} la semaine de 39 h (annexe I du titre II)", euros(Montant::du_decimal(semaine)));
             if spec.is_some_and(|s| s.champs.derogation_annexe_iii_3097 == Some(true)) {
                 let a = c.annexe_iii.as_ref().ok_or_else(|| manque("3097.annexe_iii"))?;
                 if semaine > a.socle {
                     semaine = add(a.socle, div(mul(sub(semaine, a.socle), a.part_au_dela), Decimal::ONE_HUNDRED));
                 }
-                dit = format!("film sous dérogation de l'annexe III : {} la semaine de 39 h", euros(bas(semaine)));
+                dit = format!("film sous dérogation de l'annexe III : {} la semaine de 39 h", euros(Montant::du_decimal(bas(semaine))));
             }
             let h = bas(div(semaine, c.heures_payees_de_la_semaine.ok_or_else(|| manque("3097.heures_payees_de_la_semaine"))?.0));
             return Ok(plancher(h, format!("CCN 3097, {} : {}, soit 40 h au taux de base (35 h + 4 h à 125 %)", fonction, dit)));
@@ -650,7 +651,7 @@ impl<'a> Cx<'a> {
             if unite == Unite::Cachet {
                 trouves.push(Plancher {
                     montant,
-                    quoi: format!("CCN {}, {}, {} : {} le cachet", idcc, nom, dit, euros(montant)),
+                    quoi: format!("CCN {}, {}, {} : {} le cachet", idcc, nom, dit, euros(Montant::du_decimal(montant))),
                     unite: false,
                 });
             } else if !a_l_heure(gr) {
@@ -662,7 +663,7 @@ impl<'a> Cx<'a> {
                 };
                 trouves.push(Plancher {
                     montant,
-                    quoi: format!("CCN {}, {}, {} : {} {}", idcc, nom, dit, euros(montant), par),
+                    quoi: format!("CCN {}, {}, {} : {} {}", idcc, nom, dit, euros(Montant::du_decimal(montant)), par),
                     unite: true,
                 });
             } else {
@@ -686,7 +687,7 @@ impl<'a> Cx<'a> {
                 };
                 trouves.push(Plancher {
                     montant: h,
-                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(montant), par, virgule(heures.round_dp(2))),
+                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(Montant::du_decimal(montant)), par, virgule(heures.round_dp(2))),
                     unite: false,
                 });
             }
@@ -752,7 +753,7 @@ impl<'a> Cx<'a> {
                     "CCN 3090, grille administrative, {}, {} : {} par mois ramenés à l'heure sur 151,67 h",
                     niveau.as_str().replace('_', " "),
                     d_ou,
-                    euros(montant)
+                    euros(Montant::du_decimal(montant))
                 ),
             ));
         }
@@ -1052,9 +1053,9 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                             "{}, {} : {} {}. Notre lecture de la convention donne un minimum conventionnel de {} {} ({} ; {}).",
                             qui,
                             l.designation(),
-                            euros(paye),
+                            euros(Montant::du_decimal(paye)),
                             unite,
-                            euros(p.montant),
+                            euros(Montant::du_decimal(p.montant)),
                             unite,
                             p.quoi,
                             texte_source
@@ -1094,9 +1095,9 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                         "{}, {} : {} {}. Notre lecture de la convention donne un minimum conventionnel de {} ({} ; {}).",
                         qui,
                         l.designation(),
-                        euros(paye),
+                        euros(Montant::du_decimal(paye)),
                         unite,
-                        euros(p.montant),
+                        euros(Montant::du_decimal(p.montant)),
                         p.quoi,
                         texte_source
                     ),
@@ -1137,12 +1138,12 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                 "{}, {} : {} pour {} h. Le SMIC est de {} de l'heure au {} : il fallait {}, il manque {}. À corriger avant de déclarer (le SMIC vaut pour tous, art. L. 3231-2).",
                 qui,
                 l.designation(),
-                euros(paye.decimal()),
+                euros(paye),
                 virgule(heures.a_deux_decimales().decimal()),
-                euros(smic.decimal()),
+                euros(Montant::du_decimal(smic.decimal())),
                 jour.jj_mm_aaaa(),
-                euros(du.decimal()),
-                euros((du - paye).decimal())
+                euros(du),
+                euros(du - paye)
             ),
         });
     }

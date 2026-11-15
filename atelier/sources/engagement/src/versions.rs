@@ -19,6 +19,7 @@ use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::echec::R;
 use socle::texte::{euros, virgule};
+use socle::grandeurs::Montant;
 
 
 /// Ce qui change dans les jours d'une ligne, et seulement cela : « Jours : + 16/11 », « Jours : − 14/11 »,
@@ -96,14 +97,14 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
         None => "—".into(),
         Some(Valeur::Oui(b)) => if *b { "oui" } else { "non" }.into(),
         Some(Valeur::Nombre(n)) => match (nombre(n), en_euros) {
-            (Some(x), true) => euros(x),
+            (Some(x), true) => euros(Montant::du_decimal(x)),
             (Some(x), false) => virgule(x),
             (None, _) => n.to_string(),
         },
         Some(Valeur::Heures(h)) => socle::grandeurs::ecrit::sans_zero::dit(*h).replace('.', ","),
         Some(Valeur::Montant(m)) => euros(*m),
         Some(Valeur::Texte(t)) if en_euros => match socle::num::decimal_a_virgule(t) {
-            Some(x) => euros(x),
+            Some(x) => euros(Montant::du_decimal(x)),
             None => t.clone(),
         },
         Some(Valeur::Texte(t)) => t.clone(),
@@ -115,7 +116,7 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
 fn nombre_en_mots(x: Option<Decimal>, en_euros: bool) -> String {
     match x {
         None => "—".into(),
-        Some(x) if en_euros => euros(x),
+        Some(x) if en_euros => euros(Montant::du_decimal(x)),
         Some(x) => virgule(x),
     }
 }

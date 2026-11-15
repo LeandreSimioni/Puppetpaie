@@ -23,6 +23,7 @@ use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie, FormeDeRemuneration
 use engagement::PlaceDuMois;
 use engagement::saisie::{Champ, Valeur};
 use socle::date::Jour;
+use socle::grandeurs::Montant;
 use socle::mois::Mois;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use socle::nfkc::nfkc;
@@ -164,7 +165,7 @@ pub(crate) fn ligne_citee(l: &FormeDeRemuneration) -> String {
             texte.push(c);
         }
     }
-    format!("{} à {}", texte, socle::texte::euros(l.taux.0))
+    format!("{} à {}", texte, socle::texte::euros(Montant::du_decimal(l.taux.0)))
 }
 
 /// La ligne fait-elle le brut ? (`soumis` de la rubrique.)
@@ -507,7 +508,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
         }
     };
     Ok(match terme {
-        Champ::SalaireMensuel => socle::texte::euros(nombre()?),
+        Champ::SalaireMensuel => socle::texte::euros(Montant::du_decimal(nombre()?)),
         Champ::QuotiteContrat | Champ::QuotiteReference => match v {
             Valeur::Heures(h) => format!("{} heures par mois", socle::grandeurs::ecrit::sans_zero::dit(*h).replace('.', ",")),
             _ => return Err(socle::refus!("{} : une durée en heures est attendue, lu {}", terme.nom(), texte)),

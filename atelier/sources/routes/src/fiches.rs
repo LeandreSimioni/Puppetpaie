@@ -1412,10 +1412,10 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
             .into_iter()
             .map(|(k, x)| {
                 // Rien de saisi pour la suite de l'annee : la phrase n'en dit rien.
-                let prevu: String = (!x.prevu.est_nul()).then(|| format!(" · + {} déjà saisis pour la suite de l'année", euros(x.prevu.decimal()))).into_iter().collect();
+                let prevu: String = (!x.prevu.est_nul()).then(|| format!(" · + {} déjà saisis pour la suite de l'année", euros(x.prevu))).into_iter().collect();
                 let phrase = format!(
                     "coût employeur {} — brut {}, charges {}, {}{}{}",
-                    euros(x.cout.decimal()), euros(x.brut.decimal()), euros(x.charges.decimal()), bulletins(&x),
+                    euros(x.cout), euros(x.brut), euros(x.charges), bulletins(&x),
                     if x.incomplet { ", coût incomplet avant PuppetPaie" } else { "" },
                     prevu
                 );
@@ -1427,13 +1427,13 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     let mut phrases = Vec::new();
     for (nom, x) in &couts.spectacles {
         total += x.cout;
-        phrases.push(format!("{} : {} ({}, brut {})", nom, euros(x.cout.decimal()), bulletins(x), euros(x.brut.decimal())));
+        phrases.push(format!("{} : {} ({}, brut {})", nom, euros(x.cout), bulletins(x), euros(x.brut)));
     }
     let phrase = format!(
         "Coût de {}, jusqu'à {} : {} pour {}.",
         couts.annee,
         couts.jusqu_a.libelle(socle::mois::Graphie::Accentuee),
-        socle::texte::euros(total.decimal()),
+        socle::texte::euros(total),
         socle::ecran::compte(couts.spectacles.len(), "spectacle", "spectacles")
     );
     Ok(CoutsDits { phrase, phrases, annee: couts.annee, jusqu_a: couts.jusqu_a.to_string(), spectacles: dit(couts.spectacles)?, salaries: dit(couts.salaries)? })

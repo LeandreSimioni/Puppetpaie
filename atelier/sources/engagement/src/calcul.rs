@@ -956,7 +956,10 @@ pub(crate) fn abattement_dfs(o: &DfsDuSalarie, montants: &[Montant], brut: Monta
         avis.push(format!(
             "Déduction forfaitaire spécifique ramenée de {} à {} : le plafond de {} par année civile (arrêté du \
 4 septembre 2025, art. 9) est atteint, {} déjà déduits cette année.",
-            euros(pleine), euros(retenue), euros(o.plafond_annuel.decimal()), euros(deja)
+            euros(Montant::du_decimal(pleine)),
+            euros(Montant::du_decimal(retenue)),
+            euros(o.plafond_annuel),
+            euros(Montant::du_decimal(deja))
         ));
     }
     if brut - retenue < assiette_minimale {
@@ -964,7 +967,9 @@ pub(crate) fn abattement_dfs(o: &DfsDuSalarie, montants: &[Montant], brut: Monta
         avis.push(format!(
             "Déduction forfaitaire spécifique ramenée de {} à {} : l'assiette abattue ne descend pas sous le SMIC du \
 contrat, {} (CSS R. 242-1, al. 6 ; arrêté du 4 septembre 2025, art. 9, I, dernier alinéa).",
-            euros(retenue), euros(plancher), euros(assiette_minimale)
+            euros(Montant::du_decimal(retenue)),
+            euros(Montant::du_decimal(plancher)),
+            euros(Montant::du_decimal(assiette_minimale))
         ));
         retenue = plancher;
     }

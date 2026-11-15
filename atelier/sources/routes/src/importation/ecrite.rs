@@ -133,7 +133,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         "CASC-SVP : {} DSN déposée(s) depuis janvier 2025 ({}) ne portent peut-être pas la cotisation CASC-SVP -- un logiciel qui n'était pas paramétré l'a omise. Si Audiens ne l'a pas encaissée, {} sont à régulariser : Exports > « regularisation-casc-svp » fait le dossier (virements, courriels, liste nominative).",
         par_mois.len(),
         periode,
-        socle::texte::euros(total)
+        socle::texte::euros(socle::grandeurs::Montant::du_decimal(total))
     )))
 }
 

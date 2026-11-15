@@ -49,6 +49,7 @@ use documents::{PieceDuMois, SorteDePieceProduite};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
+use socle::grandeurs::Montant;
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins. `pour` : celui a qui il s'adresse, tel que
 /// l'envoyeur le retrouve apres l'envoi, du type de ce qu'il est (un salarie : `IdSalarie`) ; l'envoi ne le lit pas.
@@ -177,7 +178,7 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
         } else {
             volume.join(" et ")
         };
-        let mut ligne = format!("  - {} : {}, {} brut", periode, quoi, socle::texte::euros(p.brut.decimal()));
+        let mut ligne = format!("  - {} : {}, {} brut", periode, quoi, socle::texte::euros(p.brut));
         if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = e.place_du_mois()? {
             // Septembre 2026 : France Travail n'a edite AUCUNE attestation pour le contrat du 29/09 au 16/10 -- elle
             // vient a la fin du contrat. Le salarie declare quand meme ses jours du mois.
@@ -324,7 +325,12 @@ mod heures_ecrites {
 pub fn ce_qui_a_change(faits: &[String], ancien: Option<&ResumeDePaie>, nouveau: Option<&ResumeDePaie>) -> Vec<String> {
     let mut out: Vec<String> = faits.iter().map(|f| format!("  - {}", f)).collect();
     if let (Some(a), Some(n)) = (ancien, nouveau) {
-        let (brut_a, brut_n, net_a, net_n) = (socle::texte::euros(a.brut), socle::texte::euros(n.brut), socle::texte::euros(a.net), socle::texte::euros(n.net));
+        let (brut_a, brut_n, net_a, net_n) = (
+            socle::texte::euros(Montant::du_decimal(a.brut)),
+            socle::texte::euros(Montant::du_decimal(n.brut)),
+            socle::texte::euros(Montant::du_decimal(a.net)),
+            socle::texte::euros(Montant::du_decimal(n.net)),
+        );
         if brut_a != brut_n {
             out.push(format!("  - Salaire brut : {} → {}", brut_a, brut_n));
         }

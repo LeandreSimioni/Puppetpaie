@@ -7,6 +7,7 @@ use droit::fiche::Lue as _;
 use socle::echec::R;
 use socle::num::{add, mul, sub, Decimal};
 use socle::texte::euros;
+use socle::grandeurs::Montant;
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
 pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::TaxeSurLesSalaires;
@@ -87,8 +88,8 @@ pub fn regime_taxe_sur_les_salaires(ent: &droit::fiche::ChampsEntreprise, plafon
     let les_plafonds = match plafonds {
         Some((services, total)) => format!(
             "les deux plafonds de la franchise en base de TVA, {} de spectacles vendus et {} de recettes en tout",
-            euros(services),
-            euros(total)
+            euros(Montant::du_decimal(services)),
+            euros(Montant::du_decimal(total))
         ),
         None => "les plafonds de la franchise en base de TVA".to_string(),
     };
@@ -278,8 +279,8 @@ subventions n'y entrent pas.\n{t} : les recettes en tout, ces ventes plus les su
 Ces montants sont dans le compte de résultat {avant} (ses produits), ou chez votre comptable. Code général des impôts, \
 art. 231 et 293 B{depuis}.",
             avant = avant,
-            s = euros(services),
-            t = euros(total),
+            s = euros(Montant::du_decimal(services)),
+            t = euros(Montant::du_decimal(total)),
             annee = annee,
             depuis = depuis,
         ),
@@ -287,14 +288,14 @@ art. 231 et 293 B{depuis}.",
             "Sous les deux plafonds en {} : au plus {} de spectacles vendus (cessions, billetterie, ateliers…) et au plus \
 {} de recettes en tout, subventions comprises",
             avant,
-            euros(services),
-            euros(total)
+            euros(Montant::du_decimal(services)),
+            euros(Montant::du_decimal(total))
         ),
         dessus: format!(
             "Au-dessus d'un plafond en {} : plus de {} de spectacles vendus, ou plus de {} de recettes en tout",
             avant,
-            euros(services),
-            euros(total)
+            euros(Montant::du_decimal(services)),
+            euros(Montant::du_decimal(total))
         ),
         plafonds: Some((services, total)),
     })

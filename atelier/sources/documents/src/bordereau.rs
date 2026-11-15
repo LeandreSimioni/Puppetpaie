@@ -37,6 +37,7 @@
 use droit::organismes::{CodeCtp, FormatDeCtp, QualifiantDAssiette};
 use socle::date::Jour;
 use socle::fichiers::{dossier_du_code, signature};
+use socle::grandeurs::Montant;
 use socle::echec::{refus, R};
 use socle::num::{div, mul, Decimal};
 use socle::texte::euros;
@@ -435,7 +436,7 @@ pub fn credit(dest: Destinataire, _nom: &str, reste: Decimal, deduit: Decimal) -
 rembourse ou le déduit d'une prochaine échéance.";
     let (titre, que_faire, source) = match dest {
         Destinataire::Urssaf if reste <= Decimal::ZERO => (
-            format!("Trop versé déduit : {}", euros(deduit)),
+            format!("Trop versé déduit : {}", euros(Montant::du_decimal(deduit))),
             "Ce qui a été payé en trop sur un mois corrigé est retiré de ce versement, dans la limite du bordereau du \
 mois. Rien d'autre à faire ; si la somme est importante, le guide Urssaf conseille de l'expliquer à votre Urssaf par \
 le service en ligne « échange avec mon Urssaf »."
@@ -444,20 +445,20 @@ le service en ligne « échange avec mon Urssaf »."
         ),
         Destinataire::Urssaf => (
             if deduit > Decimal::ZERO {
-                format!("Trop versé : {} déduits, {} à réclamer", euros(deduit), euros(reste))
+                format!("Trop versé : {} déduits, {} à réclamer", euros(Montant::du_decimal(deduit)), euros(Montant::du_decimal(reste)))
             } else {
-                format!("Trop versé : {} à réclamer", euros(reste))
+                format!("Trop versé : {} à réclamer", euros(Montant::du_decimal(reste)))
             },
             format!(
                 "Le trop versé dépasse le bordereau de ce mois : {}{} ne peuvent pas en être déduits. Contactez votre \
 Urssaf (service en ligne « échange avec mon Urssaf ») pour qu'elle vous les rende ou les impute.",
                 if deduit > Decimal::ZERO { "ce versement tombe à zéro, et les " } else { "les " },
-                euros(reste)
+                euros(Montant::du_decimal(reste))
             ),
             SOURCE_URSSAF,
         ),
         Destinataire::Complementaire => (
-            format!("Trop versé : {}", euros(reste)),
+            format!("Trop versé : {}", euros(Montant::du_decimal(reste))),
             format!(
                 "Rien à payer ce mois-ci : les corrections font plus de cotisations en moins que le mois n'en doit. Le \
 versement est déclaré à zéro, le crédit dans les composants de versement. {}",
@@ -466,7 +467,7 @@ versement est déclaré à zéro, le crédit dans les composants de versement. {
             SOURCE_COMPLEMENTAIRE,
         ),
         Destinataire::Dgfip => (
-            format!("Prélèvement à la source en trop : {}", euros(reste)),
+            format!("Prélèvement à la source en trop : {}", euros(Montant::du_decimal(reste))),
             "Rien à reverser ce mois-ci : les régularisations rendent plus que le mois ne retient. Demandez le \
 remboursement au service des impôts des entreprises, par la messagerie sécurisée de votre espace professionnel sur \
 impots.gouv.fr."
@@ -474,7 +475,7 @@ impots.gouv.fr."
             SOURCE_DGFIP,
         ),
         Destinataire::Autre => (
-            format!("Trop versé : {}", euros(reste)),
+            format!("Trop versé : {}", euros(Montant::du_decimal(reste))),
             format!(
                 "Rien à payer ce mois-ci : les corrections font plus de cotisations en moins que le mois n'en doit. Un \
 versement ne peut pas être négatif : il est déclaré à zéro, et le crédit reste dans les cotisations des salariés. {}",

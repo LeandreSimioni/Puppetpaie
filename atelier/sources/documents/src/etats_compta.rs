@@ -1365,8 +1365,8 @@ fn provision_d_une_annee_importee(
                 avert.push(format!(
                     "{} : la rémunération de la période que sa fiche recopie ({}) n'est pas la somme des bruts de ses bulletins repris ({}) ; la provision prend les bulletins.",
                     ctx.nomme(&cle),
-                    euros(cpt.remuneration_periode.decimal()),
-                    euros(periode.decimal())
+                    euros(cpt.remuneration_periode),
+                    euros(periode)
                 ));
             }
             cpt.remuneration_periode = periode;
@@ -1497,12 +1497,12 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         pc.conges.libelle,
         pc.dette.compte,
         pc.dette.libelle,
-        euros(indemnites),
+        euros(Montant::du_decimal(indemnites)),
         pc.charges.compte,
         pc.charges.libelle,
         pc.dette_charges.compte,
         pc.dette_charges.libelle,
-        euros(charges_dites)
+        euros(Montant::du_decimal(charges_dites))
     ));
     let mut t = Tableau::nouveau(EtatDExport::ProvisionConges, format!("Provision pour congés payés au {}", jj(&fin.iso())), p.libelle.clone());
     t.mois = vec![m];
@@ -1655,15 +1655,26 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     let franchise = ts.franchise.decimal();
     let limite = ts.decote_jusqu_a.decimal();
-    let mut etapes = vec![format!("taxe brute {} × {} % taxés (CGI art. 231, 1) = {}", euros(brute), socle::texte::virgule(pct_a), euros(due))];
+    let mut etapes = vec![format!(
+        "taxe brute {} × {} % taxés (CGI art. 231, 1) = {}",
+        euros(Montant::du_decimal(brute)),
+        socle::texte::virgule(pct_a),
+        euros(Montant::du_decimal(due))
+    )];
     let mut net;
     if due <= franchise {
         net = zero;
-        etapes.push(format!("franchise : {} n'excède pas {} — rien à payer", euros(due), euros(franchise)));
+        etapes.push(format!("franchise : {} n'excède pas {} — rien à payer", euros(Montant::du_decimal(due)), euros(ts.franchise)));
     } else if due <= limite {
         let decote = quant(div(mul(sub(limite, due), Decimal::from(3)), Decimal::from(4)), 0);
         net = sub(due, decote);
-        etapes.push(format!("décote : ({} − {}) × 3/4 = {}, reste {}", euros(limite), euros(due), euros(decote), euros(net)));
+        etapes.push(format!(
+            "décote : ({} − {}) × 3/4 = {}, reste {}",
+            euros(ts.decote_jusqu_a),
+            euros(Montant::du_decimal(due)),
+            euros(Montant::du_decimal(decote)),
+            euros(Montant::du_decimal(net))
+        ));
     } else {
         net = due;
     }
@@ -1671,10 +1682,10 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let ab = ts.abattement_1679a.decimal();
         let reste = sub(net, ab);
         let reste = if reste > zero { reste } else { zero };
-        etapes.push(format!("abattement des associations (art. 1679 A) : {}, reste {}", euros(ab), euros(reste)));
+        etapes.push(format!("abattement des associations (art. 1679 A) : {}, reste {}", euros(ts.abattement_1679a), euros(Montant::du_decimal(reste))));
         net = reste;
     }
-    etapes.push(format!("taxe nette due : {}", euros(net)));
+    etapes.push(format!("taxe nette due : {}", euros(Montant::du_decimal(net))));
     avert.push(format!("Calcul {} : {}.", annee, etapes.join(" ; ")));
     if net.is_zero() {
         avert.push("Rien à payer : pas de relevé 2501-SD ni de déclaration 2502-SD à déposer (franchise ou abattement).".to_string());
@@ -1698,8 +1709,8 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         C::Brut.colonne(),
         C::BaseDeLaTaxe.colonne(),
         C::TauxNormal.colonne(),
-        C::MajorationUn.titree(format!("+4,25 % au-delà de {}", euros(ts.seuil_1.decimal()))),
-        C::MajorationDeux.titree(format!("+9,35 % au-delà de {}", euros(ts.seuil_2.decimal()))),
+        C::MajorationUn.titree(format!("+4,25 % au-delà de {}", euros(ts.seuil_1))),
+        C::MajorationDeux.titree(format!("+9,35 % au-delà de {}", euros(ts.seuil_2))),
         C::Taxe.colonne(),
     ];
     t.sources = vec!["CGI art. 231 et 1679 A ; notices 2501-SD et 2502-SD de la DGFiP (seuils, franchise, décote, abattement de l'année)".to_string()];

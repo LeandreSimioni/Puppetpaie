@@ -444,7 +444,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
                 Classe::Illisible,
                 format!(
                     "Découpage au 31 mars incohérent pour {} : {} répartis pour un brut de {}.",
-                    qui, socle::texte::euros(total.decimal()), socle::texte::euros(paie.brut.decimal())
+                    qui, socle::texte::euros(total), socle::texte::euros(paie.brut)
                 ),
             ));
         }

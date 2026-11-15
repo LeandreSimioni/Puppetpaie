@@ -1120,7 +1120,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     for pr in e.primes.iter().flatten() {
         let montant = Chiffre::Nombre(pr.montant.clone()).court()?;
         let Some(rubrique) = pr.rubrique.clone() else {
-            return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(montant))));
+            return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(Montant::du_decimal(montant)))));
         };
         lignes.push(LignePaie::composee(rubrique, Nombre(Decimal::ONE), MontantUnitaire::du_decimal(montant)));
     }
@@ -1181,9 +1181,9 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             qui(ctx, e),
             virgule(pourcentage),
             pa.annees.nombre_d_ans_revolus()?,
-            euros(base_conv),
+            euros(Montant::du_decimal(base_conv)),
             proratise,
-            euros(montant),
+            euros(Montant::du_decimal(montant)),
             pa.article
         )));
         // Ce que les suspensions ont retire des annees de presence se dit avec la prime.

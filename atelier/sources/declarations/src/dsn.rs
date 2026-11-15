@@ -1061,8 +1061,8 @@ fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) 
 ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans deviner. Rien n'est écrit.",
             l.id,
             // La phrase cite le montant : sa porte.
-            socle::texte::euros(l.montant_pat.decimal()),
-            socle::texte::euros(base.decimal())
+            socle::texte::euros(l.montant_pat),
+            socle::texte::euros(base)
         ));
     }
     Ok((sans, Some((l.montant_pat - sans, cet_pat))))
@@ -3552,7 +3552,7 @@ n'a aucun CTP des permanents. Le bordereau Urssaf serait faux : un \
 permanent relève du régime général (CTP 100 et suivants) et son assurance chômage est recouvrée par l'Urssaf, \
 contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le corrige. Rien n'est écrit.",
             mois,
-            socle::texte::euros(brut_permanent)
+            socle::texte::euros(Montant::du_decimal(brut_permanent))
         ));
     }
     for ctp in ctps {
@@ -3683,7 +3683,7 @@ fn lignes_regularisees(
                         mois_o,
                         code,
                         qualifiant,
-                        socle::texte::euros(-v)
+                        socle::texte::euros(Montant::du_decimal(-v))
                     ),
                     "reduction_generale.dsn.ctp_regularisation",
                 )
@@ -5152,8 +5152,8 @@ certificat de conformite du depot precedent.",
             "Les cotisations 059 du mois ({}, régularisations comprises) et les composants de versement que le \
 nominatif rattache à une adhésion ({}) ne font pas la même somme : une base de prévoyance n'est pas rattachée à son \
 affiliation (S21.G00.78.005). Rien n'est écrit.",
-            socle::texte::euros(somme_059),
-            socle::texte::euros(somme_composants)
+            socle::texte::euros(Montant::du_decimal(somme_059)),
+            socle::texte::euros(Montant::du_decimal(somme_composants))
         ));
     }
     if let Some(c) = composants.iter().find(|c| !places_oc.iter().any(|(_, v)| v.siret == c.organisme)) {

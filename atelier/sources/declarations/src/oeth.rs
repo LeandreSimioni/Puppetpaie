@@ -90,7 +90,7 @@ impl Declaration {
     /// `Declaration.resume` : la phrase que `produire` dit au mois d'avril.
     pub fn resume(&self) -> String {
         if let Some(accord) = &self.accord {
-            let non: String = self.non_realisees().iter().map(|m| format!(", {} de dépenses non réalisées (CTP 740)", euros(*m))).collect();
+            let non: String = self.non_realisees().iter().map(|m| format!(", {} de dépenses non réalisées (CTP 740)", euros(Montant::du_decimal(*m)))).collect();
             return format!("OETH {} : accord agréé {}{}.", self.millesime, accord, non);
         }
         format!(
@@ -101,9 +101,9 @@ impl Declaration {
             virgule(self.beneficiaires),
             virgule(self.manquants),
             self.coefficient,
-            euros(self.smic.decimal()),
-            euros(self.brute),
-            euros(self.nette)
+            euros(Montant::du_decimal(self.smic.decimal())),
+            euros(Montant::du_decimal(self.brute)),
+            euros(Montant::du_decimal(self.nette))
         )
     }
 

@@ -213,7 +213,7 @@ pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[RangDansLeMois], cible: 
     if depart <= Decimal::ZERO {
         return Err(refus(format!(
             "Cet engagement paie {} : il n'y a pas de taux à faire varier. Poser d'abord une quantité et un taux, puis viser le total.",
-            socle::texte::euros(depart)
+            socle::texte::euros(Montant::du_decimal(depart))
         )));
     }
     let rang_essai = |atteint: Decimal| ((atteint - vise).abs(), atteint > vise);

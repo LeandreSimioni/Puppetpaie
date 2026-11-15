@@ -17,7 +17,7 @@ use std::path::Path;
 
 use rust_decimal::RoundingStrategy;
 use serde::Serialize;
-use socle::grandeurs::{Cachets, Heures, Jours};
+use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 
 use droit::contexte::Contexte;
 use socle::date::{Jour, PeriodeOuverte};
@@ -400,7 +400,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         if let Some(plafond) = plafond_mensuel(*m)? {
             for (_, nom, b) in &mois_sal {
                 if *b > plafond {
-                    avert.push(format!("{}, {} : brut {} au-dessus du plafond mensuel -- la T1 n'est plus égale au brut, base à recalculer.", m, nom, euros(*b)));
+                    avert.push(format!("{}, {} : brut {} au-dessus du plafond mensuel -- la T1 n'est plus égale au brut, base à recalculer.", m, nom, euros(Montant::du_decimal(*b))));
                 }
             }
         }
@@ -456,10 +456,10 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     for a in &annees {
         for r in &par_mois {
             if annee_de(&r.mois) == a.annee {
-                tableau.push(format!("| {} | {} | {} |", r.libelle, euros(r.masse), euros(r.cotisation)));
+                tableau.push(format!("| {} | {} | {} |", r.libelle, euros(Montant::du_decimal(r.masse)), euros(Montant::du_decimal(r.cotisation))));
             }
         }
-        tableau.push(format!("| **{}, à {} %** | **{}** | **{}** |", a.annee, virgule(a.taux), euros(a.masse), euros(a.cotisation)));
+        tableau.push(format!("| **{}, à {} %** | **{}** | **{}** |", a.annee, virgule(a.taux), euros(Montant::du_decimal(a.masse)), euros(Montant::du_decimal(a.cotisation))));
     }
     let virements: Vec<String> = annees
         .iter()
@@ -469,7 +469,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 Some(j) => j,
                 None => "__/__/____".to_string(),
             };
-            format!("- le {}, {}, libellé « {} » ;", date, euros(a.cotisation), a.libelle_virement)
+            format!("- le {}, {}, libellé « {} » ;", date, euros(Montant::du_decimal(a.cotisation)), a.libelle_virement)
         })
         .collect();
     let beneficiaire = base.reglement.beneficiaire.clone();
@@ -496,7 +496,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         base.page
     )];
     for a in &annees {
-        a_faire.push(format!("    {} : {}, libellé « {} »", a.annee, euros(a.cotisation), a.libelle_virement));
+        a_faire.push(format!("    {} : {}, libellé « {} »", a.annee, euros(Montant::du_decimal(a.cotisation)), a.libelle_virement));
     }
     a_faire.push(format!("Reporter la date de chaque virement dans le courriel à Audiens, puis l'envoyer à {} (objet : {}).", courriel_audiens.a, courriel_audiens.objet));
     a_faire.push(format!(
@@ -541,7 +541,7 @@ fn deja_faites(ctx: &Contexte) -> R<String> {
     let d = declarations::casc::lue(ctx).map_err(|m| m.reclasser(Classe::Illisible))?;
     Ok(d.iter()
         .flat_map(|d| &d.regularisations)
-        .map(|x| format!("{} ({}, viré le {})", x.annee, euros(x.montant), x.vire_le.jj_mm_aaaa()))
+        .map(|x| format!("{} ({}, viré le {})", x.annee, euros(Montant::du_decimal(x.montant)), x.vire_le.jj_mm_aaaa()))
         .collect::<Vec<_>>()
         .join(", "))
 }
@@ -585,7 +585,7 @@ pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<std::path::PathBuf> {
     }
     let p = dossier.join("CASC-SVP_a-faire.txt");
     let verifier = if r.avertissements.is_empty() { String::new() } else { format!("\nÀ vérifier :\n{}", r.avertissements.join("\n")) };
-    std::fs::write(&p, format!("Régularisation CASC-SVP — {} — total {}\n\n{}\n{}\n", r.periode, euros(r.total), r.a_faire.join("\n"), verifier)).map_err(|e| io(&p, e))?;
+    std::fs::write(&p, format!("Régularisation CASC-SVP — {} — total {}\n\n{}\n{}\n", r.periode, euros(Montant::du_decimal(r.total)), r.a_faire.join("\n"), verifier)).map_err(|e| io(&p, e))?;
     fichiers.insert(0, p);
     r.fichiers = fichiers;
     r.dossier = Some(dossier.clone());

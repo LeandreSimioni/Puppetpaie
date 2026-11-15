@@ -1244,27 +1244,27 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         .iter()
         .map(|l| {
             let taux = match l.taux {
-                Some(t) => format!("{} à {}", l.rubrique, socle::texte::euros(t)),
+                Some(t) => format!("{} à {}", l.rubrique, socle::texte::euros(Montant::du_decimal(t))),
                 None => l.rubrique.to_string(),
             };
             match l.taux_avant {
-                Some(a) => format!("{} au lieu de {}", taux, socle::texte::euros(a)),
+                Some(a) => format!("{} au lieu de {}", taux, socle::texte::euros(Montant::du_decimal(a))),
                 None => taux,
             }
         })
         .collect();
     if let Some(Some(s)) = &change.salaire_mensuel {
-        faut.push(format!("salaire du mois à {}", socle::texte::euros(s.decimal()?)));
+        faut.push(format!("salaire du mois à {}", socle::texte::euros(Montant::du_decimal(s.decimal()?))));
     }
     let avec = if faut.is_empty() { String::new() } else { format!(" ; {}", faut.join(", ")) };
     let ecart = atteint - vise;
     let pres = if ecart.is_zero() {
         " au centime près".to_string()
     } else {
-        format!(" ({}{} : un taux se paie au centime)", if ecart > Decimal::ZERO { "+" } else { "" }, socle::texte::euros(ecart))
+        format!(" ({}{} : un taux se paie au centime)", if ecart > Decimal::ZERO { "+" } else { "" }, socle::texte::euros(Montant::du_decimal(ecart)))
     };
     Ok(Ajuste {
-        phrase: format!("{} visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(vise), socle::texte::euros(atteint), pres, avec),
+        phrase: format!("{} visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(Montant::du_decimal(vise)), socle::texte::euros(Montant::du_decimal(atteint)), pres, avec),
         cible: c.cible,
         vise,
         atteint,
@@ -1699,7 +1699,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             let cadre = if droit::bareme::est_cadre(s) { " (cadre)" } else { "" };
             m.push(format!("{}{}", emploi.to_lowercase(), cadre));
         }
-        m.push(format!("brut {}", socle::texte::euros(p.brut.decimal())));
+        m.push(format!("brut {}", socle::texte::euros(p.brut)));
         m.join(" · ")
     };
     // LA LIGNE REPLIEE DU CONTRAT : ses bornes, son numero, et ce qu'il fait par rapport au mois (en cours depuis un
@@ -2055,7 +2055,7 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
             }
         }
         if let Some(tarif) = tarif {
-            let dit = format!("{} à {}", l.designation.to_lowercase(), socle::texte::euros(tarif));
+            let dit = format!("{} à {}", l.designation.to_lowercase(), socle::texte::euros(Montant::du_decimal(tarif)));
             if !dits.contains(&dit) {
                 dits.push(dit);
             }
@@ -2221,7 +2221,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
             let trois = Trois::de(vs);
             ParSalarie {
                 engagements_dit: socle::ecran::compte(vs.len(), "engagement", "engagements"),
-                survol_dit: format!("coût employeur {} · brut {}", socle::texte::euros(trois.cout_employeur), socle::texte::euros(trois.brut)),
+                survol_dit: format!("coût employeur {} · brut {}", socle::texte::euros(Montant::du_decimal(trois.cout_employeur)), socle::texte::euros(Montant::du_decimal(trois.brut))),
                 salarie: vs[0].salarie.clone(),
                 nom: nom.clone(),
                 trois,

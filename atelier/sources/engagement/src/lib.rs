@@ -1355,11 +1355,15 @@ const REDUCTION_LOGE: socle::grandeurs::Coefficient = socle::grandeurs::Coeffici
 fn aide_de_case(case: CaseDeFrais, rubrique: &CodeDeRubrique, limites: Option<(Decimal, Decimal)>) -> Option<String> {
     let eur = socle::texte::euros;
     match (case, limites) {
-        (PARIS, Some((h, b))) if *rubrique == NUITEE => Some(format!("Paris ou petite couronne : la nuitée est exonérée jusqu'à {} au lieu de {}.", eur(h), eur(b))),
+        (PARIS, Some((h, b))) if *rubrique == NUITEE => Some(format!(
+            "Paris ou petite couronne : la nuitée est exonérée jusqu'à {} au lieu de {}.",
+            eur(Montant::du_decimal(h)),
+            eur(Montant::du_decimal(b))
+        )),
         (RESTAURANT, Some((h, b))) => Some(format!(
             "Le salarié ne pouvait pas rentrer et a dû manger au restaurant : le repas est exonéré jusqu'à {} au lieu de {}.",
-            eur(h),
-            eur(b)
+            eur(Montant::du_decimal(h)),
+            eur(Montant::du_decimal(b))
         )),
         (JUSTIFICATIF, _) => Some("La compagnie garde la facture : tout le montant est exonéré.".to_string()),
         (LOGE, _) => Some("La compagnie a payé l'hôtel : la limite du jour est réduite de 65 %.".to_string()),
@@ -1444,7 +1448,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                     "{} : le barème {} ne porte pas la limite d'exonération de la ligne à {}. Rien n'est calculé.",
                     qui,
                     jour.annee(),
-                    socle::texte::euros(taux)
+                    socle::texte::euros(Montant::du_decimal(taux))
                 ),
                 cle,
             )
@@ -1520,9 +1524,9 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                     "{} : {} de {} au-dessus de la limite de {} : {} par {} entrent dans le brut. Cocher {}« justificatif conservé » si la compagnie garde la facture.",
                     qui,
                     quoi,
-                    socle::texte::euros(taux),
-                    socle::texte::euros(limite),
-                    socle::texte::euros(taux - limite),
+                    socle::texte::euros(Montant::du_decimal(taux)),
+                    socle::texte::euros(Montant::du_decimal(limite)),
+                    socle::texte::euros(Montant::du_decimal(taux - limite)),
                     unite,
                     case
                 ),
@@ -1675,8 +1679,8 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
                         qui,
                         lieu,
                         j0.jj_mm_aaaa(),
-                        socle::texte::euros(*lim),
-                        socle::texte::euros(ecart)
+                        socle::texte::euros(Montant::du_decimal(*lim)),
+                        socle::texte::euros(Montant::du_decimal(ecart))
                     ),
                 });
             }

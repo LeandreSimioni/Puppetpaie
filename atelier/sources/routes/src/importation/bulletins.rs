@@ -1245,7 +1245,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 match &cl.aem {
                     Some(a) => {
                         if let Some(s) = somme.filter(|s| *s != brut) {
-                            phrases.push(format!("écart noté : l'{} dit {} de brut, les contrats {}", cl.nom(), euros(brut.decimal()), euros(s.decimal())));
+                            phrases.push(format!("écart noté : l'{} dit {} de brut, les contrats {}", cl.nom(), euros(brut), euros(s)));
                         }
                         // Les jours, l'AEM ne les dit que si sa colonne se lit : seuls ceux qu'elle dit se comparent.
                         if Some(a.cachets()) != cachets || a.jours.is_some_and(|j| Some(j) != jours) {
@@ -1263,7 +1263,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                         if let Some(s) = somme {
                             // Le certificat ecrit son brut a l'euro (`arrondi_euro`, son ecriture) : la somme s'y compare ainsi.
                             if Decimal::from(documents::conges_spectacles::arrondi_euro(s.decimal())?) != brut.decimal() {
-                                phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut.decimal()), euros(s.decimal())));
+                                phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut), euros(s)));
                             }
                         }
                         // Le nombre du certificat dit des jours ou des cachets (sa case n'a qu'une colonne) : il se compare
@@ -1313,8 +1313,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     (_, Some(n)) => format!("{} jour(s)", socle::grandeurs::ecrit::sans_zero::dit(n)),
                     _ => "ni cachet ni jour".to_string(),
                 };
-                let brut_reste: String = l.contrat.brut.map(|b| format!(", {} de brut", euros(b))).into_iter().collect();
-                Ok((l, format!("{}{} : ce que dit le certificat moins ce que disent les autres pièces ; son brut, {}, est arrondi à l'euro", quoi, brut_reste, euros(brut.decimal()))))
+                let brut_reste: String = l.contrat.brut.map(|b| format!(", {} de brut", euros(Montant::du_decimal(b)))).into_iter().collect();
+                Ok((l, format!("{}{} : ce que dit le certificat moins ce que disent les autres pièces ; son brut, {}, est arrondi à l'euro", quoi, brut_reste, euros(brut))))
             }
             (None, None) => {
                 let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_ref())?;
@@ -1329,11 +1329,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Ok((ligne, quoi)) => {
                 infos.contrat = Some(EtatContrat::Nouveau);
                 let raison = if est_aem {
-                    format!("{} {} : contrat attesté ajouté ({}, {} de brut)", nom, du_au, quoi, euros(brut.decimal()))
+                    format!("{} {} : contrat attesté ajouté ({}, {} de brut)", nom, du_au, quoi, euros(brut))
                 } else if est_reste {
                     format!("certificat Congés Spectacles {} contrat attesté ajouté ({}) ; les heures, que le certificat ne porte pas, n'y sont pas", du_au, quoi)
                 } else {
-                    format!("certificat Congés Spectacles {} : contrat attesté ajouté ({}, {} de brut arrondi à l'euro) ; les heures, que le certificat ne porte pas, n'y sont pas", du_au, quoi, euros(brut.decimal()))
+                    format!("certificat Congés Spectacles {} : contrat attesté ajouté ({}, {} de brut arrondi à l'euro) ; les heures, que le certificat ne porte pas, n'y sont pas", du_au, quoi, euros(brut))
                 };
                 let bloc = if est_aem { BlocDImport::AemPdf } else { BlocDImport::Certificats };
                 let raison = std::iter::once(raison).chain(registre.ajouter(nir, ligne, dates, cl.piece(), bloc)?).collect::<Vec<_>>().join(" ; ");

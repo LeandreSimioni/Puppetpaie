@@ -444,8 +444,8 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
                 "{}{} — garantie ce mois {}, moins {} d'indemnités journalières",
                 dm::phrase(r),
                 deja_dit,
-                socle::texte::euros(garantie),
-                socle::texte::euros(deduit)
+                socle::texte::euros(Montant::du_decimal(garantie)),
+                socle::texte::euros(Montant::du_decimal(deduit))
             )
         });
         match t {
@@ -660,7 +660,7 @@ fn montant_de_principe(bruts: &[Montant], smic: MontantUnitaire, p: &Principe) -
 /// annuel de la Securite sociale (`pass`), selon les regles `principe_accident` (voir `ij_de_principe`).
 fn montants_d_accident(brut: Montant, pass: Montant, p: &PrincipeAccident) -> R<(MontantUnitaire, MontantUnitaire)> {
     let journalier = brut.par_jour(p.diviseur).ok_or_else(diviseur_nul)?;
-    let base = journalier.min(pass.fois_taux(p.plafond_pass).au_centime().d_un_jour());
+    let base = journalier.min(pass.fois_taux(p.plafond_pass).au_centime().pour_une_unite());
     let gain_net = journalier - journalier.fois_taux(p.taux_forfaitaire);
     let au_taux = |fraction: Coefficient| base.fois_coefficient(fraction).min(gain_net).au_centime();
     Ok((au_taux(p.fraction), au_taux(p.fraction_majoree)))
@@ -839,16 +839,16 @@ atteinte. Rien n'est calculé ; signaler ce mois au développeur.",
     let (convention, phrase) = match cible {
         Some(c) => {
             let a = resoudre(c, &mut recu, &mut calculs)?.ok_or_else(echec)?;
-            (a, format!("garantit {} net ce mois", socle::texte::euros(c)))
+            (a, format!("garantit {} net ce mois", socle::texte::euros(Montant::du_decimal(c))))
         }
         None => {
             let a = complement_brut + plancher;
             let r = recu(a, &mut calculs)?;
             if r > net0 {
                 let a = resoudre(net0, &mut recu, &mut calculs)?.ok_or_else(echec)?;
-                (a, format!("ne dépasse pas le net qu'il aurait perçu, {}", socle::texte::euros(net0)))
+                (a, format!("ne dépasse pas le net qu'il aurait perçu, {}", socle::texte::euros(Montant::du_decimal(net0))))
             } else {
-                (a, format!("garantit {} brut, sous le net qu'il aurait perçu", socle::texte::euros(complement_brut)))
+                (a, format!("garantit {} brut, sous le net qu'il aurait perçu", socle::texte::euros(Montant::du_decimal(complement_brut))))
             }
         }
     };

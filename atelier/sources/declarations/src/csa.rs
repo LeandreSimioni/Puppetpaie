@@ -41,6 +41,7 @@ use droit::contexte::{Contexte, FichierEffectifs, TypeDeParametreNeores};
 use droit::cotisation_etablissement::CotisationDEtablissement;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
+use socle::grandeurs::Montant;
 use socle::mois::Annee;
 use socle::num::{add, div, mul, Decimal};
 
@@ -94,14 +95,14 @@ code 080 à 0.00.",
                 "Contribution supplémentaire à l'apprentissage {} : {} (alternants {} % de l'effectif, taux {} % sur \
 {} d'assiette de la taxe d'apprentissage{}).",
                 self.millesime,
-                euros(self.montant),
+                euros(Montant::du_decimal(self.montant)),
                 virgule(self.quotient),
                 virgule(self.taux),
-                euros(add(self.assiette, self.assiette_alsace_moselle)),
+                euros(Montant::du_decimal(add(self.assiette, self.assiette_alsace_moselle))),
                 if self.assiette_alsace_moselle.is_zero() {
                     String::new()
                 } else {
-                    format!(", dont {} en Alsace-Moselle à 52 % du taux", euros(self.assiette_alsace_moselle))
+                    format!(", dont {} en Alsace-Moselle à 52 % du taux", euros(Montant::du_decimal(self.assiette_alsace_moselle)))
                 }
             )
         }

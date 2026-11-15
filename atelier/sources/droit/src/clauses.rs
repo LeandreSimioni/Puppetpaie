@@ -888,7 +888,16 @@ pub fn indemnite_licenciement(
     let mut hors_primes = false;
     let mut pourquoi = None;
     let sortie = |lectures: Vec<(String, P)>, article: String, hors_primes: bool, pourquoi: Option<String>, du: bool| -> R<Indemnite> {
-        let lectures = lectures.into_iter().map(|(n, v)| Ok((n, Montant::du_d28(v)?))).collect::<R<Vec<(String, Montant)>>>()?;
+        let lectures = lectures
+            .into_iter()
+            .map(|(n, v)| {
+                let c = v.au_centime()?;
+                match c.en_decimal() {
+                    Some(d) => Ok((n, Montant::du_decimal(d))),
+                    None => Err(socle::refus!("Le montant {} ne s'écrit pas au centime : le signaler au développeur.", c)),
+                }
+            })
+            .collect::<R<Vec<(String, Montant)>>>()?;
         let (bas, haut) = if du { (lectures.iter().map(|x| x.1).min(), lectures.iter().map(|x| x.1).max()) } else { (None, None) };
         Ok(Indemnite { releve: true, du, bas, haut, lectures, hors_primes, article: Some(article), pourquoi })
     };
@@ -899,7 +908,7 @@ pub fn indemnite_licenciement(
 
     // La convention commune d'abord ; ou, pour une convention qui distingue le motif, le bareme du motif.
     if anciennete >= sec.anciennete_minimale_mois {
-        let ref_ = reference()?.en_d28();
+        let ref_ = P::depuis(reference()?.decimal());
         let mut mois = match (&sec.par_motif, &sec.taux) {
             (Some(pm), _) => {
                 let choix = match pm.economique.as_ref().filter(|e| e.motifs.as_deref().is_some_and(dans)) {
@@ -973,7 +982,7 @@ pub fn indemnite_licenciement(
             let p = format!("{} demande {} mois d'anciennete", article, c.anciennete_minimale_mois);
             return sortie(Vec::new(), article, hors_primes, Some(p), false);
         }
-        let ref_ = reference()?.en_d28();
+        let ref_ = P::depuis(reference()?.decimal());
         lectures = Vec::new();
         for (n, bareme) in &c.lectures {
             let mut mois = bareme.mois(annees)?;
@@ -1041,10 +1050,12 @@ impl Retraite {
 /// `mois` de salaire de reference, en euros. Sans aucun mois, rien n'est du et la reference (R1234-4) ne se lit pas :
 /// sans paies precedentes elle refuserait.
 fn fois_la_reference(mois: P, reference: &mut dyn FnMut() -> R<Montant>) -> R<Montant> {
-    if mois <= P::ZERO {
-        return Montant::du_d28(mois);
+    let euros = if mois <= P::ZERO { mois } else { mois.mul(P::depuis(reference()?.decimal())) };
+    let c = euros.au_centime()?;
+    match c.en_decimal() {
+        Some(d) => Ok(Montant::du_decimal(d)),
+        None => Err(socle::refus!("Le montant {} ne s'écrit pas au centime : le signaler au développeur.", c)),
     }
-    Montant::du_d28(mois.mul(reference()?.en_d28()))
 }
 
 /// L'indemnite conventionnelle de mise a la retraite.

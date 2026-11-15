@@ -103,7 +103,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
             continue;
         }
         if l.salaire_de_base {
-            base = Some(format!("un salaire mensuel brut de {}", euros(l.taux.0)));
+            base = Some(format!("un salaire mensuel brut de {}", euros(socle::grandeurs::Montant::du_decimal(l.taux.0))));
         } else if l.montant.decimal() > Decimal::ZERO {
             morceaux.push(ligne_citee(l));
         }

@@ -358,7 +358,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                  art. L3141-28, due quelle que soit la cause de la rupture.",
                 qui,
                 arrondir_jours(solde),
-                euros(ind.retenu),
+                euros(Montant::du_decimal(ind.retenu)),
                 ind.regle
             )));
         } else if solde < Decimal::ZERO {
@@ -513,7 +513,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                      (L1234-5){}. L'article le veut « indemnité de congés payés comprise » : {}{}",
                     qui,
                     virgule(m),
-                    euros(mul(m, salaire)),
+                    euros(Montant::du_decimal(mul(m, salaire))),
                     if duree.dit.is_empty() { String::new() } else { format!(" -- {}", duree.dit) },
                     conges,
                     article
@@ -681,7 +681,7 @@ fn delai_de_prevenance(
         dit,
         fin.jj_mm_aaaa(),
         socle::grandeurs::ecrit::sans_zero::dit(jours),
-        euros(montant),
+        euros(Montant::du_decimal(montant)),
         conges,
         avantages
     )));
@@ -731,7 +731,7 @@ fn conges_non_effectues(
         "ces jours acquièrent {} jour(s) de congé (L3141-3), payés {} ({}, L3141-24), ajoutés à l'indemnité compensatrice de \
          congés payés.",
         virgule(arrondir_jours(jours)),
-        euros(ind.retenu),
+        euros(Montant::du_decimal(ind.retenu)),
         ind.regle
     ))
 }

@@ -278,10 +278,15 @@ pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
         // Des heures nulles n'ont pas de SMIC horaire.
         if let Some(horaire) = rg.smic_reference.par_heure(rg.heures) {
             // La phrase cite les trois nombres : sa porte.
-            return Ok(format!("{} ({} h à {})", euros(rg.smic_reference.decimal()), fmt_heures(rg.heures.decimal()), euros(horaire.decimal())));
+            return Ok(format!(
+                "{} ({} h à {})",
+                euros(rg.smic_reference),
+                fmt_heures(rg.heures.decimal()),
+                euros(Montant::du_decimal(horaire.decimal()))
+            ));
         }
     }
-    Ok(format!("{} ({} h à {})", euros(p.plafond.decimal()), fmt_heures(p.heures.decimal()), euros(p.smic.decimal())))
+    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures.decimal()), euros(Montant::du_decimal(p.smic.decimal()))))
 }
 
 /// (IDCC, libellé) de la convention d'un contrat, pour ce qui s'imprime : le libellé se lit au catalogue des conventions
@@ -455,7 +460,7 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
         rangs.push(("dont enseignement (droits seuls, pas le montant)", |c| Some(dit(c.enseignement)), " h"));
         rangs.push(("Heures retenues pour les 507 h", |c| c.heures_ouverture.map(dit), " h"));
     }
-    rangs.push(("Salaire brut", |c| Some(euros(c.brut)), ""));
+    rangs.push(("Salaire brut", |c| Some(euros(Montant::du_decimal(c.brut))), ""));
     let lignes = rangs
         .iter()
         .map(|(libelle, valeur, suffixe)| {
@@ -1085,7 +1090,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             " {} % (catégorie {} %, taux de l'année) — {} déduits",
             fmt_heures(d.taux.decimal()),
             d.categorie,
-            euros(d.montant.decimal())
+            euros(d.montant)
         ),
         None => " 0 %".to_string(),
     }));
@@ -1226,7 +1231,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             "Plafond Urssaf de la période : {}{}SMIC retenu pour la réduction générale : {}{}Règlement le {} \
              par virement.\n{}, convention collective IDCC {}. Conservez ce bulletin sans limitation \
              de durée.",
-            euros(j.plafond),
+            euros(Montant::du_decimal(j.plafond)),
             barre,
             smic_de_la_reduction(p)?,
             barre,

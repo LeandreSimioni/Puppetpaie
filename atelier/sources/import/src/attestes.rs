@@ -92,7 +92,7 @@ fn compteur<G: socle::grandeurs::Grandeur>(x: Option<G>, mot: &str) -> String {
 /// Des compteurs et un brut, en mots.
 pub fn en_mots(heures: Option<Heures>, cachets: Option<Cachets>, jours: Option<Jours>, brut: Option<Montant>) -> String {
     let brut = match brut {
-        Some(b) => format!("{} de brut", socle::texte::euros(b.decimal())),
+        Some(b) => format!("{} de brut", socle::texte::euros(b)),
         None => "brut illisible".to_string(),
     };
     format!("{}, {}, {}, {}", compteur(heures, "heure"), compteur(cachets, "cachet"), compteur(jours, "jour"), brut)
