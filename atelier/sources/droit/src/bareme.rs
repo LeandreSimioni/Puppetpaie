@@ -19,16 +19,11 @@ use socle::date::{Duree, EnMois, Jour};
 use socle::mois::Annee;
 use socle::echec::{Lieu, Echec, R};
 use socle::grandeurs::{courte, Coefficient, Taux};
-use socle::num::{add, court, div, mul, Decimal};
+use socle::num::{court, div, mul, Decimal};
 use rust_decimal::RoundingStrategy;
 use std::collections::BTreeMap;
 
 // ------------------------------------------------------------ les petits outils
-
-/// Un taux du bareme, a `n` decimales, au pair sur le demi, dans sa forme la plus courte (`socle::num::court`).
-fn rond(x: Decimal, n: u32) -> Decimal {
-    court(x.round_dp_with_strategy(n, RoundingStrategy::MidpointNearestEven))
-}
 
 /// Un nombre a deux decimales, au pair sur le demi, avec la virgule.
 fn deux_virgule(x: Decimal) -> String {
@@ -624,11 +619,12 @@ pub fn sante_hors_fiche(ent: &ChampsEntreprise) -> R<Option<String>> {
     )))
 }
 
-/// Le nombre entier d'un montant de la fiche (le nombre d'enfants).
-fn entier_de(m: &crate::fiche::NombreDeFiche) -> R<i64> {
+/// Le compte qu'une case de la fiche dit (le nombre d'enfants), sa partie entiere ; un nombre negatif ne compte rien et
+/// se refuse.
+fn compte_de(m: &crate::fiche::NombreDeFiche) -> R<usize> {
     use rust_decimal::prelude::ToPrimitive;
     let d = m.decimal()?;
-    d.trunc().to_i64().ok_or_else(|| socle::echec::refus(socle::num::illisible(&d.to_string())))
+    d.trunc().to_usize().ok_or_else(|| socle::echec::refus(socle::num::illisible(&d.to_string())))
 }
 
 /// La complementaire sante d'un permanent, selon SON contrat a lui.
@@ -725,15 +721,15 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
         )
     };
     let conjoint = *choix.conjoint.dite().ok_or_else(|| a_dire("conjoint", "si son conjoint est couvert"))?;
-    let enfants = entier_de(choix.enfants.dite().ok_or_else(|| a_dire("enfants", "combien d'enfants sont couverts"))?)?;
-    let mut total = taux.assure.decimal();
+    let enfants = compte_de(choix.enfants.dite().ok_or_else(|| a_dire("enfants", "combien d'enfants sont couverts"))?)?;
+    let mut total = taux.assure;
     if conjoint {
-        total = add(total, taux.conjoint.decimal());
+        total = total + taux.conjoint;
     }
-    total = add(total, mul(taux.enfant.decimal(), Decimal::from(enfants)));
+    total = total + taux.enfant.fois(enfants);
     // Au moins la moitie a la charge de l'employeur (L911-7) : le releve du bareme dit la part.
     let part_pat = releve.part_employeur.en_coefficient();
-    let bar = poser_mutuelle(bar, None, Taux::du_decimal(total), part_pat, None);
+    let bar = poser_mutuelle(bar, None, total, part_pat, None);
     Ok(composant_79(bar, &MUTUELLE, releve.composant_79.as_ref().map(|c| c.genre)))
 }
 
@@ -1323,8 +1319,8 @@ pub fn bareme_vm(mut bar: Pile, sal: &SalarieDuContrat) -> R<Pile> {
         None => return Ok(bar),
     };
     let artiste = *sal.statut.exigee("statut")? == Statut::Artiste;
-    let facteur = if artiste { Decimal::new(70, 2) } else { Decimal::ONE };
-    let taux = Taux::du_decimal(rond(mul(vm.taux, facteur), 3));
+    let facteur = if artiste { Taux::points(70).en_coefficient() } else { Coefficient::UN };
+    let taux = (Taux::du_decimal(vm.taux) * facteur).au_pair(3);
     let org = org_urssaf(&bar)?;
     // L'ASSIETTE MAJOREE (CSS L. 243-1-3, 1° ; D. 243-0-2, 1° : 11,5 %) : l'employeur affilie a une caisse de conges
     // acquitte le versement mobilite du sur les indemnites de conges par une majoration de son assiette (lettre

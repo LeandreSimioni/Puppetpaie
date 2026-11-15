@@ -309,6 +309,10 @@ const UN_CENTIME: Montant = Montant::UN_CENTIME;
 /// Cinq dix-milliemes de point : l'ecart de taux qui n'en est pas un.
 const ECART_DE_TAUX_TOLERE: Taux = Taux::CINQ_DIX_MILLIEMES;
 
+/// Le taux AT/MP notifie d'un pour cent auquel la paie importee se calcule d'abord : sa ligne AT/MP y porte le facteur
+/// que le bareme applique au contrat, d'ou se lit le taux notifie que le bulletin a applique.
+const TAUX_ATMP_D_ESSAI: Taux = Taux::points(1);
+
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
 /// deja comparee, elle ne se compare pas deux fois.
 pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
@@ -392,14 +396,15 @@ fn comparer_une(
     // le facteur que le bareme applique a ce contrat (`droit::bareme::bareme_atmp`), au centieme de point comme un taux
     // notifie. L'AT/MP n'est alors pas compare : il est l'entree.
     let an = annee;
-    let mut atmp_imprime: Option<(Option<Decimal>, Option<Decimal>, Option<Decimal>)> = None;
+    let mut atmp_imprime: Option<(Option<Taux>, Option<Montant>, Option<Montant>)> = None;
     if !ctx.taux_atmp_dit(an) {
         let ligne = cotisations.iter().find(|l| l.cotisation == Some(RegroupementDeComparaison::Cotisation(ATMP)));
+        // La porte de lecture de la ligne imprimee (la paie importee les garde en decimal).
         atmp_imprime = ligne
-            .map(|l| (l.taux_employeur, l.montant_employeur, l.base))
-            .filter(|(t, m, _)| t.is_some() || m.is_some_and(|m| !m.is_zero()));
+            .map(|l| (l.taux_employeur.map(Taux::du_decimal), l.montant_employeur.map(Montant::du_decimal), l.base.map(Montant::du_decimal)))
+            .filter(|(t, m, _)| t.is_some() || m.is_some_and(|m| !m.est_nul()));
         if atmp_imprime.is_some() {
-            ctx = ctx.avec_le_taux_atmp_lu(an, Decimal::ONE);
+            ctx = ctx.avec_le_taux_atmp_lu(an, TAUX_ATMP_D_ESSAI);
         }
     }
     let atmp_lu = atmp_imprime.is_some();
@@ -513,13 +518,15 @@ fn comparer_une(
     if let Some((taux, montant, base)) = atmp_imprime {
         // Calcule au taux notifie de 1 %, la ligne AT/MP porte le facteur du contrat, et son assiette.
         let ligne = saisie.paies.first().and_then(|p| p.lignes.iter().find(|l| l.est(&droit::forme_bareme::ATMP)));
-        let facteur = ligne.and_then(|l| l.taux_pat).map(Taux::decimal).filter(|f| *f > Decimal::ZERO);
+        let facteur = ligne.and_then(|l| l.taux_pat).filter(|f| *f > Taux::ZERO);
         let applique = taux.or_else(|| {
-            let b = base.or(ligne.map(|l| l.base.decimal())).filter(|b| !b.is_zero())?;
-            Some((montant? / b * Decimal::from(100)).round_dp(2))
+            let b = base.or(ligne.and_then(|l| l.base.montant())).filter(|b| !b.est_nul())?;
+            Some(montant?.rapport(b)?.en_taux().a_deux_decimales())
         });
-        if let (Some(f), Some(applique)) = (facteur, applique) {
-            let notifie = (applique / f).round_dp(2);
+        // Au taux d'essai, la ligne calculee porte ce taux par le facteur : le taux notifie est le taux d'essai par le
+        // rapport du taux applique au sien.
+        if let Some(rapport) = facteur.zip(applique).and_then(|(f, applique)| applique.rapport(f)) {
+            let notifie = (TAUX_ATMP_D_ESSAI * rapport).a_deux_decimales();
             ctx = ctx.avec_le_taux_atmp_lu(an, notifie);
             saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
         }

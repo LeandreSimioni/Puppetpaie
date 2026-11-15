@@ -1338,10 +1338,9 @@ impl Contexte {
     /// pourcent) quand la compagnie n'a pas dit le sien pour cette annee (`taux_atmp_dit`). Ce taux est propre a
     /// l'etablissement, notifie par l'Assurance Maladie : il ne se devine pas, il se lit, ici du bulletin d'un autre
     /// logiciel qui l'a applique. Rien ne s'ecrit ; une compagnie qui a pose le sien garde le sien.
-    pub fn avec_le_taux_atmp_lu(mut self, an: Annee, valeur: Decimal) -> Contexte {
-        // Le taux tel qu'un bareme l'ecrit : sa forme la plus courte, un entier gardant sa decimale (`1.0`). L'import
-        // (`engagement::ecarts`) le lit encore en decimal : il devient un taux ici.
-        self.atmp_lu = Some((an, socle::grandeurs::courte(socle::grandeurs::Taux::du_decimal(valeur))));
+    pub fn avec_le_taux_atmp_lu(mut self, an: Annee, valeur: socle::grandeurs::Taux) -> Contexte {
+        // Le taux tel qu'un bareme l'ecrit : sa forme la plus courte, un entier gardant sa decimale (`1.0`).
+        self.atmp_lu = Some((an, socle::grandeurs::courte(valeur)));
         self
     }
 

@@ -372,6 +372,17 @@ impl Taux {
     pub const fn points(n: u32) -> Taux {
         Taux(Decimal::from_parts(n, 0, 0, false, 0))
     }
+
+    /// Ce taux `n` fois (le taux d'un enfant couvert, pour chacun) : taux x compte = taux. Un compte n'est pas une
+    /// grandeur (« Le glossaire »).
+    pub fn fois(self, n: usize) -> Taux {
+        Taux(num::mul(self.0, Decimal::from(n)))
+    }
+
+    /// LE RAPPORT de ce taux a `o` : taux / taux = coefficient ; `None` quand `o` est nul.
+    pub fn rapport(self, o: Taux) -> Option<Coefficient> {
+        (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
+    }
 }
 
 /// Taux x coefficient = taux (le taux AT/MP par le facteur d'une ligne, une part d'un taux).
