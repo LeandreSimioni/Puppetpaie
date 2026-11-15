@@ -763,10 +763,7 @@ impl Engagement {
     /// Les mois AAAA-MM que couvre le contrat, du premier au dernier : un contrat sans fin court jusqu'au mois de paie.
     /// Refus : un contrat sans fin qui commence apres le mois de paie.
     pub fn mois_du_contrat(&self) -> R<Vec<Mois>> {
-        Ok(match self.contrat().fermee() {
-            Some(c) => c.mois(),
-            None => Periode::du_au(self.contrat().debut(), self.fin_mois())?.mois(),
-        })
+        Ok(self.contrat().fermee_au(self.fin_mois())?.mois())
     }
 
     // ------------------------------------------------------------ les lieux
