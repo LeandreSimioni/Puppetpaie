@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::catalogue::{annexes, rubrique};
 use crate::fiche::Lue;
 use crate::contexte::{aujourdhui, Contexte, IdSalarie};
-use socle::date::{Duree, Jour};
+use socle::date::{Duree, EnJours, Jour};
 use socle::echec::R;
 use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours};
 use socle::num::{add, Decimal};
@@ -23,7 +23,7 @@ pub struct Constantes {
     /// Seuil d'ouverture des droits (507).
     pub seuil_heures: Heures,
     /// Fenetre des droits, en jours (365).
-    pub fenetre_jours: Duree,
+    pub fenetre_jours: Duree<EnJours>,
 }
 
 

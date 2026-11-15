@@ -1581,9 +1581,9 @@ impl Proprietes {
 
 // ------------------------------------ l'abattement << contrats courts >> du PAS
 
-pub const DUREE_CONTRAT_COURT: Duree = Duree::mois(2);
+pub const DUREE_CONTRAT_COURT: Duree<EnMois> = Duree::mois(2);
 
-use socle::date::{Duree, Jour};
+use socle::date::{Duree, EnMois, Jour};
 
 /// L'abattement contrats courts s'applique-t-il a ce versement ? `debut` et
 /// `fin` sont les bornes du CONTRAT SIGNE (`fin` a `None` : terme imprecis),

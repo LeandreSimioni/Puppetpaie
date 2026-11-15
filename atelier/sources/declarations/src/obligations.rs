@@ -160,7 +160,7 @@ pub struct SaufMotifs {
 pub struct Delai {
     pub jours_ouvres: Option<i64>,
     #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
-    pub jours: Option<socle::date::Duree>,
+    pub jours: Option<socle::date::Duree<socle::date::EnJours>>,
     pub heures: Option<i64>,
     #[serde(rename = "sans_dimanches")]
     _sans_dimanches: Option<bool>,
@@ -187,7 +187,7 @@ pub struct Suites {
 pub struct Reserves {
     pub libelle: String,
     #[serde(deserialize_with = "socle::date::Duree::en_jours")]
-    pub jours_francs: socle::date::Duree,
+    pub jours_francs: socle::date::Duree<socle::date::EnJours>,
     /// Ce d'ou courent les jours francs, en mots (« la déclaration »).
     #[serde(rename = "depuis")]
     _point_de_depart: String,

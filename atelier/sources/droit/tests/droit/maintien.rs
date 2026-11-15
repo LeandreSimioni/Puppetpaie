@@ -7,7 +7,7 @@ use socle::date::{Anciennete, Duree};
 use socle::grandeurs::Taux;
 
 fn tranches(mois: u32) -> Vec<Tranche> {
-    let duree = DureeDUneTranche::Duree(Duree::mois(mois));
+    let duree = DureeDUneTranche::Mois(Duree::mois(mois));
     vec![Tranche { duree: duree.clone(), taux: Taux::du_decimal(Decimal::from(100)) }, Tranche { duree, taux: Taux::du_decimal(Decimal::from(75)) }]
 }
 

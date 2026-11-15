@@ -15,7 +15,7 @@ use crate::base_assujettie::{BaseAssujettie, TypeDeComposant};
 use crate::code_cotisation::CodeCotisation81;
 use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, Nic, SalarieDuContrat, Siret, Statut, StatutCategorielRc, IDCC_3090};
-use socle::date::{Duree, Jour};
+use socle::date::{Duree, EnMois, Jour};
 use socle::mois::Annee;
 use socle::echec::{Lieu, Echec, R};
 use socle::grandeurs::{Coefficient, Taux};
@@ -1933,7 +1933,7 @@ pub fn risques_de(bar: &Pile) -> Vec<RisqueAtmp> {
 const DERNIERE_ANNEE_D242_6_17_DE_2012: Annee = Annee::constante(2026);
 
 /// « Les deux annees civiles suivantes » l'annee de la creation (D. 242-6-17).
-const ANNEES_D_UN_ETABLISSEMENT_NEUF: Duree = Duree::annees(2);
+const ANNEES_D_UN_ETABLISSEMENT_NEUF: Duree<EnMois> =Duree::annees(2);
 
 /// UN ETABLISSEMENT NOUVELLEMENT CREE EN `an` : « les taux nets collectifs sont applicables aux etablissements nouvellement
 /// crees durant l'annee de leur creation et les deux annees civiles suivantes, quel que soit leur effectif ou celui de

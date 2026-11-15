@@ -203,7 +203,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | mois ou jour | `MoisOuJour` | `socle/src/mois.rs` |
 | année | `Annee` ; à unifier (#419) : des `i32` | `socle/src/mois.rs` |
 | période | à créer (#419) : `Periode` | — |
-| durée de droit | `Duree` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
+| durée de droit | `Duree<EnJours>`, `Duree<EnMois>` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
 | durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
 
@@ -230,13 +230,17 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   opérations (`precedente`, `suivante`, `les_precedentes`, `jusqu_a`, ses mois et ses jours), jamais en nombre ; une
   année qu'un texte fixe s'écrit `Annee::constante`.
 - **période** : deux jours bornes, du … au … ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres.
-- **durée de droit** : des jours ou des mois de calendrier, jamais négative ; son nombre ne sort pas. Une durée qu'un
-  texte fixe s'écrit `Duree::jours`, `Duree::mois`, `Duree::annees` ; un fichier la dit en nombre, lu en elle à sa
-  porte (`en_jours`, `en_mois`, et leurs facultatives ; écrite par `ecrite_en_jours`, `ecrite_en_mois_opt`). Elle se
-  compte depuis un jour (`Jour::apres`, `Jour::avant`), un mois (`Mois::apres`, `Mois::avant`), une année
-  (`Annee::les_precedentes`) ; elle se mesure d'une suite de jours (`Duree::du_au`) ; deux de la même unité se
-  comparent et s'ajoutent ; elle se dit dans une phrase (« 3 jours », « 2 mois »). La durée d'une tranche de maintien de salaire
-  (`droit::maintien::DureeDUneTranche`) est une durée de droit, ou « tant que la caisse verse ses indemnités ».
+- **durée de droit** : des jours ou des mois de calendrier, jamais négative ; son nombre ne sort pas. **Son unité est
+  dans son type** : `Duree<U>`, où `U` est `EnJours` ou `EnMois` (les marqueurs du socle ; `Unite`, scellé, n'en admet
+  pas d'autre) ; une année d'un texte est douze mois. Une durée qu'un texte fixe s'écrit `Duree::jours`, `Duree::mois`,
+  `Duree::annees` ; un fichier la dit en nombre, lu en elle à sa porte (`en_jours`, `en_mois`, et leurs facultatives ;
+  écrite par `ecrite_en_jours`, `ecrite_en_mois_opt`, et à la DSN par `jours_a_ecrire`). Elle se compte depuis un jour,
+  dans l'une ou l'autre unité (`Jour::apres`, `Jour::avant`), en mois depuis un mois (`Mois::apres`, `Mois::avant`) ou
+  une année (`Annee::les_precedentes`) ; des mois se disent en jours depuis un jour (`en_jours_depuis`) ; elle se
+  mesure d'une suite de jours (`Duree::du_au`) ; deux durées ne se comparent et ne s'ajoutent que dans la même unité,
+  ce que le compilateur tient ; elle se dit dans une phrase (« 3 jours », « 2 mois »). La durée d'une tranche de
+  maintien de salaire (`droit::maintien::DureeDUneTranche`) est une durée de droit en jours ou en mois, ou « tant que la
+  caisse verse ses indemnités ».
 - **ancienneté, âge** : le temps passé depuis un jour, en mois ; un âge est l'ancienneté depuis la naissance
   (`Anciennete::age`). Elle se compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois
   entamé, le jour d'arrivée compris (`Anciennete::entre` : le préavis, les indemnités de fin de contrat, le maintien de

@@ -10,7 +10,7 @@ use crate::contexte::{Contexte, IdSalarie};
 use crate::fiche::{Lue, TauxPas};
 use crate::forme_bareme::{GrillePas, PasParDefaut, Pile};
 use crate::type_taux_pas::TypeDeTauxPas;
-use socle::date::{Duree, Jour};
+use socle::date::{Duree, EnMois, Jour};
 use socle::mois::Mois;
 use socle::fichiers::{repr, LectureDatee, ValeurLue};
 use crate::contexte::CleLue;
@@ -186,7 +186,7 @@ pub struct Triplet {
 /// mis a disposition le 10 fevrier, il est « valide jusqu'au 30 avril »
 /// (BOI-IR-PAS-30-10-20, § 70, `atelier/reference/sources/bofip/
 /// BOI-IR-PAS-30-10-20-20181203.html`).
-pub const VALIDITE: Duree = Duree::mois(2);
+pub const VALIDITE: Duree<EnMois> = Duree::mois(2);
 
 /// Le jour de la mise a disposition d'un taux recu (`mis_a_disposition`, AAAAMMJJHHMMSS) : d'ou court sa validite.
 pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {

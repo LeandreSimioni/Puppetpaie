@@ -525,7 +525,7 @@ fn etape_ecrite<S: serde::Serializer>(etape: &Option<EtapeDEcheance>, s: S) -> R
 }
 
 /// L'echeancier va jusqu'a douze mois devant.
-const MOIS_A_VENIR: socle::date::Duree = socle::date::Duree::mois(12);
+const MOIS_A_VENIR: socle::date::Duree<socle::date::EnMois> =socle::date::Duree::mois(12);
 
 /// UNE ECHEANCE est une DONNEE : quoi, quand, ou en est-on, et ce qu'il y a a faire. Elle ne fait rien : « verifier et
 /// envoyer » passe par les operations existantes, avec leurs garde-fous et leur mot de passe.

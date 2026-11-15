@@ -754,7 +754,7 @@ struct Conventionnelle {
     bas: Option<clauses::P>,
     haut: Option<clauses::P>,
     pourquoi: Option<String>,
-    prevenance_mois: Option<socle::date::Duree>,
+    prevenance_mois: Option<socle::date::Duree<socle::date::EnMois>>,
 }
 
 impl Conventionnelle {

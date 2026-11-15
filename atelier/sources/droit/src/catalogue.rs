@@ -471,7 +471,7 @@ pub struct Annexes {
     pub seuil_heures: Heures,
     /// La fenetre ou elles se comptent, en jours (365).
     #[serde(deserialize_with = "socle::date::Duree::en_jours")]
-    pub fenetre_jours: socle::date::Duree,
+    pub fenetre_jours: socle::date::Duree<socle::date::EnJours>,
     #[serde(rename = "note")]
     _note: String,
 }

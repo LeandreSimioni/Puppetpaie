@@ -2526,7 +2526,7 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
 }
 
 /// Combien de mois en arriere un signalement de fin en retard se rappelle : une annee de paies.
-const MOIS_EN_ARRIERE: socle::date::Duree = socle::date::Duree::mois(12);
+const MOIS_EN_ARRIERE: socle::date::Duree<socle::date::EnMois> =socle::date::Duree::mois(12);
 
 /// LES FINS D'AVANT, EN RETARD : celles des mois qui precedent `mois` (sur `MOIS_EN_ARRIERE`) dont le signalement est du
 /// et sa date butoir passee. Une echeance manquee reste due -- le signalement se fait « dans les cinq jours ouvres qui

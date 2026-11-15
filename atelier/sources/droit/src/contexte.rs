@@ -17,7 +17,7 @@ use socle::echec::Lieu;
 use socle::num::Decimal;
 use socle::grandeurs::MontantUnitaire;
 
-use socle::date::{repr_texte, Duree, Jour};
+use socle::date::{repr_texte, Duree, EnMois, Jour};
 use socle::fichiers::{dossier_du_code, CheminRelatif, NomDeFichier};
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, Echec, R};
@@ -159,7 +159,7 @@ impl TypeDeParametreNeores {
     }
 }
 
-const ANNEES_CONSECUTIVES: Duree = Duree::annees(5);
+const ANNEES_CONSECUTIVES: Duree<EnMois> =Duree::annees(5);
 /// Le plus petit seuil d'effectif dont un taux depend (la formation des permanents) : une annee qui ne le departage pas
 /// ne departage aucun des autres.
 const PLUS_PETIT_SEUIL: i64 = 11;
@@ -197,7 +197,7 @@ const SEUIL_DU_CSE: i64 = 11;
 /// quatre ans au plus (L2314-33, L2314-34), renouvele tant que l'effectif n'est pas reste sous onze salaries les douze
 /// mois d'avant son terme (L2313-10). Un mandat renouvele au plus tard un an apres le dernier mois a onze court quatre
 /// ans de plus : cinq annees.
-const ANNEES_DU_CSE: Duree = Duree::annees(5);
+const ANNEES_DU_CSE: Duree<EnMois> =Duree::annees(5);
 
 /// Le plus petit des grands seuils : le FNAL a 0,50 % et le `tdelta` de la reduction generale (bareme,
 /// `seuils_effectif`), l'echeance du 5 (R. 243-6 CSS), la PEEC (CCH L. 313-1), puis la contribution supplementaire a

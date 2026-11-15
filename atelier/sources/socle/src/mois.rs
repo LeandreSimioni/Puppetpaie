@@ -11,7 +11,7 @@
 //! `declarations::champs` lit du mois de naissance d'un NIR : jamais au mois d'une paie. Un mois nomme aussi un fichier ou
 //! un dossier : `../config` ou `2026-06/envoi` n'en sont pas.
 
-use crate::date::{jours_du_mois, repr_texte, Duree, Jour};
+use crate::date::{jours_du_mois, repr_texte, Duree, EnMois, Jour};
 use crate::echec::{refus, R};
 
 /// Un mois civil, de 0001-01 a 9999-12. L'ordre est celui du calendrier.
@@ -130,17 +130,16 @@ impl Mois {
         format!("{}{:04}", self.nom(Graphie::Titre), self.an)
     }
 
-    /// LE MOIS QUI SUIT DE `d` CELUI-CI ; refus hors des annees 1 a 9999, et d'une duree en jours, qui ne compte pas des
-    /// mois.
+    /// LE MOIS QUI SUIT DE `d` CELUI-CI ; refus hors des annees 1 a 9999.
     #[track_caller]
-    pub fn apres(self, d: Duree) -> R<Mois> {
-        self.plus(d.mois_pour(self)?)
+    pub fn apres(self, d: Duree<EnMois>) -> R<Mois> {
+        self.plus(d.nombre_de_mois())
     }
 
-    /// LE MOIS QUI PRECEDE DE `d` CELUI-CI ; refus hors des annees 1 a 9999, et d'une duree en jours.
+    /// LE MOIS QUI PRECEDE DE `d` CELUI-CI ; refus hors des annees 1 a 9999.
     #[track_caller]
-    pub fn avant(self, d: Duree) -> R<Mois> {
-        self.plus(-d.mois_pour(self)?)
+    pub fn avant(self, d: Duree<EnMois>) -> R<Mois> {
+        self.plus(-d.nombre_de_mois())
     }
 
     /// Le mois `n` mois plus loin (en arriere si `n` est negatif) ; refus hors des annees 1 a 9999.
@@ -324,7 +323,7 @@ impl Annee {
 
     /// LES ANNEES CIVILES ENTIERES QUE LA DUREE `d` COUVRE AVANT CELLE-CI (cinq ans : les cinq d'avant), de la plus
     /// ancienne a celle d'avant ; celles d'avant l'an 1 n'existent pas.
-    pub fn les_precedentes(self, d: Duree) -> Vec<Annee> {
+    pub fn les_precedentes(self, d: Duree<EnMois>) -> Vec<Annee> {
         let debut = match self.premier_jour().avant(d) {
             Ok(j) if j.mois == 1 && j.jour == 1 => j.an,
             Ok(j) => j.an + 1,

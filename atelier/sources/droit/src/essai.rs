@@ -20,7 +20,7 @@
 //! permet ; un controle faux refuserait du licite) ; « six mois », « un mois », « n mois » se comptent du premier jour du
 //! contrat au meme quantieme (le dernier jour du mois s'il ne l'a pas), ce jour exclu.
 
-use socle::date::{Duree, Jour};
+use socle::date::{Duree, EnJours, EnMois, Jour};
 use socle::echec::R;
 
 use crate::natures::Nature;
@@ -28,17 +28,17 @@ use crate::natures::Nature;
 /// La duree maximale de l'essai d'un contrat, en jours, et la phrase qui dit d'ou elle vient.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plafond {
-    pub jours: Duree,
+    pub jours: Duree<EnJours>,
     pub pourquoi: String,
 }
 
 /// « dans la limite de deux semaines » (L. 1242-10).
-const DEUX_SEMAINES: Duree = Duree::jours(14);
+const DEUX_SEMAINES: Duree<EnJours> = Duree::jours(14);
 /// « au plus égale à six mois », « d'un mois dans les autres cas » (L. 1242-10).
-const SIX_MOIS: Duree = Duree::mois(6);
-const UN_MOIS: Duree = Duree::mois(1);
+const SIX_MOIS: Duree<EnMois> = Duree::mois(6);
+const UN_MOIS: Duree<EnMois> = Duree::mois(1);
 /// « 2 mois de travail effectif » (3090, art. 7.4).
-const ESSAI_D_UN_ARTISTE_3090: Duree = Duree::mois(2);
+const ESSAI_D_UN_ARTISTE_3090: Duree<EnMois> = Duree::mois(2);
 
 /// LE PLAFOND DE L'ESSAI d'un contrat de nature `nat`, du `debut` a la `fin` (aucune pour un CDI) : `classement` est le
 /// classement conventionnel du salarie (S21.G00.40.002), `artiste` dit s'il est artiste du spectacle, `idcc` la
@@ -47,13 +47,12 @@ const ESSAI_D_UN_ARTISTE_3090: Duree = Duree::mois(2);
 pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Option<crate::fiche::StatutConventionnel>, artiste: bool, idcc: Option<&crate::fiche::Idcc>) -> R<Option<Plafond>> {
     if !nat.duree_indeterminee {
         let Some(fin) = fin else { return Ok(None) };
-        let par_semaine = Duree::du_au(debut, fin).un_jour_par_semaine_commencee()?;
+        let par_semaine = Duree::du_au(debut, fin).un_jour_par_semaine_commencee();
         let six_mois = *fin < debut.apres(SIX_MOIS)?;
         let (limite, borne) = if six_mois { (DEUX_SEMAINES, "deux semaines au plus, le contrat durant six mois au plus".to_string()) } else {
             (UN_MOIS.en_jours_depuis(debut)?, "un mois au plus, le contrat durant plus de six mois".to_string())
         };
-        // Deux durees en jours.
-        let jours = if par_semaine <= limite { par_semaine } else { limite };
+        let jours = par_semaine.min(limite);
         return Ok(Some(Plafond {
             jours,
             pourquoi: format!(
@@ -99,7 +98,7 @@ pub fn plafond(nat: &Nature, debut: &Jour, fin: Option<&Jour>, classement: Optio
 }
 
 /// LE REFUS D'UN ESSAI TROP LONG : `jours` stipules au-dela du `plafond` du contrat. `qui` nomme le contrat dans la phrase.
-pub fn refuser_au_dela(jours: Duree, plafond: Option<&Plafond>, qui: &str) -> R<()> {
+pub fn refuser_au_dela(jours: Duree<EnJours>,plafond: Option<&Plafond>, qui: &str) -> R<()> {
     match plafond {
         Some(p) if jours > p.jours => Err(socle::refus!(
             "{} : une période d'essai de {} dépasse la durée maximale de ce contrat — {}. La ramener à {} au plus, dans \

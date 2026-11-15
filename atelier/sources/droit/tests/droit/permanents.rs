@@ -59,14 +59,14 @@ struct IndemniteDuDepart {
 #[serde(deny_unknown_fields)]
 struct Tranche {
     #[serde(serialize_with = "Duree::ecrite_en_jours", deserialize_with = "Duree::en_jours")]
-    jours: Duree,
+    jours: Duree<socle::date::EnJours>,
     taux: Decimal,
 }
 
 /// Une duree en jours, ecrite en son nombre dans la reference.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
-struct EnJours(#[serde(serialize_with = "Duree::ecrite_en_jours", deserialize_with = "Duree::en_jours")] Duree);
+struct EnJours(#[serde(serialize_with = "Duree::ecrite_en_jours", deserialize_with = "Duree::en_jours")] Duree<socle::date::EnJours>);
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

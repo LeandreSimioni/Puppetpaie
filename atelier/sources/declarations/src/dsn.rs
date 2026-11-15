@@ -28,7 +28,7 @@ use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
-use socle::date::{Anciennete, Duree, Jour};
+use socle::date::{Anciennete, Duree, EnJours, Jour};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -1630,7 +1630,7 @@ fn qui_contrat(p: &Paie) -> String {
 /// paie la lit ainsi, `calcul::fiche_de_l_engagement` ; l'import la pose au premier contrat lu), et que les gens peuvent
 /// changer. Une fiche qui ne la porte pas ne dit pas ce jour : elle refuse. Une date apres la fin du mois donnerait zero
 /// ou moins, que la CCH-12 interdit : elle refuse aussi.
-pub fn anciennete_du_mois(s: &droit::fiche::ChampsSalarie, cle: &IdSalarie, fin_m: &Jour) -> R<Duree> {
+pub fn anciennete_du_mois(s: &droit::fiche::ChampsSalarie, cle: &IdSalarie, fin_m: &Jour) -> R<Duree<EnJours>> {
     let Some(depuis) = s.date_anciennete.dite().copied() else {
         return Err(socle::echec::cle(format!(
             "{} : la fiche ne porte pas sa date d'anciennete (« Dans la compagnie depuis »), d'ou se \
@@ -2056,11 +2056,11 @@ fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDec
 }
 
 /// Le bloc S21.G00.86 : l'anciennete dans l'entreprise, en jours.
-pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: Duree) -> R<()> {
+pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: Duree<EnJours>) -> R<()> {
     let nat = p.engagement.nat()?;
     f.add_opt(droit::rubrique!("S21.G00.86.001"), nat.code(droit::rubrique!("S21.G00.86.001")))?;
     f.add_opt(droit::rubrique!("S21.G00.86.002"), nat.code(droit::rubrique!("S21.G00.86.002")))?;
-    f.add(droit::rubrique!("S21.G00.86.003"), jours.jours_a_ecrire()?);
+    f.add(droit::rubrique!("S21.G00.86.003"), jours.jours_a_ecrire());
     f.add_opt(droit::rubrique!("S21.G00.86.005"), p.engagement.numero.clone())
 }
 

@@ -666,7 +666,7 @@ pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour
         let jours = socle::date::Duree::du_au(&d, &f);
         let libelle = motif.libelle.clone();
         if motif.anciennete == Some(droit::permanents::AncienneteDeSuspension::Moitie) {
-            retranches = retranches.plus(jours.moitie())?;
+            retranches = retranches.plus(jours.moitie());
             dit.push(info(format!(
                 "{} : {} ({}) du {} au {} -- {} comptes pour moitie dans l'anciennete (C. trav. L1225-54).",
                 cle,
@@ -677,7 +677,7 @@ pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour
                 jours
             )));
         } else {
-            retranches = retranches.plus(jours)?;
+            retranches = retranches.plus(jours);
             dit.push(avertir(format!(
                 "{} : {} ({}) du {} au {} -- {} NON comptes dans l'anciennete : aucun texte depose ne dit comment \
 cette suspension compte (le conge parental seul compte pour moitie, L1225-54). Si la convention ou un accord de la compagnie \

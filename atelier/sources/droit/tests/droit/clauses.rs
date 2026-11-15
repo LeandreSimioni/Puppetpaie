@@ -316,7 +316,7 @@ pub(crate) struct RetraiteLue {
     article: Option<String>,
     hors_primes: bool,
     #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "Duree::ecrite_en_mois_opt", deserialize_with = "Duree::en_mois_opt")]
-    prevenance_mois: Option<Duree>,
+    prevenance_mois: Option<Duree<socle::date::EnMois>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cadre_de_direction: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

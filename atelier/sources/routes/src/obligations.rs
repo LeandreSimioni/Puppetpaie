@@ -220,7 +220,7 @@ pub fn signalement_du(motif: MotifDArret) -> R<bool> {
 
 // --------------------------------------------------------------- le calendrier
 
-fn plus(j: Jour, d: socle::date::Duree) -> R<Jour> {
+fn plus(j: Jour, d: socle::date::Duree<socle::date::EnJours>) -> R<Jour> {
     j.apres(d).map_err(|m| m.reclasser(Classe::CalculImpossible))
 }
 

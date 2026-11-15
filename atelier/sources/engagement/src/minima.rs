@@ -19,7 +19,7 @@ use rust_decimal::RoundingStrategy;
 use crate::calcul::{LigneBrut, Paie};
 use droit::catalogue::{rubrique, CodeDeRubrique, Unite};
 use droit::contexte::Contexte;
-use socle::date::{repr_texte, Duree, Jour};
+use socle::date::{repr_texte, Duree, EnJours, Jour};
 use droit::emplois;
 use crate::{Avis, Engagement};
 use droit::minima::{grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
@@ -73,7 +73,7 @@ fn horaire_du_mensuel(mensuel: Decimal, heures: Decimal) -> Decimal {
 
 
 /// La duree du contrat en jours calendaires, bornes comprises.
-fn jours_du_contrat(eng: &Engagement) -> Option<Duree> {
+fn jours_du_contrat(eng: &Engagement) -> Option<Duree<EnJours>> {
     Some(Duree::du_au(&eng.debut, &eng.fin?))
 }
 
