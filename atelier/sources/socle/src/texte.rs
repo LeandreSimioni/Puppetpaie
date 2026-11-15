@@ -190,37 +190,54 @@ pub fn salarie_nomme(nom: Option<&str>, nom_affichage: Option<&str>, prenom: Opt
 /// séparés par une espace insécable (le montant ne se coupe pas en fin de ligne ; U+00A0, que toute police d'un PDF
 /// porte). Un fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
 pub fn euros<E: EnEuros>(x: E) -> String {
-    let t = x.au_centime_ecrit().to_string();
-    let (signe, t) = match t.strip_prefix('-') {
-        Some(r) => ("-", r),
-        None => ("", t.as_str()),
-    };
-    let (entier, centimes) = match t.split_once('.') {
-        Some(e_c) => e_c,
-        None => (t, "00"),
-    };
-    format!("{}{},{}\u{a0}€", signe, milliers(entier), centimes)
+    // Le signe est celui du montant au centime : ce qui s'arrondit a zero n'en a plus.
+    let c = au_centime(x.decimal_ecrit());
+    format!("{}\u{a0}€", aux_centimes(c.is_sign_negative(), c.abs(), '\u{a0}'))
 }
 
-/// CE QUI SE DIT EN EUROS (`euros`) : un montant, ou un montant unitaire (le SMIC horaire, le plafond horaire), et rien
-/// d'autre ; scelle (`scelle::EnEuros` ne se nomme pas dehors).
+/// UN MONTANT TEL QUE LE BULLETIN ET LES DOCUMENTS DU CONTRAT L'IMPRIMENT, dans leurs colonnes et leurs marqueurs :
+/// « 1 234,50 », au centime (`Montant::au_centime`), la virgule décimale, les milliers séparés par une espace ordinaire,
+/// sans « € » ; le signe est celui de l'original (`-0,00` pour un retrait qui s'arrondit à zéro).
+pub fn chiffres_en_euros<E: EnEuros>(x: E) -> String {
+    let d = x.decimal_ecrit();
+    aux_centimes(d.is_sign_negative(), au_centime(d.abs()), ' ')
+}
+
+/// Le decimal `d` au centime, par l'arrondi d'un montant (`Montant::au_centime`), ses deux decimales ecrites.
+fn au_centime(d: rust_decimal::Decimal) -> rust_decimal::Decimal {
+    crate::grandeurs::Montant::du_decimal(d).au_centime().decimal()
+}
+
+/// Les chiffres d'un montant au centime `c`, positif, precedes de « - » si `negatif`, les milliers separes par
+/// `separateur`, la virgule decimale : l'ecriture de `euros` et de `chiffres_en_euros`.
+fn aux_centimes(negatif: bool, c: rust_decimal::Decimal, separateur: char) -> String {
+    let t = c.to_string();
+    let (entier, centimes) = match t.split_once('.') {
+        Some(e_c) => e_c,
+        None => (t.as_str(), "00"),
+    };
+    format!("{}{},{}", if negatif { "-" } else { "" }, milliers(entier, separateur), centimes)
+}
+
+/// CE QUI SE DIT EN EUROS (`euros`, `chiffres_en_euros`) : un montant, ou un montant unitaire (le SMIC horaire, le
+/// plafond horaire, le taux d'un cachet), et rien d'autre ; scelle (`scelle::EnEuros` ne se nomme pas dehors).
 pub trait EnEuros: scelle::EnEuros {}
 
 mod scelle {
-    /// Son decimal au centime, que seul `euros` ecrit.
+    /// Son decimal, que seuls `euros` et `chiffres_en_euros` ecrivent.
     pub trait EnEuros {
-        fn au_centime_ecrit(self) -> rust_decimal::Decimal;
+        fn decimal_ecrit(self) -> rust_decimal::Decimal;
     }
 
     impl EnEuros for crate::grandeurs::Montant {
-        fn au_centime_ecrit(self) -> rust_decimal::Decimal {
-            self.au_centime().decimal()
+        fn decimal_ecrit(self) -> rust_decimal::Decimal {
+            self.decimal()
         }
     }
 
     impl EnEuros for crate::grandeurs::MontantUnitaire {
-        fn au_centime_ecrit(self) -> rust_decimal::Decimal {
-            self.au_centime().decimal()
+        fn decimal_ecrit(self) -> rust_decimal::Decimal {
+            self.decimal()
         }
     }
 }
@@ -236,12 +253,12 @@ pub fn pourcent(t: crate::grandeurs::Taux) -> String {
     format!("{} %", t.to_string().replace('.', ","))
 }
 
-/// Des chiffres, les milliers separes par une espace insecable (« 1 500 »).
-fn milliers(entier: &str) -> String {
+/// Des chiffres, les milliers separes par `separateur` (« 1 500 »).
+fn milliers(entier: &str, separateur: char) -> String {
     let mut dit = String::new();
     for (i, c) in entier.chars().enumerate() {
         if i > 0 && (entier.len() - i) % 3 == 0 {
-            dit.push('\u{a0}');
+            dit.push(separateur);
         }
         dit.push(c);
     }
@@ -266,6 +283,6 @@ pub fn nombre_dit(x: rust_decimal::Decimal) -> String {
         Some((e, d)) => (e, format!(",{}", d)),
         None => (t, String::new()),
     };
-    format!("{}{}{}", signe, milliers(entier), decimales)
+    format!("{}{}{}", signe, milliers(entier, '\u{a0}'), decimales)
 }
 

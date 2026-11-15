@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::forme::{Document, Style};
 
-use crate::bulletin::{fmt_eur, identite_de};
+use crate::bulletin::identite_de;
+use socle::texte::chiffres_en_euros;
 use crate::marqueurs::{ModeleLu, Valeurs};
 use droit::marqueurs::Marqueur;
 use droit::contexte::Contexte;
@@ -101,7 +102,7 @@ fait). Rien n'est écrit.",
     let dite: String = maintien.iter().map(|m| mention(m, &nom, &fin)).collect();
     valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
-    valeurs.insert(Marqueur::SoldeNet, fmt_eur(p.net_a_payer));
+    valeurs.insert(Marqueur::SoldeNet, chiffres_en_euros(p.net_a_payer));
     let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de(&const { socle::fichiers::NomDeFichier::du_moteur("recu-solde-de-tout-compte.modele") }, Some(&ent.gabarits), &poste))?;
     ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
     if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
@@ -151,12 +152,12 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
 fn inventaire(p: &Paie) -> String {
     let mut lignes = Vec::new();
     for l in &p.remuneration {
-        lignes.push(format!("{} : {}", l.libelle, fmt_eur(l.montant)));
+        lignes.push(format!("{} : {}", l.libelle, chiffres_en_euros(l.montant)));
     }
     for l in &p.lignes {
         let m = l.montant_sal.au_centime();
         if !m.est_nul() {
-            lignes.push(format!("{} : -{}", l.libelle, fmt_eur(m)));
+            lignes.push(format!("{} : -{}", l.libelle, chiffres_en_euros(m)));
         }
     }
     lignes.join("\n")

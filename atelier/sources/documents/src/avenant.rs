@@ -16,7 +16,8 @@ use droit::marqueurs::Marqueur;
 use fabrique_pdf::modele::{self, Modele};
 use serde::Serialize;
 
-use crate::bulletin::{convention_du_contrat, fmt_eur};
+use crate::bulletin::convention_du_contrat;
+use socle::texte::chiffres_en_euros;
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie, FormeDeRemuneration};
@@ -277,10 +278,10 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     // Sans taux de cachet, pas de marqueur : un modele qui le cite se refuse (`contrat::refuser_ce_que_le_modele_tairait`).
     if let Some(t) = e.f.taux_cachet {
         // Le montant d'un cachet.
-        poser(Marqueur::RemunerationTauxCachet, fmt_eur(socle::grandeurs::Cachets::UN * t));
+        poser(Marqueur::RemunerationTauxCachet, chiffres_en_euros(t));
     }
-    poser(Marqueur::RemunerationBrut, fmt_eur(paie.brut));
-    poser(Marqueur::RemunerationNetEstime, fmt_eur(paie.net_a_payer));
+    poser(Marqueur::RemunerationBrut, chiffres_en_euros(paie.brut));
+    poser(Marqueur::RemunerationNetEstime, chiffres_en_euros(paie.net_a_payer));
     poser(Marqueur::SpectacleTitre, case(&sp.titre, "titre")?);
     // LE NUMERO D'OBJET se reporte sur le contrat « a chaque fois que cela est possible » (annexes VIII et X, art. 47 § 3 :
     // atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt l. 1183-1184, et l'annexe X,
