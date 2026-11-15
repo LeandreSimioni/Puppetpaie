@@ -333,10 +333,8 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
         for c in e.conges_pris.iter().flatten() {
             pris_ce_mois = add(pris_ce_mois, Decimal::from(jours_ouvrables_de(c, chomes)?));
         }
-        let contrat = Periode::du_au(debut_de(e)?, fin)?;
-        let dans_le_mois = contrat
-            .croise(&Periode::du_mois(mois))
-            .ok_or_else(|| socle::refus!("{} : le contrat {} ne touche pas {}.", qui, contrat, mois))?;
+        let contrat = e.contrat()?.ok_or_else(|| socle::fichiers::absent("debut"))?;
+        let dans_le_mois = crate::contrat_dans_le_mois(&contrat, mois, &qui)?;
         let acquis_ce_mois = jours_acquis(&dans_le_mois)?;
         let solde = sub(add(cpt.solde(), acquis_ce_mois), pris_ce_mois);
         if solde > Decimal::ZERO {

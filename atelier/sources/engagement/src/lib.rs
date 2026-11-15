@@ -716,9 +716,7 @@ impl Engagement {
     /// tombe ce mois-ci. Refus : un contrat qui ne touche pas ce mois.
     pub fn place_du_mois(&self) -> R<PlaceDuMois> {
         let contrat = self.contrat;
-        let dans = contrat
-            .croise(&Periode::du_mois(self.mois))
-            .ok_or_else(|| socle::refus!("{} : le contrat du {} ne touche pas {}.", self.nom, contrat.debut().jj_mm_aaaa(), self.mois))?;
+        let dans = contrat_dans_le_mois(&contrat, self.mois, &self.nom)?;
         Ok(match (dans.debut() == contrat.debut(), Some(dans.fin()) == contrat.fin()) {
             (true, true) => PlaceDuMois::Seul,
             (true, false) => PlaceDuMois::Premier,
@@ -732,9 +730,7 @@ impl Engagement {
     pub fn periode_payee(&self) -> R<Periode> {
         match self.periode {
             Some(p) => Ok(p),
-            None => self.contrat.croise(&Periode::du_mois(self.mois)).ok_or_else(|| {
-                socle::refus!("{} : le contrat du {} ne touche pas {}.", self.nom, self.contrat.debut().jj_mm_aaaa(), self.mois)
-            }),
+            None => contrat_dans_le_mois(&self.contrat, self.mois, &self.nom),
         }
     }
 
@@ -1839,6 +1835,13 @@ fn unites_du_statut(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
 }
 
 // ------------------------------------------- le contrat qui deborde du mois
+
+/// LE CONTRAT `contrat` BORNE AU `mois` : la periode de paie ; refus, nommant `qui`, d'un contrat qui ne touche pas le mois.
+pub(crate) fn contrat_dans_le_mois(contrat: &PeriodeOuverte, mois: Mois, qui: &str) -> R<Periode> {
+    contrat
+        .croise(&Periode::du_mois(mois))
+        .ok_or_else(|| socle::refus!("{} : le contrat du {} ne touche pas {}.", qui, contrat.debut().jj_mm_aaaa(), mois))
+}
 
 /// Le debut de l'engagement ecrit `e`, comme `Engagement` le deduirait : `debut` s'il le dit, sinon son premier jour
 /// joue (`Carte::debut_lu`).

@@ -7,7 +7,7 @@
 //! groupes et par leurs champs (`Champ`), jamais par le nom d'une cle.
 
 use serde::{Deserialize, Serialize};
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
 use socle::forme::NombreLu;
 use socle::grandeurs::Heures;
@@ -393,6 +393,11 @@ impl Carte {
     /// Le debut, comme `Engagement` le deduirait : celui qu'elle dit, sinon son premier jour joue ; `None` sans aucun.
     pub fn debut_lu(&self) -> Option<Jour> {
         crate::debut_de(self.debut, self.lignes())
+    }
+
+    /// Les dates du contrat qu'elle ecrit : `None` quand elle ne dit pas son debut ; refus d'une fin avant le debut.
+    pub fn contrat(&self) -> R<Option<PeriodeOuverte>> {
+        self.debut.map(|d| PeriodeOuverte::du(d, self.fin)).transpose()
     }
 
     /// Les jours joues de ses lignes de travail (`crate::jours_des_lignes`).

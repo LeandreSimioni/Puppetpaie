@@ -47,7 +47,7 @@ use droit::natures::Nature;
 /// antérieurs », `atelier/reference/sources/code-du-travail/xml/D1226-4.xml`).
 const DOUZE_MOIS: Duree<EnMois> = Duree::mois(12);
 use droit::permanents::{Principe, PrincipeAccident};
-use socle::date::{Jour, Periode, PeriodeOuverte};
+use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
 use socle::forme::Nombre;
@@ -535,14 +535,13 @@ calculé.",
 pub fn indemnites_a_dire(ctx: &Contexte, carte: &crate::saisie::Carte, mois: Mois) -> R<Option<String>> {
     let nat = carte.nature_lue()?;
     // Un contrat sans date de debut ecrite ne se designe pas : aucun imprevu ne peut le nommer (S21.G00.40.001).
-    let (Some(debut_contrat), Some(salarie)) = (carte.debut, carte.salarie.as_ref()) else { return Ok(None) };
+    let (Some(contrat), Some(salarie)) = (carte.contrat()?, carte.salarie.as_ref()) else { return Ok(None) };
     if !nat.mensuelle() {
         return Ok(None);
     }
+    let debut_contrat = contrat.debut();
     // Le contrat borne au mois.
-    let presence = PeriodeOuverte::du(debut_contrat, carte.fin)?
-        .croise(&Periode::du_mois(mois))
-        .ok_or_else(|| socle::refus!("Le contrat du {} ne touche pas {}.", debut_contrat.jj_mm_aaaa(), mois))?;
+    let presence = crate::contrat_dans_le_mois(&contrat, mois, &ctx.nomme(salarie))?;
     for imp in crate::imprevus::du_contrat_dans_le_mois(ctx, salarie, &debut_contrat, carte.numero.as_ref(), mois)? {
         let Imprevu::Arret(imp) = imp else { continue };
         if !droits(ctx, &imp, &nat)?.is_some_and(|dr| dr.du()) {

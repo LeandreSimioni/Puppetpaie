@@ -993,7 +993,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let fin_mois = du_mois.fin();
     // La date de debut d'un contrat paye au mois : la meme phrase que `engagement::Engagement` (une saisie neuve sans
     // debut ne refuse pas sur « champ 'debut' absent »).
-    let Some(debut_saisi) = e.debut else {
+    let Some(contrat) = e.contrat()? else {
         return Err(socle::refus!(
             "{} : saisissez la date de début de son {}, celle du contrat signé, sous « Contrat ».\n\
              Elle identifie le contrat dans la déclaration (S21.G00.40.001) : elle ne se déduit de rien.",
@@ -1001,10 +1001,9 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             nat.libelle
         ));
     };
+    let debut_saisi = contrat.debut();
     // Le contrat borne au mois.
-    let presence = PeriodeOuverte::du(debut_saisi, e.fin)?
-        .croise(&du_mois)
-        .ok_or_else(|| socle::refus!("{} : le contrat du {} ne touche pas {}.", qui(ctx, e), debut_saisi.jj_mm_aaaa(), mois))?;
+    let presence = crate::contrat_dans_le_mois(&contrat, mois, &qui(ctx, e))?;
     // Le salaire d'un mois incomplet : l'horaire reel du mois, ou la regle de la convention qui en a une
     // (`droit::periodes::part_du_mois`).
     let salarie = salarie_de(e)?.clone();
