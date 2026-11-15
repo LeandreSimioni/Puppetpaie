@@ -213,17 +213,11 @@ impl Montant {
     }
 
     /// La part de ce montant que `part` fait sur `tout`, d'une meme grandeur (des heures : le plafond d'un temps partiel ;
-    /// des jours : le dixieme des jours pris sur ceux qu'une periode a acquis), exacte : le produit, puis le quotient
-    /// (`au_centime` la fixe). `tout` n'est pas nul : l'appelant le refuse.
+    /// des jours : le dixieme des jours pris sur ceux qu'une periode a acquis ; des montants : une assiette repartie au
+    /// prorata du brut de chaque rubrique), exacte : le produit, puis le quotient (`au_centime` la fixe). `tout` n'est pas
+    /// nul : l'appelant le refuse.
     pub fn prorata<Q: Grandeur>(self, part: Q, tout: Q) -> Montant {
         Montant(num::div(num::mul(self.0, part.en_decimal()), tout.en_decimal()))
-    }
-
-    /// La part de ce montant que `part` fait sur `tout` (une assiette repartie au prorata du brut de chaque rubrique),
-    /// exacte : le produit, puis le quotient. Montant x (montant / montant) = montant. `tout` n'est pas nul : l'appelant
-    /// le garde.
-    pub fn au_prorata(self, part: Montant, tout: Montant) -> Montant {
-        Montant(num::div(num::mul(self.0, part.0), tout.0))
     }
 
     /// Ce montant pour chacune des heures `h` (le SMIC horaire d'un SMIC de reference) : montant / heures = montant
@@ -333,6 +327,14 @@ impl Coefficient {
 impl Taux {
     /// Cinq dix-milliemes de point (`0.0005`) : l'ecart qu'un arrondi fait sur un taux imprime.
     pub const CINQ_DIX_MILLIEMES: Taux = Taux(Decimal::from_parts(5, 0, 0, false, 4));
+
+    /// Cent pour cent (`100`) : le tout, qu'une part ne depasse pas.
+    pub const CENT_POUR_CENT: Taux = Taux(Decimal::ONE_HUNDRED);
+
+    /// Ce taux en coefficient (`10.00` donne `0.10`) : taux / 100 = coefficient (l'inverse de `Coefficient::en_taux`).
+    pub fn en_coefficient(self) -> Coefficient {
+        Coefficient(num::div(self.0, Decimal::ONE_HUNDRED))
+    }
 
     /// A deux decimales, la moitie au pair (aucun texte deposé ne dit l'arrondi d'un taux moyen : `heures_en_plus`).
     pub fn a_deux_decimales(self) -> Taux {
@@ -563,6 +565,9 @@ macro_rules! au_montant_unitaire {
 au_montant_unitaire!(Heures, Cachets, Jours, Services, Semaines, Unites);
 
 impl MontantUnitaire {
+    /// Zero.
+    pub const ZERO: MontantUnitaire = MontantUnitaire(Decimal::ZERO);
+
     /// Ce montant unitaire pour `n` unites comptees (le taux d'un cachet fois les cachets d'une periode) : montant
     /// unitaire x compte = montant. Un compte n'est pas une grandeur (« Le glossaire ») : il vient d'un `len()`.
     pub fn fois(self, n: usize) -> Montant {
@@ -647,14 +652,13 @@ pub mod lu {
     /// LA GRANDEUR QU'UN NOMBRE D'UNE DONNEE ECRIT (`forme::NombreLu` : une case d'une carte, le salaire mensuel), son
     /// echelle gardee (`130.0`, sa forme ecrite) : la porte de sa lecture. Un nombre hors de portee d'un decimal se refuse.
     pub fn ecrite<G: Grandeur>(n: &crate::forme::NombreLu) -> crate::echec::R<G> {
-        let d = match (n.as_i64(), n.as_u64()) {
-            (None, None) => {
-                let s = n.ecrit();
-                num::dec_texte(&s).map_err(|_| crate::refus!("nombre hors de portee : {}", s))?
-            }
-            _ => n.decimal()?,
-        };
-        Ok(<G as crate::grandeurs::Scelle>::du(d))
+        n.decimal_avec_echelle().map(<G as crate::grandeurs::Scelle>::du)
+    }
+
+    /// LA GRANDEUR QU'UN NOMBRE ECRIT EN TEXTE DIT (`num::dec_texte`, comme `forme::decimal` lit un texte : « 12.50 »),
+    /// son echelle gardee : la porte de sa lecture. Un texte illisible se refuse.
+    pub fn en_texte<G: Grandeur>(t: &str) -> crate::echec::R<G> {
+        num::dec_texte(t).map(<G as crate::grandeurs::Scelle>::du)
     }
 
     /// Comme `forme::decimal` : un nombre, ou un nombre ecrit en texte (une ligne de paie, une paie ecrite : le moteur

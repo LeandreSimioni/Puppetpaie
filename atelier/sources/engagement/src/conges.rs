@@ -144,9 +144,10 @@ pub(crate) fn heures_dites(ctx: &Contexte, e: &Carte, x: &Option<NombreLu>, nom:
     Ok(h)
 }
 
-/// Le decimal d'un nombre de la carte, son echelle gardee (`Chiffre::dec_avec_echelle`).
+/// Le decimal d'un nombre de la carte, son echelle gardee (`NombreLu::decimal_avec_echelle`) : celui des heures en plus
+/// et du preavis, des chaines encore en decimal ; une grandeur se lit par `socle::grandeurs::lu::ecrite`.
 pub(crate) fn dec_de(n: &NombreLu) -> R<Decimal> {
-    Chiffre::Nombre(n.clone()).dec_avec_echelle()
+    n.decimal_avec_echelle()
 }
 
 // -------------------------------------------------- les jours ouvrables

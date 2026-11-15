@@ -662,18 +662,18 @@ permanents » : le taux du contrat (en % du plafond mensuel, pour le salarié se
         if sans_sante(sal, au_mois) {
             return Ok(sans_mutuelle(bar));
         }
-        let total = taux_contrat.decimal()?;
+        let total: Taux = taux_contrat.grandeur()?;
         let pp = choix.and_then(|c| c.part_patronale.dite());
-        let minimum = bar.sante_obligatoire.as_ref().ok_or_else(|| socle::fichiers::absent("sante_obligatoire"))?.part_employeur_minimum.decimal();
+        let minimum = bar.sante_obligatoire.as_ref().ok_or_else(|| socle::fichiers::absent("sante_obligatoire"))?.part_employeur_minimum;
         let Some(pp) = pp else {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Santé des permanents », part employeur : à remplir (au moins {} %, art. L911-7 du \
 code de la Securite sociale) ; elle est sur le contrat de complémentaire santé de la compagnie.",
-                minimum
+                minimum.decimal()
             ));
         };
-        let part = pp.decimal()?;
-        if part < minimum || part > Decimal::ONE_HUNDRED {
+        let part: Taux = pp.grandeur()?;
+        if part < minimum || part > Taux::CENT_POUR_CENT {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Santé des permanents », part employeur {} % : \
 l'employeur en paie au moins la moitie (art. L911-7 du code de \
@@ -681,8 +681,7 @@ la Securite sociale), et pas plus de 100.",
                 pp.ecrit()
             ));
         }
-        let pat = Coefficient::du_decimal(div(part, Decimal::ONE_HUNDRED));
-        return Ok(poser_mutuelle(bar, Some(Assiette::PssPeriode), Taux::du_decimal(total), pat, Some("Complémentaire santé (contrat de l'entreprise)")));
+        return Ok(poser_mutuelle(bar, Some(Assiette::PssPeriode), total, part.en_coefficient(), Some("Complémentaire santé (contrat de l'entreprise)")));
     }
     // La dispense d'un permanent 3090 : l'accord du 19/07/2024 (art. 9.1, 9.2,
     // `atelier/reference/sources/kali-3090-accord-sante-permanents-20240719-20261011.md`) rend l'adhesion obligatoire
@@ -1262,13 +1261,13 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
     // « aucun », ou un taux de zero : la commune de l'etablissement n'en a pas, ou il y emploie moins de onze salaries
     // (CGCT, L. 2333-64, I, l'effectif « employe dans chacune des zones »).
     let vm = e.versement_mobilite.dite();
-    let taux_vm = vm.and_then(|v| v.taux.dite()).map(crate::fiche::NombreDeFiche::decimal).transpose()?;
-    let aucun = taux_vm.is_some_and(|t| t.is_zero());
+    let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).map(crate::fiche::NombreDeFiche::grandeur).transpose()?;
+    let aucun = taux_vm.is_some_and(Taux::est_nul);
     if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.as_ref().is_none_or(VersementMobiliteEcrit::est_vide)) {
         bar.versement_mobilite = None;
     } else if let Some(v) = vm {
         bar.versement_mobilite = Some(VersementMobiliteEcrit::Ecrit(crate::forme_bareme::VersementMobiliteTaux {
-            taux: taux_vm.map(socle::grandeurs::Taux::du_decimal),
+            taux: taux_vm,
             code_insee: v.code_insee.dite().cloned(),
             ..Default::default()
         }));
@@ -2082,7 +2081,7 @@ pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> R<Option<String>> {
 /// Les deux lignes du taux AT/MP disent-elles le meme code, le meme taux (en nombre : 2 et 2,0 sont le meme) et la meme
 /// date, d'ou qu'elles viennent ?
 pub fn meme_taux_atmp(a: &crate::fiche::TauxAtmp, b: &crate::fiche::TauxAtmp) -> bool {
-    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize()).map_err(|e| e.phrase));
+    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.grandeur::<Taux>().map(socle::grandeurs::sans_zero).map_err(|e| e.phrase));
     a.code_risque == b.code_risque && a.depuis == b.depuis && taux(a) == taux(b)
 }
 
@@ -2094,11 +2093,11 @@ pub fn taux_atmp_a_confirmer(recue: Option<&crate::fiche::TauxAtmp>, apres: &cra
         Some(a) => a,
         None => return Ok(None),
     };
-    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.decimal().map(|d| d.normalize())).transpose();
+    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.grandeur::<Taux>().map(socle::grandeurs::sans_zero)).transpose();
     if a.code_risque == apres.code_risque && taux(a)? == taux(apres)? {
         return Ok(None);
     }
-    let dit: String = taux(a)?.map(pourcent).into_iter().collect();
+    let dit: String = taux(a)?.map(|t| pourcent(t.decimal())).into_iter().collect();
     let code: String = a.code_risque.iter().map(|c| format!(" (code risque {})", c)).collect();
     let depuis: String = a.depuis.iter().map(|j| format!(" à partir du {}", j.jj_mm_aaaa())).collect();
     Ok(Some(format!("Le taux reçu par la DSN est {}{}{}. Êtes-vous sûr de vouloir le modifier ?", dit, code, depuis)))

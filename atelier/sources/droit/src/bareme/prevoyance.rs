@@ -11,7 +11,7 @@ use crate::fiche::{ExtensionT2, Idcc, Lue};
 use crate::natures::AuMois;
 use socle::echec::Lieu;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
-use socle::grandeurs::{Coefficient, Montant, Taux};
+use socle::grandeurs::{Montant, Taux};
 use socle::num::{div, mul, sub};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
@@ -239,7 +239,7 @@ en vigueur au {} dans le catalogue de branche.",
         }
     }
     let choix = ent.permanent.ouvrir(au_mois).sante_permanents.dite().and_then(|s| s.part_patronale.dite());
-    let minimum = sante.part_patronale_minimum.decimal();
+    let minimum = sante.part_patronale_minimum;
     // La part de l'employeur est celle que la compagnie a decidee (au moins le minimum de la convention) : elle seule la
     // connait.
     let Some(choix) = choix else {
@@ -247,22 +247,22 @@ en vigueur au {} dans le catalogue de branche.",
             "Fiche Entreprise, « Santé des permanents », part employeur : à remplir. La convention {} en met au moins {} % \
 à la charge de l'employeur ; la part de la compagnie est sur son contrat de complémentaire santé.",
             idcc,
-            minimum
+            minimum.decimal()
         ));
     };
-    let part = choix.decimal()?;
-    if part < minimum || part > Decimal::ONE_HUNDRED {
+    let part: Taux = choix.grandeur()?;
+    if part < minimum || part > Taux::CENT_POUR_CENT {
         return Err(socle::refus!(
             "Fiche Entreprise, « Santé des permanents », part employeur {} % : \
 la convention {} met au moins {} % de la cotisation sante a la \
 charge de l'employeur (XII.2.1.11), et pas plus de 100.",
             choix.ecrit(),
             idcc,
-            minimum
+            minimum.decimal()
         ));
     }
     let base = sante.base.clone();
-    Ok(Some(Mutuelle::Pose { base, total, pat: Coefficient::du_decimal(div(part, Decimal::ONE_HUNDRED)) }))
+    Ok(Some(Mutuelle::Pose { base, total, pat: part.en_coefficient() }))
 }
 
 /// `super::minimum_sante`.

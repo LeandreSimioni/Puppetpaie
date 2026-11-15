@@ -65,14 +65,21 @@ impl Chiffre {
         }
     }
 
-    /// Le decimal dont un nombre a virgule garde son echelle (`130.0`, sa forme ecrite).
+    /// Le decimal dont un nombre a virgule garde son echelle (`130.0`, sa forme ecrite) : la lecture d'un nombre d'une
+    /// chaine encore en decimal (le maintien de salaire) ; une grandeur se lit par `grandeur`.
     pub fn dec_avec_echelle(&self) -> R<Decimal> {
         match self {
-            Chiffre::Nombre(n) if n.as_i64().is_none() && n.as_u64().is_none() => {
-                let s = n.ecrit();
-                socle::num::dec_texte(&s).map_err(|_| socle::refus!("nombre hors de portee : {}", s))
-            }
-            autre => autre.dec(),
+            Chiffre::Nombre(n) => n.decimal_avec_echelle(),
+            Chiffre::Texte(s) => socle::num::dec_texte(s),
+        }
+    }
+
+    /// LA GRANDEUR QU'IL DIT, son echelle gardee : un nombre comme une donnee l'ecrit (`socle::grandeurs::lu::ecrite`), un
+    /// texte comme un nombre ecrit en texte (`lu::en_texte`) ; la porte de sa lecture.
+    pub fn grandeur<G: socle::grandeurs::Grandeur>(&self) -> R<G> {
+        match self {
+            Chiffre::Nombre(n) => socle::grandeurs::lu::ecrite(n),
+            Chiffre::Texte(s) => socle::grandeurs::lu::en_texte(s),
         }
     }
 

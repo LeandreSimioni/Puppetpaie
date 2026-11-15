@@ -1585,11 +1585,11 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         let mut base_prev = montant;
         if let Some(pp) = plafond_prev {
             if brut > Montant::ZERO {
-                base_prev = brut.min(pp).au_prorata(montant, brut);
+                base_prev = brut.min(pp).prorata(montant, brut);
             }
         }
         let base_prev_t2 = if !tranches_prev.est_nul() && brut > Montant::ZERO {
-            tranches_prev.au_prorata(montant, brut)
+            tranches_prev.prorata(montant, brut)
         } else {
             Montant::ZERO
         };

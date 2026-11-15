@@ -45,6 +45,7 @@ use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
 use socle::mode::Mode;
+use socle::grandeurs::MontantUnitaire;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 
@@ -1441,11 +1442,11 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     }
     let montant = |k: &str, t: &Option<Chiffre>| -> R<Option<Chiffre>> {
         let Some(t) = t else { return Ok(None) };
-        let x = t.dec_avec_echelle().map_err(|e| e.reformuler(|p| format!("Indemnité journalière ({}) : {}", k, p)).reclasser(Classe::Refuse))?;
-        if x <= Decimal::ZERO {
+        let x: MontantUnitaire = t.grandeur().map_err(|e| e.reformuler(|p| format!("Indemnité journalière ({}) : {}", k, p)).reclasser(Classe::Refuse))?;
+        if x <= MontantUnitaire::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }
-        Ok(Some(Chiffre::Texte(socle::grandeurs::Montant::du_decimal(x).au_centime().decimal().to_string())))
+        Ok(Some(Chiffre::Texte(x.au_centime().decimal().to_string())))
     };
     if let Some(x) = montant("ij_brute", &c.ij_brute)? {
         a.ij_brute = Some(x);

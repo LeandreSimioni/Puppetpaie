@@ -11,6 +11,7 @@ use crate::conges::{
     salarie_de, taux_au_montant,
 };
 use crate::saisie::Carte;
+use crate::ligne::QuantiteDeLigne;
 use crate::{Chiffre, LignePaie};
 use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{AuMois, MotifDeRupture, Nature};
@@ -20,7 +21,7 @@ use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::forme::Nombre;
 use socle::grandeurs::{courte, Coefficient, Jours, Montant, MontantUnitaire};
-use socle::num::{court, Decimal};
+use socle::num::{court, mul, Decimal};
 use droit::permanents::{self, jours_acquis, IndemniteDePreavis};
 use socle::date::{Anciennete, Periode};
 
@@ -33,9 +34,10 @@ struct Solde {
     conges_payes: Option<(usize, Jours, Montant)>,
 }
 
-/// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit.
-fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: Decimal, taux: MontantUnitaire) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), Nombre(court(quantite)), courte(taux))
+/// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit : la ligne ecrite ne garde que le nombre de
+/// sa quantite (`QuantiteDeLigne`), sa porte.
+fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: QuantiteDeLigne, taux: MontantUnitaire) -> LignePaie {
+    LignePaie::composee(rubrique.clone(), Nombre(court(quantite.decimal())), courte(taux))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
@@ -351,7 +353,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             cpt2.reports = cpt.reports - entame;
             let ind = cpt2.indemnite_des_jours(solde, maintien)?;
             stc.conges_payes = Some((stc.lignes.len(), solde, ind.retenu));
-            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, solde.decimal(), taux_au_montant(ind.retenu, solde)?));
+            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, QuantiteDeLigne::Jours(solde), taux_au_montant(ind.retenu, solde)?));
             stc.avertissements.push(info(format!(
                 "{} : {} jour(s) de conges acquis et non pris, payes {} ({}) -- \
                  art. L3141-28, due quelle que soit la cause de la rupture.",
@@ -494,7 +496,8 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 }
                 // La rubrique, et avec elle le code du bloc 52, suit le motif : 023, ou 032 pour le 092 (L1226-14).
                 let rubrique = permanents::rubrique_de_l_indemnite_de_preavis(motif)?;
-                stc.lignes.push(ligne(&rubrique, m, salaire));
+                // Les mois du preavis, une duree que son calcul dit encore en decimal : la ligne ecrit leur nombre tel quel.
+                stc.lignes.push(LignePaie::composee(rubrique, Nombre(court(m)), courte(salaire)));
                 let article = match indemnite {
                     IndemniteDePreavis::AutreArticle(t) => format!(" Pour ce motif, l'indemnite vient d'un autre article : {}", t),
                     IndemniteDePreavis::ATrancher(t) => format!(
@@ -505,10 +508,9 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                     IndemniteDePreavis::Licenciement | IndemniteDePreavis::Aucune(_) => String::new(),
                 };
                 // L1234-5 : « indemnité de congés payés comprise » ; un mois de travail acquiert ses jours (L3141-3).
-                // Les mois du preavis, une duree que son calcul dit encore en decimal : leur porte.
-                let mois_du_preavis = Coefficient::du_decimal(m);
-                let jours = permanents::regles()?.conges_payes.acquisition.jours_par_mois * mois_du_preavis;
-                let paye = mois_du_preavis * salaire;
+                // Les mois du preavis sont un decimal (sa chaine) : les jours par mois et le salaire s'y ouvrent.
+                let jours = Jours::du_decimal(mul(permanents::regles()?.conges_payes.acquisition.jours_par_mois.decimal(), m));
+                let paye = Montant::du_decimal(mul(m, salaire.decimal()));
                 let conges = conges_non_effectues(ctx, e, mois, &fin, jours, salaire, paye.au_centime(), &mut stc)?;
                 stc.avertissements.push(avertir(format!(
                     "{} : {} mois de préavis non effectué, payés {} \
@@ -661,7 +663,7 @@ fn delai_de_prevenance(
         fraction += part.fraction;
         jours += part.jours;
     }
-    stc.lignes.push(ligne(&regle.rubrique, fraction.decimal(), salaire));
+    stc.lignes.push(ligne(&regle.rubrique, QuantiteDeLigne::PartDuMois(fraction), salaire));
     let montant = (fraction * salaire).au_centime();
     let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&non_effectue)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
@@ -722,7 +724,7 @@ fn conges_non_effectues(
         Some((rang, j, m)) => (rang, j + jours, m + ind.retenu),
         None => (stc.lignes.len(), jours, ind.retenu),
     };
-    let l = ligne(&rubrique, total_jours.decimal(), taux_au_montant(total, total_jours)?);
+    let l = ligne(&rubrique, QuantiteDeLigne::Jours(total_jours), taux_au_montant(total, total_jours)?);
     match stc.lignes.get_mut(rang) {
         Some(x) => *x = l,
         None => stc.lignes.push(l),

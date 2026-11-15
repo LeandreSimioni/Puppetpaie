@@ -35,7 +35,7 @@ use crate::numeros::NumeroContrat;
 use socle::fichiers::repr;
 use socle::echec::R;
 use socle::grandeurs::ecrit::sans_zero::dit;
-use socle::grandeurs::{Heures, Jours};
+use socle::grandeurs::{Heures, Jours, MontantUnitaire};
 use socle::num::{div, Decimal};
 
 /// Le dossier du magasin, sous les donnees de la compagnie.
@@ -268,7 +268,7 @@ pub fn verifier(imp: &Imprevu) -> R<()> {
     let Imprevu::Arret(a) = imp else { return Ok(()) };
     for (k, x) in [("ij_brute", &a.ij_brute), ("ij_nette", &a.ij_nette), ("ij_brute_majoree", &a.ij_brute_majoree), ("ij_nette_majoree", &a.ij_nette_majoree)] {
         if let Some(x) = x.as_ref().filter(|x| x.vrai()) {
-            if x.dec_avec_echelle()? <= Decimal::ZERO {
+            if x.grandeur::<MontantUnitaire>()? <= MontantUnitaire::ZERO {
                 return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, x.en_texte()));
             }
         }

@@ -780,6 +780,18 @@ impl NombreLu {
         }
     }
 
+    /// Le decimal du nombre, son echelle gardee (`130.0`, sa forme ecrite) : un entier tel quel, un nombre a virgule tel
+    /// qu'il s'ecrit. Un nombre hors de portee d'un decimal se refuse. Sa grandeur se lit par `grandeurs::lu::ecrite`.
+    pub fn decimal_avec_echelle(&self) -> R<crate::num::Decimal> {
+        match (self.0.as_i64(), self.0.as_u64()) {
+            (None, None) => {
+                let s = self.ecrit();
+                crate::num::dec_texte(&s).map_err(|_| crate::refus!("nombre hors de portee : {}", s))
+            }
+            _ => self.decimal(),
+        }
+    }
+
     /// Le nombre est-il nul (`0`, `0.0`) ?
     pub fn est_nul(&self) -> bool {
         matches!(self.decimal(), Ok(d) if d.is_zero())
