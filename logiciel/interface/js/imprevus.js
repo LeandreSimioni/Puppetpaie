@@ -434,7 +434,7 @@ async function contratsDuJour(ou, jour, cible) {
     return null;
   }
   const carte = ou.carte;
-  const sien = carte && contrats.find((c) => (carte.numero && c.numero === carte.numero) || c.debut === carte.debut);
+  const sien = carte && contrats.find((c) => (carte.numero && c.numero === carte.numero) || c.periode.du === carte.debut);
   if (contrats.length === 1) return contrats[0];
   if (sien && sien.numero) return sien;
   cible.innerHTML = `Quel contrat

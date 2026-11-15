@@ -606,9 +606,9 @@ contrat.",
         _ => {
             let liste: Vec<String> = candidats
                 .iter()
-                .map(|c| match &c.fin {
-                    Some(f) => format!("{} du {} au {}", numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO), c.debut.iso(), f.iso()),
-                    None => format!("{} depuis le {}", numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO), c.debut.iso()),
+                .map(|c| match c.periode.fin() {
+                    Some(f) => format!("{} du {} au {}", numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO), c.periode.debut().iso(), f.iso()),
+                    None => format!("{} depuis le {}", numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO), c.periode.debut().iso()),
                 })
                 .collect();
             Err(refus(format!(
@@ -1473,7 +1473,7 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
 fn contrat_de(ctx: &Contexte, imp: &impl Suspend) -> R<Option<ContratAuJour>> {
     let contrats = contrats_au(ctx, imp.salarie(), imp.contrat_debut())?;
 
-    Ok(contrats.into_iter().find(|c| c.debut == imp.contrat_debut()))
+    Ok(contrats.into_iter().find(|c| c.periode.debut() == imp.contrat_debut()))
 }
 
 /// La nature du contrat qu'un arret suspend ; `None` s'il n'y est plus.
@@ -1481,7 +1481,7 @@ fn nature_du_contrat(ctx: &Contexte, a: &ArretSaisi) -> R<Option<std::sync::Arc<
     let Some(c) = contrat_de(ctx, a)? else { return Ok(None) };
     // Une nature se dit, elle ne se devine pas (regle 6) : celle d'un contrat repris se dit apres l'import (`import::nature`).
     let Some(n) = c.nature else {
-        return Err(refus(format!("{} : la nature de son contrat du {} n'est pas encore dite.", c.nom, c.debut.iso())));
+        return Err(refus(format!("{} : la nature de son contrat du {} n'est pas encore dite.", c.nom, c.periode.debut().iso())));
     };
     Ok(Some(n.proprietes().map_err(|e| e.reclasser(Classe::Refuse))?))
 }
@@ -1665,7 +1665,7 @@ fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<
     let contrat = contrat_suspendu(ctx, &cle, &debut, c.contrat.as_ref())?;
     let s = SuspensionSaisie {
         salarie: cle.clone(),
-        contrat_debut: contrat.debut.clone(),
+        contrat_debut: contrat.periode.debut(),
         contrat_numero: contrat.numero.clone(),
         motif: c.motif,
         debut,
@@ -1674,7 +1674,7 @@ fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<
         qui: INTERFACE.to_string(),
         note: c.note.clone(),
     };
-    verifier_suspension(&s, contrat.fin)?;
+    verifier_suspension(&s, contrat.periode.fin())?;
     if trouver_suspension(ctx, &cle, &debut)?.is_some() {
         return Err(refus(format!(
             "Une suspension de {} au {} est deja enregistree : la modifier plutot que d'en saisir une seconde.",
@@ -1702,7 +1702,7 @@ fn suspension_modifier(ctx: &Contexte, c: &ChargeSuspensionModifier) -> R<Repons
     if let Some(m) = c.motif {
         s.motif = m;
     }
-    let fin_du_contrat = contrat_de(ctx, &s)?.and_then(|c| c.fin);
+    let fin_du_contrat = contrat_de(ctx, &s)?.and_then(|c| c.periode.fin());
     verifier_suspension(&s, fin_du_contrat)?;
     sans_chevauchement(ctx, &Imprevu::Suspension(s.clone()), Some(&Imprevu::Suspension(avant)))?;
     liste[i] = Imprevu::Suspension(s.clone());
@@ -2537,9 +2537,9 @@ fn arret_contrats(ctx: &Contexte, c: ChargeArretContrats) -> R<ReponseContrats> 
     };
     // Chaque contrat se dit en une ligne : son numero et sa periode.
     for k in &mut contrats {
-        let periode = match &k.fin {
-            Some(f) => format!("du {} au {}", k.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
-            None => format!("depuis le {}", k.debut.jj_mm_aaaa()),
+        let periode = match k.periode.fin() {
+            Some(f) => format!("du {} au {}", k.periode.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+            None => format!("depuis le {}", k.periode.debut().jj_mm_aaaa()),
         };
         k.dit = Some(format!("{}, {}", numero_dit(k.numero.as_ref(), "", "", SANS_NUMERO), periode));
     }
@@ -2558,16 +2558,15 @@ fn contrats_au(ctx: &Contexte, cle: &IdSalarie, jour: Jour) -> R<Vec<ContratAuJo
                 continue;
             }
             let Some(contrat) = e.contrat()? else { continue };
-            let (debut, fin) = (contrat.debut(), contrat.fin());
             // Un contrat paye au mois sans fin ecrite (un CDI qui court) couvre tout jour depuis son debut : c'est sur lui
             // qu'un arret ou une suspension se pose. Un contrat dont la nature n'est pas encore dite n'est pas tenu pour
             // paye au mois : il ne couvre que ses bornes. Le mois le plus recent qui le saisit fait foi (une fin ecrite
             // plus tard l'emporte) : il est retenu, couvrant ou non, avant les mois plus anciens.
             let mensuel = e.nature.map(droit::natures::NatureDeContrat::proprietes).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|n| n.mensuelle());
-            if fin.is_none() && !mensuel {
+            if contrat.fin().is_none() && !mensuel {
                 continue;
             }
-            if !vus.insert((debut, e.numero.clone())) {
+            if !vus.insert((contrat.debut(), e.numero.clone())) {
                 continue;
             }
             if !contrat.contient(&jour) {
@@ -2577,8 +2576,7 @@ fn contrats_au(ctx: &Contexte, cle: &IdSalarie, jour: Jour) -> R<Vec<ContratAuJo
                 nom: ctx.nomme(cle),
                 salarie: c,
                 numero: e.numero.clone(),
-                debut,
-                fin,
+                periode: contrat,
                 mois: m,
                 spectacle: e.spectacle.clone(),
                 // Paye au mois (`Nature::mensuelle`) : son mois de paie se tire du moteur, et un arret y appelle le maintien
@@ -2589,7 +2587,7 @@ fn contrats_au(ctx: &Contexte, cle: &IdSalarie, jour: Jour) -> R<Vec<ContratAuJo
             });
         }
     }
-    sorties.sort_by(|a, b| a.debut.cmp(&b.debut));
+    sorties.sort_by(|a, b| a.periode.debut().cmp(&b.periode.debut()));
     Ok(sorties)
 }
 

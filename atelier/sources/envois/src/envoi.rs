@@ -257,8 +257,7 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
         let heures = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero());
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
-            debut: e.contrat().debut(),
-            fin: e.contrat().fin(),
+            contrat: e.contrat(),
             spectacle,
             jours: dates,
             cachets: e.cachets,
@@ -285,8 +284,7 @@ pub struct ResumeDePaie {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContratResume {
-    pub debut: socle::date::Jour,
-    pub fin: Option<socle::date::Jour>,
+    pub contrat: socle::date::PeriodeOuverte,
     pub spectacle: Option<String>,
     pub jours: Vec<socle::date::Jour>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]

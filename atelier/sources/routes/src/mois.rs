@@ -301,8 +301,7 @@ struct EnCours {
     salarie: IdSalarie,
     nom: String,
     spectacle: Option<droit::contexte::IdSpectacle>,
-    debut: Jour,
-    fin: Jour,
+    contrat: Periode,
     numero: NumeroContrat,
     depuis: Option<Mois>,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
@@ -656,10 +655,10 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     for i in engagement::importe::qui_continuent(&ctx.racine, mois)? {
         let b = i.objet().carte();
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
-        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.clone(), b.debut, b.fin, b.numero.clone()) else {
+        let (Some(salarie), Some(contrat), Some(numero)) = (b.salarie.clone(), b.contrat()?.and_then(|c| c.fermee()), b.numero.clone()) else {
             return Err(erreur(Classe::Illisible, "Un contrat repris d'un autre logiciel ne dit pas son salarié, ses bornes ou son numéro : le reprendre à l'import."));
         };
-        if !vus.insert((salarie.clone(), debut, numero.clone())) {
+        if !vus.insert((salarie.clone(), contrat.debut(), numero.clone())) {
             continue;
         }
         let fiche = ctx.fiche_de(&salarie).map_err(|m| m.reclasser(Classe::Manque))?;
@@ -683,8 +682,9 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             nature: NatureDeContrat::CdduSpectacle,
             salarie: fiche.id.clone(),
             spectacle: spectacle.clone(),
-            debut,
-            fin,
+            // La carte du mois les ecrit en deux cases.
+            debut: contrat.debut(),
+            fin: contrat.fin(),
             numero: numero.clone(),
             lignes: [LigneAReprendre { rubrique: "cachet", taux, dates: [] }],
         };
@@ -692,8 +692,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             nom: ctx.nomme(&salarie),
             salarie: fiche.id,
             spectacle,
-            debut,
-            fin,
+            contrat,
             numero,
             depuis: i.continue_apres(),
             taux_cachet,
@@ -706,7 +705,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
         deja.insert((c, e.debut_lu(), e.numero.clone()));
     }
     for c in out.iter_mut() {
-        c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.debut), Some(c.numero.clone())));
+        c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.contrat.debut()), Some(c.numero.clone())));
     }
     Ok(out)
 }

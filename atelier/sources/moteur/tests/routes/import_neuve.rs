@@ -313,7 +313,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     assert_eq!((decembre["importes"].clone(), decembre["ferme_aux_neufs"].clone()), (json!([]), Value::Null));
     let r = reussi(&route("contrats-en-cours", json!({"mois": "2026-12"}))).clone();
     let c = &r["contrats"][0];
-    assert_eq!((c["debut"].clone(), c["fin"].clone(), c["numero"].clone()), (json!("2026-11-20"), json!("2026-12-03"), json!("FU1.26.01")), "{}", r);
+    assert_eq!((c["contrat"]["du"].clone(), c["contrat"]["au"].clone(), c["numero"].clone()), (json!("2026-11-20"), json!("2026-12-03"), json!("FU1.26.01")), "{}", r);
     let mut e = c["engagement"].clone();
     e["lignes"] = json!([{"rubrique": "cachet", "quantite": 2, "taux": 150, "lieu": null, "dates": ["2026-12-02", "2026-12-03"], "planning": []}]);
     reussi(&crate::outils::valider(&racine, "2026-12", None, &e, jour));

@@ -1772,7 +1772,7 @@ async function poserContratsEnCours(mois) {
     // Le moteur rend toujours une ligne de cachets, sans quantité, avec le taux
     // du contrat ou le dernier saisi (`engagement_de_reprise`).
     const e = { ...c.engagement, salarie: c.salarie, spectacle: c.spectacle,
-                debut: c.debut, fin: c.fin, numero: c.numero };
+                debut: c.contrat.du, fin: c.contrat.au, numero: c.numero };
     // Ce que l'engagement repris porte d'autre (la durée de référence,
     // l'emploi et les statuts déclarés…) se montre dans son formulaire
     // (`CHAMPS_RARES`), et s'écrit de là.
