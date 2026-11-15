@@ -1055,7 +1055,9 @@ fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) 
     let Some(cet) = r.cet_si_depasse.as_ref().filter(|_| base_de_la_paie(p, Assiette::Cet).is_some_and(|b| !b.is_zero())) else {
         return Ok((l.montant_pat, None));
     };
-    let base = l.base.decimal();
+    let Some(base) = l.base.montant() else {
+        return Err(refus!("La ligne « {} » du bulletin a une base en heures : sa part de la CET ne se sépare pas. Rien n'est écrit.", l.id));
+    };
     let cet_pat = cet.pat.decimal();
     let comp = match r.composants_pat.as_deref() {
         Some(c) if !c.is_empty() => c.iter().map(|t| t.decimal()).collect(),
@@ -1073,7 +1075,7 @@ ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans
             l.id,
             // La phrase cite le montant : sa porte.
             socle::texte::euros(l.montant_pat.decimal()),
-            socle::texte::euros(base)
+            socle::texte::euros(base.decimal())
         ));
     }
     Ok((sans, Some((l.montant_pat - sans, cet_pat))))

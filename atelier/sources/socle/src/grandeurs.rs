@@ -201,6 +201,13 @@ impl Montant {
         Montant(num::div(num::mul(self.0, part.0), tout.0))
     }
 
+    /// La part de ce montant que `part` fait sur `tout` (une assiette repartie au prorata du brut de chaque rubrique),
+    /// exacte : le produit, puis le quotient. Montant x (montant / montant) = montant. `tout` n'est pas nul : l'appelant
+    /// le garde.
+    pub fn au_prorata(self, part: Montant, tout: Montant) -> Montant {
+        Montant(num::div(num::mul(self.0, part.0), tout.0))
+    }
+
     /// Ce montant pour chacune des heures `h` (le SMIC horaire d'un SMIC de reference) : montant / heures = montant
     /// unitaire ; `None` quand `h` est nul.
     pub fn par_heure(self, h: Heures) -> Option<MontantUnitaire> {
@@ -255,6 +262,11 @@ impl Coefficient {
         Coefficient(c)
     }
 
+    /// Sa partie entiere, sans arrondi (un multiple de plafonds du bareme : `8` pour huit plafonds).
+    pub fn entier(self) -> Coefficient {
+        Coefficient(self.0.trunc())
+    }
+
     /// A quatre decimales, la moitie au pair (un ecart relatif : aucun texte deposé ne dit cet arrondi).
     pub fn a_quatre_decimales(self) -> Coefficient {
         Coefficient(self.0.round_dp(4))
@@ -297,6 +309,12 @@ impl Heures {
     /// deposé ne dit cet arrondi).
     pub fn a_deux_decimales(self) -> Heures {
         Heures(self.0.round_dp(2))
+    }
+
+    /// Ces heures `n` fois (les heures d'un cachet fois les jours d'un contrat) : heures x compte = heures. Un compte
+    /// n'est pas une grandeur (« Le glossaire »), comme pour `Montant::fois`.
+    pub fn fois(self, n: usize) -> Heures {
+        Heures(num::mul(self.0, Decimal::from(n)))
     }
 
     /// Ces heures reparties egalement sur `n` jours (les heures d'une ligne sur ses dates) : heures / compte = heures. Un
