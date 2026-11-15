@@ -21,7 +21,8 @@ use socle::echec::R;
 use socle::forme::Nombre;
 use socle::grandeurs::{courte, sans_zero, Montant, MontantUnitaire};
 use socle::num::{add, court, div, mul, Decimal};
-use droit::permanents::{self, anciennete_mois, arrondir_jours, jours_acquis, IndemniteDePreavis};
+use droit::permanents::{self, arrondir_jours, jours_acquis, IndemniteDePreavis};
+use socle::date::Anciennete;
 
 /// Les lignes et les avertissements du solde.
 #[derive(Default)]
@@ -101,7 +102,7 @@ pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
 }
 
 /// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.
-fn age(ctx: &Contexte, e: &Carte) -> R<Option<Decimal>> {
+fn age(ctx: &Contexte, e: &Carte) -> R<Option<Anciennete>> {
     let fiche = e.salarie.as_ref().map(|s| crate::fiche_du_salarie(ctx, s)).transpose()?;
     let Some(naissance) = fiche.and_then(|f| f.date_naissance.dite().copied()) else {
         return Ok(None);
@@ -110,8 +111,7 @@ fn age(ctx: &Contexte, e: &Carte) -> R<Option<Decimal>> {
         Some(f) => f,
         None => aujourdhui()?,
     };
-    let ans = jour.an as i64 - naissance.an as i64 - ((jour.mois, jour.jour) < (naissance.mois, naissance.jour)) as i64;
-    Ok(Some(Decimal::from(ans)))
+    Ok(Some(Anciennete::age(&naissance, &jour)))
 }
 
 // ------------------------------------------------------------ le preavis
@@ -164,7 +164,7 @@ fn terme_du_preavis(fin: &socle::date::Jour, mois: Decimal) -> R<Option<socle::d
     Ok(m.jour(fin.jour.min(m.jours())))
 }
 
-pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, motif: Option<MotifDeRupture>) -> R<Preavis> {
+pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete, motif: Option<MotifDeRupture>) -> R<Preavis> {
     let idcc = idcc(ctx);
     let cdd =!e.nature_lue()?.duree_indeterminee;
     let legal = permanents::preavis_mois(anciennete, motif, cdd)?;
@@ -431,7 +431,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
 
     // --- le preavis non effectue : L1234-5 pour un licenciement ; les autres fins de contrat ont leurs articles
     // (`preavis.indemnite_compensatrice`), et certaines n'ouvrent aucune indemnite (037, 059, 039, 091).
-    let anciennete = anciennete_mois(&debut_de(e)?, &fin);
+    let anciennete = Anciennete::entre(&debut_de(e)?, &fin);
     let mut anciennete_de_l_indemnite = anciennete;
     let indemnite = if e.preavis_non_effectue == Some(true) {
         Some(permanents::indemnite_de_preavis(motif)?)
@@ -480,7 +480,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 // jusqu'au terme du préavis.
                 if matches!(indemnite, IndemniteDePreavis::Licenciement) {
                     if let Some(terme) = terme_du_preavis(&fin, m)? {
-                        anciennete_de_l_indemnite = anciennete_mois(&debut_de(e)?, &terme);
+                        anciennete_de_l_indemnite = Anciennete::entre(&debut_de(e)?, &terme);
                         stc.avertissements.push(info(format!(
                             "{} : le préavis non effectué ne fait pas finir le contrat plus tôt (code du travail, L1234-4) : \
                              l'ancienneté de l'indemnité de licenciement se compte jusqu'au {}, terme du préavis (lecture : il court du lendemain de la fin du travail).",
@@ -769,7 +769,7 @@ fn indemnite_de_rupture(
     ctx: &Contexte,
     e: &Carte,
     mois: Mois,
-    anciennete: Decimal,
+    anciennete: Anciennete,
     motif: Option<MotifDeRupture>,
     nat: &Nature,
     stc: &mut Solde,
@@ -829,7 +829,7 @@ fn indemnite_de_rupture(
             qui
         )));
         let mise = clauses::indemnite_mise_a_la_retraite(idcc, anciennete, &mut retenu)?;
-        let vise = prof.categorie == Some(droit::fiche::CategorieConventionnelle::CadreDeDirection) && ctx.entreprise.annexe_convention.dite() == Some(&droit::fiche::AnnexeConvention::A1) && anciennete > Decimal::from(120);
+        let vise = prof.categorie == Some(droit::fiche::CategorieConventionnelle::CadreDeDirection) && ctx.entreprise.annexe_convention.dite() == Some(&droit::fiche::AnnexeConvention::A1) && anciennete > Anciennete::d_annees(Decimal::from(10));
         if let Some(cdd) = mise.cadre_de_direction.as_ref().filter(|_| vise) {
             if saisi.is_none() {
                 return Err(socle::echec::cle(format!(
@@ -1025,7 +1025,7 @@ fn indemnite_de_rupture(
         qui,
         quoi,
         euros(montant),
-        arrondir_jours(anciennete),
+        arrondir_jours(anciennete.mois()),
         euros(reference.retenu),
         reference.regle,
         detail,
@@ -1119,7 +1119,7 @@ fn indemnite_de_licenciement(
     ctx: &Contexte,
     e: &Carte,
     mois: Mois,
-    anciennete: Decimal,
+    anciennete: Anciennete,
     motif: Option<MotifDeRupture>,
     nat: &Nature,
     stc: &mut Solde,
@@ -1205,7 +1205,7 @@ fn indemnite_de_licenciement(
          de référence {} par {}) -- loi (L1234-9 et R1234-2) : {} ; {}.{}",
         qui,
         euros(montant),
-        arrondir_jours(anciennete),
+        arrondir_jours(anciennete.mois()),
         euros(reference.retenu),
         reference.regle,
         euros(m_legal),
@@ -1243,7 +1243,7 @@ fn libelle_rubrique(ctx: &Contexte, code: &droit::catalogue::CodeDeRubrique) -> 
 fn indemnite_conventionnelle(
     ctx: &Contexte,
     e: &Carte,
-    anciennete: Decimal,
+    anciennete: Anciennete,
     reference: &mut dyn FnMut() -> R<Decimal>,
     motif: Option<MotifDeRupture>,
 ) -> R<clauses::Indemnite> {

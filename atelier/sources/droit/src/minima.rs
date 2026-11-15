@@ -311,7 +311,7 @@ forme_notee! {
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
-        pub anciennete: Option<Anciennete>,
+        pub anciennete: Option<ConditionDAnciennete>,
         pub duree_contrat_max_jours: Option<i64>,
         /// Les grilles qu'elle remplace, par leur `nom`.
         pub remplace: Option<Vec<String>>,
@@ -336,7 +336,7 @@ forme_notee! {
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
-        pub anciennete: Option<Anciennete>,
+        pub anciennete: Option<ConditionDAnciennete>,
         pub duree_contrat_max_jours: Option<i64>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
         pub par_cle: Vec<(String, Nombre)>,
@@ -346,9 +346,10 @@ forme_notee! {
 /// L'anciennete qu'une grille ou une majoration demande : `ans` revolus depuis la case `champ` de la fiche du salarie.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Anciennete {
+pub struct ConditionDAnciennete {
     pub champ: ChampDAnciennete,
-    pub ans: i64,
+    #[serde(deserialize_with = "socle::date::Anciennete::en_annees_entieres")]
+    pub ans: socle::date::Anciennete,
 }
 
 /// LA CASE D'OU SE COMPTE UNE ANCIENNETE (`anciennete.champ`) : une date de la fiche du salarie, qu'une grille nomme.
@@ -459,7 +460,7 @@ pub struct Conditions<'a> {
     pub si_spectacle: Option<&'a SiSpectacle>,
     pub si_entreprise: Option<&'a SiEntreprise>,
     pub si_salarie: Option<&'a SiSalarie>,
-    pub anciennete: Option<&'a Anciennete>,
+    pub anciennete: Option<&'a ConditionDAnciennete>,
     pub duree_contrat_max_jours: Option<i64>,
 }
 
@@ -554,11 +555,6 @@ pub fn plus_bas<T>(v: Vec<T>, valeur: impl Fn(&T) -> Decimal) -> Option<T> {
         }
     }
     mini.map(|(_, x)| x)
-}
-
-/// Les annees revolues de `a` au `b` (une anciennete, un age).
-pub fn ans_revolus(a: Jour, b: Jour) -> i64 {
-    b.an as i64 - a.an as i64 - i64::from((b.mois, b.jour) < (a.mois, a.jour))
 }
 
 /// Un minimum : le montant, d'ou il vient, et s'il se compare a l'unite.

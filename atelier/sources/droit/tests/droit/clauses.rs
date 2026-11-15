@@ -8,7 +8,7 @@ use crate::outils::typee::{cas_de, chemin_donnee, empreinte, jouer, lire_chemin,
 use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit, Prime, Profil, Retraite, Tranche, P};
 use droit::fiche::{ChampsSalarie, Idcc, Statut};
 use serde::{Deserialize, Serialize};
-use socle::date::Jour;
+use socle::date::{Anciennete, Jour};
 use socle::echec::R;
 use socle::num::Decimal;
 use std::str::FromStr;
@@ -68,6 +68,16 @@ pub(crate) fn grilles() -> Grilles {
 
 pub(crate) fn dec(s: &str) -> Decimal {
     Decimal::from_str(s).unwrap()
+}
+
+/// L'anciennete d'un oracle, en mois.
+fn anc(s: &str) -> Anciennete {
+    Anciennete::de_mois(dec(s))
+}
+
+/// L'age d'un oracle, en annees.
+fn age_lu(s: &str) -> Anciennete {
+    Anciennete::d_annees(dec(s))
 }
 
 /// La fiche ecrite `texte`, avec la case `cle` posee a `valeur` (un texte).
@@ -161,7 +171,7 @@ pub(crate) fn bloc_profil(g: &Grilles, idcc: &str, code: &str) -> Vec<R<Profil>>
 }
 
 pub(crate) fn bloc_preavis(g: &Grilles, idcc: &str, categorie: Option<&str>, motif: Option<&str>) -> Vec<R<PreavisDit>> {
-    g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(idcc_dit(idcc).as_ref(), categorie_dite(categorie).as_ref(), dec(a), motif_lu(motif), age.as_deref().map(dec)))).collect()
+    g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(idcc_dit(idcc).as_ref(), categorie_dite(categorie).as_ref(), anc(a), motif_lu(motif), age.as_deref().map(age_lu)))).collect()
 }
 
 pub(crate) fn annees(g: &Grilles) -> Vec<P> {
@@ -197,8 +207,8 @@ pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option
     g.profs.iter().flat_map(|pr| g.motifs.iter().map(move |m| c::clause_d_annexe(idcc_dit(idcc).as_ref(), annexe_dite(annexe), &profil_de(pr), motif_lu(m.as_deref())))).collect()
 }
 
-pub(crate) fn indemnite(idcc: &str, annexe: &str, pr: &Prof, anc: &str, r: &str, motif: Option<&str>, age: Option<&str>) -> R<Indemnite> {
-    c::indemnite_licenciement(idcc_dit(idcc).as_ref(), annexe_dite(annexe), &profil_de(pr), dec(anc), &mut || Ok(dec(r)), motif_lu(motif), age.map(dec))
+pub(crate) fn indemnite(idcc: &str, annexe: &str, pr: &Prof, a: &str, r: &str, motif: Option<&str>, age: Option<&str>) -> R<Indemnite> {
+    c::indemnite_licenciement(idcc_dit(idcc).as_ref(), annexe_dite(annexe), &profil_de(pr), anc(a), &mut || Ok(dec(r)), motif_lu(motif), age.map(age_lu))
 }
 
 pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -> Vec<R<Indemnite>> {
@@ -216,11 +226,11 @@ pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -
 }
 
 pub(crate) fn mise(idcc: &str, a: &str, r: &str) -> R<Retraite> {
-    c::indemnite_mise_a_la_retraite(idcc_dit(idcc).as_ref(), dec(a), &mut || Ok(dec(r)))
+    c::indemnite_mise_a_la_retraite(idcc_dit(idcc).as_ref(), anc(a), &mut || Ok(dec(r)))
 }
 
 pub(crate) fn depart(idcc: &str, a: &str, r: &str) -> R<Retraite> {
-    c::indemnite_depart_retraite(idcc_dit(idcc).as_ref(), dec(a), &mut || Ok(dec(r)))
+    c::indemnite_depart_retraite(idcc_dit(idcc).as_ref(), anc(a), &mut || Ok(dec(r)))
 }
 
 pub(crate) fn bloc_retraite(g: &Grilles, f: impl Fn(&str, &str) -> R<Retraite>) -> Vec<R<Retraite>> {
@@ -383,7 +393,7 @@ pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {
         article: a.article,
         lectures: a.lectures.iter().map(|(n, _)| n.clone()).collect(),
         hors_primes: a.hors_primes,
-        anciennete_minimale_mois: a.anciennete_minimale_mois.0.to_string(),
+        anciennete_minimale_mois: a.anciennete_minimale_mois.to_string(),
         plafond_mois: a.plafond_mois.map(|m| m.0.to_string()),
         motifs_legaux_seulement: a.motifs_legaux_seulement.map(|l| l.iter().map(|m| m.code().to_string()).collect()),
     })
@@ -461,7 +471,7 @@ pub(crate) fn cas_profil(c: &CasProfil) -> Rendu<ProfilLu> {
 }
 
 pub(crate) fn cas_preavis(x: &CasPreavis) -> Rendu<PreavisLu> {
-    rendu(c::preavis_mois(idcc_dit(&x.idcc).as_ref(), categorie_dite(x.categorie.as_deref()).as_ref(), dec(&x.anciennete), motif_lu(x.motif.as_deref()), x.age.as_deref().map(dec)), preavis_ecrit)
+    rendu(c::preavis_mois(idcc_dit(&x.idcc).as_ref(), categorie_dite(x.categorie.as_deref()).as_ref(), anc(&x.anciennete), motif_lu(x.motif.as_deref()), x.age.as_deref().map(age_lu)), preavis_ecrit)
 }
 
 pub(crate) fn cas_annexe(x: &CasAnnexe) -> Rendu<Option<AnnexeLue>> {

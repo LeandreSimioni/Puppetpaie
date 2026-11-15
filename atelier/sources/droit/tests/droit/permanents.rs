@@ -5,7 +5,7 @@
 use crate::outils::typee::{cas_de, jouer, Rendu};
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
-use socle::date::Jour;
+use socle::date::{Anciennete, Jour};
 use socle::grandeurs::Montant;
 use socle::num::Decimal;
 
@@ -115,26 +115,26 @@ fn indemnite_precarite(a: &(Decimal,)) -> Rendu<Decimal> {
     p::indemnite_precarite(Montant::du_decimal(a.0)).map(Montant::decimal).into()
 }
 fn anciennete_mois(a: &(Jour, Jour)) -> Decimal {
-    p::anciennete_mois(&a.0, &a.1)
+    Anciennete::entre(&a.0, &a.1).mois()
 }
 fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<Decimal>> {
-    p::preavis_mois(a.0, motif(&a.1), false).into()
+    p::preavis_mois(Anciennete::de_mois(a.0), motif(&a.1), false).into()
 }
 fn salaire_de_reference(a: &(Vec<Decimal>, Vec<Decimal>)) -> SalaireDeReference {
     let s = p::salaire_de_reference(&a.0, &a.1).unwrap();
     SalaireDeReference { moyenne_12_mois: s.moyenne_12_mois, tiers_3_mois: s.tiers_3_mois, retenu: s.retenu, regle: s.regle.to_string() }
 }
 fn indemnite_licenciement(a: &(Decimal, Decimal, Motif)) -> Rendu<IndemniteLegale> {
-    p::indemnite_licenciement(a.0, &mut || Ok(a.1), motif(&a.2)).map(legale).into()
+    p::indemnite_licenciement(Anciennete::de_mois(a.0), &mut || Ok(a.1), motif(&a.2)).map(legale).into()
 }
 fn indemnite_mise_a_la_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteLegale> {
-    p::indemnite_mise_a_la_retraite(a.0, &mut || Ok(a.1)).map(legale).into()
+    p::indemnite_mise_a_la_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(legale).into()
 }
 fn indemnite_rupture_conventionnelle(a: &(Decimal, Decimal)) -> Rendu<PlancherDeLaRupture> {
-    p::indemnite_rupture_conventionnelle(a.0, &mut || Ok(a.1)).map(|i| PlancherDeLaRupture { plancher: i.plancher, annees: i.annees, pourquoi: i.pourquoi }).into()
+    p::indemnite_rupture_conventionnelle(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(|i| PlancherDeLaRupture { plancher: i.plancher, annees: i.annees, pourquoi: i.pourquoi }).into()
 }
 fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart> {
-    p::indemnite_depart_retraite(a.0, &mut || Ok(a.1)).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
+    p::indemnite_depart_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
     p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique: rubrique.into() })).into()
@@ -160,13 +160,13 @@ fn la_fin_du_contrat() {
 
 fn droit_au_maintien(a: &(Option<Nature>, Decimal)) -> Rendu<Option<String>> {
     let n = a.0.map(|n| n.proprietes().unwrap());
-    p::droit_au_maintien(n.as_deref(), a.1).into()
+    p::droit_au_maintien(n.as_deref(), Anciennete::de_mois(a.1)).into()
 }
 fn jours_de_carence(a: &(bool, bool)) -> Rendu<i64> {
     p::jours_de_carence(a.0, a.1).into()
 }
 fn duree_du_maintien(a: &(Decimal,)) -> Rendu<Vec<Tranche>> {
-    p::duree_du_maintien(a.0).map(|t| t.into_iter().map(|t| Tranche { jours: t.jours, taux: t.taux }).collect()).into()
+    p::duree_du_maintien(Anciennete::de_mois(a.0)).map(|t| t.into_iter().map(|t| Tranche { jours: t.jours, taux: t.taux }).collect()).into()
 }
 
 #[test]

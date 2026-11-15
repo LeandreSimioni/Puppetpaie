@@ -4,7 +4,7 @@
 //! (`prevoyance_permanents`), et le moteur le confronte a ce minimum.
 
 use super::{alsace_moselle, deux_virgule, nom_du_salarie, rond, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
-use socle::date::Duree;
+use socle::date::Anciennete;
 use socle::echec::R;
 use crate::assiette::Assiette;
 use crate::fiche::{ExtensionT2, Idcc, Lue};
@@ -112,10 +112,10 @@ forme! {
     pub struct Beneficiaires {
         /// Faux : la convention n'a pas de regime pour ses non cadres.
         pub non_cadres: Option<bool>,
-        #[serde(deserialize_with = "socle::date::Duree::en_mois")]
-        pub ouverture_cadre_mois: Duree,
-        #[serde(deserialize_with = "socle::date::Duree::en_mois")]
-        pub ouverture_non_cadre_mois: Duree,
+        #[serde(deserialize_with = "Anciennete::en_mois_entiers")]
+        pub ouverture_cadre_mois: Anciennete,
+        #[serde(deserialize_with = "Anciennete::en_mois_entiers")]
+        pub ouverture_non_cadre_mois: Anciennete,
     }
 }
 
@@ -383,17 +383,17 @@ fn resume(reg: &Regime) -> String {
     }
 }
 
-fn mois_entre(depuis: Option<&Jour>, jusqu_a: Option<&Jour>) -> Option<i64> {
-    let (a, b) = (depuis?, jusqu_a?);
-    Some((b.an - a.an) as i64 * 12 + (b.mois as i64 - a.mois as i64) - if b.jour < a.jour { 1 } else { 0 })
+/// Les mois revolus de `depuis` a `jusqu_a`, quand l'un et l'autre sont dits.
+fn mois_entre(depuis: Option<&Jour>, jusqu_a: Option<&Jour>) -> Option<Anciennete> {
+    Some(Anciennete::revolue(depuis?, jusqu_a?))
 }
 
-/// Le seuil d'anciennete dans la branche qui ouvre la cotisation, en mois : le calcul de l'anciennete
-/// (`mois_entre`, `anniversaire`) se compte en mois de calendrier.
-fn seuil(reg: &Regime, cadre: bool) -> R<i64> {
-    match if cadre { reg.beneficiaires.ouverture_cadre_mois } else { reg.beneficiaires.ouverture_non_cadre_mois } {
-        Duree::Mois(m) => Ok(m),
-        Duree::Jours(j) => Err(socle::refus!("La prévoyance de la convention s'ouvre après {} jours : l'ancienneté dans la branche se compte en mois ; le signaler au développeur.", j)),
+/// Le seuil d'anciennete dans la branche qui ouvre la cotisation, en mois revolus (`mois_entre`, `Anciennete::atteinte`).
+fn seuil(reg: &Regime, cadre: bool) -> Anciennete {
+    if cadre {
+        reg.beneficiaires.ouverture_cadre_mois
+    } else {
+        reg.beneficiaires.ouverture_non_cadre_mois
     }
 }
 
@@ -403,8 +403,8 @@ fn seuil(reg: &Regime, cadre: bool) -> R<i64> {
 /// produit Audiens, `atelier/reference/sources/audiens-3090-prevoyance-sante-fiche-produit-2021.txt`, l. 102-106).
 /// Ce temps dans la branche est un fait que seule la fiche dit (`prevoyance_branche_depuis`) : il se demande.
 fn ouverture(reg: &Regime, sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>) -> R<(bool, String)> {
-    let seuil = seuil(reg, cadre)?;
-    if seuil <= 0 {
+    let seuil = seuil(reg, cadre);
+    if seuil <= Anciennete::ZERO {
         return Ok((true, "due des l'embauche".to_string()));
     }
     let branche = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite();
@@ -625,17 +625,6 @@ convention {}.",
     Ok(Cotisation::Due { t1, t2 })
 }
 
-/// Le premier jour ou `mois_entre(depuis, jour)` atteint `seuil` : le meme quantieme `seuil` mois plus tard, ou le
-/// premier du mois suivant quand ce quantieme n'existe pas (31 janvier + 1 mois : le 1er mars).
-fn anniversaire(depuis: &Jour, seuil: i64) -> Option<Jour> {
-    let rang = depuis.an as i64 * 12 + (depuis.mois as i64 - 1) + seuil;
-    let (an, mois) = ((rang / 12) as i32, (rang % 12) as u32 + 1);
-    Jour::nouveau(an, mois, depuis.jour).or_else(|| {
-        let (an, mois) = if mois == 12 { (an + 1, 1) } else { (an, mois + 1) };
-        Jour::nouveau(an, mois, 1)
-    })
-}
-
 /// L'affiliation d'un permanent a la prevoyance de sa convention au `fin` (bloc S21.G00.70), selon la meme regle que
 /// sa cotisation (`cotisation`, `ouverture`).
 pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &Jour, entreprise: &ChampsEntreprise) -> R<super::AffiliationPrevoyance> {
@@ -645,14 +634,14 @@ pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &
         Cotisation::Due { .. } => {}
     }
     let reg = a_la_date(regime(entreprise.idcc.exigee("idcc")?)?, Some(fin));
-    let seuil = seuil(&reg, cadre)?;
-    if seuil <= 0 {
+    let seuil = seuil(&reg, cadre);
+    if seuil <= Anciennete::ZERO {
         return Ok(A::DesLEmbauche);
     }
-    if let Some(j) = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite().copied().and_then(|d| anniversaire(&d, seuil)) {
+    if let Some(j) = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite().copied().and_then(|d| seuil.atteinte(&d)) {
         return Ok(A::Le(j));
     }
-    match sal.date_anciennete.dite().copied().and_then(|d| anniversaire(&d, seuil)) {
+    match sal.date_anciennete.dite().copied().and_then(|d| seuil.atteinte(&d)) {
         Some(j) => Ok(A::AuPlusTardLe(j)),
         None => Err(socle::refus!(
             "{} : la prevoyance s'ouvre apres {} mois d'anciennete dans la branche, et sa fiche ne date ni son \

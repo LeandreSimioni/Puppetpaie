@@ -2170,7 +2170,7 @@ pub fn lue_sans_paie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Vec<calcul::
 /// Le preavis de l'engagement `e` (sa saisie), pour une anciennete et un motif de rupture : la loi (L1234-1) et la
 /// convention, et laquelle s'applique (`solde::duree_du_preavis`).
 #[cfg(feature = "ecran")]
-pub fn preavis(ctx: &Contexte, e: &saisie::Carte, anciennete: Decimal, motif: Option<MotifDeRupture>) -> R<solde::Preavis> {
+pub fn preavis(ctx: &Contexte, e: &saisie::Carte, anciennete: socle::date::Anciennete, motif: Option<MotifDeRupture>) -> R<solde::Preavis> {
     solde::duree_du_preavis(ctx, e, anciennete, motif)
 }
 

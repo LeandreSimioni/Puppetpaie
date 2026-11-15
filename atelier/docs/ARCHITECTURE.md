@@ -183,7 +183,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
 | nombre écrit (une saisie gardée telle qu'écrite) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie`, `NombreDeFiche`, `ligne::Chiffre` |
 | test ou réel | `envois::ligne::Mode` | à unifier (#419) : des `bool` (`envoi_test`, `reel`, `Pret`) |
-| ancienneté, âge | à créer (#419) : `Anciennete` | des `Decimal` et entiers, calculés à cinq endroits |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
@@ -203,6 +202,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | année | `Annee` ; à unifier (#419) : des `i32` | `socle/src/mois.rs` |
 | période | à créer (#419) : `Periode` | — |
 | durée de droit | `Duree` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
+| ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
 | durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
 
 **Le détail**
@@ -226,9 +226,18 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - **année** : une année civile. Écrite en texte (`"2025"`, la clé de `paies_annuelles`), ou en nombre là où la forme le
   dit (`socle::mois::en_nombre` : le nombre de paies parti chez l'éditeur, ce que le serveur du filet lit et rend).
 - **période** : deux jours bornes, du … au … ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres.
-- **durée de droit** : des jours ou des mois de calendrier ; un nombre de mois d'un fichier se lit par
-  `Duree::en_mois` (l'ouverture de la prévoyance des permanents). La durée d'une tranche de maintien de salaire
+- **durée de droit** : des jours ou des mois de calendrier. La durée d'une tranche de maintien de salaire
   (`droit::maintien::DureeDUneTranche`) est une durée de droit, ou « tant que la caisse verse ses indemnités ».
+- **ancienneté, âge** : le temps passé depuis un jour, en mois ; un âge est l'ancienneté depuis la naissance
+  (`Anciennete::age`). Elle se compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois
+  entamé, le jour d'arrivée compris (`Anciennete::entre` : le préavis, les indemnités de fin de contrat, le maintien de
+  salaire, le férié chômé), ou en mois révolus (`Anciennete::revolue` : une grille, la prime de présence, l'ouverture
+  d'une prévoyance, l'âge en années révolues). Un seuil d'un texte se lit en elle à sa porte (`Deserialize` en mois,
+  `en_annees`, `en_mois_entiers`, `en_annees_entieres`), et elle se compare à lui ; elle se dit dans l'unité que le texte
+  demande (`annees`, `annees_d28` pour un barème qui compte par année, `nombre_d_ans_revolus`, `semaines_entieres`), en
+  mois dans une phrase. D'où part l'ancienneté dans l'entreprise d'un salarié est un jour
+  (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
+  (`droit::minima::ConditionDAnciennete`).
 - **durée mesurée** : un temps écoulé ; `envois::ligne::Durees`, à unifier, est des millisecondes : une écriture.
 
 **L'argent et les quantités**

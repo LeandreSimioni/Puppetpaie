@@ -1108,11 +1108,11 @@ pub(crate) fn fiche_de_l_engagement(ctx: &Contexte, eng: &Engagement) -> R<Salar
         convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, &eng.debut)?, &emploi)?)
     };
     let mut fiche = etablissement_du_contrat(fiche, eng);
-    // L'embauche que ce contrat est (`Anciennete::Embauche`) date l'anciennete que la fiche ne dit pas encore ; une
-    // anciennete ni dite ni lue reste vide, et ce qui la lit refuse en la nommant.
-    match Anciennete::de(&ctx.racine, &fiche.fiche.champs, cle, eng.debut)? {
-        Anciennete::Embauche(j) => fiche.fiche.champs.date_anciennete = Some(j),
-        Anciennete::Dite(_) | Anciennete::NonDite => {}
+    // L'embauche que ce contrat est (`DebutDeLAnciennete::Embauche`) date l'anciennete que la fiche ne dit pas encore ;
+    // une anciennete ni dite ni lue reste vide, et ce qui la lit refuse en la nommant.
+    match DebutDeLAnciennete::de(&ctx.racine, &fiche.fiche.champs, cle, eng.debut)? {
+        DebutDeLAnciennete::Embauche(j) => fiche.fiche.champs.date_anciennete = Some(j),
+        DebutDeLAnciennete::Dite(_) | DebutDeLAnciennete::NonDite => {}
     }
     Ok(fiche)
 }
@@ -1134,7 +1134,7 @@ pub fn etablissement_du_contrat(mut fiche: SalarieDuContrat, eng: &Engagement) -
     fiche
 }
 
-/// L'ANCIENNETE DANS L'ENTREPRISE d'un salarie pour un contrat (S21.G00.86.003, « l'anciennete dans l'entreprise » :
+/// LE JOUR D'OU PART L'ANCIENNETE DANS L'ENTREPRISE d'un salarie pour un contrat (S21.G00.86.003, « l'anciennete dans l'entreprise » :
 /// `norme-dsn/texte/bloc-S21.G00.86.txt` ; la 3090, annexe I, art. 3.11, compte des « ans de presence » :
 /// `kali-3090-titres-vii-x-xi-annexes-20260924.md`). Seule la compagnie la connait (la case « Dans la compagnie depuis »,
 /// `date_anciennete`), sauf un fait que le moteur lit : un salarie qu'aucun engagement anterieur ne nomme chez la
@@ -1142,7 +1142,7 @@ pub fn etablissement_du_contrat(mut fiche: SalarieDuContrat, eng: &Engagement) -
 /// l'anciennete dans l'entreprise commence a l'entree dans l'entreprise. La validation et le calcul la lisent ici
 /// (`routes::fiches::poser_anciennete_a_l_embauche`, `fiche_de_l_engagement`), et nulle part ailleurs.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Anciennete {
+pub enum DebutDeLAnciennete {
     /// La date que la fiche dit.
     Dite(Jour),
     /// Aucun engagement anterieur : ce contrat est l'embauche, qui commence ce jour-la.
@@ -1151,23 +1151,23 @@ pub enum Anciennete {
     NonDite,
 }
 
-impl Anciennete {
-    /// L'anciennete de `fiche` (le salarie de cle `cle`) pour un contrat qui commence le `debut`.
-    pub fn de(racine: &std::path::Path, fiche: &ChampsSalarie, cle: &IdSalarie, debut: Jour) -> R<Anciennete> {
+impl DebutDeLAnciennete {
+    /// D'ou part l'anciennete de `fiche` (le salarie de cle `cle`) pour un contrat qui commence le `debut`.
+    pub fn de(racine: &std::path::Path, fiche: &ChampsSalarie, cle: &IdSalarie, debut: Jour) -> R<DebutDeLAnciennete> {
         if let Some(d) = fiche.date_anciennete.dite() {
-            return Ok(Anciennete::Dite(*d));
+            return Ok(DebutDeLAnciennete::Dite(*d));
         }
         let anterieur = crate::stock::objets(racine)?
             .iter()
             .any(|o| o.carte().salarie.as_ref() == Some(cle) && o.carte().debut.is_some_and(|d| d < debut));
-        Ok(if anterieur { Anciennete::NonDite } else { Anciennete::Embauche(debut) })
+        Ok(if anterieur { DebutDeLAnciennete::NonDite } else { DebutDeLAnciennete::Embauche(debut) })
     }
 
     /// Le jour d'ou elle part ; non dite, le calcul qui la lit refuse en nommant la case.
     pub fn jour(self) -> R<Jour> {
         match self {
-            Anciennete::Dite(j) | Anciennete::Embauche(j) => Ok(j),
-            Anciennete::NonDite => Err(socle::echec::cle(
+            DebutDeLAnciennete::Dite(j) | DebutDeLAnciennete::Embauche(j) => Ok(j),
+            DebutDeLAnciennete::NonDite => Err(socle::echec::cle(
                 "La fiche du salarié ne dit pas depuis quand il est dans la compagnie, et un engagement d'avant le nomme : le dire sur sa fiche (« Dans la compagnie depuis »).",
                 "date_anciennete",
             )),

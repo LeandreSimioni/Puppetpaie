@@ -3,7 +3,7 @@
 
 use droit::maintien::{conventionnel, Base, Droit, DureeDUneTranche, Origine, Tranche};
 use rust_decimal::Decimal;
-use socle::date::Duree;
+use socle::date::{Anciennete, Duree};
 use socle::grandeurs::Taux;
 
 fn tranches(mois: i64) -> Vec<Tranche> {
@@ -16,7 +16,7 @@ fn tranches(mois: i64) -> Vec<Tranche> {
 #[test]
 fn la_1285_maintient_le_brut_selon_l_anciennete() {
     let idcc = Some(&droit::clauses::IDCC_CCNEAC);
-    let regime = |mois: i64, o: Origine| conventionnel(idcc, Decimal::from(mois), o).unwrap().unwrap();
+    let regime = |mois: i64, o: Origine| conventionnel(idcc, Anciennete::de_mois(Decimal::from(mois)), o).unwrap().unwrap();
     assert!(matches!(regime(5, Origine::Maladie), Droit::PasDu(_)), "rien avant six mois");
     for (anciennete, duree) in [(6, 1), (11, 1), (12, 3), (42, 3)] {
         let Droit::Du(r) = regime(anciennete, Origine::Maladie) else { panic!("{} mois : un maintien", anciennete) };

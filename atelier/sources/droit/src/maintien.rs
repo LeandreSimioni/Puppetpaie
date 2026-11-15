@@ -16,7 +16,7 @@
 
 use crate::natures::Nature;
 use crate::clauses;
-use socle::date::Duree;
+use socle::date::{Anciennete, Duree};
 use socle::echec::R;
 use socle::grandeurs::{Coefficient, Taux};
 use socle::num::{div, Decimal};
@@ -104,12 +104,12 @@ pub fn fraction(taux: Taux) -> Coefficient {
 
 /// Ce que la loi garantit (L1226-1, D1226-1 a D1226-3, D1226-8) a un salarie de cette nature et de cette anciennete au
 /// premier jour de l'absence.
-pub fn legal(nature: &Nature, anciennete_mois: Decimal, origine: Origine) -> R<Droit> {
-    if let Some(refus) = crate::permanents::droit_au_maintien(Some(nature), anciennete_mois)? {
+pub fn legal(nature: &Nature, anciennete: Anciennete, origine: Origine) -> R<Droit> {
+    if let Some(refus) = crate::permanents::droit_au_maintien(Some(nature), anciennete)? {
         return Ok(Droit::PasDu(refus));
     }
     let carence = crate::permanents::jours_de_carence(origine.professionnelle(), origine == Origine::Trajet)?;
-    let tranches = crate::permanents::duree_du_maintien(anciennete_mois)?
+    let tranches = crate::permanents::duree_du_maintien(anciennete)?
         .into_iter()
         .map(|t| Tranche { duree: DureeDUneTranche::Duree(Duree::Jours(t.jours)), taux: Taux::du_decimal(t.taux) })
         .collect();
@@ -148,10 +148,10 @@ fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> R<Vec<Tranche>> {
 /// `None` quand elle ne prevoit rien (la loi seule s'applique). La clause de l'accident du travail vaut quand elle couvre
 /// l'origine (`couvre`, les origines que l'article nomme), sauf passe
 /// `comme_maladie_apres_mois` d'anciennete ; celle de la maladie sinon (une maladie, un accident « non professionnel »).
-pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete_mois: Decimal, origine: Origine) -> R<Option<Droit>> {
+pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, origine: Origine) -> R<Option<Droit>> {
     let Some(sec) = clauses::releve(idcc)?.and_then(|c| c.maintien_de_salaire) else { return Ok(None) };
     let accident = sec.accident_du_travail.filter(|at| {
-        at.couvre.contains(&origine) &&at.comme_maladie_apres_mois.is_none_or(|apres| anciennete_mois < apres.0)
+        at.couvre.contains(&origine) &&at.comme_maladie_apres_mois.is_none_or(|apres| anciennete < apres)
     });
     let nom = clauses::nom(idcc);
     // (article, minimum d'anciennete, base, carence, plafond net, subrogation, tranches)
@@ -159,22 +159,21 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete_mois: Decimal
         (Some(at), _) => {
             let ou = format!("{}, art. {}", nom, at.article);
             let mut tr = at.tranches.as_slice();
-            if let Some(deux_ans) = at.tranches_deux_ans.as_deref().filter(|t| !t.is_empty() && anciennete_mois >= Decimal::from(24)) {
+            if let Some(deux_ans) = at.tranches_deux_ans.as_deref().filter(|t| !t.is_empty() && anciennete >= Anciennete::d_annees(Decimal::from(2))) {
                 tr = deux_ans;
             }
-            if let Some(apres) = at.tranches_apres.as_ref().filter(|a| anciennete_mois > a.anciennete_mois.0) {
+            if let Some(apres) = at.tranches_apres.as_ref().filter(|a| anciennete > a.anciennete_mois) {
                 tr = apres.tranches.as_slice();
             }
             let liste = tranches(tr, &ou)?;
-            let minimum = at.anciennete_mois_minimum.0;
+            let minimum = at.anciennete_mois_minimum;
             (at.article, minimum, at.base, at.carence_jours, at.plafond_net == Some(true), at.subrogation, Ok(liste))
         }
         (None, Some(m)) => {
             let ou = format!("{}, art. {}", nom, m.article);
-            let annees = div(anciennete_mois, Decimal::from(12));
             let mut lignes: Vec<&clauses::LigneDeMaintien> = m.par_anciennete.iter().collect();
-            lignes.sort_by_key(|l| l.anciennete_annees_min.0);
-            let liste = match lignes.into_iter().filter(|l| annees >= l.anciennete_annees_min.0).last() {
+            lignes.sort_by_key(|l| l.anciennete_annees_min);
+            let liste = match lignes.into_iter().filter(|l| anciennete >= l.anciennete_annees_min).last() {
                 None => Err(format!("{} (art. {}) : aucune tranche a cette anciennete.", nom, m.article)),
                 Some(l) => match l.tranches.as_deref() {
                     Some(t) if !t.is_empty() => Ok(tranches(t, &ou)?),
@@ -184,18 +183,18 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete_mois: Decimal
                     ]),
                 },
             };
-            let minimum = m.anciennete_mois_minimum.0;
+            let minimum = m.anciennete_mois_minimum;
             (m.article, minimum, m.base, m.carence_jours, m.plafond_net == Some(true), m.subrogation, liste)
         }
         (None, None) => return Ok(None),
     };
-    if anciennete_mois < minimum {
+    if anciennete < minimum {
         return Ok(Some(Droit::PasDu(format!(
             "{} (art. {}) demande {} mois d'anciennete ; il y en a {}.",
             nom,
             article,
-            socle::texte::virgule(minimum),
-            socle::texte::virgule(anciennete_mois.round_dp(1))
+            socle::texte::virgule(minimum.mois()),
+            socle::texte::virgule(anciennete.mois().round_dp(1))
         ))));
     }
     let tranches = match liste {

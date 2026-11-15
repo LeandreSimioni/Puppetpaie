@@ -7,6 +7,7 @@
 //! fichiers deja ecrits : une date lue aujourd'hui se lit comme elle s'est toujours lue.
 
 use crate::echec::{refus, R};
+use crate::num::{self, Decimal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Jour {
@@ -22,10 +23,170 @@ pub enum Duree {
     Mois(i64),
 }
 
-impl Duree {
-    /// Lue d'un nombre de mois (un champ `…_mois` d'un fichier) : `#[serde(deserialize_with = "socle::date::Duree::en_mois")]`.
-    pub fn en_mois<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duree, D::Error> {
-        <i64 as serde::Deserialize>::deserialize(d).map(Duree::Mois)
+/// UNE ANCIENNETE (« Le glossaire ») : le temps passe depuis un jour, en mois de calendrier ; un age est l'anciennete
+/// depuis la naissance. Elle se compte ici, de deux jours, et nulle part ailleurs : en mois et fraction du mois entame
+/// (`entre`), ou en mois revolus (`revolue`) et en annees revolues (`ans_revolus`, `age`). Un seuil qu'un texte dit en
+/// mois ou en annees se lit en elle a sa porte (`Deserialize` : des mois ; `en_annees`, `en_mois_entiers`,
+/// `en_annees_entieres`) et elle se compare a lui ; elle se dit dans l'unite que le texte demande (`annees`,
+/// `nombre_d_ans_revolus`, `semaines_entieres`), et dans une phrase en mois (`Display`, `mois`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Anciennete(Decimal);
+
+impl Anciennete {
+    pub const ZERO: Anciennete = Anciennete(Decimal::ZERO);
+
+    /// LES MOIS COMPLETS DE `depuis` A `au`, `au` compris, ET LA FRACTION DU MOIS ENTAME (ses jours sur ceux du mois de
+    /// `au`) ; rien quand `au` precede `depuis`. Le compte d'un preavis, d'une indemnite de fin de contrat, d'un maintien
+    /// de salaire, d'un ferie chome (le code du travail).
+    pub fn entre(depuis: &Jour, au: &Jour) -> Anciennete {
+        if au < depuis {
+            return Anciennete::ZERO;
+        }
+        let mut mois = (au.an as i64 - depuis.an as i64) * 12 + (au.mois as i64 - depuis.mois as i64);
+        let anniv = depuis.jour as i64;
+        let reste = if au.jour as i64 + 1 >= anniv {
+            au.jour as i64 + 1 - anniv
+        } else {
+            mois -= 1;
+            let (an, precedent) = if au.mois > 1 { (au.an, au.mois - 1) } else { (au.an - 1, 12) };
+            jours_du_mois(an, precedent) as i64 + au.jour as i64 + 1 - anniv
+        };
+        let dans_le_mois = Decimal::from(jours_du_mois(au.an, au.mois));
+        Anciennete(num::add(Decimal::from(mois), num::div(Decimal::from(reste), dans_le_mois)))
+    }
+
+    /// LES MOIS REVOLUS DE `depuis` AU `au` : un de plus a chaque quantieme de `depuis` atteint ; negatif quand `au`
+    /// precede `depuis`. Le compte d'un texte qui dit des mois ou des ans revolus (une grille, la prime de presence,
+    /// l'ouverture d'une prevoyance, un age).
+    pub fn revolue(depuis: &Jour, au: &Jour) -> Anciennete {
+        let mois = (au.an as i64 - depuis.an as i64) * 12 + (au.mois as i64 - depuis.mois as i64) - i64::from(au.jour < depuis.jour);
+        Anciennete(Decimal::from(mois))
+    }
+
+    /// LE PREMIER JOUR OU L'ANCIENNETE REVOLUE DEPUIS `depuis` LA VAUT (`revolue`) : le meme quantieme autant de mois plus
+    /// tard, ou le premier du mois suivant quand ce quantieme n'existe pas (31 janvier + 1 mois : le 1er mars). Une fraction
+    /// de mois n'est atteinte a aucun quantieme, ni un jour hors du calendrier : `None`.
+    pub fn atteinte(self, depuis: &Jour) -> Option<Jour> {
+        use rust_decimal::prelude::ToPrimitive;
+        if !self.0.fract().is_zero() {
+            return None;
+        }
+        let rang = depuis.an as i64 * 12 + (depuis.mois as i64 - 1) + self.0.to_i64()?;
+        let (an, mois) = ((rang / 12) as i32, (rang % 12) as u32 + 1);
+        Jour::nouveau(an, mois, depuis.jour).or_else(|| {
+            let (an, mois) = if mois == 12 { (an + 1, 1) } else { (an, mois + 1) };
+            Jour::nouveau(an, mois, 1)
+        })
+    }
+
+    /// L'AGE au `au` de qui est ne le `naissance` : ses annees revolues.
+    pub fn age(naissance: &Jour, au: &Jour) -> Anciennete {
+        Anciennete::revolue(naissance, au).ans_revolus()
+    }
+
+    /// `d` mois (un seuil d'un texte, un oracle) : la porte d'un nombre de mois.
+    pub fn de_mois(d: Decimal) -> Anciennete {
+        Anciennete(d)
+    }
+
+    /// `d` annees (un seuil d'un texte, un oracle) : la porte d'un nombre d'annees, douze mois chacune.
+    pub fn d_annees(d: Decimal) -> Anciennete {
+        Anciennete(num::mul(d, Decimal::from(12)))
+    }
+
+    /// Les mois qui ne finissent pas une annee, de 0 a 12 exclu.
+    fn reste_de_l_annee(self) -> Decimal {
+        let r = self.0 % Decimal::from(12);
+        if r < Decimal::ZERO {
+            r + Decimal::from(12)
+        } else {
+            r
+        }
+    }
+
+    /// SES ANNEES REVOLUES, en anciennete : les mois des annees entieres.
+    pub fn ans_revolus(self) -> Anciennete {
+        Anciennete(num::sub(self.0, self.reste_de_l_annee()))
+    }
+
+    /// LE NOMBRE DE SES ANNEES ENTIERES, ce qu'un texte compte (la prime de presence, l'allongement d'un maintien).
+    #[track_caller]
+    pub fn nombre_d_ans_revolus(self) -> R<i64> {
+        use rust_decimal::prelude::ToPrimitive;
+        match num::div(self.ans_revolus().0, Decimal::from(12)).trunc().to_i64() {
+            Some(n) => Ok(n),
+            None => Err(refus(crate::num::illisible(&self.0.to_string()))),
+        }
+    }
+
+    /// SES MOIS COMPLETS : le mois entame ne compte pas (R1234-1).
+    pub fn mois_complets(self) -> Anciennete {
+        Anciennete(self.0.floor())
+    }
+
+    /// DITE EN ANNEES, a douze mois l'annee : l'unite d'un bareme qui compte par annee (R1234-2, D1237-1).
+    pub fn annees(self) -> Decimal {
+        num::div(self.0, Decimal::from(12))
+    }
+
+    /// DITE EN ANNEES, a vingt-huit chiffres (`d28`) : l'unite des baremes d'une convention (`droit::clauses`).
+    pub fn annees_d28(self) -> crate::d28::P {
+        crate::d28::P::depuis(self.0).div(crate::d28::P::entier(12))
+    }
+
+    /// LES SEMAINES CALENDAIRES ENTIERES qu'elle compte, cinquante-deux par annee : un preavis dit en jours par semaine
+    /// d'anciennete (`droit::clauses`).
+    pub fn semaines_entieres(self) -> crate::d28::P {
+        crate::d28::P::depuis(self.0).mul(crate::d28::P::entier(52)).div(crate::d28::P::entier(12)).plancher()
+    }
+
+    /// Le nombre de ses mois, a la porte d'une phrase ou d'une ecriture.
+    pub fn mois(self) -> Decimal {
+        self.0
+    }
+
+    /// Lue d'un nombre de mois facultatif, `null` compris : `#[serde(deserialize_with = "socle::date::Anciennete::en_mois_opt")]`.
+    pub fn en_mois_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
+        crate::forme::decimal_opt(d).map(|a| a.map(Anciennete))
+    }
+
+    /// Lue d'un nombre d'annees (un champ `…_annees` ou `age_…` d'un fichier) : `#[serde(deserialize_with = "socle::date::Anciennete::en_annees")]`.
+    pub fn en_annees<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
+        crate::forme::decimal(d).map(Anciennete::d_annees)
+    }
+
+    /// `en_annees`, facultatif : `#[serde(default, deserialize_with = "socle::date::Anciennete::en_annees_opt")]`.
+    pub fn en_annees_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
+        crate::forme::decimal_opt(d).map(|a| a.map(Anciennete::d_annees))
+    }
+
+    /// Lue d'un nombre entier d'annees.
+    pub fn en_annees_entieres<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
+        <i64 as serde::Deserialize>::deserialize(d).map(|a| Anciennete::d_annees(Decimal::from(a)))
+    }
+
+    /// Lue d'un nombre entier de mois.
+    pub fn en_mois_entiers<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
+        <i64 as serde::Deserialize>::deserialize(d).map(|m| Anciennete(Decimal::from(m)))
+    }
+
+    /// `en_mois_entiers`, facultatif : `#[serde(default, deserialize_with = "socle::date::Anciennete::en_mois_entiers_opt")]`.
+    pub fn en_mois_entiers_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
+        <Option<i64> as serde::Deserialize>::deserialize(d).map(|m| m.map(|m| Anciennete(Decimal::from(m))))
+    }
+}
+
+/// Lue d'un nombre de mois, comme `forme::decimal`.
+impl<'de> serde::Deserialize<'de> for Anciennete {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
+        crate::forme::decimal(d).map(Anciennete)
+    }
+}
+
+/// Ses mois, tels qu'ils sont (une phrase).
+impl std::fmt::Display for Anciennete {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

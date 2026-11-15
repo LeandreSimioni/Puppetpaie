@@ -85,7 +85,6 @@ pub struct Droits {
     pub loi: Droit,
     pub convention: Option<Droit>,
     pub origine: Origine,
-    pub anciennete_mois: Decimal,
     /// Ce que les suspensions retirent de l'anciennete (L1225-54), dit.
     pub sur_l_anciennete: Vec<Avis>,
 }
@@ -112,19 +111,19 @@ pub fn origine(imp: &ArretSaisi) -> R<Option<Origine>> {
 }
 
 /// LES DROITS D'UN ARRET : a l'anciennete au premier jour de l'absence (D1226-8), comptee depuis la date d'anciennete de la
-/// fiche ou l'embauche que ce contrat est (`calcul::Anciennete`), moins les suspensions qui ne comptent pas (`imprevus::anciennete_depuis`). La convention
+/// fiche ou l'embauche que ce contrat est (`calcul::DebutDeLAnciennete`), moins les suspensions qui ne comptent pas (`imprevus::anciennete_depuis`). La convention
 /// ne se lit que pour un contrat paye au mois : ses clauses de maintien sont celles des permanents (3252 : « ces clauses
 /// sont celles des PERMANENTS », `clauses-conventionnelles-base.json`) ; la loi exclut les intermittents (L1226-1).
 pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Droits>> {
     let Some(origine) = origine(imp)? else { return Ok(None) };
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
     let fiche = ctx.fiche_de(&imp.salarie)?;
-    let depuis = crate::calcul::Anciennete::de(&ctx.racine, &fiche, &imp.salarie, imp.contrat_debut)?.jour()?;
+    let depuis = crate::calcul::DebutDeLAnciennete::de(&ctx.racine, &fiche, &imp.salarie, imp.contrat_debut)?.jour()?;
     let (depuis, sur_l_anciennete) = crate::imprevus::anciennete_depuis(&ctx.racine, &fiche.id, &depuis, &premier)?;
-    let anciennete_mois = droit::permanents::anciennete_mois(&depuis, &premier);
-    let loi = dm::legal(nat, anciennete_mois, origine)?;
-    let convention = if nat.mensuelle() { dm::conventionnel(ctx.entreprise.idcc.dite(), anciennete_mois, origine)? } else { None };
-    Ok(Some(Droits { loi, convention, origine, anciennete_mois, sur_l_anciennete }))
+    let anciennete = socle::date::Anciennete::entre(&depuis, &premier);
+    let loi = dm::legal(nat, anciennete, origine)?;
+    let convention = if nat.mensuelle() { dm::conventionnel(ctx.entreprise.idcc.dite(), anciennete, origine)? } else { None };
+    Ok(Some(Droits { loi, convention, origine, sur_l_anciennete }))
 }
 
 // ------------------------------------------------------------------ les jours

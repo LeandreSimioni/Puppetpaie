@@ -22,7 +22,7 @@ use droit::contexte::Contexte;
 use socle::date::{repr_texte, Jour};
 use droit::emplois;
 use crate::{Avis, Engagement};
-use droit::minima::{ans_revolus, grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
+use droit::minima::{grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
 use socle::echec::{refus, Echec, R};
 use socle::num::{add, div, mul, sub, Decimal};
@@ -505,13 +505,12 @@ impl<'a> Cx<'a> {
                     format!(
                         "La fiche de {} ne dit pas la date d'où se compte son ancienneté, et un minimum de la convention en dépend : il change après {} ans. La dire sur sa fiche.",
                         crate::qui_de(self.fiche)?,
-                        a.ans
+                        a.ans.nombre_d_ans_revolus()?
                     ),
                     a.champ.cle().nom(),
                 ));
             };
-            let n = ans_revolus(depuis, jour_de_paie(self.paie));
-            if n < a.ans {
+            if socle::date::Anciennete::revolue(&depuis, &jour_de_paie(self.paie)) < a.ans {
                 return Ok(false);
             }
         }

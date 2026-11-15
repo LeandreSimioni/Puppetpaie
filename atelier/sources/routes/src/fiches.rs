@@ -894,16 +894,16 @@ pub(crate) fn poser_entreprise(ctx: &Contexte, case: ChangementEntreprise, depui
     poser::<FicheEntrepriseDatee>(ctx, None, vec![case], depuis, None)
 }
 
-/// L'ANCIENNETE D'UN SALARIE PART DE SON EMBAUCHE (`engagement::calcul::Anciennete`, le chemin du calcul) : la validation
+/// L'ANCIENNETE D'UN SALARIE PART DE SON EMBAUCHE (`engagement::calcul::DebutDeLAnciennete`, le chemin du calcul) : la validation
 /// d'un engagement qui est son embauche (aucun engagement anterieur ne le nomme) la pose sur sa fiche, au premier jour de
 /// ce contrat (`debut`), par l'ecrivain de la fiche (`poser`) ; elle se change ensuite dans « Avancé » de la fiche. Une
 /// fiche qui la dit la garde ; une anciennete ni dite ni lue ne se pose pas : ce qui la lit refuse en la nommant.
 pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &IdSalarie, debut: Option<Jour>) -> R<()> {
     let Some(fiche) = ctx.salaries.get(salarie) else { return Ok(()) };
     let debut = debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
-    match engagement::calcul::Anciennete::de(&ctx.racine, fiche, salarie, debut)? {
-        engagement::calcul::Anciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(j))], None, None),
-        engagement::calcul::Anciennete::Dite(_) | engagement::calcul::Anciennete::NonDite => Ok(()),
+    match engagement::calcul::DebutDeLAnciennete::de(&ctx.racine, fiche, salarie, debut)? {
+        engagement::calcul::DebutDeLAnciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(j))], None, None),
+        engagement::calcul::DebutDeLAnciennete::Dite(_) | engagement::calcul::DebutDeLAnciennete::NonDite => Ok(()),
     }
 }
 

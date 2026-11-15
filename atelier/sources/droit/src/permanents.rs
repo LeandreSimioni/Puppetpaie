@@ -6,7 +6,7 @@
 use crate::natures::{MotifDeRupture, Nature};
 use crate::source::Fondement;
 use serde::{Deserialize, Serialize};
-use socle::date::{jours_du_mois, Jour};
+use socle::date::{jours_du_mois, Anciennete, Jour};
 use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
@@ -157,10 +157,9 @@ forme! {
 forme! {
     /// Une tranche d'anciennete (en mois, `max` exclu ; `None` : sans borne) et son preavis (`None` : la loi n'en donne pas).
     pub struct TrancheDePreavis {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub anciennete_mois_min: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal_opt")]
-        pub anciennete_mois_max: Option<Decimal>,
+        pub anciennete_mois_min: Anciennete,
+        #[serde(deserialize_with = "socle::date::Anciennete::en_mois_opt")]
+        pub anciennete_mois_max: Option<Anciennete>,
         #[serde(deserialize_with = "socle::forme::decimal_opt")]
         pub mois: Option<Decimal>,
     }
@@ -191,7 +190,8 @@ forme! {
 #[serde(deny_unknown_fields)]
 pub struct TrancheDeDelai {
     pub presence_moins_de_jours: Option<i64>,
-    pub presence_jusqu_a_mois: Option<i64>,
+    #[serde(default, deserialize_with = "socle::date::Anciennete::en_mois_entiers_opt")]
+    pub presence_jusqu_a_mois: Option<Anciennete>,
     pub delai_jours: Option<i64>,
     pub delai_mois: Option<u32>,
     pub texte: String,
@@ -209,8 +209,7 @@ forme! {
 
 forme! {
     pub struct Licenciement {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub anciennete_minimale_mois: Decimal,
+        pub anciennete_minimale_mois: Anciennete,
         pub taux: Vec<TauxDeLicenciement>,
         pub salaire_de_reference: Fondee,
         pub motifs_sans_indemnite: ParMotif,
@@ -433,7 +432,8 @@ forme! {
 forme! {
     /// `maintien_de_salaire` : L1226-1, D1226-1 a D1226-8.
     pub struct Maintien {
-        pub anciennete_mois_minimum: i64,
+        #[serde(deserialize_with = "socle::date::Anciennete::en_mois_entiers")]
+        pub anciennete_mois_minimum: Anciennete,
         pub carence_jours: i64,
         pub tranches: Vec<TrancheDeMaintien>,
         pub majoration: Majoration,
@@ -673,10 +673,6 @@ pub fn motif_de_suspension(code: MotifDeSuspension) -> R<Option<ProprietesDeSusp
 }
 
 // ------------------------------------------------------------ les aides
-fn douze() -> Decimal {
-    Decimal::from(12)
-}
-
 /// Le refus d'un motif de rupture que la fiche ne dit pas, quand la regle en a besoin.
 fn motif_requis(motif: Option<MotifDeRupture>, pour: &str) -> R<MotifDeRupture> {
     motif.ok_or_else(|| socle::refus!("{} : le motif de la fin du contrat n'est pas dit (case « Motif de la fin »).", pour))
@@ -815,24 +811,6 @@ pub fn indemnite_precarite(remuneration_totale: Montant) -> R<Montant> {
     Ok((remuneration_totale * regles()?.indemnite_precarite.taux).au_centime())
 }
 
-/// L'anciennete en mois : les mois complets et la fraction du mois entame.
-pub fn anciennete_mois(debut: &Jour, fin: &Jour) -> Decimal {
-    if fin < debut {
-        return Decimal::ZERO;
-    }
-    let mut mois = (fin.an as i64 - debut.an as i64) * 12 + (fin.mois as i64 - debut.mois as i64);
-    let anniv = debut.jour as i64;
-    let reste = if fin.jour as i64 + 1 >= anniv {
-        fin.jour as i64 + 1 - anniv
-    } else {
-        mois -= 1;
-        let (an, precedent) = if fin.mois > 1 { (fin.an, fin.mois - 1) } else { (fin.an - 1, 12) };
-        jours_du_mois(an, precedent) as i64 + fin.jour as i64 + 1 - anniv
-    };
-    let dans_le_mois = Decimal::from(jours_du_mois(fin.an, fin.mois));
-    add(Decimal::from(mois), div(Decimal::from(reste), dans_le_mois))
-}
-
 /// Ce que `preavis.rupture_anticipee_cdd` dit du motif d'un contrat a duree determinee : `Some(true)` aucun preavis,
 /// `Some(false)` un preavis que le moteur ne compte pas (L1243-2), avec le texte ; `None` hors de la section.
 fn regle_du_cdd(cdd: bool, motif_rupture: Option<MotifDeRupture>) -> R<Option<(bool, String)>> {
@@ -852,7 +830,7 @@ fn regle_du_cdd(cdd: bool, motif_rupture: Option<MotifDeRupture>) -> R<Option<(b
 
 /// La duree du preavis en mois, ou `None` quand la loi ne la donne pas (ou que le moteur ne sait pas la compter :
 /// `regle_du_preavis`). `cdd` : le contrat est a duree determinee, et ses motifs de rupture anticipee ont leur regle.
-pub fn preavis_mois(anciennete: Decimal, motif_rupture: Option<MotifDeRupture>, cdd: bool) -> R<Option<Decimal>> {
+pub fn preavis_mois(anciennete: Anciennete, motif_rupture: Option<MotifDeRupture>, cdd: bool) -> R<Option<Decimal>> {
     if let Some((sans, _)) = regle_du_cdd(cdd, motif_rupture)? {
         return Ok(if sans { Some(Decimal::ZERO) } else { None });
     }
@@ -962,7 +940,7 @@ pub struct DelaiDePrevenance {
 pub fn delai_de_prevenance(debut: &Jour, notification: &Jour) -> R<DelaiDePrevenance> {
     let rg = regles()?;
     let presence_jours = notification.moins(debut) + 1;
-    let presence_mois = anciennete_mois(debut, notification);
+    let presence = Anciennete::entre(debut, notification);
     let tranche = rg
         .preavis
         .delai_de_prevenance
@@ -970,7 +948,7 @@ pub fn delai_de_prevenance(debut: &Jour, notification: &Jour) -> R<DelaiDePreven
         .iter()
         .find(|t| match (t.presence_moins_de_jours, t.presence_jusqu_a_mois) {
             (Some(j), _) => presence_jours < j,
-            (None, Some(m)) => presence_mois <= Decimal::from(m),
+            (None, Some(m)) => presence <= m,
             (None, None) => true,
         })
         .ok_or_else(|| socle::echec::livree(&BASE, "preavis.delai_de_prevenance"))?;
@@ -1063,7 +1041,7 @@ pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decima
 /// L'indemnite legale de licenciement. `reference` lit le salaire de reference (R1234-4) : il n'est lu qu'une fois
 /// l'indemnite sue due, car sans paies precedentes il refuse. De meme pour chaque indemnite de fin de CDI.
 pub fn indemnite_licenciement(
-    anciennete: Decimal,
+    anciennete: Anciennete,
     reference: &mut dyn FnMut() -> R<Decimal>,
     motif_rupture: Option<MotifDeRupture>,
 ) -> R<IndemniteLegale> {
@@ -1076,7 +1054,7 @@ pub fn indemnite_licenciement(
     if anciennete < mini {
         return Ok(IndemniteLegale::non_due(format!(
             "{} mois d'anciennete, et l'indemnite legale de licenciement en demande {} (L1234-9).",
-            mois_complets(anciennete), mini)));
+            anciennete.mois_complets(), mini)));
     }
     let (montant, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(IndemniteLegale { montant, du: true, pourquoi: None, annees: Some(annees) })
@@ -1087,9 +1065,9 @@ pub fn indemnite_licenciement(
 /// mise a la retraite et a la rupture conventionnelle.
 /// R1234-1 : « En cas d'année incomplète, l'indemnité est calculée proportionnellement au nombre de mois complets » ; le
 /// mois entame ne compte pas.
-fn bareme_licenciement(anciennete: Decimal, reference: Decimal) -> R<(Decimal, Decimal)> {
+fn bareme_licenciement(anciennete: Anciennete, reference: Decimal) -> R<(Decimal, Decimal)> {
     let rg = regles()?;
-    let annees = div(mois_complets(anciennete), douze());
+    let annees = anciennete.mois_complets().annees();
     let (mut total, mut bas) = (Decimal::ZERO, Decimal::ZERO);
     for t in &rg.indemnite_licenciement.taux {
         // La derniere tranche n'a pas de borne : elle va jusqu'a l'anciennete.
@@ -1107,13 +1085,8 @@ fn bareme_licenciement(anciennete: Decimal, reference: Decimal) -> R<(Decimal, D
     Ok((Montant::du_decimal(mul(total, reference)).au_centime().decimal(), annees))
 }
 
-/// Les mois complets d'une anciennete en mois.
-fn mois_complets(anciennete: Decimal) -> Decimal {
-    anciennete.floor()
-}
-
 /// L'anciennete minimale de l'indemnite de licenciement (L1234-9), en mois.
-fn anciennete_minimale() -> R<Decimal> {
+fn anciennete_minimale() -> R<Anciennete> {
     Ok(regles()?.indemnite_licenciement.anciennete_minimale_mois)
 }
 
@@ -1183,13 +1156,13 @@ pub fn code_52_permis(code: Option<crate::type_de_prime::TypeDePrime>, motif_rup
 
 /// L'indemnite de mise a la retraite : le bareme du licenciement, sans ses
 /// exclusions de motif.
-pub fn indemnite_mise_a_la_retraite(anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<IndemniteLegale> {
+pub fn indemnite_mise_a_la_retraite(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Decimal>) -> R<IndemniteLegale> {
     let mini = anciennete_minimale()?;
     if anciennete < mini {
         return Ok(IndemniteLegale::non_due(format!(
             "{} mois d'anciennete : L1237-7 renvoie a l'indemnite de L1234-9, qui en demande {}. \
              La convention collective peut en prevoir une.",
-            mois_complets(anciennete), mini)));
+            anciennete.mois_complets(), mini)));
     }
     let (montant, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(IndemniteLegale { montant, du: true, pourquoi: None, annees: Some(annees) })
@@ -1198,22 +1171,22 @@ pub fn indemnite_mise_a_la_retraite(anciennete: Decimal, reference: &mut dyn FnM
 /// Le plancher de l'indemnite de rupture conventionnelle (L1237-13 : celle de L1234-9). Sous l'anciennete minimale de
 /// L1234-9, au prorata des mois complets quand `rupture_conventionnelle.indemnite` le dit (la circulaire DGT 2009-4, au
 /// taux de R1234-2 en vigueur), avec la phrase qui le dit (`pourquoi`) ; sinon pas de plancher.
-pub fn indemnite_rupture_conventionnelle(anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<PlancherDeLaRupture> {
+pub fn indemnite_rupture_conventionnelle(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Decimal>) -> R<PlancherDeLaRupture> {
     let mini = anciennete_minimale()?;
     if anciennete < mini {
-        if regles()?.rupture_conventionnelle.indemnite.prorata_sous_l_anciennete_minimale && !mois_complets(anciennete).is_zero() {
+        if regles()?.rupture_conventionnelle.indemnite.prorata_sous_l_anciennete_minimale && anciennete.mois_complets() != Anciennete::ZERO {
             let (plancher, annees) = bareme_licenciement(anciennete, reference()?)?;
             return Ok(PlancherDeLaRupture { plancher: Some(plancher), annees, pourquoi: Some(format!(
                 "{} mois complets d'ancienneté, moins que les {} de L1234-9 : la circulaire DGT 2009-4 (5.3) dit \
                  l'indemnité spécifique due « au prorata du nombre de mois de présence » ; le plancher est celui de \
                  R1234-2 en vigueur (un quart de mois par année) sur ces mois. C'est la lecture de l'administration, \
                  qui homologue la convention, pas la loi.",
-                mois_complets(anciennete), mini)) });
+                anciennete.mois_complets(), mini)) });
         }
-        return Ok(PlancherDeLaRupture { plancher: None, annees: div(anciennete, Decimal::from(12)), pourquoi: Some(format!(
+        return Ok(PlancherDeLaRupture { plancher: None, annees: anciennete.annees(), pourquoi: Some(format!(
             "{} mois d'anciennete : L1237-13 renvoie a l'indemnite de L1234-9, qui en demande {}, \
              donc la loi ne donne pas de plancher. Le montant de la convention se saisit.",
-            mois_complets(anciennete), mini)) });
+            anciennete.mois_complets(), mini)) });
     }
     let (plancher, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(PlancherDeLaRupture { plancher: Some(plancher), annees, pourquoi: None })
@@ -1221,9 +1194,9 @@ pub fn indemnite_rupture_conventionnelle(anciennete: Decimal, reference: &mut dy
 
 /// L'indemnite de depart volontaire a la retraite : un PALIER, pas un cumul,
 /// et rien sous le premier.
-pub fn indemnite_depart_retraite(anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<IndemniteDuDepart> {
+pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Decimal>) -> R<IndemniteDuDepart> {
     let rg = regles()?;
-    let annees = div(anciennete, douze());
+    let annees = anciennete.annees();
     let mut tries: Vec<&PalierDeDepart> = rg.depart_a_la_retraite.indemnite.taux.iter().collect();
     tries.sort_by(|a, b| a.anciennete_annees.cmp(&b.anciennete_annees));
     let Some(premier) = tries.first() else {
@@ -1256,7 +1229,7 @@ fn annees_lisibles(annees: Decimal) -> String {
 // -------------------------------------------------- le maintien de salaire
 /// Pourquoi le maintien de salaire n'est PAS du, `None` s'il l'est
 /// (`nature` absente : seule l'anciennete compte).
-pub fn droit_au_maintien(nature: Option<&Nature>, anciennete_mois: Decimal) -> R<Option<String>> {
+pub fn droit_au_maintien(nature: Option<&Nature>, anciennete: Anciennete) -> R<Option<String>> {
     if let Some(n) = nature {
         if !n.mensuelle() {
             return Ok(Some(format!(
@@ -1267,11 +1240,11 @@ pub fn droit_au_maintien(nature: Option<&Nature>, anciennete_mois: Decimal) -> R
         }
     }
     let minimum = regles()?.maintien_de_salaire.anciennete_mois_minimum;
-    if anciennete_mois < Decimal::from(minimum) {
+    if anciennete < minimum {
         return Ok(Some(format!(
             "L1226-1 demande {} mois d'anciennete au premier jour de l'absence (D1226-8) ; il y en a {}.",
             minimum,
-            arrondir_jours(anciennete_mois)
+            arrondir_jours(anciennete.mois())
         )));
     }
     Ok(None)
@@ -1287,12 +1260,11 @@ pub fn jours_de_carence(accident_du_travail: bool, accident_de_trajet: bool) -> 
 }
 
 /// Les tranches d'indemnisation, allongees par l'anciennete.
-pub fn duree_du_maintien(anciennete_mois: Decimal) -> R<Vec<Tranche>> {
+pub fn duree_du_maintien(anciennete: Anciennete) -> R<Vec<Tranche>> {
     let rg = regles()?;
     let r = &rg.maintien_de_salaire;
     let maj = &r.majoration;
-    let reste = anciennete_mois % douze();
-    let annees = div(sub(anciennete_mois, reste), douze()).trunc().to_i64().ok_or_else(|| socle::echec::refus(socle::num::illisible(&anciennete_mois.to_string())))?;
+    let annees = anciennete.nombre_d_ans_revolus()?;
     let au_dela = (annees - 1).max(0);
     let bonus = (au_dela / maj.par_annees) * maj.jours;
     Ok(r.tranches.iter().map(|t| Tranche { jours: (t.jours + bonus).min(maj.plafond_jours), taux: t.taux }).collect())

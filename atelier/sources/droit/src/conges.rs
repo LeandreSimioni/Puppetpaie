@@ -120,19 +120,20 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
 /// n'est pas du. Le 1er mai fait exception : « Le chomage du 1er mai ne peut etre une cause de reduction de salaire »
 /// (L3133-5, meme fichier, l. 123), quelle que soit l'anciennete. Seuls comptent les feries que l'entreprise chome
 /// (`feries::chomes_entre`) et qui tombent un jour travaille du salarie : un ferie travaille est un jour de travail.
-/// L'anciennete se compte depuis `anciennete` (la fiche, « Dans la compagnie depuis » : les contrats successifs s'y
-/// cumulent, L3133-3, al. 2), au jour du ferie (`permanents::anciennete_mois`).
+/// L'anciennete se compte depuis `depuis` (la fiche, « Dans la compagnie depuis » : les contrats successifs s'y
+/// cumulent, L3133-3, al. 2), au jour du ferie (`Anciennete::entre`).
 pub fn feries_non_payes(
     debut: &Jour,
     fin: &Jour,
     chomes: Option<&str>,
     jours: &JoursTravailles,
-    anciennete: &Jour,
+    depuis: &Jour,
 ) -> R<Vec<(Jour, String)>> {
+    let trois_mois = socle::date::Anciennete::de_mois(Decimal::from(3));
     let mut out = Vec::new();
     for (j, nom) in feries::chomes_entre(debut, fin, chomes)? {
         let premier_mai = feries::chomes_de_droit(j.an)?.iter().any(|(x, _)| *x == j);
-        if jours.travaille(&j) && !premier_mai && crate::permanents::anciennete_mois(anciennete, &j) < Decimal::from(3) {
+        if jours.travaille(&j) && !premier_mai && socle::date::Anciennete::entre(depuis, &j) < trois_mois {
             out.push((j, nom));
         }
     }
