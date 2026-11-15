@@ -283,6 +283,11 @@ impl Anciennete {
         Anciennete(d)
     }
 
+    /// `n` annees qu'un texte fixe, douze mois chacune.
+    pub fn ans(n: u32) -> Anciennete {
+        Anciennete(Decimal::from(n * 12))
+    }
+
     /// `d` annees (un seuil d'un texte, un oracle) : la porte d'un nombre d'annees, douze mois chacune.
     pub fn d_annees(d: Decimal) -> Anciennete {
         Anciennete(num::mul(d, Decimal::from(12)))

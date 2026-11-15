@@ -829,7 +829,7 @@ fn indemnite_de_rupture(
             qui
         )));
         let mise = clauses::indemnite_mise_a_la_retraite(idcc, anciennete, &mut retenu)?;
-        let vise = prof.categorie == Some(droit::fiche::CategorieConventionnelle::CadreDeDirection) && ctx.entreprise.annexe_convention.dite() == Some(&droit::fiche::AnnexeConvention::A1) && anciennete > Anciennete::d_annees(Decimal::from(10));
+        let vise = prof.categorie == Some(droit::fiche::CategorieConventionnelle::CadreDeDirection) && ctx.entreprise.annexe_convention.dite() == Some(&droit::fiche::AnnexeConvention::A1) && anciennete > Anciennete::ans(10);
         if let Some(cdd) = mise.cadre_de_direction.as_ref().filter(|_| vise) {
             if saisi.is_none() {
                 return Err(socle::echec::cle(format!(

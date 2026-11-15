@@ -161,7 +161,7 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
         (Some(at), _) => {
             let ou = format!("{}, art. {}", nom, at.article);
             let mut tr = at.tranches.as_slice();
-            if let Some(deux_ans) = at.tranches_deux_ans.as_deref().filter(|t| !t.is_empty() && anciennete >= Anciennete::d_annees(Decimal::from(2))) {
+            if let Some(deux_ans) = at.tranches_deux_ans.as_deref().filter(|t| !t.is_empty() && anciennete >= Anciennete::ans(2)) {
                 tr = deux_ans;
             }
             if let Some(apres) = at.tranches_apres.as_ref().filter(|a| anciennete > a.anciennete_mois) {

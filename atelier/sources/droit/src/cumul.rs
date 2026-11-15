@@ -49,7 +49,7 @@ pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_da
     };
     let (bas, haut) = (p.moins_de_50_ans, p.cinquante_ans_et_plus);
     let Some(n) = date_naissance else { return Ok(bas) };
-    let cinquante_ans = socle::date::Anciennete::d_annees(Decimal::from(50));
+    let cinquante_ans = socle::date::Anciennete::ans(50);
     Ok(if socle::date::Anciennete::age(&n, &a_la_date) >= cinquante_ans { haut } else { bas })
 }
 

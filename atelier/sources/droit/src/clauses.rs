@@ -1212,7 +1212,7 @@ pub fn prime_anciennete(
     })?;
     let annees = Anciennete::revolue(&debut, jour).ans_revolus();
     // Un pourcentage par annee de presence a partir de la `apres_annees`-ieme, comprise.
-    let presence_comptee = if annees >= sec.apres_annees { i64::from(annees.au_dela_de(sec.apres_annees).fois_entieres(Anciennete::d_annees(Decimal::ONE))? + 1) } else { 0 };
+    let presence_comptee = if annees >= sec.apres_annees { i64::from(annees.au_dela_de(sec.apres_annees).fois_entieres(Anciennete::ans(1))? + 1) } else { 0 };
     let pourcentage = sec.plafond_pourcentage.min(presence_comptee * sec.pourcentage_par_annee);
     if pourcentage <= 0 {
         return Ok(None);

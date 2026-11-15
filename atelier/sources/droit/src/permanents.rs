@@ -1274,7 +1274,7 @@ pub fn duree_du_maintien(anciennete: Anciennete) -> R<Vec<Tranche>> {
     let r = &rg.maintien_de_salaire;
     let maj = &r.majoration;
     // « au-delà de la première » annee revolue.
-    let au_dela = anciennete.ans_revolus().au_dela_de(Anciennete::d_annees(Decimal::ONE));
+    let au_dela = anciennete.ans_revolus().au_dela_de(Anciennete::ans(1));
     let bonus = maj.jours.fois(au_dela.fois_entieres(maj.par_annees)?);
     r.tranches
         .iter()
