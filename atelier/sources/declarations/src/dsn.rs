@@ -3779,9 +3779,10 @@ impl Display for PeriodeDAffectation {
     }
 }
 
-/// La plus petite periode civile (trimestre, semestre, annee) qui contient les deux dates JJMMAAAA d'une base 78. Le
-/// trimestre etait deja la periode ecrite pour un mois courant ; la norme l'admet (p. 260, ligne 89).
-fn periode_d_affectation(debut: Jour, fin: Jour) -> R<PeriodeDAffectation> {
+/// La plus petite periode civile (trimestre, semestre, annee) qui contient la periode cotisee d'une base 78 (ses deux
+/// dates JJMMAAAA). Le trimestre etait deja la periode ecrite pour un mois courant ; la norme l'admet (p. 260, ligne 89).
+fn periode_d_affectation(cotisee: &Periode) -> R<PeriodeDAffectation> {
+    let (debut, fin) = (cotisee.debut(), cotisee.fin());
     let ((a1, m1), (a2, m2)) = ((debut.annee(), debut.mois), (fin.annee(), fin.mois));
     if a1 != a2 {
         return Err(refus!(
@@ -3896,7 +3897,7 @@ contrats ouvert sur le mois déclaré. Rien n'est écrit.",
                 let montant: Decimal =
                     v.parse().map_err(|_| socle::echec::a_la_cle(&format!("Le montant de la cotisation {} ne se lit pas (S21.G00.81.004).", code81), "S21.G00.81.004", v))?;
                 let periode = match (crate::dsn_lue::jour_dsn(debut), crate::dsn_lue::jour_dsn(fin)) {
-                    (Some(d), Some(f)) => periode_d_affectation(d, f)?,
+                    (Some(d), Some(f)) => periode_d_affectation(&Periode::du_au(d, f)?)?,
                     _ => return Err(refus!("S21.G00.55.004 : periode cotisee illisible ({} - {}).", debut, fin)),
                 };
                 match out.iter_mut().find(|c| c.organisme == organisme && c.code == code && c.periode == periode) {
@@ -3912,7 +3913,7 @@ contrats ouvert sur le mois déclaré. Rien n'est écrit.",
 
 /// Le bloc 20 d'un organisme complementaire et ses composants 55, ou rien si aucun composant ne porte de montant.
 fn versement_complementaire(
-    v: &Versement, ent: &ChampsEntreprise, banque: &droit::fiche::Banque, composants: &[&Composant], debut: Jour, fin: Jour, echeance: Option<Jour>,
+    v: &Versement, ent: &ChampsEntreprise, banque: &droit::fiche::Banque, composants: &[&Composant], periode: &Periode, echeance: Option<Jour>,
 ) -> R<Vec<(RubriqueDeLaNorme, String)>> {
     if composants.iter().all(|c| c.montant.is_zero()) {
         return Ok(Vec::new());
@@ -3928,8 +3929,8 @@ fn versement_complementaire(
     f.add_case(droit::rubrique!("S21.G00.20.003"), &banque.bic, "bic")?;
     f.add_case(droit::rubrique!("S21.G00.20.004"), &banque.iban, "iban")?;
     f.add(droit::rubrique!("S21.G00.20.005"), mt(montant));
-    f.add(droit::rubrique!("S21.G00.20.006"), debut.jjmmaaaa());
-    f.add(droit::rubrique!("S21.G00.20.007"), fin.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.20.006"), periode.debut().jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.20.007"), periode.fin().jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.20.010"), "05");
     if let Some(j) = echeance {
         f.add(droit::rubrique!("S21.G00.20.011"), j.jjmmaaaa());
@@ -3996,7 +3997,7 @@ pub fn pas_retenu(lignes: &[(RubriqueDeLaNorme, String)]) -> R<Decimal> {
 /// Le bloc 20 de la DGFiP, ou rien. `du` : le PAS retenu par le fichier ; `remplace` : la DSN est un annule et
 /// remplace (type 03 ou 05), et `remplacee_versait_pas` dit si la declaration remplacee portait un versement DGFiP.
 fn versement_dgfip(
-    du: Decimal, mois: Mois, debut: Jour, fin: Jour, banque: &droit::fiche::Banque, remplace: bool, remplacee_versait_pas: Option<bool>,
+    du: Decimal, mois: Mois, periode: &Periode, banque: &droit::fiche::Banque, remplace: bool, remplacee_versait_pas: Option<bool>,
 ) -> R<Vec<(RubriqueDeLaNorme, String)>> {
     // « arrondi a l'entier le plus proche (les deux decimales etant valorisees a zero) » (p. 157, ligne 194) ; le demi
     // va a l'euro superieur (`bordereau::euro`) : CGI art. 1724, « La liquidation de toutes sommes a recevoir [...] est
@@ -4041,8 +4042,8 @@ pas pu etre relue (le fichier du dernier depot accepte) : on ne devine pas. Rien
     f.add_case(droit::rubrique!("S21.G00.20.003"), &banque.bic, "bic")?;
     f.add_case(droit::rubrique!("S21.G00.20.004"), &banque.iban, "iban")?;
     f.add(droit::rubrique!("S21.G00.20.005"), mt(montant));
-    f.add(droit::rubrique!("S21.G00.20.006"), debut.jjmmaaaa());
-    f.add(droit::rubrique!("S21.G00.20.007"), fin.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.20.006"), periode.debut().jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.20.007"), periode.fin().jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.20.010"), "05");
     Ok(f.lignes)
 }
@@ -5166,7 +5167,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
     for (place, v) in places_oc.iter().rev() {
         let siret = v.siret.clone();
         let siens: Vec<&Composant> = composants.iter().filter(|c| c.organisme == siret).collect();
-        let bloc = versement_complementaire(v, &ent, banque, &siens, debut_mois, fin_m, echeances.get(&siret).copied())?;
+        let bloc = versement_complementaire(v, &ent, banque, &siens, &periode_du_mois, echeances.get(&siret).copied())?;
         if !bloc.is_empty() {
             let a = bordereau::a_verser(siens.iter().fold(Montant::ZERO.decimal(), |s, c| add(s, c.montant)));
             if let Some((_, i)) = places_ordres_oc.iter().find(|(s, _)| *s == siret) {
@@ -5187,7 +5188,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
 
     let du = pas_retenu(&f.lignes)?;
     let remplace = type_declaration.remplace();
-    let dgfip = versement_dgfip(du, mois, debut_mois, fin_m, banque, remplace, o.remplacee_versait_pas)?;
+    let dgfip = versement_dgfip(du, mois, &periode_du_mois, banque, remplace, o.remplacee_versait_pas)?;
     if !dgfip.is_empty() {
         let mut arrondi = bordereau::euro(du);
         arrondi.rescale(2);
@@ -5323,9 +5324,9 @@ mod tests {
     #[test]
     fn le_versement_dgfip_s_arrondit_a_l_euro_et_verse_zero_pour_un_pas_negatif() {
         let banque: droit::fiche::Banque = socle::forme::lire_texte(r#"{"bic": "BANQFRPPXXX", "iban": "FR7630001007941234567890185"}"#, "banque").unwrap();
-        let (debut, fin) = (Jour::nouveau(2026, 7, 1).unwrap(), Jour::nouveau(2026, 7, 31).unwrap());
+        let juillet = Mois::nouveau(2026, 7).unwrap();
         let montant = |du: &str| -> Option<String> {
-            let l = versement_dgfip(Decimal::from_str_exact(du).unwrap(), debut.mois_civil(), debut, fin, &banque, false, None).unwrap();
+            let l = versement_dgfip(Decimal::from_str_exact(du).unwrap(), juillet, &Periode::du_mois(juillet), &banque, false, None).unwrap();
             l.iter().find(|(k, _)| *k == droit::rubrique!("S21.G00.20.005")).map(|(_, v)| format!("'{}'", v))
         };
         assert_eq!(montant("187.18"), Some("'187.00'".into()));
