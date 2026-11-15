@@ -312,6 +312,91 @@ impl<'de> serde::Deserialize<'de> for Periode {
     }
 }
 
+/// UNE PERIODE OUVERTE (« Le glossaire ») : un premier jour, et un dernier jour quand il est dit (le contrat qui a
+/// commence et dont la fin n'est pas dite : un CDI declare en DSN, S21.G00.40.010 absente) ; la fin, quand elle est
+/// dite, n'est pas avant le debut. Elle ne se construit que par `du`, qui refuse une fin avant le debut. Elle s'ecrit et
+/// se lit `{"du": "AAAA-MM-JJ", "au": "AAAA-MM-JJ" | null}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PeriodeOuverte {
+    debut: Jour,
+    fin: Option<Jour>,
+}
+
+impl PeriodeOuverte {
+    /// DU `debut`, AU `fin` quand elle est dite ; refus quand `fin` est avant `debut`.
+    #[track_caller]
+    pub fn du(debut: Jour, fin: Option<Jour>) -> R<PeriodeOuverte> {
+        match fin {
+            Some(f) if f < debut => Err(refus(format!("période impossible : le {} est après le {}", debut.jj_mm_aaaa(), f.jj_mm_aaaa()))),
+            _ => Ok(PeriodeOuverte { debut, fin }),
+        }
+    }
+
+    /// Son premier jour.
+    pub fn debut(&self) -> Jour {
+        self.debut
+    }
+
+    /// Son dernier jour, quand il est dit.
+    pub fn fin(&self) -> Option<Jour> {
+        self.fin
+    }
+
+    /// La periode qu'elle est quand sa fin est dite.
+    pub fn fermee(&self) -> Option<Periode> {
+        self.fin.map(|fin| Periode { debut: self.debut, fin })
+    }
+
+    /// `j` en est-il ? Sans fin dite, tout jour a partir du premier en est.
+    pub fn contient(&self, j: &Jour) -> bool {
+        self.debut <= *j && self.fin.is_none_or(|f| *j <= f)
+    }
+
+    /// Ses jours communs avec `autre`, s'il y en a.
+    pub fn croise(&self, autre: &Periode) -> Option<Periode> {
+        let debut = self.debut.max(autre.debut);
+        let fin = match self.fin {
+            Some(f) => f.min(autre.fin),
+            None => autre.fin,
+        };
+        match debut <= fin {
+            true => Some(Periode { debut, fin }),
+            false => None,
+        }
+    }
+}
+
+/// Une periode est une periode ouverte dont la fin est dite.
+impl From<Periode> for PeriodeOuverte {
+    fn from(p: Periode) -> PeriodeOuverte {
+        PeriodeOuverte { debut: p.debut, fin: Some(p.fin) }
+    }
+}
+
+/// La forme ecrite d'une periode ouverte.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PeriodeOuverteEcrite {
+    du: Jour,
+    au: Option<Jour>,
+}
+
+impl serde::Serialize for PeriodeOuverte {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PeriodeOuverteEcrite { du: self.debut, au: self.fin }.serialize(s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PeriodeOuverte {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<PeriodeOuverte, D::Error> {
+        let e = PeriodeOuverteEcrite::deserialize(d)?;
+        match e.au {
+            Some(au) if au < e.du => Err(serde::de::Error::custom(format!("période impossible : le {} est après le {}", e.du.iso(), au.iso()))),
+            _ => Ok(PeriodeOuverte { debut: e.du, fin: e.au }),
+        }
+    }
+}
+
 /// UNE ANCIENNETE (« Le glossaire ») : le temps passe depuis un jour, en mois de calendrier ; un age est l'anciennete
 /// depuis la naissance. Elle se compte ici, de deux jours, et nulle part ailleurs : en mois et fraction du mois entame
 /// (`entre`), ou en mois revolus (`revolue`) et en annees revolues (`ans_revolus`, `age`). Un seuil qu'un texte dit en

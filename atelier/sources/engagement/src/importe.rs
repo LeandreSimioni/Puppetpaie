@@ -176,8 +176,8 @@ pub struct PaieVersee {
     pub contrat: CleDePaieVersee,
     pub nir: Option<droit::fiche::Nir>,
     pub numero_objet: Option<NumeroObjetSpectacle>,
-    pub debut: Option<Jour>,
-    pub fin: Option<Jour>,
+    /// Les dates du contrat qu'elle paie (S21.G00.40.001, .010 : un CDI n'a pas de fin), quand une piece les dit.
+    pub periode: Option<socle::date::PeriodeOuverte>,
     /// La quotite que la DSN deposee declare pour le contrat (S21.G00.40.013), dans l'unite de 40.011.
     pub quotite: Option<crate::QuotiteDuContrat>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
@@ -371,6 +371,18 @@ pub fn ecrit_salarie<C:CleDeLaLigne, S: serde::Serializer>(salarie: &C, s: S) ->
     s.serialize_str(salarie.ecrite())
 }
 
+impl<S> ContratLu<S> {
+    /// Les dates du contrat, quand la ligne dit son debut (une fin absente : il court encore). Refus : une fin sans debut,
+    /// ou avant le debut.
+    pub fn periode(&self) -> R<Option<socle::date::PeriodeOuverte>> {
+        match (self.debut, self.fin) {
+            (Some(d), f) => Ok(Some(socle::date::PeriodeOuverte::du(d, f)?)),
+            (None, None) => Ok(None),
+            (None, Some(f)) => Err(socle::refus!("un contrat atteste finit le {} sans dire son début", f.jj_mm_aaaa())),
+        }
+    }
+}
+
 impl ContratRelu {
     /// La meme ligne, parmi celles de l'apercu.
     pub fn a_l_apercu(self) -> ContratLu {
@@ -406,8 +418,7 @@ impl PaieVersee {
             contrat,
             nir: None,
             numero_objet: None,
-            debut: None,
-            fin: None,
+            periode: None,
             quotite: None,
             brut: None,
             net_imposable: None,
@@ -726,16 +737,16 @@ impl Importe {
         };
         // L'emploi que le bulletin imprime ; un bulletin qui ne l'imprime pas n'en dit rien.
         let imprime = |champ: fn(&EmploiImprime) -> &Option<String>| p.emploi_imprime.as_ref().and_then(|i| champ(i).clone());
-        let debut = match (self.carte().debut, p.debut) {
+        let debut = match (self.carte().debut, p.periode) {
             (Some(d), _) => d,
-            (None, Some(j)) => j,
+            (None, Some(o)) => o.debut(),
             (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),
         };
         // Le contrat d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin.
         let fin = match (self.carte().fin, self.permanent()) {
             (Some(f), _) => Some(f),
             (None, true) => None,
-            (None, false) => p.fin,
+            (None, false) => p.periode.and_then(|o| o.fin()),
         };
         let dates_travail: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
         let brut = p.brut;
@@ -812,7 +823,7 @@ impl Importe {
 
         // Le bareme de la paie range les bases ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let fin_periode = engagement.periode_payee()?.fin();
-        let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
+        let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.periode_du_contrat()?)?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref())?)?;
         // Un regroupement n'est pas une rubrique du bareme : sa base ne se range pas.
         // La base qu'imprime le bulletin (un nombre lu) se range dans ce que l'assiette compte : la porte de cette lecture.

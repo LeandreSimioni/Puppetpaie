@@ -20,7 +20,7 @@ use serde::Serialize;
 use socle::grandeurs::{Cachets, Heures, Jours};
 
 use droit::contexte::Contexte;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
 use socle::echec::erreur;
@@ -39,8 +39,7 @@ struct Versee {
     salarie: droit::fiche::FicheSalarie,
     brut: Decimal,
     numero: Option<engagement::numeros::NumeroContrat>,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
+    periode: Option<PeriodeOuverte>,
     /// Les cachets, heures et jours que le contrat atteste, quand il tient dans le mois.
     activite: Activite,
 }
@@ -74,7 +73,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let Some(brut) = p.paie.brut.map(socle::grandeurs::Montant::decimal) else { continue };
         let cle = &p.salarie;
         let salarie = ctx.salaries.get(cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
-        let (debut, fin) = (p.paie.debut, p.paie.fin);
+        let periode = p.paie.periode;
         let mut activite = Activite::default();
         if let Some(c) = i.contrat_lu()? {
             if du_mois(&c.debut) && du_mois(&c.fin) {
@@ -86,7 +85,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
             }
         }
         let numero = p.paie.contrat.numero_declare().cloned();
-        out.push(Versee { salarie, brut, numero, debut, fin, activite });
+        out.push(Versee { salarie, brut, numero, periode, activite });
     }
     Ok(out)
 }
@@ -153,9 +152,7 @@ pub struct ContratReg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub numero: Option<engagement::numeros::NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<Jour>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<Jour>,
+    pub periode: Option<PeriodeOuverte>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pcs_ese: Option<droit::fiche::CodePcsEse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -170,9 +167,7 @@ pub struct EmploiReg {
     pub contrat: ContratReg,
     pub activite: Activite,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<Jour>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<Jour>,
+    pub periode: Option<PeriodeOuverte>,
     pub brut: Decimal,
     pub fichier: String,
 }
@@ -391,14 +386,13 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 commune,
                 email: p.salarie.champs.email.dite().cloned(),
             };
-            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: dit(f.emploi.portee()) };
+            let contrat = ContratReg { numero: p.numero.clone(), periode: p.periode, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: dit(f.emploi.portee()) };
             emplois.push(EmploiReg {
                 annee: an,
                 mois: *m,
                 individu,
                 activite: p.activite.clone(),
-                debut: p.debut,
-                fin: p.fin,
+                periode: p.periode,
                 contrat,
                 brut,
                 fichier: source.clone(),
@@ -708,8 +702,8 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             (16, coupe(texte_de(&i.commune), 26)),
             (19, cellule(&i.email)),
             (21, coupe(texte_de(&c.emploi), 34)),
-            (22, jj(&x.debut)),
-            (23, jj(&x.fin)),
+            (22, jj(&x.periode.map(|o| o.debut()))),
+            (23, jj(&x.periode.and_then(|o| o.fin()))),
             (25, "I".to_string()),
             (30, if artiste { "A" } else { "T" }.to_string()),
         ];

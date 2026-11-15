@@ -14,7 +14,7 @@ use droit::caisse_conges::{affilie, douze_mois_ou_plus};
 use droit::contexte::IdSalarie;
 use droit::fiche::{FicheSalarie, SalarieDuContrat};
 use droit::natures::NatureDeContrat as N;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 
 use crate::outils::typee::lu;
 
@@ -27,21 +27,23 @@ fn qui_est_declare_a_la_caisse() {
     let sans_metier = fiche(r#"{"statut": "technicien"}"#, Some("3090"));
     let (debut, trois_mois, un_an) = (j(2026, 9, 1), j(2026, 11, 30), j(2027, 8, 31));
     assert!(douze_mois_ou_plus(&socle::date::Periode::du_au(debut, un_an).unwrap()).unwrap());
-    assert!(affilie(&cddu, &comedien, &debut, Some(&trois_mois)).unwrap());
-    assert!(!affilie(&cddu, &comedien, &debut, Some(&un_an)).unwrap(), "un CDDU de douze mois");
-    assert!(affilie(&cdd, &comedien, &debut, Some(&trois_mois)).unwrap(), "un artiste en CDD de droit commun");
-    assert!(!affilie(&cdd, &comedien, &debut, Some(&un_an)).unwrap(), "un CDD de douze mois");
+    let contrat = |fin: Option<Jour>| PeriodeOuverte::du(debut, fin).unwrap();
+    let (trois_mois, un_an, sans_terme) = (contrat(Some(trois_mois)), contrat(Some(un_an)), contrat(None));
+    assert!(affilie(&cddu, &comedien, &trois_mois).unwrap());
+    assert!(!affilie(&cddu, &comedien, &un_an).unwrap(), "un CDDU de douze mois");
+    assert!(affilie(&cdd, &comedien, &trois_mois).unwrap(), "un artiste en CDD de droit commun");
+    assert!(!affilie(&cdd, &comedien, &un_an).unwrap(), "un CDD de douze mois");
     // Le regisseur lumiere est sur la liste du spectacle vivant prive (3090), pas sur celle de la radiodiffusion (1922).
-    assert!(affilie(&cdd, &regisseur("3090"), &debut, Some(&trois_mois)).unwrap(), "un technicien de la liste en CDD");
-    assert!(!affilie(&cdd, &regisseur("1922"), &debut, Some(&trois_mois)).unwrap(), "une fonction hors de la liste du domaine");
-    assert!(affilie(&cddu, &regisseur("1922"), &debut, Some(&trois_mois)).unwrap(), "un technicien en CDDU");
+    assert!(affilie(&cdd, &regisseur("3090"), &trois_mois).unwrap(), "un technicien de la liste en CDD");
+    assert!(!affilie(&cdd, &regisseur("1922"), &trois_mois).unwrap(), "une fonction hors de la liste du domaine");
+    assert!(affilie(&cddu, &regisseur("1922"), &trois_mois).unwrap(), "un technicien en CDDU");
     // Le staffeur est sur la liste du spectacle vivant subventionne (1285), pas sur celle du prive (3090).
     let staffeur = |idcc: &str| fiche(r#"{"code_emploi_ft": "STA010", "statut": "technicien"}"#, Some(idcc));
-    assert!(affilie(&cdd, &staffeur("1285"), &debut, Some(&trois_mois)).unwrap(), "la liste 6 nomme le staffeur");
-    assert!(!affilie(&cdd, &staffeur("3090"), &debut, Some(&trois_mois)).unwrap(), "la liste 7 ne le nomme pas");
-    assert!(!affilie(&cdd, &sans_metier, &debut, Some(&trois_mois)).unwrap(), "un metier hors de la nomenclature");
-    assert!(!affilie(&cdi, &comedien, &debut, None).unwrap(), "un CDI");
-    assert!(affilie(&cdd, &comedien, &debut, None).unwrap_err().phrase.contains("sans terme"));
+    assert!(affilie(&cdd, &staffeur("1285"), &trois_mois).unwrap(), "la liste 6 nomme le staffeur");
+    assert!(!affilie(&cdd, &staffeur("3090"), &trois_mois).unwrap(), "la liste 7 ne le nomme pas");
+    assert!(!affilie(&cdd, &sans_metier, &trois_mois).unwrap(), "un metier hors de la nomenclature");
+    assert!(!affilie(&cdi, &comedien, &sans_terme).unwrap(), "un CDI");
+    assert!(affilie(&cdd, &comedien, &sans_terme).unwrap_err().phrase.contains("sans terme"));
 }
 
 /// La fiche telle que la paie la lit : ses champs, et la convention de l'employeur.

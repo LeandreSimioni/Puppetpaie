@@ -709,6 +709,12 @@ impl Engagement {
         Ok(if contrat.au_moins(reference)? { ModaliteDuTempsDeTravail::TempsPlein } else { ModaliteDuTempsDeTravail::TempsPartiel })
     }
 
+    /// Les dates du contrat : son debut, et sa fin quand elle est dite (un permanent ouvert n'en a pas). Refus : une fin
+    /// avant le debut.
+    pub fn periode_du_contrat(&self) -> R<socle::date::PeriodeOuverte> {
+        socle::date::PeriodeOuverte::du(self.debut, self.fin)
+    }
+
     /// La place de son mois dans le contrat (`PlaceDuMois`) : il y commence s'il debute ce mois-ci, il y finit si sa fin
     /// tombe ce mois-ci.
     pub fn place_du_mois(&self) -> PlaceDuMois {

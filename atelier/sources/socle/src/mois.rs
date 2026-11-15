@@ -201,11 +201,6 @@ impl Mois {
         Mois::du_jour(j) == self
     }
 
-    /// Les mois de `debut` a `fin` inclus (`Engagement::mois_du_contrat`) ; aucun si `fin` precede `debut`.
-    pub fn entre(debut: &Jour, fin: &Jour) -> Vec<Mois> {
-        Mois::du_jour(debut).jusqu_a(Mois::du_jour(fin))
-    }
-
     /// Les mois de celui-ci a `dernier` inclus ; aucun si `dernier` le precede.
     pub fn jusqu_a(self, dernier: Mois) -> Vec<Mois> {
         let mut m = self;

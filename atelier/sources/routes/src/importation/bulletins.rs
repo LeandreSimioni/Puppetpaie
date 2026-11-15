@@ -60,7 +60,7 @@ use import::proposee::FicheProposee;
 use crate::fiches::SorteDeFiche;
 use crate::importation::fiches::{redemandees, verifier_comme_a_l_ecriture};
 use engagement::importe::EmploiImprime;
-use socle::date::Jour;
+use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::echec::R;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
@@ -593,8 +593,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     sans += 1;
                     continue;
                 }
-                if registre.pareils(&c.nir, c.debut, c.fin, Source::Aem).is_empty() {
-                    registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, cle_de(&c.nir)), Source::Aem, BlocDImport::Declarations);
+                if registre.pareils(&c.nir, &c.periode, Source::Aem).is_empty() {
+                    registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, cle_de(&c.nir)), c.periode, Source::Aem, BlocDImport::Declarations)?;
                     nouveaux += 1;
                 }
             }
@@ -917,22 +917,22 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let mut par_numero: HashMap<(Nir, Mois, NumeroContrat), Vec<(Mois, CleDePaieVersee, Cible)>> = HashMap::new();
     // Sans numero imprime, la regle de l'ecriture (`import::ecrite::rapprocher`, « un contrat a cheval sur deux mois ») :
     // le bulletin complete la paie declaree du meme mois dont le contrat contient sa periode, quand il n'y en a qu'une.
-    // (debut, fin, contrat, cible) ; une fin absente : le contrat court encore.
-    let mut par_mois: HashMap<(Nir, Mois), Vec<(Jour, Option<Jour>, CleDePaieVersee, Cible)>> = HashMap::new();
+    // (dates du contrat, contrat, cible) ; une fin absente : le contrat court encore.
+    let mut par_mois: HashMap<(Nir, Mois), Vec<(PeriodeOuverte, CleDePaieVersee, Cible)>> = HashMap::new();
     let mut vus: HashSet<(Mois, Nir, CleDePaieVersee)> = HashSet::new();
-    // (mois, NIR, contrat, debut, fin) d'une paie. Une paie sans NIR ne se rattache a aucun bulletin.
-    let reperes = |x: &PaieLue| (x.mois, x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.debut, x.paie.fin);
+    // (mois, NIR, contrat, dates du contrat) d'une paie. Une paie sans NIR ne se rattache a aucun bulletin.
+    let reperes = |x: &PaieLue| (x.mois, x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.periode);
     for (k, x) in ap.paies.iter().enumerate() {
-        let (mois, Some(nir), contrat, debut, fin) = reperes(x) else { continue };
+        let (mois, Some(nir), contrat, periode) = reperes(x) else { continue };
         vus.insert((mois.clone(), nir.clone(), contrat.clone()));
-        if let (Some(d), Some(f)) = (debut, fin) {
-            index.entry((nir.clone(), socle::date::Periode::du_au(d, f)?)).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
+        if let Some(p) = periode.and_then(|o| o.fermee()) {
+            index.entry((nir.clone(), p)).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
         }
         if let Some(n) = contrat.numero_declare() {
             par_numero.entry((nir.clone(), mois.clone(), n.clone())).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
         }
-        if let Some(d) = debut {
-            par_mois.entry((nir, mois)).or_default().push((d, fin, contrat, Cible::Dsn(k)));
+        if let Some(o) = periode {
+            par_mois.entry((nir, mois)).or_default().push((o, contrat, Cible::Dsn(k)));
         }
     }
     // Une paie que l'historique tient d'un bulletin seul s'efface devant la DSN qui la declare (la DSN est lue apres le
@@ -940,7 +940,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // (`import::ecrite::rapprocher`).
     let mut de_bulletin: HashSet<(Mois, Option<IdSalarie>, CleDePaieVersee)> = HashSet::new();
     for x in &historique_paies {
-        let (mois, Some(nir), contrat, debut, fin) = reperes(x) else { continue };
+        let (mois, Some(nir), contrat, periode) = reperes(x) else { continue };
         if !vus.insert((mois.clone(), nir.clone(), contrat.clone())) {
             continue;
         }
@@ -948,8 +948,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         if x.paie.contrat.d_un_bulletin() {
             de_bulletin.insert(cle.clone());
         }
-        if let (Some(d), Some(f)) = (debut, fin) {
-            index.entry((nir, socle::date::Periode::du_au(d, f)?)).or_default().push((mois, contrat, Cible::Historique(cle)));
+        if let Some(p) = periode.and_then(|o| o.fermee()) {
+            index.entry((nir, p)).or_default().push((mois, contrat, Cible::Historique(cle)));
         }
     }
     /// La paie qu'une page de bulletin dit : une paie declaree (son mois, sa cle), ou, rattachee a aucune, ses dates.
@@ -995,8 +995,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 .get(&(l.nir.clone(), l.mois))
                 .into_iter()
                 .flatten()
-                .filter(|(d, f, _, _)| *d <= l.b.periode.debut() && f.as_ref().is_none_or(|f| l.b.periode.fin() <= *f))
-                .map(|(_, _, contrat, cible)| (l.mois, contrat.clone(), cible.clone()))
+                .filter(|(o, _, _)| o.croise(&l.b.periode) == Some(l.b.periode))
+                .map(|(_, contrat, cible)| (l.mois, contrat.clone(), cible.clone()))
                 .collect();
             if contient.len() == 1 {
                 candidats = contient;
@@ -1052,7 +1052,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     None => CleDePaieVersee::Copie { fichier: copie.clone(), page: (nb_pages > 1).then_some(l.page as u64) },
                 };
                 let mut paie = PaieVersee::vide(contrat);
-                (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.periode.debut()), Some(l.b.periode.fin()), Some(copie.clone()));
+                (paie.nir, paie.periode, paie.fichier) = (Some(l.nir.clone()), Some(l.b.periode.into()), Some(copie.clone()));
                 let x = PaieLue { mois: l.mois, salarie: salarie.clone(), paie };
                 let avant = hist_par_cle.get(&x.cle()).cloned();
                 (x, Attestant::Piece(Source::Bulletin), avant)
@@ -1113,7 +1113,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Ok((compte, ligne_contrat)) => {
                 // LE BULLETIN EST LA PIECE DE PAIE : un contrat d'AEM aux memes dates qui compte autre chose
                 // s'efface devant le sien (`import::attestes`) ; un autre contrat atteste reste, et l'ecart se dit.
-                let pareils = registre.pareils(&l.nir, l.b.periode.debut(), l.b.periode.fin(), Source::Bulletin);
+                let pareils = registre.pareils(&l.nir, &l.b.periode, Source::Bulletin);
                 // Le brut que le bulletin lu dit (un nombre de sa lecture) : sa porte.
                 let le_sien = (Some(compte.heures), Some(compte.cachets), Some(compte.jours), Some(Montant::du_decimal(compte.brut)));
                 let en_mots = import::attestes::en_mots(le_sien.0, le_sien.1, le_sien.2, le_sien.3);
@@ -1132,7 +1132,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 } else {
                     phrases.push("contrat attesté ajouté".into());
                     contrats_liste.push(ligne_contrat.clone());
-                    phrases.extend(registre.ajouter(&l.nir, ligne_contrat, Source::Bulletin, BlocDImport::Bulletins));
+                    phrases.extend(registre.ajouter(&l.nir, ligne_contrat, l.b.periode, Source::Bulletin, BlocDImport::Bulletins)?);
                     EtatContrat::Nouveau
                 }
             }
@@ -1176,9 +1176,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // (`import::attestes`) : la piece le confirme alors, n'ajoute rien, et l'ecart de brut, de jours ou de cachets se
     // note. Une paie declaree aux memes dates, sans contrat atteste (une DSN seule), recoit le sien ; une paie declaree
     // a d'autres dates qui les chevauchent ne se rattacherait a aucun contrat : celui de la piece n'est pas ajoute.
-    let declarees_dates: Vec<(Nir, Option<Jour>, Option<Jour>)> =
-        ap.paies.iter().chain(historique_paies.iter()).filter_map(|x| Some((x.paie.nir.clone()?, x.paie.debut, x.paie.fin))).collect();
-    let chevauche = import::attestes::chevauche;
+    let declarees_dates: Vec<(Nir, PeriodeOuverte)> =
+        ap.paies.iter().chain(historique_paies.iter()).filter_map(|x| Some((x.paie.nir.clone()?, x.paie.periode?))).collect();
     // Un compte ou une date d'une paie, dans une phrase : dite telle quand la piece ne la dit pas.
     let dit = |x: Option<String>| match x {
         Some(t) => t,
@@ -1190,6 +1189,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let c = &cl.c;
         let est_aem = cl.aem.is_some();
         let (Some(nir), Some(debut), Some(fin), Some(brut)) = (&c.nir, c.debut, c.fin, c.brut) else { continue };
+        // Les dates de la piece (`certificat_lu` refuse une fin avant le debut).
+        let periode = Periode::du_au(debut, fin)?;
         // Le brut que la piece dit (un nombre de sa lecture, `certificat_lu`, encore en decimal) : sa porte.
         let brut = Montant::du_decimal(brut);
         let nom = cl.nom();
@@ -1200,19 +1201,19 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         } else {
             infos.certificat = c.numero.clone();
         }
-        let pareils = registre.pareils(nir, debut, fin, cl.piece());
+        let pareils = registre.pareils(nir, &periode, cl.piece());
         // UN CERTIFICAT DONT D'AUTRES PIECES N'ATTESTENT QUE DES MOIS (un bulletin, une AEM, chacun le sien) atteste seul
         // ses autres mois (`attestes::reste_du_certificat`) ; un certificat deja repris ne se reprend pas deux fois.
-        let mut reste: Option<ContratLu> = None;
+        let mut reste: Option<(ContratLu, Periode)> = None;
         let mut sans_reste: Option<String> = None;
         // Le nom de la copie de la piece ; un PDF trie a son empreinte, donc sa copie.
         let copie = copie_lue(&tri.fichiers[cl.fichier])?;
         if !est_aem && !pareils.is_empty() && !pareils.iter().any(Atteste::de_certificat) {
             let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_ref())?;
             match contrat_du_certificat(c, statut, cle_de(nir), &copie) {
-                Ok((ligne, _)) => match registre.reste_du_certificat(nir, &ligne, &pareils) {
+                Ok((ligne, _)) => match registre.reste_du_certificat(nir, &ligne, periode, &pareils)? {
                     Reste::Rien => {}
-                    Reste::Seul(l) => reste = Some(l),
+                    Reste::Seul(l, p) => reste = Some((l, p)),
                     Reste::NeSeComptePas(m) => sans_reste = Some(m),
                 },
                 Err(m) => sans_reste = Some(m.phrase),
@@ -1230,7 +1231,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             phrases.extend(sans_reste);
             // L'ecart, quand les contrats confirmes tiennent dans les dates de la piece (un certificat coupe au 31 mars
             // n'en porte qu'une part).
-            if pareils.iter().all(|a| a.tient_dans(debut, fin)) {
+            if pareils.iter().all(|a| a.tient_dans(&periode)) {
                 let somme: Option<Montant> = pareils.iter().map(|a| a.brut).try_fold(Montant::ZERO, |s, b| b.map(|b| s + b));
                 let (cachets, jours): (Option<Cachets>, Option<Jours>) = (pareils.iter().map(|a| a.cachets).sum(), pareils.iter().map(|a| a.jours).sum());
                 fn n<G: socle::grandeurs::Grandeur>(x: Option<G>) -> String {
@@ -1276,20 +1277,19 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             continue;
         }
         // Le reste d'un certificat : ses dates et ses compteurs sont ceux du reste.
-        // Le reste d'un certificat porte toujours ses dates (`attestes::reste_du_certificat`).
-        let (d, f, du_au) = match reste.as_ref().map(|l| (l.debut, l.fin)) {
-            Some((Some(rd), Some(rf))) => {
+        let (dates, du_au) = match &reste {
+            Some((_, r)) => {
                 let mut sources: Vec<String> = pareils.iter().map(Atteste::d_ou).collect();
                 sources.dedup();
-                let du_au = format!("{} (attesté ailleurs pour ses autres mois : {}) : le reste, du {} au {},", du_au, sources.join(", "), rd.jj_mm_aaaa(), rf.jj_mm_aaaa());
-                (rd, rf, du_au)
+                let du_au = format!("{} (attesté ailleurs pour ses autres mois : {}) : le reste, du {} au {},", du_au, sources.join(", "), r.debut().jj_mm_aaaa(), r.fin().jj_mm_aaaa());
+                (*r, du_au)
             }
-            _ => (debut, fin, du_au),
+            None => (periode, du_au),
         };
         let autres: Vec<String> = declarees_dates
             .iter()
-            .filter(|p| &p.0 == nir && chevauche(p.1, p.2, d, f) && !(p.1 == Some(d) && p.2 == Some(f)))
-            .map(|p| format!("du {} au {}", dit(p.1.map(|j| j.iso())), dit(p.2.map(|j| j.iso()))))
+            .filter(|p| &p.0 == nir && p.1.croise(&dates).is_some() && p.1.fermee() != Some(dates))
+            .map(|p| format!("du {} au {}", p.1.debut().iso(), dit(p.1.fin().map(|j| j.iso()))))
             .collect();
         if !autres.is_empty() {
             let raison = format!(
@@ -1305,7 +1305,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let est_reste = reste.is_some();
         let lu = match (&cl.aem, reste) {
             (Some(a), _) => contrat_de_l_aem(a, cle_de(nir), &copie),
-            (None, Some(l)) => {
+            (None, Some((l, _))) => {
                 let quoi = match (l.contrat.cachets, l.contrat.jours) {
                     (Some(n), _) if n > Cachets::ZERO => format!("{} cachet(s)", socle::grandeurs::ecrit::sans_zero::dit(n)),
                     (_, Some(n)) => format!("{} jour(s)", socle::grandeurs::ecrit::sans_zero::dit(n)),
@@ -1334,7 +1334,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     format!("certificat Congés Spectacles {} : contrat attesté ajouté ({}, {} de brut arrondi à l'euro) ; les heures, que le certificat ne porte pas, n'y sont pas", du_au, quoi, euros(brut.decimal()))
                 };
                 let bloc = if est_aem { BlocDImport::AemPdf } else { BlocDImport::Certificats };
-                let raison = std::iter::once(raison).chain(registre.ajouter(nir, ligne, cl.piece(), bloc)).collect::<Vec<_>>().join(" ; ");
+                let raison = std::iter::once(raison).chain(registre.ajouter(nir, ligne, dates, cl.piece(), bloc)?).collect::<Vec<_>>().join(" ; ");
                 pages.entry(cl.fichier).or_default().push(PageCr { page: c.page, sort: Sort::Repris, raison, infos });
             }
         }
@@ -1494,13 +1494,13 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // repris, les donne ; sinon l'apercu le dit, contrat par contrat.
     for s in &ap.sans_nets {
         let ligne = ap.paies.iter().find(|x| x.mois == s.mois && x.paie.nir == s.nir && x.paie.contrat.numero_declare() == Some(&s.contrat));
-        let dates = ligne.map(|x| (x.paie.debut, x.paie.fin));
+        let dates = ligne.map(|x| x.paie.periode);
         let complete = ligne.is_some_and(|x| x.paie.bulletin.is_some())
             || historique_paies.iter().any(|h| {
                 h.mois == s.mois
                     && h.paie.nir == s.nir
                     && h.paie.bulletin.is_some()
-                    && (h.paie.contrat.numero_declare() == Some(&s.contrat) || (h.paie.contrat.d_un_bulletin() && Some((h.paie.debut, h.paie.fin)) == dates))
+                    && (h.paie.contrat.numero_declare() == Some(&s.contrat) || (h.paie.contrat.d_un_bulletin() && Some(h.paie.periode) == dates))
             });
         if !complete {
             reponse.avertissements.push(s.phrase());

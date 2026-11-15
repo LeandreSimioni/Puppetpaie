@@ -74,23 +74,19 @@ fn dernier_mois(importes: &[Importe]) -> Option<socle::mois::Mois> {
 /// Le premier et le dernier jour que les paies d'un engagement importe paient : ceux du bulletin dans son mois, sinon le
 /// mois entier. Rien pour un engagement sans paie.
 fn jours_payes(i: &Importe) -> R<Option<Periode>> {
-    let mut bornes = Vec::new();
+    let mut toutes: Option<Periode> = None;
     for (&mois, p) in i.paies() {
-        let dans = |j: Option<Jour>| j.filter(|j| mois.contient(j));
-        let debut = match dans(p.debut) {
-            Some(j) => j,
-            None => mois.premier_jour(),
+        let le_mois = Periode::du_mois(mois);
+        let payee = match p.periode.and_then(|o| o.croise(&le_mois)) {
+            Some(x) => x,
+            None => le_mois,
         };
-        let fin = match dans(p.fin) {
-            Some(j) => j,
-            None => mois.dernier_jour(),
-        };
-        bornes.push((debut, fin));
+        toutes = Some(match toutes {
+            Some(t) => reunies(t, payee)?,
+            None => payee,
+        });
     }
-    match bornes.iter().map(|b| b.0).min().zip(bornes.iter().map(|b| b.1).max()) {
-        Some((du, au)) => Ok(Some(Periode::du_au(du, au)?)),
-        None => Ok(None),
-    }
+    Ok(toutes)
 }
 
 /// Les jours que deux periodes payees couvrent, du premier au dernier.

@@ -912,8 +912,8 @@ fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &m
             continue;
         }
         // L'ordre de lecture : le debut de la paie ; une paie qui ne le dit pas se lit au debut de son mois.
-        let jour = match x.paie.debut {
-            Some(j) => j,
+        let jour = match x.paie.periode {
+            Some(o) => o.debut(),
             None => mois.premier_jour(),
         };
         let tri = Some((jour.mois_civil(), Some(jour)));

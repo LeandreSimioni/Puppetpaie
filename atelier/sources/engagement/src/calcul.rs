@@ -1245,7 +1245,7 @@ fn part_patronale(r: &Rubrique) -> Option<Taux> {
 pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
     let eng = &p.engagement;
     let nat = eng.nat()?;
-    let caisse = droit::caisse_conges::affilie(&nat, &p.salarie, &eng.debut, eng.fin.as_ref())?;
+    let caisse = droit::caisse_conges::affilie(&nat, &p.salarie, &eng.periode_du_contrat()?)?;
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(
         eng.nature,
         eng.motif_recours,
@@ -1382,7 +1382,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
 /// son contrat et la fiche qu'elle a lue.
 pub(crate) fn declaree_a_la_caisse_des_conges(p: &Paie) -> R<bool> {
     let e = &p.engagement;
-    droit::caisse_conges::affilie(&*e.nat()?, &p.salarie, &e.debut, e.fin.as_ref())
+    droit::caisse_conges::affilie(&*e.nat()?, &p.salarie, &e.periode_du_contrat()?)
 }
 
 /// La meme question pour la saisie `e` d'un contrat paye au mois, avant que son engagement ne soit construit (le solde de
@@ -1394,7 +1394,7 @@ pub(crate) fn saisie_declaree_a_la_caisse_des_conges(ctx: &Contexte, e: &crate::
     let cle = e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     let emploi = EmploiEngagement { code_emploi_ft: e.code_emploi_ft.clone().or_else(|| e.metier.as_ref().map(droit::fiche::CodeEmploiFt::from)), ..Default::default() };
     let fiche = convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, fin)?, &emploi)?);
-    droit::caisse_conges::affilie(&nat, &fiche, &debut, Some(fin))
+    droit::caisse_conges::affilie(&nat, &fiche, &socle::date::PeriodeOuverte::du(debut, Some(*fin))?)
 }
 
 /// LA PERIODE D'ESSAI QUE L'ENGAGEMENT STIPULE ne depasse pas la duree maximale de son contrat (`droit::essai` : C. trav.
@@ -1475,7 +1475,7 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
     };
     // Le contrat est-il declare a la caisse des Conges Spectacles ? (`caisse_conges::affilie` : un CDDU de moins de
     // douze mois, un CDD de droit commun de moins de douze mois d'un artiste.)
-    let caisse = droit::caisse_conges::affilie(&nat, &sal, &eng.debut, eng.fin.as_ref())?;
+    let caisse = droit::caisse_conges::affilie(&nat, &sal, &eng.periode_du_contrat()?)?;
     // Le contrat ouvre-t-il la contribution CPF-CDD (C. trav. L. 6331-6) ? Un CDD de droit commun, ni saisonnier,
     // ni contrat aide (`droit::cpf_cdd`, la regle du bloc 44).
     let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(

@@ -21,7 +21,7 @@
 
 use crate::natures::Nature;
 use crate::fiche::{Lue, SalarieDuContrat};
-use socle::date::{Jour, Periode};
+use socle::date::{Jour, Periode, PeriodeOuverte};
 use crate::emplois;
 use socle::echec::R;
 
@@ -121,12 +121,12 @@ pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(Stri
 /// - un CDD de droit commun d'un intermittent (`intermittent`) : oui, sauf s'il dure douze mois ou plus ; sans terme,
 ///   refus -- sa duree decide, et le moteur ne la devine pas ;
 /// - un CDD de droit commun d'un autre salarie : non.
-pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, debut: &Jour, fin: Option<&Jour>) -> R<bool> {
+pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, contrat: &PeriodeOuverte) -> R<bool> {
     if !intermittent(nat, sal)? {
         return Ok(false);
     }
-    let fin = match fin {
-        Some(f) => f,
+    let signe = match contrat.fermee() {
+        Some(p) => p,
         None if !nat.mensuelle() => return Ok(true),
         None => {
             return Err(socle::refus!(
@@ -134,9 +134,9 @@ pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, debut: &Jour, fin: Option<&
 declare a la caisse des Conges Spectacles (moins de douze mois : code du travail D. 7121-41, fiche Audiens), et le \
 moteur ne la devine pas.",
                 nat.libelle,
-                debut.jj_mm_aaaa()
+                contrat.debut().jj_mm_aaaa()
             ))
         }
     };
-    Ok(!douze_mois_ou_plus(&Periode::du_au(*debut, *fin)?)?)
+    Ok(!douze_mois_ou_plus(&signe)?)
 }

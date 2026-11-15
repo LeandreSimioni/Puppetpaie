@@ -416,16 +416,12 @@ fn comparer_une(
     // Sans ce nombre, une periode de plus d'un jour ne dit pas combien : la paie ne se compare pas.
     let mensuelle = nature.proprietes()?.mensuelle();
     if jours.is_empty() && !mensuelle {
-        if let (Some(d), Some(f)) = (p.debut, p.fin) {
+        if let Some(contrat) = p.periode.and_then(|o| o.fermee()) {
             // Les jours de la periode, du premier au dernier.
-            let (mut de_la_periode, mut j) = (Vec::new(), d);
-            while j <= f {
-                de_la_periode.push(j);
-                j = j.plus_jours(1)?;
-            }
+            let de_la_periode: Vec<socle::date::Jour> = contrat.jours().collect();
             let periode = socle::grandeurs::Jours::de_dates(de_la_periode.len());
             let un = socle::grandeurs::Jours::UN;
-            let un_mois = (d.an, d.mois) == (f.an, f.mois);
+            let un_mois = contrat.debut().mois_civil() == contrat.fin().mois_civil();
             let n = if periode == un { Some(un) } else { jours_comptes.filter(|n| *n >= un && *n <= periode && (*n == periode || un_mois)) };
             let Some(n) = n else {
                 return Err(refus(match jours_comptes {
@@ -498,8 +494,8 @@ fn comparer_une(
         salarie: Some(salarie.clone()),
         spectacle,
         nature: Some(nature),
-        debut: p.debut,
-        fin: p.fin,
+        debut: p.periode.map(|o| o.debut()),
+        fin: p.periode.and_then(|o| o.fin()),
         emploi: imprime(|i| &i.emploi),
         pcs_ese: imprimes.and_then(|i| i.pcs_ese.clone()),
         code_emploi_ft: imprimes.and_then(|i| i.code_emploi_ft.clone()),

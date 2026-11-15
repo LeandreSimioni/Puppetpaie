@@ -7,7 +7,7 @@
 
 use serde::Serialize;
 
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::Classe;
 
 use engagement::calcul::Paie;
@@ -107,12 +107,12 @@ fn ecart(avant: &Paie, apres: &Paie) -> Ecart {
 /// Ce que la page dit d'une correction qui change les dates du contrat : les dates declarees, les corrigees, ce que la
 /// DSN suivante en declare (`les_dates_d_un_contrat_declare`), et, quand le contrat court sur d'autres mois, que chacun
 /// se corrige pour lui-meme.
-fn phrase_des_dates(mois: Mois, declarees: &Bornes, corrigees: &Bornes) -> String {
+fn phrase_des_dates(mois: Mois, declarees: &PeriodeOuverte, corrigees: &PeriodeOuverte) -> String {
     let mut quoi = Vec::new();
-    if declarees.0 != corrigees.0 {
+    if declarees.debut() != corrigees.debut() {
         quoi.push("la nouvelle date de début avec l'ancienne, dans un bloc « Changements contrat » (S21.G00.41.021, fiche net-entreprises 1952)");
     }
-    if declarees.1 != corrigees.1 {
+    if declarees.fin() != corrigees.fin() {
         quoi.push("la nouvelle fin dans un bloc « Fin du contrat » (S21.G00.62, fiche net-entreprises 1722) quand le contrat a fini");
     }
     let mut phrase = format!(
@@ -136,13 +136,12 @@ fn phrase_des_dates(mois: Mois, declarees: &Bornes, corrigees: &Bornes) -> Strin
     phrase
 }
 
-/// Les mois que couvrent des bornes ; sans fin, le seul premier mois.
-fn mois_des_bornes(b: &Bornes) -> Vec<Mois> {
-    let fin = match &b.1 {
-        Some(f) => *f,
-        None => b.0,
-    };
-    Mois::entre(&b.0, &fin)
+/// Les mois que couvre un contrat ; sans fin, le seul premier mois.
+fn mois_des_bornes(b: &PeriodeOuverte) -> Vec<Mois> {
+    match b.fermee() {
+        Some(p) => p.mois(),
+        None => vec![b.debut().mois_civil()],
+    }
 }
 
 // ------------------------------------------------- modifier la paie d'un mois deja declare
@@ -183,18 +182,11 @@ pub(crate) enum DsnDeposee {
     Corrigee { porteur: Mois },
 }
 
-/// Les bornes d'un contrat : son premier jour et sa fin.
-type Bornes = (Jour, Option<Jour>);
-
-fn bornes(p: &Paie) -> Bornes {
-    (p.engagement.debut, p.engagement.fin)
-}
-
 /// « du 02/07/2026 au 25/07/2026 ».
-fn bornes_en_clair(b: &Bornes) -> String {
-    match &b.1 {
-        Some(f) => format!("du {} au {}", b.0.jj_mm_aaaa(), f.jj_mm_aaaa()),
-        None => format!("à partir du {}, sans fin", b.0.jj_mm_aaaa()),
+fn bornes_en_clair(b: &PeriodeOuverte) -> String {
+    match b.fin() {
+        Some(f) => format!("du {} au {}", b.debut().jj_mm_aaaa(), f.jj_mm_aaaa()),
+        None => format!("à partir du {}, sans fin", b.debut().jj_mm_aaaa()),
     }
 }
 
@@ -293,8 +285,9 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
     let r_avant = avant.map(resume);
     let r_apres = resume(apres);
     let ecart = avant.map(|a| ecart(a, apres));
-    let dates = match avant {
-        Some(a) if bornes(a) != bornes(apres) => Some(phrase_des_dates(mois, &bornes(a), &bornes(apres))),
+    let corrigees = apres.engagement.periode_du_contrat()?;
+    let dates = match avant.map(|a| a.engagement.periode_du_contrat()).transpose()? {
+        Some(declarees) if declarees != corrigees => Some(phrase_des_dates(mois, &declarees, &corrigees)),
         _ => None,
     };
     let contrat = match &apres.engagement.numero {

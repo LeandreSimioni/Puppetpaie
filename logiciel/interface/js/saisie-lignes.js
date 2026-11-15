@@ -365,7 +365,7 @@ function casesMoisPasse(vue, contrats, avecNom) {
     c.dates.forEach((iso) => ajouter(joue, iso, libelle));
     for (let j = 1; j <= nb; j++) {
       const iso = `${vue}-${String(j).padStart(2, "0")}`;
-      if (iso >= c.debut && iso <= c.fin) ajouter(plage, iso, libelle);
+      if (iso >= c.periode.du && iso <= c.periode.au) ajouter(plage, iso, libelle);
     }
   });
   let cases = "";

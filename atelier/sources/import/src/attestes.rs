@@ -22,7 +22,7 @@ use droit::contexte::Contexte;
 use droit::fiche::Nir;
 use engagement::importe::{Attestation, ContratLu};
 use crate::reponse::{Attestant, Source};
-use socle::date::Jour;
+use socle::date::{Periode, PeriodeOuverte};
 use socle::echec::R;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 
@@ -30,9 +30,8 @@ use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 #[derive(Clone, Debug)]
 pub struct Atteste {
     pub(crate) nir: Nir,
-    pub(crate) debut: Option<Jour>,
-    /// Sa fin ; aucune pour un contrat qui court toujours.
-    pub(crate) fin: Option<Jour>,
+    /// Ses dates : celles de la piece, ou, pour le contrat d'un permanent de l'historique, celles d'un mois verse.
+    pub(crate) periode: Periode,
     /// L'AEM, le bulletin, le certificat (la piece de cet import), ou l'historique.
     pub(crate) source: Attestant,
     /// Ce qui l'atteste.
@@ -71,9 +70,9 @@ impl Atteste {
         en_mots(self.heures, self.cachets, self.jours, self.brut)
     }
 
-    /// Commence-t-il au plus tot le `debut` et finit-il au plus tard la `fin` d'une piece ?
-    pub fn tient_dans(&self, debut: Jour, fin: Jour) -> bool {
-        self.debut.is_some_and(|d| d >= debut) && self.fin.is_some_and(|f| f <= fin)
+    /// Tient-il dans la periode d'une piece ?
+    pub fn tient_dans(&self, piece: &Periode) -> bool {
+        piece.croise(&self.periode) == Some(self.periode)
     }
 }
 
@@ -94,13 +93,12 @@ pub fn en_mots(heures: Option<Heures>, cachets: Option<Cachets>, jours: Option<J
     format!("{}, {}, {}, {}", compteur(heures, "heure"), compteur(cachets, "cachet"), compteur(jours, "jour"), brut)
 }
 
-/// Ce qu'un contrat atteste dit, pour le registre.
-fn lu(nir: &Nir, ligne: &ContratLu, source: Attestant) -> Atteste {
+/// Ce qu'un contrat atteste aux dates `periode` dit, pour le registre.
+fn lu(nir: &Nir, ligne: &ContratLu, periode: Periode, source: Attestant) -> Atteste {
     let c = &ligne.contrat;
     Atteste {
         nir: nir.clone(),
-        debut: ligne.debut,
-        fin: ligne.fin,
+        periode,
         source,
         par: c.atteste_par,
         heures: c.heures,
@@ -113,22 +111,11 @@ fn lu(nir: &Nir, ligne: &ContratLu, source: Attestant) -> Atteste {
     }
 }
 
-/// Les dates `[d1, f1]` et `[d, f]` se chevauchent ; une fin absente court toujours ; un contrat sans debut ne
-/// chevauche rien.
-pub fn chevauche(d1: Option<Jour>, f1: Option<Jour>, d: Jour, f: Jour) -> bool {
-    d1.is_some_and(|d1| d1 <= f) && f1.is_none_or(|f1| d <= f1)
-}
-
-/// Les mois de `debut` a `fin` ; `None` : une date manque.
-fn mois_de(debut: Option<Jour>, fin: Option<Jour>) -> Option<Vec<socle::mois::Mois>> {
-    Some(socle::mois::Mois::entre(&debut?, &fin?))
-}
-
-/// Ce qu'un certificat atteste seul (`reste_du_certificat`) : rien, son reste, ou la phrase qui dit pourquoi le reste ne
-/// se compte pas.
+/// Ce qu'un certificat atteste seul (`reste_du_certificat`) : rien, son reste et ses dates, ou la phrase qui dit
+/// pourquoi le reste ne se compte pas.
 pub enum Reste {
     Rien,
-    Seul(ContratLu),
+    Seul(ContratLu, Periode),
     NeSeComptePas(String),
 }
 
@@ -140,24 +127,18 @@ pub enum Reste {
 /// coupe (les compteurs ne se partagent pas entre eux), des pieces qui comptent dans une autre unite que lui ou ne
 /// disent pas leur compte, un reste nul ou negatif. La base conge du certificat ne dit que le contrat entier : le reste
 /// ne la porte pas.
-fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Reste {
-    let sans_dates = || Reste::NeSeComptePas("un contrat ne dit pas ses dates : ses mois ne se comptent pas".to_string());
-    let (Some(debut_c), Some(fin_c)) = (c.debut, c.fin) else { return sans_dates() };
-    let siens = socle::mois::Mois::entre(&debut_c, &fin_c);
-    let coupants: Vec<&&Atteste> = par.iter().filter(|p| chevauche(p.debut, p.fin, debut_c, fin_c)).collect();
-    let mut coupes: BTreeSet<socle::mois::Mois> = BTreeSet::new();
-    for p in &coupants {
-        let Some(siens) = mois_de(p.debut, p.fin) else { return sans_dates() };
-        coupes.extend(siens);
-    }
+fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
+    let siens = c.periode.mois();
+    let coupants: Vec<&&Atteste> = par.iter().filter(|p| p.periode.croise(&c.periode).is_some()).collect();
+    let coupes: BTreeSet<socle::mois::Mois> = coupants.iter().flat_map(|p| p.periode.mois()).collect();
     let restent: Vec<usize> = (0..siens.len()).filter(|i| !coupes.contains(&siens[*i])).collect();
-    let (Some(&premier), Some(&dernier)) = (restent.first(), restent.last()) else { return Reste::Rien };
+    let (Some(&premier), Some(&dernier)) = (restent.first(), restent.last()) else { return Ok(Reste::Rien) };
     let mois_restants = restent.iter().map(|i| siens[*i].libelle(socle::mois::Graphie::Accentuee)).collect::<Vec<_>>().join(", ");
     if dernier - premier + 1 != restent.len() {
-        return Reste::NeSeComptePas(format!(
+        return Ok(Reste::NeSeComptePas(format!(
             "il reste au certificat ({}) des mois de part et d'autre d'un mois attesté ailleurs : ses jours ou cachets et son brut ne se partagent pas entre eux ; déposez les bulletins de ces mois",
             mois_restants
-        ));
+        )));
     }
     fn somme<G: std::iter::Sum<G>>(coupants: &[&&Atteste], f: fn(&Atteste) -> Option<G>) -> Option<G> {
         coupants.iter().map(|p| f(p)).sum()
@@ -178,24 +159,23 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Reste {
     // Un reste se compte dans une seule unite : des cachets restants, ou des jours restants.
     let positifs = matches!((reste_cachets, reste_jours), (Some(a), Some(b)) if a >= Cachets::ZERO && b >= Jours::ZERO && (a > Cachets::ZERO || b > Jours::ZERO));
     let (true, true, Some(reste_brut)) = (unite_lue, positifs, reste_brut) else {
-        return Reste::NeSeComptePas(format!(
+        return Ok(Reste::NeSeComptePas(format!(
             "le reste du certificat ({}) ne se compte pas : le certificat dit {}, ce qui l'atteste ailleurs {} ; déposez les bulletins de ces mois",
             mois_restants,
             c.en_mots(),
             en_mots(heures, cachets, jours, brut)
-        ));
+        )));
     };
-    let debut = siens[premier].premier_jour().max(debut_c);
-    let fin = siens[dernier].dernier_jour().min(fin_c);
+    let periode = c.periode.bornee(siens[premier].premier_jour(), Some(siens[dernier].dernier_jour()))?;
     let mut ligne = c.ligne.clone();
     // La ligne lue ecrit son brut en nombre (`ContratLu`) : sa porte.
     let b = reste_brut.au_centime().decimal();
-    (ligne.debut, ligne.fin) = (Some(debut), Some(fin));
+    (ligne.debut, ligne.fin) = (Some(periode.debut()), Some(periode.fin()));
     ligne.contrat.cachets = reste_cachets;
     ligne.contrat.jours = reste_jours;
     ligne.contrat.brut = Some(b);
     ligne.contrat.base_conge = None;
-    Reste::Seul(ligne)
+    Ok(Reste::Seul(ligne, periode))
 }
 
 /// Ce que l'import retient : (NIR, la ligne du contrat, le bloc du compte rendu qui le compte).
@@ -241,7 +221,6 @@ impl Registre {
             let Some(c) = i.contrat_lu()? else { continue };
             let (cle, debut, fin) = (c.salarie.clone(), c.debut, c.fin);
             let permanent = i.permanent();
-            let manque: Vec<&str> = [(debut.is_none(), "début"), (fin.is_none() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();
             let bornes = match (debut, fin) {
                 (Some(d), Some(f)) => format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa()),
                 (Some(d), None) => format!("du {}, sans fin dite", d.jj_mm_aaaa()),
@@ -249,8 +228,21 @@ impl Registre {
                 (None, None) => "sans début ni fin dits".to_string(),
             };
             let quel = format!("le contrat de l'historique de {} {}", cle, bornes);
-            if !manque.is_empty() {
-                muets.push(format!("{} n'a pas de {} : il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel, manque.join(", ni de ")));
+            let muet = |manque: &str| format!("{} n'a pas de {} : il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel, manque);
+            let contrat = match debut {
+                Some(d) => PeriodeOuverte::du(d, fin)?,
+                None if fin.is_none() && !permanent => {
+                    muets.push(muet("début, ni de fin"));
+                    continue;
+                }
+                None => {
+                    muets.push(muet("début"));
+                    continue;
+                }
+            };
+            let fermee = contrat.fermee();
+            if !permanent && fermee.is_none() {
+                muets.push(muet("fin"));
                 continue;
             }
             let c = c.a_l_apercu();
@@ -258,22 +250,14 @@ impl Registre {
                 muets.push(format!("{} : la fiche de ce salarié n'a pas de NIR, il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel));
                 continue;
             };
-            if !permanent {
-                tous.push(lu(nir, &c, Attestant::Historique));
+            if let (false, Some(periode)) = (permanent, fermee) {
+                tous.push(lu(nir, &c, periode, Attestant::Historique));
                 continue;
             }
+            // Le contrat d'un permanent s'atteste mois par mois, aux dates du mois dans le contrat.
             for (mois, p) in i.paies() {
-                let m = *mois;
-                let (premier, dernier) = (m.premier_jour(), m.dernier_jour());
-                let mut a = lu(nir, &c, Attestant::Historique);
-                a.debut = Some(match debut {
-                    Some(d) => premier.max(d),
-                    None => premier,
-                });
-                a.fin = Some(match fin {
-                    Some(f) => dernier.min(f),
-                    None => dernier,
-                });
+                let periode = contrat.croise(&Periode::du_mois(*mois)).ok_or_else(|| socle::refus!("{} : sa paie de {} est hors du contrat", quel, mois))?;
+                let mut a = lu(nir, &c, periode, Attestant::Historique);
                 (a.heures, a.cachets, a.jours, a.brut) = (p.heures, p.cachets, p.jours, p.brut);
                 tous.push(a);
             }
@@ -284,52 +268,51 @@ impl Registre {
     /// Les contrats deja attestes qui chevauchent celui que la piece `piece` (un certificat, une AEM, un bulletin)
     /// atteste. Un certificat ne compte que pour un certificat : un bulletin ou une AEM le remplace (`ajouter`). Vide :
     /// le contrat ne l'est pas.
-    pub fn pareils(&self, nir: &Nir, debut: Jour, fin: Jour, piece: Source) -> Vec<Atteste> {
+    pub fn pareils(&self, nir: &Nir, periode: &Periode, piece: Source) -> Vec<Atteste> {
         self.tous
             .iter()
-            .filter(|a| a.nir == *nir && chevauche(a.debut, a.fin, debut, fin) && (piece == Source::Certificat || !a.de_certificat()))
+            .filter(|a| a.nir == *nir && a.periode.croise(periode).is_some() && (piece == Source::Certificat || !a.de_certificat()))
             .cloned()
             .collect()
     }
 
-    /// Ce qu'un certificat atteste seul, une fois retires les mois que les contrats `pareils` (ni des certificats, ni
-    /// vides) attestent : `reste_du_certificat`.
-    pub fn reste_du_certificat(&self, nir: &Nir, ligne: &ContratLu, pareils: &[Atteste]) -> Reste {
-        reste_du_certificat(&lu(nir, ligne, Attestant::Piece(Source::Certificat)),&pareils.iter().collect::<Vec<_>>())
+    /// Ce qu'un certificat atteste seul aux dates `periode`, une fois retires les mois que les contrats `pareils` (ni des
+    /// certificats, ni vides) attestent : `reste_du_certificat`.
+    pub fn reste_du_certificat(&self, nir: &Nir, ligne: &ContratLu, periode: Periode, pareils: &[Atteste]) -> R<Reste> {
+        reste_du_certificat(&lu(nir, ligne, periode, Attestant::Piece(Source::Certificat)), &pareils.iter().collect::<Vec<_>>())
     }
 
-    /// Retient le contrat `ligne` de la piece `source`, compte au bloc `bloc`. Il remplace, du meme salarie et aux dates
-    /// qui chevauchent les siennes, les mois des certificats qu'il atteste, et, pour un bulletin, le contrat d'une AEM
-    /// (l'appelant l'a compare : d'autres compteurs). Rend une phrase par contrat remplace.
-    pub fn ajouter(&mut self, nir: &Nir, ligne: ContratLu, source: Source, bloc: BlocDImport) -> Remplaces {
-        let a = lu(nir, &ligne, Attestant::Piece(source));
+    /// Retient le contrat `ligne` de la piece `source`, aux dates `periode`, compte au bloc `bloc`. Il remplace, du meme
+    /// salarie et aux dates qui chevauchent les siennes, les mois des certificats qu'il atteste, et, pour un bulletin, le
+    /// contrat d'une AEM (l'appelant l'a compare : d'autres compteurs). Rend une phrase par contrat remplace.
+    pub fn ajouter(&mut self, nir: &Nir, ligne: ContratLu, periode: Periode, source: Source, bloc: BlocDImport) -> R<Remplaces> {
+        let a = lu(nir, &ligne, periode, Attestant::Piece(source));
         let mut phrases = Vec::new();
-        if let (false, Some(debut), Some(fin)) = (a.de_certificat(), a.debut, a.fin) {
+        if !a.de_certificat() {
             let remplaces: Vec<usize> = (0..self.tous.len())
                 .filter(|i| {
                     let x = &self.tous[*i];
-                    x.nir == *nir && chevauche(x.debut, x.fin, debut, fin) &&(x.de_certificat() || (source == Source::Bulletin && x.par == Attestation::Aem))
+                    x.nir == *nir && x.periode.croise(&periode).is_some() && (x.de_certificat() || (source == Source::Bulletin && x.par == Attestation::Aem))
                 })
                 .collect();
             for i in remplaces.into_iter().rev() {
                 let x = self.tous.remove(i);
                 let nouvelle = if x.de_certificat() {
-                    match reste_du_certificat(&x, &[&a]) {
+                    match reste_du_certificat(&x, &[&a])? {
                         Reste::Rien => {
                             phrases.push(format!("il remplace le contrat repris d'un certificat Congés Spectacles ({}) aux mêmes dates", x.d_ou()));
                             None
                         }
-                        Reste::Seul(l) => {
-                            let r = lu(nir, &l, x.source);
-                            let date = |d: &Option<Jour>| d.iter().map(Jour::jj_mm_aaaa).collect::<String>();
+                        Reste::Seul(l, reste) => {
+                            let r = lu(nir, &l, reste, x.source);
                             phrases.push(format!(
                                 "il remplace le contrat repris d'un certificat Congés Spectacles ({}) pour les mois que cette pièce atteste ; le reste du certificat, du {} au {}, reste attesté par lui : {} (ce que dit le certificat moins ce que dit cette pièce ; le brut du certificat est arrondi à l'euro)",
                                 x.d_ou(),
-                                date(&r.debut),
-                                date(&r.fin),
+                                reste.debut().jj_mm_aaaa(),
+                                reste.fin().jj_mm_aaaa(),
                                 r.en_mots()
                             ));
-                            Some(l)
+                            Some((l, reste))
                         }
                         Reste::NeSeComptePas(m) => {
                             phrases.push(format!("il remplace le contrat repris d'un certificat Congés Spectacles ({}) ; {}", x.d_ou(), m));
@@ -350,21 +333,22 @@ impl Registre {
         }
         self.tous.push(a);
         self.retenus.push((nir.clone(), ligne, bloc));
-        phrases
+        Ok(phrases)
     }
 
-    /// `x`, retire du registre, devient `nouvelle` (`None` : il disparait), dans ce que l'import retient ou dans ce qu'il
-    /// change a l'historique.
-    fn changer(&mut self, x: Atteste, nouvelle: Option<ContratLu>) {
+    /// `x`, retire du registre, devient `nouvelle` et ses dates (`None` : il disparait), dans ce que l'import retient ou
+    /// dans ce qu'il change a l'historique.
+    fn changer(&mut self, x: Atteste, nouvelle: Option<(ContratLu, Periode)>) {
+        let ligne = nouvelle.as_ref().map(|n| n.0.clone());
         match &x.historique {
             Some(h) => {
                 self.changes.retain(|c| &c.0 != h);
-                self.changes.push((h.clone(), nouvelle.clone()));
+                self.changes.push((h.clone(), ligne));
             }
             None => {
                 let i = self.retenus.iter().position(|r| r.0 == x.nir && r.1 == x.ligne);
-                match (i, &nouvelle) {
-                    (Some(i), Some(l)) => self.retenus[i].1 = l.clone(),
+                match (i, ligne) {
+                    (Some(i), Some(l)) => self.retenus[i].1 = l,
                     (Some(i), None) => {
                         self.retenus.remove(i);
                     }
@@ -372,8 +356,8 @@ impl Registre {
                 }
             }
         }
-        if let Some(l) = nouvelle {
-            let mut r = lu(&x.nir, &l, x.source);
+        if let Some((l, periode)) = nouvelle {
+            let mut r = lu(&x.nir, &l, periode, x.source);
             r.historique = x.historique;
             self.tous.push(r);
         }

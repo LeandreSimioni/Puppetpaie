@@ -355,18 +355,29 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
     engagement::importe::paies_lues(&ctx.racine)
 }
 
+/// LES DATES DU CONTRAT QU'UN VERSEMENT DE LA DSN PAIE (S21.G00.40.001 et .010 : un CDI n'a pas de fin) ; aucune quand
+/// le versement ne paie aucun contrat declare. Le debut ouvre le bloc du contrat (`declarations::dsn_lue`) : un contrat
+/// sans debut ne se reprend pas, ni une fin avant le debut.
+fn periode_declaree(p: &dsn_aem::PaieDeclaree) -> R<Option<socle::date::PeriodeOuverte>> {
+    let Some(c) = &p.contrat else { return Ok(None) };
+    match c.debut {
+        Some(debut) => Ok(Some(socle::date::PeriodeOuverte::du(debut, c.fin)?)),
+        None => Err(socle::refus!("le contrat {} que la DSN déclare ne dit pas son début (S21.G00.40.001)", p.paie.numero)),
+    }
+}
+
 /// UN CONTRAT QU'UN VERSEMENT DE LA DSN PAIE, EN PAIE VERSEE : ses dates, et ce que la DSN lui attribue
 /// (`dsn_aem::PaieDeclaree`), tel qu'elle l'ecrit (`declarations::dsn_lue::lire`, qui refuse une DSN dont un montant ou
 /// une date ne se lit pas). Son activite (53) n'y passe pas : les heures, cachets et jours d'une paie sont ceux qu'un
 /// bulletin atteste en unites entieres pour le mois d'un permanent, ceux d'un intermittent sont a son contrat (AEM,
 /// bulletin) ; la DSN les declare en decimal.
-fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
+fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::PeriodeOuverte>, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
     use engagement::importe::{CleDePaieVersee, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
     let mut x = PaieVersee::vide(CleDePaieVersee::Dsn(d.numero.clone()));
     x.nir = d.nir.clone();
     x.numero_objet = objet;
-    (x.debut, x.fin, x.verse_le, x.quotite) = (c.and_then(|c| c.debut), c.and_then(|c| c.fin), d.verse_le, c.and_then(|c| c.quotite));
+    (x.periode, x.verse_le, x.quotite) = (periode, d.verse_le, c.and_then(|c| c.quotite));
     (x.brut, x.bases) = (d.mesures.brut.map(Montant::du_decimal), d.bases.clone());
     if let Some(n) = &d.nets {
         (x.net_imposable, x.net_verse) = (n.net_imposable.map(Montant::du_decimal), n.net_verse.map(Montant::du_decimal));
@@ -527,7 +538,7 @@ pub(crate) fn apercu_lu(
         let Some(numero) = &c.numero_objet else {
             continue;
         };
-        let m = c.fin.mois_civil().to_string();
+        let m = c.periode.fin().mois_civil().to_string();
         let i = match objets.iter().position(|o| o.numero == *numero) {
             Some(i) => i,
             None => {
@@ -589,8 +600,8 @@ pub(crate) fn apercu_lu(
     // 4. L'historique : les contrats attestes, rattaches par NIR aux fiches -- existantes ou a creer. Lesquels sont
     // nouveaux, c'est le registre de l'import qui le dit (`import::attestes`).
     let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&Some(c.nir.clone()))).count();
-    let contrats_du = contrats.iter().map(|c| c.debut).min();
-    let contrats_au = contrats.iter().map(|c| c.fin).max();
+    let contrats_du = contrats.iter().map(|c| c.periode.debut()).min();
+    let contrats_au = contrats.iter().map(|c| c.periode.fin()).max();
     if sans_fiche > 0 {
         avertissements.push(format!(
             "{} contrat(s) atteste(s) portent un NIR qu'aucune DSN ne declare : ils ne seront pas rattaches a une fiche, donc pas comptes dans les droits. Creer la fiche a la main, puis reimporter.",
@@ -615,8 +626,8 @@ pub(crate) fn apercu_lu(
     let rien_a_faire = a_creer == 0 && a_completer.is_empty() && paies_nouvelles == 0;
     // DEUX SOURCES POUR UNE LIGNE -- les montants viennent de la DSN, le numero d'objet peut
     // venir de l'AEM (rapprochee sur salarie, debut, fin).
-    let objets_aem: HashMap<(Nir, String, String), NumeroObjetSpectacle> =
-        contrats.iter().filter_map(|c| Some(((c.nir.clone(), c.debut.iso(), c.fin.iso()), c.numero_objet.clone()?))).collect();
+    let objets_aem: HashMap<(Nir, socle::date::Periode), NumeroObjetSpectacle> =
+        contrats.iter().filter_map(|c| Some(((c.nir.clone(), c.periode), c.numero_objet.clone()?))).collect();
     let mut paies: Vec<engagement::importe::PaieLue> = Vec::new();
     let mut sans_nets: Vec<SansNets> = Vec::new();
     for ((mois, nir, contrat), v) in &lecture.paies {
@@ -625,10 +636,8 @@ pub(crate) fn apercu_lu(
         }
         let mois = *mois;
         let c = v.contrat.as_ref();
-        let objet = c.and_then(|c| c.objet.clone()).or_else(|| {
-            let (debut, fin) = (c.and_then(|c| c.debut)?, c.and_then(|c| c.fin)?);
-            objets_aem.get(&(nir.clone()?, debut.iso(), fin.iso())).cloned()
-        });
+        let periode = periode_declaree(v)?;
+        let objet = c.and_then(|c| c.objet.clone()).or_else(|| objets_aem.get(&(nir.clone()?, periode?.fermee()?)).cloned());
         if v.paie.nets.is_none() {
             // Chaque paie lue est celle d'un individu de sa DSN, que `lecture.salaries` porte.
             let qui = match (lecture.salaries.iter().find(|s| s.nir == *nir), nir) {
@@ -639,7 +648,7 @@ pub(crate) fn apercu_lu(
             sans_nets.push(SansNets { mois, nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
         }
         // 50.004 est le net verse, pas le net a payer : la DSN ne declare pas celui-ci, un bulletin le donnera.
-        let paie = paie_declaree(v, objet);
+        let paie = paie_declaree(v, periode, objet);
         paies.push(engagement::importe::PaieLue { mois, salarie: cle_de(nir), paie });
     }
     let reponse = Importation {

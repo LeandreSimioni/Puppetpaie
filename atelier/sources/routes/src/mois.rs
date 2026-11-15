@@ -40,7 +40,7 @@ use droit::catalogue;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois;
 use engagement::{self, LignePaie, PlaceDuMois};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
 use socle::grandeurs::{Cachets, Heures, Jours, Montant};
@@ -350,8 +350,7 @@ struct Passe {
     dit: String,
     salarie: IdSalarie,
     nom: String,
-    debut: Jour,
-    fin: Jour,
+    periode: Periode,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     cachets: Option<Cachets>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
@@ -782,9 +781,9 @@ fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<Cachets> {
 }
 
 /// Ce qu'une ligne de la liste dit d'un contrat passe : ses bornes, ses cachets et ses heures, quand ils sont dits.
-fn dit_du_contrat(debut: Jour, fin: Jour, cachets: Option<Cachets>, heures: Option<Heures>) -> String {
+fn dit_du_contrat(periode: &Periode, cachets: Option<Cachets>, heures: Option<Heures>) -> String {
     use socle::grandeurs::ecrit::sans_zero::dit as nombre;
-    let mut dit = format!("{}→{}", debut.jj_mm(), fin.jj_mm());
+    let mut dit = format!("{}→{}", periode.debut().jj_mm(), periode.fin().jj_mm());
     if let Some(c) = cachets {
         let c = c.max(Cachets::ZERO);
         dit.push_str(&format!(" · {} {}", nombre(c), if c > Cachets::UN { "cachets" } else { "cachet" }));
@@ -800,8 +799,7 @@ fn dit_du_contrat(debut: Jour, fin: Jour, cachets: Option<Cachets>, heures: Opti
 /// reste vide.
 struct Atteste {
     salarie: IdSalarie,
-    debut: Jour,
-    fin: Jour,
+    periode: Periode,
     numero_objet: Option<NumeroObjetSpectacle>,
     cachets: Option<Cachets>,
     heures: Option<Heures>,
@@ -814,10 +812,9 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
     for i in engagement::importe::tous(&ctx.racine)? {
         let Some(c) = i.contrat_lu()? else { continue };
         let salarie = c.salarie.clone();
-        let atteste = |debut: Jour, fin: Jour, (cachets, heures, jours): (Option<Cachets>, Option<Heures>, Option<Jours>)| Atteste {
+        let atteste = |periode: Periode, (cachets, heures, jours): (Option<Cachets>, Option<Heures>, Option<Jours>)| Atteste {
             salarie: salarie.clone(),
-            debut,
-            fin,
+            periode,
             numero_objet: c.contrat.numero_objet.clone(),
             cachets,
             heures,
@@ -825,22 +822,19 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
         };
         if !i.permanent() {
             if let (Some(debut), Some(fin)) = (c.debut, c.fin) {
-                out.push(atteste(debut, fin, (c.contrat.cachets, c.contrat.heures, c.contrat.jours)));
+                out.push(atteste(Periode::du_au(debut, fin)?, (c.contrat.cachets, c.contrat.heures, c.contrat.jours)));
             }
             continue;
         }
         for (&mois_paye, p) in i.paies() {
-            let lu = |j: Option<Jour>| j.filter(|j| mois_paye.contient(j));
-            // Une paie d'un permanent couvre son mois, des bornes qu'elle dit, sinon du premier au dernier jour.
-            let debut = match lu(p.debut) {
-                Some(d) => d,
-                None => mois_paye.premier_jour(),
+            // Une paie d'un permanent couvre son mois, aux jours du contrat qu'elle dit dans le mois, sinon du premier au
+            // dernier jour.
+            let le_mois = Periode::du_mois(mois_paye);
+            let periode = match p.periode.and_then(|o| o.croise(&le_mois)) {
+                Some(x) => x,
+                None => le_mois,
             };
-            let fin = match lu(p.fin) {
-                Some(f) => f,
-                None => mois_paye.dernier_jour(),
-            };
-            out.push(atteste(debut, fin, (p.cachets, p.heures, p.jours)));
+            out.push(atteste(periode, (p.cachets, p.heures, p.jours)));
         }
     }
     Ok(out)
@@ -850,14 +844,14 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
 /// est lu la (avec ses jours exacts), l'historique importe parle pour les autres. Trie par salarie puis debut.
 /// `salarie` : ses seuls contrats (absent : ceux de tous).
 fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<Passe>> {
-    let (premier, dernier) = (mois.premier_jour(), mois.dernier_jour());
+    let le_mois = Periode::du_mois(mois);
     let voulu = |cle: &IdSalarie| salarie.is_none_or(|s| s == cle);
     let spectacles = Spectacles::nouveau(ctx);
 
     let mut couverts: HashSet<Mois> = HashSet::new();
     // Un contrat sur plusieurs mois est dans chacun de ses fichiers de mois, avec les memes bornes : on le garde une
     // fois, de preference tel que le fichier du mois regarde l'ecrit (c'est lui qui a les jours joues).
-    let mut vus: HashMap<(IdSalarie, Jour, Jour), usize> = HashMap::new();
+    let mut vus: HashMap<(IdSalarie, Periode), usize> = HashMap::new();
     let mut out: Vec<Passe> = Vec::new();
     let mut connus = engagement::stock::mois_saisis(&ctx.racine)?;
     connus.reverse();
@@ -876,11 +870,14 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         for (cle, e, jours) in du_mois {
             let (Some(debut), fin) = bornes_brutes(&e) else { continue };
             // Un contrat sans jour finit le jour ou il commence.
-            let fin = match fin {
-                Some(f) => f,
-                None => debut,
-            };
-            if debut > mois.dernier_jour() || fin < mois.premier_jour() {
+            let periode = Periode::du_au(
+                debut,
+                match fin {
+                    Some(f) => f,
+                    None => debut,
+                },
+            )?;
+            if periode.croise(&le_mois).is_none() {
                 continue;
             }
             if !voulu(&cle) {
@@ -896,17 +893,16 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             };
             let cachets = cachets_de(ctx, &e)?;
             let dates = jours_joues(&e);
-            let ident = (cle.clone(), debut, fin);
+            let ident = (cle.clone(), periode);
             let deja = vus.get(&ident).copied();
             if deja.is_some() && mc != mois {
                 continue;
             }
             let contrat = Passe {
-                dit: dit_du_contrat(debut, fin, Some(cachets), None),
+                dit: dit_du_contrat(&periode, Some(cachets), None),
                 nom: ctx.nomme(&cle),
                 salarie: cle.clone(),
-                debut,
-                fin,
+                periode,
                 cachets: Some(cachets),
                 heures: None,
                 jours: Some(jours),
@@ -926,24 +922,23 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         }
     }
     for a in historique(ctx)? {
-        if a.debut > dernier || a.fin < premier {
+        if a.periode.croise(&le_mois).is_none() {
             continue;
         }
         // Un mois produit ici se tait dans l'historique : ce sont les memes contrats, declares deux fois pendant le
         // double run.
-        if couverts.contains(&a.fin.mois_civil()) || !voulu(&a.salarie) {
+        if couverts.contains(&a.periode.fin().mois_civil()) || !voulu(&a.salarie) {
             continue;
         }
         let trouve = a.numero_objet.as_ref().and_then(|n| spectacles.par_objet.get(n).copied());
         let spec = trouve.map(|(_, s)| s);
         out.push(Passe {
-            dit: dit_du_contrat(a.debut, a.fin, a.cachets, a.heures),
+            dit: dit_du_contrat(&a.periode, a.cachets, a.heures),
             nom: ctx.nomme(&a.salarie),
             titre: titre_de(spec, a.numero_objet.as_deref()),
             spectacle: trouve.map(|(k, _)| k.clone()),
             salarie: a.salarie,
-            debut: a.debut,
-            fin: a.fin,
+            periode: a.periode,
             cachets: a.cachets,
             heures: a.heures,
             jours: a.jours,
@@ -952,7 +947,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             source: SourceDuContratPasse::Historique,
         });
     }
-    out.sort_by(|a, b| (&a.salarie, &a.debut, &a.fin).cmp(&(&b.salarie, &b.debut, &b.fin)));
+    out.sort_by(|a, b| (&a.salarie, &a.periode).cmp(&(&b.salarie, &b.periode)));
     Ok(out)
 }
 

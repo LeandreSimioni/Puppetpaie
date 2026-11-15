@@ -292,8 +292,8 @@ fn champ(ligne: &[char], a: usize, b: usize) -> String {
 /// Un enregistrement AEM, un contrat tel qu'il a ete atteste.
 pub struct ContratAtteste {
     pub nir: Nir,
-    pub debut: socle::date::Jour,
-    pub fin: socle::date::Jour,
+    /// Ses dates (zones 618..626 et 627..635).
+    pub periode: socle::date::Periode,
     /// Le numero d'objet de la zone 638..650 : a blanc ou hors de sa forme, aucun (`NumeroObjetSpectacle::d_une_piece` ; hors
     /// de sa forme, sa faute est une anomalie de la lecture, `lire_aem`).
     pub numero_objet: Option<NumeroObjetSpectacle>,
@@ -323,7 +323,7 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     a.numero_attestation = plein(&c.numero_attestation);
     a.atteste_le = c.date_attestation;
     a.fichier = Some(c.fichier.clone());
-    ContratLu { salarie, debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
+    ContratLu { salarie, debut: Some(c.periode.debut()), fin: Some(c.periode.fin()), numero: None, contrat: a }
 }
 
 /// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, les fichiers ou enregistrements illisibles (ignores),
@@ -362,6 +362,11 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
             let (Some(debut), Some(fin)) =
                 (Zone::lue(&champ(&l, 618, 626), Aaaammjj).valeur(), Zone::lue(&champ(&l, 627, 635), Aaaammjj).valeur())
             else {
+                illisible(&mut illisibles);
+                continue;
+            };
+            // Un contrat qui finirait avant son debut ne se lit pas.
+            let Ok(periode) = socle::date::Periode::du_au(debut, fin) else {
                 illisible(&mut illisibles);
                 continue;
             };
@@ -415,8 +420,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
             if connus.insert(cle.clone()) {
                 vus.push((cle, ContratAtteste {
                     nir,
-                    debut,
-                    fin,
+                    periode,
                     numero_objet,
                     heures,
                     cachets: c1 + c2,
@@ -430,7 +434,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
         }
     }
     let mut contrats: Vec<ContratAtteste> = vus.into_iter().map(|(_, c)| c).collect();
-    contrats.sort_by(|a, b| (a.debut, a.fin, &a.nir).cmp(&(b.debut, b.fin, &b.nir)));
+    contrats.sort_by(|a, b| (a.periode, &a.nir).cmp(&(b.periode, &b.nir)));
     Ok((contrats, illisibles, fautes))
 }
 
