@@ -15,8 +15,7 @@ use socle::mois::Mois;
 use socle::fichiers::{repr, LectureDatee, ValeurLue};
 use crate::contexte::CleLue;
 use socle::echec::{refus, Echec, R};
-use socle::grandeurs::Montant;
-use socle::num::Decimal;
+use socle::grandeurs::{Montant, Taux};
 
 /// Un refus du module. `SansGrille` : un bareme sans la grille de l'article 204 H (le prelevement ne se devine pas, le
 /// calcul refuse).
@@ -46,7 +45,7 @@ type RPas<T> = Result<T, ErreurPas>;
 /// `[0-9]{1,2}\.[0-9]{2}`, `formats-dsn-*-base.json` ; `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`). Il se lit
 /// et s'ecrit dans cette forme, octet pour octet ; un autre texte n'est pas un taux de PAS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TauxDePas(Decimal);
+pub struct TauxDePas(Taux);
 
 impl TauxDePas {
     /// Le taux ecrit `texte`, s'il a la forme de la norme ; `None` sinon.
@@ -56,37 +55,33 @@ impl TauxDePas {
         if !(1..=2).contains(&entier.len()) || decimales.len() != 2 || !chiffres(entier) || !chiffres(decimales) {
             return None;
         }
-        // Ses chiffres, lus un a un : le taux en centiemes de pourcent.
-        let centiemes = entier.bytes().chain(decimales.bytes()).fold(0i64, |n, b| n * 10 + i64::from(b - b'0'));
-        Some(TauxDePas(Decimal::new(centiemes, 2)))
+        socle::grandeurs::lu::norme(texte).map(TauxDePas)
     }
 
-    /// Le taux `d` ecrit en nombre (deux decimales au plus : la grille du bareme, une description de l'atelier), ses deux
-    /// decimales ecrites ; `None` hors de la forme de la norme. Le seul chemin d'un nombre a un taux de PAS ; un texte
-    /// entre par `lire`.
-    pub fn du_nombre(d: Decimal) -> Option<TauxDePas> {
-        let mut d = d;
-        if d.scale() > 2 {
-            return None;
-        }
-        d.rescale(2);
-        TauxDePas::lire(&d.to_string())
+    /// Le taux `t` (deux decimales au plus : la grille du bareme, une DSN lue, une paie importee, une description de
+    /// l'atelier), ses deux decimales ecrites (`ecrit::centimes`) ; `None` hors de la forme de la norme. Le seul chemin
+    /// d'un taux a un taux de PAS ; un texte entre par `lire`.
+    pub fn du_taux(t: Taux) -> Option<TauxDePas> {
+        socle::grandeurs::ecrit::centimes::texte(t).ok().and_then(|texte| TauxDePas::lire(&texte))
     }
 
-    /// Le taux, en pourcent.
-    pub fn decimal(self) -> Decimal {
+    /// Le taux, en pourcent, ses deux decimales ecrites : ce qu'un document en imprime.
+    pub fn taux(self) -> Taux {
         self.0
     }
 
     /// Le prelevement que ce taux prend sur le montant soumis `soumis`, exact (`Montant::au_centime` le fixe).
     pub fn prelevement(self, soumis: Montant) -> Montant {
-        Montant::du_decimal(socle::num::div(socle::num::mul(soumis.decimal(), self.0), Decimal::ONE_HUNDRED))
+        soumis.fois_taux(self.0)
     }
 }
 
 impl std::fmt::Display for TauxDePas {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        match socle::grandeurs::ecrit::texte::texte(self.0) {
+            Ok(t) => f.write_str(&t),
+            Err(_) => Err(std::fmt::Error),
+        }
     }
 }
 
@@ -351,15 +346,18 @@ pub fn taux_par_defaut(bareme: &Pile, montant: Montant, le: Option<Jour>, zone: 
         // La derniere tranche n'a pas de haut.
         if montant >= t.bas && t.haut.is_none_or(|h| montant < h) {
             // Le taux de la grille (CGI 204 H, III) a deux decimales au plus : il s'ecrit avec ses deux decimales.
-            let taux = t.taux.decimal().round_dp(2);
-            return match TauxDePas::du_nombre(taux) {
+            let taux = t.taux.a_deux_decimales();
+            return match TauxDePas::du_taux(taux) {
                 Some(t) => Ok((t, g.genre)),
-                None => Err(ErreurPas::Autre(socle::refus!("La grille du PAS porte le taux {} : un taux de PAS s'écrit en un ou deux chiffres et deux décimales ; le signaler au développeur.", taux))),
+                None => Err(ErreurPas::Autre(socle::refus!("La grille du PAS porte le taux {} : un taux de PAS s'écrit en un ou deux chiffres et deux décimales ; le signaler au développeur.", socle::grandeurs::ecrit::sans_zero::dit(taux)))),
             };
         }
     }
     // Seul un montant negatif tombe ici : taux zero.
-    Ok((TauxDePas(Decimal::new(0, 2)), g.genre))
+    match TauxDePas::lire("0.00") {
+        Some(zero) => Ok((zero, g.genre)),
+        None => Err(ErreurPas::Autre(refus("Le taux de PAS nul ne s'écrit pas « 0.00 » : le signaler au développeur."))),
+    }
 }
 
 /// LE PRELEVEMENT D'UN VERSEMENT, par l'un des deux chemins : tel que la paie l'ecrit et le relit (les montants en

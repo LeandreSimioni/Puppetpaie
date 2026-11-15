@@ -130,19 +130,6 @@ impl VersementDeclare {
 pub const FRAIS_54: [AutreElementDeRevenuBrut; 3] =
     [AutreElementDeRevenuBrut::FraisRemboursesAuForfait, AutreElementDeRevenuBrut::FraisPrisEnChargeParLEmployeur, AutreElementDeRevenuBrut::FraisRemboursesAuReel];
 
-/// LE TAUX DE PAS QU'UN VERSEMENT DECLARE (S21.G00.50.006), tel que la mensuelle l'ecrit (`dsn::versement_ecrit`) ou que
-/// la paie le garde : vide, il n'y en a pas ; il a la forme de la norme (`TauxDePas::lire`), sinon l'ecriture est fautive
-/// et l'erreur remonte.
-fn taux_ecrit(texte: &str) -> R<Option<TauxDePas>> {
-    if texte.is_empty() {
-        return Ok(None);
-    }
-    match TauxDePas::lire(texte) {
-        Some(t) => Ok(Some(t)),
-        None => Err(socle::refus!("le taux de prelevement a la source {} (S21.G00.50.006) n'a pas la forme de la norme", socle::fichiers::repr(texte))),
-    }
-}
-
 /// La rubrique porte-t-elle un montant a changer de signe ; `None` : on ne sait pas l'annuler.
 pub fn est_un_montant(rubrique: RubriqueDeLaNorme) -> Option<bool> {
     REPRISES.iter().find(|(r, _)| *r == rubrique).map(|(_, m)| *m)
@@ -218,21 +205,18 @@ fn frais_de(lignes: &[(RubriqueDeLaNorme, String)], quoi: &str) -> R<Montant> {
 
 /// Le versement que la paie declaree `p` de `mois` a fait partir, tel que les fonctions de la mensuelle l'ecrivent
 /// (`dsn::versement_ecrit`) : ses rubriques (bloc 50 a part, sans le bloc 52), les affiliations du contrat, et ses
-/// montants, ceux de la paie. Refus : une rubrique que l'annulation ne sait pas reprendre, un montant net social absent.
-pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementDeclare> {
+/// montants, ceux de la paie, et le taux de PAS du mois d'origine `taux_pas`. Refus : une rubrique que l'annulation ne
+/// sait pas reprendre, un montant net social absent.
+fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois, taux_pas: Option<TauxDePas>) -> R<VersementDeclare> {
     let quoi = paie_declaree(mois);
     let numero = p.engagement.numero.clone().ok_or_else(|| socle::refus!("{} n'a pas de numero de contrat : ce qu'elle a declare ne se relit pas", quoi))?;
     let ecrit = crate::dsn::versement_ecrit(ctx, p, mois)?;
     let du_bloc = |r: &RubriqueDeLaNorme, bloc: &str| r.to_string().starts_with(bloc);
-    let (entete, lignes): (Vec<(RubriqueDeLaNorme, String)>, Vec<(RubriqueDeLaNorme, String)>) =
-        ecrit.rubriques.into_iter().filter(|(k, _)| !du_bloc(k, "S21.G00.52.")).partition(|(k, _)| du_bloc(k, "S21.G00.50."));
+    let lignes: Vec<(RubriqueDeLaNorme, String)> =
+        ecrit.rubriques.into_iter().filter(|(k, _)| !du_bloc(k, "S21.G00.52.") && !du_bloc(k, "S21.G00.50.")).collect();
     let brut = verifier_et_brut(&lignes, &numero, &quoi)?;
     let net_social = net_social_de(&lignes, &numero, &quoi)?;
     let frais = frais_de(&lignes, &quoi)?;
-    let taux_pas = match entete.iter().find(|(k, _)| *k == droit::rubrique!("S21.G00.50.006")) {
-        Some((_, v)) => taux_ecrit(v)?,
-        None => None,
-    };
     Ok(VersementDeclare {
         declaree: Some(mois),
         net_imposable: p.net_imposable,
@@ -276,7 +260,7 @@ pub fn dernier_declare(
 ) -> R<Option<DernierDeclare>> {
     let declarees = engagement::etats::paies_declarees(ctx, o, departs, mois, Some(mois_courant))?;
     let (Some(origine), Some(derniere)) = (declarees.first(), declarees.last()) else { return Ok(None) };
-    let mut etat = de_la_paie(ctx, &derniere.paie, mois)?;
+    let mut etat = de_la_paie(ctx, &derniere.paie, mois, origine.paie.pas.as_ref().map(|p| p.taux))?;
     let mut rappels = Montant::ZERO;
     for paire in declarees.windows(2) {
         let (avant, puis) = (&paire[0].paie, &paire[1].paie);
@@ -299,7 +283,6 @@ pub fn dernier_declare(
         etat.net_social = origine_58;
         etat.rappels_net_social = rappels;
     }
-    etat.taux_pas = origine.paie.pas.as_ref().map(|p| p.taux);
     if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, mois_courant)? {
         etat.debut_contrat = Some(d);
     }

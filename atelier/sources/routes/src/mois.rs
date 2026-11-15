@@ -1617,8 +1617,10 @@ pub(crate) struct VuePaie {
     brut: Decimal,
     net_a_payer: Decimal,
     /// Le net paye, connu quand le prelevement a la source l'est (`Paie::pas`, a la validation) ; vide avant.
-    net_paye: Option<Decimal>,
-    net_imposable: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_paye: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    net_imposable: Montant,
     cout_employeur: Decimal,
     avertissements: Vec<String>,
     informations: Vec<String>,
@@ -1672,7 +1674,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     let lieu = brut.lieu.clone();
     // Le net paye : le net a payer moins le prelevement a la source que la validation a calcule ; une paie que rien n'a
     // encore validee n'en a pas (`Paie::pas`) : son net paye n'est pas encore connu.
-    let net_paye = p.pas.as_ref().map(|v| (p.net_a_payer - v.prelevement).au_centime().decimal());
+    let net_paye = p.pas.as_ref().map(|v| (p.net_a_payer - v.prelevement).au_centime());
     // CE QUE LE MOTEUR A COMPRIS DE LA CARTE, en une ligne : son bulletin (ou qu'il n'y en a pas), son contrat, ses
     // bornes (et la periode de paie d'un contrat a cheval), ce qu'elle paye, le metier, le brut.
     let resolu_dit = {
@@ -1782,7 +1784,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         // `atelier/reference/sources/code-du-travail/articles-20261029.md`), le « MONTANT NET À PAYER » du bulletin :
         // le net a payer moins l'impot preleve a la source.
         net_paye,
-        net_imposable: p.net_imposable.au_centime().decimal(),
+        net_imposable: p.net_imposable.au_centime(),
         cout_employeur: p.cout_employeur.au_centime().decimal(),
         avertissements: p.avertissements.iter().filter(|a| !a.info).map(|a| a.texte.clone()).collect(),
         informations: p.avertissements.iter().filter(|a| a.info).map(|a| a.texte.clone()).collect(),
@@ -1862,15 +1864,16 @@ pub(crate) fn archives_employees(paies: &[Paie]) -> R<Vec<String>> {
 #[derive(Debug, Clone, Serialize)]
 struct Trois {
     /// Vide tant que le net paye d'une de ces paies ne l'est (`VuePaie::net_paye`).
-    net_paye: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_paye: Option<Montant>,
     brut: Decimal,
     cout_employeur: Decimal,
     engagements: usize,
 }
 
 /// Le net paye de `vues` : leur somme, quand chacun est connu ; vide sinon.
-fn net_paye_de<'a>(vues: impl Iterator<Item = &'a VuePaie>) -> Option<Decimal> {
-    vues.map(|v| v.net_paye).sum::<Option<Decimal>>().map(|n| Montant::du_decimal(n).au_centime().decimal())
+fn net_paye_de<'a>(vues: impl Iterator<Item = &'a VuePaie>) -> Option<Montant> {
+    vues.map(|v| v.net_paye).sum::<Option<Montant>>().map(Montant::au_centime)
 }
 
 impl Trois {
@@ -1960,7 +1963,7 @@ struct Calcul {
     paies: Vec<PaieVue>,
     total_cout: Decimal,
     /// Vide tant qu'un net paye du mois ne l'est (`VuePaie::net_paye`).
-    total_net: Option<Decimal>,
+    total_net: Option<Montant>,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
     avertissements: Vec<String>,
@@ -1977,7 +1980,8 @@ struct Apercu {
     paies: Vec<PaieDeLApercu>,
     total_cout: Decimal,
     /// Vide tant qu'un net paye du mois ne l'est (`VuePaie::net_paye`).
-    total_net: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    total_net: Option<Montant>,
     blocs: Vec<Option<Trois>>,
     par_salarie: Vec<ParSalarie>,
     avertissements: Vec<String>,

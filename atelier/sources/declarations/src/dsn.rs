@@ -535,7 +535,6 @@ pub struct Regularisation {
     pub avant: Paie,
     pub declare: crate::versement_declare::VersementDeclare,
     pub apres: Paie,
-    pub taux_pas_origine: Option<droit::pas::TauxDePas>,
     /// Le net a payer avant impot deja verse au salarie pour ce contrat, lu dans la derniere paie declaree
     /// (`produire_regularisations::versement_declare_de`) : ce qui dit si la correction verse ou reprend quelque chose,
     /// et a quel montant net social correspondait ce qui a ete paye (`blocs_58_de_la_correction`).
@@ -2059,14 +2058,12 @@ pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: Duree<EnJours>) -> R<()
     f.add_opt(droit::rubrique!("S21.G00.86.005"), p.engagement.numero.clone())
 }
 
-/// (taux, type, identifiant, montant soumis) d'UN versement. L'abattement contrats courts n'a pas de rubrique : il se
-/// lit dans l'ecart entre 50.002 et 50.013 (norme 2026.1, p. 245). S21.G00.50.012 est reservee aux abattements des
-/// assistants maternels et familiaux, que seuls PAJEmploi et les departements declarent : le moteur ne l'ecrit pas.
-fn pas_du_versement(
-    taux_pas: Option<&Triplet>, bar: &Pile, montant: Montant, le: Jour, court: bool,
-) -> R<(droit::pas::TauxDePas, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<droit::pas::IdentifiantDuTauxPas>, Montant)> {
-    let r = pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT)?;
-    Ok((r.taux, r.type_taux, r.identifiant, r.montant_soumis))
+/// Le prelevement d'UN versement (taux, type, identifiant, montant soumis, prelevement). L'abattement contrats courts
+/// n'a pas de rubrique : il se lit dans l'ecart entre 50.002 et 50.013 (norme 2026.1, p. 245). S21.G00.50.012 est
+/// reservee aux abattements des assistants maternels et familiaux, que seuls PAJEmploi et les departements declarent :
+/// le moteur ne l'ecrit pas.
+fn pas_du_versement(taux_pas: Option<&Triplet>, bar: &Pile, montant: Montant, le: Jour, court: bool) -> R<pas::Versement> {
+    Ok(pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT)?)
 }
 
 pub fn court(p: &Paie, le: Jour) -> R<bool> {
@@ -2451,8 +2448,8 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     f.add(droit::rubrique!("S21.G00.50.004"), mt(p.net_verse().decimal()));
     // Le prelevement d'une paie validee est celui qu'elle a ecrit (`Paie::pas`) : la DSN ne le recalcule pas. Un mois
     // sans paie n'en a pas : son versement nul porte le taux qui vaut pour le salarie.
-    let (taux, type_taux, identifiant, soumis) = match &p.pas {
-        Some(v) => (v.taux.clone(), v.type_taux.clone(), v.identifiant.clone(), v.montant_soumis),
+    let v = match &p.pas {
+        Some(v) => v.clone(),
         None if e.sans_paie() => pas_du_versement(taux_pas, bar, p.net_imposable, fin, court(p, fin)?)?,
         None => {
             return Err(socle::echec::cle(format!(
@@ -2462,14 +2459,14 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
             ), "pas"))
         }
     };
-    f.add(droit::rubrique!("S21.G00.50.006"), taux.to_string());
-    let type_taux = type_taux.ok_or_else(|| absente(droit::rubrique!("S21.G00.50.007")))?;
+    f.add(droit::rubrique!("S21.G00.50.006"), v.taux.to_string());
+    let type_taux = v.type_taux.ok_or_else(|| absente(droit::rubrique!("S21.G00.50.007")))?;
     f.ecrire_code(type_taux)?;
     if type_taux.transmis() {
-        f.add_opt(droit::rubrique!("S21.G00.50.008"), identifiant.as_ref())?;
+        f.add_opt(droit::rubrique!("S21.G00.50.008"), v.identifiant.as_ref())?;
     }
-    f.add(droit::rubrique!("S21.G00.50.009"), mt(taux.prelevement(soumis).au_centime().decimal()));
-    f.add(droit::rubrique!("S21.G00.50.013"), mt(soumis.decimal()));
+    f.add(droit::rubrique!("S21.G00.50.009"), mt(v.prelevement.decimal()));
+    f.add(droit::rubrique!("S21.G00.50.013"), mt(v.montant_soumis.decimal()));
 
     // Un mois decoupe : les remunerations de chaque periode elementaire, datees de ses bornes (« La periode a
     // declarer dans le bloc Remuneration est cette periode elementaire de paie, lorsque le logiciel de paie produit
@@ -2753,16 +2750,15 @@ fn bloc_regularisation(
     f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(numero)?);
     f.add(droit::rubrique!("S21.G00.50.004"), mt(d_net.decimal()));
     let v = &pas_c.versement;
-    let (taux, type_taux, identifiant, soumis) = (&v.taux, &v.type_taux, &v.identifiant, v.montant_soumis);
-    f.add(droit::rubrique!("S21.G00.50.006"), taux.to_string());
-    let type_taux = type_taux.ok_or_else(|| absente(droit::rubrique!("S21.G00.50.007")))?;
+    f.add(droit::rubrique!("S21.G00.50.006"), v.taux.to_string());
+    let type_taux = v.type_taux.ok_or_else(|| absente(droit::rubrique!("S21.G00.50.007")))?;
     f.ecrire_code(type_taux)?;
     if type_taux.transmis() {
-        f.add_opt(droit::rubrique!("S21.G00.50.008"), identifiant.as_ref())?;
+        f.add_opt(droit::rubrique!("S21.G00.50.008"), v.identifiant.as_ref())?;
     }
-    let indu = d_ni < Montant::ZERO;
-    f.add(droit::rubrique!("S21.G00.50.009"), if indu { "0.00".into() } else { mt(taux.prelevement(soumis).au_centime().decimal()) });
-    f.add(droit::rubrique!("S21.G00.50.013"), if indu { "0.00".into() } else { mt(soumis.decimal()) });
+    let indu = pas_c.indu();
+    f.add(droit::rubrique!("S21.G00.50.009"), if indu { "0.00".into() } else { mt(v.prelevement.decimal()) });
+    f.add(droit::rubrique!("S21.G00.50.013"), if indu { "0.00".into() } else { mt(v.montant_soumis.decimal()) });
 
     annuler_le_declare(f, r, &["51", "53"])?;
     // Une paie d'apres `sans_paie` ecrit ses blocs 51 et 53 a 0.00 : la norme prevoit un montant 51.013 egal a « 0.00 »
@@ -2777,8 +2773,8 @@ fn bloc_regularisation(
         autre_revenu(f, apres, bar_o, &corrigee, 1)?;
     }
     if indu {
-        let taux_o = match r.taux_pas_origine {
-            Some(t) => t,
+        let (taux_o, preleve) = match pas_c.prelevement {
+            Some(p) => p,
             None => {
                 return Err(refus_avec(
                     format!(
@@ -2796,7 +2792,7 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
         f.add(droit::rubrique!("S21.G00.56.002"), "03");
         f.add(droit::rubrique!("S21.G00.56.003"), mt(d_ni.decimal()));
         f.add(droit::rubrique!("S21.G00.56.006"), taux_o);
-        f.add(droit::rubrique!("S21.G00.56.007"), mt(taux_o.prelevement(d_ni).au_centime().decimal()));
+        f.add(droit::rubrique!("S21.G00.56.007"), mt(preleve.decimal()));
         f.add(droit::rubrique!("S21.G00.56.010"), mt(d_ni.decimal()));
     }
     blocs_58_de_la_correction(f, r, &periode, fin_mois)?;
@@ -5127,7 +5123,7 @@ certificat de conformite du depot precedent.",
         for (k, (rang, r)) in rangs_regs.iter().zip(&corrections).enumerate() {
             let b = bar_de(r.mois)?;
             let numero = (lot.len() + k + 1) as i64;
-            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable,r.taux_pas_origine.as_ref(), mois)?;
+            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable, r.declare.taux_pas.as_ref(), mois)?;
             bloc_regularisation(&mut f, r, &b, *rang, numero, &pas_c, fin_m)?;
         }
         f.contrat_unique = false;

@@ -15,6 +15,8 @@ use droit::fiche::{Bic, Civilite, CodeMedecine, CodeNaf, CodeNationalite, CodePo
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
 use droit::type_taux_pas::TypeDeTauxPas;
+use droit::pas::TauxDePas;
+use socle::grandeurs::{Montant, Taux};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
@@ -404,15 +406,15 @@ pub struct VersementLu {
     /// .001.
     pub verse_le: Option<Jour>,
     /// .002.
-    pub net_imposable: Option<Decimal>,
+    pub net_imposable: Option<Montant>,
     /// .004.
-    pub net_verse: Option<Decimal>,
+    pub net_verse: Option<Montant>,
     /// .006 a .008.
-    pub taux_pas: Option<Decimal>,
+    pub taux_pas: Option<TauxDePas>,
     pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
     /// .009.
-    pub pas: Option<Decimal>,
+    pub pas: Option<Montant>,
     pub remunerations: Vec<Remuneration>,
     /// LES BASES ASSUJETTIES QUE LA DSN DECLARE (bloc 78 ; `norme-dsn/texte/bloc-S21.G00.78.txt`), dans l'ordre.
     pub bases: Vec<BaseLue>,
@@ -537,12 +539,12 @@ impl VersementLu {
 /// que lui, et lui seul (`PaieDuContrat::nets`).
 #[derive(Clone, Debug, Default)]
 pub struct Nets {
-    pub net_imposable: Option<Decimal>,
-    pub net_verse: Option<Decimal>,
-    pub taux_pas: Option<Decimal>,
+    pub net_imposable: Option<Montant>,
+    pub net_verse: Option<Montant>,
+    pub taux_pas: Option<TauxDePas>,
     pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
-    pub pas: Option<Decimal>,
+    pub pas: Option<Montant>,
 }
 
 /// CE QUE LA DSN ATTRIBUE A UN CONTRAT POUR LE MOIS, de tout ce que ses versements portent : ce que la norme rattache au
@@ -978,6 +980,10 @@ impl Fautes {
     fn montant(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<Decimal> {
         self.valeur(k, v, "un montant", socle::num::decimal_lu(v))
     }
+    /// Un montant, lu en sa grandeur (`lu::norme`).
+    fn euros(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<Montant> {
+        self.valeur(k, v, "un montant", socle::grandeurs::lu::norme(v))
+    }
     fn nombre(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<Decimal> {
         self.valeur(k, v, "un nombre", socle::num::decimal_lu(v))
     }
@@ -1349,22 +1355,23 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 base = false;
             }
             S21_50_002 => {
-                let m = fautes.montant(rub, &v);
+                let m = fautes.euros(rub, &v);
                 versement.into_iter().for_each(|x| x.net_imposable = m);
             }
             S21_50_004 => {
-                let m = fautes.montant(rub, &v);
+                let m = fautes.euros(rub, &v);
                 versement.into_iter().for_each(|x| x.net_verse = m);
             }
-            // Un taux ecrit en decimal simple (« 7 », « 7.5 », « 7.50 ») se lit ; toute autre ecriture (« +7 », « 1_0 »,
-            // « 75e-1 ») laisse la case vide : une DSN venue d'ailleurs se lit au mieux, rien ne s'y devine.
+            // Un taux ecrit en decimal simple (« 7 », « 7.5 », « 7.50 ») se lit, ses deux decimales ecrites
+            // (`TauxDePas::du_taux`) ; toute autre ecriture (« +7 », « 1_0 », « 75e-1 », « 7.500 », « 100 ») laisse la case
+            // vide : une DSN venue d'ailleurs se lit au mieux, rien ne s'y devine.
             S21_50_006 => {
                 let chiffres = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
                 let simple = match v.split_once('.') {
                     Some((entier, decimales)) => chiffres(entier) && chiffres(decimales),
                     None => chiffres(&v),
                 };
-                let t = if simple { socle::num::decimal_lu(&v) } else { None };
+                let t = if simple { socle::grandeurs::lu::norme::<Taux>(&v).and_then(TauxDePas::du_taux) } else { None };
                 versement.into_iter().for_each(|x| x.taux_pas = t);
             }
             TypeDeTauxPas::RUBRIQUE => {
@@ -1374,7 +1381,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             // Un identifiant hors de sa forme laisse la case vide (une DSN lue : un inconnu ne s'invente pas).
             S21_50_008 => versement.into_iter().for_each(|x| x.identifiant_pas = droit::pas::IdentifiantDuTauxPas::lire(&v).ok()),
             S21_50_009 => {
-                let m = fautes.montant(rub, &v);
+                let m = fautes.euros(rub, &v);
                 versement.into_iter().for_each(|x| x.pas = m);
             }
             S21_51_001 => {

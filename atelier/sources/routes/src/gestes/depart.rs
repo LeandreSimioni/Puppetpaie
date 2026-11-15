@@ -338,7 +338,6 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
             Some(d) => declarations::dsn::Regularisation {
                 mois: c,
                 avant: d.avant,
-                taux_pas_origine: d.versement.taux_pas.clone(),
                 declare: d.versement,
                 apres,
                 net_deja_verse: d.net_deja_verse,
@@ -362,7 +361,6 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
                     debut_contrat: None,
                 },
                 apres,
-                taux_pas_origine: None,
                 net_deja_verse: Montant::ZERO,
                 decidee_le,
             },
@@ -707,17 +705,7 @@ fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois
     let d_net = apres.net_a_payer - parti.net_a_payer;
     let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_ref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
     let indu = pas_c.indu();
-    let prelevement = match pas_c.prelevement {
-        Some(montant) => {
-            let taux = match indu {
-                false => Some(pas_c.versement.taux),
-                true => taux_parti,
-            };
-            let taux = taux.ok_or_else(|| erreur(Classe::Illisible, format!("La correction de {} prélève {} sans taux de prélèvement à la source.", mois_versement.libelle(Graphie::Accentuee), montant.decimal())))?;
-            Some(documents::bulletin::PrelevementDeLEcart { indu, taux, montant })
-        }
-        None => None,
-    };
+    let prelevement = pas_c.prelevement.map(|(taux, montant)| documents::bulletin::PrelevementDeLEcart { indu, taux, montant });
     let a_verser = match &prelevement {
         Some(p) => d_net - p.montant,
         None => d_net,

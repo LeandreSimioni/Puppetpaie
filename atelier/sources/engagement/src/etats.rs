@@ -923,9 +923,9 @@ pub fn prelevement_de_la_correction(
     let court = droit::natures::contrat_court(&*e.nat()?, &e.contrat(), fin)?;
     let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)?;
     let prelevement = if difference < Montant::ZERO {
-        taux_origine.map(|t| t.prelevement(difference).au_centime())
+        taux_origine.map(|t| (*t, t.prelevement(difference).au_centime()))
     } else {
-        Some(versement.taux.prelevement(versement.montant_soumis).au_centime())
+        Some((versement.taux, versement.prelevement))
     };
     Ok(PrelevementDeLaCorrection { difference, versement, prelevement })
 }
@@ -934,10 +934,11 @@ pub fn prelevement_de_la_correction(
 pub struct PrelevementDeLaCorrection {
     /// La difference de net imposable (S21.G00.50.002 du versement de la correction).
     pub difference: Montant,
-    /// Le taux, son type, son identifiant et le montant soumis du versement (S21.G00.50.006 a .008, .013).
+    /// Le taux, son type, son identifiant, le montant soumis et le prelevement du versement (S21.G00.50.006 a .009, .013).
     pub versement: droit::pas::Versement,
-    /// Ce que la correction preleve (positif) ou rend (negatif) ; `None` : un trop-verse sans taux d'origine.
-    pub prelevement: Option<Montant>,
+    /// Le taux applique et ce que la correction preleve (positif) ou rend (negatif) : celui du versement, ou pour un
+    /// trop-verse le taux d'origine (S21.G00.56.006, .007) ; `None` : un trop-verse sans taux d'origine.
+    pub prelevement: Option<(droit::pas::TauxDePas, Montant)>,
 }
 
 impl PrelevementDeLaCorrection {

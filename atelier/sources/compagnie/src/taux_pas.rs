@@ -88,8 +88,8 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
                 continue;
             };
             // Un taux que la DSN n'ecrit pas comme la norme (deux chiffres, deux decimales au plus) n'en pose aucun : une
-            // DSN venue d'ailleurs se lit au mieux, et le compte rendu de l'import le dit.
-            let rel = match v.taux_pas.and_then(droit::pas::TauxDePas::du_nombre) {
+            // DSN venue d'ailleurs se lit au mieux (`dsn_lue`, vide), et le compte rendu de l'import le dit.
+            let rel = match v.taux_pas {
                 Some(t) => TauxDUneDsn::Transmis(TauxRecu {
                     salarie: (*cle).clone(),
                     taux: t,

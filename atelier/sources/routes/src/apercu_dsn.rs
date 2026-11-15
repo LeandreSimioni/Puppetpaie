@@ -77,10 +77,13 @@ impl ContratLu {
 #[derive(Debug, Serialize)]
 struct VersementDuFichier {
     date: Option<Jour>,
-    net_verse: Option<Decimal>,
-    net_fiscal: Option<Decimal>,
-    taux_pas: Option<Decimal>,
-    montant_pas: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_verse: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_fiscal: Option<Montant>,
+    taux_pas: Option<droit::pas::TauxDePas>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant_pas: Option<Montant>,
 }
 
 impl VersementDuFichier {

@@ -1154,7 +1154,7 @@ pub fn etat_des_virements(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Some(p) => n - p,
             None => n,
         });
-        x.od(C::NetAPayer, verse.map(Montant::decimal)).ot(C::VerseLe, l.verse_le.map(|j| j.jj_mm_aaaa()));
+        x.om(C::NetAPayer, verse).ot(C::VerseLe, l.verse_le.map(|j| j.jj_mm_aaaa()));
         lignes.push(x);
     }
     let mut t = Tableau::nouveau(EtatDExport::EtatDesVirements, "État des virements de salaires", p.libelle.clone());
@@ -1192,14 +1192,14 @@ pub fn prelevement_a_la_source(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut l = Ligne::nouvelle();
             l.m(C::Mois, m).t(C::Salarie, qui(paie.salarie())?).ot(C::Contrat, paie.engagement().numero.clone());
             l.ot(C::Nir, paie.salarie().nir.portee().filter(|_| coord));
-            l.od(C::NetImposable, paie.net_imposable().map(|x| x.au_centime().decimal()));
+            l.om(C::NetImposable, paie.net_imposable().map(Montant::au_centime));
             match r {
                 Some(v) => {
                     // Ce que la paie ne dit pas (une paie importee dont les pieces ne l'impriment pas) reste vide.
-                    l.od(C::Abattement, v.abattement().map(Montant::decimal)).od(C::AssiettePas, v.montant_soumis().map(Montant::decimal));
+                    l.om(C::Abattement, v.abattement()).om(C::AssiettePas, v.montant_soumis());
                     l.ot(C::Type, v.type_taux().map(|t| format!("{} — {}", t, t.libelle())));
-                    l.od(C::Taux, v.taux().map_err(|m| m.reclasser(Classe::CalculImpossible))?);
-                    l.d(C::Prelevement, v.prelevement().au_centime().decimal());
+                    l.taux_de_pas(C::Taux, v.taux());
+                    l.montant(C::Prelevement, v.prelevement().au_centime());
                 }
                 None => {
                     l.rien(C::Abattement).rien(C::AssiettePas).rien(C::Type).rien(C::Taux).rien(C::Prelevement);

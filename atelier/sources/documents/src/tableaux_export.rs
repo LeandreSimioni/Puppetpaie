@@ -350,6 +350,11 @@ impl Ligne {
         self.od(k, v.map(|m| m.decimal()))
     }
 
+    /// Un taux de PAS, ou rien, dans la case d'un etat (deux decimales, comme la norme l'ecrit) : sa porte.
+    pub fn taux_de_pas(&mut self, k: ColonneDEtat, v: Option<droit::pas::TauxDePas>) -> &mut Ligne {
+        self.od(k, v.map(|t| t.taux().decimal()))
+    }
+
     /// Des jours, dans la case d'un etat : leur porte.
     pub fn jours(&mut self, k: ColonneDEtat, v: socle::grandeurs::Jours) -> &mut Ligne {
         self.d(k, v.decimal())

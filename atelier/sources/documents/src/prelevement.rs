@@ -96,11 +96,11 @@ impl Prelevement {
         }
     }
 
-    /// Le taux, son echelle gardee ; `None` : les pieces d'une paie importee ne le disent pas.
-    pub fn taux(&self) -> R<Option<socle::num::Decimal>> {
+    /// Le taux ; `None` : les pieces d'une paie importee ne le disent pas.
+    pub fn taux(&self) -> Option<droit::pas::TauxDePas> {
         match self {
-            Prelevement::Calcule(v) => Ok(Some(v.taux.decimal())),
-            Prelevement::Importe(p) => Ok(p.taux),
+            Prelevement::Calcule(v) => Some(v.taux),
+            Prelevement::Importe(p) => p.taux,
         }
     }
 }

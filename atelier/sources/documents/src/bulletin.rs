@@ -12,7 +12,7 @@ use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::texte::euros;
 use socle::echec::{refus, R};
-use socle::num::{sub, Decimal};
+use socle::num::Decimal;
 use socle::grandeurs::{Montant, Taux};
 use droit::pas::Versement;
 use droit::forme_bareme::{self as cot, IdDeCotisation};
@@ -92,6 +92,11 @@ pub fn fmt_eur(x: Decimal) -> String {
 pub fn fmt_taux(x: Decimal) -> String {
     let (neg, s) = fixe(x, 3);
     format!("{}{}", if neg { "-" } else { "" }, s.replace('.', ","))
+}
+
+/// Un taux de PAS, imprime comme un taux (`fmt_taux`) : sa porte.
+fn fmt_taux_de_pas(t: droit::pas::TauxDePas) -> String {
+    fmt_taux(t.taux().decimal())
 }
 
 /// 24 -> « 24 », 13.5 -> « 13,5 ».
@@ -267,9 +272,9 @@ fn tableau(largeurs: &[Mesure], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: 
 }
 
 /// Une ligne « net », blanc sur rouge, 9,5 pt, en gras.
-fn ligne_net(libelle: &str, montant: Decimal, colonnes: i64) -> Ligne {
+fn ligne_net(libelle: &str, montant: Montant, colonnes: i64) -> Ligne {
     ligne(
-        vec![cel(libelle, colonnes - 1), s(fmt_eur(montant))],
+        vec![cel(libelle, colonnes - 1), s(fmt_eur(montant.decimal()))],
         vec![gras(), Opt::Fond(ROUGE), Opt::Couleur(BLANC), Opt::Taille(mesure("9.5"))],
     )
 }
@@ -419,10 +424,10 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
         "Impôt sur le revenu prélevé à la source sur la différence"
     };
     out.push(ligne(
-        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux(p.taux.decimal())), colonnes - 1), s(fmt_eur(p.montant.decimal()))],
+        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux_de_pas(p.taux)), colonnes - 1), s(fmt_eur(p.montant.decimal()))],
         vec![],
     ));
-    out.push(ligne_net(if r.a_verser >= Montant::ZERO { "NET À VERSER" } else { "NET À RETENIR" }, r.a_verser.abs().decimal(), colonnes));
+    out.push(ligne_net(if r.a_verser >= Montant::ZERO { "NET À VERSER" } else { "NET À RETENIR" }, r.a_verser.abs(), colonnes));
     Ok(out)
 }
 
@@ -431,13 +436,13 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
 /// (le montant soumis, apres l'abattement d'un contrat court ; C. trav. R. 3243-1, 9°), son taux, son montant. Le
 /// « Cumul annuel » du modele (art. 1, V) n'est pas imprime : le moteur ne le calcule pas.
 fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> R<Vec<Ligne>> {
-    let taux = fmt_taux(pas.taux.decimal());
+    let taux = fmt_taux_de_pas(pas.taux);
     Ok(vec![
         ligne(
             vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(fmt_eur(pas.montant_soumis.decimal())), s(taux), s(fmt_eur(pas.prelevement.decimal()))],
             vec![],
         ),
-        ligne_net("MONTANT NET À PAYER (en Euros)", sub(p.net_a_payer.decimal(), pas.prelevement.decimal()), colonnes),
+        ligne_net("MONTANT NET À PAYER (en Euros)", p.net_a_payer - pas.prelevement, colonnes),
     ])
 }
 
@@ -1197,7 +1202,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // L'EMPLOYEUR » ; deux nets egaux ne partagent pas une ligne (la derogation de l'arrete du 31/01/2023 a pris fin
     // au 01/01/2026). Les libelles sont ceux du modele de l'arrete du 25/02/2016, art. 1, I
     // (`legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml`), ecrits avec les accents du francais, capitales comprises.
-    corps.push(ligne_net("MONTANT NET SOCIAL", p.net_social.decimal(), n));
+    corps.push(ligne_net("MONTANT NET SOCIAL", p.net_social, n));
     if !j.remboursements.is_empty() {
         corps.push(ligne(vec![cel("REMBOURSEMENTS ET DÉDUCTIONS DIVERSES", n)], style_section()));
         for i in &j.remboursements {
@@ -1205,7 +1210,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(fmt_eur(l.montant.decimal()))], vec![]));
         }
     }
-    corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer.decimal(), n));
+    corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer, n));
     corps.push(ligne(vec![s("IMPÔT SUR LE REVENU"), s("Base"), s("Taux"), s("Salarié")], style_section()));
     corps.push(ligne(vec![cel("Montant net imposable", 3), s(fmt_eur(p.net_imposable.decimal()))], vec![]));
     match j.rectificatif.and_then(|r| r.ecart.as_ref()) {

@@ -41,7 +41,6 @@ pub struct Reg {
     pub net_deja_verse: Montant,
     /// La paie corrigee : celle que la version presente de l'engagement valide a ecrite pour le mois d'origine.
     pub apres: Paie,
-    pub taux_pas_origine: Option<droit::pas::TauxDePas>,
 }
 
 /// UN MOIS SE CORRIGE DANS UNE DSN SUIVANTE quand sa DSN reelle est partie (un depart DSN du mois lui-meme, `departs`)
@@ -136,8 +135,6 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engage
             let lu = versement_declare::dernier_declare(ctx, d.valide.objet(), departs, mois, mois_courant)
                 .map_err(|e| Echec { a_part: e.a_part, ..refus(&e.phrase) })?
                 .ok_or_else(|| refus(&format!("aucune DSN partie n'a declare ce contrat pour {}", mois)))?;
-            // Le taux du bloc 56 : celui de la paie declaree du mois d'origine.
-            let taux_pas_origine = lu.versement.taux_pas.clone();
             out.push(Reg {
                 mois,
                 version,
@@ -146,7 +143,6 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engage
                 declare: lu.versement,
                 net_deja_verse: lu.net_deja_verse,
                 apres,
-                taux_pas_origine,
             });
         }
     }
@@ -178,7 +174,6 @@ fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Moi
             mois,
             version: n.version(),
             decidee_le: Some(n.le().jour_de_paris()),
-            taux_pas_origine: lu.versement.taux_pas.clone(),
             avant: lu.avant,
             declare: lu.versement,
             net_deja_verse: lu.net_deja_verse,
@@ -248,7 +243,7 @@ fn ajout(mois: Mois, version: VersionDeLEngagement, decidee_le: Option<Jour>, ap
         taux_pas: None,
         debut_contrat: None,
     };
-    Ok(Reg { mois, version, decidee_le, avant: apres.clone(), declare, net_deja_verse: Montant::ZERO, apres, taux_pas_origine: None })
+    Ok(Reg { mois, version, decidee_le, avant: apres.clone(), declare, net_deja_verse: Montant::ZERO, apres })
 }
 
 /// `resume_regularisations` : une ligne lisible par correction embarquee.
@@ -283,7 +278,6 @@ pub fn pour_la_dsn(regs: &[&Reg]) -> Vec<crate::dsn::Regularisation> {
             avant: r.avant.clone(),
             declare: r.declare.clone(),
             apres: r.apres.clone(),
-            taux_pas_origine: r.taux_pas_origine.clone(),
             net_deja_verse: r.net_deja_verse,
             decidee_le: r.decidee_le,
         })

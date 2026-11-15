@@ -201,7 +201,7 @@ pub struct PaieVersee {
     pub cout_employeur: Option<Montant>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub pas: Option<Montant>,
-    pub taux_pas: Option<Decimal>,
+    pub taux_pas: Option<droit::pas::TauxDePas>,
     pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
     pub verse_le: Option<Jour>,
@@ -688,7 +688,7 @@ pub struct LigneDeCotisation {
 /// pieces disent (S21.G00.50.006 a .009). Elles ne disent ni l'abattement ni le montant soumis.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PasImporte {
-    pub taux: Option<Decimal>,
+    pub taux: Option<droit::pas::TauxDePas>,
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant: Option<droit::pas::IdentifiantDuTauxPas>,
     pub prelevement: Montant,
@@ -897,7 +897,7 @@ impl Importe {
             cout_employeur: p.cout_employeur,
             numero_bulletin: p.bulletin.as_ref().and_then(|b| b.numero.clone()).filter(|n| !n.is_empty()),
             pas: p.pas.map(|prelevement| PasImporte {
-                taux: p.taux_pas.map(socle::num::court),
+                taux: p.taux_pas,
                 type_taux: p.type_pas,
                 identifiant: p.identifiant_pas.clone(),
                 prelevement,

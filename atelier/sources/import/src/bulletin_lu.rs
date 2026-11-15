@@ -929,9 +929,16 @@ pub struct Cotisation {
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Pas {
     pub base: Option<Decimal>,
-    pub taux: Option<Decimal>,
+    pub taux: Option<droit::pas::TauxDePas>,
     pub montant: Option<Decimal>,
     pub cumul: Option<Decimal>,
+}
+
+/// LE TAUX DE PAS QU'UN BULLETIN IMPRIME (« 5,500 », « 5,5 ») : le taux de la norme qu'il dit, ses deux decimales ecrites
+/// (`TauxDePas::du_taux`) ; `None` : un nombre qui n'en est pas un (plus de deux chiffres, des decimales non nulles au-dela
+/// du centieme).
+fn taux_de_pas(lu: Decimal) -> Option<droit::pas::TauxDePas> {
+    droit::pas::TauxDePas::du_taux(socle::grandeurs::courte(socle::grandeurs::Taux::du_decimal(lu)))
 }
 
 /// LE NOM D'UN CUMUL QU'UN BULLETIN IMPRIME : la liste fermee des cles `cumuls` de `bulletins-lecture-base.json`, lue
@@ -2301,7 +2308,7 @@ impl<'a> Lecteur<'a> {
                         *net_imposable = col(Genre::Periode);
                     }
                 } else if pas.is_none() && t.resumes.pas.contains(libelle) {
-                    *pas = Some(Pas { base: col(Genre::Base), taux: col(Genre::Taux), montant: col(Genre::Montant), cumul: col(Genre::Cumul) });
+                    *pas = Some(Pas { base: col(Genre::Base), taux: col(Genre::Taux).and_then(taux_de_pas), montant: col(Genre::Montant), cumul: col(Genre::Cumul) });
                 } else if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
                     *net_imposable = col(Genre::Montant);
                 }
@@ -2336,7 +2343,8 @@ impl Lecteur<'_> {
                     .iter()
                     .position(|m| canon(&m.texte).trim_start_matches('(') == "taux")
                     .and_then(|k| rang.get(k + 1))
-                    .and_then(|m| lire_nombre(m.texte.trim_end_matches([')', '%'])));
+                    .and_then(|m| lire_nombre(m.texte.trim_end_matches([')', '%'])))
+                    .and_then(taux_de_pas);
                 *pas = Some(Pas { base: None, taux, montant: Some(dernier.valeur), cumul: None });
             }
         }
