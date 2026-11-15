@@ -890,13 +890,7 @@ pub fn indemnite_licenciement(
     let sortie = |lectures: Vec<(String, P)>, article: String, hors_primes: bool, pourquoi: Option<String>, du: bool| -> R<Indemnite> {
         let lectures = lectures
             .into_iter()
-            .map(|(n, v)| {
-                let c = v.au_centime()?;
-                match c.en_decimal() {
-                    Some(d) => Ok((n, Montant::du_decimal(d))),
-                    None => Err(socle::refus!("Le montant {} ne s'écrit pas au centime : le signaler au développeur.", c)),
-                }
-            })
+            .map(|(n, v)| Ok((n, au_centime(v)?)))
             .collect::<R<Vec<(String, Montant)>>>()?;
         let (bas, haut) = if du { (lectures.iter().map(|x| x.1).min(), lectures.iter().map(|x| x.1).max()) } else { (None, None) };
         Ok(Indemnite { releve: true, du, bas, haut, lectures, hors_primes, article: Some(article), pourquoi })
@@ -1050,7 +1044,11 @@ impl Retraite {
 /// `mois` de salaire de reference, en euros. Sans aucun mois, rien n'est du et la reference (R1234-4) ne se lit pas :
 /// sans paies precedentes elle refuserait.
 fn fois_la_reference(mois: P, reference: &mut dyn FnMut() -> R<Montant>) -> R<Montant> {
-    let euros = if mois <= P::ZERO { mois } else { mois.mul(P::depuis(reference()?.decimal())) };
+    au_centime(if mois <= P::ZERO { mois } else { mois.mul(P::depuis(reference()?.decimal())) })
+}
+
+/// La sortie de l'arithmetique des clauses : un montant calcule en `d28`, au centime.
+fn au_centime(euros: P) -> R<Montant> {
     let c = euros.au_centime()?;
     match c.en_decimal() {
         Some(d) => Ok(Montant::du_decimal(d)),
