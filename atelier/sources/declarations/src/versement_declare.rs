@@ -106,11 +106,13 @@ fn paie_declaree(mois: Mois) -> String {
 }
 
 impl VersementDeclare {
-    /// Ce qui a ete declare, en mots, pour les messages (« la paie declaree de 2026-07 »).
+    /// Ce qui a ete declare, en mots, pour les messages (« la paie declaree de 2026-07 ») ; aucun mois : la correction
+    /// d'un contrat ajoute apres la DSN de son mois, que la DSN deposee ne porte pas
+    /// (`produire_regularisations::ajout`, `routes::gestes::depart`).
     pub fn dit(&self) -> String {
         match self.declaree {
             Some(m) => paie_declaree(m),
-            None => "rien de declare (un contrat ajoute)".to_string(),
+            None => "rien de declare : le contrat a ete ajoute apres la DSN de son mois, qui ne le porte pas".to_string(),
         }
     }
 

@@ -406,10 +406,9 @@ pub(crate) struct ApercuDsn {
     pub(crate) nom: String,
     pub(crate) description: String,
     pub(crate) mois: Mois,
-    /// Le mode que le fichier dit (S10.G00.00.005), ecrit deux fois : par son code, et en booleen.
-    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
-    pub(crate) nature_envoi: Option<Mode>,
-    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::si_dit::serialize")]
+    /// Le mode que le fichier dit (S10.G00.00.005), ecrit deux fois (`mode_ecrit`) : `nature_envoi`, par son code, et
+    /// `reel`, en booleen.
+    #[serde(flatten, serialize_with = "mode_ecrit")]
     pub(crate) mode: Option<Mode>,
     pub(crate) signalement: bool,
     #[serde(rename = "nature")]
@@ -436,6 +435,19 @@ pub(crate) struct ApercuDsn {
     pub(crate) remplacement: Option<RemplacementDuFichier>,
     pub(crate) recapitulatif: Option<Recapitulatif>,
     pub(crate) repetition: etats::Repetition,
+}
+
+/// L'ECRITURE DU MODE QUE LE FICHIER DIT, a sa place dans l'apercu : `nature_envoi`, son code de la norme
+/// (`code_d_envoi`), et `reel`, en booleen (`en_booleen::si_dit`).
+fn mode_ecrit<S: serde::Serializer>(mode: &Option<Mode>, s: S) -> Result<S::Ok, S::Error> {
+    #[derive(Serialize)]
+    struct Ecrit {
+        #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
+        nature_envoi: Option<Mode>,
+        #[serde(serialize_with = "socle::mode::en_booleen::si_dit::serialize")]
+        reel: Option<Mode>,
+    }
+    Ecrit { nature_envoi: *mode, reel: *mode }.serialize(s)
 }
 
 /// La description du fichier en une phrase : son nom, son type, son ordre, sa fraction, sa constitution, ses salaries,
@@ -496,7 +508,6 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<A
         fichier: std::path::PathBuf::from(&chemin),
         nom: nom.into(),
         mois,
-        nature_envoi: a.nature_envoi,
         mode: a.nature_envoi,
         signalement,
         nature_declaration: a.nature()?,

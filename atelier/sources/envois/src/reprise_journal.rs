@@ -150,17 +150,22 @@ fn heure_du_bilan(b: &Bilan) -> Option<InstantOuJour> {
     b.recu_le.as_ref().and_then(Reception::au_journal)
 }
 
+/// LE MODE D'UN BILAN REPRIS : celui qu'il dit (`essai_reel`). UN REPLI, garde tel quel (ticket #446) : un bilan qui ne
+/// dit pas son mode se reprend en test.
+fn mode_du_bilan(essai_reel: Option<Mode>) -> Mode {
+    match essai_reel {
+        Some(m) => m,
+        None => Mode::Test,
+    }
+}
+
 fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut Vec<crate::etats::IncidentDeRetour>) -> R<Reprise> {
     let (attestes, illisibles) = depots_attestes(ctx)?;
     let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], illisibles, ecrit: ecrire, rattaches: 0 };
     let mut a_ecrire: Vec<(&Atteste, Mode)> = Vec::new();
     for d in &attestes {
         let b = &d.bilan;
-        // Un bilan qui ne dit pas son mode (`essai_reel`) se reprend en test.
-        let mode = match b.essai_reel {
-            Some(m) => m,
-            None => Mode::Test,
-        };
+        let mode = mode_du_bilan(b.essai_reel);
         // UN TEST QUE CE LOGICIEL N'A PAS ENVOYE NE S'AFFICHE PAS ET NE SE REPREND PAS : sous le
         // meme compte net-entreprises, les essais de l'atelier (ligne de commande, `moteur --dev`, seances du nuage)
         // reviennent dans les retours de la compagnie. Un test n'engage rien : absent du journal, il vient d'ailleurs.
@@ -378,13 +383,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
         // verdict, que seuls les retours rattaches a la ligne donnent (`etats::verdict_dpae`) ; tant qu'aucun n'y est
         // range, la DPAE est partie, sans bilan connu. Le mode reel est une INFERENCE : aucun bilan ne dit l'essai.
         let (mode, accepte_) = match &b {
-            Some(b) => (
-                match b.essai_reel {
-                    Some(m) => m,
-                    None => Mode::Test,
-                },
-                accepte(b),
-            ),
+            Some(b) => (mode_du_bilan(b.essai_reel), accepte(b)),
             None => (Mode::Reel, true),
         };
         let deja = connus.contains(&entier);
