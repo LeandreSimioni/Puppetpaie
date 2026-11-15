@@ -10,7 +10,7 @@ use socle::date::{jours_du_mois, Jour};
 use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::echec::R;
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Coefficient, Heures, Montant, Taux};
 use socle::num::{add, sub, div, mul, Decimal};
 use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
@@ -484,39 +484,41 @@ forme! {
     /// Le montant de principe d'une maladie (R323-4, R323-5).
     pub struct Principe {
         pub mois: usize,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub diviseur: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub fraction: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub plafond_smic: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub heures_du_mois: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub csg: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub crds: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub diviseur: Coefficient,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub fraction: Coefficient,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub plafond_smic: Coefficient,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub heures_du_mois: Heures,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub csg: Taux,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub crds: Taux,
     }
 }
 
 forme! {
     /// Le montant de principe d'un accident du travail (R433-1 a R433-4).
     pub struct PrincipeAccident {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub diviseur: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub fraction: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub fraction_majoree: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub diviseur: Coefficient,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub fraction: Coefficient,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub fraction_majoree: Coefficient,
+        /// Le pourcentage du plafond annuel de la Securite sociale (R433-2) : il se compte avec le plafond, que
+        /// `Contexte::plafond_securite_sociale` rend en entiers.
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub plafond_pass: Decimal,
         pub plafond_depuis: Jour,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux_forfaitaire: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub csg: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub crds: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub taux_forfaitaire: Taux,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub csg: Taux,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub crds: Taux,
     }
 }
 

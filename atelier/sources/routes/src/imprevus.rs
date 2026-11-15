@@ -1018,10 +1018,12 @@ fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bo
         use engagement::maintien::IjDePrincipe;
         match magasin(engagement::maintien::ij_de_principe(ctx, a))? {
             IjDePrincipe::Calculee(ij) => {
-                propose.ij_brute = Some(Chiffre::Texte(ij.brute.to_string()));
-                propose.ij_nette = Some(Chiffre::Texte(ij.nette.to_string()));
-                propose.ij_brute_majoree = ij.majorees.map(|(b, _)| Chiffre::Texte(b.to_string()));
-                propose.ij_nette_majoree = ij.majorees.map(|(_, n)| Chiffre::Texte(n.to_string()));
+                // La case proposee : le montant en texte, son echelle gardee.
+                let case = |m: socle::grandeurs::Montant| socle::grandeurs::ecrit::texte::texte(m).map(Chiffre::Texte).map_err(socle::echec::refus);
+                propose.ij_brute = Some(case(ij.brute)?);
+                propose.ij_nette = Some(case(ij.nette)?);
+                propose.ij_brute_majoree = ij.majorees.map(|(b, _)| case(b)).transpose()?;
+                propose.ij_nette_majoree = ij.majorees.map(|(_, n)| case(n)).transpose()?;
                 dit = Some(ij.phrase);
             }
             IjDePrincipe::AuReleve(phrase) => dit = Some(phrase),

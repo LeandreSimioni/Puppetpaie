@@ -15,6 +15,7 @@ use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etabliss
 use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
 use socle::echec::Lieu;
 use socle::num::Decimal;
+use socle::grandeurs::MontantUnitaire;
 
 use socle::date::{repr_texte, Jour};
 use socle::fichiers::{dossier_du_code, CheminRelatif};
@@ -926,11 +927,11 @@ fn controler(pile: &Pile, fiche: &ChampsEntreprise, eff: &Effectif, ou: &str) ->
 }
 
 /// LE `depuis` DU SMIC EN VIGUEUR a `jour` (la liste reste datee dans la pile : `Contexte::smic`), et sa valeur.
-fn smic_en_vigueur(liste: &[crate::forme_bareme::Datee], jour: &Jour) -> R<Option<(Jour, Decimal)>> {
-    let mut entrees: Vec<(Jour, Decimal)> = Vec::new();
+fn smic_en_vigueur(liste: &[crate::forme_bareme::Datee], jour: &Jour) -> R<Option<(Jour, MontantUnitaire)>> {
+    let mut entrees: Vec<(Jour, MontantUnitaire)> = Vec::new();
     for e in liste {
         let depuis = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Le barème de l'année est incomplet : le signaler au développeur.", "smic_horaire.depuis", ""))?;
-        entrees.push((depuis, e.valeur.decimal()));
+        entrees.push((depuis, e.valeur));
     }
     entrees.sort_by_key(|(j, _)| *j);
     Ok(entrees.into_iter().filter(|(j, _)| j <= jour).last())
@@ -1685,10 +1686,10 @@ PSS_H_METROP).",
 
     /// Le SMIC horaire applicable a la date (le bareme liste les revalorisations ; la derniere dont `depuis <= date`
     /// gagne).
-    pub fn smic(&self, jour: &Jour) -> R<Decimal> {
+    pub fn smic(&self, jour: &Jour) -> R<MontantUnitaire> {
         let lue = self.pile_lue(jour, &self.entreprise_au(jour))?;
         match smic_en_vigueur(&lue.pile.smic_horaire, jour)? {
-            Some((_, v)) => Ok(socle::num::court(v)),
+            Some((_, v)) => Ok(socle::grandeurs::courte(v)),
             None => Err(socle::refus!("Aucun SMIC applicable au {} dans le bareme.", jour.iso())),
         }
     }

@@ -12,7 +12,7 @@ use socle::echec::{refus_avec, Lieu, R};
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Coefficient, Montant, MontantUnitaire};
 use socle::num::{add, mul, sub, Decimal};
 use std::collections::BTreeMap;
 
@@ -43,7 +43,7 @@ pub struct Declaration {
     pub beneficiaires: Decimal,
     pub manquants: Decimal,
     pub coefficient: i64,
-    pub smic: Decimal,
+    pub smic: MontantUnitaire,
     pub brute: Decimal,
     pub nette: Decimal,
     /// Les deductions non plafonnees, telles qu'elles se declarent (code -> montant).
@@ -101,7 +101,7 @@ impl Declaration {
             virgule(self.beneficiaires),
             virgule(self.manquants),
             self.coefficient,
-            euros(self.smic),
+            euros(self.smic.decimal()),
             euros(self.brute),
             euros(self.nette)
         )
@@ -212,7 +212,7 @@ pub fn coefficient(effectif: Decimal, sans_action: bool) -> i64 {
 
 /// La declaration d'un millesime, depuis son entree de `config/oeth.json` et le
 /// SMIC horaire brut au 31/12 de ce millesime.
-pub fn calculer(millesime: i32, donnees: &EntreeOeth, smic: Decimal) -> R<Declaration> {
+pub fn calculer(millesime: i32, donnees: &EntreeOeth, smic: MontantUnitaire) -> R<Declaration> {
     let ou = format!("La déclaration OETH de {}", millesime);
     let source = donnees.source.as_deref().filter(|s| !s.is_empty());
     let manque: Vec<&str> = [
@@ -330,9 +330,9 @@ pour le dire. Rien n'est ecrit.",
         false
     };
     d.coefficient = coefficient(eff, sans_action);
-    d.brute = Montant::du_decimal(mul(mul(d.manquants, Decimal::from(d.coefficient)), smic)).au_centime().decimal();
+    d.brute = (Coefficient::du_decimal(mul(d.manquants, Decimal::from(d.coefficient))) * smic).au_centime().decimal();
 
-    let ecap = Montant::du_decimal(mul(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17)), smic)).au_centime().decimal();
+    let ecap = (Coefficient::du_decimal(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17))) * smic).au_centime().decimal();
     d.deductions.insert(CotisationDEtablissement::DeductionEcap, ecap);
     if let Some(s) = sous_traitance {
         d.deductions.insert(CotisationDEtablissement::DeductionSousTraitance, s);
@@ -416,7 +416,7 @@ ans d'une entreprise creee a vingt salaries, L5212-4 ; seuil pas encore franchi,
 
 /// Le SMIC horaire brut au 31/12 du millesime (D5212-20, dernier alinea) : national,
 /// lu dans le socle livre ; une annee sans socle se lit chez la compagnie.
-pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<Decimal> {
+pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<MontantUnitaire> {
     let jour = Jour::nouveau(millesime, 12, 31).ok_or_else(|| socle::refus!("annee hors limites : {}", millesime))?;
     let socle = droit::contexte::socle_livre_lu(millesime)?;
     let liste = match socle.as_ref().map(|s| &s.smic_horaire) {
@@ -429,7 +429,7 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<Decimal> {
     let mut val = None;
     for e in entrees {
         if e.depuis.is_none_or(|d| d <= jour) {
-            val = Some(e.valeur.decimal());
+            val = Some(e.valeur);
         }
     }
     val.ok_or_else(|| socle::refus!("Aucun SMIC au {} dans le socle {}.", jour.iso(), millesime))

@@ -1614,7 +1614,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let base_csg = par_rubrique.iter().fold(zero, |a, b| a + b.csg);
 
     // 7.5 : le SMIC retenu pour la DSN, en montant unitaire des sa lecture dans le contexte (`Contexte::smic`).
-    let smic = MontantUnitaire::du_decimal(ctx.smic(&fin_periode)?);
+    let smic = ctx.smic(&fin_periode)?;
     let heures_annexes = lb.iter().fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     // Le plafond d'un intermittent : ses heures, dans la limite des heures d'un cachet par jour du contrat.
     let heures = if nat.mensuelle() { Heures::ZERO.max(heures_annexes) } else { heures_annexes.min(bar.heures_par_cachet.fois(jours)) };

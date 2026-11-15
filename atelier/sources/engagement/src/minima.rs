@@ -1119,15 +1119,15 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
     let smic = ctx.smic(&jour)?;
     let mut avis = Vec::new();
     for l in &paie.remuneration {
-        let heures = l.heures_annexes.decimal();
-        if heures <= Decimal::ZERO {
+        let heures = l.heures_annexes;
+        if heures <= socle::grandeurs::Heures::ZERO {
             continue;
         }
         if rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.heures_forfait.is_some() {
             continue;
         }
-        let du = socle::grandeurs::Montant::du_decimal(mul(smic, heures)).au_centime().decimal();
-        let paye = l.montant.decimal();
+        let du = (heures * smic).au_centime();
+        let paye = l.montant;
         if paye >= du {
             continue;
         }
@@ -1137,12 +1137,12 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                 "{}, {} : {} pour {} h. Le SMIC est de {} de l'heure au {} : il fallait {}, il manque {}. À corriger avant de déclarer (le SMIC vaut pour tous, art. L. 3231-2).",
                 qui,
                 l.designation(),
-                euros(paye),
-                virgule(heures.round_dp(2)),
-                euros(smic),
+                euros(paye.decimal()),
+                virgule(heures.a_deux_decimales().decimal()),
+                euros(smic.decimal()),
                 jour.jj_mm_aaaa(),
-                euros(du),
-                euros(sub(du, paye))
+                euros(du.decimal()),
+                euros((du - paye).decimal())
             ),
         });
     }
