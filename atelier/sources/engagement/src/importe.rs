@@ -728,7 +728,10 @@ impl Importe {
         // Sans fin dite, un autre finit avec la paie.
         let contrat = match (self.carte().contrat()?, p.periode) {
             (Some(c), _) if c.fin().is_some() || self.permanent() => c,
-            (Some(c), paie) => PeriodeOuverte::du(c.debut(), paie.and_then(|o| o.fin()))?,
+            (Some(c), paie) => match paie.and_then(|o| o.fin()) {
+                Some(fin) => c.fermee_au(fin)?.into(),
+                None => c,
+            },
             (None, Some(o)) if self.permanent() => PeriodeOuverte::du(o.debut(), None)?,
             (None, Some(o)) => o,
             (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),

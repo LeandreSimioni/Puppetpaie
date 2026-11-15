@@ -1319,11 +1319,12 @@ fn provision_d_une_annee_importee(
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
     let mut sans_compteur = 0;
     let cle_de = |p: &engagement::importe::PaieImportee| p.salarie.id.clone();
-    // Les salaries dont un contrat repris court au-dela du dernier jour repris : sans fin, ou une fin apres lui.
+    // Les salaries dont un contrat repris court au-dela du dernier jour repris : il contient le lendemain (un contrat
+    // repris commence au plus tard au dernier mois repris, qui l'atteste).
     let continuent: BTreeSet<droit::contexte::IdSalarie> = engagement::importe::contrats_lus(&ctx.racine)
         .map_err(|x| x.reclasser(Classe::Refuse))?
         .into_iter()
-        .filter(|c| c.periode.and_then(|p| p.fin()).is_none_or(|f| f > fin))
+        .filter(|c| c.periode.is_none_or(|p| p.contient(&lendemain)))
         .map(|c| c.salarie)
         .collect();
     let paies = lecture.paies(m)?;

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use droit::nature_declaration::NatureDeLaDeclaration;
-use socle::date::Jour;
+use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::echec::{erreur, Classe, R};
 use socle::num::Decimal;
 
@@ -214,25 +214,23 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
 /// jour. Un contrat sans fin court jusqu'au dernier jour du mois.
 fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
     let n = mois.jours();
-    let (premier, dernier) = (mois.premier_jour(), mois.dernier_jour());
-    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, Vec<Decimal>> = BTreeMap::new();
+    let le_mois = Periode::du_mois(mois);
+    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, BTreeMap<Jour, Decimal>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
             let Some(qui) = d.individus[k.individu].identifiant() else {
                 return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
             };
-            let jours = par_jour.entry(qui).or_insert_with(|| vec![Decimal::ZERO; n as usize]);
+            let jours = par_jour.entry(qui).or_default();
             if k.motif_recours == Some(droit::natures::MotifDeRecours::Remplacement) {
                 continue;
             }
-            let debut = k.periode.debut();
-            let fin = match k.fin_declaree.or(k.periode.fin()) {
-                Some(f) => f,
-                None => dernier,
+            // La fin que le bloc 62 declare passe avant celle du contrat.
+            let contrat = match k.fin_declaree {
+                Some(f) => PeriodeOuverte::du(k.periode.debut(), Some(f))?,
+                None => k.periode,
             };
-            if debut > dernier || fin < premier {
-                continue;
-            }
+            let Some(presence) = contrat.croise(&le_mois) else { continue };
             let poids = if k.modalite == Some(droit::natures::ModaliteDuTempsDeTravail::TempsPartiel) {
                 let (Some(reference), Some(quotite)) = (k.quotite_reference, k.quotite) else {
                     return Err(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013"));
@@ -246,14 +244,13 @@ fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
             } else {
                 Decimal::ONE
             };
-            let (a, b) = (if debut < premier { 1 } else { debut.jour }, if fin > dernier { n } else { fin.jour });
-            for j in a..=b {
-                let p = &mut jours[(j - 1) as usize];
+            for j in presence.jours() {
+                let p = jours.entry(j).or_insert(Decimal::ZERO);
                 *p = (*p).max(poids);
             }
         }
     }
-    Ok(par_jour.values().map(|jours| socle::num::div(jours.iter().sum::<Decimal>(), Decimal::from(n))).sum())
+    Ok(par_jour.values().map(|jours| socle::num::div(jours.values().sum::<Decimal>(), Decimal::from(n))).sum())
 }
 
 /// L'effectif salarie annuel de `an` : la moyenne des effectifs des mois de l'annee, les mois sans salarie ecartes, le
