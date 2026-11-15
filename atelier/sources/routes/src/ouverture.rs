@@ -843,7 +843,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     temps.extend(temps_des_etablissements(ctx, &jour)?);
     // LES PERMANENTS DU JOUR DE L'ECRAN : ce qui ne vaut que pour eux se montre s'ils se proposent ce jour-la, ou qu'un
     // permanent est du (`engagement::permanents`).
-    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
+    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
     let entreprise = fiche_verifiee::<droit::fiche::FicheEntrepriseDatee>(ctx, None, montree, temps, &ent, &p)?;
     let salaries = ctx
         .salaries

@@ -1046,7 +1046,7 @@ pub(crate) fn engagements(
             // compagnie ne le dit pas se refuse ; celui commence avant que la case se decoche continue
             // (`permanents::Permanents`). Le jour d'un avenant qui le fait passer au mois : `stock::poser_la_saisie`.
             let debut = carte.debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
-            if !ctx.emploie_des_permanents_pendant(&debut, &debut) {
+            if !ctx.emploie_des_permanents_pendant(&socle::date::Periode::du_jour(debut)) {
                 return Err(socle::refus!(
                     "{} : cet engagement est un contrat payé au mois ({}) qui commence le {}, et la compagnie ne dit pas \
                      qu'elle emploie des salariés au mois ce jour-là.\n\

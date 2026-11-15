@@ -589,7 +589,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         (None, false) => "Nouveau mois — l'enregistrement est automatique dès la première saisie.".to_string(),
     };
     // CE QUE LE MOIS PROPOSE D'UNE CARTE NEUVE : ses natures, lues sur le mois (`engagement::permanents`).
-    let p = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour())?;
+    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_mois(mois))?;
     let mut neuves = Vec::new();
     let mut propose = std::collections::BTreeMap::new();
     for n in p.natures_neuves()?.iter() {

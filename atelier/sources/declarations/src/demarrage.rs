@@ -393,7 +393,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // donnent : `droit::organismes`). Sans eux, le mois d'un permanent se refuse (`dsn::affiliations`).
     // Le mois que « Pour demarrer » prepare : celui du jour.
     let mois = ctx.aujourdhui.mois_civil();
-    let permanents = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour())?;
+    let permanents = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_mois(mois))?;
     if permanents.ouverts() && ctx.organismes()?.par_nature.permanent.references.is_empty() {
         out.push(Manque::bloquante(
             "organismes_permanents",

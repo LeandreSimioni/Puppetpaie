@@ -733,7 +733,7 @@ dites!(Modeles, ModeleRendu, Apercu);
 /// `engagement::permanents::Permanents::natures`).
 fn natures_de(ctx: &Contexte) -> R<Vec<std::sync::Arc<Nature>>> {
     let jour = ctx.aujourdhui;
-    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
+    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
     Ok(p.natures()?.into_iter().filter(|n| n.modele_contrat().is_some()).collect())
 }
 

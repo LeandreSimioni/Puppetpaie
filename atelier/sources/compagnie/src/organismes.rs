@@ -59,7 +59,7 @@ fn se_montre(spec: &Attendu, permanents: bool) -> bool {
 
 /// Les contrats des permanents se montrent-ils sur la periode regardee (`engagement::permanents`) ?
 fn permanents_ouverts(ctx: &Contexte, p: &Periode) -> R<bool> {
-    Ok(engagement::permanents::Permanents::de(ctx, &p.debut(), &p.fin())?.ouverts())
+    Ok(engagement::permanents::Permanents::de(ctx, p)?.ouverts())
 }
 
 /// La periode que l'ecran regarde : le mois `mois` de la charge (celui de l'onglet Paie), sinon celui du jour.

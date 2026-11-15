@@ -420,7 +420,7 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let permanents = mois
         .first()
         .zip(mois.last())
-        .map(|(premier, dernier)| engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour()))
+        .map(|(premier, dernier)| engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_au(premier.premier_jour(), dernier.dernier_jour())?))
         .transpose()?
         .is_some_and(|p| p.ouverts());
     let annees = annees_de(&mois);

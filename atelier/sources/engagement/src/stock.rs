@@ -1081,7 +1081,7 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie:
     // quand la compagnie ne dit pas employer des permanents ce jour-la, comme une premiere carte (`engagements`).
     if !o.mensuel()? {
         if let Some((depuis, nature)) = o.au_mois_depuis()? {
-            if !ctx.emploie_des_permanents_pendant(&depuis, &depuis) {
+            if !ctx.emploie_des_permanents_pendant(&socle::date::Periode::du_jour(depuis)) {
                 return Err(socle::refus!(
                     "{} : à partir du {}, ce contrat deviendrait un contrat payé au mois ({}), et la compagnie ne dit pas \
                      qu'elle emploie des salariés au mois ce jour-là. À faire : cocher « La compagnie emploie aussi des \

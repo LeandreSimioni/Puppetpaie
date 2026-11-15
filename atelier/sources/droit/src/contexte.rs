@@ -1382,10 +1382,10 @@ impl Contexte {
     /// La seule lecture de la case : elle ne regle que ce que le moteur PROPOSE (un CDI ou un CDD neuf), jamais ce qui est
     /// du a un permanent deja engage (`engagement::permanents::Permanents`). Lue au premier jour, puis a chaque jour ou
     /// la case change dans la periode.
-    pub fn emploie_des_permanents_pendant(&self, debut: &Jour, fin: &Jour) -> bool {
+    pub fn emploie_des_permanents_pendant(&self, periode: &socle::date::Periode) -> bool {
         self.fiches.entreprise.emploie_des_permanents.as_deref().is_some_and(|liste| {
-            std::iter::once(*debut)
-                .chain(liste.iter().filter_map(|e| e.depuis).filter(|j| j > debut && j <= fin))
+            std::iter::once(periode.debut())
+                .chain(liste.iter().filter_map(|e| e.depuis).filter(|j| *j > periode.debut() && periode.contient(j)))
                 .any(|j| crate::fiche::valeur_au(liste, &j).oui())
         })
     }

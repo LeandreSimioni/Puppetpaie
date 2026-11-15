@@ -379,7 +379,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         Some(debut) => debut,
         None => du,
     };
-    let permanents_declares = !ctx.emploie_des_permanents_pendant(&depuis, &depuis);
+    let permanents_declares = !ctx.emploie_des_permanents_pendant(&Periode::du_jour(depuis));
     if permanents_declares {
         crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::EmploieDesPermanents(Some(true)), Some(depuis))?;
     }

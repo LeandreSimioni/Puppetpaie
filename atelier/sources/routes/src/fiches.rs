@@ -444,7 +444,7 @@ pub(crate) struct Permanents {
 /// quand on coche ou decoche la case des permanents.
 fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
     let jour = ctx.aujourdhui;
-    let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
+    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
     // Une case que son type refuse est vide dans la fiche typee : elle ne change pas ce qui se montre.
     let (Montres { cases, pieces_ouvertes }, entreprise) = match &charge {
         FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &p)?, &donnees.fiche),
