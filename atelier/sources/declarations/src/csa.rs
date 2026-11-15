@@ -39,7 +39,7 @@
 
 use droit::contexte::{Contexte, FichierEffectifs, TypeDeParametreNeores};
 use droit::cotisation_etablissement::CotisationDEtablissement;
-use socle::texte::{euros, virgule};
+use socle::texte::{euros, pourcent, virgule};
 use socle::echec::R;
 use socle::grandeurs::{Montant, Taux};
 use socle::mois::Annee;
@@ -65,7 +65,7 @@ pub struct Csa {
     /// Le quotient A05 / A07, en pourcentage.
     pub quotient: Decimal,
     /// Le taux applique, en pourcentage (zero pour l'exoneration).
-    pub taux: Decimal,
+    pub taux: Taux,
     /// Les assiettes de la taxe d'apprentissage declarees pour N : hors et en Alsace-Moselle.
     pub assiette: Montant,
     pub assiette_alsace_moselle: Montant,
@@ -92,12 +92,12 @@ code 080 à 0.00.",
             )
         } else {
             format!(
-                "Contribution supplémentaire à l'apprentissage {} : {} (alternants {} % de l'effectif, taux {} % sur \
+                "Contribution supplémentaire à l'apprentissage {} : {} (alternants {} % de l'effectif, taux {} sur \
 {} d'assiette de la taxe d'apprentissage{}).",
                 self.millesime,
                 euros(self.montant),
                 virgule(self.quotient),
-                virgule(self.taux),
+                pourcent(self.taux),
                 euros(self.assiette + self.assiette_alsace_moselle),
                 if self.assiette_alsace_moselle.est_nul() {
                     String::new()
@@ -110,16 +110,17 @@ code 080 à 0.00.",
 }
 
 /// Le taux de L. 6242-1, IV, en pourcentage, pour un quotient (en pourcentage) sous 5 % ; `None` a 5 % et plus.
-pub fn taux(quotient: Decimal, plus_de_deux_mille: bool) -> Option<Decimal> {
-    let p = |x: i64, e: u32| Decimal::new(x, e);
-    if quotient < p(1, 0) {
-        Some(if plus_de_deux_mille { p(6, 1) } else { p(4, 1) })
-    } else if quotient < p(2, 0) {
-        Some(p(2, 1))
-    } else if quotient < p(3, 0) {
-        Some(p(1, 1))
-    } else if quotient < p(5, 0) {
-        Some(p(5, 2))
+/// Le quotient est un rapport d'effectifs (A05 / A07 x 100), sans grandeur ; le taux s'applique a l'assiette.
+pub fn taux(quotient: Decimal, plus_de_deux_mille: bool) -> Option<Taux> {
+    let p = |x: i64| Decimal::from(x);
+    if quotient < p(1) {
+        Some(if plus_de_deux_mille { Taux::centiemes_de_point(60) } else { Taux::centiemes_de_point(40) })
+    } else if quotient < p(2) {
+        Some(Taux::centiemes_de_point(20))
+    } else if quotient < p(3) {
+        Some(Taux::centiemes_de_point(10))
+    } else if quotient < p(5) {
+        Some(Taux::centiemes_de_point(5))
     } else {
         None
     }
@@ -211,7 +212,7 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
         code: CODE_EXONERATION,
         montant: Montant::ZERO,
         quotient: csa_quotient,
-        taux: Decimal::ZERO,
+        taux: Taux::ZERO,
         assiette: Montant::ZERO,
         assiette_alsace_moselle: Montant::ZERO,
     };
@@ -261,10 +262,7 @@ assiette (L. 6242-1, III). Rien n'est ecrit.",
         ));
     }
     // VI : 52 % des taux en Alsace-Moselle ; VII : le montant a l'euro (L. 133-10 CSS).
-    // Le taux de la table de L. 6242-1, IV (`taux`), qui compte en pourcentage d'un quotient d'effectifs, entre ici en
-    // taux de l'assiette.
-    let taux_csa = Taux::du_decimal(t);
-    let montant = (assiette.fois_taux(taux_csa) + alsace.fois_taux(taux_csa * Taux::points(52).en_coefficient())).a_l_euro().au_centime();
+    let montant = (assiette.fois_taux(t) + alsace.fois_taux(t * Taux::points(52).en_coefficient())).a_l_euro().au_centime();
     Ok(Some(Csa {
         millesime: n,
         code: CODE_CONTRIBUTION,
@@ -280,6 +278,7 @@ assiette (L. 6242-1, III). Rien n'est ecrit.",
 mod tests {
     use super::taux;
     use rust_decimal::Decimal;
+    use socle::grandeurs::Taux;
 
     fn d(s: &str) -> Decimal {
         s.parse().unwrap()
@@ -288,12 +287,13 @@ mod tests {
     #[test]
     fn les_taux_suivent_les_tranches_du_quotient() {
         // L. 6242-1, IV (`atelier/reference/sources/code-du-travail/xml/L6242-1.xml`) ; fiches net-entreprises 2588 et 2963.
-        assert_eq!(taux(d("0.5"), false), Some(d("0.4")));
-        assert_eq!(taux(d("0.5"), true), Some(d("0.6")));
-        assert_eq!(taux(d("1"), true), Some(d("0.2")), "le 0,6 % ne vaut que sous 1 %");
-        assert_eq!(taux(d("2.99"), false), Some(d("0.1")));
-        assert_eq!(taux(d("3"), false), Some(d("0.05")));
-        assert_eq!(taux(d("4.999"), false), Some(d("0.05")));
+        let c = Taux::centiemes_de_point;
+        assert_eq!(taux(d("0.5"), false), Some(c(40)));
+        assert_eq!(taux(d("0.5"), true), Some(c(60)));
+        assert_eq!(taux(d("1"), true), Some(c(20)), "le 0,6 % ne vaut que sous 1 %");
+        assert_eq!(taux(d("2.99"), false), Some(c(10)));
+        assert_eq!(taux(d("3"), false), Some(c(5)));
+        assert_eq!(taux(d("4.999"), false), Some(c(5)));
         assert_eq!(taux(d("5"), false), None, "a 5 % : exoneree");
     }
 }

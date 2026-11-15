@@ -283,7 +283,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | base d'une ligne de cotisation, valeur d'une assiette d'une paie (calculée, ou que les pièces d'une paie importée disent) | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures`) | `engagement/src/calcul.rs` |
-| signe d'une ligne de paie (ce que son sens fait au brut : garder ou retirer ses grandeurs ; le `sens` d'une rubrique au catalogue) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
+| signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
 | plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure) | `droit/src/plafond.rs` |
 | nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
 
@@ -314,8 +314,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
   Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`), dits par
   l'attribut serde du champ. Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
-  écrit un montant et un taux par `socle::grandeurs::ecrit::norme` (`montant` : au centime, jamais « -0.00 » ; `taux` :
-  ses décimales, la moitié au pair).
+  écrit un montant, un taux et une quantité par `socle::grandeurs::ecrit::norme` (`montant` : au centime, jamais
+  « -0.00 » ; `taux` : ses décimales, la moitié au pair, toutes écrites ; `quantite` : au centième, la moitié vers le
+  haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture.
 - **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte.
 
 **Les identifiants**

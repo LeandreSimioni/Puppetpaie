@@ -12,7 +12,7 @@ use socle::mois::Annee;
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
-use socle::grandeurs::{Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Coefficient, Montant, MontantUnitaire, Taux};
 use socle::num::{add, mul, sub, Decimal};
 use std::collections::BTreeMap;
 
@@ -24,7 +24,7 @@ const CTP_CONTRIBUTION: CodeCtp = CodeCtp::du_moteur("730");
 const CTP_ACCORD: CodeCtp = CodeCtp::du_moteur("740");
 
 /// Les categories de D5212-23 : leur cle dans `config/oeth.json`, leur code en S21.G00.82.002, et ce que la saisie en dit.
-const DEPENSES: [(&str, CotisationDEtablissement, fn(&Depenses) -> Option<Nombre>); 3] = [
+const DEPENSES: [(&str, CotisationDEtablissement, fn(&Depenses) -> Option<Montant>); 3] = [
     ("accessibilite", CotisationDEtablissement::DepenseAccessibilite, Depenses::accessibilite),
     ("maintien", CotisationDEtablissement::DepenseMaintien, Depenses::maintien),
     ("accompagnement", CotisationDEtablissement::DepenseAccompagnement, Depenses::accompagnement),
@@ -42,7 +42,7 @@ pub struct Declaration {
     pub obligation: Decimal,
     pub beneficiaires: Decimal,
     pub manquants: Decimal,
-    pub coefficient: i64,
+    pub coefficient: Coefficient,
     pub smic: MontantUnitaire,
     pub brute: Montant,
     pub nette: Montant,
@@ -100,7 +100,7 @@ impl Declaration {
             virgule(self.obligation),
             virgule(self.beneficiaires),
             virgule(self.manquants),
-            self.coefficient,
+            socle::grandeurs::ecrit::sans_zero::dit(self.coefficient),
             euros(self.smic),
             euros(self.brute),
             euros(self.nette)
@@ -137,10 +137,12 @@ pub struct EntreeOeth {
     pub boeth_externes: Option<Vec<BoethExterne>>,
     /// Le code de l'accord agree (table AAETH, S21.G00.13.001).
     pub accord: Option<String>,
-    pub depenses_non_realisees: Option<Nombre>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub depenses_non_realisees: Option<Montant>,
     /// Les beneficiaires dus que l'Urssaf transmet, confrontes au calcul (D5212-2).
     pub boeth_dus: Option<Nombre>,
-    pub sous_traitance: Option<Nombre>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub sous_traitance: Option<Montant>,
     /// Les depenses deductibles de D5212-23.
     pub depenses: Option<Depenses>,
     /// Sans beneficiaire ni sous-traitance : depuis plus de trois ans (D5212-21) ?
@@ -164,21 +166,24 @@ pub struct BoethExterne {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Depenses {
-    pub accessibilite: Option<Nombre>,
-    pub maintien: Option<Nombre>,
-    pub accompagnement: Option<Nombre>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub accessibilite: Option<Montant>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub maintien: Option<Montant>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub accompagnement: Option<Montant>,
 }
 
 impl Depenses {
-    fn accessibilite(&self) -> Option<Nombre> {
+    fn accessibilite(&self) -> Option<Montant> {
         self.accessibilite
     }
 
-    fn maintien(&self) -> Option<Nombre> {
+    fn maintien(&self) -> Option<Montant> {
         self.maintien
     }
 
-    fn accompagnement(&self) -> Option<Nombre> {
+    fn accompagnement(&self) -> Option<Montant> {
         self.accompagnement
     }
 }
@@ -193,20 +198,28 @@ fn dec(v: Nombre, nom: &str, millesime: Annee) -> R<Decimal> {
 }
 
 /// Un montant de `config/oeth.json` que la compagnie n'ecrit que s'il y en a, au centime.
-fn montant(v: Option<Nombre>, nom: &str, millesime: Annee) -> R<Option<Montant>> {
-    v.map(|n| dec(n, nom, millesime).map(|x| Montant::du_decimal(x).au_centime())).transpose()
+fn montant(v: Option<Montant>, nom: &str, millesime: Annee) -> R<Option<Montant>> {
+    match v {
+        Some(m) if m < Montant::ZERO => Err(socle::echec::a_la_cle(
+            &format!("La déclaration OETH de {} porte un chiffre négatif.", millesime),
+            nom,
+            socle::grandeurs::ecrit::sans_zero::dit(m),
+        )),
+        v => Ok(v.map(Montant::au_centime)),
+    }
 }
 
-/// D5212-20 et D5212-21.
-pub fn coefficient(effectif: Decimal, sans_action: bool) -> i64 {
+/// D5212-20 et D5212-21 : combien de fois le SMIC horaire par beneficiaire manquant. L'effectif est un effectif moyen,
+/// sans grandeur.
+pub fn coefficient(effectif: Decimal, sans_action: bool) -> Coefficient {
     if sans_action {
-        1500
+        Coefficient::entier_fixe(1500)
     } else if effectif >= Decimal::from(750) {
-        600
+        Coefficient::entier_fixe(600)
     } else if effectif >= Decimal::from(250) {
-        500
+        Coefficient::entier_fixe(500)
     } else {
-        400
+        Coefficient::entier_fixe(400)
     }
 }
 
@@ -243,7 +256,7 @@ Rien n'est ecrit.",
         obligation: Decimal::ZERO,
         beneficiaires: Decimal::ZERO,
         manquants: Decimal::ZERO,
-        coefficient: 0,
+        coefficient: Coefficient::ZERO,
         smic,
         brute: Montant::ZERO,
         nette: Montant::ZERO,
@@ -330,10 +343,11 @@ pour le dire. Rien n'est ecrit.",
         false
     };
     d.coefficient = coefficient(eff, sans_action);
-    // Les manquants et l'ECAP sont des effectifs (hors de la chaine des montants) : leur produit par le SMIC s'ouvre ici.
-    d.brute = Montant::du_decimal(mul(mul(d.manquants, Decimal::from(d.coefficient)), smic.decimal())).au_centime();
+    // Les manquants et l'ECAP sont des effectifs moyens, sans grandeur : chacun entre ici comme le multiplicateur du SMIC
+    // horaire qu'il est (le coefficient de D5212-20 ; 17 fois le SMIC par unite d'ECAP).
+    d.brute = ((Coefficient::du_decimal(d.manquants) * d.coefficient) * smic).au_centime();
 
-    let ecap = Montant::du_decimal(mul(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17)), smic.decimal())).au_centime();
+    let ecap = ((Coefficient::du_decimal(dec(ecap, "ecap", millesime)?) * Coefficient::entier_fixe(17)) * smic).au_centime();
     d.deductions.insert(CotisationDEtablissement::DeductionEcap, ecap);
     if let Some(s) = sous_traitance {
         d.deductions.insert(CotisationDEtablissement::DeductionSousTraitance, s);

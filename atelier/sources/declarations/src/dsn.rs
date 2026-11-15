@@ -303,21 +303,15 @@ fn contact_sante_travail(f: &mut Fichier, ent_e: &ChampsEntreprise) -> R<()> {
     Ok(())
 }
 
-/// Une quantite a `n` decimales ecrites, le demi au pair (la quotite 40.012, 40.013).
-fn fmt_f(x: Decimal, n: u32) -> String {
-    let mut q = x.round_dp_with_strategy(n, RoundingStrategy::MidpointNearestEven);
-    q.rescale(n);
-    q.to_string()
-}
-
 /// Un montant de la paie, ou son oppose dans une regularisation qui annule ce qui etait declare : sous son signe, tel
 /// que la norme l'ecrit (`norme::montant`).
 pub fn ms(x: Montant, signe: Signe) -> String {
     norme::montant(signe.de(x))
 }
 
-/// Une quantite que la norme ecrit a deux decimales (les heures en plus 51.012, une mesure d'activite 53.002), sous son
-/// signe : au centieme, la moitie vers le haut, jamais « -0.00 ». Les quantites n'ont pas encore leur ecriture au socle.
+/// Un nombre sans grandeur que la norme ecrit a deux decimales (une mesure d'activite 53.002, les beneficiaires
+/// externes de l'OETH 13.003), sous son signe, comme `norme::quantite` : au centieme, la moitie vers le haut, jamais
+/// « -0.00 ».
 fn quantite_signee(x: Decimal, signe: Signe) -> String {
     let x = match signe {
         Signe::Plus => x,
@@ -1597,8 +1591,22 @@ finit pas tout seul, et le motif commande les droits du salarie a l'assurance ch
 }
 
 
-fn qt(x: Decimal) -> String {
-    fmt_f(x, 2)
+/// La quotite telle que la DSN la compte : au centieme, le demi au pair (40.012, 40.013).
+fn au_centieme_au_pair(q: engagement::QuotiteDuContrat) -> engagement::QuotiteDuContrat {
+    use engagement::QuotiteDuContrat as Q;
+    match q {
+        Q::Heures(h) => Q::Heures(h.a_deux_decimales()),
+        Q::Jours(j) => Q::Jours(j.a_deux_decimales()),
+    }
+}
+
+/// La quotite ecrite dans la DSN (`norme::quantite`), dans son unite.
+fn quotite_ecrite(q: engagement::QuotiteDuContrat) -> String {
+    use engagement::QuotiteDuContrat as Q;
+    match q {
+        Q::Heures(h) => norme::quantite(h),
+        Q::Jours(j) => norme::quantite(j),
+    }
 }
 
 /// « Prenom NOM » d'une fiche, a defaut sa cle : qui une phrase de refus designe.
@@ -1802,16 +1810,15 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.add_opt(droit::rubrique!("S21.G00.40.010"), e.contrat().fin().map(|j| j.jjmmaaaa()))?;
     }
     f.add(droit::rubrique!("S21.G00.40.011"), nat.unite_quotite());
-    // La quotite dans l'unite que 40.011 vient d'ecrire : son nombre, a la porte de la DSN.
-    let quotite = e.quotite()?.decimal();
+    // La quotite dans l'unite que 40.011 vient d'ecrire.
+    let quotite = au_centieme_au_pair(e.quotite()?);
     // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
     // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
-    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, q: Decimal| -> R<()> {
+    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, q: engagement::QuotiteDuContrat| -> R<()> {
         let plafond = nat.plafond_quotite();
-        // Ce que la DSN ecrit : la quotite a deux decimales (`qt`).
-        let q = q.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-        let valeur = qt(q);
-        if q <= plafond {
+        // Ce que la DSN ecrit : la quotite a deux decimales, comparee au plafond que la nature lit en nombre.
+        let valeur = quotite_ecrite(q);
+        if q.decimal() <= plafond {
             return Ok(());
         }
         let cch = match nat.unite_quotite() {
@@ -1834,7 +1841,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             },
             quoi,
             valeur,
-            qt(plafond),
+            format!("{:.2}", plafond),
             nat.unite_quotite(),
             rubrique,
             cch
@@ -1843,15 +1850,14 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     depasse(droit::rubrique!("S21.G00.40.013"), "quotite", quotite)?;
     match e.quotite_reference()? {
         Some(reference) => {
-            // Son nombre, a la porte de la DSN.
-            let r = reference.decimal();
+            let r = au_centieme_au_pair(reference);
             depasse(droit::rubrique!("S21.G00.40.012"), "quotite de reference", r)?;
             quotite_de_reference_sans_heures_supplementaires(f, p, &nat, reference)?;
-            f.add(droit::rubrique!("S21.G00.40.012"), qt(r))
+            f.add(droit::rubrique!("S21.G00.40.012"), quotite_ecrite(r))
         }
         None => return Err(refus("S21.G00.40.012 : la quotite de reference manque.")),
     }
-    f.add(droit::rubrique!("S21.G00.40.013"), qt(quotite));
+    f.add(droit::rubrique!("S21.G00.40.013"), quotite_ecrite(quotite));
     // La modalite que la nature fixe, sinon celle de l'engagement (`Engagement::modalite_temps_travail`).
     f.ecrire_code(e.modalite_temps_travail()?)?;
     if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {
@@ -2117,13 +2123,18 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, periode: &Periode, signe: Signe)
         }
     }
     let montant = base_de_la_paie(p, Assiette::HeuresEnPlus)?.filter(|m| !m.est_nul());
-    let heures = p.bases.get(&Assiette::HeuresEnPlusHeures).map(|b| b.decimal()).filter(|h| !h.is_zero());
+    let heures = p
+        .bases
+        .get(&Assiette::HeuresEnPlusHeures)
+        .map(|b| b.en_heures(Assiette::HeuresEnPlusHeures))
+        .transpose()?
+        .filter(|h| !h.est_nul());
     if let (Some(montant), Some(heures)) = (montant, heures) {
         f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
         f.add_opt(droit::rubrique!("S21.G00.51.010"), e.numero.clone())?;
         f.add(droit::rubrique!("S21.G00.51.011"), TypeDeRemuneration::HeuresAleatoires.code());
-        f.add(droit::rubrique!("S21.G00.51.012"), quantite_signee(heures, signe));
+        f.add(droit::rubrique!("S21.G00.51.012"), norme::quantite(signe.de(heures)));
         f.add(droit::rubrique!("S21.G00.51.013"), ms(montant, signe));
     }
     Ok(())
@@ -3215,7 +3226,7 @@ fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> R<Option<TauxDeLaLigne>> {
         ));
     };
     let valeur = if ctp.statut == Some(droit::fiche::Statut::Artiste) { valeur * bareme::PART_DES_TAUX_D_UN_ARTISTE.en_coefficient() } else { valeur };
-    Ok(Some(TauxDeLaLigne::AtMp(valeur.au_pair_pose(2))))
+    Ok(Some(TauxDeLaLigne::AtMp(valeur.au_pair(2))))
 }
 
 /// Le taux d'une ligne 23 tel que S21.G00.23.003 l'ecrit : le taux AT/MP sur cinq caracteres, celui du versement
@@ -3570,7 +3581,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             if assiette.est_nul() {
                 continue;
             }
-            lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, Some(TauxDeLaLigne::Mobilite(vm.taux.au_pair_pose(2))), Some(assiette.a_l_euro()), None, Some(vm.code_insee.clone())));
+            lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, Some(TauxDeLaLigne::Mobilite(vm.taux.au_pair(2))), Some(assiette.a_l_euro()), None, Some(vm.code_insee.clone())));
         }
     }
     let mut local = Montant::ZERO;

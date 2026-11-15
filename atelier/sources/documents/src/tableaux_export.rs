@@ -355,6 +355,16 @@ impl Ligne {
         self.od(k, v.map(|t| t.decimal()))
     }
 
+    /// Un taux, ou rien, dans la case d'un etat, a `decimales` decimales toutes ecrites (le taux d'une ligne 23 du
+    /// bordereau, deux decimales comme la DSN l'ecrit) : sa porte. Le taux arrive arrondi a ces decimales.
+    pub fn taux_a(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Taux>, decimales: u32) -> &mut Ligne {
+        self.od(k, v.map(|t| {
+            let mut d = t.decimal();
+            d.rescale(decimales);
+            d
+        }))
+    }
+
     /// La base d'une ligne de cotisation, ou rien, dans la case d'un etat : ses euros ou ses heures
     /// (`BaseDeCotisation::decimal`), sa porte.
     pub fn base(&mut self, k: ColonneDEtat, v: Option<engagement::calcul::BaseDeCotisation>) -> &mut Ligne {

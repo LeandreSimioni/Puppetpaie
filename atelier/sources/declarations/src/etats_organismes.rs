@@ -438,7 +438,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
                     QualifiantDAssiette::AssiettePlafonnee => "921 — assiette plafonnée",
                 });
                 let taux_at = b.taux_at.map(documents::bordereau::TauxDeLaLigne::taux);
-                l.taux(C::TauxAt, taux_at).om(C::AssietteDeclaree, if b.montant.is_some() { None } else { b.assiette }).om(C::Montant, b.montant);
+                l.taux_a(C::TauxAt, taux_at, 2).om(C::AssietteDeclaree, if b.montant.is_some() { None } else { b.assiette }).om(C::Montant, b.montant);
                 lignes.push(l);
             }
         }

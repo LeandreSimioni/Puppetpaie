@@ -165,7 +165,8 @@ pub fn courte<G: Grandeur>(g: G) -> G {
     G::du(num::court(g.en_decimal()))
 }
 
-/// LE SIGNE QU'UNE LIGNE DONNE A SES GRANDEURS : les garder (`Plus`), ou les retirer (`Moins`, l'oppose). Un zero n'a pas
+/// LE SIGNE D'UNE GRANDEUR (celui qu'une ligne de paie donne a ses grandeurs, l'annulation d'un montant declare dans
+/// la DSN) : la garder (`Plus`), ou la retirer (`Moins`, l'oppose). Un zero n'a pas
 /// de signe : il reste le zero qu'il est, son echelle gardee. Signe x grandeur = grandeur de meme nom (`de`). Ecrit `+`
 /// ou `-` (le `sens` d'une rubrique de `rubriques-base.json`) ; un autre signe se refuse a la lecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -300,6 +301,11 @@ impl Coefficient {
     /// Un.
     pub const UN: Coefficient = Coefficient(Decimal::ONE);
 
+    /// Un coefficient qu'un texte fixe, entier (`400` : 400 fois le SMIC horaire, D5212-20).
+    pub const fn entier_fixe(n: u32) -> Coefficient {
+        Coefficient(Decimal::from_parts(n, 0, 0, false, 0))
+    }
+
     /// Ce coefficient divise par `c` : coefficient / coefficient = coefficient ; `None` quand `c` est nul.
     pub fn sur(self, c: Coefficient) -> Option<Coefficient> {
         (!c.0.is_zero()).then(|| Coefficient(num::div(self.0, c.0)))
@@ -362,14 +368,6 @@ impl Taux {
         Taux(num::court(self.0.round_dp_with_strategy(decimales, RoundingStrategy::MidpointNearestEven)))
     }
 
-    /// A `decimales` decimales, la moitie au pair, toutes posees (`1.5` donne `1.50`) : le taux d'une ligne du bordereau
-    /// Urssaf (S21.G00.23.003, deux decimales).
-    pub fn au_pair_pose(self, decimales: u32) -> Taux {
-        let mut q = self.0.round_dp_with_strategy(decimales, RoundingStrategy::MidpointNearestEven);
-        q.rescale(decimales);
-        Taux(q)
-    }
-
     /// A `decimales` decimales au plus, la moitie loin de zero, dans sa forme la plus courte (`courte`) : la somme des
     /// composants d'un taux, telle qu'un bareme l'affiche.
     pub fn loin_de_zero(self, decimales: u32) -> Taux {
@@ -379,6 +377,11 @@ impl Taux {
     /// Un taux qu'un texte fixe, en points entiers (`20` : 20 %).
     pub const fn points(n: u32) -> Taux {
         Taux(Decimal::from_parts(n, 0, 0, false, 0))
+    }
+
+    /// Un taux qu'un texte fixe, en centiemes de point (`40` : 0,40 %).
+    pub const fn centiemes_de_point(n: u32) -> Taux {
+        Taux(Decimal::from_parts(n, 0, 0, false, 2))
     }
 
     /// Ce taux `n` fois (le taux d'un enfant couvert, pour chacun) : taux x compte = taux. Un compte n'est pas une
@@ -910,7 +913,9 @@ pub mod ecrit {
     /// TELLE QUE LA NORME DSN L'ECRIT dans ses rubriques (cahier technique : « avec decimale », le point decimal) : un
     /// montant au centime, un taux a ses decimales. La seule ecriture des grandeurs de la DSN.
     pub mod norme {
-        use crate::grandeurs::{Montant, Taux};
+        use crate::grandeurs::{Grandeur, Montant, Taux};
+        use crate::num::Decimal;
+        use rust_decimal::RoundingStrategy;
 
         /// Un montant au centime (`Montant::au_centime`), ses deux decimales ecrites (`12.30`) ; un zero s'ecrit sans
         /// signe (`0.00`, jamais `-0.00`).
@@ -919,9 +924,23 @@ pub mod ecrit {
             if c.est_nul() { Montant::ZERO } else { c }.decimal().to_string()
         }
 
-        /// Un taux a `decimales` decimales, le demi au pair, toutes ecrites (`1.50`, `6.900`).
+        /// Un taux a `decimales` decimales, le demi au pair (`Taux::au_pair`), toutes ecrites (`1.50`, `6.900`).
         pub fn taux(t: Taux, decimales: u32) -> String {
-            t.au_pair_pose(decimales).decimal().to_string()
+            let mut d = t.au_pair(decimales).decimal();
+            d.rescale(decimales);
+            d.to_string()
+        }
+
+        /// Une quantite (des heures, des jours, des cachets) au centieme, la moitie vers le haut, ses deux decimales
+        /// ecrites (`151.67`, `2.00`) ; un zero s'ecrit sans signe (`0.00`, jamais `-0.00`). Son signe se pose avant
+        /// (`Signe::de`).
+        pub fn quantite<G: Grandeur>(q: G) -> String {
+            let mut c = q.en_decimal().round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+            if c.is_zero() {
+                c = Decimal::ZERO;
+            }
+            c.rescale(2);
+            c.to_string()
         }
     }
 
