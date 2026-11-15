@@ -19,7 +19,6 @@ use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
-use socle::forme::Nombre;
 use socle::grandeurs::{courte, Coefficient, Jours, Montant, MontantUnitaire};
 use socle::num::{court, mul, Decimal};
 use droit::permanents::{self, jours_acquis, IndemniteDePreavis};
@@ -34,15 +33,14 @@ struct Solde {
     conges_payes: Option<(usize, Jours, Montant)>,
 }
 
-/// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit : la ligne ecrite ne garde que le nombre de
-/// sa quantite (`QuantiteDeLigne`), sa porte.
+/// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit, dans leur forme la plus courte.
 fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: QuantiteDeLigne, taux: MontantUnitaire) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), Nombre(court(quantite.decimal())), courte(taux))
+    LignePaie::composee(rubrique.clone(), quantite.courte(), courte(taux))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
 fn ligne_unique(rubrique: &droit::catalogue::CodeDeRubrique, montant: Montant) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), Nombre(Decimal::ONE), courte(montant.pour_une_unite()))
+    LignePaie::composee(rubrique.clone(), QuantiteDeLigne::UNE_FOIS, courte(montant.pour_une_unite()))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite (son ecriture gardee).
@@ -496,8 +494,9 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 }
                 // La rubrique, et avec elle le code du bloc 52, suit le motif : 023, ou 032 pour le 092 (L1226-14).
                 let rubrique = permanents::rubrique_de_l_indemnite_de_preavis(motif)?;
-                // Les mois du preavis, une duree que son calcul dit encore en decimal : la ligne ecrit leur nombre tel quel.
-                stc.lignes.push(LignePaie::composee(rubrique, Nombre(court(m)), courte(salaire)));
+                // Les mois du preavis, une duree que son calcul dit encore en decimal : la part du mois que la ligne paie
+                // (sa rubrique compte des mois) s'y ouvre.
+                stc.lignes.push(LignePaie::composee(rubrique, QuantiteDeLigne::PartDuMois(Coefficient::du_decimal(court(m))), courte(salaire)));
                 let article = match indemnite {
                     IndemniteDePreavis::AutreArticle(t) => format!(" Pour ce motif, l'indemnite vient d'un autre article : {}", t),
                     IndemniteDePreavis::ATrancher(t) => format!(

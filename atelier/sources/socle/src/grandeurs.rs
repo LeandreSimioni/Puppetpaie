@@ -455,6 +455,11 @@ impl Services {
     }
 }
 
+impl Unites {
+    /// Une unite : la quantite d'une ligne qui se paie en une fois (une prime, une indemnite).
+    pub const UNE: Unites = Unites(Decimal::ONE);
+}
+
 impl Montant {
     /// Les heures que ce montant paie a `par_heure` l'heure : montant / montant unitaire = heures ; `None` quand
     /// `par_heure` est nul.

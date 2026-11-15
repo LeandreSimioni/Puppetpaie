@@ -525,6 +525,9 @@ pub enum QuantiteDeLigne {
 }
 
 impl QuantiteDeLigne {
+    /// Une fois : la quantite d'une ligne qui se paie en une fois (une prime, une indemnite), son montant pour une unite.
+    pub const UNE_FOIS: QuantiteDeLigne = QuantiteDeLigne::Unites(socle::grandeurs::Unites::UNE);
+
     /// Le nombre `d` d'une ligne dans l'unite `unite` de sa rubrique.
     pub fn de_l_unite(unite: Unite, d: Decimal) -> QuantiteDeLigne {
         match unite {
@@ -556,6 +559,21 @@ impl QuantiteDeLigne {
     /// Est-elle nulle ?
     pub fn est_nul(self) -> bool {
         self.decimal().is_zero()
+    }
+
+    /// Dans sa forme la plus courte, une decimale au moins (`socle::grandeurs::courte`), comme la ligne l'ecrit.
+    pub fn courte(self) -> QuantiteDeLigne {
+        use QuantiteDeLigne as Q;
+        match self {
+            Q::Heures(q) => Q::Heures(courte(q)),
+            Q::Cachets(q) => Q::Cachets(courte(q)),
+            Q::Jours(q) => Q::Jours(courte(q)),
+            Q::Services(q) => Q::Services(courte(q)),
+            Q::Semaines(q) => Q::Semaines(courte(q)),
+            Q::PartDuMois(q) => Q::PartDuMois(courte(q)),
+            Q::Unites(q) => Q::Unites(courte(q)),
+            Q::Base(q) => Q::Base(courte(q)),
+        }
     }
 
     /// LES HEURES QU'ELLE FAIT COMPTER, a `par_unite` heures par unite (`Rubrique::heures_par_unite` : le forfait de sa
@@ -714,7 +732,7 @@ impl LignePaie {
     /// UNE LIGNE D'UNE RUBRIQUE DE LA PIECE D'UN SALARIE AU MOIS (`droit::catalogue::RubriqueDuMois`), que seul le calcul
     /// qui tient la cle d'un contrat paye au mois (`droit::natures::AuMois`) compose : sur la paie d'un intermittent, elle
     /// ne compile pas.
-    pub fn du_mois(_cle: &droit::natures::AuMois, rubrique: droit::catalogue::RubriqueDuMois, quantite: Nombre, taux: MontantUnitaire) -> LignePaie {
+    pub fn du_mois(_cle: &droit::natures::AuMois, rubrique: droit::catalogue::RubriqueDuMois, quantite: QuantiteDeLigne, taux: MontantUnitaire) -> LignePaie {
         LignePaie::composee(rubrique.code(), quantite, taux)
     }
 
@@ -725,8 +743,10 @@ impl LignePaie {
         LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique, jours, taux, assiette_pas: Some(assiette_pas) })
     }
 
-    pub fn composee(rubrique: CodeDeRubrique, quantite: Nombre, taux: MontantUnitaire) -> LignePaie {
-        LignePaie::Composee(Composee { rubrique, quantite, taux, heures: None, precision: None, dates: Vec::new() })
+    /// La ligne de `rubrique`, `quantite` x `taux` : elle n'ecrit que le nombre de sa quantite (sa rubrique en dit l'unite
+    /// a la relecture, `QuantiteDeLigne::de_l_unite`).
+    pub fn composee(rubrique: CodeDeRubrique, quantite: QuantiteDeLigne, taux: MontantUnitaire) -> LignePaie {
+        LignePaie::Composee(Composee { rubrique, quantite: Nombre(quantite.decimal()), taux, heures: None, precision: None, dates: Vec::new() })
     }
 
     /// LA LIGNE QUE LE MOTEUR COMPOSE D'UNE RUBRIQUE EN POURCENTAGE : sa base et son pourcentage (une indemnite de fin de

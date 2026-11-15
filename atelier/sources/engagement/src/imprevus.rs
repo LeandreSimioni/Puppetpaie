@@ -848,10 +848,10 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
             None => Jours::ZERO,
         };
         let heures = (jours * m.heures_par_jour).au_centieme();
-        // Les heures retirees et leur taux, quand le mois en retire : la quantite de la ligne, sa porte.
-        let retenue = || -> R<Option<(socle::forme::Nombre, Decimal)>> {
+        // Les heures retirees et leur taux, quand le mois en retire.
+        let retenue = || -> R<Option<(Heures, Decimal)>> {
             match taux_horaire {
-                Some(t) if heures > Heures::ZERO => Ok(Some((socle::forme::Nombre(socle::grandeurs::courte(heures).decimal()), t))),
+                Some(t) if heures > Heures::ZERO => Ok(Some((socle::grandeurs::courte(heures), t))),
                 _ => Ok(None),
             }
         };
@@ -881,7 +881,8 @@ nomme cette absence. Rien n'est calcule.",
             lignes.extend(retenue()?.map(|(quantite, taux)| {
                 crate::LignePaie::RetenueArret(crate::ligne::RetenueArret {
                     rubrique,
-                    quantite,
+                    // La ligne ecrite ne garde que le nombre de ses heures : sa porte.
+                    quantite: socle::forme::Nombre(quantite.decimal()),
                     taux: socle::grandeurs::MontantUnitaire::du_decimal(taux),
                 })
             }));
@@ -911,7 +912,7 @@ nomme cette absence. Rien n'est calcule.",
                 )));
             } else {
                 lignes.extend(retenue()?.map(|(quantite, taux)| {
-                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, quantite,socle::grandeurs::MontantUnitaire::du_decimal(taux))
+                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, crate::ligne::QuantiteDeLigne::Heures(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux))
                 }));
                 absents += jours;
                 avert.push(info(format!(

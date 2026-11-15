@@ -1042,8 +1042,8 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let cpt = compteur_conges(ctx, au, &salarie, &presence.fin(), mois)?;
         let maintien = (pris * taux_jour_ouvrable).au_centime();
         let ind = cpt.indemnite_des_jours(pris, maintien)?;
-        // Les jours pris, quantite des deux lignes : leur ecriture.
-        let quantite = Nombre(court(pris.decimal()));
+        // Les jours pris, quantite des deux lignes.
+        let quantite = crate::ligne::QuantiteDeLigne::Jours(courte(pris));
         lignes.push(LignePaie::composee(ABSENCE_CONGES_PAYES, quantite, courte(taux_jour_ouvrable)));
         lignes.push(LignePaie::du_mois(
             au,
@@ -1104,7 +1104,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let Some(rubrique) = pr.rubrique.clone() else {
             return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(Montant::du_decimal(montant)))));
         };
-        lignes.push(LignePaie::composee(rubrique, Nombre(Decimal::ONE), MontantUnitaire::du_decimal(montant)));
+        lignes.push(LignePaie::composee(rubrique, crate::ligne::QuantiteDeLigne::UNE_FOIS,MontantUnitaire::du_decimal(montant)));
     }
 
     // --- les heures supplementaires d'un temps plein, complementaires d'un temps partiel
@@ -1155,7 +1155,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let reference = Heures::du_decimal(Decimal::from_str("151.67").unwrap());
         let base = Montant::du_decimal(base_conv).prorata(quotite, reference).au_centime().decimal();
         let montant = Montant::du_decimal(div(mul(base, pourcentage), Decimal::ONE_HUNDRED)).au_centime().decimal();
-        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, Nombre(Decimal::ONE), MontantUnitaire::du_decimal(court(montant))));
+        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, crate::ligne::QuantiteDeLigne::UNE_FOIS, MontantUnitaire::du_decimal(court(montant))));
         let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite.decimal())) } else { String::new() };
         avert.push(info(format!(
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \
