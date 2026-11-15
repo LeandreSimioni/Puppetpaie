@@ -252,9 +252,17 @@ pub struct FormeDEngagement {
     #[serde(with = "nombre")]
     pub quotite: Decimal,
     pub sans_paie: bool,
-    pub premier_mois: bool,
-    pub dernier_mois: bool,
+    /// La place du mois dans le contrat, ecrite en deux booleens (`PlaceDuMois::en_booleens`) ; elle se lit par `place`.
+    pub(crate) premier_mois: bool,
+    pub(crate) dernier_mois: bool,
     pub mois_du_contrat: Vec<Mois>,
+}
+
+impl FormeDEngagement {
+    /// La place du mois dans le contrat (`PlaceDuMois`), relue de son ecriture.
+    pub fn place(&self) -> crate::PlaceDuMois {
+        crate::PlaceDuMois::des_booleens(self.premier_mois, self.dernier_mois)
+    }
 }
 
 /// Un montant en texte normalise (`socle::num::nombre`), relu en decimal.

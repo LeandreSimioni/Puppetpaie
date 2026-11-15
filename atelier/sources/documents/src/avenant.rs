@@ -20,6 +20,7 @@ use crate::bulletin::{convention_du_contrat, fmt_eur};
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie, FormeDeRemuneration};
+use engagement::PlaceDuMois;
 use engagement::saisie::{Champ, Valeur};
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -177,7 +178,8 @@ pub(crate) fn fait_le_brut(l: &FormeDeRemuneration) -> bool {
 fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> R<String> {
     let morceaux: Vec<String> = remuneration.iter().filter(|l| fait_le_brut(l)).map(ligne_citee).collect();
     let mut phrase = et(&morceaux);
-    if !e.f.dernier_mois {
+    // Le contrat se poursuit apres le mois.
+    if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.f.place() {
         let quand = e.f.mois.libelle(socle::mois::Graphie::Accentuee);
         if !e.f.planning.is_empty() {
             let n = e.f.planning.len();
@@ -207,7 +209,7 @@ pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> Op
 
 /// « le mois d'octobre 2026 » quand le contrat se poursuit apres le mois : le total et le net sont ceux de ce mois.
 fn periode_remuneration(e: &Eng) -> R<Option<String>> {
-    if e.f.dernier_mois {
+    if let PlaceDuMois::Seul | PlaceDuMois::Dernier = e.f.place() {
         return Ok(None);
     }
     let mois = e.f.mois;
@@ -228,7 +230,7 @@ fn dates_travail(e: &Eng) -> R<String> {
         }
         groupes.join(", ")
     };
-    if !e.f.dernier_mois && e.f.planning.is_empty() {
+    if let (PlaceDuMois::Premier | PlaceDuMois::Milieu, true) = (e.f.place(), e.f.planning.is_empty()) {
         let fin = e.f.fin.ok_or_else(|| refus("contrat sans fin"))?;
         texte += &format!(", puis les dates du planning jusqu'au {}", fin.jj_mm_aaaa());
     }

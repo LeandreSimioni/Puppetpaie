@@ -841,6 +841,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | mode de remise d'une pièce remise aux salariés | `ModeDeRemise` | `envois/src/etats.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
+| début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
 | unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
@@ -1143,8 +1144,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   avant) ou un mois du milieu, dite par l'engagement (`Engagement::place_du_mois`). Le premier fait imprimer le contrat et
   la DPAE ; le dernier, le bloc 62 et le certificat Congés Spectacles ; hors du seul mois, le contrat est « à cheval ».
   Écrite en deux booléens, `premier_mois` et `dernier_mois` (`PlaceDuMois::en_booleens`), dans la forme canonique d'un
-  engagement et ce que rendent la paie d'un mois et la carte d'un engagement (avec `a_cheval` pour la paie). Un
-  engagement à compléter ne dit que s'il commence ce mois-ci (`premier_mois`) : sa fin n'est pas sûre.
+  engagement (relue par `FormeDEngagement::place`) et ce que rendent la paie d'un mois et la carte d'un engagement (avec
+  `a_cheval` pour la paie).
+- **début d'un contrat au mois d'une étape** : ce mois-ci (l'embauche : la DPAE, le contrat à signer) ou avant ; ce
+  qu'en sait un engagement à compléter, dont la fin n'est pas sûre, et qu'un engagement complet tire de sa place.
+  Écrit `premier_mois`, un booléen, dans la carte d'un engagement à compléter.
 - **case** : un champ d'une fiche ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé.
 - **rubrique** : une ligne du catalogue de paie ; `droit::catalogue::Rubrique` est sa définition. Son code,
   `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut

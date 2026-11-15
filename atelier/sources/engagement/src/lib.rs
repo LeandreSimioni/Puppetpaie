@@ -258,6 +258,16 @@ impl PlaceDuMois {
             PlaceDuMois::Milieu => (false, false),
         }
     }
+
+    /// LA PLACE RELUE DE SES DEUX BOOLEENS (`en_booleens`) : chacune des quatre paires est une place.
+    pub(crate) fn des_booleens(premier_mois: bool, dernier_mois: bool) -> PlaceDuMois {
+        match (premier_mois, dernier_mois) {
+            (true, true) => PlaceDuMois::Seul,
+            (true, false) => PlaceDuMois::Premier,
+            (false, true) => PlaceDuMois::Dernier,
+            (false, false) => PlaceDuMois::Milieu,
+        }
+    }
 }
 
 impl Engagement {
