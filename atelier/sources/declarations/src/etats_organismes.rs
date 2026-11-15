@@ -26,7 +26,6 @@ use socle::mois::{Graphie, Mois};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
 use documents::plan_comptable::{EtatDExport, RegroupementDEtat};
 use socle::grandeurs::{Montant, Taux};
-use socle::num::{add, Decimal};
 use documents::tableaux_export::{libelle_mois, qui, refus, section_du_mois, sections_de, ColonneDEtat as C, Ligne, Section, Tableau, R};
 
 // ------------------------------------------------------------------ outils
@@ -241,11 +240,11 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lignes = Vec::new();
     for c in cumul {
         let mut l = Ligne::nouvelle();
-        l.m(C::Mois, c.mois).t(C::Organisme, c.organisme).t(C::Code, c.code).t(C::Libelle, c.libelle).od(C::TauxSal, c.taux_sal.map(Taux::decimal)).od(C::TauxPat, c.taux_pat.map(Taux::decimal));
-        l.od(C::Base, c.base.filter(|b| !b.est_nulle()).map(BaseDeCotisation::decimal))
-            .d(C::PartSal, c.part_sal.decimal())
-            .d(C::PartPat, c.part_pat.decimal())
-            .d(C::Total, (c.part_sal + c.part_pat).decimal());
+        l.m(C::Mois, c.mois).t(C::Organisme, c.organisme).t(C::Code, c.code).t(C::Libelle, c.libelle).taux(C::TauxSal, c.taux_sal).taux(C::TauxPat, c.taux_pat);
+        l.base(C::Base, c.base.filter(|b| !b.est_nulle()))
+            .montant(C::PartSal, c.part_sal)
+            .montant(C::PartPat, c.part_pat)
+            .montant(C::Total, c.part_sal + c.part_pat);
         lignes.push(l);
     }
     let tri = |l: &Ligne| vec![l.texte(C::Code), l.texte(C::Libelle)];
@@ -490,13 +489,12 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     let p = Periode::nouvelle(ctx, None, d.annee, d.toutes, true)?;
     let mut avert = Vec::new();
-    let (taux, plancher, plafond) = (fp.taux.decimal(), fp.plancher.decimal(), fp.plafond.decimal());
-    let mut par_an: Vec<(Annee, i64, Decimal)> = Vec::new();
-    let zero = Montant::ZERO.decimal();
+    let (taux, plancher, plafond) = (fp.taux, fp.plancher, fp.plafond);
+    let mut par_an: Vec<(Annee, i64, Montant)> = Vec::new();
     let orgs = ctx.organismes().map_err(|e| e.reclasser(Classe::Refuse))?;
     for (m, paies) in paies_des_mois(ctx, &p, &mut avert, &d.departs)? {
         // La tranche A : la base 02 (« assiette brute plafonnee ») de chaque paie (`dsn::base_declaree`).
-        let mut ta = zero;
+        let mut ta = Montant::ZERO;
         for q in &paies {
             let nic = droit::bareme::etablissement_de(&ctx.entreprise, q.salarie()).map_err(|e| e.reclasser(Classe::Refuse))?;
             let bar = crate::dsn::bar_du(&ctx.du_mois(m).map_err(|e| e.reclasser(Classe::Refuse))?, &ctx.entreprise, &orgs, &nic, m).map_err(|e| e.reclasser(Classe::Refuse))?;
@@ -504,7 +502,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             match q {
                 engagement::etats::PaieDuMois::Validee(v) => {
                     for e in v.elementaires() {
-                        ta = add(ta, crate::dsn::base_declaree(e, &bar, plafonnee).map_err(|e| e.reclasser(Classe::Refuse))?);
+                        ta += crate::dsn::base_declaree(e, &bar, plafonnee).map_err(|e| e.reclasser(Classe::Refuse))?;
                     }
                 }
                 engagement::etats::PaieDuMois::Importee(i) => {
@@ -515,7 +513,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                             libelle_mois(m)
                         )));
                     };
-                    ta = add(ta, base);
+                    ta += base;
                 }
             }
         }
@@ -523,15 +521,15 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         match par_an.iter_mut().find(|(a, _, _)| *a == an) {
             Some(x) => {
                 x.1 += 1;
-                x.2 = add(x.2, ta);
+                x.2 += ta;
             }
-            None => par_an.push((an, 1, add(zero, ta))),
+            None => par_an.push((an, 1, Montant::ZERO + ta)),
         }
     }
     par_an.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes = Vec::new();
     for (an, mois, tranche_a) in par_an {
-        let calcule = Montant::du_decimal(tranche_a).fois_taux(Taux::du_decimal(taux)).au_centime().decimal();
+        let calcule = tranche_a.fois_taux(taux).au_centime();
         let du = plus_grand(plancher, plus_petit(plafond, calcule));
         let regle = if du == plancher && calcule < plancher {
             "plancher"
@@ -559,7 +557,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             regle.to_string()
         };
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an.to_string()).n(C::NombreDeMois, mois).d(C::TrancheA, tranche_a).d(C::Taux, taux).d(C::Calcule, calcule).d(C::ContributionDue, du).t(C::Regle, regle);
+        l.t(C::Annee, an.to_string()).n(C::NombreDeMois, mois).montant(C::TrancheA, tranche_a).taux(C::Taux, Some(taux)).montant(C::Calcule, calcule).montant(C::ContributionDue, du).t(C::Regle, regle);
         l.t(C::APayer, format!("début {} (inférence : le texte ne dit pas l'année de masse)", an.suivante()?));
         lignes.push(l);
     }
@@ -670,12 +668,12 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         };
         let mut l = Ligne::nouvelle();
         l.t(C::Annee, an.to_string())
-            .d(C::Masse, masse.decimal())
-            .d(C::MassePermanents, masse_permanents.decimal())
-            .d(C::Cpnef, cpnef.decimal())
-            .od(C::TauxPermanents, taux_p.map(Taux::decimal))
-            .d(C::Permanents, permanents.decimal());
-        l.d(C::TotalHt, (cpnef + permanents).decimal());
+            .montant(C::Masse, masse)
+            .montant(C::MassePermanents, masse_permanents)
+            .montant(C::Cpnef, cpnef)
+            .taux(C::TauxPermanents, taux_p)
+            .montant(C::Permanents, permanents);
+        l.montant(C::TotalHt, cpnef + permanents);
         l.t(C::APayer, format!("avant le 28/02/{}, à l'Afdas (Globaldec')", an.suivante()?));
         lignes.push(l);
     }
@@ -754,7 +752,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         }
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an.to_string()).d(C::Masse, masse.decimal()).d(C::Taux, taux.decimal()).d(C::Montant, m.decimal()).t(C::APayer, a_payer);
+        l.t(C::Annee, an.to_string()).montant(C::Masse, masse).taux(C::Taux, Some(taux)).montant(C::Montant, m).t(C::APayer, a_payer);
         lignes.push(l);
     }
     avert.push("Assiette : le brut du livre de paie, tous salariés. Le texte parle de masse salariale ou de masse déclarée en retraite complémentaire : pour une compagnie du spectacle, c'est le même brut.".to_string());

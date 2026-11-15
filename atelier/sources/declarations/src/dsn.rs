@@ -799,17 +799,17 @@ fn bareme_du_contrat(e: &engagement::Engagement, salarie: &droit::fiche::Salarie
 /// bareme de cette paie declare sous ce code (`cotisations_dsn`, `base78` ; abattue sous deduction forfaitaire
 /// specifique : `cle_abattue`), lue dans ses bases (`Paie::bases`), rien de recalcule (une paie importee :
 /// `base_declaree_importee`). Zero quand le bareme ne declare rien sous ce code.
-pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<Decimal> {
+pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<Montant> {
     let bar = bareme_de(p, bar)?;
     let Some(cle) = bar.cotisations_dsn.iter().filter(|c| c.bloc78 == bloc78).map(|c| c.base78).find(|k| *k != Assiette::Zero) else {
-        return Ok(Montant::ZERO.decimal());
+        return Ok(Montant::ZERO);
     };
     Ok(match cle_abattue(p, bloc78, cle)? {
-        Assiette::Brut => p.brut.decimal(),
-        Assiette::Csg => p.base_csg.decimal(),
+        Assiette::Brut => p.brut,
+        Assiette::Csg => p.base_csg,
         // Une base en euros ; une base en heures n'est pas un montant que la DSN declare, et se refuse en nommant son assiette.
         k => match p.bases.get(&k) {
-            Some(b) => b.en_euros(k)?.decimal(),
+            Some(b) => b.en_euros(k)?,
             None => return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom())),
         },
     })
@@ -818,14 +818,14 @@ pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<
 /// LA BASE `bloc78` D'UNE PAIE IMPORTEE, telle que ses pieces la disent, sous la cle que le bareme de son contrat declare
 /// sous ce code (comme `base_declaree`) ; `None` : les pieces ne la disent pas. Zero quand le bareme ne declare rien sous
 /// ce code. Une paie importee n'a pas de deduction forfaitaire specifique : rien ne s'y abat.
-pub fn base_declaree_importee(p: &engagement::importe::PaieImportee, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<Option<Decimal>> {
+pub fn base_declaree_importee(p: &engagement::importe::PaieImportee, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<Option<Montant>> {
     let bar = bareme_du_contrat(&p.engagement, &p.salarie, bar)?;
     let Some(cle) = bar.cotisations_dsn.iter().filter(|c| c.bloc78 == bloc78).map(|c| c.base78).find(|k| *k != Assiette::Zero) else {
-        return Ok(Some(Montant::ZERO.decimal()));
+        return Ok(Some(Montant::ZERO));
     };
     Ok(match cle {
-        Assiette::Brut => p.brut.map(Montant::decimal),
-        k => p.bases.get(&k).map(|b| b.decimal()),
+        Assiette::Brut => p.brut,
+        k => p.bases.get(&k).map(|b| b.en_euros(k)).transpose()?,
     })
 }
 

@@ -350,6 +350,17 @@ impl Ligne {
         self.od(k, v.map(|m| m.decimal()))
     }
 
+    /// Un taux, ou rien, dans la case d'un etat (le taux d'une ligne de cotisation) : sa porte.
+    pub fn taux(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Taux>) -> &mut Ligne {
+        self.od(k, v.map(|t| t.decimal()))
+    }
+
+    /// La base d'une ligne de cotisation, ou rien, dans la case d'un etat : ses euros ou ses heures
+    /// (`BaseDeCotisation::decimal`), sa porte.
+    pub fn base(&mut self, k: ColonneDEtat, v: Option<engagement::calcul::BaseDeCotisation>) -> &mut Ligne {
+        self.od(k, v.map(engagement::calcul::BaseDeCotisation::decimal))
+    }
+
     /// Un taux de PAS, ou rien, dans la case d'un etat (deux decimales, comme la norme l'ecrit) : sa porte.
     pub fn taux_de_pas(&mut self, k: ColonneDEtat, v: Option<droit::pas::TauxDePas>) -> &mut Ligne {
         self.od(k, v.map(|t| t.taux().decimal()))

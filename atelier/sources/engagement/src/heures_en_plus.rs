@@ -182,7 +182,7 @@ pub(crate) fn apres_les_cotisations(
         base: BaseDeCotisation::Montant(remuneration),
         taux_pat: None,
         montant_pat: Montant::ZERO,
-        taux_sal: Some(Taux::du_decimal(court(taux.decimal()))),
+        taux_sal: Some(socle::grandeurs::courte(taux)),
         montant_sal: -reduction,
         masquer_base_et_taux: false,
     }];
@@ -202,7 +202,7 @@ pub(crate) fn apres_les_cotisations(
                 famille: droit::forme_bareme::FAMILLE_ALLEGEMENTS,
                 libelle: "Déduction patronale sur heures supplémentaires".into(),
                 // Sa base compte des heures : la liste des bases en heures le dit (`calcul::BASES_EN_HEURES`).
-                base: BaseDeCotisation::relue(&DEDUCTION, supplementaires.decimal()),
+                base: BaseDeCotisation::Heures(supplementaires),
                 taux_pat: None,
                 montant_pat: -deduction,
                 taux_sal: None,
@@ -215,14 +215,12 @@ pub(crate) fn apres_les_cotisations(
     // L'exoneration d'impot : le net des heures.
     let abattement = bar.abattement_csg;
     // La CSG deductible que la paie retient (une paie sans CSG n'en deduit rien) ; sa ligne porte son taux.
-    let taux_csg = Taux::du_decimal(
-        lignes
-            .iter()
-            .filter(|l| l.est(&CSG_DED))
-            .take(1)
-            .map(|l| l.taux_sal.map(Taux::decimal).ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial")))
-            .sum::<R<Decimal>>()?,
-    );
+    let taux_csg = lignes
+        .iter()
+        .filter(|l| l.est(&CSG_DED))
+        .take(1)
+        .map(|l| l.taux_sal.ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial")))
+        .sum::<R<Taux>>()?;
     let csg_deductible = (remuneration * abattement).fois_taux(taux_csg).au_centime();
     let autres = sal(&|l| !(l.est(&CSG_DED) || l.est(&CSG_CRDS_ND) || l.est(&MUTUELLE)));
     let leurs_cotisations = Montant::du_decimal(autres.decimal() * remuneration.decimal() / brut.decimal()).au_centime();

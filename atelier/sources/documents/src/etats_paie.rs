@@ -24,7 +24,7 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::date::Jour;
 use socle::mois::{Annee, Mois};
-use socle::grandeurs::{Cachets, Heures, Montant, Taux};
+use socle::grandeurs::{Cachets, Heures, Montant};
 use socle::num::Decimal;
 use engagement::ligne::{QuantiteDeLigne, TauxDeLigne};
 use crate::prelevement::Prelevement;
@@ -958,9 +958,9 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Cotisation");
                 l.ot(C::Code, c.id.as_ref().map(|i| i.as_str().to_string()));
-                l.t(C::Libelle, c.libelle).od(C::Base, c.base.map(|x| x.au_centime().decimal()));
-                l.od(C::TauxSal, c.taux_sal.map(Taux::decimal)).od(C::PartSal, c.montant_sal.map(|x| x.au_centime().decimal()));
-                l.od(C::TauxPat, c.taux_pat.map(Taux::decimal)).od(C::PartPat, c.montant_pat.map(|x| x.au_centime().decimal()));
+                l.t(C::Libelle, c.libelle).base(C::Base, c.base.map(|x| x.au_centime()));
+                l.taux(C::TauxSal, c.taux_sal).om(C::PartSal, c.montant_sal.map(Montant::au_centime));
+                l.taux(C::TauxPat, c.taux_pat).om(C::PartPat, c.montant_pat.map(Montant::au_centime));
                 lignes.push(l);
             }
             for (lib, v) in [("Net imposable", paie.net_imposable()), ("Net à payer avant impôt", paie.net_a_payer())] {
