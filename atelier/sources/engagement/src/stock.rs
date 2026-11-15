@@ -437,16 +437,12 @@ impl Objet {
 
     /// Le dernier mois d'un engagement borne (celui de sa fin) ; `None` pour un contrat sans terme.
     pub fn dernier_mois(&self) -> R<Option<Mois>> {
-        let c = self.carte();
         let mensuel = self.mensuel()?;
-        match c.fin {
+        // La fin de son contrat (`Carte::contrat` : un contrat d'usage sans fin dite finit a son dernier jour joue ou
+        // planifie) ; sans jour encore, son premier mois : seul un contrat paye au mois court sans terme.
+        match self.carte().contrat()?.and_then(|c| c.fin()) {
             Some(f) => Ok(Some(f.mois_civil().max(self.fichier))),
-            None if !mensuel => {
-                // Un contrat d'usage sans fin dite finit a son dernier jour joue ou planifie ; sans jour encore, a son
-                // premier mois : seul un contrat paye au mois court sans terme.
-                let dernier = c.dates().iter().chain(c.planning().iter()).map(|j| j.jour().mois_civil()).max();
-                Ok(Some(dernier.into_iter().fold(self.fichier, Mois::max)))
-            }
+            None if !mensuel => Ok(Some(self.fichier)),
             None => Ok(None),
         }
     }

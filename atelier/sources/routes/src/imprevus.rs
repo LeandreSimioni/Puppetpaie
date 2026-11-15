@@ -1863,34 +1863,29 @@ fn validees(ctx: &Contexte, mois: Mois) -> R<(VueDuMois, Vec<Paie>)> {
     engagement::etats::validees_du_mois(ctx, mois, &departs)?.ok_or_else(|| refus(format!("Aucune saisie pour {}.", mois)))
 }
 
-/// L'engagement avec ses bornes : un contrat aux cachets ne les ecrit pas, il commence son premier jour travaille et
-/// finit son dernier (`engagement::debut_brut`, `engagement::dates_engagement`).
-fn avec_ses_bornes(e: &Carte) -> Carte {
-    let mut e = e.clone();
-    if e.debut.is_none() {
-        e.debut = e.debut_lu();
-    }
-    if e.fin.is_none() {
-        e.fin = e.dates().iter().map(|j| j.jour()).max();
-    }
-    e
+/// La periode du contrat d'une carte quand sa fin se lit (`Carte::contrat` : un contrat aux cachets ne l'ecrit pas, il
+/// finit son dernier jour).
+fn contrat_fini(e: &Carte) -> R<Option<Periode>> {
+    Ok(e.contrat()?.and_then(|c| c.fermee()))
 }
 
-/// L'engagement de ce salarie (sa cle) qui se termine ce mois, avec ses bornes (`avec_ses_bornes`), et son rang dans la
-/// saisie. `nom` : comme on l'a dit, pour la phrase. Un contrat qui a un motif de rupture passe avant les autres. Un
-/// salarie sans engagement ce mois-la n'a pas de paie : la phrase le dit, avec le mois en toutes lettres.
-fn engagement_qui_finit(saisie: &VueDuMois, cle: &IdSalarie, nom: &str, mois: Mois) -> R<(usize, Carte)> {
-    let mut siens: Vec<(usize, Carte)> =
-        saisie.engagements.iter().enumerate().filter(|(_, x)| x.salarie.as_ref() == Some(cle)).map(|(i, x)| (i, avec_ses_bornes(x))).collect();
+/// L'engagement de ce salarie (sa cle) qui se termine ce mois, la periode de son contrat (`contrat_fini`), et son rang
+/// dans la saisie. `nom` : comme on l'a dit, pour la phrase. Un contrat qui a un motif de rupture passe avant les
+/// autres. Un salarie sans engagement ce mois-la n'a pas de paie : la phrase le dit, avec le mois en toutes lettres.
+fn engagement_qui_finit(saisie: &VueDuMois, cle: &IdSalarie, nom: &str, mois: Mois) -> R<(usize, Carte, Periode)> {
+    let siens: Vec<(usize, &Carte)> = saisie.engagements.iter().enumerate().filter(|(_, x)| x.salarie.as_ref() == Some(cle)).collect();
     if siens.is_empty() {
         return Err(refus(format!("{} n'a aucun engagement en {} : aucun contrat ne s'y termine.", nom, mois.libelle(Graphie::Accentuee))));
     }
-    let finit = |x: &Carte| x.fin.is_some_and(|f| f.mois_civil() == mois);
-    let rompu = siens.iter().position(|(_, x)| finit(x) && x.motif_rupture.is_some());
-    let i = rompu.or_else(|| siens.iter().position(|(_, x)| finit(x))).ok_or_else(|| {
-        refus(format!("{} n'a aucun contrat qui se termine en {}.", nom, mois.libelle(Graphie::Accentuee)))
-    })?;
-    Ok(siens.swap_remove(i))
+    let mut finissent: Vec<(usize, Carte, Periode)> = Vec::new();
+    for (i, x) in siens {
+        if let Some(contrat) = contrat_fini(x)?.filter(|c| c.fin().mois_civil() == mois) {
+            finissent.push((i, x.clone(), contrat));
+        }
+    }
+    // Un tri stable : les rompus d'abord, chacun a son rang.
+    finissent.sort_by_key(|(_, x, _)| x.motif_rupture.is_none());
+    finissent.into_iter().next().ok_or_else(|| refus(format!("{} n'a aucun contrat qui se termine en {}.", nom, mois.libelle(Graphie::Accentuee))))
 }
 
 /// La paie validee de l'engagement de rang `rang` (`paies` : celles de `validees`, au meme rang que sa saisie).
@@ -1908,7 +1903,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let mois = c.mois;
     let (saisie, paies) = validees(ctx, mois)?;
     let cle = cle_du_nom(ctx, &c.salarie)?;
-    let (rang, _) = engagement_qui_finit(&saisie, &cle, c.salarie.as_str(), mois)?;
+    let (rang, _, _) = engagement_qui_finit(&saisie, &cle, c.salarie.as_str(), mois)?;
     let p = paie_de_l_engagement(&paies, rang, &cle, c.salarie.as_str(), mois)?;
     let date = constitue_le(ctx, c.le);
     let dossier = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
@@ -1923,14 +1918,9 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     })
 }
 
-/// Un jour que le signalement exige, lu dans la carte ; absent, il se refuse.
-fn exige(x: Option<Jour>, cle: &str) -> R<Jour> {
-    x.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))
-}
-
 /// `fctu.FinDeContrat` que le signalement declarera, batie sur la saisie (`fin-contrat-signaler`).
-fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: Mois) -> R<declarations::fctu::FinDeContrat> {
-    let manque = ce_qui_manque(ctx, e)?;
+fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, contrat: &Periode, mois: Mois) -> R<declarations::fctu::FinDeContrat> {
+    let manque = ce_qui_manque(ctx, e, contrat)?;
     let e = &fin_au_terme(e)?;
     if !manque.is_empty() {
         let liste: Vec<String> = manque.iter().map(phrase_du_manque).collect();
@@ -1942,7 +1932,7 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: Mois) -> R<declarati
     }
     let preavis = e.preavis.as_ref().ok_or_else(|| socle::fichiers::absent("preavis").reclasser(Classe::Manque))?;
     Ok(declarations::fctu::FinDeContrat {
-        fin: exige(e.fin, "fin")?,
+        fin: contrat.fin(),
         motif: e.motif_rupture.ok_or_else(|| socle::fichiers::absent("motif_rupture").reclasser(Classe::Manque))?,
         mois_rattachement: mois,
         type_preavis: preavis.genre,
@@ -1975,8 +1965,8 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
 
     let (saisie, paies) = validees(ctx, mois)?;
     let cle = cle_du_nom(ctx, &c.salarie)?;
-    let (rang, e) = engagement_qui_finit(&saisie, &cle, salarie, mois)?;
-    let fin = fin_de_contrat_declaree(ctx, &e, mois)?;
+    let (rang, e, contrat) = engagement_qui_finit(&saisie, &cle, salarie, mois)?;
+    let fin = fin_de_contrat_declaree(ctx, &e, &contrat, mois)?;
     if remplace.is_none() && !refaire {
         let journal = envois::journal::lu(&ctx.racine)?;
         if let Some(le) = crate::obligations::fin_signalee_le(&journal.lignes, &cle, &fin.fin)? {
@@ -2324,9 +2314,8 @@ pub(crate) fn phrase_du_manque(m: &Manque) -> String {
 }
 
 /// Ce que dit la loi du preavis d'une rupture, et la convention a cote (`moteur preavis`), pour la case « Préavis ».
-fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
-    let (debut, fin) = (exige(e.debut, "debut")?, exige(e.fin, "fin")?);
-    let anciennete = socle::date::Anciennete::entre(&debut, &fin);
+fn preavis_dit(ctx: &Contexte, e: &Carte, contrat: &Periode) -> R<String> {
+    let anciennete = socle::date::Anciennete::entre(&contrat.debut(), &contrat.fin());
     let motif = e.motif_rupture;
     let cdd = !nature_de(e)?.duree_indeterminee;
     let duree = droit::permanents::preavis_mois(anciennete, motif, cdd)?;
@@ -2343,7 +2332,7 @@ fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
     // Ce que dit la convention, a cote, par le moteur (le calcul de `moteur preavis`) ; pas pour un motif sans preavis
     // ni pour la rupture d'un CDD par le salarie (L1243-2), que la convention du licenciement ne regle pas.
     if duree != Some(Decimal::ZERO) && regle.is_none() {
-        let tout = engagement::preavis(ctx, e, anciennete, motif)?;
+        let tout = engagement::preavis(ctx, e, contrat, motif)?;
         let hors_la_loi = tout.duree.as_ref().filter(|d| d.source != engagement::solde::SourceDuPreavis::Loi);
         if let (Some(conv), Some(d)) = (tout.convention, hors_la_loi) {
             dit.push_str(&format!(" {} en donne {} : c'est elle qui s'applique.", d.qui(), conv));
@@ -2357,7 +2346,7 @@ fn preavis_dit(ctx: &Contexte, e: &Carte) -> R<String> {
 }
 
 /// Ce qu'un signalement exige et que la saisie ne dit pas encore, un manque par case de la carte (`Manque`).
-fn ce_qui_manque(ctx: &Contexte, e: &Carte) -> R<Vec<Manque>> {
+fn ce_qui_manque(ctx: &Contexte, e: &Carte, contrat: &Periode) -> R<Vec<Manque>> {
     let e = &fin_au_terme(e)?;
     let mut manques = Vec::new();
     match e.motif_rupture {
@@ -2385,7 +2374,7 @@ technique DSN p. 275). Le signalement ne s'écrit pas sans elle.",
         None => manques.push(manque(
             "preavis",
             "Préavis",
-            format!("le préavis de la rupture, ses dates s'il y en a un, ou « pas de clause de préavis ». {}", preavis_dit(ctx, e)?),
+            format!("le préavis de la rupture, ses dates s'il y en a un, ou « pas de clause de préavis ». {}", preavis_dit(ctx, e, contrat)?),
             "Le bloc S21.G00.63 est obligatoire dans un signalement de fin de contrat (cardinalité 1,*) : même sans préavis, il \
 se déclare, avec le type « 90 - pas de clause de préavis applicable ».",
         )),
@@ -2423,17 +2412,16 @@ contredit le signalement.",
 }
 
 /// UNE FIN DE CONTRAT QUI SE SIGNALE, telle que la colonne du mois et les rappels la lisent : l'engagement (`salarie`,
-/// `debut`, `numero`, `fin`, `motif_rupture`, `preavis`, tels que la saisie les ecrit), sa nature, ce qui manque pour la
-/// signaler (`a_saisir`), son obligation (`obligations::de_la_fin`) et sa pastille ; la route `fins-de-contrat` y ajoute
-/// ses phrases (`qui_dit`, `contrat_dit`).
+/// `numero`, `motif_rupture`, `preavis`, tels que la saisie les ecrit, et la periode de son contrat, `contrat_fini`), sa
+/// nature, ce qui manque pour la signaler (`a_saisir`), son obligation (`obligations::de_la_fin`) et sa pastille ; la
+/// route `fins-de-contrat` y ajoute ses phrases (`qui_dit`, `contrat_dit`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct FinASignaler {
     pub salarie: IdSalarie,
     pub mois: Mois,
-    debut: Option<Jour>,
+    pub contrat: Periode,
     pub en_retard: bool,
     pub numero: Option<NumeroContrat>,
-    pub fin: Jour,
     /// Le libelle de sa nature de contrat.
     #[serde(rename = "nature")]
     libelle_nature: String,
@@ -2467,20 +2455,17 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         if etats.get(i).and_then(|x| x.valide()).is_none() {
             continue;
         }
-        let e = avec_ses_bornes(carte);
-        let nat = nature_de(&e)?;
+        let e = carte;
+        let nat = nature_de(e)?;
         // La regle est celle de la nature et du motif (`Nature::signalement_fctu`) : un CDDU rompu avant son terme se signale.
         if !nat.signalement_fctu(e.motif_rupture) {
             continue;
         }
-        let Some(fin) = e.fin else { continue };
-        if !(mois.premier_jour() <= fin && fin <= mois.dernier_jour()) {
-            continue;
-        }
+        let Some(contrat) = contrat_fini(e)?.filter(|c| c.fin().mois_civil() == mois) else { continue };
         let salarie = e.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie").reclasser(Classe::Manque))?;
-        let a_saisir = ce_qui_manque(ctx, &e)?;
+        let a_saisir = ce_qui_manque(ctx, e, &contrat)?;
         // LE DELAI ET OU ON EN EST (`obligations::de_la_fin`).
-        let obligation = crate::obligations::de_la_fin(ctx, Some(&salarie), fin, &journal.lignes, aujourdhui)?;
+        let obligation = crate::obligations::de_la_fin(ctx, Some(&salarie), contrat.fin(), &journal.lignes, aujourdhui)?;
         // Due : il manque de quoi signaler, ou le delai court. Sa pastille : celle du delai passe
         // (« en retard » l'emporte : la date butoir ne se tait pas parce qu'une case manque), sinon ce qui manque, sinon
         // celle du delai.
@@ -2491,10 +2476,9 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         out.push(FinASignaler {
             salarie,
             mois,
-            debut: e.debut,
+            contrat,
             en_retard,
             numero: e.numero.clone(),
-            fin,
             libelle_nature: nat.libelle.clone(),
             motif_rupture: e.motif_rupture,
             preavis: e.preavis.clone(),
@@ -2516,7 +2500,7 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
     // Ce que l'ecran lit de chaque fin : qui, quelle nature, quel jour (et le mois d'une fin d'un mois passe), et son
     // contrat.
     for f in &mut fins {
-        let fin = f.fin.jj_mm_aaaa();
+        let fin = f.contrat.fin().jj_mm_aaaa();
         let ailleurs = if f.mois != c.mois { format!(" ({})", f.mois.libelle(Graphie::Accentuee)) } else { String::new() };
         f.qui_dit = Some(format!("{}, {}, fin le {}{}", ctx.nomme(&f.salarie), f.libelle_nature, fin, ailleurs));
         f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(f.numero.as_ref(), "", "", SANS_NUMERO), fin));

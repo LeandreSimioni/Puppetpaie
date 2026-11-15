@@ -1390,7 +1390,12 @@ pub(crate) fn declaree_a_la_caisse_des_conges(p: &Paie) -> R<bool> {
 /// la saisie dit l'emportant (`fiche_de_l_engagement`, `emploi_de`).
 pub(crate) fn saisie_declaree_a_la_caisse_des_conges(ctx: &Contexte, e: &crate::saisie::Carte, fin: &Jour) -> R<bool> {
     let nat = e.nature_lue()?;
-    let contrat = e.contrat()?.ok_or_else(|| socle::fichiers::absent("debut"))?;
+    // Le solde lit le debut que la carte ecrit (`conges::debut_de`) : sans lui, il refuse, meme quand un jour est joue.
+    let contrat = match e.debut {
+        Some(_) => e.contrat()?,
+        None => None,
+    }
+    .ok_or_else(|| socle::fichiers::absent("debut"))?;
     let cle = e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     let emploi = EmploiEngagement { code_emploi_ft: e.code_emploi_ft.clone().or_else(|| e.metier.as_ref().map(droit::fiche::CodeEmploiFt::from)), ..Default::default() };
     let fiche = convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, fin)?, &emploi)?);

@@ -1442,7 +1442,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
         fins.extend(crate::imprevus::fins_a_signaler(st.ctx, m, st.aujourdhui)?);
     }
     for f in fins {
-        if f.fin > st.aujourdhui {
+        if f.contrat.fin() > st.aujourdhui {
             continue; // il n'a pas encore pris fin
         }
         if !du(&f.obligation) {
@@ -1456,9 +1456,9 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
         let a_saisir: Vec<String> = f.a_saisir.iter().map(crate::imprevus::phrase_du_manque).collect();
         let mut r = rappel_d_obligation(
             &f.obligation,
-            CleDEcheance::DuSalarie { quoi: QuoiDuSalarie::FinContrat, salarie: f.salarie.clone(), jour: f.fin },
+            CleDEcheance::DuSalarie { quoi: QuoiDuSalarie::FinContrat, salarie: f.salarie.clone(), jour: f.contrat.fin() },
             format!("Signaler la fin du contrat de {}", salarie),
-            format!("{} s'est terminé le {}.", numero, f.fin.jj_mm_aaaa()),
+            format!("{} s'est terminé le {}.", numero, f.contrat.fin().jj_mm_aaaa()),
             Objet::Fin(Box::new(f.clone())),
         )?;
         r.mois = Some(f.mois);

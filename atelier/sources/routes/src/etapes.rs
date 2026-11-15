@@ -29,7 +29,7 @@ use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::echeances::Echeance;
 use droit::natures::NumeroDOrdre;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
 use engagement;
@@ -338,8 +338,7 @@ struct NonActif {
     salarie: Option<IdSalarie>,
     nom: Option<String>,
     numero: Option<NumeroContrat>,
-    debut: Jour,
-    fin: Option<Jour>,
+    contrat: PeriodeOuverte,
     non_actif: String,
     non_actif_dit: String,
     dit: String,
@@ -2928,20 +2927,18 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             Some(f) => super::nom_a_l_ecran(f, c).trim().to_string(),
             None => c.to_string(),
         });
-        let debut = engagement::debut_brut(b).ok_or_else(|| socle::fichiers::absent("debut"))?;
+        let contrat = b.saisie.carte.contrat()?.ok_or_else(|| socle::fichiers::absent("debut"))?;
         let fin_ecrite = b.saisie.carte.fin;
-        let fin = fin_ecrite.or_else(|| b.saisie.carte.dates().iter().map(|j| j.jour()).max());
         let dit = match &b.saisie.carte.numero {
-            Some(n) => format!("contrat {}, {}", n, periode_dite(debut, fin_ecrite)),
-            None => format!("contrat sans numéro, {}", periode_dite(debut, fin_ecrite)),
+            Some(n) => format!("contrat {}, {}", n, periode_dite(contrat.debut(), fin_ecrite)),
+            None => format!("contrat sans numéro, {}", periode_dite(contrat.debut(), fin_ecrite)),
         };
         out.push(NonActif {
             salarie: cle,
             nom,
             numero: b.saisie.carte.numero.clone(),
             dit,
-            debut,
-            fin,
+            contrat,
             non_actif: socle::paris::ecrit::seconde::texte(n.le()),
             non_actif_dit: format!("non actif depuis le {}", n.le().dit()),
             a_faire: crate::engagement::a_faire_en_phrases(&n.a_refaire(&departs)),

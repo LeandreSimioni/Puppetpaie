@@ -242,7 +242,7 @@ async function allerALaCase(f, champ) {
     if (f.mois && (MOIS_AFFICHE !== f.mois || document.getElementById("engagements").classList.contains("en-lecture"))) return null;
     const siennes = [...document.querySelectorAll("#engagements .engagement")]
       .filter((d) => memeSalarie(salarieDuBloc(d), f.salarie));
-    return siennes.find((d) => carteDe(d).numero === f.numero || (f.debut && carteDe(d).debut === f.debut)) || siennes[0] || null;
+    return siennes.find((d) => carteDe(d).numero === f.numero || carteDe(d).debut === f.contrat.du) || siennes[0] || null;
   };
   let div = await attendre(carte, 15000);
   if (!div) return;

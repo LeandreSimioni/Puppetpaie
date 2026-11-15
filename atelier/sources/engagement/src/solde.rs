@@ -22,7 +22,7 @@ use socle::forme::Nombre;
 use socle::grandeurs::{courte, sans_zero, Montant, MontantUnitaire};
 use socle::num::{add, court, div, mul, Decimal};
 use droit::permanents::{self, arrondir_jours, jours_acquis, IndemniteDePreavis};
-use socle::date::{Anciennete, Periode};
+use socle::date::{Anciennete, Jour, Periode};
 
 /// Les lignes et les avertissements du solde.
 #[derive(Default)]
@@ -103,15 +103,20 @@ pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
 
 /// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.
 fn age(ctx: &Contexte, e: &Carte) -> R<Option<Anciennete>> {
-    let fiche = e.salarie.as_ref().map(|s| crate::fiche_du_salarie(ctx, s)).transpose()?;
-    let Some(naissance) = fiche.and_then(|f| f.date_naissance.dite().copied()) else {
-        return Ok(None);
-    };
     let jour = match e.fin {
         Some(f) => f,
         None => aujourdhui()?,
     };
-    Ok(Some(Anciennete::age(&naissance, &jour)))
+    age_au(ctx, e, &jour)
+}
+
+/// L'age du salarie de `e` au `jour`, en annees revolues ; `None` quand sa fiche ne dit pas sa naissance.
+pub(crate) fn age_au(ctx: &Contexte, e: &Carte, jour: &Jour) -> R<Option<Anciennete>> {
+    let fiche = e.salarie.as_ref().map(|s| crate::fiche_du_salarie(ctx, s)).transpose()?;
+    let Some(naissance) = fiche.and_then(|f| f.date_naissance.dite().copied()) else {
+        return Ok(None);
+    };
+    Ok(Some(Anciennete::age(&naissance, jour)))
 }
 
 // ------------------------------------------------------------ le preavis
@@ -164,13 +169,14 @@ fn terme_du_preavis(fin: &socle::date::Jour, mois: Decimal) -> R<Option<socle::d
     fin.apres(socle::date::Duree::mois(n)).map(Some)
 }
 
-pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete, motif: Option<MotifDeRupture>) -> R<Preavis> {
+/// `age` : celui du salarie au dernier jour du contrat (`age`, `age_au`).
+pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete, motif: Option<MotifDeRupture>, age: Option<Anciennete>) -> R<Preavis> {
     let idcc = idcc(ctx);
     let cdd =!e.nature_lue()?.duree_indeterminee;
     let legal = permanents::preavis_mois(anciennete, motif, cdd)?;
     let prof = profil(ctx, e)?;
     let categorie = prof.categorie.as_ref();
-    let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif, age(ctx, e)?)?;
+    let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif, age)?;
     let conv_mois = conv.mois.map(de_p).transpose()?;
     // Une convention qui ne donne pas de duree dit pourquoi ; une qui en donne une dit son article (`clauses::preavis_mois`).
     let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
@@ -451,7 +457,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             qui, saisi, texte
         )));
     } else if let Some(indemnite) = &indemnite {
-        let duree = duree_du_preavis(ctx, e, anciennete, motif)?;
+        let duree = duree_du_preavis(ctx, e, anciennete, motif, age(ctx, e)?)?;
         let mut mois_preavis = duree.duree.as_ref().map(|d| d.mois);
         if let Some(saisi) = &e.preavis_mois {
             let saisi = dec_de(saisi)?;

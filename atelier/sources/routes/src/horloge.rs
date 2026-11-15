@@ -748,7 +748,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         Geste::Fin { mois, salarie, fin } => pas(d, quoi, quand, |ctx| {
             let mut encore = false;
             for x in crate::imprevus::fins_a_signaler(ctx, *mois, ctx.aujourdhui)? {
-                encore |= x.salarie == *salarie && x.fin == *fin && due(&x.obligation, ctx.aujourdhui)?.is_some();
+                encore |= x.salarie == *salarie && x.contrat.fin() == *fin && due(&x.obligation, ctx.aujourdhui)?.is_some();
             }
             if !encore {
                 return Ok(Joue::Rien);
@@ -969,8 +969,8 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
         }
         dus.push(Pas {
             quand: a_l_heure(butoir, 9, 30)?,
-            quoi: format!("signalement de fin du contrat de {} (fin le {}) déposé", f.salarie, f.fin.jj_mm_aaaa()),
-            geste: Geste::Fin { mois: le_mois, salarie: f.salarie.clone(), fin: f.fin },
+            quoi: format!("signalement de fin du contrat de {} (fin le {}) déposé", f.salarie, f.contrat.fin().jj_mm_aaaa()),
+            geste: Geste::Fin { mois: le_mois, salarie: f.salarie.clone(), fin: f.contrat.fin() },
         });
     }
     Ok(dus)
