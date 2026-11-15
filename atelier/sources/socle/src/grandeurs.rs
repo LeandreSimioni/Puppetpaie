@@ -219,6 +219,18 @@ impl Montant {
     pub fn sur(self, c: Coefficient) -> Option<Montant> {
         (!c.0.is_zero()).then(|| Montant(num::div(self.0, c.0)))
     }
+
+    /// Ce montant pour chacun des jours `j` (le salaire journalier des paies d'un arret) : montant / jours = montant
+    /// unitaire ; `None` quand `j` est nul.
+    pub fn par_jour(self, j: Jours) -> Option<MontantUnitaire> {
+        (!j.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, j.0)))
+    }
+
+    /// Ce montant, celui d'un seul jour (le plafond du salaire journalier, un pourcentage du plafond annuel : CSS R433-2) :
+    /// montant / un jour = montant unitaire.
+    pub fn d_un_jour(self) -> MontantUnitaire {
+        MontantUnitaire(self.0)
+    }
 }
 
 impl std::ops::Mul<Coefficient> for Montant {
@@ -354,6 +366,23 @@ impl MontantUnitaire {
     /// unitaire x compte = montant. Un compte n'est pas une grandeur (« Le glossaire ») : il vient d'un `len()`.
     pub fn fois(self, n: usize) -> Montant {
         Montant(num::mul(self.0, Decimal::from(n)))
+    }
+
+    /// Au centime, par l'arrondi de la paie (`Montant::au_centime`) : l'indemnite d'un jour.
+    pub fn au_centime(self) -> MontantUnitaire {
+        MontantUnitaire(Montant(self.0).au_centime().0)
+    }
+
+    /// Le montant unitaire que le taux `t` en prend, exact (`au_centime` le fixe) : montant unitaire x taux = montant
+    /// unitaire.
+    pub fn fois_taux(self, t: Taux) -> MontantUnitaire {
+        MontantUnitaire(num::div(num::mul(self.0, t.0), Decimal::ONE_HUNDRED))
+    }
+
+    /// Ce montant unitaire fois le coefficient `c` (la moitie du salaire journalier) : montant unitaire x coefficient =
+    /// montant unitaire.
+    pub fn fois_coefficient(self, c: Coefficient) -> MontantUnitaire {
+        MontantUnitaire(num::mul(self.0, c.0))
     }
 }
 

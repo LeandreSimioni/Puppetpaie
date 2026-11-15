@@ -10,7 +10,7 @@ use socle::date::{jours_du_mois, Jour};
 use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::echec::R;
-use socle::grandeurs::{Coefficient, Heures, Montant, Taux};
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, Taux};
 use socle::num::{add, sub, div, mul, Decimal};
 use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
@@ -485,7 +485,7 @@ forme! {
     pub struct Principe {
         pub mois: usize,
         #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
-        pub diviseur: Coefficient,
+        pub diviseur: Jours,
         #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
         pub fraction: Coefficient,
         #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
@@ -503,15 +503,14 @@ forme! {
     /// Le montant de principe d'un accident du travail (R433-1 a R433-4).
     pub struct PrincipeAccident {
         #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
-        pub diviseur: Coefficient,
+        pub diviseur: Jours,
         #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
         pub fraction: Coefficient,
         #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
         pub fraction_majoree: Coefficient,
-        /// Le pourcentage du plafond annuel de la Securite sociale (R433-2) : il se compte avec le plafond, que
-        /// `Contexte::plafond_securite_sociale` rend en entiers.
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub plafond_pass: Decimal,
+        /// Le pourcentage du plafond annuel de la Securite sociale que le salaire journalier prend au plus (R433-2).
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub plafond_pass: Taux,
         pub plafond_depuis: Jour,
         #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
         pub taux_forfaitaire: Taux,

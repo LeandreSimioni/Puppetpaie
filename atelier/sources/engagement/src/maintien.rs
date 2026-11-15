@@ -562,9 +562,9 @@ pub fn indemnites_a_dire(ctx: &Contexte, carte: &crate::saisie::Carte, mois: Moi
 /// CRDS (et, pour un accident du travail, de trajet ou une maladie professionnelle, le taux majore des le 29e jour), et la phrase qui le dit.
 /// Textes : `logiciel/donnees/permanents-base.json`, `indemnites_journalieres.principe` et `.principe_accident`, leurs `note`.
 pub struct IjCalculee {
-    pub brute: Montant,
-    pub nette: Montant,
-    pub majorees: Option<(Montant, Montant)>,
+    pub brute: MontantUnitaire,
+    pub nette: MontantUnitaire,
+    pub majorees: Option<(MontantUnitaire, MontantUnitaire)>,
     pub phrase: String,
 }
 
@@ -638,7 +638,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
             };
             let mois = veille.mois_civil();
             let Some(brut) = paie(mois)? else { return Ok(sans_paie(mois)) };
-            let (brute, majoree) = montants_d_accident(brut, Decimal::from(mensuel * 12), p)?;
+            let (brute, majoree) = montants_d_accident(brut, Montant::du_decimal(Decimal::from(mensuel * 12)), p)?;
             Ok(IjDePrincipe::Calculee(IjCalculee {
                 brute,
                 nette: net_de_csg_crds(brute, p.csg, p.crds),
@@ -652,19 +652,19 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
 
 /// L'indemnite brute d'un jour de maladie, des paies des trois mois (`bruts`) au SMIC horaire du plafond (`smic`), selon
 /// les regles `principe` de `permanents-base.json` (voir `ij_de_principe`).
-fn montant_de_principe(bruts: &[Montant], smic: MontantUnitaire, p: &Principe) -> R<Montant> {
+fn montant_de_principe(bruts: &[Montant], smic: MontantUnitaire, p: &Principe) -> R<MontantUnitaire> {
     let plafond = ((p.heures_du_mois * smic) * p.plafond_smic).au_centime();
     let total = bruts.iter().fold(Montant::ZERO, |t, b| t + (*b).min(plafond));
-    Ok((total.sur(p.diviseur).ok_or_else(diviseur_nul)? * p.fraction).au_centime())
+    Ok(total.par_jour(p.diviseur).ok_or_else(diviseur_nul)?.fois_coefficient(p.fraction).au_centime())
 }
 
 /// Les indemnites brutes d'un jour d'accident, normale et majoree, de la paie du mois anterieur (`brut`) au plafond
 /// annuel de la Securite sociale (`pass`), selon les regles `principe_accident` (voir `ij_de_principe`).
-fn montants_d_accident(brut: Montant, pass: Decimal, p: &PrincipeAccident) -> R<(Montant, Montant)> {
-    let journalier = brut.sur(p.diviseur).ok_or_else(diviseur_nul)?;
-    let base = journalier.min(Montant::du_decimal(div(mul(pass, p.plafond_pass), Decimal::from(100))).au_centime());
+fn montants_d_accident(brut: Montant, pass: Montant, p: &PrincipeAccident) -> R<(MontantUnitaire, MontantUnitaire)> {
+    let journalier = brut.par_jour(p.diviseur).ok_or_else(diviseur_nul)?;
+    let base = journalier.min(pass.fois_taux(p.plafond_pass).au_centime().d_un_jour());
     let gain_net = journalier - journalier.fois_taux(p.taux_forfaitaire);
-    let au_taux = |fraction: Coefficient| (base * fraction).min(gain_net).au_centime();
+    let au_taux = |fraction: Coefficient| base.fois_coefficient(fraction).min(gain_net).au_centime();
     Ok((au_taux(p.fraction), au_taux(p.fraction_majoree)))
 }
 
@@ -674,7 +674,7 @@ fn diviseur_nul() -> socle::echec::Echec {
 }
 
 /// Une indemnite brute nette de la CSG et de la CRDS des revenus de remplacement.
-fn net_de_csg_crds(brute: Montant, csg: Taux, crds: Taux) -> Montant {
+fn net_de_csg_crds(brute: MontantUnitaire, csg: Taux, crds: Taux) -> MontantUnitaire {
     (brute - brute.fois_taux(csg + crds)).au_centime()
 }
 
@@ -899,18 +899,19 @@ mod tests {
         let regles = droit::permanents::regles().unwrap();
         let p = &regles.indemnites_journalieres.principe;
         let m = Montant::du_decimal;
-        let smic = MontantUnitaire::du_decimal(Decimal::new(1202, 2));
+        let j = MontantUnitaire::du_decimal;
+        let smic = j(Decimal::new(1202, 2));
         // 2 487,39 par mois : sous le plafond (1,4 × 12,02 × 151,67 = 2 552,30) ; 7 462,17 / 91,25 / 2.
         let sous = montant_de_principe(&[m(Decimal::new(248739, 2)); 3], smic, p).unwrap();
-        assert_eq!((sous, net_de_csg_crds(sous, p.csg, p.crds)), (m(Decimal::new(4089, 2)), m(Decimal::new(3815, 2))));
+        assert_eq!((sous, net_de_csg_crds(sous, p.csg, p.crds)), (j(Decimal::new(4089, 2)), j(Decimal::new(3815, 2))));
         // 4 000 par mois : chaque paie retenue au plafond.
-        assert_eq!(montant_de_principe(&[m(Decimal::from(4000)); 3], smic, p).unwrap(), m(Decimal::new(4196, 2)));
+        assert_eq!(montant_de_principe(&[m(Decimal::from(4000)); 3], smic, p).unwrap(), j(Decimal::new(4196, 2)));
         let a = &regles.indemnites_journalieres.principe_accident;
-        let pass = Decimal::from(48060);
+        let pass = m(Decimal::from(48060));
         // 2 487,39 : 81,77 par jour ; 60 % = 49,06 ; 80 % = 65,41, ramené au gain net de 79 % = 64,60.
-        assert_eq!(montants_d_accident(m(Decimal::new(248739, 2)), pass, a).unwrap(), (m(Decimal::new(4906, 2)), m(Decimal::new(6460, 2))));
+        assert_eq!(montants_d_accident(m(Decimal::new(248739, 2)), pass, a).unwrap(), (j(Decimal::new(4906, 2)), j(Decimal::new(6460, 2))));
         // 5 000 : le salaire journalier pris au plafond, 108,62.
-        assert_eq!(montants_d_accident(m(Decimal::from(5000)), pass, a).unwrap(), (m(Decimal::new(6517, 2)), m(Decimal::new(8690, 2))));
+        assert_eq!(montants_d_accident(m(Decimal::from(5000)), pass, a).unwrap(), (j(Decimal::new(6517, 2)), j(Decimal::new(8690, 2))));
     }
 
     /// « le plus favorable » : la loi (L1226-1, D1226-1) et la convention s'appliquent ensemble, le mois paie le plus haut
