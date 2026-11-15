@@ -147,6 +147,17 @@ pub fn entiere<G: Grandeur>(g: G) -> Option<G> {
     }
 }
 
+/// LA GRANDEUR A DEUX DECIMALES ECRITES qu'elle est, son echelle portee a deux (`5.5` : `5.50`) ; `None` : elle est
+/// ecrite plus fine que le centieme (`5.505`, `5.500`), comme `ecrit::centimes` la refuse. Un taux de PAS se tient ainsi.
+pub fn aux_centiemes<G: Grandeur>(g: G) -> Option<G> {
+    let mut d = g.en_decimal();
+    if d.scale() > 2 {
+        return None;
+    }
+    d.rescale(2);
+    Some(G::du(d))
+}
+
 /// UNE GRANDEUR SANS ZERO INUTILE, UNE DECIMALE AU MOINS (`24` s'ecrit `24.0`, `12.50` `12.5`), comme l'ecrit
 /// `num::court` et la lit `lu::court` : celle d'un taux ou d'heures qu'une paie garde.
 pub fn courte<G: Grandeur>(g: G) -> G {
@@ -325,6 +336,9 @@ impl Coefficient {
 }
 
 impl Taux {
+    /// Zero pour cent, ses deux decimales ecrites (`0.00`).
+    pub const ZERO: Taux = Taux(Decimal::from_parts(0, 0, 0, false, 2));
+
     /// Cinq dix-milliemes de point (`0.0005`) : l'ecart qu'un arrondi fait sur un taux imprime.
     pub const CINQ_DIX_MILLIEMES: Taux = Taux(Decimal::from_parts(5, 0, 0, false, 4));
 

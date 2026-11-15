@@ -58,11 +58,16 @@ impl TauxDePas {
         socle::grandeurs::lu::norme(texte).map(TauxDePas)
     }
 
-    /// Le taux `t` (deux decimales au plus : la grille du bareme, une DSN lue, une paie importee, une description de
-    /// l'atelier), ses deux decimales ecrites (`ecrit::centimes`) ; `None` hors de la forme de la norme. Le seul chemin
-    /// d'un taux a un taux de PAS ; un texte entre par `lire`.
+    /// Le taux nul, ses deux decimales ecrites (`0.00`).
+    pub const ZERO: TauxDePas = TauxDePas(Taux::ZERO);
+
+    /// Le taux `t` (la grille du bareme, une DSN lue, une paie importee, une description de l'atelier), ses deux
+    /// decimales ecrites, s'il a la forme de la norme : deux decimales au plus, de 0 a moins de 100 (un ou deux chiffres
+    /// avant le point) ; `None` sinon. Le seul chemin d'un taux a un taux de PAS ; un texte entre par `lire`.
     pub fn du_taux(t: Taux) -> Option<TauxDePas> {
-        socle::grandeurs::ecrit::centimes::texte(t).ok().and_then(|texte| TauxDePas::lire(&texte))
+        let t = socle::grandeurs::aux_centiemes(t)?;
+        // `abs` : un zero negatif (« -0.00 ») n'a pas la forme de la norme, il est le taux nul.
+        (Taux::ZERO..Taux::CENT_POUR_CENT).contains(&t).then(|| TauxDePas(t.abs()))
     }
 
     /// Le taux, en pourcent, ses deux decimales ecrites : ce qu'un document en imprime.
@@ -354,10 +359,7 @@ pub fn taux_par_defaut(bareme: &Pile, montant: Montant, le: Option<Jour>, zone: 
         }
     }
     // Seul un montant negatif tombe ici : taux zero.
-    match TauxDePas::lire("0.00") {
-        Some(zero) => Ok((zero, g.genre)),
-        None => Err(ErreurPas::Autre(refus("Le taux de PAS nul ne s'écrit pas « 0.00 » : le signaler au développeur."))),
-    }
+    Ok((TauxDePas::ZERO, g.genre))
 }
 
 /// LE PRELEVEMENT D'UN VERSEMENT, par l'un des deux chemins : tel que la paie l'ecrit et le relit (les montants en

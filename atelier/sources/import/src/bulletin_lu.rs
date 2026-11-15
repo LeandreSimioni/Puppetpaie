@@ -936,9 +936,16 @@ pub struct Pas {
 
 /// LE TAUX DE PAS QU'UN BULLETIN IMPRIME (« 5,500 », « 5,5 ») : le taux de la norme qu'il dit, ses deux decimales ecrites
 /// (`TauxDePas::du_taux`) ; `None` : un nombre qui n'en est pas un (plus de deux chiffres, des decimales non nulles au-dela
-/// du centieme).
-fn taux_de_pas(lu: Decimal) -> Option<droit::pas::TauxDePas> {
-    droit::pas::TauxDePas::du_taux(socle::grandeurs::courte(socle::grandeurs::Taux::du_decimal(lu)))
+/// du centieme), que `avertissements` signale : la case ne se lit pas, on le dit (AGENTS, regle 1).
+fn taux_de_pas(lu: Decimal, avertissements: &mut Vec<Avertissement>) -> Option<droit::pas::TauxDePas> {
+    let taux = droit::pas::TauxDePas::du_taux(socle::grandeurs::courte(socle::grandeurs::Taux::du_decimal(lu)));
+    if taux.is_none() {
+        avertissements.push(Avertissement::Lecture(format!(
+            "taux de PAS « {} » : un taux de PAS a un ou deux chiffres et deux décimales au plus (S21.G00.50.006), il n'est pas repris",
+            lu
+        )));
+    }
+    taux
 }
 
 /// LE NOM D'UN CUMUL QU'UN BULLETIN IMPRIME : la liste fermee des cles `cumuls` de `bulletins-lecture-base.json`, lue
@@ -2308,7 +2315,7 @@ impl<'a> Lecteur<'a> {
                         *net_imposable = col(Genre::Periode);
                     }
                 } else if pas.is_none() && t.resumes.pas.contains(libelle) {
-                    *pas = Some(Pas { base: col(Genre::Base), taux: col(Genre::Taux).and_then(taux_de_pas), montant: col(Genre::Montant), cumul: col(Genre::Cumul) });
+                    *pas = Some(Pas { base: col(Genre::Base), taux: col(Genre::Taux).and_then(|lu| taux_de_pas(lu, &mut self.avertissements)),montant: col(Genre::Montant), cumul: col(Genre::Cumul) });
                 } else if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
                     *net_imposable = col(Genre::Montant);
                 }
@@ -2322,7 +2329,7 @@ impl Lecteur<'_> {
     /// L'impot preleve et le net imposable ecrits sans grille, sur un rang du pied : « Net imposable 435,55 »,
     /// « Impôt sur le revenu prélevé à la source (taux 4,300 %) 18,73 ». Le montant est le dernier nombre du rang ; le
     /// taux, celui qui suit le mot « taux ».
-    fn sans_grille(&self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>) -> Result<(), Refus> {
+    fn sans_grille(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>) -> Result<(), Refus> {
         let p = &self.page;
         let r_ = &self.t.resumes;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
@@ -2344,7 +2351,7 @@ impl Lecteur<'_> {
                     .position(|m| canon(&m.texte).trim_start_matches('(') == "taux")
                     .and_then(|k| rang.get(k + 1))
                     .and_then(|m| lire_nombre(m.texte.trim_end_matches([')', '%'])))
-                    .and_then(taux_de_pas);
+                    .and_then(|lu| taux_de_pas(lu, &mut self.avertissements));
                 *pas = Some(Pas { base: None, taux, montant: Some(dernier.valeur), cumul: None });
             }
         }
