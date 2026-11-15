@@ -748,12 +748,14 @@ fn verifier_la_signature(octets: &[u8], signature: &str, cle_publique: &str) -> 
     v.verify_strict(octets, &ed25519_dalek::Signature::from_bytes(&sig)).map_err(|e| refus(e.to_string()))
 }
 
-/// Les compagnies de l'installation : la compagnie du poste (la ou elle est), les autres (`compagnies/*`), les fictives
-/// (`installation::racines_de`) ; pas une copie de developpement.
+/// Les compagnies de l'installation (`installation::compagnies`), bridee ou non : la compagnie du poste la ou elle est,
+/// si elle a sa fiche entreprise et n'est pas un dossier cache, les autres (`compagnies/*`), les fictives ; pas une copie
+/// de developpement.
 pub fn compagnies_de(inst: &Path) -> R<Vec<PathBuf>> {
     let mut gardees = Vec::new();
-    for r in crate::installation::racines_de(inst)? {
-        if !crate::installation::est_copie(&r) || crate::installation::est_fictive(&r)? {
+    for (_, r) in crate::installation::compagnies(inst)? {
+        let une_compagnie = !crate::installation::est_cache(&r) && droit::contexte::ENTREPRISE.dans(&r).is_file();
+        if une_compagnie && (!crate::installation::est_copie(&r) || crate::installation::est_fictive(&r)?) {
             gardees.push(r);
         }
     }

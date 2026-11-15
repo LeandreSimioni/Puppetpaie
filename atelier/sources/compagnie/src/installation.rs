@@ -629,40 +629,40 @@ pub fn nom_dossier(p: &Path) -> R<NomDeFichier> {
 /// Les compagnies de l'installation `b` (le dossier qui porte `logiciel/`, `prive/`, `compagnies/`, `fictives/`), dans
 /// l'ordre des tuiles. L'administrateur (`administrateur.rs`) lit celles de l'installation qu'on lui donne.
 pub fn liste_de(b: &Path) -> R<Vec<Compagnie>> {
+    let bridee = crate::bridage::est_bride_de(b);
     let mut out = Vec::new();
-    if !crate::bridage::est_bride_de(b) {
-        let reel = IdDeCompagnie::Reelle.racine(b);
-        if reel.join(socle::fichiers::CONFIG).is_dir() {
-            out.push(entree(IdDeCompagnie::Reelle, &reel, true)?);
+    for (id, r) in compagnies(b)? {
+        match id {
+            // Bridee, l'accueil ne montre que les fictives ; la vraie, quand elle a sa configuration.
+            IdDeCompagnie::Reelle if !bridee && r.join(socle::fichiers::CONFIG).is_dir() => out.push(entree(id, &r, true)?),
+            IdDeCompagnie::Cie(_) if !bridee => out.push(entree(id, &r, true)?),
+            IdDeCompagnie::Fictive(_) => out.push(entree(id, &r, false)?),
+            IdDeCompagnie::Reelle | IdDeCompagnie::Cie(_) => {}
         }
-        for d in sous_dossiers(&COMPAGNIES.dans(b))? {
-            out.push(entree(IdDeCompagnie::Cie(nom_dossier(&d)?), &d, true)?);
-        }
-    }
-    for d in sous_dossiers(&FICTIVES.dans(b))? {
-        out.push(entree(IdDeCompagnie::Fictive(nom_dossier(&d)?), &d, false)?);
     }
     Ok(out)
 }
 
-/// LES RACINES DES COMPAGNIES DE L'INSTALLATION `inst`, bridee ou non : la vraie (`IdDeCompagnie::racine`, la ou elle est),
-/// puis celles de `compagnies/`, puis celles de `fictives/`, chacune par ordre de dossier ; celles qui ont leur fiche
-/// entreprise.
-pub fn racines_de(inst: &Path) -> R<Vec<PathBuf>> {
-    let reel = IdDeCompagnie::Reelle.racine(inst);
-    let mut v: Vec<PathBuf> = Vec::new();
-    if !est_cache(&reel) && droit::contexte::ENTREPRISE.dans(&reel).is_file() {
-        v.push(reel);
+/// Les groupes de l'installation, sous lesquels chaque dossier est une compagnie : `compagnies/`, `fictives/`.
+const GROUPES: [(CheminRelatif, fn(NomDeFichier) -> IdDeCompagnie); 2] = [(COMPAGNIES, IdDeCompagnie::Cie), (FICTIVES, IdDeCompagnie::Fictive)];
+
+/// LES COMPAGNIES DE L'INSTALLATION `inst`, LA SEULE LISTE, bridee ou non, dans l'ordre des tuiles : la vraie, la ou
+/// `IdDeCompagnie::racine` la met (qu'elle y soit ou non), puis celles de chaque groupe (`GROUPES`) qui ont leur fiche
+/// entreprise (`sous_dossiers`), par ordre de dossier. Chaque lecteur dit le filtre qu'il veut.
+pub fn compagnies(inst: &Path) -> R<Vec<(IdDeCompagnie, PathBuf)>> {
+    let mut v = vec![(IdDeCompagnie::Reelle, IdDeCompagnie::Reelle.racine(inst))];
+    for (groupe, du_groupe) in GROUPES {
+        for d in sous_dossiers(&groupe.dans(inst))? {
+            v.push((du_groupe(nom_dossier(&d)?), d));
+        }
     }
-    v.extend(sous_dossiers(&COMPAGNIES.dans(inst))?);
-    v.extend(sous_dossiers(&FICTIVES.dans(inst))?);
     Ok(v)
 }
 
 /// LES DOSSIERS QUI PORTENT LES COMPAGNIES QUI SE SUPPRIMENT (`routes::accueil::suppression`) : l'installation `inst`
-/// (`prive/`), `compagnies/`, `fictives/`.
-pub fn porteurs(inst: &Path) -> [PathBuf; 3] {
-    [inst.to_path_buf(), COMPAGNIES.dans(inst), FICTIVES.dans(inst)]
+/// (`prive/`), et chaque groupe (`GROUPES`).
+pub fn porteurs(inst: &Path) -> Vec<PathBuf> {
+    std::iter::once(inst.to_path_buf()).chain(GROUPES.iter().map(|(groupe, _)| groupe.dans(inst))).collect()
 }
 
 /// LES COMPAGNIES QUE LA FENETRE TIENT A JOUR EN FOND des son lancement (`Fenetre::prechauffer`) : les

@@ -403,8 +403,9 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   `prive`, `compagnies/<dossier>`, `fictives/<dossier>`) ; une compagnie hors de l'installation ne s'y enregistre pas
   (`IdDeCompagnie::de_la_racine`) ; que portent un geste du scénario et les compagnies d'un rejeu. Sa racine ne se dit que
   par lui (`racine`, dont `IdDeCompagnie::dans` est l'inverse), le dossier d'une compagnie neuve par
-  `IdDeCompagnie::libre`, l'installation d'une racine par `IdDeCompagnie::installation_de`, les racines de
-  l'installation par `installation::racines_de`.
+  `IdDeCompagnie::libre`, l'installation d'une racine par `IdDeCompagnie::installation_de` ; les compagnies de
+  l'installation, une seule liste, par `installation::compagnies`, dont chaque lecteur dit son filtre (`liste_de` : les
+  tuiles).
 - **dossier rattaché** : le dossier d'une compagnie rattachée à l'administrateur, tel que son registre l'écrit
   (`administrateur.json`) : relatif à l'installation, quel qu'il soit (`prive`, `logiciel`, `compagnies/<dossier>`,
   `prive-dev`, `ma-cie` d'une compagnie ouverte par son dossier). Ce n'est pas une tuile : toute compagnie sous
