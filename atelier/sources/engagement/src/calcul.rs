@@ -74,7 +74,7 @@ impl LigneBrut {
     pub fn designation(&self) -> String {
         let quantite = self.quantite.decimal();
         let q = quantite.round_dp(2).normalize();
-        let nb = q.to_string().replace('.', ",");
+        let nb = socle::texte::nombre_dit(q);
         if matches!(self.unite, Unite::Forfait | Unite::Pourcentage) {
             return self.libelle.clone();
         }
@@ -679,7 +679,7 @@ fn bref(l: &LigneBrut) -> String {
         let tete = if tete.ends_with('s') || tete.ends_with('x') { tete.to_string() } else { format!("{}s", tete) };
         format!("{} {}{}", q, tete, reste)
     } else if l.unite == Unite::Heure && tete.to_lowercase() == "heure" {
-        format!("{} h{}", q.to_string().replace('.', ","), reste)
+        format!("{} h{}", socle::texte::nombre_dit(q), reste)
     } else {
         l.designation()
     };
