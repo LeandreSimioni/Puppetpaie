@@ -2315,7 +2315,7 @@ pub(crate) fn phrase_du_manque(m: &Manque) -> String {
 
 /// Ce que dit la loi du preavis d'une rupture, et la convention a cote (`moteur preavis`), pour la case « Préavis ».
 fn preavis_dit(ctx: &Contexte, e: &Carte, contrat: &Periode) -> R<String> {
-    let anciennete = socle::date::Anciennete::entre(&contrat.debut(), &contrat.fin());
+    let anciennete = contrat.anciennete();
     let motif = e.motif_rupture;
     let cdd = !nature_de(e)?.duree_indeterminee;
     let duree = droit::permanents::preavis_mois(anciennete, motif, cdd)?;

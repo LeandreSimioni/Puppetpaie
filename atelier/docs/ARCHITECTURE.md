@@ -232,7 +232,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   année qu'un texte fixe s'écrit `Annee::constante`.
 - **période** : deux jours bornes, l'un et l'autre compris, le premier pas après le second ; elle ne se construit que
   par `Periode::du_au`, qui refuse un début après la fin (`du_jour`, `du_mois` : un jour, un mois civil). Ses bornes
-  (`debut`, `fin`), ses jours (`jours`), sa durée (`duree`, en `Duree<EnJours>`), ce qu'elle contient, ce qu'elle a de
+  (`debut`, `fin`), ses jours (`jours`), sa durée (`duree`, en `Duree<EnJours>`), l'ancienneté qu'elle donne (celle
+  d'un contrat : `anciennete`, `Anciennete::entre` de ses bornes), ce qu'elle contient, ce qu'elle a de
   commun avec une autre et la plus courte qui les contient toutes deux (`contient`, `croise`, `avec`) se lisent d'elle. Elle s'écrit `{"du": "AAAA-MM-JJ", "au": "AAAA-MM-JJ"}`
   et se dit dans une phrase « du 1er au 15 octobre 2026 » (`Display`).
 - **période ouverte** : un premier jour, et un dernier quand il est dit, pas avant le premier (le contrat qui a commencé

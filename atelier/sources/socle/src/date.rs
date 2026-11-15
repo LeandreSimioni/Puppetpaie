@@ -259,6 +259,12 @@ impl Periode {
         Duree::du_au(&self.debut, &self.fin)
     }
 
+    /// L'anciennete qu'elle donne, de son premier jour a son dernier (`Anciennete::entre`) : celle d'un contrat, au
+    /// preavis et aux indemnites de fin de contrat.
+    pub fn anciennete(&self) -> Anciennete {
+        Anciennete::entre(&self.debut, &self.fin)
+    }
+
     /// Ses jours, du premier au dernier.
     pub fn jours(&self) -> impl Iterator<Item = Jour> {
         let (premier, dernier) = (self.debut.ordinal(), self.fin.ordinal());

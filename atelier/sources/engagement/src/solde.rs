@@ -22,7 +22,7 @@ use socle::forme::Nombre;
 use socle::grandeurs::{courte, sans_zero, Montant, MontantUnitaire};
 use socle::num::{add, court, div, mul, Decimal};
 use droit::permanents::{self, arrondir_jours, jours_acquis, IndemniteDePreavis};
-use socle::date::{Anciennete, Jour, Periode};
+use socle::date::{Anciennete, Periode};
 
 /// Les lignes et les avertissements du solde.
 #[derive(Default)]
@@ -101,22 +101,18 @@ pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
     Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut, metier: e.metier.clone(), cadre: e.cadre, debut: e.debut })
 }
 
-/// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.
-fn age(ctx: &Contexte, e: &Carte) -> R<Option<Anciennete>> {
-    let jour = match e.fin {
-        Some(f) => f,
-        None => aujourdhui()?,
-    };
-    age_au(ctx, e, &jour)
-}
-
-/// L'age du salarie de `e` au `jour`, en annees revolues ; `None` quand sa fiche ne dit pas sa naissance.
-pub(crate) fn age_au(ctx: &Contexte, e: &Carte, jour: &Jour) -> R<Option<Anciennete>> {
+/// L'age du salarie de `e` au dernier jour ecrit du contrat (ou aujourd'hui), en annees revolues ; `None` quand sa
+/// fiche ne dit pas sa naissance.
+pub(crate) fn age(ctx: &Contexte, e: &Carte) -> R<Option<Anciennete>> {
     let fiche = e.salarie.as_ref().map(|s| crate::fiche_du_salarie(ctx, s)).transpose()?;
     let Some(naissance) = fiche.and_then(|f| f.date_naissance.dite().copied()) else {
         return Ok(None);
     };
-    Ok(Some(Anciennete::age(&naissance, jour)))
+    let jour = match e.fin {
+        Some(f) => f,
+        None => aujourdhui()?,
+    };
+    Ok(Some(Anciennete::age(&naissance, &jour)))
 }
 
 // ------------------------------------------------------------ le preavis
@@ -169,7 +165,7 @@ fn terme_du_preavis(fin: &socle::date::Jour, mois: Decimal) -> R<Option<socle::d
     fin.apres(socle::date::Duree::mois(n)).map(Some)
 }
 
-/// `age` : celui du salarie au dernier jour du contrat (`age`, `age_au`).
+/// `age` : celui du salarie au dernier jour ecrit du contrat (`age`).
 pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete, motif: Option<MotifDeRupture>, age: Option<Anciennete>) -> R<Preavis> {
     let idcc = idcc(ctx);
     let cdd =!e.nature_lue()?.duree_indeterminee;
@@ -438,7 +434,8 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
 
     // --- le preavis non effectue : L1234-5 pour un licenciement ; les autres fins de contrat ont leurs articles
     // (`preavis.indemnite_compensatrice`), et certaines n'ouvrent aucune indemnite (037, 059, 039, 091).
-    let anciennete = Anciennete::entre(&debut_de(e)?, &fin);
+    let contrat = Periode::du_au(debut_de(e)?, fin)?;
+    let anciennete = contrat.anciennete();
     let mut anciennete_de_l_indemnite = anciennete;
     let indemnite = if e.preavis_non_effectue == Some(true) {
         Some(permanents::indemnite_de_preavis(motif)?)
@@ -487,7 +484,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 // jusqu'au terme du préavis.
                 if matches!(indemnite, IndemniteDePreavis::Licenciement) {
                     if let Some(terme) = terme_du_preavis(&fin, m)? {
-                        anciennete_de_l_indemnite = Anciennete::entre(&debut_de(e)?, &terme);
+                        anciennete_de_l_indemnite = Anciennete::entre(&contrat.debut(), &terme);
                         stc.avertissements.push(info(format!(
                             "{} : le préavis non effectué ne fait pas finir le contrat plus tôt (code du travail, L1234-4) : \
                              l'ancienneté de l'indemnité de licenciement se compte jusqu'au {}, terme du préavis (lecture : il court du lendemain de la fin du travail).",

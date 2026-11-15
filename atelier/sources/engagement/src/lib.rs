@@ -2170,11 +2170,11 @@ pub fn lue_sans_paie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Vec<calcul::
 }
 
 /// Le preavis de l'engagement `e` (sa saisie), pour la periode de son contrat et un motif de rupture : la loi (L1234-1)
-/// et la convention, et laquelle s'applique (`solde::duree_du_preavis`), a l'anciennete et a l'age du dernier jour.
+/// et la convention, et laquelle s'applique (`solde::duree_du_preavis`), a l'anciennete du contrat et a l'age du salarie
+/// (`solde::age`).
 #[cfg(feature = "ecran")]
 pub fn preavis(ctx: &Contexte, e: &saisie::Carte, contrat: &Periode, motif: Option<MotifDeRupture>) -> R<solde::Preavis> {
-    let anciennete = socle::date::Anciennete::entre(&contrat.debut(), &contrat.fin());
-    solde::duree_du_preavis(ctx, e, anciennete, motif, solde::age_au(ctx, e, &contrat.fin())?)
+    solde::duree_du_preavis(ctx, e, contrat.anciennete(), motif, solde::age(ctx, e)?)
 }
 
 /// LES LIGNES `presentes` SONT-ELLES CELLES DE `partie` ARRETEES A LA `fin` (AAAA-MM-JJ) d'un contrat rompu
