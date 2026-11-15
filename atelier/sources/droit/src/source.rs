@@ -18,6 +18,20 @@ pub struct CheminDepose(String);
 
 /// Le mode d'emploi, la seule source hors de `atelier/reference/`.
 pub const MODE_D_EMPLOI: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("atelier/README.md");
+/// La reference de l'atelier, ou se deposent les textes.
+const REFERENCE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("atelier/reference");
+
+/// Le chemin `c` est-il sous la reference : un de ses dossiers l'est-il ?
+fn sous_la_reference(c: &socle::fichiers::CheminRelatif) -> bool {
+    let mut dossier = c.parent();
+    while let Some(d) = dossier {
+        if d == REFERENCE {
+            return true;
+        }
+        dossier = d.parent();
+    }
+    false
+}
 
 /// Le fichier d'un chemin depose, sans le code d'entrepot qui suit son `#`.
 fn sans_code(s: &str) -> &str {
@@ -60,7 +74,8 @@ impl TryFrom<String> for CheminDepose {
             Ok(c) => c,
             Err(_) => return Err(FauteDeSource::HorsDeLaReference),
         };
-        if !(fichier.starts_with("atelier/reference/") || lu == MODE_D_EMPLOI) || fichier.contains("..") {
+        // Un chemin relatif ne remonte pas (`CheminRelatif::lire` refuse `..`) : sous la reference, il y reste.
+        if !(sous_la_reference(&lu) || lu == MODE_D_EMPLOI) {
             return Err(FauteDeSource::HorsDeLaReference);
         }
         if s.contains('#') != fichier.ends_with(".jsonl.gz") {
