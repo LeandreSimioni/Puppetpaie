@@ -33,7 +33,7 @@ use socle::forme::Nombre;
 use super::bulletins_fictifs::{m, page_a, page_b, pdf_octets, Identite, RangA, RangB, A, B};
 use fabrique_pdf::forme::Mesure;
 use import::bulletin_lu::{jetons, Table};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
 use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant, Taux};
 use socle::num::Decimal;
@@ -191,7 +191,7 @@ struct Bulletin {
     permanent: bool,
     debut: Jour,
     fin: Jour,
-    dates: Vec<(Jour, Jour)>,
+    dates: Vec<Periode>,
     objet: Option<(String, String)>,
     analytique: Option<String>,
     lignes: Vec<Ligne>,
@@ -472,11 +472,7 @@ struct Calcule {
 fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
     let brut: Decimal = b.lignes.iter().map(|l| l.montant).sum();
     let mut jours_travailles: BTreeSet<Jour> = BTreeSet::new();
-    for (d, f) in &b.dates {
-        for k in 0..=f.moins(d) {
-            jours_travailles.insert(d.plus_jours(k).map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?);
-        }
-    }
+    jours_travailles.extend(b.dates.iter().flat_map(|p| p.jours()));
     let jours = Jours::de_dates(jours_travailles.len());
     // LE « PLAFOND URSSAF » IMPRIME, PAR LA REGLE DU MOTEUR (`plafond.rs`, qui cite ses textes) et le PSS d'un texte
     // (`pss`) : le prorata calendaire pour un permanent, les journees de l'artiste engage moins de cinq jours, le
@@ -641,18 +637,16 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
         let ou = format!("bulletin {}", k + 1);
         let salarie = *codes.get(&b.salarie).ok_or_else(|| refus!("{} : aucun salarié de code {}", ou, b.salarie))?;
         let (debut, fin) = (b.debut, b.fin);
-        if fin < debut {
-            return Err(refus!("{} : la fin précède le début", ou));
-        }
+        let periode = Periode::du_au(debut, fin).map_err(|_| refus!("{} : la fin précède le début", ou))?;
         if b.dates.is_empty() {
             return Err(refus!("{} : `dates` : au moins une paire [début, fin]", ou));
         }
         let mut dates = Vec::new();
         for [d0, d1] in b.dates {
-            if d1 < d0 || d0 < debut || d1 > fin {
-                return Err(refus!("{} : `dates` : {} - {} hors de la période", ou, d0.iso(), d1.iso()));
+            match Periode::du_au(d0, d1) {
+                Ok(p) if periode.croise(&p) == Some(p) => dates.push(p),
+                _ => return Err(refus!("{} : `dates` : {} - {} hors de la période", ou, d0.iso(), d1.iso())),
             }
-            dates.push((d0, d1));
         }
         if b.lignes.is_empty() {
             return Err(refus!("{} : `lignes` manque", ou));
@@ -872,8 +866,8 @@ fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
     out
 }
 
-fn dates_a(dates: &[(Jour, Jour)]) -> R<Vec<String>> {
-    let morceaux: Vec<String> = dates.iter().map(|(d, f)| format!("du {} au {}", dmy(d), dmy(f))).collect();
+fn dates_a(dates: &[Periode]) -> R<Vec<String>> {
+    let morceaux: Vec<String> = dates.iter().map(|p| format!("du {} au {}", dmy(&p.debut()), dmy(&p.fin()))).collect();
     let rangs: Vec<String> = morceaux
         .chunks(2)
         .enumerate()

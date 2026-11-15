@@ -2319,9 +2319,11 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<Nir, IdSalarie>, a_creer: &[ACree
 /// `import::ecrite`), et ce qu'il compte en mots : la periode du mois (`aem_lu::Aem::periode`), ses heures, ses
 /// cachets isoles et groupes, ses jours, son brut et son numero d'objet, tels qu'imprimes.
 fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
-    let (Some((debut, fin)), Some(brut)) = (a.periode(), a.brut) else {
+    let (Some(periode), Some(brut)) = (a.periode(), a.brut) else {
         return Err(socle::echec::refus("l'AEM ne dit pas tout ce qu'un contrat demande"));
     };
+    // Le contrat lu garde ses deux bornes, l'une et l'autre facultatives dans sa forme.
+    let (debut, fin) = (periode.debut(), periode.fin());
     // Ce que l'AEM dit, et seulement cela : une colonne qu'elle ne porte pas reste vide (les cachets sont leur somme).
     let (heures, cachets, jours) = (a.heures, Some(a.cachets()), a.jours);
     let brut = Montant::du_decimal(brut).au_centime().decimal();

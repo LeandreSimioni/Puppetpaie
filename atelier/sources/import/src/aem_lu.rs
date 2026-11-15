@@ -37,7 +37,7 @@
 use std::path::Path;
 
 use droit::fiche::{NumeroObjetSpectacle, Statut};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
 use socle::grandeurs::{lu, Cachets, Heures, Jours};
 use socle::mois::Mois;
@@ -213,16 +213,15 @@ impl NatureDUneAem {
 
 impl Aem {
     /// La periode que l'AEM atteste : le contrat borne au mois de l'attestation.
-    pub fn periode(&self) -> Option<(Jour, Jour)> {
+    pub fn periode(&self) -> Option<Periode> {
         let mois = self.mois?;
-        let (premier, dernier) = (mois.premier_jour(), mois.dernier_jour());
-        let debut = self.embauche?.max(premier);
         let fin = match (self.fin_contrat, self.en_cours) {
-            (Some(f), _) => f.min(dernier),
-            (None, true) => dernier,
+            (Some(f), _) => f,
+            (None, true) => mois.dernier_jour(),
             (None, false) => return None,
         };
-        (debut <= fin).then_some((debut, fin))
+        // Un contrat qui ne finit pas apres son embauche n'atteste aucune periode.
+        Periode::du_au(self.embauche?, fin).ok()?.croise(&Periode::du_mois(mois))
     }
 
     /// Les cachets du mois : isoles et groupes.
@@ -289,8 +288,8 @@ impl Aem {
             adresse,
             emploi: self.emploi.clone(),
             cadre: self.cadre,
-            debut: periode.map(|p| p.0),
-            fin: periode.map(|p| p.1),
+            debut: periode.map(|p| p.debut()),
+            fin: periode.map(|p| p.fin()),
             nombre: None,
             base_conge: None,
             brut: self.brut,
