@@ -1070,6 +1070,19 @@ impl NomDeFichier {
     pub fn texte(&self) -> &str {
         &self.0
     }
+
+    /// CE NOM, SUIVI DU NOM `suite` : deux noms bout a bout en sont un (ni barre, ni caractere nul ; ni vide, ni `.`
+    /// ou `..`, puisqu'aucun des deux ne l'est).
+    pub fn suivi_de(&self, suite: &NomDeFichier) -> NomDeFichier {
+        NomDeFichier(std::borrow::Cow::Owned(format!("{}{}", self.0, suite.0)))
+    }
+}
+
+/// Le nom d'un fichier d'une annee (`AAAA`) : il a toujours la forme d'un nom.
+impl From<crate::mois::Annee> for NomDeFichier {
+    fn from(a: crate::mois::Annee) -> NomDeFichier {
+        NomDeFichier(std::borrow::Cow::Owned(a.to_string()))
+    }
 }
 
 /// LES LECTURES D'UN NOM OU D'UN CHEMIN ECRIT AILLEURS, pour le champ d'une forme (`deserialize_with`) : une charge de

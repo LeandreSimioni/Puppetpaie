@@ -875,20 +875,42 @@ enum Analytique {
 /// `Ecrivain` : le fichier, l'ecrivain, la source, ce qu'on dit a celui qui l'importe, l'analytique du format, et le
 /// fichier des comptes quand le format en a un.
 struct Ecrivain {
-    fichier: &'static str,
+    fichier: NomDExport,
     ecrire: fn(&[Ecriture], &Envoi) -> R<Vec<u8>>,
     source: &'static str,
     conseil: String,
     section: Analytique,
-    /// (modele du nom, ecrivain, conseil)
-    comptes: Option<(&'static str, fn(&[(NumeroDeCompte, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
+    /// (nom, ecrivain, conseil)
+    comptes: Option<(NomDExport, fn(&[(NumeroDeCompte, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
+}
+
+/// LE NOM D'UN FICHIER D'EXPORT, ecrit en Rust : autour de la periode (`Periode::nom`), ou fixe (`COMPTES.TXT`, qu'EBP
+/// cherche sous ce nom-la, a cote des ecritures).
+enum NomDExport {
+    Autour(NomDeFichier, NomDeFichier),
+    Fixe(NomDeFichier),
+}
+
+impl NomDExport {
+    /// Le nom autour de la periode : `avant<periode>apres`.
+    const fn autour(avant: &'static str, apres: &'static str) -> NomDExport {
+        NomDExport::Autour(NomDeFichier::du_moteur(avant), NomDeFichier::du_moteur(apres))
+    }
+
+    /// Le nom du fichier de la periode `periode`.
+    fn de(&self, periode: &NomDeFichier) -> NomDeFichier {
+        match self {
+            NomDExport::Autour(avant, apres) => avant.suivi_de(periode).suivi_de(apres),
+            NomDExport::Fixe(nom) => nom.clone(),
+        }
+    }
 }
 
 /// `ECRIVAINS.get(format)`.
 fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
     Some(match format {
         FormatDExport::Fec => Ecrivain {
-            fichier: "extrait-fec-paie-%s.txt",
+            fichier: const { NomDExport::autour("extrait-fec-paie-", ".txt") },
             ecrire: fec,
             source: SOURCE_FEC,
             conseil: "Extrait du journal de paie à la forme du FEC, à importer dans la comptabilité — ce n'est pas le FEC de l'entreprise, que seul le logiciel de comptabilité produit. ValidDate est vide : la validation se fait à l'import.".to_string(),
@@ -896,7 +918,7 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
             comptes: None,
         },
         FormatDExport::Ximport => Ecrivain {
-            fichier: "XIMPORT-paie-%s.TXT",
+            fichier: const { NomDExport::autour("XIMPORT-paie-", ".TXT") },
             ecrire: ximport,
             source: SOURCE_XIMPORT,
             conseil: format!("Sage 50 (ex-Ciel) : Échanges > Importer des écritures, format XImport.{}", ESSAI),
@@ -904,7 +926,7 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
             comptes: None,
         },
         FormatDExport::Oxygene => Ecrivain {
-            fichier: "oxygene-ecritures-paie-%s.csv",
+            fichier: const { NomDExport::autour("oxygene-ecritures-paie-", ".csv") },
             ecrire: oxygene,
             source: SOURCE_OXYGENE,
             conseil: format!(
@@ -912,10 +934,10 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
                 ESSAI
             ),
             section: Analytique::Largeur(20),
-            comptes: Some(("oxygene-plan-comptable-paie-%s.csv", oxygene_comptes, "à importer d'abord, « Import plan comptable » ; un compte qui existe déjà n'a pas à y être.")),
+            comptes: Some((const { NomDExport::autour("oxygene-plan-comptable-paie-", ".csv") }, oxygene_comptes, "à importer d'abord, « Import plan comptable » ; un compte qui existe déjà n'a pas à y être.")),
         },
         FormatDExport::Sage => Ecrivain {
-            fichier: "ecritures-paie-%s.pnm",
+            fichier: const { NomDExport::autour("ecritures-paie-", ".pnm") },
             ecrire: sage_pnm,
             source: SOURCE_SAGE,
             conseil: format!(
@@ -926,7 +948,7 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
             comptes: None,
         },
         FormatDExport::Quadra => Ecrivain {
-            fichier: "quadra-ecritures-paie-%s.txt",
+            fichier: const { NomDExport::autour("quadra-ecritures-paie-", ".txt") },
             ecrire: quadra,
             source: SOURCE_QUADRA,
             conseil: format!(
@@ -937,15 +959,15 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
             comptes: None,
         },
         FormatDExport::Ebp => Ecrivain {
-            fichier: "ECRITURES-paie-%s.TXT",
+            fichier: const { NomDExport::autour("ECRITURES-paie-", ".TXT") },
             ecrire: ebp,
             source: SOURCE_EBP,
             conseil: format!("EBP : Outils > Import de données > Import écritures, format « EBP V3 pour Windows ».{}", ESSAI),
             section: Analytique::SansLargeur,
-            comptes: Some(("COMPTES.TXT", ebp_comptes, "EBP le lit seul s'il est dans le même dossier que le fichier des écritures, et crée les comptes absents avec leur intitulé.")),
+            comptes: Some((NomDExport::Fixe(const { NomDeFichier::du_moteur("COMPTES.TXT") }), ebp_comptes, "EBP le lit seul s'il est dans le même dossier que le fichier des écritures, et crée les comptes absents avec leur intitulé.")),
         },
         FormatDExport::Pennylane => Ecrivain {
-            fichier: "pennylane-ecritures-paie-%s.csv",
+            fichier: const { NomDExport::autour("pennylane-ecritures-paie-", ".csv") },
             ecrire: pennylane,
             source: SOURCE_PENNYLANE,
             conseil: format!(
@@ -1091,14 +1113,12 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let (ecritures, comptes) = fabriquer(ec, &ecr, &env)?;
             env.refus_des_depasses(format)?;
             std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
-            // Le nom d'un fichier : son modele, la periode a la place de `%s` ; COMPTES.TXT n'en a pas : EBP le cherche
-            // sous ce nom-la, a cote des ecritures.
-            let nom = |modele: &str| NomDeFichier::lire(&modele.replace("%s", &p.nom()));
-            let chemin = dossier.join(nom(ec.fichier)?);
+            let periode = p.nom();
+            let chemin = dossier.join(ec.fichier.de(&periode));
             std::fs::write(&chemin, ecritures).map_err(|e| io(&chemin, e))?;
             t.fichier = Some(chemin);
             if let Some((modele, octets, conseil)) = comptes {
-                let nom_comptes = nom(modele)?;
+                let nom_comptes = modele.de(&periode);
                 let cible = dossier.join(&nom_comptes);
                 std::fs::write(&cible, octets).map_err(|e| io(&cible, e))?;
                 t.avertissements.push(format!("Les comptes et leurs libellés sont dans « {} », à côté : {}", nom_comptes, conseil));
@@ -1120,14 +1140,14 @@ fn envoi<'a>(ctx: &'a Contexte, plan: &'a Plan, sections: Option<BTreeMap<String
     Ok(Envoi { plan, ctx, sections, borne, courts, depasses: RefCell::new(BTreeMap::new()) })
 }
 
-/// Le fichier des ecritures, et celui des comptes quand le format en a un : (modele de son nom, octets, conseil).
-type Fabrique = (Vec<u8>, Option<(&'static str, Vec<u8>, &'static str)>);
+/// Le fichier des ecritures, et celui des comptes quand le format en a un : (son nom, octets, conseil).
+type Fabrique<'a> = (Vec<u8>, Option<(&'a NomDExport, Vec<u8>, &'static str)>);
 
 /// Les fichiers d'un format, fabriques sans rien ecrire ; ce qui depasse sa zone est note dans `env`.
-fn fabriquer(ec: &Ecrivain, ecr: &[Ecriture], env: &Envoi) -> R<Fabrique> {
+fn fabriquer<'a>(ec: &'a Ecrivain, ecr: &[Ecriture], env: &Envoi) -> R<Fabrique<'a>> {
     let ecritures = (ec.ecrire)(ecr, env)?;
-    let comptes = match ec.comptes {
-        Some((modele, fabrique, conseil)) => Some((modele, fabrique(&comptes_utilises(ecr, env.plan), env)?, conseil)),
+    let comptes = match &ec.comptes {
+        Some((modele, fabrique, conseil)) => Some((modele, fabrique(&comptes_utilises(ecr, env.plan), env)?, *conseil)),
         None => None,
     };
     Ok((ecritures, comptes))

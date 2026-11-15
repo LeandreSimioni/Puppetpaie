@@ -11,6 +11,7 @@
 use droit::assiette::Assiette;
 use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use socle::fichiers::NomDeFichier;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -112,11 +113,11 @@ impl Quand {
     }
 
     /// Ce qui entre dans le nom du fichier.
-    pub fn nom(&self) -> String {
+    pub fn nom(&self) -> NomDeFichier {
         match self {
-            Quand::Toutes => "toutes-les-annees".to_string(),
-            Quand::Mois(m) => m.to_string(),
-            Quand::Annee(a) => a.to_string(),
+            Quand::Toutes => NomDeFichier::du_moteur("toutes-les-annees"),
+            Quand::Mois(m) => NomDeFichier::from(*m),
+            Quand::Annee(a) => NomDeFichier::from(*a),
         }
     }
 
@@ -213,7 +214,7 @@ impl Periode {
     }
 
     /// `Periode.nom` : ce qui entre dans le nom du fichier.
-    pub fn nom(&self) -> String {
+    pub fn nom(&self) -> NomDeFichier {
         self.quand.nom()
     }
 
