@@ -85,7 +85,7 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
     /// `feries_non_payes` pour les autres). Fiche DSN 2693, exemple 4 (`atelier/reference/sources/suspension-non-remuneree/
     /// net-entreprises-fiche2693-volumes-activite-exemples-20260929.txt`, l. 509) : janvier 2024 entier, « nombre de jours
     /// ouvres du mois [...] 161 heures (23 jours x 7 heures) », le lundi 1er janvier compte parmi les 23.
-    pub fn jours_entre(&self, debut: &Jour, fin: &Jour) -> R<i64> {
+    pub fn jours_entre(&self, debut: &Jour, fin: &Jour) -> R<socle::grandeurs::Jours> {
         let (mut n, mut jour) = (0, *debut);
         while jour <= *fin {
             if self.travaille(&jour) {
@@ -93,7 +93,7 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
             }
             jour = jour.plus_jours(1)?;
         }
-        Ok(n)
+        Ok(socle::grandeurs::Jours::de_dates(n))
     }
 
     /// Les jours, en mots : « du lundi au vendredi » pour une suite, « le lundi, le mardi et le jeudi » sinon.

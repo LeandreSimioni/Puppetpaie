@@ -1148,11 +1148,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // l. 96-102). INFERENCE : aucun texte depose ne dit comment compter les jours d'un contrat paye au mois ; les jours
     // que son horaire programme sont ceux de son salaire (fiche DSN 2640, `droit::conges::JoursTravailles`).
     let reel = droit::periodes::part_du_mois(&debut, &fin, &fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
-    // Un compte de jours de l'horaire (`droit::periodes`, en entiers) : des jours.
-    let jours_travailles = match usize::try_from((reel.jours - absents).max(0)) {
-        Ok(n) => socle::grandeurs::Jours::de_dates(n),
-        Err(e) => return Err(socle::refus!("jours travaillés hors des limites d'un compte : {}", e)),
-    };
+    let jours_travailles = (reel.jours - absents).max(socle::grandeurs::Jours::ZERO);
 
     // --- les primes
     // Sa rubrique, seule la compagnie la dit : une prime qui ne la dit pas est une saisie a finir, qui nomme la case.

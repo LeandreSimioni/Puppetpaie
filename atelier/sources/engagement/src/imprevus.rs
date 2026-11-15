@@ -34,6 +34,8 @@ use crate::Avis;
 use crate::numeros::NumeroContrat;
 use socle::fichiers::repr;
 use socle::echec::R;
+use socle::grandeurs::ecrit::sans_zero::dit;
+use socle::grandeurs::{Heures, Jours};
 use socle::num::{div, Decimal};
 
 /// Le dossier du magasin, sous les donnees de la compagnie.
@@ -717,7 +719,7 @@ pub struct MoisDuContrat<'a> {
     pub fin_mois: Jour,
     pub salaire_du_mois: Decimal,
     pub heures_par_jour: socle::grandeurs::HeuresParUnite,
-    pub jours_payes: i64,
+    pub jours_payes: Jours,
     pub horaire: &'a droit::periodes::Horaire,
 }
 
@@ -788,9 +790,9 @@ pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &IdSalarie, debut: &Jour
 ///
 /// Rend aussi les jours travailles que les absences retirees ote du mois (un arret, une suspension non remuneree) :
 /// `conges::lignes_du_mois` en tire les jours travailles du mois.
-pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &MoisDuContrat, au: &droit::natures::AuMois) -> R<(Vec<crate::LignePaie>, Vec<Avis>, i64)> {
+pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &MoisDuContrat, au: &droit::natures::AuMois) -> R<(Vec<crate::LignePaie>, Vec<Avis>, Jours)> {
     let qui = crate::conges::qui(ctx, e);
-    let (mut lignes, mut avert, mut absents) = (Vec::new(), Vec::new(), 0i64);
+    let (mut lignes, mut avert, mut absents) = (Vec::new(), Vec::new(), Jours::ZERO);
     let nat = e.nature_lue()?;
     // Les sommes du mois, a zero avant le premier arret.
     let mut maintien = crate::maintien::DuMois {
@@ -801,12 +803,13 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         ij_subrogees_nettes: Decimal::ZERO,
         ij_subrogees_jours: 0,
         assiette_pas: Decimal::ZERO,
-        heures: Decimal::ZERO,
+        heures: Heures::ZERO,
         avis: Vec::new(),
     };
     // Le taux de l'heure d'absence : le salaire du mois sur ses heures de travail (Cass. soc. 11/02/1982).
-    let heures_du_mois = m.heures_par_jour.fois(m.jours_payes).au_centieme().decimal();
-    let taux_horaire = if heures_du_mois > Decimal::ZERO { Some(taux_exact(m.salaire_du_mois, heures_du_mois)) } else { None };
+    let heures_du_mois = (m.jours_payes * m.heures_par_jour).au_centieme();
+    // Le salaire du mois est encore un decimal : les heures s'y ouvrent.
+    let taux_horaire = if heures_du_mois > Heures::ZERO { Some(taux_exact(m.salaire_du_mois, heures_du_mois.decimal())) } else { None };
     // Un contrat sans date de debut ecrite ne se designe pas : aucun imprevu ne peut le nommer (S21.G00.40.001).
     let imprevus: Vec<_> = e
         .debut
@@ -821,21 +824,22 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         let jours = if debut <= fin {
             droit::periodes::part_du_mois(&debut, &fin, &m.fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours
         } else {
-            0
+            Jours::ZERO
         };
-        let heures = m.heures_par_jour.fois(jours).au_centieme().decimal();
-        // Les heures retirees et leur taux, quand le mois en retire.
-        let retenue = || -> R<Option<(Decimal, Decimal)>> {
+        let heures = (jours * m.heures_par_jour).au_centieme();
+        // Les heures retirees et leur taux, quand le mois en retire : la quantite de la ligne, sa porte.
+        let retenue = || -> R<Option<(socle::forme::Nombre, Decimal)>> {
             match taux_horaire {
-                Some(t) if heures > Decimal::ZERO => Ok(Some((socle::num::court(heures), t))),
+                Some(t) if heures > Heures::ZERO => Ok(Some((socle::forme::Nombre(socle::grandeurs::courte(heures).decimal()), t))),
                 _ => Ok(None),
             }
         };
+        let en_mots = |h: Heures| socle::grandeurs::ecrit::sans_zero::dit(h).replace('.', ",");
         let au_reel = format!(
             "{} d'absence ce mois-ci, {} h sur les {} h de travail du mois, retirées au prorata du salaire du mois",
-            if jours > 1 { format!("{} jours travaillés", jours) } else { format!("{} jour travaillé", jours) },
-            socle::texte::virgule(heures),
-            socle::texte::virgule(heures_du_mois)
+            if jours > Jours::UN { format!("{} jours travaillés", dit(jours)) } else { format!("{} jour travaillé", dit(jours)) },
+            en_mots(heures),
+            en_mots(heures_du_mois)
         );
         if let Imprevu::Arret(arret) = &imp {
             let code = arret.motif;
@@ -856,7 +860,7 @@ nomme cette absence. Rien n'est calcule.",
             lignes.extend(retenue()?.map(|(quantite, taux)| {
                 crate::LignePaie::RetenueArret(crate::ligne::RetenueArret {
                     rubrique,
-                    quantite: socle::forme::Nombre(quantite),
+                    quantite,
                     taux: socle::grandeurs::MontantUnitaire::du_decimal(taux),
                 })
             }));
@@ -886,7 +890,7 @@ nomme cette absence. Rien n'est calcule.",
                 )));
             } else {
                 lignes.extend(retenue()?.map(|(quantite, taux)| {
-                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, socle::forme::Nombre(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux))
+                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, quantite,socle::grandeurs::MontantUnitaire::du_decimal(taux))
                 }));
                 absents += jours;
                 avert.push(info(format!(

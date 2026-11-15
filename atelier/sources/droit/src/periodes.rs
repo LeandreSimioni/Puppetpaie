@@ -31,8 +31,13 @@ use socle::date::Jour;
 
 use crate::conges::JoursTravailles;
 use socle::echec::R;
-use socle::grandeurs::{Coefficient, HeuresParUnite};
-use socle::num::{div, Decimal};
+use socle::grandeurs::ecrit::sans_zero::dit;
+use socle::grandeurs::{Coefficient, HeuresParUnite, Jours};
+use socle::num::Decimal;
+
+/// Les jours ouvres d'un mois de la CCN 1285, art. X.3 : « 1/21 du montant du salaire mensuel »
+/// (`atelier/reference/sources/kali-1285-x3-remuneration-artistes-20260929.md`, l. 20).
+const JOURS_DU_MOIS_CCNEAC: Jours = Jours::du_decimal(Decimal::from_parts(21, 0, 0, false, 0));
 
 /// Ce que `avant` (les termes du contrat avant un avenant en cours de mois) peut dire.
 pub const TERMES_D_AVANT: [&str; 2] = ["salaire_mensuel", "quotite_contrat"];
@@ -129,9 +134,9 @@ pub struct DecompteDuMois {
     /// La fraction du salaire mensuel payee : 1 pour un mois entier.
     pub fraction: Coefficient,
     /// Les jours travailles payes de la periode (`JoursTravailles::jours_entre`, moins les feries non payes).
-    pub jours: i64,
+    pub jours: Jours,
     /// Ceux du mois entier (horaire reel), ou 21 (CCN 1285).
-    pub jours_du_mois: i64,
+    pub jours_du_mois: Jours,
     pub regle: RegleDuMoisIncomplet,
     /// Les jours de la semaine que l'horaire compte.
     pub jours_travailles: JoursTravailles,
@@ -152,7 +157,7 @@ impl DecompteDuMois {
                 heures_en_mots(heures_par_jour, self.jours),
                 heures_en_mots(heures_par_jour, self.jours_du_mois)
             ),
-            RegleDuMoisIncomplet::Ccneac1285Artiste => format!("{} jour(s) ouvré(s) à 1/21 du mois", self.jours),
+            RegleDuMoisIncomplet::Ccneac1285Artiste => format!("{} jour(s) ouvré(s) à 1/21 du mois", dit(self.jours)),
         };
         Some(match self.feries_non_payes.as_slice() {
             [] => part,
@@ -169,14 +174,14 @@ fériés compris), payées au salaire mensuel divisé par les heures du mois (Ca
 rémunération horaire » multipliée par « le nombre d'heures de travail réellement effectuées »)",
                 heures_en_mots(heures_par_jour, self.jours),
                 heures_en_mots(heures_par_jour, self.jours_du_mois),
-                self.jours_du_mois,
-                socle::grandeurs::ecrit::sans_zero::dit(heures_par_jour).replace('.', ","),
+                dit(self.jours_du_mois),
+                dit(heures_par_jour).replace('.', ","),
                 self.jours_travailles.en_mots()
             ),
             RegleDuMoisIncomplet::Ccneac1285Artiste => format!(
                 "{} jour(s) ouvré(s) du contrat dans le mois ({}), payés chacun 1/21 du salaire mensuel (CCN 1285, \
 art. X.3 : le premier ou le dernier mois incomplet d'un artiste)",
-                self.jours,
+                dit(self.jours),
                 self.jours_travailles.en_mots()
             ),
         };
@@ -206,8 +211,8 @@ fn dates_en_mots(feries: &[(Jour, String)]) -> String {
 }
 
 /// `jours` jours de `heures_par_jour` heures, au centieme, ecrits a la francaise.
-fn heures_en_mots(heures_par_jour: HeuresParUnite, jours: i64) -> String {
-    socle::grandeurs::ecrit::sans_zero::dit(heures_par_jour.fois(jours).au_centieme()).replace('.', ",")
+fn heures_en_mots(heures_par_jour: HeuresParUnite, jours: Jours) -> String {
+    dit((jours * heures_par_jour).au_centieme()).replace('.', ",")
 }
 
 /// LA PART DU SALAIRE MENSUEL que porte la periode payee [`d`, `f`] du mois qui finit le `fin_mois`.
@@ -236,13 +241,16 @@ pub fn part_du_mois(d: &Jour, f: &Jour, fin_mois: &Jour, regle: RegleDuMoisIncom
     let premier = Jour::nouveau(fin_mois.an, fin_mois.mois, 1).ok_or_else(|| socle::echec::cle("Le moteur ne calcule pas ce mois : le signaler au développeur.", "part_du_mois"))?;
     let feries_non_payes: Vec<(Jour, String)> =
         horaire.feries_non_payes.iter().filter(|(j, _)| d <= j && j <= f && horaire.jours.travaille(j)).cloned().collect();
-    let jours = horaire.jours.jours_entre(d, f)? - feries_non_payes.len() as i64;
+    let jours = horaire.jours.jours_entre(d, f)? - Jours::de_dates(feries_non_payes.len());
     let du_mois = horaire.jours.jours_entre(&premier, fin_mois)?;
     let entier = *d <= premier && *f >= *fin_mois && feries_non_payes.is_empty();
-    let (jours_du_mois, fraction) = match regle {
-        _ if entier => (du_mois, Decimal::ONE),
-        RegleDuMoisIncomplet::HoraireReel => (du_mois, div(Decimal::from(jours), Decimal::from(du_mois))),
-        RegleDuMoisIncomplet::Ccneac1285Artiste => (21, div(Decimal::from(jours), Decimal::from(21))),
+    let jours_du_mois = match regle {
+        RegleDuMoisIncomplet::Ccneac1285Artiste if !entier => JOURS_DU_MOIS_CCNEAC,
+        _ => du_mois,
     };
-    Ok(DecompteDuMois { fraction: Coefficient::du_decimal(fraction), jours, jours_du_mois, regle, jours_travailles: horaire.jours, feries_non_payes })
+    let fraction = match entier {
+        true => Coefficient::UN,
+        false => jours.rapport(jours_du_mois).ok_or_else(|| socle::refus!("L'horaire du salarié ne compte aucun jour travaillé dans le mois : la part du salaire ne se dit pas."))?,
+    };
+    Ok(DecompteDuMois { fraction, jours, jours_du_mois, regle, jours_travailles: horaire.jours, feries_non_payes })
 }

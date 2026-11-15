@@ -365,13 +365,6 @@ impl Jours {
     }
 }
 
-impl Unites {
-    /// LE RAPPORT de ces unites a `o` (une quotite en unites sur sa reference) : unites / unites = coefficient ; `None`
-    /// quand `o` est nul.
-    pub fn rapport(self, o: Unites) -> Option<Coefficient> {
-        (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
-    }
-}
 
 /// Des jours fois un coefficient (le coefficient de l'art. 30 des annexes 8 et 10 : un jour de travail retire 1,3 jour
 /// d'allocation) : des jours.
@@ -400,12 +393,6 @@ impl Montant {
 impl HeuresParUnite {
     /// Zero heure par unite (une indemnite, le maintien : ce n'est pas du travail).
     pub const ZERO: HeuresParUnite = HeuresParUnite(Decimal::ZERO);
-
-    /// Ces heures par unite, `n` unites (les heures d'un jour fois les jours payes d'un mois, comptes en entier) :
-    /// heures par unite x compte = heures.
-    pub fn fois(self, n: i64) -> Heures {
-        Heures(num::mul(self.0, Decimal::from(n)))
-    }
 }
 
 /// Une quantite fois ses heures par unite : des heures (14 services de 4 h : 56 h).

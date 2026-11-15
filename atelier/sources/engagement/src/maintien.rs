@@ -266,7 +266,7 @@ pub struct DuMois {
     pub ij_subrogees_jours: i64,
     pub assiette_pas: Decimal,
     /// Les heures d'absence que le maintien couvre (la quantite de sa ligne).
-    pub heures: Decimal,
+    pub heures: Heures,
     pub avis: Vec<Avis>,
 }
 
@@ -323,10 +323,11 @@ fn suites(taux: &[Coefficient], premier: &Jour, debut: &Jour, fin: &Jour) -> R<V
 }
 
 /// La part du salaire du mois que les jours [debut, fin] retirent : la retenue au reel (`imprevus::lignes_du_mois`).
-fn retenue(m: &crate::imprevus::MoisDuContrat, taux_horaire: Decimal, debut: &Jour, fin: &Jour) -> R<(Decimal, Decimal)> {
+fn retenue(m: &crate::imprevus::MoisDuContrat, taux_horaire: Decimal, debut: &Jour, fin: &Jour) -> R<(Decimal, Heures)> {
     let jours = droit::periodes::part_du_mois(debut, fin, &m.fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours;
-    let heures = m.heures_par_jour.fois(jours).decimal();
-    Ok((mul(taux_horaire, heures), heures))
+    let heures = jours * m.heures_par_jour;
+    // Le taux horaire est encore un decimal : les heures s'y ouvrent.
+    Ok((mul(taux_horaire, heures.decimal()), heures))
 }
 
 /// CE QU'UN ARRET DONNE AU MOIS `mois` D'UN PERMANENT, ajoute a `dm` (les arrets du mois s'additionnent). Refuse quand le
@@ -352,11 +353,12 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     if debut > fin {
         return Ok(());
     }
-    let heures_du_mois = m.heures_par_jour.fois(m.jours_payes).decimal();
-    if heures_du_mois <= Decimal::ZERO {
+    let heures_du_mois = m.jours_payes * m.heures_par_jour;
+    if heures_du_mois <= Heures::ZERO {
         return Ok(());
     }
-    let taux_horaire = div(m.salaire_du_mois, heures_du_mois);
+    // Le salaire du mois est encore un decimal : les heures s'y ouvrent.
+    let taux_horaire = div(m.salaire_du_mois, heures_du_mois.decimal());
     let n = dernier.moins(&premier) + 1;
     let subroge = imp.subrogation == Some(droit::arrets::SubrogationDeLArret::Oui);
     let (sub_debut, sub_fin) = (imp.subrogation_debut, imp.subrogation_fin);
@@ -410,7 +412,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
 
     // Chaque texte, suite par suite : la garantie, et le complement apres deduction des indemnites.
     let mut dit = Vec::new();
-    let mut heures_max = Decimal::ZERO;
+    let mut heures_max = Heures::ZERO;
     for t in [Texte::Loi, Texte::Convention] {
         let Some(r) = dr.regime(t) else { continue };
         let deja = deja_indemnises(ctx, imp, nat, t)?;
@@ -418,7 +420,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         let (mut complement, mut garantie, mut deduit) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
         let mut parts = Vec::new();
         let mut hors_garantie = Decimal::ZERO;
-        let mut heures = Decimal::ZERO;
+        let mut heures = Heures::ZERO;
         for (a, b, f) in suites(&taux, &premier, &debut, &fin)? {
             let (x, h) = retenue(m, taux_horaire, &a, &b)?;
             let (ib, inet) = ij_de(&a, &b)?;
@@ -694,7 +696,8 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
     .decimal();
     let montant = direct + plancher;
     if montant > Decimal::ZERO || dmois.au_net.is_some() {
-        let q = if dmois.heures > Decimal::ZERO { Heures::du_decimal(dmois.heures).au_centieme().decimal() } else { Decimal::ONE };
+        // La quantite de la ligne : sa porte.
+        let q = if dmois.heures > Heures::ZERO { dmois.heures.au_centieme().decimal() } else { Decimal::ONE };
         // Une somme, pas des heures de travail : les heures de l'absence restent celles de sa retenue (S21.G00.53).
         let reconstitution = dmois.au_net.as_ref().map(|a| {
             Box::new(Reconstitution {
@@ -926,10 +929,10 @@ mod tests {
                 au_net: None,
                 ij_subrogees_nettes: Decimal::ZERO,
                 assiette_pas: Decimal::ZERO,
-                heures: Decimal::ZERO,
+                heures: Heures::ZERO,
                 avis: Vec::new(),
             };
-            let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
+            let au =droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
             let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);
             l[0].taux().unwrap().decimal()
         };

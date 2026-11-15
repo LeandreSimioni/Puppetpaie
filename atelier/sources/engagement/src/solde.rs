@@ -646,7 +646,7 @@ fn delai_de_prevenance(
     }
     // La part non effectuee : du lendemain de la fin au dernier jour du delai, le salaire de chaque mois traverse pour ses
     // heures (`droit::periodes::part_du_mois`, l'horaire reel du mois).
-    let (mut fraction, mut jours, mut j) = (Decimal::ZERO, 0i64, fin.plus_jours(1)?);
+    let (mut fraction, mut jours, mut j) = (Decimal::ZERO, socle::grandeurs::Jours::ZERO, fin.plus_jours(1)?);
     while j <= delai.expiration {
         let fin_mois = socle::date::Jour { an: j.an, mois: j.mois, jour: j.jours_du_mois() };
         let f = fin_mois.min(delai.expiration);
@@ -678,7 +678,7 @@ fn delai_de_prevenance(
         qui,
         dit,
         fin.jj_mm_aaaa(),
-        jours,
+        socle::grandeurs::ecrit::sans_zero::dit(jours),
         euros(montant),
         conges,
         avantages
