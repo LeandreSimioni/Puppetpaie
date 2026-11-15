@@ -79,7 +79,9 @@
             "contrat_ecrit": null,
             "debut_periode": "2026-11-20",
             "fin_periode": "2026-11-21",
-            "quotite": "2",
+            "quotite": {
+              "jours": "2"
+            },
             "sans_paie": false,
             "place": "seul",
             "mois_du_contrat": [
@@ -1823,7 +1825,7 @@
       },
       "2026-11/DSN_Novembre2026.dsn": {
         "quand": "2026-12-15T10:00:00",
-        "empreinte_saisie": "ea4c75e6b86f8f2c",
+        "empreinte_saisie": "8f8448464cfa7f85",
         "versions_portees": []
       }
     },
@@ -1911,7 +1913,9 @@
                 "contrat_ecrit": null,
                 "debut_periode": "2026-11-20",
                 "fin_periode": "2026-11-21",
-                "quotite": "2",
+                "quotite": {
+                  "jours": "2"
+                },
                 "sans_paie": false,
                 "place": "seul",
                 "mois_du_contrat": [
