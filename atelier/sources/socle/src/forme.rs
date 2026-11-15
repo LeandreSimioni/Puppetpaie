@@ -706,23 +706,17 @@ pub fn ecrire_a_virgule_opt<S: serde::Serializer>(d: &Option<crate::num::Decimal
     }
 }
 
-/// UNE VALEUR FACULTATIVE QUE SA FORME ECRIT `""` QUAND ELLE MANQUE (le `flux` d'une ligne du journal des envois, d'un
-/// depot rendu) : `#[serde(with = "socle::forme::vide_si_aucun")]`. `None` s'ecrit `""` ; `""` (ou `null`) se lit `None` ; tout
-/// autre texte se lit dans la forme de la valeur. La facon d'ecrire est celle du fichier, la valeur reste une absence.
-pub mod vide_si_aucun {
-    pub fn serialize<T: serde::Serialize, S: serde::Serializer>(v: &Option<T>, s: S) -> Result<S::Ok, S::Error> {
-        match v {
-            Some(t) => t.serialize(s),
-            None => s.serialize_str(""),
-        }
-    }
-
-    pub fn deserialize<'de, T: serde::de::DeserializeOwned, D: serde::Deserializer<'de>>(d: D) -> Result<Option<T>, D::Error> {
-        let Some(texte) = <Option<String> as serde::Deserialize>::deserialize(d)?.filter(|t| !t.is_empty()) else {
-            return Ok(None);
-        };
-        T::deserialize(serde::de::IntoDeserializer::<D::Error>::into_deserializer(texte)).map(Some)
-    }
+/// UNE ABSENCE QU'UN AUTRE QUE NOUS ECRIT `""` : la liste des retours de l'API de net-entreprises (un `id`, une `url`
+/// non renseignes, comme `<url/>` dans sa liste XML : guide de l'API DSN v6.8,
+/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`), le serveur du
+/// filet (le `ticket` d'un retour qui n'en a pas encore). `#[serde(default, deserialize_with =
+/// "socle::forme::absent_si_vide")]` : `""` ou `null` se lit `None` ; tout autre texte se lit dans la forme de la valeur.
+/// Nos propres formes n'ecrivent jamais `""` pour une absence : `null`, ou rien.
+pub fn absent_si_vide<'de, T: serde::de::DeserializeOwned, D: serde::Deserializer<'de>>(d: D) -> Result<Option<T>, D::Error> {
+    let Some(texte) = <Option<String> as serde::Deserialize>::deserialize(d)?.filter(|t| !t.is_empty()) else {
+        return Ok(None);
+    };
+    T::deserialize(serde::de::IntoDeserializer::<D::Error>::into_deserializer(texte)).map(Some)
 }
 
 impl<'de> serde::Deserialize<'de> for NombreEcrit {

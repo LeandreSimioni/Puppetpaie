@@ -694,8 +694,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - **identifiant de flux** : l'identifiant que la plate-forme donne à un dépôt (`idflux`), et par lequel elle range ses
   retours : celui de net-entreprises, celui du canal DPAE, le `FICTIF-…` du simulateur. Son fichier est la porte des
   retours : chiffres, lettres, `.`, `-`, `_`, de 1 à 50 caractères (guide de l'API DSN v6.8 ; la classe est une
-  inférence). Que portent une ligne du journal des envois (`""` au fichier quand la plate-forme n'en a pas donné :
-  `socle::forme::vide_si_aucun`), l'ouverture d'un dépôt réel, un retour listé, un dépôt listé, un bilan, la reprise ;
+  inférence). Que portent une ligne du journal des envois (`null` quand la plate-forme n'en a pas donné ; la liste des
+  retours de l'API l'écrit `""`, lu absent à sa porte : `socle::forme::absent_si_vide`), l'ouverture d'un dépôt réel, un retour listé, un dépôt listé, un bilan, la reprise ;
   `IdDeFlux::est_fictif` reconnaît un dépôt joué.
 - **identifiant d'un envoi** : l'`id` qu'un envoi porte au journal des envois, et que `a` reprend pour ce qui lui revient.
   Privé au journal : l'empreinte courte du texte de la ligne, suivie de `-<rang>` (à partir de 2) quand une ligne au

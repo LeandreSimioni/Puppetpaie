@@ -164,7 +164,7 @@ impl From<NumeroDeRetour> for String {
 #[serde(deny_unknown_fields)]
 pub struct Retour {
     pub numero: NumeroDeRetour,
-    #[serde(deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    #[serde(deserialize_with = "socle::forme::absent_si_vide")]
     pub ticket: Option<Url>,
     pub ticket_numero: Option<i64>,
 }

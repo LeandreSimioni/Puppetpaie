@@ -90,7 +90,6 @@ pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: 
 pub struct EtatDsnDuMois {
     pub quand: InstantOuJour,
     pub fichier: Option<NomDeFichier>,
-    #[serde(serialize_with = "socle::forme::vide_si_aucun::serialize")]
     pub flux: Option<IdDeFlux>,
     pub passee: bool,
     pub refusee: bool,

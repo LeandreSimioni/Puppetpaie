@@ -85,8 +85,7 @@ pub struct Envoi<D, R> {
     pub qui: String,
     pub accepte: bool,
     pub destinataire: String,
-    /// Le flux que la plate-forme a donne au depot ; `""` au fichier quand elle n'en a pas donne.
-    #[serde(with = "socle::forme::vide_si_aucun")]
+    /// Le flux que la plate-forme a donne au depot, si elle en a donne un.
     pub flux: Option<IdDeFlux>,
     pub retours: Vec<R>,
     pub reponse: String,

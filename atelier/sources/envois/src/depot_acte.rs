@@ -28,7 +28,6 @@ pub struct DepotFait {
     pub mois: Mois,
     pub mode: Mode,
     pub reponse: String,
-    #[serde(serialize_with = "socle::forme::vide_si_aucun::serialize")]
     pub flux: Option<IdDeFlux>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub trace: Option<PathBuf>,

@@ -1639,8 +1639,7 @@ pub struct Annonce {
     pub statut: Option<StatutDuRetour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    /// Une adresse vide se lit absente, comme `<url/>` dans la liste XML.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<Url>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub libelle: Option<String>,
@@ -1702,7 +1701,7 @@ struct RetoursJson {
 #[serde(deny_unknown_fields)]
 struct FluxJson {
     /// Un id vide se lit absent, comme `<id/>` dans la liste XML.
-    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    #[serde(default, deserialize_with = "socle::forme::absent_si_vide")]
     id: Option<IdDeFlux>,
     retour: Option<UnOuPlusieurs<RetourJson>>,
 }
@@ -1723,7 +1722,7 @@ struct RetourJson {
     statut: Option<StatutDuRetour>,
     id: Option<String>,
     /// Une adresse vide se lit absente, comme `<url/>` dans la liste XML.
-    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    #[serde(default, deserialize_with = "socle::forme::absent_si_vide")]
     url: Option<Url>,
 }
 
