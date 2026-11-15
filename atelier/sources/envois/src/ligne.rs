@@ -245,7 +245,7 @@ impl Ligne {
     }
 
     /// SA REMISE, dite seulement par les lignes qui en ont une : celles qui donnent une piece au salarie imprimee (a
-    /// remettre en main propre) ou par courriel, et le notent (`main_propre`) : des contrats a signer, des documents
+    /// remettre en main propre) ou par courriel, et le notent (`remise`) : des contrats a signer, des documents
     /// (bulletins, certificats, attestations). Les autres n'ont pas de remise : une DSN, une DPAE se deposent ; une
     /// regularisation de la CASC, un dossier, une demande de fiche, un contrat contresigne ne partent que par courriel.
     pub fn remise(&self) -> Option<crate::etats::ModeDeRemise> {
@@ -436,10 +436,9 @@ impl DetailDpae {
 }
 
 /// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`), et ce qu'elle
-/// est devenue (`EtatDeLaDpae`), lu une fois dans le certificat ; le journal l'ecrit en deux booleens et un dossier, et
-/// le relit tel qu'il l'a ecrit (`PersonneEcrite`).
+/// est devenue (`EtatDeLaDpae`), lu une fois dans le certificat.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "PersonneEcrite", into = "PersonneEcrite")]
+#[serde(deny_unknown_fields)]
 pub struct PersonneCertifiee {
     pub nom: String,
     pub prenom: String,
@@ -452,63 +451,8 @@ pub struct PersonneCertifiee {
     pub libelle: String,
     pub formalites: Vec<declarations::dpae::FormaliteDpae>,
     /// Ce que la page en montre (`routes::depots`) : pose sur ce qu'une route rend, jamais ecrit ni lu au journal.
-    pub pastille: Option<socle::ecran::Pastille>,
-}
-
-/// LA FORME D'UNE PERSONNE DU CERTIFICAT AU JOURNAL : son etat s'y ecrit en `dossier` (`""` : le certificat n'en dit
-/// aucun), `enregistree` et `deja_existante`, et se relit de meme : enregistree sous un dossier, deja existante ou
-/// refusee avec ou sans dossier ; une autre combinaison ne se lit pas.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PersonneEcrite {
-    nom: String,
-    prenom: String,
-    /// Le journal ecrit `""` une zone a blanc.
-    #[serde(with = "socle::forme::vide_si_aucun")]
-    embauche: Option<socle::date::Jour>,
-    /// Le journal ecrit `""` un dossier que le certificat ne dit pas.
-    #[serde(with = "socle::forme::vide_si_aucun")]
-    dossier: Option<declarations::dpae::DossierDpae>,
-    code: declarations::dpae::CodeRetourDpae,
-    libelle: String,
-    enregistree: bool,
-    deja_existante: bool,
-    formalites: Vec<declarations::dpae::FormaliteDpae>,
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
-    pastille: Option<socle::ecran::Pastille>,
-}
-
-impl TryFrom<PersonneEcrite> for PersonneCertifiee {
-    type Error = socle::echec::Echec;
-    fn try_from(p: PersonneEcrite) -> Result<PersonneCertifiee, socle::echec::Echec> {
-        let PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille } = p;
-        let etat = match (enregistree, deja_existante, dossier) {
-            (true, false, Some(dossier)) => EtatDeLaDpae::Enregistree { dossier },
-            (false, true, dossier) => EtatDeLaDpae::DejaExistante { dossier },
-            (false, false, dossier) => EtatDeLaDpae::Refusee { dossier },
-            (true, false, None) | (true, true, _) => {
-                return Err(socle::refus!(
-                    "Le journal des envois dit de la DPAE de {} enregistree {}, deja existante {} : ce n'est l'etat d'aucune DPAE du certificat (enregistree sous un dossier, deja existante ou refusee). Le signaler au developpeur.",
-                    socle::fichiers::repr(&nom),
-                    enregistree,
-                    deja_existante
-                ))
-            }
-        };
-        Ok(PersonneCertifiee { nom, prenom, embauche, etat, code, libelle, formalites, pastille })
-    }
-}
-
-impl From<PersonneCertifiee> for PersonneEcrite {
-    fn from(p: PersonneCertifiee) -> PersonneEcrite {
-        let PersonneCertifiee { nom, prenom, embauche, etat, code, libelle, formalites, pastille } = p;
-        let (dossier, enregistree, deja_existante) = match etat {
-            EtatDeLaDpae::Enregistree { dossier } => (Some(dossier), true, false),
-            EtatDeLaDpae::DejaExistante { dossier } => (dossier, false, true),
-            EtatDeLaDpae::Refusee { dossier } => (dossier, false, false),
-        };
-        PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille }
-    }
+    pub pastille: Option<socle::ecran::Pastille>,
 }
 
 impl PersonneCertifiee {
@@ -622,13 +566,12 @@ pub struct Servi {
     pub renvoi: bool,
 }
 
-/// LE DETAIL D'UN ENVOI DE DOCUMENTS : les salaries servis, imprimes (`main_propre`) ou partis par courriel (de
+/// LE DETAIL D'UN ENVOI DE DOCUMENTS : les salaries servis, imprimes (`remise`) ou partis par courriel (de
 /// `expediteur`) ; un envoi coupe en route dit ceux qui ont recu (`partis`) et l'adresse ou il a echoue (`echec_a`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailDocuments {
     pub salaries: Vec<Servi>,
-    #[serde(rename = "main_propre", with = "crate::etats::en_main_propre")]
     pub remise: crate::etats::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
@@ -733,13 +676,12 @@ impl ArticleModifie {
     }
 }
 
-/// LE DETAIL D'UN ENVOI A LA SIGNATURE : ses contrats (ou ses avenants, `acte`), imprimes (`main_propre`) ou partis par
+/// LE DETAIL D'UN ENVOI A LA SIGNATURE : ses contrats (ou ses avenants, `acte`), imprimes (`remise`) ou partis par
 /// courriel (de `expediteur`, une relance ou non) ; un envoi coupe en route dit ceux qui ont recu et ou il a echoue.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailSignature {
     pub contrats: Vec<ContratParti>,
-    #[serde(rename = "main_propre", with = "crate::etats::en_main_propre")]
     pub remise: crate::etats::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,

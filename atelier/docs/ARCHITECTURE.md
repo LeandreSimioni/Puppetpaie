@@ -182,7 +182,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
 | nombre écrit (une saisie gardée telle qu'écrite) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie`, `NombreDeFiche`, `ligne::Chiffre` |
-| test ou réel | `envois::ligne::Mode` | à unifier (#419) : des `bool` (`envoi_test`, `reel`, `Pret`) |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
@@ -1091,9 +1090,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   sous son dossier (00 ou 99, avec R_DOSSIER), déjà existante (98), ou refusée (un autre code, ou un code qui enregistre
   sans dossier). Lu une fois, à la lecture du certificat (`lire_certificat`) ; chaque état porte le dossier que le
   certificat dit : l'enregistrée toujours, la déjà existante et la refusée quand il en dit un. Que portent une ligne du
-  certificat, la personne certifiée au journal des envois, qui l'écrit `dossier` (`""` : le certificat n'en dit aucun),
-  `enregistree` et `deja_existante`, et le relit tel quel (`PersonneEcrite` : une enregistrée sans dossier, ou
-  enregistrée et déjà existante, ne se lit pas), l'état d'une embauche déclarée (`EtatEmbauche::certifiee`).
+  certificat, la personne certifiée au journal des envois, qui l'écrit par sa forme (`etat`), l'état d'une embauche déclarée (`EtatEmbauche::certifiee`).
 - **dossier d'une DPAE** : la référence sous laquelle l'Urssaf enregistre une DPAE (R_DOSSIER, positions 425-429), lue
   dans le certificat sans ses blancs ; jamais vide (la zone à blanc : aucun). S'écrit tel quel ; que portent l'état
   d'une personne déclarée par DPAE et la personne certifiée au journal.
@@ -1216,20 +1213,16 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   d'un FCTU et d'une demande de taux (S10.G00.00.005), le mode qu'un fichier lu dit (`DsnLue::nature_envoi`,
   `envois::depot::mode_dpae`), un bilan, un rapport, un NEOReS et un compte rendu d'organisme complémentaire
   (`essai_reel`), le filtre du journal (`journal::filtrer`), la base d'un ordre de mensuelle
-  (`dernier_ordre_des_mensuelles`). Ses écritures : la ligne du journal, `reel`, `test` ; la DSN et les retours de la
-  norme, son code `01`, `02` (S10.G00.00.005 : `droit::nature_declaration`, sa liste de la norme, et
-  `code_d_envoi` pour une réponse) ; une charge ou une réponse de route qui dit `reel`, un booléen (`socle::mode::en_booleen` :
-  `deposer`, `administrateur-deposer`, le dépôt groupé, l'incident d'un dépôt ou d'un retour ; `en_booleen::si_dit`,
-  faux aussi quand le fichier ne dit pas son mode : l'aperçu d'une DSN, d'une DPAE) ; la charge d'un signalement qui dit
-  `test` (`test_en_booleen`) ; l'indicateur d'une DPAE (`120`, `TST`) ; le tableau gardé de l'administrateur (`Pret`).
+  (`dernier_ordre_des_mensuelles`). Il s'écrit `reel`, `test` (le journal, les charges et les réponses des routes, les
+  retours lus) ; la DSN et les retours de la norme l'écrivent par son code `01`, `02` (S10.G00.00.005 :
+  `droit::nature_declaration`, sa liste de la norme) ; l'indicateur d'une DPAE, `120`, `TST`.
 - **ce qui est prêt à partir au tableau de l'administrateur** : rien, ou une déclaration prête pour un `Mode` (en test :
-  écrite, pas encore essayée ; en réel : testée, conforme, et le fichier est réel). Le tableau gardé l'écrit `test`,
-  `reel`, jamais les deux.
+  écrite, pas encore essayée ; en réel : testée, conforme, et le fichier est réel). Le tableau gardé l'écrit `null`,
+  `test` ou `reel`.
 - **mode de remise d'une pièce remise aux salariés** : comment un contrat (ou un avenant), ou les documents d'un mois
   (bulletin, certificat, attestation), sont partis : imprimés (remis en main propre) ou par courriel ; écrit `imprime`,
   `courriel`. Une ligne du journal des envois dit sa remise si elle en a une (`Ligne::remise` : une demande de
-  signature, un envoi de documents : leur `remise`, que le journal écrit `main_propre`, vrai si imprimé,
-  `etats::en_main_propre`) ; une DSN, une DPAE, un dossier, une
+  signature, un envoi de documents : leur `remise`) ; une DSN, une DPAE, un dossier, une
   demande de fiche n'en ont pas, et la phrase d'un envoi (`resume`) dit leur acte (`mot_de_l_acte` : « envoyé »). Dit
   par une seule fonction, à sa place (`mot_de_la_remise`, `PlaceDeLaRemise`) : « imprimé », « envoyé »
   dans une phrase, « imprimé », « envoyé à la signature » dans le récit de ce qui est parti. `contrats_partis_par` ne lit
@@ -1240,12 +1233,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **place du mois dans un contrat** : le seul mois du contrat, son premier (il se poursuit), son dernier (il a commencé
   avant) ou un mois du milieu, dite par l'engagement (`Engagement::place_du_mois`). Le premier fait imprimer le contrat et
   la DPAE ; le dernier, le bloc 62 et le certificat Congés Spectacles ; hors du seul mois, le contrat est « à cheval ».
-  Écrite en deux booléens, `premier_mois` et `dernier_mois` (`PlaceDuMois::en_booleens`), dans la forme canonique d'un
-  engagement (relue par `FormeDEngagement::place`) et ce que rendent la paie d'un mois et la carte d'un engagement (avec
-  `a_cheval` pour la paie).
+  Écrite `seul`, `premier`, `dernier`, `milieu` (`place`), dans la forme canonique d'un engagement et ce que rendent la
+  paie d'un mois et la carte d'un engagement.
 - **début d'un contrat au mois d'une étape** : ce mois-ci (l'embauche : la DPAE, le contrat à signer) ou avant ; ce
   qu'en sait un engagement à compléter, dont la fin n'est pas sûre, et qu'un engagement complet tire de sa place.
-  Écrit `premier_mois`, un booléen, dans la carte d'un engagement à compléter.
+  Écrit `ce_mois`, `avant` (`debut`), dans la carte d'un engagement à compléter.
 - **case** : un champ d'une fiche ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé.
 - **rubrique** : une ligne du catalogue de paie ; `droit::catalogue::Rubrique` est sa définition. Son code,
   `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut
@@ -2987,7 +2979,7 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   déclarations obligatoires de ses compagnies (les rappels de chacune : DSN, signalements, obligations d'`obligations.rs`,
   DPAE), du plus pressé au moins pressé, lues de `config/.tableau.json` sans calcul, refaites en fond
   (route `administrateur-tableau`).
-- **Le dépôt groupé** (route `administrateur-deposer`, `{"reel"}`) : ce qui part par la DSN et qui est prêt — en test, un
+- **Le dépôt groupé** (route `administrateur-deposer`, `{"mode"}`) : ce qui part par la DSN et qui est prêt — en test, un
   fichier écrit pas encore essayé ; en réel, un fichier dont le test est revenu conforme — part compagnie par compagnie
   par la route `deposer` de chacune, avec ses contrôles et son bilan. En réel, un mot de passe tapé au moment de l'acte sert
   de preuve à chaque dépôt, qui le revérifie. Une compagnie qui refuse n'arrête pas les autres. Le bouton n'apparaît qu'à

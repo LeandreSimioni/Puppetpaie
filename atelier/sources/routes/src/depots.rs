@@ -70,7 +70,7 @@ pub const ROUTES: &[Fiche] = &[
             ETABLISSEMENT,
             ENGAGEMENTS,
             SIGNALEMENT,
-            Champ { nom: "reel", libelle: Affiche::new("Dépôt réel"), forme: Forme::OuiNon, sens: "vrai : le dépôt réel (le mot de passe du logiciel, tapé par un humain au moment de l'acte)", avance: false },
+            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Texte, sens: "test, ou reel : le dépôt réel (le mot de passe du logiciel, tapé par un humain au moment de l'acte)", avance: false },
             Champ { nom: "forcer", libelle: Affiche::new("Annule et remplace"), forme: Forme::OuiNon, sens: "vrai : l'annule-et-remplace d'une DSN déjà déposée, après l'avertissement", avance: true },
             Champ { nom: "contournement", libelle: Affiche::new("Motif d'un dépôt réel sans test"), forme: Forme::Texte, sens: "le motif écrit d'un dépôt réel sans test", avance: true },
         ],
@@ -187,7 +187,7 @@ pub(crate) struct ChargeDeposer {
     engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<PathBuf>,
-    #[serde(rename = "reel", default, skip_serializing_if = "Option::is_none", with = "socle::mode::en_booleen::option")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     forcer: Option<bool>,
@@ -1010,7 +1010,6 @@ pub(crate) struct ApercuDpae {
     pub(crate) enregistrements: usize,
     pub(crate) octets: usize,
     /// Le mode que l'indicateur dit (`120` reel, `TST` test), aucun pour un autre.
-    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::si_dit::serialize")]
     pub(crate) mode: Option<Mode>,
     pub(crate) indicateur: String,
     pub(crate) mois: Option<Mois>,

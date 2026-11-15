@@ -283,7 +283,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
       <button class="primaire" id="d-test" data-occupe="Envoi…">Envoyer le test</button>
       <button class="secondaire envoi" id="d-reel" data-occupe="Dépôt…" disabled>Envoyer le réel</button>
     </div>
-    ${a.reel ? `<p class="discret"><button type="button" class="lien envoi" id="d-sans-test">envoyer sans test</button></p>` : ""}`);
+    ${a.mode === "reel" ? `<p class="discret"><button type="button" class="lien envoi" id="d-sans-test">envoyer sans test</button></p>` : ""}`);
 
   // Le mot de passe tapé pour le dépôt sert au renvoi (boiteRenvoiDsn) :
   // on ne le redemande pas. Une erreur l'oublie, un refus aussi.
@@ -299,7 +299,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
     document.getElementById("d-reel").disabled = true;
     const rendre = occupe(document.getElementById(reel ? "d-reel" : "d-test"));
     try {
-      const r = await api("deposer", { ...charge, reel, motdepasse: mdp,
+      const r = await api("deposer", { ...charge, mode: reel ? "reel" : "test", motdepasse: mdp,
                                        forcer, contournement });
       rendre();
       if (!reel) {
@@ -319,7 +319,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
       rendre();
       const test = document.getElementById("d-test"), reelB = document.getElementById("d-reel");
       if (test) test.disabled = false;
-      if (reelB) reelB.disabled = !a.reel;
+      if (reelB) reelB.disabled = a.mode !== "reel";
       if (e.detail?.classe === "RepetitionManquante") {
         // « Aucun acte irréversible sans une répétition réussie du même
         // contenu. » On ne renvoie pas l'utilisateur chercher une commande :
@@ -349,11 +349,11 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
   const boutonReel = (principal) => {
     const b = document.getElementById("d-reel"), t = document.getElementById("d-test");
     if (!b) return;
-    b.disabled = !a.reel || !principal;
+    b.disabled = a.mode !== "reel" || !principal;
     b.className = principal ? "primaire" : "secondaire";
     b.classList.add("envoi");
     if (t) t.className = principal ? "secondaire" : "primaire";
-    if (principal && a.reel) b.focus();
+    if (principal && a.mode === "reel") b.focus();
     const sansTest = document.getElementById("d-sans-test");
     if (sansTest && principal) sansTest.hidden = true;
   };

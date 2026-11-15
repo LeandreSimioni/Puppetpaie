@@ -79,16 +79,6 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     assert!(format!("{:?}", refus).contains("fluxx"), "{:?}", refus);
 }
 
-/// Bug : une DPAE deja existante (code 98) dont le certificat dit un dossier ne se relisait plus, et le journal entier
-/// se disait abime. Elle se relit, et se reecrit aux memes octets.
-#[test]
-fn une_dpae_deja_existante_garde_son_dossier() {
-    let ecrite = r#"{"nom":"A","prenom":"B","embauche":"2026-10-01","dossier":"111AL","code":"98","libelle":"DPAE déjà existante","enregistree":false,"deja_existante":true,"formalites":[]}"#;
-    let p: journal::PersonneCertifiee = socle::forme::lire_texte(ecrite, "la personne du certificat").unwrap();
-    assert_eq!(p.etat, declarations::dpae::EtatDeLaDpae::DejaExistante { dossier: Some(declarations::dpae::DossierDpae::try_from("111AL".to_string()).unwrap()) });
-    assert_eq!(socle::ecriture::json_en_ligne(&p), ecrite);
-}
-
 #[test]
 fn l_empreinte_reste_comparable_a_celles_du_journal() {
     // Les 16 premiers chiffres hexadecimaux du SHA-256, comme celles deja ecrites au journal.

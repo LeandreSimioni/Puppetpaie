@@ -286,8 +286,8 @@
 
     function ligne(d) {
       const pret = d.pret;
-      const pastille = pret.reel ? `<span class="pastille">prête à envoyer</span>`
-        : pret.test ? `<span class="pastille test">prête pour le test</span>` : "";
+      const pastille = pret === "reel" ? `<span class="pastille">prête à envoyer</span>`
+        : pret === "test" ? `<span class="pastille test">prête pour le test</span>` : "";
       const ou = d.ou.length ? `<ul>${d.ou.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
       return `<div class="declaration${d.en_retard ? " retard" : ""}"${attributsDeLaCompagnie(d)}>
         <span class="cie">${esc(d.compagnie)}</span>
@@ -356,7 +356,7 @@
     async function deposer(reel, motdepasse, bouton) {
       bouton.disabled = true;
       bouton.textContent = bouton.dataset.occupe;
-      const r = await appel("administrateur-deposer", reel ? { reel, motdepasse } : { reel });
+      const r = await appel("administrateur-deposer", reel ? { mode: "reel", motdepasse } : { mode: "test" });
       if (!r || !r.ok) {
         resultats = `<p class="refus">${esc((r && r.refus && r.refus.phrase) || "{{P:rien_parti}}")}</p>`;
         dessiner(dernier);

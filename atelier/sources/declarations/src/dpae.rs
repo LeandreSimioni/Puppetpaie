@@ -927,7 +927,8 @@ impl CodeRetourDpae {
 ///   peut y porter un dossier (aucun : la zone a blanc) ;
 /// - REFUSEE : tout autre code, ou un code qui enregistre sans reference de dossier ; le certificat peut aussi y porter
 ///   un dossier.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum EtatDeLaDpae {
     Enregistree { dossier: DossierDpae },
     DejaExistante { dossier: Option<DossierDpae> },

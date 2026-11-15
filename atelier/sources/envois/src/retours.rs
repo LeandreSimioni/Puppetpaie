@@ -1217,7 +1217,6 @@ fn lire_octets(o: &[u8]) -> R<Arbre> {
 pub struct Bilan {
     pub flux: IdDeFlux,
     pub recu_le: Option<Reception>,
-    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
     pub essai_reel: Option<Mode>,
     pub etat_envoi: Option<Verdict>,
     pub etat_declaration: Option<Verdict>,
@@ -1472,7 +1471,6 @@ pub struct DeclarationIdentifiee {
     pub siren: Option<Siren>,
     pub nic: Option<Nic>,
     pub etat: Option<Verdict>,
-    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
     pub essai_reel: Option<Mode>,
     pub codes: Vec<String>,
 }
@@ -2792,7 +2790,6 @@ pub struct Rapport {
     pub libelle: Option<String>,
     pub message: Option<String>,
     pub etat_envoi: Option<Verdict>,
-    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
     pub essai_reel: Option<Mode>,
     pub declarations: Vec<DeclarationDuRapport>,
     pub anomalies: Vec<AnomalieDuRapport>,
@@ -3151,7 +3148,6 @@ pub struct Neores {
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub produit_le: Option<socle::paris::Moment>,
     pub mois: Option<socle::mois::Mois>,
-    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
     pub essai_reel: Option<Mode>,
     pub ordre: Option<NumeroDOrdre>,
     pub metier: Option<String>,
@@ -3481,7 +3477,6 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CrmOc {
     pub type_crm: Option<TypeDeCrmOc>,
-    #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
     pub essai_reel: Option<Mode>,
     pub version: Option<String>,
     pub declarations: Vec<DeclarationOc>,

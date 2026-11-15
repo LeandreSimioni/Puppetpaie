@@ -531,38 +531,12 @@ impl Etape {
 }
 
 /// CE QUI EST PRET A PARTIR : rien (aucun fichier ecrit a deposer), en test (ecrit, pas encore essaye), en reel (teste,
-/// conforme, et le fichier est reel). Le tableau garde l'ecrit en deux booleens (`PretEcrit`).
+/// conforme, et le fichier est reel). Il s'ecrit `null`, ou par son mode (`test`, `reel`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "PretEcrit", into = "PretEcrit")]
+#[serde(untagged)]
 pub enum Pret {
     Rien,
     Pour(Mode),
-}
-
-/// La forme de `Pret` dans le tableau garde : `test`, `reel`, jamais les deux.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PretEcrit {
-    test: bool,
-    reel: bool,
-}
-
-impl TryFrom<PretEcrit> for Pret {
-    type Error = socle::echec::Echec;
-    fn try_from(p: PretEcrit) -> R<Pret> {
-        match (p.test, p.reel) {
-            (false, false) => Ok(Pret::Rien),
-            (true, false) => Ok(Pret::Pour(Mode::Test)),
-            (false, true) => Ok(Pret::Pour(Mode::Reel)),
-            (true, true) => Err(socle::refus!("Une déclaration du tableau gardé se dit prête en test et en réel : refaire le tableau.")),
-        }
-    }
-}
-
-impl From<Pret> for PretEcrit {
-    fn from(p: Pret) -> PretEcrit {
-        PretEcrit { test: p == Pret::Pour(Mode::Test), reel: p == Pret::Pour(Mode::Reel) }
-    }
 }
 
 /// UNE DECLARATION DU TABLEAU D'UNE COMPAGNIE, telle qu'elle se garde (`TableauCompagnie`) : sa cle (celle du rappel),
@@ -1088,7 +1062,6 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
 #[derive(Debug, Serialize)]
 pub struct DepotGroupe {
     pub phrase: String,
-    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::serialize")]
     pub mode: Mode,
     pub partis: usize,
     pub refuses: usize,

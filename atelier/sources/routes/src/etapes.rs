@@ -1016,7 +1016,6 @@ enum ContratDit {
 /// (`signature::contrat_signe_dit`), lus tels qu'ils sont.
 #[derive(Debug, Clone, Serialize)]
 struct ContratComplet {
-    #[serde(flatten, serialize_with = "super::mois::place_ecrite")]
     place: engagement::PlaceDuMois,
     chevrons: super::mois::Chevrons,
     depuis: Mois,
@@ -1031,7 +1030,6 @@ struct ContratComplet {
 /// Un engagement a completer ne dit que s'il commence ce mois-ci (`DebutDansLeMois`) : sa fin n'est pas sure.
 #[derive(Debug, Clone, Serialize)]
 struct ContratACompleter {
-    #[serde(rename = "premier_mois", serialize_with = "debut_ecrit")]
     debut: DebutDansLeMois,
     repris: bool,
     anterieur: bool,
@@ -1040,18 +1038,11 @@ struct ContratACompleter {
 /// OU COMMENCE LE CONTRAT, AU MOIS DE L'ETAPE : ce mois-ci (son embauche : la DPAE, le contrat a signer), ou avant. Ce
 /// qu'en sait un engagement a completer, dont la fin n'est pas sure ; un engagement complet le tire de sa place
 /// (`PlaceDuMois`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 enum DebutDansLeMois {
     CeMois,
     Avant,
-}
-
-/// L'ecriture du debut d'un contrat a completer dans la carte d'un engagement : `premier_mois`, un booleen.
-fn debut_ecrit<S: serde::Serializer>(d: &DebutDansLeMois, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_bool(match d {
-        DebutDansLeMois::CeMois => true,
-        DebutDansLeMois::Avant => false,
-    })
 }
 
 impl ContratDit {

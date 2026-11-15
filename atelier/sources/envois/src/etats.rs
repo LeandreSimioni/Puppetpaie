@@ -189,31 +189,14 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 // -------------------------------------------------------------- les contrats
 
 /// LE MODE DE REMISE D'UNE PIECE REMISE AUX SALARIES : comment un contrat (ou un avenant), ou les documents d'un mois
-/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre, `detail.remise`, ecrit `main_propre` : `en_main_propre`), ou par
+/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre, `detail.remise`), ou par
 /// courriel. Ecrite `imprime`, `courriel`. Une ligne du journal la dit si elle en a une (`Ligne::remise` : la signature
 /// d'un contrat, l'envoi des documents).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModeDeRemise {
     Imprime,
     Courriel,
-}
-
-/// L'ECRITURE D'UN MODE DE REMISE AU JOURNAL DES ENVOIS : `main_propre`, vrai s'il est imprime (remis en main propre),
-/// faux par courriel.
-pub mod en_main_propre {
-    use super::ModeDeRemise;
-
-    pub fn serialize<S: serde::Serializer>(m: &ModeDeRemise, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_bool(*m == ModeDeRemise::Imprime)
-    }
-
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<ModeDeRemise, D::Error> {
-        match <bool as serde::Deserialize>::deserialize(d)? {
-            true => Ok(ModeDeRemise::Imprime),
-            false => Ok(ModeDeRemise::Courriel),
-        }
-    }
 }
 
 /// OU SE DIT LA REMISE : dans une phrase (la reponse d'une route, la phrase d'un envoi du journal), ou dans le recit de
@@ -1161,7 +1144,6 @@ pub struct IncidentDeRetour {
 /// dit), et trente anomalies au plus.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DetailIncidentDeRetour {
-    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::serialize")]
     pub mode: Mode,
     pub nature_retour: NatureDuRetour,
     pub type_declaration: Option<droit::type_declaration::TypeDeLaDeclaration>,
@@ -1413,7 +1395,7 @@ mod tests {
     }
 
     fn signature(quand: &str, c: &str, retours: &str) -> Ligne {
-        ligne("contrat-signature", "reel", quand, "e100000000000000","f.dsn", true, "", &format!("{{\"contrats\": [{}], \"main_propre\": false}}", c), retours)
+        ligne("contrat-signature", "reel", quand, "e100000000000000","f.dsn", true, "", &format!("{{\"contrats\": [{}], \"remise\": \"courriel\"}}", c), retours)
     }
 
     #[test]

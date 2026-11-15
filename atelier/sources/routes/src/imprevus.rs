@@ -64,7 +64,7 @@ const fn fiche(route: Route, geste: &'static str, charge: &'static [Champ], exem
 
 const ORDRE: Champ = Champ { nom: "ordre", libelle: Affiche::new("Numéro d'ordre"), forme: Forme::Nombre, sens: "son numéro d'ordre ; sinon le suivant de ceux déjà partis", avance: true };
 const REMPLACE: Champ = Champ { nom: "remplace", libelle: Affiche::new("Remplace"), forme: Forme::Texte, sens: "le signalement qu'il remplace", avance: true };
-const TEST: Champ = Champ { nom: "test", libelle: Affiche::new("Fichier d'essai"), forme: Forme::OuiNon, sens: "vrai : un fichier d'essai, marqué comme tel", avance: true };
+const MODE: Champ = Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Texte, sens: "test : un fichier d'essai, marqué comme tel ; reel sinon", avance: true };
 
 /// Ou ces routes se voient a l'ecran (une place par module) : sur le chemin simple, ou hors de lui.
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
@@ -121,7 +121,7 @@ pub const ROUTES: &[Fiche] = &[
         &[SALARIE, DERNIER_JOUR, IJ_BRUTE, IJ_NETTE, IJ_BRUTE_MAJOREE, IJ_NETTE_MAJOREE, JOURS_DEJA_INDEMNISES],
         r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-02","ij_brute":"40.89","ij_nette":"38.15"}"#, "arret (l'arrêt résumé), phrase", Acte::Ecrit, GESTE) },
     Fiche { phrase: 600, ..fiche(Route::ArretSignaler, "Fabriquer le signalement d'un arrêt, sans le déposer.",
-        &[SALARIE, DERNIER_JOUR, Champ { nom: "nature", libelle: Affiche::new("Nature"), forme: Forme::Texte, sens: "04 l'arrêt, ou 05 la reprise", avance: false }, REMPLACE, ORDRE, TEST,
+        &[SALARIE, DERNIER_JOUR, Champ { nom: "nature", libelle: Affiche::new("Nature"), forme: Forme::Texte, sens: "04 l'arrêt, ou 05 la reprise", avance: false }, REMPLACE, ORDRE, MODE,
             Champ { nom: "le", libelle: Affiche::new("Constitué le"), forme: Forme::Date, sens: "le jour de constitution ; sinon aujourd'hui", avance: true }],
         r#"{"salarie":"FULLER","dernier_jour":"2026-11-27","nature":"04"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, nature, type, ordre, avertissements", Acte::Ecrit, ECRAN) },
     Fiche { phrase: 400, ..fiche(Route::ArretOublier, "Retirer un arrêt qui n'a pas été déclaré.", &[SALARIE, DERNIER_JOUR],
@@ -135,7 +135,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche { phrase: 400, ..fiche(Route::SuspensionOublier, "Retirer une absence qui n'a pas été déclarée.", &[SALARIE, DEBUT],
         r#"{"salarie":"FULLER","debut":"2026-11-27"}"#, "suspension (l'absence retirée, résumée), phrase", Acte::Ecrit, GESTE_AVANCE) },
     Fiche { phrase: 600, ..fiche(Route::FinContratSignaler, "Fabriquer le signalement d'une fin de contrat, sans le déposer.",
-        &[MOIS, SALARIE, REMPLACE, ORDRE, TEST, Champ { nom: "le", libelle: Affiche::new("Constitué le"), forme: Forme::Date, sens: "le jour de constitution ; sinon aujourd'hui", avance: true }],
+        &[MOIS, SALARIE, REMPLACE, ORDRE, MODE,Champ { nom: "le", libelle: Affiche::new("Constitué le"), forme: Forme::Date, sens: "le jour de constitution ; sinon aujourd'hui", avance: true }],
         r#"{"mois":"2026-11","salarie":"FULLER"}"#, "fichier (écrit dans sorties/AAAA-MM/), phrase, type, ordre, preavis, avertissements", Acte::Ecrit, AVANCE) },
     Fiche { phrase: 160, ..fiche(Route::FinContratDocuments, "Fabriquer le certificat de travail et le reçu pour solde de tout compte.",
         &[MOIS, SALARIE, Champ { nom: "le", libelle: Affiche::new("Établis le"), forme: Forme::Date, sens: "le jour où ils s'établissent ; sinon aujourd'hui", avance: true }],
@@ -235,7 +235,7 @@ pub(crate) struct ChargeArretSignaler {
     remplace: Option<IdentifiantDeDeclaration>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
     ordre: Option<NumeroDOrdre>,
-    #[serde(rename = "test", default, skip_serializing_if = "Option::is_none", with = "socle::mode::test_en_booleen::option")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     le: Option<Jour>,
@@ -312,7 +312,7 @@ pub(crate) struct ChargeFinContratSignaler {
     remplace: Option<IdentifiantDeDeclaration>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
     ordre: Option<NumeroDOrdre>,
-    #[serde(rename = "test", default, skip_serializing_if = "Option::is_none", with = "socle::mode::test_en_booleen::option")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     le: Option<Jour>,

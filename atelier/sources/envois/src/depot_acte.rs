@@ -26,7 +26,6 @@ use crate::suites::{DepotRefuse, Suites};
 pub struct DepotFait {
     pub quoi: Acte,
     pub mois: Mois,
-    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::serialize")]
     pub mode: Mode,
     pub reponse: String,
     #[serde(serialize_with = "socle::forme::vide_si_aucun::serialize")]

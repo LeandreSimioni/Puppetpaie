@@ -765,7 +765,7 @@ const PIECES_A_IMPRIMER: [documents::PieceDuMois; 3] = [documents::PieceDuMois::
 /// La route `documents-imprimer` : les documents du mois des salaries choisis (`salaries`, tous sinon), fabriques comme
 /// pour l'envoi par courriel (`depart::fabriquer_documents`), reunis en un seul PDF a imprimer, salarie par salarie, et
 /// remis en main propre. L'IMPRESSION EST UN DEPART : ce qui est remis au salarie est parti. Les numeros des bulletins et
-/// des certificats s'ecrivent dans les paies, le journal note `documents` (`main_propre`) avec la version de chaque
+/// des certificats s'ecrivent dans les paies, le journal note `documents` (`remise`) avec la version de chaque
 /// engagement, et la paie est figee comme par le courriel. Rien ne quitte le poste : aucun mot de passe.
 pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui: &str) -> R<DocumentsImprimes> {
     let mois = c.mois;

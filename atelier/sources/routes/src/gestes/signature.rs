@@ -415,7 +415,7 @@ pub(crate) struct Impression {
 /// choisis (`avenants`, deja verifies par la route), chacun dans son PDF dans `sorties/<mois>/envoi/` (la piece partie de
 /// chacun : un PDF de contrats par salarie, un PDF par avenant), et tous reunis en un seul PDF a imprimer (`impression`),
 /// a remettre en main propre. L'IMPRESSION EST UN DEPART : chaque contrat y part sous son numero, chaque avenant sous le
-/// sien, et le journal le note (`contrat-signature`, `main_propre` ; une ligne pour les contrats, une pour les avenants) ;
+/// sien, et le journal le note (`contrat-signature`, `remise` ; une ligne pour les contrats, une pour les avenants) ;
 /// ce qui revient signe se note ensuite d'un clic (`contrat-recu`). Rien ne quitte le poste : aucun mot de passe. `qui` :
 /// la ligne du journal.
 pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Choisis>, avenants: &[(IdSalarie, Vec<UnAvenant>)], qui: &str) -> R<Impression> {

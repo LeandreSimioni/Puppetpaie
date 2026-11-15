@@ -384,7 +384,7 @@ fn la_demande_de_taux_d_une_embauche_part_et_sa_reponse_fait_l_engagement() {
     for s in ["FULLER", "DUNCAN"] {
         outils::reussi(&outils::valider_la_carte(&racine, novembre(), s, "2026-11-16"));
     }
-    outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "reel": false}), "2026-11-16"));
+    outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "mode": "test"}), "2026-11-16"));
 
     let type_ecrit = |s: &str| -> Value { outils::paie_ecrite(&racine, "2026-11", s, None)["pas"]["type"].clone() };
     assert_eq!(type_ecrit("FULLER"), json!("13"), "sans taux recu, la grille");
@@ -440,8 +440,8 @@ fn le_compte_rendu_d_une_dsn_ne_refait_pas_la_paie_qu_elle_declare() {
     for j in [jour(2026, 11, 20), jour(2026, 12, 1)] {
         socle::temps::pendant(instant_naif(j, 9), || routes::horloge::rattraper(&racine, Some(j), true)).unwrap();
     }
-    for reel in [false, true] {
-        outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dsn", "mois": "2026-11", "reel": reel}), "2026-12-14"));
+    for mode in ["test", "reel"] {
+        outils::reussi(&outils::route(&racine, "deposer", json!({"quoi": "dsn", "mois": "2026-11", "mode": mode}), "2026-12-14"));
     }
     outils::reussi(&outils::route(&racine, "envoyer-documents", json!({"mois": "2026-11"}), "2026-12-14"));
     let etat = outils::reussi(&outils::route(&racine, "etat-du-mois", json!({"mois": "2026-11"}), "2026-12-14")).to_string();

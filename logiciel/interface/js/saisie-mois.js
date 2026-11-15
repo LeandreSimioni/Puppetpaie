@@ -262,7 +262,7 @@ async function calculerApercu(lu) {
       // premier mois, et c'est ici qu'il revient à l'écran quand la saisie
       // ne le portait pas encore.
       // Un numéro que la carte demande de dire (`contrat.ecrits`) ne se reprend pas de l'aperçu : vide, le moteur le donne.
-      if (p && p.numero_contrat && p.contrat && !p.contrat.premier_mois
+      if (p && p.numero_contrat && p.contrat && (p.contrat.place === "dernier" || p.contrat.place === "milieu")
           && !p.contrat.ecrits.includes("numero") && !div.dataset.numero) {
         div.dataset.numero = p.numero_contrat;
         div.dataset.numeroDe = salarieDuBloc(div);

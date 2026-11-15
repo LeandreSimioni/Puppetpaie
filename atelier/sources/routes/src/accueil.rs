@@ -118,10 +118,10 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::AdministrateurDeposer,
         geste: "Déposer d'un geste ce qui est prêt dans chaque compagnie de l'administrateur.",
         charge: &[
-            Champ { nom: "reel", libelle: Affiche::new("En réel"), forme: Forme::OuiNon, sens: "vrai : en réel (les fichiers testés conformes) ; en test sinon", avance: false },
+            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Texte, sens: "test, ou reel (les fichiers testés conformes)", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur ; sans lui, le moteur le demande à un humain", avance: false },
         ],
-        exemple: r#"{"reel":false}"#,
+        exemple: r#"{"mode":"test"}"#,
         rend: "partis, refuses, resultats (par dépôt : la compagnie, ce qui est parti ou le refus, et suivre pour un dépôt réel), tableau ; rien de prêt : phrase",
         refus: &[Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe, tapé par un humain ; rien n'est déposé" }, OPERATION],
         acte: Acte::Engage,
@@ -222,7 +222,6 @@ pub struct ChargeTableau {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDeposer {
-    #[serde(rename = "reel", with = "socle::mode::en_booleen")]
     mode: socle::mode::Mode,
 }
 

@@ -1803,18 +1803,19 @@ function quiEtPourQuoi(ligne) {
  * contrat, et une flèche du côté où il déborde du mois affiché — à gauche
  * s'il a commencé avant, à droite s'il se poursuit après ; ses dates en
  * infobulle. Tout vient du moteur, `contrat` d'un engagement de l'aperçu ou d'une
- * ligne des états du mois (`premier_mois`, `dernier_mois`, `depuis`,
+ * ligne des états du mois (`place`, `depuis`,
  * `jusqu_a`), avec le début et la fin du contrat : la page ne compare aucune
  * date. Un contrat sans terme (un CDI) n'en porte pas : il dure, il n'est
  * pas « sur plusieurs mois ». */
 /* UN CONTRAT SUR PLUSIEURS MOIS : un chevron au bord de la case de l'engagement,
  * à gauche quand le contrat a commencé avant ce mois, à droite quand il se
  * poursuit après (un permanent en CDI aussi) ; cliquer va au mois voisin.
- * Tout vient du moteur (`contrat.premier_mois`, `dernier_mois`, `depuis`,
+ * Tout vient du moteur (`contrat.place`, `depuis`,
  * `jusqu_a`) : la page ne compare aucune date. */
 function marquePlurimensuel(contrat, debut, fin) {
-  if (!contrat || typeof contrat.premier_mois !== "boolean" || typeof contrat.dernier_mois !== "boolean") return "";
-  const avant = !contrat.premier_mois, apres = !contrat.dernier_mois;
+  if (!contrat || typeof contrat.place !== "string") return "";
+  const avant = contrat.place === "dernier" || contrat.place === "milieu";
+  const apres = contrat.place === "premier" || contrat.place === "milieu";
   if (!avant && !apres) return "";
   const x = moisLu(document.getElementById("mois").value);
   const voisin = (pas) => {

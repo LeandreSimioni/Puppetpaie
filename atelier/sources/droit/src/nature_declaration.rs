@@ -86,20 +86,6 @@ impl crate::natures::ListeDeLaNorme for Mode {
     }
 }
 
-/// L'ECRITURE D'UN MODE PAR SON CODE DE LA NORME (S10.G00.00.005), celle d'un retour lu qu'une route rend : `01`, `02`.
-pub mod code_d_envoi {
-    use socle::mode::Mode;
-
-    use crate::natures::ListeDeLaNorme;
-
-    pub fn serialize<S: serde::Serializer>(m: &Option<Mode>, s: S) -> Result<S::Ok, S::Error> {
-        match m {
-            Some(m) => s.serialize_some(m.code_de_la_norme()),
-            None => s.serialize_none(),
-        }
-    }
-}
-
 codes_fermes! {
     /// LA NATURE DE L'EVENEMENT DECLENCHEUR D'UN SIGNALEMENT D'AMORCAGE DES DONNEES VARIABLES (S20.G00.05.011), la liste
     /// entiere de la norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt` ;

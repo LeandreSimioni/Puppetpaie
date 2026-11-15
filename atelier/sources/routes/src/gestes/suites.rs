@@ -182,7 +182,6 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
 /// cette repetition.
 #[derive(serde::Serialize)]
 struct DetailDuDepotRefuse<'a> {
-    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::serialize")]
     mode: socle::mode::Mode,
     apres_test_conforme: bool,
     repetition: Option<&'a envois::journal::Ouverture>,

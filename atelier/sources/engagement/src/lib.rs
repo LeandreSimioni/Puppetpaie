@@ -275,35 +275,13 @@ impl QuotiteDuContrat {
 /// dernier (il a commence avant), ou un mois du milieu (il a commence avant et se poursuit). Le contrat qui commence ce
 /// mois-ci se fait imprimer et declarer (DPAE) ; celui qui y finit porte le bloc 62 en DSN et son certificat Conges
 /// Spectacles ; celui qui deborde du mois est « a cheval ».
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PlaceDuMois {
     Seul,
     Premier,
     Dernier,
     Milieu,
-}
-
-impl PlaceDuMois {
-    /// SON ECRITURE EN DEUX BOOLEENS, `premier_mois` et `dernier_mois` : celle de la forme canonique d'un engagement
-    /// (`FormeDEngagement`) et des reponses qui disent le contrat d'une paie, aux memes octets.
-    pub fn en_booleens(self) -> (bool, bool) {
-        match self {
-            PlaceDuMois::Seul => (true, true),
-            PlaceDuMois::Premier => (true, false),
-            PlaceDuMois::Dernier => (false, true),
-            PlaceDuMois::Milieu => (false, false),
-        }
-    }
-
-    /// LA PLACE RELUE DE SES DEUX BOOLEENS (`en_booleens`) : chacune des quatre paires est une place.
-    pub(crate) fn des_booleens(premier_mois: bool, dernier_mois: bool) -> PlaceDuMois {
-        match (premier_mois, dernier_mois) {
-            (true, true) => PlaceDuMois::Seul,
-            (true, false) => PlaceDuMois::Premier,
-            (false, true) => PlaceDuMois::Dernier,
-            (false, false) => PlaceDuMois::Milieu,
-        }
-    }
 }
 
 impl Engagement {
@@ -819,7 +797,6 @@ impl Engagement {
     /// La forme canonique d'un engagement : une ecriture stable, pour les empreintes et les oracles.
     pub fn canon(&self) -> R<paie_ecrite::FormeDEngagement> {
         let nombre_f = |x: Option<Heures>| x.map(|x| Heures::du_decimal(court(x.decimal())));
-        let (premier_mois, dernier_mois) = self.place_du_mois().en_booleens();
         Ok(paie_ecrite::FormeDEngagement {
             salarie: self.salarie.clone(),
             spectacle: self.spectacle.clone(),
@@ -870,8 +847,7 @@ impl Engagement {
             fin_periode: self.fin_periode(),
             quotite: socle::forme::Nombre(self.quotite()?.decimal()),
             sans_paie: self.sans_paie(),
-            premier_mois,
-            dernier_mois,
+            place: self.place_du_mois(),
             mois_du_contrat: self.mois_du_contrat(),
         })
     }

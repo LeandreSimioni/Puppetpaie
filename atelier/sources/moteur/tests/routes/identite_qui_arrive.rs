@@ -79,7 +79,7 @@ fn le_nir_qui_arrive_vaut_de_tout_temps_et_le_signalement_porte_le_ntt_declare()
     // LE SIGNALEMENT PARTI (son depot de test, rejoue en reel au journal), l'arret prolonge : il ne se refait pas, et le
     // fichier reste tel qu'il est parti (regle 4 de `atelier/AGENTS.md` ; « en cas de prolongation d'arret, il ne faut
     // pas envoyer de nouveau signalement », `net-entreprises-fiche1983-prolongation-arret-dates-de-subrogation-20250322.txt`).
-    reussi(&route(&c, "deposer", json!({"quoi": "dsn", "fichier": f, "reel": false}), jour));
+    reussi(&route(&c, "deposer", json!({"quoi": "dsn", "fichier": f, "mode": "test"}), jour));
     let journal = c.join("journal").join("depots.jsonl");
     let lignes = std::fs::read_to_string(&journal).unwrap();
     let mut reel: serde_json::Value = serde_json::from_str(lignes.lines().rev().find(|l| l.contains("\"ligne\"")).unwrap()).unwrap();

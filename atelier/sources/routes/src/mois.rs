@@ -1556,7 +1556,6 @@ pub(crate) struct Periode {
 /// Le contrat par rapport au mois : un contrat qui deborde n'a pas de DPAE ni de contrat imprime hors de son premier mois.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ContratVu {
-    #[serde(flatten, serialize_with = "place_et_cheval_ecrits")]
     place: PlaceDuMois,
     chevrons: Chevrons,
     sans_paie: bool,
@@ -1842,30 +1841,6 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
         }
     };
     Ok(Chevrons { avant, apres })
-}
-
-/// LA PLACE DU MOIS DANS LE CONTRAT D'UNE CARTE, ecrite `premier_mois` et `dernier_mois` (`PlaceDuMois::en_booleens`),
-/// aux memes octets.
-pub(crate) fn place_ecrite<S: serde::Serializer>(place: &PlaceDuMois, s: S) -> Result<S::Ok, S::Error> {
-    let (premier_mois, dernier_mois) = place.en_booleens();
-    #[derive(Serialize)]
-    struct Ecrite {
-        premier_mois: bool,
-        dernier_mois: bool,
-    }
-    Ecrite { premier_mois, dernier_mois }.serialize(s)
-}
-
-/// La meme, et `a_cheval` : le contrat deborde du mois (tout sauf son seul mois), aux memes octets.
-fn place_et_cheval_ecrits<S: serde::Serializer>(place: &PlaceDuMois, s: S) -> Result<S::Ok, S::Error> {
-    let (premier_mois, dernier_mois) = place.en_booleens();
-    #[derive(Serialize)]
-    struct Ecrite {
-        premier_mois: bool,
-        dernier_mois: bool,
-        a_cheval: bool,
-    }
-    Ecrite { premier_mois, dernier_mois, a_cheval: *place != PlaceDuMois::Seul }.serialize(s)
 }
 
 /// Ce qui, dans ce mois, porte sur une
