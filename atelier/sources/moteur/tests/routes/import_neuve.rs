@@ -386,7 +386,7 @@ fn les_certificats_conges_spectacles_seuls_puis_avec_les_bulletins() {
     assert_eq!(contrats.len(), 2, "{:?}", contrats);
     for c in &contrats {
         assert_eq!(c["atteste_par"], json!("certificat"));
-        assert_eq!((c["debut"].clone(), c["fin"].clone()), (json!("2026-01-14"), json!("2026-01-24")));
+        assert_eq!(c["periode"], json!({"du": "2026-01-14", "au": "2026-01-24"}));
         let attendu = if c["salarie"] == json!(a) { (2, 0, "590.00") } else { (0, 3, "468.00") };
         assert!(c["salarie"] == json!(a) || c["salarie"] == json!(t), "{}", c);
         assert_eq!((c["cachets"].as_i64().unwrap(), c["jours"].as_i64().unwrap(), c["brut"].as_str().unwrap()), attendu, "{}", c);
@@ -481,7 +481,7 @@ fn les_aem_en_pdf_seules_et_le_contrat_d_un_certificat_que_le_bulletin_remplace(
     assert_eq!(contrats.len(), 2, "{:?}", contrats);
     for c in &contrats {
         assert_eq!((&c["atteste_par"], &c["numero_objet"]), (&json!("AEM"), &json!("999Z99999901")), "{}", c);
-        assert_eq!((c["debut"].clone(), c["fin"].clone()), (json!("2026-01-14"), json!("2026-01-24")));
+        assert_eq!(c["periode"], json!({"du": "2026-01-14", "au": "2026-01-24"}));
         let attendu = if c["salarie"] == json!(a) { (0, 2, 2, "590.40") } else { (0, 0, 3, "468.15") };
         let n = |k: &str| c[k].as_i64().unwrap();
         assert_eq!((n("heures"), n("cachets"), n("jours"), c["brut"].as_str().unwrap()), attendu, "{}", c);

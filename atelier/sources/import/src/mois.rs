@@ -346,8 +346,9 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
     let salarie = paie.map(|x| x.salarie.clone()).or_else(|| contrat.map(|x| x.salarie.clone()));
-    let debut = p.and_then(|p| p.periode).map(|o| o.debut()).or_else(|| contrat.and_then(|x| x.debut));
-    let fin = p.and_then(|p| p.periode).and_then(|o| o.fin()).or_else(|| contrat.and_then(|x| x.fin));
+    let atteste = contrat.and_then(|x| x.periode);
+    let debut = p.and_then(|p| p.periode).map(|o| o.debut()).or_else(|| atteste.map(|o| o.debut()));
+    let fin = p.and_then(|p| p.periode).and_then(|o| o.fin()).or_else(|| atteste.and_then(|o| o.fin()));
     let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone()));
     let spectacle = numero.as_ref().and_then(|n| spectacle_de(ctx, n));
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);

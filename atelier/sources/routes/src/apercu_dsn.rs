@@ -62,7 +62,7 @@ impl ContratLu {
         Ok(ContratLu {
             mois: d.mesures(c.nir.as_ref(), &numero, false),
             rappel: d.mesures(c.nir.as_ref(), &numero, true),
-            periode: c.periode()?,
+            periode: c.periode,
             emploi: c.emploi.emploi.clone(),
             nature_dsn: c.nature_dsn.clone(),
             objet: c.objet.clone(),

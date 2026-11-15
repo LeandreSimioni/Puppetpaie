@@ -317,10 +317,9 @@ droit::cle_opaque! {
 pub struct ContratLu<S = Option<IdSalarie>> {
     #[serde(serialize_with = "ecrit_salarie")]
     pub salarie: S,
+    /// Les dates du contrat, quand la ligne dit son debut (sans fin : il court encore).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<Jour>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<Jour>,
+    pub periode: Option<PeriodeOuverte>,
     #[serde(rename = "contrat", skip_serializing_if = "Option::is_none")]
     pub numero: Option<crate::numeros::NumeroContrat>,
     #[serde(flatten)]
@@ -371,28 +370,10 @@ pub fn ecrit_salarie<C:CleDeLaLigne, S: serde::Serializer>(salarie: &C, s: S) ->
     s.serialize_str(salarie.ecrite())
 }
 
-impl<S> ContratLu<S> {
-    /// Les dates du contrat, quand la ligne dit son debut (une fin absente : il court encore). Refus : une fin sans debut,
-    /// ou avant le debut.
-    pub fn periode(&self) -> R<Option<socle::date::PeriodeOuverte>> {
-        match (self.debut, self.fin) {
-            (Some(d), f) => Ok(Some(socle::date::PeriodeOuverte::du(d, f)?)),
-            (None, None) => Ok(None),
-            (None, Some(f)) => Err(socle::refus!("un contrat atteste finit le {} sans dire son début", f.jj_mm_aaaa())),
-        }
-    }
-
-    /// La meme ligne, aux dates de `periode`, telle qu'elle s'ecrit : la porte de ses dates.
-    pub fn aux_dates(mut self, periode: &socle::date::Periode) -> Self {
-        (self.debut, self.fin) = (Some(periode.debut()), Some(periode.fin()));
-        self
-    }
-}
-
 impl ContratRelu {
     /// La meme ligne, parmi celles de l'apercu.
     pub fn a_l_apercu(self) -> ContratLu {
-        ContratLu { salarie: Some(self.salarie), debut: self.debut, fin: self.fin, numero: self.numero, contrat: self.contrat }
+        ContratLu { salarie: Some(self.salarie), periode: self.periode, numero: self.numero, contrat: self.contrat }
     }
 }
 
@@ -619,7 +600,7 @@ impl Importe {
         // Importe le jour ou il l'a ete la premiere fois ; sinon, le jour de l'import de ses pieces (`Pieces::le`).
         contrat.importe_le.get_or_insert(self.le());
         let numero = self.carte().numero.clone();
-        Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
+        Ok(Some(ContratLu { salarie: self.cle_ecrite()?, periode: self.carte().contrat()?, numero, contrat }))
     }
 
     /// Les paies versees, une par mois, avec le salarie de l'engagement.
@@ -744,14 +725,12 @@ impl Importe {
         // L'emploi que le bulletin imprime ; un bulletin qui ne l'imprime pas n'en dit rien.
         let imprime = |champ: fn(&EmploiImprime) -> &Option<String>| p.emploi_imprime.as_ref().and_then(|i| champ(i).clone());
         // Le contrat d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin.
-        let fin = match (self.carte().fin, self.permanent()) {
-            (Some(f), _) => Some(f),
-            (None, true) => None,
-            (None, false) => p.periode.and_then(|o| o.fin()),
-        };
-        let contrat = match (self.carte().debut, p.periode) {
-            (Some(d), _) => PeriodeOuverte::du(d, fin)?,
-            (None, Some(o)) => PeriodeOuverte::du(o.debut(), fin)?,
+        // Sans fin dite, un autre finit avec la paie.
+        let contrat = match (self.carte().contrat()?, p.periode) {
+            (Some(c), _) if c.fin().is_some() || self.permanent() => c,
+            (Some(c), paie) => PeriodeOuverte::du(c.debut(), paie.and_then(|o| o.fin()))?,
+            (None, Some(o)) if self.permanent() => PeriodeOuverte::du(o.debut(), None)?,
+            (None, Some(o)) => o,
             (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),
         };
         let dates_travail: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();

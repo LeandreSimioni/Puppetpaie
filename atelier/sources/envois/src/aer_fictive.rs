@@ -104,7 +104,7 @@ fn paiement_de(d: &DsnLue, nir: Option<&Nir>) -> Option<Jour> {
 /// Les periodes d'un contrat de la DSN `d` qui finit ce mois-ci : une par mois du contrat dont la DSN reelle le porte.
 fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_mois: socle::mois::Mois, c: &ContratDeclare) -> R<Vec<ColonneDuCadre4>> {
     let numero = c.numero.as_ref().ok_or_else(|| socle::echec::cle("La DSN ne dit pas le numéro d'un contrat.", "S21.G00.40.009"))?;
-    let du_contrat = c.periode()?.fermee().ok_or_else(|| socle::refus!("contrat {} : la DSN ne dit pas sa fin", numero))?;
+    let du_contrat = c.periode.fermee().ok_or_else(|| socle::refus!("contrat {} : la DSN ne dit pas sa fin", numero))?;
     let mut out = Vec::new();
     // Les mois du contrat avant celui-ci.
     for m in du_contrat.debut().mois_civil().jusqu_a(le_mois.precedent()) {
@@ -555,7 +555,7 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
     let mut pdfs: Vec<(String, Vec<u8>)> = Vec::new();
     for ind in &d.individus {
         let mut finis: Vec<&ContratDeclare> = d.contrats_de(ind.nir.as_ref()).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()).collect();
-        finis.sort_by_key(|c| (c.debut, c.fin));
+        finis.sort_by_key(|c| c.periode);
         let Some(dernier) = finis.last() else { continue };
         let motif = dernier.motif_fin.ok_or_else(|| socle::echec::cle("La DSN ne dit pas le motif de fin d'un contrat.", "S21.G00.62.002"))?;
         let mut toutes: Vec<ColonneDuCadre4> = Vec::new();

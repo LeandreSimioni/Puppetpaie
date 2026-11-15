@@ -225,8 +225,8 @@ fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
             if k.motif_recours == Some(droit::natures::MotifDeRecours::Remplacement) {
                 continue;
             }
-            let Some(debut) = k.debut else { continue };
-            let fin = match k.fin_declaree.or(k.fin) {
+            let debut = k.periode.debut();
+            let fin = match k.fin_declaree.or(k.periode.fin()) {
                 Some(f) => f,
                 None => dernier,
             };

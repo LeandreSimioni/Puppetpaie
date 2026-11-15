@@ -256,7 +256,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             let initiales: String =
                 c.and_then(|c| c.numero.as_ref()).map(engagement::numeros::NumeroContrat::as_str).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();
             let avant = index_salaries.get(&nir).and_then(|&i| out.salaries[i].premier_contrat);
-            let premier = info.contrats.iter().filter(|x| x.nir == nir).filter_map(|x| x.debut).chain(avant).min();
+            let premier = info.contrats.iter().filter(|x| x.nir == nir).map(|x| x.periode.debut()).chain(avant).min();
             let decl = SalarieDeclare {
                 nir: nir.clone(),
                 individu: ind.clone(),
@@ -323,7 +323,7 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     a.numero_attestation = plein(&c.numero_attestation);
     a.atteste_le = c.date_attestation;
     a.fichier = Some(c.fichier.clone());
-    ContratLu { salarie, debut: Some(c.periode.debut()), fin: Some(c.periode.fin()), numero: None, contrat: a }
+    ContratLu { salarie, periode: Some(c.periode.into()), numero: None, contrat: a }
 }
 
 /// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, les fichiers ou enregistrements illisibles (ignores),

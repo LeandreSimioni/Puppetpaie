@@ -626,7 +626,7 @@ pub(crate) fn apercu_lu(
         let mois = *mois;
         let c = v.contrat.as_ref();
         // Les dates du contrat que le versement paie ; aucune quand il ne paie aucun contrat declare.
-        let periode = c.map(|c| c.periode()).transpose()?;
+        let periode = c.map(|c| c.periode);
         let objet = c.and_then(|c| c.objet.clone()).or_else(|| objets_aem.get(&(nir.clone()?, periode?.fermee()?)).cloned());
         if v.paie.nets.is_none() {
             // Chaque paie lue est celle d'un individu de sa DSN, que `lecture.salaries` porte.
@@ -703,8 +703,8 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let contrats = engagement::importe::contrats_lus(racine)?;
     let paies = engagement::importe::paies_lues(racine)?;
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le).chain(paies.iter().filter_map(|p| p.paie.importe_le)).max();
-    let debut = contrats.iter().filter_map(|c| c.debut).min();
-    let fin = contrats.iter().filter_map(|c| c.fin).max();
+    let debut = contrats.iter().filter_map(|c| c.periode).map(|p| p.debut()).min();
+    let fin = contrats.iter().filter_map(|c| c.periode).filter_map(|p| p.fin()).max();
     let salaries: HashSet<&droit::contexte::IdSalarie> = contrats.iter().map(|c| &c.salarie).collect();
     let objets: HashSet<&NumeroObjetSpectacle> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_ref()).collect();
     let editeur = attend_l_editeur(racine)?;
@@ -879,7 +879,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
             Attestation::Certificat => &mut certificats,
             Attestation::Aem => &mut aem,
         };
-        cible.voir(c.debut.map(MoisOuJour::Jour), c.fin.map(MoisOuJour::Jour), c.contrat.importe_le);
+        cible.voir(c.periode.map(|p| MoisOuJour::Jour(p.debut())), c.periode.and_then(|p| p.fin()).map(MoisOuJour::Jour), c.contrat.importe_le);
     }
     let (mut dsn, mut bulletins) = (Reprise::aucune(), Reprise::aucune());
     // Les DSN reprises : une par mois declare (la phrase de l'etat dit des declarations, pas des versements).

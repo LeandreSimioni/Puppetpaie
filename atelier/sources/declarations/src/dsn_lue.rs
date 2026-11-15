@@ -330,15 +330,13 @@ pub struct ContratDeclare {
     pub nir: Option<Nir>,
     /// Le rang de son individu dans `DsnLue::individus` : un individu sans NIR n'a que lui.
     pub individu: usize,
-    /// .001.
-    pub debut: Option<Jour>,
+    /// .001 et .010 : ses dates (un CDI n'a pas de fin).
+    pub periode: PeriodeOuverte,
     pub emploi: EmploiDeclare,
     /// .007, la nature du contrat.
     pub nature_dsn: Option<String>,
     /// .009.
     pub numero: Option<NumeroContrat>,
-    /// .010.
-    pub fin: Option<Jour>,
     /// .011, l'unite de la quotite ; .012, la quotite de reference de la categorie ; .013, celle du contrat, dans
     /// l'unite de .011 ; .014, la modalite du temps de travail.
     unite_quotite: Option<droit::natures::UniteDeQuotite>,
@@ -478,27 +476,16 @@ impl IndividuDeclare {
 }
 
 impl ContratDeclare {
-    /// Ses dates (S21.G00.40.001 et .010 : un CDI n'a pas de fin). Refus : un contrat sans debut (le bloc s'ouvre a son
-    /// .001, dont la lecture a pu echouer), ou dont la fin precede le debut.
-    pub fn periode(&self) -> R<PeriodeOuverte> {
-        let numero = match &self.numero {
-            Some(n) => n.to_string(),
-            None => "sans numéro".to_string(),
-        };
-        let debut = self.debut.ok_or_else(|| socle::refus!("le contrat {} que la DSN déclare ne dit pas son début (S21.G00.40.001)", numero))?;
-        PeriodeOuverte::du(debut, self.fin)
-    }
-
-    /// Un contrat de l'individu `individu` a son debut (S21.G00.40.001), le reste dit par les rubriques qui le suivent.
-    fn de(nir: Option<Nir>, individu: usize, debut: Option<Jour>) -> ContratDeclare {
+    /// Un contrat de l'individu `individu` a ses dates (S21.G00.40.001 l'ouvre ; .010, sa fin, vient apres), le reste
+    /// dit par les rubriques qui le suivent.
+    fn de(nir: Option<Nir>, individu: usize, periode: PeriodeOuverte) -> ContratDeclare {
         ContratDeclare {
             nir,
             individu,
-            debut,
+            periode,
             emploi: EmploiDeclare::default(),
             nature_dsn: None,
             numero: None,
-            fin: None,
             unite_quotite: None,
             quotite_reference: None,
             quotite: None,
@@ -670,7 +657,7 @@ impl DsnLue {
         let premier = |f: fn(&ContratDeclare) -> Option<Jour>| self.contrats.iter().find_map(f);
         premier(|c| c.dernier_jour_travaille)
             .or_else(|| premier(|c| c.fin_declaree))
-            .or_else(|| self.contrats.first().and_then(|c| c.debut))
+            .or_else(|| self.contrats.first().map(|c| c.periode.debut()))
             .or_else(|| self.depot.filter(|_| self.nature_declaration == Some(crate::amorcage::NATURE)))
     }
 
@@ -1265,8 +1252,12 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             S21_40_001 => {
                 let Some(i) = individu else { continue };
-                let debut = fautes.jour(rub, &v);
-                contrats.push(ContratDeclare::de(individus[i].nir.clone(), i, debut));
+                // Le bloc s'ouvre a son debut : un contrat sans debut ne se lit pas.
+                let Some(debut) = fautes.jour(rub, &v) else {
+                    fautes.noter(Faute::Valeur { rubrique: rub, valeur: v.clone(), quoi: "une date (JJMMAAAA)" });
+                    continue;
+                };
+                contrats.push(ContratDeclare::de(individus[i].nir.clone(), i, PeriodeOuverte::du(debut, None)?));
                 fin_de = Some(contrats.len() - 1);
             }
             // 40.002 et 40.003 : un code que la fiche connait se lit ; un autre code de la norme (01, 02, 08 a 10 ; 98, 99)
@@ -1298,7 +1289,12 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             S21_40_010 => {
                 let fin = fautes.jour(rub, &v);
-                contrat.into_iter().for_each(|c| c.fin = fin);
+                if let Some(c) = contrat {
+                    match PeriodeOuverte::du(c.periode.debut(), fin) {
+                        Ok(p) => c.periode = p,
+                        Err(_) => fautes.noter(Faute::Valeur { rubrique: rub, valeur: v.clone(), quoi: "une fin au plus tôt le jour du début du contrat (S21.G00.40.001)" }),
+                    }
+                }
             }
             <droit::natures::UniteDeQuotite as ListeDeLaNorme>::RUBRIQUE => {
                 let u = fautes.code(rub, &v);

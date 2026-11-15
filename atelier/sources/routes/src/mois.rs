@@ -821,7 +821,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
             jours,
         };
         if !i.permanent() {
-            if let Some(periode) = c.periode()?.and_then(|o| o.fermee()) {
+            if let Some(periode) = c.periode.and_then(|o| o.fermee()) {
                 out.push(atteste(periode, (c.contrat.cachets, c.contrat.heures, c.contrat.jours)));
             }
             continue;

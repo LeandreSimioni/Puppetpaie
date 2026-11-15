@@ -2121,7 +2121,6 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     let heures = heures.entieres();
     let enseignement = c.heures_enseignement.map(Heures::entieres);
     let brut = Montant::du_decimal(l.b.brut).au_centime().decimal();
-    let (debut, fin) = (l.b.periode.debut(), l.b.periode.fin());
     let compte = Compte { heures, cachets, jours, brut };
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
     // LA NATURE DU CONTRAT : aucun des bulletins lus ne l'imprime en mention (`bulletins-lecture-base.json`), et rien sur la
@@ -2141,7 +2140,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     // Le numero du contrat, quand le bulletin l'imprime : il se lit, il ne se tire pas (regle 4).
     a.numero_contrat = l.b.contrat.as_deref().and_then(engagement::numeros::NumeroContrat::d_une_piece);
     (a.fichier, a.page) = (Some(copie.clone()), Some(l.page as u64));
-    Ok((compte, ContratLu { salarie: salarie.clone(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }))
+    Ok((compte, ContratLu { salarie: salarie.clone(), periode: Some(l.b.periode.into()), numero: None, contrat: a }))
 }
 
 /// Le bulletin porte-t-il une marque d'engagement du spectacle : un numero d'objet, ou une cotisation Congés
@@ -2321,8 +2320,6 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
     let (Some(periode), Some(brut)) = (a.periode(), a.brut) else {
         return Err(socle::echec::refus("l'AEM ne dit pas tout ce qu'un contrat demande"));
     };
-    // Le contrat lu garde ses deux bornes, l'une et l'autre facultatives dans sa forme.
-    let (debut, fin) = (periode.debut(), periode.fin());
     // Ce que l'AEM dit, et seulement cela : une colonne qu'elle ne porte pas reste vide (les cachets sont leur somme).
     let (heures, cachets, jours) = (a.heures, Some(a.cachets()), a.jours);
     let brut = Montant::du_decimal(brut).au_centime().decimal();
@@ -2344,7 +2341,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
     (c.heures, c.cachets, c.jours, c.brut) = (heures, cachets, jours, Some(brut));
     c.numero_attestation = plein(&a.numero);
     (c.fichier, c.page) = (Some(copie.clone()), Some(a.page as u64));
-    let ligne = ContratLu { salarie, debut: Some(debut), fin: Some(fin), numero: None, contrat: c };
+    let ligne = ContratLu { salarie, periode: Some(periode.into()), numero: None, contrat: c };
     Ok((ligne, if quoi.is_empty() { "aucune heure, aucun cachet, aucun jour".into() } else { quoi.join(", ") }))
 }
 
@@ -2387,8 +2384,7 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<S
     a.base_conge = c.base_conge;
     a.atteste_le = c.signe_le;
     (a.fichier, a.page) = (Some(copie.clone()), Some(c.page as u64));
-    // La ligne lue ecrit ses dates (`ContratLu`) : sa porte.
-    Ok((ContratLu { salarie, debut: Some(periode.debut()), fin: Some(periode.fin()), numero: None, contrat: a }, quoi))
+    Ok((ContratLu { salarie, periode: Some(periode.into()), numero: None, contrat: a }, quoi))
 }
 
 /// Les compteurs de chaque bulletin lu (`bulletin_lu::compteurs`), confrontes a ses cumuls avec ses freres : les autres

@@ -75,7 +75,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let periode = p.paie.periode;
         let mut activite = Activite::default();
         if let Some(c) = i.contrat_lu()? {
-            if c.periode()?.and_then(|o| o.fermee()).is_some_and(|p| p.mois() == [mois]) {
+            if c.periode.and_then(|o| o.fermee()).is_some_and(|p| p.mois() == [mois]) {
                 activite = Activite {
                     cachets: c.contrat.cachets.filter(|n| !n.est_nul()),
                     heures: c.contrat.heures.filter(|n| !n.est_nul()),

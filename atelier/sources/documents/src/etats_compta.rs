@@ -1323,7 +1323,7 @@ fn provision_d_une_annee_importee(
     let continuent: BTreeSet<droit::contexte::IdSalarie> = engagement::importe::contrats_lus(&ctx.racine)
         .map_err(|x| x.reclasser(Classe::Refuse))?
         .into_iter()
-        .filter(|c| c.fin.is_none_or(|f| f > fin))
+        .filter(|c| c.periode.and_then(|p| p.fin()).is_none_or(|f| f > fin))
         .map(|c| c.salarie)
         .collect();
     let paies = lecture.paies(m)?;

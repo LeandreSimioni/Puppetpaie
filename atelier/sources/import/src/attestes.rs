@@ -40,7 +40,7 @@ pub struct Atteste {
     pub cachets: Option<Cachets>,
     pub jours: Option<Jours>,
     pub brut: Option<Montant>,
-    /// Sa ligne, telle qu'elle s'ecrit.
+    /// Sa ligne, sans ses dates : `periode` les dit (`ecrite`).
     ligne: ContratLu,
     /// Pour un contrat de l'historique : sa ligne telle que l'historique la porte (l'ecriture la retrouve par elle).
     historique: Option<ContratLu>,
@@ -68,6 +68,11 @@ impl Atteste {
     /// Ce qu'il compte, en mots, pour dire un ecart avec ses deux valeurs.
     pub fn en_mots(&self) -> String {
         en_mots(self.heures, self.cachets, self.jours, self.brut)
+    }
+
+    /// Sa ligne, a ses dates, telle qu'elle s'ecrit.
+    fn ecrite(&self) -> ContratLu {
+        ContratLu { periode: Some(self.periode.into()), ..self.ligne.clone() }
     }
 
     /// Tient-il dans la periode d'une piece ?
@@ -106,8 +111,8 @@ fn lu(nir: &Nir, ligne: &ContratLu, periode: Periode, source: Attestant) -> Atte
         jours: c.jours,
         // Le brut que la ligne lue ecrit (un nombre de sa forme) : sa porte.
         brut: c.brut.map(Montant::du_decimal),
-        ligne: ligne.clone(),
-        historique: (source == Attestant::Historique).then(|| ligne.clone()),
+        ligne: ContratLu { periode: None, ..ligne.clone() },
+        historique:(source == Attestant::Historique).then(|| ligne.clone()),
     }
 }
 
@@ -222,7 +227,7 @@ impl Registre {
         let mut muets = Vec::new();
         for i in engagement::importe::tous(&ctx.racine)? {
             let Some(c) = i.contrat_lu()? else { continue };
-            let (cle, lue) = (c.salarie.clone(), c.periode()?);
+            let (cle, lue) = (c.salarie.clone(), c.periode);
             let permanent = i.permanent();
             let bornes = match lue.map(|o| (o.debut(), o.fin())) {
                 Some((d, Some(f))) => format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa()),
@@ -333,22 +338,27 @@ impl Registre {
                 self.changer(x, nouvelle);
             }
         }
+        self.retenus.push((nir.clone(), a.ecrite(), bloc));
         self.tous.push(a);
-        self.retenus.push((nir.clone(), ligne.aux_dates(&periode), bloc));
         Ok(phrases)
     }
 
     /// `x`, retire du registre, devient `nouvelle` et ses dates (`None` : il disparait), dans ce que l'import retient ou
     /// dans ce qu'il change a l'historique.
     fn changer(&mut self, x: Atteste, nouvelle: Option<(ContratLu, Periode)>) {
-        let ligne = nouvelle.as_ref().map(|(l, periode)| l.clone().aux_dates(periode));
+        let nouvelle = nouvelle.map(|(l, periode)| {
+            let mut r = lu(&x.nir, &l, periode, x.source);
+            r.historique = x.historique.clone();
+            r
+        });
+        let ligne = nouvelle.as_ref().map(Atteste::ecrite);
         match &x.historique {
             Some(h) => {
                 self.changes.retain(|c| &c.0 != h);
                 self.changes.push((h.clone(), ligne));
             }
             None => {
-                let ecrite = x.ligne.clone().aux_dates(&x.periode);
+                let ecrite = x.ecrite();
                 let i = self.retenus.iter().position(|r| r.0 == x.nir && r.1 == ecrite);
                 match (i, ligne) {
                     (Some(i), Some(l)) => self.retenus[i].1 = l,
@@ -359,9 +369,7 @@ impl Registre {
                 }
             }
         }
-        if let Some((l, periode)) = nouvelle {
-            let mut r = lu(&x.nir, &l, periode, x.source);
-            r.historique = x.historique;
+        if let Some(r) = nouvelle {
             self.tous.push(r);
         }
     }
