@@ -16,6 +16,7 @@
 
 use droit::fiche::{Lue as _, Nic};
 use socle::echec::Classe;
+use socle::grandeurs::Montant;
 use socle::fichiers::{Empreinte, EmpreinteCourte, NomDeFichier};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
@@ -348,12 +349,12 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
                 avant: apres.clone(),
                 declare: declarations::versement_declare::VersementDeclare {
                     fichier: String::new(),
-                    net_imposable: socle::num::Decimal::ZERO,
-                    net_verse: socle::num::Decimal::ZERO,
-                    net_social: socle::num::Decimal::ZERO,
-                    rappels_net_social: socle::num::Decimal::ZERO,
-                    frais: socle::num::Decimal::ZERO,
-                    brut: socle::num::Decimal::ZERO,
+                    net_imposable: Montant::ZERO,
+                    net_verse: Montant::ZERO,
+                    net_social: Montant::ZERO,
+                    rappels_net_social: Montant::ZERO,
+                    frais: Montant::ZERO,
+                    brut: Montant::ZERO,
                     lignes: Vec::new(),
                     affiliations: Vec::new(),
                     taux_pas: None,
@@ -361,7 +362,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
                 },
                 apres,
                 taux_pas_origine: None,
-                net_deja_verse: socle::num::Decimal::ZERO,
+                net_deja_verse: Montant::ZERO,
                 decidee_le,
             },
         });
@@ -706,7 +707,7 @@ impl DocumentsFabriques {
 /// BOI-IR-PAS-30-10-50, § 1 et § 90, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-extrait-regularisation.md`).
 fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: Mois) -> R<documents::bulletin::Ecart> {
     let taux_parti = parti.pas.as_ref().map(|p| p.taux);
-    let d_net = (apres.net_a_payer - parti.net_a_payer).decimal();
+    let d_net = apres.net_a_payer - parti.net_a_payer;
     let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_ref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
     let indu = pas_c.indu();
     let prelevement = match pas_c.prelevement {
@@ -715,7 +716,7 @@ fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois
                 false => Some(pas_c.versement.taux),
                 true => taux_parti,
             };
-            let taux = taux.ok_or_else(|| erreur(Classe::Illisible, format!("La correction de {} prélève {} sans taux de prélèvement à la source.", mois_versement.libelle(Graphie::Accentuee), montant)))?;
+            let taux = taux.ok_or_else(|| erreur(Classe::Illisible, format!("La correction de {} prélève {} sans taux de prélèvement à la source.", mois_versement.libelle(Graphie::Accentuee), montant.decimal())))?;
             Some(documents::bulletin::PrelevementDeLEcart { indu, taux, montant })
         }
         None => None,
@@ -725,10 +726,10 @@ fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois
         None => d_net,
     };
     Ok(documents::bulletin::Ecart {
-        net_avant: parti.net_a_payer.decimal(),
-        net_apres: apres.net_a_payer.decimal(),
+        net_avant: parti.net_a_payer,
+        net_apres: apres.net_a_payer,
         difference_net: d_net,
-        difference_net_imposable: pas_c.difference.decimal(),
+        difference_net_imposable: pas_c.difference,
         mois_versement,
         prelevement,
         a_verser,

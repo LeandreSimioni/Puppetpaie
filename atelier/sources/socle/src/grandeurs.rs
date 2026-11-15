@@ -12,7 +12,7 @@
 //! (`#[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]`).
 
 use crate::num::{self, Decimal};
-use rust_decimal::RoundingStrategy;
+use rust_decimal::{MathematicalOps, RoundingStrategy};
 
 /// Ce que toute grandeur porte : un decimal. Il n'en sort que par `decimal`, nomme sur chaque type ; ce trait ne sert
 /// qu'aux ecritures (`ecrit`) et aux lectures (`lu`) de ce module, scelle (`scelle::Scelle` ne se nomme pas dehors).
@@ -200,6 +200,18 @@ impl Montant {
     pub fn prorata(self, part: Heures, tout: Heures) -> Montant {
         Montant(num::div(num::mul(self.0, part.0), tout.0))
     }
+
+    /// Ce montant pour chacune des heures `h` (le SMIC horaire d'un SMIC de reference) : montant / heures = montant
+    /// unitaire ; `None` quand `h` est nul.
+    pub fn par_heure(self, h: Heures) -> Option<MontantUnitaire> {
+        (!h.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, h.0)))
+    }
+
+    /// Ce montant divise par `c` (une reduction partagee par les points de sa formule) : montant / coefficient =
+    /// montant ; `None` quand `c` est nul.
+    pub fn sur(self, c: Coefficient) -> Option<Montant> {
+        (!c.0.is_zero()).then(|| Montant(num::div(self.0, c.0)))
+    }
 }
 
 impl std::ops::Mul<Coefficient> for Montant {
@@ -209,7 +221,39 @@ impl std::ops::Mul<Coefficient> for Montant {
     }
 }
 
+/// Coefficient x coefficient = coefficient.
+impl std::ops::Mul for Coefficient {
+    type Output = Coefficient;
+    fn mul(self, c: Coefficient) -> Coefficient {
+        Coefficient(num::mul(self.0, c.0))
+    }
+}
+
 impl Coefficient {
+    /// Zero.
+    pub const ZERO: Coefficient = Coefficient(Decimal::ZERO);
+
+    /// Un.
+    pub const UN: Coefficient = Coefficient(Decimal::ONE);
+
+    /// Ce coefficient divise par `c` : coefficient / coefficient = coefficient ; `None` quand `c` est nul.
+    pub fn sur(self, c: Coefficient) -> Option<Coefficient> {
+        (!c.0.is_zero()).then(|| Coefficient(num::div(self.0, c.0)))
+    }
+
+    /// Ce coefficient a la puissance `p` ; `None` quand elle ne se calcule pas.
+    pub fn puissance(self, p: Coefficient) -> Option<Coefficient> {
+        self.0.checked_powd(p.0).map(Coefficient)
+    }
+
+    /// A quatre decimales, la moitie vers le haut, ses quatre decimales ecrites : le coefficient de la reduction generale
+    /// (`droit::reduction`).
+    pub fn au_dix_millieme(self) -> Coefficient {
+        let mut c = self.0.round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero);
+        c.rescale(4);
+        Coefficient(c)
+    }
+
     /// A quatre decimales, la moitie au pair (un ecart relatif : aucun texte deposé ne dit cet arrondi).
     pub fn a_quatre_decimales(self) -> Coefficient {
         Coefficient(self.0.round_dp(4))
@@ -246,6 +290,12 @@ impl Heures {
         let mut c = self.0.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
         c.rescale(2);
         Heures(c)
+    }
+
+    /// A deux decimales, la moitie au pair (les heures exactes d'un rapport, que le bulletin dit au centieme : aucun texte
+    /// deposé ne dit cet arrondi).
+    pub fn a_deux_decimales(self) -> Heures {
+        Heures(self.0.round_dp(2))
     }
 
     /// Ces heures reparties egalement sur `n` jours (les heures d'une ligne sur ses dates) : heures / compte = heures. Un

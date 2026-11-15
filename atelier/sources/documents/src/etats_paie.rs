@@ -1251,8 +1251,8 @@ pub fn reduction_generale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let Some(rg) = &paie.reduction_generale else { continue };
             let mut l = Ligne::nouvelle();
             l.m("mois", m).t("salarie", qui(&paie.salarie)?).ot("contrat", paie.engagement.numero.clone());
-            let c = |x: Decimal| Montant::du_decimal(x).au_centime().decimal();
-            l.d("brut", paie.brut.au_centime().decimal()).d("heures", ou_zero(rg.heures)).d("smic", c(rg.smic_reference)).d("coefficient", ou_zero(rg.coefficient));
+            // Les cases du tableau : leur porte.
+            l.d("brut", paie.brut.au_centime().decimal()).d("heures", ou_zero(rg.heures.decimal())).d("smic", rg.smic_reference.au_centime().decimal()).d("coefficient", ou_zero(rg.coefficient.decimal()));
             let euros = |x: Montant| x.au_centime().decimal();
             l.d("montant", euros(rg.montant)).d("urssaf", euros(rg.urssaf)).d("chomage", euros(rg.chomage)).d("retraite", euros(rg.agirc_arrco));
             lignes.push(l);

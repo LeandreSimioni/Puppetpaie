@@ -16,7 +16,7 @@ use socle::mois::Mois;
 use socle::texte::euros;
 use socle::echec::R;
 use socle::echec::{erreur, Classe};
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 use socle::echec::Echec;
 use crate::versement_declare::{self, VersementDeclare};
 
@@ -37,7 +37,7 @@ pub struct Reg {
     pub declare: VersementDeclare,
     /// Le net a payer avant impot deja verse au salarie pour le contrat, lu dans la derniere paie declaree : celle du
     /// mois d'origine, ou celle de la derniere correction deja portee (`versement_declare::dernier_declare`).
-    pub net_deja_verse: Decimal,
+    pub net_deja_verse: Montant,
     /// La paie corrigee : celle que la version presente de l'engagement valide a ecrite pour le mois d'origine.
     pub apres: Paie,
     pub taux_pas_origine: Option<droit::pas::TauxDePas>,
@@ -236,18 +236,18 @@ fn ajout(mois: Mois, version: u64, decidee_le: Option<Jour>, apres: Paie) -> R<R
     }
     let declare = VersementDeclare {
         fichier: String::new(),
-        net_imposable: Decimal::ZERO,
-        net_verse: Decimal::ZERO,
-        net_social: Decimal::ZERO,
-        rappels_net_social: Decimal::ZERO,
-        frais: Decimal::ZERO,
-        brut: Decimal::ZERO,
+        net_imposable: Montant::ZERO,
+        net_verse: Montant::ZERO,
+        net_social: Montant::ZERO,
+        rappels_net_social: Montant::ZERO,
+        frais: Montant::ZERO,
+        brut: Montant::ZERO,
         lignes: Vec::new(),
         affiliations: Vec::new(),
         taux_pas: None,
         debut_contrat: None,
     };
-    Ok(Reg { mois, version, decidee_le, avant: apres.clone(), declare, net_deja_verse: Decimal::ZERO, apres, taux_pas_origine: None })
+    Ok(Reg { mois, version, decidee_le, avant: apres.clone(), declare, net_deja_verse: Montant::ZERO, apres, taux_pas_origine: None })
 }
 
 /// `resume_regularisations` : une ligne lisible par correction embarquee.
@@ -265,9 +265,9 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
             documents::tableaux_export::qui_souple(s),
             numero,
             r.mois.libelle(socle::mois::Graphie::Accentuee),
-            euros(r.declare.brut),
+            euros(r.declare.brut.decimal()),
             euros(r.apres.brut.decimal()),
-            euros(r.net_deja_verse),
+            euros(r.net_deja_verse.decimal()),
             euros(r.apres.net_a_payer.decimal()),
         ));
     }

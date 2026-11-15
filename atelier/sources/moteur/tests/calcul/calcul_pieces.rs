@@ -6,6 +6,7 @@ use crate::outils::{dec, dossier_de_test, lire_oracle, oracle, sceller};
 use droit::catalogue::{code_54, rubrique};
 use droit::reduction::{au_dela_du_seuil, reduction_generale};
 use serde_json::{json, Value};
+use socle::grandeurs::{Coefficient, Heures, Montant};
 
 const ORACLE: &str = "calcul-pieces.json";
 
@@ -100,7 +101,7 @@ fn la_reduction_generale() {
         let mut vus = Vec::new();
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
-            let r = section(bar).and_then(|rg| reduction_generale(rg.as_ref(), statut, dec(b.as_str().unwrap()), dec(h), caisse));
+            let r = section(bar).and_then(|rg| reduction_generale(rg.as_ref(), statut, Montant::du_decimal(dec(b.as_str().unwrap())), Heures::du_decimal(dec(h)), caisse));
             appliquees += matches!(r, Ok(Some(_))) as usize;
             vus.push(essai(r.map(|o| o.map_or(Value::Null, |x| socle::ecriture::en_valeur(&x)))));
         }
@@ -125,7 +126,7 @@ fn le_seuil_de_smic() {
             points += 1;
             let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(decimal).transpose();
             vus.push(essai(section(bar).and_then(|rg| match seuil? {
-                Some(s) => au_dela_du_seuil(rg.as_ref(), dec(b.as_str().unwrap()), dec(h), s),
+                Some(s) => au_dela_du_seuil(rg.as_ref(), Montant::du_decimal(dec(b.as_str().unwrap())), Heures::du_decimal(dec(h)), Coefficient::du_decimal(s)),
                 None => Ok(true),
             }).map(Value::Bool)));
         }

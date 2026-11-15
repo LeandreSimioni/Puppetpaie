@@ -66,7 +66,7 @@ use socle::fichiers::{LectureDatee, ValeurLue};
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
 use socle::grandeurs::Montant;
-use socle::{echec::{refus, Echec, R}, num::Decimal};
+use socle::echec::{refus, Echec, R};
 
 /// POURQUOI UNE PAIE SE RECALCULE (`raison`). Elle s'ecrit par sa phrase (`Display`), que la paie ecrite garde
 /// (`Recalcul::raison`).
@@ -923,9 +923,9 @@ pub fn prelevement_de_la_correction(
     let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
     let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)?;
     let prelevement = if difference < Montant::ZERO {
-        taux_origine.map(|t| t.prelevement(difference).au_centime().decimal())
+        taux_origine.map(|t| t.prelevement(difference).au_centime())
     } else {
-        Some(versement.taux.prelevement(versement.montant_soumis).au_centime().decimal())
+        Some(versement.taux.prelevement(versement.montant_soumis).au_centime())
     };
     Ok(PrelevementDeLaCorrection { difference, versement, prelevement })
 }
@@ -937,7 +937,7 @@ pub struct PrelevementDeLaCorrection {
     /// Le taux, son type, son identifiant et le montant soumis du versement (S21.G00.50.006 a .008, .013).
     pub versement: droit::pas::Versement,
     /// Ce que la correction preleve (positif) ou rend (negatif) ; `None` : un trop-verse sans taux d'origine.
-    pub prelevement: Option<Decimal>,
+    pub prelevement: Option<Montant>,
 }
 
 impl PrelevementDeLaCorrection {

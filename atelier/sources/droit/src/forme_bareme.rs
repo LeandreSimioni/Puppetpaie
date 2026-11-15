@@ -843,22 +843,23 @@ forme! {
 /// coefficient se multiplie par l'un et se divise par l'autre (`reduction`). Reecrite comme lue (`Display`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MajorationCaisseConges {
-    pub numerateur: Decimal,
-    pub denominateur: Decimal,
+    pub numerateur: Coefficient,
+    pub denominateur: Coefficient,
 }
 
 impl MajorationCaisseConges {
-    /// La majoration ecrite `texte`, « numerateur/denominateur ».
+    /// La majoration ecrite `texte`, « numerateur/denominateur » : la porte de sa lecture.
     pub fn lire(texte: &str) -> socle::echec::R<MajorationCaisseConges> {
         let (n, d) = texte.split_once('/').ok_or_else(|| socle::refus!("fraction illisible : {}", socle::fichiers::repr(texte)))?;
-        let lire = |s: &str| <Decimal as std::str::FromStr>::from_str(s).map_err(|_| socle::echec::refus(socle::num::illisible(s)));
+        let lire = |s: &str| <Decimal as std::str::FromStr>::from_str(s).map(Coefficient::du_decimal).map_err(|_| socle::echec::refus(socle::num::illisible(s)));
         Ok(MajorationCaisseConges { numerateur: lire(n)?, denominateur: lire(d)? })
     }
 }
 
 impl std::fmt::Display for MajorationCaisseConges {
+    /// Reecrite comme lue : la porte de son ecriture.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.numerateur, self.denominateur)
+        write!(f, "{}/{}", self.numerateur.decimal(), self.denominateur.decimal())
     }
 }
 

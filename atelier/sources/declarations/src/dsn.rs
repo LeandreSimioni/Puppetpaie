@@ -552,7 +552,7 @@ pub struct Regularisation {
     /// Le net a payer avant impot deja verse au salarie pour ce contrat, lu dans la derniere paie declaree
     /// (`produire_regularisations::versement_declare_de`) : ce qui dit si la correction verse ou reprend quelque chose,
     /// et a quel montant net social correspondait ce qui a ete paye (`blocs_58_de_la_correction`).
-    pub net_deja_verse: Decimal,
+    pub net_deja_verse: Montant,
     /// Le jour ou la correction a ete ecrite (`decidee_le`) : la date de la modification (S21.G00.41.001) quand elle
     /// change la date de debut du contrat (`changements_contrat::ancienne_date_de_debut`). `None` : inconnu.
     pub decidee_le: Option<Jour>,
@@ -607,7 +607,7 @@ pub struct Cotisation {
     pub base81: Option<Decimal>,
     /// Le taux de la ligne (81.007), tel que le bareme ou le bulletin l'ecrit.
     pub taux: Option<Decimal>,
-    pub montant: Option<Decimal>,
+    pub montant: Option<Montant>,
     /// Le composant d'une base 31 (S21.G00.79.001, et son montant 79.004) quand la source du taux de la ligne le dit
     /// (`composant_79`, `bareme::bareme_sante`) ; `None` : la tranche A, sur le brut.
     pub composant79: Option<(TypeDeComposant, Decimal)>,
@@ -729,11 +729,11 @@ fn base_de_la_paie(p: &Paie, a: Assiette) -> Option<Decimal> {
     p.bases.get(&a).map(|b| b.decimal())
 }
 
-fn somme_lignes(p: &Paie, ids: &[IdDeCotisation], patronale_seule: bool) -> Decimal {
+fn somme_lignes(p: &Paie, ids: &[IdDeCotisation], patronale_seule: bool) -> Montant {
     p.lignes
         .iter()
         .filter(|l| ids.iter().any(|id| l.est(id)))
-        .fold(Montant::ZERO.decimal(), |s, l| add(s, if patronale_seule { l.montant_pat.decimal() } else { add(l.montant_pat.decimal(), l.montant_sal.decimal()) }))
+        .fold(Montant::ZERO, |s, l| s + if patronale_seule { l.montant_pat } else { l.montant_pat + l.montant_sal })
 }
 
 /// LE BAREME QUE LA DSN LIT POUR UN MOIS ET UN ETABLISSEMENT (`bar_du`), et la pile de chaque paie qu'il a deja empilee : elle lit
@@ -851,7 +851,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let bases = bases(p, &bar)?;
     let mut out: Vec<Cotisation> = Vec::new();
     for c in &bar.cotisations_dsn {
-        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut.decimal(), p.heures_travaillees.decimal(), n.decimal())).transpose()? == Some(false) {
+        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, n)).transpose()? == Some(false) {
             continue;
         }
         let bloc78 = c.bloc78;
@@ -878,8 +878,8 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             l.base81 = Some(b);
             l.taux = Some(taux.decimal());
             l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
-                Some(composants) => composants.iter().fold(Montant::ZERO.decimal(), |s, t| add(s, Montant::du_decimal(b).fois_taux(*t).au_centime().decimal())),
-                None => Montant::du_decimal(b).fois_taux(taux).au_centime().decimal(),
+                Some(composants) => composants.iter().fold(Montant::ZERO, |s, t| s + Montant::du_decimal(b).fois_taux(*t).au_centime()),
+                None => Montant::du_decimal(b).fois_taux(taux).au_centime(),
             });
         }
         // Une cotisation qui porte un montant se declare sous son code (81.001) : le bareme le dit.
@@ -946,8 +946,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
                         code_insee: None,
                         base81: Some(brut_03),
                         taux: None,
-                        // La cotisation de la DSN compte encore en decimaux : la part s'y ouvre.
-                        montant: Some((-part).decimal()),
+                        montant: Some(-part),
                         composant79: None,
                         cet: false,
                     });
@@ -965,8 +964,8 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         let urssaf = Some(org_de(&bar, CodeCotisation81::AssuranceMaladie, HEURES_EN_PLUS)?);
         let brut_03 = bases[&cle_abattue(p, BaseAssujettie::BruteDeplafonnee, Assiette::Brut)?];
         for (code, id) in [(CODE81_REDUCTION_HEURES, engagement::heures_en_plus::REDUCTION), (CODE81_DEDUCTION_HEURES, engagement::heures_en_plus::DEDUCTION)] {
-            let montant = p.lignes.iter().filter(|l| l.est(&id)).fold(Montant::ZERO.decimal(), |a, l| add(a, add(l.montant_pat.decimal(), l.montant_sal.decimal())));
-            if montant.is_zero() {
+            let montant = p.lignes.iter().filter(|l| l.est(&id)).fold(Montant::ZERO, |a, l| a + (l.montant_pat + l.montant_sal));
+            if montant.est_nul() {
                 continue;
             }
             out.push(Cotisation {
@@ -1008,13 +1007,14 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             None => None,
         };
         if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite && place.is_some_and(|x| exclues.contains(&x)) {
-            if let Some(m) = c.montant.filter(|m| !m.is_zero()) {
+            if let Some(m) = c.montant.filter(|m| !m.est_nul()) {
                 return Err(refus!(
                     "{} : une cotisation {} de {} sous une affiliation prevoyance que le salarie n'a pas ce mois-la \
 (S21.G00.70). La paie et l'affiliation se contredisent ; rien n'est declare.",
                     qui_contrat(p),
                     code_declare(&c)?,
-                    mt(m)
+                    // La phrase dit le montant comme la DSN l'ecrit : sa porte.
+                    mt(m.decimal())
                 ));
             }
             continue;
@@ -1051,11 +1051,11 @@ const LIGNES_AGIRC_ARRCO: [IdDeCotisation; 3] = [droit::forme_bareme::RETRAITE_T
 /// CET en plus) ; la retraite et la CEG seules sont ce que la ligne vaudrait sans elle, au meme arrondi (chaque composant
 /// sur la base de la ligne), et la CET le reste. Une ligne que ce calcul ne retrouve pas au centime refuse : sa CET ne
 /// se separe pas sans deviner.
-fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) -> R<(Decimal, Option<(Decimal, Decimal)>)> {
+fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) -> R<(Montant, Option<(Montant, Decimal)>)> {
     let Some(cet) = r.cet_si_depasse.as_ref().filter(|_| base_de_la_paie(p, Assiette::Cet).is_some_and(|b| !b.is_zero())) else {
-        return Ok((l.montant_pat.decimal(), None));
+        return Ok((l.montant_pat, None));
     };
-    let (base, montant_pat) = (l.base.decimal(), l.montant_pat.decimal());
+    let base = l.base.decimal();
     let cet_pat = cet.pat.decimal();
     let comp = match r.composants_pat.as_deref() {
         Some(c) if !c.is_empty() => c.iter().map(|t| t.decimal()).collect(),
@@ -1066,16 +1066,17 @@ fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) 
     if let Some(dernier) = avec.last_mut() {
         *dernier += cet_pat;
     }
-    if droit::bareme::somme_pct(base, &avec) != montant_pat {
+    if droit::bareme::somme_pct(base, &avec) != l.montant_pat {
         return Err(refus!(
             "La ligne « {} » du bulletin ({} de part patronale sur {}) ne se refait pas, CET comprise, à partir de \
 ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans deviner. Rien n'est écrit.",
             l.id,
-            socle::texte::euros(montant_pat),
+            // La phrase cite le montant : sa porte.
+            socle::texte::euros(l.montant_pat.decimal()),
             socle::texte::euros(base)
         ));
     }
-    Ok((sans, Some((sub(montant_pat, sans), cet_pat))))
+    Ok((sans, Some((l.montant_pat - sans, cet_pat))))
 }
 
 /// Les parts patronales Agirc-Arrco que l'Urssaf attend a cote d'un 131, sous la meme base 78. Guide Urssaf « Comment
@@ -1114,7 +1115,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
         ));
     }
     let org = org_de(pile, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
-    let part = |code: CodeCotisation81, base: Decimal, taux: Decimal, montant: Decimal| Cotisation {
+    let part = |code: CodeCotisation81, base: Decimal, taux: Decimal, montant: Montant| Cotisation {
         bloc78: l131.bloc78,
         base78: l131.base78,
         code81: Some(code),
@@ -1129,7 +1130,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
         cet: false,
     };
     let mut out = Vec::new();
-    let (mut cet_montant, mut cet_base, mut cet_taux) = (Montant::ZERO.decimal(), Montant::ZERO.decimal(), None::<Decimal>);
+    let (mut cet_montant, mut cet_base, mut cet_taux) = (Montant::ZERO, Montant::ZERO.decimal(), None::<Decimal>);
     for id in &ids {
         // La CET d'un non cadre n'existe pas ; une tranche 2 nulle n'est pas au bulletin (`calcul::calculer`).
         let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
@@ -1143,17 +1144,17 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
                 return Err(refus!("La CET des lignes {} n'a pas un seul taux patronal : sa part patronale (146 en 2026, 148 en 2027) ne s'ecrit pas.", dites(&ids)));
             }
             cet_taux = Some(t);
-            cet_montant = add(cet_montant, m);
+            cet_montant += m;
             cet_base = add(cet_base, l.base.decimal());
         }
-        if !montant.is_zero() {
+        if !montant.est_nul() {
             let code = if *id == droit::forme_bareme::RETRAITE_T1 { AGIRC_ARRCO_PATRONALE_T1 } else { AGIRC_ARRCO_PATRONALE_T2 };
             // La ligne « cet » d'un permanent est toute de la CET ; celle d'un cadre intermittent est fondue dans ses
             // tranches et se separe plus bas (`sans_la_cet`).
             out.push(Cotisation { cet: *id == droit::forme_bareme::CET, ..part(code, l.base.decimal(), taux, montant) });
         }
     }
-    if let (Some(t), false) = (cet_taux, cet_montant.is_zero()) {
+    if let (Some(t), false) = (cet_taux, cet_montant.est_nul()) {
         out.push(Cotisation { cet: true, ..part(AGIRC_ARRCO_PATRONALE_T2, cet_base, t, cet_montant) });
     }
     Ok(out)
@@ -2239,16 +2240,17 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
             // Le taux couvre la prevoyance du statut ; une garantie qu'une couche range avec elle (la tranche B d'un
             // cadre technicien de la CCNEAC, XII.2.2.2) est aussi « incluse dans la base CSG » : sa part patronale s'ajoute.
             CotisationSupplementaire::SurUneBase(t) => {
-                let sur_la_base = Montant::du_decimal(base(&bases(p, &bp)?, t.base)?).fois_taux(t.taux_sur_la_base).au_centime().decimal();
+                let sur_la_base = Montant::du_decimal(base(&bases(p, &bp)?, t.base)?).fois_taux(t.taux_sur_la_base).au_centime();
                 if type_54 == AutreElementDeRevenuBrut::CotisationPrevoyanceRetraiteSupplementaire {
                     let ajoutees: Vec<IdDeCotisation> = bp.garanties_de_prevoyance().into_iter().filter(|g| *g != PREVOYANCE).collect();
-                    add(sur_la_base, somme_lignes(p, &ajoutees, true))
+                    sur_la_base + somme_lignes(p, &ajoutees, true)
                 } else {
                     sur_la_base
                 }
             }
         };
-        let montant = rond(montant);
+        // A l'euro, comme la DSN ecrit ce bloc : sa porte.
+        let montant = rond(montant.decimal());
         if montant.is_zero() {
             continue;
         }
@@ -2376,9 +2378,9 @@ pub fn bases_et_cotisations(
                 // Le SMIC de reference de la reduction generale, sinon le plafond de la periode.
                 let v = match p.reduction_generale.as_ref() {
                     Some(rg) => rg.smic_reference,
-                    None => p.plafond.decimal(),
+                    None => p.plafond,
                 };
-                f.add(droit::rubrique!("S21.G00.79.004"), ms(v, signe));
+                f.add(droit::rubrique!("S21.G00.79.004"), ms(v.decimal(), signe));
             } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
                 // Le composant que la source du taux donne (`composant79` : la sante des permanents 3090, base forfaitaire
                 // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur le brut.
@@ -2405,7 +2407,7 @@ pub fn bases_et_cotisations(
         if org.is_some() || c.cle_total.is_some() {
             f.add(droit::rubrique!("S21.G00.81.003"), ms(c.base81.ok_or_else(|| socle::fichiers::absent("base81"))?, signe));
         }
-        f.add(droit::rubrique!("S21.G00.81.004"), ms(montant, signe));
+        f.add(droit::rubrique!("S21.G00.81.004"), ms(montant.decimal(), signe));
         if let Some(insee) = c.code_insee.as_deref() {
             f.add(droit::rubrique!("S21.G00.81.005"), insee);
         }
@@ -2670,31 +2672,31 @@ dans une correction. Rien n'est écrit.",
     }
     // Le 58 de la paie d'origine se date de son versement (sa fin de periode, 50.001 de la DSN d'origine) en norme 2027.
     let (d_o, f_o) = dates_du_58(f, debut, fin, fin)?;
-    let origine = |f: &mut Fichier, montant: Decimal| -> R<()> {
+    let origine = |f: &mut Fichier, montant: Montant| -> R<()> {
         annuler_les_58(f, r, (d_o, f_o))?;
         f.add(droit::rubrique!("S21.G00.58.001"), d_o.jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.58.002"), f_o.jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.58.003"), "03");
-        f.add(droit::rubrique!("S21.G00.58.004"), ms(montant, 1));
+        f.add(droit::rubrique!("S21.G00.58.004"), ms(montant.decimal(), 1));
         Ok(())
     };
     // UN CONTRAT AJOUTE (rien de declare, rien de verse : `produire_regularisations::ajout`) : pas de 58 d'origine a
     // annuler ni a redeclarer ; tout son montant net social est verse par la correction, aux dates du mois du versement
     // (BOSS, montant net social, Q 35 : « du mois lors duquel ce rappel ou ce versement est effectue »).
-    let ajoute = r.declare.lignes.is_empty() && r.declare.fichier.is_empty() && r.net_deja_verse.is_zero();
-    if !ajoute && apres.net_a_payer.decimal() == r.net_deja_verse {
-        return origine(f, sub(apres.net_social.decimal(), rappels));
+    let ajoute = r.declare.lignes.is_empty() && r.declare.fichier.is_empty() && r.net_deja_verse.est_nul();
+    if !ajoute && apres.net_a_payer == r.net_deja_verse {
+        return origine(f, apres.net_social - rappels);
     }
-    let paye = if ajoute { Decimal::ZERO } else { sub(r.net_deja_verse, sub(avant.net_a_payer.decimal(), avant.net_social.decimal())) };
-    if !ajoute && sub(paye, rappels) != r.declare.net_social {
-        origine(f, sub(paye, rappels))?;
+    let paye = if ajoute { Montant::ZERO } else { r.net_deja_verse - (avant.net_a_payer - avant.net_social) };
+    if !ajoute && paye - rappels != r.declare.net_social {
+        origine(f, paye - rappels)?;
     }
     let debut_mois = Jour::nouveau(fin_mois.an, fin_mois.mois, 1).ok_or_else(|| refus("mois de versement illisible"))?;
     let (d_v, f_v) = dates_du_58(f, &debut_mois, &fin_mois, &fin_mois)?;
     f.add(droit::rubrique!("S21.G00.58.001"), d_v.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.58.002"), f_v.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.58.003"), "03");
-    f.add(droit::rubrique!("S21.G00.58.004"), ms(sub(apres.net_social.decimal(), paye), 1));
+    f.add(droit::rubrique!("S21.G00.58.004"), ms((apres.net_social - paye).decimal(), 1));
     Ok(())
 }
 
@@ -2748,11 +2750,11 @@ fn bloc_regularisation(
     // Le prelevement du versement de la correction est celui que l'engagement rend (`prelevement_de_la_correction`) :
     // la DSN ne le calcule pas.
     let d_ni = pas_c.difference;
-    let d_net = sub(apres.net_verse().decimal(), r.declare.net_verse);
+    let d_net = apres.net_verse() - r.declare.net_verse;
     f.add(droit::rubrique!("S21.G00.50.001"), fin_mois.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.50.002"), mt(d_ni.decimal()));
     f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(numero)?);
-    f.add(droit::rubrique!("S21.G00.50.004"), mt(d_net));
+    f.add(droit::rubrique!("S21.G00.50.004"), mt(d_net.decimal()));
     let v = &pas_c.versement;
     let (taux, type_taux, identifiant, soumis) = (&v.taux, &v.type_taux, &v.identifiant, v.montant_soumis);
     f.add(droit::rubrique!("S21.G00.50.006"), taux.to_string());
@@ -3032,7 +3034,8 @@ fn lignes_81(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Ligne81>> {
                 code: code_declare(&c)?,
                 base: if c.org.is_some() || c.cle_total.is_some() { c.base81 } else { None },
                 org: c.org,
-                montant: c.montant,
+                // Une ligne 81 telle qu'une DSN deposee se relit (81.004 en decimal, `lignes_declarees`) : sa porte.
+                montant: c.montant.map(Montant::decimal),
                 affiliation: c.affectation,
             })
         })
@@ -3068,8 +3071,10 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
     let art = !mensuelle && !tech;
     let l = lecture(p, bar)?;
     let (b78, l81) = lignes_declarees(&r.declare)?;
-    let brut = r.declare.brut;
-    let si = |oui: bool, v: &dyn Fn() -> R<Decimal>| if oui { v() } else { Ok(Montant::ZERO.decimal()) };
+    // Les assiettes du bordereau comptent encore en decimaux, comme les lignes deposees (`lignes_declarees`) : le brut
+    // declare s'y ouvre.
+    let brut = r.declare.brut.decimal();
+    let si =|oui: bool, v: &dyn Fn() -> R<Decimal>| if oui { v() } else { Ok(Montant::ZERO.decimal()) };
     let base = |a: Assiette| l.base(a, &b78, &l81);
     let t1_ou_majoree = if caisse { Assiette::T1MensuelleX115 } else { Assiette::T1Mensuelle };
     use AssietteDuBordereau as A;
@@ -3191,7 +3196,9 @@ fn cumuler_totaux(totaux: &mut Vec<(CleDeTotalisation, Decimal)>, paies: &[&Paie
                 Some(cle) => cle,
                 None => code_declare(&c)?.into(),
             };
-            ajouter(totaux, cle, mul(s, m));
+            // Les totaux du bordereau comptent encore en decimaux, comme ceux d'une DSN deposee (`cumuler_le_declare`) : le
+            // montant s'y ouvre.
+            ajouter(totaux, cle, mul(s, m.decimal()));
         }
     }
     Ok(())
@@ -5132,7 +5139,7 @@ certificat de conformite du depot precedent.",
         for (k, (rang, r)) in rangs_regs.iter().zip(&corrections).enumerate() {
             let b = bar_de(r.mois)?;
             let numero = (lot.len() + k + 1) as i64;
-            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, Montant::du_decimal(r.declare.net_imposable), r.taux_pas_origine.as_ref(), mois)?;
+            let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable,r.taux_pas_origine.as_ref(), mois)?;
             bloc_regularisation(&mut f, r, &b, *rang, numero, &pas_c, fin_m)?;
         }
         f.contrat_unique = false;

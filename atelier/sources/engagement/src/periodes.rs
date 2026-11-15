@@ -186,16 +186,15 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         ));
     }
     // La reduction generale du mois, puis sa part dans chaque periode.
-    let zero = Montant::ZERO.decimal();
     let brut_mois = parts.iter().fold(Montant::ZERO, |a, p| a + p.brut);
     let heures_mois = parts.iter().fold(Heures::ZERO, |a, p| a + p.heures_travaillees);
     let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| b.decimal() > Decimal::ZERO));
     let pile = pile_de_la_paie(ctx, derniere)?;
-    let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois.decimal(), heures_mois.decimal(), caisse)?;
+    let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois, heures_mois, caisse)?;
     for p in parts.iter_mut() {
         let rg = match &du_mois {
             Some(m) if p.brut > Montant::ZERO && p.heures_travaillees > Heures::ZERO => {
-                Some(reduction_au_coefficient(pile_de_la_paie(ctx, p)?.reduction_generale.as_ref(), m.coefficient, p.brut.decimal(), p.heures_travaillees.decimal())?)
+                Some(reduction_au_coefficient(pile_de_la_paie(ctx, p)?.reduction_generale.as_ref(), m.coefficient, p.brut, p.heures_travaillees)?)
             }
             _ => None,
         };
@@ -273,13 +272,12 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     m.remuneration = parts.iter().flat_map(|p| p.remuneration.iter().cloned()).collect();
     m.reduction_generale = du_mois.map(|d| {
         let rgs: Vec<&ReductionGenerale> = parts.iter().filter_map(|p| p.reduction_generale.as_ref()).collect();
-        let s = |f: &dyn Fn(&ReductionGenerale) -> Decimal| rgs.iter().fold(zero, |a, r| a + f(r));
         let somme = |f: &dyn Fn(&ReductionGenerale) -> Montant| rgs.iter().fold(Montant::ZERO, |a, r| a + f(r));
         ReductionGenerale {
             coefficient: d.coefficient,
             montant: somme(&|r| r.montant),
-            smic_reference: s(&|r| r.smic_reference),
-            heures: rgs.iter().fold(Decimal::ZERO, |a, r| a + r.heures),
+            smic_reference: somme(&|r| r.smic_reference),
+            heures: rgs.iter().fold(Heures::ZERO, |a, r| a + r.heures),
             urssaf: somme(&|r| r.urssaf),
             chomage: somme(&|r| r.chomage),
             agirc_arrco: somme(&|r| r.agirc_arrco),

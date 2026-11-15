@@ -12,8 +12,8 @@ use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::texte::euros;
 use socle::echec::{refus, R};
-use socle::num::{div, sub, Decimal};
-use socle::grandeurs::Taux;
+use socle::num::{sub, Decimal};
+use socle::grandeurs::{Montant, Taux};
 use droit::pas::Versement;
 use droit::forme_bareme::{self as cot, IdDeCotisation};
 use engagement::ecarts::RegroupementDeComparaison as Regroupement;
@@ -275,13 +275,10 @@ fn ligne_net(libelle: &str, montant: Decimal, colonnes: i64) -> Ligne {
 /// generale, celui du CALCUL (gele a 12,02 en 2026), pas le SMIC du jour.
 pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
     if let Some(rg) = &p.reduction_generale {
-        if !rg.heures.is_zero() {
-            return Ok(format!(
-                "{} ({} h à {})",
-                euros(rg.smic_reference),
-                fmt_heures(rg.heures),
-                euros(div(rg.smic_reference, rg.heures))
-            ));
+        // Des heures nulles n'ont pas de SMIC horaire.
+        if let Some(horaire) = rg.smic_reference.par_heure(rg.heures) {
+            // La phrase cite les trois nombres : sa porte.
+            return Ok(format!("{} ({} h à {})", euros(rg.smic_reference.decimal()), fmt_heures(rg.heures.decimal()), euros(horaire.decimal())));
         }
     }
     Ok(format!("{} ({} h à {})", euros(p.plafond.decimal()), fmt_heures(p.heures.decimal()), euros(p.smic.decimal())))
@@ -368,14 +365,14 @@ pub struct Rectificatif {
 /// paie qui le verse, le prelevement a la source de la difference, et ce qui reste a verser (ou a retenir).
 #[derive(Debug, Clone)]
 pub struct Ecart {
-    pub net_avant: Decimal,
-    pub net_apres: Decimal,
-    pub difference_net: Decimal,
-    pub difference_net_imposable: Decimal,
+    pub net_avant: Montant,
+    pub net_apres: Montant,
+    pub difference_net: Montant,
+    pub difference_net_imposable: Montant,
     pub mois_versement: Mois,
     /// `None` : un trop-verse sans taux d'origine, dont le prelevement ne se calcule pas.
     pub prelevement: Option<PrelevementDeLEcart>,
-    pub a_verser: Decimal,
+    pub a_verser: Montant,
 }
 
 /// Le prelevement a la source de la difference : au taux du mois de l'indu (`indu`), ou a celui du versement.
@@ -383,7 +380,7 @@ pub struct Ecart {
 pub struct PrelevementDeLEcart {
     pub indu: bool,
     pub taux: droit::pas::TauxDePas,
-    pub montant: Decimal,
+    pub montant: Montant,
 }
 
 /// Le bas d'un bulletin RECTIFICATIF.
@@ -398,8 +395,9 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
         vec![cel(format!("RÉGULARISATION VERSÉE AVEC LA PAIE {}", socle::texte::de(&r.mois_versement.libelle(Graphie::Accentuee)).to_uppercase()), colonnes)],
         vec![gras(), filet_haut(ROUGE, mesure("0.6"))],
     )];
+    // Les montants s'impriment : leur porte.
     for (libelle, montant) in lignes {
-        out.push(ligne(vec![cel(libelle, colonnes - 1), s(fmt_eur(montant))], vec![]));
+        out.push(ligne(vec![cel(libelle, colonnes - 1), s(fmt_eur(montant.decimal()))], vec![]));
     }
     let Some(p) = &r.prelevement else {
         out.push(ligne(vec![cel("Impôt prélevé à la source sur la différence", colonnes - 1), s("non calculé")], vec![]));
@@ -411,10 +409,10 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
         "Impôt sur le revenu prélevé à la source sur la différence"
     };
     out.push(ligne(
-        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux(p.taux.decimal())), colonnes - 1), s(fmt_eur(p.montant))],
+        vec![cel(format!("{} (taux {} %)", libelle, fmt_taux(p.taux.decimal())), colonnes - 1), s(fmt_eur(p.montant.decimal()))],
         vec![],
     ));
-    out.push(ligne_net(if r.a_verser >= Decimal::ZERO { "NET À VERSER" } else { "NET À RETENIR" }, r.a_verser.abs(), colonnes));
+    out.push(ligne_net(if r.a_verser >= Montant::ZERO { "NET À VERSER" } else { "NET À RETENIR" }, r.a_verser.abs().decimal(), colonnes));
     Ok(out)
 }
 
