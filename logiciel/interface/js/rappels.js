@@ -528,15 +528,15 @@ async function dessinerExercices() {
     </div>`;
   }).join("") + `<p class="note"><button class="lien" id="ouvrir-exercices">Dossier des archives</button></p>`;
   cible.querySelectorAll("[data-export]").forEach((b) => {
-    b.onclick = () => lancerExportCompta(b.dataset.export);
+    b.onclick = () => lancerExportCompta(Number(b.dataset.export));
   });
   cible.querySelectorAll("[data-cloturer]").forEach((b) => {
-    b.onclick = () => boiteCloture(b.dataset.cloturer);
+    b.onclick = () => boiteCloture(Number(b.dataset.cloturer));
   });
   cible.querySelectorAll("[data-rouvrir]").forEach((b) => {
     b.onclick = async () => {
       try {
-        const x = await api("cloture", { annee: b.dataset.rouvrir, rouvrir: true });
+        const x = await api("cloture", { annee: Number(b.dataset.rouvrir), rouvrir: true });
         dire(x.phrase);
         await dessinerExercices();
       } catch (e) { dire(e.message, "erreur"); }

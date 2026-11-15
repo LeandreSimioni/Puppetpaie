@@ -105,11 +105,6 @@ impl Mois {
         Annee(self.an)
     }
 
-    /// Le mois `numero` (1 a 12) de l'annee `annee` ; refus sinon.
-    pub fn de_l_an(annee: Annee, numero: u32) -> R<Mois> {
-        Mois::nouveau(annee.0, numero)
-    }
-
     /// Le numero du mois, de 1 a 12.
     pub fn numero(self) -> u32 {
         self.numero
@@ -226,6 +221,9 @@ impl MoisDeLAnnee {
         MoisDeLAnnee(7), MoisDeLAnnee(8), MoisDeLAnnee(9), MoisDeLAnnee(10), MoisDeLAnnee(11), MoisDeLAnnee(12),
     ];
 
+    /// Mars (le 31 mars borne l'annee de conges des certificats Congés Spectacles).
+    pub const MARS: MoisDeLAnnee = MoisDeLAnnee(3);
+
     /// Son numero, de 1 a 12.
     pub fn numero(self) -> u32 {
         self.0
@@ -242,9 +240,21 @@ impl MoisDeLAnnee {
     }
 }
 
+/// La lecture de serde : un mois de l'annee s'ecrit par son numero (`3` : mars) dans un fichier qui le dit ainsi
+/// (`echeancier-base.json`) ; hors de 1 a 12, refus.
+impl<'de> serde::Deserialize<'de> for MoisDeLAnnee {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MoisDeLAnnee, D::Error> {
+        let n = <u32 as serde::Deserialize>::deserialize(d)?;
+        match (1..=12).contains(&n) {
+            true => Ok(MoisDeLAnnee(n)),
+            false => Err(serde::de::Error::custom(format!("{} n'est pas un mois de l'année (1 à 12)", n))),
+        }
+    }
+}
+
 /// UNE ANNEE CIVILE, de 0001 a 9999 : la cle d'une annee de salaires (la CASC-SVP se regularise et se taxe par annee,
-/// `donnees/casc-svp-base.json`). Elle se lit une fois (`serde`) et s'ecrit `AAAA`, en texte dans le
-/// JSON (`"2025"`) ; l'ordre est celui du calendrier.
+/// `donnees/casc-svp-base.json`). Elle se lit une fois (`serde`) et s'ecrit en nombre dans le JSON (`2025`) ; cle d'un
+/// objet, en texte, comme toute cle (`"2025"`) ; l'ordre est celui du calendrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Annee(i32);
 
@@ -256,15 +266,6 @@ impl Annee {
         }
         // De 1 a 9999, l'annee tient sur 32 bits.
         Ok(Annee(an as i32))
-    }
-
-    /// Une annee ecrite `AAAA` (quatre chiffres) ; toute autre forme se refuse.
-    pub(crate) fn lire(texte: &str) -> R<Annee> {
-        let b = texte.as_bytes();
-        if !(b.len() == 4 && b.iter().all(u8::is_ascii_digit)) {
-            return Err(refus(format!("année illisible : {} (attendu : AAAA)", repr_texte(texte))));
-        }
-        Annee::nouvelle(b.iter().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')))
     }
 
     /// L'annee du mois `m`.
@@ -344,11 +345,6 @@ impl Annee {
         self.decembre().dernier_jour()
     }
 
-    /// Le jour `jour` du mois `mois` (1 a 12) de l'annee, s'il existe.
-    pub fn jour(self, mois: u32, jour: u32) -> Option<Jour> {
-        Jour::nouveau(self.0, mois, jour)
-    }
-
     /// Est-elle bissextile ?
     pub fn bissextile(self) -> bool {
         crate::date::bissextile(self.0)
@@ -363,66 +359,14 @@ impl std::fmt::Display for Annee {
 
 impl serde::Serialize for Annee {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.to_string())
+        s.serialize_i32(self.0)
     }
 }
 
-/// La lecture de serde, dont le refus se dit dans le sien.
+/// La lecture de serde, un nombre (une cle d'objet, son texte), dont le refus se dit dans le sien.
 impl<'de> serde::Deserialize<'de> for Annee {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
-        Annee::lire(&String::deserialize(d)?).map_err(serde::de::Error::custom)
-    }
-}
-
-impl From<Annee> for String {
-    fn from(a: Annee) -> String {
-        a.to_string()
-    }
-}
-
-/// UNE ANNEE ECRITE EN NOMBRE (`#[serde(with = "socle::mois::en_nombre")]`) : le nombre de paies parti chez l'editeur
-/// (`2025`, ce que le serveur du filet lit et rend) ; `option` pour un `Option<Annee>` (`null` : aucune).
-pub mod en_nombre {
-    use super::Annee;
-
-    pub fn serialize<S: serde::Serializer>(a: &Annee, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_i32(a.0)
-    }
-
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
-        let n = <i64 as serde::Deserialize>::deserialize(d)?;
-        Annee::nouvelle(n).map_err(serde::de::Error::custom)
-    }
-
-    /// Une liste d'annees, chacune en nombre (`[2024, 2025]`).
-    pub mod liste {
-        use super::Annee;
-
-        pub fn serialize<S: serde::Serializer>(a: &[Annee], s: S) -> Result<S::Ok, S::Error> {
-            s.collect_seq(a.iter().map(|a| a.0))
-        }
-
-        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Annee>, D::Error> {
-            <Vec<i64> as serde::Deserialize>::deserialize(d)?.into_iter().map(|n| Annee::nouvelle(n).map_err(serde::de::Error::custom)).collect()
-        }
-    }
-
-    pub mod option {
-        use super::Annee;
-
-        pub fn serialize<S: serde::Serializer>(a: &Option<Annee>, s: S) -> Result<S::Ok, S::Error> {
-            match a {
-                Some(a) => s.serialize_some(&a.0),
-                None => s.serialize_none(),
-            }
-        }
-
-        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Annee>, D::Error> {
-            match <Option<i64> as serde::Deserialize>::deserialize(d)? {
-                Some(n) => Annee::nouvelle(n).map(Some).map_err(serde::de::Error::custom),
-                None => Ok(None),
-            }
-        }
+        Annee::nouvelle(<i64 as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom)
     }
 }
 

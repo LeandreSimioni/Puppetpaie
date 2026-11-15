@@ -192,7 +192,6 @@ pub struct ReponseDuServeur {
 #[serde(deny_unknown_fields)]
 pub struct Paies {
     pub recu: bool,
-    #[serde(with = "socle::mois::en_nombre")]
     pub annee: Annee,
     pub paies: usize,
 }
@@ -225,7 +224,6 @@ struct Incidents<'a, I: Serialize> {
 
 #[derive(Serialize)]
 struct CompteDesPaies {
-    #[serde(with = "socle::mois::en_nombre")]
     annee: Annee,
     paies: usize,
 }

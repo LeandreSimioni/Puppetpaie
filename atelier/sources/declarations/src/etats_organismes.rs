@@ -559,7 +559,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             regle.to_string()
         };
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an).n(C::NombreDeMois, mois).d(C::TrancheA, tranche_a).d(C::Taux, taux).d(C::Calcule, calcule).d(C::ContributionDue, du).t(C::Regle, regle);
+        l.t(C::Annee, an.to_string()).n(C::NombreDeMois, mois).d(C::TrancheA, tranche_a).d(C::Taux, taux).d(C::Calcule, calcule).d(C::ContributionDue, du).t(C::Regle, regle);
         l.t(C::APayer, format!("début {} (inférence : le texte ne dit pas l'année de masse)", an.suivante()?));
         lignes.push(l);
     }
@@ -669,7 +669,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             None => Montant::ZERO,
         };
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an)
+        l.t(C::Annee, an.to_string())
             .d(C::Masse, masse.decimal())
             .d(C::MassePermanents, masse_permanents.decimal())
             .d(C::Cpnef, cpnef.decimal())
@@ -754,7 +754,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         }
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an).d(C::Masse, masse.decimal()).d(C::Taux, taux.decimal()).d(C::Montant, m.decimal()).t(C::APayer, a_payer);
+        l.t(C::Annee, an.to_string()).d(C::Masse, masse.decimal()).d(C::Taux, taux.decimal()).d(C::Montant, m.decimal()).t(C::APayer, a_payer);
         lignes.push(l);
     }
     avert.push("Assiette : le brut du livre de paie, tous salariés. Le texte parle de masse salariale ou de masse déclarée en retraite complémentaire : pour une compagnie du spectacle, c'est le même brut.".to_string());

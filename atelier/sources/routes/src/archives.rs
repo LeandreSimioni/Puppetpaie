@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::importation::casc::{marquer_regularise, RegularisationNotee};
-use crate::dossier_salarie::{construire, AnneeDite, DemandeDeDossier, DossierEnvoye, DossierRendu};
+use crate::dossier_salarie::{construire, DemandeDeDossier, DossierEnvoye, DossierRendu};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "vire_le", libelle: Affiche::new("Viré le"), forme: Forme::Date, sens: "le jour du virement, AAAA-MM-JJ", avance: false },
             Champ { nom: "montant", libelle: Affiche::new("Montant viré"), forme: Forme::Nombre, sens: "le montant viré", avance: false },
         ],
-        exemple: r#"{"annee":"2025","vire_le":"2026-11-02","montant":"12.80"}"#,
+        exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"12.80"}"#,
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
         refus: &[OPERATION, MANQUE],
         acte: Acte::Ecrit,
@@ -495,7 +495,7 @@ enum NombreDit {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCascRegularise {
-    annee: AnneeDite,
+    annee: Annee,
     vire_le: Jour,
     montant: NombreDit,
 }
@@ -520,7 +520,7 @@ fn montant_vire(m: &NombreDit) -> R<socle::num::Decimal> {
 /// Note qu'une annee de CASC-SVP est regularisee (apres le virement).
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     let aujourd_hui = socle::temps::secondes().a_la_seconde().jour_de_paris();
-    let notee = marquer_regularise(ctx, c.annee.annee()?, c.vire_le, montant_vire(&c.montant)?, INTERFACE, aujourd_hui)?;
+    let notee = marquer_regularise(ctx, c.annee,c.vire_le, montant_vire(&c.montant)?, INTERFACE, aujourd_hui)?;
     let montant = socle::texte::euros(notee.montant);
     Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
 }
@@ -534,7 +534,7 @@ fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
 pub(crate) struct ChargeExporter {
     etat: EtatDExport,
     mois: Option<Mois>,
-    annee: Option<AnneeDite>,
+    annee: Option<Annee>,
     toutes_les_annees: Option<bool>,
     regroupement: Option<RegroupementDEtat>,
     format: Option<FormatDExport>,
@@ -653,7 +653,7 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     let format = if forme.formats.is_empty() { None } else { Some(choisi("format", c.format, &forme.formats)?) };
     let d = Demande {
         mois: c.mois,
-        annee: c.annee.as_ref().map(AnneeDite::annee).transpose()?,
+        annee: c.annee,
         toutes: c.toutes_les_annees == Some(true),
         regroupement,
         format,
@@ -716,7 +716,7 @@ const REEDITION_CONTRATS: &str = "Les contrats ont été réédités par notre l
 struct ChargeDossierEnvoyer {
     salaries: Option<Vec<droit::contexte::IdSalarie>>,
     mois: Option<Mois>,
-    annee: Option<AnneeDite>,
+    annee: Option<Annee>,
     toutes_les_annees: Option<bool>,
     categories: Option<Vec<documents::CategorieDeDocument>>,
 }

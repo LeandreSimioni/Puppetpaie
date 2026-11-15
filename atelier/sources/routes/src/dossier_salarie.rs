@@ -92,24 +92,6 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
 
 // ------------------------------------------------------------------ les formes
 
-/// L'annee d'une demande, en nombre (AAAA) ou telle que la page la choisit (« 2026 »).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum AnneeDite {
-    Nombre(i64),
-    Texte(socle::mois::Annee),
-}
-
-impl AnneeDite {
-    /// L'annee dite ; une annee qui n'en est pas une se refuse.
-    pub(crate) fn annee(&self) -> socle::echec::R<socle::mois::Annee> {
-        match self {
-            AnneeDite::Nombre(n) => socle::mois::Annee::nouvelle(*n),
-            AnneeDite::Texte(a) => Ok(*a),
-        }
-    }
-}
-
 /// La demande d'un dossier (la charge de `dossier-salarie` ; `dossier-envoyer` la compose) : les salaries (aucun :
 /// chacun), UNE periode (le mois, l'annee, ou toutes les annees), ce qu'il porte (rien : tout), un seul fichier pour
 /// tous (`ensemble`), et `apercu` pour dire ce qui s'ecrirait sans rien ecrire.
@@ -118,7 +100,7 @@ impl AnneeDite {
 pub(crate) struct DemandeDeDossier {
     pub(crate) salaries: Option<Vec<IdSalarie>>,
     pub(crate) mois: Option<Mois>,
-    pub(crate) annee: Option<AnneeDite>,
+    pub(crate) annee: Option<socle::mois::Annee>,
     pub(crate) toutes_les_annees: Option<bool>,
     pub(crate) categories: Option<Vec<CategorieDeDocument>>,
     pub(crate) ensemble: Option<bool>,
@@ -1195,7 +1177,7 @@ fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(IdSalarie, V
 /// Le dossier construit (et ecrit, sauf `apercu`). L'envoi (`archives`, `dossier-envoyer`)
 /// en a besoin tel quel : ses salaries, ses fichiers, ses pages.
 pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossier> {
-    let annee = demande.annee.as_ref().map(AnneeDite::annee).transpose()?;
+    let annee = demande.annee;
     let (ensemble, ecrire) = (demande.ensemble == Some(true), demande.apercu != Some(true));
     let p = Periode::nouveau(demande.mois, annee, demande.toutes_les_annees == Some(true))?;
     // Le jour reel de Paris, pas `ctx.aujourdhui`.

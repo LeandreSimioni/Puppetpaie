@@ -173,7 +173,7 @@ async function lancerDossier(route, apercu) {
   // L'envoi refait le dossier de chacun : ni aperçu, ni dossier d'ensemble.
   if (route !== "dossier-envoyer") Object.assign(charge, { ensemble: document.getElementById("d-ensemble").checked, apercu });
   if (quand === "mois") charge.mois = periode;
-  else if (quand === "annee") charge.annee = periode;
+  else if (quand === "annee") charge.annee = Number(periode);
   else charge.toutes_les_annees = true;
   if (route === "dossier-envoyer") {
     const mdp = await demanderMotDePasse("L'envoyer à chaque salarié", { envoi: true });
@@ -439,7 +439,7 @@ async function lancerExport(apercu) {
       && document.getElementById("x-analytique").checked;
   }
   if (quand === "mois") charge.mois = periode;
-  else if (quand === "annee") charge.annee = periode;
+  else if (quand === "annee") charge.annee = Number(periode);
   else charge.toutes_les_annees = true;
   const cible = document.getElementById("exports-resultat");
   cible.innerHTML = `<p class="discret">…</p>`;
@@ -520,7 +520,7 @@ function dessinerCasc(r) {
   const choixAnnee = document.getElementById("casc-annee");
   const montant = document.getElementById("casc-montant");
   const preremplir = () => {
-    const a = r.annees.find((x) => x.annee === choixAnnee.value);
+    const a = r.annees.find((x) => x.annee === Number(choixAnnee.value));
     montant.value = a ? a.cotisation : "";
   };
   choixAnnee.onchange = preremplir;
@@ -529,7 +529,7 @@ function dessinerCasc(r) {
     const vire = document.getElementById("casc-vire-le").value;
     try {
       const e = await api("casc-regularise",
-        { annee: choixAnnee.value, vire_le: vire, montant: montant.value });
+        { annee: Number(choixAnnee.value), vire_le: vire, montant: montant.value });
       dire(e.phrase);
     } catch (x) { dire(x.message, "erreur"); }
   };

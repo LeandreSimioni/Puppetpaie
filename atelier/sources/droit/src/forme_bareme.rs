@@ -220,7 +220,6 @@ pub(crate) mod datee {
 forme! {
     /// LA PILE APPLIQUEE.
     pub struct Pile {
-        #[serde(with = "socle::mois::en_nombre")]
         pub annee: Annee,
         pub quoi: Option<String>,
         pub smic_horaire: Vec<Datee>,
@@ -1371,9 +1370,7 @@ forme! {
     /// par leur `id` ou leur code (`code81` ou `code81:affectation`). Le moteur la lit, il ne l'ecrit pas ; le taux AT/MP
     /// est dans la fiche entreprise (`fiche::ChampsEntreprise::taux_atmp`).
     pub struct Surcouche {
-        #[serde(with = "socle::mois::en_nombre")]
         pub annee: Annee,
-        #[serde(with = "socle::mois::en_nombre")]
         pub socle: Annee,
         pub quoi: Option<String>,
         pub versement_mobilite: Option<VersementMobiliteEcrit>,

@@ -109,7 +109,6 @@ const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), form
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeRevue {
-    #[serde(with = "socle::mois::en_nombre")]
     annee: Annee,
     continuent: Vec<droit::contexte::IdSpectacle>,
 }
@@ -240,7 +239,6 @@ struct Echeancier {
 #[derive(Debug, Serialize)]
 struct Revue {
     phrase: String,
-    #[serde(with = "socle::mois::en_nombre")]
     annee: Annee,
     archives: Vec<droit::contexte::IdSpectacle>,
     continuent: Vec<droit::contexte::IdSpectacle>,
@@ -991,8 +989,8 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: Annee, faites: &Cochees, premier: Op
         return Ok(None);
     }
     let trop_courte = || erreur(Classe::Manque, socle::fichiers::trop_courte("les mois de l'échéance"));
-    let debut = Mois::de_l_an(annee, *e.mois.first().ok_or_else(trop_courte)?)?;
-    let dernier = Mois::de_l_an(annee, *e.mois.last().ok_or_else(trop_courte)?)?;
+    let debut = annee.mois(*e.mois.first().ok_or_else(trop_courte)?);
+    let dernier = annee.mois(*e.mois.last().ok_or_else(trop_courte)?);
     // Ce qui tombait avant l'arrivee de la compagnie ne la concerne pas -- sauf le taux AT/MP de l'annee, sans lequel
     // rien ne se calcule.
     let arrivee_apres = premier.is_some_and(|b| dernier < b);
@@ -1090,7 +1088,7 @@ struct ModeleDsn {
 struct Annuelle {
     cle: CleDAnnuelle,
     idcc: Option<Vec<droit::fiche::Idcc>>,
-    mois: Vec<u32>,
+    mois: Vec<socle::mois::MoisDeLAnnee>,
     titre: String,
     detail: String,
     source: String,

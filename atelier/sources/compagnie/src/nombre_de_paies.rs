@@ -141,7 +141,6 @@ pub fn envoyer_si_du(ctx: &Contexte) -> BilanDesPaies {
 /// pourquoi rien n'est parti, et l'erreur quand le passage suivant recommencera.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BilanDesPaies {
-    #[serde(with = "socle::mois::en_nombre::option")]
     pub annee: Option<Annee>,
     pub envoye: bool,
     pub paies: Option<usize>,
@@ -160,7 +159,6 @@ pub fn annees_parties(racine: &Path) -> R<Vec<AnneePartie>> {
 /// Une annee partie, telle que l'ecran du filet la montre : son nombre de paies, quand il est parti, et ce qui est parti.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AnneePartie {
-    #[serde(with = "socle::mois::en_nombre")]
     pub annee: Annee,
     pub paies: u64,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
@@ -171,7 +169,6 @@ pub struct AnneePartie {
 /// Exactement ce qui a quitte le poste pour une annee.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ContenuParti {
-    #[serde(with = "socle::mois::en_nombre")]
     pub annee: Annee,
     pub paies: u64,
     pub poste: NumeroDePoste,

@@ -412,7 +412,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeEffectif {
-    #[serde(default, with = "socle::mois::en_nombre::option")]
+    #[serde(default)]
     annee: Option<Annee>,
     valeur: Option<droit::fiche::NombreDeFiche>,
 }
@@ -422,12 +422,10 @@ struct ChargeEffectif {
 #[derive(Debug, serde::Serialize)]
 struct EffectifDit {
     phrase: String,
-    #[serde(with = "socle::mois::en_nombre::option")]
     annee: Option<Annee>,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     valeur: Option<socle::num::Decimal>,
     source: Option<&'static str>,
-    #[serde(with = "socle::mois::en_nombre::liste")]
     a_dire: Vec<Annee>,
 }
 
@@ -603,7 +601,7 @@ fn paye_au_mois(s: &engagement::stock::Saisie) -> R<bool> {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeTaxeSurLesSalaires {
     taxe_sur_les_salaires: Option<droit::fiche::TaxeSurLesSalaires>,
-    #[serde(default, with = "socle::mois::en_nombre::option")]
+    #[serde(default)]
     annee: Option<Annee>,
 }
 
@@ -631,7 +629,6 @@ struct Franchise {
     aide: String,
     choix: ChoixDeLaFranchise,
     plafonds: Option<PlafondsDeLaFranchise>,
-    #[serde(with = "socle::mois::en_nombre")]
     annee: Annee,
 }
 
@@ -1376,7 +1373,6 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i6
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCouts {
-    #[serde(with = "socle::mois::en_nombre")]
     annee: Annee,
 }
 

@@ -285,7 +285,7 @@ fn bornes_31_mars(debut: Jour, fin: Jour) -> Vec<Jour> {
         .annee()
         .jusqu_a(fin.annee())
         .into_iter()
-        .filter_map(|an| an.jour(3, 31))
+        .map(|an| an.mois(socle::mois::MoisDeLAnnee::MARS).dernier_jour())
         .filter(|b| debut <= *b && *b < fin)
         .collect()
 }

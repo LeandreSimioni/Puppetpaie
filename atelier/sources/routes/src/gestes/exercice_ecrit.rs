@@ -263,7 +263,7 @@ pub(crate) fn export_compta_a_jour(racine: &Path, annee: Annee) -> R<bool> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeExportCompta {
-    annee: crate::dossier_salarie::AnneeDite,
+    annee: Annee,
     du: Option<u32>,
     au: Option<u32>,
     apercu: Option<bool>,
@@ -279,7 +279,7 @@ pub(crate) fn export_compta_route(ctx: &Contexte, c: ChargeExportCompta) -> R<Ex
         Some(m) => m,
         None => DECEMBRE,
     };
-    export_compta(ctx, c.annee.annee()?, du, au, c.apercu != Some(true))?.rendu()
+    export_compta(ctx, c.annee, du, au, c.apercu != Some(true))?.rendu()
 }
 
 /// Le premier et le dernier mois d'une annee.
@@ -557,12 +557,12 @@ pub(crate) enum Cloture {
     Rouverte(ExerciceRouvert),
 }
 
-/// La charge de `cloture` : l'annee (comme `etapes::ChargeAnnee` l'ecrit, ou en nombre), clore malgre un mois sans DSN
-/// acceptee (`forcer`), ou rouvrir ; `qui` : la ligne de commande ecrit `cli`, la page rien (`interface`).
+/// La charge de `cloture` : l'annee, clore malgre un mois sans DSN acceptee (`forcer`), ou rouvrir ; `qui` : la ligne
+/// de commande ecrit `cli`, la page rien (`interface`).
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeCloture {
-    annee: crate::dossier_salarie::AnneeDite,
+    annee: Annee,
     forcer: Option<bool>,
     rouvrir: Option<bool>,
     qui: Option<socle::forme::TexteDit>,
@@ -596,7 +596,7 @@ fn rouvrir_exercice(ctx: &Contexte, annee: Annee, qui: &str) -> R<ExerciceRouver
 
 /// La route `cloture` : clore l'annee, ou la rouvrir.
 pub(crate) fn cloture_route(ctx: &Contexte, c: ChargeCloture) -> R<Cloture> {
-    let annee = c.annee.annee()?;
+    let annee = c.annee;
     // Qui ecrit : la ligne de commande le dit (`cli`), la page non (l'interface).
     let qui = match c.qui {
         Some(q) => q.to_string(),
