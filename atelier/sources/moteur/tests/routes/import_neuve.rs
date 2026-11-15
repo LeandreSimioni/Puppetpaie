@@ -522,7 +522,7 @@ fn le_bulletin_d_un_mois_ne_remplace_que_ce_mois_du_certificat_et_l_emporte_sur_
     let attendus = |racine: &Path| {
         let mut contrats: Vec<(String, String, String, i64, String)> = contrats_importes(racine)
             .iter()
-            .map(|c| (c["atteste_par"].as_str().unwrap().into(), c["debut"].as_str().unwrap().into(), c["fin"].as_str().unwrap().into(), c["cachets"].as_i64().unwrap(), c["brut"].as_str().unwrap().into()))
+            .map(|c| (c["atteste_par"].as_str().unwrap().into(), c["periode"]["du"].as_str().unwrap().into(), c["periode"]["au"].as_str().unwrap().into(), c["cachets"].as_i64().unwrap(), c["brut"].as_str().unwrap().into()))
             .collect();
         contrats.sort();
         assert_eq!(
