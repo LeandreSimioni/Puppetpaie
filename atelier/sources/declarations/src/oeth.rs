@@ -312,7 +312,7 @@ connait pas s'applique. Rien n'est ecrit.",
             return Err(refus_avec(
                 "La déclaration OETH de l'année ne dit pas depuis quand la compagnie n'a ni bénéficiaire ni sous-traitance : le dire, depuis plus de trois ans ou non.",
                 Lieu {
-                    fichier: Some(OETH.into()),
+                    fichier: Some(OETH),
                     detail: Some(format!(
                         "{} : aucun beneficiaire et aucune sous-traitance cette annee. La contribution passe a 1 500 \
 fois le SMIC par manquant si cela dure depuis PLUS DE TROIS ANS (D5212-21), et 400 fois sinon : ecrire \
@@ -376,7 +376,7 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois) -> R<Option<Declarat
             return Ok(None);
         }
         return Err(refus_avec("La compagnie doit la déclaration OETH de l'année, et ses chiffres ne sont pas saisis : y écrire ceux que l'Urssaf transmet avant le 15 mars.", Lieu {
-            fichier: Some(OETH.into()),
+            fichier: Some(OETH),
             detail: Some(format!(
                 "DSN de {} : l'entreprise a atteint {} salaries cinq annees de suite, elle doit la declaration \
 OETH de {} (L5212-1, D5212-8), et config/oeth.json ne porte rien pour {}. Y ecrire les chiffres que \
@@ -392,7 +392,7 @@ l'Urssaf transmet avant le 15 mars : \"{}\": {{\"effectif_assujettissement\": ..
             return Err(refus_avec(
                 "La déclaration OETH de l'année dit la compagnie non assujettie sans dire pourquoi : dire la raison.",
                 Lieu {
-                    fichier: Some(OETH.into()),
+                    fichier: Some(OETH),
                     detail: Some(format!(
                         "config/oeth.json, {} : \"assujetti\": false sans \"pourquoi\". Dire la raison (delai de cinq \
 ans d'une entreprise creee a vingt salaries, L5212-4 ; seuil pas encore franchi, L. 130-1).",

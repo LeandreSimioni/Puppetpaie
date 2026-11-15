@@ -1192,13 +1192,13 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         }
         return Err(socle::echec::refus_avec(
             "Cette attestation vient de France Travail : elle ne se refait pas, elle se relit dans ses retours, où son retour (nature 46) manque ; le fichier a été déplacé ou effacé.",
-            socle::echec::Lieu { chemin: Some(envois::retours::RETOURS.to_string()), fichier: Some(nom.to_string()), ..Default::default() },
+            socle::echec::Lieu { chemin: Some(envois::retours::RETOURS.to_string()), fichier: Some(fichier.clone().into()), ..Default::default() },
         )
         .reclasser(Classe::Refuse));
     }
     Err(socle::echec::refus_avec(
         "Ce document n'est plus dans les sorties de son mois : le journal dit qu'il est parti, le fichier a été déplacé ou effacé.",
-        socle::echec::Lieu { chemin: Some(documents::DossierDuMois::Sorties.chemin(mois).to_string()), fichier: Some(nom.to_string()), ..Default::default() },
+        socle::echec::Lieu { chemin: Some(documents::DossierDuMois::Sorties.chemin(mois).to_string()), fichier: Some(fichier.clone().into()), ..Default::default() },
     )
     .reclasser(Classe::Refuse))
 }

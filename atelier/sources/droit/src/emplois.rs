@@ -11,7 +11,13 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
-use socle::fichiers::{forme_en_cache, repr, FormeGardee};
+use socle::fichiers::{forme_en_cache, repr, CheminRelatif, FormeGardee};
+
+/// Le catalogue livre des emplois, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("emplois-base.json");
+
+/// La nomenclature des emplois de France Travail, livree sous `donnees/`.
+const NOMENCLATURE: CheminRelatif = CheminRelatif::du_moteur("nomenclature-emplois-ft.json");
 use socle::echec::R;
 use socle::date::Jour;
 
@@ -155,7 +161,7 @@ impl CodeEmploi {
         if let Some((_, f)) = base()?.emplois.iter().find(|(c, _)| c == self) {
             return Ok(Metier { code: self.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) });
         }
-        let n = nomenclature()?.emplois.get(self).cloned().ok_or_else(|| socle::echec::livree("nomenclature-emplois-ft.json", &self.0))?;
+        let n = nomenclature()?.emplois.get(self).cloned().ok_or_else(|| socle::echec::livree(&NOMENCLATURE, &self.0))?;
         Ok(Metier { code: self.clone(), fiche: FicheDuMetier::Nomenclature(n) })
     }
 }
@@ -346,13 +352,13 @@ const CATALOGUE_ILLISIBLE: &str = "Le catalogue des métiers livré avec le logi
 /// LA SEULE LECTURE D'`emplois-base.json`.
 pub fn base() -> R<Arc<BaseEmplois>> {
     static CACHE: OnceLock<FormeGardee<BaseEmplois>> = OnceLock::new();
-    forme_en_cache(&CACHE, "emplois-base.json", CATALOGUE_ILLISIBLE, Ok)
+    forme_en_cache(&CACHE, &BASE, CATALOGUE_ILLISIBLE, Ok)
 }
 
 /// LA SEULE LECTURE DE `nomenclature-emplois-ft.json`.
 pub fn nomenclature() -> R<Arc<Nomenclature>> {
     static CACHE: OnceLock<FormeGardee<Nomenclature>> = OnceLock::new();
-    forme_en_cache(&CACHE, "nomenclature-emplois-ft.json", "La nomenclature des emplois France Travail livrée avec le logiciel ne se lit pas : le signaler au développeur.", NomenclatureLue::lue)
+    forme_en_cache(&CACHE, &NOMENCLATURE, "La nomenclature des emplois France Travail livrée avec le logiciel ne se lit pas : le signaler au développeur.", NomenclatureLue::lue)
 }
 
 /// Premiere lettre en majuscule, le reste en minuscules.
@@ -487,7 +493,7 @@ impl Metier {
             .and_then(|conv| conv.categories.as_ref())
             .and_then(|s| s.par_niveau_3090.as_ref())
             .and_then(|par| par.get(&c.niveau))
-            .ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", &format!("conventions.3090.categories.par_niveau_3090.{}", c.niveau)))?;
+            .ok_or_else(|| socle::echec::livree(&crate::clauses::FICHIER, &format!("conventions.3090.categories.par_niveau_3090.{}", c.niveau)))?;
         if [crate::fiche::CategorieConventionnelle::Cadre, crate::fiche::CategorieConventionnelle::AgentDeMaitrise].contains(categorie) {
             return Ok(Some(StatutConventionnel::AgentDeMaitrise));
         }

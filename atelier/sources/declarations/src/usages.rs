@@ -181,7 +181,7 @@ pub fn verifier(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<
         return Ok(());
     }
     let (t, table) = (table_de(norme)?, norme.table_usages()?);
-    let libelle = t.natures.get(&nature).ok_or_else(|| socle::echec::livree(table.texte(), &format!("natures.{}", nature)))?;
+    let libelle = t.natures.get(&nature).ok_or_else(|| socle::echec::livree(&table, &format!("natures.{}", nature)))?;
     let lignes: Vec<String> = mauvaises
         .iter()
         .map(|(r, u)| {
@@ -204,7 +204,7 @@ pub fn verifier(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<
             libelle,
             lignes.join("\n")
         ),
-        Lieu { fichier: Some(table.to_string()), ..Lieu::default() },
+        Lieu { fichier: Some(table), ..Lieu::default() },
     ))
 }
 

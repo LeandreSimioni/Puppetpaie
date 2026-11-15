@@ -194,7 +194,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
         return Ok(out);
     }
     if releve && conv_mois.is_none() {
-        let article = rel.as_ref().and_then(|r| r.preavis.as_ref()).map(|p| p.article.clone()).ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", "preavis.article"))?;
+        let article = rel.as_ref().and_then(|r| r.preavis.as_ref()).map(|p| p.article.clone()).ok_or_else(|| socle::echec::livree(&droit::clauses::FICHIER, "preavis.article"))?;
         out.pourquoi = Some(format!(
             "la durée du préavis dépend de la catégorie du salarié dans {} \
              (art. {}), et {}. Dites-la sur la fiche du salarié \
@@ -1222,7 +1222,7 @@ fn indemnite_de_licenciement(
 
 /// L'article d'une indemnite que la convention releve (`clauses::indemnite_licenciement`) : une convention relevee le dit.
 fn article_de(conv: &clauses::Indemnite) -> R<&str> {
-    conv.article.as_deref().ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", "indemnite_licenciement.article"))
+    conv.article.as_deref().ok_or_else(|| socle::echec::livree(&droit::clauses::FICHIER, "indemnite_licenciement.article"))
 }
 
 /// Le nom qu'un administrateur voit dans la liste des rubriques.
@@ -1256,7 +1256,7 @@ fn lectures(conv: &clauses::Indemnite) -> R<String> {
 
 /// Les montants d'une indemnite que la convention doit (`du`).
 fn bas_et_haut(conv: &clauses::Indemnite) -> R<(Decimal, Decimal)> {
-    let manque = || socle::echec::livree("clauses-conventionnelles-base.json", "indemnite_licenciement");
+    let manque = || socle::echec::livree(&droit::clauses::FICHIER, "indemnite_licenciement");
     Ok((de_p(conv.bas.ok_or_else(manque)?)?, de_p(conv.haut.ok_or_else(manque)?)?))
 }
 
@@ -1287,7 +1287,7 @@ fn phrase_conventionnelle(conv: &clauses::Indemnite, m_legal: Decimal) -> R<Stri
     }
     let article = article_de(conv)?;
     if !conv.du {
-        let pourquoi = conv.pourquoi.as_deref().ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", "indemnite_licenciement.pourquoi"))?;
+        let pourquoi = conv.pourquoi.as_deref().ok_or_else(|| socle::echec::livree(&droit::clauses::FICHIER, "indemnite_licenciement.pourquoi"))?;
         return Ok(format!("{} n'ouvre rien ici ({})", article, pourquoi));
     }
     let bas = bas_et_haut(conv)?.0;

@@ -547,7 +547,9 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   moteur nomme sous la compagnie, `config/…`, `journal/…`), et se joint à sa racine nom par nom (`dans`, la seule
   jointure : il n'est pas un `Path`) ; la clé d'une lecture notée s'écrit avec la même écriture. Un dossier de premier
   niveau de la compagnie (`config`, `sorties`, `journal`, `historique`, `retours`…) est un `NomDeFichier` : un nom seul
-  sous la racine. Les fichiers que trie un import aussi sont des chemins relatifs, au dossier trié. Un chemin
+  sous la racine. Les fichiers que trie un import aussi sont des chemins relatifs, au dossier trié. Le fichier qu'un
+  refus vise (`socle::echec::Lieu::fichier`, `livree`, `forme_en_cache`) en est un, relatif à sa racine (une table sous
+  `donnees/`, un fichier de la compagnie) ; ce qui le situe en mots va au détail du refus. Un chemin
   absolu du disque est un `PathBuf` ; rendu par une route, il s'écrit par `socle::fichiers::ecrire_chemin` ; le fichier
   qu'une charge nomme (un signalement écrit à déposer, un dépôt du banc), absolu ou relatif, aussi.
 - **chemin d'un texte déposé** : le fichier d'une source, depuis la racine du dépôt, sous `atelier/reference/` (ou le mode

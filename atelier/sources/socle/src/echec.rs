@@ -403,14 +403,15 @@ impl std::fmt::Debug for APart {
     }
 }
 
-/// CE QUE LE SOCLE MET A PART D'UN REFUS : le chemin d'un fichier, le nom d'un fichier livre, la cle d'une donnee, ce
-/// qui a ete lu ou ce que le systeme a dit. Ce qui n'est pas dit ne s'ecrit pas.
+/// CE QUE LE SOCLE MET A PART D'UN REFUS : le chemin d'un fichier, le fichier livre ou de la compagnie qu'il vise
+/// (relatif a sa racine : un nom, un chemin, un dossier), la cle d'une donnee, ce qui a ete lu ou ce que le systeme a
+/// dit. Ce qui n'est pas dit ne s'ecrit pas.
 #[derive(Debug, Default, Clone, serde::Serialize)]
 pub struct Lieu {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chemin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fichier: Option<String>,
+    pub fichier: Option<crate::fichiers::CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -448,12 +449,19 @@ pub fn a_la_cle(quoi: &str, cle: &str, detail: impl std::fmt::Display) -> Echec 
 /// UNE DONNEE LIVREE AVEC LE LOGICIEL QUI MANQUE OU NE SE LIT PAS (un referentiel de `donnees/`) : rien que la compagnie
 /// puisse corriger ; le fichier et la cle vont a part.
 #[track_caller]
-pub fn livree(fichier: &str, cle: &str) -> Echec {
-    refus_avec(
-        "Une donnée livrée avec le logiciel manque ou ne se lit pas : le signaler au développeur.",
-        Lieu { fichier: Some(fichier.to_string()), cle: Some(cle.to_string()), ..Lieu::default() },
-    )
+pub fn livree(fichier: &crate::fichiers::CheminRelatif, cle: &str) -> Echec {
+    refus_avec(LIVREE, Lieu { fichier: Some(fichier.clone()), cle: Some(cle.to_string()), ..Lieu::default() })
 }
+
+/// La meme donnee livree, et ce qui la situe en mots, qui n'est pas un chemin (`detail` : la convention et l'article,
+/// la table qu'elle est).
+#[track_caller]
+pub fn livree_dite(fichier: &crate::fichiers::CheminRelatif, cle: &str, detail: impl std::fmt::Display) -> Echec {
+    refus_avec(LIVREE, Lieu { fichier: Some(fichier.clone()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Lieu::default() })
+}
+
+/// La phrase du refus d'une donnee livree (`livree`).
+pub const LIVREE: &str = "Une donnée livrée avec le logiciel manque ou ne se lit pas : le signaler au développeur.";
 
 /// UNE DEMANDE MAL FORMEE : la charge d'une route n'a pas, a `cle`, ce qu'il faut (`attendu` : « un texte », « une
 /// liste »). La cle va a part.

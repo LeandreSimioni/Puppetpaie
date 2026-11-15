@@ -64,7 +64,7 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     if chemin.exists() {
         return Ok(Some(chemin));
     }
-    let a_part = socle::echec::Lieu { fichier: Some(nom.to_string()), ..Default::default() };
+    let a_part = socle::echec::Lieu { fichier: Some(nom.clone().into()), ..Default::default() };
     Err(socle::echec::refus_avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
 }
 

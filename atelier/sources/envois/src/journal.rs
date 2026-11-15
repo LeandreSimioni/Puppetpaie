@@ -705,7 +705,7 @@ pub fn dernier_ordre_des_signalements(racine: &Path) -> R<Option<droit::natures:
                     "Le journal des envois note le signalement reel du {} sans son numero d'ordre, lu en S20.G00.05.004 du fichier envoye. Le numero d'ordre d'un signalement ne se remet jamais a zero (cahier technique DSN, p. 136) : sans lui, le suivant ne se numerote pas. Le signaler au developpeur. Rien n'est ecrit.",
                     e.quand,
                 ),
-                socle::echec::Lieu { chemin: Some(chemin(racine).to_string_lossy().into_owned()), fichier: e.fichier.as_ref().map(|f| f.texte().to_string()), cle: Some("detail.ordre".to_string()), detail: None },
+                socle::echec::Lieu { chemin: Some(chemin(racine).to_string_lossy().into_owned()), fichier: e.fichier.clone().map(socle::fichiers::CheminRelatif::from), cle: Some("detail.ordre".to_string()), detail: None },
             )
         };
         match e.detail.ordre {

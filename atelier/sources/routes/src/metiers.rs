@@ -129,7 +129,7 @@ fn conventions_dites(m: &MetierDuDeroulant, noms: &BTreeMap<Idcc, String>, avec_
         .map(|c| match noms.get(c) {
             Some(nom) if avec_l_idcc => Ok(format!("{} ({})", nom, c)),
             Some(nom) => Ok(nom.clone()),
-            None => Err(socle::echec::livree("emplois-base.json", &format!("conventions.{}", c)).reclasser(socle::echec::Classe::Illisible)),
+            None => Err(socle::echec::livree(&droit::emplois::BASE, &format!("conventions.{}", c)).reclasser(socle::echec::Classe::Illisible)),
         })
         .collect::<R<Vec<_>>>()?;
     Ok(dites.join(", "))

@@ -3,7 +3,7 @@
 
 use std::sync::OnceLock;
 
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::echec::R;
 
 use crate::fiche::{ChampsEntreprise, Lue, MotifNonAssujettissement};
@@ -70,7 +70,7 @@ pub const PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES: (i32, u32) = (2026, 3);
 /// La table MNATA livree : (code, libelle).
 pub fn motifs_mnata() -> R<Vec<(MotifNonAssujettissement, String)>> {
     static CACHE: OnceLock<FormeGardee<TableMnata>> = OnceLock::new();
-    let t = forme_en_cache(&CACHE, "mnata-base.json", "La table MNATA livrée ne se lit pas : le signaler au développeur.", Ok)?;
+    let t = forme_en_cache(&CACHE, &CheminRelatif::du_moteur("mnata-base.json"), "La table MNATA livrée ne se lit pas : le signaler au développeur.", Ok)?;
     Ok(t.motifs.iter().map(|m| (m.code, m.libelle.trim().to_string())).collect())
 }
 

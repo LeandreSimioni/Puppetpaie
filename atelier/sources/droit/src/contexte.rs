@@ -25,6 +25,9 @@ use socle::texte::cle_recherche;
 /// Le dossier des gabarits de la compagnie (son identite : `gabarits/identite/`), sous sa racine.
 pub const GABARITS: NomDeFichier = NomDeFichier::du_moteur("gabarits");
 
+/// Le dossier des socles livres, une annee par fichier (`<annee>.json`), sous `donnees/`.
+pub const SOCLES: CheminRelatif = CheminRelatif::du_moteur("baremes");
+
 // ------------------------------------------------------------ les petits outils
 
 /// Le texte d'une case de fiche, exigee : vide, elle se refuse en se nommant.
@@ -1405,9 +1408,9 @@ impl Contexte {
         let jour = self.aujourdhui;
         let an = match fichier_du_socle(&dossier, jour.an)? {
             Some(_) => jour.an,
-            None => annees_du_socle(&dossier)?.into_iter().max().ok_or_else(|| socle::echec::livree("baremes", "par_convention"))?,
+            None => annees_du_socle(&dossier)?.into_iter().max().ok_or_else(|| socle::echec::livree(&SOCLES, "par_convention"))?,
         };
-        let fichier = fichier_du_socle(&dossier, an)?.ok_or_else(|| socle::echec::livree("baremes", "par_convention"))?;
+        let fichier = fichier_du_socle(&dossier, an)?.ok_or_else(|| socle::echec::livree(&SOCLES, "par_convention"))?;
         // Le dernier jour de l'annee du socle quand il est d'une annee passee : ses valeurs datees y valent toutes.
         let a = if an == jour.an { jour } else { Jour::nouveau(an, 12, 31).ok_or_else(|| socle::refus!("{}", socle::date::annee_impossible(an)))? };
         Ok(crate::forme_bareme::lire_le_socle(&fichier, &a, None)?.0.par_convention)

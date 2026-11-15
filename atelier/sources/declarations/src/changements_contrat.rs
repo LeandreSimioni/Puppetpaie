@@ -474,7 +474,7 @@ date declaree : elle se lit, elle ne se devine pas. Rien n'est ecrit.",
                 r.avant.engagement.debut.jj_mm_aaaa(),
                 nouveau.jj_mm_aaaa()
             ),
-            socle::echec::Lieu { fichier: Some(r.declare.dit()), ..socle::echec::Lieu::default() },
+            socle::echec::Lieu { detail: Some(r.declare.dit()), ..socle::echec::Lieu::default() },
         ));
     };
     if ancienne == *nouveau {

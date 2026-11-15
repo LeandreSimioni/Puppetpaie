@@ -67,7 +67,7 @@ struct Motif {
 }
 
 fn motifs_de_la_norme() -> R<std::sync::Arc<Base>> {
-    crate::norme::livree(&socle::fichiers::NomDeFichier::du_moteur("amorcage-base.json"))
+    crate::norme::livree(&socle::fichiers::CheminRelatif::du_moteur("amorcage-base.json"))
 }
 
 /// Le libelle du motif ; un motif que la norme ne connait pas refuse en le nommant.

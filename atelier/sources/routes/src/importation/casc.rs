@@ -395,7 +395,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         let taux = base.taux.de(an).ok_or_else(|| {
             socle::echec::refus_avec(
                 format!("Le taux de la CASC-SVP pour {} n'est pas releve : l'export refuse plutot que de prolonger celui d'une autre annee.", an),
-                socle::echec::Lieu { fichier: Some("donnees/casc-svp-base.json".to_string()), cle: Some(format!("taux.{}", an)), ..Default::default() },
+                socle::echec::Lieu { fichier: Some(socle::fichiers::CheminRelatif::du_moteur("donnees/casc-svp-base.json")), cle: Some(format!("taux.{}", an)), ..Default::default() },
             )
             .reclasser(Classe::Refuse)
         })?;

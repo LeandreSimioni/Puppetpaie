@@ -8,7 +8,10 @@ use crate::source::Fondement;
 use serde::{Deserialize, Serialize};
 use socle::date::{jours_du_mois, Jour};
 use socle::feries::date_ou_refus;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
+
+/// Les regles livrees des contrats permanents, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("permanents-base.json");
 use socle::echec::R;
 use socle::num::{add, sub, div, eur2, mul, zero2, Decimal};
 use rust_decimal::prelude::*;
@@ -660,7 +663,7 @@ const ILLISIBLE: &str = "Les règles des contrats permanents livrées avec le lo
 /// LA SEULE LECTURE DE `permanents-base.json` : sa forme.
 pub fn regles() -> R<Arc<Regles>> {
     static CACHE: OnceLock<FormeGardee<Regles>> = OnceLock::new();
-    forme_en_cache(&CACHE, "permanents-base.json", ILLISIBLE, Ok)
+    forme_en_cache(&CACHE, &BASE, ILLISIBLE, Ok)
 }
 
 /// Le motif de suspension `code` (`suspensions.motifs`), s'il existe.
@@ -969,7 +972,7 @@ pub fn delai_de_prevenance(debut: &Jour, notification: &Jour) -> R<DelaiDePreven
             (None, Some(m)) => presence_mois <= Decimal::from(m),
             (None, None) => true,
         })
-        .ok_or_else(|| socle::echec::livree("permanents-base.json", "preavis.delai_de_prevenance"))?;
+        .ok_or_else(|| socle::echec::livree(&BASE, "preavis.delai_de_prevenance"))?;
     let expiration = match (tranche.delai_jours, tranche.delai_mois) {
         (Some(j), _) => notification.plus_jours(j)?,
         (None, Some(m)) => notification.plus_mois(i64::from(m))?,
@@ -1223,7 +1226,7 @@ pub fn indemnite_depart_retraite(anciennete: Decimal, reference: &mut dyn FnMut(
     let mut tries: Vec<&PalierDeDepart> = rg.depart_a_la_retraite.indemnite.taux.iter().collect();
     tries.sort_by(|a, b| a.anciennete_annees.cmp(&b.anciennete_annees));
     let Some(premier) = tries.first() else {
-        return Err(socle::echec::livree("permanents-base.json", "depart_a_la_retraite.indemnite.taux"));
+        return Err(socle::echec::livree(&BASE, "depart_a_la_retraite.indemnite.taux"));
     };
     let Some(palier) = tries.iter().filter(|t| annees >= t.anciennete_annees).last() else {
         return Ok(IndemniteDuDepart { montant: zero2(), du: false, mois: Decimal::ZERO, palier: None, pourquoi: Some(format!(

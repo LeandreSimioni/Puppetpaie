@@ -973,7 +973,7 @@ fn avenant_ecrit(
             if !f.is_file() {
                 return Err(socle::echec::refus_avec(
                     format!("L'avenant n° {} de {} n'est plus dans les envois de son mois : il ne repart pas tel quel. Rien n'est parti.", a.numero, salarie),
-                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.to_string()), ..Default::default() },
+                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.clone().into()), ..Default::default() },
                 )
                 .reclasser(Classe::Refuse));
             }

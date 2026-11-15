@@ -225,7 +225,7 @@ struct Conseil {
 /// La banque, lue en sa forme une fois par contenu.
 fn banque() -> R<Arc<Banque>> {
     static CACHE: OnceLock<socle::fichiers::FormeGardee<Banque>> = OnceLock::new();
-    socle::fichiers::forme_en_cache(&CACHE, "conseils.json", ILLISIBLE, Ok)
+    socle::fichiers::forme_en_cache(&CACHE, &socle::fichiers::CheminRelatif::du_moteur("conseils.json"), ILLISIBLE, Ok)
 }
 
 impl Banque {

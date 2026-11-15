@@ -1952,7 +1952,7 @@ devine pas.",
             l.quantite().iter().map(Decimal::to_string).collect::<String>()
         ));
     }
-    let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", &format!("{}.quotite_reference_defaut", nat.libelle)))?;
+    let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree(&droit::natures::BASE, &format!("{}.quotite_reference_defaut", nat.libelle)))?;
     let reference = match e.quotite_reference()? {
         Some(r) => legale.min(r),
         None => legale,

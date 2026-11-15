@@ -81,7 +81,7 @@ impl From<CodeUrssafDpae> for String {
 /// La table livree, lue par sa forme.
 pub fn base() -> R<Arc<BaseUrssaf>> {
     static CACHE: OnceLock<FormeGardee<BaseUrssaf>> = OnceLock::new();
-    forme_en_cache(&CACHE, "urssaf-dpae-base.json", "La table des Urssaf livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &socle::fichiers::CheminRelatif::du_moteur("urssaf-dpae-base.json"), "La table des Urssaf livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
 }
 
 impl BaseUrssaf {

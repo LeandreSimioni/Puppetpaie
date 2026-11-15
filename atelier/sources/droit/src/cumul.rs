@@ -45,7 +45,7 @@ impl Constantes {
 pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_date: Jour) -> R<i64> {
     let r = rubrique(racine, &const { crate::catalogue::CodeDeRubrique::du_moteur("enseignement") }, &a_la_date)?;
     let Some(p) = r.plafond_annuel_heures else {
-        return Err(socle::echec::livree("rubriques-base.json", "rubriques.enseignement.plafond_annuel_heures"));
+        return Err(socle::echec::livree(&socle::fichiers::CheminRelatif::du_moteur("rubriques-base.json"), "rubriques.enseignement.plafond_annuel_heures"));
     };
     let (bas, haut) = (p.moins_de_50_ans, p.cinquante_ans_et_plus);
     let Some(n) = date_naissance else { return Ok(bas) };

@@ -25,7 +25,10 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
+
+/// La table livree des organismes, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("organismes-base.json");
 use socle::echec::R;
 
 use crate::contexte::{Contexte, ORGANISMES};
@@ -446,7 +449,7 @@ pub struct Niveau {
 /// LA LECTURE DE `donnees/organismes-base.json`, la seule, une fois tant que le fichier ne change pas.
 pub fn base() -> R<Arc<Base>> {
     static CACHE: OnceLock<FormeGardee<Base>> = OnceLock::new();
-    forme_en_cache(&CACHE, "organismes-base.json", "La table livrée des organismes ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &BASE, "La table livrée des organismes ne se lit pas : le signaler au développeur.", Ok)
 }
 
 impl Base {

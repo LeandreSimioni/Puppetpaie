@@ -848,8 +848,8 @@ pub type FormeGardee<T> = Mutex<Option<(PathBuf, Option<(u128, u64)>, Arc<T>)>>;
 /// se note quand meme au registre d'un calcul suivi. Un calcul la consulte a chaque champ : elle ne se relit pas a chaque
 /// fois.
 #[track_caller]
-pub fn forme_en_cache<B: serde::de::DeserializeOwned, T>(cache: &'static OnceLock<FormeGardee<T>>, nom: &str, phrase: &str, construire: impl Fn(B) -> R<T>) -> R<Arc<T>> {
-    let chemin = dossier_du_code().join(nom);
+pub fn forme_en_cache<B: serde::de::DeserializeOwned, T>(cache: &'static OnceLock<FormeGardee<T>>, nom: &CheminRelatif, phrase: &str, construire: impl Fn(B) -> R<T>) -> R<Arc<T>> {
+    let chemin = nom.dans(&dossier_du_code());
     let sig = signature(&chemin)?;
     let cache = cache.get_or_init(|| Mutex::new(None));
     if let Some((p, s, v)) = crate::memoire::tenu(cache).as_ref() {

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 
 use droit::arrets::MotifDArret;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::echec::{Echec, R};
 
 /// `obligations-base.json` : chaque obligation, son delai, son point de depart et ses textes. Ses `quoi` et `note` ne
@@ -313,13 +313,16 @@ impl DeBase {
 /// Une valeur que la base doit porter, et qu'elle ne porte pas.
 #[track_caller]
 pub fn livree(cle: &str) -> Echec {
-    socle::echec::livree("obligations-base.json", cle)
+    socle::echec::livree(&BASE, cle)
 }
+
+/// La table livree des obligations, sous `donnees/`.
+const BASE: CheminRelatif = CheminRelatif::du_moteur("obligations-base.json");
 
 /// `obligations-base.json`, lu par sa forme (une fois tant que le fichier ne change pas).
 pub fn base() -> R<BaseDesObligations> {
     static CACHE: OnceLock<FormeGardee<BaseDesObligations>> = OnceLock::new();
     let lue: Arc<BaseDesObligations> =
-        forme_en_cache(&CACHE, "obligations-base.json", "Les obligations livrées avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
+        forme_en_cache(&CACHE, &BASE, "Les obligations livrées avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
     Ok((*lue).clone())
 }

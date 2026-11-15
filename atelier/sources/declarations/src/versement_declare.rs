@@ -150,7 +150,7 @@ pub fn est_un_montant(rubrique: RubriqueDeLaNorme) -> Option<bool> {
 pub(crate) fn illisible(k: RubriqueDeLaNorme, v: &str, quoi: &str) -> Echec {
     refus_avec(
         format!("La DSN déposée porte un montant illisible en {}.", k),
-        Lieu { fichier: Some(quoi.to_string()), detail: Some(v.to_string()), ..Lieu::default() },
+        Lieu { detail: Some(format!("{} : {}", quoi, v)), ..Lieu::default() },
     )
 }
 

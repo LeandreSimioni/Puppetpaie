@@ -258,7 +258,7 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     );
     // LES ORGANISMES : le nom ET l'adresse (L1242-12, 8°) ; une adresse que la donnee ne porte pas ne se devine pas.
     let org = Organismes::lire(ctx, ent)?;
-    let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::Lieu { fichier: Some("organismes-base.json".into()), cle: Some("131".into()), ..Default::default() }))?;
+    let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::Lieu { fichier: Some(droit::organismes::BASE), cle: Some("131".into()), ..Default::default() }))?;
     let manque_adresse = |o: &Organisme| socle::refus!("Le contrat de {} donne « le nom et l'adresse » de {} (L. 1242-12, 8°), et cette adresse n'est pas connue du logiciel. Rien n'est écrit.", nom, o.nom);
     m.insert(Marqueur::OrganismesRetraite, retraite.nom_et_adresse().ok_or_else(|| manque_adresse(&retraite))?);
     use droit::organismes::{INTERBRANCHE, PREVOYANCE_PERMANENTS, SANTE_PERMANENTS, TSINTERMITTENTS};

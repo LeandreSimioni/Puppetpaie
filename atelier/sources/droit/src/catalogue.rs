@@ -533,7 +533,7 @@ fn base() -> R<Base> {
         return Err(socle::echec::refus_avec(
             "Les rubriques d'un salarié au mois ne sont pas celles que son calcul compose : le signaler au développeur.".to_string(),
             socle::echec::Lieu {
-                fichier: Some("rubriques-base.json".into()),
+                fichier: Some(socle::fichiers::CheminRelatif::du_moteur("rubriques-base.json")),
                 cle: Some("au_mois".into()),
                 detail: Some(format!("la section porte {:?}, le calcul compose {:?} (`RubriqueDuMois`)", rangees, du_calcul)),
                 ..Default::default()

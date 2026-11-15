@@ -116,7 +116,7 @@ pub struct PourDemarrer {
 /// Le champ `cle` de la fiche entreprise (`champs-base.json`), que cette table doit porter.
 fn champ_entreprise(cle: impl Into<CaseDeFiche>) -> R<crate::champs::Champ> {
     let cle = cle.into();
-    crate::champs::champ(NomDeFiche::Entreprise, cle)?.ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)))
+    crate::champs::champ(NomDeFiche::Entreprise, cle)?.ok_or_else(|| socle::echec::livree(&crate::champs::BASE, &format!("entreprise.{}", cle)))
 }
 
 /// Le libelle et l'aide du champ `cle` de la fiche entreprise (`champs-base.json`).

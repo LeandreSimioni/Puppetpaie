@@ -756,7 +756,7 @@ fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<Goog
 
 /// L'application Google du logiciel, livree avec lui dans `google-application.json` (a cote du code), `client_id` et
 /// `client_secret`. Le secret ne s'ecrit pas dans le source Rust.
-const FICHIER_APPLICATION: &str = "google-application.json";
+const FICHIER_APPLICATION: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("google-application.json");
 
 /// L'application Google propre a la compagnie, sous `config/` ; le jeton scelle : `socle::fichiers::JETON_GOOGLE`.
 const FICHIER_IDENTIFIANTS: &str = "google.json";
@@ -804,11 +804,11 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
         }
         return Ok((Application { client_id: a.client_id, client_secret: a.client_secret }, p.to_string_lossy().into_owned()));
     }
-    let livre = socle::fichiers::dossier_du_code().join(FICHIER_APPLICATION);
+    let livre = FICHIER_APPLICATION.dans(&socle::fichiers::dossier_du_code());
     if !livre.exists() {
         let lieu = socle::echec::Lieu {
             chemin: Some(p.to_string_lossy().into_owned()),
-            fichier: Some(livre.to_string_lossy().into_owned()),
+            fichier: Some(FICHIER_APPLICATION),
             detail: Some("« Publier » la pose depuis le secret PUPPETPAIE_GOOGLE_APPLICATION ; celle de la compagnie s'écrit à `chemin` (client_id, client_secret).".to_string()),
             ..socle::echec::Lieu::default()
         };

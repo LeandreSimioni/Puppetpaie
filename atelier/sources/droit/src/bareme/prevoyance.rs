@@ -9,7 +9,7 @@ use crate::assiette::Assiette;
 use crate::fiche::{ExtensionT2, Idcc, Lue};
 use crate::natures::AuMois;
 use socle::echec::Lieu;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::forme::{Court, Nombre};
 use socle::num::{div, mul, sub};
 use std::collections::BTreeMap;
@@ -177,7 +177,7 @@ forme! {
 /// Le catalogue livre.
 pub fn catalogue() -> R<Arc<Catalogue>> {
     static CACHE: OnceLock<FormeGardee<Catalogue>> = OnceLock::new();
-    forme_en_cache(&CACHE, "prevoyance-conventionnelle-base.json", "Le catalogue de la prévoyance de branche livré ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &CheminRelatif::du_moteur("prevoyance-conventionnelle-base.json"), "Le catalogue de la prévoyance de branche livré ne se lit pas : le signaler au développeur.", Ok)
 }
 
 impl Catalogue {

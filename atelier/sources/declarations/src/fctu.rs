@@ -75,7 +75,7 @@ pub fn libelle_preavis(type_preavis: TypeDePreavis) -> R<String> {
 
 /// Le code par defaut d'une nomenclature.
 fn defaut<T: Copy>(n: &droit::preavis::Nomenclature<T>, quoi: &str) -> R<T> {
-    n.defaut().ok_or_else(|| socle::echec::livree("fctu-base.json", quoi))
+    n.defaut().ok_or_else(|| socle::echec::livree(&droit::preavis::FCTU, quoi))
 }
 
 /// La fin d'un contrat, telle qu'elle se declare. Le dernier jour travaille et paye

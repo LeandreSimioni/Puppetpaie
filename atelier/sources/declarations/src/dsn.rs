@@ -866,7 +866,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         }
         // Une cotisation qui porte un montant se declare sous son code (81.001) : le bareme le dit.
         if l.montant.is_some() && l.code81.is_none() {
-            return Err(socle::echec::livree("baremes", "cotisations_dsn.code81"));
+            return Err(socle::echec::livree(&droit::contexte::SOCLES, "cotisations_dsn.code81"));
         }
         let unifie = l.code81 == Some(AGIRC_ARRCO_UNIFIE);
         out.push(l);
@@ -3257,7 +3257,7 @@ fn technicien(p: &Paie) -> bool {
 fn code_declare(c: &Cotisation) -> R<CodeCotisation81> {
     match c.code81 {
         Some(code) => Ok(code),
-        None => Err(socle::echec::livree("baremes", "cotisations_dsn.code81")),
+        None => Err(socle::echec::livree(&droit::contexte::SOCLES, "cotisations_dsn.code81")),
     }
 }
 
@@ -3450,7 +3450,7 @@ fn cle_ctp(ctp: &Ctp) -> R<(CleCtp, bool)> {
     if let Some(m) = ctp.montant {
         return Ok((CleCtp::Montant(m), true));
     }
-    let k = ctp.assiette.ok_or_else(|| socle::echec::livree("organismes-base.json", &format!("ctp_urssaf.{}.assiette", ctp.code)))?;
+    let k = ctp.assiette.ok_or_else(|| socle::echec::livree(&droit::organismes::BASE, &format!("ctp_urssaf.{}.assiette", ctp.code)))?;
     Ok((if ctp.qualifiant == QUALIFIANT_PLAFONNEE { CleCtp::Plafonnee(k) } else { CleCtp::Assiette(k) }, false))
 }
 
@@ -3466,9 +3466,9 @@ signaler au développeur. Rien n'est écrit.",
                 ctp.code,
                 QUALIFIANT_PLAFONNEE
             ),
-            Lieu { fichier: Some("organismes-base.json".into()), cle: Some(a.nom().to_string()), ..Default::default() },
+            Lieu { fichier: Some(droit::organismes::BASE), cle: Some(a.nom().to_string()), ..Default::default() },
         )),
-        (None, _) => Err(socle::echec::livree("organismes-base.json", &k.to_string())),
+        (None, _) => Err(socle::echec::livree(&droit::organismes::BASE, &k.to_string())),
     }
 }
 
@@ -3581,7 +3581,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             .regime_local_alsace_moselle
             .as_ref()
             .map(|r| r.ctp.clone())
-            .ok_or_else(|| socle::echec::livree("baremes", "regime_local_alsace_moselle.ctp"))?;
+            .ok_or_else(|| socle::echec::livree(&droit::contexte::SOCLES, "regime_local_alsace_moselle.ctp"))?;
         lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, None, Some(rond(local)), None, None));
     }
     if let Some(s) = solde_ta {
@@ -4858,7 +4858,7 @@ certificat de conformite du depot precedent.",
             droit::organismes::AUDIENS,
             echeance_mois_suivant(
                 mois,
-                crate::ordres_paiement::jour_de_paiement(&droit::organismes::AUDIENS)?.ok_or_else(|| socle::echec::livree("organismes-base.json", "P0983.jour_de_paiement"))?,
+                crate::ordres_paiement::jour_de_paiement(&droit::organismes::AUDIENS)?.ok_or_else(|| socle::echec::livree(&droit::organismes::BASE, "P0983.jour_de_paiement"))?,
             ),
         ),
     ]

@@ -4,7 +4,10 @@
 //! valeurs.
 
 use serde::{Deserialize, Serialize};
-use socle::fichiers::{forme_en_cache, repr, FormeGardee, NomDeFichier};
+use socle::fichiers::{forme_en_cache, repr, CheminRelatif, FormeGardee, NomDeFichier};
+
+/// Les natures de contrat livrees, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("contrats-base.json");
 use socle::echec::R;
 use socle::num::Decimal;
 use std::collections::BTreeMap;
@@ -1653,7 +1656,7 @@ const ILLISIBLE: &str = "Les natures de contrat livrées avec le logiciel ne se 
 /// `TypeContratDpae`).
 fn lu() -> R<Arc<Contrats>> {
     static CACHE: OnceLock<FormeGardee<Contrats>> = OnceLock::new();
-    forme_en_cache(&CACHE, "contrats-base.json", ILLISIBLE, |f: Fichier| {
+    forme_en_cache(&CACHE, &BASE, ILLISIBLE, |f: Fichier| {
         let mut natures = Vec::new();
         for (cle, proprietes) in f.natures {
             natures.push(Arc::new(Nature { cle, proprietes }));

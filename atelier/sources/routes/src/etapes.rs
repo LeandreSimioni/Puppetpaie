@@ -1865,7 +1865,7 @@ impl<'a> Moteur<'a> {
     /// Le rang d'un depot reel du journal : l'ordre que sa ligne porte (S20.G00.05.004 du fichier parti, noté au depot).
     pub(crate) fn ordre_de_la_ligne(&self, mois: Mois, l: &envois::journal::Ligne) -> R<NumeroDOrdre> {
         let refus = || Echec {
-            a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("ordre".to_string()), ..Default::default() }.into()),
+            a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS), cle: Some("ordre".to_string()), ..Default::default() }.into()),
             ..erreur(
                 Classe::Illisible,
                 format!("Un dépôt réel de la DSN de {} ne porte pas son ordre (S20.G00.05.004) dans le journal des envois : le rang d'un annule-et-remplace ne se devine pas ; le signaler au développeur.", mois),
@@ -1887,7 +1887,7 @@ impl<'a> Moteur<'a> {
             // Le type de la declaration (S20.G00.05.002), que le depot note : une ligne qui ne le dit pas se refuse.
             let Some(t) = l.dsn().and_then(|e| e.detail.type_declaration) else {
                 return Err(Echec {
-                    a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("type_declaration".to_string()), ..Default::default() }.into()),
+                    a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS), cle: Some("type_declaration".to_string()), ..Default::default() }.into()),
                     ..erreur(Classe::Illisible, format!("Un dépôt réel de la DSN de {} ne dit pas son type (S20.G00.05.002) dans le journal des envois ; le signaler au développeur.", mois))
                 });
             };

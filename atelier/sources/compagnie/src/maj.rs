@@ -675,7 +675,7 @@ const PUBLIEE_ILLISIBLE: &str = "La version publiée ne se lit pas : la mise à 
 /// La version publiee (`derniere.json`) qui ne se lit pas : la phrase en mots, la cle a part.
 #[track_caller]
 fn publiee_illisible(cle: &str, detail: impl std::fmt::Display) -> Echec {
-    refus_avec(PUBLIEE_ILLISIBLE, Lieu { fichier: Some(DERNIERE.to_string()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Default::default() })
+    refus_avec(PUBLIEE_ILLISIBLE, Lieu { fichier: Some(socle::fichiers::CheminRelatif::du_moteur(DERNIERE)), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Default::default() })
 }
 
 /// LA SEULE LECTURE DE `derniere.json` : sa forme (`Publiee`, dont la version), puis ce qu'elle ne dit pas d'elle-meme :
@@ -923,7 +923,7 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
     let jeux = jeux_a_essayer(d, &systemes);
     if jeux.is_empty() {
         let phrase = format!("La version publiée n'a pas d'archive pour ce système ({}).", joints(&systemes));
-        return Err((EchecDeMiseAJour::Introuvable, refus_avec(phrase, Lieu { fichier: Some(DERNIERE.to_string()), ..Default::default() })));
+        return Err((EchecDeMiseAJour::Introuvable, refus_avec(phrase, Lieu { fichier: Some(socle::fichiers::CheminRelatif::du_moteur(DERNIERE)), ..Default::default() })));
     }
     let mut manquees = Vec::new();
     let mut mot = EchecDeMiseAJour::Introuvable;

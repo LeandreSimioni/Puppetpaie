@@ -10,7 +10,10 @@ use serde::Deserialize;
 
 use crate::fiche::Lue;
 use socle::date::Jour;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
+
+/// Les minima conventionnels livres, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("minima-conventionnels.json");
 use socle::forme::{Court, Nombre};
 use socle::echec::R;
 use socle::num::Decimal;
@@ -493,7 +496,7 @@ const ILLISIBLE: &str = "Les minima conventionnels livrés avec le logiciel ne s
 /// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme.
 pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
-    forme_en_cache(&CACHE, "minima-conventionnels.json", ILLISIBLE, Ok)
+    forme_en_cache(&CACHE, &BASE, ILLISIBLE, Ok)
 }
 
 // ------------------------------------------------------------ les lectures
