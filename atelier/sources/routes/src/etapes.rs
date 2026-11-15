@@ -1596,7 +1596,7 @@ impl<'a> Moteur<'a> {
             let (Some(&depuis), Some(&jusqu_a)) = (mois_du_contrat.first(), mois_du_contrat.last()) else {
                 return Err(erreur(Classe::Manque, socle::fichiers::trop_courte("les mois du contrat")));
             };
-            let place = p.engagement.place_du_mois();
+            let place = p.engagement.place_du_mois()?;
             // Son etablissement (NIC) : la DSN qui le porte.
             let etablissement = nic_de_l_engagement(self.ctx, e)?;
             // LES ECHEANCES de l'engagement : sa DPAE (L. 1221-10) et la remise de son contrat (L. 1242-13, ou la couche
@@ -2517,7 +2517,7 @@ impl<'a> Moteur<'a> {
                     continue;
                 }
                 // Un contrat en cours se declare avec son premier mois.
-                if let engagement::PlaceDuMois::Dernier | engagement::PlaceDuMois::Milieu = p.engagement.place_du_mois() {
+                if let engagement::PlaceDuMois::Dernier | engagement::PlaceDuMois::Milieu = p.engagement.place_du_mois()? {
                     continue;
                 }
                 // UNE DATE D'EMBAUCHE CHANGEE depuis la version sur laquelle la DPAE est partie : reculee, la DPAE de l'ancienne

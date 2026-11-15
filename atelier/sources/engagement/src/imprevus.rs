@@ -575,18 +575,14 @@ pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: Moi
     siennes.sort_by_key(|(_, imp)| imp.debut());
     for (code, imp) in siennes {
         let motif = verifier_motif_de_suspension(code, &qui)?;
-        let (debut, fin) = (premier_jour(&imp)?, dernier_jour(&imp)?);
-        if fin < debut {
-            return Err(socle::refus!(
-                "{} : corrigez les dates de son absence « {} », dans « Les imprévus » : elle finit le {}, avant son \
-                 premier jour, le {}.",
-                qui,
-                motif.libelle,
-                fin.jj_mm_aaaa(),
-                debut.jj_mm_aaaa()
-            ));
-        }
-        out.push(Suspension { motif: code, debut, fin });
+        let Some(absence) = absence(&imp).map_err(|e| {
+            socle::refus!("{} : corrigez les dates de son absence « {} », dans « Les imprévus » : {}.", qui, motif.libelle, e.phrase)
+        })?
+        else {
+            continue;
+        };
+        // La forme ecrite du bloc 65 porte ses deux dates (65.002, 65.003).
+        out.push(Suspension { motif: code, debut: absence.debut(), fin: absence.fin() });
     }
     Ok(out)
 }
@@ -674,6 +670,11 @@ pub fn jours_de_conges_non_acquis(
 pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour) -> R<(Jour, Vec<Avis>)> {
     let mut retranches = socle::date::Duree::jours(0);
     let mut dit = Vec::new();
+    // Avant `depuis`, l'anciennete ne court pas : aucune suspension ne s'en retranche.
+    if a < depuis {
+        return Ok((*depuis, dit));
+    }
+    let fenetre = Periode::du_au(*depuis, *a)?;
     for imp in du_salarie(racine, cle)? {
         let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
         if imp.salarie() != cle {
@@ -683,11 +684,9 @@ pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour
         if motif.remunere {
             continue;
         }
-        let (d, f) = (premier_jour(&imp)?.max(*depuis), dernier_jour(&imp)?.min(*a));
-        if f < d {
-            continue;
-        }
-        let jours = socle::date::Duree::du_au(&d, &f);
+        let Some(suspendus) = absence(&imp)?.and_then(|x| x.croise(&fenetre)) else { continue };
+        let (d, f) = (suspendus.debut(), suspendus.fin());
+        let jours = suspendus.duree();
         let libelle = motif.libelle.clone();
         if motif.anciennete == Some(droit::permanents::AncienneteDeSuspension::Moitie) {
             retranches = retranches.plus(jours.moitie());

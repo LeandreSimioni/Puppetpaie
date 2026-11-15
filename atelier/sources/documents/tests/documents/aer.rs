@@ -169,7 +169,7 @@ fn attestation() -> Vec<u8> {
 fn paie(numero: &str, debut: Jour, fin: Jour, cachets: u32, heures: u32) -> PaieAer {
     use socle::grandeurs::{Cachets, Heures};
     use socle::num::Decimal;
-    PaieAer { numero: engagement::numeros::NumeroContrat::lire(numero).unwrap(), debut, fin, cachets: Cachets::du_decimal(Decimal::from(cachets)), heures: Some(Heures::du_decimal(Decimal::from(heures))) }
+    PaieAer { numero: engagement::numeros::NumeroContrat::lire(numero).unwrap(), periode: socle::date::Periode::du_au(debut, fin).unwrap(), cachets: Cachets::du_decimal(Decimal::from(cachets)), heures: Some(Heures::du_decimal(Decimal::from(heures))) }
 }
 
 fn paies_justes() -> Vec<PaieAer> {

@@ -716,14 +716,18 @@ impl Engagement {
     }
 
     /// La place de son mois dans le contrat (`PlaceDuMois`) : il y commence s'il debute ce mois-ci, il y finit si sa fin
-    /// tombe ce mois-ci.
-    pub fn place_du_mois(&self) -> PlaceDuMois {
-        match (self.debut >= self.debut_mois(), self.fin.is_some_and(|f| f <= self.fin_mois())) {
+    /// tombe ce mois-ci. Refus : un contrat qui ne touche pas ce mois.
+    pub fn place_du_mois(&self) -> R<PlaceDuMois> {
+        let contrat = self.periode_du_contrat()?;
+        let dans = contrat
+            .croise(&socle::date::Periode::du_mois(self.mois))
+            .ok_or_else(|| socle::refus!("{} : le contrat du {} ne touche pas {}.", self.nom, contrat.debut().jj_mm_aaaa(), self.mois))?;
+        Ok(match (dans.debut() == contrat.debut(), Some(dans.fin()) == contrat.fin()) {
             (true, true) => PlaceDuMois::Seul,
             (true, false) => PlaceDuMois::Premier,
             (false, true) => PlaceDuMois::Dernier,
             (false, false) => PlaceDuMois::Milieu,
-        }
+        })
     }
 
     /// La periode de paie : le contrat borne au mois, ou la periode elementaire quand ce calcul en est une (`periode`).
@@ -867,7 +871,7 @@ impl Engagement {
             periode: self.periode_payee()?,
             quotite: self.quotite()?,
             sans_paie: self.sans_paie(),
-            place: self.place_du_mois(),
+            place: self.place_du_mois()?,
             mois_du_contrat: self.mois_du_contrat()?,
         })
     }
@@ -1895,7 +1899,7 @@ fn suivre_permanent(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     let fiche = fiche_du_salarie(ctx, &eng.salarie)?;
     let qui = qui_de(&fiche)?;
     let libelle = eng.nat()?.libelle.clone();
-    if let PlaceDuMois::Seul | PlaceDuMois::Dernier = eng.place_du_mois() {
+    if let PlaceDuMois::Seul | PlaceDuMois::Dernier = eng.place_du_mois()? {
         let fin = eng.fin.ok_or_else(|| refus("fin"))?;
         avis.push(Avis {
             info: true,
@@ -1922,7 +1926,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     if eng.nat()?.mensuelle() {
         return suivre_permanent(ctx, eng);
     }
-    let place_du_mois = eng.place_du_mois();
+    let place_du_mois = eng.place_du_mois()?;
     if place_du_mois == PlaceDuMois::Seul {
         return Ok(avis);
     }

@@ -625,7 +625,8 @@ contrat.",
 /// et deux periodes qui se recouvrent sur le meme contrat sont deux declarations qui se contredisent (un salarie ne
 /// travaille pas le dernier jour travaille d'un arret qui court deja). `sauf` : l'imprevu lui-meme, quand il change.
 fn sans_chevauchement(ctx: &Contexte, nouveau: &Imprevu, sauf: Option<&Imprevu>) -> R<()> {
-    let (p, dj) = (magasin(imprevus::premier_jour(nouveau))?, magasin(imprevus::dernier_jour(nouveau))?);
+    // Un imprevu sans jour d'absence n'en retire aucun.
+    let Some(le_sien) = magasin(imprevus::absence(nouveau))? else { return Ok(()) };
     let cle = nouveau.salarie();
     let debut = nouveau.contrat_debut();
     let numero = nouveau.contrat_numero();
@@ -637,17 +638,17 @@ fn sans_chevauchement(ctx: &Contexte, nouveau: &Imprevu, sauf: Option<&Imprevu>)
         if !magasin(imprevus::du_contrat(&autre, cle, numero, &debut))? {
             continue;
         }
-        let (ap, ad) = (magasin(imprevus::premier_jour(&autre))?, magasin(imprevus::dernier_jour(&autre))?);
-        if ap <= dj && ad >= p {
+        let Some(l_autre) = magasin(imprevus::absence(&autre))? else { continue };
+        if le_sien.croise(&l_autre).is_some() {
             return Err(refus(format!(
                 "{} : du {} au {}, cet imprevu chevauche {} du {} au {} sur le meme contrat ({}). Un jour d'absence ne se \
 declare et ne se retire qu'une fois : corriger les dates, ou reprendre l'autre imprevu.",
                 cle,
-                p.jj_mm_aaaa(),
-                dj.jj_mm_aaaa(),
+                le_sien.debut().jj_mm_aaaa(),
+                le_sien.fin().jj_mm_aaaa(),
                 if imprevus::est_un_arret(&autre) { "l'arret de travail" } else { "la suspension" },
-                ap.jj_mm_aaaa(),
-                ad.jj_mm_aaaa(),
+                l_autre.debut().jj_mm_aaaa(),
+                l_autre.fin().jj_mm_aaaa(),
                 match numero {
                     Some(n) => n.to_string(),
                     None => debut.jj_mm_aaaa(),

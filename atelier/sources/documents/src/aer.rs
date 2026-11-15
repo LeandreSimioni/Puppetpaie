@@ -51,7 +51,7 @@ use fabrique_pdf::mesure::mesure;
 use fabrique_pdf::formulaire::ChampLu;
 
 use crate::cachet;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::refus;
 use socle::mois::Mois;
 use socle::grandeurs::{Cachets, Heures};
@@ -108,8 +108,7 @@ pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     if !droit::caisse_conges::intermittent(&*e.nat()?, &p.salarie)? {
         return Ok(false);
     }
-    let (debut, fin) = (e.debut_mois(), e.fin_mois());
-    Ok(e.fin.is_some_and(|f| debut <= f && f <= fin))
+    Ok(e.fin.is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
 }
 
 /// LA FIN DE CONTRAT QUI SE SIGNALE (CDD et CDI de droit commun, CDDU rompu avant son terme : `Nature::signalement_fctu`)
@@ -126,8 +125,7 @@ pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     if !nat.signalement_fctu(e.motif_rupture) {
         return Ok(false);
     }
-    let (debut, fin) = (e.debut_mois(), e.fin_mois());
-    Ok(e.fin.is_some_and(|f| debut <= f && f <= fin))
+    Ok(e.fin.is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
 }
 
 /// Pourquoi une attestation n'est pas rendue.
@@ -271,6 +269,13 @@ pub struct Ligne {
     pub heures: Option<Heures>,
 }
 
+impl Ligne {
+    /// La colonne imprime-t-elle les dates de `periode` ?
+    fn porte(&self, periode: &Periode) -> bool {
+        self.debut == Some(periode.debut()) && self.fin == Some(periode.fin())
+    }
+}
+
 fn valeur(champs: &[ChampLu], nom: &str) -> Option<String> {
     champ(champs, nom).and_then(|c| c.valeur.texte()).map(str::to_string)
 }
@@ -312,15 +317,14 @@ pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaieAer {
     pub numero: engagement::numeros::NumeroContrat,
-    pub debut: Jour,
-    pub fin: Jour,
+    pub periode: Periode,
     pub cachets: Cachets,
     /// `None` : l'engagement au cachet ne dit pas d'heures.
     pub heures: Option<Heures>,
 }
 
 impl PaieAer {
-    /// La periode d'une paie : son contrat (`e.debut`, `e.fin`) borne au mois de la paie, et les heures et cachets que
+    /// La periode d'une paie : sa periode payee (`Engagement::periode_payee`), et les heures et cachets que
     /// la DSN du mois declare en activite (bloc 53, `declarations::dsn::mesures_d_activite`) : les cachets et les heures
     /// de l'engagement, ou les heures travaillees d'un contrat paye au mois. France Travail compte les heures de
     /// l'artiste qui n'est pas au cachet (annexe 10, art. 3 : « Lorsque l'activite des artistes est declaree sous la
@@ -328,14 +332,14 @@ impl PaieAer {
     /// 20241115.txt`).
     pub fn du_mois(p: &engagement::calcul::Paie) -> socle::echec::R<PaieAer> {
         let e = &p.engagement;
-        let (d, f) = (e.debut_mois(), e.fin_mois());
         let numero = e.numero.clone().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
-        let fin = e.fin.ok_or_else(|| socle::refus!("contrat {} sans fin", numero))?;
+        if e.fin.is_none() {
+            return Err(socle::refus!("contrat {} sans fin", numero));
+        }
         let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures };
         Ok(PaieAer {
             numero,
-            debut: if e.debut > d { e.debut } else { d },
-            fin: if fin < f { fin } else { f },
+            periode: e.periode_payee()?,
             cachets: e.cachets,
             heures: heures.map(socle::grandeurs::sans_zero),
         })
@@ -373,7 +377,7 @@ fn nom_du_contrat(numero: Option<&engagement::numeros::NumeroContrat>) -> String
 pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
     let mut ecarts = Vec::new();
     for ligne in imprime {
-        let p = paies.iter().find(|p| Some(&p.numero) == ligne.numero.as_ref() && Some(p.debut) == ligne.debut && Some(p.fin) == ligne.fin);
+        let p = paies.iter().find(|p| Some(&p.numero) == ligne.numero.as_ref() && ligne.porte(&p.periode));
         let Some(p) = p else {
             ecarts.push(format!(
                 "{} ({}) : une periode sur l'attestation qu'aucune paie n'explique ({} cachets, {} heures)",
@@ -395,11 +399,11 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
         }
     }
     for p in paies {
-        if !imprime.iter().any(|l| l.numero.as_ref() == Some(&p.numero) && l.debut == Some(p.debut) && l.fin == Some(p.fin)) {
+        if !imprime.iter().any(|l| l.numero.as_ref() == Some(&p.numero) && l.porte(&p.periode)) {
             ecarts.push(format!(
                 "{} ({}) : une periode de la paie ({} cachets, {} heures) que l'attestation ne porte pas",
                 nom_du_contrat(Some(&p.numero)),
-                periode(Some(p.debut), Some(p.fin)),
+                periode(Some(p.periode.debut()), Some(p.periode.fin())),
                 nombre(Some(p.cachets)),
                 nombre(p.heures)
             ));

@@ -1432,7 +1432,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     }
     // Un contrat aux cachets finit son dernier jour travaille ; le bloc 62 s'ecrit ce mois-la et lui seul (fiche n° 3344,
     // `fin_de_contrat` de `contrats-base.json`) : sa rupture se dit ce mois-la.
-    if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.place_du_mois() {
+    if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.place_du_mois()? {
         return Ok(None);
     }
     Ok(Some(Rupture { porte, fin: Some(match e.fin {
@@ -1702,7 +1702,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             Some(f) => format!("{} → {}", e.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
             None => format!("{} →", e.debut.jj_mm_aaaa()),
         };
-        if e.place_du_mois() != PlaceDuMois::Seul {
+        if e.place_du_mois()? != PlaceDuMois::Seul {
             let payee = e.periode_payee()?;
             bornes.push_str(&format!(" (paie du {} au {})", payee.debut().jj_mm_aaaa(), payee.fin().jj_mm_aaaa()));
         }
@@ -1728,7 +1728,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             t.push_str(&format!(" · n° {}", n));
         }
         if e.fin.is_some() {
-            let place = e.place_du_mois();
+            let place = e.place_du_mois()?;
             if let PlaceDuMois::Dernier | PlaceDuMois::Milieu = place {
                 t.push_str(&format!(" — en cours depuis {}", e.debut.mois_civil().libelle(Graphie::Accentuee)));
             }
@@ -1752,7 +1752,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         debut: e.debut,
         fin: e.fin,
         contrat: ContratVu {
-            place: e.place_du_mois(),
+            place: e.place_du_mois()?,
             chevrons: chevrons_dits(e)?,
             sans_paie: e.sans_paie(),
             depuis: mois_du_contrat.first().copied().ok_or_else(trop_courte)?,
@@ -1816,7 +1816,7 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
     };
     let mois = e.mois_du_contrat()?;
     let premier = e.debut_mois();
-    let place = e.place_du_mois();
+    let place = e.place_du_mois()?;
     let avant = match place {
         PlaceDuMois::Seul | PlaceDuMois::Premier => None,
         PlaceDuMois::Dernier | PlaceDuMois::Milieu => {

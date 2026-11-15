@@ -571,7 +571,7 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
             continue;
         }
         let (cle, debut) = (cle_de(p), p.engagement.debut);
-        let place = p.engagement.place_du_mois();
+        let place = p.engagement.place_du_mois()?;
         if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = place {
             poser(&mut dus, cle, debut, None);
         } else if place == engagement::PlaceDuMois::Seul {

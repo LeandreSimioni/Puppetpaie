@@ -328,7 +328,7 @@ fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, n
     if e.numero.is_none() {
         return Ok(Vec::new());
     }
-    if let engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Premier = e.place_du_mois() {
+    if let engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Premier = e.place_du_mois()? {
         return Ok(Vec::new());
     }
     let fin_m = mois.dernier_jour();
