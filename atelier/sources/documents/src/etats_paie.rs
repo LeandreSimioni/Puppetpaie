@@ -115,7 +115,7 @@ impl Quand {
     /// Ce qui entre dans le nom du fichier.
     pub fn nom(&self) -> NomDeFichier {
         match self {
-            Quand::Toutes => NomDeFichier::du_moteur("toutes-les-annees"),
+            Quand::Toutes => const { NomDeFichier::du_moteur("toutes-les-annees") },
             Quand::Mois(m) => NomDeFichier::from(*m),
             Quand::Annee(a) => NomDeFichier::from(*a),
         }

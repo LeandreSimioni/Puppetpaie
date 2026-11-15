@@ -81,7 +81,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let maintien = engagement::portabilite::de(ctx, p, numero, &fin)?;
     // LE MODELE DU CERTIFICAT : celui de la compagnie (ses `gabarits/`, une copie qu'elle a pu modifier) ou celui livre.
     // Quand un maintien est du, un modele qui ne cite pas sa mention la tairait sans le dire : il se refuse.
-    let chemin_cert = socle::fichiers::modele_de(&socle::fichiers::NomDeFichier::du_moteur("certificat-travail.modele"), Some(&ent.gabarits), &poste);
+    let chemin_cert = socle::fichiers::modele_de(&const { socle::fichiers::NomDeFichier::du_moteur("certificat-travail.modele") }, Some(&ent.gabarits), &poste);
     let lu_cert = ModeleLu::du_fichier(&chemin_cert)?;
     if maintien.is_some() && !lu_cert.cite(Marqueur::CertificatPortabilite) {
         return Err(erreur(
@@ -103,7 +103,7 @@ fait). Rien n'est écrit.",
     valeurs_cert.insert(Marqueur::CertificatPortabilite, dite);
     valeurs.insert(Marqueur::SoldeInventaire, inventaire(p));
     valeurs.insert(Marqueur::SoldeNet, fmt_eur(eur2(p.net_a_payer)));
-    let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de(&socle::fichiers::NomDeFichier::du_moteur("recu-solde-de-tout-compte.modele"), Some(&ent.gabarits), &poste))?;
+    let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de(&const { socle::fichiers::NomDeFichier::du_moteur("recu-solde-de-tout-compte.modele") }, Some(&ent.gabarits), &poste))?;
     ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
     if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
         return Err(socle::fichiers::effacer_apres(e, &certificat));

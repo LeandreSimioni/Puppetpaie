@@ -1829,7 +1829,7 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
     let inst = code.parent().map(Path::to_path_buf).ok_or_else(|| refus_avec("Le logiciel n'est dans aucune installation.", a_part_chemin(code)))?;
     let d = prete_dans(maj)?.ok_or_else(|| refus("aucune version prete a appliquer"))?;
     let version = d.version.clone();
-    let neuf = maj.join(version.texte()).join("logiciel");
+    let neuf = maj.join(version.texte()).join(LOGICIEL);
     let avant = code.join(".avant");
     socle::fichiers::effacer(&avant)?;
     std::fs::create_dir_all(&avant).map_err(|e| refus(e.to_string()))?;
@@ -2039,7 +2039,7 @@ pub fn noter(inst: &Path, t: &str) {
 /// relais est parti.
 pub fn lancer_relais(inst: &Path, version: &VersionDuLogiciel) -> R<bool> {
     let maj = dossier_maj(inst);
-    let neuf = maj.join(version.texte()).join("logiciel");
+    let neuf = maj.join(version.texte()).join(LOGICIEL);
     let source = programme(&neuf, "puppetpaie");
     if !source.is_file() {
         return Err(refus_avec(format!("Le programme de la fenêtre manque dans la version {}.", version), a_part_chemin(&source)));

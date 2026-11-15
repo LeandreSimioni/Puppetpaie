@@ -390,7 +390,7 @@ impl DossierDuMois {
     const fn nom(self) -> Option<socle::fichiers::NomDeFichier> {
         match self {
             DossierDuMois::Sorties => None,
-            DossierDuMois::Envoi => Some(socle::fichiers::NomDeFichier::du_moteur("envoi")),
+            DossierDuMois::Envoi => Some(const { socle::fichiers::NomDeFichier::du_moteur("envoi") }),
         }
     }
 
