@@ -7,6 +7,12 @@ use documents::bordereau::{montant, LigneBordereau, TauxDeLaLigne};
 use droit::organismes::{CodeCtp, QualifiantDAssiette};
 use serde::Deserialize;
 use socle::date::Jour;
+use socle::grandeurs::Montant;
+
+/// Un montant de l'oracle.
+fn m(t: &str) -> Montant {
+    dec(t)
+}
 
 /// `bordereaux-reels.json` : ce qu'il est, et les bordereaux.
 #[derive(Deserialize)]
@@ -42,7 +48,7 @@ fn l(code: &str, qualifiant: &str, assiette: &str, taux_at: &str) -> LigneBorder
 #[test]
 fn la_fraction_d_euro_egale_a_cinquante_centimes_est_comptee_pour_un() {
     for (avant, apres) in [("0.50", "1"), ("1.50", "2"), ("2.50", "3"), ("2.49", "2"), ("2.51", "3"), ("1000.50", "1001"), ("0.49", "0")] {
-        assert_eq!(documents::bordereau::euro(dec(avant)), dec(apres), "{} EUR", avant);
+        assert_eq!(m(avant).a_l_euro(), m(apres), "{} EUR", avant);
     }
 }
 
@@ -52,8 +58,8 @@ fn un_montant_negatif_s_arrondit_comme_son_oppose_par_inference() {
     // est comptee pour 1 » sans dire le signe, et aucun texte depose ne le dit. Le moteur arrondit -2,50 comme 2,50, au
     // signe pres : une regularisation qui retire ce qu'un mois a declare retire le meme euro.
     for (avant, apres) in [("-0.50", "-1"), ("-2.50", "-3"), ("-2.49", "-2"), ("-2.51", "-3")] {
-        assert_eq!(documents::bordereau::euro(dec(avant)), dec(apres), "{} EUR", avant);
-        assert_eq!(documents::bordereau::euro(dec(avant)), -documents::bordereau::euro(-dec(avant)), "{} EUR", avant);
+        assert_eq!(m(avant).a_l_euro(), m(apres), "{} EUR", avant);
+        assert_eq!(m(avant).a_l_euro(), -(-m(avant)).a_l_euro(), "{} EUR", avant);
     }
 }
 
@@ -71,8 +77,8 @@ fn ligne(c: &[String; 5]) -> LigneBordereau {
         qualifiant: QualifiantDAssiette::du_code(champ(1)).unwrap(),
         // Le calcul lit le taux, quelle que soit la ligne qui le porte.
         taux_at: Some(champ(2)).filter(|s| !s.is_empty()).map(|t| TauxDeLaLigne::AtMp(dec(t))),
-        assiette: Some(champ(3)).filter(|s| !s.is_empty()).map(dec),
-        montant: Some(champ(4)).filter(|s| !s.is_empty()).map(dec),
+        assiette: Some(champ(3)).filter(|s| !s.is_empty()).map(m),
+        montant: Some(champ(4)).filter(|s| !s.is_empty()).map(m),
         commune: None,
     }
 }
@@ -93,8 +99,8 @@ fn les_75_bordereaux_preleves_se_recalculent_au_centime_sauf_octobre_2025() {
         let declare = b.declare.as_str();
         let lignes: Vec<LigneBordereau> = b.lignes.iter().map(ligne).collect();
         let calcule = montant(&lignes, &b.jour).unwrap_or_else(|e| panic!("{} : {}", le_jour, e.phrase));
-        if calcule != dec(declare) {
-            ecarts.push((le_jour, declare, calcule.to_string()));
+        if calcule != m(declare) {
+            ecarts.push((le_jour, declare, socle::grandeurs::ecrit::norme::montant(calcule)));
         }
     }
     let attendus = [(OCTOBRE_2025.0.to_string(), OCTOBRE_2025.1, OCTOBRE_2025.2.to_string())];

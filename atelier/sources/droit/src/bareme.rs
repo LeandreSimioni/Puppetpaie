@@ -1272,10 +1272,15 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
 
 // ------------------------------------------- le versement mobilite, le local
 
+/// LA PART DES TAUX QU'UN ARTISTE PAIE : l'abattement de 30 % sur les taux de l'arrete du 24/01/1975, que le bareme cuit
+/// dans ses taux (`bareme_du_statut`) et que le moteur applique aux taux qu'il ne lit pas d'un bareme d'artiste : le
+/// versement mobilite (`bareme_vm`) et le taux AT/MP d'une ligne du bordereau Urssaf (`dsn::taux_at_du_ctp`).
+pub const PART_DES_TAUX_D_UN_ARTISTE: Taux = Taux::points(70);
+
 /// Le versement mobilite que la compagnie a ecrit dans sa surcouche.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VersementMobilite {
-    pub taux: Decimal,
+    pub taux: Taux,
     pub code_insee: crate::fiche::CodeInsee,
     /// L'autorite organisatrice qui l'a institue, quand la surcouche la nomme.
     pub autorite: Option<String>,
@@ -1288,7 +1293,7 @@ pub fn versement_mobilite(bar: &Pile) -> R<Option<VersementMobilite>> {
         return Ok(None);
     };
     match (taux, code_insee) {
-        (Some(taux), Some(insee)) => Ok(Some(VersementMobilite { taux: taux.decimal(), code_insee: insee.clone(), autorite: autorite.clone() })),
+        (Some(taux), Some(insee)) => Ok(Some(VersementMobilite { taux: *taux, code_insee: insee.clone(), autorite: autorite.clone() })),
         _ => Err(refus(
             "Le versement mobilité est écrit sans son taux ou sans le code de la commune de l'établissement : les lire sur le bordereau Urssaf.",
             format!(
@@ -1319,8 +1324,8 @@ pub fn bareme_vm(mut bar: Pile, sal: &SalarieDuContrat) -> R<Pile> {
         None => return Ok(bar),
     };
     let artiste = *sal.statut.exigee("statut")? == Statut::Artiste;
-    let facteur = if artiste { Taux::points(70).en_coefficient() } else { Coefficient::UN };
-    let taux = (Taux::du_decimal(vm.taux) * facteur).au_pair(3);
+    let facteur = if artiste { PART_DES_TAUX_D_UN_ARTISTE.en_coefficient() } else { Coefficient::UN };
+    let taux = (vm.taux * facteur).au_pair(3);
     let org = org_urssaf(&bar)?;
     // L'ASSIETTE MAJOREE (CSS L. 243-1-3, 1° ; D. 243-0-2, 1° : 11,5 %) : l'employeur affilie a une caisse de conges
     // acquitte le versement mobilite du sur les indemnites de conges par une majoration de son assiette (lettre

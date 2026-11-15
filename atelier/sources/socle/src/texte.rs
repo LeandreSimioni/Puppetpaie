@@ -199,7 +199,18 @@ pub fn euros<E: EnEuros>(x: E) -> String {
 /// « 1 234,50 », au centime (`Montant::au_centime`), la virgule décimale, les milliers séparés par une espace ordinaire,
 /// sans « € » ; le signe est celui de l'original (`-0,00` pour un retrait qui s'arrondit à zéro).
 pub fn chiffres_en_euros<E: EnEuros>(x: E) -> String {
-    let d = x.decimal_ecrit();
+    chiffres(x.decimal_ecrit())
+}
+
+/// DES HEURES DANS UNE COLONNE DE MONTANTS DU BULLETIN (la base d'une ligne de cotisation qui compte des heures), écrites
+/// comme `chiffres_en_euros` : « 1 234,50 », au centième, sans unité.
+pub fn chiffres_d_heures(h: crate::grandeurs::Heures) -> String {
+    chiffres(h.decimal())
+}
+
+/// L'écriture de `chiffres_en_euros` et de `chiffres_d_heures` : au centième, le signe de l'original, les milliers
+/// séparés par une espace ordinaire.
+fn chiffres(d: rust_decimal::Decimal) -> String {
     aux_centimes(d.is_sign_negative(), au_centime(d.abs()), ' ')
 }
 

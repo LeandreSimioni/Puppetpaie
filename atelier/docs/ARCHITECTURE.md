@@ -313,7 +313,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   montant unitaire = montant.
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
   Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`), dits par
-  l'attribut serde du champ. Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`.
+  l'attribut serde du champ. Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
+  écrit un montant et un taux par `socle::grandeurs::ecrit::norme` (`montant` : au centime, jamais « -0.00 » ; `taux` :
+  ses décimales, la moitié au pair).
 - **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte.
 
 **Les identifiants**

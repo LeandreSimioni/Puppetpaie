@@ -276,7 +276,7 @@ pub fn dernier_declare(
         for (k, v) in etat.lignes.iter_mut() {
             match *k {
                 TYPE_58 => type_03 = v == "03",
-                MONTANT_58 if type_03 => *v = crate::dsn::mt(origine_58.decimal()),
+                MONTANT_58 if type_03 => *v = socle::grandeurs::ecrit::norme::montant(origine_58),
                 _ => {}
             }
         }

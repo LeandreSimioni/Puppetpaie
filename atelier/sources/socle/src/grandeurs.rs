@@ -362,6 +362,14 @@ impl Taux {
         Taux(num::court(self.0.round_dp_with_strategy(decimales, RoundingStrategy::MidpointNearestEven)))
     }
 
+    /// A `decimales` decimales, la moitie au pair, toutes posees (`1.5` donne `1.50`) : le taux d'une ligne du bordereau
+    /// Urssaf (S21.G00.23.003, deux decimales).
+    pub fn au_pair_pose(self, decimales: u32) -> Taux {
+        let mut q = self.0.round_dp_with_strategy(decimales, RoundingStrategy::MidpointNearestEven);
+        q.rescale(decimales);
+        Taux(q)
+    }
+
     /// A `decimales` decimales au plus, la moitie loin de zero, dans sa forme la plus courte (`courte`) : la somme des
     /// composants d'un taux, telle qu'un bareme l'affiche.
     pub fn loin_de_zero(self, decimales: u32) -> Taux {
@@ -896,6 +904,24 @@ pub mod ecrit {
                     None => s.serialize_none(),
                 }
             }
+        }
+    }
+
+    /// TELLE QUE LA NORME DSN L'ECRIT dans ses rubriques (cahier technique : « avec decimale », le point decimal) : un
+    /// montant au centime, un taux a ses decimales. La seule ecriture des grandeurs de la DSN.
+    pub mod norme {
+        use crate::grandeurs::{Montant, Taux};
+
+        /// Un montant au centime (`Montant::au_centime`), ses deux decimales ecrites (`12.30`) ; un zero s'ecrit sans
+        /// signe (`0.00`, jamais `-0.00`).
+        pub fn montant(m: Montant) -> String {
+            let c = m.au_centime();
+            if c.est_nul() { Montant::ZERO } else { c }.decimal().to_string()
+        }
+
+        /// Un taux a `decimales` decimales, le demi au pair, toutes ecrites (`1.50`, `6.900`).
+        pub fn taux(t: Taux, decimales: u32) -> String {
+            t.au_pair_pose(decimales).decimal().to_string()
         }
     }
 

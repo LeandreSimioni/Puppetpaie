@@ -16,6 +16,7 @@ use crate::dsn::{
 };
 use engagement::Engagement;
 use socle::echec::{Classe, R};
+use socle::grandeurs::Signe;
 use socle::fichiers::repr;
 use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre, RubriqueDeLaNorme, TypeDeRemuneration};
 use droit::type_declaration::TypeDeLaDeclaration;
@@ -548,13 +549,13 @@ ou un annule.",
         if paie.periodes.is_empty() { Ok(payee) } else { q.engagement.periode_payee() }
     };
     for q in paie.elementaires() {
-        remunerations(&mut f, q, &bornes(q)?, 1)?;
+        remunerations(&mut f, q, &bornes(q)?, Signe::Plus)?;
     }
-    primes_et_indemnites(&mut f, paie, &payee, 1)?;
-    autre_revenu(&mut f, paie, &bar, &payee, 1)?;
+    primes_et_indemnites(&mut f, paie, &payee, Signe::Plus)?;
+    autre_revenu(&mut f, paie, &bar, &payee, Signe::Plus)?;
     // Les bases de prevoyance ne partent pas dans un FCTU (CCH-14, p. 293).
     for q in paie.elementaires() {
-        bases_et_cotisations(&mut f, q, &bar, 1, &bornes(q)?, 1, NATURE, &BASES_INTERDITES)?;
+        bases_et_cotisations(&mut f, q, &bar, 1, &bornes(q)?, Signe::Plus, NATURE, &BASES_INTERDITES)?;
     }
 
     // ------------------------------------------------------------ S21 anciennete

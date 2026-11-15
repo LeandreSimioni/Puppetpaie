@@ -37,14 +37,11 @@
 use droit::organismes::{CodeCtp, FormatDeCtp, QualifiantDAssiette};
 use socle::date::Jour;
 use socle::fichiers::{dossier_du_code, signature};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Montant, Taux};
 use socle::echec::{refus, R};
-use socle::num::{div, mul, Decimal};
 use socle::texte::euros;
-use rust_decimal::RoundingStrategy;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock};
 
 const NOM_TABLE: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("urssaf-codes-types-personnel.csv");
@@ -57,8 +54,8 @@ pub struct LigneBordereau {
     pub qualifiant: QualifiantDAssiette,
     /// Le taux que la ligne porte (S21.G00.23.003), a deux decimales ; vide si elle n'en porte pas.
     pub taux_at: Option<TauxDeLaLigne>,
-    pub assiette: Option<Decimal>,
-    pub montant: Option<Decimal>,
+    pub assiette: Option<Montant>,
+    pub montant: Option<Montant>,
     /// La commune du versement mobilite (S21.G00.23.006).
     pub commune: Option<droit::fiche::CodeInsee>,
 }
@@ -67,12 +64,12 @@ pub struct LigneBordereau {
 /// versement mobilite de l'autorite (format Z).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TauxDeLaLigne {
-    AtMp(Decimal),
-    Mobilite(Decimal),
+    AtMp(Taux),
+    Mobilite(Taux),
 }
 
 impl TauxDeLaLigne {
-    pub fn taux(self) -> Decimal {
+    pub fn taux(self) -> Taux {
         match self {
             TauxDeLaLigne::AtMp(t) | TauxDeLaLigne::Mobilite(t) => t,
         }
@@ -84,8 +81,8 @@ struct Ligne {
     effet: Jour,
     fin: Option<Jour>,
     format: FormatDeCtp,
-    plafonne: Option<Decimal>,
-    deplafonne: Option<Decimal>,
+    plafonne: Option<Taux>,
+    deplafonne: Option<Taux>,
     libelle: String,
 }
 
@@ -115,12 +112,12 @@ fn date_table(texte: &str) -> R<Option<Jour>> {
     j.map(Some).ok_or_else(|| refus(socle::date::date_impossible(an, mois, jour)))
 }
 
-fn taux(texte: &str) -> R<Option<Decimal>> {
+fn taux(texte: &str) -> R<Option<Taux>> {
     let texte = texte.trim();
     if texte.is_empty() {
         return Ok(None);
     }
-    Decimal::from_str(texte).map(Some).map_err(|_| refus(socle::num::illisible(texte)))
+    socle::grandeurs::lu::en_texte(texte).map(Some)
 }
 
 /// Les enregistrements d'un CSV a point-virgule (guillemets doubles admis).
@@ -258,16 +255,13 @@ pub fn libelle_du_ctp(code: &CodeCtp) -> R<Option<String>> {
     Ok(lignes.iter().rev().find(|l| l.fin.is_none()).or(lignes.first()).map(|l| l.libelle.clone()))
 }
 
-/// L'arrondi a l'euro des montants et des assiettes declares aux organismes de securite sociale (CSS L. 133-10,
-/// `atelier/reference/sources/code-de-la-securite-sociale/articles-20261013.md` : « arrondi a l'euro le plus proche. La
-/// fraction d'euro egale a 0,50 est comptee pour 1 ») : la moitie vers le haut. Le seul endroit qui arrondit a l'euro, pour
-/// les lignes 23 du bordereau comme pour les versements 20 et les corrections de la DSN.
-pub fn euro(x: Decimal) -> Decimal {
-    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
-}
+// L'arrondi a l'euro des montants et des assiettes declares aux organismes de securite sociale (CSS L. 133-10,
+// `atelier/reference/sources/code-de-la-securite-sociale/articles-20261013.md` : « arrondi a l'euro le plus proche. La
+// fraction d'euro egale a 0,50 est comptee pour 1 ») : la moitie vers le haut, `Montant::a_l_euro`, pour les lignes 23 du
+// bordereau comme pour les versements 20 et les corrections de la DSN.
 
 /// Le montant d'une ligne 23, a l'euro.
-pub fn montant_ligne(l: &LigneBordereau, jour: &Jour) -> R<Decimal> {
+pub fn montant_ligne(l: &LigneBordereau, jour: &Jour) -> R<Montant> {
     let t = table()?;
     let Some(t) = ligne_de_table(&t, &l.code, jour) else {
         return Err(socle::refus!(
@@ -278,15 +272,14 @@ urssaf-codes-types-personnel). Rien n'est ecrit.",
             jour.jj_mm_aaaa()
         ));
     };
-    let cent = Decimal::ONE_HUNDRED;
     // La part du taux AT/MP que la ligne porte, valorisee a part ; une ligne sans taux AT n'en a pas.
-    let part_at = |a: Decimal| -> Option<Decimal> { l.taux_at.map(|at| euro(div(mul(a, at.taux()), cent))) };
+    let part_at = |a: Montant| -> Option<Montant> { l.taux_at.map(|at| a.fois_taux(at.taux()).a_l_euro()) };
     match t.format {
         // F et R : le CTP porte le signe negatif, le montant (23.005) s'ecrit positif (tableau DIDA de l'Urssaf,
         // `chomage-permanents/urssaf-equivalence-dida-20260611.csv`, CTP 003 et 004 ; guide Urssaf du 04/06/2026, format R).
         FormatDeCtp::F | FormatDeCtp::R => {
             let m = l.montant.ok_or_else(|| socle::fichiers::absent("montant"))?;
-            Ok(-euro(m))
+            Ok(-m.a_l_euro())
         }
         FormatDeCtp::Z => {
             let a = l.assiette.ok_or_else(|| socle::fichiers::absent("assiette"))?;
@@ -308,7 +301,7 @@ Rien n'est ecrit.",
                 ));
             };
             let a = l.assiette.ok_or_else(|| socle::fichiers::absent("assiette"))?;
-            let principale = euro(div(mul(a, tx), cent));
+            let principale = a.fois_taux(tx).a_l_euro();
             Ok(match part_at(a) {
                 Some(at) => principale + at,
                 None => principale,
@@ -323,17 +316,13 @@ valoriser. Rien n'est ecrit.",
 }
 
 /// Le montant du bordereau (S21.G00.22.005) : la somme de ses lignes, a deux decimales.
-pub fn montant(lignes: &[LigneBordereau], jour: &Jour) -> R<Decimal> {
-    let mut s = Decimal::ZERO;
+pub fn montant(lignes: &[LigneBordereau], jour: &Jour) -> R<Montant> {
+    let mut s = Montant::ZERO;
     for l in lignes {
         s += montant_ligne(l, jour)?;
     }
-    // Un zero n'a pas de signe : `Decimal("0") + Decimal("-0")` vaut `0`.
-    if s.is_zero() {
-        s = Decimal::ZERO;
-    }
-    s.rescale(2);
-    Ok(s)
+    // Un zero n'a pas de signe.
+    Ok(if s.est_nul() { Montant::ZERO } else { s.au_centime() })
 }
 
 // ------------------------------------------------------------------ le trop-verse
@@ -383,38 +372,36 @@ pub enum Destinataire {
 /// Ce qu'un versement ecrit (S21.G00.20.005, jamais negatif) et le credit que la somme due laisse.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AVerser {
-    pub montant: Decimal,
+    pub montant: Montant,
     /// Ce que la somme due avait de negatif (0 sinon).
-    pub credit: Decimal,
+    pub credit: Montant,
 }
 
 /// Le versement d'une somme due `du` (deja arrondie comme l'organisme l'attend) : elle-meme, ou zero et le credit.
-pub fn a_verser(du: Decimal) -> AVerser {
-    let mut zero = Decimal::ZERO;
-    zero.rescale(2);
-    if du < Decimal::ZERO {
-        AVerser { montant: zero, credit: -du }
+pub fn a_verser(du: Montant) -> AVerser {
+    if du < Montant::ZERO {
+        AVerser { montant: Montant::ZERO, credit: -du }
     } else {
-        AVerser { montant: du, credit: Decimal::ZERO }
+        AVerser { montant: du, credit: Montant::ZERO }
     }
 }
 
 /// La reprise d'un credit Urssaf (guide Urssaf, § 6.4) : `courant`, le bordereau du mois (22.005) ; `credit`, ce que les
 /// bordereaux des mois corriges ont de negatif (positif ici). Le versement du mois est le bordereau moins le credit, dans
 /// la limite du bordereau ; `deduit` est ce qui a ete repris, le reste demeure a l'Urssaf.
-pub fn reprise_urssaf(courant: Decimal, credit: Decimal) -> (AVerser, Decimal) {
-    let deduit = credit.max(Decimal::ZERO).min(courant.max(Decimal::ZERO));
+pub fn reprise_urssaf(courant: Montant, credit: Montant) -> (AVerser, Montant) {
+    let deduit = credit.max(Montant::ZERO).min(courant.max(Montant::ZERO));
     let v = a_verser(courant - deduit);
-    (AVerser { montant: v.montant, credit: credit.max(Decimal::ZERO) - deduit + v.credit }, deduit)
+    (AVerser { montant: v.montant, credit: credit.max(Montant::ZERO) - deduit + v.credit }, deduit)
 }
 
 /// Le credit d'un ordre, dit a l'ecran : combien, ce que la compagnie fait, et le texte qui le dit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Credit {
     /// Ce que la compagnie a verse en trop et qui n'est pas repris par ce versement.
-    pub reste: Decimal,
+    pub reste: Montant,
     /// Ce que ce versement reprend deja (l'Urssaf seulement).
-    pub deduit: Decimal,
+    pub deduit: Montant,
     /// Le titre de l'encart (« Trop versé : 65,72 € »).
     pub titre: String,
     pub que_faire: String,
@@ -428,15 +415,15 @@ const SOURCE_AUTRE: &str = "Cahier technique DSN 2026.1, S21.G00.20.005 : « mon
 
 /// Ce que devient le credit d'un versement : `reste`, le credit que le versement ne reprend pas ; `deduit`, ce qu'il
 /// reprend (l'Urssaf seulement). `None` quand il n'y a rien a dire.
-pub fn credit(dest: Destinataire, _nom: &str, reste: Decimal, deduit: Decimal) -> Option<Credit> {
-    if reste <= Decimal::ZERO && deduit <= Decimal::ZERO {
+pub fn credit(dest: Destinataire, _nom: &str, reste: Montant, deduit: Montant) -> Option<Credit> {
+    if reste <= Montant::ZERO && deduit <= Montant::ZERO {
         return None;
     }
     const DEMANDER: &str = "Aucun texte relevé ne dit comment l'organisme rend ce crédit : demandez-lui s'il vous le \
 rembourse ou le déduit d'une prochaine échéance.";
     let (titre, que_faire, source) = match dest {
-        Destinataire::Urssaf if reste <= Decimal::ZERO => (
-            format!("Trop versé déduit : {}", euros(Montant::du_decimal(deduit))),
+        Destinataire::Urssaf if reste <= Montant::ZERO => (
+            format!("Trop versé déduit : {}", euros(deduit)),
             "Ce qui a été payé en trop sur un mois corrigé est retiré de ce versement, dans la limite du bordereau du \
 mois. Rien d'autre à faire ; si la somme est importante, le guide Urssaf conseille de l'expliquer à votre Urssaf par \
 le service en ligne « échange avec mon Urssaf »."
@@ -444,21 +431,21 @@ le service en ligne « échange avec mon Urssaf »."
             SOURCE_URSSAF,
         ),
         Destinataire::Urssaf => (
-            if deduit > Decimal::ZERO {
-                format!("Trop versé : {} déduits, {} à réclamer", euros(Montant::du_decimal(deduit)), euros(Montant::du_decimal(reste)))
+            if deduit > Montant::ZERO {
+                format!("Trop versé : {} déduits, {} à réclamer", euros(deduit), euros(reste))
             } else {
-                format!("Trop versé : {} à réclamer", euros(Montant::du_decimal(reste)))
+                format!("Trop versé : {} à réclamer", euros(reste))
             },
             format!(
                 "Le trop versé dépasse le bordereau de ce mois : {}{} ne peuvent pas en être déduits. Contactez votre \
 Urssaf (service en ligne « échange avec mon Urssaf ») pour qu'elle vous les rende ou les impute.",
-                if deduit > Decimal::ZERO { "ce versement tombe à zéro, et les " } else { "les " },
-                euros(Montant::du_decimal(reste))
+                if deduit > Montant::ZERO { "ce versement tombe à zéro, et les " } else { "les " },
+                euros(reste)
             ),
             SOURCE_URSSAF,
         ),
         Destinataire::Complementaire => (
-            format!("Trop versé : {}", euros(Montant::du_decimal(reste))),
+            format!("Trop versé : {}", euros(reste)),
             format!(
                 "Rien à payer ce mois-ci : les corrections font plus de cotisations en moins que le mois n'en doit. Le \
 versement est déclaré à zéro, le crédit dans les composants de versement. {}",
@@ -467,7 +454,7 @@ versement est déclaré à zéro, le crédit dans les composants de versement. {
             SOURCE_COMPLEMENTAIRE,
         ),
         Destinataire::Dgfip => (
-            format!("Prélèvement à la source en trop : {}", euros(Montant::du_decimal(reste))),
+            format!("Prélèvement à la source en trop : {}", euros(reste)),
             "Rien à reverser ce mois-ci : les régularisations rendent plus que le mois ne retient. Demandez le \
 remboursement au service des impôts des entreprises, par la messagerie sécurisée de votre espace professionnel sur \
 impots.gouv.fr."
@@ -475,7 +462,7 @@ impots.gouv.fr."
             SOURCE_DGFIP,
         ),
         Destinataire::Autre => (
-            format!("Trop versé : {}", euros(Montant::du_decimal(reste))),
+            format!("Trop versé : {}", euros(reste)),
             format!(
                 "Rien à payer ce mois-ci : les corrections font plus de cotisations en moins que le mois n'en doit. Un \
 versement ne peut pas être négatif : il est déclaré à zéro, et le crédit reste dans les cotisations des salariés. {}",
@@ -486,24 +473,24 @@ versement ne peut pas être négatif : il est déclaré à zéro, et le crédit 
     };
     // Les guillemets ne se separent pas de ce qu'ils citent en fin de ligne (« échange avec mon Urssaf »).
     let que_faire = que_faire.replace("« ", "«\u{a0}").replace(" »", "\u{a0}»");
-    Some(Credit { reste: reste.max(Decimal::ZERO), deduit, titre, que_faire, source })
+    Some(Credit { reste: reste.max(Montant::ZERO), deduit, titre, que_faire, source })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> Decimal {
-        Decimal::from_str(s).unwrap()
+    fn d(s: &str) -> Montant {
+        socle::grandeurs::lu::norme(s).unwrap()
     }
 
     /// Un versement n'est jamais negatif (S21.G00.20.005, « non signe, valeur zero autorisee ») : une somme due negative
     /// s'ecrit 0.00 et devient un credit (`atelier/reference/norme-dsn/texte/bloc-S21.G00.20.txt`).
     #[test]
     fn une_somme_due_negative_se_verse_a_zero_et_laisse_un_credit() {
-        assert_eq!(a_verser(d("12.30")), AVerser { montant: d("12.30"), credit: Decimal::ZERO });
+        assert_eq!(a_verser(d("12.30")), AVerser { montant: d("12.30"), credit: Montant::ZERO });
         let v = a_verser(d("-65.72"));
-        assert_eq!((v.montant.to_string().as_str(), v.credit), ("0.00", d("65.72")));
+        assert_eq!((socle::grandeurs::ecrit::norme::montant(v.montant).as_str(), v.credit), ("0.00", d("65.72")));
     }
 
     /// Guide Urssaf, § 6.4 : 2000 dus en fevrier, 400 trop verses en janvier, 1600 verses ; la deduction s'arrete au
@@ -511,7 +498,7 @@ mod tests {
     #[test]
     fn la_reprise_urssaf_s_arrete_au_bordereau_du_mois() {
         let (v, deduit) = reprise_urssaf(d("2000.00"), d("400.00"));
-        assert_eq!((v.montant, v.credit, deduit), (d("1600.00"), Decimal::ZERO, d("400.00")));
+        assert_eq!((v.montant, v.credit, deduit), (d("1600.00"), Montant::ZERO, d("400.00")));
         let (v, deduit) = reprise_urssaf(d("300.00"), d("400.00"));
         assert_eq!((v.montant, v.credit, deduit), (d("0.00"), d("100.00"), d("300.00")));
         let c = credit(Destinataire::Urssaf, "Urssaf", v.credit, deduit).unwrap();

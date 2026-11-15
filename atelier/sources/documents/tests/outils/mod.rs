@@ -1,14 +1,13 @@
 //! Les aides des tests des documents, sans JSON brut : une donnee de test se lit PAR LA PORTE DU SOCLE, en texte,
-//! directement dans sa forme (`socle::forme::lire_texte`) ; un montant se lit en decimal.
+//! directement dans sa forme (`socle::forme::lire_texte`) ; un montant ou un taux se lit dans sa grandeur.
 
 use std::path::Path;
-use std::str::FromStr;
 
-use rust_decimal::Decimal;
 use serde::de::DeserializeOwned;
 
-pub fn dec(s: &str) -> Decimal {
-    Decimal::from_str(s).unwrap_or_else(|_| panic!("montant illisible : {:?}", s))
+/// La grandeur qu'une donnee de test ecrit comme la DSN l'ecrit (`12.30`).
+pub fn dec<G: socle::grandeurs::Grandeur>(s: &str) -> G {
+    socle::grandeurs::lu::norme(s).unwrap_or_else(|| panic!("nombre illisible : {:?}", s))
 }
 
 /// `documents/tests/donnees/<nom>`, lu par la porte du socle, dans sa forme.

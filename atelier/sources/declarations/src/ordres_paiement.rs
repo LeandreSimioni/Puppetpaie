@@ -51,6 +51,7 @@ use droit::organismes::Versement;
 use documents::bordereau::{self, Destinataire};
 use socle::date::{Jour, Periode};
 use socle::echec::R;
+use socle::grandeurs::Montant;
 use socle::mois::Mois;
 
 const SOURCE_011: &str = "Date de paiement écrite dans la DSN (S21.G00.20.011) : « date à prendre en compte par l'organisme dans le cas d'un prélèvement SEPA » (cahier technique DSN 2026.1, bloc S21.G00.20).";
@@ -147,12 +148,12 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
             (None, "date non dite par la DSN".to_string(), SOURCE_AUCUNE)
         };
         let credit = bordereau::credit(o.destinataire, &organisme, o.reste, o.deduit)
-            .map(|c| CreditEnClair { reste: crate::dsn::a_deux_decimales(c.reste), deduit: crate::dsn::a_deux_decimales(c.deduit), titre: c.titre, que_faire: c.que_faire, source: c.source });
+            .map(|c| CreditEnClair { reste: c.reste.au_centime(), deduit: c.deduit.au_centime(), titre: c.titre, que_faire: c.que_faire, source: c.source });
         out.push(OrdreEnClair {
             organisme,
             identifiant: o.organisme.clone(),
             objet,
-            montant: crate::dsn::a_deux_decimales(o.montant),
+            montant: o.montant.au_centime(),
             periode: o.periode,
             date,
             quand_dit,
@@ -169,7 +170,8 @@ pub struct OrdreEnClair {
     pub organisme: String,
     pub identifiant: droit::organismes::IdentifiantDOrganisme,
     pub objet: String,
-    pub montant: rust_decimal::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub montant: Montant,
     pub periode: Periode,
     pub date: Option<Jour>,
     /// La phrase de la page (« le 15/11/2026 », « date non dite par la DSN »).
@@ -183,8 +185,10 @@ pub struct OrdreEnClair {
 /// fait.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CreditEnClair {
-    pub reste: rust_decimal::Decimal,
-    pub deduit: rust_decimal::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub reste: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub deduit: Montant,
     pub titre: String,
     pub que_faire: String,
     pub source: &'static str,

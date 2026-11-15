@@ -105,7 +105,7 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     let mut ecarts = Vec::new();
     // Le brut que la paie declare en 51 de type 001 (`dsn::brut_du_51` : abattu sous deduction forfaitaire specifique), a
     // deux decimales.
-    let brut = Montant::du_decimal(declarations::dsn::brut_du_51(p)).au_centime().decimal();
+    let brut = declarations::dsn::brut_du_51(p)?.au_centime().decimal();
     match m.brut.map(|f| Montant::du_decimal(f).au_centime().decimal()) {
         Some(f) if f == brut => {}
         Some(f) => ecarts.push(format!("brut : la paie dit {}, le fichier {}", brut, f)),

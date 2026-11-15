@@ -1,7 +1,7 @@
 # L'arrondi à l'euro des montants déclarés : la fraction de 0,50 est comptée pour 1
 
 Pourquoi le bordereau Urssaf (blocs 22 et 23), les versements (bloc 20) et les lignes de correction de la DSN s'arrondissent à
-l'euro **la moitié vers le haut** (`atelier/sources/paie/src/bordereau.rs`, `euro` ; `src/dsn.rs`, `rond`). Déposé le
+l'euro **la moitié vers le haut** (`socle::grandeurs::Montant::a_l_euro`). Déposé le
 13/10/2026, lot U5. Jusque-là le bordereau arrondissait la moitié vers le haut et `dsn.rs` au pair (comme `round()` de Python).
 
 ## Le texte
@@ -42,9 +42,9 @@ le guide Urssaf de la DSN la cite encore (voir plus bas).
 
 ## Ce que le moteur en fait
 
-`bordereau::euro` est le seul endroit qui arrondit à l'euro : la moitié vers le haut (`MidpointAwayFromZero`). Les lignes 23
-(`montant_ligne`), les lignes de correction du bordereau, les assiettes du CTP 900/921/381, le montant d'un versement 20 à
-taux sur le brut, et le versement à la DGFiP s'en servent. Le nominatif (blocs 78, 79, 81) n'est pas arrondi (guide, § 1.6).
+`socle::grandeurs::Montant::a_l_euro` est le seul arrondi à l'euro : la moitié vers le haut (`MidpointAwayFromZero`). Les
+lignes 23 (`bordereau::montant_ligne`), les lignes de correction du bordereau, les assiettes du CTP 900/921/381, les blocs
+54 arrondis, la contribution supplémentaire à l'apprentissage et le versement à la DGFiP s'en servent. Le nominatif (blocs 78, 79, 81) n'est pas arrondi (guide, § 1.6).
 
 ## Le centime (relevé le 07/11/2026)
 
@@ -67,7 +67,7 @@ les sommes arrondies *après conversion* dans l'unité euro (le résultat « de 
 le produit d'une base par un taux de paie ; le considérant 11 réserve d'ailleurs les pratiques nationales d'arrondi des calculs
 intermédiaires. Lire l'art. 5 comme la règle de tout montant du bulletin est une inférence, de même sens que celle de
 l'euro (CSS L. 133-10). Il ne dit rien non plus d'un montant négatif : `au_centime` arrondit -0,005 à -0,01 (comme l'opposé), par
-symétrie, comme le fait `bordereau::euro` pour l'euro (voir plus bas).
+symétrie, comme le fait `Montant::a_l_euro` pour l'euro (voir plus bas).
 
 ## Le centime : ce que disent les autres textes (relevé le 14/11/2026)
 

@@ -12,7 +12,7 @@ use socle::mois::Annee;
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
-use socle::grandeurs::{Montant, MontantUnitaire};
+use socle::grandeurs::{Montant, MontantUnitaire, Taux};
 use socle::num::{add, mul, sub, Decimal};
 use std::collections::BTreeMap;
 
@@ -44,37 +44,37 @@ pub struct Declaration {
     pub manquants: Decimal,
     pub coefficient: i64,
     pub smic: MontantUnitaire,
-    pub brute: Decimal,
-    pub nette: Decimal,
+    pub brute: Montant,
+    pub nette: Montant,
     /// Les deductions non plafonnees, telles qu'elles se declarent (code -> montant).
-    pub deductions: BTreeMap<CotisationDEtablissement, Decimal>,
+    pub deductions: BTreeMap<CotisationDEtablissement, Montant>,
     /// [(type, nombre)] des beneficiaires mis a disposition.
     pub externes: Vec<(TypeDeBoethExterne, Decimal)>,
     /// Le code de l'accord agree, ou `None`.
     pub accord: Option<String>,
     /// Sous un accord agree, les depenses non realisees, si la compagnie en ecrit.
-    pub non_realisees: Option<Decimal>,
+    pub non_realisees: Option<Montant>,
     pub source: String,
 }
 
 impl Declaration {
     /// Les depenses non realisees sous un accord agree, quand il y en a.
-    fn non_realisees(&self) -> Option<Decimal> {
-        self.non_realisees.filter(|m| !m.is_zero())
+    fn non_realisees(&self) -> Option<Montant> {
+        self.non_realisees.filter(|m| !m.est_nul())
     }
 
     /// La contribution reelle due (068), celle du CTP 730.
-    pub fn due(&self) -> Decimal {
+    pub fn due(&self) -> Montant {
         self.nette
     }
 
     /// [(code, montant)] du bloc S21.G00.82, dans l'ordre des codes.
-    pub fn blocs_82(&self) -> Vec<(CotisationDEtablissement, Decimal)> {
+    pub fn blocs_82(&self) -> Vec<(CotisationDEtablissement, Montant)> {
         if self.accord.is_some() {
             return self.non_realisees().map(|m| (CotisationDEtablissement::OethNonRealisees, m)).into_iter().collect();
         }
-        let mut l: Vec<(CotisationDEtablissement, Decimal)> =
-            self.deductions.iter().filter(|(_, m)| !m.is_zero()).map(|(c, m)| (*c, *m)).collect();
+        let mut l: Vec<(CotisationDEtablissement, Montant)> =
+            self.deductions.iter().filter(|(_, m)| !m.est_nul()).map(|(c, m)| (*c, *m)).collect();
         l.push((CotisationDEtablissement::OethBrute, self.brute));
         l.push((CotisationDEtablissement::OethNette, self.nette));
         l.push((CotisationDEtablissement::OethReelleDue, self.due()));
@@ -83,14 +83,14 @@ impl Declaration {
     }
 
     /// Ce que la declaration ajoute au bordereau Urssaf, en euros (`Declaration.a_verser`).
-    pub fn a_verser(&self) -> Decimal {
-        self.bordereau().iter().fold(Montant::ZERO.decimal(), |a, (_, m)| a + *m)
+    pub fn a_verser(&self) -> Montant {
+        self.bordereau().iter().fold(Montant::ZERO, |a, (_, m)| a + *m)
     }
 
     /// `Declaration.resume` : la phrase que `produire` dit au mois d'avril.
     pub fn resume(&self) -> String {
         if let Some(accord) = &self.accord {
-            let non: String = self.non_realisees().iter().map(|m| format!(", {} de dépenses non réalisées (CTP 740)", euros(Montant::du_decimal(*m)))).collect();
+            let non: String = self.non_realisees().iter().map(|m| format!(", {} de dépenses non réalisées (CTP 740)", euros(*m))).collect();
             return format!("OETH {} : accord agréé {}{}.", self.millesime, accord, non);
         }
         format!(
@@ -102,17 +102,17 @@ impl Declaration {
             virgule(self.manquants),
             self.coefficient,
             euros(self.smic),
-            euros(Montant::du_decimal(self.brute)),
-            euros(Montant::du_decimal(self.nette))
+            euros(self.brute),
+            euros(self.nette)
         )
     }
 
     /// [(ctp, montant)] a ajouter au bordereau Urssaf.
-    pub fn bordereau(&self) -> Vec<(CodeCtp, Decimal)> {
+    pub fn bordereau(&self) -> Vec<(CodeCtp, Montant)> {
         if self.accord.is_some() {
             return self.non_realisees().map(|m| (CTP_ACCORD, m)).into_iter().collect();
         }
-        if self.due().is_zero() {
+        if self.due().est_nul() {
             vec![]
         } else {
             vec![(CTP_CONTRIBUTION, self.due())]
@@ -193,8 +193,8 @@ fn dec(v: Nombre, nom: &str, millesime: Annee) -> R<Decimal> {
 }
 
 /// Un montant de `config/oeth.json` que la compagnie n'ecrit que s'il y en a, au centime.
-fn montant(v: Option<Nombre>, nom: &str, millesime: Annee) -> R<Option<Decimal>> {
-    v.map(|n| dec(n, nom, millesime).map(|x| Montant::du_decimal(x).au_centime().decimal())).transpose()
+fn montant(v: Option<Nombre>, nom: &str, millesime: Annee) -> R<Option<Montant>> {
+    v.map(|n| dec(n, nom, millesime).map(|x| Montant::du_decimal(x).au_centime())).transpose()
 }
 
 /// D5212-20 et D5212-21.
@@ -245,8 +245,8 @@ Rien n'est ecrit.",
         manquants: Decimal::ZERO,
         coefficient: 0,
         smic,
-        brute: Montant::ZERO.decimal(),
-        nette: Montant::ZERO.decimal(),
+        brute: Montant::ZERO,
+        nette: Montant::ZERO,
         deductions: BTreeMap::new(),
         externes: vec![],
         accord: None,
@@ -301,14 +301,14 @@ connait pas s'applique. Rien n'est ecrit.",
 
     // La sous-traitance et les depenses (D5212-22 et -23) : celles que la compagnie ecrit, et elles seules.
     let sous_traitance = montant(donnees.sous_traitance, "sous_traitance", millesime)?;
-    let mut depenses: Vec<(CotisationDEtablissement, Decimal)> = Vec::new();
+    let mut depenses: Vec<(CotisationDEtablissement, Montant)> = Vec::new();
     for (cle, code, dite) in DEPENSES {
         if let Some(m) = montant(donnees.depenses.as_ref().and_then(dite), &format!("depenses.{}", cle), millesime)? {
             depenses.push((code, m));
         }
     }
 
-    let sans_action = if d.beneficiaires.is_zero() && sous_traitance.is_none_or(|s| s.is_zero()) {
+    let sans_action = if d.beneficiaires.is_zero() && sous_traitance.is_none_or(|s| s.est_nul()) {
         let Some(sans_action) = donnees.aucune_action_depuis_plus_de_trois_ans else {
             return Err(refus_avec(
                 "La déclaration OETH de l'année ne dit pas depuis quand la compagnie n'a ni bénéficiaire ni sous-traitance : le dire, depuis plus de trois ans ou non.",
@@ -330,9 +330,10 @@ pour le dire. Rien n'est ecrit.",
         false
     };
     d.coefficient = coefficient(eff, sans_action);
-    d.brute = Montant::du_decimal(mul(mul(d.manquants, Decimal::from(d.coefficient)), smic.decimal())).au_centime().decimal();
+    // Les manquants et l'ECAP sont des effectifs (hors de la chaine des montants) : leur produit par le SMIC s'ouvre ici.
+    d.brute = Montant::du_decimal(mul(mul(d.manquants, Decimal::from(d.coefficient)), smic.decimal())).au_centime();
 
-    let ecap = Montant::du_decimal(mul(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17)), smic.decimal())).au_centime().decimal();
+    let ecap = Montant::du_decimal(mul(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17)), smic.decimal())).au_centime();
     d.deductions.insert(CotisationDEtablissement::DeductionEcap, ecap);
     if let Some(s) = sous_traitance {
         d.deductions.insert(CotisationDEtablissement::DeductionSousTraitance, s);
@@ -343,14 +344,14 @@ pour le dire. Rien n'est ecrit.",
 
     // Les plafonds, sur la contribution brute (D5212-22 et -23).
     let moitie_du_taux = mul(d.beneficiaires, Decimal::ONE_HUNDRED) >= socle::num::div(mul(eff, taux()), Decimal::from(2));
-    let part = if moitie_du_taux { Decimal::new(75, 2) } else { Decimal::new(50, 2) };
-    let plafond_st = Montant::du_decimal(mul(d.brute, part)).au_centime().decimal();
-    let plafond_dep = Montant::du_decimal(mul(d.brute, Decimal::new(10, 2))).au_centime().decimal();
-    let total_dep = depenses.iter().fold(Montant::ZERO.decimal(), |t, (_, m)| add(t, *m));
-    let sous_traitance_retenue = sous_traitance.iter().fold(Montant::ZERO.decimal(), |t, s| add(t, (*s).min(plafond_st)));
-    let retenu = add(add(ecap, sous_traitance_retenue), total_dep.min(plafond_dep));
-    let reste = sub(d.brute, retenu);
-    d.nette = if reste > Montant::ZERO.decimal() { reste } else { Montant::ZERO.decimal() };
+    let part = if moitie_du_taux { Taux::points(75) } else { Taux::points(50) };
+    let plafond_st = d.brute.fois_taux(part).au_centime();
+    let plafond_dep = d.brute.fois_taux(Taux::points(10)).au_centime();
+    let total_dep = depenses.iter().fold(Montant::ZERO, |t, (_, m)| t + *m);
+    let sous_traitance_retenue = sous_traitance.iter().fold(Montant::ZERO, |t, s| t + (*s).min(plafond_st));
+    let retenu = ecap + sous_traitance_retenue + total_dep.min(plafond_dep);
+    let reste = d.brute - retenu;
+    d.nette = if reste > Montant::ZERO { reste } else { Montant::ZERO };
     Ok(d)
 }
 

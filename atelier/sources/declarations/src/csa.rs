@@ -41,9 +41,9 @@ use droit::contexte::{Contexte, FichierEffectifs, TypeDeParametreNeores};
 use droit::cotisation_etablissement::CotisationDEtablissement;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Montant, Taux};
 use socle::mois::Annee;
-use socle::num::{add, div, mul, Decimal};
+use socle::num::{div, mul, Decimal};
 
 const MOIS_DE_DECLARATION: u32 = 3;
 pub const CODE_CONTRIBUTION: CotisationDEtablissement = CotisationDEtablissement::Csa;
@@ -61,25 +61,25 @@ pub struct Csa {
     /// « 079 » (la contribution) ou « 080 » (l'exoneration, a 0.00).
     pub code: CotisationDEtablissement,
     /// Le montant, a l'euro (L. 6242-1, VII).
-    pub montant: Decimal,
+    pub montant: Montant,
     /// Le quotient A05 / A07, en pourcentage.
     pub quotient: Decimal,
     /// Le taux applique, en pourcentage (zero pour l'exoneration).
     pub taux: Decimal,
     /// Les assiettes de la taxe d'apprentissage declarees pour N : hors et en Alsace-Moselle.
-    pub assiette: Decimal,
-    pub assiette_alsace_moselle: Decimal,
+    pub assiette: Montant,
+    pub assiette_alsace_moselle: Montant,
 }
 
 impl Csa {
     /// Le bloc S21.G00.82 : (code, montant).
-    pub fn bloc_82(&self) -> (CotisationDEtablissement, Decimal) {
+    pub fn bloc_82(&self) -> (CotisationDEtablissement, Montant) {
         (self.code, self.montant)
     }
 
     /// Ce qu'elle ajoute au bordereau Urssaf : le CTP 998 « en montant » (taux de 100 %), rien pour l'exoneration.
-    pub fn bordereau(&self) -> Option<(droit::organismes::CodeCtp, Decimal)> {
-        (self.code == CODE_CONTRIBUTION && !self.montant.is_zero()).then_some((CTP, self.montant))
+    pub fn bordereau(&self) -> Option<(droit::organismes::CodeCtp, Montant)> {
+        (self.code == CODE_CONTRIBUTION && !self.montant.est_nul()).then_some((CTP, self.montant))
     }
 
     /// La phrase que `produire` dit au mois de mars.
@@ -95,14 +95,14 @@ code 080 à 0.00.",
                 "Contribution supplémentaire à l'apprentissage {} : {} (alternants {} % de l'effectif, taux {} % sur \
 {} d'assiette de la taxe d'apprentissage{}).",
                 self.millesime,
-                euros(Montant::du_decimal(self.montant)),
+                euros(self.montant),
                 virgule(self.quotient),
                 virgule(self.taux),
-                euros(Montant::du_decimal(add(self.assiette, self.assiette_alsace_moselle))),
-                if self.assiette_alsace_moselle.is_zero() {
+                euros(self.assiette + self.assiette_alsace_moselle),
+                if self.assiette_alsace_moselle.est_nul() {
                     String::new()
                 } else {
-                    format!(", dont {} en Alsace-Moselle à 52 % du taux", euros(Montant::du_decimal(self.assiette_alsace_moselle)))
+                    format!(", dont {} en Alsace-Moselle à 52 % du taux", euros(self.assiette_alsace_moselle))
                 }
             )
         }
@@ -209,11 +209,11 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
     let exoneree = |csa_quotient: Decimal| Csa {
         millesime: n,
         code: CODE_EXONERATION,
-        montant: socle::grandeurs::Montant::ZERO.decimal(),
+        montant: Montant::ZERO,
         quotient: csa_quotient,
         taux: Decimal::ZERO,
-        assiette: Decimal::ZERO,
-        assiette_alsace_moselle: Decimal::ZERO,
+        assiette: Montant::ZERO,
+        assiette_alsace_moselle: Montant::ZERO,
     };
     let plus_de_deux_mille = quotient < Decimal::ONE && excede_deux_mille(ctx, n)?;
     let Some(t) = taux(quotient, plus_de_deux_mille) else {
@@ -243,13 +243,13 @@ de {}. Rien n'est ecrit.",
     }
     // L'assiette : celle de la taxe d'apprentissage que les DSN de N declarent, etablissement par etablissement (le
     // montant « pour l'ensemble de ses établissements »).
-    let (mut assiette, mut alsace) = (Decimal::ZERO, Decimal::ZERO);
+    let (mut assiette, mut alsace) = (Montant::ZERO, Montant::ZERO);
     for nic in ctx.entreprise.nics()? {
         let a = crate::dsn::assiettes_de_l_annee(ctx, n, &nic, &crate::assujettissement::CTP_TAXE_APPRENTISSAGE, departs)?;
-        assiette = add(assiette, a[0]);
-        alsace = add(alsace, a[1]);
+        assiette += a[0];
+        alsace += a[1];
     }
-    if add(assiette, alsace).is_zero() {
+    if (assiette + alsace).est_nul() {
         return Err(socle::refus!(
             "DSN de mars {} : la contribution supplementaire a l'apprentissage {} est due (alternants {} % de l'effectif), \
 et aucune paie validee de {} ne porte d'assiette de la taxe d'apprentissage (CTP 992 ou 993) : elle se calcule sur cette \
@@ -261,10 +261,10 @@ assiette (L. 6242-1, III). Rien n'est ecrit.",
         ));
     }
     // VI : 52 % des taux en Alsace-Moselle ; VII : le montant a l'euro (L. 133-10 CSS).
-    let cinquante_deux = Decimal::new(52, 2);
-    let brut = div(add(mul(assiette, t), mul(mul(alsace, t), cinquante_deux)), Decimal::ONE_HUNDRED);
-    let mut montant = documents::bordereau::euro(brut);
-    montant.rescale(2);
+    // Le taux de la table de L. 6242-1, IV (`taux`), qui compte en pourcentage d'un quotient d'effectifs, entre ici en
+    // taux de l'assiette.
+    let taux_csa = Taux::du_decimal(t);
+    let montant = (assiette.fois_taux(taux_csa) + alsace.fois_taux(taux_csa * Taux::points(52).en_coefficient())).a_l_euro().au_centime();
     Ok(Some(Csa {
         millesime: n,
         code: CODE_CONTRIBUTION,

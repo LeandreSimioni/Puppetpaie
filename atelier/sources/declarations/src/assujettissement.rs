@@ -70,7 +70,7 @@ use socle::num::{add, Decimal};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bloc44 {
     pub code: CodeTaxe,
-    pub montant: Option<Decimal>,
+    pub montant: Option<Montant>,
     /// Le motif de non-assujettissement a la taxe d'apprentissage (44.004, table MNATA), pour un 002 seulement.
     pub motif: Option<MotifNonAssujettissement>,
 }
@@ -147,7 +147,7 @@ fn cpf_cdd(annee: &[MoisDuCalculAnnuel]) -> R<bool> {
 /// la part assujettie appliquee a chacune (CGI art. 231, 1 et 2 bis ; BOFiP BOI-TPS-TS-30, § 240 : « en appliquant le
 /// rapport d'assujettissement [...] à chacune des fractions des rémunérations individuelles passibles des taux
 /// majorés »).
-fn assiettes_taxe_sur_les_salaires(annee: &[MoisDuCalculAnnuel], bar: &droit::forme_bareme::Pile, pct: Decimal) -> R<(Decimal, Decimal, Decimal)> {
+fn assiettes_taxe_sur_les_salaires(annee: &[MoisDuCalculAnnuel], bar: &droit::forme_bareme::Pile, pct: Decimal) -> R<(Montant, Montant, Montant)> {
     let ts = bar.taxe_sur_les_salaires.as_ref().ok_or_else(|| {
         socle::echec::cle(
             "Le barème de l'année ne porte pas la taxe sur les salaires : ses seuils se lisent sur la notice 2501-SD de l'année ; le signaler au développeur.",
@@ -175,14 +175,14 @@ fn assiettes_taxe_sur_les_salaires(annee: &[MoisDuCalculAnnuel], bar: &droit::fo
         premier = add(premier, f1);
         second = add(second, f2);
     }
-    let part = |x: Decimal| Montant::du_decimal(x).fois_taux(Taux::du_decimal(pct)).au_centime().decimal();
+    let part = |x: Decimal| Montant::du_decimal(x).fois_taux(Taux::du_decimal(pct)).au_centime();
     Ok((part(normal), part(premier), part(second)))
 }
 
 /// L'assiette de la PEEC de l'etablissement : les remunerations de l'annee qui servent de base aux cotisations de
 /// securite sociale, la base 03 de chaque contrat (celle que la DSN de chaque mois a declaree ou declare).
-fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &droit::organismes::Organismes, nic: &Nic, annee: &[MoisDuCalculAnnuel]) -> R<Decimal> {
-    let mut total = Decimal::ZERO;
+fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &droit::organismes::Organismes, nic: &Nic, annee: &[MoisDuCalculAnnuel]) -> R<Montant> {
+    let mut total = Montant::ZERO;
     for m in annee {
         match m {
             MoisDuCalculAnnuel::Calcules(mois, ps) => {
@@ -193,14 +193,14 @@ fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &dr
                 // Les periodes elementaires d'un mois decoupe : chacune a sa base 03.
                 for p in ps.iter().flat_map(|p| p.elementaires()) {
                     if let Some(c) = crate::dsn::cotisations(p, &bar)?.into_iter().find(|c| c.bloc78 == droit::base_assujettie::BaseAssujettie::BruteDeplafonnee) {
-                        total = add(total, c.base78);
+                        total += c.base78;
                     }
                 }
             }
             MoisDuCalculAnnuel::Contrats(_) => return Err(refus("assiette de la PEEC : un mois sans montants")),
         }
     }
-    Ok(Montant::du_decimal(total).au_centime().decimal())
+    Ok(total.au_centime())
 }
 
 // ------------------------------------------------------------ le bloc
@@ -320,10 +320,10 @@ pas son assiette. Rien n'est ecrit.",
         Some(pct) => {
             let (normal, premier, second) = assiettes_taxe_sur_les_salaires(&annee, bar, pct)?;
             out.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalaires, montant: Some(normal), motif: None });
-            if premier > Decimal::ZERO {
+            if premier > Montant::ZERO {
                 majorees.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalairesAuPremierTaux, montant: Some(premier), motif: None });
             }
-            if second > Decimal::ZERO {
+            if second > Montant::ZERO {
                 majorees.push(Bloc44 { code: CodeTaxe::TaxeSurLesSalairesAuDeuxiemeTaux, montant: Some(second), motif: None });
             }
         }

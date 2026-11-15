@@ -72,23 +72,6 @@ fn fmt_taux_de_ligne(t: engagement::ligne::TauxDeLigne) -> String {
     }
 }
 
-/// Un nombre ecrit comme un montant du bulletin (`socle::texte::chiffres_en_euros`) : celui d'une base de cotisation,
-/// que le bulletin imprime dans la colonne des montants qu'elle compte des euros ou des heures.
-fn chiffres_eur(x: Decimal) -> String {
-    // Au centime, ses deux decimales ecrites (`Montant::au_centime`) : les trois derniers caracteres sont le point et
-    // les centimes ; le signe est celui de l'original.
-    let (neg, s) = (x.is_sign_negative(), socle::grandeurs::Montant::du_decimal(x.abs()).au_centime().decimal().to_string());
-    let (entier, point_frac) = s.split_at(s.len() - 3);
-    let frac = &point_frac[1..];
-    let mut groupes = String::new();
-    for (i, c) in entier.chars().enumerate() {
-        if i > 0 && (entier.len() - i) % 3 == 0 {
-            groupes.push(' ');
-        }
-        groupes.push(c);
-    }
-    format!("{}{},{}", if neg { "-" } else { "" }, groupes, frac)
-}
 
 /// Un taux tel que le bulletin l'imprime : 9.1 -> « 9,100 ».
 fn fmt_taux(t: Taux) -> String {
@@ -740,10 +723,13 @@ fn taux_dit(t: Option<Taux>) -> Cellule {
     so(t.map(fmt_taux))
 }
 
-/// La base d'une ligne de cotisation, dans la colonne des montants : ses euros, ou ses heures (`chiffres_eur`), le
-/// nombre que sa base porte (`BaseDeCotisation::decimal`) : sa porte.
+/// La base d'une ligne de cotisation, dans la colonne des montants : ses euros, ou ses heures, ecrits de meme.
 fn base_dite(l: &engagement::calcul::LigneCotisation) -> Cellule {
-    s(chiffres_eur(l.base.decimal()))
+    use engagement::calcul::BaseDeCotisation;
+    s(match l.base {
+        BaseDeCotisation::Montant(m) => chiffres_en_euros(m),
+        BaseDeCotisation::Heures(h) => socle::texte::chiffres_d_heures(h),
+    })
 }
 
 /// La base d'une ligne, et son taux salarial et son taux employeur ; rien la ou le bareme masque base et taux.
