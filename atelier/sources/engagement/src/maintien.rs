@@ -47,7 +47,7 @@ use droit::natures::Nature;
 /// antérieurs », `atelier/reference/sources/code-du-travail/xml/D1226-4.xml`).
 const DOUZE_MOIS: Duree<EnMois> = Duree::mois(12);
 use droit::permanents::{Principe, PrincipeAccident};
-use socle::date::{Jour, Periode};
+use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
 use socle::forme::Nombre;
@@ -540,7 +540,9 @@ pub fn indemnites_a_dire(ctx: &Contexte, carte: &crate::saisie::Carte, mois: Moi
         return Ok(None);
     }
     // Le contrat borne au mois.
-    let presence = Periode::du_mois(mois).bornee(debut_contrat, carte.fin)?;
+    let presence = PeriodeOuverte::du(debut_contrat, carte.fin)?
+        .croise(&Periode::du_mois(mois))
+        .ok_or_else(|| socle::refus!("Le contrat du {} ne touche pas {}.", debut_contrat.jj_mm_aaaa(), mois))?;
     for imp in crate::imprevus::du_contrat_dans_le_mois(ctx, salarie, &debut_contrat, carte.numero.as_ref(), mois)? {
         let Imprevu::Arret(imp) = imp else { continue };
         if !droits(ctx, &imp, &nat)?.is_some_and(|dr| dr.du()) {

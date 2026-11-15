@@ -244,17 +244,6 @@ impl Periode {
         }
     }
 
-    /// Ses jours a partir de `debut`, et jusqu'a `fin` quand il y en a une (un contrat dans un mois : son debut, sa fin
-    /// facultative). Refus quand il ne lui en reste aucun.
-    #[track_caller]
-    pub fn bornee(&self, debut: Jour, fin: Option<Jour>) -> R<Periode> {
-        let au = match fin {
-            Some(f) => self.fin.min(f),
-            None => self.fin,
-        };
-        Periode::du_au(self.debut.max(debut), au)
-    }
-
     /// Les mois civils qu'elle touche, du premier au dernier.
     pub fn mois(&self) -> Vec<crate::mois::Mois> {
         crate::mois::Mois::du_jour(&self.debut).jusqu_a(crate::mois::Mois::du_jour(&self.fin))

@@ -25,7 +25,7 @@ use droit::catalogue::rubrique;
 use droit::clauses;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::natures::AuMois;
-use socle::date::{Jour, Periode};
+use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::mois::Mois;
 use crate::{Avis, Chiffre, LignePaie};
 use socle::feries;
@@ -478,10 +478,8 @@ impl Tenue {
             // La presence du mois, bornee a la periode et a la reprise.
             let Some(mut presence) = m.presence.croise(periode) else { continue };
             if let Some(r) = rep {
-                if r.date > presence.fin() {
-                    continue;
-                }
-                presence = presence.bornee(r.date, None)?;
+                let Some(depuis_la_reprise) = PeriodeOuverte::du(r.date, None)?.croise(&presence) else { continue };
+                presence = depuis_la_reprise;
             }
             present = true;
             // La presence, moins les suspensions qui n'acquierent pas (`imprevus::jours_de_conges_non_acquis`).
@@ -1004,7 +1002,9 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         ));
     };
     // Le contrat borne au mois.
-    let presence = du_mois.bornee(debut_saisi, e.fin)?;
+    let presence = PeriodeOuverte::du(debut_saisi, e.fin)?
+        .croise(&du_mois)
+        .ok_or_else(|| socle::refus!("{} : le contrat du {} ne touche pas {}.", qui(ctx, e), debut_saisi.jj_mm_aaaa(), mois))?;
     // Le salaire d'un mois incomplet : l'horaire reel du mois, ou la regle de la convention qui en a une
     // (`droit::periodes::part_du_mois`).
     let salarie = salarie_de(e)?.clone();

@@ -166,7 +166,11 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
             en_mots(heures, cachets, jours, brut)
         )));
     };
-    let periode = c.periode.bornee(siens[premier].premier_jour(), Some(siens[dernier].dernier_jour()))?;
+    let mois_du_reste = Periode::du_au(siens[premier].premier_jour(), siens[dernier].dernier_jour())?;
+    let periode = c
+        .periode
+        .croise(&mois_du_reste)
+        .ok_or_else(|| socle::refus!("le reste du certificat ({}) tombe hors de son contrat ({})", mois_du_reste, c.periode))?;
     let mut ligne = c.ligne.clone();
     // La ligne lue ecrit son brut en nombre (`ContratLu`) : sa porte.
     let b = reste_brut.au_centime().decimal();
