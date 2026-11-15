@@ -1076,6 +1076,12 @@ impl NomDeFichier {
     pub fn suivi_de(&self, suite: &NomDeFichier) -> NomDeFichier {
         NomDeFichier(std::borrow::Cow::Owned(format!("{}{}", self.0, suite.0)))
     }
+
+    /// CE NOM, SUIVI DE L'EXTENSION `extension` (`livre-de-paie-2026-mois` et `csv` : `livre-de-paie-2026-mois.csv`) :
+    /// un nom, puisqu'aucun des deux n'a de barre ni n'est vide.
+    pub fn avec_l_extension(&self, extension: &NomDeFichier) -> NomDeFichier {
+        NomDeFichier(std::borrow::Cow::Owned(format!("{}.{}", self.0, extension.0)))
+    }
 }
 
 /// Le nom d'un fichier d'une annee (`AAAA`) : il a toujours la forme d'un nom.

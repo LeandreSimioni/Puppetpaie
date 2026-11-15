@@ -949,8 +949,9 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     // Le nom de chaque `.eml` garde se fait avant l'envoi : rien ne se refuse apres que les courriels sont partis.
     let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let horodate = NomDeFichier::lire(&format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]))?;
-    let eml = const { documents::etats_paie::NomDExport::autour("_CASC-SVP_", ".eml") };
-    let emls: Vec<NomDeFichier> = messages.iter().map(|m| horodate.suivi_de(&eml.de(&m.pour))).collect();
+    // Le nom d'un `.eml` garde : `<horodate>_CASC-SVP_<pour>.eml`.
+    let casc = horodate.suivi_de(&const { NomDeFichier::du_moteur("_CASC-SVP_") });
+    let emls: Vec<NomDeFichier> = messages.iter().map(|m| casc.suivi_de(&m.pour).avec_l_extension(&const { NomDeFichier::du_moteur("eml") })).collect();
     let mut copies: Vec<Vec<u8>> = Vec::new();
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,

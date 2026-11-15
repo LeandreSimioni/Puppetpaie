@@ -275,6 +275,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | rubrique de la norme | `RubriqueDeLaNorme` | `droit/src/natures.rs` |
 | nom de fichier | `NomDeFichier` | `socle/src/fichiers.rs` |
 | chemin relatif | `CheminRelatif` | `socle/src/fichiers.rs` |
+| nom d'un fichier d'export | `documents::etats_paie::NomDExport` | `documents/src/etats_paie.rs` |
 | chemin d'un texte déposé | `droit::source::CheminDepose` | `droit/src/source.rs` |
 | dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
@@ -547,7 +548,12 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   du Finder s'écrit `Relevé 03:2026.pdf`), jamais lu sur un disque Windows, et refusé dans un nom écrit ailleurs
   (`NomDeFichier::ecrit_ailleurs` : la charge d'une route, un scénario du banc, par `socle::fichiers::ecrit_ailleurs` ;
   `CheminRelatif::ecrit_ailleurs` ; la restauration sous Windows) ; il se fait d'un chemin par `NomDeFichier::du`, qui refuse un chemin sans
-  nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur` ; le nom du dossier d'un mois, de son `Mois`.
+  nom ; un nom que le moteur écrit en Rust, `NomDeFichier::du_moteur` ; le nom du dossier d'un mois, de son `Mois`. Deux
+  noms bout à bout en font un (`suivi_de`), un nom et son extension aussi (`avec_l_extension`).
+- **nom d'un fichier d'export** : le nom d'un export autour de sa période (`avant<période>après` : le livre de paie, les
+  écritures comptables d'une période, l'export compta d'une année), ou fixe (`COMPTES.TXT`, qu'EBP cherche sous ce nom
+  à côté des écritures). Les `.eml` gardés de la CASC-SVP n'en sont pas : leur nom est fait de l'instant et du
+  destinataire.
 - **chemin relatif** : un chemin sous une racine que son champ dit (la compagnie, le dossier de la sauvegarde) : la trace
   d'un dépôt, un fichier de la sauvegarde, une pièce du mois que la fenêtre ouvre, la copie d'un bulletin repris. Des
   `NomDeFichier` séparés par des barres droites sur tous les systèmes, ni vide ni avec une racine ; il se fait d'un

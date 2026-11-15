@@ -653,10 +653,10 @@ impl NomDExport {
 fn ecrire_livre(ctx: &Contexte, livre: &LivreDePaie, quand: &Quand) -> R<PathBuf> {
     let dossier = quand.dossier(ctx);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-    let (extension, octets) = match livre.format {
-        FormatDExport::Csv => (const { NomDeFichier::du_moteur(".csv") }, csv_livre(livre)),
-        FormatDExport::Xlsx => (const { NomDeFichier::du_moteur(".xlsx") }, xlsx_livre(livre)?),
-        FormatDExport::Pdf => (const { NomDeFichier::du_moteur(".pdf") }, pdf_livre(ctx, livre)?),
+    let octets = match livre.format {
+        FormatDExport::Csv => csv_livre(livre),
+        FormatDExport::Xlsx => xlsx_livre(livre)?,
+        FormatDExport::Pdf => pdf_livre(ctx, livre)?,
         autre => return Err(refus(format!("Format inconnu : « {} ». Les formats possibles sont csv, pdf, xlsx.", autre))),
     };
     let groupe = const { NomDeFichier::du_moteur("-") }.suivi_de(&livre.regroupement.nom());
@@ -664,7 +664,7 @@ fn ecrire_livre(ctx: &Contexte, livre: &LivreDePaie, quand: &Quand) -> R<PathBuf
         true => groupe.suivi_de(&const { NomDeFichier::du_moteur("-coordonnees") }),
         false => groupe,
     };
-    let nom = NomDExport::Autour(const { NomDeFichier::du_moteur("livre-de-paie-") }, groupe.suivi_de(&extension)).de(&quand.nom());
+    let nom = NomDExport::Autour(const { NomDeFichier::du_moteur("livre-de-paie-") }, groupe.avec_l_extension(&livre.format.nom())).de(&quand.nom());
     let chemin = dossier.join(nom);
     std::fs::write(&chemin, octets).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     Ok(chemin)
