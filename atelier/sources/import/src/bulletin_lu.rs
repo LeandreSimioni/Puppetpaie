@@ -592,8 +592,8 @@ pub struct Table {
     familles: Vec<(FamilleDeCotisation, Vec<String>)>,
     /// (cotisation, libelles canoniques) : la cotisation qu'une ligne imprimee est.
     cotisations: Vec<(String, Vec<String>)>,
-    /// (cle, libelles canoniques).
-    cumuls: Vec<(String, Vec<String>)>,
+    /// (cumul, libelles canoniques).
+    cumuls: Vec<(NomDeCumul, Vec<String>)>,
     /// (nom, signature : les libelles qui doivent tous se trouver).
     logiciels: Vec<(LogicielDUnBulletin, Vec<Vec<String>>)>,
     lignes: Vec<LigneTable>,
@@ -618,7 +618,7 @@ struct TableEcrite {
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     cotisations: Vec<(String, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    cumuls: Vec<(String, Libelles)>,
+    cumuls: Vec<(NomDeCumul, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     logiciels: Vec<(LogicielDUnBulletin, Signature)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
@@ -693,7 +693,7 @@ pub fn textes_de_la_table() -> R<Vec<String>> {
     libelles.extend([&r.brut, &r.total, &r.net_social, &r.net_avant_impot, &r.pas, &r.net_imposable, &t.titres, &t.annexe]);
     libelles.extend(t.mentions.iter().map(|(_, l)| l));
     libelles.extend(t.familles.iter().map(|(_, l)| l));
-    libelles.extend(t.cotisations.iter().chain(&t.cumuls).map(|(_, l)| l));
+    libelles.extend(t.cotisations.iter().map(|(_, l)| l).chain(t.cumuls.iter().map(|(_, l)| l)));
     libelles.extend(t.logiciels.iter().map(|(_, s)| &s.signature));
     let mut out = vec![t.quoi.clone(), t.note.clone()];
     for l in libelles {
@@ -934,10 +934,39 @@ pub struct Pas {
     pub cumul: Option<Decimal>,
 }
 
+/// LE NOM D'UN CUMUL QU'UN BULLETIN IMPRIME : la liste fermee des cles `cumuls` de `bulletins-lecture-base.json`, lue
+/// par serde ; un nom inconnu refuse la table. Il dit la sorte du cumul (`Cumul::lu`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NomDeCumul {
+    Cachets,
+    Jours,
+    Heures,
+    Brut,
+    Plafond,
+    CoutEmployeur,
+    NetImposable,
+    Pas,
+}
+
+impl std::fmt::Display for NomDeCumul {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            NomDeCumul::Cachets => "cachets",
+            NomDeCumul::Jours => "jours",
+            NomDeCumul::Heures => "heures",
+            NomDeCumul::Brut => "brut",
+            NomDeCumul::Plafond => "plafond",
+            NomDeCumul::CoutEmployeur => "cout_employeur",
+            NomDeCumul::NetImposable => "net_imposable",
+            NomDeCumul::Pas => "pas",
+        })
+    }
+}
+
 /// UN RANG DE LA GRILLE DES CUMULS, ses deux colonnes (« Période », « Cumul ») lues en leur grandeur a la lecture de la
-/// page, par le nom que la table donne au rang (`cumuls` de `bulletins-lecture-base.json`) : `cachets`, `jours`,
-/// `heures` en leur quantite ; un autre rang (`brut`, `plafond`, `cout_employeur`...) en euros. Il s'ecrit comme ses
-/// colonnes, `{"periode": …, "cumul": …}`.
+/// page, par le nom que la table donne au rang (`NomDeCumul`) : `cachets`, `jours`, `heures` en leur quantite ; un autre
+/// rang (`brut`, `plafond`, `cout_employeur`...) en euros. Il s'ecrit comme ses colonnes, `{"periode": …, "cumul": …}`.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(untagged)]
 pub enum Cumul {
@@ -967,12 +996,14 @@ pub struct ColonnesEnEuros {
 impl Cumul {
     /// Le rang `nom` de la table, ses colonnes `periode` et `cumul` telles que la page les imprime : la porte de leur
     /// lecture, ou chaque nombre prend sa grandeur.
-    fn lu(nom: &str, periode: Option<Decimal>, cumul: Option<Decimal>) -> Cumul {
+    fn lu(nom: NomDeCumul, periode: Option<Decimal>, cumul: Option<Decimal>) -> Cumul {
         match nom {
-            "cachets" => Cumul::Cachets(Colonnes { periode: periode.map(Cachets::du_decimal), cumul: cumul.map(Cachets::du_decimal) }),
-            "jours" => Cumul::Jours(Colonnes { periode: periode.map(Jours::du_decimal), cumul: cumul.map(Jours::du_decimal) }),
-            "heures" => Cumul::Heures(Colonnes { periode: periode.map(Heures::du_decimal), cumul: cumul.map(Heures::du_decimal) }),
-            _ => Cumul::Euros(ColonnesEnEuros { periode, cumul }),
+            NomDeCumul::Cachets => Cumul::Cachets(Colonnes { periode: periode.map(Cachets::du_decimal), cumul: cumul.map(Cachets::du_decimal) }),
+            NomDeCumul::Jours => Cumul::Jours(Colonnes { periode: periode.map(Jours::du_decimal), cumul: cumul.map(Jours::du_decimal) }),
+            NomDeCumul::Heures => Cumul::Heures(Colonnes { periode: periode.map(Heures::du_decimal), cumul: cumul.map(Heures::du_decimal) }),
+            NomDeCumul::Brut | NomDeCumul::Plafond | NomDeCumul::CoutEmployeur | NomDeCumul::NetImposable | NomDeCumul::Pas => {
+                Cumul::Euros(ColonnesEnEuros { periode, cumul })
+            }
         }
     }
 }
@@ -1014,7 +1045,7 @@ pub struct BulletinLu {
     pub mode_reglement: Option<String>,
     /// Les cumuls, dans l'ordre de la page : `cachets`, `jours`, `heures`, `brut`, `plafond`, `cout_employeur`...
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
-    pub cumuls: Vec<(String, Cumul)>,
+    pub cumuls: Vec<(NomDeCumul, Cumul)>,
     pub avertissements: Vec<Avertissement>,
 }
 
@@ -1424,7 +1455,7 @@ impl<'a> Lecteur<'a> {
         }
         let mut pas: Option<Pas> = None;
         let mut net_imposable: Option<Decimal> = None;
-        let mut cumuls: Vec<(String, Cumul)> = Vec::new();
+        let mut cumuls: Vec<(NomDeCumul, Cumul)> = Vec::new();
         if let Some(p) = pied {
             self.grilles(p, &mut pas, &mut net_imposable, &mut cumuls)?;
             self.sans_grille(p, &mut pas, &mut net_imposable)?;
@@ -2210,7 +2241,7 @@ impl<'a> Lecteur<'a> {
 
     /// Les grilles du pied, chacune sous son rang d'en-tetes : l'impot preleve et le net imposable (« base »,
     /// « taux », « montant »), les cumuls (« Période », « Cumul »).
-    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>, cumuls: &mut Vec<(String, Cumul)>) -> Result<(), Refus> {
+    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>, cumuls: &mut Vec<(NomDeCumul, Cumul)>) -> Result<(), Refus> {
         let p = &self.page;
         let t = self.t;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
@@ -2273,7 +2304,7 @@ impl<'a> Lecteur<'a> {
                 if *cumul {
                     if let Some((nom, _)) = t.cumuls.iter().find(|(_, l)| l.contains(libelle)) {
                         if !cumuls.iter().any(|(x, _)| x == nom) {
-                            cumuls.push((nom.clone(), Cumul::lu(nom, col(Genre::Periode), col(Genre::Cumul))));
+                            cumuls.push((*nom, Cumul::lu(*nom, col(Genre::Periode), col(Genre::Cumul))));
                         }
                     }
                     if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
