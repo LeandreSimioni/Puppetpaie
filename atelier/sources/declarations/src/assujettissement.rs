@@ -62,7 +62,7 @@ use droit::fiche::{MotifNonAssujettissement, Nic};
 use documents::taxe_sur_les_salaires::{assiette_taxe_sur_les_salaires, fractions_majorees, taxe_sur_les_salaires_de_la_fiche};
 use socle::echec::{refus, R};
 use socle::mois::{Annee, Mois};
-use socle::grandeurs::{Montant, Taux};
+use socle::grandeurs::{Effectif, Montant, Taux};
 
 /// Un bloc S21.G00.44 : le code taxe (44.001) et, s'il y en a un, le montant (44.002). Le millesime (44.003) est
 /// l'annee de la DSN de decembre.
@@ -203,7 +203,7 @@ fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &dr
 
 // ------------------------------------------------------------ le bloc
 
-fn effectif_atteint(ctx: &Contexte, seuil: i64, annee_paie: Annee, quoi: &str) -> R<bool> {
+fn effectif_atteint(ctx: &Contexte, seuil: Effectif, annee_paie: Annee, quoi: &str) -> R<bool> {
     ctx.effectif()?.atteint(seuil, annee_paie).map_err(|m| m.reformuler(|m| format!("Bloc S21.G00.44 (assujettissement fiscal), {} : {}", quoi, m)))
 }
 
@@ -279,7 +279,7 @@ pub fn blocs(
 
     // La contribution supplementaire : L. 6242-1, I, ne la fait devoir qu'a 250 salaries et plus, l'effectif de l'annee
     // du millesime (V), regle des cinq ans comprise. Un grand seuil : sans la case des cinquante salaries, 004 sans rien lire.
-    let csa = if effectif_atteint(ctx, 250, an.suivante()?,"contribution supplementaire a l'apprentissage")? { CodeTaxe::ContributionSupplementaireApprentissage } else { CodeTaxe::NonContributionSupplementaireApprentissage };
+    let csa = if effectif_atteint(ctx, Effectif::personnes(250), an.suivante()?,"contribution supplementaire a l'apprentissage")? { CodeTaxe::ContributionSupplementaireApprentissage } else { CodeTaxe::NonContributionSupplementaireApprentissage };
     out.push(Bloc44 { code: csa, montant: None, motif: None });
 
     // Ce qui demande les montants de l'annee : la taxe sur les salaires et la PEEC.
@@ -297,7 +297,7 @@ pas son assiette. Rien n'est ecrit.",
     // L'effectif est celui de l'annee du millesime, comme pour la contribution supplementaire : la PEEC declaree ici est
     // assise sur les salaires de cette annee-la et s'investit l'annee d'apres (BOFiP BOI-TPS-PEEC-20, § 10), et L. 313-1
     // renvoie a L. 130-1 CSS, qui retient l'effectif de l'annee civile precedant l'obligation (INFERENCE).
-    let peec = effectif_atteint(ctx, 50, an.suivante()?,"participation des employeurs a l'effort de construction")?;
+    let peec = effectif_atteint(ctx, Effectif::personnes(50), an.suivante()?,"participation des employeurs a l'effort de construction")?;
     let annee = mois_de_l_annee(ctx, ent, nic, mois, paies, ts.is_some() || peec, departs)?;
 
     // La PEEC : CCH L. 313-1, cinquante salaries.

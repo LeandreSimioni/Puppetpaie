@@ -148,7 +148,7 @@ mod tests {
     fn la_casc_svp_d_une_3090_ne_se_saisit_pas() {
         let fiche = |texte: &str| socle::forme::lire_texte::<crate::fiche::ChampsEntreprise>(texte, "la fiche").unwrap();
         let an = |a: i64| socle::mois::Annee::nouvelle(a).unwrap();
-        let soixante = crate::contexte::Effectif { annees: [(an(2025), socle::num::Decimal::from(60))].into(), premiere_embauche: None, cinquante_salaries: true };
+        let soixante = crate::contexte::Effectif { annees: [(an(2025), socle::grandeurs::Effectif::personnes(60))].into(), premiere_embauche: None, cinquante_salaries: true };
         let a = casc_svp(&fiche(r#"{"idcc": "3090"}"#), &soixante, an(2026)).unwrap().unwrap();
         assert_eq!((a.libelle.as_str(), a.delegataire.as_str()), ("CASCSVP", "P0983"));
         assert!(casc_svp(&fiche(r#"{"idcc": "1285"}"#), &soixante, an(2026)).unwrap().is_none());

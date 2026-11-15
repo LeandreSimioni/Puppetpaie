@@ -15,6 +15,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
+use declarations::dsn::MesureDActivite;
 use declarations::dsn_lue::{ContratDeclare, DsnLue, Mesures, VersementLu};
 use documents::ecrire_documents::paies_aux_numeros_declares;
 use droit::contexte::Contexte;
@@ -112,19 +113,20 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
         None => ecarts.push(format!("brut : la paie dit {}, le fichier n'en déclare pas", brut)),
     }
     // Les mesures du travail remunere (type 01) que la DSN ecrit pour cette paie (`dsn::mesures_d_activite`).
-    let (mut jours, mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
+    let (mut jours, mut cachets, mut heures) = (Jours::ZERO, Cachets::ZERO, Heures::ZERO);
     for (t, valeur, code) in declarations::dsn::mesures_d_activite(p)? {
         if t != TypeDActivite::TravailRemunere {
             continue;
         }
-        match code {
-            UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents => heures += valeur,
-            UniteDeMesure::Journee => jours += valeur,
-            UniteDeMesure::CachetsIsoles => cachets += valeur,
+        match (code, valeur) {
+            (UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents, MesureDActivite::Heures(h)) => heures += h,
+            (UniteDeMesure::Journee, MesureDActivite::Jours(j)) => jours += j,
+            (UniteDeMesure::CachetsIsoles, MesureDActivite::Cachets(c)) => cachets += c,
             _ => {}
         }
     }
-    for (quoi, paie, fichier) in [("jours", jours, m.jours), ("cachets", cachets, m.cachets), ("heures", heures, m.heures)] {
+    // Les mesures d'une DSN lue sont des nombres (`dsn_lue::Mesures`) : la paie s'y compare ouverte.
+    for (quoi, paie, fichier) in [("jours", jours.decimal(), m.jours), ("cachets", cachets.decimal(), m.cachets), ("heures", heures.decimal(), m.heures)] {
         if paie != fichier {
             ecarts.push(format!("{} : la paie dit {}, le fichier {}", quoi, paie.normalize(), fichier.normalize()));
         }

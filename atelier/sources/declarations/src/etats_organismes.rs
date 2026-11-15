@@ -650,7 +650,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Some(eff) => Some(
                 tranches
                     .iter()
-                    .find(|x| x.jusqu_a.is_none_or(|j| eff <= socle::num::Decimal::from(j)))
+                    .find(|x| x.jusqu_a.is_none_or(|j| eff <= j))
                     .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches").reclasser(Classe::Manque))?
                     .taux,
             ),

@@ -30,7 +30,7 @@ use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
 use socle::mois::Annee;
 use socle::echec::{erreur, Classe, Echec, R};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Effectif, Montant};
 use socle::ecriture::ecrire_json;
 use socle::paris::{InstantOuJour, Moment};
 use socle::html::{html_echapper, mailto};
@@ -372,20 +372,20 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         };
         return Ok(EffectifDit { phrase, annee: None, valeur: None, source: None, a_dire: manquent });
     };
-    let en_clair = |x: socle::num::Decimal| socle::texte::virgule(x.round_dp(2));
+    let en_clair = |x: Effectif| socle::grandeurs::ecrit::sans_zero::dit(x.a_deux_decimales()).replace('.', ",");
     let mut pose = None;
     if let Some(v) = &charge.valeur {
         if an >= an_paie {
             return Err(erreur(Classe::Refuse, format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
         }
-        let x = v.court().map_err(|m| m.reclasser(Classe::Illisible))?;
-        if x < socle::num::Decimal::ZERO {
+        let x = v.grandeur::<Effectif>().map_err(|m| m.reclasser(Classe::Illisible))?;
+        if x < Effectif::ZERO {
             return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", v.ecrit())));
         }
         // Un effectif, pas un montant : tronque au centieme, CSS R. 130-1, I
         // (`atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la
         // fraction d'effectif au-delà de la deuxième décimale »).
-        let x = x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToZero);
+        let x = x.tronque_au_centieme();
         if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, ctx.aujourdhui)? {
             return Err(erreur(Classe::Refuse, format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
         }
@@ -423,8 +423,8 @@ struct ChargeEffectif {
 struct EffectifDit {
     phrase: String,
     annee: Option<Annee>,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    valeur: Option<socle::num::Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    valeur: Option<Effectif>,
     source: Option<&'static str>,
     a_dire: Vec<Annee>,
 }

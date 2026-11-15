@@ -1041,7 +1041,7 @@ forme! {
 forme! {
     pub struct SeuilEffectif {
         pub cle: String,
-        pub seuil: i64,
+        pub seuil: socle::grandeurs::Effectif,
         pub quoi: String,
         pub au_dela: String,
         pub sous_le_seuil: Option<String>,
@@ -1220,7 +1220,7 @@ impl std::fmt::Display for NonPortee {
 forme! {
     pub struct SeuilNonPorte {
         pub cle: NonPortee,
-        pub seuil: i64,
+        pub seuil: socle::grandeurs::Effectif,
         pub quoi: String,
         pub texte: Option<String>,
         pub reponses: BTreeMap<String, String>,
@@ -1518,7 +1518,7 @@ forme! {
 
 forme! {
     pub struct TauxJusquA {
-        pub jusqu_a: Option<i64>,
+        pub jusqu_a: Option<socle::grandeurs::Effectif>,
         pub taux: Taux,
     }
 }

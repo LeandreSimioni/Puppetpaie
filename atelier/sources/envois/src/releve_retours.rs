@@ -24,7 +24,7 @@ use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour, StatutDuRetour, Verdict};
 use socle::date::Jour;
-use socle::num::Decimal;
+use socle::grandeurs::Effectif;
 use socle::paris::Moment;
 use socle::garde_reseau::Url;
 
@@ -815,7 +815,7 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
     let mut out = Vec::new();
     for p in crm.parametres {
         let (Some(code), Some(valeur)) = (p.type_parametre, p.valeur) else { continue };
-        let v = socle::num::dec_texte(&valeur).map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
+        let v = socle::grandeurs::lu::en_texte::<Effectif>(&valeur).map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
         out.push(Mesure118 { code, valeur: v, debut: p.effet, fin: p.fin, calcule_le: p.calcule_le });
     }
     Ok(Some(out))
@@ -824,7 +824,7 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
 /// Un effectif qu'un compte rendu de nature 118 communique : son code, sa valeur, sa periode, le jour de son calcul.
 struct Mesure118 {
     code: TypeDeParametreNeores,
-    valeur: Decimal,
+    valeur: Effectif,
     debut: Option<Jour>,
     fin: Option<Jour>,
     calcule_le: Option<socle::paris::Moment>,
@@ -908,7 +908,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`, « L'effectif au sens de la sécurité sociale ») :
 /// une compagnie venue d'un autre logiciel n'a pas les 118 de ses annees passees. `Ok(false)` : un 118 de cette annee
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
-pub fn poser_effectif(racine: &Path, an: Annee, valeur: Decimal, le: Jour) -> R<bool> {
+pub fn poser_effectif(racine: &Path, an: Annee, valeur: Effectif, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
     let mut annees: EffectifsParAnnee = existant.iter().flat_map(|f| f.annees.iter()).map(|(an, c)| (*an, c.clone())).collect();
     let codes = annees.entry(an).or_default();

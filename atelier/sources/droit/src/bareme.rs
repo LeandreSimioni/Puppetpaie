@@ -866,7 +866,7 @@ pub fn bareme_casc(mut bar: Pile, ent: &EntrepriseLue) -> Pile {
 pub fn representation_du_personnel(ent: &EntrepriseLue) -> R<String> {
     match ent.effectif {
         // III.3.1.b : moins de onze salaries, 1,45 %.
-        Some(e) if e < Decimal::from(11) => Ok("aucune".to_string()),
+        Some(e) if e < socle::grandeurs::Effectif::personnes(11) => Ok("aucune".to_string()),
         Some(_) => match ent.cse.as_ref().and_then(|cle| ent.fiche.cse.ouvrir(cle).representation_personnel.code()) {
             Some(v) => Ok(v.to_string()),
             None if ent.cse.is_none() => Err(socle::echec::refus(
@@ -1139,7 +1139,7 @@ pub struct EntrepriseLue {
     pub fiche: ChampsEntreprise,
     /// L'effectif connu le plus recent avant l'annee (`contexte::Effectif::valeur`) : la CCNEAC fixe le FNAS par lui
     /// (III.3.1.a et b).
-    pub effectif: Option<Decimal>,
+    pub effectif: Option<socle::grandeurs::Effectif>,
     /// La cle de la representation du personnel (`contexte::Effectif::cse`) : sans elle, aucun comite ne peut exister.
     pub cse: Option<crate::contexte::UnCsePossible>,
     /// La cle de cinquante salaries (`contexte::Effectif::cinquante`) : l'exemption de la CASC-SVP la demande.

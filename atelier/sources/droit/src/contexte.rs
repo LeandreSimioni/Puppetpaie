@@ -14,7 +14,7 @@ use crate::code_cotisation::CleDeCotisationDsn;
 use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
 use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
 use socle::echec::Lieu;
-use socle::num::Decimal;
+use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::MontantUnitaire;
 
 use socle::date::{repr_texte, Duree, EnMois, Jour, Periode};
@@ -36,16 +36,9 @@ fn exige<T: AsRef<str>>(c: &Option<T>, cle: &str) -> R<String> {
     c.ecrite(cle).map(str::to_string)
 }
 
-/// Un effectif tel qu'un message l'ecrit : six chiffres significatifs au plus, au pair sur le demi, sans zeros
-/// inutiles (`2.5`, `12`).
-fn effectif_ecrit(x: Decimal) -> String {
-    let entiers = x.trunc().abs().to_string().trim_start_matches('0').len() as u32;
-    x.round_dp_with_strategy(6u32.saturating_sub(entiers), rust_decimal::RoundingStrategy::MidpointNearestEven).normalize().to_string()
-}
-
-/// Un effectif a virgule, sans zeros inutiles.
-fn nombre_fr(x: Decimal) -> String {
-    effectif_ecrit(x).replace('.', ",")
+/// Un effectif a virgule, sans zeros inutiles (`2,5`, `12`).
+fn nombre_fr(x: socle::grandeurs::Effectif) -> String {
+    sans_zero::dit(x).replace('.', ",")
 }
 
 // ------------------------------------------------- la recherche floue
@@ -163,14 +156,14 @@ impl TypeDeParametreNeores {
 const ANNEES_CONSECUTIVES: Duree<EnMois> =Duree::annees(5);
 /// Le plus petit seuil d'effectif dont un taux depend (la formation des permanents) : une annee qui ne le departage pas
 /// ne departage aucun des autres.
-const PLUS_PETIT_SEUIL: i64 = 11;
+const PLUS_PETIT_SEUIL: socle::grandeurs::Effectif = socle::grandeurs::Effectif::personnes(11);
 
 /// Les effectifs A01 connus, par annee civile (`config/effectifs.json`) : ceux que l'Urssaf renvoie en compte rendu de
 /// nature 118, que le releve des retours y ecrit, et ceux que la compagnie dit pour une annee sans 118
 /// (`envois::releve_retours::poser_effectif`), qu'un 118 de la meme annee remplace.
 #[derive(Debug, Clone)]
 pub struct Effectif {
-    pub annees: BTreeMap<Annee, Decimal>,
+    pub annees: BTreeMap<Annee, socle::grandeurs::Effectif>,
     /// L'annee de la premiere embauche (fiche entreprise) : avant elle, zero.
     pub premiere_embauche: Option<Annee>,
     /// La fiche dit la compagnie d'au moins cinquante salaries (`cinquante_salaries_et_plus`, une compagnie qui emploie des
@@ -193,7 +186,7 @@ pub struct UnCsePossible(());
 pub struct CinquanteSalaries(());
 
 /// Le seuil du comite social et economique (C. trav. L2311-2).
-const SEUIL_DU_CSE: i64 = 11;
+const SEUIL_DU_CSE: socle::grandeurs::Effectif = socle::grandeurs::Effectif::personnes(11);
 /// Les annees civiles avant celle lue ou un effectif d'au moins onze salaries laisse un comite exister : un mandat de
 /// quatre ans au plus (L2314-33, L2314-34), renouvele tant que l'effectif n'est pas reste sous onze salaries les douze
 /// mois d'avant son terme (L2313-10). Un mandat renouvele au plus tard un an apres le dernier mois a onze court quatre
@@ -203,7 +196,7 @@ const ANNEES_DU_CSE: Duree<EnMois> =Duree::annees(5);
 /// Le plus petit des grands seuils : le FNAL a 0,50 % et le `tdelta` de la reduction generale (bareme,
 /// `seuils_effectif`), l'echeance du 5 (R. 243-6 CSS), la PEEC (CCH L. 313-1), puis la contribution supplementaire a
 /// l'apprentissage a 250 (C. trav. L. 6242-1, I).
-pub const GRAND_SEUIL: i64 = 50;
+pub const GRAND_SEUIL: socle::grandeurs::Effectif = socle::grandeurs::Effectif::personnes(50);
 
 /// La case est-elle cochee ? Elle est rangee avec les cases d'une compagnie qui emploie des permanents, la seule voie
 /// vers cinquante salaries (`fiche::EmploieDesPermanents`) : une compagnie d'intermittents ne la voit pas, et un seuil
@@ -231,8 +224,8 @@ pub type EffectifsParAnnee = BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, Eff
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EffectifEcrit {
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::court")]
-    pub valeur: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize", deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+    pub valeur: socle::grandeurs::Effectif,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
     pub calcule_le: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -243,7 +236,7 @@ pub struct EffectifEcrit {
 
 impl FichierEffectifs {
     /// L'effectif du code `code` pour l'annee `annee`, s'il est ecrit.
-    pub fn du_118(&self, annee: Annee, code: TypeDeParametreNeores) -> Option<Decimal> {
+    pub fn du_118(&self, annee: Annee, code: TypeDeParametreNeores) -> Option<socle::grandeurs::Effectif> {
         self.annees.get(&annee).and_then(|c| c.get(&code)).map(|e| e.valeur)
     }
 }
@@ -271,18 +264,18 @@ pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
 }
 
 impl Effectif {
-    pub fn annee(&self, a: Annee) -> Option<Decimal> {
+    pub fn annee(&self, a: Annee) -> Option<socle::grandeurs::Effectif> {
         if let Some(v) = self.annees.get(&a) {
             return Some(*v);
         }
         match self.premiere_embauche {
-            Some(p) if a < p => Some(Decimal::ZERO),
+            Some(p) if a < p => Some(socle::grandeurs::Effectif::ZERO),
             _ => None,
         }
     }
 
     /// L'effectif le plus recent connu pour payer en `annee_paie`, ou `None`.
-    pub fn valeur(&self, annee_paie: Annee) -> Option<Decimal> {
+    pub fn valeur(&self, annee_paie: Annee) -> Option<socle::grandeurs::Effectif> {
         match self.annees.range(..annee_paie).next_back() {
             Some((_, v)) => Some(*v),
             None => annee_paie.les_precedentes(Duree::annees(1)).into_iter().find_map(|a| self.annee(a)),
@@ -295,13 +288,13 @@ impl Effectif {
     /// par mois, de L1111-2 que le code du travail compte : c'est le seul que le moteur connaisse. `None` : aucune de ces
     /// annees n'atteint onze salaries, ou leur effectif n'est pas connu (`a_dire` le demande).
     pub fn cse(&self, annee: Annee) -> Option<UnCsePossible> {
-        annee.les_precedentes(ANNEES_DU_CSE).into_iter().any(|a| self.annee(a).is_some_and(|v| v >= Decimal::from(SEUIL_DU_CSE))).then_some(UnCsePossible(()))
+        annee.les_precedentes(ANNEES_DU_CSE).into_iter().any(|a| self.annee(a).is_some_and(|v| v >= SEUIL_DU_CSE)).then_some(UnCsePossible(()))
     }
 
     /// LA CLE DE CINQUANTE SALARIES pour `annee` (`CinquanteSalaries`) : la fiche dit la compagnie d'au moins cinquante
     /// salaries (`cinquante_salaries`), et l'effectif connu le plus recent (`valeur`) l'atteint.
     pub fn cinquante(&self, annee: Annee) -> Option<CinquanteSalaries> {
-        (self.cinquante_salaries && self.valeur(annee).is_some_and(|v| v >= Decimal::from(GRAND_SEUIL))).then_some(CinquanteSalaries(()))
+        (self.cinquante_salaries && self.valeur(annee).is_some_and(|v| v >= GRAND_SEUIL)).then_some(CinquanteSalaries(()))
     }
 
     /// LES ANNEES DONT L'EFFECTIF MANQUE POUR LES TAUX DE LA PAIE EN `annee_paie` : celles des cinq dernieres que le plus
@@ -311,7 +304,7 @@ impl Effectif {
     pub fn a_dire(&self, annee_paie: Annee) -> Vec<Annee> {
         let fenetre = annee_paie.les_precedentes(ANNEES_CONSECUTIVES);
         // Une annee connue sous le seuil le departage deja : il n'est pas franchi (`atteint`).
-        if fenetre.iter().copied().any(|a| self.annee(a).is_some_and(|v| v < Decimal::from(PLUS_PETIT_SEUIL))) {
+        if fenetre.iter().copied().any(|a| self.annee(a).is_some_and(|v| v < PLUS_PETIT_SEUIL)) {
             return Vec::new();
         }
         fenetre.into_iter().filter(|a| self.annee(*a).is_none()).collect()
@@ -320,14 +313,14 @@ impl Effectif {
     /// Le seuil est-il franchi pour payer en `annee_paie` ? (L. 130-1, II, CSS :
     /// cinq annees civiles consecutives.)
     /// Un grand seuil (`GRAND_SEUIL` et plus) n'est atteint que si la fiche dit la compagnie d'au moins cinquante salaries.
-    pub fn atteint(&self, seuil: i64, annee_paie: Annee) -> R<bool> {
+    pub fn atteint(&self, seuil: socle::grandeurs::Effectif, annee_paie: Annee) -> R<bool> {
         let grand = seuil >= GRAND_SEUIL;
         if grand && !self.cinquante_salaries {
             return Ok(false);
         }
         let fenetre = annee_paie.les_precedentes(ANNEES_CONSECUTIVES);
-        let connues: BTreeMap<Annee, Decimal> = fenetre.iter().filter_map(|a| self.annee(*a).map(|v| (*a, v))).collect();
-        if connues.values().any(|v| *v < Decimal::from(seuil)) {
+        let connues: BTreeMap<Annee, socle::grandeurs::Effectif> = fenetre.iter().filter_map(|a| self.annee(*a).map(|v| (*a, v))).collect();
+        if connues.values().any(|v| *v < seuil) {
             return Ok(false);
         }
         if connues.len() == fenetre.len() {
@@ -349,7 +342,7 @@ rendu de nature 118 de l'Urssaf le remplace à son arrivée.{}",
                     connues.iter().map(|(a, v)| format!("{} ({})", a, nombre_fr(*v))).collect::<Vec<_>>().join(", ")
                 )
             },
-            seuil,
+            sans_zero::dit(seuil),
             manquent.join(", "),
             if grand {
                 " Une compagnie de moins de cinquante salariés décoche « Au moins 50 salariés » (Configuration › Entreprise, Avancé)."
@@ -776,8 +769,8 @@ pas.\n  {}",
 fn controler_effectif(pile: &Pile, eff: &Effectif, ou: &str) -> R<()> {
     let Some(decl) = &pile.seuils_effectif else { return Ok(()) };
     let an = pile.annee;
-    let mut atteints: BTreeMap<i64, bool> = BTreeMap::new();
-    let mut atteint = |s: i64| -> R<bool> {
+    let mut atteints: BTreeMap<socle::grandeurs::Effectif, bool> = BTreeMap::new();
+    let mut atteint = |s: socle::grandeurs::Effectif| -> R<bool> {
         if let Some(b) = atteints.get(&s) {
             return Ok(*b);
         }
@@ -812,7 +805,7 @@ fn controler_effectif(pile: &Pile, eff: &Effectif, ou: &str) -> R<()> {
     A FAIRE : effacer ces valeurs de la surcouche ({}) ; le socle porte celle qui est due.
     Source : {}",
                         v.cle,
-                        v.seuil,
+                        sans_zero::dit(v.seuil),
                         v.quoi,
                         autres.join(" ; "),
                         ou,
@@ -832,7 +825,7 @@ fn controler_effectif(pile: &Pile, eff: &Effectif, ou: &str) -> R<()> {
         griefs.push(format!(
             "  - {} (a partir de {} salaries)\n    {}\n    A ECRIRE : {}\n    Encore au taux du socle : {}\n    Source : {}",
             v.cle,
-            v.seuil,
+            sans_zero::dit(v.seuil),
             v.quoi,
             v.au_dela,
             restees.join(", "),
@@ -853,7 +846,7 @@ fn controler_effectif(pile: &Pile, eff: &Effectif, ou: &str) -> R<()> {
                     "  - {} : un taux est ecrit dans la surcouche, et il n'est \
 du qu'a partir de {} salaries (CGCT L2333-64, L2531-2). \
 L'effacer, ou ecrire \"aucun\".",
-                    cle, v.seuil
+                    cle, sans_zero::dit(v.seuil)
                 ));
             }
             continue;
@@ -892,7 +885,7 @@ taux ne le ferait pas cotiser.",
         griefs.push(format!(
             "  - {} (a partir de {} salaries) -- LE MOTEUR NE LE PORTE PAS\n    {}\n    {}\n    A ECRIRE dans {} : \"{}\": {}, et rien d'autre ne le debloque.\n    Source : {}",
             cle,
-            v.seuil,
+            sans_zero::dit(v.seuil),
             v.quoi,
             constat,
             ou,
@@ -922,7 +915,7 @@ qu'une decision a ete prise, pas laquelle -- comme pour le taux \
 AT/MP, que lui seul ne peut pas connaitre.",
         an,
         match eff.valeur(an) {
-            Some(n) => format!("entreprise de {} salaries", effectif_ecrit(n)),
+            Some(n) => format!("entreprise de {} salaries", sans_zero::dit(n)),
             None => "entreprise dont l'effectif n'est pas dit".to_string(),
         },
         noms.join(", "),

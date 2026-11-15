@@ -39,18 +39,23 @@
 
 use droit::contexte::{Contexte, FichierEffectifs, TypeDeParametreNeores};
 use droit::cotisation_etablissement::CotisationDEtablissement;
-use socle::texte::{euros, pourcent, virgule};
+use socle::texte::{euros, pourcent};
 use socle::echec::R;
-use socle::grandeurs::{Montant, Taux};
+use socle::grandeurs::ecrit::sans_zero;
+use socle::grandeurs::{Coefficient, Effectif, Montant, Taux};
 use socle::mois::Annee;
-use socle::num::{div, mul, Decimal};
 
 const MOIS_DE_DECLARATION: u32 = 3;
 pub const CODE_CONTRIBUTION: CotisationDEtablissement = CotisationDEtablissement::Csa;
 pub const CODE_EXONERATION: CotisationDEtablissement = CotisationDEtablissement::ExonerationCsa;
 pub const CTP: droit::organismes::CodeCtp = droit::organismes::CodeCtp::du_moteur("998");
-const SEUIL: i64 = 250;
-const SEUIL_DEUX_MILLE: i64 = 2000;
+const SEUIL: Effectif = Effectif::personnes(250);
+const SEUIL_DEUX_MILLE: Effectif = Effectif::personnes(2000);
+
+/// Le quotient dans une phrase : sans zero inutile, la virgule decimale (« 2,5 »).
+fn dit(q: Taux) -> String {
+    sans_zero::dit(q).replace('.', ",")
+}
 const CODE_ALTERNANTS: TypeDeParametreNeores = TypeDeParametreNeores::EffectifCsaCfip;
 const CODE_DENOMINATEUR: TypeDeParametreNeores = TypeDeParametreNeores::EffectifCsa;
 
@@ -63,7 +68,7 @@ pub struct Csa {
     /// Le montant, a l'euro (L. 6242-1, VII).
     pub montant: Montant,
     /// Le quotient A05 / A07, en pourcentage.
-    pub quotient: Decimal,
+    pub quotient: Taux,
     /// Le taux applique, en pourcentage (zero pour l'exoneration).
     pub taux: Taux,
     /// Les assiettes de la taxe d'apprentissage declarees pour N : hors et en Alsace-Moselle.
@@ -88,7 +93,7 @@ impl Csa {
             format!(
                 "Contribution supplémentaire à l'apprentissage {} : exonérée (alternants {} % de l'effectif), déclarée en \
 code 080 à 0.00.",
-                self.millesime, virgule(self.quotient)
+                self.millesime, dit(self.quotient)
             )
         } else {
             format!(
@@ -96,7 +101,7 @@ code 080 à 0.00.",
 {} d'assiette de la taxe d'apprentissage{}).",
                 self.millesime,
                 euros(self.montant),
-                virgule(self.quotient),
+                dit(self.quotient),
                 pourcent(self.taux),
                 euros(self.assiette + self.assiette_alsace_moselle),
                 if self.assiette_alsace_moselle.est_nul() {
@@ -110,9 +115,9 @@ code 080 à 0.00.",
 }
 
 /// Le taux de L. 6242-1, IV, en pourcentage, pour un quotient (en pourcentage) sous 5 % ; `None` a 5 % et plus.
-/// Le quotient est un rapport d'effectifs (A05 / A07 x 100), sans grandeur ; le taux s'applique a l'assiette.
-pub fn taux(quotient: Decimal, plus_de_deux_mille: bool) -> Option<Taux> {
-    let p = |x: i64| Decimal::from(x);
+/// Le quotient est un rapport d'effectifs (A05 / A07), dit en pourcentage ; le taux s'applique a l'assiette.
+pub fn taux(quotient: Taux, plus_de_deux_mille: bool) -> Option<Taux> {
+    let p = Taux::points;
     if quotient < p(1) {
         Some(if plus_de_deux_mille { Taux::centiemes_de_point(60) } else { Taux::centiemes_de_point(40) })
     } else if quotient < p(2) {
@@ -128,7 +133,7 @@ pub fn taux(quotient: Decimal, plus_de_deux_mille: bool) -> Option<Taux> {
 
 /// La valeur d'un code du CRM 118 pour une annee (`config/effectifs.json`, `droit::contexte::effectifs_lus` : sans
 /// fichier, aucun effectif), ou `None`.
-pub(crate) fn effectif_du_118(effectifs: Option<&FichierEffectifs>, annee: Annee, code: TypeDeParametreNeores) -> Option<Decimal> {
+pub(crate) fn effectif_du_118(effectifs: Option<&FichierEffectifs>, annee: Annee, code: TypeDeParametreNeores) -> Option<Effectif> {
     effectifs.and_then(|e| e.du_118(annee, code))
 }
 
@@ -140,7 +145,7 @@ fn excede_deux_mille(ctx: &Contexte, n: Annee) -> R<bool> {
     let mut inconnues = Vec::new();
     for a in n.les_precedentes(socle::date::Duree::annees(4)).into_iter().chain([n]) {
         match e.annee(a) {
-            Some(v) if v <= Decimal::from(SEUIL_DEUX_MILLE) => return Ok(false),
+            Some(v) if v <= SEUIL_DEUX_MILLE => return Ok(false),
             Some(_au_dela) => {}
             None => inconnues.push(a.to_string()),
         }
@@ -196,7 +201,7 @@ saisissent pas. Rien n'est ecrit.",
             n
         ));
     };
-    if denominateur <= Decimal::ZERO {
+    let Some(quotient) = alternants.rapport(denominateur).filter(|_| denominateur > Effectif::ZERO).map(Coefficient::en_taux) else {
         return Err(socle::refus!(
             "DSN de mars {} : le compte rendu metier 118 donne un effectif de determination du taux d'alternants ({}) nul \
 pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se calcule pas. Rien n'est ecrit.",
@@ -204,10 +209,9 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
             CODE_DENOMINATEUR,
             n
         ));
-    }
-    let quotient = div(mul(alternants, Decimal::ONE_HUNDRED), denominateur);
-    let quotient_lu = quotient.round_dp(3).normalize();
-    let exoneree = |csa_quotient: Decimal| Csa {
+    };
+    let quotient_lu = quotient.au_pair(3);
+    let exoneree = |csa_quotient: Taux| Csa {
         millesime: n,
         code: CODE_EXONERATION,
         montant: Montant::ZERO,
@@ -216,11 +220,11 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
         assiette: Montant::ZERO,
         assiette_alsace_moselle: Montant::ZERO,
     };
-    let plus_de_deux_mille = quotient < Decimal::ONE && excede_deux_mille(ctx, n)?;
+    let plus_de_deux_mille = quotient < Taux::points(1) && excede_deux_mille(ctx, n)?;
     let Some(t) = taux(quotient, plus_de_deux_mille) else {
         return Ok(Some(exoneree(quotient_lu)));
     };
-    if quotient >= Decimal::new(3, 0) {
+    if quotient >= Taux::points(3) {
         // L. 6242-1, II, dernier alinea : 3 % et une progression d'au moins 10 % sur l'annee precedente.
         let n_moins_un = n.precedente()?;
         let Some(avant) = effectif_du_118(effectifs.as_ref(), n_moins_un, CODE_ALTERNANTS) else {
@@ -230,7 +234,7 @@ supplementaire a l'apprentissage n'est pas due si leur effectif a progresse d'au
 Le logiciel n'a pas l'effectif des alternants de {} (code {} du compte rendu metier 118) : relever les retours \
 de {}. Rien n'est ecrit.",
                 declaree,
-                quotient_lu,
+                sans_zero::dit(quotient_lu),
                 n,
                 n_moins_un,
                 n_moins_un,
@@ -238,7 +242,7 @@ de {}. Rien n'est ecrit.",
                 n
             ));
         };
-        if mul(alternants, Decimal::from(10)) >= mul(avant, Decimal::from(11)) {
+        if alternants.fois(10) >= avant.fois(11) {
             return Ok(Some(exoneree(quotient_lu)));
         }
     }
@@ -257,7 +261,7 @@ et aucune paie validee de {} ne porte d'assiette de la taxe d'apprentissage (CTP
 assiette (L. 6242-1, III). Rien n'est ecrit.",
             declaree,
             n,
-            quotient_lu,
+            sans_zero::dit(quotient_lu),
             n
         ));
     }
@@ -277,11 +281,10 @@ assiette (L. 6242-1, III). Rien n'est ecrit.",
 #[cfg(test)]
 mod tests {
     use super::taux;
-    use rust_decimal::Decimal;
     use socle::grandeurs::Taux;
 
-    fn d(s: &str) -> Decimal {
-        s.parse().unwrap()
+    fn d(s: &str) -> Taux {
+        socle::grandeurs::lu::norme(s).unwrap()
     }
 
     #[test]

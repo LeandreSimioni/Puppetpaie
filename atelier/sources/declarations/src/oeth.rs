@@ -10,13 +10,12 @@ use serde::Deserialize;
 use socle::echec::{refus_avec, Lieu, R};
 use socle::mois::Annee;
 use socle::fichiers::repr;
-use socle::forme::Nombre;
-use socle::texte::{euros, virgule};
-use socle::grandeurs::{Coefficient, Montant, MontantUnitaire, Taux};
-use socle::num::{add, mul, sub, Decimal};
+use socle::texte::euros;
+use socle::grandeurs::ecrit::sans_zero;
+use socle::grandeurs::{Coefficient, Effectif, Montant, MontantUnitaire, Taux};
 use std::collections::BTreeMap;
 
-const SEUIL: i64 = 20;
+const SEUIL: Effectif = Effectif::personnes(20);
 /// Le fichier des chiffres OETH de la compagnie, un par millesime.
 const OETH: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/oeth.json");
 const MOIS_DE_DECLARATION: u32 = 4;
@@ -30,18 +29,22 @@ const DEPENSES: [(&str, CotisationDEtablissement, fn(&Depenses) -> Option<Montan
     ("accompagnement", CotisationDEtablissement::DepenseAccompagnement, Depenses::accompagnement),
 ];
 
-fn taux() -> Decimal {
-    Decimal::from(6)
+/// L'obligation d'emploi : 6 % de l'effectif d'assujettissement (L5212-2, D5212-2).
+const TAUX: Taux = Taux::points(6);
+
+/// Un effectif dans une phrase : sans zero inutile, la virgule decimale (« 25,5 »).
+fn dit(e: Effectif) -> String {
+    sans_zero::dit(e).replace('.', ",")
 }
 
 /// Ce que la DSN d'avril porte pour un millesime.
 #[derive(Clone, Debug)]
 pub struct Declaration {
     pub millesime: Annee,
-    pub effectif: Decimal,
-    pub obligation: Decimal,
-    pub beneficiaires: Decimal,
-    pub manquants: Decimal,
+    pub effectif: Effectif,
+    pub obligation: Effectif,
+    pub beneficiaires: Effectif,
+    pub manquants: Effectif,
     pub coefficient: Coefficient,
     pub smic: MontantUnitaire,
     pub brute: Montant,
@@ -49,7 +52,7 @@ pub struct Declaration {
     /// Les deductions non plafonnees, telles qu'elles se declarent (code -> montant).
     pub deductions: BTreeMap<CotisationDEtablissement, Montant>,
     /// [(type, nombre)] des beneficiaires mis a disposition.
-    pub externes: Vec<(TypeDeBoethExterne, Decimal)>,
+    pub externes: Vec<(TypeDeBoethExterne, Effectif)>,
     /// Le code de l'accord agree, ou `None`.
     pub accord: Option<String>,
     /// Sous un accord agree, les depenses non realisees, si la compagnie en ecrit.
@@ -96,10 +99,10 @@ impl Declaration {
         format!(
             "OETH {} : effectif {}, {} bénéficiaire(s) dû(s), {} employé(s), {} manquant(s) x {} x SMIC {} = {} brute, {} nette (CTP 730).",
             self.millesime,
-            virgule(self.effectif),
-            virgule(self.obligation),
-            virgule(self.beneficiaires),
-            virgule(self.manquants),
+            dit(self.effectif),
+            dit(self.obligation),
+            dit(self.beneficiaires),
+            dit(self.manquants),
             socle::grandeurs::ecrit::sans_zero::dit(self.coefficient),
             euros(self.smic),
             euros(self.brute),
@@ -128,9 +131,9 @@ type FichierOeth = BTreeMap<socle::mois::Annee, Option<EntreeOeth>>;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EntreeOeth {
-    pub effectif_assujettissement: Option<Nombre>,
-    pub boeth: Option<Nombre>,
-    pub ecap: Option<Nombre>,
+    pub effectif_assujettissement: Option<Effectif>,
+    pub boeth: Option<Effectif>,
+    pub ecap: Option<Effectif>,
     /// D'ou viennent les chiffres.
     pub source: Option<String>,
     /// Les beneficiaires mis a disposition (S21.G00.13.002).
@@ -139,7 +142,7 @@ pub struct EntreeOeth {
     pub accord: Option<String>,
     pub depenses_non_realisees: Option<Montant>,
     /// Les beneficiaires dus que l'Urssaf transmet, confrontes au calcul (D5212-2).
-    pub boeth_dus: Option<Nombre>,
+    pub boeth_dus: Option<Effectif>,
     pub sous_traitance: Option<Montant>,
     /// Les depenses deductibles de D5212-23.
     pub depenses: Option<Depenses>,
@@ -156,7 +159,7 @@ pub struct EntreeOeth {
 pub struct BoethExterne {
     #[serde(rename = "type")]
     pub type_beneficiaire: TypeDeBoethExterne,
-    pub nombre: Nombre,
+    pub nombre: Effectif,
 }
 
 /// Les trois categories de depenses de D5212-23 en vigueur (les codes 071 a 073 du cahier technique ne correspondent a
@@ -183,13 +186,12 @@ impl Depenses {
     }
 }
 
-/// Un nombre positif ou nul de `config/oeth.json`.
-fn dec(v: Nombre, nom: &str, millesime: Annee) -> R<Decimal> {
-    let x = v.0;
-    if x.is_sign_negative() && !x.is_zero() {
-        return Err(socle::echec::a_la_cle(&format!("La déclaration OETH de {} porte un chiffre négatif.", millesime), nom, x.to_string()));
+/// Un effectif positif ou nul de `config/oeth.json`.
+fn positif(v: Effectif, nom: &str, millesime: Annee) -> R<Effectif> {
+    if v < Effectif::ZERO {
+        return Err(socle::echec::a_la_cle(&format!("La déclaration OETH de {} porte un chiffre négatif.", millesime), nom, sans_zero::dit(v)));
     }
-    Ok(x)
+    Ok(v)
 }
 
 /// Un montant de `config/oeth.json` que la compagnie n'ecrit que s'il y en a, au centime.
@@ -204,14 +206,13 @@ fn montant(v: Option<Montant>, nom: &str, millesime: Annee) -> R<Option<Montant>
     }
 }
 
-/// D5212-20 et D5212-21 : combien de fois le SMIC horaire par beneficiaire manquant. L'effectif est un effectif moyen,
-/// sans grandeur.
-pub fn coefficient(effectif: Decimal, sans_action: bool) -> Coefficient {
+/// D5212-20 et D5212-21 : combien de fois le SMIC horaire par beneficiaire manquant, selon l'effectif d'assujettissement.
+pub fn coefficient(effectif: Effectif, sans_action: bool) -> Coefficient {
     if sans_action {
         Coefficient::entier_fixe(1500)
-    } else if effectif >= Decimal::from(750) {
+    } else if effectif >= Effectif::personnes(750) {
         Coefficient::entier_fixe(600)
-    } else if effectif >= Decimal::from(250) {
+    } else if effectif >= Effectif::personnes(250) {
         Coefficient::entier_fixe(500)
     } else {
         Coefficient::entier_fixe(400)
@@ -244,13 +245,13 @@ Rien n'est ecrit.",
             &manque.join(", "),
         ));
     };
-    let eff = dec(effectif, "effectif_assujettissement", millesime)?;
+    let eff = positif(effectif, "effectif_assujettissement", millesime)?;
     let mut d = Declaration {
         millesime,
         effectif: eff,
-        obligation: Decimal::ZERO,
-        beneficiaires: Decimal::ZERO,
-        manquants: Decimal::ZERO,
+        obligation: Effectif::ZERO,
+        beneficiaires: Effectif::ZERO,
+        manquants: Effectif::ZERO,
         coefficient: Coefficient::ZERO,
         smic,
         brute: Montant::ZERO,
@@ -264,8 +265,8 @@ Rien n'est ecrit.",
 
     let mut externes = vec![];
     for x in donnees.boeth_externes.iter().flatten() {
-        let n = dec(x.nombre, "boeth_externes.nombre", millesime)?;
-        if !n.is_zero() {
+        let n = positif(x.nombre, "boeth_externes.nombre", millesime)?;
+        if !n.est_nul() {
             externes.push((x.type_beneficiaire, n));
         }
     }
@@ -284,28 +285,25 @@ Rien n'est ecrit.",
         return Ok(d);
     }
 
-    d.obligation = div_cent(mul(eff, taux())).trunc();
+    d.obligation = eff.fois_taux(TAUX).partie_entiere();
     if let Some(dus) = donnees.boeth_dus {
-        let x = dec(dus, "boeth_dus", millesime)?;
+        let x = positif(dus, "boeth_dus", millesime)?;
         if x != d.obligation {
             return Err(socle::refus!(
                 "{} : l'Urssaf transmet {} beneficiaire(s) du(s), et 6 % de {} arrondi a l'entier \
 inferieur (D5212-2) en donne {}. L'un des deux est mal recopie -- ou une regle que le moteur ne \
 connait pas s'applique. Rien n'est ecrit.",
                 ou,
-                x,
-                eff,
-                d.obligation
+                sans_zero::dit(x),
+                sans_zero::dit(eff),
+                sans_zero::dit(d.obligation)
             ));
         }
     }
-    let ext_total = d.externes.iter().fold(Decimal::ZERO, |t, (_, n)| add(t, *n));
-    d.beneficiaires = add(dec(boeth, "boeth", millesime)?, ext_total);
-    d.manquants = if sub(d.obligation, d.beneficiaires) > Decimal::ZERO {
-        sub(d.obligation, d.beneficiaires)
-    } else {
-        Decimal::ZERO
-    };
+    let ext_total: Effectif = d.externes.iter().map(|(_, n)| *n).sum();
+    d.beneficiaires = positif(boeth, "boeth", millesime)? + ext_total;
+    let manquants = d.obligation - d.beneficiaires;
+    d.manquants = if manquants > Effectif::ZERO { manquants } else { Effectif::ZERO };
 
     // La sous-traitance et les depenses (D5212-22 et -23) : celles que la compagnie ecrit, et elles seules.
     let sous_traitance = montant(donnees.sous_traitance, "sous_traitance", millesime)?;
@@ -316,7 +314,7 @@ connait pas s'applique. Rien n'est ecrit.",
         }
     }
 
-    let sans_action = if d.beneficiaires.is_zero() && sous_traitance.is_none_or(|s| s.est_nul()) {
+    let sans_action = if d.beneficiaires.est_nul() && sous_traitance.is_none_or(|s| s.est_nul()) {
         let Some(sans_action) = donnees.aucune_action_depuis_plus_de_trois_ans else {
             return Err(refus_avec(
                 "La déclaration OETH de l'année ne dit pas depuis quand la compagnie n'a ni bénéficiaire ni sous-traitance : le dire, depuis plus de trois ans ou non.",
@@ -338,11 +336,10 @@ pour le dire. Rien n'est ecrit.",
         false
     };
     d.coefficient = coefficient(eff, sans_action);
-    // Les manquants et l'ECAP sont des effectifs moyens, sans grandeur : chacun entre ici comme le multiplicateur du SMIC
-    // horaire qu'il est (le coefficient de D5212-20 ; 17 fois le SMIC par unite d'ECAP).
-    d.brute = ((Coefficient::du_decimal(d.manquants) * d.coefficient) * smic).au_centime();
+    // Le SMIC horaire par beneficiaire manquant, fois le coefficient de D5212-20 ; 17 fois le SMIC par unite d'ECAP.
+    d.brute = ((d.manquants * smic) * d.coefficient).au_centime();
 
-    let ecap = ((Coefficient::du_decimal(dec(ecap, "ecap", millesime)?) * Coefficient::entier_fixe(17)) * smic).au_centime();
+    let ecap = ((positif(ecap, "ecap", millesime)? * smic) * Coefficient::entier_fixe(17)).au_centime();
     d.deductions.insert(CotisationDEtablissement::DeductionEcap, ecap);
     if let Some(s) = sous_traitance {
         d.deductions.insert(CotisationDEtablissement::DeductionSousTraitance, s);
@@ -352,7 +349,8 @@ pour le dire. Rien n'est ecrit.",
     }
 
     // Les plafonds, sur la contribution brute (D5212-22 et -23).
-    let moitie_du_taux = mul(d.beneficiaires, Decimal::ONE_HUNDRED) >= socle::num::div(mul(eff, taux()), Decimal::from(2));
+    // Les beneficiaires atteignent-ils la moitie de l'obligation de 6 % (deux fois eux, au moins 6 % de l'effectif) ?
+    let moitie_du_taux = d.beneficiaires.fois(2) >= eff.fois_taux(TAUX);
     let part = if moitie_du_taux { Taux::points(75) } else { Taux::points(50) };
     let plafond_st = d.brute.fois_taux(part).au_centime();
     let plafond_dep = d.brute.fois_taux(Taux::points(10)).au_centime();
@@ -362,10 +360,6 @@ pour le dire. Rien n'est ecrit.",
     let reste = d.brute - retenu;
     d.nette = if reste > Montant::ZERO { reste } else { Montant::ZERO };
     Ok(d)
-}
-
-fn div_cent(x: Decimal) -> Decimal {
-    socle::num::div(x, Decimal::ONE_HUNDRED)
 }
 
 /// La declaration OETH que la DSN de `mois` doit porter, ou `None` : seulement
@@ -393,7 +387,7 @@ pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois) -> R<Option<Declarat
 OETH de {} (L5212-1, D5212-8), et config/oeth.json ne porte rien pour {}. Y ecrire les chiffres que \
 l'Urssaf transmet avant le 15 mars : \"{}\": {{\"effectif_assujettissement\": ..., \"boeth\": ..., \
 \"ecap\": ..., \"source\": \"...\"}}. Rien n'est ecrit.",
-                mois, SEUIL, millesime, millesime, millesime
+                mois, sans_zero::dit(SEUIL), millesime, millesime, millesime
             )),
             ..Default::default()
         }));
@@ -417,7 +411,7 @@ ans d'une entreprise creee a vingt salaries, L5212-4 ; seuil pas encore franchi,
     }
     if let Some(eff) = donnees.effectif_assujettissement {
         let accord = donnees.accord.as_deref().is_some_and(|a| !a.is_empty());
-        if eff.0 < Decimal::from(SEUIL) && !accord {
+        if eff < SEUIL && !accord {
             return Ok(None);
         }
     }
@@ -445,7 +439,7 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: Annee) -> R<MontantUnitair
 fn assujetti_selon_l_effectif(ctx: &Contexte, millesime: Annee) -> R<bool> {
     let effectifs = droit::contexte::effectifs_lus(&ctx.racine)?;
     if let Some(a04) = crate::csa::effectif_du_118(effectifs.as_ref(), millesime, droit::contexte::TypeDeParametreNeores::EffectifOeth) {
-        if a04 < Decimal::from(SEUIL) {
+        if a04 < SEUIL {
             return Ok(false);
         }
     }

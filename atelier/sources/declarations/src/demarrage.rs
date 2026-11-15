@@ -319,7 +319,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     let effectif = ctx.effectif()?;
     if !effectif.a_dire(an).is_empty() && effectif.premiere_embauche.is_none() {
         let (libelle, _) = champ(CaseEntreprise::PremiereEmbauche)?;
-        let m = match effectif.atteint(11, an) {
+        let m = match effectif.atteint(socle::grandeurs::Effectif::personnes(11), an) {
             Err(m) => m.phrase,
             Ok(_) => format!("L'effectif de {} n'est pas connu.", avant),
         };
@@ -348,7 +348,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             let cse = effectif.cse(an);
             let dit = cse.as_ref().is_some_and(|k| ent.cse.ouvrir(k).representation_personnel.est_dite());
             match effectif.valeur(an) {
-                Some(e) if e >= socle::num::Decimal::from(11) && cse.is_some() && !dit => {
+                Some(e) if e >= socle::grandeurs::Effectif::personnes(11) && cse.is_some() && !dit => {
                     let (libelle, aide) = champ(cle)?;
                     out.push(manque_de_la_case(cle, libelle, "la contribution au FNAS de chaque paie", aide)?);
                 }

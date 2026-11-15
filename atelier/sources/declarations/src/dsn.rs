@@ -9,8 +9,6 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::path::Path;
 
-use rust_decimal::RoundingStrategy;
-
 use droit::assiette::Assiette;
 use droit::base_assujettie::{BaseAssujettie, TypeDeComposant};
 use droit::code_cotisation::{CleDeTotalisation, CodeCotisation81, IdentifiantDAffiliation};
@@ -32,8 +30,8 @@ use socle::date::{Anciennete, Duree, EnJours, Jour, Periode};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, refus_avec, Lieu, R};
-use socle::grandeurs::{ecrit::norme, Montant, Signe, Taux};
-use socle::{num::Decimal, refus};
+use socle::grandeurs::{ecrit::norme, Cachets, Heures, Jours, Montant, Signe, Taux};
+use socle::refus;
 use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, QualifiantDAssiette, ReferenceDAdhesion, Versement};
 use engagement::numeros::NumeroContrat;
 use droit::pas::{self, Triplet, ZONE_DEFAUT};
@@ -307,22 +305,6 @@ fn contact_sante_travail(f: &mut Fichier, ent_e: &ChampsEntreprise) -> R<()> {
 /// que la norme l'ecrit (`norme::montant`).
 pub fn ms(x: Montant, signe: Signe) -> String {
     norme::montant(signe.de(x))
-}
-
-/// Un nombre sans grandeur que la norme ecrit a deux decimales (une mesure d'activite 53.002, les beneficiaires
-/// externes de l'OETH 13.003), sous son signe, comme `norme::quantite` : au centieme, la moitie vers le haut, jamais
-/// « -0.00 ».
-fn quantite_signee(x: Decimal, signe: Signe) -> String {
-    let x = match signe {
-        Signe::Plus => x,
-        Signe::Moins => -x,
-    };
-    let mut c = x.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-    if c.is_zero() {
-        c = Decimal::ZERO;
-    }
-    c.rescale(2);
-    c.to_string()
 }
 
 fn cle_salarie(p: &Paie) -> IdSalarie {
@@ -2140,21 +2122,49 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, periode: &Periode, signe: Signe)
     Ok(())
 }
 
-/// Les mesures d'activite (bloc 53) d'une paie, dans l'ordre ou elles s'ecrivent : (53.001, quantite, 53.003).
-pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, Decimal, UniteDeMesure)>> {
+/// LA MESURE D'UNE ACTIVITE (S21.G00.53.002, dans l'unite que dit 53.003) : des jours, des cachets ou des heures, chacun
+/// sa grandeur (`droit::natures::Mesure` dit laquelle).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MesureDActivite {
+    Jours(Jours),
+    Cachets(Cachets),
+    Heures(Heures),
+}
+
+impl MesureDActivite {
+    /// Est-elle nulle ?
+    pub fn est_nul(self) -> bool {
+        match self {
+            MesureDActivite::Jours(j) => j.est_nul(),
+            MesureDActivite::Cachets(c) => c.est_nul(),
+            MesureDActivite::Heures(h) => h.est_nul(),
+        }
+    }
+
+    /// Telle que la norme l'ecrit en 53.002, sous son signe (`norme::quantite`).
+    fn ecrite(self, signe: Signe) -> String {
+        match self {
+            MesureDActivite::Jours(j) => norme::quantite(signe.de(j)),
+            MesureDActivite::Cachets(c) => norme::quantite(signe.de(c)),
+            MesureDActivite::Heures(h) => norme::quantite(signe.de(h)),
+        }
+    }
+}
+
+/// Les mesures d'activite (bloc 53) d'une paie, dans l'ordre ou elles s'ecrivent : (53.001, 53.002, 53.003).
+pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, MesureDActivite, UniteDeMesure)>> {
     let e = &p.engagement;
     let nat = e.nat()?;
     let mut out = Vec::new();
     for u in nat.unites_activite() {
         let valeur = match u.mesure {
-            // La norme ecrit la mesure en nombre : sa porte.
-            Mesure::Jours => e.jours.decimal(),
-            Mesure::Cachets => e.cachets.decimal(),
+            Mesure::Jours => MesureDActivite::Jours(e.jours),
+            Mesure::Cachets => MesureDActivite::Cachets(e.cachets),
             // Les heures sont la somme de celles des lignes (ARCHITECTURE, « Heures, cachets et jours ») : sans ligne en
             // heures, aucune.
-            Mesure::Heures => e.heures.iter().map(|h| h.decimal()).filter(|h| !h.is_zero()).fold(Decimal::ZERO, |a, h| a + h),
+            Mesure::Heures => MesureDActivite::Heures(e.heures.iter().copied().filter(|h| !h.est_nul()).sum()),
         };
-        if u.si_non_nul == Some(true) && valeur.is_zero() {
+        if u.si_non_nul == Some(true) && valeur.est_nul() {
             continue;
         }
         // Une unite que seule la caisse des Conges Spectacles demande (`contrats-base.json`, `si_caisse_conges`).
@@ -2165,7 +2175,7 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, Decimal, UniteDeMes
     }
     if let Some(a) = nat.unite_absence() {
         if !p.heures_absence.est_nul() {
-            out.push((a.type_activite, p.heures_absence.decimal(), a.code));
+            out.push((a.type_activite, MesureDActivite::Heures(p.heures_absence), a.code));
         }
     }
     Ok(out)
@@ -2174,7 +2184,7 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, Decimal, UniteDeMes
 fn activites(f: &mut Fichier, p: &Paie, signe: Signe) -> R<()> {
     for (t, valeur, code) in mesures_d_activite(p)? {
         f.add(droit::rubrique!("S21.G00.53.001"), t);
-        f.add(droit::rubrique!("S21.G00.53.002"), quantite_signee(valeur, signe));
+        f.add(droit::rubrique!("S21.G00.53.002"), valeur.ecrite(signe));
         f.add(droit::rubrique!("S21.G00.53.003"), code);
     }
     Ok(())
@@ -3517,7 +3527,7 @@ impl Seuils {
     /// La ligne `ctp` du fichier des organismes s'ecrit-elle a l'effectif de ce mois ? Un effectif qu'un seuil demande et
     /// que le moteur ne connait pas se refuse en nommant les annees qui manquent (`Effectif::atteint`).
     fn retient(&self, ctp: &Ctp) -> R<bool> {
-        let atteint = |seuil: Option<i64>| seuil.map(|s| self.effectif.atteint(s, self.an)).transpose();
+        let atteint = |seuil: Option<socle::grandeurs::Effectif>| seuil.map(|s| self.effectif.atteint(s, self.an)).transpose();
         Ok(atteint(ctp.effectif_au_moins)?.is_none_or(|a| a) && atteint(ctp.effectif_sous)?.is_none_or(|a| !a))
     }
 }
@@ -4773,7 +4783,7 @@ certificat de conformite du depot precedent.",
         }
         for (type_boeth, nombre) in &d.externes {
             f.add(droit::rubrique!("S21.G00.13.002"), type_boeth);
-            f.add(droit::rubrique!("S21.G00.13.003"), quantite_signee(*nombre, Signe::Plus));
+            f.add(droit::rubrique!("S21.G00.13.003"), norme::quantite(*nombre));
             f.add(droit::rubrique!("S21.G00.13.004"), d.millesime);
         }
     }

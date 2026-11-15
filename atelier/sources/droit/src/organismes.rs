@@ -358,8 +358,8 @@ forme_notee! {
         /// La population : `intermittent` ou `permanent` (`ParNature`).
         #[serde(rename = "nature", default, deserialize_with = "crate::natures::population::option::deserialize")]
         pub population: Option<crate::natures::Paie>,
-        pub effectif_au_moins: Option<i64>,
-        pub effectif_sous: Option<i64>,
+        pub effectif_au_moins: Option<socle::grandeurs::Effectif>,
+        pub effectif_sous: Option<socle::grandeurs::Effectif>,
     }
 }
 
