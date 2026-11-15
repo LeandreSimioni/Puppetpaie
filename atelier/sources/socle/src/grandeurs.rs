@@ -165,8 +165,8 @@ impl Montant {
     /// Un centime (`0.01`) : l'ecart de montant qu'un arrondi fait sur une ligne.
     pub const UN_CENTIME: Montant = Montant(Decimal::from_parts(1, 0, 0, false, 2));
 
-    /// Ce montant `n` fois (un centime par ligne) : montant x compte = montant. Un compte n'est pas une grandeur
-    /// (« Le glossaire ») : il vient d'un `len()`.
+    /// Ce montant `n` fois (un centime par ligne, un multiple du plafond) : montant x compte = montant. Un compte n'est
+    /// pas une grandeur (« Le glossaire »).
     pub fn fois(self, n: usize) -> Montant {
         Montant(num::mul(self.0, Decimal::from(n)))
     }
@@ -262,7 +262,8 @@ impl Coefficient {
         Coefficient(c)
     }
 
-    /// Sa partie entiere, sans arrondi (un multiple de plafonds du bareme : `8` pour huit plafonds).
+    /// Sa partie entiere, sans arrondi (un multiple de plafonds du bareme : `8` pour huit plafonds) : la partie entiere
+    /// d'un coefficient est un coefficient (tronquer n'ajoute pas d'unite).
     pub fn entier(self) -> Coefficient {
         Coefficient(self.0.trunc())
     }
