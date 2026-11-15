@@ -57,7 +57,7 @@ pub fn faits_appeles(ctx: &Contexte, partiel: bool) -> R<Vec<&'static str>> {
 /// par mois, a temps `partiel` ou non : une ligne par majoration, au taux horaire du contrat majore. INFERENCE, ecrite
 /// comme telle : le taux horaire est le salaire mensuel du contrat sur ses heures par mois ; le BOSS (§ 310) y ajoute les
 /// primes qui sont la contrepartie du travail, que la carte ne distingue pas des autres.
-pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Montant, quotite: Heures, partiel: bool) -> R<(Vec<crate::LignePaie>, Vec<Avis>)> {
+pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnitaire, quotite: Heures, partiel: bool) -> R<(Vec<crate::LignePaie>, Vec<Avis>)> {
     let (salaire, quotite) = (salaire.decimal(), quotite.decimal());
     let heures = |x: &Option<NombreLu>, nom: &str| crate::conges::heures_dites(ctx, e, x, nom);
     let (sup, a_50, comp) = (

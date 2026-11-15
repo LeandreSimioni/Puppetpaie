@@ -24,7 +24,8 @@ use crate::ecritures_comptables::{ecritures_du_mois, Ecriture, NumeroDeCompte};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
 use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielComptable, Plan};
 use socle::texte::euros;
-use socle::grandeurs::{Montant, Taux};
+use socle::grandeurs::ecrit::sans_zero;
+use socle::grandeurs::{Jours, Montant, Taux};
 use socle::num::{add, div, mul, sub, Decimal};
 use crate::tableaux_export::{
     ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, ColonneDEtat as C, Ligne, Section, Tableau,
@@ -1386,7 +1387,7 @@ fn provision_d_une_annee_importee(
             sans_compteur += 1;
             continue;
         };
-        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
+        let provision = engagement::conges::provision_du_compteur(cpt, m, salaire.pour_une_unite()).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.clone(), nat.libelle.clone(), provision));
     }
     Ok(sans_compteur)
@@ -1395,13 +1396,12 @@ fn provision_d_une_annee_importee(
 /// `provision_conges` : la dette de conges payes des salaries au mois a la fin de la periode -- ce que la compagnie
 /// devrait s'ils partaient ce jour-la. Un salarie, une ligne ; les intermittents n'y sont pas.
 pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
-    use droit::permanents::arrondir_jours;
     if d.toutes {
         return Err(refus("La provision de congés se calcule à UNE date : demander un mois (la fin du mois) ou une année (la fin du dernier mois produit)."));
     }
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
-    let zero = Montant::ZERO.decimal();
+    let zero = Montant::ZERO;
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.clone();
     // CE QUI SE PROVISIONNE, salarie par salarie : (cle, contrat, nature, compteur et indemnite a la fin du mois `m`).
     let mut a_provisionner: Vec<(droit::contexte::IdSalarie,Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)> = Vec::new();
@@ -1450,8 +1450,8 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let (dixieme, maintien, retenu, regle) = match &cpt.indemnite {
             Some(i) => (i.dixieme, i.maintien, i.retenu, i.regle.to_string()),
             None => {
-                if cpt.solde < Decimal::ZERO {
-                    avert.push(format!("{} : compteur négatif ({} jours) — des congés pris par anticipation ; aucune dette, et une avance à régler.", cle, arrondir_jours(cpt.solde)));
+                if cpt.solde < Jours::ZERO {
+                    avert.push(format!("{} : compteur négatif ({} jours) — des congés pris par anticipation ; aucune dette, et une avance à régler.", cle, sans_zero::dit(cpt.solde.au_demi_superieur())));
                 }
                 (zero, zero, zero, String::new())
             }
@@ -1460,11 +1460,10 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if taux.is_none() {
             avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle));
         }
-        // L'indemnite (`droit::conges::IndemniteDesJours`) est encore en decimaux : sa porte.
-        let charges = taux.map(|t| Montant::du_decimal(retenu).fois_taux(t).au_centime().decimal());
-        indemnites = add(indemnites, retenu);
+        let charges = taux.map(|t| retenu.fois_taux(t).au_centime());
+        indemnites += retenu;
         if let Some(c) = charges {
-            charges_dites = add(charges_dites, c);
+            charges_dites += c;
         }
         let fiche = ctx.salaries.get(&cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
         let nom = fiche.nom.exigee("nom").map_err(|m| m.reclasser(Classe::Manque))?;
@@ -1474,11 +1473,12 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             None => nom.to_string(),
         });
         l.ot(C::Contrat, contrat).t(C::Nature, nature);
-        l.d(C::Report, arrondir_jours(cpt.report_restant)).d(C::Acquis, arrondir_jours(cpt.acquis)).d(C::Pris, arrondir_jours(cpt.pris)).d(C::Solde, arrondir_jours(cpt.solde));
-        l.d(C::Dixieme, dixieme).d(C::Maintien, maintien).d(C::Indemnite, retenu).t(C::Regle, regle);
+        l.jours(C::Report, cpt.report_restant.au_demi_superieur()).jours(C::Acquis, cpt.acquis.au_demi_superieur());
+        l.jours(C::Pris, cpt.pris.au_demi_superieur()).jours(C::Solde, cpt.solde.au_demi_superieur());
+        l.montant(C::Dixieme, dixieme).montant(C::Maintien, maintien).montant(C::Indemnite, retenu).t(C::Regle, regle);
         // Le taux s'ecrit a deux decimales (`12.50`).
-        l.od(C::TauxPatronal, taux.map(|t| quant(t.decimal(), 2))).n(C::Bulletins, n).od(C::Charges, charges);
-        l.od(C::Total, charges.map(|c| add(retenu, c)));
+        l.od(C::TauxPatronal, taux.map(|t| quant(t.decimal(), 2))).n(C::Bulletins, n).om(C::Charges, charges);
+        l.om(C::Total, charges.map(|c| retenu + c));
         lignes.push(l);
     }
     if lignes.is_empty() && sans_compteur == 0 {
@@ -1497,12 +1497,12 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         pc.conges.libelle,
         pc.dette.compte,
         pc.dette.libelle,
-        euros(Montant::du_decimal(indemnites)),
+        euros(indemnites),
         pc.charges.compte,
         pc.charges.libelle,
         pc.dette_charges.compte,
         pc.dette_charges.libelle,
-        euros(Montant::du_decimal(charges_dites))
+        euros(charges_dites)
     ));
     let mut t = Tableau::nouveau(EtatDExport::ProvisionConges, format!("Provision pour congés payés au {}", jj(&fin.iso())), p.libelle.clone());
     t.mois = vec![m];

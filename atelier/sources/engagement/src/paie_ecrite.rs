@@ -286,16 +286,3 @@ mod bases {
     }
 }
 
-/// Un entier en texte.
-/// Un decimal en texte tel qu'il est (`Decimal::to_string`, son echelle gardee), relu exactement.
-pub(crate) mod decimal_texte {
-    use serde::Deserialize;
-    use socle::num::Decimal;
-    pub fn serialize<S: serde::Serializer>(x: &Decimal, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&x.to_string())
-    }
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> {
-        let t = String::deserialize(d)?;
-        t.parse().map_err(|_| serde::de::Error::custom(format!("{} n'est pas un nombre", socle::ecriture::json_en_ligne(&t))))
-    }
-}

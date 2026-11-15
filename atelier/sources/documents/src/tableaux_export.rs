@@ -340,6 +340,21 @@ impl Ligne {
         self.poser(k, v.map(Val::Dec))
     }
 
+    /// Un montant, dans la case d'un etat : sa porte.
+    pub fn montant(&mut self, k: ColonneDEtat, v: socle::grandeurs::Montant) -> &mut Ligne {
+        self.d(k, v.decimal())
+    }
+
+    /// Un montant, ou rien.
+    pub fn om(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Montant>) -> &mut Ligne {
+        self.od(k, v.map(|m| m.decimal()))
+    }
+
+    /// Des jours, dans la case d'un etat : leur porte.
+    pub fn jours(&mut self, k: ColonneDEtat, v: socle::grandeurs::Jours) -> &mut Ligne {
+        self.d(k, v.decimal())
+    }
+
     pub fn n(&mut self, k: ColonneDEtat, v: i64) -> &mut Ligne {
         self.poser(k, Some(Val::entier(v)))
     }

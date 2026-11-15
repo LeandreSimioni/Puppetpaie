@@ -279,6 +279,13 @@ impl NombreDeFiche {
         }
     }
 
+    /// LA GRANDEUR QU'IL DIT (les jours et les montants de la reprise des conges), lue de son ecriture comme `decimal` :
+    /// la porte de sa lecture. Un texte illisible se refuse.
+    pub fn grandeur<G: socle::grandeurs::Grandeur>(&self) -> R<G> {
+        let t = self.ecrit();
+        socle::grandeurs::lu::norme(&t).ok_or_else(|| socle::echec::refus(socle::num::illisible(&t)))
+    }
+
     /// Le decimal, un nombre a virgule dans sa forme la plus courte, son echelle telle qu'elle s'ecrit (`130.0`) ; un texte
     /// se lit sans virgule.
     pub fn dec(&self) -> R<Decimal> {

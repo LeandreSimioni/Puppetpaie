@@ -105,6 +105,11 @@ pub fn jours(x: Decimal) -> String {
     q.to_string().replace('.', ",")
 }
 
+/// Des jours de conges comme `jours` les ecrit : au centieme, sans zero inutile, la virgule decimale.
+fn jours_de_conges(j: socle::grandeurs::Jours) -> String {
+    socle::grandeurs::ecrit::sans_zero::dit(j.a_deux_decimales()).replace('.', ",")
+}
+
 /// `jours` d'un nombre de jours facultatif : refuse quand il manque.
 fn jours_option(x: Option<Decimal>) -> R<String> {
     match x {
@@ -477,7 +482,7 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
 /// Le compteur de conges payes d'un permanent.
 fn tableau_conges(cpt: &CompteurConges) -> Bloc {
     let mut lignes = vec![("Acquis sur la période", cpt.acquis), ("Pris", cpt.pris)];
-    if !cpt.reports.is_zero() {
+    if !cpt.reports.est_nul() {
         lignes.insert(1, ("Report de la période précédente", cpt.reports));
     }
     let entete = vec![ligne(
@@ -495,8 +500,8 @@ fn tableau_conges(cpt: &CompteurConges) -> Bloc {
         vec![Opt::Couleur(ROUGE), Opt::Taille(mesure("6.8")), Opt::Fond(FOND_FAMILLE), filet_haut(ROUGE, mesure("0.8"))],
     )];
     let mut corps: Vec<Ligne> =
-        lignes.iter().map(|(l, v)| ligne(vec![s(*l), s(format!("{} j", jours(*v)))], vec![])).collect();
-    corps.push(ligne(vec![s("Solde"), s(format!("{} j", jours(cpt.solde())))], vec![gras()]));
+        lignes.iter().map(|(l, v)| ligne(vec![s(*l), s(format!("{} j", jours_de_conges(*v)))], vec![])).collect();
+    corps.push(ligne(vec![s("Solde"), s(format!("{} j", jours_de_conges(cpt.solde())))], vec![gras()]));
     tableau(&[mesure("0.4"), mesure("0.6")], entete, corps, "#eeeeee")
 }
 

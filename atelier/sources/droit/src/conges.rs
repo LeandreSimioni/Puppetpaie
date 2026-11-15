@@ -7,12 +7,12 @@ use crate::fiche::Lue;
 use socle::date::{Jour, Periode};
 use socle::feries;
 use socle::echec::R;
-use socle::grandeurs::{Heures, HeuresParUnite, Montant};
+use socle::grandeurs::{Heures, HeuresParUnite, Jours, Montant};
 use socle::num::Decimal;
 
 /// Le nombre de jours ouvrables entre deux dates, bornes incluses : du lundi
 /// au samedi, moins les feries que l'entreprise chome (`chomes` : ce que sa fiche en dit, `ChampsEntreprise::feries_chomes`).
-pub fn jours_ouvrables(periode: &Periode, chomes: Option<&str>) -> R<i64> {
+pub fn jours_ouvrables(periode: &Periode, chomes: Option<&str>) -> R<Jours> {
     jours_de_semaine(periode, chomes, 6)
 }
 
@@ -133,9 +133,9 @@ pub fn feries_non_payes(
 }
 
 /// Les jours de `periode` dont le rang dans la semaine (lundi = 0) est sous `jusqu_a`, moins les feries chomes.
-fn jours_de_semaine(periode: &Periode, dits: Option<&str>, jusqu_a: u32) -> R<i64> {
+fn jours_de_semaine(periode: &Periode, dits: Option<&str>, jusqu_a: u32) -> R<Jours> {
     let chomes = feries::chomes_entre(periode, dits)?;
-    Ok(periode.jours().filter(|jour| jour.jour_de_la_semaine() < jusqu_a && !chomes.iter().any(|(j, _)| j == jour)).fold(0, |n, _| n + 1))
+    Ok(Jours::de_dates(periode.jours().filter(|jour| jour.jour_de_la_semaine() < jusqu_a && !chomes.iter().any(|(j, _)| j == jour)).count()))
 }
 
 /// LES HEURES D'UN JOUR TRAVAILLE d'un contrat paye au mois de quotite `quotite` (heures par mois) : la duree
@@ -149,15 +149,15 @@ pub fn heures_par_jour(quotite: Heures, jours: &JoursTravailles) -> HeuresParUni
 /// L'indemnite de conges : le dixieme, le maintien, et celui qui gagne.
 #[derive(Debug, Clone)]
 pub struct IndemniteDesJours {
-    pub dixieme: Decimal,
-    pub maintien: Decimal,
-    pub retenu: Decimal,
+    pub dixieme: Montant,
+    pub maintien: Montant,
+    pub retenu: Montant,
     pub regle: &'static str,
 }
 
 /// L'indemnite retenue (L3141-24) : la plus forte du dixieme et du maintien de salaire ; a egalite, le maintien.
-pub fn la_plus_forte(dixieme: Decimal, maintien: Decimal) -> IndemniteDesJours {
-    let maintien = Montant::du_decimal(maintien).au_centime().decimal();
+pub fn la_plus_forte(dixieme: Montant, maintien: Montant) -> IndemniteDesJours {
+    let maintien = maintien.au_centime();
     IndemniteDesJours {
         dixieme,
         maintien,

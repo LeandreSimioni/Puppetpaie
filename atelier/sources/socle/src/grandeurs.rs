@@ -212,10 +212,11 @@ impl Montant {
         Montant(num::div(num::mul(self.0, t.0), Decimal::ONE_HUNDRED))
     }
 
-    /// La part de ce montant que `part` heures font sur `tout` (le plafond d'un temps partiel), exacte : le produit,
-    /// puis le quotient (`au_centime` la fixe). `tout` n'est pas nul : l'appelant le refuse.
-    pub fn prorata(self, part: Heures, tout: Heures) -> Montant {
-        Montant(num::div(num::mul(self.0, part.0), tout.0))
+    /// La part de ce montant que `part` fait sur `tout`, d'une meme grandeur (des heures : le plafond d'un temps partiel ;
+    /// des jours : le dixieme des jours pris sur ceux qu'une periode a acquis), exacte : le produit, puis le quotient
+    /// (`au_centime` la fixe). `tout` n'est pas nul : l'appelant le refuse.
+    pub fn prorata<Q: Grandeur>(self, part: Q, tout: Q) -> Montant {
+        Montant(num::div(num::mul(self.0, part.en_decimal()), tout.en_decimal()))
     }
 
     /// La part de ce montant que `part` fait sur `tout` (une assiette repartie au prorata du brut de chaque rubrique),
@@ -260,6 +261,14 @@ impl Montant {
     /// Sa partie entiere, sans arrondi (le plafond de la Securite sociale, que le bareme lit en euros entiers).
     pub fn partie_entiere(self) -> Montant {
         Montant(self.0.trunc())
+    }
+
+    /// A L'EURO LE PLUS PROCHE, la moitie vers le haut, sans decimale (`12.50` donne `13`) : le brut et la base qu'un
+    /// certificat Congés Spectacles ecrit en euros entiers.
+    pub fn a_l_euro(self) -> Montant {
+        let mut e = self.0.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+        e.rescale(0);
+        Montant(e)
     }
 }
 
@@ -375,6 +384,40 @@ impl Jours {
     /// `o` est nul.
     pub fn rapport(self, o: Jours) -> Option<Coefficient> {
         (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
+    }
+
+    /// Ces jours `n` fois (les jours acquis par mois fois les jours de presence du mois) : jours x compte = jours. Un
+    /// compte n'est pas une grandeur (« Le glossaire »).
+    pub fn fois(self, n: usize) -> Jours {
+        Jours(num::mul(self.0, Decimal::from(n)))
+    }
+
+    /// Ces jours repartis egalement sur `n` (les jours du mois) : jours / compte = jours. Un compte n'est pas une
+    /// grandeur (« Le glossaire ») : il vient d'un `count()`, jamais nul (l'appelant le garde).
+    pub fn reparties_sur(self, n: usize) -> Jours {
+        Jours(num::div(self.0, Decimal::from(n)))
+    }
+
+    /// A L'ENTIER SUPERIEUR (une duree de conge, C. trav. L3141-7 : un nombre de jours qui n'est pas entier « est porté
+    /// au nombre entier immédiatement supérieur ») ; des jours deja entiers gardent leur ecriture (`30.0`).
+    pub fn a_l_entier_superieur(self) -> Jours {
+        match self.0.fract().is_zero() {
+            true => self,
+            false => Jours(self.0.ceil()),
+        }
+    }
+
+    /// Au demi-jour superieur, sans zero inutile (0,1 jour : 0,5 ; 0,6 : 1) : le compte de conges qu'une phrase ou un
+    /// etat affiche (un affichage, pas une regle).
+    pub fn au_demi_superieur(self) -> Jours {
+        let demi = (self.0 * Decimal::from(2)).ceil();
+        Jours(num::div(demi, Decimal::from(2)).normalize())
+    }
+
+    /// A deux decimales, la moitie au pair (des jours que le bulletin dit au centieme : aucun texte deposé ne dit cet
+    /// arrondi).
+    pub fn a_deux_decimales(self) -> Jours {
+        Jours(self.0.round_dp(2))
     }
 }
 
@@ -547,6 +590,12 @@ impl MontantUnitaire {
     pub fn partie_entiere(self) -> MontantUnitaire {
         MontantUnitaire(self.0.trunc())
     }
+
+    /// Le montant d'une unite reparti sur les jours `j` qu'elle compte (le salaire d'un mois sur ses jours ouvrables :
+    /// le salaire d'un jour) : montant unitaire / jours = montant unitaire ; `None` quand `j` est nul.
+    pub fn par_jour(self, j: Jours) -> Option<MontantUnitaire> {
+        (!j.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, j.0)))
+    }
 }
 
 /// La part d'une unite (la part du mois payee : 12/31) fois le montant de l'unite entiere (le salaire mensuel) : un
@@ -593,6 +642,19 @@ pub mod lu {
             Some(Ok(d)) => Some((<A as crate::grandeurs::Scelle>::du(d), <B as crate::grandeurs::Scelle>::du(d))),
             Some(Err(_)) | None => None,
         }
+    }
+
+    /// LA GRANDEUR QU'UN NOMBRE D'UNE DONNEE ECRIT (`forme::NombreLu` : une case d'une carte, le salaire mensuel), son
+    /// echelle gardee (`130.0`, sa forme ecrite) : la porte de sa lecture. Un nombre hors de portee d'un decimal se refuse.
+    pub fn ecrite<G: Grandeur>(n: &crate::forme::NombreLu) -> crate::echec::R<G> {
+        let d = match (n.as_i64(), n.as_u64()) {
+            (None, None) => {
+                let s = n.ecrit();
+                num::dec_texte(&s).map_err(|_| crate::refus!("nombre hors de portee : {}", s))?
+            }
+            _ => n.decimal()?,
+        };
+        Ok(<G as crate::grandeurs::Scelle>::du(d))
     }
 
     /// Comme `forme::decimal` : un nombre, ou un nombre ecrit en texte (une ligne de paie, une paie ecrite : le moteur

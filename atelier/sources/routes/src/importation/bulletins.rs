@@ -1261,8 +1261,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     }
                     None => {
                         if let Some(s) = somme {
-                            // Le certificat ecrit son brut a l'euro (`arrondi_euro`, son ecriture) : la somme s'y compare ainsi.
-                            if Decimal::from(documents::conges_spectacles::arrondi_euro(s.decimal())?) != brut.decimal() {
+                            // Le certificat ecrit son brut a l'euro (`Montant::a_l_euro`, son ecriture) : la somme s'y compare ainsi.
+                            if s.a_l_euro() != brut {
                                 phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut), euros(s)));
                             }
                         }

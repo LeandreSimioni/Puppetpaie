@@ -6,7 +6,6 @@
 //! ce qui est du, `valeurs` ce qui va dans chaque case.
 
 use droit::fiche::Lue as _;
-use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme as pdf;
 
 use crate::bulletin::{chemin_net, identite_de, FORMAT};
@@ -216,14 +215,6 @@ const LIMITES: &[(&str, Mesure)] = &[
 
 const RESPIRATION: Mesure = Mesure::entier(3);
 const NOIR: &str = "#000000";
-
-// ---------------------------------------------------------------- chiffres
-
-/// `arrondi_euro` : a l'euro le plus proche, moitie superieure.
-pub fn arrondi_euro(x: Decimal) -> R<i64> {
-    use rust_decimal::prelude::ToPrimitive;
-    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().ok_or_else(|| socle::refus!("montant hors de portée : {}", x))
-}
 
 // ----------------------------------------------------- decoupage au 31 mars
 
@@ -544,8 +535,9 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     out.push(("debut", cases_date(&c.periode.debut())));
     out.push(("fin", cases_date(&c.periode.fin())));
     out.push(("nb_cachets", c.nb_jours_ou_cachets.dit()));
-    out.push(("base_conge", arrondi_euro(c.base.decimal())?.to_string()));
-    out.push(("salaire_brut", arrondi_euro(c.brut.decimal())?.to_string()));
+    // Le certificat ecrit ses montants a l'euro le plus proche (`Montant::a_l_euro`).
+    out.push(("base_conge", dit(c.base.a_l_euro())));
+    out.push(("salaire_brut", dit(c.brut.a_l_euro())));
     let e = c.emission;
     out.push(("date", format!("{:02}/{:02}/{:02}", e.jour, e.mois, e.an % 100)));
     out.push(("signataire", texte_requis(&sig.nom, "nom")?));
@@ -679,8 +671,8 @@ pub fn recapitulatif(paires: &[(&PaieCs, NumeroDeCertificat)], ent: &ChampsEntre
                 c.periode.debut().jj_mm_aaaa(),
                 c.periode.fin().jj_mm_aaaa(),
                 c.nb_jours_ou_cachets.dit(),
-                arrondi_euro(c.brut.decimal())?,
-                arrondi_euro(c.base.decimal())?
+                dit(c.brut.a_l_euro()),
+                dit(c.base.a_l_euro())
             ));
         }
     }

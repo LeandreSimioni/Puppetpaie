@@ -6,7 +6,7 @@ use crate::outils::typee::{cas_de, jouer, Rendu};
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
 use socle::date::{Anciennete, Duree, Jour};
-use socle::grandeurs::{Coefficient, Montant};
+use socle::grandeurs::{Coefficient, Jours, Montant};
 use socle::num::Decimal;
 
 /// Un montant de la reference, ecrit en texte (`2000.00`).
@@ -19,13 +19,18 @@ struct M(#[serde(with = "socle::grandeurs::ecrit::texte")] Montant);
 #[serde(transparent)]
 struct C(#[serde(with = "socle::grandeurs::ecrit::texte")] Coefficient);
 
+/// Des jours de la reference, ecrits en texte (`2.5`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct J(#[serde(with = "socle::grandeurs::ecrit::texte")] Jours);
+
 /// Ce que `indemnite_conges` rend : les deux calculs et la regle retenue.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IndemniteDesJours {
-    dixieme: Decimal,
-    maintien: Decimal,
-    retenu: Decimal,
+    dixieme: M,
+    maintien: M,
+    retenu: M,
     regle: String,
 }
 
@@ -99,20 +104,22 @@ fn motif(m: &Motif) -> Option<droit::natures::MotifDeRupture> {
     m.as_deref().map(|c| droit::natures::MotifDeRupture::du_code(c).unwrap_or_else(|| panic!("le motif {:?} de l'oracle n'est pas un code de S21.G00.62.002 : donnee invalide", c)))
 }
 
-fn arrondir_jours(a: &(Decimal,)) -> Decimal {
-    p::arrondir_jours(a.0)
+fn arrondir_jours(a: &(J,)) -> J {
+    J(a.0 .0.au_demi_superieur())
 }
-fn plafonner(a: &(Decimal,)) -> Rendu<Decimal> {
-    p::plafonner(a.0).into()
+fn plafonner(a: &(J,)) -> Rendu<J> {
+    p::plafonner(a.0 .0).map(J).into()
 }
 fn periode_de_reference(a: &(Jour,)) -> Rendu<(Jour, Jour)> {
     p::periode_de_reference(&a.0).map(|r| (r.debut(), r.fin())).into()
 }
-fn jours_acquis(a: &(Jour, Jour)) -> Rendu<Decimal> {
-    socle::date::Periode::du_au(a.0, a.1).and_then(|presence| p::jours_acquis(&presence)).into()
+fn jours_acquis(a: &(Jour, Jour)) -> Rendu<J> {
+    socle::date::Periode::du_au(a.0, a.1).and_then(|presence| p::jours_acquis(&presence)).map(J).into()
 }
-fn indemnite_conges(a: &(Decimal, Decimal, Decimal, Decimal)) -> Rendu<IndemniteDesJours> {
-    p::indemnite_conges(a.0, a.1, a.2, a.3).map(|i| IndemniteDesJours { dixieme: i.dixieme, maintien: i.maintien, retenu: i.retenu, regle: i.regle.to_string() }).into()
+fn indemnite_conges(a: &(J, M, J, M)) -> Rendu<IndemniteDesJours> {
+    p::indemnite_conges(a.0 .0, a.1 .0, a.2 .0, a.3 .0)
+        .map(|i| IndemniteDesJours { dixieme: M(i.dixieme), maintien: M(i.maintien), retenu: M(i.retenu), regle: i.regle.to_string() })
+        .into()
 }
 
 #[test]

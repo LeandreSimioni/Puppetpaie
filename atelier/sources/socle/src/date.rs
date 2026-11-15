@@ -545,6 +545,13 @@ impl Anciennete {
         }
     }
 
+    /// Au demi-mois superieur, sans zero inutile (3,1 mois : 3,5) : l'anciennete qu'une phrase dit en mois (un affichage,
+    /// pas une regle).
+    pub fn au_demi_mois_superieur(self) -> Anciennete {
+        let demi = (self.0 * Decimal::from(2)).ceil();
+        Anciennete(num::div(demi, Decimal::from(2)).normalize())
+    }
+
     /// SES MOIS COMPLETS : le mois entame ne compte pas (R1234-1).
     pub fn mois_complets(self) -> Anciennete {
         Anciennete(self.0.floor())

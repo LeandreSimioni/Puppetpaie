@@ -14,7 +14,7 @@ use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 pub const BASE: CheminRelatif = CheminRelatif::du_moteur("permanents-base.json");
 use socle::echec::R;
 use socle::grandeurs::{Coefficient, Heures, Jours, Montant, Taux};
-use socle::num::{add, sub, div, mul, Decimal};
+use socle::num::{add, mul, Decimal};
 use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
@@ -88,10 +88,8 @@ forme! {
 
 forme! {
     pub struct AcquisitionDesConges {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub jours_par_mois: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub maximum_annuel: Decimal,
+        pub jours_par_mois: Jours,
+        pub maximum_annuel: Jours,
         pub arrondi: ArrondiDuConge,
     }
 }
@@ -119,8 +117,7 @@ forme! {
 
 forme! {
     pub struct Indemnisation {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub dixieme: Decimal,
+        pub dixieme: Coefficient,
     }
 }
 
@@ -701,53 +698,45 @@ pub fn periode_de_reference(jour: &Jour) -> R<Periode> {
 
 /// Les jours ouvrables acquis sur une periode de presence : 2,5 par mois,
 /// au prorata des jours calendaires de chaque mois traverse.
-pub fn jours_acquis(presence: &Periode) -> R<Decimal> {
+pub fn jours_acquis(presence: &Periode) -> R<Jours> {
     let par_mois = regles()?.conges_payes.acquisition.jours_par_mois;
-    let mut total = Decimal::ZERO;
+    let mut total = Jours::ZERO;
     for mois in presence.mois() {
-        let Some(commun) = presence.croise(&Periode::du_mois(mois)) else { continue };
-        let jours = Decimal::from(commun.jours().count());
-        total = add(total, div(mul(par_mois, jours), Decimal::from(mois.jours())));
+        let du_mois = Periode::du_mois(mois);
+        let Some(commun) = presence.croise(&du_mois) else { continue };
+        total += par_mois.fois(commun.jours().count()).reparties_sur(du_mois.jours().count());
     }
     Ok(total)
 }
 
 /// Trente jours ouvrables au plus.
-pub fn plafonner(acquis: Decimal) -> R<Decimal> {
+pub fn plafonner(acquis: Jours) -> R<Jours> {
     Ok(acquis.min(regles()?.conges_payes.acquisition.maximum_annuel))
 }
 
 /// LA DUREE DU CONGE qu'une periode de reference a acquise, quand elle se clot (L3141-7 : un nombre de jours qui n'est
 /// pas entier « est porté au nombre entier immédiatement supérieur ») : `acquis`, deja plafonne, arrondi
 /// (`conges_payes.acquisition.arrondi`).
-pub fn duree_du_conge(acquis: Decimal) -> R<Decimal> {
+pub fn duree_du_conge(acquis: Jours) -> R<Jours> {
     Ok(match regles()?.conges_payes.acquisition.arrondi.vers {
-        // Un nombre deja entier garde son ecriture (`30.0`).
-        VersArrondi::EntierSuperieur if acquis.fract().is_zero() => acquis,
-        VersArrondi::EntierSuperieur => acquis.ceil(),
+        VersArrondi::EntierSuperieur => acquis.a_l_entier_superieur(),
     })
-}
-
-/// Le compte affiche : au demi-jour superieur (un affichage, pas une regle).
-pub fn arrondir_jours(jours: Decimal) -> Decimal {
-    let demi = (jours * Decimal::from(2)).ceil();
-    div(demi, Decimal::from(2)).normalize()
 }
 
 /// L'indemnite pour des jours de conges pris (L3141-24) : le dixieme de la remuneration de la periode, au prorata des
 /// jours qu'elle a acquis, le maintien, et celui qui gagne.
 pub fn indemnite_conges(
-    jours_pris: Decimal,
-    remuneration_periode: Decimal,
-    jours_acquis_periode: Decimal,
-    maintien: Decimal,
+    jours_pris: Jours,
+    remuneration_periode: Montant,
+    jours_acquis_periode: Jours,
+    maintien: Montant,
 ) -> R<crate::conges::IndemniteDesJours> {
     let taux = regles()?.conges_payes.indemnisation.dixieme;
     // Une periode qui n'a acquis aucun jour ne donne rien au dixieme : le zero est le calcul, pas une absence.
-    let dixieme = if jours_acquis_periode > Decimal::ZERO {
-        Montant::du_decimal(div(mul(mul(remuneration_periode, taux), jours_pris), jours_acquis_periode)).au_centime().decimal()
+    let dixieme = if jours_acquis_periode > Jours::ZERO {
+        (remuneration_periode * taux).prorata(jours_pris, jours_acquis_periode).au_centime()
     } else {
-        Montant::ZERO.decimal()
+        Montant::ZERO
     };
     Ok(crate::conges::la_plus_forte(dixieme, maintien))
 }
@@ -756,31 +745,31 @@ pub fn indemnite_conges(
 /// Des jours de conges acquis sur une periode de reference, et la remuneration de cette periode.
 #[derive(Debug, Clone, Copy)]
 pub struct Acquisition {
-    pub jours: Decimal,
-    pub remuneration: Decimal,
+    pub jours: Jours,
+    pub remuneration: Montant,
 }
 
 /// L'indemnite de `jours` de conges (L3141-24), chaque jour au dixieme DE LA PERIODE OU IL A ETE ACQUIS : les
 /// `report_restant` jours du report d'abord (au dixieme de `report`), puis la periode `en_cours`. Le maintien se
 /// compare au TOTAL.
 pub fn indemnite_des_jours(
-    jours: Decimal,
-    report_restant: Decimal,
+    jours: Jours,
+    report_restant: Jours,
     report: Acquisition,
     en_cours: Acquisition,
-    maintien: Decimal,
+    maintien: Montant,
 ) -> R<crate::conges::IndemniteDesJours> {
     let sur_report = jours.min(report_restant);
-    let reste = sub(jours, sur_report);
-    let mut dixieme = Montant::ZERO.decimal();
+    let reste = jours - sur_report;
+    let mut dixieme = Montant::ZERO;
     // Le dixieme d'une periode est proportionnel a la duree du conge qu'elle a fait due (L3141-24, I,
     // `code-du-travail/articles-20261110.md`) : des jours pris sur une periode qui n'en a acquis aucun (pris par
     // anticipation) n'y ont rien au dixieme ; le maintien (L3141-24, II) les paie.
-    let dixieme_de = |jours: Decimal, a: Acquisition| -> R<Decimal> { Ok(indemnite_conges(jours, a.remuneration, a.jours, Decimal::ZERO)?.dixieme) };
-    if sur_report != Decimal::ZERO {
+    let dixieme_de = |jours: Jours, a: Acquisition| -> R<Montant> { Ok(indemnite_conges(jours, a.remuneration, a.jours, Montant::ZERO)?.dixieme) };
+    if !sur_report.est_nul() {
         dixieme += dixieme_de(sur_report, report)?;
     }
-    if reste != Decimal::ZERO {
+    if !reste.est_nul() {
         dixieme += dixieme_de(reste, en_cours)?;
     }
     Ok(crate::conges::la_plus_forte(dixieme, maintien))
@@ -1243,7 +1232,7 @@ pub fn droit_au_maintien(nature: Option<&Nature>, anciennete: Anciennete) -> R<O
         return Ok(Some(format!(
             "L1226-1 demande {} mois d'anciennete au premier jour de l'absence (D1226-8) ; il y en a {}.",
             minimum,
-            arrondir_jours(anciennete.mois())
+            anciennete.au_demi_mois_superieur()
         )));
     }
     Ok(None)

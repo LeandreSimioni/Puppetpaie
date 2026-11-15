@@ -635,8 +635,8 @@ pub fn jours_de_conges_non_acquis(
     numero: Option<&NumeroContrat>,
     contrat_debut: &Jour,
     presence: &Periode,
-) -> R<Decimal> {
-    let mut total = Decimal::ZERO;
+) -> R<Jours> {
+    let mut total = Jours::ZERO;
     for imp in du_salarie(racine, cle)? {
         let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
         if !du_contrat(&imp, cle, numero, contrat_debut)? {

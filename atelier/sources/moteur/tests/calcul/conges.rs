@@ -9,6 +9,11 @@ fn err(e: socle::echec::Echec) -> Value {
     json!({"err": e.en_lignes()})
 }
 
+/// Des jours, ecrits en nombre dans l'oracle.
+#[derive(serde::Serialize)]
+#[serde(transparent)]
+struct EnNombre(#[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")] socle::grandeurs::Jours);
+
 #[test]
 fn jours_ouvrables_selon_les_feries_chomes() {
     let mut cas = lire_oracle("conges.json")["jours_ouvrables"].clone();
@@ -18,7 +23,7 @@ fn jours_ouvrables_selon_les_feries_chomes() {
         let dits = c[0].as_str().filter(|d| *d != "<absent>");
         // Le cas, lu par sa forme : (feries chomes, du, au).
         let (_, du, au): (Value, Jour, Jour) = serde_json::from_value(Value::Array(c.as_array().unwrap()[..3].to_vec())).unwrap();
-        c[3] = socle::date::Periode::du_au(du, au).and_then(|p| jours_ouvrables(&p, dits)).map_or_else(err, |n| json!(n));
+        c[3] = socle::date::Periode::du_au(du, au).and_then(|p| jours_ouvrables(&p, dits)).map_or_else(err, |n| json!(EnNombre(n)));
     }
     assert!(!cas.as_array().unwrap().is_empty());
     oracle("conges.json", "/jours_ouvrables", &cas);

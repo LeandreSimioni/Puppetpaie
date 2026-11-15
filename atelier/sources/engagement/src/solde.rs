@@ -7,8 +7,8 @@ use droit::fiche::Lue;
 use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
-    avertir, compteur_conges, debut_de, dec_de, indemnite_des_jours, info, jours_ouvrables_de,
-    qui, remuneration_du_mois, salarie_de, sub, taux_au_montant,
+    avertir, compteur_conges, debut_de, dec_de, info, jours_dits, jours_ouvrables_de, qui, remuneration_du_mois,
+    salarie_de, taux_au_montant,
 };
 use crate::saisie::Carte;
 use crate::{Chiffre, LignePaie};
@@ -19,9 +19,9 @@ use crate::Avis;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::forme::Nombre;
-use socle::grandeurs::{courte, Coefficient, Montant, MontantUnitaire};
-use socle::num::{add, court, div, mul, Decimal};
-use droit::permanents::{self, arrondir_jours, jours_acquis, IndemniteDePreavis};
+use socle::grandeurs::{courte, Coefficient, Jours, Montant, MontantUnitaire};
+use socle::num::{court, Decimal};
+use droit::permanents::{self, jours_acquis, IndemniteDePreavis};
 use socle::date::{Anciennete, Periode};
 
 /// Les lignes et les avertissements du solde.
@@ -30,12 +30,12 @@ struct Solde {
     lignes: Vec<LignePaie>,
     avertissements: Vec<Avis>,
     /// La ligne de l'indemnite compensatrice de conges payes (son rang dans `lignes`), ses jours et son montant.
-    conges_payes: Option<(usize, Decimal, Decimal)>,
+    conges_payes: Option<(usize, Jours, Montant)>,
 }
 
 /// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit.
-fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: Decimal, taux: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), Nombre(court(quantite)), MontantUnitaire::du_decimal(court(taux)))
+fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: Decimal, taux: MontantUnitaire) -> LignePaie {
+    LignePaie::composee(rubrique.clone(), Nombre(court(quantite)), courte(taux))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
@@ -331,44 +331,43 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 premier.libelle(socle::mois::Graphie::Accentuee),
             )));
         }
-        let mut pris_ce_mois = Decimal::ZERO;
+        let mut pris_ce_mois = Jours::ZERO;
         for c in e.conges_pris.iter().flatten() {
-            pris_ce_mois = add(pris_ce_mois, Decimal::from(jours_ouvrables_de(c, chomes)?));
+            pris_ce_mois += jours_ouvrables_de(c, chomes)?;
         }
         let contrat = e.contrat()?.ok_or_else(|| socle::fichiers::absent("debut"))?;
         let dans_le_mois = crate::contrat_dans_le_mois(&contrat, mois, &qui)?;
         let acquis_ce_mois = jours_acquis(&dans_le_mois)?;
-        let solde = sub(add(cpt.solde(), acquis_ce_mois), pris_ce_mois);
-        if solde > Decimal::ZERO {
+        let solde = cpt.solde() + acquis_ce_mois - pris_ce_mois;
+        if solde > Jours::ZERO {
             // Le maintien (L3141-24, II, `atelier/reference/sources/code-du-travail/xml/L3141-24.xml`) : ce que le salarie
             // aurait percu s'il avait travaille ces jours, le salaire du mois entier reparti sur les jours ouvrables du
             // mois entier, comme les conges pris (`conges::lignes_du_mois`), quel que soit le jour ou le contrat finit.
-            let ouvrables = ouvrables_du_mois(mois, chomes)?;
-            let maintien = Montant::du_decimal(mul(div(salaire, ouvrables), solde)).au_centime().decimal();
+            let maintien = (solde * salaire_d_un_jour_ouvrable(salaire, mois, chomes)?).au_centime();
             // Les jours pris ce mois-ci ont deja consomme le report d'abord :
             // le reste du report est ce qui se paie au dixieme d'avant.
             let entame = plus_petit(pris_ce_mois, cpt.report_restant());
             let mut cpt2 = cpt.clone();
-            cpt2.reports = sub(cpt.reports, entame);
-            let ind = indemnite_des_jours(&cpt2, solde, maintien)?;
+            cpt2.reports = cpt.reports - entame;
+            let ind = cpt2.indemnite_des_jours(solde, maintien)?;
             stc.conges_payes = Some((stc.lignes.len(), solde, ind.retenu));
-            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, solde, taux_au_montant(ind.retenu, solde)));
+            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, solde.decimal(), taux_au_montant(ind.retenu, solde)?));
             stc.avertissements.push(info(format!(
                 "{} : {} jour(s) de conges acquis et non pris, payes {} ({}) -- \
                  art. L3141-28, due quelle que soit la cause de la rupture.",
                 qui,
-                arrondir_jours(solde),
-                euros(Montant::du_decimal(ind.retenu)),
+                jours_dits(solde),
+                euros(ind.retenu),
                 ind.regle
             )));
-        } else if solde < Decimal::ZERO {
+        } else if solde < Jours::ZERO {
             stc.avertissements.push(avertir(format!(
                 "{} : le compteur de conges est NEGATIF ({} jours) -- le salarie \
                  a pris plus que ce qu'il a acquis. La retenue sur le solde de \
                  tout compte n'est pas calculee : elle se decide, et elle est \
                  encadree. A regler a la main.",
                 qui,
-                arrondir_jours(solde)
+                jours_dits(solde)
             )));
         }
     }
@@ -506,14 +505,17 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                     IndemniteDePreavis::Licenciement | IndemniteDePreavis::Aucune(_) => String::new(),
                 };
                 // L1234-5 : « indemnité de congés payés comprise » ; un mois de travail acquiert ses jours (L3141-3).
-                let jours = mul(permanents::regles()?.conges_payes.acquisition.jours_par_mois, m);
-                let conges = conges_non_effectues(ctx, e, mois, &fin, jours, salaire, Montant::du_decimal(mul(m, salaire)).au_centime().decimal(), &mut stc)?;
+                // Les mois du preavis, une duree que son calcul dit encore en decimal : leur porte.
+                let mois_du_preavis = Coefficient::du_decimal(m);
+                let jours = permanents::regles()?.conges_payes.acquisition.jours_par_mois * mois_du_preavis;
+                let paye = mois_du_preavis * salaire;
+                let conges = conges_non_effectues(ctx, e, mois, &fin, jours, salaire, paye.au_centime(), &mut stc)?;
                 stc.avertissements.push(avertir(format!(
                     "{} : {} mois de préavis non effectué, payés {} \
                      (L1234-5){}. L'article le veut « indemnité de congés payés comprise » : {}{}",
                     qui,
                     virgule(m),
-                    euros(Montant::du_decimal(mul(m, salaire))),
+                    euros(paye),
                     if duree.dit.is_empty() { String::new() } else { format!(" -- {}", duree.dit) },
                     conges,
                     article
@@ -578,7 +580,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
 /// (`droit::periodes::part_du_mois`) ; DSN 52 « 017 ». Les conges que ces jours acquierent (`conges_du_delai`) s'ajoutent
 /// a l'indemnite compensatrice de conges payes du solde.
 fn delai_de_prevenance(
-    ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie], fin: &socle::date::Jour, salaire: Decimal, motif: Option<MotifDeRupture>, nat: &Nature,
+    ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie], fin: &socle::date::Jour, salaire: MontantUnitaire, motif: Option<MotifDeRupture>, nat: &Nature,
     qui: &str, stc: &mut Solde,
 ) -> R<()> {
     let Some(regle) = permanents::regle_du_delai_de_prevenance(motif)? else {
@@ -651,16 +653,16 @@ fn delai_de_prevenance(
     // La part non effectuee : du lendemain de la fin au dernier jour du delai, le salaire de chaque mois traverse pour ses
     // heures (`droit::periodes::part_du_mois`, l'horaire reel du mois).
     let non_effectue = Periode::du_au(fin.plus_jours(1)?, delai.expiration)?;
-    let (mut fraction, mut jours) = (Decimal::ZERO, socle::grandeurs::Jours::ZERO);
+    let (mut fraction, mut jours) = (Coefficient::ZERO, Jours::ZERO);
     for mois_de_j in non_effectue.mois() {
         let Some(dans_le_mois) = non_effectue.croise(&Periode::du_mois(mois_de_j)) else { continue };
         let horaire = crate::conges::horaire_du_mois(ctx, au, salarie_de(e)?, &debut, mois_de_j)?;
         let part = droit::periodes::part_du_mois(&dans_le_mois, mois_de_j, droit::periodes::RegleDuMoisIncomplet::HoraireReel, &horaire)?;
-        fraction = add(fraction, part.fraction.decimal());
+        fraction += part.fraction;
         jours += part.jours;
     }
-    stc.lignes.push(ligne(&regle.rubrique, fraction, salaire));
-    let montant = Montant::du_decimal(mul(fraction, salaire)).au_centime().decimal();
+    stc.lignes.push(ligne(&regle.rubrique, fraction.decimal(), salaire));
+    let montant = (fraction * salaire).au_centime();
     let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&non_effectue)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
     let avantages = if avantages.is_empty() {
@@ -681,21 +683,20 @@ fn delai_de_prevenance(
         dit,
         fin.jj_mm_aaaa(),
         socle::grandeurs::ecrit::sans_zero::dit(jours),
-        euros(Montant::du_decimal(montant)),
+        euros(montant),
         conges,
         avantages
     )));
     Ok(())
 }
 
-/// LES JOURS OUVRABLES DU MOIS ENTIER `mois` (`droit::conges::jours_ouvrables`), sur lesquels le maintien (L3141-24, II)
-/// repartit le salaire du mois. Un mois en compte toujours (six jours par semaine, hors les feries chomes) : aucun est un
-/// defaut du calendrier, qui remonte.
-pub(crate) fn ouvrables_du_mois(mois: Mois, chomes: Option<&str>) -> R<Decimal> {
-    match jours_ouvrables(&Periode::du_mois(mois), chomes)? {
-        0 => Err(socle::refus!("Défaut du logiciel : le mois {} n'a aucun jour ouvrable.", mois)),
-        n => Ok(Decimal::from(n)),
-    }
+/// LE SALAIRE D'UN JOUR OUVRABLE au maintien (L3141-24, II) : le salaire mensuel `salaire` reparti sur les jours
+/// ouvrables du mois entier `mois` (`droit::conges::jours_ouvrables`). Un mois en compte toujours (six jours par semaine,
+/// hors les feries chomes) : aucun est un defaut du calendrier, qui remonte.
+pub(crate) fn salaire_d_un_jour_ouvrable(salaire: MontantUnitaire, mois: Mois, chomes: Option<&str>) -> R<MontantUnitaire> {
+    salaire
+        .par_jour(jours_ouvrables(&Periode::du_mois(mois), chomes)?)
+        .ok_or_else(|| socle::refus!("Défaut du logiciel : le mois {} n'a aucun jour ouvrable.", mois))
 }
 
 /// LES CONGES D'UN TEMPS PAYE SANS ETRE EFFECTUE : le delai de prevenance (L1221-25) et le preavis (L1234-5) sont payes
@@ -705,23 +706,23 @@ pub(crate) fn ouvrables_du_mois(mois: Mois, chomes: Option<&str>) -> R<Decimal> 
 /// solde, ou en font une. Un salarie dont la caisse des Conges Spectacles paie les conges n'en a pas chez l'employeur
 /// (L3141-30). Rend la phrase qui le dit.
 fn conges_non_effectues(
-    ctx: &Contexte, e: &Carte, mois: Mois, fin: &socle::date::Jour, jours: Decimal, salaire: Decimal, montant: Decimal,
+    ctx: &Contexte, e: &Carte, mois: Mois, fin: &socle::date::Jour, jours: Jours, salaire: MontantUnitaire, montant: Montant,
     stc: &mut Solde,
 ) -> R<String> {
     if crate::calcul::saisie_declaree_a_la_caisse_des_conges(ctx, e, fin)? {
         return Ok("ses congés sont payés par la caisse des Congés Spectacles (L3141-30), rien à ajouter.".to_string());
     }
-    if jours.is_zero() {
+    if jours.est_nul() {
         return Ok("ce temps n'acquiert aucun jour de congé.".to_string());
     }
-    let ouvrables = ouvrables_du_mois(mois, ctx.entreprise.feries_chomes())?;
-    let ind =permanents::indemnite_conges(jours, montant, jours, Montant::du_decimal(mul(div(salaire, ouvrables), jours)).au_centime().decimal())?;
+    let par_jour = salaire_d_un_jour_ouvrable(salaire, mois, ctx.entreprise.feries_chomes())?;
+    let ind = permanents::indemnite_conges(jours, montant, jours, (jours * par_jour).au_centime())?;
     let rubrique = permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique.clone();
     let (rang, total_jours, total) = match stc.conges_payes {
-        Some((rang, j, m)) => (rang, add(j, jours), add(m, ind.retenu)),
+        Some((rang, j, m)) => (rang, j + jours, m + ind.retenu),
         None => (stc.lignes.len(), jours, ind.retenu),
     };
-    let l = ligne(&rubrique, total_jours, taux_au_montant(total, total_jours));
+    let l = ligne(&rubrique, total_jours.decimal(), taux_au_montant(total, total_jours)?);
     match stc.lignes.get_mut(rang) {
         Some(x) => *x = l,
         None => stc.lignes.push(l),
@@ -730,8 +731,8 @@ fn conges_non_effectues(
     Ok(format!(
         "ces jours acquièrent {} jour(s) de congé (L3141-3), payés {} ({}, L3141-24), ajoutés à l'indemnité compensatrice de \
          congés payés.",
-        virgule(arrondir_jours(jours)),
-        euros(Montant::du_decimal(ind.retenu)),
+        jours_dits(jours).replace('.', ","),
+        euros(ind.retenu),
         ind.regle
     ))
 }
@@ -1030,7 +1031,7 @@ fn indemnite_de_rupture(
         qui,
         quoi,
         euros(montant),
-        arrondir_jours(anciennete.mois()),
+        anciennete.au_demi_mois_superieur(),
         euros(reference.retenu),
         reference.regle,
         detail,
@@ -1210,7 +1211,7 @@ fn indemnite_de_licenciement(
          de référence {} par {}) -- loi (L1234-9 et R1234-2) : {} ; {}.{}",
         qui,
         euros(montant),
-        arrondir_jours(anciennete.mois()),
+        anciennete.au_demi_mois_superieur(),
         euros(reference.retenu),
         reference.regle,
         euros(m_legal),
