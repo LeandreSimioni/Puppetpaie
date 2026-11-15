@@ -7,7 +7,10 @@ le change dans le même commit.
 
 **Tout est en Rust**, et le logiciel est un corps solide sous une peau solide, percée de quelques portes seulement : les
 routes (la page comme la ligne de commande), les fichiers, les imports. À la porte, on choisit ce qui entre ; partout ailleurs, rien
-n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; dedans ne circulent que des types.
+n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; dedans ne circulent que des types. **Une
+route est une porte pour ce qui entre, pas pour ce qui s'ouvre** : sa charge et sa réponse sont des formes dont les champs
+portent les types des notions (une grandeur y est sa grandeur, qui s'écrit elle-même) ; une grandeur ne s'ouvre en nombre
+nu qu'à l'écriture ou la lecture d'un fichier ou d'une norme (« Le glossaire », la règle du typage).
 
 - **Une donnée lue est une forme, déclarée une fois.** Fichier, barème, charge ou réponse d'une route : une structure
   `serde` (`deny_unknown_fields`), lue par `socle::forme`, écrite par `socle::ecriture`. Le JSON brut ne se touche
