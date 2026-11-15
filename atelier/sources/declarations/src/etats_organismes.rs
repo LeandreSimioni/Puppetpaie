@@ -383,7 +383,7 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
             };
             let mut l = Ligne::nouvelle();
             l.m(C::Mois, m).t(C::Organisme, organisme).t(C::Identifiant, o.organisme.to_string()).ot(C::Reference, o.reference.clone());
-            l.t(C::Du, o.debut.jj_mm_aaaa()).t(C::Au, o.fin.jj_mm_aaaa()).od(C::Montant, Some(o.montant));
+            l.t(C::Du, o.periode.debut().jj_mm_aaaa()).t(C::Au, o.periode.fin().jj_mm_aaaa()).od(C::Montant, Some(o.montant));
             l.t(C::Mode, "prélèvement SEPA");
             l.ot(C::Date, o.date_paiement.map(|j| j.jj_mm_aaaa())).t(C::Fichier, nom_de_la_dsn(m, partie));
             lignes.push(l);
@@ -427,7 +427,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
         for bordereau in f.bordereaux {
             let mut l = Ligne::nouvelle();
             l.m(C::Mois, m).t(C::Ctp, "").t(C::Libelle, format!("Total dû à l'Urssaf (bloc 22), {}", nom_de_la_dsn(m, partie)));
-            l.t(C::Periode, format!("{} au {}", bordereau.debut.jj_mm_aaaa(), bordereau.fin.jj_mm_aaaa())).od(C::Total, Some(bordereau.total));
+            l.t(C::Periode, format!("{} au {}", bordereau.periode.debut().jj_mm_aaaa(), bordereau.periode.fin().jj_mm_aaaa())).od(C::Total, Some(bordereau.total));
             lignes.push(l);
             for b in bordereau.lignes {
                 let mut l = Ligne::nouvelle();

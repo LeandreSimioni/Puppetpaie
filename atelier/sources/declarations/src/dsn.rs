@@ -417,9 +417,9 @@ impl Arret {
         &self.saisi
     }
 
-    /// Une periode commune avec [debut, fin] : la regle du bloc 60 (`imprevus::arret_croise`).
-    pub fn couvre(&self, debut: &Jour, fin: &Jour) -> R<bool> {
-        engagement::imprevus::arret_croise(&self.saisi, debut, fin)
+    /// Une periode commune avec `p` : la regle du bloc 60 (`imprevus::arret_croise`).
+    pub fn couvre(&self, p: &Periode) -> R<bool> {
+        engagement::imprevus::arret_croise(&self.saisi, &p.debut(), &p.fin())
     }
 
     /// L'arret se reporte-t-il dans la DSN mensuelle de `mois` ? Celle de chaque mois qu'il croise ; et, s'il a fini avant
@@ -431,12 +431,11 @@ impl Arret {
     /// mensuelle même si les impacts de l'absence sont portés dans une paie ultérieure. Un arret sans date de saisie, ou
     /// dont le contrat n'a rien declare de reel, ne se reporte que dans les mois qu'il croise.
     pub fn a_reporter(&self, mois: Mois, departs: &engagement::departs::Departs) -> R<bool> {
-        let debut_mois = mois.premier_jour();
-        if self.couvre(&debut_mois, &mois.dernier_jour())? {
+        if self.couvre(&Periode::du_mois(mois))? {
             return Ok(true);
         }
         let origine = Jour::nouveau(1900, 1, 1).ok_or_else(|| refus("jour inexistant"))?;
-        if !self.couvre(&origine, &debut_mois.plus_jours(-1)?)? {
+        if !self.couvre(&Periode::du_au(origine, mois.premier_jour().plus_jours(-1)?)?)? {
             return Ok(false);
         }
         // Un contrat sans numero n'a rien declare.
@@ -2075,7 +2074,9 @@ pub fn court(p: &Paie, le: Jour) -> R<bool> {
 }
 
 /// Les quatre blocs 51 d'une paie, et les activites 53 sous le 002.
-pub fn remunerations(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i64) -> R<()> {
+pub fn remunerations(f: &mut Fichier, p: &Paie, periode: &Periode, signe: i64) -> R<()> {
+    // La norme ecrit la periode en deux zones, son debut et sa fin.
+    let (debut, fin) = (periode.debut(), periode.fin());
     let e = &p.engagement;
     let nat = e.nat()?;
     for &t in nat.types_remuneration() {
@@ -2168,7 +2169,9 @@ fn activites(f: &mut Fichier, p: &Paie, signe: i64) -> R<()> {
 }
 
 /// Le bloc 52 : les primes et indemnites qui ont leur code.
-pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i64) -> R<()> {
+pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, periode: &Periode, signe: i64) -> R<()> {
+    // La norme ecrit la periode en deux zones, son debut et sa fin.
+    let (debut, fin) = (periode.debut(), periode.fin());
     for l in &p.remuneration {
         let code = match l.dsn_bloc52 {
             Some(c) => c,
@@ -2194,7 +2197,9 @@ pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour,
 }
 
 /// Les blocs 54 : les lignes qui portent `dsn_autres_bruts`, puis 92 et 93.
-pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour, fin: &Jour, signe: i64) -> R<()> {
+pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, periode: &Periode, signe: i64) -> R<()> {
+    // La norme ecrit la periode en deux zones, son debut et sa fin.
+    let (debut, fin) = (periode.debut(), periode.fin());
     let e = &p.engagement;
     for l in &p.remuneration {
         let Some(code) = l.dsn_autres_bruts else { continue };
@@ -2261,8 +2266,8 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
 /// 2027 (cahier 2027.1.1, p. 267-268, la regle `net_social_en_date_de_versement` de la version) : « en date de
 /// versement », la date du versement deux fois (CCH-14 : l'une ne va pas sans l'autre ; la fiche net-entreprises 2983
 /// admet aussi le mois du versement). Le cas nominal de 2027 ne les ecrit pas : `dates_du_58_du_mois`.
-fn dates_du_58(f: &Fichier, debut: &Jour, fin: &Jour, versement: &Jour) -> R<(Jour, Jour)> {
-    Ok(if f.norme()?.regle("net_social_en_date_de_versement")?.is_some() { (*versement, *versement) } else { (*debut, *fin) })
+fn dates_du_58(f: &Fichier, periode: &Periode, versement: &Jour) -> R<Periode> {
+    Ok(if f.norme()?.regle("net_social_en_date_de_versement")?.is_some() { Periode::du_jour(*versement) } else { *periode })
 }
 
 /// Les dates (58.001, 58.002) du 58 d'un versement du mois (la paie, ou le mois sans paie), ou `None` quand elles ne
@@ -2274,14 +2279,14 @@ fn dates_du_58(f: &Fichier, debut: &Jour, fin: &Jour, versement: &Jour) -> R<(Jo
 /// nominal les laisse « Non renseignee ». Le cahier 2027.1.1 (p. 267) : « a renseigner des lors que sa datation est
 /// differente de celle du Versement individu ». Le type 13 suit (« La meme regle de datation s'applique aux revenus
 /// declares pour les types 10, 13, 14 et 15 », p. 268).
-fn dates_du_58_du_mois(f: &Fichier, debut: &Jour, fin: &Jour) -> R<Option<(Jour, Jour)>> {
-    Ok(if f.norme()?.regle("net_social_en_date_de_versement")?.is_some() { None } else { Some((*debut, *fin)) })
+fn dates_du_58_du_mois(f: &Fichier, periode: &Periode) -> R<Option<Periode>> {
+    Ok(if f.norme()?.regle("net_social_en_date_de_versement")?.is_some() { None } else { Some(*periode) })
 }
 
-fn dater_le_58(f: &mut Fichier, dates: Option<(Jour, Jour)>) {
-    if let Some((d, fi)) = dates {
-        f.add(droit::rubrique!("S21.G00.58.001"), d.jjmmaaaa());
-        f.add(droit::rubrique!("S21.G00.58.002"), fi.jjmmaaaa());
+fn dater_le_58(f: &mut Fichier, dates: Option<Periode>) {
+    if let Some(p) = dates {
+        f.add(droit::rubrique!("S21.G00.58.001"), p.debut().jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.58.002"), p.fin().jjmmaaaa());
     }
 }
 
@@ -2306,8 +2311,8 @@ fn part_exoneree_des_indemnites_de_rupture(f: &Fichier, p: &Paie) -> R<Option<De
 /// Les blocs 58 de la paie : le type 03, le montant net social (`Paie::net_social`, calcule par `calcul::calculer`),
 /// et en norme 2027 le type 13 (`part_exoneree_des_indemnites_de_rupture`), dates par `dates_du_58_du_mois` (en 2027 :
 /// pas de dates, le 58 herite du versement).
-pub fn net_social(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i64) -> R<()> {
-    let dates = dates_du_58_du_mois(f, debut, fin)?;
+pub fn net_social(f: &mut Fichier, p: &Paie, periode: &Periode, signe: i64) -> R<()> {
+    let dates = dates_du_58_du_mois(f, periode)?;
     // Le montant net des heures en plus exonere d'impot (CGI 81 quater), hors de la remuneration nette fiscale : « 01 -
     // Heure(s) complémentaire(s) ou supplémentaire(s) exonérée(s) fiscalement », date comme le versement (fiche
     // net-entreprises 2066 ; `Assiette::HeuresEnPlusExonere`).
@@ -2336,9 +2341,11 @@ pub fn net_social(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i6
 
 /// Les blocs 78, 79 et 81 d'une paie.
 pub fn bases_et_cotisations(
-    f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, debut: &Jour, fin: &Jour, signe: i64, nature_dsn: NatureDeLaDeclaration,
+    f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, periode: &Periode, signe: i64, nature_dsn: NatureDeLaDeclaration,
     bases_exclues: &[BaseAssujettie],
 ) -> R<()> {
+    // La norme ecrit la periode en deux zones, son debut et sa fin.
+    let (debut, fin) = (periode.debut(), periode.fin());
     let e = &p.engagement;
     let mut courant: Option<(BaseAssujettie, Option<IdentifiantDAffiliation>, Decimal)> = None;
     let places = places_par_contrat(bar);
@@ -2431,8 +2438,9 @@ p. 243). Porter une partie des corrections sur une DSN suivante. Rien n'est ecri
 
 fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux_pas: Option<&Triplet>) -> R<()> {
     let e = &p.engagement;
-    let debut = e.debut_periode();
-    let fin = e.fin_periode();
+    let periode = e.periode_payee()?;
+    // La norme ecrit la periode en deux zones, son debut et sa fin.
+    let (debut, fin) = (periode.debut(), periode.fin());
     // « Date à laquelle le débiteur effectue le versement » (`bloc-S21.G00.50.txt`, l. 50-55 ; CCH-13, l. 61-62 : au plus
     // tard le dernier jour du mois suivant) : le jour ou se fait la retenue, celui du taux de PAS de la paie.
     f.add(droit::rubrique!("S21.G00.50.001"), e.date_du_versement()?.jjmmaaaa());
@@ -2466,11 +2474,11 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     // declarer dans le bloc Remuneration est cette periode elementaire de paie, lorsque le logiciel de paie produit
     // effectivement un decoupage », norme 2026.1, § 2.1.3.2, p. 28 ; les mesures d'activite aussi, § 2.1.3.5, p. 29).
     for q in p.elementaires() {
-        remunerations(f, q, &q.engagement.debut_periode(), &q.engagement.fin_periode(), 1)?;
+        remunerations(f, q, &q.engagement.periode_payee()?, 1)?;
     }
-    primes_et_indemnites(f, p, &debut, &fin, 1)?;
+    primes_et_indemnites(f, p, &periode, 1)?;
     if e.sans_paie() {
-        let dates = dates_du_58_du_mois(f, &debut, &fin)?;
+        let dates = dates_du_58_du_mois(f, &periode)?;
         dater_le_58(f, dates);
         f.add(droit::rubrique!("S21.G00.58.003"), "03");
         f.add(droit::rubrique!("S21.G00.58.004"), "0.00");
@@ -2502,14 +2510,14 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
         }
         return Ok(());
     }
-    autre_revenu(f, p, bar, &debut, &fin, 1)?;
+    autre_revenu(f, p, bar, &periode, 1)?;
     // Le net social de la periode (le versement est date par 50.001 ci-dessus).
-    net_social(f, p, &debut, &fin, 1)?;
+    net_social(f, p, &periode, 1)?;
     // Les bases d'un mois decoupe, periode elementaire par periode elementaire, datees de ses bornes (78.002, 78.003) :
     // « Pour tout changement intervenant en cours de mois, il convient de ventiler les bases assujetties par periodes »
     // (fiche net-entreprises 1265, l. 52) ; FAQ Agirc-Arrco « Changement de situation en cours de mois ».
     for q in p.elementaires() {
-        bases_et_cotisations(f, q, bar, rang, &q.engagement.debut_periode(), &q.engagement.fin_periode(), 1, NatureDeLaDeclaration::Mensuelle, &[])?;
+        bases_et_cotisations(f, q, bar, rang, &q.engagement.periode_payee()?, 1, NatureDeLaDeclaration::Mensuelle, &[])?;
     }
     Ok(())
 }
@@ -2633,7 +2641,7 @@ rattacher. Rien n'est ecrit.",
 ///
 /// Une correction deja portee a pu declarer un rappel aux dates de son propre mois (`declare.rappels_net_social`) :
 /// le montant net social d'origine est ce qui a ete paye moins ces rappels.
-fn blocs_58_de_la_correction(f: &mut Fichier, r: &Regularisation, debut: &Jour, fin: &Jour, fin_mois: Jour) -> R<()> {
+fn blocs_58_de_la_correction(f: &mut Fichier, r: &Regularisation, periode: &Periode, fin_mois: Jour) -> R<()> {
     let (avant, apres) = (&r.avant, &r.apres);
     // Ce que des corrections deja portees ont declare aux dates du mois de leur versement : le montant net social de la
     // periode d'origine ne le reprend pas.
@@ -2663,11 +2671,10 @@ dans une correction. Rien n'est écrit.",
         ));
     }
     // Le 58 de la paie d'origine se date de son versement (sa fin de periode, 50.001 de la DSN d'origine) en norme 2027.
-    let (d_o, f_o) = dates_du_58(f, debut, fin, fin)?;
+    let d_origine = dates_du_58(f, periode, &periode.fin())?;
     let origine = |f: &mut Fichier, montant: Montant| -> R<()> {
-        annuler_les_58(f, r, (d_o, f_o))?;
-        f.add(droit::rubrique!("S21.G00.58.001"), d_o.jjmmaaaa());
-        f.add(droit::rubrique!("S21.G00.58.002"), f_o.jjmmaaaa());
+        annuler_les_58(f, r, d_origine)?;
+        dater_le_58(f, Some(d_origine));
         f.add(droit::rubrique!("S21.G00.58.003"), "03");
         f.add(droit::rubrique!("S21.G00.58.004"), ms(montant.decimal(), 1));
         Ok(())
@@ -2683,10 +2690,8 @@ dans une correction. Rien n'est écrit.",
     if !ajoute && paye - rappels != r.declare.net_social {
         origine(f, paye - rappels)?;
     }
-    let debut_mois = Jour::nouveau(fin_mois.an, fin_mois.mois, 1).ok_or_else(|| refus("mois de versement illisible"))?;
-    let (d_v, f_v) = dates_du_58(f, &debut_mois, &fin_mois, &fin_mois)?;
-    f.add(droit::rubrique!("S21.G00.58.001"), d_v.jjmmaaaa());
-    f.add(droit::rubrique!("S21.G00.58.002"), f_v.jjmmaaaa());
+    let d_versement = dates_du_58(f, &Periode::du_au(fin_mois.mois_civil().premier_jour(), fin_mois)?, &fin_mois)?;
+    dater_le_58(f, Some(d_versement));
     f.add(droit::rubrique!("S21.G00.58.003"), "03");
     f.add(droit::rubrique!("S21.G00.58.004"), ms((apres.net_social - paye).decimal(), 1));
     Ok(())
@@ -2697,7 +2702,7 @@ dans une correction. Rien n'est écrit.",
 /// date de SON versement : annule tel quel, il heriterait de celle de la correction. Il recoit donc les dates du
 /// versement d'origine (`origine`), comme le complement qui le suit (fiche net-entreprises 2983 : la correction d'un MNS
 /// se rattache « a la date du mois du versement auquel ce MNS etait associe »).
-fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: (Jour, Jour)) -> R<()> {
+fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: Periode) -> R<()> {
     const DEBUT_58: RubriqueDeLaNorme = droit::rubrique!("S21.G00.58.001");
     const TYPE_58: RubriqueDeLaNorme = droit::rubrique!("S21.G00.58.003");
     let lignes: Vec<(RubriqueDeLaNorme, String)> = r.declare.blocs(&["58"]).cloned().collect();
@@ -2734,11 +2739,10 @@ fn bloc_regularisation(
     // `avant` ne donne ici que l'engagement declare (ses bornes, s'il est sans paie) : les montants annules sont ceux
     // du versement declare (`r.declare`), pas ceux d'un recalcul.
     let (avant, apres) = (&r.avant, &r.apres);
-    let debut = avant.engagement.debut_periode();
-    let fin = avant.engagement.fin_periode();
+    let periode = avant.engagement.periode_payee()?;
     // La paie corrigee se rattache a la periode du contrat corrige : ses dates ont pu changer (fiche
     // net-entreprises 1952 ; cahier technique DSN 2026.1, §2.1.3.6). L'annulation recopie le declare, a ses dates.
-    let (debut_c, fin_c) = (apres.engagement.debut_periode(), apres.engagement.fin_periode());
+    let corrigee = apres.engagement.periode_payee()?;
     // Le prelevement du versement de la correction est celui que l'engagement rend (`prelevement_de_la_correction`) :
     // la DSN ne le calcule pas.
     let d_ni = pas_c.difference;
@@ -2764,12 +2768,12 @@ fn bloc_regularisation(
     // (CCH-11 et CCH-13 de S21.G00.51.001-002 ne s'appliquent qu'a un montant « différent de 0.00 ») et le format de
     // 53.002 l'admet (`-?[0]*(0|[1-9][0-9]*)\.[0-9]{2}`) ; seul 51.012 refuse le zero (CCH-12), et il ne s'ecrit pas
     // (cahier technique 2027.1, `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.51.txt` et `bloc-S21.G00.53.txt`).
-    remunerations(f, apres, &debut_c, &fin_c, 1)?;
+    remunerations(f, apres, &corrigee, 1)?;
     if !avant.engagement.sans_paie() {
         annuler_le_declare(f, r, &["54"])?;
     }
     if !apres.engagement.sans_paie() {
-        autre_revenu(f, apres, bar_o, &debut_c, &fin_c, 1)?;
+        autre_revenu(f, apres, bar_o, &corrigee, 1)?;
     }
     if indu {
         let taux_o = match r.taux_pas_origine {
@@ -2794,12 +2798,12 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
         f.add(droit::rubrique!("S21.G00.56.007"), mt(taux_o.prelevement(d_ni).au_centime().decimal()));
         f.add(droit::rubrique!("S21.G00.56.010"), mt(d_ni.decimal()));
     }
-    blocs_58_de_la_correction(f, r, &debut, &fin, fin_mois)?;
+    blocs_58_de_la_correction(f, r, &periode, fin_mois)?;
     if !avant.engagement.sans_paie() {
         annuler_le_declare(f, r, &["78", "79", "81"])?;
     }
     if !apres.engagement.sans_paie() {
-        bases_et_cotisations(f, apres, bar_o, rang, &debut_c, &fin_c, 1, NatureDeLaDeclaration::Mensuelle, &[])?;
+        bases_et_cotisations(f, apres, bar_o, rang, &corrigee, 1, NatureDeLaDeclaration::Mensuelle, &[])?;
     }
     Ok(())
 }
@@ -4242,8 +4246,7 @@ pub struct Ordre {
     pub organisme: IdentifiantDOrganisme,
     pub reference: Option<String>,
     pub montant: Decimal,
-    pub debut: Jour,
-    pub fin: Jour,
+    pub periode: Periode,
     pub date_paiement: Option<Jour>,
     pub destinataire: Destinataire,
     pub reste: Decimal,
@@ -4255,8 +4258,7 @@ pub struct Ordre {
 /// corrections regularisent.
 #[derive(Clone, Debug)]
 pub struct BordereauEcrit {
-    pub debut: Jour,
-    pub fin: Jour,
+    pub periode: Periode,
     pub total: Decimal,
     pub lignes: Vec<LigneBordereau>,
 }
@@ -4570,6 +4572,7 @@ par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
     // En P27V01, la fiche entreprise est en NAF 2025 (`naf::verifier_pour`), avant tout calcul.
     crate::naf::verifier_pour(&norme, ent0)?;
     let fin_m = mois.dernier_jour();
+    let periode_du_mois = Periode::du_mois(mois);
     let mut bars: HashMap<Mois, std::sync::Arc<BaremeDuMois>> = HashMap::new();
     let mut bar_de = |m: Mois| -> R<std::sync::Arc<BaremeDuMois>> {
         if let Some(b) = bars.get(&m) {
@@ -4936,8 +4939,7 @@ certificat de conformite du depot precedent.",
             organisme: siret.clone(),
             reference: reference_versement(v, &ent),
             montant,
-            debut: debut_mois,
-            fin: fin_m,
+            periode: periode_du_mois,
             date_paiement: echeances.get(&siret).copied(),
             destinataire,
             reste,
@@ -4967,8 +4969,7 @@ certificat de conformite du depot precedent.",
             organisme: siret_urssaf.clone(),
             reference: None,
             montant: *mt_o,
-            debut: d_o,
-            fin: d_o.mois_civil().dernier_jour(),
+            periode: Periode::du_mois(*mois_o),
             date_paiement: echeances.get(&siret_urssaf).copied(),
             destinataire: Destinataire::Urssaf,
             reste: Montant::ZERO.decimal(),
@@ -4991,7 +4992,7 @@ certificat de conformite du depot precedent.",
     f.add(droit::rubrique!("S21.G00.22.004"), fin_m.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.22.005"), mt(mt_urssaf));
     ecrire_lignes_23(&mut f, &lignes_23)?;
-    let mut bordereaux = vec![BordereauEcrit { debut: debut_mois, fin: fin_m, total: mt_urssaf, lignes: lignes_23.clone() }];
+    let mut bordereaux = vec![BordereauEcrit { periode: periode_du_mois, total: mt_urssaf, lignes: lignes_23.clone() }];
     for ((mois_o, lignes), (_, montant)) in lignes_o.iter().zip(&montants_o) {
         let d_o = mois_o.premier_jour();
         f.add(droit::rubrique!("S21.G00.22.001"), &siret_urssaf);
@@ -4999,7 +5000,7 @@ certificat de conformite du depot precedent.",
         f.add(droit::rubrique!("S21.G00.22.004"), d_o.mois_civil().dernier_jour().jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.22.005"), mt(*montant));
         ecrire_lignes_23(&mut f, lignes)?;
-        bordereaux.push(BordereauEcrit { debut: d_o, fin: d_o.mois_civil().dernier_jour(), total: *montant, lignes: lignes.clone() });
+        bordereaux.push(BordereauEcrit { periode: Periode::du_mois(*mois_o), total: *montant, lignes: lignes.clone() });
     }
     // L'assujettissement fiscal : une fois l'an, dans la DSN de decembre, apres les bordereaux et avant les
     // individus (arborescence de la norme, p. 118, `chapitre-8-arborescences.txt` : 20, 55, 22, 23, 44, 30) ;
@@ -5173,8 +5174,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
                     organisme: siret.clone(),
                     reference: reference_versement(v, &ent),
                     montant: a.montant,
-                    debut: debut_mois,
-                    fin: fin_m,
+                    periode: periode_du_mois,
                     date_paiement: echeances.get(&siret).copied(),
                     destinataire: Destinataire::Complementaire,
                     reste: a.credit,
@@ -5193,7 +5193,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
         arrondi.rescale(2);
         let montant = bordereau::a_verser(arrondi).montant;
         let reste = if montant.is_zero() { (-du).max(Montant::ZERO.decimal()) } else { Montant::ZERO.decimal() };
-        ordres.insert(0, Some(Ordre { organisme: DGFIP, reference: Some(DGFIP_PAS.to_string()), montant, debut: debut_mois, fin: fin_m, date_paiement: None, destinataire: Destinataire::Dgfip, reste, deduit: Montant::ZERO.decimal() }));
+        ordres.insert(0, Some(Ordre { organisme: DGFIP, reference: Some(DGFIP_PAS.to_string()), montant, periode: periode_du_mois, date_paiement: None, destinataire: Destinataire::Dgfip, reste, deduit: Montant::ZERO.decimal() }));
     }
     f.lignes.splice(place_dgfip..place_dgfip, dgfip);
 
@@ -5436,12 +5436,12 @@ mod tests {
     /// travail » (S21.G00.60.010, p. 269) : le dernier jour d'arret est la veille.
     #[test]
     fn un_arret_repris_le_premier_du_mois_ne_couvre_pas_ce_mois() {
-        let (juin, juillet) = ((j(2026, 6, 1), j(2026, 6, 30)), (j(2026, 7, 1), j(2026, 7, 31)));
+        let (juin, juillet) = (Periode::du_mois(j(2026, 6, 1).mois_civil()), Periode::du_mois(j(2026, 7, 1).mois_civil()));
         let repris_le_1er = arret(Some(j(2026, 7, 1)), j(2026, 7, 3));
-        assert!(repris_le_1er.couvre(&juin.0, &juin.1).unwrap());
-        assert!(!repris_le_1er.couvre(&juillet.0, &juillet.1).unwrap(), "aucun jour d'arret en juillet");
-        assert!(arret(Some(j(2026, 7, 2)), j(2026, 7, 3)).couvre(&juillet.0, &juillet.1).unwrap(), "le 1er juillet est arrete");
-        assert!(arret(None, j(2026, 7, 1)).couvre(&juillet.0, &juillet.1).unwrap(), "la fin previsionnelle est un jour d'arret");
-        assert!(!arret(None, j(2026, 6, 30)).couvre(&juillet.0, &juillet.1).unwrap());
+        assert!(repris_le_1er.couvre(&juin).unwrap());
+        assert!(!repris_le_1er.couvre(&juillet).unwrap(), "aucun jour d'arret en juillet");
+        assert!(arret(Some(j(2026, 7, 2)), j(2026, 7, 3)).couvre(&juillet).unwrap(), "le 1er juillet est arrete");
+        assert!(arret(None, j(2026, 7, 1)).couvre(&juillet).unwrap(), "la fin previsionnelle est un jour d'arret");
+        assert!(!arret(None, j(2026, 6, 30)).couvre(&juillet).unwrap());
     }
 }

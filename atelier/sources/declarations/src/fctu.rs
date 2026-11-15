@@ -9,7 +9,7 @@ use droit::fiche::Lue as _;
 
 use droit::base_assujettie::BaseAssujettie;
 use droit::contexte::{aujourdhui, Contexte};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use crate::dsn::{
     autre_revenu, bases_et_cotisations, bloc_anciennete, bloc_contrat_fctu, primes_et_indemnites,
     remunerations, usage_admet, Arret, Fichier, LOGICIEL, VERSION,
@@ -447,7 +447,7 @@ ou un annule.",
         Some(j) => j,
         None => aujourdhui()?,
     };
-    let (debut_p, fin_p) = (e.debut_periode(), e.fin_periode());
+    let payee = e.periode_payee()?;
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference :
     // `note`) ; un jour que la donnee ne couvre pas refuse.
@@ -534,29 +534,27 @@ ou un annule.",
     // ------------------------------------------------------------ S21 contrat
     let siens: Vec<&Arret> = arrets.iter().collect();
     // Les emplois multiples (`40.036`) : les autres contrats du salarie dans la periode de paie du signalement.
-    let du_mois = crate::dsn::contrats_du_mois(ctx, debut_p.mois_civil(), departs)?;
+    let du_mois = crate::dsn::contrats_du_mois(ctx, payee.debut().mois_civil(), departs)?;
     let emplois = crate::dsn::emplois_multiples(paie, &du_mois.iter().collect::<Vec<_>>());
     bloc_contrat_fctu(&mut f, paie, &ent_l, &orgs, 1, &bar, true, &siens, NATURE, Some(fin), emplois)?;
 
     // ------------------------------------------------------------ S21 versement
     // La date de versement : la fin de la periode de paie.
-    f.add(droit::rubrique!("S21.G00.50.001"), fin_p.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.50.001"), payee.fin().jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.50.003"), "01");
     f.add(droit::rubrique!("S21.G00.50.020"), defaut(&nomenclatures()?.rattachement_versement, "rattachement_versement")?);
     // Un mois decoupe en periodes elementaires : les remunerations et les bases de chacune, datees de ses bornes.
-    let bornes = |q: &engagement::calcul::Paie| -> R<(Jour, Jour)> {
-        if paie.periodes.is_empty() { Ok((debut_p, fin_p)) } else { Ok((q.engagement.debut_periode(), q.engagement.fin_periode())) }
+    let bornes = |q: &engagement::calcul::Paie| -> R<Periode> {
+        if paie.periodes.is_empty() { Ok(payee) } else { q.engagement.periode_payee() }
     };
     for q in paie.elementaires() {
-        let (d, f_) = bornes(q)?;
-        remunerations(&mut f, q, &d, &f_, 1)?;
+        remunerations(&mut f, q, &bornes(q)?, 1)?;
     }
-    primes_et_indemnites(&mut f, paie, &debut_p, &fin_p, 1)?;
-    autre_revenu(&mut f, paie, &bar, &debut_p, &fin_p, 1)?;
+    primes_et_indemnites(&mut f, paie, &payee, 1)?;
+    autre_revenu(&mut f, paie, &bar, &payee, 1)?;
     // Les bases de prevoyance ne partent pas dans un FCTU (CCH-14, p. 293).
     for q in paie.elementaires() {
-        let (d, f_) = bornes(q)?;
-        bases_et_cotisations(&mut f, q, &bar, 1, &d, &f_, 1, NATURE, &BASES_INTERDITES)?;
+        bases_et_cotisations(&mut f, q, &bar, 1, &bornes(q)?, 1, NATURE, &BASES_INTERDITES)?;
     }
 
     // ------------------------------------------------------------ S21 anciennete
