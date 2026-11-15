@@ -701,7 +701,10 @@ fn prochain_avenant(deja: &[AvenantParti]) -> R<NumeroDAvenant> {
         let n = a.numero.ok_or_else(|| erreur(Classe::MalFormee, "Un avenant revenu signé n'a pas de numéro au journal des envois."))?;
         dernier = dernier.max(Some(n));
     }
-    Ok(dernier.map_or(NumeroDAvenant::premier(), NumeroDAvenant::suivant))
+    Ok(match dernier {
+        Some(n) => n.suivant(),
+        None => NumeroDAvenant::premier(),
+    })
 }
 
 /// `demander-signature` : faire signer, en un geste, les contrats choisis et les avenants coches. Tous les refus
