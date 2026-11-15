@@ -1408,10 +1408,9 @@ impl RangCorps {
     }
 }
 
-/// Une grandeur lue, telle qu'une phrase du compte rendu la cite : son texte, son echelle gardee (`ecrit::texte`, qui
-/// ne refuse aucune grandeur ; son refus se citerait tel quel).
+/// Une grandeur lue, telle qu'une phrase du compte rendu la cite : son texte, son echelle gardee.
 fn tel_que_lu<G: Grandeur>(g: G) -> String {
-    socle::grandeurs::ecrit::texte::texte(g).unwrap_or_else(|pourquoi| pourquoi)
+    socle::grandeurs::ecrit::texte::dit(g)
 }
 
 /// Un montant ecrit sur une piece (`lire_nombre`), en euros.

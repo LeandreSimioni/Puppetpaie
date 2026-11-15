@@ -868,7 +868,12 @@ pub mod ecrit {
         use crate::grandeurs::Grandeur;
 
         pub fn texte<G: Grandeur>(g: G) -> Result<String, String> {
-            Ok(g.en_decimal().to_string())
+            Ok(dit(g))
+        }
+
+        /// La meme, telle qu'une phrase la cite (`12.50`).
+        pub fn dit<G: Grandeur>(g: G) -> String {
+            g.en_decimal().to_string()
         }
 
         /// Relue exactement de son texte, son echelle gardee (un nombre JSON ne se lit pas ainsi).
