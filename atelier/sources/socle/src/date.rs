@@ -248,7 +248,11 @@ impl Periode {
     /// facultative). Refus quand il ne lui en reste aucun.
     #[track_caller]
     pub fn bornee(&self, debut: Jour, fin: Option<Jour>) -> R<Periode> {
-        Periode::du_au(self.debut.max(debut), fin.map_or(self.fin, |f| self.fin.min(f)))
+        let au = match fin {
+            Some(f) => self.fin.min(f),
+            None => self.fin,
+        };
+        Periode::du_au(self.debut.max(debut), au)
     }
 
     /// Les mois civils qu'elle touche, du premier au dernier.

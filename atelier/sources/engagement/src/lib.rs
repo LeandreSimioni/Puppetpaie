@@ -767,7 +767,11 @@ impl Engagement {
     /// Les mois AAAA-MM que couvre le contrat, du premier au dernier : un contrat sans fin court jusqu'au mois de paie.
     /// Refus : un contrat qui finit avant son debut.
     pub fn mois_du_contrat(&self) -> R<Vec<Mois>> {
-        Ok(socle::date::Periode::du_au(self.debut, self.fin.unwrap_or(self.fin_mois()))?.mois())
+        let au = match self.fin {
+            Some(f) => f,
+            None => self.fin_mois(),
+        };
+        Ok(socle::date::Periode::du_au(self.debut, au)?.mois())
     }
 
     // ------------------------------------------------------------ les lieux
