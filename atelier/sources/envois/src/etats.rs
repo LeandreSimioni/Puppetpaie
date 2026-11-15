@@ -1357,12 +1357,12 @@ mod tests {
     }
 
     /// Une ligne du journal, ecrite en JSON (`detail`, `retours` : du JSON) et lue en sa forme.
-    fn ligne(quoi: &str, mode: &str, quand: &str, empreinte: &str, fichier: &str, accepte: bool, flux: &str, detail: &str, retours: &str) -> Ligne {
+    fn ligne(quoi: &str, mode: &str, quand: &str, empreinte: &str, fichier: &str, accepte: bool, flux: Option<&str>, detail: &str, retours: &str) -> Ligne {
         let texte = format!(
             "{{\"quoi\": \"{}\", \"quand\": \"{}\", \"origine\": \"\", \"mois\": \"2026-06\", \"fichier\": \"{}\", \"empreinte\": \"{}\", \
-             \"mode\": \"{}\", \"qui\": \"?\", \"accepte\": {}, \"destinataire\": \"\", \"flux\": \"{}\", \"retours\": {}, \
+             \"mode\": \"{}\", \"qui\": \"?\", \"accepte\": {}, \"destinataire\": \"\", \"flux\": {}, \"retours\": {}, \
              \"reponse\": \"\", \"trace\": null, \"detail\": {}}}",
-            quoi, quand, fichier, empreinte, mode, accepte, flux, retours, detail
+            quoi, quand, fichier, empreinte, mode, accepte, socle::ecriture::json_en_ligne(&flux), retours, detail
         );
         socle::forme::lire_texte(&texte, "ligne de test").unwrap()
     }
@@ -1384,7 +1384,7 @@ mod tests {
     }
 
     fn signature(quand: &str, c: &str, retours: &str) -> Ligne {
-        ligne("contrat-signature", "reel", quand, "e100000000000000","f.dsn", true, "", &format!("{{\"contrats\": [{}], \"remise\": \"courriel\"}}", c), retours)
+        ligne("contrat-signature", "reel", quand, "e100000000000000","f.dsn", true, None, &format!("{{\"contrats\": [{}], \"remise\": \"courriel\"}}", c), retours)
     }
 
     #[test]
@@ -1401,7 +1401,7 @@ mod tests {
     #[test]
     fn la_repetition_et_le_deja_depose() {
         let avec = |mode: &str, quand: &str, empreinte: &str, fichier: &str, accepte: bool, retours: &str| {
-            ligne("dsn", mode, quand, empreinte, fichier, accepte, "", "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", retours)
+            ligne("dsn", mode, quand, empreinte, fichier, accepte, None, "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", retours)
         };
         let l = vec![
             avec("test", "2026-06-01T09:00:00", "eb00000000000000", "DSN.dsn", true, "[]"),
@@ -1430,8 +1430,8 @@ mod tests {
 
     #[test]
     fn le_rattachement_pose_le_verdict_et_signale_l_incident() {
-        let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, "WSBBBB", "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", "[]");
-        let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, "WSCCCC", "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
+        let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, Some("WSBBBB"), "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", "[]");
+        let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, Some("WSCCCC"), "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
         let annonce = |flux: &str, nature: NatureDuRetour, seconde: i64| Annonce {
             publication: Some(socle::paris::Moment::a_paris(Jour::nouveau(2026, 6, 1).unwrap(), 11, 0, seconde).unwrap()),

@@ -185,6 +185,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
+| heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h) | à créer (#419) : `HeuresParUnite` (Léandre, 15/11) ; quantité × heures par unité = `Heures` | `heures`, `heures_forfait` en `Decimal` |
 | version d'un engagement | à créer (#419) : `VersionDeLEngagement` | des entiers nus |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
 

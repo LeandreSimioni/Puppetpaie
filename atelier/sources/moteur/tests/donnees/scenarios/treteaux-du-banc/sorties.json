@@ -81,8 +81,7 @@
             "fin_periode": "2026-11-21",
             "quotite": "2",
             "sans_paie": false,
-            "premier_mois": true,
-            "dernier_mois": true,
+            "place": "seul",
             "mois_du_contrat": [
               "2026-11"
             ]
@@ -1281,7 +1280,7 @@
         "qui": "interface",
         "accepte": true,
         "destinataire": "loie.fuller@exemple.invalid",
-        "flux": "",
+        "flux": null,
         "retours": [
           {
             "salarie": "FULLER",
@@ -1332,7 +1331,7 @@
               "modele": "4fd274f6ca0de4b1"
             }
           ],
-          "main_propre": false,
+          "remise": "courriel",
           "expediteur": "fictive@puppetpaie.invalid",
           "relance": false
         },
@@ -1355,7 +1354,7 @@
         "qui": "interface",
         "accepte": true,
         "destinataire": "loie.fuller@exemple.invalid",
-        "flux": "",
+        "flux": null,
         "retours": [],
         "reponse": "contrat contresigne renvoye au salarie",
         "trace": null,
@@ -1763,7 +1762,7 @@
         "qui": "horloge",
         "accepte": true,
         "destinataire": "loie.fuller@exemple.invalid",
-        "flux": "",
+        "flux": null,
         "retours": [],
         "reponse": "1 message(s) envoye(s)",
         "trace": null,
@@ -1798,7 +1797,7 @@
               "renvoi": false
             }
           ],
-          "main_propre": false,
+          "remise": "courriel",
           "expediteur": "fictive@puppetpaie.invalid",
           "durees_ms": {
             "preparation": 0,
@@ -1816,15 +1815,15 @@
       }
     ],
     "journal/dsn-ecrites.json": {
-      "2026-11/DPAE_Novembre2026_20261120-0700.txt": {
+      "2026-11/Amorcage01_FULLER_20261120.dsn": {
         "quand": "2026-11-20T07:00:00"
       },
-      "2026-11/Amorcage01_FULLER_20261120.dsn": {
+      "2026-11/DPAE_Novembre2026_20261120-0700.txt": {
         "quand": "2026-11-20T07:00:00"
       },
       "2026-11/DSN_Novembre2026.dsn": {
         "quand": "2026-12-15T10:00:00",
-        "empreinte_saisie": "c5a612c758068bc1",
+        "empreinte_saisie": "ea4c75e6b86f8f2c",
         "versions_portees": []
       }
     },
@@ -1914,8 +1913,7 @@
                 "fin_periode": "2026-11-21",
                 "quotite": "2",
                 "sans_paie": false,
-                "premier_mois": true,
-                "dernier_mois": true,
+                "place": "seul",
                 "mois_du_contrat": [
                   "2026-11"
                 ]
