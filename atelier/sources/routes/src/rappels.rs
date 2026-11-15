@@ -175,7 +175,7 @@ impl TryFrom<String> for CleDEcheance {
         let cle = match (quoi, reste.rsplit_once(':')) {
             (DSN, None) => lu::<Mois>(reste).map(CleDEcheance::Dsn),
             (DPAE, None) => lu::<Jour>(reste).map(CleDEcheance::Dpae),
-            (_, None) => match (CleDAnnuelle::lire(quoi).ok(), lu::<Annee>(reste)) {
+            (_, None) => match (CleDAnnuelle::lire(quoi).ok(), socle::forme::lire_texte::<Annee>(reste, "").ok()) {
                 (Some(quoi), Some(annee)) => Some(CleDEcheance::DeLAnnee { quoi, annee }),
                 _ => None,
             },
