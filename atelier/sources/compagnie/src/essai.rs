@@ -402,7 +402,7 @@ fn absolu(p: &Path) -> R<PathBuf> {
 /// Le depot Git ou l'installation qui contient `dossier`, s'il y en a un : la copie porterait l'identite d'une vraie compagnie,
 /// elle ne va jamais la ou un `git add` la prendrait, ni a cote de ce que les gens recoivent.
 fn depot_englobant(dossier: &Path) -> R<Option<PathBuf>> {
-    Ok(absolu(dossier)?.ancestors().find(|a| a.join(".git").exists() || a.join("logiciel").join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf))
+    Ok(absolu(dossier)?.ancestors().find(|a| a.join(".git").exists() || a.join(crate::maj::LOGICIEL).join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf))
 }
 
 fn copier(src: &Path, dst: &Path, racine: &Path) -> R<()> {

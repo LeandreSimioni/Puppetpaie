@@ -55,7 +55,7 @@ pub fn fixer_le_code() -> R<()> {
             let exe = std::env::current_exe().map_err(|e| socle::echec::du_disque(Path::new("le programme"), &e))?;
             for a in exe.ancestors().skip(1) {
                 candidats.push(a.join("donnees"));
-                candidats.push(a.join("logiciel").join("donnees"));
+                candidats.push(a.join(crate::maj::LOGICIEL).join("donnees"));
             }
             candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
         }
