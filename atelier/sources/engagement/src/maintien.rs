@@ -47,7 +47,7 @@ use droit::natures::Nature;
 /// antérieurs », `atelier/reference/sources/code-du-travail/xml/D1226-4.xml`).
 const DOUZE_MOIS: Duree<EnMois> = Duree::mois(12);
 use droit::permanents::{Principe, PrincipeAccident};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
 use socle::forme::Nombre;
@@ -234,11 +234,11 @@ pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte)
 
 // ------------------------------------------------------------------ la subrogation
 
-/// La subrogation d'un arret, `(debut, fin)`, ou `None`. Elle vient avec le maintien : la convention qui la donne a tout
+/// La periode de la subrogation d'un arret, ou `None`. Elle vient avec le maintien : la convention qui la donne a tout
 /// salarie (1285, X.4.6 : « tout salarie beneficie de la subrogation et du maintien de son salaire brut »), sinon le choix
 /// de la compagnie (fiche entreprise, `subrogation_ij`) ; ses dates vont du premier jour de l'arret a la fin de la duree
 /// maximale du maintien (« Il ne faut surtout pas se limiter a la date de fin de l'arret », ameli).
-pub fn subrogation(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<(Jour, Jour)>> {
+pub fn subrogation(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Periode>> {
     let Some(dr) = droits(ctx, imp, nat)? else { return Ok(None) };
     let regimes: Vec<&Regime> = [Texte::Loi, Texte::Convention].iter().filter_map(|t| dr.regime(*t)).collect();
     if regimes.is_empty() {
@@ -255,7 +255,7 @@ pub fn subrogation(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<(
     for r in regimes {
         fin = fin.max(fin_possible(r, &premier, &dernier)?);
     }
-    Ok(Some((premier, fin)))
+    Ok(Some(Periode::du_au(premier, fin)?))
 }
 
 // ------------------------------------------------------------------ le mois
@@ -315,17 +315,17 @@ fn jours_de_la_caisse(origine: Origine) -> R<(i64, Option<i64>)> {
     })
 }
 
-/// Une suite de jours d'absence du mois au meme pourcentage : ses bornes et son pourcentage.
-fn suites(taux: &[Coefficient], premier: &Jour, debut: &Jour, fin: &Jour) -> R<Vec<(Jour, Jour, Coefficient)>> {
-    let mut out: Vec<(Jour, Jour, Coefficient)> = Vec::new();
+/// Une suite de jours d'absence du mois au meme pourcentage : sa periode et son pourcentage.
+fn suites(taux: &[Coefficient], premier: &Jour, debut: &Jour, fin: &Jour) -> R<Vec<(Periode, Coefficient)>> {
+    let mut out: Vec<(Periode, Coefficient)> = Vec::new();
     for (i, x) in taux.iter().enumerate() {
         let j = premier.plus_jours(i as i64)?;
         if j < *debut || j > *fin {
             continue;
         }
         match out.last_mut() {
-            Some(s) if s.2 == *x && s.1.plus_jours(1)? == j => s.1 = j,
-            _ => out.push((j.clone(), j, *x)),
+            Some((s, f)) if *f == *x && s.fin().plus_jours(1)? == j => *s = Periode::du_au(s.debut(), j)?,
+            _ => out.push((Periode::du_jour(j), *x)),
         }
     }
     Ok(out)
@@ -430,9 +430,9 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         let mut parts = Vec::new();
         let mut hors_garantie = Decimal::ZERO;
         let mut heures = Heures::ZERO;
-        for (a, b, f) in suites(&taux, &premier, &debut, &fin)? {
-            let (x, h) = retenue(m, taux_horaire, &a, &b)?;
-            let (ib, inet) = ij_de(&a, &b)?;
+        for (s, f) in suites(&taux, &premier, &debut, &fin)? {
+            let (x, h) = retenue(m, taux_horaire, &s.debut(), &s.fin())?;
+            let (ib, inet) = ij_de(&s.debut(), &s.fin())?;
             parts.push((x, f));
             if f > Coefficient::du_decimal(Decimal::ZERO) {
                 let gs = (Montant::du_decimal(x) * f).decimal();

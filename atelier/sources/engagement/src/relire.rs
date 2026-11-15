@@ -103,7 +103,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     for (n, x) in v.periodes.iter().enumerate() {
         let e = &x.engagement;
         let mut sub = eng.clone();
-        sub.periode = Some((e.debut_periode, e.fin_periode));
+        sub.periode = Some(e.periode);
         sub.lignes = e.lignes.clone();
         // Une periode elementaire est celle d'un salarie au mois : sa quotite compte des heures.
         sub.quotite_contrat = Some(socle::grandeurs::courte(e.quotite.heures("La quotité d'une période élémentaire")?));

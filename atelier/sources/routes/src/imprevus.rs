@@ -1495,7 +1495,7 @@ fn ouvre_le_maintien(ctx: &Contexte, a: &ArretSaisi) -> R<bool> {
 
 /// LA SUBROGATION D'UN ARRET, telle que le moteur la tire de la convention et du choix de la compagnie
 /// (`engagement::maintien::subrogation`) : ses dates, ou rien (pas de subrogation).
-fn subrogation_tiree(ctx: &Contexte, a: &ArretSaisi) -> R<Option<(Jour, Jour)>> {
+fn subrogation_tiree(ctx: &Contexte, a: &ArretSaisi) -> R<Option<socle::date::Periode>> {
     match nature_du_contrat(ctx, a)? {
         Some(nat) => magasin(engagement::maintien::subrogation(ctx, a, &nat)),
         None => Ok(None),
@@ -1505,10 +1505,10 @@ fn subrogation_tiree(ctx: &Contexte, a: &ArretSaisi) -> R<Option<(Jour, Jour)>> 
 /// La subrogation tiree du droit (`subrogation_tiree`), posee sur l'arret : `01` et ses dates, ou `02`.
 pub(crate) fn poser_la_subrogation(ctx: &Contexte, a: &mut ArretSaisi) -> R<()> {
     match subrogation_tiree(ctx, a)? {
-        Some((d, f)) => {
+        Some(p) => {
             a.subrogation = Some(SubrogationDeLArret::Oui);
-            a.subrogation_debut = Some(d);
-            a.subrogation_fin = Some(f);
+            a.subrogation_debut = Some(p.debut());
+            a.subrogation_fin = Some(p.fin());
         }
         None => {
             a.subrogation = Some(SubrogationDeLArret::Non);
@@ -1580,8 +1580,8 @@ plus tôt, c'est une reprise anticipée, qui se saisit comme telle et se signale
     // Une subrogation qui dure tant que la caisse indemnise (1285, X.4.7) suit la fin de l'arret ; les autres vont deja
     // jusqu'au maximum du maintien (`engagement::maintien::subrogation`).
     if signalement_subroge(&a)? {
-        if let Some((_, sub_fin)) = subrogation_tiree(ctx, &a)? {
-            a.subrogation_fin = Some(sub_fin);
+        if let Some(sub) = subrogation_tiree(ctx, &a)? {
+            a.subrogation_fin = Some(sub.fin());
         }
     }
     verifier(&a)?;

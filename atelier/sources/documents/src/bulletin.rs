@@ -481,7 +481,7 @@ fn tableau_conges(cpt: &CompteurConges) -> Bloc {
                 vec![
                     m("CONGÉS PAYÉS", true, None),
                     mt("\n"),
-                    mt(format!("période du {} au {}", cpt.periode_debut.jj_mm_aaaa(), cpt.periode_fin.jj_mm_aaaa())),
+                    mt(format!("période du {} au {}", cpt.periode.debut().jj_mm_aaaa(), cpt.periode.fin().jj_mm_aaaa())),
                 ],
                 Some(ARDOISE),
             ),

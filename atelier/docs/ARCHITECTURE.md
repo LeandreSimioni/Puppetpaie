@@ -202,7 +202,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | mois de l'année | `MoisDeLAnnee` | `socle/src/mois.rs` |
 | mois ou jour | `MoisOuJour` | `socle/src/mois.rs` |
 | année | `Annee` ; à unifier (#419) : des `i32` | `socle/src/mois.rs` |
-| période | à créer (#419) : `Periode` | — |
+| période | `Periode` | `socle/src/date.rs` |
 | durée de droit | `Duree<EnJours>`, `Duree<EnMois>` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
 | durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
@@ -229,7 +229,11 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   toute clé (`"2025"`, la clé de `paies_annuelles`). Elle se calcule par ses
   opérations (`precedente`, `suivante`, `les_precedentes`, `jusqu_a`, ses mois et ses jours), jamais en nombre ; une
   année qu'un texte fixe s'écrit `Annee::constante`.
-- **période** : deux jours bornes, du … au … ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres.
+- **période** : deux jours bornes, l'un et l'autre compris, le premier pas après le second ; elle ne se construit que
+  par `Periode::du_au`, qui refuse un début après la fin (`du_jour`, `du_mois` : un jour, un mois civil). Ses bornes
+  (`debut`, `fin`), ses jours (`jours`), sa durée (`duree`, en `Duree<EnJours>`), ce qu'elle contient et ce qu'elle a de
+  commun avec une autre (`contient`, `croise`) se lisent d'elle. Elle s'écrit `{"du": "AAAA-MM-JJ", "au": "AAAA-MM-JJ"}`
+  et se dit dans une phrase « du 1er au 15 octobre 2026 » (`Display`).
 - **durée de droit** : des jours ou des mois de calendrier, jamais négative ; son nombre ne sort pas. **Son unité est
   dans son type** : `Duree<U>`, où `U` est `EnJours` ou `EnMois` (les marqueurs du socle ; `Unite`, scellé, n'en admet
   pas d'autre) ; une année d'un texte est douze mois. Une durée qu'un texte fixe s'écrit `Duree::jours`, `Duree::mois`,

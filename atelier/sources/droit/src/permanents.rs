@@ -6,7 +6,7 @@
 use crate::natures::{MotifDeRupture, Nature};
 use crate::source::Fondement;
 use serde::{Deserialize, Serialize};
-use socle::date::{jours_du_mois, Anciennete, Duree, EnJours, EnMois, Jour};
+use socle::date::{jours_du_mois, Anciennete, Duree, EnJours, EnMois, Jour, Periode};
 use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
@@ -693,14 +693,14 @@ fn dit(liste: &ParMotif, motif: Option<MotifDeRupture>) -> Option<String> {
 
 // --------------------------------------------------------------- les conges
 /// Les bornes de la periode de reference qui contient `jour` : du 1er juin au 31 mai (`conges_payes.periode_de_reference`).
-pub fn periode_de_reference(jour: &Jour) -> R<(Jour, Jour)> {
+pub fn periode_de_reference(jour: &Jour) -> R<Periode> {
     let rg = regles()?;
     let r = &rg.conges_payes.periode_de_reference;
     let (mois, dj) = (r.debut_mois, r.debut_jour);
     let an = if (jour.mois as i64, jour.jour as i64) >= (mois, dj) { jour.an } else { jour.an - 1 } as i64;
     let debut = date_ou_refus(an, mois, dj)?;
     let fin = date_ou_refus(an + 1, mois, dj)?.plus_jours(-1)?;
-    Ok((debut, fin))
+    Periode::du_au(debut, fin)
 }
 
 /// Les jours ouvrables acquis sur une periode de presence : 2,5 par mois,

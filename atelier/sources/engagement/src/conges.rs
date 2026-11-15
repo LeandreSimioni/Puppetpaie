@@ -25,7 +25,7 @@ use droit::catalogue::rubrique;
 use droit::clauses;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::natures::AuMois;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::mois::Mois;
 use crate::{Avis, Chiffre, LignePaie};
 use socle::feries;
@@ -163,8 +163,8 @@ pub(crate) fn dec_de(n: &NombreLu) -> R<Decimal> {
 
 /// Les jours ouvrables d'un conge pris dans une entreprise qui chome `chomes` (`droit::conges::jours_ouvrables`).
 pub(crate) fn jours_ouvrables_de(c: &CongePris, chomes: Option<&str>) -> R<i64> {
-    let (debut, fin) = c.jours()?;
-    jours_ouvrables(&debut, &fin, chomes)
+    let p = c.jours()?;
+    jours_ouvrables(&p.debut(), &p.fin(), chomes)
 }
 
 // ------------------------------------------------ le compteur de conges
@@ -175,8 +175,8 @@ pub(crate) fn jours_ouvrables_de(c: &CongePris, chomes: Option<&str>) -> R<i64> 
 #[serde(deny_unknown_fields)]
 pub struct CompteurConges {
     pub salarie: IdSalarie,
-    pub periode_debut: Jour,
-    pub periode_fin: Jour,
+    /// La periode de reference.
+    pub periode: Periode,
     /// Jours ouvrables, compte exact.
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
     pub acquis: Decimal,
@@ -188,8 +188,9 @@ pub struct CompteurConges {
     /// Ce qui reste des jours acquis sur la periode precedente.
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
     pub reports: Decimal,
-    pub report_debut: Option<Jour>,
-    pub report_fin: Option<Jour>,
+    /// La periode ou le report a ete acquis.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report: Option<Periode>,
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
     pub acquis_report: Decimal,
     /// L'assiette du dixieme de la periode du report (zero sans report).
@@ -234,8 +235,8 @@ impl CompteurConges {
         };
         format!(
             "conges payes du {} au {} : {}{} jours acquis, {} pris, solde {} jours ouvrables",
-            self.periode_debut.jj_mm_aaaa(),
-            self.periode_fin.jj_mm_aaaa(),
+            self.periode.debut().jj_mm_aaaa(),
+            self.periode.fin().jj_mm_aaaa(),
             report,
             arrondir_jours(self.acquis),
             arrondir_jours(self.pris),
@@ -462,34 +463,34 @@ struct Tenue {
 }
 
 impl Tenue {
-    /// Ce que la periode [debut, fin] tient de la reprise de l'ancien logiciel, avant tout mois produit ici.
-    fn ouvrir(rep: Option<&Reprise>, debut: &Jour, fin: &Jour) -> R<Tenue> {
+    /// Ce que la periode `p` tient de la reprise de l'ancien logiciel, avant tout mois produit ici.
+    fn ouvrir(rep: Option<&Reprise>, p: &Periode) -> R<Tenue> {
         let mut t = Tenue { acquis: Decimal::ZERO, pris: Decimal::ZERO, brut: Montant::ZERO, avis: Vec::new() };
         let Some(r) = rep else { return Ok(t) };
-        if *debut <= r.date && r.date <= *fin {
+        if p.contient(&r.date) {
             t.acquis = add(t.acquis, r.acquis);
             t.pris += r.pris;
             t.brut += r.remuneration_periode;
-        } else if *fin == periode_de_reference(&r.date)?.0.plus_jours(-1)? {
+        } else if p.fin() == periode_de_reference(&r.date)?.debut().plus_jours(-1)? {
             t.brut += r.remuneration_report;
         }
         Ok(t)
     }
 
-    /// Ce que les paies validees `paies` du salarie (`cle`, la cle de sa fiche) en `mois` apportent a la periode [debut,
-    /// fin] : sa presence, ses jours pris, et, avec `remuneration`, son brut d'un mois ou il est present.
+    /// Ce que les paies validees `paies` du salarie (`cle`, la cle de sa fiche) en `mois` apportent a la periode
+    /// `periode` : sa presence, ses jours pris, et, avec `remuneration`, son brut d'un mois ou il est present.
     fn ajouter(
-        &mut self, ctx: &Contexte, cle_salarie: &IdSalarie, cle: &IdSalarie, rep: Option<&Reprise>, debut: &Jour, fin: &Jour, mois: Mois,
+        &mut self, ctx: &Contexte, cle_salarie: &IdSalarie, cle: &IdSalarie, rep: Option<&Reprise>, periode: &Periode, mois: Mois,
         paies: &[PaieLue], remuneration: bool,
     ) -> R<()> {
         let mut present = false;
         for m in paies.iter().filter_map(|p| p.mensuel.as_ref()) {
             // La presence du mois, bornee a la periode et a la reprise.
-            let mut p_debut = m.debut.max(*debut);
+            let mut p_debut = m.debut.max(periode.debut());
             if let Some(r) = rep {
                 p_debut = p_debut.max(r.date);
             }
-            let p_fin = m.fin.min(*fin);
+            let p_fin = m.fin.min(periode.fin());
             if p_fin < p_debut {
                 continue;
             }
@@ -532,16 +533,15 @@ fn periode(
     ctx: &Contexte,
     au: &AuMois,
     cle_salarie: &IdSalarie,
-    debut: &Jour,
-    fin: &Jour,
+    p: &Periode,
     lus: Lus,
     remuneration: bool,
 ) -> R<(Decimal, Decimal, Montant, Vec<Avis>)> {
     let rep = reprise_conges(ctx, au, cle_salarie)?;
-    let mut t = Tenue::ouvrir(rep.as_ref(), debut, fin)?;
+    let mut t = Tenue::ouvrir(rep.as_ref(), p)?;
     let cle = cle_de_fiche(ctx, cle_salarie)?;
-    for (mois, paies) in mois_de_la_periode(ctx, &cle, debut, fin, lus)? {
-        t.ajouter(ctx, cle_salarie, &cle, rep.as_ref(), debut, fin, mois, &paies, remuneration)?;
+    for (mois, paies) in mois_de_la_periode(ctx, &cle, p, lus)? {
+        t.ajouter(ctx, cle_salarie, &cle, rep.as_ref(), p, mois, &paies, remuneration)?;
     }
     Ok((plafonner(t.acquis)?, t.pris, t.brut, t.avis))
 }
@@ -553,12 +553,12 @@ fn compteur(
     a_la_date: &Jour,
     lus: Lus,
 ) -> R<Avant> {
-    let (debut, fin) = periode_de_reference(a_la_date)?;
-    let (acquis, pris, remuneration, avert) = periode(ctx, au, cle_salarie, &debut, &fin, lus, true)?;
-    let report = report(ctx, au, cle_salarie, &debut, lus)?;
+    let reference = periode_de_reference(a_la_date)?;
+    let (acquis, pris, remuneration, avert) = periode(ctx, au, cle_salarie, &reference, lus, true)?;
+    let report = report(ctx, au, cle_salarie, &reference.debut(), lus)?;
     // Un jour du report se paie au dixieme de la periode ou il a ete acquis (`indemnite_des_jours`).
-    let remuneration_report = match (report.debut, report.fin) {
-        (Some(rd), Some(rf)) if report.reports > Decimal::ZERO => periode(ctx, au, cle_salarie, &rd, &rf, lus, true)?.2,
+    let remuneration_report = match report.periode {
+        Some(r) if report.reports > Decimal::ZERO => periode(ctx, au, cle_salarie, &r, lus, true)?.2,
         _ => Montant::ZERO,
     };
     let avis_du_report = report.avertissements.len();
@@ -567,18 +567,16 @@ fn compteur(
     Ok(Avant {
         compteur: CompteurConges {
             salarie: cle_salarie.clone(),
-            periode_debut: debut,
-            periode_fin: fin,
+            periode: reference,
             acquis,
             pris,
             remuneration_periode: remuneration,
             reports: report.reports,
             avertissements,
-            report_debut: report.debut,
-            report_fin: report.fin,
+            report: report.periode,
             acquis_report: report.acquis,
             remuneration_report,
-            pris_sur_la_periode: pris_de_la_reprise(ctx, au, cle_salarie, &debut, &fin)?,
+            pris_sur_la_periode: pris_de_la_reprise(ctx, au, cle_salarie, &reference)?,
         },
         avis_du_report,
         premier: report.premier,
@@ -593,8 +591,8 @@ fn compteur(
 /// mois d'avant n'a pas d'etat ecrit pour ce salarie, ou la reprise de sa fiche a change depuis), ou une periode de
 /// reference qui ne commence pas un premier du mois.
 fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jour, mois: Mois) -> R<Option<Avant>> {
-    let (debut, fin) = periode_de_reference(a_la_date)?;
-    if debut.jour != 1 {
+    let reference = periode_de_reference(a_la_date)?;
+    if reference.debut().jour != 1 {
         return Ok(None);
     }
     let precedent = mois.premier_jour().plus_jours(-1)?.mois_civil();
@@ -609,9 +607,9 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jou
     if a.avis_du_report > c.avertissements.len() {
         return Err(socle::echec::cle("Le compteur de congés du mois d'avant ne se relit pas : revalider l'engagement de ce mois.", "avis_du_report"));
     }
-    let (q_debut, q_fin) = (c.periode_debut, c.periode_fin);
+    let q = c.periode;
     let mut tenue = Tenue { acquis: c.acquis, pris: c.pris, brut: c.remuneration_periode, avis: c.avertissements[a.avis_du_report..].to_vec() };
-    tenue.ajouter(ctx, cle_salarie, &cle, rep.as_ref(), &q_debut, &q_fin, precedent, &paies, true)?;
+    tenue.ajouter(ctx, cle_salarie, &cle, rep.as_ref(), &q, precedent, &paies, true)?;
     let mut avis_du_report = c.avertissements[..a.avis_du_report].to_vec();
     let mensuel_au_precedent = paies.iter().any(|p| p.mensuel.is_some());
     let premier = a.premier.or_else(|| mensuel_au_precedent.then_some(precedent));
@@ -620,22 +618,20 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jou
             avis_du_report.push(avis_commence_avant(cle_salarie, &avant, precedent));
         }
     }
-    let fini = |tenue: Tenue, reports, report_debut, report_fin, acquis_report, remuneration_report, pris_sur_la_periode, avis_du_report: Vec<Avis>| -> R<Avant> {
+    let fini = |tenue: Tenue, reports, report: Option<Periode>, acquis_report, remuneration_report, pris_sur_la_periode, avis_du_report: Vec<Avis>| -> R<Avant> {
         let n = avis_du_report.len();
         let mut avertissements = avis_du_report;
         avertissements.extend(tenue.avis);
         Ok(Avant {
             compteur: CompteurConges {
                 salarie: cle_salarie.clone(),
-                periode_debut: debut,
-                periode_fin: fin,
+                periode: reference,
                 acquis: plafonner(tenue.acquis)?,
                 pris: tenue.pris,
                 remuneration_periode: tenue.brut,
                 reports,
                 avertissements,
-                report_debut,
-                report_fin,
+                report,
                 acquis_report,
                 remuneration_report,
                 pris_sur_la_periode,
@@ -645,19 +641,19 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jou
             reprise: a.reprise.clone(),
         })
     };
-    if (q_debut, q_fin) == (debut, fin) {
-        return fini(tenue, c.reports, c.report_debut, c.report_fin, c.acquis_report, c.remuneration_report, c.pris_sur_la_periode, avis_du_report).map(Some);
+    if q == reference {
+        return fini(tenue, c.reports, c.report, c.acquis_report, c.remuneration_report, c.pris_sur_la_periode, avis_du_report).map(Some);
     }
-    if q_fin.plus_jours(1)? != debut {
+    if q.fin().plus_jours(1)? != reference.debut() {
         return Ok(None);
     }
     // La periode qui finit fait son report, si `report` la parcourt : depuis la periode de la reprise, ou depuis celle
     // du premier mois paye.
     let parcourue = match &rep {
-        Some(r) => periode_de_reference(&r.date)?.0 < debut,
+        Some(r) => periode_de_reference(&r.date)?.debut() < reference.debut(),
         None => premier.is_some(),
     };
-    let (mut reste, mut acquis_report, mut report_debut, mut report_fin) = (c.reports, c.acquis_report, c.report_debut, c.report_fin);
+    let (mut reste, mut acquis_report, mut report) = (c.reports, c.acquis_report, c.report);
     if parcourue {
         // L3141-7 : la periode qui se clot donne sa duree de conge, a l'entier superieur.
         let acquis_total = duree_du_conge(plafonner(tenue.acquis)?)?;
@@ -666,22 +662,21 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jou
         let sur_reste = pris.min(reste.max(Decimal::ZERO));
         let perdu = sub(reste.max(Decimal::ZERO), sur_reste);
         if perdu > Decimal::ZERO {
-            avis_du_report.push(avis_perdu(cle_salarie, perdu, &q_debut, &q_fin));
+            avis_du_report.push(avis_perdu(cle_salarie, perdu, &q));
         }
         reste = add(sub(acquis, sub(pris, sur_reste)), reste.min(Decimal::ZERO));
         acquis_report = acquis_total;
-        report_debut = Some(q_debut);
-        report_fin = Some(q_fin);
+        report = Some(q);
     }
     // Un jour du report se paie au dixieme de la periode ou il a ete acquis (`indemnite_des_jours`).
-    let remuneration_report = match (report_debut, report_fin) {
-        (Some(_), Some(_)) if reste > Decimal::ZERO && parcourue => tenue.brut,
-        (Some(_), Some(_)) if reste > Decimal::ZERO => c.remuneration_report,
+    let remuneration_report = match report {
+        Some(_) if reste > Decimal::ZERO && parcourue => tenue.brut,
+        Some(_) if reste > Decimal::ZERO => c.remuneration_report,
         _ => Montant::ZERO,
     };
-    let ouverte = Tenue::ouvrir(rep.as_ref(), &debut, &fin)?;
-    let pris_sur_la_periode = pris_de_la_reprise(ctx, au, cle_salarie, &debut, &fin)?;
-    fini(ouverte, reste, report_debut, report_fin, acquis_report, remuneration_report, pris_sur_la_periode, avis_du_report).map(Some)
+    let ouverte = Tenue::ouvrir(rep.as_ref(), &reference)?;
+    let pris_sur_la_periode = pris_de_la_reprise(ctx, au, cle_salarie, &reference)?;
+    fini(ouverte, reste, report, acquis_report, remuneration_report, pris_sur_la_periode, avis_du_report).map(Some)
 }
 
 /// L'avis d'un contrat commence avant le premier mois que ce logiciel a paye.
@@ -698,7 +693,7 @@ fn avis_commence_avant(cle_salarie: &IdSalarie, avant: &Jour, premier: Mois) -> 
 }
 
 /// L'avis des jours d'une periode de prise qui finit sans avoir ete pris.
-fn avis_perdu(cle_salarie: &IdSalarie, perdu: Decimal, p_debut: &Jour, p_fin: &Jour) -> Avis {
+fn avis_perdu(cle_salarie: &IdSalarie, perdu: Decimal, p: &Periode) -> Avis {
     avertir(format!(
         "{} : {} jour(s) de conges acquis avant le {} n'ont pas ete \
          pris au {}. Ils ne sont PAS reportes une seconde fois : un \
@@ -707,14 +702,14 @@ fn avis_perdu(cle_salarie: &IdSalarie, perdu: Decimal, p_debut: &Jour, p_fin: &J
          Si c'est le cas, a reprendre a la main.",
         cle_salarie,
         arrondir_jours(perdu),
-        p_debut.jj_mm_aaaa(),
-        p_fin.jj_mm_aaaa()
+        p.debut().jj_mm_aaaa(),
+        p.fin().jj_mm_aaaa()
     ))
 }
 
-fn pris_de_la_reprise(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debut: &Jour, fin: &Jour) -> R<Decimal> {
+fn pris_de_la_reprise(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, p: &Periode) -> R<Decimal> {
     // Les jours pris que la reprise recopie, quand elle tombe dans la periode.
-    Ok(reprise_conges(ctx, au, cle_salarie)?.into_iter().filter(|r| *debut <= r.date && r.date <= *fin).fold(Decimal::ZERO, |a, r| add(a, r.pris)))
+    Ok(reprise_conges(ctx, au, cle_salarie)?.into_iter().filter(|r| p.contient(&r.date)).fold(Decimal::ZERO, |a, r| add(a, r.pris)))
 }
 
 /// Le report de la periode precedente, periode par periode depuis le premier
@@ -723,30 +718,28 @@ fn pris_de_la_reprise(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debu
 struct Report {
     reports: Decimal,
     acquis: Decimal,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
+    periode: Option<Periode>,
     avertissements: Vec<Avis>,
     /// Le premier mois ou le salarie a la paie d'un contrat paye au mois (`premier_mois`).
     premier: Option<Mois>,
 }
 
 fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debut_courant: &Jour, lus: Lus) -> R<Report> {
-    let vide = Report { reports: Decimal::ZERO, acquis: Decimal::ZERO, debut: None, fin: None, avertissements: vec![], premier: None };
+    let vide = Report { reports: Decimal::ZERO, acquis: Decimal::ZERO, periode: None, avertissements: vec![], premier: None };
     let rep = reprise_conges(ctx, au, cle_salarie)?;
     let premier = premier_mois(ctx, cle_salarie, lus)?;
     let mut out = Report { avertissements: vec![], ..vide };
     let mut avert = Vec::new();
-    let (mut p_debut, mut p_fin, mut reste);
+    let (mut p, mut reste);
     if let Some(r) = &rep {
         // La reprise : le dernier bulletin de l'ancien logiciel, son reste
         // N-1, et la periode N-1 elle-meme.
-        (p_debut, p_fin) = periode_de_reference(&r.date)?;
+        p = periode_de_reference(&r.date)?;
         reste = r.report;
-        let avant_fin = p_debut.plus_jours(-1)?;
-        let avant_debut = periode_de_reference(&avant_fin)?.0;
+        let avant_fin = p.debut().plus_jours(-1)?;
+        let avant_debut = periode_de_reference(&avant_fin)?.debut();
         out.acquis = r.acquis_report;
-        out.debut = Some(avant_debut);
-        out.fin = Some(avant_fin);
+        out.periode = Some(Periode::du_au(avant_debut, avant_fin)?);
         if reste > Decimal::ZERO && r.remuneration_report.est_nul() {
             avert.push(info(format!(
                 "{} : {} jour(s) repris de l'ancien logiciel sans le brut de \
@@ -758,7 +751,7 @@ fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debut_courant: &
             )));
         }
     } else if let Some(premier) = premier {
-        (p_debut, p_fin) = periode_de_reference(&premier.premier_jour())?;
+        p = periode_de_reference(&premier.premier_jour())?;
         reste = Decimal::ZERO;
         if let Some(avant) = commence_avant(&paies_du_mois(ctx, premier, &cle_de_fiche(ctx, cle_salarie)?)?, premier) {
             avert.push(avis_commence_avant(cle_salarie, &avant, premier));
@@ -766,11 +759,11 @@ fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debut_courant: &
     } else {
         return Ok(Report { avertissements: vec![], premier, ..out });
     }
-    while p_debut < *debut_courant {
-        let (acquis, pris, _, _) = periode(ctx, au, cle_salarie, &p_debut, &p_fin, lus, false)?;
+    while p.debut() < *debut_courant {
+        let (acquis, pris, _, _) = periode(ctx, au, cle_salarie, &p, lus, false)?;
         // Les jours deja pris par l'ancien logiciel sur SA periode N sont
         // imputes sur N, pas sur le report.
-        let deja = pris_de_la_reprise(ctx, au, cle_salarie, &p_debut, &p_fin)?;
+        let deja = pris_de_la_reprise(ctx, au, cle_salarie, &p)?;
         // L3141-7 : la periode close donne sa duree de conge, a l'entier superieur.
         let acquis = duree_du_conge(acquis)?;
         let acquis_total = acquis;
@@ -778,16 +771,15 @@ fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debut_courant: &
         let sur_reste = pris.min(reste.max(Decimal::ZERO));
         let perdu = sub(reste.max(Decimal::ZERO), sur_reste);
         if perdu > Decimal::ZERO {
-            avert.push(avis_perdu(cle_salarie, perdu, &p_debut, &p_fin));
+            avert.push(avis_perdu(cle_salarie, perdu, &p));
         }
         // Un reste negatif (une avance deja prise) s'impute sur les jours
         // que la periode vient d'acquerir.
         reste = add(sub(acquis, sub(pris, sur_reste)), reste.min(Decimal::ZERO));
         out.acquis = acquis_total;
-        out.debut = Some(p_debut);
-        out.fin = Some(p_fin);
-        let suivant = p_fin.plus_jours(1)?;
-        (p_debut, p_fin) = periode_de_reference(&suivant)?;
+        out.periode = Some(p);
+        let suivant = p.fin().plus_jours(1)?;
+        p = periode_de_reference(&suivant)?;
     }
     out.reports = reste;
     out.avertissements = avert;
@@ -860,16 +852,12 @@ fn premier_mois(ctx: &Contexte, cle_salarie: &IdSalarie, lus: Lus) -> R<Option<M
 fn mois_de_la_periode(
     ctx: &Contexte,
     cle: &IdSalarie,
-    debut: &Jour,
-    fin: &Jour,
+    p: &Periode,
     lus: Lus,
 ) -> R<Vec<(Mois, Vec<PaieLue>)>> {
     let mut out = Vec::new();
-    if fin < debut {
-        return Ok(out);
-    }
     let saisis = crate::stock::mois_saisis(&ctx.racine)?;
-    for m in Mois::entre(debut, fin) {
+    for m in Mois::entre(&p.debut(), &p.fin()) {
         if !lus.lit(m) || !saisis.contains(&m) {
             continue;
         }
@@ -967,10 +955,10 @@ pub(crate) fn compteur_au_bulletin(ctx: &Contexte, au: &AuMois, paie: &Paie, moi
     let fin_du_mois = mois.dernier_jour();
     let avant = avant_le_mois(ctx, au, cle, &fin_du_mois, mois)?;
     let mut cpt = avant.compteur.clone();
-    let (debut, fin) = periode_de_reference(&fin_du_mois)?;
+    let reference = periode_de_reference(&fin_du_mois)?;
     // La presence de CE mois, bornee a la periode de reference.
-    let p_debut = eng.debut_periode().max(debut);
-    let p_fin = eng.fin_periode().min(fin);
+    let p_debut = eng.debut_periode().max(reference.debut());
+    let p_fin = eng.fin_periode().min(reference.fin());
     if p_fin >= p_debut {
         let cle_fiche = cle_de_fiche(ctx, cle)?;
         let non_acquis =

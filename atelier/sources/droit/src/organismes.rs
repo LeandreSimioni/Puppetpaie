@@ -24,7 +24,7 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
 /// La table livree des organismes, sous `donnees/`.
@@ -507,9 +507,9 @@ pub struct Adhesion {
 }
 
 impl Adhesion {
-    /// L'adhesion vaut-elle pour la periode `debut`..=`fin` (`adhesions::en_vigueur`) ?
-    pub fn en_vigueur(&self, debut: &Jour, fin: &Jour) -> bool {
-        crate::adhesions::en_vigueur(self.depuis, self.jusqu_a, debut, fin)
+    /// L'adhesion vaut-elle pour la periode `p` (`adhesions::en_vigueur`) ?
+    pub fn en_vigueur(&self, p: &Periode) -> bool {
+        crate::adhesions::en_vigueur(self.depuis, self.jusqu_a, p)
     }
 }
 
@@ -766,8 +766,8 @@ impl Attendu {
     }
 
     /// Le contrat vaut-il pour la periode (`adhesions::en_vigueur`) ?
-    pub fn couvre(&self, (debut, fin): &(Jour, Jour)) -> bool {
-        crate::adhesions::en_vigueur(self.depuis, self.jusqu_a, debut, fin)
+    pub fn couvre(&self, p: &Periode) -> bool {
+        crate::adhesions::en_vigueur(self.depuis, self.jusqu_a, p)
     }
 }
 
@@ -959,10 +959,10 @@ impl Organismes {
         self.adhesions_prevoyance.iter().find(|a| a.reference == *reference)
     }
 
-    /// L'adhesion `reference` vaut-elle pour la periode `debut`..=`fin` ? Une reference qu'aucune adhesion ne porte (une
+    /// L'adhesion `reference` vaut-elle pour la periode `p` ? Une reference qu'aucune adhesion ne porte (une
     /// contribution de branche du bareme) n'a pas de date.
-    pub fn adhesion_en_vigueur(&self, reference: &ReferenceDAdhesion, debut: &Jour, fin: &Jour) -> bool {
-        self.adhesion(reference).is_none_or(|a| a.en_vigueur(debut, fin))
+    pub fn adhesion_en_vigueur(&self, reference: &ReferenceDAdhesion, p: &Periode) -> bool {
+        self.adhesion(reference).is_none_or(|a| a.en_vigueur(p))
     }
 }
 
@@ -979,7 +979,7 @@ pub fn composer(
     saisi: &[Adhesion],
     mut prises: Vec<u32>,
     saisies: &BTreeMap<CleDeContrat, Saisie>,
-    exiger: Option<(&(Jour, Jour), bool)>,
+    exiger: Option<(&Periode, bool)>,
 ) -> R<Organismes> {
     // Chaque contrat retenu, avec sa reference quand le texte ou la saisie la disent.
     let mut retenus: Vec<(Attendu, Option<ReferenceDAdhesion>, ReferenceDeContrat, IdentifiantDOrganisme)> = Vec::new();

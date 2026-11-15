@@ -28,7 +28,7 @@ use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
-use socle::date::{Anciennete, Duree, EnJours, Jour};
+use socle::date::{Anciennete, Duree, EnJours, Jour, Periode};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -1169,14 +1169,9 @@ fn regrouper_par_base(lignes: Vec<Cotisation>) -> Vec<Cotisation> {
 
 // ------------------------------------------------ adhesions et affiliations
 
-/// Le premier et le dernier jour du mois.
-fn bornes_du_mois(mois: Mois) -> (Jour, Jour) {
-    (mois.premier_jour(), mois.dernier_jour())
-}
-
 /// Les references d'adhesion auxquelles cette nature rattache, parmi celles qui valent pour la
-/// periode `debut`..=`fin`.
-pub fn affiliations(orgs: &Organismes, nat: &Nature, contribs: &[ContributionDuMois], (debut, fin): (Jour, Jour)) -> R<Vec<ReferenceDAdhesion>> {
+/// periode `periode`.
+pub fn affiliations(orgs: &Organismes, nat: &Nature, contribs: &[ContributionDuMois], periode: &Periode) -> R<Vec<ReferenceDAdhesion>> {
     let cle = nat.section_des_organismes();
     let sec = orgs.par_nature.de(cle);
     if sec.references.is_empty() {
@@ -1192,7 +1187,7 @@ population, ce que la plate-forme accepte sans rien dire. Rien n'est écrit.",
             nat.libelle, cle.population(), pourquoi
         ));
     }
-    let mut out: Vec<ReferenceDAdhesion> = sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &debut, &fin)).cloned().collect();
+    let mut out: Vec<ReferenceDAdhesion> = sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, periode)).cloned().collect();
     for c in contribs {
         if c.natures.contains_key(&cle) {
             out.push(c.reference.clone());
@@ -1415,8 +1410,8 @@ pub fn places_par_contrat(bar: &Pile) -> i64 {
 
 /// Les references de chaque nature (hors `ref`), en vigueur pendant le mois.
 fn refs_du_mois(orgs: &Organismes, sec: &droit::organismes::Rattachement, mois: Mois) -> Vec<ReferenceDAdhesion> {
-    let (debut, fin) = bornes_du_mois(mois);
-    sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &debut, &fin)).cloned().collect()
+    let periode = Periode::du_mois(mois);
+    sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &periode)).cloned().collect()
 }
 
 /// `casc_svp` : la CASC-SVP de ce mois, ou `None`.
@@ -1946,7 +1941,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.add(droit::rubrique!("S21.G00.65.003"), s.fin.jjmmaaaa());
     }
     let places = places_par_contrat(bar);
-    let refs = affiliations(orgs, &nat, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
+    let refs = affiliations(orgs, &nat, &bar.contributions_du_mois, &e.periode_payee()?)?;
     for a in rattachements(p, orgs, &bar.entreprise.fiche, refs)? {
         if let Some(o) = a.option {
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.004"), Some(o))?;
@@ -2536,7 +2531,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
     let orgs = ctx.organismes()?;
     let bar = bar_du(ctx, ent, &orgs, &nic, mois)?;
     let e = &p.engagement;
-    let refs = affiliations(&orgs, &*e.nat()?, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
+    let refs = affiliations(&orgs, &*e.nat()?, &bar.contributions_du_mois, &e.periode_payee()?)?;
     let mut affiliations = Vec::new();
     for a in rattachements(p, &orgs, &bar.entreprise.fiche, refs)? {
         affiliations.push((affiliation_de_la_place(202 + a.place as i64)?, a.reference));
@@ -4794,22 +4789,22 @@ certificat de conformite du depot precedent.",
     if let Some(spst) = spst_ecrit(&f, &ent_e)? {
         f.add(droit::rubrique!("S21.G00.11.025"), spst);
     }
-    let (premier_du_mois, dernier_du_mois) = bornes_du_mois(mois);
+    let du_mois = Periode::du_mois(mois);
     let mut couvertes: HashSet<ReferenceDAdhesion> = HashSet::new();
     // Les adhesions qu'au moins une affiliation du fichier reference : celles des salaries affilies ce mois-la
     // (`rattachements`), pas toutes celles de leur nature (CCH-13 et CCH-14 de 15.004, p. 151).
     for p in paies {
-        let refs = affiliations(&orgs, &*p.engagement.nat()?, &contribs, (p.engagement.debut_periode(), p.engagement.fin_periode()))?;
+        let refs = affiliations(&orgs, &*p.engagement.nat()?, &contribs, &p.engagement.periode_payee()?)?;
         couvertes.extend(rattachements(p, &orgs, &bar.entreprise.fiche, refs)?.into_iter().map(|a| a.reference));
     }
     for r in regs {
         let b = bar_de(r.mois)?;
-        let refs = affiliations(&orgs, &*r.apres.engagement.nat()?, &b.contributions_du_mois, (r.apres.engagement.debut_periode(), r.apres.engagement.fin_periode()))?;
+        let refs = affiliations(&orgs, &*r.apres.engagement.nat()?, &b.contributions_du_mois, &r.apres.engagement.periode_payee()?)?;
         couvertes.extend(rattachements(&r.apres, &orgs, &b.entreprise.fiche, refs)?.into_iter().map(|a| a.reference));
     }
     for a in &orgs.adhesions_prevoyance {
         let reference = a.reference.clone();
-        if !couvertes.contains(&reference) && !orgs.adhesion_en_vigueur(&reference, &premier_du_mois, &dernier_du_mois) {
+        if !couvertes.contains(&reference) && !orgs.adhesion_en_vigueur(&reference, &du_mois) {
             continue;
         }
         f.add(droit::rubrique!("S21.G00.15.001"), &a.libelle);

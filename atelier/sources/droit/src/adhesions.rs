@@ -13,7 +13,7 @@
 use std::sync::{Arc, OnceLock};
 
 use crate::fiche::Lue;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::forme::Nombre;
 use socle::echec::R;
@@ -22,9 +22,9 @@ use crate::organismes::Adhesion;
 use crate::source::forme_notee;
 
 /// Le contrat qui court de `depuis` a `jusqu_a` (l'un ou l'autre absent : sans borne) couvre-t-il au moins un jour de
-/// la periode `debut`..=`fin` ?
-pub fn en_vigueur(depuis: Option<Jour>, jusqu_a: Option<Jour>, debut: &Jour, fin: &Jour) -> bool {
-    depuis.is_none_or(|d| d <= *fin) && jusqu_a.is_none_or(|j| j >= *debut)
+/// la periode `p` ?
+pub fn en_vigueur(depuis: Option<Jour>, jusqu_a: Option<Jour>, p: &Periode) -> bool {
+    depuis.is_none_or(|d| d <= p.fin()) && jusqu_a.is_none_or(|j| j >= p.debut())
 }
 
 forme_notee! {
@@ -130,14 +130,15 @@ mod tests {
     /// le mois ou il s'ouvre.
     #[test]
     fn un_contrat_ne_vaut_que_pour_la_periode_qu_il_couvre() {
+        let mois = |an: i32, m: u32| Periode::du_mois(j(an, m, 1).mois_civil());
         let thalie = Some(j(2026, 1, 1));
-        assert!(!en_vigueur(thalie, None, &j(2025, 12, 1), &j(2025, 12, 31)));
-        assert!(en_vigueur(thalie, None, &j(2026, 1, 1), &j(2026, 1, 31)));
+        assert!(!en_vigueur(thalie, None, &mois(2025, 12)));
+        assert!(en_vigueur(thalie, None, &mois(2026, 1)));
         let clos = (Some(j(2025, 1, 1)), Some(j(2026, 6, 30)));
-        assert!(en_vigueur(clos.0, clos.1, &j(2026, 6, 1), &j(2026, 6, 30)));
-        assert!(!en_vigueur(clos.0, clos.1, &j(2026, 7, 1), &j(2026, 7, 31)));
-        assert!(en_vigueur(Some(j(2026, 3, 15)), None, &j(2026, 3, 1), &j(2026, 3, 31)));
-        assert!(en_vigueur(None, None, &j(2025, 1, 1), &j(2025, 1, 31)));
+        assert!(en_vigueur(clos.0, clos.1, &mois(2026, 6)));
+        assert!(!en_vigueur(clos.0, clos.1, &mois(2026, 7)));
+        assert!(en_vigueur(Some(j(2026, 3, 15)), None, &mois(2026, 3)));
+        assert!(en_vigueur(None, None, &mois(2025, 1)));
     }
 
     /// L'adhesion CASC-SVP d'une 3090 est celle de la fiche de codification, sans rien de la compagnie

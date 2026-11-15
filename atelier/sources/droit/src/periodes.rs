@@ -27,7 +27,7 @@
 //! Le droit dit ou la paie se coupe (`decouper`, `jour_de_l_avenant`) et quelle part du mois chaque periode porte
 //! (`part_du_mois`) ; l'engagement calcule chaque periode et les assemble (`engagement::periodes`).
 
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 
 use crate::conges::JoursTravailles;
 use socle::echec::R;
@@ -49,10 +49,10 @@ pub struct TermesDAvant {
     pub quotite_contrat: bool,
 }
 
-/// Le jour ou un avenant decoupe la paie de la periode [`debut`, `fin`] : sa `date_modification`, quand le contrat dit
+/// Le jour ou un avenant decoupe la paie de la periode `payee` : sa `date_modification`, quand le contrat dit
 /// les termes d'avant (`avant`) et qu'elle tombe apres le premier jour de la periode payee. Sans `avant`, rien ; un
 /// `avant` incomplet, sans date, ou qui ne decoupe rien refuse. `qui` nomme le contrat dans un refus.
-pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<Jour>, debut: Jour, fin: Jour, qui: &str) -> R<Option<Jour>> {
+pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<Jour>, payee: &Periode, qui: &str) -> R<Option<Jour>> {
     let Some(avant) = avant else { return Ok(None) };
     let dits = [avant.salaire_mensuel, avant.quotite_contrat];
     if let Some((k, _)) = TERMES_D_AVANT.iter().zip(dits).find(|(_, dit)| !dit) {
@@ -64,14 +64,14 @@ pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<
     let Some(j) = date_modification else {
         return Err(socle::echec::cle(format!("{} : l'avenant ne dit pas quand il prend effet : remplir « À partir de » dans « Modifier l'engagement ».", qui), "date_modification"));
     };
-    if j <= debut || j > fin {
+    if j <= payee.debut() || !payee.contient(&j) {
         return Err(socle::echec::cle(
             format!(
                 "{} : l'avenant prend effet le {}, hors de la période payée du {} au {} : il ne la coupe pas ; un avenant au premier jour de la période se paie sur les termes de la saisie, tout le mois.",
                 qui,
                 j.jj_mm_aaaa(),
-                debut.jj_mm_aaaa(),
-                fin.jj_mm_aaaa()
+                payee.debut().jj_mm_aaaa(),
+                payee.fin().jj_mm_aaaa()
             ),
             "avant",
         ));
@@ -79,19 +79,19 @@ pub fn jour_de_l_avenant(avant: Option<TermesDAvant>, date_modification: Option<
     Ok(Some(j))
 }
 
-/// Les periodes elementaires de [`debut`, `fin`] coupee aux `jours` ou quelque chose change (chacun est le premier jour
+/// Les periodes elementaires de `p` coupee aux `jours` ou quelque chose change (chacun est le premier jour
 /// d'une periode) ; un jour hors de la periode ne coupe rien.
-pub fn decouper(debut: Jour, fin: Jour, mut jours: Vec<Jour>) -> R<Vec<(Jour, Jour)>> {
-    jours.retain(|j| *j > debut && *j <= fin);
+pub fn decouper(p: Periode, mut jours: Vec<Jour>) -> R<Vec<Periode>> {
+    jours.retain(|j| *j > p.debut() && p.contient(j));
     jours.sort();
     jours.dedup();
     let mut out = Vec::new();
-    let mut d = debut;
+    let mut d = p.debut();
     for j in jours {
-        out.push((d, j.plus_jours(-1)?));
+        out.push(Periode::du_au(d, j.plus_jours(-1)?)?);
         d = j;
     }
-    out.push((d, fin));
+    out.push(Periode::du_au(d, p.fin())?);
     Ok(out)
 }
 

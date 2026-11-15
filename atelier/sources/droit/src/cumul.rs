@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::catalogue::{annexes, rubrique};
 use crate::fiche::Lue;
 use crate::contexte::{aujourdhui, Contexte, IdSalarie};
-use socle::date::{Duree, EnJours, Jour};
+use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::R;
 use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours};
 use socle::num::{add, Decimal};
@@ -89,8 +89,7 @@ pub struct Position {
     pub constantes: Constantes,
     pub racine: std::path::PathBuf,
     pub salarie: IdSalarie,
-    pub debut: Jour,
-    pub fin: Jour,
+    pub periode: Periode,
     pub libelle_fenetre: String,
     pub engagements: Vec<Declare>,
     /// Pour le plafond d'enseignement (age a la fin de la fenetre).
@@ -147,7 +146,7 @@ impl Position {
     }
 
     pub fn plafond_enseignement(&self) -> R<Heures> {
-        plafond_enseignement(&self.racine, self.date_naissance, self.fin)
+        plafond_enseignement(&self.racine, self.date_naissance, self.periode.fin())
     }
 
     pub fn heures_enseignement_retenues(&self) -> R<Heures> {
@@ -187,7 +186,7 @@ impl Position {
 
     /// Jours restant avant la fin de la fenetre ; negatif si elle est passee.
     pub fn jours_restants(&self, aujourdhui: Jour) -> i64 {
-        self.fin.moins(&aujourdhui)
+        self.periode.fin().moins(&aujourdhui)
     }
 
     /// Les cachets qu'il manque pour le seuil, le dernier entame compte ; un cachet de zero heure refuse.
@@ -199,31 +198,25 @@ impl Position {
 
 // ------------------------------------------------------------------ fenetres
 
-/// (debut, fin, libelle).
-pub type Fenetre = (Jour, Jour, String);
+/// Une fenetre : sa periode, et son libelle.
+pub type Fenetre = (Periode, String);
 
-/// L'annee civile, arretee a `jusquau` quand on en donne une.
-pub fn fenetre_annee_civile(annee: socle::mois::Annee, jusquau: Option<Jour>) -> Fenetre {
-    let mut fin = annee.dernier_jour();
-    if let Some(j) = jusquau {
-        if j < fin {
-            fin = j;
-        }
-    }
-    (annee.premier_jour(), fin, format!("annee civile {}", annee))
+/// L'annee civile, arretee a la fin du mois `jusqu_au`.
+pub fn fenetre_annee_civile(jusqu_au: socle::mois::Mois) -> R<Fenetre> {
+    let annee = jusqu_au.annee();
+    Ok((Periode::du_au(annee.premier_jour(), jusqu_au.dernier_jour())?, format!("annee civile {}", annee)))
 }
 
 /// Les 12 mois precedant une date.
 pub fn fenetre_douze_mois(c: &Constantes, fin: Jour) -> R<Fenetre> {
-    Ok((fin.avant(c.fenetre_jours)?, fin, format!("12 mois au {}", fin.jj_mm_aaaa())))
+    Ok((Periode::du_au(fin.avant(c.fenetre_jours)?, fin)?, format!("12 mois au {}", fin.jj_mm_aaaa())))
 }
 
 /// Les 12 mois PRECEDANT la date anniversaire des droits : l'anniversaire est
 /// la fin de la fenetre, jamais son debut.
 pub fn fenetre_anniversaire(c: &Constantes, anniversaire: Jour) -> R<Fenetre> {
     Ok((
-        anniversaire.avant(c.fenetre_jours)?,
-        anniversaire,
+        Periode::du_au(anniversaire.avant(c.fenetre_jours)?, anniversaire)?,
         format!("12 mois au {} (anniversaire des droits)", anniversaire.jj_mm_aaaa()),
     ))
 }
@@ -237,15 +230,14 @@ pub fn position(
     fenetre: &Fenetre,
     date_naissance: Option<Jour>,
 ) -> Position {
-    let (debut, fin, libelle) = fenetre;
+    let (periode, libelle) = fenetre;
     Position {
         constantes: *c,
         racine: ctx.racine.clone(),
         salarie: salarie.clone(),
-        debut: *debut,
-        fin: *fin,
+        periode: *periode,
         libelle_fenetre: libelle.clone(),
-        engagements: engagements.iter().filter(|e| e.salarie == *salarie && *debut <= e.fin && e.fin <= *fin).cloned().collect(),
+        engagements: engagements.iter().filter(|e| e.salarie == *salarie && periode.contient(&e.fin)).cloned().collect(),
         date_naissance,
     }
 }
@@ -313,10 +305,9 @@ pub fn tableau_cumul(
 ) -> R<Vec<Colonne>> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let annee = mois.annee();
-    let (debut_mois, fin_mois) = (mois.premier_jour(), mois.dernier_jour());
     let ne = naissance(ctx, salarie)?;
-    let p_mois = position(ctx, &c, engagements, salarie, &(debut_mois, fin_mois, "periode".to_string()), ne);
-    let p_annee = position(ctx, &c, engagements, salarie, &fenetre_annee_civile(annee, Some(fin_mois)), ne);
+    let p_mois = position(ctx, &c, engagements, salarie, &(Periode::du_mois(mois), "periode".to_string()), ne);
+    let p_annee = position(ctx, &c, engagements, salarie, &fenetre_annee_civile(mois)?, ne);
 
     let col = |titre: &str, sous: String, p: &Position, reste: Option<Heures>, echeance: Option<Jour>| -> R<Colonne> {
         Ok(Colonne {

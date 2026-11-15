@@ -14,7 +14,7 @@ use socle::forme::NombreLu;
 use crate::calcul::{ligne_de_reduction, pile_de_la_paie, BaseDeCotisation, LigneCotisation, Paie, ReductionGenerale};
 use droit::reduction::{reduction_au_coefficient, reduction_generale};
 use droit::contexte::Contexte;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use crate::{Avis, Chiffre, Engagement, LignePaie};
 use socle::echec::{refus, R};
 use socle::grandeurs::{Heures, Montant};
@@ -24,7 +24,7 @@ use socle::num::{court, Decimal};
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
 fn jour_de_l_avenant(eng: &Engagement) -> R<Option<Jour>> {
     let avant = eng.avant.as_ref().map(|a| droit::periodes::TermesDAvant { salaire_mensuel: a.salaire_mensuel.is_some(), quotite_contrat: a.quotite_contrat.is_some() });
-    droit::periodes::jour_de_l_avenant(avant, eng.date_modification, eng.debut_periode(), eng.fin_periode(), &eng.qui())
+    droit::periodes::jour_de_l_avenant(avant, eng.date_modification, &eng.periode_payee()?, &eng.qui())
 }
 
 /// Les bornes des periodes elementaires de la paie de `eng` : une seule (la periode payee) pour un mois d'un seul
@@ -32,15 +32,15 @@ fn jour_de_l_avenant(eng: &Engagement) -> R<Option<Jour>> {
 /// jours ou sa fiche change une valeur qui choisit la pile ou que le bloc 40 porte avec une rubrique en bloc 41
 /// (`emplois::jours_de_changement`), et au jour de l'avenant que la saisie date en cours de mois avec ses termes
 /// d'avant (`jour_de_l_avenant`).
-pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<(Jour, Jour)>> {
-    let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
+pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<Periode>> {
+    let payee = eng.periode_payee()?;
     if eng.periode.is_some() || !eng.nat()?.mensuelle() {
-        return Ok(vec![(debut, fin)]);
+        return Ok(vec![payee]);
     }
     crate::fiche_du_salarie(ctx, &eng.salarie)?;
-    let mut jours = droit::emplois::jours_de_changement(ctx, &eng.salarie, &debut, &fin)?;
+    let mut jours = droit::emplois::jours_de_changement(ctx, &eng.salarie, &payee.debut(), &payee.fin())?;
     jours.extend(jour_de_l_avenant(eng)?);
-    droit::periodes::decouper(debut, fin, jours)
+    droit::periodes::decouper(payee, jours)
 }
 
 /// Les engagements des periodes elementaires `bornes` de `eng` : chacun borne a sa periode, sur les termes du contrat
@@ -52,7 +52,7 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<(Jour, Jour)>> {
 /// Refus : une paie qui porte autre chose que son salaire mensuel. Une prime, un conge, une absence, une prime
 /// d'anciennete ou un solde de tout compte se rattachent a une periode, ou a l'autre, ou aux deux, et rien ne le dit
 /// encore ; le logiciel ne choisit pas.
-pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[(Jour, Jour)]) -> R<Vec<Engagement>> {
+pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[Periode]) -> R<Vec<Engagement>> {
     let ligne = match eng.lignes.as_slice() {
         [l] if *l.rubrique() == crate::conges::MOIS_PAYE => l,
         _ => {
@@ -63,7 +63,7 @@ duree du travail le {}), et elle porte {} en plus du salaire mensuel. A quelle p
 le changement, apres, ou les deux) ne se lit nulle part dans la saisie, et le logiciel ne decoupe encore que le salaire \
 mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au premier jour d'un mois.",
                 eng.qui(),
-                bornes.iter().skip(1).map(|b| b.0.jj_mm_aaaa()).collect::<Vec<_>>().join(", "),
+                bornes.iter().skip(1).map(|b| b.debut().jj_mm_aaaa()).collect::<Vec<_>>().join(", "),
                 if autres.is_empty() { "des lignes saisies a la main".to_string() } else { format!("les lignes {}", autres.join(", ")) }
             ));
         }
@@ -84,12 +84,12 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     let au = eng.nat()?.au_mois().ok_or_else(|| socle::refus!("{} : ses periodes elementaires sont celles d'un contrat paye au mois, et le sien ne l'est pas : le signaler au développeur.", eng.qui()))?;
     let horaire = crate::conges::horaire_du_mois(ctx, &au, &eng.salarie, &eng.debut, &debut_mois, &fin_mois)?;
     let mut out = Vec::new();
-    for (d, f) in bornes {
-        let (salaire, quotite) = if avenant.is_some_and(|a| *d < a) { (salaire_avant, quotite_avant) } else { (salaire_apres, quotite_apres) };
+    for p in bornes {
+        let (salaire, quotite) = if avenant.is_some_and(|a| p.debut() < a) { (salaire_avant, quotite_avant) } else { (salaire_apres, quotite_apres) };
         // Chaque periode, au salaire de ses termes, par la regle d'un mois incomplet (`droit::periodes::part_du_mois`).
-        let part = droit::periodes::part_du_mois(d, f, &fin_mois, regle, &horaire)?;
+        let part = droit::periodes::part_du_mois(&p.debut(), &p.fin(), &fin_mois, regle, &horaire)?;
         let mut e = eng.clone();
-        e.periode = Some((*d, *f));
+        e.periode = Some(*p);
         e.quotite_contrat = Some(socle::grandeurs::courte(quotite));
         let q = socle::grandeurs::courte(part.fraction);
         let h = quotite.par_mois();
@@ -295,12 +295,12 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let decrites: Vec<String> = parts
         .iter()
         .filter_map(|p| p.engagement.periode.map(|b| (p, b)))
-        .map(|(p, (d, f))| {
+        .map(|(p, b)| {
             let cadre = if droit::bareme::est_cadre(&p.salarie) { "cadre" } else { "non cadre" };
             Ok(format!(
                 "du {} au {} ({}, {} h, brut {})",
-                d.jj_mm_aaaa(),
-                f.jj_mm_aaaa(),
+                b.debut().jj_mm_aaaa(),
+                b.fin().jj_mm_aaaa(),
                 cadre,
                 socle::grandeurs::ecrit::sans_zero::dit(p.engagement.quotite()?.heures("La durée d'une période élémentaire")?),
                 p.brut.decimal()

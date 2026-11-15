@@ -34,9 +34,9 @@ use serde::{Deserialize, Serialize};
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
-use droit::cumul::{self, Constantes, Declare, Fenetre};
+use droit::cumul::{self, Constantes, Declare};
 use droit::forme_bareme::Pile;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use droit::emplois;
 use droit::emplois::AnnexeChomage as Annexe;
 use droit::minima::Par;
@@ -858,7 +858,7 @@ impl<'a> Declares<'a> {
 /// La phrase de la fenetre (`conseils.json`, `fenetres`).
 fn phrase_fenetre(b: &Banque, f: &cumul::Position, anniversaire: bool) -> String {
     let g = if anniversaire { &b.fenetres.anniversaire } else { &b.fenetres.glissante };
-    g.replace("{debut}", &f.debut.jj_mm_aaaa()).replace("{fin}", &f.fin.jj_mm_aaaa())
+    g.replace("{debut}", &f.periode.debut().jj_mm_aaaa()).replace("{fin}", &f.periode.fin().jj_mm_aaaa())
 }
 
 /// La position du salarie sur la fenetre de ses droits : depuis sa date anniversaire si sa fiche la porte, sinon les
@@ -1038,13 +1038,12 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
 /// Ce que les conseils de saisie auraient change aux paies de ce salarie sur la fenetre : (heures, jours d'allocation,
 /// avant arrondi). Chaque mois de la fenetre se lit dans les paies ecrites de ses engagements valides
 /// (`engagement::etats::validees_du_mois`) : rien ne se recalcule ; un mois sans engagement valide n'en a pas.
-fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Fenetre, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Heures, Jours)> {
+fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Periode, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Heures, Jours)> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let heures_cachet = c.heures_par_cachet;
-    let (debut, fin, _) = f;
     let mut gain = Heures::ZERO;
     let mut jours = Jours::ZERO;
-    for mois in socle::mois::Mois::entre(debut, fin) {
+    for mois in socle::mois::Mois::entre(&f.debut(), &f.fin()) {
         let Some((_, paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else { continue };
         for p in &paies {
             let e = &p.engagement;
@@ -1052,7 +1051,7 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Fe
                 continue;
             }
             let fp = e.fin_periode();
-            if fp < *debut || fp > *fin {
+            if !f.contient(&fp) {
                 continue;
             }
             let repetition = match annexe {
@@ -1120,8 +1119,7 @@ fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::
         let pct = pourcentage(heures)?.round();
         a_dire.push((Quand::HeuresComptees, base(vec![("heures", val_heures(heures)), ("pourcentage", val_nombre(pct))])));
         if let (Some(a), Some(ax)) = (&a30, annexe) {
-            let f: Fenetre = (pos.debut, pos.fin, pos.libelle_fenetre.clone());
-            let (gain, jours) = gains_sur_la_fenetre(ctx, cle, &f, a, ax, &departs)?;
+            let (gain, jours) = gains_sur_la_fenetre(ctx, cle, &pos.periode, a, ax, &departs)?;
             if gain > Heures::ZERO {
                 let pct = pourcentage(gain)?.round_dp(1).normalize();
                 let mut v = vec![("gain", val_heures(gain)), ("pourcentage", val_nombre(pct))];

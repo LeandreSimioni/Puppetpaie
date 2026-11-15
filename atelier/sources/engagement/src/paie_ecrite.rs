@@ -259,8 +259,8 @@ pub struct FormeDEngagement {
     pub transaction: Option<droit::preavis::TransactionEnCours>,
     pub suspensions: Vec<crate::imprevus::Suspension>,
     pub contrat_ecrit: Option<ContratEcrit>,
-    pub debut_periode: Jour,
-    pub fin_periode: Jour,
+    /// Sa periode de paie (`Engagement::periode_payee`).
+    pub periode: socle::date::Periode,
     /// Sa quotite (`Engagement::quotite`), dans son unite.
     pub quotite: crate::QuotiteDuContrat,
     pub sans_paie: bool,

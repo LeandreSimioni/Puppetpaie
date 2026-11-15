@@ -316,9 +316,9 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
         let cpt = compteur_conges(ctx, au, salarie, &fin, mois)?;
         // L'indemnite paie le solde du compteur : un compteur qui ignore les mois d'avant PuppetPaie la sous-paierait.
         // Sa periode la plus ancienne : celle du report, s'il y en a un, sinon la periode en cours.
-        let depuis = match cpt.report_debut {
-            Some(report) => report,
-            None => cpt.periode_debut,
+        let depuis = match cpt.report {
+            Some(report) => report.debut(),
+            None => cpt.periode.debut(),
         };
         if let Some((debut, premier)) = crate::conges::compte_sans_la_reprise(ctx, au, &salarie, &depuis)? {
             stc.avertissements.push(avertir(format!(

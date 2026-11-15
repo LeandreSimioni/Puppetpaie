@@ -132,7 +132,7 @@ pub struct Engagement {
     pub avant: Option<saisie::Avant>,
     /// Une periode elementaire de paie : les bornes de CE calcul quand la paie du mois est decoupee
     /// (`periodes`) ; `None` : la periode de paie entiere (le contrat borne au mois).
-    pub periode: Option<(Jour, Jour)>,
+    pub periode: Option<socle::date::Periode>,
     /// Ce que la saisie dit du contrat ECRIT et que rien d'autre ne porte (`ContratEcrit`) : la periode
     /// d'essai (L1242-12, 6° ; R1221-34, 7°), la personne remplacee (L1242-12, 1°), la repartition des horaires d'un
     /// temps partiel (L3123-6, 1°), les clauses particulieres de ce contrat. Vide : rien n'est dit.
@@ -720,18 +720,27 @@ impl Engagement {
         }
     }
 
+    /// La periode de paie : le contrat borne au mois, ou la periode elementaire quand ce calcul en est une (`periode`).
+    /// Refus : un contrat qui ne touche pas ce mois.
+    pub fn periode_payee(&self) -> R<socle::date::Periode> {
+        match self.periode {
+            Some(p) => Ok(p),
+            None => socle::date::Periode::du_au(self.debut_periode(), self.fin_periode()),
+        }
+    }
+
     /// Le contrat borne au mois : le debut de la periode de paie (de la periode elementaire, quand ce calcul en est
     /// une : `periode`).
     pub fn debut_periode(&self) -> Jour {
         match self.periode {
-            Some((d, _)) => d,
+            Some(p) => p.debut(),
             None => self.debut.max(self.debut_mois()),
         }
     }
 
     pub fn fin_periode(&self) -> Jour {
         match self.periode {
-            Some((_, f)) => f,
+            Some(p) => p.fin(),
             None => self.fin.into_iter().fold(self.fin_mois(), Jour::min),
         }
     }
@@ -867,8 +876,7 @@ impl Engagement {
                 Some(ContratEcrit { periode_essai_jours: self.ecrit.periode_essai_jours.as_ref().map(Chiffre::canon).transpose()?, ..self.ecrit.clone() })
             },
             // Ce qui se deduit de l'engagement : sa periode, sa quotite, ses mois.
-            debut_periode: self.debut_periode(),
-            fin_periode: self.fin_periode(),
+            periode: self.periode_payee()?,
             quotite: self.quotite()?,
             sans_paie: self.sans_paie(),
             place: self.place_du_mois(),

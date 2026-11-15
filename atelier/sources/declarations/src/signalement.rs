@@ -433,7 +433,7 @@ annule-et-remplace (type 03)."
     // Les adhesions qui valent le dernier jour travaille (`droit::adhesions`).
     let orgs = ctx.organismes()?;
     let jour = engagement::imprevus::dernier_jour_declare(arret)?;
-    for ad in orgs.adhesions_prevoyance.iter().filter(|ad| ad.en_vigueur(&jour, &jour)) {
+    for ad in orgs.adhesions_prevoyance.iter().filter(|ad| ad.en_vigueur(&socle::date::Periode::du_jour(jour))) {
         f.add(droit::rubrique!("S21.G00.15.001"), &ad.libelle);
         f.add(droit::rubrique!("S21.G00.15.002"), &ad.delegataire);
         f.add(droit::rubrique!("S21.G00.15.005"), &ad.reference);

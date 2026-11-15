@@ -188,6 +188,118 @@ impl<U: Unite> std::fmt::Display for Duree<U> {
     }
 }
 
+/// UNE PERIODE (« Le glossaire ») : deux jours bornes, l'un et l'autre compris, le premier pas apres le second (la
+/// periode d'un contrat, d'une paie, d'un arret, d'une fenetre de calcul, d'un certificat, d'un export). Elle ne se
+/// construit que par `du_au`, qui refuse un debut apres la fin ; ses bornes, ses jours et sa duree se lisent d'elle.
+/// Elle s'ecrit et se lit `{"du": "AAAA-MM-JJ", "au": "AAAA-MM-JJ"}` ; elle se dit dans une phrase (`Display` : « du
+/// 1er au 15 octobre 2026 »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Periode {
+    debut: Jour,
+    fin: Jour,
+}
+
+impl Periode {
+    /// DU `debut` AU `fin` ; refus quand `debut` est apres `fin`.
+    #[track_caller]
+    pub fn du_au(debut: Jour, fin: Jour) -> R<Periode> {
+        match debut <= fin {
+            true => Ok(Periode { debut, fin }),
+            false => Err(refus(format!("période impossible : le {} est après le {}", debut.jj_mm_aaaa(), fin.jj_mm_aaaa()))),
+        }
+    }
+
+    /// Le seul jour `j`.
+    pub fn du_jour(j: Jour) -> Periode {
+        Periode { debut: j, fin: j }
+    }
+
+    /// Le mois civil `m` entier.
+    pub fn du_mois(m: crate::mois::Mois) -> Periode {
+        Periode { debut: m.premier_jour(), fin: m.dernier_jour() }
+    }
+
+    /// Son premier jour.
+    pub fn debut(&self) -> Jour {
+        self.debut
+    }
+
+    /// Son dernier jour.
+    pub fn fin(&self) -> Jour {
+        self.fin
+    }
+
+    /// `j` en est-il ?
+    pub fn contient(&self, j: &Jour) -> bool {
+        self.debut <= *j && *j <= self.fin
+    }
+
+    /// Ses jours communs avec `autre`, s'il y en a.
+    pub fn croise(&self, autre: &Periode) -> Option<Periode> {
+        let debut = self.debut.max(autre.debut);
+        let fin = self.fin.min(autre.fin);
+        match debut <= fin {
+            true => Some(Periode { debut, fin }),
+            false => None,
+        }
+    }
+
+    /// Le nombre de ses jours, l'un et l'autre bouts compris.
+    pub fn duree(&self) -> Duree<EnJours> {
+        Duree::du_au(&self.debut, &self.fin)
+    }
+
+    /// Ses jours, du premier au dernier.
+    pub fn jours(&self) -> impl Iterator<Item = Jour> {
+        let (premier, dernier) = (self.debut.ordinal(), self.fin.ordinal());
+        // Chaque rang entre deux jours du calendrier est un jour du calendrier.
+        (premier..=dernier).filter_map(Jour::depuis_ordinal)
+    }
+}
+
+/// « du 1er au 15 octobre 2026 », « du 28 septembre au 3 octobre 2026 », « du 28 décembre 2025 au 3 janvier 2026 »,
+/// « le 3 octobre 2026 ».
+impl std::fmt::Display for Periode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let quantieme = |j: &Jour| if j.jour == 1 { "1er".to_string() } else { j.jour.to_string() };
+        let mois = |j: &Jour| j.mois_civil().nom(crate::mois::Graphie::Accentuee);
+        let (d, a) = (&self.debut, &self.fin);
+        if d == a {
+            write!(f, "le {} {} {}", quantieme(d), mois(d), d.an)
+        } else if d.an != a.an {
+            write!(f, "du {} {} {} au {} {} {}", quantieme(d), mois(d), d.an, quantieme(a), mois(a), a.an)
+        } else if d.mois != a.mois {
+            write!(f, "du {} {} au {} {} {}", quantieme(d), mois(d), quantieme(a), mois(a), a.an)
+        } else {
+            write!(f, "du {} au {} {} {}", quantieme(d), quantieme(a), mois(a), a.an)
+        }
+    }
+}
+
+/// La forme ecrite d'une periode.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PeriodeEcrite {
+    du: Jour,
+    au: Jour,
+}
+
+impl serde::Serialize for Periode {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PeriodeEcrite { du: self.debut, au: self.fin }.serialize(s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Periode {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Periode, D::Error> {
+        let e = PeriodeEcrite::deserialize(d)?;
+        match e.du <= e.au {
+            true => Ok(Periode { debut: e.du, fin: e.au }),
+            false => Err(serde::de::Error::custom(format!("période impossible : le {} est après le {}", e.du.iso(), e.au.iso()))),
+        }
+    }
+}
+
 /// UNE ANCIENNETE (« Le glossaire ») : le temps passe depuis un jour, en mois de calendrier ; un age est l'anciennete
 /// depuis la naissance. Elle se compte ici, de deux jours, et nulle part ailleurs : en mois et fraction du mois entame
 /// (`entre`), ou en mois revolus (`revolue`) et en annees revolues (`ans_revolus`, `age`). Un seuil qu'un texte dit en

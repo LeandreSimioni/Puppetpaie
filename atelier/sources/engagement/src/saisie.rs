@@ -442,10 +442,10 @@ pub struct CongePris {
 }
 
 impl CongePris {
-    /// Son premier et son dernier jour, lus ; un jour qui n'est pas dit se refuse en se nommant.
-    pub fn jours(&self) -> R<(Jour, Jour)> {
+    /// Sa periode, du premier au dernier jour, lus ; un jour qui n'est pas dit se refuse en se nommant.
+    pub fn jours(&self) -> R<socle::date::Periode> {
         let lu = |x: Option<Jour>, cle: &str| x.ok_or_else(|| socle::echec::cle("Des congés pris disent leur premier et leur dernier jour.", cle));
-        Ok((lu(self.debut, "debut")?, lu(self.fin, "fin")?))
+        socle::date::Periode::du_au(lu(self.debut, "debut")?, lu(self.fin, "fin")?)
     }
 }
 

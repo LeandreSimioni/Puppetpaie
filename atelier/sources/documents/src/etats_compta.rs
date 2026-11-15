@@ -1359,7 +1359,7 @@ fn provision_d_une_annee_importee(
             continue;
         };
         // Un bulletin repris qui ne dit pas son brut ne couvre pas sa periode : la remuneration est celle que la fiche recopie.
-        if let Some((periode, true)) = bruts(&cle, &cpt.periode_debut, &fin)? {
+        if let Some((periode, true)) = bruts(&cle, &cpt.periode.debut(), &fin)? {
             if !cpt.remuneration_periode.est_nul() && cpt.remuneration_periode != periode {
                 avert.push(format!(
                     "{} : la rémunération de la période que sa fiche recopie ({}) n'est pas la somme des bruts de ses bulletins repris ({}) ; la provision prend les bulletins.",
@@ -1370,8 +1370,8 @@ fn provision_d_une_annee_importee(
             }
             cpt.remuneration_periode = periode;
         }
-        if let (Some(du), Some(au)) = (cpt.report_debut, cpt.report_fin) {
-            if let Some((report, true)) = bruts(&cle, &du, &au)? {
+        if let Some(r) = cpt.report {
+            if let Some((report, true)) = bruts(&cle, &r.debut(), &r.fin())? {
                 cpt.remuneration_report = report;
             }
         }

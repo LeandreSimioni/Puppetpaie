@@ -96,7 +96,7 @@ fn plafonner(a: &(Decimal,)) -> Rendu<Decimal> {
     p::plafonner(a.0).into()
 }
 fn periode_de_reference(a: &(Jour,)) -> Rendu<(Jour, Jour)> {
-    p::periode_de_reference(&a.0).into()
+    p::periode_de_reference(&a.0).map(|r| (r.debut(), r.fin())).into()
 }
 fn jours_acquis(a: &(Jour, Jour)) -> Rendu<Decimal> {
     p::jours_acquis(&a.0, &a.1).into()
