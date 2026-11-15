@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use engagement::calcul::Paie;
 use droit::contexte::{aujourdhui, Contexte};
-use socle::date::Jour;
+use socle::date::{Anciennete, Duree, Jour};
 use crate::dsn::{
     affiliations, bloc_anciennete, bloc_contrat, usage_admet, Fichier, LOGICIEL, VERSION,
 };
@@ -336,7 +336,9 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         // L'anciennete, due des qu'une adhesion prevoyance est declaree.
         // Elle part de `date_anciennete` de la fiche, que la validation du premier engagement pose (comme le FCTU).
         let depuis = *s.date_anciennete.exigee("date_anciennete")?;
-        bloc_anciennete(&mut f, paie, 1.max(e.debut.moins(&depuis) + 1))?;
+        // La norme interdit zero (CCH-12) : un debut avant la date d'anciennete en declare un jour.
+        let jours = Anciennete::en_jours(&depuis, &e.debut);
+        bloc_anciennete(&mut f, paie, if jours.nulle() { Duree::jours(1) } else { jours })?;
     }
 
     let n = f.lignes.len() + 2;

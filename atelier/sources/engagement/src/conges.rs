@@ -1215,7 +1215,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
              conventionnel de {}{} = {} -- {}.",
             qui(ctx, e),
             virgule(pourcentage),
-            pa.annees,
+            pa.annees.nombre_d_ans_revolus()?,
             euros(base_conv),
             proratise,
             euros(montant),

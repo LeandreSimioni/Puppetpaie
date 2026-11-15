@@ -561,7 +561,7 @@ ou un annule.",
 
     // ------------------------------------------------------------ S21 anciennete
     let depuis = *s.date_anciennete.exigee("date_anciennete")?;
-    bloc_anciennete(&mut f, paie, fin_jour.moins(&depuis) + 1)?;
+    bloc_anciennete(&mut f, paie, socle::date::Anciennete::en_jours(&depuis, &fin_jour))?;
 
     let n = f.lignes.len() + 2;
     f.add(droit::rubrique!("S90.G00.90.001"), n);

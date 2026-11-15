@@ -711,7 +711,7 @@ impl<'a> Cx<'a> {
             ));
         };
         let veille = jour_de_paie(self.paie).plus_jours(-1)?;
-        let ans = i64::from(veille.an) - i64::from(depuis.an) - i64::from((veille.mois, veille.jour) < (depuis.mois, depuis.jour));
+        let ans = socle::date::Anciennete::revolue(depuis, &veille).nombre_d_ans_revolus()?;
         let e = (ans.div_euclid(5) + 1).clamp(1, 5) as usize;
         Ok((e, format!("échelon {}, dans la fonction depuis le {}", e, depuis.jj_mm_aaaa())))
     }

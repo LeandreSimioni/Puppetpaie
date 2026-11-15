@@ -130,6 +130,16 @@ impl Duree {
         <u32 as serde::Deserialize>::deserialize(d).map(Duree::mois)
     }
 
+    /// SON NOMBRE DE JOURS, A L'ECRITURE D'UNE NORME qui le dit en nombre (la DSN : S21.G00.86.003) ; une duree en mois
+    /// ne s'y ecrit pas.
+    #[track_caller]
+    pub fn jours_a_ecrire(self) -> R<u32> {
+        match self.0 {
+            Compte::Jours(n) => Ok(n),
+            Compte::Mois(_) => Err(refus(format!("{} ne s'écrivent pas en jours", self))),
+        }
+    }
+
     /// Ecrite en son nombre de jours (un champ `…jours` d'un fichier) : `#[serde(serialize_with =
     /// "socle::date::Duree::ecrite_en_jours")]` ; une duree en mois ne s'y ecrit pas.
     pub fn ecrite_en_jours<S: serde::Serializer>(d: &Duree, s: S) -> Result<S::Ok, S::Error> {
@@ -230,6 +240,35 @@ impl Anciennete {
             let (an, mois) = if mois == 12 { (an + 1, 1) } else { (an, mois + 1) };
             Jour::nouveau(an, mois, 1)
         })
+    }
+
+    /// L'ANCIENNETE DITE EN JOURS, DE `depuis` AU `au`, l'un et l'autre compris ; aucun quand `au` precede `depuis` :
+    /// celle que la DSN declare (S21.G00.86.003, « en jours »).
+    pub fn en_jours(depuis: &Jour, au: &Jour) -> Duree {
+        Duree::du_au(depuis, au)
+    }
+
+    /// CE QU'ELLE A DE PLUS QUE `seuil` ; rien quand elle ne l'atteint pas.
+    pub fn au_dela_de(self, seuil: Anciennete) -> Anciennete {
+        if self.0 > seuil.0 {
+            Anciennete(num::sub(self.0, seuil.0))
+        } else {
+            Anciennete::ZERO
+        }
+    }
+
+    /// COMBIEN DE FOIS ENTIERES `pas` Y TIENT (un compte : « dix jours par période entière de cinq ans ») ; refus d'un
+    /// `pas` nul.
+    #[track_caller]
+    pub fn fois_entieres(self, pas: Anciennete) -> R<u32> {
+        use rust_decimal::prelude::ToPrimitive;
+        if pas.0 <= Decimal::ZERO {
+            return Err(refus(format!("une ancienneté de {} mois ne se compte pas par périodes", pas.0)));
+        }
+        match num::div(self.0, pas.0).floor().to_u32() {
+            Some(n) => Ok(n),
+            None => Err(refus(crate::num::illisible(&self.0.to_string()))),
+        }
     }
 
     /// L'AGE au `au` de qui est ne le `naissance` : ses annees revolues.

@@ -333,8 +333,8 @@ forme! {
 forme! {
     /// D1237-1 : un forfait de mois de salaire a partir d'une anciennete.
     pub struct PalierDeDepart {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub anciennete_annees: Decimal,
+        #[serde(deserialize_with = "Anciennete::en_annees")]
+        pub anciennete_annees: Anciennete,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub mois_de_salaire: Decimal,
     }
@@ -456,7 +456,8 @@ forme! {
 forme! {
     /// D1226-2 : `jours` de plus par `par_annees` d'anciennete au-dela de la premiere, chaque tranche au plus `plafond_jours`.
     pub struct Majoration {
-        pub par_annees: i64,
+        #[serde(deserialize_with = "Anciennete::en_annees_entieres")]
+        pub par_annees: Anciennete,
         #[serde(deserialize_with = "Duree::en_jours")]
         pub jours: Duree,
         #[serde(deserialize_with = "Duree::en_jours")]
@@ -1005,12 +1006,13 @@ pub struct PlancherDeLaRupture {
 
 /// L'indemnite legale de depart a la retraite : son montant, les mois de salaire et le palier (en annees) qui la
 /// donnent.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IndemniteDuDepart {
     pub montant: Decimal,
     pub du: bool,
     pub mois: Decimal,
-    pub palier: Option<i64>,
+    /// L'anciennete du palier atteint.
+    pub palier: Option<Anciennete>,
     pub pourquoi: Option<String>,
 }
 
@@ -1208,19 +1210,19 @@ pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnM
     let Some(premier) = tries.first() else {
         return Err(socle::echec::livree(&BASE, "depart_a_la_retraite.indemnite.taux"));
     };
-    let Some(palier) = tries.iter().filter(|t| annees >= t.anciennete_annees).last() else {
+    let Some(palier) = tries.iter().filter(|t| anciennete >= t.anciennete_annees).last() else {
         return Ok(IndemniteDuDepart { montant: Montant::ZERO.decimal(), du: false, mois: Decimal::ZERO, palier: None, pourquoi: Some(format!(
             "{} an(s) d'anciennete, et l'indemnite legale de depart a la retraite commence a {} ans \
              (D1237-1) -- il n'y a pas de prorata en dessous. La convention collective, elle, \
              en prevoit souvent une des la premiere annee.",
-            annees_lisibles(annees), premier.anciennete_annees)) });
+            annees_lisibles(annees), premier.anciennete_annees.annees())) });
     };
     let mois = palier.mois_de_salaire;
     Ok(IndemniteDuDepart {
         montant: Montant::du_decimal(mul(mois, reference()?)).au_centime().decimal(),
         du: true,
         mois,
-        palier: Some(palier.anciennete_annees.trunc().to_i64().ok_or_else(|| socle::echec::refus(socle::num::illisible(&palier.anciennete_annees.to_string())))?),
+        palier: Some(palier.anciennete_annees),
         pourquoi: None,
     })
 }
@@ -1270,10 +1272,9 @@ pub fn duree_du_maintien(anciennete: Anciennete) -> R<Vec<Tranche>> {
     let rg = regles()?;
     let r = &rg.maintien_de_salaire;
     let maj = &r.majoration;
-    let annees = anciennete.nombre_d_ans_revolus()?;
-    let au_dela = (annees - 1).max(0);
-    let par_annees = u32::try_from(au_dela / maj.par_annees).map_err(|_| socle::echec::livree(&BASE, "maintien_de_salaire.majoration.par_annees"))?;
-    let bonus = maj.jours.fois(par_annees);
+    // « au-delà de la première » annee revolue.
+    let au_dela = anciennete.ans_revolus().au_dela_de(Anciennete::d_annees(Decimal::ONE));
+    let bonus = maj.jours.fois(au_dela.fois_entieres(maj.par_annees)?);
     r.tranches
         .iter()
         .map(|t| {

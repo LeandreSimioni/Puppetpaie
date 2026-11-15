@@ -28,7 +28,7 @@ use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
-use socle::date::Jour;
+use socle::date::{Anciennete, Duree, Jour};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -1630,7 +1630,7 @@ fn qui_contrat(p: &Paie) -> String {
 /// paie la lit ainsi, `calcul::fiche_de_l_engagement` ; l'import la pose au premier contrat lu), et que les gens peuvent
 /// changer. Une fiche qui ne la porte pas ne dit pas ce jour : elle refuse. Une date apres la fin du mois donnerait zero
 /// ou moins, que la CCH-12 interdit : elle refuse aussi.
-pub fn anciennete_du_mois(s: &droit::fiche::ChampsSalarie, cle: &IdSalarie, fin_m: &Jour) -> R<i64> {
+pub fn anciennete_du_mois(s: &droit::fiche::ChampsSalarie, cle: &IdSalarie, fin_m: &Jour) -> R<Duree> {
     let Some(depuis) = s.date_anciennete.dite().copied() else {
         return Err(socle::echec::cle(format!(
             "{} : la fiche ne porte pas sa date d'anciennete (« Dans la compagnie depuis »), d'ou se \
@@ -1640,11 +1640,11 @@ la fiche : le jour ou la personne est entree dans la compagnie.",
             qui_fiche(s, cle)
         ), "date_anciennete"));
     };
-    let jours = fin_m.moins(&depuis) + 1;
-    if jours < 1 {
+    let jours = Anciennete::en_jours(&depuis, fin_m);
+    if jours.nulle() {
         return Err(socle::echec::cle(format!(
             "{} : la fiche date son anciennete du {}, apres la fin du mois declare ({}). \
-L'anciennete declaree en S21.G00.86.003 serait de {} jour(s), et la norme DSN interdit zero (CCH-12, cahier technique \
+L'anciennete declaree en S21.G00.86.003 serait de {}, et la norme DSN interdit zero (CCH-12, cahier technique \
 p. 322). Corriger la date sur la fiche : le jour ou la personne est entree dans la compagnie.",
             qui_fiche(s, cle),
             depuis.jj_mm_aaaa(),
@@ -2056,11 +2056,11 @@ fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDec
 }
 
 /// Le bloc S21.G00.86 : l'anciennete dans l'entreprise, en jours.
-pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> R<()> {
+pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: Duree) -> R<()> {
     let nat = p.engagement.nat()?;
     f.add_opt(droit::rubrique!("S21.G00.86.001"), nat.code(droit::rubrique!("S21.G00.86.001")))?;
     f.add_opt(droit::rubrique!("S21.G00.86.002"), nat.code(droit::rubrique!("S21.G00.86.002")))?;
-    f.add(droit::rubrique!("S21.G00.86.003"), jours);
+    f.add(droit::rubrique!("S21.G00.86.003"), jours.jours_a_ecrire()?);
     f.add_opt(droit::rubrique!("S21.G00.86.005"), p.engagement.numero.clone())
 }
 

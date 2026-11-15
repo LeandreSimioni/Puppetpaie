@@ -140,7 +140,7 @@ fn indemnite_rupture_conventionnelle(a: &(Decimal, Decimal)) -> Rendu<PlancherDe
     p::indemnite_rupture_conventionnelle(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(|i| PlancherDeLaRupture { plancher: i.plancher, annees: i.annees, pourquoi: i.pourquoi }).into()
 }
 fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart> {
-    p::indemnite_depart_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
+    p::indemnite_depart_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier.map(|p| p.nombre_d_ans_revolus().unwrap()), pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
     p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique: rubrique.into() })).into()

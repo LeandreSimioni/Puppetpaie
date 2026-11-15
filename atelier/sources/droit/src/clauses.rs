@@ -318,7 +318,8 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Palier {
-    pub anciennete_annees: i64,
+    #[serde(deserialize_with = "Anciennete::en_annees_entieres")]
+    pub anciennete_annees: Anciennete,
     pub mois_de_salaire: Nombre,
 }
 
@@ -427,7 +428,8 @@ forme! {
     pub struct PrimeAnciennete {
         pub article: String,
         pub annexe: AnnexeConvention,
-        pub apres_annees: i64,
+        #[serde(deserialize_with = "Anciennete::en_annees_entieres")]
+        pub apres_annees: Anciennete,
         pub pourcentage_par_annee: i64,
         pub plafond_pourcentage: i64,
         /// Les familles de metiers payees a la grille du costume.
@@ -998,10 +1000,10 @@ fn set(l: &mut Vec<(String, P)>, k: &str, v: P) {
 // ------------------------------------------------------------ la retraite
 /// `(mois de salaire, palier atteint)` d'un bareme par paliers, avec la part au prorata qui le precede quand la
 /// convention en a une.
-pub fn paliers(paliers: &[Palier], prorata: Option<&Prorata>, annees: P) -> (P, Option<i64>) {
+pub fn paliers(paliers: &[Palier], prorata: Option<&Prorata>, annees: P) -> (P, Option<Anciennete>) {
     let mut triees: Vec<&Palier> = paliers.iter().collect();
     triees.sort_by_key(|p| p.anciennete_annees);
-    let atteint = triees.into_iter().filter(|x| annees >= P::entier(x.anciennete_annees)).last();
+    let atteint = triees.into_iter().filter(|x| annees >= x.anciennete_annees.annees_d28()).last();
     if let Some(x) = atteint {
         return (p(&x.mois_de_salaire), Some(x.anciennete_annees));
     }
@@ -1018,7 +1020,8 @@ pub struct Retraite {
     pub releve: bool,
     pub montant: Option<P>,
     pub mois: Option<P>,
-    pub palier: Option<i64>,
+    /// L'anciennete du palier atteint.
+    pub palier: Option<Anciennete>,
     pub article: Option<String>,
     pub hors_primes: bool,
     pub prevenance_mois: Option<Duree>,
@@ -1129,7 +1132,8 @@ pub struct Prime {
     pub base: Option<P>,
     pub article: String,
     pub pourquoi: Option<String>,
-    pub annees: i64,
+    /// Les ans de presence, revolus.
+    pub annees: Anciennete,
 }
 
 /// La rubrique de la prime d'anciennete (`rubriques-base.json`) : la ligne que le calcul compose pour un contrat paye au
@@ -1205,8 +1209,10 @@ pub fn prime_anciennete(
             "date_anciennete",
         )
     })?;
-    let annees = Anciennete::revolue(&debut, jour).nombre_d_ans_revolus()?;
-    let pourcentage = sec.plafond_pourcentage.min((annees - (sec.apres_annees - 1)).max(0) * sec.pourcentage_par_annee);
+    let annees = Anciennete::revolue(&debut, jour).ans_revolus();
+    // Un pourcentage par annee de presence a partir de la `apres_annees`-ieme, comprise.
+    let presence_comptee = if annees >= sec.apres_annees { annees.au_dela_de(sec.apres_annees).nombre_d_ans_revolus()? + 1 } else { 0 };
+    let pourcentage = sec.plafond_pourcentage.min(presence_comptee * sec.pourcentage_par_annee);
     if pourcentage <= 0 {
         return Ok(None);
     }

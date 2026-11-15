@@ -200,7 +200,7 @@ pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Op
         "mise_a_la_retraite" => conv.mise_a_la_retraite.as_ref().map(|m| (m.paliers.as_ref().unwrap(), m.prorata.as_ref())).unwrap(),
         _ => conv.depart_a_la_retraite.as_ref().map(|m| (m.paliers.as_ref().unwrap(), m.prorata.as_ref())).unwrap(),
     };
-    annees(g).into_iter().map(|a| c::paliers(paliers, prorata, a)).collect()
+    annees(g).into_iter().map(|a| c::paliers(paliers, prorata, a)).map(|(m, p)| (m, p.map(|p| p.nombre_d_ans_revolus().unwrap()))).collect()
 }
 
 pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option<c::ClauseDAnnexe>>> {
@@ -375,7 +375,7 @@ pub(crate) fn retraite_ecrite(r: Retraite) -> RetraiteLue {
         releve: r.releve,
         montant: nombre(r.montant),
         mois: nombre(r.mois),
-        palier: r.palier,
+        palier: r.palier.map(|p| p.nombre_d_ans_revolus().unwrap()),
         article: r.article,
         hors_primes: r.hors_primes,
         prevenance_mois: r.prevenance_mois,
@@ -385,7 +385,7 @@ pub(crate) fn retraite_ecrite(r: Retraite) -> RetraiteLue {
 }
 
 pub(crate) fn prime_ecrite(p: Option<Prime>) -> Option<PrimeLue> {
-    p.map(|p| PrimeLue { pourcentage: p.pourcentage, base: nombre(p.base), article: p.article, pourquoi: p.pourquoi, annees: p.annees })
+    p.map(|p| PrimeLue { pourcentage: p.pourcentage, base: nombre(p.base), article: p.article, pourquoi: p.pourquoi, annees: p.annees.nombre_d_ans_revolus().unwrap() })
 }
 
 pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {

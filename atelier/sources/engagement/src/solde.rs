@@ -806,12 +806,12 @@ fn indemnite_de_rupture(
     let mut ouvert = false;
     let mut supplement_rub = format!("{}_conventionnelle", rubrique_sec);
     // Le palier de la loi (en annees) et ses mois de salaire, au depart a la retraite.
-    let mut palier: Option<(i64, Decimal)> = None;
+    let mut palier: Option<(Anciennete, Decimal)> = None;
     let (legale, article, quoi, c): (permanents::IndemniteLegale, &str, &str, Conventionnelle);
 
     if fin_cdi == permanents::FinDeCdi::DepartALaRetraite {
         let depart = permanents::indemnite_depart_retraite(anciennete, &mut retenu)?;
-        palier = depart.palier.filter(|p| *p != 0).map(|p| (p, depart.mois));
+        palier = depart.palier.filter(|p| *p != Anciennete::ZERO).map(|p| (p, depart.mois));
         legale = permanents::IndemniteLegale { montant: depart.montant, du: depart.du, pourquoi: depart.pourquoi, annees: None };
         article = "L1237-9 et D1237-1";
         quoi = "depart a la retraite";
@@ -1018,7 +1018,10 @@ fn indemnite_de_rupture(
             )));
         }
     }
-    let detail: String = palier.map(|(ans, mois)| format!(" -- palier de {} ans de la loi, {} mois de salaire", ans, mois)).into_iter().collect();
+    let detail = match palier {
+        Some((ans, mois)) => format!(" -- palier de {} ans de la loi, {} mois de salaire", ans.nombre_d_ans_revolus()?, mois),
+        None => String::new(),
+    };
     stc.avertissements.push(info(format!(
         "{} : indemnité de {} {} ({} mois d'ancienneté, salaire de \
          référence {} par {}){} -- loi ({}) : {} ; {}.{}",
