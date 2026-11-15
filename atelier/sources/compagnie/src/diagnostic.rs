@@ -1235,7 +1235,7 @@ pub fn machine(racine: &Path) -> Machine {
 /// Un depot du mois, tel qu'un incident le dit : l'acte, quand, le mode, accepte ou non, et les verdicts des organismes.
 #[derive(Debug, serde::Serialize)]
 pub struct DepotDit {
-    quoi: envois::ligne::Acte,
+    quoi: documents::Acte,
     quand: socle::paris::InstantOuJour,
     mode: socle::mode::Mode,
     accepte: bool,

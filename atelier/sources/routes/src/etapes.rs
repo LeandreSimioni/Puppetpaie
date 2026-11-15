@@ -1902,7 +1902,7 @@ impl<'a> Moteur<'a> {
     /// plate-forme a pris et qu'aucun bilan n'a refuses (les lignes du journal des envois, telles qu'elles sont).
     pub(crate) fn depots_reels(&mut self, mois: Mois, nic: Option<&Nic>) -> R<Vec<envois::journal::Ligne>> {
         let lignes = self.lignes()?;
-        let reels = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), Some(mois), Some(socle::mode::Mode::Reel));
+        let reels = envois::journal::filtrer(&lignes, Some(documents::Acte::Dsn), Some(mois), Some(socle::mode::Mode::Reel));
         let mut out = Vec::new();
         for l in etats::de_l_etablissement(reels, nic, self.nic().as_ref()) {
             if !l.accepte() || l.signalement() || etats::refuse_par_un_retour(l) {
@@ -2057,7 +2057,7 @@ impl<'a> Moteur<'a> {
         let chemin = premier.chemin.clone();
         let lignes = self.lignes()?;
         let empreinte = envois::journal::empreinte_fichier(&chemin).map_err(|m| m.reclasser(Classe::FichierAbsent))?;
-        let acte = if quoi == DSN { envois::journal::Acte::Dsn } else { envois::journal::Acte::Dpae };
+        let acte = if quoi == DSN { documents::Acte::Dsn } else { documents::Acte::Dpae };
         if etats::deja_depose(&lignes, acte, &empreinte).is_some() {
             return Ok(None);
         }

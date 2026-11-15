@@ -2,8 +2,9 @@
 //! comparable a celles deja ecrites : c'est elle qui dit qu'un fichier est deja parti.
 
 use documents::fiche_questionnaire::CodeDeDemande;
+use documents::Acte;
 use droit::fiche::Courriel;
-use envois::journal::{self, Acte, DetailDsn, Envoi, Ligne, Revenu, RetourFiche};
+use envois::journal::{self, DetailDsn, Envoi, Ligne, Revenu, RetourFiche};
 use socle::mode::Mode;
 use socle::mois::Mois;
 

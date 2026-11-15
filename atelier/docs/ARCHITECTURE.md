@@ -929,6 +929,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | mode d'un envoi (test ou réel) | `socle::mode::Mode` | `socle/src/mode.rs` |
 | ce qui est prêt à partir au tableau de l'administrateur | `routes::gestes::administrateur::Pret` | `routes/src/gestes/administrateur.rs` |
 | mode de remise d'une pièce remise aux salariés | `ModeDeRemise` | `documents/src/lib.rs` |
+| sorte d'un envoi au journal des envois | `documents::Acte` | `documents/src/lib.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
@@ -994,7 +995,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   Spectacles, toute paie, l'envoi par courriel. Une liste du logiciel, écrit `dsn`, `dpae`, `contrat`, `bulletin`,
   `certificat`, `paie`, `envoi`. Que portent une ligne et une case de `champs-base.json`, leur description, ce qu'une
   case sert (`Sert`), le refus d'un acte quand une fiche n'a pas ce qu'il exige (`refus_des_manques`). La sorte d'un
-  envoi au journal (`envois::ligne::Acte`) est une autre notion.
+  envoi au journal (`documents::Acte`) est une autre notion.
 - **marqueur** : un champ qu'un modèle de document cite (`{{employeur.siret}}`) ; aussi une clause d'un contrat parti.
   Une liste du logiciel : il s'écrit, se lit et se trie par son nom (`nom()`). Il est dans `droit` pour que la table des
   natures (`contrats-base.json`, ses mentions obligatoires) le lise à sa porte. Que portent une mention d'une nature, les

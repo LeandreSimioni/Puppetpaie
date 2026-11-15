@@ -277,7 +277,7 @@ fn deposer_les_dsn(
     let f = Moteur::nouveau(ctx).fichiers_deposables(mois)?;
     let chemins: Vec<std::path::PathBuf> = f.dsn.iter().map(|x| x.chemin.clone()).collect();
     let journal = envois::journal::lu(&ctx.racine)?;
-    let lignes: Vec<&envois::journal::Ligne> = envois::journal::filtrer(&journal.lignes, Some(envois::journal::Acte::Dsn), None, None).filter(|l| l.accepte()).collect();
+    let lignes: Vec<&envois::journal::Ligne> = envois::journal::filtrer(&journal.lignes, Some(documents::Acte::Dsn), None, None).filter(|l| l.accepte()).collect();
     let mut fait = false;
     for chemin in chemins {
         let p = chemin.as_path();

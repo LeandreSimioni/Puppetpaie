@@ -516,11 +516,11 @@ impl EtapeDEcheance {
     }
 }
 
-/// L'etape d'une echeance, ecrite par son nom ; une echeance sans etape (une DPAE, une echeance de l'annee) l'ecrit vide.
+/// L'etape d'une echeance, ecrite par son nom ; une echeance sans etape (une DPAE, une echeance de l'annee) l'ecrit `null`.
 fn etape_ecrite<S: serde::Serializer>(etape: &Option<EtapeDEcheance>, s: S) -> Result<S::Ok, S::Error> {
     match etape {
         Some(e) => s.serialize_str(e.nom()),
-        None => s.serialize_str(""),
+        None => s.serialize_none(),
     }
 }
 
@@ -1247,7 +1247,7 @@ fn spectacles_a_revoir(ctx: &Contexte, annee: i32, faites: &Cochees) -> R<Vec<Sp
 /// Le mois le plus recent dont la DSN reelle est partie et n'a pas ete
 /// refusee -- passee, ou en attente de son bilan.
 fn derniere_dsn_passee(st: &Etat) -> R<Option<Mois>> {
-    let mois: BTreeSet<Mois> = envois::journal::filtrer(&st.journal, Some(envois::journal::Acte::Dsn), None, Some(socle::mode::Mode::Reel)).filter(|l| l.accepte() && !l.signalement()).filter_map(|l| l.mois()).collect();
+    let mois: BTreeSet<Mois> = envois::journal::filtrer(&st.journal, Some(documents::Acte::Dsn), None, Some(socle::mode::Mode::Reel)).filter(|l| l.accepte() && !l.signalement()).filter_map(|l| l.mois()).collect();
     let mut passes = Vec::new();
     for m in mois {
         if !etat_dsn::du_mois(st.ctx, m, None)?.a_faire() {

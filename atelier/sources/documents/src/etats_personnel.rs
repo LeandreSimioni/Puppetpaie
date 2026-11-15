@@ -269,18 +269,18 @@ pub fn fichier_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 // ===================================== 16. le journal des declarations
 
-/// `ACTES_LIBELLES`.
-fn acte_lisible(quoi: &str) -> Option<&'static str> {
-    Some(match quoi {
-        "dsn" => "DSN",
-        "dpae" => "DPAE",
-        "documents" => "Documents au salarié",
-        "contrat-signature" => "Contrat envoyé à la signature",
-        "contrat-contresigne" => "Contrat contresigné renvoyé",
-        "regularisation-casc" => "Régularisation CASC-SVP",
-        "dossier-salarie" => "Dossier envoyé au salarié",
-        _ => return None,
-    })
+/// L'acte tel que le journal des declarations le dit ; une fiche de demande, par sa sorte.
+fn acte_lisible(quoi: crate::Acte) -> &'static str {
+    match quoi {
+        crate::Acte::Dsn => "DSN",
+        crate::Acte::Dpae => "DPAE",
+        crate::Acte::Documents => "Documents au salarié",
+        crate::Acte::ContratSignature => "Contrat envoyé à la signature",
+        crate::Acte::ContratContresigne => "Contrat contresigné renvoyé",
+        crate::Acte::RegularisationCasc => "Régularisation CASC-SVP",
+        crate::Acte::DossierSalarie => "Dossier envoyé au salarié",
+        crate::Acte::FicheDemande => quoi.nom(),
+    }
 }
 
 /// Une reponse lisible, entiere ; un rapport XML se lit au journal, pas dans une case.
@@ -298,8 +298,8 @@ fn reponse(r: &str) -> String {
 /// journal (`envois::journal::Ligne`), que ce module ne lit pas.
 pub struct ActeDuJournal {
     pub quand: socle::paris::InstantOuJour,
-    /// Sa sorte, telle que le journal l'ecrit (`dsn`, `contrat-signature`...).
-    pub quoi: String,
+    /// Sa sorte.
+    pub quoi: crate::Acte,
     /// Sa remise, s'il en a une (la signature d'un contrat, l'envoi des documents).
     pub remise: Option<crate::ModeDeRemise>,
     /// Le mois qu'il declare, s'il en declare un.
@@ -327,12 +327,9 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
         }
         let mut x = Ligne::nouvelle();
         x.t(C::Quand, l.quand.iso().replace('T', " ").chars().take(16).collect::<String>());
-        let main_propre = l.quoi == "contrat-signature" && l.remise == Some(crate::ModeDeRemise::Imprime);
-        // Un acte que la table ne nomme pas se dit par sa sorte, telle que le journal l'ecrit.
-        let acte = match (main_propre, acte_lisible(&l.quoi)) {
-            (true, _) => "Contrat imprimé, à remettre en main propre".to_string(),
-            (false, Some(a)) => a.to_string(),
-            (false, None) => l.quoi.clone(),
+        let acte = match (l.quoi, l.remise) {
+            (crate::Acte::ContratSignature, Some(crate::ModeDeRemise::Imprime)) => "Contrat imprimé, à remettre en main propre",
+            (quoi, _) => acte_lisible(quoi),
         };
         x.t(C::Acte, acte);
         x.m(C::Mois, m).t(C::Mode, l.mode.nom()).t(C::Issue, if l.accepte { "accepté" } else { "refusé ou échoué" });

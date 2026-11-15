@@ -426,7 +426,7 @@ fn copier(src: &Path, dst: &Path, racine: &Path) -> R<()> {
 
 /// Le journal de la copie sans les depots de DSN de la fictive (mensuelles et signalements, essais et reels) : voir l'en-tete.
 fn retirer_les_depots_de_dsn(dossier: &Path) -> R<()> {
-    envois::journal::ne_garder_que(dossier, |l| l.acte() != envois::journal::Acte::Dsn)
+    envois::journal::ne_garder_que(dossier, |l| l.acte() != documents::Acte::Dsn)
 }
 
 /// Monte (ou remet a jour) la compagnie d'essai dans `dossier`, depuis la fictive `fictive`, sous l'identite `texte` (le

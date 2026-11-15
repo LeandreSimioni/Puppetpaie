@@ -97,7 +97,7 @@ fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
 pub fn en_cours(ctx: &Contexte, cle: &IdSalarie) -> R<Option<EnCours>> {
     let lignes = envois::journal::lu(&ctx.racine).map_err(|e| e.reclasser(Classe::Disque))?.lignes;
     let pour_lui = |l: &envois::journal::Ligne| l.versions().is_some_and(|v| v.iter().any(|x| x.salarie == *cle));
-    let derniere = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, Some(Mode::Reel))
+    let derniere = envois::journal::filtrer(&lignes, Some(documents::Acte::Dsn), None, Some(Mode::Reel))
         .filter(|l| l.accepte() && l.nature_dsn() == Some(declarations::amorcage::NATURE) && pour_lui(l) && !envois::etats::refuse_par_un_retour(l))
         .last();
     let Some(l) = derniere else { return Ok(None) };

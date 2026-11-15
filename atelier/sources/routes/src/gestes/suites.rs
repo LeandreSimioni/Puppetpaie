@@ -60,7 +60,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<socle::mois::Mois> {
         let flux = retour.flux.as_ref()?;
         let l = journal.lignes.iter().find(|l| l.flux() == Some(flux))?;
-        (l.acte() == envois::journal::Acte::Dsn && l.nature_dsn() == Some(droit::nature_declaration::NatureDeLaDeclaration::Mensuelle)).then(|| l.mois()).flatten()
+        (l.acte() == documents::Acte::Dsn && l.nature_dsn() == Some(droit::nature_declaration::NatureDeLaDeclaration::Mensuelle)).then(|| l.mois()).flatten()
     };
     let mut tous = Vec::new();
     let mut sans_taux = Vec::new();
@@ -166,7 +166,7 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
     compagnie::incidents::noter(
         &ctx.racine,
         &compagnie::incidents::Note {
-            nature: if d.quoi == envois::journal::Acte::Dsn { compagnie::incidents::DSN } else { compagnie::incidents::DPAE },
+            nature: if d.quoi == documents::Acte::Dsn { compagnie::incidents::DSN } else { compagnie::incidents::DPAE },
             ou: &format!("depot-{}", d.quoi.nom()),
             quoi: socle::echec::classe_notee(d.classe),
             resume: &d.message,

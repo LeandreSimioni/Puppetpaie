@@ -1022,7 +1022,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     }
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
-    use envois::journal::{Acte, Ligne};
+    use documents::Acte;
+    use envois::journal::Ligne;
     let du_mois = |l: &Ligne| l.mois() == Some(le_mois) && l.accepte();
     let etiq = le_mois.etiquette();
     let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);

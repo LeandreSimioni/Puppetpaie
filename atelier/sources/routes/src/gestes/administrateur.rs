@@ -581,7 +581,7 @@ pub struct TableauCompagnie {
 fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &Path, mensuelle: Option<Mois>) -> R<Option<Etape>> {
     let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     let empreinte = socle::fichiers::Empreinte::des_octets(&octets).courte();
-    if etats::deja_depose(lignes, envois::journal::Acte::Dsn, &empreinte).is_some() {
+    if etats::deja_depose(lignes, documents::Acte::Dsn, &empreinte).is_some() {
         return Ok(None);
     }
     if let Some(m) = mensuelle {
@@ -590,7 +590,7 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
         }
     }
     let nom = socle::fichiers::NomDeFichier::du(chemin)?;
-    let r = etats::repetition(lignes, envois::journal::Acte::Dsn, &empreinte, &nom);
+    let r = etats::repetition(lignes, documents::Acte::Dsn, &empreinte, &nom);
     Ok(Some(match r.etat {
         etats::EtatDuTest::Ecrite => Etape::ATester,
         etats::EtatDuTest::EnTest => Etape::EnTest,

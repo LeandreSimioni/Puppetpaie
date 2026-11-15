@@ -464,7 +464,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<A
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
     let empreinte = socle::fichiers::Empreinte::des_octets(&contenu).courte();
-    let deja = etats::deja_depose(&lignes, envois::journal::Acte::Dsn, &empreinte);
+    let deja = etats::deja_depose(&lignes, documents::Acte::Dsn, &empreinte);
     let nom = NomDeFichier::du(std::path::Path::new(&chemin))?;
     let signalement = a.est_signalement();
     let mois = a.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}).", declarations::dsn_lue::SANS_MOIS)))?;
@@ -477,7 +477,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<A
             Err(e) => Recapitulatif::Illisible { erreur: e.phrase },
         })
     };
-    let repetition = etats::repetition(&lignes, envois::journal::Acte::Dsn, &empreinte, &nom);
+    let repetition = etats::repetition(&lignes, documents::Acte::Dsn, &empreinte, &nom);
     // LES ORDRES DE PAIEMENT EN CLAIR : a qui, pour quoi, combien, pour quand -- ceux de la DSN fabriquee
     // depuis les paies qu'elle couvre (`depart::refabriquer`) ; un fichier qui ne dit plus ce que disent les paies n'en
     // montre aucun.

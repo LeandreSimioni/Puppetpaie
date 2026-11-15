@@ -123,10 +123,10 @@ pub enum Quoi {
 
 impl Quoi {
     /// Sa sorte au journal des envois.
-    pub(crate) fn acte(self) -> envois::journal::Acte {
+    pub(crate) fn acte(self) -> documents::Acte {
         match self {
-            Quoi::Dpae => envois::journal::Acte::Dpae,
-            Quoi::Dsn => envois::journal::Acte::Dsn,
+            Quoi::Dpae => documents::Acte::Dpae,
+            Quoi::Dsn => documents::Acte::Dsn,
         }
     }
 }
@@ -852,7 +852,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
-    let du_flux = |q: envois::journal::Acte| flux.as_ref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == Some(f)));
+    let du_flux = |q: documents::Acte| flux.as_ref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == Some(f)));
     let (passe, refuse);
     if dpae {
         let etat = etats::etat_des_embauches(&lignes);

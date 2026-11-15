@@ -84,6 +84,37 @@ pub enum ModeDeRemise {
     Courriel,
 }
 
+/// LA SORTE D'UN ENVOI AU JOURNAL DES ENVOIS, telle que la ligne l'ecrit (`quoi` : `dsn`, `contrat-signature`...) :
+/// `envois::journal::Ligne::acte` la dit ; le journal des declarations la montre (`etats_personnel::ActeDuJournal`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Acte {
+    Dsn,
+    Dpae,
+    Documents,
+    ContratSignature,
+    ContratContresigne,
+    RegularisationCasc,
+    DossierSalarie,
+    FicheDemande,
+}
+
+impl Acte {
+    /// Son nom, tel que la ligne l'ecrit.
+    pub fn nom(self) -> &'static str {
+        match self {
+            Acte::Dsn => "dsn",
+            Acte::Dpae => "dpae",
+            Acte::Documents => "documents",
+            Acte::ContratSignature => "contrat-signature",
+            Acte::ContratContresigne => "contrat-contresigne",
+            Acte::RegularisationCasc => "regularisation-casc",
+            Acte::DossierSalarie => "dossier-salarie",
+            Acte::FicheDemande => "fiche-demande",
+        }
+    }
+}
+
 /// UNE SORTE DE PIECE DU DOSSIER D'UN SALARIE (`dossier-salarie`, `dossier-envoyer`) : une liste du logiciel, dans
 /// l'ordre ou le dossier se lit (`TOUTES`, l'ordre du type). Elle s'ecrit par son mot (`bulletins`, `contrats-signes`…),
 /// que la charge dit et que le journal des envois garde du dossier parti ; un autre mot se refuse a la lecture.

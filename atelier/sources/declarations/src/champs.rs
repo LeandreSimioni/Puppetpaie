@@ -714,7 +714,7 @@ pub fn description(nom: NomDeFiche) -> R<Vec<Description<'static>>> {
 /// sans la case) et `utile_pour` (le geste se fait autrement sans elle). Une liste du logiciel, ses actes : la DSN, la
 /// DPAE, le contrat, le bulletin, le certificat Congés Spectacles, toute paie, l'envoi par courriel. Ecrit par son mot
 /// (`dsn`, `dpae`, `contrat`, `bulletin`, `certificat`, `paie`, `envoi`) ; un autre mot refuse la table a sa lecture.
-/// Ce n'est pas la sorte d'un envoi au journal (`envois::ligne::Acte`).
+/// Ce n'est pas la sorte d'un envoi au journal (`documents::Acte`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActeExigeant {

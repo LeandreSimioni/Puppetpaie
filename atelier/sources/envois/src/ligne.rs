@@ -23,35 +23,7 @@ use socle::num::Decimal;
 use crate::envoi::IdDeCourriel;
 use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
 
-/// La sorte d'un envoi, telle que `quoi` l'ecrit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Acte {
-    Dsn,
-    Dpae,
-    Documents,
-    ContratSignature,
-    ContratContresigne,
-    RegularisationCasc,
-    DossierSalarie,
-    FicheDemande,
-}
-
-impl Acte {
-    /// Son nom, tel que la ligne l'ecrit.
-    pub fn nom(self) -> &'static str {
-        match self {
-            Acte::Dsn => "dsn",
-            Acte::Dpae => "dpae",
-            Acte::Documents => "documents",
-            Acte::ContratSignature => "contrat-signature",
-            Acte::ContratContresigne => "contrat-contresigne",
-            Acte::RegularisationCasc => "regularisation-casc",
-            Acte::DossierSalarie => "dossier-salarie",
-            Acte::FicheDemande => "fiche-demande",
-        }
-    }
-}
+pub(crate) use documents::Acte;
 
 /// Ce qui ne revient jamais d'un envoi (des documents, un contrat contresigne...) : sa liste `retours` reste vide.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
