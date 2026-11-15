@@ -300,7 +300,6 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
     let qui = qui(ctx, e);
     let motif = e.motif_rupture;
     let chomes = ctx.entreprise.feries_chomes();
-    let premier = mois.premier_jour();
 
     // --- l'indemnite compensatrice de conges payes (L3141-28 ; L1242-16 pour un CDD), quelle que soit la cause de la
     // rupture. L3141-28 « [n'est pas applicable] lorsque l'employeur est tenu d'adherer a une caisse de conges » (L3141-30) :
@@ -334,7 +333,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
         for c in e.conges_pris.iter().flatten() {
             pris_ce_mois = add(pris_ce_mois, Decimal::from(jours_ouvrables_de(c, chomes)?));
         }
-        let acquis_ce_mois = jours_acquis(&Periode::du_au(debut_de(e)?.max(premier), fin)?)?;
+        let acquis_ce_mois = jours_acquis(&Periode::du_mois(mois).bornee(debut_de(e)?, Some(fin))?)?;
         let solde = sub(add(cpt.solde(), acquis_ce_mois), pris_ce_mois);
         if solde > Decimal::ZERO {
             // Le maintien (L3141-24, II, `atelier/reference/sources/code-du-travail/xml/L3141-24.xml`) : ce que le salarie

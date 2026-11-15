@@ -725,7 +725,7 @@ impl Engagement {
     pub fn periode_payee(&self) -> R<socle::date::Periode> {
         match self.periode {
             Some(p) => Ok(p),
-            None => socle::date::Periode::du_au(self.debut.max(self.debut_mois()), self.fin.into_iter().fold(self.fin_mois(), Jour::min)),
+            None => socle::date::Periode::du_mois(self.mois).bornee(self.debut, self.fin),
         }
     }
 

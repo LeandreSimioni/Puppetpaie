@@ -1004,7 +1004,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         ));
     };
     // Le contrat borne au mois.
-    let presence = Periode::du_au(debut_saisi.max(du_mois.debut()), e.fin.map_or(fin_mois, |f| f.min(fin_mois)))?;
+    let presence = du_mois.bornee(debut_saisi, e.fin)?;
     // Le salaire d'un mois incomplet : l'horaire reel du mois, ou la regle de la convention qui en a une
     // (`droit::periodes::part_du_mois`).
     let salarie = salarie_de(e)?.clone();

@@ -244,6 +244,13 @@ impl Periode {
         }
     }
 
+    /// Ses jours a partir de `debut`, et jusqu'a `fin` quand il y en a une (un contrat dans un mois : son debut, sa fin
+    /// facultative). Refus quand il ne lui en reste aucun.
+    #[track_caller]
+    pub fn bornee(&self, debut: Jour, fin: Option<Jour>) -> R<Periode> {
+        Periode::du_au(self.debut.max(debut), fin.map_or(self.fin, |f| self.fin.min(f)))
+    }
+
     /// Le nombre de ses jours, l'un et l'autre bouts compris.
     pub fn duree(&self) -> Duree<EnJours> {
         Duree::du_au(&self.debut, &self.fin)

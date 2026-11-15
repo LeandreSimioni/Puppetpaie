@@ -546,13 +546,8 @@ pub fn indemnites_a_dire(ctx: &Contexte, carte: &crate::saisie::Carte, mois: Moi
     if !nat.mensuelle() {
         return Ok(None);
     }
-    let du_mois = Periode::du_mois(mois);
-    // Le contrat borne au mois ; un contrat qui ne touche pas le mois n'y a aucun jour d'arret a indemniser.
-    let (debut, fin) = (debut_contrat.max(du_mois.debut()), carte.fin.map_or(du_mois.fin(), |f| f.min(du_mois.fin())));
-    if debut > fin {
-        return Ok(None);
-    }
-    let presence = Periode::du_au(debut, fin)?;
+    // Le contrat borne au mois.
+    let presence = Periode::du_mois(mois).bornee(debut_contrat, carte.fin)?;
     for imp in crate::imprevus::du_contrat_dans_le_mois(ctx, salarie, &debut_contrat, carte.numero.as_ref(), mois)? {
         let Imprevu::Arret(imp) = imp else { continue };
         if !droits(ctx, &imp, &nat)?.is_some_and(|dr| dr.du()) {
