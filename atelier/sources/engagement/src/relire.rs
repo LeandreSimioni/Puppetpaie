@@ -106,7 +106,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         sub.periode = Some((e.debut_periode, e.fin_periode));
         sub.lignes = e.lignes.clone();
         // Une periode elementaire est celle d'un salarie au mois : sa quotite compte des heures.
-        sub.quotite_contrat = Some(Heures::du_decimal(court(e.quotite.0)));
+        sub.quotite_contrat = Some(socle::grandeurs::courte(e.quotite.heures("La quotité d'une période élémentaire")?));
         sub.heures = e.heures.map(|h| Heures::du_decimal(court(h.decimal())));
         periodes_lues.push(paie_lue(ctx, sub, x, periodes.get(n), &[])?);
     }

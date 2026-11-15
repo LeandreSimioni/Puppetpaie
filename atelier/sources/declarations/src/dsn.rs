@@ -1811,9 +1811,11 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     let quotite = e.quotite()?.decimal();
     // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
     // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
-    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, valeur: String| -> R<()> {
+    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, q: Decimal| -> R<()> {
         let plafond = nat.plafond_quotite();
-        let q = socle::num::dec_texte(&valeur)?;
+        // Ce que la DSN ecrit : la quotite a deux decimales (`qt`).
+        let q = q.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+        let valeur = qt(q);
         if q <= plafond {
             return Ok(());
         }
@@ -1843,11 +1845,13 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             cch
         ))
     };
-    depasse(droit::rubrique!("S21.G00.40.013"), "quotite", qt(quotite))?;
-    match e.quotite_reference()?.map(engagement::QuotiteDuContrat::decimal) {
-        Some(r) => {
-            depasse(droit::rubrique!("S21.G00.40.012"), "quotite de reference", qt(r))?;
-            quotite_de_reference_sans_heures_supplementaires(f, p, &nat, r)?;
+    depasse(droit::rubrique!("S21.G00.40.013"), "quotite", quotite)?;
+    match e.quotite_reference()? {
+        Some(reference) => {
+            // Son nombre, a la porte de la DSN.
+            let r = reference.decimal();
+            depasse(droit::rubrique!("S21.G00.40.012"), "quotite de reference", r)?;
+            quotite_de_reference_sans_heures_supplementaires(f, p, &nat, reference)?;
             f.add(droit::rubrique!("S21.G00.40.012"), qt(r))
         }
         None => return Err(refus("S21.G00.40.012 : la quotite de reference manque.")),
@@ -1996,23 +2000,25 @@ Rien n'est ecrit.",
 /// duree legale (35 heures par semaine, C. trav. L. 3121-27 : 151,67 h par mois, `quotite_reference_defaut` de la
 /// nature), une heure est une heure supplementaire (L. 3121-28) : une quotite de reference plus haute en inclut, et
 /// refuse. Une duree collective plus courte (32 h) passe. Un contrat d'usage (en jours) n'est pas concerne.
-fn quotite_de_reference_sans_heures_supplementaires(f: &Fichier, p: &Paie, nat: &droit::natures::Nature, reference: Decimal) -> R<()> {
+fn quotite_de_reference_sans_heures_supplementaires(f: &Fichier, p: &Paie, nat: &droit::natures::Nature, reference: engagement::QuotiteDuContrat) -> R<()> {
     let Some(texte) = f.norme()?.regle("quotite_reference_sans_heures_supplementaires")? else { return Ok(()) };
-    let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()).map(socle::grandeurs::Heures::decimal) else { return Ok(()) };
+    let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()) else { return Ok(()) };
+    let reference = reference.heures("La quotité de référence d'un contrat au mois")?;
     if reference <= legale {
         return Ok(());
     }
+    let (reference, legale) = (socle::grandeurs::ecrit::sans_zero::dit(reference), socle::grandeurs::ecrit::sans_zero::dit(legale));
     Err(refus!(
         "{} : quotite de reference de {} h (S21.G00.40.012, la durée de référence de la fiche entreprise ou de l'engagement), \
 au-dessus de la duree legale ({} h par mois, 35 heures par semaine). En norme {}, elle << ne doit pas inclure les heures \
 supplementaires structurelles >> : {} Declarer la duree collective sans les heures supplementaires (une compagnie a 39 h \
 declare {} h ; ses quatre heures sont des heures supplementaires, payees comme telles). Rien n'est ecrit.",
         qui_contrat(p),
-        qt(reference),
-        qt(legale),
+        reference,
+        legale,
         f.norme()?.version,
         texte,
-        qt(legale)
+        legale
     ))
 }
 

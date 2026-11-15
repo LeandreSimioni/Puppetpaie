@@ -224,7 +224,7 @@ pub(crate) struct ChargeNature {
     pub(crate) fin: Option<Jour>,
     pub(crate) numero: Option<engagement::numeros::NumeroContrat>,
     pub(crate) salaire: Option<MontantSaisi>,
-    pub(crate) quotite: Option<MontantSaisi>,
+    pub(crate) quotite: Option<socle::grandeurs::Heures>,
 }
 
 /// Un montant tel qu'il se saisit : un texte (« 1 850,00 ») ou un nombre.
@@ -245,15 +245,9 @@ impl MontantSaisi {
 }
 
 impl ChargeNature {
-    /// Une case de texte demandee (le salaire, la quotite), telle qu'elle est dite, sans ses blancs ; rien pour une case
-    /// vide. Un jour ni un numero de contrat ne sont un texte : ils se lisent dans leur case (`debut`, `fin`, `numero`).
-    fn lu(&self, champ: Demande) -> Option<String> {
-        let v = match champ {
-            Demande::Debut | Demande::Fin | Demande::Numero => None,
-            Demande::Salaire => self.salaire.as_ref().map(MontantSaisi::texte),
-            Demande::Quotite => self.quotite.as_ref().map(MontantSaisi::texte),
-        };
-        v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    /// Le salaire demande, tel qu'il est dit, sans ses blancs ; rien pour une case vide.
+    fn salaire(&self) -> Option<String> {
+        self.salaire.as_ref().map(MontantSaisi::texte).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
     }
 }
 
@@ -328,19 +322,21 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 *(if champ == Demande::Debut { &mut contrat.debut } else { &mut contrat.fin }) = Some(jour);
             }
             Demande::Salaire => {
-                let v = charge.lu(champ).ok_or_else(manque)?;
+                let v = charge.salaire().ok_or_else(manque)?;
                 match socle::num::decimal_a_virgule(&v).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreLu::de_decimal) {
                     Some(n) => contrat.salaire_mensuel = Some(n),
                     None => return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", v))),
                 };
             }
             Demande::Quotite => {
-                let v = charge.lu(champ).ok_or_else(manque)?;
-                // La duree saisie, a la francaise ou non : la porte de sa lecture.
-                match socle::grandeurs::lu::texte::<socle::grandeurs::Heures>(&v).filter(|h| *h > socle::grandeurs::Heures::ZERO).map(socle::grandeurs::courte) {
-                    Some(h) => contrat.quotite_contrat = Some(h),
-                    None => return Err(refus(format!("« {} » n'est pas une durée du travail en heures par mois : rien n'a été écrit.", v))),
-                };
+                let h = charge.quotite.ok_or_else(manque)?;
+                if h <= socle::grandeurs::Heures::ZERO {
+                    return Err(refus(format!(
+                        "« {} » n'est pas une durée du travail en heures par mois : rien n'a été écrit.",
+                        socle::grandeurs::ecrit::sans_zero::dit(h)
+                    )));
+                }
+                contrat.quotite_contrat = Some(socle::grandeurs::courte(h));
             }
             Demande::Numero => contrat.numero = Some(charge.numero.clone().ok_or_else(manque)?),
         }
@@ -437,8 +433,8 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
                 Demande::Fin => c.and_then(|c| c.fin).map(|j| charge.fin = Some(j)),
                 // La duree d'un contrat au mois : la quotite que la DSN declare en heures.
                 Demande::Quotite => match c.and_then(|c| c.quotite) {
-                    Some(engagement::QuotiteDuContrat::Heures(h)) => Some(charge.quotite = Some(MontantSaisi::Texte(socle::grandeurs::ecrit::sans_zero::dit(h)))),
-                    Some(engagement::QuotiteDuContrat::Jours(_)) | None => None,
+                    Some(engagement::QuotiteDuContrat::Heures(h)) => Some(charge.quotite = Some(h)),
+                    Some(_) | None => None,
                 },
             };
             complet &= pose.is_some();

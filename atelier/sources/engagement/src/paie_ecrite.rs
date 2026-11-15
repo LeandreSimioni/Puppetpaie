@@ -261,9 +261,8 @@ pub struct FormeDEngagement {
     pub contrat_ecrit: Option<ContratEcrit>,
     pub debut_periode: Jour,
     pub fin_periode: Jour,
-    /// Sa quotite (`Engagement::quotite`), sans son unite : des jours ou des heures, que sa nature dit.
-    #[serde(serialize_with = "nombre_ecrit")]
-    pub quotite: socle::forme::Nombre,
+    /// Sa quotite (`Engagement::quotite`), dans son unite.
+    pub quotite: crate::QuotiteDuContrat,
     pub sans_paie: bool,
     pub place: crate::PlaceDuMois,
     pub mois_du_contrat: Vec<Mois>,

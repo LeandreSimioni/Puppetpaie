@@ -302,7 +302,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
                 d.jj_mm_aaaa(),
                 f.jj_mm_aaaa(),
                 cadre,
-                socle::num::nombre(p.engagement.quotite()?.decimal()),
+                socle::grandeurs::ecrit::sans_zero::dit(p.engagement.quotite()?.heures("La durée d'une période élémentaire")?),
                 p.brut.decimal()
             ))
         })

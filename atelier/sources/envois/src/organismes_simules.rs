@@ -237,11 +237,11 @@ fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
                 let (Some(reference), Some(quotite)) = (k.quotite_reference, k.quotite) else {
                     return Err(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013"));
                 };
-                // 40.012 et 40.013 sont dans l'unite de 40.011 : leur rapport, le poids du contrat dans l'effectif.
-                if reference > Decimal::ZERO {
-                    socle::num::div(quotite.decimal(), reference).min(Decimal::ONE)
-                } else {
-                    Decimal::ONE
+                // 40.012 et 40.013 sont dans l'unite de 40.011 : leur rapport, le poids du contrat dans l'effectif (un
+                // nombre, ou l'effectif se compte).
+                match quotite.rapport(reference)? {
+                    Some(r) => r.decimal().min(Decimal::ONE),
+                    _ => Decimal::ONE,
                 }
             } else {
                 Decimal::ONE
@@ -603,18 +603,18 @@ pub fn garder(racine: &Path, avant: &Memoire, apres: &Memoire) -> R<()> {
 mod tests {
     use super::*;
 
-    /// Une DSN reduite a ce que le decompte lit, lue : un individu et ses contrats `(debut, fin, modalite, reference, quotite,
-    /// motif de recours)`, dates JJMMAAAA.
-    fn dsn(individus: &[(&str, &[(&str, &str, &str, &str, &str, &str)])]) -> DsnLue {
+    /// Une DSN reduite a ce que le decompte lit, lue : un individu et ses contrats `(debut, fin, modalite, unite de la
+    /// quotite, reference, quotite, motif de recours)`, dates JJMMAAAA.
+    fn dsn(individus: &[(&str, &[(&str, &str, &str, &str, &str, &str, &str)])]) -> DsnLue {
         let mut t = String::from("S20.G00.05.001,'01'\n");
         for (nir, contrats) in individus {
             t.push_str(&format!("S21.G00.30.001,'{}'\n", nir));
-            for (debut, fin, modalite, reference, quotite, motif) in contrats.iter() {
+            for (debut, fin, modalite, unite, reference, quotite, motif) in contrats.iter() {
                 t.push_str(&format!("S21.G00.40.001,'{}'\n", debut));
                 if !fin.is_empty() {
                     t.push_str(&format!("S21.G00.40.010,'{}'\n", fin));
                 }
-                t.push_str(&format!("S21.G00.40.012,'{}'\nS21.G00.40.013,'{}'\nS21.G00.40.014,'{}'\n", reference, quotite, modalite));
+                t.push_str(&format!("S21.G00.40.011,'{}'\nS21.G00.40.012,'{}'\nS21.G00.40.013,'{}'\nS21.G00.40.014,'{}'\n", unite, reference, quotite, modalite));
                 if !motif.is_empty() {
                     t.push_str(&format!("S21.G00.40.021,'{}'\n", motif));
                 }
@@ -635,14 +635,14 @@ mod tests {
         par_mois.insert(
             Mois::constante(2025, 1),
             vec![dsn(&[
-                ("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")]),
-                ("2800101999992", &[("16012025", "", "20", "151.67", "75.84", "")]),
-                ("1800101999993", &[("20012025", "21012025", "99", "2.00", "2.00", "05")]),
-                ("2800101999994", &[("01012025", "31012025", "10", "151.67", "151.67", "01")]),
+                ("1800101999991", &[("01012020", "", "10", "10", "151.67", "151.67", "")]),
+                ("2800101999992", &[("16012025", "", "20", "10", "151.67", "75.84", "")]),
+                ("1800101999993", &[("20012025", "21012025", "99", "12", "2.00", "2.00", "05")]),
+                ("2800101999994", &[("01012025", "31012025", "10", "10", "151.67", "151.67", "01")]),
             ])],
         );
         // Fevrier (28 jours) : le seul CDI ; mars a decembre sans salarie, hors de la moyenne.
-        par_mois.insert(Mois::constante(2025, 2), vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
+        par_mois.insert(Mois::constante(2025, 2), vec![dsn(&[("1800101999991", &[("01012020", "", "10", "10", "151.67", "151.67", "")])])]);
         // Janvier : 1 + 0,5 x 16/31 + 2/31 ; la moyenne avec fevrier (1), tronquee au centieme : 1,16.
         assert_eq!(effectif_annuel(&par_mois).unwrap(), Some(Decimal::new(116, 2)));
         assert_eq!(effectif_annuel(&BTreeMap::new()).unwrap(), None);

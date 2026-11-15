@@ -243,11 +243,11 @@ fn le_contrat_d_un_permanent_qui_continue_dit_son_debut_et_son_numero() {
     for charge in [
         json!({"salarie": cle, "nature": "cdi"}),
         json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15"}),
-        json!({"salarie": cle, "nature": "cdi", "debut": "2025-05-20", "numero": "00042", "salaire": "2400", "quotite": "151,67"}),
-        json!({"salarie": cle, "nature": "cdd", "debut": "2024-01-15", "numero": "00042", "salaire": "2400", "quotite": "151,67"}),
-        json!({"salarie": cle, "nature": "cdd", "debut": "2024-01-15", "fin": "2025-05-01", "numero": "00042", "salaire": "2400", "quotite": "151,67"}),
+        json!({"salarie": cle, "nature": "cdi", "debut": "2025-05-20", "numero": "00042", "salaire": "2400", "quotite": 151.67}),
+        json!({"salarie": cle, "nature": "cdd", "debut": "2024-01-15", "numero": "00042", "salaire": "2400", "quotite": 151.67}),
+        json!({"salarie": cle, "nature": "cdd", "debut": "2024-01-15", "fin": "2025-05-01", "numero": "00042", "salaire": "2400", "quotite": 151.67}),
         json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15", "numero": "00042"}),
-        json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15", "numero": "00042", "salaire": "0", "quotite": "151.67"}),
+        json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15", "numero": "00042", "salaire": "0", "quotite": 151.67}),
         json!({"salarie": cle, "nature": "cdi", "debut": "2024-01-15", "numero": "00042", "salaire": "2400"}),
     ] {
         assert_eq!(route(&racine, "importation-nature", charge.clone())["ok"], json!(false), "{}", charge);

@@ -341,8 +341,8 @@ pub struct ContratDeclare {
     pub fin: Option<Jour>,
     /// .011, l'unite de la quotite ; .012, la quotite de reference de la categorie ; .013, celle du contrat, dans
     /// l'unite de .011 ; .014, la modalite du temps de travail.
-    pub unite_quotite: Option<droit::natures::UniteDeQuotite>,
-    pub quotite_reference: Option<Decimal>,
+    unite_quotite: Option<droit::natures::UniteDeQuotite>,
+    pub quotite_reference: Option<engagement::QuotiteDuContrat>,
     pub quotite: Option<engagement::QuotiteDuContrat>,
     pub modalite: Option<droit::natures::ModaliteDuTempsDeTravail>,
     /// .017, la convention du contrat.
@@ -999,6 +999,14 @@ impl Fautes {
     fn code<T: ListeDeLaNorme>(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<T> {
         self.valeur(k, v, "un code de sa liste dans la norme", T::du_code_de_la_norme(v))
     }
+    /// Une quotite (40.012, 40.013) dans l'unite que 40.011 a dite (`unite`) : une DSN qui ne dit pas l'unite, ou un
+    /// texte qui n'est pas un nombre, est une faute.
+    fn quotite(&mut self, k: RubriqueDeLaNorme, v: &str, unite: Option<droit::natures::UniteDeQuotite>) -> Option<engagement::QuotiteDuContrat> {
+        match unite {
+            Some(u) => self.valeur(k, v, "un nombre", engagement::QuotiteDuContrat::de_la_dsn(u, v)),
+            None => self.valeur(k, v, "une quotité dont la DSN dit l'unité (S21.G00.40.011)", None),
+        }
+    }
     /// Un refus dit quoi corriger et n'ecrit rien.
     fn refus(self, mois: Option<Mois>) -> Option<Echec> {
         let de: String = mois.iter().map(|m| format!(" de {}", m.libelle(socle::mois::Graphie::Accentuee))).collect();
@@ -1114,8 +1122,9 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 }
             }
             S21_40_012 => {
-                let q = fautes.nombre(rub, &v);
-                contrat.into_iter().for_each(|c| c.quotite_reference = q);
+                if let Some(c) = contrat {
+                    c.quotite_reference = fautes.quotite(rub, &v, c.unite_quotite);
+                }
             }
             ModaliteDuTempsDeTravail::RUBRIQUE => {
                 let m = fautes.code(rub, &v);
@@ -1288,9 +1297,9 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 contrat.into_iter().for_each(|c| c.unite_quotite = u);
             }
             S21_40_013 => {
-                // Un texte qui n'est pas un nombre est une faute ; le nombre se lit dans l'unite que 40.011 a dite.
-                let nombre = fautes.nombre(rub, &v).is_some();
-                contrat.into_iter().for_each(|c| c.quotite = c.unite_quotite.filter(|_| nombre).and_then(|u| engagement::QuotiteDuContrat::de_la_dsn(u, &v)));
+                if let Some(c) = contrat {
+                    c.quotite = fautes.quotite(rub, &v, c.unite_quotite);
+                }
             }
             S21_40_017 => {
                 let idcc = fautes.lue(rub, &v, IDCC, Idcc::lire);

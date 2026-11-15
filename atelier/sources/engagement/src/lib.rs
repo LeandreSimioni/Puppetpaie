@@ -59,7 +59,7 @@ use socle::mois::{Graphie, Mois};
 use droit::emplois;
 
 use socle::{echec::{refus, Echec, R}, num::{court, Decimal}};
-use socle::grandeurs::{courte, Cachets, Heures, Jours, Montant, MontantUnitaire};
+use socle::grandeurs::{courte, Cachets, Heures, Jours, Montant, MontantUnitaire, Unites};
 
 #[derive(Debug, Clone)]
 pub struct Engagement {
@@ -235,54 +235,136 @@ fn jours_et_lieux(liste: &[DateDeLigne]) -> (Vec<Jour>, BTreeMap<Jour, String>) 
     (jours, lieux)
 }
 
-/// LA QUOTITE D'UN CONTRAT (S21.G00.40.012, .013), dans l'unite que dit S21.G00.40.011 (`Nature::unite_quotite`) : des
-/// jours pour un contrat d'usage, des heures par mois pour un salarie au mois. S'ecrit par son unite et son nombre en
-/// texte (`{"heures": "151.67"}`, `{"jours": "5"}`), son echelle gardee.
+/// LA QUOTITE D'UN CONTRAT (S21.G00.40.012, .013), dans l'unite que dit S21.G00.40.011 (`Nature::unite_quotite`) : une
+/// variante par unite de la liste de la norme (`droit::natures::UniteDeQuotite`, `bloc-S21.G00.40.txt` p. 188-189),
+/// des jours pour un contrat d'usage, des heures par mois pour un salarie au mois ; les unites que la norme ne mesure pas
+/// en temps (la pige, la vacation, la tache, le SMIC, la part, le salarie non concerne) comptent des unites, que CCH-11
+/// de 40.012 laisse a zero. S'ecrit par son unite et son nombre en texte (`{"heures": "151.67"}`, `{"jours": "5"}`), son
+/// echelle gardee.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum QuotiteDuContrat {
+    /// 10 - heure.
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
     Heures(Heures),
+    /// 12 - journee.
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
-    Jours(socle::grandeurs::Jours),
+    Jours(Jours),
+    /// 20 - forfait jour.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    ForfaitJours(Jours),
+    /// 21 - forfait heure.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    ForfaitHeures(Heures),
+    /// 31 - a la pige.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    Piges(Unites),
+    /// 32 - a la vacation.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    Vacations(Unites),
+    /// 33 - a la tache.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    Taches(Unites),
+    /// 34 - au SMIC.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    Smic(Unites),
+    /// 35 - a la part.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    Parts(Unites),
+    /// 99 - salarie non concerne.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    NonConcerne(Unites),
+}
+
+/// Deux quotites de la meme unite, chacune dans sa grandeur, nommees `$x` et `$y` dans `$f` ; d'unites differentes,
+/// refus.
+macro_rules! meme_unite {
+    ($a:expr, $b:expr, |$x:ident, $y:ident| $f:expr) => {{
+        use QuotiteDuContrat as Q;
+        match ($a, $b) {
+            (Q::Heures($x), Q::Heures($y)) | (Q::ForfaitHeures($x), Q::ForfaitHeures($y)) => Ok($f),
+            (Q::Jours($x), Q::Jours($y)) | (Q::ForfaitJours($x), Q::ForfaitJours($y)) => Ok($f),
+            (Q::Piges($x), Q::Piges($y))
+            | (Q::Vacations($x), Q::Vacations($y))
+            | (Q::Taches($x), Q::Taches($y))
+            | (Q::Smic($x), Q::Smic($y))
+            | (Q::Parts($x), Q::Parts($y))
+            | (Q::NonConcerne($x), Q::NonConcerne($y)) => Ok($f),
+            (a, b) => Err(socle::refus!(
+                "une quotité en unité « {} » et une quotité en unité « {} » ne se comparent pas : le signaler au développeur",
+                a.unite(),
+                b.unite()
+            )),
+        }
+    }};
 }
 
 impl QuotiteDuContrat {
-    /// LA QUOTITE QUE LA DSN DECLARE (S21.G00.40.013), lue de son texte dans l'unite que 40.011 dit (`unite`) : des
-    /// heures (10), des journees (12). `None` : une autre unite (le forfait, la tache...), que ce logiciel ne compte pas
-    /// en quotite ; ou un texte qui n'est pas un nombre de la norme.
+    /// LA QUOTITE QUE LA DSN DECLARE (S21.G00.40.012, .013), lue de son texte dans l'unite que 40.011 dit (`unite`) :
+    /// la porte de sa lecture ; `None` : le texte n'est pas un nombre de la norme.
     pub fn de_la_dsn(unite: droit::natures::UniteDeQuotite, texte: &str) -> Option<QuotiteDuContrat> {
         use droit::natures::UniteDeQuotite as U;
+        use socle::grandeurs::lu::norme;
+        use QuotiteDuContrat as Q;
         match unite {
-            U::Heure => socle::grandeurs::lu::norme(texte).map(QuotiteDuContrat::Heures),
-            U::Journee => socle::grandeurs::lu::norme(texte).map(QuotiteDuContrat::Jours),
-            _ => None,
+            U::Heure => norme(texte).map(Q::Heures),
+            U::Journee => norme(texte).map(Q::Jours),
+            U::ForfaitJour => norme(texte).map(Q::ForfaitJours),
+            U::ForfaitHeure => norme(texte).map(Q::ForfaitHeures),
+            U::ALaPige => norme(texte).map(Q::Piges),
+            U::ALaVacation => norme(texte).map(Q::Vacations),
+            U::ALaTache => norme(texte).map(Q::Taches),
+            U::AuSmic => norme(texte).map(Q::Smic),
+            U::ALaPart => norme(texte).map(Q::Parts),
+            U::NonConcerne => norme(texte).map(Q::NonConcerne),
         }
     }
 
-    /// Son nombre, a la porte qui l'exige (la DSN, le bulletin, la forme ecrite).
-    pub fn decimal(self) -> Decimal {
+    /// Son unite (S21.G00.40.011).
+    pub fn unite(self) -> droit::natures::UniteDeQuotite {
+        use droit::natures::UniteDeQuotite as U;
+        use QuotiteDuContrat as Q;
         match self {
-            QuotiteDuContrat::Heures(h) => h.decimal(),
-            QuotiteDuContrat::Jours(j) => j.decimal(),
+            Q::Heures(_) => U::Heure,
+            Q::Jours(_) => U::Journee,
+            Q::ForfaitJours(_) => U::ForfaitJour,
+            Q::ForfaitHeures(_) => U::ForfaitHeure,
+            Q::Piges(_) => U::ALaPige,
+            Q::Vacations(_) => U::ALaVacation,
+            Q::Taches(_) => U::ALaTache,
+            Q::Smic(_) => U::AuSmic,
+            Q::Parts(_) => U::ALaPart,
+            Q::NonConcerne(_) => U::NonConcerne,
         }
     }
 
-    /// Ses heures, quand elle en compte ; des jours ne sont pas des heures : refus, qui nomme `quoi`.
+    /// Son nombre, a la porte qui l'exige (la DSN, le bulletin).
+    pub fn decimal(self) -> Decimal {
+        use QuotiteDuContrat as Q;
+        match self {
+            Q::Heures(h) | Q::ForfaitHeures(h) => h.decimal(),
+            Q::Jours(j) | Q::ForfaitJours(j) => j.decimal(),
+            Q::Piges(u) | Q::Vacations(u) | Q::Taches(u) | Q::Smic(u) | Q::Parts(u) | Q::NonConcerne(u) => u.decimal(),
+        }
+    }
+
+    /// Ses heures, quand elle en compte (10, heure) ; une autre unite : refus, qui nomme `quoi`.
     pub fn heures(self, quoi: &str) -> R<Heures> {
         match self {
             QuotiteDuContrat::Heures(h) => Ok(h),
-            QuotiteDuContrat::Jours(_) => Err(socle::refus!("{} compte des heures, et ce contrat compte sa quotité en jours : le signaler au développeur.", quoi)),
+            autre => Err(socle::refus!("{} compte des heures, et ce contrat compte sa quotité en unité « {} » : le signaler au développeur.", quoi, autre.unite())),
         }
     }
 
-    /// Est-elle au moins `o` ? Deux quotites de la meme unite se comparent ; des heures et des jours, non : refus.
-    fn au_moins(self, o: QuotiteDuContrat) -> R<bool> {
-        match (self, o) {
-            (QuotiteDuContrat::Heures(a), QuotiteDuContrat::Heures(b)) => Ok(a >= b),
-            (QuotiteDuContrat::Jours(a), QuotiteDuContrat::Jours(b)) => Ok(a >= b),
-            _ => Err(refus("une quotité en heures et une quotité en jours ne se comparent pas : le signaler au développeur")),
-        }
+    /// Est-elle au moins `o` ? Deux quotites de la meme unite se comparent ; d'unites differentes, non : refus.
+    pub fn au_moins(self, o: QuotiteDuContrat) -> R<bool> {
+        meme_unite!(self, o, |a, b| a >= b)
+    }
+
+    /// LE RAPPORT de cette quotite a `o` (40.013 sur 40.012), de la meme unite : quotite / quotite = coefficient ;
+    /// `None` quand `o` est nulle ; d'unites differentes : refus.
+    pub fn rapport(self, o: QuotiteDuContrat) -> R<Option<socle::grandeurs::Coefficient>> {
+        meme_unite!(self, o, |a, b| a.rapport(b))
     }
 }
 
@@ -640,7 +722,7 @@ impl Engagement {
             return Ok(QuotiteDuContrat::Jours(self.jours_contrat));
         }
         match self.quotite_contrat {
-            Some(q) => Ok(QuotiteDuContrat::Heures(Heures::du_decimal(court(q.decimal())))),
+            Some(q) => Ok(QuotiteDuContrat::Heures(courte(q))),
             None => Err(socle::refus!(
                 "{} : combien d'heures par mois ? La durée du travail se lit sur le contrat signé \
                  (151,67 h pour un temps plein à 35 h) et la DSN la déclare. À taper dans la case « Heures par \
@@ -860,7 +942,7 @@ impl Engagement {
             // Ce qui se deduit de l'engagement : sa periode, sa quotite, ses mois.
             debut_periode: self.debut_periode(),
             fin_periode: self.fin_periode(),
-            quotite: socle::forme::Nombre(self.quotite()?.decimal()),
+            quotite: self.quotite()?,
             sans_paie: self.sans_paie(),
             place: self.place_du_mois(),
             mois_du_contrat: self.mois_du_contrat(),

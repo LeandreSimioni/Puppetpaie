@@ -357,6 +357,20 @@ impl Jours {
         let deux = Decimal::from(2);
         Jours(num::div(num::mul(self.0, deux).round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero), deux))
     }
+
+    /// LE RAPPORT de ces jours a `o` (une quotite en jours sur sa reference) : jours / jours = coefficient ; `None` quand
+    /// `o` est nul.
+    pub fn rapport(self, o: Jours) -> Option<Coefficient> {
+        (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
+    }
+}
+
+impl Unites {
+    /// LE RAPPORT de ces unites a `o` (une quotite en unites sur sa reference) : unites / unites = coefficient ; `None`
+    /// quand `o` est nul.
+    pub fn rapport(self, o: Unites) -> Option<Coefficient> {
+        (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
+    }
 }
 
 /// Des jours fois un coefficient (le coefficient de l'art. 30 des annexes 8 et 10 : un jour de travail retire 1,3 jour

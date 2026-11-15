@@ -133,8 +133,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     use socle::grandeurs::Heures;
     let q = match eng.quotite_contrat {
         Some(q) => q,
-        // La quotite que la forme ecrite de l'engagement garde : la porte de sa lecture.
-        None => Heures::du_decimal(eng.quotite.0),
+        None => eng.quotite.heures("La durée du travail d'un contrat écrit")?,
     };
     let dites = |h: Heures| socle::grandeurs::ecrit::sans_zero::dit(h).replace('.', ",");
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite

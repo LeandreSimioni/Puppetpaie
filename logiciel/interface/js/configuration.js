@@ -522,7 +522,8 @@ document.addEventListener("click", async (ev) => {
   try {
     const charge = { salarie: b.dataset.natureSalarie, nature };
     rang.querySelectorAll("[data-nature-case]:not([hidden]) [data-nature-champ]").forEach((c) => {
-      charge[c.dataset.natureChamp] = c.value || null;
+      // Une case de nombre part en nombre (la durée du travail : des heures, lues en nombre par le moteur).
+      charge[c.dataset.natureChamp] = c.value === "" ? null : (c.type === "number" ? Number(c.value) : c.value);
     });
     const r = await api("importation-nature", charge);
     dire(r.phrase, r.couleur);
