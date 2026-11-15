@@ -34,7 +34,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::capitaliser;
 use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use documents::fiche_questionnaire::{code_au_hasard, CodeDeDemande, SorteDeDemande};
-use envois::etats::ModeDeRemise;
+use documents::ModeDeRemise;
 use envois::journal::{ActeDuContrat, ArticleModifie, ContratParti, DetailSignature, Ligne, Version};
 use socle::date::Jour;
 use socle::mois::Mois;

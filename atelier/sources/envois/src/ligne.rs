@@ -248,7 +248,7 @@ impl Ligne {
     /// remettre en main propre) ou par courriel, et le notent (`remise`) : des contrats a signer, des documents
     /// (bulletins, certificats, attestations). Les autres n'ont pas de remise : une DSN, une DPAE se deposent ; une
     /// regularisation de la CASC, un dossier, une demande de fiche, un contrat contresigne ne partent que par courriel.
-    pub fn remise(&self) -> Option<crate::etats::ModeDeRemise> {
+    pub fn remise(&self) -> Option<documents::ModeDeRemise> {
         match self {
             Ligne::ContratSignature(e) => Some(e.detail.remise),
             Ligne::Documents(e) => Some(e.detail.remise),
@@ -572,7 +572,7 @@ pub struct Servi {
 #[serde(deny_unknown_fields)]
 pub struct DetailDocuments {
     pub salaries: Vec<Servi>,
-    pub remise: crate::etats::ModeDeRemise,
+    pub remise: documents::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -682,7 +682,7 @@ impl ArticleModifie {
 #[serde(deny_unknown_fields)]
 pub struct DetailSignature {
     pub contrats: Vec<ContratParti>,
-    pub remise: crate::etats::ModeDeRemise,
+    pub remise: documents::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]

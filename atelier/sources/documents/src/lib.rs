@@ -72,6 +72,18 @@ impl SorteDImage {
 
 pub use fabrique_pdf::forme::Mesure;
 
+/// LE MODE DE REMISE D'UNE PIECE REMISE AUX SALARIES : comment un contrat (ou un avenant), ou les documents d'un mois
+/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre), ou par courriel. Ecrite
+/// `imprime`, `courriel`. Une ligne du journal des envois la dit si elle en a une (`envois::journal::Ligne::remise` : la
+/// signature d'un contrat, l'envoi des documents) ; le journal des declarations la montre
+/// (`etats_personnel::ActeDuJournal`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModeDeRemise {
+    Imprime,
+    Courriel,
+}
+
 /// UNE SORTE DE PIECE DU DOSSIER D'UN SALARIE (`dossier-salarie`, `dossier-envoyer`) : une liste du logiciel, dans
 /// l'ordre ou le dossier se lit (`TOUTES`, l'ordre du type). Elle s'ecrit par son mot (`bulletins`, `contrats-signes`…),
 /// que la charge dit et que le journal des envois garde du dossier parti ; un autre mot se refuse a la lecture.

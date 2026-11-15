@@ -842,9 +842,9 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
         .map(|l| documents::etats_personnel::ActeDuJournal {
             quand: l.quand(),
             quoi: l.acte().nom().to_string(),
-            main_propre: l.remise() == Some(envois::etats::ModeDeRemise::Imprime),
+            remise: l.remise(),
             mois: l.mois(),
-            mode: l.mode().nom().to_string(),
+            mode: l.mode(),
             accepte: l.accepte(),
             fichier: l.fichier().cloned(),
             destinataire: l.destinataire().to_string(),

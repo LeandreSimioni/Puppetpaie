@@ -300,10 +300,11 @@ pub struct ActeDuJournal {
     pub quand: socle::paris::InstantOuJour,
     /// Sa sorte, telle que le journal l'ecrit (`dsn`, `contrat-signature`...).
     pub quoi: String,
-    pub main_propre: bool,
+    /// Sa remise, s'il en a une (la signature d'un contrat, l'envoi des documents).
+    pub remise: Option<crate::ModeDeRemise>,
     /// Le mois qu'il declare, s'il en declare un.
     pub mois: Option<Mois>,
-    pub mode: String,
+    pub mode: socle::mode::Mode,
     pub accepte: bool,
     /// Le fichier parti, s'il y en a un.
     pub fichier: Option<socle::fichiers::NomDeFichier>,
@@ -326,7 +327,7 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
         }
         let mut x = Ligne::nouvelle();
         x.t(C::Quand, l.quand.iso().replace('T', " ").chars().take(16).collect::<String>());
-        let main_propre = l.quoi == "contrat-signature" && l.main_propre;
+        let main_propre = l.quoi == "contrat-signature" && l.remise == Some(crate::ModeDeRemise::Imprime);
         // Un acte que la table ne nomme pas se dit par sa sorte, telle que le journal l'ecrit.
         let acte = match (main_propre, acte_lisible(&l.quoi)) {
             (true, _) => "Contrat imprimé, à remettre en main propre".to_string(),
@@ -334,7 +335,7 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
             (false, None) => l.quoi.clone(),
         };
         x.t(C::Acte, acte);
-        x.m(C::Mois, m).t(C::Mode, l.mode.clone()).t(C::Issue, if l.accepte { "accepté" } else { "refusé ou échoué" });
+        x.m(C::Mois, m).t(C::Mode, l.mode.nom()).t(C::Issue, if l.accepte { "accepté" } else { "refusé ou échoué" });
         x.ot(C::Fichier, l.fichier.clone()).t(C::Destinataire, l.destinataire.clone()).t(C::Reponse, reponse(&l.reponse)).t(C::Origine, l.origine.clone());
         lignes.push(x);
     }

@@ -990,7 +990,7 @@ pub(crate) struct Globales {
     pub(crate) renvoyes: HashSet<etats::Paire>,
     pub(crate) avenants: HashMap<etats::Paire, Vec<envois::journal::AvenantParti>>,
     /// Comment chaque contrat est parti la derniere fois.
-    pub(crate) par: HashMap<etats::Paire, etats::ModeDeRemise>,
+    pub(crate) par: HashMap<etats::Paire, documents::ModeDeRemise>,
 }
 
 // ------------------------------------------------------------ l'etat d'un engagement
@@ -1123,7 +1123,7 @@ pub(crate) struct CdiEnCours {
 #[derive(Debug, Clone)]
 pub(crate) struct Signature {
     pub(crate) fait: Option<InstantOuJour>,
-    pub(crate) par: Option<etats::ModeDeRemise>,
+    pub(crate) par: Option<documents::ModeDeRemise>,
     pub(crate) recu: Option<Moment>,
     pub(crate) caduc: bool,
     pub(crate) pourquoi: &'static str,
@@ -2885,7 +2885,7 @@ pub(crate) const CONTRAT_AILLEURS_A_MODIFIER: &str = "un terme du contrat signé
 /// version sur laquelle il est parti (`a_refaire_signer`, `engagement::etats::a_refaire`), ou il porte un autre numero
 /// que celui que la DSN declare. Un contrat renvoye attend une NOUVELLE signature : celle de l'ancien ne compte plus.
 pub(crate) fn etat_signature(
-    fait: Option<InstantOuJour>, par: Option<etats::ModeDeRemise>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
+    fait: Option<InstantOuJour>, par: Option<documents::ModeDeRemise>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
     a_refaire_signer: bool, ailleurs: bool,
 ) -> Signature {
     let recu = if renvoye { None } else { recu.cloned() };

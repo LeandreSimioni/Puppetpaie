@@ -354,7 +354,7 @@ pub(crate) struct ContratASigner {
     pub(crate) numero: Option<NumeroContrat>,
     pub(crate) demande_le: Option<InstantOuJour>,
     pastille: Option<Pastille>,
-    pub(crate) par: Option<etats::ModeDeRemise>,
+    pub(crate) par: Option<documents::ModeDeRemise>,
     /// Un courriel a deja demande de signer ce contrat (le journal le dit) : le redemander est un rappel.
     #[serde(skip)]
     pub(crate) demande_par_courriel: bool,

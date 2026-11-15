@@ -282,8 +282,8 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
             let par = e.detail.remise;
             let remise = etats::mot_de_la_remise(Some(par), etats::PlaceDeLaRemise::Recit);
             match par {
-                etats::ModeDeRemise::Imprime => format!("{} {}, à remettre en main propre", piece, remise),
-                etats::ModeDeRemise::Courriel => format!("{} {}", piece, remise),
+                documents::ModeDeRemise::Imprime => format!("{} {}, à remettre en main propre", piece, remise),
+                documents::ModeDeRemise::Courriel => format!("{} {}", piece, remise),
             }
         }
         Ligne::ContratContresigne(e) => format!("Contrat contresigné renvoyé — {}", qui_du_contrat(ctx, &e.detail.nom, &e.detail.salarie)),

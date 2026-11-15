@@ -927,7 +927,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | étape du dépôt d'une déclaration écrite | `EtapeDuDepot` | `routes/src/etapes.rs` |
 | mode d'un envoi (test ou réel) | `socle::mode::Mode` | `socle/src/mode.rs` |
 | ce qui est prêt à partir au tableau de l'administrateur | `routes::gestes::administrateur::Pret` | `routes/src/gestes/administrateur.rs` |
-| mode de remise d'une pièce remise aux salariés | `ModeDeRemise` | `envois/src/etats.rs` |
+| mode de remise d'une pièce remise aux salariés | `ModeDeRemise` | `documents/src/lib.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |

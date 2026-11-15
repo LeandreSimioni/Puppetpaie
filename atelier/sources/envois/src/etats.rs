@@ -4,6 +4,7 @@
 //! contrat s'il en a un).
 
 use documents::fiche_questionnaire::CodeDeDemande;
+use documents::ModeDeRemise;
 use droit::contexte::IdSalarie;
 use droit::fiche::{Lue as _, Nic};
 use engagement::numeros::NumeroContrat;
@@ -187,17 +188,6 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
 }
 
 // -------------------------------------------------------------- les contrats
-
-/// LE MODE DE REMISE D'UNE PIECE REMISE AUX SALARIES : comment un contrat (ou un avenant), ou les documents d'un mois
-/// (bulletin, certificat, attestation), sont partis : imprimes (remis en main propre, `detail.remise`), ou par
-/// courriel. Ecrite `imprime`, `courriel`. Une ligne du journal la dit si elle en a une (`Ligne::remise` : la signature
-/// d'un contrat, l'envoi des documents).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ModeDeRemise {
-    Imprime,
-    Courriel,
-}
 
 /// OU SE DIT LA REMISE : dans une phrase (la reponse d'une route, la phrase d'un envoi du journal), ou dans le recit de
 /// ce qui est parti (l'Historique du mois, les pieces d'un contrat).
