@@ -177,7 +177,7 @@ pub struct CompteurConges {
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
     pub pris: Decimal,
     /// L'assiette du dixieme.
-    #[serde(with = "crate::paie_ecrite::montant_texte")]
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
     pub remuneration_periode: Montant,
     /// Ce qui reste des jours acquis sur la periode precedente.
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
@@ -187,7 +187,7 @@ pub struct CompteurConges {
     #[serde(with = "crate::paie_ecrite::decimal_texte")]
     pub acquis_report: Decimal,
     /// L'assiette du dixieme de la periode du report (zero sans report).
-    #[serde(with = "crate::paie_ecrite::montant_texte")]
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
     pub remuneration_report: Montant,
     /// Les jours pris que l'ancien logiciel a deja imputes sur la periode en
     /// cours (reprise) : ils ne consomment pas le report.

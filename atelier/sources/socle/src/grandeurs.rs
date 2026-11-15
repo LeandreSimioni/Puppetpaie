@@ -165,6 +165,12 @@ impl Montant {
     /// Un centime (`0.01`) : l'ecart de montant qu'un arrondi fait sur une ligne.
     pub const UN_CENTIME: Montant = Montant(Decimal::from_parts(1, 0, 0, false, 2));
 
+    /// Ce montant `n` fois (un centime par ligne) : montant x compte = montant. Un compte n'est pas une grandeur
+    /// (« Le glossaire ») : il vient d'un `len()`.
+    pub fn fois(self, n: usize) -> Montant {
+        Montant(num::mul(self.0, Decimal::from(n)))
+    }
+
     /// LE RAPPORT de ce montant a `o` : montant / montant = coefficient ; `None` quand `o` est nul.
     pub fn rapport(self, o: Montant) -> Option<Coefficient> {
         (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
@@ -256,6 +262,14 @@ macro_rules! au_montant_unitaire {
 }
 
 au_montant_unitaire!(Heures, Cachets, Jours, Services, Semaines, Unites);
+
+impl MontantUnitaire {
+    /// Ce montant unitaire pour `n` unites comptees (le taux d'un cachet fois les cachets d'une periode) : montant
+    /// unitaire x compte = montant. Un compte n'est pas une grandeur (« Le glossaire ») : il vient d'un `len()`.
+    pub fn fois(self, n: usize) -> Montant {
+        Montant(num::mul(self.0, Decimal::from(n)))
+    }
+}
 
 /// La part d'une unite (la part du mois payee : 12/31) fois le montant de l'unite entiere (le salaire mensuel) : un
 /// montant.
@@ -353,6 +367,16 @@ pub mod ecrit {
 
         pub fn texte<G: Grandeur>(g: G) -> Result<String, String> {
             Ok(g.en_decimal().to_string())
+        }
+
+        /// Relue exactement de son texte, son echelle gardee (un nombre JSON ne se lit pas ainsi).
+        pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<G, D::Error> {
+            use serde::Deserialize;
+            let t = String::deserialize(d)?;
+            match t.parse::<crate::num::Decimal>() {
+                Ok(x) => Ok(<G as crate::grandeurs::Scelle>::du(x)),
+                Err(_) => Err(serde::de::Error::custom(format!("{} n'est pas un nombre", crate::ecriture::json_en_ligne(&t)))),
+            }
         }
 
         ecriture!();

@@ -723,16 +723,12 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let idcc = idcc_de(ctx)?;
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
-    let mut par_an: Vec<(String, Montant)> = Vec::new();
+    // La masse de chaque annee : la somme de ses bruts, a partir de zero au centime.
+    let mut par_an: std::collections::BTreeMap<String, Montant> = std::collections::BTreeMap::new();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
         let Some(brut) = l.brut else { continue };
-        let an = format!("{:04}", l.mois.annee());
-        match par_an.iter_mut().find(|(a, _)| *a == an) {
-            Some(x) => x.1 += brut,
-            None => par_an.push((an, Montant::ZERO + brut)),
-        }
+        *par_an.entry(format!("{:04}", l.mois.annee())).or_insert(Montant::ZERO) += brut;
     }
-    par_an.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes = Vec::new();
     for (an, masse) in par_an {
         let f = hors_bulletin(ctx, annee_entiere(&an)?, &idcc)?.and_then(|h| h.financement_paritarisme);

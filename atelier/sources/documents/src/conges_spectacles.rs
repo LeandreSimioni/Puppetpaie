@@ -16,7 +16,7 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use engagement::Engagement;
 use engagement::numeros::NumeroDeCertificat;
-use socle::grandeurs::Montant;
+use socle::grandeurs::{courte, Montant, MontantUnitaire};
 use socle::num::{court, Decimal};
 use socle::echec::{erreur, refus, Classe, Echec, R};
 
@@ -235,7 +235,7 @@ pub struct ContratCs {
     pub cachets: i64,
     pub jours: i64,
     pub heures: Option<Decimal>,
-    pub taux_cachet: Option<Decimal>,
+    pub taux_cachet: Option<MontantUnitaire>,
     pub numero: Option<engagement::numeros::NumeroContrat>,
     /// Un contrat paye au mois : chacun de ses mois payes (`MoisPaye`), dans l'ordre. Vide pour un contrat a l'activite.
     pub mois_payes: Vec<MoisPaye>,
@@ -258,7 +258,7 @@ impl ContratCs {
             cachets: e.cachets,
             jours: e.jours,
             heures: e.heures.map(socle::grandeurs::Heures::decimal),
-            taux_cachet: e.taux_cachet.map(socle::grandeurs::MontantUnitaire::decimal),
+            taux_cachet: e.taux_cachet,
             numero: e.numero.clone(),
             mois_payes: Vec::new(),
         })
@@ -368,13 +368,13 @@ pub fn certificats(paie: &PaieCs, premier_numero: NumeroDeCertificat) -> R<Vec<C
     }
     let parts = decouper(e)?;
     let mut out = Vec::new();
-    for (numero, (debut, fin, _dates, nb, _jours)) in premier_numero.suite().zip(&parts) {
+    for (numero, (debut, fin, dates, nb, _jours)) in premier_numero.suite().zip(&parts) {
         let brut = if parts.len() == 1 {
             paie.brut
         } else {
             match e.taux_cachet {
-                // Le taux de cachet du contrat (`ContratCs`, une copie de l'engagement) est encore un decimal : sa porte.
-                Some(t) => Montant::du_decimal(court(t) * Decimal::from(*nb)),
+                // Un contrat a cheval sur le 31 mars : un cachet par date travaillee de la periode (`decouper`).
+                Some(t) => courte(t).fois(dates.len()),
                 // Aucun cachet ni jour dans la periode : rien a repartir, quel que soit le taux.
                 None if *nb == 0 => Montant::ZERO,
                 None => {
@@ -666,7 +666,7 @@ mod tests {
     }
 
     fn contrat(debut: Jour, fin: Jour, dates: Vec<Jour>, cachets: i64, jours: i64, heures: Option<Decimal>) -> ContratCs {
-        ContratCs { debut, fin, dates_travail: dates, cachets, jours, heures, taux_cachet: Some(Decimal::new(1300, 1)), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
+        ContratCs { debut, fin, dates_travail: dates, cachets, jours, heures, taux_cachet: Some(socle::grandeurs::MontantUnitaire::du_decimal(Decimal::new(1300, 1))), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
     }
 
     /// L'exercice des conges va du 1er avril au 31 mars

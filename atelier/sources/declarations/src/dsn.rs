@@ -821,8 +821,11 @@ pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<
     Ok(match cle_abattue(p, bloc78, cle)? {
         Assiette::Brut => p.brut.decimal(),
         Assiette::Csg => p.base_csg.decimal(),
-        // Une base en euros ; une base en heures n'est pas un montant que la DSN declare.
-        k => p.bases.get(&k).and_then(|b| b.montant()).map(Montant::decimal).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom()))?,
+        // Une base en euros ; une base en heures n'est pas un montant que la DSN declare, et se refuse en nommant son assiette.
+        k => match p.bases.get(&k) {
+            Some(b) => b.en_euros(k)?.decimal(),
+            None => return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom())),
+        },
     })
 }
 

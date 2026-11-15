@@ -605,8 +605,7 @@ fn comparer_une(
             continue;
         }
         // Un centime par ligne, du cote qui en a le plus.
-        let (des_leurs, des_notres) = (eux.iter().fold(Montant::ZERO, |t, _| t + UN_CENTIME), nous.iter().fold(Montant::ZERO, |t, _| t + UN_CENTIME));
-        let tolerance = des_leurs.max(des_notres);
+        let tolerance = UN_CENTIME.fois(eux.len().max(nous.len()));
         let montants: [(fn(Option<Coefficient>) -> MesureDeLEcart, Montant, Montant); 2] =
             [(MesureDeLEcart::MontantSalarie, leur_sal, notre_sal), (MesureDeLEcart::MontantEmployeur, leur_pat, notre_pat)];
         for (mesure, leur, notre) in montants {
