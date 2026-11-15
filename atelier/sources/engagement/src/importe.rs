@@ -762,7 +762,7 @@ impl Importe {
         // un contrat d'usage, ses jours, que les jours du contrat disent (`Engagement::quotite`).
         let quotite = match p.quotite.filter(|_| nat.mensuelle()) {
             Some(crate::QuotiteDuContrat::Heures(h)) => Some(socle::grandeurs::courte(h)),
-            Some(_) | None => None,
+            Some(crate::QuotiteDuContrat::Jours(_)) | None => None,
         };
         let mut engagement = crate::Engagement {
             salarie: cle.clone(),
@@ -1032,7 +1032,7 @@ impl Importe {
         let dernier = self.paies().values().last()?;
         match dernier.quotite? {
             crate::QuotiteDuContrat::Jours(j) => Some(j).filter(|q| *q > Jours::ZERO).and_then(socle::grandeurs::entiere),
-            _ => None,
+            crate::QuotiteDuContrat::Heures(_) => None,
         }
     }
 }
