@@ -3784,7 +3784,9 @@ impl Display for PeriodeDAffectation {
 /// dates JJMMAAAA). Le trimestre etait deja la periode ecrite pour un mois courant ; la norme l'admet (p. 260, ligne 89).
 fn periode_d_affectation(cotisee: &Periode) -> R<PeriodeDAffectation> {
     let (debut, fin) = (cotisee.debut(), cotisee.fin());
-    let ((a1, m1), (a2, m2)) = ((debut.annee(), debut.mois), (fin.annee(), fin.mois));
+    // Le code de la norme (« AAAAPNN ») se compte du numero des mois du premier et du dernier jour : sa porte.
+    let (premier, dernier) = (debut.mois_civil(), fin.mois_civil());
+    let ((a1, m1), (a2, m2)) = ((premier.annee(), premier.numero()), (dernier.annee(), dernier.numero()));
     if a1 != a2 {
         return Err(refus!(
             "S21.G00.55.004 : une base de prevoyance couvre du {} au {}, a cheval sur deux annees civiles ; la periode \

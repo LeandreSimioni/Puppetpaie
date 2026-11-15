@@ -280,11 +280,10 @@ pub struct PaieCs {
 /// Les 31 mars strictement traverses par un contrat.
 fn bornes_31_mars(contrat: &Periode) -> Vec<Jour> {
     contrat
-        .debut()
-        .annee()
-        .jusqu_a(contrat.fin().annee())
+        .mois()
         .into_iter()
-        .map(|an| an.mois(socle::mois::MoisDeLAnnee::MARS).dernier_jour())
+        .filter(|m| m.de_l_annee() == socle::mois::MoisDeLAnnee::MARS)
+        .map(|m| m.dernier_jour())
         .filter(|b| contrat.contient(b) && *b != contrat.fin())
         .collect()
 }
