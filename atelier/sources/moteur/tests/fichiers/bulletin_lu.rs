@@ -114,7 +114,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
             "net_social": "477.82",
             "net_avant_impot": "477.82",
             "net_imposable": "491.90",
-            "pas": {"base": "491.90", "taux": "0.000", "montant": "0.00", "cumul": "0.00"},
+            "pas": {"base": "491.90", "taux": "0.00", "montant": "0.00", "cumul": "0.00"},
             "net_a_payer": "477.82",
             "cout_employeur": "845.53",
             "regle_le": "2026-01-24",
