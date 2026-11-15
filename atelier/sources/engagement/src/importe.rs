@@ -91,9 +91,11 @@ pub struct ContratAtteste {
     /// Les heures d'enseignement que les heures comptent (annexe 10).
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     pub heures_enseignement: Option<Heures>,
-    pub brut: Option<Decimal>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub brut: Option<Montant>,
     /// La base conge qu'un certificat Congés Spectacles porte, pour le contrat entier.
-    pub base_conge: Option<Decimal>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub base_conge: Option<Montant>,
     /// La nature du contrat, que la piece atteste (`ContratAtteste::vide`) ou qui a ete dite ; `None` : elle reste a dire
     /// (le bulletin d'un permanent ne la porte pas : elle se demande apres l'import, `import::nature`).
     pub nature: Option<NatureDeContrat>,
@@ -209,7 +211,8 @@ pub struct PaieVersee {
     pub depose_le: Option<Jour>,
     pub fichier: Option<NomDeFichier>,
     /// Les bases assujetties que la DSN declare, par code du bloc 78.
-    pub bases: BTreeMap<BaseAssujettie, Decimal>,
+    #[serde(with = "bases_en_texte")]
+    pub bases: BTreeMap<BaseAssujettie, Montant>,
     /// Ce que le bulletin d'un mois atteste de ce mois, quand le contrat entier ne le garde pas.
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     pub heures: Option<Heures>,
@@ -267,12 +270,40 @@ pub struct CotisationImprimee {
     pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
     pub libelle: String,
     pub cotisation: Option<crate::ecarts::RegroupementDeComparaison>,
+    /// La base imprimee, un nombre lu : des euros, ou des heures pour une ligne dont la base compte des heures
+    /// (`calcul::BaseDeCotisation::relue`) ; sa grandeur se sait quand sa cotisation est lue au bareme.
     pub base: Option<Decimal>,
-    pub taux_employeur: Option<Decimal>,
-    pub montant_employeur: Option<Decimal>,
-    pub taux_salarie: Option<Decimal>,
-    pub montant_salarie: Option<Decimal>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub taux_employeur: Option<Taux>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub montant_employeur: Option<Montant>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub taux_salarie: Option<Taux>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub montant_salarie: Option<Montant>,
     pub hors_total: bool,
+}
+
+/// Les bases du bloc 78 d'une paie versee, chacune en texte (`socle::grandeurs::ecrit::texte`), relue d'un nombre ou
+/// d'un texte (`socle::grandeurs::lu::nombre_ou_texte`).
+mod bases_en_texte {
+    use droit::base_assujettie::BaseAssujettie;
+    use serde::{Deserialize, Serialize};
+    use socle::grandeurs::Montant;
+    use std::collections::BTreeMap;
+
+    #[derive(Serialize, Deserialize)]
+    struct EnTexte(
+        #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")] Montant,
+    );
+
+    pub fn serialize<S: serde::Serializer>(t: &BTreeMap<BaseAssujettie, Montant>, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_map(t.iter().map(|(k, m)| (k, EnTexte(*m))))
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<BaseAssujettie, Montant>, D::Error> {
+        BTreeMap::<BaseAssujettie, EnTexte>::deserialize(d).map(|t| t.into_iter().map(|(k, EnTexte(m))| (k, m)).collect())
+    }
 }
 
 /// Le statut et l'emploi que CE bulletin imprime, en champs de la fiche (`import::bulletins::statut_et_metier`).
@@ -839,7 +870,7 @@ impl Importe {
         // Les lignes de cotisation du bulletin, sous leur cotisation ; une ligne que l'import n'a pas qualifiee garde
         // son libelle, sans cotisation.
         // Ce que le bulletin imprime se lit ici dans ses grandeurs : une base, des taux, des montants.
-        let taux = |x: Option<Decimal>| x.map(|t| socle::grandeurs::courte(Taux::du_decimal(t)));
+        let taux = |x: Option<Taux>| x.map(socle::grandeurs::courte);
         let cotisations: Vec<LigneDeCotisation> = p
             .cotisations
             .iter()
@@ -850,9 +881,9 @@ impl Importe {
                 libelle: l.libelle.clone(),
                 base: base_imprimee(l),
                 taux_pat: taux(l.taux_employeur),
-                montant_pat: l.montant_employeur.map(Montant::du_decimal),
+                montant_pat: l.montant_employeur,
                 taux_sal: taux(l.taux_salarie),
-                montant_sal: l.montant_salarie.map(Montant::du_decimal),
+                montant_sal: l.montant_salarie,
             })
             .collect();
 
@@ -870,7 +901,10 @@ impl Importe {
             cles.sort();
             cles.dedup();
             if let [cle] = &cles[..] {
-                bases.entry(*cle).or_insert(crate::calcul::BaseDeCotisation::de_l_assiette(*cle, *m));
+                if let std::collections::btree_map::Entry::Vacant(v) = bases.entry(*cle) {
+                    // Une base du bloc 78 est un montant (78.004) : une assiette qui compte des heures la refuse.
+                    v.insert(crate::calcul::BaseDeCotisation::calculee(*cle, crate::calcul::BaseDeCotisation::Montant(*m))?);
+                }
             }
         }
         // Le plafond applique : la base plafonnee, quand elle est sous le brut.

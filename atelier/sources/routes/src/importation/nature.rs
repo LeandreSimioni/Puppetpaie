@@ -432,7 +432,10 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         for champ in demande(nat, en_cours) {
             let pose = match champ {
                 Demande::Numero => Some(charge.numero = Some(numero.clone())),
-                Demande::Salaire => p.paie.mesures.salaire_habituel.map(|m| charge.salaire = Some(MontantSaisi::Texte(m.to_string()))),
+                Demande::Salaire => match p.paie.mesures.salaire_habituel {
+                    Some(m) => Some(charge.salaire = Some(MontantSaisi::Texte(socle::grandeurs::ecrit::texte::texte(m).map_err(socle::echec::refus)?))),
+                    None => None,
+                },
                 Demande::Debut => c.map(|c| charge.debut = Some(c.periode.debut())),
                 Demande::Fin => c.and_then(|c| c.periode.fin()).map(|j| charge.fin = Some(j)),
                 // La duree d'un contrat au mois : la quotite que la DSN declare en heures.

@@ -106,11 +106,12 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     let mut ecarts = Vec::new();
     // Le brut que la paie declare en 51 de type 001 (`dsn::brut_du_51` : abattu sous deduction forfaitaire specifique), a
     // deux decimales.
-    let brut = declarations::dsn::brut_du_51(p)?.au_centime().decimal();
-    match m.brut.map(|f| Montant::du_decimal(f).au_centime().decimal()) {
+    let brut = declarations::dsn::brut_du_51(p)?.au_centime();
+    let dit = socle::grandeurs::ecrit::norme::montant;
+    match m.brut.map(Montant::au_centime) {
         Some(f) if f == brut => {}
-        Some(f) => ecarts.push(format!("brut : la paie dit {}, le fichier {}", brut, f)),
-        None => ecarts.push(format!("brut : la paie dit {}, le fichier n'en déclare pas", brut)),
+        Some(f) => ecarts.push(format!("brut : la paie dit {}, le fichier {}", dit(brut), dit(f))),
+        None => ecarts.push(format!("brut : la paie dit {}, le fichier n'en déclare pas", dit(brut))),
     }
     // Les mesures du travail remunere (type 01) que la DSN ecrit pour cette paie (`dsn::mesures_d_activite`).
     let (mut jours, mut cachets, mut heures) = (Jours::ZERO, Cachets::ZERO, Heures::ZERO);
@@ -218,7 +219,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                 emploi: c.emploi.clone(),
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
-                brut: m.brut.map(|b| Montant::du_decimal(b).au_centime()),
+                brut: m.brut.map(Montant::au_centime),
                 jours: Jours::du_decimal(m.jours),
                 cachets: Cachets::du_decimal(m.cachets),
                 heures: Heures::du_decimal(m.heures),

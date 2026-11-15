@@ -31,7 +31,6 @@ use droit::contexte::Contexte;
 use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, FicheEntrepriseDatee, FicheNommee, FicheSaisie, FicheSalarieDatee, Nir, NomDeFiche, NumeroObjetSpectacle, ValeurDeCase};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
-use socle::grandeurs::Montant;
 use socle::mois::MoisOuJour;
 
 const DOSSIER: Champ = Champ { nom: "dossier", libelle: Affiche::new("Dossier"), forme: Forme::Texte, sens: "le dossier choisi ; la boîte import/ de la compagnie sinon", avance: true };
@@ -367,7 +366,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::Periode
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.periode, x.verse_le, x.quotite) = (periode, d.verse_le, c.and_then(|c| c.quotite));
-    (x.brut, x.bases) = (d.mesures.brut.map(Montant::du_decimal), d.bases.clone());
+    (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
     if let Some(n) = &d.nets {
         (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
         // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).

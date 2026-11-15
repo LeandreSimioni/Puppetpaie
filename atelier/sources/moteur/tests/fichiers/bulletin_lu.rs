@@ -270,8 +270,8 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
     );
     assert!(b.avertissements.iter().all(|a| matches!(a, import::bulletin_lu::Avertissement::Incoherence(_))), "{:?}", b.avertissements);
     // Rien n'est corrige : les montants sont ceux de la page.
-    assert_eq!(b.brut.to_string(), "600.00");
-    assert_eq!(b.net_a_payer.to_string(), "487.80");
+    assert_eq!(socle::grandeurs::ecrit::norme::montant(b.brut), "600.00");
+    assert_eq!(socle::grandeurs::ecrit::norme::montant(b.net_a_payer), "487.80");
 
     // La somme versee non imprimee (un impot nul) : le net avant impot moins l'impot preleve, imprimes l'un et l'autre
     // (R. 3243-1, 9° et 10°, `code-du-travail/xml/R3243-1.xml` ; le modele de l'arrete du 25/02/2016), et le compte rendu
@@ -282,7 +282,7 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
     pdf(vec![page], &sans_net);
     let l = lire(&sans_net).unwrap();
     let b = lu(&l[0]);
-    assert_eq!(b.net_a_payer.to_string(), "477.82");
+    assert_eq!(socle::grandeurs::ecrit::norme::montant(b.net_a_payer), "477.82");
     assert!(
         b.avertissements.iter().any(|a| matches!(a, import::bulletin_lu::Avertissement::Lecture(t) if t.starts_with("le net à payer n'est pas imprimé"))),
         "{:?}",

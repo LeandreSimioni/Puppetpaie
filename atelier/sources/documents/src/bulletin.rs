@@ -449,7 +449,7 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
         rangs.push(("dont enseignement (droits seuls, pas le montant)", |c| Some(dit(c.enseignement)), " h"));
         rangs.push(("Heures retenues pour les 507 h", |c| c.heures_ouverture.map(dit), " h"));
     }
-    rangs.push(("Salaire brut", |c| Some(euros(Montant::du_decimal(c.brut))), ""));
+    rangs.push(("Salaire brut", |c| Some(euros(c.brut)), ""));
     let lignes = rangs
         .iter()
         .map(|(libelle, valeur, suffixe)| {

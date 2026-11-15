@@ -83,7 +83,7 @@ struct ColonneDuCadre4 {
     cachets: Decimal,
     jours: Decimal,
     /// Le brut declare ; sans remuneration declaree ce mois-ci, la case reste a blanc.
-    brut: Option<Decimal>,
+    brut: Option<socle::grandeurs::Montant>,
     paiement: Option<String>,
 }
 
@@ -409,7 +409,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         f.imprime(2, &format!("SAL_NB_HEURES_{}", n), r(258, 273), &quantite(p.heures), m("8.5"), Alignement::Centre);
         f.imprime(2, &format!("SAL_NB_CACHET_{}", n), r(282, 298), &quantite(p.cachets), m("8.5"), Alignement::Centre);
         f.imprime(2, &format!("SAL_TPS_TRA_{}", n), r(306, 322), &quantite(p.jours), m("8.5"), Alignement::Centre);
-        let montant = p.brut.map(|b| socle::grandeurs::Montant::du_decimal(b).au_centime().decimal().to_string());
+        let montant = p.brut.map(socle::grandeurs::ecrit::norme::montant);
         f.imprime_dite(2, &format!("SAL_MONTANT_{}", n), r(339, 360), montant.as_deref(), m("8.5"), Alignement::Centre);
         f.imprime_dite(2, &format!("SAL_DT_PAI_{}", n), r(379, 400), p.paiement.as_deref(), m("8.5"), Alignement::Centre);
     }

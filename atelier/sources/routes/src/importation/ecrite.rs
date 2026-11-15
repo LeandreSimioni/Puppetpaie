@@ -115,12 +115,13 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         if porte {
             continue;
         }
-        let mut masse = socle::grandeurs::Montant::ZERO.decimal();
+        let mut masse = socle::grandeurs::Montant::ZERO;
         for b in d.paies().iter().filter_map(|p| p.mesures.brut) {
             masse += b;
         }
         let Some(taux) = base.taux.de(m.annee()) else { return Ok(None) };
-        let cot = socle::grandeurs::Montant::du_decimal(masse * taux / Decimal::from(100)).au_centime().decimal();
+        // Le taux de la CASC-SVP reste un decimal (`TauxCasc`, chaine CA) : sa porte.
+        let cot = masse.fois_taux(socle::grandeurs::Taux::du_decimal(taux)).au_centime().decimal();
         par_mois.push((m, cot));
     }
     if par_mois.is_empty() {

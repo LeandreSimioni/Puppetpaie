@@ -28,7 +28,7 @@ use std::path::Path;
 use documents::conges_spectacles::NombreDuCertificat;
 use droit::fiche::Nir;
 use socle::date::{Jour, Periode};
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 use crate::releve::Mesure;
 
 /// Deux mots sont sur le meme rang quand leurs milieux verticaux sont a moins de cela.
@@ -136,8 +136,8 @@ pub struct Certificat {
     pub periode: Option<Periode>,
     /// Le « NB JOURS OU CACHETS » (des chiffres seuls), lu une fois, a la lecture de la piece.
     pub nombre: Option<JoursOuCachetsLus>,
-    pub base_conge: Option<Decimal>,
-    pub brut: Option<Decimal>,
+    pub base_conge: Option<Montant>,
+    pub brut: Option<Montant>,
     /// La date de signature.
     pub signe_le: Option<Jour>,
 }
@@ -285,9 +285,9 @@ fn texte(mots: &[String]) -> Option<String> {
 }
 
 /// Un montant arrondi a l'euro (« 1 234 », « 480 ») : des chiffres, des blancs de milliers.
-fn montant(mots: &[String]) -> Option<Decimal> {
+fn montant(mots: &[String]) -> Option<Montant> {
     let t: String = mots.concat();
-    (!t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')).then(|| crate::bulletin_lu::lire_nombre(&t)).flatten()
+    (!t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')).then(|| crate::bulletin_lu::lire_montant(&t)).flatten()
 }
 
 /// Le NIR imprime en tete du rang : treize caracteres (chiffres, et 2A ou 2B pour un ne en Corse), puis sa cle de deux

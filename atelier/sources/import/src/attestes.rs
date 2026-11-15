@@ -109,8 +109,7 @@ fn lu(nir: &Nir, ligne: &ContratLu, periode: Periode, source: Attestant) -> Atte
         heures: c.heures,
         cachets: c.cachets,
         jours: c.jours,
-        // Le brut que la ligne lue ecrit (un nombre de sa forme) : sa porte.
-        brut: c.brut.map(Montant::du_decimal),
+        brut: c.brut,
         ligne: ContratLu { periode: None, ..ligne.clone() },
         historique:(source == Attestant::Historique).then(|| ligne.clone()),
     }
@@ -177,11 +176,9 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
         .croise(&mois_du_reste)
         .ok_or_else(|| socle::refus!("le reste du certificat ({}) tombe hors de son contrat ({})", mois_du_reste, c.periode))?;
     let mut ligne = c.ligne.clone();
-    // La ligne lue ecrit son brut en nombre (`ContratLu`) : sa porte.
-    let b = reste_brut.au_centime().decimal();
     ligne.contrat.cachets = reste_cachets;
     ligne.contrat.jours = reste_jours;
-    ligne.contrat.brut = Some(b);
+    ligne.contrat.brut = Some(reste_brut.au_centime());
     ligne.contrat.base_conge = None;
     Ok(Reste::Seul(ligne, periode))
 }

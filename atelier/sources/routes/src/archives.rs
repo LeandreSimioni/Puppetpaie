@@ -1127,7 +1127,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
                 rangee("Cachets", &|x| dit(x.cachets)),
                 rangee("Heures déclarées", &|x| heures(x.heures)),
                 rangee("Total d'heures", &|x| heures(x.heures_equivalentes)),
-                rangee("Salaire brut", &|x| socle::texte::euros(socle::grandeurs::Montant::du_decimal(x.brut))),
+                rangee("Salaire brut", &|x| socle::texte::euros(x.brut)),
             ],
         };
         // Un engagement dont la fiche n'est plus la se dit par sa cle.

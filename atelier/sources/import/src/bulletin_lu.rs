@@ -50,7 +50,7 @@ use std::path::Path;
 use socle::date::{Jour, Periode};
 use socle::echec::R;
 use socle::num::Decimal;
-use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours};
+use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours, Montant, Taux};
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 use droit::catalogue::CodeDeRubrique;
@@ -897,7 +897,8 @@ pub struct LignePaie {
     pub quantite: Option<Decimal>,
     pub libelle: String,
     pub taux: Option<Decimal>,
-    pub montant: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant: Option<Montant>,
     pub soumis: bool,
     /// La rubrique du catalogue que la table donne a ce libelle ; `None` : libelle connu sans rubrique sure, ou absent
     /// de la table (alors signale).
@@ -917,32 +918,41 @@ pub struct Cotisation {
     /// du bareme, ou le grain auquel le modele de l'arrete du 25/02/2016 regroupe plusieurs lignes) ; `None` : un libelle
     /// que la table ne connait pas, garde tel quel et non qualifie.
     pub cotisation: Option<String>,
+    /// La base imprimee, un nombre lu : des euros, ou des heures (la deduction des heures supplementaires), ce que sa
+    /// cotisation dit.
     pub base: Option<Decimal>,
-    pub taux_employeur: Option<Decimal>,
-    pub montant_employeur: Option<Decimal>,
-    pub taux_salarie: Option<Decimal>,
-    pub montant_salarie: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub taux_employeur: Option<Taux>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant_employeur: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub taux_salarie: Option<Taux>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant_salarie: Option<Montant>,
     /// Ecrite apres le total des cotisations (une famille facultative) : hors de ce total.
     pub hors_total: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Pas {
-    pub base: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub base: Option<Montant>,
     pub taux: Option<droit::pas::TauxDePas>,
-    pub montant: Option<Decimal>,
-    pub cumul: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cumul: Option<Montant>,
 }
 
 /// LE TAUX DE PAS QU'UN BULLETIN IMPRIME (« 5,500 », « 5,5 ») : le taux de la norme qu'il dit, ses deux decimales ecrites
 /// (`TauxDePas::du_taux`) ; `None` : un nombre qui n'en est pas un (plus de deux chiffres, des decimales non nulles au-dela
 /// du centieme), que `avertissements` signale : la case ne se lit pas, on le dit (AGENTS, regle 1).
-fn taux_de_pas(lu: Decimal, avertissements: &mut Vec<Avertissement>) -> Option<droit::pas::TauxDePas> {
-    let taux = droit::pas::TauxDePas::du_taux(socle::grandeurs::courte(socle::grandeurs::Taux::du_decimal(lu)));
+fn taux_de_pas(lu: Taux, avertissements: &mut Vec<Avertissement>) -> Option<droit::pas::TauxDePas> {
+    let taux = droit::pas::TauxDePas::du_taux(socle::grandeurs::courte(lu));
     if taux.is_none() {
         avertissements.push(Avertissement::Lecture(format!(
             "taux de PAS « {} » : un taux de PAS a un ou deux chiffres et deux décimales au plus (S21.G00.50.006), il n'est pas repris",
-            lu
+            tel_que_lu(lu)
         )));
     }
     taux
@@ -1003,8 +1013,10 @@ pub struct Colonnes<G: Grandeur> {
 /// Les deux colonnes d'un rang de cumul en euros.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct ColonnesEnEuros {
-    pub periode: Option<Decimal>,
-    pub cumul: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub periode: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cumul: Option<Montant>,
 }
 
 impl Cumul {
@@ -1016,7 +1028,7 @@ impl Cumul {
             NomDeCumul::Jours => Cumul::Jours(Colonnes { periode: periode.map(Jours::du_decimal), cumul: cumul.map(Jours::du_decimal) }),
             NomDeCumul::Heures => Cumul::Heures(Colonnes { periode: periode.map(Heures::du_decimal), cumul: cumul.map(Heures::du_decimal) }),
             NomDeCumul::Brut | NomDeCumul::Plafond | NomDeCumul::CoutEmployeur | NomDeCumul::NetImposable | NomDeCumul::Pas => {
-                Cumul::Euros(ColonnesEnEuros { periode, cumul })
+                Cumul::Euros(ColonnesEnEuros { periode: periode.map(en_euros), cumul: cumul.map(en_euros) })
             }
         }
     }
@@ -1043,17 +1055,25 @@ pub struct BulletinLu {
     /// Les memes, jour par jour.
     pub jours_travailles: Vec<Jour>,
     pub lignes: Vec<LignePaie>,
-    pub brut: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub brut: Montant,
     pub cotisations: Vec<Cotisation>,
-    pub total_employeur: Option<Decimal>,
-    pub total_salarie: Option<Decimal>,
-    pub net_social: Option<Decimal>,
-    pub net_avant_impot: Option<Decimal>,
-    pub net_imposable: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub total_employeur: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub total_salarie: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub net_social: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub net_avant_impot: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub net_imposable: Option<Montant>,
     pub pas: Option<Pas>,
-    pub net_a_payer: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub net_a_payer: Montant,
     /// « Total verse par l'employeur ».
-    pub cout_employeur: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cout_employeur: Option<Montant>,
     pub regle_le: Option<Jour>,
     pub mode_reglement: Option<String>,
     /// Les cumuls, dans l'ordre de la page : `cachets`, `jours`, `heures`, `brut`, `plafond`, `cout_employeur`...
@@ -1375,9 +1395,33 @@ impl RangCorps {
         self.nombres.iter().find(|(c, _)| *c == Some((g, p))).map(|(_, v)| *v)
     }
     /// Le dernier nombre du rang : la valeur d'un resume, le montant d'une ligne.
-    fn dernier(&self) -> Option<Decimal> {
-        self.nombres.last().map(|(_, v)| *v)
+    fn dernier(&self) -> Option<Montant> {
+        self.nombres.last().map(|(_, v)| en_euros(*v))
     }
+    /// Le montant de la colonne `g`, `p` (la porte de sa lecture : `en_euros`).
+    fn montant(&self, g: Genre, p: Option<Part>) -> Option<Montant> {
+        self.colonne(g, p).map(en_euros)
+    }
+    /// Le taux de la colonne des taux de la part `p` : la porte de sa lecture.
+    fn taux(&self, p: Option<Part>) -> Option<Taux> {
+        self.colonne(Genre::Taux, p).map(Taux::du_decimal)
+    }
+}
+
+/// Une grandeur lue, telle qu'une phrase du compte rendu la cite : son texte, son echelle gardee (`ecrit::texte`, qui
+/// ne refuse aucune grandeur ; son refus se citerait tel quel).
+fn tel_que_lu<G: Grandeur>(g: G) -> String {
+    socle::grandeurs::ecrit::texte::texte(g).unwrap_or_else(|pourquoi| pourquoi)
+}
+
+/// Un montant ecrit sur une piece (`lire_nombre`), en euros.
+pub(crate) fn lire_montant(texte: &str) -> Option<Montant> {
+    lire_nombre(texte).map(en_euros)
+}
+
+/// UN MONTANT QUE LA PAGE IMPRIME (`lire_nombre`, la porte de la page) : en euros, des qu'il sort de sa ligne lue.
+fn en_euros(lu: Decimal) -> Montant {
+    Montant::du_decimal(lu)
 }
 
 impl<'a> Lecteur<'a> {
@@ -1457,7 +1501,7 @@ impl<'a> Lecteur<'a> {
             }
         }
         let mut pas: Option<Pas> = None;
-        let mut net_imposable: Option<Decimal> = None;
+        let mut net_imposable: Option<Montant> = None;
         let mut cumuls: Vec<(NomDeCumul, Cumul)> = Vec::new();
         if let Some(p) = pied {
             self.grilles(p, &mut pas, &mut net_imposable, &mut cumuls)?;
@@ -1488,12 +1532,13 @@ impl<'a> Lecteur<'a> {
         // La somme recue (10°) est le net avant impot moins l'impot preleve (R. 3243-1, 9° et 10° ; le modele de
         // l'arrete du 25/02/2016 les imprime l'un sous l'autre) : un bulletin qui imprime les deux termes sans la
         // somme (un impot nul) la dit par cette identite, et le compte rendu dit qu'elle a ete lue ainsi.
-        let net_a_payer = match (nombre(&valeurs, "net_a_payer"), corps.lu.net_avant_impot, pas.as_ref().and_then(|p| p.montant)) {
+        let net_a_payer = match (nombre(&valeurs, "net_a_payer").map(en_euros), corps.lu.net_avant_impot, pas.as_ref().and_then(|p| p.montant)) {
             (Some(n), _, _) => n,
             (None, Some(avant), Some(impot)) => {
                 self.avertissements.push(Avertissement::Lecture(format!(
                     "le net à payer n'est pas imprimé : lu comme le net avant impôt ({}) moins l'impôt prélevé ({}), imprimés",
-                    avant, impot
+                    tel_que_lu(avant),
+                    tel_que_lu(impot)
                 )));
                 avant - impot
             }
@@ -1540,7 +1585,7 @@ impl<'a> Lecteur<'a> {
             net_imposable,
             pas,
             net_a_payer,
-            cout_employeur: nombre(&valeurs, "cout_employeur"),
+            cout_employeur: nombre(&valeurs, "cout_employeur").map(en_euros),
             regle_le: date(&valeurs, "regle_le"),
             mode_reglement,
             cumuls,
@@ -2181,8 +2226,8 @@ impl<'a> Lecteur<'a> {
                 }
                 Phase::Cotisations | Phase::ApresTotal => {
                     if phase == Phase::Cotisations && est(&cl, &r_.total) {
-                        lu.total_employeur = r.colonne(Genre::Montant, Some(Part::Employeur));
-                        lu.total_salarie = r.colonne(Genre::Montant, Some(Part::Salarie));
+                        lu.total_employeur = r.montant(Genre::Montant, Some(Part::Employeur));
+                        lu.total_salarie = r.montant(Genre::Montant, Some(Part::Salarie));
                         phase = Phase::ApresTotal;
                         if let Some((_, ecrit)) = titre_en_cours.take() {
                             avertissements.push(Avertissement::Lecture(format!("rang sans montant : « {} »", ecrit)));
@@ -2245,7 +2290,7 @@ impl<'a> Lecteur<'a> {
 
     /// Les grilles du pied, chacune sous son rang d'en-tetes : l'impot preleve et le net imposable (« base »,
     /// « taux », « montant »), les cumuls (« Période », « Cumul »).
-    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>, cumuls: &mut Vec<(NomDeCumul, Cumul)>) -> Result<(), Refus> {
+    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Montant>, cumuls: &mut Vec<(NomDeCumul, Cumul)>) -> Result<(), Refus> {
         let p = &self.page;
         let t = self.t;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
@@ -2312,12 +2357,14 @@ impl<'a> Lecteur<'a> {
                         }
                     }
                     if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
-                        *net_imposable = col(Genre::Periode);
+                        *net_imposable = col(Genre::Periode).map(en_euros);
                     }
                 } else if pas.is_none() && t.resumes.pas.contains(libelle) {
-                    *pas = Some(Pas { base: col(Genre::Base), taux: col(Genre::Taux).and_then(|lu| taux_de_pas(lu, &mut self.avertissements)),montant: col(Genre::Montant), cumul: col(Genre::Cumul) });
+                    let euros = |g: Genre| col(g).map(en_euros);
+                    let taux = col(Genre::Taux).map(Taux::du_decimal).and_then(|lu| taux_de_pas(lu, &mut self.avertissements));
+                    *pas = Some(Pas { base: euros(Genre::Base), taux, montant: euros(Genre::Montant), cumul: euros(Genre::Cumul) });
                 } else if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
-                    *net_imposable = col(Genre::Montant);
+                    *net_imposable = col(Genre::Montant).map(en_euros);
                 }
             }
         }
@@ -2329,7 +2376,7 @@ impl Lecteur<'_> {
     /// L'impot preleve et le net imposable ecrits sans grille, sur un rang du pied : « Net imposable 435,55 »,
     /// « Impôt sur le revenu prélevé à la source (taux 4,300 %) 18,73 ». Le montant est le dernier nombre du rang ; le
     /// taux, celui qui suit le mot « taux ».
-    fn sans_grille(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>) -> Result<(), Refus> {
+    fn sans_grille(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Montant>) -> Result<(), Refus> {
         let p = &self.page;
         let r_ = &self.t.resumes;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
@@ -2343,7 +2390,7 @@ impl Lecteur<'_> {
                 return Err(self.refus_inconnu(u, &texte_de(&libelle)));
             }
             if net_imposable.is_none() && r_.net_imposable.iter().any(|x| *x == cl) {
-                *net_imposable = Some(dernier.valeur);
+                *net_imposable = Some(en_euros(dernier.valeur));
             }
             if pas.is_none() && r_.pas.iter().any(|x| cl.starts_with(x.as_str())) {
                 let taux = rang
@@ -2351,8 +2398,8 @@ impl Lecteur<'_> {
                     .position(|m| canon(&m.texte).trim_start_matches('(') == "taux")
                     .and_then(|k| rang.get(k + 1))
                     .and_then(|m| lire_nombre(m.texte.trim_end_matches([')', '%'])))
-                    .and_then(|lu| taux_de_pas(lu, &mut self.avertissements));
-                *pas = Some(Pas { base: None, taux, montant: Some(dernier.valeur), cumul: None });
+                    .and_then(|lu| taux_de_pas(Taux::du_decimal(lu), &mut self.avertissements));
+                *pas = Some(Pas { base: None, taux, montant: Some(en_euros(dernier.valeur)), cumul: None });
             }
         }
         Ok(())
@@ -2362,12 +2409,12 @@ impl Lecteur<'_> {
 #[derive(Default)]
 struct Corps {
     lignes: Vec<LignePaie>,
-    brut: Option<Decimal>,
+    brut: Option<Montant>,
     cotisations: Vec<Cotisation>,
-    total_employeur: Option<Decimal>,
-    total_salarie: Option<Decimal>,
-    net_social: Option<Decimal>,
-    net_avant_impot: Option<Decimal>,
+    total_employeur: Option<Montant>,
+    total_salarie: Option<Montant>,
+    net_social: Option<Montant>,
+    net_avant_impot: Option<Montant>,
 }
 
 /// Le corps lu, et le milieu du rang qui le ferme (le net avant impot) : le pied commence sous lui.
@@ -2389,10 +2436,10 @@ fn cotisation(table: &Table, famille: &Option<FamilleDeCotisation>, libelle: Str
         cotisation: table.cotisation(&libelle).map(str::to_string),
         libelle,
         base: r.colonne(Genre::Base, None),
-        taux_employeur: r.colonne(Genre::Taux, Some(Part::Employeur)),
-        montant_employeur: r.colonne(Genre::Montant, Some(Part::Employeur)),
-        taux_salarie: r.colonne(Genre::Taux, Some(Part::Salarie)),
-        montant_salarie: r.colonne(Genre::Montant, Some(Part::Salarie)),
+        taux_employeur: r.taux(Some(Part::Employeur)),
+        montant_employeur: r.montant(Genre::Montant, Some(Part::Employeur)),
+        taux_salarie: r.taux(Some(Part::Salarie)),
+        montant_salarie: r.montant(Genre::Montant, Some(Part::Salarie)),
         hors_total: false,
     }
 }
@@ -2403,19 +2450,20 @@ fn controler(b: &mut BulletinLu) {
     if soumises.iter().any(|l| l.montant.is_none()) {
         b.avertissements.push(Avertissement::Lecture("une ligne soumise n'a pas de montant : le brut ne se contrôle pas".into()));
     } else if !soumises.is_empty() {
-        let somme: Decimal = soumises.iter().filter_map(|l| l.montant).sum();
+        let somme: Montant = soumises.iter().filter_map(|l| l.montant).sum();
         if somme != b.brut {
-            b.avertissements.push(Avertissement::Incoherence(format!("le brut lu ({}) n'est pas la somme des lignes soumises ({})", b.brut, somme)));
+            b.avertissements.push(Avertissement::Incoherence(format!("le brut lu ({}) n'est pas la somme des lignes soumises ({})", tel_que_lu(b.brut), tel_que_lu(somme))));
         }
     }
     if let (Some(avant), Some(salarie)) = (b.net_avant_impot, b.total_salarie) {
-        let non_soumis: Decimal = b.lignes.iter().filter(|l| !l.soumis).filter_map(|l| l.montant).sum();
-        let hors_total: Decimal = b.cotisations.iter().filter(|c| c.hors_total).filter_map(|c| c.montant_salarie).sum();
+        let non_soumis: Montant = b.lignes.iter().filter(|l| !l.soumis).filter_map(|l| l.montant).sum();
+        let hors_total: Montant = b.cotisations.iter().filter(|c| c.hors_total).filter_map(|c| c.montant_salarie).sum();
         let attendu = b.brut - salarie - hors_total + non_soumis;
         if attendu != avant {
             b.avertissements.push(Avertissement::Incoherence(format!(
                 "le net avant impôt lu ({}) n'est pas brut - cotisations salariales + lignes non soumises ({})",
-                avant, attendu
+                tel_que_lu(avant),
+                tel_que_lu(attendu)
             )));
         }
     }
@@ -2424,8 +2472,8 @@ fn controler(b: &mut BulletinLu) {
             if avant - impot != b.net_a_payer {
                 b.avertissements.push(Avertissement::Incoherence(format!(
                     "le net à payer lu ({}) n'est pas le net avant impôt moins l'impôt prélevé ({})",
-                    b.net_a_payer,
-                    avant - impot
+                    tel_que_lu(b.net_a_payer),
+                    tel_que_lu(avant - impot)
                 )));
             }
         }

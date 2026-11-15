@@ -18,7 +18,6 @@ use engagement::numeros::{NumeroContrat, NumeroDAvenant};
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mode::Mode;
 use socle::mois::Mois;
-use socle::num::Decimal;
 
 use crate::envoi::IdDeCourriel;
 use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
@@ -265,27 +264,27 @@ pub struct Ouverture {
 /// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
 mod versements_en_texte {
     use serde::{Deserialize, Serialize};
-    use socle::num::Decimal;
+    use socle::grandeurs::Montant;
 
     /// Un montant ecrit par `ecrit::texte`.
-    struct EnTexte<'a>(&'a Decimal);
+    struct EnTexte<'a>(&'a Montant);
 
     impl Serialize for EnTexte<'_> {
         fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-            socle::grandeurs::ecrit::texte::serialize(&socle::grandeurs::Montant::du_decimal(*self.0), s)
+            socle::grandeurs::ecrit::texte::serialize(self.0, s)
         }
     }
 
-    pub fn serialize<S: serde::Serializer>(v: &Option<Vec<Decimal>>, s: S) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: serde::Serializer>(v: &Option<Vec<Montant>>, s: S) -> Result<S::Ok, S::Error> {
         v.as_ref().map(|l| l.iter().map(EnTexte).collect::<Vec<_>>()).serialize(s)
     }
 
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Decimal>>, D::Error> {
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Montant>>, D::Error> {
         let Some(textes) = Option::<Vec<String>>::deserialize(d)? else { return Ok(None) };
         let mut out = Vec::with_capacity(textes.len());
         for t in textes {
-            let m = socle::num::dec_texte(&t).map_err(|e| serde::de::Error::custom(e.phrase))?;
-            if m.to_string() != t {
+            let m = socle::grandeurs::lu::en_texte::<Montant>(&t).map_err(|e| serde::de::Error::custom(e.phrase))?;
+            if socle::grandeurs::ecrit::texte::texte(m).as_ref() != Ok(&t) {
                 return Err(serde::de::Error::custom(format!("versement {} : un montant s'écrit en chiffres, un point avant ses décimales.", socle::fichiers::repr(&t))));
             }
             out.push(m);
@@ -317,7 +316,7 @@ pub struct DetailDsn {
     pub ordre: Option<droit::natures::NumeroDOrdre>,
     /// Les montants versés aux organismes (S21.G00.20.005), écrits en texte (`socle::grandeurs::ecrit::texte`).
     #[serde(default, skip_serializing_if = "Option::is_none", with = "versements_en_texte")]
-    pub versements: Option<Vec<Decimal>>,
+    pub versements: Option<Vec<socle::grandeurs::Montant>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub salaries: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]

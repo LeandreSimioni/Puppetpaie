@@ -42,7 +42,6 @@ use socle::echec::{refus, R};
 use socle::grandeurs::{lu, Cachets, Heures, Jours};
 use socle::mois::Mois;
 use socle::num::entier_de_chiffres;
-use socle::num::Decimal;
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 
@@ -187,7 +186,7 @@ pub struct Aem {
     pub cachets_isoles: Option<Cachets>,
     pub cachets_groupes: Option<Cachets>,
     pub jours: Option<Jours>,
-    pub brut: Option<Decimal>,
+    pub brut: Option<socle::grandeurs::Montant>,
     /// Complementaire ou rectificative quand la case est cochee.
     pub corrige: Option<NatureDUneAem>,
     /// Une periode d'une AER Cinéma Spectacle (`lire_aer`), qui atteste au meme rang qu'une AEM.
@@ -463,7 +462,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| entier_de_chiffres(&t).and(lu::texte_entier(&t))),
             cachets_groupes: None,
             jours: None,
-            brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::num::decimal_a_virgule(&t)),
+            brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::grandeurs::lu::texte(&t)),
             corrige: None,
             aer: true,
             faute: faute.clone(),
@@ -822,7 +821,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         a.brut = mots
             .iter()
             .filter(|m| m.y0 > r.y1 && m.y0 < r.y1 + pt(40) && (m.cx() - cx).abs() <= (r.x1 - r.x0) / 2 + pt(10))
-            .filter_map(|m| crate::bulletin_lu::lire_nombre(&m.texte).filter(|_| m.texte.chars().any(|c| c.is_ascii_digit())).map(|n| (m.y0, n)))
+            .filter_map(|m| crate::bulletin_lu::lire_montant(&m.texte).filter(|_| m.texte.chars().any(|c| c.is_ascii_digit())).map(|n| (m.y0, n)))
             .min_by(|a, b| a.0.cmp(&b.0))
             .map(|x| x.1);
     }

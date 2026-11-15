@@ -401,7 +401,7 @@ fn comparer_une(
         let ligne = cotisations.iter().find(|l| l.cotisation == Some(RegroupementDeComparaison::Cotisation(ATMP)));
         // La porte de lecture de la ligne imprimee (la paie importee les garde en decimal).
         atmp_imprime = ligne
-            .map(|l| (l.taux_employeur.map(Taux::du_decimal), l.montant_employeur.map(Montant::du_decimal), l.base.map(Montant::du_decimal)))
+            .map(|l| (l.taux_employeur, l.montant_employeur, l.base.map(Montant::du_decimal)))
             .filter(|(t, m, _)| t.is_some() || m.is_some_and(|m| !m.est_nul()));
         if atmp_imprime.is_some() {
             ctx = ctx.avec_le_taux_atmp_lu(an, TAUX_ATMP_D_ESSAI);
@@ -542,10 +542,10 @@ fn comparer_une(
         let lue = Lue {
             libelle: l.libelle.clone(),
             base: l.base.map(Montant::du_decimal),
-            taux_salarie: l.taux_salarie.map(Taux::du_decimal),
-            taux_employeur: l.taux_employeur.map(Taux::du_decimal),
-            montant_salarie: l.montant_salarie.map(Montant::du_decimal),
-            montant_employeur: l.montant_employeur.map(Montant::du_decimal),
+            taux_salarie: l.taux_salarie,
+            taux_employeur: l.taux_employeur,
+            montant_salarie: l.montant_salarie,
+            montant_employeur: l.montant_employeur,
         };
         if lue.montant_salarie.is_none() && lue.montant_employeur.is_none() {
             continue;

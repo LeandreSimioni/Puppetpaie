@@ -26,7 +26,7 @@ use crate::reponse::Source;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::grandeurs::{Cachets, Heures, Jours};
 use socle::mois::{Graphie, Mois};
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 use crate::proposee::A_COMPLETER;
 
 /// Les engagements importes qui touchent `mois`.
@@ -257,24 +257,24 @@ fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::Insta
 /// Les montants qu'une piece importee porte, chacun exact ; un montant qu'aucune ne porte n'y est pas.
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct Montants {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    brut: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    net_imposable: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    net_a_payer: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pas: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    net_verse: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cotisations_salariales: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cotisations_patronales: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cout_employeur: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    net_avant_impot: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    brut: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_imposable: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_a_payer: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pas: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_verse: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cotisations_salariales: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cotisations_patronales: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    cout_employeur: Option<Montant>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    net_avant_impot: Option<Montant>,
 }
 
 /// D'ou vient chaque montant : la DSN, le bulletin, l'AEM, l'historique.
@@ -372,7 +372,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
 
     // Les montants, et d'ou chacun vient : le bulletin fait foi sur ceux qu'il imprime (`import::bulletins::completer`).
     let (mut montants, mut sources) = (Montants::default(), Sources::default());
-    let lus: [(&str, fn(&PaieVersee) -> Option<socle::grandeurs::Montant>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<Source>)); 9] = [
+    let lus: [(&str, fn(&PaieVersee) -> Option<Montant>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Montant>, &'a mut Option<Source>)); 9] = [
         ("brut", |p| p.brut, |m, s| (&mut m.brut, &mut s.brut)),
         ("net_imposable", |p| p.net_imposable, |m, s| (&mut m.net_imposable, &mut s.net_imposable)),
         ("net_a_payer", |p| p.net_a_payer, |m, s| (&mut m.net_a_payer, &mut s.net_a_payer)),
@@ -386,7 +386,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     for (k, lu, place) in lus {
         // Le montant que la paie porte ; sans paie, le brut que l'AEM atteste.
         let porte = match (p, k == "brut") {
-            (Some(p), _) => lu(p).map(|d| (d.decimal(), if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
+            (Some(p), _) => lu(p).map(|d| (d, if bulletin.is_some() && k != "net_verse" { Source::Bulletin } else { declaree_par(p) })),
             (None, true) => c.and_then(|c| c.brut).map(|b| (b, Source::Aem)),
             (None, false) => None,
         };
