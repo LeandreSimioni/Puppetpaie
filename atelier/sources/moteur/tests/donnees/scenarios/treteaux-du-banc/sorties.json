@@ -316,7 +316,7 @@
     },
     "config/compteurs.json": {
       "2026": {
-        "bulletin": 1,
+        "bulletin": "1/2026",
         "certificat_cs": 1
       }
     },
