@@ -452,7 +452,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 
 /// Ce que l'administrateur de l'installation est pour la compagnie `racine` (`administrateur::etat`).
 pub fn administrateur_etat(racine: &Path) -> R<crate::gestes::administrateur::EtatAdministrateur> {
-    let inst = crate::gestes::administrateur::installation_de(racine);
+    let inst = compagnie::installation::IdDeCompagnie::installation_de(racine);
     crate::gestes::administrateur::etat(&inst, racine, &Poste::de_ce_poste())}
 
 /// `administrateur-rattacher` et `administrateur-detacher`, sur le coffre de `poste` : tout se decide dans
@@ -460,7 +460,7 @@ pub fn administrateur_etat(racine: &Path) -> R<crate::gestes::administrateur::Et
 /// `mdp`, le mot de passe actuel de la compagnie, tape pour la route.
 pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, mdp: Option<&socle::secret::Secret>, poste: &Poste) -> R<Rattachement> {
     use crate::gestes::administrateur as adm;
-    let inst = adm::installation_de(racine);
+    let inst = compagnie::installation::IdDeCompagnie::installation_de(racine);
     let admin = match charge.administrateur {
         Some(m) => m,
         None => compagnie::demande::saisir_secret(
@@ -719,7 +719,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&socle::se
     let actuel = actuel(mdp);
     // UNE COMPAGNIE DE L'ADMINISTRATEUR : son mot de passe est celui de toutes ses compagnies, et il se change pour toutes a
     // la fois (`administrateur::changer`) ; l'actuel les ouvre chacune, tout se prepare puis tout se remplace.
-    let inst = crate::gestes::administrateur::installation_de(&ctx.racine);
+    let inst = compagnie::installation::IdDeCompagnie::installation_de(&ctx.racine);
     if crate::gestes::administrateur::est_rattachee(&inst, &ctx.racine)? {
         let Some(actuel) = actuel else {
             return Err(refus("Tapez le mot de passe actuel de l'administrateur : le nouveau le remplace dans toutes ses compagnies. Rien n'a ete modifie."));
@@ -733,7 +733,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&socle::se
 
 /// Plus de mot de passe du logiciel. L'actuel est exige.
 fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
-    if crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)? {
+    if crate::gestes::administrateur::est_rattachee(&compagnie::installation::IdDeCompagnie::installation_de(&ctx.racine), &ctx.racine)? {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;

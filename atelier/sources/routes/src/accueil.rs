@@ -171,7 +171,7 @@ pub const ROUTES: &[Fiche] = &[
 /// L'installation de la route : celle de la compagnie nommee (`--racine`), sinon celle du programme.
 pub fn installation(o: &Options) -> PathBuf {
     match &o.racine {
-        Some(r) => administrateur::installation_de(r),
+        Some(r) => IdDeCompagnie::installation_de(r),
         None => compagnies::base(),
     }
 }

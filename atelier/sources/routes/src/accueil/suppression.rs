@@ -125,7 +125,7 @@ pub fn supprimable(inst: &Path, racine: &Path) -> R<bool> {
 /// une compagnie reelle le rappel de la conservation et la sauvegarde a proposer (un Drive lie : la date du dernier
 /// passage). Une compagnie qui ne se supprime pas rend, sans genre, la phrase qui dit pourquoi.
 pub fn question(racine: &Path) -> R<Suppression> {
-    let inst = crate::gestes::administrateur::installation_de(racine);
+    let inst = installation::IdDeCompagnie::installation_de(racine);
     let nom = installation::nom_de(racine)?;
     let g = match sorte(&inst, racine)? {
         Ok(g) => g,
@@ -215,7 +215,7 @@ pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&socle::
     if charge.confirme != Some(true) {
         return question(racine);
     }
-    let inst = crate::gestes::administrateur::installation_de(racine);
+    let inst = installation::IdDeCompagnie::installation_de(racine);
     let nom = supprimer(&inst, racine, motdepasse, &Poste::de_ce_poste(), avant)?;
     Ok(Suppression { phrase: format!("{} est supprimée de ce poste.", nom), supprimee: Some(nom.clone()), ..Suppression::de(nom) })
 }

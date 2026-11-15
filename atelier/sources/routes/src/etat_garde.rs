@@ -1123,7 +1123,7 @@ impl FileDesEtats {
                 Vec::new()
             }
         };
-        let tableau = match crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&self.racine), &self.racine) {
+        let tableau = match crate::gestes::administrateur::est_rattachee(&compagnie::installation::IdDeCompagnie::installation_de(&self.racine), &self.racine) {
             Ok(t) => t,
             Err(m) => {
                 noter("le registre de l'administrateur ne se lit pas", &m);

@@ -1658,7 +1658,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         envoi_sans_mot_de_passe: joue || branchement.refus().is_some(),
         // SUPPRIMER LA COMPAGNIE : la Configuration ne le propose que si elle se supprime -- jamais une
         // fictive livree, qui se remet a zero (`accueil::suppression::sorte`).
-        supprimable: crate::accueil::suppression::supprimable(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)?,
+        supprimable: crate::accueil::suppression::supprimable(&compagnie::installation::IdDeCompagnie::installation_de(&ctx.racine), &ctx.racine)?,
         suppression: "Tout son dossier est effacé de ce poste : fiches, paies, documents, journaux.",
         // UNE COMPAGNIE CREEE EN DEMO PUIS GARDEE : sa mention, et les mois saisis en demo, ou la page la montre.
         demo: crate::accueil::suppression::mention(&ctx.racine)?,

@@ -119,7 +119,7 @@ fn lire_s_il_est_la<T: DeserializeOwned>(p: &Path, phrase: &str) -> R<Option<T>>
 
 /// La vraie compagnie : `prive/` a cote du code, sinon le code lui-meme.
 pub fn dossier_reel() -> PathBuf {
-    let voisin = base().join("prive");
+    let voisin = PRIVE.dans(&base());
     if voisin.join(socle::fichiers::CONFIG).is_dir() {
         voisin
     } else {
@@ -397,43 +397,111 @@ impl From<IdDeCompagnie> for String {
     }
 }
 
+/// Le dossier de la vraie compagnie, sous l'installation.
+const PRIVE: CheminRelatif = CheminRelatif::du_moteur("prive");
+/// Le dossier des compagnies ajoutees, sous l'installation.
+const COMPAGNIES: CheminRelatif = CheminRelatif::du_moteur("compagnies");
+/// Le dossier des fictives, sous l'installation (`DOSSIER_FICTIVES`).
+const FICTIVES: CheminRelatif = CheminRelatif::du_moteur(DOSSIER_FICTIVES);
+
 impl IdDeCompagnie {
     /// SON DOSSIER, RELATIF A L'INSTALLATION (`liste_de`) : `prive`, `compagnies/<dossier>`, `fictives/<dossier>`.
     pub fn dossier(&self) -> CheminRelatif {
         match self {
-            IdDeCompagnie::Reelle => CheminRelatif::du_moteur("prive"),
-            IdDeCompagnie::Cie(d) => CheminRelatif::du_moteur("compagnies").joint(d),
-            IdDeCompagnie::Fictive(d) => CheminRelatif::du_moteur(DOSSIER_FICTIVES).joint(d),
+            IdDeCompagnie::Reelle => PRIVE,
+            IdDeCompagnie::Cie(d) => COMPAGNIES.joint(d),
+            IdDeCompagnie::Fictive(d) => FICTIVES.joint(d),
+        }
+    }
+
+    /// SA RACINE dans l'installation `inst` : son dossier ; la vraie compagnie de l'installation du logiciel, la ou elle
+    /// est (`dossier_reel` : `prive/`, sinon le logiciel lui-meme).
+    pub fn racine(&self, inst: &Path) -> PathBuf {
+        match self {
+            IdDeCompagnie::Reelle if inst == base() => dossier_reel(),
+            IdDeCompagnie::Reelle | IdDeCompagnie::Cie(_) | IdDeCompagnie::Fictive(_) => self.dossier().dans(inst),
+        }
+    }
+
+    /// La compagnie de ce dossier relatif a l'installation (`dossier`) ; `None` pour un autre dossier.
+    fn de_la_forme(rel: &CheminRelatif) -> Option<IdDeCompagnie> {
+        match rel.parent() {
+            None if *rel == PRIVE => Some(IdDeCompagnie::Reelle),
+            Some(p) if p == COMPAGNIES => Some(IdDeCompagnie::Cie(rel.nom())),
+            Some(p) if p == FICTIVES => Some(IdDeCompagnie::Fictive(rel.nom())),
+            Some(_) | None => None,
         }
     }
 
     /// La compagnie de ce dossier relatif a l'installation (`dossier`) ; un autre dossier se refuse.
     pub fn du_dossier(rel: &CheminRelatif) -> R<IdDeCompagnie> {
-        let texte = rel.texte();
-        match (texte, texte.split_once('/')) {
-            ("prive", _) => Ok(IdDeCompagnie::Reelle),
-            (_, Some(("compagnies", d))) => Ok(IdDeCompagnie::Cie(NomDeFichier::lire(d)?)),
-            (_, Some((DOSSIER_FICTIVES, d))) => Ok(IdDeCompagnie::Fictive(NomDeFichier::lire(d)?)),
-            (_, Some(_) | None) => Err(socle::refus!(
+        match IdDeCompagnie::de_la_forme(rel) {
+            Some(id) => Ok(id),
+            None => Err(socle::refus!(
                 "{} n'est le dossier d'aucune compagnie de l'installation : prive, compagnies/<dossier> ou fictives/<dossier>.",
-                socle::fichiers::repr(texte)
+                socle::fichiers::repr(rel.texte())
             )),
         }
     }
 
-    /// La compagnie de `racine` dans l'installation `inst` ; une compagnie hors de l'installation se refuse.
+    /// LA COMPAGNIE DE `racine` DANS L'INSTALLATION `inst` (`racine`, `dossier`) ; `None` pour un dossier qui n'est celui
+    /// d'aucune compagnie de l'installation. Les chemins se comparent absolus (`absolu`).
+    pub fn dans(inst: &Path, racine: &Path) -> R<Option<IdDeCompagnie>> {
+        let (i, r) = (absolu(inst)?, absolu(racine)?);
+        if r == absolu(&IdDeCompagnie::Reelle.racine(inst))? {
+            return Ok(Some(IdDeCompagnie::Reelle));
+        }
+        match socle::fichiers::sous(&r, &i) {
+            Some(rel) if rel.as_os_str().is_empty() => Ok(None),
+            Some(rel) => Ok(IdDeCompagnie::de_la_forme(&CheminRelatif::du(rel)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// La compagnie de `racine` dans l'installation `inst` (`dans`) ; un autre dossier se refuse.
     pub fn de_la_racine(inst: &Path, racine: &Path) -> R<IdDeCompagnie> {
-        let resolu = |p: &Path| std::fs::canonicalize(p).map_err(|e| socle::echec::du_disque(p, &e));
-        let (i, r) = (resolu(inst)?, resolu(racine)?);
-        match r.strip_prefix(&i) {
-            Ok(rel) => IdDeCompagnie::du_dossier(&CheminRelatif::du(rel)?),
-            Err(_) => Err(socle::refus!("{} n'est pas sous l'installation {}.", socle::fichiers::repr(&r.to_string_lossy()), socle::fichiers::repr(&i.to_string_lossy()))),
+        match IdDeCompagnie::dans(inst, racine)? {
+            Some(id) => Ok(id),
+            None => Err(socle::refus!(
+                "{} n'est le dossier d'aucune compagnie de l'installation {}.",
+                socle::fichiers::repr(&racine.to_string_lossy()),
+                socle::fichiers::repr(&inst.to_string_lossy())
+            )),
+        }
+    }
+
+    /// L'INSTALLATION D'UNE COMPAGNIE dont la racine est `racine` : au-dessus de `compagnies/<nom>` ou de
+    /// `fictives/<nom>`, sinon le dossier qui porte la racine (`prive/`, le logiciel).
+    pub fn installation_de(racine: &Path) -> PathBuf {
+        let parent = match racine.parent() {
+            Some(p) => p,
+            None => racine,
+        };
+        match parent.parent() {
+            Some(haut) if parent == COMPAGNIES.dans(haut) || parent == FICTIVES.dans(haut) => haut.to_path_buf(),
+            Some(_) | None => parent.to_path_buf(),
         }
     }
 }
 
+/// Le chemin absolu, liens suivis. UN DOSSIER QUI N'EXISTE PLUS (une compagnie effacee que le registre nomme encore) n'a
+/// pas de liens a suivre : il se compare par son chemin absolu tel qu'il s'ecrit, ce que le systeme en dit sans le
+/// toucher (`std::path::absolute` : « Makes the path absolute without accessing the filesystem »).
+fn absolu(p: &Path) -> R<PathBuf> {
+    let c = match std::fs::canonicalize(p) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,
+        Err(e) => return Err(socle::echec::du_disque(p, &e)),
+    };
+    Ok(match c.to_string_lossy().strip_prefix(r"\\?\") {
+        Some(s) => PathBuf::from(s),
+        None => c.clone(),
+    })
+}
+
 /// L'ECRITURE D'UN IDENTIFIANT DE COMPAGNIE PAR SON DOSSIER RELATIF A L'INSTALLATION (`IdDeCompagnie::dossier`), celle
-/// d'un scenario du banc (`fictives/ajoutee-les-treteaux-du-banc`), d'un identifiant que le scenario peut taire.
+/// d'un scenario du banc (`fictives/ajoutee-les-treteaux-du-banc`), d'un identifiant que le scenario peut taire ; `seul`,
+/// celle du registre de l'administrateur (`compagnies/les-pupazzi`, `prive`).
 pub mod en_dossier {
     use super::IdDeCompagnie;
     use socle::fichiers::CheminRelatif;
@@ -447,11 +515,29 @@ pub mod en_dossier {
 
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IdDeCompagnie>, D::Error> {
         match <Option<CheminRelatif> as serde::Deserialize>::deserialize(d)? {
-            Some(rel) => match IdDeCompagnie::du_dossier(&rel) {
-                Ok(id) => Ok(Some(id)),
-                Err(e) => Err(serde::de::Error::custom(e.phrase)),
-            },
+            Some(rel) => lu(&rel).map(Some),
             None => Ok(None),
+        }
+    }
+
+    fn lu<E: serde::de::Error>(rel: &CheminRelatif) -> Result<IdDeCompagnie, E> {
+        match IdDeCompagnie::du_dossier(rel) {
+            Ok(id) => Ok(id),
+            Err(e) => Err(E::custom(e.phrase)),
+        }
+    }
+
+    /// Un identifiant toujours dit.
+    pub mod seul {
+        use super::{lu, IdDeCompagnie};
+        use socle::fichiers::CheminRelatif;
+
+        pub fn serialize<S: serde::Serializer>(id: &IdDeCompagnie, s: S) -> Result<S::Ok, S::Error> {
+            serde::Serialize::serialize(&id.dossier(), s)
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<IdDeCompagnie, D::Error> {
+            lu(&<CheminRelatif as serde::Deserialize>::deserialize(d)?)
         }
     }
 }
@@ -518,15 +604,15 @@ pub fn nom_dossier(p: &Path) -> R<NomDeFichier> {
 pub fn liste_de(b: &Path) -> R<Vec<Compagnie>> {
     let mut out = Vec::new();
     if !crate::bridage::est_bride_de(b) {
-        let reel = if b == base() { dossier_reel() } else { b.join("prive") };
+        let reel = IdDeCompagnie::Reelle.racine(b);
         if reel.join(socle::fichiers::CONFIG).is_dir() {
             out.push(entree(IdDeCompagnie::Reelle, &reel, true)?);
         }
-        for d in sous_dossiers(&b.join("compagnies"))? {
+        for d in sous_dossiers(&COMPAGNIES.dans(b))? {
             out.push(entree(IdDeCompagnie::Cie(nom_dossier(&d)?), &d, true)?);
         }
     }
-    for d in sous_dossiers(&b.join(DOSSIER_FICTIVES))? {
+    for d in sous_dossiers(&FICTIVES.dans(b))? {
         out.push(entree(IdDeCompagnie::Fictive(nom_dossier(&d)?), &d, false)?);
     }
     Ok(out)

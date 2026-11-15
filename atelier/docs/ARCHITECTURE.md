@@ -400,7 +400,10 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
   l'administrateur, le choix d'une tuile dans la fenêtre. Un scénario du banc l'écrit par son dossier relatif à
   l'installation (`installation::en_dossier` : `prive`, `compagnies/<dossier>`, `fictives/<dossier>`) ; une compagnie
   hors de l'installation ne s'y enregistre pas (`IdDeCompagnie::de_la_racine`) ; que portent un geste du scénario et les
-  compagnies d'un rejeu.
+  compagnies d'un rejeu, et le registre de l'administrateur (`en_dossier::seul`). Son dossier et sa racine ne se disent
+  que par lui (`dossier`, `racine` : la vraie compagnie de l'installation du logiciel là où elle est, `prive/` ou le
+  logiciel lui-même), une racine se relit par `IdDeCompagnie::dans`, et l'installation d'une racine par
+  `IdDeCompagnie::installation_de`.
 - **couleur d'une compagnie** : la couleur qu'une compagnie choisit pour sa tuile et sa page. `#RRGGBB`, gardée telle que
   lue ; `poser_couleur` l'écrit en majuscules ; celle de la charte quand rien n'est posé. Que portent
   `config/affichage.json`, une tuile, la charge et la réponse de `compagnie-couleur`, le tableau de l'administrateur. La

@@ -48,7 +48,7 @@ use serde::{Deserialize, Serialize};
 
 use compagnie::coffre::Coffre;
 use socle::paris::Moment;
-use compagnie::installation::{self as compagnies, Compagnie};
+use compagnie::installation::{self as compagnies, Compagnie, IdDeCompagnie};
 use crate::catalogue::Route;
 use crate::depots::{ChargeDeposer, Designation, Quoi};
 use crate::enveloppe::Dite;
@@ -101,52 +101,15 @@ struct Registre {
     compagnies: Vec<EntreeRegistre>,
 }
 
-/// Une compagnie rattachee : son dossier, relatif a l'installation, et depuis quand.
+/// Une compagnie rattachee : son identifiant, ecrit par son dossier relatif a l'installation
+/// (`installation::en_dossier`), et depuis quand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EntreeRegistre {
-    dossier: CheminRelatif,
+    #[serde(with = "compagnie::installation::en_dossier::seul")]
+    dossier: IdDeCompagnie,
     #[serde(with = "socle::paris::ecrit::minute")]
     depuis: Moment,
-}
-
-/// L'installation d'une compagnie : `<installation>/compagnies/<nom>` ou `<installation>/prive` (ou `fictives/<nom>`).
-pub(crate) fn installation_de(racine: &Path) -> PathBuf {
-    let parent = match racine.parent() {
-        Some(p) => p,
-        None => racine,
-    };
-    match parent.parent() {
-        Some(haut) if parent.file_name().is_some_and(|n| n == "compagnies" || n == compagnies::DOSSIER_FICTIVES) => haut.to_path_buf(),
-        Some(_) | None => parent.to_path_buf(),
-    }
-}
-
-/// Le chemin absolu, liens suivis. UN DOSSIER QUI N'EXISTE PLUS (une compagnie effacee que le registre nomme encore) n'a
-/// pas de liens a suivre : il se compare par son chemin absolu tel qu'il s'ecrit, ce que le systeme en dit sans le
-/// toucher (`std::path::absolute` : « Makes the path absolute without accessing the filesystem »).
-fn absolu(p: &Path) -> R<PathBuf> {
-    let c = match std::fs::canonicalize(p) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,
-        Err(e) => return Err(socle::echec::du_disque(p, &e)),
-    };
-    Ok(match c.to_string_lossy().strip_prefix(r"\\?\") {
-        Some(s) => PathBuf::from(s),
-        None => c.clone(),
-    })
-}
-
-/// Le dossier d'une compagnie, relatif a l'installation, en barres droites (`compagnies/les-pupazzi`, `prive`) ; `None`
-/// pour un dossier hors de l'installation.
-fn relatif(inst: &Path, racine: &Path) -> R<Option<CheminRelatif>> {
-    let r = absolu(racine)?;
-    let i = absolu(inst)?;
-    match socle::fichiers::sous(&r, &i) {
-        Some(rel) if rel.as_os_str().is_empty() => Ok(None),
-        Some(rel) => CheminRelatif::du(rel).map(Some),
-        None => Ok(None),
-    }
 }
 
 /// Les compagnies du registre : aucune sans registre ; un registre qui ne se lit pas se refuse.
@@ -170,13 +133,13 @@ fn ecrire_registre(inst: &Path, entrees: &[EntreeRegistre]) -> R<()> {
 /// Les compagnies rattachees a l'administrateur, telles qu'elles sont sur le disque (un dossier parti n'y est plus). Une
 /// compagnie fictive n'y entre pas : `rattacher` la refuse.
 pub fn rattachees(inst: &Path) -> R<Vec<PathBuf>> {
-    Ok(lire_registre(inst)?.into_iter().map(|e| e.dossier.dans(inst)).filter(|racine| droit::contexte::ENTREPRISE.dans(racine).is_file()).collect())
+    Ok(lire_registre(inst)?.into_iter().map(|e| e.dossier.racine(inst)).filter(|racine| droit::contexte::ENTREPRISE.dans(racine).is_file()).collect())
 }
 
 /// UNE COMPAGNIE SUPPRIMEE (`accueil::suppression`) sort du registre : une compagnie creee plus tard sous
 /// le meme dossier n'en herite pas. Rien a faire si elle n'y est pas.
 pub fn oublier(inst: &Path, racine: &Path) -> R<()> {
-    let Some(rel) = relatif(inst, racine)? else { return Ok(()) };
+    let Some(rel) = IdDeCompagnie::dans(inst, racine)? else { return Ok(()) };
     let avant = lire_registre(inst)?;
     let apres: Vec<EntreeRegistre> = avant.iter().filter(|e| e.dossier != rel).cloned().collect();
     if apres.len() == avant.len() {
@@ -187,24 +150,24 @@ pub fn oublier(inst: &Path, racine: &Path) -> R<()> {
 
 /// La compagnie `racine` est-elle rattachee a l'administrateur de son installation ?
 pub fn est_rattachee(inst: &Path, racine: &Path) -> R<bool> {
-    let parmi_les_rattachees = |rel: CheminRelatif| -> R<bool> {
+    let parmi_les_rattachees = |rel: IdDeCompagnie| -> R<bool> {
         for r in rattachees(inst)? {
-            if relatif(inst, &r)? == Some(rel.clone()) {
+            if IdDeCompagnie::dans(inst, &r)? == Some(rel.clone()) {
                 return Ok(true);
             }
         }
         Ok(false)
     };
     // Une compagnie hors de l'installation n'y est pas rattachee.
-    Ok(relatif(inst, racine)?.map(parmi_les_rattachees).transpose()?.is_some_and(|oui| oui))
+    Ok(IdDeCompagnie::dans(inst, racine)?.map(parmi_les_rattachees).transpose()?.is_some_and(|oui| oui))
 }
 
 /// `liste` sans la compagnie `racine`.
 fn sans(liste: Vec<PathBuf>, inst: &Path, racine: &Path) -> R<Vec<PathBuf>> {
-    let rel = relatif(inst, racine)?;
+    let rel = IdDeCompagnie::dans(inst, racine)?;
     let mut out = Vec::new();
     for r in liste {
-        if relatif(inst, &r)? != rel {
+        if IdDeCompagnie::dans(inst, &r)? != rel {
             out.push(r);
         }
     }
@@ -224,9 +187,9 @@ fn reelles(inst: &Path) -> R<Vec<Compagnie>> {
 
 /// La fiche d'accueil de la compagnie `racine`, si l'installation la liste.
 fn fiche_de(inst: &Path, racine: &Path) -> R<Option<Compagnie>> {
-    let rel = relatif(inst, racine)?;
+    let rel = IdDeCompagnie::dans(inst, racine)?;
     for c in compagnies::liste_de(inst)? {
-        if relatif(inst, &c.racine)? == rel {
+        if IdDeCompagnie::dans(inst, &c.racine)? == rel {
             return Ok(Some(c));
         }
     }
@@ -296,10 +259,10 @@ pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> R<EtatAdministr
     let autres: Vec<String> = if !groupe.is_empty() {
         noms_de(inst, &sans(groupe.clone(), inst, racine)?)?
     } else {
-        let ici = relatif(inst, racine)?;
+        let ici = IdDeCompagnie::dans(inst, racine)?;
         let mut a = Vec::new();
         for c in reelles(inst)? {
-            if relatif(inst, &c.racine)? != ici && exigee(poste, &c.racine)? {
+            if IdDeCompagnie::dans(inst, &c.racine)? != ici && exigee(poste, &c.racine)? {
                 a.push(c.nom);
             }
         }
@@ -398,7 +361,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, actu
     if compagnies::est_fictive(racine)? {
         return Err(socle::echec::refus("Une compagnie fictive s'ouvre sans mot de passe : elle n'a pas d'administrateur."));
     }
-    let Some(rel) = relatif(inst, racine)? else {
+    let Some(rel) = IdDeCompagnie::dans(inst, racine)? else {
         let a_part = HorsDeLInstallation { chemin: racine.to_string_lossy().into_owned(), installation: inst.to_string_lossy().into_owned() };
         return Err(socle::echec::refus_avec("Ce dossier n'est pas une compagnie de cette installation.", socle::echec::APart::forme(a_part)));
     };
@@ -413,7 +376,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, actu
     if groupe.is_empty() {
         let mut candidates: Vec<Compagnie> = Vec::new();
         for c in reelles(inst)? {
-            if relatif(inst, &c.racine)?.as_ref() != Some(&rel) && exigee(poste, &c.racine)? {
+            if IdDeCompagnie::dans(inst, &c.racine)?.as_ref() != Some(&rel) && exigee(poste, &c.racine)? {
                 candidates.push(c);
             }
         }
@@ -448,7 +411,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, actu
     remplacer(&chemin, &octets).map_err(|m| socle::refus!("Le coffre de cette compagnie ne s'écrit pas ({}). Rien n'a changé.", m.phrase))?;
     let mut entrees = lire_registre(inst)?;
     for r in nouvelles.iter().chain(std::iter::once(&racine.to_path_buf())) {
-        if let Some(dossier) = relatif(inst, r)? {
+        if let Some(dossier) = IdDeCompagnie::dans(inst, r)? {
             if !entrees.iter().any(|x| x.dossier == dossier) {
                 entrees.push(EntreeRegistre { dossier, depuis: poste.maintenant });
             }
@@ -485,7 +448,7 @@ pub fn detacher(inst: &Path, racine: &Path, admin: &socle::secret::Secret, nouve
     }
     let coffre = poste.coffre(racine);
     let octets = coffre.preparer_ouverture(nouveau, Some(admin)).map_err(|e| e.reformuler(|m| format!("{} Rien n'a changé.", m.trim_end_matches(" Rien n'a ete pose."))))?;
-    let rel = relatif(inst, racine)?;
+    let rel = IdDeCompagnie::dans(inst, racine)?;
     let avant_registre = lire_registre(inst)?;
     let reste: Vec<EntreeRegistre> = avant_registre.iter().filter(|e| Some(&e.dossier) != rel.as_ref()).cloned().collect();
     ecrire_registre(inst, &reste).map_err(|m| socle::refus!("Le registre de l'administrateur ne s'écrit pas ({}). Rien n'a changé.", m.phrase))?;
