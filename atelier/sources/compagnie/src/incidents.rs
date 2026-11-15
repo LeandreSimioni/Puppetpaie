@@ -1119,22 +1119,13 @@ pub fn configuration(racine: &Path) -> R<(Url, PathBuf)> {
     if let Some(s) = lire_config(racine)?.serveur {
         return Ok((s, racine.to_path_buf()));
     }
-    let code = dossier_du_code();
-    let logiciel = code.parent().ok_or_else(|| socle::echec::refus_avec("Le dossier du code n'a pas de parent.", socle::echec::Lieu { chemin: Some(code.to_string_lossy().into_owned()), ..Default::default() }).reclasser(Classe::DefautDuLogiciel))?;
-    let voisin = match logiciel.parent() {
-        Some(r) => Some(r.join("prive")),
-        None => None,
-    };
-    let reel = match voisin {
-        Some(v) if v.join(socle::fichiers::CONFIG).is_dir() => v,
-        Some(_) | None => logiciel.to_path_buf(),
-    };
+    let reel = crate::installation::dossier_reel();
     if crate::installation::est_fictive(racine)? && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
         if let Some(s) = lire_config(&reel)?.serveur {
             return Ok((s, reel));
         }
     }
-    let editeur = logiciel.join(FICHIER_EDITEUR);
+    let editeur = crate::installation::logiciel().join(FICHIER_EDITEUR);
     if editeur.is_file() {
         let e: Editeur = socle::forme::lire_fichier(&editeur, "Le serveur de l'éditeur livré avec le logiciel ne se lit pas.")?;
         return Ok((e.serveur, racine.to_path_buf()));

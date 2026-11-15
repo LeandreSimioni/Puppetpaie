@@ -73,3 +73,17 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
     assert!(!administrateur::est_rattachee(&i, &neuve).unwrap());
 }
 
+/// Un registre qui porte la vraie compagnie qu'est le logiciel lui-meme (`logiciel` : `prive/config` manque) se relit, et
+/// se reecrit aux memes octets quand une compagnie supprimee en sort.
+#[test]
+fn un_registre_qui_porte_le_logiciel_se_relit_et_se_reecrit_aux_memes_octets() {
+    let i = inst("logiciel");
+    let quoi = "Les compagnies que gere l'administrateur de ce logiciel : un seul mot de passe les ouvre toutes. Aucun secret ici.";
+    let entree = |d: &str| json!({"dossier": d, "depuis": "2026-01-02T09:00"});
+    let registre = |c: Vec<serde_json::Value>| format!("{}\n", socle::ecriture::json_indente(&json!({"quoi": quoi, "compagnies": c}), 2));
+    let p = i.join(administrateur::FICHIER);
+    std::fs::write(&p, registre(vec![entree("logiciel"), entree("compagnies/partie")])).unwrap();
+    administrateur::oublier(&i, &i.join("compagnies").join("partie")).unwrap();
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), registre(vec![entree("logiciel")]));
+}
+

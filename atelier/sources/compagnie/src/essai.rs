@@ -354,16 +354,14 @@ pub struct Montage {
     pub neuf: bool,
 }
 
-/// Le dossier d'installation : celui qui porte `logiciel/` (`logiciel/donnees` -> `logiciel` -> l'installation).
-fn installation() -> R<PathBuf> {
-    let code = socle::fichiers::dossier_du_code();
-    code.parent().and_then(Path::parent).map(Path::to_path_buf).ok_or_else(|| refus_avec("Le logiciel n'est dans aucune installation.", a_part(&code)))
-}
-
 /// La fictive a copier : un chemin (s'il designe un dossier), sinon un nom de `fictives/` de l'installation.
 fn source(fictive: &str) -> R<PathBuf> {
     let p = PathBuf::from(fictive);
-    let d = if fictive.contains('/') || fictive.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::installation::DOSSIER_FICTIVES).join(fictive) };
+    let d = if fictive.contains('/') || fictive.contains('\\') || p.is_dir() {
+        p
+    } else {
+        crate::installation::IdDeCompagnie::Fictive(socle::fichiers::NomDeFichier::lire(fictive)?).racine(&crate::installation::base())
+    };
     if !droit::contexte::ENTREPRISE.dans(&d).is_file() {
         return Err(refus_avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }

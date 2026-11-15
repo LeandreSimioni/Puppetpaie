@@ -26,7 +26,7 @@ use droit::natures::{self, MotifDeRupture, Nature};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
-use socle::fichiers::{dossier_du_code, NomDeFichier};
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use crate::catalogue::{Ecran, Place};
 use crate::fiches::{comblee, SorteDeFiche};
@@ -525,12 +525,7 @@ pub fn racine_du_poste() -> PathBuf {
     if let Some(e) = std::env::var_os("PUPPETPAIE_DONNEES").filter(|e| !e.is_empty()) {
         return PathBuf::from(e);
     }
-    let code = dossier_du_code();
-    let Some(logiciel) = code.parent() else { return code };
-    match logiciel.parent().map(|p| p.join("prive")) {
-        Some(voisin) if voisin.join(socle::fichiers::CONFIG).is_dir() => voisin,
-        _ => logiciel.to_path_buf(),
-    }
+    compagnie::installation::dossier_reel()
 }
 
 /// `DOCUMENTS_IDENTITE` : ou va chaque image.

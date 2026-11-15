@@ -24,7 +24,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use compagnie::installation as compagnies;
-use compagnie::installation::{entree, nom_de_dossier, nom_dossier, Compagnie, CouleurDeCompagnie, Creation, IdDeCompagnie, Marqueur, Venue, DOSSIER_FICTIVES, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
+use compagnie::installation::{entree, nom_de_dossier, Compagnie, CouleurDeCompagnie, Creation, IdDeCompagnie, Marqueur, Venue, FICHIER_CREATION, MARQUEUR, MARQUE_FICTIVE, PREFIXE_AJOUTEE};
+use socle::fichiers::NomDeFichier;
 use crate::gestes::administrateur;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
@@ -467,17 +468,11 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
         return Err(socle::echec::refus("Le nom de la compagnie, s'il vous plait."));
     }
     let bride = compagnie::bridage::est_bride_de(inst);
-    let (parent, racine_nom) = if bride {
-        (inst.join(DOSSIER_FICTIVES), format!("{}{}", PREFIXE_AJOUTEE, nom_de_dossier(&nom)))
+    let (id, dossier) = if bride {
+        IdDeCompagnie::libre(inst, IdDeCompagnie::Fictive, &NomDeFichier::lire(&format!("{}{}", PREFIXE_AJOUTEE, nom_de_dossier(&nom)))?)?
     } else {
-        (inst.join("compagnies"), nom_de_dossier(&nom))
+        IdDeCompagnie::libre(inst, IdDeCompagnie::Cie, &NomDeFichier::lire(&nom_de_dossier(&nom))?)?
     };
-    let mut dossier = parent.join(&racine_nom);
-    let mut n = 2;
-    while dossier.exists() {
-        dossier = parent.join(format!("{}-{}", racine_nom, n));
-        n += 1;
-    }
     let cfg = dossier.join(socle::fichiers::CONFIG);
     std::fs::create_dir_all(&cfg).map_err(|e| socle::echec::du_disque(&cfg, &e))?;
     // La raison sociale se deduit du nom comme a chaque enregistrement de la fiche (`SorteDeFiche::deriver` : majuscules
@@ -506,9 +501,8 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
         let import = dossier.join(import::BOITE_AUX_LETTRES);
         std::fs::create_dir_all(&import).map_err(|e| socle::echec::du_disque(&import, &e))?;
     }
-    let nom_du_dossier = nom_dossier(&dossier)?;
     if !bride {
-        return entree(IdDeCompagnie::Cie(nom_du_dossier), &dossier, true);
+        return entree(id, &dossier, true);
     }
     // Le marqueur d'une fictive (`est_fictive`), et la marque qui la dit ajoutee. `copie_de` ne dit pas le nom d'une
     // fictive livree (`maj::marquee_comme_livree` compare « compagnie fictive <nom du dossier> ») : elle n'en est pas une.
@@ -520,5 +514,5 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
         quoi: "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.".to_string(),
     };
     socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;
-    entree(IdDeCompagnie::Fictive(nom_du_dossier), &dossier, false)
+    entree(id, &dossier, false)
 }

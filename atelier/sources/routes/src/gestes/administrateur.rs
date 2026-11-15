@@ -102,7 +102,7 @@ struct Registre {
 }
 
 /// Une compagnie rattachee : son identifiant, ecrit par son dossier relatif a l'installation
-/// (`installation::en_dossier`), et depuis quand.
+/// (`installation::en_dossier` : `prive`, `logiciel`, `prive-dev`, `compagnies/<d>`), et depuis quand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EntreeRegistre {
@@ -133,7 +133,7 @@ fn ecrire_registre(inst: &Path, entrees: &[EntreeRegistre]) -> R<()> {
 /// Les compagnies rattachees a l'administrateur, telles qu'elles sont sur le disque (un dossier parti n'y est plus). Une
 /// compagnie fictive n'y entre pas : `rattacher` la refuse.
 pub fn rattachees(inst: &Path) -> R<Vec<PathBuf>> {
-    Ok(lire_registre(inst)?.into_iter().map(|e| e.dossier.racine(inst)).filter(|racine| droit::contexte::ENTREPRISE.dans(racine).is_file()).collect())
+    Ok(lire_registre(inst)?.into_iter().map(|e| e.dossier.dossier().dans(inst)).filter(|racine| droit::contexte::ENTREPRISE.dans(racine).is_file()).collect())
 }
 
 /// UNE COMPAGNIE SUPPRIMEE (`accueil::suppression`) sort du registre : une compagnie creee plus tard sous

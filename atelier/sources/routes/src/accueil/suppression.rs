@@ -63,27 +63,18 @@ pub enum Genre {
     Reelle,
 }
 
-/// Le dossier `p` resolu, et comparable (sous Windows, sans le `\\?\` de `canonicalize`) ; un dossier qui ne se resout
-/// pas se refuse.
-fn absolu(p: &Path) -> R<PathBuf> {
-    let c = std::fs::canonicalize(p).map_err(|e| socle::echec::du_disque(&p, &e))?;
-    let t = c.to_string_lossy();
-    Ok(match t.strip_prefix(r"\\?\") {
-        Some(s) => PathBuf::from(s),
-        None => c.clone(),
-    })
-}
-
-/// La compagnie `racine` est-elle une compagnie de l'installation `inst` -- `prive/`, `compagnies/<nom>`,
-/// `fictives/<nom>`, et rien d'autre (ni `logiciel/`, ni un dossier cache) ?
+/// La compagnie `racine` est-elle une compagnie de l'installation `inst` qui se supprime -- `prive/`, `compagnies/<nom>`,
+/// `fictives/<nom>` (`IdDeCompagnie::dans`), avec sa fiche entreprise, et rien d'autre : ni le logiciel lui-meme (le
+/// supprimer effacerait le programme), ni la copie de developpement (regle 11 : la ligne de commande seulement), ni un
+/// dossier cache ?
 fn de_l_installation(inst: &Path, racine: &Path) -> R<bool> {
-    let (i, r) = (absolu(inst)?, absolu(racine)?);
-    // Un chemin sans nom (une racine du disque) n'est le dossier d'aucune compagnie.
-    let nommee = r.file_name().is_some_and(|n| !n.to_string_lossy().starts_with('.'));
-    if !nommee || !droit::contexte::ENTREPRISE.dans(&r).is_file() {
+    if installation::est_cache(racine) || !droit::contexte::ENTREPRISE.dans(racine).is_file() {
         return Ok(false);
     }
-    Ok(r == i.join("prive") || r.parent().is_some_and(|p| p == i.join("compagnies") || p == i.join(installation::DOSSIER_FICTIVES)))
+    Ok(match installation::IdDeCompagnie::dans(inst, racine)? {
+        Some(installation::IdDeCompagnie::Reelle | installation::IdDeCompagnie::Cie(_) | installation::IdDeCompagnie::Fictive(_)) => true,
+        Some(installation::IdDeCompagnie::Logiciel | installation::IdDeCompagnie::Developpement) | None => false,
+    })
 }
 
 /// Ce qu'est `racine` pour sa suppression : son genre, ou le refus qui dit pourquoi elle ne se supprime pas. Un disque
@@ -288,7 +279,7 @@ pub struct Restes {
 /// pas se dit.
 pub fn effacer_les_restes(inst: &Path) -> R<Restes> {
     let mut r = Restes { partis: Vec::new(), resistent: Vec::new() };
-    for d in [inst.to_path_buf(), inst.join("compagnies"), inst.join(installation::DOSSIER_FICTIVES)] {
+    for d in installation::porteurs(inst) {
         if !socle::fichiers::present(&d)? {
             continue;
         }
@@ -330,15 +321,9 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
     let creee_le = installation::marqueur(racine)?
         .and_then(|m| m.quand)
         .ok_or_else(|| refus("Le marqueur de la compagnie créée en démo ne dit pas quand elle a été créée : rien n'a changé."))?;
-    let parent = inst.join("compagnies");
+    let (id, cible) = installation::IdDeCompagnie::libre(inst, installation::IdDeCompagnie::Cie, &socle::fichiers::NomDeFichier::lire(&installation::nom_de_dossier(&nom))?)?;
+    let parent = installation::dessus(&cible);
     std::fs::create_dir_all(&parent).map_err(|e| socle::echec::du_disque(&parent, &e))?;
-    let base = installation::nom_de_dossier(&nom);
-    let mut cible = parent.join(&base);
-    let mut n = 2;
-    while cible.exists() {
-        cible = parent.join(format!("{}-{}", base, n));
-        n += 1;
-    }
     let mention = FichierDemo {
         creee_le,
         gardee_le: socle::temps::secondes().a_la_seconde(),
@@ -354,9 +339,8 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
     let a_part = || Lieu { chemin: Some(cible.to_string_lossy().into_owned()), ..Default::default() };
     std::fs::remove_file(cible.join(installation::MARQUEUR))
         .map_err(|e| refus_avec("Le marqueur de la fictive ne s'efface pas.", Lieu { detail: Some(e.to_string()), ..a_part() }))?;
-    let gardee = absolu(&cible)?;
     for c in installation::liste_de(inst)? {
-        if absolu(&c.racine)? == gardee {
+        if c.id == id {
             return Ok(c);
         }
     }
