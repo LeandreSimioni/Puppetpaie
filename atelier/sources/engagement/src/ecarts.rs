@@ -421,7 +421,7 @@ fn comparer_une(
             let de_la_periode: Vec<socle::date::Jour> = contrat.jours().collect();
             let periode = socle::grandeurs::Jours::de_dates(de_la_periode.len());
             let un = socle::grandeurs::Jours::UN;
-            let un_mois = contrat.debut().mois_civil() == contrat.fin().mois_civil();
+            let un_mois = contrat.mois().len() == 1;
             let n = if periode == un { Some(un) } else { jours_comptes.filter(|n| *n >= un && *n <= periode && (*n == periode || un_mois)) };
             let Some(n) = n else {
                 return Err(refus(match jours_comptes {

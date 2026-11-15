@@ -381,6 +381,12 @@ impl<S> ContratLu<S> {
             (None, Some(f)) => Err(socle::refus!("un contrat atteste finit le {} sans dire son début", f.jj_mm_aaaa())),
         }
     }
+
+    /// La meme ligne, aux dates de `periode`, telle qu'elle s'ecrit : la porte de ses dates.
+    pub fn aux_dates(mut self, periode: &socle::date::Periode) -> Self {
+        (self.debut, self.fin) = (Some(periode.debut()), Some(periode.fin()));
+        self
+    }
 }
 
 impl ContratRelu {

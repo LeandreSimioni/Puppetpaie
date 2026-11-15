@@ -174,7 +174,6 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
     let mut ligne = c.ligne.clone();
     // La ligne lue ecrit son brut en nombre (`ContratLu`) : sa porte.
     let b = reste_brut.au_centime().decimal();
-    (ligne.debut, ligne.fin) = (Some(periode.debut()), Some(periode.fin()));
     ligne.contrat.cachets = reste_cachets;
     ligne.contrat.jours = reste_jours;
     ligne.contrat.brut = Some(b);
@@ -335,21 +334,22 @@ impl Registre {
             }
         }
         self.tous.push(a);
-        self.retenus.push((nir.clone(), ligne, bloc));
+        self.retenus.push((nir.clone(), ligne.aux_dates(&periode), bloc));
         Ok(phrases)
     }
 
     /// `x`, retire du registre, devient `nouvelle` et ses dates (`None` : il disparait), dans ce que l'import retient ou
     /// dans ce qu'il change a l'historique.
     fn changer(&mut self, x: Atteste, nouvelle: Option<(ContratLu, Periode)>) {
-        let ligne = nouvelle.as_ref().map(|n| n.0.clone());
+        let ligne = nouvelle.as_ref().map(|(l, periode)| l.clone().aux_dates(periode));
         match &x.historique {
             Some(h) => {
                 self.changes.retain(|c| &c.0 != h);
                 self.changes.push((h.clone(), ligne));
             }
             None => {
-                let i = self.retenus.iter().position(|r| r.0 == x.nir && r.1 == x.ligne);
+                let ecrite = x.ligne.clone().aux_dates(&x.periode);
+                let i = self.retenus.iter().position(|r| r.0 == x.nir && r.1 == ecrite);
                 match (i, ligne) {
                     (Some(i), Some(l)) => self.retenus[i].1 = l,
                     (Some(i), None) => {
