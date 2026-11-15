@@ -1006,8 +1006,8 @@ struct QuotiteDeLaNature {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QuotiteDeReference {
-    #[serde(deserialize_with = "socle::forme::court")]
-    valeur: Decimal,
+    #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+    valeur: socle::grandeurs::Heures,
     #[serde(rename = "quoi")]
     _quoi: String,
 }
@@ -1370,7 +1370,7 @@ impl Proprietes {
     }
 
     /// La quotite de reference d'un contrat au mois (la duree legale, L. 3121-27), ou `None` : la nature n'en a pas.
-    pub fn quotite_reference_defaut(&self) -> Option<Decimal> {
+    pub fn quotite_reference_defaut(&self) -> Option<socle::grandeurs::Heures> {
         self.quotite_reference.as_ref().map(|q| q.valeur)
     }
 

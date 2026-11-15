@@ -25,6 +25,7 @@
 
 use std::path::Path;
 
+use documents::conges_spectacles::NombreDuCertificat;
 use droit::fiche::Nir;
 use socle::date::Jour;
 use socle::num::Decimal;
@@ -101,10 +102,10 @@ pub struct Certificat {
     pub cadre: Option<bool>,
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
-    /// Le « NB JOURS OU CACHETS », tel que sa case l'ecrit (des chiffres seuls) : des cachets ou des jours, que la case ne
-    /// dit pas ; le statut du salarie le tranche, et il se lit alors en sa grandeur
-    /// (`documents::conges_spectacles::NombreDuCertificat`).
-    pub nombre: Option<String>,
+    /// Le « NB JOURS OU CACHETS » (des chiffres seuls), lu a la lecture de la piece dans les deux grandeurs qu'il peut
+    /// dire, puisque sa case ne dit pas laquelle : les cachets d'un artiste, les jours d'un technicien. Le statut du
+    /// salarie choisit (`documents::conges_spectacles::NombreDuCertificat`).
+    pub nombre: Option<[NombreDuCertificat; 2]>,
     pub base_conge: Option<Decimal>,
     pub brut: Option<Decimal>,
     /// La date de signature.
@@ -384,7 +385,8 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                         c.fin = Some(d);
                         let reste = &v[n..];
                         if let [x] = reste {
-                            c.nombre = socle::num::entier_de_chiffres(x).map(|_| x.to_string());
+                            c.nombre = socle::num::entier_de_chiffres(x)
+                                .and_then(|_| Some([NombreDuCertificat::Cachets(socle::grandeurs::lu::texte_entier(x)?), NombreDuCertificat::Jours(socle::grandeurs::lu::texte_entier(x)?)]));
                         }
                     }
                 }

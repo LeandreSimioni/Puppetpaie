@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::R;
 use socle::forme::NombreLu;
+use socle::grandeurs::Heures;
 
 use crate::ligne::{DateDeLigne, LignePaie};
 
@@ -85,9 +86,12 @@ macro_rules! carte {
                 match c { $( Champ::$variante => self.$champ.is_some(), )* }
             }
 
-            /// Le champ `c` tel qu'il se compare (`socle::ecriture::comparable`).
+            /// Le champ `c` tel qu'il se compare (`socle::ecriture::comparable`) : la carte qui ne dit que lui, ecrite
+            /// comme la carte s'ecrit.
             pub fn comparable_du(&self, c: Champ) -> String {
-                match c { $( Champ::$variante => socle::ecriture::comparable(&self.$champ), )* }
+                let mut seul = $carte::default();
+                seul.prendre(self, c);
+                socle::ecriture::comparable(&seul)
             }
 
             /// La valeur du champ `c` quand elle est un texte, un nombre ou un oui-non (un terme, une clause) ; `None`
@@ -128,9 +132,11 @@ carte! {
         #[champ(Terme, MotifRecours)]
         pub motif_recours: Option<droit::natures::MotifDeRecours>,
         #[champ(Terme, QuotiteContrat)]
-        pub quotite_contrat: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub quotite_contrat: Option<Heures>,
         #[champ(Terme, QuotiteReference)]
-        pub quotite_reference: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub quotite_reference: Option<Heures>,
         #[champ(Terme, ModaliteTempsTravail)]
         pub modalite_temps_travail: Option<droit::natures::ModaliteDuTempsDeTravail>,
         #[champ(Terme, SalaireMensuel)]
@@ -234,6 +240,9 @@ pub enum Valeur {
     Nature(droit::natures::NatureDeContrat),
     Texte(String),
     Nombre(NombreLu),
+    /// Des heures (la duree du travail, en heures par mois).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    Heures(Heures),
     Oui(bool),
 }
 
@@ -309,6 +318,12 @@ code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture, dro
 impl Simple for NombreLu {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Nombre(self.clone()))
+    }
+}
+
+impl Simple for Heures {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Heures(*self))
     }
 }
 
@@ -460,7 +475,8 @@ pub struct Preavis {
 #[serde(deny_unknown_fields)]
 pub struct Avant {
     pub salaire_mensuel: Option<NombreLu>,
-    pub quotite_contrat: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub quotite_contrat: Option<Heures>,
 }
 
 /// Un engagement valide, dans la vue de son mois : le jour de sa validation (`null` : compte comme valide par le calcul

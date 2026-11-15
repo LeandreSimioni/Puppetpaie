@@ -934,10 +934,47 @@ pub struct Pas {
     pub cumul: Option<Decimal>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
-pub struct Cumul {
+/// UN RANG DE LA GRILLE DES CUMULS, ses deux colonnes (« Période », « Cumul ») lues en leur grandeur a la lecture de la
+/// page, par le nom que la table donne au rang (`cumuls` de `bulletins-lecture-base.json`) : `cachets`, `jours`,
+/// `heures` en leur quantite ; un autre rang (`brut`, `plafond`, `cout_employeur`...) en euros. Il s'ecrit comme ses
+/// colonnes, `{"periode": …, "cumul": …}`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(untagged)]
+pub enum Cumul {
+    Cachets(Colonnes<Cachets>),
+    Jours(Colonnes<Jours>),
+    Heures(Colonnes<Heures>),
+    Euros(ColonnesEnEuros),
+}
+
+/// Les deux colonnes d'un rang de cumul de quantite, chacune quand la page l'imprime, ecrites telles que lues.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(bound = "")]
+pub struct Colonnes<G: Grandeur> {
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub periode: Option<G>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cumul: Option<G>,
+}
+
+/// Les deux colonnes d'un rang de cumul en euros.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct ColonnesEnEuros {
     pub periode: Option<Decimal>,
     pub cumul: Option<Decimal>,
+}
+
+impl Cumul {
+    /// Le rang `nom` de la table, ses colonnes `periode` et `cumul` telles que la page les imprime : la porte de leur
+    /// lecture, ou chaque nombre prend sa grandeur.
+    fn lu(nom: &str, periode: Option<Decimal>, cumul: Option<Decimal>) -> Cumul {
+        match nom {
+            "cachets" => Cumul::Cachets(Colonnes { periode: periode.map(Cachets::du_decimal), cumul: cumul.map(Cachets::du_decimal) }),
+            "jours" => Cumul::Jours(Colonnes { periode: periode.map(Jours::du_decimal), cumul: cumul.map(Jours::du_decimal) }),
+            "heures" => Cumul::Heures(Colonnes { periode: periode.map(Heures::du_decimal), cumul: cumul.map(Heures::du_decimal) }),
+            _ => Cumul::Euros(ColonnesEnEuros { periode, cumul }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -2236,7 +2273,7 @@ impl<'a> Lecteur<'a> {
                 if *cumul {
                     if let Some((nom, _)) = t.cumuls.iter().find(|(_, l)| l.contains(libelle)) {
                         if !cumuls.iter().any(|(x, _)| x == nom) {
-                            cumuls.push((nom.clone(), Cumul { periode: col(Genre::Periode), cumul: col(Genre::Cumul) }));
+                            cumuls.push((nom.clone(), Cumul::lu(nom, col(Genre::Periode), col(Genre::Cumul))));
                         }
                     }
                     if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
@@ -2537,12 +2574,10 @@ pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> R<Com
         }
     };
     let jours_de = |l: &Lignes| (!l.dates.is_empty()).then(|| Jours::de_dates(l.dates.len()));
-    // La colonne « Période » d'un cumul que la page imprime, un nombre du bulletin lu : sa grandeur se lit ici, a la
-    // porte du bulletin, par le nom du cumul qui la dit.
-    let imprime = |b: &BulletinLu, nom: &str| b.cumuls.iter().find(|(n, _)| n == nom).and_then(|(_, c)| c.periode);
-    let cachets_imprimes = |b: &BulletinLu| imprime(b, "cachets").map(Cachets::du_decimal);
-    let jours_imprimes = |b: &BulletinLu| imprime(b, "jours").map(Jours::du_decimal);
-    let heures_imprimees = |b: &BulletinLu| imprime(b, "heures").map(Heures::du_decimal);
+    // La colonne « Période » d'un cumul de quantite que la page imprime, lue en sa grandeur (`Cumul::lu`).
+    let cachets_imprimes = |b: &BulletinLu| b.cumuls.iter().find_map(|(_, c)| if let Cumul::Cachets(c) = c { c.periode } else { None });
+    let jours_imprimes = |b: &BulletinLu| b.cumuls.iter().find_map(|(_, c)| if let Cumul::Jours(c) = c { c.periode } else { None });
+    let heures_imprimees = |b: &BulletinLu| b.cumuls.iter().find_map(|(_, c)| if let Cumul::Heures(c) = c { c.periode } else { None });
     let siennes = lignes_comptees(b, racine)?;
     let autres: Vec<(Lignes, &BulletinLu)> = freres.iter().map(|f| lignes_comptees(f, racine).map(|l| (l, *f))).collect::<R<_>>()?;
     let nombre = autres.len() + 1;

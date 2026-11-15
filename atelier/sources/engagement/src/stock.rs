@@ -597,10 +597,10 @@ impl Objet {
             return Ok(());
         }
         let a = self.termes_a(&j.plus_jours(-1)?);
-        let quotite = |x: &Carte| -> R<Option<NombreLu>> {
-            Ok(match &x.quotite_contrat {
-                Some(q) => Some(q.clone()),
-                None => x.nature_lue()?.quotite_reference_defaut().map(NombreLu::de_decimal),
+        let quotite = |x: &Carte| -> R<Option<socle::grandeurs::Heures>> {
+            Ok(match x.quotite_contrat {
+                Some(q) => Some(q),
+                None => x.nature_lue()?.quotite_reference_defaut().map(socle::grandeurs::courte),
             })
         };
         let avant = Avant { salaire_mensuel: a.salaire_mensuel.clone(), quotite_contrat: quotite(&a)? };

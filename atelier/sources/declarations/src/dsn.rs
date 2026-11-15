@@ -1998,7 +1998,7 @@ Rien n'est ecrit.",
 /// refuse. Une duree collective plus courte (32 h) passe. Un contrat d'usage (en jours) n'est pas concerne.
 fn quotite_de_reference_sans_heures_supplementaires(f: &Fichier, p: &Paie, nat: &droit::natures::Nature, reference: Decimal) -> R<()> {
     let Some(texte) = f.norme()?.regle("quotite_reference_sans_heures_supplementaires")? else { return Ok(()) };
-    let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()) else { return Ok(()) };
+    let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()).map(socle::grandeurs::Heures::decimal) else { return Ok(()) };
     if reference <= legale {
         return Ok(());
     }

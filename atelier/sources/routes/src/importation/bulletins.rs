@@ -68,7 +68,7 @@ use socle::echec::erreur;
 use crate::importation::completer as completer;
 use import::proposee;
 use import::tri::Sorte;
-use socle::grandeurs::{lu, Cachets, Heures, Jours, Montant};
+use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 use documents::conges_spectacles::NombreDuCertificat;
 use socle::num::Decimal;
 use socle::texte::euros;
@@ -1264,10 +1264,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                                 phrases.push(format!("écart noté : le certificat dit {} de brut, les contrats {}", euros(brut.decimal()), euros(s.decimal())));
                             }
                         }
-                        // Le nombre du certificat dit des jours ou des cachets (sa case n'a qu'une colonne) : il se lit
-                        // dans l'une et l'autre grandeur, et se compare a l'une et a l'autre.
-                        if let Some(nombre) = c.nombre.as_deref().filter(|t| cachets != lu::texte_entier(t) && jours != lu::texte_entier(t)) {
-                            phrases.push(format!("écart noté : le certificat dit {} jours ou cachets, les contrats {} cachets et {} jours", nombre, n(cachets), n(jours)));
+                        // Le nombre du certificat dit des jours ou des cachets (sa case n'a qu'une colonne) : il se compare
+                        // aux cachets et aux jours des contrats.
+                        let accorde = |x: &NombreDuCertificat| match *x {
+                            NombreDuCertificat::Cachets(c) => cachets == Some(c),
+                            NombreDuCertificat::Jours(j) => jours == Some(j),
+                        };
+                        if let Some([lu, _]) = c.nombre.as_ref().filter(|l| !l.iter().any(accorde)) {
+                            phrases.push(format!("écart noté : le certificat dit {} jours ou cachets, les contrats {} cachets et {} jours", lu.dit(), n(cachets), n(jours)));
                         }
                     }
                 }
@@ -2355,15 +2359,13 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
 /// des cachets ; pour un technicien, des jours. Sans statut, rien ne le dit : pas de contrat. Les heures, que le
 /// certificat ne porte pas, ne s'inventent pas (0) ; le brut est celui du certificat, « arrondi à l'euro le plus proche ».
 fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<Statut>, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
-    let (Some(debut), Some(fin), Some(nombre), Some(brut)) = (c.debut, c.fin, c.nombre.as_deref(), c.brut) else {
+    let (Some(debut), Some(fin), Some([cachets_lus, jours_lus]), Some(brut)) = (c.debut, c.fin, c.nombre, c.brut) else {
         return Err(socle::echec::refus("le certificat ne dit pas tout ce qu'un contrat demande"));
     };
-    let illisible = || socle::refus!("le nombre de jours ou cachets du certificat ne se lit pas : {}", socle::fichiers::repr(nombre));
-    // Le nombre du certificat prend ici son sens, des cachets ou des jours, et se lit en sa grandeur : la porte de sa
-    // lecture.
+    // Le nombre du certificat prend ici son sens, des cachets ou des jours.
     let lu = match statut {
-        Some(Statut::Artiste) => NombreDuCertificat::Cachets(lu::texte_entier(nombre).ok_or_else(illisible)?),
-        Some(Statut::Technicien) => NombreDuCertificat::Jours(lu::texte_entier(nombre).ok_or_else(illisible)?),
+        Some(Statut::Artiste) => cachets_lus,
+        Some(Statut::Technicien) => jours_lus,
         None => {
             let emploi = match &c.emploi {
                 Some(e) => format!("l'emploi « {} » ne nomme aucun métier du catalogue", e),

@@ -73,8 +73,8 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     let avenant = jour_de_l_avenant(eng)?;
     let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle)).and_then(|c| c.dec());
     let (salaire_avant, quotite_avant) = match &eng.avant {
-        // Les termes d'avant l'avenant, des nombres de la saisie : leur porte.
-        Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, Heures::du_decimal(terme(&a.quotite_contrat, "quotite_contrat")?)),
+        // Les termes d'avant l'avenant : le salaire, un nombre de la saisie (sa porte) ; la duree, en heures.
+        Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, a.quotite_contrat.ok_or_else(|| socle::fichiers::absent("quotite_contrat"))?),
         None => (salaire_apres, quotite_apres),
     };
     let (debut_mois, fin_mois) = (eng.debut_mois(), eng.fin_mois());

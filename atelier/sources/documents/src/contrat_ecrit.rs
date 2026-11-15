@@ -21,7 +21,7 @@ use droit::marqueurs::Marqueur;
 
 use crate::avenant::{de_devant, et, fait_le_brut, ligne_citee, remuneration_hors_brut};
 use crate::bulletin::fmt_eur;
-use socle::texte::{euros, virgule};
+use socle::texte::euros;
 use droit::contexte::Contexte;
 use droit::natures::{self, Nature, NatureDeContrat};
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
@@ -130,15 +130,18 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     // LA DUREE DU TRAVAIL (R1221-34, 12°) : la quotite du contrat, en heures par mois ; sans elle, celle que la DSN
     // declare (S21.G00.40.013, `quotite`). Sous la duree de reference, c'est un temps partiel, dont le contrat dit la
     // repartition (L3123-6, 1°).
+    use socle::grandeurs::Heures;
     let q = match eng.quotite_contrat {
-        Some(q) => q.decimal(),
-        None => eng.quotite.0,
+        Some(q) => q,
+        // La quotite que la forme ecrite de l'engagement garde : la porte de sa lecture.
+        None => Heures::du_decimal(eng.quotite.0),
     };
+    let dites = |h: Heures| socle::grandeurs::ecrit::sans_zero::dit(h).replace('.', ",");
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite
     // saisie, sinon une quotite sous la reference de l'entreprise, plafonnee a la duree legale ; sans reference, le temps
     // plein.
     let legale = nat.quotite_reference_defaut();
-    let reference = match (eng.quotite_reference_saisie.map(socle::grandeurs::Heures::decimal), legale) {
+    let reference = match (eng.quotite_reference_saisie, legale) {
         (Some(r), Some(l)) => Some(r.min(l)),
         (r, l) => r.or(l),
     };
@@ -146,19 +149,19 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
         Some(m) => m == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel,
         None => reference.is_some_and(|r| q < r),
     };
-    let mut duree = format!("{} heures par mois", virgule(q));
+    let mut duree = format!("{} heures par mois", dites(q));
     if partiel {
-        let plein = if let Some(r) = reference { format!(", pour {} à temps plein", virgule(r)) } else { String::new() };
+        let plein = if let Some(r) = reference { format!(", pour {} à temps plein", dites(r)) } else { String::new() };
         let repartition = ecrit(eng, |c| c.repartition_horaire.as_deref()).ok_or_else(|| {
             socle::refus!(
                 "Le contrat de {} est à temps partiel ({} heures par mois{}) : il dit « la répartition de la durée du travail entre les jours de la semaine ou les semaines du mois » (L. 3123-6, 1°). L'écrire dans l'engagement (Plus d'options › Répartition des horaires). Rien n'est écrit.",
                 nom,
-                virgule(q),
+                dites(q),
                 plein
             )
         })?;
         duree = format!("{}, à temps partiel, réparties ainsi : {}", duree, repartition);
-    } else if q.round_dp(2) == Decimal::new(15167, 2) {
+    } else if legale.is_some_and(|l| q.a_deux_decimales() == l) {
         duree.push_str(", soit la durée légale de trente-cinq heures par semaine (article L. 3121-27 du code du travail)");
     }
     m.insert(Marqueur::ContratDureeTravail, duree);

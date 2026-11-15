@@ -339,9 +339,11 @@ pub struct ContratDeclare {
     pub numero: Option<NumeroContrat>,
     /// .010.
     pub fin: Option<Jour>,
-    /// .012, la quotite de reference de la categorie ; .013, celle du contrat ; .014, la modalite du temps de travail.
+    /// .011, l'unite de la quotite ; .012, la quotite de reference de la categorie ; .013, celle du contrat, dans
+    /// l'unite de .011 ; .014, la modalite du temps de travail.
+    pub unite_quotite: Option<droit::natures::UniteDeQuotite>,
     pub quotite_reference: Option<Decimal>,
-    pub quotite: Option<Decimal>,
+    pub quotite: Option<engagement::QuotiteDuContrat>,
     pub modalite: Option<droit::natures::ModaliteDuTempsDeTravail>,
     /// .017, la convention du contrat.
     pub idcc: Option<Idcc>,
@@ -486,6 +488,7 @@ impl ContratDeclare {
             nature_dsn: None,
             numero: None,
             fin: None,
+            unite_quotite: None,
             quotite_reference: None,
             quotite: None,
             modalite: None,
@@ -1280,9 +1283,14 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let fin = fautes.jour(rub, &v);
                 contrat.into_iter().for_each(|c| c.fin = fin);
             }
+            <droit::natures::UniteDeQuotite as ListeDeLaNorme>::RUBRIQUE => {
+                let u = fautes.code(rub, &v);
+                contrat.into_iter().for_each(|c| c.unite_quotite = u);
+            }
             S21_40_013 => {
-                let q = fautes.nombre(rub, &v);
-                contrat.into_iter().for_each(|c| c.quotite = q);
+                // Un texte qui n'est pas un nombre est une faute ; le nombre se lit dans l'unite que 40.011 a dite.
+                let nombre = fautes.nombre(rub, &v).is_some();
+                contrat.into_iter().for_each(|c| c.quotite = c.unite_quotite.filter(|_| nombre).and_then(|u| engagement::QuotiteDuContrat::de_la_dsn(u, &v)));
             }
             S21_40_017 => {
                 let idcc = fautes.lue(rub, &v, IDCC, Idcc::lire);

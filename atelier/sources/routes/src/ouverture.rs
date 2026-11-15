@@ -1221,20 +1221,6 @@ pub(crate) struct Choix {
     defaut: Option<bool>,
 }
 
-/// Un nombre lu du fichier, rendu entier quand il l'est (`12`, pas `12.0`).
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct NombreLu(socle::num::Decimal);
-
-impl serde::Serialize for NombreLu {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use rust_decimal::prelude::ToPrimitive;
-        match self.0.fract().is_zero().then(|| self.0.to_i64()).flatten().filter(|i| i.unsigned_abs() < 1_000_000_000_000_000) {
-            Some(i) => s.serialize_i64(i),
-            None => socle::forme::ecrire_a_virgule(&self.0, s),
-        }
-    }
-}
-
 /// UNE RUBRIQUE QUI PAIE, telle que la carte d'un engagement la propose : ce que le catalogue en dit, et ce que la page en
 /// tire sans rien decider (ses genres, ses lieux, ses formes, ce qu'elle promet sans que rien ne le tienne, ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1414,7 +1400,8 @@ struct NatureDeLaPage {
     motif_rupture_defaut: Option<MotifDeRupture>,
     motifs_recours: Vec<natures::RecoursOffert>,
     motif_recours_exige: bool,
-    quotite_defaut: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    quotite_defaut: Option<socle::grandeurs::Heures>,
     /// Le bouton qui propose la duree d'un temps plein, et le choix vide des motifs de fin (le defaut d'une fin qui ne se
     /// signale pas : le CDDU a son terme).
     temps_plein_dit: Option<String>,
@@ -1457,8 +1444,8 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
             motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
             motif_recours_exige: n.motif_recours_exige(),
-            quotite_defaut: n.quotite_reference_defaut().map(NombreLu),
-            temps_plein_dit: n.quotite_reference_defaut().map(|d| format!("temps plein {} h", socle::texte::virgule(d))),
+            quotite_defaut: n.quotite_reference_defaut(),
+            temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::grandeurs::ecrit::sans_zero::dit(h).replace('.', ","))),
             motif_rupture_vide_dit: match n.motif_rupture_par_defaut() {
                 Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
                 _ => "— à choisir —".to_string(),

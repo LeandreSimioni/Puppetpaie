@@ -237,8 +237,9 @@ fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
                 let (Some(reference), Some(quotite)) = (k.quotite_reference, k.quotite) else {
                     return Err(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013"));
                 };
+                // 40.012 et 40.013 sont dans l'unite de 40.011 : leur rapport, le poids du contrat dans l'effectif.
                 if reference > Decimal::ZERO {
-                    socle::num::div(quotite, reference).min(Decimal::ONE)
+                    socle::num::div(quotite.decimal(), reference).min(Decimal::ONE)
                 } else {
                     Decimal::ONE
                 }

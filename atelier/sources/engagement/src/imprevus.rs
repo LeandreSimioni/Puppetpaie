@@ -34,8 +34,7 @@ use crate::Avis;
 use crate::numeros::NumeroContrat;
 use socle::fichiers::repr;
 use socle::echec::R;
-use socle::grandeurs::Heures;
-use socle::num::{div, mul, Decimal};
+use socle::num::{div, Decimal};
 
 /// Le dossier du magasin, sous les donnees de la compagnie.
 pub const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::MAGASIN_DES_IMPREVUS;
@@ -717,7 +716,7 @@ pub struct MoisDuContrat<'a> {
     pub fin: Jour,
     pub fin_mois: Jour,
     pub salaire_du_mois: Decimal,
-    pub heures_par_jour: Decimal,
+    pub heures_par_jour: socle::grandeurs::HeuresParUnite,
     pub jours_payes: i64,
     pub horaire: &'a droit::periodes::Horaire,
 }
@@ -806,7 +805,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         avis: Vec::new(),
     };
     // Le taux de l'heure d'absence : le salaire du mois sur ses heures de travail (Cass. soc. 11/02/1982).
-    let heures_du_mois = Heures::du_decimal(mul(m.heures_par_jour, Decimal::from(m.jours_payes))).au_centieme().decimal();
+    let heures_du_mois = m.heures_par_jour.fois(m.jours_payes).au_centieme().decimal();
     let taux_horaire = if heures_du_mois > Decimal::ZERO { Some(taux_exact(m.salaire_du_mois, heures_du_mois)) } else { None };
     // Un contrat sans date de debut ecrite ne se designe pas : aucun imprevu ne peut le nommer (S21.G00.40.001).
     let imprevus: Vec<_> = e
@@ -824,7 +823,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         } else {
             0
         };
-        let heures = Heures::du_decimal(mul(m.heures_par_jour, Decimal::from(jours))).au_centieme().decimal();
+        let heures = m.heures_par_jour.fois(jours).au_centieme().decimal();
         // Les heures retirees et leur taux, quand le mois en retire.
         let retenue = || -> R<Option<(Decimal, Decimal)>> {
             match taux_horaire {

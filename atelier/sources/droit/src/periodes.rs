@@ -31,7 +31,7 @@ use socle::date::Jour;
 
 use crate::conges::JoursTravailles;
 use socle::echec::R;
-use socle::grandeurs::Coefficient;
+use socle::grandeurs::{Coefficient, HeuresParUnite};
 use socle::num::{div, Decimal};
 
 /// Ce que `avant` (les termes du contrat avant un avenant en cours de mois) peut dire.
@@ -142,7 +142,7 @@ pub struct DecompteDuMois {
 impl DecompteDuMois {
     /// Ce que la ligne du bulletin dit de la part payee, pour un contrat de `heures_par_jour` heures par jour travaille ;
     /// `None` pour un mois entier.
-    pub fn sur_le_bulletin(&self, heures_par_jour: Decimal) -> Option<String> {
+    pub fn sur_le_bulletin(&self, heures_par_jour: HeuresParUnite) -> Option<String> {
         if self.fraction.decimal() == Decimal::ONE {
             return None;
         }
@@ -161,7 +161,7 @@ impl DecompteDuMois {
     }
 
     /// La methode, en mots, et son texte : ce que l'apercu du bulletin dit d'un mois paye en partie.
-    pub fn methode(&self, heures_par_jour: Decimal) -> String {
+    pub fn methode(&self, heures_par_jour: HeuresParUnite) -> String {
         let mut dit = match self.regle {
             RegleDuMoisIncomplet::HoraireReel => format!(
                 "{} h de travail sur les {} h que l'horaire compte dans le mois ({} jours travaillés de {} h, {}, jours \
@@ -170,7 +170,7 @@ rémunération horaire » multipliée par « le nombre d'heures de travail réel
                 heures_en_mots(heures_par_jour, self.jours),
                 heures_en_mots(heures_par_jour, self.jours_du_mois),
                 self.jours_du_mois,
-                socle::num::nombre(heures_par_jour).replace('.', ","),
+                socle::grandeurs::ecrit::sans_zero::dit(heures_par_jour).replace('.', ","),
                 self.jours_travailles.en_mots()
             ),
             RegleDuMoisIncomplet::Ccneac1285Artiste => format!(
@@ -206,8 +206,8 @@ fn dates_en_mots(feries: &[(Jour, String)]) -> String {
 }
 
 /// `jours` jours de `heures_par_jour` heures, au centieme, ecrits a la francaise.
-fn heures_en_mots(heures_par_jour: Decimal, jours: i64) -> String {
-    socle::num::nombre(socle::grandeurs::Heures::du_decimal(socle::num::mul(heures_par_jour, Decimal::from(jours))).au_centieme().decimal()).replace('.', ",")
+fn heures_en_mots(heures_par_jour: HeuresParUnite, jours: i64) -> String {
+    socle::grandeurs::ecrit::sans_zero::dit(heures_par_jour.fois(jours).au_centieme()).replace('.', ",")
 }
 
 /// LA PART DU SALAIRE MENSUEL que porte la periode payee [`d`, `f`] du mois qui finit le `fin_mois`.

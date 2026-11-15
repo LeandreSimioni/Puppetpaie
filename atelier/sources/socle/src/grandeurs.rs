@@ -386,6 +386,12 @@ impl Montant {
 impl HeuresParUnite {
     /// Zero heure par unite (une indemnite, le maintien : ce n'est pas du travail).
     pub const ZERO: HeuresParUnite = HeuresParUnite(Decimal::ZERO);
+
+    /// Ces heures par unite, `n` unites (les heures d'un jour fois les jours payes d'un mois, comptes en entier) :
+    /// heures par unite x compte = heures.
+    pub fn fois(self, n: i64) -> Heures {
+        Heures(num::mul(self.0, Decimal::from(n)))
+    }
 }
 
 /// Une quantite fois ses heures par unite : des heures (14 services de 4 h : 56 h).
@@ -453,6 +459,12 @@ impl Heures {
     /// heures / heures par unite = jours ; `None` quand `par_jour` est nul.
     pub fn en_jours(self, par_jour: HeuresParUnite) -> Option<Jours> {
         (!par_jour.0.is_zero()).then(|| Jours(num::div(self.0, par_jour.0)))
+    }
+
+    /// Ces heures reparties egalement sur `n` jours, en heures par jour (35 h sur cinq jours : 7 h le jour) : heures /
+    /// compte = heures par unite, l'unite etant le jour. Un compte n'est pas une grandeur (« Le glossaire »).
+    pub fn par_jour(self, n: usize) -> HeuresParUnite {
+        HeuresParUnite(num::div(self.0, Decimal::from(n)))
     }
 
     /// Leur partie entiere, vers le bas (`13.9` h : `13`) : les heures entieres qu'une somme couvre.
@@ -538,6 +550,12 @@ pub mod lu {
     /// `None` : le texte n'est pas un nombre.
     pub fn texte<G: Grandeur>(t: &str) -> Option<G> {
         num::decimal_a_virgule(t).map(<G as crate::grandeurs::Scelle>::du)
+    }
+
+    /// LA GRANDEUR QU'UNE RUBRIQUE DE LA NORME ECRIT (une DSN : `151.67`), comme `num::decimal_lu` la lit, son echelle
+    /// gardee : la porte de sa lecture ; `None` : le texte n'est pas un nombre.
+    pub fn norme<G: Grandeur>(t: &str) -> Option<G> {
+        num::decimal_lu(t).map(<G as crate::grandeurs::Scelle>::du)
     }
 
     /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT EN ENTIER (`num::entier_lu` : une zone a largeur fixe de l'AEM, `012`),

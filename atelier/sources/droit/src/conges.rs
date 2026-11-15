@@ -7,7 +7,7 @@ use crate::fiche::Lue;
 use socle::date::Jour;
 use socle::feries;
 use socle::echec::R;
-use socle::grandeurs::{Heures, Montant};
+use socle::grandeurs::{Heures, HeuresParUnite, Montant};
 use socle::num::Decimal;
 
 /// Le nombre de jours ouvrables entre deux dates, bornes incluses : du lundi
@@ -157,9 +157,8 @@ fn jours_de_semaine(debut: &Jour, fin: &Jour, dits: Option<&str>, jusqu_a: u32) 
 /// hebdomadaire (quotite x 12 / 52, au centieme : 151,67 h font 35,00 h) sur les jours travailles de la semaine -- 7 h
 /// pour un temps plein sur cinq jours. Fiche DSN 2640, « Nb d'heures travaillees/jours oeuvres ». INFERENCE NOMMEE :
 /// la duree se repartit egalement entre les jours travailles (la fiche ne dit pas les heures de chaque jour).
-pub fn heures_par_jour(quotite: Heures, jours: &JoursTravailles) -> Decimal {
-    // Le nombre rendu ne sert qu'aux phrases du bulletin (`periodes::DecompteDuMois::sur_le_bulletin`, `methode`).
-    quotite.fois(12).reparties_sur(52).au_centieme().reparties_sur(jours.jours.iter().filter(|x| **x).count()).decimal()
+pub fn heures_par_jour(quotite: Heures, jours: &JoursTravailles) -> HeuresParUnite {
+    quotite.fois(12).reparties_sur(52).au_centieme().par_jour(jours.jours.iter().filter(|x| **x).count())
 }
 
 /// L'indemnite de conges : le dixieme, le maintien, et celui qui gagne.

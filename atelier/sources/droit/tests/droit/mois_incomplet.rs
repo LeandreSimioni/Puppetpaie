@@ -37,7 +37,7 @@ fn un_mois_incomplet_se_paie_a_l_horaire_reel() {
     let entree = part_du_mois(&j(2026, 1, 12), &j(2026, 1, 31), &j(2026, 1, 31), h, &lv).unwrap();
     assert_eq!((entree.jours, entree.jours_du_mois), (15, 22));
     assert_eq!(entree.fraction.decimal(), div(Decimal::from(15), Decimal::from(22)));
-    assert_eq!(entree.sur_le_bulletin(Decimal::from(7)).as_deref(), Some("105 h sur les 154 h du mois"));
+    assert_eq!(entree.sur_le_bulletin(socle::grandeurs::HeuresParUnite::du_decimal(Decimal::from(7))).as_deref(), Some("105 h sur les 154 h du mois"));
     // La sortie au mercredi 25/02/2026 : 18 jours ouvres sur 20, et non 25 jours sur 28.
     let sortie = part_du_mois(&j(2026, 2, 1), &j(2026, 2, 25), &j(2026, 2, 28), h, &lv).unwrap();
     assert_eq!((sortie.jours, sortie.jours_du_mois), (18, 20));
@@ -61,7 +61,7 @@ fn les_heures_du_mois_se_comptent_sur_les_jours_travailles_de_la_fiche() {
     let p = part_du_mois(&j(2026, 10, 15), &j(2026, 10, 31), &j(2026, 10, 31), RegleDuMoisIncomplet::HoraireReel, &horaire)
         .unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (13, 23));
-    assert_eq!(p.sur_le_bulletin(droit::conges::heures_par_jour(socle::grandeurs::lu::texte("151.67").unwrap(), &jours)).as_deref(), Some("91 h sur les 161 h du mois"));
+    assert_eq!(p.sur_le_bulletin(droit::conges::heures_par_jour(socle::grandeurs::Heures::du_decimal(socle::num::Decimal::new(15167, 2)), &jours)).as_deref(), Some("91 h sur les 161 h du mois"));
     assert!(jours_ecrits("[]").is_err());
     assert!(jours_ecrits("null").is_err());
 }

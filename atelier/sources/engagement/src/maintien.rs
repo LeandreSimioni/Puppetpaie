@@ -325,7 +325,7 @@ fn suites(taux: &[Coefficient], premier: &Jour, debut: &Jour, fin: &Jour) -> R<V
 /// La part du salaire du mois que les jours [debut, fin] retirent : la retenue au reel (`imprevus::lignes_du_mois`).
 fn retenue(m: &crate::imprevus::MoisDuContrat, taux_horaire: Decimal, debut: &Jour, fin: &Jour) -> R<(Decimal, Decimal)> {
     let jours = droit::periodes::part_du_mois(debut, fin, &m.fin_mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours;
-    let heures = mul(m.heures_par_jour, Decimal::from(jours));
+    let heures = m.heures_par_jour.fois(jours).decimal();
     Ok((mul(taux_horaire, heures), heures))
 }
 
@@ -352,7 +352,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     if debut > fin {
         return Ok(());
     }
-    let heures_du_mois = mul(m.heures_par_jour, Decimal::from(m.jours_payes));
+    let heures_du_mois = m.heures_par_jour.fois(m.jours_payes).decimal();
     if heures_du_mois <= Decimal::ZERO {
         return Ok(());
     }

@@ -178,8 +178,8 @@ pub struct PaieVersee {
     pub numero_objet: Option<NumeroObjetSpectacle>,
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
-    /// La quotite que la DSN deposee declare pour le contrat (S21.G00.40.013).
-    pub quotite: Option<Decimal>,
+    /// La quotite que la DSN deposee declare pour le contrat (S21.G00.40.013), dans l'unite de 40.011.
+    pub quotite: Option<crate::QuotiteDuContrat>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
@@ -760,7 +760,10 @@ impl Importe {
         }
         // La quotite que la DSN declare (40.013) est, pour un salarie au mois, ses heures par mois (`quotite_contrat`) ; pour
         // un contrat d'usage, ses jours, que les jours du contrat disent (`Engagement::quotite`).
-        let quotite = p.quotite.filter(|_| nat.mensuelle()).map(|q| socle::grandeurs::Heures::du_decimal(socle::num::court(q)));
+        let quotite = match p.quotite.filter(|_| nat.mensuelle()) {
+            Some(crate::QuotiteDuContrat::Heures(h)) => Some(socle::grandeurs::courte(h)),
+            Some(crate::QuotiteDuContrat::Jours(_)) | None => None,
+        };
         let mut engagement = crate::Engagement {
             salarie: cle.clone(),
             nom: crate::qui_de(&sal)?,
@@ -1025,10 +1028,12 @@ impl Importe {
         if let Some(l) = lus.filter(|l| !l.is_empty()) {
             return Some(Jours::de_dates(l.iter().sum::<usize>() + propres));
         }
-        // La quotite que la DSN deposee declare (S21.G00.40.013, un nombre de la norme que la paie versee garde) : des
-        // jours entiers, lus ici en leur grandeur.
+        // La quotite que la DSN deposee declare (S21.G00.40.013) en journees : des jours entiers.
         let dernier = self.paies().values().last()?;
-        dernier.quotite.map(Jours::du_decimal).filter(|q| *q > Jours::ZERO).and_then(socle::grandeurs::entiere)
+        match dernier.quotite? {
+            crate::QuotiteDuContrat::Jours(j) => Some(j).filter(|q| *q > Jours::ZERO).and_then(socle::grandeurs::entiere),
+            crate::QuotiteDuContrat::Heures(_) => None,
+        }
     }
 }
 

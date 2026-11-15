@@ -190,8 +190,10 @@ pub struct Assemble {
     pub statut_conventionnel: Option<StatutConventionnel>,
     pub statut_categoriel_rc: Option<StatutCategorielRc>,
     pub etablissement: Option<droit::fiche::Nic>,
-    pub quotite_contrat: Option<Chiffre>,
-    pub quotite_reference_saisie: Option<Chiffre>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub quotite_contrat: Option<Heures>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub quotite_reference_saisie: Option<Heures>,
     pub modalite_temps_travail_saisie: Option<ModaliteDuTempsDeTravail>,
     pub motif_recours: Option<MotifDeRecours>,
     pub motif_rupture: Option<MotifDeRupture>,
@@ -234,14 +236,30 @@ fn jours_et_lieux(liste: &[DateDeLigne]) -> (Vec<Jour>, BTreeMap<Jour, String>) 
 }
 
 /// LA QUOTITE D'UN CONTRAT (S21.G00.40.012, .013), dans l'unite que dit S21.G00.40.011 (`Nature::unite_quotite`) : des
-/// jours pour un contrat d'usage, des heures par mois pour un salarie au mois.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// jours pour un contrat d'usage, des heures par mois pour un salarie au mois. S'ecrit par son unite et son nombre en
+/// texte (`{"heures": "151.67"}`, `{"jours": "5"}`), son echelle gardee.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum QuotiteDuContrat {
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
     Heures(Heures),
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
     Jours(socle::grandeurs::Jours),
 }
 
 impl QuotiteDuContrat {
+    /// LA QUOTITE QUE LA DSN DECLARE (S21.G00.40.013), lue de son texte dans l'unite que 40.011 dit (`unite`) : des
+    /// heures (10), des journees (12). `None` : une autre unite (le forfait, la tache...), que ce logiciel ne compte pas
+    /// en quotite ; ou un texte qui n'est pas un nombre de la norme.
+    pub fn de_la_dsn(unite: droit::natures::UniteDeQuotite, texte: &str) -> Option<QuotiteDuContrat> {
+        use droit::natures::UniteDeQuotite as U;
+        match unite {
+            U::Heure => socle::grandeurs::lu::norme(texte).map(QuotiteDuContrat::Heures),
+            U::Journee => socle::grandeurs::lu::norme(texte).map(QuotiteDuContrat::Jours),
+            _ => None,
+        }
+    }
+
     /// Son nombre, a la porte qui l'exige (la DSN, le bulletin, la forme ecrite).
     pub fn decimal(self) -> Decimal {
         match self {
@@ -572,8 +590,8 @@ impl Engagement {
             statut_categoriel_rc: v.statut_categoriel_rc.clone(),
             etablissement: v.etablissement.clone(),
             nature,
-            quotite_contrat: v.quotite_contrat.as_ref().map(Chiffre::court).transpose()?.map(Heures::du_decimal),
-            quotite_reference_saisie: v.quotite_reference_saisie.as_ref().map(Chiffre::court).transpose()?.map(Heures::du_decimal),
+            quotite_contrat: v.quotite_contrat.map(courte),
+            quotite_reference_saisie: v.quotite_reference_saisie.map(courte),
             modalite_temps_travail_saisie: v.modalite_temps_travail_saisie.clone(),
             motif_recours: v.motif_recours.clone(),
             motif_rupture: v.motif_rupture.clone(),
@@ -645,7 +663,7 @@ impl Engagement {
                 return Err(socle::refus!("La quotité de référence saisie est nulle : elle dit la durée collective du travail de l'entreprise (en heures par mois), ou ne se saisit pas à la durée légale."))
             }
             Some(q) => Some(QuotiteDuContrat::Heures(q)),
-            None => nat.quotite_reference_defaut().map(|d| QuotiteDuContrat::Heures(Heures::du_decimal(d))),
+            None => nat.quotite_reference_defaut().map(QuotiteDuContrat::Heures),
         })
     }
 
@@ -670,7 +688,7 @@ impl Engagement {
         }
         let reference = match (self.quotite_reference()?, nat.quotite_reference_defaut().filter(|_| nat.mensuelle())) {
             (Some(r), Some(legale)) => {
-                let legale = QuotiteDuContrat::Heures(Heures::du_decimal(legale));
+                let legale = QuotiteDuContrat::Heures(legale);
                 Some(if legale.au_moins(r)? { r } else { legale })
             }
             (r, _) => r,
@@ -939,8 +957,8 @@ pub(crate) fn salarie_nomme(ctx: &Contexte, salarie: Option<&IdSalarie>) -> Stri
 struct Termes {
     spectacle: Option<IdSpectacle>,
     taux_cachet: Option<Chiffre>,
-    quotite_contrat: Option<Chiffre>,
-    quotite_reference: Option<Chiffre>,
+    quotite_contrat: Option<Heures>,
+    quotite_reference: Option<Heures>,
     modalite_temps_travail: Option<ModaliteDuTempsDeTravail>,
     motif_recours: Option<MotifDeRecours>,
     personne_remplacee: Option<String>,
@@ -969,8 +987,8 @@ impl Termes {
             carte::CarteValide::Cdi(c) => Termes {
                 spectacle: None,
                 taux_cachet: None,
-                quotite_contrat: Some(n(&c.quotite_contrat)),
-                quotite_reference: c.quotite_reference.as_ref().map(n),
+                quotite_contrat: Some(c.quotite_contrat),
+                quotite_reference: c.quotite_reference,
                 modalite_temps_travail: c.modalite_temps_travail.clone(),
                 motif_recours: None,
                 personne_remplacee: None,
@@ -979,8 +997,8 @@ impl Termes {
             carte::CarteValide::Cdd(c) => Termes {
                 spectacle: None,
                 taux_cachet: None,
-                quotite_contrat: Some(n(&c.quotite_contrat)),
-                quotite_reference: c.quotite_reference.as_ref().map(n),
+                quotite_contrat: Some(c.quotite_contrat),
+                quotite_reference: c.quotite_reference,
                 modalite_temps_travail: c.modalite_temps_travail.clone(),
                 motif_recours: Some(c.motif_recours),
                 personne_remplacee: c.personne_remplacee.clone(),

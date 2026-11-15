@@ -315,7 +315,7 @@ fn bulletin_lu_la_colonne_du_mois_ne_se_met_pas_dans_chaque_contrat() {
     let mut sans_cachet = cachets.clone();
     sans_cachet.lignes.clear();
     sans_cachet.numero = Some("autre".into());
-    assert!(cachets.cumuls.iter().any(|(n, c)| n == "cachets" && c.periode.is_some_and(|x| x.normalize().to_string() == "3")));
+    assert!(cachets.cumuls.iter().any(|(_, c)| matches!(c, import::bulletin_lu::Cumul::Cachets(c) if c.periode.map(socle::grandeurs::ecrit::sans_zero::dit).as_deref() == Some("3"))));
     let de = |b: &BulletinLu, frere: &BulletinLu| socle::ecriture::en_valeur(&compteurs(b, &[frere], &racine()).unwrap());
     assert_eq!(de(&sans_cachet, &cachets)["cachets"], json!("0"));
     assert_eq!(de(&cachets, &sans_cachet)["cachets"], json!("3"));

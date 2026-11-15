@@ -327,16 +327,19 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 }
                 *(if champ == Demande::Debut { &mut contrat.debut } else { &mut contrat.fin }) = Some(jour);
             }
-            Demande::Salaire | Demande::Quotite => {
+            Demande::Salaire => {
                 let v = charge.lu(champ).ok_or_else(manque)?;
-                let (cle, quoi) = if champ == Demande::Salaire {
-                    (&mut contrat.salaire_mensuel, "un salaire mensuel brut")
-                } else {
-                    (&mut contrat.quotite_contrat, "une durée du travail en heures par mois")
-                };
                 match socle::num::decimal_a_virgule(&v).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreLu::de_decimal) {
-                    Some(n) => *cle = Some(n),
-                    None => return Err(refus(format!("« {} » n'est pas {} : rien n'a été écrit.", v, quoi))),
+                    Some(n) => contrat.salaire_mensuel = Some(n),
+                    None => return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", v))),
+                };
+            }
+            Demande::Quotite => {
+                let v = charge.lu(champ).ok_or_else(manque)?;
+                // La duree saisie, a la francaise ou non : la porte de sa lecture.
+                match socle::grandeurs::lu::texte::<socle::grandeurs::Heures>(&v).filter(|h| *h > socle::grandeurs::Heures::ZERO).map(socle::grandeurs::courte) {
+                    Some(h) => contrat.quotite_contrat = Some(h),
+                    None => return Err(refus(format!("« {} » n'est pas une durée du travail en heures par mois : rien n'a été écrit.", v))),
                 };
             }
             Demande::Numero => contrat.numero = Some(charge.numero.clone().ok_or_else(manque)?),
@@ -432,7 +435,11 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
                 Demande::Salaire => p.paie.mesures.salaire_habituel.map(|m| charge.salaire = Some(MontantSaisi::Texte(m.to_string()))),
                 Demande::Debut => c.and_then(|c| c.debut).map(|j| charge.debut = Some(j)),
                 Demande::Fin => c.and_then(|c| c.fin).map(|j| charge.fin = Some(j)),
-                Demande::Quotite => c.and_then(|c| c.quotite).map(|q| charge.quotite = Some(MontantSaisi::Texte(q.to_string()))),
+                // La duree d'un contrat au mois : la quotite que la DSN declare en heures.
+                Demande::Quotite => match c.and_then(|c| c.quotite) {
+                    Some(engagement::QuotiteDuContrat::Heures(h)) => Some(charge.quotite = Some(MontantSaisi::Texte(socle::grandeurs::ecrit::sans_zero::dit(h)))),
+                    Some(engagement::QuotiteDuContrat::Jours(_)) | None => None,
+                },
             };
             complet &= pose.is_some();
         }
