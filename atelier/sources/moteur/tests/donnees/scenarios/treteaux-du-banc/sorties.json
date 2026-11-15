@@ -1290,7 +1290,10 @@
         "retours": [
           {
             "salarie": "FULLER",
-            "debut": "2026-11-20",
+            "contrat": {
+              "du": "2026-11-20",
+              "au": "2026-11-21"
+            },
             "recu": true,
             "numero": "FU1.26.01",
             "nom": "FULLER Loïe",
@@ -1312,8 +1315,10 @@
           "contrats": [
             {
               "salarie": "FULLER",
-              "debut": "2026-11-20",
-              "fin": "2026-11-21",
+              "contrat": {
+                "du": "2026-11-20",
+                "au": "2026-11-21"
+              },
               "numero": "FU1.26.01",
               "fichier": "Contrat_FULLER_FU1.26.01_Novembre2026.pdf",
               "spectacle": "Le Banc des menteurs",
@@ -1371,8 +1376,10 @@
           "contrats": [
             {
               "salarie": "FULLER",
-              "debut": "2026-11-20",
-              "fin": "2026-11-21",
+              "contrat": {
+                "du": "2026-11-20",
+                "au": "2026-11-21"
+              },
               "numero": "FU1.26.01",
               "spectacle": "Le Banc des menteurs",
               "fichier": "Contrat_FULLER_FU1.26.01_Novembre2026.pdf",
@@ -1426,8 +1433,10 @@
             {
               "salarie": "FULLER",
               "numero": "FU1.26.01",
-              "debut": "2026-11-20",
-              "fin": "2026-11-21"
+              "contrat": {
+                "du": "2026-11-20",
+                "au": "2026-11-21"
+              }
             }
           ],
           "certificat": false
@@ -1540,8 +1549,10 @@
             {
               "salarie": "FULLER",
               "numero": "FU1.26.01",
-              "debut": "2026-11-20",
-              "fin": "2026-11-21"
+              "contrat": {
+                "du": "2026-11-20",
+                "au": "2026-11-21"
+              }
             }
           ],
           "certificat": false
@@ -1785,8 +1796,10 @@
               "resume": {
                 "contrats": [
                   {
-                    "debut": "2026-11-20",
-                    "fin": "2026-11-21",
+                    "contrat": {
+                      "du": "2026-11-20",
+                      "au": "2026-11-21"
+                    },
                     "spectacle": "Le Banc des menteurs",
                     "jours": [
                       "2026-11-20",
