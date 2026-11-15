@@ -137,11 +137,9 @@ pub struct EntreeOeth {
     pub boeth_externes: Option<Vec<BoethExterne>>,
     /// Le code de l'accord agree (table AAETH, S21.G00.13.001).
     pub accord: Option<String>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub depenses_non_realisees: Option<Montant>,
     /// Les beneficiaires dus que l'Urssaf transmet, confrontes au calcul (D5212-2).
     pub boeth_dus: Option<Nombre>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub sous_traitance: Option<Montant>,
     /// Les depenses deductibles de D5212-23.
     pub depenses: Option<Depenses>,
@@ -166,11 +164,8 @@ pub struct BoethExterne {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Depenses {
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub accessibilite: Option<Montant>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub maintien: Option<Montant>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub accompagnement: Option<Montant>,
 }
 
