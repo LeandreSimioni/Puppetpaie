@@ -17,10 +17,10 @@ use serde::Serialize;
 
 use droit::contexte::{Contexte, IdSpectacle};
 use droit::fiche::NumeroObjetSpectacle;
-use engagement::importe::{Attestation, BulletinSource, ContratRelu, DatesTravaillees, Importe, LigneImprimee, PaieRelue, PaieVersee};
+use engagement::importe::{Attestation, BulletinSource, ContratRelu, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
-use socle::date::Jour;
-use socle::echec::{Classe, R};
+use socle::date::{Jour, Periode};
+use socle::echec::R;
 use socle::ecran::EtatDEcran;
 use crate::reponse::Source;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
@@ -179,22 +179,15 @@ fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
 }
 
 /// Les jours des dates travaillees d'un bulletin, dans `mois`.
-fn jours_du_mois(dates: &[DatesTravaillees], mois: Mois) -> R<Vec<Jour>> {
+fn jours_du_mois(dates: &[Periode], mois: Mois) -> Vec<Jour> {
     let mut out = Vec::new();
-    for d in dates {
-        let (mut j, b) = (d.debut, d.fin);
-        while j <= b {
-            if mois.contient(&j) && !out.contains(&j) {
-                out.push(j);
-            }
-            if j == b {
-                break;
-            }
-            j = j.plus_jours(1).map_err(|m| m.reclasser(Classe::CalculImpossible))?;
+    for j in dates.iter().flat_map(|d| d.jours()) {
+        if mois.contient(&j) && !out.contains(&j) {
+            out.push(j);
         }
     }
     out.sort();
-    Ok(out)
+    out
 }
 
 /// UNE CASE QU'AUCUNE PIECE NE PORTE : laquelle, son libelle, et ce qui l'aurait donnee.
@@ -363,7 +356,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         _ => titre_bulletin,
     };
     let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
-    let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).transpose()?.into_iter().flatten().collect();
+    let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).into_iter().flatten().collect();
     // Ce que la piece du mois atteste de lui (la paie d'un mois d'un permanent), sinon le contrat.
     let (cachets, heures, jours) = (
         p.and_then(|p| p.cachets).or_else(|| c.and_then(|c| c.cachets)),

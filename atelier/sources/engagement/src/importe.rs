@@ -220,7 +220,8 @@ pub struct PaieVersee {
     pub spectacle: Option<String>,
     pub analytique: Option<String>,
     pub lignes: Vec<LigneImprimee>,
-    pub dates: Vec<DatesTravaillees>,
+    /// Les jours travailles que le bulletin imprime, en periodes.
+    pub dates: Vec<socle::date::Periode>,
     /// Les lignes de cotisation du bulletin ; `None` : aucun bulletin ne les a donnees.
     pub cotisations: Option<Vec<CotisationImprimee>>,
     pub emploi_imprime: Option<EmploiImprime>,
@@ -257,14 +258,6 @@ impl LigneImprimee {
             montant: self.montant?,
         }))
     }
-}
-
-/// Des jours travailles que le bulletin imprime, de `debut` a `fin`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DatesTravaillees {
-    pub debut: Jour,
-    pub fin: Jour,
 }
 
 /// Une ligne de cotisation que le bulletin imprime ; `cotisation` : celle du bareme que l'import lui a donnee.
@@ -744,14 +737,7 @@ impl Importe {
             (None, true) => None,
             (None, false) => p.fin,
         };
-        let mut dates_travail = Vec::new();
-        for d in &p.dates {
-            let mut j = d.debut;
-            while j <= d.fin {
-                dates_travail.push(j);
-                j = j.plus_jours(1)?;
-            }
-        }
+        let dates_travail: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
         let brut = p.brut;
         // LES LIGNES DE REMUNERATION QUE LES PIECES DISENT : celles du bulletin ; a defaut, le brut que la DSN declare.
         let mut lignes_lues = p.lignes.clone();
@@ -1018,11 +1004,8 @@ impl Importe {
     /// dit pour le contrat entier, `norme-dsn/texte/bloc-S21.G00.40.txt`). `None` quand aucune piece ne les donne.
     pub fn jours_du_contrat_continue(&self, propres: usize) -> Option<Jours> {
         let jours = |p: &PaieVersee| -> Option<usize> {
-            let n: i64 = p.dates.iter().map(|d| d.fin.moins(&d.debut) + 1).sum();
-            match usize::try_from(n) {
-                Ok(n) if n > 0 => Some(n),
-                Ok(_) | Err(_) => None,
-            }
+            let n: usize = p.dates.iter().map(|d| d.jours().count()).sum();
+            (n > 0).then_some(n)
         };
         let lus: Option<Vec<usize>> = self.paies().values().map(jours).collect();
         if let Some(l) = lus.filter(|l| !l.is_empty()) {

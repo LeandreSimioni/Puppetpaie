@@ -405,14 +405,7 @@ fn comparer_une(
     let atmp_lu = atmp_imprime.is_some();
     c.taux_atmp = Some(if atmp_lu { OrigineDuTauxAtmp::Bulletin } else { OrigineDuTauxAtmp::Compagnie });
     // Les jours travailles que le bulletin dit, chacun sur chaque ligne (les jours de l'engagement en sont la reunion).
-    let mut jours: Vec<crate::DateDeLigne> = Vec::new();
-    for d in &p.dates {
-        let (mut j, b) = (d.debut, d.fin);
-        while j <= b {
-            jours.push(crate::DateDeLigne::Nue(j));
-            j = j.plus_jours(1)?;
-        }
-    }
+    let mut jours: Vec<crate::DateDeLigne> = p.dates.iter().flat_map(|d| d.jours()).map(crate::DateDeLigne::Nue).collect();
     // UN BULLETIN QUI N'IMPRIME PAS SES JOURS TRAVAILLES en dit la periode et le nombre (`jours_comptes`) :
     // - autant de jours que la periode : ce sont tous les siens ;
     // - moins, dans une periode qui tient dans un mois : le calcul ne lit des jours que leur nombre, leur mois et le

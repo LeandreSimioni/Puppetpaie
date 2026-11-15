@@ -452,14 +452,7 @@ pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
 fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> R<Option<(Montant, Vec<engagement::LignePaie>, socle::grandeurs::Jours)>> {
     let Some(p) = i.paies().get(&mois) else { return Ok(None) };
     let Some(brut) = p.brut.map(Montant::au_centime) else { return Ok(None) };
-    let mut dates: Vec<Jour> = Vec::new();
-    for d in &p.dates {
-        let mut j = d.debut;
-        while j <= d.fin {
-            dates.push(j);
-            j = j.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?;
-        }
-    }
+    let dates: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
     let Some(cachets) = p.lignes.iter().find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET)) else { return Ok(None) };
     let (Some(q), Some(t)) = (cachets.quantite, cachets.taux) else { return Ok(None) };
     let (quantite, taux) = (Some(socle::forme::Nombre(q)), Some(socle::grandeurs::MontantUnitaire::du_decimal(t)));

@@ -2023,7 +2023,7 @@ fn entreprise_proposee(e: EntrepriseLue) -> R<(ChampsEntreprise, Vec<FauteDeCase
 /// ailleurs il remplit ce qui est vide et note ce qui differe. Rend les ecarts : (champ, valeur d'avant, le bulletin
 /// l'emporte, valeur du bulletin).
 fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page: usize, idcc: Option<&droit::fiche::Idcc>) -> R<Vec<(&'static str, String, bool, String)>> {
-    use engagement::importe::{BulletinSource, CotisationImprimee, DatesTravaillees, LigneImprimee};
+    use engagement::importe::{BulletinSource, CotisationImprimee, LigneImprimee};
     let mut ecarts = Vec::new();
     let pas = b.pas.as_ref().and_then(|p| p.montant);
     for (champ, place, v) in [
@@ -2072,7 +2072,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
         .iter()
         .map(|l| LigneImprimee { quantite: l.quantite, libelle: l.libelle.clone(), taux: l.taux, montant: l.montant.map(Montant::du_decimal), soumis: l.soumis, rubrique: l.rubrique.clone(), heures: l.heures })
         .collect();
-    ligne.dates = b.dates_travaillees.iter().map(|(debut, fin)| DatesTravaillees { debut: *debut, fin: *fin }).collect();
+    ligne.dates = b.dates_travaillees.clone();
     ligne.cotisations = Some(
         b.cotisations
             .iter()

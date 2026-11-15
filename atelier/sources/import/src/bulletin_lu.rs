@@ -47,7 +47,7 @@
 //! et le bulletin l'emporte sur ce qu'il compte lui-meme.
 
 use std::path::Path;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::R;
 use socle::num::Decimal;
 use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours};
@@ -1025,8 +1025,7 @@ pub struct BulletinLu {
     pub debut: Jour,
     pub fin: Jour,
     /// Les intervalles « du ... au ... » des dates travaillees, tels qu'ecrits.
-    #[serde(serialize_with = "intervalles")]
-    pub dates_travaillees: Vec<(Jour, Jour)>,
+    pub dates_travaillees: Vec<Periode>,
     /// Les memes, jour par jour.
     pub jours_travailles: Vec<Jour>,
     pub lignes: Vec<LignePaie>,
@@ -1146,16 +1145,6 @@ pub struct Lecture {
     pub resultat: Result<BulletinLu, Refus>,
 }
 
-/// Les intervalles des dates travaillees, chacun `{"debut", "fin"}`.
-fn intervalles<S: serde::Serializer>(l: &[(Jour, Jour)], s: S) -> Result<S::Ok, S::Error> {
-    #[derive(serde::Serialize)]
-    struct Intervalle<'a> {
-        debut: &'a Jour,
-        fin: &'a Jour,
-    }
-    s.collect_seq(l.iter().map(|(debut, fin)| Intervalle { debut, fin }))
-}
-
 // --------------------------------------------------------------------------------------------- la lecture
 
 /// `lire(chemin)` : chaque page du PDF, lue avec la table livree. Une erreur : le PDF ne s'ouvre pas, ou la table
@@ -1225,8 +1214,8 @@ fn lire_page(p: &crate::releve::PageRelevee, numero: usize, signale: &[&str], ta
 enum Valeur {
     Texte(String),
     Date(Jour),
-    Periode(Jour, Jour),
-    Intervalles(Vec<(Jour, Jour)>),
+    Periode(Periode),
+    Intervalles(Vec<Periode>),
     Nombre(Decimal),
 }
 
@@ -1461,7 +1450,7 @@ impl<'a> Lecteur<'a> {
             self.sans_grille(p, &mut pas, &mut net_imposable)?;
         }
 
-        let periode = valeurs.iter().find_map(|(k, v)| if let (true, Valeur::Periode(a, b)) = (*k == "periode", v) { Some((*a, *b)) } else { None });
+        let periode = valeurs.iter().find_map(|(k, v)| if let (true, Valeur::Periode(p)) = (*k == "periode", v) { Some(*p) } else { None });
         let dates_travaillees = valeurs
             .iter()
             .find_map(|(k, v)| if let (true, Valeur::Intervalles(l)) = (*k == "dates_travaillees", v) { Some(l.clone()) } else { None })
@@ -1469,25 +1458,21 @@ impl<'a> Lecteur<'a> {
             .flatten()
             .collect::<Vec<_>>();
         let mut jours_travailles = Vec::new();
-        for (a, b) in &dates_travaillees {
-            let n = b.moins(a);
-            if !(0..=INTERVALLE_MAX).contains(&n) {
-                self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : intervalle non déplié", a.iso(), b.iso())));
+        for p in &dates_travaillees {
+            if p.fin().moins(&p.debut()) > INTERVALLE_MAX {
+                self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : intervalle non déplié", p.debut().iso(), p.fin().iso())));
                 continue;
             }
-            for k in 0..=n {
-                match a.plus_jours(k) {
-                    Ok(x) => jours_travailles.push(x),
-                    Err(e) => self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : {}", a.iso(), b.iso(), e.phrase))),
-                }
-            }
+            jours_travailles.extend(p.jours());
         }
 
         // Ce qui identifie le bulletin (R. 3243-1 : 4° le nom du salarie, 5° la periode, 7° le brut, 10° la somme recue).
         if nom_s.is_none() && nir.is_none() {
             return Err(Refus::Incomplet("ni le nom du salarié (son adresse) ni son NIR ne se trouvent".into()));
         }
-        let (debut, fin) = periode.ok_or_else(|| Refus::Incomplet(format!("la période (« {} du ... au ... ») ne se trouve pas", self.libelle_de("periode"))))?;
+        let periode = periode.ok_or_else(|| Refus::Incomplet(format!("la période (« {} du ... au ... ») ne se trouve pas", self.libelle_de("periode"))))?;
+        // Le bulletin imprime sa periode en deux dates : la forme lue les garde l'une et l'autre.
+        let (debut, fin) = (periode.debut(), periode.fin());
         let brut = corps.lu.brut.ok_or_else(|| Refus::Incomplet(format!("le brut (« {} ») ne se trouve pas", self.t.resumes.brut.join(" » ou « "))))?;
         // La somme recue (10°) est le net avant impot moins l'impot preleve (R. 3243-1, 9° et 10° ; le modele de
         // l'arrete du 25/02/2016 les imprime l'un sous l'autre) : un bulletin qui imprime les deux termes sans la
@@ -1718,12 +1703,16 @@ impl<'a> Lecteur<'a> {
             }
             Sorte::Periode => {
                 let dates: Vec<Jour> = textes.iter().filter_map(|x| lire_date(x)).collect();
-                match dates.as_slice() {
-                    [a, b] => Some(Valeur::Periode(*a, *b)),
+                let bornes = match dates.as_slice() {
+                    [a, b] => Some((*a, *b)),
                     // « du A au B (contrat du C au D) » : la periode est la premiere.
                     [..] if textes.len() >= 4 && canon(textes[0]) == "du" && canon(textes[2]) == "au" && lire_date(textes[1]).is_some() && lire_date(textes[3]).is_some() => {
-                        Some(Valeur::Periode(lire_date(textes[1])?, lire_date(textes[3])?))
+                        Some((lire_date(textes[1])?, lire_date(textes[3])?))
                     }
+                    _ => None,
+                };
+                match bornes.map(|(a, b)| Periode::du_au(a, b)) {
+                    Some(Ok(p)) => Some(Valeur::Periode(p)),
                     _ => {
                         self.avertissements.push(Avertissement::Lecture(format!("{} : « {} » n'est pas une période du ... au ...", m.nom, textes.join(" "))));
                         None
@@ -1733,22 +1722,27 @@ impl<'a> Lecteur<'a> {
             Sorte::Intervalles => {
                 let canons: Vec<String> = textes.iter().map(|x| canon(x)).collect();
                 let mut l = Vec::new();
+                let mut ecrits = 0;
                 let mut k = 0;
                 while k + 3 < textes.len() {
                     if canons[k] == "du" && canons[k + 2] == "au" {
                         if let (Some(a), Some(b)) = (lire_date(textes[k + 1]), lire_date(textes[k + 3])) {
-                            l.push((a, b));
+                            ecrits += 1;
+                            match Periode::du_au(a, b) {
+                                Ok(p) => l.push(p),
+                                Err(_) => self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : intervalle non déplié", a.iso(), b.iso()))),
+                            }
                             k += 4;
                             continue;
                         }
                     }
                     k += 1;
                 }
-                if l.is_empty() {
+                if ecrits == 0 {
                     // Une liste de jours (« 20/11/2026, 21/11/2026 ») : chacun est un intervalle d'un jour.
-                    l = textes.iter().filter_map(|x| lire_date(x)).map(|j| (j, j)).collect();
+                    l = textes.iter().filter_map(|x| lire_date(x)).map(Periode::du_jour).collect();
                 }
-                if l.is_empty() {
+                if ecrits == 0 && l.is_empty() {
                     self.avertissements.push(Avertissement::Lecture(format!("{} : « {} » ne se lit pas en dates", m.nom, textes.join(" "))));
                     return None;
                 }

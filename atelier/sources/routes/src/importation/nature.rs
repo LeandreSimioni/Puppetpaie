@@ -29,7 +29,7 @@ use std::path::Path;
 
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::importe::Importe;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, R};
 
 /// Les natures qu'un permanent peut recevoir.
@@ -73,7 +73,7 @@ fn dernier_mois(importes: &[Importe]) -> Option<socle::mois::Mois> {
 
 /// Le premier et le dernier jour que les paies d'un engagement importe paient : ceux du bulletin dans son mois, sinon le
 /// mois entier. Rien pour un engagement sans paie.
-fn jours_payes(i: &Importe) -> R<Option<(Jour, Jour)>> {
+fn jours_payes(i: &Importe) -> R<Option<Periode>> {
     let mut bornes = Vec::new();
     for (&mois, p) in i.paies() {
         let dans = |j: Option<Jour>| j.filter(|j| mois.contient(j));
@@ -87,7 +87,15 @@ fn jours_payes(i: &Importe) -> R<Option<(Jour, Jour)>> {
         };
         bornes.push((debut, fin));
     }
-    Ok(bornes.iter().map(|b| b.0).min().zip(bornes.iter().map(|b| b.1).max()))
+    match bornes.iter().map(|b| b.0).min().zip(bornes.iter().map(|b| b.1).max()) {
+        Some((du, au)) => Ok(Some(Periode::du_au(du, au)?)),
+        None => Ok(None),
+    }
+}
+
+/// Les jours que deux periodes payees couvrent, du premier au dernier.
+fn reunies(a: Periode, b: Periode) -> R<Periode> {
+    Periode::du_au(a.debut().min(b.debut()), a.fin().max(b.fin()))
 }
 
 /// Le nom d'un salarié à l'écran, tel que sa fiche le porte aujourd'hui ; sa clé quand aucune fiche ne le nomme.
@@ -102,7 +110,7 @@ fn nom_du_salarie(racine: &Path, cle: &IdSalarie) -> R<String> {
 /// Les contrats a dire d'un salarie : combien, les jours que leurs paies paient, payes le dernier mois repris.
 struct ContratsADire {
     nombre: usize,
-    payes: Option<(Jour, Jour)>,
+    payes: Option<Periode>,
     en_cours: bool,
 }
 
@@ -117,7 +125,7 @@ fn a_dire_par_salarie(importes: &[Importe]) -> R<BTreeMap<IdSalarie, ContratsADi
         let x = par.entry(salarie).or_insert(ContratsADire { nombre: 0, payes: None, en_cours: false });
         x.nombre += 1;
         x.payes = match (x.payes, payes) {
-            (Some((a, b)), Some((c, d))) => Some((a.min(c), b.max(d))),
+            (Some(a), Some(b)) => Some(reunies(a, b)?),
             (a, b) => a.or(b),
         };
         x.en_cours |= dernier.as_ref().is_some_and(|d| i.paies().contains_key(d));
@@ -141,10 +149,10 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
         let en_cours = c.en_cours;
         let natures = natures.iter().map(|x| NatureProposee { cle: x.cle, libelle: x.libelle.clone(), demande: demande(x, en_cours) }).collect();
         // Le mois de la derniere DSN qui l'a declare, tel que l'ecran le lit (« de novembre 2026 »).
-        let mois_au = c.payes.map(|(_, au)| au.mois_civil());
+        let mois_au = c.payes.map(|p| p.fin().mois_civil());
         let au_dit: Option<String> = mois_au.map(crate::regularisation::de_mois_en_clair);
         let nom = nom_du_salarie(racine, &salarie)?;
-        let periode: String = c.payes.iter().map(|(du, au)| format!(", du {} au {}", du.jj_mm_aaaa(), au.jj_mm_aaaa())).collect();
+        let periode: String = c.payes.iter().map(|p| format!(", du {} au {}", p.debut().jj_mm_aaaa(), p.fin().jj_mm_aaaa())).collect();
         let dit = format!(
             "{} contrat{} repris{} : ses bulletins n'ont pas de Congés Spectacles ni de numéro d'objet, c'est un contrat de permanent.",
             c.nombre,
@@ -168,8 +176,7 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
             salarie,
             nom,
             contrats: c.nombre,
-            du: c.payes.map(|p| p.0),
-            au: c.payes.map(|p| p.1),
+            payes: c.payes,
             au_dit,
             en_cours,
             suite: suite.filter(|_| en_cours).map(|m| m.to_string()),
@@ -187,9 +194,9 @@ pub(crate) struct ADire {
     pub(crate) salarie: IdSalarie,
     pub(crate) nom: String,
     pub(crate) contrats: usize,
-    /// Le premier et le dernier jour que ses paies reprises paient ; rien sans paie reprise.
-    pub(crate) du: Option<Jour>,
-    pub(crate) au: Option<Jour>,
+    /// Du premier au dernier jour que ses paies reprises paient ; rien sans paie reprise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) payes: Option<Periode>,
     pub(crate) au_dit: Option<String>,
     /// Paye le dernier mois repris : son contrat court peut-etre encore (`suite` : le mois qui suit).
     pub(crate) en_cours: bool,
@@ -281,9 +288,10 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     };
     let en_cours = c.en_cours;
     // Les jours que ses bulletins repris paient : un contrat a dire en a toujours (il vient d'un bulletin).
-    let Some((du, au)) = c.payes else {
+    let Some(payes) = c.payes else {
         return Err(refus(format!("Aucune paie reprise de {} ne dit quand ses contrats ont été payés : rien n'a été écrit.", qui)));
     };
+    let (du, au) = (payes.debut(), payes.fin());
     let dernier = dernier_mois(&importes);
     // Le contrat qui court encore : son debut, sa fin s'il a un terme, son numero -- lus sur la DSN deja deposee ; ce
     // qui s'en ecrit sur l'engagement repris.
