@@ -1,5 +1,5 @@
 //! Le lecteur de bulletins : une page de PDF devient un `BulletinLu`, TEL QU'IL EST, quel que soit le logiciel qui
-//! l'a fait. Le bulletin fait foi : rien ne se recalcule, chaque montant est un `Decimal` lu sur la page
+//! l'a fait. Le bulletin fait foi : rien ne se recalcule, chaque montant est un `Montant` lu sur la page
 //! (« 1 421,13 » -> 1421.13).
 //!
 //! La page se lit par `fabrique_pdf::inspection::inspecter` : chaque mot et sa boite. Le texte dans l'ordre du flux
@@ -1404,7 +1404,7 @@ impl RangCorps {
     }
     /// Le taux de la colonne des taux de la part `p` : la porte de sa lecture.
     fn taux(&self, p: Option<Part>) -> Option<Taux> {
-        self.colonne(Genre::Taux, p).map(Taux::du_decimal)
+        self.colonne(Genre::Taux, p).map(en_taux)
     }
 }
 
@@ -1422,6 +1422,11 @@ pub(crate) fn lire_montant(texte: &str) -> Option<Montant> {
 /// UN MONTANT QUE LA PAGE IMPRIME (`lire_nombre`, la porte de la page) : en euros, des qu'il sort de sa ligne lue.
 fn en_euros(lu: Decimal) -> Montant {
     Montant::du_decimal(lu)
+}
+
+/// Un taux que la page imprime, en pourcent (« 6,900 % ») : un taux, des qu'il sort de sa ligne lue.
+fn en_taux(lu: Decimal) -> Taux {
+    Taux::du_decimal(lu)
 }
 
 impl<'a> Lecteur<'a> {
@@ -2361,7 +2366,7 @@ impl<'a> Lecteur<'a> {
                     }
                 } else if pas.is_none() && t.resumes.pas.contains(libelle) {
                     let euros = |g: Genre| col(g).map(en_euros);
-                    let taux = col(Genre::Taux).map(Taux::du_decimal).and_then(|lu| taux_de_pas(lu, &mut self.avertissements));
+                    let taux = col(Genre::Taux).map(en_taux).and_then(|lu| taux_de_pas(lu, &mut self.avertissements));
                     *pas = Some(Pas { base: euros(Genre::Base), taux, montant: euros(Genre::Montant), cumul: euros(Genre::Cumul) });
                 } else if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
                     *net_imposable = col(Genre::Montant).map(en_euros);
@@ -2398,7 +2403,7 @@ impl Lecteur<'_> {
                     .position(|m| canon(&m.texte).trim_start_matches('(') == "taux")
                     .and_then(|k| rang.get(k + 1))
                     .and_then(|m| lire_nombre(m.texte.trim_end_matches([')', '%'])))
-                    .and_then(|lu| taux_de_pas(Taux::du_decimal(lu), &mut self.avertissements));
+                    .and_then(|lu| taux_de_pas(en_taux(lu), &mut self.avertissements));
                 *pas = Some(Pas { base: None, taux, montant: Some(en_euros(dernier.valeur)), cumul: None });
             }
         }
