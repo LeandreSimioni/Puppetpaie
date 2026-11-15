@@ -241,7 +241,8 @@ impl Coefficient {
         (!c.0.is_zero()).then(|| Coefficient(num::div(self.0, c.0)))
     }
 
-    /// Ce coefficient a la puissance `p` ; `None` quand elle ne se calcule pas.
+    /// Ce coefficient a la puissance `p` : coefficient ^ coefficient = coefficient (un exposant n'a pas d'unite, et un
+    /// coefficient eleve a une puissance n'en prend pas) ; `None` quand elle ne se calcule pas.
     pub fn puissance(self, p: Coefficient) -> Option<Coefficient> {
         self.0.checked_powd(p.0).map(Coefficient)
     }
