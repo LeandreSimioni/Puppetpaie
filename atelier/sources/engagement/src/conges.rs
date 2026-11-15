@@ -134,7 +134,7 @@ pub(crate) fn quotite_du_contrat(ctx: &Contexte, e: &Carte, nat: &droit::natures
     match &e.quotite_contrat {
         Some(q) if Chiffre::Nombre(q.clone()).vrai() => dec_de(q),
         Some(_) => Err(socle::refus!("{} : ses heures par mois sont nulles : la case « Heures par mois » dit la durée du contrat signé.", qui(ctx, e))),
-        None => nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", "quotite_reference_defaut")),
+        None => nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree(&droit::natures::BASE, "quotite_reference_defaut")),
     }
 }
 
@@ -1157,7 +1157,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // --- les heures supplementaires d'un temps plein, complementaires d'un temps partiel
     // Le temps partiel comme la DSN le declare (`Engagement::modalite_temps_travail`) : une duree du contrat inferieure a
     // la plus courte de la duree legale et de la quotite de reference (C. trav. L3123-1).
-    let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", "quotite_reference_defaut"))?;
+    let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree(&droit::natures::BASE, "quotite_reference_defaut"))?;
     let reference = match &e.quotite_reference {
         Some(r) if Chiffre::Nombre(r.clone()).vrai() => dec_de(r)?.min(legale),
         Some(_) => {

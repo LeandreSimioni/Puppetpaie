@@ -25,7 +25,10 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
+
+/// La table livree des organismes, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("organismes-base.json");
 use socle::echec::R;
 
 use crate::contexte::{Contexte, ORGANISMES};
@@ -446,7 +449,7 @@ pub struct Niveau {
 /// LA LECTURE DE `donnees/organismes-base.json`, la seule, une fois tant que le fichier ne change pas.
 pub fn base() -> R<Arc<Base>> {
     static CACHE: OnceLock<FormeGardee<Base>> = OnceLock::new();
-    forme_en_cache(&CACHE, "organismes-base.json", "La table livrée des organismes ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &BASE, "La table livrée des organismes ne se lit pas : le signaler au développeur.", Ok)
 }
 
 impl Base {
@@ -646,11 +649,11 @@ impl<'de> Deserialize<'de> for Saisies {
 
 /// LA LECTURE DE `config/organismes.json`, la seule ; absent, il ne dit rien.
 pub fn fichier_organismes(ctx: &Contexte) -> R<FichierOrganismes> {
-    let p = ctx.racine.join(socle::fichiers::CONFIG).join(ORGANISMES);
+    let p = ORGANISMES.dans(&ctx.racine);
     if !p.is_file() {
         return Ok(FichierOrganismes::default());
     }
-    crate::fiche::lire_fichier(&p, &format!("config/{}", ORGANISMES))
+    crate::fiche::lire_fichier(&p, ORGANISMES.texte())
 }
 
 /// Le numero d'une reference d'adhesion (S21.G00.15.005) : une reference qui n'en est pas un se refuse.

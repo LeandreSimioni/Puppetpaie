@@ -60,6 +60,7 @@ use droit::contexte::Contexte;
 use envois::courriel::Courriel;
 use socle::date::Jour;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
+use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
 use socle::paris::Moment;
 use compagnie::preuve::Preuve;
@@ -247,15 +248,15 @@ impl Joue {
 }
 
 /// JOUE. La re-verification precede l'appel. Rend ce que ses retours laissent a faire.
-fn deposer_dsn_joue(d: &HorlogeFictive, ctx: &Contexte, fichier: &str, reel: bool) -> R<Vec<String>> {
+fn deposer_dsn_joue(d: &HorlogeFictive, ctx: &Contexte, fichier: &Path, mode: Mode) -> R<Vec<String>> {
     d.reverifier()?;
-    Ok(depot_acte::deposer_dsn(ctx, fichier, reel, None, QUI_HORLOGE, false, "")?.suites)
+    Ok(depot_acte::deposer_dsn(ctx, fichier, mode, None, QUI_HORLOGE, false, "")?.suites)
 }
 
 /// JOUE. La re-verification precede l'appel.
-fn deposer_dpae_joue(d: &HorlogeFictive, ctx: &Contexte, fichier: &str, reel: bool) -> R<()> {
+fn deposer_dpae_joue(d: &HorlogeFictive, ctx: &Contexte, fichier: &Path, mode: Mode) -> R<()> {
     d.reverifier()?;
-    depot_acte::deposer_dpae(ctx, fichier, reel, None, QUI_HORLOGE, false, "")?;
+    depot_acte::deposer_dpae(ctx, fichier, mode, None, QUI_HORLOGE, false, "")?;
     Ok(())
 }
 
@@ -276,7 +277,7 @@ fn deposer_les_dsn(
     let f = Moteur::nouveau(ctx).fichiers_deposables(mois)?;
     let chemins: Vec<std::path::PathBuf> = f.dsn.iter().map(|x| x.chemin.clone()).collect();
     let journal = envois::journal::lu(&ctx.racine)?;
-    let lignes: Vec<&envois::journal::Ligne> = envois::journal::filtrer(&journal.lignes, Some(envois::journal::Acte::Dsn), None, false).filter(|l| l.accepte()).collect();
+    let lignes: Vec<&envois::journal::Ligne> = envois::journal::filtrer(&journal.lignes, Some(envois::journal::Acte::Dsn), None, None).filter(|l| l.accepte()).collect();
     let mut fait = false;
     for chemin in chemins {
         let p = chemin.as_path();
@@ -292,15 +293,15 @@ fn deposer_les_dsn(
         let mut deja = false;
         for l in lignes.iter().filter(|l| l.fichier() == Some(&nom)) {
             let refuse = etats::refuse_par_un_retour(l);
-            deja |= (l.reel() && !refuse) || (refuse && l.empreinte() == Some(&empreinte));
+            deja |= (l.mode() == Mode::Reel && !refuse) || (refuse && l.empreinte() == Some(&empreinte));
         }
         if deja {
             continue;
         }
         // Un signalement qui ne part pas se nomme : le pas est celui de la DSN du mois.
         let signalement = lue.nature_declaration != Some(declarations::dsn_lue::MENSUELLE);
-        for reel in [false, true] {
-            a_faire.extend(deposer_dsn_joue(d, ctx, &chemin.to_string_lossy(), reel).map_err(|mut e| {
+        for mode in [Mode::Test, Mode::Reel] {
+            a_faire.extend(deposer_dsn_joue(d, ctx, &chemin, mode).map_err(|mut e| {
                 if signalement {
                     e = Echec { a_part: None, ..e.reformuler(|p| format!("le signalement {} ne part pas : {}", nom, p)) };
                 }
@@ -348,7 +349,7 @@ struct DernierRattrapage {
 
 /// La memoire de l'horloge, lue ; aucune tant qu'elle n'a jamais joue (le fichier n'existe pas).
 fn memoire(racine: &Path) -> R<Option<Memoire>> {
-    let f = racine.join(FICHIER_HORLOGE);
+    let f = FICHIER_HORLOGE.dans(racine);
     if !socle::fichiers::existe(&f) {
         return Ok(None);
     }
@@ -484,7 +485,7 @@ fn rattraper_l_horloge(racine: &Path, d: HorlogeFictive, aujourdhui: Option<Jour
         ancien
     };
     let sortie = Memoire { quoi: QUOI.to_string(), le: jour, mois_faits: clos, annees_faites, dernier };
-    socle::ecriture::ecrire_json(&racine.join(FICHIER_HORLOGE), &sortie, 2).map_err(|m| m.reclasser(Classe::Disque))?;
+    socle::ecriture::ecrire_json(&FICHIER_HORLOGE.dans(racine), &sortie, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     Ok(fait)
 }
 
@@ -667,10 +668,9 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             let crate::depots::Dpae::Ecrite(r) = crate::depots::dpae(ctx, *mois, Some(&engagements))? else {
                 return Ok(Joue::Rien);
             };
-            let fichier = r.chemin.to_string_lossy().into_owned();
             // La DPAE emporte la demande de taux de PAS de ses embauches (`depot_acte::deposer_dpae`).
-            for reel in [false, true] {
-                deposer_dpae_joue(d, ctx, &fichier, reel)?;
+            for mode in [Mode::Test, Mode::Reel] {
+                deposer_dpae_joue(d, ctx, &r.chemin, mode)?;
             }
             Ok(Joue::Fait)
         }),
@@ -1097,7 +1097,7 @@ mod tests {
         assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), true).unwrap(), Vec::<String>::new());
         assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), false).unwrap(), Vec::<String>::new());
         assert_eq!(photo(&r), avant, "pas meme config/horloge.json");
-        assert!(!r.join(FICHIER_HORLOGE).exists());
+        assert!(!FICHIER_HORLOGE.dans(&r).exists());
         // Un marqueur de copie de developpement qui n'est PAS une compagnie fictive ne suffit pas.
         std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "prive", "quoi": "copie"}"#).unwrap();
         let avant = photo(&r);

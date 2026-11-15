@@ -12,7 +12,7 @@ use crate::retours::Annonce;
 pub struct DepotRefuse {
     /// Une DSN ou une DPAE.
     pub quoi: crate::journal::Acte,
-    pub reel: bool,
+    pub mode: socle::mode::Mode,
     pub classe: Option<socle::echec::Classe>,
     pub message: String,
     /// Ce qui a ouvert le depot reel (`None` pour un test).

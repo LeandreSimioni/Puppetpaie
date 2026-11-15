@@ -28,11 +28,11 @@ use serde::Deserialize;
 
 use droit::fiche::Lue as _;
 use droit::fiche::CodeNaf;
-use socle::fichiers::{forme_en_cache, Empreinte, FormeGardee, NomDeFichier};
+use socle::fichiers::{forme_en_cache, CheminRelatif, Empreinte, FormeGardee, NomDeFichier};
 use crate::norme::Norme;
 use socle::echec::{refus, refus_avec, Lieu, R};
 
-const BASE: &str = "naf-base.json";
+const BASE: CheminRelatif = CheminRelatif::du_moteur("naf-base.json");
 
 /// La regle de `norme-dsn-base.json` qui demande la NAF 2025.
 pub const REGLE: &str = "code_naf_en_naf_2025";
@@ -90,7 +90,7 @@ struct Vers {
 
 fn base() -> R<Arc<Base>> {
     static CACHE: OnceLock<FormeGardee<Base>> = OnceLock::new();
-    forme_en_cache(&CACHE, BASE, "La table NAF livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, &BASE, "La table NAF livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
 }
 
 /// Le code tel que la fiche le porte : sans espace, en majuscules.
@@ -192,7 +192,7 @@ en norme {} demande (net-entreprises, 08/10/2026). Saisir dans Configuration ›
 l'INSEE a notifie, sans le point. Rien n'est ecrit.",
                 ou, code, norme.version
             ),
-            Lieu { fichier: Some(BASE.into()), ..Default::default() },
+            Lieu { fichier: Some(BASE), ..Default::default() },
         ));
     }
     Ok(())

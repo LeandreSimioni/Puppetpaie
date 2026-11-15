@@ -195,7 +195,7 @@ pub struct Chemins {
 }
 
 /// Le nom du gabarit livre.
-const NOM_GABARIT: &str = "due_tel_gabarit.txt";
+const NOM_GABARIT: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("due_tel_gabarit.txt");
 
 /// Les 990 premiers caractères du gabarit, lus en latin-1 : un octet, un caractère, et les fins de ligne
 /// CR LF et CR lues comme LF.
@@ -204,7 +204,7 @@ fn gabarit_lu(gabarits: Option<&Path>, chemins: &Chemins) -> R<Vec<char>> {
     // sinon (`donnees/modeles/`, un enregistrement neutre) : il ne donne plus
     // que l'entete constante, tout le reste est reecrit plus bas.
     let chemin = match gabarits {
-        Some(g) => modele_de(NOM_GABARIT, Some(g), &chemins.poste),
+        Some(g) => modele_de(&NOM_GABARIT, Some(g), &chemins.poste),
         None => chemins.defaut.clone(),
     };
     let octets = std::fs::read(&chemin).map_err(|e| refus(socle::fichiers::panne_fichier(&e, &chemin)))?;
@@ -914,15 +914,74 @@ impl CodeRetourDpae {
             CodeRetourDpae::AutreErreur => "Autre erreur (erreur concernant des données facultatives)",
         }
     }
+}
 
-    /// ENREGISTREE, EN PRATIQUE : `00` ou `99` (avec une reference de dossier, `lire_certificat`). Le `99` (« autre
-    /// erreur, donnees facultatives ») enregistre la DPAE mais signale une donnee facultative mal formee. Celui que
-    /// portaient tous les certificats depuis juin 2026, CoolPaie compris, venait de la periode d'essai (N_JJ_ESSAI)
-    /// laissee a blanc : un CDDU l'ecrit `000` et rend `00`. Un CDI ou un CDD, dont l'essai n'est pas connu, reste en 99.
-    /// Le `98` (`DejaExistante`) dit qu'une DPAE identique existait deja : rien n'a ete cree, et les formalites restent a
-    /// N -- sur le second TEST des memes embauches. L'embauche est declaree quand meme, par la premiere.
-    pub fn enregistree(self) -> bool {
-        matches!(self, CodeRetourDpae::Enregistree | CodeRetourDpae::AutreErreur)
+/// CE QU'EST DEVENUE UNE DPAE DU CERTIFICAT DE CONFORMITE (nature 41), lu une fois dans son code retour et sa reference
+/// de dossier (`lire_certificat`) :
+/// - ENREGISTREE, sous son dossier : `00` ou `99`, avec une reference de dossier. Le `99` (« autre erreur, donnees
+///   facultatives ») enregistre la DPAE mais signale une donnee facultative mal formee. Celui que portaient tous les
+///   certificats depuis juin 2026, CoolPaie compris, venait de la periode d'essai (N_JJ_ESSAI) laissee a blanc : un CDDU
+///   l'ecrit `000` et rend `00`. Un CDI ou un CDD, dont l'essai n'est pas connu, reste en 99 ;
+/// - DEJA EXISTANTE : le `98` dit qu'une DPAE identique existait deja ; rien n'a ete cree, et les formalites restent a
+///   N -- sur le second TEST des memes embauches. L'embauche est declaree quand meme, par la premiere. Le certificat
+///   peut y porter un dossier (aucun : la zone a blanc) ;
+/// - REFUSEE : tout autre code, ou un code qui enregistre sans reference de dossier ; le certificat peut aussi y porter
+///   un dossier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EtatDeLaDpae {
+    Enregistree { dossier: DossierDpae },
+    DejaExistante { dossier: Option<DossierDpae> },
+    Refusee { dossier: Option<DossierDpae> },
+}
+
+/// LE DOSSIER D'UNE DPAE : la reference sous laquelle l'Urssaf l'enregistre (R_DOSSIER, Format 120, positions 425-429),
+/// lue dans le certificat sans ses blancs ; jamais vide. Il s'ecrit tel quel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DossierDpae(String);
+
+impl DossierDpae {
+    /// Le dossier que dit la zone R_DOSSIER, sans ses blancs ; aucun quand elle est a blanc.
+    fn de_la_zone(zone: String) -> Option<DossierDpae> {
+        match zone.is_empty() {
+            true => None,
+            false => Some(DossierDpae(zone)),
+        }
+    }
+
+    /// Tel qu'il s'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for DossierDpae {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for DossierDpae {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<DossierDpae> {
+        DossierDpae::de_la_zone(s).ok_or_else(|| refus("Le dossier d'une DPAE (R_DOSSIER) n'est jamais vide."))
+    }
+}
+
+impl From<DossierDpae> for String {
+    fn from(d: DossierDpae) -> String {
+        d.0
+    }
+}
+
+impl EtatDeLaDpae {
+    /// L'etat que le certificat dit par ce code retour et ce dossier (aucun : la zone a blanc).
+    fn du_certificat(code: CodeRetourDpae, dit: Option<DossierDpae>) -> EtatDeLaDpae {
+        match (code, dit) {
+            (CodeRetourDpae::DejaExistante, dossier) => EtatDeLaDpae::DejaExistante { dossier },
+            (CodeRetourDpae::Enregistree | CodeRetourDpae::AutreErreur, Some(dossier)) => EtatDeLaDpae::Enregistree { dossier },
+            (_, dossier) => EtatDeLaDpae::Refusee { dossier },
+        }
     }
 }
 
@@ -970,7 +1029,7 @@ fn zone_retour(nom: &str) -> (usize, usize) {
 }
 
 /// Une DPAE du certificat de conformite (nature 41) : chaque zone telle que l'enregistrement la porte, sans ses blancs.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct LigneDuCertificat {
     pub nom: String,
     pub prenom: String,
@@ -978,14 +1037,10 @@ pub struct LigneDuCertificat {
     pub nir: Option<droit::fiche::Nir>,
     /// Aucun quand la zone est a blanc.
     pub embauche: Option<Jour>,
-    /// R_DOSSIER, la reference sous laquelle la DPAE est enregistree.
-    pub dossier: String,
     /// C_RETOUR_AR.
     pub code: CodeRetourDpae,
-    /// 00 ou 99 avec un dossier.
-    pub enregistree: bool,
-    /// 98.
-    pub deja_existante: bool,
+    /// Ce qu'elle est devenue, lu dans son code et R_DOSSIER (la reference sous laquelle elle est enregistree).
+    pub etat: EtatDeLaDpae,
     /// Celles a O : CERTIF, IMMA, MT, PMF5.
     pub formalites: Vec<FormaliteDpae>,
     /// C_RET_AR_LOT ; aucun quand la zone est a blanc.
@@ -1034,17 +1089,13 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             "" => None,
             n => Some(droit::fiche::Nir::lire(n).map_err(|e| e.reformuler(|p| format!("Certificat de conformité des DPAE : {}", p)))?),
         };
-        let dossier = z("dossier");
-        let enregistree = code.enregistree() && !dossier.is_empty();
         out.push(LigneDuCertificat {
             nom: c("nom"),
             prenom: c("prenom"),
             nir,
             embauche,
-            dossier,
-            deja_existante: code == CodeRetourDpae::DejaExistante,
             code,
-            enregistree,
+            etat: EtatDeLaDpae::du_certificat(code, DossierDpae::de_la_zone(z("dossier"))),
             formalites: FormaliteDpae::TOUTES.into_iter().filter(|f| z(f.zone()) == "O").collect(),
             lot,
         });
@@ -1332,6 +1383,7 @@ mod tests {
                     poser_texte(r, 974, "O");
                 }
                 1 => {
+                    poser_texte(r, 424, "111AL");
                     poser_texte(r, 429, "98");
                     poser_texte(r, 973, "O");
                 }
@@ -1345,21 +1397,20 @@ mod tests {
         let c = lire_certificat(&f).unwrap();
         assert_eq!(c.len(), 4);
         assert_eq!(c[0].embauche.map(|j| j.iso()).as_deref(), Some("2026-10-01"));
-        assert_eq!(c[0].dossier, "D1234");
         assert_eq!(c[0].code, CodeRetourDpae::AutreErreur);
         assert_eq!(c[0].code.libelle(), "Autre erreur (erreur concernant des données facultatives)");
-        assert!(c[0].enregistree);
+        assert_eq!(c[0].etat, EtatDeLaDpae::Enregistree { dossier: DossierDpae("D1234".into()) });
         assert_eq!(c[0].formalites, [FormaliteDpae::Certif, FormaliteDpae::Mt]);
-        // 98 : deja existante, et pas enregistree
-        assert!(c[1].deja_existante);
-        assert!(!c[1].enregistree);
+        // 98 : deja existante, et pas enregistree ; le dossier que le certificat dit se garde
+        assert_eq!(c[1].code, CodeRetourDpae::DejaExistante);
+        assert_eq!(c[1].etat, EtatDeLaDpae::DejaExistante { dossier: Some(DossierDpae("111AL".into())) });
         assert_eq!(c[1].formalites, [FormaliteDpae::Imma]);
         // un refus de la DPAE (38)
         assert_eq!(c[2].code, CodeRetourDpae::NumeroDeSecuriteSocialeInvalide);
-        assert!(!c[2].enregistree && !c[2].deja_existante);
+        assert_eq!(c[2].etat, EtatDeLaDpae::Refusee { dossier: None });
         // un lot en erreur ; le code `00` sans dossier n'est pas enregistre
         assert_eq!(c[3].lot, Some(CodeRetourDuLot::CodeVersionIncorrect));
-        assert!(!c[3].enregistree);
+        assert_eq!(c[3].etat, EtatDeLaDpae::Refusee { dossier: None });
         // un code inconnu du Format 120 refuse le certificat
         let e = lire_certificat(&flux(1, |r, _| poser_texte(r, 429, "77"))).unwrap_err();
         assert!(e.phrase.contains("77") && e.phrase.contains("C_RETOUR_AR"), "{}", e.phrase);

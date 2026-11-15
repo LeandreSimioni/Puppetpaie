@@ -170,8 +170,8 @@ fn dossier_exercices(ctx: &Contexte) -> PathBuf {
 pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecrire: bool) -> R<ExportCompta> {
     let plan = plan_comptable(ctx)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let propre = ctx.racine.join(documents::plan_comptable::PLAN_COMPTABLE);
-    let origine = if propre.exists() { documents::plan_comptable::PLAN_COMPTABLE } else { "plan livré avec le logiciel (plan-comptable-base.json)" };
+    let propre = documents::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine);
+    let origine = documents::plan_comptable::origine(ctx)?;
     let mut mois: Vec<Mois> = Vec::new();
     for m in mois_de_l_annee(ctx, annee)? {
         let n = m.numero();
@@ -189,7 +189,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     let mut avert: Vec<String> = Vec::new();
     let mut ecritures: Vec<Ecriture> = Vec::new();
     for &m in &mois {
-        if !ctx.racine.join("sorties").join(m.to_string()).is_dir() {
+        if !documents::DossierDuMois::Sorties.dans(&ctx.racine, m).is_dir() {
             avert.push(format!("{} : saisi mais jamais écrit (pas de bulletin) -- pris quand même, depuis la saisie.", m));
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));
@@ -218,7 +218,7 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
         compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&f), lues, None)?;
         fichier = Some(f);
     }
-    Ok(ExportCompta { annee, du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine.to_string(), avertissements: avert })
+    Ok(ExportCompta { annee, du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine, avertissements: avert })
 }
 
 /// LES SAISIES DE L'ANNEE, PAR LEUR EMPREINTE : `{"AAAA-MM": empreinte}` pour chaque mois saisi de l'annee, l'empreinte
@@ -289,7 +289,7 @@ const DECEMBRE: u32 = 12;
 // ------------------------------------------------------------------ la cloture
 
 /// Les exercices clos de la compagnie, sous sa racine.
-pub(crate) const EXERCICES: &str = "config/exercices.json";
+pub(crate) const EXERCICES: CheminRelatif = CheminRelatif::du_moteur("config/exercices.json");
 
 /// `config/exercices.json` : chaque annee close (`clos`, sa cloture sous son annee) et les clotures retirees (`rouverts`),
 /// dans l'ordre ou elles l'ont ete. Lu par sa forme (`lire_exercices`), ecrit par `ecrire_exercices`.
@@ -350,7 +350,7 @@ impl Exercices {
 /// `config/exercices.json`, lu par sa forme : aucune annee close s'il n'existe pas. Le texte est lu une fois tant qu'il
 /// ne change pas (l'etat d'un mois le demande pour chaque mois) ; le refus d'un fichier illisible ne se garde pas.
 pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
-    let p = racine.join(EXERCICES);
+    let p = EXERCICES.dans(racine);
     match socle::forme::partagee::<Exercices>(&p, "Le fichier des exercices clos ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))? {
         Some(e) => Ok((*e).clone()),
         None => Ok(Exercices { clos: BTreeMap::new(), rouverts: Vec::new() }),
@@ -358,7 +358,7 @@ pub(crate) fn lire_exercices(racine: &Path) -> R<Exercices> {
 }
 
 fn ecrire_exercices(ctx: &Contexte, tous: &Exercices) -> R<()> {
-    let chemin = ctx.racine.join(EXERCICES);
+    let chemin = EXERCICES.dans(&ctx.racine);
     socle::ecriture::ecrire_json(&chemin, tous, 1).map_err(|m| m.reclasser(Classe::Disque))
 }
 
@@ -438,14 +438,13 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
         }
     }
     for m in &mois {
-        let d = ctx.racine.join("sorties").join(m.to_string());
+        let d = documents::DossierDuMois::Sorties.dans(&ctx.racine, *m);
         if d.is_dir() {
             let mut fichiers = Vec::new();
             fichiers_sous(&d, &mut fichiers)?;
             fichiers.sort();
             for p in fichiers {
-                let rel: Vec<String> = p.strip_prefix(&d).map_err(|e| refus(e.to_string()))?.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
-                entrees.push(entree_fichier(&p, format!("sorties/{}/{}", m, rel.join("/")))?);
+                entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
             }
         }
     }
@@ -455,10 +454,6 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     // Les retours DSN a la racine des retours, ceux des DPAE sous `dpae/`.
     for canal in [envois::releve_retours::CanalDesRetours::Dsn, envois::releve_retours::CanalDesRetours::Dpae] {
         let d = canal.chemin(&ctx.racine);
-        let prefixe = match canal.dossier() {
-            Some(s) => format!("{}/", s),
-            None => String::new(),
-        };
         if d.is_dir() {
             let mut noms: Vec<(String, PathBuf)> = Vec::new();
             for e in std::fs::read_dir(&d).map_err(|e| en_os(&e, &d))? {
@@ -468,7 +463,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             noms.sort_by(|a, b| a.1.cmp(&b.1));
             for (nom, p) in noms {
                 if p.is_file() && (nom.starts_with(&de_l_annee) || nom.starts_with(&suivante)) {
-                    entrees.push(entree_fichier(&p, format!("retours/{}{}", prefixe, nom))?);
+                    entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
                 }
             }
         }
@@ -480,8 +475,9 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     let cfg = ctx.racine.join(socle::fichiers::CONFIG);
     let fiches: [&str; 6] = ["entreprise.json", "salaries.json", "spectacles.json", "organismes.json", "rubriques.json", "compteurs.json"];
     for nom in fiches {
-        if cfg.join(nom).exists() {
-            entrees.push(entree_fichier(&cfg.join(nom), format!("config/{}", nom))?);
+        let p = cfg.join(nom);
+        if p.exists() {
+            entrees.push(entree_fichier(&p, CheminRelatif::sous(&ctx.racine, &p)?.to_string())?);
         }
     }
     let surcouche = droit::contexte::surcouche(annee.nombre())?;

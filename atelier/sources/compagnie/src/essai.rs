@@ -44,12 +44,12 @@ use std::path::{Path, PathBuf};
 use droit::natures::RubriqueDeLaNorme;
 use serde::Deserialize;
 use socle::echec::{refus_avec, Echec, R};
+use socle::fichiers::CheminRelatif;
+
+use crate::installation::MARQUEUR;
 
 /// La variable : l'identite de la compagnie, un objet JSON sur une ligne.
 pub const VARIABLE: &str = "PUPPETPAIE_COMPAGNIE";
-
-/// Le marqueur d'une copie (`commandes::compagnie`, `compagnie::installation`).
-const MARQUEUR: &str = "COPIE-DE-DEVELOPPEMENT.json";
 
 /// Le debut de `copie_de` d'une compagnie d'essai. Ne commence PAS par « compagnie fictive » (`compagnies::MARQUE_FICTIVE`) :
 /// une fictive joue ses depots, une compagnie d'essai les fait en test, pour de vrai.
@@ -63,8 +63,10 @@ pub const FICTIVE_PAR_DEFAUT: &str = "fictive-fil-de-fer";
 pub const DOSSIER_PAR_DEFAUT: &str = "puppetpaie-essai";
 
 
-/// Ce que la copie ne prend pas de la fictive (relatif a sa racine).
-const NON_COPIES: [&str; 3] = [MARQUEUR, envois::retours::RETOURS, crate::installation::FICHIER_HORLOGE];
+/// Ce que la copie ne prend pas de la fictive (relatif a sa racine) : son marqueur, son horloge, ses retours.
+fn non_copies() -> [CheminRelatif; 3] {
+    [MARQUEUR.into(), crate::installation::FICHIER_HORLOGE, envois::retours::RETOURS.into()]
+}
 
 /// Une compagnie d'essai : son marqueur le dit (`installation::sorte_de_copie`).
 pub fn est_essai(racine: &Path) -> R<bool> {
@@ -352,17 +354,15 @@ pub struct Montage {
     pub neuf: bool,
 }
 
-/// Le dossier d'installation : celui qui porte `logiciel/` (`logiciel/donnees` -> `logiciel` -> l'installation).
-fn installation() -> R<PathBuf> {
-    let code = socle::fichiers::dossier_du_code();
-    code.parent().and_then(Path::parent).map(Path::to_path_buf).ok_or_else(|| refus_avec("Le logiciel n'est dans aucune installation.", a_part(&code)))
-}
-
 /// La fictive a copier : un chemin (s'il designe un dossier), sinon un nom de `fictives/` de l'installation.
 fn source(fictive: &str) -> R<PathBuf> {
     let p = PathBuf::from(fictive);
-    let d = if fictive.contains('/') || fictive.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::installation::DOSSIER_FICTIVES).join(fictive) };
-    if !d.join(droit::contexte::ENTREPRISE).is_file() {
+    let d = if fictive.contains('/') || fictive.contains('\\') || p.is_dir() {
+        p
+    } else {
+        crate::installation::IdDeCompagnie::Fictive(socle::fichiers::NomDeFichier::lire(fictive)?).racine(&crate::installation::base())
+    };
+    if !droit::contexte::ENTREPRISE.dans(&d).is_file() {
         return Err(refus_avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }
     // Seulement une FICTIVE : jamais `prive/` ni une autre compagnie reelle, dont les salaries partiraient sous un autre SIREN.
@@ -402,7 +402,7 @@ fn absolu(p: &Path) -> R<PathBuf> {
 /// Le depot Git ou l'installation qui contient `dossier`, s'il y en a un : la copie porterait l'identite d'une vraie compagnie,
 /// elle ne va jamais la ou un `git add` la prendrait, ni a cote de ce que les gens recoivent.
 fn depot_englobant(dossier: &Path) -> R<Option<PathBuf>> {
-    Ok(absolu(dossier)?.ancestors().find(|a| a.join(".git").exists() || a.join("logiciel").join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf))
+    Ok(absolu(dossier)?.ancestors().find(|a| a.join(".git").exists() || a.join(crate::maj::LOGICIEL).join("donnees").join("echeancier-base.json").is_file()).map(Path::to_path_buf))
 }
 
 fn copier(src: &Path, dst: &Path, racine: &Path) -> R<()> {
@@ -411,7 +411,7 @@ fn copier(src: &Path, dst: &Path, racine: &Path) -> R<()> {
         let e = e.map_err(|e| socle::echec::du_disque(&src, &e))?;
         let s = e.path();
         let rel = s.strip_prefix(racine).map_err(|e| socle::echec::refus(e.to_string()))?.to_string_lossy().replace('\\', "/");
-        if NON_COPIES.contains(&rel.as_str()) || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
+        if non_copies().iter().any(|c| c.texte() == rel) || s.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")) {
             continue;
         }
         let d = dst.join(e.file_name());
@@ -472,10 +472,10 @@ pub fn monter(dossier: &Path, fictive: &str, texte: Option<&str>) -> R<Montage> 
     };
     // La fiche sous la nouvelle identite, calculee AVANT toute ecriture.
     let base_fiche = match &src {
-        Some(s) => s.join(droit::contexte::ENTREPRISE),
-        None => dossier.join(droit::contexte::ENTREPRISE),
+        Some(s) => droit::contexte::ENTREPRISE.dans(s),
+        None => droit::contexte::ENTREPRISE.dans(dossier),
     };
-    let fiche: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&base_fiche, droit::contexte::ENTREPRISE)?;
+    let fiche: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&base_fiche, droit::contexte::ENTREPRISE.texte())?;
     let fiche = id.appliquer(&fiche)?;
 
     if let Some(s) = &src {
@@ -493,7 +493,7 @@ pub fn monter(dossier: &Path, fictive: &str, texte: Option<&str>) -> R<Montage> 
         std::fs::write(dossier.join(".gitignore"), "# Compagnie d'essai : l'identite d'une vraie compagnie. Rien ici ne se commite.\n*\n")
             .map_err(|e| socle::echec::du_disque(&dossier, &e))?;
     }
-    socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
+    socle::ecriture::ecrire_json(&droit::contexte::ENTREPRISE.dans(dossier), &fiche, 2)?;
     Ok(Montage { dossier: absolu(dossier)?, fictive: nom, neuf: !deja })
 }
 

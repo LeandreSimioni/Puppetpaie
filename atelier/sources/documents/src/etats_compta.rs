@@ -17,8 +17,9 @@ use serde::Serialize;
 use droit::contexte::Contexte;
 use droit::fiche::CodeAnalytique;
 use socle::echec::{erreur, Classe};
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
-use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, Periode};
+use crate::etats_paie::{ecrire_fini, finir, lignes_livre, charger_mois, Demande, NomDExport, Periode};
 use crate::ecritures_comptables::{ecritures_du_mois, Ecriture, NumeroDeCompte};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
 use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielComptable, Plan};
@@ -26,7 +27,7 @@ use socle::texte::euros;
 use socle::grandeurs::{Montant, Taux};
 use socle::num::{add, div, mul, sub, Decimal};
 use crate::tableaux_export::{
-    col_m, col_n, col_t, col_x, ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, Ligne, Section, Tableau,
+    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, ColonneDEtat as C, Ligne, Section, Tableau,
     FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
@@ -114,7 +115,7 @@ fn tenir(logiciel: &str, quoi: &str, v: &str, n: usize) -> R<String> {
         #[derive(Serialize)]
         struct Zone {
             zone: String,
-            fichier: &'static str,
+            fichier: socle::fichiers::CheminRelatif,
         }
         return Err(socle::echec::refus_avec(
             format!("{} : « {} » a {} caractères, {} en prend {} au plus dans ce logiciel. {}.", logiciel, t, c, porte, n, conseil),
@@ -240,17 +241,17 @@ fn libelle_de(plan: &Plan, e: &Ecriture) -> Option<String> {
 /// Une ligne d'ecriture pour un tableau.
 fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
-    l.t("journal", e.journal.to_string()).t("date", e.date.jj_mm_aaaa()).t("piece", e.piece.clone()).t("compte", compte_de(e).to_string());
-    l.ot("libelle_compte", libelle_de(plan, e)).t("libelle", e.libelle.clone());
-    l.od("debit", if e.debit.est_nul() { None } else { Some(e.debit.decimal()) });
-    l.od("credit", if e.credit.est_nul() { None } else { Some(e.credit.decimal()) });
-    l.ot("analytique", e.analytique.clone()).m("mois", e.mois);
+    l.t(C::Journal, e.journal.to_string()).t(C::Date, e.date.jj_mm_aaaa()).t(C::Piece, e.piece.clone()).t(C::Compte, compte_de(e).to_string());
+    l.ot(C::LibelleCompte, libelle_de(plan, e)).t(C::Libelle, e.libelle.clone());
+    l.od(C::Debit, if e.debit.est_nul() { None } else { Some(e.debit.decimal()) });
+    l.od(C::Credit, if e.credit.est_nul() { None } else { Some(e.credit.decimal()) });
+    l.ot(C::Analytique, e.analytique.clone()).m(C::Mois, e.mois);
     l
 }
 
 /// Les ecritures de la periode, numerotees -- une ecriture (une piece) par mois, ses lignes dans
 /// l'ordre de `ecritures_du_mois`.
-fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<(Vec<Ecriture>, Plan, &'static str)> {
+fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<(Vec<Ecriture>, Plan, String)> {
     let (plan, origine) = crate::plan_comptable::plan(ctx)?;
     let mut out = Vec::new();
     for (n, &m) in p.mois.iter().enumerate() {
@@ -260,7 +261,7 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
             out.push(e);
         }
     }
-    if !ctx.racine.join(crate::plan_comptable::PLAN_COMPTABLE).exists() {
+    if !socle::fichiers::existe_lu(&crate::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine))? {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
     }
     Ok((out, plan, origine))
@@ -875,20 +876,21 @@ enum Analytique {
 /// `Ecrivain` : le fichier, l'ecrivain, la source, ce qu'on dit a celui qui l'importe, l'analytique du format, et le
 /// fichier des comptes quand le format en a un.
 struct Ecrivain {
-    fichier: &'static str,
+    fichier: NomDExport,
     ecrire: fn(&[Ecriture], &Envoi) -> R<Vec<u8>>,
     source: &'static str,
     conseil: String,
     section: Analytique,
-    /// (modele du nom, ecrivain, conseil)
-    comptes: Option<(&'static str, fn(&[(NumeroDeCompte, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
+    /// (nom, ecrivain, conseil)
+    comptes: Option<(NomDExport, fn(&[(NumeroDeCompte, String)], &Envoi) -> R<Vec<u8>>, &'static str)>,
 }
+
 
 /// `ECRIVAINS.get(format)`.
 fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
     Some(match format {
         FormatDExport::Fec => Ecrivain {
-            fichier: "extrait-fec-paie-%s.txt",
+            fichier: const { NomDExport::autour("extrait-fec-paie-", ".txt") },
             ecrire: fec,
             source: SOURCE_FEC,
             conseil: "Extrait du journal de paie à la forme du FEC, à importer dans la comptabilité — ce n'est pas le FEC de l'entreprise, que seul le logiciel de comptabilité produit. ValidDate est vide : la validation se fait à l'import.".to_string(),
@@ -896,7 +898,7 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
             comptes: None,
         },
         FormatDExport::Ximport => Ecrivain {
-            fichier: "XIMPORT-paie-%s.TXT",
+            fichier: const { NomDExport::autour("XIMPORT-paie-", ".TXT") },
             ecrire: ximport,
             source: SOURCE_XIMPORT,
             conseil: format!("Sage 50 (ex-Ciel) : Échanges > Importer des écritures, format XImport.{}", ESSAI),
@@ -904,7 +906,7 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
             comptes: None,
         },
         FormatDExport::Oxygene => Ecrivain {
-            fichier: "oxygene-ecritures-paie-%s.csv",
+            fichier: const { NomDExport::autour("oxygene-ecritures-paie-", ".csv") },
             ecrire: oxygene,
             source: SOURCE_OXYGENE,
             conseil: format!(
@@ -912,10 +914,10 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
                 ESSAI
             ),
             section: Analytique::Largeur(20),
-            comptes: Some(("oxygene-plan-comptable-paie-%s.csv", oxygene_comptes, "à importer d'abord, « Import plan comptable » ; un compte qui existe déjà n'a pas à y être.")),
+            comptes: Some((const { NomDExport::autour("oxygene-plan-comptable-paie-", ".csv") }, oxygene_comptes, "à importer d'abord, « Import plan comptable » ; un compte qui existe déjà n'a pas à y être.")),
         },
         FormatDExport::Sage => Ecrivain {
-            fichier: "ecritures-paie-%s.pnm",
+            fichier: const { NomDExport::autour("ecritures-paie-", ".pnm") },
             ecrire: sage_pnm,
             source: SOURCE_SAGE,
             conseil: format!(
@@ -926,7 +928,7 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
             comptes: None,
         },
         FormatDExport::Quadra => Ecrivain {
-            fichier: "quadra-ecritures-paie-%s.txt",
+            fichier: const { NomDExport::autour("quadra-ecritures-paie-", ".txt") },
             ecrire: quadra,
             source: SOURCE_QUADRA,
             conseil: format!(
@@ -937,15 +939,15 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
             comptes: None,
         },
         FormatDExport::Ebp => Ecrivain {
-            fichier: "ECRITURES-paie-%s.TXT",
+            fichier: const { NomDExport::autour("ECRITURES-paie-", ".TXT") },
             ecrire: ebp,
             source: SOURCE_EBP,
             conseil: format!("EBP : Outils > Import de données > Import écritures, format « EBP V3 pour Windows ».{}", ESSAI),
             section: Analytique::SansLargeur,
-            comptes: Some(("COMPTES.TXT", ebp_comptes, "EBP le lit seul s'il est dans le même dossier que le fichier des écritures, et crée les comptes absents avec leur intitulé.")),
+            comptes: Some((NomDExport::Fixe(const { NomDeFichier::du_moteur("COMPTES.TXT") }), ebp_comptes, "EBP le lit seul s'il est dans le même dossier que le fichier des écritures, et crée les comptes absents avec leur intitulé.")),
         },
         FormatDExport::Pennylane => Ecrivain {
-            fichier: "pennylane-ecritures-paie-%s.csv",
+            fichier: const { NomDExport::autour("pennylane-ecritures-paie-", ".csv") },
             ecrire: pennylane,
             source: SOURCE_PENNYLANE,
             conseil: format!(
@@ -961,7 +963,7 @@ fn ecrivain(format: FormatDExport) -> Option<Ecrivain> {
 }
 
 /// Le logiciel du comptable et l'analytique que la compagnie a retenus, sous sa racine.
-const COMPTA: &str = "config/compta.json";
+const COMPTA: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/compta.json");
 
 /// `config/compta.json` : le logiciel du comptable (absent : aucun) et l'analytique, retenus une fois pour toutes. Lu
 /// par `ChoixCompta::lu` seule (les ecritures comptables, la page des exports), ecrit par `ChoixCompta::ecrire` seule
@@ -984,7 +986,7 @@ impl ChoixCompta {
 
     /// `config/compta.json`, lu par sa forme ; rien de retenu s'il n'existe pas.
     pub fn lu(racine: &std::path::Path) -> R<ChoixCompta> {
-        let chemin = racine.join(COMPTA);
+        let chemin = COMPTA.dans(racine);
         if !chemin.exists() {
             return Ok(ChoixCompta::nouveau(None, false));
         }
@@ -993,7 +995,7 @@ impl ChoixCompta {
 
     /// Le choix ecrit dans `config/compta.json`.
     pub fn ecrire(&self, racine: &std::path::Path) -> R<()> {
-        socle::ecriture::ecrire_json(&racine.join(COMPTA), self, 2).map_err(|m| m.reclasser(Classe::Disque))
+        socle::ecriture::ecrire_json(&COMPTA.dans(racine), self, 2).map_err(|m| m.reclasser(Classe::Disque))
     }
 
     /// Le logiciel retenu, s'il en est un.
@@ -1040,14 +1042,14 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         t.sections.push(Section::nouvelle(libelle_mois(m), lignes));
     }
     t.colonnes = vec![
-        col_t("journal", "Journal"),
-        col_t("date", "Date"),
-        col_t("piece", "N° pièce"),
-        col_t("compte", "N° compte"),
-        col_t("libelle", "Libellé"),
-        col_m("debit", "Débit"),
-        col_m("credit", "Crédit"),
-        col_t("analytique", "Analytique"),
+        C::Journal.colonne(),
+        C::Date.colonne(),
+        C::Piece.titree("N° pièce"),
+        C::Compte.titree("N° compte"),
+        C::Libelle.colonne(),
+        C::Debit.colonne(),
+        C::Credit.colonne(),
+        C::Analytique.colonne(),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
     let ecr_format = ecrivain(format);
@@ -1058,8 +1060,8 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.format = format_possible(Some(format), &FORMATS_ECRITURES)?;
     totaliser(&mut t, TOTAL_GENERAL)?;
     // Le total de chaque colonne : la somme de ce que les lignes portent (aucune ligne, rien).
-    let somme = |k: &str| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(Montant::ZERO.decimal(), add);
-    let (debit, credit) = (somme("debit"), somme("credit"));
+    let somme = |k: C| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(Montant::ZERO.decimal(), add);
+    let (debit, credit) = (somme(C::Debit), somme(C::Credit));
     if debit != credit {
         return Err(refus(format!("Le journal n'est pas équilibré (débit {}, crédit {}).", debit, credit)));
     }
@@ -1091,12 +1093,12 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let (ecritures, comptes) = fabriquer(ec, &ecr, &env)?;
             env.refus_des_depasses(format)?;
             std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
-            let chemin = dossier.join(ec.fichier.replace("%s", &p.nom()));
+            let periode = p.nom();
+            let chemin = dossier.join(ec.fichier.de(&periode));
             std::fs::write(&chemin, ecritures).map_err(|e| io(&chemin, e))?;
             t.fichier = Some(chemin);
             if let Some((modele, octets, conseil)) = comptes {
-                // COMPTES.TXT n'a pas de periode dans son nom : EBP le cherche sous ce nom-la, a cote des ecritures.
-                let nom_comptes = if modele.contains("%s") { modele.replace("%s", &p.nom()) } else { modele.to_string() };
+                let nom_comptes = modele.de(&periode);
                 let cible = dossier.join(&nom_comptes);
                 std::fs::write(&cible, octets).map_err(|e| io(&cible, e))?;
                 t.avertissements.push(format!("Les comptes et leurs libellés sont dans « {} », à côté : {}", nom_comptes, conseil));
@@ -1118,14 +1120,14 @@ fn envoi<'a>(ctx: &'a Contexte, plan: &'a Plan, sections: Option<BTreeMap<String
     Ok(Envoi { plan, ctx, sections, borne, courts, depasses: RefCell::new(BTreeMap::new()) })
 }
 
-/// Le fichier des ecritures, et celui des comptes quand le format en a un : (modele de son nom, octets, conseil).
-type Fabrique = (Vec<u8>, Option<(&'static str, Vec<u8>, &'static str)>);
+/// Le fichier des ecritures, et celui des comptes quand le format en a un : (son nom, octets, conseil).
+type Fabrique<'a> = (Vec<u8>, Option<(&'a NomDExport, Vec<u8>, &'static str)>);
 
 /// Les fichiers d'un format, fabriques sans rien ecrire ; ce qui depasse sa zone est note dans `env`.
-fn fabriquer(ec: &Ecrivain, ecr: &[Ecriture], env: &Envoi) -> R<Fabrique> {
+fn fabriquer<'a>(ec: &'a Ecrivain, ecr: &[Ecriture], env: &Envoi) -> R<Fabrique<'a>> {
     let ecritures = (ec.ecrire)(ecr, env)?;
-    let comptes = match ec.comptes {
-        Some((modele, fabrique, conseil)) => Some((modele, fabrique(&comptes_utilises(ecr, env.plan), env)?, conseil)),
+    let comptes = match &ec.comptes {
+        Some((modele, fabrique, conseil)) => Some((modele, fabrique(&comptes_utilises(ecr, env.plan), env)?, *conseil)),
         None => None,
     };
     Ok((ecritures, comptes))
@@ -1170,7 +1172,7 @@ pub fn format_retenu(ctx: &Contexte) -> R<Option<FormatDExport>> {
 /// Le solde d'une ligne, dit « débiteur », « créditeur » ou « nul ».
 fn solde(d: &Ligne) -> String {
     // Ce que le compte porte au debit, moins ce qu'il porte au credit (une colonne vide n'y porte rien).
-    let v = [d.decimal("debit"), d.decimal("credit").map(|c| -c)].into_iter().flatten().fold(Montant::ZERO.decimal(), add);
+    let v = [d.decimal(C::Debit), d.decimal(C::Credit).map(|c| -c)].into_iter().flatten().fold(Montant::ZERO.decimal(), add);
     let t = if v > Decimal::ZERO {
         format!("débiteur {}", v)
     } else if v < Decimal::ZERO {
@@ -1198,13 +1200,13 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     // Une section par compte : son numero, et son libelle quand le plan le nomme.
     t.sections = par.into_iter().map(|(c, l)| Section::nouvelle([Some(c.to_string()), libelles[&c].clone()].into_iter().flatten().collect::<Vec<_>>().join(" "), l)).collect();
     t.colonnes = vec![
-        col_t("compte", "Compte"),
-        col_t("date", "Date"),
-        col_t("piece", "Pièce"),
-        col_t("libelle", "Libellé"),
-        col_t("analytique", "Analytique"),
-        col_m("debit", "Débit"),
-        col_m("credit", "Crédit"),
+        C::Compte.colonne(),
+        C::Date.colonne(),
+        C::Piece.colonne(),
+        C::Libelle.colonne(),
+        C::Analytique.colonne(),
+        C::Debit.colonne(),
+        C::Credit.colonne(),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
     t.format = format_possible(d.format, &FORMATS_TABLEAU)?;
@@ -1212,7 +1214,7 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
             let dit = format!("solde {}", solde(tot));
-            tot.t("analytique", dit);
+            tot.t(C::Analytique, dit);
         }
     }
     if d.ecrire {
@@ -1244,9 +1246,9 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for (c, (lib, debit, credit)) in &par {
         let v = *debit - *credit;
         let mut l = Ligne::nouvelle();
-        l.t("compte", c.to_string()).ot("libelle", lib.clone()).d("debit", debit.decimal()).d("credit", credit.decimal());
-        l.od("solde_debiteur", if v > zero { Some(v.decimal()) } else { None });
-        l.od("solde_crediteur", if v < zero { Some((-v).decimal()) } else { None });
+        l.t(C::Compte, c.to_string()).ot(C::Libelle, lib.clone()).d(C::Debit, debit.decimal()).d(C::Credit, credit.decimal());
+        l.od(C::SoldeDebiteur, if v > zero { Some(v.decimal()) } else { None });
+        l.od(C::SoldeCrediteur, if v < zero { Some((-v).decimal()) } else { None });
         lignes.push(l);
     }
     let mut t = Tableau::nouveau(EtatDExport::BalancePaie, "Balance des comptes de paie", p.libelle.clone());
@@ -1254,12 +1256,12 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![
-        col_t("compte", "Compte"),
-        col_t("libelle", "Libellé"),
-        col_m("debit", "Total débit"),
-        col_m("credit", "Total crédit"),
-        col_m("solde_debiteur", "Solde débiteur"),
-        col_m("solde_crediteur", "Solde créditeur"),
+        C::Compte.colonne(),
+        C::Libelle.colonne(),
+        C::Debit.titree("Total débit"),
+        C::Credit.titree("Total crédit"),
+        C::SoldeDebiteur.colonne(),
+        C::SoldeCrediteur.colonne(),
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
     t.format = format_possible(d.format, &FORMATS_TABLEAU)?;
@@ -1311,7 +1313,7 @@ fn provision_d_une_annee_importee(
 ) -> R<usize> {
     let fin = m.dernier_jour();
     let lendemain = fin.plus_jours(1).map_err(|x| x.reclasser(Classe::Illisible))?;
-    let importes: Vec<Mois> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::IMPORTE).map(|(k, _)| *k).collect();
+    let importes: Vec<Mois> = p.dispo.iter().filter(|(_, s)| **s == crate::etats_paie::OrigineDuMois::Importe).map(|(k, _)| *k).collect();
     // `m` est un mois repris : il y en a au moins un.
     let premier_importe = importes.first().copied().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
@@ -1466,16 +1468,16 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let fiche = ctx.salaries.get(&cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
         let nom = fiche.nom.exigee("nom").map_err(|m| m.reclasser(Classe::Manque))?;
         let mut l = Ligne::nouvelle();
-        l.t("salarie", match fiche.prenom.portee() {
+        l.t(C::Salarie, match fiche.prenom.portee() {
             Some(prenom) => format!("{} {}", nom, prenom),
             None => nom.to_string(),
         });
-        l.ot("contrat", contrat).t("nature", nature);
-        l.d("report", arrondir_jours(cpt.report_restant)).d("acquis", arrondir_jours(cpt.acquis)).d("pris", arrondir_jours(cpt.pris)).d("solde", arrondir_jours(cpt.solde));
-        l.d("dixieme", dixieme).d("maintien", maintien).d("indemnite", retenu).t("regle", regle);
+        l.ot(C::Contrat, contrat).t(C::Nature, nature);
+        l.d(C::Report, arrondir_jours(cpt.report_restant)).d(C::Acquis, arrondir_jours(cpt.acquis)).d(C::Pris, arrondir_jours(cpt.pris)).d(C::Solde, arrondir_jours(cpt.solde));
+        l.d(C::Dixieme, dixieme).d(C::Maintien, maintien).d(C::Indemnite, retenu).t(C::Regle, regle);
         // Le taux s'ecrit a deux decimales (`12.50`).
-        l.od("taux_patronal", taux.map(|t| quant(t.decimal(), 2))).n("bulletins", n).od("charges", charges);
-        l.od("total", charges.map(|c| add(retenu, c)));
+        l.od(C::TauxPatronal, taux.map(|t| quant(t.decimal(), 2))).n(C::Bulletins, n).od(C::Charges, charges);
+        l.od(C::Total, charges.map(|c| add(retenu, c)));
         lignes.push(l);
     }
     if lignes.is_empty() && sans_compteur == 0 {
@@ -1506,32 +1508,34 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![
-        col_t("salarie", "Salarié"),
-        col_t("contrat", "Contrat"),
-        col_t("nature", "Nature"),
-        col_n("report", "Report N-1 (j)"),
-        col_n("acquis", "Acquis N (j)"),
-        col_n("pris", "Pris (j)"),
-        col_n("solde", "Solde (j)"),
-        col_m("dixieme", "Au dixième"),
-        col_m("maintien", "Au maintien"),
-        col_m("indemnite", "Indemnité retenue"),
-        col_t("regle", "Règle"),
-        col_x("taux_patronal", "Taux patronal réel"),
-        col_m("charges", "Charges patronales"),
-        col_m("total", "Provision"),
+        C::Salarie.colonne(),
+        C::Contrat.colonne(),
+        C::Nature.colonne(),
+        C::Report.colonne(),
+        C::Acquis.colonne(),
+        C::Pris.colonne(),
+        C::Solde.colonne(),
+        C::Dixieme.colonne(),
+        C::Maintien.colonne(),
+        C::Indemnite.colonne(),
+        C::Regle.colonne(),
+        C::TauxPatronal.colonne(),
+        C::Charges.colonne(),
+        C::Total.titree("Provision"),
     ];
     t.sources = vec!["compteur de congés écrit dans la paie validée du mois, indemnité L3141-24 comme au solde de tout compte, taux patronal = cotisations patronales / brut des bulletins des douze derniers mois".to_string()];
     finir(ctx, &mut t, Some(&p), "provision-conges", d.format,false)?;
+    // Les jours, le taux et le nombre de bulletins d'un salarie ne s'additionnent pas : leur total reste vide.
+    const SANS_TOTAL: [C; 6] = [C::Report, C::Acquis, C::Pris, C::Solde, C::TauxPatronal, C::Bulletins];
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
-            for c in ["report", "acquis", "pris", "solde", "taux_patronal", "bulletins"] {
+            for c in SANS_TOTAL {
                 tot.rien(c);
             }
         }
     }
     if let Some(tot) = t.total.as_mut() {
-        for c in ["report", "acquis", "pris", "solde", "taux_patronal", "bulletins"] {
+        for c in SANS_TOTAL {
             tot.rien(c);
         }
     }
@@ -1640,7 +1644,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let m2 = Montant::du_decimal(div(mul(au_dela_2, maj_2), cent)).au_centime().decimal();
         let taxe = add(add(normal, m1), m2);
         let mut l = Ligne::nouvelle();
-        l.t("salarie", nom.clone()).n("mois", mois.len() as i64).d("brut", *brut).d("base", b).d("taux_normal", normal).d("majoration_1", m1).d("majoration_2", m2).d("taxe", taxe);
+        l.t(C::Salarie, nom.clone()).n(C::NombreDeMois, mois.len() as i64).d(C::Brut, *brut).d(C::BaseDeLaTaxe, b).d(C::TauxNormal, normal).d(C::MajorationUn, m1).d(C::MajorationDeux, m2).d(C::Taxe, taxe);
         brute = add(brute, taxe);
         lignes.push(l);
     }
@@ -1689,24 +1693,24 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avertissements = avert;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![
-        col_t("salarie", "Salarié"),
-        col_n("mois", "Mois"),
-        col_m("brut", "Brut"),
-        col_m("base", "Base (assiette CSG sans réduction)"),
-        col_m("taux_normal", "4,25 %"),
-        col_m("majoration_1", &format!("+4,25 % au-delà de {}", euros(ts.seuil_1.decimal()))),
-        col_m("majoration_2", &format!("+9,35 % au-delà de {}", euros(ts.seuil_2.decimal()))),
-        col_m("taxe", "Taxe brute"),
+        C::Salarie.colonne(),
+        C::NombreDeMois.colonne(),
+        C::Brut.colonne(),
+        C::BaseDeLaTaxe.colonne(),
+        C::TauxNormal.colonne(),
+        C::MajorationUn.titree(format!("+4,25 % au-delà de {}", euros(ts.seuil_1.decimal()))),
+        C::MajorationDeux.titree(format!("+9,35 % au-delà de {}", euros(ts.seuil_2.decimal()))),
+        C::Taxe.colonne(),
     ];
     t.sources = vec!["CGI art. 231 et 1679 A ; notices 2501-SD et 2502-SD de la DGFiP (seuils, franchise, décote, abattement de l'année)".to_string()];
     finir(ctx, &mut t, Some(&p), "taxe-sur-les-salaires", d.format,false)?;
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
-            tot.rien("mois");
+            tot.rien(C::NombreDeMois);
         }
     }
     if let Some(tot) = t.total.as_mut() {
-        tot.rien("mois");
+        tot.rien(C::NombreDeMois);
     }
     if d.ecrire {
         ecrire_fini(ctx, &mut t, Some(&p), "taxe-sur-les-salaires")?;

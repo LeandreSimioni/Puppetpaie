@@ -12,22 +12,22 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use socle::echec::R;
-use socle::fichiers::{dossier_du_code, NomDeFichier};
+use socle::fichiers::{dossier_du_code, CheminRelatif, NomDeFichier};
 
 /// Le journal de la fenetre, sous la racine de la compagnie qu'elle sert.
-pub const JOURNAL_INTERFACE: &str = "journal/interface.log";
+pub const JOURNAL_INTERFACE: CheminRelatif = CheminRelatif::du_moteur("journal/interface.log");
 /// La memoire de l'horloge d'une fictive (`horloge`), sous la racine de la compagnie : la compagnie d'essai ne la copie
 /// pas (`essai`).
-pub const FICHIER_HORLOGE: &str = "config/horloge.json";
+pub const FICHIER_HORLOGE: CheminRelatif = CheminRelatif::du_moteur("config/horloge.json");
 
-pub const MARQUEUR: &str = "COPIE-DE-DEVELOPPEMENT.json";
+pub const MARQUEUR: NomDeFichier = socle::fichiers::MARQUEUR_COPIE;
 /// La couleur d'une compagnie qui n'en a pas choisi : le rouge de la charte de l'accueil.
 const COULEUR_DE_LA_CHARTE: CouleurDeCompagnie = CouleurDeCompagnie(std::borrow::Cow::Borrowed("#B22222"));
 /// La couleur de la compagnie, sous sa racine.
-const AFFICHAGE: &str = "config/affichage.json";
-const DOSSIER_ORIGINE: &str = ".origine";
+const AFFICHAGE: CheminRelatif = CheminRelatif::du_moteur("config/affichage.json");
+const DOSSIER_ORIGINE: NomDeFichier = NomDeFichier::du_moteur(".origine");
 /// Ce qui appartient au poste et survit a une remise a zero.
-const PROPRES_AU_POSTE: [&str; 4] =
+const PROPRES_AU_POSTE: [CheminRelatif; 4] =
     [crate::incidents::DIAGNOSTIC, crate::problemes::SIGNALEMENTS, crate::incidents::INCIDENTS, JOURNAL_INTERFACE];
 
 /// Le dossier qui porte `p`. La racine d'un disque n'a pas de dossier au-dessus d'elle : elle se porte elle-meme.
@@ -55,7 +55,7 @@ pub fn fixer_le_code() -> R<()> {
             let exe = std::env::current_exe().map_err(|e| socle::echec::du_disque(Path::new("le programme"), &e))?;
             for a in exe.ancestors().skip(1) {
                 candidats.push(a.join("donnees"));
-                candidats.push(a.join("logiciel").join("donnees"));
+                candidats.push(a.join(crate::maj::LOGICIEL).join("donnees"));
             }
             candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
         }
@@ -119,12 +119,17 @@ fn lire_s_il_est_la<T: DeserializeOwned>(p: &Path, phrase: &str) -> R<Option<T>>
 
 /// La vraie compagnie : `prive/` a cote du code, sinon le code lui-meme.
 pub fn dossier_reel() -> PathBuf {
-    let voisin = base().join("prive");
+    let voisin = PRIVE.dans(&base());
     if voisin.join(socle::fichiers::CONFIG).is_dir() {
         voisin
     } else {
         logiciel()
     }
+}
+
+/// `racine` est-elle le logiciel lui-meme (`logiciel`) ? Les chemins se comparent absolus (`absolu`).
+pub fn est_le_logiciel(racine: &Path) -> R<bool> {
+    Ok(absolu(racine)? == absolu(&logiciel())?)
 }
 
 pub fn est_copie(racine: &Path) -> bool {
@@ -224,7 +229,7 @@ pub const PREFIXE_AJOUTEE: &str = "ajoutee-";
 
 /// La fiche entreprise telle qu'elle vaut aujourd'hui.
 fn fiche(racine: &Path) -> R<droit::fiche::ChampsEntreprise> {
-    let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE)?;
+    let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&droit::contexte::ENTREPRISE.dans(racine), droit::contexte::ENTREPRISE.texte())?;
     Ok(f.au(&droit::contexte::jour_reel()))
 }
 
@@ -336,7 +341,7 @@ struct Affichage {
 
 /// La couleur d'une compagnie (`config/affichage.json`) ; celle de la charte tant qu'elle n'en a pas choisi.
 pub fn couleur(racine: &Path) -> R<CouleurDeCompagnie> {
-    let p = racine.join(AFFICHAGE);
+    let p = AFFICHAGE.dans(racine);
     match lire_s_il_est_la::<Affichage>(&p, "La couleur de la compagnie (config/affichage.json) ne se lit pas.")? {
         Some(a) => Ok(a.couleur),
         None => Ok(COULEUR_DE_LA_CHARTE),
@@ -345,12 +350,13 @@ pub fn couleur(racine: &Path) -> R<CouleurDeCompagnie> {
 
 /// Le logo de la compagnie, s'il est pose (svg d'abord).
 pub fn logo(racine: &Path) -> Option<PathBuf> {
-    ["logo.svg", "logo.png"].iter().map(|n| racine.join("gabarits").join("identite").join(n)).find(|p| p.is_file())
+    ["logo.svg", "logo.png"].iter().map(|n| racine.join(droit::contexte::GABARITS).join("identite").join(n)).find(|p| p.is_file())
 }
 
-/// L'IDENTIFIANT D'UNE COMPAGNIE DE L'INSTALLATION, celui de sa tuile : la vraie compagnie du poste (`reelle`), une
-/// compagnie sous `compagnies/` (`cie:<dossier>`), ou une fictive sous `fictives/` (`fictive:<dossier>`). Il s'ecrit et se
-/// lit par son texte ; une autre forme se refuse.
+/// L'IDENTIFIANT D'UNE COMPAGNIE DE L'INSTALLATION, celui d'une tuile de l'accueil : la vraie compagnie du poste
+/// (`reelle`, la ou `dossier_reel` la met : `prive/`, sinon le logiciel lui-meme), une compagnie sous `compagnies/`
+/// (`cie:<dossier>`), une fictive sous `fictives/` (`fictive:<dossier>`). Il s'ecrit et se lit par son texte ; une
+/// autre forme se refuse. Le dossier qu'ecrit le registre de l'administrateur est une autre notion (`DossierRattache`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum IdDeCompagnie {
@@ -362,14 +368,12 @@ pub enum IdDeCompagnie {
 impl IdDeCompagnie {
     /// L'identifiant ecrit `texte` ; refus s'il n'en a pas la forme.
     pub fn lire(texte: &str) -> R<IdDeCompagnie> {
-        if texte == "reelle" {
-            return Ok(IdDeCompagnie::Reelle);
-        }
         let refus = |pourquoi: &str| socle::refus!("Identifiant de compagnie {} : {}", socle::fichiers::repr(texte), pourquoi);
-        match (texte.strip_prefix("cie:"), texte.strip_prefix("fictive:")) {
-            (Some(d), _) => NomDeFichier::lire(d).map(IdDeCompagnie::Cie).map_err(|e| refus(&e.phrase)),
-            (None, Some(d)) => NomDeFichier::lire(d).map(IdDeCompagnie::Fictive).map_err(|e| refus(&e.phrase)),
-            (None, None) => Err(refus("reelle, cie:<dossier> ou fictive:<dossier>.")),
+        match (texte, texte.strip_prefix("cie:"), texte.strip_prefix("fictive:")) {
+            ("reelle", _, _) => Ok(IdDeCompagnie::Reelle),
+            (_, Some(d), _) => NomDeFichier::lire(d).map(IdDeCompagnie::Cie).map_err(|e| refus(&e.phrase)),
+            (_, None, Some(d)) => NomDeFichier::lire(d).map(IdDeCompagnie::Fictive).map_err(|e| refus(&e.phrase)),
+            (_, None, None) => Err(refus("reelle, cie:<dossier> ou fictive:<dossier>.")),
         }
     }
 }
@@ -394,6 +398,180 @@ impl TryFrom<String> for IdDeCompagnie {
 impl From<IdDeCompagnie> for String {
     fn from(i: IdDeCompagnie) -> String {
         i.to_string()
+    }
+}
+
+/// Le dossier de la vraie compagnie, sous l'installation.
+const PRIVE: CheminRelatif = CheminRelatif::du_moteur("prive");
+/// Le dossier des compagnies ajoutees, sous l'installation.
+const COMPAGNIES: CheminRelatif = CheminRelatif::du_moteur("compagnies");
+/// Le dossier des fictives, sous l'installation (`DOSSIER_FICTIVES`).
+const FICTIVES: CheminRelatif = CheminRelatif::du_moteur(DOSSIER_FICTIVES);
+
+impl IdDeCompagnie {
+    /// SON DOSSIER, RELATIF A L'INSTALLATION, tel qu'il s'ecrit (`en_dossier`) : `prive`, `compagnies/<dossier>`,
+    /// `fictives/<dossier>`. Ou elle est, c'est `racine` qui le dit : la vraie compagnie peut etre le logiciel lui-meme.
+    pub fn dossier(&self) -> CheminRelatif {
+        match self {
+            IdDeCompagnie::Reelle => PRIVE,
+            IdDeCompagnie::Cie(d) => COMPAGNIES.joint(d),
+            IdDeCompagnie::Fictive(d) => FICTIVES.joint(d),
+        }
+    }
+
+    /// SA RACINE dans l'installation `inst` : son dossier ; la vraie compagnie de l'installation du logiciel, la ou elle
+    /// est (`dossier_reel` : `prive/`, sinon le logiciel lui-meme). `dans` en est l'inverse.
+    pub fn racine(&self, inst: &Path) -> PathBuf {
+        match self {
+            IdDeCompagnie::Reelle if inst == base() => dossier_reel(),
+            IdDeCompagnie::Reelle | IdDeCompagnie::Cie(_) | IdDeCompagnie::Fictive(_) => self.dossier().dans(inst),
+        }
+    }
+
+    /// La compagnie de ce dossier relatif a l'installation (`dossier`), ecrit par un scenario du banc ; un autre dossier
+    /// se refuse.
+    fn du_dossier(rel: &CheminRelatif) -> R<IdDeCompagnie> {
+        match (rel.parent(), IdDeCompagnie::d_un_groupe(rel)) {
+            (None, _) if *rel == PRIVE => Ok(IdDeCompagnie::Reelle),
+            (_, Some(id)) => Ok(id),
+            (_, None) => Err(socle::refus!(
+                "{} n'est le dossier d'aucune compagnie de l'installation : prive, compagnies/<dossier> ou fictives/<dossier>.",
+                socle::fichiers::repr(rel.texte())
+            )),
+        }
+    }
+
+    /// La compagnie de `compagnies/<dossier>` ou de `fictives/<dossier>` ; `None` pour un autre dossier.
+    fn d_un_groupe(rel: &CheminRelatif) -> Option<IdDeCompagnie> {
+        match rel.parent() {
+            Some(p) if p == COMPAGNIES => Some(IdDeCompagnie::Cie(rel.nom())),
+            Some(p) if p == FICTIVES => Some(IdDeCompagnie::Fictive(rel.nom())),
+            Some(_) | None => None,
+        }
+    }
+
+    /// LE DOSSIER D'UNE COMPAGNIE NEUVE de l'installation `inst`, dans le groupe que `du_groupe` dit (`Cie`, `Fictive`) :
+    /// `nom`, sinon `nom-2`, `nom-3`... le premier qui n'existe pas. Rend son identifiant et sa racine.
+    pub fn libre(inst: &Path, du_groupe: fn(NomDeFichier) -> IdDeCompagnie, nom: &NomDeFichier) -> R<(IdDeCompagnie, PathBuf)> {
+        let mut id = du_groupe(nom.clone());
+        let mut n = 2;
+        while id.dossier().dans(inst).exists() {
+            id = du_groupe(NomDeFichier::lire(&format!("{}-{}", nom, n))?);
+            n += 1;
+        }
+        let racine = id.dossier().dans(inst);
+        Ok((id, racine))
+    }
+
+    /// LA COMPAGNIE DE `racine` DANS L'INSTALLATION `inst`, l'inverse de `racine` : la vraie la ou elle est, une compagnie
+    /// de `compagnies/` ou de `fictives/` par son dossier ; `None` pour un dossier qui n'est celui d'aucune tuile de
+    /// l'installation. Les chemins se comparent absolus (`absolu`).
+    pub fn dans(inst: &Path, racine: &Path) -> R<Option<IdDeCompagnie>> {
+        let (i, r) = (absolu(inst)?, absolu(racine)?);
+        if r == absolu(&IdDeCompagnie::Reelle.racine(inst))? {
+            return Ok(Some(IdDeCompagnie::Reelle));
+        }
+        match socle::fichiers::sous(&r, &i) {
+            Some(rel) if rel.as_os_str().is_empty() => Ok(None),
+            Some(rel) => Ok(IdDeCompagnie::d_un_groupe(&CheminRelatif::du(rel)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// La compagnie de `racine` dans l'installation `inst` (`dans`) ; un autre dossier se refuse.
+    pub fn de_la_racine(inst: &Path, racine: &Path) -> R<IdDeCompagnie> {
+        match IdDeCompagnie::dans(inst, racine)? {
+            Some(id) => Ok(id),
+            None => Err(socle::refus!(
+                "{} n'est le dossier d'aucune compagnie de l'installation {}.",
+                socle::fichiers::repr(&racine.to_string_lossy()),
+                socle::fichiers::repr(&inst.to_string_lossy())
+            )),
+        }
+    }
+
+    /// L'INSTALLATION D'UNE COMPAGNIE dont la racine est `racine` : au-dessus de `compagnies/<nom>` ou de
+    /// `fictives/<nom>`, sinon le dossier qui porte la racine (`prive/`, le logiciel).
+    pub fn installation_de(racine: &Path) -> PathBuf {
+        let parent = match racine.parent() {
+            Some(p) => p,
+            None => racine,
+        };
+        match parent.parent() {
+            Some(haut) if parent == COMPAGNIES.dans(haut) || parent == FICTIVES.dans(haut) => haut.to_path_buf(),
+            Some(_) | None => parent.to_path_buf(),
+        }
+    }
+}
+
+/// Le chemin absolu, liens suivis. UN DOSSIER QUI N'EXISTE PLUS (une compagnie effacee que le registre nomme encore) n'a
+/// pas de liens a suivre : il se compare par son chemin absolu tel qu'il s'ecrit, ce que le systeme en dit sans le
+/// toucher (`std::path::absolute` : « Makes the path absolute without accessing the filesystem »).
+fn absolu(p: &Path) -> R<PathBuf> {
+    let c = match std::fs::canonicalize(p) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::path::absolute(p).map_err(|e| socle::echec::du_disque(p, &e))?,
+        Err(e) => return Err(socle::echec::du_disque(p, &e)),
+    };
+    Ok(match c.to_string_lossy().strip_prefix(r"\\?\") {
+        Some(s) => PathBuf::from(s),
+        None => c.clone(),
+    })
+}
+
+/// LE DOSSIER D'UNE COMPAGNIE RATTACHEE A L'ADMINISTRATEUR, tel que son registre l'ecrit (`administrateur.json`) :
+/// relatif a l'installation, quel qu'il soit (`prive`, `logiciel`, `compagnies/les-pupazzi`, `prive-dev` sous l'atelier,
+/// `ma-cie` d'une compagnie ouverte par son dossier). Ce n'est pas une tuile (`IdDeCompagnie`) : toute compagnie sous
+/// l'installation se rattache. Fait par `de` seul, lu tel qu'il s'ecrit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DossierRattache(CheminRelatif);
+
+impl DossierRattache {
+    /// Le dossier de `racine` sous l'installation `inst` ; `None` hors de l'installation, ou pour l'installation
+    /// elle-meme. Les chemins se comparent absolus (`absolu`).
+    pub fn de(inst: &Path, racine: &Path) -> R<Option<DossierRattache>> {
+        let (i, r) = (absolu(inst)?, absolu(racine)?);
+        match socle::fichiers::sous(&r, &i) {
+            Some(rel) if rel.as_os_str().is_empty() => Ok(None),
+            Some(rel) => CheminRelatif::du(rel).map(|c| Some(DossierRattache(c))),
+            None => Ok(None),
+        }
+    }
+
+    /// Sa racine dans l'installation `inst`.
+    pub fn racine(&self, inst: &Path) -> PathBuf {
+        self.0.dans(inst)
+    }
+}
+
+impl std::fmt::Display for DossierRattache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+/// L'ECRITURE D'UN IDENTIFIANT DE COMPAGNIE PAR SON DOSSIER RELATIF A L'INSTALLATION (`IdDeCompagnie::dossier`), celle
+/// d'un scenario du banc (`fictives/ajoutee-les-treteaux-du-banc`), d'un identifiant que le scenario peut taire.
+pub mod en_dossier {
+    use super::IdDeCompagnie;
+    use socle::fichiers::CheminRelatif;
+
+    pub fn serialize<S: serde::Serializer>(id: &Option<IdDeCompagnie>, s: S) -> Result<S::Ok, S::Error> {
+        match id {
+            Some(id) => s.serialize_some(&id.dossier()),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IdDeCompagnie>, D::Error> {
+        match <Option<CheminRelatif> as serde::Deserialize>::deserialize(d)? {
+            Some(rel) => match IdDeCompagnie::du_dossier(&rel) {
+                Ok(id) => Ok(Some(id)),
+                Err(e) => Err(serde::de::Error::custom(e.phrase)),
+            },
+            None => Ok(None),
+        }
     }
 }
 
@@ -438,7 +616,7 @@ fn sous_dossiers(dossier: &Path) -> R<Vec<PathBuf>> {
     let mut v = Vec::new();
     for e in entrees {
         let d = e.map_err(|e| socle::echec::du_disque(dossier, &e))?.path();
-        if !est_cache(&d) && d.join(droit::contexte::ENTREPRISE).is_file() {
+        if !est_cache(&d) && droit::contexte::ENTREPRISE.dans(&d).is_file() {
             v.push(d);
         }
     }
@@ -457,20 +635,41 @@ pub fn nom_dossier(p: &Path) -> R<NomDeFichier> {
 /// Les compagnies de l'installation `b` (le dossier qui porte `logiciel/`, `prive/`, `compagnies/`, `fictives/`), dans
 /// l'ordre des tuiles. L'administrateur (`administrateur.rs`) lit celles de l'installation qu'on lui donne.
 pub fn liste_de(b: &Path) -> R<Vec<Compagnie>> {
+    let bridee = crate::bridage::est_bride_de(b);
     let mut out = Vec::new();
-    if !crate::bridage::est_bride_de(b) {
-        let reel = if b == base() { dossier_reel() } else { b.join("prive") };
-        if reel.join(socle::fichiers::CONFIG).is_dir() {
-            out.push(entree(IdDeCompagnie::Reelle, &reel, true)?);
+    // Bridee, l'accueil ne montre que les fictives, et ne lit pas `compagnies/` ; la vraie, quand elle a sa configuration.
+    for (id, r) in compagnies(b, |groupe| !bridee || *groupe == FICTIVES)? {
+        match id {
+            IdDeCompagnie::Reelle if !bridee && r.join(socle::fichiers::CONFIG).is_dir() => out.push(entree(id, &r, true)?),
+            IdDeCompagnie::Reelle => {}
+            IdDeCompagnie::Cie(_) => out.push(entree(id, &r, true)?),
+            IdDeCompagnie::Fictive(_) => out.push(entree(id, &r, false)?),
         }
-        for d in sous_dossiers(&b.join("compagnies"))? {
-            out.push(entree(IdDeCompagnie::Cie(nom_dossier(&d)?), &d, true)?);
-        }
-    }
-    for d in sous_dossiers(&b.join(DOSSIER_FICTIVES))? {
-        out.push(entree(IdDeCompagnie::Fictive(nom_dossier(&d)?), &d, false)?);
     }
     Ok(out)
+}
+
+/// Les groupes de l'installation, sous lesquels chaque dossier est une compagnie : `compagnies/`, `fictives/`.
+const GROUPES: [(CheminRelatif, fn(NomDeFichier) -> IdDeCompagnie); 2] = [(COMPAGNIES, IdDeCompagnie::Cie), (FICTIVES, IdDeCompagnie::Fictive)];
+
+/// LES COMPAGNIES DE L'INSTALLATION `inst`, LA SEULE LISTE, bridee ou non, dans l'ordre des tuiles : la vraie, la ou
+/// `IdDeCompagnie::racine` la met (qu'elle y soit ou non), puis celles de chaque groupe (`GROUPES`) qui ont leur fiche
+/// entreprise (`sous_dossiers`), par ordre de dossier. Chaque lecteur dit le filtre qu'il veut ; `lu` dit les groupes
+/// qui se lisent (un groupe qu'il ecarte n'est pas lu sur le disque).
+pub fn compagnies(inst: &Path, lu: impl Fn(&CheminRelatif) -> bool) -> R<Vec<(IdDeCompagnie, PathBuf)>> {
+    let mut v = vec![(IdDeCompagnie::Reelle, IdDeCompagnie::Reelle.racine(inst))];
+    for (groupe, du_groupe) in GROUPES.into_iter().filter(|(groupe, _)| lu(groupe)) {
+        for d in sous_dossiers(&groupe.dans(inst))? {
+            v.push((du_groupe(nom_dossier(&d)?), d));
+        }
+    }
+    Ok(v)
+}
+
+/// LES DOSSIERS QUI PORTENT LES COMPAGNIES QUI SE SUPPRIMENT (`routes::accueil::suppression`) : l'installation `inst`
+/// (`prive/`), et chaque groupe (`GROUPES`).
+pub fn porteurs(inst: &Path) -> Vec<PathBuf> {
+    std::iter::once(inst.to_path_buf()).chain(GROUPES.iter().map(|(groupe, _)| groupe.dans(inst))).collect()
 }
 
 /// LES COMPAGNIES QUE LA FENETRE TIENT A JOUR EN FOND des son lancement (`Fenetre::prechauffer`) : les
@@ -479,7 +678,7 @@ pub fn liste_de(b: &Path) -> R<Vec<Compagnie>> {
 pub fn a_tenir_a_jour(b: &Path) -> R<Vec<PathBuf>> {
     let mut datees = Vec::new();
     for c in liste_de(b)?.into_iter().filter(|c| c.reelle) {
-        let journal = c.racine.join(JOURNAL_INTERFACE);
+        let journal = JOURNAL_INTERFACE.dans(&c.racine);
         let date = match std::fs::metadata(&journal).and_then(|m| m.modified()) {
             Ok(d) => Some(d),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -503,7 +702,7 @@ pub fn racine_choisie(inst: &Path, id: &IdDeCompagnie) -> R<PathBuf> {
 pub fn poser_couleur(inst: &Path, id: &IdDeCompagnie, valeur: &CouleurDeCompagnie) -> R<CouleurDeCompagnie> {
     let c = liste_de(inst)?.into_iter().find(|c| c.id == *id && c.reelle).ok_or_else(|| socle::echec::refus("Seule une compagnie reelle a une couleur a choisir."))?;
     let v = valeur.en_majuscules();
-    socle::ecriture::ecrire_json(&c.racine.join(AFFICHAGE), &Affichage { couleur: v.clone() }, 2)?;
+    socle::ecriture::ecrire_json(&AFFICHAGE.dans(&c.racine), &Affichage { couleur: v.clone() }, 2)?;
     Ok(v)
 }
 
@@ -598,13 +797,13 @@ fn origine(racine: &Path) -> R<PathBuf> {
     Ok(dessus(racine).join(DOSSIER_ORIGINE).join(nom_dossier(racine)?))
 }
 
-fn copier_arbre(de: &Path, vers: &Path, rel: &Path, sauf: &[&str]) -> std::io::Result<()> {
+fn copier_arbre(de: &Path, vers: &Path, rel: &Path, sauf: &[CheminRelatif]) -> std::io::Result<()> {
     std::fs::create_dir_all(vers.join(rel))?;
     for e in std::fs::read_dir(de.join(rel))? {
         let e = e?;
         let r = rel.join(e.file_name());
         let rs = r.to_string_lossy().replace('\\', "/");
-        if sauf.contains(&rs.as_str()) || e.file_name() == "__pycache__" {
+        if sauf.iter().any(|c| c.texte() == rs) || e.file_name() == "__pycache__" {
             continue;
         }
         if e.file_type()?.is_dir() {
@@ -662,13 +861,13 @@ pub fn remettre_a_zero(inst: &Path, id: &IdDeCompagnie) -> R<(String, bool)> {
     }
     copier_arbre(&o, &neuve, Path::new(""), &[]).map_err(|e| socle::echec::du_disque(&neuve, &e))?;
     for rel in PROPRES_AU_POSTE {
-        let source = c.racine.join(rel);
+        let source = rel.dans(&c.racine);
         let octets = match std::fs::read(&source) {
             Ok(o) => o,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Err(socle::echec::du_disque(&source, &e)),
         };
-        let cible = neuve.join(rel);
+        let cible = rel.dans(&neuve);
         let d = dessus(&cible);
         std::fs::create_dir_all(&d).map_err(|e| socle::echec::du_disque(&d, &e))?;
         std::fs::write(&cible, octets).map_err(|e| socle::echec::du_disque(&cible, &e))?;

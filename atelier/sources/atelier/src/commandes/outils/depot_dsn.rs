@@ -42,12 +42,12 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     // Un mois tape (`AAAA-MM`) designe la DSN du mois, comme la route (`depots::designee`) ; tout autre texte, un fichier.
     let designee = match fichier.designe_un_mois() {
         Some(m) => routes::depots::designee(&cadre.ctx, &routes::depots::Designation::du_mois(routes::depots::Quoi::Dsn, m))?.0,
-        None => fichier.texte().to_string(),
+        None => std::path::PathBuf::from(fichier.texte()),
     };
     // Un depot de test n'engage rien : il lui faut seulement le secret de l'organisme, donc le coffre ouvert.
     cadre.ouvrir_le_coffre();
     let environnement = envois::releve_retours::EnvironnementNetEntreprises::lire(super::avec_defaut(args, "environnement")?)?;
-    let fait = depot_acte::deposer_dsn_dans(&cadre.ctx, &designee, false, Some(&Preuve::default()), "atelier", environnement, false, "", ordre)?;
+    let fait = depot_acte::deposer_dsn_dans(&cadre.ctx, &designee, socle::mode::Mode::Test, Some(&Preuve::default()), "atelier", environnement, false, "", ordre)?;
     dire!("Depot de TEST {} ({}) : rien n'est conserve.", fait.mois, environnement);
     dire!("Reponse du point de depot :\n{}", if fait.reponse.is_empty() { "(vide)" } else { fait.reponse.as_str() });
     if let Some(flux) = &fait.flux {

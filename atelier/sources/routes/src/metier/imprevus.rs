@@ -5,7 +5,7 @@
 use compagnie::{maintenant, INTERFACE};
 use droit::arrets::Bloc60;
 use droit::contexte::{Contexte, IdSalarie};
-use engagement::imprevus::{self, ArretSaisi, GenreArret, Imprevu};
+use engagement::imprevus::{self, ArretSaisi, Imprevu};
 use engagement::Chiffre;
 use socle::date::Jour;
 use socle::echec::{Classe, R};
@@ -67,7 +67,6 @@ pub(crate) struct ArretDit<'a> {
 /// subrogation, que le droit tire ensuite : `poser_la_subrogation` ; la reprise ; les indemnites journalieres).
 pub(crate) fn arret_a_ecrire(x: ArretDit) -> ArretSaisi {
     ArretSaisi {
-        genre: GenreArret::Arret,
         salarie: x.cle.clone(),
         contrat_debut: x.contrat.debut,
         contrat_numero: x.contrat.numero.clone(),

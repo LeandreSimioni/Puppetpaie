@@ -129,7 +129,7 @@ pub(crate) struct ChargeDossier {
 /// nomme (`charge.dossier`, le chemin que `importation-etat` lui a donne). Un AUTRE dossier donne qui n'existe pas reste
 /// refuse (`import::tri::trier`).
 pub(crate) fn dossier_import(ctx: &Contexte, charge: &ChargeDossier) -> R<PathBuf> {
-    let boite = ctx.racine.join("import");
+    let boite = ctx.racine.join(import::BOITE_AUX_LETTRES);
     let d = match charge.dossier.as_deref() {
         None => boite.clone(),
         Some(s) => PathBuf::from(crate::depots::normaliser(s)),
@@ -759,7 +759,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         importe_le,
         du: debut,
         au: fin,
-        dossier: racine.join("import"),
+        dossier: racine.join(import::BOITE_AUX_LETTRES),
         reprises,
         editeur,
         pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
@@ -932,8 +932,8 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
 /// Les pieces copiees sous `historique/bulletins/` : aucune tant que le dossier n'existe pas. Un dossier qui ne se lit
 /// pas se refuse.
 fn copies_reprises(racine: &Path) -> R<usize> {
-    let dossier = racine.join("historique").join("bulletins");
-    if !dossier.exists() {
+    let dossier = import::mois::dossier_des_bulletins(racine);
+    if !socle::fichiers::existe_lu(&dossier)? {
         return Ok(0);
     }
     let disque = |e: std::io::Error| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque);

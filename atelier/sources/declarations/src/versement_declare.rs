@@ -65,8 +65,9 @@ const fn r(texte: &'static str) -> RubriqueDeLaNorme {
 /// Le versement d'un contrat, tel qu'une DSN l'a declare.
 #[derive(Clone, Debug)]
 pub struct VersementDeclare {
-    /// Ce qui a ete declare, en mots, pour les messages (« la DSN de juillet 2026 »).
-    pub fichier: String,
+    /// Le mois de la paie declaree ; aucun : rien n'a ete declare (un contrat ajoute apres la limite). Il se dit par
+    /// `dit`.
+    pub declaree: Option<Mois>,
     /// S21.G00.50.002.
     pub net_imposable: Montant,
     /// S21.G00.50.004 (le montant net verse de la norme : la RNF moins CSG/CRDS non deductible et sante patronale).
@@ -100,7 +101,22 @@ pub struct VersementDeclare {
     pub debut_contrat: Option<socle::date::Jour>,
 }
 
+/// Ce qui a ete declare en `mois`, en mots, pour les messages.
+fn paie_declaree(mois: Mois) -> String {
+    format!("la paie declaree de {}", mois)
+}
+
 impl VersementDeclare {
+    /// Ce qui a ete declare, en mots, pour les messages (« la paie declaree de 2026-07 ») ; aucun mois : la correction
+    /// d'un contrat ajoute apres la DSN de son mois, que la DSN deposee ne porte pas
+    /// (`produire_regularisations::ajout`, `routes::gestes::depart`).
+    pub fn dit(&self) -> String {
+        match self.declaree {
+            Some(m) => paie_declaree(m),
+            None => "rien de declare : le contrat a ete ajoute apres la DSN de son mois, qui ne le porte pas".to_string(),
+        }
+    }
+
     /// Les lignes des blocs dont le numero est donne (`"51"`, `"78"`...), dans l'ordre ecrit.
     pub fn blocs<'a>(&'a self, blocs: &'a [&str]) -> impl Iterator<Item = &'a (RubriqueDeLaNorme, String)> + 'a {
         self.lignes.iter().filter(move |(r, _)| {
@@ -137,7 +153,7 @@ pub fn est_un_montant(rubrique: RubriqueDeLaNorme) -> Option<bool> {
 pub(crate) fn illisible(k: RubriqueDeLaNorme, v: &str, quoi: &str) -> Echec {
     refus_avec(
         format!("La DSN déposée porte un montant illisible en {}.", k),
-        Lieu { fichier: Some(quoi.to_string()), detail: Some(v.to_string()), ..Lieu::default() },
+        Lieu { detail: Some(format!("{} : {}", quoi, v)), ..Lieu::default() },
     )
 }
 
@@ -204,7 +220,7 @@ fn frais_de(lignes: &[(RubriqueDeLaNorme, String)], quoi: &str) -> R<Montant> {
 /// (`dsn::versement_ecrit`) : ses rubriques (bloc 50 a part, sans le bloc 52), les affiliations du contrat, et ses
 /// montants, ceux de la paie. Refus : une rubrique que l'annulation ne sait pas reprendre, un montant net social absent.
 pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementDeclare> {
-    let quoi = format!("la paie declaree de {}", mois);
+    let quoi = paie_declaree(mois);
     let numero = p.engagement.numero.clone().ok_or_else(|| socle::refus!("{} n'a pas de numero de contrat : ce qu'elle a declare ne se relit pas", quoi))?;
     let ecrit = crate::dsn::versement_ecrit(ctx, p, mois)?;
     let du_bloc = |r: &RubriqueDeLaNorme, bloc: &str| r.to_string().starts_with(bloc);
@@ -218,7 +234,7 @@ pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementDeclare> {
         None => None,
     };
     Ok(VersementDeclare {
-        fichier: quoi,
+        declaree: Some(mois),
         net_imposable: p.net_imposable,
         net_verse: p.net_verse(),
         net_social,

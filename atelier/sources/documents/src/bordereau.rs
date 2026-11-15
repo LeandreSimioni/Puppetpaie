@@ -46,7 +46,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock};
 
-const NOM_TABLE: &str = "urssaf-codes-types-personnel.csv";
+const NOM_TABLE: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("urssaf-codes-types-personnel.csv");
 
 /// Une ligne 23, en donnee : ce que la DSN ecrit en 001 a 005. `assiette`
 /// (formats A, C, D, E, K, Z) ou `montant` (format F), jamais les deux.

@@ -92,7 +92,7 @@ fn jours_payes(i: &Importe) -> R<Option<(Jour, Jour)>> {
 
 /// Le nom d'un salarié à l'écran, tel que sa fiche le porte aujourd'hui ; sa clé quand aucune fiche ne le nomme.
 fn nom_du_salarie(racine: &Path, cle: &IdSalarie) -> R<String> {
-    let lues = droit::fiche::lire_fichier::<droit::fiche::Salaries>(&racine.join(droit::contexte::SALARIES), droit::contexte::SALARIES)?;
+    let lues = droit::fiche::lire_fichier::<droit::fiche::Salaries>(&droit::contexte::SALARIES.dans(racine), droit::contexte::SALARIES.texte())?;
     Ok(match lues.fiches.get(cle).and_then(|f| f.au(&socle::temps::jour_de_paris()).nomme()) {
         Some(n) => n,
         None => cle.to_string(),
@@ -411,7 +411,7 @@ impl crate::enveloppe::Dite for NatureDite {
 /// l'ecran (`dire`). Il en manque, ou la nature declaree n'est pas d'un permanent : rien ne se choisit, l'ecran le
 /// demande. Rend ce que chaque nature dite a fait, en phrases ; une nature lue que l'ecriture refuse se dit aussi.
 pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>> {
-    let lecture = import::dsn_aem::lire_dsn(&racine.join("historique").join("bulletins"))?;
+    let lecture = import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(racine))?;
     let permises = natures_permanentes()?;
     let mut faits = Vec::new();
     for x in a_dire(racine)? {

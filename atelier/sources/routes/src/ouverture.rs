@@ -26,7 +26,7 @@ use droit::natures::{self, MotifDeRupture, Nature};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
-use socle::fichiers::{dossier_du_code, NomDeFichier};
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use crate::catalogue::{Ecran, Place};
 use crate::fiches::{comblee, SorteDeFiche};
@@ -525,12 +525,7 @@ pub fn racine_du_poste() -> PathBuf {
     if let Some(e) = std::env::var_os("PUPPETPAIE_DONNEES").filter(|e| !e.is_empty()) {
         return PathBuf::from(e);
     }
-    let code = dossier_du_code();
-    let Some(logiciel) = code.parent() else { return code };
-    match logiciel.parent().map(|p| p.join("prive")) {
-        Some(voisin) if voisin.join(socle::fichiers::CONFIG).is_dir() => voisin,
-        _ => logiciel.to_path_buf(),
-    }
+    compagnie::installation::dossier_reel()
 }
 
 /// `DOCUMENTS_IDENTITE` : ou va chaque image.
@@ -971,7 +966,7 @@ pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<NomDeFichier>)>> {
     };
     let mut dossiers: BTreeMap<Mois, PathBuf> = BTreeMap::new();
     // Les dossiers AAAA-MM seulement : `sorties/exercices/` n'est pas un mois.
-    for d in socle::fichiers::nommes_d_un_mois(&racine.join("sorties"), None, false)? {
+    for d in socle::fichiers::nommes_d_un_mois(&documents::DossierDuMois::des_mois(racine), None, false)? {
         vus.insert(d.mois);
         dossiers.insert(d.mois, d.chemin);
     }
@@ -1091,7 +1086,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
         // LES AER DE FRANCE TRAVAIL : rangees avec les documents des salaries (`sorties/<mois>/envoi/`), pas a la
         // racine du mois ; elles se nomment avec les autres sortes.
         let aer = documents::PieceDuMois::Aer;
-        if crate::documents::un_nom_commence_et_finit(&aer.dossier().sous(&ctx.racine.join("sorties").join(le_mois.to_string())), aer.sorte().prefixe(), ".pdf")? {
+        if crate::documents::un_nom_commence_et_finit(&aer.dossier().dans(&ctx.racine, le_mois), aer.sorte().prefixe(), ".pdf")? {
             // Avant les AEM, ou en dernier.
             let rang = match sortes.iter().position(|s| *s == mot_aem) {
                 Some(r) => r,
@@ -1255,7 +1250,7 @@ pub(crate) struct RubriqueDeLaPage {
     heures_forfait: Option<NombreLu>,
     plafond: Option<droit::catalogue::Unite>,
     aem: Option<droit::catalogue::Unite>,
-    dsn_type: Option<String>,
+    dsn_type: Option<droit::catalogue::DsnTypeDeRubrique>,
     dsn_autres_bruts: Option<AutreElementDeRevenuBrut>,
     annexe: Option<droit::emplois::AnnexeChomage>,
     soumis: bool,
@@ -1286,7 +1281,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),
         ("aem", r.aem.is_some()),
-        ("dsn_type", r.dsn_type.as_deref().is_some_and(|s| !s.is_empty())),
+        ("dsn_type", r.dsn_type.is_some()),
     ]
     .into_iter()
     .filter(|(_, dite)| *dite)
@@ -1326,7 +1321,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         heures_forfait: r.heures_forfait.map(NombreLu),
         plafond: r.plafond,
         aem: r.aem,
-        dsn_type: r.dsn_type.clone(),
+        dsn_type: r.dsn_type,
         dsn_autres_bruts: r.dsn_autres_bruts,
         annexe: r.annexe,
         soumis: r.soumis,
@@ -1581,7 +1576,7 @@ pub(crate) struct EtatDeLaPage {
     spectacles: Vec<SpectacleDeLaListe>,
     rubriques: Vec<RubriqueDeLaPage>,
     emplois: Vec<emplois::MetierDuDeroulant>,
-    familles_emplois: Vec<String>,
+    familles_emplois: Vec<emplois::FamilleDeMetier>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
     types_preavis: Vec<droit::preavis::TypePreavis>,
@@ -1658,7 +1653,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         envoi_sans_mot_de_passe: joue || branchement.refus().is_some(),
         // SUPPRIMER LA COMPAGNIE : la Configuration ne le propose que si elle se supprime -- jamais une
         // fictive livree, qui se remet a zero (`accueil::suppression::sorte`).
-        supprimable: crate::accueil::suppression::supprimable(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)?,
+        supprimable: crate::accueil::suppression::supprimable(&compagnie::installation::IdDeCompagnie::installation_de(&ctx.racine), &ctx.racine)?,
         suppression: "Tout son dossier est effacé de ce poste : fiches, paies, documents, journaux.",
         // UNE COMPAGNIE CREEE EN DEMO PUIS GARDEE : sa mention, et les mois saisis en demo, ou la page la montre.
         demo: crate::accueil::suppression::mention(&ctx.racine)?,

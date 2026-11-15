@@ -113,6 +113,50 @@ pub enum HorsAssiette {
 
 impl crate::fiche::FormeDeCase for socle::grandeurs::Signe {}
 
+socle::noms_fermes! {
+    /// LA SORTE DSN D'UNE RUBRIQUE, un mot du logiciel que `dsn_type` ecrit a la place d'un type de remuneration de la
+    /// norme : une prime, une absence. Rien ne l'applique (`docs/RUBRIQUES.md`, « Les champs que rien n'applique »).
+    SorteDsnDeRubrique, "Sorte DSN d'une rubrique" {
+        Prime = "prime",
+        Absence = "absence",
+    }
+}
+
+/// LE `dsn_type` D'UNE RUBRIQUE : un type de remuneration de la norme (`010`, `017` ;
+/// `natures::TypeDeRemuneration`), ou une sorte du logiciel (`prime`, `absence` ; `SorteDsnDeRubrique`). Il s'ecrit par
+/// son texte, et se lit en l'un ou l'autre ; un autre texte se refuse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DsnTypeDeRubrique {
+    Remuneration(crate::natures::TypeDeRemuneration),
+    Sorte(SorteDsnDeRubrique),
+}
+
+impl crate::fiche::FormeDeCase for DsnTypeDeRubrique {}
+
+impl serde::Serialize for DsnTypeDeRubrique {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            DsnTypeDeRubrique::Remuneration(t) => s.serialize_str(t.code()),
+            DsnTypeDeRubrique::Sorte(o) => s.serialize_str(o.nom()),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DsnTypeDeRubrique {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as serde::Deserialize>::deserialize(d)?;
+        match (crate::natures::TypeDeRemuneration::du_code(&texte), SorteDsnDeRubrique::du_nom(&texte)) {
+            (Some(t), _) => Ok(DsnTypeDeRubrique::Remuneration(t)),
+            (None, Some(o)) => Ok(DsnTypeDeRubrique::Sorte(o)),
+            (None, None) => Err(serde::de::Error::custom(format!(
+                "dsn_type inconnu : {}. Un type de rémunération de la norme (S21.G00.51.011), ou : {}.",
+                repr(&texte),
+                SorteDsnDeRubrique::TOUTES.iter().map(|o| o.nom()).collect::<Vec<_>>().join(", ")
+            ))),
+        }
+    }
+}
+
 /// CE QU'UNE RUBRIQUE COMPTE POUR LES DROITS DES ANNEXES VIII ET X (`compte_pour` de `rubriques-base.json`) : ses heures
 /// et son montant, ou ses heures pour l'ouverture des droits seulement. Une liste du logiciel ; une autre valeur se
 /// refuse a la lecture de la rubrique.
@@ -263,7 +307,7 @@ pub struct Rubrique {
     pub heures_forfait: Option<Decimal>,
     pub plafond: Option<Unite>,
     pub aem: Option<Unite>,
-    pub dsn_type: Option<String>,
+    pub dsn_type: Option<DsnTypeDeRubrique>,
     pub dsn_autres_bruts: Option<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub annexe: Option<crate::emplois::AnnexeChomage>,
     pub plafond_mensuel: Option<i64>,
@@ -463,7 +507,7 @@ fn base() -> R<Base> {
         return Err(socle::echec::refus_avec(
             "Les rubriques d'un salarié au mois ne sont pas celles que son calcul compose : le signaler au développeur.".to_string(),
             socle::echec::Lieu {
-                fichier: Some("rubriques-base.json".into()),
+                fichier: Some(const { socle::fichiers::CheminRelatif::du_moteur("rubriques-base.json") }),
                 cle: Some("au_mois".into()),
                 detail: Some(format!("la section porte {:?}, le calcul compose {:?} (`RubriqueDuMois`)", rangees, du_calcul)),
                 ..Default::default()
@@ -536,11 +580,11 @@ struct RubriquesDeLaCompagnie {
 
 /// Le fichier des rubriques de la compagnie, s'il existe ; absent, il n'en dit aucune.
 fn de_la_compagnie(racine: &Path) -> R<RubriquesDeLaCompagnie> {
-    let p = racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE);
+    let p = RUBRIQUES_COMPAGNIE.dans(racine);
     if !socle::fichiers::existe(&p) {
         return Ok(RubriquesDeLaCompagnie::default());
     }
-    crate::fiche::lire_fichier(&p, &format!("config/{}", RUBRIQUES_COMPAGNIE))
+    crate::fiche::lire_fichier(&p, RUBRIQUES_COMPAGNIE.texte())
 }
 
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
@@ -584,8 +628,8 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubriqu
     Ok(r)
 }
 
-/// Le fichier des rubriques propres a la compagnie, sous `config/`.
-pub const RUBRIQUES_COMPAGNIE: &str = "rubriques-compagnie.json";
+/// Le fichier des rubriques propres a la compagnie, sous la compagnie.
+pub const RUBRIQUES_COMPAGNIE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/rubriques-compagnie.json");
 
 /// Une rubrique de la compagnie a-t-elle une valeur datee ? Sinon le catalogue est le meme a toute date.
 fn rubriques_datees(racine: &Path) -> R<bool> {
@@ -645,7 +689,7 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> R<Arc<Vec<Rubrique>>> {
     let fichiers = format!(
         "{}|{}",
         empreinte(&dossier_du_code().join("rubriques-base.json")),
-        empreinte(&racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE)),
+        empreinte(&RUBRIQUES_COMPAGNIE.dans(racine)),
     );
     let cache = CATALOGUES.get_or_init(|| Mutex::new(HashMap::new()));
     let connue = cache.lock().unwrap().get(&fichiers).map(|(datee, _)| *datee);
@@ -663,7 +707,7 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> R<Arc<Vec<Rubrique>>> {
         socle::fichiers::est_dossier(racine);
         for p in [
             dossier_du_code().join("rubriques-base.json"),
-            racine.join(socle::fichiers::CONFIG).join(RUBRIQUES_COMPAGNIE),
+            RUBRIQUES_COMPAGNIE.dans(racine),
         ] {
             if socle::fichiers::existe(&p) {
                 socle::fichiers::noter_si_besoin(&p);

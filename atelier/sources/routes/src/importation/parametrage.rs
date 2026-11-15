@@ -179,7 +179,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
 
 /// Ce que les DSN reprises de la compagnie (`historique/bulletins/`) disent de sa configuration, pose ; rend ce qui l'a ete.
 pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
-    let lecture = match import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins")) {
+    let lecture = match import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(&ctx.racine)) {
         Ok(l) => l,
         Err(e) => return vec![e.phrase],
     };
@@ -200,7 +200,7 @@ pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
 /// (S21.G00.50.006 a .008) : au magasin du PAS, comme un taux recu, date du jour du versement qui
 /// l'applique (`compagnie::taux_pas::derniers_taux_des_dsn`, une inference). La validite se lit ensuite comme pour tout taux recu (`droit::pas`).
 fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
-    let dossier = ctx.racine.join("historique").join("bulletins");
+    let dossier = import::mois::dossier_des_bulletins(&ctx.racine);
     let lus = match compagnie::taux_pas::derniers_taux_des_dsn(ctx, &dossier) {
         Ok(r) => r,
         Err(e) => return faits.push(e.phrase),
@@ -234,7 +234,7 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
 /// Les contrats des permanents que les DSN reprises portent, poses quand la compagnie se met a employer un permanent
 /// (la nature d'un contrat repris dite, `import::nature::dire`) : l'ecran ne les attendait pas encore a l'import.
 pub(crate) fn poser_organismes_repris(ctx: &Contexte) -> socle::echec::R<Vec<String>> {
-    let lecture = import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins"))?;
+    let lecture = import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(&ctx.racine))?;
     let mut faits = Vec::new();
     if lecture.fichiers > 0 {
         poser_organismes(ctx, &lecture, &mut faits)?;

@@ -104,7 +104,7 @@ struct Banque {
     #[serde(default, deserialize_with = "socle::forme::non_lue")]
     note: socle::forme::NonLue,
     /// Le titre lisible de chaque texte depose qu'une source cite, par son chemin.
-    documents: BTreeMap<String, String>,
+    documents: BTreeMap<droit::source::CheminDepose, String>,
     annexes: Annexes,
     fenetres: Fenetres,
     /// L'ordre dans lequel les conditions de saisie se demandent : la premiere qui parle donne le conseil de la carte.
@@ -226,14 +226,14 @@ struct Conseil {
 /// La banque, lue en sa forme une fois par contenu.
 fn banque() -> R<Arc<Banque>> {
     static CACHE: OnceLock<socle::fichiers::FormeGardee<Banque>> = OnceLock::new();
-    socle::fichiers::forme_en_cache(&CACHE, "conseils.json", ILLISIBLE, Ok)
+    socle::fichiers::forme_en_cache(&CACHE, &const { socle::fichiers::CheminRelatif::du_moteur("conseils.json") }, ILLISIBLE, Ok)
 }
 
 impl Banque {
     /// La reference lisible d'une source : le titre du document, l'article. Un texte que la banque cite sans titre est
     /// une banque mal ecrite.
     fn reference_de(&self, s: &Source) -> R<String> {
-        let titre = self.documents.get(s.fichier.texte()).ok_or_else(|| {
+        let titre = self.documents.get(&s.fichier).ok_or_else(|| {
             socle::echec::refus_avec(ILLISIBLE, socle::echec::Lieu { cle: Some(format!("documents/{}", s.fichier.texte())), detail: Some("le texte cité n'a pas de titre".to_string()), ..Default::default() })
         })?;
         Ok(match (s.article.as_deref().filter(|a| !a.is_empty()), s.fichier.code()) {

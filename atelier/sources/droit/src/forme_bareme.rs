@@ -189,7 +189,7 @@ pub(crate) mod datee {
                 None => e.depuis,
                 Some(source) => {
                     let t = crate::minima::table()?;
-                    let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree("minima-conventionnels.json", source.as_str()))?;
+                    let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree(&crate::minima::BASE, source.as_str()))?;
                     let ecrit = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Une valeur du barème datée par un accord ne dit pas son jour : le signaler au développeur.", "depuis", &source))?;
                     match crate::minima::lie_depuis(accord, lecture.organisation.as_ref(), ecrit) {
                         Some(j) => Some(j),

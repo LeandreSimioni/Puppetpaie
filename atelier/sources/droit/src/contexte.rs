@@ -18,10 +18,16 @@ use socle::num::Decimal;
 use socle::grandeurs::MontantUnitaire;
 
 use socle::date::{repr_texte, Jour};
-use socle::fichiers::{dossier_du_code, CheminRelatif};
+use socle::fichiers::{dossier_du_code, CheminRelatif, NomDeFichier};
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, Echec, R};
 use socle::texte::cle_recherche;
+
+/// Le dossier des gabarits de la compagnie (son identite : `gabarits/identite/`), sous sa racine.
+pub const GABARITS: NomDeFichier = NomDeFichier::du_moteur("gabarits");
+
+/// Le dossier des socles livres, une annee par fichier (`<annee>.json`), sous `donnees/`.
+pub const SOCLES: CheminRelatif = CheminRelatif::du_moteur("baremes");
 
 // ------------------------------------------------------------ les petits outils
 
@@ -243,7 +249,7 @@ impl FichierEffectifs {
 
 /// `config/effectifs.json` de la compagnie, lu par sa forme ; aucun s'il n'existe pas.
 pub fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
-    let p = racine.join(EFFECTIFS);
+    let p = EFFECTIFS.dans(racine);
     if !socle::fichiers::existe_lu(&p)? {
         return Ok(None);
     }
@@ -1214,7 +1220,7 @@ fn lire_fiches(cfg: &Path) -> R<Arc<Fiches>> {
     type Cache = Mutex<HashMap<PathBuf, ([Signature; 3], Arc<Fiches>)>>;
     static CACHE: OnceLock<Cache> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let chemins = [cfg.join("entreprise.json"), cfg.join("salaries.json"), cfg.join("spectacles.json")];
+    let chemins = [ENTREPRISE, SALARIES, SPECTACLES].map(|c| cfg.join(c.nom()));
     let [a, b, c] = chemins.clone().map(|p| socle::fichiers::signature(&p));
     let sig = [a?, b?, c?];
     let connue = sig.iter().all(Option::is_some);
@@ -1226,9 +1232,9 @@ fn lire_fiches(cfg: &Path) -> R<Arc<Fiches>> {
             }
         }
     }
-    let entreprise = crate::fiche::lire_fichier(&chemins[0], ENTREPRISE)?;
-    let salaries = crate::fiche::lire_fichier(&chemins[1], SALARIES)?;
-    let spectacles = crate::fiche::lire_fichier(&chemins[2], SPECTACLES)?;
+    let entreprise = crate::fiche::lire_fichier(&chemins[0], ENTREPRISE.texte())?;
+    let salaries = crate::fiche::lire_fichier(&chemins[1], SALARIES.texte())?;
+    let spectacles = crate::fiche::lire_fichier(&chemins[2], SPECTACLES.texte())?;
     let f = Arc::new(Fiches { entreprise, salaries, spectacles });
     if connue {
         cache.lock().unwrap().insert(cfg.to_path_buf(), (sig, f.clone()));
@@ -1252,12 +1258,12 @@ fn salaries_au(s: &Salaries, jour: &Jour) -> IndexMap<IdSalarie, FicheSalarie> {
 }
 
 /// Les fiches d'une compagnie et ce qu'elle a dit d'elle-meme, sous sa racine.
-pub const ENTREPRISE: &str = "config/entreprise.json";
-pub const SALARIES: &str = "config/salaries.json";
-pub const SPECTACLES: &str = "config/spectacles.json";
-pub const EFFECTIFS: &str = "config/effectifs.json";
+pub const ENTREPRISE: CheminRelatif = CheminRelatif::du_moteur("config/entreprise.json");
+pub const SALARIES: CheminRelatif = CheminRelatif::du_moteur("config/salaries.json");
+pub const SPECTACLES: CheminRelatif = CheminRelatif::du_moteur("config/spectacles.json");
+pub const EFFECTIFS: CheminRelatif = CheminRelatif::du_moteur("config/effectifs.json");
 /// Les baremes propres a la compagnie (`<annee>.json`), sous sa racine.
-pub const BAREMES: &str = "config/baremes";
+pub const BAREMES: CheminRelatif = CheminRelatif::du_moteur("config/baremes");
 
 /// LA SURCOUCHE DE LA COMPAGNIE POUR L'ANNEE `an`, sous sa racine : `config/baremes/<an>.json`. Le seul ecrivain de ce
 /// chemin : le bareme le lit, son controle le nomme, la raison d'un recalcul le reconnait (`engagement::etats`).
@@ -1267,12 +1273,12 @@ pub fn surcouche(an: i32) -> R<CheminRelatif> {
 
 /// L'annee de la surcouche que `chemin` nomme, s'il en est une (`surcouche`, dont c'est la seule relecture).
 pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<i32> {
-    let an = chemin.texte().strip_prefix(BAREMES)?.strip_prefix('/')?.strip_suffix(".json")?;
+    let an = chemin.texte().strip_prefix(BAREMES.texte())?.strip_prefix('/')?.strip_suffix(".json")?;
     let an = i32::try_from(socle::num::entier_de_chiffres(an)?).ok()?;
     surcouche(an).is_ok_and(|c| c == *chemin).then_some(an)
 }
-/// Le fichier des organismes et contrats de la DSN, sous `config/`.
-pub const ORGANISMES: &str = "organismes.json";
+/// Le fichier des organismes et contrats de la DSN, sous la compagnie.
+pub const ORGANISMES: CheminRelatif = CheminRelatif::du_moteur("config/organismes.json");
 
 impl Contexte {
     /// Le contexte de `racine` a la date `date`. Sans `date`, celle de l'horloge du moteur (`jour_reel`).
@@ -1403,9 +1409,9 @@ impl Contexte {
         let jour = self.aujourdhui;
         let an = match fichier_du_socle(&dossier, jour.an)? {
             Some(_) => jour.an,
-            None => annees_du_socle(&dossier)?.into_iter().max().ok_or_else(|| socle::echec::livree("baremes", "par_convention"))?,
+            None => annees_du_socle(&dossier)?.into_iter().max().ok_or_else(|| socle::echec::livree(&SOCLES, "par_convention"))?,
         };
-        let fichier = fichier_du_socle(&dossier, an)?.ok_or_else(|| socle::echec::livree("baremes", "par_convention"))?;
+        let fichier = fichier_du_socle(&dossier, an)?.ok_or_else(|| socle::echec::livree(&SOCLES, "par_convention"))?;
         // Le dernier jour de l'annee du socle quand il est d'une annee passee : ses valeurs datees y valent toutes.
         let a = if an == jour.an { jour } else { Jour::nouveau(an, 12, 31).ok_or_else(|| socle::refus!("{}", socle::date::annee_impossible(an)))? };
         Ok(crate::forme_bareme::lire_le_socle(&fichier, &a, None)?.0.par_convention)
@@ -1413,7 +1419,7 @@ impl Contexte {
 
     /// Le dossier des gabarits de la compagnie.
     pub fn gabarits(&self) -> PathBuf {
-        self.racine.join("gabarits")
+        self.racine.join(GABARITS)
     }
 
     /// La fiche entreprise de ce contexte, telle qu'un document la lit.
@@ -1430,7 +1436,7 @@ impl Contexte {
     fn empreinte_bareme_de(&self, an: i32, ent: &ChampsEntreprise) -> R<String> {
         let cfg = self.racine.join(socle::fichiers::CONFIG);
         let sig: Vec<_> = [
-            socle::fichiers::signature(&self.racine.join(surcouche(an)?)),
+            socle::fichiers::signature(&surcouche(an)?.dans(&self.racine)),
             socle::fichiers::signature(&self.code.join("baremes").join(format!("{}.json", an))),
             socle::fichiers::signature(&cfg.join("effectifs.json")),
         ]
@@ -1522,7 +1528,7 @@ impl Contexte {
     fn socle_de_l_annee(&self, an: i32) -> R<Result<(Surcouche, PathBuf), BaremeAbsent>> {
         let chemin = surcouche(an)?;
         let dossier = self.code.join("baremes");
-        let p = self.racine.join(&chemin);
+        let p = chemin.dans(&self.racine);
         // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
         let surcouche = match socle::fichiers::existe_lu(&p)? {
             true => crate::forme_bareme::lire_la_surcouche(&p)?,

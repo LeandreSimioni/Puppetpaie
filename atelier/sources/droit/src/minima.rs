@@ -10,7 +10,10 @@ use serde::Deserialize;
 
 use crate::fiche::Lue;
 use socle::date::Jour;
-use socle::fichiers::{forme_en_cache, FormeGardee};
+use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
+
+/// Les minima conventionnels livres, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("minima-conventionnels.json");
 use socle::forme::{Court, Nombre};
 use socle::echec::R;
 use socle::num::Decimal;
@@ -493,7 +496,7 @@ const ILLISIBLE: &str = "Les minima conventionnels livrés avec le logiciel ne s
 /// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme.
 pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
-    forme_en_cache(&CACHE, "minima-conventionnels.json", ILLISIBLE, Ok)
+    forme_en_cache(&CACHE, &BASE, ILLISIBLE, Ok)
 }
 
 // ------------------------------------------------------------ les lectures
@@ -520,7 +523,7 @@ pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: 
         Some(c) => crate::emplois::metier(c)?,
         None => None,
     };
-    match metier.as_ref().and_then(|m| m.au_catalogue()).map(|f| f.famille.as_str()) {
+    match metier.as_ref().and_then(|m| m.famille()) {
         None => Err(socle::refus!(
             "Spectacle {}, émission de télévision (convention 1734) : le métier {} de {} n'est pas au catalogue, et \
              le logiciel ne sait pas s'il est artiste-interprète (1734) ou musicien, metteur en scène, artiste de \
@@ -535,7 +538,7 @@ pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: 
                 None => "ce salarié",
             }
         )),
-        Some("Artistes" | "Cirque et rue") => Ok(crate::fiche::IDCC_1734),
+        Some(crate::emplois::FamilleDeMetier::Artistes | crate::emplois::FamilleDeMetier::CirqueEtRue) => Ok(crate::fiche::IDCC_1734),
         Some(_) => Ok(idcc),
     }
 }

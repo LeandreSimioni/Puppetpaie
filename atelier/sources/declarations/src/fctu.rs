@@ -75,7 +75,7 @@ pub fn libelle_preavis(type_preavis: TypeDePreavis) -> R<String> {
 
 /// Le code par defaut d'une nomenclature.
 fn defaut<T: Copy>(n: &droit::preavis::Nomenclature<T>, quoi: &str) -> R<T> {
-    n.defaut().ok_or_else(|| socle::echec::livree("fctu-base.json", quoi))
+    n.defaut().ok_or_else(|| socle::echec::livree(&droit::preavis::FCTU, quoi))
 }
 
 /// La fin d'un contrat, telle qu'elle se declare. Le dernier jour travaille et paye
@@ -395,14 +395,14 @@ pub struct Options {
     pub type_declaration: TypeDeLaDeclaration,
     pub ordre: NumeroDOrdre,
     pub remplace: Option<IdentifiantDeDeclaration>,
-    pub envoi_test: bool,
+    pub mode: socle::mode::Mode,
     pub date_constitution: Option<Jour>,
 }
 
 impl Options {
     /// Un premier signalement normal, en reel, constitue le jour de son depot.
     pub fn normale() -> Options {
-        Options { type_declaration: TypeDeLaDeclaration::Normale, ordre: NumeroDOrdre::PREMIER, remplace: None, envoi_test: false, date_constitution: None }
+        Options { type_declaration: TypeDeLaDeclaration::Normale, ordre: NumeroDOrdre::PREMIER, remplace: None, mode: socle::mode::Mode::Reel, date_constitution: None }
     }
 }
 
@@ -458,7 +458,7 @@ ou un annule.",
     f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
-    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.005"), droit::natures::ListeDeLaNorme::code_de_la_norme(o.mode));
     f.ecrire_la_version()?;
     f.add(droit::rubrique!("S10.G00.00.007"), "01");
     f.add(droit::rubrique!("S10.G00.00.008"), "01");
@@ -576,15 +576,9 @@ ou un annule.",
 /// interdite en S21.G00.78.001) et CCH-15 (au moins trois blocs 51, de types
 /// 001, 002 et 010).
 pub fn verifier_controles_07(texte: &str) -> Result<(), Echec> {
-    // Chaque ligne, sa rubrique (aucune si elle n'en ecrit pas) et sa valeur.
-    let lignes: Vec<(Option<RubriqueDeLaNorme>, &str)> = texte
-        .lines()
-        .map(|l| {
-            let (k, v) = crate::usages::rubrique_valeur(l.trim());
-            (RubriqueDeLaNorme::lue(k), v)
-        })
-        .collect();
-    let de = |r: RubriqueDeLaNorme| lignes.iter().filter(move |(k, _)| *k == Some(r)).map(|(_, v)| *v);
+    // Chaque ligne qui ecrit une rubrique, sa rubrique et sa valeur.
+    let lignes: Vec<(RubriqueDeLaNorme, &str)> = texte.lines().filter_map(|l| crate::usages::rubrique_valeur(l.trim())).collect();
+    let de = |r: RubriqueDeLaNorme| lignes.iter().filter(move |(k, _)| *k == r).map(|(_, v)| *v);
     let mut bases = de(droit::rubrique!("S21.G00.78.001")).map(BaseAssujettie::du_code);
     if bases.any(|b| b == Some(BaseAssujettie::PrevoyanceSanteRetraite)) {
         return Err(Echec::impossible(

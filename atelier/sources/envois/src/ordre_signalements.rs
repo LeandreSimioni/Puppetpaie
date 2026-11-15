@@ -32,7 +32,8 @@ use crate::retours::IdDeFlux;
 
 use droit::contexte::Contexte;
 use droit::fiche::Siren;
-use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
+use droit::nature_declaration::NatureDeLaDeclaration;
+use socle::mode::Mode;
 use droit::natures::NumeroDOrdre;
 use socle::echec::{erreur, Classe};
 use crate::branchement::Branchement;
@@ -118,9 +119,9 @@ fn bilans_archives(racine: &Path) -> Result<Vec<(String, std::path::PathBuf)>, E
 /// Le plus grand ordre des signalements d'ESSAI que ce dossier a deposes (`detail.ordre` des lignes `dsn` en test) :
 /// la base d'essai les garde, et le meme fichier part ensuite en reel. Une ligne qui ne dit pas son ordre n'en donne pas.
 fn dernier_ordre_des_essais(racine: &Path) -> Result<Option<NumeroDOrdre>, Echec> {
-    let lignes = crate::journal::lire(racine, Some(crate::journal::Acte::Dsn), None, false).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let lignes = crate::journal::lire(racine, Some(crate::journal::Acte::Dsn), None, Some(Mode::Test)).map_err(|m| m.reclasser(Classe::Refuse))?;
     let mut dernier = None;
-    for e in lignes.iter().filter_map(crate::journal::Ligne::dsn).filter(|e| e.mode == crate::journal::Mode::Test) {
+    for e in lignes.iter().filter_map(crate::journal::Ligne::dsn) {
         if !e.detail.nature_declaration.is_some_and(NatureDeLaDeclaration::signalement_envoye) {
             continue;
         }
@@ -192,7 +193,10 @@ pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, f
     if !declaration.codes.iter().any(|c| c == "B1-208-10") {
         return None;
     }
-    let essai = if declaration.essai_reel == Some(EssaiOuReel::Essai) { "essai" } else { "reel" };
+    let essai = match declaration.essai_reel {
+        Some(Mode::Test) => "essai",
+        Some(Mode::Reel) | None => "reel",
+    };
     // Ce que le bilan ne dit pas se dit tel.
     let dit = |x: Option<&str>| match x {
         Some(t) => t.to_string(),
@@ -249,8 +253,7 @@ impl MensuellesVues {
 ///   20261030 ») : AAAAMM + ordre, exact, quel que soit le jour du bilan.
 ///
 /// `mois` : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
-pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &Siren, essai: bool, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
-    let base = if essai { EssaiOuReel::Essai } else { EssaiOuReel::Reel };
+pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &Siren, base: Mode, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
     let aaaamm = format!("{:04}{:02}", constitution.annee(), constitution.numero());
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
     // Avant le premier bilan lu : aucune mensuelle vue.

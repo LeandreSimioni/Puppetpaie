@@ -204,7 +204,7 @@ pub(crate) struct PieceDeLEnvoi {
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
 /// a imprimer, qui reunit celles de plusieurs salaries : ce fichier n'est la piece de personne).
 pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnvoi>> {
-    let envoi = documents::DossierDuMois::Envoi.sous(&ctx.racine.join("sorties").join(mois.to_string()));
+    let envoi = documents::DossierDuMois::Envoi.dans(&ctx.racine, mois);
     if !envoi.exists() {
         return Ok(Vec::new());
     }
@@ -426,7 +426,7 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
     let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats().filter(|(e, piece)| etat_concerne(ctx, e.etat, *piece, permanents, taxe_due)).map(|(e, _)| e.clone()).collect();
-    let dossier = ctx.racine.join("exports");
+    let dossier = documents::DossierDeTravail::Exports.sous(&ctx.racine);
     let ecran = EcranDesExports {
         vide: mois.is_empty().then_some("Aucune paie saisie : il n'y a rien à exporter pour l'instant."),
         regroupement_livre: "Par salarié, ce qu'on envoie au comptable ; par mois, ce qu'on rapproche de la banque ; par spectacle, ce qui justifie une subvention. Les trois disent la même chose, et le total ne bouge pas.",
@@ -603,7 +603,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
                 .iter()
                 .map(|(colonne, n)| {
                     let sur = bulletins.saturating_sub(*n);
-                    format!("{} sur {} bulletin{} sur {}", colonne.as_str().replace('_', " "), sur, if sur == 1 { "" } else { "s" }, bulletins)
+                    format!("{} sur {} bulletin{} sur {}", colonne.cle().replace('_', " "), sur, if sur == 1 { "" } else { "s" }, bulletins)
                 })
                 .collect();
             let (periode, ecrit, avertissements) = (l.periode.clone(), nom(&l.fichier)?.into_iter().collect(), l.avertissements.clone());
@@ -907,9 +907,9 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     let classeur = dossier.join("CASC-SVP_liste-nominative.xlsx");
 
     // Chaque courriel porte le nom court de son organisme : celui du `.eml` garde.
-    let messages: Vec<Message<&str>> = vec![
+    let messages: Vec<Message<NomDeFichier>> = vec![
         Message {
-            pour: "audiens",
+            pour: const { NomDeFichier::du_moteur("audiens") },
             nom: "Audiens".into(),
             destinataire: r.courriel_audiens.a.clone(),
             sujet: r.courriel_audiens.objet.clone(),
@@ -918,7 +918,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
             html: Some(courriel_en_html(&r.courriel_audiens.corps)),
         },
         Message {
-            pour: "casc",
+            pour: const { NomDeFichier::du_moteur("casc") },
             nom: "CASC-SVP".into(),
             destinataire: r.courriel_casc.a.clone(),
             sujet: r.courriel_casc.objet.clone(),
@@ -948,8 +948,10 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     };
     // Le nom de chaque `.eml` garde se fait avant l'envoi : rien ne se refuse apres que les courriels sont partis.
     let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
-    let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
-    let emls = messages.iter().map(|m| NomDeFichier::lire(&format!("{}_CASC-SVP_{}.eml", horodate, m.pour))).collect::<R<Vec<_>>>()?;
+    let horodate = NomDeFichier::lire(&format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]))?;
+    // Le nom d'un `.eml` garde : `<horodate>_CASC-SVP_<pour>.eml`.
+    let casc = horodate.suivi_de(&const { NomDeFichier::du_moteur("_CASC-SVP_") });
+    let emls: Vec<NomDeFichier> = messages.iter().map(|m| casc.suivi_de(&m.pour).avec_l_extension(&const { NomDeFichier::du_moteur("eml") })).collect();
     let mut copies: Vec<Vec<u8>> = Vec::new();
     let partis = match envoi::envoyer_suivi(&messages, &compte, client.as_mut(), None, Some(&mut copies)) {
         Ok(p) => p,

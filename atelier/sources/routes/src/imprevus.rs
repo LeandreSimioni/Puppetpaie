@@ -37,13 +37,14 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60, MotifDArret, MotifDeReprise, SubrogationDeLArret};
 use droit::permanents::MotifDeSuspension;
-use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
+use engagement::imprevus::{self, ArretSaisi, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, GenreDImprevu};
 use engagement::numeros::{numero_dit, NumeroContrat};
 use engagement::saisie::{Carte, Preavis, VueDuMois};
 use engagement::Chiffre;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
+use socle::mode::Mode;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 
@@ -234,8 +235,8 @@ pub(crate) struct ChargeArretSignaler {
     remplace: Option<IdentifiantDeDeclaration>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
     ordre: Option<NumeroDOrdre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    test: Option<bool>,
+    #[serde(rename = "test", default, skip_serializing_if = "Option::is_none", with = "socle::mode::test_en_booleen::option")]
+    mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     le: Option<Jour>,
 }
@@ -243,13 +244,22 @@ pub(crate) struct ChargeArretSignaler {
 impl ChargeArretSignaler {
     /// Le signalement de l'arret de `salarie` qui suit `dernier_jour`, de sa `nature` : le suivant, constitue aujourd'hui.
     pub(crate) fn de(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement) -> ChargeArretSignaler {
-        ChargeArretSignaler { salarie: salarie.into(), dernier_jour, nature, remplace: None, ordre: None, test: None, le: None }
+        ChargeArretSignaler { salarie: salarie.into(), dernier_jour, nature, remplace: None, ordre: None, mode: None, le: None }
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`) : son numero d'ordre et son
     /// jour de constitution, tels que le journal les dit.
     pub(crate) fn refait(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement, ordre: NumeroDOrdre, le: Jour) -> ChargeArretSignaler {
         ChargeArretSignaler { ordre: Some(ordre), le: Some(le), ..ChargeArretSignaler::de(salarie, dernier_jour, nature) }
+    }
+}
+
+/// Le mode qu'un signalement ecrit (S10.G00.00.005) : celui que la charge dit (`test`, le fichier d'essai) ; une charge
+/// qui ne demande pas d'essai ecrit le fichier reel, que son depot de test bascule en memoire.
+fn mode_du_fichier(dit: Option<Mode>) -> Mode {
+    match dit {
+        Some(m) => m,
+        None => Mode::Reel,
     }
 }
 
@@ -302,8 +312,8 @@ pub(crate) struct ChargeFinContratSignaler {
     remplace: Option<IdentifiantDeDeclaration>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
     ordre: Option<NumeroDOrdre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    test: Option<bool>,
+    #[serde(rename = "test", default, skip_serializing_if = "Option::is_none", with = "socle::mode::test_en_booleen::option")]
+    mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     le: Option<Jour>,
 }
@@ -311,7 +321,7 @@ pub(crate) struct ChargeFinContratSignaler {
 impl ChargeFinContratSignaler {
     /// Le signalement de la fin du contrat de `salarie` en `mois` : le suivant, constitue aujourd'hui.
     pub(crate) fn de(mois: Mois, salarie: IdSalarie) -> ChargeFinContratSignaler {
-        ChargeFinContratSignaler { mois, salarie: salarie.into(), remplace: None, ordre: None, test: None, le: None }
+        ChargeFinContratSignaler { mois, salarie: salarie.into(), remplace: None, ordre: None, mode: None, le: None }
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`).
@@ -838,7 +848,7 @@ impl EtatDuSignalement {
 pub(crate) struct ResumeDArret {
     #[serde(flatten)]
     base: ArretResume,
-    genre: &'static str,
+    genre: GenreDImprevu,
     premier_jour: Jour,
     dernier_jour: Jour,
     jours_deja_indemnises: Option<Chiffre>,
@@ -891,7 +901,7 @@ impl ResumeDArret {
 /// (`Dit`), puis, dans la liste, ce qui en est `parti`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ResumeDeSuspension {
-    genre: &'static str,
+    genre: GenreDImprevu,
     salarie: IdSalarie,
     contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
@@ -1294,7 +1304,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
     })?;
     Ok(ResumeDArret {
         base,
-        genre: ARRET,
+        genre: GenreDImprevu::Arret,
         premier_jour: premier,
         dernier_jour: dernier,
         jours_deja_indemnises: a.jours_deja_indemnises.clone(),
@@ -1330,7 +1340,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         signalements: &[],
     })?;
     Ok(ResumeDeSuspension {
-        genre: SUSPENSION,
+        genre: GenreDImprevu::Suspension,
         salarie: s.salarie.clone(),
         contrat: s.contrat_numero.clone(),
         contrat_debut: s.contrat_debut,
@@ -1654,7 +1664,6 @@ fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<
     let debut = c.debut;
     let contrat = contrat_suspendu(ctx, &cle, &debut, c.contrat.as_ref())?;
     let s = SuspensionSaisie {
-        genre: GenreSuspension::Suspension,
         salarie: cle.clone(),
         contrat_debut: contrat.debut.clone(),
         contrat_numero: contrat.numero.clone(),
@@ -1902,7 +1911,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let (rang, _) = engagement_qui_finit(&saisie, &cle, c.salarie.as_str(), mois)?;
     let p = paie_de_l_engagement(&paies, rang, &cle, c.salarie.as_str(), mois)?;
     let date = constitue_le(ctx, c.le);
-    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let dossier = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     // Les sorties du mois : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
     let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
     Ok(ReponsePapiers {
@@ -1962,7 +1971,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let mois = c.mois;
     let salarie = c.salarie.as_str();
     let remplace = c.remplace;
-    let envoi_test = c.test == Some(true);
+    let mode = mode_du_fichier(c.mode);
 
     let (saisie, paies) = validees(ctx, mois)?;
     let cle = cle_du_nom(ctx, &c.salarie)?;
@@ -1986,13 +1995,13 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let (ordre, plate_forme) = ordre_du_signalement(ctx, c.ordre)?;
     avertissements.extend(plate_forme);
     let nom = nom_du_signalement(&format!("{}{}_{}", documents::SorteDePieceProduite::SignalementFinContrat.prefixe(), cle, fin.fin.aaaammjj()), remplace.is_some(), ordre)?;
-    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string())).join(&nom);
+    let cible = documents::PieceDuMois::SignalementFinContrat.dossier().dans(&ctx.racine, mois).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
         type_declaration,
         ordre,
         remplace,
-        envoi_test,
+        mode,
         date_constitution: c.le,
     };
     // Les arrets du contrat qui croisent la periode du signalement : le FCTU les reporte (bloc 60), comme la mensuelle,
@@ -2134,14 +2143,14 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
         ordre,
     )?;
     // Arret et reprise : deux pieces du mois, la sienne dit son dossier.
-    let cible = piece.dossier().sous(&ctx.racine.join("sorties").join(dernier.mois_civil().to_string())).join(&nom);
+    let cible = piece.dossier().dans(&ctx.racine, dernier.mois_civil()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature_declaration: nature,
         type_declaration,
         ordre,
         remplace,
-        envoi_test: c.test == Some(true),
+        mode: mode_du_fichier(c.mode),
         date_constitution: Some(constitution),
     };
     let texte = signalement::generer(ctx, &dsn_arret, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;

@@ -127,7 +127,7 @@ pub fn legal(nature: &Nature, anciennete_mois: Decimal, origine: Origine) -> R<D
 
 #[track_caller]
 fn manque(ou: &str, cle: &str) -> socle::echec::Echec {
-    socle::echec::livree(ou, cle)
+    socle::echec::livree_dite(&clauses::FICHIER, cle, ou)
 }
 
 fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> R<Vec<Tranche>> {
@@ -157,7 +157,7 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete_mois: Decimal
     // (article, minimum d'anciennete, base, carence, plafond net, subrogation, tranches)
     let (article, minimum, base, carence, plafond_net, subrogation, liste) = match (accident, sec.maladie) {
         (Some(at), _) => {
-            let ou = format!("clauses-conventionnelles-base.json, {}, art. {}", nom, at.article);
+            let ou = format!("{}, art. {}", nom, at.article);
             let mut tr = at.tranches.as_slice();
             if let Some(deux_ans) = at.tranches_deux_ans.as_deref().filter(|t| !t.is_empty() && anciennete_mois >= Decimal::from(24)) {
                 tr = deux_ans;
@@ -170,7 +170,7 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete_mois: Decimal
             (at.article, minimum, at.base, at.carence_jours, at.plafond_net == Some(true), at.subrogation, Ok(liste))
         }
         (None, Some(m)) => {
-            let ou = format!("clauses-conventionnelles-base.json, {}, art. {}", nom, m.article);
+            let ou = format!("{}, art. {}", nom, m.article);
             let annees = div(anciennete_mois, Decimal::from(12));
             let mut lignes: Vec<&clauses::LigneDeMaintien> = m.par_anciennete.iter().collect();
             lignes.sort_by_key(|l| l.anciennete_annees_min.0);

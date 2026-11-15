@@ -1437,7 +1437,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     // `numero` (de ce salarie, quand il est dit) ?
     let ce_contrat = |s: &IdSalarie, n: Option<&NumeroContrat>| n == Some(&numero) && le_salarie.as_ref().is_none_or(|x| x == s);
     let mut dpae = Vec::new();
-    for e in journal::filtrer(&lignes, Some(journal::Acte::Dpae), None, true).filter_map(journal::Ligne::dpae) {
+    for e in journal::filtrer(&lignes, Some(journal::Acte::Dpae), None, Some(socle::mode::Mode::Reel)).filter_map(journal::Ligne::dpae) {
         let Some(fichier) = e.fichier.as_ref() else { continue };
         if !e.accepte {
             continue;
@@ -1451,7 +1451,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     let mut contrat: Vec<PiecePartie> = Vec::new();
     for l in lignes.iter().filter(|l| l.accepte()) {
         let Some(e) = l.signature() else { continue };
-        let parti = etats::mot_de_la_remise(Some(etats::ModeDeRemise::de(e.detail.main_propre)), etats::PlaceDeLaRemise::Recit);
+        let parti = etats::mot_de_la_remise(Some(e.detail.remise), etats::PlaceDeLaRemise::Recit);
         for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_ref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
             let quoi = match x.acte {

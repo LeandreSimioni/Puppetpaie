@@ -3166,7 +3166,7 @@ fiche! {
         HeuresForfait(NombreDeFiche) = "heures_forfait" => heures_forfait,
         Plafond(crate::catalogue::Unite) = "plafond" => plafond,
         Aem(crate::catalogue::Unite) = "aem" => aem,
-        DsnType(String) = "dsn_type" => dsn_type,
+        DsnType(crate::catalogue::DsnTypeDeRubrique) = "dsn_type" => dsn_type,
         DsnAutresBruts(crate::autre_revenu_brut::AutreElementDeRevenuBrut) = "dsn_autres_bruts" => dsn_autres_bruts,
         Annexe(crate::emplois::AnnexeChomage) = "annexe" => annexe,
         PlafondMensuel(i64) = "plafond_mensuel" => plafond_mensuel,

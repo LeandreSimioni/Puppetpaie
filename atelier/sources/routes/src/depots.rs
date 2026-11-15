@@ -24,6 +24,7 @@ use socle::date::Jour;
 use socle::paris::Moment;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{dossier_du_code, NomDeFichier};
+use socle::mode::Mode;
 use socle::mois::{Graphie, Mois};
 use serde::{Deserialize, Serialize};
 use envois::depot_acte::DepotFait;
@@ -152,7 +153,7 @@ pub struct Designation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) fichier: Option<String>,
+    pub(crate) fichier: Option<PathBuf>,
 }
 
 impl Designation {
@@ -162,8 +163,8 @@ impl Designation {
     }
 
     /// Le signalement ecrit `fichier`.
-    pub(crate) fn du_fichier(fichier: impl Into<String>) -> Designation {
-        Designation { quoi: Quoi::Dsn, mois: None, etablissement: None, engagements: None, fichier: Some(fichier.into()) }
+    pub(crate) fn du_fichier(fichier: PathBuf) -> Designation {
+        Designation { quoi: Quoi::Dsn, mois: None, etablissement: None, engagements: None, fichier: Some(fichier) }
     }
 
     /// L'etablissement nomme (son NIC), s'il l'est.
@@ -185,9 +186,9 @@ pub(crate) struct ChargeDeposer {
     #[serde(skip_serializing_if = "Option::is_none")]
     engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reel: Option<bool>,
+    fichier: Option<PathBuf>,
+    #[serde(rename = "reel", default, skip_serializing_if = "Option::is_none", with = "socle::mode::en_booleen::option")]
+    mode: Option<Mode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     forcer: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -207,9 +208,9 @@ pub(crate) struct DepotDemande {
 
 impl ChargeDeposer {
     /// Le depot de la declaration `d`, reel ou de test, sous le mot de passe tape.
-    pub(crate) fn de(d: Designation, reel: bool, motdepasse: Option<socle::secret::Secret>) -> DepotDemande {
+    pub(crate) fn de(d: Designation, mode: Mode, motdepasse: Option<socle::secret::Secret>) -> DepotDemande {
         let Designation { quoi, mois, etablissement, engagements, fichier } = d;
-        DepotDemande { charge: ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel: Some(reel), forcer: None, contournement: None }, motdepasse }
+        DepotDemande { charge: ChargeDeposer { quoi, mois, etablissement, engagements, fichier, mode: Some(mode), forcer: None, contournement: None }, motdepasse }
     }
 }
 
@@ -322,7 +323,7 @@ impl Dite for BilanDuTest {
 /// fichier deja depose, le fichier code envoi de test.
 fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
     let mut e = Vec::new();
-    let (deja_depose, reel) = match apercu {
+    let (deja_depose, mode) = match apercu {
         DepotApercu::Dsn(Dit { apercu: a, .. }) => {
             if let Some(remplace) = &a.remplace {
                 e.push(Encart::de(socle::ecran::EtatDEcran::Information, "Annule et remplace", format!("Ce fichier remplace la déclaration {}.", remplace)));
@@ -348,7 +349,7 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
                     "Sans taux transmis par la DGFiP, la grille de l'article 204 H du CGI s'applique ; le dépôt n'est pas bloqué. Elle prélève souvent plus que le taux réel, et le salarié ne récupère la différence qu'à sa déclaration de revenus. Relever les retours avant de déposer peut changer cela.",
                 ));
             }
-            (&a.deja_depose, a.reel)
+            (&a.deja_depose, a.mode)
         }
         DepotApercu::Dpae(Dit { apercu: a, .. }) => {
             let deja = a.embauches.iter().filter(|x| x.deja_declaree).count();
@@ -359,17 +360,20 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
                     "Le fichier porte tout le mois : le déposer les redéclare, et l'Urssaf reçoit deux déclarations pour un seul contrat.",
                 ));
             }
-            (&a.deja_depose, a.reel)
+            (&a.deja_depose, a.mode)
         }
     };
     if let Some(deja) = deja_depose {
         e.push(Encart::de(
             socle::ecran::EtatDEcran::AFaire,
             "Ce fichier a déjà été déposé",
-            format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", deja.quand().dit(), if deja.reel() { "réel" } else { "test" }),
+            format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", deja.quand().dit(), match deja.mode() {
+                Mode::Reel => "réel",
+                Mode::Test => "test",
+            }),
         ));
     }
-    if !reel {
+    if mode != Some(Mode::Reel) {
         e.push(Encart::de(socle::ecran::EtatDEcran::Information, "Envoi de test", "Le fichier est codé envoi de test : déposé pour de vrai, il ne déclarerait rien et rien ne serait conservé."));
     }
     e
@@ -494,7 +498,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         engs.iter().map(|e| engagement::embauche(ctx, e)).collect::<Result<_, _>>()?
     };
     let etiq = le_mois.etiquette();
-    let sortie = documents::PieceDuMois::Dpae.dossier().sous(&ctx.racine.join("sorties").join(&mois));
+    let sortie = documents::PieceDuMois::Dpae.dossier().dans(&ctx.racine, le_mois);
     // Une embauche par son salarie et son numero de contrat ; une paie sans numero n'en a pas a declarer.
     let cle_de = |p: &Paie| -> Option<(IdSalarie, NumeroContrat)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.clone(), n.clone())) };
 
@@ -676,7 +680,7 @@ mod tests_dpae_partielles {
     use super::*;
 
     fn dossier() -> PathBuf {
-        let r = crate::horloge::racine_d_essai(false).join("sorties").join("2026-10");
+        let r = documents::DossierDuMois::Sorties.dans(&crate::horloge::racine_d_essai(false), socle::mois::Mois::nouveau(2026, 10).unwrap());
         std::fs::create_dir_all(&r).unwrap();
         r
     }
@@ -718,11 +722,11 @@ pub struct DitALEcriture {
 /// a corriger. La DPAE du mois (`quoi` : dpae, `mois`, `engagements`) : celle de ces embauches, ou de celles qui restent
 /// a declarer (`dpae`, meme reprise) ; une fois partie, il n'en reste aucune a declarer, et c'est celle qui est partie
 /// (`partie`), jamais refaite (regle 4). `fichier` : un signalement ecrit.
-pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
+pub fn designee(ctx: &Contexte, d: &Designation) -> R<(PathBuf, DitALEcriture)> {
     // Un signalement se nomme par son fichier, la declaration du mois par son mois : les deux ne designent pas la meme.
-    let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.is_empty()));
+    let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.as_os_str().is_empty()));
     let Some(le_mois) = le_mois else {
-        return fichier.map(|f| (f.to_string(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque));
+        return fichier.map(|f| (f.to_path_buf(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque));
     };
     if fichier.is_some() {
         return Err(socle::echec::a_la_cle(
@@ -751,11 +755,11 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
         };
         let chemin = chemin.ok_or_else(|| refus("Aucune DSN de cet etablissement ce mois-ci. Rien n'est parti."))?;
         let (avertissements, informations) = dsn.avis();
-        return Ok((chemin.to_string_lossy().into_owned(), DitALEcriture { phrase: None, avertissements, informations }));
+        return Ok((chemin.clone(), DitALEcriture { phrase: None, avertissements, informations }));
     }
     // Ce qui reste a declarer s'ecrit, et un manque refuse ; quand rien ne reste, c'est la DPAE partie.
     match dpae(ctx, le_mois, d.engagements.as_deref())? {
-        Dpae::Ecrite(w) => Ok((w.chemin.to_string_lossy().into_owned(), DitALEcriture { phrase: Some(w.phrase), ..Default::default() })),
+        Dpae::Ecrite(w) => Ok((w.chemin, DitALEcriture { phrase: Some(w.phrase), ..Default::default() })),
         Dpae::Rien(phrase) => partie(ctx, d, le_mois)?.map(|c| (c, DitALEcriture::default())).ok_or_else(|| refus(phrase)),
     }
 }
@@ -763,13 +767,13 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
 /// CE QUI EST PARTI POUR LA DESIGNATION `d` du mois `mois`, en test ou en reel, lu au journal (`envois::journal::lu`) :
 /// le fichier de la derniere ligne du mois, du meme etablissement (DSN mensuelle) ou des memes embauches (DPAE, quand la
 /// designation les nomme). Rien ne se fabrique.
-fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
+fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<PathBuf>> {
     let lignes = envois::journal::lu(&ctx.racine)?.lignes;
     // Une fiche qui ne dit pas encore son NIC n'a que son siege, et aucune DSN n'en est partie.
     let principal = ctx.entreprise.nic_principal();
     let nic = d.etablissement.as_ref().or(principal);
     let voulues: Option<BTreeSet<etats::Paire>> = d.engagements.as_ref().filter(|e| !e.is_empty()).map(|e| e.iter().map(|x| (x.salarie.clone(), Some(x.numero.clone()))).collect());
-    let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
+    let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), None).rev().find(|l| match l {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
             let de = l.etablissement().or(principal);
@@ -779,8 +783,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
         // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     });
-    let sorties = ctx.racine.join("sorties").join(mois.to_string());
-    Ok(ligne.and_then(Ligne::fichier).map(|f| documents::fichier_depose(&sorties, f.texte()).to_string_lossy().into_owned()))
+    Ok(ligne.and_then(Ligne::fichier).map(|f| documents::fichier_depose(&ctx.racine, mois, f.texte())))
 }
 
 /// `deposer` : `motdepasse` est celui DU LOGICIEL, et il ne sert qu'a prouver la presence. Il arrive par le
@@ -788,8 +791,13 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
 /// repetition. `forcer` : l'annule-et-remplace voulu, apres l'avertissement que la page affiche sur
 /// `DsnDejaDeposee` -- jamais par defaut.
 fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::Secret>) -> R<Deposee> {
-    let ChargeDeposer { quoi, mois, etablissement, engagements, fichier, reel, forcer, contournement } = c;
-    let (reel, forcer) = (reel == Some(true), forcer == Some(true));
+    let ChargeDeposer { quoi, mois, etablissement, engagements, fichier, mode, forcer, contournement } = c;
+    // Un depot que la charge ne demande pas reel est un test (la charge, ci-dessus : « absents, ils ne sont pas demandes »).
+    let mode = match mode {
+        Some(m) => m,
+        None => Mode::Test,
+    };
+    let forcer = forcer == Some(true);
     let d = Designation { quoi, mois, etablissement, engagements, fichier };
     let (fichier, _) = designee(ctx, &d)?;
     let preuve = Preuve::du_mot_de_passe(motdepasse.cloned());
@@ -797,12 +805,12 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     let contournement: String = contournement.iter().map(|c| c.trim()).collect();
     let contournement = contournement.as_str();
     let mut fait = match quoi {
-        Quoi::Dsn => depot_acte::deposer_dsn(ctx, &fichier, reel, Some(&preuve), "interface", forcer, contournement)?,
-        Quoi::Dpae => depot_acte::deposer_dpae(ctx, &fichier, reel, Some(&preuve), "interface", false, contournement)?,
+        Quoi::Dsn => depot_acte::deposer_dsn(ctx, &fichier, mode, Some(&preuve), "interface", forcer, contournement)?,
+        Quoi::Dpae => depot_acte::deposer_dpae(ctx, &fichier, mode, Some(&preuve), "interface", false, contournement)?,
     };
     // LA PHRASE DU DEPOT : ou en est son test, ou ce qu'ont dit les retours du reel s'ils sont deja la (le simulateur repond
     // dans le geste) ; puis ses suites.
-    let tranche = if !reel {
+    let tranche = if mode == Mode::Test {
         let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
         format!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
@@ -812,7 +820,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     };
     let phrase = std::iter::once(tranche).chain(fait.suites.iter().cloned()).collect::<Vec<_>>().join(" ");
     // APRES LA DSN REELLE D'UN MOIS QUI A DES SALARIES, la boite d'avis : leurs documents partent de l'etape 4.
-    let avis = (reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
+    let avis = (mode == Mode::Reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
         .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
     etats::poser_les_pastilles(&mut fait.ligne);
     poser_les_pastilles(&mut fait.deja);
@@ -933,43 +941,38 @@ fn existe(t: &str) -> bool {
     !t.contains('\0') && Path::new(t).exists()
 }
 
-/// Un chemin tape a la main, tel quel s'il existe, sinon sous les donnees. Rend le texte du chemin, normalisé. La
+/// Un chemin tape a la main, tel quel s'il existe, sinon sous les donnees. Rend le chemin, normalisé. La
 /// declaration d'un mois se designe par le mois de la charge (`Designation::mois`), jamais par un chemin.
-pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
+pub(crate) fn resoudre(racine: &Path, chemin: &Path) -> R<PathBuf> {
+    let t = chemin.to_string_lossy();
     if t.chars().all(socle::texte::blanc) {
         return Err(erreur(Classe::FichierAbsent, "Aucun fichier indique."));
     }
-    let p = normaliser(t);
+    let p = normaliser(&t);
     if existe(&p) || p.starts_with('/') {
-        return Ok(p);
+        return Ok(PathBuf::from(p));
     }
     let base = normaliser(&racine.display().to_string());
     let candidat = normaliser(&format!("{}/{}", base, p));
     if existe(&candidat) {
-        return Ok(candidat);
+        return Ok(PathBuf::from(candidat));
     }
-    Ok(p)
+    Ok(PathBuf::from(p))
 }
 
 /// `read_bytes`, l'erreur du disque sous sa classe.
-fn empreinte_du_fichier(chemin: &str) -> R<socle::fichiers::EmpreinteCourte> {
-    if chemin.contains('\0') {
-        return Err(erreur(Classe::Illisible, "embedded null byte"));
-    }
-    let p = Path::new(chemin);
-    let octets = std::fs::read(p).map_err(|e| erreur_io(&e, p))?;
-    Ok(socle::fichiers::Empreinte::des_octets(&octets).courte())
+fn empreinte_du_fichier(chemin: &Path) -> R<socle::fichiers::EmpreinteCourte> {
+    Ok(socle::fichiers::Empreinte::des_octets(&lire_octets(chemin)?).courte())
 }
 
 // ------------------------------------------------------------------ depot-apercu, la DPAE
 
 /// Le contenu d'un fichier, en octets.
-pub(crate) fn lire_octets(chemin: &str) -> R<Vec<u8>> {
-    if chemin.contains('\0') {
+pub(crate) fn lire_octets(chemin: &Path) -> R<Vec<u8>> {
+    if chemin.as_os_str().as_encoded_bytes().contains(&0) {
         return Err(erreur(Classe::Illisible, "embedded null byte"));
     }
-    let p = Path::new(chemin);
-    std::fs::read(p).map_err(|e| erreur_io(&e, p))
+    std::fs::read(chemin).map_err(|e| erreur_io(&e, chemin))
 }
 
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
@@ -1006,7 +1009,9 @@ pub(crate) struct ApercuDpae {
     pub(crate) nom: NomDeFichier,
     pub(crate) enregistrements: usize,
     pub(crate) octets: usize,
-    pub(crate) reel: bool,
+    /// Le mode que l'indicateur dit (`120` reel, `TST` test), aucun pour un autre.
+    #[serde(rename = "reel", serialize_with = "socle::mode::en_booleen::si_dit::serialize")]
+    pub(crate) mode: Option<Mode>,
     pub(crate) indicateur: String,
     pub(crate) mois: Option<Mois>,
     pub(crate) embauches: Vec<EmbaucheDuFichier>,
@@ -1015,7 +1020,7 @@ pub(crate) struct ApercuDpae {
 }
 
 /// `apercu_depot_dpae` : ce que le fichier DPAE declare, enregistrement par enregistrement.
-pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> {
+pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae> {
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
     let texte: String = contenu.iter().map(|&b| b as char).collect();
@@ -1114,7 +1119,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         nom: nom_fichier,
         enregistrements: enrs.len(),
         octets: contenu.len(),
-        reel: envois::depot::est_reel(&contenu),
+        mode: envois::depot::mode_dpae(&contenu),
         indicateur: envois::depot::indicateur(&contenu),
         mois,
         embauches: lignes,
@@ -1190,11 +1195,11 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
 fn bilan_de_la_repetition(ctx: &Contexte, d: &Designation) -> R<Repetition> {
     let fichier = match d.mois {
         Some(m) => partie(ctx, d, m)?.ok_or_else(|| refus(format!("Rien n'est parti pour {} : le déposer d'abord en test.", m)))?,
-        None => d.fichier.clone().filter(|f| !f.is_empty()).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque))?,
+        None => d.fichier.clone().filter(|f| !f.as_os_str().is_empty()).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque))?,
     };
     let chemin = resoudre(&ctx.racine, &fichier)?;
     let empreinte = empreinte_du_fichier(&chemin)?;
-    let nom = NomDeFichier::du(Path::new(&chemin))?;
+    let nom = NomDeFichier::du(&chemin)?;
     let lignes = crate::etapes::Moteur::nouveau(ctx).lignes()?;
     Ok(etats::repetition(&lignes, d.quoi.acte(), &empreinte, &nom))
 }

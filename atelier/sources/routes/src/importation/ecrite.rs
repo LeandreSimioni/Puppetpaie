@@ -27,7 +27,7 @@ use droit::fiche::FicheNommee;
 use engagement::importe::{Attestation, CleDePaieVersee, ContratLu, ContratRelu, PaieLue, PaieVersee};
 use engagement::numeros::NumeroContrat;
 use socle::date::Jour;
-use socle::fichiers::NomDeFichier;
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
@@ -64,7 +64,7 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     if chemin.exists() {
         return Ok(Some(chemin));
     }
-    let a_part = socle::echec::Lieu { fichier: Some(nom.to_string()), ..Default::default() };
+    let a_part = socle::echec::Lieu { fichier: Some(nom.clone().into()), ..Default::default() };
     Err(socle::echec::refus_avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
 }
 
@@ -605,7 +605,7 @@ fn avertissement_differents(differents: &[String], ou: &str) -> String {
 
 /// Ou l'import du dossier copie ce qu'il reprend.
 fn dossier_bulletins(ctx: &Contexte) -> PathBuf {
-    ctx.racine.join("historique").join("bulletins")
+    import::mois::dossier_des_bulletins(&ctx.racine)
 }
 
 /// La copie de ce que le dossier lu reprend, dans `historique/bulletins/`, sous le nom de sa copie. RIEN NE S'ECRASE :
@@ -652,7 +652,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         crate::importation::incident::noter_les_non_lus(ctx, &lu)?;
         let tri = lu.ap.reponse.tri;
         // La copie se relit sous le nom du fichier depose.
-        let deposes: HashMap<String, String> = lu.copies.iter().map(|(i, nom)| (nom.to_string(), lu.tri.fichiers[*i].chemin.clone())).collect();
+        let deposes: HashMap<CheminRelatif, CheminRelatif> = lu.copies.iter().map(|(i, nom)| (CheminRelatif::from(nom.clone()), lu.tri.fichiers[*i].chemin.clone())).collect();
         Ok((tri, copie, noms, deposes))
     })?;
 

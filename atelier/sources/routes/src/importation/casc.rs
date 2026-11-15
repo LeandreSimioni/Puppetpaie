@@ -395,7 +395,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         let taux = base.taux.de(an).ok_or_else(|| {
             socle::echec::refus_avec(
                 format!("Le taux de la CASC-SVP pour {} n'est pas releve : l'export refuse plutot que de prolonger celui d'une autre annee.", an),
-                socle::echec::Lieu { fichier: Some("donnees/casc-svp-base.json".to_string()), cle: Some(format!("taux.{}", an)), ..Default::default() },
+                socle::echec::Lieu { fichier: Some(const { socle::fichiers::CheminRelatif::du_moteur("donnees/casc-svp-base.json") }), cle: Some(format!("taux.{}", an)), ..Default::default() },
             )
             .reclasser(Classe::Refuse)
         })?;
@@ -515,7 +515,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
 }
 
 fn fichier_suivi(ctx: &Contexte) -> std::path::PathBuf {
-    ctx.racine.join(declarations::casc::CASC_SVP)
+    declarations::casc::CASC_SVP.dans(&ctx.racine)
 }
 
 /// UNE CELLULE DE LA LISTE : ce que la fiche dit ; une case qu'elle ne dit pas reste une cellule vide.
@@ -537,7 +537,7 @@ fn deja_faites(ctx: &Contexte) -> R<String> {
 /// L'ecriture de la regularisation : `exports/casc-svp/` -- les CSV, les deux courriels, la liste des gestes. Rend le
 /// dossier ecrit.
 pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<std::path::PathBuf> {
-    let dossier = ctx.racine.join("exports").join("casc-svp");
+    let dossier = documents::DossierDeTravail::RegularisationCasc.sous(&ctx.racine);
     let io = |p: &Path, e: std::io::Error| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque);
     std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
     let virgule = |d: &Decimal| d.to_string().replace('.', ",");

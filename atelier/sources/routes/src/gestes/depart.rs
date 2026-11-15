@@ -18,6 +18,7 @@ use droit::fiche::{Lue as _, Nic};
 use socle::echec::Classe;
 use socle::grandeurs::Montant;
 use socle::fichiers::{Empreinte, EmpreinteCourte, NomDeFichier};
+use socle::mode::Mode;
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
 use crate::dossier_salarie::cle_de;
@@ -78,7 +79,7 @@ fn fichiers_dans(dossiers: &[PathBuf]) -> R<Vec<PathBuf>> {
 /// l'etape de depot (`routes::etapes`).
 pub(crate) fn mois_ecrit(racine: &Path, mois: Mois) -> R<bool> {
     let prefixe = format!("{}/", mois);
-    let sorties = racine.join("sorties");
+    let sorties = documents::DossierDuMois::des_mois(racine);
     Ok(journal_des_ecritures(racine)?
         .keys()
         .any(|k| k.strip_prefix(&prefixe).is_some_and(crate::etapes::est_une_dsn_mensuelle) && sorties.join(k).is_file()))
@@ -94,7 +95,7 @@ fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&N
     // CE QUE LA PLATE-FORME A VU EN REEL ce mois civil, lu en silence dans les bilans archives
     // (`ordre_signalements::dernier_ordre_des_mensuelles`) : le rang se compte « au cours du mois courant » (cahier
     // technique DSN, p. 136), toutes declarations du SIREN confondues, d'ou qu'elles soient parties (un autre poste).
-    let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, false, ctx.aujourdhui.mois_civil(), le_mois)?;
+    let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, Mode::Reel, ctx.aujourdhui.mois_civil(), le_mois)?;
     let dernier = match dernier {
         Some(d) => vues.ordre.into_iter().fold(d, Ord::max),
         // Une mensuelle du mois acceptee en reel que le journal ignore : la suivante la remplace.
@@ -132,7 +133,7 @@ impl Forme {
     fn options(&self) -> declarations::dsn::Options {
         declarations::dsn::Options {
             date_constitution: Some(self.constitution),
-            envoi_test: false,
+            mode: Mode::Reel,
             type_declaration: self.type_dsn,
             ordre: self.ordre,
             etablissement: self.etablissement.clone(),
@@ -348,7 +349,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
                 mois: c,
                 avant: apres.clone(),
                 declare: declarations::versement_declare::VersementDeclare {
-                    fichier: String::new(),
+                    declaree: None,
                     net_imposable: Montant::ZERO,
                     net_verse: Montant::ZERO,
                     net_social: Montant::ZERO,
@@ -468,7 +469,7 @@ fn pas_avant(ctx: &Contexte, mois: Mois) -> R<()> {
 /// un mois dont aucun engagement n'est valide alors qu'il en a (rien ne part d'un engagement en saisie) ; un mois
 /// deja declare dont l'annule-et-remplace n'est plus admis.
 pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFabriquee> {
-    let (mois, texte) = (le_mois, &le_mois.to_string());
+    let mois = le_mois;
     import::mois::refuser_la_dsn_de_l_ancien_logiciel(ctx, mois)?;
     let _verrou = documents::ecrire_documents::prendre_le_verrou(ctx, qui)?;
     crate::mois::refuser_si_clos(ctx, mois)?;
@@ -525,7 +526,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_ref())?;
     }
     let etiq = le_mois.etiquette();
-    let sortie = documents::PieceDuMois::Dsn.dossier().sous(&ctx.racine.join("sorties").join(texte));
+    let sortie = documents::PieceDuMois::Dsn.dossier().dans(&ctx.racine, le_mois);
 
     // LES CORRECTIONS DES MOIS DEJA DECLARES : la DSN de ce mois les porte, datees de leur mois d'origine.
     let regs = &lu.regs;
@@ -579,7 +580,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         }
     }
     // LES SUSPENSIONS (bloc 65) : chacune se declare entiere dans la DSN de chaque mois qu'elle traverse.
-    for s in crate::metier::imprevus::magasin(engagement::imprevus::du_mois(&ctx.racine, le_mois, Some(engagement::imprevus::SUSPENSION)))? {
+    for s in crate::metier::imprevus::magasin(engagement::imprevus::du_mois(&ctx.racine, le_mois, Some(engagement::imprevus::GenreDImprevu::Suspension)))? {
         let engagement::imprevus::Imprevu::Suspension(s) = s else { continue };
         avertissements.push(info(format!("Suspension declaree dans la DSN : {}, motif {}, du {} au {}.", s.salarie, s.motif, s.debut.jj_mm_aaaa(), s.fin.jj_mm_aaaa())));
     }
@@ -787,7 +788,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     let ecrits = engagement::etats::numeros_des_documents(ctx, mois, &departs)?;
     let an = i64::from(mois.annee());
     let etiq = mois.etiquette();
-    let sortie = ctx.racine.join("sorties").join(mois.to_string());
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     let dossier = documents::PieceDuMois::Bulletin.dossier().sous(&sortie);
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let part = |p: &Paie| cles.contains(&p.salarie.id);
@@ -927,8 +928,8 @@ pub(crate) fn archive_du_mois(sorte: SorteDePieceProduite, etiq: &str, fin: &str
 /// (`Bulletins_<Mois>.pdf`, `CertificatsCS_<Mois>.pdf` et son recapitulatif), qui porte tous les documents numerotes.
 /// `absents` : seuls les fichiers qui manquent s'ecrivent (une piece partie refaite pour se lire).
 fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, imp: &Impression, cles: &[IdSalarie], absents: bool) -> R<()> {
-    let (etiq, mois) = (le_mois.etiquette(), &le_mois.to_string());
-    let sortie = ctx.racine.join("sorties").join(mois);
+    let etiq = le_mois.etiquette();
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, le_mois);
     let dossier = documents::PieceDuMois::Bulletin.dossier().sous(&sortie);
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
     let a_ecrire = |f: &Path| !(absents && f.exists());
@@ -1024,16 +1025,16 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     use envois::journal::{Acte, Ligne};
     let du_mois = |l: &Ligne| l.mois() == Some(le_mois) && l.accepte();
     let etiq = le_mois.etiquette();
-    let sortie = ctx.racine.join("sorties").join(mois.to_string());
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
 
     // LA DSN MENSUELLE : la derniere ligne qui l'a deposee, le reel devant son test.
-    let deposee = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.reel() == reel);
-    let deposee = deposee(true).or_else(|| deposee(false));
+    let deposee = |mode: Mode| lignes.iter().rposition(|l| l.acte() == Acte::Dsn && l.fichier() == Some(fichier) && du_mois(l) && l.mode() == mode);
+    let deposee = deposee(Mode::Reel).or_else(|| deposee(Mode::Test));
     if crate::etapes::est_une_dsn_mensuelle(nom) {
         let Some(rang) = deposee else {
             return Err(refus(format!("{} : le journal ne dit pas qu'elle est partie.", nom)));
         };
-        let f = documents::PieceDuMois::Dsn.dossier().sous(&sortie).join(nom);
+        let f = documents::PieceDuMois::Dsn.dossier().dans(&ctx.racine, mois).join(nom);
         refaire_la_dsn(ctx, &mut m, &lignes, rang, &f)?;
         return Ok(f);
     }
@@ -1041,7 +1042,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
     // est range dans ce mois. Ce qu'une ligne de DSN nomme se lit selon l'acte, jamais par son prefixe
     // (`documents::fichier_depose`, comme l'Historique) : un `Bulletin_x.dsn` pose n'est pas un bulletin.
     if let Some(rang) = deposee {
-        let f = documents::fichier_depose(&sortie, nom);
+        let f = documents::fichier_depose(&ctx.racine, mois, nom);
         refaire_le_signalement(ctx, mois, &lignes[rang], &f)?;
         return Ok(f);
     }
@@ -1054,8 +1055,8 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         (None, Some(b)) => b.to_string(),
         (None, None) => nom.to_string(),
     };
-    let dpae = |reel: bool| lignes.iter().rposition(|l| l.acte() == Acte::Dpae && l.fichier().map(NomDeFichier::texte) == Some(base.as_str()) && du_mois(l) && l.reel() == reel);
-    match dpae(true).or_else(|| dpae(false)) {
+    let dpae = |mode: Mode| lignes.iter().rposition(|l| l.acte() == Acte::Dpae && l.fichier().map(NomDeFichier::texte) == Some(base.as_str()) && du_mois(l) && l.mode() == mode);
+    match dpae(Mode::Reel).or_else(|| dpae(Mode::Test)) {
         Some(rang) => {
             let dossier = documents::FichierDuJournal::Depose.dossier().sous(&sortie);
             refaire_la_dpae(ctx, mois, &lignes[rang], &dossier.join(&base))?;
@@ -1189,13 +1190,13 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
         }
         return Err(socle::echec::refus_avec(
             "Cette attestation vient de France Travail : elle ne se refait pas, elle se relit dans ses retours, où son retour (nature 46) manque ; le fichier a été déplacé ou effacé.",
-            socle::echec::Lieu { chemin: Some(envois::retours::RETOURS.to_string()), fichier: Some(nom.to_string()), ..Default::default() },
+            socle::echec::Lieu { chemin: Some(envois::retours::RETOURS.to_string()), fichier: Some(fichier.clone().into()), ..Default::default() },
         )
         .reclasser(Classe::Refuse));
     }
     Err(socle::echec::refus_avec(
         "Ce document n'est plus dans les sorties de son mois : le journal dit qu'il est parti, le fichier a été déplacé ou effacé.",
-        socle::echec::Lieu { chemin: Some(format!("sorties/{}", mois)), fichier: Some(nom.to_string()), ..Default::default() },
+        socle::echec::Lieu { chemin: Some(documents::DossierDuMois::Sorties.chemin(mois).to_string()), fichier: Some(fichier.clone().into()), ..Default::default() },
     )
     .reclasser(Classe::Refuse))
 }
@@ -1343,7 +1344,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
                     type_declaration: TypeDeLaDeclaration::Normale,
                     ordre,
                     remplace: None,
-                    envoi_test: false,
+                    mode: Mode::Reel,
                     date_constitution: Some(jour),
                 };
                 let texte = declarations::amorcage::generer(&ctx_j, paie, &options, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(|e| e.en_classe(Classe::Illisible))?;

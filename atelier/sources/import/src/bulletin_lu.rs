@@ -62,7 +62,7 @@ const fn pt(n: i64) -> Mesure {
 }
 
 /// La table de lecture, dans `logiciel/donnees/`.
-pub const FICHIER_TABLE: &str = "bulletins-lecture-base.json";
+pub const FICHIER_TABLE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("bulletins-lecture-base.json");
 
 /// Deux mots dont le milieu vertical s'ecarte de moins que cela sont sur un meme rang (en points).
 const TOLERANCE: Mesure = mesure("3.5");
@@ -684,7 +684,7 @@ struct LigneDetaillee {
 /// LES TEXTES DE LA TABLE LIVREE, tels qu'ecrits : ses notes, ses libelles, ses signatures, les rubriques de ses lignes
 /// (le vocabulaire que le masque des incidents garde : `import::incident`).
 pub fn textes_de_la_table() -> R<Vec<String>> {
-    let t: TableEcrite = socle::forme::lire_fichier(&socle::fichiers::dossier_du_code().join(FICHIER_TABLE), "La table de lecture des bulletins ne se lit pas : le signaler au développeur.")?;
+    let t: TableEcrite = socle::forme::lire_fichier(&FICHIER_TABLE.dans(&socle::fichiers::dossier_du_code()), "La table de lecture des bulletins ne se lit pas : le signaler au développeur.")?;
     let e = &t.entetes;
     let r = &t.resumes;
     let mut libelles: Vec<&Libelles> = vec![&e.libelle, &e.base, &e.taux, &e.montant, &e.salarie, &e.employeur, &e.periode, &e.cumul];
@@ -754,7 +754,7 @@ fn groupes<K: Clone + std::fmt::Display>(g: &[(K, Libelles)], ou: &str) -> R<Vec
 impl Table {
     /// La table livree (`logiciel/donnees/bulletins-lecture-base.json`).
     pub fn livree() -> R<Table> {
-        let chemin = socle::fichiers::dossier_du_code().join(FICHIER_TABLE);
+        let chemin = FICHIER_TABLE.dans(&socle::fichiers::dossier_du_code());
         Table::de(socle::forme::lire_fichier(&chemin, "La table de lecture des bulletins ne se lit pas : le signaler au développeur.")?)
     }
 
@@ -843,7 +843,7 @@ fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> R<Vec<LigneTable>> {
             None => (None, None),
             Some(LigneEcrite::Rubrique(s)) => (Some(s.clone()), None),
             Some(LigneEcrite::Detail(d)) => match d.heures {
-                Some(socle::forme::Nombre(h)) if h <= Decimal::ZERO => return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.heures", o))),
+                Some(socle::forme::Nombre(h)) if h <= Decimal::ZERO => return Err(socle::echec::livree_dite(&FICHIER_TABLE, &format!("{}.heures", o), "table de lecture des bulletins")),
                 h => (Some(d.rubrique.clone()), h.map(|n| n.0)),
             },
         };

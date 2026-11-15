@@ -15,8 +15,8 @@
 //!
 //! UN SEUL MAGASIN : `imprevus/AAAA-MM.json` sous les donnees de la compagnie, au mois ou l'imprevu se range (le dernier
 //! jour travaille d'un arret, le premier jour d'une suspension) : `{"quoi", "mois", "imprevus": [...]}`. Chaque
-//! imprevu dit son `genre` (`arret` ou `suspension`) ; sa forme est `ArretSaisi` ou `SuspensionSaisie`, et tout autre
-//! champ refuse.
+//! imprevu dit son `genre` en tete (`arret` ou `suspension`, l'etiquette de `Imprevu`) ; sa forme est `ArretSaisi` ou
+//! `SuspensionSaisie`, et tout autre champ refuse.
 
 use std::path::{Path, PathBuf};
 
@@ -37,12 +37,8 @@ use socle::echec::R;
 use socle::grandeurs::Heures;
 use socle::num::{div, mul, Decimal};
 
-/// Le genre d'un arret de travail (bloc S21.G00.60).
-pub const ARRET: &str = "arret";
-/// Le genre d'une autre suspension du contrat (bloc S21.G00.65).
-pub const SUSPENSION: &str = "suspension";
 /// Le dossier du magasin, sous les donnees de la compagnie.
-pub const DOSSIER: &str = socle::fichiers::MAGASIN_DES_IMPREVUS;
+pub const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::MAGASIN_DES_IMPREVUS;
 
 /// La phrase du refus d'un imprevu qui n'a pas sa forme.
 pub const ILLISIBLE: &str = "Un imprévu ne se lit pas : le signaler au développeur.";
@@ -52,20 +48,6 @@ const ABIME: &str = "Un mois du magasin des imprévus ne se relit pas : il est a
 
 /// La rubrique de la retenue d'une absence non remuneree.
 const ABSENCE_NON_REMUNEREE: droit::catalogue::CodeDeRubrique = droit::catalogue::CodeDeRubrique::du_moteur("absence_non_remuneree");
-
-/// Le genre d'un arret, tel qu'il s'ecrit (`ARRET`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GenreArret {
-    #[serde(rename = "arret")]
-    Arret,
-}
-
-/// Le genre d'une suspension, tel qu'il s'ecrit (`SUSPENSION`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GenreSuspension {
-    #[serde(rename = "suspension")]
-    Suspension,
-}
 
 /// UN ARRET DE TRAVAIL, dans l'ordre ou il s'ecrit ; chaque cle est ecrite, nulle quand elle n'a pas de valeur, et sa
 /// lecture refuse celle qui manque. Ses champs de la norme (motif, dernier
@@ -81,7 +63,6 @@ pub enum GenreSuspension {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArretSaisi {
-    pub genre: GenreArret,
     pub salarie: droit::contexte::IdSalarie,
     pub contrat_debut: Jour,
     pub contrat_numero: Option<crate::numeros::NumeroContrat>,
@@ -142,7 +123,6 @@ pub struct RepriseNotee {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SuspensionSaisie {
-    pub genre: GenreSuspension,
     pub salarie: droit::contexte::IdSalarie,
     pub contrat_debut: Jour,
     pub contrat_numero: Option<crate::numeros::NumeroContrat>,
@@ -155,12 +135,38 @@ pub struct SuspensionSaisie {
     pub note: Option<String>,
 }
 
-/// UN IMPREVU DU MAGASIN : un arret de travail ou une suspension, que son genre distingue.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Imprevu {
-    Arret(ArretSaisi),
-    Suspension(SuspensionSaisie),
+/// Les imprevus et leur genre, declares ensemble : le nom d'un genre ne s'ecrit qu'a leur appel.
+macro_rules! imprevus {
+    ($( $(#[$va:meta])* $v:ident($t:ty) = $n:literal, )*) => {
+        socle::noms_fermes! {
+            /// LE GENRE D'UN IMPREVU, tel que le magasin l'ecrit.
+            GenreDImprevu, "Genre d'imprévu" { $( $(#[$va])* $v = $n, )* }
+        }
+
+        /// UN IMPREVU DU MAGASIN : un arret de travail ou une suspension, que son genre distingue ; le genre s'ecrit en
+        /// tete de l'imprevu, `genre`, par son nom (`GenreDImprevu`).
+        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+        #[serde(tag = "genre")]
+        pub enum Imprevu {
+            $( #[serde(rename = $n)] $v($t), )*
+        }
+
+        impl Imprevu {
+            /// Son genre.
+            pub fn genre(&self) -> GenreDImprevu {
+                match self {
+                    $( Imprevu::$v(_) => GenreDImprevu::$v, )*
+                }
+            }
+        }
+    };
+}
+
+imprevus! {
+    /// Un arret de travail (bloc S21.G00.60).
+    Arret(ArretSaisi) = "arret",
+    /// Une autre suspension du contrat (bloc S21.G00.65).
+    Suspension(SuspensionSaisie) = "suspension",
 }
 
 /// LE FICHIER D'UN MOIS DU MAGASIN : ce qu'il range, son mois, ses imprevus.
@@ -227,14 +233,6 @@ impl Suspend for Imprevu {
 
 
 impl Imprevu {
-    /// Son genre, tel qu'il s'ecrit (`ARRET`, `SUSPENSION`).
-    pub fn genre(&self) -> &'static str {
-        match self {
-            Imprevu::Arret(_) => ARRET,
-            Imprevu::Suspension(_) => SUSPENSION,
-        }
-    }
-
     /// L'arret qu'il est, s'il en est un.
     pub fn arret(&self) -> Option<&ArretSaisi> {
         match self {
@@ -343,7 +341,7 @@ fn siens_sans_noter(racine: &Path, cle: &IdSalarie) -> R<Vec<Imprevu>> {
 }
 
 /// Les imprevus d'un genre (ou de tous les genres) d'un salarie (`du_salarie`) qui croisent le mois `AAAA-MM`.
-pub fn du_mois_du_salarie(racine: &Path, mois: Mois, genre_voulu: Option<&str>, cle: &IdSalarie) -> R<Vec<Imprevu>> {
+pub fn du_mois_du_salarie(racine: &Path, mois: Mois, genre_voulu: Option<GenreDImprevu>, cle: &IdSalarie) -> R<Vec<Imprevu>> {
     croisant(du_salarie(racine, cle)?, mois, genre_voulu)
 }
 
@@ -449,11 +447,11 @@ pub fn arret_croise(arret: &ArretSaisi, debut: &Jour, fin: &Jour) -> R<bool> {
 }
 
 /// Les imprevus d'un genre (ou de tous les genres) qui croisent le mois `AAAA-MM`.
-pub fn du_mois(racine: &Path, mois: Mois, genre_voulu: Option<&str>) -> R<Vec<Imprevu>> {
+pub fn du_mois(racine: &Path, mois: Mois, genre_voulu: Option<GenreDImprevu>) -> R<Vec<Imprevu>> {
     croisant(tous(racine)?, mois, genre_voulu)
 }
 
-fn croisant(imprevus: Vec<Imprevu>, mois: Mois, genre_voulu: Option<&str>) -> R<Vec<Imprevu>> {
+fn croisant(imprevus: Vec<Imprevu>, mois: Mois, genre_voulu: Option<GenreDImprevu>) -> R<Vec<Imprevu>> {
     let (debut, fin) = (mois.premier_jour(), mois.dernier_jour());
     let mut out = Vec::new();
     for imp in imprevus {
@@ -539,7 +537,7 @@ pub fn suspensions_du_mois(ctx: &Contexte, paie: &crate::calcul::Paie, mois: Moi
     let qui = ctx.nomme(cle);
     let mut out = Vec::new();
     let mut siennes = Vec::new();
-    for imp in du_mois_du_salarie(&ctx.racine, mois, Some(SUSPENSION), cle)? {
+    for imp in du_mois_du_salarie(&ctx.racine, mois, Some(GenreDImprevu::Suspension), cle)? {
         if let Some(code) = imp.suspension().map(|s| s.motif) {
             if du_contrat(&imp, cle, e.numero.as_ref(), &e.debut)? {
                 siennes.push((code, imp));

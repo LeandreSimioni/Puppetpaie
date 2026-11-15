@@ -67,7 +67,7 @@ struct Motif {
 }
 
 fn motifs_de_la_norme() -> R<std::sync::Arc<Base>> {
-    crate::norme::livree("amorcage-base.json")
+    crate::norme::livree(&const { socle::fichiers::CheminRelatif::du_moteur("amorcage-base.json") })
 }
 
 /// Le libelle du motif ; un motif que la norme ne connait pas refuse en le nommant.
@@ -84,7 +84,7 @@ pub struct Options {
     pub type_declaration: TypeDeLaDeclaration,
     pub ordre: NumeroDOrdre,
     pub remplace: Option<IdentifiantDeDeclaration>,
-    pub envoi_test: bool,
+    pub mode: socle::mode::Mode,
     pub date_constitution: Option<Jour>,
 }
 
@@ -242,7 +242,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
     f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
-    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.005"), droit::natures::ListeDeLaNorme::code_de_la_norme(o.mode));
     f.ecrire_la_version()?;
     f.add(droit::rubrique!("S10.G00.00.007"), "01");
     // << 02 - envoi neant >> n'a pas de sens ici.

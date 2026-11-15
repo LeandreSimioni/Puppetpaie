@@ -593,14 +593,14 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
 /// ou `None` quand aucune n'est due (France Travail ne publie rien) ; un signalement (nature 04, 05, 07) n'en appelle pas.
 /// Le fichier depose est relu la ou le depot l'a pris (`sorties/<mois>/<fichier>`).
 fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
-    if !l.reel() {
+    if l.mode() == socle::mode::Mode::Test {
         return Ok(None);
     }
     if l.nature_dsn().is_some_and(|n| n != droit::nature_declaration::NatureDeLaDeclaration::Mensuelle) {
         return Ok(None);
     }
     let (Some(mois), Some(fichier)) = (l.mois(), l.fichier()) else { return Ok(None) };
-    let chemin = documents::fichier_depose(&ctx.racine.join("sorties").join(mois.to_string()), fichier.texte());
+    let chemin = documents::fichier_depose(&ctx.racine, mois, fichier.texte());
     // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
@@ -842,7 +842,7 @@ fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
 fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: EffectifsParAnnee) -> R<()> {
     let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
-        socle::ecriture::ecrire_json(&racine.join(droit::contexte::EFFECTIFS), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
+        socle::ecriture::ecrire_json(&droit::contexte::EFFECTIFS.dans(racine), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     }
     Ok(())
 }

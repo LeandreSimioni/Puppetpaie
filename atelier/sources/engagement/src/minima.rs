@@ -105,7 +105,7 @@ fn premiere_partie(c: &Convention) -> R<String> {
 /// Ce qui manque a la table livree, nomme par sa cle.
 #[track_caller]
 fn manque(cle: &str) -> Echec {
-    socle::echec::livree("minima-conventionnels.json", cle)
+    socle::echec::livree(&droit::minima::BASE, cle)
 }
 
 /// Les donnees d'une ligne et de la paie qu'un plancher lit.

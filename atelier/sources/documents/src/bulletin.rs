@@ -1130,7 +1130,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         }
         long.push(')');
         long
-    } else if e.a_cheval() {
+    } else if e.place_du_mois() != engagement::PlaceDuMois::Seul {
         let fin = e.fin.ok_or_else(|| socle::refus!("Le contrat qui court sur plusieurs mois depuis le {} n'a pas de date de fin.", e.debut.jj_mm_aaaa()))?;
         format!(" (contrat du {} au {})", e.debut.jj_mm_aaaa(), fin.jj_mm_aaaa())
     } else {

@@ -452,7 +452,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 
 /// Ce que l'administrateur de l'installation est pour la compagnie `racine` (`administrateur::etat`).
 pub fn administrateur_etat(racine: &Path) -> R<crate::gestes::administrateur::EtatAdministrateur> {
-    let inst = crate::gestes::administrateur::installation_de(racine);
+    let inst = compagnie::installation::IdDeCompagnie::installation_de(racine);
     crate::gestes::administrateur::etat(&inst, racine, &Poste::de_ce_poste())}
 
 /// `administrateur-rattacher` et `administrateur-detacher`, sur le coffre de `poste` : tout se decide dans
@@ -460,7 +460,7 @@ pub fn administrateur_etat(racine: &Path) -> R<crate::gestes::administrateur::Et
 /// `mdp`, le mot de passe actuel de la compagnie, tape pour la route.
 pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, mdp: Option<&socle::secret::Secret>, poste: &Poste) -> R<Rattachement> {
     use crate::gestes::administrateur as adm;
-    let inst = adm::installation_de(racine);
+    let inst = compagnie::installation::IdDeCompagnie::installation_de(racine);
     let admin = match charge.administrateur {
         Some(m) => m,
         None => compagnie::demande::saisir_secret(
@@ -694,7 +694,7 @@ fn ecrire_compte_dpae(ctx: &Contexte, propres: Vec<(&'static str, String)>) -> R
         *case = Some(v);
     }
     crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::ApiDpae(Some(cfg)), Some(ctx.aujourdhui))?;
-    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&ctx.racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE)?.au(&ctx.aujourdhui))
+    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&droit::contexte::ENTREPRISE.dans(&ctx.racine), droit::contexte::ENTREPRISE.texte())?.au(&ctx.aujourdhui))
 }
 
 // ------------------------------------------------------------------ le mot de passe du logiciel
@@ -719,7 +719,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&socle::se
     let actuel = actuel(mdp);
     // UNE COMPAGNIE DE L'ADMINISTRATEUR : son mot de passe est celui de toutes ses compagnies, et il se change pour toutes a
     // la fois (`administrateur::changer`) ; l'actuel les ouvre chacune, tout se prepare puis tout se remplace.
-    let inst = crate::gestes::administrateur::installation_de(&ctx.racine);
+    let inst = compagnie::installation::IdDeCompagnie::installation_de(&ctx.racine);
     if crate::gestes::administrateur::est_rattachee(&inst, &ctx.racine)? {
         let Some(actuel) = actuel else {
             return Err(refus("Tapez le mot de passe actuel de l'administrateur : le nouveau le remplace dans toutes ses compagnies. Rien n'a ete modifie."));
@@ -733,7 +733,7 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&socle::se
 
 /// Plus de mot de passe du logiciel. L'actuel est exige.
 fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
-    if crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)? {
+    if crate::gestes::administrateur::est_rattachee(&compagnie::installation::IdDeCompagnie::installation_de(&ctx.racine), &ctx.racine)? {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;
@@ -746,7 +746,7 @@ fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> 
 /// Efface le jeton local, sans reseau. L'acces reste accorde cote Google, et se retire sur myaccount.google.com.
 fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<GoogleOublie> {
     exiger_mot_de_passe(&ctx.racine, mdp, "oublier le compte Google")?;
-    let p = ctx.racine.join(JETON_GOOGLE);
+    let p = socle::fichiers::JETON_GOOGLE.dans(&ctx.racine);
     let efface = p.exists();
     if efface {
         std::fs::remove_file(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
@@ -756,13 +756,10 @@ fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<Goog
 
 /// L'application Google du logiciel, livree avec lui dans `google-application.json` (a cote du code), `client_id` et
 /// `client_secret`. Le secret ne s'ecrit pas dans le source Rust.
-const FICHIER_APPLICATION: &str = "google-application.json";
+const FICHIER_APPLICATION: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("google-application.json");
 
-/// L'application Google propre a la compagnie, sous `config/`, et le jeton scelle.
+/// L'application Google propre a la compagnie, sous `config/` ; le jeton scelle : `socle::fichiers::JETON_GOOGLE`.
 const FICHIER_IDENTIFIANTS: &str = "google.json";
-pub(crate) const FICHIER_JETON: &str = "google-jeton.bin";
-/// Le jeton Google, sous la racine de la compagnie.
-pub const JETON_GOOGLE: &str = "config/google-jeton.bin";
 
 /// La description scellee avec le jeton.
 pub(crate) const DESCRIPTION: &str = "moteur de paie - jeton Google";
@@ -807,11 +804,11 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
         }
         return Ok((Application { client_id: a.client_id, client_secret: a.client_secret }, p.to_string_lossy().into_owned()));
     }
-    let livre = socle::fichiers::dossier_du_code().join(FICHIER_APPLICATION);
+    let livre = FICHIER_APPLICATION.dans(&socle::fichiers::dossier_du_code());
     if !livre.exists() {
         let lieu = socle::echec::Lieu {
             chemin: Some(p.to_string_lossy().into_owned()),
-            fichier: Some(livre.to_string_lossy().into_owned()),
+            fichier: Some(FICHIER_APPLICATION),
             detail: Some("« Publier » la pose depuis le secret PUPPETPAIE_GOOGLE_APPLICATION ; celle de la compagnie s'écrit à `chemin` (client_id, client_secret).".to_string()),
             ..socle::echec::Lieu::default()
         };
@@ -835,7 +832,7 @@ enum Jeton {
 impl Jeton {
     /// Le jeton scelle sous la racine de la compagnie.
     fn de(racine: &Path) -> Jeton {
-        let p = config(racine).join(FICHIER_JETON);
+        let p = socle::fichiers::JETON_GOOGLE.dans(racine);
         if !p.exists() {
             return Jeton::Absent;
         }
@@ -953,7 +950,7 @@ fn sceller_le_jeton(racine: &Path, jeton: &envois::google_autorisation::JetonGoo
         .map_err(|e| e.reformuler(|m| format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", m)).reclasser(Classe::Google))?;
     let dossier = config(racine);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Google))?;
-    let chemin = dossier.join(FICHIER_JETON);
+    let chemin = socle::fichiers::JETON_GOOGLE.dans(racine);
     std::fs::write(&chemin, scelle).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Google))?;
     Ok(jeton.compte.clone())
 }

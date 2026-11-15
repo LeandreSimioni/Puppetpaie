@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use declarations::dpae::EtatDeLaDpae;
 use droit::contexte::IdSalarie;
 use documents::fiche_questionnaire::CodeDeDemande;
 use droit::fiche::{Courriel, Nic};
@@ -15,37 +16,12 @@ use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
+use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::num::Decimal;
 
 use crate::envoi::IdDeCourriel;
 use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
-
-/// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    Reel,
-    Test,
-}
-
-impl Mode {
-    pub fn de(reel: bool) -> Mode {
-        if reel {
-            Mode::Reel
-        } else {
-            Mode::Test
-        }
-    }
-
-    /// Son nom, tel que la ligne l'ecrit.
-    pub fn nom(self) -> &'static str {
-        match self {
-            Mode::Reel => "reel",
-            Mode::Test => "test",
-        }
-    }
-}
 
 /// La sorte d'un envoi, telle que `quoi` l'ecrit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -189,10 +165,6 @@ impl Ligne {
         commun!(self, e => e.mode)
     }
 
-    pub fn reel(&self) -> bool {
-        self.mode() == Mode::Reel
-    }
-
     pub fn qui(&self) -> &str {
         commun!(self, e => &e.qui)
     }
@@ -278,8 +250,8 @@ impl Ligne {
     /// regularisation de la CASC, un dossier, une demande de fiche, un contrat contresigne ne partent que par courriel.
     pub fn remise(&self) -> Option<crate::etats::ModeDeRemise> {
         match self {
-            Ligne::ContratSignature(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
-            Ligne::Documents(e) => Some(crate::etats::ModeDeRemise::de(e.detail.main_propre)),
+            Ligne::ContratSignature(e) => Some(e.detail.remise),
+            Ligne::Documents(e) => Some(e.detail.remise),
             Ligne::Dsn(_) | Ligne::Dpae(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => None,
         }
     }
@@ -463,43 +435,90 @@ impl DetailDpae {
     }
 }
 
-/// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`).
+/// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`), et ce qu'elle
+/// est devenue (`EtatDeLaDpae`), lu une fois dans le certificat ; le journal l'ecrit en deux booleens et un dossier, et
+/// le relit tel qu'il l'a ecrit (`PersonneEcrite`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "PersonneEcrite", into = "PersonneEcrite")]
 pub struct PersonneCertifiee {
     pub nom: String,
     pub prenom: String,
-    /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc (le journal l'ecrit `""`).
-    #[serde(with = "socle::forme::vide_si_aucun")]
+    /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc.
     pub embauche: Option<socle::date::Jour>,
-    pub dossier: String,
+    pub etat: EtatDeLaDpae,
     /// C_RETOUR_AR.
     pub code: declarations::dpae::CodeRetourDpae,
     /// Le libelle de son code (Format 120).
     pub libelle: String,
-    pub enregistree: bool,
-    pub deja_existante: bool,
     pub formalites: Vec<declarations::dpae::FormaliteDpae>,
     /// Ce que la page en montre (`routes::depots`) : pose sur ce qu'une route rend, jamais ecrit ni lu au journal.
-    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub pastille: Option<socle::ecran::Pastille>,
 }
 
-impl PersonneCertifiee {
-    /// Refusee : un code retour qui ne l'enregistre pas et ne la dit pas deja existante.
-    pub fn refusee(&self) -> bool {
-        !self.enregistree && !self.deja_existante
-    }
+/// LA FORME D'UNE PERSONNE DU CERTIFICAT AU JOURNAL : son etat s'y ecrit en `dossier` (`""` : le certificat n'en dit
+/// aucun), `enregistree` et `deja_existante`, et se relit de meme : enregistree sous un dossier, deja existante ou
+/// refusee avec ou sans dossier ; une autre combinaison ne se lit pas.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PersonneEcrite {
+    nom: String,
+    prenom: String,
+    /// Le journal ecrit `""` une zone a blanc.
+    #[serde(with = "socle::forme::vide_si_aucun")]
+    embauche: Option<socle::date::Jour>,
+    /// Le journal ecrit `""` un dossier que le certificat ne dit pas.
+    #[serde(with = "socle::forme::vide_si_aucun")]
+    dossier: Option<declarations::dpae::DossierDpae>,
+    code: declarations::dpae::CodeRetourDpae,
+    libelle: String,
+    enregistree: bool,
+    deja_existante: bool,
+    formalites: Vec<declarations::dpae::FormaliteDpae>,
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pastille: Option<socle::ecran::Pastille>,
+}
 
+impl TryFrom<PersonneEcrite> for PersonneCertifiee {
+    type Error = socle::echec::Echec;
+    fn try_from(p: PersonneEcrite) -> Result<PersonneCertifiee, socle::echec::Echec> {
+        let PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille } = p;
+        let etat = match (enregistree, deja_existante, dossier) {
+            (true, false, Some(dossier)) => EtatDeLaDpae::Enregistree { dossier },
+            (false, true, dossier) => EtatDeLaDpae::DejaExistante { dossier },
+            (false, false, dossier) => EtatDeLaDpae::Refusee { dossier },
+            (true, false, None) | (true, true, _) => {
+                return Err(socle::refus!(
+                    "Le journal des envois dit de la DPAE de {} enregistree {}, deja existante {} : ce n'est l'etat d'aucune DPAE du certificat (enregistree sous un dossier, deja existante ou refusee). Le signaler au developpeur.",
+                    socle::fichiers::repr(&nom),
+                    enregistree,
+                    deja_existante
+                ))
+            }
+        };
+        Ok(PersonneCertifiee { nom, prenom, embauche, etat, code, libelle, formalites, pastille })
+    }
+}
+
+impl From<PersonneCertifiee> for PersonneEcrite {
+    fn from(p: PersonneCertifiee) -> PersonneEcrite {
+        let PersonneCertifiee { nom, prenom, embauche, etat, code, libelle, formalites, pastille } = p;
+        let (dossier, enregistree, deja_existante) = match etat {
+            EtatDeLaDpae::Enregistree { dossier } => (Some(dossier), true, false),
+            EtatDeLaDpae::DejaExistante { dossier } => (dossier, false, true),
+            EtatDeLaDpae::Refusee { dossier } => (dossier, false, false),
+        };
+        PersonneEcrite { nom, prenom, embauche, dossier, code, libelle, enregistree, deja_existante, formalites, pastille }
+    }
+}
+
+impl PersonneCertifiee {
     /// Sa pastille : enregistree, faite ; deja existante, une information ; refusee, refusee.
     pub fn pastille_due(&self) -> socle::ecran::Pastille {
         use socle::ecran::{EtatDEcran, Pastille};
-        if self.enregistree {
-            Pastille::de(EtatDEcran::Fait, &if self.dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée — dossier {}", self.dossier) })
-        } else if self.deja_existante {
-            Pastille::de(EtatDEcran::Information, "déjà existante")
-        } else {
-            Pastille::de(EtatDEcran::Refuse, self.code.libelle())
+        match &self.etat {
+            EtatDeLaDpae::Enregistree { dossier } => Pastille::de(EtatDEcran::Fait, &format!("enregistrée — dossier {}", dossier)),
+            EtatDeLaDpae::DejaExistante { .. } => Pastille::de(EtatDEcran::Information, "déjà existante"),
+            EtatDeLaDpae::Refusee { .. } => Pastille::de(EtatDEcran::Refuse, self.code.libelle()),
         }
     }
 }
@@ -609,7 +628,8 @@ pub struct Servi {
 #[serde(deny_unknown_fields)]
 pub struct DetailDocuments {
     pub salaries: Vec<Servi>,
-    pub main_propre: bool,
+    #[serde(rename = "main_propre", with = "crate::etats::en_main_propre")]
+    pub remise: crate::etats::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -719,7 +739,8 @@ impl ArticleModifie {
 #[serde(deny_unknown_fields)]
 pub struct DetailSignature {
     pub contrats: Vec<ContratParti>,
-    pub main_propre: bool,
+    #[serde(rename = "main_propre", with = "crate::etats::en_main_propre")]
+    pub remise: crate::etats::ModeDeRemise,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -18,13 +18,14 @@
 //!
 //! RIEN NE SE DEVINE (regle 1) : un fichier qu'on ne reconnait pas est `autre`, pas « sans doute une DSN ».
 //! Rien n'est ecrit dans les donnees de la compagnie : seuls les zip s'ouvrent, et dans `travail/`
-//! seulement, un sous-dossier par archive, chemins d'archive assainis (`enclosed_name`).
+//! seulement, un sous-dossier par archive ; une entree dont le nom ne fait pas un chemin sous l'archive
+//! (`CheminRelatif::ecrit_ailleurs`) ne s'ecrit pas, elle est mise de cote (`MiseDeCote`).
 
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use socle::fichiers::Empreinte;
+use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 use socle::texte::{lignes_du_texte, texte_latin1};
 use socle::echec::R;
 
@@ -84,8 +85,8 @@ pub struct PageLue {
 /// Un fichier trie.
 #[derive(Clone, Debug)]
 pub struct Fichier {
-    /// Le chemin relatif au dossier trie, en `/` ; dans une archive : `lot.zip/sous/fichier.dsn`.
-    pub chemin: String,
+    /// Le chemin relatif au dossier trie ; dans une archive : `lot.zip/sous/fichier.dsn`.
+    pub chemin: CheminRelatif,
     /// Ou il se lit sur le disque (sous `travail/` pour ce qui sort d'une archive).
     pub disque: PathBuf,
     pub sorte: Sorte,
@@ -97,19 +98,70 @@ pub struct Fichier {
     /// Pourquoi, en une phrase, quand il y a quelque chose a dire.
     pub raison: Option<String>,
     /// Le fichier dont celui-ci est la copie exacte.
-    pub doublon_de: Option<String>,
+    pub doublon_de: Option<CheminRelatif>,
     /// L'archive d'ou il sort.
-    pub archive: Option<String>,
+    pub archive: Option<CheminRelatif>,
     /// Le mois qu'une DSN declare.
     pub mois: Option<socle::mois::Mois>,
 }
 
+/// UNE ENTREE MISE DE COTE : un nom qui ne fait pas un chemin sous le dossier trie, ou une entree qui ne se lit pas.
+/// Elle ne s'ecrit jamais sur le disque ; le compte rendu la dit (`dit`), et le reste se trie.
+#[derive(Clone, Debug)]
+pub struct MiseDeCote {
+    /// Le dossier ou l'archive qui la porte ; aucun a la racine du dossier trie.
+    pub dans: Option<CheminRelatif>,
+    pub entree: EntreeDeCote,
+    pub raison: RaisonDeMiseDeCote,
+}
+
+/// QUELLE ENTREE EST MISE DE COTE : son nom tel qu'il est ecrit, ou, pour une entree qui ne se lit pas, son rang dans la
+/// lecture du dossier ou de l'archive, a partir de 1 (un compte, que la phrase dit).
+#[derive(Clone, Debug)]
+pub enum EntreeDeCote {
+    Nommee(String),
+    SansNom(usize),
+}
+
+/// POURQUOI UNE ENTREE EST MISE DE COTE, avec sa phrase.
+#[derive(Clone, Debug)]
+pub enum RaisonDeMiseDeCote {
+    /// Le nom d'une entree d'archive ne fait pas un chemin sous l'archive (`CheminRelatif::ecrit_ailleurs`).
+    HorsDeLArchive,
+    /// Le nom d'un fichier du disque n'est pas un `NomDeFichier`.
+    PasUnNom,
+    /// L'entree ne se lit pas : l'erreur, telle que le disque ou l'archive la dit.
+    Illisible(String),
+}
+
+impl std::fmt::Display for RaisonDeMiseDeCote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RaisonDeMiseDeCote::HorsDeLArchive => f.write_str("son nom n'est pas un chemin sous l'archive (il remonte par « .. », porte « : », ne nomme rien, ou il est absolu)"),
+            RaisonDeMiseDeCote::PasUnNom => f.write_str("son nom n'est pas un nom de fichier (il porte une barre inverse)"),
+            RaisonDeMiseDeCote::Illisible(e) => write!(f, "l'entrée ne se lit pas ({})", e),
+        }
+    }
+}
+
+impl MiseDeCote {
+    /// « « ../x.dsn » (dans lot.zip) est mis de côté, sans être lu : … » ; « L'entrée n° 3 (dans lot.zip) … ».
+    pub fn dit(&self) -> String {
+        let dans: String = self.dans.iter().map(|d| format!(" (dans {})", d)).collect();
+        match &self.entree {
+            EntreeDeCote::Nommee(n) => format!("« {} »{} est mis de côté, sans être lu : {}.", n, dans, self.raison),
+            EntreeDeCote::SansNom(rang) => format!("L'entrée n° {}{} est mise de côté, sans être lue : {}.", rang, dans, self.raison),
+        }
+    }
+}
+
 /// Le tri d'un dossier : chaque fichier, dans l'ordre du parcours (noms tries, une archive suivie de
-/// son contenu).
+/// son contenu), et les entrees mises de cote.
 #[derive(Clone, Debug)]
 pub struct Tri {
     pub dossier: PathBuf,
     pub fichiers: Vec<Fichier>,
+    pub mises_de_cote: Vec<MiseDeCote>,
 }
 
 /// `trier(dossier, travail)` : parcourt `dossier` et ses sous-dossiers, ouvre chaque zip dans `travail/`
@@ -121,21 +173,22 @@ pub fn trier(dossier: &Path, travail: &Path) -> R<Tri> {
     }
     std::fs::create_dir_all(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Refuse))?;
     let travail_canon = std::fs::canonicalize(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Disque))?;
-    let mut t = Trieur { travail: travail.to_path_buf(), travail_canon, vus: HashMap::new(), fichiers: Vec::new() };
-    t.parcourir(dossier, "", None, 0);
-    Ok(Tri { dossier: dossier.to_path_buf(), fichiers: t.fichiers })
+    let mut t = Trieur { travail: travail.to_path_buf(), travail_canon, vus: HashMap::new(), fichiers: Vec::new(), mises_de_cote: Vec::new() };
+    t.parcourir(dossier, None, None, 0)?;
+    Ok(Tri { dossier: dossier.to_path_buf(), fichiers: t.fichiers, mises_de_cote: t.mises_de_cote })
 }
 
 struct Trieur {
     travail: PathBuf,
     travail_canon: PathBuf,
     /// Empreinte -> chemin du premier fichier qui l'a portee.
-    vus: HashMap<Empreinte, String>,
+    vus: HashMap<Empreinte, CheminRelatif>,
     fichiers: Vec<Fichier>,
+    mises_de_cote: Vec<MiseDeCote>,
 }
 
 impl Trieur {
-    fn nouveau(&self, chemin: String, disque: PathBuf, archive: Option<&str>) -> Fichier {
+    fn nouveau(&self, chemin: CheminRelatif, disque: PathBuf, archive: Option<&CheminRelatif>) -> Fichier {
         Fichier {
             chemin,
             disque,
@@ -145,33 +198,54 @@ impl Trieur {
             pages: Vec::new(),
             raison: None,
             doublon_de: None,
-            archive: archive.map(String::from),
+            archive: archive.cloned(),
             mois: None,
         }
     }
 
-    /// Les entrees d'un dossier, par nom, sous-dossiers compris.
-    fn parcourir(&mut self, dossier: &Path, prefixe: &str, archive: Option<&str>, profondeur: usize) {
-        let illisible = |t: &mut Self, raison: String| {
-            let mut f = t.nouveau(prefixe.trim_end_matches('/').to_string(), dossier.to_path_buf(), archive);
-            f.sorte = Sorte::Illisible;
-            f.raison = Some(raison);
-            t.fichiers.push(f);
-        };
-        let lues = match std::fs::read_dir(dossier) {
-            Ok(l) => l,
-            Err(e) => return illisible(self, format!("dossier qui ne se lit pas ({})", e)),
+    /// Les entrees d'un dossier, par nom, sous-dossiers compris ; `prefixe` est son chemin sous le dossier trie (aucun
+    /// pour le dossier trie lui-meme). Le dossier trie qui ne se lit pas : son erreur remonte ; un sous-dossier se dit
+    /// illisible ; une entree qui ne se lit pas est mise de cote.
+    fn parcourir(&mut self, dossier: &Path, prefixe: Option<&CheminRelatif>, archive: Option<&CheminRelatif>, profondeur: usize) -> R<()> {
+        let lues = match (std::fs::read_dir(dossier), prefixe) {
+            (Ok(l), _) => l,
+            (Err(e), None) => return Err(socle::echec::du_disque(dossier, &e).reclasser(socle::echec::Classe::Disque)),
+            (Err(e), Some(p)) => {
+                let mut f = self.nouveau(p.clone(), dossier.to_path_buf(), archive);
+                f.sorte = Sorte::Illisible;
+                f.raison = Some(format!("dossier qui ne se lit pas ({})", e));
+                self.fichiers.push(f);
+                return Ok(());
+            }
         };
         let mut entrees: Vec<(String, PathBuf, std::fs::FileType)> = Vec::new();
-        for e in lues {
-            match e.and_then(|e| Ok((e.file_name().to_string_lossy().into_owned(), e.path(), e.file_type()?))) {
-                Ok(x) => entrees.push(x),
-                Err(e) => illisible(self, format!("une entrée du dossier ne se lit pas ({})", e)),
+        for (i, e) in lues.enumerate() {
+            let e = match e {
+                Ok(e) => e,
+                Err(x) => {
+                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), entree: EntreeDeCote::SansNom(i + 1), raison: RaisonDeMiseDeCote::Illisible(x.to_string()) });
+                    continue;
+                }
+            };
+            let nom = e.file_name().to_string_lossy().into_owned();
+            match e.file_type() {
+                Ok(genre) => entrees.push((nom, e.path(), genre)),
+                Err(x) => self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), entree: EntreeDeCote::Nommee(nom), raison: RaisonDeMiseDeCote::Illisible(x.to_string()) }),
             }
         }
         entrees.sort_by(|a, b| a.0.cmp(&b.0));
         for (nom, chemin, genre) in entrees {
-            let rel = format!("{}{}", prefixe, nom);
+            let nom_lu = match NomDeFichier::lire(&nom) {
+                Ok(n) => n,
+                Err(_) => {
+                    self.mises_de_cote.push(MiseDeCote { dans: prefixe.cloned(), entree: EntreeDeCote::Nommee(nom), raison: RaisonDeMiseDeCote::PasUnNom });
+                    continue;
+                }
+            };
+            let rel = match prefixe {
+                Some(p) => p.joint(&nom_lu),
+                None => CheminRelatif::from(nom_lu),
+            };
             if genre.is_dir() {
                 // Le dossier de travail, s'il est sous le dossier trie, ne se trie pas.
                 match std::fs::canonicalize(&chemin) {
@@ -185,19 +259,20 @@ impl Trieur {
                         continue;
                     }
                 }
-                self.parcourir(&chemin, &format!("{}/", rel), archive, profondeur);
+                self.parcourir(&chemin, Some(&rel), archive, profondeur)?;
             } else if genre.is_symlink() {
                 let mut f = self.nouveau(rel, chemin, archive);
                 f.raison = Some("lien symbolique : il n'est pas suivi".into());
                 self.fichiers.push(f);
             } else {
-                self.classer(rel, chemin, archive, profondeur);
+                self.classer(rel, chemin, archive, profondeur)?;
             }
         }
+        Ok(())
     }
 
     /// Un fichier : son empreinte, puis ce que son contenu dit.
-    fn classer(&mut self, rel: String, disque: PathBuf, archive: Option<&str>, profondeur: usize) {
+    fn classer(&mut self, rel: CheminRelatif, disque: PathBuf, archive: Option<&CheminRelatif>, profondeur: usize) -> R<()> {
         let mut f = self.nouveau(rel, disque, archive);
         let octets = match std::fs::read(&f.disque) {
             Ok(o) => o,
@@ -205,7 +280,7 @@ impl Trieur {
                 f.sorte = Sorte::Illisible;
                 f.raison = Some(format!("le fichier ne se lit pas ({})", e));
                 self.fichiers.push(f);
-                return;
+                return Ok(());
             }
         };
         f.taille = octets.len() as u64;
@@ -216,17 +291,16 @@ impl Trieur {
             f.doublon_de = Some(premier.clone());
             f.raison = Some(format!("copie exacte de {}", premier));
             self.fichiers.push(f);
-            return;
+            return Ok(());
         }
         self.vus.insert(empreinte.clone(), f.chemin.clone());
         if octets.is_empty() {
             f.raison = Some("fichier vide".into());
             self.fichiers.push(f);
-            return;
+            return Ok(());
         }
         if est_un_zip(&octets) {
-            self.ouvrir_archive(f, &octets, &empreinte, profondeur);
-            return;
+            return self.ouvrir_archive(f, &octets, &empreinte, profondeur);
         }
         if est_un_pdf(&octets) {
             lire_pdf(&mut f);
@@ -252,14 +326,15 @@ impl Trieur {
             f.raison = Some(format!("ce fichier n'est ni un PDF, ni une DSN, ni une AEM, ni une archive zip. {}", ACCEPTE));
         }
         self.fichiers.push(f);
+        Ok(())
     }
 
     /// Un zip : ouvert dans son propre sous-dossier de `travail/`, puis son contenu trie a la suite.
-    fn ouvrir_archive(&mut self, mut f: Fichier, octets: &[u8], empreinte: &Empreinte, profondeur: usize) {
+    fn ouvrir_archive(&mut self, mut f: Fichier, octets: &[u8], empreinte: &Empreinte, profondeur: usize) -> R<()> {
         if profondeur >= PROFONDEUR_MAX {
             f.raison = Some(format!("zip rangé à plus de {} niveaux de zips l'un dans l'autre : pas ouvert", PROFONDEUR_MAX));
             self.fichiers.push(f);
-            return;
+            return Ok(());
         }
         let mut z = match zip::ZipArchive::new(std::io::Cursor::new(octets)) {
             Ok(z) => z,
@@ -267,21 +342,17 @@ impl Trieur {
                 f.sorte = Sorte::Illisible;
                 f.raison = Some(format!("archive zip qui ne s'ouvre pas ({})", e));
                 self.fichiers.push(f);
-                return;
+                return Ok(());
             }
         };
-        let nom = match f.chemin.rsplit_once('/') {
-            Some((_, n)) => n,
-            None => f.chemin.as_str(),
-        };
-        let assaini: String = nom.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect();
+        let assaini: String = f.chemin.nom().texte().chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect();
         let cible = self.travail.join(format!("{}-{}", assaini, &empreinte.texte()[..12]));
         let pret = socle::fichiers::effacer(&cible).and_then(|()| std::fs::create_dir_all(&cible).map_err(|e| socle::echec::du_disque(&cible, &e)));
         if let Err(e) = pret {
             f.sorte = Sorte::Illisible;
             f.raison = Some(format!("le dossier de travail de l'archive ne se cree pas ({})", e.phrase));
             self.fichiers.push(f);
-            return;
+            return Ok(());
         }
         // Les entrees qui ne s'extraient pas : elles ont leur sort elles aussi, apres l'archive.
         let mut refusees: Vec<Fichier> = Vec::new();
@@ -291,26 +362,24 @@ impl Trieur {
             let mut e = match z.by_index(i) {
                 Ok(e) => e,
                 Err(err) => {
-                    let mut r = self.nouveau(format!("{}/#{}", f.chemin, i + 1), cible.clone(), Some(&f.chemin));
-                    r.sorte = Sorte::Illisible;
-                    r.raison = Some(format!("entree d'archive qui ne se lit pas ({})", err));
-                    refusees.push(r);
+                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), entree: EntreeDeCote::SansNom(i + 1), raison: RaisonDeMiseDeCote::Illisible(err.to_string()) });
                     continue;
                 }
             };
+            // Le nom de l'entree, tel qu'un autre systeme l'ecrit (la barre finale d'un dossier, `/` ou `\`, se retire) :
+            // un chemin sous l'archive, ou elle ne s'ecrit pas.
             let brut = e.name().to_string();
-            let Some(rel) = e.enclosed_name() else {
-                let mut r = self.nouveau(format!("{}/{}", f.chemin, brut), cible.clone(), Some(&f.chemin));
-                r.sorte = Sorte::Illisible;
-                r.taille = e.size();
-                r.raison = Some("chemin d'archive refuse : il sortirait du dossier de l'archive".into());
-                refusees.push(r);
-                continue;
+            let rel = match CheminRelatif::ecrit_ailleurs(&brut) {
+                Ok(r) => r,
+                Err(_) => {
+                    self.mises_de_cote.push(MiseDeCote { dans: Some(f.chemin.clone()), entree: EntreeDeCote::Nommee(brut), raison: RaisonDeMiseDeCote::HorsDeLArchive });
+                    continue;
+                }
             };
-            let chemin = cible.join(rel);
+            let chemin = rel.dans(&cible);
             if e.is_dir() {
                 if let Err(x) = std::fs::create_dir_all(&chemin) {
-                    let mut r = self.nouveau(format!("{}/{}", f.chemin, brut.trim_end_matches('/')), chemin.clone(), Some(&f.chemin));
+                    let mut r = self.nouveau(f.chemin.suivi(&rel), chemin.clone(), Some(&f.chemin));
                     r.sorte = Sorte::Illisible;
                     r.raison = Some(format!("dossier d'archive qui ne se cree pas ({})", x));
                     refusees.push(r);
@@ -332,7 +401,7 @@ impl Trieur {
             match ecrit {
                 Ok(()) => extraites += 1,
                 Err(m) => {
-                    let mut r = self.nouveau(format!("{}/{}", f.chemin, brut.trim_end_matches('/')), chemin.clone(), Some(&f.chemin));
+                    let mut r = self.nouveau(f.chemin.suivi(&rel), chemin.clone(), Some(&f.chemin));
                     r.sorte = Sorte::Illisible;
                     r.taille = e.size();
                     r.raison = Some(match socle::fichiers::effacer(&chemin) {
@@ -351,7 +420,7 @@ impl Trieur {
         let chemin_archive = f.chemin.clone();
         self.fichiers.push(f);
         self.fichiers.extend(refusees);
-        self.parcourir(&cible, &format!("{}/", chemin_archive), Some(&chemin_archive), profondeur + 1);
+        self.parcourir(&cible, Some(&chemin_archive), Some(&chemin_archive), profondeur + 1)
     }
 }
 
@@ -448,4 +517,52 @@ fn lire_aem(f: &mut Fichier, octets: &[u8]) {
         }
     }
     f.sorte = Sorte::Aem;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{trier, RaisonDeMiseDeCote, Tri};
+    use std::io::Write;
+
+    /// Un dossier `import/` qui ne porte que `lot.zip`, fait des entrees `entrees`, trie.
+    fn trier_le_zip(test: &str, entrees: &[&str]) -> (std::path::PathBuf, Tri) {
+        let d = std::env::temp_dir().join(format!("puppetpaie-tri-{}-{}", test, std::process::id()));
+        if d.exists() {
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+        let import = d.join("import");
+        std::fs::create_dir_all(&import).unwrap();
+        let mut z = zip::ZipWriter::new(std::fs::File::create(import.join("lot.zip")).unwrap());
+        for nom in entrees {
+            z.start_file(*nom, zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored)).unwrap();
+            if !nom.ends_with('\\') {
+                z.write_all(nom.as_bytes()).unwrap();
+            }
+        }
+        z.finish().unwrap();
+        let tri = trier(&import, &d.join("travail")).unwrap();
+        (d, tri)
+    }
+
+    /// Le `Compress-Archive` de PowerShell ecrit ses entrees avec des barres inverses (`sous\paie.dsn`) : le zip
+    /// s'importe, son contenu sous ses dossiers ; `./a`, `a//b` se lisent `a`, `a/b`.
+    #[test]
+    fn un_zip_fait_sous_windows_s_importe() {
+        let (d, tri) = trier_le_zip("windows", &["sous\\", "sous\\paie.txt", "./a.txt", "b//c.txt"]);
+        let chemins: Vec<String> = tri.fichiers.iter().map(|f| f.chemin.to_string()).collect();
+        std::fs::remove_dir_all(&d).unwrap();
+        assert!(tri.mises_de_cote.is_empty(), "{:?}", tri.mises_de_cote);
+        assert_eq!(chemins, ["lot.zip", "lot.zip/a.txt", "lot.zip/b/c.txt", "lot.zip/sous/paie.txt"]);
+    }
+
+    /// Une entree qui porterait un prefixe de lecteur (`C:x`, `C:\x`), qui remonte ou qui est absolue est mise de cote.
+    #[test]
+    fn une_entree_piegee_ne_s_ecrit_pas_hors_de_l_archive() {
+        let (d, tri) = trier_le_zip("piege", &["C:x.txt", "C:\\x.txt", "..\\x.txt", "\\x.txt", "bon.txt"]);
+        let chemins: Vec<String> = tri.fichiers.iter().map(|f| f.chemin.to_string()).collect();
+        std::fs::remove_dir_all(&d).unwrap();
+        assert_eq!(chemins, ["lot.zip", "lot.zip/bon.txt"]);
+        assert_eq!(tri.mises_de_cote.len(), 4);
+        assert!(tri.mises_de_cote.iter().all(|m| matches!(m.raison, RaisonDeMiseDeCote::HorsDeLArchive)));
+    }
 }

@@ -55,17 +55,18 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::{au_chemin, du_disque, refus, R};
+use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::paris::{ecrit, InstantOuJour, Moment};
 use socle::refus;
 
-use compagnie::installation::Venue;
+use compagnie::installation::{IdDeCompagnie, Venue};
 use crate::catalogue::Route;
 use crate::enveloppe::{Charge, Options, Refus, Reponse};
 
 /// Le fichier des gestes, dans le dossier du scenario.
 pub const GESTES: &str = "gestes.jsonl";
 /// Le dossier des pieces deposees, par empreinte.
-pub const PIECES: &str = "pieces";
+pub const PIECES: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("pieces");
 /// La version du format.
 pub const FORMAT: u64 = 1;
 
@@ -95,9 +96,9 @@ pub struct Geste {
     /// D'ou vient la compagnie ajoutee (`ajouter`, qui l'exige).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub venue: Option<Venue>,
-    /// La compagnie, relative a l'installation ; absente, la derniere ajoutee.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub compagnie: Option<String>,
+    /// La compagnie, ecrite par son dossier relatif a l'installation ; absente, la derniere ajoutee.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "compagnie::installation::en_dossier")]
+    pub compagnie: Option<IdDeCompagnie>,
     /// L'etat refait (`etat`) : un mois, ou l'ouverture.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cle: Option<crate::etat_garde::Cle>,
@@ -105,7 +106,7 @@ pub struct Geste {
     pub charge: Option<Charge>,
     /// Ce qu'on avait depose dans un dossier que la route lit, par cle de la charge.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pieces: Option<BTreeMap<String, Piece>>,
+    pub pieces: Option<BTreeMap<CleDeDepot, Piece>>,
     /// La route a-t-elle change un fichier de la compagnie ? Absent : oui.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ecrit: Option<bool>,
@@ -164,22 +165,75 @@ impl Geste {
     }
 }
 
+socle::noms_fermes! {
+    /// LA CLE D'UNE CHARGE QUI NOMME CE QUE LA ROUTE LIT HORS DU MOTEUR (une boite aux lettres d'import, un export d'un
+    /// autre logiciel) : ce qu'elle nomme entre dans le scenario, sous cette cle.
+    CleDeDepot, "Clé de dépôt" {
+        Dossier = "dossier",
+        Export = "export",
+        Fichier = "fichier",
+        Chemin = "chemin",
+    }
+}
+
 /// UNE PIECE DEPOSEE : un fichier ou un dossier du scenario (`chemin`, relatif a lui), ou ce que le banc a recopie dans
-/// `pieces/` (`fichiers` : relatif a la piece -> empreinte ; un fichier seul a la cle `.`, `nom` son nom). `dans_la_compagnie`
-/// la pose a cet endroit de la compagnie au lieu d'un dossier de travail.
+/// `pieces/` (`fichiers` : chaque fichier de la piece -> empreinte ; `nom` le nom d'un fichier seul). `dans_la_compagnie`
+/// la pose a cet endroit de la compagnie au lieu d'un dossier de travail. Un scenario s'ecrit a la main ou sur un autre
+/// systeme : ses chemins et son nom se lisent comme un chemin ecrit ailleurs (`CheminRelatif::ecrit_ailleurs`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Piece {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub chemin: Option<socle::fichiers::CheminRelatif>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::fichiers::ecrit_ailleurs::chemin_facultatif")]
+    pub chemin: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fichier: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::fichiers::ecrit_ailleurs::nom_facultatif")]
+    pub nom: Option<NomDeFichier>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::fichiers::ecrit_ailleurs::chemin_facultatif")]
+    pub dans_la_compagnie: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nom: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dans_la_compagnie: Option<socle::fichiers::CheminRelatif>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fichiers: Option<BTreeMap<String, socle::fichiers::Empreinte>>,
+    pub fichiers: Option<BTreeMap<FichierDeLaPiece, socle::fichiers::Empreinte>>,
+}
+
+/// UN FICHIER D'UNE PIECE DEPOSEE, relatif a elle : la piece elle-meme, quand elle est un fichier seul (ecrite `.`), ou un
+/// chemin sous le dossier qu'elle est.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum FichierDeLaPiece {
+    Elle,
+    Sous(CheminRelatif),
+}
+
+/// L'ecriture de la piece elle-meme.
+const LA_PIECE: &str = ".";
+
+impl FichierDeLaPiece {
+    /// Ou il se pose, la piece posee en `piece`.
+    fn dans(&self, piece: &Path) -> PathBuf {
+        match self {
+            FichierDeLaPiece::Elle => piece.to_path_buf(),
+            FichierDeLaPiece::Sous(c) => c.dans(piece),
+        }
+    }
+}
+
+impl TryFrom<String> for FichierDeLaPiece {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<FichierDeLaPiece> {
+        if s == LA_PIECE {
+            return Ok(FichierDeLaPiece::Elle);
+        }
+        CheminRelatif::ecrit_ailleurs(&s).map(FichierDeLaPiece::Sous)
+    }
+}
+
+impl From<FichierDeLaPiece> for String {
+    fn from(f: FichierDeLaPiece) -> String {
+        match f {
+            FichierDeLaPiece::Elle => LA_PIECE.to_string(),
+            FichierDeLaPiece::Sous(c) => c.into(),
+        }
+    }
 }
 
 /// Ce que rend `horloge-rattraper`, pour le rejeu : les pas joues, une phrase chacun.
@@ -196,34 +250,6 @@ struct HorlogeDeLOuverture {
     horloge: Vec<String>,
 }
 
-/// Les cles d'une charge qui nomment un dossier ou un fichier que la route LIT (une boite aux lettres d'import, un export
-/// d'un autre logiciel) : ce qu'il contient entre dans le scenario.
-#[cfg(feature = "atelier")]
-const CLES_DE_DEPOT: [&str; 4] = ["dossier", "export", "fichier", "chemin"];
-
-/// CE QUE LA CHARGE NOMME A LIRE HORS DU MOTEUR, aux cles `CLES_DE_DEPOT`, lu en sa forme : un chemin chacune, ou rien.
-#[cfg(feature = "atelier")]
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Depots {
-    dossier: Option<String>,
-    export: Option<String>,
-    fichier: Option<String>,
-    chemin: Option<String>,
-}
-
-#[cfg(feature = "atelier")]
-impl Depots {
-    /// Chaque cle, dans l'ordre de `CLES_DE_DEPOT`, et le chemin qu'elle nomme.
-    fn chacun(&self) -> [(&'static str, Option<&str>); 4] {
-        [
-            (CLES_DE_DEPOT[0], self.dossier.as_deref()),
-            (CLES_DE_DEPOT[1], self.export.as_deref()),
-            (CLES_DE_DEPOT[2], self.fichier.as_deref()),
-            (CLES_DE_DEPOT[3], self.chemin.as_deref()),
-        ]
-    }
-}
 
 /// Les routes dont la cle `dossier` vide (ou absente) veut dire `import/` de la compagnie (`crate::import::dossier_import`).
 #[cfg(feature = "atelier")]
@@ -251,19 +277,6 @@ pub fn rendre_simulee(racine: &Path) -> R<()> {
     socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2)
 }
 
-/// Le chemin de `racine` relatif a l'installation `inst` (barres droites), ou le chemin entier s'il n'y est pas. L'un et
-/// l'autre existent : un dossier qui ne se resout pas refuse.
-pub fn relatif(inst: &Path, racine: &Path) -> R<String> {
-    let resolu = |p: &Path| std::fs::canonicalize(p).map_err(|e| du_disque(p, &e));
-    let (i, r) = (resolu(inst)?, resolu(racine)?);
-    // Hors de l'installation, le chemin entier.
-    if !r.starts_with(&i) {
-        return Ok(r.display().to_string());
-    }
-    let p = r.strip_prefix(&i).map_err(|e| du_disque(&r, &e))?;
-    Ok(p.to_string_lossy().replace('\\', "/"))
-}
-
 /// L'heure lisible d'un instant, a Paris.
 fn heure(t: Moment) -> String {
     ecrit::seconde::texte(t)
@@ -277,16 +290,17 @@ fn instant_de_l_heure(h: InstantOuJour) -> Option<Moment> {
     }
 }
 
-/// Les fichiers d'un dossier, relatifs a lui (barres droites), dans l'ordre des noms.
-fn fichiers_de(dossier: &Path) -> R<Vec<(String, PathBuf)>> {
-    fn parcourir(base: &Path, d: &Path, out: &mut Vec<(String, PathBuf)>) -> R<()> {
+/// Les fichiers d'un dossier, relatifs a lui, dans l'ordre des noms ; un chemin se lit comme l'ecrit son systeme
+/// (`CheminRelatif::ecrit_ailleurs`).
+fn fichiers_de(dossier: &Path) -> R<Vec<(CheminRelatif, PathBuf)>> {
+    fn parcourir(base: &Path, d: &Path, out: &mut Vec<(CheminRelatif, PathBuf)>) -> R<()> {
         for e in std::fs::read_dir(d).map_err(|e| du_disque(d, &e))? {
             let p = e.map_err(|e| du_disque(d, &e))?.path();
             if p.is_dir() {
                 parcourir(base, &p, out)?;
             } else {
                 let r = p.strip_prefix(base).map_err(|e| du_disque(&p, &e))?;
-                out.push((r.to_string_lossy().replace('\\', "/"), p.clone()));
+                out.push((CheminRelatif::ecrit_ailleurs(&r.to_string_lossy())?, p.clone()));
             }
         }
         Ok(())
@@ -319,7 +333,7 @@ impl OptionsRejeu {
 #[derive(Debug, Clone)]
 pub struct Rejeu {
     /// Les compagnies rejouees, dans l'ordre de leur « + » : (dossier relatif a l'installation, racine).
-    pub compagnies: Vec<(String, PathBuf)>,
+    pub compagnies: Vec<(IdDeCompagnie, PathBuf)>,
     pub routes_rejouees: usize,
     pub lectures_ecartees: usize,
     /// Les gestes sur une compagnie que le scenario n'a pas ajoutee (une fictive livree ouverte pour voir) : ecartes.
@@ -403,14 +417,14 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
     let mut charge = geste.charge.clone().ok_or_else(|| refus!("Geste {} : une route sans charge, même vide pour une route qui ne prend rien.", rang))?;
     let Some(pieces) = &geste.pieces else { return Ok(charge) };
     for (cle, p) in pieces {
-        // Les fichiers de la piece : (relatif a la piece, source). Un fichier seul a la cle `.`.
-        let fichiers: Vec<(String, PathBuf)> = match (&p.chemin, &p.fichiers) {
+        // Les fichiers de la piece : (relatif a la piece, source).
+        let fichiers: Vec<(FichierDeLaPiece, PathBuf)> = match (&p.chemin, &p.fichiers) {
             (Some(c), _) => {
-                let source = scenario.join(c);
+                let source = c.dans(scenario);
                 if source.is_dir() {
-                    fichiers_de(&source)?
+                    fichiers_de(&source)?.into_iter().map(|(r, s)| (FichierDeLaPiece::Sous(r), s)).collect()
                 } else if source.is_file() {
-                    vec![(".".to_string(), source)]
+                    vec![(FichierDeLaPiece::Elle, source)]
                 } else {
                     return Err(au_chemin(format!("Pièce {} : elle n'existe pas dans le scénario.", cle), &source));
                 }
@@ -418,12 +432,12 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
             (None, Some(f)) => f.iter().map(|(rel, sha)| (rel.clone(), source_de_piece(scenario, sha))).collect(),
             (None, None) => return Err(refus!("Pièce {} : elle ne dit ni son chemin ni ses fichiers.", cle)),
         };
-        let nom = p.nom.clone().or_else(|| p.chemin.as_ref().map(|c| c.nom().into()));
-        let est_fichier = p.fichier == Some(true) || (fichiers.len() == 1 && fichiers[0].0 == ".");
+        let nom = p.nom.clone().or_else(|| p.chemin.as_ref().map(|c| c.nom()));
+        let est_fichier = p.fichier == Some(true) || (fichiers.len() == 1 && fichiers[0].0 == FichierDeLaPiece::Elle);
         let dans = p.dans_la_compagnie.as_ref();
         let cible = match dans {
-            Some(rel) => racine.join(rel),
-            None => travail.join(rang.to_string()).join(cle),
+            Some(rel) => rel.dans(racine),
+            None => travail.join(rang.to_string()).join(cle.nom()),
         };
         if est_fichier {
             let (_, source) = fichiers.first().ok_or_else(|| refus("piece sans contenu"))?;
@@ -437,21 +451,21 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
             }
             std::fs::copy(source, &dest).map_err(|e| du_disque(source, &e))?;
             if dans.is_none() {
-                charge.poser_texte(cle, dest.display().to_string());
+                charge.poser_texte(cle.nom(), dest.display().to_string());
             }
             continue;
         }
         socle::fichiers::effacer(&cible)?;
         std::fs::create_dir_all(&cible).map_err(|e| du_disque(&cible, &e))?;
         for (rel, source) in &fichiers {
-            let dest = cible.join(rel);
+            let dest = rel.dans(&cible);
             if let Some(d) = dest.parent() {
                 std::fs::create_dir_all(d).map_err(|e| du_disque(d, &e))?;
             }
             std::fs::copy(source, &dest).map_err(|e| du_disque(source, &e))?;
         }
         if dans.is_none() {
-            charge.poser_texte(cle, cible.display().to_string());
+            charge.poser_texte(cle.nom(), cible.display().to_string());
         }
     }
     Ok(charge)
@@ -486,8 +500,8 @@ pub fn rejouer_et_lire(scenario: &Path, inst: &Path, options: &OptionsRejeu, arr
     rendu
 }
 
-/// La racine du rejeu de la compagnie `c` (relative a l'installation) ; sans nom, la derniere ajoutee.
-fn racine_nommee(racines: &BTreeMap<String, PathBuf>, derniere: &Option<PathBuf>, c: Option<&str>) -> Option<PathBuf> {
+/// La racine du rejeu de la compagnie `c` ; sans nom, la derniere ajoutee.
+fn racine_nommee(racines: &std::collections::HashMap<IdDeCompagnie, PathBuf>, derniere: &Option<PathBuf>, c: Option<&IdDeCompagnie>) -> Option<PathBuf> {
     match c {
         Some(c) => racines.get(c).cloned(),
         None => derniere.clone(),
@@ -529,7 +543,7 @@ fn rejouer_les_gestes(
         }
     };
     // Le dossier enregistre -> la racine du rejeu ; un geste qui ne nomme pas sa compagnie vise la derniere ajoutee.
-    let mut racines: BTreeMap<String, PathBuf> = BTreeMap::new();
+    let mut racines: std::collections::HashMap<IdDeCompagnie, PathBuf> = std::collections::HashMap::new();
     let mut derniere: Option<PathBuf> = None;
     for (i, (g, &t)) in gestes.iter().zip(instants).enumerate() {
         let n = match g.n {
@@ -562,19 +576,19 @@ fn rejouer_les_gestes(
         lire_les_soirs(jour, &r);
         socle::temps::figer(t);
         r.fin = Some(t);
-        let compagnie = g.compagnie.as_deref();
+        let compagnie = g.compagnie.as_ref();
         match g.geste {
             Some(Genre::Ajouter) => {
                 let nom = g.nom.as_deref().ok_or_else(|| refus!("Geste {} : une compagnie s'ajoute avec son nom.", n))?;
                 let venue = g.venue.ok_or_else(|| refus!("Geste {} : une compagnie s'ajoute avec sa venue (« neuve » ou « logiciel_precedent »).", n))?;
                 let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| m.reformuler(|p| format!("geste {} : « + » refuse : {}", n, p)))?;
-                let rel = relatif(inst, &c.racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
+                let id = IdDeCompagnie::de_la_racine(inst, &c.racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
                 let nomme = match compagnie {
-                    Some(c) if c != rel => {
-                        r.ecarts.push(format!("geste {} : le « + » a cree {} (enregistre : {})", n, rel, c));
-                        c.to_string()
+                    Some(c) if *c != id => {
+                        r.ecarts.push(format!("geste {} : le « + » a cree {} (enregistre : {})", n, id.dossier(), c.dossier()));
+                        c.clone()
                     }
-                    Some(_) | None => rel,
+                    Some(_) | None => id,
                 };
                 racines.insert(nomme.clone(), c.racine.clone());
                 derniere = Some(c.racine.clone());
@@ -695,12 +709,12 @@ fn saisie_d_un_geste(g: &Geste) -> Option<Geste> {
 pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
     let gestes = lire(scenario)?;
     std::fs::create_dir_all(vers.join(PIECES)).map_err(|e| du_disque(vers, &e))?;
-    let copier = |rel: &Path| -> R<()> {
-        let dest = vers.join(rel);
+    let copier = |rel: &CheminRelatif| -> R<()> {
+        let dest = rel.dans(vers);
         if let Some(d) = dest.parent() {
             std::fs::create_dir_all(d).map_err(|e| du_disque(d, &e))?;
         }
-        let source = scenario.join(rel);
+        let source = rel.dans(scenario);
         std::fs::copy(&source, &dest).map(|_| ()).map_err(|e| du_disque(&source, &e))
     };
     let (mut gardes, mut otees) = (Vec::new(), 0);
@@ -711,16 +725,16 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
         }
         for p in g.pieces.iter().flat_map(BTreeMap::values) {
             for sha in p.fichiers.iter().flat_map(BTreeMap::values) {
-                copier(&Path::new(PIECES).join(sha.texte()))?;
+                copier(&CheminRelatif::from(PIECES).joint(&NomDeFichier::lire(sha.texte())?))?;
             }
             if let Some(c) = &p.chemin {
-                let source = scenario.join(c);
+                let source = c.dans(scenario);
                 if source.is_dir() {
                     for (rel, _) in fichiers_de(&source)? {
-                        copier(&c.as_ref().join(rel))?;
+                        copier(&c.suivi(&rel))?;
                     }
                 } else {
-                    copier(c.as_ref())?;
+                    copier(c)?;
                 }
             }
         }
@@ -734,13 +748,17 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
 /// Ce qu'une comparaison de deux compagnies ne regarde pas : les caches que la fenetre refait en fond, son journal, l'etape
 /// en cours d'un passage de la veille, et le journal des incidents (chaque incident porte le fil de la fenetre, ce que la
 /// page a fait avant lui, et la fenetre y note les refus que la page a recus : `compagnie::incidents::noter`).
-fn hors_comparaison(rel: &str) -> bool {
-    rel == compagnie::installation::JOURNAL_INTERFACE || rel == compagnie::incidents::INCIDENTS || rel == "ouverture.etat.json" || rel.ends_with(crate::gestes::ouverture::ETAPE)
+fn hors_comparaison(rel: &CheminRelatif) -> bool {
+    let rel = rel.texte();
+    rel == compagnie::installation::JOURNAL_INTERFACE.texte()
+        || rel == compagnie::incidents::INCIDENTS.texte()
+        || rel == crate::etat_garde::OUVERTURE_ECRITE.texte()
+        || rel.ends_with(socle::fichiers::ETAPE_DE_L_OUVERTURE.nom().texte())
 }
 
-/// Les fichiers d'une compagnie, relatifs (barres droites), hors caches. Une compagnie que le banc n'a pas n'a aucun
+/// Les fichiers d'une compagnie, relatifs, hors caches. Une compagnie que le banc n'a pas n'a aucun
 /// fichier ; un dossier qui ne se lit pas se dit.
-fn fichiers_compares(racine: &Path) -> R<BTreeMap<String, PathBuf>> {
+fn fichiers_compares(racine: &Path) -> R<BTreeMap<CheminRelatif, PathBuf>> {
     if !socle::fichiers::present(racine)? {
         return Ok(BTreeMap::new());
     }
@@ -764,8 +782,9 @@ pub fn verifier(scenario: &Path, inst: &Path, travail: &Path) -> R<Vec<String>> 
     socle::fichiers::effacer(travail)?;
     let r = rejouer(scenario, travail, &OptionsRejeu::entier())?;
     let mut ecarts: Vec<String> = r.ecarts.iter().map(|e| format!("au rejeu, {}", e)).collect();
-    for (rel, rejouee) in &r.compagnies {
-        let banc = inst.join(rel);
+    for (id, rejouee) in &r.compagnies {
+        let rel = id.dossier();
+        let banc = rel.dans(inst);
         let (a, b) = (fichiers_compares(&banc)?, fichiers_compares(rejouee)?);
         for (f, p) in &a {
             let Some(q) = b.get(f) else {
@@ -806,8 +825,8 @@ pub fn fictives_de_reference(depot: &Path) -> R<Vec<(String, PathBuf)>> {
 }
 
 /// Ce qu'une fictive livree ne porte pas de son rejeu : le marqueur (reecrit), les incidents du rejeu, les caches.
-fn hors_livraison(rel: &str) -> bool {
-    rel == compagnie::installation::MARQUEUR || rel == compagnie::incidents::INCIDENTS || hors_comparaison(rel)
+fn hors_livraison(rel: &CheminRelatif) -> bool {
+    rel.texte() == compagnie::installation::MARQUEUR.texte() || *rel == compagnie::incidents::INCIDENTS || hors_comparaison(rel)
 }
 
 /// LIVRER UNE FICTIVE DE REFERENCE : rejoue `scenario` (jusqu'au jour `jusqu_au`, ou entier) dans une installation de
@@ -840,7 +859,7 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<Moment>) -> R<()> {
     let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| au_chemin("Un dossier est attendu.", dest))?;
     socle::fichiers::effacer(dest)?;
     for (rel, source) in fichiers_de(racine)?.into_iter().filter(|(rel, _)| !hors_livraison(rel)) {
-        let cible = dest.join(&rel);
+        let cible = rel.dans(dest);
         if let Some(d) = cible.parent() {
             std::fs::create_dir_all(d).map_err(|e| du_disque(d, &e))?;
         }
@@ -905,8 +924,8 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                     for p in &r.horloge {
                         dire!("      {}", p);
                     }
-                    for (nom, racine) in &r.compagnies {
-                        dire!("{} -> {}", nom, racine.display());
+                    for (id, racine) in &r.compagnies {
+                        dire!("{} -> {}", id.dossier(), racine.display());
                     }
                     dire!(
                         "{} route(s) rejouee(s), {} lecture(s) ecartee(s), {} geste(s) sur une autre compagnie, en {} s.",
@@ -1002,10 +1021,11 @@ mod enregistreur {
     }
 
     /// Ce qu'une empreinte de la compagnie ne regarde pas : les caches que la fenetre refait en fond, et son journal.
-    fn hors_empreinte(rel: &str) -> bool {
-        rel == compagnie::installation::JOURNAL_INTERFACE
-            || rel == "ouverture.etat.json"
-            || rel.ends_with(crate::gestes::ouverture::ETAPE)
+    fn hors_empreinte(rel: &CheminRelatif) -> bool {
+        let rel = rel.texte();
+        rel == compagnie::installation::JOURNAL_INTERFACE.texte()
+            || rel == crate::etat_garde::OUVERTURE_ECRITE.texte()
+            || rel.ends_with(socle::fichiers::ETAPE_DE_L_OUVERTURE.nom().texte())
             || rel.ends_with(".verrou")
     }
 
@@ -1013,7 +1033,7 @@ mod enregistreur {
     /// ce qui se compare comme une date), ou ce que le disque en refuse ; ou, quand ses fichiers ne se listent pas, le
     /// refus tel que la route le rendrait.
     enum Empreinte {
-        Lue(BTreeMap<String, Result<(u64, Option<Moment>), std::io::ErrorKind>>),
+        Lue(BTreeMap<CheminRelatif, Result<(u64, Option<Moment>), std::io::ErrorKind>>),
         Refusee(crate::enveloppe::Refus),
     }
 
@@ -1108,9 +1128,10 @@ mod enregistreur {
             rendu
         }
 
-        /// Le dossier d'une compagnie, tel que le scenario le nomme.
-        pub fn compagnie(&self, racine: &Path) -> R<String> {
-            relatif(&self.inst, racine)
+        /// La compagnie de `racine` dans l'installation du banc, telle que le scenario la nomme ; une compagnie hors de
+        /// l'installation ne s'enregistre pas.
+        pub fn compagnie(&self, racine: &Path) -> R<IdDeCompagnie> {
+            IdDeCompagnie::de_la_racine(&self.inst, racine)
         }
 
         /// UNE ROUTE, servie par `servir` sous l'enregistreur : le temps fige a son debut, ce qu'on avait depose recopie,
@@ -1133,7 +1154,7 @@ mod enregistreur {
             let rep = servir();
             let ecrit = empreinte(racine) != avant;
             socle::temps::defiger();
-            let ligne = |compagnie: String| Geste {
+            let ligne = |compagnie: IdDeCompagnie| Geste {
                 route: Some(nom.nom().to_string()),
                 compagnie: Some(compagnie),
                 charge: Some(charge.sans_les_mots_de_passe()),
@@ -1159,27 +1180,28 @@ mod enregistreur {
             Ok(sha)
         }
 
-        /// Ce que la route lit hors du moteur : un dossier ou un fichier nomme par la charge (`CLES_DE_DEPOT`), ou la
-        /// boite aux lettres `import/` de la compagnie. Chaque fichier entre dans `pieces/`.
-        fn recopier_les_pieces(&self, racine: &Path, route: Route, charge: &Charge) -> R<BTreeMap<String, Piece>> {
+        /// Ce que la route lit hors du moteur : un dossier ou un fichier nomme par la charge (a une `CleDeDepot`, un chemin
+        /// chacune, ou rien), ou la boite aux lettres `import/` de la compagnie. Chaque fichier entre dans `pieces/`.
+        fn recopier_les_pieces(&self, racine: &Path, route: Route, charge: &Charge) -> R<BTreeMap<CleDeDepot, Piece>> {
             let mut out = BTreeMap::new();
-            let depots: Depots = charge.lire_cles(&CLES_DE_DEPOT)?;
-            for (cle, valeur) in depots.chacun() {
-                let chemin = match valeur.map(str::trim) {
-                    Some(s) if !s.is_empty() => {
-                        let p = PathBuf::from(crate::depots::normaliser(s));
+            let noms: Vec<&str> = CleDeDepot::TOUTES.iter().map(|c| c.nom()).collect();
+            let depots: BTreeMap<CleDeDepot, Option<PathBuf>> = charge.lire_cles(&noms)?;
+            for &cle in CleDeDepot::TOUTES {
+                let chemin = match depots.get(&cle).and_then(Option::as_deref).map(Path::to_string_lossy) {
+                    Some(s) if !s.trim().is_empty() => {
+                        let p = PathBuf::from(crate::depots::normaliser(s.trim()));
                         if p.is_absolute() {
                             p
                         } else {
                             continue;
                         }
                     }
-                    _ if cle == "dossier" && lit_la_boite_aux_lettres(route) => racine.join("import"),
+                    _ if cle == CleDeDepot::Dossier && lit_la_boite_aux_lettres(route) => racine.join(import::BOITE_AUX_LETTRES),
                     _ => continue,
                 };
                 // Son chemin dans la compagnie ; aucun, hors d'elle.
                 let dans = if chemin.starts_with(racine) {
-                    Some(socle::fichiers::CheminRelatif::sous(racine, &chemin)?)
+                    Some(CheminRelatif::sous(racine, &chemin)?)
                 } else {
                     None
                 };
@@ -1190,17 +1212,17 @@ mod enregistreur {
                     if dans.is_some() {
                         continue;
                     }
-                    fichiers.insert(".".to_string(), self.recopier(&chemin)?);
-                    Piece { fichier: Some(true), nom: chemin.file_name().map(|n| n.to_string_lossy().into_owned()), ..Piece::default() }
+                    fichiers.insert(FichierDeLaPiece::Elle, self.recopier(&chemin)?);
+                    Piece { fichier: Some(true), nom: Some(NomDeFichier::du(&chemin)?), ..Piece::default() }
                 } else if chemin.is_dir() {
                     for (rel, p) in fichiers_de(&chemin)? {
-                        fichiers.insert(rel, self.recopier(&p)?);
+                        fichiers.insert(FichierDeLaPiece::Sous(rel), self.recopier(&p)?);
                     }
                     Piece::default()
                 } else {
                     continue;
                 };
-                out.insert(cle.to_string(), Piece { dans_la_compagnie: dans, fichiers: Some(fichiers), ..piece });
+                out.insert(cle, Piece { dans_la_compagnie: dans, fichiers: Some(fichiers), ..piece });
             }
             Ok(out)
         }

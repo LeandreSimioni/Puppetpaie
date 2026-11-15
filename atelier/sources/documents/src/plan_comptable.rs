@@ -39,6 +39,11 @@ macro_rules! liste_des_exports {
                 match self { $( $nom::$var => $txt ),* }
             }
 
+            /// Son texte dans le nom d'un fichier.
+            pub fn nom(self) -> socle::fichiers::NomDeFichier {
+                match self { $( $nom::$var => const { socle::fichiers::NomDeFichier::du_moteur($txt) } ),* }
+            }
+
             /// Celle qu'ecrit `texte`, ou la phrase qui le refuse.
             pub fn lire(texte: &str) -> R<$nom> {
                 match texte {
@@ -172,20 +177,6 @@ liste_des_exports! {
     }
 }
 
-liste_des_exports! {
-    /// LA COLONNE D'UN ETAT que le livre de paie totalise (`etats_paie::CUMULABLES`) : sa cle, sous laquelle le total
-    /// rendu la nomme, et sous laquelle se compte ce qu'un bulletin ne declare pas.
-    pub enum ColonneDEtat, "Colonne inconnue" {
-        Brut = "brut",
-        CotisationsSalariales = "cotisations_salariales",
-        CotisationsPatronales = "cotisations_patronales",
-        NetImposable = "net_imposable",
-        NetAPayer = "net_a_payer",
-        Pas = "pas",
-        CoutEmployeur = "cout_employeur",
-    }
-}
-
 // ------------------------------------------------------------------ les tables des exports
 
 /// LES TABLES FIXES DES EXPORTS ET DES ECRITURES COMPTABLES (`exports_tables.json`) : les etats que la page propose,
@@ -286,7 +277,7 @@ pub fn logiciels_connus() -> Vec<LogicielComptable> {
 
 
 /// Le plan comptable propre a la compagnie, sous sa racine.
-pub const PLAN_COMPTABLE: &str = "config/plan-comptable.json";
+pub const PLAN_COMPTABLE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/plan-comptable.json");
 
 /// UN OBJET DONT L'ORDRE COMPTE, lu dans l'ordre du fichier (`socle::forme::en_ordre`) : les lignes, les tiers et les
 /// retenues du plan, ou la premiere ligne qui porte un compte lui donne son libelle. `K` : sa cle, un texte (une
@@ -559,18 +550,25 @@ impl Plan {
 }
 
 /// Le plan comptable de la compagnie, et d'ou il vient (`config/plan-comptable.json` ou le plan livre).
-pub fn plan(ctx: &Contexte) -> R<(Plan, &'static str)> {
-    let p = plan_comptable(ctx)?;
-    let origine = if ctx.racine.join(PLAN_COMPTABLE).exists() { PLAN_COMPTABLE } else { "plan livré avec le logiciel (plan-comptable-base.json)" };
-    Ok((p, origine))
+pub fn plan(ctx: &Contexte) -> R<(Plan, String)> {
+    Ok((plan_comptable(ctx)?, origine(ctx)?))
+}
+
+/// D'ou vient le plan comptable de la compagnie : `config/plan-comptable.json`, ou le plan livre.
+pub fn origine(ctx: &Contexte) -> R<String> {
+    Ok(if socle::fichiers::existe_lu(&PLAN_COMPTABLE.dans(&ctx.racine))? {
+        PLAN_COMPTABLE.to_string()
+    } else {
+        "plan livré avec le logiciel (plan-comptable-base.json)".to_string()
+    })
 }
 
 /// Le plan livre, recouvert par `config/plan-comptable.json`.
 pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
     let mut plan: Plan = socle::forme::lire_fichier(&ctx.code.join("plan-comptable-base.json"), "Le plan comptable livré ne se lit pas : le signaler au développeur.")
         .map_err(|m| m.reclasser(Classe::Illisible))?;
-    let propre = ctx.racine.join(PLAN_COMPTABLE);
-    if propre.exists() {
+    let propre = PLAN_COMPTABLE.dans(&ctx.racine);
+    if socle::fichiers::existe_lu(&propre)? {
         let p: PlanPropre = socle::forme::lire_fichier(&propre, "Le plan comptable de la compagnie (config/plan-comptable.json) ne se lit pas : le corriger.")
             .map_err(|m| m.reclasser(Classe::Illisible))?;
         plan.recouvrir(p);

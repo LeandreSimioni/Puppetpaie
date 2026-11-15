@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use socle::echec::{Classe, R};
 
 /// Les libelles courts valides de la compagnie, sous sa racine.
-pub const LIBELLES_COURTS: &str = "config/libelles-courts.json";
+pub const LIBELLES_COURTS: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/libelles-courts.json");
 
 /// Les formats dont une zone de texte a une largeur que la notice borne (`etats_compta`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -105,7 +105,7 @@ impl Courts {
 
 /// Les libelles courts de la compagnie ; aucun si le fichier n'existe pas. Un fichier qui ne se lit pas refuse.
 pub fn lire(racine: &Path) -> R<LibellesCourts> {
-    let p = racine.join(LIBELLES_COURTS);
+    let p = LIBELLES_COURTS.dans(racine);
     if !p.exists() {
         return Ok(LibellesCourts::default());
     }
@@ -114,7 +114,7 @@ pub fn lire(racine: &Path) -> R<LibellesCourts> {
 
 /// Ecrit les libelles courts de la compagnie.
 pub fn ecrire(racine: &Path, l: &LibellesCourts) -> R<()> {
-    socle::ecriture::ecrire_json(&racine.join(LIBELLES_COURTS), l, 2).map_err(|m| m.reclasser(Classe::Disque))
+    socle::ecriture::ecrire_json(&LIBELLES_COURTS.dans(racine), l, 2).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// Une valeur trop longue pour sa zone, telle qu'un export l'a rencontree : ce qu'elle est, sa cle, son texte long, la

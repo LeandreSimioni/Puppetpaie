@@ -24,6 +24,7 @@ use engagement::calcul::Paie;
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
+use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 use socle::num::Decimal;
@@ -406,8 +407,10 @@ pub(crate) struct ApercuDsn {
     pub(crate) nom: String,
     pub(crate) description: String,
     pub(crate) mois: Mois,
-    pub(crate) nature_envoi: Option<droit::nature_declaration::EssaiOuReel>,
-    pub(crate) reel: bool,
+    /// Le mode que le fichier dit (S10.G00.00.005), ecrit deux fois (`mode_ecrit`) : `nature_envoi`, par son code, et
+    /// `reel`, en booleen.
+    #[serde(flatten, serialize_with = "mode_ecrit")]
+    pub(crate) mode: Option<Mode>,
     pub(crate) signalement: bool,
     #[serde(rename = "nature")]
     pub(crate) nature_declaration: droit::nature_declaration::NatureDeLaDeclaration,
@@ -435,6 +438,19 @@ pub(crate) struct ApercuDsn {
     pub(crate) repetition: etats::Repetition,
 }
 
+/// L'ECRITURE DU MODE QUE LE FICHIER DIT, a sa place dans l'apercu : `nature_envoi`, son code de la norme
+/// (`code_d_envoi`), et `reel`, en booleen (`en_booleen::si_dit`).
+fn mode_ecrit<S: serde::Serializer>(mode: &Option<Mode>, s: S) -> Result<S::Ok, S::Error> {
+    #[derive(Serialize)]
+    struct Ecrit {
+        #[serde(serialize_with = "droit::nature_declaration::code_d_envoi::serialize")]
+        nature_envoi: Option<Mode>,
+        #[serde(serialize_with = "socle::mode::en_booleen::si_dit::serialize")]
+        reel: Option<Mode>,
+    }
+    Ecrit { nature_envoi: *mode, reel: *mode }.serialize(s)
+}
+
 /// La description du fichier en une phrase : son nom, son type, son ordre, sa fraction, sa constitution, ses salaries,
 /// ses lignes, son SIREN ; ce qu'il ne dit pas ne se dit pas.
 fn description(nom: &str, a: &DsnLue) -> String {
@@ -456,7 +472,7 @@ fn description(nom: &str, a: &DsnLue) -> String {
 }
 
 /// `apercu_depot_dsn` : ce qui partirait, en clair, sans rien envoyer ni demander.
-pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
+pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<ApercuDsn> {
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
     let a = declarations::dsn_lue::lire(&contenu, None)?;
@@ -493,8 +509,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         fichier: std::path::PathBuf::from(&chemin),
         nom: nom.into(),
         mois,
-        nature_envoi: a.nature_envoi,
-        reel: a.reel(),
+        mode: a.nature_envoi,
         signalement,
         nature_declaration: a.nature()?,
         libelle_nature: a.nature_lisible().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001)."))?,

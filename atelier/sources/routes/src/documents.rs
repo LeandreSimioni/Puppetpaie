@@ -164,11 +164,13 @@ pub(crate) struct DocumentsEnvoyes {
     avertissements: Vec<String>,
 }
 
-/// La charge de `piece-partie` : le mois, et la piece telle que le journal la nomme.
+/// La charge de `piece-partie` : le mois, et la piece telle que le journal la nomme (un nom ecrit ailleurs : la page,
+/// `moteur route`).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargePiecePartie {
     mois: Mois,
+    #[serde(deserialize_with = "socle::fichiers::ecrit_ailleurs::nom")]
     fichier: NomDeFichier,
 }
 
@@ -253,7 +255,7 @@ pub(crate) fn un_nom_commence_et_finit(dossier: &Path, prefixe: &str, suffixe: &
 // ------------------------------------------------------------------ envoi-apercu
 
 /// Le dossier des retours ou vont les attestations qu'aucune fiche ne porte.
-const A_RANGER: &str = "aer-a-ranger";
+const A_RANGER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur("aer-a-ranger");
 
 /// Le nom d'une piece dans l'archive d'un retour, sans ses dossiers.
 fn nom_dans_l_archive(chemin: &str) -> &str {
@@ -289,7 +291,7 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
     let mut vues: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
     for nom in fichiers {
         let chemin = dossier.join(&nom);
-        let octets = crate::depots::lire_octets(&chemin.to_string_lossy())?;
+        let octets = crate::depots::lire_octets(&chemin)?;
         let liste = envois::retours::aer_spectacle(&octets)?;
         let cles = envois::retours::rattacher(&liste.iter().map(|a| a.qui.as_str()).collect::<Vec<_>>(), &index);
         let mut de_ce_retour: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
@@ -309,7 +311,7 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
 /// `aer_manquantes` : les salaries dont France Travail a renvoye l'AER du mois, mais dont le PDF signe
 /// n'est pas dans `sorties/<mois>/envoi/`.
 fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
-    let sorties = ctx.racine.join("sorties").join(mois.to_string());
+    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     let etiquette = mois.etiquette();
     let mut out: Vec<String> = Vec::new();
     for groupe in attestations_archivees(ctx, Some(mois), None)?.values() {
@@ -460,7 +462,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             }
         }
         let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir())? };
-        let cible = documents::PieceDuMois::Aer.dossier().sous(&ctx.racine.join("sorties").join(periode.to_string()));
+        let cible = documents::PieceDuMois::Aer.dossier().dans(&ctx.racine, periode);
         std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         let chemin = cible.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &periode.etiquette()));
         std::fs::write(&chemin, donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
@@ -588,7 +590,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     let m = Moteur::nouveau(ctx);
     let prets = documents_prets(ctx, mois, &paies)?;
     let pret = prets.empechements.is_empty();
-    let sorties = ctx.racine.join("sorties").join(mois.to_string());
+    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     // A QUI ILS PARTENT : le meme choix que l'envoi (`choisir`).
     let choix = choisir(ctx, mois, &paies)?;
     // CE QUI PARTIRA, nomme sans etre fabrique : les documents s'ecrivent, numerotes, a l'envoi (`envoyer_documents`).
@@ -789,7 +791,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     }
     let choix = choisir(ctx, mois, &paies)?;
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, qui)?;
-    let sorties = ctx.racine.join("sorties").join(mois.to_string());
+    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     let etiq = c.mois.etiquette();
     let mut pieces: Vec<std::path::PathBuf> = Vec::new();
     let mut salaries: Vec<journal::Servi> = Vec::new();
@@ -813,7 +815,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     let nom_impression = NomDeFichier::du(&impression)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, mois)?;
-    let detail = journal::DetailDocuments { salaries, main_propre: true, expediteur: None, durees_ms: None, partis: None, echec_a: None };
+    let detail = journal::DetailDocuments { salaries, remise: envois::etats::ModeDeRemise::Imprime, expediteur: None, durees_ms: None, partis: None, echec_a: None };
     let reponse = format!("documents de {} salarie(s) imprimes pour une remise en main propre", cles.len());
     noter(ctx, journal::Ligne::Documents(par_courriel(Some(c.mois), qui, true, "", &reponse, detail, Some(versions))))?;
     let qui_les_recoit: Vec<String> = cles.iter().filter_map(|cle| noms.get(cle).map(|nom| nom_a_l_ecran(ctx, cle, nom))).collect();
@@ -1001,7 +1003,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
             format!("{} : aucun engagement validé, aucun document à envoyer. Rien ne part d'un engagement en saisie.", mois.libelle(Graphie::Accentuee)),
         ));
     }
-    let sorties = ctx.racine.join("sorties").join(mois.to_string());
+    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     let choix = choisir(ctx, mois, &paies)?;
     // LES DOCUMENTS SE FABRIQUENT ICI, pour ceux a qui ils partent : depuis les paies ecrites, a leurs numeros.
     let mut cles: Vec<IdSalarie> = Vec::new();
@@ -1091,7 +1093,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     let le_mois = Some(mois);
     let detail = |servis: &[journal::Servi]| journal::DetailDocuments {
         salaries: servis.to_vec(),
-        main_propre: false,
+        remise: envois::etats::ModeDeRemise::Courriel,
         expediteur: Some(expediteur.clone()),
         durees_ms: Some(durees.clone()),
         partis: None,

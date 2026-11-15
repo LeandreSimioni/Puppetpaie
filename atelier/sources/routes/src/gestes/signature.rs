@@ -34,6 +34,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::capitaliser;
 use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use documents::fiche_questionnaire::{code_au_hasard, CodeDeDemande, SorteDeDemande};
+use envois::etats::ModeDeRemise;
 use envois::journal::{ActeDuContrat, ArticleModifie, ContratParti, DetailSignature, Ligne, Version};
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -428,7 +429,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         return Err(refus(format!("Aucun contrat a imprimer pour {}.", mois)));
     }
     controler_avenants(ctx, avenants)?;
-    let sorties = ctx.racine.join("sorties").join(s_mois.to_string());
+    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, s_mois);
     let dossier = documents::PieceDuMois::Contrat.dossier().sous(&sorties);
     let etiq = s_mois.etiquette();
     let ent = documents::avenant::ent_du_mois(ctx, s_mois);
@@ -455,13 +456,13 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
     let nom_impression = NomDeFichier::du(&impression)?;
     let le_mois = Some(mois);
     if !contrats.is_empty() {
-        let detail = DetailSignature { contrats: contrats.clone(), main_propre: true, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
+        let detail = DetailSignature { contrats: contrats.clone(), remise: ModeDeRemise::Imprime, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
         let versions = envois::journal::versions_des_contrats(ctx, &contrats, &departs)?;
         let reponse = format!("{} contrat(s) imprime(s) pour une remise en main propre", contrats.len());
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }
     if !lignes_avenants.is_empty() {
-        let detail = DetailSignature { contrats: lignes_avenants.clone(), main_propre: true, expediteur: None, relance: None, acte: Some(ActeDuContrat::Avenant), partis: None, echec_a: None };
+        let detail = DetailSignature { contrats: lignes_avenants.clone(), remise: ModeDeRemise::Imprime, expediteur: None, relance: None, acte: Some(ActeDuContrat::Avenant), partis: None, echec_a: None };
         let versions = envois::journal::versions_des_contrats(ctx, &lignes_avenants, &departs)?;
         let reponse = format!(
             "{} imprime(s) pour une remise en main propre",
@@ -500,7 +501,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois, None, &departs)?;
     let s_mois = data.mois;
-    let dossier = documents::PieceDuMois::Contrat.dossier().sous(&ctx.racine.join("sorties").join(s_mois.to_string()));
+    let dossier = documents::PieceDuMois::Contrat.dossier().dans(&ctx.racine, s_mois);
     let etiq = s_mois.etiquette();
 
     let (an, nom_mois) = (s_mois.annee(), s_mois.nom(socle::mois::Graphie::Accentuee));
@@ -511,7 +512,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
 
     let mut remplacements: Vec<((IdSalarie, Jour, NumeroContrat), (String, Jour))> = Vec::new();
     if remplace {
-        let lignes = envois::journal::lire(&ctx.racine, None, None, false)?;
+        let lignes = envois::journal::lire(&ctx.racine, None, None, None)?;
         for (k, ps, _) in &par_salarie {
             for p in ps {
                 let debut = p.engagement.debut;
@@ -646,7 +647,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         Ok(p) => p,
         Err(e) => {
             let servis = versions_des_servis(&versions, &messages, e.partis.len());
-            let detail = DetailSignature { contrats: contrats.clone(), main_propre: false, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
+            let detail = DetailSignature { contrats: contrats.clone(), remise: ModeDeRemise::Courriel, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
             noter_echec_d_envoi(ctx, Ligne::ContratSignature, Some(mois), "interface", &e.partis, &e.echoue, &e.echec.phrase, detail, Some(servis))?;
             return Err(e.echec);
         }
@@ -656,7 +657,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         c.message = messages.iter().zip(&identifiants).find(|(m, _)| m.pour == c.salarie).map(|(_, i)| i.clone());
     }
     let n_rappels = contrats.iter().filter(|c| c.relance == Some(true)).count();
-    let detail = DetailSignature { contrats: contrats.clone(), main_propre: false, expediteur: Some(expediteur.clone()), relance: Some(n_rappels == contrats.len()), acte: None, partis: None, echec_a: None };
+    let detail = DetailSignature { contrats: contrats.clone(), remise: ModeDeRemise::Courriel, expediteur: Some(expediteur.clone()), relance: Some(n_rappels == contrats.len()), acte: None, partis: None, echec_a: None };
     let reponse = match n_rappels {
         0 => format!("{} contrat(s) envoye(s) a la signature", contrats.len()),
         n if n == contrats.len() => format!("{} contrat(s) relance(s) a la signature", n),
@@ -965,14 +966,14 @@ fn avenant_ecrit(
     let p = &paies[rang_p];
     let ailleurs = engagement::signe_ailleurs(&ctx.racine, &p.engagement)?;
     let ent = documents::avenant::ent_du_mois(ctx, mois_a);
-    let dossier = documents::PieceDuMois::Avenant.dossier().sous(&ctx.racine.join("sorties").join(mois_a.to_string()));
+    let dossier = documents::PieceDuMois::Avenant.dossier().dans(&ctx.racine, mois_a);
     let pdf = match &a.repris {
         Some(Repris { fichier, .. }) => {
             let f = dossier.join(fichier);
             if !f.is_file() {
                 return Err(socle::echec::refus_avec(
                     format!("L'avenant n° {} de {} n'est plus dans les envois de son mois : il ne repart pas tel quel. Rien n'est parti.", a.numero, salarie),
-                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.to_string()), ..Default::default() },
+                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.clone().into()), ..Default::default() },
                 )
                 .reclasser(Classe::Refuse));
             }
@@ -1169,7 +1170,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
             Ok(p) => p,
             Err(e) => {
                 let servis = versions_des_servis(&versions, std::slice::from_ref(&message), e.partis.len());
-                let detail = DetailSignature { contrats: lignes_contrats.clone(), main_propre: false, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
+                let detail = DetailSignature { contrats: lignes_contrats.clone(), remise: ModeDeRemise::Courriel, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
                 noter_echec_d_envoi(ctx, Ligne::ContratSignature, le_mois, "interface", &e.partis, &e.echoue, &e.echec.phrase, detail, Some(servis))?;
                 return Err(e.echec);
             }
@@ -1183,7 +1184,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
         );
         let detail = DetailSignature {
             contrats: lignes_contrats.clone(),
-            main_propre: false,
+            remise: ModeDeRemise::Courriel,
             expediteur: Some(expediteur.clone()),
             relance: Some(aa.iter().all(UnAvenant::rappel)),
             acte: Some(ActeDuContrat::Avenant),

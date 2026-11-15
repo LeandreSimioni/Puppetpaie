@@ -11,7 +11,13 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
-use socle::fichiers::{forme_en_cache, repr, FormeGardee};
+use socle::fichiers::{forme_en_cache, repr, CheminRelatif, FormeGardee};
+
+/// Le catalogue livre des emplois, sous `donnees/`.
+pub const BASE: CheminRelatif = CheminRelatif::du_moteur("emplois-base.json");
+
+/// La nomenclature des emplois de France Travail, livree sous `donnees/`.
+const NOMENCLATURE: CheminRelatif = CheminRelatif::du_moteur("nomenclature-emplois-ft.json");
 use socle::echec::R;
 use socle::date::Jour;
 
@@ -155,7 +161,7 @@ impl CodeEmploi {
         if let Some((_, f)) = base()?.emplois.iter().find(|(c, _)| c == self) {
             return Ok(Metier { code: self.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) });
         }
-        let n = nomenclature()?.emplois.get(self).cloned().ok_or_else(|| socle::echec::livree("nomenclature-emplois-ft.json", &self.0))?;
+        let n = nomenclature()?.emplois.get(self).cloned().ok_or_else(|| socle::echec::livree(&NOMENCLATURE, &self.0))?;
         Ok(Metier { code: self.clone(), fiche: FicheDuMetier::Nomenclature(n) })
     }
 }
@@ -172,6 +178,31 @@ impl<'de> Deserialize<'de> for CodeEmploi {
     }
 }
 
+socle::noms_fermes! {
+    /// LA FAMILLE D'UN METIER DU CATALOGUE (`emplois-base.json`), qui groupe le deroulant.
+    FamilleDeMetier, "Famille de métier" {
+        Artistes = "Artistes",
+        AudiovisuelDansLeSpectacle = "Audiovisuel dans le spectacle",
+        CirqueEtRue = "Cirque et rue",
+        CostumeCoiffureMaquillage = "Costume, coiffure, maquillage",
+        CreationEtEvenement = "Création et événement",
+        DecorEtConstruction = "Décor et construction",
+        EditionPhonographique = "Édition phonographique",
+        FilmsDAnimation = "Films d'animation",
+        Lumiere = "Lumière",
+        MiseEnSceneEtCreation = "Mise en scène et création",
+        Musique = "Musique",
+        ProductionAudiovisuelle = "Production audiovisuelle",
+        ProductionCinematographique = "Production cinématographique",
+        ProductionEtAdministration = "Production et administration",
+        Radiodiffusion = "Radiodiffusion",
+        RegieEtPlateau = "Régie et plateau",
+        Son = "Son",
+        TechniquesDuSpectacle = "Techniques du spectacle",
+        Telediffusion = "Télédiffusion",
+    }
+}
+
 /// Un metier du catalogue : ce que les declarations demandent (le libelle et sa forme declaree S21.G00.40.006, la
 /// PCS-ESE 40.004, le statut artiste ou technicien, le statut conventionnel 40.002, cadre par defaut 40.003), sa famille,
 /// les conventions dont le deroulant le montre, et la ligne de minima et de classification de chaque convention qui
@@ -183,7 +214,7 @@ pub struct FicheDuCatalogue {
     pub feminin: String,
     pub pcs_ese: CodePcsEse,
     pub statut: Statut,
-    pub famille: String,
+    pub famille: FamilleDeMetier,
     pub cadre_par_defaut: bool,
     /// Le defaut cadre d'une convention qui le dit autrement (le dramaturge, cadre dans la 1285).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -321,13 +352,13 @@ const CATALOGUE_ILLISIBLE: &str = "Le catalogue des métiers livré avec le logi
 /// LA SEULE LECTURE D'`emplois-base.json`.
 pub fn base() -> R<Arc<BaseEmplois>> {
     static CACHE: OnceLock<FormeGardee<BaseEmplois>> = OnceLock::new();
-    forme_en_cache(&CACHE, "emplois-base.json", CATALOGUE_ILLISIBLE, Ok)
+    forme_en_cache(&CACHE, &BASE, CATALOGUE_ILLISIBLE, Ok)
 }
 
 /// LA SEULE LECTURE DE `nomenclature-emplois-ft.json`.
 pub fn nomenclature() -> R<Arc<Nomenclature>> {
     static CACHE: OnceLock<FormeGardee<Nomenclature>> = OnceLock::new();
-    forme_en_cache(&CACHE, "nomenclature-emplois-ft.json", "La nomenclature des emplois France Travail livrée avec le logiciel ne se lit pas : le signaler au développeur.", NomenclatureLue::lue)
+    forme_en_cache(&CACHE, &NOMENCLATURE, "La nomenclature des emplois France Travail livrée avec le logiciel ne se lit pas : le signaler au développeur.", NomenclatureLue::lue)
 }
 
 /// Premiere lettre en majuscule, le reste en minuscules.
@@ -402,12 +433,9 @@ impl Metier {
         }
     }
 
-    /// La famille du catalogue ; « Hors catalogue » sinon.
-    pub fn famille(&self) -> &str {
-        match self.au_catalogue() {
-            Some(f) => &f.famille,
-            None => "Hors catalogue",
-        }
+    /// La famille du catalogue ; aucune hors du catalogue.
+    pub fn famille(&self) -> Option<FamilleDeMetier> {
+        self.au_catalogue().map(|f| f.famille)
     }
 
     /// La PCS-ESE du catalogue (hors catalogue : aucune).
@@ -465,7 +493,7 @@ impl Metier {
             .and_then(|conv| conv.categories.as_ref())
             .and_then(|s| s.par_niveau_3090.as_ref())
             .and_then(|par| par.get(&c.niveau))
-            .ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", &format!("conventions.3090.categories.par_niveau_3090.{}", c.niveau)))?;
+            .ok_or_else(|| socle::echec::livree(&crate::clauses::FICHIER, &format!("conventions.3090.categories.par_niveau_3090.{}", c.niveau)))?;
         if [crate::fiche::CategorieConventionnelle::Cadre, crate::fiche::CategorieConventionnelle::AgentDeMaitrise].contains(categorie) {
             return Ok(Some(StatutConventionnel::AgentDeMaitrise));
         }
@@ -671,7 +699,7 @@ pub struct MetierDuDeroulant {
     pub code: CodeEmploi,
     pub libelle: String,
     pub feminin: String,
-    pub famille: String,
+    pub famille: FamilleDeMetier,
     pub statut: &'static str,
     #[serde(with = "annexe_en_nombre")]
     pub annexe: AnnexeChomage,
@@ -694,7 +722,7 @@ pub fn catalogue(idcc: Option<&Idcc>) -> R<Vec<MetierDuDeroulant>> {
                 code: code.clone(),
                 libelle: f.libelle.clone(),
                 feminin: f.feminin.clone(),
-                famille: f.famille.clone(),
+                famille: f.famille,
                 statut: f.statut.as_str(),
                 annexe: f.annexe,
                 pcs_ese: f.pcs_ese.clone(),
@@ -731,14 +759,15 @@ pub fn noms_des_conventions() -> R<BTreeMap<Idcc, String>> {
 /// Les familles du catalogue, dans l'ordre ou les
 /// montrer : les artistes d'abord, parce que c'est le cas de presque toutes
 /// les paies.
-pub fn familles() -> R<Vec<String>> {
-    const ORDRE: [&str; 11] = [
-        "Artistes", "Musique", "Cirque et rue", "Mise en scène et création", "Régie et plateau", "Son", "Lumière",
-        "Décor et construction", "Costume, coiffure, maquillage", "Production et administration", "Audiovisuel dans le spectacle",
+pub fn familles() -> R<Vec<FamilleDeMetier>> {
+    use FamilleDeMetier as F;
+    const ORDRE: [FamilleDeMetier; 11] = [
+        F::Artistes, F::Musique, F::CirqueEtRue, F::MiseEnSceneEtCreation, F::RegieEtPlateau, F::Son, F::Lumiere,
+        F::DecorEtConstruction, F::CostumeCoiffureMaquillage, F::ProductionEtAdministration, F::AudiovisuelDansLeSpectacle,
     ];
-    let vues: std::collections::BTreeSet<String> = base()?.emplois.iter().map(|(_, f)| f.famille.clone()).collect();
-    let mut out: Vec<String> = ORDRE.iter().filter(|f| vues.contains(**f)).map(|f| f.to_string()).collect();
-    out.extend(vues.iter().filter(|f| !ORDRE.contains(&f.as_str())).cloned());
+    let vues: std::collections::BTreeSet<FamilleDeMetier> = base()?.emplois.iter().map(|(_, f)| f.famille).collect();
+    let mut out: Vec<FamilleDeMetier> = ORDRE.iter().copied().filter(|f| vues.contains(f)).collect();
+    out.extend(vues.iter().copied().filter(|f| !ORDRE.contains(f)));
     Ok(out)
 }
 

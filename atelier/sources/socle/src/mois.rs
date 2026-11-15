@@ -108,14 +108,14 @@ impl Mois {
         self.numero
     }
 
-    /// Le nom du mois dans la graphie `g` : la seule table des noms de mois du moteur.
+    /// Le nom du mois dans la graphie `g`.
     pub fn nom(self, g: Graphie) -> &'static str {
-        let table = match g {
-            Graphie::Titre => &MOIS_TITRE,
-            Graphie::Minuscule => &MOIS_MINUSCULE,
-            Graphie::Accentuee => &MOIS_ACCENTUE,
-        };
-        table[(self.numero - 1) as usize]
+        self.de_l_annee().nom(g)
+    }
+
+    /// Le mois de l'annee qu'il est, sans son annee.
+    pub fn de_l_annee(self) -> MoisDeLAnnee {
+        MoisDeLAnnee(self.numero)
     }
 
     /// « octobre 2026 », dans la graphie `g`.
@@ -195,6 +195,34 @@ impl Mois {
             m = m.suivant();
         }
         sortie
+    }
+}
+
+/// UN MOIS DE L'ANNEE, sans annee : janvier a decembre (la colonne d'un mois au recapitulatif annuel). Il ne se
+/// fabrique que d'un mois civil (`Mois::de_l_annee`) ou parmi les douze (`MoisDeLAnnee::TOUS`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoisDeLAnnee(u32);
+
+impl MoisDeLAnnee {
+    /// Les douze, de janvier a decembre.
+    pub const TOUS: [MoisDeLAnnee; 12] = [
+        MoisDeLAnnee(1), MoisDeLAnnee(2), MoisDeLAnnee(3), MoisDeLAnnee(4), MoisDeLAnnee(5), MoisDeLAnnee(6),
+        MoisDeLAnnee(7), MoisDeLAnnee(8), MoisDeLAnnee(9), MoisDeLAnnee(10), MoisDeLAnnee(11), MoisDeLAnnee(12),
+    ];
+
+    /// Son numero, de 1 a 12.
+    pub fn numero(self) -> u32 {
+        self.0
+    }
+
+    /// Son nom dans la graphie `g` : la seule table des noms de mois du moteur.
+    pub fn nom(self, g: Graphie) -> &'static str {
+        let table = match g {
+            Graphie::Titre => &MOIS_TITRE,
+            Graphie::Minuscule => &MOIS_MINUSCULE,
+            Graphie::Accentuee => &MOIS_ACCENTUE,
+        };
+        table[(self.0 - 1) as usize]
     }
 }
 

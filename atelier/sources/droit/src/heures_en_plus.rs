@@ -72,7 +72,7 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
                 debut = fin;
             }
             if reste > Decimal::ZERO {
-                let au_dela = c.au_dela_du_contingent.ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", "heures_supplementaires.au_dela_du_contingent"))?;
+                let au_dela = c.au_dela_du_contingent.ok_or_else(|| socle::echec::livree(&crate::clauses::FICHIER, "heures_supplementaires.au_dela_du_contingent"))?;
                 ajouter(&mut r.paliers, reste, au_dela.0);
             }
         }
@@ -87,7 +87,7 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
             let hebdo = loi()?.heures_supplementaires.paliers_hebdomadaires;
             let (premier, second) = match (hebdo.first(), hebdo.get(1)) {
                 (Some(a), Some(b)) => (a.majoration, b.majoration),
-                _ => return Err(socle::echec::livree("permanents-base.json", "heures_en_plus.heures_supplementaires.paliers_hebdomadaires")),
+                _ => return Err(socle::echec::livree(&crate::permanents::BASE, "heures_en_plus.heures_supplementaires.paliers_hebdomadaires")),
             };
             ajouter(&mut r.paliers, heures - a_50, premier);
             ajouter(&mut r.paliers, a_50, second);

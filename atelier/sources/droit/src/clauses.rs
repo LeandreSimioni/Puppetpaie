@@ -23,7 +23,8 @@ use std::sync::{Arc, OnceLock};
 
 pub use socle::d28::P;
 
-const FICHIER: &str = "clauses-conventionnelles-base.json";
+/// La table livree des clauses conventionnelles, sous `donnees/`.
+pub const FICHIER: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("clauses-conventionnelles-base.json");
 
 // ------------------------------------------------------------ le catalogue
 forme! {
@@ -416,7 +417,7 @@ forme! {
         pub pourcentage_par_annee: i64,
         pub plafond_pourcentage: i64,
         /// Les familles de metiers payees a la grille du costume.
-        pub familles_costume: Option<Vec<String>>,
+        pub familles_costume: Option<Vec<crate::emplois::FamilleDeMetier>>,
         /// La ligne de la grille de chaque niveau 3090.
         pub niveaux: BTreeMap<CleDeGrille, CleDeGrille>,
         /// Les grilles, dans l'ordre de leurs dates.
@@ -473,7 +474,7 @@ forme! {
 /// Le catalogue livre. Une clause que la convention laisse a la loi n'est pas aussi relevee.
 pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
-    forme_en_cache(&CACHE, FICHIER, "Les clauses conventionnelles livrées ne se lisent pas : le signaler au développeur.", |t: Table| {
+    forme_en_cache(&CACHE, &FICHIER, "Les clauses conventionnelles livrées ne se lisent pas : le signaler au développeur.", |t: Table| {
         for (idcc, c) in &t.conventions {
             let releves = [
                 (Section::Preavis, c.preavis.is_some()),
@@ -482,7 +483,7 @@ pub fn table() -> R<Arc<Table>> {
                 (Section::DepartALaRetraite, c.depart_a_la_retraite.is_some()),
             ];
             if let Some((s, _)) = releves.iter().find(|(s, releve)| *releve && c.loi_seule.as_ref().is_some_and(|l| l.contains_key(s))) {
-                return Err(socle::echec::livree(FICHIER, &format!("conventions.{}.loi_seule.{:?}", idcc, s)));
+                return Err(socle::echec::livree(&FICHIER, &format!("conventions.{}.loi_seule.{:?}", idcc, s)));
             }
         }
         Ok(t)
@@ -509,7 +510,7 @@ fn p(n: &Nombre) -> P {
 
 #[track_caller]
 fn manque(cle: &str) -> socle::echec::Echec {
-    socle::echec::livree(FICHIER, cle)
+    socle::echec::livree(&FICHIER, cle)
 }
 
 /// Pour les phrases : « la convention 3090 », ou « la convention collective » quand l'IDCC manque.
@@ -1211,7 +1212,7 @@ pub fn prime_anciennete(
     let Some(niveau) = sec.niveaux.get(&c3090.niveau) else {
         return Ok(Some(prime(None, Some(format!("le niveau 3090 du metier {} n'est pas connu", code)))));
     };
-    let base = if sec.familles_costume.iter().flatten().any(|f| f == famille) {
+    let base = if famille.is_some_and(|famille| sec.familles_costume.iter().flatten().any(|f| *f == famille)) {
         g.costume.get(niveau).ok_or_else(|| manque(&format!("prime_anciennete.salaires_conventionnels.costume.{}", niveau)))?
     } else {
         let jauge = jauge(&crate::minima::ParLaGrille::de_l_annexe());

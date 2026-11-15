@@ -7,12 +7,13 @@
 //! transport est ailleurs (`transport`).
 
 use declarations::dsn_lue::DsnLue;
+use droit::natures::ListeDeLaNorme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{Classe, Echec, R};
+use socle::mode::Mode;
 use socle::texte::ascii_nfkd;
 
-pub const NATURE_TEST: droit::nature_declaration::EssaiOuReel = droit::nature_declaration::EssaiOuReel::Essai;
-pub use declarations::dsn_lue::{MENSUELLE, NATURE_REEL};
+pub use declarations::dsn_lue::MENSUELLE;
 pub const RUB_NATURE: &str = "S10.G00.00.005";
 
 
@@ -65,7 +66,7 @@ fn deux_chiffres(reste: &[u8]) -> Option<usize> {
 pub fn basculer_dsn(octets: &[u8]) -> R<Vec<u8>> {
     let prefixe = format!("{},'", RUB_NATURE);
     match premier(octets, prefixe.as_bytes(), deux_chiffres) {
-        Some((i, n)) => Ok(remplacer(octets, i, n, format!("{},'{}'", RUB_NATURE, NATURE_TEST).as_bytes())),
+        Some((i, n)) => Ok(remplacer(octets, i, n, format!("{},'{}'", RUB_NATURE, Mode::Test.code_de_la_norme()).as_bytes())),
         None => Err(depot_refuse(format!("Rubrique {} introuvable : ce fichier ne ressemble pas a une DSN.", RUB_NATURE))),
     }
 }
@@ -107,32 +108,27 @@ pub fn renumeroter(octets: &[u8], ordre: droit::natures::NumeroDOrdre) -> R<Vec<
 
 /// Le mode demande doit correspondre au fichier, et un reel
 /// exige une preuve.
-pub fn verifier(a: &DsnLue, reel: bool, presence_prouvee: bool) -> R<()> {
-    let nature_envoi = a.nature_envoi;
-    if reel && nature_envoi != Some(NATURE_REEL) {
-        let porte = match nature_envoi {
-            Some(n) => format!("porte {}='{}'", RUB_NATURE, n),
-            None => format!("ne porte pas {}", RUB_NATURE),
-        };
-        return Err(depot_refuse(format!(
-            "Le fichier {} (envoi de test) et vous demandez un depot REEL. Un fichier de test depose reellement ne declare RIEN : les donnees ne sont pas conservees. Deposez le fichier du mois, que la route deposer ecrit elle-meme.",
-            porte
-        )));
-    }
-    if !reel && nature_envoi != Some(NATURE_REEL) {
-        return Ok(());
-    }
-    if reel {
-        let attendu = a.confirmation_attendue().map_err(|m| m.reclasser(Classe::DepotRefuse))?;
-        if !presence_prouvee {
-            return Err(depot_refuse(format!(
-                "Un depot REEL demande une preuve : reecrire {} ({}), ou retaper le mot de passe du logiciel.",
-                if a.est_signalement() { "le jour de l'evenement signale" } else { "le mois declare" },
-                attendu
-            )));
+pub fn verifier(a: &DsnLue, mode: Mode, presence_prouvee: bool) -> R<()> {
+    let porte = match (mode, a.nature_envoi) {
+        (Mode::Test, _) => return Ok(()),
+        (Mode::Reel, Some(Mode::Reel)) => {
+            let attendu = a.confirmation_attendue().map_err(|m| m.reclasser(Classe::DepotRefuse))?;
+            if !presence_prouvee {
+                return Err(depot_refuse(format!(
+                    "Un depot REEL demande une preuve : reecrire {} ({}), ou retaper le mot de passe du logiciel.",
+                    if a.est_signalement() { "le jour de l'evenement signale" } else { "le mois declare" },
+                    attendu
+                )));
+            }
+            return Ok(());
         }
-    }
-    Ok(())
+        (Mode::Reel, Some(n)) => format!("porte {}='{}'", RUB_NATURE, n.code_de_la_norme()),
+        (Mode::Reel, None) => format!("ne porte pas {}", RUB_NATURE),
+    };
+    Err(depot_refuse(format!(
+        "Le fichier {} (envoi de test) et vous demandez un depot REEL. Un fichier de test depose reellement ne declare RIEN : les donnees ne sont pas conservees. Deposez le fichier du mois, que la route deposer ecrit elle-meme.",
+        porte
+    )))
 }
 
 // --------------------------------------------------------------------- DPAE
@@ -147,8 +143,13 @@ pub fn indicateur(octets: &[u8]) -> String {
     octets[a..fin].iter().map(|&c| c as char).collect()
 }
 
-pub fn est_reel(octets: &[u8]) -> bool {
-    indicateur(octets) == INDICATEUR_REEL
+/// Le mode qu'une DPAE dit par C_VERSION (`120` reel, `TST` test) ; aucun pour une autre valeur.
+pub fn mode_dpae(octets: &[u8]) -> Option<Mode> {
+    match indicateur(octets).as_str() {
+        INDICATEUR_REEL => Some(Mode::Reel),
+        INDICATEUR_TEST => Some(Mode::Test),
+        _ => None,
+    }
 }
 
 /// Chaque enregistrement repasse en C_VERSION = TST,

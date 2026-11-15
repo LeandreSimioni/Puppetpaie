@@ -1111,7 +1111,7 @@ fn echeancier_base() -> socle::echec::R<EcheancierBase> {
 // ------------------------------------------------------ ce que la compagnie a coche
 
 /// Ce que l'utilisateur a coche dans l'echeancier, sous la racine de la compagnie.
-pub(crate) const ECHEANCIER: &str = "config/echeancier.json";
+pub(crate) const ECHEANCIER: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/echeancier.json");
 
 /// `config/echeancier.json` : les echeances que la compagnie a dites faites (« quoi:AAAA »), quand et par qui.
 #[derive(Debug, Deserialize, Serialize)]
@@ -1134,7 +1134,7 @@ struct Coche {
 /// `config/echeancier.json`, lu : rien de coche s'il n'existe pas. La seule lecture du fichier ; `marquer_echeance` est
 /// la seule ecriture.
 fn cochees(ctx: &Contexte) -> socle::echec::R<Cochees> {
-    let p = ctx.racine.join(ECHEANCIER);
+    let p = ECHEANCIER.dans(&ctx.racine);
     if !p.exists() {
         return Ok(Cochees { quoi: QUOI_COCHEES.to_string(), fait: BTreeMap::new() });
     }
@@ -1161,7 +1161,7 @@ fn marquer_echeance(ctx: &Contexte, cle: &CleDEcheance, fait: bool, qui: &str) -
         c.fait.remove(cle);
     }
     c.quoi = QUOI_COCHEES.to_string();
-    let p = ctx.racine.join(ECHEANCIER);
+    let p = ECHEANCIER.dans(&ctx.racine);
     if let Some(parent) = p.parent() {
         crate::fiches::creer_dossier(parent)?;
     }
@@ -1247,7 +1247,7 @@ fn spectacles_a_revoir(ctx: &Contexte, annee: i32, faites: &Cochees) -> R<Vec<Sp
 /// Le mois le plus recent dont la DSN reelle est partie et n'a pas ete
 /// refusee -- passee, ou en attente de son bilan.
 fn derniere_dsn_passee(st: &Etat) -> R<Option<Mois>> {
-    let mois: BTreeSet<Mois> = envois::journal::filtrer(&st.journal, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !l.signalement()).filter_map(|l| l.mois()).collect();
+    let mois: BTreeSet<Mois> = envois::journal::filtrer(&st.journal, Some(envois::journal::Acte::Dsn), None, Some(socle::mode::Mode::Reel)).filter(|l| l.accepte() && !l.signalement()).filter_map(|l| l.mois()).collect();
     let mut passes = Vec::new();
     for m in mois {
         if !etat_dsn::du_mois(st.ctx, m, None)?.a_faire() {
@@ -1297,7 +1297,7 @@ pub(crate) fn mois_a_parcourir(ctx: &Contexte, aujourdhui: Jour) -> socle::echec
 fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, std::path::PathBuf)>> {
     // Le mois n'est ecrit que si le moteur a note sa DSN mensuelle (`depart::mois_ecrit`, le critere de l'horloge
     // et de l'accueil) : un fichier DSN qu'il n'a pas note ne fait pas « le mois est ecrit ».
-    let dossier = documents::PieceDuMois::Dsn.dossier().sous(&st.racine().join("sorties").join(mois.to_string()));
+    let dossier = documents::PieceDuMois::Dsn.dossier().dans(st.racine(), mois);
     if !crate::gestes::depart::mois_ecrit(st.racine(), mois)? || !dossier.is_dir() {
         return Ok(None);
     }

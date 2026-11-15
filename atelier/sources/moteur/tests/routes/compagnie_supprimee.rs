@@ -73,3 +73,29 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
     assert!(!administrateur::est_rattachee(&i, &neuve).unwrap());
 }
 
+/// Un registre qui porte une compagnie ouverte par son dossier (`ma-cie`), le logiciel lui-meme (`logiciel` :
+/// `prive/config` manque) et la copie de developpement (`prive-dev`) se relit, et se reecrit aux memes octets quand une
+/// compagnie supprimee en sort ; chacune y reste rattachee.
+#[test]
+fn un_registre_qui_porte_tout_dossier_de_l_installation_se_relit_et_se_reecrit_aux_memes_octets() {
+    let i = inst("tout_dossier");
+    let quoi = "Les compagnies que gere l'administrateur de ce logiciel : un seul mot de passe les ouvre toutes. Aucun secret ici.";
+    let entree = |d: &str| json!({"dossier": d, "depuis": "2026-01-02T09:00"});
+    let registre = |c: Vec<serde_json::Value>| format!("{}\n", socle::ecriture::json_indente(&json!({"quoi": quoi, "compagnies": c}), 2));
+    let portees = ["ma-cie", "logiciel", "prive-dev"];
+    let p = i.join(administrateur::FICHIER);
+    std::fs::write(&p, registre(portees.iter().map(|d| entree(d)).chain([entree("compagnies/partie")]).collect())).unwrap();
+    let racines: Vec<PathBuf> = portees.iter().map(|d| i.join(d)).collect();
+    for r in &racines {
+        let fiche = droit::contexte::ENTREPRISE.dans(r);
+        std::fs::create_dir_all(fiche.parent().unwrap()).unwrap();
+        std::fs::write(&fiche, "{}\n").unwrap();
+    }
+    administrateur::oublier(&i, &i.join("compagnies").join("partie")).unwrap();
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), registre(portees.iter().map(|d| entree(d)).collect()));
+    assert_eq!(administrateur::rattachees(&i).unwrap(), racines);
+    for r in &racines {
+        assert!(administrateur::est_rattachee(&i, r).unwrap(), "{} n'est pas lue rattachee", r.display());
+    }
+}
+

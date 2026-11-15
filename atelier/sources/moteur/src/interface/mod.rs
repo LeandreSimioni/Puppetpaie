@@ -361,11 +361,15 @@ fn fichier_de_la_page(chemin: &str) -> R<Option<(Vec<u8>, &'static str)>> {
     std::fs::read(&vrai).map(|o| Some((o, mime))).map_err(|e| socle::echec::du_disque(&vrai, &e))
 }
 
+/// Le fichier du jeton d'une fenetre, dans son dossier sur le poste (`navigateur::dossier_local`), hors de toute
+/// compagnie : ni la sauvegarde ni la publication ne le croisent.
+const JETON_DE_LA_FENETRE: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier::du_moteur(".jeton-interface");
+
 /// Le jeton de cette fenetre, tire une fois et garde dans son dossier sur le poste (`navigateur::dossier_local`).
 /// Un jeton garde d'une autre forme se tire a neuf. UN TIRAGE QUI ECHOUE REFUSE : la fenetre ne demarre pas avec un jeton
 /// previsible.
 fn jeton(local: &Path) -> R<socle::secret::Secret> {
-    let p = local.join(".jeton-interface");
+    let p = local.join(JETON_DE_LA_FENETRE);
     match std::fs::read_to_string(&p) {
         Ok(j) => {
             let j = j.trim();
@@ -612,7 +616,7 @@ impl Fenetre {
         }
         // Aucune variable du processus ne dit la compagnie : chaque route la recoit (`--racine`, `o["racine"]`,
         // le `Contexte`), et la fenetre pourra en servir plusieurs a la fois.
-        let journal = racine.join(JOURNAL_INTERFACE);
+        let journal = JOURNAL_INTERFACE.dans(&racine);
         if let Some(d) = journal.parent() {
             std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(d, &e))?;
         }
@@ -1134,7 +1138,7 @@ impl Fenetre {
             };
         }
         let Some(sorte) = documents::SorteDImage::du_nom(quoi) else { return rien() };
-        let dossier = racine.join("gabarits").join("identite");
+        let dossier = racine.join(droit::contexte::GABARITS).join("identite");
         for format in fabrique_pdf::alleger::FormatDImage::TOUS {
             let f = dossier.join(format!("{}{}", sorte.nom(), format.extension()));
             match std::fs::read(&f) {

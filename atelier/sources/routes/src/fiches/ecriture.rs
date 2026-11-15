@@ -50,7 +50,7 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn candidats_de_cle(_p: &Self::Plate) -> Vec<String> {
         Vec::new()
     }
-    const FICHIER: &'static str;
+    const FICHIER: socle::fichiers::CheminRelatif;
     /// Les cases qui s'ecrivent a part (`ecrire_a_part`).
     fn a_part() -> Vec<CaseDeFiche> {
         Vec::new()
@@ -126,7 +126,7 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
 
 impl SorteDeFiche for FicheEntrepriseDatee {
     const NOM: NomDeFiche = NomDeFiche::Entreprise;
-    const FICHIER: &'static str = droit::contexte::ENTREPRISE;
+    const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::ENTREPRISE;
     type Fichier = FicheEntrepriseDatee;
     type Cle = ();
 
@@ -368,7 +368,7 @@ pub(crate) fn inscrire_etablissements(ctx: &Contexte, liste: &[droit::fiche::Eta
 
 impl SorteDeFiche for FicheSalarieDatee {
     const NOM: NomDeFiche = NomDeFiche::Salarie;
-    const FICHIER: &'static str = droit::contexte::SALARIES;
+    const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::SALARIES;
     type Fichier = droit::fiche::Salaries;
     type Cle = IdSalarie;
 
@@ -524,7 +524,7 @@ rapproche chacun de ses déclarations par lui. En choisir un autre, ou laisser l
 
 impl SorteDeFiche for FicheSpectacleDatee {
     const NOM: NomDeFiche = NomDeFiche::Spectacle;
-    const FICHIER: &'static str = droit::contexte::SPECTACLES;
+    const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::SPECTACLES;
     type Fichier = droit::fiche::Spectacles;
     type Cle = IdSpectacle;
 
@@ -607,16 +607,16 @@ cette fiche-là, ou corrigez le numéro.",
 
 /// Le fichier de la fiche `F` de la compagnie, lu par sa forme ; absent, il est vide (une compagnie sans fiche encore).
 pub(crate) fn lire_fichier<F: SorteDeFiche>(ctx: &Contexte) -> R<F::Fichier> {
-    let chemin = ctx.racine.join(F::FICHIER);
+    let chemin = F::FICHIER.dans(&ctx.racine);
     if !chemin.exists() {
         return Ok(F::Fichier::default());
     }
-    droit::fiche::lire_fichier(&chemin, F::FICHIER)
+    droit::fiche::lire_fichier(&chemin, F::FICHIER.texte())
 }
 
 /// Le fichier ecrit, l'ancien sauvegarde.
 fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichier) -> R<()> {
-    let chemin = ctx.racine.join(F::FICHIER);
+    let chemin = F::FICHIER.dans(&ctx.racine);
     sauver_avant(&chemin)?;
     ecrire(&chemin, fichier)
 }

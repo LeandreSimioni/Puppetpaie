@@ -26,7 +26,7 @@ use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
 use documents::plan_comptable::{EtatDExport, RegroupementDEtat};
 use socle::grandeurs::{Montant, Taux};
 use socle::num::{add, Decimal};
-use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
+use documents::tableaux_export::{libelle_mois, qui, refus, section_du_mois, sections_de, ColonneDEtat as C, Ligne, Section, Tableau, R};
 
 // ------------------------------------------------------------------ outils
 
@@ -230,7 +230,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 "Lignes de bulletin sans organisme dans le plan comptable : {}. Les y ajouter parmi les lignes (une cotisation) ou les regroupements (autres, convention, apec) : on ne devine pas à qui une cotisation est due.",
                 manque.into_iter().collect::<Vec<_>>().join(", ")
             ),
-            Lieu { fichier: Some(documents::plan_comptable::PLAN_COMPTABLE.to_string()), cle: Some("lignes".to_string()), ..Default::default() },
+            Lieu { fichier: Some(documents::plan_comptable::PLAN_COMPTABLE), cle: Some("lignes".to_string()), ..Default::default() },
         )
         .reclasser(Classe::Refuse));
     }
@@ -244,33 +244,33 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lignes = Vec::new();
     for c in cumul {
         let mut l = Ligne::nouvelle();
-        l.m("mois", c.mois).t("organisme", c.organisme).t("code", c.code).t("libelle", c.libelle).od("taux_sal", c.taux_sal.map(Taux::decimal)).od("taux_pat", c.taux_pat.map(Taux::decimal));
-        l.od("base", c.base.filter(|b| !b.est_nulle()).map(BaseDeCotisation::decimal))
-            .d("part_sal", c.part_sal.decimal())
-            .d("part_pat", c.part_pat.decimal())
-            .d("total", (c.part_sal + c.part_pat).decimal());
+        l.m(C::Mois, c.mois).t(C::Organisme, c.organisme).t(C::Code, c.code).t(C::Libelle, c.libelle).od(C::TauxSal, c.taux_sal.map(Taux::decimal)).od(C::TauxPat, c.taux_pat.map(Taux::decimal));
+        l.od(C::Base, c.base.filter(|b| !b.est_nulle()).map(BaseDeCotisation::decimal))
+            .d(C::PartSal, c.part_sal.decimal())
+            .d(C::PartPat, c.part_pat.decimal())
+            .d(C::Total, (c.part_sal + c.part_pat).decimal());
         lignes.push(l);
     }
-    let tri = |l: &Ligne| vec![l.texte("code"), l.texte("libelle")];
+    let tri = |l: &Ligne| vec![l.texte(C::Code), l.texte(C::Libelle)];
     let mut t = Tableau::nouveau(EtatDExport::CotisationsParOrganisme, "Cotisations par organisme", p.libelle.clone());
     t.mois = p.mois.clone();
     t.sections = if par_mois {
-        sections_de(lignes, |l| (l.mois("mois"), l.texte("organisme")), |k| Ok(format!("{} — {}", section_du_mois(&k.0)?, k.1)), Some(&tri))?
+        sections_de(lignes, |l| (l.mois(C::Mois), l.texte(C::Organisme)), |k| Ok(format!("{} — {}", section_du_mois(&k.0)?, k.1)), Some(&tri))?
     } else {
-        sections_de(lignes, |l| l.texte("organisme"), |k| Ok(k.clone()), Some(&tri))?
+        sections_de(lignes, |l| l.texte(C::Organisme), |k| Ok(k.clone()), Some(&tri))?
     };
     // Par organisme, la section porte deja son nom : une colonne qui le repeterait ne dirait rien de plus.
-    let mut cols = if par_mois { vec![col_t("mois", "Mois"), col_t("organisme", "Organisme")] } else { Vec::new() };
+    let mut cols = if par_mois { vec![C::Mois.colonne(), C::Organisme.colonne()] } else { Vec::new() };
     cols.extend([
-        col_t("libelle", "Cotisation"),
-        col_t("code", "Code"),
+        C::Libelle.titree("Cotisation"),
+        C::Code.colonne(),
         // La base ne se totalise pas : deux assiettes differentes ne s'additionnent pas.
-        col_x("base", "Base"),
-        col_x("taux_sal", "Taux sal. %"),
-        col_m("part_sal", "Part salariale"),
-        col_x("taux_pat", "Taux pat. %"),
-        col_m("part_pat", "Part patronale"),
-        col_m("total", "Total dû"),
+        C::Base.colonne(),
+        C::TauxSal.colonne(),
+        C::PartSal.colonne(),
+        C::TauxPat.titree("Taux pat. %"),
+        C::PartPat.colonne(),
+        C::Total.colonne(),
     ]);
     t.colonnes = cols;
     t.sources = vec![
@@ -385,31 +385,31 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
                 None => o.organisme.to_string(),
             };
             let mut l = Ligne::nouvelle();
-            l.m("mois", m).t("organisme", organisme).t("identifiant", o.organisme.to_string()).ot("reference", o.reference.clone());
-            l.t("du", o.debut.jj_mm_aaaa()).t("au", o.fin.jj_mm_aaaa()).od("montant", Some(o.montant));
-            l.t("mode", "prélèvement SEPA");
-            l.ot("date", o.date_paiement.map(|j| j.jj_mm_aaaa())).t("fichier", nom_de_la_dsn(m, partie));
+            l.m(C::Mois, m).t(C::Organisme, organisme).t(C::Identifiant, o.organisme.to_string()).ot(C::Reference, o.reference.clone());
+            l.t(C::Du, o.debut.jj_mm_aaaa()).t(C::Au, o.fin.jj_mm_aaaa()).od(C::Montant, Some(o.montant));
+            l.t(C::Mode, "prélèvement SEPA");
+            l.ot(C::Date, o.date_paiement.map(|j| j.jj_mm_aaaa())).t(C::Fichier, nom_de_la_dsn(m, partie));
             lignes.push(l);
         }
     }
-    if lignes.iter().any(|l| l.texte("date").is_empty()) {
+    if lignes.iter().any(|l| l.texte(C::Date).is_empty()) {
         avert.push("Un versement sans date de paiement est prélevé à l'échéance légale de l'organisme.".to_string());
     }
     let mut t = Tableau::nouveau(EtatDExport::VersementsOrganismes, "Versements aux organismes (DSN)", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, None)?;
+    t.sections = sections_de(lignes, |l| l.mois(C::Mois), section_du_mois, None)?;
     t.colonnes = vec![
-        col_t("mois", "Mois"),
-        col_t("organisme", "Organisme"),
-        col_t("identifiant", "SIRET ou code"),
-        col_t("reference", "Référence"),
-        col_t("du", "Période du"),
-        col_t("au", "au"),
-        col_m("montant", "Montant"),
-        col_t("mode", "Mode"),
-        col_t("date", "Date de paiement"),
-        col_t("fichier", "DSN"),
+        C::Mois.colonne(),
+        C::Organisme.colonne(),
+        C::Identifiant.colonne(),
+        C::Reference.colonne(),
+        C::Du.colonne(),
+        C::Au.colonne(),
+        C::Montant.colonne(),
+        C::Mode.colonne(),
+        C::Date.titree("Date de paiement"),
+        C::Fichier.titree("DSN"),
     ];
     t.sources = vec![
         "bloc S21.G00.20 « Versement organisme de protection sociale » (cahier technique DSN 2026.1), tiré de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; libellés : donnees/organismes-base.json".to_string(),
@@ -429,20 +429,20 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
     for (m, _nic, f, partie) in dsn_des_mois(ctx, &p, &mut avert, dsn_du_mois)? {
         for bordereau in f.bordereaux {
             let mut l = Ligne::nouvelle();
-            l.m("mois", m).t("ctp", "").t("libelle", format!("Total dû à l'Urssaf (bloc 22), {}", nom_de_la_dsn(m, partie)));
-            l.t("periode", format!("{} au {}", bordereau.debut.jj_mm_aaaa(), bordereau.fin.jj_mm_aaaa())).od("total", Some(bordereau.total));
+            l.m(C::Mois, m).t(C::Ctp, "").t(C::Libelle, format!("Total dû à l'Urssaf (bloc 22), {}", nom_de_la_dsn(m, partie)));
+            l.t(C::Periode, format!("{} au {}", bordereau.debut.jj_mm_aaaa(), bordereau.fin.jj_mm_aaaa())).od(C::Total, Some(bordereau.total));
             lignes.push(l);
             for b in bordereau.lignes {
                 let mut l = Ligne::nouvelle();
                 // Le libelle, dans la table des CTP que lit le bordereau (`documents::bordereau`, sa seule lecture).
-                l.m("mois", m).t("ctp", b.code.as_str()).ot("libelle", documents::bordereau::libelle_du_ctp(&b.code)?);
-                l.t("qualifiant", match b.qualifiant {
+                l.m(C::Mois, m).t(C::Ctp, b.code.as_str()).ot(C::Libelle, documents::bordereau::libelle_du_ctp(&b.code)?);
+                l.t(C::Qualifiant, match b.qualifiant {
                     // Les libelles de la norme (S21.G00.23.002, `bloc-S21.G00.23.txt` l. 35-36).
                     QualifiantDAssiette::AutreAssiette => "920 — autre assiette",
                     QualifiantDAssiette::AssiettePlafonnee => "921 — assiette plafonnée",
                 });
                 let taux_at = b.taux_at.map(documents::bordereau::TauxDeLaLigne::taux);
-                l.od("taux_at", taux_at).od("assiette", if b.montant.is_some() { None } else { b.assiette }).od("montant", b.montant);
+                l.od(C::TauxAt, taux_at).od(C::AssietteDeclaree, if b.montant.is_some() { None } else { b.assiette }).od(C::Montant, b.montant);
                 lignes.push(l);
             }
         }
@@ -450,17 +450,17 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
     let mut t = Tableau::nouveau(EtatDExport::BordereauUrssaf, "Bordereau Urssaf (DSN)", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, None)?;
+    t.sections = sections_de(lignes, |l| l.mois(C::Mois), section_du_mois, None)?;
     t.colonnes = vec![
-        col_t("mois", "Mois"),
-        col_t("ctp", "CTP"),
-        col_t("libelle", "Libellé"),
-        col_t("qualifiant", "Qualifiant"),
-        col_x("taux_at", "Taux AT"),
-        col_x("assiette", "Assiette déclarée"),
-        col_m("montant", "Montant forfaitaire"),
-        col_t("periode", "Période"),
-        col_m("total", "Total dû"),
+        C::Mois.colonne(),
+        C::Ctp.colonne(),
+        C::Libelle.colonne(),
+        C::Qualifiant.colonne(),
+        C::TauxAt.colonne(),
+        C::AssietteDeclaree.colonne(),
+        C::Montant.titree("Montant forfaitaire"),
+        C::Periode.colonne(),
+        C::Total.colonne(),
     ];
     t.sources = vec![
         "blocs S21.G00.22 « Bordereau de cotisation due » et S21.G00.23 « Cotisation agrégée » (cahier technique DSN 2026.1), tirés de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN".to_string(),
@@ -562,8 +562,8 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             regle.to_string()
         };
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone()).n("mois", mois).d("tranche_a", tranche_a).d("taux", taux).d("calcule", calcule).d("du", du).t("regle", regle);
-        l.t("a_payer", format!("début {} (inférence : le texte ne dit pas l'année de masse)", annee_entiere(&an)? + 1));
+        l.t(C::Annee, an.clone()).n(C::NombreDeMois, mois).d(C::TrancheA, tranche_a).d(C::Taux, taux).d(C::Calcule, calcule).d(C::ContributionDue, du).t(C::Regle, regle);
+        l.t(C::APayer, format!("début {} (inférence : le texte ne dit pas l'année de masse)", annee_entiere(&an)? + 1));
         lignes.push(l);
     }
     avert.push("Le FCAP-SVP se paie hors DSN, au FCAP-SVP (ou à l'organisme à qui il délègue la collecte, art. 5.2), en début d'année civile (art. 5.3). Que la tranche A soit celle de l'année écoulée est une inférence, à confirmer sur un appel du FCAP-SVP.".to_string());
@@ -573,14 +573,14 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avec_total = false;
     t.sections = vec![Section::nouvelle("", lignes)];
     t.colonnes = vec![
-        col_t("annee", "Année"),
-        col_n("mois", "Mois lus"),
-        col_m("tranche_a", "Tranche A déclarée"),
-        col_x("taux", "Taux %"),
-        col_m("calcule", "0,1 % de la tranche A"),
-        col_m("du", "Contribution due"),
-        col_t("regle", "Règle"),
-        col_t("a_payer", "À payer"),
+        C::Annee.colonne(),
+        C::NombreDeMois.titree("Mois lus"),
+        C::TrancheA.colonne(),
+        C::Taux.colonne(),
+        C::Calcule.colonne(),
+        C::ContributionDue.colonne(),
+        C::Regle.colonne(),
+        C::APayer.colonne(),
     ];
     t.sources = vec![
         "CCN 3090, titre V, articles 5.1 (0,1 % de la tranche A, plancher 80 €, plafond 300 € par an et par entreprise), 5.2 et 5.3 — base KALI de la DILA, relevée le 23/09/2026".to_string(),
@@ -672,14 +672,14 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             None => Montant::ZERO,
         };
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone())
-            .d("masse", masse.decimal())
-            .d("masse_permanents", masse_permanents.decimal())
-            .d("cpnef", cpnef.decimal())
-            .od("taux_permanents", taux_p.map(Taux::decimal))
-            .d("permanents", permanents.decimal());
-        l.d("total_ht", (cpnef + permanents).decimal());
-        l.t("a_payer", format!("avant le 28/02/{}, à l'Afdas (Globaldec')", annee_entiere(&an)? + 1));
+        l.t(C::Annee, an.clone())
+            .d(C::Masse, masse.decimal())
+            .d(C::MassePermanents, masse_permanents.decimal())
+            .d(C::Cpnef, cpnef.decimal())
+            .od(C::TauxPermanents, taux_p.map(Taux::decimal))
+            .d(C::Permanents, permanents.decimal());
+        l.d(C::TotalHt, (cpnef + permanents).decimal());
+        l.t(C::APayer, format!("avant le 28/02/{}, à l'Afdas (Globaldec')", annee_entiere(&an)? + 1));
         lignes.push(l);
     }
     if idcc == IDCC_1790 {
@@ -693,16 +693,16 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avertissements = avert;
     t.avec_total = false;
     t.sections = vec![Section::nouvelle("", lignes)];
-    let mut cols = vec![col_t("annee", "Année"), col_m("masse", "Masse salariale")];
+    let mut cols = vec![C::Annee.colonne(), C::Masse.colonne()];
     if idcc != IDCC_1790 {
-        cols.push(col_m("cpnef", "CPNEF (dialogue social)"));
+        cols.push(C::Cpnef.colonne());
     }
     cols.extend([
-        col_m("masse_permanents", "Masse hors intermittents"),
-        col_x("taux_permanents", "Taux %"),
-        col_m("permanents", "Contribution conventionnelle"),
-        col_m("total_ht", "Total HT"),
-        col_t("a_payer", "À payer"),
+        C::MassePermanents.colonne(),
+        C::TauxPermanents.colonne(),
+        C::Permanents.colonne(),
+        C::TotalHt.colonne(),
+        C::APayer.colonne(),
     ]);
     t.colonnes = cols;
     t.sources = vec![
@@ -757,7 +757,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
         }
         let mut l = Ligne::nouvelle();
-        l.t("annee", an.clone()).d("masse", masse.decimal()).d("taux", taux.decimal()).d("montant", m.decimal()).t("a_payer", a_payer);
+        l.t(C::Annee, an.clone()).d(C::Masse, masse.decimal()).d(C::Taux, taux.decimal()).d(C::Montant, m.decimal()).t(C::APayer, a_payer);
         lignes.push(l);
     }
     avert.push("Assiette : le brut du livre de paie, tous salariés. Le texte parle de masse salariale ou de masse déclarée en retraite complémentaire : pour une compagnie du spectacle, c'est le même brut.".to_string());
@@ -766,7 +766,7 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.avertissements = avert;
     t.avec_total = false;
     t.sections = vec![Section::nouvelle("", lignes)];
-    t.colonnes = vec![col_t("annee", "Année de la masse"), col_m("masse", "Masse salariale"), col_x("taux", "Taux %"), col_m("montant", "Contribution"), col_t("a_payer", "À payer")];
+    t.colonnes = vec![C::Annee.titree("Année de la masse"), C::Masse.colonne(), C::Taux.colonne(), C::Montant.titree("Contribution"), C::APayer.colonne()];
     t.sources = vec!["la couche de la convention, `hors_bulletin`".to_string(), "masse salariale : le livre de paie, bulletin par bulletin".to_string()];
     finir(ctx, &mut t, Some(&p), "paritarisme-branche", d.format,d.ecrire)?;
     Ok(t)

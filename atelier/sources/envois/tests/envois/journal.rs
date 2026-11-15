@@ -3,7 +3,8 @@
 
 use documents::fiche_questionnaire::CodeDeDemande;
 use droit::fiche::Courriel;
-use envois::journal::{self, Acte, DetailDsn, Envoi, Ligne, Mode, Revenu, RetourFiche};
+use envois::journal::{self, Acte, DetailDsn, Envoi, Ligne, Revenu, RetourFiche};
+use socle::mode::Mode;
 use socle::mois::Mois;
 
 use crate::outils::dossier_de_test;
@@ -41,10 +42,10 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let avant = std::fs::read(journal::chemin(&d)).unwrap();
     journal::noter(&d, Ligne::Dpae(envoi(Mode::Test, journal::DetailDpae::nouveau(false, false))), None, a(3, 11)).unwrap();
     assert!(std::fs::read(journal::chemin(&d)).unwrap().starts_with(&avant), "ce qui etait ecrit au journal a ete reecrit");
-    assert_eq!(journal::lire(&d, None, None, false).unwrap().len(), 2);
-    assert_eq!(journal::lire(&d, Some(Acte::Dpae), None, false).unwrap().len(), 1);
-    assert_eq!(journal::lire(&d, None, None, true).unwrap().len(), 1);
-    assert_eq!(journal::lire(&d, None, Some(Mois::nouveau(2026, 8).unwrap()), false).unwrap().len(), 0);
+    assert_eq!(journal::lire(&d, None, None, None).unwrap().len(), 2);
+    assert_eq!(journal::lire(&d, Some(Acte::Dpae), None, None).unwrap().len(), 1);
+    assert_eq!(journal::lire(&d, None, None, Some(Mode::Reel)).unwrap().len(), 1);
+    assert_eq!(journal::lire(&d, None, Some(Mois::nouveau(2026, 8).unwrap()), None).unwrap().len(), 0);
 
     // DEUX POSTES (regle 9 b) : chacun ajoute au meme journal ce qu'il a fait, et range le meme retour ; leurs journaux mis
     // bout a bout disent tout, sans rien compter deux fois.
@@ -60,7 +61,7 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let mut reunis = std::fs::read(journal::chemin(&d)).unwrap();
     reunis.extend(std::fs::read(journal::chemin(&e)).unwrap());
     std::fs::write(journal::chemin(&e), reunis).unwrap();
-    let lignes = journal::lire(&e, None, None, false).unwrap();
+    let lignes = journal::lire(&e, None, None, None).unwrap();
     let quoi: Vec<Acte> = lignes.iter().map(Ligne::acte).collect();
     assert_eq!(quoi, [Acte::Dsn, Acte::Dpae, Acte::FicheDemande, Acte::FicheDemande, Acte::Dsn]);
     assert_eq!(lignes[2].fiche().unwrap().retours, [retour.clone()]);
@@ -76,6 +77,16 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let refus = journal::lu(&f).unwrap_err();
     assert!(refus.phrase.starts_with("Le journal des envois de la compagnie ne se lit pas : sa ligne 6 est abîmée"), "{:?}", refus);
     assert!(format!("{:?}", refus).contains("fluxx"), "{:?}", refus);
+}
+
+/// Bug : une DPAE deja existante (code 98) dont le certificat dit un dossier ne se relisait plus, et le journal entier
+/// se disait abime. Elle se relit, et se reecrit aux memes octets.
+#[test]
+fn une_dpae_deja_existante_garde_son_dossier() {
+    let ecrite = r#"{"nom":"A","prenom":"B","embauche":"2026-10-01","dossier":"111AL","code":"98","libelle":"DPAE déjà existante","enregistree":false,"deja_existante":true,"formalites":[]}"#;
+    let p: journal::PersonneCertifiee = socle::forme::lire_texte(ecrite, "la personne du certificat").unwrap();
+    assert_eq!(p.etat, declarations::dpae::EtatDeLaDpae::DejaExistante { dossier: Some(declarations::dpae::DossierDpae::try_from("111AL".to_string()).unwrap()) });
+    assert_eq!(socle::ecriture::json_en_ligne(&p), ecrite);
 }
 
 #[test]

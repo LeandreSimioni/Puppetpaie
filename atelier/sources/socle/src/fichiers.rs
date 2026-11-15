@@ -203,7 +203,7 @@ const DOSSIER: &str = "dossier";
 
 /// Le magasin des imprevus, sous la racine de la compagnie (`engagement::imprevus::DOSSIER`) : la cle des imprevus d'un
 /// salarie le nomme (`CleDeLecture::Imprevus`).
-pub const MAGASIN_DES_IMPREVUS: &str = "imprevus";
+pub const MAGASIN_DES_IMPREVUS: NomDeFichier = NomDeFichier::du_moteur("imprevus");
 
 /// LE CHEMIN QU'UNE LECTURE NOTEE NOMME : sous la compagnie (`racine:<chemin>`), sous le code livre (`code:<chemin>`), ou
 /// ailleurs, en absolu (`abs:<chemin>`). Aucun chemin sous une base : la base elle-meme (`racine:`).
@@ -229,18 +229,18 @@ impl CheminLu {
     /// Le chemin sur le disque, sous la compagnie `racine` ou le code `code`.
     pub fn sur_le_disque(&self, racine: &Path, code: &Path) -> PathBuf {
         match self {
-            CheminLu::Racine(Some(c)) => racine.join(c),
+            CheminLu::Racine(Some(c)) => c.dans(racine),
             CheminLu::Racine(None) => racine.to_path_buf(),
-            CheminLu::Code(Some(c)) => code.join(c),
+            CheminLu::Code(Some(c)) => c.dans(code),
             CheminLu::Code(None) => code.to_path_buf(),
             CheminLu::Absolu(p) => p.clone(),
         }
     }
 
     /// Le chemin est-il le dossier `dossier` de la compagnie, ou dessous ?
-    pub fn dans_la_compagnie(&self, dossier: &str) -> bool {
+    pub fn dans_la_compagnie(&self, dossier: &NomDeFichier) -> bool {
         match self {
-            CheminLu::Racine(Some(c)) => c.texte() == dossier || c.texte().strip_prefix(dossier).is_some_and(|r| r.starts_with('/')),
+            CheminLu::Racine(Some(c)) => c.texte() == dossier.texte() || c.texte().strip_prefix(dossier.texte()).is_some_and(|r| r.starts_with('/')),
             _ => false,
         }
     }
@@ -848,8 +848,8 @@ pub type FormeGardee<T> = Mutex<Option<(PathBuf, Option<(u128, u64)>, Arc<T>)>>;
 /// se note quand meme au registre d'un calcul suivi. Un calcul la consulte a chaque champ : elle ne se relit pas a chaque
 /// fois.
 #[track_caller]
-pub fn forme_en_cache<B: serde::de::DeserializeOwned, T>(cache: &'static OnceLock<FormeGardee<T>>, nom: &str, phrase: &str, construire: impl Fn(B) -> R<T>) -> R<Arc<T>> {
-    let chemin = dossier_du_code().join(nom);
+pub fn forme_en_cache<B: serde::de::DeserializeOwned, T>(cache: &'static OnceLock<FormeGardee<T>>, nom: &CheminRelatif, phrase: &str, construire: impl Fn(B) -> R<T>) -> R<Arc<T>> {
+    let chemin = nom.dans(&dossier_du_code());
     let sig = signature(&chemin)?;
     let cache = cache.get_or_init(|| Mutex::new(None));
     if let Some((p, s, v)) = crate::memoire::tenu(cache).as_ref() {
@@ -974,17 +974,24 @@ pub fn ecriture_impossible(e: &std::io::Error, chemin: &Path) -> String {
 }
 
 /// Le dossier de la configuration d'une compagnie, sous sa racine.
-pub const CONFIG: &str = "config";
+pub const CONFIG: NomDeFichier = NomDeFichier::du_moteur("config");
 
 /// Le marqueur d'une compagnie qui n'est pas la vraie (une compagnie fictive, une copie de developpement).
-pub const MARQUEUR_COPIE: &str = "COPIE-DE-DEVELOPPEMENT.json";
+pub const MARQUEUR_COPIE: NomDeFichier = NomDeFichier::du_moteur("COPIE-DE-DEVELOPPEMENT.json");
+
+/// LES FICHIERS D'ETAT DE LA MACHINE, nommes ici parce que des crates de plusieurs etages les nomment (la sauvegarde
+/// ne les monte pas, `compagnie::sauvegarde::ecarte`) : le jeton Google scelle (`routes::coffre`) ; la trace de la
+/// derniere ouverture et l'etape en cours d'un passage (`routes::gestes::ouverture`).
+pub const JETON_GOOGLE: CheminRelatif = CheminRelatif::du_moteur("config/google-jeton.bin");
+pub const TRACE_DE_L_OUVERTURE: CheminRelatif = CheminRelatif::du_moteur("config/.ouverture.json");
+pub const ETAPE_DE_L_OUVERTURE: CheminRelatif = CheminRelatif::du_moteur("config/.ouverture-etape.json");
 
 /// Le modele `nom` (gabarit de contrat, de DPAE, de certificat) : celui de la compagnie (son dossier `gabarits`),
 /// a defaut celui du poste (`poste`), a defaut celui livre avec le logiciel (`donnees/modeles/`). Une compagnie qui
 /// ecrit ses propres clauses passe devant ; une copie de la configuration du poste sans son dossier de gabarits reste la
 /// meme compagnie et garde ceux du poste (son gabarit DPAE porte son centre de medecine du travail). Une compagnie qui
 /// porte `MARQUEUR_COPIE` n'emprunte rien au poste : ses documents ne prennent jamais les clauses de la compagnie reelle.
-pub fn modele_de(nom: &str, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
+pub fn modele_de(nom: &NomDeFichier, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
     let propre = match gabarits {
         Some(g) => g.to_path_buf(),
         None => poste.to_path_buf(),
@@ -1001,8 +1008,11 @@ pub fn modele_de(nom: &str, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
 
 /// LE NOM D'UN FICHIER, seul, sans son dossier : le fichier parti (`Contrat_ALBARET_AL3.26.01_Mai2026.pdf`), le modele
 /// d'un contrat (`contrat-cddu.modele`), l'archive d'une version (`puppetpaie-2026.11.12-windows.zip`). Il n'est pas
-/// vide, ne porte ni `/`, ni `\`, ni caractere nul, et n'est ni `.` ni `..` : joint a un dossier, il y reste. Il s'ecrit
-/// tel quel et se trie par son texte.
+/// vide, ne porte ni `/`, ni `\`, ni caractere nul, et n'est ni `.` ni `..`. Il peut porter `:`, un caractere permis
+/// sous Mac et Linux (le Finder ecrit « Releve 03/2026.pdf » `Releve 03:2026.pdf`) ; sous Windows, un nom lu sur le
+/// disque ne le porte jamais, et un nom ecrit ailleurs n'entre que par `CheminRelatif::ecrit_ailleurs`,
+/// `ecrit_ailleurs::nom` ou la restauration, qui le refusent : joindre `C:` ou `C:x` y remplacerait tout le chemin. Il s'ecrit tel quel et se trie
+/// par son texte.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct NomDeFichier(std::borrow::Cow<'static, str>);
@@ -1046,9 +1056,81 @@ impl NomDeFichier {
         }
     }
 
+    /// LE NOM QU'ECRIT UN AUTRE SYSTEME (un scenario du banc) : lu comme un chemin ecrit ailleurs
+    /// (`CheminRelatif::ecrit_ailleurs`, qui refuse `:`), et un nom seul.
+    pub fn ecrit_ailleurs(texte: &str) -> R<NomDeFichier> {
+        let c = CheminRelatif::ecrit_ailleurs(texte)?;
+        match c.parent() {
+            None => Ok(c.nom()),
+            Some(_) => Err(crate::refus!("{} n'est pas un nom de fichier : un nom seul, sans dossier.", repr(texte))),
+        }
+    }
+
     /// Le nom tel qu'ecrit.
     pub fn texte(&self) -> &str {
         &self.0
+    }
+
+    /// CE NOM, SUIVI DU NOM `suite` : deux noms bout a bout en sont un (ni barre, ni caractere nul ; ni vide, ni `.`
+    /// ou `..`, puisqu'aucun des deux ne l'est).
+    pub fn suivi_de(&self, suite: &NomDeFichier) -> NomDeFichier {
+        NomDeFichier(std::borrow::Cow::Owned(format!("{}{}", self.0, suite.0)))
+    }
+
+    /// CE NOM, SUIVI DE L'EXTENSION `extension` (`livre-de-paie-2026-mois` et `csv` : `livre-de-paie-2026-mois.csv`) :
+    /// un nom, puisqu'aucun des deux n'a de barre ni n'est vide.
+    pub fn avec_l_extension(&self, extension: &NomDeFichier) -> NomDeFichier {
+        NomDeFichier(std::borrow::Cow::Owned(format!("{}.{}", self.0, extension.0)))
+    }
+}
+
+/// Le nom d'un fichier d'une annee (`AAAA`) : il a toujours la forme d'un nom.
+impl From<crate::mois::Annee> for NomDeFichier {
+    fn from(a: crate::mois::Annee) -> NomDeFichier {
+        NomDeFichier(std::borrow::Cow::Owned(a.to_string()))
+    }
+}
+
+/// LES LECTURES D'UN NOM OU D'UN CHEMIN ECRIT AILLEURS, pour le champ d'une forme (`deserialize_with`) : une charge de
+/// route qui porte un nom de fichier, un scenario du banc.
+pub mod ecrit_ailleurs {
+    use super::{repr, CheminRelatif, NomDeFichier};
+    use serde::Deserialize;
+
+    /// Le nom de fichier qu'une charge de route porte, lu strict : un nom seul, tel qu'il est (`NomDeFichier::lire` :
+    /// ni barre, ni `.`, ni `..`), sans `:` (un prefixe de lecteur sous Windows) ; la phrase du refus dit quoi corriger.
+    /// Rien ne s'y retire : `./x.pdf`, `x.pdf/`, `x\` se refusent.
+    pub fn nom<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NomDeFichier, D::Error> {
+        let texte = String::deserialize(d)?;
+        if texte.contains(':') {
+            return Err(serde::de::Error::custom(format!("{} porte « : », qu'un nom ne porte pas sous Windows : l'écrire sans.", repr(&texte))));
+        }
+        match NomDeFichier::lire(&texte) {
+            Ok(n) => Ok(n),
+            Err(e) => Err(serde::de::Error::custom(e.phrase)),
+        }
+    }
+
+    /// Un nom de fichier facultatif d'un scenario du banc (`NomDeFichier::ecrit_ailleurs`).
+    pub fn nom_facultatif<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<NomDeFichier>, D::Error> {
+        match Option::<String>::deserialize(d)? {
+            Some(t) => match NomDeFichier::ecrit_ailleurs(&t) {
+                Ok(n) => Ok(Some(n)),
+                Err(e) => Err(serde::de::Error::custom(e.phrase)),
+            },
+            None => Ok(None),
+        }
+    }
+
+    /// Un chemin relatif facultatif (`CheminRelatif::ecrit_ailleurs`).
+    pub fn chemin_facultatif<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<CheminRelatif>, D::Error> {
+        match Option::<String>::deserialize(d)? {
+            Some(t) => match CheminRelatif::ecrit_ailleurs(&t) {
+                Ok(c) => Ok(Some(c)),
+                Err(e) => Err(serde::de::Error::custom(e.phrase)),
+            },
+            None => Ok(None),
+        }
     }
 }
 
@@ -1068,6 +1150,13 @@ impl TryFrom<String> for NomDeFichier {
     type Error = Echec;
     fn try_from(s: String) -> R<NomDeFichier> {
         NomDeFichier::lire(&s)
+    }
+}
+
+/// Le nom d'un dossier d'un mois (`AAAA-MM`) : il a toujours la forme d'un nom.
+impl From<crate::mois::Mois> for NomDeFichier {
+    fn from(m: crate::mois::Mois) -> NomDeFichier {
+        NomDeFichier(std::borrow::Cow::Owned(m.to_string()))
     }
 }
 
@@ -1135,20 +1224,36 @@ impl CheminRelatif {
         CheminRelatif::lire(&CheminRelatif::en_barres(rel))
     }
 
+    /// LE CHEMIN QU'ECRIT UN AUTRE SYSTEME : le nom d'une entree d'archive (le `Compress-Archive` de Windows ecrit
+    /// `sous\paie.dsn`), un chemin relatif lu sur le disque. La barre inverse s'y lit barre droite, et les noms vides ou
+    /// `.` se retirent (`./a`, `a//b`, `a/./b` : `a`, `a/b`) ; un chemin absolu, un nom `..`, `:` (un prefixe de lecteur,
+    /// `C:` ou `C:x`, que `dans` joindrait sous Windows en remplacant tout le chemin : refuse sur tous les systemes), ou
+    /// rien qui reste, se refusent.
+    pub fn ecrit_ailleurs(texte: &str) -> R<CheminRelatif> {
+        let barres = texte.replace('\\', "/");
+        if barres.starts_with('/') {
+            return Err(crate::refus!("{} est un chemin absolu.", repr(texte)));
+        }
+        if barres.contains(':') {
+            return Err(crate::refus!("{} porte « : », qu'un nom ne porte pas sous Windows.", repr(texte)));
+        }
+        CheminRelatif::lire(&barres.split('/').filter(|n| !n.is_empty() && *n != ".").collect::<Vec<_>>().join("/"))
+    }
+
     /// Le chemin relatif `rel`, ecrit avec des barres droites ; un nom qui n'est pas en UTF-8 garde son caractere
     /// illisible (`to_string_lossy`).
     pub(crate) fn en_barres(rel: &Path) -> String {
         rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
     }
 
-    /// LE DOSSIER DES PIECES DU MOIS `mois` : `sorties/AAAA-MM`.
-    pub fn sorties(mois: crate::mois::Mois) -> CheminRelatif {
-        CheminRelatif(std::borrow::Cow::Owned(format!("sorties/{}", mois)))
-    }
-
     /// Ce chemin, suivi du nom `nom`.
     pub fn joint(&self, nom: &NomDeFichier) -> CheminRelatif {
         CheminRelatif(std::borrow::Cow::Owned(format!("{}/{}", self.0, nom)))
+    }
+
+    /// Ce chemin, suivi du chemin `rel` : le chemin de `rel` sous celui-ci.
+    pub fn suivi(&self, rel: &CheminRelatif) -> CheminRelatif {
+        CheminRelatif(std::borrow::Cow::Owned(format!("{}/{}", self.0, rel.0)))
     }
 
     /// Le chemin du dossier qui le contient ; `None` pour un nom seul, a la racine.
@@ -1169,6 +1274,13 @@ impl CheminRelatif {
     pub fn texte(&self) -> &str {
         &self.0
     }
+
+    /// Ce chemin sous la racine `racine`, joint nom par nom : le separateur est celui du systeme. Aucun nom n'a de
+    /// racine (ni `/`, ni `\`) ; un nom ne porte `:` que lu sur le disque d'un Mac ou d'un Linux, ou ecrit par le moteur,
+    /// puisqu'un nom ecrit ailleurs passe par `ecrit_ailleurs` ou la restauration : le chemin reste sous `racine`.
+    pub fn dans(&self, racine: &Path) -> PathBuf {
+        self.0.split('/').fold(racine.to_path_buf(), |p, n| p.join(n))
+    }
 }
 
 impl From<NomDeFichier> for CheminRelatif {
@@ -1180,12 +1292,6 @@ impl From<NomDeFichier> for CheminRelatif {
 impl std::fmt::Display for CheminRelatif {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl AsRef<Path> for CheminRelatif {
-    fn as_ref(&self) -> &Path {
-        Path::new(self.texte())
     }
 }
 

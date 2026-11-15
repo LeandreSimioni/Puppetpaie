@@ -596,9 +596,10 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
             continue;
         }
         let (cle, debut) = (cle_de(p), p.engagement.debut);
-        if !p.engagement.dernier_mois() {
+        let place = p.engagement.place_du_mois();
+        if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = place {
             poser(&mut dus, cle, debut, None);
-        } else if !p.engagement.a_cheval() {
+        } else if place == engagement::PlaceDuMois::Seul {
             poser(&mut dus, cle, debut, Some(paie_cs(p)?));
         } else {
             let (entier, manquants) = paie_du_contrat_entier(ctx, p)?;
@@ -633,7 +634,7 @@ fn mois_puppetpaie(
 ) -> R<Vec<Page>> {
     let mut pages = Vec::new();
     let mois = &le_mois.to_string();
-    let sortie = ctx.racine.join("sorties").join(mois);
+    let sortie = documents::DossierDuMois::Sorties.dans(&ctx.racine, le_mois);
     let etiq = le_mois.etiquette();
     let dossier_des_contrats = documents::PieceDuMois::Contrat.dossier().sous(&sortie);
     let (_, paies) = charger(ctx, le_mois)?;
@@ -688,7 +689,7 @@ fn mois_puppetpaie(
             let piece = envois::envoi::chemin_de_la_piece(documents::PieceDuMois::Bulletin, &sortie, cle, &etiq);
             if !piece.is_file() {
                 // Le dossier ou il se range, tel que la compagnie le voit (`sorties/<mois>/envoi`).
-                let ou = documents::PieceDuMois::Bulletin.dossier().sous_le_chemin(&socle::fichiers::CheminRelatif::sorties(le_mois));
+                let ou = documents::PieceDuMois::Bulletin.dossier().chemin(le_mois);
                 return Err(erreur_operation(format!(
                     "{}, {} : son bulletin n'est pas dans {}/. Un bulletin remis ne se réimprime pas : rien n'est envoyé à sa place.",
                     lib, cle, ou
@@ -773,8 +774,10 @@ fn mois_puppetpaie(
         let textes = if archive.exists() { Some(texte_pdf(&archive)?) } else { None };
         match textes {
             None if !paires.is_empty() => d.refus.push(format!(
-                "{} : certificats Congés Spectacles non joints — {} n'est pas dans sorties/{}/, et un certificat remis ne se réimprime pas.",
-                lib, nom_archive, mois
+                "{} : certificats Congés Spectacles non joints — {} n'est pas dans {}/, et un certificat remis ne se réimprime pas.",
+                lib,
+                nom_archive,
+                documents::PieceDuMois::CertificatsCs.dossier().chemin(le_mois)
             )),
             Some(t) if !paires.is_empty() && t.len() != tous.len() => d.refus.push(format!(
                 "{} : certificats Congés Spectacles non joints — {} a {} page(s), les paies en attendent {}. Le fichier ne dit pas ce que les paies disent : rien n'est joint à sa place.",
@@ -902,7 +905,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
         if !p.contient(mois) {
             continue;
         }
-        let d = documents::PieceDuMois::Signature.dossier().sous(&ctx.racine.join("sorties").join(mois.to_string()));
+        let d = documents::PieceDuMois::Signature.dossier().dans(&ctx.racine, mois);
         out.extend(noms_commencant_finissant(&d, &format!("{}{}_", SorteDePieceProduite::Signature.prefixe(), cle), ".eml")?.into_iter().map(|n| d.join(n)));
     }
     Ok(out)
@@ -913,7 +916,7 @@ fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
 /// dans la periode par le mois de la paie. Une copie qui manque se dit ; rien d'autre ne se devine.
 fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &mut Dossier) -> R<Vec<Page>> {
     let lignes = engagement::importe::paies_lues(&ctx.racine)?;
-    let dossier = ctx.racine.join("historique").join("bulletins");
+    let dossier = import::mois::dossier_des_bulletins(&ctx.racine);
     let (mut pages, mut manquent): (Vec<Page>, Vec<NomDeFichier>) = (Vec::new(), Vec::new());
     for x in lignes {
         let Some(b) = &x.paie.bulletin else { continue };

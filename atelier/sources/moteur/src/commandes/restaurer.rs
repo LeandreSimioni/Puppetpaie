@@ -72,7 +72,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };
     if !json {
-        dire!("Restauration de Drive/{}/{} vers {}", racine_drive, sauvegarde::DOSSIER_DRIVE, cible.display());
+        dire!("Restauration de Drive/{} vers {}", sauvegarde::DossierDuDrive::de(racine_drive, None), cible.display());
     }
     let r = match restauration::restaurer(&cible, racine_drive, &mut client) {
         Ok(r) => r,

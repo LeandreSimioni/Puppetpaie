@@ -945,7 +945,7 @@ mod tests {
     /// 12/03. Un accident du travail l'est des le premier jour qui suit l'arret du travail (L433-1).
     #[test]
     fn la_caisse_indemnise_des_le_quatrieme_jour_de_l_incapacite_prescrite() {
-        let imp: ArretSaisi = socle::forme::lire_texte(r#"{"genre": "arret", "salarie": "X", "contrat_debut": "2026-01-01", "contrat_numero": null,
+        let imp: ArretSaisi = socle::forme::lire_texte(r#"{"salarie": "X", "contrat_debut": "2026-01-01", "contrat_numero": null,
             "motif": "01", "dernier_jour_travaille": "2026-03-06", "debut": "2026-03-09", "fin_previsionnelle": "2026-03-20",
             "subrogation": null, "subrogation_debut": null, "subrogation_fin": null, "reprise": null, "reprise_motif": null,
             "date_accident": null, "jours_deja_indemnises": null, "ij_brute": "40.89", "ij_nette": "38.15", "ij_brute_majoree": null,

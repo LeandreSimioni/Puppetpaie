@@ -13,7 +13,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::fiches::{creer_dossier, ecrire, refus};
 use compagnie::avant::sauver_avant;
 use droit::contexte::Contexte;
-use droit::emplois::{self, MetierDuDeroulant};
+use droit::emplois::{self, FamilleDeMetier, MetierDuDeroulant};
 use socle::echec::R;
 
 const METIERS_REND: &str = "emplois (les métiers proposés) et emplois_autres (ceux des autres conventions)";
@@ -85,12 +85,12 @@ pub(crate) struct MetiersAjoutes {
 const QUOI_METIERS: &str = "Les metiers que cette compagnie a coches ou decoches dans Configuration > Metiers : `codes`, pris a une autre convention collective ; `retires`, decoches dans la sienne. Preference d'affichage : aucun calcul ne change. Le catalogue est livre avec le logiciel (donnees/emplois-base.json).";
 
 /// Les metiers que la compagnie a ajoutes ou retires, sous sa racine.
-pub(crate) const METIERS_AJOUTES: &str = "config/metiers-ajoutes.json";
+pub(crate) const METIERS_AJOUTES: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/metiers-ajoutes.json");
 
 impl MetiersAjoutes {
     /// LA SEULE LECTURE de `config/metiers-ajoutes.json` ; rien de pose s'il n'existe pas.
     pub(crate) fn lire(racine: &Path) -> R<MetiersAjoutes> {
-        let p = racine.join(METIERS_AJOUTES);
+        let p = METIERS_AJOUTES.dans(racine);
         if !p.exists() {
             return Ok(MetiersAjoutes { quoi: QUOI_METIERS.into(), codes: Vec::new(), retires: Vec::new() });
         }
@@ -99,7 +99,7 @@ impl MetiersAjoutes {
     }
 
     fn ecrire(&self, ctx: &Contexte) -> R<()> {
-        let p = ctx.racine.join(METIERS_AJOUTES);
+        let p = METIERS_AJOUTES.dans(&ctx.racine);
         if let Some(parent) = p.parent() {
             creer_dossier(parent)?;
         }
@@ -129,15 +129,15 @@ fn conventions_dites(m: &MetierDuDeroulant, noms: &BTreeMap<Idcc, String>, avec_
         .map(|c| match noms.get(c) {
             Some(nom) if avec_l_idcc => Ok(format!("{} ({})", nom, c)),
             Some(nom) => Ok(nom.clone()),
-            None => Err(socle::echec::livree("emplois-base.json", &format!("conventions.{}", c)).reclasser(socle::echec::Classe::Illisible)),
+            None => Err(socle::echec::livree(&droit::emplois::BASE, &format!("conventions.{}", c)).reclasser(socle::echec::Classe::Illisible)),
         })
         .collect::<R<Vec<_>>>()?;
     Ok(dites.join(", "))
 }
 
 /// Les familles, et l'ordre ou les montrer : les artistes en tete.
-fn rang_des_familles(familles: &[String]) -> HashMap<String, usize> {
-    familles.iter().enumerate().map(|(i, f)| (f.clone(), i)).collect()
+fn rang_des_familles(familles: &[FamilleDeMetier]) -> HashMap<FamilleDeMetier, usize> {
+    familles.iter().enumerate().map(|(i, f)| (*f, i)).collect()
 }
 
 /// `metiers` : le catalogue des metiers que le deroulant de cette compagnie montre, groupe par famille (les artistes en
@@ -187,7 +187,7 @@ struct MetierDeLOnglet {
 struct MetiersDuCatalogue {
     phrase: String,
     metiers: Vec<MetierDeLOnglet>,
-    familles: Vec<String>,
+    familles: Vec<FamilleDeMetier>,
 }
 
 /// L'onglet Metiers : tout le catalogue, chaque metier coche ou non.
