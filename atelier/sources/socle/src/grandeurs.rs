@@ -248,6 +248,40 @@ impl Montant {
     pub fn d_un_jour(self) -> MontantUnitaire {
         MontantUnitaire(self.0)
     }
+
+    /// Ce montant, celui d'une seule unite (une indemnite versee en une fois : une ligne d'une unite) : montant / une
+    /// unite = montant unitaire.
+    pub fn pour_une_unite(self) -> MontantUnitaire {
+        MontantUnitaire(self.0)
+    }
+
+    /// Ce montant reparti egalement sur `n` (la moyenne des bruts de douze mois, le tiers de trois) : montant / compte =
+    /// montant, exact (`au_centime` le fixe). Un compte n'est pas une grandeur (« Le glossaire ») : il vient d'un
+    /// `len()`, jamais nul (l'appelant le refuse).
+    pub fn reparti_sur(self, n: usize) -> Montant {
+        Montant(num::div(self.0, Decimal::from(n)))
+    }
+
+    /// Sa partie entiere, sans arrondi (le plafond de la Securite sociale, que le bareme lit en euros entiers).
+    pub fn partie_entiere(self) -> Montant {
+        Montant(self.0.trunc())
+    }
+
+    /// Ce montant dans l'arithmetique des clauses des conventions (`d28::P`, plus de 28 decimales), comme
+    /// `date::Anciennete::annees_d28` : un bareme des clauses le multiplie par ses mois de salaire.
+    pub fn en_d28(self) -> crate::d28::P {
+        crate::d28::P::depuis(self.0)
+    }
+
+    /// Le montant au centime qu'un bareme des clauses rend dans son arithmetique (`d28::P::au_centime`, la regle de
+    /// `au_centime`) ; un montant trop grand pour un decimal se refuse.
+    pub fn du_d28(p: crate::d28::P) -> crate::echec::R<Montant> {
+        let c = p.au_centime()?;
+        match c.en_decimal() {
+            Some(d) => Ok(Montant(d)),
+            None => Err(crate::refus!("Le montant {} ne s'écrit pas au centime : le signaler au développeur.", c)),
+        }
+    }
 }
 
 impl std::ops::Mul<Coefficient> for Montant {
@@ -528,6 +562,11 @@ impl MontantUnitaire {
     /// montant unitaire.
     pub fn fois_coefficient(self, c: Coefficient) -> MontantUnitaire {
         MontantUnitaire(num::mul(self.0, c.0))
+    }
+
+    /// Sa partie entiere, sans arrondi (le plafond horaire de la Securite sociale, que le bareme lit en euros entiers).
+    pub fn partie_entiere(self) -> MontantUnitaire {
+        MontantUnitaire(self.0.trunc())
     }
 }
 

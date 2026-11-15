@@ -17,7 +17,7 @@ use socle::date::{Anciennete, Duree, EnJours, EnMois, Jour};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::forme::{en_ordre, Nombre};
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -854,10 +854,10 @@ pub fn clause_d_annexe(idcc: Option<&Idcc>, annexe: Option<AnnexeConvention>, pr
 pub struct Indemnite {
     pub releve: bool,
     pub du: bool,
-    pub bas: Option<P>,
-    pub haut: Option<P>,
+    pub bas: Option<Montant>,
+    pub haut: Option<Montant>,
     /// Chaque lecture du texte et son montant, dans l'ordre du fichier.
-    pub lectures: Vec<(String, P)>,
+    pub lectures: Vec<(String, Montant)>,
     pub hors_primes: bool,
     pub article: Option<String>,
     pub pourquoi: Option<String>,
@@ -868,7 +868,7 @@ pub fn indemnite_licenciement(
     annexe: Option<AnnexeConvention>,
     prof: &Profil,
     anciennete: Anciennete,
-    reference: &mut dyn FnMut() -> R<Decimal>,
+    reference: &mut dyn FnMut() -> R<Montant>,
     motif: Option<MotifDeRupture>,
     age: Option<Anciennete>,
 ) -> R<Indemnite> {
@@ -887,18 +887,19 @@ pub fn indemnite_licenciement(
     let mut article = format!("{}, art. {}", nom(idcc), sec.article);
     let mut hors_primes = false;
     let mut pourquoi = None;
-    let sortie = |lectures: Vec<(String, P)>, article: String, hors_primes: bool, pourquoi: Option<String>, du: bool| {
+    let sortie = |lectures: Vec<(String, P)>, article: String, hors_primes: bool, pourquoi: Option<String>, du: bool| -> R<Indemnite> {
+        let lectures = lectures.into_iter().map(|(n, v)| Ok((n, Montant::du_d28(v)?))).collect::<R<Vec<(String, Montant)>>>()?;
         let (bas, haut) = if du { (lectures.iter().map(|x| x.1).min(), lectures.iter().map(|x| x.1).max()) } else { (None, None) };
-        Indemnite { releve: true, du, bas, haut, lectures, hors_primes, article: Some(article), pourquoi }
+        Ok(Indemnite { releve: true, du, bas, haut, lectures, hors_primes, article: Some(article), pourquoi })
     };
     if let Some(m) = motif.filter(|_| sec.motifs_sans_indemnite.as_deref().is_some_and(dans)) {
         let p = format!("le motif {} n'ouvre pas d'indemnite de licenciement", m);
-        return Ok(sortie(lectures, article, hors_primes, Some(p), false));
+        return sortie(lectures, article, hors_primes, Some(p), false);
     }
 
     // La convention commune d'abord ; ou, pour une convention qui distingue le motif, le bareme du motif.
     if anciennete >= sec.anciennete_minimale_mois {
-        let ref_ = P::depuis(reference()?);
+        let ref_ = reference()?.en_d28();
         let mut mois = match (&sec.par_motif, &sec.taux) {
             (Some(pm), _) => {
                 let choix = match pm.economique.as_ref().filter(|e| e.motifs.as_deref().is_some_and(dans)) {
@@ -970,9 +971,9 @@ pub fn indemnite_licenciement(
         hors_primes = c.hors_primes == Some(true);
         if anciennete < c.anciennete_minimale_mois {
             let p = format!("{} demande {} mois d'anciennete", article, c.anciennete_minimale_mois);
-            return Ok(sortie(Vec::new(), article, hors_primes, Some(p), false));
+            return sortie(Vec::new(), article, hors_primes, Some(p), false);
         }
-        let ref_ = P::depuis(reference()?);
+        let ref_ = reference()?.en_d28();
         lectures = Vec::new();
         for (n, bareme) in &c.lectures {
             let mut mois = bareme.mois(annees)?;
@@ -984,9 +985,9 @@ pub fn indemnite_licenciement(
     }
     if lectures.is_empty() {
         let p = format!("{} mois d'anciennete, et {} en demande {}", P::depuis(anciennete.mois()).plancher(), article, sec.anciennete_minimale_mois);
-        return Ok(sortie(lectures, article, hors_primes, Some(p), false));
+        return sortie(lectures, article, hors_primes, Some(p), false);
     }
-    Ok(sortie(lectures, article, hors_primes, pourquoi, true))
+    sortie(lectures, article, hors_primes, pourquoi, true)
 }
 
 /// Pose `k` a `v` dans une liste ordonnee de paires : une cle existante garde sa place.
@@ -1019,7 +1020,7 @@ pub fn paliers(paliers: &[Palier], prorata: Option<&Prorata>, anciennete: Ancien
 #[derive(Debug, Clone, PartialEq)]
 pub struct Retraite {
     pub releve: bool,
-    pub montant: Option<P>,
+    pub montant: Option<Montant>,
     pub mois: Option<P>,
     /// L'anciennete du palier atteint.
     pub palier: Option<Anciennete>,
@@ -1039,15 +1040,15 @@ impl Retraite {
 
 /// `mois` de salaire de reference, en euros. Sans aucun mois, rien n'est du et la reference (R1234-4) ne se lit pas :
 /// sans paies precedentes elle refuserait.
-fn fois_la_reference(mois: P, reference: &mut dyn FnMut() -> R<Decimal>) -> R<P> {
+fn fois_la_reference(mois: P, reference: &mut dyn FnMut() -> R<Montant>) -> R<Montant> {
     if mois <= P::ZERO {
-        return mois.au_centime();
+        return Montant::du_d28(mois);
     }
-    mois.mul(P::depuis(reference()?)).au_centime()
+    Montant::du_d28(mois.mul(reference()?.en_d28()))
 }
 
 /// L'indemnite conventionnelle de mise a la retraite.
-pub fn indemnite_mise_a_la_retraite(idcc: Option<&Idcc>, anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Decimal>) -> R<Retraite> {
+pub fn indemnite_mise_a_la_retraite(idcc: Option<&Idcc>, anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Montant>) -> R<Retraite> {
     let t = table()?;
     let conv = t.convention(idcc);
     if let Some(loi) = conv.and_then(|c| c.loi_seule(Section::MiseALaRetraite)) {
@@ -1092,7 +1093,7 @@ pub fn indemnite_mise_a_la_retraite(idcc: Option<&Idcc>, anciennete: Anciennete,
 }
 
 /// L'indemnite conventionnelle de depart volontaire a la retraite : un palier, pas un cumul.
-pub fn indemnite_depart_retraite(idcc: Option<&Idcc>, anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Decimal>) -> R<Retraite> {
+pub fn indemnite_depart_retraite(idcc: Option<&Idcc>, anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Montant>) -> R<Retraite> {
     let t = table()?;
     let conv = t.convention(idcc);
     if let Some(loi) = conv.and_then(|c| c.loi_seule(Section::DepartALaRetraite)) {

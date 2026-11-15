@@ -5,7 +5,7 @@
 
 use crate::natures::{MotifDeRupture, Nature};
 use crate::source::Fondement;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use socle::date::{Anciennete, Duree, EnJours, EnMois, Jour, Periode};
 use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
@@ -266,17 +266,14 @@ forme! {
 forme! {
     /// Les deux plafonds de L242-1 II 7°, en plafonds annuels de la Securite sociale.
     pub struct Plafonds {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub cotisations_exoneration_pass: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub cotisations_assujettissement_total_pass: Decimal,
+        pub cotisations_exoneration_pass: Coefficient,
+        pub cotisations_assujettissement_total_pass: Coefficient,
     }
 }
 
 forme! {
     pub struct ContributionPatronale {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux: Decimal,
+        pub taux: Taux,
         pub motifs: Vec<MotifDeRupture>,
     }
 }
@@ -335,8 +332,7 @@ forme! {
     pub struct PalierDeDepart {
         #[serde(deserialize_with = "Anciennete::en_annees")]
         pub anciennete_annees: Anciennete,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub mois_de_salaire: Decimal,
+        pub mois_de_salaire: Coefficient,
     }
 }
 
@@ -964,37 +960,36 @@ pub fn delai_de_prevenance(debut: &Jour, notification: &Jour) -> R<DelaiDePreven
 
 /// Le salaire de reference de l'indemnite de licenciement (R1234-4) : la moyenne des douze derniers mois, le tiers des
 /// trois derniers, et le plus favorable des deux (`retenu`, par la regle `regle`).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SalaireDeReference {
-    pub moyenne_12_mois: Decimal,
-    pub tiers_3_mois: Decimal,
-    pub retenu: Decimal,
+    pub moyenne_12_mois: Montant,
+    pub tiers_3_mois: Montant,
+    pub retenu: Montant,
     /// `moyenne_12_mois` ou `tiers_3_mois`.
     pub regle: &'static str,
 }
 
 /// Une indemnite legale (licenciement, mise a la retraite) : son montant, si elle est due, et pourquoi elle ne l'est
 /// pas ; les annees d'anciennete qui la comptent, quand elle l'est.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IndemniteLegale {
-    pub montant: Decimal,
+    pub montant: Montant,
     pub du: bool,
     pub pourquoi: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub annees: Option<Decimal>,
 }
 
 impl IndemniteLegale {
     fn non_due(pourquoi: String) -> IndemniteLegale {
-        IndemniteLegale { montant: Montant::ZERO.decimal(), du: false, pourquoi: Some(pourquoi), annees: None }
+        IndemniteLegale { montant: Montant::ZERO, du: false, pourquoi: Some(pourquoi), annees: None }
     }
 }
 
 /// Le plancher legal de l'indemnite de rupture conventionnelle (`None` : la loi n'en donne pas), les annees qui le
 /// comptent, et la phrase qui l'explique.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PlancherDeLaRupture {
-    pub plancher: Option<Decimal>,
+    pub plancher: Option<Montant>,
     pub annees: Decimal,
     pub pourquoi: Option<String>,
 }
@@ -1003,9 +998,9 @@ pub struct PlancherDeLaRupture {
 /// donnent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IndemniteDuDepart {
-    pub montant: Decimal,
+    pub montant: Montant,
     pub du: bool,
-    pub mois: Decimal,
+    pub mois: Coefficient,
     /// L'anciennete du palier atteint.
     pub palier: Option<Anciennete>,
     pub pourquoi: Option<String>,
@@ -1014,7 +1009,7 @@ pub struct IndemniteDuDepart {
 /// Le salaire de reference de l'indemnite de licenciement : la moyenne des
 /// douze derniers mois ou le tiers des trois derniers, le plus favorable.
 /// Sans aucun brut des mois precedents, il ne se calcule pas : le refus le dit.
-pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decimal]) -> R<SalaireDeReference> {
+pub fn salaire_de_reference(douze_derniers: &[Montant], trois_derniers: &[Montant]) -> R<SalaireDeReference> {
     let manque = match (douze_derniers.is_empty(), trois_derniers.is_empty()) {
         (true, true) => Some("des douze et des trois derniers mois"),
         (true, false) => Some("des douze derniers mois"),
@@ -1029,10 +1024,9 @@ pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decima
             manque
         ));
     }
-    let s = douze_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
-    let moyenne = Montant::du_decimal(div(s, Decimal::from(douze_derniers.len() as i64))).au_centime().decimal();
-    let s = trois_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
-    let tiers = Montant::du_decimal(div(s, Decimal::from(3))).au_centime().decimal();
+    let moyenne = douze_derniers.iter().copied().sum::<Montant>().reparti_sur(douze_derniers.len()).au_centime();
+    // R1234-4, 2° : « le tiers des trois derniers mois ».
+    let tiers = trois_derniers.iter().copied().sum::<Montant>().reparti_sur(3).au_centime();
     Ok(SalaireDeReference {
         moyenne_12_mois: moyenne,
         tiers_3_mois: tiers,
@@ -1045,7 +1039,7 @@ pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decima
 /// l'indemnite sue due, car sans paies precedentes il refuse. De meme pour chaque indemnite de fin de CDI.
 pub fn indemnite_licenciement(
     anciennete: Anciennete,
-    reference: &mut dyn FnMut() -> R<Decimal>,
+    reference: &mut dyn FnMut() -> R<Montant>,
     motif_rupture: Option<MotifDeRupture>,
 ) -> R<IndemniteLegale> {
     let rg = regles()?;
@@ -1068,7 +1062,7 @@ pub fn indemnite_licenciement(
 /// mise a la retraite et a la rupture conventionnelle.
 /// R1234-1 : « En cas d'année incomplète, l'indemnité est calculée proportionnellement au nombre de mois complets » ; le
 /// mois entame ne compte pas.
-fn bareme_licenciement(anciennete: Anciennete, reference: Decimal) -> R<(Decimal, Decimal)> {
+fn bareme_licenciement(anciennete: Anciennete, reference: Montant) -> R<(Montant, Decimal)> {
     let rg = regles()?;
     let annees = anciennete.mois_complets().annees();
     let (mut total, mut bas) = (Decimal::ZERO, Decimal::ZERO);
@@ -1085,7 +1079,9 @@ fn bareme_licenciement(anciennete: Anciennete, reference: Decimal) -> R<(Decimal
             break;
         }
     }
-    Ok((Montant::du_decimal(mul(total, reference)).au_centime().decimal(), annees))
+    // Les mois de salaire que le bareme compte, des annees que le texte dit (`Anciennete::annees`), sont un coefficient
+    // du salaire de reference.
+    Ok(((reference * Coefficient::du_decimal(total)).au_centime(), annees))
 }
 
 /// L'anciennete minimale de l'indemnite de licenciement (L1234-9), en mois.
@@ -1159,7 +1155,7 @@ pub fn code_52_permis(code: Option<crate::type_de_prime::TypeDePrime>, motif_rup
 
 /// L'indemnite de mise a la retraite : le bareme du licenciement, sans ses
 /// exclusions de motif.
-pub fn indemnite_mise_a_la_retraite(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Decimal>) -> R<IndemniteLegale> {
+pub fn indemnite_mise_a_la_retraite(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Montant>) -> R<IndemniteLegale> {
     let mini = anciennete_minimale()?;
     if anciennete < mini {
         return Ok(IndemniteLegale::non_due(format!(
@@ -1174,7 +1170,7 @@ pub fn indemnite_mise_a_la_retraite(anciennete: Anciennete, reference: &mut dyn 
 /// Le plancher de l'indemnite de rupture conventionnelle (L1237-13 : celle de L1234-9). Sous l'anciennete minimale de
 /// L1234-9, au prorata des mois complets quand `rupture_conventionnelle.indemnite` le dit (la circulaire DGT 2009-4, au
 /// taux de R1234-2 en vigueur), avec la phrase qui le dit (`pourquoi`) ; sinon pas de plancher.
-pub fn indemnite_rupture_conventionnelle(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Decimal>) -> R<PlancherDeLaRupture> {
+pub fn indemnite_rupture_conventionnelle(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Montant>) -> R<PlancherDeLaRupture> {
     let mini = anciennete_minimale()?;
     if anciennete < mini {
         if regles()?.rupture_conventionnelle.indemnite.prorata_sous_l_anciennete_minimale && anciennete.mois_complets() != Anciennete::ZERO {
@@ -1197,7 +1193,7 @@ pub fn indemnite_rupture_conventionnelle(anciennete: Anciennete, reference: &mut
 
 /// L'indemnite de depart volontaire a la retraite : un PALIER, pas un cumul,
 /// et rien sous le premier.
-pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Decimal>) -> R<IndemniteDuDepart> {
+pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Montant>) -> R<IndemniteDuDepart> {
     let rg = regles()?;
     let annees = anciennete.annees();
     let mut tries: Vec<&PalierDeDepart> = rg.depart_a_la_retraite.indemnite.taux.iter().collect();
@@ -1206,7 +1202,7 @@ pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnM
         return Err(socle::echec::livree(&BASE, "depart_a_la_retraite.indemnite.taux"));
     };
     let Some(palier) = tries.iter().filter(|t| anciennete >= t.anciennete_annees).last() else {
-        return Ok(IndemniteDuDepart { montant: Montant::ZERO.decimal(), du: false, mois: Decimal::ZERO, palier: None, pourquoi: Some(format!(
+        return Ok(IndemniteDuDepart { montant: Montant::ZERO, du: false, mois: Coefficient::ZERO, palier: None, pourquoi: Some(format!(
             "{} an(s) d'anciennete, et l'indemnite legale de depart a la retraite commence a {} ans \
              (D1237-1) -- il n'y a pas de prorata en dessous. La convention collective, elle, \
              en prevoit souvent une des la premiere annee.",
@@ -1214,7 +1210,7 @@ pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnM
     };
     let mois = palier.mois_de_salaire;
     Ok(IndemniteDuDepart {
-        montant: Montant::du_decimal(mul(mois, reference()?)).au_centime().decimal(),
+        montant: (reference()? * mois).au_centime(),
         du: true,
         mois,
         palier: Some(palier.anciennete_annees),

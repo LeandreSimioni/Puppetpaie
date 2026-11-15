@@ -6,8 +6,18 @@ use crate::outils::typee::{cas_de, jouer, Rendu};
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
 use socle::date::{Anciennete, Duree, Jour};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Coefficient, Montant};
 use socle::num::Decimal;
+
+/// Un montant de la reference, ecrit en texte (`2000.00`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct M(#[serde(with = "socle::grandeurs::ecrit::texte")] Montant);
+
+/// Un coefficient de la reference (des mois de salaire), ecrit en texte (`0.5`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct C(#[serde(with = "socle::grandeurs::ecrit::texte")] Coefficient);
 
 /// Ce que `indemnite_conges` rend : les deux calculs et la regle retenue.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -22,16 +32,16 @@ struct IndemniteDesJours {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SalaireDeReference {
-    moyenne_12_mois: Decimal,
-    tiers_3_mois: Decimal,
-    retenu: Decimal,
+    moyenne_12_mois: M,
+    tiers_3_mois: M,
+    retenu: M,
     regle: String,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IndemniteLegale {
-    montant: Decimal,
+    montant: M,
     du: bool,
     pourquoi: Option<String>,
     annees: Option<Decimal>,
@@ -40,7 +50,7 @@ struct IndemniteLegale {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PlancherDeLaRupture {
-    plancher: Option<Decimal>,
+    plancher: Option<M>,
     annees: Decimal,
     pourquoi: Option<String>,
 }
@@ -48,9 +58,9 @@ struct PlancherDeLaRupture {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IndemniteDuDepart {
-    montant: Decimal,
+    montant: M,
     du: bool,
-    mois: Decimal,
+    mois: C,
     palier: Option<i64>,
     pourquoi: Option<String>,
 }
@@ -76,7 +86,7 @@ struct Fin {
 }
 
 fn legale(i: p::IndemniteLegale) -> IndemniteLegale {
-    IndemniteLegale { montant: i.montant, du: i.du, pourquoi: i.pourquoi, annees: i.annees }
+    IndemniteLegale { montant: M(i.montant), du: i.du, pourquoi: i.pourquoi, annees: i.annees }
 }
 
 // Les entrees de chaque fonction : ses arguments, dans l'ordre.
@@ -117,8 +127,8 @@ fn les_conges() {
 fn precarite_due(a: &(Nature, Motif)) -> Rendu<Option<String>> {
     p::precarite_due(&a.0.proprietes().unwrap(), motif(&a.1)).into()
 }
-fn indemnite_precarite(a: &(Decimal,)) -> Rendu<Decimal> {
-    p::indemnite_precarite(Montant::du_decimal(a.0)).map(Montant::decimal).into()
+fn indemnite_precarite(a: &(M,)) -> Rendu<M> {
+    p::indemnite_precarite(a.0 .0).map(M).into()
 }
 fn anciennete_mois(a: &(Jour, Jour)) -> Decimal {
     Anciennete::entre(&a.0, &a.1).mois()
@@ -126,21 +136,22 @@ fn anciennete_mois(a: &(Jour, Jour)) -> Decimal {
 fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<Decimal>> {
     p::preavis_mois(Anciennete::de_mois(a.0), motif(&a.1), false).into()
 }
-fn salaire_de_reference(a: &(Vec<Decimal>, Vec<Decimal>)) -> SalaireDeReference {
-    let s = p::salaire_de_reference(&a.0, &a.1).unwrap();
-    SalaireDeReference { moyenne_12_mois: s.moyenne_12_mois, tiers_3_mois: s.tiers_3_mois, retenu: s.retenu, regle: s.regle.to_string() }
+fn salaire_de_reference(a: &(Vec<M>, Vec<M>)) -> SalaireDeReference {
+    let montants = |l: &[M]| l.iter().map(|m| m.0).collect::<Vec<Montant>>();
+    let s = p::salaire_de_reference(&montants(&a.0), &montants(&a.1)).unwrap();
+    SalaireDeReference { moyenne_12_mois: M(s.moyenne_12_mois), tiers_3_mois: M(s.tiers_3_mois), retenu: M(s.retenu), regle: s.regle.to_string() }
 }
-fn indemnite_licenciement(a: &(Decimal, Decimal, Motif)) -> Rendu<IndemniteLegale> {
-    p::indemnite_licenciement(Anciennete::de_mois(a.0), &mut || Ok(a.1), motif(&a.2)).map(legale).into()
+fn indemnite_licenciement(a: &(Decimal, M, Motif)) -> Rendu<IndemniteLegale> {
+    p::indemnite_licenciement(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0), motif(&a.2)).map(legale).into()
 }
-fn indemnite_mise_a_la_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteLegale> {
-    p::indemnite_mise_a_la_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(legale).into()
+fn indemnite_mise_a_la_retraite(a: &(Decimal, M)) -> Rendu<IndemniteLegale> {
+    p::indemnite_mise_a_la_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(legale).into()
 }
-fn indemnite_rupture_conventionnelle(a: &(Decimal, Decimal)) -> Rendu<PlancherDeLaRupture> {
-    p::indemnite_rupture_conventionnelle(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(|i| PlancherDeLaRupture { plancher: i.plancher, annees: i.annees, pourquoi: i.pourquoi }).into()
+fn indemnite_rupture_conventionnelle(a: &(Decimal, M)) -> Rendu<PlancherDeLaRupture> {
+    p::indemnite_rupture_conventionnelle(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(|i| PlancherDeLaRupture { plancher: i.plancher.map(M), annees: i.annees, pourquoi: i.pourquoi }).into()
 }
-fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart> {
-    p::indemnite_depart_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1)).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier.map(|p| p.nombre_d_ans_revolus().unwrap()), pourquoi: i.pourquoi }).into()
+fn indemnite_depart_retraite(a: &(Decimal, M)) -> Rendu<IndemniteDuDepart> {
+    p::indemnite_depart_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(|i| IndemniteDuDepart { montant: M(i.montant), du: i.du, mois: C(i.mois), palier: i.palier.map(|p| p.nombre_d_ans_revolus().unwrap()), pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
     p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique: rubrique.into() })).into()

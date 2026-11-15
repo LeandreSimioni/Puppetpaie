@@ -10,6 +10,7 @@ use droit::fiche::{ChampsSalarie, Idcc, Statut};
 use serde::{Deserialize, Serialize};
 use socle::date::{Anciennete, Duree, Jour};
 use socle::echec::R;
+use socle::grandeurs::Montant;
 use socle::num::Decimal;
 use std::str::FromStr;
 
@@ -68,6 +69,11 @@ pub(crate) fn grilles() -> Grilles {
 
 pub(crate) fn dec(s: &str) -> Decimal {
     Decimal::from_str(s).unwrap()
+}
+
+/// Le salaire de reference d'un oracle, ecrit en texte.
+fn reference_lue(s: &str) -> Montant {
+    socle::grandeurs::lu::texte(s).unwrap()
 }
 
 /// L'anciennete d'un oracle, en mois.
@@ -208,7 +214,7 @@ pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option
 }
 
 pub(crate) fn indemnite(idcc: &str, annexe: &str, pr: &Prof, a: &str, r: &str, motif: Option<&str>, age: Option<&str>) -> R<Indemnite> {
-    c::indemnite_licenciement(idcc_dit(idcc).as_ref(), annexe_dite(annexe), &profil_de(pr), anc(a), &mut || Ok(dec(r)), motif_lu(motif), age.map(age_lu))
+    c::indemnite_licenciement(idcc_dit(idcc).as_ref(), annexe_dite(annexe), &profil_de(pr), anc(a), &mut || Ok(reference_lue(r)), motif_lu(motif), age.map(age_lu))
 }
 
 pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -> Vec<R<Indemnite>> {
@@ -226,11 +232,11 @@ pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -
 }
 
 pub(crate) fn mise(idcc: &str, a: &str, r: &str) -> R<Retraite> {
-    c::indemnite_mise_a_la_retraite(idcc_dit(idcc).as_ref(), anc(a), &mut || Ok(dec(r)))
+    c::indemnite_mise_a_la_retraite(idcc_dit(idcc).as_ref(), anc(a), &mut || Ok(reference_lue(r)))
 }
 
 pub(crate) fn depart(idcc: &str, a: &str, r: &str) -> R<Retraite> {
-    c::indemnite_depart_retraite(idcc_dit(idcc).as_ref(), anc(a), &mut || Ok(dec(r)))
+    c::indemnite_depart_retraite(idcc_dit(idcc).as_ref(), anc(a), &mut || Ok(reference_lue(r)))
 }
 
 pub(crate) fn bloc_retraite(g: &Grilles, f: impl Fn(&str, &str) -> R<Retraite>) -> Vec<R<Retraite>> {
@@ -262,6 +268,11 @@ pub(crate) fn bloc_prime(g: &Grilles, idcc: &str, annexe: &str, code: &str) -> V
 
 fn nombre(p: Option<P>) -> Option<String> {
     p.map(|p| p.to_string())
+}
+
+/// Un montant tel que la reference l'ecrit (`1234.50`).
+fn montant_ecrit(m: Montant) -> String {
+    socle::grandeurs::ecrit::texte::texte(m).unwrap()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -361,9 +372,9 @@ pub(crate) fn indemnite_ecrite(i: Indemnite) -> IndemniteLue {
     IndemniteLue {
         releve: i.releve,
         du: i.du,
-        bas: nombre(i.bas),
-        haut: nombre(i.haut),
-        lectures: i.lectures.into_iter().map(|(k, v)| (k, v.to_string())).collect(),
+        bas: i.bas.map(montant_ecrit),
+        haut: i.haut.map(montant_ecrit),
+        lectures: i.lectures.into_iter().map(|(k, v)| (k, montant_ecrit(v))).collect(),
         hors_primes: i.hors_primes,
         article: i.article,
         pourquoi: i.pourquoi,
@@ -373,7 +384,7 @@ pub(crate) fn indemnite_ecrite(i: Indemnite) -> IndemniteLue {
 pub(crate) fn retraite_ecrite(r: Retraite) -> RetraiteLue {
     RetraiteLue {
         releve: r.releve,
-        montant: nombre(r.montant),
+        montant: r.montant.map(montant_ecrit),
         mois: nombre(r.mois),
         palier: r.palier.map(|p| p.nombre_d_ans_revolus().unwrap()),
         article: r.article,

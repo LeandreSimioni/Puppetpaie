@@ -23,7 +23,7 @@ use droit::contexte::{IdSalarie, IdSpectacle};
 use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NatureDeContrat};
 use socle::date::Jour;
 use socle::forme::NombreLu;
-use socle::grandeurs::Heures;
+use socle::grandeurs::{Heures, Montant};
 use socle::echec::{refus, R};
 
 use crate::ligne::{LigneDonnee, LignePaie};
@@ -244,7 +244,7 @@ nature! {
             date_paiement: Jour = DatePaiement,
             jours: NombreLu = Jours,
             taux_cachet: NombreLu = TauxCachet,
-            indemnite_licenciement: NombreLu = IndemniteLicenciement,
+            indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
             notification_rupture: Jour = NotificationRupture,
@@ -299,7 +299,7 @@ nature! {
             heures_supplementaires: NombreLu = HeuresSupplementaires,
             heures_supplementaires_a_50: NombreLu = HeuresSupplementairesA50,
             heures_complementaires: NombreLu = HeuresComplementaires,
-            indemnite_licenciement: NombreLu = IndemniteLicenciement,
+            indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
             notification_rupture: Jour = NotificationRupture,
@@ -356,7 +356,7 @@ nature! {
             heures_supplementaires: NombreLu = HeuresSupplementaires,
             heures_supplementaires_a_50: NombreLu = HeuresSupplementairesA50,
             heures_complementaires: NombreLu = HeuresComplementaires,
-            indemnite_licenciement: NombreLu = IndemniteLicenciement,
+            indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
             notification_rupture: Jour = NotificationRupture,
@@ -743,7 +743,7 @@ changements! {
     HeuresSupplementaires(NombreLu) = "heures_supplementaires" => heures_supplementaires,
     HeuresSupplementairesA50(NombreLu) = "heures_supplementaires_a_50" => heures_supplementaires_a_50,
     HeuresComplementaires(NombreLu) = "heures_complementaires" => heures_complementaires,
-    IndemniteLicenciement(NombreLu) = "indemnite_licenciement" => indemnite_licenciement,
+    IndemniteLicenciement(Montant) = "indemnite_licenciement" => indemnite_licenciement,
     FauteGrave(bool) = "faute_grave" => faute_grave,
     MotifRupture(MotifDeRupture) = "motif_rupture" => motif_rupture,
     NotificationRupture(Jour) = "notification_rupture" => notification_rupture,

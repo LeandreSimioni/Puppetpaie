@@ -189,8 +189,9 @@ pub fn salarie_nomme(nom: Option<&str>, nom_affichage: Option<&str>, prenom: Opt
 /// document imprimé) : « 1 234,50 € », au centime (`Montant::au_centime`), la virgule décimale, les milliers et l'euro
 /// séparés par une espace insécable (le montant ne se coupe pas en fin de ligne ; U+00A0, que toute police d'un PDF
 /// porte). Un fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
-pub fn euros(x: rust_decimal::Decimal) -> String {
-    let t = crate::grandeurs::Montant::du_decimal(x).au_centime().decimal().to_string();
+/// Il dit un `Montant`, ou un décimal que son appelant n'a pas encore typé (`EnEuros`).
+pub fn euros(x: impl EnEuros) -> String {
+    let t = x.en_montant().au_centime().decimal().to_string();
     let (signe, t) = match t.strip_prefix('-') {
         Some(r) => ("-", r),
         None => ("", t.as_str()),
@@ -201,6 +202,34 @@ pub fn euros(x: rust_decimal::Decimal) -> String {
     };
     format!("{}{},{}\u{a0}€", signe, milliers(entier), centimes)
 }
+
+/// CE QUE `euros` DIT : un montant, ou un decimal nu. Scelle (`euros_scelle::Scelle` ne se nomme pas dehors) : il ne
+/// sert qu'a `euros`, et n'ouvre aucun montant.
+pub trait EnEuros: euros_scelle::Scelle {}
+
+mod euros_scelle {
+    use crate::grandeurs::Montant;
+    use rust_decimal::Decimal;
+
+    pub trait Scelle {
+        fn en_montant(self) -> Montant;
+    }
+
+    impl Scelle for Montant {
+        fn en_montant(self) -> Montant {
+            self
+        }
+    }
+
+    impl Scelle for Decimal {
+        fn en_montant(self) -> Montant {
+            Montant::du_decimal(self)
+        }
+    }
+}
+
+impl EnEuros for crate::grandeurs::Montant {}
+impl EnEuros for rust_decimal::Decimal {}
 
 /// Des chiffres, les milliers separes par une espace insecable (« 1 500 »).
 fn milliers(entier: &str) -> String {

@@ -1047,12 +1047,7 @@ impl Assiettes {
 }
 
 fn pss_du_contexte(ctx: &Contexte) -> impl Fn(socle::mois::Annee) -> socle::echec::R<droit::plafond::Pss> + '_ {
-    move |a| {
-        ctx.plafond_securite_sociale(a).map(|(m, h)| droit::plafond::Pss {
-            mensuel: socle::grandeurs::Montant::du_decimal(Decimal::from(m)),
-            horaire: socle::grandeurs::MontantUnitaire::du_decimal(Decimal::from(h)),
-        })
-    }
+    move |a| ctx.plafond_securite_sociale(a)
 }
 
 /// `bareme_applique(&ctx.bareme(fin), sal, nat, fin, caisse)`, garde : la pile ne

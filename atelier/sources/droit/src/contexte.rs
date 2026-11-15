@@ -1671,14 +1671,14 @@ impl Contexte {
         Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.annee()), cse: lu.cse(jour.annee()), cinquante: lu.cinquante(jour.annee()), taux_lus: false })
     }
 
-    /// (PSS mensuel, PSS horaire) de l'annee, d'apres la fiche entreprise de ce contexte.
-    pub fn plafond_securite_sociale(&self, annee: Annee) -> R<(i64, i64)> {
+    /// Le plafond de la Securite sociale de l'annee, ses deux valeurs en euros entiers, d'apres la fiche entreprise de ce
+    /// contexte.
+    pub fn plafond_securite_sociale(&self, annee: Annee) -> R<crate::plafond::Pss> {
         let jour = annee.premier_jour();
         let lue = self.pile_lue(&jour, &self.entreprise)?;
-        let entier = |x: Decimal| i64::try_from(x.trunc()).map_err(|e| refus(e.to_string()));
-        let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| Ok::<_, Echec>((entier(p.mensuel.decimal())?, entier(p.horaire.decimal())?))).transpose()?;
-        match plafond.filter(|(m, h)| *m != 0 && *h != 0) {
-            Some(mh) => Ok(mh),
+        let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| crate::plafond::Pss { mensuel: p.mensuel.partie_entiere(), horaire: p.horaire.partie_entiere() });
+        match plafond.filter(|p| !p.mensuel.est_nul() && !p.horaire.est_nul()) {
+            Some(p) => Ok(p),
             None => Err(socle::echec::refus_avec(
                 "Le barème de l'année n'a pas le plafond de la Sécurité sociale : le signaler au développeur.",
                 Lieu {

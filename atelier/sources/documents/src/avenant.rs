@@ -494,6 +494,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
         Valeur::Texte(s) => s.clone(),
         Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).en_texte(),
         Valeur::Heures(h) => socle::grandeurs::ecrit::sans_zero::dit(*h),
+        Valeur::Montant(m) => socle::texte::euros(*m),
         Valeur::Oui(true) => "True".into(),
         Valeur::Oui(false) => "False".into(),
     };
@@ -502,7 +503,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
         match v {
             Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).dec(),
             Valeur::Texte(s) => socle::num::decimal_a_virgule(s).ok_or_else(|| refus(socle::num::illisible(s))),
-            Valeur::Heures(_) | Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
+            Valeur::Heures(_) | Valeur::Montant(_) | Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
         }
     };
     Ok(match terme {
@@ -516,6 +517,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
                 Valeur::Oui(b) => *b,
                 Valeur::Nombre(n) => !n.est_nul(),
                 Valeur::Heures(h) => !h.est_nul(),
+                Valeur::Montant(m) => !m.est_nul(),
                 Valeur::Texte(s) => !s.is_empty(),
                 Valeur::Nature(_) => true,
             };

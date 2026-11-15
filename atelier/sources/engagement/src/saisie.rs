@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
 use socle::forme::NombreLu;
-use socle::grandeurs::Heures;
+use socle::grandeurs::{Heures, Montant};
 
 use crate::ligne::{DateDeLigne, LignePaie};
 
@@ -183,7 +183,8 @@ carte! {
         #[champ(Fait, HeuresComplementaires)]
         pub heures_complementaires: Option<NombreLu>,
         #[champ(Fait, IndemniteLicenciement)]
-        pub indemnite_licenciement: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub indemnite_licenciement: Option<Montant>,
         #[champ(Fait, FauteGrave)]
         pub faute_grave: Option<bool>,
         #[champ(Fin, MotifRupture)]
@@ -243,6 +244,9 @@ pub enum Valeur {
     /// Des heures (la duree du travail, en heures par mois).
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     Heures(Heures),
+    /// Un montant (l'indemnite de licenciement retenue).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    Montant(Montant),
     Oui(bool),
 }
 
@@ -324,6 +328,12 @@ impl Simple for NombreLu {
 impl Simple for Heures {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Heures(*self))
+    }
+}
+
+impl Simple for Montant {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Montant(*self))
     }
 }
 

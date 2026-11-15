@@ -631,12 +631,12 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
                 return Ok(AuReleve(IJ_AU_RELEVE.to_string()));
             }
             let mensuel = match ctx.plafond_securite_sociale(premier.annee()) {
-                Ok((mensuel, _)) => mensuel,
+                Ok(pss) => pss.mensuel,
                 Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", pourquoi.phrase))),
             };
             let mois = veille.mois_civil();
             let Some(brut) = paie(mois)? else { return Ok(sans_paie(mois)) };
-            let (brute, majoree) = montants_d_accident(brut, Montant::du_decimal(Decimal::from(mensuel * 12)), p)?;
+            let (brute, majoree) = montants_d_accident(brut, mensuel.fois(12), p)?;
             Ok(IjDePrincipe::Calculee(IjCalculee {
                 brute,
                 nette: net_de_csg_crds(brute, p.csg, p.crds),
