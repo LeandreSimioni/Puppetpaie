@@ -443,7 +443,17 @@ pub fn croise(imp: &Imprevu, periode: &Periode) -> R<bool> {
 
 /// La meme regle pour un arret de travail (un arret de la DSN, `dsn::Arret`).
 pub fn arret_croise(arret: &ArretSaisi, periode: &Periode) -> R<bool> {
-    Ok(Periode::du_au(dernier_jour_declare(arret)?, dernier_jour_d_arret(arret)?)?.croise(periode).is_some())
+    Ok(jours_declares(arret)?.is_some_and(|p| p.croise(periode).is_some()))
+}
+
+/// LES JOURS QUE LA DSN PORTE D'UN ARRET : du dernier jour travaille qu'elle declare (`dernier_jour_declare`) a son
+/// dernier jour d'absence (`dernier_jour_d_arret`) ; aucun pour un arret repris avant son jour declare.
+pub fn jours_declares(arret: &ArretSaisi) -> R<Option<Periode>> {
+    let (declare, dernier) = (dernier_jour_declare(arret)?, dernier_jour_d_arret(arret)?);
+    match declare <= dernier {
+        true => Periode::du_au(declare, dernier).map(Some),
+        false => Ok(None),
+    }
 }
 
 /// LES JOURS D'ABSENCE D'UN IMPREVU, du `premier_jour` au `dernier_jour` ; aucun quand le dernier precede le premier (un

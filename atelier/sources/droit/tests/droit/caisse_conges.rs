@@ -26,7 +26,7 @@ fn qui_est_declare_a_la_caisse() {
     let regisseur = |idcc: &str| fiche(r#"{"code_emploi_ft": "REG130", "statut": "technicien"}"#, Some(idcc));
     let sans_metier = fiche(r#"{"statut": "technicien"}"#, Some("3090"));
     let (debut, trois_mois, un_an) = (j(2026, 9, 1), j(2026, 11, 30), j(2027, 8, 31));
-    assert!(douze_mois_ou_plus(&debut, &un_an).unwrap());
+    assert!(douze_mois_ou_plus(&socle::date::Periode::du_au(debut, un_an).unwrap()).unwrap());
     assert!(affilie(&cddu, &comedien, &debut, Some(&trois_mois)).unwrap());
     assert!(!affilie(&cddu, &comedien, &debut, Some(&un_an)).unwrap(), "un CDDU de douze mois");
     assert!(affilie(&cdd, &comedien, &debut, Some(&trois_mois)).unwrap(), "un artiste en CDD de droit commun");

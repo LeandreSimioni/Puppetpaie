@@ -21,7 +21,7 @@
 
 use crate::natures::Nature;
 use crate::fiche::{Lue, SalarieDuContrat};
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use crate::emplois;
 use socle::echec::R;
 
@@ -38,9 +38,9 @@ fn douze_mois_apres(debut: &Jour) -> R<Jour> {
     debut.apres(socle::date::Duree::mois(12))
 }
 
-/// Le contrat, du `debut` au `fin` signes, dure-t-il douze mois ou plus ?
-pub fn douze_mois_ou_plus(debut: &Jour, fin: &Jour) -> R<bool> {
-    Ok(fin.plus_jours(1)? >= douze_mois_apres(debut)?)
+/// Le `contrat`, du debut au terme signes, dure-t-il douze mois ou plus ?
+pub fn douze_mois_ou_plus(contrat: &Periode) -> R<bool> {
+    Ok(contrat.fin().plus_jours(1)? >= douze_mois_apres(&contrat.debut())?)
 }
 
 /// LE CONTRAT D'UN INTERMITTENT. Un CDD d'usage (la nature payee a l'activite) l'est toujours ; un CDI jamais ; un CDD
@@ -138,5 +138,5 @@ moteur ne la devine pas.",
             ))
         }
     };
-    Ok(!douze_mois_ou_plus(debut, fin)?)
+    Ok(!douze_mois_ou_plus(&Periode::du_au(*debut, *fin)?)?)
 }

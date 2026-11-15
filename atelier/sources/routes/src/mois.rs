@@ -1671,7 +1671,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         },
         None => None,
     };
-    let mois_du_contrat = e.mois_du_contrat();
+    let mois_du_contrat = e.mois_du_contrat()?;
     // Le taux du cachet, tel que le contrat l'imprime : celui de la premiere ligne a l'unite « cachet » ; sans cachet, la
     // valeur ecrite, telle quelle, et rien quand rien n'est ecrit (regle 1 : plus de 130 EUR).
     let mut premier_cachet = None;
@@ -1819,7 +1819,7 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
         Some(f) => format!("Contrat du {} au {}", e.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
         None => format!("Contrat du {}, sans date de fin", e.debut.jj_mm_aaaa()),
     };
-    let mois = e.mois_du_contrat();
+    let mois = e.mois_du_contrat()?;
     let premier = e.debut_mois();
     let place = e.place_du_mois();
     let avant = match place {

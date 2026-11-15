@@ -1055,13 +1055,11 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     let arret = lu.arret().map(|saisi| declarations::dsn::Arret { saisi: saisi.clone() });
     let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
     // Les mois qu'un arret traverse ; une suspension, ou un arret repris avant son jour declare, n'en traverse aucun.
-    let mut traverses: Vec<socle::mois::Mois> = Vec::new();
-    if let Some(p) = declare_lu {
-        let d = engagement::imprevus::dernier_jour(lu).map_err(|m| m.reclasser(Classe::Illisible))?;
-        if p <= d {
-            traverses = socle::mois::Mois::entre(&p, &d);
-        }
-    }
+    let declares = lu.arret().map(engagement::imprevus::jours_declares).transpose().map_err(|m| m.reclasser(Classe::Illisible))?.flatten();
+    let traverses: Vec<socle::mois::Mois> = match declares {
+        Some(p) => p.mois(),
+        None => Vec::new(),
+    };
     let saisi = match lu {
         Imprevu::Arret(a) => a.saisi_le,
         Imprevu::Suspension(s) => s.saisi_le,

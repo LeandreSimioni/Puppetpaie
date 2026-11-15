@@ -477,7 +477,7 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
 fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
     let eng = &p.engagement;
     let cle = cle_de(p);
-    let mois_du = eng.mois_du_contrat();
+    let mois_du = eng.mois_du_contrat()?;
     let mut manquants: Vec<Mois> = Vec::new();
     let mut lignes: Vec<engagement::LignePaie> = Vec::new();
     // Un contrat commence dans l'ancien logiciel : ses mois d'avant sont ceux que l'engagement importe a verses.

@@ -1592,7 +1592,7 @@ impl<'a> Moteur<'a> {
                 },
                 None => None,
             };
-            let mois_du_contrat = p.engagement.mois_du_contrat();
+            let mois_du_contrat = p.engagement.mois_du_contrat()?;
             let (Some(&depuis), Some(&jusqu_a)) = (mois_du_contrat.first(), mois_du_contrat.last()) else {
                 return Err(erreur(Classe::Manque, socle::fichiers::trop_courte("les mois du contrat")));
             };

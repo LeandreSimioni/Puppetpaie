@@ -17,7 +17,7 @@ use socle::echec::Lieu;
 use socle::num::Decimal;
 use socle::grandeurs::MontantUnitaire;
 
-use socle::date::{repr_texte, Duree, EnMois, Jour};
+use socle::date::{repr_texte, Duree, EnMois, Jour, Periode};
 use socle::fichiers::{dossier_du_code, CheminRelatif, NomDeFichier};
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, Echec, R};
@@ -71,11 +71,12 @@ fn levenshtein(a: &str, b: &str) -> usize {
 
 // ------------------------------------------------- la configuration datee (`fiche::dater`)
 
-/// LES AUTRES ETABLISSEMENTS OUVERTS UN JOUR AU MOINS entre `debut` et `fin` (la fiche entreprise datee : `etablissements`
+/// LES AUTRES ETABLISSEMENTS OUVERTS UN JOUR AU MOINS de la `periode` (la fiche entreprise datee : `etablissements`
 /// est la liste de ceux qui sont ouverts, une version par ouverture, modification ou fermeture), chacun dans sa derniere
 /// valeur de la periode. Un etablissement ferme en cours de mois a encore sa DSN de ce mois. `None` : la fiche n'en dit
 /// rien.
-pub fn etablissements_entre(liste: Option<&[Datee<Vec<Etablissement>>]>, debut: &Jour, fin: &Jour) -> Option<Vec<Etablissement>> {
+pub fn etablissements_entre(liste: Option<&[Datee<Vec<Etablissement>>]>, periode: &Periode) -> Option<Vec<Etablissement>> {
+    let (debut, fin) = (&periode.debut(), &periode.fin());
     let liste = liste?;
     let versions = crate::fiche::valeurs_datees(liste);
     let mut ordre: Vec<Option<String>> = Vec::new();
@@ -1718,7 +1719,7 @@ PSS_H_METROP).",
     pub fn entreprise_du_mois(&self, mois: Mois) -> ChampsEntreprise {
         let dernier = mois.dernier_jour();
         let mut ent = self.entreprise_au(&dernier);
-        if let Some(l) = etablissements_entre(self.fiches.entreprise.etablissements.as_deref(), &mois.premier_jour(), &dernier) {
+        if let Some(l) = etablissements_entre(self.fiches.entreprise.etablissements.as_deref(), &Periode::du_mois(mois)) {
             ent.etablissements = Some(l);
         }
         ent

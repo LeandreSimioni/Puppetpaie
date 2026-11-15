@@ -19,7 +19,7 @@
 use droit::fiche::Lue as _;
 use droit::contexte::Contexte;
 use droit::forme_bareme::{IdDeCotisation, MUTUELLE};
-use socle::date::{Duree, EnMois, Jour};
+use socle::date::{Duree, EnMois, Jour, Periode};
 use socle::echec::R;
 
 use crate::calcul::Paie;
@@ -72,7 +72,7 @@ pub fn de(ctx: &Contexte, p: &Paie, numero: &crate::numeros::NumeroContrat, fin:
         return Ok(None);
     }
     let depuis = debut_des_contrats_consecutifs(&siens, p.engagement.debut)?;
-    Ok(Some(Portabilite { prevoyance, sante, depuis, consecutifs: depuis < p.engagement.debut, mois: mois_arrondis(&depuis, fin)? }))
+    Ok(Some(Portabilite { prevoyance, sante, depuis, consecutifs: depuis < p.engagement.debut, mois: mois_arrondis(&Periode::du_au(depuis, *fin)?)? }))
 }
 
 /// LES DERNIERS CONTRATS CONSECUTIFS CHEZ LE MEME EMPLOYEUR : en remontant depuis le contrat qui finit (`debut`), chaque
@@ -80,28 +80,29 @@ pub fn de(ctx: &Contexte, p: &Paie, numero: &crate::numeros::NumeroContrat, fin:
 /// s'y ajoute. INFERENCE : L. 911-8 ne definit pas « consecutifs » ; on le lit au mot, des contrats qui se suivent
 /// sans interruption. Un contrat dont la fin ne se lit pas (ni dite, ni jour joue) n'y entre pas.
 fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> R<Jour> {
-    let mut bornes = Vec::new();
+    let mut contrats: Vec<Periode> = Vec::new();
     for o in siens {
         let c = o.carte();
         let Some(d) = c.debut_lu() else { continue };
         let Some(f) = c.fin.or_else(|| c.dates().iter().map(DateDeLigne::jour).max()) else { continue };
-        bornes.push((d, f));
+        contrats.push(Periode::du_au(d, f)?);
     }
     let mut depuis = debut;
     loop {
         let veille = depuis.plus_jours(-1)?;
-        match bornes.iter().filter(|(d, f)| *d < depuis && *f >= veille).map(|(d, _)| *d).min() {
+        match contrats.iter().filter(|p| p.debut() < depuis && p.fin() >= veille).map(Periode::debut).min() {
             Some(d) => depuis = d,
             None => return Ok(depuis),
         }
     }
 }
 
-/// La duree de `debut` a `fin` (compris) en mois de calendrier entiers comptes depuis `debut`, un mois entame compte
-/// entier (« arrondie au nombre superieur »), au plus `DOUZE_MOIS`. Le `n`-ieme mois finit la veille du meme quantieme
-/// `n` mois plus tard, ou le dernier jour de ce mois-la quand il n'a pas ce quantieme (du 31/01, le premier mois finit
-/// le 28/02).
-fn mois_arrondis(debut: &Jour, fin: &Jour) -> R<Duree<EnMois>> {
+/// La duree de la `periode` en mois de calendrier entiers comptes depuis son debut, un mois entame compte entier
+/// (« arrondie au nombre superieur »), au plus `DOUZE_MOIS`. Le `n`-ieme mois finit la veille du meme quantieme `n`
+/// mois plus tard, ou le dernier jour de ce mois-la quand il n'a pas ce quantieme (du 31/01, le premier mois finit le
+/// 28/02).
+fn mois_arrondis(periode: &Periode) -> R<Duree<EnMois>> {
+    let (debut, fin) = (&periode.debut(), &periode.fin());
     let mut n = Duree::mois(0);
     while n < DOUZE_MOIS {
         n = n.plus(UN_MOIS);

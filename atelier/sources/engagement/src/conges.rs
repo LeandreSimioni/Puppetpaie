@@ -840,7 +840,7 @@ fn mois_de_la_periode(
 ) -> R<Vec<(Mois, Vec<PaieLue>)>> {
     let mut out = Vec::new();
     let saisis = crate::stock::mois_saisis(&ctx.racine)?;
-    for m in Mois::entre(&p.debut(), &p.fin()) {
+    for m in p.mois() {
         if !lus.lit(m) || !saisis.contains(&m) {
             continue;
         }

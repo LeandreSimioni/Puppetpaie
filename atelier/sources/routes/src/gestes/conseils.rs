@@ -1042,7 +1042,7 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Pe
     let heures_cachet = c.heures_par_cachet;
     let mut gain = Heures::ZERO;
     let mut jours = Jours::ZERO;
-    for mois in socle::mois::Mois::entre(&f.debut(), &f.fin()) {
+    for mois in f.mois() {
         let Some((_, paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else { continue };
         for p in &paies {
             let e = &p.engagement;

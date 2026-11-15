@@ -798,7 +798,7 @@ pub(crate) struct ArretResume {
     debut: Jour,
     fin_previsionnelle: Jour,
     subrogation: Option<SubrogationDeLArret>,
-    periode_de_subrogation: Option<socle::date::Periode>,
+    periode_de_subrogation: Option<Periode>,
     date_accident: Option<Jour>,
     reprise: Option<Jour>,
     reprise_motif: Option<MotifDeReprise>,
@@ -1605,7 +1605,9 @@ l'arrêt traverse porte la nouvelle fin prévisionnelle (S21.G00.60.003, fiche n
     ));
     // Les jours ajoutes qui tombent dans un mois dont la DSN reelle est deja partie : elle portait l'ancienne fin.
     let declares = reporte_par(&envois_de_l_arret(ctx, &avant)?);
-    for m in Mois::entre(&fin_avant.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?, &f) {
+    // Apres la fin d'avant : la prolongation la recule (refus plus haut sinon).
+    let ajoutes = Periode::du_au(fin_avant.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?, f)?;
+    for m in ajoutes.mois() {
         if declares.contains(&m) {
             avertissements.push(format!(
                 "La DSN de {} est déjà partie avec l'ancienne fin (le {}) : la paie de ce mois, où les jours ajoutés \

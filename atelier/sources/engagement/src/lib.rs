@@ -755,11 +755,9 @@ impl Engagement {
     }
 
     /// Les mois AAAA-MM que couvre le contrat, du premier au dernier : un contrat sans fin court jusqu'au mois de paie.
-    pub fn mois_du_contrat(&self) -> Vec<Mois> {
-        match self.fin {
-            Some(fin) => Mois::entre(&self.debut, &fin),
-            None => Mois::entre(&self.debut, &self.fin_mois()),
-        }
+    /// Refus : un contrat qui finit avant son debut.
+    pub fn mois_du_contrat(&self) -> R<Vec<Mois>> {
+        Ok(socle::date::Periode::du_au(self.debut, self.fin.unwrap_or(self.fin_mois()))?.mois())
     }
 
     // ------------------------------------------------------------ les lieux
@@ -864,7 +862,7 @@ impl Engagement {
             quotite: self.quotite()?,
             sans_paie: self.sans_paie(),
             place: self.place_du_mois(),
-            mois_du_contrat: self.mois_du_contrat(),
+            mois_du_contrat: self.mois_du_contrat()?,
         })
     }
 }
@@ -1926,7 +1924,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
     let qui = qui_de(&fiche)?;
     let fin = eng.fin.ok_or_else(|| refus("contrat a cheval sans fin"))?;
     let bornes = format!("du {} au {}", eng.debut.jj_mm_aaaa(), fin.jj_mm_aaaa());
-    let mois_du_contrat = eng.mois_du_contrat();
+    let mois_du_contrat = eng.mois_du_contrat()?;
     if let PlaceDuMois::Dernier | PlaceDuMois::Milieu = place_du_mois {
         avis.push(Avis {
             info: true,
