@@ -999,13 +999,10 @@ impl Fautes {
     fn code<T: ListeDeLaNorme>(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<T> {
         self.valeur(k, v, "un code de sa liste dans la norme", T::du_code_de_la_norme(v))
     }
-    /// Une quotite (40.012, 40.013) dans l'unite que 40.011 a dite (`unite`) : une DSN qui ne dit pas l'unite, ou un
-    /// texte qui n'est pas un nombre, est une faute.
+    /// Une quotite (40.012, 40.013), en jours ou en heures selon l'unite que 40.011 a dite (`unite`,
+    /// `QuotiteDuContrat::de_la_dsn`) : un texte qui n'est pas un nombre est une faute.
     fn quotite(&mut self, k: RubriqueDeLaNorme, v: &str, unite: Option<droit::natures::UniteDeQuotite>) -> Option<engagement::QuotiteDuContrat> {
-        match unite {
-            Some(u) => self.valeur(k, v, "un nombre", engagement::QuotiteDuContrat::de_la_dsn(u, v)),
-            None => self.valeur(k, v, "une quotité dont la DSN dit l'unité (S21.G00.40.011)", None),
-        }
+        self.valeur(k, v, "un nombre", engagement::QuotiteDuContrat::de_la_dsn(unite, v))
     }
     /// Un refus dit quoi corriger et n'ecrit rien.
     fn refus(self, mois: Option<Mois>) -> Option<Echec> {
