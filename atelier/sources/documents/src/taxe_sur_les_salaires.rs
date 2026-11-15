@@ -5,9 +5,9 @@
 
 use droit::fiche::Lue as _;
 use socle::echec::R;
-use socle::num::{add, mul, sub, Decimal};
 use socle::texte::euros;
-use socle::grandeurs::Montant;
+use socle::grandeurs::ecrit::sans_zero;
+use socle::grandeurs::{Coefficient, Montant, Taux};
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
 pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::TaxeSurLesSalaires;
@@ -18,17 +18,21 @@ pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fic
 /// « La réduction mentionnée au I de l'article L. 136-2 du code de la sécurité sociale n'est pas applicable »).
 /// `abattement` : le facteur de la CSG du bareme (`abattement_csg`, 0,9825). Le calcul de l'etat « taxe sur les
 /// salaires » (`etats_compta`), mis ici pour que la DSN lise le meme.
-pub fn assiette_taxe_sur_les_salaires(brut: Decimal, base_csg: Decimal, abattement: Decimal) -> Decimal {
-    let au_centime = |x: Decimal| socle::grandeurs::Montant::du_decimal(x).au_centime().decimal();
-    au_centime(add(sub(base_csg, au_centime(mul(brut, abattement))), brut))
+pub fn assiette_taxe_sur_les_salaires(brut: Montant, base_csg: Montant, abattement: Coefficient) -> Montant {
+    (base_csg - (brut * abattement).au_centime() + brut).au_centime()
 }
 
 /// Les fractions d'une remuneration individuelle annuelle soumises aux taux majores (CGI art. 231, 2 bis) : celle
 /// comprise entre `seuil_1` et `seuil_2`, et celle qui excede `seuil_2`.
-pub fn fractions_majorees(base: Decimal, seuil_1: Decimal, seuil_2: Decimal) -> (Decimal, Decimal) {
-    let positif = |x: Decimal| if x > Decimal::ZERO { x } else { Decimal::ZERO };
-    let premiere = positif(sub(if base < seuil_2 { base } else { seuil_2 }, seuil_1));
-    (premiere, positif(sub(base, seuil_2)))
+pub fn fractions_majorees(base: Montant, seuil_1: Montant, seuil_2: Montant) -> (Montant, Montant) {
+    let positif = |x: Montant| if x > Montant::ZERO { x } else { Montant::ZERO };
+    let premiere = positif(base.min(seuil_2) - seuil_1);
+    (premiere, positif(base - seuil_2))
+}
+
+/// La part taxee dans une phrase (« 40 », « 37,5 ») : sans zero inutile, la virgule decimale.
+pub fn part_dite(part: Taux) -> String {
+    sans_zero::dit(part).replace('.', ",")
 }
 
 /// LA TAXE SUR LES SALAIRES SE DEDUIT DE LA TVA. La fiche disait « la compagnie la doit-elle ? »
@@ -76,20 +80,20 @@ pub struct RegimeTaxeSalaires {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decision {
     NonDue,
-    DueSur(Decimal),
+    DueSur(Taux),
     ADire(String),
 }
 
 /// `taxe_sur_les_salaires` de la fiche entreprise `ent`, et ce que le moteur en conclut (CGI art. 231, 1). `plafonds` :
 /// ceux de la franchise en base de TVA, lus au bareme de l'annee (`plafonds_franchise`) ; la conclusion les nomme quand
 /// on les a, elle dit « les plafonds » sinon. Ils ne changent rien a la decision.
-pub fn regime_taxe_sur_les_salaires(ent: &droit::fiche::ChampsEntreprise, plafonds: Option<(Decimal, Decimal)>) -> RegimeTaxeSalaires {
+pub fn regime_taxe_sur_les_salaires(ent: &droit::fiche::ChampsEntreprise, plafonds: Option<(Montant, Montant)>) -> RegimeTaxeSalaires {
     // Les deux plafonds, en mots de compagnie, pour la conclusion.
     let les_plafonds = match plafonds {
         Some((services, total)) => format!(
             "les deux plafonds de la franchise en base de TVA, {} de spectacles vendus et {} de recettes en tout",
-            euros(Montant::du_decimal(services)),
-            euros(Montant::du_decimal(total))
+            euros(services),
+            euros(total)
         ),
         None => "les plafonds de la franchise en base de TVA".to_string(),
     };
@@ -115,13 +119,13 @@ decembre ne se fait pas.",
         ),
     };
     let part_taxee = match fiche.and_then(|f| f.tva.dite()) {
-        Some(droit::fiche::Tva::Exoneree) => Decimal::ONE_HUNDRED,
+        Some(droit::fiche::Tva::Exoneree) => Taux::CENT_POUR_CENT,
         Some(droit::fiche::Tva::Assujettie) => {
             champs.push("part_tva");
             let part = match fiche.and_then(|f| f.part_tva.dite()) {
                 None => None,
-                Some(v) => match v.dec() {
-                    Ok(p) if p >= Decimal::ZERO && p <= Decimal::ONE_HUNDRED => Some(p),
+                Some(v) => match v.grandeur::<Taux>() {
+                    Ok(p) if p >= Taux::ZERO && p <= Taux::CENT_POUR_CENT => Some(p),
                     _ => {
                         return manque(
                             champs,
@@ -139,17 +143,17 @@ decembre ne se fait pas.",
 compagnie ne doit pas la taxe sur les salaires ; en dessous, elle la doit sur le reste.",
                 );
             };
-            if part >= Decimal::from(90) {
+            if part >= Taux::points(90) {
                 return non_due(
                     champs,
                     &format!(
                         "elle est assujettie à la TVA sur {} % de ses recettes de l'an dernier, 90 % ou plus (code général \
 des impôts, art. 231)",
-                        socle::texte::virgule(part)
+                        part_dite(part)
                     ),
                 );
             }
-            sub(Decimal::ONE_HUNDRED, part)
+            Taux::CENT_POUR_CENT - part
         }
         None => {
             return manque(
@@ -162,10 +166,10 @@ sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
     };
     // La taxe serait due : sauf sous les plafonds de la franchise en base (231, 1, 2e alinea).
     champs.push("sous_franchise");
-    let sur = if part_taxee == Decimal::ONE_HUNDRED {
+    let sur = if part_taxee == Taux::CENT_POUR_CENT {
         "sur tous ses salaires".to_string()
     } else {
-        format!("sur {} % de ses salaires, la part de ses recettes qui n'était pas soumise à la TVA", socle::texte::virgule(part_taxee))
+        format!("sur {} % de ses salaires, la part de ses recettes qui n'était pas soumise à la TVA", part_dite(part_taxee))
     };
     match fiche.and_then(|f| f.sous_franchise.dite().copied()) {
         Some(true) => {
@@ -234,14 +238,14 @@ pub struct QuestionFranchise {
     pub sous: String,
     pub dessus: String,
     /// Les plafonds lus au bareme : prestations de services, total. `None` si le bareme de l'annee ne les porte pas.
-    pub plafonds: Option<(Decimal, Decimal)>,
+    pub plafonds: Option<(Montant, Montant)>,
 }
 
 /// Les plafonds de la franchise en base de TVA au bareme `bar` (`taxe_sur_les_salaires.plafonds_franchise`) : prestations
 /// de services, total. `None` si le bareme ne les porte pas.
-pub fn plafonds_franchise(bar: Option<&droit::forme_bareme::Pile>) -> Option<(Decimal, Decimal)> {
+pub fn plafonds_franchise(bar: Option<&droit::forme_bareme::Pile>) -> Option<(Montant, Montant)> {
     let pf = &bar?.taxe_sur_les_salaires.as_ref()?.plafonds_franchise;
-    Some((pf.prestations_de_services.decimal(), pf.total.decimal()))
+    Some((pf.prestations_de_services, pf.total))
 }
 
 /// La question des plafonds pour les remunerations de `annee` (le chiffre d'affaires de `annee - 1`), depuis le bareme
@@ -279,8 +283,8 @@ subventions n'y entrent pas.\n{t} : les recettes en tout, ces ventes plus les su
 Ces montants sont dans le compte de résultat {avant} (ses produits), ou chez votre comptable. Code général des impôts, \
 art. 231 et 293 B{depuis}.",
             avant = avant,
-            s = euros(Montant::du_decimal(services)),
-            t = euros(Montant::du_decimal(total)),
+            s = euros(services),
+            t = euros(total),
             annee = annee,
             depuis = depuis,
         ),
@@ -288,14 +292,14 @@ art. 231 et 293 B{depuis}.",
             "Sous les deux plafonds en {} : au plus {} de spectacles vendus (cessions, billetterie, ateliers…) et au plus \
 {} de recettes en tout, subventions comprises",
             avant,
-            euros(Montant::du_decimal(services)),
-            euros(Montant::du_decimal(total))
+            euros(services),
+            euros(total)
         ),
         dessus: format!(
             "Au-dessus d'un plafond en {} : plus de {} de spectacles vendus, ou plus de {} de recettes en tout",
             avant,
-            euros(Montant::du_decimal(services)),
-            euros(Montant::du_decimal(total))
+            euros(services),
+            euros(total)
         ),
         plafonds: Some((services, total)),
     })
@@ -303,7 +307,7 @@ art. 231 et 293 B{depuis}.",
 
 /// Ce que la DSN de decembre lit : `None` si la taxe n'est pas due, sinon la part taxee des remunerations en
 /// pourcentage. Une fiche qui ne dit pas tout : refus, avec ce qu'il faut dire (`regime_taxe_sur_les_salaires`).
-pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> R<Option<Decimal>> {
+pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> R<Option<Taux>> {
     match regime_taxe_sur_les_salaires(ent, None).decision {
         Decision::NonDue => Ok(None),
         Decision::DueSur(p) => Ok(Some(p)),
@@ -315,19 +319,15 @@ pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
-
-    fn d(s: &str) -> Decimal {
-        Decimal::from_str(s).unwrap()
-    }
 
     #[test]
     fn les_fractions_majorees_suivent_le_2_bis() {
-        let (s1, s2) = (d("9147"), d("18259"));
-        assert_eq!(fractions_majorees(d("5000"), s1, s2), (Decimal::ZERO, Decimal::ZERO));
-        assert_eq!(fractions_majorees(d("10000"), s1, s2), (d("853"), Decimal::ZERO));
+        let d = Montant::euros;
+        let (s1, s2) = (d(9147), d(18259));
+        assert_eq!(fractions_majorees(d(5000), s1, s2), (Montant::ZERO, Montant::ZERO));
+        assert_eq!(fractions_majorees(d(10000), s1, s2), (d(853), Montant::ZERO));
         // L'exemple du BOFiP (BOI-TPS-TS-30, § 240, `atelier/reference/sources/bofip/BOI-TPS-TS-30-20200624.html`), seuils
         // 2020 : 180 000 -> 7 977 et 164 019.
-        assert_eq!(fractions_majorees(d("180000"), d("8004"), d("15981")), (d("7977"), d("164019")));
+        assert_eq!(fractions_majorees(d(180000), d(8004), d(15981)), (d(7977), d(164019)));
     }
 }

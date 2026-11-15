@@ -674,7 +674,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         franchise: Franchise {
             aide: q.aide,
             choix: ChoixDeLaFranchise { sous: q.sous, dessus: q.dessus },
-            plafonds: q.plafonds.map(|(s, t)| PlafondsDeLaFranchise { prestations_de_services: Montant::du_decimal(s), total: Montant::du_decimal(t) }),
+            plafonds: q.plafonds.map(|(prestations_de_services, total)| PlafondsDeLaFranchise { prestations_de_services, total }),
             annee,
         },
         champs: r.champs,
@@ -682,7 +682,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         complet: !matches!(r.decision, Decision::ADire(_)),
         due: matches!(r.decision, Decision::DueSur(_)),
         part_taxee: match r.decision {
-            Decision::DueSur(p) => Some(socle::grandeurs::Taux::du_decimal(p)),
+            Decision::DueSur(p) => Some(p),
             _ => None,
         },
     })

@@ -63,7 +63,6 @@ use documents::taxe_sur_les_salaires::{assiette_taxe_sur_les_salaires, fractions
 use socle::echec::{refus, R};
 use socle::mois::{Annee, Mois};
 use socle::grandeurs::{Montant, Taux};
-use socle::num::{add, Decimal};
 
 /// Un bloc S21.G00.44 : le code taxe (44.001) et, s'il y en a un, le montant (44.002). Le millesime (44.003) est
 /// l'annee de la DSN de decembre.
@@ -147,35 +146,34 @@ fn cpf_cdd(annee: &[MoisDuCalculAnnuel]) -> R<bool> {
 /// la part assujettie appliquee a chacune (CGI art. 231, 1 et 2 bis ; BOFiP BOI-TPS-TS-30, § 240 : « en appliquant le
 /// rapport d'assujettissement [...] à chacune des fractions des rémunérations individuelles passibles des taux
 /// majorés »).
-fn assiettes_taxe_sur_les_salaires(annee: &[MoisDuCalculAnnuel], bar: &droit::forme_bareme::Pile, pct: Decimal) -> R<(Montant, Montant, Montant)> {
+fn assiettes_taxe_sur_les_salaires(annee: &[MoisDuCalculAnnuel], bar: &droit::forme_bareme::Pile, pct: Taux) -> R<(Montant, Montant, Montant)> {
     let ts = bar.taxe_sur_les_salaires.as_ref().ok_or_else(|| {
         socle::echec::cle(
             "Le barème de l'année ne porte pas la taxe sur les salaires : ses seuils se lisent sur la notice 2501-SD de l'année ; le signaler au développeur.",
             "taxe_sur_les_salaires.seuil_1",
         )
     })?;
-    let (s1, s2) = (ts.seuil_1.decimal(), ts.seuil_2.decimal());
-    let abattement = bar.abattement_csg.decimal();
-    let mut par_salarie: BTreeMap<String, Decimal> = BTreeMap::new();
+    let (s1, s2) = (ts.seuil_1, ts.seuil_2);
+    let abattement = bar.abattement_csg;
+    let mut par_salarie: BTreeMap<String, Montant> = BTreeMap::new();
     for m in annee {
         match m {
             MoisDuCalculAnnuel::Calcules(_, ps) => {
                 for p in ps.iter().filter(|p| !p.engagement.sans_paie()) {
-                    let b = par_salarie.entry(p.salarie.id.to_string()).or_insert(Decimal::ZERO);
-                    *b = add(*b, assiette_taxe_sur_les_salaires(p.brut.decimal(), p.base_csg.decimal(), abattement));
+                    *par_salarie.entry(p.salarie.id.to_string()).or_insert(Montant::ZERO) += assiette_taxe_sur_les_salaires(p.brut, p.base_csg, abattement);
                 }
             }
             MoisDuCalculAnnuel::Contrats(_) => return Err(refus("assiettes de la taxe sur les salaires : un mois sans montants")),
         }
     }
-    let (mut normal, mut premier, mut second) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
+    let (mut normal, mut premier, mut second) = (Montant::ZERO, Montant::ZERO, Montant::ZERO);
     for b in par_salarie.values() {
         let (f1, f2) = fractions_majorees(*b, s1, s2);
-        normal = add(normal, *b);
-        premier = add(premier, f1);
-        second = add(second, f2);
+        normal += *b;
+        premier += f1;
+        second += f2;
     }
-    let part = |x: Decimal| Montant::du_decimal(x).fois_taux(Taux::du_decimal(pct)).au_centime();
+    let part = |x: Montant| x.fois_taux(pct).au_centime();
     Ok((part(normal), part(premier), part(second)))
 }
 

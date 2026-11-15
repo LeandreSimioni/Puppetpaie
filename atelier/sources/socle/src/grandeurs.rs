@@ -129,6 +129,7 @@ grandeurs! {
     Semaines, "DES SEMAINES : une quantite de semaines (`2`).";
     Unites, "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
     HeuresParUnite, "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
+    Effectif, "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.";
 }
 
 /// UNE GRANDEUR SANS ZERO INUTILE (`12.50` devient `12.5`, `24.0` devient `24`, `-0` devient `0`), comme l'ecrit
@@ -276,6 +277,19 @@ impl Montant {
         let mut e = self.0.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
         e.rescale(0);
         Montant(e)
+    }
+
+    /// A L'EURO LE PLUS PROCHE, la moitie au pair, sans decimale (`12.50` donne `12`) : la taxe sur les salaires due et
+    /// sa decote, telles que l'etat « taxe sur les salaires » les calcule (aucun texte depose ne dit cet arrondi).
+    pub fn a_l_euro_au_pair(self) -> Montant {
+        let mut e = self.0.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
+        e.rescale(0);
+        Montant(e)
+    }
+
+    /// Un montant qu'un texte fixe, en euros entiers (`4000` : le seuil d'un versement unique de la taxe sur les salaires).
+    pub const fn euros(n: u32) -> Montant {
+        Montant(Decimal::from_parts(n, 0, 0, false, 0))
     }
 }
 
@@ -629,7 +643,50 @@ macro_rules! au_montant_unitaire {
     )*};
 }
 
-au_montant_unitaire!(Heures, Cachets, Jours, Services, Semaines, Unites);
+au_montant_unitaire!(Heures, Cachets, Jours, Services, Semaines, Unites, Effectif);
+
+impl Effectif {
+    /// Personne.
+    pub const ZERO: Effectif = Effectif(Decimal::ZERO);
+
+    /// Un effectif qu'un texte fixe, en personnes (`250` : le seuil de la contribution supplementaire a l'apprentissage).
+    pub const fn personnes(n: u32) -> Effectif {
+        Effectif(Decimal::from_parts(n, 0, 0, false, 0))
+    }
+
+    /// Cet effectif `n` fois : effectif x compte = effectif. Un compte n'est pas une grandeur (« Le glossaire »).
+    pub fn fois(self, n: usize) -> Effectif {
+        Effectif(num::mul(self.0, Decimal::from(n)))
+    }
+
+    /// La part de cet effectif que le taux `t` en prend, exacte (6 % de l'effectif d'assujettissement : l'obligation
+    /// d'emploi, D5212-2) : effectif x taux = effectif.
+    pub fn fois_taux(self, t: Taux) -> Effectif {
+        Effectif(num::div(num::mul(self.0, t.0), Decimal::ONE_HUNDRED))
+    }
+
+    /// Sa partie entiere, sans arrondi (l'obligation d'emploi « arrondie a l'unite inferieure », D5212-2).
+    pub fn partie_entiere(self) -> Effectif {
+        Effectif(self.0.trunc())
+    }
+
+    /// Tronque au centieme (CSS R. 130-1, I : « il n'est pas tenu compte de la fraction d'effectif au-delà de la deuxième
+    /// décimale »).
+    pub fn tronque_au_centieme(self) -> Effectif {
+        Effectif(self.0.round_dp_with_strategy(2, RoundingStrategy::ToZero))
+    }
+
+    /// A deux decimales au plus, la moitie au pair : un effectif tel qu'une phrase le dit.
+    pub fn a_deux_decimales(self) -> Effectif {
+        Effectif(self.0.round_dp(2))
+    }
+
+    /// LE RAPPORT de cet effectif a `o` (les alternants sur l'effectif total : le quotient de la CSA) : effectif / effectif
+    /// = coefficient ; `None` quand `o` est nul.
+    pub fn rapport(self, o: Effectif) -> Option<Coefficient> {
+        (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
+    }
+}
 
 impl MontantUnitaire {
     /// Zero.

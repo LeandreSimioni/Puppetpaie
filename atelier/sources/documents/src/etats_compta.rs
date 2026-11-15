@@ -26,7 +26,7 @@ use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielCompta
 use socle::texte::euros;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::{Jours, Montant, Taux};
-use socle::num::{add, div, mul, sub, Decimal};
+use socle::num::{add, Decimal};
 use crate::tableaux_export::{
     ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, ColonneDEtat as C, Ligne, Section, Tableau,
     FORMATS_TABLEAU, R, TOTAL_GENERAL,
@@ -1586,11 +1586,11 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             )))
         }
     };
-    let abatt = bar.abattement_csg.decimal();
-    let zero = Montant::ZERO.decimal();
+    let abatt = bar.abattement_csg;
+    let zero = Montant::ZERO;
     // cle -> (salarie, brut, base, mois) dans l'ordre d'insertion
     let mut ordre: Vec<String> = Vec::new();
-    let mut par: BTreeMap<String, (String, Decimal, Decimal, BTreeSet<Mois>)> = BTreeMap::new();
+    let mut par: BTreeMap<String, (String, Montant, Montant, BTreeSet<Mois>)> = BTreeMap::new();
     for m in p.mois.clone() {
         let paies = match engagement::etats::paies_du_mois(ctx, m, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
             Ok(paies) => paies,
@@ -1607,7 +1607,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
             // (`assujettissement`, bloc S21.G00.44). Le brut ou l'assiette de la CSG que les pieces d'une paie importee
             // taisent ne s'invente pas : la taxe ne se calcule pas sans eux.
-            let (Some(brut), Some(base_csg)) = (pa.brut().map(Montant::decimal), pa.base_csg()?.map(Montant::decimal)) else {
+            let (Some(brut), Some(base_csg)) = (pa.brut(), pa.base_csg()?) else {
                 return Err(refus(format!(
                     "{}, {} : les pièces importées ne disent pas son brut ou son assiette de CSG ; la taxe sur les salaires ne se calcule pas sans eux.",
                     crate::tableaux_export::qui_souple(pa.salarie()),
@@ -1620,17 +1620,12 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 par.insert(cle.clone(), (crate::tableaux_export::qui_souple(pa.salarie()), zero, zero, BTreeSet::new()));
             }
             let x = par.get_mut(&cle).expect("insere");
-            x.1 = add(x.1, brut);
-            x.2 = add(x.2, crate::taxe_sur_les_salaires::assiette_taxe_sur_les_salaires(brut, base_csg, abatt));
+            x.1 += brut;
+            x.2 += crate::taxe_sur_les_salaires::assiette_taxe_sur_les_salaires(brut, base_csg, abatt);
             x.3.insert(m);
         }
     }
-    let s1 = ts.seuil_1.decimal();
-    let s2 = ts.seuil_2.decimal();
-    let taux_normal = ts.taux_normal.decimal();
-    let maj_1 = ts.majoration_1.decimal();
-    let maj_2 = ts.majoration_2.decimal();
-    let cent = Decimal::ONE_HUNDRED;
+    let (s1, s2) = (ts.seuil_1, ts.seuil_2);
     let mut rangs: Vec<&String> = ordre.iter().collect();
     rangs.sort_by(|a, b| par[*a].0.cmp(&par[*b].0));
     let mut lignes = Vec::new();
@@ -1638,61 +1633,60 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for cle in rangs {
         let (nom, brut, base, mois) = &par[cle];
         let b = *base;
-        let normal = Montant::du_decimal(div(mul(b, taux_normal), cent)).au_centime().decimal();
+        let normal = b.fois_taux(ts.taux_normal).au_centime();
         let (au_dela_1, au_dela_2) = crate::taxe_sur_les_salaires::fractions_majorees(b, s1, s2);
-        let m1 = Montant::du_decimal(div(mul(au_dela_1, maj_1), cent)).au_centime().decimal();
-        let m2 = Montant::du_decimal(div(mul(au_dela_2, maj_2), cent)).au_centime().decimal();
-        let taxe = add(add(normal, m1), m2);
+        let m1 = au_dela_1.fois_taux(ts.majoration_1).au_centime();
+        let m2 = au_dela_2.fois_taux(ts.majoration_2).au_centime();
+        let taxe = normal + m1 + m2;
         let mut l = Ligne::nouvelle();
-        l.t(C::Salarie, nom.clone()).n(C::NombreDeMois, mois.len() as i64).d(C::Brut, *brut).d(C::BaseDeLaTaxe, b).d(C::TauxNormal, normal).d(C::MajorationUn, m1).d(C::MajorationDeux, m2).d(C::Taxe, taxe);
-        brute = add(brute, taxe);
+        l.t(C::Salarie, nom.clone()).n(C::NombreDeMois, mois.len() as i64).montant(C::Brut, *brut).montant(C::BaseDeLaTaxe, b).montant(C::TauxNormal, normal).montant(C::MajorationUn, m1).montant(C::MajorationDeux, m2).montant(C::Taxe, taxe);
+        brute += taxe;
         lignes.push(l);
     }
     // Sans part taxee dite (non assujettie, ou le regime ne se lit pas : l'avertissement le dit), rien n'est du.
     let (pct_a, due) = match part {
-        Some(pct) => (pct, quant(div(mul(brute, pct), cent), 0)),
-        None => (Decimal::ZERO, zero),
+        Some(pct) => (pct, brute.fois_taux(pct).a_l_euro_au_pair()),
+        None => (Taux::ZERO, zero),
     };
-    let franchise = ts.franchise.decimal();
-    let limite = ts.decote_jusqu_a.decimal();
+    let franchise = ts.franchise;
+    let limite = ts.decote_jusqu_a;
     let mut etapes = vec![format!(
         "taxe brute {} × {} % taxés (CGI art. 231, 1) = {}",
-        euros(Montant::du_decimal(brute)),
-        socle::texte::virgule(pct_a),
-        euros(Montant::du_decimal(due))
+        euros(brute),
+        crate::taxe_sur_les_salaires::part_dite(pct_a),
+        euros(due)
     )];
     let mut net;
     if due <= franchise {
         net = zero;
-        etapes.push(format!("franchise : {} n'excède pas {} — rien à payer", euros(Montant::du_decimal(due)), euros(ts.franchise)));
+        etapes.push(format!("franchise : {} n'excède pas {} — rien à payer", euros(due), euros(ts.franchise)));
     } else if due <= limite {
-        let decote = quant(div(mul(sub(limite, due), Decimal::from(3)), Decimal::from(4)), 0);
-        net = sub(due, decote);
+        let decote = (limite - due).fois(3).reparti_sur(4).a_l_euro_au_pair();
+        net = due - decote;
         etapes.push(format!(
             "décote : ({} − {}) × 3/4 = {}, reste {}",
             euros(ts.decote_jusqu_a),
-            euros(Montant::du_decimal(due)),
-            euros(Montant::du_decimal(decote)),
-            euros(Montant::du_decimal(net))
+            euros(due),
+            euros(decote),
+            euros(net)
         ));
     } else {
         net = due;
     }
-    if regime.association && net > Decimal::ZERO {
-        let ab = ts.abattement_1679a.decimal();
-        let reste = sub(net, ab);
+    if regime.association && net > zero {
+        let reste = net - ts.abattement_1679a;
         let reste = if reste > zero { reste } else { zero };
-        etapes.push(format!("abattement des associations (art. 1679 A) : {}, reste {}", euros(ts.abattement_1679a), euros(Montant::du_decimal(reste))));
+        etapes.push(format!("abattement des associations (art. 1679 A) : {}, reste {}", euros(ts.abattement_1679a), euros(reste)));
         net = reste;
     }
-    etapes.push(format!("taxe nette due : {}", euros(Montant::du_decimal(net))));
+    etapes.push(format!("taxe nette due : {}", euros(net)));
     avert.push(format!("Calcul {} : {}.", annee, etapes.join(" ; ")));
-    if net.is_zero() {
+    if net.est_nul() {
         avert.push("Rien à payer : pas de relevé 2501-SD ni de déclaration 2502-SD à déposer (franchise ou abattement).".to_string());
     } else {
-        let periodicite = if net < Decimal::from(4000) {
+        let periodicite = if net < Montant::euros(4000) {
             "un seul versement, déclaration 2502-SD au 15 janvier"
-        } else if net <= Decimal::from(10000) {
+        } else if net <= Montant::euros(10000) {
             "trimestrielle (2501-SD)"
         } else {
             "mensuelle (2501-SD)"
