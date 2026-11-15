@@ -627,12 +627,6 @@ fn jours_joues(e: &SaisieCarte) -> Vec<Jour> {
     jours
 }
 
-/// (debut, fin) d'une carte, comme `Engagement` les deduirait : son debut (`Carte::debut_lu`), sa fin ecrite, sinon le
-/// dernier de ses jours travailles et de son planning ; aucune fin sans aucun jour.
-pub(crate) fn bornes_brutes(e: &SaisieCarte) -> (Option<Jour>, Option<Jour>) {
-    (e.debut_lu(), e.fin.or_else(|| e.dates().iter().chain(e.planning().iter()).map(|j| j.jour()).max()))
-}
-
 // ------------------------------------------------------------ les fichiers de mois
 
 /// Les engagements que le mois montre (`engagement::stock::vue_du_mois`), avec la cle du salarie ; vide si aucun
@@ -709,7 +703,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     }
     let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<NumeroContrat>)> = HashSet::new();
     for (c, e) in engagements_du_mois(ctx, mois)? {
-        deja.insert((c, bornes_brutes(&e).0, e.numero.clone()));
+        deja.insert((c, e.debut_lu(), e.numero.clone()));
     }
     for c in out.iter_mut() {
         c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.debut), Some(c.numero.clone())));
@@ -868,15 +862,9 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             }
         }
         for (cle, e, jours) in du_mois {
-            let (Some(debut), fin) = bornes_brutes(&e) else { continue };
+            let Some(contrat) = e.contrat()? else { continue };
             // Un contrat sans jour finit le jour ou il commence.
-            let periode = Periode::du_au(
-                debut,
-                match fin {
-                    Some(f) => f,
-                    None => debut,
-                },
-            )?;
+            let periode = contrat.fermee_au(contrat.debut())?;
             if periode.croise(&le_mois).is_none() {
                 continue;
             }
@@ -2154,7 +2142,10 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                 r.blocs.push(calcules.next().flatten());
             }
             Some(m) => {
-                let (debut, fin) = bornes_brutes(e);
+                // Une carte a completer peut ecrire une fin avant son debut : c'est alors ce qui lui manque (`m`, dit dans
+                // `a_completer`), et elle n'a pas de bornes a montrer.
+                let contrat = e.contrat().ok().flatten();
+                let (debut, fin) = (contrat.map(|c| c.debut()), contrat.and_then(|c| c.fin()));
                 r.paies.push(PaieVue::ACompleter(PaieACompleter {
                     a_completer: m.phrase.clone(),
                     salarie: CleEcrite { cle: e.salarie.clone() },

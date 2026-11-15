@@ -395,9 +395,11 @@ impl Carte {
         crate::debut_de(self.debut, self.lignes())
     }
 
-    /// Les dates du contrat qu'elle ecrit : `None` quand elle ne dit pas son debut ; refus d'une fin avant le debut.
+    /// LA PERIODE DE SON CONTRAT, comme `Engagement::nouveau` la deduit : son debut (`debut_lu`) ; sa fin ecrite, sinon le
+    /// dernier de ses jours joues et de son planning ; `None` sans debut ; refus d'une fin avant le debut.
     pub fn contrat(&self) -> R<Option<PeriodeOuverte>> {
-        self.debut.map(|d| PeriodeOuverte::du(d, self.fin)).transpose()
+        let fin = self.fin.or_else(|| self.dates().iter().chain(self.planning().iter()).map(DateDeLigne::jour).max());
+        self.debut_lu().map(|d| PeriodeOuverte::du(d, fin)).transpose()
     }
 
     /// Les jours joues de ses lignes de travail (`crate::jours_des_lignes`).

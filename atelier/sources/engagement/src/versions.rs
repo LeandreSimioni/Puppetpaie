@@ -15,7 +15,7 @@ use crate::saisie::{Carte, Champ, Groupe, Valeur};
 use crate::stock::{Saisie, Version};
 use droit::catalogue::Unite;
 use droit::contexte::Contexte;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::echec::R;
 use socle::texte::{euros, virgule};
@@ -37,13 +37,6 @@ fn jours_changes(x: &LignePaie, y: &LignePaie) -> Option<String> {
         .flatten()
         .collect();
     (!parts.is_empty()).then(|| format!("Jours : {}", parts.join(" · ")))
-}
-
-/// Le premier et le dernier jour d'une carte : ses bornes dites, sinon ses jours travailles (`Carte::debut_lu`,
-/// `Carte::dates`).
-fn bornes(s: &Carte) -> (Option<Jour>, Option<Jour>) {
-    // Sans fin dite, le dernier jour de ses dates ; aucun sans date.
-    (s.debut_lu(), s.fin.or_else(|| s.dates().iter().map(|j| j.jour()).max()))
 }
 
 /// « 14/11 » d'une borne ; rien si elle n'est pas dite.
@@ -252,12 +245,13 @@ pub fn depuis(ctx: &Contexte, v: &Valide, n: u64) -> R<Vec<String>> {
 
 fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
     let mut out = Vec::new();
-    let ((da, fa), (db, fb)) = (bornes(a), bornes(b));
-    if da != db {
-        out.push(format!("Début : {} → {}", borne_courte(da), borne_courte(db)));
+    let (ca, cb) = (a.contrat()?, b.contrat()?);
+    let (debut, fin) = (|c: Option<PeriodeOuverte>| c.map(|c| c.debut()), |c: Option<PeriodeOuverte>| c.and_then(|c| c.fin()));
+    if debut(ca) != debut(cb) {
+        out.push(format!("Début : {} → {}", borne_courte(debut(ca)), borne_courte(debut(cb))));
     }
-    if fa != fb {
-        out.push(format!("Fin : {} → {}", borne_courte(fa), borne_courte(fb)));
+    if fin(ca) != fin(cb) {
+        out.push(format!("Fin : {} → {}", borne_courte(fin(ca)), borne_courte(fin(cb))));
     }
     let (la, lb) = (a.lignes(), b.lignes());
     let code = |l: &LignePaie| l.rubrique().clone();

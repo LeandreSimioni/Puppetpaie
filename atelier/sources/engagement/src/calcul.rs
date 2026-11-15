@@ -1390,11 +1390,11 @@ pub(crate) fn declaree_a_la_caisse_des_conges(p: &Paie) -> R<bool> {
 /// la saisie dit l'emportant (`fiche_de_l_engagement`, `emploi_de`).
 pub(crate) fn saisie_declaree_a_la_caisse_des_conges(ctx: &Contexte, e: &crate::saisie::Carte, fin: &Jour) -> R<bool> {
     let nat = e.nature_lue()?;
-    let debut = crate::conges::debut_de(e)?;
+    let contrat = e.contrat()?.ok_or_else(|| socle::fichiers::absent("debut"))?;
     let cle = e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     let emploi = EmploiEngagement { code_emploi_ft: e.code_emploi_ft.clone().or_else(|| e.metier.as_ref().map(droit::fiche::CodeEmploiFt::from)), ..Default::default() };
     let fiche = convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, fin)?, &emploi)?);
-    droit::caisse_conges::affilie(&nat, &fiche, &socle::date::PeriodeOuverte::du(debut, Some(*fin))?)
+    droit::caisse_conges::affilie(&nat, &fiche, &contrat)
 }
 
 /// LA PERIODE D'ESSAI QUE L'ENGAGEMENT STIPULE ne depasse pas la duree maximale de son contrat (`droit::essai` : C. trav.

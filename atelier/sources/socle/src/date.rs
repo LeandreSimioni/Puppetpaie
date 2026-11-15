@@ -340,6 +340,15 @@ impl PeriodeOuverte {
         self.fin.map(|fin| Periode { debut: self.debut, fin })
     }
 
+    /// La periode qu'elle est, FERMEE AU `jour` quand sa fin n'est pas dite ; refus quand `jour` est avant son debut.
+    #[track_caller]
+    pub fn fermee_au(&self, jour: Jour) -> R<Periode> {
+        match self.fin {
+            Some(fin) => Periode::du_au(self.debut, fin),
+            None => Periode::du_au(self.debut, jour),
+        }
+    }
+
     /// `j` en est-il ? Sans fin dite, tout jour a partir du premier en est.
     pub fn contient(&self, j: &Jour) -> bool {
         self.debut <= *j && self.fin.is_none_or(|f| *j <= f)
