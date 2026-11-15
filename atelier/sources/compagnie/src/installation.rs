@@ -545,6 +545,12 @@ impl DossierRattache {
     }
 }
 
+impl std::fmt::Display for DossierRattache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
 /// L'ECRITURE D'UN IDENTIFIANT DE COMPAGNIE PAR SON DOSSIER RELATIF A L'INSTALLATION (`IdDeCompagnie::dossier`), celle
 /// d'un scenario du banc (`fictives/ajoutee-les-treteaux-du-banc`), d'un identifiant que le scenario peut taire.
 pub mod en_dossier {

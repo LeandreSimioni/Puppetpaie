@@ -1025,13 +1025,12 @@ pub struct Resultat {
     pub suivre: Option<ASuivre>,
 }
 
-/// CE QUI SE SUIT APRES UN DEPOT REEL DU GROUPE : la compagnie (son dossier, relatif a l'installation, tel que le registre
-/// le nomme) et la charge de sa route `suivre-depot`.
+/// CE QUI SE SUIT APRES UN DEPOT REEL DU GROUPE : la compagnie (son dossier rattache, tel que le registre le nomme) et la
+/// charge de sa route `suivre-depot`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ASuivre {
-    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
-    pub dossier: PathBuf,
+    pub dossier: DossierRattache,
     #[serde(flatten)]
     pub(crate) depot: crate::depots::ChargeSuivre,
 }
@@ -1065,9 +1064,9 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
     let groupe = rattachees(inst)?;
     let mut suivies = Vec::new();
     for s in a_suivre {
-        let racine = inst.join(&s.dossier);
+        let racine = s.dossier.racine(inst);
         if !groupe.contains(&racine) {
-            return Err(erreur(Classe::Refuse, format!("La compagnie « {} » n'est pas rattachée à l'administrateur : rien n'est suivi.", s.dossier.display())));
+            return Err(erreur(Classe::Refuse, format!("La compagnie « {} » n'est pas rattachée à l'administrateur : rien n'est suivi.", s.dossier)));
         }
         let ctx = crate::service::contexte(&o_de(o, &racine))?;
         let suivi = crate::depots::suivre_depot(&ctx, s.depot)?;
@@ -1180,9 +1179,9 @@ pub fn deposer(o: &Options, inst: &Path, mode: Mode, motdepasse: Option<socle::s
             Genre::Dsn | Genre::Signalement => Some(Quoi::Dsn),
             Genre::HorsDsn => None,
         };
-        let suivre = match (mode, parti, quoi, racine.strip_prefix(inst)) {
-            (Mode::Reel, true, Some(quoi), Ok(dossier)) => Some(ASuivre {
-                dossier: dossier.to_path_buf(),
+        let suivre = match (mode, parti, quoi) {
+            (Mode::Reel, true, Some(quoi)) => DossierRattache::de(inst, racine)?.map(|dossier| ASuivre {
+                dossier,
                 depot: crate::depots::ChargeSuivre { quoi, flux: flux.clone(), mois: d.mois },
             }),
             _ => None,

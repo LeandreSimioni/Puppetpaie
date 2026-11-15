@@ -410,7 +410,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **dossier rattaché** : le dossier d'une compagnie rattachée à l'administrateur, tel que son registre l'écrit
   (`administrateur.json`) : relatif à l'installation, quel qu'il soit (`prive`, `logiciel`, `compagnies/<dossier>`,
   `prive-dev`, `ma-cie` d'une compagnie ouverte par son dossier). Ce n'est pas une tuile : toute compagnie sous
-  l'installation se rattache. Fait par `DossierRattache::de`, lu tel qu'il s'écrit.
+  l'installation se rattache. Fait par `DossierRattache::de`, lu tel qu'il s'écrit ; le même dans la charge du suivi du
+  dépôt groupé (`administrateur::ASuivre`).
 - **couleur d'une compagnie** : la couleur qu'une compagnie choisit pour sa tuile et sa page. `#RRGGBB`, gardée telle que
   lue ; `poser_couleur` l'écrit en majuscules ; celle de la charte quand rien n'est posé. Que portent
   `config/affichage.json`, une tuile, la charge et la réponse de `compagnie-couleur`, le tableau de l'administrateur. La
