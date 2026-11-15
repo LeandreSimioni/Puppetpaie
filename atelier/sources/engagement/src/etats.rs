@@ -1499,7 +1499,10 @@ pub fn desactiver(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, departs: &De
     // La validation presente : la derniere version, gardee telle quelle.
     let derniere = o.brut_mut().valide.take();
     // Sa version suit la derniere validee : son present, rien de paye, est une version de plus.
-    let version = o.brut.versions.iter().map(|v| v.version).chain(derniere.as_ref().and_then(|v| v.version)).max().map_or(VersionDeLEngagement::premiere(), VersionDeLEngagement::suivante);
+    let version = match o.brut.versions.iter().map(|v| v.version).chain(derniere.as_ref().and_then(|v| v.version)).max() {
+        Some(v) => v.suivante(),
+        None => VersionDeLEngagement::premiere(),
+    };
     if let Some((v, n)) = derniere.and_then(|v| Some((v.clone(), v.version?))) {
         crate::paies::garder_la_version(&o, n)?;
         o.brut_mut().versions.push(stock::VersionPassee { version: n, valide_le: v.le, remplacee_le: le.clone(), saisie: v.saisie });
