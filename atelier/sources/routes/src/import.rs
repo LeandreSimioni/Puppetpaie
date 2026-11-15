@@ -355,17 +355,6 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
     engagement::importe::paies_lues(&ctx.racine)
 }
 
-/// LES DATES DU CONTRAT QU'UN VERSEMENT DE LA DSN PAIE (S21.G00.40.001 et .010 : un CDI n'a pas de fin) ; aucune quand
-/// le versement ne paie aucun contrat declare. Le debut ouvre le bloc du contrat (`declarations::dsn_lue`) : un contrat
-/// sans debut ne se reprend pas, ni une fin avant le debut.
-fn periode_declaree(p: &dsn_aem::PaieDeclaree) -> R<Option<socle::date::PeriodeOuverte>> {
-    let Some(c) = &p.contrat else { return Ok(None) };
-    match c.debut {
-        Some(debut) => Ok(Some(socle::date::PeriodeOuverte::du(debut, c.fin)?)),
-        None => Err(socle::refus!("le contrat {} que la DSN déclare ne dit pas son début (S21.G00.40.001)", p.paie.numero)),
-    }
-}
-
 /// UN CONTRAT QU'UN VERSEMENT DE LA DSN PAIE, EN PAIE VERSEE : ses dates, et ce que la DSN lui attribue
 /// (`dsn_aem::PaieDeclaree`), tel qu'elle l'ecrit (`declarations::dsn_lue::lire`, qui refuse une DSN dont un montant ou
 /// une date ne se lit pas). Son activite (53) n'y passe pas : les heures, cachets et jours d'une paie sont ceux qu'un
@@ -636,7 +625,8 @@ pub(crate) fn apercu_lu(
         }
         let mois = *mois;
         let c = v.contrat.as_ref();
-        let periode = periode_declaree(v)?;
+        // Les dates du contrat que le versement paie ; aucune quand il ne paie aucun contrat declare.
+        let periode = c.map(|c| c.periode()).transpose()?;
         let objet = c.and_then(|c| c.objet.clone()).or_else(|| objets_aem.get(&(nir.clone()?, periode?.fermee()?)).cloned());
         if v.paie.nets.is_none() {
             // Chaque paie lue est celle d'un individu de sa DSN, que `lecture.salaries` porte.

@@ -22,7 +22,7 @@ use droit::fiche::Lue as _;
 use droit::natures::{Fraction, IdentifiantDeDeclaration, NumeroDOrdre, TypeDActivite, UniteDeMesure};
 use engagement::calcul::Paie;
 use envois::etats;
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::mode::Mode;
 use socle::mois::Mois;
@@ -46,8 +46,7 @@ fn saisie_aux_numeros_declares(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
 /// (S21.G00.40.009) et son debut (S21.G00.40.001) sont obligatoires : un contrat qui ne les porte pas ne se lit pas.
 struct ContratLu {
     numero: engagement::numeros::NumeroContrat,
-    debut: Jour,
-    fin: Option<Jour>,
+    periode: PeriodeOuverte,
     emploi: Option<String>,
     nature_dsn: Option<String>,
     objet: Option<droit::fiche::NumeroObjetSpectacle>,
@@ -60,12 +59,10 @@ struct ContratLu {
 impl ContratLu {
     fn de(d: &DsnLue, c: &ContratDeclare) -> R<ContratLu> {
         let numero = c.numero.clone().ok_or_else(|| refus("Un contrat du fichier ne porte pas son numéro (S21.G00.40.009)."))?;
-        let debut = c.debut.ok_or_else(|| socle::refus!("Le contrat {} du fichier ne porte pas sa date de début (S21.G00.40.001).", numero))?;
         Ok(ContratLu {
             mois: d.mesures(c.nir.as_ref(), &numero, false),
             rappel: d.mesures(c.nir.as_ref(), &numero, true),
-            debut,
-            fin: c.fin,
+            periode: c.periode()?,
             emploi: c.emploi.emploi.clone(),
             nature_dsn: c.nature_dsn.clone(),
             objet: c.objet.clone(),
@@ -210,11 +207,11 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
             };
             contrats.push(ContratDuFichier {
                 activite_dit: activite_dite(m, correction),
-                dates_dit: dates_dites(c.debut, c.fin),
+                dates_dit: dates_dites(&c.periode),
                 fin_dit,
                 numero: c.numero.clone(),
-                debut: c.debut,
-                fin: c.fin,
+                debut: c.periode.debut(),
+                fin: c.periode.fin(),
                 emploi: c.emploi.clone(),
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
@@ -548,8 +545,9 @@ fn activite_dite(m: &Mesures, correction: bool) -> String {
 }
 
 /// Les dates d'un contrat sur une ligne : « 06/10 → 09/10/2026 » dans une meme annee, le jour seul s'il n'en a qu'un.
-fn dates_dites(debut: Jour, fin: Option<Jour>) -> String {
-    match fin {
+fn dates_dites(periode: &PeriodeOuverte) -> String {
+    let debut = periode.debut();
+    match periode.fin() {
         Some(f) if f != debut => {
             let d = debut.jj_mm_aaaa();
             let d = if debut.iso().get(..4) == f.iso().get(..4) { d.chars().take(5).collect() } else { d };

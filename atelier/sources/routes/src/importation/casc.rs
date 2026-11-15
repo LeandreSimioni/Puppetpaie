@@ -67,7 +67,6 @@ impl Activite {
 /// salarie sans fiche refuse (sa ligne de la liste nominative ne se devine pas).
 fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
     let mut out = Vec::new();
-    let du_mois = |d: &Option<socle::date::Jour>| d.is_some_and(|d| d.mois_civil() == mois);
     for i in engagement::importe::du_mois(&ctx.racine, mois)? {
         let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
         let Some(brut) = p.paie.brut.map(socle::grandeurs::Montant::decimal) else { continue };
@@ -76,7 +75,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let periode = p.paie.periode;
         let mut activite = Activite::default();
         if let Some(c) = i.contrat_lu()? {
-            if du_mois(&c.debut) && du_mois(&c.fin) {
+            if c.periode()?.and_then(|o| o.fermee()).is_some_and(|p| p.mois() == [mois]) {
                 activite = Activite {
                     cachets: c.contrat.cachets.filter(|n| !n.est_nul()),
                     heures: c.contrat.heures.filter(|n| !n.est_nul()),

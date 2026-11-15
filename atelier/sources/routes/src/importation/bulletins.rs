@@ -425,7 +425,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
     }
     let mut certificats = gardes_cert;
-    certificats.sort_by(|a, b| (a.c.fin, a.c.debut, a.fichier, a.c.page).cmp(&(b.c.fin, b.c.debut, b.fichier, b.c.page)));
+    let par_fin = |p: Option<Periode>| p.map(|p| (p.fin(), p.debut()));
+    certificats.sort_by(|a, b| (par_fin(a.c.periode), a.fichier, a.c.page).cmp(&(par_fin(b.c.periode), b.fichier, b.c.page)));
     let mut gardes: Vec<Lu> = Vec::new();
     for l in lus {
         let ecart = match (siret_lu(&l.b), &siren) {
@@ -1188,9 +1189,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     for cl in ordre {
         let c = &cl.c;
         let est_aem = cl.aem.is_some();
-        let (Some(nir), Some(debut), Some(fin), Some(brut)) = (&c.nir, c.debut, c.fin, c.brut) else { continue };
-        // Les dates de la piece (`certificat_lu` refuse une fin avant le debut).
-        let periode = Periode::du_au(debut, fin)?;
+        let (Some(nir), Some(periode), Some(brut)) = (&c.nir, c.periode, c.brut) else { continue };
+        let (debut, fin) = (periode.debut(), periode.fin());
         // Le brut que la piece dit (un nombre de sa lecture, `certificat_lu`, encore en decimal) : sa porte.
         let brut = Montant::du_decimal(brut);
         let nom = cl.nom();
@@ -1462,8 +1462,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let reste: Vec<&'static str> = if salaries_certificats.get(&source).is_some_and(|n| *n > 0) { tait } else { Vec::new() };
         let lu = BlocPieces {
             lus: siennes.len(),
-            du: siennes.iter().filter_map(|c| c.c.debut).min(),
-            au: siennes.iter().filter_map(|c| c.c.fin).max(),
+            du: siennes.iter().filter_map(|c| c.c.periode.map(|p| p.debut())).min(),
+            au: siennes.iter().filter_map(|c| c.c.periode.map(|p| p.fin())).max(),
             contrats_nouveaux: ajoutes.len(),
             contrats: ajoutes,
             confirmes,
@@ -2240,7 +2240,7 @@ impl Attestee {
 
     /// Le mois dont elle parle : celui de l'AEM, celui de la fin du certificat.
     fn mois(&self) -> Option<Mois> {
-        self.aem.as_ref().and_then(|a| a.mois).or_else(|| self.c.fin.map(|f| f.mois_civil()))
+        self.aem.as_ref().and_then(|a| a.mois).or_else(|| self.c.periode.map(|p| p.fin().mois_civil()))
     }
 }
 
@@ -2260,7 +2260,7 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),
         code_postal: de_la_piece(adresse.as_ref().map(|a| CodePostal::d_une_piece(&a.1)), CaseSalarie::CodePostal, &mut fautes),
         commune: adresse.as_ref().map(|a| a.2.clone()),
-        date_anciennete: ls.iter().filter_map(|l| l.c.debut).min(),
+        date_anciennete: ls.iter().filter_map(|l| l.c.periode.map(|p| p.debut())).min(),
         ..SalarieLu::de(nir)
     };
     let rc = ls.iter().rev().find_map(|l| l.c.cadre).map(|c| if c { droit::fiche::StatutCategorielRc::Cadre } else { droit::fiche::StatutCategorielRc::NonCadre });
@@ -2356,7 +2356,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
 /// des cachets ; pour un technicien, des jours. Sans statut, rien ne le dit : pas de contrat. Les heures, que le
 /// certificat ne porte pas, ne s'inventent pas (0) ; le brut est celui du certificat, « arrondi à l'euro le plus proche ».
 fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<Statut>, salarie: Option<IdSalarie>, copie: &NomDeFichier) -> R<(ContratLu, String)> {
-    let (Some(debut), Some(fin), Some(nombre), Some(brut)) = (c.debut, c.fin, c.nombre, c.brut) else {
+    let (Some(periode), Some(nombre), Some(brut)) = (c.periode, c.nombre, c.brut) else {
         return Err(socle::echec::refus("le certificat ne dit pas tout ce qu'un contrat demande"));
     };
     // Le nombre du certificat prend ici son sens, des cachets ou des jours.
@@ -2387,7 +2387,8 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<S
     a.base_conge = c.base_conge;
     a.atteste_le = c.signe_le;
     (a.fichier, a.page) = (Some(copie.clone()), Some(c.page as u64));
-    Ok((ContratLu { salarie, debut: Some(debut), fin: Some(fin), numero: None, contrat: a }, quoi))
+    // La ligne lue ecrit ses dates (`ContratLu`) : sa porte.
+    Ok((ContratLu { salarie, debut: Some(periode.debut()), fin: Some(periode.fin()), numero: None, contrat: a }, quoi))
 }
 
 /// Les compteurs de chaque bulletin lu (`bulletin_lu::compteurs`), confrontes a ses cumuls avec ses freres : les autres

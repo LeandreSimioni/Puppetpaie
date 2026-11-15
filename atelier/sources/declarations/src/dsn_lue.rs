@@ -19,7 +19,7 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 
-use socle::date::Jour;
+use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
 use socle::mode::Mode;
@@ -478,6 +478,17 @@ impl IndividuDeclare {
 }
 
 impl ContratDeclare {
+    /// Ses dates (S21.G00.40.001 et .010 : un CDI n'a pas de fin). Refus : un contrat sans debut (le bloc s'ouvre a son
+    /// .001, dont la lecture a pu echouer), ou dont la fin precede le debut.
+    pub fn periode(&self) -> R<PeriodeOuverte> {
+        let numero = match &self.numero {
+            Some(n) => n.to_string(),
+            None => "sans numéro".to_string(),
+        };
+        let debut = self.debut.ok_or_else(|| socle::refus!("le contrat {} que la DSN déclare ne dit pas son début (S21.G00.40.001)", numero))?;
+        PeriodeOuverte::du(debut, self.fin)
+    }
+
     /// Un contrat de l'individu `individu` a son debut (S21.G00.40.001), le reste dit par les rubriques qui le suivent.
     fn de(nir: Option<Nir>, individu: usize, debut: Option<Jour>) -> ContratDeclare {
         ContratDeclare {

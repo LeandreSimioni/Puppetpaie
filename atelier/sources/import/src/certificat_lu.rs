@@ -27,7 +27,7 @@ use std::path::Path;
 
 use documents::conges_spectacles::NombreDuCertificat;
 use droit::fiche::Nir;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::num::Decimal;
 use crate::releve::Mesure;
 
@@ -132,8 +132,8 @@ pub struct Certificat {
     pub emploi: Option<String>,
     /// « OUI » ou « NON ».
     pub cadre: Option<bool>,
-    pub debut: Option<Jour>,
-    pub fin: Option<Jour>,
+    /// Les dates de travail (« DEBUT », « FIN »), quand la page dit l'une et l'autre, la fin pas avant le debut.
+    pub periode: Option<Periode>,
     /// Le « NB JOURS OU CACHETS » (des chiffres seuls), lu une fois, a la lecture de la piece.
     pub nombre: Option<JoursOuCachetsLus>,
     pub base_conge: Option<Decimal>,
@@ -149,7 +149,7 @@ impl Certificat {
         if self.nir.is_none() {
             m.push("le NIR");
         }
-        if self.debut.is_none() || self.fin.is_none() {
+        if self.periode.is_none() {
             m.push("les dates de travail");
         }
         if self.nombre.is_none() {
@@ -341,8 +341,7 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
         adresse: Vec::new(),
         emploi: None,
         cadre: None,
-        debut: None,
-        fin: None,
+        periode: None,
         nombre: None,
         base_conge: None,
         brut: None,
@@ -368,6 +367,7 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
             fautes.push(u.phrase(page, &lues.join(", ")));
         }
     }
+    let (mut debut, mut fin) = (None, None);
     for r in &rangs[titre..] {
         for (cle, v) in valeurs(r) {
             match cle {
@@ -409,10 +409,10 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                         _ => None,
                     }
                 }
-                "debut" => c.debut = date_en_tete(&v).map(|x| x.0),
+                "debut" => debut = date_en_tete(&v).map(|x| x.0),
                 "fin" => {
                     if let Some((d, n)) = date_en_tete(&v) {
-                        c.fin = Some(d);
+                        fin = Some(d);
                         let reste = &v[n..];
                         if let [x] = reste {
                             c.nombre = JoursOuCachetsLus::lus(x);
@@ -426,9 +426,10 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
             }
         }
     }
-    if let (Some(d), Some(f)) = (c.debut, c.fin) {
-        if f < d {
-            fautes.push("la fin du travail précède son début".into());
+    if let (Some(d), Some(f)) = (debut, fin) {
+        match Periode::du_au(d, f) {
+            Ok(p) => c.periode = Some(p),
+            Err(_) => fautes.push("la fin du travail précède son début".into()),
         }
     }
     let resultat = match (fautes.first(), c.manque()) {

@@ -34,10 +34,10 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
     let mut out = Vec::new();
     for i in crate::importe::tous(&ctx.racine)?.into_iter().filter(|i| !i.permanent()) {
         let Some(c) = i.contrat_lu()? else { continue };
-        let Some(debut) = c.debut else { continue };
+        let Some(contrat) = c.periode()? else { continue };
         // Un contrat qui continue ici : ce que les pieces attestent s'arrete a son dernier mois verse, la suite est
         // dans les paies de ce logiciel.
-        let fin = match (i.continue_apres(), c.fin) {
+        let fin = match (i.continue_apres(), contrat.fin()) {
             (Some(dernier), _) => dernier.dernier_jour(),
             (None, Some(fin)) => fin,
             (None, None) => continue,
@@ -47,7 +47,7 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
         let a = &c.contrat;
         out.push(Declare {
             salarie: c.salarie.clone(),
-            periode: socle::date::Periode::du_au(debut, fin)?,
+            periode: socle::date::Periode::du_au(contrat.debut(), fin)?,
             heures: a.heures.ok_or_else(|| socle::fichiers::absent("heures"))?,
             cachets: a.cachets.ok_or_else(|| socle::fichiers::absent("cachets"))?,
             jours: a.jours.ok_or_else(|| socle::fichiers::absent("jours"))?,

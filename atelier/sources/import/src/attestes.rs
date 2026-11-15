@@ -22,7 +22,7 @@ use droit::contexte::Contexte;
 use droit::fiche::Nir;
 use engagement::importe::{Attestation, ContratLu};
 use crate::reponse::{Attestant, Source};
-use socle::date::{Periode, PeriodeOuverte};
+use socle::date::Periode;
 use socle::echec::R;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 
@@ -223,19 +223,18 @@ impl Registre {
         let mut muets = Vec::new();
         for i in engagement::importe::tous(&ctx.racine)? {
             let Some(c) = i.contrat_lu()? else { continue };
-            let (cle, debut, fin) = (c.salarie.clone(), c.debut, c.fin);
+            let (cle, lue) = (c.salarie.clone(), c.periode()?);
             let permanent = i.permanent();
-            let bornes = match (debut, fin) {
-                (Some(d), Some(f)) => format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa()),
-                (Some(d), None) => format!("du {}, sans fin dite", d.jj_mm_aaaa()),
-                (None, Some(f)) => format!("sans début dit, jusqu'au {}", f.jj_mm_aaaa()),
-                (None, None) => "sans début ni fin dits".to_string(),
+            let bornes = match lue.map(|o| (o.debut(), o.fin())) {
+                Some((d, Some(f))) => format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa()),
+                Some((d, None)) => format!("du {}, sans fin dite", d.jj_mm_aaaa()),
+                None => "sans début ni fin dits".to_string(),
             };
             let quel = format!("le contrat de l'historique de {} {}", cle, bornes);
             let muet = |manque: &str| format!("{} n'a pas de {} : il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel, manque);
-            let contrat = match debut {
-                Some(d) => PeriodeOuverte::du(d, fin)?,
-                None if fin.is_none() && !permanent => {
+            let contrat = match lue {
+                Some(o) => o,
+                None if !permanent => {
                     muets.push(muet("début, ni de fin"));
                     continue;
                 }

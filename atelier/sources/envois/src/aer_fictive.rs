@@ -104,13 +104,10 @@ fn paiement_de(d: &DsnLue, nir: Option<&Nir>) -> Option<Jour> {
 /// Les periodes d'un contrat de la DSN `d` qui finit ce mois-ci : une par mois du contrat dont la DSN reelle le porte.
 fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_mois: socle::mois::Mois, c: &ContratDeclare) -> R<Vec<ColonneDuCadre4>> {
     let numero = c.numero.as_ref().ok_or_else(|| socle::echec::cle("La DSN ne dit pas le numéro d'un contrat.", "S21.G00.40.009"))?;
-    let (Some(debut), Some(fin)) = (c.debut, c.fin) else {
-        return Err(socle::refus!("contrat {} : dates illisibles dans la DSN", numero));
-    };
-    let du_contrat = Periode::du_au(debut, fin)?;
+    let du_contrat = c.periode()?.fermee().ok_or_else(|| socle::refus!("contrat {} : la DSN ne dit pas sa fin", numero))?;
     let mut out = Vec::new();
     // Les mois du contrat avant celui-ci.
-    for m in debut.mois_civil().jusqu_a(le_mois.precedent()) {
+    for m in du_contrat.debut().mois_civil().jusqu_a(le_mois.precedent()) {
         let Some(lue) = dsn_deposee(ctx, lignes, m)? else { continue };
         if lue.contrats_de(c.nir.as_ref()).any(|x| x.numero == c.numero) {
             let mesures = lue.mesures(c.nir.as_ref(), numero, false);
