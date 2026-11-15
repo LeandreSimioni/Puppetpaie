@@ -66,8 +66,7 @@ impl TauxDePas {
     /// avant le point) ; `None` sinon. Le seul chemin d'un taux a un taux de PAS ; un texte entre par `lire`.
     pub fn du_taux(t: Taux) -> Option<TauxDePas> {
         let t = socle::grandeurs::aux_centiemes(t)?;
-        // `abs` : un zero negatif (« -0.00 ») n'a pas la forme de la norme, il est le taux nul.
-        (Taux::ZERO..Taux::CENT_POUR_CENT).contains(&t).then(|| TauxDePas(t.abs()))
+        (Taux::ZERO..Taux::CENT_POUR_CENT).contains(&t).then_some(TauxDePas(t))
     }
 
     /// Le taux, en pourcent, ses deux decimales ecrites : ce qu'un document en imprime.

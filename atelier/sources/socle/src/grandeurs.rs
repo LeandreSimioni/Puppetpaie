@@ -148,10 +148,11 @@ pub fn entiere<G: Grandeur>(g: G) -> Option<G> {
 }
 
 /// LA GRANDEUR A DEUX DECIMALES ECRITES qu'elle est, son echelle portee a deux (`5.5` : `5.50`) ; `None` : elle est
-/// ecrite plus fine que le centieme (`5.505`, `5.500`), comme `ecrit::centimes` la refuse. Un taux de PAS se tient ainsi.
+/// ecrite plus fine que le centieme (`5.505`, `5.500`), comme `ecrit::centimes` la refuse, ou elle porte un signe moins
+/// (`-0.00` compris). Un taux de PAS se tient ainsi.
 pub fn aux_centiemes<G: Grandeur>(g: G) -> Option<G> {
     let mut d = g.en_decimal();
-    if d.scale() > 2 {
+    if d.scale() > 2 || d.is_sign_negative() {
         return None;
     }
     d.rescale(2);
