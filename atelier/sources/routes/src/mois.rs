@@ -1556,13 +1556,6 @@ pub(crate) struct Chevrons {
     apres: Option<String>,
 }
 
-/// La periode de paie d'un contrat dans le mois.
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct Periode {
-    debut: Jour,
-    fin: Jour,
-}
-
 /// Le contrat par rapport au mois : un contrat qui deborde n'a pas de DPAE ni de contrat imprime hors de son premier mois.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ContratVu {
@@ -1571,7 +1564,8 @@ pub(crate) struct ContratVu {
     sans_paie: bool,
     depuis: Mois,
     jusqu_a: Mois,
-    periode: Periode,
+    /// La periode de paie du contrat dans le mois.
+    periode: socle::date::Periode,
     ecrits: Vec<&'static str>,
     /// Les modeles de contrat que sa case `modele_contrat` offre (`modeles_contrat::au_choix`).
     modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
@@ -1767,7 +1761,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             sans_paie: e.sans_paie(),
             depuis: mois_du_contrat.first().copied().ok_or_else(trop_courte)?,
             jusqu_a: mois_du_contrat.last().copied().ok_or_else(trop_courte)?,
-            periode: Periode { debut: e.debut_periode(), fin: e.fin_periode() },
+            periode: e.periode_payee()?,
             ecrits: champs_du_contrat_ecrit(ctx, e, &nat)?,
             modeles: crate::modeles_contrat::au_choix(ctx, nat.cle)?,
             rupture: rupture_de(e, &nat)?,

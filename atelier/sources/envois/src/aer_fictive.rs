@@ -38,7 +38,7 @@ use fabrique_pdf::mesure::mesure as m;
 use declarations::dsn_lue::{ContratDeclare, DsnLue, IndividuDeclare, Mesures};
 use droit::contexte::Contexte;
 use droit::fiche::Nir;
-use socle::date::Jour;
+use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
 use socle::num::Decimal;
 
@@ -74,11 +74,11 @@ fn cinema_spectacle(c: &ContratDeclare) -> bool {
 
 /// Une colonne du cadre 4 : une periode d'emploi d'un contrat, dans un mois ; `contrat` n'est porte que par la colonne
 /// de sa premiere periode (comme sur le formulaire).
-struct Periode {
+struct ColonneDuCadre4 {
     /// Le numero, le debut, la fin et le numero d'objet (s'il est dit) du contrat.
     contrat: Option<(engagement::numeros::NumeroContrat, String, String, Option<String>)>,
-    debut: Jour,
-    fin: Jour,
+    /// La periode d'emploi : le contrat, borne au mois.
+    periode: Periode,
     heures: Decimal,
     cachets: Decimal,
     jours: Decimal,
@@ -102,41 +102,43 @@ fn paiement_de(d: &DsnLue, nir: Option<&Nir>) -> Option<Jour> {
 }
 
 /// Les periodes d'un contrat de la DSN `d` qui finit ce mois-ci : une par mois du contrat dont la DSN reelle le porte.
-fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_mois: socle::mois::Mois, c: &ContratDeclare) -> R<Vec<Periode>> {
+fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_mois: socle::mois::Mois, c: &ContratDeclare) -> R<Vec<ColonneDuCadre4>> {
     let numero = c.numero.as_ref().ok_or_else(|| socle::echec::cle("La DSN ne dit pas le numéro d'un contrat.", "S21.G00.40.009"))?;
     let (Some(debut), Some(fin)) = (c.debut, c.fin) else {
         return Err(socle::refus!("contrat {} : dates illisibles dans la DSN", numero));
     };
+    let du_contrat = Periode::du_au(debut, fin)?;
     let mut out = Vec::new();
     // Les mois du contrat avant celui-ci.
     for m in debut.mois_civil().jusqu_a(le_mois.precedent()) {
         let Some(lue) = dsn_deposee(ctx, lignes, m)? else { continue };
         if lue.contrats_de(c.nir.as_ref()).any(|x| x.numero == c.numero) {
             let mesures = lue.mesures(c.nir.as_ref(), numero, false);
-            out.push(periode(c, numero, &mesures, debut, fin, m, paiement_de(&lue, c.nir.as_ref()), out.is_empty()));
+            out.push(colonne(c, numero, &mesures, &du_contrat, m, paiement_de(&lue, c.nir.as_ref()), out.is_empty())?);
         }
     }
     // Un contrat que ce fichier ne porte que pour le rappel d'un mois deja declare (`dsn_lue::Remuneration::rappel`) n'a
     // pas de periode ce mois-ci.
     let mesures = d.mesures(c.nir.as_ref(), numero, false);
     if mesures.remunere || out.is_empty() {
-        out.push(periode(c, numero, &mesures, debut, fin, le_mois, paiement_de(d, c.nir.as_ref()), out.is_empty()));
+        out.push(colonne(c, numero, &mesures, &du_contrat, le_mois, paiement_de(d, c.nir.as_ref()), out.is_empty())?);
     }
     Ok(out)
 }
 
-fn periode(c: &ContratDeclare, numero: &engagement::numeros::NumeroContrat, x: &Mesures, debut: Jour, fin: Jour, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> Periode {
-    let (d, f) = (m.premier_jour(), m.dernier_jour());
-    Periode {
-        contrat: premiere.then(|| (numero.clone(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), c.objet.as_ref().map(|o| o.to_string()))),
-        debut: if debut > d { debut } else { d },
-        fin: if fin < f { fin } else { f },
+fn colonne(c: &ContratDeclare, numero: &engagement::numeros::NumeroContrat, x: &Mesures, du_contrat: &Periode, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> R<ColonneDuCadre4> {
+    let periode = du_contrat
+        .croise(&Periode::du_mois(m))
+        .ok_or_else(|| socle::refus!("contrat {} : la DSN de {} le porte, et il n'a aucun jour dans ce mois", numero, m))?;
+    Ok(ColonneDuCadre4 {
+        contrat: premiere.then(|| (numero.clone(), du_contrat.debut().jj_mm_aaaa(), du_contrat.fin().jj_mm_aaaa(), c.objet.as_ref().map(|o| o.to_string()))),
+        periode,
         heures: x.heures,
         cachets: x.cachets,
         jours: x.jours,
         brut: x.brut,
         paiement: paiement.map(|j| j.jj_mm_aaaa()),
-    }
+    })
 }
 
 // ------------------------------------------------------------------ le dessin
@@ -250,7 +252,7 @@ fn quantite(d: Decimal) -> String {
 
 /// Le PDF d'une attestation : le salarie `ind` (et ce que la DSN dit de plus, `plus`), ses periodes (cinq au plus),
 /// l'emploi et le motif de rupture de son contrat, l'employeur `ent`, edite le `edite_le`.
-fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: droit::natures::MotifDeRupture, idcc: Option<&droit::fiche::Idcc>, edite_le: Jour, remplace: Option<droit::natures::NumeroDOrdre>) -> R<Vec<u8>> {
+fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&ColonneDuCadre4], emploi: Option<&str>, motif: droit::natures::MotifDeRupture, idcc: Option<&droit::fiche::Idcc>, edite_le: Jour, remplace: Option<droit::natures::NumeroDOrdre>) -> R<Vec<u8>> {
     if periodes.is_empty() || periodes.len() > COLONNES {
         return Err(socle::refus!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
     }
@@ -407,8 +409,8 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
                 f.imprime(2, &format!("CON_IDCC_{}", n), r(184, 206), idcc_contrat, m("8.5"), Alignement::Centre);
             }
         }
-        f.imprime(2, &format!("SAL_DT_DEB_{}", n), r(218, 233), &p.debut.jj_mm_aaaa(), m("8.5"), Alignement::Centre);
-        f.imprime(2, &format!("SAL_DT_FIN_{}", n), r(236, 252), &p.fin.jj_mm_aaaa(), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_DT_DEB_{}", n), r(218, 233), &p.periode.debut().jj_mm_aaaa(), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_DT_FIN_{}", n), r(236, 252), &p.periode.fin().jj_mm_aaaa(), m("8.5"), Alignement::Centre);
         f.imprime(2, &format!("SAL_NB_HEURES_{}", n), r(258, 273), &quantite(p.heures), m("8.5"), Alignement::Centre);
         f.imprime(2, &format!("SAL_NB_CACHET_{}", n), r(282, 298), &quantite(p.cachets), m("8.5"), Alignement::Centre);
         f.imprime(2, &format!("SAL_TPS_TRA_{}", n), r(306, 322), &quantite(p.jours), m("8.5"), Alignement::Centre);
@@ -559,13 +561,13 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
         finis.sort_by_key(|c| (c.debut, c.fin));
         let Some(dernier) = finis.last() else { continue };
         let motif = dernier.motif_fin.ok_or_else(|| socle::echec::cle("La DSN ne dit pas le motif de fin d'un contrat.", "S21.G00.62.002"))?;
-        let mut toutes: Vec<Periode> = Vec::new();
+        let mut toutes: Vec<ColonneDuCadre4> = Vec::new();
         for c in &finis {
             toutes.extend(periodes(ctx, &lignes, &d, le_mois, c)?);
         }
         let emploi = finis.iter().find_map(|c| c.emploi.emploi.as_deref().filter(|e| !e.is_empty()));
         let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", droit::rubrique!("S21.G00.30.002"))?, exigee(&ind.prenom, "le prénom d'un salarié", droit::rubrique!("S21.G00.30.004"))?);
-        let refs: Vec<&Periode> = toutes.iter().collect();
+        let refs: Vec<&ColonneDuCadre4> = toutes.iter().collect();
         for (rang, lot) in refs.chunks(COLONNES).enumerate() {
             let pdf = attestation(ent, &d, ind, lot, emploi, motif, idcc, edite_le, remplace)?;
             let id = 900_001 + pdfs.len();
