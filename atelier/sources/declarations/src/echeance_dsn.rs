@@ -62,16 +62,13 @@ pub struct Echeance {
     pub jour: Jour,
     /// Les jours sautes, et pourquoi (« samedi », « dimanche », « Assomption, fête légale »).
     pub sautes: Vec<(Jour, String)>,
-    /// La veille de `jour` (`veille`).
-    veille: Jour,
 }
 
 /// `nominale`, reportee au premier jour ouvre qui la suit si elle n'en est pas un (R. 133-14, I ; inferences 1 et 2) :
 /// le calendrier du point de depot, les onze fetes legales.
 pub fn reporter(nominale: Jour) -> R<Echeance> {
     let (jour, sautes) = socle::date::JoursOuvres::premier_a_partir_de(nominale, socle::feries::feries)?;
-    let veille = jour.plus_jours(-1)?;
-    Ok(Echeance { nominale, jour, sautes, veille })
+    Ok(Echeance { nominale, jour, sautes })
 }
 
 /// L'echeance de la DSN du mois `mois` : le `jour_du_mois` (5 ou 15, `Contexte::echeance_dsn`) du mois suivant, reporte
@@ -103,9 +100,10 @@ impl Echeance {
     }
 
     /// Le dernier jour (jusqu'a minuit) ou un annule-et-remplace integral est admis : la veille de l'echeance (cahier
-    /// technique § 1.4.2 ; inference 3 : la veille de l'echeance reportee).
-    pub fn veille(&self) -> Jour {
-        self.veille
+    /// technique § 1.4.2 ; inference 3 : la veille de l'echeance reportee), lu de son instant limite
+    /// (`limite_de_l_annule_et_remplace`) : une seule limite.
+    pub fn veille(&self) -> R<Jour> {
+        Ok(jour_et_heure::jour_limite(InstantOuJour::Instant(self.limite_de_l_annule_et_remplace()?)))
     }
 
     /// LE PREMIER JOUR OU LA DSN DU MOIS PEUT PARTIR : un mois avant son echeance. Cahier technique DSN 2026.1, § 1.4.2
@@ -164,7 +162,7 @@ impl Echeance {
             reportee: self.reportee(),
             pourquoi: self.pourquoi(),
             phrase: self.phrase(),
-            veille_annule_et_remplace: Some(self.veille),
+            veille_annule_et_remplace: Some(self.veille()?),
             textes: TEXTES,
             inference: INFERENCE,
         })

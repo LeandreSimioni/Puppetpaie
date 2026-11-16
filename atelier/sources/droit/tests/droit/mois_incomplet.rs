@@ -68,7 +68,7 @@ fn les_heures_du_mois_se_comptent_sur_les_jours_travailles_de_la_fiche() {
     let jours = jours_ecrits(r#"["mardi", "mercredi", "jeudi", "vendredi", "samedi"]"#)
         .unwrap();
     assert_eq!(jours.en_mots(), "du mardi au samedi");
-    let horaire = Horaire { jours, feries_non_payes: Vec::new() };
+    let horaire = Horaire { jours: jours.clone(), feries_non_payes: Vec::new() };
     let p = part_du_mois(&du_au(j(2026, 10, 15), j(2026, 10, 31)), j(2026, 10, 31).mois_civil(), RegleDuMoisIncomplet::HoraireReel, &horaire)
         .unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (n(13), n(23)));
@@ -88,7 +88,7 @@ fn un_ferie_chome_ne_se_paie_qu_apres_trois_mois_d_anciennete() {
     let lv = du_lundi_au_vendredi();
     let avril = feries_non_payes(&du_au(j(2026, 4, 1), j(2026, 4, 30)), Some(tous), &lv, &j(2026, 1, 12)).unwrap();
     assert_eq!(avril.iter().map(|(d, _)| d.iso()).collect::<Vec<_>>(), ["2026-04-06"]);
-    let horaire = Horaire { jours: lv, feries_non_payes: avril };
+    let horaire = Horaire { jours: lv.clone(), feries_non_payes: avril };
     let p = part_du_mois(&du_au(j(2026, 4, 1), j(2026, 4, 30)), j(2026, 4, 30).mois_civil(), RegleDuMoisIncomplet::HoraireReel, &horaire)
         .unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (n(21), n(22)));

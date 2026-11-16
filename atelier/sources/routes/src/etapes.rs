@@ -1855,7 +1855,7 @@ impl<'a> Moteur<'a> {
     /// (`echeance_dsn::Echeance::veille`, reportee comme elle).
     pub(crate) fn limite(&self, mois: Mois) -> R<Jour> {
         let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois).map_err(|m| m.reclasser(Classe::Illisible))?;
-        Ok(e.veille())
+        e.veille()
     }
 
     /// Le refus d'un annule-et-remplace du mois apres sa `limite` (cahier technique DSN §1.4.2) ; `Ok` jusqu'a elle.
@@ -1975,12 +1975,13 @@ impl<'a> Moteur<'a> {
             out.saisie_modifiee = Some(true);
         }
         let quand = derniere.quand().dit();
-        let jour = lim.jj_mm_aaaa();
+        // La limite, son jour et son heure (« le 14/12/2026 à minuit ») : l'heure dite par `HeureDuJour`.
+        let jour = format!("{} {}", lim.jj_mm_aaaa(), socle::paris::HeureDuJour::MINUIT.dite());
         if corriges > 0 {
             let pluriel = if corriges > 1 { "s" } else { "" };
             out.corrigee_par_la_suivante = true;
             out.phrase = format!(
-                "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({} à minuit) — {} contrat{} corrigé{} par la DSN suivante",
+                "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({}) — {} contrat{} corrigé{} par la DSN suivante",
                 quand, jour, corriges, pluriel, pluriel
             );
             return Ok(out);
@@ -1988,15 +1989,15 @@ impl<'a> Moteur<'a> {
         if modifiee {
             if admis {
                 out.a_envoyer = true;
-                out.phrase = format!("Paie modifiée depuis la DSN du {} — annule-et-remplace à envoyer, jusqu'au {} à minuit", quand, jour);
+                out.phrase = format!("Paie modifiée depuis la DSN du {} — annule-et-remplace à envoyer, jusqu'au {}", quand, jour);
             } else {
                 out.phrase = format!(
-                    "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({} à minuit) — la correction part dans la DSN suivante",
+                    "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({}) — la correction part dans la DSN suivante",
                     quand, jour
                 );
             }
         } else if admis {
-            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {} à minuit", out.prochain_ordre, jour);
+            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {}", out.prochain_ordre, jour);
         }
         Ok(out)
     }

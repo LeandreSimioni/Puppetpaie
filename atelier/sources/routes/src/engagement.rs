@@ -430,7 +430,7 @@ fn la_dsn_qui_change(m: &mut crate::etapes::Moteur, ctx: &Contexte, mois: Mois) 
             format!("la correction dans la DSN {} (celle {}, déposée, ne se remplace plus)", de_mois_en_clair(porteur), de)
         }
         Some(DsnDeposee::Remplacee { limite }) => {
-            format!("un annule-et-remplace de la DSN {}, admis jusqu'au {} à minuit", de, limite.jj_mm_aaaa())
+            format!("un annule-et-remplace de la DSN {}, admis jusqu'au {} {}", de, limite.jj_mm_aaaa(), socle::paris::HeureDuJour::MINUIT.dite())
         }
         None => format!("la DSN {} à corriger", de),
     })

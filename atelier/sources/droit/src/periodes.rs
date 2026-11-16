@@ -253,5 +253,5 @@ pub fn part_du_mois(periode: &Periode, mois: Mois, regle: RegleDuMoisIncomplet, 
         true => Coefficient::UN,
         false => jours.rapport(jours_du_mois).ok_or_else(|| socle::refus!("L'horaire du salarié ne compte aucun jour travaillé dans le mois : la part du salaire ne se dit pas."))?,
     };
-    Ok(DecompteDuMois { fraction, jours, jours_du_mois, regle, jours_travailles: horaire.jours, feries_non_payes })
+    Ok(DecompteDuMois { fraction, jours, jours_du_mois, regle, jours_travailles: horaire.jours.clone(), feries_non_payes })
 }

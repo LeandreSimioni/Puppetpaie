@@ -25,9 +25,10 @@ pub fn jours_ouvrables(periode: &Periode, chomes: Option<&str>) -> R<Jours> {
 /// net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.txt`, « Le decompte et calcul des absences au reel ») :
 /// « Nombre d'heures d'absence = Nb d'heures travaillees/jours oeuvres x Nb de jours theoriquement oeuvres sur la
 /// periode ».
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JoursTravailles {
-    jours: [bool; 7],
+    /// Les jours de la semaine travailles, dans l'ordre de la semaine, chacun une fois ; jamais vide.
+    jours: Vec<JourDeLaSemaine>,
 }
 
 impl JoursTravailles {
@@ -54,11 +55,10 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
                 "jours_travailles",
             ));
         };
-        let mut jours = [false; 7];
-        for j in liste {
-            jours[*j as usize] = true;
-        }
-        if !jours.iter().any(|x| *x) {
+        let mut jours = liste.clone();
+        jours.sort();
+        jours.dedup();
+        if jours.is_empty() {
             return Err(socle::refus!(
                 "Fiche de {} : « Jours travaillés » ne coche aucun jour. Les heures du mois se comptent sur les jours que \
 l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
@@ -70,12 +70,7 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
 
     /// Le jour `j` est-il travaille ?
     pub fn travaille(&self, j: &Jour) -> bool {
-        self.jours[j.jour_de_la_semaine() as usize]
-    }
-
-    /// Combien de jours par semaine.
-    pub fn par_semaine(&self) -> i64 {
-        self.jours.iter().filter(|x| **x).count() as i64
+        self.jours.contains(&j.jour_de_la_semaine())
     }
 
     /// LES JOURS TRAVAILLES entre deux dates, bornes incluses, jours feries compris -- les jours que l'horaire programme
@@ -89,16 +84,17 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
 
     /// Les jours, en mots : « du lundi au vendredi » pour une suite, « le lundi, le mardi et le jeudi » sinon.
     pub fn en_mots(&self) -> String {
-        let rangs: Vec<usize> = (0..7).filter(|i| self.jours[*i]).collect();
-        let suite = rangs.windows(2).all(|w| w[1] == w[0] + 1);
-        let nom = |i: usize| JourDeLaSemaine::TOUS[i].nom();
-        match rangs.as_slice() {
-            [seul] => format!("le {}", nom(*seul)),
-            [premier, .., dernier] if suite => {
-                format!("du {} au {}", nom(*premier), nom(*dernier))
+        // Une suite : chaque jour de la semaine entre le premier et le dernier est travaille.
+        let suite = |premier: &JourDeLaSemaine, dernier: &JourDeLaSemaine| {
+            JourDeLaSemaine::TOUS.iter().filter(|j| *j >= premier && *j <= dernier).count() == self.jours.len()
+        };
+        match self.jours.as_slice() {
+            [seul] => format!("le {}", seul.nom()),
+            [premier, .., dernier] if suite(premier, dernier) => {
+                format!("du {} au {}", premier.nom(), dernier.nom())
             }
             _ => {
-                let noms: Vec<String> = rangs.iter().map(|i| format!("le {}", nom(*i))).collect();
+                let noms: Vec<String> = self.jours.iter().map(|j| format!("le {}", j.nom())).collect();
                 let (dernier, tete) = noms.split_last().expect("au moins un jour");
                 format!("{} et {}", tete.join(", "), dernier)
             }
@@ -136,7 +132,7 @@ pub fn feries_non_payes(
 /// pour un temps plein sur cinq jours. Fiche DSN 2640, « Nb d'heures travaillees/jours oeuvres ». INFERENCE NOMMEE :
 /// la duree se repartit egalement entre les jours travailles (la fiche ne dit pas les heures de chaque jour).
 pub fn heures_par_jour(quotite: Heures, jours: &JoursTravailles) -> HeuresParUnite {
-    quotite.fois(12).reparties_sur(52).au_centieme().par_jour(jours.jours.iter().filter(|x| **x).count())
+    quotite.fois(12).reparties_sur(52).au_centieme().par_jour(jours.jours.len())
 }
 
 /// L'indemnite de conges : le dixieme, le maintien, et celui qui gagne.
