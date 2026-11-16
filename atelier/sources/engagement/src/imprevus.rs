@@ -878,12 +878,11 @@ nomme cette absence. Rien n'est calcule.",
                     libelle_du_motif(&motif)
                 ), "arrets-base.json"));
             };
-            lignes.extend(retenue()?.map(|(quantite, taux)| {
-                crate::LignePaie::RetenueArret(crate::ligne::RetenueArret {
-                    rubrique,
-                    paiement: crate::ligne::PaiementDeLigne::Heures(quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux)),
-                })
-            }));
+            if let Some((quantite, taux)) = retenue()? {
+                let unite = droit::catalogue::rubrique(&ctx.racine, &rubrique, &mois.dernier_jour())?.unite;
+                let paiement = crate::ligne::PaiementDeLigne::en_heures(&rubrique, unite, quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux))?;
+                lignes.push(crate::LignePaie::RetenueArret(crate::ligne::RetenueArret { rubrique, paiement }));
+            }
             absents += jours;
             avert.push(info(format!(
                 "{} : arrêt de travail ({}) du {} au {} : {} ; la DSN de chaque mois qu'il traverse le déclare.",
@@ -909,9 +908,11 @@ nomme cette absence. Rien n'est calcule.",
                     motif.texte()
                 )));
             } else {
-                lignes.extend(retenue()?.map(|(quantite, taux)| {
-                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, crate::ligne::PaiementDeLigne::Heures(quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux)))
-                }));
+                if let Some((quantite, taux)) = retenue()? {
+                    let unite = droit::catalogue::rubrique(&ctx.racine, &ABSENCE_NON_REMUNEREE, &mois.dernier_jour())?.unite;
+                    let paiement = crate::ligne::PaiementDeLigne::en_heures(&ABSENCE_NON_REMUNEREE, unite, quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux))?;
+                    lignes.push(crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, paiement));
+                }
                 absents += jours;
                 avert.push(info(format!(
                     "{} : absence ({}) du {} au {} : {} ; la DSN de chaque mois qu'elle traverse la déclare.",
@@ -924,7 +925,8 @@ nomme cette absence. Rien n'est calcule.",
             }
         }
     }
-    lignes.extend(crate::maintien::lignes(&maintien, mois, au));
+    let unite_du_maintien = droit::catalogue::rubrique(&ctx.racine, &crate::maintien::MAINTIEN_SALAIRE, &mois.dernier_jour())?.unite;
+    lignes.extend(crate::maintien::lignes(&maintien, mois, au, unite_du_maintien)?);
     avert.extend(maintien.avis);
     Ok((lignes, avert, absents))
 }

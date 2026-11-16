@@ -58,7 +58,7 @@ use droit::catalogue::CodeDeRubrique;
 /// piece d'un salarie au mois (`droit::catalogue::RubriqueDuMois::IjssNettes`).
 pub const IJ_BRUTES: CodeDeRubrique = CodeDeRubrique::du_moteur("ijss_brutes");
 /// La rubrique du maintien de salaire pendant l'arret.
-const MAINTIEN_SALAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("maintien_salaire");
+pub(crate) const MAINTIEN_SALAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("maintien_salaire");
 /// Ce que dit le refus d'un mois dont les indemnites journalieres manquent : une saisie a finir (`saisie_incomplete`).
 pub const IJ_A_DIRE: &str = ", à dire sur l'arrêt (« Indemnités journalières »)";
 
@@ -678,8 +678,9 @@ fn net_de_csg_crds(brute: MontantUnitaire, csg: Taux, crds: Taux) -> MontantUnit
 /// Les lignes du mois : le maintien (le plus favorable des complements, plus les indemnites subrogees qu'il avance), et,
 /// subroge, la deduction des indemnites brutes et le reversement des nettes. Quand la convention garantit du net (ou
 /// plafonne au net), la ligne du maintien porte ce qu'il faut pour le reconstituer (`au_net`, sous la cle `maintien`).
-/// Le reversement des nettes est une rubrique d'un salarie au mois : seul son calcul, qui tient sa cle (`au`), la pose.
-pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<LignePaie> {
+/// Le reversement des nettes est une rubrique d'un salarie au mois : seul son calcul, qui tient sa cle (`au`), la pose. La
+/// ligne du maintien se paie en heures, dans `unite`, l'unite de sa rubrique (`MAINTIEN_SALAIRE`) au catalogue.
+pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois, unite: droit::catalogue::Unite) -> R<Vec<LignePaie>> {
     let mut out = Vec::new();
     let plancher = Montant::du_decimal(dmois.ij_subrogees_brutes).au_centime().decimal();
     // Le plus favorable de la loi et de la convention (L1226-1 fixe un minimum que la convention peut depasser) ; une
@@ -692,8 +693,8 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
     .decimal();
     let montant = direct + plancher;
     if montant > Decimal::ZERO || dmois.au_net.is_some() {
-        // La quantite de la ligne : sa porte.
-        let q = if dmois.heures > Heures::ZERO { dmois.heures.au_centieme() } else { Heures::UNE };
+        // La quantite de la ligne : ses heures d'absence, ou une.
+        let (q, taux) = sur_les_heures(Montant::du_decimal(montant), dmois.heures.au_centieme());
         // Une somme, pas des heures de travail : les heures de l'absence restent celles de sa retenue (S21.G00.53).
         let reconstitution = dmois.au_net.as_ref().map(|a| {
             Box::new(Reconstitution {
@@ -708,8 +709,8 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
                 plancher,
             })
         });
-        let taux = MontantUnitaire::du_decimal(div(montant, q.decimal()).normalize());
-        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, paiement: PaiementDeLigne::Heures(q, taux), reconstitution }));
+        let paiement = PaiementDeLigne::en_heures(&MAINTIEN_SALAIRE, unite, q, taux)?;
+        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, paiement, reconstitution }));
     }
     if dmois.ij_subrogees_jours > 0 {
         let j = Decimal::from(dmois.ij_subrogees_jours);
@@ -718,7 +719,16 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
         let nettes = Montant::du_decimal(dmois.ij_subrogees_nettes).au_centime().decimal();
         out.push(LignePaie::ij_nettes(au, Jours::du_decimal(j), taux(nettes), Montant::du_decimal(dmois.assiette_pas).au_centime()));
     }
-    out
+    Ok(out)
+}
+
+/// `montant` PAYE SUR `heures` heures d'absence, ou sur une seule quand il n'y en a pas : la quantite et le taux de la
+/// ligne du maintien (montant / heures = montant unitaire), sans zero inutile.
+fn sur_les_heures(montant: Montant, heures: Heures) -> (Heures, MontantUnitaire) {
+    match montant.par_heure(heures).filter(|_| heures > Heures::ZERO) {
+        Some(taux) => (heures, socle::grandeurs::sans_zero(taux)),
+        None => (Heures::UNE, socle::grandeurs::sans_zero(montant.pour_une_unite())),
+    }
 }
 
 /// LA LIGNE DU MAINTIEN GARANTI EN NET : ce qu'il faut pour le reconstituer (`au_net`) -- le mois, la garantie, le
@@ -869,10 +879,9 @@ pub fn avec_le_montant(lignes: &[LignePaie], montant: Decimal) -> Vec<LignePaie>
     lignes
         .iter()
         .map(|l| match l {
-            // La ligne du maintien se paie en heures (`lignes`) : ses heures d'absence, ou 1.
+            // La ligne du maintien se paie en heures (`lignes`) : ses heures d'absence, ou une.
             LignePaie::Maintien(Maintien { rubrique, paiement: PaiementDeLigne::Heures(q, _), reconstitution: Some(_) }) => {
-                let q = if *q > Heures::ZERO { *q } else { Heures::UNE };
-                let taux = MontantUnitaire::du_decimal(div(montant, q.decimal()).normalize());
+                let (q, taux) = sur_les_heures(Montant::du_decimal(montant), *q);
                 LignePaie::Maintien(Maintien { rubrique: rubrique.clone(), paiement: PaiementDeLigne::Heures(q, taux), reconstitution: None })
             }
             autre => autre.clone(),
@@ -929,7 +938,7 @@ mod tests {
                 avis: Vec::new(),
             };
             let au =droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
-            let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);
+            let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au, droit::catalogue::Unite::Heure).unwrap();
             l[0].taux().unwrap().decimal()
         };
         assert_eq!(montant(500, 300, 0), Decimal::from(500));

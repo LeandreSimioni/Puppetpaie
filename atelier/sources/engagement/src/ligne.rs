@@ -511,19 +511,76 @@ macro_rules! chaque_quantite_devient {
 /// LA QUANTITE D'UNE LIGNE DE PAIE, dans l'unite que sa rubrique dit (`droit::catalogue::Unite`) : des heures, des
 /// cachets, des jours, des services, des semaines, la part du mois payee (1 pour un mois entier), le compte d'un forfait
 /// (3 repas), ou la base en euros d'une ligne en pourcentage. Elle s'ecrit par sa forme : sa grandeur, puis son nombre en
-/// texte (`{"cachets": "2"}`) ; une charge peut ecrire son nombre en nombre (`{"cachets": 2}`). Une ligne saisie la
-/// range une fois dans l'unite de sa rubrique (`LigneDonnee::ranger`). Quantite x montant unitaire = montant (`fois`).
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
+/// texte (`{"cachets": "2"}`) ; une charge peut ecrire son nombre en nombre (`{"cachets": 2}`). La cle de sa forme est
+/// celle de son unite (`cle`), dite la seulement. Une ligne saisie la range une fois dans l'unite de sa rubrique
+/// (`LigneDonnee::ranger`). Quantite x montant unitaire = montant (`fois`).
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QuantiteDeLigne {
-    Heures(#[serde(with = "texte")] Heures),
-    Cachets(#[serde(with = "texte")] socle::grandeurs::Cachets),
-    Jours(#[serde(with = "texte")] Jours),
-    Services(#[serde(with = "texte")] socle::grandeurs::Services),
-    Semaines(#[serde(with = "texte")] socle::grandeurs::Semaines),
-    PartDuMois(#[serde(with = "texte")] socle::grandeurs::Coefficient),
-    Unites(#[serde(with = "texte")] socle::grandeurs::Unites),
-    Base(#[serde(with = "texte")] Montant),
+    Heures(Heures),
+    Cachets(socle::grandeurs::Cachets),
+    Jours(Jours),
+    Services(socle::grandeurs::Services),
+    Semaines(socle::grandeurs::Semaines),
+    PartDuMois(socle::grandeurs::Coefficient),
+    Unites(socle::grandeurs::Unites),
+    Base(Montant),
+}
+
+/// Une grandeur ecrite en texte (`texte`), la valeur de la forme d'une quantite.
+struct EnTexte<G>(G);
+
+impl<G: socle::grandeurs::Grandeur> Serialize for EnTexte<G> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        texte::serialize(&self.0, s)
+    }
+}
+
+impl<'de, G: socle::grandeurs::Grandeur> Deserialize<'de> for EnTexte<G> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<EnTexte<G>, D::Error> {
+        texte::deserialize(d).map(EnTexte)
+    }
+}
+
+impl Serialize for QuantiteDeLigne {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut m = s.serialize_map(Some(1))?;
+        chaque_quantite!(self, g => m.serialize_entry(QuantiteDeLigne::cle(self.unite()), &EnTexte(*g)))?;
+        m.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for QuantiteDeLigne {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<QuantiteDeLigne, D::Error> {
+        struct Visiteur;
+        impl<'de> serde::de::Visitor<'de> for Visiteur {
+            type Value = QuantiteDeLigne;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("une quantite dans son unite : {\"cachets\": \"2\"}")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<QuantiteDeLigne, A::Error> {
+                use QuantiteDeLigne as Q;
+                let Some(cle) = m.next_key::<String>()? else { return Err(serde::de::Error::custom("une quantite dit son unite")) };
+                let cle_de = QuantiteDeLigne::cle;
+                let q = match cle.as_str() {
+                    c if c == cle_de(Unite::Heure) => Q::Heures(m.next_value::<EnTexte<_>>()?.0),
+                    c if c == cle_de(Unite::Cachet) => Q::Cachets(m.next_value::<EnTexte<_>>()?.0),
+                    c if c == cle_de(Unite::Jour) => Q::Jours(m.next_value::<EnTexte<_>>()?.0),
+                    c if c == cle_de(Unite::Service) => Q::Services(m.next_value::<EnTexte<_>>()?.0),
+                    c if c == cle_de(Unite::Semaine) => Q::Semaines(m.next_value::<EnTexte<_>>()?.0),
+                    c if c == cle_de(Unite::Mois) => Q::PartDuMois(m.next_value::<EnTexte<_>>()?.0),
+                    c if c == cle_de(Unite::Forfait) => Q::Unites(m.next_value::<EnTexte<_>>()?.0),
+                    c if c == cle_de(Unite::Pourcentage) => Q::Base(m.next_value::<EnTexte<_>>()?.0),
+                    c => return Err(serde::de::Error::custom(format!("{} n'est pas l'unite d'une quantite", socle::ecriture::json_en_ligne(c)))),
+                };
+                if m.next_key::<String>()?.is_some() {
+                    return Err(serde::de::Error::custom("une quantite dit une seule unite"));
+                }
+                Ok(q)
+            }
+        }
+        d.deserialize_map(Visiteur)
+    }
 }
 
 impl QuantiteDeLigne {
@@ -694,6 +751,23 @@ impl QuantiteDeLigne {
         }
     }
 
+    /// N'EST-ELLE PAS PLUS QUE `o`, dans la meme grandeur (une ligne coupee, `crate::lignes_coupees_a_la_fin`) ? Deux
+    /// grandeurs ne se comparent pas : non.
+    pub fn pas_plus_que(self, o: QuantiteDeLigne) -> bool {
+        use QuantiteDeLigne as Q;
+        match (self, o) {
+            (Q::Heures(a), Q::Heures(b)) => a <= b,
+            (Q::Cachets(a), Q::Cachets(b)) => a <= b,
+            (Q::Jours(a), Q::Jours(b)) => a <= b,
+            (Q::Services(a), Q::Services(b)) => a <= b,
+            (Q::Semaines(a), Q::Semaines(b)) => a <= b,
+            (Q::PartDuMois(a), Q::PartDuMois(b)) => a <= b,
+            (Q::Unites(a), Q::Unites(b)) => a <= b,
+            (Q::Base(a), Q::Base(b)) => a <= b,
+            _ => false,
+        }
+    }
+
     /// Deux quantites de la meme grandeur ajoutees (deux lignes de la meme rubrique) ; `None` : deux grandeurs, qui ne
     /// s'ajoutent pas.
     pub fn plus(self, o: QuantiteDeLigne) -> Option<QuantiteDeLigne> {
@@ -805,6 +879,16 @@ impl PaiementDeLigne {
             Unite::Mois => P::PartDuMois(une(), u),
             Unite::Forfait => P::Unites(une(), u),
             Unite::Pourcentage => P::Base(montant, Coefficient::UN),
+        }
+    }
+
+    /// DES HEURES `h` A `u` L'HEURE, dans l'unite `unite` de leur rubrique (une ligne que le moteur compose d'heures : la
+    /// retenue d'une absence, le maintien, les heures en plus) ; refus nomme : sa rubrique (`rubrique`) ne compte pas en
+    /// heures.
+    pub fn en_heures(rubrique: &CodeDeRubrique, unite: Unite, h: Heures, u: MontantUnitaire) -> R<PaiementDeLigne> {
+        match unite {
+            Unite::Heure => Ok(PaiementDeLigne::Heures(h, u)),
+            _ => Err(socle::refus!("la rubrique {} compte en {}, pas en heures : le signaler au développeur", rubrique, unite)),
         }
     }
 
@@ -1047,27 +1131,25 @@ impl LignePaie {
         }
     }
 
-    /// CE QU'ELLE PAIE, dans l'unite `unite` de sa rubrique : ce que le moteur a compose, ce que l'import a pose en la
-    /// rattachant, une ligne au montant son montant (`PaiementDeLigne::une_fois`), toute autre sa quantite a son taux
-    /// (`PaiementDeLigne::de`). Une case qui n'est pas remplie se refuse en se nommant ; une ligne qui n'est pas dans
-    /// l'unite de sa rubrique (un fichier ecrit a la main, une rubrique qui a change d'unite) aussi.
+    /// CE QU'ELLE PAIE, dans l'unite `unite` de sa rubrique : ce que le moteur a compose (dans l'unite de sa rubrique), ce
+    /// que l'import a pose en la rattachant, une ligne au montant son montant (`PaiementDeLigne::une_fois`), toute autre sa
+    /// quantite (rangee dans l'unite de sa rubrique a la porte) a son taux (`PaiementDeLigne::de`). Une case qui n'est pas
+    /// remplie se refuse en se nommant ; une quantite et un taux qui ne vont pas ensemble (un fichier ecrit a la main)
+    /// aussi.
     pub fn paiement(&self, unite: Unite) -> R<PaiementDeLigne> {
-        let p = match self {
-            LignePaie::Importee(l) => return l.paiement.ok_or_else(|| socle::fichiers::absent("paiement")),
+        match self {
+            LignePaie::Importee(l) => l.paiement.ok_or_else(|| socle::fichiers::absent("paiement")),
             LignePaie::Montant(AuMontant { montant, .. }) | LignePaie::AvantageEnNature(AvantageEnNature { montant, .. }) => {
-                return Ok(PaiementDeLigne::une_fois(unite, montant.ok_or_else(|| socle::fichiers::absent("montant"))?));
+                Ok(PaiementDeLigne::une_fois(unite, montant.ok_or_else(|| socle::fichiers::absent("montant"))?))
             }
-            LignePaie::Composee(Composee { paiement, .. }) | LignePaie::RetenueArret(RetenueArret { paiement, .. }) | LignePaie::Maintien(Maintien { paiement, .. }) => Some(*paiement),
-            LignePaie::IndemniteJournaliere(l) => Some(PaiementDeLigne::Jours(l.jours, l.taux)),
+            LignePaie::Composee(Composee { paiement, .. }) | LignePaie::RetenueArret(RetenueArret { paiement, .. }) | LignePaie::Maintien(Maintien { paiement, .. }) => Ok(*paiement),
+            LignePaie::IndemniteJournaliere(l) => Ok(PaiementDeLigne::Jours(l.jours, l.taux)),
             _ => {
                 let quantite = self.quantite(unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
                 let taux = self.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
                 PaiementDeLigne::de(quantite, taux)
+                    .ok_or_else(|| socle::refus!("la ligne {} : sa quantité et son taux ne vont pas ensemble ({}) : le signaler au développeur", self.rubrique(), unite))
             }
-        };
-        match p {
-            Some(p) if p.unite() == unite => Ok(p),
-            _ => Err(socle::refus!("la ligne {} n'a pas la forme de sa rubrique ({}) : le signaler au développeur", self.rubrique(), unite)),
         }
     }
 
@@ -1078,22 +1160,6 @@ impl LignePaie {
             LignePaie::Importee(l) => Some(l.montant),
             _ => None,
         }
-    }
-
-    /// Le taux de la ligne devient `taux` (le tarif de la convention, la limite d'un frais) ; une ligne dont le taux n'est
-    /// pas une case n'en change pas : refus.
-    pub fn poser_taux(&mut self, taux: MontantUnitaire) -> R<()> {
-        match self {
-            LignePaie::Unites(l) => l.taux = Some(taux),
-            LignePaie::UnitesEtHeures(l) => l.taux = Some(taux),
-            LignePaie::Frais(l) => l.taux = Some(taux),
-            LignePaie::Composee(l) => match l.paiement.avec_taux(taux) {
-                Some(p) => l.paiement = p,
-                None => return Err(socle::refus!("la ligne {} paie une part de sa base : elle ne prend pas de taux. Le signaler au développeur.", l.rubrique)),
-            },
-            _ => return Err(socle::refus!("la ligne {} ne prend pas de taux : le signaler au développeur", self.rubrique())),
-        }
-        Ok(())
     }
 
     /// SES HEURES PAR UNITE, quand elle en dit (`QuantiteDeLigne::heures`) ; aucune pour une indemnite journaliere et le

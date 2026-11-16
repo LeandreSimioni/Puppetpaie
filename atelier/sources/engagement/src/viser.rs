@@ -111,16 +111,17 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[RangDan
                 noms.join(", ")
             )));
         }
-        if let Some(l) = sans_taux.first().and_then(|(k, _)| e.lignes.as_mut().and_then(|ls| ls.get_mut(*k))) {
-            l.poser_taux(Montant::euros(1).pour_une_unite()).map_err(RefusVisee::Refus)?;
+        // Une ligne sans taux a sa case du taux (`taux_saisi`).
+        if let Some(case) = sans_taux.first().and_then(|(k, _)| e.lignes.as_mut().and_then(|ls| ls.get_mut(*k))).and_then(LignePaie::taux_saisi_mut) {
+            *case = Some(Montant::euros(1).pour_une_unite());
         }
     }
     // Les AUTRES blocs du mois repartent comme la page les enverrait d'ordinaire : sans leurs lignes incompletes.
     for (i, e) in RangDansLeMois::de_chacun(data.engagements.iter_mut()) {
         let Some(ls) = e.lignes.as_mut() else { continue };
         if rangs.contains(&i) {
-            for l in ls.iter_mut().filter(|l| taux_vide(l)) {
-                l.poser_taux(MontantUnitaire::ZERO).map_err(RefusVisee::Refus)?;
+            for case in ls.iter_mut().filter_map(LignePaie::taux_saisi_mut).filter(|c| c.is_none()) {
+                *case = Some(MontantUnitaire::ZERO);
             }
         } else {
             ls.retain(|l| !taux_vide(l));

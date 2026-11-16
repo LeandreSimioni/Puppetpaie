@@ -34,7 +34,7 @@ use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::{courte, Coefficient, Heures, Jours, Montant, MontantUnitaire};
-use socle::num::{add, court, div, mul, Decimal};
+use socle::num::{add, div, mul, Decimal};
 use droit::conges::{jours_ouvrables, IndemniteDesJours};
 use droit::permanents::{duree_du_conge, jours_acquis, periode_de_reference, plafonner, Acquisition};
 use droit::catalogue::CodeDeRubrique;
@@ -1150,8 +1150,10 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let pourcentage = Decimal::from(pa.pourcentage);
         let reference = Heures::du_decimal(Decimal::from_str("151.67").unwrap());
         let base = Montant::du_decimal(base_conv).prorata(quotite, reference).au_centime().decimal();
-        let montant = Montant::du_decimal(div(mul(base, pourcentage), Decimal::ONE_HUNDRED)).au_centime().decimal();
-        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, PaiementDeLigne::Unites(socle::grandeurs::Unites::UNE, MontantUnitaire::du_decimal(court(montant)))));
+        let montant = Montant::du_decimal(div(mul(base, pourcentage), Decimal::ONE_HUNDRED)).au_centime();
+        // Une prime se paie en une fois, dans l'unite de sa rubrique.
+        let unite = droit::catalogue::rubrique(&ctx.racine, &clauses::RUBRIQUE_PRIME_ANCIENNETE, &fin_mois)?.unite;
+        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, PaiementDeLigne::une_fois(unite, socle::grandeurs::courte(montant))));
         let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite)) } else { String::new() };
         avert.push(info(format!(
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \
@@ -1161,7 +1163,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             pa.annees.nombre_d_ans_revolus()?,
             euros(Montant::du_decimal(base_conv)),
             proratise,
-            euros(Montant::du_decimal(montant)),
+            euros(montant),
             pa.article
         )));
         // Ce que les suspensions ont retire des annees de presence se dit avec la prime.

@@ -1280,16 +1280,15 @@ fn lignes_au_tarif(ctx: &Contexte, lignes: &[LignePaie], mois: Mois) -> R<Option
     let mut neuves = lignes.to_vec();
     let mut change = false;
     for l in neuves.iter_mut() {
-        // Une ligne dont le taux est une case (`Unites`, `UnitesEtHeures`, `Frais`), et vide.
-        if !matches!(l, LignePaie::Unites(_) | LignePaie::UnitesEtHeures(_) | LignePaie::Frais(_)) || l.taux().is_some() {
-            continue;
-        }
         let jour = match l.dates().first() {
             Some(j) => j.jour(),
             None => mois.premier_jour(),
         };
-        if let Some(t) = tarif_conventionnel(ctx, l.rubrique(), &jour)? {
-            l.poser_taux(t)?;
+        let rubrique = l.rubrique().clone();
+        // Une ligne dont le taux est une case (`LignePaie::taux_saisi_mut`), et vide.
+        let Some(case @ None) = l.taux_saisi_mut() else { continue };
+        if let Some(t) = tarif_conventionnel(ctx, &rubrique, &jour)? {
+            *case = Some(t);
             change = true;
         }
     }
@@ -2203,7 +2202,17 @@ pub(crate) fn lignes_coupees_a_la_fin(partie: &[LignePaie], presentes: &[LignePa
         attendues.push((l.avec_les_jours(gardes, l.planning().to_vec()), coupee));
     }
     presentes.len() == attendues.len()
-        && presentes.iter().zip(&attendues).all(|(p, (a, coupee))| if *coupee { p.sans_quantite() == a.sans_quantite() && quantite_datee(p) <= quantite_datee(a) } else { p == a })
+        && presentes.iter().zip(&attendues).all(|(p, (a, coupee))| if *coupee { p.sans_quantite() == a.sans_quantite() && pas_plus(quantite_datee(p), quantite_datee(a)) } else { p == a })
+}
+
+/// La quantite `p` d'une ligne coupee ne croit pas depuis `a` : une case vide n'est pas plus qu'aucune ; une quantite
+/// dite, pas plus que celle d'avant dans sa grandeur (`QuantiteDeLigne::pas_plus_que`).
+fn pas_plus(p: Option<ligne::QuantiteDeLigne>, a: Option<ligne::QuantiteDeLigne>) -> bool {
+    match (p, a) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(p), Some(a)) => p.pas_plus_que(a),
+    }
 }
 
 /// La quantite d'une ligne qui a des jours (une ligne saisie, ou composee), dans l'unite de sa rubrique ; `None` : une

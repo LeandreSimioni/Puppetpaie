@@ -39,9 +39,11 @@ fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, paiement: PaiementDeLigne)
     LignePaie::composee(rubrique.clone(), paiement.courte())
 }
 
-/// La ligne d'une indemnite de `rubrique` (au forfait) qui verse `montant` en une fois.
-fn ligne_unique(rubrique: &droit::catalogue::CodeDeRubrique, montant: Montant) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), PaiementDeLigne::Unites(socle::grandeurs::Unites::UNE, courte(montant.pour_une_unite())))
+/// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois, dans l'unite de sa rubrique
+/// (`PaiementDeLigne::une_fois`).
+fn ligne_unique(ctx: &Contexte, rubrique: &droit::catalogue::CodeDeRubrique, montant: Montant) -> R<LignePaie> {
+    let unite = droit::catalogue::rubrique(&ctx.racine, rubrique, &ctx.lue_au)?.unite;
+    Ok(LignePaie::composee(rubrique.clone(), PaiementDeLigne::une_fois(unite, courte(montant))))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite (son ecriture gardee).
@@ -999,10 +1001,10 @@ fn indemnite_de_rupture(
     let part_legale = plus_petit(montant, m_legal);
     let supplement = montant - part_legale;
     if part_legale > Montant::ZERO {
-        stc.lignes.push(ligne_unique(&rubrique, part_legale));
+        stc.lignes.push(ligne_unique(ctx, &rubrique, part_legale)?);
     }
     if supplement > Montant::ZERO {
-        stc.lignes.push(ligne_unique(&droit::catalogue::CodeDeRubrique::lire(&supplement_rub)?, supplement));
+        stc.lignes.push(ligne_unique(ctx, &droit::catalogue::CodeDeRubrique::lire(&supplement_rub)?, supplement)?);
     }
     // L137-12 : une contribution patronale sur la part exoneree, due et non calculee.
     let regles = permanents::regles()?;
@@ -1202,11 +1204,11 @@ fn indemnite_de_licenciement(
     verifier_les_plafonds(ctx, mois, montant, "licenciement", &qui)?;
     let part_legale = plus_petit(montant, m_legal);
     if part_legale > Montant::ZERO {
-        stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_licenciement.rubrique, part_legale));
+        stc.lignes.push(ligne_unique(ctx, &permanents::regles()?.indemnite_licenciement.rubrique, part_legale)?);
     }
     let supplement = montant - part_legale;
     if supplement > Montant::ZERO {
-        stc.lignes.push(ligne_unique(&const { droit::catalogue::CodeDeRubrique::du_moteur("indemnite_licenciement_conventionnelle") }, supplement));
+        stc.lignes.push(ligne_unique(ctx, &const { droit::catalogue::CodeDeRubrique::du_moteur("indemnite_licenciement_conventionnelle") }, supplement)?);
     }
     stc.avertissements.push(info(format!(
         "{} : indemnité de licenciement {} ({} mois d'ancienneté, salaire \
