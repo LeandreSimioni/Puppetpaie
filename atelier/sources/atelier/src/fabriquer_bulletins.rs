@@ -614,9 +614,10 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
         use engagement::ligne::QuantiteDeLigne as Q;
         let (mut cachets, mut heures) = (Cachets::ZERO, Heures::ZERO);
         match (Q::imprimee(r.unite, l.quantite), r.heures_forfait.or(connu.heures)) {
-            (Q::Cachets(c), _) => cachets = c,
-            (q, Some(u)) => heures = q.fois(u).ok_or_else(|| refus!("{} : « {} » est une ligne en pourcentage, sans heures par unité", ou, connu.libelle))?,
-            (Q::Heures(h), None) => heures = h,
+            (Some(Q::Cachets(c)), _) => cachets = c,
+            (Some(q), Some(u)) => heures = q.fois(u),
+            (None, Some(_)) => return Err(refus!("{} : « {} » est une ligne en pourcentage, sans heures par unité", ou, connu.libelle)),
+            (Some(Q::Heures(h)), None) => heures = h,
             (_, None) => {}
         }
         Ok(Ligne { libelle: connu.libelle.clone(), quantite: q, taux, montant: Montant::du_decimal(q * taux).au_centime().decimal(), cachets, heures })

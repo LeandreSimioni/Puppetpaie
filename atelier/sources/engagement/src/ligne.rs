@@ -375,10 +375,18 @@ mod texte_option {
 /// LA QUANTITE ET LE TAUX D'UNE LIGNE EN TEXTE, sans leur unite, son echelle gardee (`socle::grandeurs::ecrit::texte`) :
 /// une reponse qui les donne a cote de leur rubrique (l'ecran du mois). Chaque grandeur s'ecrit par l'ecriture du socle.
 pub mod en_texte {
-    use super::{QuantiteDeLigne, TauxDeLigne};
+    use super::{PaiementDeLigne, QuantiteDeLigne, TauxDeLigne};
     use socle::grandeurs::ecrit::texte::serialize as ecrit;
 
-    pub fn quantite<S: serde::Serializer>(q: &QuantiteDeLigne, s: S) -> Result<S::Ok, S::Error> {
+    /// La quantite que le paiement `p` paie ; celle d'une ligne en pourcentage, sa base.
+    pub fn quantite<S: serde::Serializer>(p: &PaiementDeLigne, s: S) -> Result<S::Ok, S::Error> {
+        match p.quantite_ou_base() {
+            Ok(q) => la_quantite(&q, s),
+            Err(b) => ecrit(&b, s),
+        }
+    }
+
+    fn la_quantite<S: serde::Serializer>(q: &QuantiteDeLigne, s: S) -> Result<S::Ok, S::Error> {
         match q {
             QuantiteDeLigne::Heures(g) => ecrit(g, s),
             QuantiteDeLigne::Cachets(g) => ecrit(g, s),
@@ -387,7 +395,6 @@ pub mod en_texte {
             QuantiteDeLigne::Semaines(g) => ecrit(g, s),
             QuantiteDeLigne::PartDuMois(g) => ecrit(g, s),
             QuantiteDeLigne::Unites(g) => ecrit(g, s),
-            QuantiteDeLigne::Base(g) => ecrit(g, s),
         }
     }
 
@@ -410,7 +417,6 @@ macro_rules! chaque_quantite {
             QuantiteDeLigne::Semaines($g) => $e,
             QuantiteDeLigne::PartDuMois($g) => $e,
             QuantiteDeLigne::Unites($g) => $e,
-            QuantiteDeLigne::Base($g) => $e,
         }
     };
 }
@@ -427,17 +433,16 @@ macro_rules! chaque_quantite_devient {
             QuantiteDeLigne::Semaines($g) => QuantiteDeLigne::Semaines($e),
             QuantiteDeLigne::PartDuMois($g) => QuantiteDeLigne::PartDuMois($e),
             QuantiteDeLigne::Unites($g) => QuantiteDeLigne::Unites($e),
-            QuantiteDeLigne::Base($g) => QuantiteDeLigne::Base($e),
         }
     };
 }
 
 /// LA QUANTITE D'UNE LIGNE DE PAIE, dans l'unite que sa rubrique dit (`droit::catalogue::Unite`) : des heures, des
 /// cachets, des jours, des services, des semaines, la part du mois payee (1 pour un mois entier), le compte d'un forfait
-/// (3 repas), ou la base en euros d'une ligne en pourcentage. Elle s'ecrit par sa forme : sa grandeur, puis son nombre en
-/// texte (`{"cachets": "2"}`) ; une charge peut ecrire son nombre en nombre (`{"cachets": 2}`). La cle de sa forme est
-/// celle de son unite (`cle`), dite la seulement. Une ligne saisie la range une fois dans l'unite de sa rubrique
-/// (`LigneDonnee::ranger`). Quantite x montant unitaire = montant (`fois`).
+/// (3 repas). Une ligne en pourcentage n'en a pas : elle paie une part de sa base (`PaiementDeLigne::Base`). Elle s'ecrit
+/// par sa forme : sa grandeur, puis son nombre en texte (`{"cachets": "2"}`) ; une charge peut ecrire son nombre en
+/// nombre (`{"cachets": 2}`). La cle de sa forme est celle de son unite (`cle`), dite la seulement. Une ligne saisie la
+/// range une fois dans l'unite de sa rubrique (`LigneDonnee::ranger`). Quantite x montant unitaire = montant (`fois`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QuantiteDeLigne {
     Heures(Heures),
@@ -447,7 +452,6 @@ pub enum QuantiteDeLigne {
     Semaines(socle::grandeurs::Semaines),
     PartDuMois(socle::grandeurs::Coefficient),
     Unites(socle::grandeurs::Unites),
-    Base(Montant),
 }
 
 /// Une grandeur ecrite en texte (`texte`), la valeur de la forme d'une quantite.
@@ -469,7 +473,7 @@ impl Serialize for QuantiteDeLigne {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
         let mut m = s.serialize_map(Some(1))?;
-        chaque_quantite!(self, g => m.serialize_entry(QuantiteDeLigne::cle(self.unite()), &EnTexte(*g)))?;
+        chaque_quantite!(self, g => m.serialize_entry(self.cle_ecrite(), &EnTexte(*g)))?;
         m.end()
     }
 }
@@ -486,7 +490,7 @@ impl<'de> Deserialize<'de> for QuantiteDeLigne {
                 use QuantiteDeLigne as Q;
                 let Some(cle) = m.next_key::<String>()? else { return Err(serde::de::Error::custom("une quantite dit son unite")) };
                 let cle_de = QuantiteDeLigne::cle;
-                let q = match cle.as_str() {
+                let q = match Some(cle.as_str()) {
                     c if c == cle_de(Unite::Heure) => Q::Heures(m.next_value::<EnTexte<_>>()?.0),
                     c if c == cle_de(Unite::Cachet) => Q::Cachets(m.next_value::<EnTexte<_>>()?.0),
                     c if c == cle_de(Unite::Jour) => Q::Jours(m.next_value::<EnTexte<_>>()?.0),
@@ -494,8 +498,7 @@ impl<'de> Deserialize<'de> for QuantiteDeLigne {
                     c if c == cle_de(Unite::Semaine) => Q::Semaines(m.next_value::<EnTexte<_>>()?.0),
                     c if c == cle_de(Unite::Mois) => Q::PartDuMois(m.next_value::<EnTexte<_>>()?.0),
                     c if c == cle_de(Unite::Forfait) => Q::Unites(m.next_value::<EnTexte<_>>()?.0),
-                    c if c == cle_de(Unite::Pourcentage) => Q::Base(m.next_value::<EnTexte<_>>()?.0),
-                    c => return Err(serde::de::Error::custom(format!("{} n'est pas l'unite d'une quantite", socle::ecriture::json_en_ligne(c)))),
+                    _ => return Err(serde::de::Error::custom(format!("{} n'est pas l'unite d'une quantite", socle::ecriture::json_en_ligne(&cle)))),
                 };
                 if m.next_key::<String>()?.is_some() {
                     return Err(serde::de::Error::custom("une quantite dit une seule unite"));
@@ -512,9 +515,10 @@ impl QuantiteDeLigne {
     pub const UNE_FOIS: QuantiteDeLigne = QuantiteDeLigne::Unites(socle::grandeurs::Unites::UNE);
 
     /// LA QUANTITE QU'UNE LIGNE D'UN BULLETIN IMPRIME (`q`, un nombre lu de la page), dans l'unite `unite` de la rubrique a
-    /// laquelle l'import la rattache : la porte de sa lecture.
-    pub fn imprimee(unite: Unite, q: Nombre) -> QuantiteDeLigne {
-        match unite {
+    /// laquelle l'import la rattache : la porte de sa lecture ; `None` : le pourcentage, dont le nombre imprime est une
+    /// base (`PaiementDeLigne::imprime`).
+    pub fn imprimee(unite: Unite, q: Nombre) -> Option<QuantiteDeLigne> {
+        Some(match unite {
             Unite::Heure => QuantiteDeLigne::Heures(q.grandeur()),
             Unite::Cachet => QuantiteDeLigne::Cachets(q.grandeur()),
             Unite::Jour => QuantiteDeLigne::Jours(q.grandeur()),
@@ -522,14 +526,15 @@ impl QuantiteDeLigne {
             Unite::Semaine => QuantiteDeLigne::Semaines(q.grandeur()),
             Unite::Mois => QuantiteDeLigne::PartDuMois(q.grandeur()),
             Unite::Forfait => QuantiteDeLigne::Unites(q.grandeur()),
-            Unite::Pourcentage => QuantiteDeLigne::Base(q.grandeur()),
-        }
+            Unite::Pourcentage => return None,
+        })
     }
 
-    /// RIEN, dans l'unite `unite` (une ligne du planning dont aucune date ne compte la quantite, a completer).
-    pub fn nulle(unite: Unite) -> QuantiteDeLigne {
+    /// RIEN, dans l'unite `unite` (une ligne du planning dont aucune date ne compte la quantite, a completer) ; `None` :
+    /// le pourcentage, qui n'a pas de quantite.
+    pub fn nulle(unite: Unite) -> Option<QuantiteDeLigne> {
         use socle::grandeurs::nulle;
-        match unite {
+        Some(match unite {
             Unite::Heure => QuantiteDeLigne::Heures(nulle()),
             Unite::Cachet => QuantiteDeLigne::Cachets(nulle()),
             Unite::Jour => QuantiteDeLigne::Jours(nulle()),
@@ -537,14 +542,15 @@ impl QuantiteDeLigne {
             Unite::Semaine => QuantiteDeLigne::Semaines(nulle()),
             Unite::Mois => QuantiteDeLigne::PartDuMois(nulle()),
             Unite::Forfait => QuantiteDeLigne::Unites(nulle()),
-            Unite::Pourcentage => QuantiteDeLigne::Base(nulle()),
-        }
+            Unite::Pourcentage => return None,
+        })
     }
 
-    /// UNE, dans l'unite `unite` : la quantite d'une ligne au montant (`PaiementDeLigne::une_fois`).
-    pub fn une(unite: Unite) -> QuantiteDeLigne {
+    /// UNE, dans l'unite `unite` : la quantite d'une ligne au montant (`PaiementDeLigne::une_fois`) ; `None` : le
+    /// pourcentage, qui n'a pas de quantite.
+    pub fn une(unite: Unite) -> Option<QuantiteDeLigne> {
         use socle::grandeurs::une;
-        match unite {
+        Some(match unite {
             Unite::Heure => QuantiteDeLigne::Heures(une()),
             Unite::Cachet => QuantiteDeLigne::Cachets(une()),
             Unite::Jour => QuantiteDeLigne::Jours(une()),
@@ -552,8 +558,8 @@ impl QuantiteDeLigne {
             Unite::Semaine => QuantiteDeLigne::Semaines(une()),
             Unite::Mois => QuantiteDeLigne::PartDuMois(une()),
             Unite::Forfait => QuantiteDeLigne::Unites(une()),
-            Unite::Pourcentage => QuantiteDeLigne::Base(une()),
-        }
+            Unite::Pourcentage => return None,
+        })
     }
 
     /// L'UNITE DE SA RUBRIQUE, que sa grandeur dit.
@@ -566,23 +572,27 @@ impl QuantiteDeLigne {
             QuantiteDeLigne::Semaines(_) => Unite::Semaine,
             QuantiteDeLigne::PartDuMois(_) => Unite::Mois,
             QuantiteDeLigne::Unites(_) => Unite::Forfait,
-            QuantiteDeLigne::Base(_) => Unite::Pourcentage,
+        }
+    }
+
+    /// La cle de sa forme (`{"cachets": …}`).
+    fn cle_ecrite(self) -> &'static str {
+        match self {
+            QuantiteDeLigne::Heures(_) => "heures",
+            QuantiteDeLigne::Cachets(_) => "cachets",
+            QuantiteDeLigne::Jours(_) => "jours",
+            QuantiteDeLigne::Services(_) => "services",
+            QuantiteDeLigne::Semaines(_) => "semaines",
+            QuantiteDeLigne::PartDuMois(_) => "part_du_mois",
+            QuantiteDeLigne::Unites(_) => "unites",
         }
     }
 
     /// LA CLE DE SA FORME dans l'unite `unite` (`{"cachets": …}`) : ce que la page ecrit pour une ligne de cette rubrique
-    /// (`routes::ouverture::RubriqueDeLaPage`), ce qu'un refus de la porte cite.
-    pub fn cle(unite: Unite) -> &'static str {
-        match unite {
-            Unite::Heure => "heures",
-            Unite::Cachet => "cachets",
-            Unite::Jour => "jours",
-            Unite::Service => "services",
-            Unite::Semaine => "semaines",
-            Unite::Mois => "part_du_mois",
-            Unite::Forfait => "unites",
-            Unite::Pourcentage => "base",
-        }
+    /// (`routes::ouverture::RubriqueDeLaPage`), ce qu'un refus de la porte cite ; `None` : le pourcentage, qui n'a pas
+    /// de quantite.
+    pub fn cle(unite: Unite) -> Option<&'static str> {
+        QuantiteDeLigne::nulle(unite).map(QuantiteDeLigne::cle_ecrite)
     }
 
     /// Son nombre, a la porte qui l'exige (une ecriture, une phrase, `droit::catalogue::Rubrique::heures`).
@@ -621,20 +631,9 @@ impl QuantiteDeLigne {
         self.decimal().is_zero()
     }
 
-    /// TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 ») ; la base d'une ligne en pourcentage, en euros
-    /// (« 1 512,40 € »).
+    /// TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 »).
     pub fn dit(self) -> String {
-        use socle::texte::virgule;
-        match self {
-            QuantiteDeLigne::Heures(q) => virgule(q),
-            QuantiteDeLigne::Cachets(q) => virgule(q),
-            QuantiteDeLigne::Jours(q) => virgule(q),
-            QuantiteDeLigne::Services(q) => virgule(q),
-            QuantiteDeLigne::Semaines(q) => virgule(q),
-            QuantiteDeLigne::PartDuMois(q) => virgule(q),
-            QuantiteDeLigne::Unites(q) => virgule(q),
-            QuantiteDeLigne::Base(b) => socle::texte::euros(b),
-        }
+        chaque_quantite!(self, q => socle::texte::virgule(q))
     }
 
     /// Dans sa forme la plus courte, une decimale au moins (`socle::grandeurs::courte`), comme la ligne l'ecrit.
@@ -646,33 +645,19 @@ impl QuantiteDeLigne {
     /// rubrique, sinon celles que la ligne dit) : quantite x heures par unite, au centieme d'heure comme la DSN l'ecrit
     /// (14 services de 4 h : 56 h ; un mois de permanent : la part du mois payee x la quotite du contrat). Sans heures par
     /// unite, une quantite d'heures compte ses heures, une autre n'en compte aucune. Le nombre rendu est dans sa forme la
-    /// plus courte (`courte`). Une ligne en pourcentage n'a pas d'heures par unite : refus.
-    pub fn heures(self, par_unite: Option<HeuresParUnite>) -> R<Heures> {
+    /// plus courte (`courte`).
+    pub fn heures(self, par_unite: Option<HeuresParUnite>) -> Heures {
         use QuantiteDeLigne as Q;
-        Ok(match (par_unite, self) {
-            (Some(p), q) => match q.fois(p) {
-                Some(h) => courte(h.au_centieme()),
-                None => return Err(socle::refus!("une ligne en pourcentage ne compte pas d'heures par unité : le signaler au développeur")),
-            },
+        match (par_unite, self) {
+            (Some(p), q) => courte(q.fois(p).au_centieme()),
             (None, Q::Heures(q)) => courte(q),
             (None, _) => courte(Heures::ZERO),
-        })
+        }
     }
 
-    /// QUANTITE x HEURES PAR UNITE, exactes (14 services de 4 h : 56 h) ; `None` : une ligne en pourcentage, dont la
-    /// quantite est une base en euros, n'a pas d'heures par unite.
-    pub fn fois(self, par_unite: HeuresParUnite) -> Option<Heures> {
-        use QuantiteDeLigne as Q;
-        match self {
-            Q::Heures(q) => Some(q * par_unite),
-            Q::Cachets(q) => Some(q * par_unite),
-            Q::Jours(q) => Some(q * par_unite),
-            Q::Services(q) => Some(q * par_unite),
-            Q::Semaines(q) => Some(q * par_unite),
-            Q::PartDuMois(q) => Some(q * par_unite),
-            Q::Unites(q) => Some(q * par_unite),
-            Q::Base(_) => None,
-        }
+    /// QUANTITE x HEURES PAR UNITE, exactes (14 services de 4 h : 56 h).
+    pub fn fois(self, par_unite: HeuresParUnite) -> Heures {
+        chaque_quantite!(self, q => q * par_unite)
     }
 
     /// N'EST-ELLE PAS PLUS QUE `o`, dans la meme grandeur (une ligne coupee, `crate::lignes_coupees_a_la_fin`) ? Deux
@@ -687,7 +672,6 @@ impl QuantiteDeLigne {
             (Q::Semaines(a), Q::Semaines(b)) => a <= b,
             (Q::PartDuMois(a), Q::PartDuMois(b)) => a <= b,
             (Q::Unites(a), Q::Unites(b)) => a <= b,
-            (Q::Base(a), Q::Base(b)) => a <= b,
             _ => false,
         }
     }
@@ -704,9 +688,17 @@ impl QuantiteDeLigne {
             (Q::Semaines(a), Q::Semaines(b)) => Q::Semaines(a + b),
             (Q::PartDuMois(a), Q::PartDuMois(b)) => Q::PartDuMois(a + b),
             (Q::Unites(a), Q::Unites(b)) => Q::Unites(a + b),
-            (Q::Base(a), Q::Base(b)) => Q::Base(a + b),
             _ => return None,
         })
+    }
+}
+
+/// Les heures d'une ligne qui paie une part de sa base : aucune ; une rubrique en pourcentage qui dirait des heures par
+/// unite se refuse.
+fn sans_quantite(par_unite: Option<HeuresParUnite>) -> R<Heures> {
+    match par_unite {
+        Some(_) => Err(socle::refus!("une ligne en pourcentage ne compte pas d'heures par unité : le signaler au développeur")),
+        None => Ok(courte(Heures::ZERO)),
     }
 }
 
@@ -806,9 +798,12 @@ impl PaiementDeLigne {
         }
     }
 
-    /// L'unite de sa rubrique, que sa quantite dit.
+    /// L'unite de sa rubrique, que sa quantite dit (le pourcentage, pour une base).
     pub fn unite(self) -> Unite {
-        self.quantite().unite()
+        match self.quantite_ou_base() {
+            Ok(q) => q.unite(),
+            Err(_) => Unite::Pourcentage,
+        }
     }
 
     /// LE MEME PAIEMENT A UN AUTRE MONTANT UNITAIRE `u` (le tarif de la convention) ; `None` : une ligne en pourcentage,
@@ -858,29 +853,35 @@ impl PaiementDeLigne {
         }
     }
 
-    /// LA QUANTITE `q` A SON TAUX `t`, qui vont ensemble : une base a la part qu'une ligne en pourcentage en paie, toute
-    /// autre quantite a un montant unitaire ; `None` : ils ne vont pas ensemble (une ligne qui n'a pas la forme de sa
-    /// rubrique).
-    pub fn de(q: QuantiteDeLigne, t: TauxDeLigne) -> Option<PaiementDeLigne> {
+    /// LA QUANTITE `q` A SON MONTANT UNITAIRE `u` (une ligne en pourcentage paie une base, `Base`, et n'a pas de
+    /// quantite).
+    pub fn de(q: QuantiteDeLigne, u: MontantUnitaire) -> PaiementDeLigne {
         use PaiementDeLigne as P;
         use QuantiteDeLigne as Q;
-        use TauxDeLigne::{ParUnite, PartDeLaBase};
-        Some(match (q, t) {
-            (Q::Heures(q), ParUnite(u)) => P::Heures(q, u),
-            (Q::Cachets(q), ParUnite(u)) => P::Cachets(q, u),
-            (Q::Jours(q), ParUnite(u)) => P::Jours(q, u),
-            (Q::Services(q), ParUnite(u)) => P::Services(q, u),
-            (Q::Semaines(q), ParUnite(u)) => P::Semaines(q, u),
-            (Q::PartDuMois(q), ParUnite(u)) => P::PartDuMois(q, u),
-            (Q::Unites(q), ParUnite(u)) => P::Unites(q, u),
-            (Q::Base(b), PartDeLaBase(c)) => P::Base(b, c),
-            _ => return None,
-        })
+        match q {
+            Q::Heures(q) => P::Heures(q, u),
+            Q::Cachets(q) => P::Cachets(q, u),
+            Q::Jours(q) => P::Jours(q, u),
+            Q::Services(q) => P::Services(q, u),
+            Q::Semaines(q) => P::Semaines(q, u),
+            Q::PartDuMois(q) => P::PartDuMois(q, u),
+            Q::Unites(q) => P::Unites(q, u),
+        }
     }
 
-    /// Sa quantite.
-    pub fn quantite(self) -> QuantiteDeLigne {
-        match self {
+    /// DEUX PAIEMENTS D'UNE MEME RUBRIQUE AJOUTES (`calcul::en_bref`) : leurs quantites, ou leurs bases, au taux du
+    /// premier ; `None` : deux grandeurs, qui ne s'ajoutent pas.
+    pub fn plus(self, o: PaiementDeLigne) -> Option<PaiementDeLigne> {
+        match (self.quantite_ou_base(), o.quantite_ou_base(), self) {
+            (Ok(a), Ok(b), _) => a.plus(b).and_then(|q| self.avec_quantite(q)),
+            (Err(a), Err(b), PaiementDeLigne::Base(_, c)) => Some(PaiementDeLigne::Base(a + b, c)),
+            _ => None,
+        }
+    }
+
+    /// Sa quantite, ou la base en euros d'une ligne en pourcentage, qui n'a pas de quantite.
+    pub(crate) fn quantite_ou_base(self) -> Result<QuantiteDeLigne, Montant> {
+        Ok(match self {
             PaiementDeLigne::Heures(q, _) => QuantiteDeLigne::Heures(q),
             PaiementDeLigne::Cachets(q, _) => QuantiteDeLigne::Cachets(q),
             PaiementDeLigne::Jours(q, _) => QuantiteDeLigne::Jours(q),
@@ -888,7 +889,38 @@ impl PaiementDeLigne {
             PaiementDeLigne::Semaines(q, _) => QuantiteDeLigne::Semaines(q),
             PaiementDeLigne::PartDuMois(q, _) => QuantiteDeLigne::PartDuMois(q),
             PaiementDeLigne::Unites(q, _) => QuantiteDeLigne::Unites(q),
-            PaiementDeLigne::Base(b, _) => QuantiteDeLigne::Base(b),
+            PaiementDeLigne::Base(b, _) => return Err(b),
+        })
+    }
+
+    /// Sa quantite ; `None` : une ligne en pourcentage, qui paie une part de sa base.
+    pub fn quantite(self) -> Option<QuantiteDeLigne> {
+        self.quantite_ou_base().ok()
+    }
+
+    /// LES HEURES QU'IL FAIT COMPTER, a `par_unite` heures par unite (`QuantiteDeLigne::heures`) ; une base n'en compte
+    /// aucune.
+    pub fn heures(self, par_unite: Option<HeuresParUnite>) -> R<Heures> {
+        match self.quantite_ou_base() {
+            Ok(q) => Ok(q.heures(par_unite)),
+            Err(_) => sans_quantite(par_unite),
+        }
+    }
+
+    /// Le nombre de sa quantite, ou de sa base, a la porte qui l'exige (la colonne « Base » du livre de paie).
+    pub fn quantite_en_decimal(self) -> Decimal {
+        match self.quantite_ou_base() {
+            Ok(q) => q.decimal(),
+            Err(b) => b.decimal(),
+        }
+    }
+
+    /// SA QUANTITE TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 ») ; la base d'une ligne en pourcentage,
+    /// en euros (« 1 512,40 € »).
+    pub fn quantite_dite(self) -> String {
+        match self.quantite_ou_base() {
+            Ok(q) => q.dit(),
+            Err(b) => socle::texte::euros(b),
         }
     }
 
@@ -905,7 +937,6 @@ impl PaiementDeLigne {
             (P::Semaines(_, u), Q::Semaines(q)) => P::Semaines(q, u),
             (P::PartDuMois(_, u), Q::PartDuMois(q)) => P::PartDuMois(q, u),
             (P::Unites(_, u), Q::Unites(q)) => P::Unites(q, u),
-            (P::Base(_, c), Q::Base(b)) => P::Base(b, c),
             _ => return None,
         })
     }
@@ -985,23 +1016,47 @@ impl LignePaie {
     }
 
     /// SA QUANTITE, dans l'unite `unite` de sa rubrique : celle qu'elle dit (rangee dans cette unite a la porte,
-    /// `LigneDonnee::ranger`), sa base en pourcentage, celle de ce qu'elle paie (une ligne composee, importee, une ligne
-    /// au montant : `PaiementDeLigne::une_fois`), ses jours d'indemnites. `None` : la case n'est pas remplie.
+    /// `LigneDonnee::ranger`), celle de ce qu'elle paie (une ligne composee, importee, une ligne au montant :
+    /// `PaiementDeLigne::une_fois`), ses jours d'indemnites. `None` : la case n'est pas remplie, ou la ligne paie une
+    /// part de sa base (une ligne en pourcentage, qui n'a pas de quantite).
     pub fn quantite(&self, unite: Unite) -> Option<QuantiteDeLigne> {
         match self {
             LignePaie::Unites(l) => l.quantite,
             LignePaie::UnitesEtHeures(l) => l.quantite,
             LignePaie::Frais(l) => l.quantite,
-            LignePaie::Pourcentage(l) => l.base.map(QuantiteDeLigne::Base),
-            LignePaie::Montant(AuMontant { montant, .. }) | LignePaie::AvantageEnNature(AvantageEnNature { montant, .. }) => match unite {
-                Unite::Pourcentage => montant.map(QuantiteDeLigne::Base),
-                _ => Some(QuantiteDeLigne::une(unite)),
-            },
-            LignePaie::Composee(l) => Some(l.paiement.quantite()),
-            LignePaie::RetenueArret(l) => Some(l.paiement.quantite()),
+            LignePaie::Pourcentage(_) => None,
+            LignePaie::Montant(_) | LignePaie::AvantageEnNature(_) => QuantiteDeLigne::une(unite),
+            LignePaie::Composee(l) => l.paiement.quantite(),
+            LignePaie::RetenueArret(l) => l.paiement.quantite(),
             LignePaie::IndemniteJournaliere(l) => Some(QuantiteDeLigne::Jours(l.jours)),
-            LignePaie::Maintien(l) => Some(l.paiement.quantite()),
-            LignePaie::Importee(l) => l.paiement.map(PaiementDeLigne::quantite),
+            LignePaie::Maintien(l) => l.paiement.quantite(),
+            LignePaie::Importee(l) => l.paiement.and_then(PaiementDeLigne::quantite),
+        }
+    }
+
+    /// LES HEURES QU'ELLE FAIT COMPTER, dans l'unite `unite` de sa rubrique, a `par_unite` heures par unite
+    /// (`QuantiteDeLigne::heures`) ; une ligne qui paie une part de sa base n'en compte aucune. Une case qui n'est pas
+    /// remplie se refuse en se nommant.
+    pub fn heures_comptees(&self, unite: Unite, par_unite: Option<HeuresParUnite>) -> R<Heures> {
+        match self.quantite(unite) {
+            Some(q) => Ok(q.heures(par_unite)),
+            None => {
+                self.base(unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
+                sans_quantite(par_unite)
+            }
+        }
+    }
+
+    /// SA BASE EN EUROS, quand elle paie une part de sa base dans l'unite `unite` de sa rubrique (une ligne en
+    /// pourcentage, une ligne au montant d'une rubrique en pourcentage, ce que le moteur ou l'import a pose ainsi) ;
+    /// `None` : elle n'en dit pas, ou elle paie une quantite (`quantite`).
+    pub fn base(&self, unite: Unite) -> Option<Montant> {
+        match self {
+            LignePaie::Pourcentage(l) => l.base,
+            LignePaie::Montant(AuMontant { montant, .. }) | LignePaie::AvantageEnNature(AvantageEnNature { montant, .. }) => montant.filter(|_| unite == Unite::Pourcentage),
+            LignePaie::Composee(Composee { paiement, .. }) | LignePaie::RetenueArret(RetenueArret { paiement, .. }) | LignePaie::Maintien(Maintien { paiement, .. }) => paiement.quantite_ou_base().err(),
+            LignePaie::Importee(l) => l.paiement.and_then(|p| p.quantite_ou_base().err()),
+            LignePaie::Unites(_) | LignePaie::UnitesEtHeures(_) | LignePaie::Frais(_) | LignePaie::IndemniteJournaliere(_) => None,
         }
     }
 
@@ -1058,11 +1113,15 @@ impl LignePaie {
             }
             LignePaie::Composee(Composee { paiement, .. }) | LignePaie::RetenueArret(RetenueArret { paiement, .. }) | LignePaie::Maintien(Maintien { paiement, .. }) => Ok(*paiement),
             LignePaie::IndemniteJournaliere(l) => Ok(PaiementDeLigne::Jours(l.jours, l.taux)),
-            _ => {
-                let quantite = self.quantite(unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
-                let taux = self.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
-                PaiementDeLigne::de(quantite, taux)
-                    .ok_or_else(|| socle::refus!("la ligne {} : sa quantité et son taux ne vont pas ensemble ({}) : le signaler au développeur", self.rubrique(), unite))
+            LignePaie::Pourcentage(l) => {
+                let base = l.base.ok_or_else(|| socle::fichiers::absent("base"))?;
+                let taux = l.taux_majoration.ok_or_else(|| socle::fichiers::absent("taux"))?;
+                Ok(PaiementDeLigne::Base(base, taux.en_coefficient()))
+            }
+            LignePaie::Unites(Unites { quantite, taux, .. }) | LignePaie::UnitesEtHeures(UnitesEtHeures { quantite, taux, .. }) | LignePaie::Frais(Frais { quantite, taux, .. }) => {
+                let quantite = quantite.ok_or_else(|| socle::fichiers::absent("quantite"))?;
+                let taux = taux.ok_or_else(|| socle::fichiers::absent("taux"))?;
+                Ok(PaiementDeLigne::de(quantite, taux))
             }
         }
     }
@@ -1519,7 +1578,9 @@ impl LigneDonnee {
         // Sa quantite se dit dans l'unite de sa rubrique : la porte la range la, une fois.
         if let Some(Some(q)) = self.quantite {
             if q.unite() != r.unite {
-                let cle = QuantiteDeLigne::cle(r.unite);
+                let Some(cle) = QuantiteDeLigne::cle(r.unite) else {
+                    return Err(socle::refus!("la ligne « {} » : sa rubrique est en pourcentage, elle dit sa base et son pourcentage.", r.libelle));
+                };
                 return Err(socle::refus!("la ligne « {} » : sa quantité se dit en {} : {{\"{}\": …}}.", r.libelle, cle, cle));
             }
         }

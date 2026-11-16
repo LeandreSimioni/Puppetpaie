@@ -26,7 +26,7 @@ use socle::date::Jour;
 use socle::mois::{Annee, Mois};
 use socle::grandeurs::{Cachets, Heures, Montant};
 use socle::num::Decimal;
-use engagement::ligne::{QuantiteDeLigne, TauxDeLigne};
+use engagement::ligne::{PaiementDeLigne, QuantiteDeLigne};
 use crate::prelevement::Prelevement;
 use crate::plan_comptable::{EtatDExport, FormatDExport, LogicielComptable, RegroupementDEtat};
 use engagement::etats::PaieDuMois;
@@ -951,7 +951,7 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for r in paie.remuneration() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Rémunération");
-                l.ot(C::Code, r.code).t(C::Libelle, r.libelle).od(C::Base, r.quantite.map(QuantiteDeLigne::decimal)).od(C::TauxSal, r.taux.map(TauxDeLigne::decimal)).od(C::Gain, r.montant.map(|x| x.au_centime().decimal()));
+                l.ot(C::Code, r.code).t(C::Libelle, r.libelle).od(C::Base, r.paiement.map(PaiementDeLigne::quantite_en_decimal)).od(C::TauxSal, r.paiement.map(|p| p.taux().decimal())).od(C::Gain, r.montant.map(|x| x.au_centime().decimal()));
                 lignes.push(l);
             }
             for c in paie.cotisations() {
@@ -1380,7 +1380,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let (cachets, heures) = match dites.is_empty() && paie.importee().is_some() {
                 true => (None, None),
                 false => (
-                    Some(dites.iter().fold(Cachets::ZERO, |a, r| match r.quantite {
+                    Some(dites.iter().fold(Cachets::ZERO, |a, r| match r.paiement.and_then(PaiementDeLigne::quantite) {
                         Some(QuantiteDeLigne::Cachets(c)) => a + c,
                         _ => a,
                     })),

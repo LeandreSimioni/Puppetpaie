@@ -6,7 +6,7 @@
 use serde::Serialize;
 use socle::forme::NombreLu;
 use crate::LignePaie;
-use crate::ligne::{QuantiteDeLigne, TauxDeLigne};
+use crate::ligne::TauxDeLigne;
 
 use crate::departs::{Depart, Departs, Envoi};
 use crate::etats::{ses_departs, ARefaire, Valide};
@@ -110,20 +110,14 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
     }
 }
 
-/// La quantite d'une ligne de paie, en mots, a la virgule et sans son unite (« 151,67 ») ; « — » quand elle n'est pas
-/// dite.
-fn quantite_en_mots(q: Option<QuantiteDeLigne>) -> String {
+/// La quantite d'une ligne de paie (`unite` : celle de sa rubrique), ou la base d'une ligne en pourcentage, en mots, a
+/// la virgule et sans son unite (« 151,67 ») ; « — » quand elle n'est pas dite.
+fn quantite_en_mots(l: &LignePaie, unite: droit::catalogue::Unite) -> String {
     use socle::texte::virgule;
-    match q {
-        None => "—".into(),
-        Some(QuantiteDeLigne::Heures(g)) => virgule(g),
-        Some(QuantiteDeLigne::Cachets(g)) => virgule(g),
-        Some(QuantiteDeLigne::Jours(g)) => virgule(g),
-        Some(QuantiteDeLigne::Services(g)) => virgule(g),
-        Some(QuantiteDeLigne::Semaines(g)) => virgule(g),
-        Some(QuantiteDeLigne::PartDuMois(g)) => virgule(g),
-        Some(QuantiteDeLigne::Unites(g)) => virgule(g),
-        Some(QuantiteDeLigne::Base(g)) => virgule(g),
+    match (l.quantite(unite), l.base(unite)) {
+        (Some(q), _) => q.dit(),
+        (None, Some(b)) => virgule(b),
+        (None, None) => "—".into(),
     }
 }
 
@@ -286,11 +280,10 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
         for k in 0..xs.len().max(ys.len()) {
             match (xs.get(k), ys.get(k)) {
                 (Some(_), None) => out.push(format!("{} : retiré", lib)),
-                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, quantite_en_mots(y.quantite(unite)))),
+                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, quantite_en_mots(y, unite))),
                 (Some(x), Some(y)) => {
-                    let (qx, qy) = (x.quantite(unite), y.quantite(unite));
-                    if qx != qy {
-                        out.push(format!("{} : {} → {}", au_pluriel(&lib), quantite_en_mots(qx), quantite_en_mots(qy)));
+                    if (x.quantite(unite), x.base(unite)) != (y.quantite(unite), y.base(unite)) {
+                        out.push(format!("{} : {} → {}", au_pluriel(&lib), quantite_en_mots(x, unite), quantite_en_mots(y, unite)));
                     }
                     let (tx, ty) = (taux_en_mots(x.taux()), taux_en_mots(y.taux()));
                     if tx != ty {

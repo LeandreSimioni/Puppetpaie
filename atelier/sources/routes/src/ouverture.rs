@@ -1300,7 +1300,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         vec![]
     };
     Ok(RubriqueDeLaPage {
-        quantite: cles.contains(&engagement::ligne::Cle::Quantite.nom()).then(|| engagement::ligne::QuantiteDeLigne::cle(r.unite)),
+        quantite: engagement::ligne::QuantiteDeLigne::cle(r.unite).filter(|_| cles.contains(&engagement::ligne::Cle::Quantite.nom())),
         cles,
         lieu_aide: (!lieux.is_empty()).then_some(LIEU_AIDE),
         lieux,

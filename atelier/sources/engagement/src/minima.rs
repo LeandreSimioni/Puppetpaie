@@ -912,7 +912,8 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
         .remuneration
         .iter()
         .filter(|l| cachet(&l.code))
-        .fold(Decimal::ZERO, |a, l| add(a, l.paiement.quantite().decimal()))
+        .filter_map(|l| l.paiement.quantite())
+        .fold(Decimal::ZERO, |a, q| add(a, q.decimal()))
         .trunc()
         .to_string()
         .parse::<i64>()
@@ -949,7 +950,7 @@ fn minimum_dans(cx: &Cx, l: &LigneBrut, saisie: Option<&crate::LignePaie>) -> R<
     // l'annexe, jamais le cachet de la journee.
     if repetition(&l.code) && *cx.idcc == IDCC_3090 && statut == Statut::Artiste {
         let dates: BTreeSet<Jour> = saisie.iter().flat_map(|s| s.dates().iter()).map(|d| d.jour()).collect();
-        let par_jour = (!dates.is_empty()).then(|| div(l.paiement.quantite().decimal(), Decimal::from(dates.len())));
+        let par_jour = l.paiement.quantite().filter(|_| !dates.is_empty()).map(|q| div(q.decimal(), Decimal::from(dates.len())));
         return Ok(cx.plancher_service_3090(par_jour)?.map(|(montant, quoi, heure)| Minimum {
             montant,
             quoi,

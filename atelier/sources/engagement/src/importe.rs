@@ -686,8 +686,8 @@ pub struct LigneDeRemuneration {
     pub code: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: String,
     pub unite: Option<droit::catalogue::Unite>,
-    pub quantite: Option<crate::ligne::QuantiteDeLigne>,
-    pub taux: Option<crate::ligne::TauxDeLigne>,
+    /// Ce qu'elle paie : sa quantite (ou sa base, une ligne en pourcentage) et son taux.
+    pub paiement: Option<crate::ligne::PaiementDeLigne>,
     pub montant: Option<Montant>,
     pub heures_annexes: Option<socle::grandeurs::Heures>,
     /// La ligne est soumise a cotisations : ce que le catalogue dit de sa rubrique, sinon ce que le bulletin imprime.
@@ -822,7 +822,7 @@ impl Importe {
             ecrit: crate::ContratEcrit::default(),
         };
         let remuneration = remuneration_lue(&lignes_lues, &ctx)?;
-        let cachets = remuneration.iter().fold(socle::grandeurs::Cachets::ZERO, |a, r| match r.quantite {
+        let cachets = remuneration.iter().fold(socle::grandeurs::Cachets::ZERO, |a, r| match r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite) {
             Some(crate::ligne::QuantiteDeLigne::Cachets(c)) => a + c,
             _ => a,
         });
@@ -1150,15 +1150,14 @@ fn remuneration_lue(lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRe
                 code: Some(r.code.into()),
                 libelle: r.libelle,
                 unite: Some(r.unite),
-                quantite: Some(paiement.quantite()),
-                taux: Some(paiement.taux()),
+                paiement: Some(paiement),
                 montant: l.montant,
                 heures_annexes: Some(heures_annexes),
                 soumis: r.soumis,
             });
             continue;
         }
-        out.push(LigneDeRemuneration { code: None, libelle: l.libelle.clone(), unite: None, quantite: None, taux: None, montant: l.montant, heures_annexes: None, soumis: l.soumis });
+        out.push(LigneDeRemuneration { code: None, libelle: l.libelle.clone(), unite: None, paiement: None, montant: l.montant, heures_annexes: None, soumis: l.soumis });
     }
     Ok(out)
 }

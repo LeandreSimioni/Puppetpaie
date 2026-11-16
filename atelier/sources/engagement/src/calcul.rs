@@ -85,7 +85,8 @@ impl LigneBrut {
             let part = socle::texte::virgule(socle::grandeurs::au_centieme_au_pair(part.en_taux()));
             return format!("{} ({} % du mois)", self.libelle, part);
         }
-        let q = self.paiement.quantite().au_centieme();
+        // Une base (une ligne en pourcentage) n'est pas un nombre de choses : son seul libelle.
+        let Some(q) = self.paiement.quantite().map(QuantiteDeLigne::au_centieme) else { return self.libelle.clone() };
         let nb = q.dit();
         let (tete, reste) = match self.libelle.split_once(' ') {
             Some((t, r)) => (t, Some(r)),
@@ -211,7 +212,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 pub(crate) fn rattacher(code: &droit::catalogue::CodeDeRubrique, paiement: impl FnOnce(Unite) -> R<PaiementDeLigne>, heures: Option<socle::grandeurs::HeuresParUnite>, ctx: &Contexte) -> R<(droit::catalogue::Rubrique, PaiementDeLigne, Heures)> {
     let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
     let paiement = paiement(r.unite)?;
-    let h = paiement.quantite().heures(r.heures_par_unite(heures))?;
+    let h = paiement.heures(r.heures_par_unite(heures))?;
     let heures_annexes = r.sens.de(h);
     Ok((r, paiement, heures_annexes))
 }
@@ -648,7 +649,7 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
     for l in lignes.iter().filter(|l| l.code != crate::NUITEE_AU_DELA && l.code != crate::REPAS_AU_DELA) {
         // Deux quantites d'une meme rubrique sont de la meme grandeur ; deux grandeurs ne s'ajouteraient pas, et se diraient
         // a part.
-        let somme = |g: &LigneBrut| g.paiement.quantite().plus(l.paiement.quantite()).and_then(|q| g.paiement.avec_quantite(q));
+        let somme = |g: &LigneBrut| g.paiement.plus(l.paiement);
         match groupes.iter_mut().find(|g| g.code == l.code && g.precision == l.precision).and_then(|g| somme(g).map(|p| (g, p))) {
             Some((g, p)) => {
                 g.paiement = p;
@@ -658,7 +659,7 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
         }
     }
     let base = |l: &LigneBrut| l.libelle.split_once(" (").map(|(b, _)| b.to_string());
-    let meme_mesure = |a: &LigneBrut, b: &LigneBrut| a.unite == b.unite && a.paiement.quantite() == b.paiement.quantite();
+    let meme_mesure = |a: &LigneBrut, b: &LigneBrut| a.unite == b.unite && a.paiement.quantite_ou_base() == b.paiement.quantite_ou_base();
     let mut dits = Vec::new();
     let mut i = 0;
     while i < groupes.len() {
@@ -682,7 +683,7 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
 /// Une ligne (deja additionnee) dite en bref : un forfait qui se compte dit son nombre (« 8 repas »), des heures de
 /// travail se disent en heures (« 28 h de travail ») ; le reste comme au bulletin.
 fn bref(l: &LigneBrut) -> String {
-    let q = l.paiement.quantite().au_centieme();
+    let Some(q) = l.paiement.quantite().map(QuantiteDeLigne::au_centieme) else { return l.designation().to_lowercase() };
     let (tete, reste) = match l.libelle.split_once(' ') {
         Some((t, r)) => (t, r),
         None => (l.libelle.as_str(), ""),

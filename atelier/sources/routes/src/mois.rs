@@ -547,7 +547,7 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     for (i, (l, src)) in p.remuneration.iter().zip(brutes).enumerate() {
         let saisi = p.engagement.lignes.get(i).and_then(|x| x.marques()).and_then(|m| m.taux_saisi);
         // La quantite que l'ecran montre : sa forme la plus courte.
-        let quantite = Some(l.paiement.quantite().courte());
+        let quantite = l.paiement.quantite().map(engagement::ligne::QuantiteDeLigne::courte);
         let taux = match saisi {
             Some(t) => Some(t),
             None => l.paiement.taux().par_unite().map(socle::grandeurs::courte),
@@ -1584,9 +1584,9 @@ pub(crate) struct CaseDeFrais {
 pub(crate) struct LigneVue {
     rubrique: droit::catalogue::CodeDeRubrique,
     designation: String,
-    /// Sa quantite et son taux, dans l'unite de sa rubrique, en texte.
+    /// Sa quantite (la base d'une ligne en pourcentage) et son taux, dans l'unite de sa rubrique, en texte.
     #[serde(serialize_with = "engagement::ligne::en_texte::quantite")]
-    quantite: engagement::ligne::QuantiteDeLigne,
+    quantite: engagement::ligne::PaiementDeLigne,
     #[serde(serialize_with = "engagement::ligne::en_texte::taux")]
     taux: engagement::ligne::TauxDeLigne,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
@@ -1793,7 +1793,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         remuneration: p
             .remuneration
             .iter()
-            .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.paiement.quantite(), taux: l.paiement.taux(), montant: l.montant.au_centime() })
+            .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.paiement, taux: l.paiement.taux(), montant: l.montant.au_centime() })
             .collect(),
         jours: e.jours,
         lieu,

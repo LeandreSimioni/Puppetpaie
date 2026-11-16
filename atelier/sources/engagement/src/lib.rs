@@ -411,15 +411,15 @@ impl Engagement {
         };
         for l in &lignes {
             let r = rubrique(racine, l.rubrique(), &jour_lu)?;
-            match l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))? {
-                ligne::QuantiteDeLigne::Cachets(q) => {
+            match l.quantite(r.unite) {
+                Some(ligne::QuantiteDeLigne::Cachets(q)) => {
                     cachets_somme += q;
                     premier_cachet.get_or_insert(l);
                 }
                 // Le signe porte aussi sur les heures, comme au calcul
                 // (`calcul::lignes_brut`) : une absence en retire. Un acompte,
                 // au forfait et sans heures, n'en retire aucune.
-                q => autres += r.sens.de(q.heures(r.heures_par_unite(l.heures()))?),
+                _ => autres += r.sens.de(l.heures_comptees(r.unite, r.heures_par_unite(l.heures()))?),
             }
         }
         // Un nombre de cachets se compte en entiers : la partie entiere de la somme.
@@ -927,13 +927,12 @@ pub(crate) fn lignes_du_planning(racine: &Path, source: &[LignePaie], mois: Mois
         }
         let unite = rubrique(racine, l.rubrique(), &mois.dernier_jour())?.unite;
         let quantite = match unite {
-            droit::catalogue::Unite::Cachet => ligne::QuantiteDeLigne::Cachets(Cachets::de_dates(dedans.len())),
-            droit::catalogue::Unite::Jour => ligne::QuantiteDeLigne::Jours(Jours::de_dates(dedans.len())),
-            droit::catalogue::Unite::Service => ligne::QuantiteDeLigne::Services(socle::grandeurs::Services::comptes(dedans.len())),
+            droit::catalogue::Unite::Cachet => Some(ligne::QuantiteDeLigne::Cachets(Cachets::de_dates(dedans.len()))),
+            droit::catalogue::Unite::Jour => Some(ligne::QuantiteDeLigne::Jours(Jours::de_dates(dedans.len()))),
+            droit::catalogue::Unite::Service => Some(ligne::QuantiteDeLigne::Services(socle::grandeurs::Services::comptes(dedans.len()))),
             autre => ligne::QuantiteDeLigne::nulle(autre),
         };
         let par_date = matches!(unite, droit::catalogue::Unite::Cachet | droit::catalogue::Unite::Jour | droit::catalogue::Unite::Service);
-        let quantite = Some(quantite);
         lignes.push(match l.avec_les_jours(dedans, apres) {
             LignePaie::Unites(x) => LignePaie::Unites(ligne::Unites { quantite, ..x }),
             LignePaie::UnitesEtHeures(x) => {
@@ -1509,8 +1508,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
         marquer_les_cases(&mut l, &cases, &lim.rubrique, metropole);
         if let Some((taux, limite)) = part {
             let quantite = l.quantite.ok_or_else(|| socle::fichiers::absent("quantite"))?;
-            let paiement = ligne::PaiementDeLigne::de(quantite, ligne::TauxDeLigne::ParUnite(MontantUnitaire::du_decimal((taux - limite).normalize())))
-                .ok_or_else(|| socle::refus!("{} : la ligne {} ne se compte pas en unités : le signaler au développeur.", qui, l.rubrique))?;
+            let paiement = ligne::PaiementDeLigne::de(quantite, MontantUnitaire::du_decimal((taux - limite).normalize()));
             au_dela.push(LignePaie::Composee(ligne::Composee {
                 rubrique: lim.au_dela.clone(),
                 paiement,
@@ -1728,12 +1726,14 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
     for (i, l) in lignes.iter().enumerate() {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         let ligne = format!("sa ligne {} (« {} »)", i + 1, r.libelle);
-        // Ce que la ligne dit qu'elle paie (une quantite, une base, ou rien a compter : un montant), et son prix.
+        // Ce que la ligne dit qu'elle paie (une quantite, une base, ou rien a compter : un montant), et son prix ; de ce
+        // qu'elle compte : negatif, nul, et tel qu'une phrase le dit.
+        let mesure = |q: Option<ligne::QuantiteDeLigne>| q.map(|q| (q.est_negative(), q.est_nul(), q.dit()));
         let (quantite, taux, quoi, prix) = match l {
-            LignePaie::Unites(x) => (Some(x.quantite), x.taux.is_some(), "la quantité", "le montant"),
-            LignePaie::UnitesEtHeures(x) => (Some(x.quantite), x.taux.is_some(), "la quantité", "le montant"),
-            LignePaie::Frais(x) => (Some(x.quantite), x.taux.is_some(), "la quantité", "le montant"),
-            LignePaie::Pourcentage(x) => (Some(x.base.map(ligne::QuantiteDeLigne::Base)), x.taux_majoration.is_some(), "la base", "le pourcentage"),
+            LignePaie::Unites(x) => (Some(mesure(x.quantite)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::UnitesEtHeures(x) => (Some(mesure(x.quantite)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::Frais(x) => (Some(mesure(x.quantite)), x.taux.is_some(), "la quantité", "le montant"),
+            LignePaie::Pourcentage(x) => (Some(x.base.map(|b| (b < Montant::ZERO, b.est_nul(), socle::texte::euros(b)))), x.taux_majoration.is_some(), "la base", "le pourcentage"),
             LignePaie::Montant(x) => (None, x.montant.is_some(), "", "le montant"),
             LignePaie::AvantageEnNature(x) => (None, x.montant.is_some(), "", "le montant"),
             // UNE LIGNE QUE LE MOTEUR POSE ne se saisit pas.
@@ -1742,11 +1742,11 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
             }
         };
         if let Some(quantite) = quantite {
-            let Some(dite) = quantite else {
+            let Some((negative, nulle, dite)) = quantite else {
                 return Err(a_finir(format!("{}{}{} de {}.", qui, LIGNE_A_DIRE, quoi, ligne)));
             };
             let a_venir_seulement = l.dates().is_empty() && !l.planning().is_empty();
-            if dite.est_negative() || (dite.est_nul() && !a_venir_seulement) {
+            if negative || (nulle && !a_venir_seulement) {
                 // La ligne dit ses jours et le mois ou elle se saisit : la ligne d'un mois suivant d'un contrat a cheval
                 // (`stock::Objet::vue`) porte les jours de son planning, et ses heures se disent sur la carte de ce mois.
                 let jours: Vec<Jour> = l.jours();
@@ -1763,7 +1763,7 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
                     quoi,
                     ligne.trim_end_matches(')'),
                     if ou.is_empty() { ")".to_string() } else { format!("{})", ou) },
-                    dite.dit(),
+                    dite,
                     QUANTITE_SANS_COMPTE,
                     carte
                 )));
@@ -2222,7 +2222,7 @@ fn quantite_datee(l: &LignePaie) -> Option<ligne::QuantiteDeLigne> {
         LignePaie::Unites(x) => x.quantite,
         LignePaie::UnitesEtHeures(x) => x.quantite,
         LignePaie::Frais(x) => x.quantite,
-        LignePaie::Composee(x) => Some(x.paiement.quantite()),
+        LignePaie::Composee(x) => x.paiement.quantite(),
         _ => None,
     }
 }

@@ -183,7 +183,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
-| nombre écrit (une saisie gardée telle qu'écrite) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie`, `ligne::Chiffre` |
+| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `NombreEcrit::en`, `socle::grandeurs::lu::tapee`) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` ; les cases de fiche le gardent encore |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
@@ -274,7 +274,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
 | heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures`) | `socle/src/grandeurs.rs` |
 | nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (des cachets ou des jours, chacun sa grandeur) | `documents/src/conges_spectacles.rs` |
-| quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, la part du mois payée, ou la base en euros d'une ligne en pourcentage) | `engagement/src/ligne.rs` |
+| quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, ou la part du mois payée ; une ligne en pourcentage n'en a pas, elle paie une part de sa base) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
 | effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; écrit en 13.003 par `norme::quantite`) | `socle/src/grandeurs.rs` |
 | mesure d'activité (S21.G00.53.002, dans l'unité que dit 53.003) | `MesureDActivite` (des jours, des cachets, des heures ou des unités — la pige, la vacation, la tâche —, chacun sa grandeur, comme le dit la mesure de la nature ; lue d'une DSN dans la grandeur de son unité, `MesureDActivite::lue` ; écrite par `norme::quantite`) | `declarations/src/dsn.rs` |
@@ -296,15 +296,16 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - **taux** : un pourcentage appliqué à une base ; aujourd'hui aussi `Decimal` (le solde de la taxe d'apprentissage se lit dans la forme
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le
   taux de PAS est sa notion à lui, `droit::pas::TauxDePas`.
-- **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui `Decimal`, `i64`,
-  `engagement::ligne::Chiffre`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
-  (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait, la base en
-  euros d'une ligne en pourcentage ; une ligne au montant compte 1, et paie son montant quelle que soit l'unité,
-  `PaiementDeLigne::une_fois`) : elle s'écrit dans son unité, par sa forme (`{"cachets": "2"}`), la charge comme le
-  fichier, et la porte d'une ligne saisie la range dans l'unité de sa rubrique (`LigneDonnee::ranger`) ; quantité ×
-  montant unitaire = montant. Une ligne que le moteur compose porte ce qu'elle paie (`PaiementDeLigne`, sa quantité et
-  son taux) : une rubrique en pourcentage donne une base et la part qu'elle en paie, toute autre une quantité et un
-  montant unitaire (`PaiementDeLigne::de`) ; une ligne composée d'une rubrique en pourcentage a la forme d'une ligne en
+- **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui aussi `Decimal`,
+  `i64`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
+  (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait ; une ligne
+  au montant compte 1, et paie son montant quelle que soit l'unité, `PaiementDeLigne::une_fois`) : elle s'écrit dans son
+  unité, par sa forme (`{"cachets": "2"}`), la charge comme le fichier, et la porte d'une ligne saisie la range dans
+  l'unité de sa rubrique (`LigneDonnee::ranger`) ; quantité × montant unitaire = montant. Une ligne en pourcentage n'a
+  pas de quantité : elle paie une part de sa base en euros (`PaiementDeLigne::Base`, `EnPourcentage.base`). Une ligne
+  que le moteur compose porte ce qu'elle paie (`PaiementDeLigne`, sa quantité et son taux) : une rubrique en pourcentage
+  donne une base et la part qu'elle en paie, toute autre une quantité et un montant unitaire (`PaiementDeLigne::de`) ;
+  une ligne composée d'une rubrique en pourcentage a la forme d'une ligne en
   pourcentage (`LignePaie::en_pourcentage`), et la saisie d'une rubrique dit une base et un pourcentage si, et seulement
   si, son unité est le pourcentage (`FormeSaisie::de`). Une ligne importée garde le montant que son bulletin dit
   (`LignePaie::montant_lu`), qui ne se recompose pas ; sa quantité et son taux imprimés se lisent dans l'unité de sa

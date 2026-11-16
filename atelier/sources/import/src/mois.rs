@@ -322,7 +322,7 @@ pub(crate) struct LigneDeLaCarte {
 
 impl LigneDeLaCarte {
     fn de(l: &LigneImprimee) -> LigneDeLaCarte {
-        LigneDeLaCarte { libelle: l.libelle.clone(), quantite: l.paiement.map(|p| p.quantite().dit()), taux: l.paiement.map(|p| p.taux().dit()), montant: l.montant }
+        LigneDeLaCarte { libelle: l.libelle.clone(), quantite: l.paiement.map(engagement::ligne::PaiementDeLigne::quantite_dite), taux: l.paiement.map(|p| p.taux().dit()), montant: l.montant }
     }
 }
 

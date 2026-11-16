@@ -2574,12 +2574,13 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         // La quantite de la ligne prend l'unite de sa rubrique : la porte de sa lecture.
         use engagement::ligne::QuantiteDeLigne as Q;
         let h = match (Q::imprimee(r.unite, q), par_unite) {
-            (Q::Cachets(c), _) => {
+            (Some(Q::Cachets(c)), _) => {
                 cachets = cachets.map(|x| x + c);
                 continue;
             }
-            (q, Some(u)) => q.fois(u).ok_or_else(|| socle::refus!("« {} » : une ligne en pourcentage ne compte pas d'heures par unité", l.libelle))?,
-            (Q::Heures(h), None) => h,
+            (Some(q), Some(u)) => q.fois(u),
+            (None, Some(_)) => return Err(socle::refus!("« {} » : une ligne en pourcentage ne compte pas d'heures par unité", l.libelle)),
+            (Some(Q::Heures(h)), None) => h,
             // Ni cachet, ni heures par unite, ni heure : la ligne est passee plus haut.
             (_, None) => continue,
         };

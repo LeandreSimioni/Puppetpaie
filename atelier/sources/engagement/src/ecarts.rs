@@ -471,7 +471,7 @@ fn comparer_une(
             saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures, precision: None, dates: jours.clone() }));
             continue;
         };
-        let (rubrique, quantite, dates) = (lue.code, Some(quantite), jours.clone());
+        let (rubrique, dates) = (lue.code, jours.clone());
         saisies.push(match forme {
             FormeSaisie::Unites => LignePaie::Unites(ligne::Unites { rubrique, quantite, taux: Some(par_unite()?), lieu: None, dates, planning: Vec::new() }),
             FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux: Some(par_unite()?), heures, lieu: None, dates, planning: Vec::new() }),
