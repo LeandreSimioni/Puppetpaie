@@ -529,7 +529,7 @@ impl Donnees {
             Livree::CachetDeRepetition { idcc, annexe } => {
                 let t = droit::minima::table()?;
                 let a = t.conventions.get(idcc).and_then(|c| c.annexes.as_ref()).and_then(|a| a.get(annexe));
-                return Ok(a.and_then(|a| a.repetition.as_ref()).and_then(|r| r.cachet).map(|n| n.0));
+                return Ok(a.and_then(|a| a.repetition.as_ref()).and_then(|r| r.cachet).map(|m| m.decimal()));
             }
             _ => match self.bareme()? {
                 Some(b) => b,
@@ -759,8 +759,8 @@ struct GainRepetition {
 
 fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: HeuresParUnite) -> R<Option<GainRepetition>> {
     let Some(min) = p.cachet_de_repetition(ctx)? else { return Ok(None) };
-    // Le minimum du cachet de repetition, un montant par jour que la grille des minima dit en nombre : son bord.
-    let minimum_du_jour = MontantUnitaire::du_decimal(min.montant);
+    // Le minimum du cachet de repetition : le prix d'un jour.
+    let minimum_du_jour = min.montant;
     let saisies = p.saisies();
     let (mut heures_avant, mut gain, mut jours, mut montant) = (Heures::ZERO, Heures::ZERO, Jours::ZERO, Montant::ZERO);
     for (l, s) in p.remuneration.iter().zip(saisies) {
@@ -818,11 +818,10 @@ fn gain_heures(ctx: &Contexte, p: &Paie, seuil: Heures) -> R<Option<GainHeures>>
             continue;
         }
         let Some(m) = p.minimum_de_la_ligne(ctx, i)? else { continue };
-        if m.par != Par::Heure || m.montant <= Decimal::ZERO {
+        if m.par != Par::Heure || m.montant <= MontantUnitaire::ZERO {
             continue;
         }
-        // Le minimum horaire, un montant par heure que la grille des minima dit en nombre : son bord.
-        let minimum = MontantUnitaire::du_decimal(m.montant);
+        let minimum = m.montant;
         let Some(heures_max) = montant.en_heures(minimum) else { continue };
         let heures_max = heures_max.entieres_en_dessous();
         let gain = (heures_max - heures).entieres_en_dessous();
@@ -985,7 +984,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                         ("heures_avant", val_heures(g.heures_avant)),
                         ("nb_jours", val_jours(g.jours)),
                         ("montant_jour", val_unitaire(*par_jour)),
-                        ("minimum", val_texte(nombre_fr(Montant::du_decimal(g.minimum.montant).au_centime().decimal(), Some(2)))),
+                        ("minimum", val_unitaire(g.minimum.montant.au_centime())),
                         ("gain", val_heures(g.gain)),
                     ];
                     avec_jours(&mut v, *jours);
