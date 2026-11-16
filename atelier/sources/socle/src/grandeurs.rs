@@ -814,15 +814,20 @@ pub mod lu {
     /// : `1.500`) : les milliers ne se separent que d'un blanc. Tout le reste se refuse et dit pourquoi (« 1 5 », « 1e3 »,
     /// « 1_000 », « %5 », « 1h30 », le signe d'une autre unite).
     pub fn tapee<G: Grandeur>(t: &str) -> Result<G, String> {
+        nombre_tape(t, <G as crate::grandeurs::Scelle>::SIGNES, <G as crate::grandeurs::Scelle>::ATTENDU).map(<G as crate::grandeurs::Scelle>::du)
+    }
+
+    /// LE NOMBRE QU'UNE PERSONNE A TAPE, LA SEULE LECTURE D'UN TEXTE TAPE (`tapee`, `entier_tape`) : les regles de
+    /// `tapee` ; `signes` : ceux de l'unite de la case ; `attendu` : ce qu'elle attend, dit dans le refus.
+    fn nombre_tape(t: &str, signes: &[&str], attendu: &str) -> Result<Decimal, String> {
         let cite = crate::fichiers::repr(t);
-        let attendu = <G as crate::grandeurs::Scelle>::ATTENDU;
         let blanc = |c: char| c.is_whitespace() || matches!(c, '\u{a0}' | '\u{202f}');
         let illisible = || format!("{} ne se lit pas : on attend {}, écrit en chiffres avec une virgule pour les décimales (« 1 500,50 »)", cite, attendu);
         let mut net = t.trim_matches(blanc);
-        if let Some(sans) = <G as crate::grandeurs::Scelle>::SIGNES.iter().find_map(|s| net.strip_suffix(s)) {
+        if let Some(sans) = signes.iter().find_map(|s| net.strip_suffix(s)) {
             net = sans.trim_end_matches(blanc);
         }
-        if let Some(s) = <G as crate::grandeurs::Scelle>::SIGNES.iter().find(|s| net.contains(**s)) {
+        if let Some(s) = signes.iter().find(|s| net.contains(**s)) {
             return Err(format!("{} ne se lit pas : on attend {}, le signe « {} » à la fin seulement", cite, attendu, s));
         }
         if super::TOUS_LES_SIGNES.iter().any(|s| net.contains(s)) {
@@ -855,7 +860,61 @@ pub mod lu {
             Some(d) => format!("{}{}.{}", moins, if entier.is_empty() { "0" } else { &entier }, d),
             None => format!("{}{}", moins, entier),
         };
-        Decimal::from_str_exact(&ecrit).map(<G as crate::grandeurs::Scelle>::du).map_err(|_| format!("{} est trop long : on attend {}", cite, attendu))
+        Decimal::from_str_exact(&ecrit).map_err(|_| format!("{} est trop long : on attend {}", cite, attendu))
+    }
+
+    /// UN NOMBRE ENTIER, JAMAIS NEGATIF, QU'UNE PERSONNE A TAPE (un compte, des jours de droit, une annee) : lu par
+    /// `nombre_tape` (« 1 500 »), puis sa forme ; `attendu` : ce que la case attend.
+    fn entier_tape(t: &str, attendu: &str) -> Result<u64, String> {
+        let d = nombre_tape(t, &[], attendu)?;
+        match d.fract().is_zero().then(|| rust_decimal::prelude::ToPrimitive::to_u64(&d.trunc())).flatten() {
+            Some(n) => Ok(n),
+            None => Err(format!("{} n'est pas un nombre entier positif : on attend {}", crate::fichiers::repr(t), attendu)),
+        }
+    }
+
+    /// LA LECTURE D'UN NOMBRE ENTIER, JAMAIS NEGATIF (un compte, des jours de droit, une annee) : un nombre entier ; dans
+    /// une saisie (`forme::lire_saisie`, la charge d'une route), aussi le texte qu'une personne a tape, lu par
+    /// `entier_tape`, son refus dit (`forme::refus_du_tape`). `attendu` : ce que la case attend.
+    pub(crate) fn entier<'de, D: serde::Deserializer<'de>>(d: D, attendu: &'static str) -> Result<u64, D::Error> {
+        struct Entier(&'static str);
+        impl<'de> serde::de::Visitor<'de> for Entier {
+            type Value = u64;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(self.0)
+            }
+            fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<u64, E> {
+                Ok(u)
+            }
+            fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<u64, E> {
+                u64::try_from(i).map_err(|_| E::custom(format!("{} n'est pas un nombre entier positif : on attend {}", i, self.0)))
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<u64, E> {
+                match crate::forme::en_saisie() {
+                    true => entier_tape(s, self.0).map_err(|r| E::custom(crate::forme::refus_du_tape(r))),
+                    false => Err(E::custom(format!("« {} » est écrit en texte : écrire le nombre sans guillemets", s))),
+                }
+            }
+        }
+        d.deserialize_any(Entier(attendu))
+    }
+
+    /// UN COMPTE (« combien de… », `usize` : les enfants couverts d'une complementaire sante) lu par `entier`.
+    pub mod compte {
+        /// Un compte facultatif : absent (avec `#[serde(default)]`) ou nul, il est vide.
+        pub mod option {
+            pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<usize>, D::Error> {
+                /// Un compte lu ainsi, la ou un champ ne se pose pas (un `Option`).
+                struct Lu(usize);
+                impl<'de> serde::Deserialize<'de> for Lu {
+                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lu, D::Error> {
+                        let n = super::super::entier(d, "un nombre entier")?;
+                        usize::try_from(n).map(Lu).map_err(serde::de::Error::custom)
+                    }
+                }
+                <Option<Lu> as serde::Deserialize>::deserialize(d).map(|l| l.map(|l| l.0))
+            }
+        }
     }
 
     /// `tapee`, son decimal : la conversion que la lecture d'une saisie passe a `forme` (`forme::decimal_en_nombre`).

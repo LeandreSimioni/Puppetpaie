@@ -1325,8 +1325,8 @@ async function brancherAtmp() {
   };
   $("atmp-enregistrer").onclick = async (ev) => {
     ev.preventDefault();
-    const nombre = String(valeur.value).trim().replace(",", ".");
-    const ligne = { code_risque: code.value.trim() || null, valeur: nombre === "" ? null : Number(nombre), depuis: depuis.value || null };
+    // Le taux part tel qu'il est tapé (« 1,5 % ») : la route le convertit, et le refuse en nommant la case.
+    const ligne = { code_risque: code.value.trim() || null, valeur: valeur.value.trim() || null, depuis: depuis.value || null };
     const charge = { nom: "entreprise", changements: [{ case: "taux_atmp", valeur: ligne }] };
     try {
       let r = await api("enregistrer-fiche", charge);
@@ -1371,7 +1371,7 @@ function SANTE_HTML() {
       </select></label>
     <label class="coche"><input type="checkbox" id="config-sante-conjoint"> conjoint couvert</label>
     <label>Enfants couverts
-      <input type="number" min="0" step="1" id="config-sante-enfants" value="0"></label>
+      <input type="text" inputmode="numeric" id="config-sante-enfants" value="0"></label>
     <div class="aide">${echapper(ETAT.sante_aide)}</div>
   </div>`;
 }

@@ -899,10 +899,11 @@ function brancherSante(fiche) {
   const ecrire = () => {
     if (!champ) return;
     // Pas de niveau : pas de mutuelle. `null` et non un objet vide — une
-    // fiche qui porterait {"niveau": ""} ferait croire à un choix fait.
+    // fiche qui porterait {"niveau": ""} ferait croire à un choix fait. Le nombre d'enfants part tel qu'il est tapé : la
+    // route le convertit, et le refuse en nommant la case.
     champ.value = JSON.stringify(
       niveau.value ? { niveau: niveau.value, conjoint: conjoint.checked,
-                       enfants: enfants.value === "" ? null : +enfants.value } : null, null, 1);
+                       enfants: enfants.value.trim() || null } : null, null, 1);
     champ.classList.remove("faute");
     verifierFormulaire();
   };

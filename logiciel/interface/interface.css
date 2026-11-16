@@ -406,7 +406,7 @@ tr.total td { font-weight: bold; border-top: 2px solid var(--texte); border-bott
 #config-sante > label:first-child { flex: 1 1 22rem; }
 #config-sante label.coche { display: flex; align-items: center; gap: 6px; height: 30px; }
 #config-sante label.coche input { width: auto; margin: 0; }
-#config-sante input[type="number"] { width: 6rem; }
+#config-sante-enfants { width: 6rem; }
 #config-sante .aide { flex-basis: 100%; }
 
 /* -------------------------------------------------------- configuration */

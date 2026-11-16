@@ -2717,7 +2717,12 @@ cases! {
 
 cases! {
     /// La complementaire sante d'un permanent : le niveau souscrit et la composition couverte.
-    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: usize }
+    pub struct SanteSvp {
+        niveau: crate::forme_bareme::NiveauDeGarantie,
+        conjoint: bool,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::compte::option::deserialize")]
+        enfants: usize,
+    }
 }
 
 cases! {
