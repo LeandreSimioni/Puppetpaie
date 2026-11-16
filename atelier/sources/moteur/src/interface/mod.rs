@@ -808,7 +808,7 @@ impl Fenetre {
         if nom == Route::AdministrateurTableau {
             let c: routes::accueil::ChargeTableau = match charge.lire() {
                 Ok(c) => c,
-                Err(e) => return RouteReponse::de(nom, Err(e)),
+                Err(e) => return RouteReponse::de(nom, Err(routes::case_nommee(nom, e))),
             };
             if c.garde == Some(true) || c.relever == Some(true) {
                 return api::route_de_l_installation(nom, charge);
@@ -965,7 +965,7 @@ impl Fenetre {
                 if nom == Route::CompagnieSupprimer {
                     let c: suppression::ChargeSupprimer = match charge.lire() {
                         Ok(c) => c,
-                        Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(e))),
+                        Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(routes::case_nommee(nom, e)))),
                     };
                     if c.confirme == Some(true) {
                         let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {

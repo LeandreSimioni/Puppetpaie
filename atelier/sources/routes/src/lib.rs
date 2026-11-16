@@ -193,12 +193,16 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
 }
 
 /// LE REFUS `e` DE LA ROUTE `route`, s'il est celui d'une case de sa charge (`Charge::lire`, `CaseRefusee`) : sa phrase
-/// dit la case comme l'ecran la montre, et pourquoi (`socle::forme::case_refusee`) ; tout autre refus, tel quel.
-fn case_nommee(route: Route, e: Echec) -> Echec {
+/// dit la case comme l'ecran la montre, et pourquoi (`socle::forme::case_refusee`), et la memoire des echecs la note ;
+/// tout autre refus, tel quel. La seule fabrique de cette phrase, quelle que soit l'entree qui lit la charge (la route
+/// servie, la fenetre qui lit une charge avant elle).
+#[track_caller]
+pub fn case_nommee(route: Route, e: Echec) -> Echec {
     let phrase = match e.case_refusee() {
         Some(c) => socle::forme::case_refusee(&libelle_de_la_case(route, &c.case), &c.detail),
         None => return e,
     };
+    socle::echec::noter_echec(e.classe, &phrase);
     Echec { phrase, ..e }
 }
 

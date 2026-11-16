@@ -39,9 +39,10 @@ pub fn case_refusee(case: &str, raison: &str) -> String {
     format!("{} : {}", case, raison)
 }
 
-/// LA CASE OU UNE SAISIE `v` SE REFUSE AU CHEMIN `chemin` : la case du changement qui la porte (`{"case": …, "valeur":
-/// …}`, celui de la carte), sinon la premiere cle du chemin ; aucune pour une faute de la saisie elle-meme (une cle
-/// inconnue, une cle qui manque).
+/// LA CASE OU UNE SAISIE `v` SE REFUSE AU CHEMIN `chemin` : une faute qui a un chemin se dit par sa case, a tout niveau
+/// (une valeur qui ne se lit pas, une cle inconnue ou qui manque dans une case) : la case du changement qui la porte
+/// (`{"case": …, "valeur": …}`, celui de la carte), sinon la premiere cle du chemin. Aucune pour une faute a la racine de
+/// la saisie (une cle inconnue, une cle qui manque a la charge).
 fn case_au_chemin(v: &Value, chemin: &serde_path_to_error::Path) -> Option<crate::echec::CaseDeLaSaisie> {
     use crate::echec::CaseDeLaSaisie;
     use serde_path_to_error::Segment;
@@ -109,10 +110,10 @@ impl Drop for EnSaisie {
 }
 
 /// LE REFUS D'UNE SAISIE A SA CASE `case` (au chemin `cle`), pour la raison `detail` : la route en fait sa phrase
-/// (`echec::CaseRefusee`) ; `phrase` est celle d'un appel qui ne la nomme pas.
-#[track_caller]
+/// (`echec::CaseRefusee`), et c'est elle que la memoire des echecs note, la ou la route la fait
+/// (`routes::case_nommee`) ; `phrase` est celle d'un appel qui ne la nomme pas.
 fn case_refusee_a(phrase: &str, case: crate::echec::CaseDeLaSaisie, cle: String, detail: String) -> Echec {
-    refus_avec(phrase, crate::echec::APart::Case(crate::echec::CaseRefusee { case, cle, detail }))
+    Echec { classe: None, phrase: phrase.to_string(), a_part: Some(crate::echec::APart::Case(crate::echec::CaseRefusee { case, cle, detail })) }
 }
 
 /// Lit-on une saisie (`lire_saisie`) ?
