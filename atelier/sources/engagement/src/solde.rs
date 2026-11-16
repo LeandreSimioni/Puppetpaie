@@ -19,7 +19,7 @@ use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::euros;
 use socle::echec::R;
-use socle::grandeurs::{courte, Coefficient, Jours, Montant, MontantUnitaire};
+use socle::grandeurs::{courte, Coefficient, Jours, Montant, MontantUnitaire, NonNul};
 use socle::grandeurs::ecrit::texte;
 use droit::permanents::{self, jours_acquis, IndemniteDePreavis};
 use socle::date::{Anciennete, Periode};
@@ -692,9 +692,8 @@ fn delai_de_prevenance(
 /// ouvrables du mois entier `mois` (`droit::conges::jours_ouvrables`). Un mois en compte toujours (six jours par semaine,
 /// hors les feries chomes) : aucun est un defaut du calendrier, qui remonte.
 pub(crate) fn salaire_d_un_jour_ouvrable(salaire: MontantUnitaire, mois: Mois, chomes: Option<&str>) -> R<MontantUnitaire> {
-    salaire
-        .par_jour(jours_ouvrables(&Periode::du_mois(mois), chomes)?)
-        .ok_or_else(|| socle::refus!("Défaut du logiciel : le mois {} n'a aucun jour ouvrable.", mois))
+    let jours = NonNul::de(jours_ouvrables(&Periode::du_mois(mois), chomes)?).ok_or_else(|| socle::refus!("Défaut du logiciel : le mois {} n'a aucun jour ouvrable.", mois))?;
+    Ok(salaire.par_jour(jours))
 }
 
 /// LES CONGES D'UN TEMPS PAYE SANS ETRE EFFECTUE : le delai de prevenance (L1221-25) et le preavis (L1234-5) sont payes

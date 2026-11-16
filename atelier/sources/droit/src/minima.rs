@@ -300,10 +300,12 @@ forme_notee! {
         /// la meme notion (`catalogue::Unite`). Une unite hors de sa liste refuse le fichier a la lecture, au chemin de la
         /// grille.
         pub unite: crate::catalogue::Unite,
-        /// Les heures que sa valeur paie (une semaine de 35 h, un mois de 151,67 h) : d'une grille au mois, les heures du
-        /// mois, comme `Convention.heures_mensuelles` ; d'une autre unite, les heures de cette unite
-        /// (`Heures::pour_une_unite`).
-        pub heures: Option<Heures>,
+        /// Les heures du mois que la valeur d'une grille au mois paie (151,67 h), comme `Convention.heures_mensuelles` :
+        /// dites, la grille se ramene a l'heure. Une grille d'une autre unite ne les dit pas (`table`).
+        pub heures_du_mois: Option<Heures>,
+        /// Les heures de l'unite que la valeur d'une grille a la semaine, a la journee ou a l'heure paie (une semaine de
+        /// 35 h, une journee de 8 h) : dites, la grille se ramene a l'heure. Une grille au mois ne les dit pas (`table`).
+        pub heures_par_unite: Option<HeuresParUnite>,
         /// Les lignes de minima des metiers qu'elle vise (`emplois-base.json`, `minima.<idcc>`).
         pub categories: Option<Vec<CleDeGrille>>,
         pub codes: Option<Vec<crate::emplois::CodeEmploi>>,
@@ -496,10 +498,34 @@ impl Majoration {
 
 const ILLISIBLE: &str = "Les minima conventionnels livrés avec le logiciel ne se lisent pas : le signaler au développeur.";
 
-/// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme.
+/// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme, et les heures de chaque grille dans la grandeur de son
+/// unite.
 pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
-    forme_en_cache(&CACHE, &BASE, ILLISIBLE, Ok)
+    forme_en_cache(&CACHE, &BASE, ILLISIBLE, |t: Table| {
+        for (idcc, c) in &t.conventions {
+            heures_dans_leur_unite(c, &format!("conventions.{}", idcc))?;
+        }
+        Ok(t)
+    })
+}
+
+/// Une grille au mois dit ses heures du mois, une autre les heures de son unite, jamais l'inverse : une cle hors de son
+/// unite refuse la table (`ou` : la convention, ou l'accord, qui la porte).
+fn heures_dans_leur_unite(c: &Convention, ou: &str) -> R<()> {
+    for g in c.grilles.iter().chain(&c.grilles_complementaires).flatten() {
+        let hors = match g.unite {
+            crate::catalogue::Unite::Mois => g.heures_par_unite.map(|_| "heures_par_unite"),
+            _ => g.heures_du_mois.map(|_| "heures_du_mois"),
+        };
+        if let Some(cle) = hors {
+            return Err(socle::echec::livree_dite(&BASE, cle, format!("{}, la grille {} paie {}", ou, g.nom, g.unite)));
+        }
+    }
+    for (i, a) in c.accords.iter().flatten().enumerate() {
+        heures_dans_leur_unite(a, &format!("{}.accords.{}", ou, i))?;
+    }
+    Ok(())
 }
 
 // ------------------------------------------------------------ les lectures

@@ -1046,7 +1046,7 @@
       "nom": "artistes dramatiques et chorégraphiques, au mois",
       "statut": "artiste",
       "unite": "mois",
-      "heures": 151.67,
+      "heures_du_mois": 151.67,
       "categories": ["dramatique"],
       "source": {"fichier": "atelier/reference/sources/kali-1285-accord-salaires-2026/kali-1285-accord-salaires-2026-art1.1.1-KALIARTI000054981896-20261102.xml", "emetteur": "convention", "citation": "Cachet forfaitaire jour – 1 ou 2 cachets dans le mois 162,75"},
       "note": "Art. 1.1.1 : CDI et CDD de plus de 4 mois 2 143,56 ; CDD de moins de 4 mois 2 252,37 ; avec fractionnement 2 469,98 -- le plus bas. Les stagiaires : -30 % la 1re annee, -15 % la 2e (`stagiaire_ccneac` sur la fiche).",
@@ -1080,7 +1080,7 @@
       "nom": "artistes de cirque, au mois",
       "statut": "artiste",
       "unite": "mois",
-      "heures": 151.67,
+      "heures_du_mois": 151.67,
       "categories": ["cirque"],
       "source": {"fichier": "atelier/reference/sources/kali-1285-accord-salaires-2026/kali-1285-accord-salaires-2026-art1.1.1-KALIARTI000054981896-20261102.xml", "emetteur": "convention", "citation": "Cachet forfaitaire jour – 1 ou 2 cachets dans le mois 162,75"},
       "note": "Art. 1.1.4 : salaire mensuel 2 252,37, plateau de 5 artistes ou moins comme au-dela, et en creation.",
@@ -1092,7 +1092,7 @@
       "nom": "musiciens, au mois",
       "statut": "artiste",
       "unite": "mois",
-      "heures": 151.67,
+      "heures_du_mois": 151.67,
       "categories": ["musicien_autres"],
       "source": {"fichier": "atelier/reference/sources/kali-1285-accord-salaires-2026/kali-1285-accord-salaires-2026-art1.1.1-KALIARTI000054981896-20261102.xml", "emetteur": "convention", "citation": "Cachet forfaitaire jour – 1 ou 2 cachets dans le mois 162,75"},
       "note": "Art. 1.1.2 : CDI des musiques actuelles 2 856,24, le plus bas des quatre ensembles (sans nomenclature 2 902,08, autres entreprises 2 856,35, avec nomenclature 3 250,97 le tuttiste) ; un CDD de plus d'un mois est plus haut (2 962,85, CDDU 3 123,31). L'ensemble ne se lit pas sur la paie.",
@@ -1104,7 +1104,7 @@
       "nom": "artistes de chœur, au mois",
       "statut": "artiste",
       "unite": "mois",
-      "heures": 151.67,
+      "heures_du_mois": 151.67,
       "categories": ["choeur"],
       "source": {"fichier": "atelier/reference/sources/kali-1285-accord-salaires-2026/kali-1285-accord-salaires-2026-art1.1.1-KALIARTI000054981896-20261102.xml", "emetteur": "convention", "citation": "Cachet forfaitaire jour – 1 ou 2 cachets dans le mois 162,75"},
       "note": "Art. 1.1.3 : CDI par anciennete dans l'entreprise (1re a 3e annee 2 165,00 ; 4e a 6e 2 214,45 ; 7e a 9e 2 285,41 ; 10e a 12e 2 358,87 ; 13e a 15e 2 434,88 ; 16e a 18e 2 502,33 -- le texte ecrit << 6e a 18e >>, [INFERENCE] la 16e, qui suit la 15e ; a partir de la 19e, 3 % tous les 3 ans, non porte) ; CDD de droit commun 2 165,00 ; CDDU 2 282,29. L'anciennete se lit sur `poste_depuis` (dans la fonction chez l'employeur, donc au plus l'anciennete dans l'entreprise : jamais a tort).",
@@ -1173,7 +1173,7 @@
       "nom": "artistes lyriques solistes, au mois",
       "statut": "artiste",
       "unite": "mois",
-      "heures": 151.67,
+      "heures_du_mois": 151.67,
       "categories": ["lyrique_soliste"],
       "source": {"fichier": "atelier/reference/sources/kali-1285-accord-salaires-2026/kali-1285-accord-salaires-2026-art1.1.1-KALIARTI000054981896-20261102.xml", "emetteur": "convention", "citation": "Cachet forfaitaire jour – 1 ou 2 cachets dans le mois 162,75"},
       "note": "Art. 1.1.3 : CDI et CDD de droit commun 2 626,66 ; CDDU de plus d'un mois 2 870,08.",
@@ -1189,7 +1189,7 @@
     "nom": "artistes dramatiques et chorégraphiques, au mois",
     "statut": "artiste",
     "unite": "mois",
-    "heures": 151.67,
+    "heures_du_mois": 151.67,
     "categories": [
      "dramatique"
     ],
@@ -1225,7 +1225,7 @@
     "nom": "artistes de cirque, au mois",
     "statut": "artiste",
     "unite": "mois",
-    "heures": 151.67,
+    "heures_du_mois": 151.67,
     "categories": [
      "cirque"
     ],
@@ -1239,7 +1239,7 @@
     "nom": "musiciens, au mois",
     "statut": "artiste",
     "unite": "mois",
-    "heures": 151.67,
+    "heures_du_mois": 151.67,
     "categories": [
      "musicien_autres"
     ],
@@ -1253,7 +1253,7 @@
     "nom": "artistes de chœur, au mois",
     "statut": "artiste",
     "unite": "mois",
-    "heures": 151.67,
+    "heures_du_mois": 151.67,
     "categories": [
      "choeur"
     ],
@@ -1324,7 +1324,7 @@
     "nom": "artistes lyriques solistes, au mois",
     "statut": "artiste",
     "unite": "mois",
-    "heures": 151.67,
+    "heures_du_mois": 151.67,
     "categories": [
      "lyrique_soliste"
     ],
@@ -2705,7 +2705,6 @@
     "population": "intermittent",
     "statut": "artiste",
     "unite": "cachet",
-    "heures": null,
     "categories": [
      "dramatique"
     ],
@@ -2722,7 +2721,6 @@
     "population": "intermittent",
     "statut": "artiste",
     "unite": "cachet",
-    "heures": null,
     "categories": [
      "choregraphique"
     ],
@@ -2738,7 +2736,6 @@
     "population": "intermittent",
     "statut": "artiste",
     "unite": "cachet",
-    "heures": null,
     "categories": [
      "lyrique_soliste",
      "chanteur"
@@ -2755,7 +2752,6 @@
     "population": "intermittent",
     "statut": "artiste",
     "unite": "cachet",
-    "heures": null,
     "categories": [
      "lyrique_choeur"
     ],
@@ -2771,7 +2767,6 @@
     "population": "intermittent",
     "statut": "artiste",
     "unite": "cachet",
-    "heures": null,
     "categories": [
      "varietes",
      "chanteur"
@@ -2789,7 +2784,6 @@
     "population": "intermittent",
     "statut": "artiste",
     "unite": "cachet",
-    "heures": null,
     "categories": [
      "musicien"
     ],
@@ -2812,7 +2806,6 @@
     "population": "intermittent",
     "statut": "artiste",
     "unite": "cachet",
-    "heures": null,
     "categories": [
      "figurant"
     ],
@@ -2828,7 +2821,6 @@
     "population": "intermittent",
     "statut": "artiste",
     "unite": "cachet",
-    "heures": null,
     "categories": [
      "doublure_lumiere"
     ],
@@ -2842,7 +2834,6 @@
     "nom": "réalisateurs de fiction, la journée",
     "unite": "jour",
     "statut": "artiste",
-    "heures": null,
     "categories": [
      "realisateur"
     ],
@@ -2859,7 +2850,6 @@
     "nom": "réalisateurs de fiction, la semaine",
     "unite": "semaine",
     "statut": "artiste",
-    "heures": null,
     "categories": [
      "realisateur"
     ],
@@ -2876,7 +2866,6 @@
     "nom": "réalisateurs de fiction, le mois",
     "unite": "mois",
     "statut": "artiste",
-    "heures": null,
     "categories": [
      "realisateur"
     ],
@@ -3124,7 +3113,6 @@
      "realisateur"
     ],
     "statut": "artiste",
-    "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
     "note": "Contrat de moins de 5 mois 3 015,27 ; contrat hors production du film, engagement d'une semaine ou plus, 1 977,68 -- le plus bas, la paie ne disant pas si le contrat est de production.",
     "valeurs": {
@@ -3139,7 +3127,6 @@
      "realisateur"
     ],
     "statut": "artiste",
-    "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
     "si_spectacle": {
      "derogation_annexe_iii_3097": true
@@ -3159,7 +3146,6 @@
      "realisateur"
     ],
     "statut": "artiste",
-    "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
     "note": "Contrat hors production du film, engagement de moins de 5 jours consecutifs : 494,42 la journee. Une journee de production n'a pas de minimum propre (la semaine / 5 serait plus haute) : le plus bas.",
     "valeurs": {
@@ -3173,7 +3159,6 @@
      "realisateur_publicite"
     ],
     "statut": "artiste",
-    "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
     "valeurs": {
      "engagement d'une semaine ou plus": 3733.93
@@ -3186,7 +3171,6 @@
      "realisateur_publicite"
     ],
     "statut": "artiste",
-    "heures": null,
     "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097", "emetteur": "convention", "article": "KALIARTI000050329476", "citation": "Les salaires minima sont garantis sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorées de 25 %."},
     "valeurs": {
      "engagement de moins de 5 jours": 933.48
@@ -3216,7 +3200,7 @@
             "nom": "niveaux (art. 7.3)",
             "population": "permanent",
             "unite": "mois",
-            "heures": 151.67,
+            "heures_du_mois": 151.67,
             "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000055028614", "citation": "Le tableau suivant se substitue intégralement au tableau de l'article 7.3 du tronc commun de la convention collective."},
             "valeurs": {
               "niveau 2": 1874,
@@ -3276,7 +3260,7 @@
             "nom": "fonctions des permanents",
             "population": "permanent",
             "unite": "mois",
-            "heures": 151.67,
+            "heures_du_mois": 151.67,
             "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000055028607", "citation": "les grilles annexées au présent avenant se substituent intégralement aux grilles correspondantes dans le tronc commun et les annexes de la convention"},
             "note": "art. 7.2, annexes I a V",
             "valeurs": {
@@ -4415,7 +4399,7 @@
             "population": "intermittent",
             "statut": "technicien",
             "unite": "heure",
-            "heures": 1,
+            "heures_par_unite": 1,
             "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000055028607", "citation": "il a été décidé d'augmenter les salaires minimaux horaires applicables aux CDD d'usage comme suit"},
             "note": "annexes I a IV (CDDU)",
             "valeurs": {
@@ -4648,7 +4632,6 @@
             "population": "intermittent",
             "statut": "artiste",
             "unite": "cachet",
-            "heures": null,
             "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000047046175", "citation": "Grille de rémunération des artistes-interprètes à partir du 1er janvier 2023"},
             "valeurs": {
               "cat1a_1-6_lignes_demi_journee": 121.73,
@@ -4695,7 +4678,7 @@
             "population": "intermittent",
             "statut": "artiste",
             "unite": "heure",
-            "heures": 1,
+            "heures_par_unite": 1,
             "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000051642282", "citation": "La rémunération de la prestation du mannequin est mentionnée au contrat de travail en salaire brut"},
             "valeurs": {
               "essayage_technique_adulte": 81.05,
@@ -4729,7 +4712,6 @@
             "population": "intermittent",
             "statut": "artiste",
             "unite": "jour",
-            "heures": null,
             "codes": [
               "MAN010"
             ],
@@ -4748,7 +4730,6 @@
             "population": "intermittent",
             "statut": "artiste",
             "unite": "semaine",
-            "heures": null,
             "codes": [
               "MAN010"
             ],
@@ -4767,7 +4748,6 @@
             "population": "intermittent",
             "statut": "technicien",
             "unite": "jour",
-            "heures": null,
             "codes": [
               "DIR020"
             ],
@@ -4795,7 +4775,7 @@
         "nom": "niveaux (art. 7.3)",
         "population": "permanent",
         "unite": "mois",
-        "heures": 151.67,
+        "heures_du_mois": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000051948357", "citation": "Le niveau et le salaire minimum applicables à une fonction non-référencée dans les grilles de classification"},
         "valeurs": {
           "niveau 1": 1802,
@@ -4858,7 +4838,7 @@
         "nom": "fonctions des permanents",
         "population": "permanent",
         "unite": "mois",
-        "heures": 151.67,
+        "heures_du_mois": 151.67,
         "note": "art. 7.2, annexes I a V",
         "valeurs": {
           "Chargé d'accueil, standardiste bilingue [Accueil]": 2007.0,
@@ -6017,7 +5997,7 @@
         "population": "intermittent",
         "statut": "technicien",
         "unite": "heure",
-        "heures": 1,
+        "heures_par_unite": 1,
         "note": "annexes I a IV (CDDU)",
         "valeurs": {
           "Ingénieur du son [Son]": 34.1,
@@ -6254,7 +6234,6 @@
         "population": "intermittent",
         "statut": "artiste",
         "unite": "cachet",
-        "heures": null,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000047046175", "citation": "Grille de rémunération des artistes-interprètes à partir du 1er janvier 2023"},
         "valeurs": {
           "cat1a_1-6_lignes_demi_journee": 121.73,
@@ -6301,7 +6280,7 @@
         "population": "intermittent",
         "statut": "artiste",
         "unite": "heure",
-        "heures": 1,
+        "heures_par_unite": 1,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3252", "emetteur": "convention", "article": "KALIARTI000051642282", "citation": "La rémunération de la prestation du mannequin est mentionnée au contrat de travail en salaire brut"},
         "valeurs": {
           "essayage_technique_adulte": 81.05,
@@ -6335,7 +6314,6 @@
         "population": "intermittent",
         "statut": "artiste",
         "unite": "jour",
-        "heures": null,
         "codes": [
           "MAN010"
         ],
@@ -6354,7 +6332,6 @@
         "population": "intermittent",
         "statut": "artiste",
         "unite": "semaine",
-        "heures": null,
         "codes": [
           "MAN010"
         ],
@@ -6373,7 +6350,6 @@
         "population": "intermittent",
         "statut": "technicien",
         "unite": "jour",
-        "heures": null,
         "codes": [
           "DIR020"
         ],
@@ -6409,7 +6385,7 @@
         "population": "intermittent",
         "statut": "technicien",
         "unite": "semaine",
-        "heures": 35,
+        "heures_par_unite": 35,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2412", "emetteur": "convention", "article": "KALIARTI000050506609", "citation": "Salaires minima conventionnels (CDI et CDD de droit commun)"},
         "valeurs": {
           "1er assistant réalisateur [II]": 723.48,
@@ -6565,7 +6541,7 @@
         "nom": "CDI et CDD de droit commun",
         "population": "permanent",
         "unite": "mois",
-        "heures": 151.67,
+        "heures_du_mois": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2412", "emetteur": "convention", "article": "KALIARTI000050506609", "citation": "Salaires minima conventionnels (CDI et CDD de droit commun)"},
         "valeurs": {
           "Chargé de négociation/business affairs [I]": 3332.16,
@@ -6790,7 +6766,7 @@
         "nom": "permanents, moins de 50 salariés",
         "population": "permanent",
         "unite": "mois",
-        "heures": 151.67,
+        "heures_du_mois": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3241", "emetteur": "convention", "article": "KALIARTI000054880884", "citation": "Au 1er juin 2026 (mensuel)"},
         "valeurs": {
           "I-A": 1870,
@@ -6842,7 +6818,7 @@
         "population": "intermittent",
         "statut": "technicien",
         "unite": "jour",
-        "heures": 8,
+        "heures_par_unite": 8,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3241", "emetteur": "convention", "article": "KALIARTI000054880855", "citation": "Salaire brut minimum journalier (8 heures)"},
         "valeurs": {
           "niveau 1": 119.83,
@@ -6888,7 +6864,6 @@
         "population": "intermittent",
         "statut": "artiste",
         "unite": "cachet",
-        "heures": null,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3241", "emetteur": "convention", "article": "KALIARTI000054880855", "citation": "Salaire brut minimum journalier (8 heures)"},
         "valeurs": {
           "Participant": 59.6,
@@ -6927,7 +6902,6 @@
         "population": "intermittent",
         "statut": "artiste",
         "unite": "cachet",
-        "heures": null,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#1734", "emetteur": "convention", "article": "KALIARTI000049300569", "citation": "Barème de rémunération au 1er février 2024"},
         "valeurs": {
           "dramatique - journée répétition ou enregistrement": 286.37,
@@ -6960,7 +6934,7 @@
         "nom": "permanents du disque",
         "population": "permanent",
         "unite": "mois",
-        "heures": 151.67,
+        "heures_du_mois": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2121", "emetteur": "convention", "article": "KALIARTI000054262231", "citation": "les salaires minima annuels et mensuels sont augmentés de 1,18 %"},
         "valeurs": {
           "niveau I": 1829.34,
@@ -6979,7 +6953,6 @@
         "population": "intermittent",
         "statut": "artiste",
         "unite": "cachet",
-        "heures": null,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2121", "emetteur": "convention", "article": "KALIARTI000054273017", "citation": "les dispositions du présent titre III fixent les conditions particulières"},
         "valeurs": {
           "service de 3 h (cachet de base)": 188.0,
@@ -6991,7 +6964,6 @@
         "population": "intermittent",
         "statut": "technicien",
         "unite": "jour",
-        "heures": null,
         "source": {"fichier": "atelier/reference/sources/bocc-2121-nao-phono-20260203.md", "emetteur": "convention", "citation": "Salaire journalier pour un contrat de 5 jours dans le cadre des activités « phonogramme » ou « spectacle vivant promotionnel »"},
         "note": "Annexe I de l'accord NAO du 03/02/2026 (BOCC 2026-12, p. 140-167), 105 fonctions, salaire journalier. La journee n'a pas de duree dans le texte : la grille se compare a une ligne payee a la journee, jamais a l'heure. Chaque fonction a cinq colonnes (phonogramme studio et captation, phonogramme captation, videogramme tournage et captation, videogramme captation, spectacle vivant promotionnel) et quatre lignes selon la duree du contrat (moins de 5 jours, 5 jours, 10 jours sur 21, 15 jours sur 30) : l'activite ne se lit pas sur la paie, la valeur portee est la PLUS BASSE des cellules de la fonction.",
         "valeurs": {
@@ -7107,7 +7079,6 @@
         "population": "intermittent",
         "statut": "technicien",
         "unite": "jour",
-        "heures": null,
         "source": {"fichier": "atelier/reference/sources/bocc-2121-nao-phono-20260203.md", "emetteur": "convention", "citation": "Salaire journalier pour un contrat de 5 jours dans le cadre des activités « phonogramme » ou « spectacle vivant promotionnel »"},
         "duree_contrat_max_jours": 4,
         "remplace": [
@@ -7237,7 +7208,7 @@
         "nom": "indices de référence",
         "population": "permanent",
         "unite": "mois",
-        "heures": 151.67,
+        "heures_du_mois": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#1922", "emetteur": "convention", "article": "KALIARTI000052283593", "citation": "rappellent au présent article la formule permettant le calcul des salaires"},
         "valeurs": {
           "indice 121": 1826.99,
@@ -7370,7 +7341,7 @@
         "nom": "niveaux et échelons",
         "population": "permanent",
         "unite": "mois",
-        "heures": 151.67,
+        "heures_du_mois": 151.67,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#1790", "emetteur": "convention", "article": "KALIARTI000054871994", "citation": "Comme suite aux réunions de négociation de la commission paritaire nationale de la convention collective des espaces de loisirs, d'attractions et culturels"},
         "valeurs": {
           "niveau I.1": 1851.85,
@@ -7413,7 +7384,6 @@
         "population": "intermittent",
         "statut": "artiste",
         "unite": "cachet",
-        "heures": null,
         "source": {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#1790", "emetteur": "convention", "article": "KALIARTI000054871994", "citation": "Comme suite aux réunions de négociation de la commission paritaire nationale de la convention collective des espaces de loisirs, d'attractions et culturels"},
         "valeurs": {
           "niveau II.1": 112.93,

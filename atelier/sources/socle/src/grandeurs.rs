@@ -35,6 +35,18 @@ mod scelle {
 
 use scelle::Scelle;
 
+/// UNE GRANDEUR QUI N'EST PAS NULLE : un diviseur que la division prend sans refus (`MontantUnitaire::par_jour`). Elle
+/// se lit d'une grandeur, `None` quand elle est nulle (`de`), ou se fixe d'un texte (`Jours::non_nuls`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NonNul<G: Grandeur>(G);
+
+impl<G: Grandeur> NonNul<G> {
+    /// Cette grandeur, si elle n'est pas nulle.
+    pub fn de(g: G) -> Option<NonNul<G>> {
+        (!g.en_decimal().is_zero()).then_some(NonNul(g))
+    }
+}
+
 /// Une grandeur par nom : son decimal, sa porte de sortie, l'addition et la soustraction de deux grandeurs de meme nom,
 /// sa lecture.
 macro_rules! grandeurs {
@@ -566,6 +578,12 @@ impl Jours {
         Jours(Decimal::from_parts(n, 0, 0, false, 0))
     }
 
+    /// Des jours qu'un texte fixe, entiers et jamais nuls (la semaine de 5 jours d'un artiste de la 3097, titre III) :
+    /// un diviseur.
+    pub const fn non_nuls(n: std::num::NonZeroU32) -> NonNul<Jours> {
+        NonNul(Jours::fixes(n.get()))
+    }
+
     /// Au demi-jour le plus proche, la moitie loin de zero (1,04 jour : 1 ; 1,3 : 1,5) : des jours qu'une phrase dit
     /// « environ ». Aucun texte deposé ne dit cet arrondi.
     pub fn au_demi(self) -> Jours {
@@ -793,12 +811,6 @@ impl Heures {
         HeuresParUnite(num::court(self.au_centieme().0))
     }
 
-    /// CES HEURES, CELLES D'UNE SEULE UNITE (la valeur d'une grille des minima qui paie une semaine de 35 h : 35 h par
-    /// semaine) : heures / une unite = heures par unite, comme `Montant::pour_une_unite`.
-    pub fn pour_une_unite(self) -> HeuresParUnite {
-        HeuresParUnite(self.0)
-    }
-
     /// Les cachets qu'il faut pour faire ces heures, a `par_cachet` heures chacun, le dernier entame compte (13 h a 12 h le
     /// cachet : 2 cachets) ; `None` : un cachet de zero heure n'en fait aucune.
     pub fn cachets_pour(self, par_cachet: HeuresParUnite) -> Option<Cachets> {
@@ -913,15 +925,11 @@ impl MontantUnitaire {
     }
 
     /// Le montant d'une unite reparti sur les jours `j` qu'elle compte (le salaire d'un mois sur ses jours ouvrables :
-    /// le salaire d'un jour) : montant unitaire / jours = montant unitaire ; `None` quand `j` est nul.
-    pub fn par_jour(self, j: Jours) -> Option<MontantUnitaire> {
-        (!j.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, j.0)))
-    }
-
-    /// Le montant d'une unite reparti sur les `jours` qu'un texte fixe (la semaine de 5 ou de 6 jours d'un artiste de la
-    /// 3097, titre III : le prix d'un jour) : montant unitaire / jours = montant unitaire, exact ; jamais nuls.
-    pub fn sur_jours_fixes(self, jours: std::num::NonZeroU32) -> MontantUnitaire {
-        MontantUnitaire(num::div(self.0, Decimal::from(jours.get())))
+    /// le salaire d'un jour ; la semaine de 5 jours d'un artiste de la 3097 : le prix d'un jour) : montant unitaire /
+    /// jours = montant unitaire, exact. Des jours non nuls : `NonNul::de`, ou `Jours::non_nuls` pour ceux qu'un texte
+    /// fixe.
+    pub fn par_jour(self, j: NonNul<Jours>) -> MontantUnitaire {
+        MontantUnitaire(num::div(self.0, j.0 .0))
     }
 
     /// Le prix d'une unite pour chacune des heures `h` par unite qu'elle paie (une semaine de 35 h, la valeur d'une

@@ -22,7 +22,7 @@ use droit::emplois;
 use crate::{Avis, Engagement};
 use droit::minima::{grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
-use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, MontantUnitaire, Services, Taux};
+use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, Jours, MontantUnitaire, NonNul, Services, Taux};
 use socle::echec::{refus, Echec, R};
 use crate::ligne::QuantiteDeLigne;
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
@@ -74,8 +74,8 @@ fn paye_a_l_heure(l: &LigneBrut) -> Option<MontantUnitaire> {
 }
 
 /// Les jours de la semaine de 5 et de 6 jours d'un artiste de la 3097, titre III.
-const CINQ_JOURS: std::num::NonZeroU32 = std::num::NonZeroU32::new(5).expect("cinq n'est pas nul");
-const SIX_JOURS: std::num::NonZeroU32 = std::num::NonZeroU32::new(6).expect("six n'est pas nul");
+const CINQ_JOURS: NonNul<Jours> = Jours::non_nuls(std::num::NonZeroU32::new(5).expect("cinq n'est pas nul"));
+const SIX_JOURS: NonNul<Jours> = Jours::non_nuls(std::num::NonZeroU32::new(6).expect("six n'est pas nul"));
 
 /// Les heures du mois telles qu'une phrase les dit (« 151,67 h »).
 fn heures_dites(h: Heures) -> String {
@@ -477,8 +477,8 @@ impl<'a> Cx<'a> {
                 (role, format!("acteur de complément ({}), long-métrage", reference.as_str().replace('_', " ")))
             };
             let (montant, regle) = if self.nb_cachets >= Cachets::fixes(5) {
-                let s5 = grille.semaine_5j.sur_jours_fixes(CINQ_JOURS);
-                let s6 = grille.semaine_6j.sur_jours_fixes(SIX_JOURS);
+                let s5 = grille.semaine_5j.par_jour(CINQ_JOURS);
+                let s6 = grille.semaine_6j.par_jour(SIX_JOURS);
                 ((if s6 < s5 { s6 } else { s5 }).au_centime_vers_zero(), "engagement à la semaine, rapporté au cachet")
             } else {
                 (grille.journee, "engagement à la journée")
@@ -692,11 +692,16 @@ impl<'a> Cx<'a> {
                     unite: true,
                 });
             } else {
-                let heures = gr.heures.ok_or_else(|| manque("heures"))?;
                 // Une grille au mois se ramene a l'heure comme tout mensuel ; une autre unite, sur ses heures.
-                let mut h = match unite {
-                    Unite::Mois => horaire_du_mensuel(montant, heures, "heures")?,
-                    _ => par_heure(montant, heures.pour_une_unite(), "heures")?.au_centime_vers_zero(),
+                let (mut h, heures) = match unite {
+                    Unite::Mois => {
+                        let heures = gr.heures_du_mois.ok_or_else(|| manque("heures_du_mois"))?;
+                        (horaire_du_mensuel(montant, heures, "heures_du_mois")?, virgule(socle::grandeurs::au_centieme_au_pair(heures)))
+                    }
+                    _ => {
+                        let heures = gr.heures_par_unite.ok_or_else(|| manque("heures_par_unite"))?;
+                        (par_heure(montant, heures, "heures_par_unite")?.au_centime_vers_zero(), virgule(socle::grandeurs::au_centieme_au_pair(heures)))
+                    }
                 };
                 if let Some(facteur) = gr.facteur.filter(|f| !f.est_nul()) {
                     // Un taux horaire qui ne vaut pas pour toutes les heures : le plus bas taux effectif.
@@ -716,7 +721,7 @@ impl<'a> Cx<'a> {
                 };
                 trouves.push(Plancher {
                     montant: h,
-                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(montant), par, virgule(socle::grandeurs::au_centieme_au_pair(heures))),
+                    quoi: format!("CCN {}, {}, {} : {} {}, pour {} h, ramené à l'heure", idcc, nom, dit, euros(montant), par, heures),
                     unite: false,
                 });
             }
@@ -893,9 +898,13 @@ fn musicien_dans(refs: &BTreeMap<AnnexeConvention, CleDeGrille>, annexe: &Annexe
     refs.get(annexe).is_some_and(|s| matches!(s.as_str().split('.').next(), Some("musicien" | "chef_orchestre")))
 }
 
-/// Une grille qui se ramene a l'heure : elle dit les heures que sa valeur paie.
+/// Une grille qui se ramene a l'heure : elle dit les heures que sa valeur paie, celles du mois d'une grille au mois,
+/// celles de son unite d'une autre.
 fn a_l_heure(gr: &Grille) -> bool {
-    gr.heures.is_some_and(|h| !h.est_nul())
+    match gr.unite {
+        Unite::Mois => gr.heures_du_mois.is_some_and(|h| !h.est_nul()),
+        _ => gr.heures_par_unite.is_some_and(|h| !h.est_nul()),
+    }
 }
 
 fn ligne_de_l_unite(unite: Unite) -> Option<CodeDeRubrique> {
