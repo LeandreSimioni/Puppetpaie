@@ -382,7 +382,7 @@ impl<'de> serde::Deserialize<'de> for Annee {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
         match crate::forme::en_saisie() {
             true => {
-                let n = crate::grandeurs::lu::entier(d, "une année, en chiffres (« 2026 »)")?;
+                let n = crate::grandeurs::lu::entier(d, "une année")?;
                 let an = i64::try_from(n).map_err(serde::de::Error::custom)?;
                 Annee::nouvelle(an).map_err(|e| serde::de::Error::custom(crate::forme::refus_du_tape(e.phrase)))
             }
