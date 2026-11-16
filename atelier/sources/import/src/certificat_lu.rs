@@ -276,14 +276,7 @@ pub(crate) fn date_en_tete(mots: &[String]) -> Option<(Jour, usize)> {
         return None;
     }
     let n = |t: &str| t.bytes().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'));
-    jour_ecrit(i64::from(n(a)), n(m), n(j)).map(|d| (d, 3))
-}
-
-/// LE JOUR QU'UNE PIECE ECRIT EN TROIS NOMBRES (l'annee, le mois, le jour), s'il est au calendrier.
-pub(crate) fn jour_ecrit(an: i64, mois: u32, jour: u32) -> Option<Jour> {
-    let an = socle::mois::Annee::nouvelle(an).ok()?;
-    let mois = socle::mois::MoisDeLAnnee::TOUS.get(usize::try_from(mois).ok()?.checked_sub(1)?)?;
-    an.mois(*mois).jour(jour)
+    Jour::nouveau(n(a).try_into().ok()?, n(m), n(j)).map(|d| (d, 3))
 }
 
 fn texte(mots: &[String]) -> Option<String> {

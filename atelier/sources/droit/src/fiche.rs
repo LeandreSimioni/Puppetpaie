@@ -269,6 +269,12 @@ pub enum NombreDeFiche {
 }
 
 impl NombreDeFiche {
+    /// LE TAUX `t` ECRIT DANS UNE CASE DE LA FICHE (le taux AT/MP qu'une DSN reprise declare) : un nombre a virgule, dans
+    /// sa forme la plus courte (`socle::grandeurs::courte`) ; la porte de la fiche.
+    pub fn du_taux(t: socle::grandeurs::Taux) -> NombreDeFiche {
+        NombreDeFiche::Flottant(socle::grandeurs::courte(t).decimal())
+    }
+
     /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un texte illisible se refuse.
     pub fn decimal(&self) -> R<Decimal> {
         match self {

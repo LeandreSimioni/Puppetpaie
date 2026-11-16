@@ -43,8 +43,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
         let en_clair = mois.libelle(socle::mois::Graphie::Accentuee);
         let t = droit::fiche::TauxAtmp {
             code_risque: Some(code.clone()),
-            // La case de la fiche (`NombreDeFiche`, chaine AT) n'a pas encore d'ecriture par la grandeur : sa porte.
-            valeur: taux.map(|v| droit::fiche::NombreDeFiche::Flottant(socle::grandeurs::courte(v).decimal())),
+            valeur: taux.map(droit::fiche::NombreDeFiche::du_taux),
             depuis: Some(janvier),
             provenance: Some(droit::fiche::ProvenanceAtmp::Import),
             notification: None,
@@ -56,7 +55,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
             Err(m) => Err(m.phrase),
         };
         let dit = match taux {
-            Some(v) => format!("taux {} %", socle::grandeurs::ecrit::sans_zero::dit(*v).replace('.', ",")),
+            Some(v) => format!("taux {} %", socle::texte::virgule(*v)),
             None => "sans taux (pas encore de notification)".to_string(),
         };
         faits.push(match ecrit {

@@ -29,7 +29,6 @@ use engagement::numeros::NumeroContrat;
 use socle::date::PeriodeOuverte;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
-use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
 use import::attestes::BlocDImport;
 use import::reponse::{Copie, EtatFiche, Importation};
@@ -99,7 +98,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     dispo.extend(engagement::stock::mois_saisis(&ctx.racine)?);
     let depuis = base.depuis;
     let contrat = base.dsn.contrat.clone();
-    let mut par_mois: Vec<(Mois, Decimal)> = Vec::new();
+    let mut par_mois: Vec<(Mois, socle::grandeurs::Montant)> = Vec::new();
     for &m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(*m)) {
         // Un mois d'une annee ou la compagnie est exemptee (article 4.22 B) ne doit rien.
         if crate::importation::casc::exemptee_au_mois(ctx, &eff, m)? {
@@ -121,7 +120,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         }
         let Some(taux) = base.taux.de(m.annee()) else { return Ok(None) };
         // Le taux de la CASC-SVP reste un decimal (`TauxCasc`, chaine CA) : sa porte.
-        let cot = masse.fois_taux(socle::grandeurs::Taux::du_decimal(taux)).au_centime().decimal();
+        let cot = masse.fois_taux(socle::grandeurs::Taux::du_decimal(taux)).au_centime();
         par_mois.push((m, cot));
     }
     if par_mois.is_empty() {
@@ -129,12 +128,12 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     }
     let libelle = |m: Mois| m.libelle(socle::mois::Graphie::Accentuee);
     let periode = format!("{} à {}", libelle(par_mois[0].0), libelle(par_mois[par_mois.len() - 1].0));
-    let total = par_mois.iter().fold(Decimal::ZERO, |a, (_, c)| a + *c);
+    let total: socle::grandeurs::Montant = par_mois.iter().map(|(_, c)| *c).sum();
     Ok(Some(format!(
         "CASC-SVP : {} DSN déposée(s) depuis janvier 2025 ({}) ne portent peut-être pas la cotisation CASC-SVP -- un logiciel qui n'était pas paramétré l'a omise. Si Audiens ne l'a pas encaissée, {} sont à régulariser : Exports > « regularisation-casc-svp » fait le dossier (virements, courriels, liste nominative).",
         par_mois.len(),
         periode,
-        socle::texte::euros(socle::grandeurs::Montant::du_decimal(total))
+        socle::texte::euros(total)
     )))
 }
 

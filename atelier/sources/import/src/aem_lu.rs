@@ -366,8 +366,8 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
     let nir = v("SALARIE_NIR").map(|n| n.replace(' ', ""));
     let chiffres = |nom: &str| v(nom).and_then(|t: String| entier_de_chiffres(&t));
     let naissance = match (chiffres("SALARIE_DT_NAISSANCE_A"), chiffres("SALARIE_DT_NAISSANCE_M"), chiffres("SALARIE_DT_NAISSANCE_J")) {
-        (Some(a), Some(m), Some(j)) => match (u32::try_from(m), u32::try_from(j)) {
-            (Ok(m), Ok(j)) => crate::certificat_lu::jour_ecrit(a, m, j),
+        (Some(a), Some(m), Some(j)) => match (a.try_into(), u32::try_from(m), u32::try_from(j)) {
+            (Ok(a), Ok(m), Ok(j)) => Jour::nouveau(a, m, j),
             _ => None,
         },
         _ => None,
