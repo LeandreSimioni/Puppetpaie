@@ -338,21 +338,19 @@ pub fn un_texte_pose<T: DeserializeOwned>(nom_cle: &str, cle: &str, nom_valeur: 
     une_entree(&Value::Object(entree), nom_valeur)
 }
 
-/// UNE LISTE QUE SA FORME LIT ELEMENT PAR ELEMENT (les changements d'une fiche, `droit::fiche::Changements`) : au moins
-/// un, chacun lu seul, une faute ne faisant pas taire les suivants (`chacun`). Une liste vide se refuse a sa lecture,
-/// comme les changements de la carte (`engagement::carte::Changements`).
+/// UNE LISTE QUE SA FORME LIT ELEMENT PAR ELEMENT (les changements d'une fiche, `droit::fiche::Changements`) : chacun lu
+/// seul, une faute ne faisant pas taire les suivants (`chacun`). Vide, elle ne dit aucun changement.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Liste(AuMoinsUn<Value>);
+pub struct Liste(Vec<Value>);
 
 impl<'de> serde::Deserialize<'de> for Liste {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Liste, D::Error> {
-        AuMoinsUn::de(Vec::<Value>::deserialize(d)?)
-            .map(Liste)
-            .ok_or_else(|| serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"))
+        Vec::<Value>::deserialize(d).map(Liste)
     }
 }
 
 impl Liste {
+
     /// CHAQUE ELEMENT LU SEUL EN SA FORME `T`, comme une saisie (`lire_saisie`) ; sa faute : le chemin sous `sous` et ce qui
     /// ne va pas.
     pub fn chacun<T: DeserializeOwned>(&self, sous: &str) -> Vec<Result<T, (String, String)>> {

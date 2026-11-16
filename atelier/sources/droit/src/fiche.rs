@@ -134,7 +134,7 @@ struct CaseSeule {
 impl<C: DeserializeOwned> Changements<C> {
     /// LES CHANGEMENTS TAPES `liste`, CHACUN LU SEUL dans le type de sa case : ceux qui se lisent, et la faute de chacun
     /// des autres, toutes ensemble (`FauteDeCase`). Un changement qui ne nomme pas une case d'une fiche refuse la charge ;
-    /// la liste en a au moins un (`socle::forme::Liste`).
+    /// une liste vide n'en lit aucun : la fiche s'enregistre telle qu'elle est (Léandre, 16/11).
     pub fn lire(liste: &socle::forme::Liste) -> R<(Changements<C>, Vec<FauteDeCase>)> {
         let mut lus = Vec::new();
         let mut fautes = Vec::new();
