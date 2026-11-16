@@ -22,7 +22,7 @@ fn la_1285_maintient_le_brut_selon_l_anciennete() {
     assert!(matches!(regime(5, Origine::Maladie), Droit::PasDu(_)), "rien avant six mois");
     for (anciennete, duree) in [(6, 1), (11, 1), (12, 3), (42, 3)] {
         let Droit::Du(r) = regime(anciennete, Origine::Maladie) else { panic!("{} mois : un maintien", anciennete) };
-        assert_eq!((r.tranches, r.base, r.carence, r.subrogation), (tranches(duree), Base::Brut, Duree::jours(0), true), "{} mois", anciennete);
+        assert_eq!((r.tranches, r.base, r.carence, r.subrogation), (tranches(duree), Base::Brut, Duree::jours(0), Some(droit::clauses::Subrogation::ToutSalarie)), "{} mois", anciennete);
     }
     // X.4.7 : l'accident du travail et l'accident de trajet, le salaire brut garanti pendant les indemnités, sans
     // ancienneté ; la maladie professionnelle, que X.4.7 ne nomme pas, suit X.4.6.

@@ -38,7 +38,7 @@ use crate::imprevus::{ArretSaisi, Imprevu};
 use crate::ligne::{IndemniteJournaliere, LignePaie, Maintien, PaiementDeLigne};
 use crate::Avis;
 use droit::contexte::Contexte;
-use droit::maintien::{self as dm, Base, Droit, DureeDUneTranche, Origine, Regime};
+use droit::maintien::{self as dm, Base, Droit, DureeDUneTranche, MaintienDeSalaire, Origine};
 use socle::date::{Duree, EnJours, EnMois};
 use droit::natures::Nature;
 
@@ -79,8 +79,8 @@ pub struct Droits {
 }
 
 impl Droits {
-    /// Le regime d'un texte, quand le salarie y a droit.
-    pub fn regime(&self, t: Texte) -> Option<&Regime> {
+    /// Le maintien qu'un texte garantit, quand le salarie y a droit.
+    pub fn regime(&self, t: Texte) -> Option<&MaintienDeSalaire> {
         match (t, &self.loi, &self.convention) {
             (Texte::Loi, Droit::Du(r), _) => Some(r),
             (Texte::Convention, _, Some(Droit::Du(r))) => Some(r),
@@ -119,7 +119,7 @@ pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Droits
 
 /// La capacite de chaque tranche en jours, la tranche commencant au jour `debut` (une tranche en mois dure de date a date ;
 /// `None` : tant que la caisse indemnise).
-fn capacites(r: &Regime, debut: &Jour) -> R<Vec<Option<Duree<EnJours>>>> {
+fn capacites(r: &MaintienDeSalaire,debut: &Jour) -> R<Vec<Option<Duree<EnJours>>>> {
     let mut out = Vec::new();
     let mut d0 = debut.clone();
     for t in &r.tranches {
@@ -139,7 +139,7 @@ fn capacites(r: &Regime, debut: &Jour) -> R<Vec<Option<Duree<EnJours>>>> {
 /// LE POURCENTAGE DE CHAQUE JOUR D'UN ARRET, du premier au dernier jour d'absence, en fraction (zero : pas indemnise) :
 /// la carence, puis les tranches, diminuees d'abord de `deja` jours deja indemnises dans les douze mois. Un jour
 /// indemnise compte comme s'il suivait les `deja` jours : il tombe dans la tranche qui court encore a ce rang.
-pub fn taux_des_jours(r: &Regime, arret: &Periode, deja: Duree<EnJours>) -> R<Vec<Coefficient>> {
+pub fn taux_des_jours(r: &MaintienDeSalaire,arret: &Periode, deja: Duree<EnJours>) -> R<Vec<Coefficient>> {
     let apres_carence = arret.debut().apres(r.carence)?;
     // Le premier jour qui suit chaque tranche, comptee de la fin de la carence ; `None` : elle ne finit pas.
     let mut fins = Vec::new();
@@ -172,7 +172,7 @@ pub fn taux_des_jours(r: &Regime, arret: &Periode, deja: Duree<EnJours>) -> R<Ve
 /// Le dernier jour que le texte peut indemniser pour cet arret, d'un seul tenant depuis son premier jour : la duree
 /// maximale du maintien, que la subrogation declare (ameli, fiche 3028) ; la fin de l'arret pour une tranche qui dure
 /// tant que la caisse indemnise.
-pub fn fin_possible(r: &Regime, arret: &Periode) -> R<Jour> {
+pub fn fin_possible(r: &MaintienDeSalaire,arret: &Periode) -> R<Jour> {
     let debut = arret.debut().apres(r.carence)?;
     let mut total = Duree::jours(0);
     for c in capacites(r, &debut)? {
@@ -226,13 +226,14 @@ pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte)
 /// maximale du maintien (« Il ne faut surtout pas se limiter a la date de fin de l'arret », ameli).
 pub fn subrogation(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Periode>> {
     let Some(dr) = droits(ctx, imp, nat)? else { return Ok(None) };
-    let regimes: Vec<&Regime> = [Texte::Loi, Texte::Convention].iter().filter_map(|t| dr.regime(*t)).collect();
+    let regimes: Vec<&MaintienDeSalaire> = [Texte::Loi, Texte::Convention].iter().filter_map(|t| dr.regime(*t)).collect();
     if regimes.is_empty() {
         return Ok(None);
     }
     // Le choix de la compagnie est une case des permanents : seul un contrat paye au mois le lit.
     let choisie = nat.au_mois().is_some_and(|au_mois| ctx.entreprise.permanent.ouvrir(&au_mois).subrogation_ij.dite() == Some(&droit::fiche::Subrogation::Oui));
-    if !choisie && !regimes.iter().any(|r| r.subrogation) {
+    let donnee = regimes.iter().any(|r| r.subrogation == Some(droit::clauses::Subrogation::ToutSalarie));
+    if !choisie && !donnee {
         return Ok(None);
     }
     // Un arret sans jour d'absence n'a rien a subroger.

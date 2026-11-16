@@ -179,7 +179,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
 | déduction forfaitaire spécifique d'une paie | `calcul::DeductionForfaitaire` | à unifier (#419) : `forme_bareme::DeductionForfaitaire`, `AbattementDfs` |
 | réduction générale d'une paie | `droit::reduction::ReductionGenerale` | à unifier (#419) : `forme_bareme::ReductionGenerale`, `ReductionDsn` sont des formes, à renommer |
-| maintien de salaire | `MaintienDeSalaire` | à unifier (#419) : `maintien::{Regime, Tranche, Droit}`, `permanents::Maintien`, `engagement::maintien::*`, `ligne::Maintien` |
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
@@ -1046,6 +1045,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
 | assujettissement à la taxe sur les salaires (ce que la compagnie déclare : sa TVA, la part de ses recettes soumise, la franchise, l'association de 1679 A) | `droit::fiche::AssujettissementALaTaxe` | `droit/src/fiche.rs` |
 | genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
+| maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` | `droit/src/maintien.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
 
 **Le détail**
 

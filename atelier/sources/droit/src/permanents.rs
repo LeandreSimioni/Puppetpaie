@@ -19,13 +19,6 @@ use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
-/// Une tranche d'indemnisation du maintien : sa duree et son taux (en %).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Tranche {
-    pub jours: Duree<EnJours>,
-    pub taux: Taux,
-}
-
 // ------------------------------------------------------------ la forme du fichier
 
 /// Un objet du fichier et ses notes (`quoi`, `note`, `source`) : elles ne se lisent pas au calcul.
@@ -1252,8 +1245,8 @@ pub fn jours_de_carence(accident_du_travail: bool, accident_de_trajet: bool) -> 
     Ok(regles()?.maintien_de_salaire.carence_jours)
 }
 
-/// Les tranches d'indemnisation, allongees par l'anciennete.
-pub fn duree_du_maintien(anciennete: Anciennete) -> R<Vec<Tranche>> {
+/// Les tranches d'indemnisation, allongees par l'anciennete : chacune dure des jours.
+pub fn duree_du_maintien(anciennete: Anciennete) -> R<Vec<crate::maintien::Tranche>> {
     let rg = regles()?;
     let r = &rg.maintien_de_salaire;
     let maj = &r.majoration;
@@ -1263,7 +1256,10 @@ pub fn duree_du_maintien(anciennete: Anciennete) -> R<Vec<Tranche>> {
     r.tranches
         .iter()
         .map(|t| {
-            Ok(Tranche { jours: t.jours.plus(bonus).min(maj.plafond_jours), taux: t.taux })
+            Ok(crate::maintien::Tranche {
+                duree: crate::maintien::DureeDUneTranche::Jours(t.jours.plus(bonus).min(maj.plafond_jours)),
+                taux: t.taux,
+            })
         })
         .collect()
 }

@@ -1,5 +1,5 @@
 //! LE MAINTIEN DE SALAIRE D'UN ARRET DE TRAVAIL : ce que la loi et la convention garantissent, lu une fois, sous une seule
-//! forme (`Regime`). Le module dit le droit ; il ne compte pas les jours d'un arret ni ne fait la paie
+//! forme (`MaintienDeSalaire`). Le module dit le droit ; il ne compte pas les jours d'un arret ni ne fait la paie
 //! (`engagement::maintien`).
 //!
 //! - La loi : L1226-1 (une annee d'anciennete ; pas pour les intermittents), D1226-1 (90 % puis deux tiers de la
@@ -62,16 +62,17 @@ pub struct Tranche {
     pub taux: Taux,
 }
 
-/// Sur quoi porte le pourcentage garanti.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Sur quoi porte le pourcentage garanti : `brut` ou `net` dans `clauses-conventionnelles-base.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Base {
     Brut,
     Net,
 }
 
-/// Ce qu'un texte garantit pour un arret, a l'anciennete du salarie.
+/// LE MAINTIEN DE SALAIRE : ce qu'un texte garantit pour un arret, a l'anciennete du salarie.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Regime {
+pub struct MaintienDeSalaire {
     /// Le texte, pour les phrases : « la loi (L1226-1) », « la convention 1285 (art. X.4.6) ».
     pub texte: String,
     pub base: Base,
@@ -79,14 +80,14 @@ pub struct Regime {
     pub tranches: Vec<Tranche>,
     /// « un montant total superieur a la remuneration nette qu'il aurait effectivement percue » est exclu.
     pub plafond_net: bool,
-    /// La convention donne la subrogation a tout salarie qui a droit au maintien.
-    pub subrogation: bool,
+    /// La subrogation que la convention donne ; la loi n'en donne pas (`None`).
+    pub subrogation: Option<clauses::Subrogation>,
 }
 
-/// Le droit d'un salarie a un regime, ou pourquoi il n'en a pas.
+/// Le droit d'un salarie a un maintien, ou pourquoi il n'en a pas.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Droit {
-    Du(Regime),
+    Du(MaintienDeSalaire),
     PasDu(String),
 }
 
@@ -116,17 +117,14 @@ pub fn legal(nature: &Nature, anciennete: Anciennete, origine: Origine) -> R<Dro
         return Ok(Droit::PasDu(refus));
     }
     let carence = crate::permanents::jours_de_carence(origine.professionnelle(), origine == Origine::Trajet)?;
-    let tranches = crate::permanents::duree_du_maintien(anciennete)?
-        .into_iter()
-        .map(|t| Tranche { duree: DureeDUneTranche::Jours(t.jours), taux: t.taux })
-        .collect();
-    Ok(Droit::Du(Regime {
+    let tranches = crate::permanents::duree_du_maintien(anciennete)?;
+    Ok(Droit::Du(MaintienDeSalaire {
         texte: "la loi (L1226-1)".into(),
         base: Base::Brut,
         carence,
         tranches,
         plafond_net: false,
-        subrogation: false,
+        subrogation: None,
     }))
 }
 
@@ -208,16 +206,13 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
         Ok(t) => t,
         Err(pas_du) => return Ok(Some(Droit::PasDu(pas_du))),
     };
-    Ok(Some(Droit::Du(Regime {
+    Ok(Some(Droit::Du(MaintienDeSalaire {
         texte: format!("{} (art. {})", nom, article),
-        base: match base {
-            clauses::BaseDuMaintien::Brut => Base::Brut,
-            clauses::BaseDuMaintien::Net => Base::Net,
-        },
+        base,
         carence,
         tranches,
         plafond_net,
-        subrogation: subrogation == Some(clauses::Subrogation::ToutSalarie),
+        subrogation,
     })))
 }
 
@@ -225,7 +220,7 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
 
 /// Le regime en une phrase : « la convention 1285 (art. X.4.6) : 3 mois à 100 % puis 3 mois à 75 % du salaire brut,
 /// sans carence ».
-pub fn phrase(r: &Regime) -> String {
+pub fn phrase(r: &MaintienDeSalaire) -> String {
     let tr: Vec<String> = r
         .tranches
         .iter()

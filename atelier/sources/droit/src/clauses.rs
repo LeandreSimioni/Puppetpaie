@@ -339,14 +339,6 @@ forme! {
     }
 }
 
-/// Sur quoi porte le pourcentage garanti.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BaseDuMaintien {
-    Brut,
-    Net,
-}
-
 /// A qui la convention donne la subrogation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -361,7 +353,7 @@ forme! {
         pub anciennete_mois_minimum: Anciennete,
         #[serde(deserialize_with = "Duree::en_jours")]
         pub carence_jours: Duree<EnJours>,
-        pub base: BaseDuMaintien,
+        pub base: crate::maintien::Base,
         pub plafond_net: Option<bool>,
         pub subrogation: Option<Subrogation>,
         pub par_anciennete: Vec<LigneDeMaintien>,
@@ -390,7 +382,7 @@ forme! {
         pub anciennete_mois_minimum: Anciennete,
         #[serde(deserialize_with = "Duree::en_jours")]
         pub carence_jours: Duree<EnJours>,
-        pub base: BaseDuMaintien,
+        pub base: crate::maintien::Base,
         pub plafond_net: Option<bool>,
         pub subrogation: Option<Subrogation>,
         /// Passe cette anciennete, l'accident suit la clause de la maladie.

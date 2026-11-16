@@ -70,6 +70,8 @@ struct IndemniteDuDepart {
     pourquoi: Option<String>,
 }
 
+/// Une tranche de la loi (`droit::maintien::Tranche`, qui dure des jours), dans la forme de sa reference
+/// (`duree_du_maintien.json`).
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Tranche {
@@ -191,7 +193,11 @@ fn jours_de_carence(a: &(bool, bool)) -> Rendu<EnJours> {
     p::jours_de_carence(a.0, a.1).map(EnJours).into()
 }
 fn duree_du_maintien(a: &(Decimal,)) -> Rendu<Vec<Tranche>> {
-    p::duree_du_maintien(Anciennete::de_mois(a.0)).map(|t| t.into_iter().map(|t| Tranche { jours: t.jours, taux: t.taux }).collect()).into()
+    let en_jours = |t: droit::maintien::Tranche| match t.duree {
+        droit::maintien::DureeDUneTranche::Jours(jours) => Tranche { jours, taux: t.taux },
+        autre => panic!("une tranche de la loi dure des jours, pas {:?}", autre),
+    };
+    p::duree_du_maintien(Anciennete::de_mois(a.0)).map(|t| t.into_iter().map(en_jours).collect()).into()
 }
 
 #[test]
