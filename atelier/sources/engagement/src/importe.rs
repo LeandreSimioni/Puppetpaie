@@ -660,8 +660,8 @@ pub struct PaieImportee {
     pub remuneration: Vec<LigneDeRemuneration>,
     /// Les lignes de cotisation que le bulletin imprime ; vide quand aucun bulletin ne les donne.
     pub lignes: Vec<LigneDeCotisation>,
-    /// Les bases que les pieces disent, la ou le bareme de la paie les range, chacune dans ce que son assiette compte
-    /// (`BaseDeCotisation::de_l_assiette`).
+    /// Les bases que les pieces disent, la ou le bareme de la paie les range, chacune dans la grandeur qu'elles disent
+    /// (`BaseDeCotisation::imprimee`, une base du bloc 78 en euros).
     pub bases: BTreeMap<Assiette, crate::calcul::BaseDeCotisation>,
     pub brut: Option<Montant>,
     /// Le plafond applique : la base plafonnee que les pieces disent, quand elle est sous le brut.
