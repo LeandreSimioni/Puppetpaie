@@ -863,13 +863,19 @@ pub mod lu {
         let d = nombre_tape(t, &[], attendu)?;
         match d.fract().is_zero().then(|| rust_decimal::prelude::ToPrimitive::to_u64(&d.trunc())).flatten() {
             Some(n) => Ok(n),
-            None => Err(format!("{} n'est pas un nombre entier positif : on attend {}", crate::fichiers::repr(t), attendu)),
+            None => Err(pas_entier(t, attendu)),
         }
+    }
+
+    /// Le refus d'un nombre `ecrit` (tape, ou un nombre JSON) qui n'est pas un entier jamais negatif.
+    fn pas_entier(ecrit: &str, attendu: &str) -> String {
+        format!("{} n'est pas un nombre entier positif : on attend {}", crate::fichiers::repr(ecrit), attendu)
     }
 
     /// LA LECTURE D'UN NOMBRE ENTIER, JAMAIS NEGATIF (un compte, des jours de droit, une annee) : un nombre entier ; dans
     /// une saisie (`forme::lire_saisie`, la charge d'une route), aussi le texte qu'une personne a tape, lu par
-    /// `entier_tape`, son refus dit (`forme::refus_du_tape`). `attendu` : ce que la case attend.
+    /// `entier_tape`. Un nombre negatif ou a virgule se refuse comme le meme nombre tape. `attendu` : ce que la case
+    /// attend.
     pub(crate) fn entier<'de, D: serde::Deserializer<'de>>(d: D, attendu: &'static str) -> Result<u64, D::Error> {
         struct Entier(&'static str);
         impl<'de> serde::de::Visitor<'de> for Entier {
@@ -881,11 +887,14 @@ pub mod lu {
                 Ok(u)
             }
             fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<u64, E> {
-                u64::try_from(i).map_err(|_| E::custom(format!("{} n'est pas un nombre entier positif : on attend {}", i, self.0)))
+                u64::try_from(i).map_err(|_| E::custom(pas_entier(&i.to_string(), self.0)))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<u64, A::Error> {
+                Err(serde::de::Error::custom(pas_entier(&crate::forme::texte_a_virgule(m)?, self.0)))
             }
             fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<u64, E> {
                 match crate::forme::en_saisie() {
-                    true => entier_tape(s, self.0).map_err(|r| E::custom(crate::forme::refus_du_tape(r))),
+                    true => entier_tape(s, self.0).map_err(E::custom),
                     false => Err(E::custom(format!("« {} » est écrit en texte : écrire le nombre sans guillemets", s))),
                 }
             }

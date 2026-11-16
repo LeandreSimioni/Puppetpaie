@@ -384,7 +384,7 @@ impl<'de> serde::Deserialize<'de> for Annee {
             true => {
                 let n = crate::grandeurs::lu::entier(d, "une année")?;
                 let an = i64::try_from(n).map_err(serde::de::Error::custom)?;
-                Annee::nouvelle(an).map_err(|e| serde::de::Error::custom(crate::forme::refus_du_tape(e.phrase)))
+                Annee::nouvelle(an).map_err(|e| serde::de::Error::custom(e.phrase))
             }
             false => Annee::nouvelle(<i64 as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom),
         }

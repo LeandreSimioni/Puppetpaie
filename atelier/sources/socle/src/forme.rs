@@ -31,11 +31,6 @@ pub fn lire<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
 thread_local! {
     /// Vrai le temps de lire une saisie (`lire_saisie`).
     static EN_SAISIE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// LA RAISON DE LA DERNIERE CASE TAPEE QUI NE S'EST PAS CONVERTIE (`refus_du_tape`), le temps d'une lecture d'une
-    /// saisie : celle-ci en fait la phrase de son refus (`lire_saisie`).
-    static TAPE_REFUSE: RefCell<Option<String>> = const { RefCell::new(None) };
-    /// LE LIBELLE DE CHAQUE CLE D'UNE SAISIE, le temps d'une route (`cases_nommees`).
-    static NOMS_DES_CASES: RefCell<Option<Box<dyn Fn(&str) -> Option<&'static str>>>> = const { RefCell::new(None) };
 }
 
 /// LA PHRASE D'UNE CASE TAPEE QUI SE REFUSE, la seule : la case, nommee comme l'ecran la montre, et pourquoi
@@ -44,36 +39,11 @@ pub fn case_refusee(case: &str, raison: &str) -> String {
     format!("{} : {}", case, raison)
 }
 
-/// LA RAISON `raison` D'UN TEXTE TAPE QUI NE SE CONVERTIT PAS (`grandeurs::lu`, et les formes qui la suivent : un nombre
-/// entier, une annee), rendue telle quelle pour serde, et notee : la lecture de la saisie en fait la phrase de son refus
-/// (`lire_saisie`, `case_refusee`).
-pub(crate) fn refus_du_tape(raison: String) -> String {
-    TAPE_REFUSE.with(|t| *t.borrow_mut() = Some(raison.clone()));
-    raison
-}
-
-/// LES NOMS DES CASES D'UNE SAISIE, le temps que la garde rendue vit (une route) : le libelle que l'ecran montre de chaque
-/// cle (`nommer`), dont la phrase d'une case tapee refusee se sert (`case_refusee`) ; une cle sans libelle se dit par
-/// elle-meme.
-pub fn cases_nommees(nommer: impl Fn(&str) -> Option<&'static str> + 'static) -> CasesNommees {
-    CasesNommees(NOMS_DES_CASES.with(|n| n.borrow_mut().replace(Box::new(nommer))))
-}
-
-/// La garde de `cases_nommees` : elle remet les noms d'avant en sortant.
-#[must_use]
-pub struct CasesNommees(Option<Box<dyn Fn(&str) -> Option<&'static str>>>);
-
-impl Drop for CasesNommees {
-    fn drop(&mut self) {
-        let avant = self.0.take();
-        NOMS_DES_CASES.with(|n| *n.borrow_mut() = avant);
-    }
-}
-
-/// LA CASE OU UNE SAISIE `v` SE REFUSE AU CHEMIN `chemin`, nommee : la case du changement qui la porte (`{"case": …,
-/// "valeur": …}`, celui de la carte ou d'une fiche), sinon la premiere cle du chemin ; son libelle (`cases_nommees`), ou
-/// elle-meme.
-fn case_au_chemin(v: &Value, chemin: &serde_path_to_error::Path) -> String {
+/// LA CASE OU UNE SAISIE `v` SE REFUSE AU CHEMIN `chemin` : la case du changement qui la porte (`{"case": …, "valeur":
+/// …}`, celui de la carte), sinon la premiere cle du chemin ; aucune pour une faute de la saisie elle-meme (une cle
+/// inconnue, une cle qui manque).
+fn case_au_chemin(v: &Value, chemin: &serde_path_to_error::Path) -> Option<crate::echec::CaseDeLaSaisie> {
+    use crate::echec::CaseDeLaSaisie;
     use serde_path_to_error::Segment;
     let mut ici = Some(v);
     let mut premiere: Option<String> = None;
@@ -95,20 +65,18 @@ fn case_au_chemin(v: &Value, chemin: &serde_path_to_error::Path) -> String {
             Segment::Enum { .. } | Segment::Unknown => ici,
         };
     }
-    let cle = match (case, premiere) {
-        (Some(c), _) | (None, Some(c)) => c,
-        (None, None) => return chemin.to_string(),
-    };
-    match NOMS_DES_CASES.with(|n| n.borrow().as_ref().and_then(|f| f(&cle))) {
-        Some(l) => l.to_string(),
-        None => cle,
+    match (case, premiere) {
+        (Some(c), _) => Some(CaseDeLaSaisie::DUnChangement(c)),
+        (None, Some(c)) => Some(CaseDeLaSaisie::Cle(c)),
+        (None, None) => None,
     }
 }
 
 /// UNE SAISIE LUE (la charge d'une route) : la donnee `v` lue en `T` comme `lire`, le texte de chaque notion qui range sa
 /// saisie (`droit::fiche::FormeDeCase::RANGER`) d'abord range dans sa forme (`range_si_saisi`), comme la saisie d'une
-/// fiche. Un fichier se lit par `lire`, tel qu'il est ecrit. Une case tapee qui ne se convertit pas refuse la saisie par
-/// sa phrase (`case_refusee`), la cle et la raison a part ; une autre faute, par `phrase`.
+/// fiche. Un fichier se lit par `lire`, tel qu'il est ecrit. Une case dont la valeur ne se lit pas (un texte tape qui ne
+/// se convertit pas, un nombre hors de sa forme) refuse la saisie en portant sa case, son chemin et la raison
+/// (`echec::CaseRefusee`), dont la route fait sa phrase ; une faute de la saisie elle-meme, par `phrase`.
 #[track_caller]
 pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
     /// Remet l'etat d'avant en sortant, panique comprise : une lecture de fichier qui suit n'est jamais rangee.
@@ -119,18 +87,16 @@ pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
         }
     }
     let _remise = Remise(EN_SAISIE.replace(true));
-    TAPE_REFUSE.with(|t| t.borrow_mut().take());
     let texte = v.to_string();
     let mut d = serde_json::Deserializer::from_str(&texte);
     let e = match serde_path_to_error::deserialize(&mut d) {
         Ok(t) => return Ok(t),
         Err(e) => e,
     };
-    let detail = en_clair(&e.inner().to_string());
-    match TAPE_REFUSE.with(|t| t.borrow_mut().take()).filter(|r| *r == detail) {
-        Some(raison) => {
-            let cle = e.path().to_string();
-            Err(refus_avec(case_refusee(&case_au_chemin(v, e.path()), &raison), Lieu { cle: Some(cle), detail: Some(raison), ..Lieu::default() }))
+    match case_au_chemin(v, e.path()) {
+        Some(case) => {
+            let a_part = crate::echec::CaseRefusee { case, cle: e.path().to_string(), detail: en_clair(&e.inner().to_string()) };
+            Err(refus_avec(phrase, crate::echec::APart::Case(a_part)))
         }
         None => Err(refus(phrase, None, &e)),
     }
@@ -502,7 +468,7 @@ pub fn nombre_en_texte<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String,
 
 /// LE TEXTE D'UN NOMBRE A VIRGULE QUE LE LECTEUR JSON REND : `arbitrary_precision` le passe en objet a cle privee, que
 /// `serde_json::Number` sait lire.
-fn texte_a_virgule<'de, A: serde::de::MapAccess<'de>>(m: A) -> Result<String, A::Error> {
+pub(crate) fn texte_a_virgule<'de, A: serde::de::MapAccess<'de>>(m: A) -> Result<String, A::Error> {
     use serde::Deserialize;
     serde_json::Number::deserialize(serde::de::value::MapAccessDeserializer::new(m)).map(|n| n.to_string())
 }
@@ -566,7 +532,7 @@ impl<'de> serde::de::Visitor<'de> for EnDecimal {
         match self.texte {
             TexteLu::Refuse => Err(E::custom(format!("« {} » est écrit en texte : écrire le nombre sans guillemets", s))),
             TexteLu::Ecrit => crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase)),
-            TexteLu::Tape(tapee) => tapee(s).map_err(|r| E::custom(refus_du_tape(r))),
+            TexteLu::Tape(tapee) => tapee(s).map_err(E::custom),
         }
     }
 }

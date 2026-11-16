@@ -176,10 +176,8 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
     let _code = socle::fichiers::code_fige();
     // Ce que la compagnie porte (les engagements, leurs paies, les imprevus) se lit une fois par geste (`socle::forme::geste`).
     let _geste = socle::forme::geste();
-    // Une case tapee qui ne se convertit pas se refuse en se nommant comme l'ecran la montre (`socle::forme::case_refusee`).
-    let _cases = socle::forme::cases_nommees(move |cle| libelle_de_la_cle(route, cle));
     compagnie::incidents::brancher_l_engagement();
-    let rendu = servir(o, route, charge);
+    let rendu = servir(o, route, charge).map_err(|e| case_nommee(route, e));
     // Ce que la route rend, reussite ou refus, est ce que l'ecran lit : ses phrases passent ici (`phrase_a_sa_place`).
     let racine = crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o));
     if let (Ok(v), Some(r)) = (&rendu, &racine) {
@@ -194,13 +192,28 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
     reponse
 }
 
-/// LE LIBELLE D'UNE CLE DE LA CHARGE DE `route`, tel que l'ecran le montre : un champ de sa fiche (`catalogue::Champ`),
-/// ou une case de la carte, que nomme un changement (`{"case": "salaire_mensuel", …}`, `engagement::carte::libelle`).
-fn libelle_de_la_cle(route: Route, cle: &str) -> Option<&'static str> {
-    let champ = catalogue::FICHES.iter().find_map(|l| catalogue::dans(l, route)).and_then(|f| f.charge.iter().find(|c| c.nom == cle));
-    match champ {
-        Some(c) => Some(c.libelle.texte()),
-        None => ::engagement::carte::libelle_de_la_case(cle),
+/// LE REFUS `e` DE LA ROUTE `route`, s'il est celui d'une case de sa charge (`Charge::lire`, `CaseRefusee`) : sa phrase
+/// dit la case comme l'ecran la montre, et pourquoi (`socle::forme::case_refusee`) ; tout autre refus, tel quel.
+fn case_nommee(route: Route, e: Echec) -> Echec {
+    let phrase = match e.case_refusee() {
+        Some(c) => socle::forme::case_refusee(&libelle_de_la_case(route, &c.case), &c.detail),
+        None => return e,
+    };
+    Echec { phrase, ..e }
+}
+
+/// LE LIBELLE D'UNE CASE DE LA CHARGE DE `route`, tel que l'ecran le montre : une cle, par le champ de sa fiche
+/// (`catalogue::Champ`) ; la case que nomme un changement (`{"case": "salaire_mensuel", …}`), par la carte
+/// (`engagement::carte::libelle_de_la_case`). Sans libelle, la case se dit par sa cle.
+fn libelle_de_la_case(route: Route, case: &socle::echec::CaseDeLaSaisie) -> String {
+    use socle::echec::CaseDeLaSaisie;
+    let libelle = match case {
+        CaseDeLaSaisie::Cle(cle) => catalogue::FICHES.iter().find_map(|l| catalogue::dans(l, route)).and_then(|f| f.charge.iter().find(|c| c.nom == cle)).map(|c| c.libelle.texte()),
+        CaseDeLaSaisie::DUnChangement(cle) => ::engagement::carte::libelle_de_la_case(cle),
+    };
+    match (libelle, case) {
+        (Some(l), _) => l.to_string(),
+        (None, CaseDeLaSaisie::Cle(cle) | CaseDeLaSaisie::DUnChangement(cle)) => cle.clone(),
     }
 }
 
