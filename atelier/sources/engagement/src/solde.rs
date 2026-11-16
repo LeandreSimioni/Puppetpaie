@@ -1098,7 +1098,7 @@ fn verifier_les_plafonds(ctx: &Contexte, mois: Mois, montant: Montant, quoi: &st
     let regles = permanents::regles()?;
     let regles_plafonds = &regles.regime_des_indemnites_de_rupture.plafonds;
     // Le plafond annuel : douze plafonds mensuels.
-    let annuel = ctx.plafond_securite_sociale(mois.annee())?.mensuel.fois(12);
+    let annuel = ctx.plafond_securite_sociale(mois.annee())?.mensuel().fois(12);
     for (combien, quel) in [
         (regles_plafonds.cotisations_exoneration_pass, "exoneree"),
         (regles_plafonds.cotisations_assujettissement_total_pass, "hors de l'assiette"),

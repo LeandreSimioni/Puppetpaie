@@ -448,12 +448,6 @@ impl Taux {
         Taux(Decimal::from_parts(n, 0, 0, false, 2))
     }
 
-    /// La part `numerateur / denominateur` de ce taux (la part salariale d'un taux partage, une fraction de deux
-    /// entiers), exacte : le produit, puis le quotient. `denominateur` n'est pas nul : l'appelant le tient.
-    pub fn part(self, numerateur: i128, denominateur: i128) -> Taux {
-        Taux(num::div(num::mul(self.0, Decimal::from_i128_with_scale(numerateur, 0)), Decimal::from_i128_with_scale(denominateur, 0)))
-    }
-
     /// Au centieme de point, la moitie vers zero (sans zero ajoute : `3.9` reste `3.9`) : la part salariale de la
     /// retraite complementaire en tranche 1 (`droit::bareme::parts_t1`).
     pub fn au_centieme_la_moitie_vers_zero(self) -> Taux {
@@ -480,7 +474,8 @@ impl Taux {
     }
 }
 
-/// Taux x coefficient = taux (le taux AT/MP par le facteur d'une ligne, une part d'un taux).
+/// Taux x coefficient = taux (le taux AT/MP par le facteur d'une ligne, une part d'un taux : la part salariale de la
+/// retraite complementaire en tranche 1).
 impl std::ops::Mul<Coefficient> for Taux {
     type Output = Taux;
     fn mul(self, c: Coefficient) -> Taux {

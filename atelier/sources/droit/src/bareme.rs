@@ -22,6 +22,7 @@ use socle::grandeurs::{courte, Coefficient, Taux};
 use socle::num::Decimal;
 use rust_decimal::RoundingStrategy;
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 
 // ------------------------------------------------------------ les petits outils
 
@@ -1367,55 +1368,33 @@ ne porte pas le taux du regime local (`regime_local_alsace_moselle`).",
 
 // ------------------------------------------- la retraite en tranche 1
 
-/// UNE PART DE LA TRANCHE 1 : la part employeur ou salariee d'une repartition de la retraite complementaire en tranche 1
-/// (`RepartitionDeLaTrancheUne::parts`), `num/den` irreductible, ce que le calcul partage (`parts_t1`).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PartDeLaTrancheUne {
-    pub num: i128,
-    pub den: i128,
-}
-
-impl PartDeLaTrancheUne {
-    fn nouvelle(num: i128, den: i128) -> PartDeLaTrancheUne {
-        fn pgcd(a: i128, b: i128) -> i128 {
-            if b == 0 {
-                a.abs()
-            } else {
-                pgcd(b, a % b)
-            }
-        }
-        let g = pgcd(num, den).max(1);
-        PartDeLaTrancheUne { num: num / g, den: den / g }
-    }
-}
-
 /// LA REPARTITION DE LA RETRAITE COMPLEMENTAIRE EN TRANCHE 1 d'une branche (tableau n 3 de la fiche Audiens « Taux et
 /// repartitions », `retraite_t1_repartition` du socle) : la part employeur, puis la part salariee. Deux ecritures,
 /// gardees telles que lues et reecrites ainsi (`Display`) : en pourcentages (« 60/40 »), en fractions (« 2/3-1/3 »).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepartitionDeLaTrancheUne {
     /// « 60/40 » : les deux parts en pourcentages.
-    EnPourcentages { employeur: i128, salarie: i128 },
+    EnPourcentages { employeur: u32, salarie: u32 },
     /// « 2/3-1/3 » : les deux parts en fractions (numerateur, denominateur), telles qu'ecrites.
-    EnFractions { employeur: (i128, i128), salarie: (i128, i128) },
+    EnFractions { employeur: (u32, NonZeroU32), salarie: (u32, NonZeroU32) },
 }
 
 impl RepartitionDeLaTrancheUne {
     /// La repartition ecrite `texte` : « a/b » (des pourcentages) ou « a/b-c/d » (des fractions), en nombres entiers.
     pub fn lire(texte: &str) -> R<RepartitionDeLaTrancheUne> {
         let faute = || socle::refus!("repartition de la tranche 1 illisible : {}", socle::fichiers::repr(texte));
-        let entier = |s: &str| -> R<i128> {
+        let entier = |s: &str| -> R<u32> {
             if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
                 return Err(faute());
             }
-            s.parse::<i128>().map_err(|_| faute())
+            s.parse::<u32>().map_err(|_| faute())
         };
-        let fraction = |s: &str| -> R<(i128, i128)> {
+        let fraction = |s: &str| -> R<(u32, NonZeroU32)> {
             let (n, d) = s.split_once('/').ok_or_else(faute)?;
-            let (n, d) = (entier(n)?, entier(d)?);
-            if d == 0 {
+            let n = entier(n)?;
+            let Some(d) = NonZeroU32::new(entier(d)?) else {
                 return Err(socle::refus!("fraction de denominateur nul : {}", socle::fichiers::repr(s)));
-            }
+            };
             Ok((n, d))
         };
         match texte.split_once('-') {
@@ -1427,11 +1406,12 @@ impl RepartitionDeLaTrancheUne {
         }
     }
 
-    /// (part employeur, part salariee), irreductibles.
-    pub fn parts(self) -> (PartDeLaTrancheUne, PartDeLaTrancheUne) {
+    /// (part employeur, part salariee) : la part du taux que chacun paie, un coefficient (« 60/40 » : 0,60 et 0,40 ;
+    /// « 2/3-1/3 » : deux tiers et un tiers).
+    pub fn parts(self) -> (Coefficient, Coefficient) {
         match self {
-            RepartitionDeLaTrancheUne::EnPourcentages { employeur, salarie } => (PartDeLaTrancheUne::nouvelle(employeur, 100), PartDeLaTrancheUne::nouvelle(salarie, 100)),
-            RepartitionDeLaTrancheUne::EnFractions { employeur: (a, b), salarie: (c, d) } => (PartDeLaTrancheUne::nouvelle(a, b), PartDeLaTrancheUne::nouvelle(c, d)),
+            RepartitionDeLaTrancheUne::EnPourcentages { employeur, salarie } => (Coefficient::centiemes(employeur), Coefficient::centiemes(salarie)),
+            RepartitionDeLaTrancheUne::EnFractions { employeur: (a, b), salarie: (c, d) } => (Coefficient::fraction(a, b), Coefficient::fraction(c, d)),
         }
     }
 }
@@ -1482,9 +1462,9 @@ impl std::fmt::Display for ColonneDeRepartition {
 /// Le premier jour ou la repartition d'avant 1999 ne vaut plus.
 const PREMIER_JANVIER_1999: Jour = Jour { an: 1999, mois: 1, jour: 1 };
 
-/// (part patronale, part salariale) de la tranche 1, en fractions, pour la convention de l'entreprise et la colonne
-/// `colonne` de sa branche.
-pub fn repartition_t1(bar: &Pile, ent: &ChampsEntreprise, colonne: ColonneDeRepartition) -> R<(PartDeLaTrancheUne, PartDeLaTrancheUne)> {
+/// (part patronale, part salariale) de la tranche 1, pour la convention de l'entreprise et la colonne `colonne` de sa
+/// branche.
+pub fn repartition_t1(bar: &Pile, ent: &ChampsEntreprise, colonne: ColonneDeRepartition) -> R<(Coefficient, Coefficient)> {
     let rep = bar.retraite_t1_repartition.as_ref();
     // La repartition d'avant 1999 vaut pour la compagnie dont la fiche dit une premiere embauche d'avant 1999.
     let embauche_avant_1999 = ent.premiere_embauche.dite().is_some_and(|j| *j < PREMIER_JANVIER_1999);
@@ -1526,8 +1506,8 @@ du socle.",
 /// publies par Audiens (`atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt`, p. 3 : 7,87 en
 /// 50/50 donne 3,94 a l'employeur et 3,93 au salarie), relevee dans la note de `retraite_t1_repartition` du bareme
 /// livre : un constat, pas un fondement.
-pub fn parts_t1(total: Taux, sal: PartDeLaTrancheUne) -> (Taux, Taux) {
-    let part_sal = total.part(sal.num, sal.den).au_centieme_la_moitie_vers_zero();
+pub fn parts_t1(total: Taux, sal: Coefficient) -> (Taux, Taux) {
+    let part_sal = (total * sal).au_centieme_la_moitie_vers_zero();
     (total - part_sal, part_sal)
 }
 

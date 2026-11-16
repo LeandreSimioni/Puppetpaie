@@ -327,7 +327,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | heures en plus d'un mois, réparties par majoration (les heures supplémentaires d'un temps plein, complémentaires d'un temps partiel ; un palier : des heures à une majoration, un taux que le taux horaire du contrat prend en plus de lui-même) | `droit::heures_en_plus::Reparties`, ses `Palier` (`Heures`, `Taux`) ; la loi et la convention les lisent en grandeurs (`permanents::HeuresEnPlus`, `clauses::HeuresSupplementaires`) | `droit/src/heures_en_plus.rs`, `socle/src/grandeurs.rs` |
 | base d'une ligne de cotisation, valeur d'une assiette d'une paie (calculée, ou que les pièces d'une paie importée disent) | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures` ; une paie écrite l'écrit sans son unité, `en_nombre`, et la relit dans la grandeur que sa cotisation ou son assiette compte, `relue`, `de_l_assiette` ; un état l'écrit par `Ligne::base`) | `engagement/src/calcul.rs` |
 | signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
-| plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure ; lues en euros entiers une fois, à la lecture du barème, `Contexte::plafond_securite_sociale` ; le plafond d'une paie se calcule en grandeurs, `droit::plafond`) | `droit/src/plafond.rs` |
+| plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure ; en euros entiers, par le seul chemin qui en fait un, `Pss::en_euros_entiers`, ses champs privés : le barème de la compagnie, `Contexte::plafond_securite_sociale`, le socle livré de la CASC, le résolveur de l'atelier ; le plafond d'une paie se calcule en grandeurs, `droit::plafond`) | `droit/src/plafond.rs` |
 | taille d'un fichier (une image posée et son poids visé, ce que la sauvegarde envoie et la restauration redescend, une archive, une capture, ce qu'une mise à jour reçoit) | `Octets` (écrite en octets dans un fichier, tapée en Ko dans une saisie, `Octets::ko` ; dite d'une seule façon, par son affichage : en Ko au centième, en Mo au dixième au-delà de mille Ko ; octets / octets = coefficient, `rapport`) | `socle/src/grandeurs.rs` |
 | nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
 
@@ -364,7 +364,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, le multiplicateur de
   l'assiette d'un employeur affilié à une caisse de congés, `majoration_conges_115` et `_110` du barème, 1,115, le
   coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie, la
-  part reçue d'une mise à jour) ;
+  part reçue d'une mise à jour, la part salariée d'une répartition de la tranche 1) ;
   montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant.
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le taux d'une ligne de paie qui se
   paie à l'unité (`TauxDeLigne::ParUnite`), le plafond de la sécurité sociale horaire, le SMIC horaire ; quantité ×
@@ -1076,7 +1076,6 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
 | répartition de la tranche 1 | `RepartitionDeLaTrancheUne` | `droit/src/bareme.rs` |
-| part de la tranche 1 | `PartDeLaTrancheUne` | `droit/src/bareme.rs` |
 | majoration de la caisse des congés | `MajorationCaisseConges` | `droit/src/forme_bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
 | rôle d'un contrat d'organisme | `RoleDuContrat` | `droit/src/organismes.rs` |
@@ -1480,8 +1479,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **répartition de la tranche 1** : la part employeur et la part salariée de la retraite complémentaire en tranche 1
   d'une branche (`retraite_t1_repartition` du socle : `avant_1999`, chaque colonne de `par_idcc`). Deux écritures,
   gardées telles que lues et réécrites ainsi : en pourcentages (`EnPourcentages`, « 60/40 »), en fractions
-  (`EnFractions`, « 2/3-1/3 ») ; ce que le calcul partage, ses deux parts irréductibles (`parts`,
-  `PartDeLaTrancheUne`, même fichier). Ce n'est pas une fraction de la norme (`natures::Fraction`, S20.G00.05.003).
+  (`EnFractions`, « 2/3-1/3 ») ; ce que le calcul partage, ses deux parts, chacune un coefficient (`parts` ; taux ×
+  coefficient = taux, `parts_t1`). Ce n'est pas une fraction de la norme (`natures::Fraction`, S20.G00.05.003).
 - **majoration de la caisse des congés** : ce par quoi le coefficient de la réduction générale d'un salarié déclaré à
   la caisse des Congés Spectacles se multiplie (`majoration_caisse_conges` du barème, « 100/90 ») : son numérateur et
   son dénominateur tels qu'écrits, sans les réduire (le calcul reste `c × 100 / 90`) ; réécrite comme lue.

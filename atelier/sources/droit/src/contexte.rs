@@ -1662,8 +1662,8 @@ impl Contexte {
     pub fn plafond_securite_sociale(&self, annee: Annee) -> R<crate::plafond::Pss> {
         let jour = annee.premier_jour();
         let lue = self.pile_lue(&jour, &self.entreprise)?;
-        let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| crate::plafond::Pss { mensuel: p.mensuel.partie_entiere(), horaire: p.horaire.partie_entiere() });
-        match plafond.filter(|p| !p.mensuel.est_nul() && !p.horaire.est_nul()) {
+        let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| crate::plafond::Pss::en_euros_entiers(p.mensuel, p.horaire));
+        match plafond.filter(|p| !p.mensuel().est_nul() && !p.horaire().est_nul()) {
             Some(p) => Ok(p),
             None => Err(socle::echec::refus_avec(
                 "Le barème de l'année n'a pas le plafond de la Sécurité sociale : le signaler au développeur.",

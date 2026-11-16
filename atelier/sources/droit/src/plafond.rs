@@ -41,11 +41,28 @@ use socle::grandeurs::{nulle, Heures, Jours, Montant, MontantUnitaire};
 use std::collections::BTreeSet;
 
 /// LE PLAFOND DE LA SECURITE SOCIALE D'UNE ANNEE (CSS L. 241-3, D. 242-17 a D. 242-19) : sa valeur mensuelle, et sa
-/// valeur horaire, des euros par heure.
+/// valeur horaire, des euros par heure, en euros entiers (`en_euros_entiers`, le seul chemin qui en fait un).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pss {
-    pub mensuel: Montant,
-    pub horaire: MontantUnitaire,
+    mensuel: Montant,
+    horaire: MontantUnitaire,
+}
+
+impl Pss {
+    /// Le plafond que dit un texte (le bareme, la table des parametres du BOSS), ses deux valeurs tronquees a l'euro.
+    pub fn en_euros_entiers(mensuel: Montant, horaire: MontantUnitaire) -> Pss {
+        Pss { mensuel: mensuel.partie_entiere(), horaire: horaire.partie_entiere() }
+    }
+
+    /// Sa valeur mensuelle.
+    pub fn mensuel(self) -> Montant {
+        self.mensuel
+    }
+
+    /// Sa valeur horaire.
+    pub fn horaire(self) -> MontantUnitaire {
+        self.horaire
+    }
 }
 
 /// Arrete du 24/01/1975, art. 3, al. 2 : « periodes d'engagement continu inferieures a cinq jours ».

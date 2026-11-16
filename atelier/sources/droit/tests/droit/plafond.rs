@@ -75,7 +75,7 @@ fn table() -> HashMap<Annee, Pss> {
     let mut t = HashMap::new();
     for annee in [Annee::constante(2025), Annee::constante(2026)] {
         let b: BaremePss = lire(&code_livre(), &format!("baremes/{}.json", annee));
-        t.insert(annee, Pss { mensuel: b.plafond_securite_sociale.mensuel, horaire: b.plafond_securite_sociale.horaire });
+        t.insert(annee, Pss::en_euros_entiers(b.plafond_securite_sociale.mensuel, b.plafond_securite_sociale.horaire));
     }
     t
 }
@@ -100,7 +100,7 @@ fn oracle(t: &HashMap<Annee, Pss>, duree: u32, artiste: bool, journees: &[Jour])
         // Arrete du 24/01/1975, art. 3, al. 2 : 12 x le plafond horaire par journee de travail accomplie.
         let mut total = Montant::ZERO;
         for x in journees {
-            total += pss(x.annee())?.horaire.fois(12);
+            total += pss(x.annee())?.horaire().fois(12);
         }
         return Ok(total.au_centime());
     }
@@ -122,7 +122,7 @@ fn oracle(t: &HashMap<Annee, Pss>, duree: u32, artiste: bool, journees: &[Jour])
             2 => 28,
             _ => 31,
         };
-        total += pss(a)?.mensuel.fois(n).reparti_sur(dim);
+        total += pss(a)?.mensuel().fois(n).reparti_sur(dim);
     }
     Ok(total.au_centime())
 }

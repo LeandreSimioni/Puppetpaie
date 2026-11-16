@@ -227,13 +227,13 @@ pub struct Demande {
 }
 
 /// Le plafond mensuel de la Securite sociale du mois `mois` (`AAAA-MM`), tel que le socle livre de son annee le dit
-/// (un plafond national : ni la convention ni la compagnie n'y changent rien) ; aucun quand le logiciel ne livre pas le
-/// bareme de cette annee.
+/// (un plafond national : ni la convention ni la compagnie n'y changent rien), en euros entiers comme tout plafond lu
+/// (`Pss::en_euros_entiers`) ; aucun quand le logiciel ne livre pas le bareme de cette annee.
 fn plafond_mensuel(mois: Mois) -> R<Option<Decimal>> {
     let an = mois.annee();
     let Some(socle) = droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))? else { return Ok(None) };
     match socle.plafond_securite_sociale {
-        Some(p) => Ok(Some(p.mensuel.decimal())),
+        Some(p) => Ok(Some(droit::plafond::Pss::en_euros_entiers(p.mensuel, p.horaire).mensuel().decimal())),
         None => Err(erreur(Classe::DefautDuLogiciel, format!("Le barème livré de {} n'a pas le plafond de la Sécurité sociale : le signaler au développeur.", an))),
     }
 }

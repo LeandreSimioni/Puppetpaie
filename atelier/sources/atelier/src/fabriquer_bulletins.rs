@@ -135,8 +135,7 @@ fn table_boss() -> std::path::PathBuf {
 /// source), sinon la table des parametres du BOSS deposee (`table_boss`), sinon refus -- l'annee manque, on ne
 /// l'invente pas.
 fn pss(annee: socle::mois::Annee) -> R<droit::plafond::Pss> {
-    // Ses deux valeurs en euros entiers, comme le moteur les lit (`Contexte::plafond_securite_sociale`).
-    let entier = |mensuel: Montant, horaire: socle::grandeurs::MontantUnitaire| droit::plafond::Pss { mensuel: mensuel.partie_entiere(), horaire: horaire.partie_entiere() };
+    let entier = droit::plafond::Pss::en_euros_entiers;
     let lu = |m: Decimal, h: Decimal| entier(Montant::du_decimal(m), socle::grandeurs::MontantUnitaire::du_decimal(h));
     if let Some(p) = droit::contexte::socle_livre_lu(annee)?.and_then(|pile| pile.plafond_securite_sociale) {
         return Ok(entier(p.mensuel, p.horaire));
