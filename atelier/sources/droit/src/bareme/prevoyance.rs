@@ -3,7 +3,7 @@
 //! pas. Le catalogue porte le minimum de la branche ; ce que la compagnie souscrit se dit sur sa fiche
 //! (`prevoyance_permanents`), et le moteur le confronte a ce minimum.
 
-use super::{alsace_moselle, deux_virgule, nom_du_salarie, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
+use super::{alsace_moselle, nom_du_salarie, ChampsEntreprise, Jour, Mutuelle, SalarieDuContrat};
 use socle::date::Anciennete;
 use socle::echec::R;
 use crate::assiette::Assiette;
@@ -12,6 +12,7 @@ use crate::natures::AuMois;
 use socle::echec::Lieu;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::grandeurs::{Montant, Taux};
+use socle::texte::pourcent;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -246,7 +247,7 @@ en vigueur au {} dans le catalogue de branche.",
             "Fiche Entreprise, « Santé des permanents », part employeur : à remplir. La convention {} en met au moins {} % \
 à la charge de l'employeur ; la part de la compagnie est sur son contrat de complémentaire santé.",
             idcc,
-            minimum.decimal()
+            socle::grandeurs::ecrit::texte::dit(minimum)
         ));
     };
     let part: Taux = *choix;
@@ -257,7 +258,7 @@ la convention {} met au moins {} % de la cotisation sante a la \
 charge de l'employeur (XII.2.1.11), et pas plus de 100.",
             socle::texte::virgule(part),
             idcc,
-            minimum.decimal()
+            socle::grandeurs::ecrit::texte::dit(minimum)
         ));
     }
     let base = sante.base.clone();
@@ -265,7 +266,7 @@ charge de l'employeur (XII.2.1.11), et pas plus de 100.",
 }
 
 /// `super::minimum_sante`.
-pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(Decimal, String)>> {
+pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(Taux, String)>> {
     let c = catalogue()?;
     let Some(m) = ent.idcc.dite().and_then(|i| c.regime(i)).and_then(|r| r.sante_minimum.as_ref()) else { return Ok(None) };
     let annexe = ent.annexe_convention.dite();
@@ -273,11 +274,7 @@ pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(D
         Some((n, t)) => (t, format!("annexe {}", n)),
         None => (&m.socle, "socle".to_string()),
     };
-    Ok(derniere(table, jour).map(|(depuis, taux)| (taux.decimal(), format!("{}, depuis le {}", qui, depuis.jj_mm_aaaa()))))
-}
-
-fn pcf(x: Decimal) -> String {
-    deux_virgule(x)
+    Ok(derniere(table, jour).map(|(depuis, taux)| (taux, format!("{}, depuis le {}", qui, depuis.jj_mm_aaaa()))))
 }
 
 /// Le regime conventionnel de cette convention collective ; refuse quand la convention n'est pas relevee ou pas
@@ -365,13 +362,13 @@ fn resume(reg: &Regime) -> String {
     let mut out = Vec::new();
     if reg.beneficiaires.non_cadres == Some(false) {
         out.push("non cadres : aucun regime de branche".to_string());
-    } else if let Some(t) = reg.obligatoire.taux.map(Taux::decimal) {
-        out.push(format!("non cadres {} % de la tranche 1", pcf(t)));
+    } else if let Some(t) = reg.obligatoire.taux {
+        out.push(format!("non cadres {} de la tranche 1", pourcent(t)));
     }
-    if let Some((oc, taux)) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux.map(|t| (oc, t.decimal()))) {
-        let mut s = format!("cadres {} % de la tranche 1", pcf(taux));
-        if let Some(t2) = oc.t2.map(Taux::decimal) {
-            s += &format!(" et {} % de la tranche 2", pcf(t2));
+    if let Some((oc, taux)) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux.map(|t| (oc, t))) {
+        let mut s = format!("cadres {} de la tranche 1", pourcent(taux));
+        if let Some(t2) = oc.t2 {
+            s += &format!(" et {} de la tranche 2", pourcent(t2));
         }
         out.push(s);
     }
@@ -434,10 +431,10 @@ nouveau le laisserait sans couverture pendant un an.",
 /// (taux minimum de tranche 1, d'ou il vient) pour ce salarie ; `None` : ni la convention (elle fixe la repartition,
 /// pas le taux : `contrat_requis`) ni l'obligation cadre n'en fixent.
 fn minimum_t1(reg: &Regime, annexe: Option<&crate::fiche::AnnexeConvention>, cadre: bool) -> R<Option<(Taux, String)>> {
-    let mut retenu = reg.obligatoire.taux.map(|t| (t, format!("{} : {} %", reg.texte, pcf(t.decimal()))));
+    let mut retenu = reg.obligatoire.taux.map(|t| (t, format!("{} : {}", reg.texte, pourcent(t))));
     let sup = annexe.and_then(|n| reg.annexes.as_ref().and_then(|a| a.get(n)).map(|a| (n, a.taux)));
     if let Some((n, s)) = sup.filter(|(_, s)| retenu.as_ref().is_none_or(|(t, _)| s > t)) {
-        retenu = Some((s, format!("annexe {} de la convention : {} %", n, pcf(s.decimal()))));
+        retenu = Some((s, format!("annexe {} de la convention : {}", n, pourcent(s))));
     }
     if cadre {
         if let Some(propre) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux) {
@@ -445,13 +442,13 @@ fn minimum_t1(reg: &Regime, annexe: Option<&crate::fiche::AnnexeConvention>, cad
                 Some((_, s)) => propre.max(s),
                 None => propre,
             };
-            retenu = Some((t, format!("{} : {} % (cadres)", reg.texte, pcf(t.decimal()))));
+            retenu = Some((t, format!("{} : {} (cadres)", reg.texte, pourcent(t))));
         }
         let plancher = catalogue()?.obligation_cadre.taux_t1;
         if retenu.as_ref().is_none_or(|(t, _)| plancher > *t) {
             let pourquoi = match &retenu {
-                Some((_, p)) => format!("{}, porte a {} % par l'obligation cadre (ANI du 17/11/2017)", p, pcf(plancher.decimal())),
-                None => format!("l'obligation cadre (ANI du 17/11/2017) : {} %", pcf(plancher.decimal())),
+                Some((_, p)) => format!("{}, porte a {} par l'obligation cadre (ANI du 17/11/2017)", p, pourcent(plancher)),
+                None => format!("l'obligation cadre (ANI du 17/11/2017) : {}", pourcent(plancher)),
             };
             retenu = Some((plancher, pourquoi));
         }
@@ -554,13 +551,13 @@ minimum de la branche.",
         if let Some((mini, origine)) = minimum.as_ref().filter(|(mini, _)| propose < *mini) {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Prévoyance des permanents », taux {} : \
-{} % : c'est sous le minimum de la branche ({} %, {}).\n  \
+{} : c'est sous le minimum de la branche ({}, {}).\n  \
 Une entreprise peut souscrire mieux que la convention, \
 jamais moins : le minimum conventionnel s'impose a elle. \
 Corriger le contrat, ou revenir au regime conventionnel.",
                 pour,
-                pcf(propose.decimal()),
-                pcf(mini.decimal()),
+                pourcent(propose),
+                pourcent(*mini),
                 origine
             ));
         }

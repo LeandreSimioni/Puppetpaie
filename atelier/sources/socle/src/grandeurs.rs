@@ -1457,6 +1457,15 @@ pub mod ecrit {
         }
     }
 
+    /// En nombre JSON a virgule, exact, comme les fichiers l'ecrivent (`130.0`, `1.1` : `forme::ecrire_a_virgule`).
+    pub mod a_virgule {
+        use crate::grandeurs::Grandeur;
+
+        pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
+            crate::forme::ecrire_a_virgule(&g.en_decimal(), s)
+        }
+    }
+
     /// TELLE QUE LA NORME DSN L'ECRIT dans ses rubriques (cahier technique : « avec decimale », le point decimal) : un
     /// montant au centime, un taux a ses decimales. La seule ecriture des grandeurs de la DSN, et des retours de la norme
     /// que le simulateur des organismes fabrique (le taux de PAS, le taux AT/MP notifie).

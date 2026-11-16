@@ -1465,12 +1465,12 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
 #[derive(Debug, Clone, serde::Serialize)]
 struct NiveauDeSante {
     niveau: droit::forme_bareme::NiveauDeGarantie,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
-    assure: socle::num::Decimal,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
-    conjoint: socle::num::Decimal,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
-    enfant: socle::num::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
+    assure: socle::grandeurs::Taux,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
+    conjoint: socle::grandeurs::Taux,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
+    enfant: socle::grandeurs::Taux,
     libelle: String,
 }
 
@@ -1490,10 +1490,10 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
         .flat_map(|r| r.niveaux.iter())
         .map(|(n, t)| NiveauDeSante {
             niveau: n.clone(),
-            assure: t.assure.decimal(),
-            conjoint: t.conjoint.decimal(),
-            enfant: t.enfant.decimal(),
-            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, t.assure.decimal()),
+            assure: t.assure,
+            conjoint: t.conjoint,
+            enfant: t.enfant,
+            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, socle::grandeurs::ecrit::texte::dit(t.assure)),
         })
         .collect())
 }

@@ -19,19 +19,10 @@ use socle::date::{Duree, EnMois, Jour};
 use socle::mois::Annee;
 use socle::echec::{Lieu, Echec, R};
 use socle::grandeurs::{courte, Coefficient, Taux};
-use socle::num::Decimal;
-use rust_decimal::RoundingStrategy;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 // ------------------------------------------------------------ les petits outils
-
-/// Un nombre a deux decimales, au pair sur le demi, avec la virgule.
-fn deux_virgule(x: Decimal) -> String {
-    let mut r = x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    r.rescale(2);
-    r.to_string().replace('.', ",")
-}
 
 /// L'annee d'un bareme, pour un message.
 fn annee(bar: &Pile) -> String {
@@ -563,12 +554,12 @@ pub fn sans_sante(sal: &SalarieDuContrat, au_mois: &AuMois) -> bool {
 /// La cotisation globale minimale des frais de sante d'un permanent (% du
 /// PMSS, salarie seul) que la convention impose a cette date, et d'ou elle
 /// vient -- ou `(None, "")` quand la convention n'en fixe pas.
-pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(Decimal, String)>> {
+pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(Taux, String)>> {
     prevoyance::minimum_sante(ent, jour)
 }
 
 /// Le niveau souscrit cotise-t-il au moins le minimum de la convention ?
-fn controler_minimum_sante(ent: &ChampsEntreprise, sal: &SalarieDuContrat, niveau: &crate::forme_bareme::NiveauDeGarantie, assure: Decimal, fin: Option<&Jour>) -> R<()> {
+fn controler_minimum_sante(ent: &ChampsEntreprise, sal: &SalarieDuContrat, niveau: &crate::forme_bareme::NiveauDeGarantie, assure: Taux, fin: Option<&Jour>) -> R<()> {
     let Some((mini, origine)) = minimum_sante(ent, fin)? else { return Ok(()) };
     if assure < mini {
         return Err(socle::echec::refus_avec(
@@ -576,8 +567,8 @@ fn controler_minimum_sante(ent: &ChampsEntreprise, sal: &SalarieDuContrat, nivea
             Lieu {
                 cle: Some("sante_svp.niveau".into()),
                 detail: Some(format!(
-                    "{} : complementaire sante au niveau {}, {} % du PMSS pour le \
-salarie seul -- SOUS le minimum de la convention, {} % ({} ; \
+                    "{} : complementaire sante au niveau {}, {} du PMSS pour le \
+salarie seul -- SOUS le minimum de la convention, {} ({} ; \
 accord du 19/07/2024, art. 13).\n  \
 Soit le niveau souscrit est plus haut (le lire sur le bulletin \
 d'adhesion, `sante_svp.niveau`), soit les taux des niveaux ont \
@@ -586,8 +577,8 @@ l'annee (bareme, rubrique `mutuelle`, `releve_svp_sante`). Rien \
 n'est calcule.",
                     nom_du_salarie(sal),
                     niveau,
-                    deux_virgule(assure),
-                    deux_virgule(mini),
+                    socle::texte::pourcent(assure),
+                    socle::texte::pourcent(mini),
                     origine
                 )),
                 ..Lieu::default()
@@ -656,7 +647,7 @@ permanents » : le taux du contrat (en % du plafond mensuel, pour le salarié se
             return Err(socle::refus!(
                 "Fiche Entreprise, « Santé des permanents », part employeur : à remplir (au moins {} %, art. L911-7 du \
 code de la Securite sociale) ; elle est sur le contrat de complémentaire santé de la compagnie.",
-                minimum.decimal()
+                socle::grandeurs::ecrit::texte::dit(minimum)
             ));
         };
         let part: Taux = *pp;
@@ -700,7 +691,7 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
             nom_du_salarie(sal)
         ));
     };
-    controler_minimum_sante(ent, sal, niveau, taux.assure.decimal(), fin)?;
+    controler_minimum_sante(ent, sal, niveau, taux.assure, fin)?;
     // Qui le contrat couvre avec lui, son conjoint et ses enfants : seule sa fiche le sait, et elle le dit meme a non ou
     // a zero.
     let a_dire = |cle: &str, quoi: &str| {

@@ -1107,6 +1107,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | place d'une affiliation dans le versement d'un individu | `PlaceDAffiliation` | `declarations/src/dsn.rs` |
+| ayants droit d'une affiliation (le conjoint couvert ou non, le nombre d'enfants : 70.008, 70.011, lus de `sante_svp`) | `AyantsDroit` | `declarations/src/dsn.rs` |
 | numéro d'un versement d'un individu dans une DSN | `NumeroDeVersement` | `declarations/src/dsn.rs` |
 | rang d'un contrat sous l'individu dans une DSN | `RangDuContrat` | `declarations/src/dsn.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |

@@ -1228,10 +1228,19 @@ pub struct Affiliation {
     pub reference: ReferenceDAdhesion,
     /// L'option retenue par le salarie (70.004), quand l'organisme la demande pour ce contrat.
     pub option: Option<String>,
-    /// Les ayants droit conjoint (70.008) et enfants (70.011), quand ils entrent dans le calcul de la cotisation.
-    pub ayants_droit: Option<(usize, usize)>,
+    /// Les ayants droit (70.008, 70.011), quand ils entrent dans le calcul de la cotisation.
+    pub ayants_droit: Option<AyantsDroit>,
     /// La date de debut de l'affiliation (70.014), quand ce n'est pas celle du contrat.
     pub debut: Option<Jour>,
+}
+
+/// LES AYANTS DROIT D'UNE AFFILIATION, que l'option retenue couvre avec le salarie : son conjoint, ou non, et le nombre de
+/// ses enfants (`sante_svp` de sa fiche). La DSN les compte : 70.008 « Nombre d'ayants-droit conjoint / concubin »,
+/// 70.011 « Nombre d'enfants ayants-droit » (`atelier/reference/norme-dsn/texte/bloc-S21.G00.70.txt` l. 31-36, 68-73).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AyantsDroit {
+    pub conjoint: bool,
+    pub enfants: usize,
 }
 
 /// Ce qui affilie un permanent, ce mois-la, aux deux adhesions de sa nature : la prevoyance de sa convention, selon la
@@ -1377,7 +1386,7 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
 /// `organismes-base.json` dit que l'organisme les demande pour ce contrat (`contrats`, `options` : la sante des
 /// permanents 3090, fiche de parametrage Audiens version 139, groupes 00003 a 00008). Ils se lisent de `sante_svp`, la
 /// meme fiche que la cotisation (`bareme::bareme_sante`) ; sans elle, ou d'un niveau que la table n'a pas, refus.
-fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &ReferenceDAdhesion) -> R<(Option<String>, Option<(usize, usize)>)> {
+fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &ReferenceDAdhesion) -> R<(Option<String>, Option<AyantsDroit>)> {
     let base = droit::organismes::base()?;
     let libelle = adhesion.libelle.as_str().trim();
     let Some(options) = base.options(ent.idcc.dite(), libelle) else {
@@ -1407,7 +1416,7 @@ compagnie ; rien n'est declare.",
     let famille = conjoint || enfants.is_some_and(|n| n > 0);
     let code = niveau.and_then(|niveau| options.niveaux.get(niveau)).map(|n| if famille { n.famille.as_str() } else { n.isole.as_str() });
     match (code, enfants) {
-        (Some(c), Some(n)) => Ok((Some(c.to_string()), famille.then_some((usize::from(conjoint), n)))),
+        (Some(c), Some(enfants)) => Ok((Some(c.to_string()), famille.then_some(AyantsDroit { conjoint, enfants }))),
         _ => Err(socle::echec::a_la_cle(
             &format!(
                 "{} : elle se lit sur la fiche du salarie (son niveau, son conjoint, ses enfants), d'apres son bulletin d'adhesion -- la meme fiche que sa cotisation. Rien n'est declare.",
@@ -1978,8 +1987,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         if let Some(o) = a.option {
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.004"), Some(o))?;
         }
-        if let Some((conjoint, enfants)) = a.ayants_droit {
-            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.008"), Some(conjoint.to_string()))?;
+        if let Some(AyantsDroit { conjoint, enfants }) = a.ayants_droit {
+            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.008"), Some(usize::from(conjoint).to_string()))?;
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.011"), Some(enfants.to_string()))?;
         }
         si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.012"), Some(identifiant_d_affiliation(rang, a.place, places)?.to_string()))?;
