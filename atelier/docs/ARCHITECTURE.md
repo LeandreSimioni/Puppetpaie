@@ -445,6 +445,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | clé d'un contrat d'organisme | `CleDeContrat` | `droit/src/organismes.rs` |
 | accord de salaires | `AccordDeSalaires` | `droit/src/minima.rs` |
 | classe d'un échec noté | `ClasseNotee` | `socle/src/echec.rs` |
+| case d'une saisie qu'un refus nomme (la clé de la charge, ou la case que nomme un changement de la carte) | `CaseDeLaSaisie` (le refus qui la porte : `CaseRefusee`) | `socle/src/echec.rs` |
 
 **Le détail**
 
@@ -871,6 +872,13 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   lui (`accord`). Une clé du logiciel, non vide.
 - **classe d'un échec noté** : ce que la mémoire des échecs dit d'un échec : sa classe, un refus ordinaire (`-`), une
   panique (`panique`) ; ce que le diagnostic montre.
+- **case d'une saisie qu'un refus nomme** : là où une faute de la charge d'une route se trouve, quel que soit son niveau
+  (`socle::forme::lire_saisie`, `Objet::jour_du_mois`) : la clé de la charge qui la porte, ou la case que nomme le
+  changement qui la porte (`{"case": "salaire_mensuel", "valeur": …}`). La route en fait sa phrase, la case nommée comme
+  sa fiche la montre (`routes::case_nommee`, la seule fabrique, quelle que soit l'entrée qui lit la charge). La case d'un
+  changement (`DUnChangement`) est le texte de la clé de la carte : le socle, où se lit la charge, ne voit pas
+  `engagement`, dont la carte nomme ses cases (`engagement::carte::libelle_de_la_case`, que la route lit) ; il ne la lit
+  pas, il la rend.
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
