@@ -136,31 +136,6 @@ impl Val {
         )
     }
 
-    /// Cette valeur et `autre`, d'une meme colonne, additionnees : des grandeurs de meme nom qui s'additionnent (des
-    /// montants, des heures, des cachets, des jours), ou des comptes. Le reste ne s'additionne pas.
-    fn plus(&self, autre: &Val) -> R<Val> {
-        Ok(match (self, autre) {
-            (Val::Montant(a), Val::Montant(b)) => Val::Montant(*a + *b),
-            (Val::Heures(a), Val::Heures(b)) => Val::Heures(*a + *b),
-            (Val::Cachets(a), Val::Cachets(b)) => Val::Cachets(*a + *b),
-            (Val::Jours(a), Val::Jours(b)) => Val::Jours(*a + *b),
-            (Val::Compte(a), Val::Compte(b)) => Val::Compte(a + b),
-            (a, b) => return Err(Val::sans_total(&format!("« {} » et « {} »", a.en_texte_ecrit(), b.en_texte_ecrit()))),
-        })
-    }
-
-    /// La premiere valeur du total d'une colonne : elle-meme, quand elle s'additionne (`plus`).
-    fn premiere_du_total(&self) -> R<Val> {
-        match self {
-            Val::Montant(_) | Val::Heures(_) | Val::Cachets(_) | Val::Jours(_) | Val::Compte(_) => Ok(self.clone()),
-            autre => Err(Val::sans_total(&format!("« {} »", autre.en_texte_ecrit()))),
-        }
-    }
-
-    /// Le refus d'un total d'une colonne dont les valeurs `quoi` ne s'additionnent pas.
-    fn sans_total(quoi: &str) -> Echec {
-        erreur(Classe::CalculImpossible, format!("{} ne s'additionnent pas dans le total d'une colonne.", quoi))
-    }
 }
 
 impl Serialize for Val {
@@ -224,16 +199,35 @@ impl From<TauxDeLigne> for Val {
 
 // ------------------------------------------------------------------ les colonnes
 
-/// LES COLONNES DES ETATS, declarees une fois : une ligne par colonne, sa cle ecrite (sous laquelle une ligne la porte
-/// et le tableau la nomme), ce qu'elle porte (`Genre`) et son en-tete ; un etat qui la titre autrement le dit
-/// (`ColonneDEtat::titree`).
+/// CE QU'UNE COLONNE TOTALISEE ADDITIONNE : une seule grandeur, ou un compte ; celle d'une assiette, la grandeur que
+/// l'assiette compte (`Assiette::en_heures`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Total {
+    Montant,
+    Heures,
+    Cachets,
+    Jours,
+    Compte,
+    Assiette(Assiette),
+}
+
+/// CE QU'UNE COLONNE RECOIT : une colonne qui recoit `V` (un montant, des heures, un compte…) le declare par son type ;
+/// une colonne totalisee n'en recoit qu'une sorte, celle qu'elle additionne (`Total`), et une case d'une autre sorte ne
+/// s'y pose pas : elle ne compile pas.
+pub trait Recoit<V>: Into<ColonneDEtat> + Copy {}
+
+/// LES COLONNES DES ETATS, declarees une fois et rangees par ce qu'elles recoivent : chaque sorte a son type (le texte,
+/// une grandeur a droite sans total, un montant, des heures, des cachets, des jours, un compte), son genre ecrit dans la
+/// reponse (`Genre`) et son total ; une ligne par colonne, sa cle ecrite (sous laquelle une ligne la porte et le tableau
+/// la nomme) et son en-tete ; un etat qui la titre autrement le dit (`titree`). Toutes se nomment ensemble
+/// (`ColonneDEtat`, la cle d'une case) ; un etat les prend par `colonne`.
 macro_rules! colonnes_des_etats {
-    ($( $(#[$m:meta])* $var:ident = $cle:literal, $genre:ident, $entete:literal; )*) => {
-        /// LA COLONNE D'UN ETAT (voir la declaration). Deux variantes qui s'ecrivent sous la meme cle ne se posent
-        /// jamais dans un meme etat : une ligne n'a qu'une case par cle.
+    ($( $(#[$ms:meta])* $sorte:ident, [$($v:ty),*], $total:expr, $genre:ident { $( $(#[$m:meta])* $var:ident = $cle:literal, $entete:literal; )* } )*) => {
+        /// LA COLONNE D'UN ETAT, quelle que soit sa sorte (voir la declaration) : la cle d'une case. Deux variantes qui
+        /// s'ecrivent sous la meme cle ne se posent jamais dans un meme etat : une ligne n'a qu'une case par cle.
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum ColonneDEtat {
-            $( $(#[$m])* $var, )*
+            $( $( $(#[$m])* $var, )* )*
             /// Le brut d'un mois de l'annee, au recapitulatif annuel : `m01` a `m12`, sous le nom abrege du mois avec son
             /// point (« Janv. »).
             DuMois(MoisDeLAnnee),
@@ -245,165 +239,280 @@ macro_rules! colonnes_des_etats {
             /// Sa cle ecrite.
             pub fn cle(self) -> Cow<'static, str> {
                 match self {
-                    $( ColonneDEtat::$var => Cow::Borrowed($cle), )*
+                    $( $( ColonneDEtat::$var => Cow::Borrowed($cle), )* )*
                     ColonneDEtat::DuMois(m) => Cow::Owned(format!("m{:02}", m.numero())),
                     ColonneDEtat::DeLAssiette(a) => Cow::Owned(format!("b_{}", a)),
                 }
             }
 
-            /// Ce qu'elle porte.
+            /// Ce qu'elle porte, tel que la reponse l'ecrit.
             pub fn genre(self) -> Genre {
                 match self {
-                    $( ColonneDEtat::$var => Genre::$genre, )*
+                    $( $( ColonneDEtat::$var => Genre::$genre, )* )*
                     ColonneDEtat::DuMois(_) | ColonneDEtat::DeLAssiette(_) => Genre::Montant,
+                }
+            }
+
+            /// Ce que son total additionne ; `None` : elle n'a pas de total.
+            fn total(self) -> Option<Total> {
+                match self {
+                    $( $( ColonneDEtat::$var => $total, )* )*
+                    ColonneDEtat::DuMois(_) => Some(Total::Montant),
+                    ColonneDEtat::DeLAssiette(a) => Some(Total::Assiette(a)),
                 }
             }
 
             /// Son en-tete.
             pub fn entete(self) -> Cow<'static, str> {
                 match self {
-                    $( ColonneDEtat::$var => Cow::Borrowed($entete), )*
+                    $( $( ColonneDEtat::$var => Cow::Borrowed($entete), )* )*
                     ColonneDEtat::DuMois(m) => Cow::Owned(format!("{}.", m.nom(socle::mois::Graphie::Titre).chars().take(4).collect::<String>())),
                     ColonneDEtat::DeLAssiette(a) => Cow::Borrowed(a.nom()),
                 }
             }
         }
+
+        $(
+            $(#[$ms])*
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            pub enum $sorte {
+                $( $(#[$m])* $var, )*
+            }
+
+            impl From<$sorte> for ColonneDEtat {
+                fn from(c: $sorte) -> ColonneDEtat {
+                    match c {
+                        $( $sorte::$var => ColonneDEtat::$var, )*
+                    }
+                }
+            }
+
+            impl $sorte {
+                /// La colonne d'un tableau, sous son en-tete.
+                pub fn colonne(self) -> Colonne {
+                    ColonneDEtat::from(self).colonne()
+                }
+
+                /// La colonne d'un tableau, sous l'en-tete que l'etat lui donne.
+                pub fn titree(self, libelle: impl Into<String>) -> Colonne {
+                    ColonneDEtat::from(self).titree(libelle)
+                }
+            }
+
+            impl Serialize for $sorte {
+                fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                    ColonneDEtat::from(*self).serialize(s)
+                }
+            }
+
+            $( impl Recoit<$v> for $sorte {} )*
+        )*
+
+        /// Les colonnes des etats sous leur nom, quelle que soit leur sorte : `colonne::Brut`, `colonne::DuMois(m)`.
+        pub mod colonne {
+            $( pub use super::$sorte::*; )*
+            pub use super::{DeLAssiette, DuMois};
+        }
     };
 }
 
+/// LE BRUT D'UN MOIS DE L'ANNEE, la colonne du recapitulatif annuel : un montant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DuMois(pub MoisDeLAnnee);
+
+impl From<DuMois> for ColonneDEtat {
+    fn from(c: DuMois) -> ColonneDEtat {
+        ColonneDEtat::DuMois(c.0)
+    }
+}
+
+impl Recoit<Montant> for DuMois {}
+
+impl DuMois {
+    /// La colonne d'un tableau, sous son en-tete.
+    pub fn colonne(self) -> Colonne {
+        ColonneDEtat::from(self).colonne()
+    }
+}
+
+/// UNE ASSIETTE DU CALCUL, la colonne de l'etat des assiettes : la base de l'assiette, dans la grandeur qu'elle compte
+/// (`Ligne::assiette`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeLAssiette(pub Assiette);
+
+impl From<DeLAssiette> for ColonneDEtat {
+    fn from(c: DeLAssiette) -> ColonneDEtat {
+        ColonneDEtat::DeLAssiette(c.0)
+    }
+}
+
+impl DeLAssiette {
+    /// La colonne d'un tableau, sous son en-tete.
+    pub fn colonne(self) -> Colonne {
+        ColonneDEtat::from(self).colonne()
+    }
+
+    /// La colonne d'un tableau, sous l'en-tete que l'etat lui donne.
+    pub fn titree(self, libelle: impl Into<String>) -> Colonne {
+        ColonneDEtat::from(self).titree(libelle)
+    }
+}
+
 colonnes_des_etats! {
-    APayer = "a_payer", Texte, "À payer";
-    Abattement = "abattement", Montant, "Abattement";
-    Acquis = "acquis", Nombre, "Acquis N (j)";
-    Acte = "acte", Texte, "Acte";
-    Actif = "actif", Texte, "Fiche";
-    Adresse = "adresse", Texte, "Adresse";
-    Analytique = "analytique", Texte, "Analytique";
-    Annee = "annee", Texte, "Année";
-    /// L'assiette du prelevement a la source d'une paie.
-    AssiettePas = "assiette", Montant, "Assiette PAS";
-    /// L'assiette qu'une ligne du bordereau Urssaf declare : la meme cle qu'`AssiettePas`, a droite sans total.
-    AssietteDeclaree = "assiette", Taux, "Assiette déclarée";
-    Au = "au", Texte, "au";
-    /// La base ou la quantite d'une ligne de bulletin, d'une cotisation : a droite, sans total.
-    Base = "base", Taux, "Base";
-    /// La base de la taxe sur les salaires d'un salarie : la meme cle que `Base`, un montant qui se totalise.
-    BaseDeLaTaxe = "base", Montant, "Base (assiette CSG sans réduction)";
-    Brut = "brut", Montant, "Brut";
-    Bulletins = "bulletins", Nombre, "Bulletins";
-    Cachets = "cachets", Nombre, "Cachets";
-    Calcule = "calcule", Montant, "0,1 % de la tranche A";
-    Charges = "charges", Montant, "Charges patronales";
-    Chomage = "chomage", Montant, "dont chômage";
-    /// La cle de la fiche d'un salarie, sur une ligne de la liste des contrats (la meme notion que `CleSalarie`).
-    Cle = "cle", Texte, "Clé du salarié";
-    /// La cle de la fiche d'un salarie, qui range deux homonymes a part ; aucun tableau ne la montre.
-    CleSalarie = "cle_salarie", Texte, "Clé du salarié";
-    Code = "code", Texte, "Code";
-    Coefficient = "coefficient", Taux, "Coefficient";
-    Commune = "commune", Texte, "Commune";
-    Compte = "compte", Texte, "Compte";
-    Contrat = "contrat", Texte, "Contrat";
-    ContratType = "contrat_type", Texte, "Type de contrat";
-    CotisationsPatronales = "cotisations_patronales", Montant, "Cot. patronales";
-    CotisationsSalariales = "cotisations_salariales", Montant, "Cot. salariales";
-    CoutEmployeur = "cout_employeur", Montant, "Coût employeur";
-    Cp = "cp", Texte, "Code postal";
-    Cpnef = "cpnef", Montant, "CPNEF (dialogue social)";
-    Credit = "credit", Montant, "Crédit";
-    Cs = "cs", Texte, "N° Congés Spectacles";
-    Ctp = "ctp", Texte, "CTP";
-    Date = "date", Texte, "Date";
-    Debit = "debit", Montant, "Débit";
-    Debut = "debut", Texte, "Début";
-    Destinataire = "destinataire", Texte, "Destinataire";
-    Dixieme = "dixieme", Montant, "Au dixième";
-    /// Le premier jour d'une periode de versement.
-    Du = "du", Texte, "Période du";
-    /// La contribution due d'une annee : la meme cle que `Du`, un montant.
-    ContributionDue = "du", Montant, "Contribution due";
-    Email = "email", Texte, "Courriel";
-    Emploi = "emploi", Texte, "Emploi";
-    Entree = "entree", Texte, "Entrée";
-    Fichier = "fichier", Texte, "Fichier";
-    Fin = "fin", Texte, "Fin";
-    Gain = "gain", Montant, "Gain";
-    Genre = "genre", Texte, "Ligne";
-    Heures = "heures", Nombre, "Heures";
-    Identifiant = "identifiant", Texte, "SIRET ou code";
-    Indemnite = "indemnite", Montant, "Indemnité retenue";
-    Issue = "issue", Texte, "Issue";
-    Journal = "journal", Texte, "Journal";
-    Jours = "jours", Nombre, "Jours";
-    Libelle = "libelle", Texte, "Libellé";
-    /// Le libelle d'un compte du plan, sur une ecriture ; aucun tableau ne le montre.
-    LibelleCompte = "libelle_compte", Texte, "Libellé du compte";
-    Lieu = "lieu", Texte, "à";
-    Maintien = "maintien", Montant, "Au maintien";
-    MajorationUn = "majoration_1", Montant, "Première majoration";
-    MajorationDeux = "majoration_2", Montant, "Seconde majoration";
-    Masse = "masse", Montant, "Masse salariale";
-    MassePermanents = "masse_permanents", Montant, "Masse hors intermittents";
-    Mode = "mode", Texte, "Mode";
-    /// Le mois d'une ligne.
-    Mois = "mois", Texte, "Mois";
-    /// Un nombre de mois : la meme cle que `Mois`, une quantite qui se totalise.
-    NombreDeMois = "mois", Nombre, "Mois";
-    Montant = "montant", Montant, "Montant";
-    Naissance = "naissance", Texte, "Date de naissance";
-    Nationalite = "nationalite", Texte, "Nationalité";
-    Nature = "nature", Texte, "Nature";
-    Net = "net", Montant, "Net";
-    NetAPayer = "net_a_payer", Montant, "Net à payer";
-    NetImposable = "net_imposable", Montant, "Net imposable";
-    Nir = "nir", Texte, "NIR";
-    Nom = "nom", Texte, "Nom";
-    Objet = "objet", Texte, "N° d'objet";
-    Ordre = "ordre", Texte, "N°";
-    Organisme = "organisme", Texte, "Organisme";
-    Origine = "origine", Texte, "Reconstitué depuis";
-    PartPat = "part_pat", Montant, "Part patronale";
-    PartSal = "part_sal", Montant, "Part salariale";
-    Pas = "pas", Montant, "PAS";
-    Periode = "periode", Texte, "Période";
-    Permanents = "permanents", Montant, "Contribution conventionnelle";
-    Piece = "piece", Texte, "Pièce";
-    Plafond = "plafond", Taux, "Plafond appliqué";
-    Prelevement = "prelevement", Montant, "Prélevé";
-    Prenom = "prenom", Texte, "Prénom";
-    Pris = "pris", Nombre, "Pris (j)";
-    Qualifiant = "qualifiant", Texte, "Qualifiant";
-    Qualification = "qualification", Texte, "Qualification";
-    Quand = "quand", Texte, "Date";
-    Reference = "reference", Texte, "Référence";
-    Regle = "regle", Texte, "Règle";
-    Reponse = "reponse", Texte, "Réponse";
-    Report = "report", Nombre, "Report N-1 (j)";
-    Retraite = "retraite", Montant, "dont retraite";
-    Salarie = "salarie", Texte, "Salarié";
-    Salaries = "salaries", Nombre, "Salariés";
-    Sexe = "sexe", Texte, "Sexe";
-    Smic = "smic", Montant, "SMIC de référence";
-    Solde = "solde", Nombre, "Solde (j)";
-    SoldeCrediteur = "solde_crediteur", Montant, "Solde créditeur";
-    SoldeDebiteur = "solde_debiteur", Montant, "Solde débiteur";
-    Sortie = "sortie", Texte, "Sortie";
-    Spectacle = "spectacle", Texte, "Spectacle";
-    Statut = "statut", Texte, "Statut";
-    Taux = "taux", Taux, "Taux %";
-    TauxAt = "taux_at", Taux, "Taux AT";
-    TauxNormal = "taux_normal", Montant, "4,25 %";
-    TauxPat = "taux_pat", Taux, "Taux patronal";
-    TauxPatronal = "taux_patronal", Taux, "Taux patronal réel";
-    TauxPermanents = "taux_permanents", Taux, "Taux %";
-    TauxSal = "taux_sal", Taux, "Taux sal. %";
-    Taxe = "taxe", Montant, "Taxe brute";
-    Total = "total", Montant, "Total dû";
-    TotalHt = "total_ht", Montant, "Total HT";
-    TrancheA = "tranche_a", Montant, "Tranche A déclarée";
-    Type = "type", Texte, "Type de taux";
-    Urssaf = "urssaf", Montant, "dont Urssaf";
-    VerseLe = "verse_le", Texte, "Versé le";
+    /// UNE COLONNE DE TEXTE : un texte, un mois, un rang ; sans total.
+    ColonneDeTexte, [], None, Texte {
+        APayer = "a_payer", "À payer";
+        Acte = "acte", "Acte";
+        Actif = "actif", "Fiche";
+        Adresse = "adresse", "Adresse";
+        Analytique = "analytique", "Analytique";
+        Annee = "annee", "Année";
+        Au = "au", "au";
+        /// La cle de la fiche d'un salarie, sur une ligne de la liste des contrats (la meme notion que `CleSalarie`).
+        Cle = "cle", "Clé du salarié";
+        /// La cle de la fiche d'un salarie, qui range deux homonymes a part ; aucun tableau ne la montre.
+        CleSalarie = "cle_salarie", "Clé du salarié";
+        Code = "code", "Code";
+        Commune = "commune", "Commune";
+        Compte = "compte", "Compte";
+        Contrat = "contrat", "Contrat";
+        ContratType = "contrat_type", "Type de contrat";
+        Cp = "cp", "Code postal";
+        Cs = "cs", "N° Congés Spectacles";
+        Ctp = "ctp", "CTP";
+        Date = "date", "Date";
+        Debut = "debut", "Début";
+        Destinataire = "destinataire", "Destinataire";
+        /// Le premier jour d'une periode de versement.
+        Du = "du", "Période du";
+        Email = "email", "Courriel";
+        Emploi = "emploi", "Emploi";
+        Entree = "entree", "Entrée";
+        Fichier = "fichier", "Fichier";
+        Fin = "fin", "Fin";
+        Genre = "genre", "Ligne";
+        Identifiant = "identifiant", "SIRET ou code";
+        Issue = "issue", "Issue";
+        Journal = "journal", "Journal";
+        Libelle = "libelle", "Libellé";
+        /// Le libelle d'un compte du plan, sur une ecriture ; aucun tableau ne le montre.
+        LibelleCompte = "libelle_compte", "Libellé du compte";
+        Lieu = "lieu", "à";
+        Mode = "mode", "Mode";
+        /// Le mois d'une ligne.
+        Mois = "mois", "Mois";
+        Naissance = "naissance", "Date de naissance";
+        Nationalite = "nationalite", "Nationalité";
+        Nature = "nature", "Nature";
+        Nir = "nir", "NIR";
+        Nom = "nom", "Nom";
+        Objet = "objet", "N° d'objet";
+        Ordre = "ordre", "N°";
+        Organisme = "organisme", "Organisme";
+        Origine = "origine", "Reconstitué depuis";
+        Periode = "periode", "Période";
+        Piece = "piece", "Pièce";
+        Prenom = "prenom", "Prénom";
+        Qualifiant = "qualifiant", "Qualifiant";
+        Qualification = "qualification", "Qualification";
+        Quand = "quand", "Date";
+        Reference = "reference", "Référence";
+        Regle = "regle", "Règle";
+        Reponse = "reponse", "Réponse";
+        Salarie = "salarie", "Salarié";
+        Sexe = "sexe", "Sexe";
+        Sortie = "sortie", "Sortie";
+        Spectacle = "spectacle", "Spectacle";
+        Statut = "statut", "Statut";
+        Type = "type", "Type de taux";
+        VerseLe = "verse_le", "Versé le";
+    }
+    /// UNE COLONNE A DROITE SANS TOTAL : une grandeur, quelle qu'elle soit (un taux, une base, un coefficient…).
+    ColonneADroite, [Montant, Taux, Coefficient, Heures, Cachets, Jours, QuantiteDeLigne, TauxDeLigne], None, Taux {
+        /// L'assiette qu'une ligne du bordereau Urssaf declare : la meme cle qu'`AssiettePas`, a droite sans total.
+        AssietteDeclaree = "assiette", "Assiette déclarée";
+        /// La base ou la quantite d'une ligne de bulletin, d'une cotisation : a droite, sans total.
+        Base = "base", "Base";
+        Coefficient = "coefficient", "Coefficient";
+        Plafond = "plafond", "Plafond appliqué";
+        Taux = "taux", "Taux %";
+        TauxAt = "taux_at", "Taux AT";
+        TauxPat = "taux_pat", "Taux patronal";
+        TauxPatronal = "taux_patronal", "Taux patronal réel";
+        TauxPermanents = "taux_permanents", "Taux %";
+        TauxSal = "taux_sal", "Taux sal. %";
+    }
+    /// UNE COLONNE DE MONTANTS, totalisee.
+    ColonneDeMontant, [Montant], Some(Total::Montant), Montant {
+        Abattement = "abattement", "Abattement";
+        /// L'assiette du prelevement a la source d'une paie.
+        AssiettePas = "assiette", "Assiette PAS";
+        /// La base de la taxe sur les salaires d'un salarie : la meme cle que `Base`, un montant qui se totalise.
+        BaseDeLaTaxe = "base", "Base (assiette CSG sans réduction)";
+        Brut = "brut", "Brut";
+        Calcule = "calcule", "0,1 % de la tranche A";
+        Charges = "charges", "Charges patronales";
+        Chomage = "chomage", "dont chômage";
+        /// La contribution due d'une annee : la meme cle que `Du`, un montant.
+        ContributionDue = "du", "Contribution due";
+        CotisationsPatronales = "cotisations_patronales", "Cot. patronales";
+        CotisationsSalariales = "cotisations_salariales", "Cot. salariales";
+        CoutEmployeur = "cout_employeur", "Coût employeur";
+        Cpnef = "cpnef", "CPNEF (dialogue social)";
+        Credit = "credit", "Crédit";
+        Debit = "debit", "Débit";
+        Dixieme = "dixieme", "Au dixième";
+        Gain = "gain", "Gain";
+        Indemnite = "indemnite", "Indemnité retenue";
+        Maintien = "maintien", "Au maintien";
+        MajorationUn = "majoration_1", "Première majoration";
+        MajorationDeux = "majoration_2", "Seconde majoration";
+        Masse = "masse", "Masse salariale";
+        MassePermanents = "masse_permanents", "Masse hors intermittents";
+        Montant = "montant", "Montant";
+        Net = "net", "Net";
+        NetAPayer = "net_a_payer", "Net à payer";
+        NetImposable = "net_imposable", "Net imposable";
+        PartPat = "part_pat", "Part patronale";
+        PartSal = "part_sal", "Part salariale";
+        Pas = "pas", "PAS";
+        Permanents = "permanents", "Contribution conventionnelle";
+        Prelevement = "prelevement", "Prélevé";
+        Retraite = "retraite", "dont retraite";
+        Smic = "smic", "SMIC de référence";
+        SoldeCrediteur = "solde_crediteur", "Solde créditeur";
+        SoldeDebiteur = "solde_debiteur", "Solde débiteur";
+        Taxe = "taxe", "Taxe brute";
+        TauxNormal = "taux_normal", "4,25 %";
+        Total = "total", "Total dû";
+        TotalHt = "total_ht", "Total HT";
+        TrancheA = "tranche_a", "Tranche A déclarée";
+        Urssaf = "urssaf", "dont Urssaf";
+    }
+    /// UNE COLONNE D'HEURES, totalisee.
+    ColonneDHeures, [Heures], Some(Total::Heures), Nombre {
+        Heures = "heures", "Heures";
+    }
+    /// UNE COLONNE DE CACHETS, totalisee.
+    ColonneDeCachets, [Cachets], Some(Total::Cachets), Nombre {
+        Cachets = "cachets", "Cachets";
+    }
+    /// UNE COLONNE DE JOURS, totalisee : ceux d'un compteur de conges.
+    ColonneDeJours, [Jours], Some(Total::Jours), Nombre {
+        Acquis = "acquis", "Acquis N (j)";
+        Pris = "pris", "Pris (j)";
+        Report = "report", "Report N-1 (j)";
+        Solde = "solde", "Solde (j)";
+    }
+    /// UNE COLONNE DE COMPTES (« combien de… »), totalisee.
+    ColonneDeCompte, [usize], Some(Total::Compte), Nombre {
+        Bulletins = "bulletins", "Bulletins";
+        /// Les jours travailles d'un contrat, comptes.
+        Jours = "jours", "Jours";
+        /// Un nombre de mois : la meme cle que `Mois`, un compte qui se totalise.
+        NombreDeMois = "mois", "Mois";
+        Salaries = "salaries", "Salariés";
+    }
 }
 
 impl Serialize for ColonneDEtat {
@@ -430,16 +539,20 @@ impl ColonneDEtat {
 #[serde(transparent)]
 pub struct Ligne {
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
-    pub champs: Vec<(ColonneDEtat, Option<Val>)>,
+    champs: Vec<(ColonneDEtat, Option<Val>)>,
 }
 
+/// LES CASES D'UNE LIGNE se posent par leur colonne, qui dit ce qu'elle recoit (`Recoit`) : une case d'une colonne
+/// totalisee porte toujours la grandeur que son total additionne. Une case se pose une fois ; un cumul se fait sur des
+/// grandeurs, avant (`etats_paie::CumulDuLivre`).
 impl Ligne {
     pub fn nouvelle() -> Ligne {
         Ligne::default()
     }
 
     /// `d[k] = v` : remplace en gardant la place, ou ajoute a la fin.
-    pub fn poser(&mut self, k: ColonneDEtat, v: Option<Val>) -> &mut Ligne {
+    fn poser(&mut self, k: impl Into<ColonneDEtat>, v: Option<Val>) -> &mut Ligne {
+        let k = k.into();
         match self.champs.iter_mut().find(|(c, _)| *c == k) {
             Some(x) => x.1 = v,
             None => self.champs.push((k, v)),
@@ -447,46 +560,46 @@ impl Ligne {
         self
     }
 
-    pub fn t(&mut self, k: ColonneDEtat, s: impl Into<String>) -> &mut Ligne {
+    pub fn t(&mut self, k: ColonneDeTexte, s: impl Into<String>) -> &mut Ligne {
         self.poser(k, Some(Val::Txt(s.into())))
     }
 
     /// Un texte, ou rien quand il est vide.
-    pub fn ot(&mut self, k: ColonneDEtat, s: Option<impl Into<String>>) -> &mut Ligne {
+    pub fn ot(&mut self, k: ColonneDeTexte, s: Option<impl Into<String>>) -> &mut Ligne {
         self.poser(k, s.map(|s| Val::Txt(s.into())))
     }
 
-    pub fn m(&mut self, k: ColonneDEtat, m: Mois) -> &mut Ligne {
+    pub fn m(&mut self, k: ColonneDeTexte, m: Mois) -> &mut Ligne {
         self.poser(k, Some(Val::Mois(m)))
     }
 
     /// Une grandeur dans la case `k` (un montant, un taux, des heures, la quantite ou le taux d'une ligne de paie…).
-    pub fn grandeur(&mut self, k: ColonneDEtat, v: impl Into<Val>) -> &mut Ligne {
+    pub fn grandeur<G: Into<Val>>(&mut self, k: impl Recoit<G>, v: G) -> &mut Ligne {
         self.poser(k, Some(v.into()))
     }
 
     /// Une grandeur, ou rien (la source ne la dit pas).
-    pub fn grandeur_ou_rien<G: Into<Val>>(&mut self, k: ColonneDEtat, v: Option<G>) -> &mut Ligne {
+    pub fn grandeur_ou_rien<G: Into<Val>>(&mut self, k: impl Recoit<G>, v: Option<G>) -> &mut Ligne {
         self.poser(k, v.map(Into::into))
     }
 
     /// Un montant.
-    pub fn montant(&mut self, k: ColonneDEtat, v: Montant) -> &mut Ligne {
+    pub fn montant(&mut self, k: impl Recoit<Montant>, v: Montant) -> &mut Ligne {
         self.grandeur(k, v)
     }
 
     /// Un montant, ou rien.
-    pub fn om(&mut self, k: ColonneDEtat, v: Option<Montant>) -> &mut Ligne {
+    pub fn om(&mut self, k: impl Recoit<Montant>, v: Option<Montant>) -> &mut Ligne {
         self.grandeur_ou_rien(k, v)
     }
 
     /// Un taux, ou rien (le taux d'une ligne de cotisation).
-    pub fn taux(&mut self, k: ColonneDEtat, v: Option<Taux>) -> &mut Ligne {
+    pub fn taux(&mut self, k: impl Recoit<Taux>, v: Option<Taux>) -> &mut Ligne {
         self.grandeur_ou_rien(k, v)
     }
 
-    /// La base d'une ligne de cotisation, ou rien : ses euros ou ses heures.
-    pub fn base(&mut self, k: ColonneDEtat, v: Option<engagement::calcul::BaseDeCotisation>) -> &mut Ligne {
+    /// La base d'une ligne de cotisation, ou rien : ses euros ou ses heures, dans une colonne a droite sans total.
+    pub fn base(&mut self, k: ColonneADroite, v: Option<engagement::calcul::BaseDeCotisation>) -> &mut Ligne {
         match v {
             Some(engagement::calcul::BaseDeCotisation::Montant(m)) => self.montant(k, m),
             Some(engagement::calcul::BaseDeCotisation::Heures(h)) => self.grandeur(k, h),
@@ -494,47 +607,66 @@ impl Ligne {
         }
     }
 
+    /// La base de l'assiette `a` d'une paie, ou rien, dans sa colonne (`DeLAssiette`) : dans la grandeur que l'assiette
+    /// compte (`Assiette::en_heures`), que son total additionne ; une base d'une autre grandeur se refuse.
+    pub fn assiette(&mut self, a: Assiette, v: Option<engagement::calcul::BaseDeCotisation>) -> R<&mut Ligne> {
+        let case = match v {
+            Some(v) if a.en_heures() => Some(Val::Heures(v.en_heures(a)?)),
+            Some(v) => Some(Val::Montant(v.en_euros(a)?)),
+            None => None,
+        };
+        Ok(self.poser(DeLAssiette(a), case))
+    }
+
     /// Un taux de PAS, ou rien (deux decimales, comme la norme l'ecrit).
-    pub fn taux_de_pas(&mut self, k: ColonneDEtat, v: Option<droit::pas::TauxDePas>) -> &mut Ligne {
+    pub fn taux_de_pas(&mut self, k: ColonneADroite, v: Option<droit::pas::TauxDePas>) -> &mut Ligne {
         self.taux(k, v.map(|t| t.taux()))
     }
 
     /// Un compte (« combien de… »).
-    pub fn compte(&mut self, k: ColonneDEtat, n: usize) -> &mut Ligne {
+    pub fn compte(&mut self, k: impl Recoit<usize>, n: usize) -> &mut Ligne {
         self.poser(k, Some(Val::Compte(n)))
     }
 
     /// Le rang de la ligne dans son etat.
-    pub fn rang(&mut self, k: ColonneDEtat, r: RangDansLEtat) -> &mut Ligne {
+    pub fn rang(&mut self, k: ColonneDeTexte, r: RangDansLEtat) -> &mut Ligne {
         self.poser(k, Some(Val::Rang(r)))
     }
 
-    pub fn rien(&mut self, k: ColonneDEtat) -> &mut Ligne {
+    /// Une case presente et vide (la source ne la dit pas, ou un total qui n'a pas de sens).
+    pub fn rien(&mut self, k: impl Into<ColonneDEtat>) -> &mut Ligne {
         self.poser(k, None)
     }
 
     /// `d.get(k)` distinguant l'absente (`None`) de la presente a `None` (`Some(None)`).
-    pub fn get(&self, k: ColonneDEtat) -> Option<&Option<Val>> {
+    pub fn get(&self, k: impl Into<ColonneDEtat>) -> Option<&Option<Val>> {
+        let k = k.into();
         self.champs.iter().find(|(c, _)| *c == k).map(|(_, v)| v)
     }
 
     /// La valeur, ou rien.
-    pub fn val(&self, k: ColonneDEtat) -> Option<&Val> {
+    pub fn val(&self, k: impl Into<ColonneDEtat>) -> Option<&Val> {
         self.get(k).and_then(|v| v.as_ref())
     }
 
     /// Le texte de la case `k`, tel qu'il s'ecrit : rien pour une case vide (absente ou `None`). C'est ce qui range et
     /// groupe les lignes.
-    pub fn texte(&self, k: ColonneDEtat) -> String {
+    pub fn texte(&self, k: impl Into<ColonneDEtat>) -> String {
         self.val(k).map(Val::en_texte_ecrit).into_iter().collect()
     }
 
     /// Le mois de la case `k`, quand elle en porte un (`m`).
-    pub fn mois(&self, k: ColonneDEtat) -> Option<Mois> {
+    pub fn mois(&self, k: ColonneDeTexte) -> Option<Mois> {
         match self.val(k) {
             Some(Val::Mois(m)) => Some(*m),
             _ => None,
         }
+    }
+
+    /// La grandeur que la colonne totalisee `k` additionne, dans cette ligne (`lue` la tire de sa case ; une case de
+    /// cette colonne ne porte qu'elle, `Recoit`) ; rien quand la case est vide.
+    fn totalisee<G>(&self, k: ColonneDEtat, lue: fn(&Val) -> Option<G>) -> Option<G> {
+        self.val(k).and_then(lue)
     }
 }
 
@@ -574,10 +706,6 @@ pub struct Colonne {
 }
 
 impl Colonne {
-    pub fn totalisee(&self) -> bool {
-        matches!(self.genre, Genre::Montant | Genre::Nombre)
-    }
-
     pub fn a_droite(&self) -> bool {
         matches!(self.genre, Genre::Montant | Genre::Nombre | Genre::Taux)
     }
@@ -678,60 +806,84 @@ pub fn sans_mois() -> Echec {
 
 // ------------------------------------------------------------------ totaux
 
-/// La somme de ce qui est DECLARE, ou `None` quand aucune ligne ne l'est.
-fn somme(lignes: &[&Ligne], cle: ColonneDEtat) -> R<Option<Val>> {
-    let mut total: Option<Val> = None;
-    for l in lignes {
-        let v = match l.get(cle) {
-            Some(Some(Val::Txt(t))) if t.is_empty() => continue,
-            Some(Some(v)) => v,
-            _ => continue,
-        };
-        total = Some(match total {
-            Some(t) => t.plus(v)?,
-            None => v.premiere_du_total()?,
-        });
+/// La somme de la grandeur `G` de la colonne `cle` sur ce que les `lignes` DECLARENT, ou `None` quand aucune ne la
+/// declare.
+fn somme_de<G: std::ops::Add<Output = G>>(lignes: &[&Ligne], cle: ColonneDEtat, lue: fn(&Val) -> Option<G>) -> Option<G> {
+    lignes.iter().filter_map(|l| l.totalisee(cle, lue)).reduce(|a, b| a + b)
+}
+
+/// Le total de la colonne `cle`, qui additionne `total` : la somme de ce qui est DECLARE, ou `None` quand aucune ligne ne
+/// l'est.
+fn somme(lignes: &[&Ligne], cle: ColonneDEtat, total: Total) -> Option<Val> {
+    let montant = |v: &Val| match v {
+        Val::Montant(m) => Some(*m),
+        _ => None,
+    };
+    let heures = |v: &Val| match v {
+        Val::Heures(h) => Some(*h),
+        _ => None,
+    };
+    match total {
+        Total::Montant => somme_de(lignes, cle, montant).map(Val::Montant),
+        Total::Heures => somme_de(lignes, cle, heures).map(Val::Heures),
+        Total::Assiette(a) if a.en_heures() => somme_de(lignes, cle, heures).map(Val::Heures),
+        Total::Assiette(_) => somme_de(lignes, cle, montant).map(Val::Montant),
+        Total::Cachets => somme_de(lignes, cle, |v| match v {
+            Val::Cachets(c) => Some(*c),
+            _ => None,
+        })
+        .map(Val::Cachets),
+        Total::Jours => somme_de(lignes, cle, |v| match v {
+            Val::Jours(j) => Some(*j),
+            _ => None,
+        })
+        .map(Val::Jours),
+        Total::Compte => somme_de(lignes, cle, |v| match v {
+            Val::Compte(n) => Some(*n),
+            _ => None,
+        })
+        .map(Val::Compte),
     }
-    Ok(total)
 }
 
 /// La ligne d'un total des `lignes` : la premiere colonne de texte porte le libelle, les colonnes totalisees leur somme,
 /// les autres restent vides.
-fn ligne_du_total(colonnes: &[Colonne], lignes: &[&Ligne], libelle: &str) -> R<Ligne> {
+fn ligne_du_total(colonnes: &[Colonne], lignes: &[&Ligne], libelle: &str) -> Ligne {
     let porte = colonnes.iter().find(|c| c.genre == Genre::Texte).map(|c| c.cle);
     let mut d = Ligne::nouvelle();
-    for c in colonnes.iter().filter(|c| c.totalisee()) {
-        d.poser(c.cle, somme(lignes, c.cle)?);
+    for c in colonnes {
+        if let Some(total) = c.cle.total() {
+            d.poser(c.cle, somme(lignes, c.cle, total));
+        }
     }
     if let Some(p) = porte {
-        d.t(p, libelle);
+        d.poser(p, Some(Val::Txt(libelle.to_string())));
     }
-    Ok(d)
+    d
 }
 
 /// Pose le sous-total de chaque section (« Total ... ») et le total general (`totaliser_general`).
-pub fn totaliser(t: &mut Tableau, libelle_total: &str) -> R<()> {
+pub fn totaliser(t: &mut Tableau, libelle_total: &str) {
     for s in t.sections.iter_mut() {
         s.total = if s.libelle.is_empty() || !t.avec_total {
             None
         } else {
             let l: Vec<&Ligne> = s.lignes.iter().collect();
-            Some(ligne_du_total(&t.colonnes, &l, &format!("Total {}", s.libelle))?)
+            Some(ligne_du_total(&t.colonnes, &l, &format!("Total {}", s.libelle)))
         };
     }
-    totaliser_general(t, libelle_total)
+    totaliser_general(t, libelle_total);
 }
 
 /// Pose le total general de toutes les lignes, quand le tableau en a un ; le sous-total d'une section reste celui que
 /// l'etat lui a donne (le grand livre : le total de son compte).
-pub fn totaliser_general(t: &mut Tableau, libelle_total: &str) -> R<()> {
+pub fn totaliser_general(t: &mut Tableau, libelle_total: &str) {
     t.total = if t.avec_total {
         let toutes: Vec<&Ligne> = t.sections.iter().flat_map(|s| s.lignes.iter()).collect();
-        Some(ligne_du_total(&t.colonnes, &toutes, libelle_total)?)
+        Some(ligne_du_total(&t.colonnes, &toutes, libelle_total))
     } else {
         None
     };
-    Ok(())
 }
 
 /// Le libelle du total general : « TOTAL GÉNÉRAL ».

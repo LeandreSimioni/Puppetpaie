@@ -14,7 +14,7 @@ use socle::mois::Mois;
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use crate::plan_comptable::EtatDExport;
 use socle::grandeurs::Montant;
-use crate::tableaux_export::{jj, qui, refus, section_du_mois, sections_de, ColonneDEtat as C, Ligne, RangDansLEtat, Section, Tableau, R};
+use crate::tableaux_export::{jj, qui, refus, section_du_mois, sections_de, colonne as C, Ligne, RangDansLEtat, Section, Tableau, R};
 
 // ============================================================ 13. les contrats
 

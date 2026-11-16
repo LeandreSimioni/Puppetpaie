@@ -30,7 +30,7 @@ use crate::prelevement::Prelevement;
 use crate::plan_comptable::{EtatDExport, FormatDExport, LogicielComptable, RegroupementDEtat};
 use engagement::etats::PaieDuMois;
 use crate::tableaux_export::{
-    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, qui, refus, sans_mois, section_du_mois, sections_de, totaliser, ColonneDEtat as C, Ligne,
+    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, qui, refus, sans_mois, section_du_mois, sections_de, totaliser, colonne as C, ColonneDEtat, ColonneDeMontant, ColonneDeTexte, Ligne,
     Section, Tableau, FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
@@ -307,7 +307,7 @@ fn nat_libelle(p: &PaieDuMois) -> R<String> {
 
 /// Les montants du livre de paie, dans son ordre : la colonne sous laquelle chacun s'ecrit et se compte quand il manque,
 /// ce que chaque ligne en dit, et sa somme dans un cumul.
-const CUMULABLES: [(C, fn(&LigneLivre) -> Option<Montant>, fn(&CumulDuLivre) -> SommeDuLivre); 7] = [
+const CUMULABLES: [(ColonneDeMontant, fn(&LigneLivre) -> Option<Montant>, fn(&CumulDuLivre) -> SommeDuLivre); 7] = [
     (C::Brut, |l| l.brut, |c| c.brut),
     (C::CotisationsSalariales, |l| l.cotisations_salariales, |c| c.cotisations_salariales),
     (C::CotisationsPatronales, |l| l.cotisations_patronales, |c| c.cotisations_patronales),
@@ -457,13 +457,13 @@ pub struct LigneLivre {
 #[serde(into = "TotauxRendus")]
 pub struct Totaux {
     cumul: CumulDuLivre,
-    taisent: Vec<(C, fn(&CumulDuLivre) -> SommeDuLivre)>,
+    taisent: Vec<(ColonneDeMontant, fn(&CumulDuLivre) -> SommeDuLivre)>,
 }
 
 impl Totaux {
     /// Les totaux des `lignes`.
     fn des(lignes: &[&LigneLivre]) -> Totaux {
-        let mut taisent: Vec<(C, fn(&CumulDuLivre) -> SommeDuLivre)> = Vec::new();
+        let mut taisent: Vec<(ColonneDeMontant, fn(&CumulDuLivre) -> SommeDuLivre)> = Vec::new();
         for l in lignes {
             for (c, montant, somme) in CUMULABLES {
                 if montant(l).is_none() && !taisent.iter().any(|(k, _)| *k == c) {
@@ -480,8 +480,8 @@ impl Totaux {
     }
 
     /// Combien de lignes taisent chaque colonne qu'une ligne au moins tait, dans l'ordre ou on l'a vu.
-    pub fn inconnus(&self) -> Vec<(C, usize)> {
-        self.taisent.iter().map(|(c, somme)| (*c, self.cumul.bulletins - somme(&self.cumul).dite)).collect()
+    pub fn inconnus(&self) -> Vec<(ColonneDEtat, usize)> {
+        self.taisent.iter().map(|(c, somme)| ((*c).into(), self.cumul.bulletins - somme(&self.cumul).dite)).collect()
     }
 
     /// Le total de la somme `s` de ce cumul, ou `None` quand AUCUNE de ses lignes ne la dit.
@@ -497,9 +497,9 @@ struct TotauxRendus {
     bulletins: usize,
     bulletins_dit: String,
     #[serde(flatten, serialize_with = "socle::ecriture::en_ordre")]
-    sommes: Vec<(C, String)>,
+    sommes: Vec<(ColonneDeMontant, String)>,
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
-    inconnus: Vec<(C, usize)>,
+    inconnus: Vec<(ColonneDEtat, usize)>,
 }
 
 impl From<Totaux> for TotauxRendus {
@@ -960,7 +960,7 @@ pub fn pdf_livre(ctx: &Contexte, livre: &LivreDePaie) -> R<Vec<u8>> {
 /// de la periode (celui d'`exports/` sans periode).
 pub fn finir(ctx: &Contexte, t: &mut Tableau, p: Option<&Periode>, nom: &str, format: Option<FormatDExport>, ecrire: bool) -> R<()> {
     t.format = format_possible(format, &FORMATS_TABLEAU)?;
-    totaliser(t, TOTAL_GENERAL)?;
+    totaliser(t, TOTAL_GENERAL);
     if ecrire {
         ecrire_fini(ctx, t, p, nom)?;
     }
@@ -1012,7 +1012,7 @@ fn annee_de(m: Mois) -> String {
 }
 
 /// Les cles tri : un tuple de textes.
-fn cle_tri(l: &Ligne, cles: &[C]) -> Vec<String> {
+fn cle_tri(l: &Ligne, cles: &[ColonneDeTexte]) -> Vec<String> {
     cles.iter().map(|c| l.texte(*c)).collect()
 }
 
@@ -1406,11 +1406,11 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             l.m(C::Mois, m).t(C::Salarie, qui(paie.salarie())?).ot(C::Contrat, paie.engagement().numero.clone());
             l.om(C::Plafond, paie.plafond().map(Montant::au_centime));
             for (k, v) in paie.bases() {
-                l.base(C::DeLAssiette(*k), Some(v.au_centime()));
+                l.assiette(*k, Some(v.au_centime()))?;
                 vues.insert(*k);
             }
             if !paie.bases().contains_key(&Assiette::Csg) {
-                l.om(C::DeLAssiette(Assiette::Csg), paie.base_csg()?.map(Montant::au_centime));
+                l.assiette(Assiette::Csg, paie.base_csg()?.map(|m| engagement::calcul::BaseDeCotisation::Montant(m.au_centime())))?;
                 vues.insert(Assiette::Csg);
             }
             lignes.push(l);

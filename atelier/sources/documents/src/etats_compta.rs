@@ -27,7 +27,7 @@ use socle::texte::euros;
 use socle::grandeurs::ecrit::{sans_zero, texte};
 use socle::grandeurs::{Jours, Montant, Taux};
 use crate::tableaux_export::{
-    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, totaliser_general, ColonneDEtat as C, Ligne, Section, Tableau,
+    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, totaliser_general, colonne as C, ColonneDEtat, Ligne, Section, Tableau,
     FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
@@ -1071,7 +1071,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         t.avertissements.push(ec.conseil.clone());
     }
     t.format = format_possible(Some(format), &FORMATS_ECRITURES)?;
-    totaliser(&mut t, TOTAL_GENERAL)?;
+    totaliser(&mut t, TOTAL_GENERAL);
     // L'equilibre du journal : chaque mois s'equilibre a sa fabrication (`ecritures_du_mois`), seul endroit qui le tienne.
     let mut sections = None;
     if analytique {
@@ -1256,7 +1256,7 @@ pub fn grand_livre(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
     t.format = format_possible(d.format, &FORMATS_TABLEAU)?;
-    totaliser_general(&mut t, TOTAL_GENERAL)?;
+    totaliser_general(&mut t, TOTAL_GENERAL);
     if d.ecrire {
         ecrire_tableau(&mut t, &p.dossier(ctx), &format!("grand-livre-paie-{}", p.nom()), ctx)?;
     }
@@ -1294,7 +1294,7 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     ];
     t.sources = vec![SOURCES.to_string(), format!("plan : {}", origine)];
     t.format = format_possible(d.format, &FORMATS_TABLEAU)?;
-    totaliser(&mut t, TOTAL_GENERAL)?;
+    totaliser(&mut t, TOTAL_GENERAL);
     if d.ecrire {
         ecrire_tableau(&mut t, &p.dossier(ctx), &format!("balance-paie-{}", p.nom()), ctx)?;
     }
@@ -1551,7 +1551,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     t.sources = vec!["compteur de congés écrit dans la paie validée du mois, indemnité L3141-24 comme au solde de tout compte, taux patronal = cotisations patronales / brut des bulletins des douze derniers mois".to_string()];
     finir(ctx, &mut t, Some(&p), "provision-conges", d.format,false)?;
     // Les jours, le taux et le nombre de bulletins d'un salarie ne s'additionnent pas : leur total reste vide.
-    const SANS_TOTAL: [C; 6] = [C::Report, C::Acquis, C::Pris, C::Solde, C::TauxPatronal, C::Bulletins];
+    const SANS_TOTAL: [ColonneDEtat; 6] = [ColonneDEtat::Report, ColonneDEtat::Acquis, ColonneDEtat::Pris, ColonneDEtat::Solde, ColonneDEtat::TauxPatronal, ColonneDEtat::Bulletins];
     for s in t.sections.iter_mut() {
         if let Some(tot) = s.total.as_mut() {
             for c in SANS_TOTAL {

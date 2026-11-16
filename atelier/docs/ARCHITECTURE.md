@@ -393,7 +393,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
   Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`, et
   `en_centimes`, la zone d'un format comptable), dits par l'attribut serde du champ ; la case d'un état porte la
-  grandeur elle-même (`documents::tableaux_export::Val`, une forme), écrite à chacune de ses portes (le texte, le JSON,
+  grandeur elle-même (`documents::tableaux_export::Val`, une forme), posée une fois par sa colonne, qui dit ce qu'elle
+  reçoit (une colonne totalisée, la seule grandeur que son total additionne : `Recoit` ; un cumul se fait avant, sur des
+  grandeurs, `etats_paie::CumulDuLivre`), écrite à chacune de ses portes (le texte, le JSON,
   la feuille du classeur, `classeur::Feuille::nombre`, qui prend la grandeur) ; case d'une fiche (`fiche!`, ses listes datées), elle s'écrit en nombre JSON par
   `socle::ecriture::EcritureDeCase` (les heures du forfait d'une rubrique, son plafond de cachets par mois). Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
   écrit un montant, un taux et une quantité par `socle::grandeurs::ecrit::norme` (`montant` : au centime, jamais
@@ -1012,7 +1014,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
 | logiciel du comptable | `LogicielComptable` | `documents/src/plan_comptable.rs` |
 | période d'export | `PeriodeDExport` | `documents/src/plan_comptable.rs` |
-| colonne d'un état | `ColonneDEtat` | `documents/src/tableaux_export.rs` |
+| colonne d'un état (la clé d'une case ; chaque colonne a le type de ce qu'elle reçoit, `Recoit` : un texte, une grandeur à droite sans total, ou, totalisée, la seule grandeur que son total additionne — un montant, des heures, des cachets, des jours, un compte, la base d'une assiette) | `ColonneDEtat` ; ses sortes : `ColonneDeTexte`, `ColonneADroite`, `ColonneDeMontant`, `ColonneDHeures`, `ColonneDeCachets`, `ColonneDeJours`, `ColonneDeCompte`, `DuMois`, `DeLAssiette` | `documents/src/tableaux_export.rs` |
 | code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
 | numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
 | cumul de lignes du livre de paie (combien de bulletins, et chacun de ses montants : le seul cumul des états, `cumuls_par` ; le livre, le récapitulatif annuel, la masse salariale, le coût par spectacle, le coût de l'année d'une fiche, la masse des contributions de branche, le taux patronal réel ; la clé et les lignes retenues se disent à la porte de chaque état) | `CumulDuLivre` | `documents/src/etats_paie.rs` |

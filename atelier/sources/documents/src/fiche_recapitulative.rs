@@ -157,7 +157,7 @@ impl<'a> Recapitulatifs<'a> {
             reduit.sections = sections;
             reduit.sources = t.sources.clone();
             reduit.mois = t.mois.clone();
-            totaliser(&mut reduit, TOTAL_GENERAL)?;
+            totaliser(&mut reduit, TOTAL_GENERAL);
             morceaux.push(pdf_tableau(&reduit, Some(self.ctx))?);
         }
         if morceaux.is_empty() {

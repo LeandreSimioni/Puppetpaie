@@ -26,7 +26,7 @@ use socle::mois::{Graphie, Mois};
 use documents::etats_paie::{cumul_de, cumuls_par, finir, lignes_livre, Demande, Lecture, Periode};
 use documents::plan_comptable::{EtatDExport, RegroupementDEtat};
 use socle::grandeurs::{Montant, Taux};
-use documents::tableaux_export::{libelle_mois, qui, refus, section_du_mois, sections_de, ColonneDEtat as C, Ligne, Section, Tableau, R};
+use documents::tableaux_export::{libelle_mois, qui, refus, section_du_mois, sections_de, colonne as C, Ligne, Section, Tableau, R};
 
 // ------------------------------------------------------------------ outils
 
