@@ -27,6 +27,8 @@ mod scelle {
         /// Le signe de son unite, tel qu'une personne le tape apres le nombre (« % », « € ») ; aucun pour une grandeur
         /// qui n'en a pas.
         const SIGNES: &'static [&'static str];
+        /// Ce qu'une case de cette grandeur attend, dit a qui la remplit (« un nombre d'heures »).
+        const ATTENDU: &'static str;
     }
 }
 
@@ -35,7 +37,7 @@ use scelle::Scelle;
 /// Une grandeur par nom : son decimal, sa porte de sortie, l'addition et la soustraction de deux grandeurs de meme nom,
 /// sa lecture.
 macro_rules! grandeurs {
-    ($($nom:ident, [$($signe:literal),*], $doc:literal;)*) => {
+    ($($nom:ident, [$($signe:literal),*], $attendu:literal, $doc:literal;)*) => {
         /// Les signes d'unite de toutes les grandeurs : un signe d'une autre unite que celle de la case se refuse.
         const TOUS_LES_SIGNES: &[&str] = &[$($($signe,)*)*];
         $(
@@ -85,6 +87,7 @@ macro_rules! grandeurs {
                 $nom(d)
             }
             const SIGNES: &'static [&'static str] = &[$($signe),*];
+            const ATTENDU: &'static str = $attendu;
         }
 
         impl Grandeur for $nom {}
@@ -125,18 +128,18 @@ macro_rules! grandeurs {
 }
 
 grandeurs! {
-    Montant, ["€"], "UN MONTANT : une somme en euros (`1512.40`).";
-    Taux, ["%"], "UN TAUX : un pourcentage applique a une base, ecrit en pourcent comme la norme et les baremes (`6.90` : 6,90 %).";
-    Heures, ["h"], "DES HEURES : une quantite d'heures (`151.67`).";
-    Cachets, [], "DES CACHETS : une quantite de cachets (`2`).";
-    Jours, [], "DES JOURS : une quantite de jours (`4.92`).";
-    Coefficient, [], "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).";
-    MontantUnitaire, ["€"], "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.";
-    Services, [], "DES SERVICES : une quantite de services de repetition (`14`).";
-    Semaines, [], "DES SEMAINES : une quantite de semaines (`2`).";
-    Unites, [], "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
-    HeuresParUnite, ["h"], "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
-    Effectif, [], "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.";
+    Montant, ["€"], "un montant en euros", "UN MONTANT : une somme en euros (`1512.40`).";
+    Taux, ["%"], "un taux en pourcent", "UN TAUX : un pourcentage applique a une base, ecrit en pourcent comme la norme et les baremes (`6.90` : 6,90 %).";
+    Heures, ["h"], "un nombre d'heures", "DES HEURES : une quantite d'heures (`151.67`).";
+    Cachets, [], "un nombre de cachets", "DES CACHETS : une quantite de cachets (`2`).";
+    Jours, [], "un nombre de jours", "DES JOURS : une quantite de jours (`4.92`).";
+    Coefficient, [], "un nombre", "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).";
+    MontantUnitaire, ["€"], "un montant en euros", "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.";
+    Services, [], "un nombre de services", "DES SERVICES : une quantite de services de repetition (`14`).";
+    Semaines, [], "un nombre de semaines", "DES SEMAINES : une quantite de semaines (`2`).";
+    Unites, [], "un nombre d'unités", "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
+    HeuresParUnite, ["h"], "un nombre d'heures", "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
+    Effectif, [], "un nombre de personnes", "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.";
 }
 
 /// UNE GRANDEUR SANS ZERO INUTILE (`12.50` devient `12.5`, `24.0` devient `24`, `-0` devient `0`), comme l'ecrit
@@ -811,36 +814,61 @@ pub mod lu {
     use crate::num::{self, Decimal};
 
     /// LA GRANDEUR QU'UNE PERSONNE A TAPEE, la seule conversion d'une saisie (Leandre, 16/11 : « si la personne ecrit
-    /// 1,5 %, on transforme en 1,5 ») : la virgule ou le point pour les decimales, l'espace (insecable comprise) entre
-    /// les milliers, le signe de l'unite de la grandeur retire s'il est la (`Scelle::SIGNES` : « % » d'un taux, « € »
-    /// d'un montant), son echelle gardee (« 2,50 » : `2.50`). Ce qui ne se convertit pas, ou fait douter, se refuse et
-    /// dit pourquoi : un point et une virgule ensemble, deux separateurs, un separateur suivi de trois chiffres apres un
-    /// entier qui n'est pas nul (« 1.500 », « 1,500 » : des milliers ou des decimales ?), le signe d'une autre unite.
+    /// 1,5 %, on transforme en 1,5 »), son echelle gardee (« 2,50 » : `2.50`). Elle ne devine rien et n'admet que : des
+    /// chiffres ; un signe moins en tete ; un seul separateur decimal, la virgule ou le point ; des blancs (l'espace,
+    /// l'insecable, l'insecable fine) entre les groupes de trois chiffres de la partie entiere (« 1 500,50 ») ; le signe de
+    /// l'unite de la grandeur (`Scelle::SIGNES` : « % » d'un taux, « € » d'un montant, « h » des heures) a la fin
+    /// seulement, un blanc avant lui permis (« 1,5 % ») ; des blancs autour. Tout le reste se refuse et dit pourquoi (« 1
+    /// 5 », « 1e3 », « 1_000 », « %5 », « 1h30 », le signe d'une autre unite), et ce qui fait douter aussi : un separateur
+    /// suivi de trois chiffres apres un entier qui n'est pas nul (« 1.500 », « 1,500 » : des milliers ou des decimales ?).
     pub fn tapee<G: Grandeur>(t: &str) -> Result<G, String> {
         let cite = crate::fichiers::repr(t);
-        let net: String = t.chars().filter(|c| !c.is_whitespace() && !matches!(c, '\u{a0}' | '\u{202f}')).collect();
-        let net = match <G as crate::grandeurs::Scelle>::SIGNES.iter().find_map(|s| net.strip_suffix(s).or_else(|| net.strip_prefix(s))) {
-            Some(sans) => sans.to_string(),
-            None => net,
-        };
+        let attendu = <G as crate::grandeurs::Scelle>::ATTENDU;
+        let blanc = |c: char| c.is_whitespace() || matches!(c, '\u{a0}' | '\u{202f}');
+        let illisible = || format!("{} ne se lit pas : on attend {}, écrit en chiffres avec une virgule pour les décimales (« 1 500,50 »)", cite, attendu);
+        let mut net = t.trim_matches(blanc);
+        if let Some(sans) = <G as crate::grandeurs::Scelle>::SIGNES.iter().find_map(|s| net.strip_suffix(s)) {
+            net = sans.trim_end_matches(blanc);
+        }
+        if let Some(s) = <G as crate::grandeurs::Scelle>::SIGNES.iter().find(|s| net.contains(**s)) {
+            return Err(format!("{} ne se lit pas : on attend {}, le signe « {} » à la fin seulement", cite, attendu, s));
+        }
         if super::TOUS_LES_SIGNES.iter().any(|s| net.contains(s)) {
-            return Err(format!("{} porte le signe d'une autre unité", cite));
+            return Err(format!("{} porte le signe d'une autre unité : on attend {}", cite, attendu));
         }
-        let (points, virgules) = (net.matches('.').count(), net.matches(',').count());
-        if points > 0 && virgules > 0 {
-            return Err(format!("{} porte un point et une virgule : écrire le nombre avec une seule virgule, sans séparer les milliers ou en les séparant d'une espace", cite));
+        let (moins, net) = match net.strip_prefix('-') {
+            Some(reste) => ("-", reste),
+            None => ("", net),
+        };
+        let separateurs = net.matches(['.', ',']).count();
+        if separateurs > 1 {
+            return Err(format!("{} porte plus d'un séparateur : on attend {}, avec une seule virgule pour les décimales, les milliers séparés d'une espace (« 1 500,50 »)", cite, attendu));
         }
-        if points + virgules > 1 {
-            return Err(num::illisible(t));
+        let (entier, decimales) = match net.split_once(['.', ',']) {
+            Some((e, d)) => (e, Some(d)),
+            None => (net, None),
+        };
+        let groupes: Vec<&str> = entier.split(blanc).collect();
+        let chiffres = |g: &str| !g.is_empty() && g.chars().all(|c| c.is_ascii_digit());
+        let groupes_justes = match groupes.split_first() {
+            Some((premier, [])) => premier.is_empty() || chiffres(premier),
+            Some((premier, suivants)) => chiffres(premier) && premier.len() <= 3 && suivants.iter().all(|g| chiffres(g) && g.len() == 3),
+            None => false,
+        };
+        if !groupes_justes || decimales.is_some_and(|d| !chiffres(d)) || (entier.is_empty() && decimales.is_none()) {
+            return Err(illisible());
         }
-        let net = net.replace(',', ".");
-        if let Some((entier, decimales)) = net.split_once('.') {
-            let entier = entier.trim_start_matches(['-', '+']);
-            if decimales.len() == 3 && decimales.chars().all(|c| c.is_ascii_digit()) && !matches!(entier, "" | "0") {
+        let entier: String = groupes.concat();
+        if let Some(d) = decimales {
+            if d.len() == 3 && !matches!(entier.trim_start_matches('0'), "") {
                 return Err(format!("{} fait douter : des milliers ou des décimales ? Séparer les milliers d'une espace (« 1 500 »)", cite));
             }
         }
-        num::decimal_lu(&net).map(<G as crate::grandeurs::Scelle>::du).ok_or_else(|| num::illisible(t))
+        let ecrit = match decimales {
+            Some(d) => format!("{}{}.{}", moins, if entier.is_empty() { "0" } else { &entier }, d),
+            None => format!("{}{}", moins, entier),
+        };
+        Decimal::from_str_exact(&ecrit).map(<G as crate::grandeurs::Scelle>::du).map_err(|_| format!("{} est trop long : on attend {}", cite, attendu))
     }
 
     /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT (une case d'un formulaire, d'une attestation, d'un bulletin), a la
