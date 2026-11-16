@@ -18,8 +18,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::R;
-use socle::forme::NombreEcrit;
-use socle::grandeurs::{Jours, Montant, Taux};
+use socle::ecriture::{CaseEcrite, EcritureDeCase};
+use socle::grandeurs::{Cachets, HeuresParUnite, Jours, Montant, Taux};
 
 use crate::contexte::{IdSalarie, IdSpectacle};
 
@@ -1605,16 +1605,17 @@ fn declaree_de_piece<T: FormeDeCase>(cle: CaseDePiece) -> Declaree<CaseDeFiche> 
 
 impl FormeDeCase for String {}
 impl FormeDeCase for bool {}
-impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for usize {}
-// Une grandeur s'ecrit en nombre (`ecrit::nombre_json`, l'attribut de sa case) ; tapee, elle se lit a la porte de la
-// route qui ecrit la fiche (`socle::grandeurs::lu::tapee`).
+// Une grandeur s'ecrit en nombre (`ecrit::nombre_json` : l'attribut de sa case dans une structure, son
+// `socle::ecriture::EcritureDeCase` en case d'une fiche) ; tapee, elle se lit a la porte de la route qui ecrit la fiche
+// (`socle::grandeurs::lu::tapee`).
 impl FormeDeCase for Taux {}
 impl FormeDeCase for Montant {}
 impl FormeDeCase for Jours {}
-impl FormeDeCase for NombreEcrit {}
+impl FormeDeCase for HeuresParUnite {}
+impl FormeDeCase for Cachets {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
 impl FormeDeCase for crate::bareme::CodeRisqueAt {
@@ -1828,10 +1829,6 @@ impl<C: std::fmt::Debug, K> std::fmt::Debug for PieceFermee<C, K> {
     }
 }
 
-/// Une case vide ne s'ecrit pas.
-fn vide<T>(case: &&Option<T>) -> bool {
-    case.is_none()
-}
 
 /// UNE FICHE DATEE : ses champs a un jour (`$plate`), et la fiche telle qu'ecrite (`$datee`), chaque champ une liste
 /// datee ; `au` lit l'une dans l'autre, la valeur en vigueur de chaque champ (`valeur_au`).
@@ -1889,11 +1886,11 @@ macro_rules! fiche {
             fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
                 #[derive(Serialize)]
                 struct APlat<'a> {
-                    $( #[serde(rename = $ecrit, skip_serializing_if = "vide")] $champ: &'a Option<$t>, )*
-                    $( $( #[serde(rename = $pecrit, skip_serializing_if = "vide")] $pchamp: &'a Option<$pt>, )* )*
-                    $( $( #[serde(skip_serializing_if = "vide")] $note: &'a Option<String>, )* )?
+                    $( #[serde(rename = $ecrit, skip_serializing_if = "CaseEcrite::vide")] $champ: CaseEcrite<'a, $t>, )*
+                    $( $( #[serde(rename = $pecrit, skip_serializing_if = "CaseEcrite::vide")] $pchamp: CaseEcrite<'a, $pt>, )* )*
+                    $( $( #[serde(skip_serializing_if = "CaseEcrite::vide")] $note: CaseEcrite<'a, String>, )* )?
                 }
-                APlat { $( $champ: &self.$champ, )* $( $( $pchamp: &self.$piece.cases.$pchamp, )* )* $( $( $note: &self.$note, )* )? }.serialize(s)
+                APlat { $( $champ: CaseEcrite(&self.$champ), )* $( $( $pchamp: CaseEcrite(&self.$piece.cases.$pchamp), )* )* $( $( $note: CaseEcrite(&self.$note), )* )? }.serialize(s)
             }
         }
 
@@ -2026,10 +2023,10 @@ macro_rules! fiche {
             /// que la forme ne declare pas n'ecrit rien.
             pub fn ecrite_au_chemin(&self, k: CaseDeFiche, chemin: &[&str]) -> MotEcrit {
                 $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
-                    return socle::ecriture::mot_au_chemin(&self.$champ, chemin);
+                    return socle::ecriture::mot_au_chemin(&CaseEcrite(&self.$champ), chemin);
                 } )*
                 $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
-                    return socle::ecriture::mot_au_chemin(&self.$piece.cases.$pchamp, chemin);
+                    return socle::ecriture::mot_au_chemin(&CaseEcrite(&self.$piece.cases.$pchamp), chemin);
                 } )* )*
                 MotEcrit::Vide
             }
@@ -2037,10 +2034,10 @@ macro_rules! fiche {
             /// La valeur de la case `k`, ecrite comme le fichier l'ecrit ; vide, aucune.
             pub fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase> {
                 $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
-                    return ValeurDeCase::de(&self.$champ);
+                    return ValeurDeCase::de(&CaseEcrite(&self.$champ));
                 } )*
                 $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
-                    return ValeurDeCase::de(&self.$piece.cases.$pchamp);
+                    return ValeurDeCase::de(&CaseEcrite(&self.$piece.cases.$pchamp));
                 } )* )*
                 None
             }
@@ -2258,16 +2255,17 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 /// CE QUI REGARDE LES LISTES DATEES D'UNE FICHE PAR LEUR NOM (l'historique que l'ecran montre, les gardes qui cherchent
 /// ce qui nomme une personne) : chacune lui est donnee typee (`FicheDatee::voir_listes`).
 pub trait VoirListe {
-    fn liste<T: Serialize>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]);
+    fn liste<T: EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]);
 }
 
 /// UNE VALEUR DATEE : de tout temps sans `depuis`, ou a partir de ce jour ; `note` dit d'ou elle vient.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, bound(deserialize = "T: DeserializeOwned"))]
+#[serde(deny_unknown_fields, bound(serialize = "T: EcritureDeCase", deserialize = "T: DeserializeOwned"))]
 pub struct Datee<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depuis: Option<Jour>,
     /// La valeur ; nulle, la case est vide a partir de `depuis`.
+    #[serde(serialize_with = "socle::ecriture::case_ecrite")]
     pub valeur: Option<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -3135,13 +3133,13 @@ fiche! {
         CongesSpectacles(bool) = "conges_spectacles" => conges_spectacles,
         Source(String) = "source" => source,
         Sens(socle::grandeurs::Signe) = "sens" => sens,
-        HeuresForfait(NombreEcrit) = "heures_forfait" => heures_forfait,
+        HeuresForfait(HeuresParUnite) = "heures_forfait" => heures_forfait,
         Plafond(crate::catalogue::Unite) = "plafond" => plafond,
         Aem(crate::catalogue::Unite) = "aem" => aem,
         DsnType(crate::catalogue::DsnTypeDeRubrique) = "dsn_type" => dsn_type,
         DsnAutresBruts(crate::autre_revenu_brut::AutreElementDeRevenuBrut) = "dsn_autres_bruts" => dsn_autres_bruts,
         Annexe(crate::emplois::AnnexeChomage) = "annexe" => annexe,
-        PlafondMensuel(i64) = "plafond_mensuel" => plafond_mensuel,
+        PlafondMensuel(Cachets) = "plafond_mensuel" => plafond_mensuel,
         PlafondAnnuelHeures(crate::catalogue::PlafondAnnuelHeures) = "plafond_annuel_heures" => plafond_annuel_heures,
         ComptePour(crate::catalogue::ComptePour) = "compte_pour" => compte_pour,
         SalaireDeBase(bool) = "salaire_de_base" => salaire_de_base,

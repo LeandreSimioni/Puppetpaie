@@ -141,6 +141,44 @@ impl ValeurDeCase {
     }
 }
 
+/// L'ECRITURE D'UNE CASE (une case d'une fiche, une valeur datee) : celle de sa forme (`Serialize`) ; une grandeur, qui
+/// n'en a pas (son ecriture est l'attribut de son champ, « Le glossaire »), s'ecrit en case comme les fichiers de la
+/// configuration l'ecrivent, en nombre JSON (`grandeurs::ecrit::nombre_json`).
+pub trait EcritureDeCase {
+    fn ecrire_la_case<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error>;
+}
+
+impl<T: Serialize + ?Sized> EcritureDeCase for T {
+    fn ecrire_la_case<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.serialize(s)
+    }
+}
+
+/// UNE CASE, PLEINE OU VIDE, DANS SON ECRITURE (`EcritureDeCase`) : ce que `serde` ecrit d'elle (vide, `null`).
+pub struct CaseEcrite<'a, T>(pub &'a Option<T>);
+
+impl<T: EcritureDeCase> Serialize for CaseEcrite<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            Some(v) => v.ecrire_la_case(s),
+            None => s.serialize_none(),
+        }
+    }
+}
+
+impl<T> CaseEcrite<'_, T> {
+    /// Une case vide ne s'ecrit pas.
+    pub fn vide(&self) -> bool {
+        self.0.is_none()
+    }
+}
+
+/// Une case dans son ecriture, la ou une forme la porte (`#[serde(serialize_with = "socle::ecriture::case_ecrite")]`
+/// sur un `Option<T>` : la valeur d'une case datee).
+pub fn case_ecrite<T: EcritureDeCase, S: serde::Serializer>(v: &Option<T>, s: S) -> Result<S::Ok, S::Error> {
+    CaseEcrite(v).serialize(s)
+}
+
 fn mot_de_la_valeur(v: &Value) -> MotEcrit {
     match v {
         Value::Null => MotEcrit::Vide,

@@ -275,8 +275,8 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
         listes: Vec<(CaseDeFiche, R<Vec<droit::fiche::Datee<ValeurDeCase>>>)>,
     }
     impl droit::fiche::VoirListe for Toutes {
-        fn liste<T: serde::Serialize>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
-            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee { depuis: e.depuis, valeur: ValeurDeCase::de(&e.valeur), note: e.note.clone() })).collect();
+        fn liste<T: socle::ecriture::EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
+            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee { depuis: e.depuis, valeur: ValeurDeCase::de(&socle::ecriture::CaseEcrite(&e.valeur)), note: e.note.clone() })).collect();
             self.listes.push((cle, lue));
         }
     }

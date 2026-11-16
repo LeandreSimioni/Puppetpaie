@@ -249,8 +249,8 @@ fn signature(p: &Path) -> Option<(SystemTime, u64)> {
 struct TextesDeFiche(Vec<(CaseDeFiche, Vec<String>)>);
 
 impl droit::fiche::VoirListe for TextesDeFiche {
-    fn liste<T: Serialize>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
-        let textes: Vec<String> = liste.iter().filter_map(|e| e.valeur.as_ref()).filter_map(texte_de).collect();
+    fn liste<T: socle::ecriture::EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
+        let textes: Vec<String> = liste.iter().filter_map(|e| texte_de(&socle::ecriture::CaseEcrite(&e.valeur))).collect();
         if !textes.is_empty() {
             self.0.push((cle, textes));
         }

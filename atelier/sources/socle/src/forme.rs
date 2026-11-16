@@ -796,7 +796,7 @@ where
         Remplie::Dite(v) => v,
     };
     ranger_les_textes(&mut v, &mut Vec::new(), rangee);
-    // Relue depuis son texte JSON : un nombre a virgule y reste le texte ecrit (`arbitrary_precision`, `NombreEcrit`) ;
+    // Relue depuis son texte JSON : un nombre a virgule y reste le texte ecrit (`arbitrary_precision`) ;
     // lue de la `Value` meme, il arriverait en flottant.
     let texte = serde_json::to_string(&v).map_err(serde::de::Error::custom)?;
     serde_json::from_str::<T>(&texte).map(Remplie::Dite).map_err(serde::de::Error::custom)
@@ -826,31 +826,7 @@ fn ranger_les_textes(v: &mut Value, chemin: &mut Vec<String>, rangee: &dyn Fn(&[
     }
 }
 
-/// UN NOMBRE TEL QU'IL EST ECRIT, une ecriture et non une grandeur (les heures du forfait d'une rubrique, case de fiche
-/// que `fiche!` ecrit par son type) : un entier, un flottant, ou le texte tape, garde tel quel pour se reecrire de meme.
-/// Un nombre ecrit avec sa virgule se garde en decimal, dans sa forme la plus courte (`num::court` : `130.0` reste
-/// `130.0`), et se reecrit en nombre a virgule (`ecrire_a_virgule`). Sa grandeur se lit a sa porte (`en`, dans
-/// `grandeurs`).
-#[derive(Debug, Clone, PartialEq)]
-pub enum NombreEcrit {
-    Entier(i64),
-    Naturel(u64),
-    Flottant(crate::num::Decimal),
-    Texte(String),
-}
-
-impl serde::Serialize for NombreEcrit {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        match self {
-            NombreEcrit::Entier(i) => s.serialize_i64(*i),
-            NombreEcrit::Naturel(u) => s.serialize_u64(*u),
-            NombreEcrit::Flottant(x) => ecrire_a_virgule(x, s),
-            NombreEcrit::Texte(t) => s.serialize_str(t),
-        }
-    }
-}
-
-/// Ecrit un decimal en nombre a virgule (`NombreEcrit::Flottant`, un taux rendu), exact, comme les fichiers l'ecrivent
+/// Ecrit un decimal en nombre a virgule (une grandeur en nombre JSON, un taux rendu), exact, comme les fichiers l'ecrivent
 /// (`ecriture::a_virgule` : `130.0`).
 pub fn ecrire_a_virgule<S: serde::Serializer>(d: &crate::num::Decimal, s: S) -> Result<S::Ok, S::Error> {
     use serde::Serialize;
@@ -879,36 +855,6 @@ pub fn absent_si_vide<'de, T: serde::de::DeserializeOwned, D: serde::Deserialize
         return Ok(None);
     };
     T::deserialize(serde::de::IntoDeserializer::<D::Error>::into_deserializer(texte)).map(Some)
-}
-
-impl<'de> serde::Deserialize<'de> for NombreEcrit {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        struct Lu;
-        impl<'de> serde::de::Visitor<'de> for Lu {
-            type Value = NombreEcrit;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("un nombre")
-            }
-            fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<NombreEcrit, E> {
-                Ok(NombreEcrit::Entier(i))
-            }
-            fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<NombreEcrit, E> {
-                // Un naturel que `i64` tient est un entier ; au-dela, il reste naturel.
-                Ok(if u <= i64::MAX as u64 { NombreEcrit::Entier(u as i64) } else { NombreEcrit::Naturel(u) })
-            }
-            fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<NombreEcrit, A::Error> {
-                decimal_ecrit(&texte_a_virgule(m)?).map(|d| NombreEcrit::Flottant(crate::num::court(d))).map_err(|e| serde::de::Error::custom(e.phrase))
-            }
-            // Ce qu'une personne a tape, tel quel : il se convertit a sa porte, qui nomme sa case (`NombreEcrit::en`).
-            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<NombreEcrit, E> {
-                Ok(NombreEcrit::Texte(s.to_string()))
-            }
-            fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<NombreEcrit, E> {
-                Err(E::custom(format!("{} n'est pas un nombre", b)))
-            }
-        }
-        d.deserialize_any(Lu)
-    }
 }
 
 /// UN NOMBRE D'UNE DONNEE, garde tel qu'il s'ecrit (`130.0` reste `130.0`, `12` reste `12`) : il se relit et se

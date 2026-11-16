@@ -93,6 +93,12 @@ macro_rules! grandeurs {
 
         impl Grandeur for $nom {}
 
+        impl crate::ecriture::EcritureDeCase for $nom {
+            fn ecrire_la_case<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                ecrit::nombre_json::serialize(self, s)
+            }
+        }
+
         impl<'de> serde::Deserialize<'de> for $nom {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<$nom, D::Error> {
                 crate::forme::decimal_en_nombre(d, lu::tapee_en_decimal::<$nom>).map($nom)
@@ -959,22 +965,6 @@ impl std::fmt::Display for Octets {
         } else {
             write!(f, "{} Mo", crate::texte::nombre_dit(self.mo_dits()))
         }
-    }
-}
-
-/// LE NOMBRE ECRIT D'UNE CASE (`forme::NombreEcrit`) : sa grandeur, et la grandeur qu'on y ecrit, a sa porte.
-impl crate::forme::NombreEcrit {
-    /// LA GRANDEUR QU'IL DIT dans la case `case` (un taux, des jours, un montant), son echelle gardee : un nombre tel
-    /// qu'il est, un texte tape par la seule conversion d'une saisie (`lu::tapee`) ; la porte de sa lecture. Ce qui ne se
-    /// convertit pas se refuse en nommant la case.
-    pub fn en<G: Grandeur>(&self, case: &str) -> crate::echec::R<G> {
-        let d = match self {
-            crate::forme::NombreEcrit::Entier(i) => Decimal::from(*i),
-            crate::forme::NombreEcrit::Naturel(u) => Decimal::from(*u),
-            crate::forme::NombreEcrit::Flottant(x) => *x,
-            crate::forme::NombreEcrit::Texte(t) => return lu::tapee(t).map_err(|p| crate::echec::refus(crate::forme::case_refusee(case, &p))),
-        };
-        Ok(G::du(d))
     }
 }
 

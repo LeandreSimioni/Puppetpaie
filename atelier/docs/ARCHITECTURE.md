@@ -181,7 +181,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement (et le crédit que sa somme due laisse, `documents::bordereau::Credit`, qu'il porte : `dsn::Ordre.credit`, rendu tel quel par `OrdreEnClair.credit`) | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser` |
-| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`, qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` ; `socle::forme::NombreEcrit`, que la case `heures_forfait` d'une rubrique garde encore (`NombreEcrit::en`) |
+| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`, qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
@@ -331,7 +331,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
 | plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure ; en euros entiers, par le seul chemin qui en fait un, `Pss::en_euros_entiers`, ses champs privés : le barème de la compagnie, `Contexte::plafond_securite_sociale`, le socle livré de la CASC, le résolveur de l'atelier ; le plafond d'une paie se calcule en grandeurs, `droit::plafond`) | `droit/src/plafond.rs` |
 | taille d'un fichier (une image posée et son poids visé, ce que la sauvegarde envoie et la restauration redescend, une archive, une capture, ce qu'une mise à jour reçoit) | `Octets` (écrite en octets dans un fichier, tapée en Ko dans une saisie, `Octets::ko` ; dite d'une seule façon, par son affichage : en Ko au centième, en Mo au dixième au-delà de mille Ko ; octets / octets = coefficient, `rapport`) | `socle/src/grandeurs.rs` |
-| nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
+| nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu` | `socle/src/forme.rs` |
 
 **Le détail**
 
@@ -378,7 +378,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   (`socle::grandeurs::lu::en_texte`).
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
   Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`), dits par
-  l'attribut serde du champ. Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
+  l'attribut serde du champ ; case d'une fiche (`fiche!`, ses listes datées), elle s'écrit en nombre JSON par
+  `socle::ecriture::EcritureDeCase` (les heures du forfait d'une rubrique, son plafond de cachets par mois). Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
   écrit un montant, un taux et une quantité par `socle::grandeurs::ecrit::norme` (`montant` : au centime, jamais
   « -0.00 » ; `taux` : ses décimales, la moitié au pair, toutes écrites ; `quantite` : au centième, la moitié vers le
   haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture.
