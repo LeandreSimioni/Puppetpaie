@@ -296,7 +296,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   entamé, le jour d'arrivée compris (`Anciennete::entre` : le préavis, les indemnités de fin de contrat, le maintien de
   salaire, le férié chômé), ou en mois révolus (`Anciennete::revolue` : une grille, la prime de présence, l'ouverture
   d'une prévoyance, l'âge en années révolues). Un seuil d'un texte se lit en elle à sa porte (`Deserialize` en mois,
-  `en_annees`, `en_mois_entiers`, `en_annees_entieres` ; un seuil que le code tient d'un texte s'écrit `Anciennete::ans`),
+  `en_annees`, `en_mois_entiers`, `en_annees_entieres` ; un seuil que le code tient d'un texte s'écrit `Anciennete::ans`,
+  `Anciennete::mois_fixes`),
   et elle se compare à lui, s'en écarte (`au_dela_de`) ou
   le compte (`fois_entieres`) ; elle se dit dans l'unité que le texte
   demande (`annees`, `annees_d28` pour un barème qui compte par année, `nombre_d_ans_revolus`, `semaines_entieres`), en

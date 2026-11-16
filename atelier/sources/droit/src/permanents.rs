@@ -7,7 +7,6 @@ use crate::natures::{MotifDeRupture, Nature};
 use crate::source::Fondement;
 use serde::Deserialize;
 use socle::date::{Anciennete, Duree, EnJours, EnMois, Jour, Periode};
-use socle::feries::date_ou_refus;
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
 /// Les regles livrees des contrats permanents, sous `donnees/`.
@@ -102,9 +101,10 @@ forme! {
 }
 
 forme! {
+    /// Son premier jour, chaque annee : son mois de l'annee, et le numero du jour dans ce mois (R3141-4 : le 1er juin).
     pub struct PeriodeDeReference {
-        pub debut_mois: i64,
-        pub debut_jour: i64,
+        pub debut_mois: socle::mois::MoisDeLAnnee,
+        pub debut_jour: u32,
     }
 }
 
@@ -682,10 +682,10 @@ fn dit(liste: &ParMotif, motif: Option<MotifDeRupture>) -> Option<String> {
 pub fn periode_de_reference(jour: &Jour) -> R<Periode> {
     let rg = regles()?;
     let r = &rg.conges_payes.periode_de_reference;
-    let (mois, dj) = (r.debut_mois, r.debut_jour);
-    let an = if (jour.mois as i64, jour.jour as i64) >= (mois, dj) { jour.an } else { jour.an - 1 } as i64;
-    let debut = date_ou_refus(an, mois, dj)?;
-    let fin = date_ou_refus(an + 1, mois, dj)?.plus_jours(-1)?;
+    let debut_de = |an: socle::mois::Annee| an.mois(r.debut_mois).jour_exige(r.debut_jour);
+    let an = if *jour >= debut_de(jour.annee())? { jour.annee() } else { jour.annee().precedente()? };
+    let debut = debut_de(an)?;
+    let fin = debut_de(an.suivante()?)?.plus_jours(-1)?;
     Periode::du_au(debut, fin)
 }
 

@@ -720,6 +720,11 @@ impl Anciennete {
         Anciennete(d)
     }
 
+    /// `n` mois qu'un texte fixe (L3133-3 : « trois mois d'ancienneté »).
+    pub fn mois_fixes(n: u32) -> Anciennete {
+        Anciennete(Decimal::from(n))
+    }
+
     /// `n` annees qu'un texte fixe, douze mois chacune.
     pub fn ans(n: u32) -> Anciennete {
         Anciennete(Decimal::from(n * 12))

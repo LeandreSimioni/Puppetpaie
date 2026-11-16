@@ -8,7 +8,6 @@ use socle::date::{Jour, JourDeLaSemaine, Periode, Semaine};
 use socle::feries;
 use socle::echec::R;
 use socle::grandeurs::{Heures, HeuresParUnite, Jours, Montant};
-use socle::num::Decimal;
 
 /// Le nombre de jours ouvrables entre deux dates, bornes incluses : du lundi
 /// au samedi, moins les feries que l'entreprise chome (`chomes` : ce que sa fiche en dit, `ChampsEntreprise::feries_chomes`).
@@ -116,7 +115,7 @@ pub fn feries_non_payes(
     jours: &JoursTravailles,
     depuis: &Jour,
 ) -> R<Vec<(Jour, String)>> {
-    let trois_mois = socle::date::Anciennete::de_mois(Decimal::from(3));
+    let trois_mois = socle::date::Anciennete::mois_fixes(3);
     let mut out = Vec::new();
     for (j, nom) in feries::chomes_entre(periode, chomes)? {
         let premier_mai = feries::chomes_de_droit(j.annee())?.iter().any(|(x, _)| *x == j);
