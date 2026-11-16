@@ -754,7 +754,8 @@ pub struct DetailContresigne {
 pub struct AnneeCasc {
     pub annee: socle::mois::Annee,
     pub vire_le: socle::date::Jour,
-    pub montant: rust_decimal::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    pub montant: socle::grandeurs::Montant,
 }
 
 /// LE DETAIL DE LA REGULARISATION CASC-SVP envoyee a Audiens et au CASC-SVP : ses annees, ses mois, son total, les
@@ -764,7 +765,8 @@ pub struct AnneeCasc {
 pub struct DetailCasc {
     pub annees: Vec<AnneeCasc>,
     pub mois: Vec<Mois>,
-    pub total: rust_decimal::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    pub total: socle::grandeurs::Montant,
     pub expediteur: Courriel,
     pub eml: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]

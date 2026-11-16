@@ -24,8 +24,10 @@ pub struct CascSvp {
 pub struct RegularisationNotee {
     pub annee: socle::mois::Annee,
     pub mois: Vec<Mois>,
-    pub montant: rust_decimal::Decimal,
-    pub calcule: rust_decimal::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    pub montant: socle::grandeurs::Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    pub calcule: socle::grandeurs::Montant,
     pub vire_le: socle::date::Jour,
     pub note_le: socle::date::Jour,
     pub qui: String,

@@ -5361,8 +5361,8 @@ mod tests {
             regularisations: vec![crate::casc::RegularisationNotee {
                 annee: socle::mois::Annee::nouvelle(2024).unwrap(),
                 mois: regularises.to_vec(),
-                montant: Montant::ZERO.decimal(),
-                calcule: Montant::ZERO.decimal(),
+                montant: Montant::ZERO,
+                calcule: Montant::ZERO,
                 vire_le: Jour::nouveau(2025, 1, 15).unwrap(),
                 note_le: Jour::nouveau(2025, 1, 16).unwrap(),
                 qui: "test".into(),

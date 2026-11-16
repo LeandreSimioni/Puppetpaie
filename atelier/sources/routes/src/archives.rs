@@ -505,8 +505,8 @@ struct CascNotee {
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     let aujourd_hui = socle::temps::secondes().a_la_seconde().jour_de_paris();
     let vire = socle::grandeurs::sans_zero(c.montant);
-    let notee = marquer_regularise(ctx, c.annee, c.vire_le, vire.decimal(), INTERFACE, aujourd_hui)?;
-    let montant = socle::texte::euros(socle::grandeurs::Montant::du_decimal(notee.montant));
+    let notee = marquer_regularise(ctx, c.annee, c.vire_le, vire, INTERFACE, aujourd_hui)?;
+    let montant = socle::texte::euros(notee.montant);
     Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
 }
 
@@ -964,11 +964,11 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     let dites: Vec<String> = annees.iter().map(|a| a.annee.to_string()).collect();
     let notee = if dites.len() > 1 { "notées régularisées" } else { "notée régularisée" };
     Ok(CascEnvoyee {
-        phrase: format!("CASC-SVP, {} : {}, envoyé à {} ; {} {}.", r.periode, socle::texte::euros(socle::grandeurs::Montant::du_decimal(r.total)), en_liste(&partis, " et "), dites.join(" et "), notee),
+        phrase: format!("CASC-SVP, {} : {}, envoyé à {} ; {} {}.", r.periode, socle::texte::euros(r.total), en_liste(&partis, " et "), dites.join(" et "), notee),
         partis,
         expediteur: compte,
         periode: r.periode,
-        total: socle::grandeurs::Montant::du_decimal(r.total),
+        total: r.total,
         annees,
         eml: emls,
         dossier: garde,

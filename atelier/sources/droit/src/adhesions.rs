@@ -15,8 +15,8 @@ use std::sync::{Arc, OnceLock};
 use crate::fiche::Lue;
 use socle::date::{Jour, Periode};
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
-use socle::forme::Nombre;
 use socle::echec::R;
+use socle::grandeurs::{Montant, Taux};
 
 use crate::organismes::Adhesion;
 use crate::source::forme_notee;
@@ -47,14 +47,20 @@ forme_notee! {
     /// Le taux de la cotisation, en pourcentage, par annee de salaires (`AAAA`).
     pub struct TauxCasc {
         #[serde(deserialize_with = "socle::forme::en_ordre")]
-        pub par_annee: Vec<(socle::mois::Annee, Nombre)>,
+        pub par_annee: Vec<(socle::mois::Annee, Taux)>,
     }
 }
 
 impl TauxCasc {
     /// Le taux de l'annee `an`, s'il est releve.
-    pub fn de(&self, an: socle::mois::Annee) -> Option<socle::num::Decimal> {
-        self.par_annee.iter().find(|(a, _)| *a == an).map(|(_, t)| t.0)
+    pub fn de(&self, an: socle::mois::Annee) -> Option<Taux> {
+        self.par_annee.iter().find(|(a, _)| *a == an).map(|(_, t)| *t)
+    }
+
+    /// LA COTISATION D'UN MOIS sur sa masse `masse`, au taux `taux` de son annee (`de`) : au centime
+    /// (`Montant::au_centime`). La seule : la regularisation et l'alerte apres l'import la prennent ici.
+    pub fn cotisation(taux: Taux, masse: Montant) -> Montant {
+        masse.fois_taux(taux).au_centime()
     }
 }
 

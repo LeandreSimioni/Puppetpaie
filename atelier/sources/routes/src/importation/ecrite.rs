@@ -119,8 +119,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
             masse += b;
         }
         let Some(taux) = base.taux.de(m.annee()) else { return Ok(None) };
-        // Le taux de la CASC-SVP reste un decimal (`TauxCasc`, chaine CA) : sa porte.
-        let cot = masse.fois_taux(socle::grandeurs::Taux::du_decimal(taux)).au_centime();
+        let cot = droit::adhesions::TauxCasc::cotisation(taux, masse);
         par_mois.push((m, cot));
     }
     if par_mois.is_empty() {
