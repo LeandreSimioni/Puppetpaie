@@ -422,7 +422,7 @@ function boiteAvertissement(a) {
       ${a.engagements.map((e) => `<div class="encart attention"><b>${echapper(e.qui)}</b>
         ${e.consequences.length ? `<ul>${e.consequences.map((c) => `<li>${echapper(c)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
       ${a.jour ? `<p>${echapper(a.jour)}</p>
-        <label>le <input id="av-jour" class="jour-du-mois" type="number" min="1" max="31" step="1" value="1"></label>` : ""}
+        <label>le <input id="av-jour" class="jour-du-mois" type="text" inputmode="numeric" value="1"></label>` : ""}
       <div class="actions">
         <button class="secondaire" id="av-non">Annuler</button>
         <button class="primaire" id="av-oui">Modifier l'engagement</button>
@@ -430,7 +430,7 @@ function boiteAvertissement(a) {
     document.getElementById("av-non").onclick = () => fermerBoite();
     document.getElementById("av-oui").onclick = () => {
       const jour = document.getElementById("av-jour");
-      repondre({ jour: jour && jour.value ? Number(jour.value) : null });
+      repondre({ jour: jour && jour.value.trim() ? jour.value : null });
       fermerBoite();
     };
   });

@@ -1154,8 +1154,8 @@ impl EchelonCcneac {
 
     /// L'echelon ecrit `texte`, ou la phrase qui le refuse.
     pub fn lire(texte: &str) -> R<EchelonCcneac> {
-        match socle::num::entier_de_chiffres(texte.trim()).filter(|n| (1..=12).contains(n)) {
-            Some(n) => Ok(EchelonCcneac(n as u8)),
+        match socle::grandeurs::lu::entier_tape(texte, "un échelon, de 1 à 12").ok().and_then(|n| u8::try_from(n).ok()).filter(|n| (1..=12).contains(n)) {
+            Some(n) => Ok(EchelonCcneac(n)),
             None => Err(socle::refus!(
                 "« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué",
                 texte

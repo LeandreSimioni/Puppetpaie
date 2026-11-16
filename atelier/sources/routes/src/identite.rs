@@ -9,7 +9,7 @@ use crate::fiches::{aujourd_hui, creer_dossier, ecrire, refus};
 use crate::ouverture::{EcranDeLImage, Identite, ImageIdentite};
 use droit::contexte::Contexte;
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::grandeurs::Octets;
 use documents::SorteDImage;
 use fabrique_pdf::alleger::FormatDImage;
 
@@ -73,7 +73,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                 phrase: dire_l_identite(&identite),
                 identite,
                 intro: Some("Ce qui se pose sur les documents de la compagnie : PNG, JPEG ou SVG, 2 Mo au plus. Une image posée part dans chaque document qui la porte : le logiciel l'allège au poids visé."),
-                poids_vise_ko: Some(Decimal::from(POIDS_VISE_KO)),
+                poids_vise_ko: Some(POIDS_VISE),
             })
         }
         Route::PoserIdentite => {
@@ -102,25 +102,19 @@ struct IdentiteDite {
     identite: Identite,
     #[serde(skip_serializing_if = "Option::is_none")]
     intro: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    poids_vise_ko: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "Octets::ecrite_en_ko_opt")]
+    poids_vise_ko: Option<Octets>,
 }
 
-/// La charge de `poser-identite` : quoi, l'image en base64 (une adresse data: aussi), et le poids vise en Ko.
+/// La charge de `poser-identite` : quoi, l'image en base64 (une adresse data: aussi), et le poids vise, lu en Ko tapes
+/// (« 20,5 »).
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargePoser {
     quoi: String,
     contenu: String,
-    poids: PoidsVise,
-}
-
-/// Le poids vise : un nombre, ou un texte qui en dit un (« 20,5 »).
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged)]
-enum PoidsVise {
-    Nombre(socle::forme::Nombre),
-    Texte(String),
+    #[serde(deserialize_with = "Octets::ko")]
+    poids: Octets,
 }
 
 /// La charge de `retirer-identite` : quoi.
@@ -132,9 +126,10 @@ struct ChargeQuoi {
 
 // ------------------------------------------------------------------ l'identite
 
-const OCTETS_MAX: usize = 2 * 1024 * 1024;
-/// Le poids visé d'une image dans chaque document, en Ko, que l'écran propose (`identite`).
-const POIDS_VISE_KO: u32 = 20;
+/// Le poids d'une image reçue, et le poids visé, au plus : 2 Mo.
+const OCTETS_MAX: Octets = Octets::en_ko(2048);
+/// Le poids visé d'une image dans chaque document, que l'écran propose (`identite`).
+const POIDS_VISE: Octets = Octets::en_ko(20);
 
 /// L'image que la charge nomme (`quoi`), ou ce qui la refuse.
 #[track_caller]
@@ -171,7 +166,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     if octets.is_empty() {
         return Err(refus("Le fichier est vide."));
     }
-    if octets.len() > OCTETS_MAX {
+    if Octets::de(&octets) > OCTETS_MAX {
         return Err(refus(format!("Le fichier fait {} ; la limite est de 2 Mo.", compagnie::sauvegarde::en_mo(octets.len() as u64, '.'))));
     }
     FormatDImage::des_octets(&octets).ok_or_else(|| {
@@ -179,27 +174,16 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     })?;
     // Le poids visé est dit par la charge : l'écran le propose (`poids_vise_ko` de `identite`), la personne le garde ou
     // le change.
-    let faute = |dit: &str| format!("Le poids visé est un nombre de Ko, de 1 à {} : {} ne l'est pas.", OCTETS_MAX / 1024, socle::fichiers::repr(dit));
-    let (objectif_ko, dit) = match &charge.poids {
-        PoidsVise::Nombre(k) => (k.0.normalize(), k.0.normalize().to_string()),
-        PoidsVise::Texte(s) => {
-            let lu = socle::num::decimal_a_virgule(s);
-            (lu.ok_or_else(|| socle::echec::a_la_cle(&faute(s), "poids", "").reclasser(socle::echec::Classe::Refuse))?.normalize(), s.clone())
-        }
-    };
-    if objectif_ko < Decimal::ONE || objectif_ko > Decimal::from(OCTETS_MAX / 1024) {
-        return Err(refus(faute(&dit)));
+    let objectif = charge.poids;
+    if objectif < Octets::en_ko(1) || objectif > OCTETS_MAX {
+        return Err(refus(format!("Le poids visé est un nombre de Ko, de 1 Ko à {} : {} ne l'est pas.", OCTETS_MAX, objectif)));
     }
     // L'image part dans chaque document qui la porte : elle est allégée avant d'être posée, à la largeur que les
-    // documents impriment (`documents::largeur_imprimee`) et au poids visé (en octets, tronque).
+    // documents impriment (`documents::largeur_imprimee`) et au poids visé.
     let largeur = quoi.largeur_imprimee();
-    let octets_vises = match rust_decimal::prelude::ToPrimitive::to_usize(&(objectif_ko * Decimal::from(1024)).trunc()) {
-        Some(o) => o,
-        None => unreachable!("un poids de 1 a 2 048 Ko tient en octets"),
-    };
-    let allegee = fabrique_pdf::alleger::alleger(&octets, largeur, octets_vises)
+    let allegee = fabrique_pdf::alleger::alleger(&octets, largeur, objectif.en_usize())
         .map_err(|r| documents::fabrique::echec(r).reformuler(|p| format!("Le fichier n'est pas lisible : {}. Rien n'a ete ecrit.", p)))?;
-    let poids = dire_le_poids(quoi, &allegee, objectif_ko);
+    let poids = dire_le_poids(quoi, &allegee, objectif);
     let (octets, format) = (allegee.octets, allegee.format);
     let dossier = dossier_identite(ctx);
     creer_dossier(&dossier)?;
@@ -230,7 +214,7 @@ fn ko(octets: usize) -> String {
 }
 
 /// Ce que l'image posée pèsera dans chaque document, et pourquoi on l'a allégée.
-fn dire_le_poids(quoi: SorteDImage, a: &fabrique_pdf::alleger::Allegee, objectif_ko: Decimal) -> String {
+fn dire_le_poids(quoi: SorteDImage, a: &fabrique_pdf::alleger::Allegee, objectif: Octets) -> String {
     let nom = match quoi {
         SorteDImage::Signature => "La signature",
         SorteDImage::Cachet => "Le tampon",
@@ -246,8 +230,8 @@ fn dire_le_poids(quoi: SorteDImage, a: &fabrique_pdf::alleger::Allegee, objectif
         dit.push_str(&format!(" (l'image reçue : {} ; ramenée à {} pixels de large, ce que les documents impriment)", ko(a.avant), a.largeur));
     }
     dit.push('.');
-    if Decimal::from(a.octets.len()) > objectif_ko * Decimal::from(1024) {
-        dit.push_str(&format!(" C'est plus que les {} Ko visés : une image plus simple (moins de détails, moins de couleurs) serait plus légère.", objectif_ko));
+    if Octets::de(&a.octets) > objectif {
+        dit.push_str(&format!(" C'est plus que les {} visés : une image plus simple (moins de détails, moins de couleurs) serait plus légère.", objectif));
     }
     format!("{} {}", dit, pourquoi)
 }

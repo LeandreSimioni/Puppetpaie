@@ -125,6 +125,7 @@ struct ChargeModifier {
     engagement: Identite,
     changements: Changements,
     confirme: bool,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::jour_du_mois::option::deserialize")]
     jour: Option<u32>,
 }
 

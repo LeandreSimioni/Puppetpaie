@@ -769,6 +769,61 @@ impl std::ops::Mul<MontantUnitaire> for Coefficient {
     }
 }
 
+/// UNE TAILLE DE FICHIER, EN OCTETS (« Le glossaire », taille d'un fichier) : le poids vise d'une image posee
+/// (`routes::identite`). Elle se compte en Ko (1 Ko = 1 024 octets) : elle se lit d'un nombre de Ko (`ko`), tape dans une
+/// saisie (« 20,5 »), s'ecrit en Ko (`ecrite_en_ko_opt`) et se dit en Ko (`Display` : « 20,5 Ko »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Octets(u64);
+
+impl Octets {
+    /// `ko` Ko.
+    pub const fn en_ko(ko: u64) -> Octets {
+        Octets(ko * 1024)
+    }
+
+    /// LA TAILLE DE `octets`, a la porte qui les tient (un fichier lu, une image allegee).
+    pub fn de(octets: &[u8]) -> Octets {
+        Octets(octets.len() as u64)
+    }
+
+    /// SON NOMBRE D'OCTETS, a la porte qui le prend (l'allegement d'une image : `fabrique_pdf::alleger`).
+    pub fn en_usize(self) -> usize {
+        match usize::try_from(self.0) {
+            Ok(n) => n,
+            Err(_) => unreachable!("une taille de fichier tient en memoire : {} octets", self.0),
+        }
+    }
+
+    /// Son nombre de Ko, au centieme.
+    fn ko_dits(self) -> Decimal {
+        (Decimal::from(self.0) / Decimal::from(1024)).round_dp(2)
+    }
+
+    /// LUE D'UN NOMBRE DE KO, jamais negatif (`#[serde(deserialize_with = "socle::grandeurs::Octets::ko")]`) : un nombre ;
+    /// dans une saisie (`forme::lire_saisie`), aussi ce qu'une personne a tape (« 20,5 », lu par `lu::ko_tapes`) ; un
+    /// octet entame ne compte pas.
+    pub fn ko<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Octets, D::Error> {
+        let ko = crate::forme::decimal_en_nombre(d, lu::ko_tapes)?;
+        match rust_decimal::prelude::ToPrimitive::to_u64(&(ko * Decimal::from(1024)).trunc()) {
+            Some(n) => Ok(Octets(n)),
+            None => Err(serde::de::Error::custom(format!("{} n'est pas un poids : on attend un nombre de Ko positif", crate::fichiers::repr(&ko.to_string())))),
+        }
+    }
+
+    /// ECRITE EN KO, facultative (`null` quand elle n'est pas dite) : `#[serde(serialize_with =
+    /// "socle::grandeurs::Octets::ecrite_en_ko_opt")]`.
+    pub fn ecrite_en_ko_opt<S: serde::Serializer>(o: &Option<Octets>, s: S) -> Result<S::Ok, S::Error> {
+        crate::forme::ecrire_a_virgule_opt(&o.map(Octets::ko_dits), s)
+    }
+}
+
+/// Dite en Ko (« 20 Ko », « 20,5 Ko »).
+impl std::fmt::Display for Octets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} Ko", crate::texte::nombre_dit(self.ko_dits()))
+    }
+}
+
 /// LE NOMBRE ECRIT D'UNE CASE (`forme::NombreEcrit`) : sa grandeur, et la grandeur qu'on y ecrit, a sa porte.
 impl crate::forme::NombreEcrit {
     /// LA GRANDEUR QU'IL DIT dans la case `case` (un taux, des jours, un montant), son echelle gardee : un nombre tel
@@ -858,13 +913,19 @@ pub mod lu {
     }
 
     /// UN NOMBRE ENTIER, JAMAIS NEGATIF, QU'UNE PERSONNE A TAPE (un compte, des jours de droit, une annee) : lu par
-    /// `nombre_tape` (« 1 500 »), puis sa forme ; `attendu` : ce que la case attend.
-    fn entier_tape(t: &str, attendu: &str) -> Result<u64, String> {
+    /// `nombre_tape` (« 1 500 »), puis sa forme ; `attendu` : ce que la case attend. Aussi l'echelon tape d'une fiche
+    /// (`droit::fiche::EchelonCcneac`).
+    pub fn entier_tape(t: &str, attendu: &str) -> Result<u64, String> {
         let d = nombre_tape(t, &[], attendu)?;
         match d.fract().is_zero().then(|| rust_decimal::prelude::ToPrimitive::to_u64(&d.trunc())).flatten() {
             Some(n) => Ok(n),
             None => Err(pas_entier(t, attendu)),
         }
+    }
+
+    /// UN NOMBRE DE KO QU'UNE PERSONNE A TAPE (le poids vise d'une image, `Octets::ko`), lu par `nombre_tape`.
+    pub(crate) fn ko_tapes(t: &str) -> Result<Decimal, String> {
+        nombre_tape(t, &["Ko", "ko"], "un nombre de Ko")
     }
 
     /// Le refus d'un nombre `ecrit` (tape, ou un nombre JSON) qui n'est pas un entier jamais negatif.
@@ -913,6 +974,24 @@ pub mod lu {
                     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lu, D::Error> {
                         let n = super::super::entier(d, "un nombre entier")?;
                         usize::try_from(n).map(Lu).map_err(serde::de::Error::custom)
+                    }
+                }
+                <Option<Lu> as serde::Deserialize>::deserialize(d).map(|l| l.map(|l| l.0))
+            }
+        }
+    }
+
+    /// UN JOUR DU MOIS (le quantieme d'ou vaut un changement d'un engagement) lu par `entier`.
+    pub mod jour_du_mois {
+        /// Un jour du mois facultatif : absent (avec `#[serde(default)]`) ou nul, il n'est pas dit.
+        pub mod option {
+            pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
+                /// Un jour du mois lu ainsi, la ou un champ ne se pose pas (un `Option`).
+                struct Lu(u32);
+                impl<'de> serde::Deserialize<'de> for Lu {
+                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lu, D::Error> {
+                        let n = super::super::entier(d, "un jour du mois, de 1 à 31")?;
+                        u32::try_from(n).map(Lu).map_err(serde::de::Error::custom)
                     }
                 }
                 <Option<Lu> as serde::Deserialize>::deserialize(d).map(|l| l.map(|l| l.0))

@@ -183,10 +183,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
-| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` ; `socle::forme::NombreEcrit`, que la case `heures_forfait` d'une rubrique garde encore (`NombreEcrit::en`) |
+| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, un jour du mois, par la même lecture, `lu::entier`, et l'échelon d'une fiche par `lu::entier_tape` ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` ; `socle::forme::NombreEcrit`, que la case `heures_forfait` d'une rubrique garde encore (`NombreEcrit::en`) |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
-| taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
+| taille d'un fichier (en octets, lue, écrite et dite en Ko) | `socle::grandeurs::Octets` (le poids d'une image reçue et le poids visé, `routes::identite`) | à unifier (#419) : des `u64` et des `usize` (la sauvegarde, `en_mo`) |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
 
 **Le temps**
