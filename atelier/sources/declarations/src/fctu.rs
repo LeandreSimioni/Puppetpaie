@@ -542,7 +542,7 @@ ou un annule.",
     // ------------------------------------------------------------ S21 versement
     // La date de versement : la fin de la periode de paie.
     f.add(droit::rubrique!("S21.G00.50.001"), payee.fin().jjmmaaaa());
-    f.add(droit::rubrique!("S21.G00.50.003"), "01");
+    f.add(droit::rubrique!("S21.G00.50.003"), crate::dsn::NumeroDeVersement::PREMIER);
     f.add(droit::rubrique!("S21.G00.50.020"), defaut(&nomenclatures()?.rattachement_versement, "rattachement_versement")?);
     // Un mois decoupe en periodes elementaires : les remunerations et les bases de chacune, datees de ses bornes.
     let bornes = |q: &engagement::calcul::Paie| -> R<Periode> {

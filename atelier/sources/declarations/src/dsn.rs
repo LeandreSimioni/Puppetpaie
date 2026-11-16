@@ -558,7 +558,7 @@ pub struct Cotisation {
     pub code81: Option<CodeCotisation81>,
     pub org: Option<IdentifiantDOrganisme>,
     /// L'affiliation que cite sa base 31 (S21.G00.78.005) : celle du bareme, puis la place de l'adhesion du contrat
-    /// (`affiliation_de_la_place`).
+    /// (`identifiant_d_affiliation`).
     pub affectation: Option<IdentifiantDAffiliation>,
     pub cle_total: Option<CleDeTotalisation>,
     pub code_insee: Option<droit::fiche::CodeInsee>,
@@ -592,19 +592,47 @@ pub struct ContributionDuMois {
     pub natures: std::collections::BTreeMap<droit::natures::Paie, IdentifiantDAffiliation>,
 }
 
-/// L'IDENTIFIANT DE L'AFFILIATION A LA PLACE `n` (S21.G00.70.012, que cite 78.005 : « 202 » et suivants, la place de
-/// l'adhesion parmi les references du contrat, `rattachements`), fait depuis ce nombre.
-fn affiliation_de_la_place(n: i64) -> R<IdentifiantDAffiliation> {
-    IdentifiantDAffiliation::lire(&n.to_string())
+/// LA PLACE D'UNE AFFILIATION parmi les adhesions de la nature du contrat (`affiliations`, dans leur ordre), d'ou la DSN
+/// tire l'identifiant technique de l'affiliation (S21.G00.70.012, que cite 78.005 : `identifiant_d_affiliation`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlaceDAffiliation(usize);
+
+impl PlaceDAffiliation {
+    /// La premiere adhesion ; pour un permanent, la prevoyance -- l'ordre que `organismes::composer` ecrit et que le
+    /// socle attend.
+    pub const PREMIERE: PlaceDAffiliation = PlaceDAffiliation(0);
+    /// La seconde ; pour un permanent, la sante.
+    pub const SECONDE: PlaceDAffiliation = PlaceDAffiliation(1);
+
+    /// La place qui suit `adhesions` adhesions.
+    fn apres(adhesions: usize) -> PlaceDAffiliation {
+        PlaceDAffiliation(adhesions)
+    }
 }
 
-/// La place qu'un identifiant d'affiliation ecrit (`affiliation_de_la_place`) ; `None` : il n'ecrit pas un nombre, et
-/// l'appelant le refuse.
-fn place_de(a: &IdentifiantDAffiliation) -> Option<i64> {
-    match a.as_str().trim().parse::<i64>() {
-        Ok(n) => Some(n),
-        Err(_) => None,
-    }
+/// Le premier identifiant technique d'une affiliation que le moteur ecrit (« 202 »).
+const PREMIER_IDENTIFIANT: usize = 202;
+
+/// L'IDENTIFIANT DE L'AFFILIATION a la place `place` du contrat de rang `rang` sous l'individu (S21.G00.70.012, que cite
+/// 78.005) : « 202 » et suivants, chaque contrat se reservant `places` identifiants (`places_par_contrat`), dans l'ordre
+/// de ses rangs. Le seul endroit ou il se compose.
+fn identifiant_d_affiliation(rang: i64, place: PlaceDAffiliation, places: usize) -> R<IdentifiantDAffiliation> {
+    IdentifiantDAffiliation::lire(&(PREMIER_IDENTIFIANT + places * (rang as usize - 1) + place.0).to_string())
+}
+
+/// Pourquoi un identifiant d'affiliation ne dit pas de place (`place_de`).
+enum PlaceIllisible {
+    /// Il n'ecrit pas un nombre.
+    PasUnNombre,
+    /// Il est avant le premier identifiant (`PREMIER_IDENTIFIANT`) : le moteur n'en fait pas.
+    AvantLaPremiere,
+}
+
+/// La place qu'ecrit un identifiant d'affiliation du contrat de rang 1 (celui que le bareme nomme, `202`, `203` :
+/// `CleDeCotisationDsn::affectation`) ; l'appelant refuse ce qui ne se lit pas.
+fn place_de(a: &IdentifiantDAffiliation) -> Result<PlaceDAffiliation, PlaceIllisible> {
+    let n = a.as_str().trim().parse::<usize>().map_err(|_| PlaceIllisible::PasUnNombre)?;
+    n.checked_sub(PREMIER_IDENTIFIANT).map(PlaceDAffiliation).ok_or(PlaceIllisible::AvantLaPremiere)
 }
 
 /// Les assiettes que le calcul a ecrites dans la paie, telles quelles : rien ne se recalcule.
@@ -949,19 +977,17 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     for c in out {
         // L'affectation d'une base 31 (78.005) : « 202 » et suivants, la place de l'adhesion.
         let place = match &c.affectation {
-            Some(a) => match place_de(a).map(usize::try_from) {
-                Some(Ok(n)) => match n.checked_sub(202) {
-                    Some(x) => Some(x),
-                    // Le moteur fait les identifiants d'affiliation a partir de 202 (`affiliation_de_la_place`) : un
-                    // plus petit est une faute du logiciel.
-                    None => {
-                        return Err(socle::echec::erreur(
-                            socle::echec::Classe::DefautDuLogiciel,
-                            format!("{} : l'affectation {} d'une base {} est avant la premiere place (202) : le signaler au developpeur.", qui_contrat(p), a, c.bloc78),
-                        ))
-                    }
-                },
-                _ => return Err(refus!("{} : l'affectation {} d'une base {} ne se lit pas.", qui_contrat(p), socle::fichiers::repr(a.as_str().trim()), c.bloc78)),
+            Some(a) => match place_de(a) {
+                Ok(x) => Some(x),
+                // Le moteur fait les identifiants d'affiliation a partir de 202 (`identifiant_d_affiliation`) : un
+                // plus petit est une faute du logiciel.
+                Err(PlaceIllisible::AvantLaPremiere) => {
+                    return Err(socle::echec::erreur(
+                        socle::echec::Classe::DefautDuLogiciel,
+                        format!("{} : l'affectation {} d'une base {} est avant la premiere place (202) : le signaler au developpeur.", qui_contrat(p), a, c.bloc78),
+                    ))
+                }
+                Err(PlaceIllisible::PasUnNombre) => return Err(refus!("{} : l'affectation {} d'une base {} ne se lit pas.", qui_contrat(p), socle::fichiers::repr(a.as_str().trim()), c.bloc78)),
             },
             None => None,
         };
@@ -1175,9 +1201,8 @@ population, ce que la plate-forme accepte sans rien dire. Rien n'est écrit.",
 /// Une affiliation que le contrat declare (bloc S21.G00.70), dans l'ordre de `affiliations`.
 pub struct Affiliation {
     /// Sa place parmi les references de la nature : elle fait l'identifiant (70.012) et l'affectation de sa base 31
-    /// (`202 + place`, les `cotisations_dsn` du bareme). Pour un permanent, 0 est la prevoyance et 1 la sante -- l'ordre
-    /// que `organismes::composer` ecrit et que le socle attend.
-    pub place: usize,
+    /// (`identifiant_d_affiliation`, les `cotisations_dsn` du bareme).
+    pub place: PlaceDAffiliation,
     /// La reference de l'adhesion (70.013 = 15.005).
     pub reference: ReferenceDAdhesion,
     /// L'option retenue par le salarie (70.004), quand l'organisme la demande pour ce contrat.
@@ -1241,14 +1266,14 @@ declare.",
 }
 
 /// Les places (`Affiliation::place`) des adhesions de sa nature auxquelles le salarie n'est pas affilie ce mois-la.
-fn places_non_affiliees(p: &Paie, ent: &ChampsEntreprise) -> R<Vec<usize>> {
+fn places_non_affiliees(p: &Paie, ent: &ChampsEntreprise) -> R<Vec<PlaceDAffiliation>> {
     let mut out = Vec::new();
     if let Some(a) = affiliations_du_permanent(p, ent)? {
         if a.prevoyance == bareme::AffiliationPrevoyance::NonAffilie {
-            out.push(0);
+            out.push(PlaceDAffiliation::PREMIERE);
         }
         if !a.sante {
-            out.push(1);
+            out.push(PlaceDAffiliation::SECONDE);
         }
     }
     Ok(out)
@@ -1271,10 +1296,11 @@ pub fn rattachements(p: &Paie, orgs: &Organismes, ent: &ChampsEntreprise, refs: 
     let permanent = affiliations_du_permanent(p, ent)?;
     let fin = e.periode_payee()?.fin();
     let mut out = Vec::new();
-    for (place, reference) in refs.into_iter().enumerate() {
+    for (avant, reference) in refs.into_iter().enumerate() {
+        let place = PlaceDAffiliation::apres(avant);
         let mut debut: Option<Jour> = None;
         if let Some(a) = &permanent {
-            if place == 0 {
+            if place == PlaceDAffiliation::PREMIERE {
                 match &a.prevoyance {
                     bareme::AffiliationPrevoyance::NonAffilie => continue,
                     bareme::AffiliationPrevoyance::DesLEmbauche => {}
@@ -1296,13 +1322,13 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
                     }
                 }
             }
-            if place == 1 && !a.sante {
+            if place == PlaceDAffiliation::SECONDE && !a.sante {
                 continue;
             }
             // Affilie a la sante a la fin d'une dispense (Q13) : 70.014 « fin d'une dispense d'affiliation »
             // (`bloc-S21.G00.71.txt`, p. 287), le lendemain de son dernier jour. Ce mois-ci n'est plus dispense
             // (`calcul::dispense_de_la_periode`) : une fin de dispense posee est passee.
-            if place == 1 {
+            if place == PlaceDAffiliation::SECONDE {
                 if let Some(j) = p.salarie.permanent.ouvrir(&a.au_mois).sante_dispense_jusqu_au.dite() {
                     let lendemain = j.plus_jours(1)?;
                     if lendemain <= fin && debut.is_none_or(|x| lendemain > x) {
@@ -1376,8 +1402,8 @@ compagnie ; rien n'est declare.",
 }
 
 /// `places_par_contrat` : combien d'identifiants d'affiliation un contrat se reserve.
-pub fn places_par_contrat(bar: &Pile) -> i64 {
-    3.max(2 + bar.contributions_dsn.iter().flatten().count() as i64)
+pub fn places_par_contrat(bar: &Pile) -> usize {
+    3.max(2 + bar.contributions_dsn.iter().flatten().count())
 }
 
 /// Les references de chaque nature (hors `ref`), en vigueur pendant le mois.
@@ -1386,8 +1412,8 @@ fn refs_du_mois(orgs: &Organismes, sec: &droit::organismes::Rattachement, mois: 
     sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &periode)).cloned().collect()
 }
 
-/// `casc_svp` : la CASC-SVP de ce mois, ou `None`.
-fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois) -> R<Option<ContributionDuMois>> {
+/// `casc_svp` : la CASC-SVP de ce mois, ou `None`. `places` : `places_par_contrat`.
+fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois, places: usize) -> R<Option<ContributionDuMois>> {
     let base = droit::adhesions::casc_svp_base()?;
     if ent.idcc.dite() != Some(&base.idcc) || mois < base.depuis {
         return Ok(None);
@@ -1426,7 +1452,7 @@ d'affiliation par contrat). Rien n'est ecrit.",
                 refs.len()
             ));
         }
-        natures.insert(n, affiliation_de_la_place(202 + refs.len() as i64)?);
+        natures.insert(n, identifiant_d_affiliation(1, PlaceDAffiliation::apres(refs.len()), places)?);
     }
     Ok(Some(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: base.dsn.lignes_bulletin.clone(), natures }))
 }
@@ -1435,7 +1461,8 @@ d'affiliation par contrat). Rien n'est ecrit.",
 /// `contributions_dsn` : les contributions declarees sous une adhesion Audiens.
 fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois, bar: &Pile) -> R<Vec<ContributionDuMois>> {
     let mut out = Vec::new();
-    if let Some(c) = casc_svp(ctx, ent, orgs, mois)? {
+    let places = places_par_contrat(bar);
+    if let Some(c) = casc_svp(ctx, ent, orgs, mois, places)? {
         out.push(c);
     }
     let specs: Vec<&droit::forme_bareme::ContributionDsn> = bar.contributions_dsn
@@ -1446,8 +1473,7 @@ fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, 
     if specs.is_empty() {
         return Ok(out);
     }
-    let places = places_par_contrat(bar);
-    let mut deja: HashMap<droit::natures::Paie, i64> = HashMap::new();
+    let mut deja: HashMap<droit::natures::Paie, usize> = HashMap::new();
     for spec in specs {
         let nom = spec.contribution.clone();
         let adh = orgs.adhesions_prevoyance.iter().find(|a| {
@@ -1472,8 +1498,8 @@ du mois n'ont pas l'adhesion de cette contribution, que le logiciel compose depu
                 continue;
             }
             let refs = refs_du_mois(orgs, sec, mois);
-            let place = refs.len() as i64 + *deja.entry(n).or_insert(0);
-            if place >= places {
+            let occupees = refs.len() + *deja.entry(n).or_insert(0);
+            if occupees >= places {
                 return Err(refus!(
                     "Contrat '{}' : {} adhesions deja, plus de place pour le {} ({} identifiants d'affiliation par \
 contrat). Rien n'est ecrit.",
@@ -1483,7 +1509,7 @@ contrat). Rien n'est ecrit.",
                     places
                 ));
             }
-            natures.insert(n, affiliation_de_la_place(202 + place as i64)?);
+            natures.insert(n, identifiant_d_affiliation(1, PlaceDAffiliation::apres(occupees), places)?);
             *deja.entry(n).or_insert(0) += 1;
         }
         out.push(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: spec.lignes.clone(), natures });
@@ -1935,7 +1961,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.008"), Some(conjoint.to_string()))?;
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.011"), Some(enfants.to_string()))?;
         }
-        si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.012"), Some(affiliation_de_la_place(202 + places * (rang - 1) + a.place as i64)?.to_string()))?;
+        si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.012"), Some(identifiant_d_affiliation(rang, a.place, places)?.to_string()))?;
         f.add(droit::rubrique!("S21.G00.70.013"), a.reference);
         if let Some(d) = a.debut {
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.014"), Some(d.jjmmaaaa()))?;
@@ -2390,8 +2416,8 @@ pub fn bases_et_cotisations(
             continue;
         }
         if let Some(a) = &c.affectation {
-            let n = place_de(a).ok_or_else(|| refus!("affectation illisible : {}", a))?;
-            c.affectation = Some(affiliation_de_la_place(n + places * (rang - 1))?);
+            let place = place_de(a).map_err(|_| refus!("affectation illisible : {}", a))?;
+            c.affectation = Some(identifiant_d_affiliation(rang, place, places)?);
         }
         let cle = (c.bloc78, c.affectation.clone(), c.base78);
         if courant.as_ref() != Some(&cle) {
@@ -2457,22 +2483,39 @@ pub fn bases_et_cotisations(
 /// même salarié » ; CCH-11 : « Pour un même bloc "Individu - S21.G00.30", il est interdit de déclarer plusieurs blocs
 /// « Versement individu - S21.G00.50 » avec un même "Numéro de versement" » ; N [2,2], CSL 00 `[0]*[1-9][0-9]*` (norme
 /// DSN 2026.1, bloc 50, p. 243-244 : `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, lignes 111-126). La norme ne
-/// dit rien de l'ordre : `n` est le rang du versement sous l'individu dans ce fichier, les versements du mois d'abord, puis
-/// ses regularisations (`generer`). Ce n'est pas le rang du contrat, qui numerote les affiliations (70.012, 78.005) : une
-/// regularisation d'un contrat aussi paye ce mois a le rang de ce contrat, et un numero de versement a elle.
-fn numero_de_versement(n: i64) -> R<String> {
-    if !(1..=99).contains(&n) {
-        return Err(refus!(
-            "Un individu porte un {}e versement dans cette DSN : le numero de versement (S21.G00.50.003) s'ecrit sur deux \
+/// dit rien de l'ordre : le numero est le rang du versement sous l'individu dans ce fichier, les versements du mois
+/// d'abord, puis ses regularisations (`generer`). Ce n'est pas le rang du contrat, qui numerote les affiliations (70.012,
+/// 78.005) : une regularisation d'un contrat aussi paye ce mois a le rang de ce contrat, et un numero de versement a elle.
+/// Il ne se fait que par le premier et le suivant ; il s'ecrit sur deux chiffres par son affichage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NumeroDeVersement(u8);
+
+impl NumeroDeVersement {
+    pub const PREMIER: NumeroDeVersement = NumeroDeVersement(1);
+    const DERNIER: u8 = 99;
+
+    /// Le numero qui suit ; au-dela de 99, refus.
+    pub fn suivant(self) -> R<NumeroDeVersement> {
+        if self.0 >= Self::DERNIER {
+            return Err(refus!(
+                "Un individu porte un {}e versement dans cette DSN : le numero de versement (S21.G00.50.003) s'ecrit sur deux \
 chiffres, de 01 a 99 (norme DSN 2026.1, p. 244), et deux versements du meme individu n'ont jamais le meme numero (CCH-11, \
 p. 243). Porter une partie des corrections sur une DSN suivante. Rien n'est ecrit.",
-            n
-        ));
+                u16::from(self.0) + 1
+            ));
+        }
+        Ok(NumeroDeVersement(self.0 + 1))
     }
-    Ok(format!("{:02}", n))
 }
 
-fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux_pas: Option<&Triplet>) -> R<()> {
+impl Display for NumeroDeVersement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:02}", self.0)
+    }
+}
+
+/// `rang` : le rang du contrat sous l'individu (ses affiliations, 78.005) ; `numero` : celui du versement (50.003).
+fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, numero: NumeroDeVersement, taux_pas: Option<&Triplet>) -> R<()> {
     let e = &p.engagement;
     let periode = e.periode_payee()?;
     // La norme ecrit la periode en deux zones, son debut et sa fin.
@@ -2481,8 +2524,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     // tard le dernier jour du mois suivant) : le jour ou se fait la retenue, celui du taux de PAS de la paie.
     f.add(droit::rubrique!("S21.G00.50.001"), e.date_du_versement()?.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.50.002"), norme::montant(p.net_imposable));
-    // Le versement du mois a le rang de son contrat : un contrat paye ce mois, un versement (`generer`).
-    f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(rang)?);
+    f.add(droit::rubrique!("S21.G00.50.003"), numero);
     f.add(droit::rubrique!("S21.G00.50.004"), norme::montant(p.net_verse()));
     // Le prelevement d'une paie validee est celui qu'elle a ecrit (`Paie::pas`) : la DSN ne le recalcule pas. Un mois
     // sans paie n'en a pas : son versement nul porte le taux qui vaut pour le salarie.
@@ -2530,8 +2572,8 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
             f.add(droit::rubrique!("S21.G00.78.003"), fin.jjmmaaaa());
             f.add(droit::rubrique!("S21.G00.78.004"), "0.00");
             if let Some(a) = &c.affectation {
-                let n = place_de(a).ok_or_else(|| refus!("affectation illisible : {}", a))?;
-                f.add(droit::rubrique!("S21.G00.78.005"), affiliation_de_la_place(n + places * (rang - 1))?);
+                let place = place_de(a).map_err(|_| refus!("affectation illisible : {}", a))?;
+                f.add(droit::rubrique!("S21.G00.78.005"), identifiant_d_affiliation(rang, place, places)?);
             }
             if !f.contrat_unique {
                 f.add_opt(droit::rubrique!("S21.G00.78.006"), e.numero.clone())?;
@@ -2577,11 +2619,12 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
     let e = &p.engagement;
     let refs = affiliations(&orgs, &*e.nat()?, &bar.contributions_du_mois, &e.periode_payee()?)?;
     let mut affiliations = Vec::new();
+    let places = places_par_contrat(&bar);
     for a in rattachements(p, &orgs, &bar.entreprise.fiche, refs)? {
-        affiliations.push((affiliation_de_la_place(202 + a.place as i64)?, a.reference));
+        affiliations.push((identifiant_d_affiliation(1, a.place, places)?, a.reference));
     }
     let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(mois)?);
-    bloc_versement(&mut f, p, &bar, 1, None)?;
+    bloc_versement(&mut f, p, &bar, 1, NumeroDeVersement::PREMIER, None)?;
     Ok(VersementEcrit { affiliations, rubriques: f.lignes })
 }
 
@@ -2767,9 +2810,9 @@ fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: Periode) -> R<()
 }
 
 /// `rang` : le rang du contrat sous l'individu (ses affiliations, 78.005) ; `numero` : celui du versement (50.003), qui
-/// n'est jamais celui d'un autre versement de l'individu (`numero_de_versement`).
+/// n'est jamais celui d'un autre versement de l'individu (`NumeroDeVersement`).
 fn bloc_regularisation(
-    f: &mut Fichier, r: &Regularisation, bar_o: &BaremeDuMois, rang: i64, numero: i64, pas_c: &PrelevementDeLaCorrection,
+    f: &mut Fichier, r: &Regularisation, bar_o: &BaremeDuMois, rang: i64, numero: NumeroDeVersement, pas_c: &PrelevementDeLaCorrection,
     fin_mois: Jour,
 ) -> R<()> {
     // `avant` ne donne ici que l'engagement declare (ses bornes, s'il est sans paie) : les montants annules sont ceux
@@ -2785,7 +2828,7 @@ fn bloc_regularisation(
     let d_net = apres.net_verse() - r.declare.net_verse;
     f.add(droit::rubrique!("S21.G00.50.001"), fin_mois.jjmmaaaa());
     f.add(droit::rubrique!("S21.G00.50.002"), norme::montant(d_ni));
-    f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(numero)?);
+    f.add(droit::rubrique!("S21.G00.50.003"), numero);
     f.add(droit::rubrique!("S21.G00.50.004"), norme::montant(d_net));
     let v = &pas_c.versement;
     f.add(droit::rubrique!("S21.G00.50.006"), v.taux.to_string());
@@ -5145,15 +5188,26 @@ certificat de conformite du depot precedent.",
         // Un seul bloc 40 sous l'individu (les contrats du mois, plus ceux qu'une regularisation ajoute) : 78.006 ne
         // s'ecrit pas sur ses bases (p. 298). Les lignes d'annulation recopient le depose tel quel.
         f.contrat_unique = lot.len() + ajoutes.len() == 1;
+        // Les numeros de versement de l'individu : le premier, puis chacun le suivant du precedent.
+        let mut dernier: Option<NumeroDeVersement> = None;
+        let mut numero_suivant = || -> R<NumeroDeVersement> {
+            let n = match dernier {
+                None => NumeroDeVersement::PREMIER,
+                Some(d) => d.suivant()?,
+            };
+            dernier = Some(n);
+            Ok(n)
+        };
         for (i, p) in lot.iter().enumerate() {
-            bloc_versement(&mut f, p, &bar, i as i64 + 1, taux_pas.as_ref())?;
+            // Le versement du mois a le numero du rang de son contrat : un contrat paye ce mois, un versement.
+            bloc_versement(&mut f, p, &bar, i as i64 + 1, numero_suivant()?, taux_pas.as_ref())?;
         }
         // POINT 18 : une regularisation d'un contrat aussi paye ce mois garde le rang de ce contrat (ses
         // affiliations), mais pas son numero de versement -- deux blocs 50 au meme numero sous un individu, la CCH-11 du
         // bloc 50 l'interdit (p. 243). Les versements du mois portent 01 a n, ses regularisations n+1 et suivants.
-        for (k, (rang, r)) in rangs_regs.iter().zip(&corrections).enumerate() {
+        for (rang, r) in rangs_regs.iter().zip(&corrections) {
             let b = bar_de(r.mois)?;
-            let numero = (lot.len() + k + 1) as i64;
+            let numero = numero_suivant()?;
             let pas_c = engagement::etats::prelevement_de_la_correction(ctx, &r.apres, r.declare.net_imposable, r.declare.taux_pas.as_ref(), mois)?;
             bloc_regularisation(&mut f, r, &b, *rang, numero, &pas_c, fin_m)?;
         }
@@ -5305,7 +5359,7 @@ mod tests {
     // La CASC-SVP de la 3090 (`atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`).
     #[test]
     fn la_dsn_de_la_3090_porte_la_casc_en_troisieme_affiliation() {
-        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &orgs_casc(), Mois::nouveau(2026, 9).unwrap()).unwrap().unwrap();
+        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &orgs_casc(), Mois::nouveau(2026, 9).unwrap(), 3).unwrap().unwrap();
         assert_eq!(c.reference.as_str(), "100");
         assert_eq!(c.lignes, [droit::forme_bareme::CCN]);
         // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
@@ -5317,9 +5371,9 @@ mod tests {
     fn pas_de_casc_hors_3090_avant_2025_ni_sur_un_mois_regularise() {
         let o = orgs_casc();
         let m = |an, numero| Mois::nouveau(an, numero).unwrap();
-        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("1285").unwrap()), ..Default::default() }, &o, m(2026, 9)).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2024, 12)).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b3", &[m(2026, 8)]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2026, 8)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("1285").unwrap()), ..Default::default() }, &o, m(2026, 9), 3).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2024, 12), 3).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b3", &[m(2026, 8)]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2026, 8), 3).unwrap().is_none());
     }
 
     // S21.G00.20.002 de France Travail (`atelier/reference/sources/francetravail-100-dsn/net-entreprises-fiche-3344-intermittents-20251113.html`).

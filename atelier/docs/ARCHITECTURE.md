@@ -1040,6 +1040,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | taux de PAS que la dernière DSN déposée d'un salarié dit (un taux transmis, qui se reçoit, ou un taux illisible, qui ne pose rien) | `compagnie::taux_pas::TauxDUneDsn` | `compagnie/src/taux_pas.rs` |
 | formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
+| place d'une affiliation dans le versement d'un individu | `PlaceDAffiliation` | `declarations/src/dsn.rs` |
+| numéro d'un versement d'un individu dans une DSN | `NumeroDeVersement` | `declarations/src/dsn.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectifs par année (les effectifs annuels A01 de la compagnie, et ce qui s'en lit : les seuils, le CSE, cinquante salariés) | `droit::contexte::EffectifsParAnnee` | `droit/src/contexte.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
@@ -1480,8 +1482,14 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   elle, le coefficient se calcule par `tmin`, `tdelta` et `puissance`. Une liste du logiciel.
 - **identifiant d'une affiliation** : l'« Identifiant technique Affiliation » de la norme, une seule rubrique sous deux
   blocs : le bloc 70 le déclare (S21.G00.70.012), la base 31 le cite (S21.G00.78.005) (`bloc-S21.G00.70.txt` l. 75-80,
-  `bloc-S21.G00.78.txt` l. 409-417). Le moteur le fait depuis la place de l'adhésion du contrat (`202` et suivants,
-  `declarations::dsn::affiliation_de_la_place`) ; le barème le nomme pour une cotisation (`affectation`, `202`, `203`)
+  `bloc-S21.G00.78.txt` l. 409-417). Il se compose à un seul endroit (`202` et suivants,
+  `declarations::dsn::identifiant_d_affiliation`), du rang du contrat sous l'individu et de la **place d'une
+  affiliation** (`PlaceDAffiliation` : la place de l'adhésion parmi celles de la nature du contrat ; pour un permanent,
+  la première est la prévoyance, la seconde la santé), chaque contrat se réservant un nombre de places
+  (`places_par_contrat`, un compte) ; sa relecture (`place_de`) rend une `PlaceDAffiliation`. Le **numéro d'un
+  versement** (`NumeroDeVersement`, S21.G00.50.003, de 01 à 99 : le premier, puis le suivant ; il s'écrit sur deux
+  chiffres par son affichage) n'est pas le rang du contrat : une régularisation d'un contrat aussi payé ce mois a le
+  rang de ce contrat et un numéro de versement à elle. Le barème nomme l'identifiant pour une cotisation (`affectation`, `202`, `203`)
   quand plusieurs partagent un code 81.001, et il distingue leur clé (`059:203`, `CleDeCotisationDsn`). Que portent la
   cotisation de la DSN (`dsn::Cotisation`), la contribution d'un mois, les affiliations d'un versement écrit ou déclaré
   (avec leur référence d'adhésion, 70.013), la ligne 81 d'une DSN relue et les relectures du fichier en cours
