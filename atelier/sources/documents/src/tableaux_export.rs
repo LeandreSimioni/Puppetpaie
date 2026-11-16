@@ -509,17 +509,6 @@ impl Ligne {
         self.poser(k, Some(Val::Rang(r)))
     }
 
-    /// Le montant `v` ajoute a celui de la case `k`, ou pose quand elle est vide : le cumul d'une ligne d'un etat de
-    /// synthese (le recapitulatif annuel, la masse salariale, le cout par spectacle).
-    pub fn ajouter(&mut self, k: ColonneDEtat, v: Montant) -> R<&mut Ligne> {
-        let total = match self.val(k) {
-            None => v,
-            Some(Val::Montant(avant)) => *avant + v,
-            Some(autre) => return Err(erreur(Classe::CalculImpossible, format!("La case « {} » porte « {} », pas un montant.", k.cle(), autre.en_texte_ecrit()))),
-        };
-        Ok(self.montant(k, total))
-    }
-
     pub fn rien(&mut self, k: ColonneDEtat) -> &mut Ligne {
         self.poser(k, None)
     }

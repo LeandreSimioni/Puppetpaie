@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use serde::Serialize;
 
-use crate::etats_paie::{self, Demande, Periode};
+use crate::etats_paie::{self, cumul_de, cumuls_par, Demande, LigneLivre, Periode};
 use crate::tableaux_export::{pdf_tableau, qui, totaliser, Section, Tableau, R, TOTAL_GENERAL};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, Echec};
@@ -93,56 +93,24 @@ impl<'a> Recapitulatifs<'a> {
         if p.mois.is_empty() {
             return Ok(out);
         }
-        struct Cumul {
-            bulletins: usize,
-            brut: Montant,
-            charges: Montant,
-            cout: Montant,
-            prevu: Montant,
-            incomplet: bool,
-        }
-        let zero = Montant::ZERO;
-        let mut cotes: [Vec<(String, Cumul)>; 2] = [Vec::new(), Vec::new()];
-        for l in etats_paie::lignes_livre(self.ctx, &p, &mut Vec::new(), &self.demande.departs)? {
-            for (i, cle) in [l.spectacle.as_str(), l.cle_salarie.as_str()].into_iter().enumerate() {
-                if cle.is_empty() {
-                    continue;
-                }
-                let pos = match cotes[i].iter().position(|(k, _)| k == cle) {
-                    Some(n) => n,
-                    None => {
-                        cotes[i].push((
-                            cle.to_string(),
-                            Cumul { bulletins: 0, brut: zero, charges: zero, cout: zero, prevu: zero, incomplet: false },
-                        ));
-                        cotes[i].len() - 1
-                    }
-                };
-                // Une somme que la piece importee ne disait pas ne s'ajoute pas ; un cout qui manque rend le cumul
-                // `incomplet`.
-                let d = &mut cotes[i][pos].1;
-                if l.mois > courant {
-                    d.prevu = l.cout_employeur.into_iter().fold(d.prevu, |a, m| a + m);
-                    continue;
-                }
-                d.bulletins += 1;
-                d.brut = l.brut.into_iter().fold(d.brut, |a, m| a + m);
-                d.charges = l.cotisations_patronales.into_iter().fold(d.charges, |a, m| a + m);
-                if l.cout_employeur.is_none() {
-                    d.incomplet = true;
-                }
-                d.cout = l.cout_employeur.into_iter().fold(d.cout, |a, m| a + m);
-            }
-        }
-        let [spectacles, salaries] = cotes.map(|v| {
-            v.into_iter()
-                .map(|(cle, d)| {
-                    (cle, Cout { bulletins: d.bulletins, brut: d.brut, charges: d.charges, cout: d.cout, prevu: d.prevu, incomplet: d.incomplet })
+        let lignes = etats_paie::lignes_livre(self.ctx, &p, &mut Vec::new(), &self.demande.departs)?;
+        // Les cles, dans l'ordre ou les paies les rencontrent ; leur cumul jusqu'au mois courant, et ce qui n'est que
+        // prevu apres lui (son seul cout). Une somme que les pieces importees taisent ne compte pas ; un cout qui manque
+        // rend le cumul `incomplet`.
+        let couts = |cle: &dyn Fn(&LigneLivre) -> Option<String>| -> Vec<(String, Cout)> {
+            let faits = cumuls_par(lignes.iter().filter(|l| l.mois <= courant), cle);
+            let prevus = cumuls_par(lignes.iter().filter(|l| l.mois > courant), cle);
+            cumuls_par(&lignes, cle)
+                .into_iter()
+                .map(|(k, _)| {
+                    let (f, prevu) = (cumul_de(&faits, &k), cumul_de(&prevus, &k).cout_employeur.montant);
+                    let incomplet = f.cout_employeur.dite < f.bulletins;
+                    (k, Cout { bulletins: f.bulletins, brut: f.brut.montant, charges: f.cotisations_patronales.montant, cout: f.cout_employeur.montant, prevu, incomplet })
                 })
                 .collect()
-        });
-        out.spectacles = spectacles;
-        out.salaries = salaries;
+        };
+        out.spectacles = couts(&|l| Some(l.spectacle.clone()).filter(|s| !s.is_empty()));
+        out.salaries = couts(&|l| Some(l.cle_salarie.to_string()));
         Ok(out)
     }
 

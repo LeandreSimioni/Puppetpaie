@@ -581,10 +581,10 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
             (EtatRendu::Casc(r), periode, ecrits, avertissements, false, Vec::new(), boite_liee)
         }
         Exporte::Livre(l) => {
-            let bulletins = l.totaux.bulletins;
+            let bulletins = l.totaux.bulletins();
             let partiels = l
                 .totaux
-                .inconnus
+                .inconnus()
                 .iter()
                 .map(|(colonne, n)| {
                     let sur = bulletins.saturating_sub(*n);

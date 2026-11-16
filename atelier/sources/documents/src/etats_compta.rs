@@ -1307,19 +1307,13 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
 fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Taux>, usize)> {
     let depart = jusqu_a.avant(socle::date::Duree::mois(12)).map_err(|x| x.reclasser(Classe::Illisible))?;
-    let (mut brut, mut pat, mut n) = (Montant::ZERO, Montant::ZERO, 0usize);
-    for l in lignes {
-        let (Some(b), Some(c)) = (l.brut, l.cotisations_patronales) else { continue };
-        if l.cle_salarie != *cle || !(depart < l.mois && l.mois <= jusqu_a) {
-            continue;
-        }
-        brut += b;
-        pat += c;
-        n += 1;
-    }
+    // Les bulletins du salarie sur les douze mois qui disent leur brut et leurs cotisations patronales.
+    let c = crate::etats_paie::CumulDuLivre::des(
+        lignes.iter().filter(|l| l.brut.is_some() && l.cotisations_patronales.is_some() && l.cle_salarie == *cle && depart < l.mois && l.mois <= jusqu_a),
+    );
     // Montant / montant = coefficient ; sans brut, pas de taux, et les bulletins lus restent ceux qu'ils sont.
-    let Some(part) = pat.rapport(brut) else { return Ok((None, n)) };
-    Ok((Some(part.en_taux().a_deux_decimales()), n))
+    let Some(part) = c.cotisations_patronales.montant.rapport(c.brut.montant) else { return Ok((None, c.bulletins)) };
+    Ok((Some(part.en_taux().a_deux_decimales()), c.bulletins))
 }
 
 /// LA PROVISION D'UNE ANNEE REPRISE D'UN ANCIEN LOGICIEL, au dernier jour du dernier mois repris `m` : celle de chaque

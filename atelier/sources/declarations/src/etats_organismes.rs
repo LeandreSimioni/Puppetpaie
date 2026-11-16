@@ -23,7 +23,7 @@ use droit::organismes::QualifiantDAssiette;
 use socle::echec::{erreur, refus_avec, Lieu, Classe};
 use socle::mois::Annee;
 use socle::mois::{Graphie, Mois};
-use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
+use documents::etats_paie::{cumul_de, cumuls_par, finir, lignes_livre, Demande, Lecture, Periode};
 use documents::plan_comptable::{EtatDExport, RegroupementDEtat};
 use socle::grandeurs::{Montant, Taux};
 use documents::tableaux_export::{libelle_mois, qui, refus, section_du_mois, sections_de, ColonneDEtat as C, Ligne, Section, Tableau, R};
@@ -608,27 +608,16 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut par_an: Vec<(Annee, Montant, Montant)> = Vec::new();
     // Un permanent est une nature MENSUELLE du catalogue des contrats.
     let mensuelles: Vec<String> = droit::natures::natures().map_err(|e| e.reclasser(Classe::Refuse))?.iter().filter(|n| n.mensuelle()).map(|n| n.libelle.clone()).collect();
-    for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        let Some(brut) = l.brut else { continue };
-        let an = l.mois.annee();
-        let i = match par_an.iter().position(|(a, _, _)| *a == an) {
-            Some(i) => i,
-            None => {
-                par_an.push((an, Montant::ZERO, Montant::ZERO));
-                par_an.len() - 1
-            }
-        };
-        par_an[i].1 += brut;
-        if mensuelles.contains(&l.libelle_nature) {
-            par_an[i].2 += brut;
-        }
-    }
+    let livre = lignes_livre(ctx, &p, &mut avert, &d.departs)?;
+    // La masse de chaque annee ou un bulletin dit son brut, et celle de ses permanents.
+    let mut par_an = cumuls_par(&livre, |l| l.brut.map(|_| l.mois.annee()));
     par_an.sort_by(|a, b| a.0.cmp(&b.0));
+    let des_permanents = cumuls_par(livre.iter().filter(|l| mensuelles.contains(&l.libelle_nature)), |l| l.brut.map(|_| l.mois.annee()));
     let mut lignes = Vec::new();
-    for (an, masse, masse_permanents) in par_an {
+    for (an, c) in par_an {
+        let (masse, masse_permanents) = (c.brut.montant, cumul_de(&des_permanents, &an).brut.montant);
         let Some(hb) = hors_bulletin(ctx, an, &idcc)? else {
             return Err(socle::echec::cle(format!("Le barème {} ne porte pas les contributions Afdas de la {}.", an, idcc), &format!("par_convention.{}.hors_bulletin", idcc))
                 .reclasser(Classe::Refuse));
@@ -718,14 +707,13 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let idcc = idcc_de(ctx)?;
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
-    // La masse de chaque annee : la somme de ses bruts, a partir de zero au centime.
-    let mut par_an: std::collections::BTreeMap<Annee, Montant> = std::collections::BTreeMap::new();
-    for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        let Some(brut) = l.brut else { continue };
-        *par_an.entry(l.mois.annee()).or_insert(Montant::ZERO) += brut;
-    }
+    // La masse de chaque annee ou un bulletin dit son brut : la somme de ses bruts.
+    let livre = lignes_livre(ctx, &p, &mut avert, &d.departs)?;
+    let mut par_an = cumuls_par(&livre, |l| l.brut.map(|_| l.mois.annee()));
+    par_an.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes = Vec::new();
-    for (an, masse) in par_an {
+    for (an, c) in par_an {
+        let masse = c.brut.montant;
         let f = hors_bulletin(ctx, an, &idcc)?.and_then(|h| h.financement_paritarisme);
         let Some(f) = f else {
             return Err(socle::echec::cle(

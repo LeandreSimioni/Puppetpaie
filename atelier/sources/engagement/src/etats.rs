@@ -666,6 +666,31 @@ impl PaieDuMois {
         }
     }
 
+    /// Les pieces d'une paie importee disent-elles ce qu'elle compte (une ligne de remuneration rattachee a une rubrique) ?
+    /// Une paie validee le dit toujours.
+    fn compte_dit(&self) -> bool {
+        match self {
+            PaieDuMois::Validee(_) => true,
+            PaieDuMois::Importee(p) => p.remuneration.iter().any(|r| r.unite.is_some()),
+        }
+    }
+
+    /// LES CACHETS DE LA PAIE : ceux que son engagement compte (la partie entiere de la somme de ses lignes de cachets, ce
+    /// que la DSN declare en activite) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique.
+    pub fn cachets(&self) -> Option<socle::grandeurs::Cachets> {
+        self.compte_dit().then_some(self.engagement().cachets)
+    }
+
+    /// LES HEURES DE LA PAIE POUR LES ANNEXES 8 ET 10 (un cachet compte pour les heures que sa rubrique declare) : celles
+    /// que le calcul a sommees (`heures_travaillees`), ou celles que l'import a sommees des lignes du bulletin dans
+    /// l'engagement ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique.
+    pub fn heures_annexes(&self) -> Option<socle::grandeurs::Heures> {
+        match self {
+            PaieDuMois::Validee(p) => Some(p.heures_travaillees),
+            PaieDuMois::Importee(p) => self.compte_dit().then(|| p.engagement.heures.into_iter().sum()),
+        }
+    }
+
     /// Les lignes de remuneration : celles du calcul, ou celles du bulletin importe.
     pub fn remuneration(&self) -> Vec<RemunerationDuMois> {
         match self {

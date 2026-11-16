@@ -1015,6 +1015,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | colonne d'un état | `ColonneDEtat` | `documents/src/tableaux_export.rs` |
 | code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
 | numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
+| cumul de lignes du livre de paie (combien de bulletins, et chacun de ses montants : le seul cumul des états, `cumuls_par` ; le livre, le récapitulatif annuel, la masse salariale, le coût par spectacle, le coût de l'année d'une fiche, la masse des contributions de branche, le taux patronal réel ; la clé et les lignes retenues se disent à la porte de chaque état) | `CumulDuLivre` | `documents/src/etats_paie.rs` |
+| somme d'un montant du livre sur des lignes (ce que portent celles qui le disent, et combien le disent : une paie importée peut le taire) | `SommeDuLivre` | `documents/src/etats_paie.rs` |
 | total d'un compte sur les écritures d'une période (son libellé, son débit, son crédit, son solde : le sous-total du grand livre et la ligne de la balance, un seul calcul, `totaux_par_compte`) | `TotalDuCompte` | `documents/src/etats_compta.rs` |
 | poste analytique | `PosteAnalytique` | `documents/src/ecritures_comptables.rs` |
 | code analytique d'un spectacle | `CodeAnalytique` | `droit/src/fiche.rs` |
