@@ -2230,7 +2230,8 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
-  note l'année faite.
+  note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien
+  elle-même : elle dit ce que cette régularisation ferait partir, ou son refus.
 - **Les écarts de calcul** (`import/ecarts.rs`, `engagement/src/ecarts.rs`) : à la fin de chaque import, et à
   l'ouverture de la compagnie pour les paies importées pas encore comparées (`journal/ecarts-import.json`), chaque paie
   importée se compare à ce que le moteur aurait calculé de la même saisie, avec les barèmes et la configuration à la

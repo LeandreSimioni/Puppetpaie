@@ -253,8 +253,25 @@ pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::EffectifsP
     Ok(droit::bareme::casc_exemptee(&du_mois.entreprise, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()))
 }
 
+/// CE QU'UNE DEMANDE DE REGULARISATION TROUVE : le dossier, ou rien a regulariser, et pourquoi (tout est regularise,
+/// porte par les DSN, ou hors du dispositif), dit comme l'export le dit.
+pub enum ARegulariser {
+    Dossier(Box<Regularisation>),
+    Rien(String),
+}
+
+impl ARegulariser {
+    /// Le dossier ; rien a regulariser refuse, en disant pourquoi.
+    pub fn dossier(self) -> R<Regularisation> {
+        match self {
+            ARegulariser::Dossier(r) => Ok(*r),
+            ARegulariser::Rien(pourquoi) => Err(refus(pourquoi)),
+        }
+    }
+}
+
 /// La regularisation CASC-SVP que demande `d`, calculee sans rien ecrire (l'ecriture des fichiers : `ecrire`).
-pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
+pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
     let base = droit::adhesions::casc_svp_base().map_err(|m| m.reclasser(Classe::Disque))?;
     let ent = &ctx.entreprise;
     let idcc = ent.idcc.exigee("idcc").map_err(|e| e.reclasser(Classe::Refuse))?;
@@ -290,7 +307,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     candidats.retain(|m| !exemptes.contains(m));
     let liste = |v: &[Mois]| v.iter().map(Mois::to_string).collect::<Vec<_>>().join(", ");
     if candidats.is_empty() && !exemptes.is_empty() {
-        return Err(refus(format!(
+        return Ok(ARegulariser::Rien(format!(
             "L'entreprise est hors du dispositif CASC-SVP (article 4.22 B : au moins 50 salaries, un CSE qui contribue au moins autant) pour {} : il n'y a rien a regulariser.",
             liste(&exemptes)
         )));
@@ -318,12 +335,12 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     }
     if lues.is_empty() {
         if !faits.is_empty() {
-            return Err(refus(format!(
+            return Ok(ARegulariser::Rien(format!(
                 "Tout est regularise : {}. Les DSN suivantes portent la CASC-SVP elles-memes.",
                 deja_faites(ctx)?
             )));
         }
-        return Err(refus(format!(
+        return Ok(ARegulariser::Rien(format!(
             "Aucun mois importe sans la CASC-SVP dans sa DSN depuis {} dans la periode demandee : rien a regulariser.",
             depuis
         )));
@@ -514,7 +531,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     a_faire.push("Vérifier que la fiche de paramétrage Audiens porte les deux lignes CASC-SVP, pour que les DSN suivantes la déclarent.".to_string());
 
     let boite = d.boite_liee;
-    Ok(Regularisation {
+    Ok(ARegulariser::Dossier(Box::new(Regularisation {
         etat: "regularisation-casc-svp",
         periode,
         virements_titre: if annees.len() > 1 { format!("Les {} virements", annees.len()) } else { "Le virement".to_string() },
@@ -530,7 +547,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         dossier: None,
         boite_liee: boite,
         emplois,
-    })
+    })))
 }
 
 fn fichier_suivi(ctx: &Contexte) -> std::path::PathBuf {
@@ -755,7 +772,7 @@ pub use declarations::casc::RegularisationNotee;
 /// La route `casc-regularise` note qu'une annee est regularisee. S'ecrit
 /// APRES le virement, jamais avant.
 pub fn marquer_regularise(ctx: &Contexte, annee: Annee, vire_le: Jour, montant: Montant, qui: &str, aujourd_hui: Jour) -> R<RegularisationNotee> {
-    let r = regularisation(ctx, &Demande { mois: None, annee: Some(annee), toutes_les_annees: false, jusqu_a: None, annees: Vec::new(), vire_le: Vec::new(), boite_liee: false })?;
+    let r = regularisation(ctx, &Demande { mois: None, annee: Some(annee), toutes_les_annees: false, jusqu_a: None, annees: Vec::new(), vire_le: Vec::new(), boite_liee: false })?.dossier()?;
     let p = fichier_suivi(ctx);
     let mut d = match declarations::casc::lue(ctx).map_err(|m| m.reclasser(Classe::Illisible))? {
         Some(d) => d,
