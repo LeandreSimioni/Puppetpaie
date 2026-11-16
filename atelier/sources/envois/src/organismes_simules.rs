@@ -20,6 +20,7 @@ use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, R};
 use socle::grandeurs::ecrit::norme;
+use droit::pas::TauxDePas;
 use socle::grandeurs::Taux;
 use socle::num::Decimal;
 
@@ -55,9 +56,15 @@ pub enum Annonce {
 #[serde(deny_unknown_fields)]
 pub struct TauxPasAnnonce {
     pub salarie: droit::contexte::IdSalarie,
-    /// En pourcentage (`7.50`), lu d'un nombre ou d'un texte, ecrit en texte tel qu'annonce.
-    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
-    pub taux: Taux,
+    /// En pourcentage (`7.50`), lu d'un nombre ou d'un texte, ecrit dans la forme de la norme.
+    #[serde(deserialize_with = "taux_pas_annonce")]
+    pub taux: TauxDePas,
+}
+
+/// Le taux de PAS annonce : un taux, lu d'un nombre ou d'un texte, qui a la forme d'un taux de PAS (`TauxDePas::du_taux`).
+fn taux_pas_annonce<'de, D: serde::Deserializer<'de>>(d: D) -> Result<TauxDePas, D::Error> {
+    let t: Taux = socle::grandeurs::lu::nombre_ou_texte::deserialize(d)?;
+    TauxDePas::du_taux(t).ok_or_else(|| serde::de::Error::custom("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100."))
 }
 
 /// Le code risque annonce, range comme une saisie (`CodeRisqueAt::rangee` : `92.3AD` se lit `923AD`).
@@ -174,9 +181,6 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
     };
     match annonce.clone() {
         Annonce::TauxPas(t) => {
-            if !(Taux::ZERO..=Taux::CENT_POUR_CENT).contains(&t.taux) {
-                return Err(socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas").reclasser(Classe::Illisible));
-            }
             gardee.taux_pas = Some(t);
         }
         Annonce::TauxAtmp(t) => {
@@ -390,10 +394,11 @@ fn bilans_refuses(flux: &IdDeFlux, publication: Moment, l: &Ligne, nature: Natur
 /// LE TAUX DE SIMULATION d'un salarie dont le scenario n'annonce aucun taux : la DGFiP simulee le connait comme la vraie
 /// connait celui de tout contribuable identifie. Il ne vient d'aucun texte ni d'aucun avis d'imposition : c'est un
 /// nombre tire du NIR (FNV-1a), stable d'un compte rendu a l'autre, de 0,00 % a 12,00 % par dixieme.
-fn taux_de_simulation(nir: &droit::fiche::Nir) -> Taux {
+fn taux_de_simulation(nir: &droit::fiche::Nir) -> R<TauxDePas> {
     let h = nir.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
     // (h % 121) dixiemes de point, en centiemes de point.
-    Taux::centiemes_de_point((h % 121) as u32 * 10)
+    let t = Taux::centiemes_de_point((h % 121) as u32 * 10);
+    TauxDePas::du_taux(t).ok_or_else(|| erreur(Classe::CalculImpossible,format!("taux de simulation hors de la forme d'un taux de PAS : {}", socle::grandeurs::ecrit::texte::dit(t))))
 }
 
 /// Le compte rendu DGFiP de nature 94 d'une DSN mensuelle ou d'un signalement d'amorcage reels : le taux est « mis à
@@ -406,7 +411,7 @@ fn taux_de_simulation(nir: &droit::fiche::Nir) -> Taux {
 /// `taux_imposition_PAS`). `None` quand la declaration ne porte aucun salarie de la compagnie.
 fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publication: Moment) -> R<Option<Piece>> {
     let depot = l.quand().jour();
-    let mut taux: BTreeMap<droit::contexte::IdSalarie, Taux> = BTreeMap::new();
+    let mut taux: BTreeMap<droit::contexte::IdSalarie, TauxDePas> = BTreeMap::new();
     for a in &memoire.annonces {
         let Some(t) = &a.taux_pas else { continue };
         if a.le <= depot {
@@ -423,13 +428,13 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDe
         // Le taux annonce ; sans annonce, celui de la simulation.
         let t = match taux.get(cle) {
             Some(t) => *t,
-            None => taux_de_simulation(nir_de_la_fiche),
+            None => taux_de_simulation(nir_de_la_fiche)?,
         };
         salaries.push_str(&format!(
             "<salarie><NIR>{}</NIR><matricule>{}</matricule><taux_imposition_PAS>{}</taux_imposition_PAS></salarie>",
             echappe(&nir),
             element(ind.code_salarie.as_deref()),
-            norme::taux(t, 2)
+            t
         ));
     }
     if salaries.is_empty() {
