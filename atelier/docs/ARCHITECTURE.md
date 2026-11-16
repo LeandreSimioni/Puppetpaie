@@ -290,7 +290,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | base d'une ligne de cotisation, valeur d'une assiette d'une paie (calculée, ou que les pièces d'une paie importée disent) | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures`) | `engagement/src/calcul.rs` |
 | signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
 | plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure) | `droit/src/plafond.rs` |
-| taille d'un fichier (une image posée et son poids visé, ce que la sauvegarde envoie et la restauration redescend, une archive, une capture, ce qu'une mise à jour reçoit) | `Octets` (écrite en octets dans un fichier, tapée en Ko dans une saisie, `Octets::ko` ; dite d'une seule façon, `Display` : en Ko au centième, en Mo au dixième au-delà de mille Ko ; octets / octets = coefficient, `rapport`) | `socle/src/grandeurs.rs` |
+| taille d'un fichier (une image posée et son poids visé, ce que la sauvegarde envoie et la restauration redescend, une archive, une capture, ce qu'une mise à jour reçoit) | `Octets` (écrite en octets dans un fichier, tapée en Ko dans une saisie, `Octets::ko` ; dite d'une seule façon, par son affichage : en Ko au centième, en Mo au dixième au-delà de mille Ko ; octets / octets = coefficient, `rapport`) | `socle/src/grandeurs.rs` |
 | nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
 
 **Le détail**
