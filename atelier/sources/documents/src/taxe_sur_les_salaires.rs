@@ -118,7 +118,7 @@ decembre ne se fait pas.",
             champs.push("part_tva");
             let part = match fiche.and_then(|f| f.part_tva.dite()) {
                 None => None,
-                Some(v) => match v.grandeur::<Taux>() {
+                Some(v) => match v.en::<Taux>("Part du chiffre d'affaires soumise à la TVA") {
                     Ok(p) if p >= Taux::ZERO && p <= Taux::CENT_POUR_CENT => Some(p),
                     _ => {
                         return manque(

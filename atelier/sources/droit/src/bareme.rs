@@ -648,7 +648,7 @@ permanents » : le taux du contrat (en % du plafond mensuel, pour le salarié se
         if sans_sante(sal, au_mois) {
             return Ok(sans_mutuelle(bar));
         }
-        let total: Taux = taux_contrat.grandeur()?;
+        let total: Taux = taux_contrat.en("Santé des permanents, taux du contrat")?;
         let pp = choix.and_then(|c| c.part_patronale.dite());
         let minimum = bar.sante_obligatoire.as_ref().ok_or_else(|| socle::fichiers::absent("sante_obligatoire"))?.part_employeur_minimum;
         let Some(pp) = pp else {
@@ -658,7 +658,7 @@ code de la Securite sociale) ; elle est sur le contrat de complémentaire santé
                 minimum.decimal()
             ));
         };
-        let part: Taux = pp.grandeur()?;
+        let part: Taux = pp.en("Santé des permanents, part employeur")?;
         if part < minimum || part > Taux::CENT_POUR_CENT {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Santé des permanents », part employeur {} % : \
@@ -1247,7 +1247,7 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
     // « aucun », ou un taux de zero : la commune de l'etablissement n'en a pas, ou il y emploie moins de onze salaries
     // (CGCT, L. 2333-64, I, l'effectif « employe dans chacune des zones »).
     let vm = e.versement_mobilite.dite();
-    let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).map(socle::forme::NombreEcrit::grandeur).transpose()?;
+    let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).map(|t| t.en("Taux du versement mobilité")).transpose()?;
     let aucun = taux_vm.is_some_and(Taux::est_nul);
     if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.as_ref().is_none_or(VersementMobiliteEcrit::est_vide)) {
         bar.versement_mobilite = None;
@@ -2017,7 +2017,7 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: Annee, socle_an: O
             an, nom, pourquoi),
         )))
     };
-    let valeur = match dit.valeur.as_ref().map(socle::forme::NombreEcrit::grandeur::<Taux>).transpose() {
+    let valeur = match dit.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP")).transpose() {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
     };
@@ -2051,7 +2051,7 @@ fn code_risque_valide(code: &str) -> bool {
 /// un taux sans la date a partir de laquelle il vaut (celle de la notification). `None` : rien a redire.
 pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> R<Option<String>> {
     let code = t.code_risque.as_ref();
-    let valeur = t.valeur.as_ref().map(socle::forme::NombreEcrit::grandeur::<Taux>).transpose()?;
+    let valeur = t.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP")).transpose()?;
     Ok(match (code, valeur) {
         (None, Some(_)) => Some("Le taux AT/MP se dit avec son code risque, tel que la notification de la CARSAT les écrit.".to_string()),
         (Some(c), Some(_)) if *c == SANS_NOTIFICATION => Some("Avec 999ZZ (pas encore de notification), la DSN ne déclare aucun taux (norme DSN, S21.G00.40.043) : laissez le taux vide.".to_string()),
@@ -2064,7 +2064,7 @@ pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> R<Option<String>> {
 /// Les deux lignes du taux AT/MP disent-elles le meme code, le meme taux (en nombre : 2 et 2,0 sont le meme) et la meme
 /// date, d'ou qu'elles viennent ?
 pub fn meme_taux_atmp(a: &crate::fiche::TauxAtmp, b: &crate::fiche::TauxAtmp) -> bool {
-    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.grandeur::<Taux>().map(socle::grandeurs::sans_zero).map_err(|e| e.phrase));
+    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP").map(socle::grandeurs::sans_zero).map_err(|e| e.phrase));
     a.code_risque == b.code_risque && a.depuis == b.depuis && taux(a) == taux(b)
 }
 
@@ -2076,7 +2076,7 @@ pub fn taux_atmp_a_confirmer(recue: Option<&crate::fiche::TauxAtmp>, apres: &cra
         Some(a) => a,
         None => return Ok(None),
     };
-    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.grandeur::<Taux>().map(socle::grandeurs::sans_zero)).transpose();
+    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP").map(socle::grandeurs::sans_zero)).transpose();
     if a.code_risque == apres.code_risque && taux(a)? == taux(apres)? {
         return Ok(None);
     }

@@ -226,31 +226,15 @@ pub(crate) struct ChargeNature {
     pub(crate) debut: Option<Jour>,
     pub(crate) fin: Option<Jour>,
     pub(crate) numero: Option<engagement::numeros::NumeroContrat>,
-    pub(crate) salaire: Option<MontantSaisi>,
+    /// Le salaire tel que la personne l'a tape (« 1 850,00 »), ou un nombre.
+    pub(crate) salaire: Option<socle::forme::NombreEcrit>,
     pub(crate) quotite: Option<socle::grandeurs::Heures>,
 }
 
-/// Un montant tel qu'il se saisit : un texte (« 1 850,00 ») ou un nombre.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged)]
-pub(crate) enum MontantSaisi {
-    Texte(String),
-    Nombre(socle::forme::NombreLu),
-}
-
-impl MontantSaisi {
-    fn texte(&self) -> String {
-        match self {
-            MontantSaisi::Texte(t) => t.clone(),
-            MontantSaisi::Nombre(n) => n.to_string(),
-        }
-    }
-}
-
 impl ChargeNature {
-    /// Le salaire demande, tel qu'il est dit, sans ses blancs ; rien pour une case vide.
-    fn salaire(&self) -> Option<String> {
-        self.salaire.as_ref().map(MontantSaisi::texte).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    /// Le salaire demande, tel qu'il est tape ; rien pour une case blanche.
+    fn salaire(&self) -> Option<&socle::forme::NombreEcrit> {
+        self.salaire.as_ref().filter(|n| !matches!(n, socle::forme::NombreEcrit::Texte(t) if t.trim().is_empty()))
     }
 }
 
@@ -327,10 +311,11 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
             }
             Demande::Salaire => {
                 let v = charge.salaire().ok_or_else(manque)?;
-                match socle::num::decimal_a_virgule(&v).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreLu::de_decimal) {
-                    Some(n) => contrat.salaire_mensuel = Some(n),
-                    None => return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", v))),
-                };
+                let salaire: socle::grandeurs::MontantUnitaire = v.en("Salaire mensuel brut")?;
+                if salaire <= socle::grandeurs::MontantUnitaire::ZERO {
+                    return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", v.ecrit())));
+                }
+                contrat.salaire_mensuel = Some(socle::forme::NombreLu::de_grandeur(salaire));
             }
             Demande::Quotite => {
                 let h = charge.quotite.ok_or_else(manque)?;
@@ -433,7 +418,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
             let pose = match champ {
                 Demande::Numero => Some(charge.numero = Some(numero.clone())),
                 Demande::Salaire => match p.paie.mesures.salaire_habituel {
-                    Some(m) => Some(charge.salaire = Some(MontantSaisi::Texte(socle::grandeurs::ecrit::texte::texte(m).map_err(socle::echec::refus)?))),
+                    Some(m) => Some(charge.salaire = Some(socle::forme::NombreEcrit::de_grandeur(m))),
                     None => None,
                 },
                 Demande::Debut => c.map(|c| charge.debut = Some(c.periode.debut())),

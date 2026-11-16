@@ -591,7 +591,7 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubriqu
         sens: dite(f.sens, "sens", &faute)?,
         // Une case de fiche garde le nombre tel qu'on l'a ecrit (`NombreEcrit`) : sa grandeur se lit ici, a la porte de
         // la fiche.
-        heures_forfait: f.heures_forfait.map(|m| m.grandeur().map(socle::grandeurs::courte::<socle::grandeurs::HeuresParUnite>)).transpose()?,
+        heures_forfait: f.heures_forfait.map(|m| m.en("Heures du forfait").map(socle::grandeurs::courte::<socle::grandeurs::HeuresParUnite>)).transpose()?,
         plafond: f.plafond,
         aem: f.aem,
         dsn_type: f.dsn_type,

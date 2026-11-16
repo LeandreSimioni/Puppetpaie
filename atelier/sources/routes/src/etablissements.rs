@@ -179,7 +179,7 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
             }
         }
         if let Some(vm) = &o.versement_mobilite {
-            let paye = vm.taux.as_ref().map(socle::forme::NombreEcrit::grandeur::<socle::grandeurs::Taux>).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|t| !t.est_nul());
+            let paye = vm.taux.as_ref().map(|t| t.en::<socle::grandeurs::Taux>("Taux du versement mobilité")).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|t| !t.est_nul());
             if paye && vm.code_insee.remplie().map(|c| c.trim().chars().count()) != Some(5) {
                 griefs.push(format!("{} : le code INSEE de sa commune (cinq caractères), que la DSN déclare avec le versement mobilité", nom));
             }

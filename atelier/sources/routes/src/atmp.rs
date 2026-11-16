@@ -44,9 +44,9 @@ fn socle_de(an: Annee) -> R<Option<droit::forme_bareme::Pile>> {
     droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-/// Le taux que la ligne `t` de la case dit, lu de son ecriture (`NombreEcrit::grandeur`).
+/// Le taux que la ligne `t` de la case dit, lu de son ecriture (`NombreEcrit::en`).
 fn taux(t: &TauxAtmp) -> R<Option<Taux>> {
-    t.valeur.as_ref().map(NombreEcrit::grandeur::<Taux>).transpose().map_err(|m| m.reclasser(Classe::Illisible))
+    t.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP")).transpose().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 // ------------------------------------------------------------------ les sources
@@ -258,7 +258,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
 /// code et du meme taux que celle en vigueur, d'ou qu'elle vienne, n'est pas un changement.
 fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Option<LigneDite>, Option<LigneDite>, Option<LigneDite>)> {
     let liste: Vec<droit::fiche::Datee<TauxAtmp>> = liste.iter().map(|d| droit::fiche::Datee { valeur: d.valeur.clone().filter(|t| !t.est_vide()), ..d.clone() }).collect();
-    let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.grandeur::<socle::grandeurs::Taux>().map(socle::grandeurs::sans_zero).map_err(|e| e.phrase));
+    let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.en::<socle::grandeurs::Taux>("Taux AT/MP").map(socle::grandeurs::sans_zero).map_err(|e| e.phrase));
     let temps = droit::fiche::temps_au(&liste, aujourdhui, |a, b| a.code_risque == b.code_risque && taux(a) == taux(b)).map_err(|m| m.reclasser(Classe::Illisible))?;
     let dite = |devant: &str, t: Option<&TauxAtmp>, depuis: Option<Jour>, jusqu_au: Option<Jour>, note: Option<String>| -> R<LigneDite> {
         let mut l = match t.filter(|t| !t.est_vide()) {

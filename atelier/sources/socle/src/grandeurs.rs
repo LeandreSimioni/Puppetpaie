@@ -24,6 +24,9 @@ mod scelle {
     pub trait Scelle {
         fn en_decimal(self) -> Decimal;
         fn du(d: Decimal) -> Self;
+        /// Le signe de son unite, tel qu'une personne le tape apres le nombre (« % », « € ») ; aucun pour une grandeur
+        /// qui n'en a pas.
+        const SIGNES: &'static [&'static str];
     }
 }
 
@@ -32,7 +35,10 @@ use scelle::Scelle;
 /// Une grandeur par nom : son decimal, sa porte de sortie, l'addition et la soustraction de deux grandeurs de meme nom,
 /// sa lecture.
 macro_rules! grandeurs {
-    ($($nom:ident, $doc:literal;)*) => {$(
+    ($($nom:ident, [$($signe:literal),*], $doc:literal;)*) => {
+        /// Les signes d'unite de toutes les grandeurs : un signe d'une autre unite que celle de la case se refuse.
+        const TOUS_LES_SIGNES: &[&str] = &[$($($signe,)*)*];
+        $(
         #[doc = $doc]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $nom(Decimal);
@@ -78,6 +84,7 @@ macro_rules! grandeurs {
             fn du(d: Decimal) -> $nom {
                 $nom(d)
             }
+            const SIGNES: &'static [&'static str] = &[$($signe),*];
         }
 
         impl Grandeur for $nom {}
@@ -118,18 +125,18 @@ macro_rules! grandeurs {
 }
 
 grandeurs! {
-    Montant, "UN MONTANT : une somme en euros (`1512.40`).";
-    Taux, "UN TAUX : un pourcentage applique a une base, ecrit en pourcent comme la norme et les baremes (`6.90` : 6,90 %).";
-    Heures, "DES HEURES : une quantite d'heures (`151.67`).";
-    Cachets, "DES CACHETS : une quantite de cachets (`2`).";
-    Jours, "DES JOURS : une quantite de jours (`4.92`).";
-    Coefficient, "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).";
-    MontantUnitaire, "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.";
-    Services, "DES SERVICES : une quantite de services de repetition (`14`).";
-    Semaines, "DES SEMAINES : une quantite de semaines (`2`).";
-    Unites, "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
-    HeuresParUnite, "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
-    Effectif, "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.";
+    Montant, ["€"], "UN MONTANT : une somme en euros (`1512.40`).";
+    Taux, ["%"], "UN TAUX : un pourcentage applique a une base, ecrit en pourcent comme la norme et les baremes (`6.90` : 6,90 %).";
+    Heures, ["h"], "DES HEURES : une quantite d'heures (`151.67`).";
+    Cachets, [], "DES CACHETS : une quantite de cachets (`2`).";
+    Jours, [], "DES JOURS : une quantite de jours (`4.92`).";
+    Coefficient, [], "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).";
+    MontantUnitaire, ["€"], "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.";
+    Services, [], "DES SERVICES : une quantite de services de repetition (`14`).";
+    Semaines, [], "DES SEMAINES : une quantite de semaines (`2`).";
+    Unites, [], "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
+    HeuresParUnite, ["h"], "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
+    Effectif, [], "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.";
 }
 
 /// UNE GRANDEUR SANS ZERO INUTILE (`12.50` devient `12.5`, `24.0` devient `24`, `-0` devient `0`), comme l'ecrit
@@ -760,11 +767,17 @@ impl std::ops::Mul<MontantUnitaire> for Coefficient {
 
 /// LE NOMBRE ECRIT D'UNE CASE (`forme::NombreEcrit`) : sa grandeur, et la grandeur qu'on y ecrit, a sa porte.
 impl crate::forme::NombreEcrit {
-    /// LA GRANDEUR QU'IL DIT (une case d'une fiche : un taux, des jours, un montant), lue de son ecriture comme une
-    /// rubrique de la norme (`lu::norme`), son echelle gardee : la porte de sa lecture. Un texte illisible se refuse.
-    pub fn grandeur<G: Grandeur>(&self) -> crate::echec::R<G> {
-        let t = self.ecrit();
-        lu::norme(&t).ok_or_else(|| crate::echec::refus(num::illisible(&t)))
+    /// LA GRANDEUR QU'IL DIT dans la case `case` (un taux, des jours, un montant), son echelle gardee : un nombre tel
+    /// qu'il est, un texte tape par la seule conversion d'une saisie (`lu::tapee`) ; la porte de sa lecture. Ce qui ne se
+    /// convertit pas se refuse en nommant la case.
+    pub fn en<G: Grandeur>(&self, case: &str) -> crate::echec::R<G> {
+        let d = match self {
+            crate::forme::NombreEcrit::Entier(i) => Decimal::from(*i),
+            crate::forme::NombreEcrit::Naturel(u) => Decimal::from(*u),
+            crate::forme::NombreEcrit::Flottant(x) => *x,
+            crate::forme::NombreEcrit::Texte(t) => return lu::tapee(t).map_err(|p| crate::echec::refus(format!("{} : {}", case, p))),
+        };
+        Ok(G::du(d))
     }
 
     /// LE COMPTE QU'IL DIT (le nombre d'enfants couverts), sa partie entiere : la porte de sa lecture. Un texte
@@ -804,6 +817,39 @@ impl crate::forme::NombreLu {
 pub mod lu {
     use crate::grandeurs::Grandeur;
     use crate::num::{self, Decimal};
+
+    /// LA GRANDEUR QU'UNE PERSONNE A TAPEE, la seule conversion d'une saisie (Leandre, 16/11 : « si la personne ecrit
+    /// 1,5 %, on transforme en 1,5 ») : la virgule ou le point pour les decimales, l'espace (insecable comprise) entre
+    /// les milliers, le signe de l'unite de la grandeur retire s'il est la (`Scelle::SIGNES` : « % » d'un taux, « € »
+    /// d'un montant), son echelle gardee (« 2,50 » : `2.50`). Ce qui ne se convertit pas, ou fait douter, se refuse et
+    /// dit pourquoi : un point et une virgule ensemble, deux separateurs, un separateur suivi de trois chiffres apres un
+    /// entier qui n'est pas nul (« 1.500 », « 1,500 » : des milliers ou des decimales ?), le signe d'une autre unite.
+    pub fn tapee<G: Grandeur>(t: &str) -> Result<G, String> {
+        let cite = crate::fichiers::repr(t);
+        let net: String = t.chars().filter(|c| !c.is_whitespace() && !matches!(c, '\u{a0}' | '\u{202f}')).collect();
+        let net = match <G as crate::grandeurs::Scelle>::SIGNES.iter().find_map(|s| net.strip_suffix(s).or_else(|| net.strip_prefix(s))) {
+            Some(sans) => sans.to_string(),
+            None => net,
+        };
+        if super::TOUS_LES_SIGNES.iter().any(|s| net.contains(s)) {
+            return Err(format!("{} porte le signe d'une autre unité", cite));
+        }
+        let (points, virgules) = (net.matches('.').count(), net.matches(',').count());
+        if points > 0 && virgules > 0 {
+            return Err(format!("{} porte un point et une virgule : écrire le nombre avec une seule virgule, sans séparer les milliers ou en les séparant d'une espace", cite));
+        }
+        if points + virgules > 1 {
+            return Err(num::illisible(t));
+        }
+        let net = net.replace(',', ".");
+        if let Some((entier, decimales)) = net.split_once('.') {
+            let entier = entier.trim_start_matches(['-', '+']);
+            if decimales.len() == 3 && decimales.chars().all(|c| c.is_ascii_digit()) && !matches!(entier, "" | "0") {
+                return Err(format!("{} fait douter : des milliers ou des décimales ? Séparer les milliers d'une espace (« 1 500 »)", cite));
+            }
+        }
+        num::decimal_lu(&net).map(<G as crate::grandeurs::Scelle>::du).ok_or_else(|| num::illisible(t))
+    }
 
     /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT (une case d'un formulaire, d'une attestation, d'un bulletin), a la
     /// francaise ou non (`num::decimal_a_virgule` : « 12,5 », « 12.50 »), son echelle gardee : la porte de sa lecture ;

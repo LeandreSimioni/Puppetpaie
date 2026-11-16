@@ -483,21 +483,13 @@ fn retenir_logiciel(ctx: &Contexte, c: ChargeRetenirLogiciel) -> R<LogicielReten
     Ok(LogicielRetenu { phrase, compta })
 }
 
-/// Un nombre d'une charge, ecrit en nombre ou tel que la page le saisit (« 12.80 »).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum NombreDit {
-    Nombre(socle::forme::NombreLu),
-    Texte(String),
-}
-
-/// La charge de `casc-regularise` : l'annee, le jour du virement, le montant vire.
+/// La charge de `casc-regularise` : l'annee, le jour du virement, le montant vire tel que la personne l'a tape.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCascRegularise {
     annee: Annee,
     vire_le: Jour,
-    montant: NombreDit,
+    montant: socle::forme::NombreEcrit,
 }
 
 /// Ce que rend `casc-regularise` : sa phrase, et la regularisation notee.
@@ -508,19 +500,12 @@ struct CascNotee {
     notee: RegularisationNotee,
 }
 
-/// Le montant vire, ecrit en nombre ou en texte (« 12.80 », « 12,80 ») ; un montant qui ne se lit pas se refuse.
-fn montant_vire(m: &NombreDit) -> R<socle::num::Decimal> {
-    match m {
-        NombreDit::Nombre(n) => Ok(n.decimal()?.normalize()),
-        NombreDit::Texte(t) => socle::num::decimal_a_virgule(t)
-            .ok_or_else(|| socle::echec::refus("Le montant viré ne se lit pas (montant).".to_string()).reclasser(Classe::Illisible)),
-    }
-}
-
-/// Note qu'une annee de CASC-SVP est regularisee (apres le virement).
+/// Note qu'une annee de CASC-SVP est regularisee (apres le virement) ; le montant tape se convertit une fois
+/// (`NombreEcrit::en`), et ce qui ne se convertit pas se refuse.
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     let aujourd_hui = socle::temps::secondes().a_la_seconde().jour_de_paris();
-    let notee = marquer_regularise(ctx, c.annee,c.vire_le, montant_vire(&c.montant)?, INTERFACE, aujourd_hui)?;
+    let vire = socle::grandeurs::sans_zero(c.montant.en::<socle::grandeurs::Montant>("Montant viré").map_err(|m| m.reclasser(Classe::Illisible))?);
+    let notee = marquer_regularise(ctx, c.annee, c.vire_le, vire.decimal(), INTERFACE, aujourd_hui)?;
     let montant = socle::texte::euros(socle::grandeurs::Montant::du_decimal(notee.montant));
     Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
 }

@@ -832,23 +832,21 @@ fn deriver_etablissements(p: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
     Ok(fautes)
 }
 
-/// UN MONTANT SAISI EN TEXTE (`12,5`, `1.5 %`) S'ECRIT EN NOMBRE, dans sa forme la plus courte, comme un nombre lu du
-/// fichier ; un texte blanc ne dit rien. Rend la faute d'un texte qui n'est pas un nombre.
+/// UN TAUX TAPE EN TEXTE (`12,5`, `1,5 %`) S'ECRIT EN NOMBRE, converti par la seule conversion d'une saisie
+/// (`NombreEcrit::en`), dans sa forme la plus courte ; un texte blanc ne dit rien. Rend la faute d'un texte qui ne se
+/// convertit pas.
 fn montant_saisi(m: &mut Option<socle::forme::NombreEcrit>, quoi: &str) -> Option<String> {
-    let Some(socle::forme::NombreEcrit::Texte(brut)) = m.as_ref() else { return None };
-    let brut = brut.replace('%', "");
-    let brut = brut.trim();
-    if brut.is_empty() {
+    let Some(n @ socle::forme::NombreEcrit::Texte(brut)) = m.as_ref() else { return None };
+    if brut.trim().is_empty() {
         *m = None;
         return None;
     }
-    let Some(d) = socle::num::decimal_a_virgule(brut) else { return Some(format!("{} illisible : {}.", quoi, brut)) };
-    match socle::forme::lire_texte::<socle::forme::NombreEcrit>(&socle::num::court(d).to_string(), "Le nombre ne se lit pas.") {
-        Ok(lu) => {
-            *m = Some(lu);
+    match n.en::<socle::grandeurs::Taux>(quoi) {
+        Ok(t) => {
+            *m = Some(socle::forme::NombreEcrit::de_grandeur(t));
             None
         }
-        Err(e) => Some(format!("{} illisible : {} ({}).", quoi, brut, e.phrase)),
+        Err(e) => Some(e.phrase),
     }
 }
 

@@ -378,7 +378,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         if an >= an_paie {
             return Err(erreur(Classe::Refuse, format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
         }
-        let x = v.grandeur::<Effectif>().map_err(|m| m.reclasser(Classe::Illisible))?;
+        let x = v.en::<Effectif>("Effectif").map_err(|m| m.reclasser(Classe::Illisible))?;
         if x < Effectif::ZERO {
             return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", v.ecrit())));
         }
