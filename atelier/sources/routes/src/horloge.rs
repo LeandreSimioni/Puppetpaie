@@ -62,7 +62,7 @@ use socle::date::Jour;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
-use socle::paris::Moment;
+use socle::paris::{HeureDuJour, Moment};
 use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
 use envois::etats;
@@ -165,11 +165,11 @@ fn mois_fr(mois: Mois) -> String {
     mois.libelle(socle::mois::Graphie::Accentuee)
 }
 
-/// `jour` a `heure:minute`, a Paris ; une heure que le changement d'heure saute se refuse.
-fn a_l_heure(jour: Jour, heure: i64, minute: i64) -> R<Moment> {
-    let m = Moment::a_paris(jour, heure, minute, 0).ok_or_else(|| erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))?;
-    if m.jour_de_paris() != jour || m.seconde_du_jour_de_paris() != heure * 3_600 + minute * 60 {
-        return Err(erreur(Classe::DefautDuLogiciel, format!("L'instant d'un pas de l'horloge n'existe pas a Paris : {} a {:02}:{:02}.", jour.iso(), heure, minute)));
+/// `jour` a l'heure `heure`, a Paris ; une heure que le changement d'heure saute se refuse.
+fn a_l_heure(jour: Jour, heure: HeureDuJour) -> R<Moment> {
+    let m = Moment::a_paris(jour, heure).ok_or_else(|| erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))?;
+    if m.jour_de_paris() != jour || m.heure_de_paris() != heure {
+        return Err(erreur(Classe::DefautDuLogiciel, format!("L'instant d'un pas de l'horloge n'existe pas a Paris : {} a {}.", jour.iso(), heure)));
     }
     Ok(m)
 }
@@ -512,22 +512,22 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     for debut in debuts {
         let j = debut.jj_mm_aaaa();
         calendrier.push(Pas {
-            quand: a_l_heure(debut, 5, 0)?,
+            quand: a_l_heure(debut, const { HeureDuJour::a(5, 0) })?,
             quoi: format!("engagements de l'embauche du {} validés", j),
             geste: Geste::Valider { mois: le_mois, jusqu_au: debut },
         });
         calendrier.push(Pas {
-            quand: a_l_heure(debut, 6, 0)?,
+            quand: a_l_heure(debut, const { HeureDuJour::a(6, 0) })?,
             quoi: format!("contrats de l'embauche du {} envoyés à la signature", j),
             geste: Geste::Contrats { mois: le_mois, debut },
         });
         calendrier.push(Pas {
-            quand: a_l_heure(debut, 7, 0)?,
+            quand: a_l_heure(debut, const { HeureDuJour::a(7, 0) })?,
             quoi: format!("DPAE de l'embauche du {} envoyée", j),
             geste: Geste::Dpae { mois: le_mois, debut },
         });
         calendrier.push(Pas {
-            quand: a_l_heure(debut, 8, 0)?,
+            quand: a_l_heure(debut, const { HeureDuJour::a(8, 0) })?,
             quoi: format!("contrats de l'embauche du {} revenus signés", j),
             geste: Geste::Signes { mois: le_mois, debut },
         });
@@ -562,7 +562,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
         _ => suivant,
     };
     calendrier.push(Pas {
-        quand: a_l_heure(valide_le, 9, 0)?,
+        quand: a_l_heure(valide_le, const { HeureDuJour::a(9, 0) })?,
         quoi: format!("engagements de {} validés", mois_fr(mois)),
         geste: Geste::Valider { mois: le_mois, jusqu_au: fin },
     });
@@ -582,12 +582,12 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
             .iter()
             .filter_map(|o| o.brut.valide.as_ref().map(|v| v.le))
             .max();
-        let documents = a_l_heure(echeance, 11, 0)?;
+        let documents = a_l_heure(echeance, const { HeureDuJour::a(11, 0) })?;
         let documents = match revalide {
             Some(r) if r > documents => r,
             _ => documents,
         };
-        (a_l_heure(echeance, 10, 0)?, documents)
+        (a_l_heure(echeance, const { HeureDuJour::a(10, 0) })?, documents)
     };
     calendrier.push(Pas { quand: quand_dsn, quoi: format!("DSN de {} déposée", mois_fr(mois)), geste: Geste::Dsn { mois: le_mois, echeance } });
     calendrier.push(Pas {
@@ -605,9 +605,9 @@ fn les_pas_de_l_annee(annee: Annee, jour: Jour, calendrier: &mut Vec<Pas>) -> R<
         return Ok(());
     }
     let precedente = annee.precedente()?;
-    calendrier.push(Pas { quand: a_l_heure(fin_janvier, 10, 0)?, quoi: format!("exercice {} clos", precedente), geste: Geste::Cloture { annee: precedente } });
+    calendrier.push(Pas { quand: a_l_heure(fin_janvier, const { HeureDuJour::a(10, 0) })?, quoi: format!("exercice {} clos", precedente), geste: Geste::Cloture { annee: precedente } });
     calendrier.push(Pas {
-        quand: a_l_heure(fin_janvier, 11, 0)?,
+        quand: a_l_heure(fin_janvier, const { HeureDuJour::a(11, 0) })?,
         quoi: format!("exercice {} exporté pour la comptabilité", precedente),
         geste: Geste::Export { annee: precedente },
     });
@@ -620,7 +620,7 @@ fn maintenant_du(jour: Jour) -> R<Moment> {
     if m.jour_de_paris() == jour {
         Ok(m)
     } else {
-        a_l_heure(jour, 12, 0)
+        a_l_heure(jour, HeureDuJour::MIDI)
     }
 }
 
@@ -771,7 +771,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 let a_l_echeance = HorlogeFictive { racine: d.racine, jour: (*echeance).min(d.jour) };
                 let ctx_e = a_l_echeance.contexte()?;
                 let fabriquer = || crate::gestes::depart::fabriquer_dsn(&ctx_e, *mois, QUI_HORLOGE);
-                let t = a_l_heure(*echeance, 10, 0)?;
+                let t = a_l_heure(*echeance, const { HeureDuJour::a(10, 0) })?;
                 socle::temps::pendant(t, fabriquer)?;
                 // TOUTES LES DSN DU MOIS QUI NE SONT PAS PARTIES, dans l'ordre de `crate::etapes::ordre_de_depot` :
                 // la mensuelle, puis les signalements.
@@ -956,7 +956,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
             let Some(o) = obligations.iter().find(|o| o.cle == cle) else { continue };
             let Some(butoir) = du(o)? else { continue };
             dus.push(Pas {
-                quand: a_l_heure(butoir, 9, 30)?,
+                quand: a_l_heure(butoir, const { HeureDuJour::a(9, 30) })?,
                 quoi: format!("signalement {} de {} (dernier jour travaillé le {}) déposé", dit, a.salarie, dernier.jj_mm_aaaa()),
                 geste: Geste::Arret { mois: le_mois, salarie: a.salarie.clone(), dernier, cle, nature },
             });
@@ -968,7 +968,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
             continue;
         }
         dus.push(Pas {
-            quand: a_l_heure(butoir, 9, 30)?,
+            quand: a_l_heure(butoir, const { HeureDuJour::a(9, 30) })?,
             quoi: format!("signalement de fin du contrat de {} (fin le {}) déposé", f.salarie, f.contrat.fin().jj_mm_aaaa()),
             geste: Geste::Fin { mois: le_mois, salarie: f.salarie.clone(), fin: f.contrat.fin() },
         });

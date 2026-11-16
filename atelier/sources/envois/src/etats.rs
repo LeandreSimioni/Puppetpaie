@@ -1433,7 +1433,7 @@ mod tests {
         let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, Some("WSCCCC"), "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
         let annonce = |flux: &str, nature: NatureDuRetour, seconde: i64| Annonce {
-            publication: Some(socle::paris::Moment::a_paris(Jour::nouveau(2026, 6, 1).unwrap(), 11, 0, seconde).unwrap()),
+            publication: Some(socle::paris::Moment::a_paris_a_la_seconde(Jour::nouveau(2026, 6, 1).unwrap(), const { socle::paris::HeureDuJour::a(11, 0) }, seconde).unwrap()),
             production: None,
             ops: None,
             delegataire: None,

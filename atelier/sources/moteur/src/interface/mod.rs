@@ -754,7 +754,7 @@ impl Fenetre {
                 }
                 let texte = std::str::from_utf8(corps).map_err(|e| socle::echec::refus(e.to_string()))?;
                 let ChargeJour { jour } = socle::forme::lire_texte(texte, "Il faut {\"jour\": \"AAAA-MM-JJ\"}.")?;
-                let instant = socle::paris::Moment::a_paris(jour, 9, 0, 0).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
+                let instant = socle::paris::Moment::a_paris(jour, const { socle::paris::HeureDuJour::a(9, 0) }).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
                 if instant <= socle::temps::secondes() {
                     return Err(socle::refus!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::ecrit::seconde::texte(socle::temps::secondes())));
                 }
@@ -1321,7 +1321,7 @@ fn poser_le_banc(args: &[socle::ligne::Argument]) -> R<Vec<socle::ligne::Argumen
     let hors_calendrier = || socle::echec::refus(socle::date::HORS_CALENDRIER);
     let depart = match (jour, dernier) {
         (Some(j), dernier) => {
-            let neuf_heures = socle::paris::Moment::a_paris(j, 9, 0, 0).ok_or_else(hors_calendrier)?;
+            let neuf_heures = socle::paris::Moment::a_paris(j, const { socle::paris::HeureDuJour::a(9, 0) }).ok_or_else(hors_calendrier)?;
             if let Some(t) = dernier.filter(|t| neuf_heures <= *t) {
                 return Err(socle::echec::refus_avec(
                     format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::ecrit::seconde::texte(t)),

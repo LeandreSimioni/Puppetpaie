@@ -9,12 +9,12 @@
 //!   exigeante l'avance (`clauses-conventionnelles-base.json`, `remise_du_contrat` de sa couche : la 1285, titre XV).
 //!
 //! INFERENCE : un jour ouvrable est un jour du lundi au samedi qui n'est pas un ferie chome de la compagnie
-//! (`conges::jours_ouvrables`, L. 3141-3) ; « dans les deux jours ouvrables suivant l'embauche » se compte a partir du
+//! (`socle::date::JoursOuvrables`, sur `feries::chomes` ; L. 3141-3) ; « dans les deux jours ouvrables suivant l'embauche » se compte a partir du
 //! lendemain de l'embauche.
 
 use serde::Serialize;
 
-use socle::date::Jour;
+use socle::date::{Jour, JoursOuvrables};
 use socle::echec::R;
 
 /// Une echeance : le jour, ce qui le precede (`Tournure`), l'heure s'il y en a une (« à midi »), et le texte depose qui
@@ -91,18 +91,8 @@ impl From<Echeance> for EcheanceRendue {
     }
 }
 
-/// Le `n`-ieme jour ouvrable apres `depuis` (`n` > 0) ou avant lui (`n` < 0), `depuis` exclu.
-pub fn jour_ouvrable(depuis: &Jour, n: i64, chomes: Option<&str>) -> R<Jour> {
-    let pas = if n < 0 { -1 } else { 1 };
-    let (mut jour, mut reste) = (*depuis, n.abs());
-    while reste > 0 {
-        jour = jour.plus_jours(pas)?;
-        if crate::conges::jours_ouvrables(&socle::date::Periode::du_jour(jour), chomes)? == socle::grandeurs::Jours::UN {
-            reste -= 1;
-        }
-    }
-    Ok(jour)
-}
+/// La remise du contrat selon la loi : « dans les deux jours ouvrables suivant l'embauche » (L. 1242-13).
+const REMISE_SELON_LA_LOI: JoursOuvrables = JoursOuvrables::de(2);
 
 /// La DPAE d'un engagement qui commence le `debut` : avant ce jour (L. 1221-10).
 pub fn dpae(debut: &Jour) -> Echeance {
@@ -118,7 +108,9 @@ pub fn dpae(debut: &Jour) -> Echeance {
 /// l'embauche (L. 1242-13), ou plus tot si la couche de la convention `idcc` le dit pour ce metier (`code_emploi`, quand
 /// l'engagement ou la fiche le dit).
 pub fn remise_du_contrat(debut: &Jour, idcc: Option<&crate::fiche::Idcc>, code_emploi: Option<&crate::fiche::CodeEmploiFt>, chomes: Option<&str>) -> R<Echeance> {
-    let loi = jour_ouvrable(debut, 2, chomes)?;
+    // Les feries de la compagnie (sa fiche) : ceux qu'elle chome ne sont pas ouvrables (L. 3141-3).
+    let feries = |a: socle::mois::Annee| socle::feries::chomes(a, chomes);
+    let loi = REMISE_SELON_LA_LOI.apres(*debut, feries)?;
     let mut e = Echeance {
         jour: loi,
         mots: Tournure::AuPlusTardLe,
@@ -127,7 +119,7 @@ pub fn remise_du_contrat(debut: &Jour, idcc: Option<&crate::fiche::Idcc>, code_e
     };
     let Some(r) = crate::clauses::releve(idcc)?.and_then(|c| c.remise_du_contrat) else { return Ok(e) };
     if code_emploi.is_some_and(|c| r.metiers.iter().any(|m| crate::fiche::CodeEmploiFt::from(m) == *c)) {
-        let jour = jour_ouvrable(debut, -r.jours_ouvrables_avant, chomes)?;
+        let jour = r.jours_ouvrables_avant.avant(*debut, feries)?;
         if jour < e.jour {
             e = Echeance { jour, mots: Tournure::AuPlusTardLe, heure: "", source: format!("{}, art. {}", crate::clauses::nom(idcc), r.article) };
         }

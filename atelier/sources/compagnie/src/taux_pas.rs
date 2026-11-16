@@ -56,7 +56,7 @@ impl TauxDUneDsn {
 
 /// Le debut du jour `j` (`AAAAMMJJ000000`).
 fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
-    socle::paris::Moment::a_paris(j, 0, 0, 0).ok_or_else(|| socle::refus!("Le jour {} sort du calendrier.", j.jj_mm_aaaa()))
+    socle::paris::Moment::a_paris(j, socle::paris::HeureDuJour::MINUIT).ok_or_else(|| socle::refus!("Le jour {} sort du calendrier.", j.jj_mm_aaaa()))
 }
 
 /// LE DERNIER TAUX TRANSMIS PAR LA DGFiP QUE LES DSN DEJA DEPOSEES DE `dossier` DECLARENT, par salarie (un releve tel que

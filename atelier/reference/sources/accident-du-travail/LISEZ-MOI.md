@@ -102,7 +102,7 @@ libellé de `declaration_accident.ou` (code `net-entreprises`, champ `edi` qui c
 `logiciel/donnees/obligations-base.json`, obligation `declaration_accident` : `ou` (les deux voies, net-entreprises et le
 courrier), `a_avoir` (ce qu'il faut avoir sous la main, tiré des rubriques du cerfa), `suites.reserves` (dix jours francs),
 `textes`. Le calcul (point de départ, quarante-huit heures sans dimanches ni fériés, état) est dans
-`atelier/sources/paie/src/obligations.rs` (`de_l_arret`, `Calendrier::heures_apres`) ; les routes `arrets`,
+`atelier/sources/paie/src/obligations.rs` (`de_l_arret`, `socle::paris::DelaiEnHeures::heures_apres`) ; les routes `arrets`,
 `arret-obligations`, `arret-connaissance` et `accident-declare` le rendent, et le rappel de l'ouverture (route `rappels`,
 `routes_ouverture::rappels_obligations`, depuis le 20/10/2026) le rappelle tant qu'il n'est pas dit fait. **Le logiciel ne fait pas la déclaration** : il la
 rappelle, avec sa date butoir, et retient qu'elle est faite quand la compagnie le dit.

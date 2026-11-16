@@ -38,10 +38,10 @@
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
-use socle::paris::{ecrit::jour_et_heure, InstantOuJour, Moment};
+use socle::paris::{ecrit::jour_et_heure, HeureDuJour, InstantOuJour, Moment};
 
-/// L'heure limite du depot le jour de l'echeance, midi, en minutes depuis minuit (cahier technique DSN 2026.1, § 1.4.2).
-pub const MINUTE_LIMITE: u32 = 12 * 60;
+/// L'heure limite du depot le jour de l'echeance, midi (cahier technique DSN 2026.1, § 1.4.2).
+pub const HEURE_LIMITE: HeureDuJour = HeureDuJour::MIDI;
 
 const JOURS: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
@@ -68,23 +68,10 @@ pub struct Echeance {
     veille: Jour,
 }
 
-/// Pourquoi `j` n'est pas un jour ouvre du point de depot, ou `None` s'il l'est.
-pub fn non_ouvre(j: &Jour) -> R<Option<String>> {
-    match j.jour_de_la_semaine() {
-        5 => return Ok(Some("samedi".into())),
-        6 => return Ok(Some("dimanche".into())),
-        _ => {}
-    }
-    Ok(socle::feries::feries(j.annee())?.into_iter().find(|(d, _)| d == j).map(|(_, nom)| format!("{}, fête légale", nom)))
-}
-
-/// `nominale`, reportee au premier jour ouvre qui la suit si elle n'en est pas un (R. 133-14, I ; inferences 1 et 2).
+/// `nominale`, reportee au premier jour ouvre qui la suit si elle n'en est pas un (R. 133-14, I ; inferences 1 et 2) :
+/// le calendrier du point de depot, les onze fetes legales.
 pub fn reporter(nominale: Jour) -> R<Echeance> {
-    let (mut jour, mut sautes) = (nominale, Vec::new());
-    while let Some(pourquoi) = non_ouvre(&jour)? {
-        sautes.push((jour, pourquoi));
-        jour = jour.plus_jours(1)?;
-    }
+    let (jour, sautes) = socle::date::JoursOuvres::premier_a_partir_de(nominale, socle::feries::feries)?;
     let veille = jour.plus_jours(-1)?;
     Ok(Echeance { nominale, jour, sautes, veille })
 }
@@ -151,14 +138,14 @@ impl Echeance {
 
     /// « lundi 16/11/2026 à midi ».
     pub fn phrase(&self) -> String {
-        format!("{} à midi", lisible(&self.jour))
+        format!("{} {}", lisible(&self.jour), HEURE_LIMITE.dite())
     }
 
-    /// L'instant limite du depot : son jour, a l'heure limite (`MINUTE_LIMITE`, a Paris).
+    /// L'instant limite du depot : son jour, a l'heure limite (`HEURE_LIMITE`, a Paris).
     pub fn limite(&self) -> R<Moment> {
-        match jour_et_heure::a_la_minute(self.jour, i64::from(MINUTE_LIMITE)) {
+        match jour_et_heure::a_la_minute(self.jour, HEURE_LIMITE) {
             Some(InstantOuJour::Instant(m)) => Ok(m),
-            _ => Err(refus(format!("L'échéance du {} à midi n'est pas une heure de Paris.", self.jour.jj_mm_aaaa()))),
+            _ => Err(refus(format!("L'échéance du {} {} n'est pas une heure de Paris.", self.jour.jj_mm_aaaa(), HEURE_LIMITE.dite()))),
         }
     }
 

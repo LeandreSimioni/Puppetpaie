@@ -12,7 +12,7 @@ use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::echec::{Echec, R};
 
 /// `obligations-base.json` : chaque obligation, son delai, son point de depart et ses textes. Ses `quoi` et `note` ne
-/// servent pas au calcul (la regle d'un jour ouvre est dans le calendrier du moteur, `jours_ouvres_apres`).
+/// servent pas au calcul (la regle d'un jour ouvre est dans le calendrier du socle, `socle::date::JoursOuvres`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BaseDesObligations {
@@ -153,24 +153,38 @@ pub struct SaufMotifs {
     _texte: TexteDepose,
 }
 
-/// Un delai : en jours ouvres, en jours, en heures (dimanches et feries non compris), ou avec la DSN mensuelle ; et la
-/// phrase qui le dit.
+/// LE DELAI D'UNE OBLIGATION (« Le glossaire »), l'un de ses quatre cas, et la phrase qui le dit (`dit`) : en jours
+/// ouvres (CSS R. 133-14, II : cinq), en jours (R. 461-5 : quinze ; « dès réception » : zero), en heures, dimanches et
+/// jours feries non compris (R. 441-3 : quarante-huit), ou avec la DSN mensuelle du mois de l'evenement (R. 133-14, II,
+/// l'employeur subroge). Le fichier l'ecrit par son cas : `{"jours_ouvres": {"jours": 5, "dit": "…"}}`.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Delai {
-    pub jours_ouvres: Option<i64>,
-    #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
-    pub jours: Option<socle::date::Duree<socle::date::EnJours>>,
-    pub heures: Option<i64>,
-    #[serde(rename = "sans_dimanches")]
-    _sans_dimanches: Option<bool>,
-    #[serde(rename = "sans_feries")]
-    _sans_feries: Option<bool>,
-    #[serde(rename = "avec_la_mensuelle")]
-    _avec_la_mensuelle: Option<bool>,
-    #[serde(rename = "depart")]
-    _depart: Option<String>,
-    pub dit: String,
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum Delai {
+    JoursOuvres {
+        jours: socle::date::JoursOuvres,
+        dit: String,
+    },
+    Jours {
+        #[serde(deserialize_with = "socle::date::Duree::en_jours")]
+        jours: socle::date::Duree<socle::date::EnJours>,
+        dit: String,
+    },
+    HeuresHorsDimanchesEtFeries {
+        heures: socle::paris::DelaiEnHeures,
+        dit: String,
+    },
+    AvecLaMensuelle {
+        dit: String,
+    },
+}
+
+impl Delai {
+    /// La phrase qui le dit.
+    pub fn dit(&self) -> &str {
+        match self {
+            Delai::JoursOuvres { dit, .. } | Delai::Jours { dit, .. } | Delai::HeuresHorsDimanchesEtFeries { dit, .. } | Delai::AvecLaMensuelle { dit } => dit,
+        }
+    }
 }
 
 /// Ce qui suit une declaration d'accident.

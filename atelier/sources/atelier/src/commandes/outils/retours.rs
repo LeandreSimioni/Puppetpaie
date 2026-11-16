@@ -33,16 +33,16 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 
 /// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
 fn plage(args: &Args) -> Result<(Moment, Moment), Echec> {
-    let a = |t: &socle::ligne::Argument, h: i64, m: i64, s: i64| {
+    let a = |t: &socle::ligne::Argument, h: socle::paris::HeureDuJour, s: i64| {
         let j = t.jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
-        Moment::a_paris(j, h, m, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
+        Moment::a_paris_a_la_seconde(j, h, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
     };
     let fin = match args.tape("jusqu-a") {
-        Some(j) => a(j, 23, 59, 59)?,
+        Some(j) => a(j, const { socle::paris::HeureDuJour::a(23, 59) }, 59)?,
         None => socle::temps::secondes(),
     };
     let debut = match args.tape("depuis") {
-        Some(j) => a(j, 0, 0, 0)?,
+        Some(j) => a(j, socle::paris::HeureDuJour::MINUIT, 0)?,
         None => fin.plus(-30 * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
     };
     Ok((debut, fin))

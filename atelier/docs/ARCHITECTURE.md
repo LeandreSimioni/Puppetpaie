@@ -201,6 +201,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | période | `Periode` | `socle/src/date.rs` |
 | période ouverte | `PeriodeOuverte` | `socle/src/date.rs` |
 | durée de droit | `Duree<EnJours>`, `Duree<EnMois>` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
+| jours ouvrés, jours ouvrables (un compte de jours que le calendrier change en jour : pas une `Duree`) | `JoursOuvres`, `JoursOuvrables` | `socle/src/date.rs` |
+| heure du jour | `HeureDuJour` | `socle/src/paris.rs` |
+| délai en heures, dimanches et jours fériés non compris | `DelaiEnHeures` | `socle/src/paris.rs` |
+| délai d'une obligation | `declarations::obligations::Delai` | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
 | durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
 
@@ -253,6 +257,26 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   ce que le compilateur tient ; elle se dit dans une phrase (« 3 jours », « 2 mois »). La durée d'une tranche de
   maintien de salaire (`droit::maintien::DureeDUneTranche`) est une durée de droit en jours ou en mois, ou « tant que la
   caisse verse ses indemnités ».
+- **jours ouvrés, jours ouvrables** : un compte de jours, jamais négatif, qui n'est pas une durée de droit : il ne
+  devient un jour que par **un seul calendrier par règle**, écrit une fois (`socle/src/date.rs`) : du lundi au vendredi
+  pour les jours ouvrés (`JoursOuvres::apres`, `avant`, et le premier jour ouvré à partir d'un jour,
+  `JoursOuvres::premier_a_partir_de`, le report de la DSN), du lundi au samedi pour les jours ouvrables
+  (`JoursOuvrables::apres`, `avant` : « les quinze jours ouvrables précédant »), chacun moins les fériés qu'on lui donne,
+  une année à la fois (les onze fêtes légales, `feries::feries`, ou ceux que la compagnie chôme, `feries::chomes`). Un
+  texte le fixe (`JoursOuvres::de`) ; un fichier le dit en nombre, lu en lui à sa porte.
+- **heure du jour** : un point dans le jour, à la minute, heure de Paris, de 00:00 à 23:59 (midi, l'heure limite de la
+  DSN ; 8 h, l'heure d'embauche que la DPAE porte ; minuit). « Jusqu'à minuit » est le début du jour suivant. Une heure
+  que le code tient d'un texte s'écrit `HeureDuJour::a` (`MIDI`, `MINUIT`) ; lue d'une pièce, `HeureDuJour::lue`. Elle
+  fait l'instant d'un jour (`Moment::a_paris`, `jour_et_heure::a_la_minute`) et se lit d'un instant
+  (`Moment::heure_de_paris`, `jour_et_heure::heure`) ; elle s'écrit `HH:MM` (son `Display`, sa serde) et se dit dans une
+  phrase (`dite` : « à midi », « à minuit », « à 09:30 »).
+- **délai en heures** : des heures qui courent d'une heure du jour sur le calendrier des jours ouvrables (dimanches et
+  fériés non compris : CSS R. 441-3, quarante-huit heures) ; ni une quantité d'heures de travail, ni une durée mesurée.
+  Lu en nombre à sa porte, il ne devient un instant que par `DelaiEnHeures::heures_apres`.
+- **délai d'une obligation** : ce qui fixe, d'un fait, la date ou le moment limite d'une obligation (un signalement, une
+  déclaration d'accident, une attestation) : en jours ouvrés, en jours, en heures hors dimanches et fériés, ou avec la
+  DSN mensuelle du mois de l'événement ; une `enum`, avec la phrase qui le dit, écrite par son cas dans
+  `obligations-base.json`. La fin d'un délai se compte à un seul endroit (`routes::obligations`, `fin_du_delai`).
 - **ancienneté, âge** : le temps passé depuis un jour, en mois ; un âge est l'ancienneté depuis la naissance
   (`Anciennete::age`). Elle se compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois
   entamé, le jour d'arrivée compris (`Anciennete::entre` : le préavis, les indemnités de fin de contrat, le maintien de

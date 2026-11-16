@@ -25,7 +25,7 @@ use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
 use socle::date::{Jour, PeriodeOuverte};
 use socle::fichiers::{modele_de, repr};
-use socle::paris::Moment;
+use socle::paris::{HeureDuJour, Moment};
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
 use crate::urssaf::CodeUrssafDpae;
@@ -35,7 +35,7 @@ use crate::usages::strip;
 pub const LONGUEUR: usize = 990;
 
 /// L'heure d'embauche que porte la DPAE : 8 h. Rien ne la demande.
-const HEURE_EMBAUCHE: i64 = 8;
+const HEURE_EMBAUCHE: HeureDuJour = HeureDuJour::a(8, 0);
 
 /// POSITIONS 0-BASED, [debut, fin). Le dessin d'enregistrement officiel
 /// (Format 120, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.pdf`) compte a
@@ -335,8 +335,8 @@ pub struct Embauche {
 impl Embauche {
     /// L'instant de l'embauche : son premier jour, a l'heure que la DPAE porte (`HEURE_EMBAUCHE`, a Paris).
     pub fn instant(&self) -> R<Moment> {
-        Moment::a_paris(self.contrat.debut(), HEURE_EMBAUCHE, 0, 0)
-            .ok_or_else(|| socle::refus!("L'embauche du {} à {} h n'est pas une heure de Paris.", self.contrat.debut().jj_mm_aaaa(), HEURE_EMBAUCHE))
+        Moment::a_paris(self.contrat.debut(), HEURE_EMBAUCHE)
+            .ok_or_else(|| socle::refus!("L'embauche du {} {} n'est pas une heure de Paris.", self.contrat.debut().jj_mm_aaaa(), HEURE_EMBAUCHE.dite()))
     }
 }
 
@@ -748,10 +748,9 @@ fn horodatage_relu(h: &str) -> Option<Moment> {
     if h.len() != 12 || !h.is_ascii() {
         return None;
     }
-    let heure = socle::num::entier_de_chiffres(&h[8..10]).filter(|x| (0..24).contains(x))?;
-    let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x))?;
+    let heure = HeureDuJour::lue(socle::num::entier_de_chiffres(&h[8..10])?, socle::num::entier_de_chiffres(&h[10..12])?)?;
     let j = socle::piece::Zone::lue(&h[..8], socle::piece::format::Jjmmaaaa).valeur()?;
-    Moment::a_paris(j, heure, minute, 0).filter(|m| m.jour_de_paris() == j && m.seconde_du_jour_de_paris() == heure * 3_600 + minute * 60)
+    Moment::a_paris(j, heure).filter(|m| m.jour_de_paris() == j && m.heure_de_paris() == heure)
 }
 
 /// Chaque enregistrement par ses zones (`CHAMPS`) ; une zone NIR remplie qui n'est pas un NIR le refuse.
@@ -1161,7 +1160,7 @@ mod tests {
     }
 
     fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<CodeUrssafDpae>, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: Moment::a_paris(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap(), code_urssaf: code, ent, chemins }
+        Parametres { horodatage: Moment::a_paris(Jour::nouveau(2026, 10, 3).unwrap(), const { HeureDuJour::a(14, 7) }).unwrap(), code_urssaf: code, ent, chemins }
     }
 
     fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {

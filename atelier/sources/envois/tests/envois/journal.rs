@@ -19,7 +19,7 @@ fn envoi<D, R>(mode: Mode, detail: D) -> Envoi<D, R> {
 
 /// Le `jour` d'octobre 2026 a `heure` pile.
 fn instant(jour: u32, heure: i64) -> socle::paris::Moment {
-    socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), heure, 0, 0).unwrap()
+    socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), socle::paris::HeureDuJour::lue(heure, 0).unwrap()).unwrap()
 }
 
 /// La ligne datee du `jour` d'octobre 2026 a `heure`, que le test dit.

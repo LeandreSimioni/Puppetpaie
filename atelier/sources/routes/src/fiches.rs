@@ -1355,7 +1355,7 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i6
         // Une demande datee d'un jour seul est partie a minuit de ce jour.
         let partie = match a.quand {
             InstantOuJour::Instant(i) => Some(i),
-            InstantOuJour::Jour(j) => Moment::a_paris(j, 0, 0, 0),
+            InstantOuJour::Jour(j) => Moment::a_paris(j, socle::paris::HeureDuJour::MINUIT),
         };
         let Some(partie) = partie else { continue };
         if !maintenant.depuis(partie).is_some_and(|d| d.as_secs() as i64 >= delai) {

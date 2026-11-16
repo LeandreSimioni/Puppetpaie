@@ -206,6 +206,106 @@ impl<U: Unite> std::fmt::Display for Duree<U> {
     }
 }
 
+// LES FERIES QU'UN CALENDRIER SAUTE se donnent une annee a la fois (`feries`) : les onze fetes legales
+// (`feries::feries`), ou ceux que la compagnie chome (`|a| feries::chomes(a, dits)`, sa fiche) ; chaque regle garde les
+// siens.
+
+/// Les noms des jours de la semaine, du lundi (0) au dimanche (6).
+const NOMS_DES_JOURS: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+
+/// LE CALENDRIER D'UNE SEMAINE DE `jours` JOURS (5 : du lundi au vendredi, les jours ouvres ; 6 : au samedi, les jours
+/// ouvrables), moins les feries qu'on lui donne : pourquoi `jour` n'en est pas (« samedi », « dimanche », « Assomption,
+/// fête légale »), ou `None` s'il en est.
+pub(crate) fn hors_de_la_semaine(jour: Jour, jours: u32, feries: &impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Option<String>> {
+    let rang = jour.jour_de_la_semaine();
+    if rang >= jours {
+        return Ok(Some(NOMS_DES_JOURS[rang as usize].to_string()));
+    }
+    Ok(feries(jour.annee())?.into_iter().find(|(j, _)| *j == jour).map(|(_, nom)| format!("{}, fête légale", nom)))
+}
+
+/// Le `n`-ieme jour de la semaine de `jours` jours apres `depuis` (`plus_tard`) ou avant lui, `depuis` exclu.
+fn compter(depuis: Jour, n: u32, plus_tard: bool, jours: u32, feries: &impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+    let (mut jour, mut reste) = (depuis, n);
+    while reste > 0 {
+        jour = jour.plus_jours(if plus_tard { 1 } else { -1 })?;
+        if hors_de_la_semaine(jour, jours, feries)?.is_none() {
+            reste -= 1;
+        }
+    }
+    Ok(jour)
+}
+
+/// DES JOURS OUVRES : un compte de jours du lundi au vendredi, moins les feries qu'on donne au calendrier (CSS R. 133-14,
+/// II ; BOI-IR-PAS-30-10-20, § 30). Ce n'est pas une `Duree` : il ne devient un jour que par le calendrier (`apres`),
+/// qui sait quels jours comptent. Un texte le fixe (`de`), ou un fichier le dit en nombre, lu en lui a sa porte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JoursOuvres(u32);
+
+impl JoursOuvres {
+    /// `n` jours ouvres, qu'un texte fixe.
+    pub const fn de(n: u32) -> JoursOuvres {
+        JoursOuvres(n)
+    }
+
+    /// Le jour ouvre qui tombe ce nombre de jours ouvres apres `depuis`, `depuis` exclu.
+    pub fn apres(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+        compter(depuis, self.0, true, 5, &feries)
+    }
+
+    /// Le jour ouvre qui tombe ce nombre de jours ouvres avant `depuis`, `depuis` exclu.
+    pub fn avant(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+        compter(depuis, self.0, false, 5, &feries)
+    }
+
+    /// LE PREMIER JOUR OUVRE A PARTIR DE `jour`, lui compris, et chaque jour saute avec ce qu'il est (« samedi »,
+    /// « Assomption, fête légale »).
+    pub fn premier_a_partir_de(jour: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<(Jour, Vec<(Jour, String)>)> {
+        let (mut jour, mut sautes) = (jour, Vec::new());
+        while let Some(pourquoi) = hors_de_la_semaine(jour, 5, &feries)? {
+            sautes.push((jour, pourquoi));
+            jour = jour.plus_jours(1)?;
+        }
+        Ok((jour, sautes))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for JoursOuvres {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<JoursOuvres, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(d).map(JoursOuvres)
+    }
+}
+
+/// DES JOURS OUVRABLES : un compte de jours du lundi au samedi, moins les feries qu'on donne au calendrier (C. trav.
+/// L. 1242-13 ; CCN 1285, titre XV). Ce n'est pas une `Duree` : il ne devient un jour que par le calendrier (`apres`,
+/// `avant`). Un texte le fixe (`de`), ou un fichier le dit en nombre, lu en lui a sa porte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JoursOuvrables(u32);
+
+impl JoursOuvrables {
+    /// `n` jours ouvrables, qu'un texte fixe.
+    pub const fn de(n: u32) -> JoursOuvrables {
+        JoursOuvrables(n)
+    }
+
+    /// Le jour ouvrable qui tombe ce nombre de jours ouvrables apres `depuis`, `depuis` exclu.
+    pub fn apres(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+        compter(depuis, self.0, true, 6, &feries)
+    }
+
+    /// Le jour ouvrable qui tombe ce nombre de jours ouvrables avant `depuis`, `depuis` exclu (« les quinze jours
+    /// ouvrables précédant »).
+    pub fn avant(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+        compter(depuis, self.0, false, 6, &feries)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for JoursOuvrables {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<JoursOuvrables, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(d).map(JoursOuvrables)
+    }
+}
+
 /// UNE PERIODE (« Le glossaire ») : deux jours bornes, l'un et l'autre compris, le premier pas apres le second (la
 /// periode d'un contrat, d'une paie, d'un arret, d'une fenetre de calcul, d'un certificat, d'un export). Elle ne se
 /// construit que par `du_au`, qui refuse un debut apres la fin ; ses bornes, ses jours et sa duree se lisent d'elle.

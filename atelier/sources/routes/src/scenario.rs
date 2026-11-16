@@ -286,7 +286,7 @@ fn heure(t: Moment) -> String {
 fn instant_de_l_heure(h: InstantOuJour) -> Option<Moment> {
     match h {
         InstantOuJour::Instant(m) => Some(m),
-        InstantOuJour::Jour(j) => Moment::a_paris(j, 9, 0, 0),
+        InstantOuJour::Jour(j) => Moment::a_paris(j, const { socle::paris::HeureDuJour::a(9, 0) }),
     }
 }
 
@@ -556,7 +556,7 @@ fn rejouer_les_gestes(
             None => (g.clone(), t),
             Some(j) => match saisie_d_un_geste(g) {
                 Some(s) => {
-                    let neuf_heures = Moment::a_paris(j, 9, 0, 0).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
+                    let neuf_heures = Moment::a_paris(j, const { socle::paris::HeureDuJour::a(9, 0) }).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
                     (s, match r.fin {
                         Some(f) => {
                             let apres = seconde_apres(f)?;

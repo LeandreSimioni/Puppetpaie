@@ -475,7 +475,7 @@ forme! {
     /// La remise du contrat a duree determinee, plus tot que la loi pour les metiers qu'elle nomme.
     pub struct RemiseDuContrat {
         pub article: String,
-        pub jours_ouvrables_avant: i64,
+        pub jours_ouvrables_avant: socle::date::JoursOuvrables,
         pub metiers: Vec<emplois::CodeEmploi>,
     }
 }

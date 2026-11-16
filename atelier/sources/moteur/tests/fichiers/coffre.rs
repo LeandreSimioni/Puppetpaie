@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 /// Le `jour` d'octobre 2026 a `heure`:`minute`.
 fn minute(jour: u32, heure: i64, minute: i64) -> Moment {
-    Moment::a_paris(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), heure, minute, 0).unwrap()
+    Moment::a_paris(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), socle::paris::HeureDuJour::lue(heure, minute).unwrap()).unwrap()
 }
 
 fn dossier() -> PathBuf {

@@ -45,8 +45,23 @@ impl Moment {
         Moment::de_nanos(if avant_1970 { -ns } else { ns })
     }
 
+    /// L'instant de `jour` a l'heure `heure`, heure de Paris ; `None` hors du calendrier.
+    pub fn a_paris(jour: Jour, heure: HeureDuJour) -> Option<Moment> {
+        Moment::a_paris_a_la_seconde(jour, heure, 0)
+    }
+
+    /// L'instant de `jour` a l'heure `heure` et `seconde` secondes (de 0 a 59, lues d'une piece qui les ecrit), heure de
+    /// Paris ; `None` pour une seconde hors de la minute, ou hors du calendrier.
+    pub fn a_paris_a_la_seconde(jour: Jour, heure: HeureDuJour, seconde: i64) -> Option<Moment> {
+        if !(0..60).contains(&seconde) {
+            return None;
+        }
+        let m = i64::from(heure.0);
+        Moment::a_paris_hms(jour, m / 60, m % 60, seconde)
+    }
+
     /// L'instant de `jour` a `heure:minute:seconde`, heure de Paris ; `None` hors du calendrier.
-    pub fn a_paris(jour: Jour, heure: i64, minute: i64, seconde: i64) -> Option<Moment> {
+    fn a_paris_hms(jour: Jour, heure: i64, minute: i64, seconde: i64) -> Option<Moment> {
         let local = (jour.ordinal() - 719_163) * 86_400 + heure * 3_600;
         // Le decalage de Paris a cet instant : celui de l'instant local lu comme UTC, corrige une fois (un changement
         // d'heure ne tombe jamais a l'heure d'un pas).
@@ -187,6 +202,127 @@ impl Moment {
     pub fn seconde_du_jour_de_paris(self) -> i64 {
         (self.entieres() + decalage(self)).rem_euclid(86_400)
     }
+
+    /// L'heure de Paris de cet instant, a la minute (arrondi a la microseconde, puis tronque).
+    pub fn heure_de_paris(self) -> HeureDuJour {
+        // La seconde du jour est de 0 a 86 399 : sa minute est de 0 a 1 439.
+        HeureDuJour((ecrit::local(self).1 / 60) as u32)
+    }
+}
+
+/// L'HEURE DU JOUR (« Le glossaire ») : un point dans le jour, a la minute, heure de Paris : la minute depuis minuit, de
+/// 00:00 a 23:59 (l'heure limite de la DSN, midi ; l'heure d'embauche que la DPAE porte, 8 h ; minuit, l'heure presumee
+/// de connaissance d'un accident). « Jusqu'a minuit » est le debut du jour suivant. Une heure qu'un texte ou l'editeur
+/// fixe s'ecrit `HeureDuJour::a` (`MIDI`, `MINUIT`) ; une heure lue d'une piece, `lue` ; elle s'ecrit `HH:MM` (son
+/// `Display`, sa serde) et se dit dans une phrase (`dite` : « à midi », « à minuit », « à 09:30 »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HeureDuJour(u32);
+
+impl HeureDuJour {
+    /// Minuit, le debut du jour.
+    pub const MINUIT: HeureDuJour = HeureDuJour(0);
+    /// Midi.
+    pub const MIDI: HeureDuJour = HeureDuJour(12 * 60);
+
+    /// `heure` h `minute`, qu'un texte ou l'editeur fixe : un litteral du code, evalue a la compilation (`const {
+    /// HeureDuJour::a(9, 30) }`), qui ne compile pas hors du jour.
+    pub const fn a(heure: u32, minute: u32) -> HeureDuJour {
+        assert!(heure < 24 && minute < 60, "une heure du jour est de 00:00 a 23:59");
+        HeureDuJour(heure * 60 + minute)
+    }
+
+    /// L'heure `heure:minute` lue d'une piece ou d'une saisie, a sa porte ; `None` hors de 00:00 a 23:59.
+    pub fn lue(heure: i64, minute: i64) -> Option<HeureDuJour> {
+        ((0..24).contains(&heure) && (0..60).contains(&minute)).then_some(HeureDuJour((heure * 60 + minute) as u32))
+    }
+
+    /// L'HEURE DANS UNE PHRASE : « à midi », « à minuit », « à 09:30 ».
+    pub fn dite(self) -> String {
+        match self {
+            HeureDuJour::MIDI => "à midi".to_string(),
+            HeureDuJour::MINUIT => "à minuit".to_string(),
+            h => format!("à {}", h),
+        }
+    }
+
+    /// L'HEURE QU'UNE CHARGE SAISIT, sa seule lecture : `H:M`, un ou deux chiffres de chaque cote, sans ses blancs autour,
+    /// de 00:00 a 23:59 ; `None` sinon.
+    fn saisie(texte: &str) -> Option<HeureDuJour> {
+        let (a, b) = texte.trim().split_once(':')?;
+        let nombre = |t: &str| (!t.is_empty() && t.len() <= 2 && t.bytes().all(|c| c.is_ascii_digit())).then(|| t.bytes().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')));
+        HeureDuJour::lue(nombre(a)?, nombre(b)?)
+    }
+}
+
+/// `HH:MM`, son ecriture.
+impl std::fmt::Display for HeureDuJour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:02}:{:02}", self.0 / 60, self.0 % 60)
+    }
+}
+
+impl serde::Serialize for HeureDuJour {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
+    }
+}
+
+/// Lue de `HH:MM`, et de rien d'autre.
+impl<'de> serde::Deserialize<'de> for HeureDuJour {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDuJour, D::Error> {
+        let t = <String as serde::Deserialize>::deserialize(d)?;
+        let lue = match ecrit::morceaux(&t, 5, [(0, 2), (2, 3), (3, 5)]) {
+            Some([h, ":", m]) => match (ecrit::chiffres(h), ecrit::chiffres(m)) {
+                (Some(heure), Some(minute)) => HeureDuJour::lue(heure, minute),
+                _ => None,
+            },
+            _ => None,
+        };
+        lue.ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure HH:MM", crate::date::repr_texte(&t))))
+    }
+}
+
+/// UN DELAI EN HEURES, dimanches et jours feries non compris (« Le glossaire » ; CSS R. 441-3 : la declaration d'un
+/// accident du travail, quarante-huit heures). Ce n'est ni une quantite d'heures de travail, ni une duree mesuree : il
+/// court sur le calendrier des jours ouvrables (du lundi au samedi, moins les feries qu'on lui donne) et ne devient un
+/// instant que par lui (`heures_apres`). Un fichier le dit en nombre d'heures, lu en lui a sa porte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DelaiEnHeures(u32);
+
+impl DelaiEnHeures {
+    /// CE DELAI COMPTE DE `depart` A L'HEURE `a`, dimanches et feries (`feries`) non compris : le jour et l'heure ou il
+    /// expire ; a la fin d'un jour, minuit du lendemain. Un depart un jour qui ne compte pas court des minuit du premier
+    /// jour qui compte.
+    pub fn heures_apres(self, depart: Jour, a: HeureDuJour, feries: impl Fn(crate::mois::Annee) -> crate::echec::R<crate::feries::Jours>) -> crate::echec::R<(Jour, HeureDuJour)> {
+        let compte = |j: Jour| -> crate::echec::R<bool> { Ok(crate::date::hors_de_la_semaine(j, 6, &feries)?.is_none()) };
+        let (mut j, mut m) = (depart, a.0);
+        while !compte(j)? {
+            j = j.plus_jours(1)?;
+            m = 0;
+        }
+        let mut reste = self.0 * 60;
+        loop {
+            let dans_ce_jour = 1_440 - m;
+            if reste < dans_ce_jour {
+                return Ok((j, HeureDuJour(m + reste)));
+            }
+            if reste == dans_ce_jour {
+                return Ok((j.plus_jours(1)?, HeureDuJour::MINUIT));
+            }
+            reste -= dans_ce_jour;
+            j = j.plus_jours(1)?;
+            while !compte(j)? {
+                j = j.plus_jours(1)?;
+            }
+            m = 0;
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DelaiEnHeures {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<DelaiEnHeures, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(d).map(DelaiEnHeures)
+    }
 }
 
 /// LES ECRITURES D'UN INSTANT : une facon d'ecrire n'est pas un type. Chaque forme de fichier dit la sienne par un
@@ -212,7 +348,7 @@ pub mod ecrit {
     }
 
     /// Des chiffres ASCII seuls, au plus quatre : leur valeur se compte, sans lecture qui puisse echouer.
-    fn chiffres(t: &str) -> Option<i64> {
+    pub(super) fn chiffres(t: &str) -> Option<i64> {
         (!t.is_empty() && t.len() <= 4 && t.bytes().all(|b| b.is_ascii_digit())).then(|| t.bytes().fold(0i64, |n, b| n * 10 + i64::from(b - b'0')))
     }
 
@@ -221,12 +357,12 @@ pub mod ecrit {
     fn de_paris(champs: [&str; 6], texte: fn(Moment) -> String, lu: &str) -> Option<Moment> {
         let [an, mois, jour, heure, minute, seconde] = champs;
         let jour = Jour::nouveau(chiffres(an)? as i32, chiffres(mois)? as u32, chiffres(jour)? as u32)?;
-        let m = Moment::a_paris(jour, chiffres(heure)?, chiffres(minute)?, chiffres(seconde)?)?;
+        let m = Moment::a_paris_hms(jour, chiffres(heure)?, chiffres(minute)?, chiffres(seconde)?)?;
         (texte(m) == lu).then_some(m)
     }
 
     /// Les morceaux `[a..b]` d'un texte ASCII de `n` octets ; `None` sinon.
-    fn morceaux<const K: usize>(t: &str, n: usize, bornes: [(usize, usize); K]) -> Option<[&str; K]> {
+    pub(super) fn morceaux<const K: usize>(t: &str, n: usize, bornes: [(usize, usize); K]) -> Option<[&str; K]> {
         if t.len() != n || !t.is_ascii() {
             return None;
         }
@@ -407,7 +543,7 @@ pub mod ecrit {
         pub(crate) fn lu(local: i64) -> Option<Moment> {
             let jour = crate::date::Jour::depuis_jours_unix(local.div_euclid(86_400))?;
             let r = local.rem_euclid(86_400);
-            let m = Moment::a_paris(jour, r / 3_600, (r % 3_600) / 60, r % 60)?;
+            let m = Moment::a_paris_hms(jour, r / 3_600, (r % 3_600) / 60, r % 60)?;
             (nombre(m) == local).then_some(m)
         }
 
@@ -424,106 +560,53 @@ pub mod ecrit {
     /// UN JOUR ET SON HEURE EN DEUX CHAMPS : le jour `AAAA-MM-JJ` et l'heure de Paris `HH:MM`, facultative ; ensemble, un
     /// `InstantOuJour` (l'instant a la minute, ou le jour seul quand l'heure manque). La fiche de suivi des obligations
     /// d'un arret les ecrit ainsi (le jour et l'heure ou une obligation hors DSN a ete faite, ou la compagnie a connu
-    /// l'arret ou l'accident), et ses routes les rendent ainsi. La forme qui les porte ecrit l'heure en `HeureEcrite`, et
+    /// l'arret ou l'accident), et ses routes les rendent ainsi. La forme qui les porte ecrit l'heure en `HeureDuJour`, et
     /// passe de ses deux champs a l'instant par `quand`, de l'instant a ses deux champs par `champs`.
     pub mod jour_et_heure {
-        use super::super::{InstantOuJour, Moment};
+        use super::super::{HeureDuJour, InstantOuJour, Moment};
         use crate::date::Jour;
-
-        /// L'heure `HH:MM` qu'une forme ecrit a cote de son jour : elle ne se lit que de ce texte, et ne sert qu'a faire
-        /// l'instant (`quand`).
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub struct HeureEcrite {
-            heure: i64,
-            minute: i64,
-        }
 
         /// L'instant de `jour` a l'heure `heure`, ou le jour seul sans heure ; `None` si cette heure n'existe pas a Paris
         /// ce jour-la (l'heure sautee du passage a l'heure d'ete, directive 2000/84/CE, art. 2).
-        pub fn quand(jour: Jour, heure: Option<HeureEcrite>) -> Option<InstantOuJour> {
+        pub fn quand(jour: Jour, heure: Option<HeureDuJour>) -> Option<InstantOuJour> {
             match heure {
                 None => Some(InstantOuJour::Jour(jour)),
-                Some(h) => a_la_minute(jour, h.heure * 60 + h.minute),
+                Some(h) => a_la_minute(jour, h),
             }
         }
 
-        /// L'instant de `jour` a `minute` (comptee depuis minuit, heure de Paris) ; `None` pour une minute hors du jour,
-        /// ou une heure qui n'existe pas a Paris ce jour-la.
-        pub fn a_la_minute(jour: Jour, minute: i64) -> Option<InstantOuJour> {
-            if !(0..1_440).contains(&minute) {
-                return None;
-            }
-            let m = Moment::a_paris(jour, minute / 60, minute % 60, 0)?;
-            (super::local(m) == (jour, minute * 60)).then_some(InstantOuJour::Instant(m))
+        /// L'instant de `jour` a l'heure `heure` (de Paris) ; `None` pour une heure qui n'existe pas a Paris ce jour-la.
+        pub fn a_la_minute(jour: Jour, heure: HeureDuJour) -> Option<InstantOuJour> {
+            let m = Moment::a_paris(jour, heure)?;
+            (m.jour_de_paris() == jour && m.heure_de_paris() == heure).then_some(InstantOuJour::Instant(m))
         }
 
-        /// La minute du jour (comptee depuis minuit, heure de Paris) d'un instant ; `None` pour un jour seul.
-        pub fn minute(q: InstantOuJour) -> Option<u32> {
+        /// L'heure (de Paris, a la minute) d'un instant ; `None` pour un jour seul.
+        pub fn heure(q: InstantOuJour) -> Option<HeureDuJour> {
             match q {
                 InstantOuJour::Jour(_) => None,
-                // La seconde du jour est de 0 a 86 399 : sa minute tient dans un `u32`.
-                InstantOuJour::Instant(m) => Some((super::local(m).1 / 60) as u32),
+                InstantOuJour::Instant(m) => Some(m.heure_de_paris()),
             }
         }
 
         /// Les deux champs d'un instant ou d'un jour : son jour (de Paris) et, pour un instant, son heure a la minute.
-        pub fn champs(q: InstantOuJour) -> (Jour, Option<HeureEcrite>) {
+        pub fn champs(q: InstantOuJour) -> (Jour, Option<HeureDuJour>) {
             match q {
                 InstantOuJour::Jour(j) => (j, None),
-                InstantOuJour::Instant(m) => {
-                    let (j, r) = super::local(m);
-                    (j, Some(HeureEcrite { heure: r / 3_600, minute: (r % 3_600) / 60 }))
-                }
-            }
-        }
-
-        impl HeureEcrite {
-            /// L'HEURE QU'UNE CHARGE SAISIT, sa seule lecture : `H:M`, un ou deux chiffres de chaque cote, sans ses blancs
-            /// autour, de 00:00 a 23:59 ; `None` sinon.
-            fn saisie(texte: &str) -> Option<HeureEcrite> {
-                let (a, b) = texte.trim().split_once(':')?;
-                let nombre = |t: &str| (!t.is_empty() && t.len() <= 2 && t.bytes().all(|c| c.is_ascii_digit())).then(|| t.bytes().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')));
-                let (heure, minute) = (nombre(a)?, nombre(b)?);
-                (heure < 24 && minute < 60).then_some(HeureEcrite { heure, minute })
-            }
-        }
-
-        impl std::fmt::Display for HeureEcrite {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{:02}:{:02}", self.heure, self.minute)
+                InstantOuJour::Instant(m) => (super::local(m).0, Some(m.heure_de_paris())),
             }
         }
 
         /// L'HEURE FACULTATIVE D'UNE CHARGE (`#[serde(default, deserialize_with = "…::saisie")]`) : absente ou nulle, aucune ;
-        /// `""` ne dit rien et se refuse, comme tout texte d'une charge ; sinon `HeureEcrite::saisie`, ou le refus.
-        pub fn saisie<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<HeureEcrite>, D::Error> {
+        /// `""` ne dit rien et se refuse, comme tout texte d'une charge ; sinon `HeureDuJour::saisie`, ou le refus.
+        pub fn saisie<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<HeureDuJour>, D::Error> {
             let Some(t) = <Option<String> as serde::Deserialize>::deserialize(d)? else { return Ok(None) };
             if t.is_empty() {
                 return Err(serde::de::Error::custom("un texte vide ne dit rien : le vide s'écrit absent ou null"));
             }
-            match HeureEcrite::saisie(&t) {
+            match HeureDuJour::saisie(&t) {
                 Some(h) => Ok(Some(h)),
                 None => Err(serde::de::Error::custom(format!("Heure {} illisible : HH:MM, de 00:00 a 23:59.", crate::date::repr_texte(&t)))),
-            }
-        }
-
-        impl serde::Serialize for HeureEcrite {
-            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                s.serialize_str(&self.to_string())
-            }
-        }
-
-        impl<'de> serde::Deserialize<'de> for HeureEcrite {
-            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureEcrite, D::Error> {
-                let t = <String as serde::Deserialize>::deserialize(d)?;
-                let lue = match super::morceaux(&t, 5, [(0, 2), (2, 3), (3, 5)]) {
-                    Some([h, ":", m]) => match (super::chiffres(h), super::chiffres(m)) {
-                        (Some(heure), Some(minute)) if heure < 24 && minute < 60 => Some(HeureEcrite { heure, minute }),
-                        _ => None,
-                    },
-                    _ => None,
-                };
-                lue.ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure HH:MM", crate::date::repr_texte(&t))))
             }
         }
     }

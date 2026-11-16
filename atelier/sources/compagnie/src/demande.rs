@@ -759,7 +759,7 @@ mod tests {
         }
 
         fn coffre_a(&self) -> Coffre {
-            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 10, 8).unwrap(), 10, 0, 0).unwrap(), variables: Default::default() }
+            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 10, 8).unwrap(), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap(), variables: Default::default() }
         }
     }
 

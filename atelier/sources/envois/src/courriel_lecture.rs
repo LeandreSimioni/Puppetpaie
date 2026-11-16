@@ -278,7 +278,7 @@ fn date_lue(brut: &str) -> Option<socle::paris::Moment> {
         // L'heure de Paris telle qu'ecrite : une heure qui n'existe pas a Paris (l'heure sautee du passage a l'ete) est
         // illisible.
         None => {
-            let instant = socle::paris::Moment::a_paris(j, h, mi, s)?;
+            let instant = socle::paris::Moment::a_paris_a_la_seconde(j, socle::paris::HeureDuJour::lue(h, mi)?, s)?;
             (instant.jour_de_paris() == j && instant.seconde_du_jour_de_paris() == h * 3_600 + mi * 60 + s).then_some(instant)
         }
         Some(d) => {

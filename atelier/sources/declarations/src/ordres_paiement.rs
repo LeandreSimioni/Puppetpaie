@@ -35,7 +35,7 @@
 //!    d'exigibilite des cotisations » (cahier d'aide a la codification Agirc-Arrco CT2026, p. 47,
 //!    `atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt`, l. 2401-2405) :
 //!    le dernier jour ouvre du mois qui suit la fin de periode (S21.G00.20.007). « Ouvre » : ni samedi, ni dimanche, ni
-//!    fete legale (`echeance_dsn::non_ouvre`).
+//!    fete legale (`socle::date::JoursOuvres`, sur les fetes legales).
 //! 6. Tout autre organisme sans S21.G00.20.011 : aucun texte depose ne dit son jour. Le logiciel le dit.
 //!
 //! LE TROP-VERSE : un ordre n'est jamais negatif ; quand une correction a la baisse laisse un credit, l'ordre
@@ -71,13 +71,11 @@ fn periode_lisible(p: &Periode) -> String {
     }
 }
 
-/// Le dernier jour ouvre (ni samedi, ni dimanche, ni fete legale) du mois qui suit `fin`.
+/// Le dernier jour ouvre (ni samedi, ni dimanche, ni fete legale) du mois qui suit `fin` : le premier jour ouvre avant
+/// le lendemain de son dernier jour.
 fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> R<Jour> {
-    let mut j = fin.mois_civil().suivant().dernier_jour();
-    while crate::echeance_dsn::non_ouvre(&j)?.is_some() {
-        j = j.plus_jours(-1)?;
-    }
-    Ok(j)
+    let lendemain = fin.mois_civil().suivant().dernier_jour().plus_jours(1)?;
+    socle::date::JoursOuvres::de(1).avant(lendemain, socle::feries::feries)
 }
 
 /// Le `jour` du mois qui suit le mois declare `mois`.

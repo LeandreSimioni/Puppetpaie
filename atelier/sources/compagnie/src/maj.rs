@@ -2188,7 +2188,7 @@ mod tests {
 
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
-        let p = Prete { version: VersionDuLogiciel::lire("2026.11.01").unwrap(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap(), archives: vec![CleDArchive::Du(Systeme::DE_CE_PROGRAMME)], notes: String::new(), calcul: String::new(), exigee: String::new() };
+        let p = Prete { version: VersionDuLogiciel::lire("2026.11.01").unwrap(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), const { socle::paris::HeureDuJour::a(9, 0) }).unwrap(), archives: vec![CleDArchive::Du(Systeme::DE_CE_PROGRAMME)], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
     }
 

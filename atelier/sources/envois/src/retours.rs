@@ -1329,7 +1329,7 @@ fn au_journal(date: (Jour, Option<FuseauXsd>), heure: Option<(i64, bool, Option<
         None => {
             // `24:00:00` est le debut du jour suivant.
             let (jour, seconde) = (Jour::depuis_jours_unix(local.div_euclid(86_400))?, local.rem_euclid(86_400));
-            Moment::a_paris(jour, seconde / 3_600, (seconde % 3_600) / 60, seconde % 60).filter(|m| m.jour_de_paris() == jour && m.seconde_du_jour_de_paris() == seconde)?
+            Moment::a_paris_a_la_seconde(jour, socle::paris::HeureDuJour::lue(seconde / 3_600, (seconde % 3_600) / 60)?, seconde % 60).filter(|m| m.jour_de_paris() == jour && m.seconde_du_jour_de_paris() == seconde)?
         }
         Some(z) => Moment::de_secondes(local - z.secondes())?,
     };

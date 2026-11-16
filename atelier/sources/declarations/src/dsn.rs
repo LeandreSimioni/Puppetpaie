@@ -5536,7 +5536,7 @@ mod tests {
                 ij_nette_majoree: None,
                 prolongations: Vec::new(),
                 reprises: Vec::new(),
-                saisi_le: socle::paris::Moment::a_paris(j(2026, 6, 21), 10, 0, 0).unwrap(),
+                saisi_le: socle::paris::Moment::a_paris(j(2026, 6, 21), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap(),
                 qui: "interface".into(),
                 note: None,
             },
