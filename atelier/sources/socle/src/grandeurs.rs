@@ -776,8 +776,9 @@ impl crate::forme::NombreEcrit {
         d.trunc().to_usize().ok_or_else(|| crate::echec::refus(num::illisible(&t)))
     }
 
-    /// LA GRANDEUR `g` ECRITE DANS UNE CASE (le taux AT/MP qu'une DSN reprise declare) : un nombre a virgule, dans sa
-    /// forme la plus courte (`courte`) ; la porte de la case.
+    /// LA GRANDEUR `g` ECRITE DANS UNE CASE (le taux AT/MP qu'une DSN reprise declare, un taux de cachet, un salaire
+    /// mensuel) : un nombre a virgule, dans sa forme la plus courte (`courte` : `130` s'ecrit `130.0`) ; la porte de la
+    /// case.
     pub fn de_grandeur<G: Grandeur>(g: G) -> crate::forme::NombreEcrit {
         crate::forme::NombreEcrit::Flottant(courte(g).en_decimal())
     }
@@ -788,14 +789,6 @@ impl crate::forme::Nombre {
     /// son echelle gardee : la porte de sa lecture.
     pub fn grandeur<G: Grandeur>(self) -> G {
         G::du(self.0)
-    }
-}
-
-impl crate::forme::NombreLu {
-    /// LA GRANDEUR `g` ECRITE DANS UNE CASE D'UNE CARTE (un taux de cachet, un salaire mensuel) : un nombre a virgule,
-    /// dans sa forme la plus courte (`courte` : `130` s'ecrit `130.0`) ; la porte de la case.
-    pub fn de_grandeur<G: Grandeur>(g: G) -> crate::forme::NombreLu {
-        crate::forme::NombreLu::de_decimal(g.en_decimal())
     }
 }
 
@@ -834,12 +827,6 @@ pub mod lu {
             Some(Ok(d)) => Some((<A as crate::grandeurs::Scelle>::du(d), <B as crate::grandeurs::Scelle>::du(d))),
             Some(Err(_)) | None => None,
         }
-    }
-
-    /// LA GRANDEUR QU'UN NOMBRE D'UNE DONNEE ECRIT (`forme::NombreLu` : une case d'une carte, le salaire mensuel), son
-    /// echelle gardee (`130.0`, sa forme ecrite) : la porte de sa lecture. Un nombre hors de portee d'un decimal se refuse.
-    pub fn ecrite<G: Grandeur>(n: &crate::forme::NombreLu) -> crate::echec::R<G> {
-        n.decimal_avec_echelle().map(<G as crate::grandeurs::Scelle>::du)
     }
 
     /// LA GRANDEUR QU'UN NOMBRE ECRIT EN TEXTE DIT (`num::dec_texte`, comme `forme::decimal` lit un texte : « 12.50 »),

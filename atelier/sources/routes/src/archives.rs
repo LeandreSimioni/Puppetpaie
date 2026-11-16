@@ -487,7 +487,7 @@ fn retenir_logiciel(ctx: &Contexte, c: ChargeRetenirLogiciel) -> R<LogicielReten
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 enum NombreDit {
-    Nombre(socle::forme::NombreLu),
+    Nombre(socle::forme::NombreEcrit),
     Texte(String),
 }
 

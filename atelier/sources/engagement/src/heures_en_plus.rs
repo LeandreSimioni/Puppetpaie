@@ -8,7 +8,7 @@
 //! `heures_en_plus`, qui les cite.
 
 use droit::fiche::Lue;
-use socle::forme::NombreLu;
+use socle::forme::NombreEcrit;
 
 use crate::calcul::{BaseDeCotisation, LigneBrut, LigneCotisation};
 use crate::conges::{avertir, info, qui};
@@ -59,7 +59,7 @@ pub fn faits_appeles(ctx: &Contexte, partiel: bool) -> R<Vec<&'static str>> {
 /// primes qui sont la contrepartie du travail, que la carte ne distingue pas des autres.
 pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnitaire, quotite: Heures, partiel: bool) -> R<(Vec<crate::LignePaie>, Vec<Avis>)> {
     let (salaire, quotite) = (salaire.decimal(), quotite.decimal());
-    let heures = |x: &Option<NombreLu>, nom: &str| crate::conges::heures_dites(ctx, e, x, nom);
+    let heures = |x: &Option<NombreEcrit>, nom: &str| crate::conges::heures_dites(ctx, e, x, nom);
     let (sup, a_50, comp) = (
         heures(&e.heures_supplementaires, "Heures supplémentaires")?,
         heures(&e.heures_supplementaires_a_50, "Heures supplémentaires à 50 %")?,

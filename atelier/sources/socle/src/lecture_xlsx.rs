@@ -28,7 +28,7 @@ const NS_P: &str = "http://schemas.openxmlformats.org/package/2006/relationships
 pub enum Cellule {
     Texte(String),
     Entier(i64),
-    AVirgule(crate::forme::NombreLu),
+    AVirgule(crate::forme::NombreEcrit),
     Booleen(bool),
 }
 
@@ -222,8 +222,8 @@ pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
                     Some("str") | Some("e") => Cellule::Texte(v.to_string()),
                     Some("b") => Cellule::Booleen(v == "1"),
                     _ if v.contains(['.', 'e', 'E']) => Cellule::AVirgule(
-                        crate::forme::NombreLu::du_texte(v.trim_matches(crate::texte::blanc))
-                            .map_err(|e| refus(format!("{} : nombre illisible {} ({})", c.nom, crate::fichiers::repr(v), e)))?,
+                        crate::forme::NombreEcrit::du_texte(v.trim_matches(crate::texte::blanc))
+                            .map_err(|e| e.reformuler(|p| format!("{} : {}", c.nom, p)))?,
                     ),
                     _ => Cellule::Entier(entier(v, "nombre")?),
                 }

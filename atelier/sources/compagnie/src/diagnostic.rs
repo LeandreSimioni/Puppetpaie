@@ -839,14 +839,14 @@ pub struct PageDite {
     pub ecran: String,
     pub fenetre: String,
     /// Le rapport des pixels de l'ecran aux pixels de la page (`devicePixelRatio` : `1.25`), tel que la page l'ecrit.
-    pub echelle: socle::forme::NombreLu,
+    pub echelle: socle::forme::NombreEcrit,
     pub langue: String,
     pub langues: String,
     pub fuseau: String,
     pub decalage_minutes: i64,
     pub agent: String,
     /// La memoire du poste en Go (`navigator.deviceMemory` : `0.5`, `8`), telle que la page l'ecrit.
-    pub memoire_go: Option<socle::forme::NombreLu>,
+    pub memoire_go: Option<socle::forme::NombreEcrit>,
     pub coeurs: Option<u64>,
 }
 

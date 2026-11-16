@@ -2,7 +2,7 @@
 //! montant donne. La recherche refait le calcul de la saisie pour l'ecran (`pour_l_ecran`) a chaque essai, les salaires
 //! des engagements vises multiplies par un meme facteur ; rien ne s'ecrit.
 
-use socle::forme::NombreLu;
+use socle::forme::NombreEcrit;
 
 use crate::LignePaie;
 
@@ -130,10 +130,10 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[RangDan
     Ok(())
 }
 
-/// Le salaire mensuel de la carte multiplie par `facteur`, au centime, en nombre a virgule (`NombreLu::de_grandeur`).
-fn mis_a_l_echelle(x: &NombreLu, facteur: Coefficient) -> R<NombreLu> {
-    let salaire: Montant = socle::grandeurs::lu::ecrite(x).map_err(RefusVisee::Refus)?;
-    Ok(NombreLu::de_grandeur((salaire * facteur).au_centime()))
+/// Le salaire mensuel de la carte multiplie par `facteur`, au centime, en nombre a virgule (`NombreEcrit::de_grandeur`).
+fn mis_a_l_echelle(x: &NombreEcrit, facteur: Coefficient) -> R<NombreEcrit> {
+    let salaire: Montant = x.grandeur().map_err(RefusVisee::Refus)?;
+    Ok(NombreEcrit::de_grandeur((salaire * facteur).au_centime()))
 }
 
 /// L'engagement recopie, ses salaires multiplies -- et rien d'autre. Rend aussi s'il y avait quelque chose a multiplier.

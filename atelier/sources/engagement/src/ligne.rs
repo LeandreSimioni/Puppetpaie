@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{CodeDeRubrique, Unite};
 use serde::{Deserialize, Serialize};
-use socle::forme::{Nombre, NombreLu};
+use socle::forme::{Nombre, NombreEcrit};
 
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -29,7 +29,7 @@ use socle::num::Decimal;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Chiffre {
-    Nombre(NombreLu),
+    Nombre(NombreEcrit),
     Texte(String),
 }
 
@@ -52,7 +52,8 @@ impl Chiffre {
         }
     }
 
-    /// Le decimal : un entier tel quel, un nombre a virgule par sa forme la plus courte, un texte lu.
+    /// Le decimal, a la porte d'une chaine encore en decimal (le maintien de salaire, l'essai) : un entier tel quel, un
+    /// nombre a virgule par sa forme la plus courte, un texte lu ; une grandeur se lit par `grandeur`.
     pub fn dec(&self) -> R<Decimal> {
         match self {
             Chiffre::Nombre(n) => n.decimal(),
@@ -60,20 +61,11 @@ impl Chiffre {
         }
     }
 
-    /// Le decimal dont un nombre a virgule garde son echelle (`130.0`, sa forme ecrite) : la lecture d'un nombre d'une
-    /// chaine encore en decimal (le maintien de salaire) ; une grandeur se lit par `grandeur`.
-    pub fn dec_avec_echelle(&self) -> R<Decimal> {
-        match self {
-            Chiffre::Nombre(n) => n.decimal_avec_echelle(),
-            Chiffre::Texte(s) => socle::num::dec_texte(s),
-        }
-    }
-
-    /// LA GRANDEUR QU'IL DIT, son echelle gardee : un nombre comme une donnee l'ecrit (`socle::grandeurs::lu::ecrite`), un
-    /// texte comme un nombre ecrit en texte (`lu::en_texte`) ; la porte de sa lecture.
+    /// LA GRANDEUR QU'IL DIT : un nombre ecrit par sa grandeur (`NombreEcrit::grandeur`), un texte comme un nombre ecrit
+    /// en texte (`lu::en_texte`) ; la porte de sa lecture.
     pub fn grandeur<G: socle::grandeurs::Grandeur>(&self) -> R<G> {
         match self {
-            Chiffre::Nombre(n) => socle::grandeurs::lu::ecrite(n),
+            Chiffre::Nombre(n) => n.grandeur(),
             Chiffre::Texte(s) => socle::grandeurs::lu::en_texte(s),
         }
     }

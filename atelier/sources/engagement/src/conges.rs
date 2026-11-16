@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 
-use socle::forme::NombreLu;
+use socle::forme::NombreEcrit;
 
 use crate::calcul::Paie;
 use crate::saisie::{Carte, CongePris};
@@ -107,7 +107,7 @@ pub(crate) fn avertir(texte: String) -> Avis {
 /// signe), ou le calcul refuse en nommant la case.
 pub(crate) fn salaire_mensuel(ctx: &Contexte, e: &Carte) -> R<MontantUnitaire> {
     match &e.salaire_mensuel {
-        Some(s) => socle::grandeurs::lu::ecrite(s),
+        Some(s) => s.grandeur(),
         None => Err(socle::refus!(
             "{} : saisissez le salaire mensuel brut de son {}, dans la case « Salaire mensuel brut ».\n\
              Il se lit sur le contrat signé.",
@@ -136,7 +136,7 @@ fn duree_legale(nat: &droit::natures::Nature) -> R<Heures> {
 
 /// LES HEURES DE PLUS DE SON CONTRAT d'un salarie au mois, une case de sa carte (`nom`) : la somme de ce qu'elle dit,
 /// aucune si elle ne dit rien. Un nombre d'heures negatif se refuse en la nommant.
-pub(crate) fn heures_dites(ctx: &Contexte, e: &Carte, x: &Option<NombreLu>, nom: &str) -> R<Decimal> {
+pub(crate) fn heures_dites(ctx: &Contexte, e: &Carte, x: &Option<NombreEcrit>, nom: &str) -> R<Decimal> {
     let h = x.iter().map(dec_de).try_fold(Decimal::ZERO, |a, h| h.map(|h| add(a, h)))?;
     if h < Decimal::ZERO {
         return Err(socle::refus!("{} : « {} » est négatif ({}) : une heure de plus se compte en positif.", qui(ctx, e), nom, h));
@@ -144,10 +144,10 @@ pub(crate) fn heures_dites(ctx: &Contexte, e: &Carte, x: &Option<NombreLu>, nom:
     Ok(h)
 }
 
-/// Le decimal d'un nombre de la carte, son echelle gardee (`NombreLu::decimal_avec_echelle`) : celui des heures en plus
-/// et du preavis, des chaines encore en decimal ; une grandeur se lit par `socle::grandeurs::lu::ecrite`.
-pub(crate) fn dec_de(n: &NombreLu) -> R<Decimal> {
-    n.decimal_avec_echelle()
+/// Le decimal d'un nombre de la carte (`NombreEcrit::decimal`, sa forme la plus courte) : celui des heures en plus et du
+/// preavis, des chaines encore en decimal ; une grandeur se lit par `NombreEcrit::grandeur`.
+pub(crate) fn dec_de(n: &NombreEcrit) -> R<Decimal> {
+    n.decimal()
 }
 
 // -------------------------------------------------- les jours ouvrables
@@ -1094,7 +1094,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // --- les primes
     // Sa rubrique, seule la compagnie la dit : une prime qui ne la dit pas est une saisie a finir, qui nomme la case.
     for pr in e.primes.iter().flatten() {
-        let montant = socle::grandeurs::courte(socle::grandeurs::lu::ecrite::<Montant>(&pr.montant)?);
+        let montant = socle::grandeurs::courte(pr.montant.grandeur::<Montant>()?);
         let Some(rubrique) = pr.rubrique.clone() else {
             return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(montant))));
         };
@@ -1243,7 +1243,7 @@ pub struct Provision {
 /// `salaire_mensuel` : la valeur de l'engagement ; absente, elle se refuse. `None` : un contrat sans compteur de
 /// l'employeur (declare a la caisse des Conges Spectacles). Refus : une paie validee qui ne porte pas le compteur
 /// qu'elle devrait.
-pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: Montant, salaire_mensuel: Option<&NombreLu>) -> R<Option<Provision>> {
+pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: Montant, salaire_mensuel: Option<&NombreEcrit>) -> R<Option<Provision>> {
     let Some(ecrit) = paie.conges.as_ref() else {
         if paie.declaree_a_la_caisse_des_conges()? {
             return Ok(None);
@@ -1261,7 +1261,7 @@ pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: Montant, salai
             paie.engagement.salarie
         ));
     };
-    provision_du_compteur(cpt, mois, socle::grandeurs::lu::ecrite(salaire)?).map(Some)
+    provision_du_compteur(cpt, mois, salaire.grandeur()?).map(Some)
 }
 
 /// LA PROVISION D'UN COMPTEUR a la fin de `mois` : son solde, et l'indemnite de ce solde quand il est positif, le
