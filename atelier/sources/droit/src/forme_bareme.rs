@@ -268,10 +268,14 @@ forme! {
         pub tarifs_conventionnels: Option<Tarifs>,
         pub contributions_dsn: Option<Vec<ContributionDsn>>,
         pub secteurs: Option<Secteurs>,
-        // Le taux AT/MP du siege, tel que sa fiche le dit pour l'annee (`contexte::Contexte::taux_atmp_de`), ou ce que le
-        // moteur en dit.
+        // La ligne du taux AT/MP du siege, telle que sa fiche la dit pour l'annee (`contexte::Contexte::taux_atmp_de`),
+        // ou celle de l'etablissement (`bareme::surcharger`).
         #[serde(skip)]
-        pub taux_atmp: Option<TauxAtmp>,
+        pub taux_atmp: Option<crate::fiche::TauxAtmp>,
+        // Le refus du taux d'un etablissement que sa ligne ne donne pas pour l'annee (`bareme::surcharger`) : la ligne ne
+        // garde que son code risque, `bareme::bareme_atmp` rend ce refus.
+        #[serde(skip)]
+        pub taux_atmp_manque: Option<socle::echec::Echec>,
         // Ce que le moteur pose sur la pile : l'etablissement du salarie (`bareme::surcharger`). La compagnie, la pile la
         // recoit typee (`bareme::EntrepriseLue`), elle ne la porte pas.
         #[serde(skip)]
@@ -1538,18 +1542,6 @@ forme! {
         pub collecteur: Option<String>,
         pub avertissement: Option<String>,
     }
-}
-
-/// LE TAUX AT/MP DE LA COMPAGNIE OU DE L'ETABLISSEMENT POUR UNE PERIODE : la ligne de sa case de la configuration
-/// (`fiche::TauxAtmp`, `bareme::taux_atmp_de_l_annee`) : son taux, son code, sa date, d'ou elle vient ; ce qui manque.
-#[derive(Debug, Clone, Default)]
-pub struct TauxAtmp {
-    pub valeur: Option<Taux>,
-    pub code_risque: Option<crate::bareme::CodeRisqueAt>,
-    pub depuis: Option<socle::date::Jour>,
-    pub provenance: Option<crate::fiche::ProvenanceAtmp>,
-    pub notification: Option<crate::fiche::NotificationAtmp>,
-    pub manque: Option<socle::echec::Echec>,
 }
 
 /// La phrase du refus d'un socle livre que le moteur ne sait pas lire, la cle a part.

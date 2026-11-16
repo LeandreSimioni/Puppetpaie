@@ -211,6 +211,7 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
         contributions_dsn: None,
         secteurs: None,
         taux_atmp: None,
+        taux_atmp_manque: None,
         etablissement: None,
         source: None,
         note: None,

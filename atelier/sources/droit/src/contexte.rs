@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
-use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
-use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
+use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
+use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, VersementMobiliteEcrit};
 use socle::echec::Lieu;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::MontantUnitaire;

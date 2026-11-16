@@ -7,7 +7,7 @@
 //! ci-dessous) et l'etablissement du salarie (`etablissement_de`, `surcharger`).
 
 use crate::forme_bareme::{
-    CotisationDsn, CotisationModifiee, CotisationSupplementaire, FamilleDeCotisation, IdDeCotisation, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, TauxAtmp,
+    CotisationDsn, CotisationModifiee, CotisationSupplementaire, FamilleDeCotisation, IdDeCotisation, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee,
     TauxDate, VersementMobiliteEcrit, CADRE, CADRE_PERMANENT, CCN, MUTUELLE, PREVOYANCE, PREVOYANCE_T2, REGIME_LOCAL, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
 use crate::assiette::Assiette;
@@ -744,13 +744,13 @@ pub fn bareme_atmp(mut bar: Pile, _ent: &ChampsEntreprise) -> R<Pile> {
     if !bar.rubriques_bulletin.iter().any(|r| r.facteur_atmp.is_some()) {
         return Ok(bar);
     }
-    let Some(taux) = bar.taux_atmp.as_ref().filter(|t| t.manque.is_none()).and_then(|t| t.valeur) else {
+    // Le taux d'un etablissement que sa ligne ne donne pas pour l'annee (`surcharger`).
+    if let Some(pourquoi) = bar.taux_atmp_manque.clone() {
+        return Err(pourquoi);
+    }
+    let Some(taux) = bar.taux_atmp.as_ref().and_then(|t| t.valeur) else {
         let a = annee(&bar);
         let t = bar.taux_atmp.as_ref();
-        // Le taux d'un etablissement que sa ligne ne donne pas pour l'annee (`surcharger`).
-        if let Some(pourquoi) = t.and_then(|t| t.manque.clone()) {
-            return Err(pourquoi);
-        }
         return Err(if t.and_then(|t| t.code_risque.as_ref()) == Some(&SANS_NOTIFICATION) {
             socle::echec::erreur(
                 socle::echec::Classe::TauxAtmpAbsent,
@@ -1240,10 +1240,13 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
         Some(libelle) => libelle,
         None => e.nic.ecrite("nic")?,
     };
-    bar.taux_atmp = match taux_atmp_de_l_annee(dit, bar.annee, Some(&bar), en_alsace_moselle(e.code_postal.portee())) {
-        Some(Ok(t)) => Some(t),
-        Some(Err(m)) => Some(TauxAtmp { code_risque: dit.code_risque.clone(), manque: Some(m.reformuler(|p| format!("Établissement « {} » : {}", nom, p))), ..TauxAtmp::default() }),
-        None => None,
+    (bar.taux_atmp, bar.taux_atmp_manque) = match taux_atmp_de_l_annee(dit, bar.annee, Some(&bar), en_alsace_moselle(e.code_postal.portee())) {
+        Some(Ok(t)) => (Some(t), None),
+        Some(Err(m)) => (
+            Some(crate::fiche::TauxAtmp { code_risque: dit.code_risque.clone(), ..crate::fiche::TauxAtmp::default() }),
+            Some(m.reformuler(|p| format!("Établissement « {} » : {}", nom, p))),
+        ),
+        None => (None, None),
     };
     // « aucun », ou un taux de zero : la commune de l'etablissement n'en a pas, ou il y emploie moins de onze salaries
     // (CGCT, L. 2333-64, I, l'effectif « employe dans chacune des zones »).
@@ -2001,7 +2004,7 @@ mod tests_risques_atmp {
 /// Celui d'un risque « TC » (D. 242-6-14, I, `socle_an`) vaut jusqu'a la ligne suivante. 999ZZ (pas encore de
 /// notification) n'a pas de taux (`bareme_atmp` dit pourquoi). Sinon `Err` : le taux de l'annee manque et se demande.
 /// `None` : la case ne dit aucun code.
-pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: Annee, socle_an: Option<&Pile>, alsace_moselle: bool) -> Option<R<TauxAtmp>> {
+pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: Annee, socle_an: Option<&Pile>, alsace_moselle: bool) -> Option<R<crate::fiche::TauxAtmp>> {
     let code = dit.code_risque.clone()?;
     let risque = socle_an.and_then(|s| risques_de(s).into_iter().find(|r| r.code == code));
     let nom = match risque.as_ref().and_then(|r| r.code_arrete.as_ref()) {
@@ -2016,7 +2019,7 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: Annee, socle_an: O
         )))
     };
     match (dit.valeur, dit.depuis) {
-        (None, _) if code == SANS_NOTIFICATION => Some(Ok(TauxAtmp { code_risque: Some(code), depuis: dit.depuis, provenance: dit.provenance, ..TauxAtmp::default() })),
+        (None, _) if code == SANS_NOTIFICATION => Some(Ok(crate::fiche::TauxAtmp { code_risque: Some(code), depuis: dit.depuis, provenance: dit.provenance, ..crate::fiche::TauxAtmp::default() })),
         (None, _) => manque("La configuration ne dit que le code risque.".to_string()),
         (Some(_), None) => manque("La ligne inscrite ne dit pas à partir de quand son taux vaut.".to_string()),
         (Some(_), Some(d)) if d.annee() > an => manque(format!("Le taux inscrit ne vaut qu'à partir du {}.", d.jj_mm_aaaa())),
@@ -2026,7 +2029,8 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: Annee, socle_an: O
                 let ou = if alsace_moselle { " (l'établissement est en Alsace-Moselle)" } else { "" };
                 return manque(format!("Celui de {} ({}) ne vaut que pour son année{} : le taux notifié de {} se demande.", d.annee(), socle::texte::pourcent(v), ou, an));
             }
-            Some(Ok(TauxAtmp { valeur: Some(v), code_risque: Some(code), provenance: dit.provenance, depuis: Some(d), notification: dit.notification.clone(), ..TauxAtmp::default() }))
+            // La ligne telle que la case la dit : elle vaut pour l'annee.
+            Some(Ok(dit.clone()))
         }
     }
 }

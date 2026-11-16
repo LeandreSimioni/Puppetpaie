@@ -175,7 +175,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | contrat (ce que l'engagement fait signer) | `ContratEcrit` | à unifier (#419) : `ContratLu`, `ContratRelu` ; les copies de l'engagement (`ContratCs`, `PaieCs`, `PaieAer`, `avenant::Eng`, `ContratResume`, `ResumeDePaie`) disparaissent |
 | contrat déclaré ou attesté (ce qu'un organisme en dit) | `ContratDeclare` | à unifier (#419) : `changements_contrat::Declare`, `dsn_lue::ContratDeclare`, `ContratAtteste`, `attestes::Atteste` |
 | taux de PAS reçu (son taux, sa date, d'où il vient) | `compagnie::taux_pas::TauxRecu` | à unifier (#419) : `droit::fiche::TauxPas`, `ReleveTauxPas`, `TauxPasLus`, `TauxPasAnnonce`, `PasImporte.taux` |
-| taux AT/MP | `TauxAtmp` | à unifier (#419) : `fiche::TauxAtmp`, `forme_bareme::TauxAtmp`, `organismes::TauxAt`, `TauxAtmpNotifie`, `TauxAtmpAnnonce` |
+| taux AT/MP (la ligne datée de la case : code risque, taux, depuis, provenance, notification ; le barème d'une année la porte, `Pile.taux_atmp`, et le refus d'un établissement à part, `Pile.taux_atmp_manque`) | `droit::fiche::TauxAtmp` | à unifier (#419) : `organismes::TauxAt`, `TauxAtmpNotifie`, `TauxAtmpAnnonce` |
 | versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
 | réduction générale d'une paie | `droit::reduction::ReductionGenerale` | à unifier (#419) : `forme_bareme::ReductionGenerale`, `ReductionDsn` sont des formes, à renommer |
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |

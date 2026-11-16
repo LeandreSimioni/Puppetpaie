@@ -280,7 +280,7 @@ fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Optio
 }
 
 /// La phrase et l'explication du taux de l'annee lu par la paie (`lu` : `bareme::taux_atmp_de_l_annee`).
-fn dire(lu: Option<socle::echec::R<droit::forme_bareme::TauxAtmp>>, an: Annee, nom: &Option<String>) -> (String, String) {
+fn dire(lu: Option<socle::echec::R<TauxAtmp>>, an: Annee, nom: &Option<String>) -> (String, String) {
     match lu {
         Some(Ok(t)) => match t.valeur {
             Some(v) => (format!("Taux AT/MP {} : {}{}.", an, pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
