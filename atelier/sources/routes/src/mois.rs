@@ -204,8 +204,8 @@ struct ChargeAjuster {
     modifications: Vec<ModificationEnCours>,
     engagement: Identite,
     cible: Cible,
-    /// Le montant vise, tel qu'il est tape (« 1 850,00 € »), ou un nombre.
-    montant: socle::forme::NombreEcrit,
+    /// Le montant vise, un nombre, ou tel qu'il est tape (« 1 850,00 € »), converti a la porte (`Charge::lire`).
+    montant: Montant,
 }
 
 /// La charge des contrats d'un mois passe : le mois, et le salarie dont ne lire que les siens (absent : tous).
@@ -1233,7 +1233,7 @@ fn cible_dite(c: Cible) -> &'static str {
 /// Le taux qu'il faudrait, pour que l'engagement `engagement` (son identite ; son brouillon enregistre, ou sa modification
 /// pas encore ecrite, `mois_designe`) coute CE montant. N'ecrit rien.
 fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
-    let vise = socle::grandeurs::courte(c.montant.en::<Montant>("Montant visé")?).au_centime();
+    let vise = socle::grandeurs::courte(c.montant).au_centime();
     if vise <= Montant::ZERO {
         return Err(refus(format!("Un montant vise se dit en euros et il est positif (recu : {}).", socle::grandeurs::ecrit::texte::dit(vise))));
     }

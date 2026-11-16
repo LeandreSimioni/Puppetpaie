@@ -226,16 +226,9 @@ pub(crate) struct ChargeNature {
     pub(crate) debut: Option<Jour>,
     pub(crate) fin: Option<Jour>,
     pub(crate) numero: Option<engagement::numeros::NumeroContrat>,
-    /// Le salaire tel que la personne l'a tape (« 1 850,00 »), ou un nombre.
-    pub(crate) salaire: Option<socle::forme::NombreEcrit>,
+    /// Le salaire, un nombre, ou tel que la personne l'a tape (« 1 850,00 »), converti a la porte (`Charge::lire`).
+    pub(crate) salaire: Option<socle::grandeurs::MontantUnitaire>,
     pub(crate) quotite: Option<socle::grandeurs::Heures>,
-}
-
-impl ChargeNature {
-    /// Le salaire demande, tel qu'il est tape ; rien pour une case blanche.
-    fn salaire(&self) -> Option<&socle::forme::NombreEcrit> {
-        self.salaire.as_ref().filter(|n| !matches!(n, socle::forme::NombreEcrit::Texte(t) if t.trim().is_empty()))
-    }
 }
 
 /// Ce qu'`importation-nature` rend : les contrats ecrits, ce qui reste a dire, et ce que l'ecran en dit.
@@ -310,10 +303,9 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 *(if champ == Demande::Debut { &mut contrat.debut } else { &mut contrat.fin }) = Some(jour);
             }
             Demande::Salaire => {
-                let v = charge.salaire().ok_or_else(manque)?;
-                let salaire: socle::grandeurs::MontantUnitaire = v.en("Salaire mensuel brut")?;
+                let salaire = charge.salaire.ok_or_else(manque)?;
                 if salaire <= socle::grandeurs::MontantUnitaire::ZERO {
-                    return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", v.ecrit())));
+                    return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", socle::grandeurs::ecrit::sans_zero::dit(salaire))));
                 }
                 contrat.salaire_mensuel = Some(socle::grandeurs::courte(salaire));
             }
@@ -418,7 +410,8 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
             let pose = match champ {
                 Demande::Numero => Some(charge.numero = Some(numero.clone())),
                 Demande::Salaire => match p.paie.mesures.salaire_habituel {
-                    Some(m) => Some(charge.salaire = Some(socle::forme::NombreEcrit::de_grandeur(m))),
+                    // Le salaire de base d'un mois : le montant d'une unite, le mois.
+                    Some(m) => Some(charge.salaire = Some(m.pour_une_unite())),
                     None => None,
                 },
                 Demande::Debut => c.map(|c| charge.debut = Some(c.periode.debut())),

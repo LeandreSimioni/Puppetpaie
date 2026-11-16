@@ -785,29 +785,17 @@ fn ranger_les_textes(v: &mut Value, chemin: &mut Vec<String>, rangee: &dyn Fn(&[
     }
 }
 
-/// UN NOMBRE TEL QU'IL EST ECRIT, une ecriture et non une grandeur (ce qu'une charge porte tel que la personne l'a tape,
-/// et les heures du forfait d'une rubrique) : un entier, un flottant, ou le texte tape, garde tel quel pour se reecrire
-/// de meme. Un nombre ecrit avec sa virgule se garde en decimal, dans sa forme la plus courte
-/// (`num::court` : `130.0` reste `130.0`), et se reecrit en nombre a virgule (`ecrire_a_virgule`). Sa grandeur se lit a
-/// sa porte (`grandeur`, `compte`, dans `grandeurs`).
+/// UN NOMBRE TEL QU'IL EST ECRIT, une ecriture et non une grandeur (les heures du forfait d'une rubrique, case de fiche
+/// que `fiche!` ecrit par son type) : un entier, un flottant, ou le texte tape, garde tel quel pour se reecrire de meme.
+/// Un nombre ecrit avec sa virgule se garde en decimal, dans sa forme la plus courte (`num::court` : `130.0` reste
+/// `130.0`), et se reecrit en nombre a virgule (`ecrire_a_virgule`). Sa grandeur se lit a sa porte (`en`, dans
+/// `grandeurs`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum NombreEcrit {
     Entier(i64),
     Naturel(u64),
     Flottant(crate::num::Decimal),
     Texte(String),
-}
-
-impl NombreEcrit {
-    /// Tel qu'il est ecrit, pour un message : un texte tel quel, un nombre sous sa forme ecrite.
-    pub fn ecrit(&self) -> String {
-        match self {
-            NombreEcrit::Entier(i) => i.to_string(),
-            NombreEcrit::Naturel(u) => u.to_string(),
-            NombreEcrit::Flottant(x) => x.to_string(),
-            NombreEcrit::Texte(s) => s.clone(),
-        }
-    }
 }
 
 impl serde::Serialize for NombreEcrit {

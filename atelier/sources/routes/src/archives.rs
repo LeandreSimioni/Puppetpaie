@@ -66,7 +66,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"12.80"}"#,
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
-        refus: &[OPERATION, MANQUE],
+        refus: &[OPERATION, FORME, MANQUE],
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Exports),
@@ -483,13 +483,14 @@ fn retenir_logiciel(ctx: &Contexte, c: ChargeRetenirLogiciel) -> R<LogicielReten
     Ok(LogicielRetenu { phrase, compta })
 }
 
-/// La charge de `casc-regularise` : l'annee, le jour du virement, le montant vire tel que la personne l'a tape.
+/// La charge de `casc-regularise` : l'annee, le jour du virement, le montant vire (tape, il se convertit a la porte :
+/// `Charge::lire`).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCascRegularise {
     annee: Annee,
     vire_le: Jour,
-    montant: socle::forme::NombreEcrit,
+    montant: socle::grandeurs::Montant,
 }
 
 /// Ce que rend `casc-regularise` : sa phrase, et la regularisation notee.
@@ -500,11 +501,10 @@ struct CascNotee {
     notee: RegularisationNotee,
 }
 
-/// Note qu'une annee de CASC-SVP est regularisee (apres le virement) ; le montant tape se convertit une fois
-/// (`NombreEcrit::en`), et ce qui ne se convertit pas se refuse.
+/// Note qu'une annee de CASC-SVP est regularisee (apres le virement).
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     let aujourd_hui = socle::temps::secondes().a_la_seconde().jour_de_paris();
-    let vire = socle::grandeurs::sans_zero(c.montant.en::<socle::grandeurs::Montant>("Montant viré").map_err(|m| m.reclasser(Classe::Illisible))?);
+    let vire = socle::grandeurs::sans_zero(c.montant);
     let notee = marquer_regularise(ctx, c.annee, c.vire_le, vire.decimal(), INTERFACE, aujourd_hui)?;
     let montant = socle::texte::euros(socle::grandeurs::Montant::du_decimal(notee.montant));
     Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })

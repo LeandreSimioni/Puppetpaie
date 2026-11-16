@@ -183,7 +183,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
-| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; `NombreEcrit::en`) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` ; la case `heures_forfait` d'une rubrique le garde encore |
+| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` ; `socle::forme::NombreEcrit`, que la case `heures_forfait` d'une rubrique garde encore (`NombreEcrit::en`) |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
@@ -292,8 +292,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 
 **Le détail**
 
-- **montant** : une somme en euros, au centime ; aujourd'hui aussi `Decimal` ; le
-  nombre tapé, `socle::forme::NombreEcrit`, ne vit qu'à la porte d'une route, pas un montant. **Le nombre tapé**
+- **montant** : une somme en euros, au centime ; aujourd'hui aussi `Decimal` ; une case tapée d'une charge est sa
+  grandeur, lue tapée à la porte de la route, pas un texte. **Le nombre tapé**
   (Léandre, 16/11) : « les gens tapent n'importe quoi et après on convertit automatiquement ; ce qui est affiché, c'est
   ce qui a été converti ; un chiffre solide, pas du texte ». Une seule conversion, celle de la route
   (`socle::grandeurs::lu::tapee`), jamais une copie ailleurs : la virgule ou le point séparent les décimales, seule

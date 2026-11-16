@@ -43,11 +43,6 @@ fn socle_de(an: Annee) -> R<Option<droit::forme_bareme::Pile>> {
     droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-/// Le taux que la ligne `t` de la case dit.
-fn taux(t: &TauxAtmp) -> R<Option<Taux>> {
-    Ok(t.valeur)
-}
-
 // ------------------------------------------------------------------ les sources
 
 /// LE CODE ET LE TAUX QUE LA CARSAT NOTIFIE (retour DSN de nature 34, `envois::retours::taux_atmp_d_octets`) s'inscrivent
@@ -72,12 +67,12 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
     let fiche = crate::fiches::lire_fichier::<FicheEntrepriseDatee>(ctx)?;
     let deja = fiche.taux_atmp.as_deref().and_then(|l| droit::fiche::valeur_au(l, &n.date_effet));
     if let Some(d) = deja.filter(|d| d.provenance == Some(ProvenanceAtmp::Saisie) && d.depuis.is_some_and(|j| j.annee() == n.date_effet.annee())) {
-        if d.code_risque != t.code_risque || taux(&d)? != taux(&t)? {
+        if d.code_risque != t.code_risque || d.valeur != t.valeur {
             return Ok(Some(format!(
                 "Conflit sur le taux AT/MP : vous avez inscrit {} ; la notification de la CARSAT ({}) dit {}. Rien n'est changé : c'est à vous de choisir. Pour prendre celui de la notification, inscrivez-le dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».",
-                ligne_dite(&d)?.dit,
+                ligne_dite(&d).dit,
                 source,
-                ligne_dite(&t)?.dit
+                ligne_dite(&t).dit
             )));
         }
     }
@@ -132,7 +127,7 @@ fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -
     let siege = fiche.taux_atmp.as_deref().and_then(derniere);
     let alsace = bareme::en_alsace_moselle(ctx.entreprise_au(&janvier).code_postal.portee());
     if let Some(t) = siege.and_then(|l| de_l_arrete(&l, alsace, false, janvier)) {
-        let phrase = format!("Taux AT/MP {}, siège : {}.", an, ligne_dite(&t)?.dit);
+        let phrase = format!("Taux AT/MP {}, siège : {}.", an, ligne_dite(&t).dit);
         if crate::fiches::inscrire_taux_atmp(ctx, t, &note)? {
             dit.push(phrase);
         }
@@ -150,7 +145,7 @@ fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -
             let neuf = bareme::etablissement_neuf(&e, an);
             let alsace = bareme::en_alsace_moselle(e.code_postal.portee());
             if let Some(t) = e.taux_atmp.clone().and_then(|l| de_l_arrete(&l, alsace, neuf, depuis)) {
-                dit.push(format!("Taux AT/MP {}, établissement {} : {}.", an, nom_de(&e), ligne_dite(&t)?.dit));
+                dit.push(format!("Taux AT/MP {}, établissement {} : {}.", an, nom_de(&e), ligne_dite(&t).dit));
                 e.taux_atmp = Some(t);
                 changee = true;
             }
@@ -231,8 +226,8 @@ struct LigneDite {
     note: Option<String>,
 }
 
-fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
-    let valeur = taux(t)?;
+fn ligne_dite(t: &TauxAtmp) -> LigneDite {
+    let valeur = t.valeur;
     let d_ou = match (t.provenance, &t.notification) {
         (Some(ProvenanceAtmp::Notification), n) => {
             let le: String = n.as_ref().and_then(|n| n.calcul.or(n.le)).iter().map(|j| format!(" du {}", j.jj_mm_aaaa())).collect();
@@ -249,7 +244,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
     };
     let code: String = t.code_risque.iter().map(|c| format!(", code risque {}", c)).collect();
     let depuis: String = t.depuis.iter().map(|j| format!(" à partir du {}", j.jj_mm_aaaa())).collect();
-    Ok(LigneDite { code_risque: t.code_risque.clone(), taux: valeur, depuis: t.depuis, jusqu_au: None, provenance: t.provenance, dit: format!("{}{}{} : {}", taux, code, depuis, d_ou), note: None })
+    LigneDite { code_risque: t.code_risque.clone(), taux: valeur, depuis: t.depuis, jusqu_au: None, provenance: t.provenance, dit: format!("{}{}{} : {}", taux, code, depuis, d_ou), note: None }
 }
 
 /// LA LIGNE D'AVANT, CELLE EN VIGUEUR `aujourdhui`, ET CELLE A VENIR d'une case du taux AT/MP, telles que
@@ -261,7 +256,7 @@ fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Optio
     let temps = droit::fiche::temps_au(&liste, aujourdhui, |a, b| a.code_risque == b.code_risque && taux(a) == taux(b)).map_err(|m| m.reclasser(Classe::Illisible))?;
     let dite = |devant: &str, t: Option<&TauxAtmp>, depuis: Option<Jour>, jusqu_au: Option<Jour>, note: Option<String>| -> R<LigneDite> {
         let mut l = match t.filter(|t| !t.est_vide()) {
-            Some(t) => ligne_dite(t)?,
+            Some(t) => ligne_dite(t),
             None => LigneDite {
                 code_risque: None,
                 taux: None,

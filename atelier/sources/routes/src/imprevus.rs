@@ -207,17 +207,18 @@ struct ChargeArretReprise {
     motif_reprise: Option<MotifDeReprise>,
 }
 
-/// La charge de `arret-indemnites` : chaque montant tel qu'il est tape (40.89 en nombre, ou « 40,89 » en texte, tel que
-/// le releve l'ecrit ; l'arret le garde au centime), et les jours deja indemnises ; absent, rien ne change.
+/// La charge de `arret-indemnites` : chaque montant par jour (40.89 en nombre, ou « 40,89 » tel que le releve l'ecrit,
+/// converti a la porte : `Charge::lire` ; l'arret le garde au centime), et les jours deja indemnises ; absent, rien ne
+/// change.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretIndemnites {
     salarie: SalarieDesigne,
     dernier_jour: Jour,
-    ij_brute: Option<socle::forme::NombreEcrit>,
-    ij_nette: Option<socle::forme::NombreEcrit>,
-    ij_brute_majoree: Option<socle::forme::NombreEcrit>,
-    ij_nette_majoree: Option<socle::forme::NombreEcrit>,
+    ij_brute: Option<MontantUnitaire>,
+    ij_nette: Option<MontantUnitaire>,
+    ij_brute_majoree: Option<MontantUnitaire>,
+    ij_nette_majoree: Option<MontantUnitaire>,
     #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
     jours_deja_indemnises: Option<Duree<EnJours>>,
 }
@@ -1444,25 +1445,24 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     if [&c.ij_brute, &c.ij_nette, &c.ij_brute_majoree, &c.ij_nette_majoree].iter().all(|v| v.is_none()) && c.jours_deja_indemnises.is_none() {
         return Err(refus("Dire les indemnités journalières (brute et nette, par jour) ou les jours déjà indemnisés : rien n'est changé."));
     }
-    // Chaque montant tape se convertit une fois (`NombreEcrit::en`), et l'arret le garde au centime.
-    let montant = |k: &str, t: &Option<socle::forme::NombreEcrit>| -> R<Option<MontantUnitaire>> {
-        let Some(t) = t else { return Ok(None) };
-        let x: MontantUnitaire = t.en(&format!("Indemnité journalière ({})", k)).map_err(|e| e.reclasser(Classe::Refuse))?;
+    // L'arret garde chaque montant au centime.
+    let montant = |t: Option<MontantUnitaire>| -> R<Option<MontantUnitaire>> {
+        let Some(x) = t else { return Ok(None) };
         if x <= MontantUnitaire::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }
         Ok(Some(x.au_centime()))
     };
-    if let Some(x) = montant("ij_brute", &c.ij_brute)? {
+    if let Some(x) = montant(c.ij_brute)? {
         a.ij_brute = Some(x);
     }
-    if let Some(x) = montant("ij_nette", &c.ij_nette)? {
+    if let Some(x) = montant(c.ij_nette)? {
         a.ij_nette = Some(x);
     }
-    if let Some(x) = montant("ij_brute_majoree", &c.ij_brute_majoree)? {
+    if let Some(x) = montant(c.ij_brute_majoree)? {
         a.ij_brute_majoree = Some(x);
     }
-    if let Some(x) = montant("ij_nette_majoree", &c.ij_nette_majoree)? {
+    if let Some(x) = montant(c.ij_nette_majoree)? {
         a.ij_nette_majoree = Some(x);
     }
     if let Some(j) = c.jours_deja_indemnises {

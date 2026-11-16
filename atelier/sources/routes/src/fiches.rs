@@ -374,13 +374,12 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
     };
     let en_clair = |x: Effectif| socle::texte::virgule(x.a_deux_decimales());
     let mut pose = None;
-    if let Some(v) = &charge.valeur {
+    if let Some(x) = charge.valeur {
         if an >= an_paie {
             return Err(erreur(Classe::Refuse, format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
         }
-        let x = v.en::<Effectif>("Effectif").map_err(|m| m.reclasser(Classe::Illisible))?;
         if x < Effectif::ZERO {
-            return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", v.ecrit())));
+            return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", socle::grandeurs::ecrit::sans_zero::dit(x))));
         }
         // Un effectif, pas un montant : tronque au centieme, CSS R. 130-1, I
         // (`atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la
@@ -414,7 +413,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 struct ChargeEffectif {
     #[serde(default)]
     annee: Option<Annee>,
-    valeur: Option<socle::forme::NombreEcrit>,
+    valeur: Option<Effectif>,
 }
 
 /// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les

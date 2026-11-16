@@ -87,7 +87,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"salarie":"TARTEMPION","nature":"cdi"}"#,
         rend: "ecrits, a_dire (ce qui reste à dire), permanents_declares",
-        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, la nature ou le champ que la phrase nomme ; rien n'est écrit" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, la nature ou le champ que la phrase nomme ; rien n'est écrit" }, FORME],
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,

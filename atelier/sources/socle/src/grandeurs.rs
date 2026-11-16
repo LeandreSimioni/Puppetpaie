@@ -783,12 +783,6 @@ impl crate::forme::NombreEcrit {
         };
         Ok(G::du(d))
     }
-
-    /// LA GRANDEUR `g` ECRITE DANS UNE CASE (le taux AT/MP qu'une DSN reprise declare) : un nombre a virgule, dans sa
-    /// forme la plus courte (`courte`) ; la porte de la case.
-    pub fn de_grandeur<G: Grandeur>(g: G) -> crate::forme::NombreEcrit {
-        crate::forme::NombreEcrit::Flottant(courte(g).en_decimal())
-    }
 }
 
 impl crate::forme::Nombre {
