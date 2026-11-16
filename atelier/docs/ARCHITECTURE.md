@@ -150,8 +150,8 @@ seule vérification, à l'arrivée », « On compile peu »).
 ## Le glossaire
 
 **Une notion, un type ; une façon d'écrire n'est pas un type** : elle se dit dans la forme du fichier qui la porte (la
-DSN, le journal, la saisie, l'UTC du filet), et son lecteur rend le type de la notion. Un type neuf est une notion de
-ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemins sont relatifs à `atelier/sources/`.
+DSN, le journal, la saisie, l'UTC du filet), et son lecteur rend le type de la notion. Un type neuf entre dans
+ce glossaire dans le lot qui le crée ; la relecture à l'arrivée y cherche le doublon. Des notions, pas des fonctions. Les chemins sont relatifs à `atelier/sources/`.
 « À unifier (#419) » : le code a encore plusieurs types pour la notion, le type nommé est la cible. « À créer
 (#419) » : la notion circule encore en `String`, `Decimal` ou entier nu.
 

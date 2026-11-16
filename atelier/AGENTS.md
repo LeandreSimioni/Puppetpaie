@@ -60,7 +60,7 @@ soient droits.
 - **Les mots** : l'**engagement** est au centre et porte ses calculs ; le **contrat** est ce qu'il fait signer ; la
   **paie** part avec le bulletin et ne nomme jamais l'engagement. Tout document se fabrique depuis l'engagement validé,
   sans recalcul. **Une notion, un type** : chaque notion a son seul type, que dit « Le glossaire »
-  (`docs/ARCHITECTURE.md`) ; un type neuf est une notion du glossaire, sinon Léandre décide.
+  (`docs/ARCHITECTURE.md`) ; un type neuf entre au glossaire dans le lot qui le crée, et la relecture à l'arrivée y cherche le doublon.
 - **Un seul chemin pour chaque chose** ; un second se ferme dans le commit qui ouvre le premier. **Une carte écrit
   l'engagement de son salarié, et lui seul** ; le mois n'est jamais une unité d'écriture ; un mois importé ne reçoit pas
   d'engagement neuf. L'engagement ne lit pas le journal ; le moteur le lit une fois par geste (`envois::journal::lu`) ;
