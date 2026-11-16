@@ -784,15 +784,6 @@ impl crate::forme::NombreEcrit {
         Ok(G::du(d))
     }
 
-    /// LE COMPTE QU'IL DIT (le nombre d'enfants couverts), sa partie entiere : la porte de sa lecture. Un texte
-    /// illisible ou un nombre negatif ne compte rien et se refuse.
-    pub fn compte(&self) -> crate::echec::R<usize> {
-        use rust_decimal::prelude::ToPrimitive;
-        let t = self.ecrit();
-        let d = num::decimal_lu(&t).ok_or_else(|| crate::echec::refus(num::illisible(&t)))?;
-        d.trunc().to_usize().ok_or_else(|| crate::echec::refus(num::illisible(&t)))
-    }
-
     /// LA GRANDEUR `g` ECRITE DANS UNE CASE (le taux AT/MP qu'une DSN reprise declare) : un nombre a virgule, dans sa
     /// forme la plus courte (`courte`) ; la porte de la case.
     pub fn de_grandeur<G: Grandeur>(g: G) -> crate::forme::NombreEcrit {

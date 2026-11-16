@@ -698,9 +698,9 @@ fn ranger_les_textes(v: &mut Value, chemin: &mut Vec<String>, rangee: &dyn Fn(&[
     }
 }
 
-/// UN NOMBRE TEL QU'IL EST ECRIT, une ecriture et non une grandeur (une case d'une fiche : un montant, un taux, une
-/// quantite) : un entier, un flottant, ou un texte qui se lit en decimal (`num::decimal_lu`, `12,5` compris), garde tel
-/// quel pour se reecrire de meme. Un nombre ecrit avec sa virgule se garde en decimal, dans sa forme la plus courte
+/// UN NOMBRE TEL QU'IL EST ECRIT, une ecriture et non une grandeur (ce qu'une charge porte tel que la personne l'a tape,
+/// et les heures du forfait d'une rubrique) : un entier, un flottant, ou le texte tape, garde tel quel pour se reecrire
+/// de meme. Un nombre ecrit avec sa virgule se garde en decimal, dans sa forme la plus courte
 /// (`num::court` : `130.0` reste `130.0`), et se reecrit en nombre a virgule (`ecrire_a_virgule`). Sa grandeur se lit a
 /// sa porte (`grandeur`, `compte`, dans `grandeurs`).
 #[derive(Debug, Clone, PartialEq)]
@@ -719,16 +719,6 @@ impl NombreEcrit {
             NombreEcrit::Naturel(u) => u.to_string(),
             NombreEcrit::Flottant(x) => x.to_string(),
             NombreEcrit::Texte(s) => s.clone(),
-        }
-    }
-
-    /// L'entier ecrit : un nombre entier, ou un texte qui se lit en entier ; `None` pour un nombre qui n'est pas un
-    /// entier ecrit (un naturel hors des entiers signes, un flottant). Un texte illisible se refuse.
-    pub fn entier(&self) -> R<Option<i64>> {
-        match self {
-            NombreEcrit::Entier(i) => Ok(Some(*i)),
-            NombreEcrit::Texte(s) => s.trim().parse().map(Some).map_err(|_| crate::echec::refus(crate::num::illisible(s))),
-            NombreEcrit::Naturel(_) | NombreEcrit::Flottant(_) => Ok(None),
         }
     }
 }

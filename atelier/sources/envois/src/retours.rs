@@ -2607,7 +2607,7 @@ pub struct TauxAtmpNotifie {
     /// est celui des fonctions support.
     pub code_risque: droit::bareme::CodeRisqueAt,
     /// En pourcentage (1.50 pour 1,50 %).
-    pub taux: socle::num::Decimal,
+    pub taux: socle::grandeurs::Taux,
     pub date_effet: socle::date::Jour,
     pub date_calcul: Option<socle::date::Jour>,
 }
@@ -2657,7 +2657,7 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
                 autre => return Err(illisible("témoin bureau", autre)),
             };
             let brut = champ("taux");
-            let taux = socle::num::decimal_a_virgule(&brut).filter(|v| *v > socle::num::Decimal::ZERO && *v < socle::num::Decimal::from(100));
+            let taux = socle::grandeurs::lu::texte::<socle::grandeurs::Taux>(&brut).filter(|v| *v > socle::grandeurs::Taux::ZERO && *v < socle::grandeurs::Taux::CENT_POUR_CENT);
             let Some(taux) = taux else { return Err(illisible("taux", &brut)) };
             let effet = champ("date_effet");
             let Some(date_effet) = jour_notifie(&effet) else { return Err(illisible("date d'effet", &effet)) };

@@ -31,7 +31,6 @@ use crate::enveloppe::Dite;
 use droit::bareme::{self, CodeRisqueAt, RisqueAtmp};
 use droit::contexte::Contexte;
 use droit::fiche::{Etablissement, FicheEntrepriseDatee, NotificationAtmp, ProvenanceAtmp, TauxAtmp};
-use socle::forme::NombreEcrit;
 use socle::date::Jour;
 use socle::mois::Annee;
 use socle::echec::{Classe, R};
@@ -44,9 +43,9 @@ fn socle_de(an: Annee) -> R<Option<droit::forme_bareme::Pile>> {
     droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-/// Le taux que la ligne `t` de la case dit, lu de son ecriture (`NombreEcrit::en`).
+/// Le taux que la ligne `t` de la case dit.
 fn taux(t: &TauxAtmp) -> R<Option<Taux>> {
-    t.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP")).transpose().map_err(|m| m.reclasser(Classe::Illisible))
+    Ok(t.valeur)
 }
 
 // ------------------------------------------------------------------ les sources
@@ -59,7 +58,7 @@ fn taux(t: &TauxAtmp) -> R<Option<Taux>> {
 pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Option<Jour>, source: &str) -> R<Option<String>> {
     let t = TauxAtmp {
         code_risque: Some(n.code_risque.clone()),
-        valeur: Some(NombreEcrit::Flottant(socle::num::court(n.taux))),
+        valeur: Some(socle::grandeurs::courte(n.taux)),
         depuis: Some(n.date_effet),
         provenance: Some(ProvenanceAtmp::Notification),
         notification: Some(NotificationAtmp { le, calcul: n.date_calcul, effet: Some(n.date_effet) }),
@@ -118,7 +117,7 @@ fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -
         let t = bareme::taux_de_l_arrete(r, neuf, alsace)?;
         Some(TauxAtmp {
             code_risque: Some(code),
-            valeur: Some(NombreEcrit::Flottant(socle::num::court(t))),
+            valeur: Some(socle::grandeurs::courte(t)),
             depuis: Some(match de_l_annee {
                 Some(d) => d.max(depuis),
                 None => depuis,
@@ -205,8 +204,8 @@ struct RisqueDit {
     code_arrete: Option<String>,
     libelle: String,
     precisions: Option<String>,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    taux: Option<socle::num::Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    taux: Option<Taux>,
     tc: bool,
 }
 
@@ -258,7 +257,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
 /// code et du meme taux que celle en vigueur, d'ou qu'elle vienne, n'est pas un changement.
 fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Option<LigneDite>, Option<LigneDite>, Option<LigneDite>)> {
     let liste: Vec<droit::fiche::Datee<TauxAtmp>> = liste.iter().map(|d| droit::fiche::Datee { valeur: d.valeur.clone().filter(|t| !t.est_vide()), ..d.clone() }).collect();
-    let taux = |t: &TauxAtmp| t.valeur.as_ref().map(|v| v.en::<socle::grandeurs::Taux>("Taux AT/MP").map(socle::grandeurs::sans_zero).map_err(|e| e.phrase));
+    let taux = |t: &TauxAtmp| t.valeur.map(socle::grandeurs::sans_zero);
     let temps = droit::fiche::temps_au(&liste, aujourdhui, |a, b| a.code_risque == b.code_risque && taux(a) == taux(b)).map_err(|m| m.reclasser(Classe::Illisible))?;
     let dite = |devant: &str, t: Option<&TauxAtmp>, depuis: Option<Jour>, jusqu_au: Option<Jour>, note: Option<String>| -> R<LigneDite> {
         let mut l = match t.filter(|t| !t.est_vide()) {

@@ -132,7 +132,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
             if Some(&t.siren) != ctx.entreprise.siren.dite() || Some(&t.nic) != ctx.entreprise.nic.dite() {
                 a_faire.push(format!(
                     "{} : le taux {} (code risque {}) est celui de l'établissement {}{}, {}. Rien n'est posé.",
-                    source, t.taux, t.code_risque, t.siren, t.nic, la_fiche
+                    source, socle::texte::virgule(t.taux), t.code_risque, t.siren, t.nic, la_fiche
                 ));
                 continue;
             }

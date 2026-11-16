@@ -767,19 +767,17 @@ pub struct Reprise {
 }
 
 /// Le solde repris de l'ancien logiciel, ou `None` (la fiche n'en dit pas, ou ne dit pas sa date). Datee, la reprise dit
-/// chacun de ses nombres (0 s'il n'y en a pas) ; un nombre illisible se refuse (`socle::forme::NombreEcrit::en`).
+/// chacun de ses nombres (0 s'il n'y en a pas).
 pub(crate) fn reprise_conges(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie) -> R<Option<Reprise>> {
     let Some(r) = reprise_ecrite(ctx, au, cle_salarie)? else { return Ok(None) };
     let Some(date) = r.date.dite().copied() else { return Ok(None) };
-    fn nombre<G: socle::grandeurs::Grandeur>(c: &Option<socle::forme::NombreEcrit>, cle: &str, date: &Jour) -> R<G> {
-        c.dite()
-            .ok_or_else(|| {
-                socle::echec::cle(
-                    format!("La reprise des congés du {} ne dit pas tous ses nombres : écrire chacun sur la fiche du salarié, 0 s'il n'y en a pas.", date.jj_mm_aaaa()),
-                    cle,
-                )
-            })?
-            .en(cle)
+    fn nombre<G: socle::grandeurs::Grandeur>(c: &Option<G>, cle: &str, date: &Jour) -> R<G> {
+        c.dite().copied().ok_or_else(|| {
+            socle::echec::cle(
+                format!("La reprise des congés du {} ne dit pas tous ses nombres : écrire chacun sur la fiche du salarié, 0 s'il n'y en a pas.", date.jj_mm_aaaa()),
+                cle,
+            )
+        })
     }
     Ok(Some(Reprise {
         date,

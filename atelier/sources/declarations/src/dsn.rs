@@ -1183,7 +1183,7 @@ pub struct Affiliation {
     /// L'option retenue par le salarie (70.004), quand l'organisme la demande pour ce contrat.
     pub option: Option<String>,
     /// Les ayants droit conjoint (70.008) et enfants (70.011), quand ils entrent dans le calcul de la cotisation.
-    pub ayants_droit: Option<(i64, i64)>,
+    pub ayants_droit: Option<(usize, usize)>,
     /// La date de debut de l'affiliation (70.014), quand ce n'est pas celle du contrat.
     pub debut: Option<Jour>,
 }
@@ -1330,7 +1330,7 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
 /// `organismes-base.json` dit que l'organisme les demande pour ce contrat (`contrats`, `options` : la sante des
 /// permanents 3090, fiche de parametrage Audiens version 139, groupes 00003 a 00008). Ils se lisent de `sante_svp`, la
 /// meme fiche que la cotisation (`bareme::bareme_sante`) ; sans elle, ou d'un niveau que la table n'a pas, refus.
-fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &ReferenceDAdhesion) -> R<(Option<String>, Option<(i64, i64)>)> {
+fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &ReferenceDAdhesion) -> R<(Option<String>, Option<(usize, usize)>)> {
     let base = droit::organismes::base()?;
     let libelle = adhesion.libelle.as_str().trim();
     let Some(options) = base.options(ent.idcc.dite(), libelle) else {
@@ -1355,16 +1355,12 @@ compagnie ; rien n'est declare.",
     let au_mois = p.engagement.nat()?.au_mois();
     let choix = au_mois.as_ref().and_then(|au| p.salarie.permanent.ouvrir(au).sante_svp.dite());
     let niveau = choix.and_then(|c| c.niveau.dite());
-    let enfants = match choix.and_then(|c| c.enfants.dite()) {
-        Some(m) => m.entier()?,
-        None => None,
-    }
-    .filter(|n| (0..=99).contains(n));
+    let enfants = choix.and_then(|c| c.enfants.dite()).copied().filter(|n| *n <= 99);
     let conjoint = choix.is_some_and(|c| c.conjoint.oui());
     let famille = conjoint || enfants.is_some_and(|n| n > 0);
     let code = niveau.and_then(|niveau| options.niveaux.get(niveau)).map(|n| if famille { n.famille.as_str() } else { n.isole.as_str() });
     match (code, enfants) {
-        (Some(c), Some(n)) => Ok((Some(c.to_string()), famille.then_some((i64::from(conjoint), n)))),
+        (Some(c), Some(n)) => Ok((Some(c.to_string()), famille.then_some((usize::from(conjoint), n)))),
         _ => Err(socle::echec::a_la_cle(
             &format!(
                 "{} : elle se lit sur la fiche du salarie (son niveau, son conjoint, ses enfants), d'apres son bulletin d'adhesion -- la meme fiche que sa cotisation. Rien n'est declare.",

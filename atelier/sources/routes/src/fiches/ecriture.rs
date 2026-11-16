@@ -817,37 +817,11 @@ fn deriver_etablissements(p: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
                 Err(e) => faute(Some(e.phrase)),
             }
         }
-        // Les taux d'une ligne arrivent de la page en texte (« 0.5 », « 1,5 % ») : ils s'ecrivent en nombre, comme la
-        // fiche les porte deja, sinon une ligne renvoyee telle quelle se dirait changee et s'ecrirait en texte.
-        if let Some(t) = o.taux_atmp.as_mut() {
-            faute(montant_saisi(&mut t.valeur, "Taux AT/MP"));
-        }
-        if let Some(vm) = o.versement_mobilite.as_mut() {
-            faute(montant_saisi(&mut vm.taux, "Taux du versement mobilité"));
-        }
         if o.versement_mobilite.as_ref().is_some_and(droit::fiche::VersementMobilite::est_vide) {
             o.versement_mobilite = None;
         }
     }
     Ok(fautes)
-}
-
-/// UN TAUX TAPE EN TEXTE (`12,5`, `1,5 %`) S'ECRIT EN NOMBRE, converti par la seule conversion d'une saisie
-/// (`NombreEcrit::en`), dans sa forme la plus courte ; un texte blanc ne dit rien. Rend la faute d'un texte qui ne se
-/// convertit pas.
-fn montant_saisi(m: &mut Option<socle::forme::NombreEcrit>, quoi: &str) -> Option<String> {
-    let Some(n @ socle::forme::NombreEcrit::Texte(brut)) = m.as_ref() else { return None };
-    if brut.trim().is_empty() {
-        *m = None;
-        return None;
-    }
-    match n.en::<socle::grandeurs::Taux>(quoi) {
-        Ok(t) => {
-            *m = Some(socle::forme::NombreEcrit::de_grandeur(t));
-            None
-        }
-        Err(e) => Some(e.phrase),
-    }
 }
 
 // ------------------------------------------------------------------ ce qui change

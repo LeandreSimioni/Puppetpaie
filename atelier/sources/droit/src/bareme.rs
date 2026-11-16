@@ -648,7 +648,7 @@ permanents » : le taux du contrat (en % du plafond mensuel, pour le salarié se
         if sans_sante(sal, au_mois) {
             return Ok(sans_mutuelle(bar));
         }
-        let total: Taux = taux_contrat.en("Santé des permanents, taux du contrat")?;
+        let total: Taux = *taux_contrat;
         let pp = choix.and_then(|c| c.part_patronale.dite());
         let minimum = bar.sante_obligatoire.as_ref().ok_or_else(|| socle::fichiers::absent("sante_obligatoire"))?.part_employeur_minimum;
         let Some(pp) = pp else {
@@ -658,13 +658,13 @@ code de la Securite sociale) ; elle est sur le contrat de complémentaire santé
                 minimum.decimal()
             ));
         };
-        let part: Taux = pp.en("Santé des permanents, part employeur")?;
+        let part: Taux = *pp;
         if part < minimum || part > Taux::CENT_POUR_CENT {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Santé des permanents », part employeur {} % : \
 l'employeur en paie au moins la moitie (art. L911-7 du code de \
 la Securite sociale), et pas plus de 100.",
-                pp.ecrit()
+                socle::texte::virgule(part)
             ));
         }
         return Ok(poser_mutuelle(bar, Some(Assiette::PssPeriode), total, part.en_coefficient(), Some("Complémentaire santé (contrat de l'entreprise)")));
@@ -713,7 +713,7 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
         )
     };
     let conjoint = *choix.conjoint.dite().ok_or_else(|| a_dire("conjoint", "si son conjoint est couvert"))?;
-    let enfants = choix.enfants.dite().ok_or_else(|| a_dire("enfants", "combien d'enfants sont couverts"))?.compte()?;
+    let enfants = *choix.enfants.dite().ok_or_else(|| a_dire("enfants", "combien d'enfants sont couverts"))?;
     let mut total = taux.assure;
     if conjoint {
         total = total + taux.conjoint;
@@ -1247,7 +1247,7 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
     // « aucun », ou un taux de zero : la commune de l'etablissement n'en a pas, ou il y emploie moins de onze salaries
     // (CGCT, L. 2333-64, I, l'effectif « employe dans chacune des zones »).
     let vm = e.versement_mobilite.dite();
-    let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).map(|t| t.en("Taux du versement mobilité")).transpose()?;
+    let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).copied();
     let aucun = taux_vm.is_some_and(Taux::est_nul);
     if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.as_ref().is_none_or(VersementMobiliteEcrit::est_vide)) {
         bar.versement_mobilite = None;
@@ -1781,11 +1781,11 @@ pub struct RisqueAtmp {
     pub libelle: String,
     pub precisions: Option<String>,
     /// Le taux net collectif de l'annexe 1, en pourcentage ; rien pour 999ZZ.
-    pub taux: Option<Decimal>,
+    pub taux: Option<Taux>,
     /// « TC » : le taux reste collectif quel que soit l'effectif (D. 242-6-14, I ; art. 5 de l'arrete).
     pub tc: bool,
     /// Le groupe et le taux de l'annexe 3, en Alsace-Moselle (art. 4 de l'arrete ; D. 242-35, non releve).
-    pub alsace_moselle: Option<(i64, Decimal)>,
+    pub alsace_moselle: Option<(i64, Taux)>,
 }
 
 /// LE CODE RISQUE AT/MP (S21.G00.40.040, `X [5,6]`, « Table RAT - Codes risque ATMP ») : trois chiffres et deux
@@ -1887,7 +1887,7 @@ pub const SANS_NOTIFICATION: CodeRisqueAt = CodeRisqueAt::du_moteur("999ZZ");
 /// (`collectif` : un etablissement nouvellement cree, `etablissement_neuf`). Rien quand le taux est celui que la CARSAT
 /// notifie, ou qu'il n'y en a pas (999ZZ). Rien en Alsace-Moselle (`alsace_moselle`) : l'annexe 3 y fixe d'autres taux
 /// collectifs, sans lettres TC, en application de D. 242-35, qui n'est pas releve : le taux se saisit.
-pub fn taux_de_l_arrete(r: &RisqueAtmp, collectif: bool, alsace_moselle: bool) -> Option<Decimal> {
+pub fn taux_de_l_arrete(r: &RisqueAtmp, collectif: bool, alsace_moselle: bool) -> Option<Taux> {
     if alsace_moselle {
         None
     } else if r.tc || collectif {
@@ -1899,7 +1899,7 @@ pub fn taux_de_l_arrete(r: &RisqueAtmp, collectif: bool, alsace_moselle: bool) -
 
 /// Les risques que la pile `bar` connait (`risques_atmp` de son socle).
 pub fn risques_de(bar: &Pile) -> Vec<RisqueAtmp> {
-    let deux = |t: &socle::grandeurs::Taux| t.a_deux_decimales().decimal();
+    let deux = |t: &Taux| t.a_deux_decimales();
     let texte = |t: &Option<String>| dit(t).map(|s| s.trim()).filter(|s| !s.is_empty()).map(String::from);
     bar.risques_atmp
         .iter()
@@ -1957,11 +1957,12 @@ mod tests_risques_atmp {
         let socle = crate::contexte::socle_livre_lu(Annee::constante(2026)).unwrap().unwrap();
         let r = risques_de(&socle).into_iter().find(|r| r.code.as_str() == "923AD").unwrap();
         assert_eq!((r.code.as_str(), r.code_arrete.as_ref().map(CodeRisqueAt::a_l_arrete).as_deref(), r.tc), ("923AD", Some("92.3AD"), true));
-        assert_eq!(taux_de_l_arrete(&r, false, false), Some(Decimal::new(150, 2)));
+        let taux = |t: &str| socle::grandeurs::lu::tapee::<Taux>(t).unwrap();
+        assert_eq!(taux_de_l_arrete(&r, false, false), Some(taux("1,50")));
         assert_eq!(taux_de_l_arrete(&r, true, true), None);
-        assert_eq!(r.alsace_moselle, Some((3, Decimal::new(334, 2))));
+        assert_eq!(r.alsace_moselle, Some((3, taux("3,34"))));
         let gestion = risques_de(&socle).into_iter().find(|r| r.code.as_str() == "921CC").unwrap();
-        assert_eq!(taux_de_l_arrete(&gestion, true, false), Some(Decimal::new(107, 2)));
+        assert_eq!(taux_de_l_arrete(&gestion, true, false), Some(taux("1,07")));
         assert_eq!(taux_de_l_arrete(&gestion, false, false), None);
         let sans = risques_de(&socle).into_iter().find(|r| r.code == SANS_NOTIFICATION).unwrap();
         assert_eq!(taux_de_l_arrete(&sans, true, false), None);
@@ -1978,19 +1979,19 @@ mod tests_risques_atmp {
     fn un_taux_notifie_sans_tc_ne_vaut_pas_au_dela_de_son_annee() {
         let (a25, a26) = (Annee::constante(2025), Annee::constante(2026));
         let s26 = crate::contexte::socle_livre_lu(a26).unwrap().unwrap();
-        let ligne = |code: &str, t: Decimal| crate::fiche::TauxAtmp {
+        let ligne = |code: &str, t: Taux| crate::fiche::TauxAtmp {
             code_risque: Some(CodeRisqueAt::lire(code).unwrap()),
-            valeur: Some(socle::forme::NombreEcrit::Flottant(t)),
+            valeur: Some(t),
             depuis: Some(Jour::nouveau(2025, 1, 1).unwrap()),
             ..Default::default()
         };
-        let (t210, t165) = (Decimal::new(21, 1), Decimal::new(165, 2));
+        let (t210, t165) = (socle::grandeurs::lu::tapee::<Taux>("2,1").unwrap(), socle::grandeurs::lu::tapee::<Taux>("1,65").unwrap());
         let t = taux_atmp_de_l_annee(&ligne("921CC", t210), a25, Some(&s26), false).unwrap().unwrap();
         assert_eq!(t.valeur.map(socle::texte::pourcent).as_deref(), Some("2,10 %"));
         assert!(taux_atmp_de_l_annee(&ligne("921CC", t210), a26, Some(&s26), false).unwrap().is_err());
         assert_eq!(taux_atmp_de_l_annee(&ligne("923AD", t165), a26, Some(&s26), false).unwrap().unwrap().valeur.map(socle::texte::pourcent).as_deref(), Some("1,65 %"));
         assert!(taux_atmp_de_l_annee(&ligne("923AD", t165), a26, Some(&s26), true).unwrap().is_err());
-        assert!(taux_atmp_de_l_annee(&crate::fiche::TauxAtmp { valeur: Some(socle::forme::NombreEcrit::Flottant(t165)), ..Default::default() }, a26, Some(&s26), false).is_none());
+        assert!(taux_atmp_de_l_annee(&crate::fiche::TauxAtmp { valeur: Some(t165), ..Default::default() }, a26, Some(&s26), false).is_none());
     }
 }
 
@@ -2017,11 +2018,7 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: Annee, socle_an: O
             an, nom, pourquoi),
         )))
     };
-    let valeur = match dit.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP")).transpose() {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
-    };
-    match (valeur, dit.depuis) {
+    match (dit.valeur, dit.depuis) {
         (None, _) if code == SANS_NOTIFICATION => Some(Ok(TauxAtmp { code_risque: Some(code), depuis: dit.depuis, provenance: dit.provenance, ..TauxAtmp::default() })),
         (None, _) => manque("La configuration ne dit que le code risque.".to_string()),
         (Some(_), None) => manque("La ligne inscrite ne dit pas à partir de quand son taux vaut.".to_string()),
@@ -2051,8 +2048,7 @@ fn code_risque_valide(code: &str) -> bool {
 /// un taux sans la date a partir de laquelle il vaut (celle de la notification). `None` : rien a redire.
 pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> R<Option<String>> {
     let code = t.code_risque.as_ref();
-    let valeur = t.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP")).transpose()?;
-    Ok(match (code, valeur) {
+    Ok(match (code, t.valeur) {
         (None, Some(_)) => Some("Le taux AT/MP se dit avec son code risque, tel que la notification de la CARSAT les écrit.".to_string()),
         (Some(c), Some(_)) if *c == SANS_NOTIFICATION => Some("Avec 999ZZ (pas encore de notification), la DSN ne déclare aucun taux (norme DSN, S21.G00.40.043) : laissez le taux vide.".to_string()),
         (_, Some(v)) if v <= Taux::ZERO || v >= Taux::points(20) => Some(format!("Taux AT/MP de {} % : il se donne en pourcentage, par exemple 1,50 pour 1,50 %.", socle::grandeurs::ecrit::sans_zero::dit(v))),
@@ -2064,7 +2060,7 @@ pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> R<Option<String>> {
 /// Les deux lignes du taux AT/MP disent-elles le meme code, le meme taux (en nombre : 2 et 2,0 sont le meme) et la meme
 /// date, d'ou qu'elles viennent ?
 pub fn meme_taux_atmp(a: &crate::fiche::TauxAtmp, b: &crate::fiche::TauxAtmp) -> bool {
-    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP").map(socle::grandeurs::sans_zero).map_err(|e| e.phrase));
+    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.map(socle::grandeurs::sans_zero);
     a.code_risque == b.code_risque && a.depuis == b.depuis && taux(a) == taux(b)
 }
 
@@ -2076,11 +2072,11 @@ pub fn taux_atmp_a_confirmer(recue: Option<&crate::fiche::TauxAtmp>, apres: &cra
         Some(a) => a,
         None => return Ok(None),
     };
-    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.as_ref().map(|v| v.en::<Taux>("Taux AT/MP").map(socle::grandeurs::sans_zero)).transpose();
-    if a.code_risque == apres.code_risque && taux(a)? == taux(apres)? {
+    let taux = |t: &crate::fiche::TauxAtmp| t.valeur.map(socle::grandeurs::sans_zero);
+    if a.code_risque == apres.code_risque && taux(a) == taux(apres) {
         return Ok(None);
     }
-    let dit: String = taux(a)?.map(socle::texte::pourcent).into_iter().collect();
+    let dit: String = taux(a).map(socle::texte::pourcent).into_iter().collect();
     let code: String = a.code_risque.iter().map(|c| format!(" (code risque {})", c)).collect();
     let depuis: String = a.depuis.iter().map(|j| format!(" à partir du {}", j.jj_mm_aaaa())).collect();
     Ok(Some(format!("Le taux reçu par la DSN est {}{}{}. Êtes-vous sûr de vouloir le modifier ?", dit, code, depuis)))

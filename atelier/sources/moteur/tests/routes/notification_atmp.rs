@@ -57,15 +57,16 @@ fn la_notification_lue_pose_le_taux_de_l_annee_a_sa_date_d_effet() {
         let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&racine.join("config/entreprise.json"), "config/entreprise.json").unwrap();
         droit::fiche::valeur_au(f.taux_atmp.as_deref().unwrap(), &j).unwrap()
     };
+    let taux = |t: &str| socle::grandeurs::lu::tapee::<socle::grandeurs::Taux>(t).unwrap();
     let t = taux_au(jour(2026, 1, 1));
-    assert_eq!((t.code_risque.as_ref().map(droit::bareme::CodeRisqueAt::as_str), t.valeur.clone(), t.depuis, t.provenance), (Some("923AD"), Some(socle::forme::NombreEcrit::Flottant(socle::num::Decimal::new(17, 1))), Some(jour(2026, 1, 1)), Some(droit::fiche::ProvenanceAtmp::Notification)), "{:?}", t);
+    assert_eq!((t.code_risque.as_ref().map(droit::bareme::CodeRisqueAt::as_str), t.valeur, t.depuis, t.provenance), (Some("923AD"), Some(taux("1,7")), Some(jour(2026, 1, 1)), Some(droit::fiche::ProvenanceAtmp::Notification)), "{:?}", t);
     assert_eq!(t.notification.and_then(|n| n.effet), Some(jour(2026, 1, 1)));
 
     // Effet en cours d'annee : le taux d'avant jusqu'a la date d'effet, le notifie ensuite.
     let a_faire = suites(&racine, vec![notification(&racine, "n2.xml", "123456873", "00017", &[("923AD", "1,90", "20260701", "20260615")])]);
     assert!(a_faire.is_empty(), "{:?}", a_faire);
     let au = |j| taux_au(j).valeur;
-    assert_eq!((au(jour(2026, 6, 30)), au(jour(2026, 7, 1))), (Some(socle::forme::NombreEcrit::Flottant(socle::num::Decimal::new(17, 1))), Some(socle::forme::NombreEcrit::Flottant(socle::num::Decimal::new(19, 1)))));
+    assert_eq!((au(jour(2026, 6, 30)), au(jour(2026, 7, 1))), (Some(taux("1,7")), Some(taux("1,9"))));
 
     // Un autre etablissement : rien ne se pose, et cela se dit.
     let a_faire = suites(&racine, vec![notification(&racine, "n3.xml", "987654321", "00011", &[("923AD", "2.10", "20270101", "20261210")])]);

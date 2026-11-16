@@ -249,13 +249,13 @@ en vigueur au {} dans le catalogue de branche.",
             minimum.decimal()
         ));
     };
-    let part: Taux = choix.en("Santé des permanents, part employeur")?;
+    let part: Taux = *choix;
     if part < minimum || part > Taux::CENT_POUR_CENT {
         return Err(socle::refus!(
             "Fiche Entreprise, « Santé des permanents », part employeur {} % : \
 la convention {} met au moins {} % de la cotisation sante a la \
 charge de l'employeur (XII.2.1.11), et pas plus de 100.",
-            choix.ecrit(),
+            socle::texte::virgule(part),
             idcc,
             minimum.decimal()
         ));
@@ -550,7 +550,7 @@ minimum de la branche.",
                 pour
             ));
         };
-        let propose = socle::grandeurs::courte(t1_contrat.en::<Taux>("Taux de prévoyance, tranche 1")?);
+        let propose = socle::grandeurs::courte(*t1_contrat);
         if let Some((mini, origine)) = minimum.as_ref().filter(|(mini, _)| propose < *mini) {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Prévoyance des permanents », taux {} : \
@@ -565,7 +565,7 @@ Corriger le contrat, ou revenir au regime conventionnel.",
             ));
         }
         if let Some(p) = part_du_contrat {
-            part_pat = socle::grandeurs::courte(p.en::<Taux>("Taux de prévoyance, part patronale")?);
+            part_pat = socle::grandeurs::courte(*p);
         }
         propose
     } else {
@@ -616,7 +616,7 @@ convention {}.",
             ));
         };
         let part = match part_du_contrat {
-            Some(p) => socle::grandeurs::courte(p.en::<Taux>("Taux de prévoyance, part patronale")?),
+            Some(p) => socle::grandeurs::courte(*p),
             None => opt.part_patronale,
         };
         t2 = Some(repartir(propre, part, opt.base.clone(), false));

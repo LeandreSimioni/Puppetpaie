@@ -118,12 +118,12 @@ decembre ne se fait pas.",
             champs.push("part_tva");
             let part = match fiche.and_then(|f| f.part_tva.dite()) {
                 None => None,
-                Some(v) => match v.en::<Taux>("Part du chiffre d'affaires soumise à la TVA") {
-                    Ok(p) if p >= Taux::ZERO && p <= Taux::CENT_POUR_CENT => Some(p),
-                    _ => {
+                Some(&p) => match p {
+                    p if p >= Taux::ZERO && p <= Taux::CENT_POUR_CENT => Some(p),
+                    p => {
                         return manque(
                             champs,
-                            format!("la part des recettes soumise a la TVA vaut {}, qui n'est pas un pourcentage de 0 a 100", socle::ecriture::json_en_ligne(v)),
+                            format!("la part des recettes soumise a la TVA vaut {}, qui n'est pas un pourcentage de 0 a 100", socle::texte::virgule(p)),
                             "La part des recettes soumise à la TVA est un pourcentage, de 0 à 100.",
                         )
                     }

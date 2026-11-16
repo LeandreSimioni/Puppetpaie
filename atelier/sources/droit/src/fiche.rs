@@ -19,6 +19,7 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::R;
 use socle::forme::NombreEcrit;
+use socle::grandeurs::{Jours, Montant, Taux};
 
 use crate::contexte::{IdSalarie, IdSpectacle};
 
@@ -1177,10 +1178,26 @@ impl std::fmt::Display for EchelonCcneac {
     }
 }
 
+/// Un nombre (la fiche l'ecrit ainsi), ou le texte qu'une personne a tape.
 impl<'de> Deserialize<'de> for EchelonCcneac {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let ecrit = socle::forme::NombreEcrit::deserialize(d)?.ecrit();
-        EchelonCcneac::lire(&ecrit).map_err(|e| serde::de::Error::custom(e.phrase))
+        struct Lu;
+        impl<'de> serde::de::Visitor<'de> for Lu {
+            type Value = EchelonCcneac;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("un échelon, de 1 à 12")
+            }
+            fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<EchelonCcneac, E> {
+                EchelonCcneac::lire(&i.to_string()).map_err(|e| E::custom(e.phrase))
+            }
+            fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<EchelonCcneac, E> {
+                EchelonCcneac::lire(&u.to_string()).map_err(|e| E::custom(e.phrase))
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<EchelonCcneac, E> {
+                EchelonCcneac::lire(s).map_err(|e| E::custom(e.phrase))
+            }
+        }
+        d.deserialize_any(Lu)
     }
 }
 
@@ -1599,6 +1616,12 @@ impl FormeDeCase for bool {}
 impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
+impl FormeDeCase for usize {}
+// Une grandeur s'ecrit en nombre (`ecrit::nombre_json`, l'attribut de sa case) ; tapee, elle se lit a la porte de la
+// route qui ecrit la fiche (`socle::grandeurs::lu::tapee`).
+impl FormeDeCase for Taux {}
+impl FormeDeCase for Montant {}
+impl FormeDeCase for Jours {}
 impl FormeDeCase for NombreEcrit {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
@@ -2694,19 +2717,25 @@ cases! {
 
 cases! {
     /// La complementaire sante d'un permanent : le niveau souscrit et la composition couverte.
-    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: NombreEcrit }
+    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: usize }
 }
 
 cases! {
     /// Les conges a la reprise, lus sur le dernier bulletin de l'ancien logiciel.
     pub struct CongesReprise {
         date: Jour,
-        report: NombreEcrit,
-        acquis_report: NombreEcrit,
-        remuneration_report: NombreEcrit,
-        acquis: NombreEcrit,
-        pris: NombreEcrit,
-        remuneration_periode: NombreEcrit,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        report: Jours,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        acquis_report: Jours,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        remuneration_report: Montant,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        acquis: Jours,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pris: Jours,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        remuneration_periode: Montant,
     }
 }
 
@@ -2751,7 +2780,14 @@ cases! {
 }
 
 cases! {
-    pub struct TauxPrevoyance { t1_non_cadre: NombreEcrit, t1_cadre: NombreEcrit, part_patronale: NombreEcrit }
+    pub struct TauxPrevoyance {
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        t1_non_cadre: Taux,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        t1_cadre: Taux,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        part_patronale: Taux,
+    }
 }
 
 cases! {
@@ -2760,12 +2796,23 @@ cases! {
 }
 
 cases! {
-    pub struct SantePermanents { taux_contrat: NombreEcrit, part_patronale: NombreEcrit }
+    pub struct SantePermanents {
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        taux_contrat: Taux,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        part_patronale: Taux,
+    }
 }
 
 cases! {
     /// Le bloc S21.G00.44 : la compagnie doit-elle la taxe sur les salaires.
-    pub struct AssujettissementALaTaxe { tva: Tva, part_tva: NombreEcrit, sous_franchise: bool, association_1679a: bool }
+    pub struct AssujettissementALaTaxe {
+        tva: Tva,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        part_tva: Taux,
+        sous_franchise: bool,
+        association_1679a: bool,
+    }
 }
 
 cases! {
@@ -2787,7 +2834,8 @@ cases! {
     /// `notification` celle d'ou elle vient.
     pub struct TauxAtmp, cles CaseTauxAtmp {
         CodeRisque(crate::bareme::CodeRisqueAt) = "code_risque" => code_risque,
-        Valeur(NombreEcrit) = "valeur" => valeur,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        Valeur(Taux) = "valeur" => valeur,
         Depuis(Jour) = "depuis" => depuis,
         Provenance(ProvenanceAtmp) = "provenance" => provenance,
         Notification(NotificationAtmp) = "notification" => notification,
@@ -2795,7 +2843,11 @@ cases! {
 }
 
 cases! {
-    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(NombreEcrit) = "taux" => taux, CodeInsee(CodeInsee) = "code_insee" => code_insee }
+    pub struct VersementMobilite, cles CaseVersementMobilite {
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        Taux(Taux) = "taux" => taux,
+        CodeInsee(CodeInsee) = "code_insee" => code_insee,
+    }
 }
 
 cases! {
