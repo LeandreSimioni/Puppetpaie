@@ -166,7 +166,7 @@ pub(crate) fn ligne_citee(l: &FormeDeRemuneration) -> String {
             texte.push(c);
         }
     }
-    format!("{} à {}", texte, l.paiement().taux().dit())
+    format!("{} à {}", texte, l.paiement.taux().dit())
 }
 
 /// La ligne fait-elle le brut ? (`soumis` de la rubrique.)
@@ -205,7 +205,7 @@ fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> R<St
 /// n'est pas une clause du contrat.
 pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> Option<String> {
     let morceaux: Vec<String> =
-        remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant.decimal() > socle::num::Decimal::ZERO).map(ligne_citee).collect();
+        remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant > Montant::ZERO).map(ligne_citee).collect();
     (!morceaux.is_empty()).then(|| et(&morceaux))
 }
 

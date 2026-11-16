@@ -43,7 +43,7 @@ use engagement::{self, LignePaie, PlaceDuMois};
 use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
-use socle::grandeurs::{Cachets, Heures, Jours, Montant};
+use socle::grandeurs::{Cachets, Coefficient, Heures, Jours, Montant, MontantUnitaire};
 use socle::num::Decimal;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
@@ -204,8 +204,8 @@ struct ChargeAjuster {
     modifications: Vec<ModificationEnCours>,
     engagement: Identite,
     cible: Cible,
-    #[serde(deserialize_with = "socle::forme::court")]
-    montant: Decimal,
+    #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+    montant: Montant,
 }
 
 /// La charge des contrats d'un mois passe : le mois, et le salarie dont ne lire que les siens (absent : tous).
@@ -242,8 +242,8 @@ struct SexeDeLaFiche {
 /// Ce que la page propose quand la saisie ne le dit pas : le taux d'une ligne de cachet neuve.
 #[derive(Debug, Serialize)]
 struct Defauts {
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    taux_cachet: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    taux_cachet: Option<MontantUnitaire>,
 }
 
 /// UNE CARTE NEUVE DU MOIS S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des
@@ -304,8 +304,8 @@ struct EnCours {
     contrat: Periode,
     numero: NumeroContrat,
     depuis: Option<Mois>,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    taux_cachet: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    taux_cachet: Option<MontantUnitaire>,
     deja_repris: bool,
     engagement: Reprise,
 }
@@ -329,8 +329,8 @@ struct Reprise {
 #[derive(Debug, Serialize)]
 struct LigneAReprendre {
     rubrique: &'static str,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    taux: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    taux: Option<MontantUnitaire>,
     dates: [Jour; 0],
 }
 
@@ -393,8 +393,10 @@ struct Emploi {
 struct TauxQuiChange {
     rang: engagement::ligne::RangDeLigne,
     rubrique: catalogue::CodeDeRubrique,
-    taux_avant: Option<Decimal>,
-    taux: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    taux_avant: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    taux: Option<MontantUnitaire>,
 }
 
 /// Ce qui a change, pour l'engagement ajuste : son salaire du mois s'il change, ses lignes dont le taux change.
@@ -411,11 +413,16 @@ struct CeQuiChange {
 struct Ajuste {
     phrase: String,
     cible: Cible,
-    vise: Decimal,
-    atteint: Decimal,
-    depart: Decimal,
-    ecart: Decimal,
-    facteur: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    vise: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    atteint: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    depart: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    ecart: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    facteur: Coefficient,
     tours: usize,
     engagements: [CeQuiChange; 1],
     paies: [VuePaie; 1],
@@ -460,13 +467,13 @@ dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, Emploi, CarteEcrite, Ajust
 /// dernier taux saisi -- `null` quand le dossier n'a encore aucun cachet (R12 :
 /// aucun texte ne fixe un taux de cachet, la compagnie le saisit).
 pub(crate) fn squelette(ctx: &Contexte, mois: Mois) -> R<VueDuMois> {
-    Ok(VueDuMois { taux_cachet: dernier_taux(ctx)?.map(socle::forme::NombreLu::de_decimal), ..VueDuMois::vide(mois) })
+    Ok(VueDuMois { taux_cachet: dernier_taux(ctx)?.map(socle::forme::NombreLu::de_grandeur), ..VueDuMois::vide(mois) })
 }
 
 
 /// Le taux du cachet le plus recemment saisi : une ligne de cachet d'abord, le `taux_cachet` du mois a defaut ; `None` si
 /// aucun mois n'en dit rien -- aucun texte ne fixe un taux de cachet (regle 1, R12), la compagnie saisit le sien.
-pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<Decimal>> {
+pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<MontantUnitaire>> {
     let mut mois = engagement::stock::mois_saisis(&ctx.racine)?;
     mois.reverse();
     for m in mois {
@@ -479,7 +486,7 @@ pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<Decimal>> {
 }
 
 /// Le taux du dernier cachet de la saisie `data`, sinon son `taux_cachet` (un taux nul ne dit rien).
-fn taux_du_mois(ctx: &Contexte, data: &VueDuMois) -> R<Option<Decimal>> {
+fn taux_du_mois(ctx: &Contexte, data: &VueDuMois) -> R<Option<MontantUnitaire>> {
     for e in data.engagements.iter().rev() {
         for l in e.lignes().iter().rev() {
             if let Some(t) = taux_d_une_ligne(ctx, l)? {
@@ -487,15 +494,15 @@ fn taux_du_mois(ctx: &Contexte, data: &VueDuMois) -> R<Option<Decimal>> {
             }
         }
     }
-    Ok(data.taux_cachet.as_ref().map(socle::forme::NombreLu::decimal).transpose()?.filter(|t| !t.is_zero()))
+    Ok(data.taux_cachet.as_ref().map(socle::grandeurs::lu::ecrite::<MontantUnitaire>).transpose()?.filter(|t| !t.est_nul()))
 }
 
 /// Le taux d'une ligne de cachet ; rien pour une autre ligne, ou un cachet sans taux.
-fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<Decimal>> {
+fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<MontantUnitaire>> {
     if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != droit::catalogue::Unite::Cachet {
         return Ok(None);
     }
-    Ok(l.taux().filter(|t| !t.est_nul()).map(engagement::ligne::TauxDeLigne::decimal))
+    Ok(l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite).filter(|t| !t.est_nul()))
 }
 
 /// Les lignes d'un permanent, calculees. Une saisie incomplete (un engagement qui ne dit pas encore tout,
@@ -540,10 +547,11 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     for (i, (l, src)) in p.remuneration.iter().zip(brutes).enumerate() {
         let saisi = p.engagement.lignes.get(i).and_then(|x| x.marques()).and_then(|m| m.taux_saisi);
         // Le nombre que l'ecran montre : sa forme la plus courte.
-        let (quantite, taux) = (Some(socle::forme::Nombre(socle::num::court(l.quantite.decimal()))), Some(match saisi {
-            Some(t) => t,
-            None => socle::grandeurs::MontantUnitaire::du_decimal(socle::num::court(l.taux.decimal())),
-        }));
+        let quantite = Some(socle::forme::Nombre(socle::num::court(l.paiement.quantite().decimal())));
+        let taux = match saisi {
+            Some(t) => Some(t),
+            None => l.paiement.taux().par_unite().map(socle::grandeurs::courte),
+        };
         out.push(match src.clone() {
             LignePaie::Unites(x) => LignePaie::Unites(engagement::ligne::Unites { quantite, taux, ..x }),
             LignePaie::UnitesEtHeures(x) => LignePaie::UnitesEtHeures(engagement::ligne::UnitesEtHeures { quantite, taux, ..x }),
@@ -673,11 +681,10 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             .flat_map(|p| p.lignes.iter())
             .find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET))
             .and_then(|l| match l.paiement {
-                // Le taux du cachet de la page reste un decimal (`dernier_taux`, `EnCours.taux_cachet`) : sa porte.
-                Some(engagement::ligne::PaiementDeLigne::Cachets(_, t)) => Some(t.decimal()),
+                Some(engagement::ligne::PaiementDeLigne::Cachets(_, t)) => Some(t),
                 _ => None,
             });
-        let taux = match taux_cachet.filter(|t| !t.is_zero()) {
+        let taux = match taux_cachet.filter(|t| !t.est_nul()) {
             Some(t) => Some(t),
             None => dernier_taux(ctx)?,
         };
@@ -1193,15 +1200,16 @@ pub(crate) fn manque_de(ctx: &Contexte, data: &VueDuMois, i: RangDansLeMois) -> 
 fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: RangDansLeMois) -> CeQuiChange {
     let mut lignes = Vec::new();
     for (rang, (a, b)) in engagement::ligne::RangDeLigne::de_chacun(avant.lignes().iter().zip(apres.lignes().iter())) {
-        let (ta, tb) = (a.taux().map(engagement::ligne::TauxDeLigne::decimal), b.taux().map(engagement::ligne::TauxDeLigne::decimal));
-        if ta.is_none() && tb.is_none_or(|t| t.is_zero()) {
+        let par_unite = |l: &LignePaie| l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite);
+        let (ta, tb) = (par_unite(a), par_unite(b));
+        if ta.is_none() && tb.is_none_or(|t| t.est_nul()) {
             continue; // restee sans taux : rien a ecrire
         }
         if ta != tb {
             lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb });
         }
     }
-    let salaire = |e: &SaisieCarte| e.salaire_mensuel.as_ref().map(|n| n.decimal().into_iter().next());
+    let salaire = |e: &SaisieCarte| e.salaire_mensuel.as_ref().map(|n| socle::grandeurs::lu::ecrite::<Montant>(n).ok());
     let change = salaire(avant) != salaire(apres);
     CeQuiChange { index, salaire_mensuel: change.then(|| apres.salaire_mensuel.clone()), lignes }
 }
@@ -1218,16 +1226,16 @@ fn cible_dite(c: Cible) -> &'static str {
 /// Le taux qu'il faudrait, pour que l'engagement `engagement` (son identite ; son brouillon enregistre, ou sa modification
 /// pas encore ecrite, `mois_designe`) coute CE montant. N'ecrit rien.
 fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
-    let vise = Montant::du_decimal(c.montant).au_centime().decimal();
-    if vise <= Decimal::ZERO {
-        return Err(refus(format!("Un montant vise se dit en euros et il est positif (recu : {}).", vise)));
+    let vise = c.montant.au_centime();
+    if vise <= Montant::ZERO {
+        return Err(refus(format!("Un montant vise se dit en euros et il est positif (recu : {}).", socle::grandeurs::ecrit::texte::dit(vise))));
     }
     let texte = c.mois.libelle(Graphie::Accentuee);
     let (data, ids) = mois_designe(ctx, c.mois, c.modifications)?;
     let i = RangDansLeMois::du_premier(&ids, |x| *x == c.engagement).ok_or_else(|| {
         refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois.", texte))
     })?;
-    let v = engagement::viser::viser(ctx, &data, &[i], c.cible, Montant::du_decimal(vise)).map_err(|r| match r {
+    let v = engagement::viser::viser(ctx, &data, &[i], c.cible, vise).map_err(|r| match r {
         engagement::viser::RefusVisee::Refus(m) => m,
         engagement::viser::RefusVisee::Calcul(m) => refus_du_calcul(ctx, &data, m),
     })?;
@@ -1238,9 +1246,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", texte)),
     };
     let vue = vue_paie(ctx, paie, apres, &v.saisie)?;
-    let atteint = v.atteint.au_centime().decimal();
-    let mut facteur = v.facteur.decimal().round_dp(6);
-    facteur.rescale(6);
+    let atteint = v.atteint.au_centime();
     let change = ce_qui_a_change(avant, apres, i);
     // Le taux qu'il faudrait : chaque ligne qui change, puis le salaire du mois s'il change.
     let mut faut: Vec<String> = change
@@ -1248,33 +1254,33 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         .iter()
         .map(|l| {
             let taux = match l.taux {
-                Some(t) => format!("{} à {}", l.rubrique, socle::texte::euros(Montant::du_decimal(t))),
+                Some(t) => format!("{} à {}", l.rubrique, socle::texte::euros(t)),
                 None => l.rubrique.to_string(),
             };
             match l.taux_avant {
-                Some(a) => format!("{} au lieu de {}", taux, socle::texte::euros(Montant::du_decimal(a))),
+                Some(a) => format!("{} au lieu de {}", taux, socle::texte::euros(a)),
                 None => taux,
             }
         })
         .collect();
     if let Some(Some(s)) = &change.salaire_mensuel {
-        faut.push(format!("salaire du mois à {}", socle::texte::euros(Montant::du_decimal(s.decimal()?))));
+        faut.push(format!("salaire du mois à {}", socle::texte::euros(socle::grandeurs::lu::ecrite::<Montant>(s)?)));
     }
     let avec = if faut.is_empty() { String::new() } else { format!(" ; {}", faut.join(", ")) };
     let ecart = atteint - vise;
-    let pres = if ecart.is_zero() {
+    let pres = if ecart.est_nul() {
         " au centime près".to_string()
     } else {
-        format!(" ({}{} : un taux se paie au centime)", if ecart > Decimal::ZERO { "+" } else { "" }, socle::texte::euros(Montant::du_decimal(ecart)))
+        format!(" ({}{} : un taux se paie au centime)", if ecart > Montant::ZERO { "+" } else { "" }, socle::texte::euros(ecart))
     };
     Ok(Ajuste {
-        phrase: format!("{} visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(Montant::du_decimal(vise)), socle::texte::euros(Montant::du_decimal(atteint)), pres, avec),
+        phrase: format!("{} visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(vise), socle::texte::euros(atteint), pres, avec),
         cible: c.cible,
         vise,
         atteint,
-        depart: v.depart.au_centime().decimal(),
+        depart: v.depart.au_centime(),
         ecart,
-        facteur,
+        facteur: v.facteur.a_decimales(6),
         tours: v.tours,
         engagements: [change],
         paies: [vue],
@@ -1571,9 +1577,13 @@ pub(crate) struct CaseDeFrais {
 pub(crate) struct LigneVue {
     rubrique: droit::catalogue::CodeDeRubrique,
     designation: String,
-    quantite: Decimal,
-    taux: Decimal,
-    montant: Decimal,
+    /// Sa quantite et son taux, dans l'unite de sa rubrique, en texte.
+    #[serde(serialize_with = "engagement::ligne::en_texte::quantite")]
+    quantite: engagement::ligne::QuantiteDeLigne,
+    #[serde(serialize_with = "engagement::ligne::en_texte::taux")]
+    taux: engagement::ligne::TauxDeLigne,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    montant: Montant,
 }
 
 /// L'emploi du salarie, tel que sa fiche le dit.
@@ -1669,7 +1679,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         }
     }
     let taux_cachet = match premier_cachet {
-        Some(l) => Some(socle::forme::NombreLu::de_decimal(l.taux().ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?.decimal())),
+        Some(l) => Some(socle::forme::NombreLu::de_grandeur(l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite).ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?)),
         None => match &brut.taux_cachet {
             Some(t) => Some(t.clone()),
             None => data.taux_cachet.clone(),
@@ -1778,7 +1788,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         remuneration: p
             .remuneration
             .iter()
-            .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.quantite.decimal(), taux: l.taux.decimal(), montant: l.montant.au_centime().decimal() })
+            .map(|l| LigneVue { rubrique: l.code.clone(), designation: l.designation(), quantite: l.paiement.quantite(), taux: l.paiement.taux(), montant: l.montant.au_centime() })
             .collect(),
         jours: e.jours,
         lieu,
@@ -2054,8 +2064,8 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
     for l in &p.remuneration {
         let mut tarif = None;
         for j in &jours {
-            match engagement::tarif_conventionnel(ctx, &l.rubrique, j)?.map(socle::grandeurs::MontantUnitaire::decimal) {
-                Some(t) if t == l.taux => {
+            match engagement::tarif_conventionnel(ctx, &l.rubrique, j)? {
+                Some(t) if Some(t) == l.taux.par_unite() => {
                     tarif = Some(t);
                     break;
                 }
@@ -2063,7 +2073,7 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
             }
         }
         if let Some(tarif) = tarif {
-            let dit = format!("{} à {}", l.designation.to_lowercase(), socle::texte::euros(Montant::du_decimal(tarif)));
+            let dit = format!("{} à {}", l.designation.to_lowercase(), socle::texte::euros(tarif));
             if !dits.contains(&dit) {
                 dits.push(dit);
             }

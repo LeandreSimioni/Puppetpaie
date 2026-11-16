@@ -25,7 +25,7 @@ use droit::contexte::Contexte;
 use droit::natures::{self, Nature, NatureDeContrat};
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
 use socle::echec::{erreur, Classe, R};
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 
 /// Un texte de l'engagement, non vide (ses blancs ote).
 fn texte(t: Option<&str>) -> Option<&str> {
@@ -102,8 +102,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
             continue;
         }
         if l.salaire_de_base {
-            base = Some(format!("un salaire mensuel brut de {}", l.paiement().taux().dit()));
-        } else if l.montant.decimal() > Decimal::ZERO {
+            base = Some(format!("un salaire mensuel brut de {}", l.paiement.taux().dit()));
+        } else if l.montant > Montant::ZERO {
             morceaux.push(ligne_citee(l));
         }
     }

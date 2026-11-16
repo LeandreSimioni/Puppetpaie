@@ -172,12 +172,9 @@ pub struct FormeDeRemuneration {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: droit::catalogue::Unite,
-    /// Sa quantite, sans son unite : relue, elle la prend de `unite` (`calcul::LigneBrut::de_la_forme`).
-    #[serde(serialize_with = "nombre_ecrit")]
-    pub quantite: socle::forme::Nombre,
-    /// Son taux, sans son unite : relu, il la prend de `unite` (`ligne::TauxDeLigne::de_l_unite`).
-    #[serde(serialize_with = "nombre_ecrit")]
-    pub taux: socle::forme::Nombre,
+    /// Ce qu'elle paie, sa quantite et son taux dans l'unite de sa rubrique, par sa forme (`{"cachets": ["2", "150"]}`),
+    /// sans zero inutile (`calcul::LigneBrut::forme`).
+    pub paiement: crate::ligne::PaiementDeLigne,
     #[serde(with = "nombre")]
     pub montant: Montant,
     #[serde(with = "nombre")]
@@ -193,14 +190,6 @@ pub struct FormeDeRemuneration {
     pub dsn_autres_bruts: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub precision: Option<String>,
     pub designation: String,
-}
-
-impl FormeDeRemuneration {
-    /// CE QU'ELLE PAIE, sa quantite et son taux relus dans l'unite de sa rubrique (`PaiementDeLigne::de_l_unite`) : la
-    /// lecture de ses deux nombres.
-    pub fn paiement(&self) -> crate::ligne::PaiementDeLigne {
-        crate::ligne::PaiementDeLigne::de_l_unite(self.unite, self.quantite.0, self.taux.0)
-    }
 }
 
 /// La deduction forfaitaire specifique (`calcul::DeductionForfaitaire`) sous sa forme ecrite.

@@ -1167,7 +1167,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // « MONTANT BRUT » (art. 1, I ; VI : mis en valeur).
     if rem.len() <= 1 {
         let titre = match rem.first() {
-            Some(l) => format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux)),
+            Some(l) => format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.paiement.taux())),
             None => "SALAIRE".to_string(),
         };
         corps.push(ligne(
@@ -1177,7 +1177,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     } else {
         for l in &rem {
             corps.push(ligne(
-                vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(chiffres_en_euros(l.montant))],
+                vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.paiement.taux()))), s(chiffres_en_euros(l.montant))],
                 vec![],
             ));
         }
@@ -1195,7 +1195,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         corps.push(ligne(vec![cel("REMBOURSEMENTS ET DÉDUCTIONS DIVERSES", n)], style_section()));
         for i in &j.remboursements {
             let l = &p.remuneration[*i];
-            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.taux))), s(chiffres_en_euros(l.montant))], vec![]));
+            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.paiement.taux()))), s(chiffres_en_euros(l.montant))], vec![]));
         }
     }
     corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer, n));

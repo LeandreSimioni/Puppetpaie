@@ -19,9 +19,9 @@ use crate::{Avis, Engagement};
 use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie, FormeDeRemuneration};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
-use socle::num::{court, div, mul, sub, Decimal};
+use socle::num::{div, mul, sub, Decimal};
 use socle::grandeurs::{courte, Heures, Montant, MontantUnitaire, Taux};
-use crate::ligne::{PaiementDeLigne, QuantiteDeLigne, TauxDeLigne};
+use crate::ligne::{PaiementDeLigne, QuantiteDeLigne};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
 use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
@@ -44,10 +44,8 @@ pub struct LigneBrut {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: Unite,
-    /// Sa quantite, dans l'unite de sa rubrique (`unite`).
-    pub quantite: QuantiteDeLigne,
-    /// Son taux, dans l'unite de sa rubrique.
-    pub taux: TauxDeLigne,
+    /// Ce qu'elle paie, sa quantite et son taux dans l'unite de sa rubrique (`unite`).
+    pub paiement: PaiementDeLigne,
     pub montant: Montant,
     pub heures_annexes: Heures,
     pub soumis: bool,
@@ -72,7 +70,7 @@ impl LigneBrut {
     /// elle se dit apres lui, dans son unite. Un forfait et un pourcentage se disent par leur seul libelle : leur
     /// quantite n'est pas un nombre de choses.
     pub fn designation(&self) -> String {
-        let quantite = self.quantite.decimal();
+        let quantite = self.paiement.quantite().decimal();
         let q = quantite.round_dp(2).normalize();
         let nb = socle::texte::nombre_dit(q);
         if matches!(self.unite, Unite::Forfait | Unite::Pourcentage) {
@@ -134,8 +132,7 @@ impl LigneBrut {
             code: self.code.clone(),
             libelle: self.libelle.clone(),
             unite: self.unite,
-            quantite: socle::forme::Nombre(self.quantite.decimal()),
-            taux: socle::forme::Nombre(self.taux.decimal()),
+            paiement: self.paiement.sans_zero(),
             montant: self.montant,
             heures_annexes: self.heures_annexes,
             soumis: self.soumis,
@@ -154,13 +151,11 @@ impl LigneBrut {
 
     /// Relue de sa forme ecrite.
     pub(crate) fn de_la_forme(f: &FormeDeRemuneration) -> LigneBrut {
-        let paiement = f.paiement();
         LigneBrut {
             code: f.code.clone(),
             libelle: f.libelle.clone(),
             unite: f.unite,
-            quantite: paiement.quantite(),
-            taux: paiement.taux(),
+            paiement: f.paiement,
             montant: f.montant,
             heures_annexes: f.heures_annexes,
             soumis: f.soumis,
@@ -193,8 +188,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
             code: r.code.into(),
             libelle: r.libelle,
             unite: r.unite,
-            quantite: paiement.quantite(),
-            taux: paiement.taux(),
+            paiement,
             montant,
             heures_annexes,
             soumis: r.soumis,
@@ -655,16 +649,17 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
     for l in lignes.iter().filter(|l| l.code != crate::NUITEE_AU_DELA && l.code != crate::REPAS_AU_DELA) {
         // Deux quantites d'une meme rubrique sont de la meme grandeur ; deux grandeurs ne s'ajouteraient pas, et se diraient
         // a part.
-        match groupes.iter_mut().find(|g| g.code == l.code && g.precision == l.precision).and_then(|g| g.quantite.plus(l.quantite).map(|q| (g, q))) {
-            Some((g, q)) => {
-                g.quantite = q;
+        let somme = |g: &LigneBrut| g.paiement.quantite().plus(l.paiement.quantite()).and_then(|q| g.paiement.avec_quantite(q));
+        match groupes.iter_mut().find(|g| g.code == l.code && g.precision == l.precision).and_then(|g| somme(g).map(|p| (g, p))) {
+            Some((g, p)) => {
+                g.paiement = p;
                 g.montant += l.montant;
             }
             None => groupes.push(l.clone()),
         }
     }
     let base = |l: &LigneBrut| l.libelle.split_once(" (").map(|(b, _)| b.to_string());
-    let meme_mesure = |a: &LigneBrut, b: &LigneBrut| a.unite == b.unite && a.quantite == b.quantite;
+    let meme_mesure = |a: &LigneBrut, b: &LigneBrut| a.unite == b.unite && a.paiement.quantite() == b.paiement.quantite();
     let mut dits = Vec::new();
     let mut i = 0;
     while i < groupes.len() {
@@ -688,7 +683,7 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
 /// Une ligne (deja additionnee) dite en bref : un forfait qui se compte dit son nombre (« 8 repas »), des heures de
 /// travail se disent en heures (« 28 h de travail ») ; le reste comme au bulletin.
 fn bref(l: &LigneBrut) -> String {
-    let q = l.quantite.decimal().round_dp(2).normalize();
+    let q = l.paiement.quantite().decimal().round_dp(2).normalize();
     let (tete, reste) = match l.libelle.split_once(' ') {
         Some((t, r)) => (t, r),
         None => (l.libelle.as_str(), ""),
@@ -2140,7 +2135,7 @@ contrat << majoree du nombre d'heures complementaires >> du mois (CSS R. 242-2, 
 heures en plus du salaire mensuel ({} h) : heures complementaires ou non, le logiciel ne le sait pas. Refus : il ne les \
 devine pas.",
             e.qui(),
-            l.quantite_ecrite().iter().map(|q| q.to_string()).collect::<String>()
+            heures_de(l).iter().map(|h| socle::grandeurs::ecrit::texte::dit(*h)).collect::<String>()
         ));
     }
     let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree(&droit::natures::BASE, &format!("{}.quotite_reference_defaut", nat.libelle)))?;
@@ -2153,10 +2148,18 @@ devine pas.",
         .lignes
         .iter()
         .filter(|l| *l.rubrique() == crate::heures_en_plus::HEURE_COMPLEMENTAIRE)
-        // Leur rubrique compte des heures (`rubriques-base.json`, `heure_complementaire`).
-        .map(|l| l.quantite_ecrite().ok_or_else(|| refus("nombre attendu, lu null")))
-        .sum::<R<Decimal>>()?;
-    Ok((socle::grandeurs::Heures::du_decimal(e.quotite()?.heures("La durée d'un temps partiel")?.decimal() + complementaires), reference))
+        .map(|l| heures_de(l).ok_or_else(|| refus("nombre attendu, lu null")))
+        .sum::<R<socle::grandeurs::Heures>>()?;
+    Ok((e.quotite()?.heures("La durée d'un temps partiel")? + complementaires, reference))
+}
+
+/// Les heures d'une ligne d'heures, normales ou complementaires : leur rubrique compte des heures (`rubriques-base.json`,
+/// `heure`, `heure_complementaire`) ; `None` : la case n'est pas remplie.
+fn heures_de(l: &crate::LignePaie) -> Option<socle::grandeurs::Heures> {
+    match l.quantite(Unite::Heure) {
+        Some(QuantiteDeLigne::Heures(h)) => Some(h),
+        _ => None,
+    }
 }
 
 impl Paie {
@@ -2198,7 +2201,7 @@ impl Paie {
             salaire_de_base: self.salaire_de_base,
             salaire_retabli: self.salaire_retabli,
             salarie: Cle { cle: self.salarie.id.clone() },
-            smic: MontantUnitaire::du_decimal(court(self.smic.decimal())),
+            smic: socle::grandeurs::courte(self.smic),
             spectacle: self.spectacle.as_ref().map(|s| Cle { cle: s.cle.clone() }),
             total_pat: self.total_pat,
             total_sal: self.total_sal,
@@ -2216,7 +2219,7 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: PaiementDeLigne::de_l_unite(Unite::Mois, Decimal::ONE, dec_de(montant)).quantite(), taux: PaiementDeLigne::de_l_unite(Unite::Mois, Decimal::ONE, dec_de(montant)).taux(),
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, paiement: PaiementDeLigne::de_l_unite(Unite::Mois, Decimal::ONE, dec_de(montant)),
             montant: Montant::du_decimal(dec_de(montant)), heures_annexes: Heures::du_decimal(dec_de(heures)), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,

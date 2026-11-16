@@ -912,7 +912,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
         .remuneration
         .iter()
         .filter(|l| cachet(&l.code))
-        .fold(Decimal::ZERO, |a, l| add(a, l.quantite.decimal()))
+        .fold(Decimal::ZERO, |a, l| add(a, l.paiement.quantite().decimal()))
         .trunc()
         .to_string()
         .parse::<i64>()
@@ -949,7 +949,7 @@ fn minimum_dans(cx: &Cx, l: &LigneBrut, saisie: Option<&crate::LignePaie>) -> R<
     // l'annexe, jamais le cachet de la journee.
     if repetition(&l.code) && *cx.idcc == IDCC_3090 && statut == Statut::Artiste {
         let dates: BTreeSet<Jour> = saisie.iter().flat_map(|s| s.dates().iter()).map(|d| d.jour()).collect();
-        let par_jour = (!dates.is_empty()).then(|| div(l.quantite.decimal(), Decimal::from(dates.len())));
+        let par_jour = (!dates.is_empty()).then(|| div(l.paiement.quantite().decimal(), Decimal::from(dates.len())));
         return Ok(cx.plancher_service_3090(par_jour)?.map(|(montant, quoi, heure)| Minimum {
             montant,
             quoi,
@@ -1043,7 +1043,7 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                     }
                     (pair(div(l.montant.decimal(), l.heures_annexes.decimal())), "l'heure")
                 } else {
-                    (l.taux.decimal(), "le service")
+                    (l.paiement.taux().decimal(), "le service")
                 };
                 if paye < p.montant {
                     avis.push(a_verifier(
@@ -1067,7 +1067,7 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
             let (paye, unite) = match p.par {
                 // Une grille a l'unite : le taux de la ligne contre le montant de la grille.
                 Par::Unite => (
-                    l.taux.decimal(),
+                    l.paiement.taux().decimal(),
                     if l.code == JOURNEE {
                         "la journée"
                     } else if l.code == SEMAINE {
@@ -1084,8 +1084,8 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                     }
                     (pair(div(l.montant.decimal(), l.heures_annexes.decimal())), "l'heure")
                 }
-                Par::Cachet => (l.taux.decimal(), "le cachet"),
-                Par::Service => (l.taux.decimal(), "le service"),
+                Par::Cachet => (l.paiement.taux().decimal(), "le cachet"),
+                Par::Service => (l.paiement.taux().decimal(), "le service"),
             };
             if paye < p.montant {
                 avis.push(a_verifier(

@@ -460,6 +460,33 @@ mod texte_option {
     pub use socle::grandeurs::lu::nombre_ou_texte::option::deserialize;
 }
 
+/// LA QUANTITE ET LE TAUX D'UNE LIGNE EN TEXTE, sans leur unite, son echelle gardee (`socle::grandeurs::ecrit::texte`) :
+/// une reponse qui les donne a cote de leur rubrique (l'ecran du mois). Chaque grandeur s'ecrit par l'ecriture du socle.
+pub mod en_texte {
+    use super::{QuantiteDeLigne, TauxDeLigne};
+    use socle::grandeurs::ecrit::texte::serialize as ecrit;
+
+    pub fn quantite<S: serde::Serializer>(q: &QuantiteDeLigne, s: S) -> Result<S::Ok, S::Error> {
+        match q {
+            QuantiteDeLigne::Heures(g) => ecrit(g, s),
+            QuantiteDeLigne::Cachets(g) => ecrit(g, s),
+            QuantiteDeLigne::Jours(g) => ecrit(g, s),
+            QuantiteDeLigne::Services(g) => ecrit(g, s),
+            QuantiteDeLigne::Semaines(g) => ecrit(g, s),
+            QuantiteDeLigne::PartDuMois(g) => ecrit(g, s),
+            QuantiteDeLigne::Unites(g) => ecrit(g, s),
+            QuantiteDeLigne::Base(g) => ecrit(g, s),
+        }
+    }
+
+    pub fn taux<S: serde::Serializer>(t: &TauxDeLigne, s: S) -> Result<S::Ok, S::Error> {
+        match t {
+            TauxDeLigne::ParUnite(g) => ecrit(g, s),
+            TauxDeLigne::PartDeLaBase(g) => ecrit(g, s),
+        }
+    }
+}
+
 /// La quantite d'une ligne, ecrite sans son unite (sa rubrique la dit, `QuantiteDeLigne`) : en texte, son echelle gardee,
 /// comme `texte` ; lue d'un nombre ou d'un texte.
 mod ecrit {
@@ -650,6 +677,15 @@ impl TauxDeLigne {
         self.decimal().is_zero()
     }
 
+    /// LE MONTANT UNITAIRE d'une ligne qui se paie a l'unite (un cachet, une heure, un salaire mensuel) ; `None` : une
+    /// ligne en pourcentage, dont le taux est une part de sa base.
+    pub fn par_unite(self) -> Option<MontantUnitaire> {
+        match self {
+            TauxDeLigne::ParUnite(u) => Some(u),
+            TauxDeLigne::PartDeLaBase(_) => None,
+        }
+    }
+
     /// TEL QU'UNE PHRASE LE DIT (un contrat, un avenant) : un montant unitaire en euros (« 120,00 € »), la part d'une
     /// ligne en pourcentage en pourcent (« 10,00 % »).
     pub fn dit(self) -> String {
@@ -689,8 +725,9 @@ impl PaiementDeLigne {
         }
     }
 
-    /// Sans zero inutile (`socle::grandeurs::sans_zero`), sa quantite et son taux.
-    fn sans_zero(self) -> PaiementDeLigne {
+    /// Sans zero inutile (`socle::grandeurs::sans_zero`), sa quantite et son taux : la forme canonique d'une ligne, et
+    /// celle de la paie ecrite (`calcul::LigneBrut::forme`).
+    pub fn sans_zero(self) -> PaiementDeLigne {
         use PaiementDeLigne as P;
         match self {
             P::Heures(q, u) => P::Heures(sans_zero(q), sans_zero(u)),
@@ -731,6 +768,24 @@ impl PaiementDeLigne {
             PaiementDeLigne::Unites(q, _) => QuantiteDeLigne::Unites(q),
             PaiementDeLigne::Base(b, _) => QuantiteDeLigne::Base(b),
         }
+    }
+
+    /// LE MEME PAIEMENT, SA QUANTITE DEVENUE `q` (deux lignes d'une meme rubrique additionnees, `calcul::en_bref`) ;
+    /// `None` : `q` n'est pas de sa grandeur.
+    pub fn avec_quantite(self, q: QuantiteDeLigne) -> Option<PaiementDeLigne> {
+        use PaiementDeLigne as P;
+        use QuantiteDeLigne as Q;
+        Some(match (self, q) {
+            (P::Heures(_, u), Q::Heures(q)) => P::Heures(q, u),
+            (P::Cachets(_, u), Q::Cachets(q)) => P::Cachets(q, u),
+            (P::Jours(_, u), Q::Jours(q)) => P::Jours(q, u),
+            (P::Services(_, u), Q::Services(q)) => P::Services(q, u),
+            (P::Semaines(_, u), Q::Semaines(q)) => P::Semaines(q, u),
+            (P::PartDuMois(_, u), Q::PartDuMois(q)) => P::PartDuMois(q, u),
+            (P::Unites(_, u), Q::Unites(q)) => P::Unites(q, u),
+            (P::Base(_, c), Q::Base(b)) => P::Base(b, c),
+            _ => return None,
+        })
     }
 
     /// Son taux.

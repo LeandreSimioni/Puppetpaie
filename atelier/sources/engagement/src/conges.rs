@@ -272,7 +272,7 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
         None => Montant::ZERO.decimal(),
     };
     let heures_supplementaires =
-        p.remuneration.iter().filter(|l| l.code == crate::heures_en_plus::HEURE_SUPPLEMENTAIRE).fold(Decimal::ZERO, |a, l| a + l.quantite.decimal());
+        p.remuneration.iter().filter(|l| l.code == crate::heures_en_plus::HEURE_SUPPLEMENTAIRE).fold(Decimal::ZERO, |a, l| a + l.paiement.quantite().decimal());
     let exonere = match p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere) {
         Some(x) => x.decimal(),
         None => Montant::ZERO.decimal(),

@@ -163,7 +163,7 @@ pub(crate) fn apres_les_cotisations(
         return Ok(None);
     }
     // Leurs rubriques comptent des heures (`rubriques-base.json`) ; une autre grandeur se refuse.
-    let heures_de = |l: &LigneBrut| match l.quantite {
+    let heures_de = |l: &LigneBrut| match l.paiement.quantite() {
         QuantiteDeLigne::Heures(h) => Ok(h),
         _ => Err(socle::refus!("La ligne {} des heures en plus ne compte pas des heures : le signaler au développeur.", l.code)),
     };
