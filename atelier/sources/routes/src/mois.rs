@@ -672,7 +672,11 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             .into_iter()
             .flat_map(|p| p.lignes.iter())
             .find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET))
-            .and_then(|l| l.taux);
+            .and_then(|l| match l.paiement {
+                // Le taux du cachet de la page reste un decimal (`dernier_taux`, `EnCours.taux_cachet`) : sa porte.
+                Some(engagement::ligne::PaiementDeLigne::Cachets(_, t)) => Some(t.decimal()),
+                _ => None,
+            });
         let taux = match taux_cachet.filter(|t| !t.is_zero()) {
             Some(t) => Some(t),
             None => dernier_taux(ctx)?,

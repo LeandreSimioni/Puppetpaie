@@ -45,7 +45,6 @@ use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
-use socle::num::Decimal;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant, Taux};
 
 /// Dans un engagement importe : ce que l'import a lu de lui (`Pieces`).
@@ -232,34 +231,29 @@ pub struct PaieVersee {
     pub importe_le: Option<Jour>,
 }
 
-/// Une ligne de remuneration que le bulletin imprime ; `rubrique` : celle du catalogue a laquelle l'import l'a rattachee.
+/// Une ligne de remuneration que le bulletin imprime ; `rubrique` : celle du catalogue a laquelle l'import l'a rattachee,
+/// et `paiement`, sa quantite et son taux dans l'unite de cette rubrique, quand le bulletin les imprime
+/// (`ligne::PaiementDeLigne::imprime`). Une ligne sans rubrique ne garde que son libelle et son montant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LigneImprimee {
-    pub quantite: Option<Decimal>,
     pub libelle: String,
-    pub taux: Option<Decimal>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub montant: Option<Montant>,
     pub soumis: bool,
     pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
+    pub paiement: Option<crate::ligne::PaiementDeLigne>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub heures: Option<socle::grandeurs::HeuresParUnite>,
 }
 
 impl LigneImprimee {
     /// La ligne de paie qu'elle dit a l'engagement importe, quand l'import l'a rattachee a une rubrique et qu'elle dit son
-    /// montant : ce montant, tel quel, et sa quantite, son taux et ses heures (son libelle reste celui du bulletin,
+    /// montant : ce montant, tel quel, et ce qu'elle paie et ses heures (son libelle reste celui du bulletin,
     /// `remuneration_lue`).
     pub fn en_ligne_de_paie(&self) -> Option<crate::LignePaie> {
         let rubrique = self.rubrique.clone()?;
-        Some(crate::LignePaie::Importee(crate::ligne::Importee {
-            rubrique,
-            quantite: self.quantite.map(socle::forme::Nombre),
-            taux: self.taux.map(socle::grandeurs::MontantUnitaire::du_decimal),
-            heures: self.heures,
-            montant: self.montant?,
-        }))
+        Some(crate::LignePaie::Importee(crate::ligne::Importee { rubrique, paiement: self.paiement, heures: self.heures, montant: self.montant? }))
     }
 }
 
@@ -270,9 +264,9 @@ pub struct CotisationImprimee {
     pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
     pub libelle: String,
     pub cotisation: Option<crate::ecarts::RegroupementDeComparaison>,
-    /// La base imprimee, un nombre lu : des euros, ou des heures pour une ligne dont la base compte des heures
-    /// (`calcul::BaseDeCotisation::relue`) ; sa grandeur se sait quand sa cotisation est lue au bareme.
-    pub base: Option<Decimal>,
+    /// La base imprimee, dans la grandeur que sa cotisation compte, posee quand l'import la qualifie
+    /// (`calcul::BaseDeCotisation::imprimee`) : des euros, ou des heures pour la deduction des heures supplementaires.
+    pub base: Option<crate::calcul::BaseDeCotisation>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub taux_employeur: Option<Taux>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
@@ -772,7 +766,7 @@ impl Importe {
         // LES LIGNES DE REMUNERATION QUE LES PIECES DISENT : celles du bulletin ; a defaut, le brut que la DSN declare.
         let mut lignes_lues = p.lignes.clone();
         if lignes_lues.is_empty() {
-            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, quantite: None, taux: None, rubrique: None, heures: None });
+            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, rubrique: None, paiement: None, heures: None });
         }
         // La quotite que la DSN declare (40.013) est, pour un salarie au mois, ses heures par mois (`quotite_contrat`) ; pour
         // un contrat d'usage, ses jours, que les jours du contrat disent (`Engagement::quotite`).
@@ -844,32 +838,15 @@ impl Importe {
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.contrat())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.contrat())?)?;
         // Un regroupement n'est pas une rubrique du bareme : sa base ne se range pas.
-        // La base qu'imprime le bulletin (un nombre lu) se range dans ce que l'assiette compte : la porte de cette lecture.
         fn de_cotisation(l: &CotisationImprimee) -> Option<&droit::forme_bareme::IdDeCotisation> {
             match &l.cotisation {
                 Some(crate::ecarts::RegroupementDeComparaison::Cotisation(id)) => Some(id),
                 Some(_) | None => None,
             }
         }
-        // La base d'une ligne de cotisation du bulletin, dans ce que compte l'assiette de sa cotisation au bareme ; une
-        // cotisation que le calcul compose hors du bareme (la deduction des heures supplementaires) se relit comme la
-        // paie validee la relit (`BaseDeCotisation::relue`). Une ligne sans cotisation (un regroupement, une ligne que
-        // l'import n'a pas qualifiee) somme des cotisations du bareme, dont aucune assiette ne compte des heures (le
-        // calcul les refuse) : des euros.
-        let base_imprimee = |l: &CotisationImprimee| -> Option<crate::calcul::BaseDeCotisation> {
-            let b = l.base?;
-            Some(match de_cotisation(l) {
-                Some(id) => match bar.rubrique(id).and_then(|r| r.base) {
-                    Some(cle) => crate::calcul::BaseDeCotisation::de_l_assiette(cle, b),
-                    None => crate::calcul::BaseDeCotisation::relue(id, b),
-                },
-                None => crate::calcul::BaseDeCotisation::Montant(Montant::du_decimal(b)),
-            })
-        };
 
         // Les lignes de cotisation du bulletin, sous leur cotisation ; une ligne que l'import n'a pas qualifiee garde
         // son libelle, sans cotisation.
-        // Ce que le bulletin imprime se lit ici dans ses grandeurs : une base, des taux, des montants.
         let taux = |x: Option<Taux>| x.map(socle::grandeurs::courte);
         let cotisations: Vec<LigneDeCotisation> = p
             .cotisations
@@ -879,7 +856,7 @@ impl Importe {
                 id: l.cotisation.clone(),
                 famille: l.famille.clone(),
                 libelle: l.libelle.clone(),
-                base: base_imprimee(l),
+                base: l.base,
                 taux_pat: taux(l.taux_employeur),
                 montant_pat: l.montant_employeur,
                 taux_sal: taux(l.taux_salarie),
@@ -891,9 +868,9 @@ impl Importe {
         if let Some(b) = brut {
             bases.insert(Assiette::Brut, crate::calcul::BaseDeCotisation::Montant(b));
         }
-        for (id, base) in p.cotisations.iter().flatten().filter_map(|l| de_cotisation(l).zip(l.base)).filter(|(_, b)| !b.is_zero()) {
+        for (id, base) in p.cotisations.iter().flatten().filter_map(|l| de_cotisation(l).zip(l.base)).filter(|(_, b)| !b.est_nulle()) {
             if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
-                bases.entry(cle).or_insert(crate::calcul::BaseDeCotisation::de_l_assiette(cle, base));
+                bases.entry(cle).or_insert(base);
             }
         }
         for (code, m) in &p.bases {
@@ -1167,8 +1144,8 @@ pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -
 fn remuneration_lue(lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRemuneration>> {
     let mut out = Vec::new();
     for l in lignes {
-        if let (Some(code), Some(q), Some(t)) = (&l.rubrique, l.quantite, l.taux) {
-            let (r, paiement, heures_annexes) = crate::calcul::rattacher(code, |unite| Ok(crate::ligne::PaiementDeLigne::de_l_unite(unite, q, t)), l.heures, ctx)?;
+        if let (Some(code), Some(p)) = (&l.rubrique, l.paiement) {
+            let (r, paiement, heures_annexes) = crate::calcul::rattacher(code, |_| Ok(p), l.heures, ctx)?;
             out.push(LigneDeRemuneration {
                 code: Some(r.code.into()),
                 libelle: r.libelle,

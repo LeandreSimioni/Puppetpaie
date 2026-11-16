@@ -44,7 +44,6 @@ use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
-use socle::num::Decimal;
 use socle::grandeurs::{Coefficient, Montant, Taux};
 
 /// Ce que l'on compare d'une ligne, et qui differe (`MesureDeLEcart::ce_qui_differe`).
@@ -399,9 +398,8 @@ fn comparer_une(
     let mut atmp_imprime: Option<(Option<Taux>, Option<Montant>, Option<Montant>)> = None;
     if !ctx.taux_atmp_dit(an) {
         let ligne = cotisations.iter().find(|l| l.cotisation == Some(RegroupementDeComparaison::Cotisation(ATMP)));
-        // La porte de lecture de la ligne imprimee (la paie importee les garde en decimal).
         atmp_imprime = ligne
-            .map(|l| (l.taux_employeur, l.montant_employeur, l.base.map(Montant::du_decimal)))
+            .map(|l| (l.taux_employeur, l.montant_employeur, l.base.and_then(crate::calcul::BaseDeCotisation::montant)))
             .filter(|(t, m, _)| t.is_some() || m.is_some_and(|m| !m.est_nul()));
         if atmp_imprime.is_some() {
             ctx = ctx.avec_le_taux_atmp_lu(an, TAUX_ATMP_D_ESSAI);
@@ -453,30 +451,34 @@ fn comparer_une(
             }
             return Err(socle::refus!("la ligne de rémunération « {} » ne se rattache à aucune rubrique du catalogue", libelle));
         };
-        let quantite = l.quantite.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité", libelle))?;
-        let taux = l.taux.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas son taux", libelle))?;
+        let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
         // La ligne dans la forme que le catalogue demande de sa rubrique (`ligne::FormeSaisie`), comme la porte la range.
-        use crate::ligne::{self, FormeSaisie, LignePaie};
+        use crate::ligne::{self, FormeSaisie, LignePaie, PaiementDeLigne, TauxDeLigne};
         let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
         let forme = FormeSaisie::de(&lue)?;
         // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
-        let montant = Some(socle::grandeurs::Montant::du_decimal(quantite * taux));
+        let montant = Some(paiement.montant());
         let heures = l.heures;
-        let (base, taux_majoration) = (Some(socle::grandeurs::Montant::du_decimal(quantite)), Some(socle::grandeurs::Taux::du_decimal(taux * Decimal::ONE_HUNDRED)));
-        let (quantite, taux) = (socle::forme::Nombre(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux));
+        // Une ligne saisie ecrit le nombre de sa quantite (sa rubrique en dit l'unite, `LignePaie::composee`) ; son taux,
+        // un montant unitaire : une rubrique qui n'est pas en pourcentage.
+        let quantite = socle::forme::Nombre(paiement.quantite().decimal());
+        let par_unite = || match paiement.taux() {
+            TauxDeLigne::ParUnite(u) => Ok(u),
+            TauxDeLigne::PartDeLaBase(_) => Err(socle::refus!("la ligne « {} » paie une part de sa base, et sa rubrique ne la saisit pas ainsi : le signaler au développeur", libelle)),
+        };
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = forme else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux, heures, precision: None, dates: jours.clone() }));
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux: par_unite()?, heures, precision: None, dates: jours.clone() }));
             continue;
         };
-        let (rubrique, quantite, taux, dates) = (lue.code, Some(quantite), Some(taux), jours.clone());
+        let (rubrique, quantite, dates) = (lue.code, Some(quantite), jours.clone());
         saisies.push(match forme {
-            FormeSaisie::Unites => LignePaie::Unites(ligne::Unites { rubrique, quantite, taux, lieu: None, dates, planning: Vec::new() }),
-            FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux, heures, lieu: None, dates, planning: Vec::new() }),
+            FormeSaisie::Unites => LignePaie::Unites(ligne::Unites { rubrique, quantite, taux: Some(par_unite()?), lieu: None, dates, planning: Vec::new() }),
+            FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux: Some(par_unite()?), heures, lieu: None, dates, planning: Vec::new() }),
             FormeSaisie::Frais | FormeSaisie::FraisSansLimite => LignePaie::Frais(ligne::Frais {
                 rubrique,
                 quantite,
-                taux,
+                taux: Some(par_unite()?),
                 territoire: None,
                 cases: Vec::new(),
                 lieu: None,
@@ -484,7 +486,11 @@ fn comparer_une(
                 planning: Vec::new(),
                 marques: ligne::Marques::default(),
             }),
-            FormeSaisie::Pourcentage => LignePaie::Pourcentage(ligne::EnPourcentage { rubrique, base, taux_majoration }),
+            // Une ligne en pourcentage : sa base, et la part qu'elle en paie, en pourcent.
+            FormeSaisie::Pourcentage => match paiement {
+                PaiementDeLigne::Base(base, part) => LignePaie::en_pourcentage(rubrique, base, part.en_taux()),
+                _ => return Err(socle::refus!("la ligne « {} » est d'une rubrique en pourcentage, et l'import ne lui a pas donné de base : le signaler au développeur", libelle)),
+            },
             FormeSaisie::Montant => LignePaie::Montant(ligne::AuMontant { rubrique, montant }),
             FormeSaisie::AvantageEnNature => LignePaie::AvantageEnNature(ligne::AvantageEnNature { rubrique, montant, genre: None }),
         });
@@ -541,7 +547,7 @@ fn comparer_une(
     for l in cotisations {
         let lue = Lue {
             libelle: l.libelle.clone(),
-            base: l.base.map(Montant::du_decimal),
+            base: l.base.and_then(crate::calcul::BaseDeCotisation::montant),
             taux_salarie: l.taux_salarie,
             taux_employeur: l.taux_employeur,
             montant_salarie: l.montant_salarie,

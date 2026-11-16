@@ -231,14 +231,33 @@ const BASES_EN_HEURES: [IdDeCotisation; 1] = [crate::heures_en_plus::DEDUCTION];
 
 /// LA BASE D'UNE LIGNE DE COTISATION, et la valeur d'une assiette d'une paie (`Contenu::bases`) : des euros, ou des
 /// heures, celles des heures en plus (`Assiette::HeuresEnPlusHeures`) et la base de la deduction patronale des heures
-/// supplementaires (`heures_en_plus::DEDUCTION`), son nombre d'heures, masquee au bulletin.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// supplementaires (`heures_en_plus::DEDUCTION`), son nombre d'heures, masquee au bulletin. Elle s'ecrit par sa forme,
+/// sa grandeur puis son nombre en texte (`{"montant": "1512.40"}`, `{"heures": "3"}`).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum BaseDeCotisation {
-    Montant(Montant),
-    Heures(Heures),
+    Montant(
+        #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")] Montant,
+    ),
+    Heures(
+        #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")] Heures,
+    ),
 }
 
 impl BaseDeCotisation {
+    /// LA BASE `n` QU'UN BULLETIN IMPORTE IMPRIME (un nombre lu, `import::bulletin_lu`) sur la ligne que l'import qualifie
+    /// de la cotisation `id`, dans la grandeur que cette cotisation compte : la porte de sa lecture. Une cotisation se
+    /// relit comme une paie validee la relit (`relue` : des heures pour la deduction des heures supplementaires, que le
+    /// calcul compose hors du bareme, des euros pour toute autre, le calcul refusant une cotisation du bareme dont
+    /// l'assiette compte des heures) ; une ligne sans cotisation (un regroupement, une ligne que l'import ne qualifie
+    /// pas) somme des cotisations du bareme : des euros.
+    pub fn imprimee(id: Option<&IdDeCotisation>, n: socle::forme::Nombre) -> BaseDeCotisation {
+        match id {
+            Some(id) => BaseDeCotisation::relue(id, n.0),
+            None => BaseDeCotisation::Montant(Montant::du_decimal(n.0)),
+        }
+    }
+
     /// La valeur `d` de l'assiette `a` : des heures quand l'assiette en compte (`Assiette::en_heures`), des euros sinon.
     pub fn de_l_assiette(a: Assiette, d: Decimal) -> BaseDeCotisation {
         if a.en_heures() {

@@ -308,6 +308,24 @@ pub(crate) struct SpectacleDeCarte {
     titre: Option<String>,
 }
 
+/// UNE LIGNE DU BULLETIN, telle que la carte la montre : son libelle, ce qu'elle paie tel qu'une phrase le dit (sa
+/// quantite, son taux en euros par unite ou en pourcent : `PaiementDeLigne`), quand l'import l'a rattachee, et son
+/// montant.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LigneDeLaCarte {
+    libelle: String,
+    quantite: Option<String>,
+    taux: Option<String>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    montant: Option<Montant>,
+}
+
+impl LigneDeLaCarte {
+    fn de(l: &LigneImprimee) -> LigneDeLaCarte {
+        LigneDeLaCarte { libelle: l.libelle.clone(), quantite: l.paiement.map(|p| p.quantite().dit()), taux: l.paiement.map(|p| p.taux().dit()), montant: l.montant }
+    }
+}
+
 /// UNE CARTE D'ENGAGEMENT IMPORTE, telle que la page Paie la dessine (`carteImportee` de js/saisie-mois.js).
 #[derive(Debug, Clone, Serialize)]
 pub struct CarteImportee {
@@ -331,7 +349,7 @@ pub struct CarteImportee {
     jours: Option<Jours>,
     montants: Montants,
     sources: Sources,
-    lignes: Vec<LigneImprimee>,
+    lignes: Vec<LigneDeLaCarte>,
     #[serde(with = "piece_de_la_carte")]
     declare_par: Option<Source>,
     atteste_par: Option<Attestation>,
@@ -517,7 +535,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         jours,
         montants,
         sources,
-        lignes: p.map(|p| p.lignes.clone()).into_iter().flatten().collect(),
+        lignes: p.iter().flat_map(|p| p.lignes.iter().map(LigneDeLaCarte::de)).collect(),
         declare_par,
         atteste_par: c.map(|c| c.atteste_par),
         bulletin,

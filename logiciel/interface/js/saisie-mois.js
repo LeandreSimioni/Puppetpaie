@@ -778,7 +778,7 @@ function carteImportee(p, i, moisCourt) {
   const lignes = p.lignes.length ? `
     <table class="ci-lignes"><tr><th>Ligne du bulletin</th><th class="nombre">Quantité</th><th class="nombre">Taux</th><th class="nombre">Montant</th></tr>
       ${p.lignes.map((l) => `<tr><td>${cellule(l.libelle)}</td><td class="nombre">${cellule(l.quantite)}</td>
-        <td class="nombre">${l.taux ? echapper(euros(l.taux)) : ""}</td><td class="nombre">${l.montant ? echapper(euros(l.montant)) : ""}</td></tr>`).join("")}
+        <td class="nombre">${cellule(l.taux)}</td><td class="nombre">${l.montant ? echapper(euros(l.montant)) : ""}</td></tr>`).join("")}
     </table>` : "";
   return `
     <div class="carte-importee${p.manque.length ? " incomplete" : ""}" data-rang="${i}">

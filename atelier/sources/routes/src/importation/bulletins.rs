@@ -1060,7 +1060,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 (x, Attestant::Piece(Source::Bulletin), avant)
             }
         };
-        let ecarts = completer(&mut ligne.paie, &l.b, &copie, l.page, convention_des(&[rang]).as_ref())?;
+        let ecarts = completer(&mut ligne.paie, &l.b, &copie, l.page, convention_des(&[rang]).as_ref(), &ctx.racine)?;
         // Le contrat que le bulletin atteste ; celui d'un permanent ne compte que son mois : ses heures, ses cachets et
         // ses jours sont ceux de la paie de ce mois (le contrat entier n'en garde pas : `import::ecrite`).
         let atteste = l.compteurs.as_ref().map_err(|m| m.clone().reformuler(|p| format!("ses compteurs ne se lisent pas ({})", p))).and_then(|c| engagement(l, c, &salarie, &copie));
@@ -2017,8 +2017,15 @@ fn entreprise_proposee(e: EntrepriseLue) -> R<(ChampsEntreprise, Vec<FauteDeCase
 /// Complete une paie par le bulletin. Sur le brut, le net imposable, le net a payer et le PAS, le bulletin l'emporte ;
 /// ailleurs il remplit ce qui est vide et note ce qui differe. Rend les ecarts : (champ, valeur d'avant, le bulletin
 /// l'emporte, valeur du bulletin).
-fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page: usize, idcc: Option<&droit::fiche::Idcc>) -> R<Vec<(&'static str, String, bool, String)>> {
+///
+/// LE RATTACHEMENT DE SES LIGNES : une ligne de remuneration prend ce qu'elle paie dans l'unite de sa rubrique, que le
+/// catalogue de la compagnie (`racine`) dit a la fin de la periode du bulletin (`PaiementDeLigne::imprime`) ; une ligne
+/// de cotisation, sa base dans la grandeur que sa cotisation compte (`BaseDeCotisation::imprimee`).
+fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page: usize, idcc: Option<&droit::fiche::Idcc>, racine: &Path) -> R<Vec<(&'static str, String, bool, String)>> {
+    use engagement::calcul::BaseDeCotisation;
+    use engagement::ecarts::RegroupementDeComparaison;
     use engagement::importe::{BulletinSource, CotisationImprimee, LigneImprimee};
+    use engagement::ligne::PaiementDeLigne;
     let mut ecarts = Vec::new();
     let pas = b.pas.as_ref().and_then(|p| p.montant);
     for (champ, place, v) in [
@@ -2066,18 +2073,29 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
     ligne.lignes = b
         .lignes
         .iter()
-        .map(|l| LigneImprimee { quantite: l.quantite, libelle: l.libelle.clone(), taux: l.taux, montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), heures: l.heures })
-        .collect();
+        .map(|l| {
+            let paiement = match (&l.rubrique, l.quantite, l.taux) {
+                (Some(code), Some(q), Some(t)) => Some(PaiementDeLigne::imprime(droit::catalogue::rubrique(racine, code, &b.periode.fin())?.unite, q, t)),
+                _ => None,
+            };
+            Ok(LigneImprimee { libelle: l.libelle.clone(), montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), paiement, heures: l.heures })
+        })
+        .collect::<R<_>>()?;
     ligne.dates = b.dates_travaillees.clone();
     ligne.cotisations = Some(
         b.cotisations
             .iter()
             .map(|c| {
+                let cotisation = c.cotisation.as_deref().map(RegroupementDeComparaison::lire).transpose()?;
+                let id = match &cotisation {
+                    Some(RegroupementDeComparaison::Cotisation(id)) => Some(id),
+                    Some(_) | None => None,
+                };
                 Ok(CotisationImprimee {
                     famille: c.famille.clone(),
                     libelle: c.libelle.clone(),
-                    cotisation: c.cotisation.as_deref().map(engagement::ecarts::RegroupementDeComparaison::lire).transpose()?,
-                    base: c.base,
+                    base: c.base.map(|n| BaseDeCotisation::imprimee(id, n)),
+                    cotisation,
                     taux_employeur: c.taux_employeur,
                     montant_employeur: c.montant_employeur,
                     taux_salarie: c.taux_salarie,

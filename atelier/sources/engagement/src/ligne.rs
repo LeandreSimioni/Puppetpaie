@@ -406,18 +406,15 @@ pub struct Maintien {
 }
 
 /// LA LIGNE QU'UN BULLETIN IMPORTE IMPRIME (`importe::LigneImprimee`), rattachee par l'import a une rubrique : son
-/// montant, tel qu'il le lit, qui ne se recompose jamais (l'import lit au mieux : ce que le bulletin dit se garde) ; sa
-/// quantite, son taux et ses heures, s'il les lit, pour l'affichage. Une ligne imprimee qu'aucune rubrique ne rattache,
-/// ou sans montant, garde son libelle dans la paie importee (`importe::remuneration_lue`) : elle n'est pas une ligne de
-/// paie.
+/// montant, tel qu'il le lit, qui ne se recompose jamais (l'import lit au mieux : ce que le bulletin dit se garde) ; ce
+/// qu'elle paie (sa quantite et son taux, dans l'unite de sa rubrique, que l'import a poses en la rattachant :
+/// `PaiementDeLigne::imprime`) et ses heures, s'il les lit. Une ligne imprimee qu'aucune rubrique ne rattache, ou sans
+/// montant, garde son libelle dans la paie importee (`importe::remuneration_lue`) : elle n'est pas une ligne de paie.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Importee {
     pub rubrique: CodeDeRubrique,
-    #[serde(with = "ecrit_option")]
-    pub quantite: Option<Nombre>,
-    #[serde(with = "texte_option")]
-    pub taux: Option<MontantUnitaire>,
+    pub paiement: Option<PaiementDeLigne>,
     #[serde(with = "texte_option")]
     pub heures: Option<HeuresParUnite>,
     #[serde(with = "texte")]
@@ -561,6 +558,22 @@ impl QuantiteDeLigne {
         self.decimal().is_zero()
     }
 
+    /// TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 ») ; la base d'une ligne en pourcentage, en euros
+    /// (« 1 512,40 € »).
+    pub fn dit(self) -> String {
+        use socle::texte::virgule;
+        match self {
+            QuantiteDeLigne::Heures(q) => virgule(q),
+            QuantiteDeLigne::Cachets(q) => virgule(q),
+            QuantiteDeLigne::Jours(q) => virgule(q),
+            QuantiteDeLigne::Services(q) => virgule(q),
+            QuantiteDeLigne::Semaines(q) => virgule(q),
+            QuantiteDeLigne::PartDuMois(q) => virgule(q),
+            QuantiteDeLigne::Unites(q) => virgule(q),
+            QuantiteDeLigne::Base(b) => socle::texte::euros(b),
+        }
+    }
+
     /// Dans sa forme la plus courte, une decimale au moins (`socle::grandeurs::courte`), comme la ligne l'ecrit.
     pub fn courte(self) -> QuantiteDeLigne {
         use QuantiteDeLigne as Q;
@@ -663,20 +676,48 @@ impl TauxDeLigne {
 
 /// CE QUE PAIE UNE LIGNE DE PAIE : sa quantite et son taux, qui vont ensemble. L'unite de sa rubrique les dit, a ce seul
 /// endroit (`de_l_unite`) : une quantite a un montant unitaire, ou, pour une rubrique en pourcentage, une base en euros
-/// a la part qu'elle en paie. Quantite x taux = montant (`montant`), toujours.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// a la part qu'elle en paie. Quantite x taux = montant (`montant`), toujours. Il s'ecrit par sa forme : sa grandeur, puis
+/// sa quantite et son taux en texte (`{"cachets": ["2", "150.00"]}`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PaiementDeLigne {
-    Heures(Heures, MontantUnitaire),
-    Cachets(socle::grandeurs::Cachets, MontantUnitaire),
-    Jours(Jours, MontantUnitaire),
-    Services(socle::grandeurs::Services, MontantUnitaire),
-    Semaines(socle::grandeurs::Semaines, MontantUnitaire),
-    PartDuMois(Coefficient, MontantUnitaire),
-    Unites(socle::grandeurs::Unites, MontantUnitaire),
-    Base(Montant, Coefficient),
+    Heures(#[serde(with = "texte")] Heures, #[serde(with = "texte")] MontantUnitaire),
+    Cachets(#[serde(with = "texte")] socle::grandeurs::Cachets, #[serde(with = "texte")] MontantUnitaire),
+    Jours(#[serde(with = "texte")] Jours, #[serde(with = "texte")] MontantUnitaire),
+    Services(#[serde(with = "texte")] socle::grandeurs::Services, #[serde(with = "texte")] MontantUnitaire),
+    Semaines(#[serde(with = "texte")] socle::grandeurs::Semaines, #[serde(with = "texte")] MontantUnitaire),
+    PartDuMois(#[serde(with = "texte")] Coefficient, #[serde(with = "texte")] MontantUnitaire),
+    Unites(#[serde(with = "texte")] socle::grandeurs::Unites, #[serde(with = "texte")] MontantUnitaire),
+    Base(#[serde(with = "texte")] Montant, #[serde(with = "texte")] Coefficient),
 }
 
 impl PaiementDeLigne {
+    /// CE QU'UNE LIGNE D'UN BULLETIN IMPORTE PAIE, sa quantite `q` et son taux `t` tels que la page les imprime (des
+    /// nombres lus, `import::bulletin_lu`), dans l'unite `unite` de la rubrique a laquelle l'import la rattache : la porte
+    /// de leur lecture. Le taux d'une rubrique en pourcentage s'imprime en pourcent (un « 10 » : 10 %) : la part de la
+    /// base qu'il paie se prend comme le calcul la prend d'une ligne en pourcentage (`sur_cent`).
+    pub fn imprime(unite: Unite, q: Nombre, t: Nombre) -> PaiementDeLigne {
+        match unite {
+            Unite::Pourcentage => PaiementDeLigne::Base(Montant::du_decimal(q.0), sur_cent(Taux::du_decimal(t.0))),
+            _ => PaiementDeLigne::de_l_unite(unite, q.0, t.0),
+        }
+    }
+
+    /// Sans zero inutile (`socle::grandeurs::sans_zero`), sa quantite et son taux.
+    fn sans_zero(self) -> PaiementDeLigne {
+        use PaiementDeLigne as P;
+        match self {
+            P::Heures(q, u) => P::Heures(sans_zero(q), sans_zero(u)),
+            P::Cachets(q, u) => P::Cachets(sans_zero(q), sans_zero(u)),
+            P::Jours(q, u) => P::Jours(sans_zero(q), sans_zero(u)),
+            P::Services(q, u) => P::Services(sans_zero(q), sans_zero(u)),
+            P::Semaines(q, u) => P::Semaines(sans_zero(q), sans_zero(u)),
+            P::PartDuMois(q, u) => P::PartDuMois(sans_zero(q), sans_zero(u)),
+            P::Unites(q, u) => P::Unites(sans_zero(q), sans_zero(u)),
+            P::Base(b, c) => P::Base(sans_zero(b), sans_zero(c)),
+        }
+    }
+
     /// La quantite `q` et le taux `t` d'une ligne, dans l'unite `unite` de sa rubrique.
     pub fn de_l_unite(unite: Unite, q: Decimal, t: Decimal) -> PaiementDeLigne {
         let u = MontantUnitaire::du_decimal(t);
@@ -795,14 +836,17 @@ impl LignePaie {
             LignePaie::RetenueArret(l) => Some(l.quantite.0),
             LignePaie::IndemniteJournaliere(l) => Some(l.jours.decimal()),
             LignePaie::Maintien(l) => Some(l.quantite.0),
-            LignePaie::Importee(l) => l.quantite.map(|n| n.0),
+            LignePaie::Importee(l) => l.paiement.map(|p| p.quantite().decimal()),
         }
     }
 
-    /// SA QUANTITE, dans l'unite `unite` de sa rubrique (`QuantiteDeLigne::de_l_unite`) ; `None` : la case n'est pas
-    /// remplie.
+    /// SA QUANTITE, dans l'unite `unite` de sa rubrique (`QuantiteDeLigne::de_l_unite`) ; celle d'une ligne importee,
+    /// telle que l'import l'a rattachee ; `None` : la case n'est pas remplie.
     pub fn quantite(&self, unite: Unite) -> Option<QuantiteDeLigne> {
-        self.quantite_ecrite().map(|d| QuantiteDeLigne::de_l_unite(unite, d))
+        match self {
+            LignePaie::Importee(l) => l.paiement.map(PaiementDeLigne::quantite),
+            _ => self.quantite_ecrite().map(|d| QuantiteDeLigne::de_l_unite(unite, d)),
+        }
     }
 
     /// SON TAUX (`TauxDeLigne`) : celui qu'elle dit, la part de sa base qu'une ligne en pourcentage paie, le montant d'une
@@ -820,13 +864,16 @@ impl LignePaie {
             LignePaie::RetenueArret(l) => Some(ParUnite(l.taux)),
             LignePaie::IndemniteJournaliere(l) => Some(ParUnite(l.taux)),
             LignePaie::Maintien(l) => Some(ParUnite(l.taux)),
-            LignePaie::Importee(l) => l.taux.map(ParUnite),
+            LignePaie::Importee(l) => l.paiement.map(PaiementDeLigne::taux),
         }
     }
 
     /// CE QU'ELLE PAIE, sa quantite et son taux dans l'unite `unite` de sa rubrique (`PaiementDeLigne::de_l_unite`) ; une
-    /// case qui n'est pas remplie se refuse en se nommant.
+    /// ligne importee, ce que l'import a pose en la rattachant ; une case qui n'est pas remplie se refuse en se nommant.
     pub fn paiement(&self, unite: Unite) -> R<PaiementDeLigne> {
+        if let LignePaie::Importee(l) = self {
+            return l.paiement.ok_or_else(|| socle::fichiers::absent("paiement"));
+        }
         let quantite = self.quantite_ecrite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
         let taux = self.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
         Ok(PaiementDeLigne::de_l_unite(unite, quantite, taux.decimal()))
@@ -1045,7 +1092,7 @@ impl LignePaie {
                 LignePaie::IndemniteJournaliere(IndemniteJournaliere { jours: sans_zero(l.jours), taux: sans_zero(l.taux), assiette_pas: o(l.assiette_pas), ..l })
             }
             LignePaie::Maintien(l) => LignePaie::Maintien(Maintien { quantite: q(l.quantite), taux: sans_zero(l.taux), ..l }),
-            LignePaie::Importee(l) => LignePaie::Importee(Importee { quantite: qo(l.quantite), taux: o(l.taux), heures: o(l.heures), montant: sans_zero(l.montant), ..l }),
+            LignePaie::Importee(l) => LignePaie::Importee(Importee { paiement: l.paiement.map(PaiementDeLigne::sans_zero), heures: o(l.heures), montant: sans_zero(l.montant), ..l }),
         }
     }
 }

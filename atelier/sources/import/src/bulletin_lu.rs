@@ -892,11 +892,15 @@ pub struct Salarie {
 
 /// Une ligne de paie : soumise (imprimee avant le brut, d'une rubrique dans l'assiette) ou non (un defraiement, apres
 /// les cotisations ou au-dessus du brut).
+/// Sa quantite et son taux sont des nombres lus : leur unite est celle de la rubrique a laquelle l'import la rattache
+/// (`engagement::ligne::PaiementDeLigne::imprime`).
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct LignePaie {
-    pub quantite: Option<Decimal>,
+    #[serde(serialize_with = "nombre_lu")]
+    pub quantite: Option<socle::forme::Nombre>,
     pub libelle: String,
-    pub taux: Option<Decimal>,
+    #[serde(serialize_with = "nombre_lu")]
+    pub taux: Option<socle::forme::Nombre>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     pub montant: Option<Montant>,
     pub soumis: bool,
@@ -919,8 +923,9 @@ pub struct Cotisation {
     /// que la table ne connait pas, garde tel quel et non qualifie.
     pub cotisation: Option<String>,
     /// La base imprimee, un nombre lu : des euros, ou des heures (la deduction des heures supplementaires), ce que sa
-    /// cotisation dit.
-    pub base: Option<Decimal>,
+    /// cotisation dit (`engagement::calcul::BaseDeCotisation::imprimee`).
+    #[serde(serialize_with = "nombre_lu")]
+    pub base: Option<socle::forme::Nombre>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     pub taux_employeur: Option<Taux>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
@@ -1405,6 +1410,14 @@ impl RangCorps {
     /// Le taux de la colonne des taux de la part `p` : la porte de sa lecture.
     fn taux(&self, p: Option<Part>) -> Option<Taux> {
         self.colonne(Genre::Taux, p).map(en_taux)
+    }
+}
+
+/// Un nombre lu sur la page, ecrit en texte, son echelle gardee (`12.50`) ; `null` sans nombre.
+fn nombre_lu<S: serde::Serializer>(n: &Option<socle::forme::Nombre>, s: S) -> Result<S::Ok, S::Error> {
+    match n {
+        Some(n) => s.serialize_str(&n.0.to_string()),
+        None => s.serialize_none(),
     }
 }
 
@@ -2174,7 +2187,7 @@ impl<'a> Lecteur<'a> {
             };
             let n = r.nombres.len();
             let taux = if n >= 2 { Some(r.nombres[n - 2].1) } else { taux_ecrit };
-            LignePaie { quantite, libelle, taux, montant: r.dernier(), soumis, rubrique, heures }
+            LignePaie { quantite: quantite.map(socle::forme::Nombre), libelle, taux: taux.map(socle::forme::Nombre), montant: r.dernier(), soumis, rubrique, heures }
         };
         let de_ligne = |r: &RangCorps| match &r.quantite {
             Some((q, reste)) => (reste.clone(), Some(*q)),
@@ -2439,7 +2452,7 @@ fn cotisation(table: &Table, famille: &Option<FamilleDeCotisation>, libelle: Str
         famille: famille.clone(),
         cotisation: table.cotisation(&libelle).map(str::to_string),
         libelle,
-        base: r.colonne(Genre::Base, None),
+        base: r.colonne(Genre::Base, None).map(socle::forme::Nombre),
         taux_employeur: r.taux(Some(Part::Employeur)),
         montant_employeur: r.montant(Genre::Montant, Some(Part::Employeur)),
         taux_salarie: r.taux(Some(Part::Salarie)),
@@ -2560,7 +2573,7 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         };
         // La quantite de la ligne prend l'unite de sa rubrique : la porte de sa lecture.
         use engagement::ligne::QuantiteDeLigne as Q;
-        let h = match (Q::de_l_unite(r.unite, q), par_unite) {
+        let h = match (Q::de_l_unite(r.unite, q.0), par_unite) {
             (Q::Cachets(c), _) => {
                 cachets = cachets.map(|x| x + c);
                 continue;
