@@ -753,7 +753,7 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionn
                 let plafond = t.plafond_jours.ok_or_else(|| manque("plafond_jours"))?;
                 let produit = anciennete.semaines_entieres() * par_semaine;
                 let jours = if produit < plafond { produit } else { plafond };
-                let mois = jours.en_mois_de_trente_jours().a_decimales(4).quatre_decimales_ecrites();
+                let mois = socle::grandeurs::decimales_ecrites(jours.en_mois_de_trente_jours().a_decimales(4), 4);
                 return Ok(PreavisDit { mois: Some(mois), article: Some(article), jours: Some(jours), pourquoi: None });
             }
             let mut mois = t.mois.ok_or_else(|| manque("mois"))?;

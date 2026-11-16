@@ -79,7 +79,7 @@ pub fn reduction_generale(
         if fillon {
             let t = requis(rg.t.map(|n| n.0), "t")?;
             let x = diviser(t, SIX_DIXIEMES)? * (rapport - Coefficient::UN);
-            coefficient = t.min(x).au_dix_millieme().quatre_decimales_ecrites();
+            coefficient = socle::grandeurs::decimales_ecrites(t.min(x).au_dix_millieme(), 4);
         } else {
             let crochet = Coefficient::UN.min(diviser(rapport - Coefficient::UN, DEUX)?);
             let puissance = requis(rg.puissance, "puissance")?;
@@ -97,7 +97,7 @@ pub fn reduction_generale(
             coefficient = diviser(coefficient * m.numerateur, m.denominateur)?;
         }
     }
-    let coefficient = if coefficient.est_nul() { coefficient } else { coefficient.au_dix_millieme().quatre_decimales_ecrites() };
+    let coefficient = if coefficient.est_nul() { coefficient } else { socle::grandeurs::decimales_ecrites(coefficient.au_dix_millieme(), 4) };
     reduction_au_coefficient(Some(rg), coefficient, brut, heures).map(Some)
 }
 

@@ -211,16 +211,28 @@ pub fn entiere<G: Grandeur>(g: G) -> Option<G> {
     }
 }
 
-/// LA GRANDEUR A DEUX DECIMALES ECRITES qu'elle est, son echelle portee a deux (`5.5` : `5.50`) ; `None` : elle est
-/// ecrite plus fine que le centieme (`5.505`, `5.500`), comme `ecrit::centimes` la refuse, ou elle porte un signe moins
+/// LA GRANDEUR, SES `n` DECIMALES ECRITES (`12.5` a deux : `12.50`) : son echelle portee a `n` quand elle est moindre,
+/// sa valeur la meme ; une ecriture, pas un arrondi (une grandeur ecrite plus fine reste telle quelle). Chacune apres son
+/// arrondi : le coefficient de la reduction generale et les mois d'un preavis qu'une convention dit en jours (quatre),
+/// le taux d'une ligne 23 du bordereau et le taux patronal reel d'une provision de conges (deux), un taux de PAS
+/// (`aux_centiemes`).
+pub fn decimales_ecrites<G: Grandeur>(g: G, n: u32) -> G {
+    let mut d = g.en_decimal();
+    if d.scale() < n {
+        d.rescale(n);
+    }
+    G::du(d)
+}
+
+/// LA GRANDEUR A DEUX DECIMALES ECRITES qu'elle est (`decimales_ecrites`, `5.5` : `5.50`) ; `None` : elle est ecrite
+/// plus fine que le centieme (`5.505`, `5.500`), comme `ecrit::centimes` la refuse, ou elle porte un signe moins
 /// (`-0.00` compris). Un taux de PAS se tient ainsi.
 pub fn aux_centiemes<G: Grandeur>(g: G) -> Option<G> {
-    let mut d = g.en_decimal();
+    let d = g.en_decimal();
     if d.scale() > 2 || d.is_sign_negative() {
         return None;
     }
-    d.rescale(2);
-    Some(G::du(d))
+    Some(decimales_ecrites(g, 2))
 }
 
 /// UNE GRANDEUR SANS ZERO INUTILE, UNE DECIMALE AU MOINS (`24` s'ecrit `24.0`, `12.50` `12.5`), comme l'ecrit
@@ -416,17 +428,6 @@ impl Coefficient {
         Coefficient(self.0.round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero))
     }
 
-    /// SES QUATRE DECIMALES ECRITES (`0.5` s'ecrit `0.5000`) : son echelle portee a quatre quand elle est moindre, sa
-    /// valeur la meme ; une ecriture, pas un arrondi (un coefficient plus fin reste tel quel). Le coefficient de la
-    /// reduction generale, les mois d'un preavis qu'une convention dit en jours, chacun apres son arrondi.
-    pub fn quatre_decimales_ecrites(self) -> Coefficient {
-        let mut c = self.0;
-        if c.scale() < 4 {
-            c.rescale(4);
-        }
-        Coefficient(c)
-    }
-
     /// Sa partie entiere, sans arrondi (un multiple de plafonds du bareme : `8` pour huit plafonds) : la partie entiere
     /// d'un coefficient est un coefficient (tronquer n'ajoute pas d'unite).
     pub fn entier(self) -> Coefficient {
@@ -484,15 +485,6 @@ impl Taux {
     /// A deux decimales, la moitie au pair (aucun texte deposé ne dit l'arrondi d'un taux moyen : `heures_en_plus`).
     pub fn a_deux_decimales(self) -> Taux {
         Taux(self.0.round_dp(2))
-    }
-
-    /// SES `n` DECIMALES ECRITES (`12.5` s'ecrit `12.50`) : son echelle portee a `n` ; une ecriture, pas un arrondi, le
-    /// taux arrive arrondi a `n` decimales (le taux d'une ligne 23 du bordereau, deux decimales comme la DSN l'ecrit ; le
-    /// taux patronal reel d'une provision de conges, `a_deux_decimales`).
-    pub fn decimales_ecrites(self, n: u32) -> Taux {
-        let mut d = self.0;
-        d.rescale(n);
-        Taux(d)
     }
 
     /// A `decimales` decimales au plus, la moitie au pair, dans sa forme la plus courte (`courte`) : un taux qu'un

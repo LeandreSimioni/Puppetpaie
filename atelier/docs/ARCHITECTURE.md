@@ -376,7 +376,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   part reçue d'une mise à jour, la part salariée d'une répartition de la tranche 1) ;
   montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant. Il s'arrondit
   par une fonction par règle (`au_dix_millieme`, la moitié vers le haut ; `a_decimales`, la moitié au pair) ; ses quatre
-  décimales s'écrivent à part (`quatre_decimales_ecrites`).
+  décimales s'écrivent à part (`socle::grandeurs::decimales_ecrites`).
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le taux d'une ligne de paie qui se
   paie à l'unité (`TauxDeLigne::ParUnite`), le plafond de la sécurité sociale horaire, le SMIC horaire, un minimum
   conventionnel et chaque valeur des grilles des minima (`droit::minima::Minimum`, par heure, par cachet, par service,
@@ -398,8 +398,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   `socle::ecriture::EcritureDeCase` (les heures du forfait d'une rubrique, son plafond de cachets par mois). Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
   écrit un montant, un taux et une quantité par `socle::grandeurs::ecrit::norme` (`montant` : au centime, jamais
   « -0.00 » ; `taux` : ses décimales, la moitié au pair, toutes écrites ; `quantite` : au centième, la moitié vers le
-  haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture (`Taux::decimales_ecrites`, la case
-  d'un état).
+  haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture, par la seule écriture des
+  décimales d'une grandeur, `socle::grandeurs::decimales_ecrites` (une écriture, pas un arrondi : la case d'un état, le
+  coefficient de la réduction générale ; un taux de PAS par `aux_centiemes`, qui refuse plus fin que le centième).
 - **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte.
 
 **Les identifiants**

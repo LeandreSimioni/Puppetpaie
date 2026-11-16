@@ -1462,7 +1462,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         l.grandeur(C::Pris, cpt.pris.au_demi_superieur()).grandeur(C::Solde, cpt.solde.au_demi_superieur());
         l.montant(C::Dixieme, dixieme).montant(C::Maintien, maintien).montant(C::Indemnite, retenu).t(C::Regle, regle);
         // Le taux s'ecrit a deux decimales (`12.50`).
-        l.taux(C::TauxPatronal, taux.map(|t| t.decimales_ecrites(2))).compte(C::Bulletins, n).om(C::Charges, charges);
+        l.taux(C::TauxPatronal, taux.map(|t| socle::grandeurs::decimales_ecrites(t, 2))).compte(C::Bulletins, n).om(C::Charges, charges);
         l.om(C::Total, charges.map(|c| retenu + c));
         lignes.push(l);
     }
