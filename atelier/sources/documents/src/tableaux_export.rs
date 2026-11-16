@@ -376,6 +376,11 @@ impl Ligne {
         self.od(k, v.map(|t| t.taux().decimal()))
     }
 
+    /// La quantite d'une ligne de paie, ou rien, dans la case d'un etat (dans l'unite de sa rubrique) : sa porte.
+    pub fn quantite(&mut self, k: ColonneDEtat, v: Option<engagement::ligne::QuantiteDeLigne>) -> &mut Ligne {
+        self.od(k, v.map(|q| q.decimal()))
+    }
+
     /// Des jours, dans la case d'un etat : leur porte.
     pub fn jours(&mut self, k: ColonneDEtat, v: socle::grandeurs::Jours) -> &mut Ligne {
         self.d(k, v.decimal())

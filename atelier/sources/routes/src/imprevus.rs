@@ -183,6 +183,7 @@ struct ChargeArretEnregistrer {
     date_accident: Option<Jour>,
     connu: Option<crate::obligations::ConnaissanceDite>,
     contrat: Option<NumeroContrat>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::entiere::option::deserialize")]
     jours_deja_indemnises: Option<Jours>,
     note: Option<String>,
 }
@@ -217,6 +218,7 @@ struct ChargeArretIndemnites {
     ij_nette: Option<socle::forme::NombreEcrit>,
     ij_brute_majoree: Option<socle::forme::NombreEcrit>,
     ij_nette_majoree: Option<socle::forme::NombreEcrit>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::entiere::option::deserialize")]
     jours_deja_indemnises: Option<Jours>,
 }
 
@@ -1463,7 +1465,7 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     if let Some(x) = montant("ij_nette_majoree", &c.ij_nette_majoree)? {
         a.ij_nette_majoree = Some(x);
     }
-    if let Some(j) = jours_entiers(c.jours_deja_indemnises)? {
+    if let Some(j) = c.jours_deja_indemnises {
         a.jours_deja_indemnises = Some(j);
     }
     let nouveau = Imprevu::Arret(a.clone());
@@ -1471,17 +1473,6 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     liste[i] = nouveau;
     ecrire(ctx, &dernier, liste)?;
     reponse_arret(ctx, &a, "Indemnités journalières notées.")
-}
-
-/// Les jours deja indemnises qu'une charge dit : un nombre entier de jours, positif ; un autre se refuse.
-fn jours_entiers(j: Option<Jours>) -> R<Option<Jours>> {
-    match j {
-        None => Ok(None),
-        Some(j) => match socle::grandeurs::entiere(j).filter(|j| *j >= Jours::ZERO) {
-            Some(j) => Ok(Some(j)),
-            None => Err(refus(format!("Les jours déjà indemnisés se comptent en nombre entier, positif ({} lu) : rien n'est écrit.", socle::texte::virgule(j)))),
-        },
-    }
 }
 
 /// Le contrat qu'un imprevu suspend, lu dans la saisie qui le porte ; `None` s'il n'y est plus.
@@ -1789,7 +1780,7 @@ fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArr
         debut: c.debut,
         fin: c.fin,
         date_accident: c.date_accident,
-        jours_deja_indemnises: jours_entiers(c.jours_deja_indemnises)?,
+        jours_deja_indemnises: c.jours_deja_indemnises,
         note: c.note.clone(),
     });
     // Les jours deja indemnises (D1226-4) ne se disent que pour un arret qui ouvre le maintien de salaire.

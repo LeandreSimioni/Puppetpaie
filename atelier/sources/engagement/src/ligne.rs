@@ -907,14 +907,6 @@ impl PaiementDeLigne {
         }
     }
 
-    /// Le nombre de sa quantite, ou de sa base, a la porte qui l'exige (la colonne « Base » du livre de paie).
-    pub fn quantite_en_decimal(self) -> Decimal {
-        match self.quantite_ou_base() {
-            Ok(q) => q.decimal(),
-            Err(b) => b.decimal(),
-        }
-    }
-
     /// SA QUANTITE TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 ») ; la base d'une ligne en pourcentage,
     /// en euros (« 1 512,40 € »).
     pub fn quantite_dite(self) -> String {

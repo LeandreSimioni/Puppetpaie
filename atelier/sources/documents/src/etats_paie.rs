@@ -951,7 +951,13 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for r in paie.remuneration() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Rémunération");
-                l.ot(C::Code, r.code).t(C::Libelle, r.libelle).od(C::Base, r.paiement.map(PaiementDeLigne::quantite_en_decimal)).od(C::TauxSal, r.paiement.map(|p| p.taux().decimal())).od(C::Gain, r.montant.map(|x| x.au_centime().decimal()));
+                l.ot(C::Code, r.code).t(C::Libelle, r.libelle);
+                // La colonne « Base ou quantité » : la base en euros d'une ligne en pourcentage, la quantité d'une autre.
+                match r.paiement {
+                    Some(PaiementDeLigne::Base(b, _)) => l.om(C::Base, Some(b)),
+                    p => l.quantite(C::Base, p.and_then(PaiementDeLigne::quantite)),
+                };
+                l.od(C::TauxSal, r.paiement.map(|p| p.taux().decimal())).od(C::Gain, r.montant.map(|x| x.au_centime().decimal()));
                 lignes.push(l);
             }
             for c in paie.cotisations() {
