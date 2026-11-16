@@ -377,30 +377,15 @@ impl serde::Serialize for Annee {
 }
 
 /// La lecture de serde, un nombre (une cle d'objet, son texte), dont le refus se dit dans le sien ; dans la charge d'une
-/// route (`forme::lire_saisie`), aussi l'annee qu'une personne a tapee, en chiffres seuls (« 2026 »).
+/// route (`forme::lire_saisie`), aussi l'annee qu'une personne a tapee (`grandeurs::lu::entier`, « 2026 »).
 impl<'de> serde::Deserialize<'de> for Annee {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
-        struct Tapee;
-        impl<'de> serde::de::Visitor<'de> for Tapee {
-            type Value = Annee;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("une année")
-            }
-            fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<Annee, E> {
-                Annee::nouvelle(i).map_err(E::custom)
-            }
-            fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Annee, E> {
-                Annee::nouvelle(i64::try_from(u).map_err(E::custom)?).map_err(E::custom)
-            }
-            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Annee, E> {
-                match crate::num::entier_de_chiffres(s.trim()) {
-                    Some(i) => Annee::nouvelle(i).map_err(|e| E::custom(crate::forme::refus_du_tape(e.phrase))),
-                    None => Err(E::custom(crate::forme::refus_du_tape(format!("{} ne se lit pas : on attend une année, en chiffres (« 2026 »)", crate::fichiers::repr(s))))),
-                }
-            }
-        }
         match crate::forme::en_saisie() {
-            true => d.deserialize_any(Tapee),
+            true => {
+                let n = crate::grandeurs::lu::entier(d, "une année, en chiffres (« 2026 »)")?;
+                let an = i64::try_from(n).map_err(serde::de::Error::custom)?;
+                Annee::nouvelle(an).map_err(|e| serde::de::Error::custom(crate::forme::refus_du_tape(e.phrase)))
+            }
             false => Annee::nouvelle(<i64 as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom),
         }
     }

@@ -122,30 +122,10 @@ impl Duree<EnJours> {
     }
 
     /// Lue d'un nombre entier de jours : `#[serde(deserialize_with = "socle::date::Duree::en_jours")]` ; dans la charge
-    /// d'une route (`forme::lire_saisie`), aussi le nombre qu'une personne a tape, en chiffres seuls (« 30 »).
+    /// d'une route (`forme::lire_saisie`), aussi le nombre qu'une personne a tape (`grandeurs::lu::entier`, « 30 »).
     pub fn en_jours<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duree<EnJours>, D::Error> {
-        struct Tapee;
-        impl<'de> serde::de::Visitor<'de> for Tapee {
-            type Value = u32;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("un nombre entier de jours")
-            }
-            fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<u32, E> {
-                u32::try_from(u).map_err(E::custom)
-            }
-            fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<u32, E> {
-                u32::try_from(i).map_err(E::custom)
-            }
-            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<u32, E> {
-                crate::num::entier_de_chiffres(s.trim()).and_then(|n| u32::try_from(n).ok()).ok_or_else(|| {
-                    E::custom(crate::forme::refus_du_tape(format!("{} ne se lit pas : on attend un nombre entier de jours, en chiffres (« 30 »)", crate::fichiers::repr(s))))
-                })
-            }
-        }
-        match crate::forme::en_saisie() {
-            true => d.deserialize_any(Tapee).map(Duree::jours),
-            false => <u32 as serde::Deserialize>::deserialize(d).map(Duree::jours),
-        }
+        let n = crate::grandeurs::lu::entier(d, "un nombre entier de jours")?;
+        u32::try_from(n).map(Duree::jours).map_err(serde::de::Error::custom)
     }
 
     /// `en_jours`, facultatif : `#[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]`.
