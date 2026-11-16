@@ -31,7 +31,9 @@
               {
                 "forme": "unites",
                 "rubrique": "cachet",
-                "quantite": "2",
+                "quantite": {
+                  "cachets": "2"
+                },
                 "taux": "150",
                 "lieu": "Salle fictive de Rezé",
                 "dates": [
@@ -504,7 +506,7 @@
       "quoi": "L'horloge de la compagnie fictive : le dernier jour joue, ce qui n'est plus a regarder, et ce qu'elle a fait en dernier (le bandeau le dit).",
       "le": "2026-12-16",
       "mois_faits": {
-        "2026-11": "422faa6336fd0393"
+        "2026-11": "ea5f0614fec6e78d"
       },
       "annees_faites": [
         2026
@@ -1142,7 +1144,9 @@
                 {
                   "forme": "unites",
                   "rubrique": "cachet",
-                  "quantite": "2",
+                  "quantite": {
+                    "cachets": "2"
+                  },
                   "taux": "150",
                   "lieu": "Salle fictive de Rezé",
                   "dates": [
@@ -1218,7 +1222,9 @@
                   {
                     "forme": "unites",
                     "rubrique": "cachet",
-                    "quantite": "2",
+                    "quantite": {
+                      "cachets": "2"
+                    },
                     "taux": "150",
                     "lieu": "Salle fictive de Rezé",
                     "dates": [
@@ -1846,7 +1852,7 @@
       },
       "2026-11/DSN_Novembre2026.dsn": {
         "quand": "2026-12-15T10:00:00",
-        "empreinte_saisie": "f8966d1209d11937",
+        "empreinte_saisie": "f117238414934cfe",
         "versions_portees": []
       }
     },
@@ -1886,7 +1892,9 @@
                   {
                     "forme": "unites",
                     "rubrique": "cachet",
-                    "quantite": "2",
+                    "quantite": {
+                      "cachets": "2"
+                    },
                     "taux": "150",
                     "lieu": "Salle fictive de Rezé",
                     "dates": [
@@ -2225,7 +2233,7 @@
                 "imprevus racine:imprevus FULLER": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
                 "moteur": "<moteur>",
                 "pas FULLER 2026-11-30 2026-11": "[\"8.30\",\"01\",\"442936195\"]",
-                "saisie 2026-11 FULLER": "e0ad37804bbfa6e0f816dbaa7e0da47844374179868ad0b6bcde25d23ebfa70c:c090c9084bb7b911e213fb44086c832cda2dfdee4b3390a002776960514ff7d1"
+                "saisie 2026-11 FULLER": "e0ad37804bbfa6e0f816dbaa7e0da47844374179868ad0b6bcde25d23ebfa70c:1e32e402c4d15e1573386c1f30aa160d7324972492373239bc9358aa083f2365"
               },
               "regles": [
                 "2026-06-01",
