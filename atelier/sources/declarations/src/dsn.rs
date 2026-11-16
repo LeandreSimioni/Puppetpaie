@@ -581,15 +581,15 @@ pub struct Cotisation {
 const TRANCHE_A: TypeDeComposant = TypeDeComposant::TrancheAPrevoyance;
 
 /// UNE CONTRIBUTION DECLAREE SOUS UNE ADHESION AUDIENS ce mois-la (la CASC-SVP, une contribution de branche :
-/// `contributions_dsn`) : sa reference d'adhesion, son libelle, les lignes du bulletin qu'elle somme, et l'affectation
-/// (`202 + place`) de sa base 31 pour chaque section des organismes qui l'a, par population (la section d'une nature de
-/// contrat, `Nature::section_des_organismes`).
+/// `contributions_dsn`) : sa reference d'adhesion, son libelle, les lignes du bulletin qu'elle somme, et sa place
+/// d'affiliation (`placer`), d'ou se font son bloc 70 et l'affectation de sa base 31, pour chaque section des organismes
+/// qui l'a, par population (la section d'une nature de contrat, `Nature::section_des_organismes`).
 #[derive(Clone, Debug)]
 pub struct ContributionDuMois {
     pub reference: ReferenceDAdhesion,
     pub libelle: droit::organismes::ReferenceDeContrat,
     pub lignes: Vec<IdDeCotisation>,
-    pub natures: std::collections::BTreeMap<droit::natures::Paie, IdentifiantDAffiliation>,
+    pub natures: std::collections::BTreeMap<droit::natures::Paie, PlaceDAffiliation>,
 }
 
 /// LA PLACE D'UNE AFFILIATION parmi les adhesions de la nature du contrat (`affiliations`, dans leur ordre), d'ou la DSN
@@ -915,7 +915,10 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let nat = p.engagement.nat()?;
     let nature = nat.section_des_organismes();
     for contrib in &contribs {
-        let Some(affectation) = contrib.natures.get(&nature) else { continue };
+        let Some(place) = contrib.natures.get(&nature) else { continue };
+        // L'affectation telle que le bareme l'ecrit, au premier contrat (`202 + place`) : la DSN la refait au rang du
+        // contrat (`bases_et_cotisations`).
+        let affectation = identifiant_d_affiliation(RangDuContrat::PREMIER, *place, places_par_contrat(&bar))?;
         // Apres la derniere cotisation affectee a une adhesion ; sans elle, a la fin.
         let apres = match out.iter().rposition(|l| l.affectation.is_some()) {
             Some(i) => i + 1,
@@ -928,7 +931,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
                 base78: base(&bases, Assiette::Zero)?,
                 code81: Some(CodeCotisation81::PrevoyanceAssuranceMutuelle),
                 org: None,
-                affectation: Some(affectation.clone()),
+                affectation: Some(affectation),
                 cle_total: None,
                 code_insee: None,
                 base81: None,
@@ -1192,9 +1195,10 @@ fn regrouper_par_base(lignes: Vec<Cotisation>) -> Vec<Cotisation> {
 
 // ------------------------------------------------ adhesions et affiliations
 
-/// Les references d'adhesion auxquelles cette nature rattache, parmi celles qui valent pour la
-/// periode `periode`.
-pub fn affiliations(orgs: &Organismes, nat: &Nature, contribs: &[ContributionDuMois], periode: &Periode) -> R<Vec<ReferenceDAdhesion>> {
+/// Les references d'adhesion auxquelles cette nature rattache, et la place de chacune : celles de sa section qui valent
+/// pour la periode `periode`, a leur rang ; puis les contributions du mois `contribs`, a la place que `placer` leur a
+/// comptee.
+pub fn affiliations(orgs: &Organismes, nat: &Nature, contribs: &[ContributionDuMois], periode: &Periode) -> R<Vec<(ReferenceDAdhesion, PlaceDAffiliation)>> {
     let cle = nat.section_des_organismes();
     let sec = orgs.par_nature.de(cle);
     if sec.references.is_empty() {
@@ -1210,10 +1214,16 @@ population, ce que la plate-forme accepte sans rien dire. Rien n'est écrit.",
             nat.libelle, cle.population(), pourquoi
         ));
     }
-    let mut out: Vec<ReferenceDAdhesion> = sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, periode)).cloned().collect();
+    let mut out: Vec<(ReferenceDAdhesion, PlaceDAffiliation)> = sec
+        .references
+        .iter()
+        .filter(|r| orgs.adhesion_en_vigueur(r, periode))
+        .enumerate()
+        .map(|(avant, r)| (r.clone(), PlaceDAffiliation::apres(avant)))
+        .collect();
     for c in contribs {
-        if c.natures.contains_key(&cle) {
-            out.push(c.reference.clone());
+        if let Some(place) = c.natures.get(&cle) {
+            out.push((c.reference.clone(), *place));
         }
     }
     Ok(out)
@@ -1229,18 +1239,9 @@ pub struct Affiliation {
     /// L'option retenue par le salarie (70.004), quand l'organisme la demande pour ce contrat.
     pub option: Option<String>,
     /// Les ayants droit (70.008, 70.011), quand ils entrent dans le calcul de la cotisation.
-    pub ayants_droit: Option<AyantsDroit>,
+    pub ayants_droit: Option<bareme::AyantsDroit>,
     /// La date de debut de l'affiliation (70.014), quand ce n'est pas celle du contrat.
     pub debut: Option<Jour>,
-}
-
-/// LES AYANTS DROIT D'UNE AFFILIATION, que l'option retenue couvre avec le salarie : son conjoint, ou non, et le nombre de
-/// ses enfants (`sante_svp` de sa fiche). La DSN les compte : 70.008 « Nombre d'ayants-droit conjoint / concubin »,
-/// 70.011 « Nombre d'enfants ayants-droit » (`atelier/reference/norme-dsn/texte/bloc-S21.G00.70.txt` l. 31-36, 68-73).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AyantsDroit {
-    pub conjoint: bool,
-    pub enfants: usize,
 }
 
 /// Ce qui affilie un permanent, ce mois-la, aux deux adhesions de sa nature : la prevoyance de sa convention, selon la
@@ -1309,7 +1310,7 @@ fn places_non_affiliees(p: &Paie, ent: &ChampsEntreprise) -> R<Vec<PlaceDAffilia
     Ok(out)
 }
 
-/// Les affiliations que le contrat declare (bloc S21.G00.70), parmi les references `refs` de sa nature
+/// Les affiliations que le contrat declare (bloc S21.G00.70), parmi les references `refs` de sa nature et leurs places
 /// (`affiliations`) : celles du salarie ce mois-la, avec ce que l'organisme demande de chacune.
 ///
 /// Cahier technique DSN 2026.1 (`atelier/reference/norme-dsn/texte/bloc-S21.G00.70.txt`, p. 285-286 ;
@@ -1321,13 +1322,12 @@ fn places_non_affiliees(p: &Paie, ent: &ChampsEntreprise) -> R<Vec<PlaceDAffilia
 /// (`prevoyance_branche_depuis`). La date s'ecrit chaque mois ou le contrat se declare (inference : la condition de la
 /// norme reste vraie ; la liste des cas d'usage de net-entreprises n'est pas dans le depot).
 /// `ent` : la fiche de l'entreprise que la paie a lue (`BaremeDuMois::entreprise`).
-pub fn rattachements(p: &Paie, orgs: &Organismes, ent: &ChampsEntreprise, refs: Vec<ReferenceDAdhesion>) -> R<Vec<Affiliation>> {
+pub fn rattachements(p: &Paie, orgs: &Organismes, ent: &ChampsEntreprise, refs: Vec<(ReferenceDAdhesion, PlaceDAffiliation)>) -> R<Vec<Affiliation>> {
     let e = &p.engagement;
     let permanent = affiliations_du_permanent(p, ent)?;
     let fin = e.periode_payee()?.fin();
     let mut out = Vec::new();
-    for (avant, reference) in refs.into_iter().enumerate() {
-        let place = PlaceDAffiliation::apres(avant);
+    for (reference, place) in refs {
         let mut debut: Option<Jour> = None;
         if let Some(a) = &permanent {
             if place == PlaceDAffiliation::PREMIERE {
@@ -1386,7 +1386,7 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
 /// `organismes-base.json` dit que l'organisme les demande pour ce contrat (`contrats`, `options` : la sante des
 /// permanents 3090, fiche de parametrage Audiens version 139, groupes 00003 a 00008). Ils se lisent de `sante_svp`, la
 /// meme fiche que la cotisation (`bareme::bareme_sante`) ; sans elle, ou d'un niveau que la table n'a pas, refus.
-fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &ReferenceDAdhesion) -> R<(Option<String>, Option<AyantsDroit>)> {
+fn option_retenue(p: &Paie, ent: &ChampsEntreprise, adhesion: &droit::organismes::Adhesion, reference: &ReferenceDAdhesion) -> R<(Option<String>, Option<bareme::AyantsDroit>)> {
     let base = droit::organismes::base()?;
     let libelle = adhesion.libelle.as_str().trim();
     let Some(options) = base.options(ent.idcc.dite(), libelle) else {
@@ -1411,13 +1411,8 @@ compagnie ; rien n'est declare.",
     let au_mois = p.engagement.nat()?.au_mois();
     let choix = au_mois.as_ref().and_then(|au| p.salarie.permanent.ouvrir(au).sante_svp.dite());
     let niveau = choix.and_then(|c| c.niveau.dite());
-    let enfants = choix.and_then(|c| c.enfants.dite()).copied().filter(|n| *n <= 99);
-    let conjoint = choix.is_some_and(|c| c.conjoint.oui());
-    let famille = conjoint || enfants.is_some_and(|n| n > 0);
-    let code = niveau.and_then(|niveau| options.niveaux.get(niveau)).map(|n| if famille { n.famille.as_str() } else { n.isole.as_str() });
-    match (code, enfants) {
-        (Some(c), Some(enfants)) => Ok((Some(c.to_string()), famille.then_some(AyantsDroit { conjoint, enfants }))),
-        _ => Err(socle::echec::a_la_cle(
+    let (Some(choix), Some(codes)) = (choix, niveau.and_then(|niveau| options.niveaux.get(niveau))) else {
+        return Err(socle::echec::a_la_cle(
             &format!(
                 "{} : elle se lit sur la fiche du salarie (son niveau, son conjoint, ses enfants), d'apres son bulletin d'adhesion -- la meme fiche que sa cotisation. Rien n'est declare.",
                 lieu
@@ -1427,8 +1422,12 @@ compagnie ; rien n'est declare.",
                 Some(n) => format!("niveau « {} »", n),
                 None => "rien".to_string(),
             },
-        )),
-    }
+        ));
+    };
+    // Les ayants droit, lus comme la cotisation les lit (`bareme::ayants_droit`).
+    let ayants = bareme::ayants_droit(&p.salarie, choix)?;
+    let code = if ayants.famille() { codes.famille.as_str() } else { codes.isole.as_str() };
+    Ok((Some(code.to_string()), ayants.famille().then_some(ayants)))
 }
 
 /// `places_par_contrat` : combien d'identifiants d'affiliation un contrat se reserve.
@@ -1442,8 +1441,49 @@ fn refs_du_mois(orgs: &Organismes, sec: &droit::organismes::Rattachement, mois: 
     sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &periode)).cloned().collect()
 }
 
-/// `casc_svp` : la CASC-SVP de ce mois, ou `None`. `places` : `places_par_contrat`.
-fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois, places: usize) -> R<Option<ContributionDuMois>> {
+/// UNE CONTRIBUTION DU MOIS A PLACER (`placer`) : ce qu'elle sera (`ContributionDuMois`), sans ses places, et ce que le
+/// refus d'une place dit d'elle (« la CASC-SVP », « le FNAS »).
+struct AContribuer {
+    nom: String,
+    reference: ReferenceDAdhesion,
+    libelle: droit::organismes::ReferenceDeContrat,
+    lignes: Vec<IdDeCotisation>,
+}
+
+/// LES PLACES DES CONTRIBUTIONS DU MOIS, comptees a ce seul endroit : sous chaque section qui ne porte pas deja son
+/// adhesion, une contribution prend la place qui suit les adhesions de la section en vigueur pendant le mois
+/// (`refs_du_mois`) et les contributions placees avant elle, dans l'ordre de `a_placer` ; un contrat n'en a que
+/// `places` (`places_par_contrat`). Deux blocs 70 d'un contrat ne prennent ainsi jamais la meme place.
+fn placer(orgs: &Organismes, mois: Mois, a_placer: Vec<AContribuer>, places: usize) -> R<Vec<ContributionDuMois>> {
+    let mut deja: HashMap<droit::natures::Paie, usize> = HashMap::new();
+    let mut out = Vec::with_capacity(a_placer.len());
+    for c in a_placer {
+        let mut natures = std::collections::BTreeMap::new();
+        for (n, sec) in orgs.par_nature.natures() {
+            if sec.references.is_empty() || sec.references.contains(&c.reference) {
+                continue;
+            }
+            let occupees = refs_du_mois(orgs, sec, mois).len() + *deja.entry(n).or_insert(0);
+            if occupees >= places {
+                return Err(refus!(
+                    "Contrat '{}' : {} adhesions deja, plus de place pour {} ({} identifiants d'affiliation par \
+contrat). Rien n'est ecrit.",
+                    n.population(),
+                    occupees,
+                    c.nom,
+                    places
+                ));
+            }
+            natures.insert(n, PlaceDAffiliation::apres(occupees));
+            *deja.entry(n).or_insert(0) += 1;
+        }
+        out.push(ContributionDuMois { reference: c.reference, libelle: c.libelle, lignes: c.lignes, natures });
+    }
+    Ok(out)
+}
+
+/// `casc_svp` : la CASC-SVP de ce mois, a placer (`placer`), ou `None`.
+fn casc_svp(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois) -> R<Option<AContribuer>> {
     let base = droit::adhesions::casc_svp_base()?;
     if ent.idcc.dite() != Some(&base.idcc) || mois < base.depuis {
         return Ok(None);
@@ -1467,44 +1507,18 @@ l'adhesion {} que le logiciel compose pour toute compagnie de la 3090. Rien n'es
             ))
         }
     };
-    let reference = adh.reference.clone();
-    let mut natures = std::collections::BTreeMap::new();
-    for (n, s) in orgs.par_nature.natures() {
-        if s.references.is_empty() || s.references.contains(&reference) {
-            continue;
-        }
-        let refs = refs_du_mois(orgs, s, mois);
-        if refs.len() >= 3 {
-            return Err(refus!(
-                "Contrat '{}' : {} adhesions deja, plus de place pour la CASC-SVP (trois identifiants \
-d'affiliation par contrat). Rien n'est ecrit.",
-                n.population(),
-                refs.len()
-            ));
-        }
-        natures.insert(n, identifiant_d_affiliation(RangDuContrat::PREMIER, PlaceDAffiliation::apres(refs.len()), places)?);
-    }
-    Ok(Some(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: base.dsn.lignes_bulletin.clone(), natures }))
+    Ok(Some(AContribuer { nom: "la CASC-SVP".to_string(), reference: adh.reference.clone(), libelle: adh.libelle.clone(), lignes: base.dsn.lignes_bulletin.clone() }))
 }
 
 
-/// `contributions_dsn` : les contributions declarees sous une adhesion Audiens.
+/// `contributions_dsn` : les contributions declarees sous une adhesion Audiens, la CASC-SVP d'abord, chacune a sa place
+/// (`placer`).
 fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, mois: Mois, bar: &Pile) -> R<Vec<ContributionDuMois>> {
-    let mut out = Vec::new();
-    let places = places_par_contrat(bar);
-    if let Some(c) = casc_svp(ctx, ent, orgs, mois, places)? {
-        out.push(c);
+    let mut a_placer = Vec::new();
+    if let Some(c) = casc_svp(ctx, ent, orgs, mois)? {
+        a_placer.push(c);
     }
-    let specs: Vec<&droit::forme_bareme::ContributionDsn> = bar.contributions_dsn
-        .iter()
-        .flatten()
-        .filter(|c| mois >= c.en_dsn_depuis)
-        .collect();
-    if specs.is_empty() {
-        return Ok(out);
-    }
-    let mut deja: HashMap<droit::natures::Paie, usize> = HashMap::new();
-    for spec in specs {
+    for spec in bar.contributions_dsn.iter().flatten().filter(|c| mois >= c.en_dsn_depuis) {
         let nom = spec.contribution.clone();
         let adh = orgs.adhesions_prevoyance.iter().find(|a| {
             a.contribution.as_ref().is_some_and(|c| c.est(&nom)) || nom.est_le_libelle(a.libelle.as_str())
@@ -1521,30 +1535,9 @@ du mois n'ont pas l'adhesion de cette contribution, que le logiciel compose depu
                 ))
             }
         };
-        let reference = adh.reference.clone();
-        let mut natures = std::collections::BTreeMap::new();
-        for (n, sec) in orgs.par_nature.natures() {
-            if sec.references.is_empty() || sec.references.contains(&reference) {
-                continue;
-            }
-            let refs = refs_du_mois(orgs, sec, mois);
-            let occupees = refs.len() + *deja.entry(n).or_insert(0);
-            if occupees >= places {
-                return Err(refus!(
-                    "Contrat '{}' : {} adhesions deja, plus de place pour le {} ({} identifiants d'affiliation par \
-contrat). Rien n'est ecrit.",
-                    n.population(),
-                    refs.len(),
-                    nom,
-                    places
-                ));
-            }
-            natures.insert(n, identifiant_d_affiliation(RangDuContrat::PREMIER, PlaceDAffiliation::apres(occupees), places)?);
-            *deja.entry(n).or_insert(0) += 1;
-        }
-        out.push(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: spec.lignes.clone(), natures });
+        a_placer.push(AContribuer { nom: format!("le {}", nom), reference: adh.reference.clone(), libelle: adh.libelle.clone(), lignes: spec.lignes.clone() });
     }
-    Ok(out)
+    placer(orgs, mois, a_placer, places_par_contrat(bar))
 }
 
 // ------------------------------------------------------------ les blocs
@@ -1987,7 +1980,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         if let Some(o) = a.option {
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.004"), Some(o))?;
         }
-        if let Some(AyantsDroit { conjoint, enfants }) = a.ayants_droit {
+        if let Some(bareme::AyantsDroit { conjoint, enfants }) = a.ayants_droit {
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.008"), Some(usize::from(conjoint).to_string()))?;
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.011"), Some(enfants.to_string()))?;
         }
@@ -5395,11 +5388,14 @@ mod tests {
     // La CASC-SVP de la 3090 (`atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`).
     #[test]
     fn la_dsn_de_la_3090_porte_la_casc_en_troisieme_affiliation() {
-        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &orgs_casc(), Mois::nouveau(2026, 9).unwrap(), 3).unwrap().unwrap();
+        let (orgs, mois) = (orgs_casc(), Mois::nouveau(2026, 9).unwrap());
+        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &orgs, mois).unwrap().unwrap();
         assert_eq!(c.reference.as_str(), "100");
         assert_eq!(c.lignes, [droit::forme_bareme::CCN]);
-        // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
-        assert_eq!(c.natures, std::collections::BTreeMap::from([(droit::natures::Paie::Activite, IdentifiantDAffiliation::lire("204").unwrap())]));
+        // l'intermittent : apres 103 et 102, donc la troisieme place (204) ; le permanent l'a deja.
+        let c = placer(&orgs, mois, vec![c], 3).unwrap().remove(0);
+        assert_eq!(c.natures, std::collections::BTreeMap::from([(droit::natures::Paie::Activite, PlaceDAffiliation::apres(2))]));
+        assert_eq!(identifiant_d_affiliation(RangDuContrat::PREMIER, c.natures[&droit::natures::Paie::Activite], 3).unwrap(), IdentifiantDAffiliation::lire("204").unwrap());
     }
 
     // `atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`.
@@ -5407,9 +5403,9 @@ mod tests {
     fn pas_de_casc_hors_3090_avant_2025_ni_sur_un_mois_regularise() {
         let o = orgs_casc();
         let m = |an, numero| Mois::nouveau(an, numero).unwrap();
-        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("1285").unwrap()), ..Default::default() }, &o, m(2026, 9), 3).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2024, 12), 3).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b3", &[m(2026, 8)]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2026, 8), 3).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("1285").unwrap()), ..Default::default() }, &o, m(2026, 9)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2024, 12)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b3", &[m(2026, 8)]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2026, 8)).unwrap().is_none());
     }
 
     // S21.G00.20.002 de France Travail (`atelier/reference/sources/francetravail-100-dsn/net-entreprises-fiche-3344-intermittents-20251113.html`).

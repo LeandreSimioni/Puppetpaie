@@ -611,6 +611,43 @@ pub fn sante_hors_fiche(ent: &ChampsEntreprise) -> R<Option<String>> {
     )))
 }
 
+/// LES AYANTS DROIT D'UNE AFFILIATION A LA SANTE, que son niveau couvre avec le salarie : son conjoint, ou non, et le
+/// nombre de ses enfants. La cotisation les compte (`bareme_sante` : le taux de l'assure, plus celui du conjoint, plus
+/// celui d'un enfant par enfant), et la DSN les declare quand ils y entrent : 70.008 « Nombre d'ayants-droit conjoint /
+/// concubin », 70.011 « Nombre d'enfants ayants-droit » (`atelier/reference/norme-dsn/texte/bloc-S21.G00.70.txt`
+/// l. 31-36, 68-73 ; `declarations::dsn::option_retenue`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AyantsDroit {
+    pub conjoint: bool,
+    pub enfants: usize,
+}
+
+impl AyantsDroit {
+    /// Le niveau couvre-t-il quelqu'un avec le salarie : son conjoint, ou un enfant au moins ?
+    pub fn famille(&self) -> bool {
+        self.conjoint || self.enfants > 0
+    }
+}
+
+/// LES AYANTS DROIT QUE DIT LA COMPLEMENTAIRE SANTE `choix` DE LA FICHE DU SALARIE `sal` (`sante_svp`), lus une fois pour
+/// la cotisation et la DSN : seule sa fiche sait qui le contrat couvre avec lui, et elle le dit meme a non ou a zero ; une
+/// case qu'elle ne dit pas refuse en la nommant.
+pub fn ayants_droit(sal: &SalarieDuContrat, choix: &crate::fiche::SanteSvp) -> R<AyantsDroit> {
+    let a_dire = |cle: &str, quoi: &str| {
+        socle::echec::refus_avec(
+            format!(
+                "{} : sa complémentaire santé ne dit pas {}. À dire sur sa fiche, Configuration › Salariés, « Complémentaire santé » (même à non ou à zéro) : son bulletin d'adhésion le dit.",
+                nom_du_salarie(sal),
+                quoi
+            ),
+            Lieu { cle: Some(format!("sante_svp.{}", cle)), ..Lieu::default() },
+        )
+    };
+    let conjoint = *choix.conjoint.dite().ok_or_else(|| a_dire("conjoint", "si son conjoint est couvert"))?;
+    let enfants = *choix.enfants.dite().ok_or_else(|| a_dire("enfants", "combien d'enfants sont couverts"))?;
+    Ok(AyantsDroit { conjoint, enfants })
+}
+
 /// La complementaire sante d'un permanent, selon SON contrat a lui.
 pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, nat: Option<&Nature>, fin: Option<&Jour>) -> R<Pile> {
     let Some(au_mois) = nat.and_then(|n| n.au_mois()) else {
@@ -692,25 +729,12 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
         ));
     };
     controler_minimum_sante(ent, sal, niveau, taux.assure, fin)?;
-    // Qui le contrat couvre avec lui, son conjoint et ses enfants : seule sa fiche le sait, et elle le dit meme a non ou
-    // a zero.
-    let a_dire = |cle: &str, quoi: &str| {
-        socle::echec::refus_avec(
-            format!(
-                "{} : sa complémentaire santé ne dit pas {}. À dire sur sa fiche, Configuration › Salariés, « Complémentaire santé » (même à non ou à zéro) : son bulletin d'adhésion le dit.",
-                nom_du_salarie(sal),
-                quoi
-            ),
-            Lieu { cle: Some(format!("sante_svp.{}", cle)), ..Lieu::default() },
-        )
-    };
-    let conjoint = *choix.conjoint.dite().ok_or_else(|| a_dire("conjoint", "si son conjoint est couvert"))?;
-    let enfants = *choix.enfants.dite().ok_or_else(|| a_dire("enfants", "combien d'enfants sont couverts"))?;
+    let ayants = ayants_droit(sal, choix)?;
     let mut total = taux.assure;
-    if conjoint {
+    if ayants.conjoint {
         total = total + taux.conjoint;
     }
-    total = total + taux.enfant.fois(enfants);
+    total = total + taux.enfant.fois(ayants.enfants);
     // Au moins la moitie a la charge de l'employeur (L911-7) : le releve du bareme dit la part.
     let part_pat = releve.part_employeur.en_coefficient();
     let bar = poser_mutuelle(bar, None, total, part_pat, None);

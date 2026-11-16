@@ -1107,7 +1107,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | place d'une affiliation dans le versement d'un individu | `PlaceDAffiliation` | `declarations/src/dsn.rs` |
-| ayants droit d'une affiliation (le conjoint couvert ou non, le nombre d'enfants : 70.008, 70.011, lus de `sante_svp`) | `AyantsDroit` | `declarations/src/dsn.rs` |
+| ayants droit d'une affiliation (le conjoint couvert ou non, le nombre d'enfants, lus une fois de `sante_svp`, `droit::bareme::ayants_droit`, que la cotisation santé compte et que la DSN déclare en 70.008, 70.011) | `AyantsDroit` | `droit/src/bareme.rs` |
 | numéro d'un versement d'un individu dans une DSN | `NumeroDeVersement` | `declarations/src/dsn.rs` |
 | rang d'un contrat sous l'individu dans une DSN | `RangDuContrat` | `declarations/src/dsn.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |
@@ -1569,8 +1569,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   de ses blocs 40, les contrats payés ce mois puis ceux qu'une régularisation ajoute ; le premier, puis le suivant ; son
   nombre ne sert qu'ici, il ne s'écrit dans aucune rubrique) et de la **place d'une
   affiliation** (`PlaceDAffiliation` : la place de l'adhésion parmi celles de la nature du contrat ; pour un permanent,
-  la première est la prévoyance, la seconde la santé), chaque contrat se réservant un nombre de places
-  (`places_par_contrat`, un compte) ; sa relecture (`place_de`) rend une `PlaceDAffiliation`. Le **numéro d'un
+  la première est la prévoyance, la seconde la santé ; une contribution du mois, la CASC-SVP ou une contribution de
+  branche, prend la sienne à un seul endroit, `declarations::dsn::placer`, qui voit les adhésions de la nature et les
+  contributions déjà placées, et que le bloc 70 et la base 31 lisent tous deux), chaque contrat se réservant un nombre
+  de places (`places_par_contrat`, un compte) ; sa relecture (`place_de`) rend une `PlaceDAffiliation`. Le **numéro d'un
   versement** (`NumeroDeVersement`, S21.G00.50.003, de 01 à 99 : le premier, puis le suivant ; il s'écrit sur deux
   chiffres par son affichage) n'est pas le rang du contrat : une régularisation d'un contrat aussi payé ce mois a le
   rang de ce contrat et un numéro de versement à elle. Le barème nomme l'identifiant pour une cotisation (`affectation`, `202`, `203`)
