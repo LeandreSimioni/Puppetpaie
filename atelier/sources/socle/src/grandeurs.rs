@@ -454,14 +454,6 @@ impl Taux {
         Taux(self.0.round_dp_with_strategy(2, RoundingStrategy::MidpointTowardZero))
     }
 
-    /// A deux decimales, la moitie au pair, ses deux decimales ecrites (`1.6` s'ecrit `1.60`) : le taux qu'annonce le
-    /// simulateur des organismes, comme une notification l'ecrit.
-    pub fn a_deux_decimales_ecrites(self) -> Taux {
-        let mut t = self.0.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-        t.rescale(2);
-        Taux(t)
-    }
-
     /// Ce taux `n` fois (le taux d'un enfant couvert, pour chacun) : taux x compte = taux. Un compte n'est pas une
     /// grandeur (« Le glossaire »).
     pub fn fois(self, n: usize) -> Taux {
@@ -1345,7 +1337,8 @@ pub mod ecrit {
     }
 
     /// TELLE QUE LA NORME DSN L'ECRIT dans ses rubriques (cahier technique : « avec decimale », le point decimal) : un
-    /// montant au centime, un taux a ses decimales. La seule ecriture des grandeurs de la DSN.
+    /// montant au centime, un taux a ses decimales. La seule ecriture des grandeurs de la DSN, et des retours de la norme
+    /// que le simulateur des organismes fabrique (le taux de PAS, le taux AT/MP notifie).
     pub mod norme {
         use crate::grandeurs::{Grandeur, Montant, Taux};
         use crate::num::Decimal;
