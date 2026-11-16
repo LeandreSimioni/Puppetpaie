@@ -1066,14 +1066,14 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
 /// partir du `jour` de ce mois quand il est dit, du 1er sinon. Refus : un engagement valide, un jour qui n'est pas un
 /// jour du contrat dans ce mois, ou des bornes qui laisseraient hors du contrat un mois ou il a des jours payes ; rien
 /// n'est ecrit.
-pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie: &Carte, jour: Option<u32>) -> R<()> {
+pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie: &Carte, jour: Option<socle::date::Jour>) -> R<()> {
     let mut o = objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang))?;
     if o.est_valide() {
         return Err(socle::refus!("{} : l'engagement de rang {} est valide, il ne prend pas de saisie", mois, rang));
     }
     let le = match jour {
         None => None,
-        Some(n) => {
+        Some(j) => {
             let qui = crate::salarie_nomme(ctx, o.carte().salarie.as_ref());
             // AU PREMIER MOIS DE L'ENGAGEMENT, ses termes valent de son debut : un jour n'a rien a dater.
             if mois == o.fichier {
@@ -1084,7 +1084,6 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie:
                     mois.libelle(Graphie::Accentuee)
                 ));
             }
-            let j = mois.jour(n).ok_or_else(|| socle::refus!("{} : « le {} {} » n'est pas un jour de ce mois. Rien n'est écrit.", qui, n, mois.libelle(Graphie::Accentuee)))?;
             let debut = o.carte().debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
             let fin = o.carte().fin;
             if j < debut || fin.is_some_and(|f| j > f) {

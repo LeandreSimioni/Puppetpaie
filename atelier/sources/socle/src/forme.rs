@@ -79,14 +79,7 @@ fn case_au_chemin(v: &Value, chemin: &serde_path_to_error::Path) -> Option<crate
 /// (`echec::CaseRefusee`), dont la route fait sa phrase ; une faute de la saisie elle-meme, par `phrase`.
 #[track_caller]
 pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
-    /// Remet l'etat d'avant en sortant, panique comprise : une lecture de fichier qui suit n'est jamais rangee.
-    struct Remise(bool);
-    impl Drop for Remise {
-        fn drop(&mut self) {
-            EN_SAISIE.set(self.0);
-        }
-    }
-    let _remise = Remise(EN_SAISIE.replace(true));
+    let _remise = EnSaisie::ouverte();
     let texte = v.to_string();
     let mut d = serde_json::Deserializer::from_str(&texte);
     let e = match serde_path_to_error::deserialize(&mut d) {
@@ -94,12 +87,32 @@ pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
         Err(e) => e,
     };
     match case_au_chemin(v, e.path()) {
-        Some(case) => {
-            let a_part = crate::echec::CaseRefusee { case, cle: e.path().to_string(), detail: en_clair(&e.inner().to_string()) };
-            Err(refus_avec(phrase, crate::echec::APart::Case(a_part)))
-        }
+        Some(case) => Err(case_refusee_a(phrase, case, e.path().to_string(), en_clair(&e.inner().to_string()))),
         None => Err(refus(phrase, None, &e)),
     }
+}
+
+/// Le temps d'une lecture d'une saisie (`EN_SAISIE`) : l'etat d'avant revient en sortant, panique comprise ; une lecture
+/// de fichier qui suit n'est jamais rangee.
+struct EnSaisie(bool);
+
+impl EnSaisie {
+    fn ouverte() -> EnSaisie {
+        EnSaisie(EN_SAISIE.replace(true))
+    }
+}
+
+impl Drop for EnSaisie {
+    fn drop(&mut self) {
+        EN_SAISIE.set(self.0);
+    }
+}
+
+/// LE REFUS D'UNE SAISIE A SA CASE `case` (au chemin `cle`), pour la raison `detail` : la route en fait sa phrase
+/// (`echec::CaseRefusee`) ; `phrase` est celle d'un appel qui ne la nomme pas.
+#[track_caller]
+fn case_refusee_a(phrase: &str, case: crate::echec::CaseDeLaSaisie, cle: String, detail: String) -> Echec {
+    refus_avec(phrase, crate::echec::APart::Case(crate::echec::CaseRefusee { case, cle, detail }))
 }
 
 /// Lit-on une saisie (`lire_saisie`) ?
@@ -206,6 +219,24 @@ impl Objet {
         lire(&Value::Object(m), phrase)
     }
 
+    /// LE JOUR DU MOIS `mois` QUE CETTE SAISIE DIT A `cle` (le numero du jour, tape ou en nombre, lu par la lecture du
+    /// nombre tape), lu une fois en `Jour` : le numero d'un jour n'existe qu'ecrit. Absent ou nul, aucun. Un numero qui
+    /// ne se lit pas, ou qui n'est pas un jour de ce mois, refuse la saisie a sa case (`echec::CaseRefusee`), `phrase` pour
+    /// qui ne la nomme pas.
+    #[track_caller]
+    pub fn jour_du_mois(&self, cle: &str, mois: crate::mois::Mois, phrase: &str) -> R<Option<crate::date::Jour>> {
+        let Some(v) = self.0.get(cle).filter(|v| !v.is_null()) else { return Ok(None) };
+        let refusee = |detail: String| case_refusee_a(phrase, crate::echec::CaseDeLaSaisie::Cle(cle.to_string()), cle.to_string(), detail);
+        let n = {
+            let _remise = EnSaisie::ouverte();
+            crate::grandeurs::lu::entier(v, "un jour du mois, de 1 à 31").map_err(|e| refusee(e.to_string()))?
+        };
+        match u32::try_from(n).ok().and_then(|n| mois.jour(n)) {
+            Some(j) => Ok(Some(j)),
+            None => Err(refusee(format!("« {} » n'est pas un jour de {}", n, mois.libelle(crate::mois::Graphie::Accentuee)))),
+        }
+    }
+
     /// Ses cles, dans l'ordre ecrit.
     pub fn cles(&self) -> Vec<&str> {
         self.0.keys().map(String::as_str).collect()
@@ -277,13 +308,7 @@ impl Objet {
 /// UNE ENTREE LUE SEULE (`Objet::chacune`, `Liste::chacun`) comme une saisie : sa faute, le chemin sous `sous` (vide pour la
 /// valeur elle-meme) et ce qui ne va pas.
 fn une_entree<T: DeserializeOwned>(v: &Value, sous: &str) -> Result<T, (String, String)> {
-    struct Remise(bool);
-    impl Drop for Remise {
-        fn drop(&mut self) {
-            EN_SAISIE.set(self.0);
-        }
-    }
-    let _remise = Remise(EN_SAISIE.replace(true));
+    let _remise = EnSaisie::ouverte();
     let texte = v.to_string();
     let mut d = serde_json::Deserializer::from_str(&texte);
     match serde_path_to_error::deserialize(&mut d) {

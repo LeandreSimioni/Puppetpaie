@@ -1039,24 +1039,6 @@ pub mod lu {
         }
     }
 
-    /// UN JOUR DU MOIS (le quantieme d'ou vaut un changement d'un engagement) lu par `entier`.
-    pub mod jour_du_mois {
-        /// Un jour du mois facultatif : absent (avec `#[serde(default)]`) ou nul, il n'est pas dit.
-        pub mod option {
-            pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
-                /// Un jour du mois lu ainsi, la ou un champ ne se pose pas (un `Option`).
-                struct Lu(u32);
-                impl<'de> serde::Deserialize<'de> for Lu {
-                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lu, D::Error> {
-                        let n = super::super::entier(d, "un jour du mois, de 1 à 31")?;
-                        u32::try_from(n).map(Lu).map_err(serde::de::Error::custom)
-                    }
-                }
-                <Option<Lu> as serde::Deserialize>::deserialize(d).map(|l| l.map(|l| l.0))
-            }
-        }
-    }
-
     /// `tapee`, son decimal : la conversion que la lecture d'une saisie passe a `forme` (`forme::decimal_en_nombre`).
     pub(crate) fn tapee_en_decimal<G: Grandeur>(t: &str) -> Result<Decimal, String> {
         tapee::<G>(t).map(<G as crate::grandeurs::Scelle>::en_decimal)

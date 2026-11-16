@@ -183,7 +183,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
-| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, un jour du mois, par la même lecture, `lu::entier`, et l'échelon d'une fiche par `lu::entier_tape` ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` ; `socle::forme::NombreEcrit`, que la case `heures_forfait` d'une rubrique garde encore (`NombreEcrit::en`) |
+| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`, qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` ; `socle::forme::NombreEcrit`, que la case `heures_forfait` d'une rubrique garde encore (`NombreEcrit::en`) |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
@@ -218,7 +218,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   porte par `jour_et_heure::saisie` (les charges des obligations d'un arrêt). Le butoir d'une obligation (`routes::obligations::Obligation.butoir`)
   s'écrit aussi en deux champs, `butoir` et `butoir_heure`, où un instant à minuit est la fin du jour d'avant, écrite
   `24:00` (« jusqu'à minuit »).
-- **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone.
+- **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone. Le numéro d'un jour dans
+  son mois n'est pas une notion : il ne sort d'un `Jour` qu'à une écriture ; tapé dans une charge (le jour d'effet d'un
+  changement), il se lit une fois en `Jour` dans le mois que la charge porte (`socle::forme::Objet::jour_du_mois`), et un
+  jour qui n'est pas de ce mois se refuse à sa case.
 - **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom.
 - **mois de l'année** : janvier à décembre, sans année (la colonne d'un mois au récapitulatif annuel) ; il porte la
   table des noms de mois ; un fichier qui l'écrit par son numéro (`echeancier-base.json`) se lit en lui.

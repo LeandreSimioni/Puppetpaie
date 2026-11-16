@@ -151,6 +151,16 @@ impl Charge {
         self.objet.lire_saisie(&[MOT_DE_PASSE], "La demande est mal formée.").map_err(|m| m.reclasser(Classe::MalFormee))
     }
 
+    /// LA CHARGE LUE EN SA FORME `T` comme `lire`, sauf sa cle `cle_du_jour`, et le jour du mois que celle-ci dit, lu une
+    /// fois dans le mois que la forme porte (`mois_de`) : le numero d'un jour n'existe qu'ecrit
+    /// (`socle::forme::Objet::jour_du_mois`). Absent ou nul, aucun jour ; un jour qui n'est pas de ce mois se refuse a sa
+    /// case, comme toute valeur qui ne se lit pas.
+    pub fn lire_avec_le_jour<T: DeserializeOwned>(&self, cle_du_jour: &str, mois_de: impl Fn(&T) -> socle::mois::Mois) -> R<(T, Option<socle::date::Jour>)> {
+        let t: T = self.objet.lire_saisie(&[MOT_DE_PASSE, cle_du_jour], "La demande est mal formée.").map_err(|m| m.reclasser(Classe::MalFormee))?;
+        let jour = self.objet.jour_du_mois(cle_du_jour, mois_de(&t), "La demande est mal formée.").map_err(|m| m.reclasser(Classe::MalFormee))?;
+        Ok((t, jour))
+    }
+
     /// Le mot de passe du logiciel tape pour cette route, s'il est donne (un texte non vide).
     pub fn mot_de_passe(&self) -> Option<&socle::secret::Secret> {
         self.mot_de_passe.as_ref()

@@ -88,7 +88,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
     match porte.route {
         Route::ValiderEngagement => en_json(valider_engagement(ctx, charge.lire()?)?),
-        Route::ModifierEngagement => en_json(modifier_engagement(ctx, charge.lire()?)?),
+        Route::ModifierEngagement => en_json(modifier_engagement(ctx, charge.lire_avec_le_jour("jour", |c: &ChargeModifier| c.mois)?)?),
         Route::RetirerEngagement => en_json(retirer_engagement(ctx, charge.lire()?)?),
         autre => Err(crate::enveloppe::route_inconnue(autre.nom())),
     }
@@ -116,8 +116,8 @@ impl Dite for Retrait {
 }
 
 /// La charge de « Modifier l'engagement » : le mois de la carte, son identite, ce qu'on y change (`changements`, comme
-/// `enregistrer-saisie`) ; l'avertissement lu (`confirme`) et le jour du mois d'ou vaut un terme change (`jour`, `null` :
-/// le 1er).
+/// `enregistrer-saisie`) ; l'avertissement lu (`confirme`). Le jour du mois d'ou vaut un terme change (`jour`, `null` :
+/// le 1er) se lit a cote, dans le mois de la carte (`Charge::lire_avec_le_jour`).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeModifier {
@@ -125,8 +125,6 @@ struct ChargeModifier {
     engagement: Identite,
     changements: Changements,
     confirme: bool,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::jour_du_mois::option::deserialize")]
-    jour: Option<u32>,
 }
 
 /// La charge de « Retirer cet engagement » : le mois de la carte, son identite, l'avertissement lu (`confirme`).
@@ -259,12 +257,8 @@ pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Vali
 /// Refus, et rien n'est ecrit : un engagement qui n'est pas valide (il se saisit sur sa carte), importe, d'un mois tenu
 /// avant PuppetPaie, d'un exercice clos ; un jour qui n'est pas un jour du contrat dans ce mois ; un changement que la
 /// norme ne permet plus de declarer (`crate::regularisation::refus_non_declarable`) ; une saisie qui ne se calcule pas.
-fn modifier_engagement(ctx: &Contexte, charge: ChargeModifier) -> R<Modification> {
-    let ChargeModifier { mois, engagement: id, changements, confirme, jour } = charge;
-    // Le jour du mois de la carte ou un terme change, quand on le dit (le 1er sinon).
-    if let Some(j) = jour.filter(|j| !(1..=31).contains(j)) {
-        return Err(refus(format!("« le {} » : un jour du mois est attendu, de 1 à 31. Rien n'est écrit.", j)));
-    }
+fn modifier_engagement(ctx: &Contexte, (charge, jour): (ChargeModifier, Option<socle::date::Jour>)) -> R<Modification> {
+    let ChargeModifier { mois, engagement: id, changements, confirme } = charge;
     let _verrou = crate::mois::avant_d_ecrire(ctx, mois)?;
     let (i, o) = designe(ctx, mois, &id)?;
     if !o.est_valide() {
@@ -335,7 +329,7 @@ fn a_partir_de(o: &engagement::stock::Objet, devenu: &engagement::stock::Objet, 
 /// La modification elle-meme, dans le brouillon de fichiers ouvert : la carte de `mois` de l'engagement `o`, de rang
 /// `i`, prend ses changements ; l'engagement se rouvre, prend la carte changee et se revalide. Ce qu'elle rend dit si
 /// elle s'ecrit (`Issue::Ecrite`).
-fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: RangDansLeMois, o: &engagement::stock::Objet, changements: Changements, confirme: bool, jour: Option<u32>) -> R<Issue> {
+fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: RangDansLeMois, o: &engagement::stock::Objet, changements: Changements, confirme: bool, jour: Option<socle::date::Jour>) -> R<Issue> {
     let qui = engagement::etats::qui_de(ctx, o);
     let vue = o.vue(lu)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
     let mut carte = Brouillon::de_la_carte(&vue, &qui).map_err(|e| e.reclasser(Classe::Refuse))?;
